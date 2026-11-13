@@ -108,6 +108,7 @@ const ABILITIES: Readonly<Record<GrantAction, Ability | null>> = {
   // Group projects and canvas browsers are joined on a canvas, and the Dispatcher has none.
   'group_project.read': null,
   'group_project.post': null,
+  'group_project.lead': null,
   'group_project.admin': null,
 };
 

@@ -41,7 +41,7 @@ import { getAgentRuntime } from './agent-runtime';
 import { bindingManager } from './clubhouse-mcp/binding-manager';
 import { buildToolName } from './clubhouse-mcp/tool-registry';
 import { onAgentMcpConnected } from './clubhouse-mcp/connection-events';
-import { isProjectAdmin } from '../../shared/group-project-admin';
+import { groupProjectMay, roleModeOf } from './group-project-roles';
 import type { ChatSessionState } from '../../shared/chat';
 import { ATTR } from '../../shared/telemetry/attributes';
 import { tel } from '../telemetry/facade';
@@ -192,9 +192,9 @@ export function mentions(body: string, name: string): boolean {
   return new RegExp(`(^|[^\\w@])@${escapeRegExp(name)}(?![\\w-])`, 'i').test(body);
 }
 
-/** The lead, until #3360's grants: an admin of the group project. */
+/** The lead: an agent granted lead on this group project, Allow or Ask first (#3360). */
 function isLead(gp: GroupProject, agentId: string): boolean {
-  return isProjectAdmin(gp.metadata, agentId);
+  return roleModeOf(agentId, gp.id, 'lead') !== 'off';
 }
 
 /** Whether the group project still uses polling, the legacy delivery. */
@@ -204,6 +204,11 @@ export function usesPolling(gp: GroupProject): boolean {
 
 async function onPost(gp: GroupProject, message: BulletinMessage): Promise<void> {
   if (message.sender === 'system' || message.topic === 'system' || usesPolling(gp)) return;
+  // Delivering is the group project's own action, under its own grant (#3360).
+  if (!groupProjectMay(gp, 'deliver')) {
+    appLog('core:group-project', 'debug', 'Post notices are off for this group project', { meta: { groupProjectId: gp.id } });
+    return;
+  }
   const [resolved, membership] = await Promise.all([groupProjectHost.resolveMembers(gp.id), groupProjectHost.getMembership(gp.id)]);
   forgetFormerMembers(gp.id, resolved);
   for (const member of resolved) {
@@ -227,7 +232,7 @@ async function onPost(gp: GroupProject, message: BulletinMessage): Promise<void>
 /** Whether a notice may still go: the group project is on notices, and the agent is still a member. */
 async function stillMember(state: MemberState): Promise<GroupProject | null> {
   const gp = await groupProjectHost.get(state.groupProjectId);
-  if (!gp || usesPolling(gp)) return null;
+  if (!gp || usesPolling(gp) || !groupProjectMay(gp, 'deliver')) return null;
   const resolved = await groupProjectHost.resolveMembers(gp.id);
   return resolved.some((m) => m.address === state.agentId) ? gp : null;
 }
@@ -425,7 +430,7 @@ export function watchGroupProjectDelivery(): () => void {
       // Members left, or the group project went back to polling or stopped delivering.
       void (async () => {
         const gp = await groupProjectHost.get(change.groupProjectId);
-        const resolved = gp && !usesPolling(gp) ? await groupProjectHost.resolveMembers(gp.id) : [];
+        const resolved = gp && !usesPolling(gp) && groupProjectMay(gp, 'deliver') ? await groupProjectHost.resolveMembers(gp.id) : [];
         forgetFormerMembers(change.groupProjectId, resolved);
       })().catch((err) => {
         // telemetry-exempt: held notices are re-checked when they go anyway; logged

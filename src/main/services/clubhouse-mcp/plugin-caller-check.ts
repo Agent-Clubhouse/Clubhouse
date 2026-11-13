@@ -15,11 +15,11 @@
  */
 
 import { GRANT_ACTIONS, type GrantAction, type GrantCallTarget } from '../../../shared/agent-grants';
-import { deniedGroupProjectTools, isProjectAdmin } from '../../../shared/group-project-admin';
+import { deniedGroupProjectTools } from '../../../shared/group-project-admin';
 import type { ToolGrantDeclaration } from './tool-grants';
 import { resolveArgTargets } from './arg-targets';
 import { bindingManager } from './binding-manager';
-import { checkToolGrant } from './grant-check';
+import { checkToolGrant, holdsGrant } from './grant-check';
 import { agentOfPluginCall } from './plugin-tool-registry';
 import { groupProjectRegistry } from '../group-project-registry';
 
@@ -61,7 +61,8 @@ function administersGroupWith(callerId: string, agentId: string, action: GrantAc
   return all.some((b) => {
     if (b.agentId !== callerId || b.targetKind !== 'group-project') return false;
     const metadata = groupProjectRegistry.getSync(b.targetId)?.metadata;
-    return isProjectAdmin(metadata, callerId)
+    // Leading the group is an explicit grant on it (#3360).
+    return holdsGrant(callerId, 'group_project.lead', { kind: 'group_project', groupRole: 'member', groupProjectId: b.targetId })
       && !deniedGroupProjectTools(metadata, callerId, b.disabledTools).has(tool)
       && all.some((m) => m.targetKind === 'group-project' && m.targetId === b.targetId && m.agentId === agentId);
   });

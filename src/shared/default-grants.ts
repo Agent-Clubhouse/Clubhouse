@@ -101,7 +101,7 @@ export function defaultGrants(facts: GrantCallerFacts): Grant[] {
     every('project.read', OWN_PROJECT), every('project.display', OWN_PROJECT),
     every('group_project.read', { kind: 'group_project', role: 'member' }),
     every('group_project.post', { kind: 'group_project', role: 'member' }),
-    every('group_project.admin', { kind: 'group_project', role: 'admin' }),
+    // Lead and admin of a group project are explicit grants on it (#3360): none by default.
     every('agent.message', { kind: 'group_members' }), every('agent.wake', { kind: 'group_members' }),
     every('agent.sleep', { kind: 'group_members' }), every('agent.reset', { kind: 'group_members' }),
     every('settings.app.read', APP), every('user.notify', APP), every('models.read', APP),
@@ -146,6 +146,8 @@ export function defaultGrants(facts: GrantCallerFacts): Grant[] {
       structural('agent.dispose', ANY, 'ask'),
       structural('connection.bootstrap', { kind: 'created_by_me' }, 'ask'),
       structural('agent.watch', APP),
+      // Admin of any group project, asking first each time (#3360).
+      structural('group_project.admin', ANY, 'ask'),
       // The Annex Network's devices (#3068): it sees them, and asks before it changes any.
       structural('handoff.offer', ANY, 'ask'), structural('handoff.accept', ANY, 'ask'),
       structural('device.read', APP), structural('device.manage', APP, 'ask'),

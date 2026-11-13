@@ -186,13 +186,14 @@ describe('BridgeServer', () => {
     setOrchestrationEnabled('agent-1', true);
     const board = vi.spyOn(groupProjectRegistry, 'getSync').mockReturnValue({
       id: 'board', name: 'Board', description: '', instructions: '', createdAt: '',
-      metadata: { admins: ['agent-1'] },
+      metadata: {},
     });
     const definition = { description: 'Annotation serialization', inputSchema: { type: 'object' as const } };
     const handler = async () => ({ content: [] });
     registerGlobalTool('read_settings', definition, handler, { grant: { actions: ['settings.app.read'], target: 'app' } });
     registerGlobalTool('hand_off', definition, handler, { grant: { actions: ['agent.dispose'], target: 'my_helpers' } });
-    registerToolTemplate('group-project', 'clear_topic', definition, handler, { grant: { actions: ['group_project.admin'], target: 'bound' } });
+    // A member's board tool: the annotation is by suffix, whatever the declaration.
+    registerToolTemplate('group-project', 'clear_topic', definition, handler, { grant: { actions: ['group_project.read'], target: 'bound' } });
     registerToolTemplate('browser', 'screenshot', definition, handler, { grant: { actions: ['browser.read'], target: 'bound' } });
     registerToolTemplate('browser', 'evaluate', definition, handler, { grant: { actions: ['browser.act'], target: 'bound' } });
     bindingManager.bind('agent-1', { targetId: 'board', targetKind: 'group-project', label: 'Board' });

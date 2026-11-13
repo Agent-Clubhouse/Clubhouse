@@ -421,4 +421,18 @@ export function registerAnnexClientHandlers(): void {
       return annexClient.requestGroupProjectSetPolling(satelliteId, groupProjectId, enabled as boolean);
     },
   ));
+
+  // Group Project proxy: lead and admin on a satellite's group project (#3360)
+  ipcMain.handle(IPC.ANNEX_CLIENT.GP_GET_ROLES, withValidatedArgs(
+    [stringArg(), stringArg()],
+    async (_event, satelliteId, groupProjectId) => annexClient.requestGroupProjectRoles(satelliteId, groupProjectId),
+  ));
+  ipcMain.handle(IPC.ANNEX_CLIENT.GP_SET_ROLE, withValidatedArgs(
+    [stringArg(), stringArg(), stringArg(), stringArg(), stringArg()],
+    async (_event, satelliteId, groupProjectId, agentId, role, mode) => {
+      if (role !== 'lead' && role !== 'admin') throw new Error('Role must be lead or admin.');
+      if (mode !== 'allow' && mode !== 'ask' && mode !== 'off') throw new Error('Mode must be allow, ask or off.');
+      return annexClient.requestGroupProjectSetRole(satelliteId, groupProjectId, agentId, role, mode);
+    },
+  ));
 }

@@ -21,7 +21,6 @@ import { resolveOrchestrationPolicies } from '../orchestration-policy';
 import * as projectStore from '../project-store';
 import { groupProjectRegistry } from '../group-project-registry';
 import { parseAgentAddress } from '../../../shared/agent-address';
-import { isProjectAdmin } from '../../../shared/group-project-admin';
 import { localConnectionWakeOn } from '../connection-grants-store';
 import { bindingManager } from './binding-manager';
 import { isDispatcherAgent, isTrackedDispatcher, isDispatcherCoordinatorId } from './dispatcher-gate';
@@ -188,7 +187,8 @@ async function resolveDeclaration(lookup: Lookup, d: ToolGrantDeclaration, args:
       const matches = projects.filter((p) => p.id === ref || p.name.toLowerCase() === ref.toLowerCase());
       return matches.map((p): GrantCallTarget => {
         const member = bindingManager.getBindingsForAgent(lookup.callerId).some((b) => b.targetKind === 'group-project' && b.targetId === p.id);
-        return { kind: 'group_project', groupRole: member ? (isProjectAdmin(p.metadata, lookup.callerId) ? 'admin' : 'member') : null };
+        // Its id, so a grant on this one group project covers it (#3360); lead and admin are such grants, not a role here.
+        return { kind: 'group_project', groupRole: member ? 'member' : null, groupProjectId: p.id };
       });
     });
   }

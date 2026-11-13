@@ -810,7 +810,7 @@ export const ATTR = {
     'resumed', 'fresh_not_found', 'fresh_stalled', 'fresh_user', 'fresh_other', 'failed_not_found', 'failed_early_exit',
   ]),
   targetsCount: intAttr('clubhouse.targets.count'),
-  deliveryResult: enumAttr('clubhouse.delivery.result', ['delivered', 'not_running', 'unsupported_runtime']),
+  deliveryResult: enumAttr('clubhouse.delivery.result', ['delivered', 'woken', 'not_running', 'unsupported_runtime']),
   // Workspace (§4.7–4.10, Phase 5). Counts are bucketed with countBucket().
   gitOp: enumAttr('clubhouse.git.op', GIT_OPS),
   gitTimedOut: boolAttr('clubhouse.git.timed_out'),
@@ -1027,6 +1027,8 @@ export const ATTR = {
     'POST /api/v1/group-projects/:id/bulletin/messages',
     'POST /api/v1/group-projects/:id/shoulder-tap',
     'POST /api/v1/group-projects/:id/polling',
+    'GET /api/v1/group-projects/:id/roles',
+    'POST /api/v1/group-projects/:id/roles',
     'DELETE /api/v1/group-projects/:id/bulletin/topics/:id/messages/:id',
     'DELETE /api/v1/group-projects/:id/bulletin/topics/:id',
     'PATCH /api/v1/group-projects/:id/bulletin/topics/:id/protection',

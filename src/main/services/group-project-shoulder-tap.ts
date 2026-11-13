@@ -18,6 +18,27 @@ import { isAgentStoppingError } from './agent-runtime/agent-stopping';
 import { appLog } from './log-service';
 import { ATTR } from '../../shared/telemetry/attributes';
 import { tel } from '../telemetry/facade';
+import { groupProjectMay } from './group-project-roles';
+import { findDurableAgentConfig } from './clubhouse-mcp/tools/agent-lifecycle';
+import * as agentSystem from './agent-system';
+
+/** Wake a sleeping durable member with the tap as its first message. False when it can't be found or started. */
+async function wakeWithTap(agentId: string, message: string): Promise<boolean> {
+  try {
+    const durable = await findDurableAgentConfig(agentId);
+    if (!durable) return false;
+    const { agentConfig, projectPath } = durable;
+    await agentSystem.spawnAgent({
+      agentId, projectPath, cwd: agentConfig.worktreePath || projectPath, kind: 'durable',
+      model: agentConfig.model, mission: message, orchestrator: agentConfig.orchestrator, freeAgentMode: agentConfig.freeAgentMode,
+    });
+    return true;
+  } catch (err) {
+    // telemetry-exempt: reported as not delivered in the tap's result; logged
+    appLog('core:group-project', 'warn', 'Shoulder tap could not wake the member', { meta: { agentId, error: err instanceof Error ? err.message : String(err) } });
+    return false;
+  }
+}
 
 export interface ShoulderTapParams {
   projectId: string;
@@ -31,7 +52,10 @@ export interface ShoulderTapParams {
 export interface ShoulderTapDelivery {
   agentId: string;
   agentName: string;
-  status: 'delivered' | 'not-running' | 'unsupported-runtime';
+  /** `woken`: it was asleep, and the group project's wake grant woke it with the tap (#3360). */
+  status: 'delivered' | 'woken' | 'not-running' | 'unsupported-runtime';
+  /** Why a sleeping member wasn't woken: the group project's wake grant is off. */
+  refusal?: 'group_project_wake_off';
 }
 
 export interface ShoulderTapResult {
@@ -58,6 +82,7 @@ async function senderReplyChannel(projectId: string, senderLabel: string, sender
 
 const DELIVERY_RESULT = {
   'delivered': 'delivered',
+  'woken': 'woken',
   'not-running': 'not_running',
   'unsupported-runtime': 'unsupported_runtime',
 } as const;
@@ -122,12 +147,6 @@ async function deliverShoulderTap(params: ShoulderTapParams): Promise<ShoulderTa
     const agentName = binding.agentName || binding.agentId;
     const reg = agentRegistry.get(binding.agentId);
 
-    if (!reg) {
-      failed.push({ agentId: binding.agentId, agentName, status: 'not-running' });
-      recordDelivery('not-running', undefined);
-      continue;
-    }
-
     // Build the response tool name for this agent's group binding
     const replyToolName = buildToolName(binding, 'post_bulletin');
 
@@ -155,6 +174,18 @@ async function deliverShoulderTap(params: ShoulderTapParams): Promise<ShoulderTa
       `Task ID: ${taskId}\n` +
       `This tap is ephemeral — no bulletin record was created.\n\n` +
       replyLines.join('\n');
+
+    if (!reg) {
+      // A sleeping member: the group project wakes it with the tap only when it holds the wake grant (#3360).
+      if (project && groupProjectMay(project, 'wake') && await wakeWithTap(binding.agentId, taggedMessage)) {
+        delivered.push({ agentId: binding.agentId, agentName, status: 'woken' });
+        recordDelivery('woken', undefined);
+      } else {
+        failed.push({ agentId: binding.agentId, agentName, status: 'not-running', ...(project && !groupProjectMay(project, 'wake') && { refusal: 'group_project_wake_off' as const }) });
+        recordDelivery('not-running', undefined);
+      }
+      continue;
+    }
 
     const runtime = getAgentRuntime(binding.agentId);
     try {

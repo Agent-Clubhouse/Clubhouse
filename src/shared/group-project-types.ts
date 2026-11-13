@@ -183,6 +183,21 @@ export interface ResolvedGroupProjectMember {
   projectName?: string;
 }
 
+/** One agent's lead and admin grants on a group project (#3360): Allow, Ask first or Off. */
+export interface GroupProjectRoleHolderView {
+  agentId: string;
+  lead: 'allow' | 'ask' | 'off';
+  admin: 'allow' | 'ask' | 'off';
+}
+
+/** A group project's own grants and who leads and administers it (#3360). */
+export interface GroupProjectRolesView {
+  groupProjectId: string;
+  /** What it does by itself: post notices to members, and wake a member with a lead's shoulder tap. */
+  own: { deliver: 'allow' | 'off'; wake: 'allow' | 'off' };
+  holders: GroupProjectRoleHolderView[];
+}
+
 /** Who would auto-join a group project with a given scope, shown before creating it (#3357). */
 export interface AutoJoinPreview {
   wouldJoin: ResolvedGroupProjectMember[];

@@ -1,5 +1,6 @@
 import { ipcRenderer } from 'electron';
 import { IPC } from '../shared/ipc-channels';
+import type { GroupProjectRolesView } from '../shared/group-project-types';
 
 export const annexClient = {
   annexClient: {
@@ -90,6 +91,10 @@ export const annexClient = {
     ipcRenderer.invoke(IPC.ANNEX_CLIENT.GP_INJECT_MESSAGE, satelliteId, agentId, message),
   gpSetPolling: (satelliteId: string, groupProjectId: string, enabled: boolean): Promise<unknown> =>
     ipcRenderer.invoke(IPC.ANNEX_CLIENT.GP_SET_POLLING, satelliteId, groupProjectId, enabled),
+  gpGetRoles: (satelliteId: string, groupProjectId: string): Promise<GroupProjectRolesView> =>
+    ipcRenderer.invoke(IPC.ANNEX_CLIENT.GP_GET_ROLES, satelliteId, groupProjectId),
+  gpSetRole: (satelliteId: string, groupProjectId: string, agentId: string, role: 'lead' | 'admin', mode: 'allow' | 'ask' | 'off'): Promise<GroupProjectRolesView> =>
+    ipcRenderer.invoke(IPC.ANNEX_CLIENT.GP_SET_ROLE, satelliteId, groupProjectId, agentId, role, mode),
   forgetSatellite: (fingerprint: string) =>
     ipcRenderer.invoke(IPC.ANNEX_CLIENT.FORGET_SATELLITE, fingerprint),
   /** A host name or address to reach a satellite at, such as its tailnet name; empty clears it (#3058). */

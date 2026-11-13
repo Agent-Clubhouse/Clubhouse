@@ -9,7 +9,6 @@ import { renderMarkdownSafe } from '../../../utils/safe-markdown';
 import { useRemoteProject } from '../../../hooks/useRemoteProject';
 import { useAgentStore } from '../../../stores/agentStore';
 import { pollingNudgeMsg } from '../../../../shared/polling-messages';
-import { getProjectAdmins, isProjectAdmin, addAdmin, removeAdmin } from '../../../../shared/group-project-admin';
 import { useMcpBindingStore } from '../../../stores/mcpBindingStore';
 import { useGroupProjectContext, type GroupProjectContextValue, type GroupProjectMember } from './useGroupProjectContext';
 import { useUIStore } from '../../../stores/uiStore';
@@ -313,7 +312,7 @@ function ProjectCard({
   onUpdateMetadata: (updates: Record<string, unknown>) => void;
   ctx: GroupProjectContextValue;
 }) {
-  const { project, members, loaded, loadProjects, update, setPolling, fetchDigest, injectMessage } = ctx;
+  const { project, members, loaded, loadProjects, setPolling, fetchDigest, injectMessage, getRoles, setRole } = ctx;
 
   const [showTapModal, setShowTapModal] = useState(false);
   const [topics, setTopics] = useState<TopicDigest[]>([]);
@@ -345,14 +344,20 @@ function ProjectCard({
   const totalMessages = topics.reduce((sum, t) => sum + t.messageCount, 0);
   const totalNew = topics.reduce((sum, t) => sum + t.newMessageCount, 0);
 
-  const admins = getProjectAdmins(project?.metadata);
-  const handleToggleAdmin = useCallback(async (agentId: string) => {
-    const next = isProjectAdmin(project?.metadata, agentId)
-      ? removeAdmin(project?.metadata, agentId)
-      : addAdmin(project?.metadata, agentId);
-    await update(groupProjectId, { metadata: { admins: next } });
-    onUpdateMetadata({ admins: next });
-  }, [project?.metadata, groupProjectId, update, onUpdateMetadata]);
+  // Leads hold the lead grant on this group project (#3360), set here or on the permissions page.
+  const [leads, setLeads] = useState<string[]>([]);
+  useEffect(() => {
+    let cancelled = false;
+    getRoles(groupProjectId)
+      .then((view) => { if (!cancelled) setLeads(view.holders.filter((h) => h.lead !== 'off').map((h) => h.agentId)); })
+      .catch(() => { /* telemetry-exempt: no leads shown; the permissions page has them */ });
+    return () => { cancelled = true; };
+  }, [groupProjectId, getRoles]);
+  // On a satellite's card the lead grant is set on the machine that holds the group project.
+  const handleToggleLead = useCallback(async (agentId: string) => {
+    const view = await setRole(groupProjectId, agentId, 'lead', leads.includes(agentId) ? 'off' : 'allow');
+    setLeads(view.holders.filter((h) => h.lead !== 'off').map((h) => h.agentId));
+  }, [groupProjectId, leads, setRole]);
 
   const handleTogglePolling = useCallback(async () => {
     const newVal = !pollingEnabled;
@@ -401,15 +406,15 @@ function ProjectCard({
 
       {!ctx.isRemote && <PausedPolling groupProjectId={groupProjectId} />}
 
-      {/* Members: the star makes an agent a project lead (admin), which gets the privileged tools. */}
+      {/* Members: the star gives an agent the lead grant on this group project (#3360). */}
       {members.length > 0 && (
         <ul className="mt-1.5 px-1.5 flex-1 min-h-0 overflow-y-auto" aria-label="Members">
           {members.map((m) => (
             <MemberRow
               key={m.agentId}
               member={m}
-              lead={admins.includes(m.agentId)}
-              onToggleLead={() => void handleToggleAdmin(m.agentId)}
+              lead={leads.includes(m.agentId)}
+              onToggleLead={() => void handleToggleLead(m.agentId)}
             />
           ))}
         </ul>
@@ -492,7 +497,7 @@ function MemberRow({ member, lead, onToggleLead }: { member: GroupProjectMember;
       )}
       <IconButton
         label="Project lead"
-        tooltip="Project lead: gets the privileged group project tools"
+        tooltip="Project lead: can broadcast, tap, wake and manage members' context"
         pressed={lead}
         onClick={(e) => { e.stopPropagation(); onToggleLead(); }}
       >

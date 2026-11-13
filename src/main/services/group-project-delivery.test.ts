@@ -18,6 +18,13 @@ const fx = vi.hoisted(() => ({
 }));
 
 vi.mock('./log-service', () => ({ appLog: vi.fn() }));
+// Lead is a grant on the group project (#3360).
+const grants = vi.hoisted(() => ({ changes: new Map<string, unknown>() }));
+vi.mock('./agent-grants-store', () => ({
+  getAgentGrantChanges: (id: string) => grants.changes.get(id),
+  listAgentsWithGrantChanges: () => [...grants.changes.keys()],
+  updateAgentGrantChanges: async (id: string, fn: (c: unknown) => unknown) => { const n = fn(grants.changes.get(id)); if (n) grants.changes.set(id, n); else grants.changes.delete(id); return n; },
+}));
 vi.mock('../telemetry/facade', () => ({ tel: { count: fx.telCount } }));
 vi.mock('./group-project-host', () => ({
   groupProjectHost: {
@@ -85,6 +92,7 @@ beforeEach(() => {
   fx.alive.clear();
   fx.runtimes.clear();
   fx.telCount.mockClear();
+  grants.changes.clear();
   watchGroupProjectDelivery();
 });
 
@@ -112,7 +120,7 @@ describe('who hears about a post', () => {
   });
 
   it('a work channel reaches only its subscribers, members named in the post, and the lead', async () => {
-    fx.gp.metadata = { admins: ['lead'] };
+    grants.changes.set('lead', { changes: [{ action: 'group_project.lead', target: { kind: 'group_project', id: 'gp1' }, mode: 'allow' }] });
     const lead = runtime('lead');
     const dev = runtime('dev');
     const qa = runtime('qa');
@@ -135,6 +143,14 @@ describe('who hears about a post', () => {
 
   it('a group project with polling on behaves as today: no notices', async () => {
     fx.gp.metadata = { pollingEnabled: true };
+    const dev = runtime('dev');
+    await post('qa@Release', 'general');
+    await vi.advanceTimersByTimeAsync(COALESCE_MS);
+    expect(dev.sendMessage).not.toHaveBeenCalled();
+  });
+
+  it('notices are the group project\'s own action: none when its deliver grant is off (#3360)', async () => {
+    fx.gp.metadata = { grants: { deliver: 'off', wake: 'off' } };
     const dev = runtime('dev');
     await post('qa@Release', 'general');
     await vi.advanceTimersByTimeAsync(COALESCE_MS);
