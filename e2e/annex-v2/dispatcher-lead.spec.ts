@@ -100,4 +100,5 @@ test('a lead reaches the other computer, which follows its chat, keeps messages 
   // Removing the lead's computer returns the other to peers.
   await there.window.evaluate((fingerprint) => window.clubhouse.annex.removeDevice(fingerprint), desk);
   await expect.poll(async () => (await lead(there.window)).role, { timeout: 30_000 }).toBe('peer');
+  expect(await lead(there.window)).toMatchObject({ available: true, canChoose: false, clearedFor: 'Desk' });
 });

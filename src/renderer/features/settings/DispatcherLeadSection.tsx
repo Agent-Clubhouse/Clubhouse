@@ -21,8 +21,16 @@ export function listNames(names: string[]): string {
 }
 
 function choiceLabel(choice: LeadChoice): string {
-  if (choice.self) return `${choice.name} (this computer)`;
-  return choice.online ? choice.name : `${choice.name} (offline)`;
+  const notes = [choice.self && 'this computer', !choice.self && !choice.online && 'offline', choice.dispatcherOn === false && 'Dispatcher off'].filter(Boolean);
+  return notes.length ? `${choice.name} (${notes.join(', ')})` : choice.name;
+}
+
+/** A lead whose Dispatcher is off: followers have no chat to show until it's on. */
+export function leadOffWarning(state: DispatcherLeadState): string | null {
+  if (!state.lead || state.lead.dispatcherOn !== false) return null;
+  return state.lead.self
+    ? 'This computer’s Dispatcher is off. Turn it on above, or the other computers have no lead chat to show.'
+    : `${state.lead.name}’s Dispatcher is off. The other computers show its chat once it’s on there.`;
 }
 
 /** The line under the picker: where this computer stands. */
@@ -74,7 +82,7 @@ export function LeadSection() {
           id="dispatcher-lead"
           className={SELECT_CLASS}
           value={state.lead?.machine ?? NONE}
-          disabled={saving}
+          disabled={saving || !state.canChoose}
           onChange={(e) => void choose(e.target.value === NONE ? null : e.target.value)}
           data-testid="dispatcher-lead"
         >
@@ -89,6 +97,7 @@ export function LeadSection() {
         </Button>
       )}
       {confirmation && <p className={`${settingsHelp} mt-1`} data-testid="dispatcher-lead-confirmation">{confirmation}</p>}
+      {leadOffWarning(state) && <p className={`${settingsError} mt-1`} role="alert" data-testid="dispatcher-lead-off">{leadOffWarning(state)}</p>}
       {error && <p className={`${settingsError} mt-1.5`} role="alert" data-testid="dispatcher-lead-error">{error}</p>}
     </SettingsSection>
   );

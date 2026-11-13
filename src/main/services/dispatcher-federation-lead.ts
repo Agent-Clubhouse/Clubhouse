@@ -21,6 +21,8 @@ import type { FederationPublicationGuard } from './dispatcher-federation-policy'
 import * as annexIdentity from './annex-identity';
 import * as annexSettings from './annex-settings';
 import { listPeers, peerNeedsPairing } from './annex-peers';
+import { remoteFederationController } from './dispatcher-federation';
+import { isDispatcherEnabled, onDispatcherChanged } from './dispatcher/dispatcher-service';
 import { onDevicePresenceChanged, onDevicesChanged } from './annex-device-signal';
 import { currentView, onMembershipChanged, ownPairing } from './annex-network-membership';
 import {
@@ -227,16 +229,21 @@ export function getLeadState(): DispatcherLeadState {
   const { record, heard, leadName, tookBack } = read();
   const connected = hooks?.connected ?? (() => false);
   const choices: LeadChoice[] = !self ? [] : [
-    { machine: self, name: selfName(), self: true, online: true },
-    ...members.map((p) => ({ machine: lower(p.fingerprint), name: p.alias || 'A computer', self: false, online: connected(lower(p.fingerprint)) })),
+    { machine: self, name: selfName(), self: true, online: true, dispatcherOn: isDispatcherEnabled() },
+    ...members.map((p) => ({
+      machine: lower(p.fingerprint), name: p.alias || 'A computer', self: false, online: connected(lower(p.fingerprint)),
+      dispatcherOn: remoteFederationController(p.fingerprint)?.enabled ?? null,
+    })),
   ];
   const lead = record.lead ? choices.find((c) => c.machine === record.lead)
-    ?? { machine: record.lead, name: leadName ?? 'Another computer', self: false, online: false } : null;
+    ?? { machine: record.lead, name: leadName ?? 'Another computer', self: false, online: false, dispatcherOn: null } : null;
   const confirmedBy = members.filter((p) => sameLeadRecord(heard[lower(p.fingerprint)], record)).map((p) => p.alias || 'A computer');
   const waitingOn = members.filter((p) => !sameLeadRecord(heard[lower(p.fingerprint)], record)).map((p) => p.alias || 'A computer');
   const changedBy = record.rev === 0 ? null : choices.find((c) => c.machine === record.by)?.name ?? null;
   return {
-    available: !!self && members.length > 0,
+    // Kept after the last other computer leaves, so the page can say who left.
+    available: !!self && (members.length > 0 || record.rev > 0),
+    canChoose: !!self && members.length > 0,
     role: leadRole(record),
     lead,
     choices,
@@ -262,11 +269,14 @@ export function startDispatcherLead(h: LeadHooks): () => void {
   const offMembership = onMembershipChanged(recheck);
   const offDevices = onDevicesChanged(recheck);
   const offPresence = onDevicePresenceChanged(changed);
+  // This computer's switch shows on its own choice.
+  const offDispatcher = onDispatcherChanged(changed);
   void reconcileMembership().catch(logError);
   return () => {
     offMembership();
     offDevices();
     offPresence();
+    offDispatcher();
     if (hooks === h) hooks = undefined;
   };
 }

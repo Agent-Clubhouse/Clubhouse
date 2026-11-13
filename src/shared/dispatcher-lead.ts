@@ -77,12 +77,16 @@ export interface LeadChoice {
   self: boolean;
   /** Connected now. Always true for this machine. */
   online: boolean;
+  /** Its Dispatcher is on, as that computer last said; null when it hasn't said. */
+  dispatcherOn: boolean | null;
 }
 
 /** What Settings › Dispatcher shows for Lead. */
 export interface DispatcherLeadState {
-  /** False when this computer isn't in an Annex Network with another computer. */
+  /** False when this computer has never been in an Annex Network with another computer, and has no lead record. */
   available: boolean;
+  /** Another computer is in the network now, so a lead can be chosen. */
+  canChoose: boolean;
   role: LeadRole;
   /** The chosen lead, by name, or null for peers. */
   lead: LeadChoice | null;

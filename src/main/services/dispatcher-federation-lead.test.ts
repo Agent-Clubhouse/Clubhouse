@@ -31,6 +31,8 @@ vi.mock('./settings-store', () => ({
 vi.mock('./annex-identity', () => ({ getIdentity: () => (world.current ? { fingerprint: world.current.toUpperCase() } : null) }));
 vi.mock('./annex-settings', () => ({ getSettings: () => ({ alias: world.current.toUpperCase() }) }));
 vi.mock('./annex-peers', () => ({ listPeers: () => world.peers[world.current] ?? [], peerNeedsPairing: () => false }));
+vi.mock('./dispatcher-federation', () => ({ remoteFederationController: () => ({ agentId: 'c', name: 'Controller', enabled: true }) }));
+vi.mock('./dispatcher/dispatcher-service', () => ({ isDispatcherEnabled: () => true, onDispatcherChanged: () => () => {} }));
 vi.mock('./annex-device-signal', () => ({ onDevicesChanged: () => () => {}, onDevicePresenceChanged: () => () => {} }));
 vi.mock('./annex-network-membership', () => ({
   currentView: () => ({ members: [], removals: world.removals[world.current] ?? [] }),
@@ -223,6 +225,16 @@ describe('when the lead’s computer leaves (#3351)', () => {
     for (const m of ['a', 'b']) {
       expect(await state(m)).toMatchObject({ role: 'peer', lead: null, clearedFor: 'C' });
     }
+  });
+
+  it('in a two-computer network, still says the lead left once it was the only other computer', async () => {
+    await boot(['a', 'b']);
+    await on('a', (l) => l.chooseLead('B'));
+    await settle();
+    world.peers.a = [];
+    world.removals.a = [{ fingerprint: 'B', removedAt: new Date().toISOString() }];
+    await on('a', (l) => l.reconcileMembership());
+    expect(await state('a')).toMatchObject({ available: true, canChoose: false, role: 'peer', clearedFor: 'B' });
   });
 
   it('a lead that is only offline stays the lead', async () => {
