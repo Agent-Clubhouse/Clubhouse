@@ -458,6 +458,7 @@ vi.stubGlobal('clubhouse', {
     onSatelliteEvent: () => noop,
   },
   groupProject: {
+    onDeleted: () => noop,
     list: async () => [],
     create: asyncNoop,
     get: asyncNoop,

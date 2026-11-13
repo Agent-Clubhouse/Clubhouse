@@ -51,12 +51,19 @@ import { closeDispatcher, openAutoSettings, openDispatcher, openDispatcherNavTar
 import { requestLeaveAgentSettings } from './features/agents/agentSettingsPages';
 import { openAgent } from './features/agents/helpers/orchestration-hooks';
 import { useAgentDetailsStore } from './features/agents/details/detailsStore';
+import { useBulletinReadStore } from './stores/bulletinReadStore';
 
 
 // ─── IPC Listener Setup ─────────────────────────────────────────────────────
 
 function initWindowListeners(): (() => void)[] {
   const removers: (() => void)[] = [];
+
+  removers.push(window.clubhouse.groupProject.onDeleted((id) => {
+    useBulletinReadStore.getState().clearLastRead(id);
+    useAppCanvasStore.getState().removeDeletedGroupProject(id);
+    for (const projectId of getKnownProjectIds()) getProjectCanvasStore(projectId).getState().removeDeletedGroupProject(id);
+  }));
 
   removers.push(window.clubhouse.app.onModelCatalogNotice((message) => {
     if (window.clubhouse.window.isPopout()) return;

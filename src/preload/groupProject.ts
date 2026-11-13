@@ -75,5 +75,10 @@ export const groupProject = {
     ipcRenderer.on(IPC.GROUP_PROJECT.CHANGED, listener);
     return () => { ipcRenderer.removeListener(IPC.GROUP_PROJECT.CHANGED, listener); };
   },
+  onDeleted: (callback: (id: string) => void) => {
+    const listener = (_event: Electron.IpcRendererEvent, id: string) => callback(id);
+    ipcRenderer.on(IPC.GROUP_PROJECT.DELETED, listener);
+    return () => { ipcRenderer.removeListener(IPC.GROUP_PROJECT.DELETED, listener); };
+  },
   },
 };
