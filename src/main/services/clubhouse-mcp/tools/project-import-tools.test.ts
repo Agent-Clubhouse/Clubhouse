@@ -477,6 +477,7 @@ describe('public Dispatcher repository import (#2808)', () => {
     expect(changed.body.reason).toBe('agent_choice_changed');
     const omitted = await call('create_managed_agent', { project: destination, name: 'different-owner' });
     expect(omitted.body.reason).toBe('import_receipt_required');
+    expect(omitted.body.message).toContain(receipt.id);
     const outcome = await call('get_repository_import', { importId: receipt.id });
     expect(outcome.body.agentCreation).toMatchObject({ phase: 'completed', agentId: created.body.id });
     expect(outcome.body.agentStarted).toBe(false);

@@ -60,6 +60,9 @@ never an approval source, and model text/tokens are not accepted as authority.
    to choose differently with the Dispatcher. Import approval never creates an
    agent. The builder leaves it asleep, and only a separately requested wake
    under the existing wake/message grants starts it. Repository setup is not run.
+   The panel exposes receipt/project ids for recovery after lost conversation
+   context; an omitted builder `importId` reports that caller's owned lifecycle
+   id, not authority. The exact creation still needs its own human review.
 
 Import downloads a shallow single-branch checkout into its exclusively created
 directory, then calls the same `registerProjectFolder` path as the app and

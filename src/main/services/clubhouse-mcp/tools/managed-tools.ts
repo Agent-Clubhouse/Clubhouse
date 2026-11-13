@@ -681,7 +681,7 @@ export function registerManagedTools(): void {
       const project = await resolveProject(requireString(args, 'project'));
       const importId = optionalString(args, 'importId');
       const ownedImport = await projectImportService.importForProject(callerId, project);
-      if (ownedImport && importId !== ownedImport) throw new ImportError('import_receipt_required', 'This imported project requires its exact owned importId for safe agent choices and retry recovery. Reuse the existing outcome; additional agents can be created explicitly in the app.');
+      if (ownedImport && importId !== ownedImport) throw new ImportError('import_receipt_required', `This imported project requires its exact owned importId: ${ownedImport}. This lifecycle id is not approval. Read its status and reuse its outcome, or obtain the separate exact agent-choice review. Additional agents can be created explicitly in the app.`);
       if (importId) {
         const imported = await projectImportService.projectForAgent(callerId, importId);
         if (imported.id !== project.id || imported.path !== project.path) throw new ImportError('project_changed', 'Use the real project registered by your import receipt. No agent was created.');

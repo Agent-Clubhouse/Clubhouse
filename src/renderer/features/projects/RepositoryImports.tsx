@@ -65,6 +65,7 @@ export function RepositoryImports() {
         {receipts.map((r) => <div key={r.id} className="flex flex-col gap-2 break-words" data-testid={`repository-import-${r.id}`}>
           <strong>{r.plan.url}</strong>
           <p>{r.plan.destination}</p>
+          <p>Import receipt: {r.id}{r.projectId ? `; project: ${r.projectId}` : ''}</p>
           <p role="status">Import: {r.phase}{r.progress !== undefined && ACTIVE.has(r.phase) ? ` (${r.progress}%)` : ''}</p>
           {r.failedAt && <p>Failed operation: {r.failedAt}</p>}
           {r.message && <p>{r.message}</p>}

@@ -105,6 +105,7 @@ describe('repository import user review and progress (#2808)', () => {
     render(<RepositoryImports />);
     fireEvent.click(await screen.findByTestId('repository-imports-open'));
     expect(screen.getByRole('status')).toHaveTextContent('Import: partial');
+    expect(screen.getByText('Import receipt: owned-import; project: real-project')).toBeInTheDocument();
     expect(screen.getByText('Failed operation: registering')).toBeInTheDocument();
     expect(screen.getByText('Reuse real-project; do not clone again.')).toBeInTheDocument();
     expect(screen.getByText(/Agent creation: not requested/)).toBeInTheDocument();
