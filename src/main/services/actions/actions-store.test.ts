@@ -214,3 +214,9 @@ describe('actions store', () => {
     }
   });
 });
+
+
+it('retains the private handoff exception receipt source and paths across history reload', () => {
+  const run = { id: 'handoff-secret:confirmation', actionId: 'handoff-secret:confirmation', externalSource: 'handoff_secret', owner: { kind: 'user' }, trigger: { kind: 'manual', at: 5 }, chain: [], startedAt: 5, endedAt: 5, outcome: 'done', steps: [{ kind: 'notify', outcome: 'done', detail: 'fixture.txt' }] };
+  expect(migrations.get('action-history.json')!({ runs: { [run.actionId]: [run] } })).toEqual({ version: 1, runs: { [run.actionId]: [run] } });
+});

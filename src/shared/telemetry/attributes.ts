@@ -568,7 +568,7 @@ export const ATTR = {
     'list_settings', 'read_settings', 'read_helper_presets', 'set_helper_presets', 'request_grant',
     'probe_capacity', 'list_devices', 'rename_device', 'reconnect_device', 'remove_device', 'start_adding_device',
     'request_app_update',
-    'offer_handoff', 'respond_to_handoff', 'get_handoff', 'list_handoffs', 'cancel_handoff',
+    'check_handoff', 'offer_handoff', 'respond_to_handoff', 'get_handoff', 'list_handoffs', 'cancel_handoff',
     'hand_off_request', 'list_remote_requests', 'triage_remote_request', 'report_remote_request',
     'get_delivery', 'get_annex_network_settings', 'update_annex_network_settings',
     // Dispatcher controls: helper settings and links between agents (#2661, #3248)

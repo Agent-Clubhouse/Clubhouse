@@ -53,6 +53,8 @@ vi.stubGlobal('clubhouse', {
     pickDirectory: async () => null,
     checkGit: async () => false,
     getRepoKeys: async () => ({}),
+    getHandoffSecretSettings: async () => ({ notSecretPaths: [], historyActionIds: [] }),
+    setHandoffSecretSettings: async (_id: string, notSecretPaths: string[]) => ({ notSecretPaths, historyActionIds: [] }),
     gitInit: asyncNoop,
     update: asyncNoop,
     pickIcon: asyncNoop,

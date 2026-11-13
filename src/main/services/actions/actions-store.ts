@@ -190,7 +190,7 @@ function sanitizeRun(raw: unknown): ActionRun | null {
   return {
     id: raw.id,
     actionId: raw.actionId,
-    ...(raw.externalSource === 'annex_delivery' && { externalSource: raw.externalSource }),
+    ...((raw.externalSource === 'annex_delivery' || raw.externalSource === 'handoff_secret') && { externalSource: raw.externalSource }),
     ...(owner && { owner }),
     trigger: {
       ...trigger,

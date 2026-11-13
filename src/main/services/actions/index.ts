@@ -469,7 +469,7 @@ export function actionHistory(id: string, reader?: ActionOwner): ActionRun[] {
 }
 
 /** Internal receipt ingestion only; never creates an Action or schedules work. */
-export function recordExternalRun(run: ActionRun & { externalSource: 'annex_delivery' }): Promise<void> {
+export function recordExternalRun(run: ActionRun & { externalSource: NonNullable<ActionRun['externalSource']> }): Promise<void> {
   return requireEngine().recordExternalRun(run);
 }
 

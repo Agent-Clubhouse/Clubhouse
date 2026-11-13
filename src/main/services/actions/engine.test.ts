@@ -51,6 +51,7 @@ const START = new Date(2026, 10, 9, 8, 0).getTime();
 const MIN = 60_000;
 
 interface Setup {
+  historyFlush?: () => Promise<void>;
   devices?: Map<string, boolean | undefined>;
   actions?: Action[];
   state?: EngineState;
@@ -106,6 +107,7 @@ function setup(opts: Setup = {}) {
       saveState: (s) => { saved.state = s; },
     },
     history: {
+      flush: opts.historyFlush,
       put: (run) => { runs.set(run.id, JSON.parse(JSON.stringify(run))); },
       list: (id) => [...runs.values()].filter((r) => r.actionId === id).sort((a, b) => a.startedAt - b.startedAt),
     },
@@ -2496,4 +2498,20 @@ describe('subscriptions (#3042)', () => {
     const changed = engine.update(a.id, { name: 'Pushes', trigger: pushedMain, steps: [{ kind: 'message', agentId: 'pm', text: 'hi' }] });
     expect(changed.subscription).toBeUndefined();
   });
+});
+
+
+it('keeps handoff exception receipts private to the person and cannot execute them', async () => {
+  const durable = vi.fn().mockResolvedValue(undefined);
+  const { engine, stepCalls } = setup({ historyFlush: durable });
+  const receipt = { id: 'handoff-secret:confirmation', actionId: 'handoff-secret:confirmation', externalSource: 'handoff_secret', owner: { kind: 'user' }, trigger: { kind: 'manual', at: START }, chain: [], startedAt: START, endedAt: START, outcome: 'done', steps: [{ kind: 'notify', outcome: 'done', detail: 'fixture.txt' }] } as const;
+  await engine.recordExternalRun({ ...receipt, chain: [], steps: [...receipt.steps] });
+  expect(durable).toHaveBeenCalledOnce();
+  expect(engine.history(receipt.actionId)).toHaveLength(1);
+  expect(engine.history(receipt.actionId, { kind: 'user' })).toHaveLength(1);
+  expect(engine.history(receipt.actionId, { kind: 'dispatcher' })).toEqual([]);
+  expect(engine.history(receipt.actionId, { kind: 'agent', agentId: 'lead' })).toEqual([]);
+  expect(engine.get(receipt.actionId)).toBeUndefined();
+  expect(stepCalls).toEqual([]);
+  await expect(engine.recordExternalRun({ ...receipt, chain: [], steps: [], owner: { kind: 'agent', agentId: 'lead' } })).rejects.toThrow('executable Action');
 });

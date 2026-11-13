@@ -16,6 +16,28 @@ export function registerHandoffTools(): void {
   describeCallsForAsk('offer_handoff', (args) => `Offer work to ${typeof args.to === 'string' ? args.to : 'the receiver'}. They must agree before transfer and automatic apply.`);
   describeCallsForAsk('respond_to_handoff', (args) => args.accept === true ? 'Accept this handoff, including automatic verified transfer and apply into a fresh worktree.' : 'Decline this handoff.');
 
+  registerGlobalTool('check_handoff', {
+    description: 'Check your selected worktree files locally before offering a handoff. Returns safe file names, sizes, totals/ceilings and secret findings (path, rule, line only); sends no file bytes. Defaults to tracked changes plus untracked files, excluding node_modules. include.ignored explicitly selects ignored paths. A blocked file must be excluded, corrected, or confirmed non-secret by the person in project settings; agents cannot override secret rules.',
+    inputSchema: { type: 'object', properties: {
+      include: { type: 'object', properties: { tracked_changes: { type: 'boolean' }, untracked: { type: 'boolean' }, ignored: { type: 'array', items: { type: 'string' }, maxItems: 100 } }, additionalProperties: false },
+      exclude: { type: 'array', items: { type: 'string' }, maxItems: 100 },
+    } },
+  }, async (agentId, args) => {
+    const include = args.include;
+    const patterns = (value: unknown) => Array.isArray(value) && value.length <= 100 && value.every((entry) => typeof entry === 'string' && entry.length <= 1024);
+    if (!known(args, ['include', 'exclude']) || args.exclude !== undefined && !patterns(args.exclude)
+      || include !== undefined && (!include || typeof include !== 'object' || Array.isArray(include)
+        || !known(include as Record<string, unknown>, ['tracked_changes', 'untracked', 'ignored'])
+        || Object.entries(include).some(([key, value]) => key === 'ignored' ? !patterns(value) : typeof value !== 'boolean'))) return text('Give optional include (tracked_changes, untracked, ignored) and exclude only. No source path, project, rule overrides or allowlist can be supplied.', true);
+    try {
+      return text(await (await import('../../handoff-preflight-host')).checkCallerHandoff(agentId,
+        include as Partial<import('../../../../shared/handoff-manifest').HandoffWorktreeManifest['include']> | undefined, args.exclude as string[] | undefined));
+    } catch {
+      // telemetry-exempt: no filesystem paths, Git stderr, or file contents in errors.
+      return text('Handoff check failed. Check the registered worktree, safe relative selections and transfer bounds.', true);
+    }
+  }, { group: 'handoffs', grant: READ });
+
   registerGlobalTool('offer_handoff', {
     description: 'Offer a task, brief and code to another agent or a computer’s Dispatcher. Unlike hand_off, which records how an orchestrator took a helper’s work, this starts a durable agreement with a receiver. Needs handoff.offer and an existing connection, or a receiving Dispatcher. Accepting authorizes automatic verified transfer/apply. Keep the returned id; get_handoff shows retained history. A refused or expired offer is terminal: make a new offer to try again.',
     inputSchema: { type: 'object', properties: {
