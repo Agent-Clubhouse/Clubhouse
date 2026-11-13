@@ -899,7 +899,7 @@ export const CanvasViewComponent = memo(function CanvasViewComponent({
               </Tooltip>
             );
           })()}
-          <Tooltip content="Close view">
+          <Tooltip content={view.type === 'plugin' && (view as PluginCanvasViewType).pluginWidgetType === 'plugin:group-project:group-project' ? 'Remove from this canvas. The group project stays.' : 'Close view'}>
             <button
               className="w-6 h-6 flex items-center justify-center rounded-md text-ctp-overlay1 hover:bg-surface-0 hover:text-ctp-text transition-colors"
               onClick={(e) => { e.stopPropagation(); onClose(); }}

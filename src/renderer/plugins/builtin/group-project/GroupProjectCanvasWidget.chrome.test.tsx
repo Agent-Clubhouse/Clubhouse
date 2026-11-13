@@ -22,12 +22,13 @@ const deleteTopic = vi.fn(async () => true);
 let admins: string[] = [];
 let projectAvailable = true;
 let remoteProject = false;
+let projectScope: { level: 'app'; reach: 'network' | 'local' } | undefined;
 
 vi.mock('./useGroupProjectContext', () => ({
   useGroupProjectContext: () => ({
     isRemote: false,
     satelliteId: null,
-    project: projectAvailable ? { id: 'gp1', name: 'Launch', description: 'Ship the launch', instructions: 'Be brief', metadata: { admins } } : undefined,
+    project: projectAvailable ? { id: 'gp1', name: 'Launch', description: 'Ship the launch', instructions: 'Be brief', metadata: { admins }, scope: projectScope, host: { machine: null } } : undefined,
     members: [
       { agentId: 'a1', agentName: 'curious-tapir' },
       { agentId: 'a2', agentName: 'bold-falcon' },
@@ -96,6 +97,7 @@ beforeEach(() => {
   projectAvailable = true;
   remoteProject = false;
   vi.spyOn(window.clubhouse.groupProject, 'getRoles').mockImplementation(async () => rolesFor(admins));
+  projectScope = undefined;
   confirmAnswer = true;
   vi.clearAllMocks();
   useAgentStore.setState({ agents: { a1: tapir }, agentDetailedStatus: {} } as never);
@@ -154,6 +156,11 @@ describe('group project creation context', () => {
 });
 
 describe('group project card (compact)', () => {
+  it('shows scope and a human-readable host label for network projects', () => {
+    projectScope = { level: 'app', reach: 'network' };
+    renderWidget();
+    expect(screen.getByTestId('group-project-scope')).toHaveTextContent('App / Network · Host: This computer');
+  });
   it('lets a missing reference select an existing project and resolve deferred wires', async () => {
     projectAvailable = false;
     useGroupProjectStore.setState({ projects: [{ id: 'gp-existing', name: 'Shared', description: '', instructions: '', createdAt: '', metadata: {} }], loaded: true, loadError: null });

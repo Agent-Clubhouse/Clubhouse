@@ -406,6 +406,7 @@ function ProjectCard({
       </div>
 
       <div className="px-3 text-xs text-ctp-overlay1 flex-shrink-0" data-testid="group-project-activity">{activity}</div>
+      <ProjectScopeLine ctx={ctx} />
 
       {description && (
         <Tooltip content={description} onlyWhenTruncated>
@@ -438,6 +439,15 @@ function ProjectCard({
       />
     </div>
   );
+}
+
+function ProjectScopeLine({ ctx }: { ctx: GroupProjectContextValue }) {
+  const scope = ctx.project?.scope;
+  if (!scope) return null;
+  const label = `${scope.level === 'app' ? 'App' : 'Project'} / ${scope.reach === 'network' ? 'Network' : 'Local'}`;
+  const hostName = (ctx.project as (typeof ctx.project & { hostName?: string }))?.hostName
+    ?? (ctx.project?.host?.machine === null ? 'This computer' : 'Unknown');
+  return <div className="px-3 text-xs text-ctp-overlay1" data-testid="group-project-scope">{label}{scope.reach === 'network' && ` · Host: ${hostName}`}</div>;
 }
 
 /* ---------- Shared pieces ---------- */
@@ -1011,6 +1021,7 @@ function ExpandedProjectView({
 
       {!ctx.isRemote && <PausedPolling groupProjectId={groupProjectId} />}
 
+      <ProjectScopeLine ctx={ctx} />
       <div className="h-[30px] flex items-center px-3 border-t border-surface-0 text-xs text-ctp-overlay1 flex-shrink-0">
         {members.length} {members.length === 1 ? 'agent' : 'agents'} connected
       </div>
