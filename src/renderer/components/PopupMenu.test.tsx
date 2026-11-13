@@ -19,6 +19,10 @@ function renderMenu(onClose = vi.fn(), onSelect = vi.fn()) {
 }
 
 describe('PopupMenu', () => {
+  it('positions the portal relative to the viewport', () => {
+    render(<PopupMenu items={items()} position={{ x: 10, y: 10 }} label="M" testId="m" onClose={() => {}} />);
+    expect(screen.getByRole('menu').style.position).toBe('fixed');
+  });
   it('limits long menus to the viewport and makes their items scrollable', () => {
     renderMenu();
     const menu = screen.getByRole('menu');
