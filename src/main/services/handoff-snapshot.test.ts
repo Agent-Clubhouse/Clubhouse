@@ -388,43 +388,48 @@ describe('local secret-safe handoff snapshots', () => {
     expect(await fs.promises.readFile(path.join(snapshot.root, 'files/tracked.txt'), 'utf8')).toBe('base\r\n');
   });
 
-  it('preserves final tracked bytes, untracked and selected >512KiB ignored files, deletions and executable mode', async () => {
-    await file('tracked.txt', 'staged\n');
-    await git('add', 'tracked.txt');
-    await file('tracked.txt', 'final unstaged\n');
-    await fs.promises.rm(path.join(repo, 'deleted.txt'));
-    await file('new.txt', 'new executable\n');
-    await git('add', '--', 'new.txt');
-    await git('update-index', '--chmod=+x', '--', 'new.txt');
-    await git('config', 'core.filemode', 'false');
-    await fs.promises.chmod(path.join(repo, 'new.txt'), 0o644);
-    expect((await exec('git', ['ls-files', '--stage', '--', 'new.txt'], { cwd: repo })).stdout.startsWith('100755 ')).toBe(true);
-    expect((await fs.promises.stat(path.join(repo, 'new.txt'))).mode & 0o100).toBe(0);
-    await file('untracked.txt', 'untracked\n');
+  describe('a prepared mixed-content worktree', () => {
     const large = Buffer.alloc(600 * 1024, 17);
-    await file('models/selected.bin', large);
-    await file('models/unselected.dat', 'not selected\n');
-    await file('ignored-unselected.txt', 'not selected\n');
-    await file('node_modules/example/index.js', 'not selected\n');
-    const snapshot = await prepareHandoffSnapshot(options({ include: { ignored: ['models/*.bin'] } }));
-    expect(snapshot.manifest.files.map((entry) => entry.path)).toEqual(['models/selected.bin', 'new.txt', 'tracked.txt', 'untracked.txt']);
-    expect(snapshot.manifest.deletions).toEqual(['deleted.txt']);
-    expect(snapshot.manifest.files.find((entry) => entry.path === 'new.txt')?.mode).toBe('100755');
-    expect(snapshot.manifest.files.find((entry) => entry.path === 'untracked.txt')?.mode).toBe('100644');
-    expect(snapshot.manifest.files.find((entry) => entry.path === 'models/selected.bin')?.sha256).toBe(hash(large));
-    expect(await fs.promises.readFile(path.join(snapshot.root, 'files/tracked.txt'), 'utf8')).toBe('final unstaged\n');
-    expect(await fs.promises.readFile(path.join(snapshot.root, 'files/untracked.txt'), 'utf8')).toBe('untracked\n');
-    const selectedBytes = await fs.promises.readFile(path.join(snapshot.root, 'files/models/selected.bin'));
-    expect(selectedBytes.byteLength).toBe(large.byteLength);
-    expect(selectedBytes.equals(large)).toBe(true);
-    expect(await verifyHandoffSnapshot(snapshot.root, snapshot.manifest, summary(snapshot.manifest))).toEqual(snapshot);
-    if (process.platform !== 'win32') {
-      expect((await fs.promises.stat(snapshot.root)).mode & 0o777).toBe(0o700);
-      expect((await fs.promises.stat(path.join(snapshot.root, 'files/tracked.txt'))).mode & 0o777).toBe(0o600);
-    }
-    await file('tracked.txt', 'sender changed after snapshot\n');
-    expect(await fs.promises.readFile(path.join(snapshot.root, 'files/tracked.txt'), 'utf8')).toBe('final unstaged\n');
-    expect(await verifyHandoffSnapshot(snapshot.root, snapshot.manifest, summary(snapshot.manifest))).toEqual(snapshot);
+    beforeEach(async () => {
+      await file('tracked.txt', 'staged\n');
+      await git('add', 'tracked.txt');
+      await file('tracked.txt', 'final unstaged\n');
+      await fs.promises.rm(path.join(repo, 'deleted.txt'));
+      await file('new.txt', 'new executable\n');
+      await git('add', '--', 'new.txt');
+      await git('update-index', '--chmod=+x', '--', 'new.txt');
+      await git('config', 'core.filemode', 'false');
+      await fs.promises.chmod(path.join(repo, 'new.txt'), 0o644);
+      expect((await exec('git', ['ls-files', '--stage', '--', 'new.txt'], { cwd: repo })).stdout.startsWith('100755 ')).toBe(true);
+      expect((await fs.promises.stat(path.join(repo, 'new.txt'))).mode & 0o100).toBe(0);
+      await file('untracked.txt', 'untracked\n');
+      await file('models/selected.bin', large);
+      await file('models/unselected.dat', 'not selected\n');
+      await file('ignored-unselected.txt', 'not selected\n');
+      await file('node_modules/example/index.js', 'not selected\n');
+    });
+
+    it('preserves final tracked bytes, untracked and selected >512KiB ignored files, deletions and executable mode', async () => {
+      const snapshot = await prepareHandoffSnapshot(options({ include: { ignored: ['models/*.bin'] } }));
+      expect(snapshot.manifest.files.map((entry) => entry.path)).toEqual(['models/selected.bin', 'new.txt', 'tracked.txt', 'untracked.txt']);
+      expect(snapshot.manifest.deletions).toEqual(['deleted.txt']);
+      expect(snapshot.manifest.files.find((entry) => entry.path === 'new.txt')?.mode).toBe('100755');
+      expect(snapshot.manifest.files.find((entry) => entry.path === 'untracked.txt')?.mode).toBe('100644');
+      expect(snapshot.manifest.files.find((entry) => entry.path === 'models/selected.bin')?.sha256).toBe(hash(large));
+      expect(await fs.promises.readFile(path.join(snapshot.root, 'files/tracked.txt'), 'utf8')).toBe('final unstaged\n');
+      expect(await fs.promises.readFile(path.join(snapshot.root, 'files/untracked.txt'), 'utf8')).toBe('untracked\n');
+      const selectedBytes = await fs.promises.readFile(path.join(snapshot.root, 'files/models/selected.bin'));
+      expect(selectedBytes.byteLength).toBe(large.byteLength);
+      expect(selectedBytes.equals(large)).toBe(true);
+      expect(await verifyHandoffSnapshot(snapshot.root, snapshot.manifest, summary(snapshot.manifest))).toEqual(snapshot);
+      if (process.platform !== 'win32') {
+        expect((await fs.promises.stat(snapshot.root)).mode & 0o777).toBe(0o700);
+        expect((await fs.promises.stat(path.join(snapshot.root, 'files/tracked.txt'))).mode & 0o777).toBe(0o600);
+      }
+      await file('tracked.txt', 'sender changed after snapshot\n');
+      expect(await fs.promises.readFile(path.join(snapshot.root, 'files/tracked.txt'), 'utf8')).toBe('final unstaged\n');
+      expect(await verifyHandoffSnapshot(snapshot.root, snapshot.manifest, summary(snapshot.manifest))).toEqual(snapshot);
+    }, 10_000); // Real Git snapshot plus two complete on-disk integrity verifications.
   });
 
   it.each(['edited', 'unchanged'] as const)('preserves canonical tracked Git mode with core.filemode=false (%s bytes)', async (bytes) => {
