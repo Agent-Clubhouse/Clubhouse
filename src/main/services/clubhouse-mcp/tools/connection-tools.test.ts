@@ -193,8 +193,8 @@ function restart(): void {
   _resetPersistedBindingSourcesForTesting();
   _resetOrchestratorConnectionsForTesting();
   _resetLifecycleForTesting();
+  // The host's records stay, like files across a restart.
   _resetMembershipForTesting();
-  groupProjectHost._resetForTesting();
   registerPersistedBindingSource(orchestratorConnectionSource);
   // Group project members are a record on the host (#3357).
   registerPersistedBindingSource(membershipBindingSource);
