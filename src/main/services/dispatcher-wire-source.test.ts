@@ -29,6 +29,7 @@ vi.mock('electron', () => ({ app: { isPackaged: false, getPath: () => os.tmpdir(
 vi.mock('./log-service', () => ({ appLog: vi.fn() }));
 vi.mock('./project-store', () => ({
   list: vi.fn(async () => projects.list),
+  peekProjectsChecked: vi.fn(async () => ({ projects: projects.list, readable: true })),
   onProjectsChanged: (listener: () => void) => {
     projects.listeners.add(listener);
     return () => projects.listeners.delete(listener);
@@ -40,6 +41,10 @@ vi.mock('./agent-config', () => ({
     if (!agents) throw new Error('EACCES');
     return agents;
   }),
+  peekDurableConfigsChecked: vi.fn(async (projectPath: string) => ({
+    agents: configs.get(projectPath) ?? [],
+    readable: configs.has(projectPath) && !unreadablePolicies.has(projectPath),
+  })),
   projectKey: (p: string) => p,
   onAgentConfigChanged: vi.fn((listener: (projectPath: string) => void) => {
     configListeners.add(listener);
@@ -160,6 +165,25 @@ afterEach(() => {
 });
 
 describe('dispatcherWiresForProject', () => {
+  it('inspects durable automatic directions while off without running the collector or restoring bindings', async () => {
+    dispatcher.enabled = false;
+    vi.mocked(listDurable).mockClear();
+    vi.mocked(resolveOrchestrationPolicies).mockClear();
+    const collect = vi.spyOn(dispatcherWireBindingSource, 'collect');
+    const inspected = await dispatcherWireBindingSource.inspect!();
+    expect(Array.isArray(inspected) ? inspected.map(key) : inspected.bindings.map(key)).toEqual([
+      `${DISPATCHER}->durable_lead`, `durable_lead->${DISPATCHER}`,
+    ]);
+    expect(collect).not.toHaveBeenCalled();
+    expect(listDurable).not.toHaveBeenCalled();
+    expect(resolveOrchestrationPolicies).not.toHaveBeenCalled();
+    expect(boundPairs()).toEqual([]);
+    unreadablePolicies.add(projectPath);
+    await expect(dispatcherWireBindingSource.inspect!()).rejects.toThrow('sources could not be checked');
+    expect(collect).not.toHaveBeenCalled();
+    collect.mockRestore();
+  });
+
   it('labels the controller in both directions without changing agent names, IDs or tool addresses', async () => {
     const out = await dispatcherWiresForProject(DISPATCHER, projectPath, configs.get(projectPath)!, 'Wardfall');
     const starting = { disabledTools: ['clear_agent', 'compact_agent'], enabledTools: ['wake_agent'], startingTools: true };

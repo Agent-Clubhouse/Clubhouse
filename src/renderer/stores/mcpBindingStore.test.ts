@@ -162,6 +162,10 @@ describe('mcpBindingStore', () => {
       initMcpBindingListener();
       expect(capturedCallback).toBeTruthy();
 
+      const plugin: McpBindingEntry = {
+        agentId: 'a1', targetId: 'plugin-1', targetKind: 'plugin', label: 'Plugin tools',
+        instructions: { '*': 'Saved plugin guidance' },
+      };
       // Simulate receiving mixed valid and invalid bindings
       capturedCallback!([
         { agentId: 'a1', targetId: 'w1', targetKind: 'browser', label: 'Valid' },
@@ -169,12 +173,14 @@ describe('mcpBindingStore', () => {
         null,
         { agentId: 'a1' }, // Missing fields
         { agentId: 'a1', targetId: 'a2', targetKind: 'agent', label: 'Also Valid' },
+        plugin,
       ]);
 
       const bindings = useMcpBindingStore.getState().bindings;
-      expect(bindings).toHaveLength(2);
+      expect(bindings).toHaveLength(3);
       expect(bindings[0].targetKind).toBe('browser');
       expect(bindings[1].targetKind).toBe('agent');
+      expect(bindings[2]).toEqual(plugin);
     });
 
     it('handles empty bindings array', () => {

@@ -161,7 +161,7 @@ describe('AgentDetails in the terminal', () => {
     render(<AgentDetails agent={quick} />);
     act(() => { useAgentDetailsStore.getState().reveal({ agentId: quick.id, card: 'connections' }); });
     expect(await screen.findByTestId('details-card-connections')).toHaveAttribute('data-open', 'true');
-    fireEvent.click(await screen.findByRole('button', { name: 'Manage' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Edit' }));
     const read = screen.getByRole('switch', { name: `Read output (${quick.name} to Other)` });
     expect(read).toHaveAttribute('aria-checked', 'false');
     fireEvent.click(read);

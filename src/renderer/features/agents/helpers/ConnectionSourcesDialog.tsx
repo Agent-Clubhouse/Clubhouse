@@ -61,12 +61,13 @@ const CONFIRMED: ReadonlySet<ConnectionSourceKind> = new Set(['dispatcher_auto',
  * does a helper's link with its orchestrator, where it can't take effect.
  * A direction that isn't connected offers Make two-way instead.
  */
-function DirectionColumn({ from, to, fromName, toName, connected, disabledTools, wakeOn, showWake, canMakeTwoWay, onChanged }: {
+function DirectionColumn({ from, to, fromName, toName, connected, inspectionOnly, disabledTools, wakeOn, showWake, canMakeTwoWay, onChanged }: {
   from: string;
   to: string;
   fromName: string;
   toName: string;
   connected: boolean;
+  inspectionOnly: boolean;
   disabledTools: readonly string[];
   wakeOn: boolean;
   showWake: boolean;
@@ -127,7 +128,7 @@ function DirectionColumn({ from, to, fromName, toName, connected, disabledTools,
   return (
     <section className="flex-1 min-w-0 flex flex-col gap-1.5" aria-label={`${fromName} to ${toName}`} data-testid={`connection-direction-${from}-${to}`}>
       <h3 className="text-[13px] text-ctp-text truncate">{fromName} to {toName}</h3>
-      {connected ? (
+      {inspectionOnly ? <p className="text-xs text-ctp-overlay1">Configured, but not connected. Saved metadata is read-only.</p> : connected ? (
         <ul className="flex flex-col gap-1">
           {CONNECTION_TOOLS.map(({ tool, label }) => {
             const on = !tools.includes(tool);
@@ -236,12 +237,20 @@ export function ConnectionSourcesDialog({ agentId, otherId, agentName, otherName
   const savedOf = (from: string, to: string) => grants.find((g) => g.from.agentId === from && g.to.agentId === to && !g.from.machineId && !g.to.machineId);
   const toolsOf = (from: string, to: string): readonly string[] => savedOf(from, to)?.disabledTools ?? liveTools?.get(`${from}>${to}`) ?? [];
   const connectedWay = (from: string, to: string) => pairs.some((p) => p.agentId === from && p.targetId === to && (p.bound || p.sources.length > 0));
+  const inspectionWay = (from: string, to: string) => pairs.some((p) => p.agentId === from && p.targetId === to && !!p.inspection && !p.bound);
+  const inspectionOnly = pairs.length > 0 && pairs.every((pair) => !pair.bound) && pairs.some((pair) => !!pair.inspection);
+  const guidanceDirections = directions.filter((d, index) => (targetKind === 'agent' || index === 0)
+    && (connectedWay(d.from, d.to) || liveTools?.has(`${d.from}>${d.to}`)))
+    .map((d) => ({
+      from: d.from, to: d.to, label: `${d.fromName} to ${d.toName}`,
+      offline: !pairs.some((pair) => pair.agentId === d.from && pair.targetId === d.to && pair.bound) && !liveTools?.has(`${d.from}>${d.to}`),
+    }));
 
   return (
     <Modal open onClose={onClose} title={`${agentName} and ${otherName}`} width="w-[640px]" testId="connection-sources-dialog" backdropTestId={backdropTestId}
       footer={<Button kind="quiet" onClick={onClose} data-testid="wire-instructions-cancel">Close</Button>}>
       {readError && <p role="alert" className="text-xs text-ctp-error mb-3">Couldn't refresh connection sources: {readError}. Showing the last known sources. <Button onClick={onRetry}>Try again</Button></p>}
-      <p className="text-xs text-ctp-overlay1 mb-3">On describes the connection switch. The sender's Clubhouse permissions can still turn a tool off or require Ask first.</p>
+      {!inspectionOnly && <p className="text-xs text-ctp-overlay1 mb-3">On describes the connection switch. The sender's Clubhouse permissions can still turn a tool off or require Ask first.</p>}
       {targetKind === 'agent' && directions.length > 0 && (
         <div className="flex gap-4 mb-4" data-testid="connection-directions">
           {directions.map((d) => (
@@ -249,10 +258,11 @@ export function ConnectionSourcesDialog({ agentId, otherId, agentName, otherName
               key={`${d.from}>${d.to}`}
               {...d}
               connected={connectedWay(d.from, d.to)}
+              inspectionOnly={inspectionWay(d.from, d.to)}
               disabledTools={toolsOf(d.from, d.to)}
               wakeOn={localWakeOn(savedOf(d.from, d.to), liveEnabled?.get(`${d.from}>${d.to}`))}
               showWake={!dispatcherEnd && !familyLink}
-              canMakeTwoWay={connectedWay(d.to, d.from)}
+              canMakeTwoWay={connectedWay(d.to, d.from) && !inspectionWay(d.to, d.from)}
               onChanged={onRemoved}
             />
           ))}
@@ -260,7 +270,7 @@ export function ConnectionSourcesDialog({ agentId, otherId, agentName, otherName
       )}
       {targetKind === 'agent' && (dispatcherEnd || familyLink) && <p className="text-xs text-ctp-overlay1 mb-3">This connection has no Wake it switch. The Dispatcher and helpers use their own wake tools.</p>}
       <p className="text-xs text-ctp-overlay1 mb-3">
-        {entries.length === 0
+        {inspectionOnly ? `Configured in ${direction}, but not connected now. Saved sources and guidance can be inspected without starting a session.` : entries.length === 0
           ? (pairs.some((p) => p.unresolved) ? 'Connected now, but no saved source lists it.' : 'Nothing connects them now.')
           : `Connected in ${direction}. Each source below keeps them connected on its own; removing one leaves the others.`}
       </p>
@@ -303,9 +313,10 @@ export function ConnectionSourcesDialog({ agentId, otherId, agentName, otherName
           </li>
         )}
       </ul>
-      <ConnectionGuidanceEditor directions={directions.filter((d, index) => (targetKind === 'agent' || index === 0)
-        && (pairs.some((pair) => pair.agentId === d.from && pair.targetId === d.to && pair.bound) || liveTools?.has(`${d.from}>${d.to}`)))
-        .map((d) => ({ from: d.from, to: d.to, label: `${d.fromName} to ${d.toName}` }))} />
+      <ConnectionGuidanceEditor directions={guidanceDirections} />
+      {guidanceDirections.length === 0 && (
+        <p className="mt-4 text-xs text-ctp-overlay1">No saved or active direction is available for guidance inspection. No session was started.</p>
+      )}
     </Modal>
   );
 }

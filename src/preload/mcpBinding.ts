@@ -83,7 +83,7 @@ export const mcpBinding = {
   onBindingsChanged: (callback: (bindings: Array<{
     agentId: string;
     targetId: string;
-    targetKind: 'browser' | 'agent' | 'terminal' | 'group-project';
+    targetKind: 'browser' | 'agent' | 'terminal' | 'group-project' | 'plugin';
     label: string;
   }>) => void) => {
     const listener = (_event: Electron.IpcRendererEvent, bindings: Parameters<typeof callback>[0]) => callback(bindings);

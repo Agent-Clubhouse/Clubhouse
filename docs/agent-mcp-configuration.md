@@ -80,8 +80,27 @@ direction switches and all existing checks.
 
 ## Directional connection guidance
 
-The Connections card's **Manage** and Canvas wire editors share the same
+The Connections card's **Edit** and Canvas wire editors share the same
 directional editor: connection switches, ownership/removal sources, and guidance.
+Edit also inspects browser, terminal, group-project and plugin rows without
+requiring a Canvas placement. Guidance writability comes from the backend
+ownership snapshot, not the row's helper or target kind. Plugin and
+membership-managed guidance remains read-only with its owning-source reason.
+Source-read failures remain visible and retryable; they do not hide Edit.
+Suspended connections without an active binding show saved guidance read-only
+when the backend can prove their durable source, direction and endpoint kind.
+No binding or session is created to inspect them. Unreadable, removed, ambiguous
+or stale sources produce an explicit inspection error instead of granting access
+from a saved guidance entry alone. Editing and description previews still require
+an active binding. Any unsaved draft is retained separately from the saved text
+and becomes editable again after reconnecting. No running tool client is needed
+to inspect guidance, even when its sender or target sleeps.
+Configured automatic Dispatcher directions also appear on the Connections card
+while the Dispatcher is off, clearly marked suspended and not connected. These
+read-only inspection rows do not enable connection tools, Wake it or Make two-way.
+Their source's existing Remove action still requires confirmation before turning
+off Connect to Dispatcher. Inspection rejects corrupt source files without
+repairing, restoring or quarantining them.
 Saving guidance changes only the selected sender-to-receiver direction. The
 explicit **Copy guidance to reverse draft** action copies text, not permissions,
 and still requires saving that reverse direction separately.
@@ -94,6 +113,10 @@ rules as the runtime tool list. An unavailable catalog is reported, not replaced
 with a hardcoded list. Default and saved per-tool guidance remain editable when
 the catalog is unavailable or its request fails; only discovery and description
 preview require the tool index.
+Search filters registered tool suffixes and base descriptions without changing
+the selected tool or discarding saved overrides. **Configured overrides** lists
+nonempty per-tool replacements, including currently gated or absent tools,
+independently of the search.
 
 User guidance is saved atomically in `connection-instructions.json`, keyed by
 canonical direction and target kind, independently of Canvas placement. Original
@@ -107,6 +130,12 @@ sources retains unsaved text for review and another explicit save. Empty saved
 guidance deliberately suppresses original source guidance. Source restoration
 and later Canvas hydration cannot overwrite the saved directional choice.
 Saving does not restart a session or change any permission or reverse direction.
+Save feedback distinguishes updated server definitions from descriptions loaded
+by the sender's client. A CLI known to keep its first tool list requires a
+session restart. For other runtimes, including native chat, client refresh is
+not confirmed: reload tools or restart the sender's session to ensure it loads
+the saved descriptions. A tool-list change notification or connected-server
+status alone is not proof of client-visible refresh.
 
 Reads and source restoration use only committed guidance, never an in-flight
 save's cache. Malformed files and duplicate direction records fail closed and

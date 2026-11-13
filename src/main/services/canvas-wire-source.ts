@@ -84,11 +84,12 @@ export function bindingsFromCanvasStores(
   return out;
 }
 
-async function readGroupProjectNames(): Promise<Map<string, string> | null> {
+async function readGroupProjectNames(options: { strict?: boolean } = {}): Promise<Map<string, string> | null> {
   try {
-    const projects = await groupProjectRegistry.list();
+    const projects = options.strict ? await groupProjectRegistry.peek({ strict: true }) : await groupProjectRegistry.list();
     return new Map(projects.map((p) => [p.id, p.name ?? '']));
-  } catch {
+  } catch (error) {
+    if (options.strict) throw error;
     // telemetry-exempt: null keeps group-project wires, as the renderer does
     return null;
   }
@@ -103,7 +104,7 @@ export const canvasWireBindingSource: PersistedBindingSource = {
     return bindingsFromCanvasStores(snapshots, groupProjects);
   },
   async inspect() {
-    const [snapshots, groupProjects] = await Promise.all([readAllCanvasStores(), readGroupProjectNames()]);
+    const [snapshots, groupProjects] = await Promise.all([readAllCanvasStores({ strict: true }), readGroupProjectNames({ strict: true })]);
     if (snapshots.some((s) => s.problems.length > 0)) throw new Error('Some Canvas guidance could not be read. Open the affected Canvas and try again.');
     return bindingsFromCanvasStores(snapshots, groupProjects, { inspect: true });
   },

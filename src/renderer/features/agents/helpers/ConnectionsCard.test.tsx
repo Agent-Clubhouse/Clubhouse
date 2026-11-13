@@ -5,9 +5,37 @@ import { useAgentStore } from '../../../stores/agentStore';
 import { useMcpBindingStore, type McpBindingEntry } from '../../../stores/mcpBindingStore';
 import { ConnectionsCard, agentConnections, connectionMeta } from './ConnectionsCard';
 import type { ConnectionSourceKind } from '../../../../shared/connection-sources';
+import type { ConnectionGuidanceSnapshot } from '../../../../shared/connection-guidance';
 import { DISPATCHER_OFF } from '../../../../shared/dispatcher-types';
 import { useDispatcherStore } from '../../dispatcher/dispatcherStore';
 import { ConnectionEditorDialog } from './ConnectionEditorDialog';
+import fs, * as fsExports from 'fs';
+import * as fspExports from 'fs/promises';
+import { syncBuiltinESMExports } from 'module';
+import * as os from 'os';
+import * as path from 'path';
+
+const offlineFiles = vi.hoisted(() => ({ base: '' }));
+vi.mock('electron', () => ({ app: { isPackaged: false, getPath: () => offlineFiles.base } }));
+vi.mock('../../../../main/services/base-dir', () => ({ getBaseDirPath: () => offlineFiles.base }));
+vi.mock('../../../../main/services/log-service', () => ({ appLog: vi.fn() }));
+vi.mock('../../../../main/services/annex-identity', () => ({ getIdentity: () => null }));
+
+import { bindingManager as mainBindings } from '../../../../main/services/clubhouse-mcp/binding-manager';
+import * as mainSources from '../../../../main/services/persisted-bindings';
+import * as mainGuidance from '../../../../main/services/connection-guidance';
+import * as mainDispatcher from '../../../../main/services/dispatcher/dispatcher-service';
+import * as mainAgentConfig from '../../../../main/services/agent-config';
+import * as mainProjects from '../../../../main/services/project-store';
+import * as mainPolicies from '../../../../main/services/orchestration-policy';
+import { dispatcherWireBindingSource } from '../../../../main/services/dispatcher-wire-source';
+import { canvasWireBindingSource } from '../../../../main/services/canvas-wire-source';
+import { groupProjectRegistry } from '../../../../main/services/group-project-registry';
+import { listConnectionSources } from '../../../../main/services/connection-sources';
+import { listDispatcherLinksForUser } from '../../../../main/services/dispatcher-connections';
+import { listConnectionDirectionsForInspection } from '../../../../main/services/connection-grants-store';
+import { agentRegistry as mainAgents } from '../../../../main/services/agent-registry';
+import { resetAllSettingsStoresForTests } from '../../../../main/services/settings-store';
 
 const lead: Agent = { id: 'lead', projectId: 'p1', name: 'epic-lead', kind: 'durable', status: 'running', color: 'teal' };
 
@@ -28,6 +56,11 @@ const bindings: McpBindingEntry[] = [
   // Not this agent's.
   wire('h1', 'rev', ['impl-ipc', 'reviewer']),
 ];
+
+const guidance = (agentId: string, targetId: string, changes: Partial<ConnectionGuidanceSnapshot> = {}): ConnectionGuidanceSnapshot => ({
+  agentId, targetId, instructions: { '*': 'Saved routing guidance' }, hasOverride: true, sources: [], unreadable: [],
+  conflictingSources: false, needsSourceConfirmation: false, readOnly: false, revision: 'r1', ...changes,
+});
 
 describe('agentConnections', () => {
   it('folds both directions into one two-way row and puts family first', () => {
@@ -113,13 +146,21 @@ describe('Connections card (#2232)', () => {
       unreadable: [],
     }));
     window.clubhouse.mcpBinding.getConnectionGrants = vi.fn(async () => []);
-    render(<ConnectionEditorDialog binding={binding} onClose={vi.fn()} />);
+    window.clubhouse.mcpBinding.getConnectionGuidance = vi.fn(async (from, to) => guidance(from, to));
+    window.clubhouse.mcpBinding.getConnectionToolCatalog = vi.fn(async () => ({ state: 'available', tools: [] }));
+    const canvas = render(<ConnectionEditorDialog binding={binding} onClose={vi.fn()} />);
     expect(await screen.findByRole('region', { name: 'epic-lead to Dispatcher controller' })).toBeInTheDocument();
     expect(screen.getByRole('region', { name: 'Dispatcher controller to epic-lead' })).toBeInTheDocument();
     expect(window.clubhouse.mcpBinding.getConnectionSources).toHaveBeenCalledWith('lead');
+    canvas.unmount();
+    render(<ConnectionsCard agent={lead} helperIds={new Set()} open onToggle={vi.fn()} onDisconnect={vi.fn()} />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Edit' }));
+    expect(await screen.findByRole('region', { name: 'epic-lead to Dispatcher controller' })).toBeInTheDocument();
+    expect(screen.getByRole('region', { name: 'Dispatcher controller to epic-lead' })).toBeInTheDocument();
+    expect(await screen.findByRole('textbox', { name: 'Instructions' })).toHaveValue('Saved routing guidance');
   });
 
-  it('offers Sources for agent rows, and removes one source at a time, saying what keeps them connected (#2744)', async () => {
+  it('offers Edit for connection rows, and removes one source at a time, saying what keeps them connected (#2744)', async () => {
     const pair = (agentId: string, targetId: string, kinds: ConnectionSourceKind[]) => ({ agentId, targetId, bound: true, sources: kinds.map((kind) => ({ kind, sourceId: kind })) });
     let reviewerSources: ConnectionSourceKind[] = ['tool_link', 'canvas'];
     window.clubhouse.mcpBinding.getConnectionSources = vi.fn(async () => ({
@@ -132,7 +173,7 @@ describe('Connections card (#2232)', () => {
     });
     window.clubhouse.mcpBinding.removeConnectionSource = removeConnectionSource;
     render(<ConnectionsCard agent={lead} helperIds={new Set(['h1'])} open onToggle={() => {}} onDisconnect={vi.fn()} />);
-    await waitFor(() => expect(screen.getAllByTestId('connection-sources')).toHaveLength(3));
+    await waitFor(() => expect(screen.getAllByTestId('connection-sources')).toHaveLength(5));
     const rows = screen.getAllByTestId('connection-row');
     expect(within(rows[0]).getByTestId('connection-meta').getAttribute('title')).toBe('From: Helper');
     expect(within(rows[4]).getByTestId('connection-meta').getAttribute('title')).toBe('From: Made by an agent, Canvas wire');
@@ -315,7 +356,7 @@ describe('Connections card (#2232)', () => {
       unreadable: [],
     }));
     render(<ConnectionsCard agent={lead} helperIds={new Set(['h1'])} open onToggle={() => {}} onDisconnect={vi.fn()} />);
-    fireEvent.click(await screen.findByTestId('connection-sources'));
+    fireEvent.click(await within(screen.getAllByTestId('connection-row')[0]).findByRole('button', { name: 'Edit' }));
     expect(screen.getByTestId('connection-source-helper')).toHaveTextContent('dispose the helper from the Helpers card');
     expect(screen.queryByTestId('connection-source-remove-helper')).not.toBeInTheDocument();
   });
@@ -439,5 +480,217 @@ describe('Connections card (#2232)', () => {
     render(<ConnectionsCard agent={lead} helperIds={new Set()} open onToggle={() => {}} />);
     expect(screen.getByTestId('details-card-connections-summary')).toHaveTextContent('none');
     expect(screen.getByTestId('details-card-connections')).toHaveTextContent('No Clubhouse MCP wires.');
+  });
+
+  it.each(['browser', 'terminal', 'group-project'] as const)('offers Edit and guidance inspection for a %s row without requiring Canvas metadata', async (kind) => {
+    useMcpBindingStore.setState({ bindings: [wire('lead', 'target', ['epic-lead', 'Target'], kind)] });
+    window.clubhouse.mcpBinding.getConnectionSources = vi.fn(async () => ({ pairs: [], unreadable: [] }));
+    window.clubhouse.mcpBinding.getConnectionGuidance = vi.fn(async (from, to) => guidance(from, to));
+    window.clubhouse.mcpBinding.getConnectionToolCatalog = vi.fn(async () => ({ state: 'unavailable', reason: 'tools_not_registered', tools: [] }));
+    window.clubhouse.mcpBinding.saveConnectionGuidance = vi.fn(async (from, to, request) => guidance(from, to, { instructions: request.instructions }));
+    render(<ConnectionsCard agent={lead} helperIds={new Set()} open onToggle={vi.fn()} onDisconnect={vi.fn()} />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Edit' }));
+    const textarea = await screen.findByRole('textbox', { name: 'Instructions' });
+    expect(textarea).toHaveValue('Saved routing guidance');
+    expect(textarea).toBeEnabled();
+    expect(screen.getByTestId('connection-sources-dialog')).toHaveTextContent('Connected now, but no saved source lists it.');
+    expect(screen.queryByTestId('connection-directions')).toBeNull();
+    fireEvent.change(textarea, { target: { value: 'Save without a running tool client' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Save direction' }));
+    await waitFor(() => expect(window.clubhouse.mcpBinding.saveConnectionGuidance).toHaveBeenCalledExactlyOnceWith('lead', 'target', {
+      instructions: { '*': 'Save without a running tool client' }, revision: 'r1', replaceAcrossSources: false,
+    }));
+  });
+
+  it.each([false, true])('lets backend ownership decide helper guidance writability: readOnly=%s', async (readOnly) => {
+    useMcpBindingStore.setState({ bindings: [wire('lead', 'h1', ['epic-lead', 'impl-ipc'])] });
+    window.clubhouse.mcpBinding.getConnectionSources = vi.fn(async () => ({
+      pairs: [{ agentId: 'lead', targetId: 'h1', bound: true, sources: [{ kind: 'helper' as const, sourceId: 'helper-wires' }] }], unreadable: [],
+    }));
+    window.clubhouse.mcpBinding.getConnectionGuidance = vi.fn(async (from, to) => guidance(from, to, {
+      readOnly, ...(readOnly && { readOnlyReason: 'This derived connection is managed by its source.' }),
+    }));
+    window.clubhouse.mcpBinding.getConnectionToolCatalog = vi.fn(async () => ({ state: 'available', tools: [] }));
+    render(<ConnectionsCard agent={lead} helperIds={new Set(['h1'])} open onToggle={vi.fn()} onDisconnect={vi.fn()} />);
+    const row = await screen.findByTestId('connection-row');
+    expect(within(row).getByRole('button', { name: 'Open' })).toBeInTheDocument();
+    fireEvent.click(await within(row).findByRole('button', { name: 'Edit' }));
+    const textarea = await screen.findByRole('textbox', { name: 'Instructions' });
+    if (readOnly) {
+      expect(textarea).toBeDisabled();
+      expect(screen.getByRole('alert')).toHaveTextContent('managed by its source');
+    } else {
+      expect(textarea).toBeEnabled();
+    }
+    expect(screen.queryByTestId('connection-source-remove-helper')).toBeNull();
+  });
+
+  it('keeps guidance inspection available when source discovery fails and exposes retry instead of hiding Edit', async () => {
+    useMcpBindingStore.setState({ bindings: [wire('lead', 'target', ['epic-lead', 'Target'], 'browser')] });
+    window.clubhouse.mcpBinding.getConnectionSources = vi.fn().mockRejectedValue(new Error('Source index offline'));
+    window.clubhouse.mcpBinding.getConnectionGuidance = vi.fn(async (from, to) => guidance(from, to, {
+      readOnly: true, readOnlyReason: 'Connection ownership could not be checked.',
+    }));
+    render(<ConnectionsCard agent={lead} helperIds={new Set()} open onToggle={vi.fn()} onDisconnect={vi.fn()} />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Edit' }));
+    expect(await screen.findByRole('textbox', { name: 'Instructions' })).toBeDisabled();
+    expect(screen.getByText(/Couldn't refresh connection sources: Source index offline/)).toBeInTheDocument();
+    window.clubhouse.mcpBinding.getConnectionSources = vi.fn(async () => ({ pairs: [], unreadable: [] }));
+    fireEvent.click(screen.getByRole('button', { name: 'Try again' }));
+    await waitFor(() => expect(screen.queryByText(/Couldn't refresh connection sources/)).toBeNull());
+  });
+
+  it('inspects plugin guidance with its backend read-only reason and no connection permission controls', async () => {
+    useMcpBindingStore.setState({ bindings: [wire('lead', 'plugin-target', ['epic-lead', 'Plugin tools'], 'plugin')] });
+    window.clubhouse.mcpBinding.getConnectionSources = vi.fn(async () => ({ pairs: [], unreadable: [] }));
+    window.clubhouse.mcpBinding.getConnectionGuidance = vi.fn(async (from, to) => guidance(from, to, {
+      readOnly: true, readOnlyReason: 'Plugin connection guidance cannot be changed from this window.',
+    }));
+    window.clubhouse.mcpBinding.getConnectionToolCatalog = vi.fn(async () => ({ state: 'available', tools: [] }));
+    window.clubhouse.mcpBinding.saveConnectionGuidance = vi.fn();
+    render(<ConnectionsCard agent={lead} helperIds={new Set()} open onToggle={vi.fn()} onDisconnect={vi.fn()} />);
+    expect(await screen.findByTestId('connection-meta')).toHaveTextContent('plugin');
+    fireEvent.click(await screen.findByRole('button', { name: 'Edit' }));
+    expect(await screen.findByRole('textbox', { name: 'Instructions' })).toBeDisabled();
+    expect(screen.getByRole('alert')).toHaveTextContent('Plugin connection guidance cannot be changed');
+    expect(screen.getByRole('button', { name: 'Save direction' })).toBeDisabled();
+    expect(screen.queryByTestId('connection-directions')).toBeNull();
+    expect(window.clubhouse.mcpBinding.saveConnectionGuidance).not.toHaveBeenCalled();
+  });
+
+  it.each([false, true])('reads the actual automatic-OFF producer through Card inspection without writes, repair or clients (corrupt source: %s)', async (corrupt) => {
+    offlineFiles.base = fs.mkdtempSync(path.join(os.tmpdir(), 'clubhouse-card-offline-'));
+    const bridge = { ...window.clubhouse.mcpBinding };
+    let view: ReturnType<typeof render> | undefined;
+    try {
+      resetAllSettingsStoresForTests();
+      mainBindings._resetForTesting();
+      mainSources._resetPersistedBindingSourcesForTesting();
+      mainGuidance.startConnectionGuidance();
+      const projectPath = path.join(offlineFiles.base, 'project');
+      const agentsFile = path.join(projectPath, '.clubhouse', 'agents.json');
+      const projectsFile = path.join(offlineFiles.base, 'projects.json');
+      const canvasDir = path.join(projectPath, '.clubhouse', 'plugin-data-local', 'canvas', 'kv');
+      const registryFile = path.join(offlineFiles.base, '.clubhouse-dev', 'group-projects', 'registry.json');
+      fs.mkdirSync(canvasDir, { recursive: true });
+      fs.mkdirSync(path.dirname(registryFile), { recursive: true });
+      fs.writeFileSync(projectsFile, JSON.stringify({ version: 1, projects: [{ id: 'p1', name: 'Project', path: projectPath }] }));
+      fs.writeFileSync(agentsFile, JSON.stringify(['lead', 'work'].map((id) => ({
+        id, name: id === 'lead' ? lead.name : 'Rosie', color: 'teal', createdAt: '2026-11-07',
+        orchestration: { orchestrate: true, connectToDispatcher: true },
+      }))));
+      fs.writeFileSync(path.join(canvasDir, 'canvas-instances.json'), JSON.stringify([{
+        id: 'canvas', name: 'Project canvas', views: [
+          { id: 'lead-view', type: 'agent', agentId: 'lead' },
+          { id: 'gp-view', type: 'plugin', metadata: { groupProjectId: 'legacy-gp' } },
+        ],
+      }]));
+      fs.writeFileSync(path.join(canvasDir, 'canvas-wires.json'), JSON.stringify([
+        { agentId: 'lead', targetId: 'legacy-gp', targetKind: 'group-project', label: 'Legacy group', agentName: lead.name },
+      ]));
+      fs.writeFileSync(registryFile, JSON.stringify([{ id: 'legacy-gp', name: 'Legacy group', description: '', instructions: '', createdAt: '2026-11-07', metadata: {} }]));
+      mainSources.applyPersistedBinding({ agentId: 'lead', targetId: 'work', targetKind: 'agent', label: 'Rosie' });
+      const before = await mainGuidance.getConnectionGuidance('lead', 'work');
+      await mainGuidance.saveConnectionGuidance('lead', 'work', {
+        instructions: { '*': 'Actual saved automatic routing', absent_tool: 'Actual saved unavailable replacement' }, revision: before.revision,
+      });
+      mainBindings.unbind('lead', 'work');
+      vi.spyOn(mainDispatcher, 'getDispatcherAgentId').mockReturnValue('work');
+      vi.spyOn(mainDispatcher, 'isDispatcherEnabled').mockReturnValue(false);
+      vi.spyOn(mainDispatcher, 'isDispatcherPath').mockReturnValue(false);
+      mainSources.registerPersistedBindingSource(canvasWireBindingSource);
+      mainSources.registerPersistedBindingSource(dispatcherWireBindingSource);
+      const grantsFile = path.join(offlineFiles.base, 'connection-grants.json');
+      fs.writeFileSync(grantsFile, JSON.stringify({
+        version: 1, directions: [{ from: { agentId: 'lead' }, to: { agentId: 'work' }, disabledTools: ['send_message'], updatedAt: '2026-11-07' }],
+      }));
+      const grantsTemp = `${grantsFile}.tmp-0-retained`;
+      fs.writeFileSync(grantsTemp, 'Uncommitted permission bytes');
+      if (corrupt) {
+        fs.copyFileSync(projectsFile, `${projectsFile}.bak`);
+        fs.writeFileSync(projectsFile, '{malformed');
+      }
+      resetAllSettingsStoresForTests();
+      const protectedFiles = [projectsFile, agentsFile, registryFile, grantsFile, grantsTemp,
+        path.join(canvasDir, 'canvas-instances.json'), path.join(canvasDir, 'canvas-wires.json'),
+        path.join(offlineFiles.base, 'connection-instructions.json')];
+      const bytes = protectedFiles.map((file) => fs.readFileSync(file, 'utf8'));
+      const names = fs.readdirSync(offlineFiles.base, { recursive: true }).sort();
+      const forbidden = [
+        vi.spyOn(fs.promises, 'rename'), vi.spyOn(fs.promises, 'writeFile'), vi.spyOn(fs.promises, 'mkdir'),
+        vi.spyOn(fs.promises, 'rm'), vi.spyOn(fs.promises, 'unlink'), vi.spyOn(fs.promises, 'open'),
+        vi.spyOn(fs, 'renameSync'), vi.spyOn(fs, 'writeFileSync'), vi.spyOn(fs, 'mkdirSync'),
+        vi.spyOn(fs, 'rmSync'), vi.spyOn(fs, 'unlinkSync'), vi.spyOn(fs, 'watch'), vi.spyOn(fs, 'watchFile'),
+        vi.spyOn(fs.promises, 'watch'), vi.spyOn(mainBindings, 'bind'),
+        vi.spyOn(canvasWireBindingSource, 'collect'), vi.spyOn(dispatcherWireBindingSource, 'collect'),
+        vi.spyOn(mainProjects, 'list'), vi.spyOn(mainAgentConfig, 'listDurable'),
+        vi.spyOn(mainPolicies, 'resolveOrchestrationPolicies'), vi.spyOn(groupProjectRegistry, 'list'),
+      ];
+      syncBuiltinESMExports();
+      expect(fsExports.renameSync).toBe(fs.renameSync);
+      expect(fsExports.watch).toBe(fs.watch);
+      expect(fspExports.open).toBe(fs.promises.open);
+      expect(fspExports.rename).toBe(fs.promises.rename);
+      window.clubhouse.mcpBinding.getConnectionSources = vi.fn(listConnectionSources);
+      window.clubhouse.mcpBinding.getDispatcherLinks = vi.fn(async () => listDispatcherLinksForUser({ strict: true }));
+      window.clubhouse.mcpBinding.getToolConnections = vi.fn(async () => mainSources.listSoleOwnedPairs('orchestrator-connections'));
+      window.clubhouse.mcpBinding.getConnectionGrants = vi.fn(async (id) => listConnectionDirectionsForInspection(id));
+      window.clubhouse.mcpBinding.getConnectionGuidance = vi.fn(mainGuidance.getConnectionGuidance);
+      window.clubhouse.mcpBinding.getConnectionToolCatalog = vi.fn();
+      window.clubhouse.mcpBinding.saveConnectionGuidance = vi.fn();
+      window.clubhouse.mcpBinding.previewConnectionGuidance = vi.fn();
+      window.clubhouse.mcpBinding.removeConnectionSource = vi.fn();
+      window.clubhouse.mcpBinding.setDisabledTools = vi.fn();
+      window.clubhouse.mcpBinding.setLocalWake = vi.fn();
+      window.clubhouse.mcpBinding.makeTwoWay = vi.fn();
+      useMcpBindingStore.setState({ bindings: [] });
+      useDispatcherStore.getState().setState({
+        ...DISPATCHER_OFF, agentId: 'work', chatAgentId: 'chat',
+        config: { id: 'work', name: 'Rosie', color: 'indigo', createdAt: 'then' },
+      });
+      view = render(<ConnectionsCard agent={{ ...lead, status: 'sleeping' }} helperIds={new Set()} open onToggle={vi.fn()} onDisconnect={vi.fn()} />);
+      if (corrupt) {
+        expect(await screen.findByRole('alert')).toHaveTextContent("Couldn't check saved connection sources");
+        expect(screen.queryByTestId('connection-row')).toBeNull();
+      } else {
+        const row = await screen.findByTestId('connection-row');
+        expect(row).toHaveTextContent('Dispatcher controller');
+        expect(row).toHaveTextContent('configured two-way, suspended, not connected');
+        expect(within(row).queryByTestId('connection-disconnect')).toBeNull();
+        fireEvent.click(within(row).getByRole('button', { name: 'Edit' }));
+        const dialog = screen.getByTestId('connection-sources-dialog');
+        expect(await within(dialog).findByRole('textbox', { name: 'Instructions' })).toHaveValue('Actual saved automatic routing');
+        expect(within(dialog).getByRole('textbox', { name: 'Instructions' })).toBeDisabled();
+        expect(within(dialog).getByTestId('connection-source-dispatcher_auto')).toHaveTextContent('Not connected now');
+        expect(within(dialog).queryByTestId('connection-source-dispatcher_link')).toBeNull();
+        expect(within(dialog).queryAllByRole('switch')).toHaveLength(0);
+        expect(within(dialog).queryByText('Make two-way')).toBeNull();
+        expect(within(dialog).getByRole('button', { name: 'Save direction' })).toBeDisabled();
+        fireEvent.click(within(dialog).getByTestId('connection-source-remove-dispatcher_auto'));
+        expect(within(dialog).getByTestId('connection-source-confirm-dispatcher_auto')).toHaveTextContent('Turn it off');
+        expect(window.clubhouse.mcpBinding.getConnectionGuidance).toHaveBeenCalledWith('lead', 'work');
+        expect(window.clubhouse.mcpBinding.getConnectionGuidance).toHaveBeenCalledWith('work', 'lead');
+      }
+      for (const action of ['getConnectionToolCatalog', 'saveConnectionGuidance', 'previewConnectionGuidance', 'removeConnectionSource', 'setDisabledTools', 'setLocalWake', 'makeTwoWay'] as const) {
+        expect(window.clubhouse.mcpBinding[action]).not.toHaveBeenCalled();
+      }
+      for (const operation of forbidden) expect(operation).not.toHaveBeenCalled();
+      expect(mainBindings.getAllBindings()).toEqual([]);
+      expect(useMcpBindingStore.getState().bindings).toEqual([]);
+      expect(mainAgents.get('lead')).toBeUndefined();
+      expect(mainAgents.get('work')).toBeUndefined();
+      expect(groupProjectRegistry.getSync('legacy-gp')).toBeNull();
+      expect(protectedFiles.map((file) => fs.readFileSync(file, 'utf8'))).toEqual(bytes);
+      expect(fs.readdirSync(offlineFiles.base, { recursive: true }).sort()).toEqual(names);
+    } finally {
+      view?.unmount();
+      vi.restoreAllMocks();
+      syncBuiltinESMExports();
+      Object.assign(window.clubhouse.mcpBinding, bridge);
+      mainBindings.setConnectionInstructionsSource(null);
+      mainBindings._resetForTesting();
+      mainSources._resetPersistedBindingSourcesForTesting();
+      fs.rmSync(offlineFiles.base, { recursive: true, force: true });
+    }
   });
 });

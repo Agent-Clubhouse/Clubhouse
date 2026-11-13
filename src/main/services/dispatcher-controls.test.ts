@@ -82,6 +82,7 @@ vi.mock('./log-service', () => ({ appLog: vi.fn() }));
 vi.mock('./base-dir', () => ({ getBaseDirPath: () => state.base }));
 vi.mock('./project-store', () => ({
   list: vi.fn(async () => [...state.projects]),
+  peekProjectsChecked: vi.fn(async () => ({ projects: [...state.projects], readable: true })),
   onProjectsChanged: vi.fn((): (() => void) => (): undefined => undefined),
 }));
 vi.mock('./fs-utils', () => ({ pathExists: vi.fn(async () => true) }));
@@ -90,6 +91,12 @@ vi.mock('./agent-config', () => ({
     if (state.unreadable.has(p)) throw new Error('EACCES');
     return state.agents.get(p) ?? [];
   }),
+  peekDurableConfigsChecked: vi.fn(async (p: string) => ({
+    agents: (state.agents.get(p) as Array<{ id: string }> | undefined)?.map((agent) => ({
+      ...agent, orchestration: state.policies.get(agent.id),
+    })) ?? [],
+    readable: !state.unreadable.has(p),
+  })),
   onAgentConfigChanged: vi.fn((listener: (p: string) => void) => {
     state.agentListeners.add(listener);
     return () => state.agentListeners.delete(listener);
@@ -159,6 +166,7 @@ import {
   _resetDispatcherConnectionsForTesting,
 } from './dispatcher-connections';
 import { setOrchestratorHelpers as actualSetOrchestratorHelpers } from './dispatcher-controls';
+import { getConnectionGuidance, previewConnectionGuidance, saveConnectionGuidance, startConnectionGuidance } from './connection-guidance';
 import { getConnectionDirection, removeConnectionDirections, setConnectionTools, connectionMigrationDone, _forgetConnectionMigrationForTesting } from './connection-grants-store';
 import { DISPATCHER_LINK_DEFAULTS_MIGRATION, migrateDispatcherLinkTools } from './dispatcher-controls';
 import {
@@ -484,6 +492,46 @@ describe('set_orchestrator_helpers', () => {
 });
 
 describe('connect_orchestrators', () => {
+  it('inspects actual committed suspended-link guidance read-only without a collector, binding or write', async () => {
+    await call('connect_orchestrators', { from: 'a', to: 'c' });
+    startConnectionGuidance();
+    const before = await getConnectionGuidance('a', 'c');
+    await saveConnectionGuidance('a', 'c', { instructions: { '*': 'Saved offline routing', future_tool: 'Saved absent replacement' }, revision: before.revision });
+    state.dispatcherOn = false;
+    await rebuildPersistedBindings();
+    expect(isBound('a', 'c')).toBe(false);
+    const linkBytes = fs.readFileSync(dispatcherConnectionsPath(), 'utf8');
+    const guidanceFile = path.join(state.base, 'connection-instructions.json');
+    const guidanceBytes = fs.readFileSync(guidanceFile, 'utf8');
+    const collect = vi.spyOn(dispatcherConnectionSource, 'collect');
+    const bind = vi.spyOn(bindingManager, 'bind');
+    let writes = 0;
+    state.failWrite = () => { writes += 1; return true; };
+    try {
+      const offline = await getConnectionGuidance('a', 'c');
+      expect(offline).toMatchObject({
+        offline: true, readOnly: true, hasOverride: true,
+        instructions: { '*': 'Saved offline routing', future_tool: 'Saved absent replacement' },
+        sources: [{ sourceId: 'dispatcher-connections' }],
+      });
+      expect(offline.notice).toContain('No session or tool client was started');
+      await expect(saveConnectionGuidance('a', 'c', { instructions: {}, revision: offline.revision })).rejects.toThrow('no longer connected');
+      expect(() => previewConnectionGuidance('a', 'c', {})).toThrow('no longer connected');
+      expect(collect).not.toHaveBeenCalled();
+      expect(bind).not.toHaveBeenCalled();
+      expect(writes).toBe(0);
+      expect(fs.readFileSync(dispatcherConnectionsPath(), 'utf8')).toBe(linkBytes);
+      expect(fs.readFileSync(guidanceFile, 'utf8')).toBe(guidanceBytes);
+      state.unreadable.add(P1);
+      await expect(getConnectionGuidance('a', 'c')).rejects.toThrow('sources could not be checked');
+    } finally {
+      state.failWrite = null;
+      bindingManager.setConnectionInstructionsSource(null);
+      collect.mockRestore();
+      bind.mockRestore();
+    }
+  });
+
   it('binds across projects and saves provenance', async () => {
     const result = await call('connect_orchestrators', { from: 'a', to: 'c' });
     expect(JSON.parse(text(result)).links[0]).toMatchObject({ from: 'a', to: 'c', outcome: 'created' });
