@@ -23,7 +23,7 @@ import {
   AGENT_CALL_VERSION, LOOP_LIMIT, RATE_LIMIT, currentRemoteCaller, forwardAgentCall, receiveAgentCall, receiveDirections,
   remoteAgentName, startAgentCalls, _clearOutboxForTesting, syncDirectionsWith, waitingFor, flushOutbox, isNetworkComputer, getDelivery, type AgentCallTransport, type RemoteCaller,
 } from './annex-agent-calls';
-import { createAnnexDeliveryStore, DELIVERY_MAX_AGE_MS } from './annex-delivery-store';
+import { createAnnexDeliveryStore, DELIVERY_MAX_AGE_MS, type AnnexDeliveryStore, type DeliveryFile } from './annex-delivery-store';
 import {
   getConnectionDirection, listAllConnectionDirections, removeConnectionDirections, setConnectionLink, setConnectionTools,
 } from './connection-grants-store';
@@ -71,14 +71,32 @@ beforeEach(async () => {
   seen.length = 0;
   respond = (_path, body) => delivered(body);
   now += 3_600_000;
-  stop = startAgentCalls({
+  stop = startFixture();
+});
+afterEach(() => { stop(); vi.restoreAllMocks(); });
+
+function startFixture(deliveryStore = createAnnexDeliveryStore()): () => void {
+  return startAgentCalls({
+    deliveryStore,
     transport,
     authorizeQueuedCall: async () => ({ allowed: true }),
     runTool: async (tool, targetId, callerId, args) => { seen.push({ tool, targetId, callerId, args, caller: currentRemoteCaller() }); return ok('ran here'); },
     describeLocalAgent: async (id) => (id === 'receiver' ? { name: 'Builder' } : id === 'here' ? { name: 'Helper', projectName: 'Atlas' } : undefined),
   });
-});
-afterEach(() => { stop(); vi.restoreAllMocks(); });
+}
+
+// Limiter tests exercise call admission, with persistence covered by the
+// durable-receipt cases below. Avoid hundreds of unrelated atomic disk writes.
+function useMemoryDeliveryStore(): void {
+  let file: DeliveryFile = { version: 1, inbox: [], outbox: [], deliveries: [] };
+  const store: AnnexDeliveryStore = {
+    get: () => structuredClone(file),
+    update: async (change) => { const next = structuredClone(file); change(next); file = next; },
+    clearForTesting: async () => { file = { version: 1, inbox: [], outbox: [], deliveries: [] }; },
+  };
+  stop();
+  stop = startFixture(store);
+}
 
 function nextRetry(ms = 3_600_000): void {
   vi.spyOn(Date, 'now').mockReturnValue(Date.now() + ms);
@@ -114,6 +132,7 @@ describe('receiving a call from another machine (#3064)', () => {
   });
 
   it('counts wakes with messages for the loop limit', async () => {
+    useMemoryDeliveryStore();
     await setConnectionLink(inbound.from, inbound.to, true);
     let t = now;
     for (let i = 0; i < LOOP_LIMIT.messages; i++) {
@@ -140,6 +159,7 @@ describe('receiving a call from another machine (#3064)', () => {
   });
 
   it('limits calls per link, and messages back and forth between one pair', async () => {
+    useMemoryDeliveryStore();
     await setConnectionLink(inbound.from, inbound.to, true);
     for (let i = 0; i < RATE_LIMIT.calls; i++) expect(await receiveAgentCall(OTHER, call({ tool: 'get_status', args: {} }), now)).toHaveProperty('result');
     expect(await receiveAgentCall(OTHER, call({ tool: 'get_status', args: {} }), now)).toMatchObject({ status: 429, error: 'rate_limited' });
@@ -298,15 +318,19 @@ describe('sending a call to another machine', () => {
     respond = () => ({ status: 503, body: {} });
     const second = await forwardAgentCall('here', `there@${OTHER}`, 'Far agent', 'send_message', { message: 'second' });
     expect(textOf(second)).toContain('behind messages already on their way');
-    await vi.waitFor(() => expect(posts.length).toBeGreaterThan(0));
+    const firstId = waitingFor(OTHER)[0].id;
+    // A POST precedes the durable retry state; wait before moving the clock.
+    await vi.waitFor(() => expect(getDelivery('here', firstId)?.state).toBe('retry_later'));
     expect(waitingFor(OTHER).map((i) => i.body.args.message)).toEqual(['first', 'second']);
     respond = (_path, body) => delivered(body, 'ok');
     nextRetry();
     await flushOutbox(OTHER);
+    await vi.waitFor(() => expect(waitingFor(OTHER)).toHaveLength(0));
     expect(posts.filter((p) => p.path === '/api/v1/network/agent-call').slice(-2).map((p) => (p.body.args as { message: string }).message)).toEqual(['first', 'second']);
   });
 
   it('counts messages to one agent on this side too, so the limit holds both ways', async () => {
+    useMemoryDeliveryStore();
     let t = now;
     for (let i = 0; i < LOOP_LIMIT.messages; i++) {
       expect((await forwardAgentCall('here', `there@${OTHER}`, 'Far agent', 'send_message', { message: `m${i}` }, t)).isError).toBeFalsy();

@@ -379,27 +379,35 @@ describe('#2849 effective-provider save → chat prepare (no provider/server)', 
       expect(await fs.readFile(path.join(sourceRoot, '.github/mcp.json'), 'utf8')).toBe(raw({ imported: { command: 'never-run-imported' } }));
     });
 
-    it('records a restart failure and refuses revoked authorization before stopping the live fixture', async () => {
-      const service = createManagedAgentsService({
-        catalog: createAssetCatalogStore({ dir: path.join(root, 'catalog') }),
-        state: createManagedStateStore(path.join(root, 'managed')),
-        listProjects: async () => [], listAgents: async () => [agent], getAgent: async () => agent,
-        setManagedSetup: async () => {}, isRunning: () => fixture.running,
+    describe('restart outcomes with a prepared live fixture', () => {
+      beforeEach(async () => {
+        const service = createManagedAgentsService({
+          catalog: createAssetCatalogStore({ dir: path.join(root, 'catalog') }),
+          state: createManagedStateStore(path.join(root, 'managed')),
+          listProjects: async () => [], listAgents: async () => [agent], getAgent: async () => agent,
+          setManagedSetup: async () => {}, isRunning: () => fixture.running,
+        });
+        _setManagedAgentsForTesting(service);
+        await service.ensureBuiltins();
+        agent.managed = { version: 1, blocks: [], skills: [], mcps: [] };
+        await deliverForSpawn(root, agent, copilot);
+        await start(); fixture.running = true;
       });
-      _setManagedAgentsForTesting(service);
-      await service.ensureBuiltins();
-      agent.managed = { version: 1, blocks: [], skills: [], mcps: [] };
-      await deliverForSpawn(root, agent, copilot);
-      await start(); fixture.running = true;
-      await expect(restartManagedAgent(root, agent.id, { whenTurnEnds: true, authorize: async () => { throw new Error('revoked'); } })).rejects.toThrow('Managed restart failed');
-      expect(killAgent).not.toHaveBeenCalled();
-      expect(fixture.running).toBe(true);
-      vi.mocked(spawnAgent).mockRejectedValueOnce(new Error('password=must-not-appear'));
-      await expect(restartManagedAgent(root, agent.id, { whenTurnEnds: true })).rejects.toThrow('Managed restart failed');
-      expect(await activationFor(root, agent.id)).toMatchObject({ status: 'blocked', lastRestart: { outcome: 'failed' }, running: { status: 'stopped' } });
-      expect(JSON.stringify(await activationFor(root, agent.id))).not.toContain('must-not-appear');
-      expect(broadcastToAllWindows).toHaveBeenCalledWith(IPC.AGENT.AGENT_WAKE_FAILED, agent.id, expect.stringContaining('lifecycle receipt'));
-      expect(JSON.stringify(vi.mocked(broadcastToAllWindows).mock.calls)).not.toContain('must-not-appear');
+
+      it('refuses revoked authorization before stopping the live fixture', async () => {
+        await expect(restartManagedAgent(root, agent.id, { whenTurnEnds: true, authorize: async () => { throw new Error('revoked'); } })).rejects.toThrow('Managed restart failed');
+        expect(killAgent).not.toHaveBeenCalled();
+        expect(fixture.running).toBe(true);
+      });
+
+      it('records a restart failure without exposing provider diagnostics', async () => {
+        vi.mocked(spawnAgent).mockRejectedValueOnce(new Error('password=must-not-appear'));
+        await expect(restartManagedAgent(root, agent.id, { whenTurnEnds: true })).rejects.toThrow('Managed restart failed');
+        expect(await activationFor(root, agent.id)).toMatchObject({ status: 'blocked', lastRestart: { outcome: 'failed' }, running: { status: 'stopped' } });
+        expect(JSON.stringify(await activationFor(root, agent.id))).not.toContain('must-not-appear');
+        expect(broadcastToAllWindows).toHaveBeenCalledWith(IPC.AGENT.AGENT_WAKE_FAILED, agent.id, expect.stringContaining('lifecycle receipt'));
+        expect(JSON.stringify(vi.mocked(broadcastToAllWindows).mock.calls)).not.toContain('must-not-appear');
+      });
     });
 
     it.each(['stop', 'start'] as const)('checks current authorization synchronously before the %s lifecycle effect', async (stage) => {

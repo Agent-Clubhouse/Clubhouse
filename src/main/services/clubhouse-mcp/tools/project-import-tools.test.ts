@@ -177,6 +177,8 @@ const git = (...args: string[]) => execFileSync(binary, ['-c', 'protocol.file.al
 }).trim();
 const handlers = new Map<string, Parameters<typeof ipcMain.handle>[1]>();
 const event = {} as Electron.IpcMainInvokeEvent;
+// The source is immutable after beforeAll; reuse its real Git advertisement.
+let sourceRefs: string;
 let serial = 0;
 let store: ImportStore;
 let runner: ImportGit;
@@ -236,6 +238,7 @@ beforeAll(async () => {
   git('-c', 'user.email=fixture@example.test', '-c', 'user.name=Fixture', 'commit', '-qm', 'distinct selected branch tip');
   current.releaseCommit = git('rev-parse', 'HEAD');
   git('switch', '-q', 'trunk');
+  sourceRefs = git('ls-remote', '--symref', fixture.source, 'HEAD', 'refs/heads/*');
   fs.mkdirSync(path.join(fixture.dispatcher, '.clubhouse'), { recursive: true });
   fs.writeFileSync(path.join(fixture.dispatcher, '.clubhouse', 'agents.json'), JSON.stringify([
     { id: 'dispatcher', name: 'Dispatcher', color: 'indigo', createdAt: new Date().toISOString(), orchestrator: 'copilot-cli' },
@@ -276,7 +279,7 @@ beforeEach(async () => {
     remote: async (remoteUrl, branch) => {
       current.remoteCalls.push(remoteUrl);
       if (current.remoteFailure) throw current.remoteFailure;
-      const metadata = parseRemoteIdentity(remoteUrl, git('ls-remote', '--symref', fixture.source, 'HEAD', 'refs/heads/*'), branch);
+      const metadata = parseRemoteIdentity(remoteUrl, sourceRefs, branch);
       await current.afterRemote?.();
       return metadata;
     },
@@ -328,6 +331,9 @@ afterEach(async () => {
   await owner().close(() => agentConfig.settleAgentsFileChecksForTests(), () => {
     agentConfig.clearAgentConfigCache();
   });
+  // Each test owns its project registrations; do not make later guards and
+  // binding rebuilds scan every earlier checkout in this file.
+  for (const project of await projectStore.list()) await projectStore.remove(project.id);
   owner().assertRetired();
 });
 
@@ -563,7 +569,9 @@ describe('public Dispatcher repository import (#2808)', () => {
   });
 
   describe('agent choices with a prepared real public import', () => {
-    beforeEach(prepareImportedProject);
+    // Real init/fetch/checkout plus guarded registration can exceed the default
+    // hook deadline on Windows; the assertion bodies keep their normal budget.
+    beforeEach(prepareImportedProject, 20_000);
 
     it('composes real template choices and create-only builder with persistent retry/restart idempotence, not just unconnected builder tests', async () => {
       const { receipt } = imported;
@@ -747,7 +755,9 @@ describe('public Dispatcher repository import (#2808)', () => {
   });
 
   describe('agent boundaries with a prepared real public import', () => {
-    beforeEach(prepareImportedProject);
+    // Real init/fetch/checkout plus guarded registration can exceed the default
+    // hook deadline on Windows; the assertion bodies keep their normal budget.
+    beforeEach(prepareImportedProject, 20_000);
 
     it.each(['not-git', 'error'])('refuses %s from the protected creation probe without a folder/bootstrap fallback', async (outcome) => {
       const { receipt } = imported;
