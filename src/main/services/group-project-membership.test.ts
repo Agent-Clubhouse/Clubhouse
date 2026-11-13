@@ -28,7 +28,7 @@ vi.mock('./agent-config', () => ({
 }));
 vi.mock('./quick-agent-events', () => ({ knownQuickAgents: () => fx.quick }));
 vi.mock('./group-project-bulletin', () => ({
-  getBulletinBoard: vi.fn(), ensureInboxChannel: vi.fn(), ensureProjectChannels: vi.fn(),
+  getBulletinBoard: vi.fn(), ensureInboxChannel: vi.fn(), ensureProjectChannels: vi.fn(), destroyBulletinBoard: vi.fn(),
 }));
 
 import { bindingManager } from './clubhouse-mcp/binding-manager';
@@ -36,10 +36,10 @@ import {
   _resetPersistedBindingSourcesForTesting, keepHeldBinding, markBindingRemovedByUser, rebuildPersistedBindings, registerPersistedBindingSource,
 } from './persisted-bindings';
 import { groupProjectRegistry } from './group-project-registry';
-import { _resetMembershipStoreForTesting, getMembership, updateMembership } from './group-project-membership-store';
+import { groupProjectHost } from './group-project-host';
 import {
   _resetMembershipForTesting, addMember, answerAutoJoinOffer, describeMembership, excludeMember, membershipBindingSource,
-  purgeMembership, quickMemberName, reconcileMembership, recordMemberDisabledTools, savedMemberDisabledTools,
+  releaseMembershipBindings, quickMemberName, reconcileMembership, recordMemberDisabledTools, savedMemberDisabledTools, watchGroupProjectMembership,
 } from './group-project-membership';
 
 const PROJ_A = { id: 'proj_a', name: 'Alpha', path: path.join('work', 'alpha') };
@@ -85,8 +85,11 @@ function restart(): void {
   bindingManager._resetForTesting();
   _resetPersistedBindingSourcesForTesting();
   _resetMembershipForTesting();
-  _resetMembershipStoreForTesting();
+  groupProjectHost._resetForTesting();
 }
+
+const getMembership = (id: string) => groupProjectHost.getMembership(id);
+const updateMembership: typeof groupProjectHost.updateMembership = (id, fn) => groupProjectHost.updateMembership(id, fn);
 
 beforeEach(async () => {
   const cache = path.join(process.cwd(), 'node_modules', '.cache');
@@ -287,11 +290,28 @@ describe('bindings follow the record', () => {
     expect(membersOf('gp1')).toEqual(['dev', 'lead']);
   });
 
-  it('purge releases every binding and deletes the record', async () => {
+  it('releasing a deleted group project\'s bindings needs no store access (#3364)', async () => {
     groupProjectRegistry._setForTesting(gp('gp1'));
     await start();
-    await purgeMembership('gp1');
+    releaseMembershipBindings('gp1');
     expect(membersOf('gp1')).toEqual([]);
-    expect(await getMembership('gp1')).toEqual({ version: 1, autoJoin: false, explicit: [], excluded: [] });
+  });
+
+  it('a host delete releases the members', async () => {
+    groupProjectRegistry._setForTesting(gp('gp1'));
+    await start();
+    const stop = watchGroupProjectMembership();
+    await groupProjectHost.delete('gp1');
+    expect(membersOf('gp1')).toEqual([]);
+    stop();
+  });
+
+  it('answers the host\'s member resolver with the record\'s members', async () => {
+    groupProjectRegistry._setForTesting(gp('gp1'));
+    await start();
+    const stop = watchGroupProjectMembership();
+    await excludeMember('gp1', 'dev');
+    expect(await groupProjectHost.resolveMembers('gp1')).toEqual([{ address: 'lead', name: 'lead', projectId: PROJ_A.id }]);
+    stop();
   });
 });

@@ -50,7 +50,7 @@ import {
   registerPersistedBindingSource,
   _resetPersistedBindingSourcesForTesting,
 } from './persisted-bindings';
-import { canvasWireBindingSource, bindingsFromCanvasStores } from './canvas-wire-source';
+import { canvasWireBindingSource, bindingsFromCanvasStores, setManagedGroupProjects } from './canvas-wire-source';
 import {
   getAgentCanvasMemberships,
   getTargetCanvasIndex,
@@ -445,6 +445,17 @@ describe('canvas wire binding source', () => {
     expect(w1.projectName).toBe('Wardfall'); // refreshed from the registry
     expect(w1.instructions).toEqual({ send_message: 'be brief' });
     expect(w1.disabledTools).toEqual(['broadcast']);
+  });
+
+  it('leaves a group project whose members come from its record to that record (#3357)', async () => {
+    setManagedGroupProjects(async () => new Set(['gp_wardfall']));
+    try {
+      const bindings = await canvasWireBindingSource.collect();
+      expect(bindings.map(key).filter((k) => k.endsWith('gp_wardfall'))).toEqual([]);
+      expect(bindings.map(key)).toContain('durable_a->durable_b');
+    } finally {
+      setManagedGroupProjects(null);
+    }
   });
 
   it('keeps group-project wires when the registry cannot be read', async () => {

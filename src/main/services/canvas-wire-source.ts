@@ -12,7 +12,6 @@
 
 import { readAllCanvasStores, type CanvasStoreSnapshot } from './canvas-store-reader';
 import { groupProjectRegistry } from './group-project-registry';
-import { managedGroupProjectIds } from './group-project-membership';
 import type { PersistedBinding, PersistedBindingSource } from './persisted-bindings';
 import type { BindingTargetKind } from './clubhouse-mcp/types';
 import { reconcilePersistedWires } from '../../shared/canvas-persistence';
@@ -87,10 +86,17 @@ export function bindingsFromCanvasStores(
   return out;
 }
 
+let managedGroupProjects: (() => Promise<ReadonlySet<string>>) | null = null;
+
+/** Group projects whose members come from their membership record (#3357), set by that module. */
+export function setManagedGroupProjects(list: (() => Promise<ReadonlySet<string>>) | null): void {
+  managedGroupProjects = list;
+}
+
 /** Drop wires to group projects whose membership record holds their members. */
 async function withoutManagedMembers(bindings: PersistedBinding[]): Promise<PersistedBinding[]> {
-  if (!bindings.some((b) => b.targetKind === 'group-project')) return bindings;
-  const managed = await managedGroupProjectIds();
+  if (!managedGroupProjects || !bindings.some((b) => b.targetKind === 'group-project')) return bindings;
+  const managed = await managedGroupProjects();
   return bindings.filter((b) => b.targetKind !== 'group-project' || !managed.has(b.targetId));
 }
 

@@ -8,7 +8,7 @@ import { groupProjectRegistry } from '../services/group-project-registry';
 import { listPausedPolling, onPollingPauseChanged, resumePausedPolling, setProjectPolling, watchPollingForMcp } from '../services/group-project-polling';
 import { groupProjectHost } from '../services/group-project-host';
 import { initGroupProjectLifecycle } from '../services/group-project-lifecycle';
-import { addMember, answerAutoJoinOffer, describeMembership, excludeMember, onMembershipChanged } from '../services/group-project-membership';
+import { addMember, answerAutoJoinOffer, beginAutoJoin, describeMembership, excludeMember, onMembershipChanged } from '../services/group-project-membership';
 import { executeShoulderTap } from '../services/group-project-shoulder-tap';
 import * as annexEventBus from '../services/annex-event-bus';
 import { appLog } from '../services/log-service';
@@ -80,6 +80,8 @@ export function registerGroupProjectHandlers(): void {
     [stringArg(), objectArg<GroupProjectCreateOptions>({ optional: true })],
     async (_event, name, options) => {
       const project = await groupProjectHost.create(name as string, options as GroupProjectCreateOptions | undefined);
+      // Everyone in scope joins a new group project (#3357).
+      await beginAutoJoin(project.id);
       annexEventBus.emitGroupProjectChanged('created', project);
       appLog('core:group-project', 'info', 'Group project created', { meta: { id: project.id, name: project.name } });
       return project;

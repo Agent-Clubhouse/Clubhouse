@@ -67,6 +67,11 @@ export interface GroupProjectMembership {
   autoJoin: boolean;
   explicit: GroupProjectExplicitMember[];
   excluded: GroupProjectExclusion[];
+  /**
+   * The one-time "Include every agent in scope" offer of a group project
+   * migrated from canvas wires (#3357): shown while pending. Absent on a
+   * record that was never migrated.
+   */
   autoJoinOffer?: 'pending' | 'accepted' | 'dismissed';
   /** Per-member tool switches (#2084), keyed by address. */
   disabledTools?: Record<string, string[]>;
@@ -143,30 +148,7 @@ export interface BulletinRetentionConfig {
 export type DigestSince = string | Record<string, string>;
 
 /** How a member came to be in a group project (#3357). */
-export type GroupProjectMemberKind = 'durable' | 'helper' | 'quick';
-
-/**
- * The membership record of one group project (#3357), kept on its host in
- * `group-projects/<id>/membership.json`. Members are keyed by address: a bare
- * agent id on the host machine. Names are display only.
- */
-export interface GroupProjectMembership {
-  version: 1;
-  /** Every top-level durable agent in scope is a member unless excluded. */
-  autoJoin: boolean;
-  /** Members added by hand: helpers, quick agents for one run, and durable agents outside auto-join. */
-  explicit: Array<{ address: string; kind: GroupProjectMemberKind; addedAt: string; runId?: string; name?: string }>;
-  /** Agents left out. An excluded agent never joins automatically. */
-  excluded: Array<{ address: string; excludedAt: string }>;
-  /**
-   * The one-time "Include every agent in scope" offer of a group project
-   * migrated from canvas wires: shown while pending. Absent on a record that
-   * was never migrated.
-   */
-  autoJoinOffer?: 'pending' | 'accepted' | 'dismissed';
-  /** A member's own tool switches on the group project (#2084): disabled tool suffixes by address. */
-  disabledTools?: Record<string, string[]>;
-}
+export type GroupProjectMemberKind = GroupProjectExplicitMember['kind'];
 
 /** One member as resolved from the record, scope and the agents that exist now. */
 export interface ResolvedGroupProjectMember {
