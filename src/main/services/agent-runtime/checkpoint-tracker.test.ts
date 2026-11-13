@@ -191,6 +191,10 @@ describe('checkpoint tracker', () => {
 
     // The pending snapshot ref is cleaned up once the turn names it.
     expect(git('for-each-ref', 'refs/clubhouse/pending/')).toBe('');
+  });
+
+  it('reverts a completed turn and undoes the revert with exact bytes and undoable state', async () => {
+    await runTurn('turn-1', () => fs.writeFileSync(path.join(repo, 'a.txt'), 'two\n'));
 
     fixture().phaseStarted('revert');
     const result = await revertTurn('agent-1', 'turn-1');
