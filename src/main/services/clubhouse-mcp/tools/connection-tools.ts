@@ -28,7 +28,6 @@ import * as projectStore from '../../project-store';
 import { listHelpersEverywhere } from '../../helper-index';
 import { groupProjectRegistry } from '../../group-project-registry';
 import { GroupProjectHostError, groupProjectHost } from '../../group-project-host';
-import { bootstrapGroupProjectAdmin } from '../../group-project-admin-service';
 import {
   addMember as addGroupMember, beginAutoJoin, excludeMember as excludeGroupMember, isMember as isGroupMember, isMembershipManaged,
 } from '../../group-project-membership';
@@ -203,9 +202,8 @@ async function joinRecord(agent: DurableAgentConfig, project: GroupProject): Pro
     if (err instanceof GroupProjectHostError && err.code === 'out_of_scope') return 'out_of_scope';
     throw err;
   }
-  if (before) return 'existing';
-  void bootstrapGroupProjectAdmin(project.id, agent.id);
-  return 'created';
+  // No member leads by joining: lead and admin are explicit grants (#3360).
+  return before ? 'existing' : 'created';
 }
 
 function entryFor(callerId: string, scope: CallerScope, binding: PersistedBinding): OrchestratorConnection {
@@ -259,10 +257,8 @@ async function connect(callerId: string, scope: CallerScope, bindings: Persisted
     throw err;
   }
   const outcomes = bindings.map((b) => {
-    const outcome = claimSourceBinding(ORCHESTRATOR_CONNECTION_SOURCE_ID, b);
-    // Same as a group-project join the user draws: the first member leads.
-    if (outcome === 'created' && b.targetKind === 'group-project') void bootstrapGroupProjectAdmin(b.targetId, b.agentId);
-    return outcome;
+    // No member leads by joining: lead and admin are explicit grants (#3360).
+    return claimSourceBinding(ORCHESTRATOR_CONNECTION_SOURCE_ID, b);
   });
   // The user removed a pair between the check above and the claim: don't keep it.
   const refusedNow = bindings.filter((_, i) => outcomes[i] === 'removed');

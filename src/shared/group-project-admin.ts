@@ -39,20 +39,16 @@ export function removeAdmin(metadata: Record<string, unknown> | undefined, agent
 }
 
 /**
- * The set of tool suffixes denied for `agentId` on a group-project wire.
- *
- * - Per-wire `disabledTools` always apply (a wire can restrict anyone further).
- * - Non-admins are additionally denied every privileged tool (role baseline);
- *   admins keep the privileged set unless a wire explicitly disables one.
+ * The set of tool suffixes denied for `agentId` on a group-project wire: the
+ * wire's own `disabledTools`. Lead and admin tools are no longer gated by the
+ * `admins` role here (#3360): they declare `group_project.lead` or
+ * `group_project.admin` on the group project, which only an explicit grant
+ * gives, and the grant check lists and refuses them.
  */
 export function deniedGroupProjectTools(
-  metadata: Record<string, unknown> | undefined,
-  agentId: string,
+  _metadata: Record<string, unknown> | undefined,
+  _agentId: string,
   wireDisabledTools?: string[],
 ): Set<string> {
-  const denied = new Set<string>(wireDisabledTools ?? []);
-  if (!isProjectAdmin(metadata, agentId)) {
-    for (const t of GROUP_PROJECT_PRIVILEGED_TOOL_SUFFIXES) denied.add(t);
-  }
-  return denied;
+  return new Set<string>(wireDisabledTools ?? []);
 }
