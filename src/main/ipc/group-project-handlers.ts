@@ -8,6 +8,7 @@ import { groupProjectRegistry } from '../services/group-project-registry';
 import { listPausedPolling, onPollingPauseChanged, resumePausedPolling, setProjectPolling, watchPollingForMcp } from '../services/group-project-polling';
 import { groupProjectHost } from '../services/group-project-host';
 import { initGroupProjectLifecycle } from '../services/group-project-lifecycle';
+import { describeGroupProjectRoles, grantGroupProjectRole, setOwnGrant } from '../services/group-project-roles';
 import { addMember, answerAutoJoinOffer, beginAutoJoin, describeMembership, excludeMember, onMembershipChanged, previewAutoJoin, releaseMembershipBindings } from '../services/group-project-membership';
 import { executeShoulderTap } from '../services/group-project-shoulder-tap';
 import * as annexEventBus from '../services/annex-event-bus';
@@ -78,6 +79,26 @@ export function registerGroupProjectHandlers(): void {
   ipcMain.handle(IPC.GROUP_PROJECT.LIST_MEMBERS, withValidatedArgs([stringArg()], (_event, id) => describeMembership(id as string)));
   ipcMain.handle(IPC.GROUP_PROJECT.ADD_MEMBER, withValidatedArgs([stringArg(), stringArg()], (_event, id, agentId) => addMember(id as string, agentId as string)));
   ipcMain.handle(IPC.GROUP_PROJECT.EXCLUDE_MEMBER, withValidatedArgs([stringArg(), stringArg()], (_event, id, agentId) => excludeMember(id as string, agentId as string)));
+  // The group project as a principal (#3360): its own grants, and lead and admin as grants.
+  ipcMain.handle(IPC.GROUP_PROJECT.GET_ROLES, withValidatedArgs([stringArg()], (_event, id) => describeGroupProjectRoles(id as string)));
+  ipcMain.handle(IPC.GROUP_PROJECT.SET_ROLE, withValidatedArgs(
+    [stringArg(), stringArg(), stringArg(), stringArg()],
+    async (_event, id, agentId, role, mode) => {
+      if (role !== 'lead' && role !== 'admin') throw new Error('Role must be lead or admin.');
+      if (mode !== 'allow' && mode !== 'ask' && mode !== 'off') throw new Error('Mode must be allow, ask or off.');
+      await grantGroupProjectRole(id as string, agentId as string, role, mode);
+      return describeGroupProjectRoles(id as string);
+    },
+  ));
+  ipcMain.handle(IPC.GROUP_PROJECT.SET_OWN_GRANT, withValidatedArgs(
+    [stringArg(), stringArg(), stringArg()],
+    async (_event, id, grant, mode) => {
+      if (grant !== 'deliver' && grant !== 'wake' && grant !== 'actions') throw new Error('Grant must be deliver, wake or actions.');
+      if (mode !== 'allow' && mode !== 'off') throw new Error('Mode must be allow or off.');
+      await setOwnGrant(id as string, grant, mode);
+      return describeGroupProjectRoles(id as string);
+    },
+  ));
   ipcMain.handle(IPC.GROUP_PROJECT.PREVIEW_AUTO_JOIN, withValidatedArgs(
     [objectArg<GroupProjectScope>()], (_event, scope) => previewAutoJoin(scope),
   ));
@@ -149,6 +170,12 @@ export function registerGroupProjectHandlers(): void {
   // Scope (#3355): a person changes it here, after reviewing who would leave.
   ipcMain.handle(IPC.GROUP_PROJECT.SCOPE_OPTIONS, () => groupProjectHost.scopeOptions());
 
+  // Network group projects (#3363): the person has seen the host's refusals.
+  ipcMain.handle(IPC.GROUP_PROJECT.DISMISS_REFUSALS, withValidatedArgs([stringArg()], async (_event, id) => {
+    await groupProjectHost.dismissRefusals(id as string);
+    return true;
+  }));
+
   ipcMain.handle(IPC.GROUP_PROJECT.PREVIEW_SCOPE, withValidatedArgs(
     [stringArg(), objectArg<GroupProjectScope>()],
     async (_event, id, scope) => groupProjectHost.previewScope(id as string, scope),
@@ -193,7 +220,7 @@ export function registerGroupProjectHandlers(): void {
     [stringArg(), stringArg(), stringArg()],
     async (_event, projectId, topic, body) => {
       const message = await groupProjectHost.post(projectId as string, 'user', topic as string, body as string);
-      annexEventBus.emitBulletinMessage(projectId as string, message);
+      if (!message.pending) annexEventBus.emitBulletinMessage(projectId as string, message);
       return message;
     },
   ));

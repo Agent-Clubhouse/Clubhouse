@@ -9,6 +9,9 @@ import { federationBindingSource, learnFederationController, localFederationCont
 import { learnLeadShare, leadShare, startDispatcherLead } from '../services/dispatcher-federation-lead';
 import { getDispatcherPresence, onDispatcherPresenceChanged, watchDispatcherPresence } from '../services/dispatcher-presence';
 import { watchPeerPages } from '../services/dispatcher/dispatcher-peer-pages';
+import { startLeadOutbox } from '../services/dispatcher-lead-outbox';
+import { forwardNewsToLead, newsDeliveryFailed, startFollowerNews } from '../services/dispatcher-follower-news';
+import { setChatForwarder } from '../services/dispatcher/dispatcher-channel';
 import { federationDirection } from '../services/dispatcher-federation-policy';
 import { auditChanged } from '../services/settings-audit';
 import { watchSessionQuota } from '../services/provider-quota';
@@ -24,7 +27,6 @@ import { watchHelperStartRequests } from '../services/clubhouse-mcp/tools/helper
 import { onDisposeRequestsChanged } from '../services/helper-dispose-requests';
 import { onGrantRequestsChanged } from '../services/grant-requests';
 import { agentRegistry } from '../services/agent-registry';
-import { bootstrapGroupProjectAdmin } from '../services/group-project-admin-service';
 import { appLog } from '../services/log-service';
 import {
   registerPersistedBindingSource,
@@ -38,6 +40,7 @@ import { canvasWireBindingSource } from '../services/canvas-wire-source';
 import { setManagedGroupProjects } from '../services/managed-group-projects';
 import { MCP_UNBIND_CANVAS_CLEANUP, type McpBindCause, type McpBindResult, type McpUnbindResult } from '../../shared/mcp-unbind';
 import { watchGroupProjectDelivery } from '../services/group-project-delivery';
+import { watchGroupProjectRoles } from '../services/group-project-roles';
 import {
   excludeMember, isMembershipManaged, managedGroupProjectIds, membershipBindingSource, watchGroupProjectMembership,
 } from '../services/group-project-membership';
@@ -57,10 +60,15 @@ import {
   applyConnectionTools, connectAcrossMachines, disconnectAcrossMachines, makeTwoWay, migrateAutomaticConnectionTools, removeSourceAcrossMachines, setLocalWake, setToolsAcrossMachines, startConnectionGrants,
 } from '../services/connection-grants';
 import { listConnectionDirectionsForInspection } from '../services/connection-grants-store';
-import { syncDirectionsWith, startAgentCalls } from '../services/annex-agent-calls';
+import { isNetworkComputer, syncDirectionsWith, startAgentCalls } from '../services/annex-agent-calls';
 import { startHandoffs } from '../services/handoff-host';
 import { addCardConnection, listConnectionPickerTargets, removeCardConnection, startCardConnections } from '../services/connection-card';
 import type { AddCardConnection } from '../../shared/connection-picker';
+import { startGroupProjectNetwork } from '../services/group-project-network';
+import { remoteGroupProjectGrantGate } from '../services/group-project-remote-grants';
+import { purgeGroupProjectViews } from '../services/group-project-delete-service';
+import { onMembershipChanged as onNetworkMembershipChanged } from '../services/annex-network-membership';
+import { injectPtyMessage } from '../services/group-project-lifecycle';
 import { authorizeQueuedAnnexCall, reportAnnexDeliveryFailure } from '../services/annex-agent-call-host';
 import * as annexPeers from '../services/annex-peers';
 import * as annexClient from '../services/annex-client';
@@ -187,12 +195,6 @@ export function registerMcpBindingHandlers(): void {
         assertValidTargetKind(target.targetKind);
         clearBindingRemovedByUser(agentId as string, target.targetId);
         const isNew = bindingManager.bind(agentId as string, target as { targetId: string; targetKind: BindingTargetKind; label: string; agentName?: string; targetName?: string; projectName?: string });
-        // Bootstrap the project lead: the first agent to join a group project
-        // becomes its admin (no-op once an admin exists). The registry change
-        // invalidates the scoped tool cache so role gating applies immediately.
-        if (target.targetKind === 'group-project') {
-          void bootstrapGroupProjectAdmin(target.targetId, agentId as string);
-        }
         if (!isNew) {
           // Duplicate binding — notifyChange was skipped by bind(), so the
           // renderer's mcpBindingStore won't receive a BINDINGS_CHANGED event.
@@ -212,10 +214,10 @@ export function registerMcpBindingHandlers(): void {
       };
       if (target.targetKind !== 'group-project') { bindNow(); return undefined; }
       // Scope, exclusions and the membership record (#3355, #3357) decide; see group-project-bind.ts.
+      // Joining makes no one lead: lead and admin are explicit grants (#3360).
       return bindToGroupProject(target.targetId, agentId as string, cause as McpBindCause | undefined, {
         bindNow,
         joined: () => {
-          void bootstrapGroupProjectAdmin(target.targetId, agentId as string);
           broadcastBindingsChanged();
         },
       });
@@ -480,6 +482,8 @@ let stopWatchingFederation: (() => void) | null = null;
 let stopDispatcherLead: (() => void) | null = null;
 let stopWatchingDispatcherPresence: (() => void) | null = null;
 let stopWatchingPeerPages: (() => void) | null = null;
+let stopLeadOutbox: (() => void) | null = null;
+let stopFollowerNews: (() => void) | null = null;
 let stopWatchingMcpCallers: (() => void) | null = null;
 
 /**
@@ -516,6 +520,8 @@ export function restorePersistedBindings(): Promise<void> {
     watchGroupProjectMembership();
     // Members hear about posts as notices (#3362).
     watchGroupProjectDelivery();
+    // Lead and admin as grants; today's admins get them once (#3360).
+    watchGroupProjectRoles();
     // Connection permissions (D129): the store sets each direction's tools, and the user's links are a source.
     startConnectionGrants({
       notify: (from, to, disabledTools) => broadcastToAllWindows(IPC.MCP_BINDING.CONNECTION_GRANTS_CHANGED, from, to, disabledTools),
@@ -544,6 +550,39 @@ export function restorePersistedBindings(): Promise<void> {
     stopWatchingDispatcherPresence = watchDispatcherPresence((machine) => annexClient.isMachineConnected(machine), (machine) => annexClient.lastConfirmedConnectivity(machine));
     // And its memory pages for them, keyed by machine-qualified address.
     stopWatchingPeerPages = watchPeerPages({ remotes: () => getDispatcherPresence().remotes, enabled: isDispatcherEnabled, onChanged: onDispatcherPresenceChanged });
+    // A follower's agent news goes to the lead's chat while it's reachable (#3352).
+    stopFollowerNews = startFollowerNews({
+      connected: (machine) => annexClient.isMachineConnected(machine),
+      machineName: (machine) => annexClient.machineAlias(machine),
+    });
+    setChatForwarder(forwardNewsToLead);
+    // Messages typed while the lead was offline go when it's back (#3353).
+    stopLeadOutbox = startLeadOutbox({
+      connected: (machine) => annexClient.isMachineConnected(machine),
+      dispatcherAgentId: (machine) => annexClient.machineDispatcherAgentId(machine),
+      chatSession: async (machine, agentId) => {
+        const key = annexClient.satelliteKeyFor(machine);
+        if (!key) return { sessionId: null, live: false };
+        const page = await annexClient.requestChatPage(key, agentId, { limit: 1 }) as { sessionId?: unknown; readOnly?: unknown } | null;
+        return { sessionId: typeof page?.sessionId === 'string' ? page.sessionId : null, live: page?.readOnly === false };
+      },
+      wake: (machine, agentId, message, commandId) => {
+        const key = annexClient.satelliteKeyFor(machine);
+        if (!key) return Promise.reject(new Error('Satellite not connected'));
+        return annexClient.wakeChatAgentWithMessage(key, agentId, message, commandId);
+      },
+      send: (machine, command, commandId) => {
+        const key = annexClient.satelliteKeyFor(machine);
+        if (!key) return Promise.reject(new Error('Satellite not connected'));
+        return annexClient.sendChatCommand(key, command, commandId);
+      },
+      // Its snapshot names the lead's Dispatcher, and comes just after the connection opens.
+      onConnected: (listener) => {
+        const offConnected = annexClient.onSatelliteConnected(listener);
+        const offSnapshot = annexClient.onSatelliteSnapshot(listener);
+        return () => { offConnected(); offSnapshot(); };
+      },
+    });
     startAgentCalls({
       remoteDispatcher: federationReceiver,
       federation: {
@@ -570,9 +609,26 @@ export function restorePersistedBindings(): Promise<void> {
       nameOfLocalSender: (id) => isDispatcherAgentId(id) ? dispatcherDisplayName('work')
         : isDispatcherChatAgentId(id) ? dispatcherDisplayName() : undefined,
       authorizeQueuedCall: authorizeQueuedAnnexCall,
-      onDeliveryFailure: reportAnnexDeliveryFailure,
+      // News a follower queued for the lead and the lead didn't take shows here instead (#3352).
+      onDeliveryFailure: async (notice) => (await newsDeliveryFailed(notice)) || reportAnnexDeliveryFailure(notice),
     });
     stopFederatedRequests = startFederatedRequests();
+    // Network group projects (#3363): copies of other computers' group projects, and writes to their hosts.
+    startGroupProjectNetwork({
+      transport: {
+        connected: (machine) => annexClient.isMachineConnected(machine),
+        post: (machine, urlPath, body) => annexClient.postToMachine(machine, urlPath, body),
+        onConnected: (listener) => annexClient.onSatelliteConnected(listener),
+        machineName: (machine) => annexClient.machineAlias(machine) || annexPeers.listPeers().find((p) => p.fingerprint.toLowerCase() === machine.toLowerCase())?.alias,
+      },
+      isMember: (machine) => isNetworkComputer(machine),
+      members: () => annexPeers.listPeers().map((p) => p.fingerprint.toLowerCase()).filter((fp) => isNetworkComputer(fp)),
+      onMembershipChanged: (listener) => onNetworkMembershipChanged(listener),
+      notifyAgent: (agentId, text) => injectPtyMessage(agentId, text),
+      purgeViews: (id) => purgeGroupProjectViews(id),
+    });
+    // The host checks other computers' agents' writes against #3360's grants.
+    groupProjectHost.setRemoteWriteGate(remoteGroupProjectGrantGate);
   }
   return rebuildPersistedBindings().then(async (): Promise<void> => {
     // Once, after a rebuild has read every source: Dispatcher links from before #3215 get the new defaults.
@@ -624,6 +680,11 @@ export function _resetHandlersForTesting(): void {
   stopWatchingDispatcherPresence = null;
   stopWatchingPeerPages?.();
   stopWatchingPeerPages = null;
+  stopLeadOutbox?.();
+  stopLeadOutbox = null;
+  stopFollowerNews?.();
+  stopFollowerNews = null;
+  setChatForwarder(null);
   stopWatchingHelperWires?.();
   stopWatchingHelperWires = null;
   stopWatchingOrchestratorConnections?.();

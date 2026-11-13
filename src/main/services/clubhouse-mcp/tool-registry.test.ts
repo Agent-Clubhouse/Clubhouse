@@ -3,6 +3,21 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 const gate = vi.hoisted(() => ({ access: 'open' as 'open' | 'closed' }));
 vi.mock('./mcp-call-gate', async (original) => ({ ...await original<typeof import('./mcp-call-gate')>(), mcpCallAccess: () => gate.access }));
 
+// Grants in memory (#3360); a change still tells the tool list to refresh, as the real store does.
+const grantFx = vi.hoisted(() => ({ changes: new Map<string, unknown>() }));
+vi.mock('../agent-grants-store', async () => {
+  const { notifyToolGateChange } = await import('./orchestration-gate');
+  return {
+    getAgentGrantChanges: (id: string) => grantFx.changes.get(id),
+    listAgentsWithGrantChanges: () => [...grantFx.changes.keys()],
+    updateAgentGrantChanges: async (id: string, fn: (c: unknown) => unknown) => {
+      const next = fn(grantFx.changes.get(id));
+      if (next) grantFx.changes.set(id, next); else grantFx.changes.delete(id);
+      notifyToolGateChange(id);
+      return next;
+    },
+  };
+});
 vi.mock('electron', () => ({
   app: { isPackaged: false, getPath: () => '/tmp/test-clubhouse' },
 }));
@@ -25,6 +40,7 @@ vi.mock('../dispatcher/dispatcher-settings', () => ({
   isDispatcherEnabled: () => dispatcherState.enabled,
 }));
 
+import { updateAgentGrantChanges } from '../agent-grants-store';
 import { registerToolTemplate, registerGlobalTool, setTargetToolTemplates, getConnectionToolCatalog, getScopedToolList, callTool, refusalReasonOf, buildToolName, buildToolKey, parseToolName, shortHash, invalidateToolListCache, agentsWiredTo, sanitizeWireInstruction, _resetForTesting } from './tool-registry';
 import { bindingManager } from './binding-manager';
 import { MCP_CALLER_UNKNOWN_MESSAGE } from '../../../shared/orchestration-policy';
@@ -790,7 +806,7 @@ describe('ToolRegistry', () => {
       expect(handler).not.toHaveBeenCalled();
     });
 
-    it('reuses group-project admin filtering without applying the direction switches', () => {
+    it('lists a group project\'s admin tool by the admin grant, without applying the direction switches (#3360)', async () => {
       registerToolTemplate('group-project', 'list_members', definition, vi.fn(), { grant: { actions: ['group_project.read'], target: 'bound' } });
       registerToolTemplate('group-project', 'clear_topic', definition, vi.fn(), { grant: { actions: ['group_project.admin'], target: 'bound' } });
       const project = { id: 'catalog-board', name: 'Board', description: '', instructions: '', createdAt: '' };
@@ -800,8 +816,9 @@ describe('ToolRegistry', () => {
       });
       const entries = () => getConnectionToolCatalog('agent-1', project.id, 'group-project').tools.map(({ suffix, available }) => ({ suffix, available }));
       expect(entries()).toEqual([{ suffix: 'list_members', available: true }, { suffix: 'clear_topic', available: false }]);
-      groupProjectRegistry._setForTesting({ ...project, metadata: { admins: ['agent-1'] } });
+      await updateAgentGrantChanges('agent-1', () => ({ changes: [{ action: 'group_project.admin', target: { kind: 'group_project', id: project.id }, mode: 'allow' }] }));
       expect(entries()).toEqual([{ suffix: 'list_members', available: true }, { suffix: 'clear_topic', available: true }]);
+      await updateAgentGrantChanges('agent-1', () => undefined);
     });
 
     it('scopes contributed templates to their target and explicitly reports an unloaded plugin', () => {
@@ -1010,20 +1027,27 @@ describe('ToolRegistry', () => {
   describe('group-project tool gating (admin role + wire-level)', () => {
     beforeEach(() => {
       groupProjectRegistry._resetForTesting();
-      registerToolTemplate('group-project', 'list_members', { description: 'List', inputSchema: { type: 'object' } }, vi.fn());
-      registerToolTemplate('group-project', 'shoulder_tap', { description: 'Tap', inputSchema: { type: 'object' } }, vi.fn());
-      registerToolTemplate('group-project', 'broadcast', { description: 'Broadcast', inputSchema: { type: 'object' } }, vi.fn());
-      registerToolTemplate('group-project', 'wake_agent', { description: 'Wake', inputSchema: { type: 'object' } }, vi.fn());
-      registerToolTemplate('group-project', 'clear_topic', { description: 'Clear', inputSchema: { type: 'object' } }, vi.fn());
-      registerToolTemplate('group-project', 'clear_agent', { description: 'Clear agent', inputSchema: { type: 'object' } }, vi.fn());
-      registerToolTemplate('group-project', 'compact_agent', { description: 'Compact agent', inputSchema: { type: 'object' } }, vi.fn());
+      // Lead tools declare the lead grant on the bound group project (#3360), as the real ones do.
+      const lead = { grant: { actions: ['group_project.lead' as const], target: 'bound' as const } };
+      registerToolTemplate('group-project', 'list_members', { description: 'List', inputSchema: { type: 'object' } }, vi.fn(), { grant: { actions: ['group_project.read'], target: 'bound' } });
+      registerToolTemplate('group-project', 'shoulder_tap', { description: 'Tap', inputSchema: { type: 'object' } }, vi.fn(), lead);
+      registerToolTemplate('group-project', 'broadcast', { description: 'Broadcast', inputSchema: { type: 'object' } }, vi.fn(), lead);
+      registerToolTemplate('group-project', 'wake_agent', { description: 'Wake', inputSchema: { type: 'object' } }, vi.fn(), lead);
+      registerToolTemplate('group-project', 'clear_topic', { description: 'Clear', inputSchema: { type: 'object' } }, vi.fn(), lead);
+      registerToolTemplate('group-project', 'clear_agent', { description: 'Clear agent', inputSchema: { type: 'object' } }, vi.fn(), lead);
+      registerToolTemplate('group-project', 'compact_agent', { description: 'Compact agent', inputSchema: { type: 'object' } }, vi.fn(), lead);
     });
+    afterEach(async () => { await updateAgentGrantChanges('agent-1', () => undefined); });
+    const grantLead = (groupProjectId: string) => updateAgentGrantChanges('agent-1', () => ({
+      changes: [{ action: 'group_project.lead', target: { kind: 'group_project', id: groupProjectId }, mode: 'allow' }],
+    }));
 
-    it('exposes all group-project tools to an admin with no wire-level disabledTools', () => {
+    it('exposes all group-project tools to a lead with no wire-level disabledTools', async () => {
       groupProjectRegistry._setForTesting({
         id: 'gp_test_1', name: 'TestProj', description: '', instructions: '',
-        createdAt: '2020-01-01T00:00:00Z', metadata: { admins: ['agent-1'] },
+        createdAt: '2020-01-01T00:00:00Z', metadata: {},
       });
+      await grantLead('gp_test_1');
       bindingManager.bind('agent-1', {
         targetId: 'gp_test_1', targetKind: 'group-project', label: 'GP', targetName: 'TestProj',
       });
@@ -1054,7 +1078,7 @@ describe('ToolRegistry', () => {
       expect(suffixes).not.toContain('compact_agent');
     });
 
-    it('refuses a disabled or privileged tool at call time with reason tool_denied', async () => {
+    it('refuses a lead tool to a member without the lead grant at call time, with a typed refusal (#3360)', async () => {
       bindingManager.bind('agent-1', {
         targetId: 'gp_test_4', targetKind: 'group-project', label: 'GP', targetName: 'TestProj',
       });
@@ -1062,15 +1086,16 @@ describe('ToolRegistry', () => {
         agentId: 'agent-1', targetId: 'gp_test_4', targetKind: 'group-project', targetName: 'TestProj',
       }), 'shoulder_tap');
       const result = await callTool('agent-1', toolName, {});
-      expect(result.content[0].text).toBe('Only a project admin can invoke this tool.');
-      expect(refusalReasonOf(result)).toBe('tool_denied');
+      expect(result.content[0].text).toContain('group_project.lead');
+      expect(refusalReasonOf(result)).toBe('no_grant');
     });
 
-    it('an admin calling a privileged tool switched off on its own wire is refused at call time, by name (#3176)', async () => {
+    it('a lead calling a privileged tool switched off on its own wire is refused at call time, by name (#3176)', async () => {
       groupProjectRegistry._setForTesting({
         id: 'gp_test_5', name: 'TestProj', description: '', instructions: '',
-        createdAt: '2020-01-01T00:00:00Z', metadata: { admins: ['agent-1'] },
+        createdAt: '2020-01-01T00:00:00Z', metadata: {},
       });
+      await grantLead('gp_test_5');
       bindingManager.bind('agent-1', { targetId: 'gp_test_5', targetKind: 'group-project', label: 'GP', targetName: 'TestProj' });
       bindingManager.setDisabledTools('agent-1', 'gp_test_5', ['wake_agent', 'clear_agent']);
       const name = (tool: string) => buildToolName(makeBinding({ agentId: 'agent-1', targetId: 'gp_test_5', targetKind: 'group-project', targetName: 'TestProj' }), tool);
@@ -1084,11 +1109,12 @@ describe('ToolRegistry', () => {
       expect(other?.content?.[0]?.text).not.toBe('compact_agent is turned off on this wire.');
     });
 
-    it('an admin wire can disable individual tools without affecting others', () => {
+    it('a lead\'s wire can disable individual tools without affecting others', async () => {
       groupProjectRegistry._setForTesting({
         id: 'gp_test_3', name: 'TestProj', description: '', instructions: '',
-        createdAt: '2020-01-01T00:00:00Z', metadata: { admins: ['agent-1'] },
+        createdAt: '2020-01-01T00:00:00Z', metadata: {},
       });
+      await grantLead('gp_test_3');
       bindingManager.bind('agent-1', {
         targetId: 'gp_test_3', targetKind: 'group-project', label: 'GP', targetName: 'TestProj',
       });

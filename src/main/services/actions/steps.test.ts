@@ -248,6 +248,13 @@ describe('step runner', () => {
 
     beforeEach(() => deliver.mockClear());
 
+    it('does not wake a sleeping Dispatcher when the group project lacks wake permission', async () => {
+      const d = withDispatcher({ wakeRefusal: () => 'Wake members is off.' });
+      const result = await createStepRunner(d).run({ kind: 'message', agentId: 'disp', text: 'hello' }, owned({ kind: 'group_project', groupProjectId: 'gp1' }));
+      expect(result).toMatchObject({ outcome: 'failed', detail: expect.stringContaining('Wake members is off.') });
+      expect(deliver).not.toHaveBeenCalled();
+    });
+
     it.each([{ sourceAgentId: 'quick' }, { agentIds: ['quick'] }])('wraps quick-finish names as untrusted data in a promptless wake (%j)', async (source) => {
       const context: StepContext = {
         ...owned({ kind: 'dispatcher' }),

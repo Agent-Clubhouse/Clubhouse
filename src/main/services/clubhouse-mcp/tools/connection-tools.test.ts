@@ -646,8 +646,8 @@ describe('connecting and persistence', () => {
     expect(project.metadata[GROUP_PROJECT_CREATOR_KEY]).toBe('durable_lead');
     expect(boundPairs()).toEqual(['durable_h1->gp_1', 'durable_lead->gp_1']);
     await ticks();
-    // The caller joins first and leads the project.
-    expect(project.metadata.admins).toEqual(['durable_lead']);
+    // No member leads by joining: lead and admin are explicit grants (#3360).
+    expect(project.metadata.admins).toBeUndefined();
     expect(postMessage).toHaveBeenCalledWith('system', 'system', expect.stringContaining('joined project "Raid"'));
     // Polling stays off: it starts only from the user's toggle.
     expect(ptyWrite).not.toHaveBeenCalled();

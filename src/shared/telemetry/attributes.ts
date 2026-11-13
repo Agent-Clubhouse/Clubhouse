@@ -810,7 +810,7 @@ export const ATTR = {
     'resumed', 'fresh_not_found', 'fresh_stalled', 'fresh_user', 'fresh_other', 'failed_not_found', 'failed_early_exit',
   ]),
   targetsCount: intAttr('clubhouse.targets.count'),
-  deliveryResult: enumAttr('clubhouse.delivery.result', ['delivered', 'not_running', 'unsupported_runtime']),
+  deliveryResult: enumAttr('clubhouse.delivery.result', ['delivered', 'woken', 'not_running', 'unsupported_runtime']),
   // Workspace (§4.7–4.10, Phase 5). Counts are bucketed with countBucket().
   gitOp: enumAttr('clubhouse.git.op', GIT_OPS),
   gitTimedOut: boolAttr('clubhouse.git.timed_out'),
@@ -983,6 +983,9 @@ export const ATTR = {
     'POST /api/v1/network/handoff-capacity',
     'POST /api/v1/network/handoffs',
     'POST /api/v1/network/connections',
+    'POST /api/v1/network/group-projects/sync',
+    'POST /api/v1/network/group-projects/write',
+    'POST /api/v1/network/group-projects/changed',
     'GET /api/v1/mobile/canvas',
     'GET /api/v1/mobile/canvas/:id',
     'DELETE /api/v1/mobile/pairing',
@@ -1027,6 +1030,8 @@ export const ATTR = {
     'POST /api/v1/group-projects/:id/bulletin/messages',
     'POST /api/v1/group-projects/:id/shoulder-tap',
     'POST /api/v1/group-projects/:id/polling',
+    'GET /api/v1/group-projects/:id/roles',
+    'POST /api/v1/group-projects/:id/roles',
     'DELETE /api/v1/group-projects/:id/bulletin/topics/:id/messages/:id',
     'DELETE /api/v1/group-projects/:id/bulletin/topics/:id',
     'PATCH /api/v1/group-projects/:id/bulletin/topics/:id/protection',
@@ -1043,7 +1048,7 @@ export const ATTR = {
 
   // Actions (#2918, #2956). Closed codes and counts only: never an action's name, steps' text, prompts or
   // reasons in words. The action id hash is on the Detailed `clubhouse.action.run_detail` only.
-  actionOwner: enumAttr('clubhouse.action.owner', ['user', 'dispatcher', 'agent', 'app']),
+  actionOwner: enumAttr('clubhouse.action.owner', ['user', 'dispatcher', 'agent', 'group_project', 'app']),
   actionTrigger: enumAttr('clubhouse.action.trigger', ['schedule', 'once', 'event', 'catch_up', 'manual']),
   actionEvent: enumAttr('clubhouse.action.event', ACTION_EVENT_KINDS),
   actionDelayed: boolAttr('clubhouse.action.delayed'),

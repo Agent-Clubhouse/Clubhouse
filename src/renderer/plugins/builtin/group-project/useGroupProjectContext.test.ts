@@ -218,6 +218,25 @@ describe('useGroupProjectContext — remote optimistic update', () => {
     expect(updated.metadata.shoulderTapEnabled).toBe(false);
   });
 
+  it('reads and sets lead on the satellite that holds the group project, by its bare id (#3360)', async () => {
+    seedRemoteGP();
+    const view = { groupProjectId: GP_ID, own: { deliver: 'allow' as const, wake: 'off' as const, actions: 'allow' as const }, holders: [{ agentId: 'a1', lead: 'allow' as const, admin: 'off' as const }] };
+    // This file runs without the renderer's window.clubhouse: give it the two surfaces involved.
+    const w = window as unknown as { clubhouse?: Record<string, Record<string, unknown>> };
+    w.clubhouse ??= {};
+    const getRoles = vi.fn().mockResolvedValue(view);
+    const setRole = vi.fn().mockResolvedValue(view);
+    const local = vi.fn();
+    w.clubhouse.annexClient = { ...w.clubhouse.annexClient, gpGetRoles: getRoles, gpSetRole: setRole };
+    w.clubhouse.groupProject = { ...w.clubhouse.groupProject, setRole: local, getRoles: local };
+    const { result } = renderHook(() => useGroupProjectContext(`remote||${SAT_ID}||${GP_ID}`, true, SAT_ID, mockAnnex));
+    expect(await result.current.getRoles(`remote||${SAT_ID}||${GP_ID}`)).toEqual(view);
+    expect(getRoles).toHaveBeenCalledWith(SAT_ID, GP_ID);
+    await act(async () => { await result.current.setRole(`remote||${SAT_ID}||${GP_ID}`, 'a1', 'lead', 'allow'); });
+    expect(setRole).toHaveBeenCalledWith(SAT_ID, GP_ID, 'a1', 'lead', 'allow');
+    expect(local).not.toHaveBeenCalled();
+  });
+
   it('returns loaded=true for remote context', () => {
     seedRemoteGP();
     const { result } = renderHook(() => useGroupProjectContext(GP_ID, true, SAT_ID, mockAnnex));

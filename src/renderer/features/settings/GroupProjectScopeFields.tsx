@@ -228,3 +228,52 @@ export function GroupProjectScopeEditor({ project }: { project: GroupProject }) 
     </SettingsSection>
   );
 }
+
+/** Where a group project is held, in a person's words (#3363): never a fingerprint. */
+export function hostLine(project: GroupProject): string {
+  const host = project.hostName ?? 'This computer';
+  const network = project.network;
+  if (!network || network.role === 'host') return `Host: ${host}`;
+  const waiting = network.waitingWrites > 0
+    ? `, ${network.waitingWrites} ${network.waitingWrites === 1 ? 'change waits' : 'changes wait'} for it`
+    : '';
+  if (network.state === 'host-removed') return `Host: ${host} left your network. This copy is read-only.`;
+  if (network.state === 'cached') return `Host: ${host}, offline. Showing a saved copy${waiting}.`;
+  return `Host: ${host}${waiting}`;
+}
+
+/** Changes the host refused, shown to the person who made them, with a way to clear the list. */
+export function GroupProjectRefusals({ project }: { project: GroupProject }) {
+  const dismiss = useGroupProjectStore((s) => s.dismissRefusals);
+  const [error, setError] = useState<string | null>(null);
+  const refusals = project.network?.refusals ?? [];
+  if (refusals.length === 0) return null;
+  return (
+    <SettingsSection title="Changes the host refused">
+      <SettingsBlock>
+        <div className="flex flex-col items-start gap-2">
+          <ul aria-label="Changes the host refused" className="list-disc pl-5 text-xs text-ctp-text">
+            {refusals.map((r) => (
+              <li key={r.id}>
+                {r.op === 'post' ? 'A post' : 'A change'} by {r.author.label}: {r.reason}
+              </li>
+            ))}
+          </ul>
+          <Button
+            kind="ghost"
+            onClick={() => {
+              setError(null);
+              dismiss(project.id).catch((err: unknown) => {
+                // telemetry-exempt: shown inline; the list stays until it is cleared
+                setError(`Not cleared. ${ipcErrorMessage(err)}`);
+              });
+            }}
+          >
+            Clear this list
+          </Button>
+          {error && <p role="alert" className={settingsError}>{error}</p>}
+        </div>
+      </SettingsBlock>
+    </SettingsSection>
+  );
+}

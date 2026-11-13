@@ -15,6 +15,11 @@ import * as tlsLib from 'tls';
 import { readMobileChatContent } from './annex-chat-content';
 import * as agentCalls from './annex-agent-calls';
 import { receiveCapacityProbe } from './handoff-capacity-host';
+vi.mock('./group-project-network', () => ({
+  receiveGroupProjectSync: vi.fn(async () => ({ v: 1, projects: [], unchanged: [], tombstones: [] })),
+  receiveGroupProjectWrites: vi.fn(async () => ({ v: 1, results: [] })),
+  receiveGroupProjectChanged: vi.fn(),
+}));
 vi.mock('./handoff-capacity-host', () => ({ receiveCapacityProbe: vi.fn() }));
 import { receiveNetworkHandoff } from './handoff-host';
 vi.mock('./handoff-host', () => ({ receiveNetworkHandoff: vi.fn() }));
@@ -276,6 +281,12 @@ vi.mock('./group-project-shoulder-tap', () => ({
   executeShoulderTap: vi.fn().mockResolvedValue({ taskId: 'tap_1', delivered: [], failed: [] }),
 }));
 
+const rolesView = { groupProjectId: 'gp_1', own: { deliver: 'allow', wake: 'off', actions: 'allow' }, holders: [{ agentId: 'a1', lead: 'allow', admin: 'off' }] };
+vi.mock('./group-project-roles', async (original) => ({
+  ...await original<typeof import('./group-project-roles')>(),
+  describeGroupProjectRoles: vi.fn(async () => rolesView),
+  grantGroupProjectRole: vi.fn(async () => undefined),
+}));
 vi.mock('./group-project-polling', () => ({
   setProjectPolling: vi.fn().mockResolvedValue({ pollingEnabled: true, members: [] }),
   getProjectPollingState: vi.fn().mockResolvedValue({ pollingEnabled: false, members: [] }),
@@ -1731,6 +1742,37 @@ describe('annex-server', () => {
     expect(receiveNetworkHandoff).toHaveBeenCalledTimes(2);
     asUnpaired();
     expect((await request(port, 'POST', route, {})).status).toBe(401);
+  });
+
+  it('serves network group project routes only to pinned desktop network members (#3363)', async () => {
+    const groupProjectNetwork = await import('./group-project-network');
+    const { GroupProjectNetworkError } = await import('../../shared/group-project-network');
+    const member = { ...TEST_CONTROLLER, role: 'member' as const, kind: 'desktop' as const };
+    vi.mocked(annexPeers.getPeer).mockReturnValue(member);
+    vi.mocked(annexPeers.listPeers).mockReturnValue([member]);
+    const { port } = await startAndPair();
+    const fp = member.fingerprint.toLowerCase();
+    const sync = await request(port, 'POST', '/api/v1/network/group-projects/sync', { v: 1, known: {} });
+    expect(sync.status).toBe(200);
+    expect(JSON.parse(sync.body)).toEqual({ v: 1, projects: [], unchanged: [], tombstones: [] });
+    expect(groupProjectNetwork.receiveGroupProjectSync).toHaveBeenCalledWith(fp, { v: 1, known: {} });
+    expect((await request(port, 'POST', '/api/v1/network/group-projects/write', { v: 1, writes: [] })).status).toBe(200);
+    expect((await request(port, 'POST', '/api/v1/network/group-projects/changed', { v: 1, ids: [] })).status).toBe(200);
+    expect(groupProjectNetwork.receiveGroupProjectChanged).toHaveBeenCalledWith(fp, { v: 1, ids: [] });
+    // A malformed body is refused without detail beyond the validator's.
+    vi.mocked(groupProjectNetwork.receiveGroupProjectWrites).mockRejectedValueOnce(new GroupProjectNetworkError('Invalid group project network write request.'));
+    const malformed = await request(port, 'POST', '/api/v1/network/group-projects/write', { v: 2 });
+    expect(malformed.status).toBe(400);
+    expect(JSON.parse(malformed.body)).toMatchObject({ error: 'invalid_request' });
+    // A phone, a paired computer outside the network, and an unpaired caller are refused before any receiver runs.
+    const calls = vi.mocked(groupProjectNetwork.receiveGroupProjectSync).mock.calls.length;
+    vi.mocked(annexPeers.listPeers).mockReturnValue([{ ...member, kind: 'phone' }]);
+    expect((await request(port, 'POST', '/api/v1/network/group-projects/sync', { v: 1, known: {} })).status).toBe(403);
+    vi.mocked(annexPeers.listPeers).mockReturnValue([{ ...member, role: 'controller' as never }]);
+    expect((await request(port, 'POST', '/api/v1/network/group-projects/sync', { v: 1, known: {} })).status).toBe(403);
+    asUnpaired();
+    expect((await request(port, 'POST', '/api/v1/network/group-projects/sync', { v: 1, known: {} })).status).toBe(401);
+    expect(vi.mocked(groupProjectNetwork.receiveGroupProjectSync).mock.calls.length).toBe(calls);
   });
 
   it('negotiates durable delivery only for pinned desktop members and surfaces an unreadable store', async () => {
@@ -7304,6 +7346,62 @@ describe('annex-server', () => {
       const res = await request(port, 'POST', '/api/v1/group-projects/gp_missing/polling', { enabled: false }, authHeaders(token));
       expect(res.status).toBe(404);
       expect(JSON.parse(res.body).error).toBe('group_project_not_found');
+    });
+  });
+
+  describe('group project roles endpoint (#3360)', () => {
+    const asMember = (kind: 'desktop' | 'phone') => {
+      const member = { ...TEST_CONTROLLER, role: 'member' as const, kind };
+      vi.mocked(annexPeers.getPeer).mockReturnValue(member);
+      vi.mocked(annexPeers.listPeers).mockReturnValue([member]);
+    };
+
+    it('GET answers a network desktop\'s card with lead and admin holders', async () => {
+      asMember('desktop');
+      const { port, token } = await startAndPair();
+      const res = await request(port, 'GET', '/api/v1/group-projects/gp_1/roles', undefined, authHeaders(token));
+      expect(res.status).toBe(200);
+      expect(JSON.parse(res.body).holders).toEqual([{ agentId: 'a1', lead: 'allow', admin: 'off' }]);
+    });
+
+    it('POST gives a member a role, and refuses a bad role', async () => {
+      asMember('desktop');
+      const { port, token } = await startAndPair();
+      const { grantGroupProjectRole } = await import('./group-project-roles');
+      vi.mocked(grantGroupProjectRole).mockClear();
+      const res = await request(port, 'POST', '/api/v1/group-projects/gp_1/roles', { agentId: 'a1', role: 'lead', mode: 'allow' }, authHeaders(token));
+      expect(res.status).toBe(200);
+      expect(grantGroupProjectRole).toHaveBeenCalledWith('gp_1', 'a1', 'lead', 'allow');
+      const bad = await request(port, 'POST', '/api/v1/group-projects/gp_1/roles', { agentId: 'a1', role: 'owner', mode: 'allow' }, authHeaders(token));
+      expect(bad.status).toBe(400);
+    });
+
+    it('refuses a non-member, an excluded agent and an unknown group project without writing', async () => {
+      asMember('desktop');
+      const { port, token } = await startAndPair();
+      const { grantGroupProjectRole, GroupProjectRoleError } = await import('./group-project-roles');
+      vi.mocked(grantGroupProjectRole).mockRejectedValueOnce(new GroupProjectRoleError('not_member', 'Only a member…'));
+      expect((await request(port, 'POST', '/api/v1/group-projects/gp_1/roles', { agentId: 'outsider', role: 'lead', mode: 'allow' }, authHeaders(token))).status).toBe(409);
+      vi.mocked(grantGroupProjectRole).mockRejectedValueOnce(new GroupProjectRoleError('not_member', 'Only a member…'));
+      expect((await request(port, 'POST', '/api/v1/group-projects/gp_1/roles', { agentId: 'excluded', role: 'admin', mode: 'ask' }, authHeaders(token))).status).toBe(409);
+      vi.mocked(grantGroupProjectRole).mockRejectedValueOnce(new GroupProjectRoleError('not_found', 'That group project does not exist.'));
+      const missing = await request(port, 'POST', '/api/v1/group-projects/gp_missing/roles', { agentId: 'a1', role: 'lead', mode: 'allow' }, authHeaders(token));
+      expect(missing.status).toBe(404);
+      expect(JSON.parse(missing.body).error).toBe('group_project_not_found');
+    });
+
+    it('refuses a paired phone, before any change', async () => {
+      asMember('phone');
+      const { port, token } = await startAndPair();
+      const { grantGroupProjectRole, describeGroupProjectRoles } = await import('./group-project-roles');
+      vi.mocked(grantGroupProjectRole).mockClear();
+      vi.mocked(describeGroupProjectRoles).mockClear();
+      const post = await request(port, 'POST', '/api/v1/group-projects/gp_1/roles', { agentId: 'a1', role: 'lead', mode: 'allow' }, authHeaders(token));
+      expect(post.status).toBe(403);
+      expect(JSON.parse(post.body).error).toBe('desktop_member_required');
+      expect((await request(port, 'GET', '/api/v1/group-projects/gp_1/roles', undefined, authHeaders(token))).status).toBe(403);
+      expect(grantGroupProjectRole).not.toHaveBeenCalled();
+      expect(describeGroupProjectRoles).not.toHaveBeenCalled();
     });
   });
 

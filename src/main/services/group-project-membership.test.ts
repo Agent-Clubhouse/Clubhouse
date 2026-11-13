@@ -56,6 +56,8 @@ import {
 } from './persisted-bindings';
 import { groupProjectRegistry } from './group-project-registry';
 import { groupProjectHost } from './group-project-host';
+import { initGroupProjectLifecycle, _resetLifecycleForTesting } from './group-project-lifecycle';
+import { roleModeOf, setGroupProjectRole } from './group-project-roles';
 import {
   _resetMembershipForTesting, addMember, answerAutoJoinOffer, previewAutoJoin, describeMembership, excludeMember, membershipBindingSource,
   releaseMembershipBindings, quickMemberName, reconcileMembership, recordMemberDisabledTools, savedMemberDisabledTools, watchGroupProjectMembership,
@@ -333,6 +335,93 @@ describe('exclusions and preview', () => {
     await expect(previewAutoJoin({ level: 'galaxy', reach: 'local' })).rejects.toThrow(/project or app/);
     await expect(previewAutoJoin({ level: 'project', projectId: 'nope', reach: 'local' })).rejects.toThrow(/registered project/);
     vi.mocked(listDurable).mockImplementation(async (p: string) => fx.configs.get(p) ?? []);
+  });
+});
+
+describe('lead and admin end with membership (#3360)', () => {
+  afterEach(() => _resetLifecycleForTesting());
+
+  it('an excluded lead loses lead and admin, and doesn\'t get them back by rejoining', async () => {
+    groupProjectRegistry._setForTesting(gp('gp1'));
+    // The lifecycle sees the members join at startup, then dev leave.
+    initGroupProjectLifecycle();
+    await start();
+    await setGroupProjectRole('gp1', 'dev', 'lead', 'allow');
+    await setGroupProjectRole('gp1', 'dev', 'admin', 'ask');
+
+    await excludeMember('gp1', 'dev');
+    await vi.waitFor(() => expect([roleModeOf('dev', 'gp1', 'lead'), roleModeOf('dev', 'gp1', 'admin')]).toEqual(['off', 'off']));
+
+    await addMember('gp1', 'dev');
+    expect(membersOf('gp1')).toContain('dev');
+    expect(roleModeOf('dev', 'gp1', 'lead')).toBe('off');
+  });
+
+  it('a lead that leaves scope loses its roles; one that stays keeps them', async () => {
+    groupProjectRegistry._setForTesting(gp('gp1'));
+    initGroupProjectLifecycle();
+    await start();
+    await setGroupProjectRole('gp1', 'dev', 'lead', 'allow');
+    await setGroupProjectRole('gp1', 'lead', 'lead', 'allow');
+
+    fx.configs.set(PROJ_A.path, fx.configs.get(PROJ_A.path)!.filter((a) => a.id !== 'dev'));
+    await reconcileMembership();
+    await vi.waitFor(() => expect(roleModeOf('dev', 'gp1', 'lead')).toBe('off'));
+    expect(roleModeOf('lead', 'gp1', 'lead')).toBe('allow');
+  });
+});
+
+describe('a copy of a group project hosted on another machine (#3363)', () => {
+  const SELF = 'aa:aa:aa:aa:aa:aa:aa:aa:aa:aa:aa:aa:aa:aa:aa:aa';
+  const HOST = 'bb:bb:bb:bb:bb:bb:bb:bb:bb:bb:bb:bb:bb:bb:bb:bb';
+  const shared = { scope: { level: 'app', reach: 'network' } } as Partial<GroupProject>;
+  const remote = (id: string) => gp(id, { createdAt: '2025-01-01T00:00:00.000Z', host: { machine: HOST }, ...shared } as Partial<GroupProject>);
+
+  /** A copy as a sync leaves it: the host's membership record, under a record whose host is the other computer. */
+  async function seedCopy(id: string, fill: (d: Parameters<Parameters<typeof updateMembership>[1]>[0]) => void): Promise<void> {
+    groupProjectRegistry._setForTesting(gp(id, { createdAt: '2025-01-01T00:00:00.000Z', ...shared }));
+    await updateMembership(id, fill);
+    groupProjectRegistry._setForTesting(remote(id));
+  }
+
+  it('binds only this machine\'s agents the record lists, and never auto-joins or tidies from here', async () => {
+    // The host's record: its own agents (bare ids), one of this machine's, and one gone from here.
+    await seedCopy('gp_remote', (d) => {
+      d.autoJoin = true;
+      d.explicit.push(
+        { address: 'lead', kind: 'durable', addedAt: 'x' },
+        { address: `dev@${SELF}`, kind: 'durable', addedAt: 'x' },
+        { address: `ghost@${SELF}`, kind: 'helper', addedAt: 'x' },
+      );
+    });
+    vi.spyOn(groupProjectHost, 'selfMachine').mockReturnValue(SELF);
+    await start();
+    // 'lead' here is a different agent from the host's 'lead': not bound; this machine's dev is.
+    expect(membersOf('gp_remote')).toEqual(['dev']);
+    // Nothing removed because this machine doesn't know 'ghost', and no auto-join from local agents.
+    expect((await groupProjectHost.getMembership('gp_remote')).explicit.map((e) => e.address)).toEqual(['lead', `dev@${SELF}`, `ghost@${SELF}`]);
+    vi.restoreAllMocks();
+  });
+
+  it('sends an addition from here to the host with this machine\'s address', async () => {
+    await seedCopy('gp_remote', (d) => { d.autoJoin = true; });
+    vi.spyOn(groupProjectHost, 'selfMachine').mockReturnValue(SELF);
+    const sent: unknown[] = [];
+    groupProjectHost.setNetworkLink({
+      connected: () => true, isMember: () => true, machineName: () => 'Desk',
+      sync: async () => ({ v: 1, projects: [], unchanged: ['gp_remote'], tombstones: [] }),
+      sendWrites: async (_machine, writes) => {
+        sent.push(...writes);
+        return { v: 1, results: writes.map((w) => ({ id: w.id, status: 'applied' as const, seq: 2 })) };
+      },
+    });
+    await start();
+    await addMember('gp_remote', 'dev');
+    expect(sent).toEqual([expect.objectContaining({
+      groupProjectId: 'gp_remote',
+      write: { op: 'membership', patch: expect.objectContaining({ addExplicit: [expect.objectContaining({ address: `dev@${SELF}`, kind: 'durable' })] }) },
+    })]);
+    vi.restoreAllMocks();
   });
 });
 

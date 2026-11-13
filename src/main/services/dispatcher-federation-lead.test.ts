@@ -31,6 +31,8 @@ vi.mock('./settings-store', () => ({
 vi.mock('./annex-identity', () => ({ getIdentity: () => (world.current ? { fingerprint: world.current.toUpperCase() } : null) }));
 vi.mock('./annex-settings', () => ({ getSettings: () => ({ alias: world.current.toUpperCase() }) }));
 vi.mock('./annex-peers', () => ({ listPeers: () => world.peers[world.current] ?? [], peerNeedsPairing: () => false }));
+vi.mock('./dispatcher-federation', () => ({ remoteFederationController: () => ({ agentId: 'c', name: 'Controller', enabled: true }) }));
+vi.mock('./dispatcher/dispatcher-service', () => ({ isDispatcherEnabled: () => true, onDispatcherChanged: () => () => {} }));
 vi.mock('./annex-device-signal', () => ({ onDevicesChanged: () => () => {}, onDevicePresenceChanged: () => () => {} }));
 vi.mock('./annex-network-membership', () => ({
   currentView: () => ({ members: [], removals: world.removals[world.current] ?? [] }),
@@ -225,6 +227,16 @@ describe('when the lead’s computer leaves (#3351)', () => {
     }
   });
 
+  it('in a two-computer network, still says the lead left once it was the only other computer', async () => {
+    await boot(['a', 'b']);
+    await on('a', (l) => l.chooseLead('B'));
+    await settle();
+    world.peers.a = [];
+    world.removals.a = [{ fingerprint: 'B', removedAt: new Date().toISOString() }];
+    await on('a', (l) => l.reconcileMembership());
+    expect(await state('a')).toMatchObject({ available: true, canChoose: false, role: 'peer', clearedFor: 'B' });
+  });
+
   it('a lead that is only offline stays the lead', async () => {
     await boot(['a', 'b']);
     await on('a', (l) => l.chooseLead('B'));
@@ -263,5 +275,38 @@ describe('no agent can change the lead (#3351)', () => {
     const tools = sources.filter((f) => f.split(path.sep).join('/').includes('/clubhouse-mcp/')
       && fs.readFileSync(f, 'utf8').includes('dispatcher-federation-lead'));
     expect(tools).toEqual([]);
+  });
+});
+
+describe('Take back (#3353)', () => {
+  it('changes only the computer that takes back, lasts until a new choice, and can be undone', async () => {
+    await boot(['a', 'b', 'c']);
+    await on('a', (l) => l.chooseLead('B'));
+    await settle();
+    await on('c', (l) => l.takeBackFromLead());
+    expect(await state('c')).toMatchObject({ role: 'follower', following: false, tookBack: true });
+    expect(await state('a')).toMatchObject({ following: true, tookBack: false });
+    expect((await record('b')).lead).toBe('b');
+    // It never travels: B and A still see C as having the same record.
+    await settle();
+    expect((await state('a')).confirmedBy).toEqual(['B', 'C']);
+    await on('c', (l) => l.followLeadAgain());
+    expect(await state('c')).toMatchObject({ following: true, tookBack: false });
+    // A new choice follows again, on its own.
+    await on('c', (l) => l.takeBackFromLead());
+    await on('a', (l) => l.chooseLead('A'));
+    await settle();
+    expect(await state('c')).toMatchObject({ role: 'follower', following: true, tookBack: false, lead: { machine: 'a' } });
+  });
+
+  it('is refused on the lead and on peers, and nothing takes back while the lead is offline', async () => {
+    await boot(['a', 'b']);
+    await expect(on('a', (l) => l.takeBackFromLead())).rejects.toThrow('isn’t following');
+    await on('a', (l) => l.chooseLead('A'));
+    await settle();
+    await expect(on('a', (l) => l.takeBackFromLead())).rejects.toThrow('isn’t following');
+    online.delete('a');
+    await on('b', (l) => l.reconcileMembership());
+    expect(await state('b')).toMatchObject({ role: 'follower', following: true, lead: { machine: 'a', online: false } });
   });
 });

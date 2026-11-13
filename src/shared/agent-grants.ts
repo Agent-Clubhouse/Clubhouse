@@ -39,7 +39,8 @@ export const GRANT_ACTIONS = [
   'connection.bootstrap',
   'group_project.read',
   'group_project.post',
-  'group_project.admin',
+  'group_project.lead', // broadcast, shoulder taps, wake/sleep/reset members, board curation, legacy polling (#3360)
+  'group_project.admin', // name, instructions, scope, members, its own grants and Actions (#3360)
   // Projects
   'project.read',
   'project.add', // add or open a project (#3050): the target is the folder, which may not be a project yet
@@ -79,8 +80,9 @@ export type GrantAction = (typeof GRANT_ACTIONS)[number];
  * - `project`: `own` (the caller's project), `any`, or one project by path.
  *   For `project.add` the path is the folder being added, which isn't a
  *   Clubhouse project yet; `own` never covers it (there's nothing to add).
- * - `group_project`: groups the caller is a `member` of (admins are members),
- *   or that it is an `admin` of.
+ * - `group_project`: groups the caller is a `member` of, or (`id`) one group
+ *   project by id: how lead and admin are granted (#3360). `role: 'admin'` is
+ *   from before #3360 and covers nothing now.
  * - `group_members`: agents in a group project the caller administers.
  * - `app`; `any`: every target of the action's kind.
  */
@@ -98,6 +100,8 @@ export type GrantTarget =
   | { kind: 'connected'; excludeDispatcher?: boolean; onlyDispatcher?: boolean; wakeOn?: boolean }
   | { kind: 'project'; project: 'own' | 'any' | { path: string } }
   | { kind: 'group_project'; role: 'member' | 'admin' }
+  /** One group project (#3360): lead and admin are granted on it explicitly. */
+  | { kind: 'group_project'; id: string }
   | { kind: 'group_members' }
   | { kind: 'app' }
   /** One Action (#2918), by id: an explicit grant on an Action the caller doesn't own. */
@@ -147,6 +151,8 @@ export interface GrantCallTarget {
   notGroupMember?: boolean;
   /** For a group project target: the caller's role in it. */
   groupRole?: 'member' | 'admin' | null;
+  /** For a group project target: its id, for grants on one group project (#3360). */
+  groupProjectId?: string;
 }
 
 /** An `agent.grant` call says what it would change, so fixed rule 2 can check it. */
@@ -195,7 +201,9 @@ export function targetCovers(grant: GrantTarget, caller: GrantCaller, target: Gr
     case 'app': return target.kind === 'app';
     case 'action': return target.kind === 'action' && target.actionId === grant.id;
     case 'group_project':
-      if (target.kind !== 'group_project' || !target.groupRole) return false;
+      if (target.kind !== 'group_project') return false;
+      if ('id' in grant) return !!target.groupProjectId && target.groupProjectId === grant.id;
+      if (!target.groupRole) return false;
       return grant.role === 'member' || target.groupRole === 'admin';
     case 'project': {
       if (target.kind !== 'project' && target.kind !== 'agent') return false;
@@ -241,7 +249,10 @@ export function widerOrSame(held: GrantTarget, given: GrantTarget): boolean {
   if (held.kind === 'project' && given.kind === 'project') {
     return held.project === 'any' || JSON.stringify(held.project) === JSON.stringify(given.project);
   }
-  if (held.kind === 'group_project' && given.kind === 'group_project') return held.role === 'member' || given.role === 'admin';
+  if (held.kind === 'group_project' && given.kind === 'group_project') {
+    if ('id' in held || 'id' in given) return 'id' in held && 'id' in given && held.id === given.id;
+    return held.role === 'member' || given.role === 'admin';
+  }
   if (held.kind === 'action' && given.kind === 'action') return held.id === given.id;
   return true;
 }

@@ -17,8 +17,12 @@
  * below is the whole rule, and the one place to replace.
  */
 
-import { registerGlobalTool } from '../tool-registry';
-import { registerActionOwnerLookup } from '../grant-check';
+import { callGrantIsApproved, grantApprovalContext, registerGlobalTool } from '../tool-registry';
+import { checkToolGrant, decideGrant, isGroupMember, registerActionOwnerLookup } from '../grant-check';
+import { resolveArgTargets } from '../arg-targets';
+import type { GrantCallTarget } from '../../../../shared/agent-grants';
+import { groupProjectRegistry } from '../../group-project-registry';
+import { groupProjectHost } from '../../group-project-host';
 import type { McpToolDefinition, McpToolResult } from '../types';
 import { isDispatcherAgent, isTrackedDispatcher } from '../dispatcher-gate';
 import { mcpCallerKind } from '../mcp-call-gate';
@@ -67,6 +71,7 @@ export type ActionToolErrorCode = ActionErrorCode | 'internal';
 // ── Scope ───────────────────────────────────────────────────────────────────
 
 export interface ActionScope {
+  callerId: string;
   /** Owner of the actions this caller creates. */
   owner: ActionOwner;
   /** Whether the caller may see and change this action. */
@@ -74,6 +79,13 @@ export interface ActionScope {
   canSee(action: Pick<Action, 'owner'> & Partial<Pick<Action, 'trigger'>>): boolean;
   /** Whether the caller may change, delete or run it. */
   canChange(action: Pick<Action, 'owner'>): boolean;
+}
+
+function groupAdmin(callerId: string, groupProjectId: string, approved = false): boolean {
+  const project = groupProjectRegistry.getSync(groupProjectId);
+  if (!project || !groupProjectHost.isThisMachine(project.host) || !isGroupMember(groupProjectId, callerId)) return false;
+  const outcome = decideGrant(callerId, 'group_project.admin', { kind: 'group_project', groupRole: 'member', groupProjectId } as GrantCallTarget).outcome;
+  return outcome === 'allow' || (outcome === 'ask' && approved);
 }
 
 function canSeeAction(action: Pick<Action, 'owner'> & Partial<Pick<Action, 'trigger'>>, reader: ActionOwner): boolean {
@@ -94,9 +106,9 @@ function canSeeAction(action: Pick<Action, 'owner'> & Partial<Pick<Action, 'trig
  * Actions: rights.ts, which the engine checks on create, update, turning on
  * and every run (#2960, D131).
  */
-export function actionScope(callerId: string): ActionScope {
+export function actionScope(callerId: string, groupApproved = false): ActionScope {
   if (isDispatcherAgent(callerId)) {
-    return { owner: { kind: 'dispatcher' }, canSee: (a) => canSeeAction(a, { kind: 'dispatcher' }), canChange: (a) => a.owner.kind !== 'app' };
+    return { callerId, owner: { kind: 'dispatcher' }, canSee: (a) => canSeeAction(a, { kind: 'dispatcher' }), canChange: (a) => a.owner.kind === 'group_project' ? groupAdmin(callerId, a.owner.groupProjectId, groupApproved) : a.owner.kind !== 'app' };
   }
   if (isTrackedDispatcher(callerId)) {
     throw new ActionError('not_allowed', 'The Dispatcher is turned off, so it can’t manage actions.');
@@ -108,11 +120,12 @@ export function actionScope(callerId: string): ActionScope {
   const helper = kind === 'helper' || !!knownAgent(callerId)?.parentAgentId;
   const owner: ActionOwner = { kind: 'agent', agentId: callerId, ...(helper && { helper: true }) };
   return {
+    callerId,
     owner,
     // Agents read every action people and agents can see, but change and run
     // only their own: running a person's action would act at the person's access.
     canSee: (a) => canSeeAction(a, owner),
-    canChange: (a) => a.owner.kind === 'agent' && a.owner.agentId === callerId,
+    canChange: (a) => a.owner.kind === 'group_project' ? groupAdmin(callerId, a.owner.groupProjectId, groupApproved) : a.owner.kind === 'agent' && a.owner.agentId === callerId,
   };
 }
 
@@ -272,13 +285,18 @@ function prepareEndsAt(value: unknown): unknown {
 // ── Handlers ────────────────────────────────────────────────────────────────
 
 function createAction(scope: ActionScope, args: Obj): unknown {
-  const ctx = contextFor(scope);
+  let owner = scope.owner;
+  if (args.groupProjectId !== undefined) {
+    if (typeof args.groupProjectId !== 'string' || !scope.canChange({ owner: { kind: 'group_project', groupProjectId: args.groupProjectId } })) throw new ActionError('not_allowed', 'A group-project Admin grant on the host is required.');
+    owner = { kind: 'group_project', groupProjectId: args.groupProjectId };
+  }
+  const ctx = owner.kind === 'group_project' ? {} : contextFor(scope);
   const input: Obj = {};
   for (const key of INPUT_FIELDS) if (args[key] !== undefined) input[key] = args[key];
   input.trigger = prepareTrigger(args.trigger, ctx);
   input.steps = prepareSteps(args.steps, ctx);
   input.endsAt = prepareEndsAt(args.endsAt);
-  return { action: present(actions.createAction(input, scope.owner), scope.owner) };
+  return { action: present(owner.kind === 'group_project' ? actions.createAction(input, owner, scope.owner) : actions.createAction(input, owner), scope.owner) };
 }
 
 /**
@@ -334,9 +352,9 @@ function updateAction(scope: ActionScope, args: Obj): unknown {
   // Only turning it on or off: the same as the switch in Settings.
   if (changes.length === 1 && changes[0] === 'enabled') {
     if (typeof args.enabled !== 'boolean') throw new ActionError('invalid_input', 'enabled must be true or false.');
-    return { action: present(actions.setActionEnabled(id, args.enabled), scope.owner) };
+    return { action: present(current.owner.kind === 'group_project' ? actions.setActionEnabled(id, args.enabled, scope.owner) : actions.setActionEnabled(id, args.enabled), scope.owner) };
   }
-  const ctx = contextFor(scope);
+  const ctx = current.owner.kind === 'group_project' ? {} : contextFor(scope);
   // A name that was the suggestion for the old trigger and steps follows them.
   const suggested = current.name === suggestActionName(current, actions.actionNames());
   const followsSuggestion = args.name === undefined && suggested && (args.trigger !== undefined || args.steps !== undefined);
@@ -350,7 +368,7 @@ function updateAction(scope: ActionScope, args: Obj): unknown {
     endsAt: args.endsAt !== undefined ? prepareEndsAt(args.endsAt) : current.endsAt,
     maxRuns: args.maxRuns !== undefined ? args.maxRuns : current.maxRuns,
   };
-  return { action: present(actions.updateAction(id, input), scope.owner) };
+  return { action: present(current.owner.kind === 'group_project' ? actions.updateAction(id, input, scope.owner) : actions.updateAction(id, input), scope.owner) };
 }
 
 function deleteAction(scope: ActionScope, args: Obj): unknown {
@@ -362,8 +380,8 @@ function deleteAction(scope: ActionScope, args: Obj): unknown {
 
 function runAction(scope: ActionScope, args: Obj): unknown {
   const id = idArg(args);
-  findChangeable(scope, id);
-  const { runId } = actions.runActionNow(id);
+  const current = findChangeable(scope, id);
+  const { runId } = current.owner.kind === 'group_project' ? actions.runActionNow(id, scope.owner) : actions.runActionNow(id);
   const view = actions.getAction(id);
   return {
     runId,
@@ -417,9 +435,11 @@ const TRIGGER_SCHEMA = {
       type: 'object',
       description: 'Agent: agentId/self. Project: projectId/name/path. App: kind app. Any: turns/quick finishes, needs agent.watch and agent.read. Device: optional deviceId/deviceKind, needs device.read.',
       properties: {
-        kind: { type: 'string', enum: ['agent', 'project', 'app', 'any', 'device'] },
+        kind: { type: 'string', enum: ['agent', 'project', 'group_project', 'app', 'any', 'device'] },
         agentId: { type: 'string' },
         projectId: { type: 'string' },
+        groupProjectId: { type: 'string', description: 'Group project whose board is watched.' },
+        topic: { type: 'string', description: 'For message-posted events, an optional topic filter.' },
         deviceId: { type: 'string', description: 'Devices only: one id from list_devices. Left out means any device directly seen by this computer.' },
         deviceKind: { type: 'string', enum: ['computer', 'phone'], description: 'Devices only: filter to computers or phones. May be combined with deviceId.' },
       },
@@ -443,6 +463,7 @@ const STEPS_SCHEMA = {
       agentId: { type: 'string', description: 'wake, message, sleep: the agent, by id, or "self".' },
       prompt: { type: 'string', description: 'wake: optional first message. quick: the quick agent\'s task.' },
       text: { type: 'string', description: 'message: the message. notify: the notice text.' },
+      topic: { type: 'string', description: 'group_post: the board topic.' },
       delivery: { type: 'string', enum: ['queue', 'steer'], description: 'message: queue for the next turn (default), or steer like a user mid-turn message. Steer falls back to queue when unsupported. A sleeping target wakes with the message.' },
       latestOnly: { type: 'boolean', description: 'message: replace older queued messages from this Action with its newest queued message. Default off. Does not replace user messages or messages from other Actions.' },
       maxWaitMinutes: { type: 'number', minimum: 1, maximum: MAX_DELAY_MINUTES, description: 'message: maximum whole minutes undelivered in the queue, up to one week. Default no limit. On expiry the message is removed, logged and recorded as expired in run history.' },
@@ -457,6 +478,7 @@ const STEPS_SCHEMA = {
 };
 
 const ACTION_FIELDS = {
+  groupProjectId: { type: 'string', description: 'Create for this group project on its host; requires its Admin grant.' },
   name: { type: 'string', description: 'Optional. Left out, a name is suggested from the trigger and first step.' },
   trigger: TRIGGER_SCHEMA,
   steps: STEPS_SCHEMA,
@@ -482,10 +504,25 @@ type Handler = (scope: ActionScope, args: Obj) => unknown;
 
 async function guarded(tool: ActionToolName, callerId: string, args: Obj, handler: Handler): Promise<McpToolResult> {
   try {
-    const scope = actionScope(callerId);
-    const value = handler(scope, args);
+    let scope: ActionScope;
+    const run = async () => {
+      const options = tool === 'create_action' ? CREATE : tool === 'update_action' ? UPDATE_ONE : tool === 'delete_action' ? WRITE_ONE : tool === 'run_action' ? RUN_ONE : undefined;
+      let approved = false;
+      if (options) {
+        const targets = await resolveArgTargets(callerId, options.grant, args);
+        const check = checkToolGrant(callerId, options.grant, args, undefined, targets);
+        approved = check.ok === false && check.reason === 'ask_first' && check.asks.some((ask) => ask.action === 'group_project.admin')
+          && callGrantIsApproved(callerId, tool, args, check, grantApprovalContext(callerId, tool, args, options.grant, targets));
+      }
+      scope = actionScope(callerId, approved);
+      return handler(scope, args);
+    };
+    const value = tool === 'create_action' && typeof args.groupProjectId === 'string'
+      ? await actions.withGroupActionLock(args.groupProjectId, run)
+      : (tool === 'update_action' || tool === 'delete_action' || tool === 'run_action') && typeof args.id === 'string'
+        ? await actions.changeActionOnHost(args.id, run) : await run();
     const result = json(value);
-    if (scope.owner.kind === 'dispatcher' && (tool === 'create_action' || tool === 'update_action' || tool === 'subscribe')
+    if (scope!.owner.kind === 'dispatcher' && (tool === 'create_action' || tool === 'update_action' || tool === 'subscribe')
       && isObject(value) && isObject(value.action) && typeof value.action.id === 'string') {
       const action = actions.getAction(value.action.id);
       if (action) {
@@ -525,12 +562,14 @@ async function guarded(tool: ActionToolName, callerId: string, args: Obj, handle
 const LIST = { group: 'actions', grant: { actions: ['action.read'], target: 'app' } } as const;
 // Ask first cannot authorize unattended watching: rights.ts explains that a saved Allow is needed.
 const WATCH_ACTIVITY = { actions: ['agent.watch'], target: 'app', ifAnyAgentSource: true, askHandledByTool: true } as const;
-const CREATE = { group: 'actions', grant: [{ actions: ['action.write'], target: 'app' }, WATCH_ACTIVITY] } as const;
+const SUBSCRIBE = { group: 'actions', grant: [{ actions: ['action.write'], target: 'app' }, WATCH_ACTIVITY] } as const;
+const CREATE = { group: 'actions', grant: [...SUBSCRIBE.grant, { actions: ['group_project.admin'], target: 'group_project_arg', ifArgs: ['groupProjectId'], strictTargets: true, requiresGroupMembership: true, from: { args: ['groupProjectId'] } }] } as const;
 // Trigger/step grants are rechecked by rights.ts, not granted by action.write.
 // The action named in the arguments: its owner tells the caller's own from others'.
-const WRITE_ONE = { group: 'actions', grant: { actions: ['action.write'], target: 'action_arg' } } as const;
-const UPDATE_ONE = { group: 'actions', grant: [WRITE_ONE.grant, WATCH_ACTIVITY] } as const;
-const RUN_ONE = { group: 'actions', grant: { actions: ['action.run'], target: 'action_arg' } } as const;
+const GROUP_OWNER_ADMIN = { actions: ['group_project.admin'], target: 'action_group_project' } as const;
+const WRITE_ONE = { group: 'actions', grant: [{ actions: ['action.write'], target: 'action_arg' }, GROUP_OWNER_ADMIN] } as const;
+const UPDATE_ONE = { group: 'actions', grant: [...WRITE_ONE.grant, WATCH_ACTIVITY] } as const;
+const RUN_ONE = { group: 'actions', grant: [{ actions: ['action.run'], target: 'action_arg' }, GROUP_OWNER_ADMIN] } as const;
 
 function schema(properties: Obj, required: string[] = []): McpToolDefinition['inputSchema'] {
   return { type: 'object', properties, ...(required.length > 0 && { required }) };
@@ -542,7 +581,7 @@ function schema(properties: Obj, required: string[] = []): McpToolDefinition['in
  * Dispatcher's action has no owning agent; an unknown id (or Clubhouse's own
  * action) is undefined, refused like someone else's.
  */
-export function actionOwnerFromArgs(args: Record<string, unknown>): { actionId: string; ownerAgentId?: string } | undefined {
+export function actionOwnerFromArgs(args: Record<string, unknown>): { actionId: string; ownerAgentId?: string; groupProjectId?: string } | undefined {
   const id = typeof args.id === 'string' ? args.id.trim() : '';
   if (!id) return undefined;
   let view: ActionView | undefined;
@@ -553,7 +592,7 @@ export function actionOwnerFromArgs(args: Record<string, unknown>): { actionId: 
     return undefined;
   }
   if (!view) return undefined;
-  return { actionId: view.id, ...(view.owner.kind === 'agent' && { ownerAgentId: view.owner.agentId }) };
+  return { actionId: view.id, ...(view.owner.kind === 'agent' && { ownerAgentId: view.owner.agentId }), ...(view.owner.kind === 'group_project' && { groupProjectId: view.owner.groupProjectId }) };
 }
 
 export function registerActionTools(): void {
@@ -654,6 +693,6 @@ export function registerActionTools(): void {
       }, ['event']),
     },
     (callerId, args) => guarded('subscribe', callerId, args, subscribe),
-    CREATE,
+    SUBSCRIBE,
   );
 }

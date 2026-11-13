@@ -194,8 +194,8 @@ export async function writeKey(req: PluginStorageWriteRequest): Promise<void> {
 export async function writeKeyWithinCanvasBarrier(req: PluginStorageWriteRequest): Promise<void> {
   if (req.pluginId === 'canvas' && isGroupProjectCanvasKey(req.key)) {
     const { groupProjectHost } = await import('./group-project-host');
-    const tombstones = await groupProjectHost.listTombstones();
-    req = { ...req, value: stripDeletedGroupProjectsFromCanvasKey(req.key, req.value, tombstones.map((t) => t.groupProjectId)) };
+    // Deleted here, or a dropped copy of another computer's (#3363): a stale save can't bring its card back.
+    req = { ...req, value: stripDeletedGroupProjectsFromCanvasKey(req.key, req.value, await groupProjectHost.removedGroupProjectIds()) };
   }
   if (req.scope === 'project-local' && req.projectPath) {
     await ensurePluginDataLocalGitignored(req.projectPath);

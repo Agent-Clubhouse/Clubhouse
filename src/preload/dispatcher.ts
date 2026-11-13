@@ -60,6 +60,14 @@ export const dispatcher = {
     getLead: (): Promise<DispatcherLeadState> => ipcRenderer.invoke(IPC.DISPATCHER.GET_LEAD),
     /** Choose the lead: a computer's machine id, or null for peers. Resolves with the state afterwards. */
     setLead: (machine: string | null): Promise<DispatcherLeadState> => ipcRenderer.invoke(IPC.DISPATCHER.SET_LEAD, machine),
+    /** Take back (#3353): use this computer's own Dispatcher chat again. */
+    takeBack: (): Promise<DispatcherLeadState> => ipcRenderer.invoke(IPC.DISPATCHER.TAKE_BACK),
+    /** Follow the lead again after Take back. */
+    followAgain: (): Promise<DispatcherLeadState> => ipcRenderer.invoke(IPC.DISPATCHER.FOLLOW_AGAIN),
+    /** Keep a message for the lead's chat until its computer is back (#3353). */
+    queueForLead: (text: string): Promise<{ id: string }> => ipcRenderer.invoke(IPC.DISPATCHER.QUEUE_FOR_LEAD, text),
+    /** Clear the notices about expired or refused waiting messages. */
+    dismissLeadNotice: (): Promise<DispatcherLeadState> => ipcRenderer.invoke(IPC.DISPATCHER.DISMISS_LEAD_NOTICE),
     onLeadChanged: (callback: (state: DispatcherLeadState) => void): (() => void) => {
       const listener = (_event: Electron.IpcRendererEvent, state: DispatcherLeadState) => callback(state);
       ipcRenderer.on(IPC.DISPATCHER.LEAD_CHANGED, listener);

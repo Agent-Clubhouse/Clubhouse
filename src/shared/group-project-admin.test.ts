@@ -36,9 +36,9 @@ describe('group-project admin helpers', () => {
 describe('deniedGroupProjectTools (role-based gating)', () => {
   const adminMeta = { admins: ['lead'] };
 
-  it('denies all privileged tools to a non-admin', () => {
+  it('no longer gates privileged tools by the admins role: the lead grant does (#3360)', () => {
     const denied = deniedGroupProjectTools(adminMeta, 'member');
-    for (const t of GROUP_PROJECT_PRIVILEGED_TOOL_SUFFIXES) expect(denied.has(t)).toBe(true);
+    for (const t of GROUP_PROJECT_PRIVILEGED_TOOL_SUFFIXES) expect(denied.has(t)).toBe(false);
     for (const t of GROUP_PROJECT_CORE_TOOL_SUFFIXES) expect(denied.has(t)).toBe(false);
   });
 
@@ -54,9 +54,8 @@ describe('deniedGroupProjectTools (role-based gating)', () => {
     expect(denied.has('wake_agent')).toBe(false);   // still granted
   });
 
-  it('a non-admin with no metadata is denied privileged but keeps core', () => {
-    const denied = deniedGroupProjectTools(undefined, 'member');
-    expect(denied.has('wake_agent')).toBe(true);
-    expect(denied.has('list_members')).toBe(false);
+  it('denies only what the wire switches off', () => {
+    const denied = deniedGroupProjectTools(undefined, 'member', ['wake_agent']);
+    expect([...denied]).toEqual(['wake_agent']);
   });
 });

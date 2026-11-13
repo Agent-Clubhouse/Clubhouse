@@ -27,6 +27,7 @@ export interface StepDraft {
   /** Prompt (wake, quick), message text, or notice text. */
   text: string;
   projectId: string;
+  topic: string;
   /** Quick agents: run in this agent's worktree; empty for the project root. */
   worktreeAgentId: string;
   /** Quick agents: empty for the project's provider. */
@@ -59,6 +60,7 @@ export interface ActionDraft {
   /** Delay in the selected unit, as typed. */
   delay: string;
   branch: string;
+  topic: string;
   /** datetime-local value. */
   onceAt: string;
   endsAt: string;
@@ -75,7 +77,7 @@ export interface ActionDraft {
 }
 
 export function emptyStep(kind: ActionStepKind = 'wake'): StepDraft {
-  return { kind, agentId: '', text: '', projectId: '', worktreeAgentId: '', orchestrator: '', model: '', difficulty: 'medium', delivery: '', maxWaitMinutes: '' };
+  return { kind, agentId: '', text: '', projectId: '', topic: '', worktreeAgentId: '', orchestrator: '', model: '', difficulty: 'medium', delivery: '', maxWaitMinutes: '' };
 }
 
 const pad = (n: number) => String(n).padStart(2, '0');
@@ -103,6 +105,7 @@ export function newDraft(now = Date.now()): ActionDraft {
     deviceKind: '',
     delay: '',
     branch: '',
+    topic: '',
     onceAt: toLocalInput(now + 60 * 60 * 1000),
     endsAt: '',
     maxRuns: '',
@@ -120,6 +123,8 @@ export function newDraft(now = Date.now()): ActionDraft {
 function stepToDraft(s: ActionStep): StepDraft {
   const d = emptyStep(s.kind);
   switch (s.kind) {
+    case 'group_post': return { ...d, topic: s.topic, text: s.text };
+    case 'group_tap': return { ...d, agentId: s.agentId, text: s.text };
     case 'wake': return { ...d, agentId: s.agentId, text: s.prompt ?? '' };
     case 'message': return {
       ...d, agentId: s.agentId, text: s.text, delivery: s.delivery ?? '',
@@ -154,9 +159,10 @@ export function draftFrom(input: Partial<ActionInput>, now = Date.now()): Action
   } else if (t?.kind === 'event') {
     d.when = 'event';
     d.event = t.event;
-    d.source = t.source.kind === 'agent' ? `agent:${t.source.agentId}` : t.source.kind === 'project' ? `project:${t.source.projectId}` : t.source.kind === 'any' ? 'any' : '';
+    d.source = t.source.kind === 'agent' ? `agent:${t.source.agentId}` : t.source.kind === 'project' ? `project:${t.source.projectId}` : t.source.kind === 'group_project' ? `group_project:${t.source.groupProjectId}` : t.source.kind === 'any' ? 'any' : '';
+    if (t.source.kind === 'group_project') d.topic = t.source.topic ?? '';
     d.timing = t.source.kind === 'any' || t.coalesceSeconds !== undefined ? 'coalesce'
-      : t.delaySeconds || t.delayMinutes || t.event === 'agent.idle' ? 'delay' : 'none';
+      : t.delaySeconds || t.delayMinutes || t.event === 'agent.idle' || t.event === 'group_project.board_idle' ? 'delay' : 'none';
     d.delayUnit = t.delaySeconds !== undefined ? 'seconds' : 'minutes';
     d.delay = t.delaySeconds !== undefined ? String(t.delaySeconds) : t.delayMinutes ? String(t.delayMinutes) : '';
     if (t.source.kind === 'device') {
@@ -187,6 +193,8 @@ export function draftCron(d: ActionDraft): string {
 
 function stepFromDraft(s: StepDraft): Record<string, unknown> {
   switch (s.kind) {
+    case 'group_post': return { kind: 'group_post', topic: s.topic, text: s.text };
+    case 'group_tap': return { kind: 'group_tap', agentId: s.agentId, text: s.text };
     case 'wake': return { kind: 'wake', agentId: s.agentId, ...(s.text.trim() && { prompt: s.text }) };
     case 'message': return {
       kind: 'message', agentId: s.agentId, text: s.text,
@@ -210,6 +218,7 @@ function sourceFromDraft(source: string): Record<string, unknown> {
   if (source === 'any') return { kind: 'any' };
   if (source.startsWith('agent:')) return { kind: 'agent', agentId: source.slice(6) };
   if (source.startsWith('project:')) return { kind: 'project', projectId: source.slice(8) };
+  if (source.startsWith('group_project:')) return { kind: 'group_project', groupProjectId: source.slice(14) };
   return { kind: 'app' };
 }
 
@@ -225,7 +234,7 @@ export function draftToInput(d: ActionDraft, now = Date.now()): { ok: true; inpu
     if (at <= now) return { ok: false, error: 'Pick a time in the future.' };
     trigger = { kind: 'once', at };
   } else {
-    const timing = d.source === 'any' ? 'coalesce' : d.event === 'agent.idle' ? 'delay' : d.timing;
+    const timing = d.source === 'any' ? 'coalesce' : d.event === 'agent.idle' || d.event === 'group_project.board_idle' ? 'delay' : d.timing;
     const delay = timing === 'delay' && d.delay.trim() !== '' ? Number(d.delay) : undefined;
     if (timing === 'delay' && (delay === undefined || !Number.isInteger(delay) || delay <= 0)) return { ok: false, error: `The wait must be a positive whole number of ${d.delayUnit}.` };
     trigger = {
@@ -234,7 +243,7 @@ export function draftToInput(d: ActionDraft, now = Date.now()): { ok: true; inpu
         kind: 'device',
         ...(d.source.startsWith('device:') && { deviceId: d.source.slice(7) }),
         ...(d.deviceKind && { deviceKind: d.deviceKind }),
-      } : sourceFromDraft(d.source),
+      } : d.event === 'group_project.message_posted' && d.topic.trim() ? { ...sourceFromDraft(d.source), topic: d.topic.trim() } : sourceFromDraft(d.source),
       ...(delay && (d.delayUnit === 'seconds' ? { delaySeconds: delay } : { delayMinutes: delay })),
       ...(d.branch.trim() && { branch: d.branch.trim() }),
       ...(d.event === 'app.returned' && d.absenceMinutes.trim() && { absenceMinutes: Number(d.absenceMinutes) }),

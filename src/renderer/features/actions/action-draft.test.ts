@@ -153,6 +153,12 @@ describe('action draft', () => {
     expect(draftToInput(d, at + 1)).toEqual({ ok: false, error: 'Pick a time in the future.' });
   });
 
+  it('round-trips a group board event, its topic and a board post', () => {
+    const input = { trigger: { kind: 'event' as const, event: 'group_project.message_posted' as const, source: { kind: 'group_project' as const, groupProjectId: 'gp1', topic: 'updates' }, coalesceSeconds: 10 }, steps: [{ kind: 'group_post' as const, topic: 'summary', text: 'Ready' }], overlap: 'skip' as const };
+    const result = draftToInput(draftFrom(input, NOW), NOW);
+    expect(result.ok && result.input).toEqual(input);
+  });
+
   it('keeps a quick agent model override through an edit', () => {
     const input = { trigger: { kind: 'schedule' as const, preset: 'daily' as const, cron: '0 9 * * *', missed: 'skip' as const }, steps: [{ kind: 'quick' as const, projectId: 'p1', prompt: 'x', orchestrator: 'claude-code', model: 'opus' }] };
     const r = draftToInput(draftFrom(input, NOW), NOW);

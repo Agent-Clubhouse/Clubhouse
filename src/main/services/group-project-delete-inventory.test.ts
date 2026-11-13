@@ -3,21 +3,26 @@ import { describe, expect, it, vi } from 'vitest';
 const host = vi.hoisted(() => ({ get: vi.fn(), resolveMembers: vi.fn(), getMembership: vi.fn(), digest: vi.fn() }));
 const readCanvas = vi.hoisted(() => vi.fn());
 const checkGuidance = vi.hoisted(() => vi.fn());
+const groupActions = vi.hoisted(() => vi.fn(() => [{ id: 'b', name: 'Second' }, { id: 'a', name: 'First' }]));
+vi.mock('./actions', () => ({ groupProjectActions: groupActions }));
 vi.mock('./group-project-host', () => ({ groupProjectHost: host }));
 vi.mock('./group-project-canvas-inventory', () => ({ readGroupProjectCanvasInventory: readCanvas }));
 vi.mock('./connection-guidance', () => ({ assertGroupProjectGuidanceDeletable: checkGuidance }));
+// Lead and admin are grants on the group project (#3360): the impact lists their holders.
+vi.mock('./group-project-roles', () => ({ listGroupProjectRoles: () => [{ agentId: 'lead', lead: 'allow', admin: 'ask' }] }));
 import { readGroupProjectDeletionInventory } from './group-project-delete-inventory';
 
 describe('group project deletion inventory', () => {
   it('collects member names, canvases, board counts, grants and machine addresses', async () => {
-    host.get.mockResolvedValue({ id: 'gp', seq: 4, metadata: { admins: ['lead'] } });
+    host.get.mockResolvedValue({ id: 'gp', seq: 4, metadata: { admins: ['retired-role'] } });
     host.resolveMembers.mockResolvedValue([{ address: 'ada@machine', name: 'Ada' }, { address: 'bob', name: 'Bob' }]);
     host.getMembership.mockResolvedValue({ version: 1, explicit: [], excluded: [{ address: 'excluded' }] });
     host.digest.mockResolvedValue([{ messageCount: 2 }, { messageCount: 3 }]);
     readCanvas.mockResolvedValue({ canvases: ['Home / One', 'Work / Two'], revision: 'canvas-revision' });
     expect(await readGroupProjectDeletionInventory('gp')).toMatchObject({
       members: ['Ada (ada@machine)', 'Bob (bob)'], canvases: ['Home / One', 'Work / Two'],
-      exclusions: ['excluded'], grants: ['lead'], messages: 5, topics: 2, machines: ['machine'],
+      exclusions: ['excluded'], grants: ['lead: admin (ask)', 'lead: lead (allow)'], messages: 5, topics: 2, machines: ['machine'],
+      actions: ['First (a)', 'Second (b)'],
       revisions: expect.arrayContaining(['4', 'canvas-revision']),
     });
   });

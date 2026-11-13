@@ -2,7 +2,13 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import * as fs from 'fs/promises';
 
 const listTombstones = vi.hoisted(() => vi.fn());
-vi.mock('./group-project-host', () => ({ groupProjectHost: { listTombstones } }));
+vi.mock('./group-project-host', () => ({
+  groupProjectHost: {
+    listTombstones,
+    // Deleted here, plus dropped copies (#3363): this test's deletes come from listTombstones.
+    removedGroupProjectIds: async () => ((await listTombstones()) as Array<{ groupProjectId: string }>).map((t) => t.groupProjectId),
+  },
+}));
 vi.mock('fs/promises', () => ({ realpath: vi.fn(async (path: string) => path), mkdir: vi.fn(), writeFile: vi.fn() }));
 import { writeKey } from './plugin-storage';
 

@@ -15,8 +15,15 @@ vi.mock('./annex-peers', () => ({ listPeers: () => [{ fingerprint: state.machine
 vi.mock('./annex-identity', () => ({ getIdentity: () => null }));
 vi.mock('./annex-agent-calls', () => ({ rememberRemoteAgentName: vi.fn() }));
 vi.mock('./annex-client', () => ({ isMachineConnected: () => false }));
-vi.mock('./group-project-registry', () => ({ groupProjectRegistry: { list: async () => [{ id: 'g', name: 'Group' }] } }));
-vi.mock('./group-project-admin-service', () => ({ bootstrapGroupProjectAdmin: vi.fn() }));
+vi.mock('./group-project-registry', () => ({ groupProjectRegistry: { list: async () => [{ id: 'g', name: 'Group' }, { id: 'rec', name: 'Record' }] } }));
+// 'rec' takes its members from its membership record (#3357); 'g' still uses wires.
+const membership = vi.hoisted(() => ({ addMember: vi.fn(async () => undefined), excludeMember: vi.fn(async () => undefined) }));
+vi.mock('./group-project-membership', () => ({
+  isMembershipManaged: async (id: string) => id === 'rec', addMember: membership.addMember, excludeMember: membership.excludeMember,
+}));
+vi.mock('./managed-group-projects', () => ({
+  withoutManagedMembers: async <T extends { targetKind: string; targetId: string }>(b: T[]) => b.filter((x) => x.targetId !== 'rec'),
+}));
 vi.mock('./clubhouse-mcp/binding-manager', () => ({ bindingManager: { getBindingsForAgent: () => [], getAllBindings: () => [] } }));
 vi.mock('./connection-grants', () => ({ bindingTargetOf: (end: { agentId: string; machineId?: string }) => end.machineId ? `${end.agentId}@${end.machineId}` : end.agentId, connectionEnd: (id: string) => { const [agentId, machineId] = id.split('@'); return { agentId, ...(machineId && { machineId }) }; } }));
 vi.mock('./persisted-bindings', () => ({ claimSourceBinding: () => 'created', clearBindingRemovedByUser: vi.fn(), collectSourcesByPair: async () => ({ bySource: new Map(), failed: [] }), registerPersistedBindingSource: vi.fn(() => () => {}), onBindingRemovedByUser: () => () => {}, rebuildPersistedBindings: vi.fn() }));
@@ -66,4 +73,12 @@ it('lets a live quick agent start a connection and removes it when the agent end
       expect(getConnectionDirection({ agentId: 'b' }, { agentId: 'quick' })?.cardLink).toBeUndefined();
     });
   } finally { stop(); }
+});
+
+it('joins and leaves a record-managed group project through its membership record (#3357)', async () => {
+  await addCardConnection({ agentId: 'a', targetId: 'rec', targetKind: 'group-project', twoWay: false, allow: [], allowBack: [] });
+  expect(membership.addMember).toHaveBeenCalledWith('rec', 'a');
+  expect(await cardConnectionSource.collect()).not.toEqual(expect.arrayContaining([expect.objectContaining({ targetId: 'rec' })]));
+  await removeCardConnection('a', 'rec');
+  expect(membership.excludeMember).toHaveBeenCalledWith('rec', 'a');
 });

@@ -5,10 +5,24 @@ import { readGroupProjectCanvasInventory, removeGroupProjectFromCanvasInventory 
 import { withCanvasWriteBarrier } from './canvas-write-barrier';
 import { writeKeyWithinCanvasBarrier } from './plugin-storage';
 import { purgeGroupProjectGuidance } from './connection-guidance';
+import { purgeGroupProjectRoles } from './group-project-roles';
 import { appLog } from './log-service';
 import { tel } from '../telemetry/facade';
 
 const journal = groupProjectHost;
+
+/**
+ * Remove a group project from every saved Canvas (cards and wires) and its
+ * connection guidance, tolerating unreadable canvases as the delete cascade
+ * does. Used when this computer's copy of a network group project goes (#3363).
+ */
+export async function purgeGroupProjectViews(id: string): Promise<void> {
+  await withCanvasWriteBarrier(async () => {
+    const canvas = await readGroupProjectCanvasInventory(id);
+    await removeGroupProjectFromCanvasInventory(canvas, id, writeKeyWithinCanvasBarrier);
+  });
+  await purgeGroupProjectGuidance(id);
+}
 
 /** Build the local cascade; release is supplied by the durable membership source. */
 export function createLocalGroupProjectDeleteService(releaseBindings: (id: string) => void) {
@@ -16,7 +30,11 @@ export function createLocalGroupProjectDeleteService(releaseBindings: (id: strin
     const canvas = await readGroupProjectCanvasInventory(id);
     await removeGroupProjectFromCanvasInventory(canvas, id, writeKeyWithinCanvasBarrier);
     await purgeGroupProjectGuidance(id);
+    // Lead and admin grants on it (#3360): the agent grants store, not a host write; safe to rerun.
+    await purgeGroupProjectRoles(id);
     releaseBindings(id);
+    const { purgeGroupProjectActions } = await import('./actions');
+    await purgeGroupProjectActions(id);
     await journal.finishDelete(id, { withinExclusive: true });
   };
   const service = createGroupProjectDeletionService({

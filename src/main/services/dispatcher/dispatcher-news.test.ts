@@ -118,6 +118,11 @@ describe('agent news shown now (#3193)', () => {
     expect(decision.text).not.toContain('task_id');
   });
 
+  it('carries the same news as fields, for a follower to send to the lead (#3352)', async () => {
+    const decision = shown(await createGroupChatDelivery(deps().deps)({ message: 'Should deletion be on by default?', from: 'api-lead', kind: 'needs_user' }));
+    expect(decision.forward).toEqual({ v: 1, kind: 'needs_user', text: 'Should deletion be on by default?', fromName: 'api-lead' });
+  });
+
   it('shows a question that needs the user once', async () => {
     const deliver = createGroupChatDelivery(deps().deps);
     shown(await deliver({ message: 'Should deletion be on by default?', from: 'api-lead', kind: 'needs_user' }));

@@ -7,7 +7,6 @@ import { bindingManager } from '../binding-manager';
 import { mcpAdapter } from '../mcp-adapter';
 import { groupProjectRegistry } from '../../group-project-registry';
 import { groupProjectHost } from '../../group-project-host';
-import { isProjectAdmin } from '../../../../shared/group-project-admin';
 import { canPoll, isAgentAlive, injectPtyMessage } from '../../group-project-lifecycle';
 import { notePollingRead, notePollingStart } from '../../group-project-polling-runs';
 import { getAgentRuntime } from '../../agent-runtime';
@@ -159,9 +158,21 @@ export function registerGroupProjectTools(): void {
       const sender = await resolveSenderLabel(agentId, targetId);
 
       try {
-        const msg = await groupProjectHost.post(targetId, sender, topic, body);
+        const msg = await groupProjectHost.post(targetId, sender, topic, body, { author: { agentId, label: sender } });
         // Members' notices leave the sender out by address, not by name.
-        noteSenderAddress(msg.id, agentId);
+        if (!msg.pending) noteSenderAddress(msg.id, agentId);
+        if (msg.pending) {
+          // A copy of a group project hosted on another computer that is away (#3363): queued for it.
+          return {
+            content: [{
+              type: 'text',
+              text: JSON.stringify({
+                posted: false, queued: true, waitingFor: msg.pending.waitingFor, topic: msg.topic,
+                note: `Waiting for ${msg.pending.waitingFor}. It is posted when that computer is back; if it is refused, you are told why.`,
+              }),
+            }],
+          };
+        }
         annexEventBus.emitBulletinMessage(targetId, msg);
         return {
           content: [{
@@ -355,7 +366,7 @@ export function registerGroupProjectTools(): void {
     id: 'group-project.shoulder_tap',
     category: 'group-project',
     label: 'Shoulder Tap',
-    mcp: { targetKind: 'group-project', nameSuffix: 'shoulder_tap', grant: { actions: ['agent.message'], target: 'group_members' } },
+    mcp: { targetKind: 'group-project', nameSuffix: 'shoulder_tap', grant: [{ actions: ['group_project.lead'], target: 'bound' }, { actions: ['agent.message'], target: 'group_members' }] },
       description:
         'Send an urgent, ephemeral message directly into a specific agent\'s CLI.\n\n' +
         'NOT for routine coordination — post to a channel instead. Use shoulder_tap only when a channel post is insufficient: ' +
@@ -419,7 +430,7 @@ export function registerGroupProjectTools(): void {
     id: 'group-project.broadcast',
     category: 'group-project',
     label: 'Broadcast',
-    mcp: { targetKind: 'group-project', nameSuffix: 'broadcast', grant: { actions: ['agent.message'], target: 'group_members' } },
+    mcp: { targetKind: 'group-project', nameSuffix: 'broadcast', grant: [{ actions: ['group_project.lead'], target: 'bound' }, { actions: ['agent.message'], target: 'group_members' }] },
       description:
         'Broadcast an urgent, ephemeral message to every agent in this project (injected as input to each one; no bulletin record).\n\n' +
         'NOT for routine coordination — post to "general" for that. Use broadcast only for critical, all-hands announcements ' +
@@ -476,7 +487,7 @@ export function registerGroupProjectTools(): void {
     id: 'group-project.wake_agent',
     category: 'group-project',
     label: 'Wake Agent',
-    mcp: { targetKind: 'group-project', nameSuffix: 'wake_agent', grant: [{ actions: ['agent.wake'], target: 'group_members' }, { actions: ['agent.message'], target: 'group_members', ifArgs: ['message'] }] },
+    mcp: { targetKind: 'group-project', nameSuffix: 'wake_agent', grant: [{ actions: ['group_project.lead'], target: 'bound' }, { actions: ['agent.wake'], target: 'group_members' }, { actions: ['agent.message'], target: 'group_members', ifArgs: ['message'] }] },
       description:
         'Wake a sleeping agent connected to this group project.\n\n' +
         'Use list_members to find agents with status "sleeping", then call this tool ' +
@@ -596,7 +607,7 @@ export function registerGroupProjectTools(): void {
     id: 'group-project.sleep_agent',
     category: 'group-project',
     label: 'Sleep Agent',
-    mcp: { targetKind: 'group-project', nameSuffix: 'sleep_agent', grant: { actions: ['agent.sleep'], target: 'group_members' } },
+    mcp: { targetKind: 'group-project', nameSuffix: 'sleep_agent', grant: [{ actions: ['group_project.lead'], target: 'bound' }, { actions: ['agent.sleep'], target: 'group_members' }] },
       description:
         'Put a connected agent in this group project to sleep.\n\n' +
         'Gracefully stops the target agent using the same lifecycle path as the Clubhouse UI stop action, ' +
@@ -645,7 +656,7 @@ export function registerGroupProjectTools(): void {
     id: 'group-project.toggle_polling',
     category: 'group-project',
     label: 'Toggle Polling',
-    mcp: { targetKind: 'group-project', nameSuffix: 'toggle_polling', grant: { actions: ['group_project.admin'], target: 'bound' } },
+    mcp: { targetKind: 'group-project', nameSuffix: 'toggle_polling', grant: { actions: ['group_project.lead'], target: 'bound' } },
       description:
         'Legacy: members now get a notice when someone posts, so most group projects don\'t poll. ' +
         'Turn the project-wide polling setting on or off. Turning it off moves the group project to notices.\n\n' +
@@ -762,7 +773,7 @@ export function registerGroupProjectTools(): void {
     id: 'group-project.nudge_polling',
     category: 'group-project',
     label: 'Nudge Polling',
-    mcp: { targetKind: 'group-project', nameSuffix: 'nudge_polling', grant: { actions: ['group_project.admin'], target: 'bound' } },
+    mcp: { targetKind: 'group-project', nameSuffix: 'nudge_polling', grant: { actions: ['group_project.lead'], target: 'bound' } },
       description:
         'Legacy, for a group project that still polls: nudge a single connected agent to start polling if it isn\'t already.\n\n' +
         'This is a one-off PTY nudge to a specific peer — it does NOT change the ' +
@@ -880,7 +891,7 @@ export function registerGroupProjectTools(): void {
     id: 'group-project.clear_topic',
     category: 'group-project',
     label: 'Clear Topic',
-    mcp: { targetKind: 'group-project', nameSuffix: 'clear_topic', grant: { actions: ['group_project.admin'], target: 'bound' } },
+    mcp: { targetKind: 'group-project', nameSuffix: 'clear_topic', grant: { actions: ['group_project.lead'], target: 'bound' } },
     description:
       'Delete an entire channel and all its messages from the project board.\n\n' +
       'Use this to clean up stale or completed work channels that are no longer relevant. ' +
@@ -896,7 +907,7 @@ export function registerGroupProjectTools(): void {
       },
       required: ['topic'],
     },
-    handler: async (targetId: string, _agentId: string, args: Record<string, unknown>): Promise<McpToolResult> => {
+    handler: async (targetId: string, agentId: string, args: Record<string, unknown>): Promise<McpToolResult> => {
       const topic = requireString(args, 'topic');
       if (!topic) {
         return { content: [{ type: 'text', text: 'topic is required.' }], isError: true };
@@ -906,7 +917,7 @@ export function registerGroupProjectTools(): void {
         return { content: [{ type: 'text', text: 'Cannot delete the "system" topic.' }], isError: true };
       }
 
-      const deleted = await groupProjectHost.deleteTopic(targetId, topic);
+      const deleted = await groupProjectHost.deleteTopic(targetId, topic, { author: { agentId, label: agentId } });
       return {
         content: [{ type: 'text', text: JSON.stringify({ deleted, topic }) }],
       };
@@ -918,7 +929,7 @@ export function registerGroupProjectTools(): void {
     id: 'group-project.clear_agent',
     category: 'group-project',
     label: 'Clear Agent Context',
-    mcp: { targetKind: 'group-project', nameSuffix: 'clear_agent', grant: { actions: ['agent.reset'], target: 'group_members' } },
+    mcp: { targetKind: 'group-project', nameSuffix: 'clear_agent', grant: [{ actions: ['group_project.lead'], target: 'bound' }, { actions: ['agent.reset'], target: 'group_members' }] },
     description:
       'Send a /clear command to a connected agent, clearing its conversation context.\n\n' +
       'Injects /clear directly into the target agent\'s CLI. Use this when the agent\'s ' +
@@ -984,7 +995,7 @@ export function registerGroupProjectTools(): void {
     id: 'group-project.compact_agent',
     category: 'group-project',
     label: 'Compact Agent Context',
-    mcp: { targetKind: 'group-project', nameSuffix: 'compact_agent', grant: { actions: ['agent.reset'], target: 'group_members' } },
+    mcp: { targetKind: 'group-project', nameSuffix: 'compact_agent', grant: [{ actions: ['group_project.lead'], target: 'bound' }, { actions: ['agent.reset'], target: 'group_members' }] },
     description:
       'Send a /compact command to a connected agent, compacting its conversation context.\n\n' +
       'Injects /compact directly into the target agent\'s CLI. Use this when the agent\'s ' +
@@ -1050,7 +1061,7 @@ export function registerGroupProjectTools(): void {
     id: 'group-project.delete_messages',
     category: 'group-project',
     label: 'Delete Messages',
-    mcp: { targetKind: 'group-project', nameSuffix: 'delete_messages', grant: { actions: ['group_project.admin'], target: 'bound' } },
+    mcp: { targetKind: 'group-project', nameSuffix: 'delete_messages', grant: { actions: ['group_project.lead'], target: 'bound' } },
     description:
       'Delete specific messages by ID from the bulletin board.\n\n' +
       'Use this to clean up outdated or irrelevant messages. Pass an array of message IDs ' +
@@ -1071,7 +1082,7 @@ export function registerGroupProjectTools(): void {
       },
       required: ['topic', 'message_ids'],
     },
-    handler: async (targetId: string, _agentId: string, args: Record<string, unknown>): Promise<McpToolResult> => {
+    handler: async (targetId: string, agentId: string, args: Record<string, unknown>): Promise<McpToolResult> => {
       const topic = requireString(args, 'topic');
       const messageIds = args.message_ids as string[] | undefined;
 
@@ -1081,7 +1092,7 @@ export function registerGroupProjectTools(): void {
 
       let deletedCount = 0;
       for (const id of messageIds) {
-        const ok = await groupProjectHost.deleteMessage(targetId, topic, id);
+        const ok = await groupProjectHost.deleteMessage(targetId, topic, id, { author: { agentId, label: agentId } });
         if (ok) deletedCount++;
       }
 
@@ -1115,12 +1126,7 @@ export function registerGroupProjectTools(): void {
       if (!project) {
         return { content: [{ type: 'text', text: `Group project ${targetId} not found.` }], isError: true };
       }
-      // Defense in depth: the tool is already role-gated out of non-admins' tool
-      // lists, but reject here too in case it is ever invoked directly.
-      if (!isProjectAdmin(project.metadata, agentId)) {
-        return { content: [{ type: 'text', text: 'Only a project admin can update the project description or instructions.' }], isError: true };
-      }
-
+      // Admin of this group project is an explicit grant, checked before the handler runs (#3360).
       const description = optionalString(args, 'description');
       const instructions = optionalString(args, 'instructions');
       if (description === undefined && instructions === undefined) {
@@ -1130,7 +1136,7 @@ export function registerGroupProjectTools(): void {
       const updated = await groupProjectHost.update(targetId, {
         ...(description !== undefined ? { description } : {}),
         ...(instructions !== undefined ? { instructions } : {}),
-      });
+      }, { author: { agentId, label: agentId } });
 
       return {
         content: [{ type: 'text', text: JSON.stringify({ description: updated?.description, instructions: updated?.instructions }) }],

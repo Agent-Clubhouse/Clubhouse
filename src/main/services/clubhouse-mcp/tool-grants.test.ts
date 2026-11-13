@@ -60,7 +60,7 @@ describe('tool grant declarations (#2967)', () => {
     // Canvas-only actions the Dispatcher has no canvas for, the model list, and project defaults,
     // which no tool changes yet: none of them is offered in "What else can you do?".
     expect(withoutTool).toEqual([
-      'browser.act', 'browser.read', 'group_project.admin', 'group_project.post', 'group_project.read', 'models.read', 'project.configure',
+      'browser.act', 'browser.read', 'group_project.post', 'group_project.read', 'models.read', 'project.configure',
     ]);
   });
 
@@ -133,19 +133,19 @@ describe('tool grant declarations (#2967)', () => {
       group-project read_bulletin: group_project.read on bound
       group-project read_topic: group_project.read on bound
       group-project get_project_info: group_project.read on bound
-      group-project shoulder_tap: agent.message on group_members
-      group-project broadcast: agent.message on group_members
-      group-project wake_agent: agent.wake on group_members; agent.message on group_members if message
-      group-project sleep_agent: agent.sleep on group_members
-      group-project toggle_polling: group_project.admin on bound
+      group-project shoulder_tap: group_project.lead on bound; agent.message on group_members
+      group-project broadcast: group_project.lead on bound; agent.message on group_members
+      group-project wake_agent: group_project.lead on bound; agent.wake on group_members; agent.message on group_members if message
+      group-project sleep_agent: group_project.lead on bound; agent.sleep on group_members
+      group-project toggle_polling: group_project.lead on bound
       group-project query_polling: group_project.read on bound
       group-project subscribe_topic: group_project.read on bound
-      group-project nudge_polling: group_project.admin on bound
+      group-project nudge_polling: group_project.lead on bound
       group-project read_message: group_project.read on bound
-      group-project clear_topic: group_project.admin on bound
-      group-project clear_agent: agent.reset on group_members
-      group-project compact_agent: agent.reset on group_members
-      group-project delete_messages: group_project.admin on bound
+      group-project clear_topic: group_project.lead on bound
+      group-project clear_agent: group_project.lead on bound; agent.reset on group_members
+      group-project compact_agent: group_project.lead on bound; agent.reset on group_members
+      group-project delete_messages: group_project.lead on bound
       group-project set_project_info: group_project.admin on bound
       probe_capacity: device.read on app
       offer_handoff: handoff.offer on handoff_peer
@@ -214,11 +214,11 @@ describe('tool grant declarations (#2967)', () => {
       disconnect_agents: connection.manage on agent_arg
       set_connection_tools: connection.manage on agent_arg
       list_connections: connection.manage on agent_arg
-      create_action: action.write on app; agent.watch on app if any-agent source
+      create_action: action.write on app; agent.watch on app if any-agent source; group_project.admin on group_project_arg if groupProjectId
       list_actions: action.read on app
-      update_action: action.write on action_arg; agent.watch on app if any-agent source
-      delete_action: action.write on action_arg
-      run_action: action.run on action_arg
+      update_action: action.write on action_arg; group_project.admin on action_group_project; agent.watch on app if any-agent source
+      delete_action: action.write on action_arg; group_project.admin on action_group_project
+      run_action: action.run on action_arg; group_project.admin on action_group_project
       action_history: action.read on app
       subscribe: action.write on app; agent.watch on app if any-agent source
       read_helper_presets: settings.app.read on app

@@ -11,16 +11,22 @@ vi.mock('./annex-identity', () => ({ getIdentity: () => null }));
 vi.mock('./project-store', () => ({ list: vi.fn(async () => []), peekProjectsChecked: vi.fn(async () => ({ readable: true, projects: [] })) }));
 vi.mock('./clubhouse-mcp/binding-manager', () => ({ bindingManager: { getAllBindings: () => fixture.bindings } }));
 vi.mock('../telemetry/persist', () => ({ persist: { timed: async (_kind: string, operation: () => Promise<unknown>) => operation() } }));
+vi.mock('./actions', async () => {
+  const store = await import('./actions/actions-store');
+  return { groupProjectActions: store.storedGroupProjectActions, purgeGroupProjectActions: store.purgeStoredGroupProjectActions };
+});
 
 import { groupProjectRegistry } from './group-project-registry';
 import { _resetAllBoardsForTesting } from './group-project-bulletin';
 import { groupProjectHost } from './group-project-host';
 import { createLocalGroupProjectDeleteService } from './group-project-delete-service';
 import { globalCanvasKvDir } from './canvas-store-reader';
+import { resetAllSettingsStoresForTests } from './settings-store';
 
 beforeEach(async () => {
   fixture.home = await fs.mkdtemp(path.join(os.tmpdir(), 'group-project-stores-'));
   fixture.bindings = [];
+  resetAllSettingsStoresForTests();
   groupProjectRegistry._resetForTesting(); _resetAllBoardsForTesting(); groupProjectHost._resetForTesting();
 });
 afterEach(async () => {
@@ -31,6 +37,8 @@ afterEach(async () => {
 it('removes the host stores, bindings and references from every canvas while retaining other projects', async () => {
   const project = await groupProjectHost.create('Delete me');
   const other = await groupProjectHost.create('Keep me');
+  const action = (id: string, groupProjectId: string) => ({ id, name: id, owner: { kind: 'group_project', groupProjectId }, enabled: true, trigger: { kind: 'once', at: Date.now() + 60_000 }, steps: [{ kind: 'group_post', topic: 'general', text: 'Ready' }], overlap: 'skip', createdAt: 1, updatedAt: 1 });
+  await fs.writeFile(path.join(fixture.home, 'actions.json'), JSON.stringify({ version: 1, actions: [action('Delete action', project.id), action('Keep action', other.id)], state: { nextAt: {}, waits: [] } }));
   await groupProjectHost.post(project.id, 'Ada', 'plans', 'A board message');
   await groupProjectHost.updateMembership(project.id, (m) => { m.excluded.push({ address: 'other-agent', excludedAt: new Date().toISOString() }); });
   fixture.bindings = [{ agentId: 'ada', agentName: 'Ada', targetId: project.id, targetKind: 'group-project' }];
@@ -54,8 +62,11 @@ it('removes the host stores, bindings and references from every canvas while ret
   expect(preview.canvases).toEqual(['Home / One', 'Home / Two']);
   expect(preview.members).toEqual(['Ada (ada)']);
   expect(preview.exclusions).toEqual(['other-agent']);
+  expect(preview.actions).toEqual(['Delete action (Delete action)']);
   expect(preview.messages).toBeGreaterThanOrEqual(1);
   await service.confirm(project.id, 1, preview.token);
+  const storedActions = JSON.parse(await fs.readFile(path.join(fixture.home, 'actions.json'), 'utf8'));
+  expect(storedActions.actions.map((entry: { id: string }) => entry.id)).toEqual(['Keep action']);
   for (const file of ['canvas-instances.json', 'canvas-instances.json.bak', 'canvas-wires.json', 'canvas-wires.json.bak']) {
     const contents = await fs.readFile(path.join(dir, file), 'utf8');
     expect(contents).not.toContain(project.id);

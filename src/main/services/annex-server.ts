@@ -20,6 +20,7 @@ import { isProjectIdle } from '../../shared/project-state';
 import { applyFinishedQuickAgentChange, getFinishedQuickAgents, isFinishedQuickAgentsReady, onFinishedQuickAgentsChange } from './finished-quick-agents-store';
 import type { CompletedQuickAgent, HelperDeleteChoice, Project } from '../../shared/types';
 import { ANNEX_FRAME_MAX_BYTES, MOBILE_WS_FRAME_MAX_BYTES, SNAPSHOT_FRAME_MAX_BYTES, SNAPSHOT_ICONS_MAX_BYTES } from '../../shared/icon-limits';
+import { onAppEvent } from './app-event-bus';
 import { MobileCommandService, MobileControlError, chatControls, executeChatCommand, pendingInteractions, MOBILE_COMMAND_MAX_ENTRIES, MOBILE_COMMAND_TTL_MS } from './mobile-control';
 import { FULL_EVENT_MAX_BYTES, findFullEvent, forgetReviewedBy, fullEventDigest, rememberReviewed, wasReviewed } from './annex-full-events';
 import { isRevertRunning } from './agent-runtime/checkpoint-tracker';
@@ -90,8 +91,10 @@ import * as pluginManifestRegistry from './plugin-manifest-registry';
 import { readKey as readPluginStorageKey, writeKey as writePluginStorageKey } from './plugin-storage';
 import { groupProjectRegistry } from './group-project-registry';
 import { groupProjectHost } from './group-project-host';
+import * as groupProjectNetwork from './group-project-network';
 import { executeShoulderTap } from './group-project-shoulder-tap';
 import { setProjectPolling } from './group-project-polling';
+import { describeGroupProjectRoles, grantGroupProjectRole, GroupProjectRoleError } from './group-project-roles';
 import { agentRegistry } from './agent-registry';
 import { bindingManager } from './clubhouse-mcp/binding-manager';
 import * as fileService from './file-service';
@@ -270,6 +273,7 @@ let unsubPermissionRequest: (() => void) | null = null;
 let unsubGroupProjectChanged: (() => void) | null = null;
 let unsubBulletinMessage: (() => void) | null = null;
 let unsubGroupProjectRegistry: (() => void) | null = null;
+let unsubActionSnapshots: (() => void) | null = null;
 let unsubHelperRequests: (() => void) | null = null;
 let unsubDispatcher: (() => void) | null = null;
 let unsubDispatcherPresence: (() => void) | null = null;
@@ -317,6 +321,7 @@ function unsubscribeEventBus(): void {
   unsubGroupProjectChanged?.();
   unsubBulletinMessage?.();
   unsubGroupProjectRegistry?.();
+  unsubActionSnapshots?.();
   unsubHelperRequests?.();
   unsubDispatcher?.();
   unsubDispatcherPresence?.();
@@ -331,6 +336,7 @@ function unsubscribeEventBus(): void {
   unsubGroupProjectChanged = null;
   unsubBulletinMessage = null;
   unsubGroupProjectRegistry = null;
+  unsubActionSnapshots = null;
   unsubHelperRequests = null;
   unsubDispatcher = null;
   unsubDispatcherPresence = null;
@@ -1199,6 +1205,15 @@ async function readSnapshotSourcesData() {
 
   // Read group project data
   const groupProjects = await groupProjectRegistry.list();
+  let groupProjectActions: import('../../shared/actions/view').RemoteGroupAction[] = [];
+  const networkGroups = groupProjects.filter((gp) => gp.scope?.reach === 'network' && groupProjectHost.isThisMachine(gp.host));
+  if (networkGroups.length) {
+    const actionService = await import('./actions');
+    if (actionService.actionsReady()) {
+      const { groupActionSummaries } = await import('./actions/group-snapshot');
+      groupProjectActions = groupActionSummaries(networkGroups, actionService.listActions(), (gp) => groupProjectHost.isThisMachine(gp.host));
+    }
+  }
   const bulletinDigests: Record<string, unknown[]> = {};
   await Promise.all(groupProjects.map(async (gp) => {
     try {
@@ -1208,7 +1223,7 @@ async function readSnapshotSourcesData() {
     }
   }));
 
-  return { projects, durablesByProject, policiesByProject, iconSet, canvasState, appCanvasState, groupProjects, bulletinDigests, repoKeys };
+  return { projects, durablesByProject, policiesByProject, iconSet, canvasState, appCanvasState, groupProjects, groupProjectActions, bulletinDigests, repoKeys };
 }
 
 /**
@@ -1219,7 +1234,7 @@ async function readSnapshotSourcesData() {
  * what changes it asks for another refresh, which follows this one.
  */
 function assembleSnapshot(sources: SnapshotSources): BuiltSnapshot {
-  const { projects, durablesByProject, policiesByProject, iconSet, canvasState, appCanvasState, groupProjects, bulletinDigests, repoKeys } = sources;
+  const { projects, durablesByProject, policiesByProject, iconSet, canvasState, appCanvasState, groupProjects, groupProjectActions, bulletinDigests, repoKeys } = sources;
   const { projectIcons, agentIcons, stats: icons, iconRefs } = iconSet;
   const agents: Record<string, unknown[]> = {};
   const quickAgents: Record<string, unknown[]> = {};
@@ -1317,6 +1332,7 @@ function assembleSnapshot(sources: SnapshotSources): BuiltSnapshot {
     appCanvasState,
     sessionPaused,
     groupProjects,
+    ...(groupProjectActions.length > 0 && { groupProjectActions }),
     bulletinDigests,
     groupProjectMembers,
     ptyHost: annexPtyHost(process.platform, detectWindowsPty()),
@@ -3263,8 +3279,9 @@ async function handleGroupProjectPostMessageRoute(ctx: AnnexRouteContext, match:
       return;
     }
     try {
-      const message = await groupProjectHost.post(gpId, sender, topic, msgBody);
-      annexEventBus.emitBulletinMessage(gpId, message);
+      // A phone or controller posts for the person (#3363's author).
+      const message = await groupProjectHost.post(gpId, sender, topic, msgBody, { author: { label: 'user' } });
+      if (!message.pending) annexEventBus.emitBulletinMessage(gpId, message);
       sendJson(ctx.res, 201, message);
     } catch (err) {
       sendJson(ctx.res, 400, { error: err instanceof Error ? err.message : 'post_failed' });
@@ -3293,6 +3310,51 @@ async function handleGroupProjectShoulderTapRoute(ctx: AnnexRouteContext, match:
       sendJson(ctx.res, 200, result);
     } catch (err) {
       sendJson(ctx.res, 500, { error: err instanceof Error ? err.message : 'shoulder_tap_failed' });
+    }
+  });
+}
+
+/** A desktop in this machine's Annex Network: not a phone, and not a session-only pairing (#3360). */
+function isDesktopNetworkMember(fingerprint: string | undefined): boolean {
+  if (!fingerprint || mobileSessionPeers.has(fingerprint) || !annexSettings.networkEnabled()) return false;
+  const peer = annexPeers.getPeer(fingerprint);
+  return peer?.role === 'member' && peer.kind === 'desktop';
+}
+
+/** A group project's roles and own grants, and giving one, for a network desktop's card (#3360). */
+async function handleGroupProjectRolesRoute(ctx: AnnexRouteContext, match: RegExpMatchArray): Promise<void> {
+  if (ctx.requireMtls()) return;
+  // Lead and admin are a person's grants: only from another desktop of this network, never a phone.
+  if (!isDesktopNetworkMember(ctx.mobilePrincipal)) {
+    recordControlDenied('rest');
+    sendJson(ctx.res, 403, { error: 'desktop_member_required', message: 'Only a desktop in this Annex Network can see or change group project roles.' });
+    return;
+  }
+  const gpId = decodeURIComponent(match[1]);
+  if (ctx.req.method === 'GET') {
+    try {
+      sendJson(ctx.res, 200, await describeGroupProjectRoles(gpId));
+    } catch {
+      // telemetry-exempt: answered to the controller as not found
+      sendJson(ctx.res, 404, { error: 'group_project_not_found' });
+    }
+    return;
+  }
+  readJsonBody(ctx.req, ctx.res, async (body) => {
+    const { agentId, role, mode } = body as { agentId?: unknown; role?: unknown; mode?: unknown };
+    if (typeof agentId !== 'string' || !agentId || (role !== 'lead' && role !== 'admin') || (mode !== 'allow' && mode !== 'ask' && mode !== 'off')) {
+      sendJson(ctx.res, 400, { error: 'agentId, role (lead|admin) and mode (allow|ask|off) are required' });
+      return;
+    }
+    try {
+      await grantGroupProjectRole(gpId, agentId, role, mode);
+      sendJson(ctx.res, 200, await describeGroupProjectRoles(gpId));
+    } catch (err) {
+      if (err instanceof GroupProjectRoleError) {
+        sendJson(ctx.res, err.code === 'not_found' ? 404 : 409, { error: err.code === 'not_found' ? 'group_project_not_found' : 'not_a_member', message: err.message });
+        return;
+      }
+      sendJson(ctx.res, 500, { error: err instanceof Error ? err.message : 'set_role_failed' });
     }
   });
 }
@@ -3601,6 +3663,29 @@ async function handleNetworkHandoffsRoute(ctx: AnnexRouteContext): Promise<void>
     sendJson(ctx.res, 200, record);
   } catch { // telemetry-exempt: never return peer content, task text or storage diagnostics
     sendJson(ctx.res, 400, { error: 'handoff_refused' });
+  }
+}
+
+/** Network group projects (#3363): catch-up, writes and change notices, between computers in the network only. */
+async function handleGroupProjectNetworkRoute(ctx: AnnexRouteContext, kind: 'sync' | 'write' | 'changed'): Promise<void> {
+  const machine = agentCallPeer(ctx);
+  if (!machine) { ctx.req.resume(); sendJson(ctx.res, 403, { error: 'not_a_computer', message: 'Only a computer in this Annex Network can reach group projects here.' }); return; }
+  const body = await readAgentCallBody(ctx);
+  if (body === undefined) return;
+  if (ctx.requireMtls()) return;
+  try {
+    if (kind === 'sync') sendJson(ctx.res, 200, await groupProjectNetwork.receiveGroupProjectSync(machine, body));
+    else if (kind === 'write') sendJson(ctx.res, 200, await groupProjectNetwork.receiveGroupProjectWrites(machine, body));
+    else {
+      groupProjectNetwork.receiveGroupProjectChanged(machine, body);
+      sendJson(ctx.res, 200, { ok: true });
+    }
+  } catch (err) {
+    const invalid = err instanceof Error && err.name === 'GroupProjectNetworkError';
+    if (!invalid) {
+      appLog('core:annex', 'warn', 'Network group project request failed', { meta: { kind, error: err instanceof Error ? err.message : String(err) } });
+    }
+    sendJson(ctx.res, invalid ? 400 : 500, { error: invalid ? 'invalid_request' : 'failed', message: err instanceof Error ? err.message : String(err) });
   }
 }
 
@@ -4380,6 +4465,9 @@ const ANNEX_HTTP_ROUTE_TABLE: AnnexHttpRoute[] = [
   { method: 'POST', pattern: /^\/api\/v1\/network\/handoff-capacity$/, handler: handleNetworkCapacityRoute },
   { method: 'POST', pattern: /^\/api\/v1\/network\/handoffs$/, handler: handleNetworkHandoffsRoute },
   { method: 'POST', pattern: /^\/api\/v1\/network\/connections$/, handler: handleNetworkConnectionsRoute },
+  { method: 'POST', pattern: /^\/api\/v1\/network\/group-projects\/sync$/, handler: (ctx) => handleGroupProjectNetworkRoute(ctx, 'sync') },
+  { method: 'POST', pattern: /^\/api\/v1\/network\/group-projects\/write$/, handler: (ctx) => handleGroupProjectNetworkRoute(ctx, 'write') },
+  { method: 'POST', pattern: /^\/api\/v1\/network\/group-projects\/changed$/, handler: (ctx) => handleGroupProjectNetworkRoute(ctx, 'changed') },
   { method: 'GET', pattern: /^\/api\/v1\/mobile\/canvas$/, handler: handleMobileCanvasRoute },
   { method: 'GET', pattern: /^\/api\/v1\/mobile\/canvas\/([^/]+)$/, handler: handleMobileCanvasRoute },
   { method: 'DELETE', pattern: /^\/api\/v1\/mobile\/pairing$/, handler: handleMobilePairingDeleteRoute },
@@ -4424,6 +4512,8 @@ const ANNEX_HTTP_ROUTE_TABLE: AnnexHttpRoute[] = [
   { method: 'POST', pattern: /^\/api\/v1\/group-projects\/([^/]+)\/bulletin\/messages$/, handler: handleGroupProjectPostMessageRoute },
   { method: 'POST', pattern: /^\/api\/v1\/group-projects\/([^/]+)\/shoulder-tap$/, handler: handleGroupProjectShoulderTapRoute },
   { method: 'POST', pattern: /^\/api\/v1\/group-projects\/([^/]+)\/polling$/, handler: handleGroupProjectPollingRoute },
+  { method: 'GET', pattern: /^\/api\/v1\/group-projects\/([^/]+)\/roles$/, handler: handleGroupProjectRolesRoute },
+  { method: 'POST', pattern: /^\/api\/v1\/group-projects\/([^/]+)\/roles$/, handler: handleGroupProjectRolesRoute },
   { method: 'DELETE', pattern: /^\/api\/v1\/group-projects\/([^/]+)\/bulletin\/topics\/([^/]+)\/messages\/([^/]+)$/, handler: handleGroupProjectDeleteMessageRoute },
   { method: 'DELETE', pattern: /^\/api\/v1\/group-projects\/([^/]+)\/bulletin\/topics\/([^/?]+)$/, handler: handleGroupProjectDeleteTopicRoute },
   { method: 'PATCH', pattern: /^\/api\/v1\/group-projects\/([^/]+)\/bulletin\/topics\/([^/]+)\/protection$/, handler: handleGroupProjectBulletinProtectionRoute },
@@ -5417,6 +5507,9 @@ function startServer(strict = false): Promise<void> {
     void groupProjectRegistry.list().then((projects) => {
       broadcastWs({ type: 'group-project:list', payload: { projects } });
     });
+  });
+  unsubActionSnapshots = onAppEvent((event) => {
+    if (event.type === 'actions.changed' && wss && wss.clients.size > 0) broadcastSnapshotRefresh();
   });
 
   staleEvictionInterval = setInterval(() => {

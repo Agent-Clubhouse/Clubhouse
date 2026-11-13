@@ -22,7 +22,6 @@
 
 import { evaluateGrant, GRANT_REFUSAL_MESSAGES, widerOrSame, type Grant, type GrantAction, type GrantCallTarget, type GrantCaller, type GrantDecision, type GrantRefusal } from '../../../shared/agent-grants';
 import { defaultGrants } from '../../../shared/default-grants';
-import { isProjectAdmin } from '../../../shared/group-project-admin';
 import { CROSS_PROJECT_OFF_MESSAGE, fiveLevelOf } from '../../../shared/orchestration-policy';
 import { agentRegistry } from '../agent-registry';
 import { bindingManager } from './binding-manager';
@@ -74,7 +73,8 @@ function boundTarget(agentId: string, wire: GrantCheckWire): GrantCallTarget | n
     case 'browser':
       return { kind: 'browser', relations: ['connected'] };
     case 'group-project':
-      return { kind: 'group_project', groupRole: isProjectAdmin(wire.groupMetadata, agentId) ? 'admin' : 'member' };
+      // Bound is a member. Lead and admin are grants on this group project by id (#3360).
+      return { kind: 'group_project', groupRole: 'member', groupProjectId: binding.targetId };
     default:
       // Terminals and plugin targets: no grant action covers them yet.
       return null;
@@ -92,14 +92,15 @@ function resolveTargets(agentId: string, d: ToolGrantDeclaration, wire: GrantChe
 function resolveTarget(agentId: string, target: ToolGrantTarget, wire: GrantCheckWire | undefined, args: Record<string, unknown>): GrantCallTarget | null {
   switch (target) {
     case 'bound': return wire ? boundTarget(agentId, wire) : null;
-    // Members of a group project its admins act on: the caller must administer the bound group, and an
-    // agent named in the call (target_agent_id) must be a member of it (#2974). Broadcast names none.
+    // Members of the bound group project: an agent named in the call (target_agent_id) must be a
+    // member of it (#2974). Broadcast names none. That the caller leads the group is its own
+    // declaration, group_project.lead on the bound group project (#3360).
     case 'group_members': {
-      const admin = !!wire && isProjectAdmin(wire.groupMetadata, agentId);
+      if (!wire) return { kind: 'agent', relations: [] };
       // "all" taps every member, as broadcast does.
       const named = typeof args.target_agent_id === 'string' && args.target_agent_id !== 'all' ? args.target_agent_id : undefined;
-      const member = !named || (!!wire && isGroupMember(wire.binding.targetId, named));
-      return { kind: 'agent', relations: admin && member ? ['group_member'] : [], ...(admin && !member && { notGroupMember: true }) };
+      const member = !named || isGroupMember(wire.binding.targetId, named);
+      return { kind: 'agent', relations: member ? ['group_member'] : [], ...(!member && { notGroupMember: true }) };
     }
     case 'self': return { kind: 'agent', relations: ['self'] };
     case 'parent': return { kind: 'agent', relations: ['parent'] };
@@ -115,8 +116,13 @@ function resolveTarget(agentId: string, target: ToolGrantTarget, wire: GrantChec
       // its own Actions.
       if (!actionOwnerLookup || args.id === undefined) return null;
       const action = actionOwnerLookup(args);
+      const groupAdmin = action?.groupProjectId && isGroupMember(action.groupProjectId, agentId) && decideGrant(agentId, 'group_project.admin', { kind: 'group_project', groupRole: 'member', groupProjectId: action.groupProjectId } as GrantCallTarget).outcome !== 'refuse';
       // An unknown id reads like someone else's: a refusal never says whether it exists.
-      return { kind: 'action', actionId: action?.actionId, relations: action?.ownerAgentId === agentId ? ['self'] : [] };
+      return { kind: 'action', actionId: action?.actionId, relations: action?.ownerAgentId === agentId || groupAdmin ? ['self'] : [] };
+    }
+    case 'action_group_project': {
+      const groupProjectId = actionOwnerLookup?.(args)?.groupProjectId;
+      return groupProjectId ? { kind: 'group_project', groupRole: isGroupMember(groupProjectId, agentId) ? 'member' : null, groupProjectId } as GrantCallTarget : null;
     }
     case 'handoff_peer':
     case 'agent_arg':
@@ -127,12 +133,12 @@ function resolveTarget(agentId: string, target: ToolGrantTarget, wire: GrantChec
 }
 
 /** Whether an agent is bound to a group project: its member. */
-function isGroupMember(groupId: string, memberId: string): boolean {
+export function isGroupMember(groupId: string, memberId: string): boolean {
   return bindingManager.getAllBindings().some((b) => b.targetKind === 'group-project' && b.targetId === groupId && b.agentId === memberId);
 }
 
 /** Who owns the Action a call names: an agent, or a person (no `ownerAgentId`). Undefined when the id is unknown. */
-export type ActionOwnerLookup = (args: Record<string, unknown>) => { actionId: string; ownerAgentId?: string } | undefined;
+export type ActionOwnerLookup = (args: Record<string, unknown>) => { actionId: string; ownerAgentId?: string; groupProjectId?: string } | undefined;
 
 let actionOwnerLookup: ActionOwnerLookup | null = null;
 
@@ -243,6 +249,9 @@ export function checkToolGrant(agentId: string, grant: ToolGrant | undefined, ar
       return { ok: false, reason: 'no_grant', message: 'This handoff target or metadata is unavailable or unsafe.' };
     }
     for (const target of resolveTargets(agentId, d, wire, args, argTargets)) {
+      if ((d.target === 'action_group_project' || d.requiresGroupMembership) && target.groupRole !== 'member') {
+        return { ok: false, reason: 'no_grant', message: 'You must be a current member of this group project to manage its Actions.', action: 'group_project.admin', targetKind: 'group_project' };
+      }
       for (const action of d.actions) {
         const decision = evaluateGrant({ caller, action, target }, grants);
         if (decision.outcome === 'refuse') return { ok: false, reason: decision.reason, message: refusalMessage(decision.reason, action, target), action, targetKind: target.kind };

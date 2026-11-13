@@ -14,7 +14,7 @@ export interface ActionOwnerUsage {
 export function summarizeActionUsage(actions: Action[], runs: ActionRun[], now = Date.now()): ActionOwnerUsage[] {
   const groups = new Map<string, ActionOwnerUsage>();
   const groupFor = (owner?: ActionOwner): ActionOwnerUsage => {
-    const key = owner?.kind === 'agent' ? `agent:${owner.agentId}` : owner?.kind ?? 'unknown';
+    const key = owner?.kind === 'agent' ? `agent:${owner.agentId}` : owner?.kind === 'group_project' ? `group_project:${owner.groupProjectId}` : owner?.kind ?? 'unknown';
     let group = groups.get(key);
     if (!group) {
       group = { ...(owner && { owner }), actions: [], runs24h: 0, runs7d: 0, failures24h: 0, failures7d: 0 };

@@ -10,6 +10,7 @@ import { Button } from '../../components/Button';
 import { TabList, tabPanelProps } from '../../components/TabList';
 import { Toggle } from '../../components/Toggle';
 import { ipcErrorMessage } from '../../utils/ipc-error';
+import { useAnnexClientStore } from '../../stores/annexClientStore';
 import { SettingsPage, settingsError, settingsHelp } from '../settings/SettingsLayout';
 import { ActionCard, OutcomeDot, formatWhen, outcomeWords } from './ActionCard';
 import { ActionForm } from './ActionForm';
@@ -94,9 +95,16 @@ function ActionRow({ action, onOpen }: { action: ActionView; onOpen: () => void 
 export function ActionsSettingsView() {
   const tabsId = useId();
   const { actions, error, reload } = useActionsList();
+  const satellites = useAnnexClientStore((s) => s.satellites);
+  const remoteActions = satellites.flatMap((satellite) => {
+    const list = satellite.snapshot?.groupProjectActions;
+    if (!Array.isArray(list)) return [];
+    return list.filter((a) => a && typeof a.id === 'string' && typeof a.name === 'string' && typeof a.groupProjectName === 'string' && typeof a.enabled === 'boolean')
+      .slice(0, 500).map((action) => ({ ...action, machine: satellite.alias || 'another computer', satelliteId: satellite.id }));
+  });
   const [filter, setFilter] = useState<Filter>('all');
   const [cardId, setCardId] = useState<string | null>(null);
-  const [form, setForm] = useState<{ action?: ActionView; initial?: Partial<ActionInput> } | null>(null);
+  const [form, setForm] = useState<{ action?: ActionView; initial?: Partial<ActionInput>; groupProjectId?: string } | null>(null);
   const pending = useActionsNav((s) => s.pending);
   const setPending = useActionsNav((s) => s.setPending);
 
@@ -108,7 +116,7 @@ export function ActionsSettingsView() {
     else if (pending.editId) {
       const a = actions.find((x) => x.id === pending.editId);
       if (a) setForm({ action: a });
-    } else setForm({ initial: pending.draft ?? {} });
+    } else setForm({ initial: pending.draft ?? {}, groupProjectId: pending.groupProjectId });
     setPending(null);
   }, [pending, actions, form, setPending]);
 
@@ -163,10 +171,16 @@ export function ActionsSettingsView() {
           </div>
         </>
       )}
+      {remoteActions.length > 0 && <section className="mt-5" aria-label="Actions on other computers"><h2 className="text-sm font-medium text-ctp-text">Actions on other computers</h2>
+        <ul>{remoteActions.map((action) => <li key={`${action.satelliteId}:${action.id}`} className="py-2 border-t border-surface-0 text-xs text-ctp-subtext1">
+          <span className="text-ctp-text">{action.name}</span> · {action.groupProjectName} · Runs on {action.machine}{!action.enabled && ' · Off'}
+          {typeof action.description === 'string' && <p>{action.description}</p>}
+        </li>)}</ul>
+      </section>}
       {card && (
         <ActionCard action={card} onClose={() => setCardId(null)} onEdit={() => { setCardId(null); setForm({ action: card }); }} />
       )}
-      <ActionForm open={!!form} action={form?.action} initial={form?.initial} onClose={() => setForm(null)} />
+      <ActionForm open={!!form} action={form?.action} initial={form?.initial} initialGroupProjectId={form?.groupProjectId} onClose={() => setForm(null)} />
     </SettingsPage>
   );
 }

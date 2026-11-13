@@ -12,7 +12,8 @@ import * as annexPeers from './annex-peers';
 import * as annexIdentity from './annex-identity';
 import { rememberRemoteAgentName } from './annex-agent-calls';
 import { groupProjectRegistry } from './group-project-registry';
-import { bootstrapGroupProjectAdmin } from './group-project-admin-service';
+import { withoutManagedMembers } from './managed-group-projects';
+import { addMember as addGroupMember, excludeMember as excludeGroupMember, isMembershipManaged } from './group-project-membership';
 import { bindingManager } from './clubhouse-mcp/binding-manager';
 import { getConnectionDirection, linkCardDirections, listAllConnectionDirections, removeCardDirection } from './connection-grants-store';
 import { bindingTargetOf, connectionEnd } from './connection-grants';
@@ -101,7 +102,8 @@ export const cardConnectionSource: PersistedBindingSource = {
     }));
     const directions = listAllConnectionDirections().filter((d) => d.cardLink && !d.from.machineId && names.has(d.from.agentId) && (d.to.machineId || names.has(d.to.agentId)));
     const peers = store.get().peers ?? {};
-    return [...memberships, ...directions.map((d): PersistedBinding => {
+    // A group project whose members are a record (#3357) isn't held here.
+    return [...await withoutManagedMembers(memberships), ...directions.map((d): PersistedBinding => {
       const targetId = bindingTargetOf(d.to);
       const name = d.to.machineId ? peers[d.to.machineId]?.targets.find((a) => a.id === d.to.agentId)?.name ?? d.to.agentId : names.get(d.to.agentId)!;
       return { agentId: d.from.agentId, targetId, targetKind: 'agent', label: name, agentName: names.get(d.from.agentId), targetName: name, disabledTools: d.disabledTools };
@@ -155,7 +157,10 @@ export async function addCardConnection(request: AddCardConnection): Promise<voi
     if ((from === caller.id && to === targetId) || (request.twoWay && from === targetId && to === caller.id)) removedDuringSave = true;
   });
   try {
-  if (target.kind === 'group-project') {
+  if (target.kind === 'group-project' && await isMembershipManaged(target.id)) {
+    // Its members are a record (#3357): joining adds the agent there. No member leads by joining (#3360).
+    await addGroupMember(target.id, caller.id);
+  } else if (target.kind === 'group-project') {
     await store.update((file) => {
       if (file.version > 1) throw new Error('The saved connections were written by a newer Clubhouse.');
       if (file.memberships.some((m) => m.agentId === caller.id && m.groupId === target.id)) throw new Error('This agent is already a member.');
@@ -163,7 +168,7 @@ export async function addCardConnection(request: AddCardConnection): Promise<voi
     });
     if (removedDuringSave) { await removeCardConnection(caller.id, target.id); throw new Error('A newer removal canceled this connection.'); }
     clearBindingRemovedByUser(caller.id, target.id);
-    if (claimSourceBinding(CARD_CONNECTION_SOURCE_ID, { agentId: caller.id, targetId: target.id, targetKind: 'group-project', label: target.name, agentName: caller.name, targetName: target.name }) === 'created') void bootstrapGroupProjectAdmin(target.id, caller.id);
+    claimSourceBinding(CARD_CONNECTION_SOURCE_ID, { agentId: caller.id, targetId: target.id, targetKind: 'group-project', label: target.name, agentName: caller.name, targetName: target.name });
   } else {
     if (target.machineId && !isMachineFingerprint(target.machineId)) throw new Error('That machine address is invalid.');
     const self = annexIdentity.getIdentity()?.fingerprint?.toLowerCase();
@@ -193,6 +198,10 @@ export async function removeCardConnection(agentId: string, targetId: string): P
   const from = connectionEnd(agentId);
   const remote = connectionEnd(targetId);
   if (getConnectionDirection(from, remote)?.cardLink) await removeCardDirection(from, remote);
-  else await store.update((file) => ({ ...file, memberships: file.memberships.filter((m) => m.agentId !== agentId || m.groupId !== targetId) }));
+  else {
+    await store.update((file) => ({ ...file, memberships: file.memberships.filter((m) => m.agentId !== agentId || m.groupId !== targetId) }));
+    // A record-managed group project (#3357): removing the membership excludes the agent there.
+    if ((await groupProjectRegistry.list()).some((g) => g.id === targetId) && await isMembershipManaged(targetId)) await excludeGroupMember(targetId, agentId);
+  }
   await rebuildPersistedBindings();
 }

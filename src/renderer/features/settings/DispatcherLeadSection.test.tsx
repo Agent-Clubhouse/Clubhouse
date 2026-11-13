@@ -1,25 +1,28 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import type { DispatcherLeadState } from '../../../shared/dispatcher-lead';
-import { LeadSection, leadConfirmation, leadStatus, listNames } from './DispatcherLeadSection';
+import { LeadSection, leadConfirmation, leadOffWarning, leadStatus, listNames } from './DispatcherLeadSection';
+import { _resetLeadStoreForTesting } from '../dispatcher/leadStore';
 
 const PEERS: DispatcherLeadState = {
-  available: true, role: 'peer', lead: null,
+  available: true, canChoose: true, role: 'peer', lead: null,
   choices: [
-    { machine: 'desk', name: 'Desk', self: true, online: true },
-    { machine: 'laptop', name: 'Laptop', self: false, online: true },
-    { machine: 'studio', name: 'Studio', self: false, online: false },
+    { machine: 'desk', name: 'Desk', self: true, online: true, dispatcherOn: true },
+    { machine: 'laptop', name: 'Laptop', self: false, online: true, dispatcherOn: true },
+    { machine: 'studio', name: 'Studio', self: false, online: false, dispatcherOn: false },
   ],
   confirmedBy: [], waitingOn: [], clearedFor: null, changedByName: null, changedAt: null,
+  following: false, tookBack: false, leadLastSeen: null, outbox: { waiting: 0, oldestAt: null, expired: 0, failed: null }, localNews: { count: 0, needsUser: false },
 };
 const FOLLOWING: DispatcherLeadState = {
-  ...PEERS, role: 'follower', lead: PEERS.choices[1], confirmedBy: ['Laptop'], waitingOn: ['Studio'],
+  ...PEERS, role: 'follower', following: true, lead: PEERS.choices[1], confirmedBy: ['Laptop'], waitingOn: ['Studio'],
   changedByName: 'Desk', changedAt: '2026-11-13T10:00:00.000Z',
 };
 
 let changed: ((state: DispatcherLeadState) => void) | undefined;
 beforeEach(() => {
   changed = undefined;
+  _resetLeadStoreForTesting();
   Object.assign(window.clubhouse.dispatcher, {
     getLead: vi.fn(async () => PEERS),
     setLead: vi.fn(async () => FOLLOWING),
@@ -38,7 +41,7 @@ describe('Settings › Dispatcher › Lead (#3351)', () => {
   it('lists None, this computer and each member, and saves a person’s choice', async () => {
     render(<LeadSection />);
     const select = await screen.findByTestId('dispatcher-lead') as HTMLSelectElement;
-    expect([...select.options].map((o) => o.textContent)).toEqual(['None', 'Desk (this computer)', 'Laptop', 'Studio (offline)']);
+    expect([...select.options].map((o) => o.textContent)).toEqual(['None', 'Desk (this computer)', 'Laptop', 'Studio (offline, Dispatcher off)']);
     expect(select.value).toBe('');
     expect(screen.getByTestId('dispatcher-lead-status').textContent).toBe('Each computer uses its own Dispatcher.');
     fireEvent.change(select, { target: { value: 'laptop' } });
@@ -61,6 +64,41 @@ describe('Settings › Dispatcher › Lead (#3351)', () => {
     render(<LeadSection />);
     fireEvent.change(await screen.findByTestId('dispatcher-lead'), { target: { value: 'studio' } });
     expect((await screen.findByTestId('dispatcher-lead-error')).textContent).toContain('Couldn’t change the lead.');
+  });
+
+  it('offers Follow again on a computer that took back', async () => {
+    window.clubhouse.dispatcher.getLead = vi.fn(async () => ({ ...FOLLOWING, following: false, tookBack: true }));
+    window.clubhouse.dispatcher.followAgain = vi.fn(async () => FOLLOWING);
+    render(<LeadSection />);
+    expect((await screen.findByTestId('dispatcher-lead-status')).textContent).toBe('Laptop leads, but this computer took back and uses its own Dispatcher.');
+    fireEvent.click(screen.getByTestId('dispatcher-lead-follow-again'));
+    await waitFor(() => expect(window.clubhouse.dispatcher.followAgain).toHaveBeenCalled());
+  });
+
+  it('after the only other computer left, still says who left, with nothing to choose', async () => {
+    window.clubhouse.dispatcher.getLead = vi.fn(async () => ({ ...PEERS, canChoose: false, choices: [PEERS.choices[0]], clearedFor: 'Laptop' }));
+    render(<LeadSection />);
+    expect((await screen.findByTestId('dispatcher-lead-status')).textContent).toBe('Laptop left the network, so there’s no lead now. Each computer uses its own Dispatcher.');
+    expect((screen.getByTestId('dispatcher-lead') as HTMLSelectElement).disabled).toBe(true);
+  });
+
+  it('warns when the lead’s Dispatcher is off', () => {
+    expect(leadOffWarning({ ...FOLLOWING, lead: PEERS.choices[2] })).toBe('Studio’s Dispatcher is off. The other computers show its chat once it’s on there.');
+    expect(leadOffWarning({ ...FOLLOWING, lead: { ...PEERS.choices[0], dispatcherOn: false } })).toContain('This computer’s Dispatcher is off.');
+    expect(leadOffWarning(FOLLOWING)).toBeNull();
+  });
+
+  it('after Take back, says what still waits for the lead and what didn’t make it', async () => {
+    window.clubhouse.dispatcher.getLead = vi.fn(async () => ({ ...FOLLOWING, following: false, tookBack: true,
+      outbox: { waiting: 2, oldestAt: null, expired: 1, failed: null }, localNews: { count: 1, needsUser: false } }));
+    window.clubhouse.dispatcher.dismissLeadNotice = vi.fn(async () => FOLLOWING);
+    render(<LeadSection />);
+    const box = await screen.findByTestId('dispatcher-lead-outbox');
+    expect(box.textContent).toContain('2 messages waiting for Laptop.');
+    expect(box.textContent).toContain('1 message expired before Laptop came back');
+    expect(box.textContent).toContain('An update from this computer’s Dispatcher is in its own chat');
+    fireEvent.click(screen.getByTestId('dispatcher-lead-outbox-dismiss'));
+    await waitFor(() => expect(window.clubhouse.dispatcher.dismissLeadNotice).toHaveBeenCalled());
   });
 
   it('words each state plainly', () => {
