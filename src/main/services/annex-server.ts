@@ -3582,12 +3582,17 @@ async function handleNetworkCapacityRoute(ctx: AnnexRouteContext): Promise<void>
 async function handleNetworkConnectionsRoute(ctx: AnnexRouteContext): Promise<void> {
   const machine = agentCallPeer(ctx);
   if (!machine) { ctx.req.resume(); sendJson(ctx.res, 403, { error: 'not_a_computer', message: 'Only a computer in this Annex Network can share connections here.' }); return; }
+  const publication = agentCalls.captureControllerPublication(machine);
   const body = await readAgentCallBody(ctx);
   if (body === undefined) return;
   if (ctx.requireMtls()) return;
-  const outcome = await agentCalls.receiveDirections(machine, body);
+  const outcome = await agentCalls.receiveDirections(machine, body, Date.now(), publication);
   // Answered with this machine's own share, so the sender has it even if this one can't reach it.
-  if ('applied' in outcome) sendJson(ctx.res, 200, { ...outcome, directions: await agentCalls.shareForAnswer(machine) });
+  if ('applied' in outcome) {
+    const directions = await agentCalls.shareForAnswer(machine);
+    if (!publication.current()) { sendJson(ctx.res, 403, { error: 'pairing_changed' }); return; }
+    sendJson(ctx.res, 200, { ...outcome, directions, controller: agentCalls.federationControllerForShare(), epoch: publication.epoch });
+  }
   else sendJson(ctx.res, outcome.status, { error: outcome.error, message: outcome.message });
 }
 

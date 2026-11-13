@@ -17,6 +17,7 @@ export type ConnectionSourceKind =
   /** A link the user made on the Connections card (Make two-way, #2972). */
   | 'user_link'
   /** A source this build doesn't know. */
+  | 'dispatcher_federation'
   | 'other';
 
 export interface ConnectionSource {
@@ -80,6 +81,7 @@ export const CONNECTION_SOURCE_LABELS: Readonly<Record<ConnectionSourceKind, str
   tool_link: 'Made by an agent',
   dispatcher_link: 'Made by the Dispatcher',
   user_link: 'Made by you',
+  dispatcher_federation: 'Annex Network controllers',
   other: 'Other',
 };
 

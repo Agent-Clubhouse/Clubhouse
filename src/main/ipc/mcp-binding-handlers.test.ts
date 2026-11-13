@@ -1,3 +1,4 @@
+import { federationBindingSource } from '../services/dispatcher-federation';
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 
 const { sendGrantEvent, dispatcherIdentity } = vi.hoisted(() => ({ sendGrantEvent: vi.fn(), dispatcherIdentity: { name: 'Dispatcher' } }));
@@ -720,6 +721,7 @@ describe('restorePersistedBindings (#1544)', () => {
       orchestratorConnectionSource,
       dispatcherWireBindingSource,
       dispatcherConnectionSource,
+      federationBindingSource,
     ]);
     expect(rebuildPersistedBindings).toHaveBeenCalledTimes(2);
   });

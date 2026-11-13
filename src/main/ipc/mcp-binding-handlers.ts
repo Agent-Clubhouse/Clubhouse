@@ -1,7 +1,11 @@
+import { federationReceiver } from '../services/dispatcher-federation-receiver';
 /**
  * IPC handlers for MCP binding management.
  */
 
+import { parseAgentAddress } from '../../shared/agent-address';
+import { federationBindingSource, learnFederationController, localFederationController, watchFederation } from '../services/dispatcher-federation';
+import { federationDirection } from '../services/dispatcher-federation-policy';
 import { auditChanged } from '../services/settings-audit';
 import { watchSessionQuota } from '../services/provider-quota';
 import { BrowserWindow, ipcMain } from 'electron';
@@ -42,8 +46,9 @@ import {
   applyConnectionTools, connectAcrossMachines, disconnectAcrossMachines, makeTwoWay, migrateAutomaticConnectionTools, setLocalWake, setToolsAcrossMachines, startConnectionGrants,
 } from '../services/connection-grants';
 import { listConnectionDirectionsForInspection } from '../services/connection-grants-store';
-import { startAgentCalls } from '../services/annex-agent-calls';
+import { syncDirectionsWith, startAgentCalls } from '../services/annex-agent-calls';
 import { authorizeQueuedAnnexCall, reportAnnexDeliveryFailure } from '../services/annex-agent-call-host';
+import * as annexPeers from '../services/annex-peers';
 import * as annexClient from '../services/annex-client';
 import { runAgentToolForRemoteCaller } from '../services/clubhouse-mcp/tool-registry';
 import { mcpCallerKind } from '../services/clubhouse-mcp/mcp-call-gate';
@@ -52,6 +57,11 @@ import * as agentConfig from '../services/agent-config';
 import { getConnectionGuidance, getConnectionGuidanceCatalog, previewConnectionGuidance, saveConnectionGuidance, startConnectionGuidance } from '../services/connection-guidance';
 import type { SaveConnectionGuidance } from '../../shared/connection-guidance';
 import { dispatcherDisplayName, getDispatcherChatConfig, getDispatcherState, isDispatcherAgentId, isDispatcherChatAgentId } from '../services/dispatcher/dispatcher-service';
+
+function federationEnd(id: string) {
+  const parsed = parseAgentAddress(id);
+  return { agentId: parsed.agentId, ...(parsed.machine && { machineId: parsed.machine }) };
+}
 
 /** An agent's name and project here, for another machine's view of a call or connection (#3064). */
 async function describeAgentHere(agentId: string): Promise<{ name: string; projectName?: string } | undefined> {
@@ -202,6 +212,7 @@ export function registerMcpBindingHandlers(): void {
         });
         return { kept: true };
       }
+      if (federationDirection(federationEnd(agentId as string), federationEnd(targetId as string))) return { kept: true };
       // Allow unbinding for sleeping/exited agents to support cleanup of stale
       // wire definitions without requiring the agent to be running.
       bindingManager.unbind(agentId as string, targetId as string);
@@ -415,6 +426,7 @@ let stopWatchingOrchestratorConnections: (() => void) | null = null;
 let stopWatchingDispatcherWires: (() => void) | null = null;
 let stopWatchingAgentCards: (() => void) | null = null;
 let stopWatchingDispatcherConnections: (() => void) | null = null;
+let stopWatchingFederation: (() => void) | null = null;
 let stopWatchingMcpCallers: (() => void) | null = null;
 
 /**
@@ -450,7 +462,16 @@ export function restorePersistedBindings(): Promise<void> {
     });
     stopWatchingMcpCallers = watchMcpCallers();
     // Agents across machines (#3064): calls to and from other machines' agents, and the connections between them.
+    registerPersistedBindingSource(federationBindingSource);
+    stopWatchingFederation = watchFederation(() => {
+      void restorePersistedBindings();
+      for (const peer of annexPeers.listPeers()) {
+        if (peer.role === 'member' && peer.kind !== 'phone') void syncDirectionsWith(peer.fingerprint.toLowerCase());
+      }
+    }, (machine) => annexClient.isMachineConnected(machine));
     startAgentCalls({
+      remoteDispatcher: federationReceiver,
+      federation: { local: localFederationController, learn: learnFederationController },
       transport: {
         connected: (machine) => annexClient.isMachineConnected(machine),
         post: (machine, urlPath, body) => annexClient.postToMachine(machine, urlPath, body),
@@ -502,6 +523,8 @@ export function restorePersistedBindings(): Promise<void> {
 export function _resetHandlersForTesting(): void {
   handlersRegistered = false;
   persistedSourcesRegistered = false;
+  stopWatchingFederation?.();
+  stopWatchingFederation = null;
   stopWatchingHelperWires?.();
   stopWatchingHelperWires = null;
   stopWatchingOrchestratorConnections?.();

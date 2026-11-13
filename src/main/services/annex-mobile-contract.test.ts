@@ -902,7 +902,8 @@ async function connect(auth: 'mtls' | 'bearer' = 'mtls', opts: { iconRefs?: bool
   if (auth === 'mtls') annexServer._testing.registerPeerSocket(ws as never, 'mobile-fixture-identity', (W.peers.get('mobile-fixture-identity') as { tlsCertificateFingerprint: string }).tlsCertificateFingerprint);
   annexServer._testing.wss!.clients.add(ws as never);
   annexServer._testing.wss!.emit('connection', ws);
-  await eventually(() => expect(ws.send).toHaveBeenCalled());
+  // Incremental broadcasts can reach a new socket before its asynchronous snapshot.
+  await eventually(() => expect(frames(ws).some((frame) => frame.type === 'snapshot')).toBe(true));
   return ws;
 }
 const frames = (ws: FakeWs) => ws.send.mock.calls.map((c) => JSON.parse(c[0] as string));

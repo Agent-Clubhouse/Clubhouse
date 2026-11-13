@@ -13,6 +13,7 @@
  * asynchronously; their stores are not in that commit.
  */
 
+import { federationDirection } from './dispatcher-federation-policy';
 import type { AgentAddress, ConnectionDirection, DirectionTools } from '../../shared/connection-grants';
 import {
   activeAgentLinks, NEW_CONNECTION_ENABLED_TOOLS, NEW_CONNECTION_SWITCHES, WAKE_TOOL, directionKey, localDirectionTools,
@@ -102,11 +103,16 @@ const liveAgentBinding = (agentId: string, targetId: string) => bindingManager.g
  * binding says that, wake included.
  */
 function restoreTools(agentId: string, targetId: string, targetKind: BindingTargetKind, legacy: string[], options: Partial<RestoreOptions> = {}): void {
+  const controller = targetKind === 'agent' && federationDirection(connectionEnd(agentId), connectionEnd(targetId));
+  if (controller) {
+    bindingManager.setDisabledTools(agentId, targetId, controller.disabledTools, []);
+    return;
+  }
   if (targetKind !== 'agent') {
     bindingManager.setDisabledTools(agentId, targetId, legacy);
     return;
   }
-  const saved = deniedConnectionTools(local(agentId), connectionEnd(targetId));
+  const saved = deniedConnectionTools(connectionEnd(agentId), connectionEnd(targetId));
   if (options.starting) {
     // Bind and every store write keep the live list in step with a saved one.
     if (saved) return;
@@ -150,7 +156,7 @@ export async function applyConnectionTools(agentId: string, targetId: string, di
   }
   if (options.restore) {
     // A canvas wire bound again only fills a store that has nothing, live binding or not.
-    const saved = deniedConnectionTools(local(agentId), connectionEnd(targetId));
+    const saved = deniedConnectionTools(connectionEnd(agentId), connectionEnd(targetId));
     if (saved) {
       if (binding) bindingManager.setDisabledTools(agentId, targetId, saved);
       return saved;
@@ -160,7 +166,7 @@ export async function applyConnectionTools(agentId: string, targetId: string, di
     return disabledTools;
   }
   // An edit (the canvas popover, the Connections card), or a sleeping agent's wire: the store, then the binding follows.
-  const before = deniedConnectionTools(local(agentId), connectionEnd(targetId));
+  const before = deniedConnectionTools(connectionEnd(agentId), connectionEnd(targetId));
   // A new wire turns wake on. A first edit on a direction with nothing saved keeps the wake its source started it with.
   const enabled = options.start
     ? [...NEW_CONNECTION_ENABLED_TOOLS]
@@ -465,7 +471,7 @@ export async function forgetConnectionAgent(agentId: string): Promise<void> {
 export function startConnectionGrants(options: { notify?: (from: string, to: string, disabledTools: string[]) => void } = {}): () => void {
   notifyRenderer = options.notify ?? null;
   bindingManager.setConnectionToolsSource(
-    (agentId, targetId, targetKind) => (targetKind === 'agent' ? deniedConnectionTools(local(agentId), connectionEnd(targetId)) : undefined),
+    (agentId, targetId, targetKind) => (targetKind === 'agent' ? deniedConnectionTools(connectionEnd(agentId), connectionEnd(targetId)) : undefined),
     restoreTools,
   );
   const unregister = registerPersistedBindingSource(userConnectionSource);

@@ -163,6 +163,8 @@ export interface WakeAgentRequest {
    * Dispatcher, which is in no project, passes its own folder (#3037).
    */
   locate?: (targetId: string) => Promise<DurableAgentLocation | null>;
+  /** Trusted call admission, rechecked after configuration I/O and before starting input. */
+  admission?: () => boolean;
 }
 
 /** Wakes in progress here: a parallel wake must not spawn the agent too. */
@@ -173,7 +175,7 @@ const waking = new Set<string>();
  * still stopping is waited on and then woken for real, so the mission goes to
  * a new session instead of the one that is exiting.
  */
-export async function wakeWiredAgent({ callerId, targetId, targetName, mission, missionRouted, locate = findDurableAgentConfig }: WakeAgentRequest): Promise<McpToolResult> {
+export async function wakeWiredAgent({ callerId, targetId, targetName, mission, missionRouted, locate = findDurableAgentConfig, admission }: WakeAgentRequest): Promise<McpToolResult> {
   const target = { agentId: targetId, agentName: targetName };
   const undelivered = mission ? { messageDelivered: false } : {};
   const stillStopping = () => jsonResult({
@@ -185,7 +187,10 @@ export async function wakeWiredAgent({ callerId, targetId, targetName, mission, 
     note: 'It is changing state. Check get_status, then use send_message once it is running.',
   });
 
+  const revoked = () => ({ content: [{ type: 'text' as const, text: 'The connection was revoked before the agent could be woken.' }], isError: true });
+  if (admission && !admission()) return revoked();
   if (agentSystem.isAgentStopping(targetId) && !(await agentSystem.waitForAgentStopped(targetId))) return stillStopping();
+  if (admission && !admission()) return revoked();
   if (waking.has(targetId)) return stillStarting();
   if (agentSystem.isAgentRunning(targetId)) {
     // A sleep that began during the wait above.
@@ -205,6 +210,7 @@ export async function wakeWiredAgent({ callerId, targetId, targetName, mission, 
     if (!durable) {
       return { content: [{ type: 'text', text: `Could not find durable config for agent ${targetId}.` }], isError: true };
     }
+    if (admission && !admission()) return revoked();
     const { agentConfig, projectPath } = durable;
     const resume = !!agentConfig.lastSessionId;
     announced = true;

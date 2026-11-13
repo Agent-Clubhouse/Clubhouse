@@ -26,6 +26,7 @@ export function removalEffect(kind: ConnectionSourceKind, names: { agent: string
     case 'user_link': return `Removes the link you made from ${names.agent} to ${names.other}.`;
     case 'dispatcher_auto': return `Turns off Connect to Dispatcher for ${names.dispatcherEnd ?? names.other}. The Dispatcher can no longer message it or get its reports.`;
     case 'canvas': return 'Remove it on its canvas. This card doesn’t change canvas wires.';
+    case 'dispatcher_federation': return 'Controller links follow Annex Network membership. Their tools are fixed.';
     case 'helper': return `A helper stays connected to its orchestrator while it exists. To end it, dispose the helper from the Helpers card.`;
     default: return 'This source can’t be removed here.';
   }
@@ -45,6 +46,7 @@ export function sourcesByKind(pairs: readonly ConnectionPairSources[]): Array<{ 
 }
 
 const KIND_BY_ID: Readonly<Record<string, ConnectionSourceKind>> = {
+  'dispatcher-federation': 'dispatcher_federation',
   'canvas-wires': 'canvas', 'helper-wires': 'helper', 'dispatcher-wires': 'dispatcher_auto',
   'orchestrator-connections': 'tool_link', 'network-agent-connections': 'tool_link', 'network-connections': 'user_link', 'dispatcher-connections': 'dispatcher_link', 'user-connections': 'user_link',
 };
@@ -61,7 +63,8 @@ const CONFIRMED: ReadonlySet<ConnectionSourceKind> = new Set(['dispatcher_auto',
  * does a helper's link with its orchestrator, where it can't take effect.
  * A direction that isn't connected offers Make two-way instead.
  */
-function DirectionColumn({ from, to, fromName, toName, connected, inspectionOnly, disabledTools, wakeOn, showWake, canMakeTwoWay, onChanged }: {
+function DirectionColumn({ readOnly = false, from, to, fromName, toName, connected, inspectionOnly, disabledTools, wakeOn, showWake, canMakeTwoWay, onChanged }: {
+  readOnly?: boolean;
   from: string;
   to: string;
   fromName: string;
@@ -135,14 +138,14 @@ function DirectionColumn({ from, to, fromName, toName, connected, inspectionOnly
             return (
               <li key={tool} className="flex items-center gap-2 text-xs text-ctp-subtext1">
                 <span className="flex-1 min-w-0 truncate">{label}</span>
-                <Toggle aria-label={`${label} (${fromName} to ${toName})`} checked={on} onChange={(next) => toggle(tool, next)} data-testid={`connection-tool-${from}-${to}-${tool}`} />
+                <Toggle disabled={readOnly} aria-label={`${label} (${fromName} to ${toName})`} checked={on} onChange={(next) => toggle(tool, next)} data-testid={`connection-tool-${from}-${to}-${tool}`} />
               </li>
             );
           })}
           {showWake && (
             <li className="flex items-center gap-2 text-xs text-ctp-subtext1">
               <span className="flex-1 min-w-0 truncate">{WAKE_SWITCH.label}</span>
-              <Toggle aria-label={`${WAKE_SWITCH.label} (${fromName} to ${toName})`} checked={wake} onChange={toggleWake} data-testid={`connection-tool-${from}-${to}-${WAKE_SWITCH.tool}`} />
+              <Toggle disabled={readOnly} aria-label={`${WAKE_SWITCH.label} (${fromName} to ${toName})`} checked={wake} onChange={toggleWake} data-testid={`connection-tool-${from}-${to}-${WAKE_SWITCH.tool}`} />
             </li>
           )}
         </ul>
@@ -255,13 +258,14 @@ export function ConnectionSourcesDialog({ agentId, otherId, agentName, otherName
         <div className="flex gap-4 mb-4" data-testid="connection-directions">
           {directions.map((d) => (
             <DirectionColumn
+              readOnly={pairs.some((p) => p.sources.some((s) => s.kind === 'dispatcher_federation'))}
               key={`${d.from}>${d.to}`}
               {...d}
               connected={connectedWay(d.from, d.to)}
               inspectionOnly={inspectionWay(d.from, d.to)}
               disabledTools={toolsOf(d.from, d.to)}
               wakeOn={localWakeOn(savedOf(d.from, d.to), liveEnabled?.get(`${d.from}>${d.to}`))}
-              showWake={!dispatcherEnd && !familyLink}
+              showWake={pairs.some((p) => p.sources.some((s) => s.kind === 'dispatcher_federation')) || (!dispatcherEnd && !familyLink)}
               canMakeTwoWay={connectedWay(d.to, d.from) && !inspectionWay(d.to, d.from)}
               onChanged={onRemoved}
             />
