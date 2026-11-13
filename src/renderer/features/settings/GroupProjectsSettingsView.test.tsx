@@ -197,9 +197,11 @@ describe('GroupProjectsSettingsView', () => {
     it('disables network reach with its reason when Annex Network is off', async () => {
       render(<GroupProjectsSettingsView />);
       await screen.findByRole('list', { name: 'Local group projects' });
-      const network = screen.getAllByRole('radio', { name: 'Network' });
-      expect(network[0]).toBeDisabled();
-      expect(network[0]).toHaveAccessibleDescription(/Network reach needs Annex Network/);
+      await waitFor(() => {
+        const network = screen.getAllByRole('radio', { name: 'Network' });
+        expect(network[0]).toBeDisabled();
+        expect(network[0]).toHaveAccessibleDescription(/Network reach needs Annex Network/);
+      });
     });
 
     it('creates with the project the person chooses, on this computer', async () => {
