@@ -10,7 +10,7 @@ import { parseHandoff, type Handoff } from '../../shared/handoffs';
 import type { HandoffOffer } from '../../shared/handoffs';
 const state = vi.hoisted(() => ({
   dir: '', machine: Array(16).fill('ab').join(':'), peer: Array(16).fill('cd').join(':'),
-  allowed: true, connected: true, member: true, accepting: true, running: true,
+  allowed: true, connected: true, online: true, member: true, accepting: true, running: true,
   send: vi.fn(async (_text: string, _options?: unknown) => ({})), create: vi.fn(), extraAgent: undefined as { id: string; name: string } | undefined, participant: (_id: string) => false, post: vi.fn(),
 }));
 vi.mock('electron', () => ({ app: { getPath: () => state.dir } }));
@@ -18,7 +18,7 @@ vi.mock('../telemetry/persist', () => ({ persist: { recovery: vi.fn(), timed: (_
 vi.mock('./annex-identity', () => ({ getIdentity: () => ({ fingerprint: state.machine }), getOrCreateIdentity: () => ({ fingerprint: state.machine }) }));
 vi.mock('./annex-settings', () => ({ getSettings: () => ({ alias: 'this-computer', enableServer: true, networkEnabled: true, acceptHandoffs: state.accepting }), networkEnabled: () => true }));
 vi.mock('./annex-peers', () => ({ listPeers: () => [{ fingerprint: state.peer, alias: 'other-computer', role: 'member', kind: 'desktop' }] }));
-vi.mock('./annex-client', () => ({ getSatellite: () => ({ snapshot: { dispatcher: { id: 'remote-dispatcher', name: 'Remote concierge' } } }), isMachineConnected: () => true, postToMachine: (...args: unknown[]) => state.post(...args), onSatelliteConnected: () => () => {} }));
+vi.mock('./annex-client', () => ({ getSatellite: () => ({ snapshot: { dispatcher: { agent: { id: 'remote-dispatcher', name: 'Remote concierge' } } } }), isMachineConnected: () => state.online, postToMachine: (...args: unknown[]) => state.post(...args), onSatelliteConnected: () => () => {} }));
 vi.mock('./annex-agent-calls', () => ({ isNetworkComputer: () => state.member }));
 vi.mock('./agent-registry', () => ({ agentRegistry: { get: () => undefined } }));
 vi.mock('./agent-runtime', () => ({ getAgentRuntime: () => ({ isRunning: () => state.running, sendMessage: state.send }) }));
@@ -36,11 +36,11 @@ import { prepareNewHandoffHelper, handoffHost, localHandoffAgent, receiveNetwork
 const offer = (): HandoffOffer => ({ to: localHandoffAgent('receiver'), task: { title: 'Continue task', brief: 'Goal and remaining checks.' }, mode: 'worktree' });
 beforeEach(() => {
   state.dir = fs.mkdtempSync(path.join(os.tmpdir(), 'handoff-host-'));
-  state.allowed = state.connected = state.member = state.accepting = state.running = true;
+  state.allowed = state.connected = state.online = state.member = state.accepting = state.running = true;
   vi.clearAllMocks();
   state.extraAgent = undefined;
 });
-afterEach(() => { stopHandoffs(); fs.rmSync(state.dir, { recursive: true, force: true }); });
+afterEach(async () => { await stopHandoffs(); fs.rmSync(state.dir, { recursive: true, force: true }); });
 
 it('resolves named agents and computer Dispatcher targets, requiring a connection for normal receivers', async () => {
   expect(await resolveHandoffTarget('Receiver')).toEqual(localHandoffAgent('receiver'));
@@ -71,7 +71,7 @@ it('retains query access after revocation and delivers each notice once across h
   expect(state.send.mock.calls[0][0]).not.toContain('From You');
   expect(state.participant('receiver')).toBe(true);
   expect(state.participant('stranger')).toBe(false);
-  stopHandoffs();
+  await stopHandoffs();
   state.allowed = false;
   startHandoffs();
   await vi.waitFor(() => expect(state.participant('receiver')).toBe(true));
@@ -103,7 +103,7 @@ it('prepares one asleep managed helper using the normal creation boundary and re
   });
   expect(await prepareNewHandoffHelper('dispatcher', record.id)).toEqual(localHandoffAgent('new-agent'));
   expect(state.create).toHaveBeenCalledWith('dispatcher', 'create_managed_agent', { name: `handoff-${record.id}`, project: state.dir, templateId: 'person-helper-template', connectToDispatcher: false });
-  stopHandoffs();
+  await stopHandoffs();
   expect(await prepareNewHandoffHelper('dispatcher', record.id)).toEqual(localHandoffAgent('new-agent'));
   expect(state.create).toHaveBeenCalledTimes(1);
   state.allowed = false;
@@ -138,4 +138,24 @@ it.each(['Receiver', 'new_helper'])('routes machine:<name> to a remote Dispatche
   expect(accepted).toMatchObject({ state: 'accepted', acceptance: { by: { agentId: 'dispatcher' }, target: { agentId: choice === 'new_helper' ? 'new-agent' : 'receiver' } } });
   expect(store.get(record.id)).toEqual(accepted);
   await expect(handoffHost().coordinator.service.advance(record.id, { state: 'transferring', bytesDone: 0 }, accepted.version)).resolves.toMatchObject({ state: 'transferring' });
+});
+
+
+it('does not plant a cancelled offer, participant tools or its private brief for an unconnected local receiver', async () => {
+  startHandoffs(); state.connected = false;
+  const from = { machine: state.peer, agentId: 'remote-sender' }; const at = Date.now(); const id = randomUUID();
+  const record = parseHandoff({ schemaVersion: 1, id, createdAt: at, updatedAt: at, version: 1, from, to: localHandoffAgent('receiver'),
+    task: { title: 'Private task', brief: 'Private sender brief' }, mode: 'worktree', state: 'offered', history: [{ operationId: randomUUID(), at, by: { kind: 'agent', address: from }, state: 'offered' }] });
+  expect(await receiveNetworkHandoff(state.peer, { op: 'cancel', record, command: { id, from, operationId: randomUUID() } })).toMatchObject({ kind: 'refused', record: { failure: { code: 'refused' } } });
+  expect(handoffHost().store.list()).toEqual([]); expect(state.participant('receiver')).toBe(false); expect(state.send).not.toHaveBeenCalled();
+  expect(() => handoffHost().coordinator.service.get(id, localHandoffAgent('receiver'))).toThrow('unavailable');
+});
+it('sends nothing when a never-attempted offer is cancelled after its grant or connection is revoked', async () => {
+  state.online = false;
+  const record = await handoffHost().coordinator.offer({ ...offer(), to: await resolveHandoffTarget('machine:other-computer') }, localHandoffAgent('sender'));
+  expect(handoffHost().commands.isUndelivered(record.id)).toBe(true);
+  state.allowed = state.connected = false;
+  expect((await handoffHost().coordinator.cancel(record.id, localHandoffAgent('sender'))).state).toBe('cancelled');
+  state.online = true; await handoffHost().coordinator.flush();
+  expect(state.post).not.toHaveBeenCalled(); expect(handoffHost().commands.list()).toEqual([]);
 });

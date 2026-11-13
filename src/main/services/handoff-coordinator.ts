@@ -32,6 +32,7 @@ export interface HandoffCoordinatorOptions {
   authorizeOutgoing(record: Handoff): Promise<boolean>;
   changed?(record: Handoff): Promise<void>;
   now?: () => number;
+  peerRemoved?(machine: string): boolean;
 }
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
 
@@ -61,6 +62,8 @@ export function originalHandoffOffer(record: Handoff): Handoff {
  * computer serializes decisions, including sender cancellation.
  */
 export class HandoffCoordinator {
+  private readonly preparing = new Set<string>();
+  private readonly cancellations = new Map<string, Promise<Handoff>>();
   private readonly syncing = new Map<string, Promise<void>>();
   private cursor = 0;
   private historyCursor = 0;
@@ -76,8 +79,15 @@ export class HandoffCoordinator {
 
   async offer(input: HandoffOffer, sender: HandoffAgent): Promise<Handoff> {
     await this.prune();
-    const record = await this.service.offer(input, sender);
-    await this.options.commands.markUndelivered?.(record.id);
+    let preparingId: string | undefined;
+    let record: Handoff;
+    try {
+      record = await this.service.offer(input, sender, async (next) => {
+        // The delivery proof is durable before an offer can become visible to a concurrent cancel.
+        preparingId = next.id; this.preparing.add(next.id);
+        if (next.from.machine !== next.to.machine) await this.options.commands.markUndelivered?.(next.id);
+      });
+    } finally { if (preparingId) this.preparing.delete(preparingId); }
     await this.changed(record);
     await this.trySync(record.id);
     return this.options.store.get(record.id)!;
@@ -97,15 +107,38 @@ export class HandoffCoordinator {
   }
 
   async cancel(id: string, actor: HandoffAgent, reason?: string): Promise<Handoff> {
+    const current = this.service.get(id, actor);
+    if (!sameHandoffAgent(current.from, actor)) throw new Error('Only the sender can cancel.');
+    let work = this.cancellations.get(id);
+    if (!work) {
+      work = this.cancelRecord(id, actor, reason).finally(() => { this.cancellations.delete(id); });
+      this.cancellations.set(id, work);
+    }
+    await work;
+    await this.trySync(id);
+    return this.options.store.get(id)!;
+  }
+
+  private async cancelRecord(id: string, actor: HandoffAgent, reason?: string): Promise<Handoff> {
+    // A transport attempt and a local never-delivered cancellation cannot race.
+    try { await this.syncing.get(id); }
+    catch { /* telemetry-exempt: uncertain delivery keeps its durable attempt marker; cancellation is queued below */ }
+
     const record = this.service.get(id, actor);
     if (!sameHandoffAgent(record.from, actor)) throw new Error('Only the sender can cancel.');
     if (record.state === 'cancelled') return record;
     if (['applying', 'applied', 'declined', 'failed'].includes(record.state)) throw new Error('This handoff can no longer be cancelled.');
+    if (record.to.machine !== this.options.machine && this.options.commands.isUndelivered?.(id)) {
+      const cancelled = await this.service.cancelUndelivered(id, reason);
+      await this.options.commands.acknowledge?.(id, cancelled.version);
+      for (const command of this.options.commands.list().filter((item) => item.id === id)) await this.options.commands.remove(command.operationId);
+      await this.changed(cancelled);
+      return cancelled;
+    }
     const pending = this.options.commands.list().find((command) => command.id === id);
     const command = pending ?? parseHandoffCancellation({ id, operationId: randomUUID(), from: actor, ...(reason !== undefined && { reason }) });
     await this.options.commands.put(command);
     if (record.to.machine === this.options.machine) await this.applyCancellation(command, this.options.machine);
-    else await this.trySync(id);
     return this.options.store.get(id)!;
   }
 
@@ -155,7 +188,11 @@ export class HandoffCoordinator {
       if (body.record !== undefined) {
         const offer = parseHandoff(body.record);
         if (offer.id !== command.id) throw new Error('Invalid cancelled offer.');
-        record = await this.service.receiveCancelledOffer(offer, command.from, machine, command.operationId, command.reason);
+        try { record = await this.service.receiveCancelledOffer(offer, command.from, machine, command.operationId, command.reason); }
+        catch (error) {
+          if (error instanceof HandoffOfferRefused) return { kind: 'refused', record: error.record };
+          throw error;
+        }
       } else record = await this.applyCancellation(command, machine);
     } else throw new Error('Invalid handoff request.');
     await this.changed(record);
@@ -173,6 +210,7 @@ export class HandoffCoordinator {
   async sync(id: string): Promise<void> {
     const pending = this.syncing.get(id);
     if (pending) return pending;
+    if (this.cancellations.has(id)) return;
     const run = this.syncRecord(id).finally(() => { this.syncing.delete(id); });
     this.syncing.set(id, run);
     return run;
@@ -186,6 +224,7 @@ export class HandoffCoordinator {
       return;
     }
     const sending = record.from.machine === this.options.machine;
+    if (sending && isTerminalHandoff(record.state) && !this.options.commands.list().some((command) => command.id === id)) return;
     const peer = sending ? record.to.machine : record.from.machine;
     if (!this.options.connected(peer) || !await this.options.authorizeOutgoing(record) && !this.options.commands.list().some((command) => command.id === id)) return;
     const cancellation = sending ? this.options.commands.list().find((command) => command.id === id) : undefined;
@@ -223,17 +262,20 @@ export class HandoffCoordinator {
     await this.changed(this.options.store.get(id)!);
   }
 
-  /** Only acknowledged terminal history is evictable; pending decisions/commands remain durable. */
+  /** Acknowledged or removed-peer terminal history is evictable; pending decisions/commands remain durable. */
   private async prune(): Promise<void> {
     const now = (this.options.now ?? Date.now)();
+    const orphaned = new Set(this.options.store.list().filter((record) => isTerminalHandoff(record.state) && record.from.machine !== record.to.machine
+      && this.options.peerRemoved?.(record.from.machine === this.options.machine ? record.to.machine : record.from.machine)).map((record) => record.id));
+    for (const command of this.options.commands.list()) if (orphaned.has(command.id)) await this.options.commands.remove(command.operationId);
     const candidates = this.options.store.list().filter((record) => isTerminalHandoff(record.state)
       && !this.options.commands.list().some((command) => command.id === record.id)
-      && (record.from.machine === record.to.machine || this.options.commands.acknowledged?.(record.id) === record.version
+      && (orphaned.has(record.id) || record.from.machine === record.to.machine || record.state === 'cancelled' && this.options.commands.isUndelivered?.(record.id) || this.options.commands.acknowledged?.(record.id) === record.version
         || this.acknowledged.get(record.id) === record.version)).sort((a, b) => b.updatedAt - a.updatedAt);
-    const removed = new Set(candidates.filter((record, index) => index >= 200 || now - record.updatedAt >= 7 * 24 * 60 * 60_000).map((record) => record.id));
+    const removed = new Set(candidates.filter((record, index) => orphaned.has(record.id) || index >= 200 || now - record.updatedAt >= 7 * 24 * 60 * 60_000).map((record) => record.id));
     if (removed.size) await this.options.store.prune?.(removed);
     for (const id of removed) this.acknowledged.delete(id);
-    await this.options.commands.prune?.(new Set(this.options.store.list().map((record) => record.id)));
+    await this.options.commands.prune?.(new Set([...this.options.store.list().map((record) => record.id), ...this.preparing]));
   }
 
   /** Bounded work per sweep, so retained history cannot flood a network peer. */
@@ -244,10 +286,7 @@ export class HandoffCoordinator {
       if (record.state === 'offered' && record.from.machine === this.options.machine && record.to.machine !== this.options.machine
         && now >= record.createdAt + HANDOFF_OFFER_TTL_MS) {
         if (this.options.commands.isUndelivered?.(record.id)) {
-          const cancelled = await this.service.cancelUndelivered(record.id);
-          await this.options.commands.acknowledge?.(record.id, cancelled.version);
-          for (const command of this.options.commands.list().filter((item) => item.id === record.id)) await this.options.commands.remove(command.operationId);
-          await this.changed(cancelled);
+          await this.cancel(record.id, record.from, 'Offer expired before any delivery attempt.');
         } else if (!this.options.commands.list().some((command) => command.id === record.id)) {
           await this.options.commands.put({ id: record.id, from: record.from, operationId: randomUUID(), reason: 'Offer expired.' });
         }

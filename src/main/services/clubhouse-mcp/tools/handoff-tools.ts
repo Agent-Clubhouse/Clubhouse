@@ -17,7 +17,7 @@ export function registerHandoffTools(): void {
   describeCallsForAsk('respond_to_handoff', (args) => args.accept === true ? 'Accept this handoff, including automatic verified transfer and apply into a fresh worktree.' : 'Decline this handoff.');
 
   registerGlobalTool('offer_handoff', {
-    description: 'Offer a task, brief and code to another agent or a computer’s Dispatcher. Unlike hand_off, which records how an orchestrator took a helper’s work, this starts a durable agreement with a receiver. Needs handoff.offer and an existing connection, or a receiving Dispatcher. Accepting authorizes automatic verified transfer/apply. Keep the returned id; get_handoff shows retained history.',
+    description: 'Offer a task, brief and code to another agent or a computer’s Dispatcher. Unlike hand_off, which records how an orchestrator took a helper’s work, this starts a durable agreement with a receiver. Needs handoff.offer and an existing connection, or a receiving Dispatcher. Accepting authorizes automatic verified transfer/apply. Keep the returned id; get_handoff shows retained history. A refused or expired offer is terminal: make a new offer to try again.',
     inputSchema: { type: 'object', properties: {
       to: { type: 'string', description: 'Agent id/name, agent@machine (fingerprint or unambiguous name), or machine:<name> for that computer’s Dispatcher.' },
       task: { type: 'string', description: 'Task title, up to 256 characters.' }, brief: { type: 'string', description: 'Goal, progress, remaining work and verification; up to 16000 characters. Never include secrets.' },

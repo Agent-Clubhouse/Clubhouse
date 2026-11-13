@@ -76,7 +76,7 @@ export async function resolveHandoffTarget(reference: string): Promise<HandoffTa
     return isDispatcherAgentId(local.agentId) ? { machine, via: 'dispatcher' } : local;
   }
   const snapshot = annexClient.getSatellite(machine)?.snapshot;
-  const remoteDispatcher = snapshot?.dispatcher as { id?: string; name?: string } | undefined;
+  const remoteDispatcher = (snapshot?.dispatcher as { agent?: { id?: string; name?: string } } | undefined)?.agent;
   if (ref.toLowerCase() === 'dispatcher' || remoteDispatcher && [remoteDispatcher.id, remoteDispatcher.name].some((value) => typeof value === 'string' && value.toLowerCase() === ref.toLowerCase())) return { machine, via: 'dispatcher' };
   const candidates = Object.values(snapshot?.agents ?? {}).flat().filter((raw): raw is { id: string; name: string } => !!raw && typeof raw === 'object'
     && 'id' in raw && typeof raw.id === 'string' && 'name' in raw && typeof raw.name === 'string');
@@ -130,7 +130,7 @@ interface Host { store: HandoffStore; commands: HandoffCommandStore; coordinator
 let host: Host | undefined;
 let sweep: ReturnType<typeof setInterval> | undefined;
 let offConnected: (() => void) | undefined;
-let flushing = false;
+let flushWork: Promise<void> | undefined;
 
 async function authorize(request: HandoffAuthorization): Promise<boolean> {
   const { record, actor, action, stage } = request;
@@ -203,6 +203,7 @@ export function handoffHost(): Host {
     }, isDispatcher: (agent) => agent.machine === machine && isDispatcherAgentId(agent.agentId) && getDispatcherState().enabled });
   const coordinator = new HandoffCoordinator({
     machine, store, service, commands,
+    peerRemoved: (peer) => !isNetworkComputer(peer),
     connected: (peer) => isNetworkComputer(peer) && annexClient.isMachineConnected(peer),
     post: async (peer, body) => {
       const response = await withCapacityDeadline((signal) => annexClient.postToMachine(peer, '/api/v1/network/handoffs', body, { signal, maxResponseBytes: 512 * 1024 }));
@@ -247,15 +248,17 @@ export function startHandoffs(): void {
       return false;
     }
   });
-  const flush = async () => {
-    if (flushing || !getIdentity()) return;
-    flushing = true;
-    try {
-      const current = handoffHost();
-      await current.coordinator.flush();
-      for (const record of current.store.list()) await notifyRecord(record);
-    } catch { /* telemetry-exempt: durable records/commands retry; tools report unreadable storage explicitly */ }
-    finally { flushing = false; }
+  const flush = (): Promise<void> => {
+    if (flushWork) return flushWork;
+    if (!getIdentity()) return Promise.resolve();
+    const current = handoffHost();
+    flushWork = (async () => {
+      try {
+        await current.coordinator.flush();
+        for (const record of current.store.list()) await notifyRecord(record);
+      } catch { /* telemetry-exempt: durable records/commands retry; tools report unreadable storage explicitly */ }
+    })().finally(() => { flushWork = undefined; });
+    return flushWork;
   };
   offConnected = annexClient.onSatelliteConnected(() => { void flush(); });
   sweep = setInterval(() => { void flush(); }, 30_000);
@@ -263,11 +266,12 @@ export function startHandoffs(): void {
   void flush();
 }
 
-export function stopHandoffs(): void {
+export async function stopHandoffs(): Promise<void> {
   if (sweep) clearInterval(sweep);
   sweep = undefined;
   offConnected?.();
   offConnected = undefined;
+  await flushWork;
   setHandoffParticipantCheck(() => false);
   host = undefined;
   incomingRates.clear();
