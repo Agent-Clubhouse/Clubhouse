@@ -5,7 +5,7 @@ import * as os from 'os';
 import * as path from 'path';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 const state = vi.hoisted(() => ({
-  dir: '', sender: '', receiver: '', asleep: true, wake: vi.fn(), onLocate: () => {}, targetMode: 'allow', wakeMode: 'allow', messageMode: 'allow', dispatcherConnected: true, disabledTools: [] as string[], machine: Array(16).fill('ab').join(':'), peer: Array(16).fill('cd').join(':'),
+  dir: '', sender: '', receiver: '', asleep: true, wake: vi.fn(), onLocate: () => {}, targetMode: 'allow', wakeMode: 'allow', messageMode: 'allow', dispatcherConnected: true, disabledTools: [] as string[], enabledTools: ['wake_agent'] as string[] | undefined, savedDirection: true, bindingEnabled: ['wake_agent'] as string[] | undefined, bindingDisabled: [] as string[], policyRevision: 0, onGrants: (_id: string) => {}, machine: Array(16).fill('ab').join(':'), peer: Array(16).fill('cd').join(':'),
   allowed: true, connected: true, online: true, member: true, accepting: true, running: true,
   send: vi.fn(async (_text: string, _options?: unknown) => ({})), create: vi.fn(), extraAgent: undefined as { id: string; name: string } | undefined, participant: (_id: string) => false, post: vi.fn(),
 }));
@@ -21,9 +21,10 @@ vi.mock('./agent-runtime', () => ({ getAgentRuntime: () => ({ isRunning: () => s
 vi.mock('./agent-config', () => ({ listDurable: async (project: string) => { state.onLocate(); return project === state.receiver ? [{ id: 'receiver', name: 'Receiver' }] : [{ id: 'sender', name: 'Sender' }]; }, peekDurableConfigs: async (project: string) => project === state.sender ? [{ id: 'sender', name: 'Sender' }] : [{ id: 'receiver', name: 'Receiver' }] }));
 vi.mock('./project-store', () => ({ list: async () => [{ id: 'destination-project', path: state.receiver }], peekProjects: async () => [{ id: 'source-project', name: 'Source', path: state.sender }, { id: 'destination-project', name: 'Destination', path: state.receiver }] }));
 vi.mock('./dispatcher/dispatcher-service', () => ({ getDispatcherState: () => ({ enabled: true, agentId: 'dispatcher', path: state.dir, config: { name: 'Dispatcher' } }), isDispatcherAgentId: (id: string) => id === 'dispatcher' }));
-vi.mock('./agent-grants-service', () => ({ effectiveAgentGrants: async (_project: string, id: string) => state.allowed ? [{ action: 'handoff.offer', target: { kind: 'any' }, mode: 'allow' }, ...(id !== 'receiver' || state.targetMode !== 'off' ? [{ action: 'handoff.accept', target: { kind: 'any' }, mode: id === 'receiver' ? state.targetMode : 'allow' }] : []), { action: 'agent.wake', target: { kind: 'any' }, mode: state.wakeMode }, { action: 'agent.message', target: { kind: 'any' }, mode: state.messageMode }] : [] }));
-vi.mock('./connection-grants-store', () => ({ getConnectionDirection: (from: { agentId: string }, to: { agentId: string }) => state.connected && !(from.agentId === 'dispatcher' && to.agentId === 'receiver' && !state.dispatcherConnected) ? { link: true, ...(from.agentId === 'dispatcher' && { disabledTools: state.disabledTools }) } : undefined }));
-vi.mock('./clubhouse-mcp/binding-manager', () => ({ bindingManager: { getAllBindings: () => [], getBindingsForAgent: () => [] } }));
+vi.mock('./agent-grants-store', () => ({ getAgentGrantChanges: () => ({ revision: state.policyRevision }) }));
+vi.mock('./agent-grants-service', () => ({ effectiveAgentGrants: async (_project: string, id: string) => { const grants = state.allowed ? [{ action: 'handoff.offer', target: { kind: 'any' }, mode: 'allow' }, ...(id !== 'receiver' || state.targetMode !== 'off' ? [{ action: 'handoff.accept', target: { kind: 'any' }, mode: id === 'receiver' ? state.targetMode : 'allow' }] : []), { action: 'agent.wake', target: { kind: 'any' }, mode: state.wakeMode }, { action: 'agent.message', target: { kind: 'any' }, mode: state.messageMode }] : []; await Promise.resolve(); state.onGrants(id); return grants; } }));
+vi.mock('./connection-grants-store', async () => { const { localWakeOn } = await import('../../shared/connection-grants'); return { localConnectionWakeOn: () => state.savedDirection ? localWakeOn({ disabledTools: state.disabledTools, enabledTools: state.enabledTools }) : localWakeOn(undefined, state.bindingEnabled) && !state.bindingDisabled.includes('wake_agent'), getConnectionDirection: (from: { agentId: string }, to: { agentId: string }) => state.connected && !(from.agentId === 'dispatcher' && (!state.savedDirection || to.agentId === 'receiver' && !state.dispatcherConnected)) ? { link: true, disabledTools: from.agentId === 'dispatcher' ? state.disabledTools : [], enabledTools: state.enabledTools } : undefined }; });
+vi.mock('./clubhouse-mcp/binding-manager', () => ({ bindingManager: { getAllBindings: () => [], getBindingsForAgent: (id: string) => id === 'dispatcher' && !state.savedDirection ? [{ targetKind: 'agent', targetId: 'receiver', enabledTools: state.bindingEnabled, disabledTools: state.bindingDisabled }] : [] } }));
 vi.mock('./clubhouse-mcp/grant-check', () => ({ callerGrants: () => [] }));
 vi.mock('./clubhouse-mcp/tool-registry', () => ({ callTool: (...args: unknown[]) => state.create(...args), setHandoffParticipantCheck: (check: (id: string) => boolean) => { state.participant = check; } }));
 vi.mock('./clubhouse-mcp/handoff-permissions', () => ({ handoffAgreementCallApproved: async () => state.allowed }));
@@ -38,7 +39,7 @@ beforeEach(async () => {
   state.dir = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'handoff-live-host-'))); state.sender = path.join(state.dir, 'source'); state.receiver = path.join(state.dir, 'destination'); state.asleep = true;
   const config = path.join(state.dir, 'empty-config'); fs.writeFileSync(config, ''); vi.stubEnv('GIT_CONFIG_GLOBAL', config); vi.stubEnv('GIT_CONFIG_SYSTEM', config); vi.stubEnv('GIT_CONFIG_NOSYSTEM', '0');
   _resetHandoffPreparationsForTesting(); vi.clearAllMocks();
-  state.targetMode = state.wakeMode = state.messageMode = 'allow'; state.dispatcherConnected = true; state.disabledTools = []; state.onLocate = () => {};
+  state.targetMode = state.wakeMode = state.messageMode = 'allow'; state.dispatcherConnected = true; state.disabledTools = []; state.enabledTools = ['wake_agent']; state.savedDirection = true; state.bindingEnabled = ['wake_agent']; state.bindingDisabled = []; state.policyRevision = 0; state.onGrants = () => {}; state.onLocate = () => {};
   state.wake.mockImplementation(async () => { state.asleep = false; });
   fs.mkdirSync(state.sender); await git(state.sender, 'init', '-b', 'main'); await git(state.sender, 'config', 'user.name', 'Fixture'); await git(state.sender, 'config', 'user.email', 'test@example.invalid');
   fs.writeFileSync(path.join(state.sender, 'work.txt'), 'base'); fs.writeFileSync(path.join(state.sender, '.gitignore'), '.clubhouse/\n');
@@ -117,4 +118,37 @@ it('allows Dispatcher-selected targets only with their own acceptance and the Di
   const f = await dispatched(); await f.accept();
   await vi.waitFor(() => expect(f.host.store.get(f.offered.id)?.state).toBe('applied'), { timeout: 15_000 });
   expect(state.wake).toHaveBeenCalledTimes(1); expect(briefDelivered()).toBe(true);
+}, 30_000);
+
+it.each(['absent', 'empty', 'fallback-absent', 'fallback-empty', 'fallback-message-off', 'fallback-wake-disabled'])('refuses a canonical local switch that is %s before acceptance', async (kind) => {
+  const f = await dispatched();
+  if (kind === 'absent') state.enabledTools = undefined;
+  if (kind === 'empty') state.enabledTools = [];
+  if (kind.startsWith('fallback')) { state.savedDirection = false; state.bindingEnabled = kind === 'fallback-absent' ? undefined : kind === 'fallback-empty' ? [] : ['wake_agent']; }
+  if (kind === 'fallback-message-off') state.bindingDisabled = ['send_message'];
+  if (kind === 'fallback-wake-disabled') { state.bindingEnabled = ['wake_agent']; state.bindingDisabled = ['wake_agent']; }
+  await expect(f.accept()).rejects.toThrow('not authorized');
+  expect(f.host.store.get(f.offered.id)?.acceptance).toBeUndefined(); expect(state.wake).not.toHaveBeenCalled(); expect(briefDelivered()).toBe(false);
+}, 30_000);
+it('uses the live binding starting switches when no direction is saved', async () => {
+  const f = await dispatched(); state.savedDirection = false;
+  await f.accept(); await vi.waitFor(() => expect(f.host.store.get(f.offered.id)?.state).toBe('applied'), { timeout: 15_000 });
+  expect(briefDelivered()).toBe(true);
+}, 30_000);
+it.each(['message-switch', 'wake-switch', 'target-grant'])('rejects %s revoked during the final asynchronous Dispatcher grant lookup', async (right) => {
+  const f = await dispatched();
+  state.wake.mockImplementation(async () => {
+    state.asleep = false;
+    let lookups = 0;
+    state.onGrants = (id) => {
+      // First: the accepting Dispatcher's own handoff grant. Second: the
+      // selected-target wake/message grant lookup, after the old switch check.
+      if (id !== 'dispatcher' || ++lookups !== 2) return;
+      if (right === 'message-switch') state.disabledTools = ['send_message'];
+      if (right === 'wake-switch') state.enabledTools = [];
+      if (right === 'target-grant') { state.targetMode = 'off'; state.policyRevision++; }
+    };
+  });
+  await f.accept(); await vi.waitFor(() => expect(f.host.store.get(f.offered.id)?.state).toBe('failed'), { timeout: 15_000 });
+  expect(state.wake).toHaveBeenCalledTimes(1); expect(briefDelivered()).toBe(false);
 }, 30_000);
