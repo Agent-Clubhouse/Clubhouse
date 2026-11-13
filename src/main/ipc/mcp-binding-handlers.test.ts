@@ -861,6 +861,15 @@ describe('group project membership gestures (#3357)', () => {
     mockGet.mockReturnValue(undefined);
   });
 
+  it('keeps the member binding when a group project card is removed', async () => {
+    vi.mocked(bindingManager.getBindingsForAgent).mockReturnValue([{ agentId: 'agent-1', targetId: 'gp_managed', targetKind: 'group-project', label: 'GP' }] as any);
+    vi.mocked(keepHeldBinding).mockReturnValueOnce(true);
+    const result = await getHandler(IPC.MCP_BINDING.UNBIND)(fakeEvent, 'agent-1', 'gp_managed', MCP_UNBIND_CANVAS_CLEANUP);
+    expect(result).toEqual({ kept: true });
+    expect(bindingManager.unbind).not.toHaveBeenCalled();
+    expect(excludeMember).not.toHaveBeenCalled();
+  });
+
   it('drawing a wire to a managed group project adds the member through the record', async () => {
     await getHandler(IPC.MCP_BINDING.BIND)(fakeEvent, 'agent-1', target);
     expect(addMember).toHaveBeenCalledWith('gp_managed', 'agent-1');

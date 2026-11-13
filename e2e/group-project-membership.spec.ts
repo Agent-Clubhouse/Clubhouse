@@ -14,7 +14,7 @@ import * as os from 'os';
 import * as path from 'path';
 import { launchApp, type LaunchedApp } from './launch';
 import { createDisposableProfile, type DisposableProfile } from './app-profile';
-import { addProject } from './smoke-helpers';
+import { addProject, clickExplorerTab } from './smoke-helpers';
 
 const LEAD = 'durable_gpm_lead';
 const DEV = 'durable_gpm_dev';
@@ -80,4 +80,53 @@ test('auto-join, an added helper and an exclusion survive a restart', async () =
   const view = await app.window.evaluate((id) => window.clubhouse.groupProject.listMembers(id), gp.id);
   expect(view.excluded.map((e) => e.agentId)).toEqual([DEV]);
   expect(view.autoJoin).toBe(true);
+});
+
+test('removing a group project card keeps its members and board on another canvas', async () => {
+  projectDir = makeProject();
+  profile = createDisposableProfile({ label: 'gp-multiple-canvases' });
+  app = await launchApp({ profile });
+  const { electronApp, window } = app;
+  await addProject(electronApp, window, projectDir);
+  const projectId = await window.evaluate(async (dir) => {
+    const projects = await window.clubhouse.project.list() as Array<{ id: string; path: string }>;
+    return projects.find((p) => p.path.endsWith(dir.split(/[\\/]/).pop()!))!.id;
+  }, projectDir);
+  const gp = await window.evaluate((id) => window.clubhouse.groupProject.create('Shared release', { projectId: id }), projectId) as { id: string };
+  await window.evaluate((id) => window.clubhouse.groupProject.postBulletinMessage(id, 'notes', 'Board survives'), gp.id);
+  await expect.poll(() => members(window, gp.id), { timeout: 15_000 }).toEqual([DEV, LEAD]);
+
+  await clickExplorerTab(electronApp, window, 'explorer-tab-plugin:canvas');
+  const workspace = window.getByTestId('canvas-workspace');
+  await expect(workspace).toBeVisible();
+  const tabs = window.getByRole('tablist', { name: 'Canvases' }).getByRole('tab');
+  const firstId = await tabs.first().getAttribute('data-testid');
+  expect(firstId).toBeTruthy();
+  const attach = async () => {
+    await workspace.click({ button: 'right', position: { x: 220, y: 180 } });
+    await window.getByTestId('canvas-context-menu-plugin:group-project:group-project').click();
+    const card = workspace.locator('[data-testid^="canvas-view-cv_"]').first();
+    await card.getByLabel('Existing group project').selectOption({ label: 'Shared release' });
+    await card.getByRole('button', { name: 'Add existing' }).click();
+    await expect(card.getByTestId('group-project-member-count')).toHaveText('2 agents');
+    return card;
+  };
+  await attach();
+  await window.getByTestId('canvas-add-button').click();
+  await window.getByTestId('canvas-add-new').click();
+  await expect(tabs).toHaveCount(2);
+  const secondCard = await attach();
+  await secondCard.getByRole('button', { name: 'Remove from this canvas' }).click();
+  await expect(workspace.locator('[data-testid^="canvas-view-cv_"]')).toHaveCount(0);
+  await expect.poll(() => members(window, gp.id)).toEqual([DEV, LEAD]);
+  const saved = await window.evaluate(async (id) => ({
+    project: await window.clubhouse.groupProject.get(id),
+    membership: await window.clubhouse.groupProject.listMembers(id),
+    board: await window.clubhouse.groupProject.getTopicMessages(id, 'notes'),
+  }), gp.id);
+  expect(saved.project).toBeTruthy();
+  expect(saved.membership.members.map((member) => member.agentId).sort()).toEqual([DEV, LEAD]);
+  expect(JSON.stringify(saved.board)).toContain('Board survives');
+  await window.getByTestId(firstId!).click();
+  await expect(workspace.getByTestId('group-project-member-count')).toHaveText('2 agents');
 });

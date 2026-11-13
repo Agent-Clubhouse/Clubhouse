@@ -204,18 +204,16 @@ describe('connection Open navigation', () => {
       return () => {};
     });
     const { api, storage } = panelApi(data);
-    const card = render(<ConnectionOpenAction targetId="gp_actual" targetKind="group-project" name="Old project name" projectId="nav-one" />);
-    fireEvent.click(screen.getByRole('button', { name: 'Open' }));
+    const opening = jumpToConnectionCanvas('group-project', 'gp_actual', hit, beginConnectionNavigationRequest().signal);
     await waitFor(() => expect(window.clubhouse.canvas.readForNavigation).toHaveBeenCalledWith('group-project', 'gp_actual', 'nav-two'));
     expect(focus).not.toHaveBeenCalled();
     expect(store.getState().loaded).toBe(false);
     expect(useUIStore.getState().explorerTab).toBe('agents');
-    await act(async () => { loading.resolve(data); });
+    await act(async () => { loading.resolve(data); await opening; });
     await waitFor(() => expect(useUIStore.getState().explorerTab).toBe('plugin:canvas'));
     expect(store.getState().activeCanvasId).toBe('board');
     expect(store.getState().selectedViewId).toBe('node');
     expect(focus).toHaveBeenCalledWith('node');
-    card.unmount();
     vi.useFakeTimers();
     const panel = render(<MainPanel api={api} />);
     expect(screen.getByTestId('canvas-workspace')).toBeInTheDocument();
@@ -246,10 +244,11 @@ describe('connection Open navigation', () => {
   });
 
   it('offers labeled Home/project/Canvas/node choices, revalidates the selected ID, and explains no owner or incomplete lookup', async () => {
+    vi.mocked(window.clubhouse.canvas.readForNavigation).mockResolvedValue({ ...snapshot(), canvases: [board('board', [{ ...groupView(), pluginWidgetType: 'plugin:browser:webview', metadata: {} }])], wires: [] });
     const multiple = indexed();
     multiple.stores[0].hits = [{ ...hit, canvasId: 'home-board', viewId: 'home-node' }];
     vi.mocked(window.clubhouse.canvas.getTargetCanvases).mockResolvedValue(multiple);
-    render(<ConnectionOpenAction targetId="gp_actual" targetKind="group-project" name="Renamed project" projectId="nav-one" />);
+    render(<ConnectionOpenAction targetId="node" targetKind="browser" name="Browser" projectId="nav-one" />);
     fireEvent.click(screen.getByRole('button', { name: 'Open' }));
     const chooser = await screen.findByTestId('connection-open-dialog');
     expect(within(chooser).getByRole('button', { name: /Home.*home-board.*home-node/ })).toBeInTheDocument();
@@ -261,12 +260,24 @@ describe('connection Open navigation', () => {
     none.stores.forEach((entry) => { entry.hits = []; });
     getProjectCanvasStore('nav-two').setState({ loaded: false, dataOrigin: null });
     vi.mocked(window.clubhouse.canvas.getTargetCanvases).mockResolvedValue(none);
-    render(<ConnectionOpenAction targetId="gp_actual" targetKind="group-project" name="Renamed project" projectId="nav-one" />);
+    render(<ConnectionOpenAction targetId="node" targetKind="browser" name="Browser" projectId="nav-one" />);
     fireEvent.click(screen.getByRole('button', { name: 'Open' }));
-    expect(await screen.findByRole('alert')).toHaveTextContent('No owning Canvas is available');
+    expect(await screen.findByRole('alert')).toHaveTextContent('No Canvas containing this target is available');
     none.stores[0].error = 'Permission denied';
     fireEvent.click(screen.getByRole('button', { name: 'Retry Open' }));
     expect(await screen.findByRole('alert')).toHaveTextContent('lookup is incomplete');
+  });
+
+  it('opens a group project in its directory without touching canvases or membership', () => {
+    const unbind = vi.spyOn(window.clubhouse.mcpBinding, 'unbind');
+    render(<ConnectionOpenAction targetId="gp_actual" targetKind="group-project" name="Renamed project" projectId="nav-one" />);
+    fireEvent.click(screen.getByRole('button', { name: 'Open in directory' }));
+    expect(useGroupProjectStore.getState().directorySelection).toBe('gp_actual');
+    expect(useUIStore.getState().settingsContext).toBe('app');
+    expect(useUIStore.getState().settingsSubPage).toBe('group-projects');
+    expect(useUIStore.getState().explorerTab).toBe('settings');
+    expect(window.clubhouse.canvas.getTargetCanvases).not.toHaveBeenCalled();
+    expect(unbind).not.toHaveBeenCalled();
   });
 
   it('keeps a mounted Canvas navigation-only when another owning board is opened', async () => {
@@ -335,7 +346,7 @@ describe('connection Open navigation', () => {
     render(
       <>
         <div data-testid="pending-open">
-          <ConnectionOpenAction targetId="gp_actual" targetKind="group-project" name="Group project" projectId="nav-one" />
+          <ConnectionOpenAction targetId="node" targetKind="browser" name="Browser" projectId="nav-one" />
         </div>
         <div data-testid="replacement-open">
           <ConnectionOpenAction targetId="actual-agent" targetKind="agent" name="Agent" projectId="nav-one" />
@@ -503,8 +514,8 @@ describe('connection Open navigation', () => {
     const canvasCreate = vi.spyOn(useAppCanvasStore.getState(), 'addCanvas');
     const writes = vi.spyOn(window.clubhouse.plugin, 'storageWrite');
     render(<ChromeBody />);
-    const row = await screen.findByTestId('connection-row');
-    fireEvent.click(within(row).getByRole('button', { name: 'Open' }));
+    await screen.findByTestId('connection-row');
+    await act(async () => { await jumpToConnectionCanvas('group-project', 'gp_actual', homeHit, beginConnectionNavigationRequest().signal); });
     const target = await screen.findByTestId('canvas-view-node');
     expect(screen.queryByTestId('agent-details')).not.toBeInTheDocument();
     expect(target).toHaveTextContent('Renamed project');
@@ -541,9 +552,9 @@ describe('connection Open navigation', () => {
 
   it('keeps the actual routed Card alive until popout ACK, shows Retry on failure, and cancels genuine departure', async () => {
     await registerNavigationPanels();
-    useMcpBindingStore.setState({ bindings: [{ agentId: lead.id, targetId: 'gp_actual', targetKind: 'group-project', label: 'Target' }] });
+    useMcpBindingStore.setState({ bindings: [{ agentId: lead.id, targetId: 'node', targetKind: 'browser', label: 'Target' }] });
     const store = getProjectCanvasStore('nav-two');
-    store.getState().hydrateForNavigation({ ...snapshot(), wires: [] }, 'board');
+    store.getState().hydrateForNavigation({ ...snapshot(), canvases: [board('board', [{ ...groupView(), pluginWidgetType: 'plugin:browser:webview', metadata: {} }])], wires: [] }, 'board');
     vi.spyOn(useProjectStore.getState(), 'loadProjects').mockResolvedValue(undefined);
     vi.spyOn(useAgentStore.getState(), 'loadDurableAgents').mockResolvedValue(undefined);
     window.clubhouse.window.getCanvasState = vi.fn(async () => null);

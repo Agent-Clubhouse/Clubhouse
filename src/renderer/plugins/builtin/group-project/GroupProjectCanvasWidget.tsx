@@ -12,6 +12,7 @@ import { pollingNudgeMsg } from '../../../../shared/polling-messages';
 import { useMcpBindingStore } from '../../../stores/mcpBindingStore';
 import { useGroupProjectContext, type GroupProjectContextValue, type GroupProjectMember } from './useGroupProjectContext';
 import { useUIStore } from '../../../stores/uiStore';
+import { useAnnexStore } from '../../../stores/annexStore';
 import { showApprovalDialog, showConfirmDialog } from '../../PluginDialog';
 import { WireToolPermissionsDialog } from '../canvas/WireToolPermissionsDialog';
 import { Button } from '../../../components/Button';
@@ -148,7 +149,10 @@ function CreationForm({
   const projects = useGroupProjectStore((s) => s.projects);
   const loadError = useGroupProjectStore((s) => s.loadError);
   const [selectedId, setSelectedId] = useState('');
+  const [scopeFilter, setScopeFilter] = useState<'all' | 'app' | 'project'>('all');
   const selectId = useId();
+  const scopeId = useId();
+  const visibleProjects = projects.filter((project) => scopeFilter === 'all' || project.scope?.level === scopeFilter);
 
   useEffect(() => {
     if (!loaded) loadProjects();
@@ -189,9 +193,15 @@ function CreationForm({
         <div role="alert" className="text-xs text-ctp-error">Could not load group projects. <Button kind="ghost" onClick={() => void loadProjects()}>Retry</Button></div>
       ) : (
         <>
+          <label htmlFor={scopeId} className="text-xs text-ctp-subtext1">Scope</label>
+          <select id={scopeId} value={scopeFilter} onChange={(e) => { setScopeFilter(e.target.value as 'all' | 'app' | 'project'); setSelectedId(''); }} className="w-full h-7 px-2 text-xs bg-ctp-base border border-surface-1 rounded-md text-ctp-text">
+            <option value="all">All scopes</option>
+            <option value="app">App</option>
+            <option value="project">Project</option>
+          </select>
           <select id={selectId} value={selectedId} onChange={(e) => setSelectedId(e.target.value)} className="w-full h-7 px-2 text-xs bg-ctp-base border border-surface-1 rounded-md text-ctp-text">
             <option value="">{loaded ? 'Select a group project' : 'Loading group projects...'}</option>
-            {projects.map((project) => <option key={project.id} value={project.id}>{project.name}</option>)}
+            {visibleProjects.map((project) => <option key={project.id} value={project.id}>{project.name}</option>)}
           </select>
           <Button disabled={!projects.some((project) => project.id === selectedId)} onClick={() => {
             const project = projects.find((item) => item.id === selectedId);
@@ -397,6 +407,7 @@ function ProjectCard({
       </div>
 
       <div className="px-3 text-xs text-ctp-overlay1 flex-shrink-0" data-testid="group-project-activity">{activity}</div>
+      <ProjectScopeLine ctx={ctx} />
 
       {description && (
         <Tooltip content={description} onlyWhenTruncated>
@@ -429,6 +440,20 @@ function ProjectCard({
       />
     </div>
   );
+}
+
+function ProjectScopeLine({ ctx }: { ctx: GroupProjectContextValue }) {
+  const fingerprint = useAnnexStore((s) => s.status.fingerprint);
+  const loadStatus = useAnnexStore((s) => s.loadStatus);
+  const scope = ctx.project?.scope;
+  useEffect(() => { if (scope?.reach === 'network' && !fingerprint) void loadStatus(); }, [scope?.reach, fingerprint, loadStatus]);
+  if (!scope) return null;
+  const label = `${scope.level === 'app' ? 'App' : 'Project'} / ${scope.reach === 'network' ? 'Network' : 'Local'}`;
+  const machine = ctx.project?.host?.machine;
+  const resolvedName = (ctx.project as (typeof ctx.project & { hostName?: string }))?.hostName;
+  const hostName = !machine ? 'This computer' : !fingerprint ? 'Unknown'
+    : machine.toLowerCase() === fingerprint.toLowerCase() ? 'This computer' : resolvedName || machine;
+  return <div className="px-3 text-xs text-ctp-overlay1" data-testid="group-project-scope">{label}{scope.reach === 'network' && ` · Host: ${hostName}`}</div>;
 }
 
 /* ---------- Shared pieces ---------- */
@@ -1002,6 +1027,7 @@ function ExpandedProjectView({
 
       {!ctx.isRemote && <PausedPolling groupProjectId={groupProjectId} />}
 
+      <ProjectScopeLine ctx={ctx} />
       <div className="h-[30px] flex items-center px-3 border-t border-surface-0 text-xs text-ctp-overlay1 flex-shrink-0">
         {members.length} {members.length === 1 ? 'agent' : 'agents'} connected
       </div>

@@ -22,12 +22,14 @@ const deleteTopic = vi.fn(async () => true);
 let admins: string[] = [];
 let projectAvailable = true;
 let remoteProject = false;
+let projectScope: { level: 'app'; reach: 'network' | 'local' } | undefined;
+let projectHostMachine: string | null = null;
 
 vi.mock('./useGroupProjectContext', () => ({
   useGroupProjectContext: () => ({
     isRemote: false,
     satelliteId: null,
-    project: projectAvailable ? { id: 'gp1', name: 'Launch', description: 'Ship the launch', instructions: 'Be brief', metadata: { admins } } : undefined,
+    project: projectAvailable ? { id: 'gp1', name: 'Launch', description: 'Ship the launch', instructions: 'Be brief', metadata: { admins }, scope: projectScope, host: { machine: projectHostMachine } } : undefined,
     members: [
       { agentId: 'a1', agentName: 'curious-tapir' },
       { agentId: 'a2', agentName: 'bold-falcon' },
@@ -65,6 +67,7 @@ vi.mock('../../PluginDialog', () => ({
 import { GroupProjectCanvasWidget, POLLING_HINT } from './GroupProjectCanvasWidget';
 import { useAgentStore } from '../../../stores/agentStore';
 import { useGroupProjectStore } from '../../../stores/groupProjectStore';
+import { useAnnexStore } from '../../../stores/annexStore';
 import { DOT_LABEL, type AgentDot } from '../../../features/agents/agent-status';
 
 const tapir: Agent = { id: 'a1', projectId: 'p1', name: 'curious-tapir', kind: 'durable', status: 'running', color: 'teal' };
@@ -96,6 +99,9 @@ beforeEach(() => {
   projectAvailable = true;
   remoteProject = false;
   vi.spyOn(window.clubhouse.groupProject, 'getRoles').mockImplementation(async () => rolesFor(admins));
+  projectScope = undefined;
+  projectHostMachine = null;
+  useAnnexStore.setState((state) => ({ status: { ...state.status, fingerprint: 'local-fingerprint' } }));
   confirmAnswer = true;
   vi.clearAllMocks();
   useAgentStore.setState({ agents: { a1: tapir }, agentDetailedStatus: {} } as never);
@@ -116,6 +122,20 @@ describe('group project creation context', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Add existing' }));
     expect(onUpdateMetadata).toHaveBeenCalledWith({ groupProjectId: 'gp-existing', name: 'Shared' });
     expect(create).not.toHaveBeenCalled();
+  });
+
+  it('filters the picker by scope without restricting cross-canvas placement', async () => {
+    useGroupProjectStore.setState({ projects: [
+      { id: 'app-gp', name: 'App project', description: '', instructions: '', createdAt: '', metadata: {}, scope: { level: 'app', reach: 'local' } },
+      { id: 'project-gp', name: 'Project group', description: '', instructions: '', createdAt: '', metadata: {}, scope: { level: 'project', projectId: 'other', reach: 'local' } },
+    ] });
+    renderWidget({}, { mode: 'project', projectId: 'p1' });
+    expect(screen.getByRole('option', { name: 'Project group' })).toBeInTheDocument();
+    await userEvent.selectOptions(screen.getByLabelText('Scope'), 'app');
+    expect(screen.getByRole('option', { name: 'App project' })).toBeInTheDocument();
+    expect(screen.queryByRole('option', { name: 'Project group' })).not.toBeInTheDocument();
+    await userEvent.selectOptions(screen.getByLabelText('Scope'), 'all');
+    expect(screen.getByRole('option', { name: 'Project group' })).toBeInTheDocument();
   });
 
   it.each([
@@ -140,6 +160,19 @@ describe('group project creation context', () => {
 });
 
 describe('group project card (compact)', () => {
+  it('shows this computer for a matching network host fingerprint', () => {
+    projectScope = { level: 'app', reach: 'network' };
+    projectHostMachine = 'LOCAL-FINGERPRINT';
+    renderWidget();
+    expect(screen.getByTestId('group-project-scope')).toHaveTextContent('App / Network · Host: This computer');
+  });
+
+  it('shows the other host fingerprint for a network project', () => {
+    projectScope = { level: 'app', reach: 'network' };
+    projectHostMachine = 'other-fingerprint';
+    renderWidget();
+    expect(screen.getByTestId('group-project-scope')).toHaveTextContent('App / Network · Host: other-fingerprint');
+  });
   it('lets a missing reference select an existing project and resolve deferred wires', async () => {
     projectAvailable = false;
     useGroupProjectStore.setState({ projects: [{ id: 'gp-existing', name: 'Shared', description: '', instructions: '', createdAt: '', metadata: {} }], loaded: true, loadError: null });
