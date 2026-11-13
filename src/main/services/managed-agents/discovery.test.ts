@@ -119,11 +119,18 @@ describe('scoped managed asset discovery (#2855)', () => {
     await expect(selected('skill')).rejects.toThrow('multiple hard links');
   });
 
-  it.each(['files', 'depth'])('refuses a bundle exceeding the %s limit without importing a truncated bundle', async (limit) => {
-    if (limit === 'files') {
-      for (let i = 0; i < 500; i++) write(`.github/skills/review/f${i}.txt`, '');
-    } else write(`.github/skills/review/${Array(18).fill('d').join('/')}/nested.txt`, '');
-    await expect(selected('skill')).rejects.toThrow(limit === 'files' ? 'file limit' : 'depth limit');
+  describe.each(['files', 'depth'])('a bundle exceeding the %s limit', (limit) => {
+    beforeEach(() => {
+      if (limit === 'files') {
+        const dir = path.join(worktree, '.github/skills/review');
+        // The directory already exists; avoid 500 redundant recursive mkdirs.
+        for (let i = 0; i < 500; i++) fs.writeFileSync(path.join(dir, `f${i}.txt`), '');
+      } else write(`.github/skills/review/${Array(18).fill('d').join('/')}/nested.txt`, '');
+    });
+
+    it('refuses without importing a truncated bundle', async () => {
+      await expect(selected('skill')).rejects.toThrow(limit === 'files' ? 'file limit' : 'depth limit');
+    });
   });
 
   it('preserves local MCP siblings, extracts external env names only and fingerprints literal changes', async () => {
