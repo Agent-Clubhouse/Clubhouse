@@ -6,10 +6,10 @@ import { watchFederationTelemetry } from './dispatcher-federation-telemetry';
 it('follows presence events once per transition, including removal, without polling', () => {
   state.remotes = [{ machineId: 'peer', link: { state: 'active' } }];
   const stop = watchFederationTelemetry();
-  state.changed(); expect(state.record.mock.calls).toEqual([['peer', 'active']]);
+  state.changed(); expect(state.record.mock.calls).toEqual([['active']]);
   state.remotes[0].link.state = 'paused'; state.changed(); state.changed();
   state.remotes[0].link.state = 'active'; state.changed();
   state.remotes = []; state.changed();
-  expect(state.record.mock.calls).toEqual([['peer', 'active'], ['peer', 'paused'], ['peer', 'active'], ['peer', 'removed']]);
+  expect(state.record.mock.calls).toEqual([['active'], ['paused'], ['active'], ['removed']]);
   stop(); expect(state.stop).toHaveBeenCalledOnce();
 });

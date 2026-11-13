@@ -1,7 +1,7 @@
 /** Production adapter: remote work enters the hidden controller under local grants. */
 import { parseAgentAddress, formatAgentAddress } from '../../shared/agent-address';
 import { tel } from '../telemetry/facade';
-import { recordFederatedRequest } from '../telemetry/dispatcher-telemetry';
+import { recordFederatedRequest, recordFederationLimit } from '../telemetry/dispatcher-telemetry';
 import { watchFederationTelemetry } from './dispatcher-federation-telemetry';
 import { captureControllerPublication, forwardPreparedAgentCall, flushOutbox, getDelivery, type DispatcherAgentCallReceiver } from './annex-agent-calls';
 import { getIdentity } from './annex-identity';
@@ -95,7 +95,8 @@ export function startFederatedRequests(): () => void {
       if (shown.outcome !== 'delivered' && shown.outcome !== 'started') throw new Error(shown.error ?? 'The local chat is unavailable.');
     },
     fault: () => tel.exception(Object.assign(new Error('federated_controller_input_unconfirmed'), { stack: undefined }), { origin: 'main', handled: true }),
-    record: (r, event) => recordFederatedRequest(r, r.direction === 'incoming' ? getIdentity()?.fingerprint.toLowerCase() ?? '' : r.machineId, event),
+    record: recordFederatedRequest,
+    recordLimit: recordFederationLimit,
   });
   requests = instance;
   const stopTelemetry = watchFederationTelemetry();

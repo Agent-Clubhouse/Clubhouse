@@ -1114,9 +1114,6 @@ export const ATTR = {
   /** Whether the Dispatcher was asked to review anything (a background turn follows). */
   dispatcherUpkeepReview: boolAttr('clubhouse.dispatcher.upkeep.review'),
   /** What the Dispatcher said a report was (tell_user's kind). */
-  federationRequest: hashAttr('clubhouse.federation.request'),
-  federationOrigin: hashAttr('clubhouse.federation.origin'),
-  federationTarget: hashAttr('clubhouse.federation.target'),
   federationDelivery: enumAttr('clubhouse.federation.delivery', ['accepted', 'delivered', 'refused', 'expired']),
   federationOutcome: enumAttr('clubhouse.federation.outcome', ['under_way', 'waiting_user', 'answered', 'declined', 'failed']),
   federationEvent: enumAttr('clubhouse.federation.event', ['crossing', 'duplicate', 'triage', 'limit']),
