@@ -1,4 +1,5 @@
-import type { GroupProjectScope } from './group-project-types';
+import type { GroupProjectMemberView, GroupProjectScope, GroupProjectScopeOptions } from './group-project-types';
+import { parseAgentAddress } from './agent-address';
 
 export class GroupProjectScopeError extends Error {
   constructor(readonly code: 'invalid_scope' | 'network_unavailable', message: string) {
@@ -18,8 +19,15 @@ function projectId(value: unknown, registered: ReadonlySet<string>): string {
   return value;
 }
 
+const NETWORK_NOT_READY: GroupProjectScopeOptions['network'] = {
+  available: false,
+  reason: 'Network group projects are unavailable until the authoritative Annex host path is ready.',
+};
+
 /** Validate untrusted creation options before choosing a canonical scope. */
-export function resolveGroupProjectScope(options: unknown, registered: ReadonlySet<string>): GroupProjectScope {
+export function resolveGroupProjectScope(
+  options: unknown, registered: ReadonlySet<string>, network: GroupProjectScopeOptions['network'] = NETWORK_NOT_READY,
+): GroupProjectScope {
   const input = options === undefined ? {} : options;
   if (!isRecord(input)) {
     throw new GroupProjectScopeError('invalid_scope', 'Group project creation options must be an object.');
@@ -48,8 +56,8 @@ export function resolveGroupProjectScope(options: unknown, registered: ReadonlyS
     }
     result = { level: 'app', reach: scope.reach };
   }
-  if (result.reach === 'network') {
-    throw new GroupProjectScopeError('network_unavailable', 'Network group projects are unavailable until the authoritative Annex host path is ready.');
+  if (result.reach === 'network' && !network.available) {
+    throw new GroupProjectScopeError('network_unavailable', network.reason ?? NETWORK_NOT_READY.reason!);
   }
   return result;
 }
@@ -61,4 +69,26 @@ export function inferLegacyGroupProjectScope(memberProjectIds: readonly (string 
     return { level: 'project', projectId: id, reach: 'local' };
   }
   return { level: 'app', reach: 'local' };
+}
+
+/**
+ * Whether a member is within a scope (#3355). Addresses are host-relative, so
+ * one with a machine is on another computer. A project scope with a member
+ * whose project isn't known answers `undefined`: neither in nor out.
+ */
+export function memberInScope(scope: GroupProjectScope, member: Pick<GroupProjectMemberView, 'address' | 'projectId'>): boolean | undefined {
+  if (scope.reach === 'local' && parseAgentAddress(member.address).machine) return false;
+  if (scope.level === 'app') return true;
+  if (member.projectId === undefined) return undefined;
+  return member.projectId === scope.projectId;
+}
+
+/** The members that would leave when a group project's scope changes to `next`. */
+export function membersLeavingScope<T extends Pick<GroupProjectMemberView, 'address' | 'projectId'>>(next: GroupProjectScope, members: readonly T[]): T[] {
+  return members.filter((member) => memberInScope(next, member) === false);
+}
+
+export function sameGroupProjectScope(a: GroupProjectScope | undefined, b: GroupProjectScope): boolean {
+  return a?.level === b.level && a.reach === b.reach
+    && (a.level !== 'project' || (b.level === 'project' && a.projectId === b.projectId));
 }

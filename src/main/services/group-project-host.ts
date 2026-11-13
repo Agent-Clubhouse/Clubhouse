@@ -13,8 +13,11 @@
 
 import type {
   BulletinMessage, GroupProject, GroupProjectChange, GroupProjectChangePart, GroupProjectCreateOptions, GroupProjectHost,
-  DigestSince, GroupProjectMemberView, GroupProjectMembership, GroupProjectTombstone, TopicDigest,
+  DigestSince, GroupProjectMemberView, GroupProjectMembership, GroupProjectScope, GroupProjectScopeOptions, GroupProjectTombstone, TopicDigest,
 } from '../../shared/group-project-types';
+import {
+  GroupProjectScopeError, memberInScope, membersLeavingScope, resolveGroupProjectScope, sameGroupProjectScope,
+} from '../../shared/group-project-scope';
 import { canonicalMemberAddress, memberAddress } from '../../shared/group-project-members';
 import { groupProjectRegistry } from './group-project-registry';
 import {
@@ -27,10 +30,15 @@ import { AsyncLocalStorage } from 'async_hooks';
 import { assertGroupProjectId, groupProjectDir, hostStatePath, tombstonesPath } from './group-project-paths';
 import { readJsonFile, writeJsonFile } from './group-project-json-file';
 import * as annexIdentity from './annex-identity';
+import { networkEnabled } from './annex-settings';
+import * as projectStore from './project-store';
+import * as agentConfig from './agent-config';
+import { agentRegistry } from './agent-registry';
+import { bindingManager } from './clubhouse-mcp/binding-manager';
 import { annexEphemeralSession } from './annex-network-profile';
 import { appLog } from './log-service';
 
-export type GroupProjectHostErrorCode = 'not_found' | 'changed' | 'invalid';
+export type GroupProjectHostErrorCode = 'not_found' | 'changed' | 'invalid' | 'network_unavailable';
 
 export class GroupProjectHostError extends Error {
   constructor(readonly code: GroupProjectHostErrorCode, message: string) {
@@ -273,7 +281,11 @@ class GroupProjectHostService {
   async create(name: string, options?: GroupProjectCreateOptions): Promise<GroupProject> {
     await this.reconcile();
     const tombstoned = new Set((await this.loadTombstones()).map((t) => t.groupProjectId));
-    const created = await groupProjectRegistry.create(name, options, { machine: this.selfMachine() }, undefined, (id) => !tombstoned.has(id));
+    const network = this.scopeOptions().network;
+    const created = await groupProjectRegistry.create(
+      name, options, { machine: this.selfMachine() },
+      (input, registered) => resolveGroupProjectScope(input, registered, network), (id) => !tombstoned.has(id),
+    );
     await this.commit(created.id, 'record', async ({ reserve }) => {
       const seq = await reserve();
       try {
@@ -434,7 +446,7 @@ class GroupProjectHostService {
   async resolveMembers(id: string): Promise<GroupProjectMemberView[]> {
     const project = await this.requireProject(id);
     if (this.memberResolver) return this.memberResolver(await this.view(project), await this.getMembership(id));
-    const { bindingManager } = await import('./clubhouse-mcp/binding-manager');
+    const projects = await this.agentProjects();
     const seen = new Set<string>();
     const members: GroupProjectMemberView[] = [];
     for (const b of bindingManager.getAllBindings()) {
@@ -442,9 +454,110 @@ class GroupProjectHostService {
       const address = canonicalMemberAddress(b.agentId, this.hostMachineOf(project));
       if (seen.has(address)) continue;
       seen.add(address);
-      members.push({ address, name: b.agentName || b.agentId });
+      const projectId = projects.get(b.agentId);
+      members.push({ address, name: b.agentName || b.agentId, ...(projectId && { projectId }) });
     }
     return members;
+  }
+
+  /** Each local agent's registered project: durable agents from their configs, others from their live registration. */
+  private async agentProjects(): Promise<Map<string, string>> {
+    const projects = await projectStore.list();
+    const byAgent = new Map<string, string>();
+    for (const project of projects) {
+      let agents: readonly { id: string }[] = [];
+      try {
+        agents = await agentConfig.peekDurableConfigs(project.path);
+      } catch (err) {
+        // telemetry-exempt: logged; members of an unreadable project count as project unknown, never as leaving
+        appLog('core:group-project', 'warn', 'Could not read agents for group project scope', {
+          meta: { projectId: project.id, error: err instanceof Error ? err.message : String(err) },
+        });
+      }
+      for (const agent of agents) byAgent.set(agent.id, project.id);
+    }
+    for (const [agentId, registration] of agentRegistry.getAllRegistrations()) {
+      if (byAgent.has(agentId)) continue;
+      const project = projects.find((p) => p.path === registration.projectPath);
+      if (project) byAgent.set(agentId, project.id);
+    }
+    return byAgent;
+  }
+
+  // ── Scope (#3355) ────────────────────────────────────────────────────────
+
+  /** Whether network reach can be chosen now, and why not. */
+  scopeOptions(): GroupProjectScopeOptions {
+    if (!networkEnabled()) {
+      return { network: { available: false, reason: 'Network reach needs Annex Network. Turn it on in Settings > Annex Network.' } };
+    }
+    return { network: { available: false, reason: 'Network group projects are not available in this version yet.' } };
+  }
+
+  private async resolveScope(scope: unknown): Promise<GroupProjectScope> {
+    const registered = new Set((await projectStore.list()).map((project) => project.id));
+    try {
+      return resolveGroupProjectScope({ scope }, registered, this.scopeOptions().network);
+    } catch (err) {
+      if (err instanceof GroupProjectScopeError) {
+        throw new GroupProjectHostError(err.code === 'network_unavailable' ? 'network_unavailable' : 'invalid', err.message);
+      }
+      throw err;
+    }
+  }
+
+  /** Who would leave if the scope changed to `scope`; nothing changes. */
+  async previewScope(id: string, scope: unknown): Promise<{ scope: GroupProjectScope; leaving: GroupProjectMemberView[] }> {
+    const next = await this.resolveScope(scope);
+    return { scope: next, leaving: membersLeavingScope(next, await this.resolveMembers(id)) };
+  }
+
+  /**
+   * Change a group project's scope. When members would leave, `confirmLeaving`
+   * must list exactly their addresses, as shown by `previewScope`; otherwise
+   * it refuses (`changed`) so the person reviews again. Members that leave lose
+   * their live bindings and explicit entries.
+   */
+  async setScope(
+    id: string, scope: unknown, options: { confirmLeaving?: readonly string[]; withinExclusive?: boolean } = {},
+  ): Promise<{ project: GroupProject; left: GroupProjectMemberView[] }> {
+    const next = await this.resolveScope(scope);
+    return this.commit(id, 'record', async ({ project, reserve }) => {
+      if (project.scope && sameGroupProjectScope(project.scope, next)) return { project: await this.view(project), left: [] };
+      const leaving = membersLeavingScope(next, await this.resolveMembers(id));
+      const confirmed = new Set(options.confirmLeaving ?? []);
+      if (leaving.length !== confirmed.size || leaving.some((member) => !confirmed.has(member.address))) {
+        throw new GroupProjectHostError('changed', 'The members who would leave have changed. Review the scope change again.');
+      }
+      const seq = await reserve();
+      const updated = await groupProjectRegistry.setScope(id, next);
+      const hostMachine = this.hostMachineOf(project);
+      const leavingAddresses = new Set(leaving.map((member) => member.address));
+      if (leaving.length > 0) {
+        const membership = await readMembershipFile(id, hostMachine);
+        const explicit = membership.explicit.filter((entry) => !leavingAddresses.has(entry.address));
+        if (explicit.length !== membership.explicit.length) await writeMembershipFile(id, { ...membership, explicit });
+        for (const b of bindingManager.getAllBindings()) {
+          if (b.targetKind === 'group-project' && b.targetId === id && leavingAddresses.has(canonicalMemberAddress(b.agentId, hostMachine))) {
+            bindingManager.unbind(b.agentId, id);
+          }
+        }
+      }
+      appLog('core:group-project', 'info', 'Group project scope changed', { meta: { id, seq, scope: next, left: leaving.length } });
+      return { project: await this.view(updated ?? project), left: leaving };
+    }, options.withinExclusive);
+  }
+
+  /**
+   * Whether an agent here may be a member under the group project's scope.
+   * Unresolved scope, or an agent whose project isn't known, is admitted.
+   */
+  async admits(id: string, agentId: string): Promise<boolean> {
+    const project = await groupProjectRegistry.get(id);
+    if (!project?.scope) return true;
+    const address = canonicalMemberAddress(agentId, this.hostMachineOf(project));
+    const projectId = project.scope.level === 'project' ? (await this.agentProjects()).get(agentId) : undefined;
+    return memberInScope(project.scope, { address, projectId }) !== false;
   }
 
   /** The host-relative address of an agent here or on another machine. */

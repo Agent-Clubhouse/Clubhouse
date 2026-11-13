@@ -61,6 +61,10 @@ export async function passthroughHostModule() {
     resolveMembers: vi.fn(async () => []),
     listTombstones: vi.fn(async () => []),
     listPendingDeletes: vi.fn(async () => []),
+    scopeOptions: vi.fn(() => ({ network: { available: false, reason: 'Network reach needs Annex Network.' } })),
+    previewScope: vi.fn(async (_id: string, scope: unknown) => ({ scope, leaving: [] })),
+    setScope: vi.fn(async (id: string) => ({ project: await registry.get(id), left: [] })),
+    admits: vi.fn(async () => true),
     beginDelete: vi.fn(async (id: string) => ({ groupProjectId: id, host: { machine: null }, seq: 0, deletedAt: new Date(0).toISOString(), state: 'deleting' })),
     finishDelete: vi.fn(async (id: string) => {
       await registry.delete(id);

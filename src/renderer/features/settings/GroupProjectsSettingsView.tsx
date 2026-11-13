@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react';
-import type { GroupProject } from '../../../shared/group-project-types';
+import type { GroupProject, GroupProjectScope } from '../../../shared/group-project-types';
 import { Button } from '../../components/Button';
 import { useGroupProjectStore } from '../../stores/groupProjectStore';
 import { ipcErrorMessage } from '../../utils/ipc-error';
@@ -8,6 +8,7 @@ import {
   SettingsBlock, SettingsPage, SettingsSection,
   settingsError, settingsHelp, settingsInput, settingsLabel, settingsTextArea,
 } from './SettingsLayout';
+import { GroupProjectScopeEditor, GroupProjectScopeFields, useScopeOptions } from './GroupProjectScopeFields';
 
 function scopeDescription(scope: GroupProject['scope']): string {
   if (!scope || (scope.reach !== 'local' && scope.reach !== 'network')
@@ -17,12 +18,15 @@ function scopeDescription(scope: GroupProject['scope']): string {
   }
   const level = scope.level === 'app' ? 'App' : `Project (${scope.projectId})`;
   return scope.reach === 'local'
-    ? `${level} / Local: covers ${scope.level === 'app' ? 'this app' : 'that project'} on this machine. Scope does not automatically connect agents.`
-    : `${level} / Network recorded. Authoritative network hosting is not available.`;
+    ? `${level} / This computer: covers ${scope.level === 'app' ? 'this app' : 'that project'} on this machine.`
+    : `${level} / Network: covers your other computers too.`;
 }
 
 function CreateGroupProject() {
   const create = useGroupProjectStore((s) => s.create);
+  const scopeOptions = useScopeOptions();
+  // From the directory, a new group project covers the app on this computer unless the person picks otherwise (#3355).
+  const [scope, setScope] = useState<GroupProjectScope>({ level: 'app', reach: 'local' });
   const [name, setName] = useState('');
   const [creating, setCreating] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -42,7 +46,7 @@ function CreateGroupProject() {
     setError(null);
     setCreated(false);
     try {
-      await create(trimmed, { scope: { level: 'app', reach: 'local' } });
+      await create(trimmed, { scope });
       setName('');
       setCreated(true);
     } catch (err) {
@@ -58,9 +62,7 @@ function CreateGroupProject() {
     <SettingsSection title="Create a group project">
       <SettingsBlock>
         <p className={`${settingsHelp} mb-3`}>
-          New group projects here use App / Local, even when a project is selected:
-          this app on this machine, without automatically connecting agents.
-          Network creation needs an authoritative host backend that is not available, even with Annex on.
+          New group projects here cover the whole app on this computer unless you choose a project.
         </p>
         <form onSubmit={submit} className="flex flex-col items-start gap-2">
           <label htmlFor="new-group-project-name" className={settingsLabel}>New group project name</label>
@@ -70,6 +72,13 @@ function CreateGroupProject() {
             value={name}
             disabled={creating}
             onChange={(event) => { setName(event.target.value); setCreated(false); }}
+          />
+          <GroupProjectScopeFields
+            idPrefix="new-group-project-scope"
+            value={scope}
+            onChange={(next) => { setScope(next); setCreated(false); }}
+            options={scopeOptions}
+            disabled={creating}
           />
           <Button type="submit" kind="primary" disabled={creating}>
             {creating ? 'Creating...' : 'Create group project'}
@@ -249,13 +258,14 @@ export function GroupProjectsSettingsView() {
       {loaded && !loadError && !retrying && (
         <>
           {selected && <GroupProjectEditor key={selected.id} project={selected} />}
+          {selected && <GroupProjectScopeEditor key={`scope-${selected.id}`} project={selected} />}
           <CreateGroupProject />
         </>
       )}
       <SettingsSection title="Local directory limits">
         <SettingsBlock>
           <p className={settingsHelp}>
-            Scope is read-only. Host status, network synchronization, durable membership,
+            Host status, network synchronization, durable membership,
             membership management, admin grants and owned Actions are not available here.
             Board and Canvas navigation are not provided by this directory.
             This list is not an authoritative network or membership directory.
