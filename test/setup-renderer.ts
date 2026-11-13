@@ -481,6 +481,11 @@ vi.stubGlobal('clubhouse', {
     getPausedPolling: async () => [],
     resumePolling: async () => false,
     onPausedPollingChanged: () => noop,
+    listMembers: async (groupProjectId: string) => ({ groupProjectId, managed: true, autoJoin: true, members: [], excluded: [] }),
+    addMember: async (groupProjectId: string) => ({ groupProjectId, managed: true, autoJoin: true, members: [], excluded: [] }),
+    excludeMember: async (groupProjectId: string) => ({ groupProjectId, managed: true, autoJoin: true, members: [], excluded: [] }),
+    answerAutoJoinOffer: async (groupProjectId: string) => ({ groupProjectId, managed: true, autoJoin: true, members: [], excluded: [] }),
+    onMembershipChanged: () => noop,
     onChanged: () => noop,
   },
   mcpBinding: {
