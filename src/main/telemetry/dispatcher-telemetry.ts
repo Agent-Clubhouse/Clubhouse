@@ -14,7 +14,7 @@
  *
  * Safety:
  * - The Dispatcher events carry counts, sizes and closed codes only. Never
- *   message text, page contents, page or agent names, paths or ids, and never
+ *   message text, page contents, page or agent names, paths or raw ids, and never
  *   which of the Dispatcher's agents did the work.
  * - With telemetry off nothing is built or recorded, and callers can skip
  *   measuring with `dispatcherTelemetryActive()`.
