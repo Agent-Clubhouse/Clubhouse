@@ -5,11 +5,14 @@
  * and every registered project's store, drops wires whose endpoints are gone
  * (the canvas plugin's own reconcile rules, shared/canvas-persistence.ts) and
  * group-project wires whose project no longer exists on this machine, and
- * returns the rest for {@link rebuildPersistedBindings}.
+ * returns the rest for {@link rebuildPersistedBindings}. A group project whose
+ * members come from its membership record (#3357) is left to that record: the
+ * canvas shows its membership but doesn't hold it.
  */
 
 import { readAllCanvasStores, type CanvasStoreSnapshot } from './canvas-store-reader';
 import { groupProjectRegistry } from './group-project-registry';
+import { managedGroupProjectIds } from './group-project-membership';
 import type { PersistedBinding, PersistedBindingSource } from './persisted-bindings';
 import type { BindingTargetKind } from './clubhouse-mcp/types';
 import { reconcilePersistedWires } from '../../shared/canvas-persistence';
@@ -84,6 +87,13 @@ export function bindingsFromCanvasStores(
   return out;
 }
 
+/** Drop wires to group projects whose membership record holds their members. */
+async function withoutManagedMembers(bindings: PersistedBinding[]): Promise<PersistedBinding[]> {
+  if (!bindings.some((b) => b.targetKind === 'group-project')) return bindings;
+  const managed = await managedGroupProjectIds();
+  return bindings.filter((b) => b.targetKind !== 'group-project' || !managed.has(b.targetId));
+}
+
 async function readGroupProjectNames(options: { strict?: boolean } = {}): Promise<Map<string, string> | null> {
   try {
     const projects = options.strict ? await groupProjectRegistry.peek({ strict: true }) : await groupProjectRegistry.list();
@@ -101,11 +111,11 @@ export const canvasWireBindingSource: PersistedBindingSource = {
   readOnlyCollect: true,
   async collect() {
     const [snapshots, groupProjects] = await Promise.all([readAllCanvasStores(), readGroupProjectNames()]);
-    return bindingsFromCanvasStores(snapshots, groupProjects);
+    return withoutManagedMembers(bindingsFromCanvasStores(snapshots, groupProjects));
   },
   async inspect() {
     const [snapshots, groupProjects] = await Promise.all([readAllCanvasStores({ strict: true }), readGroupProjectNames({ strict: true })]);
     if (snapshots.some((s) => s.problems.length > 0)) throw new Error('Some Canvas guidance could not be read. Open the affected Canvas and try again.');
-    return bindingsFromCanvasStores(snapshots, groupProjects, { inspect: true });
+    return withoutManagedMembers(bindingsFromCanvasStores(snapshots, groupProjects, { inspect: true }));
   },
 };

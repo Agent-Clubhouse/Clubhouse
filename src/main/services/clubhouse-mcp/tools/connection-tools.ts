@@ -30,6 +30,9 @@ import { groupProjectRegistry } from '../../group-project-registry';
 import { groupProjectHost } from '../../group-project-host';
 import { bootstrapGroupProjectAdmin } from '../../group-project-admin-service';
 import {
+  addMember as addGroupMember, excludeMember as excludeGroupMember, isMember as isGroupMember, isMembershipManaged,
+} from '../../group-project-membership';
+import {
   claimSourceBinding,
   collectSourcesByPair,
   isBindingRemovedByUser,
@@ -187,6 +190,16 @@ function membership(agent: DurableAgentConfig, project: GroupProject): Persisted
   return { agentId: agent.id, targetId: project.id, targetKind: 'group-project', label: project.name, agentName: agent.name, targetName: project.name };
 }
 
+/** Add an agent to a group project's membership record (#3357), the way a drawn wire does. */
+async function joinRecord(agent: DurableAgentConfig, project: GroupProject): Promise<'created' | 'existing' | 'removed' | 'invalid'> {
+  if (isBindingRemovedByUser(agent.id, project.id)) return 'removed';
+  const before = await isGroupMember(project.id, agent.id);
+  await addGroupMember(project.id, agent.id);
+  if (before) return 'existing';
+  void bootstrapGroupProjectAdmin(project.id, agent.id);
+  return 'created';
+}
+
 function entryFor(callerId: string, scope: CallerScope, binding: PersistedBinding): OrchestratorConnection {
   const agentProjectPath = scope.otherProjects.get(binding.agentId);
   const targetProjectPath = binding.targetKind === 'agent' ? scope.otherProjects.get(binding.targetId) : undefined;
@@ -329,10 +342,8 @@ async function handleCreateGroupProject(callerId: string, args: Record<string, u
       meta: { agentId: callerId, groupProjectId: project.id, members: members.length },
     });
     const lines = [`Created group project "${project.name}" (id ${project.id}).`];
-    if (members.length > 0) {
-      const outcomes = await connect(callerId, scope, members.map((m) => membership(m, project)));
-      members.forEach((m, i) => lines.push(membershipMessage(m, project, outcomes[i])));
-    }
+    // Its members are a record (#3357): agents in scope join by themselves, the rest are added.
+    for (const m of members) lines.push(membershipMessage(m, project, await joinRecord(m, project)));
     return text(lines.join('\n'));
   } catch (err) {
     // telemetry-exempt: errorResult logs unexpected failures and returns them to the calling agent
@@ -347,7 +358,9 @@ async function handleAddToGroupProject(callerId: string, args: Record<string, un
     const scope = await callerScope(callerId, granted);
     const agent = resolveAgent(scope, helperRef, 'helper');
     const project = await resolveGroupProject(callerId, projectRef, granted);
-    const [outcome] = await connect(callerId, scope, [membership(agent, project)]);
+    const [outcome] = await isMembershipManaged(project.id)
+      ? [await joinRecord(agent, project)]
+      : await connect(callerId, scope, [membership(agent, project)]);
     if (granted) recordDispatcherControl({ tool: 'join_group_project', actorId: callerId, targets: [agent.id, project.id], outcome: outcome === 'created' || outcome === 'existing' ? 'ok' : 'refused' });
     return text(membershipMessage(agent, project, outcome), outcome === 'invalid' || outcome === 'removed');
   } catch (err) {
@@ -366,6 +379,11 @@ async function handleRemoveFromGroupProject(callerId: string, args: Record<strin
     if (granted) {
       const owned = (await readConnections(scope.projectPath)).some((c) => c.ownerId === callerId && c.agentId === agent.id && c.targetId === project.id && c.targetKind === 'group-project');
       if (!owned && isMember(agent.id, project.id)) throw new ConnectionScopeError('You did not make that membership source.');
+    }
+    if (await isMembershipManaged(project.id)) {
+      if (!(await isGroupMember(project.id, agent.id))) return text(`${agent.name} is not in "${project.name}".`);
+      await excludeGroupMember(project.id, agent.id);
+      return text(`${agent.name} left "${project.name}".`);
     }
     const { stored, outcomes: [outcome] } = await disconnect(callerId, scope, [{ agentId: agent.id, targetId: project.id }]);
     if (granted) recordDispatcherControl({ tool: 'leave_group_project', actorId: callerId, targets: [agent.id, project.id], outcome: 'ok' });

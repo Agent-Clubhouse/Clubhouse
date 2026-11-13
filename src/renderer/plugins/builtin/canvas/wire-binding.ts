@@ -7,6 +7,7 @@
 // the restrictions its wire carries (#2070).
 
 import type { McpBindingEntry } from '../../../stores/mcpBindingStore';
+import { MCP_BIND_RESTORE } from '../../../../shared/mcp-unbind';
 
 /**
  * `current` returns the wire's definition as it is now. Instructions and
@@ -22,7 +23,7 @@ export async function bindWireDefinition(def: McpBindingEntry, current: () => Mc
     agentName: def.agentName,
     targetName: def.targetName,
     projectName: def.projectName,
-  });
+  }, MCP_BIND_RESTORE);
   const latest = current();
   if (!latest) return;
   if (latest.instructions && Object.keys(latest.instructions).length > 0) {

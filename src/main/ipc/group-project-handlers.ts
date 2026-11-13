@@ -8,6 +8,7 @@ import { groupProjectRegistry } from '../services/group-project-registry';
 import { listPausedPolling, onPollingPauseChanged, resumePausedPolling, setProjectPolling, watchPollingForMcp } from '../services/group-project-polling';
 import { groupProjectHost } from '../services/group-project-host';
 import { initGroupProjectLifecycle } from '../services/group-project-lifecycle';
+import { addMember, answerAutoJoinOffer, describeMembership, excludeMember, onMembershipChanged } from '../services/group-project-membership';
 import { executeShoulderTap } from '../services/group-project-shoulder-tap';
 import * as annexEventBus from '../services/annex-event-bus';
 import { appLog } from '../services/log-service';
@@ -61,6 +62,15 @@ export function registerGroupProjectHandlers(): void {
   groupProjectHost.onChange((change) => {
     if (change.part === 'deleted' && change.project) annexEventBus.emitGroupProjectChanged('deleted', change.project);
   });
+  onMembershipChanged((projectId) => broadcastToAllWindows(IPC.GROUP_PROJECT.MEMBERSHIP_CHANGED, projectId));
+
+  // Membership (#3357): the record, not canvas wires.
+  ipcMain.handle(IPC.GROUP_PROJECT.LIST_MEMBERS, withValidatedArgs([stringArg()], (_event, id) => describeMembership(id as string)));
+  ipcMain.handle(IPC.GROUP_PROJECT.ADD_MEMBER, withValidatedArgs([stringArg(), stringArg()], (_event, id, agentId) => addMember(id as string, agentId as string)));
+  ipcMain.handle(IPC.GROUP_PROJECT.EXCLUDE_MEMBER, withValidatedArgs([stringArg(), stringArg()], (_event, id, agentId) => excludeMember(id as string, agentId as string)));
+  ipcMain.handle(IPC.GROUP_PROJECT.ANSWER_AUTO_JOIN_OFFER, withValidatedArgs(
+    [stringArg(), booleanArg()], (_event, id, accept) => answerAutoJoinOffer(id as string, accept as boolean),
+  ));
 
   ipcMain.handle(IPC.GROUP_PROJECT.LIST, async () => {
     return groupProjectHost.list();
