@@ -68,6 +68,7 @@ export function GroupProjectCanvasWidget({
   return (
     <ProjectView
       groupProjectId={groupProjectId}
+      projectId={projectId}
       onUpdateMetadata={onUpdateMetadata}
       referenceUnresolved={metadata.__groupProjectReferenceUnresolved === true}
       isRemote={isRemote}
@@ -133,9 +134,11 @@ export function PausedPolling({ groupProjectId }: { groupProjectId: string }) {
 function CreationForm({
   projectId,
   onUpdateMetadata,
+  referenceUnresolved = false,
 }: {
   projectId?: string;
   onUpdateMetadata: (updates: Record<string, unknown>) => void;
+  referenceUnresolved?: boolean;
 }) {
   const [name, setName] = useState('');
   const [creating, setCreating] = useState(false);
@@ -159,7 +162,7 @@ function CreationForm({
     setError(null);
     try {
       const project = await create(trimmed, projectId === undefined ? undefined : { projectId });
-      onUpdateMetadata({ groupProjectId: project.id, name: project.name });
+      onUpdateMetadata({ groupProjectId: project.id, name: project.name, ...(referenceUnresolved && { __groupProjectReferenceUnresolved: false }) });
     } catch (err) {
       // Surface the failure instead of silently resetting the card. The most
       // common cause is an unregistered IPC handler ("No handler registered for
@@ -171,7 +174,7 @@ function CreationForm({
     } finally {
       setCreating(false);
     }
-  }, [name, creating, create, projectId, onUpdateMetadata]);
+  }, [name, creating, create, projectId, onUpdateMetadata, referenceUnresolved]);
 
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent) => {
@@ -184,7 +187,7 @@ function CreationForm({
     <div className="flex h-full min-h-0 flex-col gap-2 overflow-y-auto p-4">
       <label htmlFor={selectId} className="text-[13px] font-medium text-ctp-text">Existing group project</label>
       {loadError ? (
-        <div role="alert" className="text-xs text-ctp-error">Could not load group projects. <button type="button" onClick={() => void loadProjects()}>Retry</button></div>
+        <div role="alert" className="text-xs text-ctp-error">Could not load group projects. <Button kind="ghost" onClick={() => void loadProjects()}>Retry</Button></div>
       ) : (
         <>
           <select id={selectId} value={selectedId} onChange={(e) => setSelectedId(e.target.value)} className="w-full h-7 px-2 text-xs bg-ctp-base border border-surface-1 rounded-md text-ctp-text">
@@ -193,7 +196,7 @@ function CreationForm({
           </select>
           <Button disabled={!projects.some((project) => project.id === selectedId)} onClick={() => {
             const project = projects.find((item) => item.id === selectedId);
-            if (project) onUpdateMetadata({ groupProjectId: project.id, name: project.name });
+            if (project) onUpdateMetadata({ groupProjectId: project.id, name: project.name, ...(referenceUnresolved && { __groupProjectReferenceUnresolved: false }) });
           }} className="self-start">Add existing</Button>
         </>
       )}
@@ -224,6 +227,7 @@ function CreationForm({
 
 function ProjectView({
   groupProjectId,
+  projectId,
   onUpdateMetadata,
   referenceUnresolved,
   isRemote,
@@ -231,6 +235,7 @@ function ProjectView({
   annex,
 }: {
   groupProjectId: string;
+  projectId?: string;
   onUpdateMetadata: (updates: Record<string, unknown>) => void;
   referenceUnresolved: boolean;
   isRemote: boolean;
@@ -263,8 +268,11 @@ function ProjectView({
 
   return (
     <div ref={containerRef} className="h-full w-full">
-      {ctx.loaded && !ctx.project ? (
-        <div role="status" className="p-4 text-xs text-ctp-subtext1">Group project unavailable. Its reference is retained: {groupProjectId}</div>
+      {ctx.loaded && !ctx.project && !isRemote ? (
+        <div className="h-full flex flex-col">
+          <div role="status" className="px-4 pt-4 text-xs text-ctp-subtext1">This group project isn't on this machine. Choose one or create one.</div>
+          <CreationForm projectId={projectId} onUpdateMetadata={onUpdateMetadata} referenceUnresolved />
+        </div>
       ) : isExpanded ? (
         <ExpandedProjectView groupProjectId={groupProjectId} onUpdateMetadata={onUpdateMetadata} ctx={ctx} />
       ) : (

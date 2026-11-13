@@ -20,12 +20,14 @@ const setPolling = vi.fn(async () => {});
 const update = vi.fn(async () => {});
 const deleteTopic = vi.fn(async () => true);
 let admins: string[] = [];
+let projectAvailable = true;
+let remoteProject = false;
 
 vi.mock('./useGroupProjectContext', () => ({
   useGroupProjectContext: () => ({
     isRemote: false,
     satelliteId: null,
-    project: { id: 'gp1', name: 'Launch', description: 'Ship the launch', instructions: 'Be brief', metadata: { admins } },
+    project: projectAvailable ? { id: 'gp1', name: 'Launch', description: 'Ship the launch', instructions: 'Be brief', metadata: { admins } } : undefined,
     members: [
       { agentId: 'a1', agentName: 'curious-tapir' },
       { agentId: 'a2', agentName: 'bold-falcon' },
@@ -47,7 +49,7 @@ vi.mock('./useGroupProjectContext', () => ({
 }));
 
 vi.mock('../../../hooks/useRemoteProject', () => ({
-  useRemoteProject: () => ({ isRemote: false, satelliteId: null }),
+  useRemoteProject: () => ({ isRemote: remoteProject, satelliteId: remoteProject ? 'satellite' : null }),
 }));
 
 let confirmAnswer = true;
@@ -83,6 +85,8 @@ function renderWidget(
 beforeEach(() => {
   widgetWidth = 300;
   admins = [];
+  projectAvailable = true;
+  remoteProject = false;
   confirmAnswer = true;
   vi.clearAllMocks();
   useAgentStore.setState({ agents: { a1: tapir }, agentDetailedStatus: {} } as never);
@@ -127,6 +131,39 @@ describe('group project creation context', () => {
 });
 
 describe('group project card (compact)', () => {
+  it('lets a missing reference select an existing project and resolve deferred wires', async () => {
+    projectAvailable = false;
+    useGroupProjectStore.setState({ projects: [{ id: 'gp-existing', name: 'Shared', description: '', instructions: '', createdAt: '', metadata: {} }], loaded: true, loadError: null });
+    const onUpdateMetadata = vi.fn();
+    render(<GroupProjectCanvasWidget widgetId="w" api={{ context: { mode: 'app' }, annex: {} } as never} metadata={{ groupProjectId: 'gp-missing', __groupProjectReferenceUnresolved: true }} onUpdateMetadata={onUpdateMetadata} size={{ width: 300, height: 600 }} {...({} as never)} />);
+    expect(screen.getByText("This group project isn't on this machine. Choose one or create one.")).toBeInTheDocument();
+    expect(screen.queryByText(/gp-missing/)).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Create' })).toBeInTheDocument();
+    await userEvent.selectOptions(screen.getByLabelText('Existing group project'), 'gp-existing');
+    await userEvent.click(screen.getByRole('button', { name: 'Add existing' }));
+    expect(onUpdateMetadata).toHaveBeenCalledWith({ groupProjectId: 'gp-existing', name: 'Shared', __groupProjectReferenceUnresolved: false });
+  });
+
+  it('does not offer local replacement while a remote snapshot is pending', () => {
+    projectAvailable = false;
+    remoteProject = true;
+    renderWidget({ groupProjectId: 'gp-missing' }, { mode: 'project', projectId: 'remote-project' });
+    expect(screen.queryByText(/isn't on this machine/)).not.toBeInTheDocument();
+    expect(screen.queryByLabelText('Existing group project')).not.toBeInTheDocument();
+  });
+
+  it('resolves a missing reference when creating its replacement', async () => {
+    projectAvailable = false;
+    useGroupProjectStore.setState({ projects: [], loaded: true, loadError: null });
+    const create = vi.spyOn(window.clubhouse.groupProject, 'create').mockResolvedValue({ id: 'gp_new', name: 'Replacement' });
+    const onUpdateMetadata = vi.fn();
+    render(<GroupProjectCanvasWidget widgetId="w" api={{ context: { mode: 'app' }, annex: {} } as never} metadata={{ groupProjectId: 'gp-missing', __groupProjectReferenceUnresolved: true }} onUpdateMetadata={onUpdateMetadata} size={{ width: 300, height: 600 }} {...({} as never)} />);
+    await userEvent.type(screen.getByRole('textbox', { name: 'Project name' }), 'Replacement');
+    await userEvent.click(screen.getByRole('button', { name: 'Create' }));
+    await waitFor(() => expect(onUpdateMetadata).toHaveBeenCalledWith({ groupProjectId: 'gp_new', name: 'Replacement', __groupProjectReferenceUnresolved: false }));
+    create.mockRestore();
+  });
+
   it('resolves a retained reference once its group project is available', async () => {
     const onUpdateMetadata = vi.fn();
     render(<GroupProjectCanvasWidget widgetId="w" api={{ context: { mode: 'app' }, annex: {} } as never} metadata={{ groupProjectId: 'gp1', __groupProjectReferenceUnresolved: true }} onUpdateMetadata={onUpdateMetadata} size={{ width: 300, height: 600 }} {...({} as never)} />);
