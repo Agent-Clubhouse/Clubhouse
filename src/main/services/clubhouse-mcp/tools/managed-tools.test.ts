@@ -69,6 +69,10 @@ vi.mock('../grant-check', async (original) => {
   // On: stands in for a person allowing every call, so a test can reach the tool's own refusals.
   return { ...real, checkToolGrant: (...args: Parameters<typeof real.checkToolGrant>) => (grantMock.granted ? { ok: true } : real.checkToolGrant(...args)) };
 });
+vi.mock('../../managed-agents/agents', async (original) => {
+  const real = await original<typeof import('../../managed-agents/agents')>();
+  return { ...real, previewConvert: vi.fn(real.previewConvert), convertToManaged: vi.fn(real.convertToManaged) };
+});
 vi.mock('../../managed-agents', async () => {
   const { createManagedAgentsService } = await import('../../managed-agents/service');
   const { createAssetCatalogStore } = await import('../../asset-catalog/store');
@@ -92,6 +96,7 @@ vi.mock('../../managed-agents', async () => {
       return svc;
     },
     statusFor: async (_p: string, id: string) => ({ managed: !!state.agents.get(id)?.managed, running: state.running.has(id), waiting: false, changes: [], cliChanged: false }),
+    activationFor: vi.fn(async () => ({ verification: { status: 'not_confirmed', reason: 'provider_evidence_unavailable', attempts: 0 } })),
     restartManagedAgent: vi.fn(async () => {
       // What the restart (and its spawn) runs under: never the Dispatcher's write grant.
       const { currentSettingsOrigin } = await import('../../settings-audit');
@@ -103,7 +108,8 @@ vi.mock('../../managed-agents', async () => {
 
 import { callTool, getScopedToolList, registerGlobalTool, _resetForTesting } from '../tool-registry';
 import { CONFIRM_TTL_MS, registerManagedTools, _resetConfirmTokensForTesting } from './managed-tools';
-import { managedAgents, restartManagedAgent } from '../../managed-agents';
+import { activationFor, managedAgents, restartManagedAgent } from '../../managed-agents';
+import { convertToManaged, previewConvert } from '../../managed-agents/agents';
 import { _resetSettingsAuditForTesting } from '../../settings-audit';
 import { CLUBHOUSE_MCP_PART_ID, CLUBHOUSE_PART_ALWAYS_ON } from '../../../../shared/managed-agents-types';
 import { BUILTIN_BLOCK_IDS } from '../../managed-agents/builtins';
@@ -307,6 +313,71 @@ describe('the builder tools', () => {
   it('are listed in the dispatcher group', () => {
     const names = getScopedToolList('dispatcher').map((t) => t.name);
     for (const name of ['list_agent_parts', 'update_agent_part', 'push_agent_template', 'restart_agent']) expect(names).toContain(name);
+  });
+});
+
+describe('verified activation and plain agents (#2855)', () => {
+  const pending = { verification: { status: 'not_confirmed', reason: 'awaiting_provider_report', attempts: 1 } };
+  const verified = { status: 'verified', verification: { status: 'verified', attempts: 1 } };
+  afterEach(() => { vi.useRealTimers(); });
+  /** Steps the fake clock a second at a time, letting the call's real file reads run in between. */
+  const settled = async <T>(promise: Promise<T>): Promise<T> => {
+    let done = false;
+    void promise.finally(() => { done = true; });
+    while (!done) {
+      await new Promise((resolve) => setImmediate(resolve));
+      await vi.advanceTimersByTimeAsync(1_000);
+    }
+    return promise;
+  };
+
+  it('re-reads a pending provider report within waitSeconds, and stops once it is answered', async () => {
+    managedAgent('target');
+    vi.useFakeTimers({ toFake: ['setTimeout', 'Date'] });
+    vi.mocked(activationFor).mockReset().mockResolvedValueOnce(pending as never).mockResolvedValueOnce(pending as never).mockResolvedValue(verified as never);
+    const result = await settled(call('get_agent_activation', { project: 'Clubhouse', agent: 'target', waitSeconds: 30 }));
+    expect(result.json).toMatchObject({ status: 'verified', verification: { status: 'verified', attempts: 3 } });
+    expect(activationFor).toHaveBeenCalledTimes(3);
+  });
+
+  it('never waits past the cap, and does not wait on a block or without waitSeconds', async () => {
+    managedAgent('target');
+    vi.useFakeTimers({ toFake: ['setTimeout', 'Date'] });
+    vi.mocked(activationFor).mockReset().mockResolvedValue(pending as never);
+    const answered = (await settled(call('get_agent_activation', { project: 'Clubhouse', agent: 'target', waitSeconds: 1_000 }))).json;
+    expect(answered.verification).toMatchObject({ status: 'not_confirmed', reason: 'awaiting_provider_report' });
+    expect(answered.verification.attempts).toBeLessThanOrEqual(46);
+    vi.mocked(activationFor).mockReset().mockResolvedValue({ verification: { status: 'blocked', reason: 'not_in_provider_report', attempts: 1 } } as never);
+    expect((await call('get_agent_activation', { project: 'Clubhouse', agent: 'target', waitSeconds: 30 })).json.verification.attempts).toBe(1);
+    vi.mocked(activationFor).mockReset().mockResolvedValue(pending as never);
+    expect((await call('get_agent_activation', { project: 'Clubhouse', agent: 'target' })).json.verification.attempts).toBe(1);
+    expect((await call('get_agent_activation', { project: 'Clubhouse', agent: 'target', waitSeconds: 0 })).json.verification.attempts).toBe(1);
+    for (const waitSeconds of [-1, '5', Number.NaN]) {
+      expect((await call('get_agent_activation', { project: 'Clubhouse', agent: 'target', waitSeconds })).isError, String(waitSeconds)).toBe(true);
+    }
+  });
+
+  it('switches a plain agent to managed only with the preview\'s confirm token, keeping what it has', async () => {
+    state.agents.set('plain', { id: 'plain', name: 'plain', color: 'indigo', createdAt: '', worktreePath: '/w/plain' });
+    vi.mocked(previewConvert).mockResolvedValue({ blocks: ['plain notes'], skills: ['review'], mcps: ['tickets'], notes: [] });
+    vi.mocked(convertToManaged).mockImplementation(async (_p, id) => {
+      const setup = { version: 1 as const, blocks: ['b'], skills: ['s'], mcps: [CLUBHOUSE_MCP_PART_ID, 'm'] };
+      state.agents.get(id)!.managed = setup;
+      return setup;
+    });
+    const args = { project: 'Clubhouse', agent: 'plain' };
+    const preview = await call('switch_agent_to_managed', args);
+    expect(preview.json).toMatchObject({ status: 'needs_confirmation', blocks: ['plain notes'], skills: ['review'], mcps: ['tickets'] });
+    expect(convertToManaged).not.toHaveBeenCalled();
+    expect((await call('switch_agent_to_managed', { ...args, confirm: 'not-issued' })).isError).toBe(true);
+    vi.mocked(previewConvert).mockResolvedValueOnce({ blocks: ['plain notes'], skills: ['review', 'added-since'], mcps: ['tickets'], notes: [] });
+    expect((await call('switch_agent_to_managed', { ...args, confirm: preview.json.confirm })).content[0].text).toContain('stale');
+    const again = await call('switch_agent_to_managed', args);
+    const switched = await call('switch_agent_to_managed', { ...args, confirm: again.json.confirm });
+    expect(switched.json).toMatchObject({ status: 'switched', setup: { mcps: [CLUBHOUSE_MCP_PART_ID, 'm'] } });
+    expect(convertToManaged).toHaveBeenCalledExactlyOnceWith('/proj', 'plain', { keep: true });
+    vi.mocked(previewConvert).mockReset().mockImplementation(async () => { throw new Error('This agent is already Clubhouse managed.'); });
+    expect((await call('switch_agent_to_managed', args)).isError).toBe(true);
   });
 });
 

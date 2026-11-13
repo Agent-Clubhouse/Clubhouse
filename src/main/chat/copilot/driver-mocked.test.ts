@@ -126,6 +126,29 @@ describe('Copilot SDK callback wiring with fake transport', () => {
     expect(fake.resume).toHaveBeenCalledTimes(resumeNativeSessionId ? 1 : 0);
   });
 
+  it('reports enabled loaded skills by name only, once per change, never a subagent\'s list (#2855)', async () => {
+    const session = await new CopilotSdkChatDriver().start({ agentId: 'fixture', provider: 'copilot-cli', cwd: path.resolve('synthetic'), binaryPath: 'fake', level: 'auto_edit' });
+    const config = fake.configs[0];
+    await session.send([{ type: 'text', text: 'go' }], 'prompt');
+    const loaded = { type: 'session.skills_loaded', data: { skills: [
+      { name: 'review', enabled: true, description: 'd', source: 'project', userInvocable: true, path: path.resolve('secret-path', 'SKILL.md') },
+      { name: 'off', enabled: false, description: 'd', source: 'project', userInvocable: true },
+    ] } };
+    config.onEvent(loaded);
+    config.onEvent(loaded);
+    config.onEvent({ ...loaded, agentId: 'sub-1', data: { skills: [{ name: 'sub-only', enabled: true, description: 'd', source: 'project', userInvocable: true }] } });
+    config.onEvent({ type: 'session.skills_loaded', data: { skills: 'bad' } });
+    config.onEvent({ type: 'session.idle', data: {} });
+    await session.close();
+    const reports: unknown[] = [];
+    for await (const event of session.events) if (event.type === 'session_info' && event.data.providerInventory) reports.push(event.data.providerInventory);
+    expect(reports).toEqual([
+      { provider: 'copilot', driver: 'copilot_sdk', source: 'session.skills_loaded', nativeSessionId: 'fake-session', skills: ['review'] },
+      { provider: 'copilot', driver: 'copilot_sdk', source: 'session.skills_loaded', nativeSessionId: 'fake-session', skills: null },
+    ]);
+    expect(JSON.stringify(reports)).not.toContain('secret-path');
+  });
+
   it('reports a turn and the session as inclusive of subagent calls, keeping zeros and leaving unreported figures out', async () => {
     const session = await new CopilotSdkChatDriver().start({ agentId: 'fixture', provider: 'copilot-cli', cwd: '/synthetic', binaryPath: 'fake', level: 'auto_edit' });
     const config = fake.configs[0];

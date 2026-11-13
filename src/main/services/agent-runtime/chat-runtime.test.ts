@@ -1320,6 +1320,24 @@ describe('ChatAgentRuntime', () => {
     expect((await runtime.sendMessage('steer me', { source: 'user' })).delivery).toBe('steer');
   });
 
+  it('keeps the provider report for the current native session only, merging a partial report (#2855)', async () => {
+    const driver = new FakeChatDriver('copilot_sdk', 'copilot-cli', STEERLESS);
+    const { runtime } = makeRuntime(driver);
+    await runtime.start();
+    const inventory = (nativeSessionId: string, extra: Record<string, unknown>) =>
+      ({ provider: 'copilot' as const, driver: 'copilot_sdk' as const, source: 'session.skills_loaded' as const, nativeSessionId, ...extra });
+    driver.last.emit({ type: 'session_info', data: { nativeSessionId: 'n1', mcpServers: [{ name: 'tickets', status: 'connected' }],
+      providerInventory: inventory('n1', { skills: ['review'], mcpTools: ['mcp__tickets__a'] }) } });
+    driver.last.emit({ type: 'session_info', data: { providerInventory: inventory('n1', { skills: ['review', 'deploy'] }) } });
+    await flush();
+    expect(runtime.getProviderReport()).toEqual({ driver: 'copilot_sdk', nativeSessionId: 'n1',
+      inventory: inventory('n1', { skills: ['review', 'deploy'], mcpTools: ['mcp__tickets__a'] }), mcpHandshakes: [{ name: 'tickets', status: 'connected' }] });
+    // Another session's report never speaks for this one.
+    driver.last.emit({ type: 'session_info', data: { providerInventory: inventory('other', { skills: ['x'] }) } });
+    await flush();
+    expect(runtime.getProviderReport().inventory).toBeUndefined();
+  });
+
   it('pushes state changes, events and exit to listeners', async () => {
     const driver = new FakeChatDriver();
     const { runtime } = makeRuntime(driver);

@@ -580,7 +580,7 @@ export const ATTR = {
     // managed agents: parts, setup, templates and restart (#2900)
     'list_agent_parts', 'get_agent_part', 'create_agent_part', 'update_agent_part', 'fork_agent_part', 'delete_agent_part',
     'discover_agent_assets', 'import_agent_asset',
-    'get_agent_setup', 'get_agent_activation', 'set_agent_setup', 'preview_agent_setup',
+    'get_agent_setup', 'get_agent_activation', 'set_agent_setup', 'switch_agent_to_managed', 'preview_agent_setup',
     'list_agent_templates', 'save_agent_template', 'push_agent_template', 'delete_agent_template', 'create_managed_agent',
     'restart_agent',
     // deleting an agent with its helpers (#3182)

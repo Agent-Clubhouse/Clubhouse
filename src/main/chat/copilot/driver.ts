@@ -28,6 +28,7 @@ import { markFailedCopilotWrites, markFailedCopilotWritesFromStart } from './fai
 import { loadCopilotSdk } from './sdk-loader';
 import { copilotTierEntry, type CopilotTierEntry } from '../../../shared/context-window';
 import { safeMcpErrorLine } from '../../services/mcp-error-text';
+import { reportedCopilotSkillNames } from '../../../shared/chat/provider-inventory';
 
 type ReasoningEffort = NonNullable<NonNullable<Parameters<CopilotSession['setModel']>[1]>['reasoningEffort']>;
 
@@ -247,6 +248,7 @@ export class CopilotSdkChatSession implements ChatDriverSession {
   private effort: string | undefined;
   private models: ModelInfo[] = [];
   private mcpReported = '';
+  private skillsReported = '';
   private turn = 0;
   private turnRunning = false;
   private interrupting = false;
@@ -997,6 +999,18 @@ export class CopilotSdkChatSession implements ChatDriverSession {
           ? { type: 'notice', data: { level: 'info', code: 'compacted', message: 'Context compacted' } }
           : { type: 'notice', data: { level: 'warn', code: 'compaction_failed', message: event.data.error ? `Context compaction failed: ${event.data.error}` : 'Context compaction failed' } }, true);
         return;
+      case 'session.skills_loaded': {
+        // The skills this session loaded, with their enabled state (#2855). Names only: paths stay out.
+        const nativeSessionId = this.sdk?.sessionId;
+        if (fromSubagent || !nativeSessionId) return;
+        const inventory = { provider: 'copilot' as const, driver: 'copilot_sdk' as const, source: 'session.skills_loaded' as const,
+          nativeSessionId, skills: reportedCopilotSkillNames(event.data.skills) };
+        const reported = JSON.stringify(inventory);
+        if (reported === this.skillsReported) return;
+        this.skillsReported = reported;
+        this.push({ type: 'session_info', data: { providerInventory: inventory } });
+        return;
+      }
       case 'session.mcp_servers_loaded': {
         if (fromSubagent) return;
         // Repeats before every turn; report changes only.

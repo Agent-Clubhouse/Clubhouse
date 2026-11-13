@@ -295,6 +295,7 @@ const TOOL_ANNOTATIONS: Partial<Record<'global' | BindingTargetKind, Readonly<Re
     get_agent_setup: INTERNAL_READ,
     get_agent_activation: INTERNAL_READ,
     set_agent_setup: INTERNAL_WRITE,
+    switch_agent_to_managed: INTERNAL_WRITE,
     preview_agent_setup: INTERNAL_READ,
     list_agent_templates: INTERNAL_READ,
     save_agent_template: INTERNAL_WRITE,

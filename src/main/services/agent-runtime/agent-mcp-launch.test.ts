@@ -41,7 +41,7 @@ function owner(): CheckpointFixtureLifetime {
 const it = ownedRegistration(rawIt, 1, (promise) => { owner().observeRaw(promise); });
 const beforeEach = ownedRegistration(rawBeforeEach, 0, (promise) => { owner().observeRaw(promise); });
 
-const fixture = vi.hoisted(() => ({ agents: [] as DurableAgentConfig[], running: false, starts: [] as ChatDriverStartOptions[], cacheAvailable: true, configGeneration: 0 }));
+const fixture = vi.hoisted(() => ({ agents: [] as DurableAgentConfig[], running: false, starts: [] as ChatDriverStartOptions[], sessions: [] as FakeChatDriverSession[], cacheAvailable: true, configGeneration: 0 }));
 vi.mock('electron', () => ({ ipcMain: { handle: vi.fn() }, app: { getPath: () => '/unused-synthetic-app' } }));
 vi.mock('../agent-config', () => ({
   agentConfigGeneration: () => fixture.configGeneration,
@@ -89,7 +89,7 @@ import { ipcMain } from 'electron';
 import { IPC } from '../../../shared/ipc-channels';
 import { registerAgentSettingsHandlers } from '../../ipc/agent-settings-handlers';
 import { tryStartChatAgent, stopAllChatAgents } from './chat-spawn';
-import { FakeChatDriver } from './fake-chat-driver';
+import { FakeChatDriver, type FakeChatDriverSession } from './fake-chat-driver';
 import { registerChatDriver, clearChatDrivers } from './chat-drivers';
 import { clearChatRuntimes, getAgentRuntime } from './index';
 import { appendChatEvent } from './chat-transcript';
@@ -128,6 +128,7 @@ beforeEach(async () => {
   fixture.cacheAvailable = true;
   fixture.configGeneration = 0;
   fixture.starts = [];
+  fixture.sessions = [];
   await prepareMcpFixture(resources);
 });
 
@@ -185,6 +186,7 @@ async function start(options: { resume?: boolean; sessionId?: string; orchestrat
   const driver = new FakeChatDriver(provider.id === 'copilot-cli' ? 'copilot_sdk' : 'claude_stream_json', provider.id); registerChatDriver(driver);
   expect(await tryStartChatAgent({ agentId: agent.id, projectPath: root, cwd, kind: 'durable', permissionMode: 'auto', ...options }, provider, undefined, agent)).toBe('chat');
   fixture.starts.push(driver.last.startOptions!);
+  fixture.sessions.push(driver.last);
   return driver.last.startOptions!.mcpServers;
 }
 
@@ -352,7 +354,17 @@ describe('#2849 effective-provider save → chat prepare (no provider/server)', 
       await withSettingsSurface('mcp', 'dispatcher', () => restartManagedAgent(root, agent.id, { whenTurnEnds: true }));
       expect(getAgentRuntime(agent.id)?.kind).toBe('chat');
       const first = await activationFor(root, agent.id);
-      expect(first).toMatchObject({ status: 'partial', lastRestart: { outcome: 'completed', resumed: true }, materialized: { matchesDesired: true }, verification: { status: 'blocked', attempts: 0 } });
+      expect(first).toMatchObject({ status: 'partial', lastRestart: { outcome: 'completed', resumed: true }, materialized: { matchesDesired: true },
+        verification: { status: 'not_confirmed', reason: 'awaiting_provider_report' } });
+      // The provider reports the resumed session's skills; a connected MCP handshake is shown, never proof.
+      fixture.sessions[fixture.sessions.length - 1].emit({ type: 'session_info', data: {
+        mcpServers: [{ name: 'imported', status: 'connected' }, { name: 'unrelated', status: 'connected' }],
+        providerInventory: { provider: 'copilot', driver: 'copilot_sdk', source: 'session.skills_loaded', nativeSessionId: identity.session, skills: ['imported-review'] } } });
+      await new Promise((resolve) => setImmediate(resolve));
+      const reported = await activationFor(root, agent.id);
+      expect(reported).toMatchObject({ status: 'partial', providerConfirmedLoaded: { skills: 'confirmed', mcpTools: 'not_confirmed', nativeSessionId: identity.session },
+        verification: { status: 'partial', reason: 'provider_does_not_report' } });
+      expect(reported.providerConfirmedLoaded.parts.find((p) => p.id === mcp)).toMatchObject({ state: 'not_confirmed', handshake: 'connected' });
       expect(await fs.readFile(path.join(cwd, '.github/skills/imported-review/scripts/check.sh'), 'utf8')).toContain('exit 0');
       const afterAdd = JSON.parse(await fs.readFile(path.join(cwd, conventions.mcpConfigFile), 'utf8'));
       expect(afterAdd.mcpServers).toMatchObject({ unrelated: { command: 'never-run-unrelated' }, imported: { command: 'never-run-imported' } });
@@ -375,7 +387,9 @@ describe('#2849 effective-provider save → chat prepare (no provider/server)', 
       await expect(fs.stat(path.join(cwd, '.github/skills/imported-review'))).rejects.toMatchObject({ code: 'ENOENT' });
       expect(await fs.readFile(path.join(cwd, '.mcp.json'), 'utf8')).toBe(otherProviderBytes);
       expect({ id: agent.id, name: agent.name, orchestrator: agent.orchestrator, session: agent.lastSessionId }).toEqual(identity);
-      expect(await activationFor(root, agent.id)).toMatchObject({ status: 'partial', materialized: { matchesDesired: true }, providerConfirmedLoaded: { skills: 'not_confirmed', mcpTools: 'not_confirmed' } });
+      // A new session after the restart: the old report doesn't carry over.
+      expect(await activationFor(root, agent.id)).toMatchObject({ status: 'partial', materialized: { matchesDesired: true },
+        providerConfirmedLoaded: { skills: 'none_assigned', mcpTools: 'not_confirmed', source: 'none' }, verification: { status: 'not_confirmed' } });
       expect(await fs.readFile(path.join(sourceRoot, '.github/mcp.json'), 'utf8')).toBe(raw({ imported: { command: 'never-run-imported' } }));
     });
 

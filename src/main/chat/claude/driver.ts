@@ -23,6 +23,7 @@ import type {
   UsageLimit,
 } from '../../../shared/chat/events';
 import { COMPACTION_STARTED } from '../../../shared/chat/events';
+import type { ChatProviderInventory } from '../../../shared/chat/provider-inventory';
 import type {
   ChatDriver,
   ChatDriverProbe,
@@ -601,6 +602,8 @@ export class ClaudeChatDriverSession implements ChatDriverSession {
   private planUsageFailures = 0;
   /** The latest root init's MCP list: an mcp_status reply read for another list is dropped. */
   private mcpInitKey: string | undefined;
+  /** The provider inventory last sent; init repeats every turn, so only a change is sent again. */
+  private inventoryKey: string | undefined;
   /** The init list the last mcp_status read was for: the same list again isn't re-read. */
   private mcpStatusReadFor: string | undefined;
   /** False once the SDK showed it has no mcpServerStatus(). */
@@ -1011,6 +1014,13 @@ export class ClaudeChatDriverSession implements ChatDriverSession {
           const error = s.error ? safeMcpErrorLine(s.error) : undefined;
           return { name: s.name, status: claudeMcpStatus(s.status), ...(error && { error }) };
         });
+        const inventory: ChatProviderInventory | undefined = ev.sessionId && ev.sessionId.length <= 512 ? {
+          provider: 'claude-code', driver: this.driverId, source: 'system/init' as const,
+          nativeSessionId: ev.sessionId, skills: ev.skills ?? null, mcpTools: ev.mcpTools ?? null,
+        } : undefined;
+        const inventoryKey = inventory && JSON.stringify(inventory);
+        const inventoryChanged = !!inventoryKey && inventoryKey !== this.inventoryKey;
+        if (inventoryChanged) this.inventoryKey = inventoryKey;
         this.push({
           type: 'session_info',
           data: {
@@ -1022,6 +1032,7 @@ export class ClaudeChatDriverSession implements ChatDriverSession {
               provider: PROVIDER, driver: this.driverId, source: 'system/init' as const,
               nativeSessionId: ev.sessionId, names: ev.skills ?? null,
             } }),
+            ...(inventoryChanged && { providerInventory: inventory }),
           },
         });
         // A per-turn init reports the model the turn started with, before any /model in it ran.
