@@ -58,7 +58,32 @@ export async function setOwnGrant(groupProjectId: string, grant: GroupProjectOwn
 
 const target = (groupProjectId: string) => ({ kind: 'group_project' as const, id: groupProjectId });
 
-/** Give or take a role: Allow, Ask first, or Off. */
+export class GroupProjectRoleError extends Error {
+  constructor(readonly code: 'not_found' | 'not_member', message: string) {
+    super(message);
+    this.name = 'GroupProjectRoleError';
+  }
+}
+
+/**
+ * Give or take a role as a person does (the directory, the canvas card, a
+ * paired desktop): the group project must exist, and lead or admin goes only
+ * to a current member, by the membership record. Taking a role away always
+ * may. Nothing is written when refused.
+ */
+export async function grantGroupProjectRole(groupProjectId: string, agentId: string, role: GroupProjectRole, mode: GrantChangeMode): Promise<void> {
+  const gp = await groupProjectHost.get(groupProjectId);
+  if (!gp) throw new GroupProjectRoleError('not_found', 'That group project does not exist.');
+  if (mode !== 'off') {
+    const members = await groupProjectHost.resolveMembers(groupProjectId);
+    if (!members.some((m) => m.address === agentId)) {
+      throw new GroupProjectRoleError('not_member', 'Only a member of the group project can lead or administer it. Add the agent first.');
+    }
+  }
+  await setGroupProjectRole(groupProjectId, agentId, role, mode);
+}
+
+/** Give or take a role: Allow, Ask first, or Off. No checks: migration and cleanup use it. */
 export async function setGroupProjectRole(groupProjectId: string, agentId: string, role: GroupProjectRole, mode: GrantChangeMode): Promise<void> {
   await updateAgentGrantChanges(agentId, (saved) => withGrantChange(saved, {
     action: ROLE_ACTION[role], target: target(groupProjectId), mode, by: 'user', at: new Date().toISOString(),

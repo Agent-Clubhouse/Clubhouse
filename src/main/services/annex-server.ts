@@ -92,7 +92,7 @@ import { groupProjectRegistry } from './group-project-registry';
 import { groupProjectHost } from './group-project-host';
 import { executeShoulderTap } from './group-project-shoulder-tap';
 import { setProjectPolling } from './group-project-polling';
-import { describeGroupProjectRoles, setGroupProjectRole } from './group-project-roles';
+import { describeGroupProjectRoles, grantGroupProjectRole, GroupProjectRoleError } from './group-project-roles';
 import { agentRegistry } from './agent-registry';
 import { bindingManager } from './clubhouse-mcp/binding-manager';
 import * as fileService from './file-service';
@@ -3298,9 +3298,22 @@ async function handleGroupProjectShoulderTapRoute(ctx: AnnexRouteContext, match:
   });
 }
 
-/** A group project's roles and own grants, and giving one, for a paired controller's card (#3360). */
+/** A desktop in this machine's Annex Network: not a phone, and not a session-only pairing (#3360). */
+function isDesktopNetworkMember(fingerprint: string | undefined): boolean {
+  if (!fingerprint || mobileSessionPeers.has(fingerprint) || !annexSettings.networkEnabled()) return false;
+  const peer = annexPeers.getPeer(fingerprint);
+  return peer?.role === 'member' && peer.kind === 'desktop';
+}
+
+/** A group project's roles and own grants, and giving one, for a network desktop's card (#3360). */
 async function handleGroupProjectRolesRoute(ctx: AnnexRouteContext, match: RegExpMatchArray): Promise<void> {
   if (ctx.requireMtls()) return;
+  // Lead and admin are a person's grants: only from another desktop of this network, never a phone.
+  if (!isDesktopNetworkMember(ctx.mobilePrincipal)) {
+    recordControlDenied('rest');
+    sendJson(ctx.res, 403, { error: 'desktop_member_required', message: 'Only a desktop in this Annex Network can see or change group project roles.' });
+    return;
+  }
   const gpId = decodeURIComponent(match[1]);
   if (ctx.req.method === 'GET') {
     try {
@@ -3318,9 +3331,13 @@ async function handleGroupProjectRolesRoute(ctx: AnnexRouteContext, match: RegEx
       return;
     }
     try {
-      await setGroupProjectRole(gpId, agentId, role, mode);
+      await grantGroupProjectRole(gpId, agentId, role, mode);
       sendJson(ctx.res, 200, await describeGroupProjectRoles(gpId));
     } catch (err) {
+      if (err instanceof GroupProjectRoleError) {
+        sendJson(ctx.res, err.code === 'not_found' ? 404 : 409, { error: err.code === 'not_found' ? 'group_project_not_found' : 'not_a_member', message: err.message });
+        return;
+      }
       sendJson(ctx.res, 500, { error: err instanceof Error ? err.message : 'set_role_failed' });
     }
   });

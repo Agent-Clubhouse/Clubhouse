@@ -12,6 +12,7 @@ import { defaultGrants } from '../../shared/default-grants';
 const fx = vi.hoisted(() => ({
   projects: new Map<string, GroupProject>(),
   grants: new Map<string, unknown>(),
+  members: new Map<string, string[]>(),
   listeners: new Set<(c: GroupProjectChange) => void>(),
 }));
 
@@ -29,6 +30,7 @@ vi.mock('./group-project-host', () => ({
   groupProjectHost: {
     list: async () => [...fx.projects.values()],
     get: async (id: string) => fx.projects.get(id) ?? null,
+    resolveMembers: async (id: string) => (fx.members.get(id) ?? []).map((address) => ({ address, name: address })),
     update: async (id: string, fields: { metadata?: Record<string, unknown> }) => {
       const gp = fx.projects.get(id);
       if (!gp) return null;
@@ -40,7 +42,7 @@ vi.mock('./group-project-host', () => ({
 }));
 
 import {
-  describeGroupProjectRoles, groupProjectMay, listGroupProjectRoles, migrateGroupProjectRoles, ownGrantsOf, roleModeOf,
+  describeGroupProjectRoles, grantGroupProjectRole, groupProjectMay, listGroupProjectRoles, migrateGroupProjectRoles, ownGrantsOf, roleModeOf,
   setGroupProjectRole, setOwnGrant, watchGroupProjectRoles,
 } from './group-project-roles';
 import { getAgentGrantChanges } from './agent-grants-store';
@@ -61,6 +63,7 @@ beforeEach(() => {
   fx.projects.clear();
   fx.grants.clear();
   fx.listeners.clear();
+  fx.members.clear();
 });
 
 describe('lead and admin are explicit grants', () => {
@@ -88,6 +91,26 @@ describe('lead and admin are explicit grants', () => {
     const target = { kind: 'group_project' as const, groupRole: 'member' as const, groupProjectId: 'gp1' };
     expect(evaluateGrant({ caller: { kind: 'agent', agentId: 'd' }, action: 'group_project.admin', target }, grants).outcome).toBe('ask');
     expect(evaluateGrant({ caller: { kind: 'agent', agentId: 'd' }, action: 'group_project.lead', target }, grants).outcome).toBe('refuse');
+  });
+});
+
+describe('a person gives a role (#3360)', () => {
+  it('only to a current member of an existing group project, and writes nothing when refused', async () => {
+    fx.projects.set('gp1', gp('gp1'));
+    fx.members.set('gp1', ['dev']);
+    await grantGroupProjectRole('gp1', 'dev', 'lead', 'allow');
+    expect(roleModeOf('dev', 'gp1', 'lead')).toBe('allow');
+
+    // Not a member, or excluded (an excluded agent isn't resolved as a member).
+    await expect(grantGroupProjectRole('gp1', 'outsider', 'lead', 'allow')).rejects.toMatchObject({ code: 'not_member' });
+    await expect(grantGroupProjectRole('gp1', 'outsider', 'admin', 'ask')).rejects.toMatchObject({ code: 'not_member' });
+    expect(fx.grants.has('outsider')).toBe(false);
+    await expect(grantGroupProjectRole('gp_missing', 'dev', 'lead', 'allow')).rejects.toMatchObject({ code: 'not_found' });
+
+    // Taking a role away always may, member or not.
+    fx.members.set('gp1', []);
+    await grantGroupProjectRole('gp1', 'dev', 'lead', 'off');
+    expect(roleModeOf('dev', 'gp1', 'lead')).toBe('off');
   });
 });
 

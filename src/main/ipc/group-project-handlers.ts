@@ -8,7 +8,7 @@ import { groupProjectRegistry } from '../services/group-project-registry';
 import { listPausedPolling, onPollingPauseChanged, resumePausedPolling, setProjectPolling, watchPollingForMcp } from '../services/group-project-polling';
 import { groupProjectHost } from '../services/group-project-host';
 import { initGroupProjectLifecycle } from '../services/group-project-lifecycle';
-import { describeGroupProjectRoles, setGroupProjectRole, setOwnGrant } from '../services/group-project-roles';
+import { describeGroupProjectRoles, grantGroupProjectRole, setOwnGrant } from '../services/group-project-roles';
 import { addMember, answerAutoJoinOffer, beginAutoJoin, describeMembership, excludeMember, onMembershipChanged, previewAutoJoin, releaseMembershipBindings } from '../services/group-project-membership';
 import { executeShoulderTap } from '../services/group-project-shoulder-tap';
 import * as annexEventBus from '../services/annex-event-bus';
@@ -86,7 +86,7 @@ export function registerGroupProjectHandlers(): void {
     async (_event, id, agentId, role, mode) => {
       if (role !== 'lead' && role !== 'admin') throw new Error('Role must be lead or admin.');
       if (mode !== 'allow' && mode !== 'ask' && mode !== 'off') throw new Error('Mode must be allow, ask or off.');
-      await setGroupProjectRole(id as string, agentId as string, role, mode);
+      await grantGroupProjectRole(id as string, agentId as string, role, mode);
       return describeGroupProjectRoles(id as string);
     },
   ));

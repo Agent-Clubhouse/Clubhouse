@@ -280,7 +280,7 @@ const rolesView = { groupProjectId: 'gp_1', own: { deliver: 'allow', wake: 'off'
 vi.mock('./group-project-roles', async (original) => ({
   ...await original<typeof import('./group-project-roles')>(),
   describeGroupProjectRoles: vi.fn(async () => rolesView),
-  setGroupProjectRole: vi.fn(async () => undefined),
+  grantGroupProjectRole: vi.fn(async () => undefined),
 }));
 vi.mock('./group-project-polling', () => ({
   setProjectPolling: vi.fn().mockResolvedValue({ pollingEnabled: true, members: [] }),
@@ -7314,21 +7314,58 @@ describe('annex-server', () => {
   });
 
   describe('group project roles endpoint (#3360)', () => {
-    it('GET answers a paired controller\'s card with lead and admin holders', async () => {
+    const asMember = (kind: 'desktop' | 'phone') => {
+      const member = { ...TEST_CONTROLLER, role: 'member' as const, kind };
+      vi.mocked(annexPeers.getPeer).mockReturnValue(member);
+      vi.mocked(annexPeers.listPeers).mockReturnValue([member]);
+    };
+
+    it('GET answers a network desktop\'s card with lead and admin holders', async () => {
+      asMember('desktop');
       const { port, token } = await startAndPair();
       const res = await request(port, 'GET', '/api/v1/group-projects/gp_1/roles', undefined, authHeaders(token));
       expect(res.status).toBe(200);
       expect(JSON.parse(res.body).holders).toEqual([{ agentId: 'a1', lead: 'allow', admin: 'off' }]);
     });
 
-    it('POST sets a role on this machine\'s group project, and refuses a bad role', async () => {
+    it('POST gives a member a role, and refuses a bad role', async () => {
+      asMember('desktop');
       const { port, token } = await startAndPair();
-      const { setGroupProjectRole } = await import('./group-project-roles');
+      const { grantGroupProjectRole } = await import('./group-project-roles');
+      vi.mocked(grantGroupProjectRole).mockClear();
       const res = await request(port, 'POST', '/api/v1/group-projects/gp_1/roles', { agentId: 'a1', role: 'lead', mode: 'allow' }, authHeaders(token));
       expect(res.status).toBe(200);
-      expect(setGroupProjectRole).toHaveBeenCalledWith('gp_1', 'a1', 'lead', 'allow');
+      expect(grantGroupProjectRole).toHaveBeenCalledWith('gp_1', 'a1', 'lead', 'allow');
       const bad = await request(port, 'POST', '/api/v1/group-projects/gp_1/roles', { agentId: 'a1', role: 'owner', mode: 'allow' }, authHeaders(token));
       expect(bad.status).toBe(400);
+    });
+
+    it('refuses a non-member, an excluded agent and an unknown group project without writing', async () => {
+      asMember('desktop');
+      const { port, token } = await startAndPair();
+      const { grantGroupProjectRole, GroupProjectRoleError } = await import('./group-project-roles');
+      vi.mocked(grantGroupProjectRole).mockRejectedValueOnce(new GroupProjectRoleError('not_member', 'Only a member…'));
+      expect((await request(port, 'POST', '/api/v1/group-projects/gp_1/roles', { agentId: 'outsider', role: 'lead', mode: 'allow' }, authHeaders(token))).status).toBe(409);
+      vi.mocked(grantGroupProjectRole).mockRejectedValueOnce(new GroupProjectRoleError('not_member', 'Only a member…'));
+      expect((await request(port, 'POST', '/api/v1/group-projects/gp_1/roles', { agentId: 'excluded', role: 'admin', mode: 'ask' }, authHeaders(token))).status).toBe(409);
+      vi.mocked(grantGroupProjectRole).mockRejectedValueOnce(new GroupProjectRoleError('not_found', 'That group project does not exist.'));
+      const missing = await request(port, 'POST', '/api/v1/group-projects/gp_missing/roles', { agentId: 'a1', role: 'lead', mode: 'allow' }, authHeaders(token));
+      expect(missing.status).toBe(404);
+      expect(JSON.parse(missing.body).error).toBe('group_project_not_found');
+    });
+
+    it('refuses a paired phone, before any change', async () => {
+      asMember('phone');
+      const { port, token } = await startAndPair();
+      const { grantGroupProjectRole, describeGroupProjectRoles } = await import('./group-project-roles');
+      vi.mocked(grantGroupProjectRole).mockClear();
+      vi.mocked(describeGroupProjectRoles).mockClear();
+      const post = await request(port, 'POST', '/api/v1/group-projects/gp_1/roles', { agentId: 'a1', role: 'lead', mode: 'allow' }, authHeaders(token));
+      expect(post.status).toBe(403);
+      expect(JSON.parse(post.body).error).toBe('desktop_member_required');
+      expect((await request(port, 'GET', '/api/v1/group-projects/gp_1/roles', undefined, authHeaders(token))).status).toBe(403);
+      expect(grantGroupProjectRole).not.toHaveBeenCalled();
+      expect(describeGroupProjectRoles).not.toHaveBeenCalled();
     });
   });
 
