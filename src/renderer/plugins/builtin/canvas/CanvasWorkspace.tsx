@@ -40,6 +40,15 @@ import { PinnedWidgetBar } from './PinnedWidgetBar';
 import { CANVAS_Z } from './canvas-chrome';
 import { PopupMenu } from '../../../components/PopupMenu';
 import { viewStructure } from './canvas-navigation-handoff';
+import { DeleteGroupProjectDialog } from '../../../features/settings/DeleteGroupProjectDialog';
+import { useGroupProjectStore } from '../../../stores/groupProjectStore';
+
+function CanvasGroupProjectDeleteDialog({ id, name, onClose }: { id: string; name: string; onClose: () => void }) {
+  const remove = useGroupProjectStore((state) => state.remove);
+  const loadImpact = useCallback(() => window.clubhouse.groupProject.previewDelete(id), [id]);
+  const confirmDelete = useCallback((token: string) => remove(id, token), [id, remove]);
+  return <DeleteGroupProjectDialog name={name} loadImpact={loadImpact} confirmDelete={confirmDelete} onClose={onClose} />;
+}
 
 const LayoutCenterIcon = (
   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
@@ -259,6 +268,7 @@ export function CanvasWorkspace({
   zoneSessionKey,
   navigationFocus,
 }: CanvasWorkspaceProps) {
+  const [deleteGroup, setDeleteGroup] = useState<{ id: string; name: string } | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const { scheduleViewportChange, flushViewportChange } = useBatchedViewportChange(onViewportChange, viewport);
   const [isPanning, setIsPanning] = useState(false);
@@ -976,9 +986,17 @@ export function CanvasWorkspace({
               icon: CenterIcon,
               onSelect: () => handleCenterViewFromMenu(viewContextMenu.viewId, handleCenterView),
             },
+            ...views.filter((view) => view.id === viewContextMenu.viewId && view.type === 'plugin'
+              && view.pluginWidgetType === 'plugin:group-project:group-project'
+              && typeof view.metadata.groupProjectId === 'string').map((view) => ({
+                id: 'delete-group-project', label: 'Delete group project', danger: true,
+                onSelect: () => setDeleteGroup({ id: view.metadata.groupProjectId as string, name: view.displayName }),
+              })),
           ]}
         />
       )}
+
+      {deleteGroup && <CanvasGroupProjectDeleteDialog id={deleteGroup.id} name={deleteGroup.name} onClose={() => setDeleteGroup(null)} />}
 
       {/* Wire config popover */}
       {wirePopover && (
