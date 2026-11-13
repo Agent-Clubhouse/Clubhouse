@@ -70,9 +70,26 @@ function pullFrom(machine: string, flush: boolean): Promise<void> {
   return next;
 }
 
+/** Delays between attempts to remove a dropped copy's Canvas cards; the next start tries again after that. */
+const VIEW_PURGE_RETRY_MS = [1_000, 10_000, 60_000];
+
 export function startGroupProjectNetwork(start: StartGroupProjectNetworkOptions): () => void {
   const generation = ++lifecycle;
   options = start;
+  const purgeViews = async (id: string): Promise<void> => {
+    if (!start.purgeViews) return;
+    for (let attempt = 0; ; attempt++) {
+      try {
+        await start.purgeViews(id);
+        await groupProjectHost.markViewsPurged(id);
+        return;
+      } catch (err) {
+        logFailure('removing a copy\'s canvas cards', id, err);
+        if (attempt >= VIEW_PURGE_RETRY_MS.length || generation !== lifecycle) return;
+        await new Promise((resolve) => { const t = setTimeout(resolve, VIEW_PURGE_RETRY_MS[attempt]); t.unref?.(); });
+      }
+    }
+  };
   groupProjectHost.setNetworkLink({
     connected: (machine) => start.transport.connected(machine),
     isMember: (machine) => start.isMember(machine),
@@ -108,7 +125,7 @@ export function startGroupProjectNetwork(start: StartGroupProjectNetworkOptions)
   const offChanged = groupProjectHost.onChange((change) => {
     // This computer's copy went (deleted on its host, or no longer shared): so do its cards and wires.
     if (change.part === 'deleted' && change.project?.network?.role === 'replica') {
-      void start.purgeViews?.(change.groupProjectId).catch((err) => logFailure('removing a copy\'s canvas cards', change.project!.host?.machine ?? '', err));
+      void purgeViews(change.groupProjectId);
       return;
     }
     void (async () => {
@@ -131,6 +148,10 @@ export function startGroupProjectNetwork(start: StartGroupProjectNetworkOptions)
     }
     known = now;
   });
+
+  // Cards of copies dropped before a crash or a failed removal go now.
+  void groupProjectHost.pendingViewPurges().then(async (ids) => { for (const id of ids) await purgeViews(id); })
+    .catch((err) => logFailure('removing dropped copies\' canvas cards', '', err));
 
   // Catch up with every computer already connected.
   for (const machine of start.members()) {

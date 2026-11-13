@@ -6,6 +6,7 @@
  */
 import { AsyncLocalStorage } from 'async_hooks';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import * as fs from 'fs';
 import * as fsp from 'fs/promises';
 import * as path from 'path';
 import { readSyncResponse, readWriteRequest, readWriteResponse, readSyncRequest } from '../../shared/group-project-network';
@@ -18,6 +19,7 @@ interface Machine {
   projects?: Array<{ id: string; name: string; path: string; key: string; agents: Array<{ id: string; name: string }> }>;
   host?: typeof import('./group-project-host');
   registry?: typeof import('./group-project-registry');
+  bulletin?: typeof import('./group-project-bulletin');
 }
 
 const world = vi.hoisted(() => ({
@@ -90,6 +92,7 @@ beforeEach(async () => {
     vi.resetModules();
     m.host = await import('./group-project-host');
     m.registry = await import('./group-project-registry');
+    m.bulletin = await import('./group-project-bulletin');
     m.host.groupProjectHost.setNetworkLink(linkFor(m));
   }
 });
@@ -300,6 +303,48 @@ describe('network group projects across two desktops (#3363)', () => {
       await fsp.rm(path.join(A.home, '.clubhouse-dev', 'group-projects', 'network-applied.json'), { force: true });
       await writeAs(id, { label: 'user' }, { op: 'post', sender: 'user', topic: 'work', body: 'once' }, 'same-write');
       expect((await as(A, (h) => h.groupProjectHost.readTopic(id, 'work'))).map((m) => m.body)).toEqual(['once']);
+    });
+  });
+
+  describe('a remote write is durable before it is answered (#3446 re-review)', () => {
+    const write = (id: string) => ({ v: 1, writes: [{ id: 'durable-1', groupProjectId: id, queuedAt: '2026-11-13T00:00:00.000Z', author: { label: 'user' }, write: { op: 'post', sender: 'user', topic: 'work', body: 'kept' } }] });
+    /** The host stops: everything in memory is lost, the files stay. */
+    const crashHost = () => {
+      A.host!.groupProjectHost._resetForTesting();
+      A.bulletin!._resetAllBoardsForTesting();
+      A.registry!.groupProjectRegistry._resetForTesting();
+      A.host!.groupProjectHost.setNetworkLink(linkFor(A));
+    };
+    const failRenameOf = (name: string) => {
+      const rename = fs.promises.rename;
+      return vi.spyOn(fs.promises, 'rename').mockImplementation(async (from, to) => {
+        if (String(to).startsWith(A.home) && path.basename(String(to)) === name) throw new Error('power cut');
+        await rename(from, to);
+      });
+    };
+
+    it('crashing before the board is on disk answers nothing; the resend posts it once', async () => {
+      const id = await sharedProject();
+      const spy = failRenameOf('bulletin.json');
+      await expect(as(A, (h) => h.groupProjectHost.applyRemoteWrites(B.fp, readWriteRequest(wire(write(id)))))).rejects.toThrow('power cut');
+      spy.mockRestore();
+      crashHost();
+      const resent = await as(A, (h) => h.groupProjectHost.applyRemoteWrites(B.fp, readWriteRequest(wire(write(id)))));
+      expect(resent.results[0].status).toBe('applied');
+      crashHost();
+      expect((await as(A, (h) => h.groupProjectHost.readTopic(id, 'work'))).map((m) => m.body)).toEqual(['kept']);
+    });
+
+    it('crashing after the board is on disk but before the answer is saved: the resend finds the post', async () => {
+      const id = await sharedProject();
+      const spy = failRenameOf('network-applied.json');
+      await expect(as(A, (h) => h.groupProjectHost.applyRemoteWrites(B.fp, readWriteRequest(wire(write(id)))))).rejects.toThrow('power cut');
+      spy.mockRestore();
+      crashHost();
+      const resent = await as(A, (h) => h.groupProjectHost.applyRemoteWrites(B.fp, readWriteRequest(wire(write(id)))));
+      expect(resent.results[0].status).toBe('applied');
+      crashHost();
+      expect((await as(A, (h) => h.groupProjectHost.readTopic(id, 'work'))).map((m) => m.body)).toEqual(['kept']);
     });
   });
 

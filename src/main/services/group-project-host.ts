@@ -135,7 +135,7 @@ type OutboxItem = QueuedWrite & { host: string };
 interface StoredList<T> { version: 1; items: T[] }
 interface ReplicaState { version: 1; syncedAt?: string; hostRemoved?: boolean }
 /** A copy this computer dropped: deleted on its host, or no longer shared as of `seq`. */
-interface ReplicaTombstone { groupProjectId: string; host: string; seq: number; at: string; kind: 'deleted' | 'unshared' }
+interface ReplicaTombstone { groupProjectId: string; host: string; seq: number; at: string; kind: 'deleted' | 'unshared'; viewsPurged?: boolean }
 /** What a host answered a remote write, kept so a replayed write gets the same answer. */
 interface AppliedWrite { machine: string; id: string; result: WriteResult; at: string }
 
@@ -1315,6 +1315,38 @@ class GroupProjectHostService {
     });
   }
 
+  private forgetReplicaTombstone(id: string, host: string): Promise<void> {
+    return this.serial(this.fileChains, 'replica-tombstones', async () => {
+      const items = (await this.loadReplicaTombstones()).filter((t) => !(t.groupProjectId === id && t.host === host));
+      await writeJsonFile(replicaTombstonesPath(), { version: 1, items } satisfies StoredList<ReplicaTombstone>);
+      this.replicaTombstones = items;
+    });
+  }
+
+  /**
+   * Every group project removed here: deleted on this computer, or a copy
+   * dropped (#3363). A Canvas save naming one of them has it taken out.
+   */
+  async removedGroupProjectIds(): Promise<string[]> {
+    const ids = new Set((await this.loadTombstones()).map((t) => t.groupProjectId));
+    for (const t of await this.loadReplicaTombstones()) ids.add(t.groupProjectId);
+    return [...ids];
+  }
+
+  /** Dropped copies whose Canvas cards and wires haven't been removed yet (a crash or failure since). */
+  async pendingViewPurges(): Promise<string[]> {
+    return (await this.loadReplicaTombstones()).filter((t) => !t.viewsPurged).map((t) => t.groupProjectId);
+  }
+
+  /** A dropped copy's cards, wires and guidance are gone. */
+  markViewsPurged(id: string): Promise<void> {
+    return this.serial(this.fileChains, 'replica-tombstones', async () => {
+      const items = (await this.loadReplicaTombstones()).map((t) => (t.groupProjectId === id ? { ...t, viewsPurged: true } : t));
+      await writeJsonFile(replicaTombstonesPath(), { version: 1, items } satisfies StoredList<ReplicaTombstone>);
+      this.replicaTombstones = items;
+    });
+  }
+
   /** Catch up every copy held of `host`'s group projects, and learn of new ones. One catch-up per host at a time. */
   syncFrom(host: string): Promise<void> {
     return this.serial(this.syncChains, host, () => this.syncFromNow(host));
@@ -1368,6 +1400,8 @@ class GroupProjectHostService {
       // A copy dropped for a delete never comes back; one dropped as unshared comes back only when shared again since.
       const dropped = (await this.loadReplicaTombstones()).find((t) => t.groupProjectId === id && t.host === host);
       if (dropped && (dropped.kind === 'deleted' || snapshot.seq <= dropped.seq)) return;
+      // Shared again since: its marker goes, so its cards are no longer stripped.
+      if (dropped) await this.forgetReplicaTombstone(id, host);
       const { seq: _seq, hostName: _hostName, network: _network, ...record } = snapshot.record;
       const previous = await this.seqOf(id).catch(() => 0);
       // Older than what this copy has: an answer overtaken by a newer one.
@@ -1507,6 +1541,12 @@ class GroupProjectHostService {
     const earlier = (await this.loadApplied()).find((a) => a.machine === machine && a.id === item.id);
     if (earlier) return earlier.result;
     const result = await this.applyRemoteWrite(machine, item);
+    if (result.status === 'applied') {
+      // Durable before it's answered: a failed flush answers nothing, saves no receipt, and the
+      // sender sends the write again with the same id.
+      await groupProjectRegistry.flush();
+      await getBulletinBoard(item.groupProjectId).flush();
+    }
     await this.serial(this.fileChains, 'applied', async () => {
       const now = Date.now();
       const items = [...(await this.loadApplied()).filter((a) => now - Date.parse(a.at) < APPLIED_TTL_MS), { machine, id: item.id, result, at: new Date(now).toISOString() }]
