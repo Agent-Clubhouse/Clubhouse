@@ -18,6 +18,7 @@ import type { HandoffManifestSummary } from '../../shared/handoffs';
 
 const exec = promisify(execFile);
 const CHUNK_BYTES = 64 * 1024;
+const LFS_POINTER_HEADER = Buffer.from('version https://git-lfs.github.com/spec/v1\n');
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
 const compare = (a: string, b: string) => a < b ? -1 : a > b ? 1 : 0;
 
@@ -158,9 +159,6 @@ async function directory(root: string, parent?: SourceRoot): Promise<SourceRoot>
 
 async function repository(context: SnapshotGit): Promise<HandoffWorktreeManifest['repo']> {
   await gitControls(context);
-  if (await git(context, ['config', '--null', '--name-only', '--get-regexp', '^filter\\.'], true)) {
-    throw new HandoffSnapshotError('unsupported_repository');
-  }
   if (paths(await git(context, ['ls-files', '-v', '-z'])).some((entry) => /^[a-zS] /.test(entry))) {
     throw new HandoffSnapshotError('unsupported_repository');
   }
@@ -171,8 +169,37 @@ async function repository(context: SnapshotGit): Promise<HandoffWorktreeManifest
   const branch = (await git(context, ['symbolic-ref', '--quiet', '--short', 'HEAD'], true))?.trim();
   const remote = (await git(context, ['config', '--get', 'remote.origin.url'], true))?.trim() ?? null;
   if (!base || !branch) throw new HandoffSnapshotError('invalid_repository');
+  await rejectFilteredPaths(context, [...new Set([
+    ...paths(await git(context, ['ls-files', '-z'])),
+    ...paths(await git(context, ['ls-tree', '-r', '--name-only', '-z', base])),
+  ])]);
   await gitControls(context);
   return { remote, base, branch };
+}
+
+/** Attribute queries do not execute clean/process drivers. A configured but unused
+ * driver (for example a global Git LFS installation) does not affect raw bytes. */
+async function rejectFilteredPaths(context: SnapshotGit, names: string[]): Promise<void> {
+  for (let offset = 0; offset < names.length;) {
+    const batch: string[] = [];
+    let bytes = 0;
+    while (offset < names.length && batch.length < 128 && bytes < 16 * 1024) {
+      const name = names[offset++];
+      batch.push(name);
+      bytes += Buffer.byteLength(name) + 1;
+    }
+    // Inspect both working-tree and indexed attributes: deleting or editing an
+    // attributes file must not conceal a filter used by the indexed tree.
+    for (const cached of [false, true]) {
+      const values = paths(await git(context, ['check-attr', ...(cached ? ['--cached'] : []), '-z', 'filter', '--', ...batch]));
+      if (values.length !== batch.length * 3) throw new HandoffSnapshotError('git_failed');
+      for (let index = 0; index < batch.length; index++) {
+        const [name, attribute, value] = values.slice(index * 3, index * 3 + 3);
+        if (name !== batch[index] || attribute !== 'filter') throw new HandoffSnapshotError('git_failed');
+        if (value !== 'unspecified' && value !== 'unset') throw new HandoffSnapshotError('unsupported_repository');
+      }
+    }
+  }
 }
 
 function paths(output: string | null): string[] {
@@ -256,6 +283,7 @@ async function selection(
     }
   }
   const all = [...new Set([...tracked, ...others])].sort(compare);
+  await rejectFilteredPaths(context, all);
   return { tracked, all, modes };
 }
 
@@ -334,7 +362,7 @@ async function inspect(root: SourceRoot, source: SourceFile, sink?: (chunk: Uint
       throw new HandoffSnapshotError('source_changed', safeHandoffDiagnosticPath(source.path));
     }
     const size = Number(opened.size);
-    const small = !gitObjectHash && size <= HANDOFF_SECRET_CONTENT_MAX_BYTES;
+    const small = size <= HANDOFF_SECRET_CONTENT_MAX_BYTES;
     const content = small ? Buffer.alloc(size) : undefined;
     const buffer = Buffer.alloc(Math.min(CHUNK_BYTES, Math.max(1, size)));
     const hash = createHash(gitObjectHash ?? 'sha256');
@@ -352,6 +380,9 @@ async function inspect(root: SourceRoot, source: SourceFile, sink?: (chunk: Uint
       if (content) content.set(chunk, position);
       else if (sink) await sink(chunk);
       position += bytesRead;
+    }
+    if (content?.subarray(0, LFS_POINTER_HEADER.length).equals(LFS_POINTER_HEADER)) {
+      throw new HandoffSnapshotError('unsupported_repository');
     }
     if (!gitObjectHash) block(scan(source.path, content, policy));
     const after = await sourceStat(root, source.path);

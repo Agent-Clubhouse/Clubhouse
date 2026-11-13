@@ -292,7 +292,7 @@ describe('local secret-safe handoff snapshots', () => {
     expect(await fs.promises.readdir(staging)).toEqual([]);
   });
 
-  it('pins the environment source once without losing global configuration filter checks', async () => {
+  it('pins the environment source once while reading global repository metadata', async () => {
     const global = path.join(root, 'initial-global-config');
     const other = path.join(root, 'other-global-config');
     await git('config', '--file', global, 'remote.origin.url', 'https://example.com/initial.git');
@@ -349,20 +349,42 @@ describe('local secret-safe handoff snapshots', () => {
   it.each([
     ['global', 'GIT_CONFIG_GLOBAL'],
     ['system', 'GIT_CONFIG_SYSTEM'],
-  ] as const)('refuses %s filter definitions even when no selected file uses the driver', async (scope, variable) => {
+  ] as const)('accepts unused %s Git LFS definitions without invoking or modifying them', async (scope, variable) => {
     const config = path.join(root, `${scope}-config`);
-    await git('config', '--file', config, 'filter.qa.process', 'handoff-fixture-must-not-execute');
+    await git('config', '--file', config, 'filter.lfs.process', 'handoff-fixture-must-not-execute');
     const original = await fs.promises.readFile(config);
     vi.stubEnv(variable, config);
-    const observed = await exec('git', ['config', '--show-scope', '--name-only', '--get-regexp', '^filter\\.qa\\.process$'], { cwd: repo });
-    expect(observed.stdout.trim()).toBe(`${scope}\tfilter.qa.process`);
-    await expect(prepareHandoffSnapshot(options())).rejects.toMatchObject({ code: 'unsupported_repository', cleanupFailed: false });
-    expect(await fs.promises.readdir(staging)).toEqual([]);
+    const observed = await exec('git', ['config', '--show-scope', '--name-only', '--get-regexp', '^filter\\.lfs\\.process$'], { cwd: repo });
+    expect(observed.stdout.trim()).toBe(`${scope}\tfilter.lfs.process`);
+    await file('tracked.txt', 'edited without LFS\n');
+    const snapshot = await prepareHandoffSnapshot(options());
+    expect(snapshot.manifest.files.map((entry) => entry.path)).toEqual(['tracked.txt']);
+    expect(await fs.promises.readFile(path.join(snapshot.root, 'files/tracked.txt'), 'utf8')).toBe('edited without LFS\n');
     expect(await fs.promises.readFile(config)).toEqual(original);
   });
 
+  it('refuses LFS attributes even without a configured filter', async () => {
+    await file('.gitattributes', 'tracked.txt filter=lfs diff=lfs merge=lfs -text\n');
+    await expect(prepareHandoffSnapshot(options())).rejects.toMatchObject({ code: 'unsupported_repository' });
+    expect(await fs.promises.readdir(staging)).toEqual([]);
+  });
+
+  it('checks indexed attributes when the working attributes file was removed', async () => {
+    await file('.gitattributes', 'tracked.txt filter=lfs\n');
+    await git('add', '.gitattributes');
+    await fs.promises.rm(path.join(repo, '.gitattributes'));
+    await expect(prepareHandoffSnapshot(options())).rejects.toMatchObject({ code: 'unsupported_repository' });
+    expect(await fs.promises.readdir(staging)).toEqual([]);
+  });
+
+  it('refuses an LFS pointer even after its attributes are removed', async () => {
+    await file('tracked.txt', `version https://git-lfs.github.com/spec/v1\noid sha256:${'a'.repeat(64)}\nsize 1000000\n`);
+    await expect(prepareHandoffSnapshot(options())).rejects.toMatchObject({ code: 'unsupported_repository' });
+    expect(await fs.promises.readdir(staging)).toEqual([]);
+  });
+
   it('never executes a filter installed after the initial repository preflight', async () => {
-    await file('.gitattributes', 'tracked.txt filter=qa\n');
+    await file('.gitattributes', 'tracked.txt -filter\n');
     await file('tracked.txt', 'same\n');
     const lstat = fs.promises.lstat;
     let installed = false;
@@ -370,6 +392,7 @@ describe('local secret-safe handoff snapshots', () => {
       const stat = await lstat(...args);
       if (args[0] === path.join(repo, 'tracked.txt') && !installed) {
         installed = true;
+        await file('.git/info/attributes', 'tracked.txt filter=qa\n');
         await git('config', 'filter.qa.clean', 'node -e "require(\'fs\').writeFileSync(\'filter-marker\',\'ran\');process.stdin.pipe(process.stdout)"');
       }
       return stat;
