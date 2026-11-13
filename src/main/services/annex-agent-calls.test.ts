@@ -223,7 +223,7 @@ describe('sending a call to another machine', () => {
     const at = new Date(now).toISOString();
     expect(await receiveDirections(OTHER, { v: 1, directions: ['dispatcher-work', 'dispatcher-chat', 'unknown'].map((id) => ({
       from: { agentId: 'there', machine: OTHER }, to: { agentId: id, machine: SELF },
-      disabledTools: [], link: true, updatedAt: at,
+      disabledTools: [] as const, link: true, updatedAt: at,
     })) }, now)).toEqual({ applied: 0 });
     for (const id of ['dispatcher-work', 'dispatcher-chat', 'unknown']) {
       expect(getConnectionDirection({ agentId: 'there', machineId: OTHER }, { agentId: id })).toBeUndefined();
