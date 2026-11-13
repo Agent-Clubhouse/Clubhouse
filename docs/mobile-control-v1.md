@@ -560,9 +560,11 @@ Errors:
 - 413 `event_too_large` with `bytes` and `maximumBytes`: the response would be over `maximumBytes`, 32 MiB.
 - 403 `client_certificate_required` or `authorization_revoked`.
 
-It's an HTTP response, not a frame, so it isn't held to the socket's 16 MiB. A permission request's `digest` is what `chat.permission` takes as `reviewedDigest` (see "Large permission requests").
+It's an HTTP response, not a frame, so it isn't held to the socket's 16 MiB. A permission request's `digest` is what `chat.permission` takes as `reviewedDigest` (see "Large permission requests"). Treat the digest as opaque: send back exactly what you got, and fetch again rather than reuse one from before a restart or a new pairing.
 
-Events over 16 MiB that carry a fact that can't be left out (a `user_message`, `question` or `plan_document`, for example) still close the socket. That part of #2731 waits for `clubhouse.annex.frames.over_limit` to show it happens.
+Fixtures: `chat-full-event.json` has the fetch, approve refused before it, refused with another digest, taken with the fetched one, and the 400 and 404 errors. `fullEvents` is in `capabilities.json`, and `chat-permission-incomplete.json` has the preview a phone is sent first.
+
+Events over 16 MiB that carry a fact that can't be left out (a `user_message`, `question` or `plan_document`, for example) still close the socket, as in [Still sent whole](#frames-over-the-limit). Nothing is built for them: a check of `clubhouse.annex.frames.over_limit` on 2026-11-13 found no `sent_over_limit`, only one `fallback`. If one is ever reported, that's a new issue.
 
 ## Chat links
 

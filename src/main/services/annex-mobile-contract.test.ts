@@ -2796,6 +2796,53 @@ describe('Annex mobile contract fixtures', { timeout: TEST_TIMEOUT_MS }, () => {
   }, TEST_TIMEOUT_MS);
 
 
+  it('the whole of an event: fetch a large permission request, then approve it with reviewedDigest (#2731)', async () => {
+    const big = LIVE_TRANSCRIPT.find((e) => e.type === 'permission_request')! as any;
+    const large = { ...big, data: { ...big.data, title: 'Write big.ts', description: 'big.ts', toolName: 'Write', rawInput: { file_path: '/work/app/big.ts', content: 'c'.repeat(300 * 1024) } } };
+    registerChatRuntime(chatRuntime('durable_chat', 'sess_live', CHAT_CAPS, [...LIVE_TRANSCRIPT.filter((e) => e !== big), large], true) as never);
+    const chat = { agentId: 'durable_chat', sessionId: 'sess_live' };
+    const approve = (commandId: string, reviewedDigest?: string) => send('POST', '/api/v1/mobile/commands',
+      { version: 1, epoch, commandId, type: 'chat.permission', ...chat, requestId: 'perm_1', optionId: 'allow', ...(reviewedDigest && { reviewedDigest }) });
+    const path = `/api/v1/mobile/agents/durable_chat/chat/events/${big.seq}?sessionId=sess_live`;
+    try {
+      const before = await approve('cmd_full_before');
+      expect(before.status).toBe(409);
+      expect(before.body.error.code).toBe('incomplete_representation');
+
+      const full = await exchange('GET', path);
+      expect(full.response.status).toBe(200);
+      const body = full.response.body as { digest: string; event: any };
+      expect(body.event.data.rawInput).toEqual(large.data.rawInput);
+      expect(body.digest).toMatch(/^sha256:[0-9a-f]{64}$/);
+
+      const wrong = await approve('cmd_full_wrong', `sha256:${'0'.repeat(64)}`);
+      expect(wrong.status).toBe(409);
+      const after = await approve('cmd_full_after', body.digest);
+      expect(after.status).toBe(200);
+      expect(after.body).toMatchObject({ status: 'completed', result: { answered: true, requestId: 'perm_1' } });
+
+      const missingSession = await exchange('GET', `/api/v1/mobile/agents/durable_chat/chat/events/${big.seq}`);
+      expect(missingSession.response).toMatchObject({ status: 400, body: { error: 'invalid_query' } });
+      const missingEvent = await exchange('GET', '/api/v1/mobile/agents/durable_chat/chat/events/9999?sessionId=sess_live');
+      expect(missingEvent.response).toMatchObject({ status: 404, body: { error: 'event_not_found' } });
+      const missingAgent = await exchange('GET', '/api/v1/mobile/agents/missing/chat/events/1?sessionId=sess_live');
+      expect(missingAgent.response).toMatchObject({ status: 404, body: { error: 'agent_not_found' } });
+
+      const receipt = (reply: Reply) => ({ status: reply.status, body: { ...reply.body, epoch: '<epoch>', commandId: '<commandId>' } });
+      fixtures.set('chat-full-event.json', {
+        note: 'capabilities.fullEvents. Fetch an event that came with truncated, whole, over pinned mTLS. rawInput.content is shortened here; digest is of the original. For a permission_request, send that digest back as reviewedDigest. It counts only for the device that fetched it, since the desktop started and since pairing, while the request and its options are unchanged. Not shown: 413 event_too_large {bytes, maximumBytes} over 32 MiB, and 403 client_certificate_required or authorization_revoked.',
+        fetch: { request: full.request, response: { status: full.response.status, body: { ...body, event: { ...body.event, data: { ...body.event.data, rawInput: { ...body.event.data.rawInput, content: 'ccc…' } } } } } },
+        approveBeforeFetch: { request: { type: 'chat.permission', requestId: 'perm_1', optionId: 'allow' }, response: receipt(before) },
+        approveWithOtherDigest: { request: { type: 'chat.permission', requestId: 'perm_1', optionId: 'allow', reviewedDigest: `sha256:${'0'.repeat(64)}` }, response: receipt(wrong) },
+        approveWithDigest: { request: { type: 'chat.permission', requestId: 'perm_1', optionId: 'allow', reviewedDigest: body.digest }, response: receipt(after) },
+        errors: { missingSessionId: missingSession, eventNotFound: missingEvent, agentNotFound: missingAgent },
+      });
+    } finally {
+      registerChatRuntime(chatRuntime('durable_chat', 'sess_live', CHAT_CAPS, LIVE_TRANSCRIPT, true) as never);
+    }
+  }, TEST_TIMEOUT_MS);
+
+
   it('chat pages: bounded on bytes, and pending all or nothing', async () => {
     const chat = (agentEvents: ChatEvent[]) => registerChatRuntime(chatRuntime('durable_chat', 'sess_live', CHAT_CAPS, agentEvents, true) as never);
     const route = '/api/v1/mobile/agents/durable_chat/chat';
