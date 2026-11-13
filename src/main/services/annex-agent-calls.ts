@@ -269,7 +269,6 @@ export async function forwardPreparedAgentCall(callerId: string, targetId: strin
     epoch,
   };
   body.context = context ?? { rootId: body.callId, depth: 0 };
-  prepared?.(body.callId);
   if (args.idempotency_key !== undefined && (typeof args.idempotency_key !== 'string' || !args.idempotency_key.trim() || args.idempotency_key.length > 200)) {
     return text('idempotency_key must be a non-empty string of at most 200 characters.', true);
   }
@@ -289,6 +288,8 @@ export async function forwardPreparedAgentCall(callerId: string, targetId: strin
     const online = transport.connected(machine);
     const behind = waitingFor(machine).length > 0;
     await queue(machine, body, targetId);
+    // A prepared id is useful only after durable admission actually exists.
+    prepared?.(body.callId);
     if (online && !behind) {
       await flushOutbox(machine);
       const finished = deliveries.get().deliveries.find((r) => r.callId === body.callId);

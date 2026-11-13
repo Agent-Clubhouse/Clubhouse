@@ -110,6 +110,26 @@ export function createFederatedRequests(d: FederationRequestDependencies) {
   };
   async function showNotice(r: FederatedRequest) {
     if (!r.noticePending) return;
+    if (r.noticePending === 'reply') {
+      for (const prompt of r.replyPrompts ?? []) {
+        if (prompt.state !== 'pending' || !current(r)) continue;
+        let claimed = false;
+        await replace(r.id, (saved) => {
+          const entry = saved.replyPrompts?.find((p) => p.revision === prompt.revision);
+          if (entry?.state === 'pending') { entry.state = 'claimed'; claimed = true; }
+        }, () => current(r));
+        if (!claimed) continue;
+        try {
+          await d.present({ ...r, outcome: prompt.outcome, reason: prompt.text, cause: prompt.cause, receivedRevision: prompt.revision }, 'reply');
+          await replace(r.id, (saved) => { saved.replyPrompts!.find((p) => p.revision === prompt.revision)!.state = 'accepted'; });
+        } catch (err) {
+          if (err instanceof FederationInputNotReady) await replace(r.id, (saved) => { saved.replyPrompts!.find((p) => p.revision === prompt.revision)!.state = 'pending'; });
+          else d.fault?.(); // Unknown input acceptance remains claimed, never blindly replayed.
+        }
+      }
+      await replace(r.id, (saved) => { if (!saved.replyPrompts?.some((p) => p.state === 'pending')) delete saved.noticePending; });
+      return;
+    }
     try {
       await d.present(r, r.noticePending);
       await replace(r.id, (saved) => { if (saved.receivedRevision === r.receivedRevision && saved.noticePending === r.noticePending) delete saved.noticePending; });
@@ -186,15 +206,28 @@ export function createFederatedRequests(d: FederationRequestDependencies) {
     }
   }
   async function sendPending(r: FederatedRequest) {
-    if (!current(r) || d.now() >= r.expiresAt || (d.store.get().paused[r.machineId] && (!d.store.get().pauseEpochs?.[r.machineId] || deliveryHash(d.store.get().pauseEpochs![r.machineId]) === deliveryHash(r.epoch)))) return;
-    if (r.direction === 'outgoing' && !r.deliveryId && r.delivery === 'accepted') {
+    if (!current(r) || (d.store.get().paused[r.machineId] && (!d.store.get().pauseEpochs?.[r.machineId] || deliveryHash(d.store.get().pauseEpochs![r.machineId]) === deliveryHash(r.epoch)))) return;
+    if (r.direction === 'outgoing' && !r.deliveryId && r.delivery === 'accepted' && d.now() < r.expiresAt) {
       const sent = await d.send(r.callerId, r.machineId, r.targetId, { v: 1, kind: 'request', id: r.id, originRequestId: r.originRequestId, text: r.text }, r.cause, r.id);
       await replace(r.id, (q) => { q.deliveryId = sent.deliveryId; if (sent.error) { q.delivery = 'refused'; q.reason = sent.error; } });
     }
     for (const reply of r.replies ?? []) {
-      if (reply.deliveryId) continue;
+      if (reply.delivery === 'delivered' || reply.delivery === 'refused' || reply.delivery === 'expired') continue;
+      const status = reply.deliveryId && d.delivery(d.self().agentId, reply.deliveryId);
+      const failed = status && ['refused', 'expired', 'indeterminate'].includes(status.state);
+      if (failed || (!reply.deliveryId && d.now() >= (reply.expiresAt ?? r.expiresAt))) {
+        const reason = status ? `Reply ${reply.revision} could not be delivered: ${status.reason ?? status.state}.` : `Reply ${reply.revision} expired while waiting for durable admission.`;
+        const updated = await replace(r.id, (q) => { const saved = q.replies!.find((x) => x.revision === reply.revision)!; saved.delivery = status && status.state !== 'expired' ? 'refused' : 'expired'; saved.error = reason; q.reason = reason; q.noticePending = 'failure'; });
+        await showNotice(updated);
+        continue;
+      }
+      if (reply.deliveryId) {
+        if (status && status.state === 'delivered') await replace(r.id, (q) => { q.replies!.find((x) => x.revision === reply.revision)!.delivery = 'delivered'; });
+        continue;
+      }
       const sent = await d.send(d.self().agentId, r.machineId, r.origin.agentId, { v: 1, kind: 'reply', id: r.id, originRequestId: r.originRequestId, revision: reply.revision, outcome: reply.outcome, text: reply.text }, nextCause(r), `${r.id}:reply:${reply.revision}`);
-      await replace(r.id, (q) => { const saved = q.replies?.find((x) => x.revision === reply.revision); if (saved) saved.deliveryId = sent.deliveryId; });
+      const admitted = sent.deliveryId && d.delivery(d.self().agentId, sent.deliveryId);
+      await replace(r.id, (q) => { const saved = q.replies?.find((x) => x.revision === reply.revision); if (saved) { if (admitted) { saved.deliveryId = sent.deliveryId; saved.delivery = 'accepted'; } saved.error = sent.error ?? (!admitted ? 'The reply has not been admitted to durable delivery; retry pending.' : undefined); } });
     }
   }
   return {
@@ -314,10 +347,11 @@ export function createFederatedRequests(d: FederationRequestDependencies) {
           if (envelope.revision <= r.receivedRevision) { r.duplicates++; replay = true; return; }
           if (terminal(r.outcome)) throw new Error('The receiver already reported a final outcome.');
           r.outcome = envelope.outcome; r.receivedRevision = envelope.revision; r.reason = envelope.text; r.noticePending = 'reply';
+          if ((r.replyPrompts?.length ?? 0) >= 64) throw new Error('This request has reached its report limit.');
+          (r.replyPrompts ??= []).push({ revision: envelope.revision, outcome: envelope.outcome, text: envelope.text, cause, state: 'pending' });
           (file.news ??= {})[origin.machineId] = { ...r, direction: 'incoming', origin, targetId, cause, localRequestId: '', outcome: 'under_way', text: '' };
         }, () => current(original));
         if (replay) { d.record(updated, 'duplicate'); return updated; }
-        d.settleLocal?.(updated);
         await showNotice(updated);
         d.record(updated, 'crossing');
         return updated;
@@ -351,7 +385,7 @@ export function createFederatedRequests(d: FederationRequestDependencies) {
         if (terminal(r.outcome)) throw new Error('This request already has a final outcome.');
         if ((r.replies?.length ?? 0) >= 64) throw new Error('This request has reached its report limit.');
         r.outcome = outcome; r.reason = text; r.revision++;
-        (r.replies ??= []).push({ revision: r.revision, outcome, text });
+        (r.replies ??= []).push({ revision: r.revision, outcome, text, expiresAt: d.now() + FEDERATED_REQUEST_LIMITS.ttl });
       }, () => current(found));
       d.settleLocal?.(updated);
       try { await sendPending(updated); } catch { d.fault?.(); } // telemetry-exempt: the explicit report is retained for durable retry

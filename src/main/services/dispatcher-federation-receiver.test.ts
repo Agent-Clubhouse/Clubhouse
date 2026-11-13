@@ -40,10 +40,14 @@ import { receiveAgentCall, startAgentCalls, waitingFor, _clearOutboxForTesting }
 import { federationReceiver } from './dispatcher-federation-receiver';
 import { learnFederationController, watchFederation } from './dispatcher-federation';
 import { registerAgentTools } from './clubhouse-mcp/tools/agent-tools';
-import { _resetForTesting as resetRegistry } from './clubhouse-mcp/tool-registry';
+import { callTool, _resetForTesting as resetRegistry } from './clubhouse-mcp/tool-registry';
+import { registerNotifyTools } from './clubhouse-mcp/tools/notify-tools';
+import { _resetGrantRequestsForTesting, listGrantRequests } from './grant-requests';
+import { broadcastToAllWindows } from '../util/ipc-broadcast';
+import { IPC } from '../../shared/ipc-channels';
 import { _resetDispatcherDeliveryForTesting } from './clubhouse-mcp/tools/dispatcher-delivery';
 import { startFederatedRequests, federatedRequests } from './dispatcher-federation-runtime';
-import { getRequests, _resetDispatcherRequestsForTesting } from './dispatcher/dispatcher-requests';
+import { beginRequest, getRequests, _resetDispatcherRequestsForTesting } from './dispatcher/dispatcher-requests';
 import { checkToolGrant } from './clubhouse-mcp/grant-check';
 import { updateAgentGrantChanges } from './agent-grants-store';
 import { setMcpCaller } from './clubhouse-mcp/mcp-call-gate';
@@ -58,6 +62,7 @@ const call = (id = 'wake-call', tool = 'send_message') => ({
 });
 beforeEach(async () => {
   await _resetDispatcherRequestsForTesting();
+  _resetGrantRequestsForTesting();
   fs.rmSync(path.join(state.base, 'dispatcher-federation-requests.json'), { force: true });
   fs.rmSync(path.join(state.base, '.clubhouse-dev', 'dispatcher-requests.json'), { force: true });
   state.running = false; state.enabled = true; state.busy = false; state.inputState = undefined; state.pendingWork = false; state.pairing = 'peer-pairing';
@@ -73,6 +78,7 @@ beforeEach(async () => {
     transport: { connected: () => false, supportsDurableDelivery: async () => true, post: async () => ({ status: 503, body: {} }), machineName: () => 'Laptop', onConnected: () => () => {} },
     describeLocalAgent: async () => ({ name: 'Dispatcher controller' }), runTool: async () => { throw new Error('must use the production controller receiver'); },
     remoteDispatcher: federationReceiver,
+    authorizeQueuedCall: async () => ({ allowed: true }),
   });
 });
 afterEach(() => { stopRequests(); stop(); stopSource(); vi.clearAllMocks(); });
@@ -133,6 +139,44 @@ describe('production remote request admission and triage (#3346)', () => {
     expect(getRequests()).toHaveLength(1);
     expect(state.spawn).toHaveBeenCalledTimes(1);
     expect(federatedRequests()!.list('controller')[0].duplicates).toBe(1);
+  });
+  it('delivers a correlated subtask answer to the origin hidden controller after readiness, leaving the parent live', async () => {
+    stopRequests = startFederatedRequests();
+    const parent = beginRequest('Build on Laptop, then use its result on Desk');
+    if (parent.kind !== 'new') throw new Error('Expected new parent request');
+    const outgoing = await federatedRequests()!.offer('controller', PEER, 'peer-controller', parent.request.id, 'Build artifact');
+    state.running = true; state.busy = true;
+    const reply = { ...call('correlated-reply', 'hand_off_request'), context: { rootId: outgoing.id, depth: 1 },
+      args: { envelope: { v: 1, kind: 'reply', id: outgoing.id, originRequestId: parent.request.id, revision: 1, outcome: 'answered', text: 'Artifact ready; continue on Desk.' } } };
+    expect(await receiveAgentCall(PEER, reply)).toMatchObject({ delivery: { state: 'delivered' } });
+    expect(state.send).not.toHaveBeenCalled();
+    expect(getRequests().find((r) => r.id === parent.request.id)?.status).toBe('under_way');
+    state.busy = false; await federatedRequests()!.reconcile();
+    expect(state.send).toHaveBeenCalledWith(expect.stringContaining('[REMOTE REPLY:'), expect.objectContaining({ taskId: parent.request.id }));
+    expect(state.send.mock.calls[0][0]).toContain('Artifact ready; continue on Desk.');
+    expect(state.send.mock.calls[0][0]).toContain('does not complete your local request');
+    expect(deliverToChat).not.toHaveBeenCalled();
+    expect(getRequests().find((r) => r.id === parent.request.id)?.status).toBe('under_way');
+    await receiveAgentCall(PEER, reply); await federatedRequests()!.reconcile();
+    expect(state.send).toHaveBeenCalledTimes(1);
+  });
+  it.each(['allow', 'ask', 'off'] as const)('runs a real receiver tool under the local %s grant and records actual Needs-you requests', async (mode) => {
+    registerNotifyTools(); setMcpCaller('controller', state.base, {}); setDispatcherAgent('controller', true);
+    await updateAgentGrantChanges('controller', () => ({ changes: [{ action: 'user.notify', target: { kind: 'app' }, mode }] }));
+    stopRequests = startFederatedRequests();
+    await receiveAgentCall(PEER, handoff(`real-grant-${mode}`));
+    await federatedRequests()!.triage('controller', `real-grant-${mode}`, 'now', 'Handle under local grants');
+    vi.mocked(broadcastToAllWindows).mockClear();
+    const result = await callTool('controller', 'notify_user', { message: 'Remote task needs attention' });
+    if (mode === 'allow') {
+      expect(result.isError).toBe(false);
+      expect(broadcastToAllWindows).toHaveBeenCalledWith(IPC.APP.AGENT_ATTENTION, 'controller', { message: 'Remote task needs attention' });
+    } else {
+      expect(result.isError).toBe(true);
+      expect(broadcastToAllWindows).not.toHaveBeenCalledWith(IPC.APP.AGENT_ATTENTION, expect.anything(), expect.anything());
+    }
+    if (mode === 'ask') expect(listGrantRequests()).toContainEqual(expect.objectContaining({ agentId: 'controller', kind: 'call', toolName: 'notify_user' }));
+    else expect(listGrantRequests()).toEqual([]);
   });
   it.each(['now', 'check_in', 'needs_user', 'decline'] as const)('routes %s through the real triage adapter and durable correlated reply', async (choice) => {
     stopRequests = startFederatedRequests();
