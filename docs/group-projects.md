@@ -431,8 +431,10 @@ scope (`not_host`, "Only <host> can …").
 the agent (its author), and the host checks it as `<agent>@<sending computer>`.
 The agent must be a member, and anything beyond posting (lead: deleting
 messages and channels, protection; admin: record fields, membership) needs
-#3360's grants through the registered `setRemoteWriteGate`. Without a gate
-registered, only posting is allowed. The person, on any of their computers,
+#3360's grants: the registered gate (`group-project-remote-grants.ts`) asks
+`decideGrant` for `<agent>@<computer>` on that group project, and only Allow
+passes. Ask first refuses, since no person sees a remote write on the host.
+Without a gate registered, only posting is allowed. The person, on any of their computers,
 may write: their computers already control each other. A computer's own
 housekeeping (channel seeding, its agents' inboxes, its agents' membership
 entries and per-member settings, its agents' join and leave notes) covers only

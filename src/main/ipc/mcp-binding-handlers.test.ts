@@ -149,6 +149,7 @@ vi.mock('../services/group-project-host', () => ({
     }),
     recordScopedWireMembers: vi.fn(async () => 0),
     excludeOutOfScope: vi.fn(async () => undefined),
+    setRemoteWriteGate: vi.fn(),
     get: vi.fn(async () => null),
     update: vi.fn(async () => null),
   },

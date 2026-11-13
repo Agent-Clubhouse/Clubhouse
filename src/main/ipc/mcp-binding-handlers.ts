@@ -65,6 +65,7 @@ import { startHandoffs } from '../services/handoff-host';
 import { addCardConnection, listConnectionPickerTargets, removeCardConnection, startCardConnections } from '../services/connection-card';
 import type { AddCardConnection } from '../../shared/connection-picker';
 import { startGroupProjectNetwork } from '../services/group-project-network';
+import { remoteGroupProjectGrantGate } from '../services/group-project-remote-grants';
 import { purgeGroupProjectViews } from '../services/group-project-delete-service';
 import { onMembershipChanged as onNetworkMembershipChanged } from '../services/annex-network-membership';
 import { injectPtyMessage } from '../services/group-project-lifecycle';
@@ -626,6 +627,8 @@ export function restorePersistedBindings(): Promise<void> {
       notifyAgent: (agentId, text) => injectPtyMessage(agentId, text),
       purgeViews: (id) => purgeGroupProjectViews(id),
     });
+    // The host checks other computers' agents' writes against #3360's grants.
+    groupProjectHost.setRemoteWriteGate(remoteGroupProjectGrantGate);
   }
   return rebuildPersistedBindings().then(async (): Promise<void> => {
     // Once, after a rebuild has read every source: Dispatcher links from before #3215 get the new defaults.
