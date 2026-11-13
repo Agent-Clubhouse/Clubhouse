@@ -1322,7 +1322,7 @@ describe('AgentTools', () => {
       });
       await vi.advanceTimersByTimeAsync(600);
       await promise;
-      expect(mockPtyWrite.mock.calls[0][1]).toContain('Filename hint: \"data.json\"');
+      expect(mockPtyWrite.mock.calls[0][1]).toContain('Filename hint: "data.json"');
 
       expect(mockWriteFile).toHaveBeenCalledWith(
         expect.stringMatching(/[a-f0-9-]{36}\.md$/),
