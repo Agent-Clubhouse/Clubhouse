@@ -58,6 +58,7 @@ import {
   globalCanvasKvDir,
   projectCanvasKvDir,
   readCanvasStore,
+  readAllCanvasStores,
   readKvKey,
 } from './canvas-store-reader';
 
@@ -169,7 +170,7 @@ describe('canvas-store-reader', () => {
 
   it('preserves strict legacy GP guidance inspection without writes, while navigation requires a genuine widget discriminator', async () => {
     fs.mkdirSync(projects.list[2].path, { recursive: true });
-    writeKv(projectCanvasKvDir(other), 'canvas-instances', []);
+    writeKv(projectCanvasKvDir(other), 'canvas-instances', [canvas('empty-board', 'Empty', [])]);
     writeKv(projectCanvasKvDir(other), 'canvas-wires', []);
     const legacy = { id: 'legacy-gp', type: 'plugin', metadata: { groupProjectId: 'gp_wardfall' } };
     writeKv(location().kvDir, 'canvas-instances', [
@@ -179,6 +180,13 @@ describe('canvas-store-reader', () => {
       wire('durable_w1', 'gp_wardfall', 'group-project', { instructions: { send_message: 'Saved guidance' }, disabledTools: ['broadcast'] }),
     ]);
     const before = snapshotTree(root);
+    const snapshots = await readAllCanvasStores({ strict: true });
+    expect(snapshots.map(({ location: store, problems }) => ({ store: store.scope === 'app' ? 'Home' : store.projectId, problems }))).toEqual([
+      { store: 'Home', problems: [] },
+      { store: 'proj_w', problems: [] },
+      { store: 'proj_o', problems: [] },
+      { store: 'proj_empty', problems: [] },
+    ]);
     const inspect = canvasWireBindingSource.inspect;
     if (!inspect) throw new Error('Canvas saved-source inspection must be available.');
     const saved = await inspect();

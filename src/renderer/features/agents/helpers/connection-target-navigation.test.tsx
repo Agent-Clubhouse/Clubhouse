@@ -5,7 +5,8 @@ import type { CanvasNavigationSnapshot, CanvasPopoutReveal, CanvasPopoutRevealRe
 import type { PluginAPI, ScopedStorage } from '../../../../shared/plugin-types';
 import { getProjectCanvasStore, MainPanel, useAppCanvasStore } from '../../../plugins/builtin/canvas/main';
 import type { CanvasInstanceData, CanvasView } from '../../../plugins/builtin/canvas/canvas-types';
-import { consumeCanvasNavigationHandoff, getCanvasNavigationHandoff } from '../../../plugins/builtin/canvas/canvas-navigation-handoff';
+import { consumeCanvasNavigationHandoff, getCanvasNavigationHandoff, viewStructure } from '../../../plugins/builtin/canvas/canvas-navigation-handoff';
+import { applyCanvasMutation } from '../../../plugins/builtin/canvas/canvas-sync';
 import { useAgentStore } from '../../../stores/agentStore';
 import { useProjectStore } from '../../../stores/projectStore';
 import { useUIStore } from '../../../stores/uiStore';
@@ -760,9 +761,10 @@ describe('connection Open navigation', () => {
     window.clubhouse.window.onCanvasPopoutReveal = vi.fn((callback) => { receive = callback; return () => { receive = undefined; }; });
     window.clubhouse.window.revealCanvasPopout = vi.fn((request) => { receive?.(request); return answer.promise; });
     window.clubhouse.window.canvasPopoutRevealed = vi.fn((result) => { answer.resolve(result); });
-    const destination = render(<PopoutCanvasView canvasId="board" projectId="nav-two" />);
-    await screen.findByTestId('canvas-view-node');
     vi.useFakeTimers();
+    const destination = render(<PopoutCanvasView canvasId="board" projectId="nav-two" />);
+    await act(async () => {});
+    expect(screen.getByTestId('canvas-view-node')).toBeInTheDocument();
     await act(async () => { await vi.advanceTimersByTimeAsync(30_000); });
     expect(window.clubhouse.window.getCanvasState).toHaveBeenCalledTimes(2);
     let opening!: Promise<void>;
@@ -822,7 +824,9 @@ describe('connection Open navigation', () => {
       canvases: [board('board', [
         groupView(),
         { id: 'manual-zone', type: 'zone', title: 'Zone', displayName: 'Zone', metadata: {}, themeId: 'catppuccin-mocha',
-          position: { x: 0, y: 0 }, size: { width: 600, height: 400 }, zIndex: 0, containedViewIds: [] },
+          position: { x: 0, y: 0 }, size: { width: 600, height: 400 }, zIndex: 0, containedViewIds: ['bounds-note'] },
+        { id: 'bounds-note', type: 'sticky-note', title: 'Zone bounds', displayName: 'Zone bounds', metadata: {}, content: '', color: 'yellow',
+          position: { x: 40, y: 60 }, size: { width: 520, height: 300 }, zIndex: 0 },
         { id: 'manual-member', type: 'agent', agentId: 'manual-agent', title: 'Member', displayName: 'Member', metadata: {},
           position: { x: 700, y: 60 }, size: { width: 200, height: 200 }, zIndex: 1 },
       ])],
@@ -834,6 +838,7 @@ describe('connection Open navigation', () => {
     useMcpBindingStore.setState({ bindings: [unrelated] });
     const bind = vi.spyOn(window.clubhouse.mcpBinding, 'bind');
     const unbind = vi.spyOn(window.clubhouse.mcpBinding, 'unbind');
+    vi.useFakeTimers();
     if (mode === 'leader') {
       await jumpToConnectionCanvas('group-project', 'gp_actual', hit, beginConnectionNavigationRequest().signal);
       render(<MainPanel api={panelApi(data).api} />);
@@ -847,26 +852,35 @@ describe('connection Open navigation', () => {
       window.clubhouse.window.listPopouts = vi.fn(async () => [{ windowId: 7, params: { type: 'canvas', canvasId: 'board', projectId: 'nav-two' } }]);
       window.clubhouse.window.revealCanvasPopout = vi.fn((request) => { receive?.(request); return answer.promise; });
       window.clubhouse.window.canvasPopoutRevealed = vi.fn((result) => { answer.resolve(result); });
+      let receiveBroadcast: Parameters<typeof window.clubhouse.window.onCanvasStateChanged>[0] | undefined;
+      window.clubhouse.window.onCanvasStateChanged = vi.fn((callback) => { receiveBroadcast = callback; return () => {}; });
+      window.clubhouse.window.broadcastCanvasState = vi.fn((state) => { receiveBroadcast?.(JSON.parse(JSON.stringify(state))); });
+      window.clubhouse.window.sendCanvasMutation = vi.fn((canvasId, scope, mutation, projectId) => {
+        applyCanvasMutation(store, canvasId, mutation, projectId, scope);
+      });
       render(<PopoutCanvasView canvasId="board" projectId="nav-two" />);
-      await waitFor(() => expect(receive).toBeDefined());
+      await act(async () => {});
+      expect(receive).toBeDefined();
       let opening!: Promise<void>;
       await act(async () => { opening = jumpToConnectionCanvas('group-project', 'gp_actual', hit, beginConnectionNavigationRequest().signal); });
       await opening;
     }
     const workspace = screen.getByTestId('canvas-workspace');
     expect(bind).not.toHaveBeenCalled();
-    dragCanvasView(workspace, 'manual-member', -640, 0);
-    await waitFor(() => expect(bind).toHaveBeenCalledWith('manual-agent', expect.objectContaining({ targetId: 'gp_actual' })));
-    dragCanvasView(workspace, 'manual-member', 640, 0);
-    await waitFor(() => expect(unbind).toHaveBeenCalledWith('manual-agent', 'gp_actual', expect.any(String)));
+    await act(async () => { dragCanvasView(workspace, 'manual-member', -640, 0); });
+    expect(within(workspace).getByTestId('canvas-view-manual-member')).toHaveStyle({ left: '60px', top: '60px' });
+    expect(bind).toHaveBeenCalledWith('manual-agent', expect.objectContaining({ targetId: 'gp_actual' }));
+    await act(async () => { dragCanvasView(workspace, 'manual-member', 640, 0); });
+    expect(within(workspace).getByTestId('canvas-view-manual-member')).toHaveStyle({ left: '700px', top: '60px' });
+    expect(unbind).toHaveBeenCalledWith('manual-agent', 'gp_actual', expect.any(String));
+    expect(viewStructure(store.getState().views)).toBe(viewStructure(data.canvases[0].views));
     expect(useMcpBindingStore.getState().bindings).toContainEqual(unrelated);
     expect(useMcpBindingStore.getState().bindings.some((wire) => wire.agentId === 'manual-agent')).toBe(false);
     expect(unbind.mock.calls.every(([agentId]) => agentId === 'manual-agent')).toBe(true);
     if (mode === 'leader') {
       expect(store.getState().views.find((view) => view.id === 'manual-member')?.position).toEqual({ x: 700, y: 60 });
-      useMcpBindingStore.setState({ bindings: [unrelated] });
+      act(() => { useMcpBindingStore.setState({ bindings: [unrelated] }); });
       bind.mockClear();
-      vi.useFakeTimers();
       await act(async () => { await vi.advanceTimersByTimeAsync(2200); });
       expect(bind).toHaveBeenCalledWith('sleeping', expect.objectContaining({ targetId: 'gp_actual' }));
     }
