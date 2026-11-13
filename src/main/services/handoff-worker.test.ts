@@ -10,7 +10,7 @@ import { HandoffSnapshotError } from './handoff-snapshot';
 import { HandoffTransferInterrupted } from './handoff-transfer-receiver';
 let root: string;
 const machine = Array(16).fill('ab').join(':'); const sender = { machine: Array(16).fill('cd').join(':'), agentId: 'sender' }; const target = { machine, agentId: 'receiver' };
-beforeEach(() => { root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'handoff-worker-'))); });
+beforeEach(async () => { root = await fs.promises.realpath(fs.mkdtempSync(path.join(os.tmpdir(), 'handoff-worker-'))); });
 afterEach(() => { vi.useRealTimers(); fs.rmSync(root, { recursive: true, force: true }); });
 function fixture() {
   const at = Date.now(); const id = randomUUID();

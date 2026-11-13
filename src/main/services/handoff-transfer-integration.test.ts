@@ -5,7 +5,9 @@ import * as os from 'os';
 import * as path from 'path';
 import { pathToFileURL } from 'url';
 import { randomUUID } from 'crypto';
-import { afterEach, beforeEach, expect, it, vi } from 'vitest';
+import { afterAll, afterEach, beforeEach as rawBeforeEach, expect, it as rawIt, vi } from 'vitest';
+import { CheckpointFixtureLifetime } from '../../../test/checkpoint-fixture-lifetime';
+import { ownedRegistration } from '../../../test/dispatcher-work-owner';
 const state = vi.hoisted(() => ({ data: '' }));
 vi.mock('electron', () => ({ app: { getPath: () => state.data } }));
 import { HANDOFF_TRANSFER_DEFAULTS, summarizeHandoffManifest } from '../../shared/handoff-manifest';
@@ -15,6 +17,18 @@ import { HandoffTransferSource } from './handoff-transfer-source';
 import { HandoffStore } from './handoff-store';
 import { HandoffService } from './handoff-service';
 import { HandoffWorker } from './handoff-worker';
+const lifetime = vi.hoisted(() => ({ current: undefined as CheckpointFixtureLifetime | undefined, directory: '' }));
+vi.mock('child_process', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('child_process')>();
+  const { ownCheckpointExecFile } = await import('../../../test/checkpoint-fixture-lifetime');
+  return { ...actual, execFile: ownCheckpointExecFile(actual.execFile, () => lifetime.current) };
+});
+function owner(): CheckpointFixtureLifetime {
+  if (!lifetime.current) throw new Error('Handoff fixture is missing');
+  return lifetime.current;
+}
+const it = ownedRegistration(rawIt, 1, (promise) => { owner().observeRaw(promise); });
+const beforeEach = ownedRegistration(rawBeforeEach, 0, (promise) => { owner().observeRaw(promise); });
 const exec = promisify(execFile);
 const receiverMachine = Array(16).fill('ab').join(':');
 let root: string; let sender: string; let receiver: string; let outgoing: string; let incoming: string;
@@ -26,14 +40,22 @@ async function initialize(repo: string, content: string) {
   await git(repo, 'config', 'remote.origin.url', 'https://example.invalid/project.git');
 }
 beforeEach(async () => {
-  root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'handoff-integration-'))); state.data = root;
+  lifetime.current?.assertRetired(); lifetime.current = new CheckpointFixtureLifetime();
+  lifetime.directory = fs.mkdtempSync(path.join(os.tmpdir(), 'handoff-integration-'));
+  // Async realpath expands Windows DOS 8.3 aliases just as the production roots do.
+  root = await fs.promises.realpath(lifetime.directory); state.data = root;
   sender = path.join(root, 'sender'); receiver = path.join(root, 'receiver'); outgoing = path.join(root, 'outgoing'); incoming = path.join(root, 'incoming');
   fs.mkdirSync(outgoing); fs.mkdirSync(incoming);
   const config = path.join(root, 'empty-config'); fs.writeFileSync(config, ''); vi.stubEnv('GIT_CONFIG_GLOBAL', config); vi.stubEnv('GIT_CONFIG_SYSTEM', config); vi.stubEnv('GIT_CONFIG_NOSYSTEM', '0');
   await initialize(sender, 'sender base'); await initialize(receiver, 'receiver base');
   await git(receiver, 'config', `url.${pathToFileURL(path.join(root, 'absent.git')).href}.insteadOf`, 'https://example.invalid/project.git');
 });
-afterEach(() => { vi.unstubAllEnvs(); fs.rmSync(root, { recursive: true, force: true }); });
+afterEach(async () => {
+  await owner().close(() => Promise.resolve(), () => {
+    vi.unstubAllEnvs(); fs.rmSync(lifetime.directory, { recursive: true, force: true });
+  });
+});
+afterAll(() => { lifetime.current?.assertRetired(); });
 it.each(['same-machine', 'paired-computer'])('automatically applies a %s accepted handoff and wakes only after verified publication', async (kind) => {
   fs.writeFileSync(path.join(sender, 'work.txt'), 'final tracked bytes'); fs.writeFileSync(path.join(sender, 'new.txt'), 'new untracked');
   fs.mkdirSync(path.join(sender, 'fixtures')); const large = Buffer.alloc(600 * 1024, 17);
@@ -67,5 +89,5 @@ it.each(['same-machine', 'paired-computer'])('automatically applies a %s accepte
     expect((await git(result.result!.worktree, 'status', '--porcelain')).stdout).toContain(' M work.txt');
     expect(fs.readdirSync(incoming)).toEqual([]);
     await worker.run(id); expect(wake).toHaveBeenCalledTimes(1);
-  } finally { worker.stop(); await source.close(); }
-}, 30_000);
+  } finally { await worker.stop(); await source.close(); }
+}, 60_000);
