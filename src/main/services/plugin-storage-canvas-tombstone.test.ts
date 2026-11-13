@@ -21,4 +21,11 @@ describe('canvas persistence after group project deletion', () => {
     await expect(writeKey({ pluginId: 'canvas', scope: 'global', key: 'canvas-instances', value: [] })).rejects.toThrow('unreadable');
     expect(fs.writeFile).not.toHaveBeenCalled();
   });
+
+  it('does not block unrelated canvas preferences on a tombstone read', async () => {
+    listTombstones.mockRejectedValue(new Error('unreadable'));
+    await writeKey({ pluginId: 'canvas', scope: 'global', key: 'active-canvas', value: 'board' });
+    expect(listTombstones).not.toHaveBeenCalled();
+    expect(fs.writeFile).toHaveBeenCalledTimes(2);
+  });
 });

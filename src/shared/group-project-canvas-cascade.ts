@@ -50,9 +50,14 @@ export function removeGroupProjectCanvasReferences(
 }
 
 /** Strip deleted references from a late canvas key write. */
+export function isGroupProjectCanvasKey(key: string): boolean {
+  return key === 'canvas-instances' || key === 'canvas-instances-backup' || key.startsWith('canvas-instances-recovery-')
+    || key === 'canvas-wires' || key === 'canvas-zone-wires';
+}
+
 export function stripDeletedGroupProjectsFromCanvasKey(key: string, value: unknown, deletedIds: Iterable<string>): unknown {
   const instancesKey = key === 'canvas-instances' || key === 'canvas-instances-backup' || key.startsWith('canvas-instances-recovery-');
-  if (!instancesKey && key !== 'canvas-wires' && key !== 'canvas-zone-wires') return value;
+  if (!isGroupProjectCanvasKey(key)) return value;
   let result = value;
   for (const id of deletedIds) {
     if (instancesKey) {

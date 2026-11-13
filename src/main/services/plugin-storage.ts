@@ -11,7 +11,7 @@ import type {
 import { appLog } from './log-service';
 import { persist } from '../telemetry/persist';
 import { withCanvasWriteBarrier } from './canvas-write-barrier';
-import { stripDeletedGroupProjectsFromCanvasKey } from '../../shared/group-project-canvas-cascade';
+import { isGroupProjectCanvasKey, stripDeletedGroupProjectsFromCanvasKey } from '../../shared/group-project-canvas-cascade';
 
 // Track which projects have already had .gitignore updated this session
 const gitignoreEnsured = new Set<string>();
@@ -184,7 +184,7 @@ export async function readKey(req: PluginStorageReadRequest): Promise<unknown> {
 }
 
 export async function writeKey(req: PluginStorageWriteRequest): Promise<void> {
-  if (req.pluginId === 'canvas') {
+  if (req.pluginId === 'canvas' && isGroupProjectCanvasKey(req.key)) {
     return withCanvasWriteBarrier(() => writeKeyWithinCanvasBarrier(req));
   }
   await writeKeyWithinCanvasBarrier(req);
@@ -192,7 +192,7 @@ export async function writeKey(req: PluginStorageWriteRequest): Promise<void> {
 
 /** For a deletion cascade that already holds the canvas write barrier. */
 export async function writeKeyWithinCanvasBarrier(req: PluginStorageWriteRequest): Promise<void> {
-  if (req.pluginId === 'canvas') {
+  if (req.pluginId === 'canvas' && isGroupProjectCanvasKey(req.key)) {
     const { groupProjectHost } = await import('./group-project-host');
     const tombstones = await groupProjectHost.listTombstones();
     req = { ...req, value: stripDeletedGroupProjectsFromCanvasKey(req.key, req.value, tombstones.map((t) => t.groupProjectId)) };
