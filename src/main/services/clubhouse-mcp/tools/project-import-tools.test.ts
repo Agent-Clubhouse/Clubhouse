@@ -498,7 +498,7 @@ describe('public Dispatcher repository import (#2808)', () => {
     expect(await agentConfig.listDurable(destination)).toEqual([]);
   });
 
-  it('refuses unsafe URLs/placement and offers actual duplicate project reuse rather than another checkout', async () => {
+  it('refuses unsafe URLs and placement without creating a checkout', async () => {
     for (const input of ['https://user:secret@github.com/owner/repo', 'git@github.com:owner/repo', 'https://github.com/owner/../repo', 'https://example.com/owner/repo']) {
       const result = await call('preview_repository_import', { url: input, destination });
       expect(result.body.reason).toBe('unsupported_url');
@@ -507,12 +507,17 @@ describe('public Dispatcher repository import (#2808)', () => {
     expect((await call('preview_repository_import', { url, destination: 'relative' })).body.reason).toBe('invalid_destination');
     fs.mkdirSync(destination);
     expect((await call('preview_repository_import', { url, destination })).body.reason).toBe('destination_exists');
-    destination += '-new';
-    const { receipt } = await completeImport();
-    const duplicate = await call('preview_repository_import', { url, destination: destination + '-duplicate' });
-    expect(duplicate.body).toMatchObject({ status: 'existing_project', projectId: receipt.projectId });
-    expect(fs.existsSync(destination + '-duplicate')).toBe(false);
-    expect(duplicate.text).toContain('Open/reuse');
+  });
+
+  describe('duplicate project reuse with a prepared real public import', () => {
+    beforeEach(prepareImportedProject, 20_000);
+
+    it('offers actual duplicate project reuse rather than another checkout', async () => {
+      const duplicate = await call('preview_repository_import', { url, destination: destination + '-duplicate' });
+      expect(duplicate.body).toMatchObject({ status: 'existing_project', projectId: imported.receipt.projectId });
+      expect(fs.existsSync(destination + '-duplicate')).toBe(false);
+      expect(duplicate.text).toContain('Open/reuse');
+    });
   });
 
   it('cancels the exact owned running receipt, preserves user content, and reports final cancellation without restarting', async () => {

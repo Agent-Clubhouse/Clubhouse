@@ -1469,10 +1469,20 @@ describe('event time filters', () => {
   });
 
   async function withLocalZone(zone: string, run: (setZone: (value: string) => void) => Promise<void>): Promise<void> {
+    const formatterFor = (timeZone: string) => new Intl.DateTimeFormat('en-US', {
+      timeZone, year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hourCycle: 'h23',
+    });
+    let formatter = formatterFor(zone);
+    let lastTime: number | undefined;
+    let parts: Intl.DateTimeFormatPart[] = [];
     const part = (date: Date, field: 'year' | 'month' | 'day' | 'hour' | 'minute'): number => {
-      const value = new Intl.DateTimeFormat('en-US', {
-        timeZone: zone, year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hourCycle: 'h23',
-      }).formatToParts(date).find((p) => p.type === field)?.value;
+      // All five getters describe the same instant. Reuse its ICU conversion
+      // instead of constructing a formatter and converting for every getter.
+      if (lastTime !== date.getTime()) {
+        lastTime = date.getTime();
+        parts = formatter.formatToParts(date);
+      }
+      const value = parts.find((p) => p.type === field)?.value;
       if (!value) throw new Error(`Missing local ${field}`);
       return Number(value);
     };
@@ -1483,7 +1493,7 @@ describe('event time filters', () => {
       vi.spyOn(Date.prototype, 'getHours').mockImplementation(function (this: Date) { return part(this, 'hour'); }),
       vi.spyOn(Date.prototype, 'getMinutes').mockImplementation(function (this: Date) { return part(this, 'minute'); }),
     ];
-    try { await run((value) => { zone = value; }); }
+    try { await run((value) => { formatter = formatterFor(value); lastTime = undefined; }); }
     finally { for (const spy of spies) spy.mockRestore(); }
   }
 
