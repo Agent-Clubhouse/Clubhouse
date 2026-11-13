@@ -16,6 +16,13 @@ describe('canvas persistence after group project deletion', () => {
     for (const call of vi.mocked(fs.writeFile).mock.calls) expect(JSON.parse(String(call[1]))).toEqual([{ id: 'board', views: [] }]);
   });
 
+  it('preserves malformed recovery data while removing recognizable deleted cards', async () => {
+    const card = { id: 'card', type: 'plugin', pluginWidgetType: 'plugin:group-project:group-project', metadata: { groupProjectId: 'gp-gone' } };
+    const value = [{ id: 'board', views: [null, card, { broken: true }] }, { broken: 'snapshot' }];
+    await writeKey({ pluginId: 'canvas', scope: 'global', key: 'canvas-instances-recovery-123', value });
+    for (const call of vi.mocked(fs.writeFile).mock.calls) expect(JSON.parse(String(call[1]))).toEqual([{ id: 'board', views: [null, { broken: true }] }, { broken: 'snapshot' }]);
+  });
+
   it('refuses a canvas write if tombstones cannot be checked', async () => {
     listTombstones.mockRejectedValue(new Error('unreadable'));
     await expect(writeKey({ pluginId: 'canvas', scope: 'global', key: 'canvas-instances', value: [] })).rejects.toThrow('unreadable');

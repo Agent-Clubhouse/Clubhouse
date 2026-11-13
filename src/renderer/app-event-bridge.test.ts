@@ -350,6 +350,7 @@ import { fileState } from './plugins/builtin/files/state';
 import { usePendingPermissionStore } from './stores/pendingPermissionStore';
 import { useAgentDetailsStore } from './features/agents/details/detailsStore';
 import { useBulletinReadStore } from './stores/bulletinReadStore';
+import { getKnownProjectIds, getProjectCanvasStore } from './plugins/builtin/canvas/main';
 
 // ─── Tests ──────────────────────────────────────────────────────────────────
 
@@ -376,6 +377,18 @@ describe('initAppEventBridge', () => {
     expect(mockRemoveDeletedGroup).toHaveBeenCalledWith('gp-gone');
     expect(clear).toHaveBeenCalledWith('gp-gone');
     clear.mockRestore();
+  });
+
+  it('continues cleaning other canvases if one store fails', () => {
+    const error = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const later = vi.fn();
+    vi.mocked(getKnownProjectIds).mockReturnValueOnce(['broken', 'healthy']);
+    vi.mocked(getProjectCanvasStore).mockImplementationOnce(() => { throw new Error('broken'); })
+      .mockImplementationOnce(() => ({ getState: () => ({ removeDeletedGroupProject: later }) }) as never);
+    const handler = vi.mocked(window.clubhouse.groupProject.onDeleted).mock.calls.at(-1)![0];
+    handler('gp-gone');
+    expect(later).toHaveBeenCalledWith('gp-gone');
+    error.mockRestore();
   });
 
   it('opens Settings at Annex Network when asked for that page (#3068), and toggles Settings otherwise', () => {

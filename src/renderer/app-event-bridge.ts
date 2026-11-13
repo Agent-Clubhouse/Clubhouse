@@ -60,9 +60,14 @@ function initWindowListeners(): (() => void)[] {
   const removers: (() => void)[] = [];
 
   removers.push(window.clubhouse.groupProject.onDeleted((id) => {
-    useBulletinReadStore.getState().clearLastRead(id);
-    useAppCanvasStore.getState().removeDeletedGroupProject(id);
-    for (const projectId of getKnownProjectIds()) getProjectCanvasStore(projectId).getState().removeDeletedGroupProject(id);
+    try { useBulletinReadStore.getState().clearLastRead(id); }
+    catch (error) { console.error('Could not clear deleted group project read state', error); }
+    try { useAppCanvasStore.getState().removeDeletedGroupProject(id); }
+    catch (error) { console.error('Could not clear deleted group project from Home canvas', error); }
+    for (const projectId of getKnownProjectIds()) {
+      try { getProjectCanvasStore(projectId).getState().removeDeletedGroupProject(id); }
+      catch (error) { console.error('Could not clear deleted group project from a project canvas', error); }
+    }
   }));
 
   removers.push(window.clubhouse.app.onModelCatalogNotice((message) => {

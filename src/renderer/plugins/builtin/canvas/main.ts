@@ -342,6 +342,8 @@ export function MainPanel({ api }: { api: PluginAPI }) {
       const saving = Promise.all([store.getState().saveCanvas(storage), store.getState().saveWires(storage)]);
       inflightSaves.set(store, saving.catch((): undefined => undefined));
       flushResults.set(store, saving);
+      const clearSettled = () => { if (flushResults.get(store) === saving) flushResults.delete(store); };
+      void saving.then(clearSettled, clearSettled);
     };
     const previous = pendingSaveRef.current;
     if (previous) {

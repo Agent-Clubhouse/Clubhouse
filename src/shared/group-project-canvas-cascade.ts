@@ -58,15 +58,27 @@ export function isGroupProjectCanvasKey(key: string): boolean {
 export function stripDeletedGroupProjectsFromCanvasKey(key: string, value: unknown, deletedIds: Iterable<string>): unknown {
   const instancesKey = key === 'canvas-instances' || key === 'canvas-instances-backup' || key.startsWith('canvas-instances-recovery-');
   if (!isGroupProjectCanvasKey(key)) return value;
-  let result = value;
-  for (const id of deletedIds) {
-    if (instancesKey) {
-      result = removeGroupProjectCanvasReferences(result, [], [], id).instances;
-    } else if (key === 'canvas-wires') {
-      result = removeGroupProjectCanvasReferences([], result, [], id).wires;
-    } else {
-      result = removeGroupProjectCanvasReferences([], [], result, id).zoneWires;
+  const deleted = new Set(deletedIds);
+  if (!Array.isArray(value)) return value;
+  if (instancesKey) return value.map((raw) => {
+    if (!record(raw) || !Array.isArray(raw.views)) return raw;
+    const removed = new Set(raw.views.filter((view) => record(view) && typeof view.id === 'string'
+      && view.type === 'plugin' && view.pluginWidgetType === 'plugin:group-project:group-project'
+      && record(view.metadata) && typeof view.metadata.groupProjectId === 'string' && deleted.has(view.metadata.groupProjectId))
+      .map((view) => (view as RecordValue).id as string));
+    if (!removed.size) return raw;
+    const views = raw.views.filter((view) => !record(view) || typeof view.id !== 'string' || !removed.has(view.id)).map((view) => {
+      if (!record(view) || view.type !== 'zone' || !Array.isArray(view.containedViewIds)) return view;
+      return { ...view, containedViewIds: view.containedViewIds.filter((id) => typeof id !== 'string' || !removed.has(id)) };
+    });
+    const result: RecordValue = { ...raw, views };
+    for (const field of ['selectedViewId', 'zoomedViewId', 'layoutCenterId']) {
+      if (typeof result[field] === 'string' && removed.has(result[field] as string)) result[field] = null;
     }
-  }
-  return result;
+    if (Array.isArray(raw.deferredWires)) result.deferredWires = raw.deferredWires.filter((wire) => !record(wire)
+      || (!removed.has(String(wire.sourceViewId)) && !removed.has(String(wire.targetViewId))));
+    return result;
+  });
+  return value.filter((wire) => !record(wire) || typeof wire.targetId !== 'string' || !deleted.has(wire.targetId)
+    || (key === 'canvas-wires' ? wire.targetKind !== 'group-project' : wire.targetType !== 'group-project'));
 }

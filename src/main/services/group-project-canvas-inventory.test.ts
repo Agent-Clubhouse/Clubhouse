@@ -1,10 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import * as path from 'path';
-import * as fs from 'fs/promises';
 import { readAllCanvasStores, readKvKey } from './canvas-store-reader';
 import { readGroupProjectCanvasInventory, removeGroupProjectFromCanvasInventory } from './group-project-canvas-inventory';
 
-vi.mock('fs/promises', () => ({ readdir: vi.fn() }));
 vi.mock('./canvas-store-reader', () => ({ readAllCanvasStores: vi.fn(), readKvKey: vi.fn() }));
 const dir = path.join('canvas-fixture', 'kv');
 const location = { scope: 'app' as const, kvDir: dir };
@@ -14,7 +12,6 @@ const data = [{ id: 'board', name: 'Board', views: [view] }];
 beforeEach(() => {
   vi.resetAllMocks();
   vi.mocked(readAllCanvasStores).mockResolvedValue([{ location, canvases: data, wires: [], problems: [] }]);
-  vi.mocked(fs.readdir).mockResolvedValue([] as never);
   vi.mocked(readKvKey).mockImplementation(async (_dir, key) => key === 'canvas-instances' ? { status: 'ok', value: data } : { status: 'missing' });
 });
 
@@ -30,6 +27,11 @@ describe('group project canvas inventory', () => {
 
   it('refuses to continue when any store is unreadable', async () => {
     vi.mocked(readAllCanvasStores).mockResolvedValue([{ location, canvases: null, wires: null, problems: ['unreadable'] }]);
-    await expect(readGroupProjectCanvasInventory('gp')).rejects.toThrow('unreadable');
+    await expect(readGroupProjectCanvasInventory('gp')).rejects.toThrow('Home: unreadable');
+  });
+
+  it('does not read malformed recovery snapshots when building the impact', async () => {
+    await readGroupProjectCanvasInventory('gp');
+    expect(vi.mocked(readKvKey).mock.calls.every(([, key]) => !key.startsWith('canvas-instances-recovery-'))).toBe(true);
   });
 });

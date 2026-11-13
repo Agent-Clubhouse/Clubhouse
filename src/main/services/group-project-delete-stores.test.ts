@@ -41,6 +41,11 @@ it('removes the host stores, bindings and references from every canvas while ret
   await fs.mkdir(dir, { recursive: true });
   await fs.writeFile(path.join(dir, 'canvas-instances.json'), JSON.stringify(canvases));
   await fs.writeFile(path.join(dir, 'canvas-wires.json'), JSON.stringify(wires));
+  const guidanceFile = path.join(fixture.home, 'connection-instructions.json');
+  const guidance = (key: string) => ({ key, instructions: { '*': 'Keep this guidance' }, revision: 'r', sourceRevision: 's' });
+  await fs.writeFile(guidanceFile, JSON.stringify({ version: 1, entries: [
+    guidance(`group-project:/ada>/${project.id}`), guidance(`group-project:/ada>/${other.id}`),
+  ] }));
   const release = vi.fn((id: string) => { fixture.bindings = fixture.bindings.filter((b) => b.targetId !== id); });
   const service = createLocalGroupProjectDeleteService(release);
   const preview = await service.preview(project.id, 1);
@@ -55,6 +60,9 @@ it('removes the host stores, bindings and references from every canvas while ret
     if (file.startsWith('canvas-instances')) expect(contents).toContain(other.id);
   }
   expect(fixture.bindings).toEqual([]);
+  const savedGuidance = await fs.readFile(guidanceFile, 'utf8');
+  expect(savedGuidance).not.toContain(project.id);
+  expect(savedGuidance).toContain(other.id);
   expect(await groupProjectHost.get(project.id)).toBeNull();
   expect(await groupProjectHost.get(other.id)).not.toBeNull();
   await expect(fs.stat(path.join(fixture.home, '.clubhouse-dev', 'group-projects', project.id))).rejects.toMatchObject({ code: 'ENOENT' });
