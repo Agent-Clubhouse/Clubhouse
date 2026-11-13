@@ -574,7 +574,8 @@ describe('GroupProjectCanvasWidget — admin star + toggle', () => {
 
   it('toggles the lead grant on the group project, not a metadata role (#3360)', () => {
     expect(source).toContain('handleToggleLead');
-    expect(source).toMatch(/groupProject\.setRole\(groupProjectId, agentId, 'lead'/);
+    // Through the context, which reaches a satellite's group project too.
+    expect(source).toMatch(/setRole\(groupProjectId, agentId, 'lead'/);
     expect(source).not.toContain('metadata: { admins');
   });
 });

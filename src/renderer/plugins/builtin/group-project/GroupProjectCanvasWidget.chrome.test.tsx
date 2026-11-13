@@ -36,6 +36,9 @@ vi.mock('./useGroupProjectContext', () => ({
     loadProjects: vi.fn(async () => {}),
     update,
     setPolling,
+    // Roles are read and set where the group project lives: here, the local IPC (#3360).
+    getRoles: (id: string) => window.clubhouse.groupProject.getRoles(id),
+    setRole: (id: string, agentId: string, role: 'lead' | 'admin', mode: 'allow' | 'ask' | 'off') => window.clubhouse.groupProject.setRole(id, agentId, role, mode),
     fetchDigest: vi.fn(async () => [{ topic: 'general', messageCount: 3, newMessageCount: 1, latestTimestamp: '2026-10-18T10:00:00.000Z' }]),
     fetchTopicMessages: vi.fn(async () => []),
     fetchAllMessages: vi.fn(async () => []),

@@ -312,7 +312,7 @@ function ProjectCard({
   onUpdateMetadata: (updates: Record<string, unknown>) => void;
   ctx: GroupProjectContextValue;
 }) {
-  const { project, members, loaded, loadProjects, setPolling, fetchDigest, injectMessage } = ctx;
+  const { project, members, loaded, loadProjects, setPolling, fetchDigest, injectMessage, getRoles, setRole } = ctx;
 
   const [showTapModal, setShowTapModal] = useState(false);
   const [topics, setTopics] = useState<TopicDigest[]>([]);
@@ -348,15 +348,16 @@ function ProjectCard({
   const [leads, setLeads] = useState<string[]>([]);
   useEffect(() => {
     let cancelled = false;
-    window.clubhouse.groupProject.getRoles(groupProjectId)
+    getRoles(groupProjectId)
       .then((view) => { if (!cancelled) setLeads(view.holders.filter((h) => h.lead !== 'off').map((h) => h.agentId)); })
       .catch(() => { /* telemetry-exempt: no leads shown; the permissions page has them */ });
     return () => { cancelled = true; };
-  }, [groupProjectId]);
+  }, [groupProjectId, getRoles]);
+  // On a satellite's card the lead grant is set on the machine that holds the group project.
   const handleToggleLead = useCallback(async (agentId: string) => {
-    const view = await window.clubhouse.groupProject.setRole(groupProjectId, agentId, 'lead', leads.includes(agentId) ? 'off' : 'allow');
+    const view = await setRole(groupProjectId, agentId, 'lead', leads.includes(agentId) ? 'off' : 'allow');
     setLeads(view.holders.filter((h) => h.lead !== 'off').map((h) => h.agentId));
-  }, [groupProjectId, leads]);
+  }, [groupProjectId, leads, setRole]);
 
   const handleTogglePolling = useCallback(async () => {
     const newVal = !pollingEnabled;

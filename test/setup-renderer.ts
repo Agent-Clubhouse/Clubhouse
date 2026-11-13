@@ -447,6 +447,8 @@ vi.stubGlobal('clubhouse', {
     gpSetTopicProtection: vi.fn(async () => ({ ok: true })),
     gpInjectMessage: vi.fn(async () => true),
     gpSetPolling: vi.fn(async () => ({ pollingEnabled: false, members: [] })),
+    gpGetRoles: vi.fn(async (_s: string, groupProjectId: string) => ({ groupProjectId, own: { deliver: 'allow', wake: 'off' }, holders: [] })),
+    gpSetRole: vi.fn(async (_s: string, groupProjectId: string) => ({ groupProjectId, own: { deliver: 'allow', wake: 'off' }, holders: [] })),
     forgetSatellite: asyncNoop,
     setSatelliteHost: async () => ({ ok: true }),
     chatPage: async () => ({ events: [] }),

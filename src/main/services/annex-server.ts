@@ -92,6 +92,7 @@ import { groupProjectRegistry } from './group-project-registry';
 import { groupProjectHost } from './group-project-host';
 import { executeShoulderTap } from './group-project-shoulder-tap';
 import { setProjectPolling } from './group-project-polling';
+import { describeGroupProjectRoles, setGroupProjectRole } from './group-project-roles';
 import { agentRegistry } from './agent-registry';
 import { bindingManager } from './clubhouse-mcp/binding-manager';
 import * as fileService from './file-service';
@@ -3297,6 +3298,34 @@ async function handleGroupProjectShoulderTapRoute(ctx: AnnexRouteContext, match:
   });
 }
 
+/** A group project's roles and own grants, and giving one, for a paired controller's card (#3360). */
+async function handleGroupProjectRolesRoute(ctx: AnnexRouteContext, match: RegExpMatchArray): Promise<void> {
+  if (ctx.requireMtls()) return;
+  const gpId = decodeURIComponent(match[1]);
+  if (ctx.req.method === 'GET') {
+    try {
+      sendJson(ctx.res, 200, await describeGroupProjectRoles(gpId));
+    } catch {
+      // telemetry-exempt: answered to the controller as not found
+      sendJson(ctx.res, 404, { error: 'group_project_not_found' });
+    }
+    return;
+  }
+  readJsonBody(ctx.req, ctx.res, async (body) => {
+    const { agentId, role, mode } = body as { agentId?: unknown; role?: unknown; mode?: unknown };
+    if (typeof agentId !== 'string' || !agentId || (role !== 'lead' && role !== 'admin') || (mode !== 'allow' && mode !== 'ask' && mode !== 'off')) {
+      sendJson(ctx.res, 400, { error: 'agentId, role (lead|admin) and mode (allow|ask|off) are required' });
+      return;
+    }
+    try {
+      await setGroupProjectRole(gpId, agentId, role, mode);
+      sendJson(ctx.res, 200, await describeGroupProjectRoles(gpId));
+    } catch (err) {
+      sendJson(ctx.res, 500, { error: err instanceof Error ? err.message : 'set_role_failed' });
+    }
+  });
+}
+
 async function handleGroupProjectPollingRoute(ctx: AnnexRouteContext, match: RegExpMatchArray): Promise<void> {
   if (ctx.requireMtls()) return;
   const gpId = decodeURIComponent(match[1]);
@@ -4424,6 +4453,8 @@ const ANNEX_HTTP_ROUTE_TABLE: AnnexHttpRoute[] = [
   { method: 'POST', pattern: /^\/api\/v1\/group-projects\/([^/]+)\/bulletin\/messages$/, handler: handleGroupProjectPostMessageRoute },
   { method: 'POST', pattern: /^\/api\/v1\/group-projects\/([^/]+)\/shoulder-tap$/, handler: handleGroupProjectShoulderTapRoute },
   { method: 'POST', pattern: /^\/api\/v1\/group-projects\/([^/]+)\/polling$/, handler: handleGroupProjectPollingRoute },
+  { method: 'GET', pattern: /^\/api\/v1\/group-projects\/([^/]+)\/roles$/, handler: handleGroupProjectRolesRoute },
+  { method: 'POST', pattern: /^\/api\/v1\/group-projects\/([^/]+)\/roles$/, handler: handleGroupProjectRolesRoute },
   { method: 'DELETE', pattern: /^\/api\/v1\/group-projects\/([^/]+)\/bulletin\/topics\/([^/]+)\/messages\/([^/]+)$/, handler: handleGroupProjectDeleteMessageRoute },
   { method: 'DELETE', pattern: /^\/api\/v1\/group-projects\/([^/]+)\/bulletin\/topics\/([^/?]+)$/, handler: handleGroupProjectDeleteTopicRoute },
   { method: 'PATCH', pattern: /^\/api\/v1\/group-projects\/([^/]+)\/bulletin\/topics\/([^/]+)\/protection$/, handler: handleGroupProjectBulletinProtectionRoute },

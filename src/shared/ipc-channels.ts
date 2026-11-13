@@ -583,6 +583,10 @@ export const IPC = {
     GP_SET_TOPIC_PROTECTION: 'annex-client:gp-set-topic-protection',
     GP_INJECT_MESSAGE: 'annex-client:gp-inject-message',
     GP_SET_POLLING: 'annex-client:gp-set-polling',
+    /** A satellite group project's lead and admin holders and its own grants (#3360). */
+    GP_GET_ROLES: 'annex-client:gp-get-roles',
+    /** Give an agent lead or admin on a satellite group project (#3360). */
+    GP_SET_ROLE: 'annex-client:gp-set-role',
   },
   GROUP_PROJECT: {
     CREATE: 'group-project:create',

@@ -276,6 +276,12 @@ vi.mock('./group-project-shoulder-tap', () => ({
   executeShoulderTap: vi.fn().mockResolvedValue({ taskId: 'tap_1', delivered: [], failed: [] }),
 }));
 
+const rolesView = { groupProjectId: 'gp_1', own: { deliver: 'allow', wake: 'off' }, holders: [{ agentId: 'a1', lead: 'allow', admin: 'off' }] };
+vi.mock('./group-project-roles', async (original) => ({
+  ...await original<typeof import('./group-project-roles')>(),
+  describeGroupProjectRoles: vi.fn(async () => rolesView),
+  setGroupProjectRole: vi.fn(async () => undefined),
+}));
 vi.mock('./group-project-polling', () => ({
   setProjectPolling: vi.fn().mockResolvedValue({ pollingEnabled: true, members: [] }),
   getProjectPollingState: vi.fn().mockResolvedValue({ pollingEnabled: false, members: [] }),
@@ -7304,6 +7310,25 @@ describe('annex-server', () => {
       const res = await request(port, 'POST', '/api/v1/group-projects/gp_missing/polling', { enabled: false }, authHeaders(token));
       expect(res.status).toBe(404);
       expect(JSON.parse(res.body).error).toBe('group_project_not_found');
+    });
+  });
+
+  describe('group project roles endpoint (#3360)', () => {
+    it('GET answers a paired controller\'s card with lead and admin holders', async () => {
+      const { port, token } = await startAndPair();
+      const res = await request(port, 'GET', '/api/v1/group-projects/gp_1/roles', undefined, authHeaders(token));
+      expect(res.status).toBe(200);
+      expect(JSON.parse(res.body).holders).toEqual([{ agentId: 'a1', lead: 'allow', admin: 'off' }]);
+    });
+
+    it('POST sets a role on this machine\'s group project, and refuses a bad role', async () => {
+      const { port, token } = await startAndPair();
+      const { setGroupProjectRole } = await import('./group-project-roles');
+      const res = await request(port, 'POST', '/api/v1/group-projects/gp_1/roles', { agentId: 'a1', role: 'lead', mode: 'allow' }, authHeaders(token));
+      expect(res.status).toBe(200);
+      expect(setGroupProjectRole).toHaveBeenCalledWith('gp_1', 'a1', 'lead', 'allow');
+      const bad = await request(port, 'POST', '/api/v1/group-projects/gp_1/roles', { agentId: 'a1', role: 'owner', mode: 'allow' }, authHeaders(token));
+      expect(bad.status).toBe(400);
     });
   });
 
