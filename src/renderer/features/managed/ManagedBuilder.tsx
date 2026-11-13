@@ -490,6 +490,12 @@ function OutsideTheSetup({ preview }: { preview: ManagedPreview }) {
           {list(preview.keptSkills, 'managed-preview-kept-skills')}
         </section>
       )}
+      {preview.grantedSkipped && preview.grantedSkipped.length > 0 && (
+        <section>
+          <h3 className="text-[13px] font-semibold text-ctp-text mb-1">Not delivered</h3>
+          {list(preview.grantedSkipped, 'managed-preview-granted-skipped')}
+        </section>
+      )}
       {preview.alsoRead && preview.alsoRead.length > 0 && (
         <section>
           <h3 className="text-[13px] font-semibold text-ctp-text mb-1">Also read by {cli}</h3>

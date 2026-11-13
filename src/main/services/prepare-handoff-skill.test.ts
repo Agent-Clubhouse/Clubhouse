@@ -124,6 +124,13 @@ describe('the prepare-handoff skill (#3344)', () => {
     expect(handoffHost().store.get(offered.body.id)?.task.brief).toBe(brief);
   }, 30_000);
 
+  it('tells a too-big refusal apart from a secret finding, and a dirty branch from both', () => {
+    const step4 = PREPARE_HANDOFF_SKILL_MD.slice(PREPARE_HANDOFF_SKILL_MD.indexOf('## 4.'), PREPARE_HANDOFF_SKILL_MD.indexOf('## 5.'));
+    expect(step4).toMatch(/\*\*Too big\*\* \(`reason: bounds_exceeded`\): `largestFiles` and `bounds`/);
+    expect(step4).toMatch(/\*\*Looks like a secret\*\* \(`findings`/);
+    expect(PREPARE_HANDOFF_SKILL_MD).toContain('`uncommitted_branch`');
+  });
+
   it('refuses the full manifest in place of the summary, as the skill warns', async () => {
     const prepared = await call('prepare_handoff', { mode: 'worktree', exclude: ['deploy.key'] });
     const offered = await call('offer_handoff', { to: 'Receiver', task: 'Continue', brief: 'Goal: continue.', mode: 'worktree', manifest: prepared.body.manifest });

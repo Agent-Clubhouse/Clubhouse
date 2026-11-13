@@ -1,4 +1,6 @@
-import { useMemo } from 'react';
+import { useCallback, useMemo } from 'react';
+import { useUIStore } from '../../stores/uiStore';
+import { useHelpSections } from './useHelpSections';
 import { useSafeMarkdownLinks } from '../../utils/safe-markdown-links';
 import { renderMarkdownSafe } from '../../utils/safe-markdown';
 
@@ -8,8 +10,22 @@ interface HelpContentPaneProps {
   variant?: 'classic' | 'chrome';
 }
 
+/** A link to another Help topic: `#help:<topic-id>`. */
+const HELP_LINK = /^#help:([a-z0-9-]+)$/;
+
 export function HelpContentPane({ markdown, variant = 'classic' }: HelpContentPaneProps) {
-  const handleClick = useSafeMarkdownLinks();
+  const safeClick = useSafeMarkdownLinks();
+  const { all } = useHelpSections();
+  // Topic links open that topic in Help; every other link keeps the safe handling.
+  const handleClick = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
+    const topicId = (e.target as HTMLElement).closest('a')?.getAttribute('href')?.match(HELP_LINK)?.[1];
+    const section = topicId ? all.find((s) => s.topics.some((t) => t.id === topicId)) : undefined;
+    if (!topicId || !section) { safeClick(e); return; }
+    e.preventDefault();
+    const ui = useUIStore.getState();
+    ui.setHelpSection(section.id);
+    ui.setHelpTopic(topicId);
+  }, [all, safeClick]);
   const html = useMemo(() => {
     if (!markdown) return null;
     return renderMarkdownSafe(markdown);

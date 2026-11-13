@@ -347,6 +347,11 @@ export interface ManagedPreview {
    */
   keptSkills?: string[];
   keptSkillsReason?: 'link' | 'git';
+  /**
+   * Grant-gated built-ins (prepare-handoff, #3344) not delivered because a
+   * skill the person chose installs to the same folder; theirs wins. One line each.
+   */
+  grantedSkipped?: string[];
   /** Instruction files above the agent's folder that the CLI is told not to read. */
   notRead?: string[];
   /** Instruction files the CLI reads besides the setup, which Clubhouse can't turn off. */

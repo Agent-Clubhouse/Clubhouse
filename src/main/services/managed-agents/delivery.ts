@@ -51,6 +51,11 @@ interface Resolved {
   /** `droppedEnvValues`: env names the part stored literal values for, which now come from the environment (D46). */
   mcps: Array<{ id: string; name: string; revision: number; builtin: boolean; content: ManagedMcpContent; droppedEnvValues: string[] }>;
   missing: string[];
+  /**
+   * Grant-gated built-ins not delivered because a skill the person chose
+   * installs to the same folder (#3344, like D75): the person's skill wins.
+   */
+  grantedSkipped?: Array<{ name: string; folder: string; keptName: string }>;
 }
 
 /**
@@ -65,17 +70,18 @@ export function setGrantedSkills(provider: (agent: DurableAgentConfig) => readon
   return () => { if (grantedSkills === provider) grantedSkills = () => []; };
 }
 
-/** The setup's skills without grant-gated ones, then the ones this agent holds. */
-function withGrantedSkills(setup: ManagedAgentSetup, agent: DurableAgentConfig | undefined): ManagedAgentSetup {
-  const own = setup.skills.filter((id) => !GRANT_GATED_SKILLS.includes(id));
-  const granted = agent ? grantedSkills(agent).filter((id) => GRANT_GATED_SKILLS.includes(id)) : [];
-  return { ...setup, skills: [...own, ...granted] };
+/** "<A> uses <folder>/, so the built-in <B> isn't delivered. Rename one to get both." */
+export function grantedSkippedNote(skipped: { name: string; folder: string; keptName: string }): string {
+  return `${skipped.keptName} uses ${skipped.folder}/, so the built-in ${skipped.name} skill isn't delivered. Rename one to get both.`;
 }
 
 async function resolveSetup(service: ManagedAgentsService, saved: ManagedAgentSetup, agent?: DurableAgentConfig): Promise<Resolved> {
   // Both sides of the delivery fingerprint (delivered and current) resolve here,
   // so a setup saved before the Clubhouse part was required fingerprints the same.
-  const setup = withGrantedSkills(withClubhouseSetup(saved), agent);
+  const base = withClubhouseSetup(saved);
+  // A setup never chooses a grant-gated skill: what the agent may do decides it, after the person's own skills.
+  const setup = { ...base, skills: base.skills.filter((id) => !GRANT_GATED_SKILLS.includes(id)) };
+  const granted = agent ? grantedSkills(agent).filter((id) => GRANT_GATED_SKILLS.includes(id)) : [];
   const out: Resolved = { blocks: [], skills: [], mcps: [], missing: [] };
   for (const id of setup.blocks) {
     const head = await service.headContent(id);
@@ -86,6 +92,15 @@ async function resolveSetup(service: ManagedAgentsService, saved: ManagedAgentSe
     const head = await service.headContent(id);
     if (!head || head.content.kind !== 'skill') { out.missing.push(id); continue; }
     out.skills.push({ id, name: head.entry.name, revision: head.entry.headRevision, builtin: head.entry.source.kind === 'builtin', ...(head.fromRetiredBuiltin && { retiredCopy: true as const }), content: head.content });
+  }
+  for (const id of granted) {
+    const head = await service.headContent(id);
+    if (!head || head.content.kind !== 'skill') { out.missing.push(id); continue; }
+    const folder = head.content.skillName;
+    // Two skills never share a folder (D75). The person chose theirs; the built-in steps aside.
+    const kept = out.skills.find((s) => s.content.skillName.toLowerCase() === folder.toLowerCase());
+    if (kept) { (out.grantedSkipped ??= []).push({ name: head.entry.name, folder, keptName: kept.name }); continue; }
+    out.skills.push({ id, name: head.entry.name, revision: head.entry.headRevision, builtin: true, content: head.content });
   }
   for (const id of setup.mcps) {
     const head = await service.headContent(id);
@@ -804,6 +819,10 @@ export async function deliverManagedSetup(params: {
   const instructions = await renderManagedInstructions(projectPath, agent, resolved);
   await provider.writeInstructions(agent.worktreePath, instructions);
   const projectOwn = await writeSkills(agent.worktreePath, provider, resolved.skills, params.backupRoot);
+  for (const skipped of resolved.grantedSkipped ?? []) {
+    // Part names and a folder name only.
+    appLog('core:managed', 'info', grantedSkippedNote(skipped), { meta: { agentId: agent.id, folder: skipped.folder } });
+  }
   for (const folder of projectOwn) {
     // A built-in skill folder name, never project content.
     appLog('core:managed', 'info', `${projectOwnSkillNote(folder)}; its built-in isn't delivered`, { meta: { agentId: agent.id, folder } });
@@ -1001,6 +1020,7 @@ export async function previewManagedSetup(params: {
     })),
     mcps: resolved.mcps.map((m) => ({ id: m.id, name: m.name, serverKey: m.content.serverKey, builtin: m.builtin, ...(m.droppedEnvValues.length > 0 && { droppedEnvValues: m.droppedEnvValues }) })),
     missing: resolved.missing,
+    ...(resolved.grantedSkipped?.length && { grantedSkipped: resolved.grantedSkipped.map(grantedSkippedNote) }),
   };
 }
 

@@ -24,7 +24,7 @@ To receive handoffs from other computers in your Annex Network, turn on **Accept
 
 ## The prepare-handoff skill
 
-An agent that may offer handoffs gets the built-in **prepare-handoff** skill at its next start. It loses the skill once that permission is Off again. Ask the agent to hand the work off, and the skill walks it through:
+An agent that may offer handoffs gets the built-in **prepare-handoff** skill at its next start ([read the skill](#help:agents-prepare-handoff)). It loses the skill once that permission is Off again. Ask the agent to hand the work off, and the skill walks it through:
 
 1. Writing a brief: the goal, what's done, what's left, how to check it, and open questions.
 2. Choosing a mode: **branch** sends an exact pushed branch, **worktree** sends a snapshot of tracked and untracked files.
