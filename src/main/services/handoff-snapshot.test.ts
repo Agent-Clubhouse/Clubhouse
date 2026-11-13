@@ -32,7 +32,7 @@ const beforeEach = ownedRegistration(rawBeforeEach, 0, (promise) => { owner().ob
 const exec = promisify(execFile);
 const hash = (content: Uint8Array | string) => createHash('sha256').update(content).digest('hex');
 const summary = (manifest: HandoffWorktreeManifest) => ({
-  fileCount: manifest.files.length + manifest.deletions.length, totalBytes: manifest.total_bytes, sha256: manifest.manifest_sha256,
+  fileCount: manifest.files.length + manifest.deletions.length + (manifest.bundle ? 1 : 0), totalBytes: manifest.total_bytes, sha256: manifest.manifest_sha256,
 });
 let root: string;
 let repo: string;
@@ -516,7 +516,7 @@ describe('local secret-safe handoff snapshots', { timeout: 30_000 }, () => {
     expect(await fs.promises.readFile(path.join(snapshot.root, 'files/ordinary.txt'), 'utf8')).toBe('ordinary untracked bytes\n');
   });
 
-  it.each(['120000', '160000'])('still refuses unsupported HEAD kind %s when its index-removed path is selected as untracked', async (mode) => {
+  it.each(['160000'])('still refuses unsupported HEAD kind %s when its index-removed path is selected as untracked', async (mode) => {
     await unsupportedTrackedBase(mode);
     await git('rm', '--cached', '--', 'unsupported.txt');
     await expect(prepareHandoffSnapshot(options({ include: { tracked_changes: false } }))).rejects.toMatchObject({ code: 'unsupported_repository' });
@@ -547,7 +547,7 @@ describe('local secret-safe handoff snapshots', { timeout: 30_000 }, () => {
     expect(await fs.promises.readdir(staging)).toEqual([]);
   });
 
-  it.each(['120000', '160000'])('refuses unsupported index mode %s even when the working path is a regular file', async (mode) => {
+  it.each(['160000'])('refuses unsupported index mode %s even when the working path is a regular file', async (mode) => {
     const oid = (await exec('git', ['rev-parse', mode === '120000' ? 'HEAD:tracked.txt' : 'HEAD'], { cwd: repo })).stdout.trim();
     await file('indexed.txt', 'regular working file\n');
     await git('update-index', '--add', '--cacheinfo', `${mode},${oid},indexed.txt`);
@@ -634,6 +634,52 @@ describe('local secret-safe handoff snapshots', { timeout: 30_000 }, () => {
     await expect(prepareHandoffSnapshot(options())).rejects.toMatchObject({ code: 'unsafe_entry' });
     expect(await fs.promises.readdir(staging)).toEqual([]);
     expect(await fs.promises.readFile(target, 'utf8')).toBe(outside ? 'outside' : 'base\n');
+  });
+
+  it('stages relative internal links as bounded payloads and verifies without following them', async () => {
+    await fs.promises.symlink('tracked.txt', path.join(repo, 'link.txt'));
+    const snapshot = await prepareHandoffSnapshot(options());
+    expect(snapshot.manifest.files).toMatchObject([{ path: 'link.txt', mode: '120000', size: 11 }]);
+    expect((await fs.promises.lstat(path.join(snapshot.root, 'files/link.txt'))).isFile()).toBe(true);
+    expect(await fs.promises.readFile(path.join(snapshot.root, 'files/link.txt'), 'utf8')).toBe('tracked.txt');
+    expect(await verifyHandoffSnapshot(snapshot.root, snapshot.manifest, summary(snapshot.manifest))).toEqual(snapshot);
+  });
+
+  it('refuses a relative outside link before allocating staging', async () => {
+    await fs.promises.writeFile(path.join(root, 'outside.txt'), 'outside bytes');
+    await fs.promises.symlink('../outside.txt', path.join(repo, 'link.txt'));
+    await expect(prepareHandoffSnapshot(options())).rejects.toMatchObject({ code: 'unsafe_entry' });
+    expect(await fs.promises.readdir(staging)).toEqual([]);
+  });
+
+  it('honors core.symlinks=false for a regular link representation', async () => {
+    await git('config', 'core.symlinks', 'false');
+    await file('link.txt', 'tracked.txt');
+    const oid = (await exec('git', ['hash-object', '-w', '--', 'link.txt'], { cwd: repo })).stdout.trim();
+    await git('update-index', '--add', '--cacheinfo', `120000,${oid},link.txt`);
+    const snapshot = await prepareHandoffSnapshot(options());
+    expect(snapshot.manifest.files).toMatchObject([{ path: 'link.txt', mode: '120000', size: 11 }]);
+    expect(await verifyHandoffSnapshot(snapshot.root, snapshot.manifest, summary(snapshot.manifest))).toEqual(snapshot);
+  });
+
+  it('verifies a private bundle artifact without following a replacement link', async () => {
+    const snapshot = await prepareHandoffSnapshot(options());
+    const bytes = Buffer.from('fixture bundle bytes');
+    const manifest = rehash({ ...snapshot.manifest, bundle: { size: bytes.length, sha256: hash(bytes) }, total_bytes: bytes.length });
+    await fs.promises.writeFile(path.join(snapshot.root, 'bundle.bin'), bytes);
+    expect(await verifyHandoffSnapshot(snapshot.root, manifest, summary(manifest))).toEqual({ root: snapshot.root, manifest });
+    await fs.promises.writeFile(path.join(snapshot.root, 'bundle.bin'), Buffer.alloc(bytes.length));
+    await expect(verifyHandoffSnapshot(snapshot.root, manifest, summary(manifest))).rejects.toMatchObject({ code: 'hash_mismatch' });
+    await fs.promises.rm(path.join(snapshot.root, 'bundle.bin'));
+    await fs.promises.symlink(path.join(repo, 'tracked.txt'), path.join(snapshot.root, 'bundle.bin'));
+    await expect(verifyHandoffSnapshot(snapshot.root, manifest, summary(manifest))).rejects.toMatchObject({ code: 'unsafe_entry' });
+  });
+
+  it('rejects a hash-valid forged outside link on the receiver', async () => {
+    await file('link.txt', '../outside');
+    const snapshot = await prepareHandoffSnapshot(options());
+    const forged = rehash({ ...snapshot.manifest, files: snapshot.manifest.files.map((entry) => ({ ...entry, mode: '120000' })) });
+    await expect(verifyHandoffSnapshot(snapshot.root, forged, summary(forged))).rejects.toMatchObject({ code: 'unsafe_entry' });
   });
 
   it.each([

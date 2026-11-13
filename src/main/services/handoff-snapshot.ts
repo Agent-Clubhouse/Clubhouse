@@ -7,12 +7,13 @@ import * as path from 'path';
 import { promisify } from 'util';
 import picomatch from 'picomatch';
 import {
-  canonicalHandoffManifest, HANDOFF_TRANSFER_DEFAULTS, isSafeHandoffPath, parseHandoffManifest, validateHandoffBounds,
+  canonicalHandoffManifest, summarizeHandoffManifest, HANDOFF_TRANSFER_DEFAULTS, isSafeHandoffPath, parseHandoffManifest, validateHandoffBounds,
   type HandoffManifestFile, type HandoffTransferBounds, type HandoffWorktreeManifest,
 } from '../../shared/handoff-manifest';
 import {
   HANDOFF_SECRET_CONTENT_MAX_BYTES, safeHandoffDiagnosticPath, scanHandoffSecrets, type HandoffSecretFinding,
 } from '../../shared/handoff-secrets';
+import { assertInternalHandoffLinks, handoffLinkTarget } from '../../shared/handoff-links';
 import { HandoffSecretPolicy, isTrustedHandoffSecretPolicy } from './handoff-secret-settings';
 import type { HandoffManifestSummary } from '../../shared/handoffs';
 
@@ -57,6 +58,7 @@ interface SourceFile {
   path: string;
   stat: fs.BigIntStats;
   sha256?: string;
+  link?: boolean;
 }
 
 interface SourceRoot {
@@ -73,6 +75,7 @@ interface SnapshotGit {
 
 interface GitModeAuthority {
   trustFileMode: boolean;
+  trustSymlinks: boolean;
   indexModes: ReadonlyMap<string, string>;
 }
 
@@ -224,11 +227,13 @@ async function gitModeAuthority(context: SnapshotGit): Promise<GitModeAuthority>
     if (/^0+$/.test(match[2]) || indexModes.has(name)) throw new HandoffSnapshotError('unsupported_repository');
     indexModes.set(name, mode);
   }
-  return { trustFileMode: policy === 'true', indexModes };
+  const symlinks = (await git(context, ['config', '--type=bool', '--get', 'core.symlinks'], true))?.trim() ?? 'true';
+  if (symlinks !== 'true' && symlinks !== 'false') throw new HandoffSnapshotError('git_failed');
+  return { trustFileMode: policy === 'true', trustSymlinks: symlinks === 'true', indexModes };
 }
 
 function physicalMode(stat: fs.BigIntStats): HandoffManifestFile['mode'] {
-  return stat.mode & 0o100n ? '100755' : '100644';
+  return stat.isSymbolicLink() ? '120000' : stat.mode & 0o100n ? '100755' : '100644';
 }
 
 async function selection(
@@ -246,8 +251,8 @@ async function selection(
   for (const [name, mode] of authority.indexModes) {
     if (excluded(name) || (!manifest.include.tracked_changes && !others.has(name))) continue;
     if (!isSafeHandoffPath(name)) throw new HandoffSnapshotError('unsafe_entry');
-    if (mode !== '100644' && mode !== '100755') throw new HandoffSnapshotError('unsupported_repository');
-    if (!authority.trustFileMode) modes.set(name, mode);
+    if (mode !== '100644' && mode !== '100755' && mode !== '120000') throw new HandoffSnapshotError('unsupported_repository');
+    if (mode === '120000' ? !authority.trustSymlinks : !authority.trustFileMode) modes.set(name, mode);
   }
   const base = new Map<string, { mode: HandoffManifestFile['mode']; oid: string; size: bigint }>();
   if (manifest.include.tracked_changes || (!authority.trustFileMode && others.size > 0)) {
@@ -256,9 +261,9 @@ async function selection(
       if (!match) throw new HandoffSnapshotError('git_failed');
       if (excluded(match[4]) || (!manifest.include.tracked_changes && !others.has(match[4]))) continue;
       const mode = match[1];
-      if (mode !== '100644' && mode !== '100755') throw new HandoffSnapshotError('unsupported_repository');
+      if (mode !== '100644' && mode !== '100755' && mode !== '120000') throw new HandoffSnapshotError('unsupported_repository');
       base.set(match[4], { mode, oid: match[2], size: BigInt(match[3]) });
-      if (!authority.trustFileMode && !modes.has(match[4])) modes.set(match[4], mode);
+      if ((mode === '120000' ? !authority.trustSymlinks : !authority.trustFileMode) && !modes.has(match[4])) modes.set(match[4], mode);
     }
   }
   if (manifest.include.tracked_changes) {
@@ -266,8 +271,9 @@ async function selection(
     let comparedBytes = 0n;
     for (const name of candidates) {
       if (excluded(name)) continue;
-      const stat = await sourceStat(source, name, true);
+      const stat = await sourceStat(source, name, true, true);
       const original = base.get(name);
+      if (stat?.isSymbolicLink()) modes.set(name, '120000');
       if (!stat) { if (original) tracked.add(name); continue; }
       if (!original || stat.size !== original.size || (modes.get(name) ?? physicalMode(stat)) !== original.mode) {
         tracked.add(name);
@@ -278,7 +284,7 @@ async function selection(
         || comparedBytes > BigInt(Math.max(HANDOFF_TRANSFER_DEFAULTS.totalBytes, bounds.totalBytes))) {
         throw new HandoffSnapshotError('unsupported_repository');
       }
-      const actual = await inspect(source, { path: name, stat }, undefined, original.oid.length === 40 ? 'sha1' : 'sha256');
+      const actual = await inspect(source, { path: name, stat, link: (modes.get(name) ?? physicalMode(stat)) === '120000' }, undefined, original.oid.length === 40 ? 'sha1' : 'sha256');
       if (actual !== original.oid) tracked.add(name);
     }
   }
@@ -292,7 +298,7 @@ function stamp(stat: fs.BigIntStats): string {
 }
 
 /** Identity checks detect observed swaps; they do not replace descriptor-relative traversal. */
-async function sourceStat(source: SourceRoot, relative: string, missingAllowed = false): Promise<fs.BigIntStats | undefined> {
+async function sourceStat(source: SourceRoot, relative: string, missingAllowed = false, allowLink = false): Promise<fs.BigIntStats | undefined> {
   if (!isSafeHandoffPath(relative)) throw new HandoffSnapshotError('unsafe_entry');
   await checkDirectories(source);
   const ancestors = [...source.required];
@@ -310,7 +316,7 @@ async function sourceStat(source: SourceRoot, relative: string, missingAllowed =
       }
       throw new HandoffSnapshotError('source_changed', safeHandoffDiagnosticPath(relative));
     }
-    if (stat.isSymbolicLink() || (index === parts.length - 1 ? !stat.isFile() : !stat.isDirectory())) {
+    if (index === parts.length - 1 ? !stat.isFile() && !(allowLink && stat.isSymbolicLink()) : stat.isSymbolicLink() || !stat.isDirectory()) {
       throw new HandoffSnapshotError('unsafe_entry', safeHandoffDiagnosticPath(relative));
     }
     if (index === parts.length - 1) {
@@ -350,7 +356,33 @@ async function writeAll(handle: FileHandle, buffer: Uint8Array): Promise<void> {
   }
 }
 
-async function inspect(root: SourceRoot, source: SourceFile, sink?: (chunk: Uint8Array) => Promise<void>, gitObjectHash?: 'sha1' | 'sha256', policy?: HandoffSecretPolicy): Promise<string> {
+async function validateSourceLink(root: SourceRoot, name: string, bytes: Uint8Array, actualLink: boolean): Promise<void> {
+  try {
+    const target = handoffLinkTarget(bytes);
+    assertInternalHandoffLinks(new Map([[name, target]]));
+    const resolved = await fs.promises.realpath(actualLink ? path.join(root.root, name) : path.resolve(path.dirname(path.join(root.root, name)), target));
+    const relative = path.relative(root.root, resolved).split(path.sep).join('/');
+    if (relative && !isSafeHandoffPath(relative)) throw new Error('Outside link.');
+  } catch { throw new HandoffSnapshotError('unsafe_entry', safeHandoffDiagnosticPath(name)); }
+}
+
+async function inspect(root: SourceRoot, source: SourceFile, sink?: (chunk: Uint8Array) => Promise<void>, gitObjectHash?: 'sha1' | 'sha256', policy?: HandoffSecretPolicy, onContent?: (bytes: Uint8Array) => void): Promise<string> {
+  if (source.stat.isSymbolicLink()) {
+    const before = await sourceStat(root, source.path, false, true);
+    if (!before || stamp(before) !== stamp(source.stat)) throw new HandoffSnapshotError('source_changed', source.path);
+    const bytes = await fs.promises.readlink(path.join(root.root, source.path), { encoding: 'buffer' });
+    await validateSourceLink(root, source.path, bytes, true);
+    const after = await sourceStat(root, source.path, false, true);
+    if (!after || stamp(before) !== stamp(after) || BigInt(bytes.byteLength) !== before.size) throw new HandoffSnapshotError('source_changed', source.path);
+    if (!gitObjectHash) block(scan(source.path, bytes, policy));
+    const hash = createHash(gitObjectHash ?? 'sha256');
+    if (gitObjectHash) hash.update(`blob ${bytes.byteLength}\0`);
+    hash.update(bytes);
+    onContent?.(bytes);
+    if (sink) await sink(bytes);
+    return hash.digest('hex');
+  }
+  if (source.link && source.stat.size > 4096n) throw new HandoffSnapshotError('unsafe_entry', source.path);
   const initial = await sourceStat(root, source.path);
   if (!initial || stamp(initial) !== stamp(source.stat)) throw new HandoffSnapshotError('source_changed', safeHandoffDiagnosticPath(source.path));
   const handle = await fs.promises.open(path.join(root.root, source.path), fs.constants.O_RDONLY
@@ -384,10 +416,15 @@ async function inspect(root: SourceRoot, source: SourceFile, sink?: (chunk: Uint
     if (content?.subarray(0, LFS_POINTER_HEADER.length).equals(LFS_POINTER_HEADER)) {
       throw new HandoffSnapshotError('unsupported_repository');
     }
+    if (source.link) await validateSourceLink(root, source.path, content!, false);
     if (!gitObjectHash) block(scan(source.path, content, policy));
     const after = await sourceStat(root, source.path);
     if (!after || stamp(after) !== stamp(initial) || stamp(await handle.stat({ bigint: true })) !== stamp(initial)) {
       throw new HandoffSnapshotError('source_changed', safeHandoffDiagnosticPath(source.path));
+    }
+    if (onContent) {
+      if (!content) throw new HandoffSnapshotError('unsafe_entry', safeHandoffDiagnosticPath(source.path));
+      onContent(content);
     }
     if (content && sink) await sink(content);
     return hash.digest('hex');
@@ -420,11 +457,12 @@ async function preflight(options: Omit<PrepareHandoffSnapshot, 'stagingRoot' | '
   const sources: SourceFile[] = [];
   let total = 0;
   for (const file of selected.all) {
-    const stat = await sourceStat(sourceRoot, file, selected.tracked.has(file));
+    const stat = await sourceStat(sourceRoot, file, selected.tracked.has(file), true);
     if (!stat) { manifest.deletions.push(file); continue; }
     total += Number(stat.size);
     if (stat.size > BigInt(bounds.perFileBytes) || !Number.isSafeInteger(total) || total > bounds.totalBytes) throw new HandoffSnapshotError('bounds_exceeded', safeHandoffDiagnosticPath(file));
-    const source: SourceFile = { path: file, stat };
+    const source: SourceFile = { path: file, stat, link: (stat.isSymbolicLink() ? '120000' : selected.modes.get(file) ?? physicalMode(stat)) === '120000' };
+    if (stat.isSymbolicLink()) (selected.modes as Map<string, HandoffManifestFile['mode']>).set(file, '120000');
     if (stat.size <= BigInt(HANDOFF_SECRET_CONTENT_MAX_BYTES)) source.sha256 = await inspect(sourceRoot, source, undefined, undefined, options.secretPolicy);
     else block(scan(file, undefined, options.secretPolicy));
     sources.push(source);
@@ -485,7 +523,7 @@ export async function prepareHandoffSnapshot(options: PrepareHandoffSnapshot): P
       files.push({ path: source.path, size: Number(source.stat.size), sha256, mode: selected.modes.get(source.path) ?? physicalMode(source.stat) });
     }
     for (const source of sources) {
-      const current = await sourceStat(sourceRoot, source.path);
+      const current = await sourceStat(sourceRoot, source.path, false, true);
       if (!current || stamp(current) !== stamp(source.stat)) throw new HandoffSnapshotError('source_changed', safeHandoffDiagnosticPath(source.path));
     }
     for (const deleted of manifest.deletions) {
@@ -506,7 +544,7 @@ export async function prepareHandoffSnapshot(options: PrepareHandoffSnapshot): P
     }
     if (JSON.stringify(await repository(context)) !== JSON.stringify(repo)) throw new HandoffSnapshotError('source_changed');
     const currentAuthority = await gitModeAuthority(context);
-    if (currentAuthority.trustFileMode !== authority.trustFileMode || currentAuthority.indexModes.size !== authority.indexModes.size
+    if (currentAuthority.trustSymlinks !== authority.trustSymlinks || currentAuthority.trustFileMode !== authority.trustFileMode || currentAuthority.indexModes.size !== authority.indexModes.size
       || [...authority.indexModes].some(([name, mode]) => currentAuthority.indexModes.get(name) !== mode)) {
       throw new HandoffSnapshotError('source_changed');
     }
@@ -537,7 +575,7 @@ export async function verifyHandoffSnapshot(
   try {
     const bounds = validateHandoffBounds(limits);
     const manifest = parseHandoffManifest(rawManifest, bounds);
-    if (!expected || expected.fileCount !== manifest.files.length + manifest.deletions.length || expected.totalBytes !== manifest.total_bytes
+    if (!expected || expected.fileCount !== summarizeHandoffManifest(manifest).fileCount || expected.totalBytes !== manifest.total_bytes
       || expected.sha256 !== manifest.manifest_sha256
       || !timingSafeEqual(Buffer.from(manifest.manifest_sha256, 'hex'), Buffer.from(digest(manifest, bounds), 'hex'))) {
       throw new HandoffSnapshotError('hash_mismatch');
@@ -546,13 +584,25 @@ export async function verifyHandoffSnapshot(
     metadata(manifest, localPolicy?.policy);
     const source = await directory(snapshotRoot);
     const root = source.root;
+    if (manifest.bundle) {
+      const stat = await sourceStat(source, 'bundle.bin');
+      if (!stat || stat.size !== BigInt(manifest.bundle.size)) throw new HandoffSnapshotError('hash_mismatch', 'bundle.bin');
+      const actual = await inspect(source, { path: 'bundle.bin', stat });
+      if (!timingSafeEqual(Buffer.from(actual, 'hex'), Buffer.from(manifest.bundle.sha256, 'hex'))) throw new HandoffSnapshotError('hash_mismatch', 'bundle.bin');
+    }
     const filesRoot = await directory(path.join(root, 'files'), source);
+    const links = new Map<string, string>();
     for (const file of manifest.files) {
       const stat = await sourceStat(filesRoot, file.path);
       if (!stat || stat.size !== BigInt(file.size)) throw new HandoffSnapshotError('hash_mismatch', safeHandoffDiagnosticPath(file.path));
-      const actual = await inspect(filesRoot, { path: file.path, stat }, undefined, undefined, localPolicy?.policy);
+      const actual = await inspect(filesRoot, { path: file.path, stat }, undefined, undefined, localPolicy?.policy,
+        file.mode === '120000' ? (bytes) => {
+          try { links.set(file.path, handoffLinkTarget(bytes)); }
+          catch { throw new HandoffSnapshotError('unsafe_entry', safeHandoffDiagnosticPath(file.path)); }
+        } : undefined);
       if (!timingSafeEqual(Buffer.from(actual, 'hex'), Buffer.from(file.sha256, 'hex'))) throw new HandoffSnapshotError('hash_mismatch', safeHandoffDiagnosticPath(file.path));
     }
+    try { assertInternalHandoffLinks(links); } catch { throw new HandoffSnapshotError('unsafe_entry'); }
     await checkDirectories(filesRoot, [...filesRoot.directories.keys()]);
     await localPolicy?.policy.recordUse(localPolicy.handoffId, 'receiver');
     return { root, manifest };

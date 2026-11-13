@@ -2,7 +2,7 @@ import { createHash } from 'crypto';
 import { describe, expect, it } from 'vitest';
 import {
   canonicalHandoffManifest, HANDOFF_MANIFEST_MAX_BYTES, HANDOFF_TRANSFER_DEFAULTS, HANDOFF_TRANSFER_MAX_BYTES,
-  isSafeHandoffBranch, isSafeHandoffPath, parseHandoffManifest, validateHandoffBounds,
+  isSafeHandoffBranch, isSafeHandoffPath, parseHandoffManifest, summarizeHandoffManifest, validateHandoffBounds,
   type HandoffWorktreeManifest,
 } from './handoff-manifest';
 
@@ -76,7 +76,7 @@ describe('portable bounded handoff manifest', () => {
   it.each([
     (value: HandoffWorktreeManifest) => ({ ...value, total_bytes: 11 }),
     (value: HandoffWorktreeManifest) => ({ ...value, manifest_sha256: 'no' }),
-    (value: HandoffWorktreeManifest) => ({ ...value, files: [{ ...value.files[0], mode: '120000' }] }),
+    (value: HandoffWorktreeManifest) => ({ ...value, files: [{ ...value.files[0], mode: '160000' }] }),
     (value: HandoffWorktreeManifest) => ({ ...value, files: [{ ...value.files[0], sha256: 'f'.repeat(63) }] }),
     (value: HandoffWorktreeManifest) => ({ ...value, files: [{ ...value.files[0], size: 1.5 }] }),
     (value: HandoffWorktreeManifest) => ({ ...value, repo: { ...value.repo, remote: 'https://example:password@example.com/repo.git' } }),
@@ -87,6 +87,17 @@ describe('portable bounded handoff manifest', () => {
     (value: HandoffWorktreeManifest) => ({ ...value, secret: 'must not persist' }),
   ])('fails closed on malformed or credential-bearing metadata', (corrupt) => {
     expect(() => parseHandoffManifest(corrupt(fixture()))).toThrow('Invalid handoff manifest.');
+  });
+
+  it('binds the private bundle hash and bytes into canonicalization, totals and limits', () => {
+    const manifest = { ...fixture(), bundle: { size: 8, sha256: 'd'.repeat(64) }, total_bytes: 18 };
+    expect(parseHandoffManifest(manifest).bundle).toEqual(manifest.bundle);
+    expect(summarizeHandoffManifest(manifest)).toEqual({ fileCount: 3, totalBytes: 18, sha256: manifest.manifest_sha256 });
+    expect(canonicalHandoffManifest(manifest)).not.toBe(canonicalHandoffManifest({ ...manifest, bundle: { size: 8, sha256: 'e'.repeat(64) } }));
+    expect(() => parseHandoffManifest({ ...manifest, total_bytes: 10 })).toThrow();
+    expect(() => parseHandoffManifest(manifest, { totalBytes: 18, perFileBytes: 10, maxFiles: 2 })).toThrow();
+    expect(() => parseHandoffManifest({ ...manifest, bundle: { size: 0, sha256: 'd'.repeat(64) }, total_bytes: 10 })).toThrow();
+    expect(() => parseHandoffManifest({ ...manifest, bundle: { size: 8, sha256: 'invalid' } })).toThrow();
   });
 
   it('caps the complete serialized manifest independently of transfer byte counts', () => {
