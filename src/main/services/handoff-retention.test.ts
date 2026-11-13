@@ -134,3 +134,17 @@ it('keeps delivery proof during concurrent pruning before an offer becomes visib
   f.revoke(); expect((await f.sender.coordinator.cancel(record.id, a)).state).toBe('cancelled');
   f.online(); await f.sender.coordinator.flush(); expect(f.posts).toEqual([]); expect(f.receiver.store.list()).toEqual([]);
 });
+
+
+it('settles and prunes attempted outgoing offers when their receiving peer is permanently removed', async () => {
+  const f = fixture(); f.breakTransport();
+  const record = await f.sender.coordinator.offer(input, a);
+  expect(f.posts).toHaveLength(1); expect(f.sender.undelivered.has(record.id)).toBe(false);
+  f.offline(); f.advance(); await f.sender.coordinator.flush();
+  expect(f.sender.store.get(record.id)?.state).toBe('offered'); expect(f.sender.commands).toHaveLength(1);
+  f.removePeer(); await f.sender.coordinator.flush();
+  expect(f.sender.store.list()).toEqual([]); expect(f.sender.commands).toEqual([]);
+  expect(f.posts).toHaveLength(1);
+  f.sender.restart(); await f.sender.coordinator.flush();
+  expect(f.sender.store.list()).toEqual([]); expect(f.posts).toHaveLength(1);
+});

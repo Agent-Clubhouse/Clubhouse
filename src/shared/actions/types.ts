@@ -310,7 +310,7 @@ export interface ActionRun {
   id: string;
   actionId: string;
   /** A retained receipt, not an executable scheduled Action. */
-  externalSource?: 'annex_delivery';
+  externalSource?: 'annex_delivery' | 'handoff_secret';
   /**
    * Who owned the action when it ran. Kept on the run so its owner can still
    * read it after a one-time action deleted itself. Unset on runs from before.

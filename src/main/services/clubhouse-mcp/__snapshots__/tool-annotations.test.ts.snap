@@ -41,6 +41,7 @@ group-project:compact_agent readOnly=false destructive=true openWorld=false
 group-project:delete_messages readOnly=false destructive=true openWorld=false
 group-project:set_project_info readOnly=false destructive=false openWorld=false
 global:probe_capacity readOnly=true destructive=false openWorld=true
+global:check_handoff readOnly=true destructive=false openWorld=false
 global:offer_handoff readOnly=false destructive=false openWorld=true
 global:respond_to_handoff readOnly=false destructive=false openWorld=true
 global:get_handoff readOnly=true destructive=false openWorld=false

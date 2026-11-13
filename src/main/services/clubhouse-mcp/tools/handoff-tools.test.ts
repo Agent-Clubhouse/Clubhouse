@@ -2,9 +2,10 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { McpToolHandler } from '../types';
 const state = vi.hoisted(() => ({
   handlers: new Map<string, McpToolHandler>(), options: new Map<string, unknown>(),
-  offer: vi.fn(), respond: vi.fn(), get: vi.fn(), list: vi.fn(), cancel: vi.fn(), prepare: vi.fn(),
+  check: vi.fn(), offer: vi.fn(), respond: vi.fn(), get: vi.fn(), list: vi.fn(), cancel: vi.fn(), prepare: vi.fn(),
   target: { agentId: 'receiver', machine: Array(16).fill('ab').join(':') } as { agentId: string; machine: string },
 }));
+vi.mock('../../handoff-preflight-host', () => ({ checkCallerHandoff: (...args: unknown[]) => state.check(...args) }));
 vi.mock('../tool-registry', () => ({ registerGlobalTool: (name: string, _definition: unknown, handler: McpToolHandler, options: unknown) => { state.handlers.set(name, handler); state.options.set(name, options); } }));
 vi.mock('../arg-targets', () => ({ setHandoffGrantTargetResolver: vi.fn() }));
 vi.mock('../ask-first', () => ({ describeCallsForAsk: vi.fn() }));
@@ -33,7 +34,7 @@ beforeEach(() => {
 
 describe('global handoff tools', () => {
   it('declares agreement grants separately from orchestration and reserves queries for the caller', () => {
-    expect(state.handlers.size).toBe(5);
+    expect(state.handlers.size).toBe(6);
     expect(state.options.get('offer_handoff')).toEqual({ group: 'handoffs', grant: { actions: ['handoff.offer'], target: 'handoff_peer' } });
     expect(state.options.get('respond_to_handoff')).toEqual({ group: 'handoffs', grant: { actions: ['handoff.accept'], target: 'handoff_peer' } });
     for (const name of ['get_handoff', 'list_handoffs', 'cancel_handoff']) expect(state.options.get(name)).toEqual({ group: 'handoffs', grant: { actions: ['agent.read'], target: 'self' } });
@@ -81,4 +82,15 @@ describe('global handoff tools', () => {
       expect(result.isError).toBe(true); expect(JSON.stringify(result)).not.toContain('private-'); expect(JSON.stringify(result)).not.toContain('ghp_');
     }
   });
+});
+
+
+it('preflights only the authenticated caller and refuses path, policy and rule overrides', async () => {
+  state.check.mockResolvedValue({ ready: false, findings: [{ path: 'fixture.txt', rule: 'github-token', line: 2 }] });
+  const include = { tracked_changes: true, untracked: true, ignored: ['fixtures/example.txt'] };
+  expect((await call('check_handoff', { include, exclude: ['build/**'] })).isError).not.toBe(true);
+  expect(state.check).toHaveBeenCalledWith('caller', include, ['build/**']);
+  state.check.mockClear();
+  for (const args of [{ source: 'other' }, { project: 'other' }, { notSecretPaths: ['fixture.txt'] }, { secretPolicy: {} }, { include: { allow_secrets: true } }]) expect((await call('check_handoff', args)).isError).toBe(true);
+  expect(state.check).not.toHaveBeenCalled();
 });

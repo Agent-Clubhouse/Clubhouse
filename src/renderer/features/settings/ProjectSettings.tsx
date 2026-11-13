@@ -23,6 +23,7 @@ import {
   settingsHelp,
 } from './SettingsLayout';
 import { Button } from '../../components/Button';
+import { HandoffSecretSettingsSection } from './HandoffSecretSettingsSection';
 import { LinkedProjectsSection } from './LinkedProjectsSection';
 
 function NameField({ projectId }: { projectId: string }) {
@@ -580,6 +581,7 @@ export function ProjectSettings({ projectId }: { projectId?: string }) {
       <LaunchWrapperSection key={project.id} projectId={project.id} projectPath={project.path} />
       <BlueprintBundleSection projectId={project.id} projectPath={project.path} projectName={name} />
       <LinkedProjectsSection projectId={project.id} />
+      <HandoffSecretSettingsSection key={project.id} projectId={project.id} />
       <RemoveProjectSection projectId={project.id} projectPath={project.path} projectName={name} />
     </SettingsPage>
   );

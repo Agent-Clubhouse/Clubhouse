@@ -425,6 +425,7 @@ export class ActionsEngine {
     const runs = this.deps.history.list(id);
     if (!reader) return runs;
     return runs.flatMap((run) => {
+      if (run.externalSource === 'handoff_secret' && reader.kind !== 'user') return [];
       if (run.externalSource === 'annex_delivery' && reader.kind === 'agent'
         && (run.owner?.kind !== 'agent' || run.owner.agentId !== reader.agentId)) return [];
       if (run.trigger.sourceAgentId && this.deps.rights.checkSource(reader, {
@@ -462,8 +463,10 @@ export class ActionsEngine {
     });
   }
 
-  async recordExternalRun(run: ActionRun & { externalSource: 'annex_delivery' }): Promise<void> {
-    if (!run.actionId.startsWith('annex-delivery:') || run.id !== run.actionId || run.outcome === 'running' || this.get(run.actionId)) {
+  async recordExternalRun(run: ActionRun & { externalSource: NonNullable<ActionRun['externalSource']> }): Promise<void> {
+    const prefix = run.externalSource === 'annex_delivery' ? 'annex-delivery:' : run.externalSource === 'handoff_secret' ? 'handoff-secret:' : undefined;
+    if (!prefix || !run.actionId.startsWith(prefix) || run.id !== run.actionId || run.outcome === 'running' || this.get(run.actionId)
+      || run.externalSource === 'handoff_secret' && run.owner?.kind !== 'user') {
       throw new Error('An external delivery receipt cannot create or replace an executable Action.');
     }
     if (!this.deps.history.flush) throw new Error('External receipts require durable history persistence.');

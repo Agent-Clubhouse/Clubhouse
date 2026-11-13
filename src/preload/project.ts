@@ -16,6 +16,8 @@ export const project = {
     ),
   checkGit: (dirPath: string) => ipcRenderer.invoke(IPC.PROJECT.CHECK_GIT, dirPath),
   /** Each project's git remote as a key, by project id (#3066). */
+  getHandoffSecretSettings: (projectId: string): Promise<import('../shared/handoff-secret-settings').HandoffSecretSettings> => ipcRenderer.invoke(IPC.PROJECT.GET_HANDOFF_SECRET_SETTINGS, projectId),
+  setHandoffSecretSettings: (projectId: string, paths: string[]): Promise<import('../shared/handoff-secret-settings').HandoffSecretSettings> => ipcRenderer.invoke(IPC.PROJECT.SET_HANDOFF_SECRET_SETTINGS, projectId, paths),
   getRepoKeys: (): Promise<Record<string, string>> => ipcRenderer.invoke(IPC.PROJECT.REPO_KEYS),
   gitInit: (dirPath: string) => ipcRenderer.invoke(IPC.PROJECT.GIT_INIT, dirPath),
   update: (id: string, updates: Record<string, unknown>) =>
