@@ -61,13 +61,13 @@ export interface AskFirstRequest {
  * A real permission request from the agent `mcp` acts as, waiting on the
  * person in `window`'s app. Resolves with its request id once that app lists it.
  */
-export async function raiseAskFirst(window: Page, mcp: McpAgent, request: AskFirstRequest): Promise<string> {
-  const before = new Set((await window.evaluate(() => window.clubhouse.agent.listGrantRequests())).map((r) => r.requestId));
+export async function raiseAskFirst(page: Page, mcp: McpAgent, request: AskFirstRequest): Promise<string> {
+  const before = new Set((await page.evaluate(() => window.clubhouse.agent.listGrantRequests())).map((r) => r.requestId));
   const asked = await mcp.callText('request_grant', { action: request.action, target: request.target, reason: request.reason });
   expect(asked.isError, asked.text).toBe(false);
   let requestId = '';
   await expect.poll(async () => {
-    const now = await window.evaluate(() => window.clubhouse.agent.listGrantRequests());
+    const now = await page.evaluate(() => window.clubhouse.agent.listGrantRequests());
     requestId = now.find((r) => !before.has(r.requestId))?.requestId ?? '';
     return requestId;
   }, { timeout: 15_000 }).not.toBe('');
@@ -75,6 +75,6 @@ export async function raiseAskFirst(window: Page, mcp: McpAgent, request: AskFir
 }
 
 /** Whether `window`'s app still has the request waiting. */
-export async function askFirstWaiting(window: Page, requestId: string): Promise<boolean> {
-  return (await window.evaluate(() => window.clubhouse.agent.listGrantRequests())).some((r) => r.requestId === requestId);
+export async function askFirstWaiting(page: Page, requestId: string): Promise<boolean> {
+  return (await page.evaluate(() => window.clubhouse.agent.listGrantRequests())).some((r) => r.requestId === requestId);
 }

@@ -48,7 +48,7 @@ async function desktop(name: string, profile?: DisposableProfile) {
 }
 const machine = async (page: Page) => (await page.evaluate(() => window.clubhouse.annex.getStatus())).fingerprint!.toLowerCase();
 const lead = (page: Page) => page.evaluate(() => window.clubhouse.dispatcher.getLead());
-const startedAs = async () => (await fakes!.report('claude').catch(() => undefined))?.env.CLUBHOUSE_AGENT_ID;
+const startedAs = async (): Promise<string | null | undefined> => (await fakes!.report('claude').catch((): undefined => undefined))?.env.CLUBHOUSE_AGENT_ID;
 
 /** Wakes a computer's Dispatcher chat from its view, as a person does; resolves with the chat's id. */
 async function wakeDispatcherChat(page: Page): Promise<string> {
