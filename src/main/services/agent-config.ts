@@ -2188,11 +2188,15 @@ async function mutateAgentRecord(
   fn: (agent: DurableAgentConfig) => void,
   { flush = false }: { flush?: boolean } = {},
 ): Promise<DurableAgentConfig | null> {
+  const scope = currentCreationGit();
+  // Import preparation can invalidate a clean cache; load the mutation snapshot afterward.
+  if (scope) await scope.assertCurrent();
   const { agents, agentsById } = await readAgentsEntry(projectPath);
   const agent = agentsById.get(agentId);
   if (!agent) return null;
-  await currentCreationGit()?.assertCurrent();
-  const before = currentCreationGit() ? cloneAgent(agent) : undefined;
+  scope?.assertConsent();
+  scope?.assertFilesystem();
+  const before = scope ? cloneAgent(agent) : undefined;
   fn(agent);
   await writeCreationMutation(projectPath, agents, agent, before, activeCreations.get(agentId)?.deferWritesUntilReady);
   if (flush) await flushAgentConfig(projectPath);

@@ -20,7 +20,12 @@ const fixture = vi.hoisted(() => {
   const p = require('path') as typeof import('path');
   const o = require('os') as typeof import('os');
   const root = f.realpathSync.native(f.mkdtempSync(p.join(o.tmpdir(), 'public-project-import-')));
-  return { root, base: p.join(root, 'app'), dispatcher: p.join(root, 'dispatcher'), source: p.join(root, 'source') };
+  const userData = p.join(root, 'user-data');
+  f.mkdirSync(userData);
+  return {
+    root, base: p.join(root, 'app'), userData,
+    dispatcher: p.join(root, 'dispatcher'), source: p.join(root, 'source'),
+  };
 });
 const current = vi.hoisted(() => ({
   service: undefined as import('../../project-import/service').ProjectImportService | undefined,
@@ -35,6 +40,11 @@ const current = vi.hoisted(() => ({
   remoteCalls: [] as string[],
   gitCalls: [] as string[][],
 }));
+
+vi.mock('electron', async (original) => {
+  const real = await original<typeof import('electron')>();
+  return { ...real, app: { ...real.app, getPath: () => fixture.userData } };
+});
 
 vi.mock('child_process', async (original) => {
   const child = await original<typeof import('child_process')>();
@@ -936,6 +946,44 @@ describe('public Dispatcher repository import (#2808)', () => {
       expect(wakeWiredAgent).not.toHaveBeenCalled();
     });
 
+    it('keeps imported creation ready across a clean-cache invalidation during its final authority preparation', async () => {
+      const { receipt } = imported;
+      const args = { project: destination, importId: receipt.id, name: 'invalidated-ready', connectToDispatcher: true, blocks: [], skills: [], mcps: [] };
+      await call('create_managed_agent', args);
+      await approveDesktop('create_managed_agent');
+      const configFile = path.join(destination, '.clubhouse', 'agents.json');
+      let prepared = false;
+      let invalidated = false;
+      const afterInvalidation: DurableAgentConfig[] = [];
+      current.afterRename = (_from, to) => {
+        if (to !== configFile) return;
+        const agents: DurableAgentConfig[] = JSON.parse(fs.readFileSync(configFile, 'utf8'));
+        if (invalidated) { afterInvalidation.push(agents[0]); return; }
+        if (agents[0]?.creation?.stage === 'config_injected') prepared = true;
+      };
+      const resolve = vi.mocked(resolveOrchestrator).getMockImplementation();
+      if (!resolve) throw new Error('Expected the inert fixture CLI resolver');
+      vi.mocked(resolveOrchestrator).mockImplementation(async (...params) => {
+        const provider = await resolve(...params);
+        if (prepared && !invalidated && params[0] === destination) {
+          invalidated = true;
+          agentConfig.clearAgentConfigCache(destination);
+        }
+        return provider;
+      });
+      const result = await call('create_managed_agent', args);
+      current.afterRename = undefined;
+      expect(invalidated).toBe(true);
+      expect(afterInvalidation[0]?.creation).toBeUndefined();
+      expect(result.body, result.text).toMatchObject({ status: 'sleeping', connectedToDispatcher: true, agentCreated: true, agentStarted: false });
+      const agents = await agentConfig.listDurable(destination);
+      expect(agents).toHaveLength(1);
+      expect(agents[0].creation).toBeUndefined();
+      expect(agents[0].repositoryImportCreation?.state).toBe('completed');
+      expect((await getOrchestrationPolicy(destination, agents[0].id)).connectToDispatcher).toBe(true);
+      expect(wakeWiredAgent).not.toHaveBeenCalled();
+    });
+
     it('residual direction commit rechecks revoked connection permission after its actual atomic staging await', async () => {
       const { receipt } = imported;
       const args = { project: destination, importId: receipt.id, name: 'late-direction', connectToDispatcher: true, blocks: [], skills: [], mcps: [] };
@@ -1028,10 +1076,15 @@ describe('public Dispatcher repository import (#2808)', () => {
       });
       const result = await call('create_managed_agent', args);
       inspection.mockRestore();
-      expect(changed).toBe(true);
+      expect(changed, result.text).toBe(true);
       expect(result.body, result.text).toMatchObject({ status: 'partial', agentCreated: true, agentStarted: false, reason: 'agent_connection_failed' });
       expect((await getOrchestrationPolicy(destination, result.body.id)).connectToDispatcher).toBe(true);
       expect(getConnectionDirection({ agentId: 'dispatcher' }, { agentId: result.body.id })).toBeDefined();
+      const savedDirections = JSON.parse(fs.readFileSync(path.join(fixture.userData, 'connection-grants.json'), 'utf8'));
+      expect(savedDirections.directions).toEqual(expect.arrayContaining([
+        expect.objectContaining({ from: { agentId: 'dispatcher' }, to: { agentId: result.body.id } }),
+        expect.objectContaining({ from: { agentId: result.body.id }, to: { agentId: 'dispatcher' } }),
+      ]));
       expect((await agentConfig.listDurable(destination))).toHaveLength(1);
       expect(wakeWiredAgent).not.toHaveBeenCalled();
     });
