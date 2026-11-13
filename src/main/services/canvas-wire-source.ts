@@ -12,21 +12,7 @@
 
 import { readAllCanvasStores, type CanvasStoreSnapshot } from './canvas-store-reader';
 import { groupProjectRegistry } from './group-project-registry';
-import { withoutManagedMembers } from './managed-group-projects';
-import { groupProjectHost } from './group-project-host';
-
-/**
- * A stored group project wire whose agent was refused or moved out by scope
- * (#3355) is not restored. Others are restores of pairs that were members
- * already, which scope never evicts.
- */
-async function withinScope<T extends { targetKind: string; targetId: string; agentId: string }>(bindings: T[]): Promise<T[]> {
-  const kept: T[] = [];
-  for (const b of bindings) {
-    if (b.targetKind !== 'group-project' || await groupProjectHost.admits(b.targetId, b.agentId, { restore: true }).catch(() => false)) kept.push(b);
-  }
-  return kept;
-}
+import { withinScope, withoutManagedMembers } from './managed-group-projects';
 import type { PersistedBinding, PersistedBindingSource } from './persisted-bindings';
 import type { BindingTargetKind } from './clubhouse-mcp/types';
 import { reconcilePersistedWires } from '../../shared/canvas-persistence';

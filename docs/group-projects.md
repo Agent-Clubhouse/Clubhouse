@@ -41,18 +41,22 @@ project) is neither in nor out.
 `groupProjectHost.admits(id, agentId, { restore })` before anything is bound,
 recorded as a member or made admin:
 
-- An excluded address is never admitted.
-- An explicit member is admitted.
-- A restore of a pair that was already bound is admitted, so a check never
-  evicts a current member.
-- A new join (a drawn wire) must be within the scope. It fails closed: an
-  unknown project, or any error in the check, refuses.
+- A restore of a stored wire is admitted unless the address is excluded, so a
+  check never evicts a current member.
+- A drawn wire is a person's choice. An explicit member is admitted. Otherwise
+  the agent must be within the scope, failing closed on an unknown project or
+  any error. Within scope, drawing lifts an exclusion the person made earlier by
+  deleting the wire (#3357). A scope refusal stays until the scope covers the
+  agent.
 
 A refusal answers `{ notMember: true, reason: 'out_of_scope' }`, which the
 canvas treats as final and stops retrying. A refused draw is also recorded as
 excluded (`reason: "scope"`), so the canvas restoring that wire later is
-refused too. At startup the canvas wire source doesn't restore a group project
-wire whose agent is excluded.
+refused too. At startup the canvas wire and orchestrator connection sources
+don't restore a group project binding whose agent is excluded (`withinScope` in
+`managed-group-projects.ts`). Card inspection stays read-only and shows stored
+wires as they are. The bind decision is `bindToGroupProject` in
+`group-project-bind.ts`, called by the MCP bind handler.
 
 **Explicit adds are checked too.** `addMember` (the person's Add in the
 directory, and agents' `add_to_group_project` / `join_group_project`) refuses an
@@ -67,7 +71,9 @@ with the admin grant in #3360). `previewScope(id, scope)` lists the members who
 would leave and changes nothing. `setScope(id, scope, { confirmLeaving })` applies
 only when `confirmLeaving` names exactly those members, so what the person
 reviewed is what happens. Otherwise it refuses with `changed`. Widening needs
-no confirmation. Members who leave move from `explicit` to `excluded`
+no confirmation. The preview also lists agents an earlier narrowing (or a
+refused draw) excluded for scope that the wider scope covers again
+(`returning`). Applying it lifts those exclusions, so they can join again. Members who leave move from `explicit` to `excluded`
 (`reason: "scope"`) and lose their live bindings, so neither a restore nor
 auto-join brings them back. The change takes a sequence number like any other.
 

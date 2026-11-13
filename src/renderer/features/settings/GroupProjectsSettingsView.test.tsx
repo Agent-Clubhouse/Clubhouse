@@ -247,6 +247,21 @@ describe('GroupProjectsSettingsView', () => {
       expect(await within(editor).findByRole('alert')).toHaveTextContent(/Scope not changed.*have changed/);
     });
 
+    it('shows agents a wider scope lets back in before applying it', async () => {
+      vi.spyOn(window.clubhouse.groupProject, 'previewScope').mockResolvedValue({
+        scope: { level: 'app', reach: 'local' }, leaving: [],
+        returning: [{ address: 'agent-o', name: 'outsider', projectId: 'proj-b' }],
+      });
+      useGroupProjectStore.setState({ projects: [{ ...alpha, scope: { level: 'project', projectId: 'proj-a', reach: 'local' } }], loaded: true, loadError: null });
+      render(<GroupProjectsSettingsView />);
+      select('Alpha');
+      const editor = screen.getByRole('region', { name: 'Scope' });
+      fireEvent.change(within(editor).getByLabelText('Covers'), { target: { value: 'app' } });
+      fireEvent.click(within(editor).getByRole('button', { name: 'Review change' }));
+      expect(await within(editor).findByRole('list', { name: 'Agents who can join again' })).toHaveTextContent('outsider (Proj B)');
+      expect(within(editor).getByText('No members leave.')).toBeInTheDocument();
+    });
+
     it('replaces an untouched draft when the scope changes elsewhere', async () => {
       render(<GroupProjectsSettingsView />);
       await screen.findByRole('list', { name: 'Local group projects' });

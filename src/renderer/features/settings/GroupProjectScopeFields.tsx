@@ -117,11 +117,16 @@ export function GroupProjectScopeEditor({ project }: { project: GroupProject }) 
   const [draft, setDraft] = useState<GroupProjectScope>(saved);
   const [baseline, setBaseline] = useState<GroupProjectScope>(saved);
   const [leaving, setLeaving] = useState<GroupProjectMemberView[] | null>(null);
+  const [returning, setReturning] = useState<GroupProjectMemberView[]>([]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [applied, setApplied] = useState(false);
   const pending = useRef(false);
   const unchanged = sameGroupProjectScope(project.scope, draft);
+  const memberLabel = (member: GroupProjectMemberView) => {
+    const from = projects.find((p) => p.id === member.projectId);
+    return `${member.name}${from ? ` (${projectLabel(from)})` : ''}`;
+  };
 
   // A change made elsewhere (another window, an agent, the host) replaces an untouched draft.
   useEffect(() => {
@@ -152,7 +157,9 @@ export function GroupProjectScopeEditor({ project }: { project: GroupProject }) 
 
   const review = () => run(async () => {
     try {
-      setLeaving(await previewScope(project.id, draft));
+      const preview = await previewScope(project.id, draft);
+      setReturning(preview.returning);
+      setLeaving(preview.leaving);
     } catch (err) {
       // telemetry-exempt: shown inline; nothing changed
       setError(`Could not review this change. ${ipcErrorMessage(err)}`);
@@ -192,10 +199,17 @@ export function GroupProjectScopeEditor({ project }: { project: GroupProject }) 
                     {leaving.length === 1 ? 'This member leaves' : `These ${leaving.length} members leave`} when the scope changes:
                   </p>
                   <ul aria-label="Members who would leave" className="list-disc pl-5 text-xs text-ctp-text">
-                    {leaving.map((member) => {
-                      const from = projects.find((p) => p.id === member.projectId);
-                      return <li key={member.address}>{member.name}{from ? ` (${projectLabel(from)})` : ''}</li>;
-                    })}
+                    {leaving.map((member) => <li key={member.address}>{memberLabel(member)}</li>)}
+                  </ul>
+                </>
+              )}
+              {returning.length > 0 && (
+                <>
+                  <p className={settingsHelp}>
+                    {returning.length === 1 ? 'This agent, moved out by an earlier scope, can join again:' : `These ${returning.length} agents, moved out by an earlier scope, can join again:`}
+                  </p>
+                  <ul aria-label="Agents who can join again" className="list-disc pl-5 text-xs text-ctp-text">
+                    {returning.map((member) => <li key={member.address}>{memberLabel(member)}</li>)}
                   </ul>
                 </>
               )}

@@ -588,7 +588,7 @@ describe('group project host: joins fail closed (#3431 review)', () => {
     expect((await groupProjectHost.previewScope(wide.id, { level: 'project', projectId: 'proj_a', reach: 'local' })).leaving).toEqual([]);
   });
 
-  it('admits an explicit member and a restored pair whatever the scope, unless excluded', async () => {
+  it('admits an explicit member and a restored pair whatever the scope; exclusion blocks restores, scope blocks draws', async () => {
     fixture.agents = { '/projects/a': [{ id: 'agent_a' }], '/projects/b': [{ id: 'agent_b' }, { id: 'agent_c' }] };
     const project = await groupProjectHost.create('Explicit', { projectId: 'proj_a' });
     await groupProjectHost.updateMembership(project.id, (m) => {
@@ -598,7 +598,8 @@ describe('group project host: joins fail closed (#3431 review)', () => {
     expect(await groupProjectHost.admits(project.id, 'agent_b')).toBe(true);
     expect(await groupProjectHost.admits(project.id, 'agent_c')).toBe(false);
     expect(await groupProjectHost.admits(project.id, 'agent_c', { restore: true })).toBe(true);
-    expect(await groupProjectHost.admits(project.id, 'agent_a')).toBe(false);
+    // A person's exclusion: a stored wire stays refused, but drawing it again (in scope) lifts it.
+    expect(await groupProjectHost.admits(project.id, 'agent_a')).toBe(true);
     expect(await groupProjectHost.admits(project.id, 'agent_a', { restore: true })).toBe(false);
     expect(await groupProjectHost.admits('gp_missing', 'agent_a')).toBe(false);
   });

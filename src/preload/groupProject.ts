@@ -21,7 +21,7 @@ export const groupProject = {
     ipcRenderer.invoke(IPC.GROUP_PROJECT.DELETE, id, token),
   scopeOptions: (): Promise<GroupProjectScopeOptions> =>
     ipcRenderer.invoke(IPC.GROUP_PROJECT.SCOPE_OPTIONS),
-  previewScope: (id: string, scope: GroupProjectScope): Promise<{ scope: GroupProjectScope; leaving: GroupProjectMemberView[] }> =>
+  previewScope: (id: string, scope: GroupProjectScope): Promise<{ scope: GroupProjectScope; leaving: GroupProjectMemberView[]; returning: GroupProjectMemberView[] }> =>
     ipcRenderer.invoke(IPC.GROUP_PROJECT.PREVIEW_SCOPE, id, scope),
   setScope: (id: string, scope: GroupProjectScope, options?: { confirmLeaving?: string[] }): Promise<{ project: GroupProject; left: GroupProjectMemberView[] }> =>
     ipcRenderer.invoke(IPC.GROUP_PROJECT.SET_SCOPE, id, scope, options),
