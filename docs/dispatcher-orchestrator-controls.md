@@ -172,3 +172,24 @@ If local telemetry recording is off, nothing records the call: the change stands
 - Ids are matched back to the agents Clubhouse knows. One since removed shows as `hash:<hash>`. A row recorded under another salt (another build's, or from before an install id reset) is left out.
 - A caller-supplied value that isn't a short word or id is left out.
 - With local telemetry recording off, there are no rows to return.
+
+## Controllers in Annex Network
+
+Computer members publish their hidden Dispatcher controller endpoint on the pinned
+Annex connection exchange. Membership creates both directions automatically. Phones
+and one-to-one pairings do not get controller links. The visible Dispatcher chat is
+never an endpoint. The Connections view identifies these as **Annex Network
+controllers**. Removing the computer from the network ends its links; they cannot
+be removed individually.
+
+Controller links have fixed tools: status, connectivity, messages, files and request
+handoff. Request handoff behavior is delivered with the remote request workflow.
+Read output, clear, compact and explicit wake are always off. Settings, approvals
+and prompt answers are not controller-link capabilities. Neither the connection
+editor nor agent connection tools can override these rules.
+
+Offline computers retain paused links and use Annex durable delivery on reconnect.
+Turning off a Dispatcher leaves its endpoint known, shows an unavailable reason on
+other computers and refuses new requests. A new network pairing must publish its
+controller again before links resume. Each receiver derives its link from its own
+membership and endpoint record, and rechecks membership before execution.

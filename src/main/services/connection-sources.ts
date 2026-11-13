@@ -1,4 +1,5 @@
 import { activeAgentLinks } from '../../shared/connection-grants';
+import { federationStatus } from './dispatcher-federation-policy';
 /**
  * The sources behind an agent's connections, and removing one of them
  * (#2744). Sources are read from what each persisted source lists
@@ -43,6 +44,7 @@ const KIND_BY_SOURCE: Readonly<Record<string, ConnectionSourceKind>> = {
   'user-connections': 'user_link',
   'network-connections': 'user_link',
   'network-agent-connections': 'tool_link',
+  'dispatcher-federation': 'dispatcher_federation',
 };
 
 const SUSPENDED_WHY: Readonly<Record<string, string>> = {
@@ -114,7 +116,8 @@ export async function listConnectionSources(agentId: string): Promise<AgentConne
       const link = kind === 'dispatcher_link' ? linkStatus.get(key) : undefined;
       const savedOnly = kind === 'dispatcher_auto' && automatic?.has(key) && !boundPairs.has(key);
       const makers = sourceId === 'network-agent-connections' ? activeAgentLinks(getConnectionDirection(connectionEnd(pair.agentId), connectionEnd(pair.targetId))) : undefined;
-      sources.push({ kind, sourceId, ...(makers?.length && { makers }), ...(savedOnly && { suspended: 'Configured, but not connected now.' }),
+            const federationReason = kind === 'dispatcher_federation' ? federationStatus(connectionEnd(pair.agentId), connectionEnd(pair.targetId))?.reason : undefined;
+      sources.push({ kind, sourceId, ...(makers?.length && { makers }), ...(federationReason && { suspended: federationReason }), ...(savedOnly && { suspended: 'Configured, but not connected now.' }),
         ...(link && link.status === 'suspended' && { suspended: SUSPENDED_WHY[link.reason ?? ''] ?? 'Suspended.' }) });
     }
     // A suspended Dispatcher link isn't collected (no binding), but it is still saved.

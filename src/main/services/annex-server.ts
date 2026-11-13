@@ -3568,7 +3568,7 @@ async function handleNetworkConnectionsRoute(ctx: AnnexRouteContext): Promise<vo
   if (ctx.requireMtls()) return;
   const outcome = await agentCalls.receiveDirections(machine, body);
   // Answered with this machine's own share, so the sender has it even if this one can't reach it.
-  if ('applied' in outcome) sendJson(ctx.res, 200, { ...outcome, directions: await agentCalls.shareForAnswer(machine) });
+  if ('applied' in outcome) sendJson(ctx.res, 200, { ...outcome, directions: await agentCalls.shareForAnswer(machine), controller: agentCalls.federationControllerForShare() });
   else sendJson(ctx.res, outcome.status, { error: outcome.error, message: outcome.message });
 }
 

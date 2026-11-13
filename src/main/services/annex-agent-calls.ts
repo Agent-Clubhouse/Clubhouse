@@ -20,6 +20,8 @@ import { activeAgentLinks } from '../../shared/connection-grants';
  * - A machine that's offline: messages wait here and go, in order, when it's
  *   back; reads say it's offline; other calls are refused (D235).
  */
+
+import { FEDERATION_TOOLS, federationDirection, federationStatus } from './dispatcher-federation-policy';
 import { AsyncLocalStorage } from 'async_hooks';
 import { randomUUID } from 'crypto';
 import { tel } from '../telemetry/facade';
@@ -70,7 +72,7 @@ const CLOCK_SKEW_MS = 5 * 60_000;
 /** How long a queued message refused as "not connected" is tried again, in case the link hasn't arrived there yet. */
 const NOT_CONNECTED_GRACE_MS = 10 * 60_000;
 export const ANNEX_CALL_MAX_DEPTH = 8;
-const DISPATCHER_CALL_TOOLS = new Set(['get_status', 'check_connectivity', 'send_message', 'send_file', 'hand_off_request']);
+const DISPATCHER_CALL_TOOLS = FEDERATION_TOOLS;
 
 // ── Who is calling ──────────────────────────────────────────────────────────
 
@@ -129,6 +131,9 @@ export interface DispatcherAgentCallReceiver {
 }
 let remoteDispatcher: DispatcherAgentCallReceiver | undefined;
 let lifecycle = 0;
+let federation: StartAgentCallsOptions['federation'];
+export function federationControllerForShare(): unknown { return federation?.local(); }
+
 
 const selfFingerprint = (): string | undefined => annexIdentity.getIdentity()?.fingerprint.toLowerCase();
 
@@ -219,6 +224,10 @@ export async function forwardAgentCall(callerId: string, targetId: string, targe
   if (context !== undefined && !validContext(context)) return text('The trusted Annex causal context is invalid or exceeds its depth limit.', true);
   args = structuredClone(args);
   if (context) context = structuredClone(context);
+  const controllerLink = federationDirection({ agentId: callerId }, { agentId: to, machineId: machine });
+  if (controllerLink && !FEDERATION_TOOLS.has(tool)) return text('That tool is fixed off on controller connections.', true);
+  const controllerStatus = controllerLink && federationStatus({ agentId: callerId }, { agentId: to, machineId: machine });
+  if (controllerStatus && controllerStatus.state === 'unavailable') return text(controllerStatus.reason, true);
   const sender = await describe(callerId);
   const epoch = outgoingEpoch(machine);
   const body: AgentCallBody = {
@@ -589,6 +598,7 @@ export async function receiveAgentCall(senderMachine: string, raw: unknown, now 
   // The same answer whether or not the agent exists, as for local wires.
   if (!dispatcher && !direction?.link && !activeAgentLinks(direction).length) return { status: 403, error: 'not_connected', message: 'That agent is not connected to you on its computer.' };
   if (!dispatcher && direction?.disabledTools.includes(body.tool)) return { status: 403, error: 'tool_denied', message: `${body.tool} is turned off on this connection.` };
+  if (federationDirection(from, { agentId: to.agentId }) && !FEDERATION_TOOLS.has(body.tool)) return { status: 403, error: 'tool_denied', message: 'That tool is fixed off on controller connections.' };
   const key = `${machine}/${deliveryHash(currentEpoch)}/${body.callId}`;
   const hash = payloadHash(body);
   let saved: ReceiverDelivery | undefined;
@@ -813,8 +823,9 @@ async function exchangeShare(machine: string): Promise<boolean> {
   if (!self || !transport?.connected(machine) || !isNetworkComputer(machine)) return false;
   try {
     const directions = await shareFor(machine, self);
-    const response = await transport.post(machine, '/api/v1/network/connections', { v: AGENT_CALL_VERSION, directions: directions as unknown as Record<string, unknown>[] });
+    const response = await transport.post(machine, '/api/v1/network/connections', { v: AGENT_CALL_VERSION, directions: directions as unknown as Record<string, unknown>[], ...(federation && { controller: federation.local() }) });
     if (response.status !== 200) return false;
+    if (federation) await federation.learn(machine, (response.body as { controller?: unknown } | null)?.controller);
     const theirs = (response.body as { directions?: unknown } | null)?.directions;
     if (Array.isArray(theirs) && theirs.length > 0) await receiveDirections(machine, { v: AGENT_CALL_VERSION, directions: theirs });
     return true;
@@ -843,6 +854,7 @@ export async function receiveDirections(senderMachine: string, raw: unknown, now
   if (!self || !list || list.v !== AGENT_CALL_VERSION || !Array.isArray(list.directions) || list.directions.length > DIRECTIONS_PER_REQUEST) {
     return { status: 400, error: 'invalid_connections', message: 'The connections were not in a form this computer reads.' };
   }
+  if (federation && isNetworkComputer(machine)) await federation.learn(machine, (raw as { controller?: unknown }).controller);
   let applied = 0;
   // Links count toward the cap; a link turned off (a deleted agent's, say) doesn't.
   let kept = listDirections().filter((d) => peersFor(d, self).includes(machine) && (!!d.link || !!activeAgentLinks(d).length)).length;
@@ -862,6 +874,7 @@ export async function receiveDirections(senderMachine: string, raw: unknown, now
     const from = relative(entry.from, self);
     const to = relative(entry.to, self);
     const localEnds = [from, to].filter((end) => !end.machineId);
+    if (federationDirection(from, to)) continue;
     const current = getConnectionDirection(from, to);
     if (typeof entry.link !== 'boolean') continue;
     const userLink = typeof entry.userLink === 'boolean' ? entry.userLink : entry.link;
@@ -950,6 +963,7 @@ export interface StartAgentCallsOptions {
   deliveryStore?: AnnexDeliveryStore;
   /** Fixed controller capability; never selected by agent arguments or editable tool names. */
   remoteDispatcher?: DispatcherAgentCallReceiver;
+  federation?: { local(): unknown; learn(machine: string, raw: unknown): Promise<void> };
 }
 
 export function startAgentCalls(options: StartAgentCallsOptions): () => void {
@@ -962,6 +976,7 @@ export function startAgentCalls(options: StartAgentCallsOptions): () => void {
   authorizeQueuedCall = options.authorizeQueuedCall;
   onDeliveryFailure = options.onDeliveryFailure;
   remoteDispatcher = options.remoteDispatcher;
+  federation = options.federation;
   if (options.listDirections) listDirections = options.listDirections;
   const offConnected = options.transport.onConnected((machine) => { void syncThenFlush(machine); });
   // A change here to a direction with another machine is sent to it at once, when connected.
@@ -972,7 +987,8 @@ export function startAgentCalls(options: StartAgentCallsOptions): () => void {
   });
   void (async () => {
     await notifyFailures();
-    for (const machine of new Set(deliveries.get().outbox.map((i) => i.machine))) await syncThenFlush(machine);
+    const members = federation ? annexPeers.listPeers().filter((p) => p.role === 'member' && p.kind !== 'phone').map((p) => p.fingerprint.toLowerCase()) : [];
+    for (const machine of new Set([...members, ...deliveries.get().outbox.map((i) => i.machine)])) await syncThenFlush(machine);
   })().catch(logFlushError);
   return () => {
     if (generation !== lifecycle) return;
@@ -986,6 +1002,7 @@ export function startAgentCalls(options: StartAgentCallsOptions): () => void {
     authorizeQueuedCall = undefined;
     onDeliveryFailure = undefined;
     remoteDispatcher = undefined;
+    federation = undefined;
     listDirections = () => listAllConnectionDirections();
     _resetAgentCallsForTesting();
   };

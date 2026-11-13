@@ -664,7 +664,7 @@ describe('durable receipts and crash boundaries (#3334)', () => {
       cause: { rootId: 'real', depth: 2 }, deliveryId: 'controller-call',
     }));
     await setConnectionLink(inbound.from, { agentId: 'controller' }, true);
-    for (const tool of ['wake_agent', 'clear_agent', 'read_output']) {
+    for (const tool of ['wake_agent', 'clear_agent', 'compact_agent', 'read_output', 'set_connection_tools', 'approve', 'answer_question', 'set_settings']) {
       expect(await receiveAgentCall(OTHER, { ...body, callId: `unsafe-${tool}`, tool }, now)).toMatchObject({ error: 'tool_not_allowed' });
     }
     available = false;
@@ -924,5 +924,27 @@ describe('keeping both machines\' copies of a connection', () => {
   it('refuses a list it can\'t read', async () => {
     expect(await receiveDirections(OTHER, { v: 2, directions: [] })).toMatchObject({ status: 400 });
     expect(await receiveDirections(OTHER, null)).toMatchObject({ status: 400 });
+  });
+});
+
+describe('authenticated controller publication (#3345)', () => {
+  it('exchanges the hidden controller on connect, and learns the receiver endpoint from its pinned response', async () => {
+    stop();
+    const local = { agentId: 'here-controller', enabled: true, name: 'Here controller' };
+    const remote = { agentId: 'there-controller', enabled: true, name: 'There controller' };
+    const learn = vi.fn(async () => {});
+    respond = (urlPath) => urlPath.endsWith('/connections')
+      ? { status: 200, body: { directions: [], controller: remote } }
+      : { status: 503, body: {} };
+    stop = startAgentCalls({ transport, runTool: async () => ok('unused'), describeLocalAgent: async () => undefined, federation: { local: () => local, learn } });
+    await syncDirectionsWith(OTHER);
+    expect(posts.find((p) => p.path.endsWith('/connections'))?.body.controller).toEqual(local);
+    expect(learn).toHaveBeenCalledWith(OTHER, remote);
+    const inboundController = { agentId: 'replacement-controller', enabled: false, name: 'Other controller' };
+    await receiveDirections(OTHER, { v: 1, directions: [], controller: inboundController });
+    expect(learn).toHaveBeenCalledWith(OTHER, inboundController);
+    learn.mockClear();
+    await receiveDirections(THIRD, { v: 1, directions: [], controller: inboundController });
+    expect(learn).not.toHaveBeenCalled();
   });
 });

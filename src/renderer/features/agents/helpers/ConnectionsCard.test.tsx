@@ -191,6 +191,21 @@ describe('Connections card (#2232)', () => {
     expect(await within(dialog).findByTestId('connection-source-result')).toHaveTextContent('Still connected through: Canvas wire.');
   });
 
+  it('shows federation tools read-only and offers no individual removal', async () => {
+    const source = { kind: 'dispatcher_federation' as const, sourceId: 'dispatcher-federation' };
+    useMcpBindingStore.setState({ bindings: [wire('lead', 'rev', ['epic-lead', 'Laptop controller'], 'agent', { disabledTools: ['read_output', 'clear_agent', 'compact_agent', 'wake_agent'] })] });
+    window.clubhouse.mcpBinding.getConnectionSources = vi.fn(async () => ({
+      pairs: [{ agentId: 'lead', targetId: 'rev', bound: true, sources: [source] }], unreadable: [],
+    }));
+    render(<ConnectionsCard agent={lead} helperIds={new Set()} open onToggle={() => {}} onDisconnect={vi.fn()} />);
+    fireEvent.click(await screen.findByTestId('connection-sources'));
+    const dialog = screen.getByTestId('connection-sources-dialog');
+    expect(within(dialog).getByTestId('connection-source-dispatcher_federation')).toHaveTextContent('Their tools are fixed');
+    expect(within(dialog).queryByTestId('connection-source-remove-dispatcher_federation')).not.toBeInTheDocument();
+    for (const toggle of within(dialog).getAllByRole('switch')) expect(toggle).toBeDisabled();
+    expect(within(dialog).getByTestId('connection-tool-lead-rev-read_output')).toHaveAttribute('aria-checked', 'false');
+  });
+
   it('turns off Connect to Dispatcher once for both directions, after confirming, and warns when a removal couldn\'t be saved', async () => {
     const src = { kind: 'dispatcher_auto' as const, sourceId: 'dispatcher-wires' };
     useMcpBindingStore.setState({ bindings: [wire('lead', 'rev', ['epic-lead', 'reviewer']), wire('rev', 'lead', ['reviewer', 'epic-lead'])] });

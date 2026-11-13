@@ -30,6 +30,7 @@
  * against the store with the existing call path.
  */
 
+import { assertEditableConnection, federationDirection } from './dispatcher-federation-policy';
 import {
   activeAgentLinks, NEW_CONNECTION_SWITCHES, WAKE_TOOL, directionKey, localWakeOn, normalizeConnectionDirection, type AgentAddress, type ConnectionDirection,
 } from '../../shared/connection-grants';
@@ -83,7 +84,7 @@ export async function _setConnectionGrantsVersionForTesting(version: number): Pr
 const sameAddress = (a: AgentAddress, b: AgentAddress) => a.agentId === b.agentId && (a.machineId ?? '') === (b.machineId ?? '');
 
 export function getConnectionDirection(from: AgentAddress, to: AgentAddress): ConnectionDirection | undefined {
-  return entries().find((d) => sameAddress(d.from, from) && sameAddress(d.to, to));
+  return federationDirection(from, to) ?? entries().find((d) => sameAddress(d.from, from) && sameAddress(d.to, to));
 }
 
 /** The tools `from` may not use on `to`: the entry's list, or undefined when the store has nothing to say. */
@@ -137,6 +138,7 @@ export function listLinkedDirections(): ConnectionDirection[] {
 const UNCHANGED = Symbol('unchanged');
 
 async function updateDirection(from: AgentAddress, to: AgentAddress, fn: (current: ConnectionDirection | undefined) => ConnectionDirection | null | typeof UNCHANGED): Promise<ConnectionDirection | null> {
+  assertEditableConnection(from, to);
   if (!writable()) throw new Error('This connection file was saved by a newer Clubhouse, so this one won’t change it.');
   let next: ConnectionDirection | null = null;
   let changed = true;
@@ -205,6 +207,7 @@ export async function setConnectionDirections(
   guard: (current: ConnectionDirection | undefined, change: DirectionToolsChange) => void | false,
   options: { agentId?: string; precondition?: SettingsCommitPrecondition } = {},
 ): Promise<ConnectionDirection[]> {
+  for (const c of changes) assertEditableConnection(c.from, c.to);
   if (!writable()) throw new Error('This connection file was saved by a newer Clubhouse, so this one won’t change it.');
   let written: ConnectionDirection[] = [];
   await store.update((file) => {
@@ -296,6 +299,7 @@ export function setConnectionLink(from: AgentAddress, to: AgentAddress, on: bool
 export async function linkConnectionDirections(pairs: readonly Pick<ConnectionDirection, 'from' | 'to'>[]): Promise<ConnectionDirection[]> {
   const requested = new Map<string, Pick<ConnectionDirection, 'from' | 'to'>>();
   for (const pair of pairs) {
+    assertEditableConnection(pair.from, pair.to);
     const valid = normalizeConnectionDirection(pair);
     if (!valid) throw new Error('That connection address is not valid.');
     requested.set(directionKey(valid.from, valid.to), { from: valid.from, to: valid.to });
@@ -469,6 +473,7 @@ export function connectionMigrationDone(name: string): boolean {
 export async function runConnectionMigration(
   name: string, directions: readonly ConnectionDirection[], replaceIf: (current: ConnectionDirection, next: ConnectionDirection) => boolean = () => false,
 ): Promise<ConnectionDirection[] | null> {
+  for (const c of directions) assertEditableConnection(c.from, c.to);
   if (!writable()) throw new Error('This connection file was saved by a newer Clubhouse, so this one won’t change it.');
   let written = null as ConnectionDirection[] | null;
   await store.update((file) => {
