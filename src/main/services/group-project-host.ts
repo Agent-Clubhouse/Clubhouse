@@ -465,11 +465,15 @@ class GroupProjectHostService {
     const projects = await projectStore.list();
     const byAgent = new Map<string, string>();
     for (const project of projects) {
+      // Unreadable is not empty: its agents stay unknown, so a new join from it is refused
+      // and a current member of it is never counted as leaving.
       let agents: readonly { id: string }[] = [];
       try {
-        agents = await agentConfig.peekDurableConfigs(project.path);
+        const read = await agentConfig.peekDurableConfigsChecked(project.path);
+        if (read.readable) agents = read.agents;
+        else appLog('core:group-project', 'warn', 'Could not read agents for group project scope', { meta: { projectId: project.id } });
       } catch (err) {
-        // telemetry-exempt: logged; members of an unreadable project count as project unknown, never as leaving
+        // telemetry-exempt: logged; the project's agents stay unknown
         appLog('core:group-project', 'warn', 'Could not read agents for group project scope', {
           meta: { projectId: project.id, error: err instanceof Error ? err.message : String(err) },
         });
@@ -534,9 +538,16 @@ class GroupProjectHostService {
       const hostMachine = this.hostMachineOf(project);
       const leavingAddresses = new Set(leaving.map((member) => member.address));
       if (leaving.length > 0) {
+        // Leavers are excluded, so neither a restore nor auto-join brings them back.
         const membership = await readMembershipFile(id, hostMachine);
         const explicit = membership.explicit.filter((entry) => !leavingAddresses.has(entry.address));
-        if (explicit.length !== membership.explicit.length) await writeMembershipFile(id, { ...membership, explicit });
+        const already = new Set(membership.excluded.map((entry) => entry.address));
+        const excludedAt = new Date().toISOString();
+        const excluded = [
+          ...membership.excluded,
+          ...[...leavingAddresses].filter((address) => !already.has(address)).map((address) => ({ address, excludedAt, reason: 'scope' })),
+        ];
+        await writeMembershipFile(id, validateMembership({ ...membership, explicit, excluded }, hostMachine));
         for (const b of bindingManager.getAllBindings()) {
           if (b.targetKind === 'group-project' && b.targetId === id && leavingAddresses.has(canonicalMemberAddress(b.agentId, hostMachine))) {
             bindingManager.unbind(b.agentId, id);
@@ -549,15 +560,67 @@ class GroupProjectHostService {
   }
 
   /**
-   * Whether an agent here may be a member under the group project's scope.
-   * Unresolved scope, or an agent whose project isn't known, is admitted.
+   * Once per group project (#3355 upgrade): record every agent bound to a
+   * project-scoped group project as an explicit member, so its scope only
+   * decides new joins and no current member is dropped. Helpers are recorded as
+   * helpers; quick agents and agents on other machines are left to their runs.
+   * Returns how many members were recorded.
    */
-  async admits(id: string, agentId: string): Promise<boolean> {
+  async recordScopedWireMembers(): Promise<number> {
+    const durable = new Map<string, { parentAgentId?: string }>();
+    for (const project of await projectStore.list()) {
+      try {
+        const read = await agentConfig.peekDurableConfigsChecked(project.path);
+        if (read.readable) for (const agent of read.agents) durable.set(agent.id, agent);
+      } catch {
+        // telemetry-exempt: an unreadable project's bound agents are left for the next run
+      }
+    }
+    let recorded = 0;
+    for (const gp of await this.list()) {
+      if (gp.scope?.level !== 'project') continue;
+      const hostMachine = this.hostMachineOf(gp);
+      const bound = bindingManager.getAllBindings().filter((b) => b.targetKind === 'group-project' && b.targetId === gp.id);
+      await this.updateMembership(gp.id, (draft) => {
+        if (draft.scopeMembersRecorded) return;
+        draft.scopeMembersRecorded = 'wire-3355';
+        const addedAt = new Date().toISOString();
+        for (const binding of bound) {
+          const config = durable.get(binding.agentId);
+          if (!config) continue;
+          const address = canonicalMemberAddress(binding.agentId, hostMachine);
+          if (draft.explicit.some((e) => e.address === address) || draft.excluded.some((e) => e.address === address)) continue;
+          draft.explicit.push({
+            address, kind: config.parentAgentId ? 'helper' : 'durable', addedAt,
+            ...(binding.agentName && { name: binding.agentName }), migratedFrom: 'wire-3355',
+          });
+          recorded++;
+        }
+      });
+    }
+    return recorded;
+  }
+
+  /**
+   * Whether an agent here may join (#3355). Excluded: never. Already an
+   * explicit member, or a restore of a pair that was bound before: yes. A new
+   * join must be within the scope, and fails closed when its project can't be
+   * known.
+   */
+  async admits(id: string, agentId: string, options: { restore?: boolean } = {}): Promise<boolean> {
     const project = await groupProjectRegistry.get(id);
-    if (!project?.scope) return true;
-    const address = canonicalMemberAddress(agentId, this.hostMachineOf(project));
+    if (!project) return false;
+    const hostMachine = this.hostMachineOf(project);
+    const address = canonicalMemberAddress(agentId, hostMachine);
+    const membership = await readMembershipFile(id, hostMachine);
+    if (membership.excluded.some((entry) => entry.address === address)) return false;
+    // A pair that was already a member is never evicted by a check; only exclusion removes it.
+    if (options.restore || membership.explicit.some((entry) => entry.address === address)) return true;
+    // No recorded scope (an unresolved legacy record) has nothing to check against.
+    if (!project.scope) return true;
     const projectId = project.scope.level === 'project' ? (await this.agentProjects()).get(agentId) : undefined;
-    return memberInScope(project.scope, { address, projectId }) !== false;
+    // A new join fails closed: an agent whose project can't be known is not admitted.
+    return memberInScope(project.scope, { address, projectId }) === true;
   }
 
   /** The host-relative address of an agent here or on another machine. */

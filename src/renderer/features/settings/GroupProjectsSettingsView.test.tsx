@@ -226,7 +226,7 @@ describe('GroupProjectsSettingsView', () => {
       const editor = screen.getByRole('region', { name: 'Scope' });
       fireEvent.change(within(editor).getByLabelText('Covers'), { target: { value: 'project:proj-a' } });
       fireEvent.click(within(editor).getByRole('button', { name: 'Review change' }));
-      expect(await within(editor).findByRole('list', { name: 'Members who would leave' })).toHaveTextContent('builder-b');
+      expect(await within(editor).findByRole('list', { name: 'Members who would leave' })).toHaveTextContent('builder-b (Proj B)');
       expect(setScope).not.toHaveBeenCalled();
       expect(preview).toHaveBeenCalledWith('gp-alpha', { level: 'project', projectId: 'proj-a', reach: 'local' });
       fireEvent.click(within(editor).getByRole('button', { name: 'Apply and remove 1' }));
@@ -245,6 +245,21 @@ describe('GroupProjectsSettingsView', () => {
       expect(await within(editor).findByText('No members leave.')).toBeInTheDocument();
       fireEvent.click(within(editor).getByRole('button', { name: 'Apply scope' }));
       expect(await within(editor).findByRole('alert')).toHaveTextContent(/Scope not changed.*have changed/);
+    });
+
+    it('replaces an untouched draft when the scope changes elsewhere', async () => {
+      render(<GroupProjectsSettingsView />);
+      await screen.findByRole('list', { name: 'Local group projects' });
+      select('Alpha');
+      const editor = screen.getByRole('region', { name: 'Scope' });
+      expect(within(editor).getByLabelText('Covers')).toHaveValue('app');
+      act(() => {
+        useGroupProjectStore.setState((state) => ({
+          projects: state.projects.map((p) => (p.id === 'gp-alpha' ? { ...p, scope: { level: 'project', projectId: 'proj-b', reach: 'local' } } : p)),
+        }));
+      });
+      await waitFor(() => expect(within(editor).getByLabelText('Covers')).toHaveValue('project:proj-b'));
+      expect(within(editor).getByRole('button', { name: 'Review change' })).toBeDisabled();
     });
   });
 });

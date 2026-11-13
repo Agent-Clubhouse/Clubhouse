@@ -168,17 +168,6 @@ async function syncMemberships(agentId: string): Promise<void> {
       // check and inject duplicate loop-start messages.
       members.add(agentId);
 
-      // Outside the group project's scope (#3355), a wire doesn't make a member:
-      // narrowing removed it, and a restored wire must not bring it back.
-      if (!(await groupProjectHost.admits(projectId, agentId).catch(() => true))) {
-        members.delete(agentId);
-        if (members.size === 0) memberships.delete(projectId);
-        consumeRestoredBinding(agentId, projectId);
-        bindingManager.unbind(agentId, projectId);
-        appLog('core:group-project', 'info', 'Refused a member outside the group project scope', { meta: { agentId, projectId } });
-        continue;
-      }
-
       const agentName = resolveAgentName(agentId);
       agentNames.set(agentId, agentName);
 

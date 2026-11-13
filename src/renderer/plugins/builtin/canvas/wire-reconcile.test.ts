@@ -101,3 +101,25 @@ describe('group project members (#3357)', () => {
     expect(onReport).not.toHaveBeenCalled();
   });
 });
+
+describe('group project scope (#3355)', () => {
+  it('after narrowing, a leaver\'s stored wire stays unbound: one refused bind, then no retries', async () => {
+    // Main as the bind site sees it: the member is admitted until the scope narrows it out.
+    let narrowed = false;
+    const bind = vi.fn(async () => (narrowed ? 'not_member' as const : undefined));
+    const onReport = vi.fn();
+    const r = createWireReconciler({ bind, onReport });
+    const def = wire('leaver', 'gp_1', { targetKind: 'group-project' });
+    r.reconcile([def], []);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(bind).toHaveBeenCalledTimes(1);
+    // Narrowing removes the live binding; the canvas still shows the stored wire.
+    narrowed = true;
+    for (let i = 0; i < 10; i++) {
+      r.reconcile([def], []);
+      await vi.advanceTimersByTimeAsync(2_000);
+    }
+    expect(bind).toHaveBeenCalledTimes(2);
+    expect(onReport).not.toHaveBeenCalled();
+  });
+});

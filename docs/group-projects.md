@@ -34,20 +34,38 @@ startup binding cache or change existing members or subscriptions.
 
 `memberInScope` in `src/shared/group-project-scope.ts` applies the table to a
 member's host-relative address (one with a machine is on another computer) and
-its project. A member whose project isn't known is neither in nor out: it is
-never counted as leaving, and it is admitted.
+its project. A member whose project isn't known (an unreadable or unregistered
+project) is neither in nor out.
 
-An agent outside a group project's scope is not a member. When a wire binds one,
-lifecycle releases the binding and posts no join (`groupProjectHost.admits`),
-including a wire restored at startup.
+**Joining is checked where a binding is made.** The MCP bind handler asks
+`groupProjectHost.admits(id, agentId, { restore })` before anything is bound,
+recorded as a member or made admin:
+
+- An excluded address is never admitted.
+- An explicit member is admitted.
+- A restore of a pair that was already bound is admitted, so a check never
+  evicts a current member.
+- A new join (a drawn wire) must be within the scope. It fails closed: an
+  unknown project, or any error in the check, refuses.
+
+A refusal answers `{ notMember: true, reason: 'out_of_scope' }`, which the
+canvas treats as final and stops retrying.
 
 Changing scope is a person's action in Settings > Group Projects (agents get it
 with the admin grant in #3360). `previewScope(id, scope)` lists the members who
 would leave and changes nothing. `setScope(id, scope, { confirmLeaving })` applies
 only when `confirmLeaving` names exactly those members, so what the person
 reviewed is what happens. Otherwise it refuses with `changed`. Widening needs
-no confirmation. Members who leave lose their live bindings and explicit
-membership entries. The change takes a sequence number like any other.
+no confirmation. Members who leave move from `explicit` to `excluded`
+(`reason: "scope"`) and lose their live bindings, so neither a restore nor
+auto-join brings them back. The change takes a sequence number like any other.
+
+**Upgrade.** After the first persisted-binding rebuild, every agent bound to a
+project-scoped group project is recorded once as an explicit member
+(`migratedFrom: "wire-3355"`, helpers as helpers, quick agents and other
+machines' agents left to their runs). Each record is marked
+`scopeMembersRecorded`. So scope affects only new joins, and no existing member
+is dropped silently.
 
 Until #3357 registers its membership policy, "members" are the agents wired to
 the group project, with their projects read from durable agent configs and live
