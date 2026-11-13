@@ -166,8 +166,11 @@ test('remote requests triage locally, send correlated outcomes and wait once acr
     const expected = choice === 'decline' ? 'declined' : choice === 'needs_user' ? 'waiting_user' : 'under_way';
     await expect.poll(async () => (await remoteRequests(a.controller)).find((r) => r.id === sent.id)?.outcome, { timeout: 30_000 }).toBe(expected);
     if (choice === 'now') {
+      const parentWork = (await here.window.evaluate(() => window.clubhouse.dispatcher.get())).requestsUnderWay;
       expect((await b.controller.call('report_remote_request', { id: sent.id, outcome: 'answered', message: 'Explicit receiver answer.' })).isError).toBe(false);
       await expect.poll(async () => (await remoteRequests(a.controller)).find((r) => r.id === sent.id)?.outcome, { timeout: 30_000 }).toBe('answered');
+      await expect.poll(async () => JSON.stringify(await here.window.evaluate((controller) => window.clubhouse.chat.readTranscript(controller), a.ids.controller)), { timeout: 30_000 }).toContain('Explicit receiver answer.');
+      expect((await here.window.evaluate(() => window.clubhouse.dispatcher.get())).requestsUnderWay).toBe(parentWork);
     }
   }
   const profile = there.profile;

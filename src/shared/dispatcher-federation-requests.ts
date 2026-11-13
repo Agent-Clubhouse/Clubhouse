@@ -26,7 +26,8 @@ export interface FederatedRequest {
   deliveryId?: string;
   revision: number;
   receivedRevision: number;
-  replies?: { revision: number; outcome: FederationOutcome; text: string; deliveryId?: string }[];
+  replies?: { revision: number; outcome: FederationOutcome; text: string; deliveryId?: string; expiresAt?: number; delivery?: FederationDelivery; error?: string }[];
+  replyPrompts?: { revision: number; outcome: FederationOutcome; text: string; cause: AnnexCallContext; state: 'pending' | 'claimed' | 'accepted' }[];
   duplicates: number;
   revocationNotified?: boolean;
   noticePending?: 'reply' | 'failure' | 'needs_user';

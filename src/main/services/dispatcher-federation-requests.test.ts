@@ -3,7 +3,7 @@ import type { AnnexCallContext, AnnexDeliveryStatus, AuthenticatedAnnexOrigin } 
 import type { FederationRequestEnvelope } from '../../shared/dispatcher-federation-requests';
 vi.mock('electron', () => ({ app: { getPath: () => '', isPackaged: false } }));
 vi.mock('./log-service', () => ({ appLog: vi.fn() }));
-import { createFederatedRequests, FEDERATED_REQUEST_LIMITS, parseFederationEnvelope, type FederationRequestDependencies, type FederationRequestFile } from './dispatcher-federation-requests';
+import { createFederatedRequests, FEDERATED_REQUEST_LIMITS, FederationInputNotReady, parseFederationEnvelope, type FederationRequestDependencies, type FederationRequestFile } from './dispatcher-federation-requests';
 
 function fixture() {
   let now = 1_000_000;
@@ -156,14 +156,44 @@ describe('federated request delivery and explicit outcomes (#3347, #3346)', () =
     expect(f.a.api.list(f.a.self.agentId)[0].outcome).toBe('answered');
   });
 
-  it('retains a correlated chat notice until the chat can accept it', async () => {
+  it('retains a correlated reply until the hidden controller can accept it', async () => {
     const f = fixture(); const r = await f.offer(); await f.pump();
-    vi.mocked(f.a.deps.present).mockRejectedValueOnce(new Error('chat off'));
+    vi.mocked(f.a.deps.present).mockRejectedValueOnce(new FederationInputNotReady('controller busy'));
     await f.b.api.report(f.b.self.agentId, r.id, 'answered', 'Explicit result'); await f.pump();
     expect(f.a.api.list(f.a.self.agentId)[0]).toMatchObject({ outcome: 'answered', noticePending: 'reply' });
     await f.a.api.reconcile();
     expect(f.a.api.list(f.a.self.agentId)[0].noticePending).toBeUndefined();
     expect(f.a.deps.present).toHaveBeenCalledTimes(2);
+  });
+  it('retries a reply when a prepared id did not reach durable transport admission', async () => {
+    const f = fixture(); const r = await f.offer(); await f.pump();
+    vi.mocked(f.b.deps.send).mockResolvedValueOnce({ deliveryId: 'never-admitted', error: 'transport loop limit' });
+    await f.b.api.report(f.b.self.agentId, r.id, 'answered', 'Build artifact');
+    expect(f.b.api.list(f.b.self.agentId)[0].replies![0]).toMatchObject({ error: 'transport loop limit' });
+    expect(f.b.api.list(f.b.self.agentId)[0].replies![0].deliveryId).toBeUndefined();
+    await f.b.api.reconcile(); await f.pump();
+    expect(f.a.api.list(f.a.self.agentId)[0].outcome).toBe('answered');
+  });
+  it('reports delivered live work after the original request TTL and tracks reply failure separately', async () => {
+    const f = fixture(); const r = await f.offer(); await f.pump(); await f.a.api.reconcile();
+    f.advance(FEDERATED_REQUEST_LIMITS.ttl + 1);
+    await f.b.api.report(f.b.self.agentId, r.id, 'answered', 'Long build finished');
+    const reply = f.b.api.list(f.b.self.agentId)[0].replies![0];
+    expect(reply.deliveryId).toBeTruthy();
+    expect(reply.expiresAt).toBeGreaterThan(r.expiresAt);
+    f.statuses.get(reply.deliveryId!)!.state = 'expired';
+    await f.b.api.reconcile();
+    expect(f.b.api.list(f.b.self.agentId)[0]).toMatchObject({ delivery: 'delivered', outcome: 'answered', replies: [expect.objectContaining({ delivery: 'expired' })] });
+    expect(f.b.deps.present).toHaveBeenCalledWith(expect.objectContaining({ reason: expect.stringContaining('Reply 1 could not be delivered') }), 'failure');
+  });
+  it('never settles a parent request from a subtask reply and claims unknown controller acceptance once', async () => {
+    const f = fixture(); const r = await f.offer(); await f.pump();
+    const settle = f.a.deps.settleLocal = vi.fn();
+    vi.mocked(f.a.deps.present).mockRejectedValueOnce(new Error('input acceptance unknown'));
+    await f.b.api.report(f.b.self.agentId, r.id, 'answered', 'Subtask only'); await f.pump(); await f.a.api.reconcile();
+    expect(settle).not.toHaveBeenCalled();
+    expect(f.a.deps.present).toHaveBeenCalledTimes(1);
+    expect(f.a.api.list(f.a.self.agentId)[0].replyPrompts![0].state).toBe('claimed');
   });
   it('never blindly replays a controller prompt with unknown acceptance after a crash', async () => {
     const f = fixture(); const r = await f.offer();
