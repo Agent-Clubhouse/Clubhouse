@@ -1,6 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, fireEvent, render, waitFor, within } from '@testing-library/react';
-import userEvent from '@testing-library/user-event';
 import { WireInstructionsDialog } from './WireInstructionsDialog';
 import { ConnectionSourcesDialog } from '../../../features/agents/helpers/ConnectionSourcesDialog';
 import { ConnectionsCard } from '../../../features/agents/helpers/ConnectionsCard';
@@ -67,13 +66,16 @@ describe('shared Canvas and card guidance editor', () => {
     window.clubhouse.mcpBinding.getConnectionToolCatalog = vi.fn(async () => ({ state: 'available', tools }));
     const view = render(<WireInstructionsDialog binding={binding} onClose={vi.fn()} />);
     const textarea = await view.findByRole('textbox', { name: 'Instructions' });
-    const select = view.getByRole('combobox', { name: 'Apply guidance to' });
+    const select = view.getByRole<HTMLSelectElement>('combobox', { name: 'Apply guidance to' });
     const search = view.getByRole('searchbox', { name: 'Search tools' });
-    expect(within(select).getAllByRole('option')).toHaveLength(602);
+    expect(select.options).toHaveLength(602);
     fireEvent.change(search, { target: { value: '  RELEASE RECEIPTS  ' } });
-    expect(within(select).getAllByRole('option')).toHaveLength(2);
-    expect(within(select).getByRole('option', { name: 'registered_417 (unavailable now)' })).toBeInTheDocument();
-    await userEvent.selectOptions(select, 'registered_417');
+    expect(select.options).toHaveLength(2);
+    const unavailable = within(select).getByRole('option', { name: 'registered_417 (unavailable now)' });
+    expect(unavailable).toBeInTheDocument();
+    expect(select).toBeEnabled();
+    expect(unavailable).toBeEnabled();
+    fireEvent.change(select, { target: { value: 'registered_417' } });
     fireEvent.change(textarea, { target: { value: 'Specific gated-tool guidance' } });
     fireEvent.change(search, { target: { value: 'registered_599' } });
     expect(select).toHaveValue('registered_417');
