@@ -123,6 +123,7 @@ export const canvasWireBindingSource: PersistedBindingSource = {
   async inspect() {
     const [snapshots, groupProjects] = await Promise.all([readAllCanvasStores({ strict: true }), readGroupProjectNames({ strict: true })]);
     if (snapshots.some((s) => s.problems.length > 0)) throw new Error('Some Canvas guidance could not be read. Open the affected Canvas and try again.');
-    return withinScope(await withoutManagedMembers(bindingsFromCanvasStores(snapshots, groupProjects, { inspect: true })));
+    // Inspection is read-only: it shows the stored wires and loads no registry, so scope isn't applied here.
+    return withoutManagedMembers(bindingsFromCanvasStores(snapshots, groupProjects, { inspect: true }));
   },
 };
