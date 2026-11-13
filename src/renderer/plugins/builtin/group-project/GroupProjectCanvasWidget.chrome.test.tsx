@@ -82,11 +82,17 @@ function renderWidget(
   );
 }
 
+/** Leads hold the lead grant (#3360), read over IPC. */
+function rolesFor(leads: string[]) {
+  return { groupProjectId: 'gp1', own: { deliver: 'allow' as const, wake: 'off' as const }, holders: leads.map((agentId) => ({ agentId, lead: 'allow' as const, admin: 'off' as const })) };
+}
+
 beforeEach(() => {
   widgetWidth = 300;
   admins = [];
   projectAvailable = true;
   remoteProject = false;
+  vi.spyOn(window.clubhouse.groupProject, 'getRoles').mockImplementation(async () => rolesFor(admins));
   confirmAnswer = true;
   vi.clearAllMocks();
   useAgentStore.setState({ agents: { a1: tapir }, agentDetailedStatus: {} } as never);
@@ -179,13 +185,13 @@ describe('group project card (compact)', () => {
     expect(setPolling).toHaveBeenCalledWith('gp1', true);
   });
 
-  it('lists members with an avatar row, the lead word and a status dot plus one word', () => {
+  it('lists members with an avatar row, the lead word and a status dot plus one word', async () => {
     admins = ['a1'];
     renderWidget();
     const rows = screen.getAllByTestId('group-project-member');
     expect(rows).toHaveLength(2);
     const tapirRow = rows[0];
-    expect(within(tapirRow).getByText('Lead')).toBeInTheDocument();
+    expect(await within(tapirRow).findByText('Lead')).toBeInTheDocument();
     const dot = tapirRow.querySelector('[data-dot]')!;
     expect(within(tapirRow).getByText(DOT_LABEL[dot.getAttribute('data-dot') as AgentDot])).toBeInTheDocument();
     // An agent this window doesn't have (e.g. remote) shows no status rather than a guess.
@@ -197,15 +203,19 @@ describe('group project card (compact)', () => {
     const falconRow = screen.getAllByTestId('group-project-member')[1];
     const star = within(falconRow).getByRole('button', { name: 'Project lead' });
     expect(star).toHaveAttribute('aria-pressed', 'false');
+    const setRole = vi.spyOn(window.clubhouse.groupProject, 'setRole').mockResolvedValue(rolesFor(['a2']));
     await userEvent.click(star);
-    expect(update).toHaveBeenCalledWith('gp1', { metadata: { admins: ['a2'] } });
+    // The lead grant on this group project, not a role in its metadata (#3360).
+    expect(setRole).toHaveBeenCalledWith('gp1', 'a2', 'lead', 'allow');
+    expect(update).not.toHaveBeenCalled();
+    await waitFor(() => expect(star).toHaveAttribute('aria-pressed', 'true'));
   });
 
-  it('keeps the star button\'s name fixed and says lead or not with aria-pressed', () => {
+  it('keeps the star button\'s name fixed and says lead or not with aria-pressed', async () => {
     admins = ['a1'];
     renderWidget();
     const stars = screen.getAllByRole('button', { name: 'Project lead' });
-    expect(stars.map((b) => b.getAttribute('aria-pressed'))).toEqual(['true', 'false']);
+    await waitFor(() => expect(stars.map((b) => b.getAttribute('aria-pressed'))).toEqual(['true', 'false']));
   });
 
   it('reads a member\'s status once: the word, not also the dot', () => {

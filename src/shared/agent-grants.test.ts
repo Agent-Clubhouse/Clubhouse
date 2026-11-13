@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
-  GRANT_ACTIONS, GRANT_REFUSAL_MESSAGES, evaluateGrant, isGrantAction, targetCovers,
+  GRANT_ACTIONS, GRANT_REFUSAL_MESSAGES, evaluateGrant, isGrantAction, targetCovers, widerOrSame,
   type Grant, type GrantCall, type GrantCallTarget, type GrantCaller,
 } from './agent-grants';
 
@@ -173,5 +173,27 @@ describe('agent grants (#2966)', () => {
     for (const a of ['agent.restart', 'library.write', 'template.push', 'grant.request', 'settings.app.write']) expect(isGrantAction(a)).toBe(true);
     expect(isGrantAction('agent.delete')).toBe(false);
     expect(new Set(GRANT_ACTIONS).size).toBe(GRANT_ACTIONS.length);
+  });
+});
+
+describe('grants on one group project (#3360)', () => {
+  const caller = { kind: 'agent' as const, agentId: 'a' };
+  const target = (groupProjectId: string) => ({ kind: 'group_project' as const, groupRole: 'member' as const, groupProjectId });
+  const lead = { action: 'group_project.lead' as const, target: { kind: 'group_project' as const, id: 'gp1' }, mode: 'allow' as const };
+
+  it('covers that group project and no other', () => {
+    expect(evaluateGrant({ caller, action: 'group_project.lead', target: target('gp1') }, [lead]).outcome).toBe('allow');
+    expect(evaluateGrant({ caller, action: 'group_project.lead', target: target('gp2') }, [lead]).outcome).toBe('refuse');
+  });
+
+  it('the old admin role covers nothing: no group role is admin any more', () => {
+    const admin = { action: 'group_project.admin' as const, target: { kind: 'group_project' as const, role: 'admin' as const }, mode: 'allow' as const };
+    expect(evaluateGrant({ caller, action: 'group_project.admin', target: target('gp1') }, [admin]).outcome).toBe('refuse');
+  });
+
+  it('one group project\'s grant is only as wide as itself', () => {
+    expect(widerOrSame({ kind: 'group_project', id: 'gp1' }, { kind: 'group_project', id: 'gp1' })).toBe(true);
+    expect(widerOrSame({ kind: 'group_project', id: 'gp1' }, { kind: 'group_project', id: 'gp2' })).toBe(false);
+    expect(widerOrSame({ kind: 'group_project', role: 'member' }, { kind: 'group_project', id: 'gp1' })).toBe(false);
   });
 });

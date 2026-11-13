@@ -334,8 +334,6 @@ async function handleCreateGroupProject(callerId: string, args: Record<string, u
       const agent = resolveAgent(scope, ref, 'Member');
       if (!members.some((m) => m.id === agent.id)) members.push(agent);
     }
-    // The first member to join leads the project: the caller, when it joins.
-    members.sort((a, b) => Number(b.id === callerId) - Number(a.id === callerId));
 
     const callerProject = (await projectStore.list()).find((project) => project.path === scope.projectPath);
     if (!callerProject) {

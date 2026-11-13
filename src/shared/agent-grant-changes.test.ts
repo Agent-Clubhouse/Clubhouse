@@ -166,3 +166,12 @@ describe('the Dispatcher-only target (#3037)', () => {
     expect(has(helperDefaults, 'agent.wake@connected:dispatcher')).toBe(true);
   });
 });
+
+describe('a grant on one group project (#3360)', () => {
+  it('keeps its id through normalization, and refuses an unsafe one', () => {
+    const kept = normalizeGrantChanges({ changes: [{ action: 'group_project.lead', target: { kind: 'group_project', id: 'gp_1' }, mode: 'allow' }] });
+    expect(kept?.changes).toEqual([expect.objectContaining({ target: { kind: 'group_project', id: 'gp_1' } })]);
+    const dropped = normalizeGrantChanges({ changes: [{ action: 'group_project.lead', target: { kind: 'group_project', id: '../x' }, mode: 'allow' }] });
+    expect(dropped?.changes ?? []).toEqual([]);
+  });
+});

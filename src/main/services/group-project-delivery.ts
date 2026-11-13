@@ -430,7 +430,7 @@ export function watchGroupProjectDelivery(): () => void {
       // Members left, or the group project went back to polling or stopped delivering.
       void (async () => {
         const gp = await groupProjectHost.get(change.groupProjectId);
-        const resolved = gp && !usesPolling(gp) ? await groupProjectHost.resolveMembers(gp.id) : [];
+        const resolved = gp && !usesPolling(gp) && groupProjectMay(gp, 'deliver') ? await groupProjectHost.resolveMembers(gp.id) : [];
         forgetFormerMembers(change.groupProjectId, resolved);
       })().catch((err) => {
         // telemetry-exempt: held notices are re-checked when they go anyway; logged

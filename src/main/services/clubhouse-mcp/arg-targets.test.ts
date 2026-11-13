@@ -275,10 +275,13 @@ describe('what a plugin may do for the agent whose call it answers, with real gr
     expect(await checkPluginCaller('p', 'c', { action: 'agent.create', projectPath: '/home' })).toMatch(/agent\.create/);
   });
 
-  it('a group project\'s admin wakes and stops its members, as its group tools would, and no one else (#3174)', async () => {
+  it('a group project\'s lead wakes and stops its members, as its group tools would, and no one else (#3174, #3360)', async () => {
     asCaller('plain');
     expect(await checkPluginCaller('p', 'c', { action: 'agent.wake', agentId: 'peer' })).not.toBeNull();
+    // Leading is the lead grant on the group project (#3360); the old admins role gives nothing.
     state.groups.set('gp1', { admins: ['plain'] });
+    expect(await checkPluginCaller('p', 'c', { action: 'agent.wake', agentId: 'peer' })).not.toBeNull();
+    await updateAgentGrantChanges('plain', () => ({ changes: [{ action: 'group_project.lead', target: { kind: 'group_project', id: 'gp1' }, mode: 'allow' }] }));
     bindingManager.bind('plain', { targetId: 'gp1', targetKind: 'group-project', label: 'Team' });
     bindingManager.bind('peer', { targetId: 'gp1', targetKind: 'group-project', label: 'Team' });
     try {
@@ -300,6 +303,7 @@ describe('what a plugin may do for the agent whose call it answers, with real gr
       bindingManager.unbind('plain', 'gp1');
       bindingManager.unbind('peer', 'gp1');
       state.groups.clear();
+      await updateAgentGrantChanges('plain', () => undefined);
     }
   });
 });

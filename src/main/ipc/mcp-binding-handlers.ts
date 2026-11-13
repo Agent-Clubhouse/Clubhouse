@@ -37,6 +37,7 @@ import { canvasWireBindingSource } from '../services/canvas-wire-source';
 import { setManagedGroupProjects } from '../services/managed-group-projects';
 import { MCP_UNBIND_CANVAS_CLEANUP, type McpBindCause, type McpBindResult, type McpUnbindResult } from '../../shared/mcp-unbind';
 import { watchGroupProjectDelivery } from '../services/group-project-delivery';
+import { watchGroupProjectRoles } from '../services/group-project-roles';
 import {
   excludeMember, isMembershipManaged, managedGroupProjectIds, membershipBindingSource, watchGroupProjectMembership,
 } from '../services/group-project-membership';
@@ -509,6 +510,8 @@ export function restorePersistedBindings(): Promise<void> {
     watchGroupProjectMembership();
     // Members hear about posts as notices (#3362).
     watchGroupProjectDelivery();
+    // Lead and admin as grants; today's admins get them once (#3360).
+    watchGroupProjectRoles();
     // Connection permissions (D129): the store sets each direction's tools, and the user's links are a source.
     startConnectionGrants({
       notify: (from, to, disabledTools) => broadcastToAllWindows(IPC.MCP_BINDING.CONNECTION_GRANTS_CHANGED, from, to, disabledTools),

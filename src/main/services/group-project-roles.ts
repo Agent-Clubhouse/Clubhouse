@@ -16,7 +16,7 @@
 import type { GrantChangeMode } from '../../shared/agent-grant-changes';
 import { withGrantChange } from '../../shared/agent-grant-changes';
 import type { GrantAction } from '../../shared/agent-grants';
-import type { GroupProject } from '../../shared/group-project-types';
+import type { GroupProject, GroupProjectRolesView } from '../../shared/group-project-types';
 import { getProjectAdmins } from '../../shared/group-project-admin';
 import { getAgentGrantChanges, listAgentsWithGrantChanges, updateAgentGrantChanges } from './agent-grants-store';
 import { groupProjectHost } from './group-project-host';
@@ -119,4 +119,31 @@ export async function migrateGroupProjectRoles(): Promise<number> {
   }
   if (migrated > 0) appLog('core:group-project', 'info', 'Gave group project admins lead and admin grants', { meta: { agents: migrated } });
   return migrated;
+}
+
+let stopRoles: (() => void) | null = null;
+
+/** Migrate today's admins once, and take a deleted group project's role grants away. Returns the stop. */
+export function watchGroupProjectRoles(): () => void {
+  if (stopRoles) return stopRoles;
+  void migrateGroupProjectRoles().catch((err) => {
+    // telemetry-exempt: retried at the next start, and the admins keep nothing until it runs; logged
+    appLog('core:group-project', 'error', 'Could not give group project admins their grants', { meta: { error: err instanceof Error ? err.message : String(err) } });
+  });
+  const off = groupProjectHost.onChange((change) => {
+    if (change.part !== 'deleted') return;
+    void purgeGroupProjectRoles(change.groupProjectId).catch((err) => {
+      // telemetry-exempt: a grant on a deleted group project covers nothing; logged
+      appLog('core:group-project', 'warn', 'Could not remove a deleted group project\'s role grants', { meta: { groupProjectId: change.groupProjectId, error: err instanceof Error ? err.message : String(err) } });
+    });
+  });
+  stopRoles = () => { off(); stopRoles = null; };
+  return stopRoles;
+}
+
+/** Its own grants and who holds lead and admin, for the directory and the canvas card. */
+export async function describeGroupProjectRoles(groupProjectId: string): Promise<GroupProjectRolesView> {
+  const gp = await groupProjectHost.get(groupProjectId);
+  if (!gp) throw new Error(`Group project ${groupProjectId} does not exist.`);
+  return { groupProjectId, own: ownGrantsOf(gp), holders: listGroupProjectRoles(groupProjectId) as GroupProjectRolesView['holders'] };
 }

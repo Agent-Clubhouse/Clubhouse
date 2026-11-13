@@ -572,16 +572,10 @@ describe('GroupProjectCanvasWidget — admin star + toggle', () => {
     expect(source).toContain('{lead && <span className="text-xs text-ctp-overlay1 flex-shrink-0">Lead</span>}');
   });
 
-  it('toggles admin membership via the project metadata.admins list', () => {
-    expect(source).toContain('handleToggleAdmin');
-    expect(source).toMatch(/update\(groupProjectId, \{ metadata: \{ admins: next \} \}\)/);
-    // Uses the shared add/remove helpers
-    expect(source).toContain('addAdmin(project?.metadata');
-    expect(source).toContain('removeAdmin(project?.metadata');
-  });
-
-  it('computes the admin list from project metadata via the shared helper', () => {
-    expect(source).toContain('getProjectAdmins(project?.metadata)');
+  it('toggles the lead grant on the group project, not a metadata role (#3360)', () => {
+    expect(source).toContain('handleToggleLead');
+    expect(source).toMatch(/groupProject\.setRole\(groupProjectId, agentId, 'lead'/);
+    expect(source).not.toContain('metadata: { admins');
   });
 });
 

@@ -28,6 +28,12 @@ vi.mock('fs/promises', () => ({
   }),
 }));
 
+// Waking a sleeping member (#3360): the agent is found and started with the tap as its first message.
+const wake = vi.hoisted(() => ({ spawn: vi.fn(async () => undefined), find: vi.fn(async (_id: string) => null as null | { agentConfig: Record<string, unknown>; projectPath: string }) }));
+vi.mock('./agent-system', async (original) => ({ ...await original<typeof import('./agent-system')>(), spawnAgent: wake.spawn }));
+vi.mock('./clubhouse-mcp/tools/agent-lifecycle', async (original) => ({
+  ...await original<typeof import('./clubhouse-mcp/tools/agent-lifecycle')>(), findDurableAgentConfig: wake.find,
+}));
 vi.mock('./log-service', () => ({
   appLog: vi.fn(),
 }));
@@ -205,6 +211,22 @@ describe('executeShoulderTap', () => {
     expect(result.delivered).toHaveLength(0);
     expect(result.failed).toHaveLength(1);
     expect(result.failed[0].status).toBe('not-running');
+    // The group project may not wake members by default (#3360): a typed refusal says so.
+    expect(result.failed[0].refusal).toBe('group_project_wake_off');
+    expect(wake.spawn).not.toHaveBeenCalled();
+  });
+
+  it('wakes a sleeping member with the tap when the group project holds the wake grant (#3360)', async () => {
+    const project = await groupProjectRegistry.create('WakeProj');
+    await groupProjectRegistry.update(project.id, { metadata: { grants: { deliver: 'allow', wake: 'allow' } } });
+    bindingManager.bind('agent-asleep', { targetId: project.id, targetKind: 'group-project', label: 'WakeProj', agentName: 'sleepy', targetName: 'WakeProj' });
+    wake.find.mockResolvedValueOnce({ agentConfig: { orchestrator: 'claude-code' }, projectPath: 'proj' });
+    wake.spawn.mockClear();
+
+    const result = await executeShoulderTap({ projectId: project.id, senderLabel: 'lead@WakeProj', senderAgentId: 'lead', targetAgentId: 'agent-asleep', message: 'Review PR 12' });
+
+    expect(result.delivered).toEqual([expect.objectContaining({ agentId: 'agent-asleep', status: 'woken' })]);
+    expect(wake.spawn).toHaveBeenCalledWith(expect.objectContaining({ agentId: 'agent-asleep', kind: 'durable', mission: expect.stringContaining('Review PR 12') }));
   });
 
   it('records an undelivered tap and its not_running delivery', async () => {
