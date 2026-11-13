@@ -1,6 +1,9 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 
 const mockIsStopping = vi.hoisted(() => vi.fn((_id?: unknown) => false));
+const mockDeletion = vi.hoisted(() => ({ preview: vi.fn(), confirm: vi.fn() }));
+vi.mock('../services/group-project-delete-service', () => ({ createLocalGroupProjectDeleteService: () => mockDeletion }));
+vi.mock('../services/canvas-flush', () => ({ flushOpenCanvases: vi.fn(async () => ({ complete: true })) }));
 vi.mock('electron', () => ({
   ipcMain: { handle: vi.fn() },
   app: { getPath: () => '/tmp/clubhouse-test' },
@@ -97,7 +100,7 @@ vi.mock('../util/ipc-broadcast', () => ({
 import { ipcMain } from 'electron';
 import { IPC } from '../../shared/ipc-channels';
 import { groupProjectRegistry } from '../services/group-project-registry';
-import { getBulletinBoard, destroyBulletinBoard } from '../services/group-project-bulletin';
+import { getBulletinBoard } from '../services/group-project-bulletin';
 import { executeShoulderTap } from '../services/group-project-shoulder-tap';
 import * as annexEventBus from '../services/annex-event-bus';
 import { broadcastToAllWindows } from '../util/ipc-broadcast';
@@ -283,21 +286,31 @@ describe('group-project-handlers', () => {
   // ── DELETE ────────────────────────────────────────────────────────────
 
   describe('DELETE', () => {
-    it('deletes project, emits event, and destroys bulletin', async () => {
+    it('requires the reviewed token and reports deletion only after confirmation', async () => {
       const handler = getHandler(IPC.GROUP_PROJECT.DELETE);
-      const result = await handler(fakeEvent, 'gp-1');
-      expect(groupProjectRegistry.delete).toHaveBeenCalledWith('gp-1');
+      mockDeletion.confirm.mockResolvedValue(undefined);
+      const result = await handler(fakeEvent, 'gp-1', 'review-token');
+      expect(mockDeletion.confirm).toHaveBeenCalledWith('gp-1', 1, 'review-token');
       expect(annexEventBus.emitGroupProjectChanged).toHaveBeenCalledWith('deleted', { id: 'gp-1', name: 'Test Project' });
-      expect(destroyBulletinBoard).toHaveBeenCalledWith('gp-1');
       expect(result).toBe(true);
     });
 
-    it('does not emit event when delete returns false', async () => {
-      vi.mocked(groupProjectRegistry.delete).mockResolvedValue(false);
+    it('does not report deletion when confirmation fails', async () => {
+      mockDeletion.confirm.mockRejectedValueOnce(new Error('stale impact'));
       const handler = getHandler(IPC.GROUP_PROJECT.DELETE);
-      await handler(fakeEvent, 'nonexistent');
+      await expect(handler(fakeEvent, 'gp-1', 'old-token')).rejects.toThrow('stale impact');
       expect(annexEventBus.emitGroupProjectChanged).not.toHaveBeenCalled();
-      expect(destroyBulletinBoard).not.toHaveBeenCalled();
+    });
+
+    it('rejects an unchecked delete without a token', () => {
+      expect(() => getHandler(IPC.GROUP_PROJECT.DELETE)(fakeEvent, 'gp-1')).toThrow();
+      expect(mockDeletion.confirm).not.toHaveBeenCalled();
+    });
+
+    it('returns the impact after asking open canvases to flush', async () => {
+      mockDeletion.preview.mockResolvedValueOnce({ token: 'review-token' });
+      await expect(getHandler(IPC.GROUP_PROJECT.PREVIEW_DELETE)(fakeEvent, 'gp-1')).resolves.toEqual({ token: 'review-token', incompleteWindows: false });
+      expect(mockDeletion.preview).toHaveBeenCalledWith('gp-1', 1);
     });
 
     it('rejects missing ID', () => {
