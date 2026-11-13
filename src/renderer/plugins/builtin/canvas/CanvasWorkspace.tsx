@@ -287,7 +287,12 @@ export function CanvasWorkspace({
     }
     if (navigationBaseline && !baselineRef.current.retired) {
       if (viewStructure(navigationBaseline.views) === viewStructure(views)
-        && JSON.stringify(navigationBaseline.zoneWireDefinitions) === JSON.stringify(zoneWireDefinitions)) return;
+        && navigationBaseline.zoneWireDefinitions.length === zoneWireDefinitions.length
+        && navigationBaseline.zoneWireDefinitions.every((wire, index) => {
+          const current = zoneWireDefinitions[index];
+          return wire.id === current.id && wire.sourceZoneId === current.sourceZoneId
+            && wire.targetId === current.targetId && wire.targetType === current.targetType;
+        })) return;
       baselineRef.current.retired = true;
     }
     const desired = expandZoneWires(zoneWireDefinitions, views);

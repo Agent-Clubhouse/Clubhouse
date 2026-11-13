@@ -641,11 +641,12 @@ describe('connection Open navigation', () => {
           position: { x: 300, y: 50 }, size: { width: 200, height: 200 }, zIndex: 1,
         },
       ])],
-      zoneWires: [{ id: 'popout-zone-wire', sourceZoneId: 'popout-zone', targetId: 'gp_actual', targetType: 'group-project' }],
+      zoneWires: [],
     };
     store.getState().hydrateForNavigation(data, 'board');
     store.getState().moveView('node', { x: 9100, y: 10100 });
     store.getState().renameCanvas('board', 'Unsaved local Canvas');
+    store.getState().addZoneWireDefinition({ sourceZoneId: 'popout-zone', targetId: 'gp_actual', targetType: 'group-project' });
     const existing = { agentId: 'existing', targetId: 'gp_actual', targetKind: 'group-project' as const, label: 'Active pair' };
     useMcpBindingStore.setState({ bindings: [existing] });
     vi.spyOn(useProjectStore.getState(), 'loadProjects').mockResolvedValue(undefined);
