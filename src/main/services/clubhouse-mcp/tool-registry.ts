@@ -321,6 +321,7 @@ const TOOL_ANNOTATIONS: Partial<Record<'global' | BindingTargetKind, Readonly<Re
     request_grant: INTERNAL_WRITE,
     update_my_card: INTERNAL_WRITE,
     list_devices: INTERNAL_READ,
+    probe_capacity: OPEN_READ,
     rename_device: INTERNAL_WRITE,
     reconnect_device: INTERNAL_WRITE,
     remove_device: INTERNAL_DESTRUCTIVE,

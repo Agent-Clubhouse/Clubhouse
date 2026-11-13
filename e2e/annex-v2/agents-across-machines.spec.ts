@@ -474,3 +474,49 @@ test('default native Copilot SDK fixtures accept one remote input and replay a s
   expect(calls).toHaveLength(1);
   await info.attach('native-sdk-replay-witness', { body: JSON.stringify({ driver: 'copilot_sdk', runtimeInputs: input.length, actualRequests: calls.length, realLogin: false, modelExecution: false }), contentType: 'application/json' });
 });
+
+test('capacity probes require device.read and return coarse results for both desktops', async () => {
+  scratch = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'handoff-capacity-'));
+  const fixture = await quietFixture(scratch);
+  fakesHere = await installFakeClis({ claude: fixture });
+  fakesThere = await installFakeClis({ claude: fixture });
+  const senderProject = path.join(scratch, 'sender-project');
+  const receiverProject = path.join(scratch, 'receiver-project');
+  await fs.promises.mkdir(senderProject);
+  await fs.promises.mkdir(receiverProject);
+  here = await launchDesktop('capacity-sender', fakesHere, 'Desk');
+  there = await launchDesktop('capacity-receiver', fakesThere, 'Studio');
+  const senderId = await startAgent(here, senderProject, 'capacity-sender');
+  const receiverId = await startAgent(there, receiverProject, 'capacity-receiver');
+  const { senderFingerprint, receiverFingerprint } = await pairDesktops(here, there, senderId, receiverId);
+  const mcp = await connectMcp((await fakesHere.report('claude')).env);
+  expect((await mcp.toolNames()).some((name) => name.endsWith('probe_capacity'))).toBe(false);
+  await here.window.evaluate(async ({ project, id }) => {
+    await window.clubhouse.agent.setGrant(project, id, { action: 'device.read', target: { kind: 'app' }, mode: 'allow' });
+  }, { project: senderProject, id: senderId });
+  let tool = '';
+  await expect.poll(async () => { tool = (await mcp.toolNames()).find((name) => name.endsWith('probe_capacity')) ?? ''; return !!tool; }).toBe(true);
+  const result = await mcp.call(tool, {});
+  expect(result.isError).toBe(false);
+  const values = JSON.parse(result.text);
+  expect(values.map((value: { machine: string }) => value.machine).sort()).toEqual([senderFingerprint, receiverFingerprint].sort());
+  for (const value of values) {
+    expect(value).toMatchObject({ online: true, agents: { idleDurable: 1 }, accepting_handoffs: true });
+    expect(Object.keys(value).sort()).toEqual(['machine', 'online', 'sampledAt', 'lastSeen', 'agents', 'load', 'disk', 'providers', 'accepting_handoffs'].sort());
+    expect(['low', 'medium', 'high']).toContain(value.load);
+    expect(['ample', 'limited', 'low']).toContain(value.disk);
+    expect(Object.values(value.providers).every((band) => ['available', 'limited', 'unavailable', 'unknown'].includes(String(band)))).toBe(true);
+  }
+  await there.window.evaluate(async () => {
+    const settings = await window.clubhouse.annex.getSettings();
+    await window.clubhouse.annex.saveSettings({ ...settings, enableServer: false, enableClient: false });
+  });
+  await expect.poll(async () => {
+    const answer = await mcp.call(tool, { machine: receiverFingerprint });
+    return answer.isError ? null : JSON.parse(answer.text)[0]?.online;
+  }, { timeout: 20_000 }).toBe(false);
+  await here.window.evaluate(async ({ project, id }) => {
+    await window.clubhouse.agent.setGrant(project, id, { action: 'device.read', target: { kind: 'app' }, mode: 'off' });
+  }, { project: senderProject, id: senderId });
+  expect((await mcp.call(tool, {})).isError).toBe(true);
+});

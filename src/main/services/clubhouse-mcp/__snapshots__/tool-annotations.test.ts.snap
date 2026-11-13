@@ -38,6 +38,7 @@ group-project:clear_agent readOnly=false destructive=true openWorld=false
 group-project:compact_agent readOnly=false destructive=true openWorld=false
 group-project:delete_messages readOnly=false destructive=true openWorld=false
 group-project:set_project_info readOnly=false destructive=false openWorld=false
+global:probe_capacity readOnly=true destructive=false openWorld=true
 global:call_wire_tool readOnly=false destructive=true openWorld=true
 global:notify_user readOnly=false destructive=false openWorld=false
 global:hand_off readOnly=false destructive=false openWorld=false

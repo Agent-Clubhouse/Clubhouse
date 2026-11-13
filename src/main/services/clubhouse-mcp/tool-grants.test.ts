@@ -145,6 +145,7 @@ describe('tool grant declarations (#2967)', () => {
       group-project compact_agent: agent.reset on group_members
       group-project delete_messages: group_project.admin on bound
       group-project set_project_info: group_project.admin on bound
+      probe_capacity: device.read on app
       call_wire_tool: (called_tool)
       notify_user: user.notify on app
       hand_off: agent.dispose on my_helpers

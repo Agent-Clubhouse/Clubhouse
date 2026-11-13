@@ -14,6 +14,8 @@ import { createHash } from 'crypto';
 import * as tlsLib from 'tls';
 import { readMobileChatContent } from './annex-chat-content';
 import * as agentCalls from './annex-agent-calls';
+import { receiveCapacityProbe } from './handoff-capacity-host';
+vi.mock('./handoff-capacity-host', () => ({ receiveCapacityProbe: vi.fn() }));
 import type { AnnexSettings } from '../../shared/types';
 const networkToolHost = vi.hoisted(() => ({ host: undefined as import('./clubhouse-mcp/tools/annex-network-tools').AnnexNetworkToolHost | undefined }));
 vi.mock('./clubhouse-mcp/tools/annex-network-tools', () => ({
@@ -1728,6 +1730,29 @@ describe('annex-server', () => {
     expect((await request(port, 'POST', route, {})).status).toBe(401);
     capabilities.mockRestore();
     report.mockRestore();
+  });
+
+  it('serves capacity only to pinned desktop network members, without reflecting errors', async () => {
+    const member = { ...TEST_CONTROLLER, role: 'member' as const, kind: 'desktop' as const };
+    vi.mocked(annexPeers.getPeer).mockReturnValue(member);
+    vi.mocked(annexPeers.listPeers).mockReturnValue([member]);
+    const value = { machine: member.fingerprint.toLowerCase(), online: false as const, lastSeen: null, accepting_handoffs: false as const };
+    vi.mocked(receiveCapacityProbe).mockResolvedValue(value as never);
+    const { port } = await startAndPair();
+    const route = '/api/v1/network/handoff-capacity';
+    const response = await request(port, 'POST', route, {});
+    expect(response.status).toBe(200);
+    expect(JSON.parse(response.body)).toEqual(value);
+    expect(receiveCapacityProbe).toHaveBeenCalledWith(member.fingerprint.toLowerCase(), {});
+    vi.mocked(receiveCapacityProbe).mockRejectedValueOnce(new Error('private-host/private-volume'));
+    const failed = await request(port, 'POST', route, {});
+    expect(failed.status).toBe(503);
+    expect(JSON.parse(failed.body)).toEqual({ error: 'capacity_unavailable' });
+    vi.mocked(annexPeers.listPeers).mockReturnValue([{ ...member, kind: 'phone' }]);
+    expect((await request(port, 'POST', route, {})).status).toBe(403);
+    expect(receiveCapacityProbe).toHaveBeenCalledTimes(2);
+    asUnpaired();
+    expect((await request(port, 'POST', route, {})).status).toBe(401);
   });
 
   it('advertises agent.create, agent.update and their option and settings routes (#2451, #2452)', async () => {
