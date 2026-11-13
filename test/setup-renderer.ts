@@ -519,6 +519,7 @@ vi.stubGlobal('clubhouse', {
     onToolActivity: () => noop,
   },
   canvas: {
+    onFlushRequested: vi.fn(() => () => {}),
     layoutElk: vi.fn(async () => ({ nodes: [], edges: [] })),
     getAgentCanvases: vi.fn(async () => []),
     getTargetCanvases: vi.fn(async () => ({ stores: [] })),

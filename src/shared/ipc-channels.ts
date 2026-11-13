@@ -667,6 +667,8 @@ export const IPC = {
     TOOL_ACTIVITY: 'mcp-binding:tool-activity',
   },
   CANVAS_CMD: {
+    FLUSH_REQUEST: 'canvas-cmd:flush-request',
+    FLUSH_RESULT: 'canvas-cmd:flush-result',
     /** Renderer→main: run ELK layout algorithm (async). */
     ELK_LAYOUT: 'canvas-cmd:elk-layout',
     /** Renderer→main: the canvases holding an agent's card, read from disk (CanvasMembership[]). */

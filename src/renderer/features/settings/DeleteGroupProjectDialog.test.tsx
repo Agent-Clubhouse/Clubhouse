@@ -3,7 +3,7 @@ import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { DeleteGroupProjectDialog } from './DeleteGroupProjectDialog';
 
-const impact = { token: 'token', members: ['Ada'], canvases: ['Home', 'Work'], actions: ['Build'], grants: ['Admin'], messages: 3, topics: 2, machines: ['Laptop'] };
+const impact = { token: 'token', members: ['Ada'], canvases: ['Home', 'Work'], actions: ['Build'], grants: ['Admin'], messages: 3, topics: 2, machines: ['Laptop'], incompleteWindows: false };
 
 describe('DeleteGroupProjectDialog', () => {
   it('shows the full impact and requires an explicit confirmation', async () => {

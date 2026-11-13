@@ -12,6 +12,7 @@ export interface GroupProjectDeleteImpact {
   messages: number;
   topics: number;
   machines: string[];
+  incompleteWindows: boolean;
 }
 
 export function DeleteGroupProjectDialog({ name, loadImpact, confirmDelete, onClose }: {
@@ -73,6 +74,7 @@ export function DeleteGroupProjectDialog({ name, loadImpact, confirmDelete, onCl
           <div><dt className="font-medium text-ctp-text">Board</dt><dd>{impact.messages} messages in {impact.topics} topics</dd></div>
           {list('Other machines', impact.machines)}
         </dl>}
+        {impact?.incompleteWindows && <p>Some open canvases did not respond and may not be counted.</p>}
       </div>
     </Modal>
   );
