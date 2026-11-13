@@ -21,6 +21,7 @@ import { cleanSetupInput, cleanTryItOutRequest, type TryItOutResult } from '../.
 import { checkDispatcherBehavior, tryDispatcherPersonality } from '../services/dispatcher/dispatcher-setup';
 import type { DispatcherTeaching } from '../../shared/dispatcher-teaching';
 import { readDispatcherTeaching } from '../services/dispatcher/dispatcher-teaching';
+import { answerFollowerApproval } from '../services/dispatcher-lead-approvals';
 import { chooseLead, followLeadAgain, getLeadState, onLeadChanged, takeBackFromLead } from '../services/dispatcher-federation-lead';
 import { dismissLeadOutboxNotice, leadOutboxState, onLeadOutboxChanged, queueForLead } from '../services/dispatcher-lead-outbox';
 import { dismissLocalNews, localNewsState, onLocalNewsChanged } from '../services/dispatcher-follower-news';
@@ -153,6 +154,11 @@ export function registerDispatcherHandlers(): void {
     dismissLocalNews();
     return leadView();
   });
+  // On the lead (#3354): only a person's click in its chat reaches this. No tool, controller or message does.
+  ipcMain.handle(IPC.DISPATCHER.ANSWER_REMOTE_APPROVAL, withValidatedArgs(
+    [stringArg({ maxLength: 200 }), stringArg({ maxLength: 200 }), stringArg({ maxLength: 40 })],
+    async (_event, machine, requestId, answer): Promise<void> => answerFollowerApproval(machine, requestId, answer),
+  ));
   const broadcastLead = () => broadcastToAllWindows(IPC.DISPATCHER.LEAD_CHANGED, leadView());
   onLeadChanged(broadcastLead);
   onLeadOutboxChanged(broadcastLead);

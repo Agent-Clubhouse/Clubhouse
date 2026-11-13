@@ -321,4 +321,24 @@ the person's message.
   Dispatcher chat. A member phone already connects to every computer in the
   network (D212), so it opens the lead's chat on the lead's computer.
 
-Approvals from other computers come with #3354.
+### Approvals from other computers (#3354)
+
+On the lead, the Dispatcher chat lists the Ask-first requests waiting on the
+other computers in the network, from each one's snapshot (`grantRequests`),
+oldest first, each as "<computer>: <its Needs you line>" with what allowing
+does. The lead's row in Needs you carries them too. The same requests still
+show on their own computers.
+
+- **Answering.** A person's click sends `grant.answer` to that computer over
+  the pinned connection (`answerFollowerApproval`, main only), as Needs you
+  there would. That computer applies it only while the request is still
+  pending and the answer still offered. The first answer wins: answered on its
+  own computer first, it leaves the lead's chat with that computer's next
+  snapshot, and an answer from the lead then is refused with "It was already
+  answered, or it ended, on that computer."
+- **Only a person.** The only caller is the IPC behind the button. No tool,
+  controller link, message or forwarded news reaches it, and a test scans the
+  source for any other caller.
+- **Left to its computer.** A desktop update's restart choice, and an answer
+  the lead doesn't know, show "Answer it on <computer>." An offline computer's
+  requests aren't listed.

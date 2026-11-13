@@ -2250,6 +2250,15 @@ export function wakeChatAgentWithMessage(fingerprint: string, agentId: string, m
   return postMobileCommand(fingerprint, { type: 'agent.start', agentId, resume: true, message }, commandId);
 }
 
+/**
+ * A person's answer, from the lead's chat, to a Clubhouse permission request
+ * waiting on another computer (#3354). That computer checks it again: still
+ * pending, still offered. Main only; the IPC behind it is a click in the lead's chat.
+ */
+export function answerRemoteGrantRequest(fingerprint: string, requestId: string, answer: string): Promise<unknown> {
+  return postMobileCommand(fingerprint, { type: 'grant.answer', requestId, answer });
+}
+
 async function postMobileCommand(fingerprint: string, command: Record<string, unknown>, commandId?: string): Promise<unknown> {
   // A caller that retries across connections (the lead's outbox, #3353) keeps one id, so the satellite takes it once.
   const send = async (fresh: boolean) => {

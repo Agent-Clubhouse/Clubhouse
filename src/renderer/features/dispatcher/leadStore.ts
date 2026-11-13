@@ -1,6 +1,7 @@
 import { useEffect, useMemo } from 'react';
 import { create } from 'zustand';
 import type { Agent } from '../../../shared/types';
+import type { MobileGrantRequest } from '../../../shared/mobile-control';
 import type { DispatcherLeadState } from '../../../shared/dispatcher-lead';
 import { DISPATCHER_PROJECT_ID } from '../../../shared/dispatcher-types';
 import { useAnnexClientStore } from '../../stores/annexClientStore';
@@ -74,6 +75,35 @@ export function useFollowedLead(): FollowedLead | null {
   }, [remote, satelliteId, machine, live]);
   if (!state || !machine) return null;
   return { state, machineName: state.lead?.name ?? satellite?.alias ?? 'another computer', agent, online };
+}
+
+export interface FollowerApproval {
+  /** The computer it waits on (lowercase fingerprint). */
+  machine: string;
+  machineName: string;
+  request: MobileGrantRequest;
+}
+
+const NO_APPROVALS: FollowerApproval[] = [];
+
+/**
+ * On the lead (#3354): Ask-first requests waiting on the other computers in
+ * this network, from their latest snapshots, oldest first. Answered or expired
+ * there, a request leaves with the next snapshot.
+ */
+export function useFollowerApprovals(): FollowerApproval[] {
+  const state = useLeadState();
+  const satellites = useAnnexClientStore((s) => s.satellites);
+  return useMemo(() => {
+    const members = state?.role === 'lead' ? state.choices.filter((c) => !c.self) : [];
+    if (!members.length) return NO_APPROVALS;
+    const out: FollowerApproval[] = [];
+    for (const member of members) {
+      const sat = satellites.find((x) => x.fingerprint.toLowerCase() === member.machine && x.state === 'connected');
+      for (const request of sat?.snapshot?.grantRequests ?? []) out.push({ machine: member.machine, machineName: member.name, request });
+    }
+    return out.length ? out.sort((a, b) => Date.parse(a.request.requestedAt) - Date.parse(b.request.requestedAt)) : NO_APPROVALS;
+  }, [state, satellites]);
 }
 
 /** For tests: as if nothing had read the lead yet. */

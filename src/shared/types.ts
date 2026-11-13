@@ -1345,6 +1345,8 @@ export interface SatelliteSnapshot {
   ptyHost?: import('./annex-pty').AnnexPtyHost;
   /** That machine's Dispatcher chat agent while it's on (#3043); a lead's pane follows it (#3352). */
   dispatcher?: { enabled?: boolean; projectId?: string; agent?: Agent | null } | null;
+  /** Clubhouse permission requests waiting on a person there (#3205); a lead's chat lists a follower's (#3354). */
+  grantRequests?: import('./mobile-control').MobileGrantRequest[];
 }
 
 // --- Auto-update types ---
