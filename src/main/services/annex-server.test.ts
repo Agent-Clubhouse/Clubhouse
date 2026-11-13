@@ -15,6 +15,11 @@ import * as tlsLib from 'tls';
 import { readMobileChatContent } from './annex-chat-content';
 import * as agentCalls from './annex-agent-calls';
 import { receiveCapacityProbe } from './handoff-capacity-host';
+vi.mock('./group-project-network', () => ({
+  receiveGroupProjectSync: vi.fn(async () => ({ v: 1, projects: [], unchanged: [], tombstones: [] })),
+  receiveGroupProjectWrites: vi.fn(async () => ({ v: 1, results: [] })),
+  receiveGroupProjectChanged: vi.fn(),
+}));
 vi.mock('./handoff-capacity-host', () => ({ receiveCapacityProbe: vi.fn() }));
 import { receiveNetworkHandoff } from './handoff-host';
 vi.mock('./handoff-host', () => ({ receiveNetworkHandoff: vi.fn() }));
@@ -1737,6 +1742,37 @@ describe('annex-server', () => {
     expect(receiveNetworkHandoff).toHaveBeenCalledTimes(2);
     asUnpaired();
     expect((await request(port, 'POST', route, {})).status).toBe(401);
+  });
+
+  it('serves network group project routes only to pinned desktop network members (#3363)', async () => {
+    const groupProjectNetwork = await import('./group-project-network');
+    const { GroupProjectNetworkError } = await import('../../shared/group-project-network');
+    const member = { ...TEST_CONTROLLER, role: 'member' as const, kind: 'desktop' as const };
+    vi.mocked(annexPeers.getPeer).mockReturnValue(member);
+    vi.mocked(annexPeers.listPeers).mockReturnValue([member]);
+    const { port } = await startAndPair();
+    const fp = member.fingerprint.toLowerCase();
+    const sync = await request(port, 'POST', '/api/v1/network/group-projects/sync', { v: 1, known: {} });
+    expect(sync.status).toBe(200);
+    expect(JSON.parse(sync.body)).toEqual({ v: 1, projects: [], unchanged: [], tombstones: [] });
+    expect(groupProjectNetwork.receiveGroupProjectSync).toHaveBeenCalledWith(fp, { v: 1, known: {} });
+    expect((await request(port, 'POST', '/api/v1/network/group-projects/write', { v: 1, writes: [] })).status).toBe(200);
+    expect((await request(port, 'POST', '/api/v1/network/group-projects/changed', { v: 1, ids: [] })).status).toBe(200);
+    expect(groupProjectNetwork.receiveGroupProjectChanged).toHaveBeenCalledWith(fp, { v: 1, ids: [] });
+    // A malformed body is refused without detail beyond the validator's.
+    vi.mocked(groupProjectNetwork.receiveGroupProjectWrites).mockRejectedValueOnce(new GroupProjectNetworkError('Invalid group project network write request.'));
+    const malformed = await request(port, 'POST', '/api/v1/network/group-projects/write', { v: 2 });
+    expect(malformed.status).toBe(400);
+    expect(JSON.parse(malformed.body)).toMatchObject({ error: 'invalid_request' });
+    // A phone, a paired computer outside the network, and an unpaired caller are refused before any receiver runs.
+    const calls = vi.mocked(groupProjectNetwork.receiveGroupProjectSync).mock.calls.length;
+    vi.mocked(annexPeers.listPeers).mockReturnValue([{ ...member, kind: 'phone' }]);
+    expect((await request(port, 'POST', '/api/v1/network/group-projects/sync', { v: 1, known: {} })).status).toBe(403);
+    vi.mocked(annexPeers.listPeers).mockReturnValue([{ ...member, role: 'controller' as never }]);
+    expect((await request(port, 'POST', '/api/v1/network/group-projects/sync', { v: 1, known: {} })).status).toBe(403);
+    asUnpaired();
+    expect((await request(port, 'POST', '/api/v1/network/group-projects/sync', { v: 1, known: {} })).status).toBe(401);
+    expect(vi.mocked(groupProjectNetwork.receiveGroupProjectSync).mock.calls.length).toBe(calls);
   });
 
   it('negotiates durable delivery only for pinned desktop members and surfaces an unreadable store', async () => {

@@ -598,6 +598,7 @@ export const IPC = {
     SCOPE_OPTIONS: 'group-project:scope-options',
     PREVIEW_SCOPE: 'group-project:preview-scope',
     SET_SCOPE: 'group-project:set-scope',
+    DISMISS_REFUSALS: 'group-project:dismiss-refusals',
     GET_BULLETIN_DIGEST: 'group-project:get-bulletin-digest',
     GET_TOPIC_MESSAGES: 'group-project:get-topic-messages',
     GET_ALL_MESSAGES: 'group-project:get-all-messages',

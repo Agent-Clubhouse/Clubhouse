@@ -91,6 +91,7 @@ import * as pluginManifestRegistry from './plugin-manifest-registry';
 import { readKey as readPluginStorageKey, writeKey as writePluginStorageKey } from './plugin-storage';
 import { groupProjectRegistry } from './group-project-registry';
 import { groupProjectHost } from './group-project-host';
+import * as groupProjectNetwork from './group-project-network';
 import { executeShoulderTap } from './group-project-shoulder-tap';
 import { setProjectPolling } from './group-project-polling';
 import { describeGroupProjectRoles, grantGroupProjectRole, GroupProjectRoleError } from './group-project-roles';
@@ -3278,8 +3279,9 @@ async function handleGroupProjectPostMessageRoute(ctx: AnnexRouteContext, match:
       return;
     }
     try {
-      const message = await groupProjectHost.post(gpId, sender, topic, msgBody);
-      annexEventBus.emitBulletinMessage(gpId, message);
+      // A phone or controller posts for the person (#3363's author).
+      const message = await groupProjectHost.post(gpId, sender, topic, msgBody, { author: { label: 'user' } });
+      if (!message.pending) annexEventBus.emitBulletinMessage(gpId, message);
       sendJson(ctx.res, 201, message);
     } catch (err) {
       sendJson(ctx.res, 400, { error: err instanceof Error ? err.message : 'post_failed' });
@@ -3661,6 +3663,29 @@ async function handleNetworkHandoffsRoute(ctx: AnnexRouteContext): Promise<void>
     sendJson(ctx.res, 200, record);
   } catch { // telemetry-exempt: never return peer content, task text or storage diagnostics
     sendJson(ctx.res, 400, { error: 'handoff_refused' });
+  }
+}
+
+/** Network group projects (#3363): catch-up, writes and change notices, between computers in the network only. */
+async function handleGroupProjectNetworkRoute(ctx: AnnexRouteContext, kind: 'sync' | 'write' | 'changed'): Promise<void> {
+  const machine = agentCallPeer(ctx);
+  if (!machine) { ctx.req.resume(); sendJson(ctx.res, 403, { error: 'not_a_computer', message: 'Only a computer in this Annex Network can reach group projects here.' }); return; }
+  const body = await readAgentCallBody(ctx);
+  if (body === undefined) return;
+  if (ctx.requireMtls()) return;
+  try {
+    if (kind === 'sync') sendJson(ctx.res, 200, await groupProjectNetwork.receiveGroupProjectSync(machine, body));
+    else if (kind === 'write') sendJson(ctx.res, 200, await groupProjectNetwork.receiveGroupProjectWrites(machine, body));
+    else {
+      groupProjectNetwork.receiveGroupProjectChanged(machine, body);
+      sendJson(ctx.res, 200, { ok: true });
+    }
+  } catch (err) {
+    const invalid = err instanceof Error && err.name === 'GroupProjectNetworkError';
+    if (!invalid) {
+      appLog('core:annex', 'warn', 'Network group project request failed', { meta: { kind, error: err instanceof Error ? err.message : String(err) } });
+    }
+    sendJson(ctx.res, invalid ? 400 : 500, { error: invalid ? 'invalid_request' : 'failed', message: err instanceof Error ? err.message : String(err) });
   }
 }
 
@@ -4440,6 +4465,9 @@ const ANNEX_HTTP_ROUTE_TABLE: AnnexHttpRoute[] = [
   { method: 'POST', pattern: /^\/api\/v1\/network\/handoff-capacity$/, handler: handleNetworkCapacityRoute },
   { method: 'POST', pattern: /^\/api\/v1\/network\/handoffs$/, handler: handleNetworkHandoffsRoute },
   { method: 'POST', pattern: /^\/api\/v1\/network\/connections$/, handler: handleNetworkConnectionsRoute },
+  { method: 'POST', pattern: /^\/api\/v1\/network\/group-projects\/sync$/, handler: (ctx) => handleGroupProjectNetworkRoute(ctx, 'sync') },
+  { method: 'POST', pattern: /^\/api\/v1\/network\/group-projects\/write$/, handler: (ctx) => handleGroupProjectNetworkRoute(ctx, 'write') },
+  { method: 'POST', pattern: /^\/api\/v1\/network\/group-projects\/changed$/, handler: (ctx) => handleGroupProjectNetworkRoute(ctx, 'changed') },
   { method: 'GET', pattern: /^\/api\/v1\/mobile\/canvas$/, handler: handleMobileCanvasRoute },
   { method: 'GET', pattern: /^\/api\/v1\/mobile\/canvas\/([^/]+)$/, handler: handleMobileCanvasRoute },
   { method: 'DELETE', pattern: /^\/api\/v1\/mobile\/pairing$/, handler: handleMobilePairingDeleteRoute },
