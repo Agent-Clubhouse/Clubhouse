@@ -127,7 +127,7 @@ it('prepares only the authenticated caller selection, returns frozen results, an
 
 it.each(['prepare_handoff', 'offer_handoff'])('returns actionable repository prerequisites from %s without an offer', async (name) => {
   const { HandoffSnapshotError } = await import('../../handoff-snapshot');
-  for (const reason of ['not_a_repository', 'no_commits'] as const) {
+  for (const reason of ['not_a_repository', 'no_commits', 'invalid_repository'] as const) {
     const error = new HandoffSnapshotError(reason);
     if (name === 'prepare_handoff') state.snapshot.mockRejectedValueOnce(error);
     else state.ensure.mockRejectedValueOnce(error);

@@ -38,6 +38,7 @@ export class HandoffSnapshotError extends Error {
   }
   get instruction(): string | undefined {
     if (this.code === 'not_a_repository') return 'Code handoffs require a Git worktree with a commit. Initialize Git and create an initial commit, or send the task as a message.';
+    if (this.code === 'invalid_repository') return 'Code handoffs need the project registered at the Git repository root and a named branch. Register the repository root as the project and retry.';
     if (this.code === 'no_commits') return 'Create an initial commit in this Git worktree before preparing or offering a code handoff.';
     if (this.code === 'uncommitted_branch') return 'Commit your work or use worktree mode.';
     return undefined;
@@ -101,18 +102,23 @@ function gitEnvironment(): NodeJS.ProcessEnv {
 }
 
 /** Unlike UI Git helpers, never log Git stderr, URLs, paths or subprocess output. */
-async function gitBytes(context: SnapshotGit, args: string[], missingAllowed = false): Promise<Buffer | null> {
+async function gitBytes(context: SnapshotGit, args: string[], missingAllowed: boolean | 'repository' = false): Promise<Buffer | null> {
   try {
     const result = await exec('git', ['--no-replace-objects', '-c', 'core.fsmonitor=false', ...args], {
       cwd: context.root, encoding: 'buffer', timeout: 30_000, maxBuffer: 8 * 1024 ** 2, env: context.env,
     });
     return result.stdout;
   } catch (error) {
-    if (missingAllowed && error !== null && typeof error === 'object' && 'code' in error && error.code === 1) return null;
+    if (error !== null && typeof error === 'object' && 'code' in error) {
+      if (missingAllowed === true && error.code === 1) return null;
+      // Only classify Git's own no-repository diagnostic; other failures stay git_failed.
+      if (missingAllowed === 'repository' && error.code === 128 && 'stderr' in error
+        && /fatal: not a git repository\b/.test(String(error.stderr))) return null;
+    }
     throw new HandoffSnapshotError('git_failed');
   }
 }
-async function git(context: SnapshotGit, args: string[], missingAllowed = false): Promise<string | null> {
+async function git(context: SnapshotGit, args: string[], missingAllowed: boolean | 'repository' = false): Promise<string | null> {
   const result = await gitBytes(context, args, missingAllowed);
   if (result === null) return null;
   try { return new TextDecoder('utf-8', { fatal: true }).decode(result); }
@@ -227,7 +233,10 @@ async function directory(root: string, parent?: SourceRoot): Promise<SourceRoot>
 async function repository(context: SnapshotGit): Promise<HandoffWorktreeManifest['repo']> {
   try { await fs.promises.lstat(path.join(context.root, '.git')); }
   catch (error) {
-    if ((error as NodeJS.ErrnoException).code === 'ENOENT') throw new HandoffSnapshotError('not_a_repository');
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
+      const top = await git({ ...context, env: { ...context.env, LC_ALL: 'C', LANGUAGE: 'C' } }, ['rev-parse', '--show-toplevel'], 'repository');
+      throw new HandoffSnapshotError(top ? 'invalid_repository' : 'not_a_repository');
+    }
     throw error;
   }
   await gitControls(context);

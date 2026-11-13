@@ -68,3 +68,12 @@ it.each(['branch', 'worktree'] as const)('explains non-Git and unborn sources be
   await expect(prepareCallerHandoff('owner', mode)).rejects.toMatchObject({ code: 'no_commits', instruction: expect.stringContaining('initial commit') });
   expect(fs.readdirSync(path.join(state.dir, 'handoff-data', 'prepared'))).toEqual([]);
 }, 30_000);
+
+it('points a registered repository subfolder at the repository root without suggesting nested Git initialization', async () => {
+  state.repo = path.join(state.repo, 'subfolder'); fs.mkdirSync(state.repo);
+  for (const mode of ['branch', 'worktree'] as const) {
+    await expect(prepareCallerHandoff('owner', mode)).rejects.toMatchObject({ code: 'invalid_repository', instruction: expect.stringContaining('project registered at the Git repository root') });
+  }
+  expect(fs.existsSync(path.join(state.repo, '.git'))).toBe(false);
+  expect(fs.readdirSync(path.join(state.dir, 'handoff-data', 'prepared'))).toEqual([]);
+}, 30_000);
