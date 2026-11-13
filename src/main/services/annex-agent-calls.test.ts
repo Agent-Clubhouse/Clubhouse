@@ -24,7 +24,7 @@ import {
   AGENT_CALL_VERSION, LOOP_LIMIT, RATE_LIMIT, currentRemoteCaller, captureControllerPublication, forwardAgentCall, forwardPreparedAgentCall, receiveAgentCall, receiveDirections,
   remoteAgentName, shareForAnswer, startAgentCalls, _clearOutboxForTesting, syncDirectionsWith, federationExtraForShare, waitingFor, flushOutbox, isNetworkComputer, getDelivery, type AgentCallTransport, type RemoteCaller,
 } from './annex-agent-calls';
-import { createAnnexDeliveryStore, DELIVERY_MAX_AGE_MS, type AnnexDeliveryStore, type DeliveryFile } from './annex-delivery-store';
+import { createAnnexDeliveryStore, deliveryHash, DELIVERY_MAX_AGE_MS, type AnnexDeliveryStore, type DeliveryFile } from './annex-delivery-store';
 import {
   getConnectionDirection, listAllConnectionDirections, putConnectionDirection, markNetworkDirectionRemovedByUser, removeAgentNetworkSources, clearUserRemovedAgentNetworkSources, removeConnectionDirections, setConnectionLink, setConnectionTools, updateAgentNetworkLinks,
 } from './connection-grants-store';
@@ -524,6 +524,22 @@ describe('durable receipts and crash boundaries (#3334)', () => {
     expect(textOf(await forwardAgentCall('here', `there@${OTHER}`, 'Far agent', 'send_message', { ...args, message: 'changed' }))).toContain('idempotency_conflict');
     expect(getDelivery('here', id)).toMatchObject({ state: 'delivered', attempts: 1 });
     expect(getDelivery('someone-else', id)).toBeUndefined();
+  });
+
+  it('reuses an ordinary-agent delivery written before causal context was retained in the sender ledger', async () => {
+    const args = { message: 'already delivered before upgrade', idempotency_key: 'legacy-ordinary-key' };
+    const epoch = { sender: state.pairing, receiver: state.peerPairing };
+    const id = deliveryHash([SELF, 'here', OTHER, 'there', 'send_message', args.idempotency_key, undefined, epoch]);
+    const at = new Date().toISOString();
+    const store = createAnnexDeliveryStore();
+    await store.update((file) => { file.deliveries.push({ callId: id, callerId: 'here', targetId: `there@${OTHER}`, tool: 'send_message',
+      state: 'delivered', attempts: 1, queuedAt: at, updatedAt: at, result: ok('legacy receipt'),
+      payloadHash: deliveryHash({ from: 'here', to: 'there', tool: 'send_message', args, epoch, context: { rootId: id, depth: 0 } }),
+    }); });
+    restart({ deliveryStore: store });
+    expect(await forwardAgentCall('here', `there@${OTHER}`, 'Far agent', 'send_message', args)).toEqual(ok('legacy receipt'));
+    expect(posts.filter((p) => p.path.endsWith('agent-call'))).toHaveLength(0);
+    expect(textOf(await forwardAgentCall('here', `there@${OTHER}`, 'Far agent', 'send_message', { ...args, message: 'changed' }))).toContain('idempotency_conflict');
   });
 
   it('dedupes project-agent news before creating a causal root and retains its context after delivery and restart', async () => {

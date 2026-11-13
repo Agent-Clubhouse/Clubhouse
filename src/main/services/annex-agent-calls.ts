@@ -260,9 +260,10 @@ export async function forwardPreparedAgentCall(callerId: string, targetId: strin
   }
   const epoch = outgoingEpoch(machine);
   // The caller's key identifies admission before a new causal root is created.
+  // Keep the legacy empty root slot so existing ordinary-agent keys retain their IDs.
   // Keep the first context in the ledger even after its outbox entry is removed.
   const callId = QUEUED_TOOLS.has(tool) && (args.idempotency_key !== undefined || args.task_id !== undefined)
-    ? deliveryHash([self, callerId, machine, to, tool, args.idempotency_key ?? args.task_id, epoch])
+    ? deliveryHash([self, callerId, machine, to, tool, args.idempotency_key ?? args.task_id, undefined, epoch])
     : randomUUID();
   const previous = QUEUED_TOOLS.has(tool) ? deliveries.get().deliveries.find((r) => r.callId === callId) : undefined;
   context = previous?.context ?? deliveries.get().outbox.find((item) => item.id === callId)?.body.context ?? context ?? { rootId: callId, depth: 0 };
