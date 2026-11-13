@@ -91,6 +91,7 @@ just-posted message even if older history has timestamps ahead of the clock.
 - `src/shared/group-project-types.ts`: registry and bulletin types.
 - `src/main/services/group-project-host.ts`: the one writer; serialization, sequence numbers, membership, tombstones.
 - `src/main/services/group-project-membership.ts`: membership policy and its binding source (#3357).
+- `src/main/services/group-project-delivery.ts`: post notices, coalescing and the rate limit (#3362).
 - `src/renderer/features/group-projects/GroupProjectMembersSection.tsx`: members, exclusions and the auto-join offer, for the directory.
 - `src/main/services/group-project-host.test.ts`: real-file ordering, restart, crash and address regressions.
 - `src/main/services/group-project-host.guard.test.ts`: fails any write outside the host.
@@ -244,6 +245,38 @@ members, exclusions and the offer; `MEMBERSHIP_CHANGED` is broadcast with the
 group project id. The host's `resolveMembers` uses the same resolution. The
 Connections card lists a membership as "Group project member". A deleted group
 project's bindings are released when the host reports the delete.
+
+## Post notices (#3362)
+
+Members hear about new posts as notices instead of polling the board.
+`src/main/services/group-project-delivery.ts` follows the host's `board`
+changes; the message a post adds carries that change's sequence number.
+
+- **Who.** The members subscribed to the post's topic, members it names as
+  `@name`, and the lead (an admin, until #3360's grants). Never its sender, and
+  never for `system` posts. By default a member is subscribed to `general`,
+  `control` and its own inbox; `subscribe_topic` adds or removes channels,
+  kept in the membership record (`subscriptions`, by address). Members on
+  other machines are left to #3363.
+- **Coalescing.** Posts to one member within 15 seconds of the first become
+  one notice: "3 new messages in #general from lead, qa." with the
+  `read_topic` tool to use.
+- **Rate limit.** At most 6 notices per member per 10 minutes. A notice over
+  the limit is dropped; the next one says how many messages went unannounced.
+- **Sleeping members** aren't woken. Their notices are merged and sent as one
+  summary when the member's MCP connects again. In memory only: a restart
+  drops held summaries, not the board.
+- **Busy members.** A chat member in a turn gets the notice queued for the
+  turn's end (as Action messages are, #3297). A newer notice replaces the
+  queued one with one covering both. A terminal agent gets it typed in.
+- **Polling is legacy.** A group project with `pollingEnabled` keeps polling
+  and gets no notices. `toggle_polling`, `query_polling` and `nudge_polling`
+  say so in their descriptions. `GroupProjectDeliverySection` (for the
+  directory) offers such a group project "Switch to notices", which turns
+  polling off through the existing control.
+- **Telemetry.** `clubhouse.group.notices`, by `clubhouse.notice.result`:
+  `sent`, `coalesced` (messages folded into a notice beyond the first),
+  `held_asleep` and `rate_limited`.
 
 ## Local directory
 
