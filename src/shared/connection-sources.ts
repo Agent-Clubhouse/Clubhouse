@@ -25,6 +25,8 @@ export interface ConnectionSource {
   sourceId: string;
   /** A Dispatcher link that isn't active: why. */
   suspended?: string;
+  /** Agent sources on the network, including their originating computer. */
+  makers?: Array<{ agentId: string; machineId: string; name?: string }>;
 }
 
 /** One direction of a connection and what holds it. */

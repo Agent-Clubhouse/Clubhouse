@@ -3,13 +3,13 @@
  * card: each one with its direction and machine, a way to remove it, and a
  * picker to connect to an agent on a computer this one is connected to.
  *
- * The connection is the link (D129): each direction is the person's own link,
- * kept on both computers, and the computer that receives a call checks it.
+ * Each direction records its sources and switches on both computers; the
+ * computer that receives a call checks its local copy.
  */
 
 import { useEffect, useMemo, useState } from 'react';
 import type { Agent } from '../../../../shared/types';
-import { CONNECTION_SWITCHES, type ConnectionDirection as SavedDirection } from '../../../../shared/connection-grants';
+import { activeAgentLinks, CONNECTION_SWITCHES, type ConnectionDirection as SavedDirection } from '../../../../shared/connection-grants';
 import { addressFromNamespacedId, formatAgentAddress, namespacedIdFromAddress } from '../../../../shared/agent-address';
 import { useRemoteProjectStore } from '../../../stores/remoteProjectStore';
 import { useAnnexClientStore } from '../../../stores/annexClientStore';
@@ -29,7 +29,7 @@ export interface RemoteConnection {
 export function remoteConnections(grants: readonly SavedDirection[], agentId: string): RemoteConnection[] {
   const rows = new Map<string, RemoteConnection>();
   for (const d of grants) {
-    if (!d.link) continue;
+    if (!d.link && !activeAgentLinks(d).length) continue;
     const outgoing = d.from.agentId === agentId && !d.from.machineId && !!d.to.machineId;
     const incoming = d.to.agentId === agentId && !d.to.machineId && !!d.from.machineId;
     if (!outgoing && !incoming) continue;
@@ -67,7 +67,7 @@ function DirectionTools({ agentId, row, grants, otherName, agentName, onChanged 
     { outgoing: false, title: `What ${otherName} can do to ${agentName}` },
   ].map((d) => ({
     ...d,
-    saved: grants.find((g) => !!g.link && (d.outgoing
+    saved: grants.find((g) => (!!g.link || !!activeAgentLinks(g).length) && (d.outgoing
       ? g.from.agentId === agentId && !g.from.machineId && g.to.agentId === row.agentId && g.to.machineId?.toLowerCase() === row.machine
       : g.to.agentId === agentId && !g.to.machineId && g.from.agentId === row.agentId && g.from.machineId?.toLowerCase() === row.machine)),
   })).filter((d) => !!d.saved);
@@ -113,6 +113,7 @@ export function RemoteConnections({ agent, grants, onChanged }: {
 }) {
   const satellites = useAnnexClientStore((s) => s.satellites);
   const devices = useAnnexStore((s) => s.devices);
+  const selfMachine = useAnnexStore((s) => s.status.fingerprint.toLowerCase());
   const loadDevices = useAnnexStore((s) => s.loadDevices);
   useEffect(() => {
     void loadDevices();
@@ -127,7 +128,7 @@ export function RemoteConnections({ agent, grants, onChanged }: {
   const [removing, setRemoving] = useState<RemoteConnection | null>(null);
   const [managing, setManaging] = useState<string | null>(null);
 
-  const machineName = (machine: string) => satellites.find((s) => s.fingerprint.toLowerCase() === machine)?.alias || 'another computer';
+  const machineName = (machine: string) => machine === selfMachine ? 'this computer' : satellites.find((s) => s.fingerprint.toLowerCase() === machine)?.alias || 'another computer';
   // Durable agents on computers in this network that this one is connected to (D238), by address.
   const candidates = useMemo(() => {
     const network = new Set(devices.filter((d) => d.role === 'member' && d.kind !== 'phone').map((d) => d.fingerprint.toLowerCase()));
@@ -170,6 +171,7 @@ export function RemoteConnections({ agent, grants, onChanged }: {
               <div className="w-[calc(100%-28px)] ml-[22px] h-[30px] flex items-center gap-2 pl-3 pr-2.5 rounded-md hover:bg-surface-0" data-testid="remote-connection-row">
                 <span className="text-[12.5px] text-ctp-text truncate">{nameOf(r)}</span>
                 <span className="text-xs text-ctp-overlay1 whitespace-nowrap">on {machineName(r.machine)}, {META[r.direction]}</span>
+                {grants.filter((d) => (d.from.agentId === agent.id && !d.from.machineId && d.to.agentId === r.agentId && d.to.machineId?.toLowerCase() === r.machine) || (d.to.agentId === agent.id && !d.to.machineId && d.from.agentId === r.agentId && d.from.machineId?.toLowerCase() === r.machine)).flatMap((d) => activeAgentLinks(d)).filter((maker, i, all) => all.findIndex((x) => x.agentId === maker.agentId && x.machineId === maker.machineId) === i).map((maker) => <span key={`${maker.agentId}@${maker.machineId}`} className="text-xs text-ctp-overlay1">Made by {maker.name || maker.agentId} on {machineName(maker.machineId)}</span>)}
                 <span className="ml-auto flex items-center gap-2.5">
                   <button type="button" onClick={() => setManaging(managing === r.address ? null : r.address)} className="text-xs text-ctp-overlay1 hover:text-ctp-text cursor-pointer" data-testid="remote-connection-manage">
                     {managing === r.address ? 'Done' : 'Manage'}

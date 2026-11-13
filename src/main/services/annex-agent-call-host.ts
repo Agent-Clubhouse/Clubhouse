@@ -1,3 +1,4 @@
+import { activeAgentLinks } from '../../shared/connection-grants';
 import { evaluateGrant } from '../../shared/agent-grants';
 import { isDisposedAgent } from '../../shared/agent-helpers';
 import type { DeliveryOutboxItem } from './annex-delivery-store';
@@ -36,7 +37,7 @@ export async function authorizeQueuedAnnexCall(item: DeliveryOutboxItem): Promis
   if (!config || isDisposedAgent(config)) return refuse('The sending agent was removed.');
   const grants = await effectiveAgentGrants(projectPath, callerId);
   const direction = getConnectionDirection({ agentId: callerId }, { agentId: item.body.to, machineId: item.machine });
-  if (!direction?.link || direction.disabledTools.includes(item.body.tool)) return refuse('The sender connection or its tool permission was removed.');
+  if ((!direction?.link && !activeAgentLinks(direction).length) || direction.disabledTools.includes(item.body.tool)) return refuse('The sender connection or its tool permission was removed.');
   const decision = evaluateGrant({
     caller: { kind: 'agent', agentId: callerId, projectPath },
     action: 'agent.message',

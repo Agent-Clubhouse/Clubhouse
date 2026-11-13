@@ -102,7 +102,7 @@ describe('tool grant declarations (#2967)', () => {
 
   it('no tool finishes a pairing: none pairs, takes a code or confirms a certificate (#3068)', () => {
     const names = registerAll().map((t) => t.name);
-    expect(names.filter((n) => /pair|pin|certificate|confirm_device|join/i.test(n))).toEqual([]);
+    expect(names.filter((n) => n !== 'join_group_project' && /pair|pin|certificate|confirm_device|join/i.test(n))).toEqual([]);
   });
 
   it('the whole map: every tool and its declaration', () => {
@@ -196,6 +196,8 @@ describe('tool grant declarations (#2967)', () => {
       create_group_project: connection.manage on agent_arg
       add_to_group_project: connection.manage on agent_arg
       remove_from_group_project: connection.manage on agent_arg
+      join_group_project: connection.manage on agent_arg; connection.manage on group_project_arg
+      leave_group_project: connection.manage on agent_arg; connection.manage on group_project_arg
       connect_agents: connection.manage on agent_arg
       disconnect_agents: connection.manage on agent_arg
       set_connection_tools: connection.manage on agent_arg

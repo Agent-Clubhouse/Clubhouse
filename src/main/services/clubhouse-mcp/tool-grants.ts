@@ -50,6 +50,8 @@ export const TOOL_GRANT_TARGETS = [
    * For agent.create, and agent.grant on the new agent, the project it's created in.
    */
   'project_arg',
+  /** A group project named in the arguments. */
+  'group_project_arg',
   /** Every Clubhouse project on this machine. */
   'all_projects',
   /** The app itself: app settings, model lists, the user's attention. */
@@ -103,6 +105,10 @@ export interface ToolGrantDeclaration {
    * Without `from` the target
    * isn't resolved, and the tool's own checks stand alone.
    */
+  /** Allow machine-qualified agent arguments for network-aware tools. */
+  allowRemote?: boolean;
+  /** Fail closed when an argument target cannot be resolved. */
+  strictTargets?: boolean;
   from?: { args: readonly string[]; project?: string; missing?: 'caller'; all?: string; names?: 'project' | 'self_and_helpers' | 'registered' };
 }
 
