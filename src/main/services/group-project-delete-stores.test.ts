@@ -41,6 +41,8 @@ it('removes the host stores, bindings and references from every canvas while ret
   await fs.mkdir(dir, { recursive: true });
   await fs.writeFile(path.join(dir, 'canvas-instances.json'), JSON.stringify(canvases));
   await fs.writeFile(path.join(dir, 'canvas-wires.json'), JSON.stringify(wires));
+  await fs.writeFile(path.join(dir, 'canvas-instances-recovery-123.json'), JSON.stringify([null, ...canvases]));
+  await fs.writeFile(path.join(dir, 'canvas-instances-recovery-456.json'), '{ malformed');
   const guidanceFile = path.join(fixture.home, 'connection-instructions.json');
   const guidance = (key: string) => ({ key, instructions: { '*': 'Keep this guidance' }, revision: 'r', sourceRevision: 's' });
   await fs.writeFile(guidanceFile, JSON.stringify({ version: 1, entries: [
@@ -60,10 +62,22 @@ it('removes the host stores, bindings and references from every canvas while ret
     if (file.startsWith('canvas-instances')) expect(contents).toContain(other.id);
   }
   expect(fixture.bindings).toEqual([]);
+  const recovery = await fs.readFile(path.join(dir, 'canvas-instances-recovery-123.json'), 'utf8');
+  expect(recovery).not.toContain(project.id);
+  expect(recovery).toContain(other.id);
   const savedGuidance = await fs.readFile(guidanceFile, 'utf8');
   expect(savedGuidance).not.toContain(project.id);
   expect(savedGuidance).toContain(other.id);
   expect(await groupProjectHost.get(project.id)).toBeNull();
   expect(await groupProjectHost.get(other.id)).not.toBeNull();
   await expect(fs.stat(path.join(fixture.home, '.clubhouse-dev', 'group-projects', project.id))).rejects.toMatchObject({ code: 'ENOENT' });
+});
+
+it.each(['{ malformed', JSON.stringify({ version: 99, entries: [] })])('rejects impact before tombstoning when guidance is unreadable or newer', async (guidance) => {
+  const project = await groupProjectHost.create('Keep on failure');
+  await fs.writeFile(path.join(fixture.home, 'connection-instructions.json'), guidance);
+  const service = createLocalGroupProjectDeleteService(vi.fn());
+  await expect(service.preview(project.id, 1)).rejects.toThrow(/guidance/i);
+  expect(await groupProjectHost.get(project.id)).not.toBeNull();
+  expect(await groupProjectHost.listPendingDeletes()).toEqual([]);
 });

@@ -2,8 +2,10 @@ import { describe, expect, it, vi } from 'vitest';
 
 const host = vi.hoisted(() => ({ get: vi.fn(), resolveMembers: vi.fn(), getMembership: vi.fn(), digest: vi.fn() }));
 const readCanvas = vi.hoisted(() => vi.fn());
+const checkGuidance = vi.hoisted(() => vi.fn());
 vi.mock('./group-project-host', () => ({ groupProjectHost: host }));
 vi.mock('./group-project-canvas-inventory', () => ({ readGroupProjectCanvasInventory: readCanvas }));
+vi.mock('./connection-guidance', () => ({ assertGroupProjectGuidanceDeletable: checkGuidance }));
 import { readGroupProjectDeletionInventory } from './group-project-delete-inventory';
 
 describe('group project deletion inventory', () => {
@@ -23,5 +25,10 @@ describe('group project deletion inventory', () => {
   it('refuses a missing or non-host record', async () => {
     host.get.mockResolvedValue(null);
     await expect(readGroupProjectDeletionInventory('missing')).rejects.toThrow('unavailable');
+  });
+
+  it('refuses an impact check when saved guidance cannot be safely read', async () => {
+    checkGuidance.mockImplementationOnce(() => { throw new Error('Saved connection guidance could not be read.'); });
+    await expect(readGroupProjectDeletionInventory('gp')).rejects.toThrow('Saved connection guidance');
   });
 });

@@ -2,9 +2,11 @@ import { getProjectAdmins } from '../../shared/group-project-admin';
 import { groupProjectHost } from './group-project-host';
 import { readGroupProjectCanvasInventory } from './group-project-canvas-inventory';
 import type { GroupProjectDeletionInventory } from './group-project-deletion';
+import { assertGroupProjectGuidanceDeletable } from './connection-guidance';
 
 /** Assemble an impact check from the authoritative record and local canvas stores. */
 export async function readGroupProjectDeletionInventory(id: string): Promise<GroupProjectDeletionInventory> {
+  assertGroupProjectGuidanceDeletable();
   const project = await groupProjectHost.get(id);
   if (!project) throw new Error('This group project is unavailable on this host.');
   const [members, membership, digest, canvas] = await Promise.all([

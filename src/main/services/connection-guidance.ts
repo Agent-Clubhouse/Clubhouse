@@ -202,6 +202,11 @@ export function saveConnectionGuidance(agentId: string, targetId: string, reques
 }
 
 /** Remove saved overrides targeting a deleted group project, serialized with edits. */
+export function assertGroupProjectGuidanceDeletable(): void {
+  const file = committedFile();
+  if (file.version > VERSION) throw new Error('Guidance was saved by a newer Clubhouse. Update before deleting a group project.');
+}
+
 export function purgeGroupProjectGuidance(groupProjectId: string): Promise<void> {
   const purge = async () => {
     const file = committedFile();
