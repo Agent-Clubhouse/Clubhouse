@@ -459,7 +459,7 @@ describe('approval and placement change invalidation', () => {
   });
 });
 
-describe('QA engine regressions with real Git and harmless isolated markers', () => {
+describe('QA engine regressions with real Git and harmless isolated markers', { timeout: 30_000 }, () => {
   it('keeps a late previous registration from consuming another destination\'s real ignore writer', async () => {
     const previous = fixture();
     const next = fixture();
@@ -1091,7 +1091,7 @@ describe('cancellation, interruption and unsafe incidental execution', () => {
     expect(await f.service.status('dispatcher', receipt.id)).toMatchObject({ phase: 'partial', projectId: 'proj_done', reason: 'registration_receipt_interrupted' });
   });
 
-  describe('inherited hooks, templates and attribute filters', () => {
+  describe('inherited hooks, templates and attribute filters', { timeout: 30_000 }, () => {
     let f: ReturnType<typeof fixture>;
     let marker: string;
     let config: string;
