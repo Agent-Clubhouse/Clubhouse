@@ -36,7 +36,7 @@ interface LeadFile {
   leadName?: string;
 }
 
-const store = createSettingsStore<LeadFile>('dispatcher-lead.json', { record: NO_LEAD, heard: {} }, undefined, { atomic: true });
+const store = createSettingsStore<LeadFile>('dispatcher-lead.json', { record: NO_LEAD, heard: {} }, undefined, { atomic: true, audit: { key: 'dispatcher_lead' } });
 
 const lower = (id: string) => id.toLowerCase();
 const selfId = (): string | undefined => annexIdentity.getIdentity()?.fingerprint.toLowerCase();
