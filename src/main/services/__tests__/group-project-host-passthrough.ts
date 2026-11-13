@@ -65,6 +65,9 @@ export async function passthroughHostModule() {
     previewScope: vi.fn(async (_id: string, scope: unknown) => ({ scope, leaving: [] })),
     setScope: vi.fn(async (id: string) => ({ project: await registry.get(id), left: [] })),
     admits: vi.fn(async () => true),
+    inScope: vi.fn(async () => true),
+    excludeOutOfScope: vi.fn(async () => undefined),
+    outOfScopeMessage: vi.fn((project: { name: string }, agentName: string) => `${agentName} is outside the scope of "${project.name}", so it can't join. Widen the scope in Settings > Group Projects first.`),
     recordScopedWireMembers: vi.fn(async () => 0),
     beginDelete: vi.fn(async (id: string) => ({ groupProjectId: id, host: { machine: null }, seq: 0, deletedAt: new Date(0).toISOString(), state: 'deleting' })),
     finishDelete: vi.fn(async (id: string) => {

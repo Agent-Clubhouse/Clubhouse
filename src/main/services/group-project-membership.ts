@@ -28,7 +28,7 @@
 import type {
   AutoJoinPreview, GroupProject, GroupProjectScope, GroupProjectMemberKind, GroupProjectMembership, GroupProjectMembershipView, GroupProjectMemberView, ResolvedGroupProjectMember,
 } from '../../shared/group-project-types';
-import { groupProjectHost } from './group-project-host';
+import { GroupProjectHostError, groupProjectHost } from './group-project-host';
 import * as projectStore from './project-store';
 import { listDurable, onAgentConfigChanged } from './agent-config';
 import { knownQuickAgents } from './quick-agent-events';
@@ -537,6 +537,14 @@ export async function addMember(groupProjectId: string, agentId: string): Promis
   const agent = inventory.agents.get(agentId);
   const run = quick.get(agentId);
   if (!run && (!agent || agent.disposed)) throw new Error('That agent does not exist here.');
+  // Scope decides who can be added (#3355), for a person or an agent alike: an
+  // explicit add can't put an outsider in or undo a narrowing. Fails closed.
+  // Decided from this inventory's facts: an agent whose project isn't known is refused.
+  const projectId = (run ?? agent)?.projectId;
+  const allowed = !gp.scope || gp.scope.level === 'app' || (projectId !== undefined && projectId === gp.scope.projectId);
+  if (!allowed) {
+    throw new GroupProjectHostError('out_of_scope', groupProjectHost.outOfScopeMessage(gp, agent?.name ?? run?.name ?? agentId));
+  }
   const now = new Date().toISOString();
   await groupProjectHost.updateMembership(gp.id, (draft) => {
     draft.excluded = draft.excluded.filter((e) => e.address !== agentId);

@@ -13,6 +13,20 @@
 import { readAllCanvasStores, type CanvasStoreSnapshot } from './canvas-store-reader';
 import { groupProjectRegistry } from './group-project-registry';
 import { withoutManagedMembers } from './managed-group-projects';
+import { groupProjectHost } from './group-project-host';
+
+/**
+ * A stored group project wire whose agent was refused or moved out by scope
+ * (#3355) is not restored. Others are restores of pairs that were members
+ * already, which scope never evicts.
+ */
+async function withinScope<T extends { targetKind: string; targetId: string; agentId: string }>(bindings: T[]): Promise<T[]> {
+  const kept: T[] = [];
+  for (const b of bindings) {
+    if (b.targetKind !== 'group-project' || await groupProjectHost.admits(b.targetId, b.agentId, { restore: true }).catch(() => false)) kept.push(b);
+  }
+  return kept;
+}
 import type { PersistedBinding, PersistedBindingSource } from './persisted-bindings';
 import type { BindingTargetKind } from './clubhouse-mcp/types';
 import { reconcilePersistedWires } from '../../shared/canvas-persistence';
@@ -104,11 +118,11 @@ export const canvasWireBindingSource: PersistedBindingSource = {
   readOnlyCollect: true,
   async collect() {
     const [snapshots, groupProjects] = await Promise.all([readAllCanvasStores(), readGroupProjectNames()]);
-    return withoutManagedMembers(bindingsFromCanvasStores(snapshots, groupProjects));
+    return withinScope(await withoutManagedMembers(bindingsFromCanvasStores(snapshots, groupProjects)));
   },
   async inspect() {
     const [snapshots, groupProjects] = await Promise.all([readAllCanvasStores({ strict: true }), readGroupProjectNames({ strict: true })]);
     if (snapshots.some((s) => s.problems.length > 0)) throw new Error('Some Canvas guidance could not be read. Open the affected Canvas and try again.');
-    return withoutManagedMembers(bindingsFromCanvasStores(snapshots, groupProjects, { inspect: true }));
+    return withinScope(await withoutManagedMembers(bindingsFromCanvasStores(snapshots, groupProjects, { inspect: true })));
   },
 };

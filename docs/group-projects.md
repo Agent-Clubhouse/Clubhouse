@@ -49,7 +49,18 @@ recorded as a member or made admin:
   unknown project, or any error in the check, refuses.
 
 A refusal answers `{ notMember: true, reason: 'out_of_scope' }`, which the
-canvas treats as final and stops retrying.
+canvas treats as final and stops retrying. A refused draw is also recorded as
+excluded (`reason: "scope"`), so the canvas restoring that wire later is
+refused too. At startup the canvas wire source doesn't restore a group project
+wire whose agent is excluded.
+
+**Explicit adds are checked too.** `addMember` (the person's Add in the
+directory, and agents' `add_to_group_project` / `join_group_project`) refuses an
+agent outside the scope, failing closed when its project isn't known. It answers
+"…is outside the scope of "<name>", so it can't join. Widen the scope in Settings
+> Group Projects first." So an explicit add can't put in an outsider or undo a
+narrowing. For a group project still on wire membership, the connection tools
+apply the same check before connecting.
 
 Changing scope is a person's action in Settings > Group Projects (agents get it
 with the admin grant in #3360). `previewScope(id, scope)` lists the members who
@@ -60,12 +71,15 @@ no confirmation. Members who leave move from `explicit` to `excluded`
 (`reason: "scope"`) and lose their live bindings, so neither a restore nor
 auto-join brings them back. The change takes a sequence number like any other.
 
-**Upgrade.** After the first persisted-binding rebuild, every agent bound to a
-project-scoped group project is recorded once as an explicit member
+**Upgrade.** After a persisted-binding rebuild, every agent bound to a
+project-scoped group project from before #3355 whose members are still wires
+(not a managed record, #3357) is recorded once as an explicit member
 (`migratedFrom: "wire-3355"`, helpers as helpers, quick agents and other
-machines' agents left to their runs). Each record is marked
-`scopeMembersRecorded`. So scope affects only new joins, and no existing member
-is dropped silently.
+machines' agents left to their runs, excluded agents skipped). The record is
+then marked `scopeMembersRecorded`. It waits for a complete agent inventory: a
+partial read records nothing and marks nothing. New group projects are marked
+at creation. So scope affects only new joins, and no existing member is dropped
+silently.
 
 Until #3357 registers its membership policy, "members" are the agents wired to
 the group project, with their projects read from durable agent configs and live

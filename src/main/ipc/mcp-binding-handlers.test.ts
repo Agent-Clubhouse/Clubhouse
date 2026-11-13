@@ -141,6 +141,7 @@ vi.mock('../services/group-project-host', () => ({
       return scopeGate.admit;
     }),
     recordScopedWireMembers: vi.fn(async () => 0),
+    excludeOutOfScope: vi.fn(async () => undefined),
     get: vi.fn(async () => null),
     update: vi.fn(async () => null),
   },
@@ -907,6 +908,8 @@ describe('group project scope at the bind site (#3355)', () => {
     expect(addMember).not.toHaveBeenCalled();
     expect(bindingManager.bind).not.toHaveBeenCalled();
     expect(scopeGate.calls).toEqual([['gp_managed', 'outsider', { restore: false }], ['gp_plain', 'outsider', { restore: false }]]);
+    // Remembered, so the canvas restoring the drawn wire is refused too.
+    expect(groupProjectHost.excludeOutOfScope).toHaveBeenCalledWith('gp_plain', 'outsider');
   });
 
   it('asks only about exclusion for a restore, so a pair that was already a member isn\'t evicted', async () => {
@@ -919,6 +922,7 @@ describe('group project scope at the bind site (#3355)', () => {
     scopeGate.admit = false;
     expect(await getHandler(IPC.MCP_BINDING.BIND)(fakeEvent, 'leaver', plainTarget, MCP_BIND_RESTORE)).toEqual({ notMember: true, reason: 'out_of_scope' });
     expect(bindingManager.bind).not.toHaveBeenCalled();
+    expect(groupProjectHost.excludeOutOfScope).not.toHaveBeenCalledWith('gp_plain', 'leaver');
   });
 
   it('refuses when the scope check itself fails (fails closed)', async () => {

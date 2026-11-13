@@ -214,6 +214,15 @@ export function registerMcpBindingHandlers(): void {
         const restore = cause === MCP_BIND_RESTORE;
         if (!(await groupProjectHost.admits(target.targetId, agentId as string, { restore }).catch(() => false))) {
           appLog('core:mcp', 'info', 'Group project wire not bound: outside its scope', { meta: { agentId, targetId: target.targetId, restore } });
+          // A drawn wire refused for scope is remembered, so the canvas restoring it later is refused too.
+          if (!restore) {
+            await groupProjectHost.excludeOutOfScope(target.targetId, agentId as string).catch((err) => {
+              // telemetry-exempt: logged; the bind is refused either way
+              appLog('core:mcp', 'warn', 'Could not record an out-of-scope group project wire', {
+                meta: { agentId, targetId: target.targetId, error: err instanceof Error ? err.message : String(err) },
+              });
+            });
+          }
           return { notMember: true, reason: 'out_of_scope' };
         }
         if (!managed) { bindNow(); return undefined; }

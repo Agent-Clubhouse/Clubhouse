@@ -292,6 +292,17 @@ describe('ordinary agents with connection.manage (#3336)', () => {
     expect(boundPairs()).not.toContain(`durable_other->${project.id}`);
   });
 
+  it('refuses to join an agent outside the group project scope, saying to widen it, and records nothing (#3355)', async () => {
+    const project = await groupProjectRegistry.create('Scoped');
+    await grantConnections();
+    vi.mocked(groupProjectHost.inScope).mockResolvedValueOnce(false);
+    const refused = await call('join_group_project', { agent: 'other', project: project.id });
+    expect(refused.isError).toBe(true);
+    expect(refused.text).toContain('Widen the scope');
+    expect(boundPairs()).not.toContain(`durable_other->${project.id}`);
+    expect(await readConnections(projectPath)).toEqual([]);
+  });
+
   it('asks for the agent grant even when a group membership grant covers the project', async () => {
     const project = await groupProjectRegistry.create('Shared');
     bindingManager.bind('durable_lead', { targetId: project.id, targetKind: 'group-project', label: project.name });
