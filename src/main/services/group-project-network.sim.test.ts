@@ -15,12 +15,13 @@ interface Machine {
   name: string;
   fp: string;
   home: string;
+  projects?: Array<{ id: string; name: string; path: string; key: string; agents: Array<{ id: string; name: string }> }>;
   host?: typeof import('./group-project-host');
   registry?: typeof import('./group-project-registry');
 }
 
 const world = vi.hoisted(() => ({
-  als: null as unknown as AsyncLocalStorage<{ home: string; fp: string }>,
+  als: null as unknown as AsyncLocalStorage<{ home: string; fp: string; projects?: Array<{ id: string; name: string; path: string; key: string; agents: Array<{ id: string; name: string }> }> }>,
   fallbackHome: '',
 }));
 
@@ -29,8 +30,12 @@ vi.mock('./log-service', () => ({ appLog: vi.fn() }));
 vi.mock('./annex-network-profile', () => ({ annexEphemeralSession: () => false }));
 vi.mock('./annex-identity', () => ({ getIdentity: () => (world.als?.getStore() ? { fingerprint: world.als.getStore()!.fp } : null) }));
 vi.mock('./annex-settings', () => ({ networkEnabled: () => true }));
-vi.mock('./project-store', () => ({ list: vi.fn(async () => []) }));
-vi.mock('./agent-config', () => ({ peekDurableConfigsChecked: vi.fn(async () => ({ agents: [], readable: true })), projectKey: vi.fn(async () => 'key') }));
+const projectsHere = () => world.als?.getStore()?.projects ?? [];
+vi.mock('./project-store', () => ({ list: vi.fn(async () => projectsHere().map(({ id, name, path }) => ({ id, name, path }))) }));
+vi.mock('./agent-config', () => ({
+  peekDurableConfigsChecked: vi.fn(async (projectPath: string) => ({ agents: projectsHere().find((p) => p.path === projectPath)?.agents ?? [], readable: true })),
+  projectKey: vi.fn(async (projectPath: string) => projectsHere().find((p) => p.path === projectPath)?.key ?? 'unknown'),
+}));
 
 const fp = (n: string) => Array.from({ length: 32 }, () => n).join(':');
 const A: Machine = { name: 'Desk', fp: fp('aa'), home: '' };
@@ -42,7 +47,7 @@ const refusals: Array<{ on: string; refusal: GroupProjectNetworkRefusal }> = [];
 
 /** Run as a machine: its home, its identity, its modules. */
 function as<T>(m: Machine, fn: (host: Machine['host'] & object) => Promise<T>): Promise<T> {
-  return world.als.run({ home: m.home, fp: m.fp }, () => fn(m.host!));
+  return world.als.run({ home: m.home, fp: m.fp, projects: m.projects }, () => fn(m.host!));
 }
 
 const wire = <T>(value: T): unknown => JSON.parse(JSON.stringify(value));
@@ -75,6 +80,11 @@ beforeEach(async () => {
   world.fallbackHome = await fsp.mkdtemp(path.join(cache, 'gp-net-none-'));
   down.clear();
   refusals.length = 0;
+  A.projects = [{ id: 'proj_a', name: 'App', path: '/a/app', key: 'github.com/org/app', agents: [{ id: 'lead', name: 'lead' }] }];
+  B.projects = [
+    { id: 'proj_b', name: 'App', path: '/b/app', key: 'github.com/org/app', agents: [{ id: 'builder', name: 'builder' }] },
+    { id: 'proj_c', name: 'Other', path: '/b/other', key: 'github.com/org/other', agents: [{ id: 'stranger', name: 'stranger' }] },
+  ];
   for (const m of machines) {
     m.home = await fsp.mkdtemp(path.join(cache, `gp-net-${m.name}-`));
     vi.resetModules();
@@ -223,5 +233,15 @@ describe('network group projects across two desktops (#3363)', () => {
     await as(A, (h) => h.groupProjectHost.setScope(id, { level: 'app', reach: 'local' }));
     await as(B, (h) => h.groupProjectHost.syncFrom(A.fp));
     expect(await as(B, (h) => h.groupProjectHost.get(id))).toBeNull();
+  });
+
+  it('a project scope over the network covers the other computer\'s project of the same repository', async () => {
+    const project = await as(A, (h) => h.groupProjectHost.create('App team', { scope: { level: 'project', projectId: 'proj_a', reach: 'network' } }));
+    await as(B, (h) => h.groupProjectHost.syncFrom(A.fp));
+    expect(await as(B, (h) => h.groupProjectHost.get(project.id))).toMatchObject({ scopeProjectKey: 'github.com/org/app' });
+    expect(await as(B, (h) => h.groupProjectHost.inScope(project.id, 'builder'))).toBe(true);
+    expect(await as(B, (h) => h.groupProjectHost.inScope(project.id, 'stranger'))).toBe(false);
+    expect(await as(B, (h) => h.groupProjectHost.admits(project.id, 'builder'))).toBe(true);
+    expect(await as(B, (h) => h.groupProjectHost.admits(project.id, 'stranger'))).toBe(false);
   });
 });

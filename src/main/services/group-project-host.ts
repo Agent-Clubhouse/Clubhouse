@@ -736,9 +736,7 @@ class GroupProjectHostService {
     const project = await groupProjectRegistry.get(id);
     if (!project) return false;
     if (!project.scope) return true;
-    const address = this.addressOf(project, agentId);
-    const projectId = project.scope.level === 'project' ? (await this.agentProjects()).get(agentId) : undefined;
-    return memberInScope(project.scope, { address, projectId }) === true;
+    return (await this.inScopeHere(project, agentId, this.addressOf(project, agentId))) === true;
   }
 
   /** Refused for its scope: exclude the agent, so a stored wire coming back is refused too. */
@@ -749,6 +747,28 @@ class GroupProjectHostService {
       if (draft.excluded.some((e) => e.address === address) || draft.explicit.some((e) => e.address === address)) return;
       draft.excluded.push({ address, excludedAt: new Date().toISOString(), reason: 'scope' });
     });
+  }
+
+  /**
+   * Whether an agent here is in a group project's scope. On a copy of a
+   * project-scoped network group project, this computer's project counts when
+   * it has the host project's repository key (#3363). Undefined when unknown.
+   */
+  private async inScopeHere(project: GroupProject, agentId: string, address: string): Promise<boolean | undefined> {
+    const scope = project.scope!;
+    if (scope.level !== 'project' || !this.isReplica(project)) {
+      const projectId = scope.level === 'project' ? (await this.agentProjects()).get(agentId) : undefined;
+      return memberInScope(scope, { address, projectId });
+    }
+    const projectId = (await this.agentProjects()).get(agentId);
+    const local = projectId ? (await projectStore.list()).find((p) => p.id === projectId) : undefined;
+    if (!local || !project.scopeProjectKey) return undefined;
+    try {
+      return (await agentConfig.projectKey(local.path)) === project.scopeProjectKey;
+    } catch {
+      // telemetry-exempt: an unknown repository is neither in nor out
+      return undefined;
+    }
   }
 
   /** The message for an agent outside a group project's scope. */
@@ -775,9 +795,8 @@ class GroupProjectHostService {
     if (membership.explicit.some((entry) => entry.address === address)) return true;
     // No recorded scope (an unresolved legacy record) has nothing to check against.
     if (!project.scope) return true;
-    const projectId = project.scope.level === 'project' ? (await this.agentProjects()).get(agentId) : undefined;
     // A new join fails closed: an agent whose project can't be known is not admitted.
-    return memberInScope(project.scope, { address, projectId }) === true;
+    return (await this.inScopeHere(project, agentId, address)) === true;
   }
 
   /**

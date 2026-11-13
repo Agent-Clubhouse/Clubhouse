@@ -585,7 +585,10 @@ export async function addMember(groupProjectId: string, agentId: string): Promis
   // explicit add can't put an outsider in or undo a narrowing. Fails closed.
   // Decided from this inventory's facts: an agent whose project isn't known is refused.
   const projectId = (run ?? agent)?.projectId;
-  const allowed = !gp.scope || gp.scope.level === 'app' || (projectId !== undefined && projectId === gp.scope.projectId);
+  // On a copy of a group project hosted elsewhere, a project scope covers this computer's projects of the same
+  // repository (#3363): the host service's check.
+  const allowed = !gp.scope || gp.scope.level === 'app'
+    || (replica ? await groupProjectHost.inScope(gp.id, agentId).catch(() => false) : projectId !== undefined && projectId === gp.scope.projectId);
   if (!allowed) {
     throw new GroupProjectHostError('out_of_scope', groupProjectHost.outOfScopeMessage(gp, agent?.name ?? run?.name ?? agentId));
   }

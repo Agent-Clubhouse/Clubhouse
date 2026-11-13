@@ -138,6 +138,8 @@ vi.mock('../services/dispatcher-wire-source', () => ({
   watchDispatcherWires: vi.fn(() => () => undefined),
 }));
 
+vi.mock('../services/group-project-network', () => ({ startGroupProjectNetwork: vi.fn(() => () => undefined) }));
+
 const scopeGate = vi.hoisted(() => ({ admit: true, calls: [] as Array<[string, string, { restore?: boolean } | undefined]> }));
 vi.mock('../services/group-project-host', () => ({
   groupProjectHost: {
