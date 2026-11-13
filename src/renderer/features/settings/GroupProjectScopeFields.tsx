@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import type { GroupProject, GroupProjectMemberView, GroupProjectScope, GroupProjectScopeOptions } from '../../../shared/group-project-types';
 import type { Project } from '../../../shared/types';
+import { sameGroupProjectScope } from '../../../shared/group-project-scope';
 import { Button } from '../../components/Button';
 import { useGroupProjectStore } from '../../stores/groupProjectStore';
 import { useProjectStore } from '../../stores/projectStore';
@@ -103,11 +104,6 @@ export function GroupProjectScopeFields({ idPrefix, value, onChange, options, di
   );
 }
 
-function sameScope(a: GroupProjectScope | undefined, b: GroupProjectScope): boolean {
-  return !!a && a.level === b.level && a.reach === b.reach
-    && (a.level !== 'project' || (b.level === 'project' && a.projectId === b.projectId));
-}
-
 /**
  * Change a group project's scope. A person reviews who would leave before it
  * applies; the host refuses if that list changed meanwhile.
@@ -116,13 +112,23 @@ export function GroupProjectScopeEditor({ project }: { project: GroupProject }) 
   const previewScope = useGroupProjectStore((s) => s.previewScope);
   const setScope = useGroupProjectStore((s) => s.setScope);
   const options = useScopeOptions();
-  const [draft, setDraft] = useState<GroupProjectScope>(project.scope ?? { level: 'app', reach: 'local' });
+  const projects = useProjectStore((s) => s.projects);
+  const saved: GroupProjectScope = project.scope ?? { level: 'app', reach: 'local' };
+  const [draft, setDraft] = useState<GroupProjectScope>(saved);
+  const [baseline, setBaseline] = useState<GroupProjectScope>(saved);
   const [leaving, setLeaving] = useState<GroupProjectMemberView[] | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [applied, setApplied] = useState(false);
   const pending = useRef(false);
-  const unchanged = sameScope(project.scope, draft);
+  const unchanged = sameGroupProjectScope(project.scope, draft);
+
+  // A change made elsewhere (another window, an agent, the host) replaces an untouched draft.
+  useEffect(() => {
+    if (sameGroupProjectScope(baseline, saved)) return;
+    if (sameGroupProjectScope(baseline, draft) && leaving === null && !busy) setDraft(saved);
+    setBaseline(saved);
+  }, [saved, baseline, draft, leaving, busy]);
 
   const change = (next: GroupProjectScope) => {
     setDraft(next);
@@ -186,7 +192,10 @@ export function GroupProjectScopeEditor({ project }: { project: GroupProject }) 
                     {leaving.length === 1 ? 'This member leaves' : `These ${leaving.length} members leave`} when the scope changes:
                   </p>
                   <ul aria-label="Members who would leave" className="list-disc pl-5 text-xs text-ctp-text">
-                    {leaving.map((member) => <li key={member.address}>{member.name}</li>)}
+                    {leaving.map((member) => {
+                      const from = projects.find((p) => p.id === member.projectId);
+                      return <li key={member.address}>{member.name}{from ? ` (${projectLabel(from)})` : ''}</li>;
+                    })}
                   </ul>
                 </>
               )}

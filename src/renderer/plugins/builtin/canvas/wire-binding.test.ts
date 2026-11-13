@@ -47,4 +47,11 @@ describe('bindWireDefinition', () => {
     await bindWireDefinition({ ...def, disabledTools: ['broadcast'] }, () => undefined);
     expect(window.clubhouse.mcpBinding.setDisabledTools).not.toHaveBeenCalled();
   });
+
+  it('treats a group project scope refusal as final, applying nothing (#3355)', async () => {
+    vi.mocked(window.clubhouse.mcpBinding.bind).mockResolvedValueOnce({ notMember: true, reason: 'out_of_scope' } as never);
+    const gp: McpBindingEntry = { agentId: 'a1', targetId: 'gp_1', targetKind: 'group-project', label: 'GP', disabledTools: ['broadcast'] };
+    expect(await bindWireDefinition(gp)).toBe('not_member');
+    expect(window.clubhouse.mcpBinding.setDisabledTools).not.toHaveBeenCalled();
+  });
 });

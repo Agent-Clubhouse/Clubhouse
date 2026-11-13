@@ -69,7 +69,6 @@ vi.mock('../orchestrators/registry', () => ({
 import { bindingManager } from './clubhouse-mcp/binding-manager';
 import { getBulletinBoard, _resetAllBoardsForTesting } from './group-project-bulletin';
 import { groupProjectRegistry } from './group-project-registry';
-import { groupProjectHost } from './group-project-host';
 import { agentRegistry } from './agent-registry';
 import { applyPersistedBinding, _resetPersistedBindingSourcesForTesting } from './persisted-bindings';
 import {
@@ -123,18 +122,6 @@ describe('GroupProjectLifecycle', () => {
     expect(messages[0].body).toContain('joined');
     // Should include project identifier (falls back to ID when project not in registry)
     expect(messages[0].body).toContain('gp_123');
-  });
-
-  it('refuses an agent outside the group project scope: no join, and its binding is released (#3355)', async () => {
-    initGroupProjectLifecycle();
-    vi.mocked(groupProjectHost.admits).mockResolvedValueOnce(false);
-
-    bindingManager.bind('agent-out', { targetId: 'gp_scoped', targetKind: 'group-project', label: 'GP', agentName: 'outsider' });
-    await new Promise(r => setTimeout(r, 50));
-
-    expect(groupProjectHost.admits).toHaveBeenCalledWith('gp_scoped', 'agent-out');
-    expect(await getBulletinBoard('gp_scoped').getTopicMessages('system')).toEqual([]);
-    expect(bindingManager.getBindingsForAgent('agent-out')).toEqual([]);
   });
 
   it('posts leave event when agent unbinds from group project', async () => {
