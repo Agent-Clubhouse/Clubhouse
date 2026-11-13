@@ -122,6 +122,28 @@ export function registerGroupProjectHandlers(): void {
     },
   ));
 
+  // Scope (#3355): a person changes it here, after reviewing who would leave.
+  ipcMain.handle(IPC.GROUP_PROJECT.SCOPE_OPTIONS, () => groupProjectHost.scopeOptions());
+
+  ipcMain.handle(IPC.GROUP_PROJECT.PREVIEW_SCOPE, withValidatedArgs(
+    [stringArg(), objectArg<GroupProjectScope>()],
+    async (_event, id, scope) => groupProjectHost.previewScope(id as string, scope),
+  ));
+
+  ipcMain.handle(IPC.GROUP_PROJECT.SET_SCOPE, withValidatedArgs(
+    [stringArg(), objectArg<GroupProjectScope>(), objectArg<{ confirmLeaving?: string[] }>({ optional: true })],
+    async (_event, id, scope, options) => {
+      const confirmLeaving = (options as { confirmLeaving?: unknown } | undefined)?.confirmLeaving;
+      if (confirmLeaving !== undefined && (!Array.isArray(confirmLeaving) || confirmLeaving.some((a) => typeof a !== 'string'))) {
+        throw new Error('confirmLeaving must be a list of member addresses.');
+      }
+      const result = await groupProjectHost.setScope(id as string, scope, { confirmLeaving: confirmLeaving as string[] | undefined });
+      annexEventBus.emitGroupProjectChanged('updated', result.project);
+      appLog('core:group-project', 'info', 'Group project scope set', { meta: { id, left: result.left.length } });
+      return result;
+    },
+  ));
+
   ipcMain.handle(IPC.GROUP_PROJECT.GET_BULLETIN_DIGEST, withValidatedArgs(
     [stringArg(), digestSinceArg()],
     async (_event, id, since) => {

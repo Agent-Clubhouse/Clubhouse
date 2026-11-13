@@ -15,12 +15,43 @@ canvas missing its context refuses creation rather than silently using app scope
 The MCP create tool derives the registered project from its caller's project
 path and refuses an unregistered caller path.
 
-Network creation is explicitly refused until the authoritative Annex host path
-is available, even if Annex is enabled. No local group is presented as a network
+Network reach is refused, with its reason, until network group projects are
+available (#3363): "Network reach needs Annex Network" when Annex Network is off,
+otherwise "not available in this version yet". `groupProjectHost.scopeOptions()`
+(IPC `group-project:scope-options`) gives the same answer to the UI, which shows
+Network disabled with that reason. No local group is presented as a network
 group. `get_project_info` includes scope; legacy records without one return
 `scope: null` unless membership-aware migration can verify the complete
 membership inventory. Creation does not infer migration scope from an incomplete
 startup binding cache or change existing members or subscriptions.
+
+## Scope and members (#3355)
+
+| | This computer | Network |
+|---|---|---|
+| Project | Agents in this project on this computer | Agents in this project and in projects linked to it on other computers |
+| App | Agents in every project on this computer | Agents in every project on every computer in the network |
+
+`memberInScope` in `src/shared/group-project-scope.ts` applies the table to a
+member's host-relative address (one with a machine is on another computer) and
+its project. A member whose project isn't known is neither in nor out: it is
+never counted as leaving, and it is admitted.
+
+An agent outside a group project's scope is not a member. When a wire binds one,
+lifecycle releases the binding and posts no join (`groupProjectHost.admits`),
+including a wire restored at startup.
+
+Changing scope is a person's action in Settings > Group Projects (agents get it
+with the admin grant in #3360). `previewScope(id, scope)` lists the members who
+would leave and changes nothing. `setScope(id, scope, { confirmLeaving })` applies
+only when `confirmLeaving` names exactly those members, so what the person
+reviewed is what happens. Otherwise it refuses with `changed`. Widening needs
+no confirmation. Members who leave lose their live bindings and explicit
+membership entries. The change takes a sequence number like any other.
+
+Until #3357 registers its membership policy, "members" are the agents wired to
+the group project, with their projects read from durable agent configs and live
+registrations.
 
 ## Legacy scope inference
 
@@ -251,14 +282,14 @@ Settings > Group Projects, also available as **Group Projects** in the command
 palette, lists this machine's local registry, including records on no Canvas.
 This is not an authoritative host, network or membership directory.
 
-Creation here explicitly uses app/local scope regardless of the active project.
 Select a record to edit its name, description and instructions through the same
-store and IPC used by Canvas. Instructions retain their whitespace. Scope is
-read-only; legacy or missing scope is shown as unresolved, not inferred.
+store and IPC used by Canvas. Instructions retain their whitespace. Legacy or
+missing scope is shown as unresolved, not inferred, until someone sets one.
 Failed loads hide the inventory and offer a retry. Failed writes retain the
 current draft and report that it was not saved.
 
-Network creation remains unavailable because the authoritative host backend is
-not available, even when Annex is on. Host state, durable membership and its
-management, grants, owned Actions, deletion, board viewing and Canvas navigation
-are outside this local directory slice.
+Creation here defaults to the whole app on this computer, and the person can
+choose a project instead. Selecting a record also shows its scope with Review
+change and Apply. Network reach is shown disabled with its reason. Host state,
+durable membership management, grants, owned Actions, deletion, board viewing
+and Canvas navigation are outside this directory slice.

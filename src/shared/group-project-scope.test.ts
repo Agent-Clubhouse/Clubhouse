@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import { inferLegacyGroupProjectScope, resolveGroupProjectScope } from './group-project-scope';
+import {
+  inferLegacyGroupProjectScope, memberInScope, membersLeavingScope, resolveGroupProjectScope,
+} from './group-project-scope';
 
 const registered = new Set(['p-one', 'p-two']);
 
@@ -70,5 +72,33 @@ describe('legacy group project scope inference', () => {
     { members: ['', ''] },
   ])('uses app/local for mixed, unknown, or absent membership: $members', ({ members }) => {
     expect(inferLegacyGroupProjectScope(members)).toEqual({ level: 'app', reach: 'local' });
+  });
+});
+
+describe('group project scope membership (#3355)', () => {
+  const FP = Array.from({ length: 32 }, () => 'cd').join(':');
+  const here = { address: 'agent-1', projectId: 'p-one' };
+  const elsewhere = { address: `agent-2@${FP}`, projectId: 'p-one' };
+
+  it('follows the scope table: project or app, this computer or network', () => {
+    expect(memberInScope({ level: 'project', projectId: 'p-one', reach: 'local' }, here)).toBe(true);
+    expect(memberInScope({ level: 'project', projectId: 'p-two', reach: 'local' }, here)).toBe(false);
+    expect(memberInScope({ level: 'app', reach: 'local' }, here)).toBe(true);
+    expect(memberInScope({ level: 'app', reach: 'local' }, elsewhere)).toBe(false);
+    expect(memberInScope({ level: 'app', reach: 'network' }, elsewhere)).toBe(true);
+    expect(memberInScope({ level: 'project', projectId: 'p-one', reach: 'network' }, elsewhere)).toBe(true);
+  });
+
+  it('never counts a member whose project is unknown as leaving', () => {
+    const unknown = { address: 'agent-3' };
+    expect(memberInScope({ level: 'project', projectId: 'p-one', reach: 'local' }, unknown)).toBeUndefined();
+    expect(membersLeavingScope({ level: 'project', projectId: 'p-one', reach: 'local' }, [here, unknown, { address: 'x', projectId: 'p-two' }]))
+      .toEqual([{ address: 'x', projectId: 'p-two' }]);
+  });
+
+  it('allows network reach only when it is available, with its reason otherwise', () => {
+    const network = { scope: { level: 'app', reach: 'network' } };
+    expect(() => resolveGroupProjectScope(network, registered, { available: false, reason: 'Turn on Annex Network.' })).toThrow('Turn on Annex Network.');
+    expect(resolveGroupProjectScope(network, registered, { available: true })).toEqual({ level: 'app', reach: 'network' });
   });
 });

@@ -3,7 +3,9 @@ import * as fs from 'fs';
 import * as fsp from 'fs/promises';
 import * as path from 'path';
 
-const fixture = vi.hoisted(() => ({ home: '', fingerprint: null as string | null }));
+const fixture = vi.hoisted(() => ({
+  home: '', fingerprint: null as string | null, network: false, agents: {} as Record<string, Array<{ id: string }>>,
+}));
 vi.mock('electron', () => ({
   app: { isPackaged: false, getPath: () => fixture.home },
 }));
@@ -16,12 +18,17 @@ vi.mock('fs/promises', async (importOriginal) => {
   const actual = await importOriginal<typeof import('fs/promises')>();
   return { ...actual, rm: vi.fn(actual.rm) };
 });
-vi.mock('./project-store', () => ({ list: vi.fn(async () => [{ id: 'proj_a' }]) }));
+vi.mock('./project-store', () => ({
+  list: vi.fn(async () => [{ id: 'proj_a', name: 'A', path: '/projects/a' }, { id: 'proj_b', name: 'B', path: '/projects/b' }]),
+}));
+vi.mock('./agent-config', () => ({ peekDurableConfigs: vi.fn(async (projectPath: string) => fixture.agents[projectPath] ?? []) }));
+vi.mock('./annex-settings', () => ({ networkEnabled: () => fixture.network }));
 
 import { groupProjectRegistry } from './group-project-registry';
 import { _resetAllBoardsForTesting, getBulletinBoard } from './group-project-bulletin';
 import { GroupProjectHostError, groupProjectHost } from './group-project-host';
 import type { GroupProjectChange } from '../../shared/group-project-types';
+import { bindingManager } from './clubhouse-mcp/binding-manager';
 
 const dataDir = () => path.join(fixture.home, '.clubhouse-dev', 'group-projects');
 const hostFile = (id: string) => path.join(dataDir(), id, 'host.json');
@@ -43,6 +50,9 @@ beforeEach(async () => {
   await fsp.mkdir(cache, { recursive: true });
   fixture.home = await fsp.mkdtemp(path.join(cache, 'group-project-host-'));
   fixture.fingerprint = null;
+  fixture.network = false;
+  fixture.agents = {};
+  bindingManager._resetForTesting();
   groupProjectRegistry._resetForTesting();
   _resetAllBoardsForTesting();
   groupProjectHost._resetForTesting();
@@ -435,5 +445,72 @@ describe('group project host: review fixes', () => {
     await fsp.writeFile(path.join(dataDir(), 'tombstones.json'), '[]');
     groupProjectRegistry._resetForTesting();
     expect((await groupProjectRegistry.list()).map((p) => p.id)).toEqual([project.id]);
+  });
+});
+
+describe('group project host: scope (#3355)', () => {
+  const wire = (agentId: string, gpId: string, agentName = agentId) =>
+    bindingManager.bind(agentId, { targetId: gpId, targetKind: 'group-project', label: 'GP', agentName });
+
+  it('explains why network reach is unavailable, and refuses it at creation and when changing scope', async () => {
+    expect(groupProjectHost.scopeOptions().network).toEqual({ available: false, reason: expect.stringContaining('Annex Network') });
+    fixture.network = true;
+    expect(groupProjectHost.scopeOptions().network.available).toBe(false);
+    await expect(groupProjectHost.create('Net', { scope: { level: 'app', reach: 'network' } })).rejects.toThrow('not available');
+    const project = await groupProjectHost.create('Local');
+    await expect(groupProjectHost.previewScope(project.id, { level: 'app', reach: 'network' })).rejects.toMatchObject({ code: 'network_unavailable' });
+  });
+
+  it('defaults to the current project from a project, and the app from the app', async () => {
+    expect((await groupProjectHost.create('In project', { projectId: 'proj_a' })).scope).toEqual({ level: 'project', projectId: 'proj_a', reach: 'local' });
+    expect((await groupProjectHost.create('From app')).scope).toEqual({ level: 'app', reach: 'local' });
+  });
+
+  it('shows who would leave when narrowing, and changes nothing', async () => {
+    fixture.agents = { '/projects/a': [{ id: 'agent_a' }], '/projects/b': [{ id: 'agent_b' }] };
+    const project = await groupProjectHost.create('Wide');
+    wire('agent_a', project.id, 'alpha');
+    wire('agent_b', project.id, 'beta');
+    wire('agent_unknown', project.id, 'mystery');
+    const { leaving } = await groupProjectHost.previewScope(project.id, { level: 'project', projectId: 'proj_a', reach: 'local' });
+    // An agent whose project isn't known is never counted as leaving.
+    expect(leaving).toEqual([{ address: 'agent_b', name: 'beta', projectId: 'proj_b' }]);
+    expect((await groupProjectHost.get(project.id))?.scope).toEqual({ level: 'app', reach: 'local' });
+    expect(await groupProjectHost.previewScope(project.id, { level: 'app', reach: 'local' })).toMatchObject({ leaving: [] });
+  });
+
+  it('applies narrowing only with the reviewed leavers confirmed, then removes them', async () => {
+    fixture.agents = { '/projects/a': [{ id: 'agent_a' }], '/projects/b': [{ id: 'agent_b' }] };
+    const project = await groupProjectHost.create('Narrow');
+    wire('agent_a', project.id);
+    wire('agent_b', project.id);
+    await groupProjectHost.updateMembership(project.id, (m) => {
+      m.explicit.push({ address: 'agent_b', kind: 'helper', addedAt: '2026-11-13T00:00:00.000Z' });
+    });
+    const narrow = { level: 'project', projectId: 'proj_a', reach: 'local' } as const;
+    await expect(groupProjectHost.setScope(project.id, narrow)).rejects.toMatchObject({ code: 'changed' });
+    await expect(groupProjectHost.setScope(project.id, narrow, { confirmLeaving: ['agent_a'] })).rejects.toMatchObject({ code: 'changed' });
+    expect((await groupProjectHost.get(project.id))?.scope).toEqual({ level: 'app', reach: 'local' });
+
+    const before = (await groupProjectHost.get(project.id))!.seq!;
+    const { project: updated, left } = await groupProjectHost.setScope(project.id, narrow, { confirmLeaving: ['agent_b'] });
+    expect(updated.scope).toEqual(narrow);
+    expect(updated.seq).toBe(before + 1);
+    expect(left.map((m) => m.address)).toEqual(['agent_b']);
+    expect(bindingManager.getAllBindings().map((b) => b.agentId)).toEqual(['agent_a']);
+    expect((await groupProjectHost.getMembership(project.id)).explicit).toEqual([]);
+    await restart();
+    expect((await groupProjectHost.get(project.id))?.scope).toEqual(narrow);
+  });
+
+  it('widens without confirmation, and admits only agents in scope', async () => {
+    fixture.agents = { '/projects/a': [{ id: 'agent_a' }], '/projects/b': [{ id: 'agent_b' }] };
+    const project = await groupProjectHost.create('Admit', { projectId: 'proj_a' });
+    expect(await groupProjectHost.admits(project.id, 'agent_a')).toBe(true);
+    expect(await groupProjectHost.admits(project.id, 'agent_b')).toBe(false);
+    expect(await groupProjectHost.admits(project.id, 'agent_unknown')).toBe(true);
+    expect(await groupProjectHost.admits(project.id, `agent_a@${FP_B}`)).toBe(false);
+    await groupProjectHost.setScope(project.id, { level: 'app', reach: 'local' });
+    expect(await groupProjectHost.admits(project.id, 'agent_b')).toBe(true);
   });
 });
