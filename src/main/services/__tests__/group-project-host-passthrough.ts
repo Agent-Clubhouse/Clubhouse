@@ -57,7 +57,7 @@ export async function passthroughHostModule() {
     inboxFor: vi.fn(async (_id: string, name: string) => inbox(name)),
     flushRegistry: vi.fn(async () => registry.flush()),
     flushBoards: vi.fn(async () => optional<() => Promise<void>>(bulletin, 'flushAllBulletinBoards')?.()),
-    onChange: vi.fn(() => () => undefined),
+    onChange: vi.fn((): (() => void) => () => undefined),
   };
   return { groupProjectHost, GroupProjectHostError: class extends Error {} };
 }

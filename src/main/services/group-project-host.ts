@@ -13,7 +13,7 @@
 
 import type {
   BulletinMessage, GroupProject, GroupProjectChange, GroupProjectChangePart, GroupProjectCreateOptions, GroupProjectHost,
-  GroupProjectMemberView, GroupProjectMembership, GroupProjectTombstone,
+  GroupProjectMemberView, GroupProjectMembership, GroupProjectTombstone, TopicDigest,
 } from '../../shared/group-project-types';
 import { canonicalMemberAddress, memberAddress } from '../../shared/group-project-members';
 import { groupProjectRegistry } from './group-project-registry';
@@ -416,6 +416,12 @@ class GroupProjectHostService {
       if ((await board.inboxOwner(channel)) === canonical && (await board.hasTopic(channel)) && board.isTopicProtected(channel)) return channel;
       return ensureInboxChannel(id, agentName, canonical, await reserve());
     });
+  }
+
+  /** The board's topics, counts and protection, without changing anything. Safe inside `exclusive`. */
+  async digest(id: string): Promise<TopicDigest[]> {
+    await this.requireProject(id);
+    return getBulletinBoard(id).getDigest();
   }
 
   /** The inbox channel of a member, without changing anything. */
