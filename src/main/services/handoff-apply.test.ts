@@ -9,7 +9,7 @@ import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { HANDOFF_TRANSFER_DEFAULTS, canonicalHandoffManifest } from '../../shared/handoff-manifest';
 import { prepareHandoffTransfer } from './handoff-transfer-preparation';
 import { receiveHandoffCommit } from './handoff-git-receive';
-import { applyHandoffSnapshot, handoffApplyPaths } from './handoff-apply';
+import { applyHandoffSnapshot, handoffApplyPaths, recoverPendingHandoffApply } from './handoff-apply';
 const exec = promisify(execFile);
 let root: string; let sender: string; let receiver: string; let staging: string;
 const git = (cwd: string, ...args: string[]) => exec('git', args, { cwd });
@@ -68,4 +68,19 @@ it('cleans its own fresh worktree after authorization is revoked during copying'
   expect(fs.existsSync(paths.pending)).toBe(false); expect(fs.existsSync(paths.worktree)).toBe(false);
   await expect(git(receiver, 'show-ref', '--verify', `refs/heads/${paths.branch}`)).rejects.toThrow();
   expect(fs.readFileSync(path.join(receiver, 'public.txt'), 'utf8')).toBe('Receiver original');
+}, 30_000);
+
+it('removes only an unpublished checkpoint-owned worktree during crash recovery', async () => {
+  const options = await prepare(); const paths = handoffApplyPaths(receiver, options.id); fs.mkdirSync(paths.parent, { recursive: true });
+  await git(receiver, '-c', `core.hooksPath=${path.join(root, 'no-hooks')}`, 'worktree', 'add', '--no-checkout', '-b', paths.branch, '--', paths.pending, options.snapshot.manifest.repo.base);
+  fs.writeFileSync(path.join(paths.pending, 'partial.txt'), 'partial apply');
+  const checkpoint = { projectId: 'registered', stagingId: options.id, worktree: paths.worktree, branch: paths.branch };
+  expect(await recoverPendingHandoffApply(receiver, options.id, checkpoint)).toBe('removed');
+  expect(fs.existsSync(paths.pending)).toBe(false); await expect(git(receiver, 'show-ref', '--verify', `refs/heads/${paths.branch}`)).rejects.toThrow();
+  expect(fs.readFileSync(path.join(receiver, 'public.txt'), 'utf8')).toBe('Receiver original');
+}, 30_000);
+it('preserves a fully published worktree when recovery cannot know whether its mission was delivered', async () => {
+  const options = await prepare('branch'); const result = await applyHandoffSnapshot(options);
+  expect(await recoverPendingHandoffApply(receiver, options.id, { projectId: 'registered', stagingId: options.id, worktree: result.worktree, branch: result.branch })).toBe('published');
+  expect((await git(result.worktree, 'rev-parse', 'HEAD')).stdout.trim()).toBe(result.commit);
 }, 30_000);

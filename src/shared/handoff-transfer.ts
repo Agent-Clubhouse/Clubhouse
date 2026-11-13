@@ -1,3 +1,4 @@
+export class HandoffTransferBusy extends Error { constructor() { super('Handoff transfer busy.'); } }
 export const HANDOFF_CHUNK_BYTES = 256 * 1024;
 export const HANDOFF_TRANSFER_BODY_BYTES = 3 * 1024 ** 2;
 export const HANDOFF_TRANSFER_ROUTE = '/api/v1/network/handoffs/transfer';

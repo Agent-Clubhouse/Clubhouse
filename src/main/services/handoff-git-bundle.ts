@@ -55,6 +55,31 @@ export async function scanHandoffGitHistory(repository: HandoffHistoryRepository
   policy?.assertCurrent(); await repository.assertCurrent();
 }
 
+/** Bound the materialized tree too: a highly compressed bundle must not hide an oversized checkout. */
+async function validateExpandedTree(repository: HandoffHistoryRepository, snapshot: HandoffSnapshot, bounds: HandoffTransferBounds): Promise<void> {
+  const raw = await repository.read(['ls-tree', '-r', '-l', '-z', '--full-tree', snapshot.manifest.repo.base]);
+  if (!raw) throw new HandoffSnapshotError('git_failed');
+  const tree = new Map<string, number>();
+  let records: string[];
+  try { records = new TextDecoder('utf-8', { fatal: true }).decode(raw).split('\0'); }
+  catch { throw new HandoffSnapshotError('unsafe_entry'); /* telemetry-exempt: tree names are never reflected */ }
+  if (records.pop() !== '') throw new HandoffSnapshotError('git_failed');
+  for (const record of records) {
+    const match = /^(?:100644|100755|120000) blob (?:[0-9a-f]{40}|[0-9a-f]{64}) +([0-9]+)\t([\s\S]+)$/.exec(record);
+    if (!match || !isSafeHandoffPath(match[2])) throw new HandoffSnapshotError('unsupported_repository');
+    tree.set(match[2], Number(match[1]));
+  }
+  for (const name of snapshot.manifest.deletions) tree.delete(name);
+  for (const file of snapshot.manifest.files) tree.set(file.path, file.size);
+  const files = [...tree].map(([name, size]) => ({ path: safeHandoffDiagnosticPath(name), size }));
+  const totalBytes = files.reduce((total, file) => total + file.size, 0);
+  if (files.length > bounds.maxFiles || files.some((file) => !Number.isSafeInteger(file.size) || file.size > bounds.perFileBytes) || !Number.isSafeInteger(totalBytes) || totalBytes > bounds.totalBytes) {
+    const error = new HandoffSnapshotError('bounds_exceeded');
+    error.boundsReport = { totalBytes, fileCount: files.length, bounds, largestFiles: files.sort((a, b) => b.size - a.size || a.path.localeCompare(b.path)).slice(0, 10) };
+    throw error;
+  }
+}
+
 async function artifactHash(file: string, expectedSize: number): Promise<string> {
   const before = await fs.promises.lstat(file, { bigint: true });
   if (!before.isFile() || before.isSymbolicLink() || before.nlink !== 1n || before.size !== BigInt(expectedSize)) throw new HandoffSnapshotError('unsafe_entry');
@@ -81,6 +106,7 @@ export async function prepareHandoffBundle(options: {
   const { snapshot, bounds, secretPolicy } = options;
   const repository = await openHandoffRepository(options.worktreeRoot);
   if (!COMMIT.test(snapshot.manifest.repo.base) || JSON.stringify(repository.repo) !== JSON.stringify(snapshot.manifest.repo) || snapshot.manifest.bundle) throw new HandoffSnapshotError('source_changed');
+  await validateExpandedTree(repository, snapshot, bounds);
   await scanHandoffGitHistory(repository, secretPolicy);
   const stageStat = await fs.promises.lstat(snapshot.root, { bigint: true });
   if (!stageStat.isDirectory() || stageStat.isSymbolicLink()) throw new HandoffSnapshotError('invalid_staging');
@@ -94,7 +120,13 @@ export async function prepareHandoffBundle(options: {
     const heads = (await repository.read(['bundle', 'list-heads', temporary]))?.toString('ascii').trim();
     if (heads !== `${snapshot.manifest.repo.base} HEAD`) throw new HandoffSnapshotError('source_changed');
     const stat = await fs.promises.lstat(temporary, { bigint: true });
-    if (stat.size > BigInt(bounds.perFileBytes) || stat.size + BigInt(snapshot.manifest.total_bytes) > BigInt(bounds.totalBytes)) throw new HandoffSnapshotError('bounds_exceeded', 'bundle.bin');
+    if (stat.size > BigInt(bounds.perFileBytes) || stat.size + BigInt(snapshot.manifest.total_bytes) > BigInt(bounds.totalBytes)) {
+      const error = new HandoffSnapshotError('bounds_exceeded', 'bundle.bin');
+      const files = [...snapshot.manifest.files.map((file) => ({ path: safeHandoffDiagnosticPath(file.path), size: file.size })), { path: 'bundle.bin', size: Number(stat.size) }];
+      error.boundsReport = { totalBytes: Number(stat.size) + snapshot.manifest.total_bytes, fileCount: files.length + snapshot.manifest.deletions.length, bounds,
+        largestFiles: files.sort((a, b) => b.size - a.size || a.path.localeCompare(b.path)).slice(0, 10) };
+      throw error;
+    }
     await fs.promises.chmod(temporary, 0o600);
     const size = Number(stat.size); const sha256 = await artifactHash(temporary, size);
     let manifest = parseHandoffManifest({ ...snapshot.manifest, bundle: { size, sha256 }, total_bytes: snapshot.manifest.total_bytes + size }, bounds);

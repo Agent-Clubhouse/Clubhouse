@@ -15,7 +15,9 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import { createHash } from 'crypto';
-import type { ChildProcess } from 'child_process';
+import { pathToFileURL } from 'url';
+import { execFile, type ChildProcess } from 'child_process';
+import { promisify } from 'util';
 import { installFakeClis, type FakeClis } from '../chat-fake-cli';
 import { chatFixturePath } from '../../src/main/orchestrators/adapters/testing/fake-cli';
 import { buildChatScript, writeChatScript } from '../../src/main/orchestrators/adapters/testing/chat-script';
@@ -523,7 +525,7 @@ test('capacity probes require device.read and return coarse results for both des
   expect((await mcp.call(tool, {})).isError).toBe(true);
 });
 
-test('granted handoff offer and acceptance cross computers once and retain the named sender', async () => {
+test('accepted handoff transfers a selected ignored file over 512 KiB and publishes before waking the receiver', async () => {
   scratch = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'handoff-agreement-'));
   const fixture = await quietFixture(scratch);
   fakesHere = await installFakeClis({ claude: fixture });
@@ -532,6 +534,17 @@ test('granted handoff offer and acceptance cross computers once and retain the n
   const receiverProject = path.join(scratch, 'handoff-receiver-project');
   await fs.promises.mkdir(senderProject);
   await fs.promises.mkdir(receiverProject);
+  const git = (cwd: string, ...args: string[]) => promisify(execFile)('git', args, { cwd, env: { ...process.env, GIT_CONFIG_GLOBAL: emptyGitConfig, GIT_CONFIG_SYSTEM: emptyGitConfig, GIT_CONFIG_NOSYSTEM: '0' } });
+  const emptyGitConfig = path.join(scratch, 'empty-git-config'); await fs.promises.writeFile(emptyGitConfig, '');
+  for (const repo of [senderProject, receiverProject]) {
+    await git(repo, 'init', '-b', 'main'); await git(repo, 'config', 'user.name', 'Fixture'); await git(repo, 'config', 'user.email', 'test@example.invalid');
+    await fs.promises.writeFile(path.join(repo, 'work.txt'), 'base'); await fs.promises.writeFile(path.join(repo, '.gitignore'), 'fixtures/\n.clubhouse/\n');
+    await git(repo, 'add', '.'); await git(repo, '-c', `core.hooksPath=${path.join(scratch, 'no-hooks')}`, 'commit', '-qm', 'Base');
+    await git(repo, 'config', 'remote.origin.url', 'https://example.invalid/handoff.git');
+    // Deterministic local failure exercises the bundle fallback, without an external network call.
+    await git(repo, 'config', `url.${pathToFileURL(path.join(scratch, 'absent.git')).href}.insteadOf`, 'https://example.invalid/handoff.git');
+  }
+  for (const fake of [fakesHere, fakesThere]) fake.env = { ...fake.env, GIT_CONFIG_GLOBAL: emptyGitConfig, GIT_CONFIG_SYSTEM: emptyGitConfig, GIT_CONFIG_NOSYSTEM: '0' };
   here = await launchDesktop('handoff-sender', fakesHere, 'Desk');
   there = await launchDesktop('handoff-receiver', fakesThere, 'Studio');
   const senderId = await startAgent(here, senderProject, 'handoff-sender');
@@ -550,8 +563,24 @@ test('granted handoff offer and acceptance cross computers once and retain the n
     await expect.poll(async () => { name = (await mcp.toolNames()).find((candidate) => candidate.endsWith(suffix)) ?? ''; return !!name; }).toBe(true);
     return name;
   };
+  const senderConfig = await here.window.evaluate(({ project, id }) => window.clubhouse.agent.getDurableConfig(project, id), { project: senderProject, id: senderId });
+  const sourceRoot = senderConfig.worktreePath || senderProject;
+  const large = Buffer.alloc(600 * 1024, 17);
+  await fs.promises.mkdir(path.join(sourceRoot, 'fixtures'), { recursive: true });
+  await fs.promises.writeFile(path.join(sourceRoot, 'work.txt'), 'final tracked bytes');
+  await fs.promises.writeFile(path.join(sourceRoot, 'fixtures', 'selected.bin'), large);
+  await fs.promises.writeFile(path.join(sourceRoot, 'fixtures', 'excluded.bin'), 'unselected');
+  await fs.promises.writeFile(path.join(receiverProject, 'work.txt'), 'person dirty work');
+  const prepare = await tool(senderMcp, 'prepare_handoff');
+  await fs.promises.writeFile(path.join(sourceRoot, 'blocked.txt'), `ghp_${'a'.repeat(36)}`);
+  const blocked = await senderMcp.call(prepare, { mode: 'worktree', include: { ignored: ['fixtures/selected.bin'] } });
+  expect(JSON.parse(blocked.text)).toMatchObject({ ready: false, reason: 'secret_blocked' });
+  expect(fs.existsSync(path.join(there.userDataDir, 'handoff-data', 'received')) ? fs.readdirSync(path.join(there.userDataDir, 'handoff-data', 'received')) : []).toEqual([]);
+  await fs.promises.rm(path.join(sourceRoot, 'blocked.txt'));
+  const prepared = await senderMcp.call(prepare, { mode: 'worktree', include: { ignored: ['fixtures/selected.bin'] } });
+  expect(prepared.isError).toBe(false); const preview = JSON.parse(prepared.text); expect(preview.ready).toBe(true);
   const offerTool = await tool(senderMcp, 'offer_handoff');
-  const offered = await senderMcp.call(offerTool, { to: `${receiverId}@${receiverFingerprint}`, task: 'Continue the fixture task', brief: 'Goal: finish fixture checks. Done: agreement setup. Remaining: inspect and continue.', mode: 'worktree' });
+  const offered = await senderMcp.call(offerTool, { to: `${receiverId}@${receiverFingerprint}`, task: 'Continue the fixture task', brief: 'Goal: finish fixture checks. Done: agreement setup. Remaining: inspect and continue.', mode: 'worktree', manifest: preview.summary });
   expect(offered.isError).toBe(false);
   const record = JSON.parse(offered.text);
   expect(record).toMatchObject({ state: 'offered', version: 1, senderName: 'handoff-sender', from: { agentId: senderId, machine: senderFingerprint }, to: { agentId: receiverId, machine: receiverFingerprint } });
@@ -570,12 +599,18 @@ test('granted handoff offer and acceptance cross computers once and retain the n
   const respond = await tool(receiverMcp, 'respond_to_handoff');
   const accepted = await receiverMcp.call(respond, { id: record.id, accept: true });
   expect(accepted.isError).toBe(false);
-  expect(JSON.parse(accepted.text)).toMatchObject({ state: 'accepted', version: 2 });
-  expect(await receiverMcp.call(respond, { id: record.id, accept: true })).toEqual(accepted);
+  expect(JSON.parse(accepted.text).acceptance.target.agentId).toBe(receiverId);
   const senderGet = await tool(senderMcp, 'get_handoff');
-  await expect.poll(async () => JSON.parse((await senderMcp.call(senderGet, { id: record.id })).text).state, { timeout: 60_000 }).toBe('accepted');
-  expect(JSON.parse((await senderMcp.call(senderGet, { id: record.id })).text).history).toHaveLength(2);
-  expect(await notices()).toHaveLength(1);
+  let applied: { state: string; result?: { worktree: string; branch: string; commit: string }; history: Array<{ state: string }> };
+  await expect.poll(async () => { applied = JSON.parse((await senderMcp.call(senderGet, { id: record.id })).text); return applied.state; }, { timeout: 120_000 }).toBe('applied');
+  expect(applied!.history.map((event) => event.state)).toContain('applying');
+  expect(applied!.result!.worktree).not.toBe(receiverProject);
+  expect(await fs.promises.readFile(path.join(applied!.result!.worktree, 'fixtures', 'selected.bin'))).toEqual(large);
+  expect(fs.existsSync(path.join(applied!.result!.worktree, 'fixtures', 'excluded.bin'))).toBe(false);
+  expect(await fs.promises.readFile(path.join(receiverProject, 'work.txt'), 'utf8')).toBe('person dirty work');
+  expect((await git(applied!.result!.worktree, 'rev-parse', 'HEAD')).stdout.trim()).toBe(preview.manifest.repo.base);
+  await expect.poll(async () => JSON.stringify((await fakesThere!.report('claude')).unexpected)).toContain('Continue in fresh worktree');
+  expect(fs.readdirSync(path.join(there.userDataDir, 'handoff-data', 'received'))).toEqual([]);
   await here.window.evaluate(async ({ project, id }) => window.clubhouse.agent.setGrant(project, id, { action: 'handoff.offer', target: { kind: 'any' }, mode: 'off' }), { project: senderProject, id: senderId });
   expect((await senderMcp.call(offerTool, { to: `${receiverId}@${receiverFingerprint}`, task: 'Refused', brief: 'No grant.', mode: 'worktree' })).isError).toBe(true);
 });

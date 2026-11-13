@@ -22,6 +22,8 @@ export function LinkedProjectsSection({ projectId }: { projectId: string }) {
   const link = useNetworkSidebarStore((s) => s.link);
   const unlink = useNetworkSidebarStore((s) => s.unlink);
   const keepSeparate = useNetworkSidebarStore((s) => s.keepSeparate);
+  const handoffLinkError = useNetworkSidebarStore((s) => s.handoffLinkError);
+  const retryHandoffLinks = useNetworkSidebarStore((s) => s.retryHandoffLinks);
   const suggestions = useLinkSuggestions().filter((s) => s.local.id === projectId);
   const [choice, setChoice] = useState('');
 
@@ -42,13 +44,14 @@ export function LinkedProjectsSection({ projectId }: { projectId: string }) {
 
   // Shown once another computer's projects are known, or a link exists: without a network there's nothing to link across.
   const anyRemote = remoteProjects.length > 0;
-  if (linked.length === 0 && suggestions.length === 0 && !anyRemote) return null;
+  if (linked.length === 0 && suggestions.length === 0 && !anyRemote && !handoffLinkError) return null;
 
   return (
     <SettingsSection title="Linked projects">
       <p className="text-xs text-ctp-overlay1 pb-2">
-        Linked projects show as one group in the sidebar. Each agent still runs on its own computer, in its own folder.
+        Linked projects show as one group in the sidebar and let accepted handoffs choose the matching local project. Each agent runs on its own computer, in its own folder.
       </p>
+      {handoffLinkError && <div role="alert" className="text-xs text-ctp-red pb-2">Could not save project links for receiving handoffs. <Button onClick={retryHandoffLinks} kind="ghost">Retry</Button></div>}
       {suggestions.map((s) => (
         <SettingsField
           key={s.remote.id}

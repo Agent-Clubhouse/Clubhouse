@@ -53,6 +53,7 @@ vi.stubGlobal('clubhouse', {
     pickDirectory: async () => null,
     checkGit: async () => false,
     getRepoKeys: async () => ({}),
+    setHandoffProjectLinks: async () => {},
     getHandoffTransferBounds: async () => ({ totalBytes: 1024 ** 3, perFileBytes: 256 * 1024 ** 2, maxFiles: 10000 }),
     setHandoffTransferBounds: async (_id: string, bounds: import('../src/shared/handoff-manifest').HandoffTransferBounds) => bounds,
     getHandoffSecretSettings: async () => ({ notSecretPaths: [], historyActionIds: [] }),

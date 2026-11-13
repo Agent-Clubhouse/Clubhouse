@@ -2,7 +2,7 @@
  * What the sidebar across machines remembers (#3065, #3066), on this machine
  * only: which machine Show narrows to, which projects are linked into one
  * group, and pairs the person kept separate (so a suggestion to link them
- * isn't made again). Only the display depends on it.
+ * isn't made again). Project groups also guide receiving handoffs into registered local projects.
  */
 
 import { create } from 'zustand';
@@ -17,6 +17,8 @@ interface Saved {
 }
 
 interface NetworkSidebarState extends Saved {
+  handoffLinkError: boolean;
+  retryHandoffLinks: () => void;
   setShow: (show: ShowFilter) => void;
   /** Link two projects (or their groups) into one group: Merge in the sidebar, Link in a suggestion. */
   link: (a: string, b: string) => void;
@@ -46,6 +48,18 @@ function load(): Saved {
   }
 }
 
+let syncVersion = 0;
+function syncHandoffLinks(links: string[][]): void {
+  const version = ++syncVersion;
+  if (typeof window === 'undefined' || !window.clubhouse?.project?.setHandoffProjectLinks) return;
+  void window.clubhouse.project.setHandoffProjectLinks(links).then(() => {
+    if (version === syncVersion) useNetworkSidebarStore.setState({ handoffLinkError: false });
+  }, () => {
+    // telemetry-exempt: the settings section displays the failed save and offers a retry
+    if (version === syncVersion) useNetworkSidebarStore.setState({ handoffLinkError: true });
+  });
+}
+
 function save(state: Saved): void {
   try {
     localStorage.setItem(STORAGE_KEY, JSON.stringify({ show: state.show, links: state.links, keptSeparate: state.keptSeparate }));
@@ -57,11 +71,14 @@ function save(state: Saved): void {
 export const useNetworkSidebarStore = create<NetworkSidebarState>((set, get) => {
   const update = (next: Partial<Saved>) => {
     set(next);
+    if (next.links) syncHandoffLinks(next.links);
     const s = get();
     save({ show: s.show, links: s.links, keptSeparate: s.keptSeparate });
   };
   return {
-    ...load(),
+    ...(() => { const saved = load(); syncHandoffLinks(saved.links); return saved; })(),
+    handoffLinkError: false,
+    retryHandoffLinks: () => syncHandoffLinks(get().links),
     setShow: (show) => update({ show }),
     link: (a, b) => {
       if (a === b) return;
@@ -90,6 +107,7 @@ export const useNetworkSidebarStore = create<NetworkSidebarState>((set, get) => 
 
 /** For tests: forget everything. */
 export function _resetNetworkSidebarForTesting(): void {
-  useNetworkSidebarStore.setState({ show: 'all', links: [], keptSeparate: [] });
+  syncVersion++;
+  useNetworkSidebarStore.setState({ handoffLinkError: false, show: 'all', links: [], keptSeparate: [] });
   try { localStorage.removeItem(STORAGE_KEY); } catch { /* telemetry-exempt: test reset */ }
 }

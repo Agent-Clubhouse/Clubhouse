@@ -1,3 +1,4 @@
+import { setHandoffProjectLinks } from '../services/handoff-project-links';
 import { getHandoffTransferBounds, setHandoffTransferBounds } from '../services/handoff-transfer-settings';
 import { getHandoffSecretSettings, setHandoffSecretSettings } from '../services/handoff-secret-settings';
 import { HANDOFF_SECRET_MAX_PATHS } from '../../shared/handoff-secret-settings';
@@ -40,6 +41,7 @@ function forwardProjectChanges(): void {
 
 export function registerProjectHandlers(): void {
   registerProjectImportHandlers();
+  ipcMain.handle(IPC.PROJECT.SET_HANDOFF_PROJECT_LINKS, withValidatedArgs([arrayArg(arrayArg(stringArg({ maxLength: 512 }), { maxLength: 200 }), { maxLength: 200 })], (_event, groups) => setHandoffProjectLinks(groups)));
   ipcMain.handle(IPC.PROJECT.GET_HANDOFF_TRANSFER_BOUNDS, withValidatedArgs([stringArg({ maxLength: 128 })], (_event, id) => getHandoffTransferBounds(id)));
   ipcMain.handle(IPC.PROJECT.SET_HANDOFF_TRANSFER_BOUNDS, withValidatedArgs([stringArg({ maxLength: 128 }), objectArg()], (_event, id, bounds) => setHandoffTransferBounds(id, bounds)));
   ipcMain.handle(IPC.PROJECT.GET_HANDOFF_SECRET_SETTINGS, withValidatedArgs([stringArg({ maxLength: 128 })], (_event, id) => getHandoffSecretSettings(id)));

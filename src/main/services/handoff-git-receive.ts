@@ -15,7 +15,7 @@ const exec = promisify(execFile);
 /** Acquires objects only after receiver-side checks. It never checks out or alters an existing branch. */
 export async function receiveHandoffCommit(options: {
   projectRoot: string; snapshot: HandoffSnapshot; bounds: HandoffTransferBounds;
-  handoffId: string; secretPolicy?: HandoffSecretPolicy; authorize(): Promise<void>;
+  handoffId: string; secretPolicy?: HandoffSecretPolicy; linkedProject?: boolean; authorize(): Promise<void>;
 }): Promise<{ commit: string; source: 'existing' | 'remote' | 'bundle' }> {
   const { snapshot, bounds, secretPolicy, handoffId } = options;
   await options.authorize();
@@ -29,7 +29,7 @@ export async function receiveHandoffCommit(options: {
     try { return (await repository.read(['cat-file', '-t', commit]))?.toString('ascii').trim() === 'commit'; }
     catch { return false; /* telemetry-exempt: a missing object triggers fetch or a verified bundle fallback */ }
   };
-  if (sourceKey ? targetKey !== sourceKey : !await hasCommit()) throw new Error('No matching registered project for this handoff.');
+  if (!options.linkedProject && (sourceKey ? targetKey !== sourceKey : !await hasCommit())) throw new Error('No matching registered project for this handoff.');
   const before = await fs.promises.lstat(snapshot.root, { bigint: true });
   if (!before.isDirectory() || before.isSymbolicLink()) throw new HandoffSnapshotError('invalid_staging');
   const root = await fs.promises.realpath(snapshot.root);

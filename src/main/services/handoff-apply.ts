@@ -214,3 +214,34 @@ export async function applyHandoffSnapshot(options: ApplyHandoffSnapshotOptions)
     throw error;
   } finally { await fs.promises.rm(hooks, { recursive: true, force: true }); }
 }
+
+/** Recovery may remove only an unpublished worktree proven to belong to this checkpoint.
+ * A fully moved tree is preserved: its agent may already have received the mission before the crash. */
+export async function recoverPendingHandoffApply(projectRoot: string, id: string, checkpoint: HandoffApplyCheckpoint): Promise<'none' | 'removed' | 'published'> {
+  const repository = await openHandoffRepository(projectRoot, { mutableWorktree: true });
+  const paths = handoffApplyPaths(repository.root, id);
+  if (checkpoint.stagingId !== id || checkpoint.worktree !== paths.worktree || checkpoint.branch !== paths.branch) throw new HandoffSnapshotError('invalid_staging');
+  const directory = async (name: string) => {
+    const stat = await fs.promises.lstat(name);
+    if (!stat.isDirectory() || stat.isSymbolicLink() || await fs.promises.realpath(name) !== name) throw new HandoffSnapshotError('unsafe_entry');
+  };
+  try { await fs.promises.lstat(paths.worktree); await directory(paths.worktree); return 'published'; }
+  catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error; }
+  try { await fs.promises.lstat(paths.pending); }
+  catch (error) { if ((error as NodeJS.ErrnoException).code === 'ENOENT') return 'none'; throw error; }
+  await directory(path.join(repository.root, '.clubhouse')); await directory(paths.parent); await directory(paths.pending);
+  const listed = (await repository.read(['worktree', 'list', '--porcelain', '-z']))?.toString('utf8').split('\0\0') ?? [];
+  const own = listed.some((entry) => {
+    const fields = entry.split('\0');
+    return fields.includes(`worktree ${paths.pending}`) && fields.includes(`branch refs/heads/${paths.branch}`);
+  });
+  if (!own) throw new HandoffSnapshotError('invalid_staging');
+  const hooks = path.join(paths.parent, `recovery-hooks-${randomUUID()}`); await fs.promises.mkdir(hooks, { mode: 0o700 });
+  const flags = ['-c', `core.hooksPath=${hooks}`, '-c', 'core.fsmonitor=false'];
+  try {
+    await repository.assertCurrent(); await directory(paths.parent); await directory(paths.pending);
+    await repository.read([...flags, 'worktree', 'remove', '--force', '--', paths.pending]);
+    await repository.read([...flags, 'branch', '-D', '--', paths.branch]);
+    return 'removed';
+  } finally { await fs.promises.rm(hooks, { recursive: true, force: true }); }
+}

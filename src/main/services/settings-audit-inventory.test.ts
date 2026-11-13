@@ -56,6 +56,7 @@ const NOT_SETTINGS = new Set([
 
 /** Per-project policy stores audit their person-facing writer, without exposing the policy map. */
 const MANUALLY_AUDITED = new Map([
+  ['handoff-project-links.json', "auditChanged('app', 'handoff.project_links')"],
   ['handoff-transfer-settings.json', "auditChanged('project', 'handoff.transfer_bounds', projectId)"],
   ['handoff-secret-settings.json', "auditChanged('project', 'handoff.not_secret_paths', projectId)"],
 ]);

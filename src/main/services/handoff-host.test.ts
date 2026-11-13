@@ -15,6 +15,14 @@ const state = vi.hoisted(() => ({
 }));
 vi.mock('electron', () => ({ app: { getPath: () => state.dir } }));
 vi.mock('../telemetry/persist', () => ({ persist: { recovery: vi.fn(), timed: (_area: string, work: () => Promise<void>) => work() } }));
+// These cases own lifecycle admission; real transfer/apply is exercised by the worker/fixture-repo tests.
+vi.mock('./handoff-worker', async (original) => ({ ...await original<typeof import('./handoff-worker')>(),
+  HandoffWorker: class { async run() {} async flush() {} stop() {} },
+}));
+vi.mock('./handoff-transfer-transport', () => ({ readHandoffTransferManifest: async () => ({ repo: { remote: 'https://example.invalid/project.git', base: 'a'.repeat(40) } }), requestHandoffTransfer: vi.fn() }));
+vi.mock('./handoff-snapshot', async (original) => ({ ...await original<typeof import('./handoff-snapshot')>(),
+  openHandoffRepository: async () => ({ repo: { remote: 'https://example.invalid/project.git' }, read: async () => Buffer.from('commit') }),
+}));
 vi.mock('./handoff-preparations', () => ({ bindPreparedHandoff: async () => {}, settleHandoffPreparationBinding: () => {}, pruneHandoffPreparations: async () => {}, preparedSourceForRecord: async () => { throw new Error('No prepared bytes in authorization fixture'); } }));
 vi.mock('./annex-identity', () => ({ getIdentity: () => ({ fingerprint: state.machine }), getOrCreateIdentity: () => ({ fingerprint: state.machine }) }));
 vi.mock('./annex-settings', () => ({ getSettings: () => ({ alias: 'this-computer', enableServer: true, networkEnabled: true, acceptHandoffs: state.accepting }), networkEnabled: () => true }));

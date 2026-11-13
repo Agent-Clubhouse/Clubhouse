@@ -61,6 +61,20 @@ describe('linking the same project on two computers (#3066)', () => {
     expect(screen.getByTestId('linked-project')).not.toHaveTextContent('remote||');
   });
 
+  it('shows a failed handoff routing save and retries without resending links on display changes', async () => {
+    const save = vi.fn().mockRejectedValueOnce(new Error('disk')).mockResolvedValue(undefined);
+    window.clubhouse.project.setHandoffProjectLinks = save;
+    render(<LinkedProjectsSection projectId="p1" />);
+    fireEvent.click((await screen.findByTestId('linked-project-suggestion')).querySelector('button')!);
+    expect(await screen.findByRole('alert')).toHaveTextContent('Could not save project links');
+    useNetworkSidebarStore.getState().setShow('all');
+    expect(save).toHaveBeenCalledTimes(1);
+    fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
+    await waitFor(() => expect(screen.queryByRole('alert')).not.toBeInTheDocument());
+    expect(save).toHaveBeenLastCalledWith([['p1', REMOTE]]);
+    window.clubhouse.project.setHandoffProjectLinks = vi.fn().mockResolvedValue(undefined);
+  });
+
   it('shows nothing without another computer or a link', () => {
     useRemoteProjectStore.setState({ satelliteProjects: {} } as never);
     const { container } = render(<LinkedProjectsSection projectId="p1" />);

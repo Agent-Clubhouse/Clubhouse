@@ -64,3 +64,9 @@ it('refuses a different registered repository without creating any worktree or i
   await expect(receiveHandoffCommit(options)).rejects.toThrow('No matching registered project');
   await expect(git(receiver, 'cat-file', '-e', `${options.snapshot.manifest.repo.base}^{commit}`)).rejects.toThrow();
 }, 30_000);
+
+it('allows a different registered repository only with the main-owned person link decision', async () => {
+  const options = await prepared(); await git(receiver, 'config', 'remote.origin.url', 'https://example.invalid/team/linked.git');
+  expect(await receiveHandoffCommit({ ...options, linkedProject: true })).toEqual({ commit: options.snapshot.manifest.repo.base, source: 'bundle' });
+  expect(fs.readFileSync(path.join(receiver, 'public.txt'), 'utf8')).toBe('Receiver original');
+}, 30_000);

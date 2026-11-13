@@ -57,6 +57,7 @@ export function registerHandoffTools(): void {
         include: include as Partial<import('../../../../shared/handoff-manifest').HandoffWorktreeManifest['include']> | undefined, exclude: args.exclude as string[] | undefined,
       }));
     } catch (error) {
+      // telemetry-exempt: bounded, sanitized preparation findings are returned to the caller
       const { HandoffSnapshotError } = await import('../../handoff-snapshot');
       if (error instanceof HandoffSnapshotError) return text({ ready: false, reason: error.code, findings: error.findings ?? [], ...error.boundsReport,
         ...(error.code === 'uncommitted_branch' && { instruction: 'Commit your work or use worktree mode.' }) });
@@ -86,14 +87,18 @@ export function registerHandoffTools(): void {
         }, host.localHandoffAgent(agentId));
       });
       return text(record);
-    } catch {
+    } catch (error) {
+      // telemetry-exempt: bounded, sanitized preparation findings are returned to the caller
+      const { HandoffSnapshotError } = await import('../../handoff-snapshot');
+      if (error instanceof HandoffSnapshotError) return text({ ready: false, reason: error.code, findings: error.findings ?? [], ...error.boundsReport,
+        ...(error.code === 'uncommitted_branch' && { instruction: 'Commit your work or use worktree mode.' }) });
       // telemetry-exempt: never reflect task text, secret values or store paths
       return text('Handoff offer was refused or could not be persisted. Check the target, connection, permissions and secret-free metadata.', true);
     }
   }, { group: 'handoffs', grant: HANDOFF_OFFER_GRANT });
 
   registerGlobalTool('respond_to_handoff', {
-    description: 'Accept or decline an offer addressed to you. A receiving Dispatcher can name a local target_agent, or new_helper to prepare a fresh helper asleep until apply. target_project selects its registered project (otherwise the first registered project by id). Acceptance authorizes automatic verified transfer and fresh-worktree apply without another prompt. This is distinct from the helper result tool hand_off.',
+    description: 'Accept or decline an offer addressed to you. A receiving Dispatcher can name a local target_agent, or new_helper to prepare a fresh helper asleep until apply. target_project selects a matching registered project; by default the Dispatcher chooses a matching project and agent. Acceptance authorizes automatic verified transfer and fresh-worktree apply without another prompt. This is distinct from the helper result tool hand_off.',
     inputSchema: { type: 'object', properties: { id: { type: 'string' }, accept: { type: 'boolean' }, reason: { type: 'string' }, target_agent: { type: 'string' }, target_project: { type: 'string' } }, required: ['id', 'accept'] },
   }, async (agentId, args) => {
     if (!known(args, ['id', 'accept', 'reason', 'target_agent', 'target_project']) || !id(args) || typeof args.accept !== 'boolean' || !reason(args)
@@ -105,7 +110,7 @@ export function registerHandoffTools(): void {
       return await withHandoffAgreementCall({ agentId, name: 'respond_to_handoff', args }, async () => {
         const target = args.target_agent === 'new_helper'
           ? await host.prepareNewHandoffHelper(agentId, args.id as string, args.target_project as string | undefined)
-          : args.target_agent === undefined ? undefined : await host.resolveHandoffTarget(args.target_agent as string);
+          : args.target_agent === undefined ? args.accept === true ? await host.defaultHandoffReceivingAgent(agentId, args.id as string) : undefined : await host.resolveHandoffTarget(args.target_agent as string);
         if (target && 'content' in target) return target;
         if (target && (!('agentId' in target) || target.machine !== host.localHandoffAgent(agentId).machine)) return text('The accepting target must be a local agent.', true);
         return text(await host.handoffHost().coordinator.respond(args.id as string,

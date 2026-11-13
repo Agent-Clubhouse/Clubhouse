@@ -16,6 +16,7 @@ export const project = {
     ),
   checkGit: (dirPath: string) => ipcRenderer.invoke(IPC.PROJECT.CHECK_GIT, dirPath),
   /** Each project's git remote as a key, by project id (#3066). */
+  setHandoffProjectLinks: (groups: string[][]): Promise<void> => ipcRenderer.invoke(IPC.PROJECT.SET_HANDOFF_PROJECT_LINKS, groups),
   getHandoffTransferBounds: (projectId: string): Promise<import('../shared/handoff-manifest').HandoffTransferBounds> => ipcRenderer.invoke(IPC.PROJECT.GET_HANDOFF_TRANSFER_BOUNDS, projectId),
   setHandoffTransferBounds: (projectId: string, bounds: import('../shared/handoff-manifest').HandoffTransferBounds): Promise<import('../shared/handoff-manifest').HandoffTransferBounds> => ipcRenderer.invoke(IPC.PROJECT.SET_HANDOFF_TRANSFER_BOUNDS, projectId, bounds),
   getHandoffSecretSettings: (projectId: string): Promise<import('../shared/handoff-secret-settings').HandoffSecretSettings> => ipcRenderer.invoke(IPC.PROJECT.GET_HANDOFF_SECRET_SETTINGS, projectId),

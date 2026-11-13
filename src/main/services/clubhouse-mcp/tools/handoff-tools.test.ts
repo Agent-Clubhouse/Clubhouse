@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { McpToolHandler } from '../types';
 const state = vi.hoisted(() => ({
   handlers: new Map<string, McpToolHandler>(), options: new Map<string, unknown>(),
-  snapshot: vi.fn(), ensure: vi.fn(), check: vi.fn(), offer: vi.fn(), respond: vi.fn(), get: vi.fn(), list: vi.fn(), cancel: vi.fn(), prepare: vi.fn(),
+  defaultTarget: vi.fn(), snapshot: vi.fn(), ensure: vi.fn(), check: vi.fn(), offer: vi.fn(), respond: vi.fn(), get: vi.fn(), list: vi.fn(), cancel: vi.fn(), prepare: vi.fn(),
   target: { agentId: 'receiver', machine: Array(16).fill('ab').join(':') } as { agentId: string; machine: string },
 }));
 vi.mock('../../handoff-preparations', () => ({ prepareCallerHandoff: (...args: unknown[]) => state.snapshot(...args), ensurePreparedHandoff: (...args: unknown[]) => state.ensure(...args) }));
@@ -17,6 +17,7 @@ vi.mock('../handoff-permissions', () => ({
 vi.mock('../../handoff-host', () => ({
   resolveHandoffTarget: async () => state.target, localHandoffAgent: (agentId: string) => ({ agentId, machine: Array(16).fill('ab').join(':') }), handoffSenderName: async () => 'Caller name',
   prepareNewHandoffHelper: (...args: unknown[]) => state.prepare(...args),
+  defaultHandoffReceivingAgent: (...args: unknown[]) => state.defaultTarget(...args),
   handoffHost: () => ({ coordinator: { offer: state.offer, respond: state.respond, cancel: state.cancel, service: { get: state.get, list: state.list } }, commands: { list: () => [] } }),
 }));
 import { registerHandoffTools } from './handoff-tools';
@@ -26,7 +27,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   state.target = { agentId: 'receiver', machine: Array(16).fill('ab').join(':') };
   state.ensure.mockResolvedValue({ fileCount: 1, totalBytes: 5, sha256: 'a'.repeat(64) });
-  state.snapshot.mockResolvedValue({ ready: true });
+  state.snapshot.mockResolvedValue({ ready: true }); state.defaultTarget.mockResolvedValue(undefined);
   state.offer.mockResolvedValue({ id, state: 'offered' });
   state.respond.mockResolvedValue({ id, state: 'accepted' });
   state.get.mockReturnValue({ id, state: 'offered' });
@@ -56,6 +57,13 @@ describe('global handoff tools', () => {
   ])('refuses malformed %s input before changing an agreement', async (name, args) => {
     expect((await call(name as string, args as Record<string, unknown>)).isError).toBe(true);
     expect(state.offer).not.toHaveBeenCalled(); expect(state.respond).not.toHaveBeenCalled(); expect(state.cancel).not.toHaveBeenCalled();
+  });
+
+  it("uses the Dispatcher matching-project selection before accepting without an explicit target", async () => {
+    state.defaultTarget.mockResolvedValue(state.target);
+    expect((await call('respond_to_handoff', { id, accept: true })).isError).not.toBe(true);
+    expect(state.defaultTarget).toHaveBeenCalledWith('caller', id);
+    expect(state.respond).toHaveBeenCalledWith(id, { agentId: 'caller', machine: state.target.machine }, true, state.target, undefined);
   });
 
   it('does not accept while a fresh helper still needs creation approval', async () => {

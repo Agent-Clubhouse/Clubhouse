@@ -109,6 +109,13 @@ export class HandoffCoordinator {
     return this.options.store.get(id)!;
   }
 
+  /** Receiver worker transitions share the same retained synchronization and notice path. */
+  async advance(id: string, update: Parameters<HandoffService['advance']>[1], expectedVersion: number): Promise<Handoff> {
+    const record = await this.service.advance(id, update, expectedVersion);
+    await this.changed(record); await this.trySync(id);
+    return this.options.store.get(id)!;
+  }
+
   async cancel(id: string, actor: HandoffAgent, reason?: string): Promise<Handoff> {
     const current = this.service.get(id, actor);
     if (!sameHandoffAgent(current.from, actor)) throw new Error('Only the sender can cancel.');

@@ -1,3 +1,4 @@
+import { HandoffTransferBusy } from '../../shared/handoff-transfer';
 import { hasSessionCaptureFailure } from './session-capture-barrier';
 import { legacyDefaultsNotCopied } from './legacy-defaults';
 import { accessFromLegacy, legacyFreeAgentMode, type AccessLevel } from '../../shared/agent-access';
@@ -3702,8 +3703,8 @@ async function handleNetworkHandoffTransferRoute(ctx: AnnexRouteContext): Promis
     if (ctx.requireMtls()) return;
     if (agentCallPeer(ctx) !== machine) { sendJson(ctx.res, 403, { error: 'not_a_computer' }); return; }
     sendJson(ctx.res, 200, reply);
-  } catch { // telemetry-exempt: no content, paths or private storage diagnostics in failures
-    sendJson(ctx.res, 400, { error: 'handoff_transfer_refused' });
+  } catch (error) { // telemetry-exempt: no content, paths or private storage diagnostics in failures
+    sendJson(ctx.res, error instanceof HandoffTransferBusy ? 503 : 400, { error: 'handoff_transfer_refused' });
   }
 }
 

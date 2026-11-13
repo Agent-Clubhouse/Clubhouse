@@ -126,3 +126,11 @@ it('keeps a relative dangling link inside the worktree but refuses an existing o
   fs.symlinkSync('outside-link/../missing', path.join(repo, 'link.txt'));
   await expect(prepareHandoffSnapshot({ worktreeRoot: repo, stagingRoot: staging, handoffId: randomUUID(), exclude: ['outside-link'] })).rejects.toMatchObject({ code: 'unsafe_entry' });
 }, 30_000);
+
+it('bounds a compressed branch checkout before bundle allocation and reports its largest files', async () => {
+  fs.writeFileSync(path.join(repo, 'large.txt'), 'a'.repeat(4096)); await commit('Highly compressible base');
+  await expect(prepareHandoffTransfer({ mode: 'branch', worktreeRoot: repo, stagingRoot: staging, handoffId: randomUUID(), bounds: { totalBytes: 1024, perFileBytes: 512, maxFiles: 10 } })).rejects.toMatchObject({
+    code: 'bounds_exceeded', boundsReport: { largestFiles: expect.arrayContaining([expect.objectContaining({ path: 'large.txt', size: 4096 })]) },
+  });
+  expect(fs.readdirSync(staging)).toEqual([]);
+}, 30_000);

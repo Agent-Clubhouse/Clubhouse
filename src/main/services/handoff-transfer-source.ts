@@ -1,7 +1,7 @@
 import { createHash } from 'crypto';
 import type { Handoff, HandoffManifestSummary } from '../../shared/handoffs';
 import type { HandoffTransferBounds, HandoffWorktreeManifest } from '../../shared/handoff-manifest';
-import { HANDOFF_CHUNK_BYTES, HANDOFF_TRANSFER_TIMEOUT_MS, parseHandoffTransferRequest } from '../../shared/handoff-transfer';
+import { HANDOFF_CHUNK_BYTES, HANDOFF_TRANSFER_TIMEOUT_MS, parseHandoffTransferRequest, HandoffTransferBusy } from '../../shared/handoff-transfer';
 import type { HandoffSecretPolicy } from './handoff-secret-settings';
 import { openHandoffSnapshotArtifact, verifyHandoffSnapshot, type HandoffSnapshot } from './handoff-snapshot';
 
@@ -53,7 +53,7 @@ export class HandoffTransferSource {
     for (const [key, item] of this.entries) if (now - item.used > 5 * 60_000) void this.invalidate(key, item);
     let entry = this.entries.get(id);
     if (!entry) {
-      if (this.entries.size >= 8) throw new Error('Handoff transfer busy.');
+      if (this.entries.size >= 8) throw new HandoffTransferBusy();
       const current: Entry = { active: true, used: now, source: Promise.resolve(undefined as never) };
       current.source = (async () => {
         const prepared = await this.options.prepared(record);
@@ -74,7 +74,7 @@ export class HandoffTransferSource {
 
   async receive(peer: string, raw: unknown): Promise<HandoffTransferReply> {
     const request = parseHandoffTransferRequest(raw);
-    if ((this.requests.get(peer) ?? 0) >= 2 || [...this.requests.values()].reduce((a, b) => a + b, 0) >= 8) throw new Error('Handoff transfer busy.');
+    if ((this.requests.get(peer) ?? 0) >= 2 || [...this.requests.values()].reduce((a, b) => a + b, 0) >= 8) throw new HandoffTransferBusy();
     this.requests.set(peer, (this.requests.get(peer) ?? 0) + 1);
     let expired = false; let entry: Entry | undefined;
     const assertCurrent = async () => {
