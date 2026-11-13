@@ -181,8 +181,6 @@ beforeEach(async () => {
       if (setup) {
         if (!a.managed && !a.switchedToManagedAt) a.switchedToManagedAt = new Date().toISOString();
         a.managed = setup;
-        delete a.clubhouseFeatures;
-        delete a.persona;
         delete a.managedMigrationFailure;
       } else delete a.managed;
     },
@@ -267,7 +265,7 @@ describe('the switch at spawn (D59)', () => {
     const managed = await migrateAtSpawn('beta', ada);
 
     expect(managed?.managed).toBeDefined();
-    expect(get('beta', 'ada').persona).toBeUndefined();
+    expect(get('beta', 'ada').persona).toBe('orchestrator');
     expect(get('beta', 'ada').orchestration).toEqual({ orchestrate: true });
     expect(h.policyCalls).toEqual(['carry', 'save']);
     expect(get('beta', 'ada').managedMigration?.from).toBe('persona');

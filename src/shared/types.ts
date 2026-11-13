@@ -549,6 +549,8 @@ export type HelperDisposeDecision = 'disposed' | 'declined';
 
 /** start_helper's arguments, validated (#2227). */
 export interface HelperStartArgs {
+  /** Explicit bounded metadata; never inferred from task text. */
+  taskProfile?: string;
   name: string;
   task: string;
   /** @deprecated Accepted and ignored (#2901): helpers start from a template. start_helper says so in `personaNote`. */

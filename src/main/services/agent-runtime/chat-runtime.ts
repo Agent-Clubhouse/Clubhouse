@@ -27,6 +27,9 @@ import {
   type AgentRuntime,
   type ChatCapabilities,
   type ChatDriverId,
+  type ChatMcpServer,
+  type ChatProviderInventory,
+  type ProviderSessionReport,
   type ChatDriverSession,
   type ChatResumeTiming,
   type ChatEvent,
@@ -201,6 +204,9 @@ export class ChatAgentRuntime implements AgentRuntime {
   /** How the last session open went with a requested resume, for chat start telemetry (#2304). */
   private resumeOpen: { honored: boolean; timing?: ChatResumeTiming } | undefined;
   private capabilities: ChatCapabilities | undefined;
+  /** What the provider itself reported this session offers the model (#2855), and its MCP handshakes. */
+  private providerInventory: ChatProviderInventory | undefined;
+  private mcpHandshakes: ChatMcpServer[] | undefined;
   private pendingTrace?: ChatTraceContext;
   private pendingTraceAssigned = false;
   private turnTrace?: ChatTraceContext;
@@ -281,6 +287,9 @@ export class ChatAgentRuntime implements AgentRuntime {
     // old one was set to: record it for the helper ceiling (#2228), and drop
     // the user's level from the old session.
     this.recordLevel(this.opts.level, 'lower');
+    // The old session's report never speaks for the new one. Cleared before the start: a provider can report during it.
+    this.providerInventory = undefined;
+    this.mcpHandshakes = undefined;
     const session = await this.startDriverSession(resumeNativeSessionId);
     this.session = session;
     agentRegistry.setUserLaunchAccess(this.agentId, undefined);
@@ -461,6 +470,8 @@ export class ChatAgentRuntime implements AgentRuntime {
           this.capabilities = { ...this.capabilities, ...draft.data.capabilities };
         }
         if (draft.data.nativeSessionId) this.noteNativeSessionId(draft.data.nativeSessionId);
+        if (draft.data.mcpServers) this.mcpHandshakes = draft.data.mcpServers;
+        if (draft.data.providerInventory) this.noteProviderInventory(draft.data.providerInventory);
         break;
     }
     if (hasNativeSessionId(draft)) this.noteNativeSessionId(draft.data.nativeSessionId);
@@ -575,6 +586,30 @@ export class ChatAgentRuntime implements AgentRuntime {
 
   getNativeSessionId(): string | undefined {
     return this.nativeSessionId;
+  }
+
+  /**
+   * The provider's own report for the current native session (#2855). A report
+   * for another session, or none yet, leaves `inventory` out.
+   */
+  getProviderReport(): ProviderSessionReport {
+    const inventory = this.providerInventory;
+    return {
+      driver: this.opts.driverId,
+      nativeSessionId: this.nativeSessionId,
+      ...(inventory && inventory.nativeSessionId === this.nativeSessionId && { inventory }),
+      ...(this.mcpHandshakes && { mcpHandshakes: this.mcpHandshakes }),
+    };
+  }
+
+  /** A report covers what it names: a skills-only report keeps the same session's tool list. */
+  private noteProviderInventory(report: ChatProviderInventory): void {
+    const same = this.providerInventory?.nativeSessionId === report.nativeSessionId ? this.providerInventory : undefined;
+    this.providerInventory = {
+      ...report,
+      ...(report.skills === undefined && same?.skills !== undefined && { skills: same.skills }),
+      ...(report.mcpTools === undefined && same?.mcpTools !== undefined && { mcpTools: same.mcpTools }),
+    };
   }
 
   getSessionOutputDir(): string | undefined {

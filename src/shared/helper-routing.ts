@@ -1,3 +1,4 @@
+import type { QuotaCalibrationPlan } from './helper-burn-pressure';
 /**
  * Helper routing (#2671, docs/helper-auto-routing.md): what an orchestrator can
  * ask for with `difficulty`, the per-provider presets behind it, and the record
@@ -438,7 +439,7 @@ export interface QuotaWindow {
 }
 
 /** What a CLI says about its plan limits. `not_applicable`: this login has none (an API key, say). */
-export type PlanQuotaReading = { kind: 'windows'; windows: QuotaWindow[] } | { kind: 'not_applicable' };
+export type PlanQuotaReading = { kind: 'windows'; windows: QuotaWindow[]; calibrationPlan?: QuotaCalibrationPlan } | { kind: 'not_applicable' };
 
 export type QuotaWindowName = 'weekly' | 'fiveHour' | 'other' | `model:${string}`;
 

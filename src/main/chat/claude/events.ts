@@ -48,6 +48,8 @@ export type ClaudeChatEventBody =
       parentToolCallId?: string;
       /** Missing/malformed is unknown; an explicit [] reports none. */
       skills?: string[] | null;
+      /** The `mcp__` names in init's `tools`. Missing/malformed is unknown (null). */
+      mcpTools?: string[] | null;
       apiKeySource?: string;
       capabilities?: unknown;
       /** MCP servers from init's `mcp_servers`; absent when the CLI didn't send the field. */

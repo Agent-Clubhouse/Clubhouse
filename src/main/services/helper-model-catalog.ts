@@ -1,6 +1,8 @@
-import { AUTO_LEVELS, BUILTIN_PRESETS, isPresetProvider } from '../../shared/helper-routing';
+import { AUTO_LEVELS, BUILTIN_PRESETS, isPresetModel, isPresetProvider } from '../../shared/helper-routing';
+import type { HelperCalibrationIdentityReason } from '../../shared/telemetry/helper-usage-contract';
 import { IPC } from '../../shared/ipc-channels';
 import type { ModelInfo, ModelList, OrchestratorProvider } from '../orchestrators/types';
+import { isClaudeModelAlias } from '../orchestrators/claude-model-aliases';
 import { broadcastToAllWindows } from '../util/ipc-broadcast';
 import { appLog } from './log-service';
 import { getPresets } from './orchestration-settings';
@@ -20,6 +22,24 @@ interface CatalogFile {
 }
 
 const MAX_CATALOG_BYTES = 1024 * 1024;
+export const HELPER_CALIBRATION_CATALOG_MAX_AGE_MS = 24 * 60 * 60_000;
+const latestCatalogs = new Map<string, { list: ModelList; newestLiveAt: number }>();
+
+/** Evidence from reads already made by mapping validation, never another CLI call. */
+export function peekHelperCalibrationModel(provider: string, model: string, now: number): { model?: string; reason: HelperCalibrationIdentityReason } {
+  const evidence = latestCatalogs.get(provider);
+  if (!evidence) return { reason: 'missing_catalog' };
+  const { list } = evidence;
+  if (list.source !== 'live' || list.liveError) return { reason: 'fallback_catalog' };
+  if (!Number.isFinite(now) || !Number.isFinite(list.fetchedAt) || list.fetchedAt < evidence.newestLiveAt
+    || list.fetchedAt < 0 || list.fetchedAt > now || now - list.fetchedAt > HELPER_CALIBRATION_CATALOG_MAX_AGE_MS) return { reason: 'stale_catalog' };
+  const base = model.replace(/\[1m\]$/i, '');
+  const entry = list.models.find((m) => m.id === model || m.id === base || m.resolvedId === base);
+  const canonical = entry?.resolvedId ?? entry?.id;
+  if (!isPresetModel(canonical) || isClaudeModelAlias(canonical)
+    || canonical.replace(/\[1m\]$/i, '').toLowerCase() === 'auto') return { reason: 'unresolved_model' };
+  return { model: canonical, reason: 'cached_catalog' };
+}
 
 const strings = (value: unknown): value is string[] => Array.isArray(value) && value.every((v) => typeof v === 'string');
 
@@ -42,6 +62,13 @@ const store = createSettingsStore<CatalogFile>('helper-model-catalogs.json', { v
 
 /** Observe existing token-free reads only. Failed, empty and fallback reads are not baselines. */
 export async function observeHelperModelCatalog(provider: OrchestratorProvider, list: ModelList): Promise<void> {
+  if (isPresetProvider(provider.id)) {
+    const liveAt = list.source === 'live' && !list.liveError && Number.isFinite(list.fetchedAt) ? list.fetchedAt : 0;
+    latestCatalogs.set(provider.id, {
+      list: { ...list, models: list.models.map((m) => ({ ...m })) },
+      newestLiveAt: Math.max(latestCatalogs.get(provider.id)?.newestLiveAt ?? 0, liveAt),
+    });
+  }
   if (list.source !== 'live' || list.via !== 'handshake' || list.liveError || list.models.length === 0) return;
   try {
     const stored = store.get().providers[provider.id];

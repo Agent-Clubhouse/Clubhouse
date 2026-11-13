@@ -40,7 +40,7 @@ describe('controlled managed library imports (#2855)', () => {
   it('previews without a write, then commits a complete independent copy with path-free provenance', async () => {
     const plan = await prepare({ candidateId, mode: 'copy', name: 'Imported review' });
     expect(await service.listParts('skill')).toEqual([]);
-    expect(plan.preview).toMatchObject({ mode: 'copy', files: [{ path: 'SKILL.md' }], dependencies: 'not_confirmed', providerLoaded: 'not_confirmed' });
+    expect(plan.preview).toMatchObject({ mode: 'copy', files: [{ path: 'SKILL.md' }], dependencies: { status: 'none_declared', declared: [] }, providerLoaded: 'not_confirmed' });
     expect(JSON.stringify(plan.preview)).not.toContain('Review it.');
     expect(JSON.stringify(plan.preview)).not.toContain(root);
     const saved = await user(() => plan.commit('Dispatcher'));

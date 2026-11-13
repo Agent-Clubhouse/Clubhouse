@@ -19,6 +19,7 @@
  */
 
 import type { ChatCapabilities, ChatDriverId, PermissionLevel } from './capabilities';
+import type { ProviderSessionReport } from './provider-inventory';
 import type {
   PermissionOption,
   ChatEvent,
@@ -118,6 +119,8 @@ export interface AgentRuntime {
   getSessionId?(): string;
   /** When the running turn started (ms), or null between turns. Chat runtimes only. */
   getTurnStartedAt?(): number | null;
+  /** What the provider reported the current session offers the model (#2855). Chat runtimes only. */
+  getProviderReport?(): ProviderSessionReport;
 
   /** Deliver user, mission, MCP, shoulder-tap, group-project or Annex text. */
   sendMessage(content: string | ContentBlock[], opts: RuntimeSendOptions): Promise<RuntimeSendResult>;

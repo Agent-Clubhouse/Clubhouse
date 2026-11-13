@@ -5,6 +5,7 @@ import type { ManagedPartContent, ManagedPartSummary } from '../../../shared/man
 import type { ManagedAgentsService } from './service';
 import { ManagedError } from './service';
 import { readDiscoveredManagedAsset, type NativeAssetSource } from './discovery';
+import { declaredDependencies } from './dependencies';
 
 export interface ManagedAssetImportRequest {
   candidateId: string;
@@ -52,10 +53,10 @@ export async function prepareManagedAssetImport(service: ManagedAgentsService, s
     ...(native.content.kind === 'skill' ? { files: native.content.files.map((f) => ({ path: f.path, encoding: f.encoding ?? 'utf8', executable: !!f.executable })) }
       : { serverKey: native.content.serverKey, transport: native.content.transport, envVars: native.content.envVars ?? [] }),
     droppedEnvValues: native.droppedEnvValues,
-    dependencies: 'not_confirmed',
+    dependencies: declaredDependencies(native.content),
     providerCompatibility: 'not_confirmed',
     providerLoaded: 'not_confirmed',
-    note: 'Review supporting files and external dependencies before confirming. Nothing was run. Import does not assign, convert or restart an agent. Reuse follows future shared edits; a copy is independent. Literal environment values are not copied; set them in the external environment.',
+    note: 'Review supporting files and the declared dependencies before confirming; none are installed or checked. Nothing was run. Import does not assign, convert or restart an agent. Reuse follows future shared edits; a copy is independent. Literal environment values are not copied; set them in the external environment.',
   };
   const fingerprint = canonicalHash({ source: native.fingerprint, projectId, request, preview, library, matches });
   return {

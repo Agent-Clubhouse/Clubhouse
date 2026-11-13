@@ -60,14 +60,17 @@ describe('Auto replay', () => {
       ].reverse());
       expect(Object.keys(replay.calibration)).toHaveLength(4);
       for (const report of Object.values(replay.calibration)) {
-        expect(report).toEqual({ decisions: 8, unknown: 5, evaluated: 3, excluded: 0, maeBp: 0, biasBp: 0 });
+        expect(report).toMatchObject({
+          qualification: 'shadow_proxy_only', decisions: 8, unknown: 5, evaluated: 3, excluded: 0, maeBp: 0, biasBp: 0,
+          intervalsEvaluated: 3, intervalCoverageBp: 10_000, meanIntervalWidthBp: 0, meanIntervalScoreBp: 0,
+        });
       }
     });
 
     it('reports outside bursts as proxy error, not attributed helper consumption, with no future leakage', () => {
       const replay = runForecastReplay(forecastReplayFixture(T0, [100, 100, 100, 100, 100, 700]));
       for (const report of Object.values(replay.calibration)) {
-        expect(report).toMatchObject({ unknown: 5, evaluated: 1, maeBp: 600, biasBp: 600 });
+        expect(report).toMatchObject({ unknown: 5, evaluated: 1, maeBp: 600, biasBp: 600, intervalsEvaluated: 1, intervalCoverageBp: 0, meanIntervalScoreBp: 6000 });
       }
       expect(replay.entries[5].burnObservation?.attribution).toBe('whole_login_unknown');
       expect(replay.entries.slice(0, 5).every((e) => e.forecast?.weekly.expectedBp === undefined)).toBe(true);
@@ -81,9 +84,20 @@ describe('Auto replay', () => {
       expect(replay.entries[5].forecast?.weekly.expectedBp).toBeUndefined();
       const changed = runForecastReplay([
         ...forecastReplayFixture(T0, Array(5).fill(100)),
-        ...forecastReplayFixture(T0 + 10 * HOUR, [100], { mappingRevision: 'r2.0' }),
+        ...forecastReplayFixture(T0 + 10 * HOUR, [100], { calibration: { revision: '22222222-2222-4222-8222-222222222222', model: 'claude-opus-5-5' } }),
       ]);
       expect(changed.entries.at(-1)?.forecast?.weekly).toEqual({ samples: 0, unavailableReason: 'insufficient_samples' });
+    });
+
+    it('does not leak delayed evidence into a decision at the same availability timestamp, regardless of event order', () => {
+      const fixture = forecastReplayFixture(T0, Array(6).fill(100));
+      const delayed = fixture.find((e) => e.type === 'quota' && e.atMs === T0 + 4.5 * HOUR)!;
+      delayed.atMs = T0 + 5 * HOUR;
+      for (const events of [fixture, [...fixture].reverse()]) {
+        const replay = runForecastReplay(events);
+        expect(replay.entries.find((e) => e.decidedAtMs === T0 + 5 * HOUR)?.forecast?.weekly.expectedBp).toBeUndefined();
+        expect(Object.values(replay.calibration).every((report) => report.evaluated === 0)).toBe(true);
+      }
     });
 
     it('reports resets and incomplete usage as excluded intervals without inventing calibration errors', () => {
@@ -98,7 +112,7 @@ describe('Auto replay', () => {
       expect(replay.entries[5].burnObservation?.reason).toBe('reset');
       expect(replay.entries[6].burnObservation?.reason).toBe('incomplete');
       for (const report of Object.values(replay.calibration)) {
-        expect(report).toEqual({ decisions: 7, unknown: 5, evaluated: 0, excluded: 2 });
+        expect(report).toMatchObject({ decisions: 7, unknown: 5, evaluated: 0, excluded: 2, intervalsEvaluated: 0 });
       }
     });
   });

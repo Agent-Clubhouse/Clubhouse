@@ -1,3 +1,6 @@
+import { preparePressure } from './helper-burn-pressure';
+import { forecastHistory } from '../telemetry/helper-decision-ledger';
+import type { PressureDecision } from '../../shared/helper-burn-pressure';
 /**
  * Helper presets and what a start decides from them (#2671,
  * docs/helper-auto-routing.md). Stage 2: `difficulty` picks a model and effort on
@@ -56,14 +59,15 @@ import { getAllProviders, getProvider } from '../orchestrators';
 import type { OrchestratorId } from '../orchestrators';
 import { helperPresetsChanged } from '../telemetry/feature-events';
 import { appLog } from './log-service';
-import { forceProviderQuota, isProviderCoolingDown, isProviderCoolingDownNow, peekProviderQuota, readProviderQuota } from './provider-quota';
+import { forceProviderQuota, isProviderCoolingDown, isProviderCoolingDownNow, peekProviderQuota, peekQuotaCalibrationPlan, readProviderQuota } from './provider-quota';
 import { setRoutingPolicyListener } from './helper-routing-changes';
 import { checkHelperEffort, checkHelperModel, modelListFor } from './model-check';
+import { peekHelperCalibrationModel } from './helper-model-catalog';
 import * as orchestrationSettings from './orchestration-settings';
 import { appendSettingsAudit, type SettingsAuditSurface } from './settings-audit';
 import { AUTO_TIERS, decideAutoProvider, type AutoCandidate, type AutoDecision } from './helper-auto-policy';
 import { _resetHelperAutoStateForTesting, reserveAutoDecision, rotationCursors } from './helper-auto-state';
-import type { DecisionCandidate, DecisionQuota, DecisionQuotaWindow, HelperDecisionRecord } from '../../shared/telemetry/helper-usage-contract';
+import type { DecisionCandidate, DecisionQuota, DecisionQuotaWindow, HelperDecisionRecord, HelperTaskProfile } from '../../shared/telemetry/helper-usage-contract';
 import { getSettings as getOrchestratorSettings } from './orchestrator-settings';
 import { readProjectAgentDefaults, updateProjectAgentDefaults } from './agent-settings-service';
 import type { DurableAgentConfig } from '../../shared/types';
@@ -272,6 +276,7 @@ export interface StartPlanRequest {
   model?: string;
   effort?: string;
   difficulty?: string;
+  taskProfile?: HelperTaskProfile;
   /** The CLI the helper gets when nothing else names one. */
   orchestratorCli?: string;
   /** The project the helper is created in: Auto checks its CLIs there. */
@@ -283,6 +288,7 @@ interface AutoOption {
   provider: AutoCandidateProvider;
   cell: ResolvedCell;
   configuredCell: PresetCell;
+  configuredGeneration?: string;
   quota: QuotaView;
   /** Provider: see candidateKey. */
   key: string;
@@ -290,7 +296,7 @@ interface AutoOption {
 
 export interface StartPlan {
   /** Auto, waiting to be decided under the start lock: see decideAutoPlan. */
-  pendingAuto?: { options: AutoOption[]; skipped: Record<string, HelperRoutingSkip>; difficulty: HelperDifficulty; orchestratorCli?: string };
+  pendingAuto?: { options: AutoOption[]; skipped: Record<string, HelperRoutingSkip>; difficulty: HelperDifficulty; taskProfile?: HelperTaskProfile; orchestratorCli?: string };
   /** An Auto decision's record, once made. Its id is the reservation's; the caller adds the helper id. */
   decision?: HelperDecisionRecord;
   provider?: string;
@@ -436,6 +442,12 @@ function candidateKey(provider: string): string {
  * of starts sees each other's.
  */
 async function prepareAuto(request: StartPlanRequest): Promise<StartPlanResult> {
+  try {
+    await orchestrationSettings.ensurePresetCellGenerations();
+  } catch (err) {
+    // telemetry-exempt: missing metadata leaves shadow calibration cold, not routing unavailable.
+    appLog('core:mcp', 'warn', 'Could not initialize helper calibration generations', { meta: { error: errorType(err) } });
+  }
   const { orchestratorCli } = request;
   const difficulty = request.difficulty as HelperDifficulty;
   const enabled = getOrchestratorSettings().enabled ?? [];
@@ -450,10 +462,11 @@ async function prepareAuto(request: StartPlanRequest): Promise<StartPlanResult> 
     if (!(await providerUsable(provider))) { skipped[provider] = 'cli_unavailable'; return; }
     if (await isProviderCoolingDown(provider)) { skipped[provider] = 'cooling_down'; return; }
     const configuredCell = { ...(orchestrationSettings.getPresets()[provider]?.[difficulty] ?? BUILTIN_PRESETS[provider][difficulty]) };
+    const configuredGeneration = orchestrationSettings.getPresetCellGeneration(provider, difficulty);
     const { resolved } = await resolveCell(provider, difficulty);
     if (!resolved) { skipped[provider] = 'no_valid_mapping'; return; }
     const quota = await readProviderQuota(provider, { model: resolved.cell.model });
-    options.push({ provider, cell: resolved, configuredCell, quota, key: candidateKey(provider) });
+    options.push({ provider, cell: resolved, configuredCell, configuredGeneration, quota, key: candidateKey(provider) });
   }));
   // A stable order for what's shown. The choice doesn't depend on it.
   options.sort((a, b) => (a.key < b.key ? -1 : a.key > b.key ? 1 : 0));
@@ -462,7 +475,7 @@ async function prepareAuto(request: StartPlanRequest): Promise<StartPlanResult> 
   return {
     ok: true,
     plan: {
-      pendingAuto: { options, skipped, difficulty, ...(orchestratorCli && { orchestratorCli }) },
+      pendingAuto: { options, skipped, difficulty, taskProfile: request.taskProfile, ...(orchestratorCli && { orchestratorCli }) },
       routing: {} as HelperRouting,
     },
   };
@@ -549,10 +562,18 @@ function autoDecisionRecord(args: {
   load: Readonly<Record<string, AutoLoad>>;
   decision?: AutoDecision;
   routing?: HelperRouting;
+  pressure?: PressureDecision;
+  taskProfile?: HelperTaskProfile;
 }): HelperDecisionRecord {
   const { decisionId, now, difficulty, orchestratorCli, options, skipped, load, decision, routing } = args;
   const evaluations = new Map((decision?.evaluations ?? []).map((e) => [e.provider, e]));
   const chosen = decision?.ok ? decision.provider : undefined;
+  const chosenOption = options.find((option) => option.provider === chosen);
+  const currentGeneration = chosenOption ? orchestrationSettings.getPresetCellGeneration(chosenOption.provider, difficulty) : undefined;
+  const confirmedGeneration = chosenOption?.configuredGeneration === currentGeneration ? currentGeneration : undefined;
+  const identity = chosenOption ? peekHelperCalibrationModel(chosenOption.provider, chosenOption.cell.cell.model, now) : undefined;
+  const identityReason = !chosenOption ? undefined : chosenOption.cell.fallback !== 'none' ? 'unverified_mapping'
+    : !confirmedGeneration ? 'missing_generation' : identity?.reason;
   const loadOf = (provider: string) => load[provider] ?? { live: 0, reserved: 0 };
   const candidates: DecisionCandidate[] = getAllProviders().map(({ id }) => {
     const option = options.find((o) => o.provider === id);
@@ -587,6 +608,8 @@ function autoDecisionRecord(args: {
   const enabled = getOrchestratorSettings().enabled ?? [];
   return {
     decisionId,
+    ...(args.pressure && { pressure: args.pressure }),
+    ...(args.taskProfile && { taskProfile: args.taskProfile }),
     decidedAtMs: now,
     policyVersion: HELPER_ROUTING_POLICY_VERSION,
     mode: 'auto',
@@ -599,6 +622,12 @@ function autoDecisionRecord(args: {
     ...(routing && { source: routing.source, reason: routing.reason }),
     fallback: routing?.fallback ?? 'candidate_skipped',
     mappingRevision: helperRoutingRevision(),
+    ...(routing && chosenOption && {
+      calibrationIdentityReason: identityReason,
+      ...(identityReason === 'cached_catalog' && identity?.model && confirmedGeneration && {
+        calibration: { revision: confirmedGeneration, model: identity.model },
+      }),
+    }),
     mappingFingerprint: mappingFingerprint(options),
     mappingKind: sources.size === 0 ? 'none' : sources.size > 1 ? 'mixed' : sources.has('custom_mapping') ? 'custom' : 'builtin',
     settings: { autoEnabled: true, enabledProviders: enabled.length > 0 ? enabled.length : getAllProviders().length },
@@ -652,7 +681,7 @@ export function startDecisionRecord(routing: HelperRouting | undefined, launched
 export function decideAutoPlan(plan: StartPlan, load: Readonly<Record<string, AutoLoad>>, now = Date.now()): StartPlanResult {
   const pending = plan.pendingAuto;
   if (!pending) return { ok: true, plan };
-  const { difficulty, orchestratorCli } = pending;
+  const { difficulty, orchestratorCli, taskProfile } = pending;
   const skipped = { ...pending.skipped };
   const enabled = getOrchestratorSettings().enabled ?? [];
   // Reads happened outside the lock. Recheck mutable eligibility and cached evidence synchronously with load and reservations.
@@ -661,17 +690,34 @@ export function decideAutoPlan(plan: StartPlan, load: Readonly<Record<string, Au
     quota: peekProviderQuota(option.provider, { model: option.cell.cell.model, now }),
   }));
   const eligible = options.filter((option) => {
+    const currentGeneration = orchestrationSettings.getPresetCellGeneration(option.provider, difficulty);
     if (enabled.length > 0 && !enabled.includes(option.provider)) skipped[option.provider] = 'cli_disabled';
     else if (option.provider === 'copilot-cli' && !orchestrationSettings.getCopilotAuto()) skipped[option.provider] = 'auto_disabled';
     else if (isProviderCoolingDownNow(option.provider, now)) skipped[option.provider] = 'cooling_down';
-    else if (!sameCell(option.configuredCell, orchestrationSettings.getPresets()[option.provider]?.[difficulty] ?? BUILTIN_PRESETS[option.provider][difficulty])) skipped[option.provider] = 'mapping_changed';
+    else if (!sameCell(option.configuredCell, orchestrationSettings.getPresets()[option.provider]?.[difficulty] ?? BUILTIN_PRESETS[option.provider][difficulty])
+      || (option.configuredGeneration !== undefined && currentGeneration !== undefined
+        && option.configuredGeneration !== currentGeneration)) skipped[option.provider] = 'mapping_changed';
     else return true;
     return false;
   });
   const total = (provider: string) => (load[provider]?.live ?? 0) + (load[provider]?.reserved ?? 0);
+  const decisionId = randomUUID();
+  const history = forecastHistory();
+  const pressures = new Map<string, PressureDecision>();
   const candidates: AutoCandidate[] = eligible.map((o) => {
     const weekly = o.quota.weekly;
+    const identity = peekHelperCalibrationModel(o.provider, o.cell.cell.model, now);
+    const generation = orchestrationSettings.getPresetCellGeneration(o.provider, difficulty);
+    const pressure = o.cell.fallback === 'none' && generation && generation === o.configuredGeneration && identity.model
+      ? preparePressure({ decisionId, decidedAtMs: now, provider: o.provider, model: o.cell.cell.model,
+        effort: o.cell.cell.effort ?? null, difficulty, taskProfile, calibration: { model: identity.model, revision: generation } },
+      history, total(o.provider), recordQuota(o.quota, o.cell.cell.model), now, peekQuotaCalibrationPlan(o.provider, now)) : undefined;
+    if (pressure) pressures.set(o.provider, pressure);
+    const qualified = pressure && pressure.windows.every((w) => w.band)
+      && !o.quota.unreadableWindows?.length && !o.quota.otherWindows?.length && !o.quota.modelWindows?.length;
     return {
+      ...(qualified && { expectedBurnBp: pressure.windows.find((w) => w.name === 'weekly')?.band?.meanBp,
+        remainingPressure: pressure.windows.map((w) => ({ usedBp: w.usedBp, upperBp: w.band!.upperBp })) }),
       key: o.key,
       provider: o.provider,
       quotaState: o.quota.state,
@@ -681,14 +727,13 @@ export function decideAutoPlan(plan: StartPlan, load: Readonly<Record<string, Au
       load: total(o.provider),
     };
   });
-  const decision = decideAutoProvider({ now, candidates, cursors: rotationCursors() });
+  const decision = decideAutoProvider({ now, candidates, cursors: rotationCursors(), options: { useBurnForecasts: true } });
   if (decision.ok === false) return noCandidate(difficulty, skipped, options, orchestratorCli, { now, load, decision });
   const chosen = options.find((o) => o.key === decision.key)!;
   const allSkipped: Record<string, HelperRoutingSkip> = { ...skipped };
   for (const e of decision.evaluations) if (e.excluded) allSkipped[e.provider] = e.excluded;
   const { cell } = chosen;
   const effort = cell.cell.effort ?? undefined;
-  const decisionId = randomUUID();
   const routing: HelperRouting = {
     mode: 'auto',
     balanced: true,
@@ -715,7 +760,7 @@ export function decideAutoPlan(plan: StartPlan, load: Readonly<Record<string, Au
       model: cell.cell.model,
       ...(effort && { effort }),
       routing,
-      decision: autoDecisionRecord({ decisionId, now, difficulty, orchestratorCli, options, skipped, load, decision, routing }),
+      decision: autoDecisionRecord({ decisionId, now, difficulty, orchestratorCli, options, skipped, load, decision, routing, pressure: pressures.get(chosen.provider), taskProfile }),
       ...(cell.warning && { warning: cell.warning }),
     },
   };

@@ -20,7 +20,8 @@ import * as projectStore from '../../project-store';
 import * as agentConfig from '../../agent-config';
 import { withDispatcherCatalogWrites } from '../../asset-catalog/store';
 import { activationFor, managedAgents, restartManagedAgent, statusFor } from '../../managed-agents';
-import { applyManagedSettings, createManagedAgent, prepareManagedAgentCreation } from '../../managed-agents/agents';
+import { applyManagedSettings, convertToManaged, createManagedAgent, prepareManagedAgentCreation, previewConvert } from '../../managed-agents/agents';
+import { withSwitchLock } from '../../managed-agents/auto-migrate';
 import { previewManagedSetup } from '../../managed-agents/delivery';
 import { discoverManagedAssets } from '../../managed-agents/discovery';
 import { prepareManagedAssetImport, type ManagedAssetImportRequest } from '../../managed-agents/imports';
@@ -262,6 +263,11 @@ const CREATE_GRANTS: readonly ToolGrantDeclaration[] = [
 const IMPORT_GRANTS: readonly ToolGrantDeclaration[] = [
   { actions: ['agent.read'], target: 'agent_arg', from: { args: ['agent'], project: 'project' } },
   { actions: ['library.read', 'library.write'], target: 'library' },
+];
+/** A switch to managed makes parts for the agent and gives it a setup. */
+const CONVERT_GRANTS: readonly ToolGrantDeclaration[] = [
+  { actions: ['agent.grant'], target: 'agent_arg', from: { args: ['agent'], project: 'project' } },
+  { actions: ['library.write'], target: 'library' },
 ];
 const RESTART_GRANTS: readonly ToolGrantDeclaration[] = [
   { actions: ['agent.restart'], target: 'agent_arg', from: { args: ['agent'], project: 'project' } },
@@ -505,11 +511,23 @@ export function registerManagedTools(): void {
     });
 
   tool('get_agent_activation', { actions: ['agent.read'], target: 'agent_arg', from: { args: ['agent'], project: 'project' } },
-    'Read passive activation evidence and the latest restart receipt: configured references, desired revisions, recorded materialization and running launch setup are separate. Provider-confirmed loaded skills/tools remain not confirmed without trusted current-session evidence. Never treats file writes, session creation or MCP handshakes as verification; runs no paid probe. A pending/failed restart is not success and must not be blindly retried.',
-    { project: PROJECT, agent: AGENT }, ['project', 'agent'],
+    'Check whether an agent\'s skills and MCP tools reached its running session. Configured references, desired revisions, recorded materialization, the running launch setup and provider-confirmed loading are separate. A part is confirmed only when the provider\'s own report for the current session names it (Claude chat: skills and MCP tools; Copilot chat: skills); anything else stays not_confirmed, never active. verification.status: verified, partial (some parts the provider never reports), not_confirmed, or blocked with a reason and recovery. waitSeconds (up to 45) re-reads while the provider report is still pending. File writes, session creation and MCP handshakes are never proof; runs no prompt or paid probe. Includes the latest restart receipt: a pending/failed restart is not success and must not be blindly retried.',
+    { project: PROJECT, agent: AGENT, waitSeconds: { type: 'number', description: 'Wait up to this many seconds (max 45) for the provider to report the current session. Default 0.' } }, ['project', 'agent'],
     async (_c, args) => {
       const t = await resolveAgent(args);
-      return json(await activationFor(t.project.path, t.agentId));
+      const wait = args.waitSeconds ?? 0;
+      if (typeof wait !== 'number' || !Number.isFinite(wait) || wait < 0) throw new ArgError('waitSeconds must be a number, 0 or more.');
+      const deadline = Date.now() + Math.min(wait, ACTIVATION_WAIT_MAX_S) * 1000;
+      let attempts = 0;
+      for (;;) {
+        const result = await activationFor(t.project.path, t.agentId);
+        attempts += result.verification.attempts;
+        // Only a pending provider report can change by waiting; a block needs a fix, not another read.
+        if (result.verification.reason !== 'awaiting_provider_report' || Date.now() >= deadline) {
+          return json({ ...result, verification: { ...result.verification, attempts } });
+        }
+        await new Promise((resolve) => setTimeout(resolve, ACTIVATION_POLL_MS));
+      }
     });
 
   tool('set_agent_setup', { actions: ['agent.grant'], target: 'agent_arg', from: { args: ['agent'], project: 'project' } },
@@ -523,6 +541,25 @@ export function registerManagedTools(): void {
       const saved = await asDispatcher(callerId, () => svc().saveSetup(t.project.path, t.agentId, next));
       // Leaving the Clubhouse part out is ignored: saveSetup keeps it, and the result says so.
       return json(keptClubhousePart(next.mcps, saved));
+    });
+
+  tool('switch_agent_to_managed', CONVERT_GRANTS,
+    'Switch a plain (unmanaged) agent to Clubhouse managed, keeping what it has: its instructions file becomes a block, and its own skill folders and MCP servers become custom parts for it alone. Its CLI, model, access, conversation and connections stay as they are. The first call previews the parts it would make and a confirm token; show that to the user and ask before calling again with the same arguments and confirm. A token is not user approval. Nothing on disk is deleted. The setup applies at its next start; restart_agent applies it to a running agent.',
+    { project: PROJECT, agent: AGENT, confirm: S }, ['project', 'agent'],
+    async (callerId, args) => {
+      const t = await resolveAgent(args);
+      const preview = await previewConvert(t.project.path, t.agentId);
+      const digest = digestOf('switch_agent_to_managed', t.project.path, t.agentId, preview);
+      const given = optionalString(args, 'confirm');
+      if (!given) {
+        return json({ status: 'needs_confirmation', confirm: issueConfirm(callerId, digest), agent: t.agentName, ...preview,
+          note: 'These parts are made for this agent only. Ask the user, then call again with the same arguments and this confirm token.' });
+      }
+      redeemConfirm(callerId, given, digest);
+      // One switch of an agent at a time, with the automatic one (D59): the second finds it managed.
+      const setup = await withSwitchLock(t.agentId, () => asDispatcher(callerId, () => convertToManaged(t.project.path, t.agentId, { keep: true })));
+      return json({ status: 'switched', agent: t.agentName, setup: { blocks: setup.blocks, skills: setup.skills, mcps: setup.mcps },
+        note: 'It gets this setup at its next start. To give it more parts, use set_agent_setup; restart_agent applies them to a running session.' });
     });
 
   tool('preview_agent_setup', { actions: ['agent.read'], target: 'agent_arg', from: { args: ['agent'], project: 'project' } },
@@ -925,6 +962,10 @@ export function registerManagedTools(): void {
 
 /** How long restart_agent waits for a restart after the turn before it answers. */
 const RESTART_ANSWER_MS = 10_000;
+
+/** get_agent_activation's bounded wait for a pending provider report: under the shortest CLI tool-call timeout (Codex, 60s), and how often it re-reads. */
+const ACTIVATION_WAIT_MAX_S = 45;
+const ACTIVATION_POLL_MS = 1_000;
 
 /** The promise's value if it settles within `ms`, or null. Rejects if it rejects within `ms`. */
 async function settleWithin<T>(promise: Promise<T>, ms: number): Promise<T | null> {

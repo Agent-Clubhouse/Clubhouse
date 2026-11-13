@@ -77,6 +77,7 @@ global:delete_agent_part readOnly=false destructive=true openWorld=false
 global:get_agent_setup readOnly=true destructive=false openWorld=false
 global:get_agent_activation readOnly=true destructive=false openWorld=false
 global:set_agent_setup readOnly=false destructive=false openWorld=false
+global:switch_agent_to_managed readOnly=false destructive=false openWorld=false
 global:preview_agent_setup readOnly=true destructive=false openWorld=false
 global:list_agent_templates readOnly=true destructive=false openWorld=false
 global:save_agent_template readOnly=false destructive=false openWorld=false
@@ -117,5 +118,5 @@ global:cancel_repository_import readOnly=false destructive=false openWorld=false
 global:request_app_update readOnly=false destructive=false openWorld=false
 global:get_delivery readOnly=true destructive=false openWorld=false
 global:get_annex_network_settings readOnly=true destructive=false openWorld=false
-global:update_annex_network_settings readOnly=false destructive=false openWorld=false"
+global:update_annex_network_settings readOnly=false destructive=true openWorld=false"
 `;

@@ -184,6 +184,7 @@ describe('tool grant declarations (#2967)', () => {
       get_agent_setup: agent.read on agent_arg
       get_agent_activation: agent.read on agent_arg
       set_agent_setup: agent.grant on agent_arg
+      switch_agent_to_managed: agent.grant on agent_arg; library.write on library
       preview_agent_setup: agent.read on agent_arg
       list_agent_templates: library.read on library
       save_agent_template: template.write on library

@@ -382,6 +382,8 @@ export interface ChatEventDataMap {
     mcpServers?: ChatMcpServer[];
     /** Passive provider report for this session; names are not proof of skill execution. */
     providerSkills?: import('./provider-skills').ChatProviderSkills;
+    /** What the provider reported this session offers the model, for verified activation (#2855). Sent when it changes. */
+    providerInventory?: import('./provider-inventory').ChatProviderInventory;
     /** The context this session works within, for a CLI that reports more than its usage's `context` (#2660). */
     contextLimits?: import('../context-window').ContextLimits;
   };
