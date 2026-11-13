@@ -1,3 +1,5 @@
+import * as path from 'path';
+import * as os from 'os';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 // What the gate decides is covered in mcp-call-gate.test.ts and test/mcp-off.
@@ -5,15 +7,19 @@ vi.mock('../mcp-call-gate', async (original) => ({ ...await original<typeof impo
 
 const mockIsStopping = vi.hoisted(() => vi.fn((_id?: unknown) => false));
 vi.mock('electron', () => ({
-  app: { getPath: () => '/tmp/clubhouse-test' },
+  app: { getPath: () => path.join(os.tmpdir(), 'clubhouse-test') },
   BrowserWindow: { getAllWindows: () => [] },
 }));
 
 const mockMkdir = vi.fn().mockResolvedValue(undefined);
+const mockMkdtemp = vi.fn(async (prefix: string) => `${prefix}test-isolated`);
+const mockRmdir = vi.fn().mockResolvedValue(undefined);
 const mockWriteFile = vi.fn().mockResolvedValue(undefined);
 const mockUnlink = vi.fn().mockResolvedValue(undefined);
 vi.mock('fs/promises', () => ({
   mkdir: (...args: unknown[]) => mockMkdir(...args),
+  mkdtemp: (...args: [string]) => mockMkdtemp(...args),
+  rmdir: (...args: unknown[]) => mockRmdir(...args),
   writeFile: (...args: unknown[]) => mockWriteFile(...args),
   unlink: (...args: unknown[]) => mockUnlink(...args),
 }));
@@ -117,6 +123,8 @@ describe('AgentTools', () => {
     mockPtyGetBuffer.mockReset();
     mockGetProvider.mockReset();
     mockMkdir.mockReset().mockResolvedValue(undefined);
+    mockMkdtemp.mockReset().mockImplementation(async (prefix: string) => `${prefix}test-isolated`);
+    mockRmdir.mockReset().mockResolvedValue(undefined);
     mockWriteFile.mockReset().mockResolvedValue(undefined);
     mockUnlink.mockReset().mockResolvedValue(undefined);
 
@@ -1241,11 +1249,11 @@ describe('AgentTools', () => {
       const result = await promise;
 
       expect(result.isError).toBeFalsy();
-      expect(mockMkdir).toHaveBeenCalled();
+      expect(mockMkdtemp).toHaveBeenCalledWith(path.join(os.tmpdir(), 'clubhouse-test', 'clubhouse-a2a-'));
       expect(mockWriteFile).toHaveBeenCalledWith(
-        expect.stringContaining('sf1-sf1.md'),
+        expect.stringMatching(/[a-f0-9-]{36}\.md$/),
         'multi\nline\ncontent',
-        'utf-8',
+        { encoding: 'utf8', flag: 'wx', mode: 0o600 },
       );
 
       // PTY write: single-line notification + Enter
@@ -1282,28 +1290,30 @@ describe('AgentTools', () => {
       expect(result.isError).toBe(true);
     });
 
-    it('strips path traversal sequences from filename', async () => {
+    it('keeps task ids and filename traversal out of the storage path', async () => {
       mockAgentRegistryGet.mockReturnValue({ runtime: 'pty', orchestrator: 'claude-code' });
       const promise = callTool('agent-1', sendFileToolName, {
         content: 'pwned',
-        task_id: 'sf_evil',
+        task_id: '../sf_evil',
         filename: '../../etc/passwd',
       });
       await vi.advanceTimersByTimeAsync(600);
       await promise;
 
-      // path.basename('../../etc/passwd') → 'passwd', so file stays in temp dir
+      // Both hints are metadata; the directory and basename come from the app.
       expect(mockWriteFile).toHaveBeenCalledWith(
-        expect.stringContaining('sf_evil-passwd'),
+        expect.stringMatching(/[a-f0-9-]{36}\.md$/),
         'pwned',
-        'utf-8',
+        { encoding: 'utf8', flag: 'wx', mode: 0o600 },
       );
       // Must NOT contain directory traversal in the written path
       const writtenPath = mockWriteFile.mock.calls[0][0] as string;
       expect(writtenPath).not.toContain('..');
+      expect(writtenPath).not.toContain('sf_evil');
+      expect(path.dirname(writtenPath)).toBe(`${path.join(os.tmpdir(), 'clubhouse-test', 'clubhouse-a2a-')}test-isolated`);
     });
 
-    it('uses custom filename when provided', async () => {
+    it('keeps a custom filename as delivery metadata', async () => {
       mockAgentRegistryGet.mockReturnValue({ runtime: 'pty', orchestrator: 'claude-code' });
       const promise = callTool('agent-1', sendFileToolName, {
         content: '{}',
@@ -1312,11 +1322,12 @@ describe('AgentTools', () => {
       });
       await vi.advanceTimersByTimeAsync(600);
       await promise;
+      expect(mockPtyWrite.mock.calls[0][1]).toContain('Filename hint: \"data.json\"');
 
       expect(mockWriteFile).toHaveBeenCalledWith(
-        expect.stringContaining('sf3-data.json'),
+        expect.stringMatching(/[a-f0-9-]{36}\.md$/),
         '{}',
-        'utf-8',
+        { encoding: 'utf8', flag: 'wx', mode: 0o600 },
       );
     });
   });
