@@ -669,7 +669,7 @@ describe('hydrateFromRemote', () => {
         targetId: 'a2',
         targetKind: 'agent',
         label: 'Agent 2',
-      }));
+      }), 'restore');
     });
 
     it('restores wire instructions', async () => {
@@ -700,7 +700,7 @@ describe('hydrateFromRemote', () => {
       });
       await store.getState().loadWires(storage);
       expect(mockMcpBinding.bind).toHaveBeenCalledTimes(1);
-      expect(mockMcpBinding.bind).toHaveBeenCalledWith('a1', expect.objectContaining({ targetId: 'a2' }));
+      expect(mockMcpBinding.bind).toHaveBeenCalledWith('a1', expect.objectContaining({ targetId: 'a2' }), 'restore');
     });
 
     it('prunes stale bindings when either endpoint is missing', async () => {
@@ -730,7 +730,7 @@ describe('hydrateFromRemote', () => {
 
       // Only the wire with both endpoints present should be restored
       expect(mockMcpBinding.bind).toHaveBeenCalledTimes(1);
-      expect(mockMcpBinding.bind).toHaveBeenCalledWith('agent-a', expect.objectContaining({ targetId: 'agent-b' }));
+      expect(mockMcpBinding.bind).toHaveBeenCalledWith('agent-a', expect.objectContaining({ targetId: 'agent-b' }), 'restore');
       expect(store.getState().wireDefinitions).toHaveLength(1);
       expect(store.getState().wireDefinitions[0].agentId).toBe('agent-a');
       expect(store.getState().wireDefinitions[0].targetId).toBe('agent-b');
@@ -974,7 +974,7 @@ describe('hydrateFromRemote', () => {
 
       // Only the binding where both endpoints exist is restored
       expect(mockMcpBinding.bind).toHaveBeenCalledTimes(1);
-      expect(mockMcpBinding.bind).toHaveBeenCalledWith('agent-1', expect.objectContaining({ targetId: 'gp_123' }));
+      expect(mockMcpBinding.bind).toHaveBeenCalledWith('agent-1', expect.objectContaining({ targetId: 'gp_123' }), 'restore');
     });
   });
 
