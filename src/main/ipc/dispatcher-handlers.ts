@@ -30,6 +30,8 @@ const nullableMachineArg = (value: unknown, argName: string): string | null => {
   if (typeof value !== 'string' || !value || value.length > 200) throw new Error(`${argName} must be a computer's id or null`);
   return value;
 };
+import { getDispatcherPresence, onDispatcherPresenceChanged } from '../services/dispatcher-presence';
+import type { DispatcherPresenceSnapshot } from '../../shared/dispatcher-presence';
 
 let registered = false;
 
@@ -125,6 +127,9 @@ export function registerDispatcherHandlers(): void {
     async (_event, machine): Promise<DispatcherLeadState> => { await chooseLead(machine); return getLeadState(); },
   ));
   onLeadChanged(() => broadcastToAllWindows(IPC.DISPATCHER.LEAD_CHANGED, getLeadState()));
+  // The Dispatchers on this person's other computers (#3349): read-only, pushed on a real change.
+  ipcMain.handle(IPC.DISPATCHER.GET_PRESENCE, (): DispatcherPresenceSnapshot => getDispatcherPresence());
+  onDispatcherPresenceChanged(() => broadcastToAllWindows(IPC.DISPATCHER.PRESENCE_CHANGED, getDispatcherPresence()));
 
   let lastApplied = '';
   dispatcher.onDispatcherChanged((state) => {

@@ -40,6 +40,11 @@
         "flagOn": true,
         "newLayout": false,
         "offReason": "classic_layout",
+        "presence": {
+          "event": "dispatcher:presence",
+          "snapshotField": "dispatcherPresence",
+          "version": 1
+        },
         "projectId": "__dispatcher__",
         "requestsUnderWay": 0,
         "running": false,
@@ -156,6 +161,11 @@
         "flagOn": true,
         "newLayout": true,
         "offReason": "switched_off",
+        "presence": {
+          "event": "dispatcher:presence",
+          "snapshotField": "dispatcherPresence",
+          "version": 1
+        },
         "projectId": "__dispatcher__",
         "requestsUnderWay": 0,
         "running": false,

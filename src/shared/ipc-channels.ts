@@ -775,6 +775,10 @@ export const IPC = {
     SET_LEAD: 'dispatcher:set-lead',
     /** Main → renderer: DispatcherLeadState after any change. */
     LEAD_CHANGED: 'dispatcher:lead-changed',
+    /** The Dispatchers on this person's other computers (#3349). Resolves with a DispatcherPresenceSnapshot. */
+    GET_PRESENCE: 'dispatcher:get-presence',
+    /** Main → renderer broadcast: DispatcherPresenceSnapshot after a real change. */
+    PRESENCE_CHANGED: 'dispatcher:presence-changed',
   },
   HOOK_SERVER: {
     /** Main → renderer: a list of agentIds whose hook config was changed and need restart for the change to take full effect. */

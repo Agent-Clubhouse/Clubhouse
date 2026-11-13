@@ -44,6 +44,8 @@ import { OrchestrationCardPair, useOrchestrationCards } from '../helpers/Orchest
 import { useEffectiveOrchestrator } from '../effective-orchestrator';
 import { useDispatcherConnection } from '../../dispatcher/useDispatcherEnabled';
 import { DispatcherCard } from './DispatcherCard';
+import { OtherMachinesList, otherMachinesSummary } from '../../dispatcher/OtherMachinesList';
+import { useDispatcherPresence } from '../../dispatcher/useDispatcherPresence';
 import { openAgentSettingsOn } from '../agentSettingsPages';
 import { Button } from '../../../components/Button';
 
@@ -267,6 +269,10 @@ export function AgentDetails({ agent, chat, onShowInStream, missedSubagentId, on
   if (orchestration.showOrchestrate) available.add('orchestrate');
   if (showConnections) available.add('connections');
   if (showEvidence) available.add('skills-mcp');
+  // Its peers on other computers (#3349), compact. Settings › Dispatcher has the full list.
+  const presence = useDispatcherPresence();
+  const otherMachines = dispatcher ? presence?.remotes ?? [] : [];
+  if (otherMachines.length > 0) available.add('other-machines');
   const requested = focus?.agentId === agent.id ? containingDetailsCard(focus.card) : null;
   const focusCard = requested && available.has(requested) ? requested : dispatcher ? 'actions' : 'session';
 
@@ -374,6 +380,12 @@ export function AgentDetails({ agent, chat, onShowInStream, missedSubagentId, on
           onToggle={() => toggleCard('connections')}
           onDisconnect={disconnectToolWire}
         />
+      )}
+
+      {otherMachines.length > 0 && (
+        <DetailsCard id="other-machines" title="Other machines" summary={otherMachinesSummary(otherMachines)} open={open('other-machines')} onToggle={() => toggleCard('other-machines')}>
+          <OtherMachinesList compact remotes={otherMachines} />
+        </DetailsCard>
       )}
 
       {dispatcher

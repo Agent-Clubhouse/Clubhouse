@@ -359,6 +359,9 @@
       "bulletinDigests": {},
       "canvasState": {},
       "dispatcher": null,
+      "dispatcherPresence": {
+        "remotes": []
+      },
       "finishedQuickAgents": {
         "proj_app": [
           {

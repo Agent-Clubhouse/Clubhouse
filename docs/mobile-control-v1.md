@@ -1305,6 +1305,10 @@ Messages other agents send the Dispatcher arrive as `user_message` with `source:
 
 **Its chat is a group chat (#3043).** Live, on replay, in history pages and from `/chat/events/{seq}`, its chat comes as the desktop draws it: the same shapes, without tool calls, thoughts, plan documents, subagent work, Clubhouse updates or its own hand-offs, and with task ids, routing tags and JSON cleaned out of `routed` and the final `agent_message`. State events (turns, the session, the queue, approvals, questions) all still come, so `seq` can skip; `lastSeq` counts every event. Every other agent's chat comes whole.
 
+### Other computers' Dispatchers (#3349)
+
+The capabilities' `dispatcher.presence` is `{"version":1,"snapshotField":"dispatcherPresence","event":"dispatcher:presence"}`. The snapshot's top-level `dispatcherPresence` is `{"remotes":[...]}`: one entry for each other computer in this person's Annex Network, never phones, sorted by machine name. Each entry has `machineId` (lowercased fingerprint), `machineName`, `address` (the controller's machine-qualified address, or null while it is unknown), `dispatcherName` (or null), `label` ("<Dispatcher name> on <machine>"), `state` (`online`, `working`, `asleep`, `offline`, `off` or `unknown`), `lastSeen` (ISO, only while `offline`) and `link` (`{"state":"active"|"paused"|"unavailable","reason"?:string}`). `dispatcher:presence` is broadcast and buffered with the same object whenever it changes. Read-only: there are no presence commands. Phones that don't know the field ignore it. Show the `label`, never a bare id or address.
+
 ### Dispatcher settings
 
 Settings > Dispatcher from a phone (#3206): Behavior, Choose models yourself (#3191), name, look and personality, today's usage, and its two resets. Gated on `dispatcher.settings.version >= 1`. Everything here works only while it is on.

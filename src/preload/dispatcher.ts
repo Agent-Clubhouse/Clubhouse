@@ -10,6 +10,7 @@ import type { ConnectableAgent, ForgetEverythingResult } from '../shared/dispatc
 import type { DispatcherTeaching } from '../shared/dispatcher-teaching';
 import type { DispatcherUsageSplit } from '../shared/dispatcher-usage';
 import type { DispatcherLeadState } from '../shared/dispatcher-lead';
+import type { DispatcherPresenceSnapshot } from '../shared/dispatcher-presence';
 
 export const dispatcher = {
   dispatcher: {
@@ -64,6 +65,15 @@ export const dispatcher = {
       ipcRenderer.on(IPC.DISPATCHER.LEAD_CHANGED, listener);
       return () => {
         ipcRenderer.removeListener(IPC.DISPATCHER.LEAD_CHANGED, listener);
+      };
+    },
+    /** The Dispatchers on this person's other computers (#3349), read-only. */
+    getPresence: (): Promise<DispatcherPresenceSnapshot> => ipcRenderer.invoke(IPC.DISPATCHER.GET_PRESENCE),
+    onPresenceChanged: (callback: (snapshot: DispatcherPresenceSnapshot) => void): (() => void) => {
+      const listener = (_event: Electron.IpcRendererEvent, snapshot: DispatcherPresenceSnapshot) => callback(snapshot);
+      ipcRenderer.on(IPC.DISPATCHER.PRESENCE_CHANGED, listener);
+      return () => {
+        ipcRenderer.removeListener(IPC.DISPATCHER.PRESENCE_CHANGED, listener);
       };
     },
     onAgentCardChanged: (callback: (agentId: string) => void): (() => void) => {
