@@ -185,6 +185,9 @@ async function authorizeSelectedTarget(record: Handoff, by: HandoffAgent, target
   const targetLocation = await localAgent(target.agentId);
   if (sameHandoffAgent(by, target)) return; // The addressed receiver consumed its own exact acceptance approval.
   if (!isDispatcherAgentId(by.agentId) || !hasConnection(by, target)) throw new HandoffAuthorizationChanged();
+  const direction = getConnectionDirection(relative(by), relative(target));
+  const binding = bindingManager.getBindingsForAgent(by.agentId).find((wire) => wire.targetKind === 'agent' && wire.targetId === target.agentId);
+  if (['wake_agent', 'send_message'].some((tool) => direction?.disabledTools?.includes(tool) || binding?.disabledTools?.includes(tool))) throw new HandoffAuthorizationChanged();
   const targetGrants = agentRegistry.get(target.agentId) ? callerGrants(target.agentId) : await effectiveAgentGrants(targetLocation.projectPath, target.agentId);
   const senderLocation = record.from.machine === machine ? await localAgent(record.from.agentId) : undefined;
   const senderTarget: GrantCallTarget = { kind: 'agent', agentId: addressText(record.from), relations: hasConnection(record.from, target) ? ['connected'] : [],
