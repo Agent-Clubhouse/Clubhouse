@@ -137,15 +137,13 @@ beforeEach(async () => {
     listProjects: async () => [{ path: '/p', name: 'Project' }],
     listAgents: async () => [...h.agents.values()],
     getAgent: async (_p, id) => h.agents.get(id) ?? null,
-    // As agent-config's setManagedSetup does: a managed agent has no persona or Clubhouse features switch.
+    // As agent-config's setManagedSetup does: saved legacy values stay, ignored while managed.
     setManagedSetup: async (_p, id, setup: ManagedAgentSetup | null) => {
       const a = h.agents.get(id)!;
       h.policyCalls.push('save');
       if (setup) {
         if (!a.managed && !a.switchedToManagedAt) a.switchedToManagedAt = new Date().toISOString();
         a.managed = setup;
-        delete a.clubhouseFeatures;
-        delete a.persona;
       } else delete a.managed;
     },
     isRunning: () => false,
@@ -389,7 +387,7 @@ describe('a switch cut short (#2901)', () => {
 });
 
 describe('convertToManaged for an agent with a persona or Clubhouse Mode (#2901)', () => {
-  it('keeps the instructions in its folder when Clubhouse Mode is off, and drops the persona as setManagedSetup does', async () => {
+  it('keeps the instructions in its folder when Clubhouse Mode is off, and keeps the saved persona as setManagedSetup does', async () => {
     h.instructionsFromDisk = true;
     write('CLAUDE.md', 'You are ada. Build with npm run build.');
     write('.claude/skills/ship/SKILL.md', '# Ship\nOpen a PR.');
@@ -404,7 +402,7 @@ describe('convertToManaged for an agent with a persona or Clubhouse Mode (#2901)
     expect(h.agents.get('ada')!.managed).toEqual(setup);
     // Nothing on disk changes until its next start.
     expect(fs.readFileSync(path.join(wt, 'CLAUDE.md'), 'utf-8')).toBe('You are ada. Build with npm run build.');
-    expect(h.agents.get('ada')!.persona).toBeUndefined();
+    expect(h.agents.get('ada')!.persona).toBe('qa');
     expect(vi.mocked(agentConfig.updateDurableConfig)).not.toHaveBeenCalledWith('/p', 'ada', expect.objectContaining({ clubhouseModeOverride: expect.anything() }));
   });
 
@@ -412,7 +410,7 @@ describe('convertToManaged for an agent with a persona or Clubhouse Mode (#2901)
     h.personaPolicy = { orchestrator: { orchestrate: true } };
     h.agents.set('ada', { ...h.agents.get('ada')!, persona: 'orchestrator' });
     await user(() => convertToManaged('/p', 'ada', { keep: true }));
-    expect(h.agents.get('ada')!.persona).toBeUndefined();
+    expect(h.agents.get('ada')!.persona).toBe('orchestrator');
     expect(h.agents.get('ada')!.orchestration).toEqual({ orchestrate: true });
     expect(h.policyCalls).toEqual(['carry', 'save']);
     expect(orchestrationPolicy.carryPersonaOrchestration).toHaveBeenCalledWith('/p', 'ada');

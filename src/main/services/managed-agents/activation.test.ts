@@ -159,6 +159,31 @@ describe('provider-confirmed activation (#2855)', () => {
       providerConfirmedLoaded: { skills: 'not_confirmed', mcpTools: 'not_confirmed', source: 'none' }, verification: { status: 'blocked', reason: 'session_not_current' } });
   });
 
+  it('confirms nothing a report can\'t tie to one part: colliding or overlapping MCP keys, shared skill names', async () => {
+    const materialized = async () => ({ ...setupFingerprint(agent, await resolveManagedSetup(service, agent.managed!)), provider: 'copilot-cli' });
+    // tickets.api (in the setup) and tickets_api (outside it, seen in the handshake) are both mcp__tickets_api__.
+    const collision = await managedActivationFor({ service, agent, running: true, materialized: await materialized(), deliveryFailed: false,
+      report: claude({ skills: ['review', 'deploy'], mcpTools: ['mcp__clubhouse__x', 'mcp__tickets_api__search'] }, { mcpHandshakes: [{ name: 'tickets_api', status: 'connected' }] }) });
+    expect(collision).toMatchObject({ status: 'partial', verification: { status: 'not_confirmed', reason: 'ambiguous_identity', ambiguous: ['tickets.api server'] } });
+    expect(collision.providerConfirmedLoaded.parts.find((p) => p.name === 'tickets.api server')).toMatchObject({ state: 'not_confirmed', ambiguous: true });
+    // a and a__b: mcp__a__b__search could be either server's tool.
+    const [a, ab] = await Promise.all([mcpPart('a'), mcpPart('a__b')]);
+    agent.managed!.mcps.push(a.id, ab.id);
+    const overlap = await managedActivationFor({ service, agent, running: true, materialized: await materialized(), deliveryFailed: false,
+      report: claude({ skills: ['review', 'deploy'], mcpTools: ['mcp__clubhouse__x', 'mcp__tickets_api__s', 'mcp__a__b__search'] }) });
+    expect(overlap.providerConfirmedLoaded.parts.filter((p) => 'ambiguous' in p).map((p) => p.name).sort()).toEqual(['a server', 'a__b server']);
+    expect(overlap.verification).toMatchObject({ status: 'not_confirmed', reason: 'ambiguous_identity' });
+    agent.managed!.mcps = agent.managed!.mcps.filter((id) => id !== a.id && id !== ab.id);
+    // A second skill whose folder is the first one's SKILL.md name.
+    agent.managed!.skills.push((await skillPart('deploy')).id);
+    const shared = await managedActivationFor({ service, agent, running: true, materialized: await materialized(), deliveryFailed: false,
+      report: claude({ skills: ['review', 'deploy'], mcpTools: ['mcp__clubhouse__x', 'mcp__tickets_api__s'] }) });
+    expect(shared.providerConfirmedLoaded.parts.filter((p) => p.kind === 'skill').map((p) => [p.name, p.state, 'ambiguous' in p])).toEqual([
+      ['review', 'confirmed', false], ['deploy-folder', 'not_confirmed', true], ['deploy', 'not_confirmed', true],
+    ]);
+    expect(shared.verification).toMatchObject({ status: 'not_confirmed', reason: 'ambiguous_identity', ambiguous: ['deploy-folder', 'deploy'] });
+  });
+
   it('reads a SKILL.md name only from front matter', () => {
     expect(skillDeclaredName({ kind: 'skill', skillName: 'f', files: [{ path: 'SKILL.md', content: "---\nname: 'quoted'\n---\n" }] })).toBe('quoted');
     expect(skillDeclaredName({ kind: 'skill', skillName: 'f', files: [{ path: 'SKILL.md', content: 'name: body-only' }] })).toBeUndefined();

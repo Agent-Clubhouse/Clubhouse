@@ -344,23 +344,33 @@ function assertRestartConfig(projectPath: string, agentId: string, pinned: Durab
   }
 }
 
-async function waitForTurnEnd(agentId: string, stillCurrent: () => boolean, timeoutMs = 30 * 60_000): Promise<boolean> {
-  const { isAgentRunning } = await import('../agent-system');
+/** A synchronous "is it mid-turn" check, as the wait for a turn end judges it. */
+async function turnBusyCheck(): Promise<(agentId: string) => boolean> {
   const { getAgentRuntime } = await import('../agent-runtime');
   const { BUSY_STATES } = await import('../agent-runtime/checkpoint-tracker');
   const ptyManager = await import('../pty-manager');
+  return (agentId) => {
+    const runtime = getAgentRuntime(agentId);
+    if (runtime?.kind === 'chat') return BUSY_STATES.has(runtime.getState());
+    const last = ptyManager.getLastActivity(agentId);
+    return last !== null && Date.now() - last < 5000;
+  };
+}
+
+async function waitForTurnEnd(agentId: string, stillCurrent: () => boolean, timeoutMs = 30 * 60_000): Promise<boolean> {
+  const { isAgentRunning } = await import('../agent-system');
+  const busy = await turnBusyCheck();
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
     if (!isAgentRunning(agentId) || !stillCurrent()) return false;
-    const runtime = getAgentRuntime(agentId);
-    const busy = runtime?.kind === 'chat'
-      ? BUSY_STATES.has(runtime.getState())
-      : (() => { const last = ptyManager.getLastActivity(agentId); return last !== null && Date.now() - last < 5000; })();
-    if (!busy) return true;
+    if (!busy(agentId)) return true;
     await new Promise((resolve) => setTimeout(resolve, 2000));
   }
   return false;
 }
+
+/** A turn started between the wait and the stop: nothing was stopped, so the restart waits again. */
+class TurnStartedError extends Error {}
 
 /** Whether the agent is mid-turn now, as the app-update restart judges it. */
 export async function isAgentWorking(agentId: string): Promise<boolean> {
@@ -392,11 +402,8 @@ export async function restartManagedAgent(projectPath: string, agentId: string, 
     return await restartWithReceipt({
       agentId, fresh: !!options.fresh, whenTurnEnds: !!options.whenTurnEnds, requestedParts: partRevisions(requested.parts),
     }, (receipt) => service.recordRestartReceipt(receipt), async () => {
-      if (options.whenTurnEnds && !(await waitForTurnEnd(agentId, () => !!originalRuntime && restartRuntimeIdentity(agentId) === originalRuntime))) {
-        // Stopped by someone else, or still working after the wait: don't restart behind their back.
-        throw new Error(agentSystem.isAgentRunning(agentId) ? 'The agent is still working. Try Restart again later.' : 'The agent stopped before its turn ended.');
-      }
-      return withAgentTransition(agentId, async () => {
+      const busy = await turnBusyCheck();
+      const restartOnce = () => withAgentTransition(agentId, async () => {
         const assertOriginal = () => {
           if (!originalProvider || !originalRuntime || !agentSystem.isAgentRunning(agentId) || restartRuntimeIdentity(agentId) !== originalRuntime) {
             throw new ManagedError('stale', 'The original runtime is no longer running. A replacement was not restarted.');
@@ -417,6 +424,8 @@ export async function restartManagedAgent(projectPath: string, agentId: string, 
           authorizeStop?.();
           assertRestartConfig(projectPath, agentId, before.agent);
           assertOriginal();
+          // Waiting for the turn end promised not to cut one off: a turn that began while this prepared is waited out too.
+          if (options.whenTurnEnds && busy(agentId)) throw new TurnStartedError('A turn started before the stop.');
         };
         beforeStop();
         await agentSystem.killAgent(agentId, projectPath, originalProvider, 'user', { waitForExit: true, throwOnFailure: true, beforeStop });
@@ -464,6 +473,19 @@ export async function restartManagedAgent(projectPath: string, agentId: string, 
         appLog('core:managed', 'info', 'Restarted managed agent', { meta: { agentId, resume, noSession } });
         return { resumed: resume, ...(noSession && { noSession: true }) };
       });
+      const waitUntil = Date.now() + 30 * 60_000;
+      for (;;) {
+        if (options.whenTurnEnds && !(await waitForTurnEnd(agentId, () => !!originalRuntime && restartRuntimeIdentity(agentId) === originalRuntime, Math.max(0, waitUntil - Date.now())))) {
+          // Stopped by someone else, or still working after the wait: don't restart behind their back.
+          throw new Error(agentSystem.isAgentRunning(agentId) ? 'The agent is still working. Try Restart again later.' : 'The agent stopped before its turn ended.');
+        }
+        try {
+          return await restartOnce();
+        } catch (err) {
+          if (err instanceof TurnStartedError) continue;
+          throw err;
+        }
+      }
     });
   } finally {
     restarting.delete(agentId);

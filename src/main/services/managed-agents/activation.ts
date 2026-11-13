@@ -15,7 +15,8 @@ export function partRevisions(parts: DeliveryRecord['parts']): ManagedPartRevisi
  * - `confirmed`: the report names it.
  * - `not_in_report`: the report covers that kind and leaves it out.
  * - `awaiting_report`: the provider reports that kind, but hasn't yet for this session (or the server is still connecting).
- * - `not_confirmed`: nothing to read it from (this provider never reports it, or the session isn't the one to check).
+ * - `not_confirmed`: nothing to read it from (this provider never reports it, or the session isn't the one to check),
+ *   or the report can't tie a name to this one part (`ambiguous`).
  */
 export type PartVerification = 'confirmed' | 'not_in_report' | 'awaiting_report' | 'not_confirmed';
 
@@ -34,6 +35,7 @@ const RECOVERY = {
   not_running: 'The agent is not running, so no session can report what it loaded. Its next start applies the setup; check again after it starts.',
   launch_not_recorded: 'This app run has no record of what the running session started with. restart_agent (with lifecycle authority) applies the current setup; check again after.',
   session_not_current: 'The running session started with another setup or provider. restart_agent (with lifecycle authority) applies the current one; check again after.',
+  ambiguous_identity: 'Some parts share a name the provider reports the same way (an MCP server key that normalizes like another server\'s, or a skill folder or SKILL.md name another skill uses), so the report can\'t say which one loaded. Give each a distinct server key or skill name, then restart once.',
   not_in_provider_report: 'The provider\'s report for the current session leaves these parts out. Check the part (a skill\'s SKILL.md, an MCP server\'s command, environment or sign-in) and the MCP status shown, fix it, then restart once. Don\'t restart repeatedly hoping it appears.',
   awaiting_provider_report: 'The provider hasn\'t reported this session\'s skills and tools yet. Claude reports them when a turn starts; an MCP server may still be connecting. Check again with waitSeconds after the agent\'s next turn starts.',
   provider_does_not_report: 'The provider confirmed some parts but never reports the rest, so those stay not confirmed. Ask the user whether the agent\'s own use of them is enough evidence.',
@@ -85,10 +87,29 @@ export async function managedActivationFor(input: {
   const reports = report && checkable ? driverReports(report.driver) : { skills: false, mcpTools: false };
   const inventory = checkable ? report?.inventory : undefined;
   const handshakes = new Map((report?.mcpHandshakes ?? []).map((s) => [s.name, s.status]));
-  const skillState = (skill: { content: ManagedSkillContent }): PartVerification => {
+  // A name the report can't tie to one part confirms nothing: skills by folder and SKILL.md name, MCP servers by tool prefix.
+  const skillAliases = (desired?.skills ?? []).map((s) => {
+    const declared = skillDeclaredName(s.content);
+    return { id: s.id, names: [...new Set([s.content.skillName, ...(declared ? [declared] : [])])] };
+  });
+  const skillAmbiguous = (id: string) => {
+    const mine = skillAliases.find((a) => a.id === id)?.names ?? [];
+    return skillAliases.some((other) => other.id !== id && other.names.some((n) => mine.includes(n)));
+  };
+  const serverNames = [...new Set([...(desired?.mcps ?? []).map((m) => m.content.serverKey), ...handshakes.keys()])];
+  const mcpAmbiguous = (serverKey: string) => {
+    const prefix = claudeMcpToolPrefix(serverKey);
+    return serverNames.some((name) => {
+      if (name === serverKey) return false;
+      const other = claudeMcpToolPrefix(name);
+      return other.startsWith(prefix) || prefix.startsWith(other);
+    });
+  };
+  const skillState = (skill: { id: string; content: ManagedSkillContent }): PartVerification => {
     if (!reports.skills) return 'not_confirmed';
     const names = inventory?.skills;
     if (!names) return 'awaiting_report';
+    if (skillAmbiguous(skill.id)) return 'not_confirmed';
     const declared = skillDeclaredName(skill.content);
     return names.includes(skill.content.skillName) || (!!declared && names.includes(declared)) ? 'confirmed' : 'not_in_report';
   };
@@ -96,16 +117,22 @@ export async function managedActivationFor(input: {
     if (!reports.mcpTools) return 'not_confirmed';
     const tools = inventory?.mcpTools;
     if (!tools) return 'awaiting_report';
+    if (mcpAmbiguous(serverKey)) return 'not_confirmed';
     const prefix = claudeMcpToolPrefix(serverKey);
     if (tools.some((t) => t.startsWith(prefix))) return 'confirmed';
     // A server still connecting at the report has no tools in it yet; the next report can list them.
     return handshakes.get(serverKey) === 'pending' ? 'awaiting_report' : 'not_in_report';
   };
   const parts = desired ? [
-    ...desired.skills.map((s) => ({ id: s.id, kind: 'skill' as const, name: s.name, state: skillState(s) })),
+    ...desired.skills.map((s) => {
+      const ambiguous = reports.skills && skillAmbiguous(s.id);
+      return { id: s.id, kind: 'skill' as const, name: s.name, state: skillState(s), ...(ambiguous && { ambiguous: true }) };
+    }),
     ...desired.mcps.map((m) => {
       const handshake = handshakes.get(m.content.serverKey);
-      return { id: m.id, kind: 'mcp' as const, name: m.name, serverKey: m.content.serverKey, state: mcpState(m.content.serverKey), ...(handshake && { handshake }) };
+      const ambiguous = reports.mcpTools && mcpAmbiguous(m.content.serverKey);
+      return { id: m.id, kind: 'mcp' as const, name: m.name, serverKey: m.content.serverKey, state: mcpState(m.content.serverKey),
+        ...(handshake && { handshake }), ...(ambiguous && { ambiguous: true }) };
     }),
   ] : [];
   const summary = (kind: 'skill' | 'mcp') => {
@@ -124,12 +151,13 @@ export async function managedActivationFor(input: {
         : runningMatches === false ? 'session_not_current'
           : missing.length ? 'not_in_provider_report'
             : parts.some((p) => p.state === 'awaiting_report') ? 'awaiting_provider_report'
-              : parts.every((p) => p.state === 'confirmed') ? null
-                : parts.some((p) => p.state === 'confirmed') ? 'provider_does_not_report'
-                  : 'provider_evidence_unavailable';
+              : parts.some((p) => 'ambiguous' in p) ? 'ambiguous_identity'
+                : parts.every((p) => p.state === 'confirmed') ? null
+                  : parts.some((p) => p.state === 'confirmed') ? 'provider_does_not_report'
+                    : 'provider_evidence_unavailable';
   const verificationStatus: VerificationStatus = reason === null ? 'verified'
     : reason === 'provider_does_not_report' ? 'partial'
-      : reason === 'awaiting_provider_report' || reason === 'provider_evidence_unavailable' ? 'not_confirmed'
+      : reason === 'awaiting_provider_report' || reason === 'provider_evidence_unavailable' || reason === 'ambiguous_identity' ? 'not_confirmed'
         : 'blocked';
 
   return {
@@ -161,6 +189,7 @@ export async function managedActivationFor(input: {
       status: verificationStatus,
       ...(reason && { reason, recovery: RECOVERY[reason] }),
       ...(missing.length && { notInReport: missing.map((p) => p.name) }),
+      ...(parts.some((p) => 'ambiguous' in p) && { ambiguous: parts.filter((p) => 'ambiguous' in p).map((p) => p.name) }),
       attempts: report && checkable ? 1 : 0,
     },
     lastRestart,

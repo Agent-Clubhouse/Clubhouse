@@ -515,8 +515,8 @@ export function registerManagedTools(): void {
     { project: PROJECT, agent: AGENT, waitSeconds: { type: 'number', description: 'Wait up to this many seconds (max 45) for the provider to report the current session. Default 0.' } }, ['project', 'agent'],
     async (_c, args) => {
       const t = await resolveAgent(args);
-      const wait = args.waitSeconds === undefined ? 0 : numberArg(args, 'waitSeconds');
-      if (!(wait >= 0)) throw new ArgError('waitSeconds must be 0 or more.');
+      const wait = args.waitSeconds ?? 0;
+      if (typeof wait !== 'number' || !Number.isFinite(wait) || wait < 0) throw new ArgError('waitSeconds must be a number, 0 or more.');
       const deadline = Date.now() + Math.min(wait, ACTIVATION_WAIT_MAX_S) * 1000;
       let attempts = 0;
       for (;;) {

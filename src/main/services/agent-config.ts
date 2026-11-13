@@ -3580,8 +3580,8 @@ async function setManagedSetupInner(projectPath: string, agentId: string, setup:
       ...(setup.updatedAt ? { updatedAt: setup.updatedAt } : {}),
       ...(setup.updatedBy ? { updatedBy: setup.updatedBy } : {}),
     };
-    delete agent.clubhouseFeatures;
-    delete agent.persona;
+    // A saved persona or Clubhouse features off stays in the record (saved legacy values are never deleted):
+    // nothing reads them while the agent is managed, and Switch to plain finds them as they were.
     // Switched, by hand or on its own: an earlier automatic switch's failure no longer applies (D59).
     delete agent.managedMigrationFailure;
   } else {

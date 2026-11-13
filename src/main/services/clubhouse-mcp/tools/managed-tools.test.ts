@@ -351,7 +351,10 @@ describe('verified activation and plain agents (#2855)', () => {
     expect((await call('get_agent_activation', { project: 'Clubhouse', agent: 'target', waitSeconds: 30 })).json.verification.attempts).toBe(1);
     vi.mocked(activationFor).mockReset().mockResolvedValue(pending as never);
     expect((await call('get_agent_activation', { project: 'Clubhouse', agent: 'target' })).json.verification.attempts).toBe(1);
-    expect((await call('get_agent_activation', { project: 'Clubhouse', agent: 'target', waitSeconds: -1 })).isError).toBe(true);
+    expect((await call('get_agent_activation', { project: 'Clubhouse', agent: 'target', waitSeconds: 0 })).json.verification.attempts).toBe(1);
+    for (const waitSeconds of [-1, '5', Number.NaN]) {
+      expect((await call('get_agent_activation', { project: 'Clubhouse', agent: 'target', waitSeconds })).isError, String(waitSeconds)).toBe(true);
+    }
   });
 
   it('switches a plain agent to managed only with the preview\'s confirm token, keeping what it has', async () => {

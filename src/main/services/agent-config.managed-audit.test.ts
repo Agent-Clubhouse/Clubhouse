@@ -70,7 +70,8 @@ describe('managed setup audit (D13)', () => {
     const audit = lastAudit();
     expect(audit).toMatchObject({ scope: 'agent', prefix: 'agent', targetId: 'a1' });
     expect(audit.before).toMatchObject({ managed: false, persona: 'qa' });
-    expect(audit.after).toMatchObject({ managed: true, 'managed.templateId': 'builtin-template-helper', 'managed.blocks': ['b1'], persona: undefined });
+    // The saved persona stays: legacy values are never deleted, only ignored while managed.
+    expect(audit.after).toMatchObject({ managed: true, 'managed.templateId': 'builtin-template-helper', 'managed.blocks': ['b1'], persona: 'qa' });
     expect(audit.after).not.toHaveProperty('mcpOverride');
     expect(audit.catalog).toEqual({
       managed: 'value', 'managed.templateId': 'value', 'managed.blocks': 'changed', 'managed.skills': 'changed', 'managed.mcps': 'changed',

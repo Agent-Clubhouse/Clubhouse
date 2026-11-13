@@ -126,6 +126,54 @@ describe('restartManagedAgent', () => {
       expect(spawnAgent).not.toHaveBeenCalled();
     } finally { vi.useRealTimers(); }
   });
+
+  it.each(['authorize', 'stop'] as const)('waits out a turn that starts during %s instead of cutting it off (#2855)', async (when) => {
+    add('busy', true);
+    state.running.add('busy');
+    let turn = 'idle';
+    let authorizations = 0;
+    state.runtimes.set('busy', { kind: 'chat', getState: () => turn });
+    // As the real killAgent does: the fence runs synchronously right before the stop.
+    killAgent.mockImplementation(async (agentId: string, ...rest: unknown[]) => {
+      const opts = rest[3] as { beforeStop?: () => void } | undefined;
+      if (when === 'stop' && authorizations === 1) turn = 'running';
+      opts?.beforeStop?.();
+      state.running.delete(agentId);
+    });
+    const authorize = async () => {
+      if (++authorizations === 1 && when === 'authorize') turn = 'running';
+      return Object.assign(() => {}, { refresh: async () => {} });
+    };
+    const spin = async (done: () => boolean) => {
+      for (let i = 0; i < 200 && !done(); i++) {
+        await new Promise((resolve) => setImmediate(resolve));
+        await vi.advanceTimersByTimeAsync(0);
+      }
+    };
+    vi.useFakeTimers({ toFake: ['setTimeout', 'Date'] });
+    try {
+      const observed = restartManagedAgent('/p', 'busy', { whenTurnEnds: true, authorize }).then((r) => r, (e: unknown) => e);
+      await spin(() => authorizations >= 1);
+      await spin(() => false);
+      // The turn is still running: nothing was stopped, started or recorded as completed.
+      expect(state.running.has('busy')).toBe(true);
+      expect(spawnAgent).not.toHaveBeenCalled();
+      expect(await (await import('./index')).managedAgents().latestRestartReceipt('busy')).toMatchObject({ outcome: 'requested' });
+      turn = 'idle';
+      let settled = false;
+      void observed.then(() => { settled = true; });
+      for (let i = 0; i < 20 && !settled; i++) {
+        await vi.advanceTimersByTimeAsync(2000);
+        await spin(() => settled);
+      }
+      expect(await observed).toEqual({ resumed: false, noSession: true });
+      expect(spawnAgent).toHaveBeenCalledTimes(1);
+      expect(await (await import('./index')).managedAgents().latestRestartReceipt('busy')).toMatchObject({ outcome: 'completed' });
+    } finally {
+      vi.useRealTimers();
+      killAgent.mockImplementation(async (agentId: string) => { state.running.delete(agentId); });
+    }
+  });
 });
 
 describe('restart outcome (#2819)', () => {
