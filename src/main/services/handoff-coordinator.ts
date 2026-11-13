@@ -2,7 +2,7 @@ import { randomUUID } from 'crypto';
 import { isHandoffAgent, isTerminalHandoff, parseHandoff, sameHandoffAgent, type Handoff, type HandoffAgent, type HandoffOffer } from '../../shared/handoffs';
 import { scanHandoffSecrets } from '../../shared/handoff-secrets';
 import { assertHandoffExtension, type HandoffStorage } from './handoff-store';
-import { HandoffService } from './handoff-service';
+import { HANDOFF_OFFER_TTL_MS, HandoffOfferRefused, HandoffService } from './handoff-service';
 
 export interface HandoffCancellation {
   id: string;
@@ -14,6 +14,12 @@ export interface HandoffCommandStorage {
   list(): HandoffCancellation[];
   put(command: HandoffCancellation): Promise<void>;
   remove(operationId: string): Promise<void>;
+  markUndelivered?(id: string): Promise<void>;
+  markAttempted?(id: string): Promise<void>;
+  isUndelivered?(id: string): boolean;
+  acknowledge?(id: string, version: number): Promise<void>;
+  acknowledged?(id: string): number | undefined;
+  prune?(retained: ReadonlySet<string>): Promise<void>;
 }
 export interface HandoffCoordinatorOptions {
   machine: string;
@@ -25,6 +31,7 @@ export interface HandoffCoordinatorOptions {
   connected(machine: string): boolean;
   authorizeOutgoing(record: Handoff): Promise<boolean>;
   changed?(record: Handoff): Promise<void>;
+  now?: () => number;
 }
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
 
@@ -68,7 +75,9 @@ export class HandoffCoordinator {
   }
 
   async offer(input: HandoffOffer, sender: HandoffAgent): Promise<Handoff> {
+    await this.prune();
     const record = await this.service.offer(input, sender);
+    await this.options.commands.markUndelivered?.(record.id);
     await this.changed(record);
     await this.trySync(record.id);
     return this.options.store.get(record.id)!;
@@ -117,16 +126,37 @@ export class HandoffCoordinator {
   }
 
   /** Called only after pinned membership/authentication checks, never an agent-selected origin. */
-  async receive(machine: string, raw: unknown): Promise<Handoff> {
+  async receive(machine: string, raw: unknown): Promise<Handoff | { kind: 'refused'; record: Handoff }> {
     if (!raw || typeof raw !== 'object' || Array.isArray(raw)) throw new Error('Invalid handoff request.');
     const body = raw as Record<string, unknown>;
     if (Object.keys(body).some((key) => !['op', 'record', 'command'].includes(key))) throw new Error('Invalid handoff request.');
     let record: Handoff;
-    if (body.op === 'offer' && body.command === undefined) record = await this.service.receiveOffer(body.record, machine);
-    else if (body.op === 'snapshot' && body.command === undefined) record = await this.service.receiveSnapshot(body.record, machine);
-    else if (body.op === 'cancel' && body.record === undefined) {
+    if (body.op === 'offer' && body.command === undefined) {
+      await this.service.expireOffers();
+      await this.prune();
+      try { record = await this.service.receiveOffer(body.record, machine); }
+      catch (error) {
+        // A typed refusal consumes no receiver store slots and cannot become an endless outbox retry.
+        if (error instanceof HandoffOfferRefused) return { kind: 'refused', record: error.record };
+        throw error;
+      }
+    }
+    else if (body.op === 'snapshot' && body.command === undefined) {
+      const incoming = parseHandoff(body.record);
+      // Retired terminal history is an acknowledgement sink, never a new
+      // agreement or notice. Its receiving authority may still be awaiting ACK.
+      if (!this.options.store.get(incoming.id) && isTerminalHandoff(incoming.state)
+        && incoming.from.machine === this.options.machine && incoming.to.machine === machine
+        && !scanHandoffSecrets('handoff-record.json', new TextEncoder().encode(JSON.stringify(incoming))).length) return incoming;
+      record = await this.service.receiveSnapshot(incoming, machine);
+    }
+    else if (body.op === 'cancel') {
       const command = parseHandoffCancellation(body.command);
-      record = await this.applyCancellation(command, machine);
+      if (body.record !== undefined) {
+        const offer = parseHandoff(body.record);
+        if (offer.id !== command.id) throw new Error('Invalid cancelled offer.');
+        record = await this.service.receiveCancelledOffer(offer, command.from, machine, command.operationId, command.reason);
+      } else record = await this.applyCancellation(command, machine);
     } else throw new Error('Invalid handoff request.');
     await this.changed(record);
     return record;
@@ -157,21 +187,32 @@ export class HandoffCoordinator {
     }
     const sending = record.from.machine === this.options.machine;
     const peer = sending ? record.to.machine : record.from.machine;
-    if (!this.options.connected(peer) || !await this.options.authorizeOutgoing(record)) return;
-    const response = await this.options.post(peer, sending
+    if (!this.options.connected(peer) || !await this.options.authorizeOutgoing(record) && !this.options.commands.list().some((command) => command.id === id)) return;
+    const cancellation = sending ? this.options.commands.list().find((command) => command.id === id) : undefined;
+    // Persist the attempt before transport: a crash/timeout can never be mistaken for no delivery.
+    if (sending) await this.options.commands.markAttempted?.(id);
+    const response = await this.options.post(peer, cancellation ? { op: 'cancel', command: cancellation, record: originalHandoffOffer(record) } : sending
       ? { op: 'offer', record: originalHandoffOffer(record) }
       : { op: 'snapshot', record });
     // Membership/grants can change while a request is in flight.
-    if (!this.options.connected(peer) || !await this.options.authorizeOutgoing(record)) return;
-    const next = parseHandoff(response);
+    if (!this.options.connected(peer) || !await this.options.authorizeOutgoing(record) && !this.options.commands.list().some((command) => command.id === id)) return;
+    const refused = !!response && typeof response === 'object' && 'kind' in response && response.kind === 'refused';
+    if (refused && (!sending || Object.keys(response).some((key) => !['kind', 'record'].includes(key)))) throw new Error('Invalid refusal.');
+    const next = parseHandoff(refused && 'record' in response ? response.record : response);
+    if (refused && (next.state !== 'failed' || !['refused', 'expired'].includes(next.failure?.code ?? ''))) throw new Error('Invalid refusal.');
     if (next.id !== id) throw new Error('Invalid handoff reply.');
     if (!sending) {
       assertHandoffExtension(record, next);
       if (next.version !== record.version) throw new Error('Invalid handoff reply.');
       this.acknowledged.set(id, record.version);
+      await this.options.commands.acknowledge?.(id, record.version);
     }
     if (sending) {
       await this.service.receiveSnapshot(next, peer);
+      if (isTerminalHandoff(next.state)) {
+        await this.options.commands.acknowledge?.(id, next.version);
+        for (const command of this.options.commands.list().filter((item) => item.id === id)) await this.options.commands.remove(command.operationId);
+      }
       for (const command of this.options.commands.list().filter((item) => item.id === id)) {
         const cancelled = parseHandoff(await this.options.post(peer, { op: 'cancel', command }));
         if (cancelled.id !== id) throw new Error('Invalid handoff reply.');
@@ -182,14 +223,43 @@ export class HandoffCoordinator {
     await this.changed(this.options.store.get(id)!);
   }
 
+  /** Only acknowledged terminal history is evictable; pending decisions/commands remain durable. */
+  private async prune(): Promise<void> {
+    const now = (this.options.now ?? Date.now)();
+    const candidates = this.options.store.list().filter((record) => isTerminalHandoff(record.state)
+      && !this.options.commands.list().some((command) => command.id === record.id)
+      && (record.from.machine === record.to.machine || this.options.commands.acknowledged?.(record.id) === record.version
+        || this.acknowledged.get(record.id) === record.version)).sort((a, b) => b.updatedAt - a.updatedAt);
+    const removed = new Set(candidates.filter((record, index) => index >= 200 || now - record.updatedAt >= 7 * 24 * 60 * 60_000).map((record) => record.id));
+    if (removed.size) await this.options.store.prune?.(removed);
+    for (const id of removed) this.acknowledged.delete(id);
+    await this.options.commands.prune?.(new Set(this.options.store.list().map((record) => record.id)));
+  }
+
   /** Bounded work per sweep, so retained history cannot flood a network peer. */
   async flush(): Promise<void> {
+    for (const record of await this.service.expireOffers()) await this.changed(record);
+    const now = (this.options.now ?? Date.now)();
+    for (const record of this.options.store.list()) {
+      if (record.state === 'offered' && record.from.machine === this.options.machine && record.to.machine !== this.options.machine
+        && now >= record.createdAt + HANDOFF_OFFER_TTL_MS) {
+        if (this.options.commands.isUndelivered?.(record.id)) {
+          const cancelled = await this.service.cancelUndelivered(record.id);
+          await this.options.commands.acknowledge?.(record.id, cancelled.version);
+          for (const command of this.options.commands.list().filter((item) => item.id === record.id)) await this.options.commands.remove(command.operationId);
+          await this.changed(cancelled);
+        } else if (!this.options.commands.list().some((command) => command.id === record.id)) {
+          await this.options.commands.put({ id: record.id, from: record.from, operationId: randomUUID(), reason: 'Offer expired.' });
+        }
+      }
+    }
+    await this.prune();
     const commands = new Set(this.options.commands.list().map((command) => command.id));
     const records = this.options.store.list();
     const active = records.filter((record) => commands.has(record.id)
       || record.from.machine !== record.to.machine && !isTerminalHandoff(record.state));
     const history = records.filter((record) => record.from.machine !== record.to.machine && isTerminalHandoff(record.state)
-      && record.to.machine === this.options.machine && this.acknowledged.get(record.id) !== record.version && !commands.has(record.id));
+      && record.to.machine === this.options.machine && (this.options.commands.acknowledged?.(record.id) ?? this.acknowledged.get(record.id)) !== record.version && !commands.has(record.id));
     // Always service active work first; retained history cannot put one new
     // agreement behind a full archive. Reserve one slot for final responses.
     const count = Math.min(history.length ? 9 : 10, active.length);

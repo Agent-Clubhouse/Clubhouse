@@ -492,12 +492,13 @@ describe('handoff agreement grants', () => {
     const targets = new Map([[grant, [{ kind: 'agent' as const, agentId: 'peer', relations: ['connected' as const] }]]]);
     for (const caller of ['plain', 'orchestrator', 'helper']) expect(checkToolGrant(caller, grant, { to: 'peer' }, undefined, targets)).toMatchObject({ ok: false, reason: 'no_grant' });
     expect(checkToolGrant('dispatcher', grant, { to: 'peer' }, undefined, targets)).toMatchObject({ ok: false, reason: 'ask_first' });
-    expect(isListable(checkToolGrant('dispatcher', grant, {}))).toBe(true);
-    expect(isListable(checkToolGrant('plain', grant, {}))).toBe(false);
+    expect(isListable(checkToolGrant('dispatcher', grant, {}, undefined, undefined, true))).toBe(true);
+    expect(isListable(checkToolGrant('plain', grant, {}, undefined, undefined, true))).toBe(false);
   });
 
   it('enforces the resolved peer target on every call and fails closed if resolution was unsafe', async () => {
     const grant = { actions: ['handoff.offer' as const], target: 'handoff_peer' as const };
+    expect(checkToolGrant('dispatcher', grant, {})).toMatchObject({ ok: false, reason: 'no_grant' });
     const args = { to: 'peer' };
     const connected = new Map([[grant, [{ kind: 'agent' as const, agentId: 'peer', relations: ['connected' as const] }]]]);
     const unrelated = new Map([[grant, [{ kind: 'agent' as const, agentId: 'other', relations: [] }]]]);

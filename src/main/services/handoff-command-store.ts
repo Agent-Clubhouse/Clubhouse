@@ -3,12 +3,12 @@ import { parseHandoffCancellation, type HandoffCancellation, type HandoffCommand
 import { createSettingsStore, type SettingsStore } from './settings-store';
 
 interface Notice { key: string; version: number; state: 'claimed' | 'delivered' }
-interface CommandFile { v: 1; commands: HandoffCancellation[]; notices: Notice[] }
+interface CommandFile { v: 1; commands: HandoffCancellation[]; notices: Notice[]; acknowledgements?: Record<string, number>; undelivered?: string[] }
 
 function parseFile(raw: unknown): CommandFile {
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) throw new Error('Invalid handoff commands.');
   const value = raw as CommandFile;
-  if (value.v !== 1 || Object.keys(value).some((key) => !['v', 'commands', 'notices'].includes(key))
+  if (value.v !== 1 || Object.keys(value).some((key) => !['v', 'commands', 'notices', 'acknowledgements', 'undelivered'].includes(key))
     || !Array.isArray(value.commands) || value.commands.length > HANDOFF_LIMITS.records
     || !Array.isArray(value.notices) || value.notices.length > HANDOFF_LIMITS.records * 2) throw new Error('Invalid handoff commands.');
   const commands = value.commands.map(parseHandoffCancellation);
@@ -20,7 +20,13 @@ function parseFile(raw: unknown): CommandFile {
       || !['claimed', 'delivered'].includes(notice.state)) throw new Error('Invalid handoff commands.');
   }
   if (new Set(value.notices.map((notice) => notice.key)).size !== value.notices.length) throw new Error('Invalid handoff commands.');
-  return structuredClone({ v: 1, commands, notices: value.notices });
+  const acknowledgements = value.acknowledgements ?? {};
+  const undelivered = value.undelivered ?? [];
+  const uuid = /^[0-9a-f-]{36}$/;
+  if (!acknowledgements || typeof acknowledgements !== 'object' || Array.isArray(acknowledgements) || Object.keys(acknowledgements).length > HANDOFF_LIMITS.records
+    || Object.entries(acknowledgements).some(([id, version]) => !uuid.test(id) || !Number.isInteger(version) || version < 1 || version > HANDOFF_LIMITS.history)
+    || !Array.isArray(undelivered) || undelivered.length > HANDOFF_LIMITS.records || undelivered.some((id) => typeof id !== 'string' || !uuid.test(id))) throw new Error('Invalid handoff commands.');
+  return structuredClone({ v: 1, commands, notices: value.notices, acknowledgements, undelivered });
 }
 
 /** Cancellation and notice claims are durable before any network/runtime side effect. */
@@ -75,6 +81,18 @@ export class HandoffCommandStore implements HandoffCommandStorage {
   }
   remove(operationId: string): Promise<void> {
     return this.change((file) => { file.commands = file.commands.filter((command) => command.operationId !== operationId); });
+  }
+  isUndelivered(id: string): boolean { return this.snapshot().undelivered?.includes(id) ?? false; }
+  markUndelivered(id: string): Promise<void> { return this.change((file) => { file.undelivered = [...new Set([...(file.undelivered ?? []), id])]; }); }
+  markAttempted(id: string): Promise<void> { return this.change((file) => { file.undelivered = file.undelivered?.filter((entry) => entry !== id); }); }
+  acknowledged(id: string): number | undefined { return this.snapshot().acknowledgements?.[id]; }
+  acknowledge(id: string, version: number): Promise<void> { return this.change((file) => { (file.acknowledgements ??= {})[id] = version; }); }
+  prune(retained: ReadonlySet<string>): Promise<void> {
+    return this.change((file) => {
+      file.notices = file.notices.filter((notice) => retained.has(notice.key.split(':')[0]));
+      file.acknowledgements = Object.fromEntries(Object.entries(file.acknowledgements ?? {}).filter(([id]) => retained.has(id)));
+      file.undelivered = file.undelivered?.filter((id) => retained.has(id));
+    });
   }
   async claimNotice(key: string, version: number): Promise<boolean> {
     let claimed = false;

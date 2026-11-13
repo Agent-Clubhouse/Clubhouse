@@ -11,6 +11,7 @@ interface HandoffFile {
 export interface HandoffStorage {
   get(id: string): Handoff | undefined;
   list(): Handoff[];
+  prune?(ids: ReadonlySet<string>): Promise<void>;
   transact(id: string, change: (current: Handoff | undefined) => Promise<Handoff> | Handoff): Promise<Handoff>;
 }
 
@@ -91,6 +92,16 @@ export class HandoffStore implements HandoffStorage {
 
   list(): Handoff[] {
     return structuredClone(this.snapshot().records);
+  }
+
+  prune(ids: ReadonlySet<string>): Promise<void> {
+    const work = async () => {
+      const current = this.snapshot();
+      const updated = { schemaVersion: 1 as const, records: current.records.filter((record) => !ids.has(record.id)) };
+      if (updated.records.length === current.records.length) return;
+      await this.disk.save(updated); this.committed = updated;
+    };
+    const result = this.lock.then(work, work); this.lock = result; return result;
   }
 
   transact(id: string, change: (current: Handoff | undefined) => Promise<Handoff> | Handoff): Promise<Handoff> {

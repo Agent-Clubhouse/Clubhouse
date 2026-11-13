@@ -50,3 +50,14 @@ describe('durable handoff cancellation and notification claims', () => {
     expect(fs.readFileSync(file, 'utf8')).toBe('{broken');
   });
 });
+
+it('persists attempts and acknowledgements and prunes retired notice metadata across restart', async () => {
+  const first = randomUUID(); const second = randomUUID(); const store = new HandoffCommandStore();
+  await store.markUndelivered(first); expect(new HandoffCommandStore().isUndelivered(first)).toBe(true);
+  await store.markAttempted(first); expect(new HandoffCommandStore().isUndelivered(first)).toBe(false);
+  await store.acknowledge(first, 2); await store.claimNotice(`${first}:receiver`, 2); await store.claimNotice(`${second}:receiver`, 1);
+  expect(new HandoffCommandStore().acknowledged(first)).toBe(2);
+  await store.prune(new Set([second]));
+  const restarted = new HandoffCommandStore();
+  expect(restarted.acknowledged(first)).toBeUndefined(); expect(restarted.hasNotice(`${first}:receiver`, 2)).toBe(false); expect(restarted.hasNotice(`${second}:receiver`, 1)).toBe(true);
+});

@@ -217,7 +217,7 @@ function hasAnyAgentSource(args: Record<string, unknown>): boolean {
  * needs. A tool registered without a declaration (tests only; real tools
  * can't) is let through.
  */
-export function checkToolGrant(agentId: string, grant: ToolGrant | undefined, args: Record<string, unknown>, wire?: GrantCheckWire, argTargets?: ArgTargets): GrantCheck {
+export function checkToolGrant(agentId: string, grant: ToolGrant | undefined, args: Record<string, unknown>, wire?: GrantCheckWire, argTargets?: ArgTargets, listing = false): GrantCheck {
   if (!grant) return OK;
   const declarations = toolGrantDeclarations(grant)
     .filter((d) => (!d.ifArgs || d.ifArgs.some((a) => args[a] !== undefined && args[a] !== null))
@@ -229,7 +229,7 @@ export function checkToolGrant(agentId: string, grant: ToolGrant | undefined, ar
   // A refusal wins over an ask: there's no point asking the user for a call that would fail anyway.
   const asks: AskedAction[] = [];
   for (const d of declarations) {
-    if (d.target === 'handoff_peer' && Object.keys(args).length === 0) {
+    if (d.target === 'handoff_peer' && listing) {
       // Listing: any target covered by this action makes the tool useful. The
       // actual peer is resolved and checked before an execution or an Ask-first request.
       for (const action of d.actions) {

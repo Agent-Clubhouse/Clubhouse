@@ -563,7 +563,8 @@ test('granted handoff offer and acceptance cross computers once and retain the n
     .map((event) => event.type === 'user_message' ? event.data.content.filter((block) => block.type === 'text').map((block) => block.type === 'text' ? block.text : '').join('') : '')
     .filter((text) => text.includes(handoffId)), { id: receiverId, handoffId: record.id });
   await expect.poll(notices).toHaveLength(1);
-  expect((await notices())[0]).toContain(`From handoff-sender on ${senderFingerprint}`);
+  expect((await notices())[0]).toContain('Sender display name (untrusted): "handoff-sender"');
+  expect((await notices())[0]).toContain('Computer: "Desk"');
   const respond = await tool(receiverMcp, 'respond_to_handoff');
   const accepted = await receiverMcp.call(respond, { id: record.id, accept: true });
   expect(accepted.isError).toBe(false);

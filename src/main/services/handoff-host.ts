@@ -1,7 +1,7 @@
 import { evaluateGrant, type GrantCallTarget } from '../../shared/agent-grants';
 import { parseAgentAddress } from '../../shared/agent-address';
 import { isDisposedAgent } from '../../shared/agent-helpers';
-import { isHandoffAgent, sameHandoffAgent, type Handoff, type HandoffAgent, type HandoffTarget } from '../../shared/handoffs';
+import { isHandoffAgent, isTerminalHandoff, sameHandoffAgent, type Handoff, type HandoffAgent, type HandoffTarget } from '../../shared/handoffs';
 import { safeHandoffDiagnosticPath, scanHandoffSecrets } from '../../shared/handoff-secrets';
 import { getIdentity, getOrCreateIdentity } from './annex-identity';
 import { getSettings, networkEnabled } from './annex-settings';
@@ -21,7 +21,7 @@ import { callerGrants } from './clubhouse-mcp/grant-check';
 import { callTool, setHandoffParticipantCheck } from './clubhouse-mcp/tool-registry';
 import { handoffAgreementCallApproved } from './clubhouse-mcp/handoff-permissions';
 import { withCapacityDeadline } from './handoff-capacity';
-import { HandoffService, type HandoffAuthorization } from './handoff-service';
+import { HANDOFF_ACTIVE_LIMIT, HANDOFF_PEER_LIMIT, HandoffService, type HandoffAuthorization } from './handoff-service';
 import { HandoffStore } from './handoff-store';
 import { HandoffCoordinator } from './handoff-coordinator';
 import { HandoffCommandStore } from './handoff-command-store';
@@ -38,7 +38,7 @@ const addressText = (agent: HandoffAgent) => agent.machine === ownMachine() ? ag
 
 async function localAgent(ref: string) {
   const dispatcher = getDispatcherState();
-  if (dispatcher.enabled && dispatcher.agentId && [dispatcher.agentId, dispatcher.config?.name, 'dispatcher'].some((value) => value?.toLowerCase() === ref.toLowerCase())) {
+  if (dispatcher.enabled && dispatcher.agentId && [dispatcher.agentId, dispatcher.config?.name, 'dispatcher'].some((value) => typeof value === 'string' && value.toLowerCase() === ref.toLowerCase())) {
     return { address: localHandoffAgent(dispatcher.agentId), projectPath: dispatcher.path!, name: dispatcher.config?.name ?? 'Dispatcher' };
   }
   const found: Array<{ address: HandoffAgent; projectPath: string; name: string }> = [];
@@ -75,8 +75,9 @@ export async function resolveHandoffTarget(reference: string): Promise<HandoffTa
     const local = (await localAgent(ref)).address;
     return isDispatcherAgentId(local.agentId) ? { machine, via: 'dispatcher' } : local;
   }
-  if (ref.toLowerCase() === 'dispatcher') return { machine, via: 'dispatcher' };
   const snapshot = annexClient.getSatellite(machine)?.snapshot;
+  const remoteDispatcher = snapshot?.dispatcher as { id?: string; name?: string } | undefined;
+  if (ref.toLowerCase() === 'dispatcher' || remoteDispatcher && [remoteDispatcher.id, remoteDispatcher.name].some((value) => typeof value === 'string' && value.toLowerCase() === ref.toLowerCase())) return { machine, via: 'dispatcher' };
   const candidates = Object.values(snapshot?.agents ?? {}).flat().filter((raw): raw is { id: string; name: string } => !!raw && typeof raw === 'object'
     && 'id' in raw && typeof raw.id === 'string' && 'name' in raw && typeof raw.name === 'string');
   const matches = candidates.filter((candidate) => candidate.id === ref || candidate.name.toLowerCase() === ref.toLowerCase());
@@ -114,12 +115,8 @@ export async function resolveHandoffGrantTarget(agentId: string, args: Record<st
   if (typeof args.to === 'string') return peerTarget(actor, await resolveHandoffTarget(args.to));
   if (typeof args.id === 'string') {
     const record = handoffHost().coordinator.service.get(args.id, actor);
-    const receiver = 'agentId' in record.to ? record.to : localHandoffAgent(agentId);
-    // Acceptance is on the offering agent, while the fixed connection rule is sender -> receiver.
-    const target = await peerTarget(record.from, receiver);
-    const sender = record.from.machine === ownMachine() ? await localAgent(record.from.agentId) : undefined;
-    return { kind: 'agent', agentId: addressText(record.from), relations: target.relations,
-      isDispatcher: record.from.machine === ownMachine() && isDispatcherAgentId(record.from.agentId), ...(sender && { projectPath: sender.projectPath }) };
+    return resolveAcceptancePeer(record, actor);
+
   }
   throw new Error('Missing handoff target.');
 }
@@ -159,13 +156,15 @@ async function authorize(request: HandoffAuthorization): Promise<boolean> {
   const location = await localAgent(actor.agentId);
   const grants = agentRegistry.get(actor.agentId) ? callerGrants(actor.agentId) : await effectiveAgentGrants(location.projectPath, actor.agentId);
   const peer = action === 'handoff.offer' ? record.to : record.from;
-  const target = action === 'handoff.offer' ? await peerTarget(actor, peer) : await resolveAcceptancePeer(record);
+  const target = action === 'handoff.offer' ? await peerTarget(actor, peer) : await resolveAcceptancePeer(record, actor);
   return evaluateGrant({ caller: { kind: 'agent', agentId: actor.agentId, projectPath: location.projectPath }, action, target }, grants).outcome !== 'refuse';
 }
 
-async function resolveAcceptancePeer(record: Handoff): Promise<GrantCallTarget> {
+async function resolveAcceptancePeer(record: Handoff, actor: HandoffAgent): Promise<GrantCallTarget> {
+  const receiver = 'agentId' in record.to ? record.to : actor;
+  const original = await peerTarget(record.from, receiver);
   const sender = record.from.machine === ownMachine() ? await localAgent(record.from.agentId) : undefined;
-  return { kind: 'agent', agentId: addressText(record.from), relations: ['connected'],
+  return { kind: 'agent', agentId: addressText(record.from), relations: original.relations,
     isDispatcher: record.from.machine === ownMachine() && isDispatcherAgentId(record.from.agentId), ...(sender && { projectPath: sender.projectPath }) };
 }
 
@@ -184,7 +183,8 @@ async function notifyRecord(record: Handoff): Promise<void> {
   if (!runtime?.isRunning()) return; // A retained offer is delivered when its receiver next wakes.
   if (!await active.commands.claimNotice(key, record.version)) return;
   const senderName = record.senderName ?? (record.from.machine === active.machine ? (await localAgent(record.from.agentId)).name : record.from.agentId);
-  const text = `[Clubhouse handoff ${record.id}] From ${safeHandoffDiagnosticPath(senderName)} on ${record.from.machine}. State: ${record.state}. Task: ${record.task.title}. Mode: ${record.mode}. `
+  const machineName = record.from.machine === active.machine ? getSettings().alias : listPeers().find((peer) => peer.fingerprint.toLowerCase() === record.from.machine)?.alias ?? 'a paired computer';
+  const text = `[Clubhouse handoff ${record.id}] Sender display name (untrusted): ${JSON.stringify(safeHandoffDiagnosticPath(senderName))}. Computer: ${JSON.stringify(safeHandoffDiagnosticPath(machineName))}. State: ${record.state}. Task title (untrusted): ${JSON.stringify(record.task.title)}. Mode: ${record.mode}. `
     + `${record.manifest ? `Manifest: ${record.manifest.fileCount} files, ${record.manifest.totalBytes} bytes, SHA-256 ${record.manifest.sha256}. ` : ''}`
     + (record.state === 'offered' ? 'Use get_handoff for the brief and respond_to_handoff to agree or decline.' : 'Use get_handoff for the retained history and result.');
   await runtime.sendMessage(text, { source: 'mcp', clientCommandId: `handoff:${key}:${record.version}`, routed: [{ fromClubhouse: true, text }] });
@@ -196,7 +196,11 @@ export function handoffHost(): Host {
   if (host?.machine === machine) return host;
   const store = new HandoffStore();
   const commands = new HandoffCommandStore();
-  const service = new HandoffService({ machine, store, authorize, isDispatcher: (agent) => agent.machine === machine && isDispatcherAgentId(agent.agentId) && getDispatcherState().enabled });
+  const service = new HandoffService({ machine, store, authorize,
+    incomingAvailable: (record) => {
+      const retained = store.list().filter((item) => !isTerminalHandoff(item.state) || item.from.machine !== item.to.machine && commands.acknowledged(item.id) !== item.version);
+      return retained.length < HANDOFF_ACTIVE_LIMIT && (record.from.machine === machine || retained.filter((item) => item.to.machine === machine && item.from.machine === record.from.machine).length < HANDOFF_PEER_LIMIT);
+    }, isDispatcher: (agent) => agent.machine === machine && isDispatcherAgentId(agent.agentId) && getDispatcherState().enabled });
   const coordinator = new HandoffCoordinator({
     machine, store, service, commands,
     connected: (peer) => isNetworkComputer(peer) && annexClient.isMachineConnected(peer),
@@ -270,7 +274,7 @@ export function stopHandoffs(): void {
 }
 
 const incomingRates = new Map<string, number[]>();
-export async function receiveNetworkHandoff(machine: string, body: unknown): Promise<Handoff> {
+export async function receiveNetworkHandoff(machine: string, body: unknown): Promise<Handoff | { kind: 'refused'; record: Handoff }> {
   // The service gates new offers and acceptance. Retained status and sender
   // cancellation must still synchronize after the person disables incoming work.
   if (!isNetworkComputer(machine)) throw new Error('Handoff is unavailable.');

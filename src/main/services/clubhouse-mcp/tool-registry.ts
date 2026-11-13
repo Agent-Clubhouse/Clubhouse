@@ -334,7 +334,7 @@ const TOOL_ANNOTATIONS: Partial<Record<'global' | BindingTargetKind, Readonly<Re
     respond_to_handoff: OPEN_WRITE,
     get_handoff: INTERNAL_READ,
     list_handoffs: INTERNAL_READ,
-    cancel_handoff: OPEN_WRITE,
+    cancel_handoff: { ...OPEN_WRITE, destructiveHint: true },
     list_devices: INTERNAL_READ,
     probe_capacity: OPEN_READ,
     rename_device: INTERNAL_WRITE,
@@ -455,7 +455,7 @@ export function canCallWake(agentId: string, targetId: string): boolean {
   const binding = bindingManager.getBindingsForAgent(agentId).find((b) => b.targetKind === 'agent' && b.targetId === targetId);
   const template = toolTemplates.get('agent')?.find((t) => t.nameSuffix === WAKE_TOOL);
   if (!binding || !template || binding.disabledTools?.includes(WAKE_TOOL) || !wakeOffered(agentId, binding)) return false;
-  return isListable(checkToolGrant(agentId, template.grant, {}, wireOf(binding)));
+  return isListable(checkToolGrant(agentId, template.grant, {}, wireOf(binding), undefined, true));
 }
 
 /** wake_agent on an agent wire, which only some senders are offered. */
@@ -745,7 +745,7 @@ function templateListable(
 ): boolean {
   return groupAllows(template.group, binding.agentId)
     && !deniedTools.has(template.nameSuffix)
-    && isListable(checkToolGrant(binding.agentId, template.grant, {}, wire));
+    && isListable(checkToolGrant(binding.agentId, template.grant, {}, wire, undefined, true));
 }
 
 /**
@@ -858,7 +858,7 @@ export function getScopedToolList(agentId: string): McpToolDefinition[] {
   // Append global tools (available regardless of bindings, unless gated by a group)
   for (const [, tool] of globalTools) {
     if (!groupAllows(tool.group, agentId)) continue;
-    if (!isListable(checkToolGrant(agentId, tool.grant, {}))) continue;
+    if (!isListable(checkToolGrant(agentId, tool.grant, {}, undefined, undefined, true))) continue;
     tools.push(tool.definition);
   }
 

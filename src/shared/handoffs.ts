@@ -36,7 +36,7 @@ export interface HandoffApplyCheckpoint {
 
 export interface HandoffFailure {
   step: 'authorization' | 'transfer' | 'verification' | 'apply' | 'wake' | 'recovery';
-  code: 'authorization_changed' | 'transfer_failed' | 'verification_failed' | 'apply_failed' | 'wake_failed' | 'indeterminate_apply';
+  code: 'refused' | 'expired' | 'authorization_changed' | 'transfer_failed' | 'verification_failed' | 'apply_failed' | 'wake_failed' | 'indeterminate_apply';
 }
 
 interface TransitionBase {
@@ -141,6 +141,7 @@ function isFailure(value: unknown): value is HandoffFailure {
     authorization: 'authorization_changed', transfer: 'transfer_failed', verification: 'verification_failed',
     apply: 'apply_failed', wake: 'wake_failed', recovery: 'indeterminate_apply',
   };
+  if (value.step === 'authorization' && (value.code === 'refused' || value.code === 'expired')) return true;
   return typeof value.step === 'string' && Object.prototype.hasOwnProperty.call(codes, value.step)
     && codes[value.step as HandoffFailure['step']] === value.code;
 }
