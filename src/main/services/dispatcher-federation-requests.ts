@@ -4,6 +4,7 @@ import type { AnnexCallContext, AnnexDeliveryEpoch, AuthenticatedAnnexOrigin, An
 import type { FederatedRequest, FederationOutcome, FederationRequestEnvelope, FederationTriage } from '../../shared/dispatcher-federation-requests';
 import { deliveryHash } from './annex-delivery-store';
 import { createSettingsStore } from './settings-store';
+import { federationStatusChanged } from './dispatcher-federation-policy';
 
 export class FederationInputNotReady extends Error {}
 
@@ -58,8 +59,11 @@ export function createFederationRequestStore(filename = 'dispatcher-federation-r
       const value = get();
       change(value);
       if (value.requests.length > FEDERATED_REQUEST_LIMITS.records || Buffer.byteLength(JSON.stringify(value, null, 2)) > 16 * 1024 * 1024) throw new Error('Federated request records are full.');
+      const pausesBefore = JSON.stringify([committed?.paused, committed?.pauseEpochs]);
       await store.save(value, { prepare: async () => {}, check: () => { if (!current()) throw new Error('Federation authorization changed.'); } });
       committed = structuredClone(value);
+      // A link tripping (or a new pairing clearing it) changes its status everywhere it shows (#3349).
+      if (JSON.stringify([value.paused, value.pauseEpochs]) !== pausesBefore) federationStatusChanged();
     });
     serial = run;
     return run;
@@ -235,6 +239,9 @@ export function createFederatedRequests(d: FederationRequestDependencies) {
     }
   }
   return {
+    pauseReason(machine: string): string | undefined {
+      return this.allowed(machine, {}) ? undefined : d.store.get().paused[machine];
+    },
     allowed(machine: string, args: Record<string, unknown>, tool = 'hand_off_request') {
       const envelope = tool === 'hand_off_request' ? parseFederationEnvelope(args.envelope) : undefined;
       const file = d.store.get();

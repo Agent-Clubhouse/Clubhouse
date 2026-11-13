@@ -25,6 +25,8 @@ import { MobileControlError } from './mobile-control';
 export { DISPATCHER_PROJECT_ID };
 
 export const DISPATCHER_CHANGED_EVENT = 'dispatcher:changed';
+/** Other computers' Dispatchers changed (#3349): the whole `dispatcherPresence` snapshot field again, read-only. */
+export const DISPATCHER_PRESENCE_EVENT = 'dispatcher:presence';
 
 export const isDispatcherProjectId = (projectId: unknown): boolean => projectId === DISPATCHER_PROJECT_ID;
 
@@ -149,6 +151,8 @@ export function dispatcherCapability(view: AgentView = (config) => config) {
     version: 1 as const, ...dispatcherSnapshotFlags(state), newLayout: newChromeEnabled(),
     projectId: DISPATCHER_PROJECT_ID, snapshotField: 'dispatcher', event: DISPATCHER_CHANGED_EVENT, commands: ['dispatcher.setEnabled', ...DISPATCHER_SETTINGS_COMMANDS],
     settings: { version: 1 as const, path: '/api/v1/mobile/dispatcher/settings' },
+    // Read-only presence of this person's other computers' Dispatchers (#3349).
+    presence: { version: 1 as const, snapshotField: 'dispatcherPresence', event: DISPATCHER_PRESENCE_EVENT },
     ...dispatcherOffFields(state, view),
   };
 }

@@ -79,6 +79,7 @@ vi.mock('./annex-peers', () => ({
   removePeer: vi.fn(),
   removeAllPeers: vi.fn(),
   updateLastSeen: vi.fn(),
+  recordLastSeen: vi.fn(),
 }));
 
 vi.mock('./annex-settings', () => ({

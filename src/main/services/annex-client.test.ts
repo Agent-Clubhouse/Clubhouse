@@ -92,6 +92,7 @@ vi.mock('./annex-peers', () => ({
   getPeer: vi.fn().mockReturnValue(undefined),
   addPeer: vi.fn(),
   updateLastSeen: vi.fn(),
+  recordLastSeen: vi.fn(),
   removePeer: vi.fn(),
   removeAllPeers: vi.fn(),
   listPeers: vi.fn().mockReturnValue([]),
@@ -1772,6 +1773,50 @@ describe('annex-client', () => {
       expect(satsAfter[0].state).toBe('disconnected');
       expect(satsAfter[0].lastError).toMatch(/stopped answering\. Clubhouse is reconnecting/);
 
+      vi.useRealTimers();
+    });
+
+    it('keeps last seen at the last confirmed heartbeat of a long-lived connection, written once at disconnect (#3349)', async () => {
+      const { WebSocket: WsMock } = await import('ws');
+      mockHttpGetIdentity({ fingerprint: 'LL:MM:NN:OO', alias: 'Long Mac', icon: 'server', color: 'green', publicKey: 'long-pub-key' });
+      vi.mocked(annexPeers.getPeer).mockReturnValue({
+        fingerprint: 'LL:MM:NN:OO', alias: 'Long Mac', icon: 'server', color: 'green', publicKey: 'long-pub-key', pairedAt: '2024-01-01', lastSeen: '2024-01-01',
+      });
+      let openCb: (() => void) | null = null;
+      let pongCb: (() => void) | null = null;
+      const sockets: any[] = [];
+      vi.mocked(WsMock).mockImplementation(function (this: any) {
+        sockets.push(this);
+        this.readyState = 1;
+        this.socket = makeMockSocket('LL:MM:NN:OO');
+        this.on = vi.fn().mockImplementation((event: string, cb: any) => {
+          if (event === 'open') openCb = cb;
+          if (event === 'pong') pongCb = cb;
+          return this;
+        });
+        this.send = vi.fn(); this.ping = vi.fn(); this.close = vi.fn(); this.terminate = vi.fn(); this.removeListener = vi.fn();
+        return this;
+      } as any);
+      vi.useFakeTimers();
+      vi.setSystemTime(Date.parse('2026-11-13T08:00:00.000Z'));
+      annexClient.startClient();
+      await bonjourFindCallback!(makeService());
+      await vi.advanceTimersByTimeAsync(0);
+      openCb!();
+      vi.mocked(annexPeers.recordLastSeen).mockClear();
+      // Three hours of heartbeats, each answered.
+      for (let i = 0; i < 360; i++) {
+        vi.advanceTimersByTime(30_000);
+        pongCb!();
+      }
+      expect(annexClient.lastConfirmedConnectivity('ll:mm:nn:oo')).toBe('2026-11-13T11:00:00.000Z');
+      // A heartbeat costs no disk write.
+      expect(annexPeers.recordLastSeen).not.toHaveBeenCalled();
+      // Then it stops answering: last seen is the last answered heartbeat, not the open or the timeout.
+      sockets[sockets.length - 1].ping = vi.fn().mockImplementation(() => { throw new Error('socket closed'); });
+      vi.advanceTimersByTime(30_000);
+      expect(annexClient.getSatellites()[0].state).toBe('disconnected');
+      expect(annexPeers.recordLastSeen).toHaveBeenCalledExactlyOnceWith('LL:MM:NN:OO', new Date('2026-11-13T11:00:00.000Z'));
       vi.useRealTimers();
     });
 

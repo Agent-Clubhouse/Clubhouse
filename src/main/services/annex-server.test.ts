@@ -229,6 +229,7 @@ vi.mock('./annex-peers', () => ({
   addPeer: vi.fn(),
   getPeer: vi.fn().mockReturnValue(null),
   updateLastSeen: vi.fn(),
+  recordLastSeen: vi.fn(),
   listPeers: vi.fn().mockReturnValue([]),
   listPeersForDisplay: vi.fn().mockReturnValue([]),
   removePeer: vi.fn(),
@@ -523,6 +524,8 @@ describe('annex-server', () => {
     vi.mocked(annexTls.extractPeerCertificateFingerprint).mockReturnValue(TEST_CONTROLLER.tlsCertificateFingerprint);
     vi.mocked(annexPeers.getPeer).mockImplementation((fp: string) => (fp === TEST_CONTROLLER.fingerprint ? { ...TEST_CONTROLLER } : undefined) as any);
     vi.mocked(annexPeers.checkBruteForce).mockReturnValue({ allowed: true, delayMs: 0, locked: false, attemptsRemaining: 3 } as any);
+    // The snapshot lists other computers' Dispatchers (#3349): none unless a test pairs one.
+    vi.mocked(annexPeers.listPeers).mockReturnValue([]);
     vi.mocked(annexEventBus.setActive).mockReturnValue(undefined);
     vi.mocked(annexEventBus.onPtyData).mockReturnValue(() => {});
     vi.mocked(annexEventBus.onHookEvent).mockReturnValue(() => {});

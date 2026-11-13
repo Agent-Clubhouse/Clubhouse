@@ -10,6 +10,7 @@ vi.mock('./annex-network-membership', () => ({ ownPairing: () => ({ id: state.se
 vi.mock('./annex-peers', () => ({ listPeers: () => state.peers }));
 vi.mock('./dispatcher/dispatcher-service', () => ({
   getDispatcherAgentId: () => state.local, isDispatcherEnabled: () => state.enabled,
+  getDispatcherState: () => ({ workRunning: true, requestsUnderWay: 0 }),
   dispatcherDisplayName: () => 'Dispatcher controller',
   onDispatcherChanged: (listener: () => void) => { state.changed = listener; return () => { state.changed = undefined; }; },
 }));

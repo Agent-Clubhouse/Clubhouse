@@ -25,7 +25,7 @@ import {
   listPeers, getPeer, isPairedPeer, addPeer, removePeer, removeAllPeers,
   updateLastSeen, checkBruteForce, recordFailedAttempt, recordSuccessfulAttempt, forgiveFailedAttempt,
   unlockPairing, isPairingLocked, resetForTests, peerNeedsPairing, listPeersForDisplay,
-  noteReached, setTypedHost,
+  noteReached, setTypedHost, recordLastSeen,
 } from './annex-peers';
 import { app } from 'electron';
 import { reachCandidates } from './annex-reach';
@@ -97,6 +97,16 @@ describe('annex-peers', () => {
       updateLastSeen('aa:bb:cc');
       const after = getPeer('aa:bb:cc')!.lastSeen;
       expect(new Date(after).getTime()).toBeGreaterThanOrEqual(new Date(before).getTime());
+    });
+
+    it('records a confirmed contact time only when it is newer, matching the fingerprint case-insensitively (#3349)', () => {
+      addPeer({ ...makePeer('AA:BB:CC'), lastSeen: '2026-11-13T10:00:00.000Z' });
+      recordLastSeen('aa:bb:cc', new Date('2026-11-13T11:30:00.000Z'));
+      expect(getPeer('AA:BB:CC')!.lastSeen).toBe('2026-11-13T11:30:00.000Z');
+      recordLastSeen('AA:BB:CC', new Date('2026-11-13T09:00:00.000Z'));
+      expect(getPeer('AA:BB:CC')!.lastSeen).toBe('2026-11-13T11:30:00.000Z');
+      resetForTests();
+      expect(getPeer('AA:BB:CC')!.lastSeen).toBe('2026-11-13T11:30:00.000Z');
     });
 
     it('should persist to disk and survive cache reset', () => {

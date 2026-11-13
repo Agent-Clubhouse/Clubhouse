@@ -31,7 +31,7 @@ import { MOBILE_LINK_MAX_ENTRIES, MobileLinkQueryError, readMobileChatLink } fro
 import { agentFolders } from './agent-runtime/chat-files';
 import { buildAgentDetails, buildAgentSettings, buildAgentSettingsOptions, buildCreateOptions, createMobileAgent, mobileOrchestration, updateMobileAgent, updateMobileDispatcher } from './mobile-agents';
 import {
-  DISPATCHER_CHANGED_EVENT, DISPATCHER_PROJECT_ID, activeDispatcher, assertDispatcherCommand, dispatcherCapability, dispatcherChange, dispatcherFolderProject, dispatcherProject,
+  DISPATCHER_CHANGED_EVENT, DISPATCHER_PRESENCE_EVENT, DISPATCHER_PROJECT_ID, activeDispatcher, assertDispatcherCommand, dispatcherCapability, dispatcherChange, dispatcherFolderProject, dispatcherProject,
   dispatcherOffFields, dispatcherRecord, dispatcherShellProject, dispatcherSnapshotFlags, isDisabledDispatcherId, isDispatcherProjectId,
   phoneChatEvent, phoneChatEvents, setDispatcherEnabledFromPhone,
 } from './mobile-dispatcher';
@@ -120,6 +120,7 @@ import { broadcastToAllWindows } from '../util/ipc-broadcast';
 import { IPC } from '../../shared/ipc-channels';
 import type { DigestSince } from '../../shared/group-project-types';
 import { decodeDigestSince, SINCE_CHANNELS_PARAM } from '../../shared/digest-since';
+import { getDispatcherPresence, onDispatcherPresenceChanged } from './dispatcher-presence';
 import { THEMES } from '../../renderer/themes';
 import { generateQuickName } from '../../shared/name-generator';
 import { generateQuickAgentId } from '../../shared/agent-id';
@@ -271,6 +272,7 @@ let unsubBulletinMessage: (() => void) | null = null;
 let unsubGroupProjectRegistry: (() => void) | null = null;
 let unsubHelperRequests: (() => void) | null = null;
 let unsubDispatcher: (() => void) | null = null;
+let unsubDispatcherPresence: (() => void) | null = null;
 let unsubAppUpdate: (() => void) | null = null;
 let staleEvictionInterval: ReturnType<typeof setInterval> | null = null;
 let heartbeatInterval: ReturnType<typeof setInterval> | null = null;
@@ -317,6 +319,7 @@ function unsubscribeEventBus(): void {
   unsubGroupProjectRegistry?.();
   unsubHelperRequests?.();
   unsubDispatcher?.();
+  unsubDispatcherPresence?.();
   unsubHelperRouting?.();
   unsubHelperRouting = null;
   unsubPtyData = null;
@@ -330,6 +333,7 @@ function unsubscribeEventBus(): void {
   unsubGroupProjectRegistry = null;
   unsubHelperRequests = null;
   unsubDispatcher = null;
+  unsubDispatcherPresence = null;
 }
 
 // ---------------------------------------------------------------------------
@@ -1320,6 +1324,8 @@ function assembleSnapshot(sources: SnapshotSources): BuiltSnapshot {
     dispatcher: dispatcherAgent
       ? { ...dispatcherSnapshotFlags(), projectId: DISPATCHER_PROJECT_ID, ...dispatcherOffFields(getDispatcherState(), dispatcherAgentView), agent: dispatcherAgent }
       : null,
+    // Other computers' Dispatchers (#3349), read-only; `dispatcher:presence` sends it again on a change.
+    dispatcherPresence: getDispatcherPresence(),
   } };
 }
 
@@ -5401,6 +5407,9 @@ function startServer(strict = false): Promise<void> {
     }
     broadcastSnapshotRefresh();
   });
+
+  // Other computers' Dispatchers (#3349): phones show them read-only.
+  unsubDispatcherPresence = onDispatcherPresenceChanged(() => broadcastAndBuffer(DISPATCHER_PRESENCE_EVENT, getDispatcherPresence()));
 
   // Listen for group project registry changes and broadcast them
   unsubGroupProjectRegistry = groupProjectRegistry.onChange(() => {

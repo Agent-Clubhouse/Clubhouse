@@ -623,6 +623,8 @@ vi.stubGlobal('clubhouse', {
     getLead: async () => ({ available: false, role: 'peer', lead: null, choices: [], confirmedBy: [], waitingOn: [], clearedFor: null, changedByName: null, changedAt: null }),
     setLead: async () => ({ available: false, role: 'peer', lead: null, choices: [], confirmedBy: [], waitingOn: [], clearedFor: null, changedByName: null, changedAt: null }),
     onLeadChanged: () => noop,
+    getPresence: async () => ({ remotes: [] }),
+    onPresenceChanged: () => noop,
   },
   actions: {
     list: async () => [],

@@ -59,6 +59,23 @@ import {
   recordReconnectScheduled,
 } from '../telemetry/annex-telemetry';
 
+/**
+ * When each machine's connection was last confirmed alive: its open and every
+ * heartbeat pong (#3349). Kept in memory; written to the peer once, when the
+ * connection drops, so a heartbeat costs no disk write.
+ */
+const lastConfirmed = new Map<string, number>();
+
+/** The last time the connection to `machine` was confirmed alive in this app run (ISO), if any. */
+export function lastConfirmedConnectivity(machine: string): string | undefined {
+  const at = lastConfirmed.get(machine.toLowerCase());
+  return at === undefined ? undefined : new Date(at).toISOString();
+}
+
+function confirmConnectivity(sat: SatelliteConnectionInternal): void {
+  lastConfirmed.set(sat.fingerprint.toLowerCase(), Date.now());
+}
+
 /** Telemetry: when the last heartbeat ping was sent, per satellite connection. */
 const pingSentAt = new WeakMap<object, number>();
 
@@ -504,6 +521,9 @@ function setState(
   // Output sent while disconnected is in neither cache, and a restarted
   // satellite's seqs start over, so caches are seeded again on reconnect.
   if (prev === 'connected' && state !== 'connected') {
+    // Last seen is when it was last confirmed alive, not when it connected.
+    const confirmed = lastConfirmed.get(sat.fingerprint.toLowerCase());
+    if (confirmed !== undefined) annexPeers.recordLastSeen(sat.fingerprint, new Date(confirmed));
     disposeRemoteBuffers(sat.id);
     satelliteEpochs.delete(sat.fingerprint);
     // The membership channel goes with the main connection, and reopens with it.
@@ -835,10 +855,12 @@ async function connectToSatellite(sat: SatelliteConnectionInternal): Promise<voi
       sat.candidateIndex = 0;
       // The membership channel (#3060), to the same address and certificate.
       networkChannel.connectTo(sat.fingerprint, sat.host, sat.mainPort, pinnedTlsOptionsFor(sat.fingerprint));
+      confirmConnectivity(sat);
       startHeartbeat(sat);
     });
 
     ws.on('pong', () => {
+      if (sat.ws === ws) confirmConnectivity(sat);
       const sentAt = pingSentAt.get(sat);
       if (sentAt !== undefined) {
         pingSentAt.delete(sat);
