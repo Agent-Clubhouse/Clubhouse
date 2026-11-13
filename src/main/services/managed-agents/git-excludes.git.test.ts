@@ -15,7 +15,7 @@ vi.mock('../agent-config', () => ({
   onAgentConfigChanged: (fn: (projectPath: string) => void) => { listeners.add(fn); return () => listeners.delete(fn); },
 }));
 
-import { managedRootExcludesInEffect, refreshManagedExcludes, watchManagedExcludes, type ManagedExcludeDeps } from './git-excludes';
+import { managedRootExcludesInEffect, queueManagedExcludes, refreshManagedExcludes, watchManagedExcludes, type ManagedExcludeDeps } from './git-excludes';
 
 const claude = { id: 'claude-code', conventions: { configDir: '.claude', skillsDir: 'skills', mcpConfigFile: '.mcp.json', legacyInstructionsFile: 'CLAUDE.md', localSettingsFile: 'settings.local.json', settingsFormat: 'json' } } as unknown as OrchestratorProvider;
 const codex = { id: 'codex-cli', conventions: { configDir: '.codex', skillsDir: 'skills', skillsRoot: '.agents/skills', previousSkillsRoots: ['.codex/skills'], mcpConfigFile: '.codex/config.toml', legacyInstructionsFile: 'AGENTS.md', localSettingsFile: 'config.toml', settingsFormat: 'toml' } } as unknown as OrchestratorProvider;
@@ -215,29 +215,39 @@ describe('queueManagedExcludes (D97)', () => {
 });
 
 describe('watchManagedExcludes (D97)', () => {
+  let one: DurableAgentConfig;
+  beforeEach(() => { one = addAgent('one', 'claude-code'); });
+
   it('refreshes when a project\'s managed agents change, not on every agent write', async () => {
-    const one = addAgent('one', 'claude-code');
     const listAgents = vi.fn(async () => agents);
-    const stop = watchManagedExcludes({ ...deps, listAgents });
+    const refreshed = vi.fn();
+    const stop = watchManagedExcludes({ ...deps, listAgents, onRefreshed: refreshed });
+    // Drain the real queue with a no-write sentinel, including in cleanup.
+    const drain = () => queueManagedExcludes(project, { ...deps, listAgents: async () => [], providers: () => [] });
     try {
       for (const fn of listeners) fn(project);
-      await vi.waitFor(() => expect(ignored(project, 'CLAUDE.md')).toBe(true));
+      await vi.waitFor(() => expect(refreshed).toHaveBeenCalledTimes(1), { timeout: 3_000 });
+      expect(ignored(project, 'CLAUDE.md')).toBe(true);
 
       // An unrelated write: nothing to do.
       fs.writeFileSync(path.join(project, '.git', 'info', 'exclude'), '# mine\n.clubhouse/\n');
-      const before = listAgents.mock.calls.length;
       for (const fn of listeners) fn(project);
-      await vi.waitFor(() => expect(listAgents.mock.calls.length).toBeGreaterThan(before));
-      await new Promise((r) => setTimeout(r, 100));
+      // The watcher's then-handler was registered first. Await its read,
+      // then drain any refresh it queued instead of sleeping for 100ms.
+      await listAgents.mock.results.at(-1)!.value;
+      await drain();
+      expect(refreshed).toHaveBeenCalledTimes(1);
       expect(ignored(project, 'CLAUDE.md')).toBe(false);
 
       // Unmanaged: its root files come out.
       fs.writeFileSync(path.join(project, '.git', 'info', 'exclude'), '# mine\n.clubhouse/\n# >>> clubhouse-managed-claude-code\n/CLAUDE.md\n# <<< clubhouse-managed-claude-code\n');
       delete one.managed;
       for (const fn of listeners) fn(project);
-      await vi.waitFor(() => expect(ignored(project, 'CLAUDE.md')).toBe(false));
+      await vi.waitFor(() => expect(refreshed).toHaveBeenCalledTimes(2), { timeout: 3_000 });
+      expect(ignored(project, 'CLAUDE.md')).toBe(false);
     } finally {
       stop();
+      await drain();
     }
-  });
+  }, 10_000); // Two real exclude refreshes on busy Git/Windows runners.
 });
