@@ -1232,6 +1232,7 @@ class GroupProjectHostService {
       const { seq: _seq, hostName: _hostName, network: _network, ...record } = snapshot.record;
       await groupProjectRegistry.putReplica({ ...record, host: { machine: host } });
       await writeMembershipFile(id, validateMembership(snapshot.membership, host));
+      const previous = await this.seqOf(id).catch(() => 0);
       const missing = await getBulletinBoard(id).applyReplica(snapshot.board);
       // A copy missing messages the host still holds asks for everything next time.
       const seq = missing > 0 ? 0 : snapshot.seq;
@@ -1239,7 +1240,13 @@ class GroupProjectHostService {
       this.seqs.set(id, seq);
       await this.markSynced(id);
       this.emit({ groupProjectId: id, seq: snapshot.seq, part: 'record' });
-      this.emit({ groupProjectId: id, seq: snapshot.seq, part: 'board' });
+      // Each post that arrived is announced as the host's change, so this computer tells its own
+      // members (#3362). Not on a first copy: its history isn't news.
+      const arrived = previous > 0
+        ? [...new Set(snapshot.board.messages.map((m) => m.seq ?? 0).filter((s) => s > previous))].sort((a, b) => a - b)
+        : [];
+      for (const seqArrived of arrived) this.emit({ groupProjectId: id, seq: seqArrived, part: 'board' });
+      if (arrived.length === 0) this.emit({ groupProjectId: id, seq: snapshot.seq, part: 'board' });
     });
   }
 
