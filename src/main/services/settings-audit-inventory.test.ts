@@ -51,6 +51,11 @@ const NOT_SETTINGS = new Set([
   'project-imports.json',
 ]);
 
+/** Per-project policy stores audit their person-facing writer, without exposing the policy map. */
+const MANUALLY_AUDITED = new Map([
+  ['handoff-secret-settings.json', "auditChanged('project', 'handoff.not_secret_paths', projectId)"],
+]);
+
 describe('settings audit inventory', () => {
   it('every settings store either reports to the audit or is named here as not settings', () => {
     const missing: string[] = [];
@@ -61,6 +66,8 @@ describe('settings audit inventory', () => {
         const call = wholeCall(text, match.index);
         if (call.includes('audit:')) continue;
         const name = /'([^']+\.json)'/.exec(call)?.[1] ?? path.relative(MAIN, file);
+        const writer = MANUALLY_AUDITED.get(name);
+        if (writer) { expect(text).toContain(writer); continue; }
         if (!NOT_SETTINGS.has(name)) missing.push(name);
       }
     }
