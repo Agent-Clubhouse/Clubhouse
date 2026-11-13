@@ -16,8 +16,11 @@ export type PublishedDispatcherState = 'online' | 'working' | 'asleep';
  */
 export type RemoteDispatcherState = PublishedDispatcherState | 'offline' | 'off' | 'unknown';
 
-/** The controller link to it: active, paused (offline or a delivery limit) or unavailable (a Dispatcher is off). */
-export type ControllerLinkState = 'active' | 'paused' | 'unavailable';
+/**
+ * The controller link to it: active, paused (its computer is offline), tripped
+ * (a fixed cross-machine limit was reached, #3347) or unavailable (a Dispatcher is off).
+ */
+export type ControllerLinkState = 'active' | 'paused' | 'tripped' | 'unavailable';
 
 export interface RemoteDispatcherPresence {
   /** The computer's fingerprint, lowercased. */
@@ -64,5 +67,6 @@ export const REMOTE_DISPATCHER_STATE_LABELS: Readonly<Record<RemoteDispatcherSta
 export const CONTROLLER_LINK_STATE_LABELS: Readonly<Record<ControllerLinkState, string>> = {
   active: 'Link active',
   paused: 'Link paused',
+  tripped: 'Link tripped',
   unavailable: 'Link unavailable',
 };

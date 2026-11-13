@@ -24,6 +24,8 @@ state.base = fs.mkdtempSync(path.join(os.tmpdir(), 'dispatcher-presence-'));
 import { learnFederationController, localFederationController, watchFederation } from './dispatcher-federation';
 import { _resetDispatcherPresenceForTesting, getDispatcherPresence, onDispatcherPresenceChanged, remoteDispatcherLabelFor, watchDispatcherPresence } from './dispatcher-presence';
 import { devicesChanged, resetDeviceSignalForTests } from './annex-device-signal';
+import { createFederatedRequests, createFederationRequestStore, FEDERATED_REQUEST_LIMITS } from './dispatcher-federation-requests';
+import { setFederationRequestRouter } from './dispatcher-federation-policy';
 
 const peer = (id: string, alias: string, extra: Partial<AnnexPeer> = {}) =>
   ({ fingerprint: id.toUpperCase(), alias, kind: 'desktop', role: 'member', lastSeen: '2026-11-13T10:00:00.000Z', ...extra } as AnnexPeer);
@@ -127,5 +129,35 @@ describe('remote Dispatcher presence (#3349)', () => {
     devicesChanged();
     await new Promise((resolve) => setTimeout(resolve, 80));
     expect(heard).toHaveBeenCalledTimes(2);
+  });
+
+  it('shows a link tripped by a real fixed limit as tripped with the limit, and tells listeners (#3347)', async () => {
+    await learnFederationController('laptop', controller('controller-laptop'));
+    const store = createFederationRequestStore(`federation-requests-${Date.now()}.json`);
+    const requests = createFederatedRequests({
+      store, now: () => Date.parse('2026-11-13T12:00:00.000Z'),
+      self: () => ({ machineId: 'here', machineName: 'Here', agentId: 'controller-here', agentName: 'Dispatcher' }),
+      authorized: () => true, epoch: () => ({ sender: 'pair-a', receiver: 'pair-b' }),
+      send: vi.fn(async (_caller: string, _machine: string, _target: string, _envelope: unknown, _cause: unknown, key: string) => ({ deliveryId: key })),
+      delivery: () => undefined, createLocal: vi.fn(async () => {}), present: vi.fn(async () => {}), record: vi.fn(),
+    });
+    const stopRouter = setFederationRequestRouter({
+      offer: async () => ({ content: [] }), before: async () => {}, cause: () => undefined,
+      allowed: (machine, args, tool) => requests.allowed(machine, args, tool),
+      pauseReason: (machine) => requests.pauseReason(machine),
+    });
+    try {
+      expect(getDispatcherPresence().remotes.find((r) => r.machineId === 'laptop')?.link).toEqual({ state: 'active' });
+      const heard = vi.fn();
+      const off = onDispatcherPresenceChanged(heard);
+      for (let i = 0; i < FEDERATED_REQUEST_LIMITS.perMinute; i++) await requests.offer('controller-here', 'laptop', 'controller-laptop', `r-${i}`, 'Work');
+      await expect(requests.offer('controller-here', 'laptop', 'controller-laptop', 'over', 'Work')).rejects.toThrow('rate limit');
+      // The trip itself is the change signal: no device, Dispatcher or publication event happened.
+      expect(heard).toHaveBeenCalled();
+      expect(getDispatcherPresence().remotes.find((r) => r.machineId === 'laptop')).toMatchObject({
+        state: 'online', link: { state: 'tripped', reason: 'The controller link rate limit was reached.' },
+      });
+      off();
+    } finally { stopRouter(); }
   });
 });

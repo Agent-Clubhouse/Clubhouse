@@ -108,6 +108,7 @@ export function startFederatedRequests(): () => void {
       catch (err) { return result(err instanceof Error ? err.message : String(err), true); }
     },
     allowed: (machine, args, tool) => instance.allowed(machine, args, tool),
+    pauseReason: (machine) => instance.pauseReason(machine),
     before: async (_caller, machine, target, cause, args, tool) => instance.outgoingNews(machine, target, cause ?? { rootId: '', depth: 0 }, args, tool),
     cause: (caller) => {
       if (caller !== getDispatcherAgentId()) return undefined;

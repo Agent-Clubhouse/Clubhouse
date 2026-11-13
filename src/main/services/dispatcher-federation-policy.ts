@@ -19,12 +19,28 @@ export function assertEditableConnection(from: AgentAddress, to: AgentAddress): 
   if (federationDirection(from, to)) throw new Error(FEDERATION_READ_ONLY);
 }
 
-export interface FederationStatus { state: 'paused' | 'unavailable'; reason: string }
+/** `tripped`: a fixed cross-machine limit paused it (#3347), with the limit that was reached (#3349). */
+export interface FederationStatus { state: 'paused' | 'unavailable' | 'tripped'; reason: string }
 let status: (from: AgentAddress, to: AgentAddress) => FederationStatus | undefined = () => undefined;
 export function federationStatus(from: AgentAddress, to: AgentAddress): FederationStatus | undefined {
   const machine = from.machineId ?? to.machineId;
-  if (machine && federationDirection(from, to) && requests?.allowed(machine, {}) === false) return { state: 'paused', reason: 'This controller link is paused after a fixed cross-machine limit was reached.' };
+  if (machine && federationDirection(from, to) && requests?.allowed(machine, {}) === false) {
+    return { state: 'tripped', reason: requests.pauseReason?.(machine) ?? 'A fixed cross-machine limit was reached.' };
+  }
   return status(from, to);
+}
+
+const statusListeners = new Set<() => void>();
+/** Hear when a link's status may have changed for a reason other than membership, connectivity or a Dispatcher switch: a limit tripping. */
+export function onFederationStatusChanged(listener: () => void): () => void {
+  statusListeners.add(listener);
+  return () => { statusListeners.delete(listener); };
+}
+/** Called by the request store when a link's pause is recorded or cleared. */
+export function federationStatusChanged(): void {
+  for (const listener of [...statusListeners]) {
+    try { listener(); } catch { /* telemetry-exempt: one listener failing must not stop the others */ }
+  }
 }
 export function setFederationStatus(value: typeof status): () => void {
   status = value;
@@ -41,6 +57,8 @@ export interface FederationPublicationGuard {
 export interface FederationRequestRouter {
   offer(callerId: string, targetId: string, args: Record<string, unknown>): Promise<import('./clubhouse-mcp/types').McpToolResult>;
   allowed(machine: string, args: Record<string, unknown>, tool?: string): boolean;
+  /** The limit that tripped this link, while it is paused. */
+  pauseReason?(machine: string): string | undefined;
   before(callerId: string, machine: string, targetId: string, cause: import('../../shared/annex-delivery').AnnexCallContext | undefined, args: Record<string, unknown>, tool: string): Promise<void>;
   cause(callerId: string): import('../../shared/annex-delivery').AnnexCallContext | undefined;
 }

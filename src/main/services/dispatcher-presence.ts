@@ -12,7 +12,7 @@ import { listPeers } from './annex-peers';
 import { onDevicesChanged } from './annex-device-signal';
 import { getDispatcherAgentId, isDispatcherEnabled, onDispatcherChanged } from './dispatcher/dispatcher-service';
 import { onFederationControllersChanged, remoteFederationController } from './dispatcher-federation';
-import { federationStatus } from './dispatcher-federation-policy';
+import { federationStatus, onFederationStatusChanged } from './dispatcher-federation-policy';
 
 type Connected = (machine: string) => boolean;
 type LastConfirmed = (machine: string) => string | undefined;
@@ -98,7 +98,7 @@ export function watchDispatcherPresence(isConnected: Connected, lastConfirmedAt:
   connected = isConnected;
   lastConfirmed = lastConfirmedAt;
   last = JSON.stringify(getDispatcherPresence());
-  const offs = [onDevicesChanged(recompute), onDispatcherChanged(recompute), onFederationControllersChanged(recompute)];
+  const offs = [onDevicesChanged(recompute), onDispatcherChanged(recompute), onFederationControllersChanged(recompute), onFederationStatusChanged(recompute)];
   return () => {
     for (const off of offs) off();
     connected = () => false;

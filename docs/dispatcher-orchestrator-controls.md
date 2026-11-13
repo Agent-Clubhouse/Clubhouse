@@ -255,7 +255,7 @@ The two-desktop fake CLI fixtures in `e2e/annex-v2/dispatcher-federation.spec.ts
 - the controller's machine-qualified address;
 - its name and the label "<Dispatcher name> on <machine>" ("Dispatcher on <machine>" until its name is known);
 - a state: `online`, `working`, `asleep`, `offline` with `lastSeen`, `off`, or `unknown` (connected, but no controller published yet). `lastSeen` is when the connection was last confirmed alive: the Annex client records it when the connection opens and at every answered heartbeat (30s), in memory, and writes it to the peer record once when the connection drops (`recordLastSeen`, never backwards). The later of that and the stored time is shown, so a connection that stayed up for hours shows when it actually went quiet;
-- the link state from the federation status (`active`, `paused` or `unavailable`, with the reason; a tripped delivery limit shows as paused).
+- the link state from the federation status: `active`, `paused` (its computer is offline), `tripped` (a fixed cross-machine limit was reached; the reason is the limit the request store recorded, through the router's `pauseReason`) or `unavailable` (a Dispatcher is off), with the reason. The request store calls `federationStatusChanged()` whenever a link's pause is recorded or cleared, so a trip reaches Settings, Details, the phone and `list_other_dispatchers` at once.
 
 The published controller now carries an optional `state` (`asleep` while its agent isn't running, `working` while requests are under way, else `online`). It's validated under the same publication guard. An older computer that sends none reads as `online` while connected.
 

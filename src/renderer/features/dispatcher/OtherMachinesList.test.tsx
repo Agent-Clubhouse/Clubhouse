@@ -30,9 +30,14 @@ describe('Other machines (#3349)', () => {
     expect(screen.queryByText('controller@desk')).toBeNull();
   });
 
-  it('shows a link a delivery limit tripped as paused with its reason', () => {
-    render(<OtherMachinesList remotes={[remote('desk', { link: { state: 'paused', reason: 'Too many requests are waiting. Requests resume when the queue drains.' } })]} />);
-    expect(screen.getByTestId('other-machine-desk-state').textContent).toContain('Link paused: Too many requests are waiting.');
+  it('shows a link a fixed limit tripped as tripped, with the limit, in full and compact lists', () => {
+    const tripped = remote('desk', { link: { state: 'tripped', reason: 'The controller link rate limit was reached.' } });
+    const { unmount } = render(<OtherMachinesList remotes={[tripped]} />);
+    expect(screen.getByTestId('other-machine-desk-state').textContent).toBe('Online. Link tripped: The controller link rate limit was reached.');
+    expect(screen.getByTestId('other-machine-desk').getAttribute('aria-label')).toBe('Studio on Desk. Online. Link tripped: The controller link rate limit was reached.');
+    unmount();
+    render(<OtherMachinesList compact remotes={[tripped]} />);
+    expect(screen.getByTestId('other-machine-desk-state').textContent).toBe('Online. Link tripped');
   });
 
   it('keeps the compact list short: state, and the link only when it isn\'t active', () => {
