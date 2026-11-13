@@ -109,6 +109,8 @@ export const IPC = {
     CHANGED: 'project:changed',
     IMPORT_LIST: 'project:import-list',
     IMPORT_CANCEL: 'project:import-cancel',
+    GET_HANDOFF_TRANSFER_BOUNDS: 'project:get-handoff-transfer-bounds',
+    SET_HANDOFF_TRANSFER_BOUNDS: 'project:set-handoff-transfer-bounds',
     GET_HANDOFF_SECRET_SETTINGS: 'project:get-handoff-secret-settings',
     SET_HANDOFF_SECRET_SETTINGS: 'project:set-handoff-secret-settings',
   },

@@ -1,3 +1,4 @@
+import { getHandoffTransferBounds, setHandoffTransferBounds } from '../services/handoff-transfer-settings';
 import { getHandoffSecretSettings, setHandoffSecretSettings } from '../services/handoff-secret-settings';
 import { HANDOFF_SECRET_MAX_PATHS } from '../../shared/handoff-secret-settings';
 import { auditChanged, projectAuditTarget } from '../services/settings-audit';
@@ -39,6 +40,8 @@ function forwardProjectChanges(): void {
 
 export function registerProjectHandlers(): void {
   registerProjectImportHandlers();
+  ipcMain.handle(IPC.PROJECT.GET_HANDOFF_TRANSFER_BOUNDS, withValidatedArgs([stringArg({ maxLength: 128 })], (_event, id) => getHandoffTransferBounds(id)));
+  ipcMain.handle(IPC.PROJECT.SET_HANDOFF_TRANSFER_BOUNDS, withValidatedArgs([stringArg({ maxLength: 128 }), objectArg()], (_event, id, bounds) => setHandoffTransferBounds(id, bounds)));
   ipcMain.handle(IPC.PROJECT.GET_HANDOFF_SECRET_SETTINGS, withValidatedArgs([stringArg({ maxLength: 128 })], (_event, id) => getHandoffSecretSettings(id)));
   ipcMain.handle(IPC.PROJECT.SET_HANDOFF_SECRET_SETTINGS, withValidatedArgs([stringArg({ maxLength: 128 }), arrayArg(stringArg({ maxLength: 1024 }), { maxLength: HANDOFF_SECRET_MAX_PATHS })], (_event, id, names) => setHandoffSecretSettings(id, names)));
   // Pins, inactive marks and activity (#2458). Every window, and Annex, hears each change.

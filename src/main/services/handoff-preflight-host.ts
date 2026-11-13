@@ -1,3 +1,4 @@
+import { getHandoffTransferBounds } from './handoff-transfer-settings';
 import * as path from 'path';
 import { isDisposedAgent } from '../../shared/agent-helpers';
 import type { HandoffWorktreeManifest } from '../../shared/handoff-manifest';
@@ -14,7 +15,7 @@ export async function checkCallerHandoff(agentId: string, include?: Partial<Hand
     const config = (await peekDurableConfigs(project.path)).find((candidate) => candidate.id === agentId && !isDisposedAgent(candidate));
     if (!config && !(live && path.resolve(live.projectPath) === path.resolve(project.path))) continue;
     return checkHandoffSnapshot({
-      worktreeRoot: config?.worktreePath || live?.cwd || project.path, include, exclude,
+      worktreeRoot: config?.worktreePath || live?.cwd || project.path, include, exclude, bounds: await getHandoffTransferBounds(project.id),
       secretPolicy: await HandoffSecretPolicy.forProject(project.id),
     });
   }

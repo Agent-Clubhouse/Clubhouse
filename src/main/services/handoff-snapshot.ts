@@ -25,6 +25,7 @@ const compare = (a: string, b: string) => a < b ? -1 : a > b ? 1 : 0;
 
 export class HandoffSnapshotError extends Error {
   cleanupFailed = false;
+  boundsReport?: { totalBytes: number; fileCount: number; largestFiles: Array<{ path: string; size: number }>; bounds: HandoffTransferBounds };
   constructor(
     readonly code: 'invalid_repository' | 'unsupported_repository' | 'git_failed' | 'unsafe_entry' | 'source_changed' | 'bounds_exceeded'
       | 'secret_blocked' | 'hash_mismatch' | 'filesystem_failed' | 'invalid_staging',
@@ -453,19 +454,27 @@ async function preflight(options: Omit<PrepareHandoffSnapshot, 'stagingRoot' | '
   }, bounds);
   metadata(manifest, options.secretPolicy);
   const selected = await selection(sourceRoot, manifest, bounds, context, authority);
-  if (selected.all.length > bounds.maxFiles) throw new HandoffSnapshotError('bounds_exceeded');
   const sources: SourceFile[] = [];
-  let total = 0;
+  let totalBig = 0n;
   for (const file of selected.all) {
     const stat = await sourceStat(sourceRoot, file, selected.tracked.has(file), true);
     if (!stat) { manifest.deletions.push(file); continue; }
-    total += Number(stat.size);
-    if (stat.size > BigInt(bounds.perFileBytes) || !Number.isSafeInteger(total) || total > bounds.totalBytes) throw new HandoffSnapshotError('bounds_exceeded', safeHandoffDiagnosticPath(file));
+    totalBig += stat.size;
     const source: SourceFile = { path: file, stat, link: (stat.isSymbolicLink() ? '120000' : selected.modes.get(file) ?? physicalMode(stat)) === '120000' };
     if (stat.isSymbolicLink()) (selected.modes as Map<string, HandoffManifestFile['mode']>).set(file, '120000');
-    if (stat.size <= BigInt(HANDOFF_SECRET_CONTENT_MAX_BYTES)) source.sha256 = await inspect(sourceRoot, source, undefined, undefined, options.secretPolicy);
-    else block(scan(file, undefined, options.secretPolicy));
     sources.push(source);
+  }
+  const total = Number(totalBig);
+  if (selected.all.length > bounds.maxFiles || totalBig > BigInt(bounds.totalBytes) || sources.some((source) => source.stat.size > BigInt(bounds.perFileBytes))) {
+    const largest = [...sources].sort((a, b) => a.stat.size > b.stat.size ? -1 : a.stat.size < b.stat.size ? 1 : compare(a.path, b.path)).slice(0, 10);
+    const error = new HandoffSnapshotError('bounds_exceeded', largest[0]?.path);
+    error.boundsReport = { totalBytes: Math.min(total, Number.MAX_SAFE_INTEGER), fileCount: selected.all.length, bounds,
+      largestFiles: largest.map((source) => ({ path: safeHandoffDiagnosticPath(source.path), size: Math.min(Number(source.stat.size), Number.MAX_SAFE_INTEGER) })) };
+    throw error;
+  }
+  for (const source of sources) {
+    if (source.stat.size <= BigInt(HANDOFF_SECRET_CONTENT_MAX_BYTES)) source.sha256 = await inspect(sourceRoot, source, undefined, undefined, options.secretPolicy);
+    else block(scan(source.path, undefined, options.secretPolicy));
   }
   manifest = parseHandoffManifest({
     ...manifest, total_bytes: total, files: sources.map((source) => ({
@@ -486,6 +495,7 @@ export async function checkHandoffSnapshot(options: Omit<PrepareHandoffSnapshot,
       bounds: validateHandoffBounds(options.bounds ?? HANDOFF_TRANSFER_DEFAULTS), allowlistedPaths: options.secretPolicy?.usedPaths() ?? [], findings: [] as HandoffSecretFinding[] };
   } catch (error) {
     const reported = failure(error);
+    if (reported.code === 'bounds_exceeded' && reported.boundsReport) return { ready: false as const, reason: 'bounds_exceeded' as const, ...reported.boundsReport, findings: [] as HandoffSecretFinding[], allowlistedPaths: [] as string[] };
     if (reported.code !== 'secret_blocked') throw reported;
     return { ready: false as const, findings: reported.findings ?? [], allowlistedPaths: options.secretPolicy?.usedPaths() ?? [] };
   }

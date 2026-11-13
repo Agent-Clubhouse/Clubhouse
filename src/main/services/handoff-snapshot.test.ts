@@ -7,7 +7,7 @@ import { promisify } from 'util';
 import { EventEmitter } from 'events';
 import { afterAll, afterEach, beforeEach as rawBeforeEach, describe, expect, it as rawIt, vi } from 'vitest';
 import { canonicalHandoffManifest, HANDOFF_TRANSFER_DEFAULTS, type HandoffWorktreeManifest } from '../../shared/handoff-manifest';
-import { prepareHandoffSnapshot, verifyHandoffSnapshot, type HandoffSnapshot, type PrepareHandoffSnapshot } from './handoff-snapshot';
+import { checkHandoffSnapshot, prepareHandoffSnapshot, verifyHandoffSnapshot, type HandoffSnapshot, type PrepareHandoffSnapshot } from './handoff-snapshot';
 import { CheckpointFixtureLifetime, ownCheckpointExecFile } from '../../../test/checkpoint-fixture-lifetime';
 import { ownedRegistration, preservingFailure } from '../../../test/dispatcher-work-owner';
 
@@ -680,6 +680,14 @@ describe('local secret-safe handoff snapshots', { timeout: 30_000 }, () => {
     const snapshot = await prepareHandoffSnapshot(options());
     const forged = rehash({ ...snapshot.manifest, files: snapshot.manifest.files.map((entry) => ({ ...entry, mode: '120000' })) });
     await expect(verifyHandoffSnapshot(snapshot.root, forged, summary(forged))).rejects.toMatchObject({ code: 'unsafe_entry' });
+  });
+
+  it('reports resolved over-ceiling totals and largest files without allocating or sending content', async () => {
+    await file('small.txt', 'abc'); await file('large.txt', '0123456789');
+    const bounds = { totalBytes: 12, perFileBytes: 10, maxFiles: 10 };
+    expect(await checkHandoffSnapshot({ worktreeRoot: repo, bounds })).toMatchObject({ ready: false, reason: 'bounds_exceeded', totalBytes: 13, fileCount: 2, bounds,
+      largestFiles: [{ path: 'large.txt', size: 10 }, { path: 'small.txt', size: 3 }] });
+    expect(await fs.promises.readdir(staging)).toEqual([]);
   });
 
   it.each([
