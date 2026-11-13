@@ -68,7 +68,9 @@ export function GroupProjectCanvasWidget({
   return (
     <ProjectView
       groupProjectId={groupProjectId}
+      projectId={projectId}
       onUpdateMetadata={onUpdateMetadata}
+      referenceUnresolved={metadata.__groupProjectReferenceUnresolved === true}
       isRemote={isRemote}
       satelliteId={satelliteId}
       annex={api.annex}
@@ -132,9 +134,11 @@ export function PausedPolling({ groupProjectId }: { groupProjectId: string }) {
 function CreationForm({
   projectId,
   onUpdateMetadata,
+  referenceUnresolved = false,
 }: {
   projectId?: string;
   onUpdateMetadata: (updates: Record<string, unknown>) => void;
+  referenceUnresolved?: boolean;
 }) {
   const [name, setName] = useState('');
   const [creating, setCreating] = useState(false);
@@ -142,6 +146,10 @@ function CreationForm({
   const create = useGroupProjectStore((s) => s.create);
   const loadProjects = useGroupProjectStore((s) => s.loadProjects);
   const loaded = useGroupProjectStore((s) => s.loaded);
+  const projects = useGroupProjectStore((s) => s.projects);
+  const loadError = useGroupProjectStore((s) => s.loadError);
+  const [selectedId, setSelectedId] = useState('');
+  const selectId = useId();
 
   useEffect(() => {
     if (!loaded) loadProjects();
@@ -154,7 +162,7 @@ function CreationForm({
     setError(null);
     try {
       const project = await create(trimmed, projectId === undefined ? undefined : { projectId });
-      onUpdateMetadata({ groupProjectId: project.id, name: project.name });
+      onUpdateMetadata({ groupProjectId: project.id, name: project.name, ...(referenceUnresolved && { __groupProjectReferenceUnresolved: false }) });
     } catch (err) {
       // Surface the failure instead of silently resetting the card. The most
       // common cause is an unregistered IPC handler ("No handler registered for
@@ -166,7 +174,7 @@ function CreationForm({
     } finally {
       setCreating(false);
     }
-  }, [name, creating, create, projectId, onUpdateMetadata]);
+  }, [name, creating, create, projectId, onUpdateMetadata, referenceUnresolved]);
 
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent) => {
@@ -176,7 +184,22 @@ function CreationForm({
   );
 
   return (
-    <div className="flex flex-col justify-center h-full gap-2 p-4">
+    <div className="flex h-full min-h-0 flex-col gap-2 overflow-y-auto p-4">
+      <label htmlFor={selectId} className="text-[13px] font-medium text-ctp-text">Existing group project</label>
+      {loadError ? (
+        <div role="alert" className="text-xs text-ctp-error">Could not load group projects. <Button kind="ghost" onClick={() => void loadProjects()}>Retry</Button></div>
+      ) : (
+        <>
+          <select id={selectId} value={selectedId} onChange={(e) => setSelectedId(e.target.value)} className="w-full h-7 px-2 text-xs bg-ctp-base border border-surface-1 rounded-md text-ctp-text">
+            <option value="">{loaded ? 'Select a group project' : 'Loading group projects...'}</option>
+            {projects.map((project) => <option key={project.id} value={project.id}>{project.name}</option>)}
+          </select>
+          <Button disabled={!projects.some((project) => project.id === selectedId)} onClick={() => {
+            const project = projects.find((item) => item.id === selectedId);
+            if (project) onUpdateMetadata({ groupProjectId: project.id, name: project.name, ...(referenceUnresolved && { __groupProjectReferenceUnresolved: false }) });
+          }} className="self-start">Add existing</Button>
+        </>
+      )}
       <div className="text-[13px] font-medium text-ctp-text">New group project</div>
       <input
         type="text"
@@ -204,13 +227,17 @@ function CreationForm({
 
 function ProjectView({
   groupProjectId,
+  projectId,
   onUpdateMetadata,
+  referenceUnresolved,
   isRemote,
   satelliteId,
   annex,
 }: {
   groupProjectId: string;
+  projectId?: string;
   onUpdateMetadata: (updates: Record<string, unknown>) => void;
+  referenceUnresolved: boolean;
   isRemote: boolean;
   satelliteId: string | null;
   annex: AnnexAPI;
@@ -218,6 +245,14 @@ function ProjectView({
   const containerRef = useRef<HTMLDivElement>(null);
   const [isExpanded, setIsExpanded] = useState(false);
   const ctx = useGroupProjectContext(groupProjectId, isRemote, satelliteId, annex);
+
+  useEffect(() => {
+    if (!ctx.loaded) void ctx.loadProjects();
+  }, [ctx.loaded, ctx.loadProjects]);
+
+  useEffect(() => {
+    if (ctx.project && referenceUnresolved) onUpdateMetadata({ __groupProjectReferenceUnresolved: false });
+  }, [ctx.project, referenceUnresolved, onUpdateMetadata]);
 
   useEffect(() => {
     const el = containerRef.current;
@@ -233,7 +268,12 @@ function ProjectView({
 
   return (
     <div ref={containerRef} className="h-full w-full">
-      {isExpanded ? (
+      {ctx.loaded && !ctx.project && !isRemote ? (
+        <div className="h-full flex flex-col">
+          <div role="status" className="px-4 pt-4 text-xs text-ctp-subtext1">This group project isn't on this machine. Choose one or create one.</div>
+          <CreationForm projectId={projectId} onUpdateMetadata={onUpdateMetadata} referenceUnresolved />
+        </div>
+      ) : isExpanded ? (
         <ExpandedProjectView groupProjectId={groupProjectId} onUpdateMetadata={onUpdateMetadata} ctx={ctx} />
       ) : (
         <ProjectCard groupProjectId={groupProjectId} onUpdateMetadata={onUpdateMetadata} ctx={ctx} />

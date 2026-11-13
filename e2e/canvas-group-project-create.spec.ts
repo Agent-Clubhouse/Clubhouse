@@ -53,14 +53,7 @@ test('creating a group project advances from naming form to initialized card', a
   const workspace = window.locator('[data-testid="canvas-workspace"]');
   await expect(workspace).toBeVisible({ timeout: 5_000 });
 
-  const workspaceBox = await workspace.boundingBox();
-  expect(workspaceBox).not.toBeNull();
-  await workspace.dispatchEvent('contextmenu', {
-    bubbles: true,
-    button: 2,
-    clientX: workspaceBox!.x + 220,
-    clientY: workspaceBox!.y + 180,
-  });
+  await workspace.click({ button: 'right', position: { x: 220, y: 180 } });
   const contextMenu = window.locator('[data-testid="canvas-context-menu"]');
   await expect(contextMenu).toBeVisible({ timeout: 5_000 });
 
@@ -68,7 +61,7 @@ test('creating a group project advances from naming form to initialized card', a
     `[data-testid="canvas-context-menu-${GROUP_PROJECT_WIDGET}"]`,
   );
   await expect(addGroupProject).toBeVisible({ timeout: 5_000 });
-  await addGroupProject.dispatchEvent('click');
+  await addGroupProject.click();
 
   const widget = workspace.locator('[data-testid^="canvas-view-cv_"]').first();
   await expect(widget).toBeVisible({ timeout: 8_000 });
@@ -106,4 +99,29 @@ test('creating a group project advances from naming form to initialized card', a
   await expect(headerPolling).toHaveAttribute('aria-checked', 'true', { timeout: 5_000 });
   await headerPolling.click();
   await expect(headerPolling).toHaveAttribute('aria-checked', 'false', { timeout: 5_000 });
+  // Reuse this record on another canvas and verify removing the second card.
+  const tabs = window.getByRole('tablist', { name: 'Canvases' }).getByRole('tab');
+  const firstTab = tabs.first();
+  const firstId = await firstTab.getAttribute('data-testid');
+  expect(firstId).toBeTruthy();
+  await window.getByTestId('canvas-add-button').click();
+  await window.getByTestId('canvas-add-new').click();
+  await expect(tabs).toHaveCount(2);
+
+  await workspace.click({ button: 'right', position: { x: 220, y: 180 } });
+  await window.getByTestId(`canvas-context-menu-${GROUP_PROJECT_WIDGET}`).click();
+  const card = workspace.locator('[data-testid^="canvas-view-cv_"]').first();
+  await card.getByLabel('Existing group project').selectOption({ label: 'E2E Group Project' });
+  await card.getByRole('button', { name: 'Add existing' }).click();
+  const secondPolling = card.getByRole('switch', { name: 'Polling' });
+  await expect(secondPolling).toHaveAttribute('aria-checked', 'false');
+  await secondPolling.click();
+  await expect(secondPolling).toHaveAttribute('aria-checked', 'true');
+  await card.getByTestId('canvas-view-close').click();
+  await expect(workspace.locator('[data-testid^="canvas-view-cv_"]')).toHaveCount(0);
+
+  await window.getByTestId(firstId!).click();
+  const original = workspace.locator('[data-testid^="canvas-view-cv_"]').first();
+  await expect(original.getByRole('switch', { name: 'Polling' })).toHaveAttribute('aria-checked', 'true');
+  await expect(original.getByText('E2E bulletin round trip', { exact: true })).toBeVisible();
 });

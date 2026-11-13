@@ -73,6 +73,7 @@ function targetIdentity(view: CanvasView): TargetIdentity | null {
   if (view.type === 'plugin') {
     const widget = (view as PluginCanvasView).pluginWidgetType;
     if (widget === GROUP_PROJECT_WIDGET_TYPE) {
+      if (view.metadata?.__groupProjectReferenceUnresolved) return { unbound: true };
       const groupProjectId = view.metadata?.groupProjectId;
       return typeof groupProjectId === 'string' && groupProjectId ? { kind: 'group-project', id: groupProjectId } : { unbound: true };
     }
@@ -104,6 +105,7 @@ export function planBlueprintWires(
   wires: BlueprintWire[],
   refIdToViewId: Map<string, string>,
   views: CanvasView[],
+  groupProjectIds?: ReadonlySet<string>,
 ): BlueprintWirePlan {
   const plan: BlueprintWirePlan = { create: [], deferred: [], skipped: [] };
   if (wires.length === 0) return plan;
@@ -129,6 +131,10 @@ export function planBlueprintWires(
     const sourceAgentId = (source as AgentCanvasView).agentId;
     if (!sourceAgentId) { plan.deferred.push({ wire, sourceViewId, targetViewId, reason: 'source_unbound' }); continue; }
     if ('unbound' in identity) { plan.deferred.push({ wire, sourceViewId, targetViewId, reason: 'target_unbound' }); continue; }
+    if (identity.kind === 'group-project' && groupProjectIds && !groupProjectIds.has(identity.id)) {
+      plan.deferred.push({ wire, sourceViewId, targetViewId, reason: 'target_unbound' });
+      continue;
+    }
     // Two cards bound to the same agent: an agent can't be wired to itself.
     if (identity.kind === 'agent' && identity.id === sourceAgentId) { plan.skipped.push({ wire, reason: 'self' }); continue; }
 
