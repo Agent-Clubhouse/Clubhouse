@@ -144,28 +144,30 @@ describe('restartManagedAgent', () => {
       if (++authorizations === 1 && when === 'authorize') turn = 'running';
       return Object.assign(() => {}, { refresh: async () => {} });
     };
-    const spin = async (done: () => boolean) => {
-      for (let i = 0; i < 200 && !done(); i++) {
+    // Barriers, not tick counts: the receipt and config reads are real file I/O, slow on Windows runners.
+    // Real setImmediate lets that I/O finish; only the restart's own timers are fake.
+    const until = async (done: () => boolean, what: string) => {
+      const deadline = performance.now() + 15_000;
+      while (!done()) {
+        if (performance.now() > deadline) throw new Error(`Timed out waiting for ${what}`);
         await new Promise((resolve) => setImmediate(resolve));
-        await vi.advanceTimersByTimeAsync(0);
       }
     };
     vi.useFakeTimers({ toFake: ['setTimeout', 'Date'] });
     try {
-      const observed = restartManagedAgent('/p', 'busy', { whenTurnEnds: true, authorize }).then((r) => r, (e: unknown) => e);
-      await spin(() => authorizations >= 1);
-      await spin(() => false);
+      let settled = false;
+      const observed = restartManagedAgent('/p', 'busy', { whenTurnEnds: true, authorize }).then((r) => r, (e: unknown) => e)
+        .finally(() => { settled = true; });
+      // The turn started, the stop fence refused, and the restart is parked in its next turn-end poll.
+      await until(() => settled || (authorizations >= 1 && turn === 'running' && vi.getTimerCount() > 0), 'the restart to wait again');
+      expect(settled).toBe(false);
       // The turn is still running: nothing was stopped, started or recorded as completed.
       expect(state.running.has('busy')).toBe(true);
       expect(spawnAgent).not.toHaveBeenCalled();
       expect(await (await import('./index')).managedAgents().latestRestartReceipt('busy')).toMatchObject({ outcome: 'requested' });
       turn = 'idle';
-      let settled = false;
-      void observed.then(() => { settled = true; });
-      for (let i = 0; i < 20 && !settled; i++) {
-        await vi.advanceTimersByTimeAsync(2000);
-        await spin(() => settled);
-      }
+      await vi.advanceTimersByTimeAsync(2000);
+      await until(() => settled, 'the restart after the turn ended');
       expect(await observed).toEqual({ resumed: false, noSession: true });
       expect(spawnAgent).toHaveBeenCalledTimes(1);
       expect(await (await import('./index')).managedAgents().latestRestartReceipt('busy')).toMatchObject({ outcome: 'completed' });
