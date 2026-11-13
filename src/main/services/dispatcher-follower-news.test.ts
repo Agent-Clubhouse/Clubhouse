@@ -5,9 +5,13 @@ const h = vi.hoisted(() => ({
   following: true, role: 'follower' as 'peer' | 'lead' | 'follower', lead: 'laptop' as string | null,
   controller: { agentId: 'lead-controller', enabled: true, name: 'Dispatcher controller' } as { agentId: string | null; enabled: boolean; name: string } | undefined,
   result: { content: [{ type: 'text', text: 'Delivered.' }] } as { content: Array<{ type: string; text: string }>; isError?: boolean },
+  delivered: new Set<string>(),
 }));
 vi.mock('./log-service', () => ({ appLog: vi.fn() }));
-vi.mock('./annex-agent-calls', () => ({ forwardAgentCall: vi.fn(async () => h.result) }));
+vi.mock('./annex-agent-calls', () => ({
+  forwardAgentCall: vi.fn(async () => h.result),
+  getDelivery: (_caller: string, id: string) => (h.delivered.has(id) ? { state: 'delivered' } : undefined),
+}));
 vi.mock('./dispatcher-federation', () => ({ remoteFederationController: () => h.controller }));
 vi.mock('./dispatcher-federation-lead', () => ({
   isFollowingLead: () => h.following, leadRole: () => h.role, leadRecord: () => ({ lead: h.lead }),
@@ -30,6 +34,7 @@ beforeEach(() => {
   _resetFollowerNewsForTesting();
   Object.assign(h, { following: true, role: 'follower', lead: 'laptop', controller: { agentId: 'lead-controller', enabled: true, name: 'Dispatcher controller' },
     result: { content: [{ type: 'text', text: 'Delivered.' }] } });
+  h.delivered.clear();
   online = true;
   vi.mocked(forwardAgentCall).mockClear();
   vi.mocked(deliverUpdateToChat).mockClear();
@@ -78,6 +83,36 @@ describe('sending news to the lead (#3352)', () => {
     // Once only, and an ordinary message's failure isn't news.
     expect(await newsDeliveryFailed(notice)).toBe(false);
     expect(await newsDeliveryFailed({ ...notice, callId: 'other' })).toBe(false);
+  });
+});
+
+describe('one place for each piece of news (#3352)', () => {
+  const notice = (callId: string) => ({ callId, callerId: 'my-controller', targetId: 'lead-controller@laptop', tool: 'send_message', state: 'refused' as const,
+    queuedAt: '', updatedAt: '', attempts: 1, reason: 'not_lead' });
+
+  it('a refusal reported while the call is under way isn’t shown again; the call keeps the news here once', async () => {
+    let reported: boolean | undefined;
+    vi.mocked(forwardAgentCall).mockImplementationOnce(async () => {
+      reported = await newsDeliveryFailed(notice('call_now'));
+      return { content: [{ type: 'text', text: 'Refused.' }], isError: true };
+    });
+    expect(await forwardNewsToLead(MESSAGE)).toBe(false);
+    expect(reported).toBe(true);
+    expect(deliverUpdateToChat).not.toHaveBeenCalled();
+    expect(localNewsState().count).toBe(1);
+    // After the call, an ordinary message's failure is reported as usual.
+    expect(await newsDeliveryFailed(notice('call_later'))).toBe(false);
+  });
+
+  it('forgets news the lead has taken', async () => {
+    h.result = { content: [{ type: 'text', text: 'Queued. delivery_id=call_1. This confirms a durable queue, not model execution.' }] };
+    await forwardNewsToLead(MESSAGE);
+    h.delivered.add('call_1');
+    h.result = { content: [{ type: 'text', text: 'Queued. delivery_id=call_2. This confirms a durable queue, not model execution.' }] };
+    await forwardNewsToLead(MESSAGE);
+    // call_1 was taken, so a late failure for it isn't news any more.
+    expect(await newsDeliveryFailed(notice('call_1'))).toBe(false);
+    expect(await newsDeliveryFailed(notice('call_2'))).toBe(true);
   });
 });
 

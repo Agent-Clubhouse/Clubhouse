@@ -112,12 +112,18 @@ function OutboxNotice({ outbox, machine, onError }: { outbox: LeadOutboxState; m
   );
 }
 
-/** News this computer's Dispatcher kept in its own chat while the lead couldn't take it. */
-export function localNewsLine(news: { count: number; needsUser: boolean }): string | null {
+/**
+ * News this computer's Dispatcher kept in its own chat while the lead couldn't
+ * take it. Following, a question there needs Take back to answer; after Take
+ * back, it's simply in this computer's chat.
+ */
+export function localNewsLine(news: { count: number; needsUser: boolean }, tookBack = false): string | null {
   if (news.count === 0) return null;
   const what = news.count === 1 ? 'An update from this computer’s Dispatcher is' : `${news.count} updates from this computer’s Dispatcher are`;
-  return `${what} in its own chat, because the lead couldn’t take ${news.count === 1 ? 'it' : 'them'}.`
-    + (news.needsUser ? ' One needs your answer: read it in this computer’s earlier chat, and Take back to answer it there.' : '');
+  const ask = tookBack
+    ? ' One needs your answer in this computer’s chat.'
+    : ' One needs your answer. Read it in this computer’s earlier chat, and Take back to answer it there.';
+  return `${what} in its own chat, because the lead couldn’t take ${news.count === 1 ? 'it' : 'them'}.${news.needsUser ? ask : ''}`;
 }
 
 function LocalNewsNotice({ news, onShow, onError }: { news: { count: number; needsUser: boolean }; onShow: () => void; onError: (error: string | null) => void }) {

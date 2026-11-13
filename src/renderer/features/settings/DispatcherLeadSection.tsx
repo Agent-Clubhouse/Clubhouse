@@ -96,7 +96,7 @@ export function LeadSection() {
         // After Take back the pane is gone, so what still waits for the lead, or didn't make it, is said here.
         if (!state.tookBack || !state.lead) return null;
         const { waiting, problem } = outboxLines(state.outbox, state.lead.name);
-        const local = localNewsLine(state.localNews);
+        const local = localNewsLine(state.localNews, true);
         if (!waiting && !problem && !local) return null;
         return (
           <div className={`${settingsHelp} mt-1.5 flex flex-col gap-1`} data-testid="dispatcher-lead-outbox">

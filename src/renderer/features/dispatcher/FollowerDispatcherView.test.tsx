@@ -16,7 +16,7 @@ vi.mock('../agents/chat/useChatSession', () => ({
   useChatTranscript: vi.fn(), useChatState: () => undefined, useChatLoading: () => false,
 }));
 
-import { FollowerDispatcherView, outboxLines } from './FollowerDispatcherView';
+import { FollowerDispatcherView, localNewsLine, outboxLines } from './FollowerDispatcherView';
 
 const OUTBOX = { waiting: 0, oldestAt: null, expired: 0, failed: null };
 const STATE: DispatcherLeadState = {
@@ -99,6 +99,12 @@ describe('the follower’s Dispatcher pane (#3352, #3353)', () => {
     expect(screen.getByTestId('follower-earlier-chat')).toBeTruthy();
     fireEvent.click(screen.getByTestId('follower-local-news-dismiss'));
     await waitFor(() => expect(window.clubhouse.dispatcher.dismissLeadNotice).toHaveBeenCalled());
+  });
+
+  it('words a question kept here for following and for after Take back', () => {
+    expect(localNewsLine({ count: 2, needsUser: true })).toBe('2 updates from this computer’s Dispatcher are in its own chat, because the lead couldn’t take them. One needs your answer. Read it in this computer’s earlier chat, and Take back to answer it there.');
+    expect(localNewsLine({ count: 1, needsUser: true }, true)).toBe('An update from this computer’s Dispatcher is in its own chat, because the lead couldn’t take it. One needs your answer in this computer’s chat.');
+    expect(localNewsLine({ count: 0, needsUser: false })).toBeNull();
   });
 
   it('with no chat from the lead yet, says why', () => {

@@ -14,7 +14,7 @@
 
 import { formatAgentAddress } from '../../shared/agent-address';
 import { appLog } from './log-service';
-import { forwardAgentCall, type AgentToolRunResult } from './annex-agent-calls';
+import { forwardAgentCall, getDelivery, type AgentToolRunResult } from './annex-agent-calls';
 import { remoteFederationController } from './dispatcher-federation';
 import { isFollowingLead, leadRecord, leadRole } from './dispatcher-federation-lead';
 import { getDispatcherAgentId } from './dispatcher/dispatcher-service';
@@ -85,6 +85,20 @@ const pending = new Map<string, ChatMessage>();
 const PENDING_MAX = 100;
 
 /**
+ * Calls to the lead under way, by target. A refusal that comes back at once is
+ * reported to this delivery's failure hook before the call returns; the call
+ * itself then keeps the news here, so that report isn't shown a second time.
+ */
+const inFlight = new Map<string, number>();
+
+/** Forgets news the lead has taken. */
+function pruneDelivered(callerId: string): void {
+  for (const id of [...pending.keys()]) {
+    if (getDelivery(callerId, id)?.state === 'delivered') pending.delete(id);
+  }
+}
+
+/**
  * Sends news to the lead's controller link. True when it went, so this
  * computer's chat doesn't show it too; false to show it here.
  */
@@ -104,6 +118,8 @@ export async function forwardNewsToLead(message: ChatMessage): Promise<boolean> 
   if (!controller?.agentId || !controller.enabled) return kept('lead_unavailable');
   const to = formatAgentAddress({ agentId: controller.agentId, machine: lead });
   const summary = news.fromName ? `News from ${news.fromName}: ${news.text}` : news.text;
+  pruneDelivered(local);
+  inFlight.set(to, (inFlight.get(to) ?? 0) + 1);
   try {
     const result = await forwardAgentCall(local, to, controller.name, 'send_message', { message: summary, news });
     if (result.isError) return kept('refused');
@@ -119,6 +135,9 @@ export async function forwardNewsToLead(message: ChatMessage): Promise<boolean> 
     // telemetry-exempt: logged; the news shows in this computer's chat instead.
     appLog('core:dispatcher', 'warn', 'Could not send news to the lead', { meta: { error: err instanceof Error ? err.message : String(err) } });
     return kept('send_failed');
+  } finally {
+    const left = (inFlight.get(to) ?? 1) - 1;
+    if (left > 0) inFlight.set(to, left); else inFlight.delete(to);
   }
 }
 
@@ -129,7 +148,10 @@ export async function forwardNewsToLead(message: ChatMessage): Promise<boolean> 
  */
 export async function newsDeliveryFailed(notice: AnnexDeliveryFailure): Promise<boolean> {
   const message = pending.get(notice.callId);
-  if (!message) return false;
+  if (!message) {
+    // Refused while the call to the lead was still under way: that call keeps the news here itself.
+    return notice.tool === 'send_message' && notice.callerId === getDispatcherAgentId() && inFlight.has(notice.targetId);
+  }
   pending.delete(notice.callId);
   // Unknown: the lead may already have it, and showing it twice beats losing a question.
   const result = await deliverUpdateToChat(message);
@@ -182,4 +204,5 @@ export function _resetFollowerNewsForTesting(): void {
   localNews = { count: 0, needsUser: false };
   listeners.clear();
   pending.clear();
+  inFlight.clear();
 }
