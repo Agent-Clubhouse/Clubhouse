@@ -1,7 +1,7 @@
 import { createHash } from 'crypto';
 import type { AnnexCallContext, AnnexDeliveryEpoch, AnnexDeliveryFailure, AnnexDeliveryReceipt, AnnexDeliveryStatus } from '../../shared/annex-delivery';
 import type { McpToolResult } from './clubhouse-mcp/types';
-import { createSettingsStore } from './settings-store';
+import { createSettingsStore, type SettingsCommitPrecondition } from './settings-store';
 
 export const DELIVERY_MAX_AGE_MS = 7 * 24 * 60 * 60_000;
 export const DELIVERY_RETENTION_MS = DELIVERY_MAX_AGE_MS + 24 * 60 * 60_000;
@@ -25,10 +25,14 @@ export interface DeliveryOutboxItem {
   machine: string;
   body: DurableAgentCall;
   queuedAt: string;
+  /** Receiver-independent, local-only proof that this exact queued news passed sender approval. */
+  remoteDispatcherAuthorization?: { policyHash: string };
 }
 
 export interface SenderDelivery extends AnnexDeliveryStatus {
   payloadHash: string;
+  /** Local-only original causal context, retained for keyed retries after delivery. */
+  context?: AnnexCallContext;
   result?: McpToolResult;
   failureNotified?: boolean;
 }
@@ -76,7 +80,7 @@ export class DeliveryStoreError extends Error {
 
 export interface AnnexDeliveryStore {
   get(): DeliveryFile;
-  update(change: (file: DeliveryFile) => void, now?: number): Promise<void>;
+  update(change: (file: DeliveryFile) => void, now?: number, precondition?: SettingsCommitPrecondition): Promise<void>;
   clearForTesting(): Promise<void>;
 }
 
@@ -134,7 +138,7 @@ export function createAnnexDeliveryStore(filename = 'annex-agent-outbox.json'): 
   };
   return {
     get,
-    update(change, now = Date.now()) {
+    update(change, now = Date.now(), precondition) {
       const task = lock.catch(() => {}).then(async () => {
         const file = get();
         const waiting = new Set(file.outbox.map((i) => i.id));
@@ -148,7 +152,7 @@ export function createAnnexDeliveryStore(filename = 'annex-agent-outbox.json'): 
         if (file.inbox.length + file.deliveries.length > DELIVERY_MAX_RECORDS || Buffer.byteLength(JSON.stringify(file, null, 2)) + reserved > DELIVERY_MAX_BYTES) {
           throw new DeliveryStoreError('delivery_store_full', 'The durable delivery store is full. Existing receipts are retained; retry after they expire.');
         }
-        await store.save(file);
+        await store.save(file, precondition);
         committed = structuredClone(file);
       });
       lock = task;

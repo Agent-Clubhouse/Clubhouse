@@ -3,6 +3,28 @@ import { grantKey } from './agent-grant-changes';
 import { controlFromGrantModes, controlGrantModes, defaultGrants } from './default-grants';
 import { evaluateGrant, type Grant, type GrantCallTarget } from './agent-grants';
 import { ORCHESTRATION_CONTROLS } from './orchestration-policy';
+import { applyGrantChanges, grantRows, normalizeGrantChanges } from './agent-grant-changes';
+
+describe('remote Dispatcher grants (#3348)', () => {
+  it.each([[true, false, 'allow'], [false, true, 'ask'], [false, false, 'refuse']] as const)('defaults dispatcher=%s connected=%s to %s', (dispatcher, dispatcherConnected, expected) => {
+    const grants = defaultGrants({ dispatcher, dispatcherConnected, helper: false, orchestrates: false, crossProject: false });
+    expect(evaluateGrant({ caller: { kind: 'agent' }, action: 'agent.message', target: { kind: 'agent', remoteDispatcher: true } }, grants).outcome).toBe(expected);
+    expect(evaluateGrant({ caller: { kind: 'agent' }, action: 'agent.message', target: { kind: 'agent' } }, grants).outcome).toBe('refuse');
+  });
+  it.each([[true, false, 'ask'], [false, true, 'ask'], [false, false, 'refuse']] as const)('keeps agreements under their own normal approval dispatcher=%s connected=%s', (dispatcher, dispatcherConnected, expected) => {
+    const grants = defaultGrants({ dispatcher, dispatcherConnected, helper: false, orchestrates: false, crossProject: false });
+    expect(evaluateGrant({ caller: { kind: 'agent' }, action: 'handoff.offer', target: { kind: 'agent', remoteDispatcher: true } }, grants).outcome).toBe(expected);
+    if (expected === 'ask') expect(grantRows(grants, undefined)).toContainEqual(expect.objectContaining({ action: 'handoff.offer', target: { kind: 'remote_dispatcher' }, mode: 'ask' }));
+  });
+  it('exposes an Off row and preserves the person\'s grant without widening to other agents', () => {
+    const defaults = defaultGrants({ dispatcher: false, helper: false, orchestrates: false, crossProject: false });
+    expect(grantRows(defaults, undefined)).toContainEqual(expect.objectContaining({ action: 'agent.message', target: { kind: 'remote_dispatcher' }, mode: 'off' }));
+    const saved = normalizeGrantChanges(JSON.parse(JSON.stringify({ changes: [{ action: 'agent.message', target: { kind: 'remote_dispatcher' }, mode: 'allow', by: 'user' }] })));
+    const grants = applyGrantChanges(defaults, saved);
+    expect(evaluateGrant({ caller: { kind: 'agent' }, action: 'agent.message', target: { kind: 'agent', remoteDispatcher: true } }, grants).outcome).toBe('allow');
+    expect(evaluateGrant({ caller: { kind: 'agent' }, action: 'agent.message', target: { kind: 'agent', relations: ['connected'] } }, [{ action: 'agent.message', target: { kind: 'remote_dispatcher' }, mode: 'allow' }]).outcome).toBe('refuse');
+  });
+});
 
 describe('connection management (#3336)', () => {
   it('asks before ordinary agents manage their own connections without widening their reach', () => {

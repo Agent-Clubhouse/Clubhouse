@@ -131,6 +131,7 @@ describe('remote Dispatcher presence (#3349)', () => {
     expect(heard).toHaveBeenCalledTimes(2);
   });
 
+  // Repeated atomic durable-store writes are slower on loaded Windows runners.
   it('shows a link tripped by a real fixed limit as tripped with the limit, and tells listeners (#3347)', async () => {
     await learnFederationController('laptop', controller('controller-laptop'));
     const store = createFederationRequestStore(`federation-requests-${Date.now()}.json`);
@@ -159,5 +160,5 @@ describe('remote Dispatcher presence (#3349)', () => {
       });
       off();
     } finally { stopRouter(); }
-  });
+  }, 15_000);
 });

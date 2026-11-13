@@ -15,6 +15,8 @@ import type { OrchestrationControl } from './orchestration-policy';
  */
 export interface GrantCallerFacts {
   dispatcher: boolean;
+  /** Connected to this computer's Dispatcher. Remote sends ask first by default. */
+  dispatcherConnected?: boolean;
   /**
    * The Dispatcher's chat (#3036). It has no permissions of its own: it reads,
    * and hands every action to the Dispatcher. Its grants replace all others.
@@ -112,6 +114,9 @@ export function defaultGrants(facts: GrantCallerFacts): Grant[] {
     every('action.write', SELF), every('action.run', SELF),
   ];
   if (!facts.orchestrates && !facts.dispatcher) out.push(every('connection.manage', SELF, 'ask'));
+  if (facts.dispatcher || facts.dispatcherConnected) out.push(structural('agent.message', { kind: 'remote_dispatcher' }, facts.dispatcher ? 'allow' : 'ask'));
+  // Agreements retain their normal Ask first flow, including the Dispatcher.
+  if (facts.dispatcher || facts.dispatcherConnected) out.push(structural('handoff.offer', { kind: 'remote_dispatcher' }, 'ask'));
   if (facts.helper) out.push(structural('agent.message', { kind: 'parent' }));
   if (facts.orchestrates && !facts.dispatcher) {
     // The approval setting decides whether starts and disposes ask first (#2970).

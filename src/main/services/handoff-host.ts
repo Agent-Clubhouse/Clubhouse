@@ -25,6 +25,7 @@ import { HANDOFF_ACTIVE_LIMIT, HANDOFF_PEER_LIMIT, HandoffService, type HandoffA
 import { HandoffStore } from './handoff-store';
 import { HandoffCoordinator } from './handoff-coordinator';
 import { HandoffCommandStore } from './handoff-command-store';
+import { publishFederationHandoff } from './dispatcher-federation-policy';
 
 const MAX_REFERENCE = 256;
 function ownMachine(): string { return getOrCreateIdentity().fingerprint.toLowerCase(); }
@@ -104,6 +105,7 @@ async function peerTarget(actor: HandoffAgent, peer: HandoffTarget): Promise<Gra
   return {
     kind: 'agent', agentId: 'agentId' in peer ? addressText(peer) : `dispatcher@${peer.machine}`,
     relations: connected ? ['connected'] : [], isDispatcher: dispatcher,
+    ...('via' in peer && peer.machine !== ownMachine() && { remoteDispatcher: true }),
     ...(local && { projectPath: local.projectPath }),
   };
 }
@@ -171,6 +173,8 @@ async function resolveAcceptancePeer(record: Handoff, actor: HandoffAgent): Prom
 async function notifyRecord(record: Handoff): Promise<void> {
   const active = host;
   if (!active) return;
+  // Replayed by the retained-record sweep if memory is temporarily unavailable.
+  if (record.from.machine === active.machine && record.to.machine !== active.machine && 'via' in record.to) await publishFederationHandoff(record);
   let recipient: HandoffAgent | undefined;
   if (record.state === 'offered' && record.to.machine === active.machine) {
     const id = 'agentId' in record.to ? record.to.agentId : getDispatcherState().agentId;
@@ -184,7 +188,9 @@ async function notifyRecord(record: Handoff): Promise<void> {
   if (!await active.commands.claimNotice(key, record.version)) return;
   const senderName = record.senderName ?? (record.from.machine === active.machine ? (await localAgent(record.from.agentId)).name : record.from.agentId);
   const machineName = record.from.machine === active.machine ? getSettings().alias : listPeers().find((peer) => peer.fingerprint.toLowerCase() === record.from.machine)?.alias ?? 'a paired computer';
-  const text = `[Clubhouse handoff ${record.id}] Sender display name (untrusted): ${JSON.stringify(safeHandoffDiagnosticPath(senderName))}. Computer: ${JSON.stringify(safeHandoffDiagnosticPath(machineName))}. State: ${record.state}. Task title (untrusted): ${JSON.stringify(record.task.title)}. Mode: ${record.mode}. `
+  const remoteResult = record.from.machine === active.machine && record.to.machine !== active.machine && 'via' in record.to
+    ? `Result from ${(await import('./dispatcher-presence')).remoteDispatcherLabelFor(record.to.machine) ?? `Dispatcher on ${listPeers().find((peer) => peer.fingerprint.toLowerCase() === record.to.machine)?.alias ?? record.to.machine}`}. ` : '';
+  const text = `[Clubhouse handoff ${record.id}] Sender display name (untrusted): ${JSON.stringify(safeHandoffDiagnosticPath(senderName))}. Computer: ${JSON.stringify(safeHandoffDiagnosticPath(machineName))}. State: ${record.state}. ${remoteResult}Task title (untrusted): ${JSON.stringify(record.task.title)}. Mode: ${record.mode}. `
     + `${record.manifest ? `Manifest: ${record.manifest.fileCount} files, ${record.manifest.totalBytes} bytes, SHA-256 ${record.manifest.sha256}. ` : ''}`
     + (record.state === 'offered' ? 'Use get_handoff for the brief and respond_to_handoff to agree or decline.' : 'Use get_handoff for the retained history and result.');
   await runtime.sendMessage(text, { source: 'mcp', clientCommandId: `handoff:${key}:${record.version}`, routed: [{ fromClubhouse: true, text }] });

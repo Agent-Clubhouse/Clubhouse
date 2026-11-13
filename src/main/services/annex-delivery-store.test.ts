@@ -19,6 +19,15 @@ const receipt = (id: number, at: number): ReceiverDelivery => ({
 });
 
 describe('durable Annex delivery store', () => {
+  it('checks sender approval at the atomic admission barrier and rolls back a revoked write', async () => {
+    const store = createAnnexDeliveryStore('revoked-admission.json');
+    let current = true;
+    const open = fs.promises.open.bind(fs.promises);
+    vi.spyOn(fs.promises, 'open').mockImplementation(async (...args) => { const file = await open(...args); current = false; return file; });
+    await expect(store.update((file) => { file.inbox.push(receipt(1, Date.now())); }, Date.now(), { prepare: async () => {}, check: () => { if (!current) throw new Error('sender approval revoked'); } })).rejects.toThrow('sender approval revoked');
+    expect(store.get().inbox).toEqual([]);
+    expect(createAnnexDeliveryStore('revoked-admission.json').get().inbox).toEqual([]);
+  });
   it.each([null, false, 7, 'not a store', [], { version: 1, outbox: [], inbox: null, deliveries: [] }])('refuses raw non-store JSON %j without overwriting it', async (raw) => {
     const filename = 'raw-non-store.json';
     const filePath = path.join(state.base, filename);

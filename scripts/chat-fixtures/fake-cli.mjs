@@ -38,6 +38,7 @@
 // COPILOT_CONNECTION_TOKEN is refused. A header with `"listen": false` never opens the port.
 
 import { renameSync, writeFileSync } from 'node:fs';
+import { createHash } from 'node:crypto';
 import { createServer } from 'node:net';
 import {
   TCP_PROTOCOLS,
@@ -139,7 +140,8 @@ const report = {
 
 let wire;
 
-const reportTmp = opts.report ? `${opts.report}.${process.pid}.tmp` : undefined;
+const agentReport = opts.report && process.env.CLUBHOUSE_AGENT_ID
+  ? `${opts.report}.agent-${createHash('sha256').update(process.env.CLUBHOUSE_AGENT_ID).digest('hex')}.json` : undefined;
 
 /**
  * Rewrite the report atomically (temp file in the same directory, then
@@ -147,12 +149,15 @@ const reportTmp = opts.report ? `${opts.report}.${process.pid}.tmp` : undefined;
  * rename while a reader has the target open, so retry briefly.
  */
 function writeReport() {
-  if (!opts.report) return;
+  for (const file of [opts.report, agentReport]) if (file) writeReportTo(file);
+}
+function writeReportTo(file) {
+  const reportTmp = `${file}.${process.pid}.tmp`;
   try {
     writeFileSync(reportTmp, JSON.stringify(report, null, 2));
     for (let attempt = 0; ; attempt++) {
       try {
-        renameSync(reportTmp, opts.report);
+        renameSync(reportTmp, file);
         return;
       } catch (err) {
         if (attempt >= 20) throw err;

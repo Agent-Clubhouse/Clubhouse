@@ -8,6 +8,7 @@ import { buildChatScript, writeChatScript } from '../../src/main/orchestrators/a
 import { chatFixturePath } from '../../src/main/orchestrators/adapters/testing/fake-cli';
 import { launchApp, type LaunchedApp } from '../launch';
 import { createDisposableProfile, type DisposableProfile } from '../app-profile';
+import { addProject, createDurableAgent } from '../smoke-helpers';
 import { enableAnnexViaPreload } from './helpers';
 
 const apps: LaunchedApp[] = [];
@@ -48,6 +49,7 @@ const identity = async (page: Page) => {
   const state = await page.evaluate(() => window.clubhouse.dispatcher.get());
   const annex = await page.evaluate(() => window.clubhouse.annex.getStatus());
   expect(state.agentId).toBeTruthy(); expect(state.chatAgentId).not.toBe(state.agentId);
+  expect(annex.fingerprint).toMatch(/^(?:[0-9a-f]{2}:){15,31}[0-9a-f]{2}$/i);
   return { controller: state.agentId!, chat: state.chatAgentId!, machine: annex.fingerprint!.toLowerCase() };
 };
 /** Other machines' Dispatchers as Settings › Dispatcher lists them (#3349). */
@@ -121,16 +123,29 @@ async function mcp(env: Record<string, string | null>) {
     },
   };
 }
+/** A report belongs to this agent, and the current bridge must accept a real handshake. */
+async function readyMcp(cli: FakeClis, agentId: string, timeout = 45_000, previousPid?: number) {
+  let client: Awaited<ReturnType<typeof mcp>> | undefined;
+  await expect.poll(async () => {
+    try {
+      const report = await cli.report('claude', agentId);
+      expect(report.env.CLUBHOUSE_AGENT_ID).toBe(agentId);
+      if (previousPid !== undefined) expect(report.pid).not.toBe(previousPid);
+      client = await mcp(report.env);
+      await client.names();
+      return 'ready';
+    } catch (error) { return error instanceof Error ? error.message : String(error); }
+  }, { timeout, message: `MCP is ready for ${agentId}` }).toBe('ready');
+  return client!;
+}
 async function startController(app: LaunchedApp, cli: FakeClis) {
   const ids = await identity(app.window);
   await app.window.locator('[data-testid="dispatcher-row"] [role="treeitem"]').click();
   await app.window.locator('[data-testid="dispatcher-view"] [data-testid="wake-button"]').click();
-  await expect.poll(async () => (await cli.report('claude').catch(() => undefined))?.env.CLUBHOUSE_AGENT_ID, { timeout: 30_000 }).toBe(ids.chat);
-  const chat = await mcp((await cli.report('claude')).env);
+  const chat = await readyMcp(cli, ids.chat);
   const started = await chat.call('start_work', { request: 'Prepare to coordinate with the other computer.' });
   expect(started.isError).toBe(false);
-  await expect.poll(async () => (await cli.report('claude')).env.CLUBHOUSE_AGENT_ID, { timeout: 30_000 }).toBe(ids.controller);
-  return { ids, chat, controller: await mcp((await cli.report('claude')).env), localId: /Request (\S+) is under way/.exec(started.text)![1] };
+  return { ids, chat, controller: await readyMcp(cli, ids.controller), localId: /Request (\S+) is under way/.exec(started.text)![1] };
 }
 async function requestNetwork() {
   scratch = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'federated-requests-e2e-'));
@@ -141,8 +156,8 @@ async function requestNetwork() {
   fakes = await installFakeClis({ claude: script.fixture });
   const otherCli = await installFakeClis({ claude: script.fixture }); additionalFakes.push(otherCli);
   const here = await desktop('Desk'); const there = await desktop('Laptop', undefined, otherCli);
-  const a = await startController(here, fakes); const b = await startController(there, otherCli);
   await enableAnnexViaPreload(there.window); await enableAnnexViaPreload(here.window);
+  const a = await startController(here, fakes); const b = await startController(there, otherCli);
   let url = '';
   await expect.poll(async () => { url = (await there.window.evaluate(() => window.clubhouse.annex.getStatus())).pairingUrl ?? ''; return !!url; }).toBe(true);
   const pairing = new URL(url); pairing.searchParams.delete('host'); pairing.searchParams.append('host', '127.0.0.1');
@@ -162,7 +177,7 @@ async function offerRemote(client: Awaited<ReturnType<typeof mcp>>, requestId: s
 
 test('remote requests triage locally, send correlated outcomes and wait once across an offline restart', async () => {
   test.setTimeout(300_000);
-  const { here, a, b, otherCli, ...network } = await requestNetwork();
+  const { here, a, b, ...network } = await requestNetwork();
   let there = network.there;
   for (const choice of ['now', 'check_in', 'needs_user', 'decline'] as const) {
     const local = await a.chat.call('start_work', { request: `Remote triage fixture ${choice}` });
@@ -183,7 +198,67 @@ test('remote requests triage locally, send correlated outcomes and wait once acr
       expect((await here.window.evaluate(() => window.clubhouse.dispatcher.get())).requestsUnderWay).toBe(parentWork);
     }
   }
+  // The project agent reaches Laptop directly, without a local start_work call.
+  const project = path.join(scratch!, 'direct-sender'); await fs.promises.mkdir(project);
+  await addProject(here.electronApp, here.window, project);
+  const sender = await createDurableAgent(here.window, { projectName: path.basename(project), name: 'direct-sender', orchestrator: 'claude-code' });
+  const direct = await readyMcp(fakes!, sender);
+  const ownBefore = (await here.window.evaluate(() => window.clubhouse.dispatcher.get())).requestsUnderWay;
+  const news = { machine: 'Laptop', message: 'Direct authorized project news', task_id: 'direct-news', idempotency_key: 'direct-news' };
+  const setMode = async (action: 'agent.message' | 'handoff.offer', mode: 'off' | 'ask' | 'allow') => here.window.evaluate(async ({ project, sender, action, mode }) => {
+    await window.clubhouse.agent.setGrant(project, sender, { action, target: { kind: 'remote_dispatcher' }, mode });
+  }, { project, sender, action, mode });
+  const transcript = () => there.window.evaluate(async (id) => JSON.stringify(await window.clubhouse.chat.readTranscript(id)), b.ids.controller);
+  await setMode('agent.message', 'off');
+  expect((await direct.call('message_remote_dispatcher', news)).isError).toBe(true);
+  expect(await transcript()).not.toContain(news.message);
+  await setMode('agent.message', 'ask');
+  expect((await direct.call('message_remote_dispatcher', news)).isError).toBe(true);
+  let permission = '';
+  await expect.poll(async () => {
+    permission = (await here.window.evaluate(() => window.clubhouse.agent.listGrantRequests())).find((r) => r.agentId === sender && r.toolName === 'message_remote_dispatcher')?.requestId ?? '';
+    return !!permission;
+  }).toBe(true);
+  expect(await transcript()).not.toContain(news.message);
+  expect(await here.window.evaluate((id) => window.clubhouse.agent.answerGrantRequest(id, true), permission)).toMatchObject({ ok: true });
+  expect((await direct.call('message_remote_dispatcher', news)).isError).toBe(false);
+  await expect.poll(transcript, { timeout: 30_000 }).toContain(news.message);
+  expect(await transcript()).toContain(sender);
+  await setMode('agent.message', 'allow');
+  const savedGrants = await here.window.evaluate(({ project, sender }) => window.clubhouse.agent.getGrants(project, sender), { project, sender });
+  expect(savedGrants.rows.find((row) => row.action === 'agent.message' && row.target.kind === 'remote_dispatcher')?.mode).toBe('allow');
+  const file = await direct.call('send_file_to_remote_dispatcher', { machine: b.ids.machine, filename: 'direct-fixture.txt', content: 'Direct file fixture bytes', task_id: 'direct-file', idempotency_key: 'direct-file' });
+  expect(file.isError, file.text).toBe(false);
+  await expect.poll(transcript, { timeout: 30_000 }).toContain('direct-fixture.txt');
+  expect((await here.window.evaluate(() => window.clubhouse.dispatcher.get())).requestsUnderWay).toBe(ownBefore);
+  // The distinct agreement follows its normal approval, stays offered until an explicit response,
+  // and reports its own id to the originating agent.
+  await setMode('handoff.offer', 'ask');
+  const handoff = { machine: 'Laptop', task: 'Continue the project fixture', brief: 'Goal: finish the fixture. Done: direct news. Remaining: verify the agreement.', mode: 'worktree' };
+  expect((await direct.call('offer_handoff_to_remote_dispatcher', handoff)).isError).toBe(true);
+  const approval = (await here.window.evaluate(() => window.clubhouse.agent.listGrantRequests())).find((r) => r.agentId === sender && r.toolName === 'offer_handoff');
+  expect(approval).toBeTruthy();
+  expect(await here.window.evaluate((id) => window.clubhouse.agent.answerGrantRequest(id, true), approval!.requestId)).toMatchObject({ ok: true });
+  const offeredAgreement = await direct.call('offer_handoff_to_remote_dispatcher', handoff); expect(offeredAgreement.isError).toBe(false);
+  const agreement = JSON.parse(offeredAgreement.text);
+  expect(agreement).toMatchObject({ state: 'offered', from: { agentId: sender, machine: a.ids.machine }, to: { machine: b.ids.machine, via: 'dispatcher' } });
+  await expect.poll(async () => {
+    const found = await b.controller.call('get_handoff', { id: agreement.id }); return found.isError ? '' : JSON.parse(found.text).state;
+  }, { timeout: 60_000 }).toBe('offered');
+  await there.window.evaluate(async () => {
+    const state = await window.clubhouse.dispatcher.get();
+    await window.clubhouse.agent.setGrant(state.path!, state.agentId!, { action: 'handoff.accept', target: { kind: 'any' }, mode: 'allow' });
+  });
+  expect((await b.controller.call('respond_to_handoff', { id: agreement.id, accept: false, reason: 'Fixture explicit refusal.' })).isError).toBe(false);
+  await expect.poll(async () => {
+    const found = await direct.call('get_handoff', { id: agreement.id }); return found.isError ? '' : JSON.parse(found.text).state;
+  }, { timeout: 60_000 }).toBe('declined');
+  const sourceTranscript = () => here.window.evaluate(async (id) => JSON.stringify(await window.clubhouse.chat.readTranscript(id)), sender);
+  await expect.poll(sourceTranscript, { timeout: 60_000 }).toContain(`[Clubhouse handoff ${agreement.id}]`);
+  expect(await sourceTranscript()).toContain('Result from ');
+  expect(await sourceTranscript()).toContain(' on Laptop');
   const profile = there.profile;
+  const previousPid = (await network.otherCli.report('claude', b.ids.controller)).pid;
   await there.electronApp.close(); apps.splice(apps.indexOf(there), 1);
   await expect.poll(async () => (await links(here.window, a.ids.controller)).flatMap((p) => p.sources).some((s) => s.suspended?.includes('offline')), { timeout: 30_000 }).toBe(true);
   const local = await a.chat.call('start_work', { request: 'Wait for the offline laptop fixture.' });
@@ -192,11 +267,42 @@ test('remote requests triage locally, send correlated outcomes and wait once acr
   expect(offered.text).toContain('Waiting for Laptop');
   const sent = JSON.parse(offered.text).request;
   expect(sent.delivery).toBe('accepted');
-  there = await desktop('Laptop', profile, otherCli);
-  await expect.poll(async () => (await otherCli.report('claude')).env.CLUBHOUSE_AGENT_ID, { timeout: 45_000 }).toBe(b.ids.controller);
-  const restarted = { controller: await mcp((await otherCli.report('claude')).env) };
-  await expect.poll(async () => (await remoteRequests(restarted.controller)).filter((r) => r.id === sent.id).length, { timeout: 45_000 }).toBe(1);
-  await expect.poll(async () => (await remoteRequests(a.controller)).find((r) => r.id === sent.id)?.delivery, { timeout: 30_000 }).toBe('delivered');
+  // A real CLI's install path survives a restart. Reject its old process report,
+  // and observe transport recovery before checking the new controller's bridge.
+  let stage = 'launch';
+  let restarted: { controller: Awaited<ReturnType<typeof mcp>> };
+  try {
+    there = await desktop('Laptop', profile, network.otherCli);
+    stage = 'network reconnect';
+    await expect.poll(async () => (await presence(here.window)).find((r) => r.machineId === b.ids.machine)?.link.state, { timeout: 60_000 }).toBe('active');
+    stage = 'durable delivery';
+    await expect.poll(async () => (await remoteRequests(a.controller)).find((r) => r.id === sent.id)?.delivery, { timeout: 45_000 }).toBe('delivered');
+    stage = 'new controller process and MCP';
+    restarted = { controller: await readyMcp(network.otherCli, b.ids.controller, 45_000, previousPid) };
+    stage = 'controller request presentation';
+    await expect.poll(async () => (await remoteRequests(restarted.controller)).filter((r) => r.id === sent.id).length, { timeout: 45_000 }).toBe(1);
+  } catch (error) {
+    // Only fixture state, never the report's bridge nonce or Annex pairing secrets.
+    const capture = async (read: () => Promise<unknown>) => {
+      try { return await read(); } catch (failure) { return String(failure); }
+    };
+    const diagnostics = {
+      stage, previousPid,
+      report: await capture(async () => {
+        const report = await network.otherCli.report('claude', b.ids.controller);
+        return { pid: report.pid, agentId: report.env.CLUBHOUSE_AGENT_ID, argv: report.argv };
+      }),
+      sourceRequest: await capture(async () => (await remoteRequests(a.controller)).find((r) => r.id === sent.id)),
+      sourcePresence: await capture(() => presence(here.window)),
+      receiver: await capture(() => there.window.evaluate(async () => {
+        const annex = await window.clubhouse.annex.getStatus();
+        return { dispatcher: await window.clubhouse.dispatcher.get(), presence: await window.clubhouse.dispatcher.getPresence(), annex: { port: annex.port, advertising: annex.advertising } };
+      })),
+      receiverRequests: await capture(async () => JSON.parse(await fs.promises.readFile(path.join(profile.userDataDir, 'dispatcher-federation-requests.json'), 'utf8'))),
+    };
+    await test.info().attach('offline-restart-diagnostics', { body: Buffer.from(JSON.stringify(diagnostics, null, 2)), contentType: 'application/json' });
+    throw error;
+  }
   expect((await remoteRequests(a.controller)).find((r) => r.id === sent.id)?.outcome).toBe('under_way');
   await offerRemote(a.controller, localId, 'Offline request fixture.');
   expect((await remoteRequests(restarted.controller)).filter((r) => r.id === sent.id)).toHaveLength(1);

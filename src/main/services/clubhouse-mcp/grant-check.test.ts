@@ -20,11 +20,12 @@ vi.mock('../dispatcher/dispatcher-settings', async (original) => ({
 import { listToolGrants, _resetForTesting, type RegisteredToolGrant } from './tool-registry';
 import { mcpAdapter } from './mcp-adapter';
 import { registerClubhouseMcpTools } from './tools/register-all';
+import { bindingManager } from './binding-manager';
 import { capToHolder, checkToolGrant, decideGrant, isListable, registerActionOwnerLookup } from './grant-check';
 import { updateAgentGrantChanges } from '../agent-grants-store';
 import { setMcpCaller, _resetMcpCallGateForTesting } from './mcp-call-gate';
 import { setOrchestrationEnabled, isOrchestrationEnabled, isCrossProjectEnabled, _resetOrchestrationGateForTesting } from './orchestration-gate';
-import { setDispatcherAgent, isDispatcherAgent, isTrackedDispatcher, _resetDispatcherGateForTesting } from './dispatcher-gate';
+import { setDispatcherIdLookup, setDispatcherAgent, isDispatcherAgent, isTrackedDispatcher, _resetDispatcherGateForTesting } from './dispatcher-gate';
 import { GROUP_PROJECT_PRIVILEGED_TOOL_SUFFIXES } from '../../../shared/group-project-permissions';
 import type { GrantChange } from '../../../shared/agent-grant-changes';
 
@@ -34,7 +35,6 @@ function leadAndAdmin(groupProjectId: string): GrantChange[] {
 }
 import { toolGrantDeclarations, type ToolGrant } from './tool-grants';
 import type { ToolGroups } from './tool-registry';
-import { bindingManager } from './binding-manager';
 
 /**
  * The parity suite (#2968): for every tool the app registers, every kind of
@@ -174,6 +174,8 @@ describe('grant check parity (#2968)', () => {
       ...deviceTools.slice(0, 1).map((t) => `orchestrator: ${t}`), 'orchestrator: message_parent', ...deviceTools.slice(1).map((t) => `orchestrator: ${t}`), 'orchestrator: set_helper_presets',
       ...deviceTools.slice(0, 1).map((t) => `plain: ${t}`), 'plain: message_parent', ...deviceTools.slice(1).map((t) => `plain: ${t}`), 'plain: set_helper_presets',
       ...['helper', 'orchestrator', 'plain'].map((caller) => `${caller}: update_annex_network_settings`),
+      // Remote news/file tools require a distinct grant; these fixtures have no local Dispatcher binding.
+      ...['helper', 'orchestrator', 'plain'].flatMap((caller) => ['message_remote_dispatcher', 'send_file_to_remote_dispatcher'].map((tool) => `${caller}: ${tool}`)),
     ].sort());
   });
 });
@@ -555,4 +557,15 @@ describe('handoff agreement grants', () => {
       expect(checkToolGrant('plain', grant, args, undefined, connected).ok).toBe(false);
     } finally { await updateAgentGrantChanges('plain', () => undefined); }
   });
+});
+
+it('keeps the remote Dispatcher Ask default when the locally connected controller is asleep', () => {
+  setMcpCaller('connected-agent', userData.dir, {});
+  setDispatcherIdLookup((id) => id === 'sleeping-controller');
+  const bindings = vi.spyOn(bindingManager, 'getBindingsForAgent').mockReturnValue([{ targetKind: 'agent', targetId: 'sleeping-controller' }] as ReturnType<typeof bindingManager.getBindingsForAgent>);
+  try {
+    expect(checkToolGrant('connected-agent', { actions: ['agent.message'], target: 'remote_dispatcher' }, {})).toMatchObject({ ok: false, reason: 'ask_first' });
+    bindings.mockReturnValue([]);
+    expect(checkToolGrant('connected-agent', { actions: ['agent.message'], target: 'remote_dispatcher' }, {})).toMatchObject({ ok: false, reason: 'no_grant' });
+  } finally { bindings.mockRestore(); setDispatcherIdLookup(null); }
 });

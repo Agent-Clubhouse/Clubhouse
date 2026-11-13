@@ -47,7 +47,7 @@ describe('the Dispatcher\'s chat', () => {
   it('is offered reading tools and start_work, and nothing that acts', () => {
     // update_agent and update_project name their target in the arguments, so a listing can't
     // check it; the call is refused (below: the chat holds no agent.display or project.display).
-    expect(names('chat')).toEqual(['get_annex_network_settings', 'get_delivery', 'inspect_helper', 'list_abilities', 'list_agents', 'list_group_projects', 'list_settings', 'read_helper_presets', 'read_memory', 'read_settings', 'search_memory', 'start_work', 'update_agent', 'update_project']);
+    expect(names('chat')).toEqual(['get_annex_network_settings', 'get_delivery', 'inspect_helper', 'list_abilities', 'list_agents', 'list_group_projects', 'list_other_dispatchers', 'list_settings', 'read_helper_presets', 'read_memory', 'read_settings', 'search_memory', 'start_work', 'update_agent', 'update_project']);
     expect(names('chat')).not.toContain('open_group_project_directory');
     for (const name of ['update_agent', 'update_project']) {
       const tool = listToolGrants().find((t) => t.kind === 'global' && t.name === name)!;

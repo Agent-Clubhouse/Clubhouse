@@ -25,7 +25,7 @@ import { defaultGrants } from '../../../shared/default-grants';
 import { CROSS_PROJECT_OFF_MESSAGE, fiveLevelOf } from '../../../shared/orchestration-policy';
 import { agentRegistry } from '../agent-registry';
 import { bindingManager } from './binding-manager';
-import { isDispatcherAgent, isTrackedDispatcher, isTrackedDispatcherChat } from './dispatcher-gate';
+import { isDispatcherCoordinatorId, isDispatcherAgent, isTrackedDispatcher, isTrackedDispatcherChat } from './dispatcher-gate';
 import { mcpCallerParent } from './mcp-call-gate';
 import { getAgentGrantChanges } from '../agent-grants-store';
 import { localConnectionWakeOn } from '../connection-grants-store';
@@ -91,6 +91,7 @@ function resolveTargets(agentId: string, d: ToolGrantDeclaration, wire: GrantChe
 
 function resolveTarget(agentId: string, target: ToolGrantTarget, wire: GrantCheckWire | undefined, args: Record<string, unknown>): GrantCallTarget | null {
   switch (target) {
+    case 'remote_dispatcher': return { kind: 'agent', remoteDispatcher: true, isDispatcher: true };
     case 'bound': return wire ? boundTarget(agentId, wire) : null;
     // Members of the bound group project: an agent named in the call (target_agent_id) must be a
     // member of it (#2974). Broadcast names none. That the caller leads the group is its own
@@ -149,6 +150,7 @@ export function registerActionOwnerLookup(lookup: ActionOwnerLookup | null): voi
 
 /** Where a refused call was aimed, in the caller's terms. Never says whether a target exists. */
 export function whereText(target: GrantCallTarget): string {
+  if (target.remoteDispatcher) return "another machine's Dispatcher";
   const rel = target.relations ?? [];
   if (target.isDispatcher && rel.includes('connected')) return 'the Dispatcher';
   if (rel.includes('parent')) return 'your orchestrator';
@@ -204,6 +206,7 @@ export function callerGrants(agentId: string): Grant[] {
   return applyGrantChanges(defaultGrants({
     dispatcher: isDispatcherAgent(agentId),
     dispatcherChat: isTrackedDispatcherChat(agentId),
+    dispatcherConnected: bindingManager.getBindingsForAgent(agentId).some((b) => b.targetKind === 'agent' && (isDispatcherCoordinatorId(b.targetId) || isTrackedDispatcher(b.targetId) && !isTrackedDispatcherChat(b.targetId))),
     helper: mcpCallerParent(agentId) !== undefined,
     orchestrates: !tracked && isOrchestrationEnabled(agentId),
     crossProject: !tracked && isCrossProjectEnabled(agentId),

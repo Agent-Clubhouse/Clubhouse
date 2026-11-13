@@ -3,6 +3,7 @@ import * as os from 'os';
 import * as path from 'path';
 import {
   chatFixturePath,
+  fakeCliAgentReportPath,
   FAKE_CLI_SCRIPT,
   writeFakeCliShims,
   type ChatFixtureCli,
@@ -26,7 +27,7 @@ export const ORCHESTRATOR_FOR_CLI: Record<ChatFixtureCli, string> = {
 export interface FakeClis {
   env: Record<string, string>;
   /** Read the replay report for one CLI (complete, mismatch, argv, …). */
-  report(cli: ChatFixtureCli): Promise<FakeCliReport>;
+  report(cli: ChatFixtureCli, agentId?: string): Promise<FakeCliReport>;
   cleanup(): Promise<void>;
 }
 
@@ -93,10 +94,10 @@ export async function installFakeClis(
       CLUBHOUSE_TEST_NO_CARD_REQUESTS: '1',
       [pathKey]: `${binDir}${path.delimiter}${process.env[pathKey] ?? ''}`,
     },
-    async report(cli) {
+    async report(cli, agentId) {
       const file = reports[cli];
       if (!file) throw new Error(`no fake ${cli} installed`);
-      return JSON.parse(await fs.promises.readFile(file, 'utf8')) as FakeCliReport;
+      return JSON.parse(await fs.promises.readFile(agentId ? fakeCliAgentReportPath(file, agentId) : file, 'utf8')) as FakeCliReport;
     },
     async cleanup() {
       // Windows: a fake that was just killed can hold its files for a moment.

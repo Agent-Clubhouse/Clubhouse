@@ -9,7 +9,7 @@ import { listPeers } from './annex-peers';
 import { onDevicesChanged } from './annex-device-signal';
 import { dispatcherDisplayName, getDispatcherAgentId, getDispatcherState, isDispatcherEnabled, onDispatcherChanged } from './dispatcher/dispatcher-service';
 import { isPublishedDispatcherState, type PublishedDispatcherState } from '../../shared/dispatcher-presence';
-import { FEDERATION_DISABLED_TOOLS, FEDERATION_SOURCE_ID, setFederationLookup, setFederationStatus, type FederationPublicationGuard } from './dispatcher-federation-policy';
+import { FEDERATION_DISABLED_TOOLS, FEDERATION_SOURCE_ID, setFederationLookup, setFederationMessageLookup, setFederationStatus, type FederationPublicationGuard } from './dispatcher-federation-policy';
 import type { PersistedBindingSource } from './persisted-bindings';
 
 export interface FederationController {
@@ -115,6 +115,19 @@ export const federationBindingSource: PersistedBindingSource = {
 
 export function watchFederation(changed: () => void, connected: (machine: string) => boolean = () => true): () => void {
   const offLookup = setFederationLookup(controllerDirection);
+  const offMessages = setFederationMessageLookup((from, to) => {
+    if (!!from.machineId === !!to.machineId) return;
+    const remote = from.machineId ? from : to;
+    const peer = listPeers().find((p) => p.fingerprint.toLowerCase() === remote.machineId!.toLowerCase() && p.role === 'member' && p.kind !== 'phone');
+    if (!peer) return;
+    const published = remoteFederationController(remote.machineId!);
+    // Outgoing direct news must target the published controller, never another remote agent.
+    if (!from.machineId && (!published?.agentId || !published.enabled || to.agentId !== published.agentId)) return;
+    // Incoming direct news must target our hidden controller, never the visible chat.
+    if (from.machineId && to.agentId !== getDispatcherAgentId()) return;
+    const at = peer.pairedAt || new Date(0).toISOString();
+    return { from, to, link: { createdAt: at }, updatedAt: at, disabledTools: [...FEDERATION_DISABLED_TOOLS] };
+  });
   const offStatus = setFederationStatus((from, to) => {
     if (!controllerDirection(from, to)) return undefined;
     const remote = from.machineId ? from : to;
@@ -126,5 +139,5 @@ export function watchFederation(changed: () => void, connected: (machine: string
   listeners.add(changed);
   const offDevices = onDevicesChanged(changed);
   const offDispatcher = onDispatcherChanged(changed);
-  return () => { offLookup(); offStatus(); listeners.delete(changed); offDevices(); offDispatcher(); };
+  return () => { offLookup(); offMessages(); offStatus(); listeners.delete(changed); offDevices(); offDispatcher(); };
 }

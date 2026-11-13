@@ -32,6 +32,7 @@ vi.mock('./clubhouse-mcp/grant-check', () => ({ callerGrants: () => [] }));
 vi.mock('./clubhouse-mcp/tool-registry', () => ({ callTool: (...args: unknown[]) => state.create(...args), setHandoffParticipantCheck: (check: (id: string) => boolean) => { state.participant = check; } }));
 vi.mock('./clubhouse-mcp/handoff-permissions', () => ({ handoffAgreementCallApproved: async () => state.allowed }));
 vi.mock('./managed-agents', () => ({ managedAgents: () => ({ defaultHelperTemplateId: async () => 'person-helper-template' }) }));
+import { setFederationHandoffObserver } from './dispatcher-federation-policy';
 import { prepareNewHandoffHelper, handoffHost, localHandoffAgent, receiveNetworkHandoff, resolveHandoffGrantTarget, resolveHandoffTarget, startHandoffs, stopHandoffs } from './handoff-host';
 const offer = (): HandoffOffer => ({ to: localHandoffAgent('receiver'), task: { title: 'Continue task', brief: 'Goal and remaining checks.' }, mode: 'worktree' });
 beforeEach(() => {
@@ -50,6 +51,7 @@ it('resolves named agents and computer Dispatcher targets, requiring a connectio
   state.connected = false;
   await expect(resolveHandoffGrantTarget('sender', { to: 'receiver' })).rejects.toThrow('existing connection');
   expect(await resolveHandoffGrantTarget('sender', { to: 'dispatcher' })).toMatchObject({ isDispatcher: true });
+  expect(await resolveHandoffGrantTarget('sender', { to: 'machine:other-computer' })).toMatchObject({ remoteDispatcher: true, isDispatcher: true });
   await expect(resolveHandoffTarget('missing')).rejects.toThrow('unavailable');
 });
 
@@ -140,6 +142,20 @@ it.each(['Receiver', 'new_helper'])('routes machine:<name> to a remote Dispatche
   await expect(handoffHost().coordinator.service.advance(record.id, { state: 'transferring', bytesDone: 0 }, accepted.version)).resolves.toMatchObject({ state: 'transferring' });
 });
 
+ it('publishes an outgoing Dispatcher agreement for local coordination without granting participant access or accepting it', async () => {
+  const observe = vi.fn(async () => {});
+  const stop = setFederationHandoffObserver(observe);
+  state.connected = false;
+  state.post.mockRejectedValue(new Error('offline'));
+  try {
+    const record = await handoffHost().coordinator.offer({ ...offer(), to: { machine: state.peer, via: 'dispatcher' } }, localHandoffAgent('sender'));
+    expect(record.state).toBe('offered');
+    expect(observe).toHaveBeenCalledWith(expect.objectContaining({ id: record.id, state: 'offered', from: localHandoffAgent('sender') }));
+    expect(handoffHost().coordinator.service.get(record.id, localHandoffAgent('sender')).id).toBe(record.id);
+    expect(() => handoffHost().coordinator.service.get(record.id, localHandoffAgent('dispatcher'))).toThrow();
+    expect(state.create).not.toHaveBeenCalled();
+  } finally { stop(); }
+});
 
 it('does not plant a cancelled offer, participant tools or its private brief for an unconnected local receiver', async () => {
   startHandoffs(); state.connected = false;

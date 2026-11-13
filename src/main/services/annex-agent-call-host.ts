@@ -11,6 +11,8 @@ import { peekProjects } from './project-store';
 import type { AnnexDeliveryFailure } from '../../shared/annex-delivery';
 import { getAgentRuntime } from './agent-runtime';
 import { actionsReady, recordExternalRun } from './actions';
+import { federationMessageDirection, federationRequestRouter } from './dispatcher-federation-policy';
+import { remoteDispatcherPermissionHash } from './dispatcher-remote-permissions';
 
 /** Recovered work uses saved grants too: a sleeping sender is not revoked. */
 export async function authorizeQueuedAnnexCall(item: DeliveryOutboxItem): Promise<{ allowed: true } | { allowed: false; reason: string }> {
@@ -36,6 +38,14 @@ export async function authorizeQueuedAnnexCall(item: DeliveryOutboxItem): Promis
   const config = await getDurableConfig(projectPath, callerId);
   if (!config || isDisposedAgent(config)) return refuse('The sending agent was removed.');
   const grants = await effectiveAgentGrants(projectPath, callerId);
+  if (item.remoteDispatcherAuthorization) {
+    if (!['send_message', 'send_file'].includes(item.body.tool)
+      || !federationMessageDirection({ agentId: callerId }, { agentId: item.body.to, machineId: item.machine })
+      || federationRequestRouter()?.allowed(item.machine, item.body.args, item.body.tool) === false) return refuse('The receiving Dispatcher or its controller link is unavailable.');
+    const decision = evaluateGrant({ caller: { kind: 'agent', agentId: callerId, projectPath }, action: 'agent.message', target: { kind: 'agent', remoteDispatcher: true } }, grants);
+    return decision.outcome !== 'refuse' && remoteDispatcherPermissionHash(callerId, grants) === item.remoteDispatcherAuthorization.policyHash
+      ? { allowed: true } : refuse('The sender permission changed after this delivery was approved.');
+  }
   const direction = getConnectionDirection({ agentId: callerId }, { agentId: item.body.to, machineId: item.machine });
   if ((!direction?.link && !direction?.cardLink && !activeAgentLinks(direction).length) || direction.disabledTools.includes(item.body.tool)) return refuse('The sender connection or its tool permission was removed.');
   const decision = evaluateGrant({
