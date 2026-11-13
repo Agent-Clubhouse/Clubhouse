@@ -45,7 +45,7 @@ export class HandoffWorker {
   private async cleanup(id: string): Promise<void> {
     const parent = await this.options.stagingRoot();
     const stat = await fs.promises.lstat(parent);
-    if (!stat.isDirectory() || stat.isSymbolicLink() || await fs.promises.realpath(parent) !== parent) throw new HandoffSnapshotError('invalid_staging');
+    if (!stat.isDirectory() || stat.isSymbolicLink() || !path.isAbsolute(parent) || path.relative(parent, await fs.promises.realpath(parent)) !== '') throw new HandoffSnapshotError('invalid_staging');
     await fs.promises.rm(path.join(parent, id), { recursive: true, force: true });
   }
   private async fail(id: string, attempt: Attempt, error: unknown): Promise<void> {

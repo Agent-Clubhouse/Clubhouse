@@ -54,6 +54,8 @@ it('fails clearly when no registered project matches, without applying or waking
 });
 it('retains interrupted receiving data and retries without requiring a new acceptance', async () => {
   const f = fixture(); const receive = f.options.receive!;
+  // Canonical native paths can differ in spelling (including Windows drive case).
+  f.options.stagingRoot = async () => root + path.sep;
   vi.mocked(receive).mockImplementationOnce(async () => { fs.mkdirSync(path.join(root, f.id)); fs.writeFileSync(path.join(root, f.id, 'partial'), 'saved'); throw new HandoffTransferInterrupted(); });
   await f.worker.run(f.id); expect(f.current().state).toBe('transferring'); expect(fs.existsSync(path.join(root, f.id, 'partial'))).toBe(true);
   await f.worker.run(f.id); expect(f.current().state).toBe('applied'); expect(fs.existsSync(path.join(root, f.id))).toBe(false);

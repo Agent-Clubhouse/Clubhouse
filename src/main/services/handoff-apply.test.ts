@@ -74,7 +74,10 @@ it('removes only an unpublished checkpoint-owned worktree during crash recovery'
   const options = await prepare(); const paths = handoffApplyPaths(receiver, options.id); fs.mkdirSync(paths.parent, { recursive: true });
   await git(receiver, '-c', `core.hooksPath=${path.join(root, 'no-hooks')}`, 'worktree', 'add', '--no-checkout', '-b', paths.branch, '--', paths.pending, options.snapshot.manifest.repo.base);
   fs.writeFileSync(path.join(paths.pending, 'partial.txt'), 'partial apply');
-  const checkpoint = { projectId: 'registered', stagingId: options.id, worktree: paths.worktree, branch: paths.branch };
+  const checkpoint = { projectId: 'registered', stagingId: options.id, worktree: paths.worktree + path.sep, branch: paths.branch };
+  // Equivalent native spelling is valid, but a different checkpoint must never remove it.
+  await expect(recoverPendingHandoffApply(receiver, options.id, { ...checkpoint, worktree: paths.pending })).rejects.toMatchObject({ code: 'invalid_staging' });
+  expect(fs.existsSync(paths.pending)).toBe(true);
   expect(await recoverPendingHandoffApply(receiver, options.id, checkpoint)).toBe('removed');
   expect(fs.existsSync(paths.pending)).toBe(false); await expect(git(receiver, 'show-ref', '--verify', `refs/heads/${paths.branch}`)).rejects.toThrow();
   expect(fs.readFileSync(path.join(receiver, 'public.txt'), 'utf8')).toBe('Receiver original');

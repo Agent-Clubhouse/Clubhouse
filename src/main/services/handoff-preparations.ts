@@ -72,7 +72,7 @@ async function preparationRoot(): Promise<string> {
     try { await fs.promises.mkdir(next, { mode: 0o700 }); }
     catch (error) { if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error; }
     const stat = await fs.promises.lstat(next);
-    if (!stat.isDirectory() || stat.isSymbolicLink() || await fs.promises.realpath(next) !== next) throw new Error('Invalid handoff preparation directory.');
+    if (!stat.isDirectory() || stat.isSymbolicLink() || !path.isAbsolute(next) || path.relative(next, await fs.promises.realpath(next)) !== '') throw new Error('Invalid handoff preparation directory.');
     root = next;
   }
   return root;

@@ -36,7 +36,7 @@ class Staging {
       catch (error) { if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error; }
     }
     const stat = await fs.promises.lstat(name, { bigint: true });
-    if (!stat.isDirectory() || stat.isSymbolicLink() || await fs.promises.realpath(name) !== name) throw new HandoffSnapshotError('unsafe_entry');
+    if (!stat.isDirectory() || stat.isSymbolicLink() || !path.isAbsolute(name) || path.relative(name, await fs.promises.realpath(name)) !== '') throw new HandoffSnapshotError('unsafe_entry');
     const pinned = this.directories.get(name);
     if (pinned && pinned !== identity(stat)) throw new HandoffSnapshotError('source_changed');
     this.directories.set(name, identity(stat)); await this.check();

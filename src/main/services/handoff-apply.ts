@@ -146,7 +146,7 @@ export async function applyHandoffSnapshot(options: ApplyHandoffSnapshotOptions)
       catch (error) { if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error; }
     }
     const stat = await fs.promises.lstat(name, { bigint: true });
-    if (!stat.isDirectory() || stat.isSymbolicLink() || await fs.promises.realpath(name) !== name) throw new HandoffSnapshotError('unsafe_entry');
+    if (!stat.isDirectory() || stat.isSymbolicLink() || !path.isAbsolute(name) || path.relative(name, await fs.promises.realpath(name)) !== '') throw new HandoffSnapshotError('unsafe_entry');
     pinned.set(name, identity(stat)); await check();
   };
   await directory(repository.root, false);
@@ -220,10 +220,10 @@ export async function applyHandoffSnapshot(options: ApplyHandoffSnapshotOptions)
 export async function recoverPendingHandoffApply(projectRoot: string, id: string, checkpoint: HandoffApplyCheckpoint): Promise<'none' | 'removed' | 'published'> {
   const repository = await openHandoffRepository(projectRoot, { mutableWorktree: true });
   const paths = handoffApplyPaths(repository.root, id);
-  if (checkpoint.stagingId !== id || checkpoint.worktree !== paths.worktree || checkpoint.branch !== paths.branch) throw new HandoffSnapshotError('invalid_staging');
+  if (checkpoint.stagingId !== id || !path.isAbsolute(checkpoint.worktree) || path.relative(paths.worktree, checkpoint.worktree) !== '' || checkpoint.branch !== paths.branch) throw new HandoffSnapshotError('invalid_staging');
   const directory = async (name: string) => {
     const stat = await fs.promises.lstat(name);
-    if (!stat.isDirectory() || stat.isSymbolicLink() || await fs.promises.realpath(name) !== name) throw new HandoffSnapshotError('unsafe_entry');
+    if (!stat.isDirectory() || stat.isSymbolicLink() || !path.isAbsolute(name) || path.relative(name, await fs.promises.realpath(name)) !== '') throw new HandoffSnapshotError('unsafe_entry');
   };
   try { await fs.promises.lstat(paths.worktree); await directory(paths.worktree); return 'published'; }
   catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error; }
@@ -233,7 +233,9 @@ export async function recoverPendingHandoffApply(projectRoot: string, id: string
   const listed = (await repository.read(['worktree', 'list', '--porcelain', '-z']))?.toString('utf8').split('\0\0') ?? [];
   const own = listed.some((entry) => {
     const fields = entry.split('\0');
-    return fields.includes(`worktree ${paths.pending}`) && fields.includes(`branch refs/heads/${paths.branch}`);
+    const worktree = fields.find((field) => field.startsWith('worktree '))?.slice('worktree '.length);
+    return !!worktree && path.isAbsolute(worktree) && path.relative(paths.pending, worktree) === ''
+      && fields.includes(`branch refs/heads/${paths.branch}`);
   });
   if (!own) throw new HandoffSnapshotError('invalid_staging');
   const hooks = path.join(paths.parent, `recovery-hooks-${randomUUID()}`); await fs.promises.mkdir(hooks, { mode: 0o700 });
