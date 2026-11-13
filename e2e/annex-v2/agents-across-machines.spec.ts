@@ -395,7 +395,9 @@ test('a sender crash after a durable200 replays the same identity once, then pre
   const filePath = /path=(.+)$/.exec(fileResult.text)?.[1];
   if (!filePath) throw new Error('File receipt did not name the fixture file');
   const temp = await there.electronApp.evaluate(({ app }) => app.getPath('temp'));
-  expect(path.dirname(filePath)).toBe(path.join(temp, 'clubhouse-a2a-messages'));
+  expect(path.dirname(path.dirname(filePath))).toBe(temp);
+  expect(path.basename(path.dirname(filePath))).toMatch(/^clubhouse-a2a-/);
+  expect(path.basename(filePath)).toMatch(/^[0-9a-f-]{36}\.md$/);
   expect(await fs.promises.readFile(filePath)).toEqual(Buffer.from(content));
   expect(await mcp.call(fileTool!, fileArgs)).toEqual(fileResult);
   await expect.poll(async () => {
