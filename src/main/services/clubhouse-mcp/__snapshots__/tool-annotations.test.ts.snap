@@ -39,6 +39,11 @@ group-project:compact_agent readOnly=false destructive=true openWorld=false
 group-project:delete_messages readOnly=false destructive=true openWorld=false
 group-project:set_project_info readOnly=false destructive=false openWorld=false
 global:probe_capacity readOnly=true destructive=false openWorld=true
+global:offer_handoff readOnly=false destructive=false openWorld=true
+global:respond_to_handoff readOnly=false destructive=false openWorld=true
+global:get_handoff readOnly=true destructive=false openWorld=false
+global:list_handoffs readOnly=true destructive=false openWorld=false
+global:cancel_handoff readOnly=false destructive=false openWorld=true
 global:call_wire_tool readOnly=false destructive=true openWorld=true
 global:notify_user readOnly=false destructive=false openWorld=false
 global:hand_off readOnly=false destructive=false openWorld=false

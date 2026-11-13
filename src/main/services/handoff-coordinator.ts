@@ -43,6 +43,7 @@ export function originalHandoffOffer(record: Handoff): Handoff {
   return parseHandoff({
     schemaVersion: 1, id: record.id, createdAt: record.createdAt, updatedAt: record.createdAt, version: 1,
     from: record.from, to: record.to, task: record.task, mode: record.mode,
+    ...(record.senderName !== undefined && { senderName: record.senderName }),
     ...(record.manifest && { manifest: record.manifest }), state: 'offered', history: [record.history[0]],
   });
 }
@@ -60,7 +61,8 @@ export class HandoffCoordinator {
   get service(): HandoffService { return this.options.service; }
 
   private async changed(record: Handoff): Promise<void> {
-    await this.options.changed?.(record);
+    try { await this.options.changed?.(record); }
+    catch { /* telemetry-exempt: a notice cannot undo a committed agreement; it remains queryable */ }
   }
 
   async offer(input: HandoffOffer, sender: HandoffAgent): Promise<Handoff> {
@@ -98,7 +100,9 @@ export class HandoffCoordinator {
   private async applyCancellation(command: HandoffCancellation, machine: string): Promise<Handoff> {
     const current = this.options.store.get(command.id);
     if (!current) throw new Error('Unknown handoff.');
+    if (current.to.machine !== this.options.machine || command.from.machine !== machine || !sameHandoffAgent(command.from, current.from)) throw new Error('Invalid handoff cancellation source.');
     const prior = current.history.findIndex((event) => event.operationId === command.operationId);
+    if (prior === -1 && ['applying', 'applied', 'declined', 'failed'].includes(current.state)) return current;
     const record = await this.service.cancelAtReceiver(command.id, command.from, machine,
       prior === -1 ? current.version : prior, command.reason, command.operationId);
     await this.changed(record);

@@ -59,6 +59,8 @@ const anyProject = (t: GrantTarget) => t.kind === 'any' || (t.kind === 'project'
  */
 const ABILITIES: Readonly<Record<GrantAction, Ability | null>> = {
   'memory.write': null,
+  'handoff.offer': { group: 'agents', verb: 'offer work to', noun: 'agent', line: (target) => { const scope = scopeOf('agent', target); return scope === null ? null : `offer work to ${scope} through handoffs`; } },
+  'handoff.accept': { group: 'agents', verb: 'accept work from', noun: 'agent', line: (target) => { const scope = scopeOf('agent', target); return scope === null ? null : `accept work from ${scope} through handoffs`; } },
   'agent.message': { group: 'agents', verb: 'message', noun: 'agent' },
   'agent.wake': { group: 'agents', verb: 'wake', noun: 'agent' },
   'agent.sleep': { group: 'agents', verb: 'put to sleep', noun: 'agent' },

@@ -48,6 +48,7 @@ import {
 } from '../services/connection-grants';
 import { listConnectionDirectionsForInspection } from '../services/connection-grants-store';
 import { syncDirectionsWith, startAgentCalls } from '../services/annex-agent-calls';
+import { startHandoffs } from '../services/handoff-host';
 import { authorizeQueuedAnnexCall, reportAnnexDeliveryFailure } from '../services/annex-agent-call-host';
 import * as annexPeers from '../services/annex-peers';
 import * as annexClient from '../services/annex-client';
@@ -480,6 +481,7 @@ export function restorePersistedBindings(): Promise<void> {
       },
       connected: (machine) => annexClient.isMachineConnected(machine),
     });
+    startHandoffs();
     startAgentCalls({
       remoteDispatcher: federationReceiver,
       federation: {

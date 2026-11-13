@@ -36,7 +36,7 @@ function parseFile(raw: unknown): HandoffFile {
 export function assertHandoffExtension(current: Handoff, next: Handoff): void {
   const offer = (record: Handoff) => ({
     schemaVersion: record.schemaVersion, id: record.id, createdAt: record.createdAt,
-    from: record.from, to: record.to, task: record.task, mode: record.mode, manifest: record.manifest,
+    from: record.from, to: record.to, senderName: record.senderName, task: record.task, mode: record.mode, manifest: record.manifest,
   });
   if (!isDeepStrictEqual(offer(current), offer(next)) || next.version < current.version
     || !isDeepStrictEqual(current.history, next.history.slice(0, current.history.length))) {

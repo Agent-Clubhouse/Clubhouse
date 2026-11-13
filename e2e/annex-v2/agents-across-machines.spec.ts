@@ -520,3 +520,59 @@ test('capacity probes require device.read and return coarse results for both des
   }, { project: senderProject, id: senderId });
   expect((await mcp.call(tool, {})).isError).toBe(true);
 });
+
+test('granted handoff offer and acceptance cross computers once and retain the named sender', async () => {
+  scratch = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'handoff-agreement-'));
+  const fixture = await quietFixture(scratch);
+  fakesHere = await installFakeClis({ claude: fixture });
+  fakesThere = await installFakeClis({ claude: fixture });
+  const senderProject = path.join(scratch, 'handoff-sender-project');
+  const receiverProject = path.join(scratch, 'handoff-receiver-project');
+  await fs.promises.mkdir(senderProject);
+  await fs.promises.mkdir(receiverProject);
+  here = await launchDesktop('handoff-sender', fakesHere, 'Desk');
+  there = await launchDesktop('handoff-receiver', fakesThere, 'Studio');
+  const senderId = await startAgent(here, senderProject, 'handoff-sender');
+  const receiverId = await startAgent(there, receiverProject, 'handoff-receiver');
+  const { senderFingerprint, receiverFingerprint } = await pairDesktops(here, there, senderId, receiverId);
+  const senderMcp = await connectMcp((await fakesHere.report('claude')).env);
+  const receiverMcp = await connectMcp((await fakesThere.report('claude')).env);
+  expect((await senderMcp.toolNames()).some((name) => name.endsWith('offer_handoff'))).toBe(false);
+  for (const [app, project, agentId, action] of [[here, senderProject, senderId, 'handoff.offer'], [there, receiverProject, receiverId, 'handoff.accept']] as const) {
+    await app.window.evaluate(async ({ project, agentId, action }) => {
+      await window.clubhouse.agent.setGrant(project, agentId, { action, target: { kind: 'any' }, mode: 'allow' });
+    }, { project, agentId, action });
+  }
+  const tool = async (mcp: typeof senderMcp, suffix: string) => {
+    let name = '';
+    await expect.poll(async () => { name = (await mcp.toolNames()).find((candidate) => candidate.endsWith(suffix)) ?? ''; return !!name; }).toBe(true);
+    return name;
+  };
+  const offerTool = await tool(senderMcp, 'offer_handoff');
+  const offered = await senderMcp.call(offerTool, { to: `${receiverId}@${receiverFingerprint}`, task: 'Continue the fixture task', brief: 'Goal: finish fixture checks. Done: agreement setup. Remaining: inspect and continue.', mode: 'worktree' });
+  expect(offered.isError).toBe(false);
+  const record = JSON.parse(offered.text);
+  expect(record).toMatchObject({ state: 'offered', version: 1, senderName: 'handoff-sender', from: { agentId: senderId, machine: senderFingerprint }, to: { agentId: receiverId, machine: receiverFingerprint } });
+  const receiverGet = await tool(receiverMcp, 'get_handoff');
+  await expect.poll(async () => {
+    const result = await receiverMcp.call(receiverGet, { id: record.id });
+    return result.isError ? undefined : JSON.parse(result.text).state;
+  }, { timeout: 60_000 }).toBe('offered');
+  const notices = async () => there!.window.evaluate(async ({ id, handoffId }) => (await window.clubhouse.chat.readTranscript(id))
+    .filter((event) => event.type === 'user_message' && event.data.source === 'mcp')
+    .map((event) => event.type === 'user_message' ? event.data.content.filter((block) => block.type === 'text').map((block) => block.type === 'text' ? block.text : '').join('') : '')
+    .filter((text) => text.includes(handoffId)), { id: receiverId, handoffId: record.id });
+  await expect.poll(notices).toHaveLength(1);
+  expect((await notices())[0]).toContain(`From handoff-sender on ${senderFingerprint}`);
+  const respond = await tool(receiverMcp, 'respond_to_handoff');
+  const accepted = await receiverMcp.call(respond, { id: record.id, accept: true });
+  expect(accepted.isError).toBe(false);
+  expect(JSON.parse(accepted.text)).toMatchObject({ state: 'accepted', version: 2 });
+  expect(await receiverMcp.call(respond, { id: record.id, accept: true })).toEqual(accepted);
+  const senderGet = await tool(senderMcp, 'get_handoff');
+  await expect.poll(async () => JSON.parse((await senderMcp.call(senderGet, { id: record.id })).text).state, { timeout: 60_000 }).toBe('accepted');
+  expect(JSON.parse((await senderMcp.call(senderGet, { id: record.id })).text).history).toHaveLength(2);
+  expect(await notices()).toHaveLength(1);
+  await here.window.evaluate(async ({ project, id }) => window.clubhouse.agent.setGrant(project, id, { action: 'handoff.offer', target: { kind: 'any' }, mode: 'off' }), { project: senderProject, id: senderId });
+  expect((await senderMcp.call(offerTool, { to: `${receiverId}@${receiverFingerprint}`, task: 'Refused', brief: 'No grant.', mode: 'worktree' })).isError).toBe(true);
+});

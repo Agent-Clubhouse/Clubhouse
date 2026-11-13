@@ -146,6 +146,11 @@ describe('tool grant declarations (#2967)', () => {
       group-project delete_messages: group_project.admin on bound
       group-project set_project_info: group_project.admin on bound
       probe_capacity: device.read on app
+      offer_handoff: handoff.offer on handoff_peer
+      respond_to_handoff: handoff.accept on handoff_peer
+      get_handoff: agent.read on self
+      list_handoffs: agent.read on self
+      cancel_handoff: agent.read on self
       call_wire_tool: (called_tool)
       notify_user: user.notify on app
       hand_off: agent.dispose on my_helpers

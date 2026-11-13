@@ -16,6 +16,8 @@ import { readMobileChatContent } from './annex-chat-content';
 import * as agentCalls from './annex-agent-calls';
 import { receiveCapacityProbe } from './handoff-capacity-host';
 vi.mock('./handoff-capacity-host', () => ({ receiveCapacityProbe: vi.fn() }));
+import { receiveNetworkHandoff } from './handoff-host';
+vi.mock('./handoff-host', () => ({ receiveNetworkHandoff: vi.fn() }));
 import type { AnnexSettings } from '../../shared/types';
 const networkToolHost = vi.hoisted(() => ({ host: undefined as import('./clubhouse-mcp/tools/annex-network-tools').AnnexNetworkToolHost | undefined }));
 vi.mock('./group-project-host', async () =>
@@ -1706,6 +1708,26 @@ describe('annex-server', () => {
     const res = await request(port, 'GET', '/api/v1/mobile/capabilities', undefined, authHeaders(token));
     expect(res.status).toBe(200);
     expect(JSON.parse(res.body)).toMatchObject({ version: 1, controlAuth: 'mtls-pinned-client', controlAvailable: true, commands: expect.arrayContaining(['chat.send', 'agent.stop']) });
+  });
+
+  it('accepts handoff agreement synchronization only from a pinned desktop member and hides failure details', async () => {
+    const member = { ...TEST_CONTROLLER, role: 'member' as const, kind: 'desktop' as const };
+    vi.mocked(annexPeers.getPeer).mockReturnValue(member);
+    vi.mocked(annexPeers.listPeers).mockReturnValue([member]);
+    vi.mocked(receiveNetworkHandoff).mockResolvedValue({ id: 'example' } as never);
+    const { port } = await startAndPair();
+    const route = '/api/v1/network/handoffs';
+    expect((await request(port, 'POST', route, { op: 'offer', record: {} })).status).toBe(200);
+    expect(receiveNetworkHandoff).toHaveBeenCalledWith(member.fingerprint, { op: 'offer', record: {} });
+    vi.mocked(receiveNetworkHandoff).mockRejectedValueOnce(new Error('private-host/private-path secret'));
+    const failed = await request(port, 'POST', route, {});
+    expect(failed.status).toBe(400);
+    expect(JSON.parse(failed.body)).toEqual({ error: 'handoff_refused' });
+    vi.mocked(annexPeers.listPeers).mockReturnValue([{ ...member, kind: 'phone' }]);
+    expect((await request(port, 'POST', route, {})).status).toBe(403);
+    expect(receiveNetworkHandoff).toHaveBeenCalledTimes(2);
+    asUnpaired();
+    expect((await request(port, 'POST', route, {})).status).toBe(401);
   });
 
   it('negotiates durable delivery only for pinned desktop members and surfaces an unreadable store', async () => {

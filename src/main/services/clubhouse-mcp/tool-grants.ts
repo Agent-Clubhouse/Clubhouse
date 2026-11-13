@@ -44,6 +44,8 @@ export const TOOL_GRANT_TARGETS = [
    * default to the caller when it's left out say so (update_agent, read_settings).
    */
   'agent_arg',
+  /** An offer recipient, or the authenticated record's offering agent. Resolved by the handoff host. */
+  'handoff_peer',
   /**
    * A project named in the arguments. Tools that default to the caller's own
    * project when it's left out say so (update_project, start_helper, read_settings).
