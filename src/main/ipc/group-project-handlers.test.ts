@@ -1,4 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
+import * as os from 'os';
+import * as path from 'path';
 
 const mockIsStopping = vi.hoisted(() => vi.fn((_id?: unknown) => false));
 const mockDeletion = vi.hoisted(() => ({ preview: vi.fn(), confirm: vi.fn() }));
@@ -6,7 +8,7 @@ vi.mock('../services/group-project-delete-service', () => ({ createLocalGroupPro
 vi.mock('../services/canvas-flush', () => ({ flushOpenCanvases: vi.fn(async () => ({ complete: true })) }));
 vi.mock('electron', () => ({
   ipcMain: { handle: vi.fn() },
-  app: { getPath: () => '/tmp/clubhouse-test' },
+  app: { getPath: () => path.join(os.tmpdir(), 'clubhouse-test') },
   BrowserWindow: { getAllWindows: () => [] },
 }));
 
