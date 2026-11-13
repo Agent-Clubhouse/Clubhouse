@@ -24,8 +24,7 @@ import { flushAllTranscripts } from './agent-runtime/chat-transcript';
 import { whenCheckpointsIdle } from './agent-runtime/checkpoint-tracker';
 import { whenSessionCapturesSettled } from './session-capture-barrier';
 import { flushAllAgentConfigs } from './agent-config';
-import { groupProjectRegistry } from './group-project-registry';
-import { flushAllBulletinBoards } from './group-project-bulletin';
+import { groupProjectHost } from './group-project-host';
 import { restoreAll } from './config-pipeline';
 import { shutdownCompleted, shutdownStarted, shutdownStep } from '../telemetry/lifecycle';
 
@@ -86,8 +85,8 @@ const coordinator: ShutdownCoordinator = createShutdownCoordinator({
       task('transcript_flush', 'flush chat transcripts', flushAllTranscripts, PERSIST_TIMEOUT_MS),
       task('checkpoint_drain', 'finish checkpoints', whenCheckpointsIdle, PERSIST_TIMEOUT_MS),
       task('agent_config_flush', 'flush agent configs', flushAllAgentConfigs, PERSIST_TIMEOUT_MS),
-      task('group_project_flush', 'flush group projects', () => groupProjectRegistry.flush(), PERSIST_TIMEOUT_MS),
-      task('bulletin_flush', 'flush bulletin boards', flushAllBulletinBoards, PERSIST_TIMEOUT_MS),
+      task('group_project_flush', 'flush group projects', () => groupProjectHost.flushRegistry(), PERSIST_TIMEOUT_MS),
+      task('bulletin_flush', 'flush bulletin boards', () => groupProjectHost.flushBoards(), PERSIST_TIMEOUT_MS),
     ],
     restore: [
       task('config_restore', 'restore agent configs', restoreAll, RESTORE_TIMEOUT_MS),

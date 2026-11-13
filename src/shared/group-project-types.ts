@@ -13,6 +13,16 @@ export interface GroupProjectCreateOptions {
   scope?: GroupProjectScope;
 }
 
+/**
+ * The machine that holds the truth about a group project (#3356). Set at
+ * creation and fixed in v1. `machine` is its Annex identity fingerprint
+ * (lowercase), or null for the machine whose registry holds the record when
+ * it had no Annex identity (legacy records and Annex-off creation).
+ */
+export interface GroupProjectHost {
+  machine: string | null;
+}
+
 /** A group project entity. */
 export interface GroupProject {
   id: string;            // "gp_<timestamp>_<random>"
@@ -22,7 +32,72 @@ export interface GroupProject {
   createdAt: string;     // ISO 8601
   /** Absent only on legacy records awaiting membership-aware migration. */
   scope?: GroupProjectScope;
+  /** Always present once loaded; legacy records load as this machine. */
+  host?: GroupProjectHost;
+  /** Latest change sequence number (#3356); 0 before the first sequenced change. */
+  seq?: number;
   metadata: Record<string, unknown>;
+}
+
+/** One member recorded explicitly (helpers, quick agents, or a person's addition). */
+export interface GroupProjectExplicitMember {
+  /** Host-relative agent address: a bare id on the host machine, `id@<fingerprint>` elsewhere. */
+  address: string;
+  kind: 'durable' | 'helper' | 'quick';
+  addedAt: string;
+  runId?: string;
+  /** Display only, never identity. */
+  name?: string;
+  [extra: string]: unknown;
+}
+
+export interface GroupProjectExclusion {
+  address: string;
+  excludedAt: string;
+  [extra: string]: unknown;
+}
+
+/**
+ * The membership record the host stores per group project (#3356). Policy
+ * (auto-join, exclusions) is #3357's; the store persists it, keyed by address,
+ * and keeps fields it does not know.
+ */
+export interface GroupProjectMembership {
+  version: 1;
+  autoJoin: boolean;
+  explicit: GroupProjectExplicitMember[];
+  excluded: GroupProjectExclusion[];
+  autoJoinOffer?: 'pending' | 'accepted' | 'dismissed';
+  [extra: string]: unknown;
+}
+
+/** Left behind when a group project is deleted, so other machines learn of it. */
+export interface GroupProjectTombstone {
+  groupProjectId: string;
+  host: GroupProjectHost;
+  seq: number;
+  deletedAt: string;
+}
+
+/** What changed in one sequenced host write. */
+export type GroupProjectChangePart = 'record' | 'membership' | 'board' | 'deleted';
+
+export interface GroupProjectChange {
+  groupProjectId: string;
+  seq: number;
+  part: GroupProjectChangePart;
+}
+
+/** A member as other parts of the app see it (resolved by #3357's policy, or wires). */
+export interface GroupProjectMemberView {
+  address: string;
+  name: string;
+  projectId?: string;
+}
+
+/** Whether network reach can be chosen now, and why not (#3355). */
+export interface GroupProjectScopeOptions {
+  network: { available: boolean; reason?: string };
 }
 
 /** A message posted to the bulletin board. */
@@ -32,6 +107,8 @@ export interface BulletinMessage {
   topic: string;         // freeform; "system" is reserved
   body: string;          // up to ~100KB
   timestamp: string;     // ISO 8601
+  /** The group project's sequence number when it was posted (#3356). Absent on older messages. */
+  seq?: number;
 }
 
 /** Summary of a topic in the bulletin digest. */

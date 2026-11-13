@@ -7,6 +7,7 @@ import { bindingManager } from '../binding-manager';
 import { mcpAdapter } from '../mcp-adapter';
 import { getBulletinBoard } from '../../group-project-bulletin';
 import { groupProjectRegistry } from '../../group-project-registry';
+import { groupProjectHost } from '../../group-project-host';
 import { isProjectAdmin } from '../../../../shared/group-project-admin';
 import { canPoll, isAgentAlive, injectPtyMessage } from '../../group-project-lifecycle';
 import { notePollingRead, notePollingStart } from '../../group-project-polling-runs';
@@ -154,8 +155,7 @@ export function registerGroupProjectTools(): void {
       const sender = await resolveSenderLabel(agentId, targetId);
 
       try {
-        const board = getBulletinBoard(targetId);
-        const msg = await board.postMessage(sender, topic, body);
+        const msg = await groupProjectHost.post(targetId, sender, topic, body);
         annexEventBus.emitBulletinMessage(targetId, msg);
         return {
           content: [{
@@ -867,8 +867,7 @@ export function registerGroupProjectTools(): void {
         return { content: [{ type: 'text', text: 'Cannot delete the "system" topic.' }], isError: true };
       }
 
-      const board = getBulletinBoard(targetId);
-      const deleted = await board.deleteTopic(topic);
+      const deleted = await groupProjectHost.deleteTopic(targetId, topic);
       return {
         content: [{ type: 'text', text: JSON.stringify({ deleted, topic }) }],
       };
@@ -1041,10 +1040,9 @@ export function registerGroupProjectTools(): void {
         return { content: [{ type: 'text', text: 'Both topic and message_ids (array) are required.' }], isError: true };
       }
 
-      const board = getBulletinBoard(targetId);
       let deletedCount = 0;
       for (const id of messageIds) {
-        const ok = await board.deleteMessage(topic, id);
+        const ok = await groupProjectHost.deleteMessage(targetId, topic, id);
         if (ok) deletedCount++;
       }
 
@@ -1090,7 +1088,7 @@ export function registerGroupProjectTools(): void {
         return { content: [{ type: 'text', text: 'Provide at least one of description or instructions.' }], isError: true };
       }
 
-      const updated = await groupProjectRegistry.update(targetId, {
+      const updated = await groupProjectHost.update(targetId, {
         ...(description !== undefined ? { description } : {}),
         ...(instructions !== undefined ? { instructions } : {}),
       });

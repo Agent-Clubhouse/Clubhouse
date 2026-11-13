@@ -4,24 +4,14 @@
  */
 
 import * as fsp from 'fs/promises';
-import * as path from 'path';
-import { app } from 'electron';
-import type { GroupProject, GroupProjectCreateOptions, GroupProjectScope } from '../../shared/group-project-types';
+import { randomBytes } from 'crypto';
+import type { GroupProject, GroupProjectCreateOptions, GroupProjectHost, GroupProjectScope } from '../../shared/group-project-types';
 import { resolveGroupProjectScope } from '../../shared/group-project-scope';
 import { appLog } from './log-service';
-import { ensureProjectChannels } from './group-project-bulletin';
 import { persist } from '../telemetry/persist';
 import { replaceFile } from './settings-store';
 import * as projectStore from './project-store';
-
-function groupProjectsDir(): string {
-  const dirName = app.isPackaged ? '.clubhouse' : '.clubhouse-dev';
-  return path.join(app.getPath('home'), dirName, 'group-projects');
-}
-
-function registryPath(): string {
-  return path.join(groupProjectsDir(), 'registry.json');
-}
+import { groupProjectsDir, registryPath } from './group-project-paths';
 
 async function ensureDir(dir: string): Promise<void> {
   await fsp.mkdir(dir, { recursive: true });
@@ -209,11 +199,22 @@ class GroupProjectRegistry {
     }
   }
 
-  async create(name: string, options?: GroupProjectCreateOptions): Promise<GroupProject> {
+  /**
+   * Only the host service calls this (#3356). `isUnusedId` lets it refuse ids
+   * a deleted group project left behind.
+   */
+  async create(
+    name: string, options: GroupProjectCreateOptions | undefined, host: GroupProjectHost,
+    resolveScope: (options: unknown, registered: ReadonlySet<string>) => GroupProjectScope = resolveGroupProjectScope,
+    isUnusedId: (id: string) => boolean = () => true,
+  ): Promise<GroupProject> {
     await this.ensureLoaded();
     const registered = new Set(options === undefined ? [] : (await projectStore.list()).map((project) => project.id));
-    const scope = resolveGroupProjectScope(options, registered);
-    const id = `gp_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+    const scope = resolveScope(options, registered);
+    let id: string;
+    // Ids stay unique across machines (#3356): 48 random bits beside the time.
+    do id = `gp_${Date.now()}_${randomBytes(6).toString('hex')}`;
+    while (this.projects.has(id) || !isUnusedId(id));
     const project: GroupProject = {
       id,
       name,
@@ -221,17 +222,23 @@ class GroupProjectRegistry {
       instructions: '',
       createdAt: new Date().toISOString(),
       scope,
+      host: { machine: host.machine },
       metadata: {},
     };
     this.projects.set(id, project);
     this.markDirty();
-    try {
-      await ensureProjectChannels(id);
-    } catch (err) {
-      appLog('core:group-project', 'warn', 'Failed to seed project channels', {
-        meta: { projectId: id, error: err instanceof Error ? err.message : String(err) },
-      });
-    }
+    return project;
+  }
+
+  /** Change a record's scope (#3355). Only the host service calls this. */
+  async setScope(id: string, scope: GroupProjectScope): Promise<GroupProject | null> {
+    await this.ensureLoaded();
+    const project = this.projects.get(id);
+    if (!project) return null;
+    project.scope = scope;
+    this.inferredScopeIds.delete(id);
+    this.inferredScopeCandidates.delete(id);
+    this.markDirty();
     return project;
   }
 

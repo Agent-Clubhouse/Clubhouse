@@ -27,6 +27,7 @@
 
 import { bindingManager } from './clubhouse-mcp/binding-manager';
 import { groupProjectRegistry } from './group-project-registry';
+import { groupProjectHost } from './group-project-host';
 import { agentRegistry, getAgentOrchestrator } from './agent-registry';
 import { canPoll, isAgentAlive, injectPtyMessage } from './group-project-lifecycle';
 import { inboxChannelName } from './group-project-bulletin';
@@ -182,7 +183,7 @@ export async function resumePausedPolling(projectId: string, agentId: string): P
     forgetPause(agentId, projectId);
     if (!project?.metadata?.pollingEnabled) return false;
     const agentName = groupProjectMemberBindings(projectId).find((b) => b.agentId === agentId)?.agentName || agentId;
-    injectPtyMessage(agentId, pollingStartMsg(project.name || projectId, getAgentOrchestrator(agentId), inboxChannelName(agentName)));
+    injectPtyMessage(agentId, pollingStartMsg(project.name || projectId, getAgentOrchestrator(agentId), await memberInbox(projectId, agentId, agentName)));
     notePollingStart(agentId, projectId);
     appLog('core:group-project', 'info', 'Resumed polling for a member on request', { meta: { agentId, projectId } });
     return true;
@@ -221,7 +222,7 @@ async function flushPendingStarts(agentId: string): Promise<void> {
     }
     if (!project?.metadata?.pollingEnabled) continue;
     const agentName = binding.agentName || agentId;
-    const msg = pollingStartMsg(project.name || projectId, getAgentOrchestrator(agentId), inboxChannelName(agentName));
+    const msg = pollingStartMsg(project.name || projectId, getAgentOrchestrator(agentId), await memberInbox(projectId, agentId, agentName));
     appLog('core:group-project', 'info', 'Sending polling start to member that was asleep when polling was turned on', {
       meta: { agentId, projectId },
     });
@@ -289,12 +290,22 @@ export async function getProjectPollingState(projectId: string): Promise<Polling
  * switch, and emits an annex event so any controller observing this satellite sees
  * the update. Returns the resulting state, or null if the project is unknown.
  */
+/** A member's own inbox channel, which a same-named member can't share (#1646). */
+async function memberInbox(projectId: string, agentId: string, agentName: string): Promise<string> {
+  try {
+    return await groupProjectHost.inboxFor(projectId, agentName, agentId);
+  } catch {
+    // telemetry-exempt: falls back to the name-derived inbox the member was always told
+    return inboxChannelName(agentName);
+  }
+}
+
 export async function setProjectPolling(projectId: string, enabled: boolean): Promise<PollingState | null> {
   const project = await groupProjectRegistry.get(projectId);
   if (!project) return null;
   const projectName = project.name || projectId;
 
-  const updated = await groupProjectRegistry.update(projectId, { metadata: { pollingEnabled: enabled } });
+  const updated = await groupProjectHost.update(projectId, { metadata: { pollingEnabled: enabled } });
   if (updated) annexEventBus.emitGroupProjectChanged('updated', updated);
   if (!enabled) {
     clearPendingStarts(projectId);
@@ -304,13 +315,15 @@ export async function setProjectPolling(projectId: string, enabled: boolean): Pr
     notifyPauseChanged();
   }
 
-  const members = groupProjectMemberBindings(projectId).map((b) => {
+  const bindings = groupProjectMemberBindings(projectId);
+  const inboxes = await Promise.all(bindings.map((b) => memberInbox(projectId, b.agentId, toMemberState(b).agentName)));
+  const members = bindings.map((b, i) => {
     const state = toMemberState(b);
     if (state.status === 'connected' && enabled && !canPoll(b.agentId)) {
       queuePendingStart(b.agentId, projectId);
     } else if (state.status === 'connected') {
       const orchestrator = getAgentOrchestrator(b.agentId);
-      const inbox = inboxChannelName(state.agentName);
+      const inbox = inboxes[i];
       const msg = enabled
         ? pollingStartMsg(projectName, orchestrator, inbox)
         : pollingStopMsg(projectName, orchestrator);

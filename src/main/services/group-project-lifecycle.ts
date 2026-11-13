@@ -6,8 +6,8 @@
 import { holdsGrant } from './clubhouse-mcp/grant-check';
 import { bindingManager } from './clubhouse-mcp/binding-manager';
 import { consumeRestoredBinding } from './persisted-bindings';
-import { getBulletinBoard, ensureInboxChannel, ensureProjectChannels } from './group-project-bulletin';
 import { groupProjectRegistry } from './group-project-registry';
+import { groupProjectHost } from './group-project-host';
 import * as ptyManager from './pty-manager';
 import { agentRegistry } from './agent-registry';
 import type { BindingTargetKind } from './clubhouse-mcp/types';
@@ -125,10 +125,9 @@ async function syncMemberships(agentId: string): Promise<void> {
 
       const agentName = agentNames.get(agentId) || resolveAgentName(agentId);
       try {
-        const board = getBulletinBoard(projectId);
         const proj = await groupProjectRegistry.get(projectId);
         const projName = proj?.name || projectId;
-        await board.postMessage('system', 'system', `${agentName} left project "${projName}"`);
+        await groupProjectHost.post(projectId, 'system', 'system', `${agentName} left project "${projName}"`);
       } catch (err) {
         appLog('core:group-project', 'warn', 'Failed to post leave event', {
           meta: { agentId, projectId, error: err instanceof Error ? err.message : String(err) },
@@ -174,7 +173,7 @@ async function syncMemberships(agentId: string): Promise<void> {
 
       // A membership restored at startup existed before this launch, so its
       // channels and inbox already exist. Track it, but post no join bulletin
-      // and send no polling start (#1544). ensureProjectChannels is skipped
+      // and send no polling start (#1544). Channel seeding is skipped
       // too: it rewrites the board on every call.
       if (consumeRestoredBinding(agentId, projectId)) continue;
 
@@ -190,7 +189,7 @@ async function syncMemberships(agentId: string): Promise<void> {
       try {
         // Retrofit: projects created before the channel-model redesign won't
         // have general/control seeded. Safe to call on every join — idempotent.
-        await ensureProjectChannels(projectId);
+        await groupProjectHost.ensureChannels(projectId);
       } catch (err) {
         appLog('core:group-project', 'warn', 'Failed to ensure project channels on join', {
           meta: { agentId, projectId, error: err instanceof Error ? err.message : String(err) },
@@ -199,7 +198,8 @@ async function syncMemberships(agentId: string): Promise<void> {
 
       let inboxName: string | null = null;
       try {
-        inboxName = await ensureInboxChannel(projectId, agentName);
+        // Keyed by the member's address, so a second agent with the same name gets its own inbox (#1646).
+        inboxName = await groupProjectHost.ensureInbox(projectId, agentName, agentId);
       } catch (err) {
         appLog('core:group-project', 'warn', 'Failed to create inbox channel', {
           meta: { agentId, projectId, error: err instanceof Error ? err.message : String(err) },
@@ -207,8 +207,7 @@ async function syncMemberships(agentId: string): Promise<void> {
       }
 
       try {
-        const board = getBulletinBoard(projectId);
-        await board.postMessage('system', 'system', `${agentName} joined project "${projectName}"`);
+        await groupProjectHost.post(projectId, 'system', 'system', `${agentName} joined project "${projectName}"`);
       } catch (err) {
         appLog('core:group-project', 'warn', 'Failed to post join event', {
           meta: { agentId, projectId, error: err instanceof Error ? err.message : String(err) },
