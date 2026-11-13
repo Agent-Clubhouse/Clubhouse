@@ -11,6 +11,19 @@ import { tel } from '../telemetry/facade';
 
 const journal = groupProjectHost;
 
+/**
+ * Remove a group project from every saved Canvas (cards and wires) and its
+ * connection guidance, tolerating unreadable canvases as the delete cascade
+ * does. Used when this computer's copy of a network group project goes (#3363).
+ */
+export async function purgeGroupProjectViews(id: string): Promise<void> {
+  await withCanvasWriteBarrier(async () => {
+    const canvas = await readGroupProjectCanvasInventory(id);
+    await removeGroupProjectFromCanvasInventory(canvas, id, writeKeyWithinCanvasBarrier);
+  });
+  await purgeGroupProjectGuidance(id);
+}
+
 /** Build the local cascade; release is supplied by the durable membership source. */
 export function createLocalGroupProjectDeleteService(releaseBindings: (id: string) => void) {
   const cleanup = async (id: string) => {

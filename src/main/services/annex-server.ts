@@ -3279,7 +3279,8 @@ async function handleGroupProjectPostMessageRoute(ctx: AnnexRouteContext, match:
       return;
     }
     try {
-      const message = await groupProjectHost.post(gpId, sender, topic, msgBody);
+      // A phone or controller posts for the person (#3363's author).
+      const message = await groupProjectHost.post(gpId, sender, topic, msgBody, { author: { label: 'user' } });
       if (!message.pending) annexEventBus.emitBulletinMessage(gpId, message);
       sendJson(ctx.res, 201, message);
     } catch (err) {

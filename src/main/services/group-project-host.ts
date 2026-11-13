@@ -30,12 +30,13 @@ import { emptyMembership, readMembershipFile, validateMembership, writeMembershi
 import * as fs from 'fs';
 import { AsyncLocalStorage } from 'async_hooks';
 import {
-  assertGroupProjectId, groupProjectDir, hostStatePath, networkOutboxPath, networkRefusalsPath, replicaStatePath, tombstonesPath,
+  assertGroupProjectId, groupProjectDir, hostStatePath, networkAppliedPath, networkOutboxPath, networkRefusalsPath, replicaStatePath,
+  replicaTombstonesPath, tombstonesPath,
 } from './group-project-paths';
-import { randomUUID } from 'crypto';
+import { createHash, randomUUID } from 'crypto';
 import {
   applyMembershipPatch, isEmptyPatch, membershipPatch,
-  type QueuedWrite, type ReplicaSnapshot, type SyncRequest, type SyncResponse, type WriteAuthor, type WriteOp, type WriteRequest, type WriteResponse, type WriteResult,
+  type MembershipPatch, type QueuedWrite, type ReplicaSnapshot, type SyncRequest, type SyncResponse, type WriteAuthor, type WriteOp, type WriteRequest, type WriteResponse, type WriteResult,
 } from '../../shared/group-project-network';
 import { readJsonFile, writeJsonFile } from './group-project-json-file';
 import * as annexIdentity from './annex-identity';
@@ -78,12 +79,68 @@ export interface GroupProjectNetworkLink {
   notifyRefusal?(refusal: GroupProjectNetworkRefusal): void;
 }
 
-/** Answers a reason to refuse a remote write, or undefined to allow it. */
-export type RemoteWriteGate = (project: GroupProject, machine: string, write: QueuedWrite) => Promise<string | undefined> | string | undefined;
+/** The grant a remote agent's write needs (#3360's actions). */
+export type RemoteWriteAction = 'group_project.post' | 'group_project.lead' | 'group_project.admin';
+
+const REMOTE_ACTION: Record<WriteOp['op'], RemoteWriteAction> = {
+  post: 'group_project.post',
+  ensureChannels: 'group_project.post',
+  ensureInbox: 'group_project.post',
+  deleteMessage: 'group_project.lead',
+  deleteTopic: 'group_project.lead',
+  setTopicProtected: 'group_project.lead',
+  update: 'group_project.admin',
+  membership: 'group_project.admin',
+};
+
+/** What a remote agent's write is checked against; answers a reason to refuse, or undefined to allow. */
+export interface RemoteWriteCheck {
+  project: GroupProject;
+  machine: string;
+  write: QueuedWrite;
+  /** The author as a host-relative member address: `agentId@<sending machine>`. */
+  address: string;
+  isMember: boolean;
+  action: RemoteWriteAction;
+}
+export type RemoteWriteGate = (check: RemoteWriteCheck) => Promise<string | undefined> | string | undefined;
+
+/** The person, on any of their computers: an author with no agent, labelled as the user. */
+const isPersonAuthor = (author: WriteAuthor): boolean => !author.agentId && author.label === 'user';
+
+/** Membership fields kept per member address; a computer may set only its own agents' entries. */
+const PER_ADDRESS_FIELDS = new Set(['subscriptions', 'disabledTools']);
+
+/** A computer's own housekeeping changes only its own agents' membership entries. */
+function patchForMachine(patch: MembershipPatch, machine: string, current: GroupProjectMembership): MembershipPatch {
+  const own = (address: string) => parseAgentAddress(address).machine === machine;
+  const set: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(patch.set)) {
+    if (!PER_ADDRESS_FIELDS.has(key) || !value || typeof value !== 'object' || Array.isArray(value)) continue;
+    const merged: Record<string, unknown> = { ...((current[key] as Record<string, unknown> | undefined) ?? {}) };
+    for (const address of Object.keys(merged)) if (own(address)) delete merged[address];
+    for (const [address, entry] of Object.entries(value as Record<string, unknown>)) if (own(address)) merged[address] = entry;
+    set[key] = merged;
+  }
+  return {
+    addExplicit: patch.addExplicit.filter((e) => own(e.address)),
+    removeExplicit: patch.removeExplicit.filter(own),
+    addExcluded: patch.addExcluded.filter((e) => own(e.address)),
+    removeExcluded: patch.removeExcluded.filter(own),
+    set,
+  };
+}
 
 type OutboxItem = QueuedWrite & { host: string };
 interface StoredList<T> { version: 1; items: T[] }
 interface ReplicaState { version: 1; syncedAt?: string; hostRemoved?: boolean }
+/** A copy this computer dropped: deleted on its host, or no longer shared as of `seq`. */
+interface ReplicaTombstone { groupProjectId: string; host: string; seq: number; at: string; kind: 'deleted' | 'unshared' }
+/** What a host answered a remote write, kept so a replayed write gets the same answer. */
+interface AppliedWrite { machine: string; id: string; result: WriteResult; at: string }
+
+const APPLIED_MAX = 2000;
+const APPLIED_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 
 const OUTBOX_MAX_PER_PROJECT = 200;
 const OUTBOX_MAX_TOTAL = 1000;
@@ -159,7 +216,16 @@ class GroupProjectHostService {
   private remoteWriteGate: RemoteWriteGate | null = null;
   private outbox: OutboxItem[] | null = null;
   private refusals: GroupProjectNetworkRefusal[] | null = null;
-  private flushing = new Map<string, Promise<void>>();
+  /** Forwarding and flushing to one host, in order (#3363). */
+  private hostChains = new Map<string, Promise<unknown>>();
+  /** Catch-up from one host, one at a time, whoever asks. */
+  private syncChains = new Map<string, Promise<unknown>>();
+  /** Every read-modify-write of the outbox, refusals and remote-write outcomes. */
+  private fileChains = new Map<string, Promise<unknown>>();
+  /** Writes from one sending computer, applied in order. */
+  private senderChains = new Map<string, Promise<unknown>>();
+  private replicaTombstones: ReplicaTombstone[] | null = null;
+  private appliedWrites: AppliedWrite[] | null = null;
 
   // ── Identity ─────────────────────────────────────────────────────────────
 
@@ -204,6 +270,18 @@ class GroupProjectHostService {
     const tail: Promise<void> = next.then(settle, settle);
     this.queues.set(id, tail);
     void tail.then(() => { if (this.queues.get(id) === tail) this.queues.delete(id); });
+    return next;
+  }
+
+  /** Run `fn` after everything queued under `key` in `chains` has settled. */
+  private serial<T>(chains: Map<string, Promise<unknown>>, key: string, fn: () => Promise<T>): Promise<T> {
+    const previous = chains.get(key) ?? Promise.resolve();
+    const step = (): Promise<T> => fn();
+    const next: Promise<T> = previous.then(step, step);
+    const settle = (): void => undefined;
+    const tail: Promise<void> = next.then(settle, settle);
+    chains.set(key, tail);
+    void tail.then(() => { if (chains.get(key) === tail) chains.delete(key); });
     return next;
   }
 
@@ -833,7 +911,7 @@ class GroupProjectHostService {
 
   async post(
     id: string, sender: string, topic: string, body: string,
-    options: { withinExclusive?: boolean; chain?: string[]; author?: WriteAuthor } = {},
+    options: { withinExclusive?: boolean; chain?: string[]; author?: WriteAuthor; messageId?: string } = {},
   ): Promise<BulletinMessage> {
     const replica = await this.replicaFor(id);
     if (replica) {
@@ -842,8 +920,18 @@ class GroupProjectHostService {
         id: `queued_${item.id}`, sender, topic: normalizeChannelName(topic), body, timestamp: item.queuedAt, pending: { waitingFor: this.hostNameOf(replica) },
       }));
     }
-    const message = await this.commit(id, 'board', async ({ reserve }) => getBulletinBoard(id).postMessage(sender, topic, body, await reserve()), options.withinExclusive);
-    publishAppEvent({ type: 'group_project.message_posted', groupProjectId: id, topic: message.topic, ...(options.chain && { chain: options.chain }) });
+    let replayed = false;
+    const message = await this.commit(id, 'board', async ({ reserve }) => {
+      const board = getBulletinBoard(id);
+      // A replayed remote post (#3363) finds the message it made the first time.
+      const earlier = options.messageId ? await board.getMessageById(options.messageId) : null;
+      if (earlier) {
+        replayed = true;
+        return earlier;
+      }
+      return board.postMessage(sender, topic, body, await reserve(), options.messageId);
+    }, options.withinExclusive);
+    if (!replayed) publishAppEvent({ type: 'group_project.message_posted', groupProjectId: id, topic: message.topic, ...(options.chain && { chain: options.chain }) });
     return message;
   }
 
@@ -1061,6 +1149,19 @@ class GroupProjectHostService {
     this.outbox = items;
   }
 
+  /** Change the outbox under one lock, so two writes at once both stay queued. */
+  private editOutbox<T>(fn: (items: OutboxItem[]) => { items: OutboxItem[]; result: T }): Promise<T> {
+    return this.serial(this.fileChains, 'outbox', async () => {
+      const { items, result } = fn([...(await this.loadOutbox())]);
+      await this.saveOutbox(items);
+      return result;
+    });
+  }
+
+  private removeFromOutbox(ids: ReadonlySet<string>): Promise<void> {
+    return this.editOutbox((items) => ({ items: items.filter((i) => !ids.has(i.id)), result: undefined }));
+  }
+
   private async loadRefusals(): Promise<GroupProjectNetworkRefusal[]> {
     if (!this.refusals) {
       this.refusals = (await readJsonFile(networkRefusalsPath(), (): StoredList<GroupProjectNetworkRefusal> => ({ version: 1, items: [] }), validateStoredList<GroupProjectNetworkRefusal>)).items;
@@ -1072,9 +1173,11 @@ class GroupProjectHostService {
     const refusal: GroupProjectNetworkRefusal = {
       id: item.id, groupProjectId: item.groupProjectId, op: item.write.op, reason, at: new Date().toISOString(), author: item.author,
     };
-    const items = [...(await this.loadRefusals()), refusal].slice(-REFUSALS_MAX);
-    await writeJsonFile(networkRefusalsPath(), { version: 1, items } satisfies StoredList<GroupProjectNetworkRefusal>);
-    this.refusals = items;
+    await this.serial(this.fileChains, 'refusals', async () => {
+      const items = [...(await this.loadRefusals()), refusal].slice(-REFUSALS_MAX);
+      await writeJsonFile(networkRefusalsPath(), { version: 1, items } satisfies StoredList<GroupProjectNetworkRefusal>);
+      this.refusals = items;
+    });
     try {
       this.link?.notifyRefusal?.(refusal);
     } catch {
@@ -1084,9 +1187,11 @@ class GroupProjectHostService {
 
   /** The person has seen a group project's refusals. */
   async dismissRefusals(id: string): Promise<void> {
-    const items = (await this.loadRefusals()).filter((r) => r.groupProjectId !== id);
-    await writeJsonFile(networkRefusalsPath(), { version: 1, items } satisfies StoredList<GroupProjectNetworkRefusal>);
-    this.refusals = items;
+    await this.serial(this.fileChains, 'refusals', async () => {
+      const items = (await this.loadRefusals()).filter((r) => r.groupProjectId !== id);
+      await writeJsonFile(networkRefusalsPath(), { version: 1, items } satisfies StoredList<GroupProjectNetworkRefusal>);
+      this.refusals = items;
+    });
     groupProjectRegistry.touch();
   }
 
@@ -1108,7 +1213,8 @@ class GroupProjectHostService {
 
   /**
    * A write on a copy goes to its host: at once when the host is connected and
-   * nothing waits before it, otherwise into the queue for when it's back.
+   * nothing waits before it, otherwise into the queue for when it's back. One
+   * decision at a time per host, so writes reach it in the order they were made.
    */
   private async forward<T>(project: GroupProject, write: WriteOp, author: WriteAuthor, applied: (result: unknown) => T, queued: (item: OutboxItem) => T): Promise<T> {
     const host = project.host!.machine!;
@@ -1119,92 +1225,123 @@ class GroupProjectHostService {
     const item: OutboxItem = {
       id: randomUUID(), host, groupProjectId: project.id, author, queuedAt: new Date().toISOString(), write,
     };
-    const waiting = (await this.loadOutbox()).some((i) => i.host === host);
-    if (this.link?.connected(host) && !waiting) {
-      let response: WriteResponse | undefined;
-      try {
-        response = await this.link.sendWrites(host, [stripHost(item)]);
-      } catch (err) {
-        // telemetry-exempt: the host went away mid-request; the write is queued below
-        appLog('core:group-project', 'info', 'Host unreachable; queuing the write', { meta: { id: project.id, error: err instanceof Error ? err.message : String(err) } });
+    const outcome = await this.serial(this.hostChains, host, async (): Promise<{ result?: WriteResult }> => {
+      const waiting = (await this.loadOutbox()).some((i) => i.host === host);
+      if (this.link?.connected(host) && !waiting) {
+        let response: WriteResponse | undefined;
+        try {
+          response = await this.link.sendWrites(host, [stripHost(item)]);
+        } catch (err) {
+          // telemetry-exempt: the host went away mid-request; the write is queued below, and the
+          // host recognizes it by id if it did arrive
+          appLog('core:group-project', 'info', 'Host unreachable; queuing the write', { meta: { id: project.id, error: err instanceof Error ? err.message : String(err) } });
+        }
+        const result = response?.results.find((r) => r.id === item.id);
+        if (result) return { result };
       }
-      const result = response?.results.find((r) => r.id === item.id);
-      if (result?.status === 'applied') {
-        await this.syncFrom(host).catch((err: unknown) => {
-          // telemetry-exempt: the copy catches up on the host's next notice
-          appLog('core:group-project', 'warn', 'Could not catch up after a write', { meta: { id: project.id, error: err instanceof Error ? err.message : String(err) } });
-        });
-        return applied(result.result);
-      }
-      if (result?.status === 'refused') throw new GroupProjectHostError('refused', `${this.hostNameOf(project)} refused this change: ${result.reason}`);
+      await this.enqueue(project, item);
+      return {};
+    });
+    if (outcome.result?.status === 'applied') {
+      await this.syncFrom(host).catch((err: unknown) => {
+        // telemetry-exempt: the copy catches up on the host's next notice
+        appLog('core:group-project', 'warn', 'Could not catch up after a write', { meta: { id: project.id, error: err instanceof Error ? err.message : String(err) } });
+      });
+      return applied(outcome.result.result);
     }
-    await this.enqueue(project, item);
+    if (outcome.result?.status === 'refused') throw new GroupProjectHostError('refused', `${this.hostNameOf(project)} refused this change: ${outcome.result.reason}`);
+    groupProjectRegistry.touch();
     return queued(item);
   }
 
-  private async enqueue(project: GroupProject, item: OutboxItem): Promise<void> {
-    const items = await this.loadOutbox();
-    if (items.length >= OUTBOX_MAX_TOTAL || items.filter((i) => i.groupProjectId === project.id).length >= OUTBOX_MAX_PER_PROJECT) {
-      throw new GroupProjectHostError('queue_full', `Too many changes are waiting for ${this.hostNameOf(project)}. Try again when it's back.`);
-    }
-    await this.saveOutbox([...items, item]);
-    groupProjectRegistry.touch();
+  private enqueue(project: GroupProject, item: OutboxItem): Promise<void> {
+    return this.editOutbox((items) => {
+      if (items.length >= OUTBOX_MAX_TOTAL || items.filter((i) => i.groupProjectId === project.id).length >= OUTBOX_MAX_PER_PROJECT) {
+        throw new GroupProjectHostError('queue_full', `Too many changes are waiting for ${this.hostNameOf(project)}. Try again when it's back.`);
+      }
+      return { items: [...items, item], result: undefined };
+    });
   }
 
   /**
    * Send what waits for `host`, in order. Each is applied or refused by the
    * host; a refusal is kept and told to its author. Stops at the first
-   * transport failure, to go on at the next connect. Expired writes are refused
-   * here, without sending.
+   * transport failure, to go on at the next connect; a write that may have
+   * arrived is sent again with the same id, which the host answers as before.
+   * Expired writes are refused here, without sending.
    */
   flushOutbox(host: string): Promise<void> {
-    const running = this.flushing.get(host);
-    if (running) return running;
-    const flush = (async () => {
+    return this.serial(this.hostChains, host, async () => {
       for (;;) {
         const now = Date.now();
-        const all = await this.loadOutbox();
-        const expired = all.filter((i) => i.host === host && now - Date.parse(i.queuedAt) > OUTBOX_EXPIRY_MS);
-        for (const item of expired) {
-          await this.saveOutbox((await this.loadOutbox()).filter((i) => i.id !== item.id));
-          await this.recordRefusal(item, `It waited more than a day for ${this.link?.machineName(host) || 'its host'}.`);
+        const expired = (await this.loadOutbox()).filter((i) => i.host === host && now - Date.parse(i.queuedAt) > OUTBOX_EXPIRY_MS);
+        if (expired.length > 0) {
+          await this.removeFromOutbox(new Set(expired.map((i) => i.id)));
+          for (const item of expired) await this.recordRefusal(item, `It waited more than a day for ${this.link?.machineName(host) || 'its host'}.`);
         }
         const batch = (await this.loadOutbox()).filter((i) => i.host === host).slice(0, FLUSH_BATCH);
         if (batch.length === 0 || !this.link?.connected(host)) break;
         const response = await this.link.sendWrites(host, batch.map(stripHost));
-        let progressed = false;
+        const answered: OutboxItem[] = [];
         for (const item of batch) {
           const result = response.results.find((r) => r.id === item.id);
           if (!result) break;
-          await this.saveOutbox((await this.loadOutbox()).filter((i) => i.id !== item.id));
-          progressed = true;
+          answered.push(item);
           if (result.status === 'refused') await this.recordRefusal(item, result.reason);
         }
-        if (!progressed) break;
+        if (answered.length === 0) break;
+        await this.removeFromOutbox(new Set(answered.map((i) => i.id)));
       }
       groupProjectRegistry.touch();
-      await this.syncFrom(host);
-    })().finally(() => { this.flushing.delete(host); });
-    this.flushing.set(host, flush);
-    return flush;
+    }).then(() => this.syncFrom(host));
   }
 
-  /** Catch up every copy held of `host`'s group projects, and learn of new ones. */
-  async syncFrom(host: string): Promise<void> {
+  private async loadReplicaTombstones(): Promise<ReplicaTombstone[]> {
+    if (!this.replicaTombstones) {
+      this.replicaTombstones = (await readJsonFile(replicaTombstonesPath(), (): StoredList<ReplicaTombstone> => ({ version: 1, items: [] }), validateStoredList<ReplicaTombstone>)).items;
+    }
+    return this.replicaTombstones;
+  }
+
+  /** Recorded before a copy is dropped, so a late answer from its host can't bring it back. */
+  private recordReplicaTombstone(tombstone: ReplicaTombstone): Promise<void> {
+    return this.serial(this.fileChains, 'replica-tombstones', async () => {
+      const now = Date.now();
+      const items = [...(await this.loadReplicaTombstones())
+        .filter((t) => !(t.groupProjectId === tombstone.groupProjectId && t.host === tombstone.host))
+        .filter((t) => now - Date.parse(t.at) < TOMBSTONE_TTL_MS), tombstone].slice(-TOMBSTONE_MAX);
+      await writeJsonFile(replicaTombstonesPath(), { version: 1, items } satisfies StoredList<ReplicaTombstone>);
+      this.replicaTombstones = items;
+    });
+  }
+
+  /** Catch up every copy held of `host`'s group projects, and learn of new ones. One catch-up per host at a time. */
+  syncFrom(host: string): Promise<void> {
+    return this.serial(this.syncChains, host, () => this.syncFromNow(host));
+  }
+
+  private async syncFromNow(host: string): Promise<void> {
     if (!this.link) return;
     await this.reconcile();
     const held = (await groupProjectRegistry.list()).filter((p) => this.isReplica(p) && p.host?.machine === host);
     const known: Record<string, number> = {};
     for (const p of held) known[p.id] = await this.seqOf(p.id).catch(() => 0);
     const response = await this.link.sync(host, { v: 1, known });
+    const hostName = this.link.machineName(host);
     const listed = new Set([...response.unchanged, ...response.projects.map((p) => p.record.id)]);
-    for (const snapshot of response.projects) await this.applySnapshot(host, snapshot);
     for (const tombstone of response.tombstones) {
-      if (held.some((p) => p.id === tombstone.groupProjectId)) await this.purgeReplica(tombstone.groupProjectId, `It was deleted on ${this.link.machineName(host) || 'its host'}.`);
+      // Recorded whether or not a copy is held: a snapshot of it is refused from now on.
+      await this.recordReplicaTombstone({ groupProjectId: tombstone.groupProjectId, host, seq: tombstone.seq, at: new Date().toISOString(), kind: 'deleted' });
+      if (held.some((p) => p.id === tombstone.groupProjectId)) await this.purgeReplica(tombstone.groupProjectId, `It was deleted on ${hostName || 'its host'}.`);
+    }
+    for (const snapshot of response.projects) {
+      if (response.tombstones.some((t) => t.groupProjectId === snapshot.record.id)) continue;
+      await this.applySnapshot(host, snapshot);
     }
     for (const p of held) {
       if (!listed.has(p.id) && !response.tombstones.some((t) => t.groupProjectId === p.id)) {
-        await this.purgeReplica(p.id, `${this.link.machineName(host) || 'Its host'} no longer shares it with your network.`);
+        await this.recordReplicaTombstone({ groupProjectId: p.id, host, seq: known[p.id] ?? 0, at: new Date().toISOString(), kind: 'unshared' });
+        await this.purgeReplica(p.id, `${hostName || 'Its host'} no longer shares it with your network.`);
       }
     }
     for (const id of response.unchanged) {
@@ -1227,12 +1364,16 @@ class GroupProjectHostService {
           return;
         }
       }
-      const tombstoned = (await this.loadTombstones()).some((t) => t.groupProjectId === id);
-      if (tombstoned) return;
+      if ((await this.loadTombstones()).some((t) => t.groupProjectId === id)) return;
+      // A copy dropped for a delete never comes back; one dropped as unshared comes back only when shared again since.
+      const dropped = (await this.loadReplicaTombstones()).find((t) => t.groupProjectId === id && t.host === host);
+      if (dropped && (dropped.kind === 'deleted' || snapshot.seq <= dropped.seq)) return;
       const { seq: _seq, hostName: _hostName, network: _network, ...record } = snapshot.record;
+      const previous = await this.seqOf(id).catch(() => 0);
+      // Older than what this copy has: an answer overtaken by a newer one.
+      if (previous > 0 && snapshot.seq < previous) return;
       await groupProjectRegistry.putReplica({ ...record, host: { machine: host } });
       await writeMembershipFile(id, validateMembership(snapshot.membership, host));
-      const previous = await this.seqOf(id).catch(() => 0);
       const missing = await getBulletinBoard(id).applyReplica(snapshot.board);
       // A copy missing messages the host still holds asks for everything next time.
       const seq = missing > 0 ? 0 : snapshot.seq;
@@ -1243,7 +1384,7 @@ class GroupProjectHostService {
       // Each post that arrived is announced as the host's change, so this computer tells its own
       // members (#3362). Not on a first copy: its history isn't news.
       const arrived = previous > 0
-        ? [...new Set(snapshot.board.messages.map((m) => m.seq ?? 0).filter((s) => s > previous))].sort((a, b) => a - b)
+        ? [...new Set(snapshot.board.messages.map((m) => m.seq ?? 0).filter((n) => n > previous))].sort((x, y) => x - y)
         : [];
       for (const seqArrived of arrived) this.emit({ groupProjectId: id, seq: seqArrived, part: 'board' });
       if (arrived.length === 0) this.emit({ groupProjectId: id, seq: snapshot.seq, part: 'board' });
@@ -1256,10 +1397,9 @@ class GroupProjectHostService {
       const project = await groupProjectRegistry.get(id);
       if (!project || !this.isReplica(project)) return;
       const last = await this.view(project);
-      for (const item of (await this.loadOutbox()).filter((i) => i.groupProjectId === id)) {
-        await this.saveOutbox((await this.loadOutbox()).filter((i) => i.id !== item.id));
-        await this.recordRefusal(item, reason);
-      }
+      const waiting = (await this.loadOutbox()).filter((i) => i.groupProjectId === id);
+      await this.removeFromOutbox(new Set(waiting.map((i) => i.id)));
+      for (const item of waiting) await this.recordRefusal(item, reason);
       await groupProjectRegistry.delete(id);
       await groupProjectRegistry.flush();
       this.seqs.delete(id);
@@ -1280,10 +1420,9 @@ class GroupProjectHostService {
       if (this.isReplica(project) && project.host?.machine === fp) {
         const state = await this.replicaState(project.id).catch((): ReplicaState => ({ version: 1 }));
         await writeJsonFile(replicaStatePath(project.id), { ...state, hostRemoved: true } satisfies ReplicaState);
-        for (const item of (await this.loadOutbox()).filter((i) => i.groupProjectId === project.id)) {
-          await this.saveOutbox((await this.loadOutbox()).filter((i) => i.id !== item.id));
-          await this.recordRefusal(item, `${this.hostNameOf(project)} left your network.`);
-        }
+        const waiting = (await this.loadOutbox()).filter((i) => i.groupProjectId === project.id);
+        await this.removeFromOutbox(new Set(waiting.map((i) => i.id)));
+        for (const item of waiting) await this.recordRefusal(item, `${this.hostNameOf(project)} left your network.`);
       } else if (!this.isReplica(project) && project.scope?.reach === 'network') {
         await this.updateMembership(project.id, (draft) => {
           draft.explicit = draft.explicit.filter((e) => parseAgentAddress(e.address).machine !== fp);
@@ -1343,10 +1482,73 @@ class GroupProjectHostService {
   }
 
   /** Writes from another computer in the network, applied or refused here in order. */
-  async applyRemoteWrites(machine: string, request: WriteRequest): Promise<WriteResponse> {
-    const results: WriteResult[] = [];
-    for (const item of request.writes) results.push(await this.applyRemoteWrite(machine.toLowerCase(), item));
-    return { v: 1, results };
+  applyRemoteWrites(machine: string, request: WriteRequest): Promise<WriteResponse> {
+    const sender = machine.toLowerCase();
+    return this.serial(this.senderChains, sender, async () => {
+      const results: WriteResult[] = [];
+      for (const item of request.writes) results.push(await this.applyRemoteWriteOnce(sender, item));
+      return { v: 1, results };
+    });
+  }
+
+  private async loadApplied(): Promise<AppliedWrite[]> {
+    if (!this.appliedWrites) {
+      this.appliedWrites = (await readJsonFile(networkAppliedPath(), (): StoredList<AppliedWrite> => ({ version: 1, items: [] }), validateStoredList<AppliedWrite>)).items;
+    }
+    return this.appliedWrites;
+  }
+
+  /**
+   * Each write is answered once: its answer is saved, and a write sent again
+   * (its response was lost) gets the same answer. A post made before a crash
+   * that lost its answer is found by its message id, made from the write's.
+   */
+  private async applyRemoteWriteOnce(machine: string, item: QueuedWrite): Promise<WriteResult> {
+    const earlier = (await this.loadApplied()).find((a) => a.machine === machine && a.id === item.id);
+    if (earlier) return earlier.result;
+    const result = await this.applyRemoteWrite(machine, item);
+    await this.serial(this.fileChains, 'applied', async () => {
+      const now = Date.now();
+      const items = [...(await this.loadApplied()).filter((a) => now - Date.parse(a.at) < APPLIED_TTL_MS), { machine, id: item.id, result, at: new Date(now).toISOString() }]
+        .slice(-APPLIED_MAX);
+      await writeJsonFile(networkAppliedPath(), { version: 1, items } satisfies StoredList<AppliedWrite>);
+      this.appliedWrites = items;
+    });
+    return result;
+  }
+
+  /**
+   * Who may make a remote write (#3363, fails closed). An agent on the sending
+   * computer must be a member; anything beyond posting is the grants' to allow
+   * (#3360 registers the gate), and without a gate only posting is. The person
+   * may (their computers already control each other). A computer's own
+   * housekeeping (channels, its agents' inboxes, its agents' membership
+   * entries, its agents' join and leave notes) covers only its own agents.
+   */
+  private async authorizeRemote(project: GroupProject, machine: string, item: QueuedWrite): Promise<string | undefined> {
+    const { author, write } = item;
+    if (author.agentId) {
+      const address = memberAddress(parseAgentAddress(author.agentId).agentId, machine, this.hostMachineOf(project));
+      const [members, membership] = await Promise.all([this.resolveMembers(project.id), this.getMembership(project.id)]);
+      const isMember = members.some((m) => m.address === address) || membership.explicit.some((e) => e.address === address);
+      const action = REMOTE_ACTION[write.op];
+      if (this.remoteWriteGate) return this.remoteWriteGate({ project, machine, write: item, address, isMember, action });
+      if (!isMember) return 'Only a member of this group project can do that.';
+      if (action !== 'group_project.post') return 'This change needs a lead or admin grant on its host.';
+      return undefined;
+    }
+    if (isPersonAuthor(author)) return undefined;
+    switch (write.op) {
+      case 'ensureChannels':
+      case 'ensureInbox':
+      case 'membership':
+        return undefined;
+      case 'post':
+        if (write.sender === 'system' && normalizeChannelName(write.topic) === 'system') return undefined;
+        return 'A post from another computer needs an author.';
+      default:
+        return 'A change from another computer needs an author.';
+    }
   }
 
   private async applyRemoteWrite(machine: string, item: QueuedWrite): Promise<WriteResult> {
@@ -1357,16 +1559,21 @@ class GroupProjectHostService {
     if (!project) return refuse('This group project no longer exists.');
     if (this.isReplica(project)) return refuse('This computer is not its host.');
     if (project.scope?.reach !== 'network') return refuse('This group project is no longer shared with your network.');
-    const gate = this.remoteWriteGate ? await this.remoteWriteGate(project, machine, item) : undefined;
-    if (gate) return refuse(gate);
+    const denied = await this.authorizeRemote(project, machine, item).catch((err: unknown) => `Not allowed: ${err instanceof Error ? err.message : String(err)}`);
+    if (denied) return refuse(denied);
     const write = item.write;
+    const system = !item.author.agentId && !isPersonAuthor(item.author);
     try {
       let result: unknown;
       switch (write.op) {
-        case 'post':
-          if (normalizeChannelName(write.topic) === 'system') return refuse('The system channel is reserved.');
-          result = await this.post(id, write.sender, write.topic, write.body);
+        case 'post': {
+          const topic = normalizeChannelName(write.topic);
+          if (topic === 'system' && !(system && write.sender === 'system')) return refuse('The system channel is reserved.');
+          // The same write always makes the same message, so a replay after a crash finds it.
+          const messageId = `msg_${Date.parse(item.queuedAt) || 0}_${createHash('sha256').update(`${machine}\u0000${item.id}`).digest('hex').slice(0, 12)}`;
+          result = await this.post(id, write.sender, write.topic, write.body, { messageId });
           break;
+        }
         case 'deleteMessage':
           result = await this.deleteMessage(id, write.topic, write.messageId);
           break;
@@ -1381,13 +1588,13 @@ class GroupProjectHostService {
           await this.update(id, write.fields);
           break;
         case 'membership':
-          await this.updateMembership(id, (draft) => applyMembershipPatch(draft, write.patch));
+          await this.updateMembership(id, (draft) => applyMembershipPatch(draft, system ? patchForMachine(write.patch, machine, draft) : write.patch));
           break;
         case 'ensureChannels':
           await this.ensureChannels(id);
           break;
         case 'ensureInbox': {
-          // A machine speaks for its own agents only.
+          // A computer speaks for its own agents only.
           const address = canonicalMemberAddress(write.address, this.hostMachineOf(project));
           if (parseAgentAddress(address).machine !== machine) return refuse('An inbox can only be claimed for an agent on the computer asking.');
           result = await this.ensureInbox(id, write.agentName, address);
@@ -1428,7 +1635,12 @@ class GroupProjectHostService {
     this.remoteWriteGate = null;
     this.outbox = null;
     this.refusals = null;
-    this.flushing.clear();
+    this.hostChains.clear();
+    this.syncChains.clear();
+    this.fileChains.clear();
+    this.senderChains.clear();
+    this.replicaTombstones = null;
+    this.appliedWrites = null;
   }
 }
 

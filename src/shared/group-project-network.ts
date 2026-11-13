@@ -188,12 +188,32 @@ export function readSyncResponse(raw: unknown, host: string): SyncResponse {
   };
 }
 
+/** Membership fields a patch may set; anything else is refused. */
+const PATCH_FIELDS = new Set(['autoJoin', 'autoJoinOffer', 'subscriptions', 'disabledTools', 'scopeMembersRecorded']);
+const MEMBER_KINDS = new Set(['durable', 'helper', 'quick']);
+
+function readEntry(raw: unknown, dated: 'addedAt' | 'excludedAt'): Record<string, unknown> & { address: string } {
+  if (!isRecord(raw) || !isString(raw.address) || !raw.address || !isString(raw[dated])) fail('membership patch');
+  if (dated === 'addedAt' && !MEMBER_KINDS.has(raw.kind as string)) fail('membership patch');
+  return raw as Record<string, unknown> & { address: string };
+}
+
 function readPatch(raw: unknown): MembershipPatch {
   if (!isRecord(raw) || !Array.isArray(raw.addExplicit) || !Array.isArray(raw.removeExplicit) || !Array.isArray(raw.addExcluded)
     || !Array.isArray(raw.removeExcluded) || !isRecord(raw.set)) fail('membership patch');
   if (!raw.removeExplicit.every(isString) || !raw.removeExcluded.every(isString)) fail('membership patch');
-  for (const key of ['version', 'explicit', 'excluded']) if (key in raw.set) fail('membership patch');
-  return raw as unknown as MembershipPatch;
+  for (const [key, value] of Object.entries(raw.set)) {
+    if (!PATCH_FIELDS.has(key)) fail('membership patch');
+    if (key === 'autoJoin' && typeof value !== 'boolean') fail('membership patch');
+    if ((key === 'subscriptions' || key === 'disabledTools') && value !== null && !isRecord(value)) fail('membership patch');
+  }
+  return {
+    addExplicit: raw.addExplicit.map((e) => readEntry(e, 'addedAt')) as MembershipPatch['addExplicit'],
+    removeExplicit: raw.removeExplicit as string[],
+    addExcluded: raw.addExcluded.map((e) => readEntry(e, 'excludedAt')) as MembershipPatch['addExcluded'],
+    removeExcluded: raw.removeExcluded as string[],
+    set: raw.set,
+  };
 }
 
 function readOp(raw: unknown): WriteOp {

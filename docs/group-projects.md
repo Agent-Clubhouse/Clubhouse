@@ -427,6 +427,40 @@ patch (entries added and removed, fields set) that the host applies to its own
 current record. Only the host deletes, clears, changes retention or changes
 scope (`not_host`, "Only <host> can …").
 
+**Who may write.** The host decides, and fails closed. An agent's write carries
+the agent (its author), and the host checks it as `<agent>@<sending computer>`.
+The agent must be a member, and anything beyond posting (lead: deleting
+messages and channels, protection; admin: record fields, membership) needs
+#3360's grants through the registered `setRemoteWriteGate`. Without a gate
+registered, only posting is allowed. The person, on any of their computers,
+may write: their computers already control each other. A computer's own
+housekeeping (channel seeding, its agents' inboxes, its agents' membership
+entries and per-member settings, its agents' join and leave notes) covers only
+its own agents. A patch naming anyone else's entries has those parts dropped.
+Patch fields are whitelisted.
+
+**Exactly once.** Writes from one computer are applied in order, and each
+answer is saved (`network-applied.json`, 2,000 or seven days). A write sent
+again because its response was lost gets the same answer. A remote post's
+message id is derived from the write's, so even after a crash between posting
+and saving the answer, the replay finds the post rather than making a second.
+
+**Order and races.** On a copy, the outbox is changed under one lock, so writes
+made at once all stay queued. Sending to one host and flushing its queue happen
+one at a time, in the order the writes were made. Catch-up from one host runs
+one at a time whoever asks. A copy dropped because its host deleted it is
+recorded first (`replica-tombstones.json`, by host), so a late answer can't bring
+it back. One dropped as no longer shared comes back only from a newer sequence
+number. An answer older than the copy is ignored.
+
+**Canvas.** When a copy goes, so do its saved Canvas cards, wires and
+connection guidance (`purgeGroupProjectViews`, the delete cascade's tolerant
+cleanup, #3425).
+
+**Notices (#3362).** Each computer tells its own agents. When a catch-up brings
+new posts, the copy announces each one, and the notice service delivers to this
+computer's members (`localAgentId`). A first copy's history isn't announced.
+
 **Addresses.** On a copy a bare id is the host's agent. An agent here is
 `id@<this machine>` (`addressOf`, `localAgentId`). The membership policy (#3357)
 binds only this machine's agents on a copy, and never auto-joins, adopts or

@@ -31,5 +31,9 @@ export const hostStatePath = (id: string): string => path.join(groupProjectDir(i
 export const replicaStatePath = (id: string): string => path.join(groupProjectDir(id), 'replica.json');
 /** Writes made here for other computers' group projects, waiting for their hosts. */
 export const networkOutboxPath = (): string => path.join(groupProjectsDir(), 'network-outbox.json');
+/** Copies this computer dropped, so a late answer from their host can't bring them back (#3363). */
+export const replicaTombstonesPath = (): string => path.join(groupProjectsDir(), 'replica-tombstones.json');
+/** What this computer, as host, answered other computers' writes: a replayed write gets the same answer. */
+export const networkAppliedPath = (): string => path.join(groupProjectsDir(), 'network-applied.json');
 /** Writes a host refused, for their authors. */
 export const networkRefusalsPath = (): string => path.join(groupProjectsDir(), 'network-refusals.json');

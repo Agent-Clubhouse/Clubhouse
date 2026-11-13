@@ -65,6 +65,7 @@ import { startHandoffs } from '../services/handoff-host';
 import { addCardConnection, listConnectionPickerTargets, removeCardConnection, startCardConnections } from '../services/connection-card';
 import type { AddCardConnection } from '../../shared/connection-picker';
 import { startGroupProjectNetwork } from '../services/group-project-network';
+import { purgeGroupProjectViews } from '../services/group-project-delete-service';
 import { onMembershipChanged as onNetworkMembershipChanged } from '../services/annex-network-membership';
 import { injectPtyMessage } from '../services/group-project-lifecycle';
 import { authorizeQueuedAnnexCall, reportAnnexDeliveryFailure } from '../services/annex-agent-call-host';
@@ -623,6 +624,7 @@ export function restorePersistedBindings(): Promise<void> {
       members: () => annexPeers.listPeers().map((p) => p.fingerprint.toLowerCase()).filter((fp) => isNetworkComputer(fp)),
       onMembershipChanged: (listener) => onNetworkMembershipChanged(listener),
       notifyAgent: (agentId, text) => injectPtyMessage(agentId, text),
+      purgeViews: (id) => purgeGroupProjectViews(id),
     });
   }
   return rebuildPersistedBindings().then(async (): Promise<void> => {

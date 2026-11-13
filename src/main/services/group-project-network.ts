@@ -32,6 +32,8 @@ export interface StartGroupProjectNetworkOptions {
   onMembershipChanged(listener: () => void): () => void;
   /** Tell an agent here that the host refused its change. */
   notifyAgent?(agentId: string, text: string): void;
+  /** Remove a group project's saved Canvas cards, wires and guidance: its copy here went. */
+  purgeViews?(groupProjectId: string): Promise<void>;
 }
 
 /** Changes are told in one notice per burst. */
@@ -104,6 +106,11 @@ export function startGroupProjectNetwork(start: StartGroupProjectNetworkOptions)
     }
   };
   const offChanged = groupProjectHost.onChange((change) => {
+    // This computer's copy went (deleted on its host, or no longer shared): so do its cards and wires.
+    if (change.part === 'deleted' && change.project?.network?.role === 'replica') {
+      void start.purgeViews?.(change.groupProjectId).catch((err) => logFailure('removing a copy\'s canvas cards', change.project!.host?.machine ?? '', err));
+      return;
+    }
     void (async () => {
       const project = change.project ?? await groupProjectHost.get(change.groupProjectId).catch((): null => null);
       if (!project || project.network?.role === 'replica' || (project.scope?.reach !== 'network' && change.part !== 'deleted')) return;
