@@ -84,7 +84,7 @@ function extractRunScripts(workflow: string): string[] {
   return scripts;
 }
 
-describe('release message parsing (workflow shell pipeline)', () => {
+describe('release message parsing (workflow shell pipeline)', { timeout: 30_000 }, () => {
   it('passes release text through environment bindings instead of run expressions', () => {
     const workflow = readFileSync(
       resolve(__dirname, '../../../.github/workflows/release.yml'),

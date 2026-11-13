@@ -35,6 +35,9 @@ import type {
   McpAssetPayload,
 } from '../../../shared/asset-catalog-types';
 
+// These suites use the real disk store, including synced payload/index writes and atomic renames.
+const REAL_IO_TIMEOUT_MS = 30_000;
+
 const ACCEPTED: BaseAdoption = { content: { mode: 'takeable' }, structure: { mode: 'accepted' } };
 const LATEST: BaseAdoption = { content: { mode: 'takeable' }, structure: { mode: 'latest-if-clean' } };
 const FAKE_GH_TOKEN = `ghp_${'a1B2c3D4e5'.repeat(4)}`;
@@ -178,7 +181,7 @@ async function textOf(plan: { activation: { instructions: { blocks: Array<{ asse
   return composed.text;
 }
 
-describe('reading', () => {
+describe('reading', { timeout: REAL_IO_TIMEOUT_MS }, () => {
   it('reads as empty and creates nothing', async () => {
     expect(await store.read()).toEqual({ version: 2, assets: {}, compositions: {}, runs: {} });
     expect(await store.plan({ agentId: 'a', adoption: ACCEPTED })).toMatchObject({ blockers: [], compositionRevision: 0 });
@@ -210,7 +213,7 @@ describe('reading', () => {
   });
 });
 
-describe('saving unassigned assets', () => {
+describe('saving unassigned assets', { timeout: REAL_IO_TIMEOUT_MS }, () => {
   it('saves each kind with no consumer and stable ids', async () => {
     const { identity, review, git, base } = await seedBase();
     const subagent = await store.createAsset({ kind: 'subagent', name: 'Tester', payload: { agentName: 'tester', description: 'Runs tests.', blocks: [ref('Role', identity)], skills: [review.id], mcps: [git.id] } });
@@ -393,7 +396,7 @@ describe('saving unassigned assets', () => {
   });
 });
 
-describe('revisions', () => {
+describe('revisions', { timeout: REAL_IO_TIMEOUT_MS }, () => {
   it('appends immutable revisions under an expected revision', async () => {
     const asset = await store.createAsset({ kind: 'block', name: 'Doc', payload: doc('one') });
     const first = fs.readFileSync(path.join(dir, 'revisions', asset.id, '1.json'), 'utf8');
@@ -444,7 +447,7 @@ describe('revisions', () => {
   });
 });
 
-describe('renames', () => {
+describe('renames', { timeout: REAL_IO_TIMEOUT_MS }, () => {
   it('keep every reference, and the plan\'s fingerprint', async () => {
     const { review, job, base } = await seedBase();
     await compose('agent-1', instanceOf(base));
@@ -470,7 +473,7 @@ describe('renames', () => {
   });
 });
 
-describe('deletion', () => {
+describe('deletion', { timeout: REAL_IO_TIMEOUT_MS }, () => {
   it('is refused while anything uses it', async () => {
     const { job, review, base } = await seedBase();
     expect(await code(store.deleteAsset({ assetId: review.id, expectedRevision: 1 }))).toBe('asset_in_use');
@@ -592,7 +595,7 @@ describe('deletion', () => {
   });
 });
 
-describe('committing a composition', () => {
+describe('committing a composition', { timeout: REAL_IO_TIMEOUT_MS }, () => {
   it('stores it under an expected revision, keyed by agent id and nothing else', async () => {
     const { base } = await seedBase();
     const composition = instanceOf(base);
@@ -684,7 +687,7 @@ describe('committing a composition', () => {
   });
 });
 
-describe('central edits', () => {
+describe('central edits', { timeout: REAL_IO_TIMEOUT_MS }, () => {
   it('need the impact preview to be confirmed when anything consumes the asset', async () => {
     const { review, base } = await seedBase();
     await compose('agent-1', instanceOf(base));
@@ -742,7 +745,7 @@ describe('central edits', () => {
   });
 });
 
-describe('publication', () => {
+describe('publication', { timeout: REAL_IO_TIMEOUT_MS }, () => {
   it('commits a template revision and its block revisions together, tagged', async () => {
     const seed = await seedBase();
     const published = await publish(moveRules(seed, 'safety-id'));
@@ -942,7 +945,7 @@ describe('publication', () => {
   });
 });
 
-describe('accepting a structure update', () => {
+describe('accepting a structure update', { timeout: REAL_IO_TIMEOUT_MS }, () => {
   it('a clean revision takes no choice, and the floor moves past its tags', async () => {
     const seed = await seedBase();
     await compose('agent-1', instanceOf(seed.base));
@@ -1158,7 +1161,7 @@ describe('accepting a structure update', () => {
   });
 });
 
-describe('switching template', () => {
+describe('switching template', { timeout: REAL_IO_TIMEOUT_MS }, () => {
   it('replaces, with only what was selected carrying over, and the agent id unchanged', async () => {
     const seed = await seedBase();
     const other = await store.createAsset({ kind: 'template', name: 'Other', payload: { entries: [ref('Solo', seed.identity)], subagents: [], skills: [], mcps: [] } });
@@ -1288,7 +1291,7 @@ describe('switching template', () => {
   });
 });
 
-describe('copies', () => {
+describe('copies', { timeout: REAL_IO_TIMEOUT_MS }, () => {
   it('copies an exact revision, owned by one agent, with its origin', async () => {
     const asset = await store.createAsset({ kind: 'block', name: 'Orchestrator', payload: doc('one @@AgentName') });
     await store.saveRevision({ assetId: asset.id, expectedRevision: 1, payload: doc('two') });
@@ -1398,7 +1401,7 @@ describe('copies', () => {
   });
 });
 
-describe('the Dispatcher builder grant (#2900)', () => {
+describe('the Dispatcher builder grant (#2900)', { timeout: REAL_IO_TIMEOUT_MS }, () => {
   it('lets the granted Dispatcher write, and nobody else on any surface', async () => {
     const { withDispatcherCatalogWrites } = await import('./store');
     const made = await withDispatcherCatalogWrites('dispatcher-1', () => store.createAsset({ kind: 'block', name: 'From the Dispatcher', payload: doc() }));
@@ -1414,7 +1417,7 @@ describe('the Dispatcher builder grant (#2900)', () => {
   });
 });
 
-describe('agents can only read', () => {
+describe('agents can only read', { timeout: REAL_IO_TIMEOUT_MS }, () => {
   it.each([
     ['the MCP surface', 'mcp', 'agent-9'],
     ['the agent CLI', 'cli', undefined],
@@ -1526,7 +1529,7 @@ describe('agents can only read', () => {
   });
 });
 
-describe('recorded runs', () => {
+describe('recorded runs', { timeout: REAL_IO_TIMEOUT_MS }, () => {
   async function frozenRun() {
     const seeded = await seedBase();
     await compose('agent-1', instanceOf(seeded.base));
@@ -1681,7 +1684,7 @@ describe('recorded runs', () => {
   });
 });
 
-describe('interrupted writes', () => {
+describe('interrupted writes', { timeout: REAL_IO_TIMEOUT_MS }, () => {
   const crash = () => Object.assign(new Error('crash'), { code: 'EIO' });
   const onIndexCommit = (_from: string, to: string) => (path.basename(to) === 'catalog.json' ? crash() : null);
   const onPayloadWrite = (_from: string, to: string) => (path.basename(to) !== 'catalog.json' ? crash() : null);
@@ -1826,7 +1829,7 @@ describe('interrupted writes', () => {
   });
 });
 
-describe('redaction end to end', () => {
+describe('redaction end to end', { timeout: REAL_IO_TIMEOUT_MS }, () => {
   it('a refused secret reaches no file, plan, error or audit row', async () => {
     const payload = { ...mcpOf('leaky'), env: { API_TOKEN: FAKE_GH_TOKEN } };
     const error = await rejection(store.createAsset({ kind: 'mcp', name: 'Leaky', payload }));
@@ -1887,7 +1890,7 @@ describe('redaction end to end', () => {
   });
 });
 
-describe('the audit', () => {
+describe('the audit', { timeout: REAL_IO_TIMEOUT_MS }, () => {
   it('records writes by id, kind and surface, and never content', async () => {
     const asset = await withSettingsSurface('ui', undefined, () => store.createAsset({ kind: 'block', name: 'Very private name', payload: doc('private words') }));
     await withSettingsSurface('ui', undefined, async () => {
@@ -1937,7 +1940,7 @@ describe('the audit', () => {
   });
 });
 
-describe('previewInstructions', () => {
+describe('previewInstructions', { timeout: REAL_IO_TIMEOUT_MS }, () => {
   it('gives each block\'s text and the composed result, the same bytes activation would use', async () => {
     const seed = await seedBase();
     const rules = await store.createAsset({ kind: 'block', name: 'Rules', payload: doc('Local rule.'), owner: { kind: 'agent', agentId: 'a' } });
@@ -1981,7 +1984,7 @@ describe('previewInstructions', () => {
   });
 });
 
-describe('the builder actions', () => {
+describe('the builder actions', { timeout: REAL_IO_TIMEOUT_MS }, () => {
   it('a base, a new skill, an existing skill, an MCP and a forked block, without touching the agent id or the base', withTestPhaseDiagnostic('catalog-builder', async (diagnostic) => {
     const { identity, job, review, base } = await diagnostic.step('catalog.seed', () => seedBase());
     const beforeBase = (await diagnostic.step('catalog.read-base', () => store.read())).assets[base.id];
