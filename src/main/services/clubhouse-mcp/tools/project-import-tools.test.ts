@@ -20,6 +20,7 @@ const current = vi.hoisted(() => ({
   blockedFetch: false,
   partialRegistration: false,
   commit: '',
+  releaseCommit: '',
   remoteCalls: [] as string[],
   gitCalls: [] as string[][],
 }));
@@ -154,6 +155,12 @@ beforeAll(async () => {
   git('-c', 'user.email=fixture@example.test', '-c', 'user.name=Fixture', 'commit', '-qm', 'seed');
   git('branch', 'release');
   current.commit = git('rev-parse', 'HEAD');
+  git('switch', '-q', 'release');
+  fs.writeFileSync(path.join(fixture.source, 'selected-branch.txt'), 'Only on the selected release branch\n');
+  git('add', '.');
+  git('-c', 'user.email=fixture@example.test', '-c', 'user.name=Fixture', 'commit', '-qm', 'distinct selected branch tip');
+  current.releaseCommit = git('rev-parse', 'HEAD');
+  git('switch', '-q', 'trunk');
   fs.mkdirSync(path.join(fixture.dispatcher, '.clubhouse'), { recursive: true });
   fs.writeFileSync(path.join(fixture.dispatcher, '.clubhouse', 'agents.json'), JSON.stringify([
     { id: 'dispatcher', name: 'Dispatcher', color: 'indigo', createdAt: new Date().toISOString(), orchestrator: 'copilot-cli' },
@@ -240,7 +247,7 @@ describe('public Dispatcher repository import (#2808)', () => {
     const catalog = await getScopedToolList('dispatcher');
     expect(catalog.map((t) => t.name)).toEqual(expect.arrayContaining(['preview_repository_import', 'import_repository', 'get_repository_import', 'cancel_repository_import', 'create_managed_agent']));
     const plan = await preview('release');
-    expect(plan).toMatchObject({ url, destination, defaultBranch: 'trunk', branch: 'release', commit: current.commit, headCommit: current.commit });
+    expect(plan).toMatchObject({ url, destination, defaultBranch: 'trunk', branch: 'release', commit: current.releaseCommit, headCommit: current.commit });
     expect(fs.existsSync(destination)).toBe(false);
     expect((await start(plan)).body.status).toBe('approval_required');
     const review = listGrantRequests()[0];
@@ -259,6 +266,7 @@ describe('public Dispatcher repository import (#2808)', () => {
     const result = await call('get_repository_import', { importId: started.body.receipt.id });
     expect(result.body).toMatchObject({ phase: 'completed', cloneCompleted: true, gitignore: 'updated', agentCreated: false, agentStarted: false });
     expect(fs.readFileSync(path.join(destination, 'readme.txt'), 'utf8')).toBe('fixture content\n');
+    expect(fs.readFileSync(path.join(destination, 'selected-branch.txt'), 'utf8')).toBe('Only on the selected release branch\n');
     expect((await projectStore.list()).filter((p) => p.path === destination)).toHaveLength(1);
     expect(await agentConfig.listDurable(destination)).toEqual([]);
     expect((await start(plan)).body.receipt.id).toBe(started.body.receipt.id);
