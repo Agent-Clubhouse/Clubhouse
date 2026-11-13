@@ -52,7 +52,7 @@ describe('GroupProjectsSettingsView', () => {
     render(<GroupProjectsSettingsView />);
     await screen.findByRole('list');
     select('Beta');
-    const wake = await screen.findByLabelText('Wake a sleeping member when a lead taps it');
+    const wake = await screen.findByLabelText('Wake sleeping members');
     fireEvent.change(wake, { target: { value: 'allow' } });
     await waitFor(() => expect(setOwnGrant).toHaveBeenCalledWith('gp-beta', 'wake', 'allow'));
   });

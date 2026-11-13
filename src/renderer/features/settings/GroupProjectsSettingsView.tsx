@@ -4,6 +4,7 @@ import { Button } from '../../components/Button';
 import { GroupProjectLocations } from './GroupProjectLocations';
 import { GroupProjectMembersSection } from '../group-projects/GroupProjectMembersSection';
 import { GroupProjectDeliverySection } from '../group-projects/GroupProjectDeliverySection';
+import { GroupProjectRolesSection } from '../group-projects/GroupProjectRolesSection';
 import { useGroupProjectStore } from '../../stores/groupProjectStore';
 import { ipcErrorMessage } from '../../utils/ipc-error';
 import { DeleteGroupProjectDialog } from './DeleteGroupProjectDialog';
@@ -329,6 +330,7 @@ export function GroupProjectsSettingsView() {
             {selected.network?.role !== 'replica' && <GroupProjectScopeEditor project={selected} />}
             <GroupProjectMembersSection groupProjectId={selected.id} />
             <GroupProjectDeliverySection groupProjectId={selected.id} />
+            <GroupProjectRolesSection groupProjectId={selected.id} />
             <GroupProjectActionsSection groupProjectId={selected.id} />
             <GroupProjectLocations id={selected.id} />
           </Fragment>}
