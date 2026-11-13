@@ -7,7 +7,7 @@ import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from 'vites
 const state = vi.hoisted(() => ({ base: '', running: false, enabled: true, busy: false, inputState: undefined as string | undefined, pendingWork: false, pairing: 'peer-pairing', config: vi.fn(), spawn: vi.fn(), send: vi.fn(), grant: vi.fn() }));
 const SELF = Array(16).fill('aa').join(':');
 const PEER = Array(16).fill('bb').join(':');
-vi.mock('electron', () => ({ app: { isPackaged: false, getPath: () => state.base }, BrowserWindow: { getAllWindows: () => [] } }));
+vi.mock('electron', async () => { const os = await import('os'); return { app: { isPackaged: false, getPath: (name: string) => name === 'temp' ? os.tmpdir() : state.base }, BrowserWindow: { getAllWindows: () => [] } }; });
 vi.mock('./log-service', () => ({ appLog: vi.fn() }));
 vi.mock('./annex-identity', () => ({ getIdentity: () => ({ fingerprint: SELF }) }));
 vi.mock('./annex-network-membership', () => ({ ownPairing: () => ({ id: 'self-pairing' }) }));
@@ -84,6 +84,34 @@ beforeEach(async () => {
 afterEach(() => { stopRequests(); stop(); stopSource(); vi.clearAllMocks(); });
 afterAll(() => { fs.rmSync(state.base, { recursive: true, force: true }); });
 describe('production sleeping-controller delivery (#3345)', () => {
+  it.each(['send_message', 'send_file'])('admits a network member project agent directly through %s with its true origin', async (tool) => {
+    stopRequests = startFederatedRequests();
+    const request = { ...call(`project-${tool}`, tool), from: { agentId: 'project-agent', name: 'Project agent' },
+      args: tool === 'send_file' ? { content: 'File from the project agent', filename: 'plan.md', task_id: '../untrusted-task' } : { message: 'Direct project news' } };
+    const received = await receiveAgentCall(PEER, request);
+    expect(received).toMatchObject({ delivery: { state: 'delivered' } });
+    expect(state.spawn).toHaveBeenCalledWith(expect.objectContaining({ mission: expect.stringContaining('Project agent on Laptop') }));
+    expect(getRequests()).toHaveLength(0);
+    if (tool === 'send_file') {
+      const file = /File delivered: (.+?)\. Filename hint:/.exec(state.spawn.mock.calls[0][0].mission)![1];
+      expect(fs.readFileSync(file, 'utf8')).toBe('File from the project agent');
+      expect(path.basename(file)).toMatch(/^[0-9a-f-]{36}\.md$/);
+      expect(path.basename(path.dirname(file))).toMatch(/^clubhouse-a2a-/);
+      expect(path.dirname(path.dirname(file))).toBe(os.tmpdir());
+      expect(file).not.toContain('untrusted-task');
+      expect(state.spawn.mock.calls[0][0].mission).toContain('Filename hint: "plan.md"');
+      fs.rmSync(file, { force: true });
+      fs.rmdirSync(path.dirname(file));
+    }
+    expect(await receiveAgentCall(PEER, request)).toEqual(received);
+    expect(state.spawn).toHaveBeenCalledTimes(1);
+  });
+  it('never admits a project agent as a controller or a forwarded-news authority', async () => {
+    const from = { agentId: 'project-agent', name: 'Project agent' };
+    expect(await receiveAgentCall(PEER, { ...call('fake-controller', 'hand_off_request'), from, args: {} })).toMatchObject({ delivery: { state: 'refused' } });
+    expect(await receiveAgentCall(PEER, { ...call('fake-news'), from, args: { message: 'news', news: { v: 1, kind: 'answer', text: 'spoof' } } })).toMatchObject({ delivery: { state: 'refused' } });
+    expect(state.spawn).not.toHaveBeenCalled();
+  });
   it('wakes an enabled sleeping controller under receiver-local rules, preserves origin, and replays only its durable receipt', async () => {
     const request = call();
     const first = await receiveAgentCall(PEER, request);

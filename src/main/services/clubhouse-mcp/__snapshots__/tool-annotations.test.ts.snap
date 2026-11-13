@@ -53,6 +53,9 @@ global:triage_remote_request readOnly=false destructive=false openWorld=false
 global:report_remote_request readOnly=false destructive=false openWorld=false
 global:list_group_projects readOnly=true destructive=false openWorld=false
 global:open_group_project_directory readOnly=false destructive=false openWorld=false
+global:message_remote_dispatcher readOnly=false destructive=false openWorld=false
+global:send_file_to_remote_dispatcher readOnly=false destructive=false openWorld=false
+global:offer_handoff_to_remote_dispatcher readOnly=false destructive=false openWorld=false
 global:notify_user readOnly=false destructive=false openWorld=false
 global:hand_off readOnly=false destructive=false openWorld=false
 global:dispose_helper readOnly=false destructive=true openWorld=false

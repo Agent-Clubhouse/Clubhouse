@@ -8,6 +8,7 @@ import { buildChatScript, writeChatScript } from '../../src/main/orchestrators/a
 import { chatFixturePath } from '../../src/main/orchestrators/adapters/testing/fake-cli';
 import { launchApp, type LaunchedApp } from '../launch';
 import { createDisposableProfile, type DisposableProfile } from '../app-profile';
+import { addProject, createDurableAgent } from '../smoke-helpers';
 import { enableAnnexViaPreload } from './helpers';
 
 const apps: LaunchedApp[] = [];
@@ -125,7 +126,7 @@ async function startController(app: LaunchedApp, cli: FakeClis) {
   const ids = await identity(app.window);
   await app.window.locator('[data-testid="dispatcher-row"] [role="treeitem"]').click();
   await app.window.locator('[data-testid="dispatcher-view"] [data-testid="wake-button"]').click();
-  await expect.poll(async () => (await cli.report('claude').catch(() => undefined))?.env.CLUBHOUSE_AGENT_ID, { timeout: 30_000 }).toBe(ids.chat);
+  await expect.poll(async (): Promise<string | null | undefined> => (await cli.report('claude').catch((): undefined => undefined))?.env.CLUBHOUSE_AGENT_ID, { timeout: 30_000 }).toBe(ids.chat);
   const chat = await mcp((await cli.report('claude')).env);
   const started = await chat.call('start_work', { request: 'Prepare to coordinate with the other computer.' });
   expect(started.isError).toBe(false);
@@ -183,6 +184,64 @@ test('remote requests triage locally, send correlated outcomes and wait once acr
       expect((await here.window.evaluate(() => window.clubhouse.dispatcher.get())).requestsUnderWay).toBe(parentWork);
     }
   }
+  // The project agent reaches Laptop directly, without a local start_work call.
+  const project = path.join(scratch!, 'direct-sender'); await fs.promises.mkdir(project);
+  await addProject(here.electronApp, here.window, project);
+  const sender = await createDurableAgent(here.window, { projectName: path.basename(project), name: 'direct-sender', orchestrator: 'claude-code' });
+  await expect.poll(async () => (await fakes!.report('claude')).env.CLUBHOUSE_AGENT_ID).toBe(sender);
+  const direct = await mcp((await fakes!.report('claude')).env);
+  const ownBefore = (await here.window.evaluate(() => window.clubhouse.dispatcher.get())).requestsUnderWay;
+  const news = { machine: 'Laptop', message: 'Direct authorized project news', task_id: 'direct-news', idempotency_key: 'direct-news' };
+  const setMode = async (action: 'agent.message' | 'handoff.offer', mode: 'off' | 'ask' | 'allow') => here.window.evaluate(async ({ project, sender, action, mode }) => {
+    await window.clubhouse.agent.setGrant(project, sender, { action, target: { kind: 'remote_dispatcher' }, mode });
+  }, { project, sender, action, mode });
+  const transcript = () => there.window.evaluate(async (id) => JSON.stringify(await window.clubhouse.chat.readTranscript(id)), b.ids.controller);
+  await setMode('agent.message', 'off');
+  expect((await direct.call('message_remote_dispatcher', news)).isError).toBe(true);
+  expect(await transcript()).not.toContain(news.message);
+  await setMode('agent.message', 'ask');
+  expect((await direct.call('message_remote_dispatcher', news)).isError).toBe(true);
+  let permission = '';
+  await expect.poll(async () => {
+    permission = (await here.window.evaluate(() => window.clubhouse.agent.listGrantRequests())).find((r) => r.agentId === sender && r.toolName === 'message_remote_dispatcher')?.requestId ?? '';
+    return !!permission;
+  }).toBe(true);
+  expect(await transcript()).not.toContain(news.message);
+  expect(await here.window.evaluate((id) => window.clubhouse.agent.answerGrantRequest(id, true), permission)).toMatchObject({ ok: true });
+  expect((await direct.call('message_remote_dispatcher', news)).isError).toBe(false);
+  await expect.poll(transcript, { timeout: 30_000 }).toContain(news.message);
+  expect(await transcript()).toContain(sender);
+  await setMode('agent.message', 'allow');
+  const file = await direct.call('send_file_to_remote_dispatcher', { machine: b.ids.machine, filename: 'direct-fixture.txt', content: 'Direct file fixture bytes', task_id: 'direct-file', idempotency_key: 'direct-file' });
+  expect(file.isError).toBe(false);
+  await expect.poll(transcript, { timeout: 30_000 }).toContain('direct-fixture.txt');
+  expect((await here.window.evaluate(() => window.clubhouse.dispatcher.get())).requestsUnderWay).toBe(ownBefore);
+  // The distinct agreement follows its normal approval, stays offered until an explicit response,
+  // and reports its own id to the originating agent.
+  await setMode('handoff.offer', 'ask');
+  const handoff = { machine: 'Laptop', task: 'Continue the project fixture', brief: 'Goal: finish the fixture. Done: direct news. Remaining: verify the agreement.', mode: 'worktree' };
+  expect((await direct.call('offer_handoff_to_remote_dispatcher', handoff)).isError).toBe(true);
+  const approval = (await here.window.evaluate(() => window.clubhouse.agent.listGrantRequests())).find((r) => r.agentId === sender && r.toolName === 'offer_handoff');
+  expect(approval).toBeTruthy();
+  expect(await here.window.evaluate((id) => window.clubhouse.agent.answerGrantRequest(id, true), approval!.requestId)).toMatchObject({ ok: true });
+  const offeredAgreement = await direct.call('offer_handoff_to_remote_dispatcher', handoff); expect(offeredAgreement.isError).toBe(false);
+  const agreement = JSON.parse(offeredAgreement.text);
+  expect(agreement).toMatchObject({ state: 'offered', from: { agentId: sender, machine: a.ids.machine }, to: { machine: b.ids.machine, via: 'dispatcher' } });
+  await expect.poll(async () => {
+    const found = await b.controller.call('get_handoff', { id: agreement.id }); return found.isError ? '' : JSON.parse(found.text).state;
+  }, { timeout: 60_000 }).toBe('offered');
+  await there.window.evaluate(async () => {
+    const state = await window.clubhouse.dispatcher.get();
+    await window.clubhouse.agent.setGrant(state.path!, state.agentId!, { action: 'handoff.accept', target: { kind: 'any' }, mode: 'allow' });
+  });
+  expect((await b.controller.call('respond_to_handoff', { id: agreement.id, accept: false, reason: 'Fixture explicit refusal.' })).isError).toBe(false);
+  await expect.poll(async () => {
+    const found = await direct.call('get_handoff', { id: agreement.id }); return found.isError ? '' : JSON.parse(found.text).state;
+  }, { timeout: 60_000 }).toBe('declined');
+  const sourceTranscript = () => here.window.evaluate(async (id) => JSON.stringify(await window.clubhouse.chat.readTranscript(id)), sender);
+  await expect.poll(sourceTranscript, { timeout: 60_000 }).toContain(`[Clubhouse handoff ${agreement.id}]`);
+  expect(await sourceTranscript()).toContain('Result from ');
+  expect(await sourceTranscript()).toContain(' on Laptop');
   const profile = there.profile;
   await there.electronApp.close(); apps.splice(apps.indexOf(there), 1);
   await expect.poll(async () => (await links(here.window, a.ids.controller)).flatMap((p) => p.sources).some((s) => s.suspended?.includes('offline')), { timeout: 30_000 }).toBe(true);

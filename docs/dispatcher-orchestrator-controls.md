@@ -347,3 +347,11 @@ or row to show them in, so they're answered on their own computers.
 - **Left to its computer.** A desktop update's restart choice, and an answer
   the lead doesn't know, show "Answer it on <computer>." An offline computer's
   requests aren't listed.
+
+### Authorized agents reaching another computer's Dispatcher
+
+`list_other_dispatchers` is a read-only view available to agents. Use its machine name or fingerprint with `message_remote_dispatcher` or `send_file_to_remote_dispatcher`; the app resolves the receiving hidden controller. Both tools require `agent.message` on **Another machine's Dispatcher**. The Dispatcher defaults to Allow, agents connected to their own Dispatcher to Ask first, and others to Off. The person can change that target on the agent's Clubhouse permissions page. Ask first authorizes the exact call and arguments, never a later message or file.
+
+The sending computer checks the agent's grant before durable admission and checks its saved policy again before retries. Removing or changing that permission invalidates queued authorization, including a revoke followed by a reset. The receiving computer checks its current member pairing, controller availability and link bounds. Sender text cannot supply identity, approve a permission, or impersonate controller news. Messages and files enter the receiving hidden controller as news under its local readiness and wake rules; they create no work request and need no local Dispatcher work turn first.
+
+`offer_handoff_to_remote_dispatcher` delegates to `offer_handoff` with a machine-qualified Dispatcher target. This is the normal Handoff agreement and its own `handoff.offer` permission, including its normal Ask first approval, rather than a `hand_off_request` subtask. Connected agents default to Ask first on this target; the Dispatcher keeps the Handoff system's normal Ask first default. No agreement is accepted automatically. The receiver responds explicitly through `respond_to_handoff`; the original sending agent reads the same agreement id with `get_handoff` and receives labelled lifecycle notices. The source Dispatcher sees a linked local memory record and timeline entry. That copy grants it no Handoff participant rights and does not settle a Dispatcher work request.

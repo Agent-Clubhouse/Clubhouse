@@ -1,4 +1,4 @@
-import { federationDirection } from '../../dispatcher-federation-policy';
+import { federationMessageDirection } from '../../dispatcher-federation-policy';
 import { dispatcherProviderControl } from '../../dispatcher-provider-control';
 /**
  * Agent-to-Agent MCP Tools — allows linked agents to communicate.
@@ -224,10 +224,10 @@ export function registerAgentTools(): void {
       };
       const remote = currentRemoteCaller();
       const publication = remote?.machineId ? captureControllerPublication(remote.machineId) : undefined;
-      const receiverAdmission = () => !!publication?.current() && isDispatcherEnabled() && !!remote && !!federationDirection(
+      const receiverAdmission = () => !!publication?.current() && isDispatcherEnabled() && !!remote && !!federationMessageDirection(
         { agentId: remote.agentId, machineId: remote.machineId }, { agentId: targetId },
       );
-      const receiverWake = isDispatcherTarget(targetId) && !!remote && !!federationDirection(
+      const receiverWake = isDispatcherTarget(targetId) && !!remote && !!federationMessageDirection(
         { agentId: remote.agentId, machineId: remote.machineId }, { agentId: targetId },
       );
       const notReady = remoteInputPreflight(targetId, receiverWake);
@@ -512,10 +512,15 @@ export function registerAgentTools(): void {
       const filename = path.basename(rawFilename);
 
       const reg = agentRegistry.get(targetId);
-      if (!reg) {
+      const remote = currentRemoteCaller();
+      const publication = remote?.machineId ? captureControllerPublication(remote.machineId) : undefined;
+      const receiverAdmission = () => !!publication?.current() && isDispatcherEnabled() && !!remote && !!federationMessageDirection(
+        { agentId: remote.agentId, machineId: remote.machineId }, { agentId: targetId });
+      const receiverWake = isDispatcherTarget(targetId) && !!remote && receiverAdmission();
+      if (!reg && !isDispatcherTarget(targetId)) {
         return sleepingError(agentId, targetId, 'sending files');
       }
-      const notReady = remoteInputPreflight(targetId);
+      const notReady = remoteInputPreflight(targetId, receiverWake);
       if (notReady) return notReady;
 
       const { senderName, senderLabel, targetName } = senderOf(agentId, targetId);
@@ -523,6 +528,16 @@ export function registerAgentTools(): void {
       try {
         const filePath = await writeMessageFile(taskId, content);
         scheduleMessageCleanup(filePath);
+
+        if (isDispatcherTarget(targetId)) {
+          const tagged = buildTaggedMessage(agentId, targetId, `File delivered: ${filePath}. Filename hint: ${JSON.stringify(filename)}. Read this file for content from ${senderLabel}.`, taskId);
+          const delivery = await deliverToDispatcher({ senderId: agentId, targetId, targetName, text: tagged.text, routed: tagged.routed,
+            taskId, submit: true, toolName: 'send_file', args, ...(receiverWake && { wakeAsReceiver: true, admission: receiverAdmission }) });
+          if (delivery.delivered === false) return remoteDelivery({ content: [{ type: 'text', text: delivery.text }], isError: true },
+            receiverWake && !receiverAdmission() ? 'refused' : 'retry_later', receiverWake && !receiverAdmission() ? 'authorization_revoked' : 'target_not_ready');
+          return remoteInputReceipt({ content: [{ type: 'text', text: `File delivered to ${targetName}. task_id=${taskId}, path=${filePath}` }] }, delivery.delivery ? { delivery: delivery.delivery } : undefined);
+        }
+        if (!reg) return sleepingError(agentId, targetId, 'sending files');
 
         appLog('core:mcp', 'info', 'send_file: file written', {
           meta: { sourceAgent: agentId, targetAgent: targetId, taskId, filePath, contentLength: content.length },

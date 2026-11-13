@@ -13,9 +13,12 @@
 import { createSettingsStore, type SettingsCommitPrecondition } from './settings-store';
 import { normalizeGrantChanges, type AgentGrantChanges } from '../../shared/agent-grant-changes';
 import { notifyToolGateChange } from './clubhouse-mcp/orchestration-gate';
+import { randomUUID } from 'crypto';
 
 interface AgentGrantsFile {
   agents: Record<string, AgentGrantChanges>;
+  /** Remains after reset so a removed permission cannot resurrect a queued one-time approval. */
+  revisions?: Record<string, string>;
 }
 
 // Audited like other settings a person changes (#2973): which agents' permissions changed, not the targets (they can name project paths).
@@ -27,6 +30,7 @@ export function getAgentGrantChanges(agentId: string): AgentGrantChanges | undef
   if (!agents || typeof agents !== 'object' || !Object.prototype.hasOwnProperty.call(agents, agentId)) return undefined;
   return normalizeGrantChanges(agents[agentId]);
 }
+export function getAgentGrantRevision(agentId: string): string { return store.get().revisions?.[agentId] ?? 'legacy'; }
 
 /** Every agent with saved changes: for finding who holds a grant on one target (#3360). */
 export function listAgentsWithGrantChanges(): string[] {
@@ -47,7 +51,7 @@ export async function updateAgentGrantChanges(
     next = normalizeGrantChanges(fn(current));
     if (next) agents[agentId] = next;
     else delete agents[agentId];
-    return { agents };
+    return { agents, revisions: { ...file.revisions, [agentId]: randomUUID() } };
   }, precondition);
   // The next call is checked against it; the CLI lists its tools again.
   notifyToolGateChange(agentId);

@@ -183,7 +183,7 @@ function isGrantTarget(t: unknown): t is GrantTarget {
   if (!t || typeof t !== 'object') return false;
   const target = t as { kind?: unknown; project?: unknown; role?: unknown };
   switch (target.kind) {
-    case 'self': case 'parent': case 'my_helpers': case 'created_by_me': case 'connected': case 'group_members': case 'app': case 'any':
+    case 'remote_dispatcher': case 'self': case 'parent': case 'my_helpers': case 'created_by_me': case 'connected': case 'group_members': case 'app': case 'any':
       return true;
     case 'project':
       return target.project === 'own' || target.project === 'any'
@@ -250,9 +250,13 @@ export function grantRows(defaults: readonly Grant[], saved: AgentGrantChanges |
   // Defaults first, then what the template adds, then the person's own additions.
   const entries: Array<{ action: GrantAction; target: GrantTarget; base?: Grant }> = [
     ...defaults.map((g) => ({ action: g.action, target: g.target, base: g })),
+
     // Handoffs are Off unless explicitly granted, but the person still needs rows to turn them on.
     { action: 'handoff.offer', target: { kind: 'any' } },
     { action: 'handoff.accept', target: { kind: 'any' } },
+    // Off still has a row so the person can grant it to an unconnected agent.
+    { action: 'agent.message', target: { kind: 'remote_dispatcher' } },
+    { action: 'handoff.offer', target: { kind: 'remote_dispatcher' } },
     ...[...template.values()].map((c) => ({ action: c.action, target: c.target })),
     ...[...changes.values()].map((c) => ({ action: c.action, target: c.target })),
   ];
@@ -342,6 +346,7 @@ export const GRANT_ACTION_LABELS: Readonly<Record<GrantAction, string>> = {
 export function grantTargetLabel(t: GrantTarget): string {
   switch (t.kind) {
     case 'self': return 'Itself';
+    case 'remote_dispatcher': return "Another machine's Dispatcher";
     case 'parent': return 'Its orchestrator';
     case 'my_helpers': return 'Its helpers';
     case 'created_by_me': return 'Agents it creates in this call';

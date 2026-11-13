@@ -16,6 +16,8 @@ import type { GrantAction } from '../../../shared/agent-grants';
  * project) is what decides which grant covers it.
  */
 export const TOOL_GRANT_TARGETS = [
+  /** A pinned remote Dispatcher selected by machine name. */
+  'remote_dispatcher',
   /**
    * The target of the wire the tool is called through: the agent, browser
    * widget or group project the template tool was generated for.

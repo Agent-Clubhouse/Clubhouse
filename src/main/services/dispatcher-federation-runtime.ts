@@ -7,13 +7,15 @@ import { getIdentity } from './annex-identity';
 import { ownPairing } from './annex-network-membership';
 import { listPeers } from './annex-peers';
 import { controllerDirection, remoteFederationController } from './dispatcher-federation';
-import { setFederationRequestRouter } from './dispatcher-federation-policy';
+import { setFederationHandoffObserver, setFederationRequestRouter } from './dispatcher-federation-policy';
 import { createFederatedRequests, createFederationRequestStore, FederationInputNotReady, type FederatedRequests } from './dispatcher-federation-requests';
 import { dispatcherDisplayName, getDispatcherAgentId, isDispatcherEnabled } from './dispatcher/dispatcher-service';
 import { beginRemoteRequest, getRequest, getRequests, noteHandedOff, settleFederatedRequest, workTurnMark } from './dispatcher/dispatcher-requests';
 import { deliverToDispatcher } from './clubhouse-mcp/tools/dispatcher-delivery';
 import { deliverToChat } from './dispatcher/dispatcher-channel';
 import { appendTimeline } from './dispatcher/dispatcher-memory-timeline';
+import { recordFederationHandoff } from './dispatcher-federation-handoffs';
+import { remoteDispatcherLabelFor } from './dispatcher-presence';
 import { appLog } from './log-service';
 import type { McpToolResult } from './clubhouse-mcp/types';
 
@@ -33,8 +35,13 @@ export function startFederatedRequests(): () => void {
       return active && guard.current() && isDispatcherEnabled() && guard.epoch.sender === epoch.sender && guard.epoch.receiver === epoch.receiver
         && !!controllerDirection({ agentId: getDispatcherAgentId() ?? '' }, { agentId: agent, machineId: machine });
     },
+    authorizedNews: (machine, epoch) => {
+      const guard = captureControllerPublication(machine);
+      return active && guard.current() && guard.epoch.sender === epoch.sender && guard.epoch.receiver === epoch.receiver;
+    },
     send: async (callerId, machine, targetId, envelope, cause, key) => {
       let deliveryId = '';
+      if (envelope.kind === 'pause') targetId = remoteFederationController(machine)?.agentId ?? targetId;
       const reply = await forwardPreparedAgentCall(callerId, formatAgentAddress({ agentId: targetId, machine }), 'Dispatcher', 'hand_off_request',
         { envelope, idempotency_key: key }, Date.now(), cause, (id) => { deliveryId = id; });
       return { deliveryId, ...(reply.isError && { error: messageOf(reply) }) };
@@ -53,7 +60,7 @@ export function startFederatedRequests(): () => void {
         const guard = captureControllerPublication(r.machineId);
         const remoteAgent = kind === 'reply' ? r.targetId : r.origin.agentId;
         const peerName = listPeers().find((p) => p.fingerprint.toLowerCase() === r.machineId)?.alias ?? r.machineId;
-        const sender = kind === 'reply' ? `${remoteFederationController(r.machineId)?.name ?? 'Dispatcher'} on ${peerName}` : origin;
+        const sender = kind === 'reply' ? remoteDispatcherLabelFor(r.machineId) ?? `${remoteFederationController(r.machineId)?.name ?? 'Dispatcher'} on ${peerName}` : origin;
         const local = kind === 'triage' ? await beginRemoteRequest(r.localRequestId, r.text, { ...r.origin, originRequestId: r.originRequestId }) : getRequest(r.localRequestId);
         const text = kind === 'reply' ? `[REMOTE REPLY:${r.id}:${r.receivedRevision}] From ${sender}. Your local request ${r.localRequestId}; remote subtask outcome ${r.outcome}. `
           + 'Triage this result under your local grants: continue the parent task now, hold it for check-in, or ask the person here. '
@@ -91,6 +98,11 @@ export function startFederatedRequests(): () => void {
       ATTR.federationTarget(`${r.direction === 'incoming' ? getIdentity()?.fingerprint.toLowerCase() : r.machineId}/${r.targetId}`), ATTR.federationDelivery(r.delivery), ATTR.federationOutcome(r.outcome), ATTR.federationEvent(event), ATTR.federationTriage(r.triage ?? 'pending')]),
   });
   requests = instance;
+  const stopHandoffs = setFederationHandoffObserver(async (record) => {
+    if (active && isDispatcherEnabled() && record.from.machine === getIdentity()?.fingerprint.toLowerCase()) {
+      await recordFederationHandoff(record, remoteDispatcherLabelFor(record.to.machine) ?? `Dispatcher on ${record.to.machine}`);
+    }
+  });
   const stopRouter = setFederationRequestRouter({
     offer: async (callerId, targetId, args) => {
       if (callerId !== getDispatcherAgentId()) return result('Only this controller may hand off a remote request.', true);
@@ -109,7 +121,7 @@ export function startFederatedRequests(): () => void {
     },
     allowed: (machine, args, tool) => instance.allowed(machine, args, tool),
     pauseReason: (machine) => instance.pauseReason(machine),
-    before: async (_caller, machine, target, cause, args, tool) => instance.outgoingNews(machine, target, cause ?? { rootId: '', depth: 0 }, args, tool),
+    before: async (caller, machine, target, cause, args, tool) => instance.outgoingNews(machine, target, cause ?? { rootId: '', depth: 0 }, args, tool, caller),
     cause: (caller) => {
       if (caller !== getDispatcherAgentId()) return undefined;
       const parent = instance.cause();
@@ -122,7 +134,7 @@ export function startFederatedRequests(): () => void {
     appLog('core:dispatcher', 'warn', 'Federated requests could not be reconciled', { meta: { error: err instanceof Error ? err.message : String(err) } });
   }); };
   const timer = setInterval(reconcile, 5_000); timer.unref(); reconcile();
-  return () => { active = false; clearInterval(timer); stopRouter(); if (requests === instance) requests = undefined; };
+  return () => { active = false; clearInterval(timer); stopRouter(); stopHandoffs(); if (requests === instance) requests = undefined; };
 }
 
 export async function receiveFederatedRequest(request: Parameters<DispatcherAgentCallReceiver['receive']>[0]) {

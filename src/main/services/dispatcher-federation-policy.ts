@@ -15,6 +15,13 @@ export function setFederationLookup(value: Lookup): () => void {
 export function federationDirection(from: AgentAddress, to: AgentAddress): ConnectionDirection | undefined {
   return lookup(from, to);
 }
+let messageLookup: Lookup = () => undefined;
+/** News from a member's authorized agent uses that member's controller link. */
+export function federationMessageDirection(from: AgentAddress, to: AgentAddress): ConnectionDirection | undefined { return messageLookup(from, to); }
+export function setFederationMessageLookup(value: Lookup): () => void {
+  messageLookup = value;
+  return () => { if (messageLookup === value) messageLookup = () => undefined; };
+}
 export function assertEditableConnection(from: AgentAddress, to: AgentAddress): void {
   if (federationDirection(from, to)) throw new Error(FEDERATION_READ_ONLY);
 }
@@ -67,4 +74,14 @@ export function federationRequestRouter(): FederationRequestRouter | undefined {
 export function setFederationRequestRouter(router: FederationRequestRouter): () => void {
   requests = router;
   return () => { if (requests === router) requests = undefined; };
+}
+
+/** Agreement visibility does not grant the local controller Handoff participant rights. */
+let handoffObserver: ((record: import('../../shared/handoffs').Handoff) => Promise<void>) | undefined;
+export function setFederationHandoffObserver(observer: NonNullable<typeof handoffObserver>): () => void {
+  handoffObserver = observer;
+  return () => { if (handoffObserver === observer) handoffObserver = undefined; };
+}
+export async function publishFederationHandoff(record: import('../../shared/handoffs').Handoff): Promise<void> {
+  await handoffObserver?.(record);
 }

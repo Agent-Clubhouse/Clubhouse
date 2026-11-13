@@ -87,6 +87,8 @@ export type GrantAction = (typeof GRANT_ACTIONS)[number];
  * - `app`; `any`: every target of the action's kind.
  */
 export type GrantTarget =
+  /** A controller on another computer in this Annex Network, never its visible chat. */
+  | { kind: 'remote_dispatcher' }
   | { kind: 'self' }
   | { kind: 'parent' }
   | { kind: 'my_helpers' }
@@ -143,6 +145,8 @@ export interface GrantCallTarget {
   relations?: ReadonlyArray<'self' | 'parent' | 'my_helper' | 'connected' | 'group_member' | 'created_by_me'>;
   /** The target agent is the Dispatcher. */
   isDispatcher?: boolean;
+  /** Resolved from pinned controller publication, never an argument's label. */
+  remoteDispatcher?: boolean;
   /** The caller's connection to the target agent, on this computer, has Wake it on (#3215). */
   wakeOn?: boolean;
   /** The project the target agent lives in, or the project itself. */
@@ -190,6 +194,7 @@ export function targetCovers(grant: GrantTarget, caller: GrantCaller, target: Gr
   const rel = target.relations ?? [];
   switch (grant.kind) {
     case 'any': return true;
+    case 'remote_dispatcher': return target.kind === 'agent' && target.remoteDispatcher === true;
     case 'self': return rel.includes('self');
     case 'parent': return rel.includes('parent');
     case 'my_helpers': return rel.includes('my_helper');
@@ -206,6 +211,7 @@ export function targetCovers(grant: GrantTarget, caller: GrantCaller, target: Gr
       if (!target.groupRole) return false;
       return grant.role === 'member' || target.groupRole === 'admin';
     case 'project': {
+      if (target.remoteDispatcher) return false;
       if (target.kind !== 'project' && target.kind !== 'agent') return false;
       if (action === 'project.add') {
         // Adding a project: only a project target, and only `any` or that exact folder.

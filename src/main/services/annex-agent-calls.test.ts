@@ -3,6 +3,7 @@ import * as os from 'os';
 import * as path from 'path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { tel } from '../telemetry/facade';
+import { setFederationMessageLookup, setFederationRequestRouter } from './dispatcher-federation-policy';
 
 const state = vi.hoisted(() => ({ base: '', pairing: 'self-epoch', peerPairing: 'peer-epoch', thirdRole: 'satellite' as 'member' | 'satellite', localMachine: Array(16).fill('aa').join(':') }));
 const SELF = Array(16).fill('aa').join(':');
@@ -20,7 +21,7 @@ vi.mock('./annex-peers', () => ({ listPeers: () => [
 state.base = fs.mkdtempSync(path.join(os.tmpdir(), 'annex-agent-calls-'));
 
 import {
-  AGENT_CALL_VERSION, LOOP_LIMIT, RATE_LIMIT, currentRemoteCaller, captureControllerPublication, forwardAgentCall, receiveAgentCall, receiveDirections,
+  AGENT_CALL_VERSION, LOOP_LIMIT, RATE_LIMIT, currentRemoteCaller, captureControllerPublication, forwardAgentCall, forwardPreparedAgentCall, receiveAgentCall, receiveDirections,
   remoteAgentName, shareForAnswer, startAgentCalls, _clearOutboxForTesting, syncDirectionsWith, federationExtraForShare, waitingFor, flushOutbox, isNetworkComputer, getDelivery, type AgentCallTransport, type RemoteCaller,
 } from './annex-agent-calls';
 import { createAnnexDeliveryStore, DELIVERY_MAX_AGE_MS, type AnnexDeliveryStore, type DeliveryFile } from './annex-delivery-store';
@@ -523,6 +524,45 @@ describe('durable receipts and crash boundaries (#3334)', () => {
     expect(textOf(await forwardAgentCall('here', `there@${OTHER}`, 'Far agent', 'send_message', { ...args, message: 'changed' }))).toContain('idempotency_conflict');
     expect(getDelivery('here', id)).toMatchObject({ state: 'delivered', attempts: 1 });
     expect(getDelivery('someone-else', id)).toBeUndefined();
+  });
+
+  it('dedupes project-agent news before creating a causal root and retains its context after delivery and restart', async () => {
+    const restoreLookup = setFederationMessageLookup((from, to) => ({ from, to, disabledTools: [], updatedAt: new Date().toISOString(), link: { createdAt: new Date().toISOString() } }));
+    const before = vi.fn(async (_caller: string, _machine: string, _target: string, _context: import('../../shared/annex-delivery').AnnexCallContext | undefined) => {});
+    const restoreRouter = setFederationRequestRouter({ before, allowed: () => true, cause: () => undefined, offer: async () => ok('unused') });
+    const direct = { authorization: { policyHash: 'approved' }, current: () => true };
+    const args = { message: 'once from a project agent', idempotency_key: 'direct-news-key' };
+    try {
+      const first = await forwardPreparedAgentCall('here', `there@${OTHER}`, 'Remote Dispatcher', 'send_message', args, now, undefined, undefined, direct);
+      const sent = posts.find((p) => p.path.endsWith('agent-call'))!.body;
+      expect(waitingFor(OTHER)).toHaveLength(0);
+      restart();
+      const prepared = vi.fn();
+      expect(await forwardPreparedAgentCall('here', `there@${OTHER}`, 'Remote Dispatcher', 'send_message', args, now, { rootId: 'a-later-root', depth: 2 }, prepared, direct)).toEqual(first);
+      expect(prepared).toHaveBeenCalledWith(sent.callId);
+      expect(posts.filter((p) => p.path.endsWith('agent-call'))).toHaveLength(1);
+      expect(before).toHaveBeenCalledTimes(1);
+      expect(before.mock.calls[0][3]).toEqual(sent.context);
+      expect(getDelivery('here', sent.callId as string)).not.toHaveProperty('context');
+      const conflict = await forwardPreparedAgentCall('here', `there@${OTHER}`, 'Remote Dispatcher', 'send_message', { ...args, message: 'changed' }, now, undefined, undefined, direct);
+      expect(conflict.isError).toBe(true);
+      expect(textOf(conflict)).toContain('idempotency_conflict');
+      expect(posts.filter((p) => p.path.endsWith('agent-call'))).toHaveLength(1);
+    } finally { restoreRouter(); restoreLookup(); }
+  });
+
+  it('keeps keyed queued news in one slot with its first causal context', async () => {
+    connected = false;
+    const args = { message: 'queued once', idempotency_key: 'queued-context' };
+    const original = { rootId: 'original-root', depth: 2, parentId: 'parent' };
+    await forwardAgentCall('here', `there@${OTHER}`, 'Far agent', 'send_message', args, now, original);
+    restart();
+    await forwardAgentCall('here', `there@${OTHER}`, 'Far agent', 'send_message', args, now, { rootId: 'new-root', depth: 0 });
+    expect(waitingFor(OTHER)).toHaveLength(1);
+    expect(waitingFor(OTHER)[0].body.context).toEqual(original);
+    const changed = await forwardAgentCall('here', `there@${OTHER}`, 'Far agent', 'send_message', { ...args, message: 'new content' }, now);
+    expect(changed.isError).toBe(true);
+    expect(textOf(changed)).toContain('idempotency_conflict');
   });
 
   it('resends the same id after sender crashes after 200 but before removal, preserving order', async () => {

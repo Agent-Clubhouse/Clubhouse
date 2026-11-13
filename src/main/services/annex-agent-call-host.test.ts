@@ -10,6 +10,7 @@ const mocks = vi.hoisted(() => ({
     readTranscript: ReturnType<typeof vi.fn>; sendMessage: ReturnType<typeof vi.fn>;
   },
   records: new Map<string, ActionRun>(), record: vi.fn(), ready: true,
+  permissionHash: 'approved',
 }));
 vi.mock('./agent-grants-service', () => ({ effectiveAgentGrants: async () => mocks.grants }));
 vi.mock('./agent-registry', () => ({ agentRegistry: { get: () => undefined } }));
@@ -22,6 +23,8 @@ vi.mock('./dispatcher/dispatcher-service', () => ({ getDispatcherState: () => ({
 vi.mock('./project-store', () => ({ peekProjects: async () => [{ path: '/project' }] }));
 vi.mock('./agent-runtime', () => ({ getAgentRuntime: () => mocks.runtime }));
 vi.mock('./actions', () => ({ actionsReady: () => mocks.ready, recordExternalRun: mocks.record }));
+vi.mock('./dispatcher-federation-policy', () => ({ federationMessageDirection: () => mocks.link ? {} : undefined, federationRequestRouter: () => undefined }));
+vi.mock('./dispatcher-remote-permissions', () => ({ remoteDispatcherPermissionHash: () => mocks.permissionHash }));
 
 import { authorizeQueuedAnnexCall, reportAnnexDeliveryFailure } from './annex-agent-call-host';
 
@@ -37,11 +40,25 @@ const notice = {
 beforeEach(() => {
   vi.clearAllMocks(); mocks.records.clear(); mocks.runtime = undefined; mocks.ready = true;
   mocks.link = true; mocks.disabled = []; mocks.disposed = false;
+  mocks.permissionHash = 'approved';
   mocks.grants = [{ action: 'agent.message', target: { kind: 'connected' }, mode: 'allow' }];
   mocks.record.mockImplementation(async (run: ActionRun) => { mocks.records.set(run.id, run); });
 });
 
 describe('durable Annex host integration', () => {
+  it('retains an admitted Ask-first remote send across recovery, but never an off or changed grant', async () => {
+    const direct = { ...item, remoteDispatcherAuthorization: { policyHash: 'approved' } };
+    mocks.grants = [{ action: 'agent.message', target: { kind: 'remote_dispatcher' }, mode: 'ask' }];
+    expect(await authorizeQueuedAnnexCall(direct)).toEqual({ allowed: true });
+    mocks.permissionHash = 'changed';
+    expect(await authorizeQueuedAnnexCall(direct)).toMatchObject({ allowed: false });
+    mocks.permissionHash = 'approved'; mocks.grants = [];
+    expect(await authorizeQueuedAnnexCall(direct)).toMatchObject({ allowed: false });
+    mocks.grants = [{ action: 'agent.message', target: { kind: 'remote_dispatcher' }, mode: 'allow' }]; mocks.link = false;
+    expect(await authorizeQueuedAnnexCall(direct)).toMatchObject({ allowed: false });
+    mocks.link = true;
+    expect(await authorizeQueuedAnnexCall({ ...direct, body: { ...item.body, tool: 'wake_agent' } })).toMatchObject({ allowed: false });
+  });
   it('uses a sleeping sender saved permissions and rechecks removed links/tools and Ask-first grants', async () => {
     expect(await authorizeQueuedAnnexCall(item)).toEqual({ allowed: true });
     mocks.link = false;

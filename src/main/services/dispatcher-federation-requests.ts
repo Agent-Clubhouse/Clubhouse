@@ -75,6 +75,7 @@ export interface FederationRequestDependencies {
   self(): { machineId: string; machineName: string; agentId: string; agentName: string };
   /** Both pairing epochs and the derived controller direction must still match. */
   authorized(machine: string, agentId: string, epoch: AnnexDeliveryEpoch): boolean;
+  authorizedNews?(machine: string, epoch: AnnexDeliveryEpoch): boolean;
   epoch(machine: string): AnnexDeliveryEpoch;
   send(callerId: string, machine: string, targetId: string, envelope: FederationRequestEnvelope, cause: AnnexCallContext, key: string): Promise<{ deliveryId: string; error?: string }>;
   flush?(machine: string): Promise<void>;
@@ -102,7 +103,8 @@ export function parseFederationEnvelope(raw: unknown): FederationRequestEnvelope
 }
 
 export function createFederatedRequests(d: FederationRequestDependencies) {
-  const current = (r: FederatedRequest) => d.authorized(r.machineId, r.direction === 'incoming' ? r.origin.agentId : r.targetId, r.epoch);
+  const current = (r: FederatedRequest) => !r.localRequestId && d.authorizedNews ? d.authorizedNews(r.machineId, r.epoch)
+    : d.authorized(r.machineId, r.direction === 'incoming' ? r.origin.agentId : r.targetId, r.epoch);
   const read = (id: string) => d.store.get().requests.find((r) => r.id === id);
   const replace = async (id: string, change: (r: FederatedRequest, file: FederationRequestFile) => void, guard?: () => boolean) => {
     await d.store.update((file) => {
@@ -271,10 +273,10 @@ export function createFederatedRequests(d: FederationRequestDependencies) {
       const updated = await replace(found.id, (r) => { r.duplicates++; });
       d.record(updated, 'duplicate');
     },
-    async outgoingNews(machine: string, targetId: string, cause: AnnexCallContext, args: Record<string, unknown>, tool = 'send_message') {
+    async outgoingNews(machine: string, targetId: string, cause: AnnexCallContext, args: Record<string, unknown>, tool = 'send_message', callerId = d.self().agentId) {
       if (tool === 'hand_off_request' && parseFederationEnvelope(args.envelope)) return this.crossing(machine, cause, args, tool);
       const sample: FederatedRequest = {
-        id: cause.rootId, direction: 'outgoing', callerId: d.self().agentId, machineId: machine, targetId, origin: d.self(), originRequestId: cause.rootId,
+        id: cause.rootId, direction: 'outgoing', callerId, machineId: machine, targetId, origin: { ...d.self(), agentId: callerId, ...(callerId !== d.self().agentId && { agentName: callerId }) }, originRequestId: cause.rootId,
         localRequestId: '', text: '', cause, epoch: d.epoch(machine), createdAt: d.now(), expiresAt: d.now() + FEDERATED_REQUEST_LIMITS.ttl,
         delivery: 'accepted', outcome: 'under_way', revision: 0, receivedRevision: 0, duplicates: 0,
       };

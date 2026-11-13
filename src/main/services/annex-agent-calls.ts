@@ -22,7 +22,7 @@ import { federationRequestRouter } from './dispatcher-federation-policy';
  *   back; reads say it's offline; other calls are refused (D235).
  */
 
-import { FEDERATION_TOOLS, federationDirection, federationStatus, type FederationPublicationGuard } from './dispatcher-federation-policy';
+import { FEDERATION_TOOLS, federationDirection, federationMessageDirection, federationStatus, type FederationPublicationGuard } from './dispatcher-federation-policy';
 import { AsyncLocalStorage } from 'async_hooks';
 import { randomUUID } from 'crypto';
 import { tel } from '../telemetry/facade';
@@ -223,7 +223,7 @@ export function agentDeliveryCapabilities(): { deliveryVersion: 1; receiptBounda
 export function getDelivery(callerId: string, callId: string): AnnexDeliveryStatus | undefined {
   const found = deliveries.get().deliveries.find((r) => r.callId === callId && r.callerId === callerId);
   if (!found) return undefined;
-  const { payloadHash: _hash, result: _result, failureNotified: _notified, ...status } = found;
+  const { payloadHash: _hash, result: _result, failureNotified: _notified, context: _context, ...status } = found;
   return status;
 }
 
@@ -238,7 +238,8 @@ export async function forwardAgentCall(callerId: string, targetId: string, targe
 }
 
 /** Main-only transport entry. A model never supplies the causal context or prepared envelope. */
-export async function forwardPreparedAgentCall(callerId: string, targetId: string, targetName: string, tool: string, args: Record<string, unknown>, now = Date.now(), context?: AnnexCallContext, prepared?: (id: string) => void): Promise<McpToolResult> {
+export async function forwardPreparedAgentCall(callerId: string, targetId: string, targetName: string, tool: string, args: Record<string, unknown>, now = Date.now(), context?: AnnexCallContext, prepared?: (id: string) => void,
+  direct?: { authorization: { policyHash: string }; current(): boolean }): Promise<McpToolResult> {
   const { agentId: to } = parseAgentAddress(targetId);
   const machine = remoteMachineOf(targetId);
   const self = selfFingerprint();
@@ -248,22 +249,27 @@ export async function forwardPreparedAgentCall(callerId: string, targetId: strin
   if (context !== undefined && !validContext(context)) return text('The trusted Annex causal context is invalid or exceeds its depth limit.', true);
   args = structuredClone(args);
   if (context) context = structuredClone(context);
-  const controllerLink = federationDirection({ agentId: callerId }, { agentId: to, machineId: machine });
+  const controllerLink = federationDirection({ agentId: callerId }, { agentId: to, machineId: machine })
+    ?? (direct && ['send_message', 'send_file'].includes(tool) ? federationMessageDirection({ agentId: callerId }, { agentId: to, machineId: machine }) : undefined);
+  if (direct && (!controllerLink || !direct.current())) return text('The remote Dispatcher or sender permission changed before delivery.', true);
   if (controllerLink && !FEDERATION_TOOLS.has(tool)) return text('That tool is fixed off on controller connections.', true);
   const controllerStatus = controllerLink && federationStatus({ agentId: callerId }, { agentId: to, machineId: machine });
   if (controllerStatus && controllerStatus.state === 'unavailable') return text(controllerStatus.reason, true);
-  if (controllerLink && LOOP_TOOLS.has(tool)) {
-    context ??= { rootId: randomUUID(), depth: 0 };
-    try { await federationRequestRouter()?.before(callerId, machine, to, context, args, tool); }
-    catch (err) { return text(err instanceof Error ? err.message : String(err), true); }
+  if (args.idempotency_key !== undefined && (typeof args.idempotency_key !== 'string' || !args.idempotency_key.trim() || args.idempotency_key.length > 200)) {
+    return text('idempotency_key must be a non-empty string of at most 200 characters.', true);
   }
-  const sender = await describe(callerId);
   const epoch = outgoingEpoch(machine);
+  // The caller's key identifies admission before a new causal root is created.
+  // Keep the first context in the ledger even after its outbox entry is removed.
+  const callId = QUEUED_TOOLS.has(tool) && (args.idempotency_key !== undefined || args.task_id !== undefined)
+    ? deliveryHash([self, callerId, machine, to, tool, args.idempotency_key ?? args.task_id, epoch])
+    : randomUUID();
+  const previous = QUEUED_TOOLS.has(tool) ? deliveries.get().deliveries.find((r) => r.callId === callId) : undefined;
+  context = previous?.context ?? deliveries.get().outbox.find((item) => item.id === callId)?.body.context ?? context ?? { rootId: callId, depth: 0 };
+  const sender = await describe(callerId);
   const body: AgentCallBody = {
     v: AGENT_CALL_VERSION,
-    callId: QUEUED_TOOLS.has(tool) && (args.idempotency_key !== undefined || args.task_id !== undefined)
-      ? deliveryHash([self, callerId, machine, to, tool, args.idempotency_key ?? args.task_id, context?.rootId, epoch])
-      : randomUUID(),
+    callId,
     from: { agentId: callerId, name: nameOfLocalSender?.(callerId) ?? sender?.name ?? callerId, ...(sender?.projectName && { projectName: sender.projectName }) },
     to,
     tool,
@@ -271,17 +277,18 @@ export async function forwardPreparedAgentCall(callerId: string, targetId: strin
     epoch,
   };
   body.context = context ?? { rootId: body.callId, depth: 0 };
-  if (args.idempotency_key !== undefined && (typeof args.idempotency_key !== 'string' || !args.idempotency_key.trim() || args.idempotency_key.length > 200)) {
-    return text('idempotency_key must be a non-empty string of at most 200 characters.', true);
-  }
   if (Buffer.byteLength(JSON.stringify(body)) > AGENT_CALL_MAX_BYTES) return text('That is too large to send to another computer. Send a shorter message, or a file it can read there.', true);
 
   if (QUEUED_TOOLS.has(tool)) {
-    const previous = deliveries.get().deliveries.find((r) => r.callId === body.callId);
     if (previous) {
       if (previous.payloadHash !== payloadHash(body)) return text('idempotency_conflict: this delivery key already names different content. Use a new key for a new message.', true);
+      prepared?.(previous.callId);
       return previous.result ?? queuedResult(body.callId, `Delivery is ${previous.state}${previous.reason ? `: ${previous.reason}` : ''}.`);
     }
+  }
+  if (controllerLink && LOOP_TOOLS.has(tool)) {
+    try { await federationRequestRouter()?.before(callerId, machine, to, context, args, tool); }
+    catch (err) { return text(err instanceof Error ? err.message : String(err), true); }
   }
   // Counted here too, so the limit holds for messages both ways (D233).
   if (LOOP_TOOLS.has(tool) && !hit(pairKey({ machine: self, agentId: callerId }, { machine, agentId: to }), LOOP_LIMIT.windowMs, LOOP_LIMIT.messages, now)) return text(LOOP_MESSAGE, true);
@@ -289,7 +296,7 @@ export async function forwardPreparedAgentCall(callerId: string, targetId: strin
     // Behind what's already waiting for that machine, so messages keep their order.
     const online = transport.connected(machine);
     const behind = waitingFor(machine).length > 0;
-    await queue(machine, body, targetId);
+    await queue(machine, body, targetId, direct);
     // A prepared id is useful only after durable admission actually exists.
     prepared?.(body.callId);
     if (online && !behind) {
@@ -321,7 +328,7 @@ async function send(machine: string, body: AgentCallBody, machineName: string): 
   }
 }
 
-async function queue(machine: string, body: AgentCallBody, targetId: string): Promise<void> {
+async function queue(machine: string, body: AgentCallBody, targetId: string, direct?: { authorization: { policyHash: string }; current(): boolean }): Promise<void> {
   await deliveries.update((file) => {
     const existing = file.deliveries.find((r) => r.callId === body.callId);
     if (existing) {
@@ -330,12 +337,12 @@ async function queue(machine: string, body: AgentCallBody, targetId: string): Pr
     }
     if (file.outbox.length >= OUTBOX_MAX_TOTAL || file.outbox.filter((i) => i.machine === machine).length >= OUTBOX_MAX_PER_MACHINE) throw new Error('Too many messages are already waiting. Retry after earlier deliveries finish.');
     const queuedAt = new Date().toISOString();
-    file.outbox.push({ id: body.callId, machine, body, queuedAt });
+    file.outbox.push({ id: body.callId, machine, body, queuedAt, ...(direct && { remoteDispatcherAuthorization: direct.authorization }) });
     file.deliveries.push({
       callId: body.callId, callerId: body.from.agentId, targetId, tool: body.tool,
-      state: 'queued', queuedAt, updatedAt: queuedAt, attempts: 0, payloadHash: payloadHash(body),
+      state: 'queued', queuedAt, updatedAt: queuedAt, attempts: 0, payloadHash: payloadHash(body), context: body.context,
     });
-  });
+  }, Date.now(), direct && { prepare: async () => {}, check: () => { if (!direct.current()) throw new Error('The remote Dispatcher or sender permission changed before durable admission.'); } });
 }
 
 /** Messages waiting for `machine`, in the order they were sent. */

@@ -27,7 +27,7 @@ function factsOf(agentId: string, config: DurableAgentConfig) {
   const policy = resolveOrchestrationPolicy(config.orchestration, { helper });
   const orchestrates = !dispatcher && policy.orchestrate;
   const crossProject = orchestrates && policy.crossProjectHelpers;
-  return { dispatcher, helper, orchestrates, crossProject, control: policy.control };
+  return { dispatcher, dispatcherConnected: !helper && policy.connectToDispatcher, helper, orchestrates, crossProject, control: policy.control };
 }
 
 /**

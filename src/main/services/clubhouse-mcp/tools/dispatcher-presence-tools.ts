@@ -17,6 +17,6 @@ export function registerDispatcherPresenceTools(): void {
       inputSchema: { type: 'object', properties: {}, required: [] },
     },
     async () => ({ content: [{ type: 'text', text: JSON.stringify(getDispatcherPresence()) }] }),
-    { group: 'dispatcher', grant: { actions: ['agent.read'], target: 'connected' } },
+    { grant: { actions: ['agent.read'], target: 'self' } },
   );
 }

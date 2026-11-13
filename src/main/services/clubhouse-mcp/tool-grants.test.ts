@@ -72,9 +72,9 @@ describe('tool grant declarations (#2967)', () => {
     expect(allowed.filter((v) => v !== 'other' && !names.has(v))).toEqual([]);
   });
 
-  it('only call_wire_tool passes through to the tool it calls', () => {
+  it('only wire delegation and the remote Handoff alias pass through to a separately checked tool', () => {
     const passThrough = registerAll().filter((t) => isToolGrantPassThrough(t.grant)).map((t) => `${t.name}: ${t.grant}`);
-    expect(passThrough).toEqual(['call_wire_tool: called_tool']);
+    expect(passThrough).toEqual(['call_wire_tool: called_tool', 'offer_handoff_to_remote_dispatcher: called_tool']);
   });
 
   it('derives permission disclosures from every declaration, including conditional actions (#3275)', () => {
@@ -160,6 +160,9 @@ describe('tool grant declarations (#2967)', () => {
       report_remote_request: agent.message on self
       list_group_projects: settings.app.read on app
       open_group_project_directory: settings.app.read on app
+      message_remote_dispatcher: agent.message on remote_dispatcher
+      send_file_to_remote_dispatcher: agent.message on remote_dispatcher
+      offer_handoff_to_remote_dispatcher: (called_tool)
       notify_user: user.notify on app
       hand_off: agent.dispose on my_helpers
       dispose_helper: agent.dispose on my_helpers
@@ -186,7 +189,7 @@ describe('tool grant declarations (#2967)', () => {
       connect_orchestrators: connection.manage on agent_arg
       disconnect_orchestrators: connection.manage on agent_arg
       list_orchestrator_controls: agent.read on connected
-      list_other_dispatchers: agent.read on connected
+      list_other_dispatchers: agent.read on self
       list_agent_parts: library.read on library
       get_agent_part: library.read on library
       discover_agent_assets: agent.read on agent_arg

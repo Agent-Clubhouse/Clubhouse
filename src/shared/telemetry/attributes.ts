@@ -570,6 +570,7 @@ export const ATTR = {
     'request_app_update',
     'check_handoff', 'offer_handoff', 'respond_to_handoff', 'get_handoff', 'list_handoffs', 'cancel_handoff',
     'hand_off_request', 'list_remote_requests', 'triage_remote_request', 'report_remote_request',
+    'message_remote_dispatcher', 'send_file_to_remote_dispatcher', 'offer_handoff_to_remote_dispatcher',
     'get_delivery', 'get_annex_network_settings', 'update_annex_network_settings',
     // Dispatcher controls: helper settings and links between agents (#2661, #3248)
     'set_orchestrator_helpers', 'connect_orchestrators', 'disconnect_orchestrators', 'list_orchestrator_controls', 'list_other_dispatchers', 'set_connection_tools',
