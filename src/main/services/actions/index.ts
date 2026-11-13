@@ -56,6 +56,7 @@ import { listDevices } from '../annex-devices';
 import { groupProjectRegistry } from '../group-project-registry';
 import { groupProjectHost } from '../group-project-host';
 import { executeShoulderTap } from '../group-project-shoulder-tap';
+import { groupProjectMay } from '../group-project-roles';
 
 export { ActionError };
 
@@ -335,13 +336,12 @@ function createEngine(): ActionsEngine {
     groupProject: (id) => {
       const project = groupProjectRegistry.getSync(id);
       if (!project || !groupProjectHost.isThisMachine(project.host)) return undefined;
-      const grants = project.metadata.grants as { actions?: unknown; deliver?: unknown; wake?: unknown } | undefined;
       const members = new Set(bindingManager.getAllBindings().filter((binding) => binding.targetKind === 'group-project' && binding.targetId === id).map((binding) => binding.agentId));
       const projectIds = new Set([...members].map(facts.agentProjectId).filter((projectId): projectId is string => !!projectId));
       if (project.scope?.level === 'project') projectIds.add(project.scope.projectId);
       return {
         members, projectIds,
-        actions: grants?.actions !== 'off', deliver: grants?.deliver !== 'off', wake: grants?.wake === 'allow',
+        actions: groupProjectMay(project, 'actions'), deliver: groupProjectMay(project, 'deliver'), wake: groupProjectMay(project, 'wake'),
       };
     },
   });
@@ -430,6 +430,8 @@ async function startActionsNow(): Promise<void> {
   unsubs.push(() => powerMonitor.removeListener('resume', onResume));
   engine.start();
   syncPresence();
+  // A peer may have connected while persisted Actions were still loading.
+  broadcastChanged();
   appLog('core:actions', 'info', 'Actions started', { meta: { count: engine.list().length } });
 }
 

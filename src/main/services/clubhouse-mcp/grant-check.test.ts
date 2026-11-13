@@ -391,6 +391,25 @@ describe('Ask first (#2970)', () => {
   const wire = { binding: { targetKind: 'agent' as const, targetId: 'peer' } };
   const read = { actions: ['agent.read'] as const, target: 'connected' as const };
 
+  it('requires the group Admin grant, including Ask first, for its Actions', async () => {
+    registerActionOwnerLookup((args) => args.id === 'group-action' ? { actionId: 'group-action', groupProjectId: 'gp1' } : undefined);
+    const grants = [
+      { actions: ['action.write'] as const, target: 'action_arg' as const },
+      { actions: ['group_project.admin'] as const, target: 'action_group_project' as const },
+    ];
+    try {
+      expect(checkToolGrant('plain', grants, { id: 'group-action' })).toMatchObject({ ok: false, reason: 'no_grant' });
+      await updateAgentGrantChanges('plain', () => ({ changes: [{ action: 'group_project.admin', target: { kind: 'group_project', id: 'gp1' }, mode: 'ask' }] }));
+      expect(checkToolGrant('plain', grants, { id: 'group-action' })).toMatchObject({ ok: false, reason: 'ask_first', asks: [{ action: 'group_project.admin' }] });
+      await updateAgentGrantChanges('plain', () => ({ changes: [{ action: 'group_project.admin', target: { kind: 'group_project', id: 'gp1' }, mode: 'allow' }] }));
+      expect(checkToolGrant('plain', grants, { id: 'group-action' }).ok).toBe(true);
+      expect(checkToolGrant('plain', grants, { id: 'unknown' }).ok).toBe(false);
+    } finally {
+      registerActionOwnerLookup(null);
+      await updateAgentGrantChanges('plain', () => undefined);
+    }
+  });
+
   it('a permission set to Ask first asks, and the tool stays listed', async () => {
     await updateAgentGrantChanges('plain', () => ({ changes: [{ action: 'agent.read', target: { kind: 'connected' }, mode: 'ask' }] }));
     try {

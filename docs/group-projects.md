@@ -369,6 +369,7 @@ changes; the message a post adds carries that change's sequence number.
 - **Its own grants** are what it does by itself, kept in its record's `metadata.grants`:
   - `deliver`: post notices to members (#3362). On by default.
   - `wake`: a lead's `shoulder_tap` wakes a sleeping member, with the tap as its first message. Off by default.
+  - `actions`: run the group project's Actions. On by default. Message and tap steps also need `deliver`; wake steps need `wake`.
 
   With `wake` off, a tap to a sleeping member reports `not-running` with `refusal: 'group_project_wake_off'`.
 - **Migration.** At startup, each agent in a group project's old `admins` list gets lead and admin (Allow) on it, once: `metadata.rolesMigratedAt` marks it done, so a later change isn't undone.
@@ -377,6 +378,10 @@ changes; the message a post adds carries that change's sequence number.
   - `GroupProjectRolesSection` (for the directory) sets each member's lead and admin (Allow, Ask first, Off) and the group project's own grants.
   - The canvas card's star sets lead.
   - IPC: `GROUP_PROJECT.GET_ROLES`, `SET_ROLE`, `SET_OWN_GRANT`.
+
+## Group project Actions (#3361)
+
+A person or an agent with the group's Admin grant can create Actions owned by the group. They run on its authoritative host under its own grants and survive removal of their creator. Settings > Actions and the group project directory list them; peers see read-only summaries labeled with the host computer. Scheduled and one-time Actions use the normal Actions catch-up rules. Board triggers can watch a topic, membership changes, or a quiet board, with the usual coalescing rules. Deleting the group project includes its Actions in the impact preview and removes them during the recoverable delete cascade (#3364).
 
 ## Local directory
 

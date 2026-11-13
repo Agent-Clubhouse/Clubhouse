@@ -30,16 +30,16 @@ export const ROLE_ACTION: Readonly<Record<GroupProjectRole, GrantAction>> = {
 };
 
 /** What a group project does by itself, and whether it may. */
-export type GroupProjectOwnGrant = 'deliver' | 'wake';
+export type GroupProjectOwnGrant = 'deliver' | 'wake' | 'actions';
 export type GroupProjectOwnGrants = Record<GroupProjectOwnGrant, 'allow' | 'off'>;
 
-export const DEFAULT_OWN_GRANTS: Readonly<GroupProjectOwnGrants> = { deliver: 'allow', wake: 'off' };
+export const DEFAULT_OWN_GRANTS: Readonly<GroupProjectOwnGrants> = { deliver: 'allow', wake: 'off', actions: 'allow' };
 
 /** A group project's own grants: its saved ones over the defaults. */
 export function ownGrantsOf(gp: Pick<GroupProject, 'metadata'>): GroupProjectOwnGrants {
   const saved = gp.metadata?.grants as Partial<Record<GroupProjectOwnGrant, unknown>> | undefined;
   const pick = (k: GroupProjectOwnGrant): 'allow' | 'off' => (saved?.[k] === 'allow' || saved?.[k] === 'off' ? saved[k] as 'allow' | 'off' : DEFAULT_OWN_GRANTS[k]);
-  return { deliver: pick('deliver'), wake: pick('wake') };
+  return { deliver: pick('deliver'), wake: pick('wake'), actions: pick('actions') };
 }
 
 /** Whether the group project may do this by itself. */

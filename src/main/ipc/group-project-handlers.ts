@@ -93,7 +93,7 @@ export function registerGroupProjectHandlers(): void {
   ipcMain.handle(IPC.GROUP_PROJECT.SET_OWN_GRANT, withValidatedArgs(
     [stringArg(), stringArg(), stringArg()],
     async (_event, id, grant, mode) => {
-      if (grant !== 'deliver' && grant !== 'wake') throw new Error('Grant must be deliver or wake.');
+      if (grant !== 'deliver' && grant !== 'wake' && grant !== 'actions') throw new Error('Grant must be deliver, wake or actions.');
       if (mode !== 'allow' && mode !== 'off') throw new Error('Mode must be allow or off.');
       await setOwnGrant(id as string, grant, mode);
       return describeGroupProjectRoles(id as string);
