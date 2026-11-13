@@ -47,7 +47,7 @@ import { TruncatedLabel } from '../components/TruncatedLabel';
 import { DISPATCHER_PROJECT_ID } from '../../shared/dispatcher-types';
 import { DispatcherRow, DispatcherWorkRow } from './sidebar/DispatcherRow';
 import { useFollowedLead, useFollowerApprovals } from '../features/dispatcher/leadStore';
-import { approvalLine } from '../features/dispatcher/RemoteApprovals';
+import { dispatcherNeedsYouLine } from '../features/dispatcher/RemoteApprovals';
 import { useDispatcherDebug, useDispatcherWorkOpen } from '../features/dispatcher/dispatcherDebug';
 import { visibleRequestAgentId, isDispatcherAgent, useDispatcherAgentId, useDispatcherStore } from '../features/dispatcher/dispatcherStore';
 import { requestCloseProject } from '../features/projects/close-project';
@@ -494,15 +494,13 @@ export function ChromeSidebar() {
   const followerApprovals = useFollowerApprovals();
   const grantRequests = useMemo(() => {
     const out: Record<string, { message: string; at: number }> = {};
-    for (const [shownId, list] of Object.entries(grantRequestsByAgent(pendingGrants, (id) => visibleRequestAgentId(id, dispatcherState)))) {
+    const byAgent = grantRequestsByAgent(pendingGrants, (id) => visibleRequestAgentId(id, dispatcherState));
+    for (const [shownId, list] of Object.entries(byAgent)) {
       out[shownId] = { message: describeGrantRequests(list), at: Date.parse(list[0].createdAt) || 0 };
     }
     const chatId = dispatcherState?.chatAgentId;
-    if (chatId && !out[chatId] && followerApprovals.length) {
-      const first = followerApprovals[0];
-      const more = followerApprovals.length - 1;
-      out[chatId] = { message: `${approvalLine(first)}${more ? ` (and ${more} more)` : ''}`, at: Date.parse(first.request.requestedAt) || 0 };
-    }
+    const line = chatId ? dispatcherNeedsYouLine(byAgent[chatId] ?? [], followerApprovals) : null;
+    if (chatId && line) out[chatId] = line;
     return out;
   }, [pendingGrants, dispatcherState, followerApprovals]);
   // Needs you covers every host, so a blocked agent anywhere is one click away.

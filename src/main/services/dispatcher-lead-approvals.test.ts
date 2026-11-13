@@ -10,7 +10,7 @@ const h = vi.hoisted(() => ({
 }));
 vi.mock('./log-service', () => ({ appLog: vi.fn() }));
 vi.mock('./dispatcher-federation-lead', () => ({ leadRole: () => h.role }));
-vi.mock('./annex-peers', () => ({ listPeers: () => h.peers }));
+vi.mock('./annex-peers', () => ({ listPeers: () => h.peers, peerNeedsPairing: (p: { needsPairing?: boolean }) => !!p.needsPairing }));
 vi.mock('./annex-client', () => ({
   satelliteKeyFor: (m: string) => (m === 'laptop' ? 'LAPTOP' : undefined),
   isMachineConnected: () => h.connected,
@@ -40,6 +40,9 @@ describe('answering another computer’s request from the lead (#3354)', () => {
     await expect(answerFollowerApproval('laptop', 'gr_1', 'approve')).rejects.toThrow('isn’t an answer');
     await expect(answerFollowerApproval('phone', 'gr_1', 'decline')).rejects.toThrow('isn’t in this Annex Network');
     await expect(answerFollowerApproval('studio', 'gr_1', 'decline')).rejects.toThrow('isn’t in this Annex Network');
+    h.peers = [{ fingerprint: 'LAPTOP', role: 'member', kind: 'desktop', needsPairing: true } as never];
+    await expect(answerFollowerApproval('laptop', 'gr_1', 'decline')).rejects.toThrow('isn’t in this Annex Network');
+    h.peers = [{ fingerprint: 'LAPTOP', role: 'member', kind: 'desktop' }, { fingerprint: 'PHONE', role: 'member', kind: 'phone' }];
     h.connected = false;
     await expect(answerFollowerApproval('laptop', 'gr_1', 'decline')).rejects.toThrow('offline');
     h.connected = true; h.role = 'follower';
@@ -63,5 +66,12 @@ describe('answering another computer’s request from the lead (#3354)', () => {
     expect(callers).toEqual(['ipc/dispatcher-handlers.ts', 'services/dispatcher-lead-approvals.ts']);
     const senders = sources.filter((f) => /\banswerRemoteGrantRequest\(/.test(fs.readFileSync(f, 'utf8'))).map(rel).sort();
     expect(senders).toEqual(['services/annex-client.ts', 'services/dispatcher-lead-approvals.ts']);
+    // The one place this computer sends grant.answer to another, and the renderer's chat commands can't.
+    const client = fs.readFileSync(path.join(root, 'services', 'annex-client.ts'), 'utf8');
+    expect(client.match(/'grant\.answer'/g)).toHaveLength(1);
+    const sender = client.slice(client.indexOf('export function answerRemoteGrantRequest('));
+    expect(sender.slice(0, sender.indexOf('\n}\n')).includes("'grant.answer'")).toBe(true);
+    const chatCommands = client.slice(client.indexOf('export const REMOTE_CHAT_COMMANDS'), client.indexOf('\n', client.indexOf('export const REMOTE_CHAT_COMMANDS')));
+    expect(chatCommands).not.toContain('grant');
   });
 });

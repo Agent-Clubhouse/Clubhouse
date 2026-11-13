@@ -16,7 +16,7 @@
 import { MOBILE_GRANT_ANSWERS } from '../../shared/mobile-control';
 import * as annexClient from './annex-client';
 import { leadRole } from './dispatcher-federation-lead';
-import { listPeers } from './annex-peers';
+import { listPeers, peerNeedsPairing } from './annex-peers';
 import { appLog } from './log-service';
 
 /** Refusals in words, from the computer the request is on. */
@@ -33,7 +33,7 @@ export async function answerFollowerApproval(machine: string, requestId: string,
   if (!(MOBILE_GRANT_ANSWERS as readonly string[]).includes(answer)) throw new Error('That isn’t an answer a request takes.');
   if (leadRole() !== 'lead') throw new Error('Only the lead’s chat answers requests from other computers.');
   const fp = machine.toLowerCase();
-  if (!listPeers().some((p) => p.fingerprint.toLowerCase() === fp && p.role === 'member' && p.kind !== 'phone')) {
+  if (!listPeers().some((p) => p.fingerprint.toLowerCase() === fp && p.role === 'member' && p.kind !== 'phone' && !peerNeedsPairing(p))) {
     throw new Error('That computer isn’t in this Annex Network.');
   }
   const key = annexClient.satelliteKeyFor(fp);

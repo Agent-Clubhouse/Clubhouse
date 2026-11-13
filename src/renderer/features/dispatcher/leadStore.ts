@@ -102,7 +102,8 @@ export function useFollowerApprovals(): FollowerApproval[] {
       const sat = satellites.find((x) => x.fingerprint.toLowerCase() === member.machine && x.state === 'connected');
       for (const request of sat?.snapshot?.grantRequests ?? []) out.push({ machine: member.machine, machineName: member.name, request });
     }
-    return out.length ? out.sort((a, b) => Date.parse(a.request.requestedAt) - Date.parse(b.request.requestedAt)) : NO_APPROVALS;
+    const at = (item: FollowerApproval) => Date.parse(item.request.requestedAt) || 0;
+    return out.length ? out.sort((a, b) => at(a) - at(b)) : NO_APPROVALS;
   }, [state, satellites]);
 }
 

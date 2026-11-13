@@ -325,9 +325,14 @@ the person's message.
 
 On the lead, the Dispatcher chat lists the Ask-first requests waiting on the
 other computers in the network, from each one's snapshot (`grantRequests`),
-oldest first, each as "<computer>: <its Needs you line>" with what allowing
-does. The lead's row in Needs you carries them too. The same requests still
-show on their own computers.
+oldest first, each as "<computer>: <agent> <what it asks>", with its reason,
+its detail, the call's arguments (the first 4,000 characters) and what allowing
+does. The lead's row in Needs you carries them too, counted with its own. The
+same requests still show on their own computers. A row that was answered shows
+"Answered." until that computer's next snapshot drops it.
+
+They show only while the lead's Dispatcher is on: with it off there's no chat
+or row to show them in, so they're answered on their own computers.
 
 - **Answering.** A person's click sends `grant.answer` to that computer over
   the pinned connection (`answerFollowerApproval`, main only), as Needs you
