@@ -127,6 +127,12 @@ describe('group project creation context', () => {
 });
 
 describe('group project card (compact)', () => {
+  it('resolves a retained reference once its group project is available', async () => {
+    const onUpdateMetadata = vi.fn();
+    render(<GroupProjectCanvasWidget widgetId="w" api={{ context: { mode: 'app' }, annex: {} } as never} metadata={{ groupProjectId: 'gp1', __groupProjectReferenceUnresolved: true }} onUpdateMetadata={onUpdateMetadata} size={{ width: 300, height: 600 }} {...({} as never)} />);
+    await waitFor(() => expect(onUpdateMetadata).toHaveBeenCalledWith({ __groupProjectReferenceUnresolved: false }));
+  });
+
   it('switches polling with the shared switch, labelled Polling', async () => {
     renderWidget();
     expect(screen.getByText('2 agents')).toBeInTheDocument();

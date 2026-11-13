@@ -73,6 +73,7 @@ function targetIdentity(view: CanvasView): TargetIdentity | null {
   if (view.type === 'plugin') {
     const widget = (view as PluginCanvasView).pluginWidgetType;
     if (widget === GROUP_PROJECT_WIDGET_TYPE) {
+      if (view.metadata?.__groupProjectReferenceUnresolved) return { unbound: true };
       const groupProjectId = view.metadata?.groupProjectId;
       return typeof groupProjectId === 'string' && groupProjectId ? { kind: 'group-project', id: groupProjectId } : { unbound: true };
     }

@@ -184,6 +184,7 @@ describe('group project ids from another machine (#2071)', () => {
   it('retains an id this machine does not have and defers the wire', () => {
     const result = parseAnyBlueprint(manifest, { agents: [alpha], projects: [], groupProjectIds: new Set(['gp-here']) });
     expect(board(result)?.metadata).toHaveProperty('groupProjectId', 'gp-away');
+    expect(board(result)?.metadata).toHaveProperty('__groupProjectReferenceUnresolved', true);
     expect(result.wires.create).toEqual([]);
     expect(result.wires.deferred).toEqual([expect.objectContaining({ reason: 'target_unbound' })]);
   });

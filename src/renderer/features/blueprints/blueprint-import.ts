@@ -4,6 +4,7 @@
 // agent stub cards that resolve to existing agents or prompt creation.
 
 import type { Agent } from '../../../shared/types';
+import type { CanvasWidgetMetadata } from '../../../shared/plugin-types';
 import type {
   CanvasInstance,
   CanvasView,
@@ -309,7 +310,7 @@ export function importBlueprint(
   existingAgents: Agent[],
   existingProjects: ExistingProject[],
   targetProjectId?: string,
-  _options: ImportOptions = {},
+  options: ImportOptions = {},
 ): ImportResult {
   // 1. Validate
   const validation = validateManifest(manifest);
@@ -371,7 +372,7 @@ export function importBlueprint(
       title: bv.displayName || bv.type,
       displayName,
       zIndex: index,
-      metadata: (bv.metadata || {}) as Record<string, string>,
+      metadata: (bv.metadata || {}) as CanvasWidgetMetadata,
     };
 
     // Resolve project ref for agent views
@@ -431,6 +432,11 @@ export function importBlueprint(
         // Extract plugin info from the type string or metadata
         const pluginWidgetType = (bv.metadata?.pluginWidgetType as string) || bv.type;
         const pluginId = (bv.metadata?.pluginId as string) || bv.type.split(':')[1] || '';
+        const groupProjectId = base.metadata.groupProjectId;
+        if (pluginWidgetType === 'plugin:group-project:group-project' && typeof groupProjectId === 'string' && groupProjectId
+          && options.groupProjectIds && !options.groupProjectIds.has(groupProjectId)) {
+          base.metadata = { ...base.metadata, __groupProjectReferenceUnresolved: true };
+        }
         return {
           ...base,
           type: 'plugin' as const,

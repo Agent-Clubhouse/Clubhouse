@@ -69,6 +69,7 @@ export function GroupProjectCanvasWidget({
     <ProjectView
       groupProjectId={groupProjectId}
       onUpdateMetadata={onUpdateMetadata}
+      referenceUnresolved={metadata.__groupProjectReferenceUnresolved === true}
       isRemote={isRemote}
       satelliteId={satelliteId}
       annex={api.annex}
@@ -224,12 +225,14 @@ function CreationForm({
 function ProjectView({
   groupProjectId,
   onUpdateMetadata,
+  referenceUnresolved,
   isRemote,
   satelliteId,
   annex,
 }: {
   groupProjectId: string;
   onUpdateMetadata: (updates: Record<string, unknown>) => void;
+  referenceUnresolved: boolean;
   isRemote: boolean;
   satelliteId: string | null;
   annex: AnnexAPI;
@@ -241,6 +244,10 @@ function ProjectView({
   useEffect(() => {
     if (!ctx.loaded) void ctx.loadProjects();
   }, [ctx.loaded, ctx.loadProjects]);
+
+  useEffect(() => {
+    if (ctx.project && referenceUnresolved) onUpdateMetadata({ __groupProjectReferenceUnresolved: false });
+  }, [ctx.project, referenceUnresolved, onUpdateMetadata]);
 
   useEffect(() => {
     const el = containerRef.current;
