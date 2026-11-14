@@ -14,6 +14,8 @@ import { usePopouts } from '../../hooks/usePopouts';
 import { PoppedOutPlaceholder } from '../popout/PoppedOutPlaceholder';
 import { useFollowedLead } from './leadStore';
 import { FollowerDispatcherView } from './FollowerDispatcherView';
+import { useRemoteDispatcherSelection } from './remoteDispatcherSelection';
+import { useRemoteProjectStore } from '../../stores/remoteProjectStore';
 
 /**
  * The Dispatcher's own view (#2538): the same agent pane a project agent
@@ -45,6 +47,9 @@ export function DispatcherView() {
   const workOpen = useDispatcherWorkOpen();
   const { findAgentPopout } = usePopouts();
   const followed = useFollowedLead();
+  const remoteId = useRemoteDispatcherSelection((s) => s.agentId);
+  const localSelected = useRemoteDispatcherSelection((s) => s.local);
+  const remoteAgent = useRemoteProjectStore((s) => remoteId ? s.remoteAgents[remoteId] : undefined);
 
   // A false→true change is what moves focus into the terminal (AgentTerminal).
   const [focused, setFocused] = useState(false);
@@ -53,11 +58,15 @@ export function DispatcherView() {
     return () => cancelAnimationFrame(raf);
   }, [agentId]);
 
+  if (remoteId) return remoteAgent
+    ? <AgentRuntimePane key={remoteId} agent={{ ...remoteAgent, executionMode: 'chat' }} terminal={null} canSwitch={false} />
+    : <p role="status">Waiting for the other Dispatcher to connect.</p>;
+
   if (workOpen && state?.agentId) return <DispatcherWorkView agentId={state.agentId} />;
 
   // Following another computer's lead (#3352): its chat, with this computer's kept one click away.
   if (followed && state?.chatAgentId) {
-    return <FollowerDispatcherView lead={followed} localChatId={state.chatAgentId} localName={agent?.name ?? state.config?.name ?? 'Dispatcher'} />;
+    return <FollowerDispatcherView key={localSelected ? 'local' : 'lead'} initialEarlier={localSelected} lead={followed} localChatId={state.chatAgentId} localName={agent?.name ?? state.config?.name ?? 'Dispatcher'} />;
   }
 
   const setupStatus = state?.setup?.status;

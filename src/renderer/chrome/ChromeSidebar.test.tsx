@@ -28,7 +28,9 @@ import { useKeyboardShortcutsStore } from '../stores/keyboardShortcutsStore';
 import { useChromeFlagStore } from './chromeFlag';
 import { useHelperStartRequestStore } from '../stores/helperStartRequestStore';
 import { useAgentDetailsStore } from '../features/agents/details/detailsStore';
+import { useLeadStore, _resetLeadStoreForTesting } from '../features/dispatcher/leadStore';
 import { useDispatcherStore } from '../features/dispatcher/dispatcherStore';
+import { useRemoteDispatcherSelection } from '../features/dispatcher/remoteDispatcherSelection';
 import { useDispatcherDebugStore } from '../features/dispatcher/dispatcherDebug';
 import { useGrantRequestStore } from '../stores/grantRequestStore';
 import { useDispatcherSync } from '../features/dispatcher/useDispatcherSync';
@@ -756,8 +758,8 @@ describe('ChromeSidebar Dispatcher (#2538)', () => {
     useDispatcherStore.getState().setState({ enabled: true, flagOn: true, agentId: 'disp-work', path: 'dispatcher-work-dir', chatAgentId: 'disp', chatPath: 'dispatcher-dir', config: null });
     useAgentStore.setState((s) => ({ agents: { ...s.agents, disp: dispatcher } }));
   };
-  beforeEach(() => useUIStore.setState({ dispatcherOpen: false }));
-  afterEach(() => useDispatcherStore.getState().setState(DISPATCHER_OFF));
+  beforeEach(() => { useUIStore.setState({ dispatcherOpen: false }); useRemoteDispatcherSelection.getState().select(null); });
+  afterEach(() => { useDispatcherStore.getState().setState(DISPATCHER_OFF); _resetLeadStoreForTesting(); });
 
   it('has no row while the Dispatcher is off', () => {
     useAgentStore.setState((s) => ({ agents: { ...s.agents, disp: dispatcher } }));
@@ -790,6 +792,45 @@ describe('ChromeSidebar Dispatcher (#2538)', () => {
     expect(within(screen.getByTestId('agent-list')).queryByTestId('agent-item-disp')).toBeNull();
   });
 
+  it('shows another computer’s Dispatcher beneath this one and opens its chat', async () => {
+    turnOn();
+    const machine = 'fp1';
+    const chat = agent('remote-chat', DISPATCHER_PROJECT_ID, { name: 'Tael', executionMode: 'chat' });
+    const remoteId = namespacedAgentId('s1', chat.id);
+    useAnnexClientStore.setState({ satellites: [{ id: 's1', alias: 'Mini', state: 'connected', fingerprint: machine, icon: '', color: 'blue', host: 'h', mainPort: 1, pairingPort: 2, snapshot: { dispatcher: { agent: chat } }, lastError: null } as never] });
+    useRemoteProjectStore.setState({ remoteAgents: { [remoteId]: { ...chat, id: remoteId, projectId: namespacedProjectId('s1', DISPATCHER_PROJECT_ID) } } });
+    const presence = vi.spyOn(window.clubhouse.dispatcher, 'getPresence').mockResolvedValue({ remotes: [{ machineId: machine, machineName: 'Mini', address: 'work@fp1', dispatcherName: 'Tael', label: 'Tael on Mini', state: 'online', link: { state: 'active' } }] });
+    render(<ChromeSidebar />);
+    const row = await screen.findByRole('button', { name: 'Tael on Mini' });
+    expect(screen.getByTestId('dispatcher-group')).toContainElement(row);
+    expect(screen.queryByTestId('remote-dispatcher-controller')).toBeNull();
+    fireEvent.click(row);
+    expect(useRemoteDispatcherSelection.getState().agentId).toBe(remoteId);
+    expect(useUIStore.getState().dispatcherOpen).toBe(true);
+    act(() => useDispatcherDebugStore.setState({ on: true }));
+    expect(screen.getByTestId('remote-dispatcher-controller')).toHaveTextContent('Dispatcher controller');
+    presence.mockRestore();
+    useDispatcherDebugStore.setState({ on: false });
+  });
+
+  it('keeps a followed lead nested under this computer’s Dispatcher', async () => {
+    turnOn();
+    const chat = agent('remote-chat', DISPATCHER_PROJECT_ID, { name: 'Tael' });
+    useAnnexClientStore.setState({ satellites: [{ id: 's1', alias: 'Mini', state: 'connected', fingerprint: 'fp1', icon: '', color: 'blue', host: 'h', mainPort: 1, pairingPort: 2, snapshot: { dispatcher: { agent: chat } }, lastError: null } as never] });
+    useLeadStore.setState({ state: { available: true, following: true, role: 'follower', lead: { machine: 'fp1', name: 'Mini', self: false, online: true }, choices: [] } as never });
+    const getLead = vi.spyOn(window.clubhouse.dispatcher, 'getLead').mockImplementation(async () => useLeadStore.getState().state!);
+    const presence = vi.spyOn(window.clubhouse.dispatcher, 'getPresence').mockResolvedValue({ remotes: [{ machineId: 'fp1', machineName: 'Mini', address: 'work@fp1', dispatcherName: 'Tael', label: 'Tael on Mini', state: 'online', link: { state: 'active' } }] });
+    render(<ChromeSidebar />);
+    const remote = await screen.findByRole('button', { name: 'Tael on Mini' });
+    expect(screen.getByTestId('dispatcher-row')).toHaveTextContent('Dispatcher');
+    expect(screen.getByTestId('dispatcher-group')).toContainElement(remote);
+    fireEvent.click(remote);
+    expect(useRemoteDispatcherSelection.getState()).toMatchObject({ agentId: null, local: false });
+    fireEvent.click(within(screen.getByTestId('dispatcher-row')).getByTestId('agent-item-disp'));
+    expect(useRemoteDispatcherSelection.getState().local).toBe(true);
+    presence.mockRestore(); getLead.mockRestore();
+  });
+
   describe('debug view (#3188)', () => {
     afterEach(() => useDispatcherDebugStore.setState({ on: false, workOpen: false }));
 
@@ -813,6 +854,7 @@ describe('ChromeSidebar Dispatcher (#2538)', () => {
       expect(useUIStore.getState().dispatcherOpen).toBe(true);
       expect(useDispatcherDebugStore.getState().workOpen).toBe(true);
       expect(item.getAttribute('aria-selected')).toBe('true');
+      expect(item.getAttribute('aria-level')).toBe('2');
       const chat = within(screen.getByTestId('dispatcher-row')).getByTestId('agent-item-disp');
       expect(chat.getAttribute('data-active')).toBe('false');
       // The Dispatcher's own row goes back to its chat.

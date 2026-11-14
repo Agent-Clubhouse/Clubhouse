@@ -10,8 +10,9 @@ vi.mock('./project-store', () => ({ list: vi.fn(async () => [{ id: 'p', path: 'p
 vi.mock('./agent-registry', () => ({ agentRegistry: { getAllRegistrations: () => new Map(state.quick ? [['quick', {}]] : []), get: (id: string) => id === 'quick' && state.quick ? {} : undefined, onAuthChange: (listener: (id: string) => void) => { state.onAuth = listener; return () => { state.onAuth = undefined; }; } } }));
 vi.mock('./clubhouse-mcp/mcp-call-gate', () => ({ mcpCallerKind: (id: string) => id === 'quick' && state.quick ? 'quick' : undefined }));
 vi.mock('./agent-config', () => ({ listDurable: vi.fn(async () => [{ id: 'a', name: 'Alpha' }, { id: 'b', name: 'Beta' }]) }));
-vi.mock('./dispatcher/dispatcher-service', () => ({ getDispatcherState: () => ({ config: { id: 'd', name: 'Dispatcher' } }) }));
+vi.mock('./dispatcher/dispatcher-service', () => ({ getDispatcherState: () => ({ config: { id: 'd', name: 'Navi' }, agentId: 'd', chatAgentId: 'chat' }) }));
 vi.mock('./annex-peers', () => ({ listPeers: () => [{ fingerprint: state.machine, role: 'member', kind: 'desktop', alias: 'Studio', pairingId: 'pair' }] }));
+vi.mock('./dispatcher-federation', () => ({ remoteFederationController: () => ({ agentId: 'remote-work', name: 'Dispatcher controller', enabled: true }) }));
 vi.mock('./annex-identity', () => ({ getIdentity: () => null }));
 vi.mock('./annex-agent-calls', () => ({ rememberRemoteAgentName: vi.fn() }));
 vi.mock('./annex-client', () => ({ isMachineConnected: () => false }));
@@ -37,7 +38,7 @@ afterEach(() => { fs.rmSync(state.base, { recursive: true, force: true }); });
 
 it('remembers authenticated remote agents offline, and restores card connections and group membership', async () => {
   await rememberConnectionSnapshot(state.machine, { projects: [{ id: 'remote', name: 'Remote project' }], agents: { remote: [{ id: 'c', name: 'Gamma', kind: 'durable' }] }, dispatcher: { agent: { id: 'rd', name: 'Remote dispatcher' } } });
-  expect((await listConnectionPickerTargets('a')).targets).toEqual(expect.arrayContaining([expect.objectContaining({ id: 'c', online: false, project: 'Remote project' }), expect.objectContaining({ id: 'rd', kind: 'dispatcher' })]));
+  expect((await listConnectionPickerTargets('a')).targets).toEqual(expect.arrayContaining([expect.objectContaining({ id: 'c', online: false, project: 'Remote project' }), expect.objectContaining({ id: 'rd', kind: 'dispatcher' }), expect.objectContaining({ id: 'remote-work', controllerOf: 'rd' })]));
   await addCardConnection({ agentId: 'a', targetId: 'b', targetKind: 'agent', twoWay: true, allow: ['wake_agent'], allowBack: [] });
   await addCardConnection({ agentId: 'a', targetId: 'g', targetKind: 'group-project', twoWay: false, allow: [], allowBack: [] });
   resetAllSettingsStoresForTests();
@@ -47,9 +48,23 @@ it('remembers authenticated remote agents offline, and restores card connections
   expect(await cardConnectionSource.collect()).not.toEqual(expect.arrayContaining([expect.objectContaining({ targetId: 'g' })]));
 });
 
+it('lists one visible Dispatcher and its diagnostic controller, keeping the controller endpoint', async () => {
+  const { targets } = await listConnectionPickerTargets('a');
+  expect(targets).toContainEqual({ id: 'chat', name: 'Navi', kind: 'dispatcher', routeId: 'd' });
+  expect(targets).toContainEqual({ id: 'd', name: 'Dispatcher controller', kind: 'agent', controllerOf: 'chat' });
+  expect((await listConnectionPickerTargets('d')).targets.some((target) => target.id === 'chat')).toBe(false);
+  expect((await listConnectionPickerTargets('chat')).targets.some((target) => target.id === 'd')).toBe(false);
+  await addCardConnection({ agentId: 'a', targetId: 'chat', targetKind: 'dispatcher', twoWay: false, allow: ['send_message'], allowBack: [] });
+  expect(getConnectionDirection({ agentId: 'a' }, { agentId: 'd' })?.cardLink).toBeDefined();
+  expect(getConnectionDirection({ agentId: 'a' }, { agentId: 'chat' })).toBeUndefined();
+  await addCardConnection({ agentId: 'chat', targetId: 'b', targetKind: 'agent', twoWay: false, allow: ['send_message'], allowBack: [] });
+  expect(getConnectionDirection({ agentId: 'd' }, { agentId: 'b' })?.cardLink).toBeDefined();
+  expect(getConnectionDirection({ agentId: 'chat' }, { agentId: 'b' })).toBeUndefined();
+});
+
 it('creates Dispatcher and offline remote directions with the requested switches and refuses unknown targets', async () => {
   await rememberConnectionSnapshot(state.machine, { projects: [{ id: 'p', name: 'Remote' }], agents: { p: [{ id: 'c', name: 'Gamma', kind: 'durable' }] }, dispatcher: { agent: { id: 'rd', name: 'Remote dispatcher' } } });
-  await addCardConnection({ agentId: 'a', targetId: 'd', targetKind: 'dispatcher', twoWay: false, allow: ['wake_agent'], allowBack: [] });
+  await addCardConnection({ agentId: 'a', targetId: 'chat', targetKind: 'dispatcher', twoWay: false, allow: ['wake_agent'], allowBack: [] });
   expect(getConnectionDirection({ agentId: 'a' }, { agentId: 'd' })).toMatchObject({ cardLink: expect.anything(), enabledTools: ['wake_agent'] });
   expect(getConnectionDirection({ agentId: 'd' }, { agentId: 'a' })).toBeUndefined();
   await addCardConnection({ agentId: 'a', targetId: 'rd', targetKind: 'dispatcher', machineId: state.machine, twoWay: true, allow: ['send_message'], allowBack: ['wake_agent'] });

@@ -140,14 +140,14 @@ export function DispatcherWorkRow({ agentId, running, active, onSelect }: {
         <div
           role="treeitem"
           tabIndex={0}
-          aria-level={1}
+          aria-level={2}
           aria-selected={active}
           aria-label={DISPATCHER_CONTROLLER_NAME}
           aria-describedby={noteId}
           onKeyDown={(e) => {
             if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onSelect(); }
           }}
-          style={{ paddingLeft: 8 }}
+          style={{ paddingLeft: 28 }}
           className="relative min-w-0 flex-1 h-full pr-1 rounded-md flex items-center gap-2 text-[13px] text-left focus-ring"
         >
           <StatusDot dot={dot} />

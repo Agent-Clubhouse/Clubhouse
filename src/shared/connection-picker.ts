@@ -7,6 +7,10 @@ export interface ConnectionPickerTarget {
   machineId?: string;
   machineName?: string;
   online?: boolean;
+  /** Internal connection endpoint for a visible Dispatcher. */
+  routeId?: string;
+  /** Debug-only controller belonging to this Dispatcher chat. */
+  controllerOf?: string;
 }
 
 export interface ConnectionPickerDirectory {

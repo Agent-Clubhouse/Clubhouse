@@ -22,8 +22,8 @@ import type { FollowedLead } from './leadStore';
  * Take back is the person's way to use this computer's own Dispatcher now.
  * Nothing takes back by itself.
  */
-export function FollowerDispatcherView({ lead, localChatId, localName }: { lead: FollowedLead; localChatId: string; localName: string }) {
-  const [earlier, setEarlier] = useState(false);
+export function FollowerDispatcherView({ lead, localChatId, localName, initialEarlier = false }: { lead: FollowedLead; localChatId: string; localName: string; initialEarlier?: boolean }) {
+  const [earlier, setEarlier] = useState(initialEarlier);
   const [error, setError] = useState<string | null>(null);
   const machine = lead.machineName;
   const leadName = lead.agent?.name ?? 'the Dispatcher';
