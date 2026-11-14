@@ -45,9 +45,11 @@ vi.mock('./agent-config', () => ({
     }
     return out;
   }),
-  setOrchestrationConfig: vi.fn(async (projectPath: string, agentId: string, config: unknown) => {
+  setOrchestrationConfig: vi.fn(async (projectPath: string, agentId: string, config: unknown, precondition?: import('./agent-config').ManagedSetupCommitPrecondition) => {
+    await precondition?.prepare();
     const agent = agentsOf(projectPath).find((a) => a.id === agentId);
     if (!agent) throw new Error('Agent not found');
+    precondition?.check(agent);
     if (config) agent.orchestration = config as DurableAgentConfig['orchestration'];
     else delete agent.orchestration;
   }),
@@ -459,6 +461,17 @@ describe('setOrchestrationPolicy precondition (#2661)', () => {
     await expect(setOrchestrationPolicy(PROJECT, 'orch', { maxHelpers: 9 }, { precondition })).rejects.toThrow('refused');
     expect(precondition).toHaveBeenCalledWith(expect.objectContaining({ id: 'orch' }), expect.objectContaining({ maxHelpers: before?.maxHelpers }));
     expect((await getOrchestrationPolicy(PROJECT, 'orch'))?.maxHelpers).toBe(before?.maxHelpers);
+  });
+
+  it('refuses policy replaced during authorization instead of overwriting it with the earlier patch', async () => {
+    setAgents(PROJECT, [agent('orch', { orchestration: { maxHelpers: 2, control: 'hands-off' } })]);
+    const replacement = agent('orch', { orchestration: { maxHelpers: 8, control: 'ask-before-start' } });
+    const guard = {
+      prepare: vi.fn(async () => { setAgents(PROJECT, [replacement]); }),
+      check: vi.fn(),
+    };
+    await expect(setOrchestrationPolicy(PROJECT, 'orch', { maxHelpers: 4 }, { agentPrecondition: guard })).rejects.toThrow(/policy changed/i);
+    expect(agentsOf(PROJECT)[0].orchestration).toEqual({ maxHelpers: 8, control: 'ask-before-start' });
   });
 
   it('writes when it passes', async () => {
