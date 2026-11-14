@@ -5,7 +5,7 @@ import * as os from 'os';
 import * as path from 'path';
 import { pathToFileURL } from 'url';
 import { randomUUID } from 'crypto';
-import { afterAll, afterEach, beforeEach as rawBeforeEach, expect, it as rawIt, vi } from 'vitest';
+import { afterAll, afterEach, beforeEach as rawBeforeEach, describe, expect, it as rawIt, vi } from 'vitest';
 import { CheckpointFixtureLifetime } from '../../../test/checkpoint-fixture-lifetime';
 import { ownedRegistration } from '../../../test/dispatcher-work-owner';
 const state = vi.hoisted(() => ({ data: '' }));
@@ -39,6 +39,7 @@ async function initialize(repo: string, content: string) {
   await git(repo, 'add', '.'); await git(repo, '-c', `core.hooksPath=${path.join(root, 'no-hooks')}`, 'commit', '-qm', 'Base');
   await git(repo, 'config', 'remote.origin.url', 'https://example.invalid/project.git');
 }
+describe('real-I/O handoff transfer integration', { timeout: 60_000 }, () => {
 beforeEach(async () => {
   lifetime.current?.assertRetired(); lifetime.current = new CheckpointFixtureLifetime();
   lifetime.directory = fs.mkdtempSync(path.join(os.tmpdir(), 'handoff-integration-'));
@@ -91,3 +92,5 @@ it.each(['same-machine', 'paired-computer'])('automatically applies a %s accepte
     await worker.run(id); expect(wake).toHaveBeenCalledTimes(1);
   } finally { await worker.stop(); await source.close(); }
 }, 60_000);
+
+});

@@ -540,7 +540,9 @@ test('accepted handoff transfers a selected ignored file over 512 KiB and publis
   const emptyGitConfig = path.join(scratch, 'empty-git-config'); await fs.promises.writeFile(emptyGitConfig, '');
   for (const repo of [senderProject, receiverProject]) {
     await git(repo, 'init', '-b', 'main'); await git(repo, 'config', 'user.name', 'Fixture'); await git(repo, 'config', 'user.email', 'test@example.invalid');
-    await fs.promises.writeFile(path.join(repo, 'work.txt'), 'base'); await fs.promises.writeFile(path.join(repo, '.gitignore'), 'fixtures/\n.clubhouse/\n');
+    // Distinct trees force quarantine/bundle verification even if both commits
+    // happen in the same second (identical commits used to skip that path).
+    await fs.promises.writeFile(path.join(repo, 'work.txt'), repo === senderProject ? 'base' : 'receiver base'); await fs.promises.writeFile(path.join(repo, '.gitignore'), 'fixtures/\n.clubhouse/\n');
     await git(repo, 'add', '.'); await git(repo, '-c', `core.hooksPath=${path.join(scratch, 'no-hooks')}`, 'commit', '-qm', 'Base');
     await git(repo, 'config', 'remote.origin.url', 'https://example.invalid/handoff.git');
     // Deterministic local failure exercises the bundle fallback, without an external network call.

@@ -10,6 +10,7 @@ import { summarizeHandoffManifest } from '../../shared/handoff-manifest';
 import type { HandoffSecretPolicy } from './handoff-secret-settings';
 import { openHandoffRepository, verifyHandoffSnapshot, HandoffSnapshotError, type HandoffSnapshot } from './handoff-snapshot';
 import { scanHandoffGitHistory } from './handoff-git-bundle';
+import { handoffGitPlatformFlags, reportHandoffGitFailure } from './handoff-git-diagnostics';
 const exec = promisify(execFile);
 
 /** Acquires objects only after receiver-side checks. It never checks out or alters an existing branch. */
@@ -36,7 +37,7 @@ export async function receiveHandoffCommit(options: {
   const quarantine = path.join(root, `quarantine-${randomUUID()}`);
   const hooks = path.join(quarantine, 'hooks'); const config = path.join(quarantine, 'empty-config');
   await fs.promises.mkdir(quarantine, { mode: 0o700 }); await fs.promises.mkdir(hooks, { mode: 0o700 }); await fs.promises.writeFile(config, '', { mode: 0o600 });
-  const flags = ['--no-replace-objects', '-c', `core.hooksPath=${hooks}`, '-c', 'core.fsmonitor=false', '-c', 'protocol.ext.allow=never', '-c', 'fetch.fsckObjects=true', '-c', 'transfer.fsckObjects=true'];
+  const flags = [...handoffGitPlatformFlags(), '--no-replace-objects', '-c', `core.hooksPath=${hooks}`, '-c', 'core.fsmonitor=false', '-c', 'protocol.ext.allow=never', '-c', 'fetch.fsckObjects=true', '-c', 'transfer.fsckObjects=true'];
   const check = async () => {
     await options.authorize(); secretPolicy?.assertCurrent();
     const current = await fs.promises.lstat(root, { bigint: true });
@@ -52,9 +53,14 @@ export async function receiveHandoffCommit(options: {
       const read = async (args: string[]): Promise<Buffer> => {
         await check();
         try { return (await exec('git', [...flags, ...args], { cwd: quarantine, env, timeout: 60_000, maxBuffer: 8 * 1024 ** 2, encoding: 'buffer' })).stdout; }
-        catch { throw new HandoffSnapshotError('git_failed'); /* telemetry-exempt: no subprocess output or private paths escape this boundary */ }
+        catch (error) {
+          const reported = new HandoffSnapshotError('git_failed');
+          reported.message += reportHandoffGitFailure(args, error);
+          throw reported;
+        }
       };
-      const bare = path.join(quarantine, 'objects.git');
+      // Keep the quarantine's UUID ownership, while leaving more path budget for packs.
+      const bare = path.join(quarantine, 'repo');
       await read(['init', '--bare', '--template=', bare]);
       let acquired = false;
       if (sourceKey && targetKey === sourceKey) {

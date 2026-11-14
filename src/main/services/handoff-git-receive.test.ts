@@ -47,6 +47,25 @@ it('falls back to an independently scanned bundle when the configured remote lac
   expect((await git(receiver, 'rev-parse', 'HEAD')).stdout.trim()).toBe(before);
   expect(fs.readdirSync(options.snapshot.root).some((name) => name.startsWith('quarantine-'))).toBe(false);
 }, 30_000);
+it('imports bundle packs below a long user-data path with isolated Git configuration', async () => {
+  const options = await prepared();
+  const canonical = await fs.promises.realpath(root);
+  const destination = path.join(canonical, 'deep-' + 'x'.repeat(170 - canonical.length - 6));
+  await fs.promises.rename(options.snapshot.root, destination);
+  options.snapshot.root = destination;
+  const bare = path.join(destination, `quarantine-${randomUUID()}`, 'objects.git');
+  expect(path.join(bare, 'objects', 'pack', `pack-${'a'.repeat(40)}.pack`).length).toBeGreaterThan(260);
+  if (process.platform === 'win32') {
+    // Reproduce the original isolated-config failure without changing global Git.
+    await git(destination, '-c', 'core.longpaths=false', 'init', '--bare', '--template=', bare);
+    await expect(git(destination, '-c', 'core.longpaths=false', '--git-dir', bare, 'fetch', '--no-tags', '--', path.join(destination, 'bundle.bin'), 'HEAD'))
+      .rejects.toMatchObject({ stderr: expect.stringMatching(/filename too long|file name too long|path too long/i) });
+    await fs.promises.rm(path.dirname(bare), { recursive: true, force: true });
+  }
+  expect(await receiveHandoffCommit(options)).toEqual({ commit: options.snapshot.manifest.repo.base, source: 'bundle' });
+  expect((await git(receiver, 'cat-file', '-t', options.snapshot.manifest.repo.base)).stdout.trim()).toBe('commit');
+  expect(fs.readdirSync(destination).some((name) => name.startsWith('quarantine-'))).toBe(false);
+}, 30_000);
 it('rejects hash-valid secret-bearing bundle history before importing it into the registered repository', async () => {
   const token = `ghp_${'a'.repeat(36)}`; fs.writeFileSync(path.join(sender, 'retired.txt'), token);
   await git(sender, 'add', '.'); await git(sender, '-c', `core.hooksPath=${path.join(root, 'no-hooks')}`, 'commit', '-qm', 'Malicious peer history');
