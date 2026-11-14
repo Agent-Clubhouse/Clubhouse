@@ -117,6 +117,50 @@ describe('themeStore', () => {
       expect(getState().experimentalGradients).toBe(true);
     });
 
+    it('drops older reads that finish after a newer theme was applied', async () => {
+      let resolveOlder!: (value: { themeId: string }) => void;
+      let resolveNewer!: (value: { themeId: string }) => void;
+      mockApp.getTheme
+        .mockImplementationOnce(() => new Promise((resolve) => { resolveOlder = resolve; }))
+        .mockImplementationOnce(() => new Promise((resolve) => { resolveNewer = resolve; }));
+      const older = getState().loadTheme();
+      const newer = getState().loadTheme();
+      resolveNewer({ themeId: 'nord' });
+      await newer;
+      resolveOlder({ themeId: 'dracula' });
+      await older;
+
+      expect(getState().themeId).toBe('nord');
+      expect(applyTheme).toHaveBeenCalledExactlyOnceWith(THEMES['nord'], { experimentalGradients: true });
+      expect(mockApp.syncActiveTheme).toHaveBeenCalledTimes(1);
+      expect(mockApp.syncActiveTheme).toHaveBeenCalledWith(expect.objectContaining({ id: 'nord' }));
+      expect(mockApp.updateTitleBarOverlay).toHaveBeenCalledTimes(1);
+    });
+
+    it('does not apply a stale error fallback over a newer theme', async () => {
+      let rejectOlder!: (error: Error) => void;
+      mockApp.getTheme
+        .mockImplementationOnce(() => new Promise((_resolve, reject) => { rejectOlder = reject; }))
+        .mockResolvedValueOnce({ themeId: 'nord' });
+      const older = getState().loadTheme();
+      await getState().loadTheme();
+      rejectOlder(new Error('late IPC error'));
+      await older;
+      expect(getState().themeId).toBe('nord');
+      expect(applyTheme).toHaveBeenCalledExactlyOnceWith(THEMES['nord'], { experimentalGradients: true });
+    });
+
+    it('keeps a direct theme selection when an older read finishes', async () => {
+      let resolveOlder!: (value: { themeId: string }) => void;
+      mockApp.getTheme.mockImplementationOnce(() => new Promise((resolve) => { resolveOlder = resolve; }));
+      const older = getState().loadTheme();
+      await getState().setTheme('nord');
+      resolveOlder({ themeId: 'dracula' });
+      await older;
+      expect(getState().themeId).toBe('nord');
+      expect(applyTheme).toHaveBeenCalledExactlyOnceWith(THEMES['nord'], { experimentalGradients: true });
+    });
+
     it('loads theme from IPC settings', async () => {
       mockApp.getTheme.mockResolvedValueOnce({ themeId: 'dracula' });
 
