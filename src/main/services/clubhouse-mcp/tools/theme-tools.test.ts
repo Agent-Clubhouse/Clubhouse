@@ -3,15 +3,14 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 
-const data = vi.hoisted(() => ({ dir: '' }));
-vi.mock('electron', () => ({ app: { isPackaged: false, getPath: () => data.dir } }));
+const data = vi.hoisted(() => ({ dir: '', windowSends: [vi.fn(), vi.fn()], annexBroadcast: vi.fn() }));
+vi.mock('electron', () => ({ app: { isPackaged: false, getPath: () => data.dir }, BrowserWindow: { getAllWindows: () => data.windowSends.map((send) => ({ isDestroyed: () => false, webContents: { send } })) } }));
 vi.mock('../mcp-call-gate', async (original) => ({ ...await original<typeof import('../mcp-call-gate')>(), mcpCallAccess: () => 'open' }));
 vi.mock('../dispatcher-gate', async (original) => ({ ...await original<typeof import('../dispatcher-gate')>(), isDispatcherAgent: (id: string) => id === 'dispatcher' }));
 vi.mock('../../log-service', () => ({ appLog: vi.fn() }));
 vi.mock('../../agent-config', () => ({ getDurableConfig: async () => ({ name: 'Agent' }) }));
 vi.mock('../../../telemetry/feature-events', () => ({ themeChanged: vi.fn() }));
-vi.mock('../../../util/ipc-broadcast', () => ({ broadcastToAllWindows: vi.fn() }));
-vi.mock('../../annex-server', () => ({ broadcastThemeChanged: vi.fn() }));
+vi.mock('../../annex-server', () => ({ broadcastThemeChanged: data.annexBroadcast }));
 
 import { registerThemeTools } from './theme-tools';
 import { callTool, getScopedToolList, _resetForTesting } from '../tool-registry';
@@ -21,7 +20,6 @@ import { resetAllSettingsStoresForTests } from '../../settings-store';
 import { syncPluginThemes } from '../../plugin-theme-store';
 import { _resetGrantRequestsForTesting, listGrantRequests, takeGrantRequest } from '../../grant-requests';
 import { updateAgentGrantChanges } from '../../agent-grants-store';
-import { broadcastToAllWindows } from '../../../util/ipc-broadcast';
 import { IPC } from '../../../../shared/ipc-channels';
 
 const invoke = (id = 'dispatcher', theme_id = 'nord') => callTool(id, 'set_theme', { theme_id });
@@ -48,13 +46,27 @@ describe('set_theme', () => {
     expect(getScopedToolList('dispatcher').map((tool) => tool.name)).toContain('set_theme');
     expect(JSON.stringify(await invoke())).toContain('Needs you');
     expect(getSettings().themeId).toBe('catppuccin-mocha');
-    expect(broadcastToAllWindows).not.toHaveBeenCalled();
+    for (const send of data.windowSends) expect(send).not.toHaveBeenCalled();
+    expect(data.annexBroadcast).not.toHaveBeenCalled();
     const [request] = listGrantRequests();
     expect(request).toMatchObject({ toolName: 'set_theme', argumentsText: JSON.stringify({ theme_id: 'nord' }, null, 2) });
+    expect(JSON.stringify(await invoke('dispatcher', 'dracula'))).toContain('Needs you');
+    const otherRequest = listGrantRequests().find((pending) => pending.requestId !== request.requestId)!;
+    expect(otherRequest.argumentsText).toBe(JSON.stringify({ theme_id: 'dracula' }, null, 2));
     takeGrantRequest(request.requestId, true);
+    expect(JSON.stringify(await invoke('dispatcher', 'dracula'))).toContain('Needs you');
+    expect(getSettings().themeId).toBe('catppuccin-mocha');
     expect((await invoke()).isError).toBeFalsy();
     expect(getSettings().themeId).toBe('nord');
-    expect(broadcastToAllWindows).toHaveBeenCalledWith(IPC.APP.THEME_CHANGED);
+    for (const send of data.windowSends) {
+      expect(send).toHaveBeenCalledExactlyOnceWith(IPC.APP.THEME_CHANGED);
+    }
+    expect(data.annexBroadcast).toHaveBeenCalledOnce();
+    takeGrantRequest(otherRequest.requestId, true);
+    expect((await invoke('dispatcher', 'dracula')).isError).toBeFalsy();
+    expect(getSettings().themeId).toBe('dracula');
+    for (const send of data.windowSends) expect(send).toHaveBeenCalledTimes(2);
+    expect(data.annexBroadcast).toHaveBeenCalledTimes(2);
     expect(JSON.stringify(await invoke())).toContain('Needs you');
   });
 
