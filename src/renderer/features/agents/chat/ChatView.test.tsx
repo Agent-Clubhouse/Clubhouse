@@ -1063,6 +1063,8 @@ describe('ChatView review fixes', () => {
     render(<ChatViewBody agent={agent} state={state} actions={actions} providerName="P" />);
     const dock = screen.getByTestId('chat-dock');
     expect(screen.getByTestId('chat-pinned-approval')).toHaveClass('max-h-[min(40vh,320px)]');
+    expect(dock).toHaveClass('max-h-[70%]');
+    expect(screen.getByTestId('chat-composer').parentElement).toHaveClass('flex-shrink-0');
     // The card shrinks inside the cap.
     expect(screen.getByTestId('chat-question')).toHaveClass('min-h-0');
     expect(dock).toContainElement(screen.getByText('Send answer'));

@@ -325,6 +325,7 @@ export function ChatViewBody({ agent, state, actions, loading, onSwitchToTermina
   const dock = (
       <>
         <PlanHandoff state={state} onImplement={onImplement} />
+        <div className="flex-shrink-0">
         <Composer
           agentName={agent.name}
           capabilities={state.capabilities}
@@ -354,6 +355,7 @@ export function ChatViewBody({ agent, state, actions, loading, onSwitchToTermina
           layout={composerLayout}
           behaviorChip={dispatcher ? <DispatcherBehaviorChip compact={composerLayout === 'narrow'} /> : undefined}
         />
+        </div>
       </>
     );
 
@@ -415,12 +417,12 @@ export function ChatViewBody({ agent, state, actions, loading, onSwitchToTermina
           </InlineApprovalContext.Provider>
           </ApprovalAgentContext.Provider>
           {/* Only the approval scrolls inside its cap. Composer menus can still open upward. */}
-          <div className={`flex-shrink-0 flex justify-center ${narrow || short ? 'px-2 pb-2' : 'px-7 pb-4'}`} data-testid="chat-dock">
+          <div className={`flex-shrink-0 flex justify-center ${selected ? 'max-h-[70%]' : ''} ${narrow || short ? 'px-2 pb-2' : 'px-7 pb-4'}`} data-testid="chat-dock">
             <div className="w-full max-w-[740px] min-h-0 flex flex-col gap-2">
               <ProtocolDriftNote state={state} compact={context === 'canvas' || narrow} />
               <LoginBanner state={state} onSwitchToTerminal={onSwitchToTerminal} />
               {(state.plan.length > 0 || state.queued.length > 0) && (
-                <div className="min-h-0 overflow-y-auto space-y-2" data-testid="chat-dock-lists">
+                <div className={`min-h-0 overflow-y-auto space-y-2 ${selected ? 'max-h-[20vh]' : ''}`} data-testid="chat-dock-lists">
                   {state.plan.length > 0 && <TaskList entries={state.plan} />}
                   {state.queued.length > 0 && (
                     <QueueList
