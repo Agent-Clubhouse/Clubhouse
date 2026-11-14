@@ -715,11 +715,10 @@ describe('applying settings a template or the builder carries (#2895)', () => {
       orchestrator: 'codex-cli', model: 'gpt-5', effort: 'high', freeAgentMode: true, idleSleep: 30, helperTemplateId: 'builtin-template-quality-assurance',
       orchestration: { orchestrate: true, maxHelpers: 3, autoHelpers: true, connectToDispatcher: false, control: 'ask-before-start' },
     });
-    expect(agentConfig.updateDurableConfig).toHaveBeenCalledTimes(1);
-    expect(agentConfig.updateDurableConfig).toHaveBeenCalledWith('/p', 'ada', {
-      orchestrator: 'codex-cli', model: 'gpt-5', effort: 'high', freeAgentMode: true, idleSleep: 30, helperTemplateId: 'builtin-template-quality-assurance',
-    });
-    expect(orchestrationPolicy.setOrchestrationPolicy).toHaveBeenCalledWith('/p', 'ada', { orchestrate: true, maxHelpers: 3, autoHelpers: true, connectToDispatcher: false, control: 'ask-before-start' });
+    expect(agentConfig.updateDurableConfig).not.toHaveBeenCalled();
+    expect(orchestrationPolicy.setOrchestrationPolicy).toHaveBeenCalledWith('/p', 'ada',
+      { orchestrate: true, maxHelpers: 3, autoHelpers: true, connectToDispatcher: false, control: 'ask-before-start' },
+      { settingsUpdates: { orchestrator: 'codex-cli', model: 'gpt-5', effort: 'high', freeAgentMode: true, idleSleep: 30, helperTemplateId: 'builtin-template-quality-assurance' } });
     await applyManagedSettings('/p', 'ada', { effort: null, idleSleep: null, helperTemplateId: null });
     expect(agentConfig.updateDurableConfig).toHaveBeenLastCalledWith('/p', 'ada', { effort: null, idleSleep: null, helperTemplateId: null });
   });
@@ -727,8 +726,15 @@ describe('applying settings a template or the builder carries (#2895)', () => {
   it('forwards per-consumer authorization to both native settings and orchestration writes', async () => {
     const guard = { prepare: vi.fn(async () => undefined), check: vi.fn() };
     await applyManagedSettings('/p', 'ada', { model: 'opus', orchestration: { maxHelpers: 2 } }, undefined, guard);
-    expect(agentConfig.updateDurableConfig).toHaveBeenCalledExactlyOnceWith('/p', 'ada', { model: 'opus' }, undefined, guard);
-    expect(orchestrationPolicy.setOrchestrationPolicy).toHaveBeenCalledExactlyOnceWith('/p', 'ada', { maxHelpers: 2 }, { agentPrecondition: guard });
+    expect(agentConfig.updateDurableConfig).not.toHaveBeenCalled();
+    expect(orchestrationPolicy.setOrchestrationPolicy).toHaveBeenCalledExactlyOnceWith('/p', 'ada', { maxHelpers: 2 }, { agentPrecondition: guard, settingsUpdates: { model: 'opus' } });
+  });
+
+  it('leaves native settings untouched when the policy refuses the consumer', async () => {
+    vi.mocked(orchestrationPolicy.setOrchestrationPolicy).mockResolvedValueOnce({ ok: false, message: 'Choose whether to keep or dispose helpers first.' });
+    await expect(applyManagedSettings('/p', 'ada', { model: 'opus', effort: 'high', orchestration: { orchestrate: false } }))
+      .rejects.toThrow('Choose whether to keep or dispose helpers first.');
+    expect(agentConfig.updateDurableConfig).not.toHaveBeenCalled();
   });
 
   it('applies a level as Access, which wins over the legacy flag beside it (#2761)', async () => {
@@ -748,8 +754,9 @@ describe('applying settings a template or the builder carries (#2895)', () => {
     });
     await user(() => createManagedAgent('/p', { name: 'lead', color: 'indigo', templateId: t.id }));
     expect(agentConfig.createDurable).toHaveBeenCalledWith('/p', 'lead', 'indigo', 'opus', true, 'claude-code', undefined);
-    expect(agentConfig.updateDurableConfig).toHaveBeenCalledWith('/p', 'made', { effort: 'high', idleSleep: 'never', helperTemplateId: 'builtin-template-quality-assurance' });
-    expect(orchestrationPolicy.setOrchestrationPolicy).toHaveBeenCalledWith('/p', 'made', { orchestrate: true, maxHelpers: 3 });
+    expect(agentConfig.updateDurableConfig).not.toHaveBeenCalled();
+    expect(orchestrationPolicy.setOrchestrationPolicy).toHaveBeenCalledWith('/p', 'made', { orchestrate: true, maxHelpers: 3 },
+      { settingsUpdates: { effort: 'high', idleSleep: 'never', helperTemplateId: 'builtin-template-quality-assurance' } });
   });
 
   it('never asks to copy the project\'s legacy defaults, for a managed or a plain agent (#3243, #3245)', async () => {

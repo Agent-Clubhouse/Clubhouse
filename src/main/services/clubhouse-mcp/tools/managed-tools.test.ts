@@ -67,11 +67,13 @@ vi.mock('../../agent-config', () => ({
     precondition?.check(current);
     Object.assign(current, updates);
   },
-  setOrchestrationConfig: async (_p: string, id: string, policy: DurableAgentConfig['orchestration'], precondition?: import('../../agent-config').ManagedSetupCommitPrecondition) => {
+  setOrchestrationConfig: async (_p: string, id: string, policy: DurableAgentConfig['orchestration'], precondition?: import('../../agent-config').ManagedSetupCommitPrecondition, updates?: Partial<DurableAgentConfig>) => {
     await state.beforePolicyPrepare?.();
+    if (updates) await state.beforeSettingsPrepare?.();
     await precondition?.prepare();
     const current = state.agents.get(id)!;
     precondition?.check(current);
+    Object.assign(current, updates);
     current.orchestration = policy;
   },
 }));
@@ -1750,6 +1752,35 @@ describe('template pushes respect per-consumer configuration approval (#3480)', 
     expect(agent.model).toBe('opus');
     expect(agent.managed!.blocks).toEqual([BUILTIN_BLOCK_IDS.identity]);
     expect(listGrantRequests('dispatcher')).toEqual([]);
+  });
+
+  it('keeps a connected consumer model when its pushed policy is refused (#3486)', async () => {
+    const before = { model: 'sonnet', effort: 'low', orchestration: { orchestrate: true } };
+    const { agent, args } = await fixture(before);
+    const result = await call('push_agent_template', await confirmed({ ...args,
+      settings: { model: 'opus', effort: 'high', orchestration: { orchestrate: false } },
+    }));
+    expect(result.json).toMatchObject({ status: 'pushed', applied: 0, failed: [{ agentId: agent.id, message: expect.stringContaining('Only the user changes existing connections') }] });
+    expect(agent).toMatchObject(before);
+  });
+
+  it('applies the model and accepted policy together for a connected consumer (#3486)', async () => {
+    const { agent, args } = await fixture({ model: 'sonnet', orchestration: { orchestrate: true, maxHelpers: 1 } });
+    const result = await call('push_agent_template', await confirmed({ ...args,
+      settings: { model: 'opus', orchestration: { orchestrate: true, maxHelpers: 2 } },
+    }));
+    expect(result.json).toMatchObject({ status: 'pushed', applied: 1, failed: [] });
+    expect(agent).toMatchObject({ model: 'opus', orchestration: { orchestrate: true, maxHelpers: 2 } });
+  });
+
+  it('refuses the combined settings write if the consumer connection changes during preparation', async () => {
+    const { agent, args } = await fixture({ model: 'sonnet', orchestration: { orchestrate: true, maxHelpers: 1 } });
+    state.beforeSettingsPrepare = () => { agent.orchestration = { connectToDispatcher: false, maxHelpers: 1 }; };
+    const result = await call('push_agent_template', await confirmed({ ...args,
+      settings: { model: 'opus', orchestration: { orchestrate: true, maxHelpers: 2 } },
+    }));
+    expect(result.json).toMatchObject({ status: 'pushed', applied: 0, failed: [{ agentId: agent.id }] });
+    expect(agent).toMatchObject({ model: 'sonnet', orchestration: { connectToDispatcher: false, maxHelpers: 1 } });
   });
 
   it('refuses model propagation if the connection is removed before the settings write', async () => {
