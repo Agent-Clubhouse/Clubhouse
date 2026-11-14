@@ -139,7 +139,8 @@ export function ProjectPartDialog({ projectPath, item, agentName, canUse, onClos
     await unwrap(managed().keepProjectPart(projectPath, change!.id, hash));
     onClose();
   });
-  const sameContent = review?.matches.filter((m) => m.sameContent) ?? [];
+  // A built-in can't follow the repository's copy, so it isn't offered to use instead.
+  const sameContent = review?.matches.filter((m) => m.sameContent && !m.builtin) ?? [];
   const sameName = review?.matches.filter((m) => !m.sameContent) ?? [];
   const title = change ? `${item.name} changed in the repository` : `Add ${item.name} from the repository`;
   return (
@@ -185,7 +186,7 @@ export function ProjectPartDialog({ projectPath, item, agentName, canUse, onClos
       )}
       {review && !change && (
         <>
-          <p className="text-[13px] text-ctp-subtext1">This is the repository's copy as it would be added. Read it before adding: Clubhouse didn't run or check anything in it.</p>
+          <p className="text-[13px] text-ctp-subtext1">This is the repository's copy as it would be added. Clubhouse didn't run or check anything in it, so read it before you add it.</p>
           <pre data-testid="managed-project-part-content" className="mt-2 max-h-72 overflow-auto px-2.5 py-2 rounded-md border border-surface-0 bg-ctp-mantle font-mono text-[11.5px] leading-[1.6] text-ctp-text whitespace-pre-wrap break-words">
             {partAsText({ name: review.suggestedName, description: '', content: review.content })}
           </pre>
@@ -198,7 +199,7 @@ export function ProjectPartDialog({ projectPath, item, agentName, canUse, onClos
               <legend className="text-xs text-ctp-overlay1 mb-1">The library already has the same content.</legend>
               <label className="flex items-center gap-2"><input type="radio" name="project-part-choice" checked={!reuse} onChange={() => setReuse('')} />Add a new part from the repository</label>
               {sameContent.map((m) => (
-                <label key={m.id} className="flex items-center gap-2"><input type="radio" name="project-part-choice" checked={reuse === m.id} onChange={() => setReuse(m.id)} />Use {m.name}{m.builtin ? ' (built-in)' : ''}</label>
+                <label key={m.id} className="flex items-center gap-2"><input type="radio" name="project-part-choice" checked={reuse === m.id} onChange={() => setReuse(m.id)} />Use {m.name}, and show later repository changes on it</label>
               ))}
             </fieldset>
           )}

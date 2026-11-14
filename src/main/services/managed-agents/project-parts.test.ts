@@ -23,7 +23,7 @@ import { createAssetCatalogStore } from '../asset-catalog/store';
 import { _resetSettingsAuditForTesting, withSettingsSurface } from '../settings-audit';
 import { createManagedStateStore } from './state-store';
 import { createManagedAgentsService, type ManagedAgentsService } from './service';
-import { addProjectPart, keepProjectPart, projectPartsInventory, reviewProjectPart, updateProjectPart } from './project-parts';
+import { addProjectPart, keepProjectPart, projectPartKey, projectPartsInventory, reviewProjectPart, updateProjectPart } from './project-parts';
 import type { DurableAgentConfig } from '../../../shared/types';
 import type { ManagedAgentSetup } from '../../../shared/managed-agents-types';
 
@@ -83,7 +83,7 @@ describe('parts checked into a project repository', () => {
     await reviewProjectPart(service, repo, 'skill:review');
     await reviewProjectPart(service, repo, 'mcp:tickets');
     expect(await service.liveEntries()).toEqual({});
-    expect(await service.projectPartHashes()).toEqual({});
+    expect(await service.projectPartMeta()).toEqual({});
     expect(fs.existsSync(path.join(data, 'catalog'))).toBe(false);
     expect(fs.existsSync(marker())).toBe(false);
     expect(setManagedSetup).not.toHaveBeenCalled();
@@ -147,9 +147,43 @@ describe('parts checked into a project repository', () => {
     expect(review.suggestedName).toBe('house-style 2');
     await expect(user(() => addProjectPart(service, repo, 'block:house-style', review.item.hash!, { mode: 'copy', name: 'house-style' }))).rejects.toMatchObject({ code: 'name_taken' });
     await expect(addProjectPart(service, repo, 'block:house-style', review.item.hash!, { mode: 'reuse', partId: other.id })).rejects.toMatchObject({ code: 'stale' });
-    expect((await addProjectPart(service, repo, 'block:house-style', review.item.hash!, { mode: 'reuse', partId: same.id })).id).toBe(same.id);
+    expect((await user(() => addProjectPart(service, repo, 'block:house-style', review.item.hash!, { mode: 'reuse', partId: same.id }))).id).toBe(same.id);
     expect((await service.getPart(other.id)).content).toEqual({ kind: 'block', content: 'Something else.' });
     expect(Object.keys(await service.liveEntries())).toHaveLength(2);
+    // The chosen part now follows the repository's copy, so the row says so and a later change shows on it.
+    expect(await item('block:house-style')).toMatchObject({ state: 'added', partId: same.id, partName: 'Style' });
+    write('instructions/house-style.md', 'Write shorter sentences.\n');
+    const changed = await item('block:house-style');
+    expect(changed).toMatchObject({ state: 'changed', partId: same.id });
+    expect((await service.getPart(same.id)).content).toEqual({ kind: 'block', content: 'Write short sentences.\n' });
+    await user(() => updateProjectPart(service, repo, same.id, same.revision, changed.hash!));
+    expect((await service.getPart(same.id)).content).toEqual({ kind: 'block', content: 'Write shorter sentences.\n' });
+    expect((await item('block:house-style')).state).toBe('added');
+  });
+
+  it('names with spaces or other scripts get a stable catalog-safe key and can be added', async () => {
+    write('instructions/Code style.md', 'Two spaces.\n');
+    write('instructions/café.md', 'Coffee rules.\n');
+    write('skills/my skill/SKILL.md', '---\nname: my skill\n---\nDo it.\n');
+    const inv = await inventory();
+    const named = (name: string) => inv.items.find((i) => i.name === name)!;
+    for (const name of ['Code style', 'café', 'my skill']) {
+      const it = named(name);
+      expect(it.state).toBe('available');
+      expect(it.key).toMatch(/^(block|skill):[A-Za-z0-9][\w.:-]*$/);
+    }
+    expect(named('Code style').key).toMatch(/^block:Code-style-[0-9a-f]{10}$/);
+    expect(named('café').key).toMatch(/^block:cafe-[0-9a-f]{10}$/);
+    expect(projectPartKey('block', 'café')).toBe(named('café').key);
+    expect(projectPartKey('block', 'cafe')).toBe('block:cafe');
+    expect(projectPartKey('block', 'Code style')).not.toBe(projectPartKey('block', 'Code-style'));
+    expect((await inventory()).items.map((i) => i.key)).toEqual(inv.items.map((i) => i.key));
+    for (const name of ['Code style', 'café']) {
+      const it = named(name);
+      const added = await user(() => addProjectPart(service, repo, it.key, it.hash!, { mode: 'copy', name }));
+      expect((await service.liveEntries())[added.id].source).toEqual({ kind: 'project', projectId: 'proj-1', key: it.key });
+      expect(await item(it.key)).toMatchObject({ state: 'added', name });
+    }
   });
 
   it('a change in the repository waits for the person: the difference, then Update or Keep mine', async () => {
@@ -165,6 +199,7 @@ describe('parts checked into a project repository', () => {
     expect(JSON.stringify(review.current!.content)).toContain('Review the change.');
     expect(JSON.stringify(review.content)).toContain('carefully');
 
+    await expect(keepProjectPart(service, repo, added.id, 'not-the-current-copy')).rejects.toMatchObject({ code: 'stale' });
     await user(() => keepProjectPart(service, repo, added.id, changed.hash!));
     expect((await item('skill:review')).state).toBe('kept');
     expect((await service.getPart(added.id)).revision).toBe(added.revision);

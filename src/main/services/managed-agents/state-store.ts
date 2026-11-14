@@ -21,6 +21,8 @@ export interface PartMeta {
   projectHash?: string;
   /** A repository copy the person chose not to take (Keep mine): its hash. A later change asks again. */
   projectKeptHash?: string;
+  /** A library part a person chose for a repository part with the same content: that project and key. Changes are tracked as for a project part. */
+  projectLink?: { projectId: string; key: string };
 }
 
 export interface ManagedState {

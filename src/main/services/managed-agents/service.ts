@@ -816,20 +816,32 @@ export function createManagedAgentsService(deps: ManagedAgentsDeps) {
       changed();
     },
 
-    /** Each project part's repository hashes: the one it was made or updated from, and one the person chose not to take. */
-    async projectPartHashes(): Promise<Record<string, { projectHash?: string; projectKeptHash?: string }>> {
+    /** Each part's repository bookkeeping: the hash it was made or updated from, one the person kept theirs over, and a reused part's link. */
+    async projectPartMeta(): Promise<Record<string, { projectHash?: string; projectKeptHash?: string; projectLink?: { projectId: string; key: string } }>> {
       const s = await state.read();
-      const out: Record<string, { projectHash?: string; projectKeptHash?: string }> = {};
+      const out: Record<string, { projectHash?: string; projectKeptHash?: string; projectLink?: { projectId: string; key: string } }> = {};
       for (const [id, meta] of Object.entries(s.parts)) {
-        if (meta.projectHash || meta.projectKeptHash) out[id] = { ...(meta.projectHash && { projectHash: meta.projectHash }), ...(meta.projectKeptHash && { projectKeptHash: meta.projectKeptHash }) };
+        if (meta.projectHash || meta.projectKeptHash || meta.projectLink) {
+          out[id] = {
+            ...(meta.projectHash && { projectHash: meta.projectHash }), ...(meta.projectKeptHash && { projectKeptHash: meta.projectKeptHash }),
+            ...(meta.projectLink && { projectLink: meta.projectLink }),
+          };
+        }
       }
       return out;
     },
 
+    /** A custom library part a person chose for a repository part with the same content: track that repository copy from now on. */
+    async linkProjectPart(id: string, link: { projectId: string; key: string }, hash: string): Promise<void> {
+      const entry = await entryOf(id);
+      if (entry.source.kind === 'builtin') throw new ManagedError('builtin_read_only', 'A built-in part can\'t follow a repository copy. Add the copy as its own part.');
+      await state.update((s) => { s.parts[id] = { ...(s.parts[id] ?? {}), projectLink: link, projectHash: hash }; delete s.parts[id].projectKeptHash; });
+      changed();
+    },
+
     /** Keep mine: the library's version stays, and this repository copy doesn't ask again. */
     async keepProjectVersion(id: string, hash: string): Promise<void> {
-      const entry = await entryOf(id);
-      if (entry.source.kind !== 'project') throw new ManagedError('invalid', 'It isn\'t a project part.');
+      await entryOf(id);
       await state.update((s) => { s.parts[id] = { ...(s.parts[id] ?? {}), projectKeptHash: hash }; });
       changed();
     },

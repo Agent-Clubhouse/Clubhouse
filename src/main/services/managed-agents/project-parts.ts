@@ -17,10 +17,11 @@
  * the repository drops, or a project that's removed, leaves the part and the
  * agents that use it as they are.
  */
+import { createHash } from 'crypto';
 import * as path from 'path';
 import { redactSecretValues } from '../../telemetry/diag-redaction';
 import { canonicalHash } from '../asset-catalog/planner';
-import { MAX_BLOCK_BYTES, nameIssues, validatePayload } from '../asset-catalog/validation';
+import { isCatalogId, MAX_BLOCK_BYTES, nameIssues, validatePayload } from '../asset-catalog/validation';
 import { isSameProject } from '../agent-config';
 import { appLog } from '../log-service';
 import { list as listProjects } from '../project-store';
@@ -46,7 +47,7 @@ const MCP_FILE = `${PROJECT_PARTS_FOLDER}/mcp.json`;
 
 /** What the person's project-part calls need from the managed service. */
 export type ProjectPartsService = Pick<ManagedAgentsService,
-  'liveEntries' | 'getPart' | 'headContent' | 'createPart' | 'updatePart' | 'projectPartHashes' | 'keepProjectVersion'>;
+  'liveEntries' | 'getPart' | 'headContent' | 'createPart' | 'updatePart' | 'projectPartMeta' | 'linkProjectPart' | 'keepProjectVersion'>;
 
 export interface ProjectRef { id: string; name: string; path: string }
 
@@ -73,8 +74,21 @@ async function registeredProject(projectPath: string): Promise<ProjectRef> {
   throw new ManagedError('not_found', `${path.basename(projectPath)} isn't a registered project.`);
 }
 
+/**
+ * A repository part's key: `<kind>:<name>` when that's a catalog id, and
+ * otherwise (spaces, other scripts) a slug of the name and a short hash of
+ * it, the same every time for the same name. The name is shown as it is.
+ */
+export function projectPartKey(kind: ManagedPartKind, name: string): string {
+  const plain = `${kind}:${name}`;
+  if (isCatalogId(plain)) return plain;
+  const slug = name.normalize('NFKD').replace(/[\u0300-\u036f]/g, '').replace(/[^A-Za-z0-9._-]+/g, '-').replace(/^[-._]+|[-._]+$/g, '').slice(0, 80);
+  const hash = createHash('sha256').update(name, 'utf8').digest('hex').slice(0, 10);
+  return `${kind}:${slug ? `${slug}-` : ''}${hash}`;
+}
+
 function part(kind: ManagedPartKind, name: string, read: () => Promise<{ content: ManagedPartContent; droppedEnvValues?: string[] }>): Promise<RepoPart> {
-  const key = `${kind}:${name}`;
+  const key = projectPartKey(kind, name);
   return read().then(
     ({ content, droppedEnvValues = [] }) => ({ key, kind, name, content, droppedEnvValues, hash: projectContentHash(content) }),
     // telemetry-exempt: a refused part is listed with a content-free reason.
@@ -136,20 +150,35 @@ export async function readRepoParts(root: string): Promise<{ parts: RepoPart[]; 
   return { parts, notes };
 }
 
-/** This project's parts in the library, by key. */
-function addedParts(live: Record<string, CatalogEntry>, projectId: string): Map<string, CatalogEntry> {
+type PartMeta = Awaited<ReturnType<ProjectPartsService['projectPartMeta']>>;
+
+/** This project's parts in the library, by key: parts added from it, and library parts a person chose for one of its parts. */
+function addedParts(live: Record<string, CatalogEntry>, meta: PartMeta, projectId: string): Map<string, CatalogEntry> {
   const out = new Map<string, CatalogEntry>();
+  for (const entry of Object.values(live)) {
+    const link = meta[entry.id]?.projectLink;
+    if (link?.projectId === projectId && !out.has(link.key)) out.set(link.key, entry);
+  }
+  // A part made from the repository wins over a chosen one for the same key.
   for (const entry of Object.values(live)) {
     if (entry.source.kind === 'project' && entry.source.projectId === projectId) out.set(entry.source.key, entry);
   }
   return out;
 }
 
+/** The repository key a library part follows in this project, if it does. */
+function keyOf(entry: CatalogEntry | undefined, meta: PartMeta, projectId: string): string | undefined {
+  if (!entry) return undefined;
+  if (entry.source.kind === 'project') return entry.source.projectId === projectId ? entry.source.key : undefined;
+  const link = meta[entry.id]?.projectLink;
+  return link?.projectId === projectId ? link.key : undefined;
+}
+
 async function inventoryOf(service: ProjectPartsService, project: ProjectRef): Promise<{ inventory: ProjectPartsInventory; repo: Map<string, RepoPart> }> {
   const { parts, notes } = await readRepoParts(project.path);
   const live = await service.liveEntries();
-  const added = addedParts(live, project.id);
-  const hashes = await service.projectPartHashes();
+  const hashes = await service.projectPartMeta();
+  const added = addedParts(live, hashes, project.id);
   const items: ProjectPartItem[] = parts.map((p) => {
     const entry = added.get(p.key);
     const base = { key: p.key, kind: p.kind, name: p.name, ...(p.hash && { hash: p.hash }), ...(entry && { partId: entry.id, partName: entry.name }) };
@@ -237,7 +266,10 @@ export async function addProjectPart(service: ProjectPartsService, projectPath: 
   if (choice.mode === 'reuse') {
     const p = await service.getPart(choice.partId);
     if (p.retired || projectContentHash(p.content) !== repo.hash) throw new ManagedError('stale', 'That library part isn\'t the same as the repository\'s copy. Review it again.');
-    const { content: _content, ...summary } = p;
+    if (p.builtin) throw new ManagedError('invalid', `${p.name} is built-in, so it can't follow the repository's copy. Add the copy as its own part.`);
+    // From now on a change to the repository's copy shows on that part, as for one made from it.
+    await service.linkProjectPart(p.id, { projectId: project.id, key }, repo.hash);
+    const { content: _content, ...summary } = await service.getPart(p.id);
     return summary;
   }
   const name = choice.name.trim();
@@ -259,18 +291,22 @@ export async function addProjectPart(service: ProjectPartsService, projectPath: 
  * shared edit. `expectedRevision` and `hash` pin what they reviewed.
  */
 export async function updateProjectPart(service: ProjectPartsService, projectPath: string, partId: string, expectedRevision: number, hash: string): Promise<ManagedPartSummary> {
-  const project = await registeredProject(projectPath);
-  const entry = (await service.liveEntries())[partId];
-  if (!entry || entry.source.kind !== 'project' || entry.source.projectId !== project.id) throw new ManagedError('not_found', 'It isn\'t a part from this project.');
-  const { repo } = await current(service, project, entry.source.key);
-  if (repo.hash !== hash) throw new ManagedError('stale', 'It changed in the repository since you reviewed it. Review it again.');
+  const { repo } = await followed(service, projectPath, partId, hash);
   return service.updatePart({ id: partId, expectedRevision, content: repo.content, projectHash: repo.hash });
 }
 
 /** Keep mine: the library part stays as it is, and this repository copy doesn't ask again. */
 export async function keepProjectPart(service: ProjectPartsService, projectPath: string, partId: string, hash: string): Promise<void> {
-  const project = await registeredProject(projectPath);
-  const entry = (await service.liveEntries())[partId];
-  if (!entry || entry.source.kind !== 'project' || entry.source.projectId !== project.id) throw new ManagedError('not_found', 'It isn\'t a part from this project.');
+  await followed(service, projectPath, partId, hash);
   await service.keepProjectVersion(partId, hash);
+}
+
+/** A library part that follows one of this project's repository parts, and that part read now, pinned to the copy the person reviewed. */
+async function followed(service: ProjectPartsService, projectPath: string, partId: string, hash: string) {
+  const project = await registeredProject(projectPath);
+  const key = keyOf((await service.liveEntries())[partId], await service.projectPartMeta(), project.id);
+  if (!key) throw new ManagedError('not_found', 'It isn\'t a part from this project.');
+  const read = await current(service, project, key);
+  if (read.repo.hash !== hash) throw new ManagedError('stale', 'It changed in the repository since you reviewed it. Review it again.');
+  return read;
 }
