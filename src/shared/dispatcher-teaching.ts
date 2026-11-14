@@ -68,7 +68,8 @@ const ABILITIES: Readonly<Record<GrantAction, Ability | null>> = {
   'agent.restart': { group: 'agents', verb: 'restart', noun: 'agent' },
   'agent.display': { group: 'agents', verb: 'rename', noun: 'agent' },
   'agent.configure': { group: 'agents', verb: 'edit the setup of', noun: 'agent', line: (target) => target.kind === 'any' ? 'edit the setup of any agent' : undefined },
-  'agent.grant': { group: 'agents', verb: 'change the permissions of', noun: 'agent' },
+  // Held for assigning setup and creating agents, but no general permissions setter is exposed.
+  'agent.grant': null,
   'agent.dispose': { group: 'agents', verb: 'delete', noun: 'agent' },
   'agent.create': { group: 'new', verb: 'create agents in', noun: 'project' },
   'connection.manage': { group: 'new', verb: 'make and remove connections for', noun: 'agent' },

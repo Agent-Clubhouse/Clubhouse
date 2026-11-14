@@ -19,7 +19,7 @@ function actionsShown(groups: CapabilityGroup[]): Set<GrantAction> {
 }
 
 /** Not offered to the reader, on purpose (see ABILITIES). */
-const UNSAID: ReadonlySet<GrantAction> = new Set(['memory.write', 'models.read', 'grant.request', 'browser.read', 'browser.act', 'group_project.read', 'group_project.post', 'group_project.lead', 'group_project.admin']);
+const UNSAID: ReadonlySet<GrantAction> = new Set(['agent.grant', 'memory.write', 'models.read', 'grant.request', 'browser.read', 'browser.act', 'group_project.read', 'group_project.post', 'group_project.lead', 'group_project.admin']);
 
 describe('dispatcherCapabilities: built from the real grants (#3048)', () => {
   it('describes unconnected setup edits and connections as asking, without claiming model changes', () => {
@@ -27,6 +27,7 @@ describe('dispatcherCapabilities: built from the real grants (#3048)', () => {
     expect(text).toMatch(/Edit the setup of any agent, after asking you/);
     expect(text).toMatch(/Make and remove connections for any agent, after asking you/);
     expect(text).not.toContain('change the model');
+    expect(text).not.toContain('permissions of');
   });
 
   it('answers the Dispatcher\'s defaults in the five groups, in order', () => {
