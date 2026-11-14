@@ -327,7 +327,7 @@ use these member replication routes.
 fingerprint. Each record contains `projects`, `linked`, `at` and `by`. A new edit
 uses the greater of the current millisecond timestamp and one greater than every
 observed clock. Incoming clocks more than one day ahead of the receiving
-computer are refused. For a pair the newest clock wins, with separation winning an
+computer are skipped individually; other records and later pages still synchronize. For a pair the newest clock wins, with separation winning an
 equal clock and writer fingerprint breaking remaining ties deterministically.
 Unlink, split and Keep separate retain negative records as tombstones; offline
 members cannot resurrect an older link. Display groups are derived
