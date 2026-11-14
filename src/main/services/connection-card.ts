@@ -11,6 +11,7 @@ import { mcpCallerKind } from './clubhouse-mcp/mcp-call-gate';
 import * as annexPeers from './annex-peers';
 import * as annexIdentity from './annex-identity';
 import { rememberRemoteAgentName } from './annex-agent-calls';
+import { remoteFederationController } from './dispatcher-federation';
 import { groupProjectRegistry } from './group-project-registry';
 import { withoutManagedMembers } from './managed-group-projects';
 import { addMember as addGroupMember, excludeMember as excludeGroupMember, isMembershipManaged } from './group-project-membership';
@@ -61,7 +62,11 @@ async function localAgents(): Promise<ConnectionPickerTarget[]> {
   const projects = await projectStore.list();
   const groups = await Promise.all(projects.map(async (project) => (await agentConfig.listDurable(project.path)).filter((a) => !isDisposedAgent(a)).map((agent): ConnectionPickerTarget => ({ id: agent.id, name: agent.name, kind: 'agent', project: project.displayName || project.name }))));
   const dispatcher = await import('./dispatcher/dispatcher-service').then((m) => m.getDispatcherState());
-  return [...groups.flat(), ...(dispatcher.config ? [{ id: dispatcher.config.id, name: dispatcher.config.name, kind: 'dispatcher' as const }] : [])];
+  const work = dispatcher.config;
+  const chatId = dispatcher.chatAgentId;
+  return [...groups.flat().filter((agent) => agent.id !== work?.id && agent.id !== chatId),
+    ...(work && chatId ? [{ id: chatId, name: work.name, kind: 'dispatcher' as const, routeId: work.id }] : []),
+    ...(work ? [{ id: work.id, name: 'Dispatcher controller', kind: 'agent' as const, controllerOf: chatId ?? work.id }] : [])];
 }
 
 /** Quick agents may start a connection while alive, but are not picker targets. */
@@ -82,9 +87,13 @@ export async function listConnectionPickerTargets(agentId: string): Promise<Conn
     const machineId = peer.fingerprint.toLowerCase();
     const inventory = saved.peers?.[machineId];
     if (!inventory || inventory.pairingId !== peer.pairingId || !Array.isArray(inventory.targets)) return [];
-    return inventory.targets.map((target) => ({ ...target, machineId, machineName: peer.alias, online: client.isMachineConnected(machineId) }));
+    const controller = remoteFederationController(machineId);
+    const chat = inventory.targets.find((target) => target.kind === 'dispatcher');
+    const targets = inventory.targets.filter((target) => target.kind === 'dispatcher' || (target.id !== controller?.agentId && target.id !== chat?.id));
+    if (chat && controller?.agentId && controller.agentId !== chat.id) targets.push({ id: controller.agentId, name: 'Dispatcher controller', kind: 'agent', controllerOf: chat.id });
+    return targets.map((target) => ({ ...target, machineId, machineName: peer.alias, online: client.isMachineConnected(machineId) }));
   });
-  return { targets: [...locals.filter((target) => target.id !== agentId), ...remote, ...groups.map((group): ConnectionPickerTarget => ({ id: group.id, name: group.name, kind: 'group-project' }))],
+  return { targets: [...locals.filter((target) => target.id !== agentId && target.routeId !== agentId && target.controllerOf !== agentId), ...remote, ...groups.map((group): ConnectionPickerTarget => ({ id: group.id, name: group.name, kind: 'group-project' }))],
     machines: peers.map((peer) => ({ id: peer.fingerprint.toLowerCase(), name: peer.alias, network: peer.role === 'member' && peer.kind !== 'phone' })),
     ...(annexIdentity.getIdentity()?.fingerprint && { selfMachineId: annexIdentity.getIdentity()!.fingerprint.toLowerCase() }), };
 }
@@ -95,7 +104,7 @@ export const cardConnectionSource: PersistedBindingSource = {
   prune: true,
   async collect() {
     const [locals, groups] = await Promise.all([sourceAgents(), groupProjectRegistry.list()]);
-    const names = new Map(locals.map((a) => [a.id, a.name]));
+    const names = new Map(locals.map((a) => [a.id, a.controllerOf ? locals.find((owner) => owner.id === a.controllerOf)?.name ?? a.name : a.name]));
     const groupNames = new Map(groups.map((group) => [group.id, group.name]));
     const memberships = (store.get().memberships ?? []).filter((m) => names.has(m.agentId) && groupNames.has(m.groupId)).map((m): PersistedBinding => ({
       agentId: m.agentId, targetId: m.groupId, targetKind: 'group-project', label: groupNames.get(m.groupId)!, agentName: names.get(m.agentId), targetName: groupNames.get(m.groupId),
@@ -141,13 +150,15 @@ function checkedAllow(value: unknown): string[] {
 export async function addCardConnection(request: AddCardConnection): Promise<void> {
   if (!request || typeof request.agentId !== 'string' || typeof request.targetId !== 'string' || typeof request.twoWay !== 'boolean') throw new Error('That connection is invalid.');
   const locals = await sourceAgents();
-  const caller = locals.find((agent) => agent.id === request.agentId);
-  if (!caller) throw new Error('The starting agent is not available on this computer.');
+  const selectedCaller = locals.find((agent) => agent.id === request.agentId);
+  if (!selectedCaller) throw new Error('The starting agent is not available on this computer.');
+  const caller = { ...selectedCaller, id: selectedCaller.routeId ?? selectedCaller.id };
   if (mcpCallerKind(caller.id) === 'quick') quickCallers.add(caller.id);
   const { targets } = await listConnectionPickerTargets(request.agentId);
   const target = targets.find((candidate) => candidate.id === request.targetId && candidate.kind === request.targetKind && candidate.machineId === request.machineId);
   if (!target) throw new Error(request.machineId ? 'That agent or computer is not in the saved Annex Network directory.' : 'That target is no longer available.');
-  const targetId = target.machineId ? formatAgentAddress({ agentId: target.id, machine: target.machineId }) : target.id;
+  const endpoint = target.routeId ?? target.id;
+  const targetId = target.machineId ? formatAgentAddress({ agentId: endpoint, machine: target.machineId }) : endpoint;
   const { bySource, failed } = await collectSourcesByPair();
   if (failed.length) throw new Error('Connection sources could not be checked. Try again.');
   const keys = [`${caller.id}\u0000${targetId}`, `${targetId}\u0000${caller.id}`];
@@ -175,7 +186,7 @@ export async function addCardConnection(request: AddCardConnection): Promise<voi
     if (target.machineId && target.machineId === self) throw new Error('That agent is on this computer.');
     if (target.machineId) await rememberRemoteAgentName(targetId, target.name);
     const from = { agentId: caller.id };
-    const to = { agentId: target.id, ...(target.machineId && { machineId: target.machineId }) };
+    const to = { agentId: endpoint, ...(target.machineId && { machineId: target.machineId }) };
     const convert = (allow: string[]) => {
       const selected = checkedAllow(allow);
       const local = localToolsFromAllow(selected);

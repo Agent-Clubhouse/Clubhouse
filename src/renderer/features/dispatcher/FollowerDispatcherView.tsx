@@ -22,8 +22,10 @@ import type { FollowedLead } from './leadStore';
  * Take back is the person's way to use this computer's own Dispatcher now.
  * Nothing takes back by itself.
  */
-export function FollowerDispatcherView({ lead, localChatId, localName }: { lead: FollowedLead; localChatId: string; localName: string }) {
-  const [earlier, setEarlier] = useState(false);
+export function FollowerDispatcherView({ lead, localChatId, localName, earlier: selectedEarlier, onEarlierChange }: { lead: FollowedLead; localChatId: string; localName: string; earlier?: boolean; onEarlierChange?: (earlier: boolean) => void }) {
+  const [ownEarlier, setOwnEarlier] = useState(false);
+  const earlier = selectedEarlier ?? ownEarlier;
+  const setEarlier = (value: boolean) => { if (onEarlierChange) onEarlierChange(value); else setOwnEarlier(value); };
   const [error, setError] = useState<string | null>(null);
   const machine = lead.machineName;
   const leadName = lead.agent?.name ?? 'the Dispatcher';
@@ -54,7 +56,7 @@ export function FollowerDispatcherView({ lead, localChatId, localName }: { lead:
           <p className="flex-1 min-w-0 truncate text-ctp-subtext0" data-testid="follower-heading">
             {earlier ? `This computer’s earlier chat with ${localName}. Read only.` : `Following ${leadName} on ${machine}`}
           </p>
-          <Button onClick={() => setEarlier((v) => !v)} data-testid="follower-earlier-toggle">
+          <Button onClick={() => setEarlier(!earlier)} data-testid="follower-earlier-toggle">
             {earlier ? `Back to ${machine}` : 'This computer’s earlier chat'}
           </Button>
           <Button onClick={() => void run(() => window.clubhouse.dispatcher.takeBack(), 'Couldn’t take back.')} data-testid="follower-take-back">

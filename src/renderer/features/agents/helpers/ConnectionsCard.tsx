@@ -187,33 +187,34 @@ export function ConnectionsCard({ agent, helperIds, parentId, open, onToggle, on
   const bindings = useMcpBindingStore((s) => s.bindings);
   const rail = useAgentStore((s) => s.agents);
   const dispatcher = useDispatcherStore((s) => s.state);
+  const connectionAgentId = agent.id === dispatcher?.chatAgentId ? dispatcher.agentId ?? agent.id : agent.id;
   const toolPairs = useToolConnectionPairs(open && !!onDisconnect, bindings);
   // Removing a suspended link changes no binding, so that re-reads the list itself.
   const [removals, setRemovals] = useState(0);
   const dispatcherLinks = useDispatcherLinks(open && !!onDisconnect, bindings, removals);
   // Where each connection comes from (#2744), re-read with the bindings and after a removal.
-  const sourceRead = useConnectionSources(open && !!onDisconnect, agent.id, bindings, removals);
+  const sourceRead = useConnectionSources(open && !!onDisconnect, connectionAgentId, bindings, removals);
   const sources = sourceRead?.sources;
   const connections = useMemo(
-    () => agentConnections(bindings, agent.id, { helperIds, parentId }, toolPairs, dispatcherLinks, dispatcher, sources?.pairs),
-    [bindings, agent.id, helperIds, parentId, toolPairs, dispatcherLinks, dispatcher, sources],
+    () => agentConnections(bindings, connectionAgentId, { helperIds, parentId }, toolPairs, dispatcherLinks, dispatcher, sources?.pairs),
+    [bindings, connectionAgentId, helperIds, parentId, toolPairs, dispatcherLinks, dispatcher, sources],
   );
   const [confirming, setConfirming] = useState<Connection | null>(null);
   const [adding, setAdding] = useState(false);
   const [remoteManaging, setRemoteManaging] = useState<string | null>(null);
-  const grants = useConnectionGrants(open && !!onDisconnect, agent.id, bindings, removals);
+  const grants = useConnectionGrants(open && !!onDisconnect, connectionAgentId, bindings, removals);
   // A connection another computer made or changed changes no binding here, so its change re-reads the store (#3064).
   useEffect(() => {
     if (!open || !onDisconnect) return undefined;
     return window.clubhouse.mcpBinding.onConnectionGrantsChanged(() => setRemovals((n) => n + 1));
   }, [open, onDisconnect]);
-  const remoteCount = useMemo(() => remoteConnections(grants, agent.id).length, [grants, agent.id]);
+  const remoteCount = useMemo(() => remoteConnections(grants, connectionAgentId).length, [grants, connectionAgentId]);
   // The row being managed, by the other end's id: looked up each render so a new direction shows (#2972).
   const [managingId, setManagingId] = useState<string | null>(null);
   const managing = managingId ? connections.find((c) => c.id === managingId) ?? null : null;
   const pairSources = (c: Connection): ConnectionPairSources[] => {
-    const pairs = new Map((sources?.pairs ?? []).filter((p) => (p.agentId === agent.id && p.targetId === c.id)
-      || (c.kind === 'agent' && p.agentId === c.id && p.targetId === agent.id)).map((p) => [pairKey(p.agentId, p.targetId), p]));
+    const pairs = new Map((sources?.pairs ?? []).filter((p) => (p.agentId === connectionAgentId && p.targetId === c.id)
+      || (c.kind === 'agent' && p.agentId === c.id && p.targetId === connectionAgentId)).map((p) => [pairKey(p.agentId, p.targetId), p]));
     for (const p of c.pairs) {
       if (pairs.has(pairKey(p.agentId, p.targetId))) continue;
       const bound = bindings.some((b) => b.agentId === p.agentId && b.targetId === p.targetId);
@@ -268,23 +269,23 @@ export function ConnectionsCard({ agent, helperIds, parentId, open, onToggle, on
           })}
         </ul>
       )}
-      {onDisconnect && <RemoteConnections agent={agent} grants={grants} openAddress={remoteManaging} onChanged={() => setRemovals((n) => n + 1)} />}
+      {onDisconnect && <RemoteConnections agent={{ ...agent, id: connectionAgentId }} grants={grants} openAddress={remoteManaging} onChanged={() => setRemovals((n) => n + 1)} />}
     </DetailsCard>
-    {adding && <ConnectionPicker agentId={agent.id} agentName={agent.name} bindings={bindings} grants={grants} onClose={() => setAdding(false)} onCreated={(target) => {
+    {adding && <ConnectionPicker agentId={connectionAgentId} agentName={agent.name} bindings={bindings} grants={grants} onClose={() => setAdding(false)} onCreated={(target) => {
       setAdding(false);
       setRemovals((n) => n + 1);
-      if (target.machineId) setRemoteManaging(`${target.id}@${target.machineId}`);
-      else setManagingId(target.id);
+      if (target.machineId) setRemoteManaging(`${target.routeId ?? target.id}@${target.machineId}`);
+      else setManagingId(target.routeId ?? target.id);
     }} />}
     {managing && (
       <ConnectionSourcesDialog
-        agentId={agent.id}
+        agentId={connectionAgentId}
         otherId={managing.id}
         targetKind={managing.kind}
         grants={grants}
         liveTools={new Map(bindings.map((b) => [`${b.agentId}>${b.targetId}`, b.disabledTools ?? []]))}
         liveEnabled={new Map(bindings.map((b) => [`${b.agentId}>${b.targetId}`, b.enabledTools ?? []]))}
-        agentName={dispatcherAgentDisplayName(agent.id, agent.name, dispatcher)}
+        agentName={dispatcherAgentDisplayName(connectionAgentId, agent.name, dispatcher)}
         otherName={dispatcherAgentDisplayName(managing.id, rail[managing.id]?.name ?? managing.name, dispatcher)}
         dispatcherEnd={isDispatcherAgent(agent) ? managing.name : managing.id === dispatcher?.agentId || managing.id === dispatcher?.chatAgentId
           || (rail[managing.id] && isDispatcherAgent(rail[managing.id])) ? agent.name : undefined}

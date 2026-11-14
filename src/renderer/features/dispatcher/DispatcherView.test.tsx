@@ -17,12 +17,15 @@ import { DispatcherView } from './DispatcherView';
 import { useDispatcherStore } from './dispatcherStore';
 import { ClearChatHost, StartFreshHost } from './ClearChat';
 import { useDispatcherDebugStore } from './dispatcherDebug';
+import { useRemoteProjectStore } from '../../stores/remoteProjectStore';
+import { useRemoteDispatcherSelection } from './remoteDispatcherSelection';
 import { useChatStore } from '../../stores/chatStore';
 
 const dispatcher = (over: Partial<Agent> = {}): Agent =>
   ({ id: 'disp', projectId: DISPATCHER_PROJECT_ID, name: 'Dispatcher', kind: 'durable', status: 'sleeping', color: 'indigo', ...over }) as Agent;
 
 beforeEach(() => {
+  useRemoteDispatcherSelection.getState().select(null);
   useProjectStore.setState({ projects: [], activeProjectId: null });
   useUIStore.setState({ explorerTab: 'agents', dispatcherOpen: true });
   useDispatcherStore.getState().setState({ enabled: true, flagOn: true, agentId: 'disp-work', path: 'dispatcher-work-dir', chatAgentId: 'disp', chatPath: 'dispatcher-dir', config: null });
@@ -65,6 +68,14 @@ describe('DispatcherView debug view (#3188)', () => {
 });
 
 describe('DispatcherView', () => {
+  it('opens a selected remote Dispatcher chat', () => {
+    const remote = dispatcher({ id: 'remote||s1||chat', projectId: 'remote||s1||__dispatcher__', name: 'Tael', status: 'running' });
+    useRemoteProjectStore.setState({ remoteAgents: { [remote.id]: remote } });
+    useRemoteDispatcherSelection.getState().select(remote.id);
+    render(<DispatcherView />);
+    expect(screen.getByTestId('runtime-pane')).toHaveTextContent(remote.id);
+  });
+
   it('shows the chat or terminal pane while it runs', () => {
     useAgentStore.setState({ agents: { disp: dispatcher({ status: 'running' }) } });
     render(<DispatcherView />);
@@ -194,6 +205,27 @@ describe('DispatcherView on a follower (#3352)', () => {
     useAnnexClientStore.setState({ satellites: [] });
   });
 
+  it('switches an already selected remote chat to the follower view when it becomes the lead', async () => {
+    const { useLeadStore } = await import('./leadStore');
+    const { useAnnexClientStore } = await import('../../stores/annexClientStore');
+    const remote = dispatcher({ id: 'remote||sat-laptop||lead-chat', projectId: 'remote||sat-laptop||__dispatcher__', name: 'Rosie', status: 'running' });
+    useRemoteProjectStore.setState({ remoteAgents: { [remote.id]: remote } });
+    useAnnexClientStore.setState({ satellites: [{ id: 'sat-laptop', alias: 'Laptop', fingerprint: 'LAPTOP', state: 'connected', snapshot: { dispatcher: { agent: { ...remote, id: 'lead-chat', projectId: DISPATCHER_PROJECT_ID } } } }] } as never);
+    useAgentStore.setState({ agents: { disp: dispatcher({ status: 'running' }) } });
+    useRemoteDispatcherSelection.getState().select(remote.id);
+    useLeadStore.setState({ state: { ...LEAD, following: false } });
+    const getLead = vi.spyOn(window.clubhouse.dispatcher, 'getLead').mockImplementation(async () => useLeadStore.getState().state!);
+    render(<DispatcherView />);
+    expect(screen.getByTestId('runtime-pane')).toHaveTextContent(remote.id);
+    act(() => useLeadStore.setState({ state: LEAD }));
+    expect(screen.getByTestId('follower-heading')).toHaveTextContent('Following Rosie on Laptop');
+    expect(screen.getByTestId('follower-take-back')).toBeInTheDocument();
+    expect(screen.getByTestId('follower-earlier-toggle')).toBeInTheDocument();
+    act(() => useAnnexClientStore.setState((state) => ({ satellites: state.satellites.map((sat) => ({ ...sat, state: 'disconnected' as const, snapshot: null })) })));
+    expect(screen.getByTestId('follower-offline-input')).toBeInTheDocument();
+    getLead.mockRestore();
+  });
+
   it('shows the lead’s chat while following, and this computer’s own again after Take back', async () => {
     const { useLeadStore } = await import('./leadStore');
     const { useAnnexClientStore } = await import('../../stores/annexClientStore');
@@ -210,6 +242,11 @@ describe('DispatcherView on a follower (#3352)', () => {
     render(<DispatcherView />);
     await act(async () => {});
     expect(screen.getByTestId('follower-heading').textContent).toBe('Following Rosie on Laptop');
+    expect(screen.getByTestId('runtime-pane').textContent).toBe('remote||sat-laptop||lead-chat');
+    act(() => useRemoteDispatcherSelection.getState().select(null, true));
+    expect(screen.getByTestId('follower-heading')).toHaveTextContent('earlier chat');
+    expect(screen.queryByTestId('runtime-pane')).toBeNull();
+    act(() => useRemoteDispatcherSelection.getState().select(null));
     expect(screen.getByTestId('runtime-pane').textContent).toBe('remote||sat-laptop||lead-chat');
     act(() => useLeadStore.setState({ state: { ...LEAD, following: false, tookBack: true } }));
     expect(screen.queryByTestId('follower-dispatcher-view')).toBeNull();
