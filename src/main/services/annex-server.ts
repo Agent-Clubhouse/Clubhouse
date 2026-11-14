@@ -1,3 +1,5 @@
+import { mobileProjectLinks, MOBILE_PROJECT_LINKS_EVENT } from './mobile-project-links';
+import { hydrateProjectLinks, projectLinksStore } from './project-links-store';
 import { projectLinksCapabilities, receiveProjectLinks } from './project-links-network';
 import { HandoffTransferBusy } from '../../shared/handoff-transfer';
 import { hasSessionCaptureFailure } from './session-capture-barrier';
@@ -1182,6 +1184,7 @@ type SnapshotSources = Awaited<ReturnType<typeof readSnapshotSourcesData>>;
 
 /** Everything that needs awaiting. Live state comes after, in assembleSnapshot. */
 async function readSnapshotSourcesData() {
+  await hydrateProjectLinks();
   const projects = await projectStore.list();
   const durablesByProject: Record<string, DurableConfigs> = {};
   const policiesByProject: Record<string, Awaited<ReturnType<typeof catalogOrchestration>>> = {};
@@ -1323,6 +1326,7 @@ function assembleSnapshot(sources: SnapshotSources): BuiltSnapshot {
     pendingPermissions: permissionQueue.listPending().map((pending) => ({ ...pending, ...boundToolInput(pending.toolInput) })),
     // Helper starts and disposes waiting on the user (#159); gated by capabilities.helperRequests.
     helperRequests: buildMobileHelperRequests(projects, durablesByProject),
+    projectLinks: mobileProjectLinks(),
     // Clubhouse permission requests waiting on the user (#3205); gated by capabilities.grantRequests.
     grantRequests: buildMobileGrantRequests(grantRequestPlaces(projects)),
     appUpdate: getAppUpdateStatus(),
@@ -3813,6 +3817,7 @@ async function handleMobileCapabilitiesRoute(ctx: AnnexRouteContext): Promise<vo
     orchestration: { version: 1 },
     idempotency: { scope: 'peer-and-epoch', maxEntries: MOBILE_COMMAND_MAX_ENTRIES, ttlMs: MOBILE_COMMAND_TTL_MS },
     projectState: { version: 1 },
+    projectLinks: { version: 1, snapshotField: 'projectLinks', event: MOBILE_PROJECT_LINKS_EVENT },
     finishedQuickAgents: { version: 1 },
     // A snapshot over its limit says what it left out in `snapshotTruncated`; these fetch canvases.
     snapshotTruncation: { version: 1, canvasPaths: { project: '/api/v1/mobile/canvas/{projectId}', app: '/api/v1/mobile/canvas' } },
@@ -5488,6 +5493,11 @@ function startServer(strict = false): Promise<void> {
   });
 
   // Helper starts and disposes waiting on the user (#159) are in the snapshot.
+  const offProjectLinks = projectLinksStore().onChange((change) => {
+    if (!change.recordsChanged) return;
+    broadcastAndBuffer(MOBILE_PROJECT_LINKS_EVENT, { projectLinks: mobileProjectLinks() });
+    broadcastSnapshotRefresh();
+  });
   const offStarts = onStartRequestsChanged(() => broadcastSnapshotRefresh());
   // Clubhouse permission requests (#3205) too, each opened or resolved also as an event, in the order they happened.
   let grantEvents: Promise<void> = Promise.resolve();
@@ -5517,6 +5527,7 @@ function startServer(strict = false): Promise<void> {
     projectsChangedTimer.unref?.();
   });
   unsubHelperRequests = () => {
+    offProjectLinks();
     offStarts();
     offGrants();
     offDisposes();

@@ -1562,3 +1562,46 @@ disabled tools, helper/self targets and denied control still block.
 returns `control_requires_user` for manual settings. Wake remains separately gated.
 Preview and commit resolve the same target policy, with revocation rechecks and
 redacted audit records. These tools do not expose general model/settings control.
+
+## Linked projects
+
+This is an additive optional feature of mobile contract **v1**, which remains
+unchanged. Gate it on `projectLinks.version >= 1` in capabilities:
+
+```json
+{"projectLinks":{"version":1,"snapshotField":"projectLinks","event":"project-links:changed"}}
+```
+
+A snapshot's optional `projectLinks` array contains the desktop's actual shared
+Annex Network display groups. Each entry has a content-derived `id` and
+`projects: [{"machine":"<Annex identity fingerprint>","projectId":"<project id>"}]`.
+`machine` is the same lowercase fingerprint used by the snapshot's `machine`
+field and qualified agent addresses. Project ids are scoped to that computer;
+two computers may have the same project id. Match both fields when joining the
+phone's project and agent catalogs. Group ids are identical on replicas with the
+same members, and change when a group's membership changes. They are opaque to
+the phone.
+
+A sequenced, replayable `project-links:changed` event has payload
+`{"projectLinks":[...]}`. Replace the whole array, including when it is empty.
+A reconnect snapshot also replaces it. Accepted suggestions and manual links
+both appear. Keep separate, split and unlink remove groups or members. Negative
+pair records remain desktop-side tombstones and never appear as mobile groups.
+Go must not infer groups from `repoKey`, project names, paths or git remotes.
+
+The set is shared across member desktops, with newest-change-wins conflict
+resolution per pair. Computers push changes and catch up when they connect or
+reconnect. A phone paired with one computer receives that computer's replica of
+the entire set, including references to other computers; render agents only for
+catalogs the phone can access. Keep references to offline or unavailable
+computers so reconnecting restores their place in a group. With several paired
+computers, use one connected capable member's snapshot and event stream as the
+current source of this full set. Do not union old full-set snapshots, which would
+bring removed links back. Member replicas converge through desktop sync; the
+phone does not replicate or edit pair records. A desktop without this capability
+supplies no link information; retain the per-computer display in that case.
+Older phones ignore the optional capability, field and event.
+
+The canonical `test/fixtures/annex-mobile/project-links.json` includes an accepted
+link, its snapshot value, a Keep separate removal, a manual link and an unlink
+change. The fixture uses qualified references even when only one desktop answers.

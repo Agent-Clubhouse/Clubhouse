@@ -270,6 +270,15 @@ const NET = vi.hoisted(() => {
     onChange: null as null | (() => void),
   };
 });
+const LINK_REPLICA = vi.hoisted(() => ({ store: undefined as import('./project-links-store').ProjectLinksStore | undefined }));
+vi.mock('./project-links-store', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('./project-links-store')>();
+  LINK_REPLICA.store = new actual.ProjectLinksStore({
+    read: () => ({ version: 1, records: [], migrated: [] }), save: async () => {},
+    self: () => NET.self.fingerprint, legacyMirror: () => undefined, now: () => 1_800_000_000_000,
+  });
+  return { ...actual, projectLinksStore: () => LINK_REPLICA.store!, hydrateProjectLinks: () => LINK_REPLICA.store!.migrate() };
+});
 vi.mock('./annex-network-membership', () => ({
   unknownPeerReason: () => 'unknown',
   noteLocalJoin: vi.fn(),
@@ -3194,6 +3203,52 @@ describe('Annex mobile contract fixtures', { timeout: TEST_TIMEOUT_MS }, () => {
     expect(changed.payload).toEqual(listed.response.body);
     fixtures.set('network-changed.json', { direction: 'desktop-to-phone', frame: changed });
   });
+
+  it('shared project links include accepted and manual groups, exclude Keep separate, and replace on events', async () => {
+    const store = LINK_REPLICA.store!;
+    const other = NET.network.members[1].fingerprint;
+    const remote = `remote||${other}||proj_app`;
+    const ws = await connect();
+    expect(frames(ws).find((f) => f.type === 'snapshot').payload.projectLinks).toEqual([]);
+    ws.send.mockClear();
+    // Accept a suggestion. The matching git remote alone supplied no link above.
+    await store.apply({ type: 'link', a: 'proj_app', b: remote });
+    await eventually(() => expect(frames(ws).some((f) => f.type === 'project-links:changed')).toBe(true));
+    const linked = frames(ws).find((f) => f.type === 'project-links:changed');
+    expect(linked.payload.projectLinks).toHaveLength(1);
+    const group = linked.payload.projectLinks[0];
+    expect(group.id).toMatch(/^[0-9a-f]{64}$/);
+    expect(group.projects).toEqual(expect.arrayContaining([
+      { machine: NET.self.fingerprint, projectId: 'proj_app' }, { machine: other, projectId: 'proj_app' },
+    ]));
+    // A new connection to this member sees the same complete shared set.
+    const snapshot = frames(await connect()).find((f) => f.type === 'snapshot');
+    expect(snapshot.payload.projectLinks).toEqual(linked.payload.projectLinks);
+    ws.send.mockClear();
+    await store.apply({ type: 'keepSeparate', a: 'proj_app', b: remote });
+    await eventually(() => expect(frames(ws).some((f) => f.type === 'project-links:changed' && f.payload.projectLinks.length === 0)).toBe(true));
+    const separate = frames(ws).find((f) => f.type === 'project-links:changed');
+    expect(separate.payload.projectLinks).toEqual([]);
+    ws.send.mockClear();
+    // Manual links do not need matching remotes and use the very same group contract.
+    await store.apply({ type: 'link', a: 'proj_app', b: `remote||${other}||manual_docs` });
+    const manual = frames(ws).find((f) => f.type === 'project-links:changed');
+    expect(manual.payload.projectLinks[0].projects.some((p: { projectId: string }) => p.projectId === 'manual_docs')).toBe(true);
+    ws.send.mockClear();
+    await store.apply({ type: 'unlink', a: 'proj_app' });
+    const unlinked = frames(ws).find((f) => f.type === 'project-links:changed');
+    expect(unlinked.payload.projectLinks).toEqual([]);
+    const replay = await roundTrip(ws, { type: 'mobile:replay', epoch, since: linked.seq - 1 }, 6);
+    expect(replay.filter((f) => f.type === 'project-links:changed').map((f) => f.payload)).toEqual([
+      linked.payload, separate.payload, manual.payload, unlinked.payload,
+    ]);
+    fixtures.set('project-links.json', {
+      direction: 'desktop-to-phone', snapshotField: 'projectLinks',
+      snapshot: { projectLinks: snapshot.payload.projectLinks }, linked, keptSeparate: separate, manual, unlinked,
+      replay: renumberFrames(replay, linked.seq - 1),
+    });
+  });
+
 
   it('the Dispatcher\'s chat reaches a phone as its group chat, and other agents\' whole (#3043)', async () => {
     resetWorld();

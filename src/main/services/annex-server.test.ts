@@ -1,3 +1,4 @@
+vi.mock('./project-links-store', () => ({ hydrateProjectLinks: vi.fn(async () => ({})), projectLinksStore: () => ({ groups: () => [], onChange: () => () => {} }) }));
 import { receiveProjectLinks } from './project-links-network';
 vi.mock('./project-links-network', () => ({ projectLinksCapabilities: () => ({ version: 1, maxRecords: 200 }), receiveProjectLinks: vi.fn(async () => ({ version: 1, records: [] })) }));
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';

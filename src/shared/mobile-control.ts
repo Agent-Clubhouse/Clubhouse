@@ -280,3 +280,11 @@ export interface MobileGrantRequest {
   /** The answers this request takes: `allow_once` and `decline` for a call, `allow_lasting` and `decline` for a grant. */
   answers: MobileGrantAnswer[];
 }
+
+/** Optional v1 snapshot field and full-replacement project-links:changed payload. */
+export interface MobileProjectLinkGroup {
+  /** Content-derived id, identical across member replicas with the same group. */
+  id: string;
+  /** Annex identity fingerprint and project id, including projects on offline computers. */
+  projects: Array<{ machine: string; projectId: string }>;
+}
