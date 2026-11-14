@@ -850,10 +850,11 @@ export function ChromeSidebar() {
         const chat = satellite?.snapshot?.dispatcher?.agent;
         const id = satellite && chat ? namespacedAgentId(satellite.id, chat.id) : null;
         const isLead = followedLead?.state.lead?.machine === remote.machineId;
+        const active = dispatcherShown && !dispatcherWorkOpen && (selectedRemoteDispatcher === id && !!id || !!isLead && !selectedRemoteDispatcher && !localDispatcherSelected);
         return <div key={remote.machineId} className="px-1.5" data-testid="remote-dispatcher-group">
           <button type="button" disabled={!id && !isLead} onClick={() => isLead ? openDispatcher() : id && openDispatcher({ remoteAgentId: id })}
-            aria-current={dispatcherShown && (selectedRemoteDispatcher === id && !!id || !!isLead && !selectedRemoteDispatcher && !localDispatcherSelected && !dispatcherWorkOpen) ? 'true' : undefined}
-            className="w-full rounded text-left text-[13px] text-ctp-subtext1 hover:bg-surface-0 disabled:opacity-60 py-1 pl-7 pr-2">
+            aria-current={active ? 'true' : undefined}
+            className={`w-full rounded text-left text-[13px] disabled:opacity-60 py-1 pl-7 pr-2 ${active ? 'bg-surface-0 text-ctp-text' : 'text-ctp-subtext1 hover:bg-surface-0/60'}`}>
             {remote.label}{remote.state === 'offline' ? ' · Offline' : ''}
           </button>
           {dispatcherDebug && remote.address && <div className="pl-12 py-1 text-xs text-ctp-overlay1" data-testid="remote-dispatcher-controller">

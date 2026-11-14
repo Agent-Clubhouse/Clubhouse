@@ -15,7 +15,8 @@ import { PoppedOutPlaceholder } from '../popout/PoppedOutPlaceholder';
 import { useFollowedLead } from './leadStore';
 import { FollowerDispatcherView } from './FollowerDispatcherView';
 import { useRemoteDispatcherSelection } from './remoteDispatcherSelection';
-import { useRemoteProjectStore } from '../../stores/remoteProjectStore';
+import { parseNamespacedId, useRemoteProjectStore } from '../../stores/remoteProjectStore';
+import { useAnnexClientStore } from '../../stores/annexClientStore';
 
 /**
  * The Dispatcher's own view (#2538): the same agent pane a project agent
@@ -50,6 +51,9 @@ export function DispatcherView() {
   const remoteId = useRemoteDispatcherSelection((s) => s.agentId);
   const localSelected = useRemoteDispatcherSelection((s) => s.local);
   const remoteAgent = useRemoteProjectStore((s) => remoteId ? s.remoteAgents[remoteId] : undefined);
+  const remoteSatellite = remoteId ? parseNamespacedId(remoteId)?.satelliteId : undefined;
+  const remoteMachine = useAnnexClientStore((s) => s.satellites.find((sat) => sat.id === remoteSatellite)?.fingerprint.toLowerCase());
+  const selectedLead = !!remoteId && !!followed && (remoteId === followed.agent?.id || remoteMachine === followed.state.lead?.machine);
 
   // A false→true change is what moves focus into the terminal (AgentTerminal).
   const [focused, setFocused] = useState(false);
@@ -58,7 +62,7 @@ export function DispatcherView() {
     return () => cancelAnimationFrame(raf);
   }, [agentId]);
 
-  if (remoteId) return remoteAgent
+  if (remoteId && !selectedLead) return remoteAgent
     ? <AgentRuntimePane key={remoteId} agent={{ ...remoteAgent, executionMode: 'chat' }} terminal={null} canSwitch={false} />
     : <p role="status">Waiting for the other Dispatcher to connect.</p>;
 
@@ -66,7 +70,7 @@ export function DispatcherView() {
 
   // Following another computer's lead (#3352): its chat, with this computer's kept one click away.
   if (followed && state?.chatAgentId) {
-    return <FollowerDispatcherView key={localSelected ? 'local' : 'lead'} initialEarlier={localSelected} lead={followed} localChatId={state.chatAgentId} localName={agent?.name ?? state.config?.name ?? 'Dispatcher'} />;
+    return <FollowerDispatcherView earlier={localSelected} onEarlierChange={(earlier) => useRemoteDispatcherSelection.getState().select(null, earlier)} lead={followed} localChatId={state.chatAgentId} localName={agent?.name ?? state.config?.name ?? 'Dispatcher'} />;
   }
 
   const setupStatus = state?.setup?.status;
