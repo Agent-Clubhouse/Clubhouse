@@ -616,6 +616,7 @@ import * as eventReplay from './annex-event-replay';
 import { recordStartRequest, _resetStartRequestsForTesting } from './helper-start-requests';
 import { listDisposeRequests, recordDisposeRequest, _resetDisposeRequestsForTesting } from './helper-dispose-requests';
 import { callKey, dropGrantRequestsFor, recordGrantRequest, _resetGrantRequestsForTesting } from './grant-requests';
+import * as projectStore from './project-store';
 import { _resetAppUpdateForTesting } from './app-update-request';
 import { AppUpdateError } from '../../shared/app-update';
 import { GRANT_REQUEST_TTL_MS } from '../../shared/grant-requests';
@@ -3389,6 +3390,46 @@ describe('Annex mobile contract fixtures', { timeout: TEST_TIMEOUT_MS }, () => {
     W.dispatcher.enabled = false;
   });
 
+  it('does not schedule a raced follow-up when progress arrives during slow snapshot reads', async () => {
+    resetWorld();
+    _resetAppUpdateForTesting({ keepListeners: true });
+    W.updateUnsupported = null;
+    const ws = await connect();
+    const publish = (downloadProgress: number) => {
+      W.updateStatus = { ...W.updateStatus, state: 'downloading', availableVersion: '1.1.0', downloadProgress, error: null };
+      for (const listener of W.updateListeners) listener();
+    };
+    ws.send.mockClear();
+    publish(0);
+    await eventually(() => expect(frames(ws).some((f) => f.type === 'snapshot')).toBe(true));
+    ws.send.mockClear();
+    let finishRead!: (value: typeof W.projects) => void;
+    const read = vi.spyOn(projectStore, 'list').mockImplementationOnce(() => new Promise((resolve) => { finishRead = resolve; }));
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    try {
+      annexServer.broadcastSnapshotRefresh();
+      expect(read).toHaveBeenCalledTimes(1);
+      publish(25);
+      const currentSeq = eventReplay.getLastSeq();
+      finishRead(W.projects);
+      await vi.waitFor(() => expect(frames(ws).filter((f) => f.type === 'snapshot')).toHaveLength(1));
+      const snapshot = frames(ws).find((f) => f.type === 'snapshot');
+      expect(snapshot.payload.appUpdate).toMatchObject({ state: 'downloading', downloadProgress: 25 });
+      expect(snapshot.payload.lastSeq).toBe(currentSeq);
+      await vi.advanceTimersByTimeAsync(300);
+      expect(read).toHaveBeenCalledTimes(1);
+      expect(frames(ws).filter((f) => f.type === 'snapshot')).toHaveLength(1);
+    } finally {
+      read.mockRestore();
+      vi.useRealTimers();
+      W.updateStatus = { ...W.updateStatus, state: 'idle', availableVersion: null, downloadProgress: 0 };
+      W.updateUnsupported = 'This is a development build. Update it from the desktop.';
+      _resetAppUpdateForTesting({ keepListeners: true });
+      for (const listener of W.updateListeners) listener();
+      await eventually(() => expect(frames(ws).filter((f) => f.type === 'snapshot').at(-1)?.payload.appUpdate.state).toBe('unsupported'));
+    }
+  });
+
   it('bounds update progress events, avoids progress snapshots and replays current status', async () => {
     resetWorld();
     _resetAppUpdateForTesting({ keepListeners: true });
@@ -3411,6 +3452,13 @@ describe('Annex mobile contract fixtures', { timeout: TEST_TIMEOUT_MS }, () => {
     expect(progress).toHaveLength(100);
     expect(progress.map((f) => f.payload.downloadProgress)).toEqual(Array.from({ length: 100 }, (_, i) => i + 1));
     expect(frames(ws).filter((f) => f.type === 'snapshot')).toEqual([]);
+    // A retry resets to zero, then must deliver a percentage seen in the first attempt.
+    publish({ downloadProgress: 0 });
+    publish({ downloadProgress: 50 });
+    publish({ downloadProgress: 50 });
+    expect(frames(ws).filter((f) => f.type === 'app_update:changed').slice(-2).map((f) => f.payload.downloadProgress)).toEqual([0, 50]);
+    expect(frames(ws).filter((f) => f.type === 'snapshot')).toEqual([]);
+    publish({ downloadProgress: 100 });
     // Even with unchanged progress, a failure/reason and then readiness must arrive.
     publish({ state: 'error', error: 'private download detail', errorCategory: 'download' });
     publish({ state: 'ready', error: null });
@@ -3419,13 +3467,19 @@ describe('Annex mobile contract fixtures', { timeout: TEST_TIMEOUT_MS }, () => {
     expect(changes.at(-2).payload.reason).toBe('The update could not be downloaded.');
     expect(changes.at(-1).payload).toMatchObject({ state: 'ready', downloadProgress: 100, reason: null });
     expect(changes.every((f, i) => i === 0 || f.seq > changes[i - 1].seq)).toBe(true);
+    publish({ state: 'idle', availableVersion: null, downloadProgress: 0, error: null });
+    const reset = frames(ws).filter((f) => f.type === 'app_update:changed').at(-1);
+    expect(reset.payload).toMatchObject({ state: 'none', availableVersion: null, downloadProgress: 0, reason: null });
+    changes.push(reset);
     const reconnected = await connect();
-    expect(frames(reconnected).find((f) => f.type === 'snapshot').payload.appUpdate).toEqual(changes.at(-1).payload);
+    expect(frames(reconnected).find((f) => f.type === 'snapshot').payload.appUpdate).toEqual(reset.payload);
     const replay = await roundTrip(reconnected, { type: 'mobile:replay', epoch, since: before });
     expect(replay.filter((f) => f.type === 'app_update:changed')).toEqual(changes.map((f) => ({ ...f, replayed: true })));
     W.updateStatus = { ...W.updateStatus, state: 'idle', availableVersion: null, downloadProgress: 0, error: null };
     W.updateUnsupported = 'This is a development build. Update it from the desktop.';
     _resetAppUpdateForTesting({ keepListeners: true });
+    for (const listener of W.updateListeners) listener();
+    await eventually(() => expect(frames(ws).filter((f) => f.type === 'snapshot').at(-1)?.payload.appUpdate.state).toBe('unsupported'));
   });
 
   it('Clubhouse updates: status, explicit human approval, cancellation and install failure', async () => {

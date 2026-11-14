@@ -77,6 +77,23 @@ describe('LB-SP-001: downloadFile partial-download detection', () => {
     expect(progress.mock.calls.map(([percent]) => percent)).toEqual(Array.from({ length: 101 }, (_, i) => i));
   });
 
+  it('resets progress for a retry and reports a percentage reached in the failed attempt', async () => {
+    const progress = vi.fn();
+    const first = downloadFile('http://example.com/file', '/tmp/test.dmg', 100, progress);
+    fakeRes.emit('data', Buffer.alloc(40));
+    fakeFile.emit('finish');
+    await expect(first).rejects.toThrow('Partial download');
+    expect(progress.mock.calls).toEqual([[0], [40]]);
+    fakeRes.removeAllListeners();
+    fakeFile.removeAllListeners();
+    const retry = downloadFile('http://example.com/file', '/tmp/test.dmg', 100, progress);
+    fakeRes.emit('data', Buffer.alloc(40));
+    fakeRes.emit('data', Buffer.alloc(60));
+    fakeFile.emit('finish');
+    await retry;
+    expect(progress.mock.calls).toEqual([[0], [40], [0], [40], [99], [100]]);
+  });
+
   it('reports 0 and completion when the download length is unknown', async () => {
     fakeRes.headers = {};
     const progress = vi.fn();

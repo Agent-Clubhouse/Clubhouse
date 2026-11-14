@@ -5556,13 +5556,12 @@ function startServer(strict = false): Promise<void> {
   let lastDispatcherChange = JSON.stringify(dispatcherChangedPayload(getDispatcherState()));
   // Progress replaces appUpdate through the replayable event; rebuilding the entire
   // snapshot for each percent makes phones queue unrelated agent/icon data (#3504).
-  const updateStateKey = (value: ReturnType<typeof getAppUpdateStatus>) => JSON.stringify({ ...value, downloadProgress: 0 });
   const initialUpdate = getAppUpdateStatus();
-  let lastUpdateState = updateStateKey(initialUpdate);
+  let lastUpdateState = appUpdateStateKey(initialUpdate);
   let lastUpdateProgress = Math.floor(initialUpdate.downloadProgress);
   unsubAppUpdate = onAppUpdateChanged(() => {
     const next = getAppUpdateStatus();
-    const state = updateStateKey(next);
+    const state = appUpdateStateKey(next);
     const progress = Math.floor(next.downloadProgress);
     if (state === lastUpdateState && progress === lastUpdateProgress) return;
     const stateChanged = state !== lastUpdateState;
@@ -5997,10 +5996,22 @@ const RACED_REFRESH_DELAY_MS = 250;
 /** Frames that never change a snapshot's fields. They can come many times a build, so they can't count as a race. */
 const OUTPUT_EVENT_TYPES = new Set(['pty:data', 'chat:event', 'frame:omitted']);
 
+/** Everything in appUpdate except download progress, shared by events and snapshot race checks. */
+function appUpdateStateKey(value: ReturnType<typeof getAppUpdateStatus>): string {
+  return JSON.stringify({ ...value, downloadProgress: 0 });
+}
+
 /** Did anything a snapshot shows change since this seq? If the buffer can't say, assume so. */
-function snapshotStateChangedSince(seq: number): boolean {
+function snapshotStateChangedSince(seq: number, updateStateBefore: string): boolean {
   const events = eventReplay.getEventsSince(seq);
-  return events === null || events.some((event) => !OUTPUT_EVENT_TYPES.has(event.type));
+  return events === null || events.some((event) => {
+    // assembleSnapshot samples appUpdate live after the reads. Progress is already
+    // current and must not create a 250ms refresh loop on a slow disk (#3504).
+    if (event.type === APP_UPDATE_CHANGED_EVENT) {
+      return appUpdateStateKey(event.payload as ReturnType<typeof getAppUpdateStatus>) !== updateStateBefore;
+    }
+    return !OUTPUT_EVENT_TYPES.has(event.type);
+  });
 }
 
 /**
@@ -6052,12 +6063,13 @@ function startSnapshotBuild(): void {
   const broadcast = refreshWanted;
   refreshWanted = false;
   const cursor = eventReplay.getLastSeq();
+  const updateStateBefore = appUpdateStateKey(getAppUpdateStatus());
   const generation = refreshGeneration;
   let raced = false;
   readSnapshotSources().then((sources) => {
     if (generation !== refreshGeneration) return;
     const built = assembleSnapshot(sources);
-    raced = snapshotStateChangedSince(cursor);
+    raced = snapshotStateChangedSince(cursor, updateStateBefore);
     if (raced) built.payload.lastSeq = cursor;
     // Built once and encoded per form, so a phone that fetches images never gets one here.
     let oversize = false;
