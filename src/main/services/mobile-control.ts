@@ -204,31 +204,33 @@ function mobileContext(limits: ContextLimits | null, usage: { size: number; wind
 }
 
 export function chatControls(events: ChatEvent[], caps: ChatCapabilities | undefined): MobileChatControls {
-  let model: string | null = null; let modelUnknown = false;
+  let model: string | null = null; let startModel: string | null = null; let modelUnknown = false;
   let effort: string | null = null; let effortIsDefault = false; let effortReported = false;
   let level: PermissionLevel | null = null;
   let models: MobileChatControls['models'] = []; let efforts: string[] = []; let levelNames: MobileChatControls['levelNames'] = {};
   let limits: ContextLimits | null = null; let usageContext: { size: number; window?: 'input' | 'total' } | null = null;
   for (const event of events) {
     if (event.type === 'session_started') {
+      startModel = event.data.model ?? null;
       model = event.data.model ?? model; modelUnknown = false; level = event.data.level ?? level;
       models = []; efforts = []; levelNames = {}; limits = null; usageContext = null;
     } else if (event.type === 'session_info') {
       const d = event.data;
+      startModel = startModel ?? d.model ?? null;
       if (d.model !== undefined) { model = d.model; modelUnknown = d.model === null; }
       models = d.models ?? models; efforts = d.efforts ?? efforts; levelNames = d.levelNames ?? levelNames;
       limits = d.contextLimits ?? limits;
     } else if (event.type === 'usage' && event.data.context) {
       usageContext = event.data.context;
     } else if (event.type === 'model_changed') {
-      model = event.data.modelId; modelUnknown = false;
+      model = event.data.modelId; startModel = startModel ?? event.data.modelId; modelUnknown = false;
       effort = event.data.effort ?? null; effortIsDefault = event.data.effortIsDefault === true; effortReported = true;
     } else if (event.type === 'mode_changed') level = event.data.level;
   }
   const modelSwitch = caps?.modelSwitch ?? 'none';
   const effortSwitch = caps?.effortSwitch ?? 'none';
   return {
-    model, modelUnknown, effort, effortIsDefault, effortReported, level, models, efforts, levelNames,
+    model, startModel, modelUnknown, effort, effortIsDefault, effortReported, level, models, efforts, levelNames,
     liveLevels: [...(caps?.liveLevels ?? [])], modelSwitch, effortSwitch, effortDefault: caps?.effortDefault === true,
     switchNote: switchNote(modelSwitch, effortSwitch) ?? null,
     context: mobileContext(limits, usageContext),

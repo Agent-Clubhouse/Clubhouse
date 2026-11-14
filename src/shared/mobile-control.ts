@@ -118,6 +118,8 @@ export interface AnnexAgentUpdate {
  */
 export interface MobileChatControls {
   model: string | null;
+  /** First model named in the current session. Absent on older desktops; compare with model, not a saved alias. */
+  startModel?: string | null;
   /** The session runs the provider's default model and hasn't named it yet ("Default model"). */
   modelUnknown: boolean;
   effort: string | null;

@@ -783,7 +783,7 @@ Desktops that support them (#2462) advertise `chat.setModel` and `chat.setLevel`
 **Read.** A live chat snapshot carries `chatControls`; it is `null` for a sleeping agent or a readOnly historical session:
 
 ```json
-"chatControls":{"model":"opus","modelUnknown":false,"effort":"high","effortIsDefault":false,"effortReported":true,
+"chatControls":{"model":"opus","startModel":"opus","modelUnknown":false,"effort":"high","effortIsDefault":false,"effortReported":true,
  "level":"ask","models":[{"id":"opus","label":"Opus","description":"…","costHint":"1x"}],"efforts":["low","medium","high"],
  "levelNames":{"ask":"default","plan":"plan"},"liveLevels":["plan","ask","auto_edit","full_access"],
  "modelSwitch":"live"|"per_turn"|"restart"|"none","effortSwitch":"live"|"per_turn"|"restart"|"none","effortDefault":true,
@@ -791,6 +791,8 @@ Desktops that support them (#2462) advertise `chat.setModel` and `chat.setLevel`
 ```
 
 - `context` is what the running session reports: `{"effectiveTokens":300000|null,"compactAtTokens":267000|null,"reservedTokens":33000|null,"note":"…"|null}`, or `null` until it reports anything. A null field isn't reported, so omit that line and show no estimate. `note` is plain text or null, for example that Claude's figure is a working window and not the model's capacity. It changes with `session_info.contextLimits` and `usage.context.size`, which arrive at session start, after a model change and at turn end. Claude reports all three numbers; Codex and Copilot report `effectiveTokens` only. See [Context choice](#context-choice) for how this differs from the saved choice.
+- `startModel` is an optional `string | null` added within mobile contract v1 and `chatControls.version:1`; both versions are unchanged. Current desktops always emit it in live snapshots and pages, folded from the full transcript regardless of the history page the phone loaded. Older desktops omit it; older phones can ignore it. `session_started` resets it to `data.model ?? null`. While null, the first non-null `session_info.model` or `model_changed.modelId` fills it; later model changes leave it intact until another session starts.
+- Match the desktop's `sessionModelLine` comparison with `model !== startModel`, only when both are non-null. When they differ, show the current session model and the saved settings model for the next start, for example “Session: Sonnet / Saved: Opus (next start)”. `startModel` is the session's original model ID, not the saved model ID; comparing it with `model` avoids treating a saved full ID and a session alias as different. See `chat-start-model.json` in the contract fixtures for a running session that changed models and a bounded page that omits the start event.
 - `model` is `null` with `modelUnknown:true` while the session runs the provider's default and hasn't named it: show "Default model".
 - `efforts` belong to the current model. Another model's efforts are only known once the session runs it (a `session_info` replaces the list).
 - `effortReported:false`: the session hasn't reported its effort yet; hide the effort chip rather than show "Default effort".

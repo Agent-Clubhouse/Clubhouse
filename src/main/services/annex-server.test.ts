@@ -2016,7 +2016,7 @@ describe('annex-server', () => {
         getSessionId: () => 's', getCapabilities: () => caps, readTranscript: async () => ({ events }) } as any);
       try {
         expect((await chat()).chatControls).toEqual({
-          model: 'opus', modelUnknown: false, effort: 'high', effortIsDefault: true, effortReported: true, level: 'ask',
+          model: 'opus', startModel: 'opus', modelUnknown: false, effort: 'high', effortIsDefault: true, effortReported: true, level: 'ask',
           models: [{ id: 'opus', label: 'Opus' }], efforts: ['low', 'high'], levelNames: { ask: 'default' },
           liveLevels: ['plan', 'ask', 'full_access'], modelSwitch: 'live', effortSwitch: 'per_turn', effortDefault: true,
           switchNote: 'Model changes apply now; effort changes from the next message.',

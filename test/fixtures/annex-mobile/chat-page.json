@@ -74,6 +74,7 @@
             "label": "Sonnet"
           }
         ],
+        "startModel": "opus",
         "switchNote": "Applies from the next message."
       },
       "contentAnyPath": true,
