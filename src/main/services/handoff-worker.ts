@@ -37,6 +37,8 @@ interface Attempt { active: boolean; step: HandoffFailure['step'] }
 export class HandoffWorker {
   private readonly active = new Map<string, Attempt>();
   private readonly cleanups = new Set<Promise<void>>();
+  private readonly continuations = new Set<Promise<void>>();
+  private stopped = false;
   constructor(private readonly options: HandoffWorkerOptions) {}
   private record(id: string): Handoff {
     const record = this.options.records().find((value) => value.id === id);
@@ -65,7 +67,7 @@ export class HandoffWorker {
       ...(error instanceof HandoffAuthorizationChanged || error instanceof HandoffProjectUnavailable || error instanceof HandoffSnapshotError ? { reason: error.message.slice(0, 512) } : {}) });
   }
   async run(id: string): Promise<void> {
-    if (this.active.has(id) || this.active.size >= 2) return;
+    if (this.stopped || this.active.has(id) || this.active.size >= 2) return;
     const original = this.options.records().find((value) => value.id === id);
     if (!original || original.to.machine !== this.options.machine || !original.acceptance || !['accepted', 'transferring', 'verifying'].includes(original.state)) return;
     const attempt: Attempt = { active: true, step: 'verification' }; this.active.set(id, attempt);
@@ -134,6 +136,8 @@ export class HandoffWorker {
         if (!interrupted && attempt.active) await this.cleanup(id);
       }
     })();
+    this.continuations.add(work);
+    void work.then(() => this.continuations.delete(work), () => this.continuations.delete(work));
     try { await Promise.race([work, expired]); }
     catch { /* telemetry-exempt: background continuation never exposes private diagnostics; retained state is inspected through get_handoff */ }
     finally {
@@ -153,14 +157,17 @@ export class HandoffWorker {
     }
   }
   async stop(): Promise<void> {
+    this.stopped = true;
     // Invalidate continuations before awaiting: stopped attempts cannot start another cleanup.
     for (const attempt of this.active.values()) attempt.active = false;
     this.active.clear();
-    if (!this.cleanups.size) return;
+    // A terminal state can be visible while advance's changed callback is still
+    // pruning storage. Those continuations outlive the attempt's invalidation.
+    if (!this.cleanups.size && !this.continuations.size) return;
     let timer: ReturnType<typeof setTimeout> | undefined;
     try {
       await Promise.race([
-        Promise.allSettled([...this.cleanups]),
+        Promise.allSettled([...this.continuations, ...this.cleanups]),
         new Promise<void>((resolve) => { timer = setTimeout(resolve, 2_000); }),
       ]);
     } finally { if (timer) clearTimeout(timer); }

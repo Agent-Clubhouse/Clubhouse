@@ -71,6 +71,54 @@ it('expires a stuck resolver and prevents its late continuation from applying or
   expect(f.options.apply).not.toHaveBeenCalled(); expect(f.options.wake).not.toHaveBeenCalled();
 });
 
+it.each(['failed', 'applied'] as const)('joins a continuation still writing after publishing %s when stopped', async (terminal) => {
+  vi.useFakeTimers(); const f = fixture();
+  let release!: () => void;
+  const gate = new Promise<void>((resolve) => { release = resolve; });
+  let entered!: () => void;
+  const publishing = new Promise<void>((resolve) => { entered = resolve; });
+  const advanceRecord = vi.mocked(f.options.advance).getMockImplementation()!;
+  vi.mocked(f.options.advance).mockImplementation(async (...args) => {
+    const record = await advanceRecord(...args);
+    if (record.state === terminal) {
+      entered();
+      await gate;
+      await fs.promises.writeFile(path.join(root, 'terminal-callback'), terminal);
+    }
+    return record;
+  });
+  if (terminal === 'failed') vi.mocked(f.options.receive!).mockRejectedValue(new HandoffSnapshotError('hash_mismatch'));
+  const running = f.worker.run(f.id);
+  try {
+    await publishing;
+    expect(f.current().state).toBe(terminal);
+    let stopped = false;
+    const stopping = f.worker.stop().then(() => { stopped = true; });
+    await vi.advanceTimersByTimeAsync(0);
+    expect(stopped).toBe(false);
+    release(); await stopping; await running;
+    expect(fs.readFileSync(path.join(root, 'terminal-callback'), 'utf8')).toBe(terminal);
+    await f.worker.run(f.id);
+    expect(f.options.receive).toHaveBeenCalledTimes(1);
+  } finally { release(); await running; }
+});
+it('bounds shutdown of a stuck continuation and prevents another attempt after stop', async () => {
+  vi.useFakeTimers(); const f = fixture();
+  let release!: (value: Awaited<ReturnType<HandoffWorkerOptions['resolve']>>) => void;
+  let entered!: () => void;
+  const resolving = new Promise<void>((resolve) => { entered = resolve; });
+  vi.mocked(f.options.resolve).mockImplementationOnce(() => { entered(); return new Promise((resolve) => { release = resolve; }); });
+  const running = f.worker.run(f.id); await resolving;
+  let stopped = false;
+  const stopping = f.worker.stop().then(() => { stopped = true; });
+  await vi.advanceTimersByTimeAsync(1_999); expect(stopped).toBe(false);
+  await vi.advanceTimersByTimeAsync(1); await stopping; expect(stopped).toBe(true);
+  await f.worker.run(f.id);
+  expect(f.options.resolve).toHaveBeenCalledTimes(1);
+  release({ projectId: 'registered', projectRoot: root, bounds: HANDOFF_TRANSFER_DEFAULTS });
+  await running;
+  expect(f.options.apply).not.toHaveBeenCalled(); expect(f.options.wake).not.toHaveBeenCalled();
+});
 it('awaits an in-flight staging cleanup when stopped', async () => {
   const f = fixture();
   let release!: () => void;
