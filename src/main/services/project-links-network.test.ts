@@ -59,6 +59,20 @@ describe('project links pinned-member REST replication', () => {
       await vi.waitFor(() => expect(f.post.mock.calls.some((c) => c[1] === PROJECT_LINKS_SYNC_PATH)).toBe(true));
     } finally { stop(); }
   });
+  it('keeps reconnect catch-up queued while initial migration is still saving', async () => {
+    let finish!: () => void;
+    const local = new ProjectLinksStore({
+      read: () => ({ version: 1, records: [], migrated: [] }),
+      save: () => new Promise<void>((resolve) => { finish = resolve; }),
+      self: () => A, legacyMirror: () => undefined,
+    });
+    const f = network(local, store(B)), stop = startProjectLinksNetwork(f.options);
+    try {
+      await vi.waitFor(() => expect(finish).toBeTypeOf('function'));
+      f.reconnect(); finish();
+      await vi.waitFor(() => expect(f.post.mock.calls.some((c) => c[1] === PROJECT_LINKS_SYNC_PATH)).toBe(true));
+    } finally { stop(); }
+  });
   it('paginates the full set and preserves Keep separate tombstones', async () => {
     const local = store(), peer = store(B);
     await peer.migrate();

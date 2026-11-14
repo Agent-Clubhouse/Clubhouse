@@ -66,7 +66,7 @@ export function startProjectLinksNetwork(options: ProjectLinksNetworkOptions): (
     };
     try {
       await store.migrate();
-      while (dirty.delete(machine) && current()) {
+      while (current() && dirty.delete(machine)) {
         if (!supported.has(machine)) {
           const probe = await post(PROJECT_LINKS_CAPABILITIES_PATH, {});
           if (probe.status === 404) supported.set(machine, false);
