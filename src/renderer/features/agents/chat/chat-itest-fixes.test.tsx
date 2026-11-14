@@ -182,9 +182,12 @@ describe('plan card follows the approval (#2167)', () => {
 });
 
 describe('edit approvals preview the change (#2168)', () => {
-  it('shows a compact diff of the proposed edit in the approval card', () => {
+  it('keeps the proposed edit preview in the inline approval card', () => {
     renderState(fold(editRequest().events));
-    const card = screen.getByTestId('chat-permission');
+    expect(within(screen.getByTestId('chat-pinned-approval')).queryByTestId('chat-permission-diff')).not.toBeInTheDocument();
+    const inline = screen.getByTestId('chat-inline-approval');
+    fireEvent.click(within(inline).getByText('Answer here'));
+    const card = within(inline).getByTestId('chat-permission');
     const preview = within(card).getByTestId('chat-permission-diff');
     expect(preview).toHaveTextContent('/work/PRINCIPLES.md');
     expect(preview).toHaveTextContent('Date: 2026-10-19');

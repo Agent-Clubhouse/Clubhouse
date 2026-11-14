@@ -157,11 +157,11 @@ export function PermissionCard({ request, plan, queueSize, agentName, extras, on
       </div>
       {/* Paths read best in monospace; the prose reasons Claude and Codex send don't. A request with a preview lists paths. */}
       {description && <div className={`text-[12.5px] text-ctp-subtext0 pl-6 break-words ${hasContent ? 'font-mono' : ''}`} data-testid="chat-permission-description">{description}</div>}
-      {!compact && (previewDiffs.length > 0 || previewTexts.length > 0) && (
+      {((!compact && previewDiffs.length > 0) || previewTexts.length > 0) && (
         <div className="pl-6 flex flex-col gap-1.5" data-testid="chat-permission-preview">
-          <ApprovalDiffPreview diffs={previewDiffs} />
+          {!compact && <ApprovalDiffPreview diffs={previewDiffs} />}
           {previewTexts.map((text, i) => (
-            <pre key={i} className="max-h-40 overflow-auto rounded-md bg-ctp-crust px-2.5 py-2 font-mono text-[11.5px] text-ctp-subtext1 whitespace-pre-wrap break-words" data-testid="chat-permission-text">{text}</pre>
+            <pre key={i} className={`${compact ? 'max-h-16' : 'max-h-40'} overflow-auto rounded-md bg-ctp-crust px-2.5 py-2 font-mono text-[11.5px] text-ctp-subtext1 whitespace-pre-wrap break-words`} data-testid="chat-permission-text">{text}</pre>
           ))}
         </div>
       )}
