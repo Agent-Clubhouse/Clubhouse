@@ -125,6 +125,27 @@ describe('annex device list', () => {
   });
 
   describe('network members (#3061)', () => {
+    it.each([true, false])('keeps a refused member needing pairing despite inbound presence (%s)', (inbound) => {
+      const [device] = buildDeviceList({
+        ...empty,
+        peers: [peer({ fingerprint: 'fp', alias: 'Studio', role: 'member', tlsCertificatePem: 'PEM' })],
+        satellites: [satellite({ fingerprint: 'fp', state: 'disconnected', needsPairing: true, problem: describeAnnexProblem('removed-there', 'Studio') })],
+        connected: new Set(inbound ? ['fp'] : []),
+      });
+      expect(device).toMatchObject({ state: 'needs-pairing', problem: describeAnnexProblem('removed-there', 'Studio') });
+    });
+
+    it('shows an unconfirmed introduction as waiting even with inbound presence', () => {
+      const [device] = buildDeviceList({
+        ...empty,
+        peers: [peer({ role: 'member', networkPending: true, tlsCertificatePem: 'PEM' })],
+        connected: new Set(['fp']),
+        satellites: [satellite({ fingerprint: 'fp' })],
+      });
+      expect(device.state).toBe('needs-pairing');
+      expect(device.problem?.message).toContain('confirm');
+    });
+
     it('counts a member connected either way, and says where its join is confirmed', () => {
       const devices = buildDeviceList({
         ...empty,

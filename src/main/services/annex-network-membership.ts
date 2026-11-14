@@ -56,6 +56,8 @@ interface MembershipState {
   selfJoinedAt?: string;
   /** The pairing that put this machine in its network (#3107), as members know it. */
   selfPairing?: { id: string; joinedAt: string };
+  /** Removal traffic from an unconfirmed sender, bound to its current pin and pairing. */
+  deferredRemovals?: Record<string, { certFingerprint?: string; pairingId?: string; removals: NetworkRemoval[] }>;
 }
 
 const EMPTY: MembershipState = { removals: [], confirmations: {}, renamedAt: {}, removedNames: {} };
@@ -67,6 +69,7 @@ function state(): MembershipState {
     removals: s.removals ?? [], confirmations: s.confirmations ?? {}, renamedAt: s.renamedAt ?? {}, removedNames: s.removedNames ?? {}, removedKinds: s.removedKinds ?? {},
     ...(s.selfJoinedAt && { selfJoinedAt: s.selfJoinedAt }),
     ...(s.selfPairing && { selfPairing: s.selfPairing }),
+    ...(s.deferredRemovals && { deferredRemovals: s.deferredRemovals }),
   };
 }
 
@@ -115,6 +118,7 @@ export function initNetworkMembership(h: Hooks): void {
   hooks = h;
   networkChannel.setMembersProvider(currentView);
   networkChannel.setSelfPairingProvider(() => state().selfPairing);
+  networkChannel.setUnknownPeerReasonProvider(unknownPeerReason);
   unsubscribe?.();
   unsubscribe = networkChannel.onNetworkMessage(onMessage);
 }
@@ -182,7 +186,16 @@ function toMembers(): (fp: string) => boolean {
 function sendView(): void {
   if (!annexSettings.networkEnabled()) return;
   const view = currentView();
-  networkChannel.broadcast({ v: NETWORK_PROTOCOL_VERSION, type: 'members', members: view.members, removals: view.removals }, toMembers());
+  const accepts = toMembers();
+  const told: string[] = [];
+  networkChannel.broadcast({ v: NETWORK_PROTOCOL_VERSION, type: 'members', members: view.members, removals: view.removals }, (fp) => {
+    if (!accepts(fp)) return false;
+    told.push(fp);
+    return true;
+  });
+  appLog('core:annex', 'info', 'Sent Annex Network joins to connected members', {
+    meta: { members: view.members.map((m) => ({ fingerprint: m.fingerprint, pairingId: m.pairingId })), told },
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -202,6 +215,11 @@ function proves(member: NetworkMember): boolean {
 
 function removalOf(fingerprint: string, s: MembershipState = state()): NetworkRemoval | undefined {
   return s.removals.find((r) => lower(r.fingerprint) === lower(fingerprint));
+}
+
+/** Why an unrecognized inbound identity is refused, without exposing certificates. */
+export function unknownPeerReason(fingerprint: string): 'removed' | 'unknown' {
+  return removalOf(fingerprint) ? 'removed' : 'unknown';
 }
 
 /** A pairing into the network: its id (when known) and its join time, set together and never moved apart (#3107). */
@@ -320,7 +338,32 @@ function confirm(s: MembershipState, key: string, by: string): boolean {
   const list = s.confirmations[key] ?? [];
   if (list.some((fp) => lower(fp) === lower(by))) return false;
   s.confirmations[key] = [...list, by];
+  if (key.startsWith('join:')) appLog('core:annex', 'info', 'A member acknowledged an Annex Network join', { meta: { fingerprint: key.slice(5), acknowledgedBy: by } });
   return true;
+}
+
+/** Keep bounded removal traffic without granting an unconfirmed sender authority. */
+function deferRemovals(s: MembershipState, sender: AnnexPeer, incoming: NetworkRemoval[]): boolean {
+  if (!incoming.length) return false;
+  const key = lower(sender.fingerprint);
+  const held = s.deferredRemovals?.[key];
+  const samePairing = held && held.pairingId === sender.pairingId
+    && annexTls.sameCertificateFingerprint(held.certFingerprint, sender.tlsCertificateFingerprint);
+  const removals = samePairing ? [...held.removals] : [];
+  let changed = !samePairing;
+  for (const removal of incoming) {
+    const index = removals.findIndex((r) => lower(r.fingerprint) === lower(removal.fingerprint));
+    if (index >= 0 && covers(removals[index], removal)) continue;
+    if (index >= 0) removals.splice(index, 1);
+    removals.push(removal);
+    changed = true;
+  }
+  if (changed) s.deferredRemovals = {
+    ...s.deferredRemovals,
+    [key]: { certFingerprint: sender.tlsCertificateFingerprint, pairingId: sender.pairingId,
+      removals: removals.sort((a, b) => Date.parse(b.removedAt) - Date.parse(a.removedAt)).slice(0, REMOVALS_KEPT) },
+  };
+  return changed;
 }
 
 // ---------------------------------------------------------------------------
@@ -331,6 +374,10 @@ function confirm(s: MembershipState, key: string, by: string): boolean {
 function addMember(input: NetworkMember, from: string, s: MembershipState): boolean {
   // One spelling of a fingerprint everywhere: the protocol takes either case.
   const member: NetworkMember = { ...input, fingerprint: lower(input.fingerprint) };
+  // Until reciprocal confirmation, it may describe itself for reachability, but
+  // cannot introduce or update other identities (including phones, which don't
+  // have a desktop confirmation channel of their own).
+  if (annexPeers.getPeer(from)?.networkPending && lower(from) !== member.fingerprint) return false;
   if (isSelf(member.fingerprint)) return learnSelfPairing(member, s);
   if (removedSince(member, s)) return false;
   // A pairing later than the one a kept removal ended makes that removal stale: stop passing it on.
@@ -404,6 +451,7 @@ function addMember(input: NetworkMember, from: string, s: MembershipState): bool
     lastSeen: '',
     role: 'member',
     kind: member.kind,
+    ...(member.kind === 'desktop' && { networkPending: true }),
     addedBy: from,
     tlsCertificateFingerprint: member.certFingerprint,
     tlsCertificatePem: member.certPem,
@@ -412,7 +460,7 @@ function addMember(input: NetworkMember, from: string, s: MembershipState): bool
     announcedReach: { hosts: member.hosts.slice(0, 8), ...(member.port && { port: member.port }) },
     ...(member.port && { mainPort: member.port }),
   });
-  appLog('core:annex', 'info', 'A device joined the network through another member', { meta: { fingerprint: member.fingerprint, from } });
+  appLog('core:annex', 'info', 'A device joined the network through another member', { meta: { fingerprint: member.fingerprint, from, awaitingReciprocalConfirmation: member.kind === 'desktop', pairingId: member.pairingId } });
   if (member.kind === 'desktop' && annexSettings.getSettings().enableClient) hooks?.connect(lower(member.fingerprint));
   return true;
 }
@@ -464,6 +512,7 @@ function leaveNetwork(from: string, s: MembershipState): void {
   }
   // Its pairing ended with it: pairing again makes a new one (#3107). Cleared on the state the caller saves.
   delete s.selfPairing;
+  delete s.deferredRemovals;
   left = true;
 }
 
@@ -481,6 +530,73 @@ function onMessage(from: string, message: NetworkMessage): void {
   const s = state();
   let changed = false;
   let confirmed = false;
+  let becameConfirmed = false;
+
+  // A vouch pins the desktop for membership exchange only. Its own authenticated
+  // view must contain this identity, certificate and pairing before control is allowed.
+  // A phone can be between step 2 and step 3 of joining, or never finish step 3.
+  if (sender.networkPending) {
+    const self = networkChannel.localMember();
+    const ours = self && message.type === 'members'
+      ? message.members.find((m) => lower(m.fingerprint) === lower(self.fingerprint)) : undefined;
+    // Joining through a phone on a desktop that removed us makes a new pairing
+    // there. Its pinned, authenticated confirmation is how we learn that later
+    // epoch; demanding our old one here would keep both sides pending forever.
+    const newer = self && ours?.pairingId && laterPairing(ours, self);
+    if (!self || !ours || !annexTls.sameCertificateFingerprint(ours.certFingerprint, self.certFingerprint)
+      || (self.pairingId && !newer && (ours.pairingId !== self.pairingId || ours.joinedAt !== self.joinedAt))) {
+      if (message.type === 'members') appLog('core:annex', 'info', 'A desktop has not confirmed reciprocal Annex Network membership', {
+        meta: { fingerprint: from, reason: !ours ? 'unknown' : 'epoch-mismatch', pairingId: self?.pairingId, reportedPairingId: ours?.pairingId },
+      });
+      // No other mutation authority until confirmation. Keep removals for later,
+      // including a removal of this computer; a pending sender cannot evict us.
+      const deferred = deferRemovals(s, sender, message.type === 'members' ? message.removals
+        : message.type === 'member-removed' ? [message.removal] : []);
+      const own = message.type === 'hello' || message.type === 'member-joined' ? message.member
+        : message.type === 'members' ? message.members.find((m) => lower(m.fingerprint) === lower(from)) : undefined;
+      if (own) changed = addMember(own, from, s);
+      if (changed || deferred) save(s);
+      if (changed) sendView();
+      return;
+    } else {
+      if (newer) {
+        s.selfPairing = { id: ours.pairingId!, joinedAt: ours.joinedAt };
+        appLog('core:annex', 'info', 'Learned a later self pairing from reciprocal Annex Network confirmation', {
+          meta: { from, previousPairingId: self.pairingId, pairingId: ours.pairingId },
+        });
+      }
+      annexPeers.addPeer({ ...sender, networkPending: undefined });
+      appLog('core:annex', 'info', 'A desktop confirmed reciprocal Annex Network membership', {
+        meta: { fingerprint: from, selfFingerprint: self.fingerprint, pairingId: ours.pairingId },
+      });
+      changed = true;
+      becameConfirmed = true;
+    }
+  }
+
+  const deferred = s.deferredRemovals?.[lower(from)];
+  if (deferred) {
+    s.deferredRemovals = { ...s.deferredRemovals };
+    delete s.deferredRemovals[lower(from)];
+    changed = true;
+    const current = annexPeers.getPeer(from);
+    // The confirming view may itself announce a new sender epoch or pin. Its
+    // ordinary members merge runs below, so the stored peer alone is too old
+    // to authorize replay. Every sender record in the message must agree too,
+    // including when the view repeats the sender with different epochs/pins.
+    const sameAnnouncedSender = message.type !== 'members' || message.members.every((member) =>
+      lower(member.fingerprint) !== lower(from) || (deferred.pairingId === member.pairingId
+        && annexTls.sameCertificateFingerprint(deferred.certFingerprint, member.certFingerprint)));
+    if (current && deferred.pairingId === current.pairingId
+      && annexTls.sameCertificateFingerprint(deferred.certFingerprint, current.tlsCertificateFingerprint)
+      && sameAnnouncedSender) {
+      for (const removal of deferred.removals) {
+        changed = applyRemoval(removal, from, s) || changed;
+        if (left) break;
+      }
+    }
+    if (left) { save(s); return; }
+  }
 
   switch (message.type) {
     case 'hello':
@@ -501,11 +617,13 @@ function onMessage(from: string, message: NetworkMessage): void {
       }
       for (const member of message.members) changed = addMember(member, from, s) || changed;
       // What this sender's view shows is confirmed by it.
-      const theirs = new Set(message.members.map((m) => lower(m.fingerprint)));
+      const theirs = new Map(message.members.map((m) => [lower(m.fingerprint), m]));
       // Only joins and removals this machine made are tracked.
       for (const peer of memberPeers()) {
         const key = `join:${lower(peer.fingerprint)}`;
-        if (key in s.confirmations && theirs.has(lower(peer.fingerprint))) confirmed = confirm(s, key, from) || confirmed;
+        const seen = theirs.get(lower(peer.fingerprint));
+        if (key in s.confirmations && seen && seen.pairingId === peer.pairingId
+          && annexTls.sameCertificateFingerprint(seen.certFingerprint, peer.tlsCertificateFingerprint)) confirmed = confirm(s, key, from) || confirmed;
       }
       for (const removal of message.removals) {
         const ours = removalOf(removal.fingerprint, s);
@@ -529,6 +647,7 @@ function onMessage(from: string, message: NetworkMessage): void {
   }
   if (changed || confirmed) save(s);
   if (changed) sendView();
+  if (becameConfirmed && !left && annexPeers.getPeer(from)?.role === 'member' && annexSettings.getSettings().enableClient) hooks?.connect(lower(from));
 }
 
 export interface VouchResult {
@@ -585,6 +704,12 @@ export function vouchFromPhone(phone: string, members: NetworkMember[]): VouchRe
 /** A device just paired here as a member: tell the others (#3061). */
 export function noteLocalJoin(fingerprint: string): void {
   const s = state();
+  // An explicit pairing starts a new local trust decision; no traffic deferred
+  // before it is carried into that relationship, even if the peer keeps its id.
+  if (s.deferredRemovals) {
+    s.deferredRemovals = { ...s.deferredRemovals };
+    delete s.deferredRemovals[lower(fingerprint)];
+  }
   // A new pairing beats an old removal of the same device.
   s.removals = s.removals.filter((r) => lower(r.fingerprint) !== lower(fingerprint));
   s.confirmations[`join:${lower(fingerprint)}`] = [];

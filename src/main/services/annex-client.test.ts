@@ -47,7 +47,7 @@ vi.mock('node:os', async (original) => {
 });
 
 // The membership channel has its own tests (annex-network-channel.test.ts).
-vi.mock('./annex-network-channel', () => ({ connectTo: vi.fn(), closeFor: vi.fn(), closeAll: vi.fn() }));
+vi.mock('./annex-network-channel', () => ({ connectTo: vi.fn(), closeFor: vi.fn(), closeAll: vi.fn(), hasChannel: vi.fn(() => false) }));
 vi.mock('./annex-network-membership', () => ({
   noteLocalJoin: vi.fn(),
   noteLocalRemoval: vi.fn(),
@@ -2704,6 +2704,39 @@ describe('annex-client', () => {
     });
 
     const refused = () => Object.assign(new Error('connect ECONNREFUSED'), { code: 'ECONNREFUSED' });
+
+    it('probes an introduced desktop over membership only, retries, then connects after confirmation', async () => {
+      vi.useFakeTimers();
+      const channel = await import('./annex-network-channel');
+      peer = { ...peer, role: 'member', networkPending: true };
+      annexClient.startClient();
+      expect(sockets).toHaveLength(0);
+      expect(channel.connectTo).toHaveBeenCalledWith(FP, '10.0.0.4', 9443, expect.objectContaining({ pinned: true }));
+      await vi.advanceTimersByTimeAsync(300);
+      expect(channel.connectTo).toHaveBeenLastCalledWith(FP, '10.0.0.5', 9443, expect.anything());
+      expect(sockets).toHaveLength(0);
+      peer = { ...peer, networkPending: undefined };
+      annexClient.connect(FP);
+      expect(sockets.map((s) => s.url)).toEqual(['wss://10.0.0.5:9443/ws?client=desktop']);
+      vi.useRealTimers();
+    });
+
+    it.each([['out', 'in'], ['in', 'out']])('keeps pending probes alive when channels close %s then %s', async (first, last) => {
+      vi.useFakeTimers();
+      const channel = await import('./annex-network-channel');
+      const open = new Set(['in', 'out']);
+      vi.mocked(channel.hasChannel).mockImplementation(() => open.size > 0);
+      peer = { ...peer, role: 'member', networkPending: true };
+      annexClient.startClient();
+      expect(channel.connectTo).not.toHaveBeenCalled();
+      open.delete(first);
+      await vi.advanceTimersByTimeAsync(300);
+      expect(channel.connectTo).not.toHaveBeenCalled();
+      open.delete(last);
+      await vi.advanceTimersByTimeAsync(2000);
+      expect(channel.connectTo).toHaveBeenCalled();
+      expect(sockets).toHaveLength(0);
+    });
 
     it('connects to a paired satellite at its remembered address at startup, without waiting for discovery', () => {
       annexClient.startClient();

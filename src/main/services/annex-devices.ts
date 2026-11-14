@@ -78,7 +78,11 @@ export function buildDeviceList(sources: Sources): AnnexDevice[] {
     const sat = annexPeers.controlledFromHere(peer) ? satellites.get(peer.fingerprint) : undefined;
     let state: AnnexDeviceState;
     let problem: AnnexProblem | null = null;
-    if (annexPeers.peerNeedsPairing(peer)) state = 'needs-pairing';
+    if (annexPeers.peerNeedsPairing(peer) || sat?.needsPairing) state = 'needs-pairing';
+    else if (peer.networkPending) {
+      state = 'needs-pairing';
+      problem = { code: 'connection-failed', message: `Waiting for ${peer.alias || 'this computer'} to confirm this computer's membership.`, action: 'Keep the phone connected to both computers to finish joining, or pair again.' };
+    }
     // A member connected either way is connected (#3061).
     else if (peer.role === 'member' && sources.connected.has(peer.fingerprint)) state = 'connected';
     else if (annexPeers.controlledFromHere(peer) && !sources.clientOn) {

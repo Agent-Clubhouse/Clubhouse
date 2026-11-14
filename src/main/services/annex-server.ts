@@ -706,7 +706,11 @@ function logRefusedPeer(surface: 'rest' | 'ws', refusal: PeerAuthRefusal, remote
     return;
   }
   appLog('core:annex', 'warn', 'Refused a connection that is not a paired controller', {
-    meta: { surface, error: refusal.error, fingerprint: refusal.fingerprint ?? 'none', remoteAddress },
+    meta: {
+      surface, error: refusal.error, fingerprint: refusal.fingerprint ?? 'none', remoteAddress,
+      reason: !refusal.fingerprint ? 'no-identity' : !peer ? membership.unknownPeerReason(refusal.fingerprint)
+        : peer.networkPending ? 'membership-unconfirmed' : refusal.error === 'peer_not_paired' ? 'certificate-mismatch' : refusal.error,
+    },
   });
 }
 
