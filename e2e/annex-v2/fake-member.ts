@@ -11,6 +11,7 @@ import type * as tls from 'tls';
 import WebSocket, { WebSocketServer } from 'ws';
 import { generateTestIdentity, type TestIdentity } from './tls-test-utils';
 import { tryPairOverTls } from './helpers';
+import type { NetworkMember } from '../../../src/shared/annex-network-protocol';
 
 export interface FakeMember {
   identity: TestIdentity;
@@ -58,8 +59,13 @@ export async function startFakeMember(name = 'Fake member'): Promise<FakeMember>
     ws.on('error', () => { /* closed by the other side */ });
     ws.on('message', (data) => {
       try {
-        const message = JSON.parse(data.toString()) as { type?: string; member?: { fingerprint?: string } };
-        if (message.type === 'hello' && message.member?.fingerprint) heardFrom.add(message.member.fingerprint.toLowerCase());
+        const message = JSON.parse(data.toString()) as { type?: string; member?: NetworkMember };
+        if (message.type === 'hello' && message.member?.fingerprint) {
+          heardFrom.add(message.member.fingerprint.toLowerCase());
+          // Like a real member, acknowledge the sender's current identity and pairing
+          // so an introduced desktop can finish reciprocal membership before control.
+          ws.send(JSON.stringify({ v: 1, type: 'members', members: [self(), message.member], removals: [] }));
+        }
       } catch { /* not ours to judge */ }
     });
     ws.send(JSON.stringify({ v: 1, type: 'hello', member: self() }));

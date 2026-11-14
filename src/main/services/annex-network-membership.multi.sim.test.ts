@@ -51,6 +51,7 @@ vi.mock('./annex-peers', () => ({
   peerNeedsPairing: (p: { role?: string; tlsCertificateFingerprint?: string }) => !p.role || !p.tlsCertificateFingerprint,
 }));
 vi.mock('./annex-network-channel', () => ({
+  setUnknownPeerReasonProvider: vi.fn(),
   localMember: () => self(current),
   setMembersProvider: (p: World['provider']) => { worlds[current].provider = p; },
   setSelfPairingProvider: (p: World['selfPairing']) => { worlds[current].selfPairing = p; },
@@ -106,6 +107,33 @@ function open(a: Name, b: Name) {
 }
 
 const has = (who: Name, other: Name) => as(who, () => worlds[who].peers.has(FPS[other]));
+
+it.each([false, true])('a phone introduction waits for both computers, including after identity reset (%s)', (reset) => {
+  const PHONE_FP = fp('0f');
+  // C is the existing Mac, A the new (or reset) Mac. X represents A's old identity.
+  network(reset ? ['C', 'X'] : ['C']);
+  for (const n of ['A', 'C'] as Name[]) as(n, () => {
+    worlds[n].peers.set(PHONE_FP, { ...peer('P', T0, n), fingerprint: PHONE_FP, publicKey: `key-${PHONE_FP}`, kind: 'phone' });
+    worlds[n].mod!.ensureOwnPairing();
+  });
+  const mini = as('C', () => self('C'));
+  const fresh = as('A', () => self('A'));
+  as('A', () => worlds.A.mod!.vouchFromPhone(PHONE_FP, [mini]));
+  flush();
+  expect(worlds.A.peers.get(FPS.C)?.networkPending).toBe(true);
+  expect(has('C', 'A')).toBe(false);
+  // The phone isn't connected to C yet. Reconnecting the membership channel alone cannot finish.
+  open('A', 'C');
+  expect(worlds.A.peers.get(FPS.C)?.networkPending).toBe(true);
+  if (reset) expect(has('C', 'X')).toBe(true);
+  // The existing phone contract's third step finally reaches C with A's new record.
+  as('C', () => worlds.C.mod!.vouchFromPhone(PHONE_FP, [fresh]));
+  open('A', 'C');
+  expect(worlds.A.peers.get(FPS.C)?.networkPending).toBeUndefined();
+  expect(worlds.C.peers.get(FPS.A)?.networkPending).toBeUndefined();
+  expect(worlds.C.peers.get(FPS.A)?.pairingId).toBe(fresh.pairingId);
+  expect(worlds.A.peers.get(FPS.C)?.pairingId).toBe(mini.pairingId);
+});
 
 beforeEach(async () => {
   outbox.length = 0;

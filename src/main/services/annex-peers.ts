@@ -110,8 +110,8 @@ export function peerNeedsPairing(peer: AnnexPeer): boolean {
 }
 
 /** It may control this machine: a controller, or a fellow network member (#3061). */
-export function controlsThisMachine(peer: Pick<AnnexPeer, 'role'> | undefined | null): boolean {
-  return peer?.role === 'controller' || peer?.role === 'member';
+export function controlsThisMachine(peer: Pick<AnnexPeer, 'role' | 'networkPending'> | undefined | null): boolean {
+  return !peer?.networkPending && (peer?.role === 'controller' || peer?.role === 'member');
 }
 
 /** This machine connects to it: a satellite, or a fellow network member that's a computer (#3061, #3062). */

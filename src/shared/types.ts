@@ -1208,6 +1208,8 @@ export interface AnnexPeer {
    * this machine paired with, whose own pairing was made elsewhere.
    */
   pairingId?: string;
+  /** Introduced desktop: membership channel only until it confirms our current identity and pairing. Local only. */
+  networkPending?: boolean;
 }
 
 /** A peer as Settings lists it. */

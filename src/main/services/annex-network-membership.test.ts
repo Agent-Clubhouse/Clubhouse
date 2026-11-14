@@ -44,6 +44,7 @@ vi.mock('./annex-peers', () => ({
   peerNeedsPairing: vi.fn((p: AnnexPeer) => !p.role || !p.tlsCertificateFingerprint),
 }));
 vi.mock('./annex-network-channel', () => ({
+  setUnknownPeerReasonProvider: vi.fn(),
   localMember: vi.fn(() => member(SELF, '01', 'This Mac')),
   setMembersProvider: vi.fn(),
   setSelfPairingProvider: vi.fn(),
@@ -57,6 +58,8 @@ vi.mock('./annex-network-channel', () => ({
 
 import * as membership from './annex-network-membership';
 import * as annexSettings from './annex-settings';
+import * as networkChannel from './annex-network-channel';
+import { appLog } from './log-service';
 import { reachCandidates } from './annex-reach';
 
 function member(f: string, c: string, name: string, extra: Partial<NetworkMember> = {}): NetworkMember {
@@ -180,6 +183,7 @@ describe('Annex Network membership (#3061)', () => {
     expect(hooks.connect).toHaveBeenCalledWith(N.toLowerCase());
     // The new view goes to every member that's connected.
     expect(broadcasts.at(-1)).toMatchObject({ message: { type: 'members' }, to: [A, B] });
+    expect(appLog).toHaveBeenCalledWith('core:annex', 'info', 'Sent Annex Network joins to connected members', expect.objectContaining({ meta: expect.objectContaining({ told: [A, B] }) }));
     // The same view again changes nothing and sends nothing.
     broadcasts.length = 0;
     listener!(A, view([member(A, '0a', 'Studio'), member(N, '0e', 'New Mac')]));
@@ -477,6 +481,43 @@ describe('Annex Network membership (#3061)', () => {
 
   describe('the phone as a member (#3062)', () => {
     const PHONE = fp('0c');
+
+    it('records which member acknowledged the current join, ignoring a stale pairing', () => {
+      peers.set(N, memberPeer(N, '0e', 'New Mac', { pairingId: 'pairing-current-001' }));
+      membership.noteLocalJoin(N);
+      listener!(A, view([member(N, '0e', 'New Mac', { pairingId: 'pairing-previous-001', joinedAt: '2020-01-01T00:00:00.000Z' })]));
+      expect(membership.joinConfirmation(N)?.confirmedBy).not.toContain(A);
+      listener!(A, view([member(N, '0e', 'New Mac', { pairingId: 'pairing-current-001' })]));
+      expect(membership.joinConfirmation(N)?.confirmedBy).toContain(A);
+      expect(appLog).toHaveBeenCalledWith('core:annex', 'info', 'A member acknowledged an Annex Network join', { meta: { fingerprint: N, acknowledgedBy: A } });
+    });
+
+    it('keeps a phone introduction pending until the desktop confirms this identity, pin and pairing', () => {
+      peers.set(PHONE, memberPeer(PHONE, '0c', 'Phone', { kind: 'phone' }));
+      const self = member(SELF, '01', 'This Mac', { pairingId: 'pairing-current-001' });
+      vi.mocked(networkChannel.localMember).mockReturnValueOnce(self);
+      membership.vouchFromPhone(PHONE, [member(N, '0e', 'Mini')]);
+      expect(peers.get(N)?.networkPending).toBe(true);
+      // A hello and a view naming an old identity do not confirm this computer.
+      listener!(N, { v: 1, type: 'hello', member: member(N, '0e', 'Mini') });
+      listener!(N, view([member(A, '0a', 'Old identity')]));
+      expect(peers.get(N)?.networkPending).toBe(true);
+      for (const stale of [
+        { ...self, certFingerprint: cert('ff') },
+        { ...self, pairingId: 'pairing-previous-001' },
+        { ...self, joinedAt: '2020-01-01T00:00:00.000Z' },
+      ]) {
+        vi.mocked(networkChannel.localMember).mockReturnValueOnce(self);
+        listener!(N, view([stale]));
+        expect(peers.get(N)?.networkPending).toBe(true);
+      }
+      hooks.connect.mockClear();
+      vi.mocked(networkChannel.localMember).mockReturnValueOnce(self);
+      listener!(N, view([self]));
+      expect(peers.get(N)?.networkPending).toBeUndefined();
+      expect(hooks.connect).toHaveBeenCalledWith(N);
+      expect(appLog).toHaveBeenCalledWith('core:annex', 'info', 'A desktop confirmed reciprocal Annex Network membership', expect.objectContaining({ meta: expect.objectContaining({ fingerprint: N, pairingId: self.pairingId }) }));
+    });
 
     it('takes devices a member phone vouches for, connects to desktops, and tracks the joins', () => {
       peers.set(PHONE.toLowerCase(), memberPeer(PHONE, '0c', 'Phone', { kind: 'phone' }));

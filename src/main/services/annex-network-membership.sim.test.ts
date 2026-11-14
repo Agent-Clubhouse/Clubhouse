@@ -58,6 +58,7 @@ vi.mock('./annex-peers', () => ({
   peerNeedsPairing: vi.fn((p: AnnexPeer) => !p.role || !p.tlsCertificateFingerprint),
 }));
 vi.mock('./annex-network-channel', () => ({
+  setUnknownPeerReasonProvider: vi.fn(),
   localMember: vi.fn(() => member(FPS[current], current === 'A' ? '0a' : '0b', current, '2026-01-01T00:00:00.000Z')),
   setMembersProvider: vi.fn((p: () => unknown) => { worlds[current].provider = p; }),
   setSelfPairingProvider: vi.fn(),

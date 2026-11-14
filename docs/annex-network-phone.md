@@ -107,6 +107,8 @@ Each answers which records were added, and why any weren't:
 
 Each record must hold together, or it's ignored: its public key hashes to its fingerprint, and its `certPem` to its `certFingerprint`. Send members exactly as `GET /api/v1/mobile/network` lists them; `online` and `self` are ignored. The record is `fingerprint`, `publicKey`, `certFingerprint`, `certPem`, `name`, `icon`, `color`, `kind`, `hosts`, `port`, `joinedAt` and `pairingId`; anything else is refused. Send `pairingId` as listed: the device keeps that pairing, unless the desktop removed it, in which case joining it through the phone is a new pairing. Sending a member that's already known changes nothing.
 
+An introduced desktop starts pending on the receiving computer. Its pin permits the desktop membership channel only; it cannot control that computer yet. Each desktop confirms the other's current identity, certificate and pairing in its authenticated membership view before opening normal control connections. Both phone delivery steps above are required: if the phone cannot reach the existing desktop for step 3, Settings shows the introduction as waiting for confirmation. Membership probes retry at the known addresses, and the join can finish when the phone delivers the missing record. Resetting a desktop's identity requires delivering its new record, including its current `pairingId`.
+
 Refusals:
 
 | Status | `error` | Meaning |

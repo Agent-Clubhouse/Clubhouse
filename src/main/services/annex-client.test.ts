@@ -47,7 +47,7 @@ vi.mock('node:os', async (original) => {
 });
 
 // The membership channel has its own tests (annex-network-channel.test.ts).
-vi.mock('./annex-network-channel', () => ({ connectTo: vi.fn(), closeFor: vi.fn(), closeAll: vi.fn() }));
+vi.mock('./annex-network-channel', () => ({ connectTo: vi.fn(), closeFor: vi.fn(), closeAll: vi.fn(), hasChannel: vi.fn(() => false) }));
 vi.mock('./annex-network-membership', () => ({
   noteLocalJoin: vi.fn(),
   noteLocalRemoval: vi.fn(),
@@ -2704,6 +2704,24 @@ describe('annex-client', () => {
     });
 
     const refused = () => Object.assign(new Error('connect ECONNREFUSED'), { code: 'ECONNREFUSED' });
+
+    it('probes an introduced desktop over membership only, retries, then connects after confirmation', async () => {
+      vi.useFakeTimers();
+      const channel = await import('./annex-network-channel');
+      peer = { ...peer, role: 'member', networkPending: true };
+      annexClient.startClient();
+      expect(sockets).toHaveLength(0);
+      expect(channel.connectTo).toHaveBeenCalledWith(FP, '10.0.0.4', 9443, expect.objectContaining({ pinned: true }), expect.any(Function));
+      const onClose = vi.mocked(channel.connectTo).mock.calls.at(-1)![4]!;
+      onClose();
+      await vi.advanceTimersByTimeAsync(300);
+      expect(channel.connectTo).toHaveBeenLastCalledWith(FP, '10.0.0.5', 9443, expect.anything(), expect.any(Function));
+      expect(sockets).toHaveLength(0);
+      peer = { ...peer, networkPending: undefined };
+      annexClient.connect(FP);
+      expect(sockets.map((s) => s.url)).toEqual(['wss://10.0.0.5:9443/ws?client=desktop']);
+      vi.useRealTimers();
+    });
 
     it('connects to a paired satellite at its remembered address at startup, without waiting for discovery', () => {
       annexClient.startClient();

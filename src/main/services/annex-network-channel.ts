@@ -84,6 +84,12 @@ export function setReachProvider(provider: (() => { hosts: string[]; port: numbe
 }
 
 let selfPairingProvider: (() => { id: string; joinedAt: string } | undefined) | null = null;
+let unknownPeerReasonProvider: ((fingerprint: string) => string) | null = null;
+
+/** Membership knows whether a missing identity was removed, rather than never known. */
+export function setUnknownPeerReasonProvider(provider: (fingerprint: string) => string): void {
+  unknownPeerReasonProvider = provider;
+}
 
 /** Says which pairing put this machine in its network (#3107), once membership knows it. */
 export function setSelfPairingProvider(provider: (() => { id: string; joinedAt: string } | undefined) | null): void {
@@ -179,10 +185,14 @@ export function authenticateMember(socket: unknown): { ok: true; peer: AnnexPeer
   const fingerprint = annexTls.extractPeerFingerprint(socket);
   if (!fingerprint) return { ok: false, status: 401, error: 'unauthorized' };
   const peer = annexPeers.getPeer(fingerprint);
-  if (!peer) return { ok: false, status: 401, error: 'peer_not_paired' };
+  if (!peer) {
+    appLog('core:annex', 'warn', 'Refused an inbound Annex Network identity', { meta: { fingerprint, reason: unknownPeerReasonProvider?.(fingerprint) ?? 'unknown' } });
+    return { ok: false, status: 401, error: 'peer_not_paired' };
+  }
   if (annexPeers.peerNeedsPairing(peer)) return { ok: false, status: 401, error: 'needs_pairing' };
   const certFingerprint = annexTls.extractPeerCertificateFingerprint(socket);
   if (!certFingerprint || !annexTls.sameCertificateFingerprint(certFingerprint, peer.tlsCertificateFingerprint)) {
+    appLog('core:annex', 'warn', 'Refused an inbound Annex Network identity', { meta: { fingerprint, reason: 'certificate-mismatch' } });
     return { ok: false, status: 401, error: 'peer_not_paired' };
   }
   return { ok: true, peer, certFingerprint };
@@ -221,6 +231,9 @@ function sendHello(ch: Channel): void {
   send(ch, { v: NETWORK_PROTOCOL_VERSION, type: 'hello', member: self });
   const known = membersProvider?.(ch.fingerprint) ?? { members: localMembers(), removals: [] };
   send(ch, { v: NETWORK_PROTOCOL_VERSION, type: 'members', members: known.members, removals: known.removals });
+  appLog('core:annex', 'info', 'Sent Annex Network joins on channel open', {
+    meta: { told: [ch.fingerprint], members: known.members.map((m) => ({ fingerprint: m.fingerprint, pairingId: m.pairingId })) },
+  });
 }
 
 /** What to tell device `to` when its channel opens. */
@@ -371,7 +384,7 @@ export function handleNetworkUpgrade(req: IncomingMessage, socket: Duplex, head:
  * Opens the channel to a paired peer at `host:port`, pinned to its certificate.
  * Does nothing if one is already open or opening to it.
  */
-export function connectTo(fingerprint: string, host: string, port: number, tlsOptions: tls.ConnectionOptions): void {
+export function connectTo(fingerprint: string, host: string, port: number, tlsOptions: tls.ConnectionOptions, onClose?: () => void): void {
   // The main connection just opened, so any older outgoing channel is from before: replace it.
   closeFor(fingerprint, 'out');
   const peer = annexPeers.getPeer(fingerprint);
@@ -379,6 +392,7 @@ export function connectTo(fingerprint: string, host: string, port: number, tlsOp
   const authority = net.isIPv6(host) ? `[${host}]` : host;
   const ws = new WebSocket(`wss://${authority}:${port}${NETWORK_CHANNEL_PATH}`, { ...tlsOptions, handshakeTimeout: 10_000, maxPayload: NETWORK_MESSAGE_MAX_BYTES });
   const ch = attach(ws, fingerprint, peer.tlsCertificateFingerprint, 'out');
+  if (onClose) ws.once('close', onClose);
   ws.on('open', () => sendHello(ch));
   ws.on('unexpected-response', (_req, res) => {
     appLog('core:annex', 'info', 'A paired computer did not open the Annex Network channel', { meta: { fingerprint, status: res.statusCode } });
@@ -421,6 +435,8 @@ export function resetNetworkChannelForTests(): void {
   listeners.clear();
   reachProvider = null;
   membersProvider = null;
+  unknownPeerReasonProvider = null;
+  selfPairingProvider = null;
 }
 
 /** Test helper: wraps an already-open socket as a channel, as an accepted upgrade would. */

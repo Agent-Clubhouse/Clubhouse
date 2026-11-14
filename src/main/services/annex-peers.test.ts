@@ -25,10 +25,15 @@ import {
   listPeers, getPeer, isPairedPeer, addPeer, removePeer, removeAllPeers,
   updateLastSeen, checkBruteForce, recordFailedAttempt, recordSuccessfulAttempt, forgiveFailedAttempt,
   unlockPairing, isPairingLocked, resetForTests, peerNeedsPairing, listPeersForDisplay,
-  noteReached, setTypedHost, recordLastSeen,
+  noteReached, setTypedHost, recordLastSeen, controlsThisMachine,
 } from './annex-peers';
 import { app } from 'electron';
 import { reachCandidates } from './annex-reach';
+
+it('does not authorize an introduced desktop for control until reciprocal membership is confirmed', () => {
+  expect(controlsThisMachine({ role: 'member', networkPending: true })).toBe(false);
+  expect(controlsThisMachine({ role: 'member' })).toBe(true);
+});
 
 function makePeer(fingerprint: string, alias = 'Test'): AnnexPeer {
   return {

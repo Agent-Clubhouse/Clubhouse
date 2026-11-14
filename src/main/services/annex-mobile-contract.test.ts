@@ -271,6 +271,7 @@ const NET = vi.hoisted(() => {
   };
 });
 vi.mock('./annex-network-membership', () => ({
+  unknownPeerReason: () => 'unknown',
   noteLocalJoin: vi.fn(),
   // Pairing ids (#3107): fixed, so answers and fixtures don't change from run to run.
   ownPairing: vi.fn(() => undefined),
