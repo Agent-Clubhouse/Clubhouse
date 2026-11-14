@@ -3565,13 +3565,20 @@ async function setOrchestrationConfigInner(
  * Written only by services/managed-agents. Clearing leaves the files the last
  * managed start wrote, now the person's to manage. A missing agent throws.
  */
-async function setManagedSetupInner(projectPath: string, agentId: string, setup: ManagedAgentSetup | null): Promise<void> {
+export interface ManagedSetupCommitPrecondition {
+  prepare(): Promise<void>;
+  check(agent: DurableAgentConfig): void;
+}
+
+async function setManagedSetupInner(projectPath: string, agentId: string, setup: ManagedAgentSetup | null, precondition?: ManagedSetupCommitPrecondition): Promise<void> {
   const scope = currentCreationGit();
   // As with policy writes, preparation must precede the mutation snapshot.
   if (scope) await scope.assertCurrent();
   const { agents, agentsById } = await readAgentsEntry(projectPath);
   const agent = agentsById.get(agentId);
   if (!agent) throw new Error('Agent not found');
+  if (precondition) await precondition.prepare();
+  precondition?.check(agent);
   scope?.assertConsent();
   scope?.assertFilesystem();
   const before = scope ? cloneAgent(agent) : undefined;
@@ -4329,8 +4336,8 @@ export async function setOrchestrationConfig(projectPath: string, agentId: strin
   return withAgentActivity(agentId, () => setOrchestrationConfigInner(projectPath, agentId, config));
 }
 
-export async function setManagedSetup(projectPath: string, agentId: string, setup: ManagedAgentSetup | null): Promise<void> {
-  return withAgentActivity(agentId, () => setManagedSetupInner(projectPath, agentId, setup));
+export async function setManagedSetup(projectPath: string, agentId: string, setup: ManagedAgentSetup | null, precondition?: ManagedSetupCommitPrecondition): Promise<void> {
+  return withAgentActivity(agentId, () => setManagedSetupInner(projectPath, agentId, setup, precondition));
 }
 
 export async function setManagedMigration(...args: Parameters<typeof setManagedMigrationInner>): Promise<void> {

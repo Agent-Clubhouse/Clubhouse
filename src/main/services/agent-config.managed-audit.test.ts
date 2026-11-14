@@ -65,6 +65,20 @@ beforeEach(() => {
 });
 
 describe('managed setup audit (D13)', () => {
+  it('checks the authorized record after async preparation and before mutating or auditing it', async () => {
+    let allowed = true;
+    const check = vi.fn((agent: { id: string }) => {
+      expect(agent.id).toBe('a1');
+      if (!allowed) throw new Error('permission revoked');
+    });
+    await expect(setManagedSetup(PROJECT_PATH, 'a1', { version: 1, blocks: ['b1'], skills: [], mcps: [] }, {
+      prepare: async () => { allowed = false; }, check,
+    })).rejects.toThrow('permission revoked');
+    expect(check).toHaveBeenCalledOnce();
+    expect((await getDurableConfig(PROJECT_PATH, 'a1'))?.managed).toBeUndefined();
+    expect(JSON.parse(files.get(CONFIG_PATH)!)[0].managed).toBeUndefined();
+    expect(audited.calls).toEqual([]);
+  });
   it('records managing an agent: the template as a value, the part lists as changed', async () => {
     await setManagedSetup(PROJECT_PATH, 'a1', { version: 1, blocks: ['b1'], skills: [], mcps: [CLUBHOUSE_MCP_PART_ID], templateId: 'builtin-template-helper' });
     const audit = lastAudit();

@@ -17,6 +17,7 @@ const state = vi.hoisted(() => ({
   projectPresent: true,
   projectGeneration: 0,
   projectPending: false,
+  beforeSetupPrepare: undefined as undefined | (() => void | Promise<void>),
 }));
 
 vi.mock('../mcp-call-gate', async (original) => ({ ...await original<typeof import('../mcp-call-gate')>(), mcpCallAccess: () => 'open' }));
@@ -90,7 +91,13 @@ vi.mock('../../managed-agents', async () => {
         listProjects: async () => [{ path: '/proj', name: 'Clubhouse' }],
         listAgents: async () => [...state.agents.values()],
         getAgent: async (_p, id) => state.agents.get(id) ?? null,
-        setManagedSetup: async (_p, id, setup) => { const a = state.agents.get(id)!; if (setup) a.managed = setup; else delete a.managed; },
+        setManagedSetup: async (_p, id, setup, precondition) => {
+          await state.beforeSetupPrepare?.();
+          await precondition?.prepare();
+          const a = state.agents.get(id)!;
+          precondition?.check(a);
+          if (setup) a.managed = setup; else delete a.managed;
+        },
         isRunning: (id) => state.running.has(id),
       });
       return svc;
@@ -116,6 +123,8 @@ import { BUILTIN_BLOCK_IDS } from '../../managed-agents/builtins';
 import { getAgentGrantChanges, updateAgentGrantChanges } from '../../agent-grants-store';
 import { deleteAgent } from '../../agent-delete';
 import { agentRegistry } from '../../agent-registry';
+import * as setupAgentConfig from '../../agent-config';
+import * as setupProjects from '../../project-store';
 import { dropCallApprovalsFor, listGrantRequests, takeGrantRequest, _resetGrantRequestsForTesting } from '../../grant-requests';
 import { resolveOrchestrator } from '../../agent-system';
 import { describeDeleteCall } from './managed-tools';
@@ -139,6 +148,7 @@ beforeEach(async () => {
   state.projectPresent = true;
   state.projectGeneration = 0;
   state.projectPending = false;
+  state.beforeSetupPrepare = undefined;
   vi.mocked(resolveOrchestrator).mockReset();
   vi.mocked(restartManagedAgent).mockClear();
   vi.mocked(deleteAgent).mockClear();
@@ -1517,5 +1527,91 @@ describe('delete_agent (#3182)', () => {
       expect((await call('delete_agent', { project: 'Clubhouse', agent: 'dispatcher', worktree: 'delete' })).content[0].text).toMatch(/can't delete yourself/);
       expect(deleteAgent).not.toHaveBeenCalled();
     });
+  });
+});
+
+
+describe('setup authorization pins its scoped target through the write (#3467)', () => {
+  const args = { project: 'Clubhouse', agent: 'Target', blocks: ['builtin-block-identity'], skills: [], mcps: [] };
+  function target(id: string, name: string) {
+    const config: DurableAgentConfig = { id, name, color: 'indigo', createdAt: '', worktreePath: `/w/${id}`, managed: { version: 1, blocks: [], skills: [], mcps: [] } };
+    state.agents.set(id, config);
+    return config;
+  }
+  async function approve() {
+    expect((await call('set_agent_setup', args)).content[0].text).toContain('Needs you');
+    const request = listGrantRequests().find((request) => request.agentId === 'dispatcher')!;
+    expect(takeGrantRequest(request.requestId, true)).toBeTruthy();
+  }
+  beforeEach(() => {
+    _resetGrantRequestsForTesting();
+    agentRegistry.register('dispatcher', { projectPath: state.base, orchestrator: 'claude-code', runtime: 'pty' });
+  });
+  afterEach(async () => {
+    await updateAgentGrantChanges('dispatcher', () => undefined);
+    agentRegistry.untrack('dispatcher');
+    _resetGrantRequestsForTesting();
+  });
+
+  it('refuses permissions revoked during the final target lookup, after approval was consumed', async () => {
+    const a = target('a', 'Target');
+    await approve();
+    state.beforeSetupPrepare = () => {
+      vi.spyOn(setupAgentConfig, 'peekDurableConfigs').mockImplementationOnce(async () => {
+        await updateAgentGrantChanges('dispatcher', () => ({ changes: [{ action: 'agent.configure', target: { kind: 'any' }, mode: 'off' }] }));
+        return [...state.agents.values()];
+      });
+    };
+    expect((await call('set_agent_setup', args)).isError).toBe(true);
+    expect(a.managed!.blocks).toEqual([]);
+  });
+
+  it('never writes B when a name switches from approved A to B during the final lookup', async () => {
+    const a = target('a', 'Target');
+    const b = target('b', 'Other');
+    await approve();
+    state.beforeSetupPrepare = () => {
+      vi.spyOn(setupAgentConfig, 'peekDurableConfigs').mockImplementationOnce(async () => {
+        a.name = 'Other'; b.name = 'Target';
+        return [...state.agents.values()];
+      });
+    };
+    expect((await call('set_agent_setup', args)).isError).toBe(true);
+    expect(a.managed!.blocks).toEqual([]);
+    expect(b.managed!.blocks).toEqual([]);
+  });
+
+  it('requires a new approval when the same name resolves to another Ask-first target on retry', async () => {
+    const a = target('a', 'Target');
+    const b = target('b', 'Other');
+    await approve();
+    a.name = 'Other'; b.name = 'Target';
+    expect((await call('set_agent_setup', args)).content[0].text).toContain('Needs you');
+    expect(b.managed!.blocks).toEqual([]);
+    expect(listGrantRequests().filter((request) => request.agentId === 'dispatcher')).toHaveLength(1);
+  });
+
+  it('checks local B named like foreign connected A’s id, rather than authorizing A and writing B', async () => {
+    const a = target('connected-id', 'Foreign');
+    a.orchestration = { connectToDispatcher: true };
+    const b = target('b', 'connected-id');
+    vi.spyOn(setupProjects, 'peekProjects').mockResolvedValue([
+      { id: 'p1', name: 'Clubhouse', path: '/proj' }, { id: 'p2', name: 'Other', path: '/other' },
+    ]);
+    vi.spyOn(setupAgentConfig, 'peekDurableConfigs').mockImplementation(async (project) => project === '/other' ? [a] : [b]);
+    const result = await call('set_agent_setup', { ...args, agent: 'connected-id' });
+    expect(result.content[0].text).toContain('Needs you');
+    expect(a.managed!.blocks).toEqual([]);
+    expect(b.managed!.blocks).toEqual([]);
+  });
+
+  it.each(['hidden', 'missing', 'ambiguous'] as const)('fails closed for a %s target, without creating a request or writing', async (kind) => {
+    const a = target('a', 'Target');
+    if (kind === 'hidden') state.hiddenFromPeek.add('a');
+    if (kind === 'missing') a.name = 'Other';
+    if (kind === 'ambiguous') target('b', 'Target');
+    expect((await call('set_agent_setup', args)).isError).toBe(true);
+    expect(listGrantRequests()).toEqual([]);
+    expect(a.managed!.blocks).toEqual([]);
   });
 });
