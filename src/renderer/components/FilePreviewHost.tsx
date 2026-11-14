@@ -25,7 +25,7 @@ export function FilePreviewHost() {
       {target && <div className="flex flex-col h-[min(640px,calc(100vh-140px))] min-h-0">
         <div className="px-4 py-2 text-xs text-ctp-subtext0 break-all border-b border-surface-0">{current?.path ?? target.path} <span className="text-ctp-overlay1">(Read-only)</span></div>
         {current?.error ? <div role="alert" className="p-4 text-xs text-ctp-error">{current.error}</div>
-          : current?.preview ? <PreviewBody preview={current.preview} target={target} showOpenHint={false} />
+          : current?.preview ? <PreviewBody preview={current.preview} target={{ ...target, path: current.path ?? target.path }} showOpenHint={false} allowLocalFiles />
             : <div className="p-4 text-xs text-ctp-subtext0">Loading…</div>}
       </div>}
     </Modal>

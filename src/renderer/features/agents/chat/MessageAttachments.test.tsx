@@ -11,7 +11,8 @@ import { clearLoadedImages } from './rich/markdown-images';
 import { clearMediaCache } from './rich/media';
 import { clearMediaCardCaches } from './rich/media-cards';
 
-vi.mock('../../../plugins/builtin/canvas/ReadOnlyMonacoEditor', () => ({
+vi.mock('../../../plugins/builtin/canvas/ReadOnlyMonacoEditor', async (importOriginal) => ({
+  ...await importOriginal<typeof import('../../../plugins/builtin/canvas/ReadOnlyMonacoEditor')>(),
   ReadOnlyMonacoEditor: ({ value }: { value: string }) => <pre data-testid="monaco">{value}</pre>,
 }));
 
@@ -134,6 +135,7 @@ describe('sent message attachments', () => {
     fireEvent.click(chip);
     expect(await screen.findByTestId('chat-file-preview')).toBeTruthy();
     expect(readFilePreview).toHaveBeenCalledWith('a1', '/work/notes.md');
+    fireEvent.click(screen.getByRole('button', { name: 'Source' }));
     expect(await screen.findByTestId('monaco')).toHaveTextContent('hello');
   });
 

@@ -4,7 +4,8 @@ import { FilePreviewHost } from './FilePreviewHost';
 import { useFilePreviewStore } from '../stores/filePreviewStore';
 
 // Keep the preview component and routing real; Monaco/pdf.js need a browser engine.
-vi.mock('../plugins/builtin/canvas/ReadOnlyMonacoEditor', () => ({
+vi.mock('../plugins/builtin/canvas/ReadOnlyMonacoEditor', async (importOriginal) => ({
+  ...await importOriginal<typeof import('../plugins/builtin/canvas/ReadOnlyMonacoEditor')>(),
   ReadOnlyMonacoEditor: (props: { value: string; reveal?: { line: number; column?: number }; onSave?: unknown }) =>
     <div data-testid="readonly-editor" data-line={props.reveal?.line} data-column={props.reveal?.column} data-save={!!props.onSave}>{props.value}</div>,
 }));

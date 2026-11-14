@@ -286,7 +286,7 @@ export function FileViewerCanvasWidget({ widgetId: _widgetId, api, metadata, onU
 
         <div className="flex-1 min-w-0 flex flex-col">
           {filePath && currentFile?.preview ? (
-            <PreviewBody preview={currentFile.preview} target={{ path: filePath }} showOpenHint={false} />
+            <PreviewBody preview={currentFile.preview} target={{ path: filePath }} showOpenHint={false} allowLocalFiles={!remote.isRemote} />
           ) : filePath && fileContent !== null && isMarkdownFile(filePath) && previewMode === 'preview' ? (
             <MarkdownPreview content={fileContent} allowLocalFiles={!remote.isRemote} />
           ) : filePath && fileContent !== null ? (

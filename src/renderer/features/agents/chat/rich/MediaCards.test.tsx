@@ -9,7 +9,8 @@ import { FileChipProvider, clearFileChipCache } from './FileChips';
 import { resetRichChatContentFlag } from './rich-flag';
 import { clearMediaCardCaches, formatDuration, savedPosition } from './media-cards';
 
-vi.mock('../../../../plugins/builtin/canvas/ReadOnlyMonacoEditor', () => ({
+vi.mock('../../../../plugins/builtin/canvas/ReadOnlyMonacoEditor', async (importOriginal) => ({
+  ...await importOriginal<typeof import('../../../../plugins/builtin/canvas/ReadOnlyMonacoEditor')>(),
   ReadOnlyMonacoEditor: ({ value }: { value: string }) => <pre data-testid="monaco">{value}</pre>,
 }));
 

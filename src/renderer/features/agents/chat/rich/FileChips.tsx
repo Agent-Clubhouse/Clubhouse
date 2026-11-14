@@ -16,7 +16,10 @@ import { createPortal } from 'react-dom';
 import type { ChatFileInfo, ChatFilePreview, ChatFileUnavailable } from '../../../../../shared/chat';
 import { LAYER_PORTAL_ATTR } from '../../../../components/layers';
 import { Button } from '../../../../components/Button';
-import { ReadOnlyMonacoEditor } from '../../../../plugins/builtin/canvas/ReadOnlyMonacoEditor';
+import { useAgentStore } from '../../../../stores/agentStore';
+import { isRemoteAgentId, isRemoteProjectId } from '../../../../stores/remoteProjectStore';
+import { MarkdownPreview } from '../../../../plugins/builtin/files/MarkdownPreview';
+import { languageFromPath, ReadOnlyMonacoEditor } from '../../../../plugins/builtin/canvas/ReadOnlyMonacoEditor';
 import { findFilePaths, namesFileClearly, wholeFilePath, type FilePathMatch } from './file-paths';
 import { dataUrlOf } from './media';
 import { PdfPreview } from './PdfPreview';
@@ -193,7 +196,19 @@ function revealLabel(): string {
 const POPOVER_W = 560;
 const POPOVER_H = 420;
 
-export function PreviewBody({ preview, target, showOpenHint = true }: { preview: ChatFilePreview; target: Pick<Target, 'path' | 'line' | 'col'>; showOpenHint?: boolean }) {
+interface PreviewBodyProps {
+  preview: ChatFilePreview;
+  target: Pick<Target, 'path' | 'line' | 'col'>;
+  showOpenHint?: boolean;
+  allowLocalFiles?: boolean;
+}
+
+export function PreviewBody(props: PreviewBodyProps) {
+  return <PreviewBodyContent key={props.target.path} {...props} />;
+}
+
+function PreviewBodyContent({ preview, target, showOpenHint = true, allowLocalFiles = false }: PreviewBodyProps) {
+  const [mode, setMode] = useState<'preview' | 'source'>(target.line !== undefined ? 'source' : 'preview');
   const [src, setSrc] = useState<string | null>(null);
   useEffect(() => {
     // A PDF's bytes go to pdf.js, not a data: URL.
@@ -204,17 +219,31 @@ export function PreviewBody({ preview, target, showOpenHint = true }: { preview:
     return () => { cancelled = true; };
   }, [preview]);
   if (preview.kind === 'text' && preview.text !== undefined) {
+    const markdown = languageFromPath(target.path) === 'markdown';
     const lines = preview.text.split('\n').length;
     // Past the end of what's shown: the editor stops at its last line, and this says why.
-    const past = target.line !== undefined && target.line > lines;
+    const past = (!markdown || mode === 'source') && target.line !== undefined && target.line > lines;
     const note = past && preview.truncated
       ? `Line ${target.line} is past the first ${formatSize(preview.text.length)} shown here.${showOpenHint ? ' Open it in Files to go there.' : ''}`
       : past ? `Line ${target.line} is past the end of this file, which has ${lines} lines.`
         : preview.truncated ? `Showing the first ${formatSize(preview.text.length)}.${showOpenHint ? ' Open it in Files to see the rest.' : ''}` : null;
     return (
       <div className="flex flex-col min-h-0 flex-1">
-        <div className="flex-1 min-h-[200px]" data-testid="chat-file-preview-text">
-          <ReadOnlyMonacoEditor value={preview.text} filePath={target.path} {...(target.line !== undefined && { reveal: { line: target.line, ...(target.col !== undefined && { column: target.col }) } })} />
+        {markdown && <div className="flex px-3 py-1 border-b border-surface-0">
+          <div className="flex items-center gap-0.5 p-0.5 rounded-md bg-surface-0 flex-shrink-0" role="group" aria-label="Markdown view">
+            {(['preview', 'source'] as const).map((value) => <button
+              key={value}
+              type="button"
+              className={`h-6 px-2 rounded text-xs transition-colors ${mode === value ? 'bg-surface-1 text-ctp-text' : 'text-ctp-subtext0 hover:text-ctp-text'}`}
+              aria-pressed={mode === value}
+              onClick={() => setMode(value)}
+            >{value === 'preview' ? 'Preview' : 'Source'}</button>)}
+          </div>
+        </div>}
+        <div className="flex-1 min-h-[200px] overflow-hidden" data-testid="chat-file-preview-text">
+          {markdown && mode === 'preview'
+            ? <MarkdownPreview content={preview.text} allowLocalFiles={allowLocalFiles} allowLocalImages={false} />
+            : <ReadOnlyMonacoEditor value={preview.text} filePath={target.path} {...(target.line !== undefined && { reveal: { line: target.line, ...(target.col !== undefined && { column: target.col }) } })} />}
         </div>
         {note && <div className="px-3 py-1 text-[11.5px] text-ctp-overlay1 border-t border-surface-0" data-testid="chat-file-preview-note">{note}</div>}
       </div>
@@ -239,6 +268,8 @@ export function PreviewBody({ preview, target, showOpenHint = true }: { preview:
 }
 
 function FilePreviewPopover({ agentId, target, onClose }: { agentId: string; target: Target; onClose: () => void }) {
+  const projectId = useAgentStore((s) => s.agents[agentId]?.projectId);
+  const allowLocalFiles = !isRemoteAgentId(agentId) && !!projectId && !isRemoteProjectId(projectId);
   const el = useRef<HTMLDivElement>(null);
   // Focus moves into the preview and back to the chip when it closes.
   useEffect(() => {
@@ -311,7 +342,7 @@ function FilePreviewPopover({ agentId, target, onClose }: { agentId: string; tar
       </div>
       {preview === undefined && <div className="p-4 text-[12.5px] text-ctp-overlay1 flex-1">Loading…</div>}
       {preview === null && <div className="p-4 text-[12.5px] text-ctp-subtext0 flex-1">This file is no longer available.</div>}
-      {preview && <PreviewBody preview={preview} target={target} />}
+      {preview && <PreviewBody preview={preview} target={target} allowLocalFiles={allowLocalFiles} />}
       <div className="flex items-center gap-2 px-3 py-2 border-t border-surface-0">
         {error && <span className="mr-auto text-[12px] text-ctp-error" role="alert">{error}</span>}
         <span className="ml-auto" />

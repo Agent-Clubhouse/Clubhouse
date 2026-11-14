@@ -13,7 +13,8 @@ import { useDispatcherStore } from '../../../dispatcher/dispatcherStore';
 import { FileChipProvider, clearFileChipCache } from './FileChips';
 import { resetRichChatContentFlag } from './rich-flag';
 
-vi.mock('../../../../plugins/builtin/canvas/ReadOnlyMonacoEditor', () => ({
+vi.mock('../../../../plugins/builtin/canvas/ReadOnlyMonacoEditor', async (importOriginal) => ({
+  ...await importOriginal<typeof import('../../../../plugins/builtin/canvas/ReadOnlyMonacoEditor')>(),
   ReadOnlyMonacoEditor: ({ value, filePath, reveal }: { value: string; filePath: string; reveal?: { line: number; column?: number } }) => (
     <pre data-testid="monaco" data-path={filePath} data-reveal={reveal ? `${reveal.line}:${reveal.column ?? ''}` : undefined}>{value}</pre>
   ),
@@ -369,6 +370,7 @@ describe("the Dispatcher's notes (#2557)", () => {
     const { container } = await renderRich(<Markdown text={'Plan in `notes/plan.md`.'} />, 'disp');
     const chip = await waitFor(() => { const el = container.querySelector('code[data-chat-file]'); expect(el).not.toBeNull(); return el!; });
     fireEvent.click(chip);
+    fireEvent.click(await screen.findByRole('button', { name: 'Source' }));
     expect(await screen.findByTestId('monaco')).toBeTruthy();
     expect(readFilePreview).toHaveBeenCalledWith('disp', 'notes/plan.md');
     const open = screen.getByRole('button', { name: 'Open in Files' }) as HTMLButtonElement;
@@ -379,4 +381,20 @@ describe("the Dispatcher's notes (#2557)", () => {
     fireEvent.click(open);
     await waitFor(() => expect(bridge.handleProtocolAction).toHaveBeenCalledWith({ kind: 'open-file-not-found', filePath: `${FOLDER}\\notes\\plan.md` }));
   });
+});
+
+
+it.each(['remote||satellite||p1', 'p1'])('uses the project resource policy in a %s chat file preview', async (projectId) => {
+  setFlag(true);
+  useFilePreviewStore.getState().close();
+  useAgentStore.setState({ agents: { a1: { id: 'a1', projectId, name: 'a', kind: 'durable', status: 'running', color: 'indigo' } as never } });
+  readFilePreview.mockResolvedValueOnce({ kind: 'text', name: 'README.md', size: 100, text: '[local](/tmp/local.md) ![relative](./photo.png) ![absolute](/tmp/photo.png)' });
+  const { container } = await renderRich(<Markdown text={'`/repo/README.md`'} />);
+  const chip = await waitFor(() => { const el = container.querySelector('code[data-chat-file]'); expect(el).not.toBeNull(); return el!; });
+  fireEvent.click(chip);
+  fireEvent.click(await screen.findByRole('link', { name: 'local' }));
+  expect(useFilePreviewStore.getState().target?.path ?? null).toBe(projectId === 'p1' ? '/tmp/local.md' : null);
+  expect(screen.getByAltText('relative')).not.toHaveAttribute('src');
+  expect(screen.getByAltText('absolute')).not.toHaveAttribute('src');
+  useFilePreviewStore.getState().close();
 });

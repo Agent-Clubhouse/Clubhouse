@@ -646,6 +646,7 @@ export function FileViewer({ api: rawApi }: { api: PluginAPI }) {
         React.createElement('div', { className: 'px-3 py-1 text-xs text-ctp-overlay1' }, 'Read-only preview'),
         loadedFile.preview ? React.createElement(PreviewBody, {
           preview: loadedFile.preview,
+          allowLocalFiles: !isRemoteProjectId(api.context.projectId || ''),
           showOpenHint: false,
           target: { path: activeTab.filePath, line: scrollTarget?.filePath === activeTab.filePath ? scrollTarget.line : undefined, col: scrollTarget?.column },
         }) : null,

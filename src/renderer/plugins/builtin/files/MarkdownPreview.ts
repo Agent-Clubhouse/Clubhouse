@@ -135,11 +135,31 @@ export function splitMermaidSegments(content: string): Segment[] {
   return segments.map((s) => s.kind === 'html' ? { ...s, html: html[index++] } : s);
 }
 
-export function MarkdownPreview({ content, allowLocalFiles = true }: { content: string; allowLocalFiles?: boolean }) {
+export function MarkdownPreview({ content, allowLocalFiles = true, allowLocalImages = allowLocalFiles }: { content: string; allowLocalFiles?: boolean; allowLocalImages?: boolean }) {
   injectHljsStyle();
   const handleClick = useSafeMarkdownLinks(allowLocalFiles);
 
-  const segments = useMemo(() => splitMermaidSegments(content), [content]);
+  const segments = useMemo(() => splitMermaidSegments(content).map((segment) => {
+    if (allowLocalImages || segment.kind !== 'html') return segment;
+    // Without a file directory, relative URLs would resolve against the app.
+    // Keep the sanitizer's existing remote/data image policy, blocking local resources.
+    const template = document.createElement('template');
+    template.innerHTML = segment.html;
+    for (const element of template.content.querySelectorAll('*')) {
+      for (const attribute of ['src', 'srcset', 'href', 'poster', 'data', 'xlink:href']) {
+        const value = element.getAttribute(attribute);
+        if (value === null) continue;
+        const html = element.namespaceURI === 'http://www.w3.org/1999/xhtml';
+        // Anchors are handled on click. Only explicit remote/data img sources
+        // and same-document SVG references may otherwise load resources.
+        const allowed = (html && element.localName === 'a' && attribute === 'href')
+          || (html && element.localName === 'img' && attribute === 'src' && /^(https?:\/\/|data:)/i.test(value))
+          || (!html && element.localName === 'use' && attribute === 'href' && value.startsWith('#'));
+        if (!allowed) element.removeAttribute(attribute);
+      }
+    }
+    return { ...segment, html: template.innerHTML };
+  }), [content, allowLocalImages]);
 
   return React.createElement(
     'div',

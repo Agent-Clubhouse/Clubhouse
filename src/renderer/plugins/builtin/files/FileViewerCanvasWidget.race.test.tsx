@@ -5,7 +5,8 @@ import type { PluginAPI } from '../../../../shared/plugin-types';
 
 const editorProps = vi.hoisted(() => ({ current: null as null | { value: string; filePath: string; onSave?: (c: string) => unknown } }));
 
-vi.mock('../canvas/ReadOnlyMonacoEditor', () => ({
+vi.mock('../canvas/ReadOnlyMonacoEditor', async (importOriginal) => ({
+  ...await importOriginal<typeof import('../canvas/ReadOnlyMonacoEditor')>(),
   ReadOnlyMonacoEditor: (props: { value: string; filePath: string; onSave?: (c: string) => unknown }) => {
     editorProps.current = props;
     return React.createElement('div', { 'data-testid': 'editor' }, `${props.filePath}:${props.value}`);
