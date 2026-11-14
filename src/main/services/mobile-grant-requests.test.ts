@@ -343,3 +343,14 @@ describe('grant.answer: the desktop\'s answer, from a phone', () => {
     ]);
   });
 });
+
+it.each(['mobile', 'annex_desktop'] as const)('rejects deletion batch answers from %s even with controller authorization', async (surface) => {
+  const recorded = recordGrantRequest(callKey('a1', 'delete_agents', {}), {
+    kind: 'call', agentId: 'a1', agentName: 'Ada', projectPath: '/p', actions: ['agent.dispose'], where: 'batch', deleteReview: { items: [] },
+  }, NOW, { context: 'exact', asks: [] });
+  if (!recorded.ok) throw new Error('not recorded');
+  await expect(withSettingsSurface(surface, 'peer', () => runGrantCommand(command(recorded.request.requestId, 'allow_once'), places, { viewer: 'peer', assertAuthorized: () => {} })))
+    .rejects.toMatchObject({ code: 'grant_answer_not_offered' });
+  expect(listGrantRequests()).toHaveLength(1);
+  expect(consumeCallApproval(callKey('a1', 'delete_agents', {}))).toBe(false);
+});

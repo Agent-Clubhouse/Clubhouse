@@ -224,3 +224,21 @@ describe('findGitCommonDir (#2511)', () => {
     }
   });
 });
+
+it('includes work saved only on another batch target branch in the deletion review', async () => {
+  commit(worktree('helper-a'), 'batch-only.txt');
+  git(['merge', '-q', '--ff-only', 'helper-a/standby'], worktree('helper-b'));
+  expect((await getWorktreeStatus(project, 'durable_2_a')).unpushedCommits).toHaveLength(0);
+  const status = await getWorktreeStatus(project, 'durable_2_a', ['helper-a/standby', 'helper-b/standby']);
+  expect(status.unpushedCommits.map((entry) => entry.subject)).toEqual(['add batch-only.txt']);
+});
+
+it('checks the main-only batch guard at actual helper disposal and preserves its files on refusal', async () => {
+  const { withDeleteReview } = await import('./delete-review-guard');
+  const result = await withDeleteReview(async (_project, id) => {
+    if (id === 'durable_2_a') throw new Error('Helper work changed after review');
+  }, () => resolveHelpersForDelete(project, 'durable_1_orch', 'dispose', { force: true }));
+  expect(result).toMatchObject({ ok: false, failed: [{ agentId: 'durable_2_a', reason: 'Helper work changed after review' }], helperIds: ['durable_3_b'] });
+  expect(fs.existsSync(worktree('helper-a'))).toBe(true);
+  expect(branchExists('helper-a/standby')).toBe(true);
+});

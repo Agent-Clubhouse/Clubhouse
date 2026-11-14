@@ -588,6 +588,7 @@ export const ATTR = {
     'restart_agent',
     // deleting an agent with its helpers (#3182)
     'delete_agent',
+    'delete_agents',
     'other',
   ]),
   mcpResult: enumAttr('clubhouse.mcp.result', ['ok', 'tool_error', 'threw']),

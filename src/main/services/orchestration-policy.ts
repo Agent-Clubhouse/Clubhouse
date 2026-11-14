@@ -38,6 +38,7 @@
 
 import * as path from 'path';
 import * as agentConfig from './agent-config';
+import { noteDeleteReviewEffect } from './delete-review-guard';
 import { isAgentRunning, killAgent } from './agent-system';
 import { agentRegistry } from './agent-registry';
 import * as orchestrationSettings from './orchestration-settings';
@@ -426,7 +427,10 @@ export async function settleHelpers(
   if (!preview.ok) return preview;
   // Stop running helpers so none holds its worktree open (EBUSY on Windows).
   for (const { projectPath: helperPath, config: helper } of await listHelpersEverywhere(projectPath, agentId, { recursive: true })) {
-    if (isAgentRunning(helper.id)) await killAgent(helper.id, helperPath, undefined, 'user', { waitForExit: true });
+    if (isAgentRunning(helper.id)) {
+      noteDeleteReviewEffect();
+      await killAgent(helper.id, helperPath, undefined, 'user', { waitForExit: true });
+    }
   }
   return agentConfig.resolveHelpersForDelete(projectPath, agentId, 'dispose', { force });
 }

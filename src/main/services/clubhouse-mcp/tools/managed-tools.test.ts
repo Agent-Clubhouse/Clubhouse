@@ -3,6 +3,7 @@ import * as os from 'os';
 import * as path from 'path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { DurableAgentConfig } from '../../../../shared/types';
+import type { WorktreeStatus } from '../../../../shared/types';
 
 const state = vi.hoisted(() => ({
   base: '',
@@ -21,6 +22,9 @@ const state = vi.hoisted(() => ({
   afterSetupPrepare: undefined as undefined | (() => void | Promise<void>),
   beforeSettingsPrepare: undefined as undefined | (() => void | Promise<void>),
   beforePolicyPrepare: undefined as undefined | (() => void | Promise<void>),
+  work: new Map<string, WorktreeStatus>(),
+  edits: new Map<string, number>(),
+  helpers: [] as { projectPath: string; config: DurableAgentConfig }[],
 }));
 
 vi.mock('../mcp-call-gate', async (original) => ({ ...await original<typeof import('../mcp-call-gate')>(), mcpCallAccess: () => 'open' }));
@@ -51,6 +55,7 @@ vi.mock('../../agent-config', () => ({
   listDurable: async () => [...state.agents.values()],
   peekDurableConfigs: async () => [...state.agents.values()].filter((a) => !state.hiddenFromPeek.has(a.id)),
   getDurableConfig: async (_p: string, id: string) => state.agents.get(id) ?? null,
+  getWorktreeStatus: async (_p: string, id: string) => state.work.get(id) ?? { isValid: false, branch: '', uncommittedFiles: [], unpushedCommits: [], hasRemote: false },
   createDurable: async (_p: string, name: string, color: string, model?: string, _worktree?: boolean, orchestrator?: string,
     _access?: unknown, _mcpIds?: unknown, _mcpConfigs?: unknown, _worktreeOptions?: unknown, options?: { connectToDispatcher?: false }) => {
     const a: DurableAgentConfig = { id: `new-${name}`, name, color, createdAt: '', worktreePath: `/w/${name}`, ...(model && { model }), ...(orchestrator && { orchestrator: orchestrator as never }),
@@ -79,7 +84,9 @@ vi.mock('../../agent-config', () => ({
 }));
 const legacy = vi.hoisted(() => ({ notice: undefined as 'not_copied' | undefined }));
 vi.mock('../../legacy-defaults', () => ({ legacyDefaultsNotCopied: async () => legacy.notice }));
-vi.mock('../../agent-delete', () => ({ deleteAgent: vi.fn(async () => ({ ok: true, message: 'Force deleted', deleted: true })) }));
+vi.mock('../../agent-delete', async (original) => ({ ...await original<typeof import('../../agent-delete')>(), deleteAgent: vi.fn(async () => ({ ok: true, message: 'Force deleted', deleted: true })) }));
+vi.mock('../../helper-index', () => ({ listHelpersEverywhere: async () => state.helpers }));
+vi.mock('../../delete-review-state', () => ({ deleteReviewFingerprint: async (config: DurableAgentConfig, work: WorktreeStatus) => JSON.stringify({ config, work, edits: state.edits.get(config.id) }) }));
 const grantMock = vi.hoisted(() => ({ granted: false }));
 vi.mock('../grant-check', async (original) => {
   const real = await original<typeof import('../grant-check')>();
@@ -171,6 +178,9 @@ beforeEach(async () => {
   state.afterSetupPrepare = undefined;
   state.beforeSettingsPrepare = undefined;
   state.beforePolicyPrepare = undefined;
+  state.work.clear();
+  state.edits.clear();
+  state.helpers = [];
   vi.mocked(resolveOrchestrator).mockReset();
   vi.mocked(restartManagedAgent).mockClear();
   vi.mocked(deleteAgent).mockClear();
@@ -1876,5 +1886,175 @@ describe('template pushes respect per-consumer configuration approval (#3480)', 
     expect((await call('push_agent_template', input)).isError).toBe(true);
     expect(listGrantRequests('dispatcher')).toEqual([]);
     expect(agent.managed!.blocks).toEqual([]);
+  });
+});
+
+describe('delete_agents exact batch approval', () => {
+  const item = (agent: string, extra: Record<string, unknown> = {}) => ({ project: 'Clubhouse', agent, worktree: 'delete', helpers: 'dispose', ...extra });
+  const approve = () => takeGrantRequest(listGrantRequests()[0].requestId, true);
+  const add = (id: string) => {
+    const config: DurableAgentConfig = { id, name: id, color: 'blue', createdAt: 'original' };
+    state.agents.set(id, config);
+    return config;
+  };
+  beforeEach(() => {
+    _resetGrantRequestsForTesting();
+    agentRegistry.register('dispatcher', { projectPath: '/proj', orchestrator: 'claude-code', runtime: 'chat' });
+    agentRegistry.setLaunchCap('dispatcher', { freeAgentMode: true, access: 'full_access' });
+    add('one'); add('two');
+  });
+  afterEach(async () => {
+    await updateAgentGrantChanges('dispatcher', () => undefined);
+    agentRegistry.untrack('dispatcher');
+    _resetGrantRequestsForTesting();
+    vi.mocked(deleteAgent).mockReset().mockResolvedValue({ ok: true, message: 'Deleted', deleted: true });
+    vi.restoreAllMocks();
+  });
+
+  it('creates one review with every exact target and refused input, and reuses it', async () => {
+    const args = { items: [item('one'), item('two', { worktree: 'keep', helpers: 'keep' }), item('missing'), item('one')] };
+    const asked = await call('delete_agents', args);
+    expect(asked.json.status).toBe('needs_approval');
+    const [request] = listGrantRequests();
+    expect(listGrantRequests()).toHaveLength(1);
+    expect(request.deleteReview?.items.map((row) => row.status)).toEqual(['ready', 'ready', 'refused', 'refused']);
+    expect(request.deleteReview?.items[0].target).toMatchObject({ agentId: 'one', project: '/proj' });
+    expect((await call('delete_agents', args)).json.requestId).toBe(request.requestId);
+    expect(deleteAgent).not.toHaveBeenCalled();
+    approve();
+    const done = await call('delete_agents', args);
+    expect(done.json.items.map((row: { status: string }) => row.status)).toEqual(['done', 'done', 'refused', 'refused']);
+    expect(deleteAgent).toHaveBeenNthCalledWith(2, '/proj', 'two', expect.objectContaining({ mode: 'unregister', helpers: 'keep', forceWorktree: false }));
+    expect((await call('delete_agents', args)).json.status).toBe('needs_approval');
+  });
+
+  it.each(['rename', 'removed', 'disposed', 'replacement', 'dirty', 'same dirty path edited again'])('refuses a %s target after review while completing the other', async (change) => {
+    state.agents.get('one')!.worktreePath = '/work/one';
+    const work: WorktreeStatus = { isValid: true, branch: 'one', uncommittedFiles: [], unpushedCommits: [], hasRemote: true };
+    if (change === 'same dirty path edited again') work.uncommittedFiles.push({ path: 'file.ts', status: 'M', staged: false });
+    state.work.set('one', work);
+    const args = { items: [item('one', { force: true }), item('two')] };
+    await call('delete_agents', args); approve();
+    if (change === 'rename') state.agents.get('one')!.name = 'changed';
+    if (change === 'removed') state.agents.delete('one');
+    if (change === 'disposed') state.agents.get('one')!.disposedAt = new Date().toISOString();
+    if (change === 'replacement') state.agents.get('one')!.createdAt = 'replacement';
+    if (change === 'dirty') work.uncommittedFiles.push({ path: 'new.ts', status: '??', staged: false });
+    if (change === 'same dirty path edited again') state.edits.set('one', 2);
+    const done = await call('delete_agents', args);
+    expect(done.json.items.map((row: { status: string }) => row.status)).toEqual(['refused', 'done']);
+    expect(deleteAgent).toHaveBeenCalledTimes(1);
+    expect(deleteAgent).toHaveBeenCalledWith('/proj', 'two', expect.anything());
+  });
+
+  it('requires explicit per-item force and refuses failed checks even under force', async () => {
+    for (const id of ['one', 'two']) {
+      state.agents.get(id)!.worktreePath = `/work/${id}`;
+      state.work.set(id, { isValid: true, branch: id, uncommittedFiles: [{ path: 'file', status: 'M', staged: false }], unpushedCommits: [], hasRemote: true });
+    }
+    const args = { items: [item('one'), item('two', { force: true })] };
+    await call('delete_agents', args);
+    expect(listGrantRequests()[0].deleteReview?.items.map((row) => row.status)).toEqual(['refused', 'ready']);
+    expect(listGrantRequests()[0].deleteReview?.items[1].target?.work?.uncommittedFiles).toHaveLength(1);
+    _resetGrantRequestsForTesting();
+    state.work.get('two')!.checkError = 'git failed';
+    expect((await call('delete_agents', { items: [item('two', { force: true })] })).json.items[0]).toMatchObject({ status: 'refused', reason: expect.stringContaining('could not be checked') });
+    expect(listGrantRequests()).toHaveLength(0);
+  });
+
+  it('keeps force off on other targets and reports failed and refused service results', async () => {
+    const args = { items: [item('one', { force: true }), item('two')] };
+    await call('delete_agents', args); approve();
+    vi.mocked(deleteAgent).mockRejectedValueOnce(new Error('disk failed')).mockResolvedValueOnce({ ok: false, message: 'New work', worktree: { isValid: true, branch: 'two', uncommittedFiles: [], unpushedCommits: [], hasRemote: true } });
+    const done = await call('delete_agents', args);
+    expect(done.json.items).toMatchObject([{ status: 'failed', reason: 'disk failed' }, { status: 'refused', reason: 'New work' }]);
+    expect(deleteAgent).toHaveBeenNthCalledWith(2, '/proj', 'two', expect.objectContaining({ forceWorktree: false, forceHelpers: false }));
+  });
+
+  it.each(['helper settlement', 'quick stop', 'removal started'])('reports failed after %s even when the late problem is a review refusal', async (effect) => {
+    const { assertDeleteReview, noteDeleteReviewEffect } = await import('../../delete-review-guard');
+    const args = { items: [item('one')] };
+    await call('delete_agents', args); approve();
+    vi.mocked(deleteAgent).mockImplementationOnce(async (project, id) => {
+      if (effect === 'removal started') {
+        noteDeleteReviewEffect();
+        state.agents.get('one')!.name = 'changed after removal began';
+        await assertDeleteReview(project, id);
+      }
+      return { ok: false, message: 'Late review refusal',
+        worktree: { isValid: true, branch: 'one', uncommittedFiles: [], unpushedCommits: [], hasRemote: true },
+        ...(effect === 'helper settlement' && { helpers: { ok: true, message: 'Kept helper', helperIds: ['helper'] } }),
+        ...(effect === 'quick stop' && { stoppedQuickAgents: ['quick_one'] }),
+      };
+    });
+    const done = await call('delete_agents', args);
+    expect(done.json.status).toBe('failed');
+    expect(done.json.items[0]).toMatchObject({ status: 'failed', effectsStarted: true });
+  });
+
+  it('returns refused when every approved row is refused before any side effects', async () => {
+    const args = { items: [item('one'), item('two')] };
+    await call('delete_agents', args); approve();
+    state.agents.clear();
+    const done = await call('delete_agents', args);
+    expect(done.json.status).toBe('refused');
+    expect(done.json.items.every((row: { status: string }) => row.status === 'refused')).toBe(true);
+    expect(deleteAgent).not.toHaveBeenCalled();
+  });
+
+  it('an approval cannot authorize changed arguments or an agent caller', async () => {
+    const args = { items: [item('one')] };
+    await call('delete_agents', args); approve();
+    expect((await call('delete_agents', { items: [item('two')] })).json.status).toBe('needs_approval');
+    expect((await call('delete_agents', args, 'one')).isError).toBe(true);
+    expect(deleteAgent).not.toHaveBeenCalled();
+  });
+
+  it('expires and asks again without executing', async () => {
+    const args = { items: [item('one')] };
+    await call('delete_agents', args); approve();
+    vi.spyOn(Date, 'now').mockReturnValue(Date.now() + 24 * 60 * 60 * 1000 + 10);
+    expect((await call('delete_agents', args)).json.status).toBe('needs_approval');
+    expect(deleteAgent).not.toHaveBeenCalled();
+  });
+
+  it('invalidates a pending review when permissions change before Allow', async () => {
+    const args = { items: [item('one')] };
+    await call('delete_agents', args);
+    dropCallApprovalsFor('dispatcher'); approve();
+    expect((await call('delete_agents', args)).json.items[0]).toMatchObject({ status: 'refused', reason: expect.stringContaining('Permissions') });
+    expect(deleteAgent).not.toHaveBeenCalled();
+  });
+
+  it('rechecks policy and expiry at a late deletion boundary', async () => {
+    const { assertDeleteReview } = await import('../../delete-review-guard');
+    const args = { items: [item('one'), item('two')] };
+    await call('delete_agents', args); approve();
+    vi.mocked(deleteAgent).mockImplementationOnce(async (project, id) => {
+      dropCallApprovalsFor('dispatcher');
+      await assertDeleteReview(project, id);
+      return { ok: true, message: 'should never happen' };
+    });
+    expect((await call('delete_agents', args)).json.items.map((row: { status: string }) => row.status)).toEqual(['refused', 'refused']);
+  });
+
+  it('rejects self, Dispatcher, ambiguous, foreign and malformed targets before asking', async () => {
+    add('dispatcher');
+    state.agents.get('two')!.name = 'one';
+    const done = await call('delete_agents', { items: [item('dispatcher'), item('one', { agent: 'ONE' }), item('one', { project: 'Elsewhere' }), item('one@remote'), item('one', { helpers: 'maybe' }), null] });
+    expect(done.json.items.every((row: { status: string }) => row.status === 'refused')).toBe(true);
+    expect(listGrantRequests()).toHaveLength(0);
+    expect(deleteAgent).not.toHaveBeenCalled();
+  });
+
+  it('pins recursive helpers and refuses a new helper before touching the parent', async () => {
+    const helper = add('helper'); helper.parentAgentId = 'one';
+    state.helpers = [{ projectPath: '/proj', config: helper }];
+    const args = { items: [item('one')] };
+    await call('delete_agents', args);
+    expect(listGrantRequests()[0].deleteReview?.items[0].helperTargets[0]).toMatchObject({ agentId: 'helper', project: '/proj' });
+    approve(); state.helpers.push({ projectPath: '/proj', config: add('late') });
+    expect((await call('delete_agents', args)).json.items[0]).toMatchObject({ status: 'refused', reason: expect.stringContaining('helper') });
+    expect(deleteAgent).not.toHaveBeenCalled();
   });
 });

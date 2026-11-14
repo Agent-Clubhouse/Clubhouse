@@ -52,6 +52,7 @@ import { isDisposedAgent } from '../../../../shared/agent-helpers';
 import { deleteAgent } from '../../agent-delete';
 import type { AgentDeleteResult, HelperDeleteChoice } from '../../../../shared/types';
 import { createDispatcherManagedAgent } from '../dispatcher-bootstrap';
+import { registerDeleteAgentsTool } from './delete-agents';
 
 const ACTOR = 'Dispatcher';
 const KINDS: ManagedPartKind[] = ['block', 'skill', 'mcp'];
@@ -426,6 +427,7 @@ const PROJECT = { type: 'string', description: 'Project name or path, from list_
 const AGENT = { type: 'string', description: 'Agent id or name, from list_agents.' } as const;
 
 export function registerManagedTools(): void {
+  registerDeleteAgentsTool();
   const svc = () => managedAgents();
 
   tool('list_agent_parts', { actions: ['library.read'], target: 'library' },

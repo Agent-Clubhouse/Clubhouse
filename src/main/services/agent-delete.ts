@@ -29,6 +29,7 @@
  */
 
 import * as path from 'path';
+import { assertDeleteReview, hasDeleteReview, noteDeleteReviewEffect } from './delete-review-guard';
 import * as agentConfig from './agent-config';
 import { agentRegistry } from './agent-registry';
 import { isAgentRunning, killAgent } from './agent-system';
@@ -135,6 +136,7 @@ function closeGate(agentId: string): () => void {
 }
 
 async function deleteLocked(projectPath: string, agentId: string, request: AgentDeleteRequest): Promise<AgentDeleteResult> {
+  await assertDeleteReview(projectPath, agentId);
   const agent = await agentConfig.getDurableConfig(projectPath, agentId);
   // Already gone (a failed creation rolled back, or another window deleted it):
   // there is nothing left to delete, so the row a window still shows can go (#3246).
@@ -177,7 +179,10 @@ async function deleteLocked(projectPath: string, agentId: string, request: Agent
 
     // Waits for each to exit, so none holds the worktree open (EBUSY on Windows).
     const quickAgents = runningQuickAgentsIn(agent.worktreePath);
-    for (const quick of quickAgents) await killAgent(quick.id, quick.projectPath, undefined, 'user', { waitForExit: true });
+    for (const quick of quickAgents) {
+      noteDeleteReviewEffect();
+      await killAgent(quick.id, quick.projectPath, undefined, 'user', { waitForExit: true });
+    }
 
     const stopped = { ...(cascade && { helpers: cascade }), ...(quickAgents.length > 0 && { stoppedQuickAgents: quickAgents.map((q) => q.id) }) };
     // A stop that fails, or leaves it running, refuses the delete: the worktree
@@ -185,6 +190,7 @@ async function deleteLocked(projectPath: string, agentId: string, request: Agent
     if (isAgentRunning(agentId)) {
       let stopError: string | undefined;
       try {
+        noteDeleteReviewEffect();
         await killAgent(agentId, projectPath, undefined, 'user', { waitForExit: true, throwOnFailure: true });
       } catch (err) {
         // telemetry-exempt: the result carries the failure; the delete flow records it as delete_failed.
@@ -209,7 +215,21 @@ async function deleteLocked(projectPath: string, agentId: string, request: Agent
       if (refused) return { ...refused, ...stopped };
     }
 
-    const result = await deleteInMode(projectPath, agentId, request);
+    try {
+      await assertDeleteReview(projectPath, agentId);
+    } catch (err) {
+      // telemetry-exempt: returned with every helper/stop consequence already incurred.
+      return { ok: false, message: err instanceof Error ? err.message : String(err), ...stopped };
+    }
+    let result: DeleteResult;
+    try {
+      result = await deleteInMode(projectPath, agentId, request);
+    } catch (err) {
+      // Batch receipts must retain already-settled helpers even if a late guard or write throws.
+      // telemetry-exempt: the receipt carries the failure and consequences.
+      if (!hasDeleteReview()) throw err;
+      return { ok: false, message: err instanceof Error ? err.message : String(err), ...stopped };
+    }
     deleted = result.ok;
     return { ...result, ...(result.ok && { deleted: true }), ...stopped };
   } finally {

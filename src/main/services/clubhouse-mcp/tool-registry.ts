@@ -320,6 +320,7 @@ const TOOL_ANNOTATIONS: Partial<Record<'global' | BindingTargetKind, Readonly<Re
     create_managed_agent: INTERNAL_WRITE,
     restart_agent: INTERNAL_DESTRUCTIVE,
     delete_agent: INTERNAL_DESTRUCTIVE,
+    delete_agents: INTERNAL_DESTRUCTIVE,
     answer_helper_question: INTERNAL_WRITE,
     create_group_project: INTERNAL_WRITE,
     add_to_group_project: INTERNAL_WRITE,

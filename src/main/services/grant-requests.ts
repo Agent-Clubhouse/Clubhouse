@@ -31,6 +31,8 @@ type Listener = (change: GrantRequestChange) => void;
 export interface CallApprovalScope {
   readonly context: string;
   readonly asks: readonly { readonly action: GrantAction; readonly where: string }[];
+  /** Main-generated operation state, never accepted from a tool caller. */
+  readonly snapshot?: unknown;
 }
 
 export interface ConsumedCallApproval {
