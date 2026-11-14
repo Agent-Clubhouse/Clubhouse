@@ -17,6 +17,8 @@ import { assertInternalHandoffLinks, handoffLinkTarget } from '../../shared/hand
 import { HandoffSecretPolicy, isTrustedHandoffSecretPolicy } from './handoff-secret-settings';
 import type { HandoffManifestSummary } from '../../shared/handoffs';
 
+import { handoffGitPlatformFlags, reportHandoffGitFailure } from './handoff-git-diagnostics';
+
 const exec = promisify(execFile);
 const CHUNK_BYTES = 64 * 1024;
 const LFS_POINTER_HEADER = Buffer.from('version https://git-lfs.github.com/spec/v1\n');
@@ -104,7 +106,7 @@ function gitEnvironment(): NodeJS.ProcessEnv {
 /** Unlike UI Git helpers, never log Git stderr, URLs, paths or subprocess output. */
 async function gitBytes(context: SnapshotGit, args: string[], missingAllowed: boolean | 'repository' = false): Promise<Buffer | null> {
   try {
-    const result = await exec('git', ['--no-replace-objects', '-c', 'core.fsmonitor=false', ...args], {
+    const result = await exec('git', ['--no-replace-objects', '-c', 'core.fsmonitor=false', ...handoffGitPlatformFlags(), ...args], {
       cwd: context.root, encoding: 'buffer', timeout: 30_000, maxBuffer: 8 * 1024 ** 2, env: context.env,
     });
     return result.stdout;
@@ -115,14 +117,20 @@ async function gitBytes(context: SnapshotGit, args: string[], missingAllowed: bo
       if (missingAllowed === 'repository' && error.code === 128 && 'stderr' in error
         && /fatal: not a git repository\b/.test(String(error.stderr))) return null;
     }
-    throw new HandoffSnapshotError('git_failed');
+    const reported = new HandoffSnapshotError('git_failed');
+    reported.message += reportHandoffGitFailure(args, error);
+    throw reported;
   }
 }
 async function git(context: SnapshotGit, args: string[], missingAllowed: boolean | 'repository' = false): Promise<string | null> {
   const result = await gitBytes(context, args, missingAllowed);
   if (result === null) return null;
   try { return new TextDecoder('utf-8', { fatal: true }).decode(result); }
-  catch { throw new HandoffSnapshotError('git_failed'); /* telemetry-exempt: malformed Git output is never reflected */ }
+  catch (error) {
+    const reported = new HandoffSnapshotError('git_failed');
+    reported.message += reportHandoffGitFailure(args, error);
+    throw reported;
+  }
 }
 
 /** Main-only Git access after the same worktree/control checks as snapshot selection. */
@@ -145,12 +153,17 @@ export async function openHandoffRepository(worktreeRoot: string, options: { mut
     streamBlob: async (oid: string, size: number, sink: (bytes: Buffer) => Promise<void>, authorize: () => Promise<void>) => {
       if (!/^(?:[0-9a-f]{40}|[0-9a-f]{64})$/.test(oid) || !Number.isSafeInteger(size) || size < 0 || size > 16 * 1024 ** 3) throw new HandoffSnapshotError('bounds_exceeded');
       await authorize(); await checkRoot();
-      const child = spawn('git', ['--no-replace-objects', '-c', 'core.fsmonitor=false', 'cat-file', 'blob', oid], {
+      const child = spawn('git', ['--no-replace-objects', '-c', 'core.fsmonitor=false', ...handoffGitPlatformFlags(), 'cat-file', 'blob', oid], {
         cwd: context.root, env: context.env, stdio: ['ignore', 'pipe', 'ignore'],
       });
       const completion = new Promise<void>((resolve, reject) => {
-        child.once('error', () => reject(new HandoffSnapshotError('git_failed')));
-        child.once('close', (code) => code === 0 ? resolve() : reject(new HandoffSnapshotError('git_failed')));
+        const failed = (error: unknown) => {
+          const reported = new HandoffSnapshotError('git_failed');
+          reported.message += reportHandoffGitFailure(['cat-file'], error);
+          reject(reported);
+        };
+        child.once('error', failed);
+        child.once('close', (code) => code === 0 ? resolve() : failed({ code }));
       });
       void completion.catch(() => {}); // telemetry-exempt: reported at the bounded stream boundary
       const timeout = setTimeout(() => child.kill(), 60_000);

@@ -10,6 +10,7 @@ import { summarizeHandoffManifest } from '../../shared/handoff-manifest';
 import type { HandoffSecretPolicy } from './handoff-secret-settings';
 import { openHandoffRepository, verifyHandoffSnapshot, HandoffSnapshotError, type HandoffSnapshot } from './handoff-snapshot';
 import { scanHandoffGitHistory } from './handoff-git-bundle';
+import { handoffGitPlatformFlags, reportHandoffGitFailure } from './handoff-git-diagnostics';
 const exec = promisify(execFile);
 
 /** Acquires objects only after receiver-side checks. It never checks out or alters an existing branch. */
@@ -36,7 +37,7 @@ export async function receiveHandoffCommit(options: {
   const quarantine = path.join(root, `quarantine-${randomUUID()}`);
   const hooks = path.join(quarantine, 'hooks'); const config = path.join(quarantine, 'empty-config');
   await fs.promises.mkdir(quarantine, { mode: 0o700 }); await fs.promises.mkdir(hooks, { mode: 0o700 }); await fs.promises.writeFile(config, '', { mode: 0o600 });
-  const flags = ['--no-replace-objects', '-c', `core.hooksPath=${hooks}`, '-c', 'core.fsmonitor=false', '-c', 'protocol.ext.allow=never', '-c', 'fetch.fsckObjects=true', '-c', 'transfer.fsckObjects=true'];
+  const flags = [...handoffGitPlatformFlags(), '--no-replace-objects', '-c', `core.hooksPath=${hooks}`, '-c', 'core.fsmonitor=false', '-c', 'protocol.ext.allow=never', '-c', 'fetch.fsckObjects=true', '-c', 'transfer.fsckObjects=true'];
   const check = async () => {
     await options.authorize(); secretPolicy?.assertCurrent();
     const current = await fs.promises.lstat(root, { bigint: true });
@@ -49,13 +50,22 @@ export async function receiveHandoffCommit(options: {
       const env = { ...process.env };
       for (const name of Object.keys(env)) if (/^GIT_/i.test(name)) delete env[name];
       Object.assign(env, { GIT_CONFIG_GLOBAL: config, GIT_CONFIG_SYSTEM: config, GIT_CONFIG_NOSYSTEM: '0', GIT_NO_REPLACE_OBJECTS: '1', GIT_GRAFT_FILE: devNull });
-      const read = async (args: string[]): Promise<Buffer> => {
+      const read = async (args: string[], cwd = quarantine): Promise<Buffer> => {
         await check();
-        try { return (await exec('git', [...flags, ...args], { cwd: quarantine, env, timeout: 60_000, maxBuffer: 8 * 1024 ** 2, encoding: 'buffer' })).stdout; }
-        catch { throw new HandoffSnapshotError('git_failed'); /* telemetry-exempt: no subprocess output or private paths escape this boundary */ }
+        try { return (await exec('git', [...flags, ...args], { cwd, env, timeout: 60_000, maxBuffer: 8 * 1024 ** 2, encoding: 'buffer' })).stdout; }
+        catch (error) {
+          const reported = new HandoffSnapshotError('git_failed');
+          reported.message += reportHandoffGitFailure(args, error);
+          throw reported;
+        }
       };
-      const bare = path.join(quarantine, 'objects.git');
-      await read(['init', '--bare', '--template=', bare]);
+      // Keep the quarantine's UUID ownership, while leaving more path budget for packs.
+      const bare = path.join(quarantine, 'repo');
+      await read(['init', '--bare', '--template=', path.basename(bare)]);
+      // Git for Windows rejects an explicit GIT_DIR longer than PATH_MAX - 40
+      // before core.longpaths is read. Keep the process cwd and Git's directory
+      // argument separate so both repository setup and pack I/O support deep roots.
+      const readBare = (args: string[]) => read(['--git-dir=.', ...args], bare);
       let acquired = false;
       if (sourceKey && targetKey === sourceKey) {
         // Resolve only the receiving project's configured origin (including its own rewrites).
@@ -63,7 +73,7 @@ export async function receiveHandoffCommit(options: {
         const remote = (await repository.read(['remote', 'get-url', 'origin']))?.toString('utf8').trim();
         if (remote && !remote.includes('\0') && !remote.includes('\n')) {
           try {
-            await read(['--git-dir', bare, '-c', 'protocol.file.allow=always', 'fetch', '--no-tags', '--', remote, commit]);
+            await readBare(['-c', 'protocol.file.allow=always', 'fetch', '--no-tags', '--', remote, commit]);
             acquired = true; source = 'remote';
           } catch { /* telemetry-exempt: an unavailable person-configured origin falls back to the frozen bundle */ }
         }
@@ -72,16 +82,23 @@ export async function receiveHandoffCommit(options: {
         if (!snapshot.manifest.bundle) throw new Error('Handoff commit is unavailable.');
         source = 'bundle';
         const bundle = path.join(root, 'bundle.bin');
-        const heads = (await read(['--git-dir', bare, 'bundle', 'list-heads', bundle])).toString('ascii').trim();
+        const heads = (await readBare(['bundle', 'list-heads', bundle])).toString('ascii').trim();
         if (heads !== `${commit} HEAD`) throw new HandoffSnapshotError('hash_mismatch');
-        await read(['--git-dir', bare, '-c', 'protocol.file.allow=always', 'fetch', '--no-tags', '--', bundle, 'HEAD']);
+        await readBare(['-c', 'protocol.file.allow=always', 'fetch', '--no-tags', '--', bundle, 'HEAD']);
       }
-      const imported = (await read(['--git-dir', bare, 'rev-parse', '--verify', 'FETCH_HEAD^{commit}'])).toString('ascii').trim();
+      const imported = (await readBare(['rev-parse', '--verify', 'FETCH_HEAD^{commit}'])).toString('ascii').trim();
       if (imported !== commit) throw new HandoffSnapshotError('hash_mismatch');
-      await scanHandoffGitHistory({ repo: { base: commit }, read: (args) => read(['--git-dir', bare, ...args]), assertCurrent: check }, secretPolicy);
+      await scanHandoffGitHistory({ repo: { base: commit }, read: readBare, assertCurrent: check }, secretPolicy);
       await secretPolicy?.recordUse(handoffId, 'receiver'); await check();
-      // Fetch only the verified commit's reachable graph, never arbitrary extra bundle refs.
-      await repository.read([...flags, '-c', 'protocol.file.allow=always', 'fetch', '--no-tags', '--no-write-fetch-head', '--', bare, commit]);
+      // Fetch only the verified commit's reachable graph, never arbitrary extra refs.
+      // A repository source makes upload-pack interpret its path as GIT_DIR,
+      // hitting Windows' setup limit even with longpaths enabled. A bundle is
+      // ordinary file I/O and also works when staging and the project differ in drive.
+      const verifiedBundle = path.join(quarantine, 'verified.bundle');
+      await readBare(['bundle', 'create', verifiedBundle, 'FETCH_HEAD']);
+      const verifiedHeads = (await readBare(['bundle', 'list-heads', verifiedBundle])).toString('ascii').trim();
+      if (verifiedHeads !== `${commit} FETCH_HEAD`) throw new HandoffSnapshotError('hash_mismatch');
+      await repository.read([...flags, '-c', 'protocol.file.allow=always', 'fetch', '--no-tags', '--no-write-fetch-head', '--', verifiedBundle, commit]);
     } else {
       await scanHandoffGitHistory({ repo: { base: commit }, read: (args) => repository.read([...flags, ...args]), assertCurrent: check }, secretPolicy);
       await secretPolicy?.recordUse(handoffId, 'receiver');

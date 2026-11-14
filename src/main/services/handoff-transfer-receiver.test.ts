@@ -2,7 +2,7 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import { createHash, randomUUID } from 'crypto';
-import { afterEach, beforeEach, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { canonicalHandoffManifest, HANDOFF_TRANSFER_DEFAULTS, summarizeHandoffManifest, type HandoffWorktreeManifest } from '../../shared/handoff-manifest';
 import type { Handoff } from '../../shared/handoffs';
 import { HANDOFF_CHUNK_BYTES } from '../../shared/handoff-transfer';
@@ -11,6 +11,8 @@ import { receiveHandoffSnapshot, HandoffTransferInterrupted, type ReceiveHandoff
 let root: string; let incoming: string; let outgoing: string;
 const machine = Array(16).fill('ab').join(':'); const peer = Array(16).fill('cd').join(':');
 const hash = (value: Uint8Array | string) => createHash('sha256').update(value).digest('hex');
+// Each chunk crosses real file descriptors and fsync boundaries on both endpoints.
+describe('real-I/O handoff transport', { timeout: 30_000 }, () => {
 beforeEach(() => {
   root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'handoff-receive-')));
   incoming = path.join(root, 'incoming'); outgoing = path.join(root, 'outgoing');
@@ -75,4 +77,6 @@ it('refuses a planted receiving parent link without modifying its outside target
   fs.symlinkSync(outside, path.join(incoming, f.id, 'files', 'fixtures'), process.platform === 'win32' ? 'junction' : 'dir');
   await expect(receiveHandoffSnapshot(f.options)).rejects.toMatchObject({ code: 'unsafe_entry' });
   expect(fs.readdirSync(outside)).toEqual([]); await f.sender.close();
+});
+
 });

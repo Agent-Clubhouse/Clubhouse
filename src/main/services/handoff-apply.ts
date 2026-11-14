@@ -131,6 +131,7 @@ export async function applyHandoffSnapshot(options: ApplyHandoffSnapshotOptions)
   const repository = await openHandoffRepository(options.projectRoot, { mutableWorktree: true });
   const entries = await plannedTree(repository, options);
   const paths = handoffApplyPaths(repository.root, options.id);
+  const gitPath = (name: string) => path.relative(repository.root, name);
   const pinned = new Map<string, string>();
   const checkOwnership = async () => {
     for (const [name, expected] of pinned) {
@@ -161,9 +162,9 @@ export async function applyHandoffSnapshot(options: ApplyHandoffSnapshotOptions)
   try {
     await options.checkpoint({ projectId: options.projectId, worktree: paths.worktree, branch: paths.branch, stagingId: options.id });
     await check(); await repository.assertCurrent();
-    await repository.read([...flags, 'worktree', 'add', '--no-checkout', '-b', paths.branch, '--', paths.pending, snapshot.manifest.repo.base]); created = true;
+    await repository.read([...flags, 'worktree', 'add', '--no-checkout', '-b', paths.branch, '--', gitPath(paths.pending), snapshot.manifest.repo.base]); created = true;
     await directory(paths.pending, false);
-    await repository.read([...flags, '-C', paths.pending, 'read-tree', '--reset', snapshot.manifest.repo.base]);
+    await repository.read([...flags, '-C', gitPath(paths.pending), 'read-tree', '--reset', snapshot.manifest.repo.base]);
     const stagedRepository = await openHandoffRepository(paths.pending, { mutableWorktree: true });
     for (const entry of entries.filter((entry) => entry.mode !== '120000')) {
       let parent = paths.pending;
@@ -197,7 +198,7 @@ export async function applyHandoffSnapshot(options: ApplyHandoffSnapshotOptions)
     }
     await verifyAppliedEntries(paths.pending, entries, check);
     await check(); await stagedRepository.assertCurrent(); await repository.assertCurrent();
-    await repository.read([...flags, 'worktree', 'move', '--', paths.pending, paths.worktree]); moved = true;
+    await repository.read([...flags, 'worktree', 'move', '--', gitPath(paths.pending), gitPath(paths.worktree)]); moved = true;
     pinned.delete(paths.pending);
     for (const name of [...pinned.keys()]) if (name.startsWith(`${paths.pending}${path.sep}`)) pinned.delete(name);
     await directory(paths.worktree, false); await check();
@@ -207,7 +208,7 @@ export async function applyHandoffSnapshot(options: ApplyHandoffSnapshotOptions)
     if (created) {
       try {
         for (const name of [...pinned.keys()]) if (name === paths.pending || name.startsWith(`${paths.pending}${path.sep}`) || name === paths.worktree || name.startsWith(`${paths.worktree}${path.sep}`)) pinned.delete(name);
-        await checkOwnership(); await repository.read([...flags, 'worktree', 'remove', '--force', '--', moved ? paths.worktree : paths.pending]);
+        await checkOwnership(); await repository.read([...flags, 'worktree', 'remove', '--force', '--', gitPath(moved ? paths.worktree : paths.pending)]);
         await repository.read([...flags, 'branch', '-D', '--', paths.branch]);
       } catch { if (error instanceof HandoffSnapshotError) error.cleanupFailed = true; /* telemetry-exempt: failure remains explicit if owned worktree cleanup is incomplete */ }
     }
@@ -242,7 +243,7 @@ export async function recoverPendingHandoffApply(projectRoot: string, id: string
   const flags = ['-c', `core.hooksPath=${hooks}`, '-c', 'core.fsmonitor=false'];
   try {
     await repository.assertCurrent(); await directory(paths.parent); await directory(paths.pending);
-    await repository.read([...flags, 'worktree', 'remove', '--force', '--', paths.pending]);
+    await repository.read([...flags, 'worktree', 'remove', '--force', '--', path.relative(repository.root, paths.pending)]);
     await repository.read([...flags, 'branch', '-D', '--', paths.branch]);
     return 'removed';
   } finally { await fs.promises.rm(hooks, { recursive: true, force: true }); }
