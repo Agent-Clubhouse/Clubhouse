@@ -181,6 +181,39 @@ const selfOf = (n: Name) => as(n, () => worlds[n].mod!.ownPairing());
 const removeOn = (who: Name, gone: Name) => as(who, () => { worlds[who].mod!.noteLocalRemoval(FPS[gone]); worlds[who].peers.delete(FPS[gone]); });
 const offline = (n: Name) => { for (const o of NAMES) if (o !== n) down.add(linkKey(n, o)); };
 
+it('converges on the new self epoch when a phone rejoins a desktop whose old pairing was removed', () => {
+  network(['A', 'C']);
+  offline('A');
+  removeOn('C', 'A');
+  expect(as('C', () => worlds.C.mod!.currentView().removals)).toContainEqual(expect.objectContaining({ fingerprint: FPS.A, pairingId: PAIRING.A }));
+  // A retains a1 but no longer has C's peer record when the phone introduces C again.
+  worlds.A.peers.delete(FPS.C);
+  const PHONE_FP = fp('0f');
+  for (const n of ['A', 'C'] as Name[]) as(n, () => {
+    worlds[n].peers.set(PHONE_FP, { ...peer('P', T0, n), fingerprint: PHONE_FP, publicKey: `key-${PHONE_FP}`, kind: 'phone' });
+  });
+  const oldA = as('A', () => self('A'));
+  const c = as('C', () => self('C'));
+  as('A', () => worlds.A.mod!.vouchFromPhone(PHONE_FP, [c]));
+  vi.useFakeTimers({ toFake: ['Date'] });
+  try {
+    vi.setSystemTime(new Date('2026-11-02T09:00:00.000Z'));
+    as('C', () => worlds.C.mod!.vouchFromPhone(PHONE_FP, [oldA]));
+  } finally {
+    vi.useRealTimers();
+  }
+  const newEpoch = worlds.C.peers.get(FPS.A)?.pairingId;
+  expect(newEpoch).not.toBe(PAIRING.A);
+  expect(selfOf('A')?.id).toBe(PAIRING.A);
+  down.clear();
+  open('A', 'C');
+  expect(selfOf('A')?.id).toBe(newEpoch);
+  expect(worlds.C.peers.get(FPS.A)?.pairingId).toBe(newEpoch);
+  expect(worlds.A.peers.get(FPS.C)?.networkPending).toBeUndefined();
+  expect(worlds.C.peers.get(FPS.A)?.networkPending).toBeUndefined();
+  expect(worlds.A.ended).toEqual([]);
+});
+
 describe('four desktops (#3107)', () => {
   it('a new desktop pairing with a member doesn\'t move that member\'s pairing, so a removal from a member that missed it still takes everywhere', () => {
     network(['P', 'A', 'C']);

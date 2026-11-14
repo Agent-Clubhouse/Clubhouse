@@ -828,10 +828,12 @@ async function connectToSatellite(sat: SatelliteConnectionInternal): Promise<voi
     // A phone's introduction can arrive on only one computer. Probe membership
     // with the pinned certificate; never open a control socket until both agree.
     setState(sat, 'disconnected');
-    if (networkChannel.hasChannel(sat.fingerprint)) return;
-    networkChannel.connectTo(sat.fingerprint, sat.host, sat.mainPort, pinnedTlsOptionsFor(sat.fingerprint), () => {
-      if (annexPeers.getPeer(sat.fingerprint)?.networkPending && !networkChannel.hasChannel(sat.fingerprint)) scheduleReconnect(sat);
-    });
+    if (!networkChannel.hasChannel(sat.fingerprint)) {
+      networkChannel.connectTo(sat.fingerprint, sat.host, sat.mainPort, pinnedTlsOptionsFor(sat.fingerprint));
+    }
+    // Keep a probe timer even while an inbound or outgoing channel is open.
+    // Either can disappear last; retries must not belong to one socket's close.
+    scheduleReconnect(sat);
     return;
   }
   setState(sat, 'connecting');

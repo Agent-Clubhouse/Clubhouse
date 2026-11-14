@@ -347,7 +347,11 @@ function confirm(s: MembershipState, key: string, by: string): boolean {
 function addMember(input: NetworkMember, from: string, s: MembershipState): boolean {
   // One spelling of a fingerprint everywhere: the protocol takes either case.
   const member: NetworkMember = { ...input, fingerprint: lower(input.fingerprint) };
-  if (isSelf(member.fingerprint)) return annexPeers.getPeer(from)?.networkPending ? false : learnSelfPairing(member, s);
+  // Until reciprocal confirmation, it may describe itself for reachability, but
+  // cannot introduce or update other identities (including phones, which don't
+  // have a desktop confirmation channel of their own).
+  if (annexPeers.getPeer(from)?.networkPending && lower(from) !== member.fingerprint) return false;
+  if (isSelf(member.fingerprint)) return learnSelfPairing(member, s);
   if (removedSince(member, s)) return false;
   // A pairing later than the one a kept removal ended makes that removal stale: stop passing it on.
   const stale = removalOf(member.fingerprint, s);
@@ -506,15 +510,25 @@ function onMessage(from: string, message: NetworkMessage): void {
     const self = networkChannel.localMember();
     const ours = self && message.type === 'members'
       ? message.members.find((m) => lower(m.fingerprint) === lower(self.fingerprint)) : undefined;
+    // Joining through a phone on a desktop that removed us makes a new pairing
+    // there. Its pinned, authenticated confirmation is how we learn that later
+    // epoch; demanding our old one here would keep both sides pending forever.
+    const newer = self && ours?.pairingId && laterPairing(ours, self);
     if (!self || !ours || !annexTls.sameCertificateFingerprint(ours.certFingerprint, self.certFingerprint)
-      || (self.pairingId && (ours.pairingId !== self.pairingId || ours.joinedAt !== self.joinedAt))) {
+      || (self.pairingId && !newer && (ours.pairingId !== self.pairingId || ours.joinedAt !== self.joinedAt))) {
       if (message.type === 'members') appLog('core:annex', 'info', 'A desktop has not confirmed reciprocal Annex Network membership', {
         meta: { fingerprint: from, reason: !ours ? 'unknown' : 'epoch-mismatch', pairingId: self?.pairingId, reportedPairingId: ours?.pairingId },
       });
     } else {
+      if (newer) {
+        s.selfPairing = { id: ours.pairingId!, joinedAt: ours.joinedAt };
+        appLog('core:annex', 'info', 'Learned a later self pairing from reciprocal Annex Network confirmation', {
+          meta: { from, previousPairingId: self.pairingId, pairingId: ours.pairingId },
+        });
+      }
       annexPeers.addPeer({ ...sender, networkPending: undefined });
       appLog('core:annex', 'info', 'A desktop confirmed reciprocal Annex Network membership', {
-        meta: { fingerprint: from, selfFingerprint: self.fingerprint, pairingId: self.pairingId },
+        meta: { fingerprint: from, selfFingerprint: self.fingerprint, pairingId: ours.pairingId },
       });
       changed = true;
       if (annexSettings.getSettings().enableClient) hooks?.connect(lower(from));

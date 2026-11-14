@@ -482,6 +482,20 @@ describe('Annex Network membership (#3061)', () => {
   describe('the phone as a member (#3062)', () => {
     const PHONE = fp('0c');
 
+    it('does not let a pending sender introduce a phone or update another member', () => {
+      const spoofPhone = fp('0d');
+      peers.set(PHONE, memberPeer(PHONE, '0c', 'Phone', { kind: 'phone' }));
+      membership.vouchFromPhone(PHONE, [member(N, '0e', 'Pending Mac')]);
+      const introduced = member(spoofPhone, '0d', 'Spoofed phone', { kind: 'phone', hosts: [], port: undefined });
+      const held = { ...peers.get(B)! };
+      listener!(N, { v: 1, type: 'member-joined', member: introduced });
+      listener!(N, view([introduced, member(B, 'ff', 'Repinned', { pairingId: 'pairing-forged-001', joinedAt: '2035-01-01T00:00:00.000Z' })]));
+      expect(peers.has(spoofPhone)).toBe(false);
+      expect(peers.get(B)).toEqual(held);
+      expect(membership.vouchFromPhone(spoofPhone, [member(fp('0f'), '0f', 'Another Mac')])).toEqual({ added: [], skipped: [] });
+      expect(peers.get(N)?.networkPending).toBe(true);
+    });
+
     it('records which member acknowledged the current join, ignoring a stale pairing', () => {
       peers.set(N, memberPeer(N, '0e', 'New Mac', { pairingId: 'pairing-current-001' }));
       membership.noteLocalJoin(N);

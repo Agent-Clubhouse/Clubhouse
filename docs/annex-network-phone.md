@@ -109,6 +109,8 @@ Each record must hold together, or it's ignored: its public key hashes to its fi
 
 An introduced desktop starts pending on the receiving computer. Its pin permits the desktop membership channel only; it cannot control that computer yet. Each desktop confirms the other's current identity, certificate and pairing in its authenticated membership view before opening normal control connections. Both phone delivery steps above are required: if the phone cannot reach the existing desktop for step 3, Settings shows the introduction as waiting for confirmation. Membership probes retry at the known addresses, and the join can finish when the phone delivers the missing record. Resetting a desktop's identity requires delivering its new record, including its current `pairingId`.
 
+A pending desktop cannot introduce or update other identities, including phones. If an existing desktop retained a removal of the joining computer's old pairing, joining through the phone makes a new pairing there; its authenticated confirmation can teach the joining computer that later pairing, so both sides converge. Probe retries continue independently of which membership socket closes last.
+
 Refusals:
 
 | Status | `error` | Meaning |

@@ -384,7 +384,7 @@ export function handleNetworkUpgrade(req: IncomingMessage, socket: Duplex, head:
  * Opens the channel to a paired peer at `host:port`, pinned to its certificate.
  * Does nothing if one is already open or opening to it.
  */
-export function connectTo(fingerprint: string, host: string, port: number, tlsOptions: tls.ConnectionOptions, onClose?: () => void): void {
+export function connectTo(fingerprint: string, host: string, port: number, tlsOptions: tls.ConnectionOptions): void {
   // The main connection just opened, so any older outgoing channel is from before: replace it.
   closeFor(fingerprint, 'out');
   const peer = annexPeers.getPeer(fingerprint);
@@ -392,7 +392,6 @@ export function connectTo(fingerprint: string, host: string, port: number, tlsOp
   const authority = net.isIPv6(host) ? `[${host}]` : host;
   const ws = new WebSocket(`wss://${authority}:${port}${NETWORK_CHANNEL_PATH}`, { ...tlsOptions, handshakeTimeout: 10_000, maxPayload: NETWORK_MESSAGE_MAX_BYTES });
   const ch = attach(ws, fingerprint, peer.tlsCertificateFingerprint, 'out');
-  if (onClose) ws.once('close', onClose);
   ws.on('open', () => sendHello(ch));
   ws.on('unexpected-response', (_req, res) => {
     appLog('core:annex', 'info', 'A paired computer did not open the Annex Network channel', { meta: { fingerprint, status: res.statusCode } });
