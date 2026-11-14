@@ -87,7 +87,7 @@ function installIdleCli(): { env: Record<string, string>; argvFile: (agentId: st
     "  if (msg.type === 'user') { process.stderr.write('idle fake received an inference prompt'); process.exit(91); }",
     "  if (msg.type === 'control_request') console.log(JSON.stringify({ type: 'control_response', response: { subtype: 'success', request_id: msg.request_id, response: { commands: [], agents: [], models: [] } } }));",
     '});',
-    'setInterval(() => {}, 1000);',
+    // readline keeps it alive until stdin closes; a permanent timer would leak inherited pipes after app exit.
   ].join('\n'));
   let shim: string;
   if (process.platform === 'win32') {
