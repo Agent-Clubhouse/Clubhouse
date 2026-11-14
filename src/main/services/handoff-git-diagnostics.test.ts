@@ -12,6 +12,7 @@ it.each([
   [{ code: 'EPERM' }, 'permission', 'unknown'],
   [{ killed: true }, 'timeout', 'unknown'],
   [{ code: 'ENOENT' }, 'not_found', 'unknown'],
+  [{ code: 'ENOENT', syscall: 'spawn private-executable' }, 'spawn_failed', 'unknown'],
   [{ code: 'ERR_CHILD_PROCESS_STDIO_MAXBUFFER' }, 'output_limit', 'unknown'],
   [{ code: 128, stderr: 'fatal: detected dubious ownership in private repo' }, 'ownership', 128],
   [{ code: 128, stderr: 'fatal: not a git repository: private' }, 'repository', 128],
