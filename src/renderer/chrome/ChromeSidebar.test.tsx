@@ -928,6 +928,46 @@ describe('ChromeSidebar Dispatcher (#2538)', () => {
     presence.mockRestore(); getLead.mockRestore();
   });
 
+  it('goes back to this computer’s own Dispatcher on Take back, after the lead row was clicked directly', async () => {
+    turnOn();
+    const chat = agent('remote-chat', DISPATCHER_PROJECT_ID, { name: 'Tael' });
+    useAnnexClientStore.setState({ satellites: [satelliteFor(chat)] });
+    useLeadStore.setState({ state: leadState('fp1', true) });
+    const getLead = vi.spyOn(window.clubhouse.dispatcher, 'getLead').mockImplementation(async () => useLeadStore.getState().state!);
+    const takeBack = vi.spyOn(window.clubhouse.dispatcher, 'takeBack').mockImplementation(async () => { useLeadStore.setState({ state: leadState('fp1', false) }); return undefined as never; });
+    const wake = vi.spyOn(window.clubhouse.dispatcher, 'wake').mockResolvedValue();
+    const presence = vi.spyOn(window.clubhouse.dispatcher, 'getPresence').mockResolvedValue({ remotes: [remotePresence()] } as never);
+    render(<><ChromeSidebar /><DispatcherView /></>);
+    const remote = await screen.findByTestId('remote-dispatcher-row');
+    fireEvent.click(remote);
+    expect(screen.getByTestId('follower-heading')).toHaveTextContent('Following Tael on Mini');
+    wake.mockClear();
+    fireEvent.click(screen.getByTestId('follower-take-back'));
+    await waitFor(() => expect(screen.queryByTestId('follower-dispatcher-view')).toBeNull());
+    expect(screen.queryByTestId('remote-dispatcher-details')).toBeNull();
+    expect(remote).not.toHaveAttribute('aria-current');
+    expect(within(screen.getByTestId('dispatcher-row')).getByTestId('agent-item-disp')).toHaveAttribute('data-active', 'true');
+    expect(useRemoteDispatcherSelection.getState().machine).toBeNull();
+    await waitFor(() => expect(wake).toHaveBeenCalled());
+    presence.mockRestore(); getLead.mockRestore(); takeBack.mockRestore(); wake.mockRestore();
+  });
+
+  it('keeps the followed lead’s icon on its row', async () => {
+    turnOn();
+    const chat = agent('remote-chat', DISPATCHER_PROJECT_ID, { name: 'Tael', icon: 'tael.png' });
+    useAnnexClientStore.setState({ satellites: [satelliteFor(chat)] });
+    useRemoteProjectStore.setState({ remoteAgentIcons: { [namespacedAgentId('s1', chat.id)]: 'data:image/png;base64,BBBB' } });
+    useLeadStore.setState({ state: leadState('fp1', true) });
+    const getLead = vi.spyOn(window.clubhouse.dispatcher, 'getLead').mockImplementation(async () => useLeadStore.getState().state!);
+    const presence = vi.spyOn(window.clubhouse.dispatcher, 'getPresence').mockResolvedValue({ remotes: [remotePresence()] } as never);
+    render(<ChromeSidebar />);
+    const avatar = await screen.findByTestId('remote-dispatcher-avatar');
+    expect(avatar.querySelector('img')).toHaveAttribute('src', 'data:image/png;base64,BBBB');
+    expect(screen.queryByTestId('dispatcher-avatar-fallback')).toBeNull();
+    presence.mockRestore(); getLead.mockRestore();
+    useRemoteProjectStore.setState({ remoteAgentIcons: {} });
+  });
+
   it('keeps the followed lead row selected when its snapshot clears offline', async () => {
     turnOn();
     const machine = 'fp-offline';

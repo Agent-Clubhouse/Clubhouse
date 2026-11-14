@@ -13,6 +13,15 @@ export type RemoteDispatcherTarget =
 
 type Peer = Pick<SatelliteConnection, 'id' | 'fingerprint' | 'snapshot'>;
 
+/** Its chat from this computer's snapshot of that machine, under this computer's namespaced ids; whatever the target is. */
+export function remoteDispatcherChat(machineId: string, satellites: readonly Peer[]): Agent | null {
+  const machine = machineId.toLowerCase();
+  const satellite = satellites.find((sat) => sat.fingerprint.toLowerCase() === machine);
+  const chat = satellite?.snapshot?.dispatcher?.agent;
+  if (!satellite || !chat?.id) return null;
+  return { ...chat, id: namespacedAgentId(satellite.id, chat.id), projectId: namespacedProjectId(satellite.id, chat.projectId || DISPATCHER_PROJECT_ID) };
+}
+
 /**
  * The one lookup for a click on another computer's Dispatcher, the same from
  * either side. A computer is known by its fingerprint. Whether this computer
@@ -21,11 +30,7 @@ type Peer = Pick<SatelliteConnection, 'id' | 'fingerprint' | 'snapshot'>;
  * target is its details.
  */
 export function resolveRemoteDispatcherTarget(machineId: string, satellites: readonly Peer[], leadMachine?: string | null): RemoteDispatcherTarget {
-  const machine = machineId.toLowerCase();
-  if (leadMachine && leadMachine.toLowerCase() === machine) return { kind: 'lead' };
-  const satellite = satellites.find((sat) => sat.fingerprint.toLowerCase() === machine);
-  const chat = satellite?.snapshot?.dispatcher?.agent;
-  if (!satellite || !chat?.id) return { kind: 'details' };
-  const agentId = namespacedAgentId(satellite.id, chat.id);
-  return { kind: 'chat', agentId, chat: { ...chat, id: agentId, projectId: namespacedProjectId(satellite.id, chat.projectId || DISPATCHER_PROJECT_ID) } };
+  if (leadMachine && leadMachine.toLowerCase() === machineId.toLowerCase()) return { kind: 'lead' };
+  const chat = remoteDispatcherChat(machineId, satellites);
+  return chat ? { kind: 'chat', agentId: chat.id, chat } : { kind: 'details' };
 }

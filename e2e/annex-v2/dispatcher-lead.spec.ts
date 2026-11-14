@@ -100,9 +100,13 @@ test('a lead reaches the other computer, which follows its chat, keeps messages 
   await expect.poll(async () => (await userMessages(there.window, laptopChatId)).some((e) => e.data.content?.some((c) => c.text === 'Hello from Desk')), { timeout: 30_000 }).toBe(true);
   await expect(here.window.getByTestId('follower-lead-offline')).toHaveCount(0, { timeout: 30_000 });
 
-  // Take back changes only Desk.
+  // Take back changes only Desk, from the lead's row picked directly, and the pane goes back to Desk's own Dispatcher.
+  await here.window.getByTestId('remote-dispatcher-row').click();
+  await expect(here.window.getByTestId('follower-heading')).toContainText('on Laptop');
   await here.window.getByTestId('follower-take-back').click();
   await expect(here.window.getByTestId('follower-dispatcher-view')).toHaveCount(0);
+  await expect(here.window.getByTestId('dispatcher-view')).toBeVisible();
+  await expect(here.window.getByTestId('remote-dispatcher-row')).not.toHaveAttribute('aria-current', 'true');
   expect((await lead(here.window))).toMatchObject({ role: 'follower', tookBack: true });
   expect((await lead(there.window)).role).toBe('lead');
 

@@ -55,7 +55,7 @@ import { requestCloseProject } from '../features/projects/close-project';
 import { useDispatcherPresence } from '../features/dispatcher/useDispatcherPresence';
 import { useRemoteDispatcherSelection } from '../features/dispatcher/remoteDispatcherSelection';
 import { closeDispatcher, openDispatcher } from '../features/dispatcher/dispatcherNav';
-import { resolveRemoteDispatcherTarget } from '../features/dispatcher/remoteDispatcherTarget';
+import { remoteDispatcherChat, resolveRemoteDispatcherTarget } from '../features/dispatcher/remoteDispatcherTarget';
 
 /**
  * Sidebar for the new chrome (docs/chrome-redesign-spec.md §2, §4.2): the host
@@ -852,7 +852,8 @@ export function ChromeSidebar() {
         const isLead = target.kind === 'lead';
         const active = dispatcherShown && !dispatcherWorkOpen && (selectedRemoteMachine === remote.machineId
           || isLead && !selectedRemoteMachine && !localDispatcherSelected);
-        const chat = target.kind === 'chat' ? target.chat : undefined;
+        // Its avatar doesn't depend on where a click goes: the followed lead has one too.
+        const chat = remoteDispatcherChat(remote.machineId, satellites) ?? undefined;
         return <RemoteDispatcherRow
           key={remote.machineId}
           remote={remote}
@@ -860,7 +861,8 @@ export function ChromeSidebar() {
           iconUrl={chat ? remoteAgentIcons[chat.id] : undefined}
           active={active}
           showController={dispatcherDebug}
-          onSelect={() => openDispatcher({ remoteMachine: remote.machineId })}
+          // The followed lead is the follower view, not an explicit pick: Take back then leaves it for this computer's own.
+          onSelect={() => isLead ? openDispatcher() : openDispatcher({ remoteMachine: remote.machineId })}
         />;
       })}
 

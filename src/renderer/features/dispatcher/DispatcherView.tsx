@@ -60,6 +60,12 @@ export function DispatcherView() {
   const remoteId = remoteChat?.id ?? null;
   const remoteAgent = useRemoteProjectStore((s) => remoteId ? s.remoteAgents[remoteId] : undefined);
 
+  // A pick that has become the followed lead is the follower view now, not a pick: otherwise Take back would keep it.
+  const pickIsLead = remoteTarget?.kind === 'lead';
+  useEffect(() => {
+    if (pickIsLead) useRemoteDispatcherSelection.getState().select(null, false);
+  }, [pickIsLead]);
+
   useEffect(() => {
     if (state?.enabled && !remoteMachine && !followed && !workOpen) {
       void window.clubhouse.dispatcher.wake().catch((err) => {
