@@ -9,7 +9,7 @@ function git(cwd: string, args: string[]): Promise<string> {
   return new Promise((resolve, reject) => execFile('git', args, { cwd, maxBuffer: 64 * 1024 * 1024 }, (error, stdout) => error ? reject(error) : resolve(stdout)));
 }
 
-/** Hash actual edits, including further edits to an already-dirty or untracked file. No contents leave main. */
+/** Hash Git-visible edits and index-flagged paths. Ignored files and nested untracked repositories are not inventoried. */
 export async function deleteReviewFingerprint(config: DurableAgentConfig, work?: WorktreeStatus): Promise<string> {
   const hash = createHash('sha256').update(JSON.stringify({
     id: config.id, name: config.name, createdAt: config.createdAt, worktreePath: config.worktreePath,
@@ -20,6 +20,8 @@ export async function deleteReviewFingerprint(config: DurableAgentConfig, work?:
   if (!config.worktreePath || !work?.isValid || work.worktreeMissing || work.checkError) return hash.digest('hex');
   const cwd = config.worktreePath;
   hash.update(await git(cwd, ['rev-parse', 'HEAD']));
+  const index = await git(cwd, ['ls-files', '-v', '-z']);
+  hash.update(index);
   const entries = (await git(cwd, ['status', '--porcelain', '-z', '--untracked-files=all'])).split('\0');
   const changed: { path: string; status: string; original?: string }[] = [];
   for (let i = 0; i < entries.length; i++) {
@@ -27,6 +29,14 @@ export async function deleteReviewFingerprint(config: DurableAgentConfig, work?:
     if (!entry) continue;
     const status = entry.slice(0, 2);
     changed.push({ path: entry.slice(3), status: status.trim(), ...(/[RC]/.test(status) && { original: entries[++i] }) });
+  }
+  // Git status can hide these files entirely. Pin both their flags and actual contents.
+  for (const entry of index.split('\0')) {
+    const flag = entry[0];
+    if (flag && (flag.toUpperCase() === 'S' || flag !== flag.toUpperCase())) {
+      const filePath = entry.slice(2);
+      if (!changed.some((file) => file.path === filePath)) changed.push({ path: filePath, status: `index ${flag}` });
+    }
   }
   for (const file of await withoutClubhouseOwnedChanges(cwd, changed)) {
     hash.update(JSON.stringify(file));

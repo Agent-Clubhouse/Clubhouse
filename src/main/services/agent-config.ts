@@ -36,7 +36,7 @@ import { legacyClubhouseModeEnabled } from './managed-agents/legacy-migration';
 import { trackOperation } from './main-stall-monitor';
 import { dropGrantRequestsFor } from './grant-requests';
 import { AsyncLocalStorage } from 'node:async_hooks';
-import { assertDeleteReview } from './delete-review-guard';
+import { assertDeleteReview, noteDeleteReviewEffect } from './delete-review-guard';
 
 interface DurableCreationGit {
   active?: boolean;
@@ -3022,6 +3022,7 @@ async function deleteDurableGuardedInner(projectPath: string, agentId: string): 
   // Re-read: the cache may have been replaced while git ran.
   const agents = await readAgents(projectPath);
   const released: string[] = [];
+  noteDeleteReviewEffect();
   await writeAgents(projectPath, releaseHelpersOf(agents.filter((a) => a.id !== agentId), agentId, released));
   dropGrantRequestsFor(agentId);
   helpersEnded([agentId, ...released]);
@@ -3039,6 +3040,7 @@ async function removeAgentWorktree(projectPath: string, agent: DurableAgentConfi
   const hasGit = await isInsideGitRepo(projectPath);
   await assertDeleteReview(projectPath, agent.id);
   if (hasGit) {
+    noteDeleteReviewEffect();
     try {
       await stepUnderFlow('clubhouse.git.worktree_remove', () => execGitFileAsync(['worktree', 'remove', '--force', '--', worktreePath], projectPath));
     } catch (err) {
@@ -3055,6 +3057,7 @@ async function removeAgentWorktree(projectPath: string, agent: DurableAgentConfi
   // throws before the branch goes, so a half-removed agent keeps its branch.
   if (await pathExists(worktreePath)) {
     await assertDeleteReview(projectPath, agentId);
+    noteDeleteReviewEffect();
     await fsp.rm(worktreePath, { recursive: true, force: true });
   }
 
@@ -3390,6 +3393,7 @@ async function deleteUnregisterGuardedInner(projectPath: string, agentId: string
   const filtered = agents.filter((a) => a.id !== agentId);
   const released: string[] = [];
   await assertDeleteReview(projectPath, agentId);
+  noteDeleteReviewEffect();
   await writeAgents(projectPath, releaseHelpersOf(filtered, agentId, released));
   if (filtered.length < agents.length) dropGrantRequestsFor(agentId);
   helpersEnded([agentId, ...released]);
@@ -4018,6 +4022,7 @@ async function disposeAgent(projectPath: string, agentId: string, options: { exp
   }
   row.disposedAt = new Date().toISOString();
   delete row.worktreePath;
+  noteDeleteReviewEffect();
   await writeAgents(projectPath, agents);
   dropGrantRequestsFor(agentId);
   helpersEnded([agentId]);
@@ -4109,7 +4114,9 @@ export async function resolveHelpersForDelete(
     if (released.length === 0) return { ok: true, message: 'No helpers', helperIds: [] };
     if (options.dryRun) return { ok: true, message: `Would keep ${released.length} helper(s)`, helperIds: ids };
     const kept: string[] = [];
-    await writeAgents(projectPath, releaseHelpersOf(await readAgents(projectPath), agentId, kept));
+    const current = await readAgents(projectPath);
+    noteDeleteReviewEffect();
+    await writeAgents(projectPath, releaseHelpersOf(current, agentId, kept));
     helpersEnded(kept);
     await releaseForeignHelpersOf(projectPath, agentId);
     return { ok: true, message: `Kept ${released.length} helper(s)`, helperIds: ids };

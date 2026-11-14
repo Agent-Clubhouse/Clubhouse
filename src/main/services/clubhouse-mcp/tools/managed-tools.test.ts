@@ -1971,6 +1971,37 @@ describe('delete_agents exact batch approval', () => {
     expect(deleteAgent).toHaveBeenNthCalledWith(2, '/proj', 'two', expect.objectContaining({ forceWorktree: false, forceHelpers: false }));
   });
 
+  it.each(['helper settlement', 'quick stop', 'removal started'])('reports failed after %s even when the late problem is a review refusal', async (effect) => {
+    const { assertDeleteReview, noteDeleteReviewEffect } = await import('../../delete-review-guard');
+    const args = { items: [item('one')] };
+    await call('delete_agents', args); approve();
+    vi.mocked(deleteAgent).mockImplementationOnce(async (project, id) => {
+      if (effect === 'removal started') {
+        noteDeleteReviewEffect();
+        state.agents.get('one')!.name = 'changed after removal began';
+        await assertDeleteReview(project, id);
+      }
+      return { ok: false, message: 'Late review refusal',
+        worktree: { isValid: true, branch: 'one', uncommittedFiles: [], unpushedCommits: [], hasRemote: true },
+        ...(effect === 'helper settlement' && { helpers: { ok: true, message: 'Kept helper', helperIds: ['helper'] } }),
+        ...(effect === 'quick stop' && { stoppedQuickAgents: ['quick_one'] }),
+      };
+    });
+    const done = await call('delete_agents', args);
+    expect(done.json.status).toBe('failed');
+    expect(done.json.items[0]).toMatchObject({ status: 'failed', effectsStarted: true });
+  });
+
+  it('returns refused when every approved row is refused before any side effects', async () => {
+    const args = { items: [item('one'), item('two')] };
+    await call('delete_agents', args); approve();
+    state.agents.clear();
+    const done = await call('delete_agents', args);
+    expect(done.json.status).toBe('refused');
+    expect(done.json.items.every((row: { status: string }) => row.status === 'refused')).toBe(true);
+    expect(deleteAgent).not.toHaveBeenCalled();
+  });
+
   it('an approval cannot authorize changed arguments or an agent caller', async () => {
     const args = { items: [item('one')] };
     await call('delete_agents', args); approve();

@@ -20,15 +20,18 @@ function Target({ target, remove }: { target: DeleteAgentReviewTarget; remove: b
 export function DeleteAgentsReview({ review }: { review: Review }) {
   return <div className="flex flex-col gap-2" aria-label="Deletion batch review">
     <p className="text-ctp-subtext1">Allow approves all ready targets together. Refused targets stay. Running agents and quick agents in their worktrees are stopped. This approval expires after 24 hours and must be answered on this computer.</p>
+    <p className="text-ctp-subtext1">Ignored files and work inside untracked nested repositories are not checked and can be deleted even without force. Git can also omit edits hidden by skip-worktree or assume-unchanged flags from the work list. Their flags and contents are fingerprinted to detect later changes, but existing hidden edits are not listed.</p>
     <ol className="flex flex-col gap-3 list-decimal pl-5">
       {review.items.map((item) => <li key={item.index} className="border-b border-surface-0 pb-2">
         <p className="text-ctp-text">{item.status === 'ready' ? 'Ready to delete' : 'Refused'} {item.target?.name ?? item.requestedAgent} in {item.requestedProject}</p>
         {item.reason && <p className="text-xs text-ctp-subtext1">{item.reason}</p>}
-        {item.target && <Target target={item.target} remove={item.worktree === 'delete'} />}
-        <p className="text-xs text-ctp-subtext1">{item.force ? 'Force is explicitly enabled for this target and its disposed helpers. Only the reviewed work may be lost.' : 'Uncommitted or unpushed work prevents removing files.'} {item.helpers === 'dispose' ? 'Dispose its helpers and their helpers.' : 'Keep helpers and release its direct helpers as ordinary agents.'}</p>
-        {item.helperTargets.length > 0 && <ul className="mt-1 pl-4 list-disc">
-          {item.helperTargets.map((helper) => <li key={`${helper.project}/${helper.agentId}`}><Target target={helper} remove={item.helpers === 'dispose'} /></li>)}
-        </ul>}
+        {item.status === 'ready' && <>
+          {item.target && <Target target={item.target} remove={item.worktree === 'delete'} />}
+          <p className="text-xs text-ctp-subtext1">{item.force ? 'Force is explicitly enabled for this target and its disposed helpers.' : 'Git-reported uncommitted or unpushed work prevents removing files.'} {item.helpers === 'dispose' ? 'Dispose its helpers and their helpers.' : 'Keep helpers and release its direct helpers as ordinary agents.'}</p>
+          {item.helperTargets.length > 0 && <ul className="mt-1 pl-4 list-disc">
+            {item.helperTargets.map((helper) => <li key={`${helper.project}/${helper.agentId}`}><Target target={helper} remove={item.helpers === 'dispose'} /></li>)}
+          </ul>}
+        </>}
       </li>)}
     </ol>
   </div>;

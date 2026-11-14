@@ -141,6 +141,7 @@ async function execute(caller: string, args: Record<string, unknown>, plan: Plan
       continue;
     }
     let refusal: string | undefined;
+    let effects = false;
     const guard = async (project: string, id: string) => {
       try {
         if (Date.now() >= plan.until) throw new Error('This batch approval expired.');
@@ -164,7 +165,7 @@ async function execute(caller: string, args: Record<string, unknown>, plan: Plan
         const after = projects.projectRegistryMutationState();
         if (after.pending || after.generation !== registry.generation || Date.now() >= plan.until || callApprovalVersion(caller) !== plan.version || context(caller, args, plan.items) !== plan.context) throw new Error('Authorization changed while checking this target.');
       } catch (error) {
-        // telemetry-exempt: retained so partial helper disposal reports a refusal and its effects.
+        // telemetry-exempt: retained in the individual receipt, including any earlier effects.
         refusal = text(error);
         throw error;
       }
@@ -180,19 +181,23 @@ async function execute(caller: string, args: Record<string, unknown>, plan: Plan
       const deleted = await withDeleteReview(guard, () => deleteAgent(target.project, target.agentId, {
         mode: row.review.worktree === 'keep' ? 'unregister' : 'force', helpers: row.review.helpers,
         checkWorktree: true, forceWorktree: row.review.force, forceHelpers: row.review.force,
-      }));
-      receipts.push({ ...base, status: deleted.ok ? 'done' : refusal || isDeleteRefusal(deleted) ? 'refused' : 'failed', reason: refusal ?? deleted.message, result: deleted });
+      }), () => { effects = true; });
+      effects ||= !!deleted.helpers?.helperIds?.length || !!deleted.stoppedQuickAgents?.length;
+      receipts.push({ ...base, status: deleted.ok ? 'done' : effects ? 'failed' : refusal || isDeleteRefusal(deleted) ? 'refused' : 'failed', reason: refusal ?? deleted.message, ...(effects && { effectsStarted: true }), result: deleted });
     } catch (error) {
       // telemetry-exempt: an individual failure never silently skips the remaining targets.
-      receipts.push({ ...base, status: refusal ? 'refused' : 'failed', reason: text(error) });
+      receipts.push({ ...base, status: !effects && refusal ? 'refused' : 'failed', reason: text(error), ...(effects && { effectsStarted: true }) });
     }
   }
-  return result({ status: receipts.every((row) => row.status === 'done') ? 'done' : 'partial', items: receipts });
+  const status = receipts.every((row) => row.status === 'done') ? 'done'
+    : receipts.some((row) => row.status === 'done') ? 'partial'
+      : receipts.some((row) => row.status === 'failed') ? 'failed' : 'refused';
+  return result({ status, items: receipts });
 }
 
 export function registerDeleteAgentsTool(): void {
   registerGlobalTool('delete_agents', {
-    description: 'Delete several named local agents with one exact Needs you review on this computer. Each item needs project, agent, worktree (delete or keep), helpers (dispose or keep), and optional force. Every invalid or changed target is reported as refused. Force applies only to the reviewed work in that item, including its helpers. Never yourself or the Dispatcher. Repeat identical arguments after human approval; expires after 24 hours.',
+    description: 'Delete several named local agents with one exact Needs you review on this computer. Each item needs project, agent, worktree (delete or keep), helpers (dispose or keep), and optional force. Invalid or changed targets are refused before side effects; later problems are failed with consequences. Force covers Git-reported work in that item, including its helpers. Ignored files and work inside untracked nested repositories are not checked and can be deleted even without force. Never yourself or the Dispatcher. Repeat identical arguments after human approval; expires after 24 hours.',
     inputSchema: { type: 'object', required: ['items'], properties: { items: { type: 'array', minItems: 1, maxItems: 50, items: {
       type: 'object', required: ['project', 'agent', 'worktree', 'helpers'], properties: {
         project: { type: 'string' }, agent: { type: 'string' }, worktree: { type: 'string', enum: ['delete', 'keep'] },

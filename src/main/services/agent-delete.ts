@@ -29,7 +29,7 @@
  */
 
 import * as path from 'path';
-import { assertDeleteReview, hasDeleteReview } from './delete-review-guard';
+import { assertDeleteReview, hasDeleteReview, noteDeleteReviewEffect } from './delete-review-guard';
 import * as agentConfig from './agent-config';
 import { agentRegistry } from './agent-registry';
 import { isAgentRunning, killAgent } from './agent-system';
@@ -179,7 +179,10 @@ async function deleteLocked(projectPath: string, agentId: string, request: Agent
 
     // Waits for each to exit, so none holds the worktree open (EBUSY on Windows).
     const quickAgents = runningQuickAgentsIn(agent.worktreePath);
-    for (const quick of quickAgents) await killAgent(quick.id, quick.projectPath, undefined, 'user', { waitForExit: true });
+    for (const quick of quickAgents) {
+      noteDeleteReviewEffect();
+      await killAgent(quick.id, quick.projectPath, undefined, 'user', { waitForExit: true });
+    }
 
     const stopped = { ...(cascade && { helpers: cascade }), ...(quickAgents.length > 0 && { stoppedQuickAgents: quickAgents.map((q) => q.id) }) };
     // A stop that fails, or leaves it running, refuses the delete: the worktree
@@ -187,6 +190,7 @@ async function deleteLocked(projectPath: string, agentId: string, request: Agent
     if (isAgentRunning(agentId)) {
       let stopError: string | undefined;
       try {
+        noteDeleteReviewEffect();
         await killAgent(agentId, projectPath, undefined, 'user', { waitForExit: true, throwOnFailure: true });
       } catch (err) {
         // telemetry-exempt: the result carries the failure; the delete flow records it as delete_failed.

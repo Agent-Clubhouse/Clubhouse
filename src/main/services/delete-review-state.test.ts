@@ -60,3 +60,25 @@ it('detects new commits, renames and symbolic links', async () => {
   await fs.unlink(path.join(dir, 'link')); await fs.symlink('other', path.join(dir, 'link'));
   expect(await deleteReviewFingerprint(config, work)).not.toBe(linked);
 });
+
+it.each(['--skip-worktree', '--assume-unchanged'])('pins %s flags and later file edits hidden from Git status', async (flag) => {
+  const original = await deleteReviewFingerprint(config, work);
+  git('update-index', flag, 'file');
+  const flagged = await deleteReviewFingerprint(config, work);
+  expect(flagged).not.toBe(original);
+  await fs.writeFile(path.join(dir, 'file'), 'hidden edit');
+  expect(git('status', '--porcelain')).toBe('');
+  const edited = await deleteReviewFingerprint(config, work);
+  expect(edited).not.toBe(flagged);
+  await fs.writeFile(path.join(dir, 'file'), 'another hidden edit');
+  expect(await deleteReviewFingerprint(config, work)).not.toBe(edited);
+});
+
+it('does not claim to inventory ignored files', async () => {
+  await fs.writeFile(path.join(dir, '.gitignore'), 'ignored/\n');
+  git('add', '.gitignore'); git('commit', '-m', 'ignore generated folder');
+  const original = await deleteReviewFingerprint(config, work);
+  await fs.mkdir(path.join(dir, 'ignored'));
+  await fs.writeFile(path.join(dir, 'ignored', 'draft'), 'not inventoried');
+  expect(await deleteReviewFingerprint(config, work)).toBe(original);
+});

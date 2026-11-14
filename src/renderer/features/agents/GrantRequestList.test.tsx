@@ -104,3 +104,18 @@ it('shows one review with exact deletion consequences, work at risk, force, help
   expect(screen.getByText(/Refused Missing/)).toBeInTheDocument();
   expect(screen.getByText('No exact target.')).toBeInTheDocument();
 });
+
+it('shows refused row reasons without removal, force or helper consequences', () => {
+  useGrantRequestStore.getState().add(request({ kind: 'call', toolName: 'delete_agents', deleteReview: { items: [{
+    index: 0, requestedProject: 'Project', requestedAgent: 'Refused target', status: 'refused', reason: 'Work could not be checked.',
+    worktree: 'delete', helpers: 'dispose', force: true,
+    target: { project: '/project', agentId: 'refused-id', name: 'Refused target', worktreePath: '/never-remove', branch: 'never-remove' },
+    helperTargets: [{ project: '/other', agentId: 'helper-id', name: 'Never dispose' }],
+  }] } }));
+  render(<GrantRequestList agentId="a1" agentName="Ada" />);
+  expect(screen.getByText('Work could not be checked.')).toBeInTheDocument();
+  expect(screen.queryByText(/Remove \/never-remove/)).not.toBeInTheDocument();
+  expect(screen.queryByText(/Force is explicitly enabled/)).not.toBeInTheDocument();
+  expect(screen.queryByText(/Never dispose/)).not.toBeInTheDocument();
+  expect(screen.getByText(/Ignored files and work inside untracked nested repositories are not checked/)).toBeInTheDocument();
+});
