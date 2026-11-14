@@ -29,7 +29,7 @@ import { createCodexHeadlessNormalizer } from './codex-headless-events';
 import { isInjectedClubhouseBridge } from '../services/clubhouse-mcp/injection';
 import { cliStateDir, homePath, testModelProbesDisabled, validateHookUrl, buildHookCurlCommand, writeTerminalHooksConfig, parseJsonlFile } from './shared';
 import { getShellEnvironment, invalidateShellEnvironmentCache } from '../util/shell';
-import { isClubhouseHookEntry, preserveUnchangedSnapshot } from '../services/config-pipeline';
+import { isClubhouseHookEntry, preserveUnchangedSnapshot, removeEmptyCodexHooksDirectory } from '../services/config-pipeline';
 import { appLog } from '../services/log-service';
 import { stripTerminalEscapes } from '../../shared/terminal-text';
 
@@ -558,6 +558,7 @@ export class CodexCliProvider extends BaseProvider implements HeadlessCapable, H
       await writeTerminalHooksConfig(hooksPath, hooks, isClubhouseHookEntry);
     } catch (err) {
       await preserveUnchangedSnapshot(hooksPath);
+      await removeEmptyCodexHooksDirectory(hooksPath);
       throw err;
     }
   }
