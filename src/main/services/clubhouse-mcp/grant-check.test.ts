@@ -173,7 +173,7 @@ describe('grant check parity (#2968)', () => {
       ...deviceTools.map((t) => `helper: ${t}`), 'helper: set_helper_presets',
       ...deviceTools.slice(0, 1).map((t) => `orchestrator: ${t}`), 'orchestrator: message_parent', ...deviceTools.slice(1).map((t) => `orchestrator: ${t}`), 'orchestrator: set_helper_presets',
       ...deviceTools.slice(0, 1).map((t) => `plain: ${t}`), 'plain: message_parent', ...deviceTools.slice(1).map((t) => `plain: ${t}`), 'plain: set_helper_presets',
-      ...['helper', 'orchestrator', 'plain'].map((caller) => `${caller}: update_annex_network_settings`),
+      ...['helper', 'orchestrator', 'plain'].flatMap((caller) => ['update_annex_network_settings', 'set_theme'].map((tool) => `${caller}: ${tool}`)),
       // Remote news/file tools require a distinct grant; these fixtures have no local Dispatcher binding.
       ...['helper', 'orchestrator', 'plain'].flatMap((caller) => ['message_remote_dispatcher', 'send_file_to_remote_dispatcher'].map((tool) => `${caller}: ${tool}`)),
     ].sort());

@@ -308,3 +308,51 @@ describe('initApp – onboarding in the new shell', () => {
     }
   });
 });
+
+
+describe('initApp – theme changes during startup', () => {
+  it.each(['initial read', 'plugin startup', 'reconciliation'] as const)('applies the latest theme when it changes during %s', async (when) => {
+    vi.useFakeTimers();
+    let savedTheme = 'nord';
+    let appliedTheme = '';
+    let finishInitialRead!: () => void;
+    const initialRead = new Promise<void>((resolve) => { finishInitialRead = resolve; });
+    const listeners = new Set<() => void>();
+    const changeTheme = (id: string) => {
+      savedTheme = id;
+      for (const listener of listeners) listener();
+    };
+    vi.mocked(window.clubhouse.app.onThemeChanged).mockImplementation((listener) => {
+      listeners.add(listener);
+      return () => { listeners.delete(listener); };
+    });
+    let reads = 0;
+    mockLoadTheme.mockImplementation(async () => {
+      expect(listeners.size).toBe(1);
+      const selected = savedTheme;
+      reads += 1;
+      if (reads === 1 && when === 'initial read') await initialRead;
+      if (reads === 1 && when === 'reconciliation') changeTheme('dracula');
+      if (reads === 2 && when === 'reconciliation') changeTheme('custom:latest');
+      appliedTheme = selected;
+    });
+    mockInitializePluginSystem.mockImplementation(async () => {
+      if (when === 'plugin startup') changeTheme('dracula');
+    });
+    vi.mocked(window.clubhouse.app.getPendingResumes).mockResolvedValue(null);
+    const initializing = initApp();
+    if (when === 'initial read') {
+      changeTheme('dracula');
+      finishInitialRead();
+    }
+    const cleanup = await initializing;
+    try {
+      expect(appliedTheme).toBe(when === 'reconciliation' ? 'custom:latest' : 'dracula');
+      expect(reads).toBe(when === 'reconciliation' ? 3 : 2);
+    } finally {
+      cleanup();
+      expect(listeners.size).toBe(0);
+      vi.useRealTimers();
+    }
+  });
+});

@@ -62,6 +62,18 @@ async function loadAllSettings(): Promise<void> {
 export async function initApp(): Promise<() => void> {
   const cleanups: (() => void)[] = [];
   const initStartMs = Date.now();
+  // Subscribe before the initial read. Queue startup changes until settings
+  // and plugins settle so an older in-flight read cannot overwrite them.
+  let themeStartupComplete = false;
+  let themeChangedDuringStartup = false;
+  cleanups.push(window.clubhouse.app.onThemeChanged(() => {
+    if (!themeStartupComplete) {
+      themeChangedDuringStartup = true;
+      return;
+    }
+    void useThemeStore.getState().loadTheme();
+  }));
+
 
   // 1. Load all settings first — stores must be populated before anything
   //    that reads from them.
@@ -82,6 +94,12 @@ export async function initApp(): Promise<() => void> {
   }
 
   const pluginsReadyMs = Date.now();
+  while (themeChangedDuringStartup) {
+    themeChangedDuringStartup = false;
+    await useThemeStore.getState().loadTheme();
+  }
+  themeStartupComplete = true;
+
 
   // 3. Set up badge side effects AFTER settings are loaded, so subscriptions
   //    see the correct initial state.
@@ -91,11 +109,6 @@ export async function initApp(): Promise<() => void> {
   cleanups.push(initUpdateListener());
   cleanups.push(initAnnexListener());
   cleanups.push(initPluginUpdateListener());
-
-  // 4b. Re-apply theme when the main process changes it (e.g. from another window or remote client)
-  cleanups.push(window.clubhouse.app.onThemeChanged(() => {
-    useThemeStore.getState().loadTheme();
-  }));
 
   // 5. Check for What's New dialog after startup (delayed)
   const whatsNewTimer = setTimeout(() => {
