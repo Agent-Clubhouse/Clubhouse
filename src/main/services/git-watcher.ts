@@ -606,6 +606,7 @@ export class GitWatcher {
         const same = existing.paths.size === w.paths.size
           && [...w.paths.values()].every((p) => existing.paths.get(p.key)?.gitDir === p.gitDir);
         if (!same) scans.push(this.updateWorktrees(existing, w.paths));
+        else existing.paths = w.paths;
       } else {
         const g: Group = {
           key, commonDir: w.commonDir, paths: w.paths, snapshot: null,

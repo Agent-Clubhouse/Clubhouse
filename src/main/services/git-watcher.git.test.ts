@@ -433,6 +433,18 @@ describe('GitWatcher', () => {
     expect(events).toEqual([]);
   });
 
+  it('refreshes registered path spelling when worktree membership is unchanged', async () => {
+    const { repo, wt } = makeRepo();
+    const w = newWatcher({ recursiveWatch: true });
+    await w.setPaths([repo, wt]);
+    const registered = `${repo}${path.sep}`;
+    await w.setPaths([registered, wt]);
+    expect(w.lastRebuildStats()).toMatchObject({ groupsKept: 1, watchersCreated: 0, watchersClosed: 0 });
+    commit(repo, 'spelling.txt');
+    await w.rescan();
+    expect(events).toEqual([{ type: 'git.commit', repoPath: registered, branch: 'main' }]);
+  });
+
   it('adds and closes watchers only for the worktrees that came or went, and reports the rebuild (#3230)', async () => {
     const { repo, wt } = makeRepo();
     const other = makeRepo();
