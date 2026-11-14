@@ -1,3 +1,5 @@
+import { hydrateProjectLinks, changeProjectLinks } from '../services/project-links-store';
+vi.mock('../services/project-links-store', () => ({ projectLinksStore: () => ({ onChange: vi.fn() }), hydrateProjectLinks: vi.fn(), changeProjectLinks: vi.fn() }));
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import * as path from 'path';
 import { execSync } from 'child_process';
@@ -131,6 +133,15 @@ describe('project-handlers', () => {
   });
 
   // --- Registration ---
+
+  it('hydrates legacy links and sends person edits to the shared replica', async () => {
+    const legacy = { links: [['a', 'b']], keptSeparate: ['a\nb'] };
+    await handlers.get(IPC.PROJECT.LINKS_HYDRATE)!({}, legacy);
+    expect(hydrateProjectLinks).toHaveBeenCalledWith(legacy);
+    const op = { type: 'keepSeparate', a: 'a', b: 'b' };
+    await handlers.get(IPC.PROJECT.LINKS_APPLY)!({}, op);
+    expect(changeProjectLinks).toHaveBeenCalledWith(op);
+  });
 
   it('registers all expected IPC handlers', () => {
     const expectedChannels = [

@@ -4,13 +4,14 @@ import * as path from 'path';
 import { beforeEach, afterEach, describe, expect, it, vi } from 'vitest';
 import type { DurableAgentConfig } from '../../shared/types';
 import type { ManagedPartContent } from '../../shared/managed-agents-types';
+import type { AssetOwner } from '../../shared/asset-catalog-types';
 
 vi.mock('fs/promises', async (original) => {
   const real = await original<typeof import('fs/promises')>();
   return { ...real, open: vi.fn(real.open) };
 });
 
-const state = vi.hoisted(() => ({ provider: 'claude-code', agents: [] as DurableAgentConfig[], parts: new Map<string, { entry: { name: string; source: { kind: string; projectId?: string }; headRevision: number }; content: ManagedPartContent; droppedEnvValues: string[] }>() }));
+const state = vi.hoisted(() => ({ provider: 'claude-code', agents: [] as DurableAgentConfig[], parts: new Map<string, { entry: { name: string; owner?: AssetOwner; source: { kind: string; projectId?: string }; headRevision: number }; content: ManagedPartContent; droppedEnvValues: string[] }>() }));
 vi.mock('./dispatcher/dispatcher-service', () => ({ getDispatcherState: () => ({}) }));
 vi.mock('./agent-config', () => ({ peekDurableConfigs: async () => state.agents }));
 vi.mock('./project-store', () => ({ peekProjects: async () => [{ id: 'p', path: '/project', name: 'Project' }] }));
@@ -53,6 +54,13 @@ describe('bounded agent config evidence', () => {
     part('p', { kind: 'block', content: 'Project rules' }, 'project');
     state.parts.get('p')!.entry.source.projectId = 'p';
     expect((await readAgentConfig('target')).parts[0]).toMatchObject({ provenance: { kind: 'project', label: 'project-owned', projectId: 'p', source: { kind: 'project', projectId: 'p' } } });
+  });
+
+  it('uses project ownership while preserving the separate user origin', async () => {
+    state.agents[0].managed = { version: 1, blocks: ['p'], skills: [], mcps: [] };
+    part('p', { kind: 'block', content: 'Project rules' });
+    state.parts.get('p')!.entry.owner = { kind: 'project', projectId: 'owning-project' };
+    expect((await readAgentConfig('target')).parts[0]).toMatchObject({ provenance: { kind: 'project', label: 'project-owned', projectId: 'owning-project', source: { kind: 'user' } } });
   });
 
   it('bounds UTF-8 text, individual files and the complete serialized response', async () => {

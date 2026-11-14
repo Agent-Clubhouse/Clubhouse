@@ -1,3 +1,5 @@
+import { receiveProjectLinks } from './project-links-network';
+vi.mock('./project-links-network', () => ({ projectLinksCapabilities: () => ({ version: 1, maxRecords: 200 }), receiveProjectLinks: vi.fn(async () => ({ version: 1, records: [] })) }));
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { tel } from '../telemetry/facade';
 import { EventEmitter } from 'events';
@@ -110,6 +112,7 @@ vi.mock('./mobile-agents', () => ({
 // Membership has its own tests (annex-network-membership.test.ts).
 const membershipMock = vi.hoisted(() => ({ onChange: null as null | (() => void) }));
 vi.mock('./annex-network-membership', () => ({
+  unknownPeerReason: vi.fn(() => 'unknown'),
   initNetworkMembership: vi.fn(),
   noteLocalJoin: vi.fn(),
   // Pairing ids (#3107): fixed, so answers and fixtures don't change from run to run.
@@ -225,7 +228,7 @@ vi.mock('./annex-tls', () => ({
 
 // Mock annex-peers
 vi.mock('./annex-peers', () => ({
-  controlsThisMachine: (p?: { role?: string } | null) => p?.role === 'controller' || p?.role === 'member',
+  controlsThisMachine: (p?: { role?: string; networkPending?: boolean } | null) => !p?.networkPending && (p?.role === 'controller' || p?.role === 'member'),
   controlledFromHere: (p?: { role?: string; kind?: string } | null) => p?.role === 'satellite' || (p?.role === 'member' && p.kind !== 'phone'),
   checkBruteForce: vi.fn().mockReturnValue({ allowed: true, delayMs: 0, locked: false, attemptsRemaining: 3 }),
   recordFailedAttempt: vi.fn(),
@@ -1796,6 +1799,32 @@ describe('annex-server', () => {
     asUnpaired(); expect((await request(port, 'POST', route, body)).status).toBe(401);
   });
 
+  it('replicates project links only for pinned network desktop members', async () => {
+    const member = { ...TEST_CONTROLLER, role: 'member' as const, kind: 'desktop' as const };
+    vi.mocked(annexPeers.getPeer).mockReturnValue(member);
+    vi.mocked(annexPeers.listPeers).mockReturnValue([member]);
+    const { port } = await startAndPair();
+    const probe = '/api/v1/network/project-links-capabilities', route = '/api/v1/network/project-links';
+    expect(JSON.parse((await request(port, 'POST', probe, {})).body)).toEqual({ version: 1, maxRecords: 200 });
+    expect((await request(port, 'POST', route, { version: 1 })).status).toBe(200);
+    expect(receiveProjectLinks).toHaveBeenCalledWith(member.fingerprint.toLowerCase(), { version: 1 }, expect.any(Function));
+    vi.mocked(receiveProjectLinks).mockRejectedValueOnce(new Error('private-project/path'));
+    const failed = await request(port, 'POST', route, { version: 1 });
+    expect(failed.status).toBe(400);
+    expect(JSON.parse(failed.body)).toEqual({ error: 'project_links_refused' });
+    for (const peer of [{ ...member, kind: 'phone' as const }, { ...member, role: 'controller' as const }]) {
+      vi.mocked(annexPeers.getPeer).mockReturnValue(peer);
+      vi.mocked(annexPeers.listPeers).mockReturnValue([peer]);
+      expect((await request(port, 'POST', probe, {})).status).toBe(403);
+      expect((await request(port, 'POST', route, { version: 1 })).status).toBe(403);
+    }
+    expect(receiveProjectLinks).toHaveBeenCalledTimes(2);
+    asUnpaired();
+    expect((await request(port, 'POST', probe, {})).status).toBe(401);
+    asUnpaired();
+    expect((await request(port, 'POST', route, { version: 1 })).status).toBe(401);
+  });
+
   it('negotiates durable delivery only for pinned desktop members and surfaces an unreadable store', async () => {
     const report = vi.spyOn(tel, 'exception').mockImplementation(() => {});
     const member = { ...TEST_CONTROLLER, role: 'member' as const, kind: 'desktop' as const };
@@ -3050,6 +3079,8 @@ describe('annex-server', () => {
       peers.set(legacy.fingerprint, pinned(legacy, { role: undefined, tlsCertificateFingerprint: undefined }));
       peers.set(legacyPinned.fingerprint, pinned(legacyPinned, { role: undefined }));
       peers.set(satellite.fingerprint, pinned(satellite, { role: 'satellite' }));
+      const pending = device();
+      peers.set(pending.fingerprint, pinned(pending, { role: 'member', networkPending: true }));
       const cases: Array<[string, Credentials | null, number, string | null]> = [
         ['pinned controller, its own certificate', own, 200, null],
         ['pinned controller, another certificate with its name', sameName, 401, 'peer_not_paired'],
@@ -3057,6 +3088,7 @@ describe('annex-server', () => {
         ['entry from before roles', legacy, 401, 'needs_pairing'],
         ['entry from before roles, with a pin', legacyPinned, 401, 'needs_pairing'],
         ['satellite', satellite, 403, 'peer_role_not_allowed'],
+        ['introduced member awaiting confirmation', pending, 403, 'peer_role_not_allowed'],
         ['unknown device', unknown, 401, 'peer_not_paired'],
         ['no client certificate', null, 401, 'unauthorized'],
       ];
@@ -3072,7 +3104,7 @@ describe('annex-server', () => {
         }
       }
       // Refused entries stay, so Settings can show them as needing pairing again.
-      expect(peers.size).toBe(5);
+      expect(peers.size).toBe(6);
       expect(annexPeers.removePeer).not.toHaveBeenCalled();
     }, 30_000);
 

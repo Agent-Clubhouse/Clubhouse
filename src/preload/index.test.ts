@@ -152,6 +152,22 @@ describe('preload IPC bridge', () => {
   });
 
   describe('project', () => {
+    it('sends shared link edits and forwards replica updates with an unsubscribe', async () => {
+      const legacy = { links: [['a', 'b']], keptSeparate: [] };
+      await api.project.hydrateProjectLinks(legacy);
+      expect(invoke).toHaveBeenCalledWith('project:links-hydrate', legacy);
+      const op = { type: 'unlink' as const, a: 'a' };
+      await api.project.changeProjectLinks(op);
+      expect(invoke).toHaveBeenCalledWith('project:links-apply', op);
+      const callback = vi.fn(), unsubscribe = api.project.onProjectLinksChanged(callback);
+      const listener = vi.mocked(ipcRenderer.on).mock.calls.find((c) => c[0] === 'project:links-changed')![1];
+      const view = { revision: 4, links: [], keptSeparate: ['a\nb'] };
+      listener({} as never, view);
+      expect(callback).toHaveBeenCalledWith(view);
+      unsubscribe();
+      expect(ipcRenderer.removeListener).toHaveBeenCalledWith('project:links-changed', listener);
+    });
+
     it('lists projects without adding arguments', async () => {
       await expect(api.project.list()).resolves.toBe('bridge-result');
       expect(invoke).toHaveBeenCalledWith('project:list');

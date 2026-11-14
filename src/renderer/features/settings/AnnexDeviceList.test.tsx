@@ -122,7 +122,7 @@ describe('AnnexDeviceList (#3067)', () => {
 
   it('offers Pair again for a computer that needs it, and says why it isn\'t connected', () => {
     const onPairAgain = vi.fn();
-    const needs = device({ state: 'needs-pairing', problem: describeAnnexProblem('removed-there', 'Studio') });
+    const needs = device({ role: 'member', kind: 'desktop', state: 'needs-pairing', problem: describeAnnexProblem('removed-there', 'Studio') });
     render(<AnnexDeviceList devices={[needs]} onPairAgain={onPairAgain} />);
     expect(screen.getByTestId('annex-device-problem')).toHaveTextContent('This computer is no longer paired on Studio. Pair again to connect.');
     fireEvent.click(screen.getByRole('button', { name: 'Pair again' }));

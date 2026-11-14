@@ -132,9 +132,11 @@ export async function readResolvedAgentConfig({ agent, project: p }: AgentConfig
       const content: ManagedPartContent = head.content;
       const limited = bounded(content);
       const source = head.entry.source;
-      // Recognize repo-owned parts even before the catalog's source union gains it.
-      const projectOwned = String(source.kind) === 'project';
-      const projectId = projectOwned && 'projectId' in source && typeof source.projectId === 'string' ? prefix(source.projectId, 200) : undefined;
+      const owner = head.entry.owner;
+      // Ownership is independent of origin; retain the future project-source fallback.
+      const projectOwned = owner?.kind === 'project' || String(source.kind) === 'project';
+      const projectId = owner?.kind === 'project' ? prefix(owner.projectId, 200)
+        : projectOwned && 'projectId' in source && typeof source.projectId === 'string' ? prefix(source.projectId, 200) : undefined;
       const part = {
         id: item.id, name: prefix(head.entry.name, 200), kind: content.kind, revision: head.entry.headRevision,
         provenance: { kind: projectOwned ? 'project' : source.kind === 'builtin' ? 'built-in' : ['user', 'copy'].includes(source.kind) ? 'custom' : 'library', ...(projectOwned && { label: 'project-owned' }), ...(projectId !== undefined && { projectId }), source: bounded(source) },

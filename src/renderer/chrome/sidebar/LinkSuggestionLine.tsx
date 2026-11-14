@@ -10,12 +10,18 @@ export function LinkSuggestionLine() {
   const suggestions = useLinkSuggestions();
   const link = useNetworkSidebarStore((s) => s.link);
   const keepSeparate = useNetworkSidebarStore((s) => s.keepSeparate);
+  const error = useNetworkSidebarStore((s) => s.handoffLinkError);
+  const retryable = useNetworkSidebarStore((s) => s.linkErrorRetryable);
+  const retry = useNetworkSidebarStore((s) => s.retryHandoffLinks);
+  const failure = error ? <div role="alert" className="mx-2 mb-1 px-2 py-1.5 text-xs text-ctp-subtext0">
+    Could not save project links. {retryable && <button type="button" onClick={retry}>Retry</button>}
+  </div> : null;
   const first = suggestions[0];
-  if (!first) return null;
+  if (!first) return failure;
   const name = first.local.displayName || first.local.name;
   const machine = first.remote.satelliteName || 'another computer';
   return (
-    <div data-testid="link-suggestion" className="flex-shrink-0 mx-2 mb-1 px-2 py-1.5 text-xs text-ctp-subtext0 border-t border-surface-0">
+    <>{failure}<div data-testid="link-suggestion" className="flex-shrink-0 mx-2 mb-1 px-2 py-1.5 text-xs text-ctp-subtext0 border-t border-surface-0">
       <span>{name} is also on {machine}, with the same git remote.</span>
       <span className="flex gap-3 pt-1">
         <button
@@ -29,6 +35,6 @@ export function LinkSuggestionLine() {
           Keep separate
         </button>
       </span>
-    </div>
+    </div></>
   );
 }

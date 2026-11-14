@@ -1,3 +1,4 @@
+import { projectLinksCapabilities, receiveProjectLinks } from './project-links-network';
 import { HandoffTransferBusy } from '../../shared/handoff-transfer';
 import { hasSessionCaptureFailure } from './session-capture-barrier';
 import { legacyDefaultsNotCopied } from './legacy-defaults';
@@ -706,7 +707,11 @@ function logRefusedPeer(surface: 'rest' | 'ws', refusal: PeerAuthRefusal, remote
     return;
   }
   appLog('core:annex', 'warn', 'Refused a connection that is not a paired controller', {
-    meta: { surface, error: refusal.error, fingerprint: refusal.fingerprint ?? 'none', remoteAddress },
+    meta: {
+      surface, error: refusal.error, fingerprint: refusal.fingerprint ?? 'none', remoteAddress,
+      reason: !refusal.fingerprint ? 'no-identity' : !peer ? membership.unknownPeerReason(refusal.fingerprint)
+        : peer.networkPending ? 'membership-unconfirmed' : refusal.error === 'peer_not_paired' ? 'certificate-mismatch' : refusal.error,
+    },
   });
 }
 
@@ -3618,6 +3623,26 @@ async function handleNetworkAgentCallRoute(ctx: AnnexRouteContext): Promise<void
   else sendJson(ctx.res, outcome.status, { error: outcome.error, message: outcome.message, ...(outcome.delivery && { delivery: outcome.delivery }) });
 }
 
+/** Same pinned-member REST shape as delivery negotiation; no /network socket extension. */
+async function handleProjectLinksNetworkRoute(ctx: AnnexRouteContext, capabilities: boolean): Promise<void> {
+  if (ctx.requireMtls()) { ctx.req.resume(); return; }
+  const machine = agentCallPeer(ctx);
+  if (!machine || !annexSettings.networkEnabled()) { ctx.req.resume(); sendJson(ctx.res, 403, { error: 'not_a_computer' }); return; }
+  if (capabilities) { ctx.req.resume(); sendJson(ctx.res, 200, projectLinksCapabilities()); return; }
+  const pin = annexPeers.getPeer(machine);
+  const pairing = JSON.stringify([pin?.tlsCertificateFingerprint, pin?.pairingId]);
+  const current = () => agentCallPeer(ctx) === machine && annexSettings.networkEnabled()
+    && JSON.stringify([annexPeers.getPeer(machine)?.tlsCertificateFingerprint, annexPeers.getPeer(machine)?.pairingId]) === pairing;
+  const body = await readAgentCallBody(ctx);
+  if (body === undefined || ctx.requireMtls()) return;
+  if (!current()) { sendJson(ctx.res, 403, { error: 'not_a_computer' }); return; }
+  try { sendJson(ctx.res, 200, await receiveProjectLinks(machine, body, current)); }
+  catch (error) { // telemetry-exempt: do not return project identifiers or storage diagnostics
+    appLog('core:annex', 'warn', 'Project link request refused', { meta: { error: error instanceof Error ? error.message : String(error) } });
+    sendJson(ctx.res, current() ? 400 : 403, { error: 'project_links_refused' });
+  }
+}
+
 async function handleNetworkAgentDeliveryCapabilitiesRoute(ctx: AnnexRouteContext): Promise<void> {
   if (ctx.requireMtls()) { ctx.req.resume(); return; }
   const machine = agentCallPeer(ctx);
@@ -4481,6 +4506,8 @@ const ANNEX_HTTP_ROUTE_TABLE: AnnexHttpRoute[] = [
   { method: 'POST', pattern: /^\/api\/v1\/mobile\/network\/members$/, handler: handleMobileNetworkMembersRoute },
   { method: 'POST', pattern: /^\/api\/v1\/network\/agent-call$/, handler: handleNetworkAgentCallRoute },
   { method: 'POST', pattern: /^\/api\/v1\/network\/agent-delivery-capabilities$/, handler: handleNetworkAgentDeliveryCapabilitiesRoute },
+  { method: 'POST', pattern: /^\/api\/v1\/network\/project-links-capabilities$/, handler: (ctx) => handleProjectLinksNetworkRoute(ctx, true) },
+  { method: 'POST', pattern: /^\/api\/v1\/network\/project-links$/, handler: (ctx) => handleProjectLinksNetworkRoute(ctx, false) },
   { method: 'POST', pattern: /^\/api\/v1\/network\/handoff-capacity$/, handler: handleNetworkCapacityRoute },
   { method: 'POST', pattern: /^\/api\/v1\/network\/handoffs$/, handler: handleNetworkHandoffsRoute },
   { method: 'POST', pattern: /^\/api\/v1\/network\/handoffs\/transfer$/, handler: handleNetworkHandoffTransferRoute },

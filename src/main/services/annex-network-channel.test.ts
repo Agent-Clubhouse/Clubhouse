@@ -253,6 +253,11 @@ describe('Annex Network channel (#3060)', () => {
       expect(channel.authenticateMember(make('ctrl', CERT))).toMatchObject({ ok: true });
       expect(channel.authenticateMember(make(FP, SELF_CERT))).toEqual({ ok: false, status: 401, error: 'peer_not_paired' });
       expect(channel.authenticateMember(make('stranger', CERT))).toEqual({ ok: false, status: 401, error: 'peer_not_paired' });
+      expect(appLog).toHaveBeenCalledWith('core:annex', 'warn', 'Refused an inbound Annex Network identity', { meta: { fingerprint: 'stranger', reason: 'unknown' } });
+      channel.setUnknownPeerReasonProvider(() => 'removed');
+      expect(channel.authenticateMember(make('removed', CERT))).toMatchObject({ error: 'peer_not_paired' });
+      expect(appLog).toHaveBeenCalledWith('core:annex', 'warn', 'Refused an inbound Annex Network identity', { meta: { fingerprint: 'removed', reason: 'removed' } });
+      expect(appLog).toHaveBeenCalledWith('core:annex', 'warn', 'Refused an inbound Annex Network identity', { meta: { fingerprint: FP, reason: 'certificate-mismatch' } });
       expect(channel.authenticateMember(make('old', CERT))).toEqual({ ok: false, status: 401, error: 'needs_pairing' });
       expect(channel.authenticateMember({})).toEqual({ ok: false, status: 401, error: 'unauthorized' });
     });

@@ -302,6 +302,53 @@ Decisions made while building, for the maintainer to revisit. Newest last. D180 
 
 Computer members publish their hidden Dispatcher controllers and derive two-way coordination links. Each receiver triages remote work under its own grants. A person may choose a network lead for a shared conversation; local controllers and memory stay on their own computers. Offline delivery, explicit outcomes, manual Take back and human-only approval routing are described in [Federated Dispatchers](dispatcher.md#federated-dispatchers-2834). See the [controller-link and remote-request terms](glossary.md).
 
+### Shared project links
+
+Project links and Keep separate choices are one network-wide set. The sidebar
+and project settings edit that set; Show remains a preference of this computer.
+Suggested links enter the set only after the person accepts them. Manual links
+use the same set. Git remotes never create shared links automatically.
+
+Computers replicate this state over authenticated pinned-member REST routes,
+following group-project replication and delivery capability negotiation:
+`POST /api/v1/network/project-links-capabilities` returns
+`{ "version": 1, "maxRecords": 200 }`, then
+`POST /api/v1/network/project-links` exchanges records in pages of at most 200.
+The request contains `version: 1`, optional `records`, an optional `after` cursor,
+and optional `read: false` for a publication without a response page. A read
+returns `version`, `records`, and `next` when another page remains. Peers without
+the capability are skipped. Changes push to connected members; connect and
+reconnect push and pull for catch-up. `/network` remains membership-only; its
+socket protocol is unchanged. Phones and one-to-one controller pairings cannot
+use these member replication routes.
+
+`network-project-links.json` stores records keyed by a canonical pair of
+`{ machine, projectId }` references, where machine is the Annex identity
+fingerprint. Each record contains `projects`, `linked`, `at` and `by`. A new edit
+uses the greater of the current millisecond timestamp and one greater than every
+observed clock. Incoming clocks more than one day ahead of the receiving
+computer are refused. For a pair the newest clock wins, with separation winning an
+equal clock and writer fingerprint breaking remaining ties deterministically.
+Unlink, split and Keep separate retain negative records as tombstones; offline
+members cannot resurrect an older link. Display groups are derived
+deterministically from positive pairs, newest first, and cannot indirectly join
+an explicitly separated pair. Linking whole groups deliberately replaces their
+cross-group pair decisions with the newer positive edit.
+
+On upgrade each computer imports its `clubhouse.networkSidebar` localStorage
+links and keptSeparate choices and its `handoff-project-links.json` mirror once.
+Legacy choices have clock zero, so a Keep separate choice wins an untimed legacy
+conflict and a newer shared decision wins over any legacy import. Migration
+markers are local to the replica. Saved legacy values remain untouched, including
+when Show changes. New writes go only to the shared record. Unpairing a satellite hides its links
+locally without changing that shared record; pairing it again restores them.
+Deleting a local project still unlinks that project throughout the network.
+Handoff project
+matching uses the same shared groups after migration. Project identifiers remain
+qualified by their computer even when a phone is connected to just one member;
+a phone connected to several members sees replicas of the same set, not separate
+per-computer preferences.
+
 ## Reading another agent's configuration
 
 `read_agent_config({agent, project?})` is an ordinary-agent MCP tool. An agent can name a local id or unique registered name (optionally scoped by project), or an `agentId@machine` address. Its `agent.read` grant is checked on that target: connected by default, or the Dispatcher's ANY. It returns desired managed instruction text and ordered instruction/skill/MCP parts with their content, revisions and provenance. Unmanaged agents expose only their own registered provider instruction file. Catalog source distinguishes built-ins, custom user/copy parts and imported/plugin library parts. This is configuration evidence, never proof that a running provider loaded it.

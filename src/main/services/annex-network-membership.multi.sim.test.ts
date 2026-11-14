@@ -51,6 +51,7 @@ vi.mock('./annex-peers', () => ({
   peerNeedsPairing: (p: { role?: string; tlsCertificateFingerprint?: string }) => !p.role || !p.tlsCertificateFingerprint,
 }));
 vi.mock('./annex-network-channel', () => ({
+  setUnknownPeerReasonProvider: vi.fn(),
   localMember: () => self(current),
   setMembersProvider: (p: World['provider']) => { worlds[current].provider = p; },
   setSelfPairingProvider: (p: World['selfPairing']) => { worlds[current].selfPairing = p; },
@@ -107,6 +108,33 @@ function open(a: Name, b: Name) {
 
 const has = (who: Name, other: Name) => as(who, () => worlds[who].peers.has(FPS[other]));
 
+it.each([false, true])('a phone introduction waits for both computers, including after identity reset (%s)', (reset) => {
+  const PHONE_FP = fp('0f');
+  // C is the existing Mac, A the new (or reset) Mac. X represents A's old identity.
+  network(reset ? ['C', 'X'] : ['C']);
+  for (const n of ['A', 'C'] as Name[]) as(n, () => {
+    worlds[n].peers.set(PHONE_FP, { ...peer('P', T0, n), fingerprint: PHONE_FP, publicKey: `key-${PHONE_FP}`, kind: 'phone' });
+    worlds[n].mod!.ensureOwnPairing();
+  });
+  const mini = as('C', () => self('C'));
+  const fresh = as('A', () => self('A'));
+  as('A', () => worlds.A.mod!.vouchFromPhone(PHONE_FP, [mini]));
+  flush();
+  expect(worlds.A.peers.get(FPS.C)?.networkPending).toBe(true);
+  expect(has('C', 'A')).toBe(false);
+  // The phone isn't connected to C yet. Reconnecting the membership channel alone cannot finish.
+  open('A', 'C');
+  expect(worlds.A.peers.get(FPS.C)?.networkPending).toBe(true);
+  if (reset) expect(has('C', 'X')).toBe(true);
+  // The existing phone contract's third step finally reaches C with A's new record.
+  as('C', () => worlds.C.mod!.vouchFromPhone(PHONE_FP, [fresh]));
+  open('A', 'C');
+  expect(worlds.A.peers.get(FPS.C)?.networkPending).toBeUndefined();
+  expect(worlds.C.peers.get(FPS.A)?.networkPending).toBeUndefined();
+  expect(worlds.C.peers.get(FPS.A)?.pairingId).toBe(fresh.pairingId);
+  expect(worlds.A.peers.get(FPS.C)?.pairingId).toBe(mini.pairingId);
+});
+
 beforeEach(async () => {
   outbox.length = 0;
   down.clear();
@@ -152,6 +180,39 @@ function pairDesktops(client: Name, server: Name) {
 const selfOf = (n: Name) => as(n, () => worlds[n].mod!.ownPairing());
 const removeOn = (who: Name, gone: Name) => as(who, () => { worlds[who].mod!.noteLocalRemoval(FPS[gone]); worlds[who].peers.delete(FPS[gone]); });
 const offline = (n: Name) => { for (const o of NAMES) if (o !== n) down.add(linkKey(n, o)); };
+
+it('converges on the new self epoch when a phone rejoins a desktop whose old pairing was removed', () => {
+  network(['A', 'C']);
+  offline('A');
+  removeOn('C', 'A');
+  expect(as('C', () => worlds.C.mod!.currentView().removals)).toContainEqual(expect.objectContaining({ fingerprint: FPS.A, pairingId: PAIRING.A }));
+  // A retains a1 but no longer has C's peer record when the phone introduces C again.
+  worlds.A.peers.delete(FPS.C);
+  const PHONE_FP = fp('0f');
+  for (const n of ['A', 'C'] as Name[]) as(n, () => {
+    worlds[n].peers.set(PHONE_FP, { ...peer('P', T0, n), fingerprint: PHONE_FP, publicKey: `key-${PHONE_FP}`, kind: 'phone' });
+  });
+  const oldA = as('A', () => self('A'));
+  const c = as('C', () => self('C'));
+  as('A', () => worlds.A.mod!.vouchFromPhone(PHONE_FP, [c]));
+  vi.useFakeTimers({ toFake: ['Date'] });
+  try {
+    vi.setSystemTime(new Date('2026-11-02T09:00:00.000Z'));
+    as('C', () => worlds.C.mod!.vouchFromPhone(PHONE_FP, [oldA]));
+  } finally {
+    vi.useRealTimers();
+  }
+  const newEpoch = worlds.C.peers.get(FPS.A)?.pairingId;
+  expect(newEpoch).not.toBe(PAIRING.A);
+  expect(selfOf('A')?.id).toBe(PAIRING.A);
+  down.clear();
+  open('A', 'C');
+  expect(selfOf('A')?.id).toBe(newEpoch);
+  expect(worlds.C.peers.get(FPS.A)?.pairingId).toBe(newEpoch);
+  expect(worlds.A.peers.get(FPS.C)?.networkPending).toBeUndefined();
+  expect(worlds.C.peers.get(FPS.A)?.networkPending).toBeUndefined();
+  expect(worlds.A.ended).toEqual([]);
+});
 
 describe('four desktops (#3107)', () => {
   it('a new desktop pairing with a member doesn\'t move that member\'s pairing, so a removal from a member that missed it still takes everywhere', () => {
@@ -249,12 +310,16 @@ describe('four desktops (#3107)', () => {
     network(['P', 'A', 'C']);
     // The phone is a member of P, and pairs with new desktop Y, then vouches P's view to it.
     const PHONE_FP = fp('0f');
+    as('P', () => worlds.P.peers.set(PHONE_FP, { ...peer('P', T0, 'P', 'pairing-phone-001'), fingerprint: PHONE_FP, publicKey: `key-${PHONE_FP}`, kind: 'phone', alias: 'Phone' }));
     as('X', () => {
-      worlds.X.peers.set(PHONE_FP, { ...peer('P', T0, 'X', 'pairing-phone-001'), fingerprint: PHONE_FP, kind: 'phone', alias: 'Phone' });
+      worlds.X.peers.set(PHONE_FP, { ...peer('P', T0, 'X', 'pairing-phone-001'), fingerprint: PHONE_FP, publicKey: `key-${PHONE_FP}`, kind: 'phone', alias: 'Phone' });
       worlds.X.mod!.ensureOwnPairing();
     });
     const view = as('P', () => worlds.P.provider!()) as { members: Array<{ fingerprint: string }> };
     as('X', () => worlds.X.mod!.vouchFromPhone(PHONE_FP, view.members as never));
+    // Complete the phone contract's third step before trusting network mutations.
+    as('P', () => worlds.P.mod!.vouchFromPhone(PHONE_FP, [as('X', () => self('X'))]));
+    flush();
     for (const n of ['P', 'A', 'C'] as Name[]) expect(as('X', () => worlds.X.peers.get(FPS[n])?.pairingId)).toBe(PAIRING[n]);
     offline('C');
     open('X', 'P'); open('X', 'A');
@@ -278,6 +343,8 @@ describe('four desktops (#3107)', () => {
     as('X', () => { worlds.X.peers.set(PHONE_FP, phonePeer('X')); worlds.X.mod!.ensureOwnPairing(); });
     const view = as('P', () => worlds.P.provider!()) as { members: unknown[] };
     as('X', () => worlds.X.mod!.vouchFromPhone(PHONE_FP, view.members as never));
+    as('P', () => worlds.P.mod!.vouchFromPhone(PHONE_FP, [as('X', () => self('X'))]));
+    flush();
     offline('C');
     open('X', 'P'); open('X', 'A');
     for (const n of ['P', 'A', 'X'] as Name[]) expect(as(n, () => worlds[n].peers.get(PHONE_FP)?.pairingId)).toBe(phonePairing.id);

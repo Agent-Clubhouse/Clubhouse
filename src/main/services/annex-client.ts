@@ -824,6 +824,18 @@ async function connectToSatellite(sat: SatelliteConnectionInternal): Promise<voi
   }
   sat.needsPairing = false;
   sat.halt = null;
+  if (peer.networkPending) {
+    // A phone's introduction can arrive on only one computer. Probe membership
+    // with the pinned certificate; never open a control socket until both agree.
+    setState(sat, 'disconnected');
+    if (!networkChannel.hasChannel(sat.fingerprint)) {
+      networkChannel.connectTo(sat.fingerprint, sat.host, sat.mainPort, pinnedTlsOptionsFor(sat.fingerprint));
+    }
+    // Keep a probe timer even while an inbound or outgoing channel is open.
+    // Either can disappear last; retries must not belong to one socket's close.
+    scheduleReconnect(sat);
+    return;
+  }
   setState(sat, 'connecting');
   connectStarted(sat.fingerprint, sat.host);
 
