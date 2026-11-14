@@ -262,10 +262,10 @@ describe('ChatView conversation', () => {
 });
 
 describe('ChatView approvals', () => {
-  it.each(['claude', 'codex', 'copilot'] as const)('docks the provider options in place of the composer (%s)', (p) => {
+  it.each(['claude', 'codex', 'copilot'] as const)('pins the provider options above the composer (%s)', (p) => {
     const { actions } = renderFixture(p, 'approval');
     const card = screen.getByTestId('chat-permission');
-    expect(screen.queryByTestId('chat-composer')).not.toBeInTheDocument();
+    expect(screen.getByTestId('chat-composer')).toBeInTheDocument();
     expect(card).toHaveTextContent(PROFILES[p].installTitle);
     const labels = within(card).getAllByRole('button').map((b) => b.textContent);
     expect(labels).toHaveLength(PROFILES[p].installOptions.length);
@@ -277,9 +277,119 @@ describe('ChatView approvals', () => {
     expect(actions.respondPermission).toHaveBeenCalledWith('perm-1', PROFILES[p].installOptions[1].optionId);
   });
 
+  it('keeps an approval pinned as later events stream, and keeps its resolved history', () => {
+    const base = chatFixture('codex', 'approval');
+    const events = extend(base, ...Array.from({ length: 80 }, (_, i) => ({
+      type: 'agent_message' as const, data: { messageId: `later-${i}`, text: `Later message ${i}` },
+    })));
+    const { rerender, actions } = renderState(fold(events));
+    const pinned = screen.getByTestId('chat-pinned-approval');
+    expect(pinned).toHaveTextContent('1 pending');
+    expect(screen.getByTestId('chat-stream')).not.toContainElement(pinned);
+    expect(pinned.compareDocumentPosition(screen.getByTestId('chat-composer')) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(screen.getByTestId('chat-inline-approval')).toHaveTextContent('Waiting for approval');
+    fireEvent.click(within(pinned).getByText('Show in conversation'));
+    rerender(<ChatViewBody agent={agent} state={fold(extend(events, { type: 'permission_resolved', data: { requestId: 'perm-1', decision: 'deny', by: 'user' } }))} actions={actions} />);
+    expect(screen.queryByTestId('chat-pinned-approval')).not.toBeInTheDocument();
+    expect(screen.getByTestId('chat-inline-approval')).toHaveTextContent('deny');
+    expect(actions.respondPermission).not.toHaveBeenCalled();
+  });
+
+  it('steps through mixed pending requests, oldest first, and falls back after resolution', () => {
+    const base = chatFixture('codex', 'approval');
+    const events = extend(base, { type: 'question', data: { requestId: 'q-next', questions: [{ id: 'q', prompt: 'Choose next', options: [{ id: 'yes', label: 'Yes' }], allowFreeText: false }] } });
+    const { rerender, actions } = renderState(fold(events));
+    const pinned = screen.getByTestId('chat-pinned-approval');
+    expect(pinned).toHaveTextContent('2 pending');
+    expect(within(pinned).getByTestId('chat-permission')).toBeInTheDocument();
+    fireEvent.click(within(pinned).getByText('Next request'));
+    expect(within(pinned).getByTestId('chat-question')).toHaveTextContent('Choose next');
+    fireEvent.click(within(pinned).getByText('Previous request'));
+    expect(within(pinned).getByTestId('chat-permission')).toBeInTheDocument();
+    rerender(<ChatViewBody agent={agent} state={fold(extend(events, { type: 'permission_resolved', data: { requestId: 'perm-1', decision: 'allow', by: 'user' } }))} actions={actions} />);
+    expect(pinned).toHaveTextContent('1 pending');
+    expect(within(pinned).getByTestId('chat-question')).toHaveTextContent('Choose next');
+  });
+
+  it.each(['pinned', 'inline'] as const)('answers from the %s card once and disables both locations', async (location) => {
+    const events = chatFixture('codex', 'approval');
+    const { actions, rerender } = renderState(fold(events));
+    fireEvent.click(within(screen.getByTestId('chat-inline-approval')).getByText('Answer here'));
+    const pinned = within(screen.getByTestId('chat-pinned-approval')).getByTestId('chat-permission');
+    const inline = within(screen.getByTestId('chat-inline-approval')).getByTestId('chat-permission');
+    fireEvent.click(within(location === 'pinned' ? pinned : inline).getAllByRole('button')[0]);
+    await act(async () => { await Promise.resolve(); });
+    expect(within(pinned).getAllByRole('button')[0]).toBeDisabled();
+    expect(within(inline).getAllByRole('button')[0]).toBeDisabled();
+    fireEvent.click(within(location === 'pinned' ? inline : pinned).getAllByRole('button')[0]);
+    expect(actions.respondPermission).toHaveBeenCalledExactlyOnceWith('perm-1', 'accept');
+    rerender(<ChatViewBody agent={agent} state={fold(extend(events, { type: 'permission_resolved', data: { requestId: 'perm-1', decision: 'allow', by: 'user' } }))} actions={actions} />);
+    expect(screen.queryByTestId('chat-pinned-approval')).not.toBeInTheDocument();
+    expect(screen.getByTestId('chat-inline-approval')).toHaveTextContent('allow');
+    expect(within(screen.getByTestId('chat-inline-approval')).queryByText('Answer here')).not.toBeInTheDocument();
+  });
+
+  it('keeps composer focus when a permission arrives and a question becomes current after remote resolution', () => {
+    const actions = makeActions();
+    const base = chatFixture('codex', 'approval');
+    const before = base.filter((e) => e.type !== 'permission_request');
+    const { rerender } = renderState(fold(before), actions);
+    const input = screen.getByLabelText('Message');
+    fireEvent.change(input, { target: { value: 'Still writing' } });
+    input.focus();
+    expect(input).toHaveFocus();
+    rerender(<ChatViewBody agent={agent} state={fold(base)} actions={actions} />);
+    expect(screen.getByTestId('chat-permission')).toBeInTheDocument();
+    expect(input).toHaveFocus();
+    const withQuestion = extend(base, { type: 'question', data: { requestId: 'q-focus', questions: [{ id: 'q', prompt: 'Pick one', options: [{ id: 'a', label: 'A' }], allowFreeText: false }] } });
+    rerender(<ChatViewBody agent={agent} state={fold(withQuestion)} actions={actions} />);
+    expect(input).toHaveFocus();
+    rerender(<ChatViewBody agent={agent} state={fold(extend(withQuestion, { type: 'permission_resolved', data: { requestId: 'perm-1', decision: 'allow', by: 'user' } }))} actions={actions} />);
+    expect(screen.getByTestId('chat-question')).toHaveTextContent('Pick one');
+    expect(input).toHaveFocus();
+    fireEvent.keyDown(input, { key: '1' });
+    expect(actions.respondPermission).not.toHaveBeenCalled();
+    expect(actions.answerQuestion).not.toHaveBeenCalled();
+    expect(input).toHaveValue('Still writing');
+  });
+
+  it('unlocks both question cards after a failed answer, then guards a successful inline answer', async () => {
+    const actions = makeActions();
+    actions.answerQuestion.mockResolvedValueOnce(false);
+    const events = extend(chatFixture('codex', 'conversation'), { type: 'question', data: { requestId: 'q-retry', questions: [{ id: 'q', prompt: 'Pick one', options: [{ id: 'a', label: 'A' }], allowFreeText: false }] } });
+    renderState(fold(events), actions);
+    const inline = screen.getByTestId('chat-inline-approval');
+    fireEvent.click(within(inline).getByText('Answer here'));
+    const pinnedOption = within(screen.getByTestId('chat-pinned-approval')).getByRole('button', { name: /^1\s*A$/ });
+    const inlineOption = within(inline).getByRole('button', { name: /^1\s*A$/ });
+    fireEvent.click(pinnedOption);
+    expect(inlineOption).toBeDisabled();
+    await waitFor(() => expect(pinnedOption).not.toBeDisabled());
+    expect(inlineOption).not.toBeDisabled();
+    fireEvent.click(inlineOption);
+    await act(async () => { await Promise.resolve(); });
+    expect(pinnedOption).toBeDisabled();
+    fireEvent.click(pinnedOption);
+    expect(actions.answerQuestion).toHaveBeenCalledTimes(2);
+    expect(actions.answerQuestion).toHaveBeenLastCalledWith('q-retry', { q: 'a' });
+  });
+
+  it('clears the selected request when the view switches agents', () => {
+    const events = extend(chatFixture('codex', 'approval'), { type: 'question', data: { requestId: 'q-next', questions: [{ id: 'q', prompt: 'Second request', options: [{ id: 'a', label: 'A' }], allowFreeText: false }] } });
+    const state = fold(events);
+    const { actions, rerender } = renderState(state);
+    fireEvent.click(screen.getByText('Next request'));
+    expect(screen.getByTestId('chat-question')).toBeInTheDocument();
+    const other = { ...agent, id: 'other-agent' };
+    rerender(<ChatViewBody agent={other} state={{ ...state, agentId: other.id }} actions={actions} />);
+    expect(screen.getByTestId('chat-permission')).toBeInTheDocument();
+    expect(screen.queryByTestId('chat-question')).not.toBeInTheDocument();
+    expect(screen.getByTestId('chat-pinned-approval')).toHaveTextContent('1 of 2');
+  });
+
   it('keeps the level pill reachable while a permission waits, outside the card (live test)', () => {
     const { actions } = renderFixture('claude', 'approval');
-    const footer = screen.getByTestId('chat-permission-level');
+    const footer = screen.getByTestId('chat-composer');
     const pill = within(footer).getByTestId('chat-level-pill');
     expect(within(screen.getByTestId('chat-permission')).queryByTestId('chat-level-pill')).toBeNull();
     fireEvent.click(pill);
@@ -291,7 +401,7 @@ describe('ChatView approvals', () => {
 
   it('never answers the request from keys pressed on the level pill', () => {
     const { actions } = renderFixture('claude', 'approval');
-    const pill = within(screen.getByTestId('chat-permission-level')).getByTestId('chat-level-pill');
+    const pill = within(screen.getByTestId('chat-composer')).getByTestId('chat-level-pill');
     fireEvent.keyDown(pill, { key: 'Escape' });
     fireEvent.keyDown(pill, { key: '1' });
     expect(actions.respondPermission).not.toHaveBeenCalled();
@@ -962,14 +1072,14 @@ describe('ChatView (store-bound)', () => {
 });
 
 describe('ChatView review fixes', () => {
-  it('keeps the draft while an approval replaces the composer', () => {
+  it('keeps the draft while an approval is pinned above the composer', () => {
     const actions = makeActions();
     const before = chatFixture('claude', 'approval').filter((e) => e.type !== 'permission_request' && !(e.type === 'session_state' && e.data.state === 'waiting_permission'));
     const { rerender } = render(<ChatViewBody agent={agent} state={fold(before)} actions={actions} providerName="P" />);
     fireEvent.change(screen.getByLabelText('Message'), { target: { value: 'half-written thought' } });
     const pending = chatFixture('claude', 'approval');
     rerender(<ChatViewBody agent={agent} state={fold(pending)} actions={actions} providerName="P" />);
-    expect(screen.queryByLabelText('Message')).not.toBeInTheDocument();
+    expect(screen.getByLabelText('Message')).toHaveValue('half-written thought');
     rerender(<ChatViewBody agent={agent} state={fold(extend(pending, { type: 'permission_resolved', data: { requestId: 'perm-1', decision: 'allow', by: 'user' } }))} actions={actions} providerName="P" />);
     expect(screen.getByLabelText('Message')).toHaveValue('half-written thought');
   });
@@ -1010,7 +1120,9 @@ describe('ChatView review fixes', () => {
     const state = fold(extend(chatFixture('codex', 'conversation'), { type: 'question', data: { requestId: 'q-tall', questions } }));
     render(<ChatViewBody agent={agent} state={state} actions={actions} providerName="P" />);
     const dock = screen.getByTestId('chat-dock');
-    expect(dock).toHaveClass('max-h-[60%]');
+    expect(screen.getByTestId('chat-pinned-approval')).toHaveClass('max-h-[min(40vh,320px)]');
+    expect(dock).toHaveClass('max-h-[70%]');
+    expect(screen.getByTestId('chat-composer').parentElement?.parentElement).toHaveClass('flex-shrink-0');
     // The card shrinks inside the cap.
     expect(screen.getByTestId('chat-question')).toHaveClass('min-h-0');
     expect(dock).toContainElement(screen.getByText('Send answer'));

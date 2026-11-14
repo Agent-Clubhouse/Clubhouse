@@ -1,8 +1,6 @@
 /**
- * Approvals live in the composer (docs/structured-chat-research.md, UI): a
- * pending permission request or question replaces the composer. Every button
- * is one of the provider's own options; Clubhouse never offers an answer the
- * CLI can't enforce, and requests wait for the user (no client-side timeout).
+ * Shared request actions for the pinned card and transcript. Every button is
+ * one of the provider's options; requests wait for the user without a timeout.
  */
 
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react';
@@ -65,11 +63,13 @@ interface PermissionCardProps {
   diffs?: DiffContent[];
   /** The command the request would run (commandForRequest), shown when the request carries no content of its own. */
   command?: string;
+  compact?: boolean;
+  autoFocus?: boolean;
 }
 
 type DiffContent = Extract<ToolCallContent, { type: 'diff' }>;
 
-export function PermissionCard({ request, plan, queueSize, agentName, extras, onRespond, busy, diffs, command }: PermissionCardProps) {
+export function PermissionCard({ request, plan, queueSize, agentName, extras, onRespond, busy, diffs, command, compact, autoFocus = true }: PermissionCardProps) {
   const ref = useRef<HTMLDivElement>(null);
   const [answeredHere, setAnswered] = useState(false);
   const answered = answeredHere || !!busy;
@@ -104,8 +104,8 @@ export function PermissionCard({ request, plan, queueSize, agentName, extras, on
 
   useEffect(() => {
     setAnswered(false);
-    ref.current?.focus({ preventScroll: true });
-  }, [request.requestId]);
+    if (autoFocus) ref.current?.focus({ preventScroll: true });
+  }, [request.requestId, autoFocus]);
 
   /** Extras for this option: the feedback with a rejection, the edited plan with an approval. */
   const extrasFor = (opt: PermissionOption): PermissionResponseExtras | undefined => {
@@ -146,7 +146,7 @@ export function PermissionCard({ request, plan, queueSize, agentName, extras, on
       onKeyDown={onKeyDown}
       role="group"
       aria-label="Permission request"
-      className={`rounded-xl border ${plan ? 'border-ctp-accent/50' : 'border-ctp-warning/55'} bg-ctp-mantle px-3.5 py-3 flex flex-col gap-2 focus:outline-none focus-visible:ring-1 focus-visible:ring-ctp-accent/60`}
+      className={`rounded-xl border border-surface-1 bg-ctp-mantle px-3.5 py-3 flex flex-col gap-2 focus:outline-none focus-visible:ring-1 focus-visible:ring-ctp-accent/60`}
       data-testid="chat-permission"
       data-request-id={request.requestId}
     >
@@ -157,15 +157,15 @@ export function PermissionCard({ request, plan, queueSize, agentName, extras, on
       </div>
       {/* Paths read best in monospace; the prose reasons Claude and Codex send don't. A request with a preview lists paths. */}
       {description && <div className={`text-[12.5px] text-ctp-subtext0 pl-6 break-words ${hasContent ? 'font-mono' : ''}`} data-testid="chat-permission-description">{description}</div>}
-      {(previewDiffs.length > 0 || previewTexts.length > 0) && (
+      {((!compact && previewDiffs.length > 0) || previewTexts.length > 0) && (
         <div className="pl-6 flex flex-col gap-1.5" data-testid="chat-permission-preview">
-          <ApprovalDiffPreview diffs={previewDiffs} />
+          {!compact && <ApprovalDiffPreview diffs={previewDiffs} />}
           {previewTexts.map((text, i) => (
-            <pre key={i} className="max-h-40 overflow-auto rounded-md bg-ctp-crust px-2.5 py-2 font-mono text-[11.5px] text-ctp-subtext1 whitespace-pre-wrap break-words" data-testid="chat-permission-text">{text}</pre>
+            <pre key={i} className={`${compact ? 'max-h-16' : 'max-h-40'} overflow-auto rounded-md bg-ctp-crust px-2.5 py-2 font-mono text-[11.5px] text-ctp-subtext1 whitespace-pre-wrap break-words`} data-testid="chat-permission-text">{text}</pre>
           ))}
         </div>
       )}
-      <div className="flex flex-col gap-0.5 pl-5">
+      <div className={compact ? "flex flex-wrap gap-1" : "flex flex-col gap-0.5 pl-5"}>
         {request.options.map((opt, i) => {
           const isPrimary = opt === primary;
           return (
@@ -251,6 +251,7 @@ interface QuestionCardProps {
   onAnswer: (requestId: string, answers: ChatQuestionAnswers) => Promise<boolean>;
   /** An answer is already in flight, possibly from another view of this agent. */
   busy?: boolean;
+  autoFocus?: boolean;
 }
 
 function isSimpleChoice(q: ChatQuestion): boolean {
@@ -268,7 +269,7 @@ function answerSummary(q: ChatQuestion, answer: string | string[] | undefined, f
   return freeText?.trim() || null;
 }
 
-export function QuestionCard({ request, onAnswer, busy }: QuestionCardProps) {
+export function QuestionCard({ request, onAnswer, busy, autoFocus = true }: QuestionCardProps) {
   const [answers, setAnswers] = useState<ChatQuestionAnswers>({});
   const [free, setFree] = useState<Record<string, string>>({});
   const [sentHere, setSent] = useState(false);
@@ -285,8 +286,8 @@ export function QuestionCard({ request, onAnswer, busy }: QuestionCardProps) {
 
   useEffect(() => {
     // Focus the card so number keys work at once; free text is a Tab away. No scroll: the dock owns that.
-    ref.current?.focus({ preventScroll: true });
-  }, [request.requestId]);
+    if (autoFocus) ref.current?.focus({ preventScroll: true });
+  }, [request.requestId, autoFocus]);
 
   const stepsTaken = useRef(false);
   useEffect(() => {
@@ -423,7 +424,7 @@ export function QuestionCard({ request, onAnswer, busy }: QuestionCardProps) {
       ref={ref}
       tabIndex={-1}
       onKeyDown={onKeyDown}
-      className="min-h-0 flex flex-col rounded-xl border border-ctp-accent/50 bg-ctp-mantle focus:outline-none"
+      className="min-h-0 flex flex-col rounded-xl border border-surface-1 bg-ctp-mantle focus:outline-none"
       data-testid="chat-question"
       role="group"
       aria-label="Question"

@@ -48,9 +48,8 @@ const APPROVAL: ScriptApproval = {
   description: DESCRIPTION,
 };
 
-/** The question card and the parts of it that must stay inside the dock. */
-const QUESTION_PARTS = ['[data-testid="chat-question"]', '[data-testid="chat-question-body"]'];
-const PERMISSION_PARTS = ['[data-testid="chat-permission-scroll"]', '[data-testid="chat-permission-level"]'];
+/** The pinned card and preserved composer must both stay inside the dock. */
+const DOCK_PARTS = ['[data-testid="chat-pinned-approval"]', '[data-testid="chat-composer"]'];
 
 /** A short window: the default minimum is 900x600, which is roomier than a laptop split. */
 async function shrinkWindow(s: RichChat): Promise<void> {
@@ -87,12 +86,11 @@ async function expectReachable(locator: Locator): Promise<void> {
 
 /**
  * With a request in the dock (#2412): the pane header and the dock are on
- * screen; the request is tall enough to reach the dock's cap and stays
- * inside it (every one of `contents` lies within the dock's box, so nothing
- * spills past a capped dock); the transcript keeps the rest of the column
+ * screen; the pinned request and composer stay inside the dock's cap;
+ * the transcript keeps the rest of the column
  * and still scrolls under the wheel; nothing around the pane scrolled.
  */
-async function expectDockBounded(page: Page, contents: string[]): Promise<void> {
+async function expectDockBounded(page: Page): Promise<void> {
   await expectReachable(page.locator('[data-testid="chat-view"] [data-testid="agent-pane-toolbar"]'));
   await expect.poll(() => page.locator('[data-testid="chat-dock"]').evaluate((dock, selectors) => {
     const column = dock.parentElement!.getBoundingClientRect();
@@ -102,15 +100,19 @@ async function expectDockBounded(page: Page, contents: string[]): Promise<void> 
     return {
       dockOnScreen: box.top >= 0 && box.bottom <= window.innerHeight + 1,
       columnOnScreen: column.top >= 0 && column.bottom <= window.innerHeight + 1,
-      // At the cap: the request is long enough to test it, and the cap holds.
-      dockAtCap: Math.abs(box.height - column.height * 0.6) <= 2,
+      // The approval respects its own cap, leaving the composer and transcript room.
+      dockBounded: box.height <= column.height * 0.7 + 2,
+      approvalBounded: (() => {
+        const approval = dock.querySelector('[data-testid="chat-pinned-approval"]')!.getBoundingClientRect();
+        return approval.height > 0 && approval.height <= Math.min(window.innerHeight * 0.4, 320) + 2;
+      })(),
       contentsInDock: selectors.map((sel) => [...document.querySelectorAll(sel)].every((el) => inside(el.getBoundingClientRect()))),
       // The transcript has the rest of the column, and more to scroll than it shows.
       streamFillsRest: Math.abs(stream.getBoundingClientRect().height + box.height - column.height) <= 2,
       streamOverflows: stream.scrollHeight > stream.clientHeight,
     };
-  }, contents), { timeout: TURN_TIMEOUT }).toEqual({
-    dockOnScreen: true, columnOnScreen: true, dockAtCap: true, contentsInDock: contents.map(() => true), streamFillsRest: true, streamOverflows: true,
+  }, DOCK_PARTS), { timeout: TURN_TIMEOUT }).toEqual({
+    dockOnScreen: true, columnOnScreen: true, dockBounded: true, approvalBounded: true, contentsInDock: DOCK_PARTS.map(() => true), streamFillsRest: true, streamOverflows: true,
   });
 
   // The transcript scrolls under the wheel, and only the transcript.
@@ -146,16 +148,20 @@ async function approveLongRequest(s: RichChat, cli: ChatFixtureCli, prompt: stri
   const dom = chatDom(window);
   await s.send(prompt);
   await expect(dom.permission).toBeVisible({ timeout: TURN_TIMEOUT });
+  await expect(dom.composer.locator('textarea')).toBeFocused();
   await expect(chat).toHaveAttribute('data-state', 'waiting_permission');
+  // Enter the card explicitly before using its controls.
+  await dom.permission.focus();
+  await expect(dom.permission).toBeFocused();
   await expect(dom.permission).toContainText(cli === 'codex' ? 'Run npm run step-1 ' : 'Run every step of the release build');
   // Copilot's request describes the command itself; the others carry their reason (Claude's description, Codex's reason).
   if (cli !== 'copilot') await expect(window.locator('[data-testid="chat-permission-description"]')).toContainText('Part 12');
   await expect(window.locator('[data-testid="chat-permission-text"]').first()).toContainText('npm run step-1 -- --workspace packages/helper-1 ');
-  await expectDockBounded(window, PERMISSION_PARTS);
+  await expectDockBounded(window);
   // The card is taller than its share of the pane, so it scrolls inside the dock.
-  await expectScrollsInside(window.locator('[data-testid="chat-permission-scroll"]'));
-  // The level pill sits outside the scrolling card, always on screen.
-  await expectReachable(window.locator('[data-testid="chat-permission-level"] button').first());
+  await expectScrollsInside(window.locator('[data-testid="chat-pinned-approval"]'));
+  // The composer stays outside the scrolling card, always on screen.
+  await expectReachable(dom.composer);
 
   // Allow is reachable by scrolling the card itself, never the app.
   const allow = dom.permission.locator('[data-option-kind="allow_once"]');
@@ -199,11 +205,13 @@ test.describe('claude: questions, then an approval, in one session', () => {
     const dom = chatDom(window);
     await session.send('Plan the helpers.');
     await expect(dom.question).toBeVisible({ timeout: TURN_TIMEOUT });
-    // The card took focus as it opened, without moving anything around the pane.
+    // Incoming questions preserve the draft's focus. Move into the card explicitly.
+    await expect(dom.composer.locator('textarea')).toBeFocused();
+    await dom.question.focus();
     await expect(dom.question).toBeFocused();
     await expect(chat).toHaveAttribute('data-state', 'waiting_input');
-    await expectDockBounded(window, QUESTION_PARTS);
-    await expectScrollsInside(window.locator('[data-testid="chat-question-body"]'));
+    await expectDockBounded(window);
+    await expectScrollsInside(window.locator('[data-testid="chat-pinned-approval"]'));
 
     // One question open, the rest collapsed to a line each.
     await expect(dom.questionStep).toHaveText('1 of 8');
@@ -249,10 +257,11 @@ test.describe('claude: questions, then an approval, in one session', () => {
     await expect(dom.questionStep).toHaveText('1 of 8');
     await expect(dom.questionCurrent.locator('button[aria-pressed]').nth(PICKS[0][0])).toHaveAttribute('aria-pressed', 'true');
     await expectNothingAroundScrolled(window);
-    await expectDockBounded(window, QUESTION_PARTS);
+    await expectDockBounded(window);
 
-    // Every question answered: send is enabled and on screen without scrolling anything.
+    // Every question answered: send is enabled and reachable by scrolling the pinned card.
     await expect(send).toBeEnabled();
+    await send.scrollIntoViewIfNeeded();
     await expectReachable(send);
     await send.click();
     await expectNoMismatch(session, 'claude');
