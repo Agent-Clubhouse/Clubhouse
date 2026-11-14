@@ -158,24 +158,6 @@
         "downloadProgress": 100,
         "reason": null,
         "request": {
-          "error": null,
-          "expiresAt": null,
-          "requestId": "grant_00000000-0000-4000-8000-000000000003",
-          "state": "restarting",
-          "version": "1.1.0"
-        },
-        "state": "ready"
-      },
-      "seq": 1000,
-      "type": "app_update:changed"
-    },
-    {
-      "payload": {
-        "availableVersion": "1.1.0",
-        "currentVersion": "0.0.0-test",
-        "downloadProgress": 100,
-        "reason": null,
-        "request": {
           "error": "The installer could not be prepared.",
           "expiresAt": null,
           "requestId": "grant_00000000-0000-4000-8000-000000000003",

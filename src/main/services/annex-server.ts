@@ -5554,9 +5554,22 @@ function startServer(strict = false): Promise<void> {
   // The Dispatcher turned on or off, or its config changed (#2533): phones add, drop or update it live.
   const dispatcherChangedPayload = (state: ReturnType<typeof getDispatcherState>) => ({ ...dispatcherChange(state), ...dispatcherOffFields(state, dispatcherAgentView) });
   let lastDispatcherChange = JSON.stringify(dispatcherChangedPayload(getDispatcherState()));
+  // Progress replaces appUpdate through the replayable event; rebuilding the entire
+  // snapshot for each percent makes phones queue unrelated agent/icon data (#3504).
+  const updateStateKey = (value: ReturnType<typeof getAppUpdateStatus>) => JSON.stringify({ ...value, downloadProgress: 0 });
+  const initialUpdate = getAppUpdateStatus();
+  let lastUpdateState = updateStateKey(initialUpdate);
+  let lastUpdateProgress = Math.floor(initialUpdate.downloadProgress);
   unsubAppUpdate = onAppUpdateChanged(() => {
-    broadcastAndBuffer(APP_UPDATE_CHANGED_EVENT, getAppUpdateStatus());
-    broadcastSnapshotRefresh();
+    const next = getAppUpdateStatus();
+    const state = updateStateKey(next);
+    const progress = Math.floor(next.downloadProgress);
+    if (state === lastUpdateState && progress === lastUpdateProgress) return;
+    const stateChanged = state !== lastUpdateState;
+    lastUpdateState = state;
+    lastUpdateProgress = progress;
+    broadcastAndBuffer(APP_UPDATE_CHANGED_EVENT, next);
+    if (stateChanged) broadcastSnapshotRefresh();
   });
   unsubDispatcher = onDispatcherChanged((state) => {
     const change = dispatcherChangedPayload(state);

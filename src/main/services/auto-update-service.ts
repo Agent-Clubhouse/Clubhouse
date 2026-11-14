@@ -434,6 +434,13 @@ export function downloadFile(
 ): Promise<void> {
   return new Promise((resolve, reject) => {
     let hopsLeft = MAX_REDIRECTS;
+    let lastProgress = -1;
+    const reportProgress = (percent: number): void => {
+      if (percent === lastProgress) return;
+      lastProgress = percent;
+      onProgress(percent);
+    };
+    reportProgress(0);
 
     function attempt(currentUrl: string): void {
       const mod = currentUrl.startsWith('https') ? https : http;
@@ -491,7 +498,7 @@ export function downloadFile(
         res.on('data', (chunk: Buffer) => {
           downloadedBytes += chunk.length;
           if (totalSize > 0) {
-            onProgress(Math.min(99, Math.round((downloadedBytes / totalSize) * 100)));
+            reportProgress(Math.min(99, Math.round((downloadedBytes / totalSize) * 100)));
           }
         });
         res.on('aborted', () => fail(new Error(`Download interrupted after ${downloadedBytes} bytes`)));
@@ -510,7 +517,7 @@ export function downloadFile(
             reject(new Error(`Partial download: expected ${totalSize} bytes, received ${downloadedBytes}`));
             return;
           }
-          onProgress(100);
+          reportProgress(100);
           resolve();
         });
         file.on('error', fail);
@@ -856,11 +863,15 @@ async function downloadUpdate(
       async () => {
         // Clean up partial file from a previous failed attempt
         try { await fsp.unlink(destPath); } catch { /* may not exist */ }
-        status = { ...status, downloadProgress: 0 };
-        broadcastStatus();
-        await downloadFile(appendTelemetryParams(artifact.url), destPath, artifact.size, (percent) => {
-          status = { ...status, downloadProgress: percent };
+        if (status.downloadProgress !== 0) {
+          status = { ...status, downloadProgress: 0 };
           broadcastStatus();
+        }
+        await downloadFile(appendTelemetryParams(artifact.url), destPath, artifact.size, (percent) => {
+          if (status.downloadProgress !== percent) {
+            status = { ...status, downloadProgress: percent };
+            broadcastStatus();
+          }
         });
       },
       { label: 'artifact download' },

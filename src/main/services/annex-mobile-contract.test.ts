@@ -3389,6 +3389,45 @@ describe('Annex mobile contract fixtures', { timeout: TEST_TIMEOUT_MS }, () => {
     W.dispatcher.enabled = false;
   });
 
+  it('bounds update progress events, avoids progress snapshots and replays current status', async () => {
+    resetWorld();
+    _resetAppUpdateForTesting({ keepListeners: true });
+    W.updateUnsupported = null;
+    const ws = await connect();
+    ws.send.mockClear();
+    const publish = (patch: Partial<import('../../shared/types').UpdateStatus>) => {
+      W.updateStatus = { ...W.updateStatus, ...patch };
+      for (const listener of W.updateListeners) listener();
+    };
+    publish({ state: 'downloading', availableVersion: '1.1.0', downloadProgress: 0, error: null });
+    await eventually(() => expect(frames(ws).some((f) => f.type === 'snapshot')).toBe(true));
+    expect(frames(ws).find((f) => f.type === 'app_update:changed').payload).toMatchObject({ state: 'downloading', downloadProgress: 0 });
+    ws.send.mockClear();
+    const before = eventReplay.getLastSeq();
+    // Deliberately more granular than the updater, so Annex also guards its own boundary.
+    for (let i = 0; i <= 10_000; i++) publish({ downloadProgress: i / 100 });
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    const progress = frames(ws).filter((f) => f.type === 'app_update:changed');
+    expect(progress).toHaveLength(100);
+    expect(progress.map((f) => f.payload.downloadProgress)).toEqual(Array.from({ length: 100 }, (_, i) => i + 1));
+    expect(frames(ws).filter((f) => f.type === 'snapshot')).toEqual([]);
+    // Even with unchanged progress, a failure/reason and then readiness must arrive.
+    publish({ state: 'error', error: 'private download detail', errorCategory: 'download' });
+    publish({ state: 'ready', error: null });
+    await eventually(() => expect(frames(ws).some((f) => f.type === 'snapshot')).toBe(true));
+    const changes = frames(ws).filter((f) => f.type === 'app_update:changed');
+    expect(changes.at(-2).payload.reason).toBe('The update could not be downloaded.');
+    expect(changes.at(-1).payload).toMatchObject({ state: 'ready', downloadProgress: 100, reason: null });
+    expect(changes.every((f, i) => i === 0 || f.seq > changes[i - 1].seq)).toBe(true);
+    const reconnected = await connect();
+    expect(frames(reconnected).find((f) => f.type === 'snapshot').payload.appUpdate).toEqual(changes.at(-1).payload);
+    const replay = await roundTrip(reconnected, { type: 'mobile:replay', epoch, since: before });
+    expect(replay.filter((f) => f.type === 'app_update:changed')).toEqual(changes.map((f) => ({ ...f, replayed: true })));
+    W.updateStatus = { ...W.updateStatus, state: 'idle', availableVersion: null, downloadProgress: 0, error: null };
+    W.updateUnsupported = 'This is a development build. Update it from the desktop.';
+    _resetAppUpdateForTesting({ keepListeners: true });
+  });
+
   it('Clubhouse updates: status, explicit human approval, cancellation and install failure', async () => {
     resetWorld();
     _resetAppUpdateForTesting({ keepListeners: true });

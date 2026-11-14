@@ -68,6 +68,25 @@ describe('LB-SP-001: downloadFile partial-download detection', () => {
     });
   });
 
+  it('reports each integer percent once for thousands of chunks, including 0 and completion', async () => {
+    const progress = vi.fn();
+    const promise = downloadFile('http://example.com/file', '/tmp/test.dmg', 10_000, progress);
+    for (let i = 0; i < 10_000; i++) fakeRes.emit('data', Buffer.alloc(1));
+    fakeFile.emit('finish');
+    await promise;
+    expect(progress.mock.calls.map(([percent]) => percent)).toEqual(Array.from({ length: 101 }, (_, i) => i));
+  });
+
+  it('reports 0 and completion when the download length is unknown', async () => {
+    fakeRes.headers = {};
+    const progress = vi.fn();
+    const promise = downloadFile('http://example.com/file', '/tmp/test.dmg', undefined, progress);
+    for (let i = 0; i < 1000; i++) fakeRes.emit('data', Buffer.alloc(1));
+    fakeFile.emit('finish');
+    await promise;
+    expect(progress.mock.calls).toEqual([[0], [100]]);
+  });
+
   it('rejects with "Partial download" when fewer bytes received than Content-Length', async () => {
     const promise = downloadFile('http://example.com/file', '/tmp/test.dmg', undefined, vi.fn());
 
