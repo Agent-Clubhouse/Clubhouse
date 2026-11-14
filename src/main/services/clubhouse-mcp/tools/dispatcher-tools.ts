@@ -5,7 +5,7 @@
  * Both are open to the Dispatcher's chat too (#3036), which reads agents'
  * state directly.
  *
- * - list_agents: every agent with "Connect to Dispatcher" on (#2534, #2578),
+ * - list_agents: every durable agent, including unconnected agents (#3467),
  *   across every registered project, with its status, whether it orchestrates,
  *   whether it is connected now, its helpers, its branch, and its card
  *   (#3041): what the agent says it's for, or "No description yet".
@@ -17,6 +17,8 @@
  * Dispatcher. These tools only read state: agent to Dispatcher traffic is explicit (send_message), nothing is pushed or forwarded.
  */
 
+import { getSatellites } from '../../annex-client';
+import { isNetworkComputer } from '../../annex-agent-calls';
 import { registerGlobalTool } from '../tool-registry';
 import { getAgentConnection } from '../bridge-server';
 import type { McpToolResult } from '../types';
@@ -57,13 +59,14 @@ interface ConnectedAgent {
  * The agents in one project connected to the Dispatcher. Resolved as the
  * Dispatcher wires are (#2537), reading agents.json and the defaults once.
  */
-async function connectedAgents(project: Project): Promise<ConnectedAgent[]> {
+async function connectedAgents(project: Project, includeUnconnected = false): Promise<ConnectedAgent[]> {
   const agents = (await agentConfig.listDurable(project.path)).filter((a) => !isDisposedAgent(a));
   if (agents.length === 0) return [];
   const policies = await resolveOrchestrationPolicies(project.path, agents);
   return agents.flatMap((agent) => {
     const policy = policies.get(agent.id);
-    return policy?.connectToDispatcher ? [{ agent, orchestrates: policy.orchestrate }] : [];
+    return !agent.parentAgentId && (includeUnconnected || policy?.connectToDispatcher)
+      ? [{ agent, orchestrates: policy?.orchestrate ?? false }] : [];
   });
 }
 
@@ -121,9 +124,9 @@ async function describeAgent(
 }
 
 /** A project's connected agents; none, and a warning, if it can't be read. */
-async function connectedAgentsOrNone(project: Project, toolName: string): Promise<ConnectedAgent[]> {
+async function connectedAgentsOrNone(project: Project, toolName: string, includeUnconnected = false): Promise<ConnectedAgent[]> {
   try {
-    return await connectedAgents(project);
+    return await connectedAgents(project, includeUnconnected);
   } catch (err) {
     // telemetry-exempt: logged; one unreadable project must not hide the others
     appLog('core:mcp', 'warn', `${toolName}: could not read a project`, {
@@ -137,7 +140,23 @@ async function listAgents(): Promise<McpToolResult> {
   const projects = await projectStore.list();
   const rows: Record<string, unknown>[] = [];
   for (const project of projects) {
-    for (const agent of await connectedAgentsOrNone(project, 'list_agents')) rows.push(await describeAgent(project, agent, projects));
+    for (const agent of await connectedAgentsOrNone(project, 'list_agents', true)) rows.push(await describeAgent(project, agent, projects));
+  }
+  for (const satellite of getSatellites()) {
+    if (!isNetworkComputer(satellite.fingerprint) || !satellite.snapshot) continue;
+    for (const agents of Object.values(satellite.snapshot.agents)) {
+      for (const value of agents) {
+        if (!value || typeof value !== 'object') continue;
+        const agent = value as Record<string, unknown>;
+        if (typeof agent.id !== 'string' || agent.parentAgentId || agent.disposedAt) continue;
+        rows.push({
+          id: `${agent.id}@${satellite.fingerprint}`,
+          name: typeof agent.name === 'string' ? agent.name : agent.id,
+          machine: { fingerprint: satellite.fingerprint, name: satellite.alias },
+          status: typeof agent.status === 'string' ? agent.status : 'unknown',
+        });
+      }
+    }
   }
   return jsonResult({ agents: rows });
 }
@@ -248,7 +267,7 @@ export function registerDispatcherTools(): void {
     'list_agents',
     {
       description:
-        'The agents connected to you, in every project: id, name, project, status, whether it orchestrates, ' +
+        'All durable agents in every project and on Annex Network computers, including agents not connected to you: id, name, project, status, whether it orchestrates, ' +
         'whether it can be messaged now (`connected`), branch, helpers, and its card (what it\'s for, when to ' +
         'reach it, what it owns) with its page in memory.',
       inputSchema: { type: 'object', properties: {} },
@@ -262,7 +281,7 @@ export function registerDispatcherTools(): void {
         return { content: [{ type: 'text', text: errorText(err) }], isError: true };
       }
     },
-    { group: ['dispatcher', 'dispatcherChat'], grant: { actions: ['agent.read'], target: 'connected' } },
+    { group: ['dispatcher', 'dispatcherChat'], grant: { actions: ['agent.read'], target: 'all_agents' } },
   );
   registerGlobalTool(
     'inspect_helper',

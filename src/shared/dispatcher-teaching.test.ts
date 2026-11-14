@@ -184,7 +184,7 @@ describe('dispatcherIntro', () => {
 
   it('counts one agent in words, and says how to connect one when none are', () => {
     expect(dispatcherIntro({ name: 'Rosie', reachable: 1 })[0]).toBe('Hi, I\'m Rosie. I can reach one of your agents.');
-    expect(dispatcherIntro({ name: 'Rosie', reachable: 0 })[0]).toMatch(/No agents are connected to me yet\. .*Details/);
+    expect(dispatcherIntro({ name: 'Rosie', reachable: 0 })[0]).toMatch(/No agents are connected to me yet\. .*ask you first/);
   });
 
   it('reads the working name as a role', () => {

@@ -27,6 +27,12 @@ describe('remote Dispatcher grants (#3348)', () => {
 });
 
 describe('connection management (#3336)', () => {
+  it('asks before the Dispatcher connects an unconnected agent', () => {
+    const grants = defaultGrants({ dispatcher: true, helper: false, orchestrates: false, crossProject: false });
+    for (const relations of [[], ['connected']] as const) {
+      expect(evaluateGrant({ caller: { kind: 'agent' }, action: 'connection.manage', target: { kind: 'agent', relations: [...relations] } }, grants).outcome).toBe(relations.length ? 'allow' : 'ask');
+    }
+  });
   it('asks before ordinary agents manage their own connections without widening their reach', () => {
     for (const helper of [false, true]) {
       const grants = defaultGrants({ dispatcher: false, helper, orchestrates: false, crossProject: false });

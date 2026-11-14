@@ -174,7 +174,7 @@ describe('tool grant declarations (#2967)', () => {
       list_projects: project.read on all_projects
       message_parent: agent.message on parent
       list_models: models.read on app
-      list_agents: agent.read on connected
+      list_agents: agent.read on all_agents
       inspect_helper: agent.read on agent_arg
       start_work: agent.message on self
       read_memory: agent.read on self

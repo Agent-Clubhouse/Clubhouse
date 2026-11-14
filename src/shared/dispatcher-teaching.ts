@@ -359,7 +359,7 @@ export function dispatcherIntro({ name, reachable }: IntroFacts): string[] {
   // The working name reads as a role; a name the user picked reads as a name.
   const hello = `Hi, I'm ${name === 'Dispatcher' ? 'the Dispatcher' : name}.`;
   const reach = reachable === 0
-    ? 'No agents are connected to me yet. Turn me on in an agent\'s Details and I can reach it.'
+    ? 'No agents are connected to me yet. Ask me to connect one and I\'ll ask you first.'
     : `I can reach ${reachable === 1 ? 'one of your agents' : `${reachable} of your agents`}.`;
   return [
     `${hello} ${reach}`,

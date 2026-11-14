@@ -130,7 +130,7 @@ import { initGroupProjectLifecycle, _resetLifecycleForTesting } from '../../grou
 import { registerConnectionTools, GROUP_PROJECT_CREATOR_KEY } from './connection-tools';
 import { getConnectionDirection, removeConnectionDirections, setConnectionTools } from '../../connection-grants-store';
 import { updateAgentGrantChanges } from '../../agent-grants-store';
-import { dropGrantRequestsFor, listGrantRequests } from '../../grant-requests';
+import { dropGrantRequestsFor, listGrantRequests, takeGrantRequest } from '../../grant-requests';
 import { recordDispatcherControl } from '../../../telemetry/dispatcher-telemetry';
 import { groupProjectRegistry } from '../../group-project-registry';
 import * as annexIdentity from '../../annex-identity';
@@ -412,8 +412,15 @@ describe('ordinary agents with connection.manage (#3336)', () => {
     vi.spyOn(dispatcherService, 'getDispatcherState').mockReturnValue({ config, path: dispatcherPath } as ReturnType<typeof dispatcherService.getDispatcherState>);
     vi.spyOn(dispatcherGate, 'isDispatcherAgent').mockReturnValue(true);
     try {
+      vi.spyOn(dispatcherGate, 'isTrackedDispatcher').mockImplementation((id) => id === config.id);
+      const args = { from: 'lead', to: 'other' };
+      expect(JSON.stringify(await call('connect_agents', args, config.id))).toContain('Needs you');
+      expect(bindingManager.getBindingsForAgent('durable_lead').some((b) => b.targetId === 'durable_other')).toBe(false);
+      const request = listGrantRequests().find((r) => r.agentId === config.id)!;
+      expect(takeGrantRequest(request.requestId, true)).not.toBeNull();
+      expect((await call('connect_agents', args, config.id)).isError).toBe(false);
+      expect(bindingManager.getBindingsForAgent('durable_lead').some((b) => b.targetId === 'durable_other')).toBe(true);
       await updateAgentGrantChanges(config.id, () => ({ changes: [{ action: 'connection.manage', target: { kind: 'any' }, mode: 'allow' }] }));
-      expect((await call('connect_agents', { from: 'lead', to: 'other' }, config.id)).isError).toBe(false);
       expect((await call('set_connection_tools', { from: 'lead', to: 'other', allow: ['send_message'] }, config.id)).isError).toBe(false);
       expect((await call('disconnect_agents', { from: 'lead', to: 'other' }, config.id)).isError).toBe(false);
     } finally {
