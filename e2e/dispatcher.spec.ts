@@ -15,7 +15,7 @@ import { addProject } from './smoke-helpers';
  * The Dispatcher (#2533) at the UI level, over a fake `claude`, so no tokens
  * are spent:
  * - on by default in the new layout: one Dispatcher folder, its row and view,
- *   and the CLI never starts for it;
+ *   and its controller initializes idle without a prompt;
  * - a saved experimental false: no row or folder, Settings > Dispatcher still
  *   there saying why;
  * - an old Clubhouse MCP off setting is ignored: the Clubhouse MCP always runs,
@@ -123,7 +123,7 @@ async function chatConfigs(): Promise<Array<{ id: string; name: string }>> {
 
 /** The id the fake CLI last started with: each start rewrites its report. */
 async function startedAs(): Promise<string | null | undefined> {
-  return (await fakes!.report('claude').catch(() => undefined))?.env.CLUBHOUSE_AGENT_ID;
+  return (await fakes!.report('claude').catch((): undefined => undefined))?.env.CLUBHOUSE_AGENT_ID;
 }
 
 /**
@@ -199,8 +199,15 @@ async function hasWire(w: Page, dispatcherId: string): Promise<boolean> {
     && bindings.some((b) => b.agentId === ORCHESTRATOR_ID && b.targetId === dispatcherId);
 }
 
-/** Prompts the CLI got. Nothing has started it while this is 0. */
-const promptsConsumed = async (): Promise<number> => (await fakes!.report('claude').catch(() => undefined))?.consumed ?? 0;
+/** session-info consumes initialize request/response, then waits for its first user prompt. */
+async function expectIdleController(w: Page): Promise<void> {
+  await expect.poll(() => w.evaluate(() => window.clubhouse.dispatcher.get().then((s) => s.workRunning))).toBe(true);
+  const id = (await dispatcherConfigs())[0].id;
+  await expect.poll(async () => {
+    const report = await fakes!.report('claude', id).catch((): undefined => undefined);
+    return report && { consumed: report.consumed, mismatch: report.mismatch, unexpected: report.unexpected, exitCode: report.exitCode };
+  }).toEqual({ consumed: 2, mismatch: null, unexpected: [], exitCode: null });
+}
 
 test('a saved experimental false: no row or Connect switch, and its page says it can be turned on', async () => {
   fakes = await installFakeClis({ claude: 'session-info' });
@@ -217,6 +224,8 @@ test('a saved experimental false: no row or Connect switch, and its page says it
   await expect(w.locator('[data-testid="details-card-dispatcher"]')).toHaveCount(0);
   await expect(row(w)).toHaveCount(0);
   expect(fs.existsSync(dispatcherDir())).toBe(false);
+  expect(await w.evaluate(() => window.clubhouse.dispatcher.get().then((s) => s.workRunning))).toBe(false);
+  expect(await fakes.report('claude').catch((): undefined => undefined)).toBeUndefined();
 
   await openSettingsPage(w, 'Dispatcher');
   const enabled = w.locator('[data-testid="dispatcher-enabled"]');
@@ -242,7 +251,7 @@ test('an old Clubhouse MCP off setting is ignored: the Dispatcher is on and the 
   await expect(enabled).toHaveAttribute('aria-checked', 'true');
   await expect(enabled).not.toBeDisabled();
   await expect(w.locator('#dispatcher-enabled-help')).not.toContainText('Clubhouse MCP');
-  expect(await promptsConsumed()).toBe(0);
+  await expectIdleController(w);
 });
 
 test('on by default, wire an orchestrator, restart, switch off and on, and wake it', async () => {
@@ -252,7 +261,7 @@ test('on by default, wire an orchestrator, restart, switch off and on, and wake 
   let w = (await launch()).window;
 
   // One Dispatcher with its memory and its CLI's instructions file, and its row
-  // with zero projects, and nothing started.
+  // with zero projects, and its controller started idle.
   await expect(row(w)).toBeVisible({ timeout: 15_000 });
   await expect.poll(async () => (await dispatcherConfigs()).length).toBe(1);
   const [config] = await dispatcherConfigs();
@@ -264,7 +273,7 @@ test('on by default, wire an orchestrator, restart, switch off and on, and wake 
   expect(instructions).toContain('Dispatcher');
   // Its memory index is loaded into the instructions file (#3038).
   expect(instructions).toContain('## Your memory index');
-  expect(await promptsConsumed()).toBe(0);
+  await expectIdleController(w);
 
   // Off and on again keeps the one Dispatcher.
   await openSettingsPage(w, 'Dispatcher');
@@ -272,8 +281,10 @@ test('on by default, wire an orchestrator, restart, switch off and on, and wake 
   await expect(enabled).toHaveAttribute('aria-checked', 'true');
   await enabled.click();
   await expect(row(w)).toHaveCount(0);
+  await expect.poll(() => w.evaluate(() => window.clubhouse.dispatcher.get().then((s) => s.workRunning))).toBe(false);
   await enabled.click();
   await expect(row(w)).toBeVisible();
+  await expectIdleController(w);
   expect(await dispatcherIds()).toEqual([dispatcherId]);
 
   await closeSettings(w);
@@ -332,7 +343,7 @@ test('on by default, wire an orchestrator, restart, switch off and on, and wake 
   await closeSettings(w);
   await rowItem(w).click();
   await w.locator('[data-testid="dispatcher-view"] [data-testid="wake-button"]').click();
-  await expect.poll(promptsConsumed, { timeout: 20_000 }).toBeGreaterThan(0);
+  await expect.poll(startedAs, { timeout: 20_000 }).toBe((await chatConfigs())[0].id);
   // Waking it from its view keeps the view, with its chat, and no project in the title (#2563).
   await expect(w.locator('[data-testid="dispatcher-view"] [data-testid="chat-view"]')).toBeVisible({ timeout: 15_000 });
   await expect(w.locator('[data-testid="title-bar"]')).toContainText('Dispatcher');
@@ -403,7 +414,7 @@ test('the Dispatcher wakes a connected agent with a message and sleeps it again'
     expect(woken.isError).toBe(false);
     expect(woken.body).toMatchObject({ status: 'running', messageDelivered: true });
     await expect.poll(async () => {
-      const report = await fakes!.report('claude').catch(() => undefined);
+      const report = await fakes!.report('claude').catch((): undefined => undefined);
       return report?.env.CLUBHOUSE_AGENT_ID === ORCHESTRATOR_ID && JSON.stringify(report.unexpected).includes('first prompt from dispatcher');
     }, { timeout: 20_000 }).toBe(true);
 
