@@ -1601,6 +1601,7 @@ async function updateDurableConfigInner(
   updates: DurableConfigUpdates,
   beforeCommit?: () => void | Promise<void>,
   precondition?: ManagedSetupCommitPrecondition,
+  orchestration?: { config: OrchestrationPolicyConfig | undefined },
 ): Promise<void> {
   // Checked before anything changes, so a bad value never half-applies.
   if (updates.effort !== undefined && updates.effort !== null && !isEffortValue(updates.effort)) {
@@ -1620,7 +1621,7 @@ async function updateDurableConfigInner(
   const { agents, agentsById } = await readAgentsEntry(projectPath);
   const agent = agentsById.get(agentId);
   if (!agent) {
-    if (precondition) throw new Error('Agent not found');
+    if (precondition || orchestration) throw new Error('Agent not found');
     return;
   }
   if (!precondition) {
@@ -1783,6 +1784,12 @@ async function updateDurableConfigInner(
     } else {
       delete agent.sourceControlProvider;
     }
+  }
+  // The policy service has validated this patch. Commit it with the native
+  // settings after the same fresh-record authorization check, in one mutation.
+  if (orchestration) {
+    if (orchestration.config && Object.keys(orchestration.config).length > 0) agent.orchestration = { ...orchestration.config };
+    else delete agent.orchestration;
   }
   try {
     await writeCreationMutation(projectPath, agents, agent, importedBefore);
@@ -3558,7 +3565,11 @@ async function setOrchestrationConfigInner(
   agentId: string,
   config: OrchestrationPolicyConfig | undefined,
   precondition?: ManagedSetupCommitPrecondition,
+  settingsUpdates?: DurableConfigUpdates,
 ): Promise<void> {
+  if (settingsUpdates) {
+    return updateDurableConfigInner(projectPath, agentId, settingsUpdates, undefined, precondition, { config });
+  }
   const scope = currentCreationGit();
   // Authority preparation can let a watcher invalidate a clean cache. Read
   // the mutation snapshot afterward so its disk baseline still precedes it.
@@ -4349,8 +4360,8 @@ export async function updateDurable(projectPath: string, agentId: string, update
   return withAgentActivity(agentId, () => updateDurableInner(projectPath, agentId, updates));
 }
 
-export async function setOrchestrationConfig(projectPath: string, agentId: string, config: OrchestrationPolicyConfig | undefined, precondition?: ManagedSetupCommitPrecondition): Promise<void> {
-  return withAgentActivity(agentId, () => setOrchestrationConfigInner(projectPath, agentId, config, precondition));
+export async function setOrchestrationConfig(projectPath: string, agentId: string, config: OrchestrationPolicyConfig | undefined, precondition?: ManagedSetupCommitPrecondition, settingsUpdates?: DurableConfigUpdates): Promise<void> {
+  return withAgentActivity(agentId, () => setOrchestrationConfigInner(projectPath, agentId, config, precondition, settingsUpdates));
 }
 
 export async function setManagedSetup(projectPath: string, agentId: string, setup: ManagedAgentSetup | null, precondition?: ManagedSetupCommitPrecondition): Promise<void> {

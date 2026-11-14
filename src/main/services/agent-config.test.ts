@@ -103,6 +103,9 @@ import {
   deleteForce,
   getDurableConfig,
   updateDurableConfig,
+  setOrchestrationConfig,
+  onAgentConfigChanged,
+  peekCachedDurableConfig,
   updateSessionId,
   addSessionEntry,
   touchSessionEntry,
@@ -1362,6 +1365,29 @@ describe('getDurableConfig', () => {
 });
 
 describe('updateDurableConfig', () => {
+  it('publishes native template settings and policy as one mutation (#3486)', async () => {
+    mockAgentsFile([{ id: 'consumer', name: 'consumer', color: 'indigo', createdAt: '', model: 'old-model', effort: 'low', orchestration: { maxHelpers: 1 } }]);
+    await getDurableConfig(PROJECT_PATH, 'consumer');
+    const observed: unknown[] = [];
+    const unsubscribe = onAgentConfigChanged(() => observed.push(structuredClone(peekCachedDurableConfig(PROJECT_PATH, 'consumer'))));
+    try {
+      await setOrchestrationConfig(PROJECT_PATH, 'consumer', { maxHelpers: 2 }, undefined, { model: 'new-model', effort: 'high' });
+      expect(observed).toHaveLength(1);
+      expect(observed[0]).toMatchObject({ model: 'new-model', effort: 'high', orchestration: { maxHelpers: 2 } });
+    } finally {
+      unsubscribe();
+    }
+  });
+
+  it('leaves every setting intact when combined template authorization is refused (#3486)', async () => {
+    const before = { id: 'consumer', name: 'consumer', color: 'indigo', createdAt: '', model: 'old-model', effort: 'low', orchestration: { maxHelpers: 1 } };
+    mockAgentsFile([before]);
+    const guard = { prepare: vi.fn(async () => {}), check: vi.fn(() => { throw new Error('Connection changed'); }) };
+    await expect(setOrchestrationConfig(PROJECT_PATH, 'consumer', { maxHelpers: 2 }, guard, { model: 'new-model', effort: 'high' }))
+      .rejects.toThrow('Connection changed');
+    expect(await getDurableConfig(PROJECT_PATH, 'consumer')).toMatchObject(before);
+  });
+
   it('persists quickAgentDefaults and round-trips', async () => {
     const agents = [
       { id: 'durable_upd', name: 'upd', color: 'indigo', branch: 'upd/standby', worktreePath: '/test/wt', createdAt: '2024-01-01' },

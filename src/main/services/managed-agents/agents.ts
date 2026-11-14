@@ -126,15 +126,19 @@ export async function applyManagedSettings(
   else if (settings.freeAgentMode !== undefined) updates.freeAgentMode = settings.freeAgentMode;
   if (settings.idleSleep !== undefined) updates.idleSleep = settings.idleSleep;
   if (settings.helperTemplateId !== undefined) updates.helperTemplateId = settings.helperTemplateId;
-  if (Object.keys(updates).length > 0) {
-    if (agentPrecondition) await agentConfig.updateDurableConfig(projectPath, agentId, updates, undefined, agentPrecondition);
-    else await agentConfig.updateDurableConfig(projectPath, agentId, updates);
-  }
   if (settings.orchestration && Object.keys(settings.orchestration).length > 0) {
-    const result = agentPrecondition
-      ? await setOrchestrationPolicy(projectPath, agentId, settings.orchestration, { agentPrecondition })
+    // Policy refusals must leave the model and other native settings untouched.
+    const options = {
+      ...(agentPrecondition && { agentPrecondition }),
+      ...(Object.keys(updates).length > 0 && { settingsUpdates: updates }),
+    };
+    const result = Object.keys(options).length > 0
+      ? await setOrchestrationPolicy(projectPath, agentId, settings.orchestration, options)
       : await setOrchestrationPolicy(projectPath, agentId, settings.orchestration);
     if (!result.ok) throw new ManagedError('invalid', result.message);
+  } else if (Object.keys(updates).length > 0) {
+    if (agentPrecondition) await agentConfig.updateDurableConfig(projectPath, agentId, updates, undefined, agentPrecondition);
+    else await agentConfig.updateDurableConfig(projectPath, agentId, updates);
   }
   // The template's Clubhouse permissions (#2971), under the person's own changes.
   if (settings.grants?.length) {

@@ -308,6 +308,8 @@ export async function setOrchestrationPolicy(
     precondition?: (agent: DurableAgentConfig, current: ResolvedOrchestrationPolicy) => void;
     /** Main-only per-consumer template authorization, checked against the current config before mutation. */
     agentPrecondition?: import('./agent-config').ManagedSetupCommitPrecondition;
+    /** Main-only template settings to commit with this policy, after its checks pass. */
+    settingsUpdates?: import('../../shared/types').DurableConfigUpdates;
     /** Who is asking, for the audit record. Defaults to the surface this call came in on. */
     surface?: SettingsAuditSurface;
     actorId?: string;
@@ -360,7 +362,7 @@ export async function setOrchestrationPolicy(
     }
     if (options.agentPrecondition) {
       const authorization = options.agentPrecondition;
-      await agentConfig.setOrchestrationConfig(projectPath, agentId, stored, {
+      const guarded: agentConfig.ManagedSetupCommitPrecondition = {
         prepare: () => authorization.prepare(),
         check: (currentAgent) => {
           authorization.check(currentAgent);
@@ -369,7 +371,11 @@ export async function setOrchestrationPolicy(
             throw new Error('The agent policy changed while the edit was prepared. Read it again and retry.');
           }
         },
-      });
+      };
+      if (options.settingsUpdates) await agentConfig.setOrchestrationConfig(projectPath, agentId, stored, guarded, options.settingsUpdates);
+      else await agentConfig.setOrchestrationConfig(projectPath, agentId, stored, guarded);
+    } else if (options.settingsUpdates) {
+      await agentConfig.setOrchestrationConfig(projectPath, agentId, stored, undefined, options.settingsUpdates);
     } else {
       await agentConfig.setOrchestrationConfig(projectPath, agentId, stored);
     }
