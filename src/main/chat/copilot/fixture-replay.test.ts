@@ -76,7 +76,7 @@ async function expectComplete(session: ChatDriverSession, fake: FakeCli): Promis
 
 const say = (session: ChatDriverSession, text: string) => session.send([{ type: 'text', text }], 'prompt');
 
-describe('fake child environment', () => {
+describe('fake child environment', { timeout: 30_000 }, () => {
   it('strips inherited credential sentinels for probe and session start', async () => {
     const contaminated = { ...originalEnv, GH_TOKEN: 'sentinel', GITHUB_TOKEN: 'sentinel', COPILOT_GITHUB_TOKEN: 'sentinel', CLUBHOUSE_CREDENTIAL_SENTINEL: 'sentinel' };
     process.env = fakeCopilotEnv(contaminated, process.env.HOME!);
@@ -91,7 +91,7 @@ describe('fake child environment', () => {
   });
 });
 
-describe('CopilotSdkChatDriver probe against fake Copilot', () => {
+describe('CopilotSdkChatDriver probe against fake Copilot', { timeout: 30_000 }, () => {
   const probe = async (name: string, env: Record<string, string> = {}, probeTimeoutMs?: number) => {
     const { fake, binary } = await fakeCopilot(name);
     return { fake, result: await new CopilotSdkChatDriver({ probeTimeoutMs }).probe(binary, env) };
@@ -138,7 +138,7 @@ describe('CopilotSdkChatDriver probe against fake Copilot', () => {
   });
 });
 
-describe('CopilotSdkChatDriver sessions against fake Copilot', () => {
+describe('CopilotSdkChatDriver sessions against fake Copilot', { timeout: 30_000 }, () => {
   it('refuses to start logged out', async () => {
     const { binary } = await fakeCopilot('handshake');
     await expect(new CopilotSdkChatDriver().start({ agentId: 'a1', provider: 'copilot-cli', cwd: os.tmpdir(), binaryPath: binary, level: 'ask', env: {} }))

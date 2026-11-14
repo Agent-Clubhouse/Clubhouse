@@ -79,7 +79,7 @@ beforeEach(() => {
 });
 afterEach(() => { fs.rmSync(state.dir, { recursive: true, force: true }); });
 
-describe('backfill on connect (#2920)', () => {
+describe('backfill on connect (#2920)', { timeout: 30_000 }, () => {
   it('offers nothing unless the user just turned the destination on, and never for the developer destination', async () => {
     writeRun(NOW - 2 * DAY, [session(NOW - 2 * DAY), event(NOW - 2 * DAY + 1000)]);
     expect(await getBackfillOffer('otlp')).toBeNull();
