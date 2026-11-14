@@ -85,6 +85,7 @@ global:connect_orchestrators readOnly=false destructive=false openWorld=false
 global:disconnect_orchestrators readOnly=false destructive=true openWorld=false
 global:list_orchestrator_controls readOnly=true destructive=false openWorld=false
 global:list_other_dispatchers readOnly=true destructive=false openWorld=false
+global:delete_agents readOnly=false destructive=true openWorld=false
 global:list_agent_parts readOnly=true destructive=false openWorld=false
 global:get_agent_part readOnly=true destructive=false openWorld=false
 global:discover_agent_assets readOnly=true destructive=false openWorld=false
