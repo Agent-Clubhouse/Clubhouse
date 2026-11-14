@@ -839,6 +839,10 @@ export function sourceIssues(raw: unknown, allowBuiltin = false): ValidationIssu
         && isCatalogId(raw.projectId) && isCatalogId(raw.key);
       return known && ids ? [] : invalid;
     }
+    case 'project': {
+      const known = Object.keys(raw).length === 3 && ['kind', 'projectId', 'key'].every((key) => key in raw);
+      return known && isCatalogId(raw.projectId) && isCatalogId(raw.key) ? [] : invalid;
+    }
     default:
       return invalid;
   }

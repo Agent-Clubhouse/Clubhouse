@@ -46,22 +46,22 @@ export interface NativeAssetRead {
   droppedEnvValues: string[];
 }
 
-class SourceError extends Error {}
+export class SourceError extends Error {}
 
 function record(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === 'object' && !Array.isArray(value);
 }
 
-function safeName(name: string): boolean {
+export function safeName(name: string): boolean {
   return isSafeSkillPathSegment(name) && name.length <= 120 && redactSecretValues(name) === name;
 }
 
-function missing(error: unknown): boolean {
+export function missing(error: unknown): boolean {
   return record(error) && error.code === 'ENOENT';
 }
 
 /** Recheck every component below the registered anchor, including the anchor itself. */
-async function sourcePath(root: string, relative: string): Promise<string> {
+export async function sourcePath(root: string, relative: string): Promise<string> {
   const segments = relative.split('/');
   if (!segments.every(isSafeSkillPathSegment)) throw new SourceError('The provider source path is not a safe relative path.');
   let current = path.resolve(root);
@@ -77,7 +77,7 @@ async function sourcePath(root: string, relative: string): Promise<string> {
   return current;
 }
 
-async function readFile(root: string, relative: string, limit: number): Promise<{ bytes: Buffer; executable: boolean }> {
+export async function readFile(root: string, relative: string, limit: number): Promise<{ bytes: Buffer; executable: boolean }> {
   const full = await sourcePath(root, relative);
   const file = await fs.open(full, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK);
   try {
@@ -103,7 +103,7 @@ async function readFile(root: string, relative: string, limit: number): Promise<
   }
 }
 
-async function entries(root: string, relative: string, limit: number): Promise<{ names: string[]; truncated: boolean }> {
+export async function entries(root: string, relative: string, limit: number): Promise<{ names: string[]; truncated: boolean }> {
   const dir = await fs.opendir(await sourcePath(root, relative));
   const names: string[] = [];
   let truncated = false;
@@ -119,12 +119,12 @@ function candidate(kind: 'skill' | 'mcp', nativeName: string): DiscoveredManaged
   return { id: canonicalHash({ kind, nativeName }), kind, nativeName, evidence: 'discovered' };
 }
 
-function sourceProblem(error: unknown): string {
+export function sourceProblem(error: unknown): string {
   return error instanceof SourceError ? error.message : 'The source could not be read. Check access and preview again.';
 }
 
 /** JSON.parse alone silently takes the last duplicate server/environment field. */
-function refuseDuplicateKeys(json: string): void {
+export function refuseDuplicateKeys(json: string): void {
   const stack: Array<{ object: boolean; keyNext: boolean; keys: Set<string> }> = [];
   for (const token of json.match(/"(?:\\.|[^"\\])*"|[{}[\]:,]|[^{}[\]:,\s]+/g) ?? []) {
     if (token === '{' || token === '[') {
@@ -145,7 +145,12 @@ function refuseDuplicateKeys(json: string): void {
 }
 
 async function mcpDefinitions(source: NativeAssetSource): Promise<{ servers: Record<string, unknown>; fingerprint: string }> {
-  const { bytes } = await readFile(source.root, source.conventions.mcpConfigFile, MAX_MCP_BYTES);
+  return readMcpServers(source.root, source.conventions.mcpConfigFile);
+}
+
+/** The `mcpServers` object of a JSON file below `root`, read within limits, with duplicate fields refused. */
+export async function readMcpServers(root: string, relative: string): Promise<{ servers: Record<string, unknown>; fingerprint: string }> {
+  const { bytes } = await readFile(root, relative, MAX_MCP_BYTES);
   let parsed: unknown;
   try { parsed = JSON.parse(bytes.toString('utf8')); } catch {
     throw new SourceError('The local MCP configuration is not valid JSON; no values were returned.');
@@ -208,47 +213,59 @@ export async function readDiscoveredManagedAsset(source: NativeAssetSource, id: 
     const identity = { root: await fs.realpath(source.root), dev: anchor.dev, ino: anchor.ino, conventions: source.conventions };
     if (selected.kind === 'mcp') {
       const { servers, fingerprint } = await mcpDefinitions(source);
-      const raw = servers[selected.nativeName];
-      if (!record(raw) || (raw.env !== undefined && (!record(raw.env) || !Object.values(raw.env).every((v) => typeof v === 'string')))
-        || (raw.env_vars !== undefined && (!Array.isArray(raw.env_vars) || !raw.env_vars.every((v) => typeof v === 'string')))) {
-        throw new SourceError('The server has invalid environment fields; no values were returned.');
-      }
-      const { def, dropped } = envAsNames(raw);
-      const adopted = adoptNativeMcpServer(selected.nativeName, def);
-      if (!adopted.ok) throw new SourceError('The server contains unsupported fields, credentials or invalid configuration. Move credentials to the external environment and review its definition.');
-      const { env: _values, ...payload } = adopted.payload;
-      return { candidate: selected, content: { kind: 'mcp', ...payload }, fingerprint: canonicalHash({ identity, fingerprint }), droppedEnvValues: dropped };
+      const { content, droppedEnvValues } = mcpServerContent(selected.nativeName, servers[selected.nativeName]);
+      return { candidate: selected, content, fingerprint: canonicalHash({ identity, fingerprint }), droppedEnvValues };
     }
-    const files: ManagedSkillContent['files'] = [];
-    let count = 0, bytes = 0;
-    const base = `${skillsFolderOf(source.conventions)}/${selected.nativeName}`;
-    const walk = async (relative: string, depth: number): Promise<void> => {
-      if (depth > MAX_DEPTH) throw new SourceError('The skill exceeds the directory depth limit.');
-      const folder = relative ? `${base}/${relative}` : base;
-      const found = await entries(source.root, folder, MAX_ENTRIES);
-      if (found.truncated) throw new SourceError('The skill exceeds the directory entry limit.');
-      for (const name of found.names) {
-        if (++count > MAX_ENTRIES) throw new SourceError('The skill exceeds the directory entry limit.');
-        const member = relative ? `${relative}/${name}` : name;
-        if (member.length > MAX_SKILL_PATH_CHARS || !safeName(name)) throw new SourceError('The skill contains an unsafe path; the complete bundle was refused.');
-        const stat = await fs.lstat(await sourcePath(source.root, `${base}/${member}`));
-        if (stat.isDirectory()) { await walk(member, depth + 1); continue; }
-        if (!stat.isFile()) throw new SourceError('The skill contains a link or non-file member; the complete bundle was refused.');
-        if (files.length >= MAX_SKILL_FILES) throw new SourceError('The skill exceeds the file limit.');
-        const read = await readFile(source.root, `${base}/${member}`, Math.min(MAX_SKILL_FILE_BYTES, MAX_SKILL_BUNDLE_BYTES - bytes));
-        bytes += read.bytes.length;
-        const inspected = read.bytes.toString('utf8');
-        if (redactSecretValues(inspected) !== inspected) throw new SourceError('The complete skill bundle contains credentials; nothing was imported.');
-        const text = !read.bytes.includes(0) && Buffer.from(read.bytes.toString('utf8')).equals(read.bytes);
-        files.push({ path: member, content: read.bytes.toString(text ? 'utf8' : 'base64'), ...(!text && { encoding: 'base64' as const }), ...(read.executable && { executable: true }) });
-      }
-    };
-    await walk('', 0);
-    const checked = validatePayload('skill', { skillName: selected.nativeName, files });
-    if (!checked.ok) throw new SourceError('The complete skill bundle contains credentials, unsupported launch settings or invalid files; nothing was imported.');
-    const content: ManagedSkillContent = { kind: 'skill', ...checked.payload };
+    const content = await readSkillBundle(source.root, `${skillsFolderOf(source.conventions)}/${selected.nativeName}`, selected.nativeName);
     return { candidate: selected, content, fingerprint: canonicalHash({ identity, content }), droppedEnvValues: [] };
   } catch (error) {
     throw new ManagedError('invalid', sourceProblem(error));
   }
+}
+
+/**
+ * One server from an `mcpServers` object as MCP part content: literal env
+ * values become names, and credentials or unsupported fields refuse it. Nothing is run.
+ */
+export function mcpServerContent(name: string, raw: unknown): { content: ManagedMcpContent; droppedEnvValues: string[] } {
+  if (!record(raw) || (raw.env !== undefined && (!record(raw.env) || !Object.values(raw.env).every((v) => typeof v === 'string')))
+    || (raw.env_vars !== undefined && (!Array.isArray(raw.env_vars) || !raw.env_vars.every((v) => typeof v === 'string')))) {
+    throw new SourceError('The server has invalid environment fields; no values were returned.');
+  }
+  const { def, dropped } = envAsNames(raw);
+  const adopted = adoptNativeMcpServer(name, def);
+  if (!adopted.ok) throw new SourceError('The server contains unsupported fields, credentials or invalid configuration. Move credentials to the external environment and review its definition.');
+  const { env: _values, ...payload } = adopted.payload;
+  return { content: { kind: 'mcp', ...payload }, droppedEnvValues: dropped };
+}
+
+/** The complete skill bundle at `base` below `root`, or a refusal of the whole bundle. Nothing is run. */
+export async function readSkillBundle(root: string, base: string, skillName: string): Promise<ManagedSkillContent> {
+  const files: ManagedSkillContent['files'] = [];
+  let count = 0, bytes = 0;
+  const walk = async (relative: string, depth: number): Promise<void> => {
+    if (depth > MAX_DEPTH) throw new SourceError('The skill exceeds the directory depth limit.');
+    const folder = relative ? `${base}/${relative}` : base;
+    const found = await entries(root, folder, MAX_ENTRIES);
+    if (found.truncated) throw new SourceError('The skill exceeds the directory entry limit.');
+    for (const name of found.names) {
+      if (++count > MAX_ENTRIES) throw new SourceError('The skill exceeds the directory entry limit.');
+      const member = relative ? `${relative}/${name}` : name;
+      if (member.length > MAX_SKILL_PATH_CHARS || !safeName(name)) throw new SourceError('The skill contains an unsafe path; the complete bundle was refused.');
+      const stat = await fs.lstat(await sourcePath(root, `${base}/${member}`));
+      if (stat.isDirectory()) { await walk(member, depth + 1); continue; }
+      if (!stat.isFile()) throw new SourceError('The skill contains a link or non-file member; the complete bundle was refused.');
+      if (files.length >= MAX_SKILL_FILES) throw new SourceError('The skill exceeds the file limit.');
+      const read = await readFile(root, `${base}/${member}`, Math.min(MAX_SKILL_FILE_BYTES, MAX_SKILL_BUNDLE_BYTES - bytes));
+      bytes += read.bytes.length;
+      const inspected = read.bytes.toString('utf8');
+      if (redactSecretValues(inspected) !== inspected) throw new SourceError('The complete skill bundle contains credentials; nothing was imported.');
+      const text = !read.bytes.includes(0) && Buffer.from(read.bytes.toString('utf8')).equals(read.bytes);
+      files.push({ path: member, content: read.bytes.toString(text ? 'utf8' : 'base64'), ...(!text && { encoding: 'base64' as const }), ...(read.executable && { executable: true }) });
+    }
+  };
+  await walk('', 0);
+  const checked = validatePayload('skill', { skillName, files });
+  if (!checked.ok) throw new SourceError('The complete skill bundle contains credentials, unsupported launch settings or invalid files; nothing was imported.');
+  return { kind: 'skill', ...checked.payload };
 }

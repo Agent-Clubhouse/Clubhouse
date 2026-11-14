@@ -1,0 +1,216 @@
+import * as fs from 'node:fs';
+import * as os from 'node:os';
+import * as path from 'node:path';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+
+vi.mock('electron', () => ({ app: { isPackaged: false, getPath: () => os.tmpdir() } }));
+vi.mock('../log-service', () => ({ appLog: vi.fn() }));
+
+const projects = vi.hoisted(() => ({ list: [] as Array<{ id: string; name: string; path: string }> }));
+vi.mock('../project-store', () => ({ list: async () => projects.list }));
+vi.mock('../agent-config', async (original) => ({
+  ...await original<typeof import('../agent-config')>(),
+  isSameProject: async (a: string, b: string) => path.resolve(a) === path.resolve(b),
+}));
+const grants = vi.hoisted(() => ({
+  setAgentGrant: vi.fn(() => { throw new Error('Project parts must not change grants.'); }),
+  resetAgentGrants: vi.fn(() => { throw new Error('Project parts must not change grants.'); }),
+  applyTemplateGrants: vi.fn(() => { throw new Error('Project parts must not change grants.'); }),
+}));
+vi.mock('../agent-grants-service', async (original) => ({ ...await original<typeof import('../agent-grants-service')>(), ...grants }));
+
+import { createAssetCatalogStore } from '../asset-catalog/store';
+import { _resetSettingsAuditForTesting, withSettingsSurface } from '../settings-audit';
+import { createManagedStateStore } from './state-store';
+import { createManagedAgentsService, type ManagedAgentsService } from './service';
+import { addProjectPart, keepProjectPart, projectPartsInventory, reviewProjectPart, updateProjectPart } from './project-parts';
+import type { DurableAgentConfig } from '../../../shared/types';
+import type { ManagedAgentSetup } from '../../../shared/managed-agents-types';
+
+let root: string, repo: string, data: string, service: ManagedAgentsService;
+let agents: DurableAgentConfig[];
+const setManagedSetup = vi.fn(async (_p: string, _a: string, _s: ManagedAgentSetup | null): Promise<void> => { throw new Error('Project parts must not assign anything.'); });
+const user = <T>(fn: () => T) => withSettingsSurface('ui', undefined, fn);
+const parts = (...rel: string[]) => path.join(repo, '.clubhouse', 'parts', ...rel);
+const write = (rel: string, content: string, mode?: number) => {
+  const file = parts(rel);
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  fs.writeFileSync(file, content);
+  if (mode !== undefined) fs.chmodSync(file, mode);
+};
+const marker = () => path.join(root, 'ran');
+const inventory = () => projectPartsInventory(service, repo);
+const item = async (key: string) => (await inventory()).items.find((i) => i.key === key)!;
+
+beforeEach(() => {
+  root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'project-parts-')));
+  repo = path.join(root, 'repo');
+  data = path.join(root, 'data');
+  fs.mkdirSync(repo);
+  projects.list = [{ id: 'proj-1', name: 'Demo', path: repo }];
+  agents = [];
+  setManagedSetup.mockClear();
+  _resetSettingsAuditForTesting(false);
+  service = createManagedAgentsService({
+    catalog: createAssetCatalogStore({ dir: path.join(data, 'catalog') }),
+    state: createManagedStateStore(path.join(data, 'managed')),
+    listProjects: async () => projects.list,
+    listAgents: async () => agents,
+    getAgent: async (_p, id) => agents.find((a) => a.id === id) ?? null,
+    setManagedSetup,
+    isRunning: () => false,
+  });
+  // Something that would leave a mark if anything ran it.
+  write('skills/review/SKILL.md', '---\nname: review\n---\nReview the change.\n');
+  write('skills/review/run.sh', `#!/bin/sh\ntouch ${marker()}\n`, 0o755);
+  write('instructions/house-style.md', 'Write short sentences.\n');
+  write('mcp.json', JSON.stringify({ mcpServers: {
+    tickets: { command: '/bin/sh', args: ['-c', `touch ${marker()}`], env: { TICKETS_URL: 'https://example.test' } },
+    clubhouse: { command: 'clubhouse-mcp' },
+  } }));
+});
+afterEach(() => { fs.rmSync(root, { recursive: true, force: true }); });
+
+describe('parts checked into a project repository', () => {
+  it('lists what the repository offers without writing to the library, running anything or selecting it', async () => {
+    const inv = await inventory();
+    expect(inv).toMatchObject({ projectId: 'proj-1', projectName: 'Demo', gone: [] });
+    expect(inv.items.map((i) => [i.key, i.state])).toEqual([
+      ['skill:review', 'available'], ['block:house-style', 'available'], ['mcp:tickets', 'available'],
+    ]);
+    expect(inv.notes).toContain('The clubhouse server is Clubhouse\'s own, so it isn\'t offered.');
+    expect(JSON.stringify(inv)).not.toContain(repo);
+    await reviewProjectPart(service, repo, 'skill:review');
+    await reviewProjectPart(service, repo, 'mcp:tickets');
+    expect(await service.liveEntries()).toEqual({});
+    expect(await service.projectPartHashes()).toEqual({});
+    expect(fs.existsSync(path.join(data, 'catalog'))).toBe(false);
+    expect(fs.existsSync(marker())).toBe(false);
+    expect(setManagedSetup).not.toHaveBeenCalled();
+  });
+
+  it('keeps env values out and shows supporting files and executable flags for review', async () => {
+    const mcp = await reviewProjectPart(service, repo, 'mcp:tickets');
+    expect(mcp.content).toMatchObject({ kind: 'mcp', serverKey: 'tickets', command: '/bin/sh', envVars: ['TICKETS_URL'] });
+    expect(JSON.stringify(mcp)).not.toContain('example.test');
+    expect(mcp.droppedEnvValues).toEqual(['TICKETS_URL']);
+    const skill = await reviewProjectPart(service, repo, 'skill:review');
+    expect(skill.content).toMatchObject({ kind: 'skill', files: expect.arrayContaining([expect.objectContaining({ path: 'run.sh', ...(process.platform !== 'win32' && { executable: true }) })]) });
+  });
+
+  it('refuses untrusted content whole: links, credentials and duplicate fields', async () => {
+    write('skills/leaky/SKILL.md', '---\nname: leaky\n---\nUse ghp_0123456789abcdefghijklmnopqrstuvwxyzAB to sign in.\n');
+    fs.mkdirSync(path.join(root, 'outside'));
+    fs.writeFileSync(path.join(root, 'outside', 'SKILL.md'), '---\nname: linked\n---\nOutside.\n');
+    try { fs.symlinkSync(path.join(root, 'outside'), parts('skills', 'linked'), 'dir'); } catch { /* telemetry-exempt: no symlink permission on this machine */ }
+    write('mcp.json', '{"mcpServers":{"a":{"command":"x"},"a":{"command":"y"}}}');
+    const inv = await inventory();
+    expect(inv.items.find((i) => i.key === 'skill:leaky')).toMatchObject({ state: 'refused', problem: expect.stringContaining('credentials') });
+    const linked = inv.items.find((i) => i.key === 'skill:linked');
+    if (process.platform !== 'win32') expect(linked).toMatchObject({ state: 'refused', problem: expect.stringContaining('link') });
+    expect(inv.items.some((i) => i.kind === 'mcp')).toBe(false);
+    expect(inv.notes.some((n) => n.includes('duplicate fields'))).toBe(true);
+    await expect(reviewProjectPart(service, repo, 'skill:leaky')).rejects.toThrow('credentials');
+    await expect(addProjectPart(service, repo, 'skill:leaky', 'any', { mode: 'copy', name: 'Leaky' })).rejects.toThrow();
+    expect(await service.liveEntries()).toEqual({});
+  });
+
+  it('refuses a parts folder reached through a link', async () => {
+    fs.rmSync(path.join(repo, '.clubhouse'), { recursive: true });
+    fs.mkdirSync(path.join(root, 'elsewhere', 'parts', 'instructions'), { recursive: true });
+    fs.writeFileSync(path.join(root, 'elsewhere', 'parts', 'instructions', 'x.md'), 'Outside the repo.\n');
+    try { fs.symlinkSync(path.join(root, 'elsewhere'), path.join(repo, '.clubhouse'), 'dir'); } catch { return; /* telemetry-exempt: no symlink permission */ }
+    const inv = await inventory();
+    expect(inv.items).toEqual([]);
+    expect(inv.notes.join(' ')).toContain('link');
+  });
+
+  it('adds a reviewed part with project provenance and selects it for no one', async () => {
+    const review = await reviewProjectPart(service, repo, 'block:house-style');
+    const added = await user(() => addProjectPart(service, repo, 'block:house-style', review.item.hash!, { mode: 'copy', name: review.suggestedName }));
+    expect(added).toMatchObject({ name: 'house-style', project: { projectId: 'proj-1', projectName: 'Demo' }, usedBy: [] });
+    expect((await service.liveEntries())[added.id]).toMatchObject({ owner: { kind: 'library' }, source: { kind: 'project', projectId: 'proj-1', key: 'block:house-style' } });
+    expect(await item('block:house-style')).toMatchObject({ state: 'added', partId: added.id });
+    expect(setManagedSetup).not.toHaveBeenCalled();
+    expect(Object.values(grants).every((fn) => fn.mock.calls.length === 0)).toBe(true);
+    await expect(addProjectPart(service, repo, 'block:house-style', review.item.hash!, { mode: 'copy', name: 'Again' })).rejects.toThrow('already in the library');
+  });
+
+  it('never shadows a library part: same content is reused only when chosen, a different one is added beside it', async () => {
+    const same = await user(() => service.createPart({ name: 'Style', content: { kind: 'block', content: 'Write short sentences.\n' } }));
+    const other = await user(() => service.createPart({ name: 'house-style', content: { kind: 'block', content: 'Something else.' } }));
+    const review = await reviewProjectPart(service, repo, 'block:house-style');
+    expect(review.matches).toEqual([
+      { id: same.id, name: 'Style', sameContent: true, builtin: false },
+      { id: other.id, name: 'house-style', sameContent: false, builtin: false },
+    ]);
+    expect(review.suggestedName).toBe('house-style 2');
+    await expect(user(() => addProjectPart(service, repo, 'block:house-style', review.item.hash!, { mode: 'copy', name: 'house-style' }))).rejects.toMatchObject({ code: 'name_taken' });
+    await expect(addProjectPart(service, repo, 'block:house-style', review.item.hash!, { mode: 'reuse', partId: other.id })).rejects.toMatchObject({ code: 'stale' });
+    expect((await addProjectPart(service, repo, 'block:house-style', review.item.hash!, { mode: 'reuse', partId: same.id })).id).toBe(same.id);
+    expect((await service.getPart(other.id)).content).toEqual({ kind: 'block', content: 'Something else.' });
+    expect(Object.keys(await service.liveEntries())).toHaveLength(2);
+  });
+
+  it('a change in the repository waits for the person: the difference, then Update or Keep mine', async () => {
+    const first = await reviewProjectPart(service, repo, 'skill:review');
+    const added = await user(() => addProjectPart(service, repo, 'skill:review', first.item.hash!, { mode: 'copy', name: 'Review' }));
+    write('skills/review/SKILL.md', '---\nname: review\n---\nReview the change carefully.\n');
+    const changed = await item('skill:review');
+    expect(changed.state).toBe('changed');
+    // No silent overwrite: the library part is as it was.
+    expect((await service.getPart(added.id)).revision).toBe(added.revision);
+    const review = await reviewProjectPart(service, repo, 'skill:review');
+    expect(review.current).toMatchObject({ id: added.id, revision: added.revision });
+    expect(JSON.stringify(review.current!.content)).toContain('Review the change.');
+    expect(JSON.stringify(review.content)).toContain('carefully');
+
+    await user(() => keepProjectPart(service, repo, added.id, changed.hash!));
+    expect((await item('skill:review')).state).toBe('kept');
+    expect((await service.getPart(added.id)).revision).toBe(added.revision);
+
+    write('skills/review/SKILL.md', '---\nname: review\n---\nReview it twice.\n');
+    const again = await item('skill:review');
+    expect(again.state).toBe('changed');
+    await expect(updateProjectPart(service, repo, added.id, added.revision, changed.hash!)).rejects.toMatchObject({ code: 'stale' });
+    const updated = await user(() => updateProjectPart(service, repo, added.id, added.revision, again.hash!));
+    expect(updated.revision).toBe(added.revision + 1);
+    expect(JSON.stringify((await service.getPart(added.id)).content)).toContain('twice');
+    expect((await item('skill:review')).state).toBe('added');
+  });
+
+  it('an edit in the library alone is not a repository change', async () => {
+    const review = await reviewProjectPart(service, repo, 'block:house-style');
+    const added = await user(() => addProjectPart(service, repo, 'block:house-style', review.item.hash!, { mode: 'copy', name: 'Style' }));
+    await user(() => service.updatePart({ id: added.id, expectedRevision: added.revision, content: { kind: 'block', content: 'My own wording.' } }));
+    expect((await item('block:house-style')).state).toBe('added');
+  });
+
+  it('a part the repository drops, or a removed project, leaves the part and its agents as they are', async () => {
+    const review = await reviewProjectPart(service, repo, 'block:house-style');
+    const added = await user(() => addProjectPart(service, repo, 'block:house-style', review.item.hash!, { mode: 'copy', name: 'Style' }));
+    const setup: ManagedAgentSetup = { version: 1, blocks: [added.id], skills: [], mcps: [] };
+    agents = [{ id: 'agent-1', name: 'lead', color: 'blue', managed: setup } as DurableAgentConfig];
+    fs.rmSync(parts('instructions', 'house-style.md'));
+    const inv = await inventory();
+    expect(inv.items.find((i) => i.key === 'block:house-style')).toBeUndefined();
+    expect(inv.gone).toEqual([{ key: 'block:house-style', partId: added.id, partName: 'Style' }]);
+    expect((await service.getPart(added.id)).usedBy).toMatchObject([{ agentId: 'agent-1' }]);
+
+    projects.list = [];
+    await expect(inventory()).rejects.toMatchObject({ code: 'not_found' });
+    const kept = await service.getPart(added.id);
+    expect(kept.project).toEqual({ projectId: 'proj-1' });
+    expect(kept.content).toEqual({ kind: 'block', content: 'Write short sentences.\n' });
+    expect((await service.getSetup('/any', 'agent-1'))?.blocks).toContain(added.id);
+    expect(setManagedSetup).not.toHaveBeenCalled();
+  });
+
+  it('refuses a stale review and an unregistered project', async () => {
+    const review = await reviewProjectPart(service, repo, 'block:house-style');
+    write('instructions/house-style.md', 'Changed after the review.\n');
+    await expect(addProjectPart(service, repo, 'block:house-style', review.item.hash!, { mode: 'copy', name: 'Style' })).rejects.toMatchObject({ code: 'stale' });
+    await expect(projectPartsInventory(service, path.join(root, 'not-registered'))).rejects.toMatchObject({ code: 'not_found' });
+    expect(await service.liveEntries()).toEqual({});
+  });
+});

@@ -581,6 +581,9 @@ describe('names, provenance, compositions', () => {
     expect(sourceIssues({ kind: 'import', from: 'project-skill', nativeName: '/Users/someone/skill' })).not.toEqual([]);
     expect(sourceIssues({ kind: 'import', from: 'project-skill', path: '/Users/someone' })).not.toEqual([]);
     expect(sourceIssues({ kind: 'copy', originAssetId: 'a', originRevision: 1 })).not.toEqual([]);
+    expect(sourceIssues({ kind: 'project', projectId: 'p1', key: 'skill:review' })).toEqual([]);
+    expect(sourceIssues({ kind: 'project', projectId: 'p1', key: '/Users/someone/.clubhouse/parts/skills/review' })).not.toEqual([]);
+    expect(sourceIssues({ kind: 'project', projectId: 'p1', key: 'skill:review', path: '/repo' })).not.toEqual([]);
   });
 
   describe('a composition', () => {

@@ -147,6 +147,13 @@ export type AssetSource =
    * write updates the same part. Ids only, never a path.
    */
   | { kind: 'plugin'; pluginId: string; projectId: string; key: string }
+  /**
+   * Checked into a project's repository under `.clubhouse/parts/` and added to
+   * the library by a person. `key` is `skill:<folder>`,
+   * `block:<file name>` or `mcp:<serverKey>`. The repository's copy never
+   * updates the part by itself. Ids only, never a path.
+   */
+  | { kind: 'project'; projectId: string; key: string }
   /** A user's copy: the origin revision it started from. Never merged, rebased or synced. */
   | { kind: 'copy'; originAssetId: string; originRevision: number };
 
