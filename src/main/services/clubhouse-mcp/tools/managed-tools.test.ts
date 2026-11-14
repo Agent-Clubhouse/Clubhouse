@@ -18,6 +18,7 @@ const state = vi.hoisted(() => ({
   projectGeneration: 0,
   projectPending: false,
   beforeSetupPrepare: undefined as undefined | (() => void | Promise<void>),
+  afterSetupPrepare: undefined as undefined | (() => void | Promise<void>),
 }));
 
 vi.mock('../mcp-call-gate', async (original) => ({ ...await original<typeof import('../mcp-call-gate')>(), mcpCallAccess: () => 'open' }));
@@ -94,7 +95,10 @@ vi.mock('../../managed-agents', async () => {
         setManagedSetup: async (_p, id, setup, precondition) => {
           await state.beforeSetupPrepare?.();
           await precondition?.prepare();
-          const a = state.agents.get(id)!;
+          await state.afterSetupPrepare?.();
+          // Match production: load the current mutation snapshot AFTER preparation.
+          const a = state.agents.get(id);
+          if (!a) throw new Error('Agent not found');
           precondition?.check(a);
           if (setup) a.managed = setup; else delete a.managed;
         },
@@ -149,6 +153,7 @@ beforeEach(async () => {
   state.projectGeneration = 0;
   state.projectPending = false;
   state.beforeSetupPrepare = undefined;
+  state.afterSetupPrepare = undefined;
   vi.mocked(resolveOrchestrator).mockReset();
   vi.mocked(restartManagedAgent).mockClear();
   vi.mocked(deleteAgent).mockClear();
@@ -1579,6 +1584,22 @@ describe('setup authorization pins its scoped target through the write (#3467)',
     expect((await call('set_agent_setup', args)).isError).toBe(true);
     expect(a.managed!.blocks).toEqual([]);
     expect(b.managed!.blocks).toEqual([]);
+  });
+
+  it.each(['renamed', 'disposed'] as const)('checks the fresh record %s during preparation instead of writing its old object', async (change) => {
+    const original = target('a', 'Target');
+    await approve();
+    let replacement: DurableAgentConfig | undefined;
+    state.afterSetupPrepare = () => {
+      replacement = { ...original,
+        ...(change === 'renamed' ? { name: 'new-name' } : { disposedAt: '2026-11-14T00:00:00Z' }),
+      };
+      state.agents.set('a', replacement);
+    };
+    expect((await call('set_agent_setup', args)).isError).toBe(true);
+    expect(state.agents.get('a')).toBe(replacement);
+    expect(replacement!.managed!.blocks).toEqual([]);
+    expect(original.managed!.blocks).toEqual([]);
   });
 
   it('requires a new approval when the same name resolves to another Ask-first target on retry', async () => {

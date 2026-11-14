@@ -3572,12 +3572,13 @@ export interface ManagedSetupCommitPrecondition {
 
 async function setManagedSetupInner(projectPath: string, agentId: string, setup: ManagedAgentSetup | null, precondition?: ManagedSetupCommitPrecondition): Promise<void> {
   const scope = currentCreationGit();
-  // As with policy writes, preparation must precede the mutation snapshot.
+  // Preparation may let the file watcher replace the cache. Read the current
+  // mutation snapshot afterward, then check and mutate without yielding.
   if (scope) await scope.assertCurrent();
+  if (precondition) await precondition.prepare();
   const { agents, agentsById } = await readAgentsEntry(projectPath);
   const agent = agentsById.get(agentId);
   if (!agent) throw new Error('Agent not found');
-  if (precondition) await precondition.prepare();
   precondition?.check(agent);
   scope?.assertConsent();
   scope?.assertFilesystem();
