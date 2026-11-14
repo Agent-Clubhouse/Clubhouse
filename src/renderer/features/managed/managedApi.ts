@@ -78,8 +78,8 @@ function useLive<T>(load: () => Promise<T>, deps: unknown[], enabled = true): { 
   return { value, error, reload: run };
 }
 
-export function useManagedParts(kind: ManagedPartKind) {
-  return useLive<ManagedPartSummary[]>(() => unwrap(managed().listParts(kind)), [kind]);
+export function useManagedParts(kind: ManagedPartKind, enabled = true) {
+  return useLive<ManagedPartSummary[]>(() => unwrap(managed().listParts(kind)), [kind], enabled);
 }
 
 /** What a project's repository offers under .clubhouse/parts/, read again whenever parts change. */

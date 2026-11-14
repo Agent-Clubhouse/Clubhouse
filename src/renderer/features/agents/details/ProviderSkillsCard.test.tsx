@@ -21,7 +21,7 @@ describe('ProviderSkillsCard', () => {
     expect(screen.getByText('review')).toBeInTheDocument();
     act(() => { useProjectStore.setState({ projects: [{ id: 'p', name: 'project', path: '/project', orchestrator: 'codex-cli' }] }); });
     expect(screen.queryByText('review')).not.toBeInTheDocument();
-    expect(screen.getByTestId('details-card-provider-skills-summary')).toHaveTextContent('Unknown');
+    expect(screen.queryByTestId('details-card-provider-skills')).toBeNull();
     // An explicit agent override still wins over the new project default.
     rerender(<ProviderSkillsCard agent={agent} chat={chat()} open onToggle={vi.fn()} />);
     expect(screen.getByText('review')).toBeInTheDocument();
@@ -47,13 +47,12 @@ describe('ProviderSkillsCard', () => {
   it('distinguishes explicit none from missing/malformed unknown and does not fetch metadata', () => {
     const { rerender } = render(<ProviderSkillsCard agent={agent} chat={chat([])} open onToggle={vi.fn()} />);
     expect(screen.getByText(/explicitly reported no skills/)).toBeInTheDocument();
+    expect(screen.getByText(/Opening this card sends nothing/)).toBeInTheDocument();
     for (const state of [chat(null), { ...chat(), providerSkills: null }]) {
       rerender(<ProviderSkillsCard agent={agent} chat={state} open onToggle={vi.fn()} />);
-      expect(screen.getByTestId('details-card-provider-skills-summary')).toHaveTextContent('Unknown');
-      expect(screen.getByText('No valid skill list reported for this session.')).toBeInTheDocument();
+      expect(screen.queryByTestId('details-card-provider-skills')).toBeNull();
       expect(screen.queryByText(/explicitly reported no skills/)).not.toBeInTheDocument();
     }
-    expect(screen.getByText(/Opening this card sends nothing/)).toBeInTheDocument();
   });
 
   it('hides mismatched agent/session/provider/driver/native identities and labels history', () => {
@@ -62,10 +61,30 @@ describe('ProviderSkillsCard', () => {
     for (const extra of [{ agentId: 'other' }, { sessionId: 's2' }, { provider: 'codex' }, { driver: 'claude_stream_json' }, { nativeSessionId: 'other' }] as Partial<ChatViewState>[]) {
       rerender(<ProviderSkillsCard agent={agent} chat={{ ...chat(), ...extra }} open onToggle={vi.fn()} />);
       expect(screen.queryByText('review')).not.toBeInTheDocument();
-      expect(screen.getByTestId('details-card-provider-skills-summary')).toHaveTextContent('Unknown');
+      expect(screen.queryByTestId('details-card-provider-skills')).toBeNull();
     }
     rerender(<ProviderSkillsCard agent={{ ...agent, orchestrator: 'codex' }} chat={chat()} open onToggle={vi.fn()} />);
     expect(screen.queryByText('review')).not.toBeInTheDocument();
-    expect(screen.getByText(/unavailable for this provider or session/)).toBeInTheDocument();
+    expect(screen.queryByText(/unavailable for this provider or session/)).toBeNull();
+    expect(screen.queryByTestId('details-card-provider-skills')).toBeNull();
+  });
+
+  it('lists the skills Clubhouse installed instead of an Unknown report, for a provider that reports none', async () => {
+    const managed = (window as unknown as { clubhouse: { managed: Record<string, unknown> } }).clubhouse.managed;
+    const saved = { ...managed };
+    managed.getSetup = vi.fn(async () => ({ ok: true, value: { version: 1, blocks: [], skills: ['builtin-skill-build', 'gone'], mcps: [] } }));
+    managed.listParts = vi.fn(async () => ({ ok: true, value: [{ id: 'builtin-skill-build', name: 'Build', kind: 'skill' }] }));
+    managed.onChanged = vi.fn(() => () => {});
+    useProjectStore.setState({ projects: [{ id: 'p', name: 'project', path: '/project', orchestrator: 'codex-cli' }] });
+    try {
+      render(<ProviderSkillsCard agent={{ ...agent, orchestrator: 'codex-cli' }} chat={chat()} open onToggle={vi.fn()} />);
+      const list = await screen.findByTestId('details-installed-skills');
+      expect(list).toHaveTextContent('Build');
+      expect(screen.getByText('Installed by Clubhouse')).toBeInTheDocument();
+      expect(screen.getByTestId('details-card-provider-skills-summary')).toHaveTextContent('1 installed by Clubhouse');
+      expect(screen.queryByText(/Unknown|unavailable/)).toBeNull();
+    } finally {
+      Object.assign(managed, saved);
+    }
   });
 });

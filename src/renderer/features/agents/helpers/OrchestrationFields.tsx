@@ -160,20 +160,20 @@ export function AutoHelpersToggle({ id, policy, name, disabled, onChange, testId
         aria-label={`Let Clubhouse pick the provider for ${name}’s helpers`}
         data-testid={testId}
       />
-      {locked && <span className="text-ctp-overlay1" data-testid={testId && `${testId}-locked`}>{locked}</span>}
+      {locked && <span className="text-xs text-ctp-overlay1" data-testid={testId && `${testId}-locked`}>{locked}</span>}
       {!locked && (
-        <span className="text-ctp-overlay1" data-testid={testId && `${testId}-source`}>{own ? 'Set on this agent' : 'Following the app setting'}</span>
-      )}
-      {own && (
-        <button
-          type="button"
-          className="text-ctp-accent hover:underline cursor-pointer"
-          disabled={disabled}
-          onClick={() => onChange(null)}
-          data-testid={testId && `${testId}-clear`}
-        >
-          Use the app’s setting
-        </button>
+        <>
+          <span className="text-xs text-ctp-overlay1" data-testid={testId && `${testId}-source`}>{own ? 'Set on this agent' : 'Following the app setting'}</span>
+          <button
+            type="button"
+            className="text-xs text-ctp-accent hover:underline cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+            disabled={disabled}
+            onClick={() => onChange(own ? null : effective)}
+            data-testid={testId && `${testId}-${own ? 'clear' : 'override'}`}
+          >
+            {own ? 'Use the app’s setting' : 'Set on this agent'}
+          </button>
+        </>
       )}
     </span>
   );
