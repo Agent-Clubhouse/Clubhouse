@@ -4,7 +4,8 @@ import { FilePreviewHost } from './FilePreviewHost';
 import { useFilePreviewStore } from '../stores/filePreviewStore';
 
 // Keep the preview component and routing real; Monaco/pdf.js need a browser engine.
-vi.mock('../plugins/builtin/canvas/ReadOnlyMonacoEditor', () => ({
+vi.mock('../plugins/builtin/canvas/ReadOnlyMonacoEditor', async (importOriginal) => ({
+  ...await importOriginal<typeof import('../plugins/builtin/canvas/ReadOnlyMonacoEditor')>(),
   ReadOnlyMonacoEditor: (props: { value: string; reveal?: { line: number; column?: number }; onSave?: unknown }) =>
     <div data-testid="readonly-editor" data-line={props.reveal?.line} data-column={props.reveal?.column} data-save={!!props.onSave}>{props.value}</div>,
 }));
@@ -21,6 +22,8 @@ it('opens a scratch file in-app without a project, reveals the location and offe
   preview.mockResolvedValue({ path: '/resolved/notes.md', preview: { kind: 'text', size: 7, name: 'notes.md', text: '# Notes' } });
   render(<FilePreviewHost />);
   act(() => useFilePreviewStore.getState().open('~/notes.md', 12, 5));
+  expect(await screen.findByRole('heading', { name: 'Notes' })).toBeInTheDocument();
+  fireEvent.click(screen.getByRole('button', { name: 'Source' }));
   expect(await screen.findByTestId('readonly-editor')).toHaveTextContent('# Notes');
   expect(preview).toHaveBeenCalledWith('~/notes.md');
   expect(screen.getByTestId('readonly-editor')).toHaveAttribute('data-line', '12');

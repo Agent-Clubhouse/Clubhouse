@@ -3,7 +3,7 @@ export const EXT_TO_LANG: Record<string, string> = {
   ts: 'typescript', tsx: 'typescript', mts: 'typescript', cts: 'typescript',
   js: 'javascript', jsx: 'javascript', mjs: 'javascript', cjs: 'javascript',
   json: 'json', jsonc: 'json',
-  md: 'markdown', mdx: 'markdown',
+  md: 'markdown', markdown: 'markdown', mdx: 'markdown',
   html: 'html', htm: 'html',
   css: 'css', scss: 'scss', less: 'less',
   py: 'python', pyw: 'python',

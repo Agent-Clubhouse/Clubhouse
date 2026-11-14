@@ -135,11 +135,22 @@ export function splitMermaidSegments(content: string): Segment[] {
   return segments.map((s) => s.kind === 'html' ? { ...s, html: html[index++] } : s);
 }
 
-export function MarkdownPreview({ content, allowLocalFiles = true }: { content: string; allowLocalFiles?: boolean }) {
+export function MarkdownPreview({ content, allowLocalFiles = true, allowLocalImages = allowLocalFiles }: { content: string; allowLocalFiles?: boolean; allowLocalImages?: boolean }) {
   injectHljsStyle();
   const handleClick = useSafeMarkdownLinks(allowLocalFiles);
 
-  const segments = useMemo(() => splitMermaidSegments(content), [content]);
+  const segments = useMemo(() => splitMermaidSegments(content).map((segment) => {
+    if (allowLocalImages || segment.kind !== 'html') return segment;
+    // Without a file directory, relative URLs would resolve against the app.
+    // Keep the sanitizer's existing remote/data image policy, blocking local resources.
+    const template = document.createElement('template');
+    template.innerHTML = segment.html;
+    for (const image of template.content.querySelectorAll('img[src], svg [href], svg [src]')) {
+      const attribute = image.hasAttribute('src') ? 'src' : 'href';
+      if (!/^(https?:\/\/|data:)/i.test(image.getAttribute(attribute) ?? '')) image.removeAttribute(attribute);
+    }
+    return { ...segment, html: template.innerHTML };
+  }), [content, allowLocalImages]);
 
   return React.createElement(
     'div',
