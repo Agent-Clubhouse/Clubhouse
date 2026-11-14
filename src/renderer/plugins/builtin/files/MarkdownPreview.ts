@@ -145,9 +145,18 @@ export function MarkdownPreview({ content, allowLocalFiles = true, allowLocalIma
     // Keep the sanitizer's existing remote/data image policy, blocking local resources.
     const template = document.createElement('template');
     template.innerHTML = segment.html;
-    for (const image of template.content.querySelectorAll('img[src], svg [href], svg [src]')) {
-      const attribute = image.hasAttribute('src') ? 'src' : 'href';
-      if (!/^(https?:\/\/|data:)/i.test(image.getAttribute(attribute) ?? '')) image.removeAttribute(attribute);
+    for (const element of template.content.querySelectorAll('*')) {
+      for (const attribute of ['src', 'srcset', 'href', 'poster', 'data', 'xlink:href']) {
+        const value = element.getAttribute(attribute);
+        if (value === null) continue;
+        const html = element.namespaceURI === 'http://www.w3.org/1999/xhtml';
+        // Anchors are handled on click. Only explicit remote/data img sources
+        // and same-document SVG references may otherwise load resources.
+        const allowed = (html && element.localName === 'a' && attribute === 'href')
+          || (html && element.localName === 'img' && attribute === 'src' && /^(https?:\/\/|data:)/i.test(value))
+          || (!html && element.localName === 'use' && attribute === 'href' && value.startsWith('#'));
+        if (!allowed) element.removeAttribute(attribute);
+      }
     }
     return { ...segment, html: template.innerHTML };
   }), [content, allowLocalImages]);

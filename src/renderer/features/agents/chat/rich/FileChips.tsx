@@ -196,9 +196,19 @@ function revealLabel(): string {
 const POPOVER_W = 560;
 const POPOVER_H = 420;
 
-export function PreviewBody({ preview, target, showOpenHint = true, allowLocalFiles = false }: { preview: ChatFilePreview; target: Pick<Target, 'path' | 'line' | 'col'>; showOpenHint?: boolean; allowLocalFiles?: boolean }) {
-  const [mode, setMode] = useState<'preview' | 'source'>('preview');
-  useEffect(() => { setMode('preview'); }, [target.path]);
+interface PreviewBodyProps {
+  preview: ChatFilePreview;
+  target: Pick<Target, 'path' | 'line' | 'col'>;
+  showOpenHint?: boolean;
+  allowLocalFiles?: boolean;
+}
+
+export function PreviewBody(props: PreviewBodyProps) {
+  return <PreviewBodyContent key={props.target.path} {...props} />;
+}
+
+function PreviewBodyContent({ preview, target, showOpenHint = true, allowLocalFiles = false }: PreviewBodyProps) {
+  const [mode, setMode] = useState<'preview' | 'source'>(target.line !== undefined ? 'source' : 'preview');
   const [src, setSrc] = useState<string | null>(null);
   useEffect(() => {
     // A PDF's bytes go to pdf.js, not a data: URL.
@@ -212,7 +222,7 @@ export function PreviewBody({ preview, target, showOpenHint = true, allowLocalFi
     const markdown = languageFromPath(target.path) === 'markdown';
     const lines = preview.text.split('\n').length;
     // Past the end of what's shown: the editor stops at its last line, and this says why.
-    const past = target.line !== undefined && target.line > lines;
+    const past = (!markdown || mode === 'source') && target.line !== undefined && target.line > lines;
     const note = past && preview.truncated
       ? `Line ${target.line} is past the first ${formatSize(preview.text.length)} shown here.${showOpenHint ? ' Open it in Files to go there.' : ''}`
       : past ? `Line ${target.line} is past the end of this file, which has ${lines} lines.`

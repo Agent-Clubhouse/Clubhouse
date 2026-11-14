@@ -15,15 +15,14 @@ beforeEach(() => useFilePreviewStore.getState().close());
 afterEach(() => useFilePreviewStore.getState().close());
 
 it.each(['notes.md', 'notes.markdown', 'notes.mdx', 'NOTES.MD'])('defaults %s to Preview and preserves exact raw Source', (path) => {
-  const { rerender } = render(<PreviewBody preview={preview} target={{ path, line: 3 }} />);
+  const { rerender } = render(<PreviewBody preview={preview} target={{ path }} />);
   expect(screen.getByRole('button', { name: 'Preview' })).toHaveAttribute('aria-pressed', 'true');
   expect(screen.getByRole('heading', { name: 'Notes' })).toBeInTheDocument();
   expect(screen.queryByTestId('source')).toBeNull();
   fireEvent.click(screen.getByRole('button', { name: 'Source' }));
   expect(screen.getByTestId('source').textContent).toBe(text);
-  expect(screen.getByTestId('source')).toHaveAttribute('data-line', '3');
   expect(screen.getByTestId('source')).toHaveAttribute('data-save', 'false');
-  rerender(<PreviewBody preview={{ ...preview }} target={{ path, line: 3 }} />);
+  rerender(<PreviewBody preview={{ ...preview }} target={{ path }} />);
   expect(screen.getByRole('button', { name: 'Source' })).toHaveAttribute('aria-pressed', 'true');
   fireEvent.click(screen.getByRole('button', { name: 'Preview' }));
   expect(screen.getByRole('heading', { name: 'Notes' })).toBeInTheDocument();
@@ -42,14 +41,30 @@ it('resets the mode for a different file', () => {
   expect(screen.getByRole('button', { name: 'Preview' })).toHaveAttribute('aria-pressed', 'true');
 });
 
-it('renders available truncated Markdown and keeps the existing note in both modes', () => {
-  render(<PreviewBody preview={{ ...preview, truncated: true }} target={{ path: 'notes.md', line: 100 }} showOpenHint={false} />);
+it('starts a line target in Source and only shows its past-end note there', () => {
+  render(<PreviewBody preview={preview} target={{ path: 'notes.md', line: 100 }} />);
+  expect(screen.getByRole('button', { name: 'Source' })).toHaveAttribute('aria-pressed', 'true');
+  expect(screen.getByTestId('source')).toHaveAttribute('data-line', '100');
+  expect(screen.getByTestId('chat-file-preview-note')).toHaveTextContent('Line 100 is past the end');
+  fireEvent.click(screen.getByRole('button', { name: 'Preview' }));
   expect(screen.getByRole('heading', { name: 'Notes' })).toBeInTheDocument();
-  const note = screen.getByTestId('chat-file-preview-note').textContent;
-  expect(note).toMatch(/^Line 100 is past the first .* shown here\.$/);
-  fireEvent.click(screen.getByRole('button', { name: 'Source' }));
+  expect(screen.queryByTestId('chat-file-preview-note')).toBeNull();
+});
+
+it('renders available truncated Markdown and keeps a truncation note in both modes', () => {
+  render(<PreviewBody preview={{ ...preview, truncated: true }} target={{ path: 'notes.md', line: 100 }} showOpenHint={false} />);
   expect(screen.getByTestId('source').textContent).toBe(text);
-  expect(screen.getByTestId('chat-file-preview-note').textContent).toBe(note);
+  expect(screen.getByTestId('chat-file-preview-note').textContent).toMatch(/^Line 100 is past the first .* shown here\.$/);
+  fireEvent.click(screen.getByRole('button', { name: 'Preview' }));
+  expect(screen.getByRole('heading', { name: 'Notes' })).toBeInTheDocument();
+  expect(screen.getByTestId('chat-file-preview-note').textContent).toMatch(/^Showing the first /);
+  expect(screen.getByTestId('chat-file-preview-note').textContent).not.toContain('Line 100');
+});
+
+it.each(['image', 'pdf', 'other'] as const)('shows no toggle for %s or unavailable previews', (kind) => {
+  render(<PreviewBody preview={{ kind, name: 'file.md', size: 0, tooLarge: true }} target={{ path: 'file.md' }} />);
+  expect(screen.queryByRole('group', { name: 'Markdown view' })).toBeNull();
+  expect(screen.getByTestId('chat-file-preview-none')).toHaveTextContent('too large');
 });
 
 it.each([true, false])('blocks local images and safely handles links with allowLocalFiles=%s', (allowLocalFiles) => {

@@ -22,8 +22,6 @@ it('opens a scratch file in-app without a project, reveals the location and offe
   preview.mockResolvedValue({ path: '/resolved/notes.md', preview: { kind: 'text', size: 7, name: 'notes.md', text: '# Notes' } });
   render(<FilePreviewHost />);
   act(() => useFilePreviewStore.getState().open('~/notes.md', 12, 5));
-  expect(await screen.findByRole('heading', { name: 'Notes' })).toBeInTheDocument();
-  fireEvent.click(screen.getByRole('button', { name: 'Source' }));
   expect(await screen.findByTestId('readonly-editor')).toHaveTextContent('# Notes');
   expect(preview).toHaveBeenCalledWith('~/notes.md');
   expect(screen.getByTestId('readonly-editor')).toHaveAttribute('data-line', '12');
