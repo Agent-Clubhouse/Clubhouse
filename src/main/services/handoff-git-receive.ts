@@ -37,7 +37,7 @@ export async function receiveHandoffCommit(options: {
   const quarantine = path.join(root, `quarantine-${randomUUID()}`);
   const hooks = path.join(quarantine, 'hooks'); const config = path.join(quarantine, 'empty-config');
   await fs.promises.mkdir(quarantine, { mode: 0o700 }); await fs.promises.mkdir(hooks, { mode: 0o700 }); await fs.promises.writeFile(config, '', { mode: 0o600 });
-  const flags = [...handoffGitPlatformFlags(), '--no-replace-objects', '-c', `core.hooksPath=${hooks}`, '-c', 'core.fsmonitor=false', '-c', 'protocol.ext.allow=never', '-c', 'fetch.fsckObjects=true', '-c', 'transfer.fsckObjects=true'];
+  const flags = ['--no-replace-objects', '-c', `core.hooksPath=${hooks}`, '-c', 'core.fsmonitor=false', '-c', 'protocol.ext.allow=never', '-c', 'fetch.fsckObjects=true', '-c', 'transfer.fsckObjects=true'];
   const check = async () => {
     await options.authorize(); secretPolicy?.assertCurrent();
     const current = await fs.promises.lstat(root, { bigint: true });
@@ -52,7 +52,7 @@ export async function receiveHandoffCommit(options: {
       Object.assign(env, { GIT_CONFIG_GLOBAL: config, GIT_CONFIG_SYSTEM: config, GIT_CONFIG_NOSYSTEM: '0', GIT_NO_REPLACE_OBJECTS: '1', GIT_GRAFT_FILE: devNull });
       const read = async (args: string[], cwd = quarantine): Promise<Buffer> => {
         await check();
-        try { return (await exec('git', [...flags, ...args], { cwd, env, timeout: 60_000, maxBuffer: 8 * 1024 ** 2, encoding: 'buffer' })).stdout; }
+        try { return (await exec('git', [...handoffGitPlatformFlags(), ...flags, ...args], { cwd, env, timeout: 60_000, maxBuffer: 8 * 1024 ** 2, encoding: 'buffer' })).stdout; }
         catch (error) {
           const reported = new HandoffSnapshotError('git_failed');
           reported.message += reportHandoffGitFailure(args, error);

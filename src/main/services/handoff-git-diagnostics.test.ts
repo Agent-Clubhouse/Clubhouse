@@ -20,7 +20,7 @@ it.each([
 ])('reports only closed command, exit and stderr classifications for %j', (error, stderrClass, exit) => {
   const detail = reportHandoffGitFailure(['--git-dir', 'private-path', '-c', 'private=value', 'fetch', '--', 'https://secret@private', 'secret-ref'], error);
   expect(detail).toBe(` Git: fetch; exit=${exit}; stderr=${stderrClass}.`);
-  expect(appLog).toHaveBeenCalledWith('core:git', 'warn', 'Handoff Git operation failed', { meta: { command: 'fetch', exit, stderrClass } });
+  expect(appLog).toHaveBeenCalledWith('core:git', 'debug', 'Handoff Git operation failed', { meta: { command: 'fetch', exit, stderrClass } });
   expect(JSON.stringify(vi.mocked(appLog).mock.calls)).not.toMatch(/private|secret/);
 });
 it('never reflects an unrecognized command or arbitrary exit value', () => {
@@ -28,4 +28,10 @@ it('never reflects an unrecognized command or arbitrary exit value', () => {
 });
 it('enables long paths per command only on Windows', () => {
   expect(handoffGitPlatformFlags()).toEqual(process.platform === 'win32' ? ['-c', 'core.longpaths=true'] : []);
+});
+it('bounds stderr bytes before decoding a buffer', () => {
+  const stderr = Buffer.from('x'.repeat(64 * 1024) + 'Filename too long');
+  const decode = vi.spyOn(stderr, 'toString');
+  expect(reportHandoffGitFailure(['fetch'], { code: 1, stderr })).toBe(' Git: fetch; exit=1; stderr=unknown.');
+  expect(decode).not.toHaveBeenCalled();
 });

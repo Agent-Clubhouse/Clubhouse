@@ -156,17 +156,24 @@ export async function openHandoffRepository(worktreeRoot: string, options: { mut
       const child = spawn('git', ['--no-replace-objects', '-c', 'core.fsmonitor=false', ...handoffGitPlatformFlags(), 'cat-file', 'blob', oid], {
         cwd: context.root, env: context.env, stdio: ['ignore', 'pipe', 'ignore'],
       });
+      let timedOut = false;
       const completion = new Promise<void>((resolve, reject) => {
+        let settled = false;
         const failed = (error: unknown) => {
+          if (settled) return;
+          settled = true;
           const reported = new HandoffSnapshotError('git_failed');
           reported.message += reportHandoffGitFailure(['cat-file'], error);
           reject(reported);
         };
         child.once('error', failed);
-        child.once('close', (code) => code === 0 ? resolve() : failed({ code }));
+        child.once('close', (code) => {
+          if (code === 0 && !timedOut) { settled = true; resolve(); }
+          else failed({ code, killed: timedOut });
+        });
       });
       void completion.catch(() => {}); // telemetry-exempt: reported at the bounded stream boundary
-      const timeout = setTimeout(() => child.kill(), 60_000);
+      const timeout = setTimeout(() => { timedOut = true; child.kill(); }, 60_000);
       const hash = createHash(oid.length === 40 ? 'sha1' : 'sha256').update(`blob ${size}\0`);
       let total = 0;
       try {

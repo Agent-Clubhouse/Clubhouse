@@ -51,7 +51,7 @@ it('falls back to an independently scanned bundle when the configured remote lac
   expect((await git(receiver, 'rev-parse', 'HEAD')).stdout.trim()).toBe(before);
   expect(fs.readdirSync(options.snapshot.root).some((name) => name.startsWith('quarantine-'))).toBe(false);
 }, 30_000);
-it.each([['pack filename', 150], ['explicit Git directory', 170]] as const)('imports bundle packs beyond the Windows %s limit with isolated Git configuration', async (limit, rootLength) => {
+it.each([['pack filename', 150], ['explicit Git directory', 170], ['repository path', 220]] as const)('imports bundle packs beyond the Windows %s limit with isolated Git configuration', async (limit, rootLength) => {
   const options = await prepared();
   // Windows CI checks out on D: while temp staging is on C:. Exercise that
   // boundary too: making only the final fetch source relative cannot fix it.
@@ -72,7 +72,8 @@ it.each([['pack filename', 150], ['explicit Git directory', 170]] as const)('imp
   const pack = (repo: string) => path.join(repo, 'objects', 'pack', `pack-${'a'.repeat(40)}.pack`);
   expect(pack(bare).length).toBeGreaterThan(260);
   expect(pack(path.join(quarantine, 'repo')).length).toBeGreaterThan(260);
-  if (process.platform === 'win32') {
+  if (limit === 'repository path') expect(path.join(quarantine, 'repo').length).toBeGreaterThan(260);
+  if (process.platform === 'win32' && limit !== 'repository path') {
     // Reproduce the original isolated-config failure without changing global Git.
     await git(destination, '-c', 'core.longpaths=false', 'init', '--bare', '--template=', bare);
     const diagnostic = limit === 'pack filename' ? /Filename too long[\s\S]*error: index-pack died/ : /'\$GIT_DIR' too big/;
