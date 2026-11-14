@@ -25,6 +25,8 @@ import * as agentConfig from '../../agent-config';
 import { agentRegistry } from '../../agent-registry';
 import { getAgentRuntime } from '../../agent-runtime';
 import * as agentSystem from '../../agent-system';
+import { resolveRuntimeMode } from '../../chat-runtime-settings';
+import { resolveChatDriver } from '../../agent-runtime/chat-drivers';
 import { getDispatcherAgentId, getDispatcherPath, isDispatcherAgentId, isDispatcherEnabled, isDispatcherIdentityAgentId } from '../../dispatcher/dispatcher-service';
 import { recordAgentMessage } from '../../dispatcher/dispatcher-news-inbox';
 import { appLog } from '../../log-service';
@@ -102,6 +104,8 @@ export type DispatcherDelivery =
 
 /** One delivery at a time per Dispatcher session. */
 const queues = new Map<string, Promise<unknown>>();
+/** Only a session started without input can be safely moved out of the terminal, whose turn state is unknown. */
+const idleStarts = new Map<string, NonNullable<ReturnType<typeof agentRegistry.get>>>();
 
 function inOrder<T>(key: string, fn: () => Promise<T>): Promise<T> {
   const run = (queues.get(key) ?? Promise.resolve()).then(fn, fn);
@@ -130,8 +134,16 @@ export function deliverToDispatcher(req: DispatcherDeliveryRequest): Promise<Dis
 }
 
 /** The shared wake: the Dispatcher lives outside project agent configs. */
-function wakeController(req: WakeAgentRequest): Promise<McpToolResult> {
-  return wakeWiredAgent({ ...req, targetId: dispatcherInboxId(req.targetId), locate: locateDispatcher });
+async function wakeController(req: WakeAgentRequest): Promise<McpToolResult> {
+  const targetId = dispatcherInboxId(req.targetId);
+  const wasRunning = agentSystem.isAgentRunning(targetId);
+  if (req.mission) idleStarts.delete(targetId);
+  const result = await wakeWiredAgent({ ...req, targetId, locate: locateDispatcher });
+  if (!wasRunning && !req.mission && !result.isError) {
+    const registration = agentRegistry.get(targetId);
+    if (registration && agentSystem.isAgentRunning(targetId)) idleStarts.set(targetId, registration);
+  }
+  return result;
 }
 
 /**
@@ -139,10 +151,25 @@ function wakeController(req: WakeAgentRequest): Promise<McpToolResult> {
  * so callTool checks it (including Ask first) before reaching this function.
  * Clubhouse itself uses the same path to open an idle controller without a prompt.
  */
-export function wakeDispatcher(req: WakeAgentRequest): Promise<McpToolResult> {
+export function wakeDispatcher(req: WakeAgentRequest, options: { refreshRuntime?: boolean } = {}): Promise<McpToolResult> {
   const inboxId = dispatcherInboxId(req.targetId);
   return inOrder(inboxId, async () => {
     if (!isDispatcherEnabled()) return { content: [{ type: 'text', text: `${req.targetName} is turned off.` }], isError: true };
+    if (options.refreshRuntime) {
+      const registration = agentRegistry.get(inboxId);
+      if (registration && idleStarts.get(inboxId) === registration && agentSystem.isAgentRunning(inboxId)) {
+        const durable = await locateDispatcher(inboxId);
+        if (durable) {
+          const provider = durable.agentConfig.orchestrator ?? registration.orchestrator;
+          const desired = resolveRuntimeMode(provider, durable.agentConfig.runtimeMode);
+          const wantsChat = desired.mode === 'chat' && !!resolveChatDriver(provider, desired.driver);
+          if ((registration.runtime === 'chat') !== wantsChat) {
+            idleStarts.delete(inboxId);
+            await agentSystem.killAgent(inboxId, durable.projectPath, provider, 'user', { waitForExit: true, throwOnFailure: true });
+          }
+        }
+      }
+    }
     return wakeController(req);
   });
 }
@@ -171,6 +198,7 @@ async function deliver(inboxId: string, req: DispatcherDeliveryRequest): Promise
     if (req.wakeAsReceiver && runtime.kind === 'chat' && (runtime.getState() !== 'idle' || runtime.hasPendingWork?.())) {
       return { delivered: false, text: 'The receiving controller is not ready for remote input.' };
     }
+    idleStarts.delete(inboxId);
     const sent = await runtime.sendMessage(req.text, {
       source: req.messageOptions ? 'action' : 'mcp', taskId: req.taskId, submit: req.submit, routed: req.routed,
       ...(req.messageOptions && { delivery: 'queued', ...req.messageOptions }),
@@ -236,4 +264,5 @@ async function deliver(inboxId: string, req: DispatcherDeliveryRequest): Promise
 /** For tests. */
 export function _resetDispatcherDeliveryForTesting(): void {
   queues.clear();
+  idleStarts.clear();
 }

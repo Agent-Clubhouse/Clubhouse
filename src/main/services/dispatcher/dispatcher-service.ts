@@ -990,12 +990,12 @@ function watchChanges(): void {
 }
 
 /** Wake the hidden controller without a prompt. Never called from inside the settings queue: spawn prepares there too. */
-export async function wakeDispatcherController(): Promise<void> {
+export async function wakeDispatcherController(options: { refreshRuntime?: boolean } = {}): Promise<void> {
   if (!isDispatcherEnabled() || !config) return;
   const { wakeDispatcher } = await import('../clubhouse-mcp/tools/dispatcher-delivery');
   const result = await wakeDispatcher({
     callerId: config.id, targetId: config.id, targetName: config.name,
-  });
+  }, options);
   if (result.isError) {
     const reason = result.content[0]?.type === 'text' ? result.content[0].text : 'Could not wake the controller.';
     throw new Error(reason);
@@ -1008,7 +1008,7 @@ export async function wakeDispatcherController(): Promise<void> {
  * Creates nothing while it is off. Starts only the controller, idle, after reconciliation.
  */
 export function initDispatcher(): Promise<void> {
-  return enqueue(reconcile).then(wakeDispatcherController).catch((err) => {
+  return enqueue(reconcile).then(() => wakeDispatcherController()).catch((err) => {
     appLog(NS, 'error', 'Dispatcher start-up failed', {
       meta: { error: err instanceof Error ? err.message : String(err) },
     });
@@ -1042,7 +1042,7 @@ export function getDispatcherSwitchGeneration(): number {
 
 /** The experimental flags changed; a saved `dispatcher` may have flipped. */
 export function onExperimentalSettingsChanged(): Promise<void> {
-  return enqueue(reconcile).then(wakeDispatcherController).catch((err) => {
+  return enqueue(reconcile).then(() => wakeDispatcherController({ refreshRuntime: true })).catch((err) => {
     appLog(NS, 'error', 'Dispatcher update after a flag change failed', {
       meta: { error: err instanceof Error ? err.message : String(err) },
     });

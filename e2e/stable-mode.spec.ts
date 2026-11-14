@@ -72,13 +72,21 @@ function tempDir(prefix: string): string {
  * alive as a terminal agent would. The other providers point at nothing, so a
  * real CLI can never be reached.
  */
-function installIdleCli(): { env: Record<string, string>; argvFile: string } {
+function installIdleCli(): { env: Record<string, string>; argvFile: (agentId: string) => string } {
   const root = tempDir('clubhouse-e2e-idle-cli-');
-  const argvFile = path.join(root, 'argv.json');
+  const argvFile = (agentId: string) => path.join(root, `argv-${encodeURIComponent(agentId)}.json`);
   const script = path.join(root, 'idle-cli.js');
   fs.writeFileSync(script, [
     "if (process.argv.includes('--version')) { console.log('2.1.316 (Claude Code)'); process.exit(0); }",
-    `require('fs').writeFileSync(${JSON.stringify(argvFile)}, JSON.stringify(process.argv.slice(2)));`,
+    `const file = require('path').join(${JSON.stringify(root)}, 'argv-' + encodeURIComponent(process.env.CLUBHOUSE_AGENT_ID) + '.json');`,
+    "require('fs').writeFileSync(file, JSON.stringify(process.argv.slice(2)));",
+    // An idle chat start needs the initialize handshake, even though it sends no prompt.
+    "require('readline').createInterface({ input: process.stdin }).on('line', (line) => {",
+    "  if (line.trim() === '/exit') process.exit(0);",
+    "  let msg; try { msg = JSON.parse(line); } catch { return; }",
+    "  if (msg.type === 'user') { process.stderr.write('idle fake received an inference prompt'); process.exit(91); }",
+    "  if (msg.type === 'control_request') console.log(JSON.stringify({ type: 'control_response', response: { subtype: 'success', request_id: msg.request_id, response: { commands: [], agents: [], models: [] } } }));",
+    '});',
     'setInterval(() => {}, 1000);',
   ].join('\n'));
   let shim: string;
@@ -214,7 +222,7 @@ test('Preview off, saved beta state with Chat off: the new layout, a terminal, a
   const flags = await flagsInForce(w);
   for (const flag of PREVIEW_ONLY_FLAGS) expect(flags).not.toHaveProperty(flag);
   await expectSettingsPages(w, []);
-  // Preview doesn't gate the Dispatcher, and nothing starts it.
+  // Preview doesn't gate the Dispatcher, whose controller starts idle.
   await expect(w.locator('[data-testid="dispatcher-row"]')).toBeVisible({ timeout: 15_000 });
 
   // A saved false outranks the agent's own Chat mode: it wakes in the terminal, on the session it had.
@@ -226,8 +234,8 @@ test('Preview off, saved beta state with Chat off: the new layout, a terminal, a
   await expect(w.locator('[data-testid="agent-terminal"]')).toBeVisible({ timeout: 20_000 });
   await expect(w.locator('[data-testid="chat-view"]')).toHaveCount(0);
 
-  await expect.poll(() => fs.existsSync(cli.argvFile), { timeout: 20_000 }).toBe(true);
-  const argv: string[] = JSON.parse(await readText(cli.argvFile));
+  await expect.poll(() => fs.existsSync(cli.argvFile(AGENT_ID)), { timeout: 20_000 }).toBe(true);
+  const argv: string[] = JSON.parse(await readText(cli.argvFile(AGENT_ID)));
   expect(argv).toContain(LAST_SESSION);
   expect(argv).not.toContain('stream-json');
 
@@ -238,7 +246,7 @@ test('Preview off, saved beta state with Chat off: the new layout, a terminal, a
   expect(await savedPreview(profile)).toBe(false);
   const agents = JSON.parse(await readText(path.join(projectDir, '.clubhouse', 'agents.json')));
   expect(agents.find((a: { id: string }) => a.id === AGENT_ID).runtimeMode).toBe('chat');
-  // The switch saved on is honoured: it has a record and a row, and nothing started it.
+  // The switch saved on is honoured: it has a record and a row.
   expect(fs.existsSync(path.join(dispatcherFolder(profile), '.clubhouse', 'agents.json'))).toBe(true);
   // The dormant telemetry setup was switched off, consent kept, and the developer destination can't follow Feedback on.
   const telemetry = JSON.parse(await readText(path.join(profile.userDataDir, 'telemetry-settings.json')));
@@ -279,12 +287,12 @@ test('Preview off, fresh install: Chat is on, no tip, and a saved agent choice w
   await w.locator(`[data-testid="agent-item-${overrideId}"]`).click();
   await w.locator('[data-testid="wake-button"]').click();
   await expect(w.locator('[data-testid="agent-terminal"]')).toBeVisible({ timeout: 20_000 });
-  await expect.poll(() => fs.existsSync(cli.argvFile), { timeout: 20_000 }).toBe(true);
-  expect(JSON.parse(await readText(cli.argvFile))).not.toContain('stream-json');
+  await expect.poll(() => fs.existsSync(cli.argvFile(overrideId)), { timeout: 20_000 }).toBe(true);
+  expect(JSON.parse(await readText(cli.argvFile(overrideId)))).not.toContain('stream-json');
 });
 
 for (const seed of [
-  { from: '0.42', flags: undefined, agents: stableAgents },
+  { from: '0.42', flags: undefined as Record<string, boolean> | undefined, agents: stableAgents },
   { from: '0.41', flags: V041_FLAGS, agents: v041Agents },
 ]) {
   test(`Preview off, upgrade from ${seed.from}: agents open in Chat and the tip shows`, async () => {
@@ -330,7 +338,7 @@ test('Preview off, saved Chat off: Agents & providers turns it back on', async (
   await chatView.click();
   await expect(chatView).toHaveAttribute('aria-checked', 'true');
   await expect.poll(() => wakesInChat(w, projectDir)).toBe(true);
-  expect(await wakesInChat(w, dispatcherFolder(profile), dispatcherId)).toBe(true);
+  await expect.poll(() => wakesInChat(w, dispatcherFolder(profile), dispatcherId)).toBe(true);
 });
 
 test('Preview off: the Dispatcher wakes in chat', async () => {

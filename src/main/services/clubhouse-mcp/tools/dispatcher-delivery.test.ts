@@ -26,7 +26,10 @@ const mocks = vi.hoisted(() => ({
   decideGrant: vi.fn(),
   askFirst: vi.fn(),
   dispatcherEnabled: true,
+  chatMode: true,
 }));
+vi.mock('../../chat-runtime-settings', () => ({ resolveRuntimeMode: () => ({ mode: mocks.chatMode ? 'chat' : 'terminal' }) }));
+vi.mock('../../agent-runtime/chat-drivers', () => ({ resolveChatDriver: () => ({}) }));
 vi.mock('../../agent-registry', () => ({ agentRegistry: { get: mocks.registryGet } }));
 vi.mock('../../agent-runtime', () => ({ getAgentRuntime: mocks.getAgentRuntime }));
 vi.mock('../../agent-runtime/checkpoint-tracker', () => ({ BUSY_STATES: new Set(['running']) }));
@@ -78,6 +81,7 @@ describe('messages to the Dispatcher (#3037)', () => {
     _resetDispatcherDeliveryForTesting();
     clearAgentMessages();
     mocks.dispatcherEnabled = true;
+    mocks.chatMode = true;
     running = false;
     system.isAgentRunning.mockImplementation((id: string) => id === 'disp' && running);
     system.isAgentStopping.mockReturnValue(false);
@@ -184,6 +188,67 @@ describe('messages to the Dispatcher (#3037)', () => {
     mocks.dispatcherEnabled = false;
     expect((await wakeDispatcher({ callerId: 'sender', targetId: 'disp', targetName: 'Dispatcher' })).isError).toBe(true);
     expect(system.spawnAgent).not.toHaveBeenCalled();
+  });
+
+  it.each([false, true])('moves an untouched idle controller when Chat changes from %s without a prompt', async (initialChat) => {
+    mocks.chatMode = initialChat;
+    let registration: { projectPath: string; orchestrator: string; runtime: string } | undefined;
+    mocks.registryGet.mockImplementation(() => registration);
+    system.spawnAgent.mockImplementation(async () => {
+      running = true;
+      registration = { projectPath: DISPATCHER_PATH, orchestrator: 'claude-code', runtime: mocks.chatMode ? 'chat' : 'pty' };
+    });
+    system.killAgent.mockImplementation(async () => { running = false; registration = undefined; });
+    const req = { callerId: 'disp', targetId: 'disp', targetName: 'Dispatcher' };
+    await wakeDispatcher(req);
+    mocks.chatMode = !initialChat;
+    await wakeDispatcher(req, { refreshRuntime: true });
+    expect(system.killAgent).toHaveBeenCalledExactlyOnceWith('disp', DISPATCHER_PATH, 'claude-code', 'user', { waitForExit: true, throwOnFailure: true });
+    expect(registration?.runtime).toBe(initialChat ? 'pty' : 'chat');
+    expect(system.spawnAgent).toHaveBeenCalledTimes(2);
+    for (const [params] of system.spawnAgent.mock.calls) expect(params.mission).toBeUndefined();
+    // Other flag changes leave this session alone.
+    await wakeDispatcher(req, { refreshRuntime: true });
+    expect(system.spawnAgent).toHaveBeenCalledTimes(2);
+  });
+
+  it('does not restart a controller that has accepted work when Chat changes', async () => {
+    const registration = { projectPath: DISPATCHER_PATH, orchestrator: 'claude-code', runtime: 'pty' };
+    mocks.registryGet.mockImplementation(() => running ? registration : undefined);
+    const req = { callerId: 'disp', targetId: 'disp', targetName: 'Dispatcher' };
+    await wakeDispatcher(req);
+    await deliverToDispatcher(request());
+    await wakeDispatcher(req, { refreshRuntime: true });
+    expect(system.killAgent).not.toHaveBeenCalled();
+    expect(system.spawnAgent).toHaveBeenCalledTimes(1);
+    expect(mocks.sendMessage).toHaveBeenCalledTimes(1);
+  });
+
+  it('holds a message until the idle controller has moved into Chat', async () => {
+    let registration: { projectPath: string; orchestrator: string; runtime: string } | undefined;
+    mocks.chatMode = false;
+    mocks.registryGet.mockImplementation(() => registration);
+    system.spawnAgent.mockImplementation(async () => {
+      running = true;
+      registration = { projectPath: DISPATCHER_PATH, orchestrator: 'claude-code', runtime: mocks.chatMode ? 'chat' : 'pty' };
+    });
+    const req = { callerId: 'disp', targetId: 'disp', targetName: 'Dispatcher' };
+    await wakeDispatcher(req);
+    let finishStop!: () => void;
+    system.killAgent.mockImplementation(() => new Promise<void>((resolve) => {
+      finishStop = () => { running = false; registration = undefined; resolve(); };
+    }));
+    mocks.chatMode = true;
+    const refresh = wakeDispatcher(req, { refreshRuntime: true });
+    await vi.waitFor(() => expect(system.killAgent).toHaveBeenCalled());
+    const delivery = deliverToDispatcher(request());
+    expect(mocks.sendMessage).not.toHaveBeenCalled();
+    finishStop();
+    await refresh;
+    await expect(delivery).resolves.toEqual({ delivered: true, woke: false });
+    expect(registration?.runtime).toBe('chat');
+    expect(system.spawnAgent).toHaveBeenCalledTimes(2);
+    expect(mocks.sendMessage).toHaveBeenCalledExactlyOnceWith(request().text, expect.objectContaining({ routed: request().routed }));
   });
 
   it('an action (#3042): the Dispatcher’s own subscription wakes it with no grant check', async () => {
