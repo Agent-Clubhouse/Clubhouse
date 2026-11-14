@@ -63,6 +63,7 @@ vi.mock('./agent-lifecycle', () => lifecycle);
 const dispatcherDelivery = vi.hoisted(() => ({
   isDispatcherTarget: vi.fn((_id: string) => false),
   deliverToDispatcher: vi.fn(),
+  wakeDispatcher: vi.fn(),
   sleepingDispatcherHint: vi.fn((_senderId: string) => 'Agent is sleeping. send_message wakes it and delivers the message.'),
 }));
 vi.mock('./dispatcher-delivery', () => dispatcherDelivery);
@@ -73,8 +74,10 @@ import { registerAgentTools, writeChunkedBracketedPaste, waitForBufferQuiescence
 import { getScopedToolList, callTool, refusalReasonOf, buildToolName, invalidateToolListCache, runAgentToolForRemoteCaller, _resetForTesting as resetTools } from '../tool-registry';
 import { mcpAdapter } from '../mcp-adapter';
 import { bindingManager } from '../binding-manager';
-import { setDispatcherAgent, setDispatcherChatAgent, _resetDispatcherGateForTesting } from '../dispatcher-gate';
+import { setDispatcherAgent, setDispatcherChatAgent, setDispatcherIdLookup, _resetDispatcherGateForTesting } from '../dispatcher-gate';
 import * as dispatcher from '../../dispatcher/dispatcher-service';
+import * as agentGrants from '../../agent-grants-store';
+import * as askFirst from '../ask-first';
 import { registerChatRuntime, unregisterChatRuntime } from '../../agent-runtime';
 import type { McpBinding } from '../types';
 import * as runtimes from '../../agent-runtime';
@@ -922,6 +925,7 @@ describe('AgentTools', () => {
     });
 
     beforeEach(() => {
+      setDispatcherIdLookup((id) => id === 'disp');
       dispatcherDelivery.isDispatcherTarget.mockImplementation((id: string) => id === 'disp');
       dispatcherDelivery.deliverToDispatcher.mockReset().mockResolvedValue({ delivered: true, woke: true });
       bindingManager.bind('agent-1', {
@@ -931,7 +935,31 @@ describe('AgentTools', () => {
       mockAgentRegistryGet.mockImplementation((id: string) => (id === 'agent-2' ? { runtime: 'pty' } : undefined));
     });
 
-    afterEach(() => { dispatcherDelivery.isDispatcherTarget.mockReset().mockReturnValue(false); });
+    afterEach(() => { dispatcherDelivery.isDispatcherTarget.mockReset().mockReturnValue(false); setDispatcherIdLookup(null); _resetDispatcherGateForTesting(); });
+
+    it.each([undefined, 'ship it'])('wake_agent reaches the Dispatcher wake with message %s (#3465)', async (message) => {
+      bindingManager.setDisabledTools('agent-1', 'disp', [], ['wake_agent']);
+      dispatcherDelivery.wakeDispatcher.mockResolvedValue({ content: [{ type: 'text', text: '{"status":"running"}' }] });
+      const result = await callTool('agent-1', agentToolName(toDispatcher, 'wake_agent'), message ? { message } : {});
+      expect(result.isError, JSON.stringify(result)).toBeFalsy();
+      expect(dispatcherDelivery.wakeDispatcher).toHaveBeenCalledWith(expect.objectContaining({
+        callerId: 'agent-1', targetId: 'disp', mission: message ? expect.stringContaining(message) : undefined,
+      }));
+      expect(lifecycle.wakeWiredAgent).not.toHaveBeenCalled();
+    });
+
+    it.each(['off', 'ask'] as const)('wake_agent respects agent.wake set to %s (#3465)', async (mode) => {
+      bindingManager.setDisabledTools('agent-1', 'disp', [], ['wake_agent']);
+      vi.spyOn(agentGrants, 'getAgentGrantChanges').mockReturnValue({
+        changes: [{ action: 'agent.wake', target: { kind: 'connected', onlyDispatcher: true }, mode }],
+      });
+      const approval = vi.spyOn(askFirst, 'askFirst').mockResolvedValue({ kind: 'asked', text: 'Awaiting approval.' });
+      const result = await callTool('agent-1', agentToolName(toDispatcher, 'wake_agent'), {});
+      expect(result.isError).toBe(true);
+      expect(dispatcherDelivery.wakeDispatcher).not.toHaveBeenCalled();
+      if (mode === 'ask') expect(approval).toHaveBeenCalled();
+      else expect(approval).not.toHaveBeenCalled();
+    });
 
     it('send_message to a sleeping Dispatcher hands the tagged message to the delivery, which wakes it', async () => {
       const toolName = agentToolName(toDispatcher, 'send_message');

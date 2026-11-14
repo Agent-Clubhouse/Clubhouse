@@ -32,7 +32,8 @@ import { askFirst } from '../ask-first';
 import { decideGrant } from '../grant-check';
 import type { GrantCallTarget, GrantDecision } from '../../../../shared/agent-grants';
 import type { MessageDelivery, RoutedMessagePart, RuntimeSendOptions } from '../../../../shared/chat';
-import { wakeWiredAgent, type DurableAgentLocation } from './agent-lifecycle';
+import type { McpToolResult } from '../types';
+import { wakeWiredAgent, type WakeAgentRequest, type DurableAgentLocation } from './agent-lifecycle';
 
 /** The Dispatcher as a connected agent sees it, for the wake grant. */
 const DISPATCHER_TARGET: GrantCallTarget = { kind: 'agent', relations: ['connected'], isDispatcher: true };
@@ -128,6 +129,24 @@ export function deliverToDispatcher(req: DispatcherDeliveryRequest): Promise<Dis
   });
 }
 
+/** The shared wake: the Dispatcher lives outside project agent configs. */
+function wakeController(req: WakeAgentRequest): Promise<McpToolResult> {
+  return wakeWiredAgent({ ...req, targetId: dispatcherInboxId(req.targetId), locate: locateDispatcher });
+}
+
+/**
+ * Explicit wake, serialized with deliveries. The wire tool declares agent.wake,
+ * so callTool checks it (including Ask first) before reaching this function.
+ * Clubhouse itself uses the same path to open an idle controller without a prompt.
+ */
+export function wakeDispatcher(req: WakeAgentRequest): Promise<McpToolResult> {
+  const inboxId = dispatcherInboxId(req.targetId);
+  return inOrder(inboxId, async () => {
+    if (!isDispatcherEnabled()) return { content: [{ type: 'text', text: `${req.targetName} is turned off.` }], isError: true };
+    return wakeController(req);
+  });
+}
+
 /**
  * Note the agent for the group chat (#3043), so the Dispatcher's news can name
  * it. The Dispatcher's chat handing work over isn't news from an agent.
@@ -190,8 +209,8 @@ async function deliver(inboxId: string, req: DispatcherDeliveryRequest): Promise
   }
 
   appLog('core:mcp', 'info', 'send_message: waking the Dispatcher to deliver', { meta });
-  const result = await wakeWiredAgent({
-    callerId: req.wakeAsReceiver ? inboxId : senderId, targetId: inboxId, targetName, mission: req.text, missionRouted: req.routed, locate: locateDispatcher,
+  const result = await wakeController({
+    callerId: req.wakeAsReceiver ? inboxId : senderId, targetId: inboxId, targetName, mission: req.text, missionRouted: req.routed,
     ...(req.admission && { admission: req.admission }),
   });
   const text = result.content[0]?.type === 'text' ? result.content[0].text : '';

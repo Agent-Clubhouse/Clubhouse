@@ -38,6 +38,12 @@ vi.mock('electron', () => ({
   Notification: class {},
 }));
 vi.mock('bonjour-service', () => ({ default: class { publish() { return { stop() {} }; } destroy() {} } }));
+// Enabling the Dispatcher opens its controller idle (#3465). Appearance tests
+// exercise the real service and snapshots, while runtime startup stays local and inert.
+vi.mock('../../src/main/services/agent-system', async (importOriginal) => ({
+  ...await importOriginal<typeof import('../../src/main/services/agent-system')>(),
+  spawnAgent: async () => {},
+}));
 vi.mock('../../src/main/services/log-service', () => ({ appLog: () => {} }));
 vi.mock('../../src/main/services/annex-network-profile', async (importOriginal) => ({
   ...await importOriginal<typeof import('../../src/main/services/annex-network-profile')>(),

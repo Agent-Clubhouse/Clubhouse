@@ -10,6 +10,20 @@ The **chat** uses the user's chosen name, or **Dispatcher** by default. **Dispat
 
 These are display labels, not saved identities. Existing agent IDs, connections, permissions and wire tool names are unchanged; wire `targetName` retains the base name used in those tool addresses. Conversation histories project the fixed controller title without rewriting provider titles or saved records. Restart controls retain their in-flight interruption warning and next-needed resume behavior.
 
+## Controller wake and launch cost (#3465)
+
+When enabled, launch opens the controller session idle, resuming its conversation if available, with no prompt. Opening the chat or waking its session also wakes the controller. Dispatcher Off prevents these starts. The controller keeps its existing identity and stays out of the regular agent list.
+
+An agent's `wake_agent` uses the same serialized controller wake and Dispatcher config folder as `send_message`. The wire's `agent.wake` declaration checks the grant, including Ask first, before explicit wake; `send_message` checks that grant when it needs to wake the controller. Messages arriving during an idle wake wait, then enter the opened session.
+
+Opening an idle session requests no inference turn in the bundled providers:
+
+- Claude Code: starts the CLI and its initialize handshake; no user message is sent. It may query account/usage metadata, with no model tokens requested.
+- Codex CLI: starts app-server and calls `thread/start` or `thread/resume`; `turn/start` waits for a message. No model tokens are requested at launch.
+- Copilot CLI: starts its SDK client and creates/resumes a session, then reads/applies session settings. No `session.send` happens until a message, so no model turn or premium request is made at launch.
+
+All three retain a local process/session and its memory overhead while idle. Actual work, including separately scheduled Dispatcher background Actions, has the provider's normal usage cost. Tests use mocked processes and fake drivers, with no paid model calls.
+
 ## On by default (#3053)
 
 `resolveDispatcherEnablement` (`src/shared/dispatcher-types.ts`) decides, first match wins:

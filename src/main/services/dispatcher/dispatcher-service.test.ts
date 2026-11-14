@@ -119,10 +119,11 @@ vi.mock('../agent-config', () => ({
   onAgentConfigChanged: (l: (p: string) => void) => { h.configListeners.add(l); return () => { h.configListeners.delete(l); }; },
 }));
 
-// Every way an agent starts goes through spawnAgent, so "never called" means no tokens.
+// Session starts are mocked; no provider or model is contacted.
 vi.mock('../agent-runtime/chat-spawn', () => ({ hasChatStartInFlight: (id: string) => chatStarting.has(id) }));
 vi.mock('../agent-system', () => ({
   isAgentRunning: (id: string) => h.running.has(id),
+  isAgentStopping: () => false,
   killAgent: vi.fn(async (id: string) => { h.running.delete(id); }),
   spawnAgent: vi.fn(),
 }));
@@ -199,7 +200,7 @@ afterEach(async () => {
 });
 
 describe('gating', () => {
-  it('is on by default in the new layout: creates and connects, and never starts it', async () => {
+  it('is on by default in the new layout: creates both roles and starts only the controller idle', async () => {
     await svc.initDispatcher();
     expect(svc.getDispatcherState()).toMatchObject({
       enabled: true, savedOn: true, flagOn: true, offReason: null, running: false, agentId: 'durable_1', path: dispatcherDir(),
@@ -209,12 +210,35 @@ describe('gating', () => {
     expect(agentConfig.createDurable).toHaveBeenCalledTimes(2);
     expect(fs.readFileSync(path.join(dispatcherDir(), 'CLAUDE.md'), 'utf-8')).toContain(svc.DISPATCHER_INSTRUCTIONS);
     expect(fs.readFileSync(path.join(chatDir(), 'CLAUDE.md'), 'utf-8')).toContain(svc.DISPATCHER_CHAT_INSTRUCTIONS);
-    // What default-on must not do: start the agent, so no tokens are spent.
-    expect(agentSystem.spawnAgent).not.toHaveBeenCalled();
+    // An open session with no mission does not submit a model turn.
+    expect(agentSystem.spawnAgent).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({
+      agentId: 'durable_1', projectPath: dispatcherDir(), mission: undefined, missionRouted: undefined,
+    }));
     expect(agentRegistry.get('durable_1')).toBeUndefined();
     expect(agentRegistry.get('durable_2')).toBeUndefined();
     // And it saves nothing: the switch stays missing, so the default can still move.
     expect(getSettings().enabled).toBeUndefined();
+  });
+
+  it('prepares the idle controller outside reconciliation and leaves a running controller alone (#3465)', async () => {
+    vi.mocked(agentSystem.spawnAgent).mockImplementationOnce(async (params) => {
+      await svc.prepareDispatcherSessionStart(params.projectPath, params.agentId);
+      h.running.add(params.agentId);
+    });
+    await svc.initDispatcher();
+    await svc.wakeDispatcherController();
+    expect(agentSystem.spawnAgent).toHaveBeenCalledTimes(1);
+  });
+
+  it('waking its chat also wakes the controller idle, and opening it respects Off (#3465)', async () => {
+    await svc.initDispatcher();
+    vi.mocked(agentSystem.spawnAgent).mockClear();
+    await svc.prepareDispatcherSessionStart(chatDir(), 'durable_2');
+    expect(agentSystem.spawnAgent).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ agentId: 'durable_1', mission: undefined }));
+    await svc.setDispatcherEnabled(false);
+    vi.mocked(agentSystem.spawnAgent).mockClear();
+    await svc.wakeDispatcherController();
+    expect(agentSystem.spawnAgent).not.toHaveBeenCalled();
   });
 
   it('1.0 default (#3053): a fresh install reaches a working Dispatcher at startup and saves no settings', async () => {
@@ -223,7 +247,7 @@ describe('gating', () => {
     expect(svc.getDispatcherState().setup).toEqual({ status: 'pending', upgrade: false });
     // Nothing in dispatcher-settings.json: first-run setup relies on a new install having written nothing.
     expect(getSettings()).toEqual({});
-    expect(agentSystem.spawnAgent).not.toHaveBeenCalled();
+    expect(agentSystem.spawnAgent).toHaveBeenCalledTimes(1);
   });
 
   it('1.0 default (#3053): an upgrade reaches a working Dispatcher at startup, keeps its agent and saves no settings', async () => {
@@ -236,7 +260,7 @@ describe('gating', () => {
     expect(svc.getDispatcherState().config).toMatchObject({ name: 'Rosie' });
     expect(svc.getDispatcherState().setup).toEqual({ status: 'pending', upgrade: true });
     expect(getSettings()).toEqual({});
-    expect(agentSystem.spawnAgent).not.toHaveBeenCalled();
+    expect(agentSystem.spawnAgent).toHaveBeenCalledTimes(1);
   });
 
   it('1.0 default (#3053): an upgrade that turned it off, on its switch or its old flag, stays off and creates nothing', async () => {
@@ -940,7 +964,7 @@ describe('personality and first-run setup (#3047)', () => {
     expect(state.personality).toEqual({ preset: 'custom', text });
     expect(chatFile()).toContain(text);
     expect(workFile()).not.toContain(text);
-    expect(agentSystem.spawnAgent).not.toHaveBeenCalled();
+    expect(agentSystem.spawnAgent).toHaveBeenCalledTimes(1);
   });
 
   it('a rename reaches the chat\'s instructions', async () => {
@@ -959,7 +983,7 @@ describe('personality and first-run setup (#3047)', () => {
     expect(state.behavior.level).toBe('standard');
     expect(state.personality).toEqual(DEFAULT_DISPATCHER_PERSONALITY);
     expect(getSettings().behavior).toBeUndefined();
-    expect(agentSystem.spawnAgent).not.toHaveBeenCalled();
+    expect(agentSystem.spawnAgent).toHaveBeenCalledTimes(1);
   });
 
   it('finishing setup saves name, look, provider, Behavior and personality on both agents, and starts nothing', async () => {
@@ -985,7 +1009,7 @@ describe('personality and first-run setup (#3047)', () => {
     const chatAgents = fs.readFileSync(path.join(chatDir(), 'AGENTS.md'), 'utf-8');
     expect(chatAgents).toContain('Your name is Rosie.');
     expect(chatAgents).toContain(PERSONALITY_PRESET_TEXT.friendly);
-    expect(agentSystem.spawnAgent).not.toHaveBeenCalled();
+    expect(agentSystem.spawnAgent).toHaveBeenCalledTimes(1);
   });
 
   it('publishes setup done only after its chosen settings are saved', async () => {
@@ -1128,7 +1152,7 @@ describe('Choose models yourself (#3191)', () => {
     // Each start names its own provider.
     expect(await svc.prepareDispatcherSessionStart(chatDir(), 'durable_2')).toMatchObject({ orchestrator: 'codex-cli', model: 'terra' });
     expect(await svc.prepareDispatcherSessionStart(dispatcherDir(), 'durable_1')).toMatchObject({ orchestrator: 'claude-code' });
-    expect(agentSystem.spawnAgent).not.toHaveBeenCalled();
+    expect(agentSystem.spawnAgent).toHaveBeenCalledTimes(2);
   });
 
   it('turning it off brings the chat back to the provider Settings shows, and Behavior gives the models again', async () => {

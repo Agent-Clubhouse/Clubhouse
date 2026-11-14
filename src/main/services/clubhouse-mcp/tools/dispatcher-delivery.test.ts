@@ -41,6 +41,7 @@ vi.mock('../grant-check', () => ({ decideGrant: mocks.decideGrant }));
 vi.mock('../ask-first', () => ({ askFirst: mocks.askFirst }));
 vi.mock('../../dispatcher/dispatcher-service', () => ({
   getDispatcherAgentId: () => 'disp',
+  dispatcherDisplayName: () => 'Dispatcher',
   getDispatcherPath: () => '/home/.clubhouse/dispatcher',
   isDispatcherAgentId: (id: string) => id === 'disp',
   isDispatcherIdentityAgentId: (id: string) => id === 'disp' || id === 'disp-chat',
@@ -48,8 +49,10 @@ vi.mock('../../dispatcher/dispatcher-service', () => ({
 }));
 
 import { IPC } from '../../../../shared/ipc-channels';
+import { registerAgentTools } from './agent-tools';
+import { mcpAdapter } from '../mcp-adapter';
 import {
-  deliverToDispatcher, dispatcherInboxId, isDispatcherTarget, sleepingDispatcherHint, _resetDispatcherDeliveryForTesting,
+  wakeDispatcher, deliverToDispatcher, dispatcherInboxId, isDispatcherTarget, sleepingDispatcherHint, _resetDispatcherDeliveryForTesting,
   type DispatcherDeliveryRequest,
 } from './dispatcher-delivery';
 import { clearAgentMessages, findInInbox } from '../../dispatcher/dispatcher-news-inbox';
@@ -145,6 +148,42 @@ describe('messages to the Dispatcher (#3037)', () => {
     }));
     expect(mocks.broadcast).toHaveBeenCalledWith(IPC.AGENT.AGENT_WAKING, 'disp');
     expect(mocks.sendMessage).not.toHaveBeenCalled();
+  });
+
+  it('an agent send_message command wakes the sleeping controller and delivers its tagged message (#3465)', async () => {
+    const commands = vi.spyOn(mcpAdapter, 'registerMcpCommand').mockImplementation(() => {});
+    registerAgentTools();
+    const sendMessage = commands.mock.calls.find(([command]) => command.id === 'agent.sendMessage')![0];
+    mocks.getDurableConfig.mockResolvedValue({ id: 'disp', name: 'Dispatcher', orchestrator: 'claude-code', freeAgentMode: true });
+    const result = await sendMessage.handler('disp', 'sender', { message: 'cold launch message', task_id: 'cold1' });
+    expect(result.isError).toBeFalsy();
+    expect(result.content[0]).toMatchObject({ type: 'text', text: expect.stringContaining('was asleep and was woken to take it') });
+    expect(system.spawnAgent).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({
+      agentId: 'disp', projectPath: DISPATCHER_PATH, resume: false,
+      mission: '[TASK:cold1] [FROM:sender] cold launch message',
+      missionRouted: [{ sender: { agentId: 'sender', name: 'sender' }, text: 'cold launch message' }],
+    }));
+    expect(mocks.listProjects).not.toHaveBeenCalled();
+  });
+
+  it('an explicit idle wake uses its own folder and serializes a message arriving during startup (#3465)', async () => {
+    let finish!: () => void;
+    system.spawnAgent.mockImplementation(() => new Promise<void>((resolve) => { finish = () => { running = true; resolve(); }; }));
+    const waking = wakeDispatcher({ callerId: 'sender', targetId: 'disp', targetName: 'Dispatcher' });
+    const delivery = deliverToDispatcher(request());
+    await vi.waitFor(() => expect(system.spawnAgent).toHaveBeenCalled());
+    expect(system.spawnAgent).toHaveBeenCalledWith(expect.objectContaining({ projectPath: DISPATCHER_PATH, mission: undefined }));
+    finish();
+    expect((await waking).isError).toBeFalsy();
+    await expect(delivery).resolves.toEqual({ delivered: true, woke: false });
+    expect(mocks.sendMessage).toHaveBeenCalledWith(request().text, expect.objectContaining({ routed: request().routed }));
+    expect(system.spawnAgent).toHaveBeenCalledTimes(1);
+  });
+
+  it('explicit wake respects Dispatcher Off (#3465)', async () => {
+    mocks.dispatcherEnabled = false;
+    expect((await wakeDispatcher({ callerId: 'sender', targetId: 'disp', targetName: 'Dispatcher' })).isError).toBe(true);
+    expect(system.spawnAgent).not.toHaveBeenCalled();
   });
 
   it('an action (#3042): the Dispatcher’s own subscription wakes it with no grant check', async () => {

@@ -76,6 +76,13 @@ describe('DispatcherView', () => {
     expect(screen.getByTestId('runtime-pane')).toHaveTextContent(remote.id);
   });
 
+  it('wakes the controller when opening its chat, including when the chat is already running (#3465)', async () => {
+    const wake = vi.spyOn(window.clubhouse.dispatcher, 'wake').mockResolvedValue();
+    useAgentStore.setState({ agents: { disp: dispatcher({ status: 'running' }) } });
+    render(<DispatcherView />);
+    await waitFor(() => expect(wake).toHaveBeenCalledTimes(1));
+  });
+
   it('shows the chat or terminal pane while it runs', () => {
     useAgentStore.setState({ agents: { disp: dispatcher({ status: 'running' }) } });
     render(<DispatcherView />);
