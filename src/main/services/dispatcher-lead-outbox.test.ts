@@ -51,7 +51,9 @@ beforeEach(() => {
   });
 });
 
-const NOW = Date.parse('2026-11-13T10:00:00Z');
+// Relative to the real clock: automatic flushes and leadOutboxState() default to Date.now(),
+// so a fixed date expires these fixtures once it is a day old.
+const NOW = Date.now();
 
 describe('the lead outbox (#3353)', () => {
   it('keeps messages while the lead is offline and sends them in order, once each, when it is back', async () => {
