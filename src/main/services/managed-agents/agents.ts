@@ -116,6 +116,7 @@ function createAgentRecord(projectPath: string, input: CreateManagedAgentInput, 
 export async function applyManagedSettings(
   projectPath: string, agentId: string, settings: ManagedTemplateSettings,
   precondition?: import('../settings-store').SettingsCommitPrecondition,
+  agentPrecondition?: agentConfig.ManagedSetupCommitPrecondition,
 ): Promise<void> {
   const updates: Parameters<typeof agentConfig.updateDurableConfig>[2] = {};
   if (settings.orchestrator !== undefined) updates.orchestrator = settings.orchestrator;
@@ -125,14 +126,34 @@ export async function applyManagedSettings(
   else if (settings.freeAgentMode !== undefined) updates.freeAgentMode = settings.freeAgentMode;
   if (settings.idleSleep !== undefined) updates.idleSleep = settings.idleSleep;
   if (settings.helperTemplateId !== undefined) updates.helperTemplateId = settings.helperTemplateId;
-  if (Object.keys(updates).length > 0) await agentConfig.updateDurableConfig(projectPath, agentId, updates);
+  if (Object.keys(updates).length > 0) {
+    if (agentPrecondition) await agentConfig.updateDurableConfig(projectPath, agentId, updates, undefined, agentPrecondition);
+    else await agentConfig.updateDurableConfig(projectPath, agentId, updates);
+  }
   if (settings.orchestration && Object.keys(settings.orchestration).length > 0) {
-    const result = await setOrchestrationPolicy(projectPath, agentId, settings.orchestration);
+    const result = agentPrecondition
+      ? await setOrchestrationPolicy(projectPath, agentId, settings.orchestration, { agentPrecondition })
+      : await setOrchestrationPolicy(projectPath, agentId, settings.orchestration);
     if (!result.ok) throw new ManagedError('invalid', result.message);
   }
   // The template's Clubhouse permissions (#2971), under the person's own changes.
   if (settings.grants?.length) {
-    if (precondition) await applyTemplateGrants(agentId, settings.grants, precondition);
+    if (agentPrecondition) {
+      const grantsPrecondition: import('../settings-store').SettingsCommitPrecondition = {
+        prepare: async () => {
+          await precondition?.prepare();
+          await agentPrecondition.prepare();
+          await agentConfig.getDurableConfig(projectPath, agentId);
+        },
+        check: () => {
+          precondition?.check();
+          const current = agentConfig.peekCachedDurableConfig(projectPath, agentId);
+          if (!current) throw new ManagedError('not_found', 'Template consumer not found');
+          agentPrecondition.check(current);
+        },
+      };
+      await applyTemplateGrants(agentId, settings.grants, grantsPrecondition);
+    } else if (precondition) await applyTemplateGrants(agentId, settings.grants, precondition);
     else await applyTemplateGrants(agentId, settings.grants);
   }
 }

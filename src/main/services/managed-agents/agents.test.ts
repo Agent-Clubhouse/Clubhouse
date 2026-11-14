@@ -724,6 +724,13 @@ describe('applying settings a template or the builder carries (#2895)', () => {
     expect(agentConfig.updateDurableConfig).toHaveBeenLastCalledWith('/p', 'ada', { effort: null, idleSleep: null, helperTemplateId: null });
   });
 
+  it('forwards per-consumer authorization to both native settings and orchestration writes', async () => {
+    const guard = { prepare: vi.fn(async () => undefined), check: vi.fn() };
+    await applyManagedSettings('/p', 'ada', { model: 'opus', orchestration: { maxHelpers: 2 } }, undefined, guard);
+    expect(agentConfig.updateDurableConfig).toHaveBeenCalledExactlyOnceWith('/p', 'ada', { model: 'opus' }, undefined, guard);
+    expect(orchestrationPolicy.setOrchestrationPolicy).toHaveBeenCalledExactlyOnceWith('/p', 'ada', { maxHelpers: 2 }, { agentPrecondition: guard });
+  });
+
   it('applies a level as Access, which wins over the legacy flag beside it (#2761)', async () => {
     await applyManagedSettings('/p', 'ada', { access: 'auto_edit', freeAgentMode: false });
     expect(agentConfig.updateDurableConfig).toHaveBeenLastCalledWith('/p', 'ada', { access: 'auto_edit' });
