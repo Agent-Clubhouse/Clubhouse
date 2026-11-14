@@ -7,12 +7,14 @@ import { partKindLabel, sourceLabel } from './managedApi';
 import { CheckIcon, DroppedEnvNote, PartCatalogStatus } from './parts-ui';
 import type { BuilderAgent } from './BlockList';
 
-type SourceFilter = 'all' | 'builtin' | 'custom';
+type SourceFilter = 'all' | 'builtin' | 'custom' | 'project';
+
+const sourceOf = (p: ManagedPartSummary): Exclude<SourceFilter, 'all'> => (p.builtin ? 'builtin' : p.project ? 'project' : 'custom');
 
 function filterParts(parts: ManagedPartSummary[], query: string, source: SourceFilter): ManagedPartSummary[] {
   const q = query.trim().toLowerCase();
   return parts.filter((p) =>
-    (source === 'all' || (source === 'builtin' ? p.builtin : !p.builtin))
+    (source === 'all' || sourceOf(p) === source)
     && (!q || p.name.toLowerCase().includes(q) || p.description.toLowerCase().includes(q)));
 }
 
@@ -35,6 +37,7 @@ function SearchRow({ kind, query, setQuery, source, setSource, inputRef }: {
         <option value="all">All</option>
         <option value="builtin">Built-in</option>
         <option value="custom">Custom</option>
+        <option value="project">Project</option>
       </select>
     </div>
   );
@@ -86,7 +89,7 @@ export function LibraryPanel({ parts, error, onRetry, inUse, onAdd, onNew, disab
               <div className="flex-1 min-w-0">
                 <div className="flex items-baseline gap-2 text-[13px]">
                   <span className="text-ctp-text truncate">{p.name}</span>
-                  <span className="text-xs text-ctp-overlay1 flex-shrink-0">{p.builtin ? 'Built-in' : 'Custom'}</span>
+                  <span className="text-xs text-ctp-overlay1 flex-shrink-0">{p.builtin ? 'Built-in' : p.project ? `Project · ${p.project.projectName ?? 'a removed project'}` : 'Custom'}</span>
                 </div>
                 <div className="text-xs text-ctp-overlay1 line-clamp-2">{p.description || p.preview}</div>
               </div>

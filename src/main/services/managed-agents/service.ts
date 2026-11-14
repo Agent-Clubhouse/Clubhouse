@@ -70,7 +70,8 @@ export class ManagedPartCreationError extends ManagedError {
 export interface ManagedAgentsDeps {
   catalog: AssetCatalogStore;
   state: ManagedStateStore;
-  listProjects(): Promise<Array<{ path: string; name: string }>>;
+  /** `id` is the registered project's id, for naming a project part's project. */
+  listProjects(): Promise<Array<{ path: string; name: string; id?: string }>>;
   listAgents(projectPath: string): Promise<readonly DurableAgentConfig[]>;
   getAgent(projectPath: string, agentId: string): Promise<DurableAgentConfig | null>;
   setManagedSetup(projectPath: string, agentId: string, setup: ManagedAgentSetup | null, precondition?: import('../agent-config').ManagedSetupCommitPrecondition): Promise<void>;
@@ -354,7 +355,14 @@ export function createManagedAgentsService(deps: ManagedAgentsDeps) {
       preview: previewOf(content),
       ...(content.kind === 'skill' && { skillName: content.skillName }),
       ...(droppedEnvValues.length > 0 && { droppedEnvValues }),
+      ...(entry.source.kind === 'project' && { project: await projectOf(entry.source.projectId) }),
     };
+  }
+
+  /** A project part's project, with its name while it's registered. */
+  async function projectOf(projectId: string): Promise<{ projectId: string; projectName?: string }> {
+    const found = (await deps.listProjects().catch((): Array<{ id?: string; name: string }> => [])).find((p) => p.id === projectId);
+    return { projectId, ...(found && { projectName: found.name }) };
   }
 
   /** Each skill's library name and the folder it installs to. */
@@ -647,7 +655,12 @@ export function createManagedAgentsService(deps: ManagedAgentsDeps) {
       return { ...(await summarize(entry)), content: await contentOf(entry) };
     },
 
-    async createPart(input: { name: string; description?: string; content: ManagedPartContent; actor?: string; source?: Extract<AssetSource, { kind: 'import' | 'plugin' }> }, beforeCommit?: () => Promise<void>): Promise<ManagedPartSummary> {
+    async createPart(input: {
+      name: string; description?: string; content: ManagedPartContent; actor?: string;
+      source?: Extract<AssetSource, { kind: 'import' | 'plugin' | 'project' }>;
+      /** A project part: the repository copy's hash it was made from. */
+      projectHash?: string;
+    }, beforeCommit?: () => Promise<void>): Promise<ManagedPartSummary> {
       const kind = input.content.kind;
       const name = input.name.trim();
       if (!name) throw new ManagedError('invalid', 'Give it a name.');
@@ -671,7 +684,10 @@ export function createManagedAgentsService(deps: ManagedAgentsDeps) {
       try {
         await state.update((s) => {
           const actor = actorOf(input.actor);
-          s.parts[entry.id] = { ...(input.description?.trim() && { description: input.description.trim() }), ...(actor && { updatedBy: actor }) };
+          s.parts[entry.id] = {
+            ...(input.description?.trim() && { description: input.description.trim() }), ...(actor && { updatedBy: actor }),
+            ...(input.projectHash && { projectHash: input.projectHash }),
+          };
         });
       } catch {
         await auditManaged('managed.part.created', entry.id);
@@ -695,6 +711,8 @@ export function createManagedAgentsService(deps: ManagedAgentsDeps) {
     async updatePart(input: {
       id: string; expectedRevision: number; expectedName?: string; expectedDescription?: string;
       name?: string; description?: string; content?: ManagedPartContent; actor?: string;
+      /** A project part updated from its repository: the repository copy's hash. */
+      projectHash?: string;
     }): Promise<ManagedPartSummary> {
       let entry = await entryOf(input.id);
       if (entry.source.kind === 'builtin') throw new ManagedError('builtin_read_only', 'Built-in parts can\'t be edited. Make your copy instead.');
@@ -737,6 +755,7 @@ export function createManagedAgentsService(deps: ManagedAgentsDeps) {
         const actor = actorOf(input.actor);
         if (actor) meta.updatedBy = actor;
         else delete meta.updatedBy;
+        if (input.projectHash) { meta.projectHash = input.projectHash; delete meta.projectKeptHash; }
         s.parts[entry.id] = meta;
       });
       await auditManaged('managed.part.updated', entry.id);
@@ -794,6 +813,42 @@ export function createManagedAgentsService(deps: ManagedAgentsDeps) {
       const live = await liveEntries();
       if (!origin || !live[origin]) throw new ManagedError('not_found', 'The part it was copied from is gone.');
       await writeAgentSetup(input.projectPath, input.agentId, replaceIn(agent.managed, input.id, origin), { before: agent });
+      changed();
+    },
+
+    /** Each part's repository bookkeeping: the hash it was made or updated from, one the person kept theirs over, and a reused part's link. */
+    async projectPartMeta(): Promise<Record<string, { projectHash?: string; projectKeptHash?: string; projectLink?: { projectId: string; key: string } }>> {
+      const s = await state.read();
+      const out: Record<string, { projectHash?: string; projectKeptHash?: string; projectLink?: { projectId: string; key: string } }> = {};
+      for (const [id, meta] of Object.entries(s.parts)) {
+        if (meta.projectHash || meta.projectKeptHash || meta.projectLink) {
+          out[id] = {
+            ...(meta.projectHash && { projectHash: meta.projectHash }), ...(meta.projectKeptHash && { projectKeptHash: meta.projectKeptHash }),
+            ...(meta.projectLink && { projectLink: meta.projectLink }),
+          };
+        }
+      }
+      return out;
+    },
+
+    /** A custom library part a person chose for a repository part with the same content: track that repository copy from now on. */
+    async linkProjectPart(id: string, link: { projectId: string; key: string }, hash: string): Promise<void> {
+      const entry = await entryOf(id);
+      if (entry.source.kind === 'builtin') throw new ManagedError('builtin_read_only', 'A built-in part can\'t follow a repository copy. Add the copy as its own part.');
+      if (entry.source.kind === 'project') throw new ManagedError('invalid', 'It already follows its own repository part.');
+      await state.update((s) => {
+        const was = s.parts[id]?.projectLink;
+        if (was && (was.projectId !== link.projectId || was.key !== link.key)) throw new ManagedError('invalid', 'It already follows another repository part.');
+        s.parts[id] = { ...(s.parts[id] ?? {}), projectLink: link, projectHash: hash };
+        delete s.parts[id].projectKeptHash;
+      });
+      changed();
+    },
+
+    /** Keep mine: the library's version stays, and this repository copy doesn't ask again. */
+    async keepProjectVersion(id: string, hash: string): Promise<void> {
+      await entryOf(id);
+      await state.update((s) => { s.parts[id] = { ...(s.parts[id] ?? {}), projectKeptHash: hash }; });
       changed();
     },
 

@@ -111,6 +111,11 @@ export interface ManagedPartSummary {
    * longer uses the values, so each must be set in the person's environment (D46).
    */
   droppedEnvValues?: string[];
+  /**
+   * Added from a project's repository (`.clubhouse/parts/`): which project, and
+   * its name while it's registered. The repository's copy never updates it by itself.
+   */
+  project?: { projectId: string; projectName?: string };
 }
 
 /** Why two skills can't share a setup: they install to one folder. Builder, setup checks and templates all say this. */
@@ -429,3 +434,61 @@ export type ManagedErrorCode =
   | 'failed';
 
 export type ManagedResult<T> = { ok: true; value: T } | { ok: false; code: ManagedErrorCode; message?: string };
+
+// ── Project parts: checked into a repository under .clubhouse/parts/ ─────
+
+/** Where a project's repository keeps parts it offers, relative to the project root. */
+export const PROJECT_PARTS_FOLDER = '.clubhouse/parts';
+
+/**
+ * One part a project's repository offers, as of the last read.
+ * - `available`: not in the library yet.
+ * - `added`: in the library as a project part, and the repository's copy hasn't changed since.
+ * - `changed`: the repository's copy changed since it was added or last updated. Nothing changes until the person picks.
+ * - `kept`: changed, and the person chose to keep the library's version of this exact repository copy.
+ * - `refused`: it can't be read safely (a link, credentials, too large, invalid). `problem` says why.
+ */
+export interface ProjectPartItem {
+  /** `skill:<folder>`, `block:<file name>` or `mcp:<serverKey>`. */
+  key: string;
+  kind: ManagedPartKind;
+  /** The skill folder, the file name without `.md`, or the server key. */
+  name: string;
+  state: 'available' | 'added' | 'changed' | 'kept' | 'refused';
+  /** The repository copy's content hash, when it could be read. */
+  hash?: string;
+  /** The library part it was added as. */
+  partId?: string;
+  partName?: string;
+  problem?: string;
+}
+
+export interface ProjectPartsInventory {
+  projectId: string;
+  projectName: string;
+  items: ProjectPartItem[];
+  /** Parts added from this project that its repository no longer has. They stay in the library, and agents keep them. */
+  gone: Array<{ key: string; partId: string; partName: string }>;
+  notes: string[];
+}
+
+/** What adding or updating a repository part would bring in, for the person to review first. */
+export interface ProjectPartReview {
+  item: ProjectPartItem;
+  projectName: string;
+  /** The repository's copy, as it would be stored: env values are names only. */
+  content: ManagedPartContent;
+  droppedEnvValues: string[];
+  /** Declared dependencies (names only). Nothing is installed or checked. */
+  dependencies: string[];
+  /** Library parts of the same kind with the same name or the same content. Never chosen automatically. */
+  /** `reusable`: same content, and it can follow this repository part (not built-in, not following another one). */
+  matches: Array<{ id: string; name: string; sameContent: boolean; builtin: boolean; reusable: boolean }>;
+  /** A free library name to add it under. */
+  suggestedName: string;
+  /** For `changed` and `kept`: the library part as it is now. */
+  current?: { id: string; name: string; revision: number; content: ManagedPartContent; usedBy: number };
+}
+
+/** How the person chose to add a repository part: as a new library part, or by using a library part with the same content. */
+export type ProjectPartChoice = { mode: 'copy'; name: string } | { mode: 'reuse'; partId: string };

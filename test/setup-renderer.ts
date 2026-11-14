@@ -612,6 +612,11 @@ vi.stubGlobal('clubhouse', {
     restart: async () => ({ ok: true, value: { resumed: true } }),
     setClubhouseFeatures: async () => ({ ok: true, value: undefined }),
     executableBits: async (files: unknown[]) => ({ ok: true, value: files.map(() => null) }),
+    projectParts: async () => ({ ok: true, value: { projectId: 'p', projectName: 'Project', items: [], gone: [], notes: [] } }),
+    reviewProjectPart: async () => ({ ok: false, code: 'not_found' }),
+    addProjectPart: async () => ({ ok: false, code: 'not_found' }),
+    updateProjectPart: async () => ({ ok: false, code: 'not_found' }),
+    keepProjectPart: async () => ({ ok: true, value: undefined }),
     onChanged: () => noop,
   },
   dispatcher: {

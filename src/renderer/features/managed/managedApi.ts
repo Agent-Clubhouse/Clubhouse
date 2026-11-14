@@ -12,6 +12,7 @@ import type {
   ManagedPartSummary,
   ManagedResult,
   ManagedTemplate,
+  ProjectPartsInventory,
 } from '../../../shared/managed-agents-types';
 
 const MESSAGES: Record<ManagedErrorCode, string> = {
@@ -81,6 +82,15 @@ export function useManagedParts(kind: ManagedPartKind) {
   return useLive<ManagedPartSummary[]>(() => unwrap(managed().listParts(kind)), [kind]);
 }
 
+/** What a project's repository offers under .clubhouse/parts/, read again whenever parts change. */
+export function useProjectParts(projectPath: string | undefined) {
+  return useLive<ProjectPartsInventory | null>(
+    () => (projectPath ? unwrap(managed().projectParts(projectPath)) : Promise.resolve(null)),
+    [projectPath],
+    !!projectPath,
+  );
+}
+
 export function useManagedTemplates() {
   return useLive<Array<ManagedTemplate & { usedBy: number }>>(() => unwrap(managed().listTemplates()), []);
 }
@@ -120,7 +130,11 @@ export function partKindLabel(kind: ManagedPartKind, plural = false): string {
 }
 
 /** "Built-in", "Custom · used by 4 agents", or "<agent> only". */
-export function sourceLabel(part: Pick<ManagedPartSummary, 'builtin' | 'usedBy'>, agentId?: string, agentName?: string): string {
+export function sourceLabel(part: Pick<ManagedPartSummary, 'builtin' | 'usedBy' | 'project'>, agentId?: string, agentName?: string): string {
+  if (part.project) {
+    const from = `Project · ${part.project.projectName ?? 'a removed project'}`;
+    return part.usedBy.length > 0 ? `${from} · ${part.usedBy.length} agent${part.usedBy.length === 1 ? '' : 's'}` : from;
+  }
   if (part.builtin) return part.usedBy.length > 0 ? `Built-in · ${part.usedBy.length} agent${part.usedBy.length === 1 ? '' : 's'}` : 'Built-in';
   const others = part.usedBy.filter((u) => u.agentId !== agentId).length;
   if (agentId && part.usedBy.some((u) => u.agentId === agentId) && others === 0) return `${agentName ?? 'This agent'} only`;

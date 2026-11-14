@@ -41,6 +41,12 @@ export const IPC = {
     PROJECT_GIT_EXCLUDES: 'managed:project-git-excludes',
     /** Skill import: whether each dropped or picked file is executable, by its mode (D96). */
     EXECUTABLE_BITS: 'managed:executable-bits',
+    /** Parts a project's repository offers under .clubhouse/parts/: list, review, add, update and keep mine. */
+    PROJECT_PARTS: 'managed:project-parts',
+    REVIEW_PROJECT_PART: 'managed:review-project-part',
+    ADD_PROJECT_PART: 'managed:add-project-part',
+    UPDATE_PROJECT_PART: 'managed:update-project-part',
+    KEEP_PROJECT_PART: 'managed:keep-project-part',
     /** Main to renderer: parts, templates or setups changed; refetch what's shown. */
     CHANGED: 'managed:changed',
   },

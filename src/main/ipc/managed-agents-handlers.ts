@@ -5,13 +5,14 @@
  */
 import { ipcMain } from 'electron';
 import { IPC } from '../../shared/ipc-channels';
-import type { ManagedPartContent, ManagedPartKind, ManagedPlainChoice, ManagedResult, ManagedTemplate, ManagedTemplateSettings } from '../../shared/managed-agents-types';
+import type { ManagedPartContent, ManagedPartKind, ManagedPlainChoice, ManagedResult, ManagedTemplate, ManagedTemplateSettings, ProjectPartChoice } from '../../shared/managed-agents-types';
 import { dismissMigrationNotice, managedAgents, previewPlain, switchPlain, restartManagedAgent, runningSnapshotFor, statusFor, isAgentWorking } from '../services/managed-agents';
 import { applyManagedSettings, convertToManaged, createManagedAgent, previewConvert } from '../services/managed-agents/agents';
 import { withSwitchLock } from '../services/managed-agents/auto-migrate';
 import { previewManagedSetup } from '../services/managed-agents/delivery';
 import { checkTemplateSettings, ManagedError } from '../services/managed-agents/service';
 import { executableBits } from '../services/managed-agents/file-modes';
+import { addProjectPart, keepProjectPart, projectPartsInventory, reviewProjectPart, updateProjectPart } from '../services/managed-agents/project-parts';
 import * as agentConfig from '../services/agent-config';
 import { resolveOrchestrator } from '../services/agent-system';
 import { appLog } from '../services/log-service';
@@ -49,6 +50,15 @@ function setupShape(value: unknown): void {
   }
   if (v.templateId !== undefined && typeof v.templateId !== 'string') throw new Error('Invalid setup templateId');
 }
+const keyArg = () => stringArg({ maxLength: 160 });
+const hashArg = () => stringArg({ maxLength: 128 });
+function choiceShape(value: unknown): void {
+  const v = value as Record<string, unknown>;
+  if (v.mode === 'copy' && typeof v.name === 'string' && v.name.length <= 200 && Object.keys(v).length === 2) return;
+  if (v.mode === 'reuse' && typeof v.partId === 'string' && v.partId.length <= 128 && Object.keys(v).length === 2) return;
+  throw new Error('Invalid choice');
+}
+
 const setupArg = () => objectArg<{ blocks: string[]; skills: string[]; mcps: string[]; templateId?: string }>({ validate: setupShape });
 
 function contentShape(value: unknown): void {
@@ -238,6 +248,14 @@ export function registerManagedAgentsHandlers(): void {
   // Only each file's mode is read, as true, false or null (D96).
   ipcMain.handle(IPC.MANAGED.EXECUTABLE_BITS, withValidatedArgs([arrayArg(stringArg({ minLength: 0, maxLength: 4096 }), { maxLength: 2000 })],
     (_e, paths) => result(() => executableBits(paths))));
+  ipcMain.handle(IPC.MANAGED.PROJECT_PARTS, withValidatedArgs([stringArg()], (_e, projectPath) => result(() => projectPartsInventory(s(), projectPath))));
+  ipcMain.handle(IPC.MANAGED.REVIEW_PROJECT_PART, withValidatedArgs([stringArg(), keyArg()], (_e, projectPath, key) => result(() => reviewProjectPart(s(), projectPath, key))));
+  ipcMain.handle(IPC.MANAGED.ADD_PROJECT_PART, withValidatedArgs([stringArg(), keyArg(), hashArg(), objectArg<ProjectPartChoice>({ validate: choiceShape })],
+    (_e, projectPath, key, hash, choice) => result(() => addProjectPart(s(), projectPath, key, hash, choice))));
+  ipcMain.handle(IPC.MANAGED.UPDATE_PROJECT_PART, withValidatedArgs([stringArg(), idArg(), numberArg({ integer: true, min: 0 }), hashArg()],
+    (_e, projectPath, partId, expectedRevision, hash) => result(() => updateProjectPart(s(), projectPath, partId, expectedRevision, hash))));
+  ipcMain.handle(IPC.MANAGED.KEEP_PROJECT_PART, withValidatedArgs([stringArg(), idArg(), hashArg()],
+    (_e, projectPath, partId, hash) => result(() => keepProjectPart(s(), projectPath, partId, hash))));
   ipcMain.handle(IPC.MANAGED.SET_CLUBHOUSE_FEATURES, withValidatedArgs([stringArg(), idArg(), booleanArg()],
     (_e, projectPath, agentId, on) => result(async () => {
       await agentConfig.setClubhouseFeatures(projectPath, agentId, on);

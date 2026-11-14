@@ -14,6 +14,7 @@ import { Toggle } from '../../components/Toggle';
 import { BlockList, type BuilderAgent } from './BlockList';
 import { LibraryPanel, PartToggleList } from './LibraryPanel';
 import { PartDialog } from './PartDialog';
+import { ProjectPartsSection } from './ProjectParts';
 import { DroppedEnvNote } from './parts-ui';
 import { errorText, managed, unwrap, useManagedParts } from './managedApi';
 
@@ -111,6 +112,8 @@ export function ManagedBuilder({ target, tab }: { target: BuilderTarget; tab: Bu
   const [skillClash, setSkillClash] = useState<string | null>(null);
   const agent = target.kind === 'agent' ? target.agent : undefined;
   const agentName = agent?.agentName ?? (target.kind === 'draft' ? target.agentName : undefined);
+  // The project whose repository parts are offered: the agent's, or a New agent's. A template has none.
+  const projectPath = agent?.projectPath ?? (target.kind === 'draft' ? target.preview?.projectPath : undefined);
 
   if (!setup) {
     return <p className="text-[13px] text-ctp-overlay1 py-3">{error ?? 'Loading…'}</p>;
@@ -162,6 +165,18 @@ export function ManagedBuilder({ target, tab }: { target: BuilderTarget; tab: Bu
     try { await unwrap(managed().backToShared(agent.projectPath, agent.agentId, id)); }
     catch (err) { /* telemetry-exempt: shown to the person above the builder */ setActionError(errorText(err)); }
   };
+  const repoParts = (kind: ManagedPartKind) => (
+    <ProjectPartsSection
+      projectPath={projectPath}
+      kind={kind}
+      selected={setup[listKey(kind)]}
+      agentName={agentName}
+      onUse={({ id }) => {
+        if (kind === 'block') { if (!setup.blocks.includes(id)) update('block', [...setup.blocks, id]); }
+        else toggle(kind, id, true);
+      }}
+    />
+  );
   const onCreated = (part: ManagedPartSummary) => {
     const list = setup[listKey(part.kind)];
     if (!list.includes(part.id)) update(part.kind, [...list, part.id]);
@@ -170,6 +185,7 @@ export function ManagedBuilder({ target, tab }: { target: BuilderTarget; tab: Bu
   return (
     <div data-testid={`managed-builder-${tab}`} className="flex flex-col gap-3">
       {(error || actionError) && <p role="alert" className="text-xs text-ctp-error">{error ?? actionError}</p>}
+      {(tab === 'instructions' || tab === 'skills' || tab === 'mcp') && repoParts(tab === 'instructions' ? 'block' : tab === 'skills' ? 'skill' : 'mcp')}
       {tab === 'instructions' && (
         <div className="grid grid-cols-[minmax(0,1fr)_300px] gap-5 items-start">
           <BlockList

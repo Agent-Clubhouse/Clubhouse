@@ -60,7 +60,7 @@ export function managedAgents(): ManagedAgentsService {
     service = createManagedAgentsService({
       catalog: createAssetCatalogStore({ dir: assetCatalogDir() }),
       state: createManagedStateStore(),
-      listProjects: async () => (await projectStore.peekProjects()).map((p) => ({ path: p.path, name: p.displayName || p.name })),
+      listProjects: async () => (await projectStore.peekProjects()).map((p) => ({ id: p.id, path: p.path, name: p.displayName || p.name })),
       listAgents: (projectPath) => agentConfig.peekDurableConfigs(projectPath),
       listProjectsChecked: async () => {
         const { projects, readable } = await projectStore.peekProjectsChecked();

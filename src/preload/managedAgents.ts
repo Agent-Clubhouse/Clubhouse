@@ -17,6 +17,9 @@ import type {
   ManagedTemplateChange,
   ManagedTemplatePushTarget,
   ManagedTemplateSettings,
+  ProjectPartChoice,
+  ProjectPartReview,
+  ProjectPartsInventory,
 } from '../shared/managed-agents-types';
 import type { DurableAgentConfig } from '../shared/types';
 
@@ -79,6 +82,13 @@ const managed = {
     const paths = files.map((f) => { try { return webUtils.getPathForFile(f); } catch { return ''; } });
     return call<Array<boolean | null>>(IPC.MANAGED.EXECUTABLE_BITS, paths);
   },
+  /** What the project's repository offers under .clubhouse/parts/, read now. Reads only. */
+  projectParts: (projectPath: string) => call<ProjectPartsInventory>(IPC.MANAGED.PROJECT_PARTS, projectPath),
+  reviewProjectPart: (projectPath: string, key: string) => call<ProjectPartReview>(IPC.MANAGED.REVIEW_PROJECT_PART, projectPath, key),
+  /** Add a reviewed repository part to the library. `hash` is the copy reviewed. Selecting it for an agent is a separate save. */
+  addProjectPart: (projectPath: string, key: string, hash: string, choice: ProjectPartChoice) => call<ManagedPartSummary>(IPC.MANAGED.ADD_PROJECT_PART, projectPath, key, hash, choice),
+  updateProjectPart: (projectPath: string, partId: string, expectedRevision: number, hash: string) => call<ManagedPartSummary>(IPC.MANAGED.UPDATE_PROJECT_PART, projectPath, partId, expectedRevision, hash),
+  keepProjectPart: (projectPath: string, partId: string, hash: string) => call<void>(IPC.MANAGED.KEEP_PROJECT_PART, projectPath, partId, hash),
   /** Parts, templates or setups changed somewhere. Returns an unsubscribe function. */
   onChanged: (listener: () => void): (() => void) => {
     const handler = () => listener();

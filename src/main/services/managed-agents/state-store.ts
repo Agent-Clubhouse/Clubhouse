@@ -17,6 +17,12 @@ export interface PartMeta {
   updatedBy?: string;
   /** The person's copy of a built-in an app update retired: the built-in's id (D99). */
   fromRetiredBuiltin?: string;
+  /** A part added from a project's repository: the repository copy's hash when it was added or last updated from it. */
+  projectHash?: string;
+  /** A repository copy the person chose not to take (Keep mine): its hash. A later change asks again. */
+  projectKeptHash?: string;
+  /** A library part a person chose for a repository part with the same content: that project and key. Changes are tracked as for a project part. */
+  projectLink?: { projectId: string; key: string };
 }
 
 export interface ManagedState {
