@@ -580,8 +580,16 @@ function onMessage(from: string, message: NetworkMessage): void {
     delete s.deferredRemovals[lower(from)];
     changed = true;
     const current = annexPeers.getPeer(from);
+    // The confirming view may itself announce a new sender epoch or pin. Its
+    // ordinary members merge runs below, so the stored peer alone is too old
+    // to authorize replay. Every sender record in the message must agree too,
+    // including when the view repeats the sender with different epochs/pins.
+    const sameAnnouncedSender = message.type !== 'members' || message.members.every((member) =>
+      lower(member.fingerprint) !== lower(from) || (deferred.pairingId === member.pairingId
+        && annexTls.sameCertificateFingerprint(deferred.certFingerprint, member.certFingerprint)));
     if (current && deferred.pairingId === current.pairingId
-      && annexTls.sameCertificateFingerprint(deferred.certFingerprint, current.tlsCertificateFingerprint)) {
+      && annexTls.sameCertificateFingerprint(deferred.certFingerprint, current.tlsCertificateFingerprint)
+      && sameAnnouncedSender) {
       for (const removal of deferred.removals) {
         changed = applyRemoval(removal, from, s) || changed;
         if (left) break;

@@ -11,7 +11,7 @@ import type * as tls from 'tls';
 import WebSocket, { WebSocketServer } from 'ws';
 import { generateTestIdentity, type TestIdentity } from './tls-test-utils';
 import { sameCertFingerprint, tryPairOverTls } from './helpers';
-import { parseNetworkMessage, type NetworkMember } from '../../../src/shared/annex-network-protocol';
+import { parseNetworkMessage, type NetworkMember } from '../../src/shared/annex-network-protocol';
 
 export interface FakeMember {
   identity: TestIdentity;

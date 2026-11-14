@@ -525,6 +525,34 @@ describe('Annex Network membership (#3061)', () => {
       expect(peers.get(PHONE)?.alias).toBe('Trusted phone');
     });
 
+    it.each([
+      ['pairing', false], ['pin', false], ['pairing and pin', false],
+      ['pairing', true], ['pin', true], ['pairing and pin', true],
+    ] as const)('discards deferred traffic when the confirming view changes the sender %s (duplicate: %s)', (change, duplicate) => {
+      const original = member(N, '0e', 'Pending Mac', { pairingId: 'pairing-pending-001' });
+      const replacement = member(N, change.includes('pin') ? 'ff' : '0e', 'Confirmed Mac', {
+        pairingId: change.includes('pairing') ? 'pairing-replaced-002' : original.pairingId,
+        joinedAt: change.includes('pairing') ? '2026-11-10T00:00:00.000Z' : original.joinedAt,
+      });
+      peers.set(PHONE, memberPeer(PHONE, '0c', 'Trusted phone', { kind: 'phone' }));
+      membership.vouchFromPhone(PHONE, [original]);
+      listener!(N, { v: 1, type: 'member-removed', removal: { fingerprint: PHONE, removedAt: '2030-01-01T00:00:00.000Z' } });
+      hooks.endDevice.mockClear();
+
+      // The sender's replacement record arrives in the very message that
+      // confirms us, before the ordinary members merge has adopted it locally.
+      listener!(N, view([member(SELF, '01', 'This Mac'), ...(duplicate ? [original] : []), replacement]));
+      expect(peers.get(N)?.networkPending).toBeUndefined();
+      if (change.includes('pairing')) expect(peers.get(N)?.pairingId).toBe(replacement.pairingId);
+      if (change === 'pairing and pin') expect(peers.get(N)?.tlsCertificateFingerprint).toBe(replacement.certFingerprint);
+      expect(peers.get(PHONE)?.alias).toBe('Trusted phone');
+      expect(hooks.endDevice).not.toHaveBeenCalled();
+      expect(membership.currentView().removals).toEqual([]);
+      // Discarded traffic cannot reappear on the next reconciliation either.
+      listener!(N, view([member(SELF, '01', 'This Mac')]));
+      expect(peers.get(PHONE)?.alias).toBe('Trusted phone');
+    });
+
     it('adopts a later self pairing before reconciling a deferred removal of the old one', () => {
       const self = member(SELF, '01', 'This Mac', { pairingId: 'pairing-self-old-001' });
       vi.mocked(networkChannel.localMember).mockImplementation(() => self);
