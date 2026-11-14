@@ -296,6 +296,34 @@ describe('AgentRow hover card', () => {
   });
 });
 
+describe('AgentRow hover model and provider', () => {
+  afterEach(() => useChatStore.setState({ agents: {}, live: {} }));
+
+  it.each([true, false])('uses session values only for a live chat (%s)', (live) => {
+    vi.useFakeTimers();
+    useChatStore.setState({
+      agents: { a1: { ...createChatViewState('a1'), provider: 'codex-cli', model: 'gpt-6', startModel: 'sonnet',
+        models: [{ id: 'gpt-6', label: 'GPT 6' }, { id: 'sonnet', label: 'Sonnet 5.5' }] } },
+      live: { a1: live },
+    });
+    const { row } = setup(durable({ status: 'running', orchestrator: 'claude-code', model: 'sonnet' }));
+    fireEvent.mouseEnter(row);
+    act(() => { vi.advanceTimersByTime(HOVER_OPEN_MS); });
+    const card = screen.getByTestId('agent-hover-card');
+    expect(card).toHaveTextContent(live ? 'Codex, GPT 6. Next start: Sonnet 5.5' : 'Claude Code, Sonnet');
+    if (!live) expect(card).not.toHaveTextContent('GPT 6');
+  });
+
+  it('shows the saved values without a chat session', () => {
+    vi.useFakeTimers();
+    useChatStore.setState({ agents: {}, live: {} });
+    const { row } = setup(durable({ orchestrator: 'claude-code', model: 'sonnet' }));
+    fireEvent.mouseEnter(row);
+    act(() => { vi.advanceTimersByTime(HOVER_OPEN_MS); });
+    expect(screen.getByTestId('agent-hover-card')).toHaveTextContent('Claude Code, Sonnet');
+  });
+});
+
 describe('AgentRow hover card for a chat agent (#2197)', () => {
   const chatState = (state: 'running' | 'idle', turnStartedAt: number | null, live = true) =>
     useChatStore.setState({ agents: { a1: { ...createChatViewState('a1'), sessionId: 's1', state, turnStartedAt } }, live: { a1: live } });

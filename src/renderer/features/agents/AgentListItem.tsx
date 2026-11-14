@@ -11,6 +11,9 @@ import { describeHelperDispose, useHelperDisposeRequestStore } from '../../store
 import { describeHelperStarts, startRequestsFor, useHelperStartRequestStore } from '../../stores/helperStartRequestStore';
 import { describeGrantRequests, grantRequestsFor, useGrantRequestStore } from '../../stores/grantRequestStore';
 import { useAgentDetailsStore } from './details/detailsStore';
+import { liveChatAgent, useChatStore } from '../../stores/chatStore';
+import { sessionModelLine } from './ContextWindowField';
+import { modelLabel } from './chat/view-model';
 
 interface Props {
   agent: Agent;
@@ -75,7 +78,15 @@ function AgentListItemInner({ agent, isActive, isThinking, onSelect, onSpawnQuic
   const remoteIconDataUrl = useRemoteProjectStore((s) => s.remoteAgentIcons[agent.id]);
   const iconDataUrl = isRemote ? remoteIconDataUrl : localIconDataUrl;
   const allOrchestrators = useOrchestratorStore((s) => s.allOrchestrators);
-  const orchestrator = useEffectiveOrchestrator(agent);
+  const savedOrchestrator = useEffectiveOrchestrator(agent);
+  const session = useChatStore((s) => liveChatAgent(s, agent.id));
+  const orchestrator = session?.provider ?? savedOrchestrator;
+  const modelId = session ? session.model : agent.model;
+  const savedModel = session
+    ? (agent.model && agent.model !== 'default' ? modelLabel(agent.model, session.models) : 'Default model')
+    : formatModelLabel(agent.model);
+  const currentModel = session ? (session.model && session.model !== 'default' ? modelLabel(session.model, session.models) : 'Default model') : savedModel;
+  const model = (agent.kind === 'durable' && sessionModelLine(session, currentModel, savedModel)) || currentModel;
 
   const ringColor = statusRingColor(agent, detailed);
 
@@ -179,15 +190,14 @@ function AgentListItemInner({ agent, isActive, isThinking, onSelect, onSpawnQuic
               );
             })()}
             {(() => {
-              const modelLabel = formatModelLabel(agent.model);
-              const c = agent.model && agent.model !== 'default'
-                ? getModelColor(agent.model)
+              const c = modelId && modelId !== 'default'
+                ? getModelColor(modelId)
                 : { bg: 'rgb(var(--ctp-overlay1) / 0.15)', text: 'rgb(var(--ctp-overlay1))' };
               return (
                 <span className="text-xs px-1.5 py-0.5 rounded truncate min-w-0 font-mono"
                   style={{ backgroundColor: c.bg, color: c.text }}
-                  title={modelLabel}>
-                  {modelLabel}
+                  title={model}>
+                  {model}
                 </span>
               );
             })()}

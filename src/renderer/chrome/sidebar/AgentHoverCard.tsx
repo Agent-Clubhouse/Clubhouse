@@ -13,6 +13,8 @@ import type { AgentDot } from './treeModel';
 import { Tooltip } from '../../components/Tooltip';
 import { describeSleep, formatAgo } from '../../features/agents/states/format';
 import { accessLabel, type AccessLevel } from '../../../shared/agent-access';
+import { sessionModelLine } from '../../features/agents/ContextWindowField';
+import { modelLabel } from '../../features/agents/chat/view-model';
 
 const capitalize = (text: string) => text.charAt(0).toUpperCase() + text.slice(1);
 
@@ -75,7 +77,14 @@ export const AgentHoverCard = forwardRef<HTMLDivElement, {
   const turnStartedAt = useChatStore((s) => liveChatAgent(s, agent.id)?.turnStartedAt ?? null);
   // The chat session's level, which the composer can change for this session.
   const liveLevel = useChatStore((s) => liveChatAgent(s, agent.id)?.level ?? null);
-  const orchestrator = useEffectiveOrchestrator(agent);
+  const savedOrchestrator = useEffectiveOrchestrator(agent);
+  const session = useChatStore((s) => liveChatAgent(s, agent.id));
+  const orchestrator = session?.provider ?? savedOrchestrator;
+  const savedModel = session
+    ? (agent.model && agent.model !== 'default' ? modelLabel(agent.model, session.models) : 'Default model')
+    : formatModelLabel(agent.model);
+  const currentModel = session ? (session.model && session.model !== 'default' ? modelLabel(session.model, session.models) : 'Default model') : savedModel;
+  const model = (agent.kind === 'durable' && sessionModelLine(session, currentModel, savedModel)) || currentModel;
   const permissionsSupported = allOrchestrators.find((o) => o.id === orchestrator)?.capabilities.permissions ?? true;
   // A chat agent's Working time is its turn's, as in the chat header (#2197).
   const since = chatState === 'running' && turnStartedAt ? turnStartedAt : spawnedAt;
@@ -131,7 +140,7 @@ export const AgentHoverCard = forwardRef<HTMLDivElement, {
       )}
       <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1">
         <Row label="Runs on">
-          {getOrchestratorLabel(orchestrator, allOrchestrators)}, {formatModelLabel(agent.model)}
+          {getOrchestratorLabel(orchestrator, allOrchestrators)}, {model}
         </Row>
         {agent.branch && <Row label="Branch"><span className="font-mono">{agent.branch}</span></Row>}
         {worktree && <Row label="Worktree"><Tooltip content={agent.worktreePath} disabled={worktree === agent.worktreePath}><span className="font-mono">{worktree}</span></Tooltip></Row>}

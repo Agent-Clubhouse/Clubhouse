@@ -9,6 +9,7 @@ import { useHelperStartRequestStore } from '../../stores/helperStartRequestStore
 import { useHelperDisposeRequestStore } from '../../stores/helperDisposeRequestStore';
 import { useGrantRequestStore } from '../../stores/grantRequestStore';
 import { useAgentDetailsStore } from './details/detailsStore';
+import { createChatViewState, useChatStore } from '../../stores/chatStore';
 
 const baseAgent: Agent = {
   id: 'agent-1',
@@ -522,5 +523,28 @@ describe('AgentListItem helper roll-up and requests (legacy layout)', () => {
     expect(onSelect).toHaveBeenCalledWith('agent-1');
     expect(useGrantRequestStore.getState().reviewing).toBe('agent-1');
     useGrantRequestStore.setState({ requests: {}, reviewing: null });
+  });
+});
+
+describe('AgentListItem model and provider', () => {
+  afterEach(() => useChatStore.setState({ agents: {}, live: {} }));
+
+  it.each([true, false])('uses session values only for a live chat (%s)', (live) => {
+    useChatStore.setState({
+      agents: { 'agent-1': { ...createChatViewState('agent-1'), provider: 'codex-cli', model: 'gpt-6', startModel: 'sonnet',
+        models: [{ id: 'gpt-6', label: 'GPT 6' }, { id: 'sonnet', label: 'Sonnet 5.5' }] } },
+      live: { 'agent-1': live },
+    });
+    renderItem({ status: 'running', orchestrator: 'claude-code', model: 'sonnet' });
+    expect(screen.getByTitle(live ? 'Codex' : 'Claude Code')).toBeInTheDocument();
+    expect(screen.getByTitle(live ? 'GPT 6. Next start: Sonnet 5.5' : 'Sonnet')).toBeInTheDocument();
+    if (!live) expect(screen.queryByText(/GPT 6/)).toBeNull();
+  });
+
+  it('shows the saved values without a chat session', () => {
+    useChatStore.setState({ agents: {}, live: {} });
+    renderItem({ orchestrator: 'claude-code', model: 'sonnet' });
+    expect(screen.getByTitle('Claude Code')).toBeInTheDocument();
+    expect(screen.getByTitle('Sonnet')).toBeInTheDocument();
   });
 });
