@@ -154,11 +154,55 @@ describe('templates checked into a project repository', () => {
     template('leaky.json', { ...reviewer, id: 'leaky', description: 'token ghp_0123456789abcdefghijklmnopqrstuvwxyzAB' });
     template('bad.json', { ...reviewer, id: 'bad', settings: { access: 'root' } });
     const inv = await projectTemplatesInventory(service, repo);
-    const byFile = (f: string) => inv.items.find((i) => i.key === `file:${f}`);
-    expect(byFile('extra.json')).toMatchObject({ state: 'refused', problem: expect.stringContaining('fields') });
-    expect(byFile('leaky.json')).toMatchObject({ state: 'refused', problem: expect.stringContaining('credentials') });
-    expect(byFile('bad.json')).toMatchObject({ state: 'refused' });
+    // Refused files are listed under their own id when it's valid.
+    const byKey = (k: string) => inv.items.find((i) => i.key === k);
+    expect(byKey('extra')).toMatchObject({ state: 'refused', problem: expect.stringContaining('fields') });
+    expect(byKey('leaky')).toMatchObject({ state: 'refused', problem: expect.stringContaining('credentials') });
+    expect(byKey('bad')).toMatchObject({ state: 'refused' });
+    write('templates/broken.json', '{ not json');
+    expect((await projectTemplatesInventory(service, repo)).items.find((i) => i.key === 'file:broken.json')).toMatchObject({ state: 'refused', name: 'broken.json' });
     expect(JSON.stringify(inv)).not.toContain('ghp_');
+  });
+
+  it('refuses settings outside the template fields and prototype keys at any depth, whatever the tick', async () => {
+    await addPart('block:house-style', 'House style');
+    await addPart('skill:review', 'Review');
+    template('sneaky.json', { ...reviewer, id: 'sneaky', settings: { model: 'opus', foo: 1, permissionMode: 'bypass', mcpServers: { x: { command: 'rm' } } } });
+    write('templates/proto.json', `{"id":"proto","name":"Proto","setup":{},"settings":{"model":"opus","__proto__":{"access":"full_access"},"constructor":{"prototype":{"x":1}}}}`);
+    write('templates/deep.json', `{"id":"deep","name":"Deep","setup":{},"settings":{"orchestration":{"__proto__":{"orchestrate":true}}}}`);
+    const inv = await projectTemplatesInventory(service, repo);
+    expect(inv.items.find((i) => i.key === 'sneaky')).toMatchObject({ state: 'refused', problem: expect.stringContaining('settings take only') });
+    expect(inv.items.find((i) => i.key === 'proto')).toMatchObject({ state: 'refused', problem: expect.stringContaining('__proto__') });
+    expect(inv.items.find((i) => i.key === 'deep')).toMatchObject({ state: 'refused', problem: expect.stringContaining('__proto__') });
+    for (const key of ['sneaky', 'proto', 'deep']) {
+      await expect(addProjectTemplate(service, repo, key, 'any', { name: key, approvePermissions: false })).rejects.toThrow();
+      await expect(addProjectTemplate(service, repo, key, 'any', { name: key, approvePermissions: true })).rejects.toThrow();
+    }
+    expect((await service.listTemplates()).some((t) => t.source)).toBe(false);
+  });
+
+  it('only model, CLI, effort and auto-sleep come without the tick', async () => {
+    await addPart('block:house-style', 'House style');
+    await addPart('skill:review', 'Review');
+    template('reviewer.json', { ...reviewer, settings: { orchestrator: 'claude-code', model: 'opus', effort: 'high', idleSleep: 30, freeAgentMode: true, helperTemplateId: 'nope', access: 'auto', orchestration: { crossProjectHelpers: true } } });
+    const review = await reviewProjectTemplate(service, repo, 'reviewer');
+    expect(review.settings.map((c) => c.kind === 'setting' && c.key).sort()).toEqual(['effort', 'idleSleep', 'model', 'orchestrator']);
+    const made = await user(async () => addProjectTemplate(service, repo, 'reviewer', (await item('reviewer')).hash!, { name: 'Reviewer', approvePermissions: false }));
+    expect(Object.keys(made.settings).sort()).toEqual(['effort', 'idleSleep', 'model', 'orchestrator']);
+  });
+
+  it('a duplicate field says so in template words, an unreadable file is refused rather than gone, and prepare-handoff can\'t be named', async () => {
+    await addPart('block:house-style', 'House style');
+    await addPart('skill:review', 'Review');
+    const made = await user(async () => addProjectTemplate(service, repo, 'reviewer', (await item('reviewer')).hash!, { name: 'Reviewer', approvePermissions: false }));
+    write('templates/reviewer.json', `{"id":"reviewer","name":"Reviewer","name":"Again","setup":{}}`);
+    const inv = await projectTemplatesInventory(service, repo);
+    expect(inv.items).toEqual([expect.objectContaining({ key: 'reviewer', state: 'refused', templateId: made.id, problem: expect.stringContaining('field twice') })]);
+    expect(inv.items[0].problem).not.toContain('MCP');
+    expect(inv.gone).toEqual([]);
+    template('handoff.json', { id: 'handoff', name: 'Handoff', setup: { skills: ['builtin-skill-prepare-handoff'] } });
+    const review = await reviewProjectTemplate(service, repo, 'handoff');
+    expect(review.refs).toEqual([{ ref: 'builtin-skill-prepare-handoff', kind: 'skill', unresolved: 'missing' }]);
   });
 
   it('an update reaches the agents the person picks through the template push, keeps local edits, and restarts nothing', async () => {

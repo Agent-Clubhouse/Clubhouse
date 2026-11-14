@@ -22,6 +22,7 @@ import { nameIssues } from '../asset-catalog/validation';
 import { appLog } from '../log-service';
 import { list as listProjects } from '../project-store';
 import {
+  PREPARE_HANDOFF_SKILL_ID,
   PROJECT_PARTS_FOLDER,
   type ManagedPartKind,
   type ManagedTemplate,
@@ -64,19 +65,26 @@ interface RepoTemplate {
   problem?: string;
 }
 
-/** Settings that can raise what agents made from the template may do. */
+/** The only settings a template file may hold. Anything else refuses the file. */
+const SETTINGS_FIELDS = new Set(['orchestrator', 'model', 'effort', 'access', 'freeAgentMode', 'orchestration', 'idleSleep', 'helperTemplateId', 'grants']);
+/** Settings that carry no authority. Every other setting needs the person's tick. */
+const PLAIN_SETTINGS = new Set(['orchestrator', 'model', 'effort', 'idleSleep']);
+/** Keys that could reach an object's prototype once copied. Refused at any depth. */
+const PROTOTYPE_KEYS = new Set(['__proto__', 'constructor', 'prototype']);
+
+/** Whether a setting (a push-dialog key such as `grants.<…>` or `orchestration.<…>`) can raise what agents may do: anything not on the plain list. */
 export function isAuthorityKey(key: string): boolean {
-  return key === 'access' || key === 'freeAgentMode' || key === 'helperTemplateId' || key.startsWith('orchestration') || key.startsWith('grants');
+  return !PLAIN_SETTINGS.has(key);
 }
 
 function splitSettings(s: ManagedTemplateSettings): { plain: ManagedTemplateSettings; authority: ManagedTemplateSettings } {
-  const { access, freeAgentMode, orchestration, helperTemplateId, grants, ...plain } = s;
-  const authority: ManagedTemplateSettings = {
-    ...(access !== undefined && { access }), ...(freeAgentMode !== undefined && { freeAgentMode }),
-    ...(orchestration !== undefined && { orchestration }), ...(helperTemplateId !== undefined && { helperTemplateId }),
-    ...(grants !== undefined && { grants }),
-  };
-  return { plain, authority };
+  const plain: Record<string, unknown> = {};
+  const authority: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(s)) {
+    if (value === undefined) continue;
+    (PLAIN_SETTINGS.has(key) ? plain : authority)[key] = value;
+  }
+  return { plain: plain as ManagedTemplateSettings, authority: authority as ManagedTemplateSettings };
 }
 
 function record(value: unknown): value is Record<string, unknown> {
@@ -95,8 +103,14 @@ function refList(value: unknown, what: string): string[] {
 function parseTemplate(text: string): ProjectTemplateFile {
   if (redactSecretValues(text) !== text) throw new SourceError('The template contains credentials; nothing was read.');
   let raw: unknown;
-  try { raw = JSON.parse(text); } catch { throw new SourceError('The template is not valid JSON.'); }
-  refuseDuplicateKeys(text);
+  let prototypeKey = false;
+  try {
+    raw = JSON.parse(text, (key, value: unknown) => { if (PROTOTYPE_KEYS.has(key)) prototypeKey = true; return value; });
+  } catch { throw new SourceError('The template is not valid JSON.'); }
+  if (prototypeKey) throw new SourceError('The template uses __proto__, constructor or prototype as a field name; nothing was read.');
+  try { refuseDuplicateKeys(text); } catch {
+    throw new SourceError('The template has a field twice. Remove the duplicate so it\'s clear which one counts.');
+  }
   if (!record(raw)) throw new SourceError('The template must be a JSON object.');
   if (Object.keys(raw).some((k) => !FIELDS.has(k))) throw new SourceError('The template has fields Clubhouse doesn\'t take (only id, name, description, setup and settings).');
   if (typeof raw.id !== 'string' || !ID_RE.test(raw.id) || !safeName(raw.id)) throw new SourceError('The template needs an id of letters, digits, dots, dashes or underscores.');
@@ -104,6 +118,9 @@ function parseTemplate(text: string): ProjectTemplateFile {
   if (raw.description !== undefined && (typeof raw.description !== 'string' || raw.description.length > 2000)) throw new SourceError('The template\'s description must be text.');
   const setup = raw.setup ?? {};
   if (!record(setup) || Object.keys(setup).some((k) => !['blocks', 'skills', 'mcps'].includes(k))) throw new SourceError('The template\'s setup takes only blocks, skills and mcps.');
+  if (raw.settings !== undefined && (!record(raw.settings) || Object.keys(raw.settings).some((k) => !SETTINGS_FIELDS.has(k)))) {
+    throw new SourceError(`The template's settings take only ${[...SETTINGS_FIELDS].join(', ')}.`);
+  }
   let settings: ManagedTemplateSettings;
   try { settings = checkTemplateSettings(raw.settings); } catch (error) {
     throw new SourceError(error instanceof ManagedError && error.message !== error.code ? error.message : 'The template\'s settings aren\'t valid.');
@@ -113,6 +130,19 @@ function parseTemplate(text: string): ProjectTemplateFile {
     setup: { blocks: refList(setup.blocks, 'blocks'), skills: refList(setup.skills, 'skills'), mcps: refList(setup.mcps, 'mcps') },
     ...(Object.keys(settings).length > 0 && { settings }),
   };
+}
+
+/** A refused file's own id, when it has a valid one, so its row stays under that id. Read only as a string; nothing else is used. */
+function refusedKey(text: string | undefined): string | undefined {
+  if (!text) return undefined;
+  try {
+    const raw: unknown = JSON.parse(text);
+    const id = record(raw) ? raw.id : undefined;
+    return typeof id === 'string' && ID_RE.test(id) && safeName(id) && redactSecretValues(id) === id ? id : undefined;
+  } catch {
+    // telemetry-exempt: not JSON, so it's listed by file name
+    return undefined;
+  }
 }
 
 /** Every template file in the repository, read within limits. Two files with one id refuse both. */
@@ -131,18 +161,19 @@ export async function readRepoTemplates(root: string): Promise<{ templates: Repo
   const read: Array<RepoTemplate & { fileName: string }> = [];
   for (const fileName of names) {
     if (!safeName(fileName)) { notes.push('A template file with an unsafe name was skipped.'); continue; }
+    let text: string | undefined;
     try {
-      const { bytes } = await readFile(root, `${TEMPLATES}/${fileName}`, MAX_TEMPLATE_BYTES);
-      const file = parseTemplate(bytes.toString('utf8'));
+      text = (await readFile(root, `${TEMPLATES}/${fileName}`, MAX_TEMPLATE_BYTES)).bytes.toString('utf8');
+      const file = parseTemplate(text);
       read.push({ fileName, key: file.id, file, hash: canonicalHash(file) });
     } catch (error) {
-      // telemetry-exempt: listed by file name with a content-free reason.
-      read.push({ fileName, key: `file:${fileName}`, problem: sourceProblem(error) });
+      // telemetry-exempt: listed with a content-free reason, under its id when one can be told, so a template added from it isn't shown as gone.
+      read.push({ fileName, key: refusedKey(text) ?? `file:${fileName}`, problem: sourceProblem(error) });
     }
   }
   const counts = new Map<string, number>();
-  for (const t of read) if (t.file) counts.set(t.key, (counts.get(t.key) ?? 0) + 1);
-  const templates = read.map(({ fileName: _f, ...t }): RepoTemplate => (t.file && (counts.get(t.key) ?? 0) > 1
+  for (const t of read) if (!t.key.startsWith('file:')) counts.set(t.key, (counts.get(t.key) ?? 0) + 1);
+  const templates = read.map(({ fileName: _f, ...t }): RepoTemplate => (!t.key.startsWith('file:') && (counts.get(t.key) ?? 0) > 1
     ? { key: t.key, problem: 'Another template file uses the same id. Give each one its own id.' }
     : t));
   // One entry per duplicated id.
@@ -175,7 +206,8 @@ function resolveRefs(file: ProjectTemplateFile, live: Record<string, CatalogEntr
         continue;
       }
       const entry = live[ref];
-      if (entry && entry.source.kind === 'builtin' && entry.kind === kind && !builtinPart(ref)?.retired) out.push({ ref, kind, partId: entry.id, partName: entry.name });
+      // prepare-handoff follows the agent's grants (D253), so no template can choose it.
+      if (entry && entry.source.kind === 'builtin' && entry.kind === kind && !builtinPart(ref)?.retired && ref !== PREPARE_HANDOFF_SKILL_ID) out.push({ ref, kind, partId: entry.id, partName: entry.name });
       else out.push({ ref, kind, unresolved: 'missing' });
     }
   }
