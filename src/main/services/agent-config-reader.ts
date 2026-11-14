@@ -1,5 +1,6 @@
 /** Read-only, bounded setup evidence. Never scans provider/global configuration or materializes parts. */
-import { constants } from 'fs';
+import { constants, type BigIntStats } from 'fs';
+import type { DurableAgentConfig } from '../../shared/types';
 import * as fs from 'fs/promises';
 import * as path from 'path';
 import { isDisposedAgent } from '../../shared/agent-helpers';
@@ -31,20 +32,35 @@ function bounded(value: unknown): unknown {
 /** Only the registered provider's instruction file, with no links or non-file reads. */
 async function ownInstructions(root: string, relative: string): Promise<{ text: string; truncated: boolean }> {
   const anchor = await fs.realpath(root);
+  const verified = new Map<string, BigIntStats>([[anchor, await fs.lstat(anchor, { bigint: true })]]);
   let file = anchor;
-  let isFile = false;
   for (const segment of relative.split(/[\\/]/)) {
     if (!segment || segment === '.' || segment === '..') throw new Error('Unsafe instructions path.');
     file = path.join(file, segment);
-    const stat = await fs.lstat(file);
+    const stat = await fs.lstat(file, { bigint: true });
     if (stat.isSymbolicLink()) throw new Error('Instructions links are not read.');
-    isFile = stat.isFile();
+    verified.set(file, stat);
   }
-  if (!isFile) throw new Error('Instructions must be an ordinary file.');
+  const expected = verified.get(file)!;
+  if (!expected.isFile()) throw new Error('Instructions must be an ordinary file.');
+  const same = (a: BigIntStats, b: BigIntStats) => a.dev === b.dev && a.ino === b.ino;
+  const verifyPaths = async () => {
+    for (const [member, before] of verified) {
+      const current = await fs.lstat(member, { bigint: true });
+      const actual = await fs.realpath(member);
+      const within = path.relative(anchor, actual);
+      if (current.isSymbolicLink() || !same(before, current) || path.isAbsolute(within) || within === '..' || within.startsWith(`..${path.sep}`)) {
+        throw new Error('Instructions path changed while reading.');
+      }
+    }
+  };
   const handle = await fs.open(file, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK);
   try {
-    const stat = await handle.stat();
-    if (!stat.isFile()) throw new Error('Instructions must be an ordinary file.');
+    const stat = await handle.stat({ bigint: true });
+    if (!stat.isFile() || !same(expected, stat)) throw new Error('Instructions file changed while opening.');
+    // O_NOFOLLOW covers only the leaf. Pin that leaf's identity and recheck
+    // every ancestor after open before any bytes can leave the descriptor.
+    await verifyPaths();
     const bytes = Buffer.alloc(CONFIG_TEXT_BYTES + 1);
     let size = 0;
     while (size < bytes.length) {
@@ -52,22 +68,39 @@ async function ownInstructions(root: string, relative: string): Promise<{ text: 
       if (!next.bytesRead) break;
       size += next.bytesRead;
     }
-    return { text: prefix(bytes.subarray(0, size).toString('utf8')), truncated: size > CONFIG_TEXT_BYTES || stat.size > CONFIG_TEXT_BYTES };
+    await verifyPaths();
+    return { text: prefix(bytes.subarray(0, size).toString('utf8')), truncated: size > CONFIG_TEXT_BYTES || stat.size > BigInt(CONFIG_TEXT_BYTES) };
   } finally { await handle.close(); }
 }
 
-/** Resolve ids everywhere first; optional project only disambiguates names. No caller-supplied filesystem paths. */
-export async function readAgentConfig(reference: string, project?: string) {
+export interface AgentConfigTarget {
+  agent: DurableAgentConfig;
+  project: { id: string; path: string; name: string; displayName?: string };
+}
+
+/** Resolve exactly one snapshot. Even an id must not bypass an unknown project. */
+export async function resolveAgentConfigTarget(reference: string, project?: string): Promise<AgentConfigTarget> {
   const projects = await peekProjects();
   const agents = (await Promise.all(projects.map(async (p) => (await peekDurableConfigs(p.path))
     .filter((agent) => !isDisposedAgent(agent)).map((agent) => ({ agent, project: p }))))).flat();
   const dispatcher = getDispatcherState();
   if (dispatcher.config && dispatcher.path && !agents.some(({ agent }) => agent.id === dispatcher.config!.id)) agents.push({ agent: dispatcher.config, project: { id: 'dispatcher', path: dispatcher.path, name: 'Dispatcher' } });
-  const id = agents.find(({ agent }) => agent.id === reference);
-  const matches = id ? [id] : agents.filter(({ agent, project: p }) => agent.name.toLowerCase() === reference.toLowerCase()
-    && (!project || [p.id, p.path, p.name, p.displayName].includes(project)));
+  const projectMatches = project === undefined ? projects : projects.filter((p) => [p.id, p.path, p.name, p.displayName].some((value) => value?.toLowerCase() === project.toLowerCase()));
+  if (project !== undefined && projectMatches.length !== 1) throw new Error('No unique registered project matches that reference.');
+  const ids = agents.filter(({ agent }) => agent.id === reference);
+  const matches = ids.length ? ids : agents.filter(({ agent, project: p }) => agent.name.toLowerCase() === reference.toLowerCase()
+    && (project === undefined || projectMatches[0].path === p.path));
   if (matches.length !== 1) throw new Error(matches.length ? 'Agent name is ambiguous; use its id.' : 'No registered agent matches that reference.');
-  const { agent, project: p } = matches[0];
+  return structuredClone(matches[0]);
+}
+
+/** Convenience for trusted host callers; agent-facing callers authorize the resolved snapshot first. */
+export async function readAgentConfig(reference: string, project?: string) {
+  return readResolvedAgentConfig(await resolveAgentConfigTarget(reference, project));
+}
+
+/** Read only the same snapshot the caller authorized, without resolving a name or project again. */
+export async function readResolvedAgentConfig({ agent, project: p }: AgentConfigTarget) {
   const result = {
     agent: { id: agent.id, name: prefix(agent.name, 200) },
     evidence: agent.managed ? 'desired_setup' : 'instruction_file',
@@ -75,6 +108,7 @@ export async function readAgentConfig(reference: string, project?: string) {
     instructions: { text: '', provenance: agent.managed ? 'managed_parts' : 'custom', truncated: false },
     parts: [] as Array<Record<string, unknown>>,
     missing: [] as string[],
+    omittedMissing: 0,
     totalParts: 0,
     omittedParts: 0,
     truncated: false,
@@ -113,6 +147,8 @@ export async function readAgentConfig(reference: string, project?: string) {
       if (part.contentTruncated) result.truncated = true;
     }
     result.missing = resolved.missing.slice(0, CONFIG_MAX_PARTS).map((id) => prefix(id, 200));
+    result.omittedMissing = resolved.missing.length - result.missing.length;
+    result.truncated ||= result.omittedMissing > 0;
   } else if (agent.worktreePath) {
     const provider = await resolveOrchestrator(p.path, agent.orchestrator);
     try { Object.assign(result.instructions, await ownInstructions(agent.worktreePath, instructionsFileRel(provider))); }

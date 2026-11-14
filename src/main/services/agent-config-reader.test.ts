@@ -5,21 +5,26 @@ import { beforeEach, afterEach, describe, expect, it, vi } from 'vitest';
 import type { DurableAgentConfig } from '../../shared/types';
 import type { ManagedPartContent } from '../../shared/managed-agents-types';
 
-const state = vi.hoisted(() => ({ agents: [] as DurableAgentConfig[], parts: new Map<string, { entry: { name: string; source: { kind: string }; headRevision: number }; content: ManagedPartContent; droppedEnvValues: string[] }>() }));
+vi.mock('fs/promises', async (original) => {
+  const real = await original<typeof import('fs/promises')>();
+  return { ...real, open: vi.fn(real.open) };
+});
+
+const state = vi.hoisted(() => ({ provider: 'claude-code', agents: [] as DurableAgentConfig[], parts: new Map<string, { entry: { name: string; source: { kind: string }; headRevision: number }; content: ManagedPartContent; droppedEnvValues: string[] }>() }));
 vi.mock('./dispatcher/dispatcher-service', () => ({ getDispatcherState: () => ({}) }));
 vi.mock('./agent-config', () => ({ peekDurableConfigs: async () => state.agents }));
 vi.mock('./project-store', () => ({ peekProjects: async () => [{ id: 'p', path: '/project', name: 'Project' }] }));
-vi.mock('./agent-system', () => ({ resolveOrchestrator: async () => ({ id: 'claude-code', conventions: { legacyInstructionsFile: 'CLAUDE.md' } }) }));
+vi.mock('./agent-system', () => ({ resolveOrchestrator: async () => ({ id: state.provider, conventions: { configDir: '.github', legacyInstructionsFile: state.provider === 'copilot-cli' ? 'copilot-instructions.md' : 'CLAUDE.md' } }) }));
 vi.mock('./managed-agents', () => ({ managedAgents: () => ({ headContent: async (id: string) => state.parts.get(id) ?? null }) }));
 import { CONFIG_MAX_BYTES, CONFIG_TEXT_BYTES, readAgentConfig } from './agent-config-reader';
 
 let root: string;
 beforeEach(async () => {
-  root = await fs.mkdtemp(path.join(os.tmpdir(), 'config-read-'));
-  state.parts.clear();
+  root = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), 'config-read-')));
+  state.parts.clear(); state.provider = 'claude-code';
   state.agents = [{ id: 'target', name: 'Reader', color: '', createdAt: '', worktreePath: root }];
 });
-afterEach(async () => { await fs.rm(root, { recursive: true, force: true }); });
+afterEach(async () => { vi.restoreAllMocks(); await fs.rm(root, { recursive: true, force: true }); });
 const part = (id: string, content: ManagedPartContent, kind = 'user') => state.parts.set(id, { entry: { name: id, source: { kind }, headRevision: 2 }, content, droppedEnvValues: [] });
 
 describe('bounded agent config evidence', () => {
@@ -62,6 +67,46 @@ describe('bounded agent config evidence', () => {
     await fs.writeFile(path.join(root, 'other.md'), 'Outside instructions');
     await fs.symlink(path.join(root, 'other.md'), path.join(root, 'CLAUDE.md'));
     await expect(readAgentConfig('target')).rejects.toThrow('links');
+  });
+
+  it('rejects an unknown project even when the id exists globally', async () => {
+    await expect(readAgentConfig('target', 'does-not-exist')).rejects.toThrow('registered project');
+  });
+
+  it('reports omitted missing references explicitly', async () => {
+    state.agents[0].managed = { version: 1, blocks: Array.from({ length: 100 }, (_, i) => `missing-${i}`), skills: [], mcps: [] };
+    const result = await readAgentConfig('target');
+    // resolveManagedSetup also adds the implicit Clubhouse MCP reference.
+    expect(result.missing).toHaveLength(100);
+    expect(result.omittedMissing).toBe(1);
+    expect(result.truncated).toBe(true);
+  });
+
+  it('rejects an ancestor swapped for an outside link between lstat and open', async () => {
+    state.provider = 'copilot-cli';
+    const worktree = path.join(root, 'worktree');
+    await fs.mkdir(worktree); state.agents[0].worktreePath = worktree;
+    const config = path.join(worktree, '.github');
+    const outside = path.join(root, 'outside');
+    await fs.mkdir(config); await fs.mkdir(outside);
+    await fs.writeFile(path.join(config, 'copilot-instructions.md'), 'Authorized instructions');
+    await fs.writeFile(path.join(outside, 'copilot-instructions.md'), 'Outside private instructions');
+    const { open } = await vi.importActual<typeof import('fs/promises')>('fs/promises');
+    let swapped = false;
+    const read = vi.fn();
+    vi.mocked(fs.open).mockImplementation(async (...args) => {
+      if (String(args[0]) === path.join(config, 'copilot-instructions.md')) {
+        swapped = true;
+        await fs.rename(config, path.join(root, '.github-original'));
+        await fs.symlink(outside, config, process.platform === 'win32' ? 'junction' : 'dir');
+      }
+      const file = await open(...args);
+      vi.spyOn(file, 'read').mockImplementation(read);
+      return file;
+    });
+    await expect(readAgentConfig('target')).rejects.toThrow('changed');
+    expect(swapped).toBe(true);
+    expect(read).not.toHaveBeenCalled();
   });
 
   it('refuses non-files and oversized saved setups', async () => {

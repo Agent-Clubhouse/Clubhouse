@@ -3,7 +3,7 @@ vi.mock('../mcp-call-gate', async (original) => ({ ...await original<typeof impo
 vi.mock('../../project-store', () => ({ peekProjects: async () => [{ id: 'p', name: 'Project', path: '/project' }] }));
 vi.mock('../../agent-config', () => ({ peekDurableConfigs: async () => [{ id: 'target', name: 'Target' }] }));
 const mocks = vi.hoisted(() => ({ read: vi.fn(async () => ({ instructions: { text: 'Rules' } })), forward: vi.fn(async () => ({ content: [] })) }));
-vi.mock('../../agent-config-reader', () => ({ readAgentConfig: mocks.read }));
+vi.mock('../../agent-config-reader', async (original) => ({ ...await original<typeof import('../../agent-config-reader')>(), readResolvedAgentConfig: mocks.read }));
 vi.mock('../../annex-agent-calls', () => ({ remoteMachineOf: (id: string) => id.includes('@') ? 'peer' : null, forwardAgentCall: mocks.forward }));
 import { registerAgentConfigTools } from './agent-config-tools';
 import { callTool, getScopedToolList, _resetForTesting } from '../tool-registry';
@@ -21,7 +21,7 @@ describe('read_agent_config grants and routing', () => {
     wire();
     expect(getScopedToolList('caller').map((t) => t.name)).toContain('read_agent_config');
     expect((await callTool('caller', 'read_agent_config', { agent: 'target' })).isError).toBeFalsy();
-    expect(mocks.read).toHaveBeenCalledWith('target', undefined);
+    expect(mocks.read).toHaveBeenCalledWith({ agent: { id: 'target', name: 'Target' }, project: { id: 'p', name: 'Project', path: '/project' } });
   });
   it('refuses without agent.read, including a saved Off on a connection', async () => {
     expect((await callTool('caller', 'read_agent_config', { agent: 'target' })).isError).toBe(true);
@@ -29,6 +29,21 @@ describe('read_agent_config grants and routing', () => {
     grants.off = true;
     expect((await callTool('caller', 'read_agent_config', { agent: 'target' })).isError).toBe(true);
     expect(mocks.read).not.toHaveBeenCalled();
+  });
+  it('refuses an unknown project for a real unconnected id without reading content', async () => {
+    expect((await callTool('caller', 'read_agent_config', { agent: 'target', project: 'does-not-exist' })).isError).toBe(true);
+    expect(mocks.read).not.toHaveBeenCalled();
+  });
+  it('cannot bypass saved Off by pairing a connected id with an unknown project', async () => {
+    wire(); grants.off = true;
+    expect((await callTool('caller', 'read_agent_config', { agent: 'target', project: 'does-not-exist' })).isError).toBe(true);
+    expect(mocks.read).not.toHaveBeenCalled();
+  });
+  it('rejects a remote project argument before it can bypass the sender grant and forward', async () => {
+    bindingManager.bind('caller', { label: 'Remote', targetId: 'target@peer', targetKind: 'agent' });
+    grants.off = true;
+    expect((await callTool('caller', 'read_agent_config', { agent: 'target@peer', project: 'does-not-exist' })).isError).toBe(true);
+    expect(mocks.forward).not.toHaveBeenCalled();
   });
   it('lets the Dispatcher read unconnected targets and forwards remote reads', async () => {
     setDispatcherAgent('dispatcher', true);
