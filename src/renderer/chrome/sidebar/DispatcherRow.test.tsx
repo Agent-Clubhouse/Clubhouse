@@ -1,6 +1,7 @@
-import { describe, it, expect, beforeEach } from 'vitest';
-import { render, screen } from '@testing-library/react';
-import { DispatcherRow, DispatcherWorkRow } from './DispatcherRow';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { render, screen, fireEvent, within } from '@testing-library/react';
+import { DispatcherRow, DispatcherWorkRow, RemoteDispatcherRow } from './DispatcherRow';
+import type { RemoteDispatcherPresence } from '../../../shared/dispatcher-presence';
 import { useAgentStore } from '../../stores/agentStore';
 import { useChatStore } from '../../stores/chatStore';
 import { DISPATCHER_PROJECT_ID } from '../../../shared/dispatcher-types';
@@ -55,5 +56,43 @@ describe('the debug controller row (#3220)', () => {
     expect(screen.getByRole('tree', { name: 'Dispatcher controller (debug)' })).toBeTruthy();
     expect(screen.getByRole('treeitem', { name: 'Dispatcher controller' })).toBeTruthy();
     expect(screen.getByTestId('dispatcher-work-row').querySelector('[data-dot]')?.getAttribute('data-dot')).toBe('sleeping');
+  });
+});
+
+describe('the controller and remote rows\' avatars', () => {
+  beforeEach(() => useChatStore.setState({ agents: {} } as never));
+  const remote = (over: Partial<RemoteDispatcherPresence> = {}): RemoteDispatcherPresence => ({
+    machineId: 'fp1', machineName: 'Mini', address: 'work@fp1', dispatcherName: 'Tael', label: 'Tael on Mini', state: 'online', link: { state: 'active' }, ...over,
+  });
+
+  it('shows the local controller with a letter avatar, not an empty circle', () => {
+    render(<DispatcherWorkRow agentId="coordinator" running active={false} onSelect={() => {}} />);
+    expect(screen.getByTestId('dispatcher-avatar-fallback')).toHaveTextContent('D');
+  });
+
+  it('draws a remote Dispatcher from its chat agent and icon', () => {
+    render(<RemoteDispatcherRow remote={remote()} chat={chat({ id: 'remote||s1||chat', name: 'Tael', icon: 'x.png' })} iconUrl="data:image/png;base64,AAAA" active={false} showController={false} onSelect={() => {}} />);
+    expect(screen.getByTestId('remote-dispatcher-avatar').querySelector('img')).toHaveAttribute('src', 'data:image/png;base64,AAAA');
+  });
+
+  it('falls back to the Dispatcher’s letter without a chat, and is still a target', () => {
+    const onSelect = vi.fn();
+    render(<RemoteDispatcherRow remote={remote({ dispatcherName: null, label: 'Dispatcher on Mini' })} active={false} showController={false} onSelect={onSelect} />);
+    expect(screen.getByTestId('dispatcher-avatar-fallback')).toHaveTextContent('D');
+    fireEvent.click(screen.getByRole('treeitem', { name: 'Dispatcher on Mini' }));
+    expect(onSelect).toHaveBeenCalledTimes(1);
+  });
+
+  it('dims an offline Dispatcher and says so, with the controller one level under it only in Debug', () => {
+    const { rerender } = render(<RemoteDispatcherRow remote={remote({ state: 'offline' })} active={false} showController={false} onSelect={() => {}} />);
+    expect(screen.getByTestId('remote-dispatcher-row')).toHaveClass('opacity-60');
+    expect(screen.getByTestId('remote-dispatcher-row')).toHaveTextContent('offline');
+    expect(screen.queryByTestId('remote-dispatcher-controller')).toBeNull();
+    rerender(<RemoteDispatcherRow remote={remote({ state: 'offline' })} active={false} showController onSelect={() => {}} />);
+    const owner = screen.getByRole('treeitem', { name: 'Tael on Mini' });
+    const controller = within(screen.getByTestId('remote-dispatcher-controller')).getByRole('treeitem');
+    expect(owner).toHaveAttribute('aria-level', '1');
+    expect(controller).toHaveAttribute('aria-level', '2');
+    expect(controller.style.paddingLeft).toBe('28px');
   });
 });

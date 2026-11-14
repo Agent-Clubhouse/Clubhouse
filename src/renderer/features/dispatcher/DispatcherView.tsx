@@ -16,8 +16,10 @@ import { PoppedOutPlaceholder } from '../popout/PoppedOutPlaceholder';
 import { useFollowedLead } from './leadStore';
 import { FollowerDispatcherView } from './FollowerDispatcherView';
 import { useRemoteDispatcherSelection } from './remoteDispatcherSelection';
-import { parseNamespacedId, useRemoteProjectStore } from '../../stores/remoteProjectStore';
+import { useRemoteProjectStore } from '../../stores/remoteProjectStore';
 import { useAnnexClientStore } from '../../stores/annexClientStore';
+import { resolveRemoteDispatcherTarget } from './remoteDispatcherTarget';
+import { RemoteDispatcherDetails } from './RemoteDispatcherDetails';
 
 /**
  * The Dispatcher's own view (#2538): the same agent pane a project agent
@@ -49,20 +51,22 @@ export function DispatcherView() {
   const workOpen = useDispatcherWorkOpen();
   const { findAgentPopout } = usePopouts();
   const followed = useFollowedLead();
-  const remoteId = useRemoteDispatcherSelection((s) => s.agentId);
+  const remoteMachine = useRemoteDispatcherSelection((s) => s.machine);
   const localSelected = useRemoteDispatcherSelection((s) => s.local);
+  const satellites = useAnnexClientStore((s) => s.satellites);
+  // Another computer's Dispatcher picked in the sidebar: looked up by its machine, the same from either side.
+  const remoteTarget = remoteMachine ? resolveRemoteDispatcherTarget(remoteMachine, satellites, followed?.state.lead?.machine) : null;
+  const remoteChat = remoteTarget?.kind === 'chat' ? remoteTarget.chat : null;
+  const remoteId = remoteChat?.id ?? null;
   const remoteAgent = useRemoteProjectStore((s) => remoteId ? s.remoteAgents[remoteId] : undefined);
-  const remoteSatellite = remoteId ? parseNamespacedId(remoteId)?.satelliteId : undefined;
-  const remoteMachine = useAnnexClientStore((s) => s.satellites.find((sat) => sat.id === remoteSatellite)?.fingerprint.toLowerCase());
-  const selectedLead = !!remoteId && !!followed && (remoteId === followed.agent?.id || remoteMachine === followed.state.lead?.machine);
 
   useEffect(() => {
-    if (state?.enabled && !remoteId && !followed && !workOpen) {
+    if (state?.enabled && !remoteMachine && !followed && !workOpen) {
       void window.clubhouse.dispatcher.wake().catch((err) => {
         rendererLog('core:dispatcher', 'warn', 'Could not wake the controller when opening its chat', { meta: { error: String(err) } });
       });
     }
-  }, [state?.enabled, state?.agentId, remoteId, followed, workOpen]);
+  }, [state?.enabled, state?.agentId, remoteMachine, followed, workOpen]);
 
   // A false→true change is what moves focus into the terminal (AgentTerminal).
   const [focused, setFocused] = useState(false);
@@ -71,9 +75,9 @@ export function DispatcherView() {
     return () => cancelAnimationFrame(raf);
   }, [agentId]);
 
-  if (remoteId && !selectedLead) return remoteAgent
-    ? <AgentRuntimePane key={remoteId} agent={{ ...remoteAgent, executionMode: 'chat' }} terminal={null} canSwitch={false} />
-    : <p role="status">Waiting for the other Dispatcher to connect.</p>;
+  if (remoteTarget?.kind === 'details') return <RemoteDispatcherDetails machineId={remoteMachine!} />;
+  // The live copy follows run state; the snapshot's copy shows it until that arrives.
+  if (remoteChat) return <AgentRuntimePane key={remoteChat.id} agent={{ ...(remoteAgent ?? remoteChat), executionMode: 'chat' }} terminal={null} canSwitch={false} />;
 
   if (workOpen && state?.agentId) return <DispatcherWorkView agentId={state.agentId} />;
 
