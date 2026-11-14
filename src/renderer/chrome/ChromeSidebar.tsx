@@ -5,7 +5,7 @@ import { useUIStore } from '../stores/uiStore';
 import { useAgentStore } from '../stores/agentStore';
 import { useQuickAgentStore } from '../stores/quickAgentStore';
 import { useAnnexClientStore, type SatelliteConnection } from '../stores/annexClientStore';
-import { useRemoteProjectStore, satellitePrefix, namespacedAgentId } from '../stores/remoteProjectStore';
+import { useRemoteProjectStore, satellitePrefix, namespacedAgentId, parseNamespacedId } from '../stores/remoteProjectStore';
 import { useCommandPaletteStore } from '../stores/commandPaletteStore';
 import { usePluginStore } from '../plugins/plugin-store';
 import { useOrderedShallow } from '../hooks/useOrderedShallow';
@@ -850,7 +850,9 @@ export function ChromeSidebar() {
         const chat = satellite?.snapshot?.dispatcher?.agent;
         const id = satellite && chat ? namespacedAgentId(satellite.id, chat.id) : null;
         const isLead = followedLead?.state.lead?.machine === remote.machineId;
-        const active = dispatcherShown && !dispatcherWorkOpen && (selectedRemoteDispatcher === id && !!id || !!isLead && !selectedRemoteDispatcher && !localDispatcherSelected);
+        const selectedOnMachine = !!satellite && !!selectedRemoteDispatcher && parseNamespacedId(selectedRemoteDispatcher)?.satelliteId === satellite.id;
+        const active = dispatcherShown && !dispatcherWorkOpen && (selectedRemoteDispatcher === id && !!id
+          || !!isLead && (!selectedRemoteDispatcher || selectedOnMachine) && !localDispatcherSelected);
         return <div key={remote.machineId} className="px-1.5" data-testid="remote-dispatcher-group">
           <button type="button" disabled={!id && !isLead} onClick={() => isLead ? openDispatcher() : id && openDispatcher({ remoteAgentId: id })}
             aria-current={active ? 'true' : undefined}

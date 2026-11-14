@@ -849,6 +849,31 @@ describe('ChromeSidebar Dispatcher (#2538)', () => {
     presence.mockRestore(); getLead.mockRestore();
   });
 
+  it('keeps the followed lead row selected when its snapshot clears offline', async () => {
+    turnOn();
+    const machine = 'fp-offline';
+    const chat = agent('remote-chat', DISPATCHER_PROJECT_ID, { name: 'Tael', executionMode: 'chat' });
+    const id = namespacedAgentId('s1', chat.id);
+    useRemoteProjectStore.setState({ remoteAgents: { [id]: { ...chat, id, projectId: namespacedProjectId('s1', DISPATCHER_PROJECT_ID) } } });
+    useAnnexClientStore.setState({ satellites: [{ id: 's1', alias: 'Mini', state: 'connected', fingerprint: machine, icon: '', color: 'blue', host: 'h', mainPort: 1, pairingPort: 2, snapshot: { dispatcher: { agent: chat } }, lastError: null } as never] });
+    const lead = { available: true, following: true, role: 'follower', lead: { machine, name: 'Mini', self: false, online: true }, choices: [], outbox: { waiting: 0, oldestAt: null, expired: 0, failed: null }, localNews: { count: 0, needsUser: false } };
+    useLeadStore.setState({ state: { ...lead, following: false } as never });
+    const getLead = vi.spyOn(window.clubhouse.dispatcher, 'getLead').mockImplementation(async () => useLeadStore.getState().state!);
+    const presence = vi.spyOn(window.clubhouse.dispatcher, 'getPresence').mockResolvedValue({ remotes: [{ machineId: machine, machineName: 'Mini', address: 'work@fp-offline', dispatcherName: 'Tael', label: 'Tael on Mini', state: 'online', link: { state: 'active' } }] });
+    render(<><ChromeSidebar /><DispatcherView /></>);
+    const row = await screen.findByRole('button', { name: 'Tael on Mini' });
+    fireEvent.click(row);
+    expect(useRemoteDispatcherSelection.getState().agentId).toBe(id);
+    act(() => useLeadStore.setState({ state: lead as never }));
+    expect(screen.getByTestId('follower-heading')).toHaveTextContent('Following Tael on Mini');
+    act(() => useAnnexClientStore.setState((state) => ({ satellites: state.satellites.map((sat) => ({ ...sat, state: 'disconnected' as const, snapshot: null })) })));
+    expect(screen.getByTestId('follower-offline-input')).toBeInTheDocument();
+    expect(row).toHaveAttribute('aria-current', 'true');
+    expect(row).toHaveClass('bg-surface-0', 'text-ctp-text');
+    expect(within(screen.getByTestId('dispatcher-row')).getByTestId('agent-item-disp')).toHaveAttribute('data-active', 'false');
+    presence.mockRestore(); getLead.mockRestore();
+  });
+
   describe('debug view (#3188)', () => {
     afterEach(() => useDispatcherDebugStore.setState({ on: false, workOpen: false }));
 
