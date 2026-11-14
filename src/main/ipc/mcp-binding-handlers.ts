@@ -71,7 +71,7 @@ import { remoteGroupProjectGrantGate } from '../services/group-project-remote-gr
 import { purgeGroupProjectViews } from '../services/group-project-delete-service';
 import { onMembershipChanged as onNetworkMembershipChanged } from '../services/annex-network-membership';
 import { injectPtyMessage } from '../services/group-project-lifecycle';
-import { authorizeQueuedAnnexCall, reportAnnexDeliveryFailure } from '../services/annex-agent-call-host';
+import { authorizeQueuedAnnexCall, isConfigDispatcher, readConfigForRemoteCaller, reportAnnexDeliveryFailure } from '../services/annex-agent-call-host';
 import * as annexPeers from '../services/annex-peers';
 import * as annexClient from '../services/annex-client';
 import { runAgentToolForRemoteCaller } from '../services/clubhouse-mcp/tool-registry';
@@ -608,6 +608,7 @@ export function restorePersistedBindings(): Promise<void> {
         onConnected: (listener) => annexClient.onSatelliteConnected(listener),
       },
       runTool: runAgentToolForRemoteCaller,
+      configReader: { isDispatcher: isConfigDispatcher, read: readConfigForRemoteCaller },
       describeLocalAgent: describeAgentHere,
       nameOfLocalSender: (id) => isDispatcherAgentId(id) ? dispatcherDisplayName()
         : isDispatcherChatAgentId(id) ? dispatcherDisplayName() : undefined,

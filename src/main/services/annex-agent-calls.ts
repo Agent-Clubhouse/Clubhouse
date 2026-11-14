@@ -53,7 +53,7 @@ export const AGENT_CALL_TOOLS: ReadonlySet<string> = new Set([...CONNECTION_TOOL
 const QUEUED_TOOLS = new Set(['send_message', 'send_file', 'hand_off_request']);
 /** Tools that put something in front of the other agent, counted by the loop limit. */
 const LOOP_TOOLS = new Set(['send_message', 'send_file', 'hand_off_request', WAKE_TOOL]);
-const READ_TOOLS = new Set(['get_status', 'read_output', 'check_connectivity']);
+const READ_TOOLS = new Set(['get_status', 'read_output', 'check_connectivity', 'read_agent_config']);
 
 export const AGENT_CALL_MAX_BYTES = 512 * 1024;
 /** Per direction, on the receiving machine (D233). */
@@ -123,6 +123,7 @@ const describeNothing: DescribeAgent = async () => undefined;
 
 let transport: AgentCallTransport | null = null;
 let runTool: AgentToolRunner | null = null;
+let configReader: StartAgentCallsOptions['configReader'];
 let describeLocalAgent: DescribeAgent = describeNothing;
 let nameOfLocalSender: ((agentId: string) => string | undefined) | undefined;
 export interface DispatcherAgentCallReceiver {
@@ -252,7 +253,7 @@ export async function forwardPreparedAgentCall(callerId: string, targetId: strin
   const controllerLink = federationDirection({ agentId: callerId }, { agentId: to, machineId: machine })
     ?? (direct && ['send_message', 'send_file'].includes(tool) ? federationMessageDirection({ agentId: callerId }, { agentId: to, machineId: machine }) : undefined);
   if (direct && (!controllerLink || !direct.current())) return text('The remote Dispatcher or sender permission changed before delivery.', true);
-  if (controllerLink && !FEDERATION_TOOLS.has(tool)) return text('That tool is fixed off on controller connections.', true);
+  if (controllerLink && !FEDERATION_TOOLS.has(tool) && tool !== 'read_agent_config') return text('That tool is fixed off on controller connections.', true);
   const controllerStatus = controllerLink && federationStatus({ agentId: callerId }, { agentId: to, machineId: machine });
   if (controllerStatus && controllerStatus.state === 'unavailable') return text(controllerStatus.reason, true);
   if (args.idempotency_key !== undefined && (typeof args.idempotency_key !== 'string' || !args.idempotency_key.trim() || args.idempotency_key.length > 200)) {
@@ -645,6 +646,20 @@ export async function receiveAgentCall(senderMachine: string, raw: unknown, now 
   }
   const to = parseAgentAddress(body.to);
   if (!self || !routeOf(to, self).local) return { status: 404, error: 'wrong_machine', message: 'That agent is not on this computer.' };
+  // Config reads use the same pinned member transport, but never the input/delivery ledger.
+  // Only an authenticated federated controller may read without a stored connection.
+  if (body.tool === 'read_agent_config') {
+    if (!configReader) return { status: 404, error: 'unavailable', message: 'Configuration reads are not available on this computer.' };
+    const from: ConnectionEnd = { agentId: body.from.agentId, machineId: machine };
+    const direction = getConnectionDirection(from, { agentId: to.agentId });
+    const connected = !!(direction?.link || direction?.cardLink || activeAgentLinks(direction).length);
+    if (!connected && !configReader.isDispatcher(machine, body.from.agentId)) return { status: 403, error: 'not_connected', message: 'That agent is not connected to you on its computer.' };
+    if (direction?.disabledTools.includes(body.tool)) return { status: 403, error: 'tool_denied', message: 'Configuration reads are off on this connection.' };
+    if (!hit(`rate:${machine}/${body.from.agentId}>${to.agentId}`, RATE_LIMIT.windowMs, RATE_LIMIT.calls, now)) return { status: 429, error: 'rate_limited', message: 'Too many calls. Try again in a minute.' };
+    const result = await configReader.read(machine, body.from.agentId, to.agentId);
+    if (generation !== lifecycle || !isNetworkComputer(machine) || deliveryHash(currentEpoch) !== deliveryHash(outgoingEpoch(machine))) return { status: 403, error: 'authorization_revoked', message: 'The member connection changed while reading configuration.' };
+    return { result };
+  }
   const dispatcher = remoteDispatcher?.isTarget(to.agentId) ? remoteDispatcher : undefined;
   if (!(dispatcher ? DISPATCHER_CALL_TOOLS : AGENT_CALL_TOOLS).has(body.tool)) return { status: 403, error: 'tool_not_allowed', message: `${body.tool} can't be used from another computer for that target.` };
   if (dispatcher && !dispatcher.isAvailable(to.agentId)) return { status: 403, error: 'dispatcher_unavailable', message: 'That Dispatcher is not available for federation calls.' };
@@ -1042,6 +1057,11 @@ export async function receiveDirections(senderMachine: string, raw: unknown, now
 // ── Startup ────────────────────────────────────────────────────────────────
 
 export interface StartAgentCallsOptions {
+  /** Read-only setup host, separate from runtime input and its persisted delivery receipts. */
+  configReader?: {
+    isDispatcher(machine: string, agentId: string): boolean;
+    read(machine: string, agentId: string, targetId: string): Promise<McpToolResult>;
+  };
   transport: AgentCallTransport;
   runTool: AgentToolRunner;
   describeLocalAgent: DescribeAgent;
@@ -1068,6 +1088,7 @@ export function startAgentCalls(options: StartAgentCallsOptions): () => void {
   const generation = ++lifecycle;
   transport = options.transport;
   runTool = options.runTool;
+  configReader = options.configReader;
   describeLocalAgent = options.describeLocalAgent;
   nameOfLocalSender = options.nameOfLocalSender;
   if (options.deliveryStore) deliveries = options.deliveryStore;
@@ -1095,6 +1116,7 @@ export function startAgentCalls(options: StartAgentCallsOptions): () => void {
     offChanged();
     transport = null;
     runTool = null;
+    configReader = undefined;
     describeLocalAgent = describeNothing;
     nameOfLocalSender = undefined;
     authorizeQueuedCall = undefined;

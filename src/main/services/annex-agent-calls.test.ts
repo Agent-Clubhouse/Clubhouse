@@ -3,7 +3,7 @@ import * as os from 'os';
 import * as path from 'path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { tel } from '../telemetry/facade';
-import { setFederationMessageLookup, setFederationRequestRouter } from './dispatcher-federation-policy';
+import { setFederationLookup, setFederationMessageLookup, setFederationRequestRouter } from './dispatcher-federation-policy';
 
 const state = vi.hoisted(() => ({ base: '', pairing: 'self-epoch', peerPairing: 'peer-epoch', thirdRole: 'satellite' as 'member' | 'satellite', localMachine: Array(16).fill('aa').join(':') }));
 const SELF = Array(16).fill('aa').join(':');
@@ -1154,5 +1154,47 @@ describe('more federation state on the same exchange (#3351)', () => {
     await receiveDirections(OTHER, { v: 1, directions: [], extra: theirs, epoch: { sender: 'old', receiver: state.pairing } });
     await receiveDirections(THIRD, { v: 1, directions: [], extra: theirs, epoch: epoch() });
     expect(learnExtra).not.toHaveBeenCalled();
+  });
+});
+
+describe('read_agent_config member transport', () => {
+  const reader = { isDispatcher: (machine: string, id: string) => machine === OTHER && id === 'controller', read: vi.fn(async () => ok('configuration')) };
+  beforeEach(() => {
+    reader.read.mockClear(); stop();
+    stop = startAgentCalls({ transport, runTool: async () => ok('unused'), describeLocalAgent: async () => undefined, configReader: reader });
+  });
+  it('runs connected reads without storing their content in the input-delivery ledger', async () => {
+    await setConnectionLink(inbound.from, inbound.to, true);
+    const result = await receiveAgentCall(OTHER, call({ tool: 'read_agent_config', args: {} }), now);
+    expect(result).toMatchObject({ result: ok('configuration') });
+    expect(JSON.stringify(createAnnexDeliveryStore().get())).not.toContain('configuration');
+  });
+  it('allows an unconnected authenticated Dispatcher but refuses an ordinary agent and non-member', async () => {
+    expect(await receiveAgentCall(OTHER, call({ tool: 'read_agent_config', from: { agentId: 'controller', name: 'Anything' }, args: {} }), now)).toMatchObject({ result: ok('configuration') });
+    expect(await receiveAgentCall(OTHER, call({ tool: 'read_agent_config', args: {} }), now)).toMatchObject({ error: 'not_connected' });
+    expect(await receiveAgentCall(THIRD, call({ tool: 'read_agent_config', from: { agentId: 'controller', name: 'Dispatcher' }, args: {} }), now)).toMatchObject({ error: 'peer_revoked' });
+    expect(reader.read).toHaveBeenCalledTimes(1);
+  });
+  it('can read a controller target without enabling its other fixed-off tools', async () => {
+    const clear = setFederationLookup((from, to) => ({ from, to, disabledTools: [], updatedAt: '' }));
+    try {
+      await forwardAgentCall('here', `there@${OTHER}`, 'Dispatcher', 'read_agent_config', {});
+      expect(posts.some((p) => p.body.tool === 'read_agent_config')).toBe(true);
+      expect((await forwardAgentCall('here', `there@${OTHER}`, 'Dispatcher', 'clear_agent', {})).isError).toBe(true);
+    } finally { clear(); }
+  });
+  it('discards content if the pairing changes during the read', async () => {
+    await setConnectionLink(inbound.from, inbound.to, true);
+    reader.read.mockImplementationOnce(async () => { state.peerPairing = 'changed'; return ok('private'); });
+    const result = await receiveAgentCall(OTHER, call({ tool: 'read_agent_config', args: {} }), now);
+    expect(result).toMatchObject({ error: 'authorization_revoked' });
+    expect(JSON.stringify(result)).not.toContain('private');
+  });
+  it('reports an offline target without queueing or sending a read', async () => {
+    connected = false;
+    const result = await forwardAgentCall('here', `there@${OTHER}`, 'Reader', 'read_agent_config', {});
+    expect(JSON.parse(textOf(result))).toMatchObject({ status: 'offline' });
+    expect(waitingFor(OTHER)).toEqual([]);
+    expect(posts).toEqual([]);
   });
 });

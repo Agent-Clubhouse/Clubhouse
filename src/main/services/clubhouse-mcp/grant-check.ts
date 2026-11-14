@@ -204,7 +204,7 @@ function callerOf(agentId: string): GrantCaller {
 }
 
 /** A running agent's grants: its defaults, from what the gates know about it, with a person's changes (#2971). */
-export function callerGrants(agentId: string): Grant[] {
+export function callerGrants(agentId: string, authenticatedDispatcherRead = false): Grant[] {
   const tracked = isTrackedDispatcher(agentId);
   return applyGrantChanges(defaultGrants({
     dispatcher: isDispatcherAgent(agentId),
@@ -214,7 +214,7 @@ export function callerGrants(agentId: string): Grant[] {
     orchestrates: !tracked && isOrchestrationEnabled(agentId),
     crossProject: !tracked && isCrossProjectEnabled(agentId),
     control: orchestrationControl(agentId),
-  }), getAgentGrantChanges(agentId));
+  }).concat(authenticatedDispatcherRead ? [{ action: 'agent.read', target: { kind: 'any' }, mode: 'allow', source: 'structural' }] : []), getAgentGrantChanges(agentId));
 }
 
 function hasAnyAgentSource(args: Record<string, unknown>): boolean {
@@ -281,9 +281,13 @@ export function holdsGrant(agentId: string, action: GrantAction, target: GrantCa
   return decideGrant(agentId, action, target).outcome === 'allow';
 }
 
-/** As holdsGrant, with the whole decision: allow, ask first, or refuse. */
-export function decideGrant(agentId: string, action: GrantAction, target: GrantCallTarget): GrantDecision {
-  return evaluateGrant({ caller: callerOf(agentId), action, target }, callerGrants(agentId));
+/**
+ * As holdsGrant, with the whole decision. authenticatedDispatcherRead is a
+ * main-verified federation identity used only by read_agent_config. The host's
+ * saved grant changes apply over that identity's read ANY default.
+ */
+export function decideGrant(agentId: string, action: GrantAction, target: GrantCallTarget, authenticatedDispatcherRead = false): GrantDecision {
+  return evaluateGrant({ caller: callerOf(agentId), action, target }, callerGrants(agentId, action === 'agent.read' && authenticatedDispatcherRead));
 }
 
 /**
