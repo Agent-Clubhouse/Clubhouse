@@ -619,7 +619,7 @@ export function restorePersistedBindings(): Promise<void> {
     stopProjectLinksNetwork = startProjectLinksNetwork({
       transport: {
         connected: (machine) => annexClient.isMachineConnected(machine),
-        post: (machine, urlPath, body) => annexClient.postToMachine(machine, urlPath, body),
+        post: (machine, urlPath, body) => annexClient.postToMachine(machine, urlPath, body, { maxResponseBytes: 1024 * 1024 }),
         onConnected: (listener) => annexClient.onSatelliteConnected(listener),
       },
       isMember: (machine) => networkEnabled() && isNetworkComputer(machine),

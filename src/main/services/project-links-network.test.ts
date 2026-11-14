@@ -91,6 +91,8 @@ describe('project links pinned-member REST replication', () => {
     await expect(receiveProjectLinks(B, { version: 2 }, () => true, replica)).rejects.toThrow();
     await expect(receiveProjectLinks(B, { version: 1, records: Array(201).fill({}) }, () => true, replica)).rejects.toThrow();
     await expect(receiveProjectLinks(B, { version: 1 }, () => false, replica)).rejects.toThrow('pairing changed');
+    const future = { projects: [{ machine: A, projectId: 'site' }, { machine: B, projectId: 'copy' }], linked: true, at: Number.MAX_SAFE_INTEGER - 1, by: B };
+    await expect(receiveProjectLinks(B, { version: 1, records: [future] }, () => true, replica)).rejects.toThrow('too far ahead');
     expect(replica.records()).toEqual([]);
   });
 });

@@ -34,6 +34,7 @@ import { useAgentDetailsStore } from '../features/agents/details/detailsStore';
 import { ShowMenu, LOCAL_HOST } from './sidebar/ShowMenu';
 import { buildNetworkProjects } from './sidebar/networkTree';
 import { useNetworkSidebarStore } from './sidebar/networkSidebarStore';
+import { useVisibleProjectLinks } from './sidebar/projectLinks';
 import { LinkSuggestionLine } from './sidebar/LinkSuggestionLine';
 import { PopupMenu, type MenuItem } from '../components/PopupMenu';
 import { useClickOutside } from './sidebar/useClickOutside';
@@ -335,7 +336,7 @@ export function ChromeSidebar() {
   const remoteProjectIcons = useRemoteProjectStore((s) => s.remoteProjectIcons);
   // Every machine's projects and agents in one list (#3065); Show narrows it to one machine.
   const show = useNetworkSidebarStore((s) => s.show);
-  const links = useNetworkSidebarStore((s) => s.links);
+  const links = useVisibleProjectLinks();
   // The Dispatcher's pinned row (#2538), while it's turned on.
   const dispatcherAgentId = useDispatcherAgentId();
   const dispatcherAgent = dispatcherAgentId ? agents[dispatcherAgentId] : undefined;
@@ -383,8 +384,7 @@ export function ChromeSidebar() {
       for (const id of prev) {
         if (current.has(id)) continue;
         useChromeStore.getState().forgetProjectsWithPrefix(satellitePrefix(id));
-        // Its projects leave any group they were linked into.
-        useNetworkSidebarStore.getState().prune((projectId) => !projectId.startsWith(satellitePrefix(id)));
+        // Unpairing is local. Shared links survive and reappear after pairing again.
       }
     }
     if (ids.length > 0 || prev) prevSatelliteIdsRef.current = ids;

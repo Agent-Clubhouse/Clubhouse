@@ -44,6 +44,19 @@ export function parseProjectLinkRecords(raw: unknown, max = PROJECT_LINKS_MAX_RE
     return { projects, linked: r.linked, at: r.at as number, by: r.by.toLowerCase() };
   });
 }
+/** Bound received clocks without invalidating saved records if the local clock later moves back. */
+export function parseIncomingProjectLinkRecords(raw: unknown, max = PROJECT_LINKS_MAX_RECORDS, now = Date.now()): ProjectLinkRecord[] {
+  const records = parseProjectLinkRecords(raw, max);
+  if (records.some((r) => r.at > now + 24 * 60 * 60 * 1000)) throw new Error('Project link clock is too far ahead.');
+  return records;
+}
+/** IPC preserves messages but strips custom Error properties. Retry only these known temporary failures. */
+export function transientProjectLinksError(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error);
+  return message.includes('Annex identity is not ready for project links.')
+    || /\b(?:EAGAIN|EBUSY|ETIMEDOUT|ECONNRESET|ECONNREFUSED|ENETUNREACH|EHOSTUNREACH|ENOTCONN|ENETDOWN)\b/.test(message)
+    || message === 'Network request failed' || message === 'Failed to fetch';
+}
 /** Latest per pair. An equal-clock separation wins, including conflicting untimed legacy choices. */
 export function compareProjectLinkChanges(a: ProjectLinkRecord, b: ProjectLinkRecord): number {
   return a.at - b.at || Number(b.linked) - Number(a.linked) || compare(a.by, b.by);
@@ -56,6 +69,9 @@ export function mergeProjectLinkRecords(current: ProjectLinkRecord[], incoming: 
     if (!previous || compareProjectLinkChanges(r, previous) > 0) { pairs.set(key, r); changed = true; }
   }
   if (!changed) return current;
+  // Tombstones intentionally have no GC yet. Deleting them without network-wide
+  // acknowledgement would let an offline replica resurrect an old link. The
+  // record cap refuses further growth instead of silently dropping history.
   if (pairs.size > PROJECT_LINKS_MAX_RECORDS) throw new Error('Too many project link records.');
   return [...pairs.entries()].sort(([a], [b]) => compare(a, b)).map(([, r]) => r);
 }

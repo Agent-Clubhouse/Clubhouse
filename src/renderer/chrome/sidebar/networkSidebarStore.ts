@@ -1,3 +1,4 @@
+import { transientProjectLinksError } from '../../../shared/project-links';
 import type { ProjectLinksOp, ProjectLinksView } from '../../../shared/project-links';
 /**
  * Show stays local; links and Keep separate choices come from the shared
@@ -18,6 +19,7 @@ interface Saved {
 
 interface NetworkSidebarState extends Saved {
   handoffLinkError: boolean;
+  linkErrorRetryable: boolean;
   retryHandoffLinks: () => void;
   setShow: (show: ShowFilter) => void;
   /** Link two projects (or their groups) into one group: Merge in the sidebar, Link in a suggestion. */
@@ -28,7 +30,7 @@ interface NetworkSidebarState extends Saved {
   unlink: (projectId: string) => void;
   /** Keep a suggested pair separate: it isn't suggested again. */
   keepSeparate: (a: string, b: string) => void;
-  /** Drop projects that are gone from every link. */
+  /** Unlink deleted local projects network-wide. Unpairing uses only a display filter. */
   prune: (exists: (projectId: string) => boolean) => void;
 }
 
@@ -80,17 +82,29 @@ async function flush(): Promise<void> {
       if (version !== epoch) return;
       hydrated = true; publish(view);
     }
+    let rejected = false;
     while (pending.length && version === epoch) {
-      const view = await window.clubhouse.project.changeProjectLinks(pending[0]);
-      if (version !== epoch) return;
-      pending.shift(); publish(view);
+      try {
+        const view = await window.clubhouse.project.changeProjectLinks(pending[0]);
+        if (version !== epoch) return;
+        pending.shift(); publish(view);
+      } catch (error) { // telemetry-exempt: a visible error reports the refused edit; temporary failures can retry
+        if (version !== epoch) return;
+        const retryable = transientProjectLinksError(error);
+        useNetworkSidebarStore.setState({ handoffLinkError: true, linkErrorRetryable: retryable });
+        if (retryable) return;
+        pending.shift(); publish(base);
+        rejected = true;
+      }
     }
-    if (version === epoch) useNetworkSidebarStore.setState({ handoffLinkError: false });
-  } catch { // telemetry-exempt: the settings section displays the failed save and offers a retry
-    if (version === epoch) useNetworkSidebarStore.setState({ handoffLinkError: true });
+    if (version === epoch && !rejected) useNetworkSidebarStore.setState({ handoffLinkError: false, linkErrorRetryable: false });
+  } catch (error) { // telemetry-exempt: hydration failed; the settings section reports it
+    if (version === epoch) useNetworkSidebarStore.setState({ handoffLinkError: true, linkErrorRetryable: transientProjectLinksError(error) });
   } finally { if (version === epoch) running = false; }
 }
+
 function change(op: ProjectLinksOp): void {
+  useNetworkSidebarStore.setState({ handoffLinkError: false, linkErrorRetryable: false });
   pending.push(op);
   useNetworkSidebarStore.setState(optimistic(useNetworkSidebarStore.getState(), op));
   void flush();
@@ -106,7 +120,7 @@ function saveShow(show: ShowFilter): void {
 
 export const useNetworkSidebarStore = create<NetworkSidebarState>((set, get) => ({
   ...load(),
-  handoffLinkError: false,
+  handoffLinkError: false, linkErrorRetryable: false,
   retryHandoffLinks: () => { void flush(); },
   setShow: (show) => { set({ show }); saveShow(show); },
   link: (a, b) => { if (a !== b) change({ type: 'link', a, b }); },
@@ -122,6 +136,6 @@ export function _resetNetworkSidebarForTesting(): void {
   epoch++; offChanged?.(); offChanged = undefined;
   pending = []; hydrated = false; running = false;
   base = { revision: -1, links: [], keptSeparate: [] };
-  useNetworkSidebarStore.setState({ handoffLinkError: false, show: 'all', links: [], keptSeparate: [] });
+  useNetworkSidebarStore.setState({ handoffLinkError: false, linkErrorRetryable: false, show: 'all', links: [], keptSeparate: [] });
   try { localStorage.removeItem(STORAGE_KEY); } catch { /* telemetry-exempt: test reset */ }
 }

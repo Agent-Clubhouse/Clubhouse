@@ -42,6 +42,17 @@ export function linkSuggestions(
   return out;
 }
 
+/** Pairing visibility is local and never edits or tombstones the shared groups. */
+export function useVisibleProjectLinks(): string[][] {
+  const links = useNetworkSidebarStore((s) => s.links);
+  const satellites = useAnnexClientStore((s) => s.satellites);
+  return useMemo(() => {
+    const paired = new Set(satellites.map((s) => s.id));
+    return links.map((g) => g.filter((id) => !id.startsWith('remote||') || paired.has(id.split('||')[1])))
+      .filter((g) => g.length > 1);
+  }, [links, satellites]);
+}
+
 /** Every paired computer's projects, as its snapshot listed them; an unpaired computer's are left out. */
 export function usePairedRemoteProjects(): Array<Project & { satelliteId?: string; satelliteName?: string }> {
   const satellites = useAnnexClientStore((s) => s.satellites);
@@ -71,7 +82,7 @@ export function useLocalRepoKeys(): Record<string, string> {
 export function useLinkSuggestions(): LinkSuggestion[] {
   const projects = useProjectStore((s) => s.projects);
   const remote = usePairedRemoteProjects();
-  const links = useNetworkSidebarStore((s) => s.links);
+  const links = useVisibleProjectLinks();
   const keptSeparate = useNetworkSidebarStore((s) => s.keptSeparate);
   const keys = useLocalRepoKeys();
   return useMemo(

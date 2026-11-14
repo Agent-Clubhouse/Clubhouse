@@ -677,6 +677,20 @@ describe('ChromeSidebar', () => {
       expect(useNetworkSidebarStore.getState().links).toEqual([]);
     });
 
+    it('hides unpaired satellite links locally and restores them on re-pair without unlinking the shared set', () => {
+      const satellites = useAnnexClientStore.getState().satellites;
+      const shared = [['p3', rp]];
+      useNetworkSidebarStore.setState({ links: shared });
+      render(<ChromeSidebar />);
+      expect(within(screen.getByTestId('project-group-p3')).getByTestId(`agent-item-${ra}`)).toBeTruthy();
+      act(() => useAnnexClientStore.setState({ satellites: [] }));
+      expect(screen.queryByTestId(`agent-item-${ra}`)).toBeNull();
+      expect(useNetworkSidebarStore.getState().links).toEqual(shared);
+      act(() => useAnnexClientStore.setState({ satellites }));
+      expect(within(screen.getByTestId('project-group-p3')).getByTestId(`agent-item-${ra}`)).toBeTruthy();
+      expect(useNetworkSidebarStore.getState().links).toEqual(shared);
+    });
+
     it('keeps an offline machine\'s agents listed, dimmed, saying offline instead of a time', () => {
       useAnnexClientStore.setState((st) => ({ satellites: st.satellites.map((x) => ({ ...x, state: 'disconnected' as const })) }));
       render(<ChromeSidebar />);

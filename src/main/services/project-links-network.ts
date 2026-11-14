@@ -5,7 +5,7 @@
  */
 import {
   PROJECT_LINKS_CAPABILITIES_PATH, PROJECT_LINKS_SYNC_PATH, PROJECT_LINKS_PAGE_SIZE,
-  parseProjectLinkRecords, projectLinkPairKey, PROJECT_LINKS_MAX_RECORDS, type ProjectLinkRecord,
+  parseIncomingProjectLinkRecords, projectLinkPairKey, PROJECT_LINKS_MAX_RECORDS, type ProjectLinkRecord,
 } from '../../shared/project-links';
 import { projectLinksStore, type ProjectLinksStore } from './project-links-store';
 import { appLog } from './log-service';
@@ -31,7 +31,7 @@ export async function receiveProjectLinks(source: string, raw: unknown, current:
   if (!object(raw) || raw.version !== 1 || Object.keys(raw).some((k) => !['version', 'records', 'after', 'read'].includes(k))
     || raw.read !== undefined && typeof raw.read !== 'boolean'
     || raw.after !== undefined && (typeof raw.after !== 'string' || raw.after.length > 2300)) throw new Error('Invalid project links request.');
-  const records = raw.records === undefined ? [] : parseProjectLinkRecords(raw.records, PROJECT_LINKS_PAGE_SIZE);
+  const records = raw.records === undefined ? [] : parseIncomingProjectLinkRecords(raw.records, PROJECT_LINKS_PAGE_SIZE);
   if (!current()) throw new Error('Project link pairing changed.');
   await store.migrate();
   if (!current()) throw new Error('Project link pairing changed.');
@@ -89,7 +89,7 @@ export function startProjectLinksNetwork(options: ProjectLinksNetworkOptions): (
           const body = response.body;
           if (response.status !== 200 || !object(body) || body.version !== 1
             || body.next !== undefined && (typeof body.next !== 'string' || body.next.length > 2300 || after !== undefined && body.next <= after)) throw new Error('Invalid project link sync response.');
-          const incoming: ProjectLinkRecord[] = parseProjectLinkRecords(body.records, PROJECT_LINKS_PAGE_SIZE);
+          const incoming: ProjectLinkRecord[] = parseIncomingProjectLinkRecords(body.records, PROJECT_LINKS_PAGE_SIZE);
           if (body.next !== undefined && (!incoming.length || body.next !== projectLinkPairKey(...incoming[incoming.length - 1].projects))) throw new Error('Empty project link sync page.');
           await store.merge(incoming, machine, current);
           after = body.next as string | undefined;

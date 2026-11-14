@@ -326,7 +326,8 @@ use these member replication routes.
 `{ machine, projectId }` references, where machine is the Annex identity
 fingerprint. Each record contains `projects`, `linked`, `at` and `by`. A new edit
 uses the greater of the current millisecond timestamp and one greater than every
-observed clock. For a pair the newest clock wins, with separation winning an
+observed clock. Incoming clocks more than one day ahead of the receiving
+computer are refused. For a pair the newest clock wins, with separation winning an
 equal clock and writer fingerprint breaking remaining ties deterministically.
 Unlink, split and Keep separate retain negative records as tombstones; offline
 members cannot resurrect an older link. Display groups are derived
@@ -339,7 +340,10 @@ links and keptSeparate choices and its `handoff-project-links.json` mirror once.
 Legacy choices have clock zero, so a Keep separate choice wins an untimed legacy
 conflict and a newer shared decision wins over any legacy import. Migration
 markers are local to the replica. Saved legacy values remain untouched, including
-when Show changes. New writes go only to the shared record. Handoff project
+when Show changes. New writes go only to the shared record. Unpairing a satellite hides its links
+locally without changing that shared record; pairing it again restores them.
+Deleting a local project still unlinks that project throughout the network.
+Handoff project
 matching uses the same shared groups after migration. Project identifiers remain
 qualified by their computer even when a phone is connected to just one member;
 a phone connected to several members sees replicas of the same set, not separate

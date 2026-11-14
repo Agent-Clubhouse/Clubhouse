@@ -3,7 +3,7 @@ import * as path from 'path';
 import { app } from 'electron';
 import {
   applyProjectLinksOp, legacyProjectLinkRecords, mergeProjectLinkRecords, parseProjectLinkRecords,
-  parseProjectLinksOp, projectLinkGroups, projectLinkPairKey, projectLinksView, PROJECT_LINKS_PAGE_SIZE,
+  parseProjectLinksOp, parseIncomingProjectLinkRecords, PROJECT_LINKS_MAX_RECORDS, projectLinkGroups, projectLinkPairKey, projectLinksView, PROJECT_LINKS_PAGE_SIZE,
   type ProjectLinkRecord, type ProjectLinksView,
 } from '../../shared/project-links';
 import { createSettingsStore } from './settings-store';
@@ -104,7 +104,7 @@ export class ProjectLinksStore {
     });
   }
   merge(raw: unknown, source: string, current?: () => boolean): Promise<ProjectLinksView> {
-    const incoming = parseProjectLinkRecords(raw);
+    const incoming = parseIncomingProjectLinkRecords(raw, PROJECT_LINKS_MAX_RECORDS, (this.options.now ?? Date.now)());
     return this.update((state) => {
       const records = mergeProjectLinkRecords(state.records, incoming);
       return records === state.records ? state : { ...state, records };

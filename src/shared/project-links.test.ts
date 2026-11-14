@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { applyProjectLinksOp, legacyProjectLinkRecords, mergeProjectLinkRecords, parseProjectLinkRecords, projectLinkGroups, projectLinksView } from './project-links';
+import { applyProjectLinksOp, legacyProjectLinkRecords, mergeProjectLinkRecords, parseProjectLinkRecords, parseIncomingProjectLinkRecords, projectLinkGroups, projectLinksView } from './project-links';
 const A = Array(16).fill('aa').join(':'), B = Array(16).fill('bb').join(':'), C = Array(16).fill('cc').join(':');
 const remote = (m: string, p: string) => `remote||${m}||${p}`;
 const linked = () => applyProjectLinksOp([], { type: 'link', a: 'site', b: remote(B, 'copy') }, A, 100);
@@ -49,6 +49,15 @@ describe('network-shared project link pairs', () => {
     const no = yes.map((r) => ({ ...r, linked: false, by: B }));
     expect(mergeProjectLinkRecords(yes, no)).toEqual(no);
     expect(mergeProjectLinkRecords(no, yes)).toBe(no);
+  });
+  it('refuses incoming clocks more than one day ahead, including MAX_SAFE_INTEGER', () => {
+    const now = 1_000, day = 24 * 60 * 60 * 1000;
+    expect(parseIncomingProjectLinkRecords([{ ...linked()[0], at: now + day }], 200, now)).toHaveLength(1);
+    for (const at of [now + day + 1, Number.MAX_SAFE_INTEGER - 1]) {
+      expect(() => parseIncomingProjectLinkRecords([{ ...linked()[0], at }], 200, now)).toThrow('too far ahead');
+    }
+    // Saved records remain readable after a local clock correction.
+    expect(parseProjectLinkRecords([{ ...linked()[0], at: now + day + 1 }])).toHaveLength(1);
   });
   it('rejects malformed records instead of storing arbitrary input', () => {
     for (const raw of [[{ ...linked()[0], extra: true }], [{ ...linked()[0], at: Infinity }], [{ ...linked()[0], by: 'not-a-machine' }], [{ ...linked()[0], projects: [{ machine: A, projectId: '/bad\npath' }, { machine: B, projectId: 'x' }] }]]) {
