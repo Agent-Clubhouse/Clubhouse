@@ -88,7 +88,7 @@ An agent you've allowed can message, send a file or offer a Handoff directly to 
 
 ## What it can do
 
-By default it can read, message, wake, put to sleep, reset, rename and set up the agents connected to it, create agents in any project, make and remove connections, and create and run Actions. It asks you first before it adds or opens a project, changes project defaults or changes app settings, including the app theme. Its Clubhouse permissions, under **Permissions** on any agent's Dispatcher card, set each of these to Off, Ask first or Allow. It never sets an agent's access above its own.
+By default it can read, message, wake, put to sleep, reset, rename and set up the agents connected to it, create agents in any project, make and remove connections, and create and run Actions. It asks you first before it adds or opens a project, changes project defaults or changes app settings. Its Clubhouse permissions, under **Permissions** on any agent's Dispatcher card, set each of these to Off, Ask first or Allow. It never sets an agent's access above its own.
 
 When it links two of your orchestrators, you can say what each may do to the other, for example "let them see each other's status, message and wake each other, nothing else". It sets those switches on the link and reads them back to check. A new link it makes can read, message and wake, with **Clear** and **Compact** off. It never changes switches you set yourself, and never lets one agent put another to sleep. The link's switches are on each agent's **Connections** card under **Manage**.
 
