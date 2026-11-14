@@ -67,8 +67,9 @@ const ABILITIES: Readonly<Record<GrantAction, Ability | null>> = {
   'agent.reset': { group: 'agents', verb: 'clear the context of', noun: 'agent' },
   'agent.restart': { group: 'agents', verb: 'restart', noun: 'agent' },
   'agent.display': { group: 'agents', verb: 'rename', noun: 'agent' },
-  'agent.configure': { group: 'agents', verb: 'change the model of', noun: 'agent' },
-  'agent.grant': { group: 'agents', verb: 'change the setup and permissions of', noun: 'agent' },
+  'agent.configure': { group: 'agents', verb: 'edit the setup of', noun: 'agent', line: (target) => target.kind === 'any' ? 'edit the setup of any agent' : undefined },
+  // Held for assigning setup and creating agents, but no general permissions setter is exposed.
+  'agent.grant': null,
   'agent.dispose': { group: 'agents', verb: 'delete', noun: 'agent' },
   'agent.create': { group: 'new', verb: 'create agents in', noun: 'project' },
   'connection.manage': { group: 'new', verb: 'make and remove connections for', noun: 'agent' },
@@ -359,7 +360,7 @@ export function dispatcherIntro({ name, reachable }: IntroFacts): string[] {
   // The working name reads as a role; a name the user picked reads as a name.
   const hello = `Hi, I'm ${name === 'Dispatcher' ? 'the Dispatcher' : name}.`;
   const reach = reachable === 0
-    ? 'No agents are connected to me yet. Turn me on in an agent\'s Details and I can reach it.'
+    ? 'No agents are connected to me yet. Ask me to connect one and I\'ll ask you first.'
     : `I can reach ${reachable === 1 ? 'one of your agents' : `${reachable} of your agents`}.`;
   return [
     `${hello} ${reach}`,

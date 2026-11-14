@@ -174,7 +174,7 @@ describe('tool grant declarations (#2967)', () => {
       list_projects: project.read on all_projects
       message_parent: agent.message on parent
       list_models: models.read on app
-      list_agents: agent.read on connected
+      list_agents: agent.read on all_agents
       inspect_helper: agent.read on agent_arg
       start_work: agent.message on self
       read_memory: agent.read on self
@@ -201,7 +201,7 @@ describe('tool grant declarations (#2967)', () => {
       delete_agent_part: library.write on library
       get_agent_setup: agent.read on agent_arg
       get_agent_activation: agent.read on agent_arg
-      set_agent_setup: agent.grant on agent_arg
+      set_agent_setup: agent.grant, agent.configure on agent_arg
       switch_agent_to_managed: agent.grant on agent_arg; library.write on library
       preview_agent_setup: agent.read on agent_arg
       list_agent_templates: library.read on library

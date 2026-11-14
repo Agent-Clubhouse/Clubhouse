@@ -6,6 +6,10 @@ vi.mock('../mcp-call-gate', async (original) => ({ ...await original<typeof impo
 import type { DurableAgentConfig } from '../../../../shared/types';
 import type { ChatEvent } from '../../../../shared/chat';
 
+const satellites = vi.hoisted(() => [] as Array<Record<string, unknown>>);
+vi.mock('../../annex-client', () => ({ getSatellites: () => satellites }));
+vi.mock('../../annex-agent-calls', () => ({ isNetworkComputer: (id: string) => id === 'member' }));
+
 // ── Mocks: no CLI, git or disk is touched ──────────────────────────────────
 
 const PROJECT_A = path.join(path.sep, 'tmp', 'alpha');
@@ -114,6 +118,7 @@ vi.mock('../../dispatcher/dispatcher-service', () => ({
   },
 }));
 
+import { setMcpCallerQuick } from '../mcp-call-gate';
 import { registerDispatcherTools } from './dispatcher-tools';
 import { registerHelperTools, _resetHelperToolsForTesting } from './helper-tools';
 import { callTool, getScopedToolList, _resetForTesting } from '../tool-registry';
@@ -245,6 +250,22 @@ describe('dispatcher gate', () => {
 // ── list_agents ─────────────────────────────────────────────────────
 
 describe('list_agents', () => {
+  it('includes a running unconnected quick agent', async () => {
+    await runDispatcher();
+    runAgent('quick', PROJECT_B);
+    setMcpCallerQuick('quick', PROJECT_B);
+    const rows = parse(await callTool('dispatcher', 'list_agents', {})).agents as Array<Record<string, unknown>>;
+    expect(rows).toEqual([expect.objectContaining({ id: 'quick', kind: 'quick', connected_to_dispatcher: false })]);
+  });
+  it('lists unconnected agents on network members, excluding other peers', async () => {
+    await runDispatcher();
+    satellites.push(...['member', 'outsider'].map((fingerprint) => ({ fingerprint, alias: fingerprint, snapshot: { agents: { project: [{ id: 'remote', name: 'Remote' }] } } })));
+    try {
+      const rows = parse(await callTool('dispatcher', 'list_agents', {})).agents as Array<{ id: string }>;
+      expect(rows.map((row) => row.id)).toEqual(['remote@member']);
+      expect(rows[0]).toMatchObject({ connected_to_dispatcher: false });
+    } finally { satellites.length = 0; }
+  });
   it('lists connected agents across projects with status, connection, branch and helpers', async () => {
     await runDispatcher();
     addAgent(PROJECT_A, { id: 'lead-a', name: 'Lead A' });
@@ -264,13 +285,16 @@ describe('list_agents', () => {
 
     const result = await callTool('dispatcher', 'list_agents', {});
     expect(result.isError).toBeFalsy();
-    expect(parse(result).agents).toEqual([
+    const all = parse(result).agents as Array<Record<string, unknown>>;
+    expect(all.map((row) => row.id)).toEqual(['lead-a', 'h1', 'busy-b', 'h2']);
+    expect(all.filter((row) => !['h1', 'h2'].includes(row.id as string))).toEqual([
       {
         id: 'lead-a',
         name: 'Lead A',
         project: { name: 'alpha', path: PROJECT_A },
         status: 'idle',
         orchestrates: true,
+        connected_to_dispatcher: true,
         connected: true,
         branch: 'feature/a',
         helpers: {
@@ -288,6 +312,7 @@ describe('list_agents', () => {
         project: { name: 'Beta', path: PROJECT_B },
         status: 'running',
         orchestrates: true,
+        connected_to_dispatcher: true,
         // Running, but not connected to the bridge yet.
         connected: false,
         branch: 'feature/b',
@@ -318,7 +343,7 @@ describe('list_agents', () => {
     expect(rows.map((r) => [r.id, r.orchestrates])).toEqual([['plain', false], ['lead', true]]);
   });
 
-  it('leaves out a helper with the switch set, resolved by the real policy (#2578)', async () => {
+  it('includes helpers while leaving their Dispatcher connection off (#3467)', async () => {
     await runDispatcher();
     addAgent(PROJECT_A, { id: 'lead', orchestration: { orchestrate: true } });
     addAgent(PROJECT_A, { id: 'h', parentAgentId: 'lead', orchestration: { connectToDispatcher: true } });
@@ -326,10 +351,11 @@ describe('list_agents', () => {
     vi.mocked(resolveOrchestrationPolicies).mockImplementationOnce(async (_p, agents) =>
       new Map(agents.map((a) => [a.id, resolveOrchestrationPolicy(a.orchestration, { helper: !!a.parentAgentId })])));
     const rows = parse(await callTool('dispatcher', 'list_agents', {})).agents as Array<{ id: string }>;
-    expect(rows.map((r) => r.id)).toEqual(['lead']);
+    expect(rows.map((r) => r.id)).toEqual(['lead', 'h']);
+    expect(rows[1]).toMatchObject({ connected_to_dispatcher: false });
   });
 
-  it('leaves out agents with the switch off, policies without the field, and disposed agents', async () => {
+  it('includes unconnected agents and leaves out disposed agents', async () => {
     await runDispatcher();
     addAgent(PROJECT_A, { id: 'opted-out' });
     addAgent(PROJECT_A, { id: 'no-field' });
@@ -345,7 +371,7 @@ describe('list_agents', () => {
     policies.set('kept', policy({ connectToDispatcher: true }));
 
     const body = parse(await callTool('dispatcher', 'list_agents', {}));
-    expect((body.agents as Array<{ id: string }>).map((o) => o.id)).toEqual(['kept']);
+    expect((body.agents as Array<{ id: string }>).map((o) => o.id)).toEqual(['opted-out', 'no-field', 'not-orch', 'no-policy', 'kept']);
   });
 
   it('reads each project\'s agents once, and resolves its policies in one call', async () => {
@@ -361,7 +387,7 @@ describe('list_agents', () => {
     vi.mocked(resolveOrchestrationPolicies).mockClear();
 
     const body = parse(await callTool('dispatcher', 'list_agents', {}));
-    expect((body.agents as Array<{ id: string }>).map((o) => o.id)).toEqual(['a1', 'a2', 'a3']);
+    expect((body.agents as Array<{ id: string }>).map((o) => o.id)).toEqual(['a1', 'a2', 'a3', 'b1']);
     const reads = vi.mocked(agentConfig.listDurable).mock.calls.map(([p]) => p);
     expect(reads.filter((p) => p === PROJECT_A)).toHaveLength(1);
     expect(reads.filter((p) => p === PROJECT_B)).toHaveLength(1);

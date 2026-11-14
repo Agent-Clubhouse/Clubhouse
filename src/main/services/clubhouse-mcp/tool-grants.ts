@@ -41,6 +41,8 @@ export const TOOL_GRANT_TARGETS = [
    * agent with Connect to Dispatcher on.
    */
   'connected',
+  /** All agents, including agents without a connection to the caller. */
+  'all_agents',
   /**
    * An agent (or agents) named in the arguments, wherever it is. Tools that
    * default to the caller when it's left out say so (update_agent, read_settings).

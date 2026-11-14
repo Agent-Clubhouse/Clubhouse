@@ -153,6 +153,11 @@ async function agentTarget(lookup: Lookup, config: DurableAgentConfig, projectPa
   return { kind: 'agent', agentId: config.id, relations, projectPath, isDispatcher: isTrackedDispatcher(config.id) || isDispatcherCoordinatorId(config.id), ...(wakeOn && { wakeOn: true }) };
 }
 
+/** Build grants for an already resolved agent without resolving its reference again. */
+export async function resolvedAgentGrantTarget(callerId: string, config: DurableAgentConfig, projectPath: string): Promise<GrantCallTarget> {
+  return agentTarget(new Lookup(callerId, agentRegistry.get(callerId)?.projectPath), config, projectPath);
+}
+
 /**
  * Connected to the caller: for the Dispatcher, an agent with Connect to
  * Dispatcher on; for any other agent, one it has a wire to.

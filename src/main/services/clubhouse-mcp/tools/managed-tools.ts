@@ -45,8 +45,9 @@ import { CLUBHOUSE_MCP_PART_ID, CLUBHOUSE_PART_ALWAYS_ON, isListed, type Managed
 import type { DurableAgentConfig, Project } from '../../../../shared/types';
 import { agentRegistry } from '../../agent-registry';
 import { capToHolder, checkToolGrant } from '../grant-check';
-import { describeCallsForAsk } from '../ask-first';
-import { resolveArgTargets, type ArgTargets } from '../arg-targets';
+import { callApprovalVersion } from '../../grant-requests';
+import { askFirst, describeCallsForAsk } from '../ask-first';
+import { resolveArgTargets, resolvedAgentGrantTarget, type ArgTargets } from '../arg-targets';
 import { isDisposedAgent } from '../../../../shared/agent-helpers';
 import { deleteAgent } from '../../agent-delete';
 import type { AgentDeleteResult, HelperDeleteChoice } from '../../../../shared/types';
@@ -253,6 +254,10 @@ function tool(name: string, grant: ToolGrant, description: string, properties: R
     }
   }, { group: ORCHESTRATOR_READS.has(name) ? ['dispatcher', 'orchestration'] : 'dispatcher', grant });
 }
+
+// This operation owns resolution: its project-scoped target must be identical
+// for permissions, approval and mutation, even when a name resembles a foreign id.
+const SETUP_GRANT: ToolGrantDeclaration = { actions: ['agent.grant', 'agent.configure'], target: 'agent_arg' };
 
 const DELETE_GRANT: ToolGrant = { actions: ['agent.dispose'], target: 'agent_arg', from: { args: ['agent'], project: 'project' } };
 const CREATE_GRANTS: readonly ToolGrantDeclaration[] = [
@@ -530,15 +535,80 @@ export function registerManagedTools(): void {
       }
     });
 
-  tool('set_agent_setup', { actions: ['agent.grant'], target: 'agent_arg', from: { args: ['agent'], project: 'project' } },
-    'Replace a managed agent\'s parts: blocks in the order it reads them, skills and MCP servers. The Clubhouse MCP part always stays in the setup. Applies at its next start; use restart_agent for a running one.',
+  tool('set_agent_setup', { ...SETUP_GRANT, askHandledByTool: true },
+    'Replace a managed agent\'s parts: blocks in the order it reads them, skills and MCP servers. The Clubhouse MCP part always stays in the setup. Setup edits on unconnected agents ask first by default. This tool does not change model, CLI or context. Applies at its next start; use restart_agent for a running one.',
     { project: PROJECT, agent: AGENT, blocks: IDS, skills: IDS, mcps: IDS }, ['project', 'agent', 'blocks', 'skills', 'mcps'],
     async (callerId, args) => {
-      const t = await resolveAgent(args);
-      const current = await svc().getSetup(t.project.path, t.agentId);
-      if (!current) throw new ArgError(`${t.agentName} isn't Clubhouse managed.`);
+      if (Object.keys(args).some((key) => !['project', 'agent', 'blocks', 'skills', 'mcps'].includes(key))) {
+        throw new ArgError('set_agent_setup changes parts only. Model, CLI and context controls require an existing connection and their separate tools.');
+      }
+      const resolveTarget = async () => {
+        const project = await resolveProject(requireString(args, 'project'));
+        const ref = requireString(args, 'agent');
+        const agents = (await agentConfig.peekDurableConfigs(project.path)).filter((agent) => !isDisposedAgent(agent));
+        const ids = agents.filter((agent) => agent.id === ref);
+        const matches = ids.length ? ids : agents.filter((agent) => agent.name === ref);
+        if (matches.length !== 1) throw new ArgError('The setup target must resolve to exactly one visible agent in the requested project. Use its id.');
+        return { project, config: structuredClone(matches[0]) };
+      };
+      const pinned = await resolveTarget();
+      const targetMap = async (target: typeof pinned): Promise<ArgTargets> => new Map([
+        [SETUP_GRANT, [await resolvedAgentGrantTarget(callerId, target.config, target.project.path)]],
+      ]);
+      let targets = await targetMap(pinned);
+      const context = grantApprovalContext(callerId, 'set_agent_setup', args, SETUP_GRANT, targets);
+      const approvalVersion = callApprovalVersion(callerId);
+      const check = checkToolGrant(callerId, SETUP_GRANT, args, undefined, targets);
+      let approval: import('../../grant-requests').ConsumedCallApproval | undefined;
+      if (check.ok === false) {
+        if (check.reason !== 'ask_first') return fail(check.message);
+        const outcome = await askFirst(callerId, 'set_agent_setup', args, check.asks, context);
+        if (outcome.kind === 'asked') return fail(outcome.text);
+        approval = outcome.approval;
+      }
+      let prepared = pinned;
+      let projectGeneration = projectStore.projectRegistryMutationState().generation;
+      const precondition: agentConfig.ManagedSetupCommitPrecondition = {
+        prepare: async () => {
+          const before = projectStore.projectRegistryMutationState();
+          if (before.pending) throw new ArgError('The project registry is changing. Try again.');
+          prepared = await resolveTarget();
+          if (prepared.config.id !== pinned.config.id || prepared.project.path !== pinned.project.path) {
+            throw new ArgError('The setup target changed after authorization. Make a new call and request approval again.');
+          }
+          targets = await targetMap(prepared);
+          const after = projectStore.projectRegistryMutationState();
+          if (after.pending || after.generation !== before.generation) throw new ArgError('The project changed during authorization. Try again.');
+          projectGeneration = after.generation;
+        },
+        check: (agent) => {
+          const registry = projectStore.projectRegistryMutationState();
+          if (agent.id !== pinned.config.id || isDisposedAgent(agent)
+            || (args.agent !== pinned.config.id && agent.name !== pinned.config.name)
+            || JSON.stringify(agent.orchestration) !== JSON.stringify(prepared.config.orchestration)
+            || registry.pending || registry.generation !== projectGeneration
+            || callApprovalVersion(callerId) !== approvalVersion
+            || grantApprovalContext(callerId, 'set_agent_setup', args, SETUP_GRANT, targets) !== context) {
+            throw new ArgError('The setup target or permissions changed after authorization. Request approval again.');
+          }
+          // Use the SAME declaration object that keys targets. An absent target
+          // is never permission to write, and a fresh refusal beats any approval.
+          const checkedTargets = targets.get(SETUP_GRANT);
+          if (checkedTargets?.length !== 1 || checkedTargets[0].agentId !== pinned.config.id || checkedTargets[0].projectPath !== pinned.project.path) {
+            throw new ArgError('The setup target is unavailable or changed.');
+          }
+          const fresh = checkToolGrant(callerId, SETUP_GRANT, args, undefined, targets);
+          if (fresh.ok === false && (fresh.reason !== 'ask_first' || !approval
+            || approval.scope.context !== context
+            || !fresh.asks.every((ask) => approval!.scope.asks.some((allowed) => allowed.action === ask.action && allowed.where === ask.where)))) {
+            throw new ArgError(fresh.message);
+          }
+        },
+      };
+      const current = await svc().getSetup(pinned.project.path, pinned.config.id);
+      if (!current) throw new ArgError(`${pinned.config.name} isn't Clubhouse managed.`);
       const next = { ...current, blocks: idList(args, 'blocks'), skills: idList(args, 'skills'), mcps: idList(args, 'mcps') };
-      const saved = await asDispatcher(callerId, () => svc().saveSetup(t.project.path, t.agentId, next));
+      const saved = await asDispatcher(callerId, () => svc().saveSetup(pinned.project.path, pinned.config.id, next, { precondition }));
       // Leaving the Clubhouse part out is ignored: saveSetup keeps it, and the result says so.
       return json(keptClubhousePart(next.mcps, saved));
     });
