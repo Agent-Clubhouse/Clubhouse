@@ -16,6 +16,22 @@ function isCopilotHooksPath(file: string): boolean {
   return file.endsWith(path.join('.github', 'hooks', 'hooks.json'));
 }
 
+/** Codex treats even an empty project config directory as needing trust. */
+export async function removeEmptyCodexHooksDirectory(file: string): Promise<void> {
+  if (!file.endsWith(path.join('.codex', 'hooks.json'))) return;
+  try {
+    // rmdir only removes an empty directory, preserving every user config file.
+    await fsp.rmdir(path.dirname(file));
+  } catch (err) {
+    const code = (err as NodeJS.ErrnoException).code;
+    if (code !== 'ENOENT' && code !== 'ENOTEMPTY' && code !== 'EEXIST') {
+      appLog('core:config-pipeline', 'warn', 'Could not remove empty Codex config directory', {
+        meta: { filePath: file, error: err instanceof Error ? err.message : String(err) },
+      });
+    }
+  }
+}
+
 function reportCopilotRepair(file: string, detail: string, options?: ConfigCleanupOptions): void {
   const message = `Copilot hooks at ${file}: ${detail}. Review and repair the file, then restart the agent.`;
   appLog('core:config-pipeline', 'warn', 'Copilot hooks require manual repair', { meta: { filePath: file, detail } });
@@ -136,6 +152,7 @@ export function restoreForAgent(agentId: string, options?: ConfigCleanupOptions)
       if (snapshot.refCount <= 0) {
         snapshots.delete(absPath);
         await restoreSnapshot(absPath, snapshot, options);
+        await removeEmptyCodexHooksDirectory(absPath);
       }
     }
   });
@@ -148,6 +165,7 @@ export function restoreAll(options?: ConfigCleanupOptions): Promise<void> {
   return withMutex(async () => {
     for (const [absPath, snapshot] of snapshots) {
       await restoreSnapshot(absPath, snapshot, options);
+      await removeEmptyCodexHooksDirectory(absPath);
     }
     snapshots.clear();
     agentFiles.clear();
@@ -271,7 +289,10 @@ export function stripClubhouseHooksFromFile(filePath: string, options?: ConfigCl
   return withMutex(async () => {
     const absPath = path.resolve(filePath);
     if (isCopilotHooksPath(absPath)) return cleanupCopilotHooksFile(absPath, options);
-    if (!(await pathExists(absPath))) return false;
+    if (!(await pathExists(absPath))) {
+      await removeEmptyCodexHooksDirectory(absPath);
+      return false;
+    }
 
     let current: unknown;
     try {
@@ -294,6 +315,7 @@ export function stripClubhouseHooksFromFile(filePath: string, options?: ConfigCl
     try {
       if (Object.keys(cleaned).length === 0) {
         await fsp.unlink(absPath);
+        await removeEmptyCodexHooksDirectory(absPath);
         appLog('core:config-pipeline', 'info', 'Stripped Clubhouse hooks from stopped agent (deleted, no remaining settings)', {
           meta: { filePath: absPath },
         });

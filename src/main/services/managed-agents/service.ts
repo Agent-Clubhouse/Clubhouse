@@ -991,7 +991,11 @@ export function createManagedAgentsService(deps: ManagedAgentsDeps) {
     async listTemplates(): Promise<Array<ManagedTemplate & { usedBy: number }>> {
       const templates = await allTemplates();
       const agents = await managedAgents();
-      return templates.map((t) => ({ ...t, usedBy: agents.filter(({ agent }) => agent.managed?.templateId === t.id).length }));
+      const projects = templates.some((t) => t.source) ? await deps.listProjects().catch((): Array<{ id?: string; name: string }> => []) : [];
+      return templates.map((t) => {
+        const projectName = t.source && projects.find((p) => p.id === t.source!.projectId)?.name;
+        return { ...t, ...(projectName && { projectName }), usedBy: agents.filter(({ agent }) => agent.managed?.templateId === t.id).length };
+      });
     },
 
     async getTemplate(id: string): Promise<ManagedTemplate> {
@@ -1000,7 +1004,15 @@ export function createManagedAgentsService(deps: ManagedAgentsDeps) {
       return t;
     },
 
-    async saveTemplate(input: Omit<ManagedTemplate, 'builtin' | 'updatedAt' | 'updatedBy' | 'id'> & { id?: string; actor?: string }): Promise<ManagedTemplate> {
+    /**
+     * `project` is only for a template a person adds from a project's
+     * repository (D255). An edit keeps the source and hashes it already has,
+     * whatever the caller sends.
+     */
+    async saveTemplate(
+      input: Omit<ManagedTemplate, 'builtin' | 'updatedAt' | 'updatedBy' | 'id' | 'source' | 'projectHash' | 'projectKeptHash' | 'projectName'> & { id?: string; actor?: string },
+      project?: { source: NonNullable<ManagedTemplate['source']>; projectHash: string },
+    ): Promise<ManagedTemplate> {
       if (input.id && BUILTIN_TEMPLATES.has(input.id)) throw new ManagedError('builtin_read_only', 'Built-in templates can\'t be edited. Make your copy instead.');
       const name = input.name.trim();
       if (!name) throw new ManagedError('invalid', 'Give it a name.');
@@ -1012,6 +1024,10 @@ export function createManagedAgentsService(deps: ManagedAgentsDeps) {
       const template = await state.update((s) => {
         const id = input.id ?? `template-${Math.random().toString(36).slice(2, 10)}${Date.now().toString(36)}`;
         if (input.id && !s.templates[input.id]) throw new ManagedError('not_found');
+        const was = input.id ? s.templates[input.id] : undefined;
+        const kept = project
+          ? { source: project.source, projectHash: project.projectHash }
+          : was?.source ? { source: was.source, ...(was.projectHash && { projectHash: was.projectHash }), ...(was.projectKeptHash && { projectKeptHash: was.projectKeptHash }) } : {};
         // A retired built-in's name (D71) is free: nothing lists it any more.
         const clash = [...BUILTIN_TEMPLATES.values(), ...Object.values(s.templates)].some((t) => isListed(t) && t.id !== id && t.name.toLowerCase() === name.toLowerCase());
         if (clash) throw new ManagedError('name_taken', `A template called ${name} already exists.`);
@@ -1021,6 +1037,7 @@ export function createManagedAgentsService(deps: ManagedAgentsDeps) {
           settings: templateSettingsToKeep(input.settings ?? {}),
           updatedAt: new Date().toISOString(),
           ...(actor && { updatedBy: actor }),
+          ...kept,
         };
         s.templates[id] = t;
         return t;
@@ -1028,6 +1045,23 @@ export function createManagedAgentsService(deps: ManagedAgentsDeps) {
       await auditManaged('managed.template.saved', template.id);
       changed();
       return template;
+    },
+
+    /** The setting changes between two templates' settings, labeled as the push dialog shows them. */
+    async diffTemplateSettings(current: ManagedTemplateSettings, next: ManagedTemplateSettings): Promise<ManagedTemplateChange[]> {
+      const empty: ManagedTemplate['setup'] = { blocks: [], skills: [], mcps: [] };
+      return diffTemplates({ setup: empty, settings: current }, { setup: empty, settings: next }, (id) => id, await templateLabeler());
+    },
+
+    /** A project template's repository hashes: updated from one (`projectHash`), or one the person kept theirs over (`keptHash`). */
+    async setTemplateProjectHash(id: string, hashes: { projectHash?: string; keptHash?: string }): Promise<void> {
+      await state.update((s) => {
+        const t = s.templates[id];
+        if (!t?.source) throw new ManagedError('not_found', 'It isn\'t a template from a project.');
+        if (hashes.projectHash) { t.projectHash = hashes.projectHash; delete t.projectKeptHash; }
+        if (hashes.keptHash) t.projectKeptHash = hashes.keptHash;
+      });
+      changed();
     },
 
     async deleteTemplate(id: string): Promise<void> {

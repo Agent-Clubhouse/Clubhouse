@@ -47,6 +47,12 @@ export const IPC = {
     ADD_PROJECT_PART: 'managed:add-project-part',
     UPDATE_PROJECT_PART: 'managed:update-project-part',
     KEEP_PROJECT_PART: 'managed:keep-project-part',
+    /** Templates projects' repositories offer under .clubhouse/parts/templates/ (D255). */
+    PROJECT_TEMPLATES: 'managed:project-templates',
+    REVIEW_PROJECT_TEMPLATE: 'managed:review-project-template',
+    ADD_PROJECT_TEMPLATE: 'managed:add-project-template',
+    UPDATE_PROJECT_TEMPLATE: 'managed:update-project-template',
+    KEEP_PROJECT_TEMPLATE: 'managed:keep-project-template',
     /** Main to renderer: parts, templates or setups changed; refetch what's shown. */
     CHANGED: 'managed:changed',
   },

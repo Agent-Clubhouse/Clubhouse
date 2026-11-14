@@ -41,6 +41,9 @@ function what(request: GrantRequest): string {
 }
 
 export async function answerGrantRequest(requestId: string, allow: boolean, updateMode?: import('../../shared/app-update').AppUpdateMode, assertAuthorized?: () => void): Promise<GrantRequestAnswer> {
+  if (peekGrantRequest(requestId)?.deleteReview && currentSettingsOrigin().surface !== 'ui') {
+    return { ok: false, error: 'Review this deletion batch in Needs you on the originating computer.' };
+  }
   if (peekGrantRequest(requestId)?.update) {
     const { answerAppUpdateRequest } = await import('./app-update-request');
     assertAuthorized?.();

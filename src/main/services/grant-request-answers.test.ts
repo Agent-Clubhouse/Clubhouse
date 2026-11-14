@@ -126,3 +126,17 @@ describe('answering a request (#2970)', () => {
     expect(mocks.deliver).toHaveBeenCalledWith('a1', expect.stringContaining('same call again'), expect.anything());
   });
 });
+
+it.each(['mcp', 'dispatcher', 'mobile', 'annex_desktop', 'system'] as const)('a %s origin cannot answer a deletion batch', async (surface) => {
+  const { withSettingsSurface } = await import('./settings-audit');
+  const { callKey, consumeCallApprovalScope } = await import('./grant-requests');
+  const key = callKey('a1', 'delete_agents', { items: [] });
+  const recorded = recordGrantRequest(key, { kind: 'call', agentId: 'a1', agentName: 'Ada', projectPath: '/p', actions: ['agent.dispose'], where: 'batch', deleteReview: { items: [] } }, Date.now(), { context: 'exact', asks: [] });
+  if (!recorded.ok) throw new Error('Could not record request');
+  const answer = await withSettingsSurface(surface, 'a1', () => answerGrantRequest(recorded.request.requestId, true));
+  expect(answer).toMatchObject({ ok: false, error: expect.stringContaining('originating computer') });
+  expect(listGrantRequests()).toHaveLength(1);
+  expect(consumeCallApprovalScope(key)).toBeNull();
+  expect(await withSettingsSurface('ui', undefined, () => answerGrantRequest(recorded.request.requestId, true))).toEqual({ ok: true });
+  expect(consumeCallApprovalScope(key)?.scope.context).toBe('exact');
+});

@@ -41,6 +41,8 @@ export interface GrantRequest {
   /** Main-generated exact review, never supplied by a model as approval. */
   importReview?: import('./project-import').ImportPlan;
   agentReview?: import('./project-import').ImportedAgentReview;
+  /** Exact batch review generated on the originating computer. */
+  deleteReview?: import('./delete-agents').DeleteAgentsReview;
   createdAt: string;
   expiresAt: string;
 }
@@ -63,8 +65,12 @@ export function grantRequestActionLabels(request: Pick<GrantRequest, 'actions'>)
 }
 
 /** The request's line in Needs you, on the desktop and on a phone (#3205). */
-export function describeGrantRequest(request: Pick<GrantRequest, 'kind' | 'actions' | 'toolName' | 'where' | 'update'>): string {
+export function describeGrantRequest(request: Pick<GrantRequest, 'kind' | 'actions' | 'toolName' | 'where' | 'update' | 'deleteReview'>): string {
   if (request.update) return `Update Clubhouse to ${request.update.version}`;
+  if (request.deleteReview) {
+    const count = request.deleteReview.items.filter((item) => item.status === 'ready').length;
+    return `Review deleting ${count} ${count === 1 ? 'agent' : 'agents'} together.`;
+  }
   const needs = grantRequestActionLabels(request).join(', ');
   return request.kind === 'call'
     ? `Wants to run ${request.toolName ?? 'a tool'}, which needs: ${needs} on ${request.where}.`

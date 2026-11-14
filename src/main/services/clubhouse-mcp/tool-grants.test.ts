@@ -192,6 +192,7 @@ describe('tool grant declarations (#2967)', () => {
       disconnect_orchestrators: connection.manage on agent_arg
       list_orchestrator_controls: agent.read on connected
       list_other_dispatchers: agent.read on self
+      delete_agents: agent.dispose on agent_arg
       list_agent_parts: library.read on library
       get_agent_part: library.read on library
       discover_agent_assets: agent.read on agent_arg

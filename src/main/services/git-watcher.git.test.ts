@@ -38,7 +38,8 @@ vi.mock('./log-service', () => ({ appLog: vi.fn() }));
 vi.mock('fs/promises', async (importOriginal) => {
   const actual = await importOriginal<typeof import('fs/promises')>();
   const readFile = vi.fn(actual.readFile);
-  return { ...actual, default: { ...actual, readFile }, readFile };
+  const readdir = vi.fn(actual.readdir);
+  return { ...actual, default: { ...actual, readFile, readdir }, readFile, readdir };
 });
 
 import { appLog } from './log-service';
@@ -432,6 +433,18 @@ describe('GitWatcher', () => {
     expect(events).toEqual([]);
   });
 
+  it('refreshes registered path spelling when worktree membership is unchanged', async () => {
+    const { repo, wt } = makeRepo();
+    const w = newWatcher({ recursiveWatch: true });
+    await w.setPaths([repo, wt]);
+    const registered = `${repo}${path.sep}`;
+    await w.setPaths([registered, wt]);
+    expect(w.lastRebuildStats()).toMatchObject({ groupsKept: 1, watchersCreated: 0, watchersClosed: 0 });
+    commit(repo, 'spelling.txt');
+    await w.rescan();
+    expect(events).toEqual([{ type: 'git.commit', repoPath: registered, branch: 'main' }]);
+  });
+
   it('adds and closes watchers only for the worktrees that came or went, and reports the rebuild (#3230)', async () => {
     const { repo, wt } = makeRepo();
     const other = makeRepo();
@@ -489,6 +502,97 @@ describe('GitWatcher, one recursive watch per repo (macOS, #3230)', () => {
     watches[0].fire(path.join('worktrees', 'a1', 'HEAD'));
     await waitFor(() => events.length > 0);
     expect(events).toEqual([{ type: 'git.branch_switched', repoPath: wt, branch: 'next', previousBranch: 'agent' }]);
+  });
+
+  it('does not walk shared refs or reread existing HEADs for worktree membership changes (#3230)', async () => {
+    const { repo, wt } = makeRepo();
+    const w = newWatcher({ recursiveWatch: true });
+    await w.setPaths([repo, wt]);
+    const wt2 = path.join(repo, '.clubhouse', 'agents', 'a2');
+    git(repo, 'worktree', 'add', '-q', '-b', 'helper/x', wt2);
+    vi.mocked(fsp.readdir).mockClear();
+    vi.mocked(fsp.readFile).mockClear();
+    await w.setPaths([repo, wt, wt2]);
+    expect(fsp.readdir).not.toHaveBeenCalled();
+    const heads = vi.mocked(fsp.readFile).mock.calls.filter(([p]) => path.basename(String(p)) === 'HEAD');
+    expect(heads).toHaveLength(1);
+    expect(String(heads[0][0])).toContain(`${path.sep}a2${path.sep}HEAD`);
+    await w.rescan();
+    expect(events).toEqual([]); // Joining is a baseline, including its new branch.
+    commit(wt2, 'helper.txt');
+    await w.rescan();
+    expect(events).toEqual([{ type: 'git.commit', repoPath: wt2, branch: 'helper/x' }]);
+    vi.mocked(fsp.readdir).mockClear();
+    vi.mocked(fsp.readFile).mockClear();
+    await w.setPaths([repo, wt]);
+    expect(fsp.readdir).not.toHaveBeenCalled();
+    expect(vi.mocked(fsp.readFile).mock.calls.filter(([p]) => path.basename(String(p)) === 'HEAD')).toHaveLength(0);
+    expect(w.lastRebuildStats()).toMatchObject({ watchersCreated: 0, watchersClosed: 0 });
+  });
+
+  it('baselines a packed branch without hiding changes to existing worktrees', async () => {
+    const { repo, wt } = makeRepo();
+    git(repo, 'branch', 'packed-helper');
+    git(repo, 'pack-refs', '--all');
+    const w = newWatcher({ recursiveWatch: true });
+    await w.setPaths([repo, wt]);
+    const wt2 = path.join(repo, '.clubhouse', 'agents', 'a2');
+    commit(wt, 'existing.txt');
+    git(repo, 'branch', '-f', 'packed-helper', 'agent');
+    git(repo, 'pack-refs', '--all');
+    git(repo, 'worktree', 'add', '-q', wt2, 'packed-helper');
+    await w.setPaths([repo, wt, wt2]);
+    await w.rescan();
+    expect(events).toEqual([{ type: 'git.commit', repoPath: wt, branch: 'agent' }]);
+    events.length = 0;
+    commit(wt2, 'new.txt');
+    await w.rescan();
+    expect(events).toEqual([{ type: 'git.commit', repoPath: wt2, branch: 'packed-helper' }]);
+  });
+
+  it('serializes a ref event arriving while a new HEAD is being baselined', async () => {
+    const { repo, wt } = makeRepo();
+    const w = newWatcher({ recursiveWatch: true, debounceMs: 1 });
+    await w.setPaths([repo, wt]);
+    const wt2 = path.join(repo, '.clubhouse', 'agents', 'a2');
+    git(repo, 'worktree', 'add', '-q', '-b', 'helper/x', wt2);
+    const actual = await vi.importActual<typeof import('fs/promises')>('fs/promises');
+    let release!: () => void;
+    let readingHead = false;
+    const barrier = new Promise<void>((resolve) => { release = resolve; });
+    vi.mocked(fsp.readFile).mockImplementation((async (...args: Parameters<typeof actual.readFile>) => {
+      if (String(args[0]).endsWith(`${path.sep}a2${path.sep}HEAD`)) {
+        readingHead = true;
+        await barrier;
+      }
+      return actual.readFile(...args);
+    }) as typeof actual.readFile);
+    const update = w.setPaths([repo, wt, wt2]);
+    try {
+      await waitFor(() => readingHead);
+      commit(wt, 'during-update.txt');
+      watches[0].fire('refs/heads/agent');
+      await new Promise((r) => setTimeout(r, 30));
+      expect(events).toEqual([]);
+    } finally {
+      release();
+      await update;
+    }
+    await waitFor(() => events.length > 0);
+    expect(events).toEqual([{ type: 'git.commit', repoPath: wt, branch: 'agent' }]);
+  });
+
+  it('coalesces overlapping path requests into one rebuild of the latest paths (#3230)', async () => {
+    const { repo, wt } = makeRepo();
+    const w = newWatcher({ recursiveWatch: true });
+    const before = vi.mocked(appLog).mock.calls.length;
+    await Promise.all(Array.from({ length: 25 }, (_, i) => w.setPaths(i === 24 ? [repo, wt] : [repo])));
+    const rebuilds = vi.mocked(appLog).mock.calls.slice(before).filter((c) => c[2] === 'The git watcher rebuilt its repo list');
+    expect(rebuilds).toHaveLength(1);
+    expect(w.lastRebuildStats()).toMatchObject({ repos: 2 });
+    commit(wt, 'helper.txt');
+    await w.rescan();
+    expect(events).toEqual([{ type: 'git.commit', repoPath: wt, branch: 'agent' }]);
   });
 
   it('creates and closes no watchers when a helper worktree comes and goes', async () => {

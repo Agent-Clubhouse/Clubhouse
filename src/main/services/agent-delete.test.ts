@@ -410,3 +410,20 @@ describe('deleteAgent (#3182)', () => {
     });
   });
 });
+
+it('retains a batch review guard after stopping, even with force, and reports settled helpers', async () => {
+  const { withDeleteReview } = await import('./delete-review-guard');
+  vi.mocked(listHelpersEverywhere).mockResolvedValueOnce(helperRows as never);
+  let checks = 0;
+  const result = await withDeleteReview(async () => { if (++checks > 1) throw new Error('New work since review'); }, () => deleteAgent(PROJECT, 'orch', { mode: 'force', helpers: 'dispose', checkWorktree: true, forceWorktree: true }));
+  expect(result).toMatchObject({ ok: false, message: 'New work since review', helpers: { helperIds: ['h1', 'h2'] } });
+  expect(agentConfig.deleteForce).not.toHaveBeenCalled();
+});
+
+it('keeps helper receipts when a batch deletion writer fails after the final check', async () => {
+  const { withDeleteReview } = await import('./delete-review-guard');
+  vi.mocked(listHelpersEverywhere).mockResolvedValueOnce(helperRows as never);
+  vi.mocked(agentConfig.deleteUnregister).mockRejectedValueOnce(new Error('Late writer failure'));
+  const result = await withDeleteReview(async () => {}, () => deleteAgent(PROJECT, 'orch', { mode: 'unregister', helpers: 'dispose' }));
+  expect(result).toMatchObject({ ok: false, message: 'Late writer failure', helpers: { helperIds: ['h1', 'h2'] } });
+});

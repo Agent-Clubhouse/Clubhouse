@@ -228,6 +228,8 @@ export interface WorktreeState {
   branch: string | null;
   /** The last branch HEAD was on, carried through detached spells. */
   lastBranch: string | null;
+  /** Branch value when this worktree joined between full shared-ref reads. */
+  baselineSha?: string | null;
 }
 
 export interface RepoSnapshot {
@@ -259,7 +261,8 @@ export function diffSnapshots(prev: RepoSnapshot, next: RepoSnapshot): GitChange
     }
     const ref = `refs/heads/${n.branch}`;
     const after = next.refs.get(ref);
-    if (after && after !== prev.refs.get(ref)) out.push({ type: 'commit', worktree, branch: n.branch });
+    const before = p.baselineSha !== undefined ? p.baselineSha : prev.refs.get(ref);
+    if (after && after !== before) out.push({ type: 'commit', worktree, branch: n.branch });
   }
   for (const [ref, sha] of next.refs) {
     if (!ref.startsWith('refs/remotes/') || prev.refs.get(ref) === sha) continue;
@@ -342,12 +345,14 @@ interface Group {
   /** What a poll compares to skip a full read: mtimes of packed-refs, HEADs and ref folders. */
   signature: string | null;
   signaturePaths: string[];
+  refDirs: string[];
   pollsSinceRead: number;
   watchers: Map<string, DirWatcher>;
   timer: ReturnType<typeof setTimeout> | null;
   scanning: Promise<void> | null;
+  updating: Promise<void> | null;
   dirty: boolean;
-  /** A scan asked for a full read (a watcher event, a path change, rescan()). */
+  /** A scan asked for a full read (a watcher event or rescan()). */
   wantFull: boolean;
   disposed: boolean;
   dirCapLogged: boolean;
@@ -445,6 +450,7 @@ export class GitWatcher {
   private poll: ReturnType<typeof setInterval> | null = null;
   private queue: Promise<void> = Promise.resolve();
   private closed = false;
+  private pendingPaths: readonly string[] | null = null;
   private lastCapped = 0;
   private readonly reftableLogged = new Set<string>();
   /** Running totals; a rebuild reports the difference. */
@@ -467,9 +473,15 @@ export class GitWatcher {
     this.recursiveWatch = opts.recursiveWatch ?? process.platform === 'darwin';
   }
 
-  /** Watch exactly these worktree paths. Calls are serialized; resolves once baselines are read. */
+  /** Watch these paths; overlapping queued requests share the latest baseline. */
   setPaths(paths: readonly string[]): Promise<void> {
-    const run = () => this.applyPaths(paths);
+    this.pendingPaths = [...paths];
+    const run = async () => {
+      const latest = this.pendingPaths;
+      if (!latest) return;
+      this.pendingPaths = null;
+      await this.applyPaths(latest);
+    };
     this.queue = this.queue.then(run, run);
     return this.queue;
   }
@@ -593,14 +605,13 @@ export class GitWatcher {
         counts.kept++;
         const same = existing.paths.size === w.paths.size
           && [...w.paths.values()].every((p) => existing.paths.get(p.key)?.gitDir === p.gitDir);
-        existing.paths = w.paths;
-        // A new worktree joins as a baseline in the next scan.
-        if (!same) scans.push(this.scan(existing, true));
+        if (!same) scans.push(this.updateWorktrees(existing, w.paths));
+        else existing.paths = w.paths;
       } else {
         const g: Group = {
           key, commonDir: w.commonDir, paths: w.paths, snapshot: null,
-          signature: null, signaturePaths: [], pollsSinceRead: 0, watchers: new Map(),
-          timer: null, scanning: null, dirty: false, wantFull: false, disposed: false, dirCapLogged: false,
+          signature: null, signaturePaths: [], refDirs: [], pollsSinceRead: 0, watchers: new Map(),
+          timer: null, scanning: null, updating: null, dirty: false, wantFull: false, disposed: false, dirCapLogged: false,
         };
         this.groups.set(key, g);
         counts.added++;
@@ -612,6 +623,65 @@ export class GitWatcher {
       this.poll = setInterval(() => { void this.pollOnce(); }, this.pollMs);
       this.poll.unref?.();
     }
+  }
+
+  /**
+   * Membership alone doesn't move refs. Retain the shared snapshot and watches,
+   * baseline only new HEADs, and let ref events/the poll detect actual changes.
+   * Wait for an in-flight scan before changing the snapshot it is reading.
+   */
+  private updateWorktrees(g: Group, paths: Map<string, WatchedPath>): Promise<void> {
+    const run = async () => {
+      await g.scanning;
+      if (!g.disposed) await this.baselineWorktrees(g, paths);
+    };
+    g.updating = run().finally(() => { g.updating = null; });
+    return g.updating;
+  }
+
+  private async baselineWorktrees(g: Group, paths: Map<string, WatchedPath>): Promise<void> {
+    const prev = g.snapshot;
+    if (!prev) {
+      g.paths = paths;
+      await this.scanOnce(g, true);
+      return;
+    }
+    const worktrees = new Map<string, WorktreeState>();
+    let packed: Map<string, string> | undefined;
+    for (const wp of paths.values()) {
+      const before = g.paths.get(wp.key);
+      const state = before?.gitDir === wp.gitDir ? prev.worktrees.get(wp.key) : undefined;
+      if (state) {
+        worktrees.set(wp.key, state);
+        continue;
+      }
+      const head = await this.readHead(g, wp);
+      if (!head) continue;
+      worktrees.set(wp.key, { branch: head.branch, lastBranch: head.branch });
+      if (!head.branch) continue;
+      const ref = `refs/heads/${head.branch}`;
+      // Each joining worktree needs its own baseline: refreshing the shared
+      // refs here would hide a concurrent commit in an existing worktree.
+      let sha: string | undefined;
+      try {
+        sha = (await fsp.readFile(path.join(g.commonDir, ref), 'utf-8')).trim();
+      } catch {
+        // telemetry-exempt: a new worktree can check out a packed branch
+        if (!packed) {
+          packed = await fsp.readFile(path.join(g.commonDir, 'packed-refs'), 'utf-8')
+            .then(parsePackedRefs, () => new Map<string, string>());
+        }
+        sha = packed.get(ref);
+      }
+      worktrees.set(wp.key, { branch: head.branch, lastBranch: head.branch, baselineSha: sha && SHA_RE.test(sha) ? sha : null });
+    }
+    if (g.disposed) return;
+    g.paths = paths;
+    g.snapshot = { refs: prev.refs, worktrees };
+    // The HEAD set changed. Force the next poll to check the new signatures;
+    // don't record a fresh signature that could hide a concurrent ref change.
+    g.signature = null;
+    this.syncWatchers(g, g.refDirs);
   }
 
   private dispose(g: Group): void {
@@ -640,6 +710,8 @@ export class GitWatcher {
   }
 
   private scan(g: Group, full: boolean): Promise<void> {
+    if (g.updating) return g.updating.then(() => this.scan(g, full));
+    if (g.disposed) return Promise.resolve();
     if (full) g.wantFull = true;
     if (g.scanning) {
       g.dirty = true;
@@ -717,6 +789,7 @@ export class GitWatcher {
     // take them now. A change in the moment since is caught by a watcher or
     // the periodic full read.
     g.signature = samePaths ? signature : await statSignature(signaturePaths);
+    g.refDirs = read.dirs;
     this.syncWatchers(g, read.dirs);
     if (!prev) return;
     this.publishChanges(g, diffSnapshots(prev, next), next, scanAt);

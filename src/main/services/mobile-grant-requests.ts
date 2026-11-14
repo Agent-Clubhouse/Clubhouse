@@ -156,6 +156,7 @@ export async function runGrantCommand(command: GrantCommand, places: GrantReques
   const { requestId, answer, updateMode } = command;
   // The answer rechecks the row and authorization if loading the update service yields.
   const request = peekGrantRequest(requestId);
+  if (request?.deleteReview) throw new MobileControlError('grant_answer_not_offered', 409, 'rejected', 'Review this deletion batch on the originating computer.');
   const row = request ? toMobileGrantRequest(request, places) : null;
   // A device answers only what it could have been shown.
   if (!request || !row || !grantRowVisibleTo(row, deps.viewer)) throw new MobileControlError('grant_request_not_found', 404, 'rejected', GONE);
