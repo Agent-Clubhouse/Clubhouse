@@ -10,7 +10,7 @@ vi.mock('fs/promises', async (original) => {
   return { ...real, open: vi.fn(real.open) };
 });
 
-const state = vi.hoisted(() => ({ provider: 'claude-code', agents: [] as DurableAgentConfig[], parts: new Map<string, { entry: { name: string; source: { kind: string }; headRevision: number }; content: ManagedPartContent; droppedEnvValues: string[] }>() }));
+const state = vi.hoisted(() => ({ provider: 'claude-code', agents: [] as DurableAgentConfig[], parts: new Map<string, { entry: { name: string; source: { kind: string; projectId?: string }; headRevision: number }; content: ManagedPartContent; droppedEnvValues: string[] }>() }));
 vi.mock('./dispatcher/dispatcher-service', () => ({ getDispatcherState: () => ({}) }));
 vi.mock('./agent-config', () => ({ peekDurableConfigs: async () => state.agents }));
 vi.mock('./project-store', () => ({ peekProjects: async () => [{ id: 'p', path: '/project', name: 'Project' }] }));
@@ -46,6 +46,13 @@ describe('bounded agent config evidence', () => {
     expect(result.parts[2]).toMatchObject({ content: { kind: 'skill', files: [{ content: '# Review' }, { content: 'Support file' }] } });
     expect(result.missing).toContain('builtin-mcp-clubhouse');
     expect(await fs.readdir(root)).toEqual([]);
+  });
+
+  it('labels project-owned parts with their owning project', async () => {
+    state.agents[0].managed = { version: 1, blocks: ['p'], skills: [], mcps: [] };
+    part('p', { kind: 'block', content: 'Project rules' }, 'project');
+    state.parts.get('p')!.entry.source.projectId = 'p';
+    expect((await readAgentConfig('target')).parts[0]).toMatchObject({ provenance: { kind: 'project', label: 'project-owned', projectId: 'p', source: { kind: 'project', projectId: 'p' } } });
   });
 
   it('bounds UTF-8 text, individual files and the complete serialized response', async () => {

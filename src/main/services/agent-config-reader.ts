@@ -131,9 +131,13 @@ export async function readResolvedAgentConfig({ agent, project: p }: AgentConfig
       if (!head || head.entry.headRevision !== item.revision) throw new Error('The part changed while reading configuration. Read it again.');
       const content: ManagedPartContent = head.content;
       const limited = bounded(content);
+      const source = head.entry.source;
+      // Recognize repo-owned parts even before the catalog's source union gains it.
+      const projectOwned = String(source.kind) === 'project';
+      const projectId = projectOwned && 'projectId' in source && typeof source.projectId === 'string' ? prefix(source.projectId, 200) : undefined;
       const part = {
         id: item.id, name: prefix(head.entry.name, 200), kind: content.kind, revision: head.entry.headRevision,
-        provenance: { kind: head.entry.source.kind === 'builtin' ? 'built-in' : ['user', 'copy'].includes(head.entry.source.kind) ? 'custom' : 'library', source: bounded(head.entry.source) },
+        provenance: { kind: projectOwned ? 'project' : source.kind === 'builtin' ? 'built-in' : ['user', 'copy'].includes(source.kind) ? 'custom' : 'library', ...(projectOwned && { label: 'project-owned' }), ...(projectId !== undefined && { projectId }), source: bounded(source) },
         content: limited, contentTruncated: JSON.stringify(limited) !== JSON.stringify(content),
       };
       result.parts.push(part);
