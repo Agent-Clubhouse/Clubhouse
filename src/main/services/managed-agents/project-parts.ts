@@ -67,7 +67,7 @@ export function projectContentHash(content: ManagedPartContent): string {
   return canonicalHash(content.kind === 'skill' ? { ...content, files: [...content.files].sort((a, b) => a.path.localeCompare(b.path)) } : content);
 }
 
-async function registeredProject(projectPath: string): Promise<ProjectRef> {
+export async function registeredProject(projectPath: string): Promise<ProjectRef> {
   for (const p of await listProjects()) {
     if (await isSameProject(p.path, projectPath)) return { id: p.id, name: p.displayName || p.name, path: p.path };
   }
@@ -159,10 +159,10 @@ export async function readRepoParts(root: string): Promise<{ parts: RepoPart[]; 
   };
 }
 
-type PartMeta = Awaited<ReturnType<ProjectPartsService['projectPartMeta']>>;
+export type PartMeta = Awaited<ReturnType<ProjectPartsService['projectPartMeta']>>;
 
 /** This project's parts in the library, by key: parts added from it, and library parts a person chose for one of its parts. */
-function addedParts(live: Record<string, CatalogEntry>, meta: PartMeta, projectId: string): Map<string, CatalogEntry> {
+export function addedParts(live: Record<string, CatalogEntry>, meta: PartMeta, projectId: string): Map<string, CatalogEntry> {
   const out = new Map<string, CatalogEntry>();
   for (const entry of Object.values(live)) {
     const link = meta[entry.id]?.projectLink;

@@ -237,6 +237,18 @@ export interface ManagedTemplate {
   updatedAt?: string;
   /** Who last changed it, when not the person: for example "Dispatcher" (D90). */
   updatedBy?: string;
+  /**
+   * Added from a project's repository (`.clubhouse/parts/templates/`, D255):
+   * the project and the template's own `id` there. Set only when a person adds
+   * one; an edit or a push keeps it.
+   */
+  source?: { kind: 'project'; projectId: string; key: string };
+  /** The repository copy's hash when it was added or last updated from it. */
+  projectHash?: string;
+  /** A repository copy the person chose not to take (Keep mine). */
+  projectKeptHash?: string;
+  /** For a project template in a list: its project's name while it's registered. */
+  projectName?: string;
 }
 
 /** One difference between a template's saved version and an edit, for the push dialog. */
@@ -492,3 +504,73 @@ export interface ProjectPartReview {
 
 /** How the person chose to add a repository part: as a new library part, or by using a library part with the same content. */
 export type ProjectPartChoice = { mode: 'copy'; name: string } | { mode: 'reuse'; partId: string };
+
+// ── Project templates: checked in as .clubhouse/parts/templates/<file>.json ─
+
+/**
+ * A template file's shape. `id` is its identity, so renaming the file keeps it.
+ * Parts are named by repository key (`skill:<folder>`, `block:<name>`,
+ * `mcp:<serverKey>`, from the same `.clubhouse/parts`) or by built-in id.
+ */
+export interface ProjectTemplateFile {
+  id: string;
+  name: string;
+  description?: string;
+  setup: { blocks: string[]; skills: string[]; mcps: string[] };
+  settings?: ManagedTemplateSettings;
+}
+
+/** One part reference in a repository template, as it resolves now. */
+export interface ProjectTemplateRef {
+  ref: string;
+  kind: ManagedPartKind;
+  /** The library part it is, when it resolves. */
+  partId?: string;
+  partName?: string;
+  /** Why it doesn't: a repository part not added yet (`not_added`, add it first), or nothing by that name (`missing`). */
+  unresolved?: 'not_added' | 'missing';
+}
+
+/** One template a project's repository offers. States as for parts. */
+export interface ProjectTemplateItem {
+  /** The template's `id` in the repository. */
+  key: string;
+  name: string;
+  state: 'available' | 'added' | 'changed' | 'kept' | 'refused';
+  hash?: string;
+  templateId?: string;
+  templateName?: string;
+  problem?: string;
+}
+
+export interface ProjectTemplatesInventory {
+  projectPath: string;
+  projectId: string;
+  projectName: string;
+  items: ProjectTemplateItem[];
+  /** Templates added from this project that its repository no longer has. They stay, and so do agents made from them. */
+  gone: Array<{ key: string; templateId: string; templateName: string }>;
+  notes: string[];
+}
+
+/** What adding or updating a repository template would do, for the person to review first. */
+export interface ProjectTemplateReview {
+  item: ProjectTemplateItem;
+  projectName: string;
+  description: string;
+  refs: ProjectTemplateRef[];
+  /** Setting changes that carry no authority (CLI, model, effort, auto-sleep), against unset for a new one or the current template for an update. */
+  settings: ManagedTemplateChange[];
+  /**
+   * Grants, access, orchestration and helper template that differ, compared
+   * the same way. Left out unless the person approves them.
+   */
+  permissions: ManagedTemplateChange[];
+  /** Names the repository copy gives that the resolver dropped, and why. */
+  notes: string[];
+  suggestedName: string;
+  /** For `changed` and `kept`: the template now, and how many agents were made from it. */
+  current?: { id: string; name: string; consumers: number };
+  /** For `changed` and `kept`: the push the update would make, as the template push dialog shows it. */
+  push?: { changes: ManagedTemplateChange[]; targets: ManagedTemplatePushTarget[] };
+}

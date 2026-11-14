@@ -12,6 +12,7 @@ import { Toggle } from '../../components/Toggle';
 import { SettingsField, SettingsPage, SettingsSection, settingsError, settingsHelp, settingsInput } from '../settings/SettingsLayout';
 import { ManagedBuilder, type SetupDraft } from './ManagedBuilder';
 import { TemplatePushDialog } from './TemplatePushDialog';
+import { ProjectTemplatesSection } from './ProjectTemplates';
 import { TemplateGrantsSection } from './TemplateGrantsSection';
 import { settingsAccess } from './create-managed-agent';
 import { errorText, managed, unwrap, useManagedTemplates } from './managedApi';
@@ -59,6 +60,7 @@ function TemplateRow({ t, children }: { t: ListedTemplate; children: React.React
         {t.description && <span className="block text-xs text-ctp-overlay1 truncate">{t.description}</span>}
         {t.updatedBy && <span className="block text-xs text-ctp-overlay1 truncate" data-testid="managed-template-changed">{changedLine(t.updatedAt, t.updatedBy)}</span>}
         {t.fromRetiredBuiltin && <span className="block text-xs text-ctp-overlay1 truncate" data-testid="managed-template-retired-copy">{RETIRED_TEMPLATE_NOTE}</span>}
+        {t.source && <span className="block text-xs text-ctp-overlay1 truncate" data-testid="managed-template-project">Project · {t.projectName ?? 'a removed project'}</span>}
       </span>
       <span className="text-xs text-ctp-overlay1 truncate">{usage(t.usedBy)}</span>
       <span className="flex items-center gap-1">{children}</span>
@@ -436,6 +438,8 @@ export function TemplatesSettingsView() {
           ))}
         </ul>
       </SettingsSection>
+
+      <ProjectTemplatesSection onNotice={(text) => { setActionError(null); setNotice(text); }} />
 
       <SettingsSection title="Built-in" meta={builtin.length > 0 ? String(builtin.length) : undefined}>
         <ul data-testid="managed-templates-builtin">
