@@ -57,12 +57,12 @@ export function DispatcherView() {
   const selectedLead = !!remoteId && !!followed && (remoteId === followed.agent?.id || remoteMachine === followed.state.lead?.machine);
 
   useEffect(() => {
-    if (state?.enabled && !followed && !workOpen) {
+    if (state?.enabled && !remoteId && !followed && !workOpen) {
       void window.clubhouse.dispatcher.wake().catch((err) => {
         rendererLog('core:dispatcher', 'warn', 'Could not wake the controller when opening its chat', { meta: { error: String(err) } });
       });
     }
-  }, [state?.enabled, state?.agentId, followed, workOpen]);
+  }, [state?.enabled, state?.agentId, remoteId, followed, workOpen]);
 
   // A false→true change is what moves focus into the terminal (AgentTerminal).
   const [focused, setFocused] = useState(false);
