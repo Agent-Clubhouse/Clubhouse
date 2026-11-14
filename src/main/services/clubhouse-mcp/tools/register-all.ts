@@ -34,6 +34,7 @@ import { registerProjectAddTools } from './project-add-tools';
 import { registerProjectImportTools } from './project-import-tools';
 import { registerAppUpdateTools } from './app-update-tools';
 import { registerAnnexDeliveryTools } from './annex-delivery-tools';
+import { registerThemeTools } from './theme-tools';
 import { registerAnnexNetworkTools } from './annex-network-tools';
 
 export function registerClubhouseMcpTools(): void {
@@ -69,4 +70,5 @@ export function registerClubhouseMcpTools(): void {
   registerAppUpdateTools();
   registerAnnexDeliveryTools();
   registerAnnexNetworkTools();
+  registerThemeTools();
 }
