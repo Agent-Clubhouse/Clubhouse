@@ -5,6 +5,7 @@ import { handoffGitPlatformFlags, reportHandoffGitFailure } from './handoff-git-
 
 it.each([
   [{ code: 128, stderr: Buffer.from('fatal: private/path: Filename too long') }, 'path_too_long', 128],
+  [{ code: 128, stderr: "fatal: '$GIT_DIR' too big" }, 'path_too_long', 128],
   [{ code: 'ENAMETOOLONG' }, 'path_too_long', 'unknown'],
   [{ code: 'EBUSY' }, 'busy', 'unknown'],
   [{ code: 128, stderr: "Unable to create 'private/index.lock': File exists. Another git process seems to be running" }, 'lock', 128],

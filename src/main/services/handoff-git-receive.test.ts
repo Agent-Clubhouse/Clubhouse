@@ -47,19 +47,28 @@ it('falls back to an independently scanned bundle when the configured remote lac
   expect((await git(receiver, 'rev-parse', 'HEAD')).stdout.trim()).toBe(before);
   expect(fs.readdirSync(options.snapshot.root).some((name) => name.startsWith('quarantine-'))).toBe(false);
 }, 30_000);
-it('imports bundle packs below a long user-data path with isolated Git configuration', async () => {
+it.each([['pack filename', 150], ['explicit Git directory', 170]] as const)('imports bundle packs beyond the Windows %s limit with isolated Git configuration', async (limit, rootLength) => {
   const options = await prepared();
   const canonical = await fs.promises.realpath(root);
-  const destination = path.join(canonical, 'deep-' + 'x'.repeat(170 - canonical.length - 6));
+  const destination = path.join(canonical, 'deep-' + 'x'.repeat(rootLength - canonical.length - 6));
   await fs.promises.rename(options.snapshot.root, destination);
   options.snapshot.root = destination;
-  const bare = path.join(destination, `quarantine-${randomUUID()}`, 'objects.git');
-  expect(path.join(bare, 'objects', 'pack', `pack-${'a'.repeat(40)}.pack`).length).toBeGreaterThan(260);
+  const quarantine = path.join(destination, `quarantine-${randomUUID()}`);
+  const bare = path.join(quarantine, 'objects.git');
+  const pack = (repo: string) => path.join(repo, 'objects', 'pack', `pack-${'a'.repeat(40)}.pack`);
+  expect(pack(bare).length).toBeGreaterThan(260);
+  expect(pack(path.join(quarantine, 'repo')).length).toBeGreaterThan(260);
   if (process.platform === 'win32') {
     // Reproduce the original isolated-config failure without changing global Git.
     await git(destination, '-c', 'core.longpaths=false', 'init', '--bare', '--template=', bare);
-    await expect(git(destination, '-c', 'core.longpaths=false', '--git-dir', bare, 'fetch', '--no-tags', '--', path.join(destination, 'bundle.bin'), 'HEAD'))
-      .rejects.toMatchObject({ stderr: expect.stringMatching(/filename too long|file name too long|path too long/i) });
+    const diagnostic = limit === 'pack filename' ? /filename too long|file name too long|path too long/i : /'\$GIT_DIR' too big/;
+    const fetch = (longpaths: boolean) => git(destination, '-c', `core.longpaths=${longpaths}`, '--git-dir', bare, 'fetch', '--no-tags', '--', path.join(destination, 'bundle.bin'), 'HEAD');
+    expect(bare.length > 220).toBe(limit === 'explicit Git directory');
+    await expect(fetch(false)).rejects.toMatchObject({ code: 128, stderr: expect.stringMatching(diagnostic) });
+    if (limit === 'explicit Git directory') {
+      // This setup guard is independent of core.longpaths; relative GIT_DIR is required.
+      await expect(fetch(true)).rejects.toMatchObject({ code: 128, stderr: expect.stringMatching(diagnostic) });
+    }
     await fs.promises.rm(path.dirname(bare), { recursive: true, force: true });
   }
   expect(await receiveHandoffCommit(options)).toEqual({ commit: options.snapshot.manifest.repo.base, source: 'bundle' });

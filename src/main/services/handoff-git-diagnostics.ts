@@ -19,7 +19,7 @@ export function reportHandoffGitFailure(args: string[], error: unknown): string 
   const value = error && typeof error === 'object' ? error as { code?: unknown; stderr?: unknown; killed?: unknown } : {};
   const exit = typeof value.code === 'number' && Number.isInteger(value.code) && value.code >= 0 && value.code <= 255 ? value.code : 'unknown';
   const stderr = typeof value.stderr === 'string' || Buffer.isBuffer(value.stderr) ? String(value.stderr).slice(0, 64 * 1024) : '';
-  const stderrClass = value.code === 'ENAMETOOLONG' || /filename too long|file name too long|path too long/i.test(stderr) ? 'path_too_long'
+  const stderrClass = value.code === 'ENAMETOOLONG' || /filename too long|file name too long|path too long|\$GIT_DIR.*too big/i.test(stderr) ? 'path_too_long'
     : value.code === 'EBUSY' || /resource busy|used by another process|being used by another process/i.test(stderr) ? 'busy'
       : /(?:\.lock|lock file|lockfile).*already exists|unable to create.*\.lock/i.test(stderr) ? 'lock'
         : value.code === 'EACCES' || value.code === 'EPERM' || /permission denied|access is denied/i.test(stderr) ? 'permission'

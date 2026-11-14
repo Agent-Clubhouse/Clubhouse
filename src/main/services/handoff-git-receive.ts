@@ -50,9 +50,9 @@ export async function receiveHandoffCommit(options: {
       const env = { ...process.env };
       for (const name of Object.keys(env)) if (/^GIT_/i.test(name)) delete env[name];
       Object.assign(env, { GIT_CONFIG_GLOBAL: config, GIT_CONFIG_SYSTEM: config, GIT_CONFIG_NOSYSTEM: '0', GIT_NO_REPLACE_OBJECTS: '1', GIT_GRAFT_FILE: devNull });
-      const read = async (args: string[]): Promise<Buffer> => {
+      const read = async (args: string[], cwd = quarantine): Promise<Buffer> => {
         await check();
-        try { return (await exec('git', [...flags, ...args], { cwd: quarantine, env, timeout: 60_000, maxBuffer: 8 * 1024 ** 2, encoding: 'buffer' })).stdout; }
+        try { return (await exec('git', [...flags, ...args], { cwd, env, timeout: 60_000, maxBuffer: 8 * 1024 ** 2, encoding: 'buffer' })).stdout; }
         catch (error) {
           const reported = new HandoffSnapshotError('git_failed');
           reported.message += reportHandoffGitFailure(args, error);
@@ -61,7 +61,11 @@ export async function receiveHandoffCommit(options: {
       };
       // Keep the quarantine's UUID ownership, while leaving more path budget for packs.
       const bare = path.join(quarantine, 'repo');
-      await read(['init', '--bare', '--template=', bare]);
+      await read(['init', '--bare', '--template=', path.basename(bare)]);
+      // Git for Windows rejects an explicit GIT_DIR longer than PATH_MAX - 40
+      // before core.longpaths is read. Keep the process cwd and Git's directory
+      // argument separate so both repository setup and pack I/O support deep roots.
+      const readBare = (args: string[]) => read(['--git-dir=.', ...args], bare);
       let acquired = false;
       if (sourceKey && targetKey === sourceKey) {
         // Resolve only the receiving project's configured origin (including its own rewrites).
@@ -69,7 +73,7 @@ export async function receiveHandoffCommit(options: {
         const remote = (await repository.read(['remote', 'get-url', 'origin']))?.toString('utf8').trim();
         if (remote && !remote.includes('\0') && !remote.includes('\n')) {
           try {
-            await read(['--git-dir', bare, '-c', 'protocol.file.allow=always', 'fetch', '--no-tags', '--', remote, commit]);
+            await readBare(['-c', 'protocol.file.allow=always', 'fetch', '--no-tags', '--', remote, commit]);
             acquired = true; source = 'remote';
           } catch { /* telemetry-exempt: an unavailable person-configured origin falls back to the frozen bundle */ }
         }
@@ -78,13 +82,13 @@ export async function receiveHandoffCommit(options: {
         if (!snapshot.manifest.bundle) throw new Error('Handoff commit is unavailable.');
         source = 'bundle';
         const bundle = path.join(root, 'bundle.bin');
-        const heads = (await read(['--git-dir', bare, 'bundle', 'list-heads', bundle])).toString('ascii').trim();
+        const heads = (await readBare(['bundle', 'list-heads', bundle])).toString('ascii').trim();
         if (heads !== `${commit} HEAD`) throw new HandoffSnapshotError('hash_mismatch');
-        await read(['--git-dir', bare, '-c', 'protocol.file.allow=always', 'fetch', '--no-tags', '--', bundle, 'HEAD']);
+        await readBare(['-c', 'protocol.file.allow=always', 'fetch', '--no-tags', '--', bundle, 'HEAD']);
       }
-      const imported = (await read(['--git-dir', bare, 'rev-parse', '--verify', 'FETCH_HEAD^{commit}'])).toString('ascii').trim();
+      const imported = (await readBare(['rev-parse', '--verify', 'FETCH_HEAD^{commit}'])).toString('ascii').trim();
       if (imported !== commit) throw new HandoffSnapshotError('hash_mismatch');
-      await scanHandoffGitHistory({ repo: { base: commit }, read: (args) => read(['--git-dir', bare, ...args]), assertCurrent: check }, secretPolicy);
+      await scanHandoffGitHistory({ repo: { base: commit }, read: readBare, assertCurrent: check }, secretPolicy);
       await secretPolicy?.recordUse(handoffId, 'receiver'); await check();
       // Fetch only the verified commit's reachable graph, never arbitrary extra bundle refs.
       await repository.read([...flags, '-c', 'protocol.file.allow=always', 'fetch', '--no-tags', '--no-write-fetch-head', '--', bare, commit]);
