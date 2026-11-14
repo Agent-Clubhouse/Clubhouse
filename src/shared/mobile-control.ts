@@ -288,3 +288,10 @@ export interface MobileProjectLinkGroup {
   /** Annex identity fingerprint and project id, including projects on offline computers. */
   projects: Array<{ machine: string; projectId: string }>;
 }
+
+/** Snapshot fields and the full-replacement project-links:changed payload. */
+export interface MobileProjectLinksPayload {
+  projectLinks: MobileProjectLinkGroup[];
+  /** Whole groups were omitted to keep publication within its budget. */
+  projectLinksTruncated?: true;
+}

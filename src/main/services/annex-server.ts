@@ -1185,7 +1185,10 @@ type SnapshotSources = Awaited<ReturnType<typeof readSnapshotSourcesData>>;
 /** Everything that needs awaiting. Live state comes after, in assembleSnapshot. */
 async function readSnapshotSourcesData() {
   const projects = await projectStore.list();
-  await hydrateProjectLinks();
+  try { await hydrateProjectLinks(); }
+  catch (error) { // telemetry-exempt: optional link state must not prevent the phone catalog from loading
+    appLog('core:annex', 'warn', 'Project links could not be hydrated for a snapshot', { meta: { error: error instanceof Error ? error.message : String(error) } });
+  }
   const durablesByProject: Record<string, DurableConfigs> = {};
   const policiesByProject: Record<string, Awaited<ReturnType<typeof catalogOrchestration>>> = {};
 
@@ -1242,6 +1245,15 @@ async function readSnapshotSourcesData() {
  * a refresh overwriting that with a newer cursor. What came from disk can lag, but
  * what changes it asks for another refresh, which follows this one.
  */
+/** Optional display preferences cannot take down a phone's whole snapshot. */
+function snapshotProjectLinks(): ReturnType<typeof mobileProjectLinks> {
+  try { return mobileProjectLinks(); }
+  catch (error) { // telemetry-exempt: the snapshot remains usable without unreadable display links
+    appLog('core:annex', 'warn', 'Project links could not be published', { meta: { error: error instanceof Error ? error.message : String(error) } });
+    return { projectLinks: [] };
+  }
+}
+
 function assembleSnapshot(sources: SnapshotSources): BuiltSnapshot {
   const { projects, durablesByProject, policiesByProject, iconSet, canvasState, appCanvasState, groupProjects, groupProjectActions, bulletinDigests, repoKeys } = sources;
   const { projectIcons, agentIcons, stats: icons, iconRefs } = iconSet;
@@ -1326,7 +1338,7 @@ function assembleSnapshot(sources: SnapshotSources): BuiltSnapshot {
     pendingPermissions: permissionQueue.listPending().map((pending) => ({ ...pending, ...boundToolInput(pending.toolInput) })),
     // Helper starts and disposes waiting on the user (#159); gated by capabilities.helperRequests.
     helperRequests: buildMobileHelperRequests(projects, durablesByProject),
-    projectLinks: mobileProjectLinks(),
+    ...snapshotProjectLinks(),
     // Clubhouse permission requests waiting on the user (#3205); gated by capabilities.grantRequests.
     grantRequests: buildMobileGrantRequests(grantRequestPlaces(projects)),
     appUpdate: getAppUpdateStatus(),
@@ -5495,7 +5507,7 @@ function startServer(strict = false): Promise<void> {
   // Helper starts and disposes waiting on the user (#159) are in the snapshot.
   const offProjectLinks = projectLinksStore().onChange((change) => {
     if (!change.recordsChanged) return;
-    broadcastAndBuffer(MOBILE_PROJECT_LINKS_EVENT, { projectLinks: mobileProjectLinks() });
+    broadcastAndBuffer(MOBILE_PROJECT_LINKS_EVENT, snapshotProjectLinks());
     broadcastSnapshotRefresh();
   });
   const offStarts = onStartRequestsChanged(() => broadcastSnapshotRefresh());

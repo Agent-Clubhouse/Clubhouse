@@ -1584,7 +1584,13 @@ the phone.
 
 A sequenced, replayable `project-links:changed` event has payload
 `{"projectLinks":[...]}`. Replace the whole array, including when it is empty.
-A reconnect snapshot also replaces it. Accepted suggestions and manual links
+A reconnect snapshot also replaces it. Publication is bounded to 200 whole groups
+and 2,000 project references. If some groups do not fit, the snapshot and event
+payload also contain optional `projectLinksTruncated: true`; no partial group is
+published. For example, `{"projectLinks":[...],"projectLinksTruncated":true}`.
+Without the marker, the published array is complete. On an unreadable shared
+record, the snapshot remains available with `projectLinks: []` and the desktop
+logs the failure. Accepted suggestions and manual links
 both appear. Keep separate, split and unlink remove groups or members. Negative
 pair records remain desktop-side tombstones and never appear as mobile groups.
 Go must not infer groups from `repoKey`, project names, paths or git remotes.
