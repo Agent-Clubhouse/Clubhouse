@@ -45,7 +45,7 @@ vi.mock('./settings-audit', async (original) => ({
   auditChanges: vi.fn(async (...args: unknown[]) => { audited.calls.push(args); }),
 }));
 
-import { clearAgentConfigCache, flushAgentConfig, getDurableConfig, setClubhouseFeatures, setManagedMigration, setManagedSetup } from './agent-config';
+import { clearAgentConfigCache, flushAgentConfig, getDurableConfig, setClubhouseFeatures, setManagedMigration, setManagedSetup, updateDurableConfig, setOrchestrationConfig } from './agent-config';
 import { CLUBHOUSE_MCP_PART_ID } from '../../shared/managed-agents-types';
 
 const PROJECT_PATH = path.resolve('managed-audit-project');
@@ -100,6 +100,26 @@ describe('managed setup audit (D13)', () => {
     expect(check).toHaveBeenCalledOnce();
     expect(JSON.parse(files.get(CONFIG_PATH)!)).toEqual([changed]);
     expect((await getDurableConfig(PROJECT_PATH, 'a1'))?.managed).toBeUndefined();
+    expect(audited.calls).toEqual([]);
+  });
+
+  it.each(['settings', 'policy'] as const)('uses the fresh record for guarded template %s writes', async (operation) => {
+    await getDurableConfig(PROJECT_PATH, 'a1');
+    const changed = { ...JSON.parse(files.get(CONFIG_PATH)!)[0], disposedAt: '2026-11-14T00:00:00Z' };
+    const guard = {
+      prepare: async () => {
+        files.set(CONFIG_PATH, JSON.stringify([changed]));
+        clearAgentConfigCache(PROJECT_PATH);
+        await getDurableConfig(PROJECT_PATH, 'a1');
+      },
+      check: (agent: { disposedAt?: string }) => { if (agent.disposedAt) throw new Error('consumer disposed'); },
+    };
+    const write = operation === 'settings'
+      ? updateDurableConfig(PROJECT_PATH, 'a1', { idleSleep: 'never' }, undefined, guard)
+      : setOrchestrationConfig(PROJECT_PATH, 'a1', { orchestrate: true }, guard);
+    await expect(write).rejects.toThrow('consumer disposed');
+    await flushAgentConfig(PROJECT_PATH);
+    expect(JSON.parse(files.get(CONFIG_PATH)!)).toEqual([changed]);
     expect(audited.calls).toEqual([]);
   });
 

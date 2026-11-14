@@ -1035,7 +1035,7 @@ export function createManagedAgentsService(deps: ManagedAgentsDeps) {
      * result, with `changed` false when none of the changes applied to it.
      * Agents not made from the template are left out.
      */
-    async pushTemplate(id: string, edited: Pick<ManagedTemplate, 'setup' | 'settings'>, agents: Array<{ projectPath: string; agentId: string }>): Promise<TemplatePushResult[]> {
+    async pushTemplate(id: string, edited: Pick<ManagedTemplate, 'setup' | 'settings'>, agents: Array<{ projectPath: string; agentId: string }>, opts?: { precondition: (target: { projectPath: string; agentId: string }, settings: ManagedTemplateSettings) => import('../agent-config').ManagedSetupCommitPrecondition; checkTemplateWrite?: () => void }): Promise<TemplatePushResult[]> {
       // Checked before any agent is written, so a bad setting never leaves agents half-updated.
       const next = { ...withClubhousePartIn(edited), settings: checkTemplateSettings(edited.settings) };
       const current = await api.getTemplate(id);
@@ -1074,7 +1074,8 @@ export function createManagedAgentsService(deps: ManagedAgentsDeps) {
         if (effort.send !== undefined) settings.effort = effort.send;
         try {
           // Through saveSetup, so each agent's result is checked (skill folders, missing parts).
-          await api.saveSetup(target.projectPath, target.agentId, setup);
+          const precondition = opts?.precondition(target, settings);
+          await api.saveSetup(target.projectPath, target.agentId, setup, precondition ? { precondition } : {});
           settingsOut.push({ ...target, settings, changed: true });
         } catch (err) {
           // telemetry-exempt: reported to the caller per agent, and shown in the push dialog.
@@ -1084,6 +1085,7 @@ export function createManagedAgentsService(deps: ManagedAgentsDeps) {
       if (!BUILTIN_TEMPLATES.has(id)) {
         const actor = actorOf();
         await state.update((s) => {
+          opts?.checkTemplateWrite?.();
           const t = s.templates[id];
           if (!t) return;
           const { updatedBy: _was, ...rest } = t;
