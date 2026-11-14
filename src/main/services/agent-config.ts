@@ -36,6 +36,7 @@ import { legacyClubhouseModeEnabled } from './managed-agents/legacy-migration';
 import { trackOperation } from './main-stall-monitor';
 import { dropGrantRequestsFor } from './grant-requests';
 import { AsyncLocalStorage } from 'node:async_hooks';
+import { assertDeleteReview } from './delete-review-guard';
 
 interface DurableCreationGit {
   active?: boolean;
@@ -3006,6 +3007,7 @@ async function updateDurableInner(
 }
 
 async function deleteDurableGuardedInner(projectPath: string, agentId: string): Promise<void> {
+  await assertDeleteReview(projectPath, agentId);
   // Deleting an agent that is still being created stops the creation, which
   // cleans up after itself. If it finished just before the stop took effect,
   // the record is still there and is deleted below like any other (#2226).
@@ -3014,6 +3016,7 @@ async function deleteDurableGuardedInner(projectPath: string, agentId: string): 
   const agent = agentsById.get(agentId);
   if (!agent) return;
 
+  await assertDeleteReview(projectPath, agentId);
   if (agent.worktreePath) await removeAgentWorktree(projectPath, agent);
 
   // Re-read: the cache may have been replaced while git ran.
@@ -3034,6 +3037,7 @@ async function removeAgentWorktree(projectPath: string, agent: DurableAgentConfi
   if (!worktreePath) return;
   const agentId = agent.id;
   const hasGit = await isInsideGitRepo(projectPath);
+  await assertDeleteReview(projectPath, agent.id);
   if (hasGit) {
     try {
       await stepUnderFlow('clubhouse.git.worktree_remove', () => execGitFileAsync(['worktree', 'remove', '--force', '--', worktreePath], projectPath));
@@ -3050,6 +3054,7 @@ async function removeAgentWorktree(projectPath: string, agent: DurableAgentConfi
   // Remove the folder if it is still there. A failure (EBUSY on Windows)
   // throws before the branch goes, so a half-removed agent keeps its branch.
   if (await pathExists(worktreePath)) {
+    await assertDeleteReview(projectPath, agentId);
     await fsp.rm(worktreePath, { recursive: true, force: true });
   }
 
@@ -3093,7 +3098,7 @@ function parseLogLine(line: string): GitLogEntry | null {
   };
 }
 
-export async function getWorktreeStatus(projectPath: string, agentId: string): Promise<WorktreeStatus> {
+export async function getWorktreeStatus(projectPath: string, agentId: string, alsoDeletedBranches: string[] = []): Promise<WorktreeStatus> {
   const { agentsById } = await readAgentsEntry(projectPath);
   const agent = agentsById.get(agentId);
   if (!agent) {
@@ -3139,7 +3144,7 @@ export async function getWorktreeStatus(projectPath: string, agentId: string): P
     (async () => {
       const { refs, own } = await refsDeletedWith(agent, cwd, wtExists);
       if (refs.length === 0) return null;
-      const { range, hasRemote } = await lostCommitsRange(refs, own, cwd);
+      const { range, hasRemote } = await lostCommitsRange(refs, [...own, ...alsoDeletedBranches], cwd);
       const logOut = await execGitFileAsync(['log', '--format=%H|%h|%s|%an|%ai', ...range], cwd);
       const commits = logOut.trim().split('\n').filter(Boolean)
         .map(parseLogLine)
@@ -3384,6 +3389,7 @@ async function deleteUnregisterGuardedInner(projectPath: string, agentId: string
   const agents = await readAgents(projectPath);
   const filtered = agents.filter((a) => a.id !== agentId);
   const released: string[] = [];
+  await assertDeleteReview(projectPath, agentId);
   await writeAgents(projectPath, releaseHelpersOf(filtered, agentId, released));
   if (filtered.length < agents.length) dropGrantRequestsFor(agentId);
   helpersEnded([agentId, ...released]);
@@ -3977,6 +3983,7 @@ function hasWorkAtRisk(checks: HelperDisposeChecks): boolean {
  * stays an ordinary agent, and the error carries `worktreeRemoved: true`.
  */
 async function disposeAgent(projectPath: string, agentId: string, options: { expectedParentId?: string } = {}): Promise<void> {
+  await assertDeleteReview(projectPath, agentId);
   const checkParent = (row: DurableAgentConfig) => {
     if (options.expectedParentId !== undefined && row.parentAgentId !== options.expectedParentId) {
       throw new Error(`${row.name} is no longer a helper of this agent`);
@@ -3993,6 +4000,7 @@ async function disposeAgent(projectPath: string, agentId: string, options: { exp
   checkParent(agent);
   const creating = helperCreationBlock(agent);
   if (creating) throw new Error(`${agent.name} can't be disposed because ${creating}`);
+  await assertDeleteReview(projectPath, agentId);
   if (agent.worktreePath) await removeAgentWorktree(projectPath, agent);
 
   // Re-read: the cache may have been replaced while git ran.

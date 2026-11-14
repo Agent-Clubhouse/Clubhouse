@@ -11,6 +11,7 @@ import { Button } from '../../components/Button';
 import { reportChromeActionFailed } from '../../chrome/telemetry';
 import { grantRequestsFor, useGrantRequestStore } from '../../stores/grantRequestStore';
 import { ImportAgentReview, ImportReview } from '../projects/ImportReview';
+import { DeleteAgentsReview } from './DeleteAgentsReview';
 
 export function GrantRequestList({ agentId, agentName, onAnswered }: {
   agentId: string;
@@ -52,6 +53,7 @@ export function GrantRequestList({ agentId, agentName, onAnswered }: {
           {r.reason && <p className="text-ctp-subtext1">Its reason: {r.reason}</p>}
           {r.importReview && <ImportReview plan={r.importReview} />}
           {r.agentReview && <ImportAgentReview review={r.agentReview} />}
+          {r.deleteReview && <DeleteAgentsReview review={r.deleteReview} />}
           {r.details && (
             <pre className="max-h-40 overflow-auto rounded bg-ctp-mantle p-2 text-xs text-ctp-subtext1 whitespace-pre-wrap break-words">{r.details}</pre>
           )}

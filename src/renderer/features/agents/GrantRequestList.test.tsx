@@ -82,3 +82,25 @@ describe('permission requests (#2970)', () => {
     await waitFor(() => expect(window.clubhouse.agent.answerGrantRequest).toHaveBeenCalledWith('g1', true, 'when_idle'));
   });
 });
+
+it('shows one review with exact deletion consequences, work at risk, force, helpers and refusals', () => {
+  useGrantRequestStore.getState().add(request({ kind: 'call', toolName: 'delete_agents', deleteReview: { items: [{
+    index: 0, requestedProject: 'Project', requestedAgent: 'One', status: 'ready', worktree: 'delete', helpers: 'dispose', force: true,
+    target: { project: '/project', agentId: 'exact-one', name: 'One', worktreePath: '/work/one', branch: 'one/standby', work: {
+      isValid: true, branch: 'one/standby', hasRemote: true, uncommittedFiles: [{ path: 'unsaved.ts', status: 'M', staged: false }],
+      unpushedCommits: [{ hash: '123', shortHash: '123', subject: 'Unpushed work', author: 'Test', date: '' }],
+    } }, helperTargets: [{ project: '/other', agentId: 'helper-id', name: 'Helper' }],
+  }, { index: 1, requestedProject: 'Project', requestedAgent: 'Missing', status: 'refused', reason: 'No exact target.', worktree: 'keep', helpers: 'keep', force: false, helperTargets: [] }] } }));
+  render(<GrantRequestList agentId="a1" agentName="Ada" />);
+  expect(screen.getAllByTestId('grant-request-allow')).toHaveLength(1);
+  expect(screen.getByText('Review deleting 1 agent together.')).toBeInTheDocument();
+  expect(screen.getByText(/One \(exact-one\) in \/project/)).toBeInTheDocument();
+  expect(screen.getByText(/Remove \/work\/one.*Remove branch one\/standby/)).toBeInTheDocument();
+  expect(screen.getByText(/1 uncommitted file and 1 unpushed commit at risk when removed/)).toBeInTheDocument();
+  expect(screen.getByText(/Force is explicitly enabled/)).toBeInTheDocument();
+  expect(screen.getByText('unsaved.ts (M)')).toBeInTheDocument();
+  expect(screen.getByText('123 Unpushed work')).toBeInTheDocument();
+  expect(screen.getByText(/Helper \(helper-id\) in \/other/)).toBeInTheDocument();
+  expect(screen.getByText(/Refused Missing/)).toBeInTheDocument();
+  expect(screen.getByText('No exact target.')).toBeInTheDocument();
+});
