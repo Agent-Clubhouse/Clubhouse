@@ -256,5 +256,6 @@ export function _resetAppUpdateForTesting(opts: { keepListeners?: boolean } = {}
   request = null;
   reviewed.clear();
   creating = false;
+  checking = false;
   if (!opts.keepListeners) listeners.clear();
 }
