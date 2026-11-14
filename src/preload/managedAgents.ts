@@ -20,6 +20,8 @@ import type {
   ProjectPartChoice,
   ProjectPartReview,
   ProjectPartsInventory,
+  ProjectTemplateReview,
+  ProjectTemplatesInventory,
 } from '../shared/managed-agents-types';
 import type { DurableAgentConfig } from '../shared/types';
 
@@ -89,6 +91,14 @@ const managed = {
   addProjectPart: (projectPath: string, key: string, hash: string, choice: ProjectPartChoice) => call<ManagedPartSummary>(IPC.MANAGED.ADD_PROJECT_PART, projectPath, key, hash, choice),
   updateProjectPart: (projectPath: string, partId: string, expectedRevision: number, hash: string) => call<ManagedPartSummary>(IPC.MANAGED.UPDATE_PROJECT_PART, projectPath, partId, expectedRevision, hash),
   keepProjectPart: (projectPath: string, partId: string, hash: string) => call<void>(IPC.MANAGED.KEEP_PROJECT_PART, projectPath, partId, hash),
+  /** Every registered project that offers templates under .clubhouse/parts/templates/, read now. Reads only. */
+  projectTemplates: () => call<ProjectTemplatesInventory[]>(IPC.MANAGED.PROJECT_TEMPLATES),
+  reviewProjectTemplate: (projectPath: string, key: string, approvePermissions: boolean) => call<ProjectTemplateReview>(IPC.MANAGED.REVIEW_PROJECT_TEMPLATE, projectPath, key, approvePermissions),
+  addProjectTemplate: (projectPath: string, key: string, hash: string, choice: { name: string; approvePermissions: boolean }) => call<ManagedTemplate>(IPC.MANAGED.ADD_PROJECT_TEMPLATE, projectPath, key, hash, choice),
+  /** Update from the repository through the template push: only the agents in `targets` get the changes, at their next start. */
+  updateProjectTemplate: (projectPath: string, templateId: string, hash: string, choice: { approvePermissions: boolean; targets: Array<{ projectPath: string; agentId: string }> }) =>
+    call<{ failed: Array<{ agentId: string; message: string }> }>(IPC.MANAGED.UPDATE_PROJECT_TEMPLATE, projectPath, templateId, hash, choice),
+  keepProjectTemplate: (projectPath: string, templateId: string, hash: string) => call<void>(IPC.MANAGED.KEEP_PROJECT_TEMPLATE, projectPath, templateId, hash),
   /** Parts, templates or setups changed somewhere. Returns an unsubscribe function. */
   onChanged: (listener: () => void): (() => void) => {
     const handler = () => listener();

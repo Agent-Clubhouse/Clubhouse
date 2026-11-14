@@ -13,6 +13,7 @@ import { previewManagedSetup } from '../services/managed-agents/delivery';
 import { checkTemplateSettings, ManagedError } from '../services/managed-agents/service';
 import { executableBits } from '../services/managed-agents/file-modes';
 import { addProjectPart, keepProjectPart, projectPartsInventory, reviewProjectPart, updateProjectPart } from '../services/managed-agents/project-parts';
+import { addProjectTemplate, allProjectTemplates, keepProjectTemplate, reviewProjectTemplate, updateProjectTemplate } from '../services/managed-agents/project-templates';
 import * as agentConfig from '../services/agent-config';
 import { resolveOrchestrator } from '../services/agent-system';
 import { appLog } from '../services/log-service';
@@ -57,6 +58,19 @@ function choiceShape(value: unknown): void {
   if (v.mode === 'copy' && typeof v.name === 'string' && v.name.length <= 200 && Object.keys(v).length === 2) return;
   if (v.mode === 'reuse' && typeof v.partId === 'string' && v.partId.length <= 128 && Object.keys(v).length === 2) return;
   throw new Error('Invalid choice');
+}
+
+function addTemplateShape(value: unknown): void {
+  const v = value as Record<string, unknown>;
+  if (typeof v.name !== 'string' || v.name.length > 200 || typeof v.approvePermissions !== 'boolean' || Object.keys(v).length !== 2) throw new Error('Invalid choice');
+}
+function updateTemplateShape(value: unknown): void {
+  const v = value as Record<string, unknown>;
+  if (typeof v.approvePermissions !== 'boolean' || !Array.isArray(v.targets) || v.targets.length > 500 || Object.keys(v).length !== 2) throw new Error('Invalid choice');
+  for (const t of v.targets as unknown[]) {
+    const r = t as Record<string, unknown>;
+    if (!r || typeof r.projectPath !== 'string' || r.projectPath.length > 4096 || typeof r.agentId !== 'string' || r.agentId.length > 128) throw new Error('Invalid target');
+  }
 }
 
 const setupArg = () => objectArg<{ blocks: string[]; skills: string[]; mcps: string[]; templateId?: string }>({ validate: setupShape });
@@ -256,6 +270,16 @@ export function registerManagedAgentsHandlers(): void {
     (_e, projectPath, partId, expectedRevision, hash) => result(() => updateProjectPart(s(), projectPath, partId, expectedRevision, hash))));
   ipcMain.handle(IPC.MANAGED.KEEP_PROJECT_PART, withValidatedArgs([stringArg(), idArg(), hashArg()],
     (_e, projectPath, partId, hash) => result(() => keepProjectPart(s(), projectPath, partId, hash))));
+  ipcMain.handle(IPC.MANAGED.PROJECT_TEMPLATES, withValidatedArgs([], () => result(() => allProjectTemplates(s()))));
+  ipcMain.handle(IPC.MANAGED.REVIEW_PROJECT_TEMPLATE, withValidatedArgs([stringArg(), keyArg(), booleanArg()],
+    (_e, projectPath, key, approve) => result(() => reviewProjectTemplate(s(), projectPath, key, approve))));
+  ipcMain.handle(IPC.MANAGED.ADD_PROJECT_TEMPLATE, withValidatedArgs([stringArg(), keyArg(), hashArg(), objectArg<{ name: string; approvePermissions: boolean }>({ validate: addTemplateShape })],
+    (_e, projectPath, key, hash, choice) => result(() => addProjectTemplate(s(), projectPath, key, hash, choice))));
+  ipcMain.handle(IPC.MANAGED.UPDATE_PROJECT_TEMPLATE, withValidatedArgs(
+    [stringArg(), idArg(), hashArg(), objectArg<{ approvePermissions: boolean; targets: Array<{ projectPath: string; agentId: string }> }>({ validate: updateTemplateShape })],
+    (_e, projectPath, templateId, hash, choice) => result(() => updateProjectTemplate(s(), projectPath, templateId, hash, choice))));
+  ipcMain.handle(IPC.MANAGED.KEEP_PROJECT_TEMPLATE, withValidatedArgs([stringArg(), idArg(), hashArg()],
+    (_e, projectPath, templateId, hash) => result(() => keepProjectTemplate(s(), projectPath, templateId, hash))));
   ipcMain.handle(IPC.MANAGED.SET_CLUBHOUSE_FEATURES, withValidatedArgs([stringArg(), idArg(), booleanArg()],
     (_e, projectPath, agentId, on) => result(async () => {
       await agentConfig.setClubhouseFeatures(projectPath, agentId, on);

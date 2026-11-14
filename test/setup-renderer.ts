@@ -617,6 +617,11 @@ vi.stubGlobal('clubhouse', {
     addProjectPart: async () => ({ ok: false, code: 'not_found' }),
     updateProjectPart: async () => ({ ok: false, code: 'not_found' }),
     keepProjectPart: async () => ({ ok: true, value: undefined }),
+    projectTemplates: async () => ({ ok: true, value: [] }),
+    reviewProjectTemplate: async () => ({ ok: false, code: 'not_found' }),
+    addProjectTemplate: async () => ({ ok: false, code: 'not_found' }),
+    updateProjectTemplate: async () => ({ ok: false, code: 'not_found' }),
+    keepProjectTemplate: async () => ({ ok: true, value: undefined }),
     onChanged: () => noop,
   },
   dispatcher: {
