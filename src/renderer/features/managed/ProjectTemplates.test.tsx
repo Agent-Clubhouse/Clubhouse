@@ -29,7 +29,15 @@ describe('ProjectTemplatesSection', () => {
     const rows = await screen.findAllByTestId('managed-project-template-row');
     expect(rows.map((r) => r.getAttribute('data-state'))).toEqual(['available', 'changed', 'refused']);
     expect(within(rows[2]).queryByRole('button')).toBeNull();
-    expect(screen.getByTestId('managed-project-template-gone').textContent).toContain('agents made from it');
+    expect(screen.getByTestId('managed-project-template-gone').textContent).toContain('No longer in the repository');
+  });
+
+  it('a template that may be in an unreadable file isn\'t called gone', async () => {
+    vi.spyOn(m(), 'projectTemplates').mockResolvedValue(ok([{ ...inventory, gone: [{ ...inventory.gone[0], unsure: true }] }]));
+    render(<ProjectTemplatesSection onNotice={vi.fn()} />);
+    const row = await screen.findByTestId('managed-project-template-gone');
+    expect(row.textContent).toContain('It may be in a file that can\'t be read');
+    expect(row.textContent).not.toContain('No longer in the repository');
   });
 
   it('a part not added yet blocks adding; permissions need their own tick', async () => {

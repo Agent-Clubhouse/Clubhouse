@@ -252,7 +252,10 @@ async function inventoryOf(service: ProjectTemplatesService, project: ProjectRef
     return { ...base, state: t.projectKeptHash === r.hash ? 'kept' : 'changed' };
   });
   const offered = new Set(templates.map((r) => r.key));
-  const gone = mine.filter((t) => !offered.has(t.source!.key)).map((t) => ({ key: t.source!.key, templateId: t.id, templateName: t.name }));
+  // A file whose id can't be read might hold any of them, so none is said to be gone for sure.
+  const unsure = templates.some((r) => r.key.startsWith('file:'));
+  const gone = mine.filter((t) => !offered.has(t.source!.key))
+    .map((t) => ({ key: t.source!.key, templateId: t.id, templateName: t.name, ...(unsure && { unsure: true as const }) }));
   return {
     inventory: { projectPath: project.path, projectId: project.id, projectName: project.name, items, gone, notes },
     repo: new Map(templates.map((r) => [r.key, r])),

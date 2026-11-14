@@ -72,7 +72,11 @@ export function ProjectTemplatesSection({ onNotice }: { onNotice: (text: string)
             {inv.gone.map((g) => (
               <li key={g.key} data-testid="managed-project-template-gone" className="py-2 border-t border-surface-0">
                 <div className="text-[13px] text-ctp-text truncate">{g.templateName}</div>
-                <div className="text-xs text-ctp-overlay1">No longer in the repository. The template stays, and so do agents made from it.</div>
+                <div className="text-xs text-ctp-overlay1">
+                  {g.unsure
+                    ? 'Not found in the repository. It may be in a file that can\'t be read. The template stays, and so do agents made from it.'
+                    : 'No longer in the repository. The template stays, and so do agents made from it.'}
+                </div>
               </li>
             ))}
           </ul>

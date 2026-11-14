@@ -548,8 +548,12 @@ export interface ProjectTemplatesInventory {
   projectId: string;
   projectName: string;
   items: ProjectTemplateItem[];
-  /** Templates added from this project that its repository no longer has. They stay, and so do agents made from them. */
-  gone: Array<{ key: string; templateId: string; templateName: string }>;
+  /**
+   * Templates added from this project that its repository no longer has. They
+   * stay, and so do agents made from them. `unsure`: a file there can't be
+   * read well enough to tell its id, so the template may be in it.
+   */
+  gone: Array<{ key: string; templateId: string; templateName: string; unsure?: true }>;
   notes: string[];
 }
 

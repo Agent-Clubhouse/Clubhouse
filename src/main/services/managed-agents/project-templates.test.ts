@@ -200,6 +200,14 @@ describe('templates checked into a project repository', () => {
     expect(inv.items).toEqual([expect.objectContaining({ key: 'reviewer', state: 'refused', templateId: made.id, problem: expect.stringContaining('field twice') })]);
     expect(inv.items[0].problem).not.toContain('MCP');
     expect(inv.gone).toEqual([]);
+    // Not JSON at all: its id can't be told, so the template is only possibly gone.
+    write('templates/reviewer.json', '{"id":"reviewer", oops');
+    const broken = await projectTemplatesInventory(service, repo);
+    expect(broken.items).toEqual([expect.objectContaining({ key: 'file:reviewer.json', state: 'refused' })]);
+    expect(broken.gone).toEqual([{ key: 'reviewer', templateId: made.id, templateName: 'Reviewer', unsure: true }]);
+    // Gone for sure once no file is unreadable.
+    fs.rmSync(path.join(repo, '.clubhouse/parts/templates/reviewer.json'));
+    expect((await projectTemplatesInventory(service, repo)).gone).toEqual([{ key: 'reviewer', templateId: made.id, templateName: 'Reviewer' }]);
     template('handoff.json', { id: 'handoff', name: 'Handoff', setup: { skills: ['builtin-skill-prepare-handoff'] } });
     const review = await reviewProjectTemplate(service, repo, 'handoff');
     expect(review.refs).toEqual([{ ref: 'builtin-skill-prepare-handoff', kind: 'skill', unresolved: 'missing' }]);
