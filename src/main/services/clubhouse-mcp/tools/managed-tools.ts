@@ -186,7 +186,7 @@ function redeemConfirm(callerId: string, token: string, digest: string, consume 
   const entry = mine?.get(token);
   if (!entry) throw new ArgError('That confirm token wasn\'t issued to you, or was already used. Call again without confirm for a new preview.');
   if (consume) mine!.delete(token);
-  if (entry.expiresAt <= Date.now()) throw new ArgError('That confirm token expired. Call again without confirm for a new preview.');
+  if (entry.expiresAt <= Date.now()) throw new ArgError('That confirm token expired (previews last 10 minutes, including time waiting for Needs you). Call again without confirm for a new preview; any required approval must be requested again.');
   if (entry.digest !== digest) throw new ArgError('stale: it changed since the preview, or the arguments differ from it. Call again without confirm for a new preview.');
 }
 
@@ -287,8 +287,9 @@ async function authorizePushWrites(
   }
   const checkTemplateWrite = () => {
     if (callApprovalVersion(callerId) !== version) throw new ArgError('Permissions changed after authorization. Request approval again.');
+    const libraryContext = grantApprovalContext(callerId, 'push_agent_template', args, PUSH_GRANTS, targets);
     const fresh = checkToolGrant(callerId, PUSH_LIBRARY_GRANT, args);
-    if (fresh.ok === false && (fresh.reason !== 'ask_first' || !approval || approval.scope.context !== context
+    if (fresh.ok === false && (fresh.reason !== 'ask_first' || !approval || approval.scope.context !== libraryContext
       || !fresh.asks.every((ask) => approval!.scope.asks.some((allowed) => allowed.action === ask.action && allowed.where === ask.where)))) {
       throw new ArgError(fresh.message);
     }
@@ -328,7 +329,7 @@ async function authorizePushWrites(
           throw new ArgError('Template settings, including model and provider, require an existing connection. No settings were applied.');
         }
         const fresh = checkToolGrant(callerId, PUSH_GRANTS, args, undefined, targets);
-        if (fresh.ok === false && (fresh.reason !== 'ask_first' || !approval || approval.scope.context !== context
+        if (fresh.ok === false && (fresh.reason !== 'ask_first' || !approval
           || !fresh.asks.every((ask) => approval!.scope.asks.some((allowed) => allowed.action === ask.action && allowed.where === ask.where)))) {
           throw new ArgError(fresh.message);
         }
@@ -773,7 +774,7 @@ export function registerManagedTools(): void {
     });
 
   tool('push_agent_template', PUSH_GRANTS.map((declaration) => ({ ...declaration, askHandledByTool: true })),
-    'Save a template edit and apply its changes to agents made from it. Call once without confirm, naming in agents the agent ids to apply to: it returns the changes, every agent made from the template with how many changes apply to each, and a confirm token for that choice. Then call again with the same arguments and confirm. Settings left out stay as the template has them. A token is yours only, works once, expires after 10 minutes, and is refused if the template changed since the preview. The token is not user approval: setup edits to unconnected consumers ask in Needs you; settings (including model/provider) require an existing connection and are otherwise skipped and reported.',
+    'Save a template edit and apply its changes to agents made from it. Call once without confirm, naming in agents the agent ids to apply to: it returns the changes, every agent made from the template with how many changes apply to each, and a confirm token for that choice. Then call again with the same arguments and confirm. Settings left out stay as the template has them. A token is yours only, works once, expires after 10 minutes including time waiting for Needs you, and is refused if the template changed since the preview. If it expires while waiting for approval, request a new preview and approval. The token is not user approval: setup edits to unconnected consumers ask in Needs you; settings (including model/provider) require an existing connection and are otherwise skipped and reported.',
     { id: S, blocks: IDS, skills: IDS, mcps: IDS, settings: OBJ, agents: IDS, confirm: S }, ['id', 'blocks', 'skills', 'mcps'],
     async (callerId, args) => {
       const id = requireString(args, 'id');

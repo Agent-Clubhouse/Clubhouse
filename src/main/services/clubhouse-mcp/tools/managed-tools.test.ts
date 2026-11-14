@@ -20,6 +20,7 @@ const state = vi.hoisted(() => ({
   beforeSetupPrepare: undefined as undefined | (() => void | Promise<void>),
   afterSetupPrepare: undefined as undefined | (() => void | Promise<void>),
   beforeSettingsPrepare: undefined as undefined | (() => void | Promise<void>),
+  beforePolicyPrepare: undefined as undefined | (() => void | Promise<void>),
 }));
 
 vi.mock('../mcp-call-gate', async (original) => ({ ...await original<typeof import('../mcp-call-gate')>(), mcpCallAccess: () => 'open' }));
@@ -67,6 +68,7 @@ vi.mock('../../agent-config', () => ({
     Object.assign(current, updates);
   },
   setOrchestrationConfig: async (_p: string, id: string, policy: DurableAgentConfig['orchestration'], precondition?: import('../../agent-config').ManagedSetupCommitPrecondition) => {
+    await state.beforePolicyPrepare?.();
     await precondition?.prepare();
     const current = state.agents.get(id)!;
     precondition?.check(current);
@@ -166,6 +168,7 @@ beforeEach(async () => {
   state.beforeSetupPrepare = undefined;
   state.afterSetupPrepare = undefined;
   state.beforeSettingsPrepare = undefined;
+  state.beforePolicyPrepare = undefined;
   vi.mocked(resolveOrchestrator).mockReset();
   vi.mocked(restartManagedAgent).mockClear();
   vi.mocked(deleteAgent).mockClear();
@@ -1771,6 +1774,55 @@ describe('template pushes respect per-consumer configuration approval (#3480)', 
     expect(result.json).toMatchObject({ status: 'pushed', applied: 0, failed: [{ agentId: agent.id }] });
     expect(agent.managed!.blocks).toEqual([]);
     expect(state.agents.get(agent.id)!.managed!.blocks).toEqual([]);
+  });
+
+  it('recomputes library approval context when policy changes but library mode is still Ask first', async () => {
+    const { agent, args } = await fixture();
+    await updateAgentGrantChanges('dispatcher', () => ({ changes: [{ action: 'template.write', target: { kind: 'any' }, mode: 'ask' }] }));
+    const input = await confirmed(args);
+    expect((await call('push_agent_template', input)).content[0].text).toContain('Needs you');
+    approve();
+    state.afterSetupPrepare = async () => {
+      await updateAgentGrantChanges('dispatcher', () => ({ changes: [
+        { action: 'template.write', target: { kind: 'any' }, mode: 'ask' },
+        { action: 'agent.configure', target: { kind: 'any' }, mode: 'off' },
+      ] }));
+    };
+    expect((await call('push_agent_template', input)).isError).toBe(true);
+    expect(agent.managed!.blocks).toEqual([]);
+    expect((await managedAgents().getTemplate(args.id)).setup.blocks).toEqual([]);
+  });
+
+  it('does not overwrite a connected consumer policy replaced during final preparation', async () => {
+    const { agent, args } = await fixture({ orchestration: { maxHelpers: 2, control: 'hands-off' } });
+    agent.orchestration = { ...agent.orchestration, connectToDispatcher: true };
+    state.beforePolicyPrepare = () => {
+      state.agents.set(agent.id, { ...agent, orchestration: { connectToDispatcher: true, maxHelpers: 8, control: 'ask-before-start' } });
+    };
+    const result = await call('push_agent_template', await confirmed({ ...args, settings: { orchestration: { maxHelpers: 4, control: 'hands-off' } } }));
+    expect(result.json).toMatchObject({ status: 'pushed', applied: 0, failed: [{ agentId: agent.id, message: expect.stringMatching(/policy changed/i) }] });
+    expect(state.agents.get(agent.id)!.orchestration).toMatchObject({ maxHelpers: 8, control: 'ask-before-start' });
+  });
+
+  it('explains that a preview can expire while Needs you is pending and requires a fresh approval', async () => {
+    const { agent, args } = await fixture();
+    const input = await confirmed(args);
+    expect((await call('push_agent_template', input)).content[0].text).toContain('Needs you');
+    const now = Date.now();
+    const spy = vi.spyOn(Date, 'now').mockReturnValue(now + CONFIRM_TTL_MS + 1);
+    try {
+      approve();
+      const expired = await call('push_agent_template', input);
+      expect(expired.isError).toBe(true);
+      expect(expired.content[0].text).toMatch(/expired.*waiting for Needs you/);
+      expect(expired.content[0].text).toContain('approval must be requested again');
+      expect(agent.managed!.blocks).toEqual([]);
+      const retry = await confirmed(args);
+      expect((await call('push_agent_template', retry)).content[0].text).toContain('Needs you');
+      expect(agent.managed!.blocks).toEqual([]);
+    } finally {
+      spy.mockRestore();
+    }
   });
 
   it('rechecks library permission at the template save boundary', async () => {
