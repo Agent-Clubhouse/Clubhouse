@@ -71,6 +71,29 @@
         },
         "status": 409
       }
+    },
+    {
+      "name": "same id with different content is command_conflict",
+      "request": {
+        "commandId": "cmd_update_check",
+        "epoch": "00000000-0000-4000-8000-000000000001",
+        "requestId": "missing",
+        "type": "app.update.cancel",
+        "version": 1
+      },
+      "response": {
+        "body": {
+          "commandId": "cmd_update_check",
+          "epoch": "00000000-0000-4000-8000-000000000001",
+          "error": {
+            "code": "command_conflict",
+            "message": "command_conflict"
+          },
+          "status": "rejected",
+          "version": 1
+        },
+        "status": 409
+      }
     }
   ],
   "type": "app.update.cancel"

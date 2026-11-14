@@ -1,0 +1,66 @@
+{
+  "direction": "desktop-to-phone",
+  "frames": [
+    {
+      "payload": {
+        "availableVersion": null,
+        "currentVersion": "0.0.0-test",
+        "downloadProgress": 0,
+        "reason": null,
+        "request": null,
+        "state": "none"
+      },
+      "seq": 1000,
+      "type": "app_update:changed"
+    },
+    {
+      "payload": {
+        "availableVersion": "1.1.0",
+        "currentVersion": "0.0.0-test",
+        "downloadProgress": 0,
+        "reason": null,
+        "request": null,
+        "state": "available"
+      },
+      "seq": 1001,
+      "type": "app_update:changed"
+    },
+    {
+      "payload": {
+        "availableVersion": "1.1.0",
+        "currentVersion": "0.0.0-test",
+        "downloadProgress": 0,
+        "reason": null,
+        "request": null,
+        "state": "downloading"
+      },
+      "seq": 1002,
+      "type": "app_update:changed"
+    },
+    {
+      "payload": {
+        "availableVersion": "1.1.0",
+        "currentVersion": "0.0.0-test",
+        "downloadProgress": 50,
+        "reason": null,
+        "request": null,
+        "state": "downloading"
+      },
+      "seq": 1003,
+      "type": "app_update:changed"
+    },
+    {
+      "payload": {
+        "availableVersion": "1.1.0",
+        "currentVersion": "0.0.0-test",
+        "downloadProgress": 100,
+        "reason": null,
+        "request": null,
+        "state": "ready"
+      },
+      "seq": 1004,
+      "type": "app_update:changed"
+    }
+  ],
+  "note": "Mocked desktop check to ready; payload replaces snapshot.appUpdate. seq is normalized to consecutive visible changes. No installation or restart."
+}

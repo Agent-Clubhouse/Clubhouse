@@ -21,6 +21,7 @@ let offRequests: (() => void) | null = null;
 const listeners = new Set<() => void>();
 let closing = false;
 let creating = false;
+let checking = false;
 
 class UpdateRequestRefused extends Error {}
 
@@ -102,6 +103,22 @@ function readyReason(version?: string): string | null {
   if (problem) return APP_UPDATE_FAILURE_MESSAGES.missing;
   if (!getDispatcherState().enabled) return 'Turn on the Dispatcher to request an update from your phone. You can still update from the desktop banner.';
   return null;
+}
+
+/** Match the desktop's manual check; installation approval remains a separate command. */
+export async function checkAppUpdate(): Promise<AppUpdateStatus> {
+  const unsupported = updater.getSelfUpdateUnsupportedReason();
+  if (unsupported) throw new MobileControlError('update_unsupported', 409, 'rejected', unsupported);
+  const status = updater.getStatus();
+  if (status.state === 'downloading' || status.state === 'ready') return getAppUpdateStatus();
+  if (checking || status.state === 'checking') {
+    throw new MobileControlError('update_check_running', 409, 'rejected', 'An update check is already running.');
+  }
+  checking = true;
+  try {
+    await updater.checkForUpdates(true);
+    return getAppUpdateStatus();
+  } finally { checking = false; }
 }
 
 /** Asking never downloads, interrupts, stops or installs anything. */
