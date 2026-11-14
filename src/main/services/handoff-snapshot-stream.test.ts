@@ -29,6 +29,7 @@ describe('handoff blob subprocess completion', { timeout: 30_000 }, () => {
     await git('config', 'user.name', 'Fixture'); await git('config', 'user.email', 'fixture@example.invalid');
     await git('-c', `core.hooksPath=${path.join(root, 'absent-hooks')}`, 'commit', '--allow-empty', '-qm', 'Fixture');
     repository = await openHandoffRepository(root);
+    vi.mocked(appLog).mockClear();
   });
 
   afterEach(() => {
@@ -56,7 +57,7 @@ describe('handoff blob subprocess completion', { timeout: 30_000 }, () => {
     child.stdout.end(); child.emit('close', -2);
     expect(await result).toMatchObject({ code: 'git_failed', message: expect.stringContaining('stderr=not_found.') });
     expect(appLog).toHaveBeenCalledTimes(1);
-    expect(appLog).toHaveBeenCalledWith('core:git', 'debug', 'Handoff Git operation failed', {
+    expect(appLog).toHaveBeenCalledWith('core:git', 'warn', 'Handoff Git operation failed', {
       meta: { command: 'cat-file', exit: 'unknown', stderrClass: 'not_found' },
     });
   });
@@ -70,8 +71,21 @@ describe('handoff blob subprocess completion', { timeout: 30_000 }, () => {
     expect(await result).toMatchObject({ code: 'git_failed', message: expect.stringContaining('stderr=timeout.') });
     expect(child.kill).toHaveBeenCalled();
     expect(appLog).toHaveBeenCalledTimes(1);
-    expect(appLog).toHaveBeenCalledWith('core:git', 'debug', 'Handoff Git operation failed', {
+    expect(appLog).toHaveBeenCalledWith('core:git', 'warn', 'Handoff Git operation failed', {
       meta: { command: 'cat-file', exit: 'unknown', stderrClass: 'timeout' },
     });
+  });
+
+  it('accepts a complete successful blob when the timer fires between exit and close', async () => {
+    const { child, ready } = subprocess();
+    // SHA-1 of Git's empty blob; size/hash verification must still run.
+    const result = repository.streamBlob('e69de29bb2d1d6434b8b29ae775ad8c2e48c5391', 0, async () => {}, async () => {});
+    vi.useFakeTimers();
+    await ready;
+    child.kill.mockImplementation(() => { queueMicrotask(() => child.emit('close', 0)); return true; });
+    child.stdout.end(); child.emit('exit', 0);
+    await vi.advanceTimersByTimeAsync(60_000);
+    await result;
+    expect(appLog).not.toHaveBeenCalled();
   });
 });

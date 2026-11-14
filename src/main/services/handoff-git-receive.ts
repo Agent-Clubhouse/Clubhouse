@@ -27,7 +27,7 @@ export async function receiveHandoffCommit(options: {
   const targetKey = normalizeGitRemote(repository.repo.remote);
   const commit = snapshot.manifest.repo.base;
   const hasCommit = async () => {
-    try { return (await repository.read(['cat-file', '-t', commit]))?.toString('ascii').trim() === 'commit'; }
+    try { return (await repository.read(['cat-file', '-t', commit], { expected: true }))?.toString('ascii').trim() === 'commit'; }
     catch { return false; /* telemetry-exempt: a missing object triggers fetch or a verified bundle fallback */ }
   };
   if (!options.linkedProject && (sourceKey ? targetKey !== sourceKey : !await hasCommit())) throw new Error('No matching registered project for this handoff.');
@@ -50,12 +50,12 @@ export async function receiveHandoffCommit(options: {
       const env = { ...process.env };
       for (const name of Object.keys(env)) if (/^GIT_/i.test(name)) delete env[name];
       Object.assign(env, { GIT_CONFIG_GLOBAL: config, GIT_CONFIG_SYSTEM: config, GIT_CONFIG_NOSYSTEM: '0', GIT_NO_REPLACE_OBJECTS: '1', GIT_GRAFT_FILE: devNull });
-      const read = async (args: string[], cwd = quarantine): Promise<Buffer> => {
+      const read = async (args: string[], cwd = quarantine, diagnostics: { expected?: boolean } = {}): Promise<Buffer> => {
         await check();
         try { return (await exec('git', [...handoffGitPlatformFlags(), ...flags, ...args], { cwd, env, timeout: 60_000, maxBuffer: 8 * 1024 ** 2, encoding: 'buffer' })).stdout; }
         catch (error) {
           const reported = new HandoffSnapshotError('git_failed');
-          reported.message += reportHandoffGitFailure(args, error);
+          reported.message += reportHandoffGitFailure(args, error, diagnostics);
           throw reported;
         }
       };
@@ -65,7 +65,7 @@ export async function receiveHandoffCommit(options: {
       // Git for Windows rejects an explicit GIT_DIR longer than PATH_MAX - 40
       // before core.longpaths is read. Keep the process cwd and Git's directory
       // argument separate so both repository setup and pack I/O support deep roots.
-      const readBare = (args: string[]) => read(['--git-dir=.', ...args], bare);
+      const readBare = (args: string[], diagnostics: { expected?: boolean } = {}) => read(['--git-dir=.', ...args], bare, diagnostics);
       let acquired = false;
       if (sourceKey && targetKey === sourceKey) {
         // Resolve only the receiving project's configured origin (including its own rewrites).
@@ -73,7 +73,7 @@ export async function receiveHandoffCommit(options: {
         const remote = (await repository.read(['remote', 'get-url', 'origin']))?.toString('utf8').trim();
         if (remote && !remote.includes('\0') && !remote.includes('\n')) {
           try {
-            await readBare(['-c', 'protocol.file.allow=always', 'fetch', '--no-tags', '--', remote, commit]);
+            await readBare(['-c', 'protocol.file.allow=always', 'fetch', '--no-tags', '--', remote, commit], { expected: true });
             acquired = true; source = 'remote';
           } catch { /* telemetry-exempt: an unavailable person-configured origin falls back to the frozen bundle */ }
         }

@@ -8,7 +8,7 @@ export function handoffGitPlatformFlags(): string[] {
 }
 
 /** Only closed classifications leave this boundary; never argv, stderr, URLs or paths. */
-export function reportHandoffGitFailure(args: string[], error: unknown): string {
+export function reportHandoffGitFailure(args: string[], error: unknown, options: { expected?: boolean } = {}): string {
   let command = 'unknown';
   for (let index = 0; index < args.length; index++) {
     if (['-c', '--git-dir', '--work-tree'].includes(args[index])) { index++; continue; }
@@ -31,9 +31,7 @@ export function reportHandoffGitFailure(args: string[], error: unknown): string 
                   : /not a git repository|does not appear to be a git repository/i.test(stderr) ? 'repository'
                     : /bad object|not a valid object|unable to read.*object/i.test(stderr) ? 'object'
                       : 'unknown';
-  // Missing-object probes and origin fetch fallbacks are expected control flow.
-  // Keep their classified detail available without emitting warnings for them.
-  appLog('core:git', 'debug', 'Handoff Git operation failed', { meta: { command, exit, stderrClass } });
+  appLog('core:git', options.expected ? 'debug' : 'warn', 'Handoff Git operation failed', { meta: { command, exit, stderrClass } });
   // Retained handoff history and E2E diagnostics need the same safe explanation.
   return ` Git: ${command}; exit=${exit}; stderr=${stderrClass}.`;
 }
