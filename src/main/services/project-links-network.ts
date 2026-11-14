@@ -5,7 +5,7 @@
  */
 import {
   PROJECT_LINKS_CAPABILITIES_PATH, PROJECT_LINKS_SYNC_PATH, PROJECT_LINKS_PAGE_SIZE,
-  parseIncomingProjectLinkRecords, projectLinkPairKey, PROJECT_LINKS_MAX_RECORDS, type ProjectLinkRecord,
+  parseIncomingProjectLinkRecords, parseProjectLinkRecords, projectLinkPairKey, PROJECT_LINKS_MAX_RECORDS, type ProjectLinkRecord,
 } from '../../shared/project-links';
 import { projectLinksStore, type ProjectLinksStore } from './project-links-store';
 import { appLog } from './log-service';
@@ -89,9 +89,10 @@ export function startProjectLinksNetwork(options: ProjectLinksNetworkOptions): (
           const body = response.body;
           if (response.status !== 200 || !object(body) || body.version !== 1
             || body.next !== undefined && (typeof body.next !== 'string' || body.next.length > 2300 || after !== undefined && body.next <= after)) throw new Error('Invalid project link sync response.');
-          const incoming: ProjectLinkRecord[] = parseIncomingProjectLinkRecords(body.records, PROJECT_LINKS_PAGE_SIZE);
-          if (body.next !== undefined && (!incoming.length || body.next !== projectLinkPairKey(...incoming[incoming.length - 1].projects))) throw new Error('Empty project link sync page.');
-          await store.merge(incoming, machine, current);
+          const rows: ProjectLinkRecord[] = parseProjectLinkRecords(body.records, PROJECT_LINKS_PAGE_SIZE);
+          // Cursors describe the original page, including records skipped for clock skew.
+          if (body.next !== undefined && (!rows.length || body.next !== projectLinkPairKey(...rows[rows.length - 1].projects))) throw new Error('Empty project link sync page.');
+          await store.merge(parseIncomingProjectLinkRecords(rows, PROJECT_LINKS_PAGE_SIZE), machine, current);
           after = body.next as string | undefined;
         } while (after !== undefined && current());
       }

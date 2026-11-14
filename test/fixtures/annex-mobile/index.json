@@ -85,6 +85,7 @@
     "network-pairing.json",
     "pairing-revoke.json",
     "pairing.json",
+    "project-links.json",
     "pty.json",
     "queued-bursts.json",
     "replay.json",

@@ -302,6 +302,11 @@
         "persistentApprovals": true,
         "version": 1
       },
+      "projectLinks": {
+        "event": "project-links:changed",
+        "snapshotField": "projectLinks",
+        "version": 1
+      },
       "projectState": {
         "version": 1
       },

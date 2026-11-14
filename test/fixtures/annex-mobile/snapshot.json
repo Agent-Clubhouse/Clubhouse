@@ -412,6 +412,7 @@
       "projectIcons": {
         "proj_app": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAAEXRFWHRpY29uAHByb2pfYXBwLnBuZ6dlg98AAAANSURBVHjaY/z/n6EeAAeCAn89yEjvAAAAAElFTkSuQmCC"
       },
+      "projectLinks": [],
       "projectState": {
         "proj_app": {
           "idle": false,

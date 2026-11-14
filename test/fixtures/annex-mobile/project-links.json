@@ -1,0 +1,150 @@
+{
+  "direction": "desktop-to-phone",
+  "keptSeparate": {
+    "payload": {
+      "projectLinks": []
+    },
+    "seq": 166,
+    "type": "project-links:changed"
+  },
+  "linked": {
+    "payload": {
+      "projectLinks": [
+        {
+          "id": "96d7c84b90b5d8b6dccd82e193ba9c0f1d8b6c30072ca4b67cc901aa1e42af62",
+          "projects": [
+            {
+              "machine": "11:11:11:11:11:11:11:11:11:11:11:11:11:11:11:11",
+              "projectId": "proj_app"
+            },
+            {
+              "machine": "aa:aa:aa:aa:aa:aa:aa:aa:aa:aa:aa:aa:aa:aa:aa:aa",
+              "projectId": "proj_app"
+            }
+          ]
+        }
+      ]
+    },
+    "seq": 165,
+    "type": "project-links:changed"
+  },
+  "manual": {
+    "payload": {
+      "projectLinks": [
+        {
+          "id": "fed751df84509b0ab381bfca48555ae67a3e7eac84378b166f2f97798efe2a03",
+          "projects": [
+            {
+              "machine": "11:11:11:11:11:11:11:11:11:11:11:11:11:11:11:11",
+              "projectId": "manual_docs"
+            },
+            {
+              "machine": "aa:aa:aa:aa:aa:aa:aa:aa:aa:aa:aa:aa:aa:aa:aa:aa",
+              "projectId": "proj_app"
+            }
+          ]
+        }
+      ]
+    },
+    "seq": 167,
+    "type": "project-links:changed"
+  },
+  "replay": [
+    {
+      "count": 4,
+      "epoch": "00000000-0000-4000-8000-000000000001",
+      "fromSeq": 1001,
+      "toSeq": 1004,
+      "type": "replay:start"
+    },
+    {
+      "payload": {
+        "projectLinks": [
+          {
+            "id": "96d7c84b90b5d8b6dccd82e193ba9c0f1d8b6c30072ca4b67cc901aa1e42af62",
+            "projects": [
+              {
+                "machine": "11:11:11:11:11:11:11:11:11:11:11:11:11:11:11:11",
+                "projectId": "proj_app"
+              },
+              {
+                "machine": "aa:aa:aa:aa:aa:aa:aa:aa:aa:aa:aa:aa:aa:aa:aa:aa",
+                "projectId": "proj_app"
+              }
+            ]
+          }
+        ]
+      },
+      "replayed": true,
+      "seq": 1001,
+      "type": "project-links:changed"
+    },
+    {
+      "payload": {
+        "projectLinks": []
+      },
+      "replayed": true,
+      "seq": 1002,
+      "type": "project-links:changed"
+    },
+    {
+      "payload": {
+        "projectLinks": [
+          {
+            "id": "fed751df84509b0ab381bfca48555ae67a3e7eac84378b166f2f97798efe2a03",
+            "projects": [
+              {
+                "machine": "11:11:11:11:11:11:11:11:11:11:11:11:11:11:11:11",
+                "projectId": "manual_docs"
+              },
+              {
+                "machine": "aa:aa:aa:aa:aa:aa:aa:aa:aa:aa:aa:aa:aa:aa:aa:aa",
+                "projectId": "proj_app"
+              }
+            ]
+          }
+        ]
+      },
+      "replayed": true,
+      "seq": 1003,
+      "type": "project-links:changed"
+    },
+    {
+      "payload": {
+        "projectLinks": []
+      },
+      "replayed": true,
+      "seq": 1004,
+      "type": "project-links:changed"
+    },
+    {
+      "epoch": "00000000-0000-4000-8000-000000000001",
+      "type": "replay:end"
+    }
+  ],
+  "snapshot": {
+    "projectLinks": [
+      {
+        "id": "96d7c84b90b5d8b6dccd82e193ba9c0f1d8b6c30072ca4b67cc901aa1e42af62",
+        "projects": [
+          {
+            "machine": "11:11:11:11:11:11:11:11:11:11:11:11:11:11:11:11",
+            "projectId": "proj_app"
+          },
+          {
+            "machine": "aa:aa:aa:aa:aa:aa:aa:aa:aa:aa:aa:aa:aa:aa:aa:aa",
+            "projectId": "proj_app"
+          }
+        ]
+      }
+    ]
+  },
+  "snapshotField": "projectLinks",
+  "unlinked": {
+    "payload": {
+      "projectLinks": []
+    },
+    "seq": 168,
+    "type": "project-links:changed"
+  }
+}

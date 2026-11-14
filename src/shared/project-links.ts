@@ -47,8 +47,8 @@ export function parseProjectLinkRecords(raw: unknown, max = PROJECT_LINKS_MAX_RE
 /** Bound received clocks without invalidating saved records if the local clock later moves back. */
 export function parseIncomingProjectLinkRecords(raw: unknown, max = PROJECT_LINKS_MAX_RECORDS, now = Date.now()): ProjectLinkRecord[] {
   const records = parseProjectLinkRecords(raw, max);
-  if (records.some((r) => r.at > now + 24 * 60 * 60 * 1000)) throw new Error('Project link clock is too far ahead.');
-  return records;
+  // One skewed writer cannot block the good records that share its page.
+  return records.filter((r) => r.at <= now + 24 * 60 * 60 * 1000);
 }
 /** IPC preserves messages but strips custom Error properties. Retry only these known temporary failures. */
 export function transientProjectLinksError(error: unknown): boolean {

@@ -325,9 +325,11 @@ export async function setOrchestrationPolicy(
     const agent = await agentConfig.getDurableConfig(projectPath, agentId);
     if (!agent) return { ok: false, message: 'Agent not found' };
 
-    const current = await resolveFor(projectPath, agent, agent.orchestration);
+    // Keep the exact policy the patch is built from across every preparation await.
+    const storedBefore = agent.orchestration && structuredClone(agent.orchestration);
+    const current = await resolveFor(projectPath, agent, storedBefore);
     options.precondition?.(agent, current);
-    const stored = applyOrchestrationPatch(agent.orchestration, patch);
+    const stored = applyOrchestrationPatch(storedBefore, patch);
     const next = await resolveFor(projectPath, agent, stored);
     if ((who.surface === 'mcp' || who.surface === 'dispatcher') && !options.connectionBootstrap
       && current.connectToDispatcher !== next.connectToDispatcher) {
@@ -352,14 +354,25 @@ export async function setOrchestrationPolicy(
       }
     }
 
-    // Copied now: the write can change this agent's own record.
-    const storedBefore = agent.orchestration && { ...agent.orchestration };
     if (options.commitPrecondition) {
       await options.commitPrecondition.prepare();
       options.commitPrecondition.check();
     }
-    if (options.agentPrecondition) await agentConfig.setOrchestrationConfig(projectPath, agentId, stored, options.agentPrecondition);
-    else await agentConfig.setOrchestrationConfig(projectPath, agentId, stored);
+    if (options.agentPrecondition) {
+      const authorization = options.agentPrecondition;
+      await agentConfig.setOrchestrationConfig(projectPath, agentId, stored, {
+        prepare: () => authorization.prepare(),
+        check: (currentAgent) => {
+          authorization.check(currentAgent);
+          // A fresh permission read cannot authorize overwriting an external policy edit.
+          if (JSON.stringify(currentAgent.orchestration) !== JSON.stringify(storedBefore)) {
+            throw new Error('The agent policy changed while the edit was prepared. Read it again and retry.');
+          }
+        },
+      });
+    } else {
+      await agentConfig.setOrchestrationConfig(projectPath, agentId, stored);
+    }
     if (options.commitPrecondition) {
       await options.commitPrecondition.prepare();
       options.commitPrecondition.check();

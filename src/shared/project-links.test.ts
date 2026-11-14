@@ -50,11 +50,11 @@ describe('network-shared project link pairs', () => {
     expect(mergeProjectLinkRecords(yes, no)).toEqual(no);
     expect(mergeProjectLinkRecords(no, yes)).toBe(no);
   });
-  it('refuses incoming clocks more than one day ahead, including MAX_SAFE_INTEGER', () => {
+  it('skips only incoming clocks more than one day ahead, including MAX_SAFE_INTEGER', () => {
     const now = 1_000, day = 24 * 60 * 60 * 1000;
     expect(parseIncomingProjectLinkRecords([{ ...linked()[0], at: now + day }], 200, now)).toHaveLength(1);
     for (const at of [now + day + 1, Number.MAX_SAFE_INTEGER - 1]) {
-      expect(() => parseIncomingProjectLinkRecords([{ ...linked()[0], at }], 200, now)).toThrow('too far ahead');
+      expect(parseIncomingProjectLinkRecords([{ ...linked()[0], at }, ...linked()], 200, now)).toEqual(linked());
     }
     // Saved records remain readable after a local clock correction.
     expect(parseProjectLinkRecords([{ ...linked()[0], at: now + day + 1 }])).toHaveLength(1);
