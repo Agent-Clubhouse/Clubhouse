@@ -1,3 +1,5 @@
+import { handoffE2eDiagnostics } from '../../test/handoff-e2e-diagnostics';
+import { isTerminalHandoff, type Handoff } from '../../src/shared/handoffs';
 /**
  * Agents across machines (#3064, #3334).
  *
@@ -601,8 +603,27 @@ test('accepted handoff transfers a selected ignored file over 512 KiB and publis
   expect(accepted.isError).toBe(false);
   expect(JSON.parse(accepted.text).acceptance.target.agentId).toBe(receiverId);
   const senderGet = await tool(senderMcp, 'get_handoff');
-  let applied: { state: string; result?: { worktree: string; branch: string; commit: string }; history: Array<{ state: string }> };
-  await expect.poll(async () => { applied = JSON.parse((await senderMcp.call(senderGet, { id: record.id })).text); return applied.state; }, { timeout: 120_000 }).toBe('applied');
+  let applied: Handoff | undefined;
+  const attachDiagnostics = async () => {
+    let receiver: unknown;
+    try {
+      const answer = await receiverMcp.call(receiverGet, { id: record.id });
+      if (!answer.isError) receiver = JSON.parse(answer.text);
+    } catch { /* Fixture diagnostics never replace the original assertion. */ }
+    const diagnostics = { sender: handoffE2eDiagnostics(applied), receiver: handoffE2eDiagnostics(receiver) };
+    await test.info().attach('handoff-terminal-diagnostics', { body: Buffer.from(JSON.stringify(diagnostics, null, 2)), contentType: 'application/json' });
+    return diagnostics;
+  };
+  try {
+    await expect.poll(async () => {
+      applied = JSON.parse((await senderMcp.call(senderGet, { id: record.id })).text) as Handoff;
+      return isTerminalHandoff(applied.state);
+    }, { timeout: 120_000 }).toBe(true);
+  } catch (error) { await attachDiagnostics(); throw error; }
+  if (applied?.state !== 'applied') {
+    const diagnostics = await attachDiagnostics();
+    expect(applied?.state, JSON.stringify(diagnostics)).toBe('applied');
+  }
   expect(applied!.history.map((event) => event.state)).toContain('applying');
   expect(applied!.result!.worktree).not.toBe(receiverProject);
   expect(await fs.promises.readFile(path.join(applied!.result!.worktree, 'fixtures', 'selected.bin'))).toEqual(large);
