@@ -19,6 +19,14 @@ describe('AutoHelpersToggle (#2671)', () => {
     expect(screen.queryByTestId('auto-clear')).toBeNull();
   });
 
+  it('a following agent offers to set its own value, pinning what it shows now', () => {
+    const onChange = vi.fn();
+    render(<AutoHelpersToggle policy={policy({}, true)} name="a" onChange={onChange} testId="auto" />);
+    expect(screen.getByTestId('auto-source').className).toContain('text-xs');
+    fireEvent.click(screen.getByTestId('auto-override'));
+    expect(onChange).toHaveBeenCalledWith(true);
+  });
+
   it('a set switch can be cleared back to following the app', () => {
     const onChange = vi.fn();
     render(<AutoHelpersToggle policy={policy({ autoHelpers: false }, true)} name="a" onChange={onChange} testId="auto" />);

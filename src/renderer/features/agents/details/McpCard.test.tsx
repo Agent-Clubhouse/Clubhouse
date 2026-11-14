@@ -99,7 +99,7 @@ describe('MCP servers card', () => {
     expect(screen.getByTestId('details-mcp-wires')).not.toHaveTextContent('not-mine');
   });
 
-  it('displays the controller wire role while keeping the custom chat and ordinary target names', async () => {
+  it('leaves the Dispatcher wires to its own card and keeps ordinary target wires', async () => {
     useDispatcherStore.getState().setState({
       ...DISPATCHER_OFF, agentId: 'work', chatAgentId: 'chat',
       config: { id: 'work', name: 'Rosie', color: 'indigo', createdAt: 'then' },
@@ -111,7 +111,7 @@ describe('MCP servers card', () => {
     ] });
     render(<AgentDetails agent={agent} />);
     await waitFor(() => expect(screen.getByTestId('details-mcp-wires')).toBeInTheDocument());
-    expect(screen.getAllByText('Wired to Rosie')).toHaveLength(2);
+    expect(screen.queryByText('Wired to Rosie')).toBeNull();
     expect(screen.getByText('Wired to curious-tapir')).toBeInTheDocument();
     expect(useMcpBindingStore.getState().bindings[0].targetName).toBe('Rosie');
   });

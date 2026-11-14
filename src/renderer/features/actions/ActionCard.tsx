@@ -202,7 +202,7 @@ export function ActionCard({ action, onClose, onEdit }: { action: ActionView; on
           </dd>
           <dt className="text-ctp-overlay1">If still running</dt>
           <dd className="text-ctp-text">{OVERLAP_LABELS[action.overlap]}</dd>
-          <dt className="text-ctp-overlay1">Made by</dt>
+          <dt className="text-ctp-overlay1">Owned by</dt>
           <dd className="text-ctp-text">{ownerLabel(action.owner, names)}{action.owner.kind !== 'user' && ', and its usage counts toward it'}</dd>
         </dl>
 

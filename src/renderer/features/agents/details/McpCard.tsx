@@ -177,8 +177,9 @@ export function McpCard({ agent, projectPath, live, spawnedAt, refreshKey, open,
 }) {
   // Opening the card checks again, so a handshake since the last turn shows up.
   const clubhouse = useClubhouseMcpConnection(agent, spawnedAt, `${String(refreshKey)}:${open}`);
-  const bindings = useAgentBindings(agent.id);
   const dispatcher = useDispatcherStore((s) => s.state);
+  // The Dispatcher's own card shows its connection, so it isn't repeated here.
+  const bindings = useAgentBindings(agent.id).filter((b) => !(b.targetKind === 'agent' && (b.targetId === dispatcher?.agentId || b.targetId === dispatcher?.chatAgentId)));
   const { value: managedStatus } = useManagedStatus(agent.status === 'running' ? projectPath : undefined, agent.id);
   const { rows, configuredOnly, reasons } = mcpRows(live, clubhouse, agent.mcpIds ?? [], managedStatus?.mcpProblems ?? []);
   const hasClubhouse = rows.some((r) => r.name === CLUBHOUSE_MCP);

@@ -49,10 +49,12 @@ describe('agent Actions page', () => {
     it('uses the existing relationship groups and counts each related action once', async () => {
       window.clubhouse.actions.list = vi.fn(async () => [...list, reminder]);
       render(<AgentActionsCard agentId="lead" agentName="release-lead" projectId="p1" open onToggle={() => {}} />);
-      expect(await screen.findByText('Made by release-lead')).toBeInTheDocument();
+      expect(await screen.findByText('Owned by release-lead')).toBeInTheDocument();
       expect(screen.getByTestId('details-card-actions-summary')).toHaveTextContent('6 related');
-      expect(screen.getByText('Act on release-lead')).toBeInTheDocument();
+      expect(screen.getByText('Targets release-lead')).toBeInTheDocument();
       expect(screen.getByText('Set off by release-lead')).toBeInTheDocument();
+      // Each group's items sit indented under its header.
+      expect(screen.getAllByTestId('agent-action-row')[0].closest('ul')).toHaveClass('pl-4');
       expect(screen.queryByText('unrelated')).not.toBeInTheDocument();
     });
 
@@ -84,7 +86,7 @@ describe('agent Actions page', () => {
       expect(await screen.findByRole('alert')).toHaveTextContent('Unavailable');
       expect(screen.queryByText(/No actions are made/)).not.toBeInTheDocument();
       fireEvent.click(screen.getByRole('button', { name: 'Try again' }));
-      expect(await screen.findByText('No actions are made by, act on or are set off by release-lead.')).toBeInTheDocument();
+      expect(await screen.findByText('No actions are owned by, target or are set off by release-lead.')).toBeInTheDocument();
     });
   });
 
@@ -92,8 +94,8 @@ describe('agent Actions page', () => {
 
   it('says so in one line when a group is empty', async () => {
     render(<AgentActionsPage agentId="lead" agentName="release-lead" projectId="p1" />);
-    expect(await screen.findByText('No action acts on release-lead.')).toBeTruthy();
-    expect(screen.getByText('release-lead hasn’t made any actions.')).toBeTruthy();
+    expect(await screen.findByText('No action targets release-lead.')).toBeTruthy();
+    expect(screen.getByText('release-lead doesn’t own any actions.')).toBeTruthy();
     expect(screen.getByRole('button', { name: 'New action for release-lead' })).toBeTruthy();
   });
 });
