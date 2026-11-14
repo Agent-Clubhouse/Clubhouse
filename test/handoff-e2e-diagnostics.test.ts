@@ -35,11 +35,13 @@ it('bounds history and rejects unrecognized diagnostic fields instead of reflect
 it('retains only classified Git details in failure history', () => {
   const result = handoffE2eDiagnostics({ history: [
     { state: 'failed', reason: 'Handoff snapshot failed: git_failed. Git: fetch; exit=128; stderr=path_too_long.' },
+    { state: 'failed', reason: 'Handoff snapshot failed: git_failed. Git: init; exit=unknown; stderr=spawn_failed.' },
     { state: 'failed', reason: 'Handoff snapshot failed: git_failed. Git: private-command; exit=999; stderr=private_class.' },
     { state: 'failed', reason: 'Handoff snapshot failed: git_failed. Git: fetch; exit=128; stderr=private/path.' },
   ] });
   expect(result.history).toEqual([
     { state: 'failed', reason: 'snapshot', snapshotCode: 'git_failed', git: { command: 'fetch', exit: 128, stderrClass: 'path_too_long' } },
+    { state: 'failed', reason: 'snapshot', snapshotCode: 'git_failed', git: { command: 'init', exit: 'unknown', stderrClass: 'spawn_failed' } },
     { state: 'failed', reason: 'snapshot', snapshotCode: 'git_failed', git: { command: 'unknown', exit: 'unknown', stderrClass: 'unknown' } },
     { state: 'failed', reason: 'redacted' },
   ]);

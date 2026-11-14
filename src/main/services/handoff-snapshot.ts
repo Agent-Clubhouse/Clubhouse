@@ -104,7 +104,7 @@ function gitEnvironment(): NodeJS.ProcessEnv {
 }
 
 /** Unlike UI Git helpers, never log Git stderr, URLs, paths or subprocess output. */
-async function gitBytes(context: SnapshotGit, args: string[], missingAllowed: boolean | 'repository' = false): Promise<Buffer | null> {
+async function gitBytes(context: SnapshotGit, args: string[], missingAllowed: boolean | 'repository' = false, diagnostics: { expected?: boolean } = {}): Promise<Buffer | null> {
   try {
     const result = await exec('git', ['--no-replace-objects', '-c', 'core.fsmonitor=false', ...handoffGitPlatformFlags(), ...args], {
       cwd: context.root, encoding: 'buffer', timeout: 30_000, maxBuffer: 8 * 1024 ** 2, env: context.env,
@@ -112,13 +112,17 @@ async function gitBytes(context: SnapshotGit, args: string[], missingAllowed: bo
     return result.stdout;
   } catch (error) {
     if (error !== null && typeof error === 'object' && 'code' in error) {
-      if (missingAllowed === true && error.code === 1) return null;
+      if (missingAllowed === true && error.code === 1) {
+        reportHandoffGitFailure(args, error, { expected: true }); return null;
+      }
       // Only classify Git's own no-repository diagnostic; other failures stay git_failed.
       if (missingAllowed === 'repository' && error.code === 128 && 'stderr' in error
-        && /fatal: not a git repository\b/.test(String(error.stderr))) return null;
+        && /fatal: not a git repository\b/.test(String(error.stderr))) {
+        reportHandoffGitFailure(args, error, { expected: true }); return null;
+      }
     }
     const reported = new HandoffSnapshotError('git_failed');
-    reported.message += reportHandoffGitFailure(args, error);
+    reported.message += reportHandoffGitFailure(args, error, diagnostics);
     throw reported;
   }
 }
@@ -149,24 +153,31 @@ export async function openHandoffRepository(worktreeRoot: string, options: { mut
   };
   return {
     repo, root: source.root,
-    read: (args: string[]) => gitBytes(context, args),
+    read: (args: string[], diagnostics: { expected?: boolean } = {}) => gitBytes(context, args, false, diagnostics),
     streamBlob: async (oid: string, size: number, sink: (bytes: Buffer) => Promise<void>, authorize: () => Promise<void>) => {
       if (!/^(?:[0-9a-f]{40}|[0-9a-f]{64})$/.test(oid) || !Number.isSafeInteger(size) || size < 0 || size > 16 * 1024 ** 3) throw new HandoffSnapshotError('bounds_exceeded');
       await authorize(); await checkRoot();
       const child = spawn('git', ['--no-replace-objects', '-c', 'core.fsmonitor=false', ...handoffGitPlatformFlags(), 'cat-file', 'blob', oid], {
         cwd: context.root, env: context.env, stdio: ['ignore', 'pipe', 'ignore'],
       });
+      let timedOut = false;
       const completion = new Promise<void>((resolve, reject) => {
+        let settled = false;
         const failed = (error: unknown) => {
+          if (settled) return;
+          settled = true;
           const reported = new HandoffSnapshotError('git_failed');
           reported.message += reportHandoffGitFailure(['cat-file'], error);
           reject(reported);
         };
         child.once('error', failed);
-        child.once('close', (code) => code === 0 ? resolve() : failed({ code }));
+        child.once('close', (code) => {
+          if (code === 0) { settled = true; resolve(); }
+          else failed({ code, killed: timedOut });
+        });
       });
       void completion.catch(() => {}); // telemetry-exempt: reported at the bounded stream boundary
-      const timeout = setTimeout(() => child.kill(), 60_000);
+      const timeout = setTimeout(() => { timedOut = true; child.kill(); }, 60_000);
       const hash = createHash(oid.length === 40 ? 'sha1' : 'sha256').update(`blob ${size}\0`);
       let total = 0;
       try {

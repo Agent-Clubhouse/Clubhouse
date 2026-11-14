@@ -8,7 +8,7 @@ export function handoffGitPlatformFlags(): string[] {
 }
 
 /** Only closed classifications leave this boundary; never argv, stderr, URLs or paths. */
-export function reportHandoffGitFailure(args: string[], error: unknown): string {
+export function reportHandoffGitFailure(args: string[], error: unknown, options: { expected?: boolean } = {}): string {
   let command = 'unknown';
   for (let index = 0; index < args.length; index++) {
     if (['-c', '--git-dir', '--work-tree'].includes(args[index])) { index++; continue; }
@@ -16,21 +16,23 @@ export function reportHandoffGitFailure(args: string[], error: unknown): string 
     command = commands.has(args[index]) ? args[index] : 'unknown';
     break;
   }
-  const value = error && typeof error === 'object' ? error as { code?: unknown; stderr?: unknown; killed?: unknown } : {};
+  const value = error && typeof error === 'object' ? error as { code?: unknown; stderr?: unknown; killed?: unknown; syscall?: unknown } : {};
   const exit = typeof value.code === 'number' && Number.isInteger(value.code) && value.code >= 0 && value.code <= 255 ? value.code : 'unknown';
-  const stderr = typeof value.stderr === 'string' || Buffer.isBuffer(value.stderr) ? String(value.stderr).slice(0, 64 * 1024) : '';
+  const stderr = Buffer.isBuffer(value.stderr) ? value.stderr.subarray(0, 64 * 1024).toString('utf8')
+    : typeof value.stderr === 'string' ? value.stderr.slice(0, 64 * 1024) : '';
   const stderrClass = value.code === 'ENAMETOOLONG' || /filename too long|file name too long|path too long|\$GIT_DIR.*too big/i.test(stderr) ? 'path_too_long'
     : value.code === 'EBUSY' || /resource busy|used by another process|being used by another process/i.test(stderr) ? 'busy'
       : /(?:\.lock|lock file|lockfile).*already exists|unable to create.*\.lock/i.test(stderr) ? 'lock'
         : value.code === 'EACCES' || value.code === 'EPERM' || /permission denied|access is denied/i.test(stderr) ? 'permission'
           : value.killed === true || value.code === 'ETIMEDOUT' ? 'timeout'
-            : value.code === 'ENOENT' ? 'not_found'
+            : value.code === 'ENOENT' && typeof value.syscall === 'string' && /^spawn(?:\s|$)/.test(value.syscall) ? 'spawn_failed'
+              : value.code === 'ENOENT' ? 'not_found'
               : value.code === 'ERR_CHILD_PROCESS_STDIO_MAXBUFFER' ? 'output_limit'
                 : /dubious ownership/i.test(stderr) ? 'ownership'
                   : /not a git repository|does not appear to be a git repository/i.test(stderr) ? 'repository'
                     : /bad object|not a valid object|unable to read.*object/i.test(stderr) ? 'object'
                       : 'unknown';
-  appLog('core:git', 'warn', 'Handoff Git operation failed', { meta: { command, exit, stderrClass } });
+  appLog('core:git', options.expected ? 'debug' : 'warn', 'Handoff Git operation failed', { meta: { command, exit, stderrClass } });
   // Retained handoff history and E2E diagnostics need the same safe explanation.
   return ` Git: ${command}; exit=${exit}; stderr=${stderrClass}.`;
 }

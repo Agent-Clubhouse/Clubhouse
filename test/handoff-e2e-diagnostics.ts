@@ -5,7 +5,7 @@ const failureCodes = ['refused', 'expired', 'authorization_changed', 'transfer_f
 const snapshotCodes = ['not_a_repository', 'no_commits', 'invalid_repository', 'unsupported_repository', 'uncommitted_branch', 'git_failed', 'unsafe_entry', 'source_changed', 'bounds_exceeded', 'secret_blocked', 'hash_mismatch', 'filesystem_failed', 'invalid_staging'];
 const fixtureFiles = ['work.txt', 'fixtures/selected.bin', 'fixtures/excluded.bin', 'blocked.txt', 'bundle.bin'];
 const gitCommands = ['unknown', 'init', 'fetch', 'bundle', 'rev-parse', 'cat-file', 'log', 'ls-tree', 'ls-files', 'config', 'symbolic-ref', 'for-each-ref', 'check-attr', 'diff', 'status', 'worktree', 'read-tree', 'checkout-index', 'update-index', 'remote'];
-const gitStderrClasses = ['unknown', 'path_too_long', 'busy', 'lock', 'permission', 'timeout', 'not_found', 'output_limit', 'ownership', 'repository', 'object'];
+const gitStderrClasses = ['unknown', 'path_too_long', 'busy', 'lock', 'permission', 'timeout', 'spawn_failed', 'not_found', 'output_limit', 'ownership', 'repository', 'object'];
 const object = (value: unknown): Record<string, unknown> => value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : {};
 const choice = (value: unknown, allowed: readonly string[]) => typeof value === 'string' && allowed.includes(value) ? value : 'unknown';
 

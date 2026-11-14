@@ -12,6 +12,7 @@ it.each([
   [{ code: 'EPERM' }, 'permission', 'unknown'],
   [{ killed: true }, 'timeout', 'unknown'],
   [{ code: 'ENOENT' }, 'not_found', 'unknown'],
+  [{ code: 'ENOENT', syscall: 'spawn private-executable' }, 'spawn_failed', 'unknown'],
   [{ code: 'ERR_CHILD_PROCESS_STDIO_MAXBUFFER' }, 'output_limit', 'unknown'],
   [{ code: 128, stderr: 'fatal: detected dubious ownership in private repo' }, 'ownership', 128],
   [{ code: 128, stderr: 'fatal: not a git repository: private' }, 'repository', 128],
@@ -26,6 +27,19 @@ it.each([
 it('never reflects an unrecognized command or arbitrary exit value', () => {
   expect(reportHandoffGitFailure(['secret-command'], { code: 99999 })).toBe(' Git: unknown; exit=unknown; stderr=unknown.');
 });
+it('logs an expected probe failure at debug while preserving its safe detail', () => {
+  expect(reportHandoffGitFailure(['cat-file'], { code: 128, stderr: 'fatal: bad object private' }, { expected: true }))
+    .toBe(' Git: cat-file; exit=128; stderr=object.');
+  expect(appLog).toHaveBeenCalledWith('core:git', 'debug', 'Handoff Git operation failed', {
+    meta: { command: 'cat-file', exit: 128, stderrClass: 'object' },
+  });
+});
 it('enables long paths per command only on Windows', () => {
   expect(handoffGitPlatformFlags()).toEqual(process.platform === 'win32' ? ['-c', 'core.longpaths=true'] : []);
+});
+it('bounds stderr bytes before decoding a buffer', () => {
+  const stderr = Buffer.from('x'.repeat(64 * 1024) + 'Filename too long');
+  const decode = vi.spyOn(stderr, 'toString');
+  expect(reportHandoffGitFailure(['fetch'], { code: 1, stderr })).toBe(' Git: fetch; exit=1; stderr=unknown.');
+  expect(decode).not.toHaveBeenCalled();
 });

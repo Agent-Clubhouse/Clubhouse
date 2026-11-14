@@ -10,6 +10,17 @@ import { HANDOFF_TRANSFER_DEFAULTS, canonicalHandoffManifest } from '../../share
 import { prepareHandoffSnapshot } from './handoff-snapshot';
 import { prepareHandoffBundle } from './handoff-git-bundle';
 import { receiveHandoffCommit } from './handoff-git-receive';
+import { openHandoffRepository } from './handoff-snapshot';
+import * as gitPaths from './handoff-git-paths';
+const execution = vi.hoisted(() => ({ exec: vi.fn(), spawn: vi.fn() }));
+vi.mock('child_process', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('child_process')>();
+  const { promisify } = await import('util');
+  execution.exec = vi.fn(promisify(actual.execFile));
+  execution.spawn = vi.fn(actual.spawn);
+  const wrapped = Object.assign(vi.fn(actual.execFile), { [promisify.custom]: execution.exec });
+  return { ...actual, execFile: wrapped, spawn: execution.spawn };
+});
 const exec = promisify(execFile);
 let root: string; let sender: string; let receiver: string; let staging: string;
 let crossDriveRoot: string | undefined;
@@ -51,7 +62,36 @@ it('falls back to an independently scanned bundle when the configured remote lac
   expect((await git(receiver, 'rev-parse', 'HEAD')).stdout.trim()).toBe(before);
   expect(fs.readdirSync(options.snapshot.root).some((name) => name.startsWith('quarantine-'))).toBe(false);
 }, 30_000);
-it.each([['pack filename', 150], ['explicit Git directory', 170]] as const)('imports bundle packs beyond the Windows %s limit with isolated Git configuration', async (limit, rootLength) => {
+it('passes exactly one Windows longpaths setting at every handoff Git execution boundary', async () => {
+  const options = await prepared();
+  const platform = Object.getOwnPropertyDescriptor(process, 'platform')!;
+  execution.exec.mockClear(); execution.spawn.mockClear();
+  Object.defineProperty(process, 'platform', { ...platform, value: 'win32' });
+  try {
+    expect(await receiveHandoffCommit(options)).toMatchObject({ source: 'bundle' });
+    const repository = await openHandoffRepository(receiver);
+    const oid = (await repository.read(['rev-parse', `${options.snapshot.manifest.repo.base}:public.txt`]))!.toString('ascii').trim();
+    await repository.streamBlob(oid, Buffer.byteLength('Sender base'), async () => {}, async () => {});
+    const commands = execution.exec.mock.calls.map((call) => call[1] as string[]);
+    // Receiver/sender reads, direct quarantine exec, and streaming spawn all run.
+    expect(commands.some((args) => args.some((arg) => arg.startsWith('--git-dir=')))).toBe(true);
+    expect(commands.some((args) => args.includes('fetch') && !args.some((arg) => arg.startsWith('--git-dir=')))).toBe(true);
+    expect(execution.spawn).toHaveBeenCalledTimes(1);
+    for (const args of [...commands, ...execution.spawn.mock.calls.map((call) => call[1] as string[])]) {
+      expect(args.filter((arg) => arg.startsWith('core.longpaths='))).toEqual(['core.longpaths=true']);
+    }
+  } finally { Object.defineProperty(process, 'platform', platform); }
+}, 30_000);
+it('classifies an impossible launch layout before spawning and cleans its quarantine', async () => {
+  const options = await prepared(); execution.exec.mockClear();
+  vi.spyOn(gitPaths, 'handoffGitLocation').mockReturnValueOnce(null);
+  await expect(receiveHandoffCommit(options)).rejects.toMatchObject({
+    code: 'git_failed', message: expect.stringContaining('Git: init; exit=unknown; stderr=path_too_long.'),
+  });
+  expect(execution.exec.mock.calls.some((call) => (call[1] as string[]).includes('init'))).toBe(false);
+  expect(fs.readdirSync(options.snapshot.root).some((name) => name.startsWith('quarantine-'))).toBe(false);
+}, 30_000);
+it.each([['pack filename', 150], ['explicit Git directory', 170], ['repository path', 220]] as const)('handles bundle packs beyond the Windows %s limit with isolated Git configuration', async (limit, rootLength) => {
   const options = await prepared();
   // Windows CI checks out on D: while temp staging is on C:. Exercise that
   // boundary too: making only the final fetch source relative cannot fix it.
@@ -72,7 +112,8 @@ it.each([['pack filename', 150], ['explicit Git directory', 170]] as const)('imp
   const pack = (repo: string) => path.join(repo, 'objects', 'pack', `pack-${'a'.repeat(40)}.pack`);
   expect(pack(bare).length).toBeGreaterThan(260);
   expect(pack(path.join(quarantine, 'repo')).length).toBeGreaterThan(260);
-  if (process.platform === 'win32') {
+  if (limit === 'repository path') expect(path.join(quarantine, 'repo').length).toBeGreaterThan(260);
+  if (process.platform === 'win32' && limit !== 'repository path') {
     // Reproduce the original isolated-config failure without changing global Git.
     await git(destination, '-c', 'core.longpaths=false', 'init', '--bare', '--template=', bare);
     const diagnostic = limit === 'pack filename' ? /Filename too long[\s\S]*error: index-pack died/ : /'\$GIT_DIR' too big/;
@@ -85,8 +126,38 @@ it.each([['pack filename', 150], ['explicit Git directory', 170]] as const)('imp
     }
     await fs.promises.rm(path.dirname(bare), { recursive: true, force: true });
   }
-  expect(await receiveHandoffCommit(options)).toEqual({ commit: options.snapshot.manifest.repo.base, source: 'bundle' });
-  expect((await git(receiver, 'cat-file', '-t', options.snapshot.manifest.repo.base)).stdout.trim()).toBe('commit');
+  const platform = Object.getOwnPropertyDescriptor(process, 'platform')!;
+  const knownWindowsInitLimit = limit === 'repository path' && platform.value === 'win32';
+  const receivingHead = knownWindowsInitLimit ? (await git(receiver, 'rev-parse', 'HEAD')).stdout.trim() : undefined;
+  if (limit === 'repository path') Object.defineProperty(process, 'platform', { ...platform, value: 'win32' });
+  execution.exec.mockClear();
+  try {
+    if (knownWindowsInitLimit) {
+      // #3501: short cwd fixes process launch, but Git init still rejects this layout.
+      await expect(receiveHandoffCommit(options)).rejects.toMatchObject({
+        code: 'git_failed', message: expect.stringContaining('Git: init; exit=128; stderr=path_too_long.'),
+      });
+    } else {
+      expect(await receiveHandoffCommit(options)).toEqual({ commit: options.snapshot.manifest.repo.base, source: 'bundle' });
+    }
+    if (limit === 'repository path') {
+      const quarantineCalls = execution.exec.mock.calls.filter((call) => (call[1] as string[]).includes('init')
+        || (call[1] as string[]).some((arg) => arg.startsWith('--git-dir=')));
+      expect(quarantineCalls.length).toBeGreaterThan(0);
+      for (const call of quarantineCalls) {
+        expect((call[2] as { cwd: string }).cwd.length).toBeLessThan(260);
+        const gitDir = (call[1] as string[]).find((arg) => arg.startsWith('--git-dir='));
+        if (gitDir) expect(Buffer.byteLength(gitDir.slice('--git-dir='.length))).toBeLessThan(220);
+      }
+    }
+  } finally { Object.defineProperty(process, 'platform', platform); }
+  if (knownWindowsInitLimit) {
+    await expect(git(receiver, 'cat-file', '-e', `${options.snapshot.manifest.repo.base}^{commit}`)).rejects.toThrow();
+    expect((await git(receiver, 'rev-parse', 'HEAD')).stdout.trim()).toBe(receivingHead);
+    expect(fs.readFileSync(path.join(receiver, 'public.txt'), 'utf8')).toBe('Receiver original');
+  } else {
+    expect((await git(receiver, 'cat-file', '-t', options.snapshot.manifest.repo.base)).stdout.trim()).toBe('commit');
+  }
   expect(fs.readdirSync(destination).some((name) => name.startsWith('quarantine-'))).toBe(false);
 }, 30_000);
 it('rejects hash-valid secret-bearing bundle history before importing it into the registered repository', async () => {
