@@ -1184,8 +1184,8 @@ type SnapshotSources = Awaited<ReturnType<typeof readSnapshotSourcesData>>;
 
 /** Everything that needs awaiting. Live state comes after, in assembleSnapshot. */
 async function readSnapshotSourcesData() {
-  await hydrateProjectLinks();
   const projects = await projectStore.list();
+  await hydrateProjectLinks();
   const durablesByProject: Record<string, DurableConfigs> = {};
   const policiesByProject: Record<string, Awaited<ReturnType<typeof catalogOrchestration>>> = {};
 
