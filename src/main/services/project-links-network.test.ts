@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import { ProjectLinksStore } from './project-links-store';
 import { receiveProjectLinks, startProjectLinksNetwork, projectLinksCapabilities, type ProjectLinksNetworkOptions } from './project-links-network';
-import { PROJECT_LINKS_CAPABILITIES_PATH, PROJECT_LINKS_SYNC_PATH } from '../../shared/project-links';
+import { PROJECT_LINKS_CAPABILITIES_PATH, PROJECT_LINKS_SYNC_PATH, mergeProjectLinkRecords, type ProjectLinkRecord } from '../../shared/project-links';
 const A = Array(16).fill('aa').join(':'), B = Array(16).fill('bb').join(':');
 const remote = `remote||${B}||copy`;
 function store(self = A) {
@@ -86,13 +86,29 @@ describe('project links pinned-member REST replication', () => {
       expect(pulls[1][2].after).toBeTypeOf('string');
     } finally { stop(); }
   });
+  it('continues past an entirely future-dated page and accepts the next valid page', async () => {
+    const future = Date.now() + 2 * 24 * 60 * 60 * 1000;
+    const bad: ProjectLinkRecord[] = Array.from({ length: 200 }, (_, i) => ({
+      projects: [{ machine: A, projectId: `bad-${String(i).padStart(3, '0')}` }, { machine: B, projectId: 'copy' }],
+      at: future, by: B, linked: false,
+    }));
+    const good: ProjectLinkRecord = { projects: [{ machine: A, projectId: 'zz-good' }, { machine: B, projectId: 'copy' }], at: 10, by: B, linked: true };
+    const peer = new ProjectLinksStore({ read: () => ({ version: 1, records: mergeProjectLinkRecords([], [...bad, good]), migrated: [] }),
+      save: async () => {}, self: () => B, legacyMirror: () => undefined });
+    const local = store(), f = network(local, peer), stop = startProjectLinksNetwork(f.options);
+    try {
+      await vi.waitFor(() => expect(local.records()).toEqual([good]));
+      expect(f.post.mock.calls.filter((c) => c[1] === PROJECT_LINKS_SYNC_PATH && !c[2].records)).toHaveLength(2);
+    } finally { stop(); }
+  });
   it('rejects malformed/oversized requests and publications after unpairing', async () => {
     const replica = store();
     await expect(receiveProjectLinks(B, { version: 2 }, () => true, replica)).rejects.toThrow();
     await expect(receiveProjectLinks(B, { version: 1, records: Array(201).fill({}) }, () => true, replica)).rejects.toThrow();
     await expect(receiveProjectLinks(B, { version: 1 }, () => false, replica)).rejects.toThrow('pairing changed');
     const future = { projects: [{ machine: A, projectId: 'site' }, { machine: B, projectId: 'copy' }], linked: true, at: Number.MAX_SAFE_INTEGER - 1, by: B };
-    await expect(receiveProjectLinks(B, { version: 1, records: [future] }, () => true, replica)).rejects.toThrow('too far ahead');
-    expect(replica.records()).toEqual([]);
+    const good = { ...future, at: 10 };
+    await receiveProjectLinks(B, { version: 1, records: [future, good] }, () => true, replica);
+    expect(replica.records()).toEqual([good]);
   });
 });

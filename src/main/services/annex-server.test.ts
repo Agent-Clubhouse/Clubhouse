@@ -1,3 +1,6 @@
+const snapshotLinks = vi.hoisted(() => ({ groups: vi.fn(() => []), onChange: () => () => {} }));
+vi.mock('./project-links-store', () => ({ hydrateProjectLinks: vi.fn(async () => ({})), projectLinksStore: () => snapshotLinks }));
+import { hydrateProjectLinks } from './project-links-store';
 import { receiveProjectLinks } from './project-links-network';
 vi.mock('./project-links-network', () => ({ projectLinksCapabilities: () => ({ version: 1, maxRecords: 200 }), receiveProjectLinks: vi.fn(async () => ({ version: 1, records: [] })) }));
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
@@ -1797,6 +1800,40 @@ describe('annex-server', () => {
     expect((await request(port, 'POST', route, body)).status).toBe(403);
     expect(receiveHandoffTransfer).toHaveBeenCalledTimes(2);
     asUnpaired(); expect((await request(port, 'POST', route, body)).status).toBe(401);
+  });
+
+  it('still builds a phone snapshot when shared project links are unreadable or have an unknown version', async () => {
+    vi.mocked(pluginManifestRegistry.listAllManifests).mockReturnValue([]);
+    const { groupProjectRegistry } = await import('./group-project-registry');
+    vi.mocked(groupProjectRegistry.list).mockResolvedValue([]);
+    const themeService = await import('./theme-service');
+    vi.mocked(themeService.getSettings).mockReturnValue({ themeId: 'catppuccin-mocha' } as never);
+
+    vi.mocked(hydrateProjectLinks).mockRejectedValueOnce(new Error('Unknown shared project links version.'));
+    vi.spyOn(snapshotLinks, 'groups').mockImplementationOnce(() => { throw new Error('Shared project links could not be read.'); });
+    const snapshot = await annexServer._testing.buildSnapshot();
+    expect(snapshot).toHaveProperty('projects');
+    expect(snapshot.projectLinks).toEqual([]);
+    expect(() => JSON.stringify(snapshot)).not.toThrow();
+    expect(appLog).toHaveBeenCalledWith('core:annex', 'warn', 'Project links could not be hydrated for a snapshot', expect.any(Object));
+    expect(appLog).toHaveBeenCalledWith('core:annex', 'warn', 'Project links could not be published', expect.any(Object));
+  });
+
+  it('marks bounded link publication in the snapshot without splitting a group', async () => {
+    vi.mocked(pluginManifestRegistry.listAllManifests).mockReturnValue([]);
+    const { groupProjectRegistry } = await import('./group-project-registry');
+    vi.mocked(groupProjectRegistry.list).mockResolvedValue([]);
+    const themeService = await import('./theme-service');
+    vi.mocked(themeService.getSettings).mockReturnValue({ themeId: 'catppuccin-mocha' } as never);
+
+    const machine = Array(16).fill('aa').join(':');
+    const groups = Array.from({ length: 201 }, (_, i) => [{ machine, projectId: `a-${i}` }, { machine, projectId: `b-${i}` }]);
+    vi.spyOn(snapshotLinks, 'groups').mockReturnValueOnce(groups as never);
+    const snapshot = await annexServer._testing.buildSnapshot();
+    expect(snapshot.projectLinksTruncated).toBe(true);
+    expect(snapshot.projectLinks).toHaveLength(200);
+    expect((snapshot.projectLinks as Array<{ projects: unknown[] }>).every((g) => g.projects.length === 2)).toBe(true);
+    expect(appLog).toHaveBeenCalledWith('core:annex', 'warn', 'Mobile project links exceeded the publication budget', expect.any(Object));
   });
 
   it('replicates project links only for pinned network desktop members', async () => {
