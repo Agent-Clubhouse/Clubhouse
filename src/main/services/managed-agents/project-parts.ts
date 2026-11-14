@@ -76,15 +76,16 @@ async function registeredProject(projectPath: string): Promise<ProjectRef> {
 
 /**
  * A repository part's key: `<kind>:<name>` when that's a catalog id, and
- * otherwise (spaces, other scripts) a slug of the name and a short hash of
- * it, the same every time for the same name. The name is shown as it is.
+ * otherwise (spaces, other scripts) `<kind>:<slug>:<short hash of the name>`,
+ * the same every time for the same name. The name is shown as it is.
  */
 export function projectPartKey(kind: ManagedPartKind, name: string): string {
   const plain = `${kind}:${name}`;
   if (isCatalogId(plain)) return plain;
   const slug = name.normalize('NFKD').replace(/[\u0300-\u036f]/g, '').replace(/[^A-Za-z0-9._-]+/g, '-').replace(/^[-._]+|[-._]+$/g, '').slice(0, 80);
   const hash = createHash('sha256').update(name, 'utf8').digest('hex').slice(0, 10);
-  return `${kind}:${slug ? `${slug}-` : ''}${hash}`;
+  // A second ':' can't come from a file name (safeName refuses one), so no plain key can equal this.
+  return `${kind}:${slug || '_'}:${hash}`;
 }
 
 function part(kind: ManagedPartKind, name: string, read: () => Promise<{ content: ManagedPartContent; droppedEnvValues?: string[] }>): Promise<RepoPart> {
@@ -147,7 +148,15 @@ export async function readRepoParts(root: string): Promise<{ parts: RepoPart[]; 
     // telemetry-exempt: a missing file is ordinary; anything else is a content-free note.
     if (!missing(error)) notes.push(`${MCP_FILE} wasn't read: ${sourceProblem(error)}`);
   }
-  return { parts, notes };
+  // Two names with one key can't be told apart, so neither is offered.
+  const counts = new Map<string, number>();
+  for (const p of parts) counts.set(p.key, (counts.get(p.key) ?? 0) + 1);
+  return {
+    parts: parts.map((p) => ((counts.get(p.key) ?? 0) > 1
+      ? { key: p.key, kind: p.kind, name: p.name, droppedEnvValues: [], problem: 'Another part in the repository has the same key. Rename one of them.' }
+      : p)),
+    notes,
+  };
 }
 
 type PartMeta = Awaited<ReturnType<ProjectPartsService['projectPartMeta']>>;
@@ -164,6 +173,13 @@ function addedParts(live: Record<string, CatalogEntry>, meta: PartMeta, projectI
     if (entry.source.kind === 'project' && entry.source.projectId === projectId) out.set(entry.source.key, entry);
   }
   return out;
+}
+
+/** Whether a library part can be chosen to follow this repository part: not built-in, and not following another one already. */
+function reusable(entry: CatalogEntry | undefined, meta: PartMeta, projectId: string, key: string): boolean {
+  if (!entry || entry.source.kind === 'builtin' || entry.source.kind === 'project') return false;
+  const link = meta[entry.id]?.projectLink;
+  return !link || (link.projectId === projectId && link.key === key);
 }
 
 /** The repository key a library part follows in this project, if it does. */
@@ -224,6 +240,7 @@ export async function reviewProjectPart(service: ProjectPartsService, projectPat
   const { item, repo } = await current(service, project, key);
   const live = await service.liveEntries();
   const matches: ProjectPartReview['matches'] = [];
+  const meta = await service.projectPartMeta();
   for (const entry of Object.values(live)) {
     if (entry.kind !== repo.kind || entry.id === item.partId) continue;
     const sameName = entry.name.toLowerCase() === repo.name.toLowerCase() || entry.name.toLowerCase() === `${project.name}: ${repo.name}`.toLowerCase();
@@ -232,7 +249,9 @@ export async function reviewProjectPart(service: ProjectPartsService, projectPat
     const head = await service.headContent(entry.id);
     if (!head) continue;
     const sameContent = projectContentHash(head.content) === repo.hash;
-    if (sameName || sameContent) matches.push({ id: entry.id, name: entry.name, sameContent, builtin: entry.source.kind === 'builtin' });
+    if (sameName || sameContent) {
+      matches.push({ id: entry.id, name: entry.name, sameContent, builtin: entry.source.kind === 'builtin', reusable: sameContent && reusable(entry, meta, project.id, key) });
+    }
   }
   let currentPart: ProjectPartReview['current'];
   if (item.partId) {
@@ -267,6 +286,9 @@ export async function addProjectPart(service: ProjectPartsService, projectPath: 
     const p = await service.getPart(choice.partId);
     if (p.retired || projectContentHash(p.content) !== repo.hash) throw new ManagedError('stale', 'That library part isn\'t the same as the repository\'s copy. Review it again.');
     if (p.builtin) throw new ManagedError('invalid', `${p.name} is built-in, so it can't follow the repository's copy. Add the copy as its own part.`);
+    if (!reusable((await service.liveEntries())[p.id], await service.projectPartMeta(), project.id, key)) {
+      throw new ManagedError('invalid', `${p.name} already follows another repository part. Add the copy as its own part.`);
+    }
     // From now on a change to the repository's copy shows on that part, as for one made from it.
     await service.linkProjectPart(p.id, { projectId: project.id, key }, repo.hash);
     const { content: _content, ...summary } = await service.getPart(p.id);

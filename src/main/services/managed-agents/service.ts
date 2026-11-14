@@ -835,7 +835,13 @@ export function createManagedAgentsService(deps: ManagedAgentsDeps) {
     async linkProjectPart(id: string, link: { projectId: string; key: string }, hash: string): Promise<void> {
       const entry = await entryOf(id);
       if (entry.source.kind === 'builtin') throw new ManagedError('builtin_read_only', 'A built-in part can\'t follow a repository copy. Add the copy as its own part.');
-      await state.update((s) => { s.parts[id] = { ...(s.parts[id] ?? {}), projectLink: link, projectHash: hash }; delete s.parts[id].projectKeptHash; });
+      if (entry.source.kind === 'project') throw new ManagedError('invalid', 'It already follows its own repository part.');
+      await state.update((s) => {
+        const was = s.parts[id]?.projectLink;
+        if (was && (was.projectId !== link.projectId || was.key !== link.key)) throw new ManagedError('invalid', 'It already follows another repository part.');
+        s.parts[id] = { ...(s.parts[id] ?? {}), projectLink: link, projectHash: hash };
+        delete s.parts[id].projectKeptHash;
+      });
       changed();
     },
 

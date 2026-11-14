@@ -57,7 +57,7 @@ describe('ProjectPartsSection', () => {
     const review: ProjectPartReview = {
       item: inventory.items[0], projectName: 'Demo', droppedEnvValues: [], dependencies: ['git (tool)'],
       content: { kind: 'skill', skillName: 'review', files: [{ path: 'SKILL.md', content: 'Review the change.' }, { path: 'run.sh', content: 'echo', executable: true }] },
-      matches: [{ id: 'lib-review', name: 'review', sameContent: false, builtin: false }],
+      matches: [{ id: 'lib-review', name: 'review', sameContent: false, builtin: false, reusable: false }],
       suggestedName: 'review 2',
     };
     vi.spyOn(m(), 'reviewProjectPart').mockResolvedValue(ok(review));

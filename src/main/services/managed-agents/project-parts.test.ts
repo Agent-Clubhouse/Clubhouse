@@ -141,8 +141,8 @@ describe('parts checked into a project repository', () => {
     const other = await user(() => service.createPart({ name: 'house-style', content: { kind: 'block', content: 'Something else.' } }));
     const review = await reviewProjectPart(service, repo, 'block:house-style');
     expect(review.matches).toEqual([
-      { id: same.id, name: 'Style', sameContent: true, builtin: false },
-      { id: other.id, name: 'house-style', sameContent: false, builtin: false },
+      { id: same.id, name: 'Style', sameContent: true, builtin: false, reusable: true },
+      { id: other.id, name: 'house-style', sameContent: false, builtin: false, reusable: false },
     ]);
     expect(review.suggestedName).toBe('house-style 2');
     await expect(user(() => addProjectPart(service, repo, 'block:house-style', review.item.hash!, { mode: 'copy', name: 'house-style' }))).rejects.toMatchObject({ code: 'name_taken' });
@@ -172,8 +172,8 @@ describe('parts checked into a project repository', () => {
       expect(it.state).toBe('available');
       expect(it.key).toMatch(/^(block|skill):[A-Za-z0-9][\w.:-]*$/);
     }
-    expect(named('Code style').key).toMatch(/^block:Code-style-[0-9a-f]{10}$/);
-    expect(named('café').key).toMatch(/^block:cafe-[0-9a-f]{10}$/);
+    expect(named('Code style').key).toMatch(/^block:Code-style:[0-9a-f]{10}$/);
+    expect(named('café').key).toMatch(/^block:cafe:[0-9a-f]{10}$/);
     expect(projectPartKey('block', 'café')).toBe(named('café').key);
     expect(projectPartKey('block', 'cafe')).toBe('block:cafe');
     expect(projectPartKey('block', 'Code style')).not.toBe(projectPartKey('block', 'Code-style'));
@@ -184,6 +184,46 @@ describe('parts checked into a project repository', () => {
       expect((await service.liveEntries())[added.id].source).toEqual({ kind: 'project', projectId: 'proj-1', key: it.key });
       expect(await item(it.key)).toMatchObject({ state: 'added', name });
     }
+  });
+
+  it('a hashed key never equals a plain file name', async () => {
+    write('instructions/Code style.md', 'Spaces.\n');
+    const hashed = projectPartKey('block', 'Code style');
+    // The old form of the key, as a real file name, stays its own part.
+    write(`instructions/${hashed.slice('block:'.length).replace(':', '-')}.md`, 'A plain name.\n');
+    const inv = await inventory();
+    const keys = inv.items.map((i) => i.key);
+    expect(new Set(keys).size).toBe(keys.length);
+    expect(inv.items.find((i) => i.name === 'Code style')).toMatchObject({ key: hashed, state: 'available' });
+    const review = await reviewProjectPart(service, repo, hashed);
+    expect(review.content).toEqual({ kind: 'block', content: 'Spaces.\n' });
+    expect(hashed.split(':')).toHaveLength(3);
+  });
+
+  it('a part that follows another repository part is never reused for this one', async () => {
+    const first = await reviewProjectPart(service, repo, 'block:house-style');
+    const fromA = await user(() => addProjectPart(service, repo, 'block:house-style', first.item.hash!, { mode: 'copy', name: 'House style' }));
+    write('instructions/house-style.md', 'Changed.\n');
+    const changed = await item('block:house-style');
+    await user(() => keepProjectPart(service, repo, fromA.id, changed.hash!));
+    // A second project offers the original content under another name.
+    const repoB = path.join(root, 'repo-b');
+    fs.mkdirSync(path.join(repoB, '.clubhouse', 'parts', 'instructions'), { recursive: true });
+    fs.writeFileSync(path.join(repoB, '.clubhouse', 'parts', 'instructions', 'style.md'), 'Write short sentences.\n');
+    projects.list = [...projects.list, { id: 'proj-2', name: 'Other', path: repoB }];
+    const reviewB = await reviewProjectPart(service, repoB, 'block:style');
+    expect(reviewB.matches).toEqual([{ id: fromA.id, name: 'House style', sameContent: true, builtin: false, reusable: false }]);
+    await expect(addProjectPart(service, repoB, 'block:style', reviewB.item.hash!, { mode: 'reuse', partId: fromA.id })).rejects.toThrow('already follows');
+    // A's row and Keep mine are untouched.
+    expect((await item('block:house-style')).state).toBe('kept');
+    // A custom part linked to B can't then be taken by another key either.
+    const mine = await user(() => service.createPart({ name: 'Mine', content: { kind: 'block', content: 'Write short sentences.\n' } }));
+    await user(() => addProjectPart(service, repoB, 'block:style', reviewB.item.hash!, { mode: 'reuse', partId: mine.id }));
+    write('instructions/again.md', 'Write short sentences.\n');
+    const reviewA = await reviewProjectPart(service, repo, 'block:again');
+    expect(reviewA.matches.find((m) => m.id === mine.id)).toMatchObject({ sameContent: true, reusable: false });
+    await expect(addProjectPart(service, repo, 'block:again', reviewA.item.hash!, { mode: 'reuse', partId: mine.id })).rejects.toThrow('already follows');
+    await expect(service.linkProjectPart(mine.id, { projectId: 'proj-1', key: 'block:again' }, 'h')).rejects.toThrow('already follows');
   });
 
   it('a change in the repository waits for the person: the difference, then Update or Keep mine', async () => {

@@ -139,8 +139,8 @@ export function ProjectPartDialog({ projectPath, item, agentName, canUse, onClos
     await unwrap(managed().keepProjectPart(projectPath, change!.id, hash));
     onClose();
   });
-  // A built-in can't follow the repository's copy, so it isn't offered to use instead.
-  const sameContent = review?.matches.filter((m) => m.sameContent && !m.builtin) ?? [];
+  // Only a part that can follow the repository's copy is offered instead: not a built-in, nor one following another repository part.
+  const sameContent = review?.matches.filter((m) => m.reusable) ?? [];
   const sameName = review?.matches.filter((m) => !m.sameContent) ?? [];
   const title = change ? `${item.name} changed in the repository` : `Add ${item.name} from the repository`;
   return (

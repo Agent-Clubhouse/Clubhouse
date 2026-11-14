@@ -482,7 +482,8 @@ export interface ProjectPartReview {
   /** Declared dependencies (names only). Nothing is installed or checked. */
   dependencies: string[];
   /** Library parts of the same kind with the same name or the same content. Never chosen automatically. */
-  matches: Array<{ id: string; name: string; sameContent: boolean; builtin: boolean }>;
+  /** `reusable`: same content, and it can follow this repository part (not built-in, not following another one). */
+  matches: Array<{ id: string; name: string; sameContent: boolean; builtin: boolean; reusable: boolean }>;
   /** A free library name to add it under. */
   suggestedName: string;
   /** For `changed` and `kept`: the library part as it is now. */
