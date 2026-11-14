@@ -310,12 +310,16 @@ describe('four desktops (#3107)', () => {
     network(['P', 'A', 'C']);
     // The phone is a member of P, and pairs with new desktop Y, then vouches P's view to it.
     const PHONE_FP = fp('0f');
+    as('P', () => worlds.P.peers.set(PHONE_FP, { ...peer('P', T0, 'P', 'pairing-phone-001'), fingerprint: PHONE_FP, publicKey: `key-${PHONE_FP}`, kind: 'phone', alias: 'Phone' }));
     as('X', () => {
-      worlds.X.peers.set(PHONE_FP, { ...peer('P', T0, 'X', 'pairing-phone-001'), fingerprint: PHONE_FP, kind: 'phone', alias: 'Phone' });
+      worlds.X.peers.set(PHONE_FP, { ...peer('P', T0, 'X', 'pairing-phone-001'), fingerprint: PHONE_FP, publicKey: `key-${PHONE_FP}`, kind: 'phone', alias: 'Phone' });
       worlds.X.mod!.ensureOwnPairing();
     });
     const view = as('P', () => worlds.P.provider!()) as { members: Array<{ fingerprint: string }> };
     as('X', () => worlds.X.mod!.vouchFromPhone(PHONE_FP, view.members as never));
+    // Complete the phone contract's third step before trusting network mutations.
+    as('P', () => worlds.P.mod!.vouchFromPhone(PHONE_FP, [as('X', () => self('X'))]));
+    flush();
     for (const n of ['P', 'A', 'C'] as Name[]) expect(as('X', () => worlds.X.peers.get(FPS[n])?.pairingId)).toBe(PAIRING[n]);
     offline('C');
     open('X', 'P'); open('X', 'A');
@@ -339,6 +343,8 @@ describe('four desktops (#3107)', () => {
     as('X', () => { worlds.X.peers.set(PHONE_FP, phonePeer('X')); worlds.X.mod!.ensureOwnPairing(); });
     const view = as('P', () => worlds.P.provider!()) as { members: unknown[] };
     as('X', () => worlds.X.mod!.vouchFromPhone(PHONE_FP, view.members as never));
+    as('P', () => worlds.P.mod!.vouchFromPhone(PHONE_FP, [as('X', () => self('X'))]));
+    flush();
     offline('C');
     open('X', 'P'); open('X', 'A');
     for (const n of ['P', 'A', 'X'] as Name[]) expect(as(n, () => worlds[n].peers.get(PHONE_FP)?.pairingId)).toBe(phonePairing.id);

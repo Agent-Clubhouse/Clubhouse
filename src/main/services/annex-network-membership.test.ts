@@ -482,6 +482,76 @@ describe('Annex Network membership (#3061)', () => {
   describe('the phone as a member (#3062)', () => {
     const PHONE = fp('0c');
 
+    it.each(['member-renamed', 'member-removed', 'members.removals', 'self-removal'] as const)('defers mutation authority from a pending sender: %s', (kind) => {
+      const self = member(SELF, '01', 'This Mac', { pairingId: 'pairing-self-0001' });
+      vi.mocked(networkChannel.localMember).mockImplementation(() => self);
+      membership.adoptOwnPairing({ id: self.pairingId!, joinedAt: self.joinedAt });
+      peers.set(PHONE, memberPeer(PHONE, '0c', 'Trusted phone', { kind: 'phone' }));
+      membership.vouchFromPhone(PHONE, [member(N, '0e', 'Pending Mac', { pairingId: 'pairing-pending-001' })]);
+      hooks.endDevice.mockClear();
+      const removal = { fingerprint: kind === 'self-removal' ? SELF : PHONE, removedAt: '2030-01-01T00:00:00.000Z' };
+      const message: NetworkMessage = kind === 'member-renamed'
+        ? { v: 1, type: 'member-renamed', fingerprint: PHONE, name: 'Forged name', at: removal.removedAt }
+        : kind === 'members.removals' ? view([], [removal]) : { v: 1, type: 'member-removed', removal };
+      listener!(N, message);
+      expect(peers.get(PHONE)?.alias).toBe('Trusted phone');
+      expect(peers.get(N)?.networkPending).toBe(true);
+      expect(membership.currentView().removals).toEqual([]);
+      expect(membership.ownPairing()?.id).toBe(self.pairingId);
+      expect(hooks.endDevice).not.toHaveBeenCalled();
+
+      // Confirmation grants authority; queued removals then converge, while an
+      // ignored rename is never replayed as if it had come from a trusted sender.
+      hooks.connect.mockClear();
+      listener!(N, view([self]));
+      if (kind === 'self-removal') {
+        expect(membership.ownPairing()).toBeUndefined();
+        expect(hooks.connect).not.toHaveBeenCalled();
+      } else if (kind === 'member-renamed') {
+        expect(peers.get(PHONE)?.alias).toBe('Trusted phone');
+      } else {
+        expect(peers.has(PHONE)).toBe(false);
+        expect(hooks.endDevice).toHaveBeenCalledWith(PHONE);
+      }
+    });
+
+    it.each(['pairing', 'pin'])('never replays a pending removal after the sender changes %s', (change) => {
+      peers.set(PHONE, memberPeer(PHONE, '0c', 'Trusted phone', { kind: 'phone' }));
+      membership.vouchFromPhone(PHONE, [member(N, '0e', 'Pending Mac', { pairingId: 'pairing-pending-001' })]);
+      listener!(N, { v: 1, type: 'member-removed', removal: { fingerprint: PHONE, removedAt: '2030-01-01T00:00:00.000Z' } });
+      peers.set(N, { ...peers.get(N)!, ...(change === 'pairing' ? { pairingId: 'pairing-replaced-002' } : { tlsCertificateFingerprint: cert('ff') }) });
+      listener!(N, view([member(SELF, '01', 'This Mac')]));
+      expect(peers.get(N)?.networkPending).toBeUndefined();
+      expect(peers.get(PHONE)?.alias).toBe('Trusted phone');
+    });
+
+    it('adopts a later self pairing before reconciling a deferred removal of the old one', () => {
+      const self = member(SELF, '01', 'This Mac', { pairingId: 'pairing-self-old-001' });
+      vi.mocked(networkChannel.localMember).mockImplementation(() => self);
+      membership.adoptOwnPairing({ id: self.pairingId!, joinedAt: self.joinedAt });
+      peers.set(PHONE, memberPeer(PHONE, '0c', 'Phone', { kind: 'phone' }));
+      membership.vouchFromPhone(PHONE, [member(N, '0e', 'Pending Mac')]);
+      listener!(N, { v: 1, type: 'member-removed', removal: {
+        fingerprint: SELF, pairingId: self.pairingId, joinedAt: self.joinedAt, removedAt: '2026-11-09T00:00:00.000Z',
+      } });
+      listener!(N, view([{ ...self, pairingId: 'pairing-self-new-002', joinedAt: '2026-11-10T00:00:00.000Z' }]));
+      expect(membership.ownPairing()?.id).toBe('pairing-self-new-002');
+      expect(peers.get(N)?.networkPending).toBeUndefined();
+      expect(hooks.endDevice).not.toHaveBeenCalled();
+      expect(membership.currentView().removals).toEqual([]);
+    });
+
+    it('discards old deferred traffic when the person explicitly pairs with the sender again', () => {
+      peers.set(PHONE, memberPeer(PHONE, '0c', 'Trusted phone', { kind: 'phone' }));
+      membership.vouchFromPhone(PHONE, [member(N, '0e', 'Pending Mac')]);
+      listener!(N, { v: 1, type: 'member-removed', removal: { fingerprint: PHONE, removedAt: '2030-01-01T00:00:00.000Z' } });
+      peers.set(N, { ...peers.get(N)!, networkPending: undefined });
+      membership.noteLocalJoin(N);
+      listener!(N, { v: 1, type: 'hello', member: member(N, '0e', 'Paired Mac') });
+      expect(peers.get(PHONE)?.alias).toBe('Trusted phone');
+      expect(hooks.endDevice).not.toHaveBeenCalled();
+    });
+
     it('does not let a pending sender introduce a phone or update another member', () => {
       const spoofPhone = fp('0d');
       peers.set(PHONE, memberPeer(PHONE, '0c', 'Phone', { kind: 'phone' }));

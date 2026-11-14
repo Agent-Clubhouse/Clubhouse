@@ -56,6 +56,8 @@ interface MembershipState {
   selfJoinedAt?: string;
   /** The pairing that put this machine in its network (#3107), as members know it. */
   selfPairing?: { id: string; joinedAt: string };
+  /** Removal traffic from an unconfirmed sender, bound to its current pin and pairing. */
+  deferredRemovals?: Record<string, { certFingerprint?: string; pairingId?: string; removals: NetworkRemoval[] }>;
 }
 
 const EMPTY: MembershipState = { removals: [], confirmations: {}, renamedAt: {}, removedNames: {} };
@@ -67,6 +69,7 @@ function state(): MembershipState {
     removals: s.removals ?? [], confirmations: s.confirmations ?? {}, renamedAt: s.renamedAt ?? {}, removedNames: s.removedNames ?? {}, removedKinds: s.removedKinds ?? {},
     ...(s.selfJoinedAt && { selfJoinedAt: s.selfJoinedAt }),
     ...(s.selfPairing && { selfPairing: s.selfPairing }),
+    ...(s.deferredRemovals && { deferredRemovals: s.deferredRemovals }),
   };
 }
 
@@ -339,6 +342,30 @@ function confirm(s: MembershipState, key: string, by: string): boolean {
   return true;
 }
 
+/** Keep bounded removal traffic without granting an unconfirmed sender authority. */
+function deferRemovals(s: MembershipState, sender: AnnexPeer, incoming: NetworkRemoval[]): boolean {
+  if (!incoming.length) return false;
+  const key = lower(sender.fingerprint);
+  const held = s.deferredRemovals?.[key];
+  const samePairing = held && held.pairingId === sender.pairingId
+    && annexTls.sameCertificateFingerprint(held.certFingerprint, sender.tlsCertificateFingerprint);
+  const removals = samePairing ? [...held.removals] : [];
+  let changed = !samePairing;
+  for (const removal of incoming) {
+    const index = removals.findIndex((r) => lower(r.fingerprint) === lower(removal.fingerprint));
+    if (index >= 0 && covers(removals[index], removal)) continue;
+    if (index >= 0) removals.splice(index, 1);
+    removals.push(removal);
+    changed = true;
+  }
+  if (changed) s.deferredRemovals = {
+    ...s.deferredRemovals,
+    [key]: { certFingerprint: sender.tlsCertificateFingerprint, pairingId: sender.pairingId,
+      removals: removals.sort((a, b) => Date.parse(b.removedAt) - Date.parse(a.removedAt)).slice(0, REMOVALS_KEPT) },
+  };
+  return changed;
+}
+
 // ---------------------------------------------------------------------------
 // Merging what a member says
 // ---------------------------------------------------------------------------
@@ -485,6 +512,7 @@ function leaveNetwork(from: string, s: MembershipState): void {
   }
   // Its pairing ended with it: pairing again makes a new one (#3107). Cleared on the state the caller saves.
   delete s.selfPairing;
+  delete s.deferredRemovals;
   left = true;
 }
 
@@ -502,6 +530,7 @@ function onMessage(from: string, message: NetworkMessage): void {
   const s = state();
   let changed = false;
   let confirmed = false;
+  let becameConfirmed = false;
 
   // A vouch pins the desktop for membership exchange only. Its own authenticated
   // view must contain this identity, certificate and pairing before control is allowed.
@@ -519,6 +548,16 @@ function onMessage(from: string, message: NetworkMessage): void {
       if (message.type === 'members') appLog('core:annex', 'info', 'A desktop has not confirmed reciprocal Annex Network membership', {
         meta: { fingerprint: from, reason: !ours ? 'unknown' : 'epoch-mismatch', pairingId: self?.pairingId, reportedPairingId: ours?.pairingId },
       });
+      // No other mutation authority until confirmation. Keep removals for later,
+      // including a removal of this computer; a pending sender cannot evict us.
+      const deferred = deferRemovals(s, sender, message.type === 'members' ? message.removals
+        : message.type === 'member-removed' ? [message.removal] : []);
+      const own = message.type === 'hello' || message.type === 'member-joined' ? message.member
+        : message.type === 'members' ? message.members.find((m) => lower(m.fingerprint) === lower(from)) : undefined;
+      if (own) changed = addMember(own, from, s);
+      if (changed || deferred) save(s);
+      if (changed) sendView();
+      return;
     } else {
       if (newer) {
         s.selfPairing = { id: ours.pairingId!, joinedAt: ours.joinedAt };
@@ -531,8 +570,24 @@ function onMessage(from: string, message: NetworkMessage): void {
         meta: { fingerprint: from, selfFingerprint: self.fingerprint, pairingId: ours.pairingId },
       });
       changed = true;
-      if (annexSettings.getSettings().enableClient) hooks?.connect(lower(from));
+      becameConfirmed = true;
     }
+  }
+
+  const deferred = s.deferredRemovals?.[lower(from)];
+  if (deferred) {
+    s.deferredRemovals = { ...s.deferredRemovals };
+    delete s.deferredRemovals[lower(from)];
+    changed = true;
+    const current = annexPeers.getPeer(from);
+    if (current && deferred.pairingId === current.pairingId
+      && annexTls.sameCertificateFingerprint(deferred.certFingerprint, current.tlsCertificateFingerprint)) {
+      for (const removal of deferred.removals) {
+        changed = applyRemoval(removal, from, s) || changed;
+        if (left) break;
+      }
+    }
+    if (left) { save(s); return; }
   }
 
   switch (message.type) {
@@ -584,6 +639,7 @@ function onMessage(from: string, message: NetworkMessage): void {
   }
   if (changed || confirmed) save(s);
   if (changed) sendView();
+  if (becameConfirmed && !left && annexPeers.getPeer(from)?.role === 'member' && annexSettings.getSettings().enableClient) hooks?.connect(lower(from));
 }
 
 export interface VouchResult {
@@ -640,6 +696,12 @@ export function vouchFromPhone(phone: string, members: NetworkMember[]): VouchRe
 /** A device just paired here as a member: tell the others (#3061). */
 export function noteLocalJoin(fingerprint: string): void {
   const s = state();
+  // An explicit pairing starts a new local trust decision; no traffic deferred
+  // before it is carried into that relationship, even if the peer keeps its id.
+  if (s.deferredRemovals) {
+    s.deferredRemovals = { ...s.deferredRemovals };
+    delete s.deferredRemovals[lower(fingerprint)];
+  }
   // A new pairing beats an old removal of the same device.
   s.removals = s.removals.filter((r) => lower(r.fingerprint) !== lower(fingerprint));
   s.confirmations[`join:${lower(fingerprint)}`] = [];

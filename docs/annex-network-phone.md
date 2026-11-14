@@ -111,6 +111,8 @@ An introduced desktop starts pending on the receiving computer. Its pin permits 
 
 A pending desktop cannot introduce or update other identities, including phones. If an existing desktop retained a removal of the joining computer's old pairing, joining through the phone makes a new pairing there; its authenticated confirmation can teach the joining computer that later pairing, so both sides converge. Probe retries continue independently of which membership socket closes last.
 
+Pending senders also cannot rename or remove other devices, or remove this computer from the network. Removal traffic is kept locally and applied only after reciprocal confirmation, while the sender still has the same pinned certificate and pairing. A new pin or pairing discards that sender's older deferred traffic.
+
 Refusals:
 
 | Status | `error` | Meaning |
