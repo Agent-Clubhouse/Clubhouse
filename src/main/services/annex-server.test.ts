@@ -1,3 +1,5 @@
+import { receiveProjectLinks } from './project-links-network';
+vi.mock('./project-links-network', () => ({ projectLinksCapabilities: () => ({ version: 1, maxRecords: 200 }), receiveProjectLinks: vi.fn(async () => ({ version: 1, records: [] })) }));
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { tel } from '../telemetry/facade';
 import { EventEmitter } from 'events';
@@ -1795,6 +1797,32 @@ describe('annex-server', () => {
     expect((await request(port, 'POST', route, body)).status).toBe(403);
     expect(receiveHandoffTransfer).toHaveBeenCalledTimes(2);
     asUnpaired(); expect((await request(port, 'POST', route, body)).status).toBe(401);
+  });
+
+  it('replicates project links only for pinned network desktop members', async () => {
+    const member = { ...TEST_CONTROLLER, role: 'member' as const, kind: 'desktop' as const };
+    vi.mocked(annexPeers.getPeer).mockReturnValue(member);
+    vi.mocked(annexPeers.listPeers).mockReturnValue([member]);
+    const { port } = await startAndPair();
+    const probe = '/api/v1/network/project-links-capabilities', route = '/api/v1/network/project-links';
+    expect(JSON.parse((await request(port, 'POST', probe, {})).body)).toEqual({ version: 1, maxRecords: 200 });
+    expect((await request(port, 'POST', route, { version: 1 })).status).toBe(200);
+    expect(receiveProjectLinks).toHaveBeenCalledWith(member.fingerprint.toLowerCase(), { version: 1 }, expect.any(Function));
+    vi.mocked(receiveProjectLinks).mockRejectedValueOnce(new Error('private-project/path'));
+    const failed = await request(port, 'POST', route, { version: 1 });
+    expect(failed.status).toBe(400);
+    expect(JSON.parse(failed.body)).toEqual({ error: 'project_links_refused' });
+    for (const peer of [{ ...member, kind: 'phone' as const }, { ...member, role: 'controller' as const }]) {
+      vi.mocked(annexPeers.getPeer).mockReturnValue(peer);
+      vi.mocked(annexPeers.listPeers).mockReturnValue([peer]);
+      expect((await request(port, 'POST', probe, {})).status).toBe(403);
+      expect((await request(port, 'POST', route, { version: 1 })).status).toBe(403);
+    }
+    expect(receiveProjectLinks).toHaveBeenCalledTimes(2);
+    asUnpaired();
+    expect((await request(port, 'POST', probe, {})).status).toBe(401);
+    asUnpaired();
+    expect((await request(port, 'POST', route, { version: 1 })).status).toBe(401);
   });
 
   it('negotiates durable delivery only for pinned desktop members and surfaces an unreadable store', async () => {

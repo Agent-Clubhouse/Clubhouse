@@ -1,3 +1,4 @@
+vi.mock('../services/project-links-network', () => ({ startProjectLinksNetwork: vi.fn(() => vi.fn()) }));
 import { federationBindingSource } from '../services/dispatcher-federation';
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 

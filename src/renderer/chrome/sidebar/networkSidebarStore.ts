@@ -1,12 +1,13 @@
+import { transientProjectLinksError } from '../../../shared/project-links';
+import type { ProjectLinksOp, ProjectLinksView } from '../../../shared/project-links';
 /**
- * What the sidebar across machines remembers (#3065, #3066), on this machine
- * only: which machine Show narrows to, which projects are linked into one
- * group, and pairs the person kept separate (so a suggestion to link them
- * isn't made again). Project groups also guide receiving handoffs into registered local projects.
+ * Show stays local; links and Keep separate choices come from the shared
+ * Annex Network replica. Pending edits render immediately and are replayed over
+ * incoming snapshots until main acknowledges them. Legacy storage is kept intact.
  */
 
 import { create } from 'zustand';
-import { groupPairs, mergeLinks, pairKey, pruneLinks, splitLinks, type ShowFilter } from './networkTree';
+import { groupPairs, mergeLinks, pairKey, splitLinks, type ShowFilter } from './networkTree';
 
 const STORAGE_KEY = 'clubhouse.networkSidebar';
 
@@ -18,6 +19,7 @@ interface Saved {
 
 interface NetworkSidebarState extends Saved {
   handoffLinkError: boolean;
+  linkErrorRetryable: boolean;
   retryHandoffLinks: () => void;
   setShow: (show: ShowFilter) => void;
   /** Link two projects (or their groups) into one group: Merge in the sidebar, Link in a suggestion. */
@@ -28,7 +30,7 @@ interface NetworkSidebarState extends Saved {
   unlink: (projectId: string) => void;
   /** Keep a suggested pair separate: it isn't suggested again. */
   keepSeparate: (a: string, b: string) => void;
-  /** Drop projects that are gone from every link. */
+  /** Unlink deleted local projects network-wide. Unpairing uses only a display filter. */
   prune: (exists: (projectId: string) => boolean) => void;
 }
 
@@ -48,66 +50,92 @@ function load(): Saved {
   }
 }
 
-let syncVersion = 0;
-function syncHandoffLinks(links: string[][]): void {
-  const version = ++syncVersion;
-  if (typeof window === 'undefined' || !window.clubhouse?.project?.setHandoffProjectLinks) return;
-  void window.clubhouse.project.setHandoffProjectLinks(links).then(() => {
-    if (version === syncVersion) useNetworkSidebarStore.setState({ handoffLinkError: false });
-  }, () => {
-    // telemetry-exempt: the settings section displays the failed save and offers a retry
-    if (version === syncVersion) useNetworkSidebarStore.setState({ handoffLinkError: true });
-  });
-}
-
-function save(state: Saved): void {
-  try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify({ show: state.show, links: state.links, keptSeparate: state.keptSeparate }));
-  } catch {
-    // telemetry-exempt: the display works for this session; it's only not remembered
+let epoch = 0, running = false, hydrated = false;
+let offChanged: (() => void) | undefined;
+let pending: ProjectLinksOp[] = [];
+let base: ProjectLinksView = { revision: -1, links: [], keptSeparate: [] };
+function optimistic(state: Pick<Saved, 'links' | 'keptSeparate'>, op: ProjectLinksOp): Pick<Saved, 'links' | 'keptSeparate'> {
+  if (op.type === 'link') {
+    const links = mergeLinks(state.links, op.a, op.b);
+    const linked = new Set(groupPairs(links.find((g) => g.includes(op.a)) ?? []));
+    return { links, keptSeparate: state.keptSeparate.filter((k) => !linked.has(k)) };
   }
+  if (op.type === 'keepSeparate') return { ...state, keptSeparate: [...new Set([...state.keptSeparate, pairKey(op.a, op.b)])] };
+  const group = state.links.find((g) => g.includes(op.a)) ?? [];
+  const rest = group.filter((id) => id !== op.a);
+  return { links: op.type === 'split' ? splitLinks(state.links, op.a) : [...state.links.filter((g) => g !== group), ...(rest.length > 1 ? [rest] : [])],
+    keptSeparate: [...new Set([...state.keptSeparate, ...(op.type === 'split' ? groupPairs(group) : rest.map((id) => pairKey(op.a, id)))])] };
+}
+function publish(view: ProjectLinksView): void {
+  if (view.revision >= base.revision) base = view;
+  const next = pending.reduce(optimistic, base);
+  useNetworkSidebarStore.setState({ links: next.links, keptSeparate: next.keptSeparate });
+}
+async function flush(): Promise<void> {
+  if (running || !window.clubhouse?.project?.hydrateProjectLinks) return;
+  running = true;
+  const version = epoch;
+  try {
+    if (!hydrated) {
+      offChanged ??= window.clubhouse.project.onProjectLinksChanged((view) => { if (version === epoch) publish(view); });
+      const view = await window.clubhouse.project.hydrateProjectLinks(load());
+      if (version !== epoch) return;
+      hydrated = true; publish(view);
+    }
+    let rejected = false;
+    while (pending.length && version === epoch) {
+      try {
+        const view = await window.clubhouse.project.changeProjectLinks(pending[0]);
+        if (version !== epoch) return;
+        pending.shift(); publish(view);
+      } catch (error) { // telemetry-exempt: a visible error reports the refused edit; temporary failures can retry
+        if (version !== epoch) return;
+        const retryable = transientProjectLinksError(error);
+        useNetworkSidebarStore.setState({ handoffLinkError: true, linkErrorRetryable: retryable });
+        if (retryable) return;
+        pending.shift(); publish(base);
+        rejected = true;
+      }
+    }
+    if (version === epoch && !rejected) useNetworkSidebarStore.setState({ handoffLinkError: false, linkErrorRetryable: false });
+  } catch (error) { // telemetry-exempt: hydration failed; the settings section reports it
+    if (version === epoch) useNetworkSidebarStore.setState({ handoffLinkError: true, linkErrorRetryable: transientProjectLinksError(error) });
+  } finally { if (version === epoch) running = false; }
 }
 
-export const useNetworkSidebarStore = create<NetworkSidebarState>((set, get) => {
-  const update = (next: Partial<Saved>) => {
-    set(next);
-    if (next.links) syncHandoffLinks(next.links);
-    const s = get();
-    save({ show: s.show, links: s.links, keptSeparate: s.keptSeparate });
-  };
-  return {
-    ...(() => { const saved = load(); syncHandoffLinks(saved.links); return saved; })(),
-    handoffLinkError: false,
-    retryHandoffLinks: () => syncHandoffLinks(get().links),
-    setShow: (show) => update({ show }),
-    link: (a, b) => {
-      if (a === b) return;
-      const links = mergeLinks(get().links, a, b);
-      const linked = new Set(groupPairs(links.find((g) => g.includes(a)) ?? []));
-      update({ links, keptSeparate: get().keptSeparate.filter((k) => !linked.has(k)) });
-    },
-    split: (projectId) => {
-      const group = get().links.find((g) => g.includes(projectId)) ?? [];
-      update({ links: splitLinks(get().links, projectId), keptSeparate: [...new Set([...get().keptSeparate, ...groupPairs(group)])] });
-    },
-    unlink: (projectId) => {
-      const group = get().links.find((g) => g.includes(projectId));
-      if (!group) return;
-      const rest = group.filter((id) => id !== projectId);
-      const links = [...get().links.filter((g) => g !== group), ...(rest.length > 1 ? [rest] : [])];
-      update({ links, keptSeparate: [...new Set([...get().keptSeparate, ...rest.map((id) => pairKey(projectId, id))])] });
-    },
-    keepSeparate: (a, b) => update({ keptSeparate: [...new Set([...get().keptSeparate, pairKey(a, b)])] }),
-    prune: (exists) => {
-      const links = pruneLinks(get().links, exists);
-      if (JSON.stringify(links) !== JSON.stringify(get().links)) update({ links });
-    },
-  };
-});
+function change(op: ProjectLinksOp): void {
+  useNetworkSidebarStore.setState({ handoffLinkError: false, linkErrorRetryable: false });
+  pending.push(op);
+  useNetworkSidebarStore.setState(optimistic(useNetworkSidebarStore.getState(), op));
+  void flush();
+}
+/** Preserve saved legacy choices verbatim for migration and downgrade. Only Show stays local. */
+function saveShow(show: ShowFilter): void {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    const previous = raw ? JSON.parse(raw) : {};
+    localStorage.setItem(STORAGE_KEY, JSON.stringify({ ...previous, show }));
+  } catch { /* telemetry-exempt: the display works for this session if storage is unavailable */ }
+}
 
-/** For tests: forget everything. */
+export const useNetworkSidebarStore = create<NetworkSidebarState>((set, get) => ({
+  ...load(),
+  handoffLinkError: false, linkErrorRetryable: false,
+  retryHandoffLinks: () => { void flush(); },
+  setShow: (show) => { set({ show }); saveShow(show); },
+  link: (a, b) => { if (a !== b) change({ type: 'link', a, b }); },
+  split: (a) => change({ type: 'split', a }),
+  unlink: (a) => { if (get().links.some((g) => g.includes(a))) change({ type: 'unlink', a }); },
+  keepSeparate: (a, b) => change({ type: 'keepSeparate', a, b }),
+  prune: (exists) => { for (const a of new Set(get().links.flat())) if (!exists(a)) change({ type: 'unlink', a }); },
+}));
+queueMicrotask(() => { void flush(); });
+
+/** For tests: forget the current window's replica. */
 export function _resetNetworkSidebarForTesting(): void {
-  syncVersion++;
-  useNetworkSidebarStore.setState({ handoffLinkError: false, show: 'all', links: [], keptSeparate: [] });
+  epoch++; offChanged?.(); offChanged = undefined;
+  pending = []; hydrated = false; running = false;
+  base = { revision: -1, links: [], keptSeparate: [] };
+  useNetworkSidebarStore.setState({ handoffLinkError: false, linkErrorRetryable: false, show: 'all', links: [], keptSeparate: [] });
   try { localStorage.removeItem(STORAGE_KEY); } catch { /* telemetry-exempt: test reset */ }
 }

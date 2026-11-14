@@ -1,3 +1,4 @@
+import type { ProjectLinksOp, ProjectLinksView } from '../shared/project-links';
 import { ipcRenderer } from 'electron';
 import { IPC } from '../shared/ipc-channels';
 import type { LaunchWrapperConfig, McpCatalogEntry, WrapperCatalogSnapshot } from '../shared/types';
@@ -16,6 +17,13 @@ export const project = {
     ),
   checkGit: (dirPath: string) => ipcRenderer.invoke(IPC.PROJECT.CHECK_GIT, dirPath),
   /** Each project's git remote as a key, by project id (#3066). */
+  hydrateProjectLinks: (legacy: unknown): Promise<ProjectLinksView> => ipcRenderer.invoke(IPC.PROJECT.LINKS_HYDRATE, legacy),
+  changeProjectLinks: (op: ProjectLinksOp): Promise<ProjectLinksView> => ipcRenderer.invoke(IPC.PROJECT.LINKS_APPLY, op),
+  onProjectLinksChanged: (callback: (view: ProjectLinksView) => void) => {
+    const listener = (_event: Electron.IpcRendererEvent, view: ProjectLinksView) => callback(view);
+    ipcRenderer.on(IPC.PROJECT.LINKS_CHANGED, listener);
+    return () => { ipcRenderer.removeListener(IPC.PROJECT.LINKS_CHANGED, listener); };
+  },
   setHandoffProjectLinks: (groups: string[][]): Promise<void> => ipcRenderer.invoke(IPC.PROJECT.SET_HANDOFF_PROJECT_LINKS, groups),
   getHandoffTransferBounds: (projectId: string): Promise<import('../shared/handoff-manifest').HandoffTransferBounds> => ipcRenderer.invoke(IPC.PROJECT.GET_HANDOFF_TRANSFER_BOUNDS, projectId),
   setHandoffTransferBounds: (projectId: string, bounds: import('../shared/handoff-manifest').HandoffTransferBounds): Promise<import('../shared/handoff-manifest').HandoffTransferBounds> => ipcRenderer.invoke(IPC.PROJECT.SET_HANDOFF_TRANSFER_BOUNDS, projectId, bounds),

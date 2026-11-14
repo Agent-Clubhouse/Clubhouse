@@ -4,7 +4,7 @@ import { useProjectStore } from '../../stores/projectStore';
 import { parseNamespacedId, type RemoteProject } from '../../stores/remoteProjectStore';
 import { useNetworkSidebarStore } from '../../chrome/sidebar/networkSidebarStore';
 import { linkGroupOf } from '../../chrome/sidebar/networkTree';
-import { useLinkSuggestions, usePairedRemoteProjects } from '../../chrome/sidebar/projectLinks';
+import { useLinkSuggestions, usePairedRemoteProjects, useVisibleProjectLinks } from '../../chrome/sidebar/projectLinks';
 import { Button } from '../../components/Button';
 import { SettingsSection, SettingsField, settingsInput } from './SettingsLayout';
 
@@ -18,11 +18,12 @@ import { SettingsSection, SettingsField, settingsInput } from './SettingsLayout'
 export function LinkedProjectsSection({ projectId }: { projectId: string }) {
   const projects = useProjectStore((s) => s.projects);
   const remoteProjects = usePairedRemoteProjects();
-  const links = useNetworkSidebarStore((s) => s.links);
+  const links = useVisibleProjectLinks();
   const link = useNetworkSidebarStore((s) => s.link);
   const unlink = useNetworkSidebarStore((s) => s.unlink);
   const keepSeparate = useNetworkSidebarStore((s) => s.keepSeparate);
   const handoffLinkError = useNetworkSidebarStore((s) => s.handoffLinkError);
+  const linkErrorRetryable = useNetworkSidebarStore((s) => s.linkErrorRetryable);
   const retryHandoffLinks = useNetworkSidebarStore((s) => s.retryHandoffLinks);
   const suggestions = useLinkSuggestions().filter((s) => s.local.id === projectId);
   const [choice, setChoice] = useState('');
@@ -51,7 +52,7 @@ export function LinkedProjectsSection({ projectId }: { projectId: string }) {
       <p className="text-xs text-ctp-overlay1 pb-2">
         Linked projects show as one group in the sidebar and let accepted handoffs choose the matching local project. Each agent runs on its own computer, in its own folder.
       </p>
-      {handoffLinkError && <div role="alert" className="text-xs text-ctp-red pb-2">Could not save project links for receiving handoffs. <Button onClick={retryHandoffLinks} kind="ghost">Retry</Button></div>}
+      {handoffLinkError && <div role="alert" className="text-xs text-ctp-red pb-2">Could not save project links. {linkErrorRetryable && <Button onClick={retryHandoffLinks} kind="ghost">Retry</Button>}</div>}
       {suggestions.map((s) => (
         <SettingsField
           key={s.remote.id}
