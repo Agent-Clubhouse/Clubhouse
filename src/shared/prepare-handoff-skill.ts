@@ -39,19 +39,24 @@ Call \`check_handoff\` first: it is quick and changes nothing. By default it tak
 - Leave out anything the receiver doesn't need with \`exclude\`.
 - Compare \`totalBytes\`, the file count and each file's size with \`bounds\`. If anything is over, exclude more and check again.
 
+If \`check_handoff\` fails without a result, call \`prepare_handoff\` (step 5): its \`reason\` says what is wrong, and step 4 says what to do.
+
 ## 4. Resolve what blocked it
 
-\`ready: false\` means one of two things. Read \`reason\` first:
+\`ready: false\` says why. Read \`reason\` first:
 
 - **Too big** (\`reason: bounds_exceeded\`): \`largestFiles\` and \`bounds\` show what is over. Exclude the largest files the receiver doesn't need and check again. The limits are the person's; don't ask to raise them unless the person says so.
 - **Looks like a secret** (\`findings\` with a path and rule): remove or exclude those files and check again. Never copy a secret's value into the brief or another file to get past a finding. Only the person can allow a specific file, in Project Settings, Handoff secret exceptions.
+- **No Git to send from** (\`reason: not_a_repository\`): the project isn't a Git worktree, so its code can't be handed off. Tell the person, or send the task as a message instead.
+- **No commit yet** (\`reason: no_commits\`): the repository has no first commit. Make one if the work and the person allow it, then check again; otherwise tell the person.
+- **Not at the repository root** (\`reason: invalid_repository\`): the project is registered below the repository root, or isn't on a named branch. Only the person can change how the project is registered, so tell them; check out a named branch yourself if that is the cause.
 
 ## 5. Prepare the manifest
 
 Call \`prepare_handoff\` with the same \`mode\`, \`include\` and \`exclude\`. It repeats the checks, also looks at the Git history it would send, and freezes the exact set of files.
 
 - \`ready: true\`: keep its \`summary\` (\`fileCount\`, \`totalBytes\`, \`sha256\`) for the offer. The preparation expires after 15 minutes; prepare again if you take longer.
-- \`ready: false\`: handle it as in step 4 by its \`reason\` (too big, or secret \`findings\`, which preparation can also find in the Git history it would send). \`uncommitted_branch\` means \`branch\` mode found uncommitted work: commit it, or use \`worktree\`. Then prepare again.
+- \`ready: false\`: handle it as in step 4 by its \`reason\`. Preparation can also find secrets in the Git history it would send. \`uncommitted_branch\` means \`branch\` mode found uncommitted work: commit it, or use \`worktree\`. Then prepare again.
 
 ## 6. Choose a computer (optional)
 

@@ -129,7 +129,17 @@ describe('the prepare-handoff skill (#3344)', () => {
     expect(step4).toMatch(/\*\*Too big\*\* \(`reason: bounds_exceeded`\): `largestFiles` and `bounds`/);
     expect(step4).toMatch(/\*\*Looks like a secret\*\* \(`findings`/);
     expect(PREPARE_HANDOFF_SKILL_MD).toContain('`uncommitted_branch`');
+    // Each repository refusal #3455 returns has its own instruction (#3344).
+    for (const reason of ['not_a_repository', 'no_commits', 'invalid_repository']) expect(step4, reason).toContain(`\`reason: ${reason}\``);
   });
+
+  it('gets the repository reasons step 4 names from prepare_handoff itself', async () => {
+    fs.rmSync(path.join(state.sender, '.git'), { recursive: true, force: true });
+    expect((await call('prepare_handoff', { mode: 'worktree', exclude: ['deploy.key'] })).body).toMatchObject({ ready: false, reason: 'not_a_repository' });
+    await git(state.sender, 'init', '-b', 'main');
+    expect((await call('prepare_handoff', { mode: 'worktree', exclude: ['deploy.key'] })).body).toMatchObject({ ready: false, reason: 'no_commits' });
+    for (const reason of ['not_a_repository', 'no_commits']) expect(PREPARE_HANDOFF_SKILL_MD).toContain(`reason: ${reason}`);
+  }, 30_000);
 
   it('refuses the full manifest in place of the summary, as the skill warns', async () => {
     const prepared = await call('prepare_handoff', { mode: 'worktree', exclude: ['deploy.key'] });

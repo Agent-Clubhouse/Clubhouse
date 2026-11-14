@@ -103,7 +103,13 @@ describe('start and dispose rows follow the approval setting (#2970)', () => {
 });
 
 describe('agentHoldsAction (#3344)', () => {
+  it('holds it by default only toward other computers\' Dispatchers while connected to the Dispatcher (#3455)', () => {
+    const connected = { ...mocks.config, orchestration: { orchestrate: true, connectToDispatcher: true } } as DurableAgentConfig;
+    expect(agentHoldsAction('o1', connected, 'handoff.offer')).toBe(true);
+  });
+
   it('is false for an agent whose handoff.offer is Off, and true once it is Ask first or Allow', async () => {
+    mocks.config = { ...mocks.config, orchestration: { orchestrate: true, control: 'hands-off', connectToDispatcher: false } } as Partial<DurableAgentConfig>;
     const config = mocks.config as DurableAgentConfig;
     expect(agentHoldsAction('o1', config, 'handoff.offer')).toBe(false);
     const offer = (await readAgentGrants('/p', 'o1')).rows.find((r) => r.action === 'handoff.offer');

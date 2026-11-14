@@ -11,7 +11,7 @@ Two Clubhouse permissions control handoffs, on the **Clubhouse permissions** pag
 - **Offer handoffs:** the agent may offer its work to another agent or computer.
 - **Accept handoffs and apply work:** the agent may agree to receive work and have it applied.
 
-Both are **Off** for agents and **Ask first** for the Dispatcher. Set either to **Ask first** or **Allow** per agent. A handoff between two agents also needs a connection between them, unless the receiver is a Dispatcher. Clubhouse never creates that connection itself.
+By default the Dispatcher has both at **Ask first**. An agent connected to the Dispatcher has **Offer handoffs** at **Ask first** for offering work to another computer's Dispatcher, and everything else is **Off**. Set either to **Ask first** or **Allow** per agent. A handoff between two agents also needs a connection between them, unless the receiver is a Dispatcher. Clubhouse never creates that connection itself.
 
 A computer's Dispatcher can accept an offer for another agent there, or for a new helper:
 
@@ -29,7 +29,7 @@ An agent that may offer handoffs gets the built-in **prepare-handoff** skill at 
 1. Writing a brief: the goal, what's done, what's left, how to check it, and open questions.
 2. Choosing a mode: **branch** sends an exact pushed branch, **worktree** sends a snapshot of tracked and untracked files.
 3. Checking what would be sent, including any ignored files it really needs, such as test fixtures.
-4. Resolving anything that looks like a secret by leaving the file out. Values are never copied into the brief.
+4. Resolving what blocks it: files that are too big or look like a secret are left out, and values are never copied into the brief. A project with no Git, no first commit, or registered below its repository root is reported to you.
 5. Preparing the exact set of files, within your size limits.
 6. Optionally checking which computer has room.
 7. Making the offer, telling you its id, and following up.
