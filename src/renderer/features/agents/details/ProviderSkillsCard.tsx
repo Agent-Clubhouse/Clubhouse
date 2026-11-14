@@ -2,7 +2,7 @@ import type { Agent } from '../../../../shared/types';
 import type { ChatViewState } from '../../../stores/chatStore';
 import { useProjectStore } from '../../../stores/projectStore';
 import { CardNote, CardRow, DetailsCard } from './DetailsCard';
-import { useManagedParts, useManagedSetup } from '../../managed/managedApi';
+import { useManagedParts, useManagedSetup, useManagedStatus } from '../../managed/managedApi';
 import { reportedSkillsFor } from './reported-skills';
 
 /** Only renders metadata already in chat state. No filesystem reads or provider requests. */
@@ -21,12 +21,18 @@ export function ProviderSkillsCard({ agent, chat, open, onToggle, embedded }: {
   // What Clubhouse itself installed from the agent's managed setup. Known without any provider report.
   const { value: setup } = useManagedSetup(project?.path, agent.id);
   const installedIds = setup?.skills ?? [];
+  // Skills are copied when the agent starts, so the setup alone only says what is set up. Delivery evidence
+  // (a running session that got its setup, with no edit since and no failure) says they are installed.
+  const { value: status } = useManagedStatus(agent.status === 'running' ? project?.path : undefined, agent.id);
+  const delivered = agent.status === 'running' && !!status?.deliveredAt && !status.waiting && !status.deliveryFailed;
+  const label = delivered ? 'Installed by Clubhouse' : 'Set up by Clubhouse';
   const { value: parts } = useManagedParts('skill', installedIds.length > 0);
   const installed = installedIds.flatMap((id) => { const part = parts?.find((p) => p.id === id); return part ? [part.name] : []; });
   const installedList = installed.length > 0 && (
     <>
-      <p className="pr-3.5 pl-[33px] pt-1.5 pb-0.5 text-xs text-ctp-overlay1">Installed by Clubhouse</p>
-      <ul className="pr-3.5 pl-[33px] py-1 text-xs text-ctp-text break-words" aria-label="Skills installed by Clubhouse" data-testid="details-installed-skills">
+      <p className="pr-3.5 pl-[33px] pt-1.5 pb-0.5 text-xs text-ctp-overlay1">{label}</p>
+      {!delivered && <p className="pr-3.5 pl-[33px] pb-0.5 text-xs text-ctp-overlay1">Applies when the agent next starts.</p>}
+      <ul className="pr-3.5 pl-[33px] py-1 text-xs text-ctp-text break-words" aria-label={label} data-testid="details-installed-skills">
         {installed.map((name) => <li key={name}>{name}</li>)}
       </ul>
     </>
@@ -35,7 +41,7 @@ export function ProviderSkillsCard({ agent, chat, open, onToggle, embedded }: {
     // Nothing reported: show only what Clubhouse knows it installed, or nothing at all.
     if (!installedList) return null;
     return (
-      <DetailsCard id="provider-skills" title="Skills" summary={`${installed.length} installed by Clubhouse`} open={open} onToggle={onToggle} embedded={embedded}>
+      <DetailsCard id="provider-skills" title="Skills" summary={`${installed.length} ${delivered ? 'installed' : 'set up'} by Clubhouse`} open={open} onToggle={onToggle} embedded={embedded}>
         {installedList}
       </DetailsCard>
     );

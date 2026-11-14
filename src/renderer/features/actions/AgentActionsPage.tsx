@@ -81,7 +81,7 @@ export function AgentActionsPage({ agentId, agentName, projectId }: { agentId: s
       {error && <div className={`${settingsHelp} mt-3`}>Couldn’t load actions. {error}</div>}
       {actions && (
         <>
-          <Group title={`Runs on ${agentName}`} empty={`No action runs on ${agentName}.`} list={groups.targeting} />
+          <Group title={`Targets ${agentName}`} empty={`No action targets ${agentName}.`} list={groups.targeting} />
           <Group title={`Set off by ${agentName}`} empty={`Nothing ${agentName} does sets off an action.`} list={groups.triggeredBy} />
           <Group title={`Owned by ${agentName}`} empty={`${agentName} doesn’t own any actions.`} list={groups.owned} note={`Their usage counts toward ${agentName}.`} />
         </>
@@ -109,11 +109,11 @@ export function AgentActionsCard({ agentId, agentName, projectId, open, onToggle
       <DetailsCard id="actions" title="Actions" summary={actions ? `${related} related` : error ? 'couldn’t load' : 'loading'} open={open} onToggle={onToggle}>
         {error && <CardNote><span role="alert">Couldn’t load actions. {error}</span> <Button kind="ghost" onClick={reload}>Try again</Button></CardNote>}
         {!actions && !error && <CardNote>Loading actions.</CardNote>}
-        {actions && related === 0 && <CardNote>No actions are owned by, run on or are set off by {agentName}.</CardNote>}
+        {actions && related === 0 && <CardNote>No actions are owned by, target or are set off by {agentName}.</CardNote>}
         {actions && related > 0 && (
           <div className="px-3 pb-1">
             {groups.owned.length > 0 && <Group title={`Owned by ${agentName}`} empty="" list={groups.owned} note={`Their usage counts toward ${agentName}.`} onOpen={setCardId} />}
-            {groups.targeting.length > 0 && <Group title={`Runs on ${agentName}`} empty="" list={groups.targeting} onOpen={setCardId} />}
+            {groups.targeting.length > 0 && <Group title={`Targets ${agentName}`} empty="" list={groups.targeting} onOpen={setCardId} />}
             {groups.triggeredBy.length > 0 && <Group title={`Set off by ${agentName}`} empty="" list={groups.triggeredBy} onOpen={setCardId} />}
           </div>
         )}

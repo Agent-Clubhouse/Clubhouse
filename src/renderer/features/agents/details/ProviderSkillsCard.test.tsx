@@ -69,19 +69,26 @@ describe('ProviderSkillsCard', () => {
     expect(screen.queryByTestId('details-card-provider-skills')).toBeNull();
   });
 
-  it('lists the skills Clubhouse installed instead of an Unknown report, for a provider that reports none', async () => {
+  it.each([
+    ['delivered to a running session', { deliveredAt: 't', waiting: false }, 'running', 'Installed by Clubhouse', '1 installed by Clubhouse'],
+    ['edited while running', { deliveredAt: 't', waiting: true }, 'running', 'Set up by Clubhouse', '1 set up by Clubhouse'],
+    ['delivery failed', { deliveredAt: 't', waiting: false, deliveryFailed: 'x' }, 'running', 'Set up by Clubhouse', '1 set up by Clubhouse'],
+    ['never started', null, 'sleeping', 'Set up by Clubhouse', '1 set up by Clubhouse'],
+  ])('lists managed skills without a report, %s', async (_n, status, agentStatus, label, summary) => {
     const managed = (window as unknown as { clubhouse: { managed: Record<string, unknown> } }).clubhouse.managed;
     const saved = { ...managed };
     managed.getSetup = vi.fn(async () => ({ ok: true, value: { version: 1, blocks: [], skills: ['builtin-skill-build', 'gone'], mcps: [] } }));
     managed.listParts = vi.fn(async () => ({ ok: true, value: [{ id: 'builtin-skill-build', name: 'Build', kind: 'skill' }] }));
+    managed.status = vi.fn(async () => ({ ok: true, value: status }));
     managed.onChanged = vi.fn(() => () => {});
     useProjectStore.setState({ projects: [{ id: 'p', name: 'project', path: '/project', orchestrator: 'codex-cli' }] });
     try {
-      render(<ProviderSkillsCard agent={{ ...agent, orchestrator: 'codex-cli' }} chat={chat()} open onToggle={vi.fn()} />);
+      render(<ProviderSkillsCard agent={{ ...agent, orchestrator: 'codex-cli', status: agentStatus as Agent['status'] }} chat={chat()} open onToggle={vi.fn()} />);
       const list = await screen.findByTestId('details-installed-skills');
       expect(list).toHaveTextContent('Build');
-      expect(screen.getByText('Installed by Clubhouse')).toBeInTheDocument();
-      expect(screen.getByTestId('details-card-provider-skills-summary')).toHaveTextContent('1 installed by Clubhouse');
+      expect(screen.getByText(label)).toBeInTheDocument();
+      expect(screen.getByTestId('details-card-provider-skills-summary')).toHaveTextContent(summary);
+      expect(!!screen.queryByText('Applies when the agent next starts.')).toBe(label !== 'Installed by Clubhouse');
       expect(screen.queryByText(/Unknown|unavailable/)).toBeNull();
     } finally {
       Object.assign(managed, saved);
