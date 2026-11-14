@@ -90,8 +90,15 @@ export async function receiveHandoffCommit(options: {
       if (imported !== commit) throw new HandoffSnapshotError('hash_mismatch');
       await scanHandoffGitHistory({ repo: { base: commit }, read: readBare, assertCurrent: check }, secretPolicy);
       await secretPolicy?.recordUse(handoffId, 'receiver'); await check();
-      // Fetch only the verified commit's reachable graph, never arbitrary extra bundle refs.
-      await repository.read([...flags, '-c', 'protocol.file.allow=always', 'fetch', '--no-tags', '--no-write-fetch-head', '--', bare, commit]);
+      // Fetch only the verified commit's reachable graph, never arbitrary extra refs.
+      // A repository source makes upload-pack interpret its path as GIT_DIR,
+      // hitting Windows' setup limit even with longpaths enabled. A bundle is
+      // ordinary file I/O and also works when staging and the project differ in drive.
+      const verifiedBundle = path.join(quarantine, 'verified.bundle');
+      await readBare(['bundle', 'create', verifiedBundle, 'FETCH_HEAD']);
+      const verifiedHeads = (await readBare(['bundle', 'list-heads', verifiedBundle])).toString('ascii').trim();
+      if (verifiedHeads !== `${commit} FETCH_HEAD`) throw new HandoffSnapshotError('hash_mismatch');
+      await repository.read([...flags, '-c', 'protocol.file.allow=always', 'fetch', '--no-tags', '--no-write-fetch-head', '--', verifiedBundle, commit]);
     } else {
       await scanHandoffGitHistory({ repo: { base: commit }, read: (args) => repository.read([...flags, ...args]), assertCurrent: check }, secretPolicy);
       await secretPolicy?.recordUse(handoffId, 'receiver');

@@ -12,6 +12,7 @@ import { prepareHandoffBundle } from './handoff-git-bundle';
 import { receiveHandoffCommit } from './handoff-git-receive';
 const exec = promisify(execFile);
 let root: string; let sender: string; let receiver: string; let staging: string;
+let crossDriveRoot: string | undefined;
 const url = 'https://example.invalid/team/project.git';
 const git = (cwd: string, ...args: string[]) => exec('git', args, { cwd });
 async function initialize(repo: string, message: string) {
@@ -26,7 +27,10 @@ beforeEach(async () => {
   // An absent file remote fails locally and deterministically; no test reaches the internet.
   await git(receiver, 'config', `url.${pathToFileURL(path.join(root, 'absent.git')).href}.insteadOf`, url);
 });
-afterEach(() => { vi.unstubAllEnvs(); fs.rmSync(root, { recursive: true, force: true }); });
+afterEach(() => {
+  vi.unstubAllEnvs(); fs.rmSync(root, { recursive: true, force: true });
+  if (crossDriveRoot) { fs.rmSync(crossDriveRoot, { recursive: true, force: true }); crossDriveRoot = undefined; }
+});
 async function prepared() {
   const handoffId = randomUUID(); const snapshot = await prepareHandoffSnapshot({ worktreeRoot: sender, stagingRoot: staging, handoffId });
   return { projectRoot: receiver, snapshot: await prepareHandoffBundle({ worktreeRoot: sender, snapshot, handoffId, bounds: HANDOFF_TRANSFER_DEFAULTS }), handoffId, bounds: HANDOFF_TRANSFER_DEFAULTS, authorize: async () => {} };
@@ -49,8 +53,18 @@ it('falls back to an independently scanned bundle when the configured remote lac
 }, 30_000);
 it.each([['pack filename', 150], ['explicit Git directory', 170]] as const)('imports bundle packs beyond the Windows %s limit with isolated Git configuration', async (limit, rootLength) => {
   const options = await prepared();
+  // Windows CI checks out on D: while temp staging is on C:. Exercise that
+  // boundary too: making only the final fetch source relative cannot fix it.
+  if (process.platform === 'win32' && path.parse(process.cwd()).root.toLowerCase() !== path.parse(root).root.toLowerCase()) {
+    crossDriveRoot = await fs.promises.mkdtemp(path.join(process.cwd(), '.handoff-receiver-'));
+    receiver = path.join(crossDriveRoot, 'receiver');
+    await initialize(receiver, 'Receiver original');
+    await git(receiver, 'config', `url.${pathToFileURL(path.join(root, 'absent.git')).href}.insteadOf`, url);
+    options.projectRoot = receiver;
+  }
   const canonical = await fs.promises.realpath(root);
   const destination = path.join(canonical, 'deep-' + 'x'.repeat(rootLength - canonical.length - 6));
+  expect(destination.length).toBe(rootLength);
   await fs.promises.rename(options.snapshot.root, destination);
   options.snapshot.root = destination;
   const quarantine = path.join(destination, `quarantine-${randomUUID()}`);
@@ -61,10 +75,10 @@ it.each([['pack filename', 150], ['explicit Git directory', 170]] as const)('imp
   if (process.platform === 'win32') {
     // Reproduce the original isolated-config failure without changing global Git.
     await git(destination, '-c', 'core.longpaths=false', 'init', '--bare', '--template=', bare);
-    const diagnostic = limit === 'pack filename' ? /filename too long|file name too long|path too long/i : /'\$GIT_DIR' too big/;
+    const diagnostic = limit === 'pack filename' ? /Filename too long[\s\S]*error: index-pack died/ : /'\$GIT_DIR' too big/;
     const fetch = (longpaths: boolean) => git(destination, '-c', `core.longpaths=${longpaths}`, '--git-dir', bare, 'fetch', '--no-tags', '--', path.join(destination, 'bundle.bin'), 'HEAD');
     expect(bare.length > 220).toBe(limit === 'explicit Git directory');
-    await expect(fetch(false)).rejects.toMatchObject({ code: 128, stderr: expect.stringMatching(diagnostic) });
+    await expect(fetch(false)).rejects.toMatchObject({ code: limit === 'pack filename' ? 1 : 128, stderr: expect.stringMatching(diagnostic) });
     if (limit === 'explicit Git directory') {
       // This setup guard is independent of core.longpaths; relative GIT_DIR is required.
       await expect(fetch(true)).rejects.toMatchObject({ code: 128, stderr: expect.stringMatching(diagnostic) });
