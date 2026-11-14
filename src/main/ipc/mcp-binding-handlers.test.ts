@@ -260,7 +260,7 @@ describe('mcp-binding-handlers registration', () => {
     await restorePersistedBindings();
     expect(startAgentCalls).toHaveBeenCalledTimes(1);
     const { describeLocalAgent, nameOfLocalSender, runTool, authorizeQueuedCall, onDeliveryFailure } = vi.mocked(startAgentCalls).mock.calls[0][0];
-    expect(nameOfLocalSender?.('dispatcher-work')).toBe('Dispatcher controller');
+    expect(nameOfLocalSender?.('dispatcher-work')).toBe(name);
     expect(nameOfLocalSender?.('dispatcher-chat')).toBe(name);
     expect(projectStore.peekProjects).not.toHaveBeenCalled();
     expect(nameOfLocalSender?.('ordinary')).toBeUndefined();

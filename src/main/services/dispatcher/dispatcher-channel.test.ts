@@ -248,7 +248,7 @@ describe('telling the user, through the chat (#3036)', () => {
     setChatDelivery(() => ({ text: 'ask it', routed: [{ fromClubhouse: true, text: 'Should deletion be on by default?' }], notDelivered }));
     expect((await deliverToChat('coordinator', { message: 'x', from: 'api-lead', kind: 'needs_user' })).outcome).toBe('stopping');
     expect(notDelivered).toHaveBeenCalledTimes(1);
-    expect(broadcastToAllWindows).toHaveBeenCalledWith(IPC.APP.AGENT_ATTENTION, 'chat', { title: 'Dispatcher controller needs you', message: 'Should deletion be on by default?' });
+    expect(broadcastToAllWindows).toHaveBeenCalledWith(IPC.APP.AGENT_ATTENTION, 'chat', { title: `${name} needs you`, message: 'Should deletion be on by default?' });
 
     // An answer that didn't arrive is forgotten as shown too, but isn't worth a notification.
     vi.mocked(broadcastToAllWindows).mockClear();

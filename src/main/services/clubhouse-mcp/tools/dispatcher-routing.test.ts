@@ -269,9 +269,11 @@ describe('Dispatcher desktop/mobile routing and a concurrent project pivot (#258
     // wire; runtime acceptance is not a claim that a model did the design.
     const decisions = 'Quiet hours use the device timezone, 22:00-07:00 by default; allow an override and screen-reader labels. Design: docs/quiet-hours.md#decisions; desktop implementation: src/renderer/features/quiet-hours/.';
     const reply = `TASK_RESULT:quiet-hours-desktop: Design complete. ${decisions} Desktop implementation continues.`;
-    expect((await callTool('desktop-owner', tool('desktop-owner', 'dispatcher', 'send_message'), {
+    const replyResult = await callTool('desktop-owner', tool('desktop-owner', 'dispatcher', 'send_message'), {
       message: reply, task_id: 'quiet-hours-desktop',
-    })).isError).toBeFalsy();
+    });
+    expect(replyResult.isError).toBeFalsy();
+    expect(text(replyResult)).toContain('Message sent to Dispatcher.');
     expect(deliveries[1]).toMatchObject({ target: 'dispatcher', options: { routed: [{ sender: { agentId: 'desktop-owner' }, text: reply }] } });
     expect(deliveries[1].text).toContain('[FROM:desktop-owner@Clubhouse]');
     expect(spawnAgent).not.toHaveBeenCalled();
@@ -283,12 +285,12 @@ describe('Dispatcher desktop/mobile routing and a concurrent project pivot (#258
     expect(spawnAgent).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({
       agentId: 'mobile-owner', projectPath: state.projects[1].path, cwd: state.projects[1].path,
       orchestrator: 'copilot-cli', model: 'gpt-6.1-sol', resume: true, sessionId: 'mobile-prior-session',
-      missionRouted: [{ sender: { agentId: 'dispatcher', name: 'Dispatcher controller' }, text: mobile }],
+      missionRouted: [{ sender: { agentId: 'dispatcher', name: 'Dispatcher' }, text: mobile }],
     }));
     const mobileDelivery = deliveries[2];
     expect(mobileDelivery).toMatchObject({ target: 'mobile-owner' });
     expect(mobileDelivery.text).toContain(mobile);
-    expect(mobileDelivery.text).toContain(`Reply to Dispatcher controller via tool "${tool('mobile-owner', 'dispatcher', 'send_message')}"`);
+    expect(mobileDelivery.text).toContain(`Reply to Dispatcher via tool "${tool('mobile-owner', 'dispatcher', 'send_message')}"`);
     expect((await listing()).find((a) => a.id === 'mobile-owner')).toMatchObject({ status: 'running', connected: true });
 
     const pivot = 'For Garden, fix irrigation schedule drift. Pointer: docs/irrigation.md. Done: no duplicate watering after a clock change. No dependency on Clubhouse quiet hours. Message me when done or stuck.';

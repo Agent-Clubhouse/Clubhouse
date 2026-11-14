@@ -188,8 +188,8 @@ describe('dispatcherWiresForProject', () => {
     const out = await dispatcherWiresForProject(DISPATCHER, projectPath, configs.get(projectPath)!, 'Wardfall');
     const starting = { disabledTools: ['clear_agent', 'compact_agent'], enabledTools: ['wake_agent'], startingTools: true };
     expect(out).toEqual([
-      { agentId: DISPATCHER, targetId: 'durable_lead', targetKind: 'agent', label: 'lead', agentName: 'Dispatcher controller', targetName: 'lead', projectName: 'Wardfall', ...starting },
-      { agentId: 'durable_lead', targetId: DISPATCHER, targetKind: 'agent', label: 'Dispatcher controller', agentName: 'lead', targetName: 'Dispatcher', projectName: 'Wardfall', ...starting },
+      { agentId: DISPATCHER, targetId: 'durable_lead', targetKind: 'agent', label: 'lead', agentName: 'Dispatcher', targetName: 'lead', projectName: 'Wardfall', ...starting },
+      { agentId: 'durable_lead', targetId: DISPATCHER, targetKind: 'agent', label: 'Dispatcher', agentName: 'lead', targetName: 'Dispatcher', projectName: 'Wardfall', ...starting },
     ]);
     expect(buildToolName(out[1], 'send_message')).toBe(buildToolName({ ...out[1], label: 'Dispatcher' }, 'send_message'));
     expect(buildToolName(out[1], 'send_message')).toMatch(/^clubhouse__Wardfall_Dispatcher_[a-z0-9]+__send_message$/);
@@ -261,7 +261,7 @@ describe('Dispatcher wire rebuild', () => {
     await rebuild();
     const toLead = () => bindingManager.getBindingsForAgent(DISPATCHER).find((b) => b.targetId === 'durable_lead')!;
     const fromLead = () => bindingManager.getBindingsForAgent('durable_lead').find((b) => b.targetId === DISPATCHER)!;
-    expect(fromLead()).toMatchObject({ label: 'Dispatcher controller', targetName: 'Dispatcher' });
+    expect(fromLead()).toMatchObject({ label: 'Dispatcher', targetName: 'Dispatcher' });
     const before = fromLead();
 
     dispatcher.name = 'Rosie';
@@ -269,8 +269,8 @@ describe('Dispatcher wire rebuild', () => {
     expect(result.sources.find((s) => s.id === 'dispatcher-wires')).toMatchObject({ created: 0, existing: 2, pruned: 0 });
     // The same binding, relabelled: the agent's wire to it never dropped.
     expect(fromLead()).toBe(before);
-    expect(fromLead()).toMatchObject({ label: 'Dispatcher controller', agentName: 'lead', targetName: 'Rosie' });
-    expect(toLead()).toMatchObject({ agentName: 'Dispatcher controller' });
+    expect(fromLead()).toMatchObject({ label: 'Rosie', agentName: 'lead', targetName: 'Rosie' });
+    expect(toLead()).toMatchObject({ agentName: 'Rosie' });
     expect(boundPairs()).toEqual([`${DISPATCHER}->durable_lead`, `durable_lead->${DISPATCHER}`]);
     expect(buildToolName(fromLead(), 'send_message')).toBe(buildToolName({ ...fromLead(), label: 'Rosie' }, 'send_message'));
     expect(buildToolName(fromLead(), 'send_message')).toMatch(/^clubhouse__Wardfall_Rosie_[a-z0-9]+__send_message$/);
@@ -284,7 +284,7 @@ describe('Dispatcher wire rebuild', () => {
       dispatcher.name = 'Rosie';
       for (const listener of dispatcher.listeners) listener();
       await vi.waitFor(() => expect(onWiresChanged).toHaveBeenCalledTimes(1));
-      expect(bindingManager.getBindingsForAgent('durable_lead').find((b) => b.targetId === DISPATCHER)).toMatchObject({ label: 'Dispatcher controller', targetName: 'Rosie' });
+      expect(bindingManager.getBindingsForAgent('durable_lead').find((b) => b.targetId === DISPATCHER)).toMatchObject({ label: 'Rosie', targetName: 'Rosie' });
     } finally {
       stop();
     }
@@ -348,7 +348,7 @@ describe('Dispatcher wire rebuild', () => {
       `${DISPATCHER}->durable_lead`, `${DISPATCHER}->durable_o1`,
       `durable_lead->${DISPATCHER}`, `durable_o1->${DISPATCHER}`,
     ].sort());
-    expect(bindingManager.getBindingsForAgent('durable_o1')[0]).toMatchObject({ label: 'Dispatcher controller', targetName: 'Dispatcher', projectName: 'other' });
+    expect(bindingManager.getBindingsForAgent('durable_o1')[0]).toMatchObject({ label: 'Dispatcher', targetName: 'Dispatcher', projectName: 'other' });
   });
 
   it('comes back after a restart, with nothing but the policy to go on', async () => {

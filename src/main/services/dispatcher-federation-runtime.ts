@@ -29,7 +29,7 @@ export function startFederatedRequests(): () => void {
   let active = true;
   const instance = createFederatedRequests({
     store: createFederationRequestStore(), now: () => Date.now(),
-    self: () => ({ machineId: getIdentity()?.fingerprint.toLowerCase() ?? '', machineName: 'this computer', agentId: getDispatcherAgentId() ?? '', agentName: dispatcherDisplayName('work') }),
+    self: () => ({ machineId: getIdentity()?.fingerprint.toLowerCase() ?? '', machineName: 'this computer', agentId: getDispatcherAgentId() ?? '', agentName: dispatcherDisplayName() }),
     epoch: (machine) => ({ sender: ownPairing()?.id ?? 'legacy', receiver: listPeers().find((p) => p.fingerprint.toLowerCase() === machine)?.pairingId ?? 'legacy' }),
     authorized: (machine, agent, epoch) => {
       const guard = captureControllerPublication(machine);
@@ -72,7 +72,7 @@ export function startFederatedRequests(): () => void {
           + 'Choose now, check_in, needs_user or decline with triage_remote_request. All work uses your own local grants. '
           + `Report explicit progress/outcomes with report_remote_request and id ${r.id}. A receipt or turn end does not answer the request.\n\n${r.text}`;
         const mark = workTurnMark();
-        const delivery = await deliverToDispatcher({ senderId: `${remoteAgent}@${r.machineId}`, targetId: controller, targetName: dispatcherDisplayName('work'), text,
+        const delivery = await deliverToDispatcher({ senderId: `${remoteAgent}@${r.machineId}`, targetId: controller, targetName: dispatcherDisplayName(), text,
           routed: [{ sender: { agentId: `${remoteAgent}@${r.machineId}`, name: sender }, text: kind === 'reply' ? r.reason ?? '' : r.text }], taskId: r.localRequestId, submit: true,
           toolName: 'hand_off_request', args: {}, wakeAsReceiver: true, admission: () => active && guard.current() && guard.epoch.sender === r.epoch.sender && guard.epoch.receiver === r.epoch.receiver && isDispatcherEnabled()
             && !!controllerDirection({ agentId: remoteAgent, machineId: r.machineId }, { agentId: controller }) });

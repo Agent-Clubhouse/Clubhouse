@@ -129,8 +129,8 @@ describe('Connections card (#2232)', () => {
     ];
     useMcpBindingStore.setState({ bindings: wires });
     render(<ConnectionsCard agent={lead} helperIds={new Set()} open onToggle={() => {}} />);
-    expect(screen.getAllByTestId('connection-name').map((node) => node.textContent).sort()).toEqual(['Dispatcher controller', name, 'reviewer'].sort());
-    expect(screen.getAllByTestId('connection-row').find((row) => row.textContent?.includes('Dispatcher controller'))).toHaveTextContent('two-way');
+    expect(screen.getAllByTestId('connection-name').map((node) => node.textContent).sort()).toEqual([name, name, 'reviewer'].sort());
+    expect(screen.getAllByTestId('connection-row').find((row) => row.textContent?.includes(name))).toHaveTextContent('two-way');
     const controller = agentConnections(wires, 'lead', { helperIds: new Set() }).find((row) => row.id === 'work');
     expect(controller).toMatchObject({ id: 'work', pairs: [{ agentId: 'lead', targetId: 'work' }, { agentId: 'work', targetId: 'lead' }] });
     expect(wires[0].targetName).toBe(name);
@@ -152,14 +152,14 @@ describe('Connections card (#2232)', () => {
     window.clubhouse.mcpBinding.getConnectionGuidance = vi.fn(async (from, to) => guidance(from, to));
     window.clubhouse.mcpBinding.getConnectionToolCatalog = vi.fn(async () => ({ state: 'available', tools: [] }));
     const canvas = render(<ConnectionEditorDialog binding={binding} onClose={vi.fn()} />);
-    expect(await screen.findByRole('region', { name: 'epic-lead to Dispatcher controller' })).toBeInTheDocument();
-    expect(screen.getByRole('region', { name: 'Dispatcher controller to epic-lead' })).toBeInTheDocument();
+    expect(await screen.findByRole('region', { name: 'epic-lead to Rosie' })).toBeInTheDocument();
+    expect(screen.getByRole('region', { name: 'Rosie to epic-lead' })).toBeInTheDocument();
     expect(window.clubhouse.mcpBinding.getConnectionSources).toHaveBeenCalledWith('lead');
     canvas.unmount();
     render(<ConnectionsCard agent={lead} helperIds={new Set()} open onToggle={vi.fn()} onDisconnect={vi.fn()} />);
     fireEvent.click(await screen.findByRole('button', { name: 'Edit' }));
-    expect(await screen.findByRole('region', { name: 'epic-lead to Dispatcher controller' })).toBeInTheDocument();
-    expect(screen.getByRole('region', { name: 'Dispatcher controller to epic-lead' })).toBeInTheDocument();
+    expect(await screen.findByRole('region', { name: 'epic-lead to Rosie' })).toBeInTheDocument();
+    expect(screen.getByRole('region', { name: 'Rosie to epic-lead' })).toBeInTheDocument();
     expect(await screen.findByRole('textbox', { name: 'Instructions' })).toHaveValue('Saved routing guidance');
   });
 
@@ -672,7 +672,7 @@ describe('Connections card (#2232)', () => {
         expect(screen.queryByTestId('connection-row')).toBeNull();
       } else {
         const row = await screen.findByTestId('connection-row');
-        expect(row).toHaveTextContent('Dispatcher controller');
+        expect(row).toHaveTextContent('Rosie');
         expect(row).toHaveTextContent('configured two-way, suspended, not connected');
         expect(within(row).queryByTestId('connection-disconnect')).toBeNull();
         fireEvent.click(within(row).getByRole('button', { name: 'Edit' }));

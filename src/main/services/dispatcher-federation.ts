@@ -28,7 +28,7 @@ const controllers = createSettingsStore<{ controllers: Record<string, Federation
 const listeners = new Set<() => void>();
 export function localFederationController(): FederationController {
   const enabled = isDispatcherEnabled();
-  return { agentId: getDispatcherAgentId(), name: dispatcherDisplayName('work'), enabled, ...(enabled && { state: localDispatcherState() }) };
+  return { agentId: getDispatcherAgentId(), name: dispatcherDisplayName(), enabled, ...(enabled && { state: localDispatcherState() }) };
 }
 
 /** As the Dispatcher's own badge judges it: asleep while its agent isn't running, working while requests are under way. */

@@ -296,7 +296,7 @@ function notDelivered(chatId: string, report: ChatReport, message: ChatMessage):
   message.notDelivered?.();
   if ((report.kind ?? 'needs_user') !== 'needs_user') return;
   const text = message.routed.find((p) => p.text)?.text ?? report.message;
-  const payload: AgentAttentionPayload = { title: `${dispatcherDisplayName('work')} needs you`, message: text.slice(0, NOTIFY_MESSAGE_MAX_LENGTH) };
+  const payload: AgentAttentionPayload = { title: `${dispatcherDisplayName()} needs you`, message: text.slice(0, NOTIFY_MESSAGE_MAX_LENGTH) };
   broadcastToAllWindows(IPC.APP.AGENT_ATTENTION, chatId, payload);
 }
 

@@ -948,6 +948,7 @@ describe('personality and first-run setup (#3047)', () => {
     await agentConfig.updateDurable(dispatcherDir(), 'durable_1', { name: 'Rosie' });
     await settle();
     expect(chatFile()).toContain('Your name is Rosie.');
+    expect(workFile()).toContain('Your name is Rosie.');
   });
 
   it('Set up later keeps the default name, Standard and Concise, and the chat offers setup again', async () => {

@@ -874,9 +874,9 @@ describe('AgentTools', () => {
       await callTool('dispatcher-1', agentToolName(toTarget, 'wake_agent'), { message: 'ship it' });
       const request = lifecycle.wakeWiredAgent.mock.calls[0][0];
       expect(request).toMatchObject({ callerId: 'dispatcher-1', targetId: 'orch-1', targetName: 'boss' });
-      expect(request.mission).toMatch(/^\[TASK:t_\w+\] \[FROM:Dispatcher controller\] ship it/);
+      expect(request.mission).toMatch(/^\[TASK:t_\w+\] \[FROM:Dispatcher\] ship it/);
       expect(request.mission).toContain(agentToolName(back, 'send_message'));
-      expect(request.missionRouted).toEqual([{ sender: { agentId: 'dispatcher-1', name: 'Dispatcher controller' }, text: 'ship it' }]);
+      expect(request.missionRouted).toEqual([{ sender: { agentId: 'dispatcher-1', name: 'Dispatcher' }, text: 'ship it' }]);
     });
 
     it('wake_agent without a message sends no first prompt', async () => {
@@ -1157,17 +1157,18 @@ describe('AgentTools', () => {
       // Two-way pairs add reply instructions, so the message goes as a bracketed paste.
       expect(mockPtyWrite.mock.calls[0][0]).toBe('orch-1');
       expect(mockPtyWrite.mock.calls.map(c => c[1]).join('')).not.toContain('Dispatcher@');
-      expect(mockPtyWrite.mock.calls.map(c => c[1]).join('')).toContain('[TASK:d1] [FROM:Dispatcher controller] hi');
-      expect(mockPtyWrite.mock.calls.map(c => c[1]).join('')).toContain(`Reply to Dispatcher controller via tool "${agentToolName(toDispatcher, 'send_message')}"`);
+      expect(mockPtyWrite.mock.calls.map(c => c[1]).join('')).toContain('[TASK:d1] [FROM:Dispatcher] hi');
+      expect(mockPtyWrite.mock.calls.map(c => c[1]).join('')).toContain(`Reply to Dispatcher via tool "${agentToolName(toDispatcher, 'send_message')}"`);
     });
 
     it('labels an orchestrator message to the Dispatcher with its project', async () => {
+      vi.spyOn(dispatcher, 'dispatcherDisplayName').mockReturnValue('Rosie');
       const result = await sendMessage('orch-1', agentToolName(toDispatcher, 'send_message'), { message: 'hi', task_id: 'd2' });
       expect(result.isError).toBeFalsy();
       // Two-way pairs add reply instructions, so the message goes as a bracketed paste.
       expect(mockPtyWrite.mock.calls[0][0]).toBe('dispatcher-1');
       expect(mockPtyWrite.mock.calls.map(c => c[1]).join('')).toContain('[TASK:d2] [FROM:boss@myapp] hi');
-      expect(result.content[0].text).toContain('Message sent to Dispatcher controller.');
+      expect(result.content[0].text).toContain('Message sent to Rosie.');
       expect(agentToolName(toDispatcher, 'send_message')).toMatch(/^clubhouse__myapp_Dispatcher_[a-z0-9]+__send_message$/);
     });
 
@@ -1176,7 +1177,7 @@ describe('AgentTools', () => {
       await vi.advanceTimersByTimeAsync(600);
       const result = await promise;
       expect(result.isError).toBeFalsy();
-      expect(mockPtyWrite.mock.calls[0][1]).toContain('[FROM:Dispatcher controller] File delivered');
+      expect(mockPtyWrite.mock.calls[0][1]).toContain('[FROM:Dispatcher] File delivered');
       expect(mockPtyWrite.mock.calls[0][1]).not.toContain('Dispatcher@');
     });
 
@@ -1185,12 +1186,12 @@ describe('AgentTools', () => {
       registerChatRuntime({ agentId: 'orch-1', kind: 'chat', sendMessage: receive } as AgentRuntime);
       try {
         expect((await callTool('dispatcher-1', agentToolName(toOrchestrator, 'send_message'), { message: 'hi', task_id: 'chat-message' })).isError).toBeFalsy();
-        expect(receive).toHaveBeenLastCalledWith(expect.stringContaining('[FROM:Dispatcher controller] hi'), expect.objectContaining({
-          routed: [{ sender: { agentId: 'dispatcher-1', name: 'Dispatcher controller' }, text: 'hi' }],
+        expect(receive).toHaveBeenLastCalledWith(expect.stringContaining('[FROM:Dispatcher] hi'), expect.objectContaining({
+          routed: [{ sender: { agentId: 'dispatcher-1', name: 'Dispatcher' }, text: 'hi' }],
         }));
         expect((await callTool('dispatcher-1', agentToolName(toOrchestrator, 'send_file'), { content: 'x', task_id: 'chat-file' })).isError).toBeFalsy();
-        expect(receive).toHaveBeenLastCalledWith(expect.stringContaining('[FROM:Dispatcher controller] File delivered'), expect.objectContaining({
-          routed: [{ sender: { agentId: 'dispatcher-1', name: 'Dispatcher controller' }, text: expect.stringContaining('File delivered:') }],
+        expect(receive).toHaveBeenLastCalledWith(expect.stringContaining('[FROM:Dispatcher] File delivered'), expect.objectContaining({
+          routed: [{ sender: { agentId: 'dispatcher-1', name: 'Dispatcher' }, text: expect.stringContaining('File delivered:') }],
         }));
       } finally {
         unregisterChatRuntime('orch-1');
@@ -1202,7 +1203,7 @@ describe('AgentTools', () => {
       const call = runAgentToolForRemoteCaller('send_message', 'orch-1', 'dispatcher-1', { message: 'hi', task_id: 'late' });
       await vi.advanceTimersByTimeAsync(1500);
       expect((await call).isError).toBeFalsy();
-      expect(mockPtyWrite.mock.calls.map(c => c[1]).join('')).toContain('[FROM:Dispatcher controller] hi');
+      expect(mockPtyWrite.mock.calls.map(c => c[1]).join('')).toContain('[FROM:Dispatcher] hi');
     });
 
     it('keeps the chat and ordinary agents named from their own bindings', async () => {
