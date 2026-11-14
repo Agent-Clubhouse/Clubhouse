@@ -10,7 +10,7 @@ const mocks = vi.hoisted(() => ({
     readTranscript: ReturnType<typeof vi.fn>; sendMessage: ReturnType<typeof vi.fn>;
   },
   records: new Map<string, ActionRun>(), record: vi.fn(), ready: true,
-  permissionHash: 'approved',
+  permissionHash: 'approved', member: true, controller: 'controller', hostOff: false, configRead: vi.fn(async () => ({ instructions: { text: 'Rules' } })),
 }));
 vi.mock('./agent-grants-service', () => ({ effectiveAgentGrants: async () => mocks.grants }));
 vi.mock('./agent-registry', () => ({ agentRegistry: { get: () => undefined } }));
@@ -26,7 +26,12 @@ vi.mock('./actions', () => ({ actionsReady: () => mocks.ready, recordExternalRun
 vi.mock('./dispatcher-federation-policy', () => ({ federationMessageDirection: () => mocks.link ? {} : undefined, federationRequestRouter: () => undefined }));
 vi.mock('./dispatcher-remote-permissions', () => ({ remoteDispatcherPermissionHash: () => mocks.permissionHash }));
 
-import { authorizeQueuedAnnexCall, reportAnnexDeliveryFailure } from './annex-agent-call-host';
+vi.mock('./annex-agent-calls', () => ({ isNetworkComputer: () => mocks.member }));
+vi.mock('./dispatcher-federation', () => ({ remoteFederationController: () => ({ enabled: true, agentId: mocks.controller }) }));
+vi.mock('./agent-config-reader', () => ({ readAgentConfig: mocks.configRead }));
+vi.mock('./agent-grants-store', () => ({ getAgentGrantChanges: () => mocks.hostOff ? { changes: [{ action: 'agent.read', target: { kind: 'any' }, mode: 'off' }, { action: 'agent.read', target: { kind: 'connected' }, mode: 'off' }] } : undefined }));
+
+import { isConfigDispatcher, readConfigForRemoteCaller, authorizeQueuedAnnexCall, reportAnnexDeliveryFailure } from './annex-agent-call-host';
 
 const item: DeliveryOutboxItem = {
   id: 'call', machine: 'peer', queuedAt: new Date().toISOString(),
@@ -40,7 +45,7 @@ const notice = {
 beforeEach(() => {
   vi.clearAllMocks(); mocks.records.clear(); mocks.runtime = undefined; mocks.ready = true;
   mocks.link = true; mocks.disabled = []; mocks.disposed = false;
-  mocks.permissionHash = 'approved';
+  mocks.permissionHash = 'approved'; mocks.member = true; mocks.controller = 'controller'; mocks.hostOff = false;
   mocks.grants = [{ action: 'agent.message', target: { kind: 'connected' }, mode: 'allow' }];
   mocks.record.mockImplementation(async (run: ActionRun) => { mocks.records.set(run.id, run); });
 });
@@ -112,5 +117,34 @@ describe('durable Annex host integration', () => {
     mocks.runtime.readTranscript.mockResolvedValue({ events: [message, { type: 'queue_state', data: { transition: { messageIds: ['notice-1'], status: 'delivered' } } }] });
     expect(await reportAnnexDeliveryFailure(notice)).toBe(true);
     expect(mocks.runtime.sendMessage).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('remote configuration host grants', () => {
+  it('reads a connected ordinary target under the host agent.read grant', async () => {
+    expect((await readConfigForRemoteCaller('peer', 'sender', 'receiver')).isError).toBeFalsy();
+    expect(mocks.configRead).toHaveBeenCalledWith('receiver');
+  });
+  it('allows only the authenticated member controller to read without a connection', async () => {
+    mocks.link = false;
+    expect((await readConfigForRemoteCaller('peer', 'controller', 'receiver')).isError).toBeFalsy();
+    expect((await readConfigForRemoteCaller('peer', 'sender', 'receiver')).isError).toBe(true);
+    mocks.controller = 'replacement';
+    expect(isConfigDispatcher('peer', 'controller')).toBe(false);
+    expect((await readConfigForRemoteCaller('peer', 'controller', 'receiver')).isError).toBe(true);
+  });
+  it('honors host saved Off for an ordinary agent and the unconnected controller', async () => {
+    mocks.hostOff = true;
+    expect((await readConfigForRemoteCaller('peer', 'sender', 'receiver')).isError).toBe(true);
+    mocks.link = false;
+    expect((await readConfigForRemoteCaller('peer', 'controller', 'receiver')).isError).toBe(true);
+    expect(mocks.configRead).not.toHaveBeenCalled();
+  });
+  it('rejects a non-member and rechecks revocation before returning content', async () => {
+    mocks.member = false;
+    expect((await readConfigForRemoteCaller('peer', 'controller', 'receiver')).isError).toBe(true);
+    mocks.member = true;
+    mocks.configRead.mockImplementationOnce(async () => { mocks.member = false; return { instructions: { text: 'Private' } }; });
+    expect((await readConfigForRemoteCaller('peer', 'controller', 'receiver')).isError).toBe(true);
   });
 });

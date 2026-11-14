@@ -7,6 +7,7 @@ import { registerHandoffCapacityTools } from './handoff-capacity-tools';
 import { registerHandoffTools } from './handoff-tools';
 import { registerFederatedRequestTools } from './federated-request-tools';
 import { registerRemoteDispatcherTools } from './remote-dispatcher-tools';
+import { registerAgentConfigTools } from './agent-config-tools';
 import { registerAgentTools } from './agent-tools';
 import { registerBrowserTools } from './browser-tools';
 import { registerGroupProjectTools } from './group-project-tools';
@@ -40,6 +41,7 @@ export function registerClubhouseMcpTools(): void {
   registerHandoffCapacityTools();
   registerHandoffTools();
   registerAgentTools();
+  registerAgentConfigTools();
   registerFederatedRequestTools();
   registerRemoteDispatcherTools();
   registerBrowserTools();

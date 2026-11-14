@@ -156,6 +156,7 @@ describe('tool grant declarations (#2967)', () => {
       list_handoffs: agent.read on self
       cancel_handoff: agent.read on self
       call_wire_tool: (called_tool)
+      read_agent_config: agent.read on agent_arg
       list_remote_requests: agent.read on self
       triage_remote_request: agent.message on self
       report_remote_request: agent.message on self

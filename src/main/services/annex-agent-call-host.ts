@@ -1,3 +1,9 @@
+import { formatAgentAddress } from '../../shared/agent-address';
+import type { McpToolResult } from './clubhouse-mcp/types';
+import { decideGrant } from './clubhouse-mcp/grant-check';
+import { remoteFederationController } from './dispatcher-federation';
+import { isNetworkComputer } from './annex-agent-calls';
+import { readAgentConfig } from './agent-config-reader';
 import { activeAgentLinks } from '../../shared/connection-grants';
 import { evaluateGrant } from '../../shared/agent-grants';
 import { isDisposedAgent } from '../../shared/agent-helpers';
@@ -103,4 +109,32 @@ export async function reportAnnexDeliveryFailure(notice: AnnexDeliveryFailure): 
     routed: [{ fromClubhouse: true, text: detail }],
   });
   return result.delivery !== 'queued';
+}
+
+/** The identity published by this pinned member, never a model-supplied name or flag. */
+export function isConfigDispatcher(machine: string, agentId: string): boolean {
+  const controller = remoteFederationController(machine);
+  return isNetworkComputer(machine) && controller?.enabled === true && controller.agentId === agentId;
+}
+
+/** Recheck the host's own permission immediately before returning any configuration bytes. */
+export async function readConfigForRemoteCaller(machine: string, agentId: string, targetId: string): Promise<McpToolResult> {
+  const address = formatAgentAddress({ agentId, machine });
+  const allowed = () => {
+    if (!isNetworkComputer(machine)) return false;
+    const direction = getConnectionDirection({ agentId, machineId: machine }, { agentId: targetId });
+    const connected = !!(direction?.link || direction?.cardLink || activeAgentLinks(direction).length);
+    const dispatcher = isConfigDispatcher(machine, agentId);
+    if ((!connected && !dispatcher) || direction?.disabledTools.includes('read_agent_config')) return false;
+    return decideGrant(address, 'agent.read', { kind: 'agent', agentId: targetId, relations: connected ? ['connected'] : [] }, dispatcher).outcome === 'allow';
+  };
+  const refused = (): McpToolResult => ({ content: [{ type: 'text', text: 'The receiving host does not allow agent.read on that target.' }], isError: true });
+  if (!allowed()) return refused();
+  try {
+    const result = await readAgentConfig(targetId);
+    return allowed() ? { content: [{ type: 'text', text: JSON.stringify(result) }] } : refused();
+  } catch {
+    // telemetry-exempt: read failure returned without configuration content or source paths
+    return { content: [{ type: 'text', text: 'The target configuration could not be read on its computer.' }], isError: true };
+  }
 }
