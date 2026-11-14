@@ -206,7 +206,7 @@ describe('tool grant declarations (#2967)', () => {
       preview_agent_setup: agent.read on agent_arg
       list_agent_templates: library.read on library
       save_agent_template: template.write on library
-      push_agent_template: template.write on library; template.push on agent_arg if agents
+      push_agent_template: template.write on library; template.push, agent.configure on agent_arg
       delete_agent_template: template.write on library
       create_managed_agent: agent.create on project_arg; agent.grant on project_arg if settings or templateId; connection.bootstrap on created_by_me if connectToDispatcher is true
       restart_agent: agent.restart on agent_arg; agent.sleep on agent_arg if now is true

@@ -181,11 +181,11 @@ function issueConfirm(callerId: string, digest: string): string {
 }
 
 /** Use up a token. Throws ArgError unless it was issued to this caller, is unexpired, and matches what is there now. */
-function redeemConfirm(callerId: string, token: string, digest: string): void {
+function redeemConfirm(callerId: string, token: string, digest: string, consume = true): void {
   const mine = issuedTokens.get(callerId);
   const entry = mine?.get(token);
   if (!entry) throw new ArgError('That confirm token wasn\'t issued to you, or was already used. Call again without confirm for a new preview.');
-  mine!.delete(token);
+  if (consume) mine!.delete(token);
   if (entry.expiresAt <= Date.now()) throw new ArgError('That confirm token expired. Call again without confirm for a new preview.');
   if (entry.digest !== digest) throw new ArgError('stale: it changed since the preview, or the arguments differ from it. Call again without confirm for a new preview.');
 }
@@ -258,6 +258,84 @@ function tool(name: string, grant: ToolGrant, description: string, properties: R
 // This operation owns resolution: its project-scoped target must be identical
 // for permissions, approval and mutation, even when a name resembles a foreign id.
 const SETUP_GRANT: ToolGrantDeclaration = { actions: ['agent.grant', 'agent.configure'], target: 'agent_arg' };
+
+const PUSH_AGENT_GRANT: ToolGrantDeclaration = { actions: ['template.push', 'agent.configure'], target: 'agent_arg' };
+const PUSH_LIBRARY_GRANT: ToolGrantDeclaration = { actions: ['template.write'], target: 'library' };
+const PUSH_GRANTS = [PUSH_LIBRARY_GRANT, PUSH_AGENT_GRANT] as const;
+type PinnedWriteTarget = { project: Project; config: DurableAgentConfig };
+
+/** Exact per-consumer approval, retained through each service write. A preview token is never approval. */
+async function authorizePushWrites(
+  callerId: string, args: Record<string, unknown>, pinned: PinnedWriteTarget[],
+  resolveFresh: () => Promise<PinnedWriteTarget[]>,
+): Promise<{ asked: McpToolResult } | { checkTemplateWrite: () => void; guard: (projectPath: string, agentId: string, settings?: ManagedTemplateSettings) => agentConfig.ManagedSetupCommitPrecondition }> {
+  const targetMap = async (rows: PinnedWriteTarget[]): Promise<ArgTargets> => new Map([
+    [PUSH_AGENT_GRANT, await Promise.all(rows.map((row) => resolvedAgentGrantTarget(callerId, row.config, row.project.path)))],
+  ]);
+  let targets = await targetMap(pinned);
+  const context = grantApprovalContext(callerId, 'push_agent_template', args, PUSH_GRANTS, targets);
+  const version = callApprovalVersion(callerId);
+  let approval: import('../../grant-requests').ConsumedCallApproval | undefined;
+  {
+    const initial = checkToolGrant(callerId, PUSH_GRANTS, args, undefined, targets);
+    if (initial.ok === false) {
+      if (initial.reason !== 'ask_first') return { asked: fail(initial.message) };
+      const outcome = await askFirst(callerId, 'push_agent_template', args, initial.asks, context);
+      if (outcome.kind === 'asked') return { asked: fail(outcome.text) };
+      approval = outcome.approval;
+    }
+  }
+  const checkTemplateWrite = () => {
+    if (callApprovalVersion(callerId) !== version) throw new ArgError('Permissions changed after authorization. Request approval again.');
+    const fresh = checkToolGrant(callerId, PUSH_LIBRARY_GRANT, args);
+    if (fresh.ok === false && (fresh.reason !== 'ask_first' || !approval || approval.scope.context !== context
+      || !fresh.asks.every((ask) => approval!.scope.asks.some((allowed) => allowed.action === ask.action && allowed.where === ask.where)))) {
+      throw new ArgError(fresh.message);
+    }
+  };
+  return { checkTemplateWrite, guard: (projectPath, agentId, settings = {}) => {
+    const original = pinned.find((row) => row.project.path === projectPath && row.config.id === agentId);
+    if (!original) throw new ArgError('The template consumer was not authorized.');
+    let prepared = original;
+    let generation = -1;
+    const needsConnection = Object.keys(settings).length > 0;
+    return {
+      prepare: async () => {
+        const before = projectStore.projectRegistryMutationState();
+        if (before.pending) throw new ArgError('The project registry is changing. Try again.');
+        const current = await resolveFresh();
+        if (current.length !== pinned.length || current.some((row, i) => row.config.id !== pinned[i].config.id || row.project.path !== pinned[i].project.path)) {
+          throw new ArgError('A template consumer changed after authorization. Request approval again.');
+        }
+        prepared = current.find((row) => row.project.path === projectPath && row.config.id === agentId)!;
+        targets = await targetMap(current);
+        const after = projectStore.projectRegistryMutationState();
+        if (after.pending || after.generation !== before.generation) throw new ArgError('The project changed during authorization. Try again.');
+        generation = after.generation;
+      },
+      check: (agent) => {
+        const registry = projectStore.projectRegistryMutationState();
+        const rows = targets.get(PUSH_AGENT_GRANT);
+        const target = rows?.find((row) => row.agentId === agentId && row.projectPath === projectPath);
+        if (!target || rows?.length !== pinned.length || agent.id !== original.config.id || isDisposedAgent(agent)
+          || agent.name !== original.config.name || agent.managed?.templateId !== original.config.managed?.templateId
+          || JSON.stringify(agent.orchestration) !== JSON.stringify(prepared.config.orchestration)
+          || registry.pending || registry.generation !== generation || callApprovalVersion(callerId) !== version
+          || grantApprovalContext(callerId, 'push_agent_template', args, PUSH_GRANTS, targets) !== context) {
+          throw new ArgError('The template consumer or permissions changed after authorization. Request approval again.');
+        }
+        if (needsConnection && !target.relations?.includes('connected')) {
+          throw new ArgError('Template settings, including model and provider, require an existing connection. No settings were applied.');
+        }
+        const fresh = checkToolGrant(callerId, PUSH_GRANTS, args, undefined, targets);
+        if (fresh.ok === false && (fresh.reason !== 'ask_first' || !approval || approval.scope.context !== context
+          || !fresh.asks.every((ask) => approval!.scope.asks.some((allowed) => allowed.action === ask.action && allowed.where === ask.where)))) {
+          throw new ArgError(fresh.message);
+        }
+      },
+    };
+  } };
+}
 
 const DELETE_GRANT: ToolGrant = { actions: ['agent.dispose'], target: 'agent_arg', from: { args: ['agent'], project: 'project' } };
 const CREATE_GRANTS: readonly ToolGrantDeclaration[] = [
@@ -694,8 +772,8 @@ export function registerManagedTools(): void {
       return json(keptClubhousePart(input.setup.mcps, await asDispatcher(callerId, () => svc().saveTemplate(input))));
     });
 
-  tool('push_agent_template', [{ actions: ['template.write'], target: 'library' }, { actions: ['template.push'], target: 'agent_arg', ifArgs: ['agents'], from: { args: ['agents'] } }],
-    'Save a template edit and apply its changes to agents made from it. Call once without confirm, naming in agents the agent ids to apply to: it returns the changes, every agent made from the template with how many changes apply to each, and a confirm token for that choice. Then call again with the same arguments and confirm. Settings left out stay as the template has them. A token is yours only, works once, expires after 10 minutes, and is refused if the template changed since the preview.',
+  tool('push_agent_template', PUSH_GRANTS.map((declaration) => ({ ...declaration, askHandledByTool: true })),
+    'Save a template edit and apply its changes to agents made from it. Call once without confirm, naming in agents the agent ids to apply to: it returns the changes, every agent made from the template with how many changes apply to each, and a confirm token for that choice. Then call again with the same arguments and confirm. Settings left out stay as the template has them. A token is yours only, works once, expires after 10 minutes, and is refused if the template changed since the preview. The token is not user approval: setup edits to unconnected consumers ask in Needs you; settings (including model/provider) require an existing connection and are otherwise skipped and reported.',
     { id: S, blocks: IDS, skills: IDS, mcps: IDS, settings: OBJ, agents: IDS, confirm: S }, ['id', 'blocks', 'skills', 'mcps'],
     async (callerId, args) => {
       const id = requireString(args, 'id');
@@ -724,16 +802,45 @@ export function registerManagedTools(): void {
         return json({ status: 'needs_confirmation', confirm: issueConfirm(callerId, digest), changes: preview.changes, agents: preview.targets, applyTo: chosen,
           note: 'Call again with the same arguments and this confirm token. To apply to other agents, preview again with them in agents.' });
       }
-      redeemConfirm(callerId, given, digest);
-      const targets = preview.targets.filter((t) => chosen.includes(t.agentId)).map((t) => ({ projectPath: t.projectPath, agentId: t.agentId }));
-      const results = await asDispatcher(callerId, () => svc().pushTemplate(id, next, targets));
+      // Validate without consuming: an Ask-first retry must retain this exact preview token.
+      redeemConfirm(callerId, given, digest, false);
+      const selected = chosen.map((agentId) => {
+        const matches = preview.targets.filter((target) => target.agentId === agentId);
+        if (matches.length !== 1) throw new ArgError('Each template consumer must resolve to exactly one project and agent.');
+        return matches[0];
+      });
+      const resolveConsumers = async (consumers: typeof selected): Promise<PinnedWriteTarget[]> => Promise.all(consumers.map(async (target) => {
+        const project = await resolveProject(target.projectPath);
+        const matches = (await agentConfig.peekDurableConfigs(project.path)).filter((agent) => agent.id === target.agentId && !isDisposedAgent(agent));
+        if (matches.length !== 1 || matches[0].managed?.templateId !== id) throw new ArgError('The template consumer is unavailable or changed. Preview again.');
+        return { project, config: structuredClone(matches[0]) };
+      }));
+      const resolved = await resolveConsumers(selected);
       const failed: Array<{ agentId: string; message: string }> = [];
+      const allowed: typeof selected = [];
+      for (let i = 0; i < selected.length; i++) {
+        const target = await resolvedAgentGrantTarget(callerId, resolved[i].config, resolved[i].project.path);
+        // ANY configure authorizes parts only. A bulk preview cannot authorize settings controls.
+        if (selected[i].applicable > 0 && preview.changes.some((change) => change.kind === 'setting') && !target.relations?.includes('connected')) {
+          failed.push({ agentId: selected[i].agentId, message: 'Template settings, including model and provider, require an existing connection. This consumer was skipped.' });
+        } else allowed.push(selected[i]);
+      }
+      const writing = allowed.filter((target) => target.applicable > 0);
+      const pinned = resolved.filter((row) => writing.some((target) => target.agentId === row.config.id && target.projectPath === row.project.path));
+      const authorization = await authorizePushWrites(callerId, args, pinned, () => resolveConsumers(writing));
+      if ('asked' in authorization) return authorization.asked;
+      redeemConfirm(callerId, given, digest);
+      const targets = allowed.map((target) => ({ projectPath: target.projectPath, agentId: target.agentId }));
+      const results = await asDispatcher(callerId, () => svc().pushTemplate(id, next, targets, {
+        precondition: (target, settings) => authorization.guard(target.projectPath, target.agentId, settings),
+        checkTemplateWrite: authorization.checkTemplateWrite,
+      }));
       let applied = 0;
       for (const r of results) {
         if (r.failed) { failed.push({ agentId: r.agentId, message: r.failed }); continue; }
         if (!r.changed) continue;
         try {
-          await asDispatcher(callerId, () => applyManagedSettings(r.projectPath, r.agentId, r.settings));
+          await asDispatcher(callerId, () => applyManagedSettings(r.projectPath, r.agentId, r.settings, undefined, authorization.guard(r.projectPath, r.agentId, r.settings)));
           applied++;
         } catch (err) {
           // telemetry-exempt: reported to the Dispatcher per agent in the result

@@ -306,6 +306,8 @@ export async function setOrchestrationPolicy(
   rawPatch: unknown,
   options: {
     precondition?: (agent: DurableAgentConfig, current: ResolvedOrchestrationPolicy) => void;
+    /** Main-only per-consumer template authorization, checked against the current config before mutation. */
+    agentPrecondition?: import('./agent-config').ManagedSetupCommitPrecondition;
     /** Who is asking, for the audit record. Defaults to the surface this call came in on. */
     surface?: SettingsAuditSurface;
     actorId?: string;
@@ -356,7 +358,8 @@ export async function setOrchestrationPolicy(
       await options.commitPrecondition.prepare();
       options.commitPrecondition.check();
     }
-    await agentConfig.setOrchestrationConfig(projectPath, agentId, stored);
+    if (options.agentPrecondition) await agentConfig.setOrchestrationConfig(projectPath, agentId, stored, options.agentPrecondition);
+    else await agentConfig.setOrchestrationConfig(projectPath, agentId, stored);
     if (options.commitPrecondition) {
       await options.commitPrecondition.prepare();
       options.commitPrecondition.check();

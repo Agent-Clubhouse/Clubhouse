@@ -19,6 +19,7 @@ const state = vi.hoisted(() => ({
   projectPending: false,
   beforeSetupPrepare: undefined as undefined | (() => void | Promise<void>),
   afterSetupPrepare: undefined as undefined | (() => void | Promise<void>),
+  beforeSettingsPrepare: undefined as undefined | (() => void | Promise<void>),
 }));
 
 vi.mock('../mcp-call-gate', async (original) => ({ ...await original<typeof import('../mcp-call-gate')>(), mcpCallAccess: () => 'open' }));
@@ -58,8 +59,18 @@ vi.mock('../../agent-config', () => ({
   },
   deleteUnregister: async (_p: string, id: string) => { state.agents.delete(id); },
   deleteDurable: async (_p: string, id: string) => { state.agents.delete(id); },
-  setOrchestrationConfig: async (_p: string, id: string, policy: DurableAgentConfig['orchestration']) => {
-    state.agents.get(id)!.orchestration = policy;
+  updateDurableConfig: async (_p: string, id: string, updates: Partial<DurableAgentConfig>, _before?: unknown, precondition?: import('../../agent-config').ManagedSetupCommitPrecondition) => {
+    await state.beforeSettingsPrepare?.();
+    await precondition?.prepare();
+    const current = state.agents.get(id)!;
+    precondition?.check(current);
+    Object.assign(current, updates);
+  },
+  setOrchestrationConfig: async (_p: string, id: string, policy: DurableAgentConfig['orchestration'], precondition?: import('../../agent-config').ManagedSetupCommitPrecondition) => {
+    await precondition?.prepare();
+    const current = state.agents.get(id)!;
+    precondition?.check(current);
+    current.orchestration = policy;
   },
 }));
 const legacy = vi.hoisted(() => ({ notice: undefined as 'not_copied' | undefined }));
@@ -154,6 +165,7 @@ beforeEach(async () => {
   state.projectPending = false;
   state.beforeSetupPrepare = undefined;
   state.afterSetupPrepare = undefined;
+  state.beforeSettingsPrepare = undefined;
   vi.mocked(resolveOrchestrator).mockReset();
   vi.mocked(restartManagedAgent).mockClear();
   vi.mocked(deleteAgent).mockClear();
@@ -795,7 +807,7 @@ describe('templates', () => {
       expect(preview.json.status).toBe('needs_confirmation');
       const pushed = await call('push_agent_template', { ...args, confirm: preview.json.confirm });
       expect(pushed.json).toMatchObject({
-        status: 'pushed', applied: 0, failed: [{ agentId: target.id, message: expect.stringContaining('connection.bootstrap') }],
+        status: 'pushed', applied: 0, failed: [{ agentId: target.id, message: expect.stringContaining('require an existing connection') }],
       });
       expect(target.orchestration?.connectToDispatcher).toBe(false);
       expect((await getOrchestrationPolicy('/proj', target.id))?.connectToDispatcher).toBe(false);
@@ -910,6 +922,8 @@ describe('templates', () => {
     const t = (await call('save_agent_template', { name: 'Count push', blocks: [], mcps: [CLUBHOUSE_MCP_PART_ID] })).json;
     managedAgent('a', { mcps: [CLUBHOUSE_MCP_PART_ID], templateId: t.id });
     managedAgent('b', { blocks: [BUILTIN_BLOCK_IDS.identity], mcps: [CLUBHOUSE_MCP_PART_ID], templateId: t.id });
+    state.agents.get('a')!.orchestration = { connectToDispatcher: true };
+    state.agents.get('b')!.orchestration = { connectToDispatcher: true };
     const args = { id: t.id, blocks: [BUILTIN_BLOCK_IDS.identity], skills: [], mcps: [CLUBHOUSE_MCP_PART_ID], agents: ['a', 'b'] };
     const first = await call('push_agent_template', args);
     const pushed = await call('push_agent_template', { ...args, confirm: first.json.confirm });
@@ -1634,5 +1648,150 @@ describe('setup authorization pins its scoped target through the write (#3467)',
     expect((await call('set_agent_setup', args)).isError).toBe(true);
     expect(listGrantRequests()).toEqual([]);
     expect(a.managed!.blocks).toEqual([]);
+  });
+});
+
+
+describe('template pushes respect per-consumer configuration approval (#3480)', () => {
+  async function fixture(settings: Record<string, unknown> = {}) {
+    const made = await call('save_agent_template', { name: `Push boundary ${path.basename(state.base)}`, blocks: [], skills: [], mcps: [CLUBHOUSE_MCP_PART_ID], settings });
+    expect(made.isError, made.content[0].text).toBeFalsy();
+    const template = made.json;
+    const agent = managedAgent('consumer', { templateId: template.id, mcps: [CLUBHOUSE_MCP_PART_ID] });
+    Object.assign(agent, settings);
+    const args = { id: template.id, blocks: [BUILTIN_BLOCK_IDS.identity], skills: [], mcps: [CLUBHOUSE_MCP_PART_ID], agents: [agent.id] };
+    return { agent, args };
+  }
+  async function confirmed(args: Record<string, unknown>) {
+    const preview = await call('push_agent_template', args);
+    expect(preview.json.status).toBe('needs_confirmation');
+    return { ...args, confirm: preview.json.confirm };
+  }
+  function approve() {
+    const request = listGrantRequests('dispatcher')[0];
+    expect(request).toBeTruthy();
+    expect(takeGrantRequest(request.requestId, true)).toBeTruthy();
+  }
+  beforeEach(() => {
+    _resetGrantRequestsForTesting();
+    agentRegistry.register('dispatcher', { projectPath: '/proj', orchestrator: 'claude-code', runtime: 'chat' });
+    agentRegistry.setLaunchCap('dispatcher', { freeAgentMode: true, access: 'full_access' });
+  });
+  afterEach(async () => {
+    await updateAgentGrantChanges('dispatcher', () => undefined);
+    agentRegistry.untrack('dispatcher');
+    _resetGrantRequestsForTesting();
+  });
+
+  it.each([
+    [{ model: 'sonnet' }, { model: 'opus' }],
+    [{ orchestrator: 'claude-code' }, { orchestrator: 'codex-cli' }],
+    [{ effort: 'low' }, { effort: 'high' }],
+  ])('refuses unconnected settings changes despite a tool-issued confirm token', async (before, after) => {
+    const { agent, args } = await fixture(before);
+    const input = await confirmed({ ...args, settings: after });
+    const result = await call('push_agent_template', input);
+    expect(result.json).toMatchObject({ status: 'pushed', applied: 0, failed: [{ agentId: agent.id, message: expect.stringContaining('require an existing connection') }] });
+    expect(agent).toMatchObject(before);
+    expect(agent.managed!.blocks).toEqual([]);
+    expect(listGrantRequests('dispatcher')).toEqual([]);
+  });
+
+  it('asks for an unconnected setup, then uses the same confirm token only after approval', async () => {
+    const { agent, args } = await fixture();
+    const input = await confirmed(args);
+    expect((await call('push_agent_template', input)).content[0].text).toContain('Needs you');
+    expect(agent.managed!.blocks).toEqual([]);
+    approve();
+    const result = await call('push_agent_template', input);
+    expect(result.json).toMatchObject({ status: 'pushed', applied: 1, failed: [] });
+    expect(agent.managed!.blocks).toEqual([BUILTIN_BLOCK_IDS.identity]);
+    expect((await call('push_agent_template', input)).content[0].text).toContain('already used');
+  });
+
+  it('does not reuse one exact-call approval with a different preview token', async () => {
+    const { agent, args } = await fixture();
+    const first = await confirmed(args);
+    expect((await call('push_agent_template', first)).content[0].text).toContain('Needs you');
+    approve();
+    const different = await confirmed(args);
+    expect((await call('push_agent_template', different)).content[0].text).toContain('Needs you');
+    expect(agent.managed!.blocks).toEqual([]);
+  });
+
+  it('combines an Ask-first library write and consumer setup into one approval', async () => {
+    const { agent, args } = await fixture();
+    await updateAgentGrantChanges('dispatcher', () => ({ changes: [{ action: 'template.write', target: { kind: 'any' }, mode: 'ask' }] }));
+    const input = await confirmed(args);
+    expect((await call('push_agent_template', input)).content[0].text).toContain('Needs you');
+    expect(listGrantRequests('dispatcher')).toHaveLength(1);
+    approve();
+    const result = await call('push_agent_template', input);
+    expect(result.json).toMatchObject({ status: 'pushed', applied: 1, failed: [] });
+    expect(agent.managed!.blocks).toEqual([BUILTIN_BLOCK_IDS.identity]);
+  });
+
+  it('honors a saved Off choice for unconnected consumer configuration', async () => {
+    const { agent, args } = await fixture();
+    await updateAgentGrantChanges('dispatcher', () => ({ changes: [{ action: 'agent.configure', target: { kind: 'any' }, mode: 'off' }] }));
+    expect((await call('push_agent_template', await confirmed(args))).isError).toBe(true);
+    expect(agent.managed!.blocks).toEqual([]);
+    expect(listGrantRequests('dispatcher')).toEqual([]);
+  });
+
+  it('keeps connected model and setup propagation without a new approval', async () => {
+    const { agent, args } = await fixture({ model: 'sonnet' });
+    agent.orchestration = { connectToDispatcher: true };
+    const result = await call('push_agent_template', await confirmed({ ...args, settings: { model: 'opus' } }));
+    expect(result.json).toMatchObject({ status: 'pushed', applied: 1, failed: [] });
+    expect(agent.model).toBe('opus');
+    expect(agent.managed!.blocks).toEqual([BUILTIN_BLOCK_IDS.identity]);
+    expect(listGrantRequests('dispatcher')).toEqual([]);
+  });
+
+  it('refuses model propagation if the connection is removed before the settings write', async () => {
+    const { agent, args } = await fixture({ model: 'sonnet' });
+    agent.orchestration = { connectToDispatcher: true };
+    state.beforeSettingsPrepare = () => { agent.orchestration = { connectToDispatcher: false }; };
+    const result = await call('push_agent_template', await confirmed({ ...args, settings: { model: 'opus' } }));
+    expect(result.json).toMatchObject({ status: 'pushed', applied: 0, failed: [{ agentId: agent.id, message: expect.stringMatching(/changed|connection/) }] });
+    expect(agent.model).toBe('sonnet');
+  });
+
+  it.each(['renamed', 'disposed', 'revoked'] as const)('refuses an approved setup when the consumer is %s before mutation', async (change) => {
+    const { agent, args } = await fixture();
+    const input = await confirmed(args);
+    expect((await call('push_agent_template', input)).content[0].text).toContain('Needs you');
+    approve();
+    state.afterSetupPrepare = async () => {
+      if (change === 'revoked') await updateAgentGrantChanges('dispatcher', () => ({ changes: [{ action: 'agent.configure', target: { kind: 'any' }, mode: 'off' }] }));
+      else state.agents.set(agent.id, { ...agent, ...(change === 'renamed' ? { name: 'different' } : { disposedAt: '2026-11-14T00:00:00Z' }) });
+    };
+    const result = await call('push_agent_template', input);
+    expect(result.json).toMatchObject({ status: 'pushed', applied: 0, failed: [{ agentId: agent.id }] });
+    expect(agent.managed!.blocks).toEqual([]);
+    expect(state.agents.get(agent.id)!.managed!.blocks).toEqual([]);
+  });
+
+  it('rechecks library permission at the template save boundary', async () => {
+    const { agent, args } = await fixture();
+    const input = await confirmed(args);
+    expect((await call('push_agent_template', input)).content[0].text).toContain('Needs you');
+    approve();
+    state.afterSetupPrepare = async () => {
+      await updateAgentGrantChanges('dispatcher', () => ({ changes: [{ action: 'template.write', target: { kind: 'any' }, mode: 'off' }] }));
+    };
+    expect((await call('push_agent_template', input)).isError).toBe(true);
+    expect(agent.managed!.blocks).toEqual([]);
+    expect((await managedAgents().getTemplate(args.id)).setup.blocks).toEqual([]);
+  });
+
+  it('fails closed for a hidden consumer rather than asking for an empty target', async () => {
+    const { agent, args } = await fixture();
+    const input = await confirmed(args);
+    state.hiddenFromPeek.add(agent.id);
+    expect((await call('push_agent_template', input)).isError).toBe(true);
+    expect(listGrantRequests('dispatcher')).toEqual([]);
+    expect(agent.managed!.blocks).toEqual([]);
   });
 });

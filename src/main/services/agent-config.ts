@@ -1600,6 +1600,7 @@ async function updateDurableConfigInner(
   agentId: string,
   updates: DurableConfigUpdates,
   beforeCommit?: () => void | Promise<void>,
+  precondition?: ManagedSetupCommitPrecondition,
 ): Promise<void> {
   // Checked before anything changes, so a bad value never half-applies.
   if (updates.effort !== undefined && updates.effort !== null && !isEffortValue(updates.effort)) {
@@ -1610,11 +1611,23 @@ async function updateDurableConfigInner(
     throw new Error('helperTemplateId must be a template id');
   }
   const preflight = await preflightContextWindow(projectPath, agentId, updates);
+  // Guarded template writes prepare before reading the mutable cache snapshot.
+  if (precondition) {
+    if (beforeCommit) await beforeCommit();
+    await currentCreationGit()?.assertCurrent();
+    await precondition.prepare();
+  }
   const { agents, agentsById } = await readAgentsEntry(projectPath);
   const agent = agentsById.get(agentId);
-  if (!agent) return;
-  if (beforeCommit) await beforeCommit();
-  await currentCreationGit()?.assertCurrent();
+  if (!agent) {
+    if (precondition) throw new Error('Agent not found');
+    return;
+  }
+  if (!precondition) {
+    if (beforeCommit) await beforeCommit();
+    await currentCreationGit()?.assertCurrent();
+  }
+  precondition?.check(agent);
   const importedBefore = currentCreationGit() ? cloneAgent(agent) : undefined;
   const rollbackProvider = beforeCommit && updates.orchestrator !== undefined ? structuredClone(agent) : undefined;
   const auditBefore = pickAudited(agent, AGENT_AUDIT_CATALOG);
@@ -3544,14 +3557,17 @@ async function setOrchestrationConfigInner(
   projectPath: string,
   agentId: string,
   config: OrchestrationPolicyConfig | undefined,
+  precondition?: ManagedSetupCommitPrecondition,
 ): Promise<void> {
   const scope = currentCreationGit();
   // Authority preparation can let a watcher invalidate a clean cache. Read
   // the mutation snapshot afterward so its disk baseline still precedes it.
   if (scope) await scope.assertCurrent();
+  if (precondition) await precondition.prepare();
   const { agents, agentsById } = await readAgentsEntry(projectPath);
   const agent = agentsById.get(agentId);
   if (!agent) throw new Error('Agent not found');
+  precondition?.check(agent);
   scope?.assertConsent();
   scope?.assertFilesystem();
   const before = scope ? cloneAgent(agent) : undefined;
@@ -4324,17 +4340,17 @@ export async function auditRecovery(
   return result;
 }
 
-export async function updateDurableConfig(projectPath: string, agentId: string, updates: DurableConfigUpdates, beforeCommit?: () => void | Promise<void>): Promise<void> {
-  if (Object.keys(updates).every((key) => key === 'lastSessionId' || key === 'lastSleep')) return updateDurableConfigInner(projectPath, agentId, updates, beforeCommit);
-  return withAgentActivity(agentId, () => updateDurableConfigInner(projectPath, agentId, updates, beforeCommit));
+export async function updateDurableConfig(projectPath: string, agentId: string, updates: DurableConfigUpdates, beforeCommit?: () => void | Promise<void>, precondition?: ManagedSetupCommitPrecondition): Promise<void> {
+  if (Object.keys(updates).every((key) => key === 'lastSessionId' || key === 'lastSleep')) return updateDurableConfigInner(projectPath, agentId, updates, beforeCommit, precondition);
+  return withAgentActivity(agentId, () => updateDurableConfigInner(projectPath, agentId, updates, beforeCommit, precondition));
 }
 
 export async function updateDurable(projectPath: string, agentId: string, updates: { name?: string; color?: string; icon?: string | null; emoji?: string | null }): Promise<void> {
   return withAgentActivity(agentId, () => updateDurableInner(projectPath, agentId, updates));
 }
 
-export async function setOrchestrationConfig(projectPath: string, agentId: string, config: OrchestrationPolicyConfig | undefined): Promise<void> {
-  return withAgentActivity(agentId, () => setOrchestrationConfigInner(projectPath, agentId, config));
+export async function setOrchestrationConfig(projectPath: string, agentId: string, config: OrchestrationPolicyConfig | undefined, precondition?: ManagedSetupCommitPrecondition): Promise<void> {
+  return withAgentActivity(agentId, () => setOrchestrationConfigInner(projectPath, agentId, config, precondition));
 }
 
 export async function setManagedSetup(projectPath: string, agentId: string, setup: ManagedAgentSetup | null, precondition?: ManagedSetupCommitPrecondition): Promise<void> {
