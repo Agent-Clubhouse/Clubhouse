@@ -1,0 +1,197 @@
+{
+  "cases": [
+    {
+      "name": "update_unsupported (This is a development build. Update it from the desktop.)",
+      "request": {
+        "commandId": "cmd_242",
+        "epoch": "00000000-0000-4000-8000-000000000001",
+        "type": "app.update.check",
+        "version": 1
+      },
+      "response": {
+        "body": {
+          "commandId": "cmd_242",
+          "epoch": "00000000-0000-4000-8000-000000000001",
+          "error": {
+            "code": "update_unsupported",
+            "message": "This is a development build. Update it from the desktop."
+          },
+          "status": "rejected",
+          "version": 1
+        },
+        "status": 409
+      }
+    },
+    {
+      "name": "update_unsupported (Updates are disabled for this build.)",
+      "request": {
+        "commandId": "cmd_243",
+        "epoch": "00000000-0000-4000-8000-000000000001",
+        "type": "app.update.check",
+        "version": 1
+      },
+      "response": {
+        "body": {
+          "commandId": "cmd_243",
+          "epoch": "00000000-0000-4000-8000-000000000001",
+          "error": {
+            "code": "update_unsupported",
+            "message": "Updates are disabled for this build."
+          },
+          "status": "rejected",
+          "version": 1
+        },
+        "status": 409
+      }
+    },
+    {
+      "name": "update_unsupported (This installation needs a manual update from the desktop.)",
+      "request": {
+        "commandId": "cmd_244",
+        "epoch": "00000000-0000-4000-8000-000000000001",
+        "type": "app.update.check",
+        "version": 1
+      },
+      "response": {
+        "body": {
+          "commandId": "cmd_244",
+          "epoch": "00000000-0000-4000-8000-000000000001",
+          "error": {
+            "code": "update_unsupported",
+            "message": "This installation needs a manual update from the desktop."
+          },
+          "status": "rejected",
+          "version": 1
+        },
+        "status": 409
+      }
+    },
+    {
+      "name": "update_check_running",
+      "request": {
+        "commandId": "cmd_245",
+        "epoch": "00000000-0000-4000-8000-000000000001",
+        "type": "app.update.check",
+        "version": 1
+      },
+      "response": {
+        "body": {
+          "commandId": "cmd_245",
+          "epoch": "00000000-0000-4000-8000-000000000001",
+          "error": {
+            "code": "update_check_running",
+            "message": "An update check is already running."
+          },
+          "status": "rejected",
+          "version": 1
+        },
+        "status": 409
+      }
+    },
+    {
+      "name": "accepted check (Dispatcher off)",
+      "request": {
+        "commandId": "cmd_update_check",
+        "epoch": "00000000-0000-4000-8000-000000000001",
+        "type": "app.update.check",
+        "version": 1
+      },
+      "response": {
+        "body": {
+          "commandId": "cmd_update_check",
+          "epoch": "00000000-0000-4000-8000-000000000001",
+          "result": {
+            "availableVersion": "1.1.0",
+            "currentVersion": "0.0.0-test",
+            "downloadProgress": 100,
+            "reason": null,
+            "request": null,
+            "state": "ready"
+          },
+          "status": "completed",
+          "version": 1
+        },
+        "status": 200
+      }
+    },
+    {
+      "name": "same commandId returns original receipt",
+      "request": {
+        "commandId": "cmd_update_check",
+        "epoch": "00000000-0000-4000-8000-000000000001",
+        "type": "app.update.check",
+        "version": 1
+      },
+      "response": {
+        "body": {
+          "commandId": "cmd_update_check",
+          "epoch": "00000000-0000-4000-8000-000000000001",
+          "result": {
+            "availableVersion": "1.1.0",
+            "currentVersion": "0.0.0-test",
+            "downloadProgress": 100,
+            "reason": null,
+            "request": null,
+            "state": "ready"
+          },
+          "status": "completed",
+          "version": 1
+        },
+        "status": 200
+      }
+    },
+    {
+      "name": "accepted check while ready (no second download)",
+      "request": {
+        "commandId": "cmd_246",
+        "epoch": "00000000-0000-4000-8000-000000000001",
+        "type": "app.update.check",
+        "version": 1
+      },
+      "response": {
+        "body": {
+          "commandId": "cmd_246",
+          "epoch": "00000000-0000-4000-8000-000000000001",
+          "result": {
+            "availableVersion": "1.1.0",
+            "currentVersion": "0.0.0-test",
+            "downloadProgress": 100,
+            "reason": null,
+            "request": null,
+            "state": "ready"
+          },
+          "status": "completed",
+          "version": 1
+        },
+        "status": 200
+      }
+    },
+    {
+      "name": "accepted check while downloading (no second download)",
+      "request": {
+        "commandId": "cmd_247",
+        "epoch": "00000000-0000-4000-8000-000000000001",
+        "type": "app.update.check",
+        "version": 1
+      },
+      "response": {
+        "body": {
+          "commandId": "cmd_247",
+          "epoch": "00000000-0000-4000-8000-000000000001",
+          "result": {
+            "availableVersion": "1.1.0",
+            "currentVersion": "0.0.0-test",
+            "downloadProgress": 50,
+            "reason": null,
+            "request": null,
+            "state": "downloading"
+          },
+          "status": "completed",
+          "version": 1
+        },
+        "status": 200
+      }
+    }
+  ],
+  "type": "app.update.check"
+}

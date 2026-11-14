@@ -5,7 +5,7 @@ import type { ContextWindowApplies, ContextWindowChoice, ContextWindowKind } fro
 import type { OrchestrationPolicy, OrchestrationPolicyPatch } from './orchestration-policy';
 import type { AccessLevel } from './agent-access';
 export const MOBILE_PROTOCOL_VERSION = 1;
-export const MOBILE_COMMAND_TYPES = ['chat.send', 'chat.interrupt', 'chat.permission', 'chat.question', 'chat.queue.remove', 'agent.start', 'agent.stop', 'agent.spawn', 'agent.create', 'agent.update', 'project.setPinned', 'project.setInactive', 'helper.approve', 'helper.decline', 'chat.setModel', 'chat.setLevel', 'quick.dismiss', 'quick.clear', 'dispatcher.setEnabled', 'helperRouting.update', 'agent.providerPreview', 'agent.providerChange', 'grant.answer', 'dispatcher.update', 'dispatcher.setModels', 'dispatcher.clearChat', 'dispatcher.forgetEverything', 'app.update.request', 'app.update.cancel'] as const;
+export const MOBILE_COMMAND_TYPES = ['chat.send', 'chat.interrupt', 'chat.permission', 'chat.question', 'chat.queue.remove', 'agent.start', 'agent.stop', 'agent.spawn', 'agent.create', 'agent.update', 'project.setPinned', 'project.setInactive', 'helper.approve', 'helper.decline', 'chat.setModel', 'chat.setLevel', 'quick.dismiss', 'quick.clear', 'dispatcher.setEnabled', 'helperRouting.update', 'agent.providerPreview', 'agent.providerChange', 'grant.answer', 'dispatcher.update', 'dispatcher.setModels', 'dispatcher.clearChat', 'dispatcher.forgetEverything', 'app.update.check', 'app.update.request', 'app.update.cancel'] as const;
 interface CommandBase { version: 1; commandId: string; epoch: string }
 interface ChatTarget { agentId: string; sessionId: string }
 export type MobileCommand = CommandBase & (
@@ -32,6 +32,7 @@ export type MobileCommand = CommandBase & (
   | { type: 'helper.decline'; requestId: string }
   // A Clubhouse permission request waiting on the user (#3205): an Ask-first call or a request_grant ask.
   | { type: 'grant.answer'; requestId: string; answer: MobileGrantAnswer; updateMode?: import('./app-update').AppUpdateMode }
+  | { type: 'app.update.check' }
   | { type: 'app.update.request' }
   | { type: 'app.update.cancel'; requestId: string }
   // The start page's "Finished, waiting on you" list (#2467).

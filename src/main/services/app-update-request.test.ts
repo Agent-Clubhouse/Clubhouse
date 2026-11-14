@@ -11,12 +11,14 @@ const fake = vi.hoisted(() => ({
   live: [] as LiveAgentInfo[],
   registrations: new Map<string, AgentRegistration>(),
   listeners: new Set<() => void>(),
+  check: vi.fn(async (_manual: boolean) => {}),
   apply: vi.fn(async (..._args: unknown[]) => {}),
   resolve: vi.fn(async (..._args: unknown[]) => ({ status: 'resolved', isWorking: false })),
   name: vi.fn(async () => ({ name: 'Builder' })),
 }));
 vi.mock('electron', () => ({ app: { getVersion: () => '1.0.0' } }));
 vi.mock('./auto-update-service', () => ({
+  checkForUpdates: fake.check,
   getStatus: () => ({ ...fake.status }),
   getSelfUpdateUnsupportedReason: () => fake.unsupported,
   getReadyUpdateProblem: () => fake.readyProblem,
@@ -36,7 +38,7 @@ vi.mock('./grant-telemetry', () => ({ recordGrantRequest: vi.fn() }));
 vi.mock('./agent-grants-service', () => ({ setAgentGrant: vi.fn() }));
 vi.mock('./clubhouse-mcp/tools/helper-delivery', () => ({ deliverHelperUpdate: vi.fn() }));
 
-import { _resetAppUpdateForTesting, answerAppUpdateRequest, cancelAppUpdate, getAppUpdateStatus, onAppUpdateChanged, requestAppUpdate } from './app-update-request';
+import { _resetAppUpdateForTesting, answerAppUpdateRequest, checkAppUpdate, cancelAppUpdate, getAppUpdateStatus, onAppUpdateChanged, requestAppUpdate } from './app-update-request';
 import { answerGrantRequest } from './grant-request-answers';
 import { _resetGrantRequestsForTesting, consumeCallApproval, callKey, listGrantRequests, peekGrantRequest } from './grant-requests';
 import { runGrantCommand, type GrantRequestPlaces } from './mobile-grant-requests';
@@ -63,6 +65,25 @@ beforeEach(() => {
   fake.name.mockResolvedValue({ name: 'Builder' });
 });
 afterEach(() => { _resetAppUpdateForTesting(); _resetGrantRequestsForTesting(); vi.useRealTimers(); });
+
+describe('mobile desktop update checks', () => {
+  it('serializes checks even before the updater publishes checking, and releases after failure', async () => {
+    fake.status = { ...fake.status, state: 'idle', availableVersion: null };
+    fake.enabled = false;
+    let release!: () => void;
+    fake.check.mockImplementationOnce(() => new Promise<void>((resolve) => { release = resolve; }));
+    const pending = checkAppUpdate();
+    await expect(checkAppUpdate()).rejects.toMatchObject({ code: 'update_check_running' });
+    release();
+    await pending;
+    fake.check.mockRejectedValueOnce(new Error('mock failure'));
+    await expect(checkAppUpdate()).rejects.toThrow('mock failure');
+    await expect(checkAppUpdate()).resolves.toMatchObject({ state: 'none' });
+    expect(fake.check).toHaveBeenCalledWith(true);
+    expect(listGrantRequests()).toEqual([]);
+    expect(fake.apply).not.toHaveBeenCalled();
+  });
+});
 
 describe('human-approved Clubhouse updates', () => {
   it('only records an approval, with the version and working agent names, and never starts a prompt or restart', async () => {

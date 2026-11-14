@@ -72,6 +72,7 @@ const W = vi.hoisted(() => ({
   updateUnsupported: 'This is a development build. Update it from the desktop.' as string | null,
   updateListeners: new Set<() => void>(),
   updateWorking: [] as import('../../shared/types').LiveAgentInfo[],
+  updateCheck: vi.fn(async (_manual: boolean) => {}),
   updateApply: vi.fn(async () => { throw new Error('The fixture installer refused.'); }),
 }));
 const DISPATCHER_PATH = vi.hoisted(() => '/Users/me/.clubhouse/dispatcher');
@@ -79,6 +80,7 @@ const NOW_FOR_MOCKS = vi.hoisted(() => 1_800_000_000_000);
 
 vi.mock('./auto-update-service', async (original) => ({
   ...await original<typeof import('./auto-update-service')>(),
+  checkForUpdates: W.updateCheck,
   getStatus: () => ({ ...W.updateStatus }),
   getSelfUpdateUnsupportedReason: () => W.updateUnsupported,
   getReadyUpdateProblem: () => null,
@@ -3456,6 +3458,57 @@ describe('Annex mobile contract fixtures', { timeout: TEST_TIMEOUT_MS }, () => {
     W.updateUnsupported = 'This is a development build. Update it from the desktop.';
     _resetAppUpdateForTesting({ keepListeners: true });
     W.dispatcher.enabled = false;
+  });
+
+  it('mobile update checks use the desktop check without a Dispatcher and replay their receipts', async () => {
+    resetWorld();
+    _resetAppUpdateForTesting({ keepListeners: true });
+    W.dispatcher.enabled = false;
+    const ws = await connect();
+    ws.send.mockClear();
+    for (const reason of ['This is a development build. Update it from the desktop.', 'Updates are disabled for this build.', 'This installation needs a manual update from the desktop.']) {
+      W.updateUnsupported = reason;
+      const refused = await command(`update_unsupported (${reason})`, { type: 'app.update.check' });
+      expect(refused.body.error.code).toBe('update_unsupported');
+    }
+    W.updateUnsupported = null;
+    W.updateStatus = { ...W.updateStatus, state: 'checking', error: null };
+    const busy = await command('update_check_running', { type: 'app.update.check' });
+    expect(busy.body.error.code).toBe('update_check_running');
+    const publish = (state: import('../../shared/types').UpdateStatus['state'], availableVersion: string | null, downloadProgress: number) => {
+      W.updateStatus = { ...W.updateStatus, state, availableVersion, downloadProgress, error: null };
+      for (const listener of W.updateListeners) listener();
+    };
+    publish('idle', null, 0);
+    W.updateCheck.mockImplementationOnce(async () => {
+      publish('checking', null, 0);
+      publish('checking', '1.1.0', 0);
+      publish('downloading', '1.1.0', 0);
+      publish('downloading', '1.1.0', 50);
+      publish('ready', '1.1.0', 100);
+    });
+    const checked = await command('accepted check (Dispatcher off)', { type: 'app.update.check' }, { commandId: 'cmd_update_check' });
+    expect(checked.body.result).toMatchObject({ state: 'ready', request: null });
+    expect(W.updateCheck).toHaveBeenCalledExactlyOnceWith(true);
+    const replayed = await command('same commandId returns original receipt', { type: 'app.update.check' }, { commandId: 'cmd_update_check' });
+    expect(replayed).toEqual(checked);
+    const conflict = await command('same id with different content is command_conflict', { type: 'app.update.cancel', requestId: 'missing' }, { commandId: 'cmd_update_check' });
+    expect(conflict.body.error.code).toBe('command_conflict');
+    await command('accepted check while ready (no second download)', { type: 'app.update.check' });
+    publish('downloading', '1.1.0', 50);
+    const downloading = await command('accepted check while downloading (no second download)', { type: 'app.update.check' });
+    expect(downloading.body.result.state).toBe('downloading');
+    expect(W.updateCheck).toHaveBeenCalledTimes(1);
+    // The contract permits coalescing unchanged status; keep the sequence's visible changes.
+    const changes = frames(ws).filter((f) => f.type === 'app_update:changed');
+    const events = changes.filter((f, i) => i === 0 || JSON.stringify(f.payload) !== JSON.stringify(changes[i - 1].payload)).slice(0, 5);
+    expect(events.map((f) => f.payload.state)).toEqual(['none', 'available', 'downloading', 'downloading', 'ready']);
+    expect(events.every((f, i) => i === 0 || f.seq > events[i - 1].seq)).toBe(true);
+    fixtures.set('app-update-check-events.json', { direction: 'desktop-to-phone', note: 'Mocked desktop check to ready; payload replaces snapshot.appUpdate. seq is normalized to consecutive visible changes. No installation or restart.', frames: events.map((f, i) => ({ ...f, seq: 1000 + i })) });
+    expect(frames(await connect()).find((f) => f.type === 'snapshot').payload.appUpdate).toEqual(downloading.body.result);
+    W.updateStatus = { ...W.updateStatus, state: 'idle', availableVersion: null, downloadProgress: 0 };
+    W.updateUnsupported = 'This is a development build. Update it from the desktop.';
+    W.updateCheck.mockReset();
   });
 
   it('every command type has an accepted request and receipt', () => {

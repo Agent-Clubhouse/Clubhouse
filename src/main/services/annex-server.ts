@@ -56,7 +56,7 @@ import {
   type GrantRequestPlaces,
 } from './mobile-grant-requests';
 import { onGrantRequestsChanged } from './grant-requests';
-import { getAppUpdateStatus, onAppUpdateChanged, requestAppUpdate, cancelAppUpdate } from './app-update-request';
+import { getAppUpdateStatus, onAppUpdateChanged, checkAppUpdate, requestAppUpdate, cancelAppUpdate } from './app-update-request';
 import { APP_UPDATE_CHANGED_EVENT, APP_UPDATE_IDLE_WAIT_MS } from '../../shared/app-update';
 import { onDisposeRequestsChanged } from './helper-dispose-requests';
 import { MOBILE_ATTACHMENTS_CAPABILITY, MobileAttachmentService, MobileUploadError, isUploadContentType, readCappedBody } from './mobile-attachments';
@@ -3816,7 +3816,7 @@ async function handleMobileCapabilitiesRoute(ctx: AnnexRouteContext): Promise<vo
     grantRequests: { version: 1, snapshotField: 'grantRequests', events: { opened: GRANT_REQUEST_OPENED_EVENT, resolved: GRANT_REQUEST_RESOLVED_EVENT },
       commands: ['grant.answer'], answers: MOBILE_GRANT_ANSWERS },
     appUpdate: { version: 1, snapshotField: 'appUpdate', event: APP_UPDATE_CHANGED_EVENT,
-      commands: ['app.update.request', 'app.update.cancel'], approvalCommand: 'grant.answer', approvalModeField: 'updateMode',
+      commands: ['app.update.check', 'app.update.request', 'app.update.cancel'], approvalCommand: 'grant.answer', approvalModeField: 'updateMode',
       modes: ['now', 'when_idle'], idleWaitMs: APP_UPDATE_IDLE_WAIT_MS },
     chatControls: { version: 1 },
     // The composer's / menu: a live chat snapshot's `slashCommands`, updated by `commands_available` events.
@@ -4207,6 +4207,7 @@ function localizeCommandAgent(command: MobileCommand): MobileCommand {
 async function runMobileCommand(input: MobileCommand, assertAuthorized: () => void, principal: string): Promise<unknown> {
   assertAuthorized();
   const command = localizeCommandAgent(input);
+  if (command.type === 'app.update.check') return checkAppUpdate();
   if (command.type === 'app.update.request') return requestAppUpdate(assertAuthorized);
   if (command.type === 'app.update.cancel') return cancelAppUpdate(command.requestId);
   if (command.type === 'helperRouting.update') return runHelperRoutingUpdate(command, assertAuthorized, findProjectById);

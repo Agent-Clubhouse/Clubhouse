@@ -134,6 +134,10 @@
         "requestId"
       ]
     },
+    "app.update.check": {
+      "fields": [],
+      "required": []
+    },
     "app.update.request": {
       "fields": [],
       "required": []

@@ -26,6 +26,7 @@
         "approvalCommand": "grant.answer",
         "approvalModeField": "updateMode",
         "commands": [
+          "app.update.check",
           "app.update.request",
           "app.update.cancel"
         ],
@@ -85,6 +86,7 @@
         "dispatcher.setModels",
         "dispatcher.clearChat",
         "dispatcher.forgetEverything",
+        "app.update.check",
         "app.update.request",
         "app.update.cancel"
       ],

@@ -57,6 +57,7 @@ A 404 means unsupported: do not send mobile commands. Gate durable-agent creatio
 - `helper.approve`: `{requestId, force?}`; approve a helper start or dispose an orchestrator asked the user to decide. `force:true` is the desktop's "Dispose anyway". See [Helper requests](#helper-requests).
 - `helper.decline`: `{requestId}`; decline it. The orchestrator is told, as from the desktop.
 - `grant.answer`: `{requestId, answer, updateMode?}`; answer a Clubhouse permission request (an Ask-first call or a `request_grant` ask) as Needs you does, from any device that controls this computer. `answer` is `allow_once`, `allow_lasting` or `decline`. An update's `allow_once` additionally requires `updateMode:"now"|"when_idle"`. See [Grant requests](#grant-requests) and [Desktop updates](#desktop-updates).
+- `app.update.check`: `{}`; run the desktop manual check and its existing download behavior, without requiring the Dispatcher. See [Desktop updates](#desktop-updates).
 - `app.update.request`: `{}`; request human approval of the ready desktop update through the Dispatcher. Never installs or approves anything. See [Desktop updates](#desktop-updates).
 - `app.update.cancel`: `{requestId}`; cancel a pending update approval or an approved idle wait. See [Desktop updates](#desktop-updates).
 
@@ -75,7 +76,7 @@ The authenticated capabilities response adds exactly:
   "version": 1,
   "snapshotField": "appUpdate",
   "event": "app_update:changed",
-  "commands": ["app.update.request", "app.update.cancel"],
+  "commands": ["app.update.check", "app.update.request", "app.update.cancel"],
   "approvalCommand": "grant.answer",
   "approvalModeField": "updateMode",
   "modes": ["now", "when_idle"],
@@ -83,7 +84,7 @@ The authenticated capabilities response adds exactly:
 }
 ```
 
-The two new commands also appear in `capabilities.commands`. `grantRequests` keeps its existing version, answers and events. Its update rows add the optional `update` object below.
+These commands also appear in `capabilities.commands`. `grantRequests` keeps its existing version, answers and events. Its update rows add the optional `update` object below.
 
 ### Status and events
 
@@ -116,7 +117,7 @@ All six top-level fields are always present. `currentVersion` is the running des
 | `ready` | The existing updater is ready to install. macOS/Linux artifacts have been downloaded and verified. Windows Squirrel downloads its package during installation, so readiness/progress 100 there does not promise that package bytes are already on disk. |
 | `unsupported` | This installation cannot self-update: for example a development/unpackaged build, disabled updates, integration/main/nightly/nonrelease build, missing Windows updater, or unsupported local installer. `reason` explains. Do not offer Request update. |
 
-Requesting this feature does not trigger a network check or download. The existing desktop updater and Settings control those. Only `ready` can be requested; an installation rechecks readiness, the installer and the reviewed version before stopping agents and again before apply. A missing installer cannot cause a restart-only fallback.
+`app.update.request` does not trigger a network check or download. The existing desktop updater and Settings control those. Only `ready` can be requested; an installation rechecks readiness, the installer and the reviewed version before stopping agents and again before apply. A missing installer cannot cause a restart-only fallback.
 
 On Windows, immediately before running `Update.exe`, a remote-approved install re-reads the selected channel's actual Squirrel `RELEASES` feed. If its latest version differs from the approved version, the request fails with "A newer update became available; request again." A failed or unreadable feed also refuses installation. The existing desktop banner does not make this extra check. Squirrel still installs from the live feed: a release published in the small gap between that check and installation can replace the reviewed version. It is a Clubhouse release from the same HTTPS update channel, not an exact-version guarantee. The Windows nupkg and its embedded binaries are not currently signed. A pinned local Squirrel feed for remote approvals and signing those packages/binaries remain follow-ups.
 
@@ -133,6 +134,12 @@ On Windows, immediately before running `Update.exe`, a remote-approved install r
 `error` is `null` outside `failed`; failures use fixed plain messages, not exception text. `expiresAt` is `null` for `restarting`, `failed` and `cancelled`. On a successful install the app exits; there is no success/completed request state.
 
 Changes to updater status/progress or request state send the normal replayable WebSocket envelope `{type:"app_update:changed",payload:<the entire appUpdate object>,seq:<global Annex sequence>}` and schedule a snapshot refresh. Replace `appUpdate` from the payload, not a patch. An event or snapshot can arrive before a command receipt. Multiple changes can be coalesced into one snapshot; do not require a snapshot between events or assume every intermediate state will be seen. Use normal snapshot/replay cursor rules. The event and snapshot have the same object shape.
+
+### Checking
+
+`app.update.check` takes no fields beyond `{version:1,commandId,epoch,type:"app.update.check"}` (payload `{}`). Discover it in `capabilities.appUpdate.commands`; capability version 1 is unchanged and older desktops may omit this command. It calls the existing desktop manual check (`checkForUpdates(true)`), including the download the desktop normally performs. It does not require the Dispatcher, matching desktop Check for updates, and creates no grant or installation approval.
+
+The completed receipt's `result` is the entire current `appUpdate` object. On macOS/Linux the receipt can remain pending for the whole download; phones should follow `app_update:changed` for progress while waiting. Retrying with the same `commandId` is safe and returns the original receipt without starting another check. Updater failures appear in its `reason` and in the existing snapshot/event channel. A check while downloading or ready returns that current status without checking or downloading again. This also applies when the updater is ready but its installer is missing: the phone receives the current status and its `reason`, and the check does not re-download. Otherwise an in-flight desktop or mobile check is refused with HTTP 409 `update_check_running`. Unsupported development builds, platforms/installations, or disabled updaters return HTTP 409 `update_unsupported`. Both are `rejected` receipts. Normal pinned mTLS, controlling-device authorization, epoch, receipt replay and `command_conflict` rules apply unchanged; replay never starts another check. Reconnecting clients get current status through normal snapshots/replay. Checking never relaunches or installs.
 
 ### Requesting and approving
 
@@ -194,7 +201,7 @@ For **persistent pairing**, the desktop keeps its Annex identity, TLS certificat
 
 After reconnect, fetch capabilities and the new snapshot. A process restart creates a **new epoch**: discard old receipt retries and replay cursors, and never resend the old request/approval under a new commandId to recover a lost receipt. The latest `appUpdate.currentVersion` is the installation result; compare it with the requested version. `appUpdate.request` starts at `null`. If the old version remains, the outcome is unconfirmed/failed, not an instruction to retry automatically. Restored agents follow existing auto/manual resume policy. Shells and live socket subscriptions from the previous connection end and must be opened again explicitly.
 
-Canonical fixtures: `app-update-statuses.json`, `snapshot-app-update-approval.json`, `app-update-events.json`, `commands/app.update.request.json`, `commands/app.update.cancel.json`, and the additive update cases in `commands/grant.answer.json`. The fixture installer is a fake that fails without applying an update or restarting an app.
+Canonical fixtures: `app-update-statuses.json`, `snapshot-app-update-approval.json`, `app-update-events.json`, `commands/app.update.check.json`, `app-update-check-events.json`, `commands/app.update.request.json`, `commands/app.update.cancel.json`, and the additive update cases in `commands/grant.answer.json`. The fixture installer is a fake that fails without applying an update or restarting an app.
 
 ## Oversized commands
 
