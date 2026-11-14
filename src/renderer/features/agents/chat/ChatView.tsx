@@ -297,6 +297,7 @@ export function ChatViewBody({ agent, state, actions, loading, onSwitchToTermina
   if (permission) {
     approval = (
       <PermissionCard
+        autoFocus={false}
         key={permission.requestId}
         agentName={agent.name}
         // Another desktop's permission command carries only the choice: no plan edits or feedback (#2390).
@@ -312,7 +313,7 @@ export function ChatViewBody({ agent, state, actions, loading, onSwitchToTermina
       />
     );
   } else if (question) {
-    approval = <QuestionCard key={question.requestId} request={question} busy={questionBusy} onAnswer={answerQuestion} />;
+    approval = <QuestionCard autoFocus={false} key={question.requestId} request={question} busy={questionBusy} onAnswer={answerQuestion} />;
   }
   const inlineApproval = (requestId: string, busy: boolean) => {
     const p = state.pendingPermissions.find((r) => r.requestId === requestId);

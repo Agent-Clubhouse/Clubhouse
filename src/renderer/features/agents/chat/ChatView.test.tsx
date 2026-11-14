@@ -329,6 +329,64 @@ describe('ChatView approvals', () => {
     expect(within(screen.getByTestId('chat-inline-approval')).queryByText('Answer here')).not.toBeInTheDocument();
   });
 
+  it('keeps composer focus when a permission arrives and a question becomes current after remote resolution', () => {
+    const actions = makeActions();
+    const base = chatFixture('codex', 'approval');
+    const before = base.filter((e) => e.type !== 'permission_request');
+    const { rerender } = renderState(fold(before), actions);
+    const input = screen.getByLabelText('Message');
+    fireEvent.change(input, { target: { value: 'Still writing' } });
+    input.focus();
+    expect(input).toHaveFocus();
+    rerender(<ChatViewBody agent={agent} state={fold(base)} actions={actions} />);
+    expect(screen.getByTestId('chat-permission')).toBeInTheDocument();
+    expect(input).toHaveFocus();
+    const withQuestion = extend(base, { type: 'question', data: { requestId: 'q-focus', questions: [{ id: 'q', prompt: 'Pick one', options: [{ id: 'a', label: 'A' }], allowFreeText: false }] } });
+    rerender(<ChatViewBody agent={agent} state={fold(withQuestion)} actions={actions} />);
+    expect(input).toHaveFocus();
+    rerender(<ChatViewBody agent={agent} state={fold(extend(withQuestion, { type: 'permission_resolved', data: { requestId: 'perm-1', decision: 'allow', by: 'user' } }))} actions={actions} />);
+    expect(screen.getByTestId('chat-question')).toHaveTextContent('Pick one');
+    expect(input).toHaveFocus();
+    fireEvent.keyDown(input, { key: '1' });
+    expect(actions.respondPermission).not.toHaveBeenCalled();
+    expect(actions.answerQuestion).not.toHaveBeenCalled();
+    expect(input).toHaveValue('Still writing');
+  });
+
+  it('unlocks both question cards after a failed answer, then guards a successful inline answer', async () => {
+    const actions = makeActions();
+    actions.answerQuestion.mockResolvedValueOnce(false);
+    const events = extend(chatFixture('codex', 'conversation'), { type: 'question', data: { requestId: 'q-retry', questions: [{ id: 'q', prompt: 'Pick one', options: [{ id: 'a', label: 'A' }], allowFreeText: false }] } });
+    renderState(fold(events), actions);
+    const inline = screen.getByTestId('chat-inline-approval');
+    fireEvent.click(within(inline).getByText('Answer here'));
+    const pinnedOption = within(screen.getByTestId('chat-pinned-approval')).getByRole('button', { name: /^1\s*A$/ });
+    const inlineOption = within(inline).getByRole('button', { name: /^1\s*A$/ });
+    fireEvent.click(pinnedOption);
+    expect(inlineOption).toBeDisabled();
+    await waitFor(() => expect(pinnedOption).not.toBeDisabled());
+    expect(inlineOption).not.toBeDisabled();
+    fireEvent.click(inlineOption);
+    await act(async () => { await Promise.resolve(); });
+    expect(pinnedOption).toBeDisabled();
+    fireEvent.click(pinnedOption);
+    expect(actions.answerQuestion).toHaveBeenCalledTimes(2);
+    expect(actions.answerQuestion).toHaveBeenLastCalledWith('q-retry', { q: 'a' });
+  });
+
+  it('clears the selected request when the view switches agents', () => {
+    const events = extend(chatFixture('codex', 'approval'), { type: 'question', data: { requestId: 'q-next', questions: [{ id: 'q', prompt: 'Second request', options: [{ id: 'a', label: 'A' }], allowFreeText: false }] } });
+    const state = fold(events);
+    const { actions, rerender } = renderState(state);
+    fireEvent.click(screen.getByText('Next request'));
+    expect(screen.getByTestId('chat-question')).toBeInTheDocument();
+    const other = { ...agent, id: 'other-agent' };
+    rerender(<ChatViewBody agent={other} state={{ ...state, agentId: other.id }} actions={actions} />);
+    expect(screen.getByTestId('chat-permission')).toBeInTheDocument();
+    expect(screen.queryByTestId('chat-question')).not.toBeInTheDocument();
+    expect(screen.getByTestId('chat-pinned-approval')).toHaveTextContent('1 of 2');
+  });
+
   it('keeps the level pill reachable while a permission waits, outside the card (live test)', () => {
     const { actions } = renderFixture('claude', 'approval');
     const footer = screen.getByTestId('chat-composer');
