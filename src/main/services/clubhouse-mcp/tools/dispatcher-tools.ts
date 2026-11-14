@@ -19,6 +19,8 @@
 
 import { getSatellites } from '../../annex-client';
 import { isNetworkComputer } from '../../annex-agent-calls';
+import { mcpCallerKind } from '../mcp-call-gate';
+import { bindingManager } from '../binding-manager';
 import { registerGlobalTool } from '../tool-registry';
 import { getAgentConnection } from '../bridge-server';
 import type { McpToolResult } from '../types';
@@ -53,6 +55,7 @@ function errorText(err: unknown): string {
 interface ConnectedAgent {
   agent: DurableAgentConfig;
   orchestrates: boolean;
+  connectedToDispatcher: boolean;
 }
 
 /**
@@ -65,8 +68,8 @@ async function connectedAgents(project: Project, includeUnconnected = false): Pr
   const policies = await resolveOrchestrationPolicies(project.path, agents);
   return agents.flatMap((agent) => {
     const policy = policies.get(agent.id);
-    return !agent.parentAgentId && (includeUnconnected || policy?.connectToDispatcher)
-      ? [{ agent, orchestrates: policy?.orchestrate ?? false }] : [];
+    return includeUnconnected || policy?.connectToDispatcher
+      ? [{ agent, orchestrates: policy?.orchestrate ?? false, connectedToDispatcher: !!policy?.connectToDispatcher }] : [];
   });
 }
 
@@ -95,8 +98,9 @@ async function cardOf(agentId: string): Promise<Record<string, unknown>> {
 
 async function describeAgent(
   project: Project,
-  { agent, orchestrates }: ConnectedAgent,
+  { agent, orchestrates, connectedToDispatcher }: ConnectedAgent,
   projects: readonly Project[],
+  callerId: string,
 ): Promise<Record<string, unknown>> {
   const [helpers, branch, card] = await Promise.all([
     listHelpersEverywhere(project.path, agent.id),
@@ -115,6 +119,7 @@ async function describeAgent(
     project: { name: projectName(project), path: project.path },
     status: helperStatus(agent).status,
     orchestrates,
+    connected_to_dispatcher: connectedToDispatcher || bindingManager.getBindingsForAgent(callerId).some((binding) => binding.targetKind === 'agent' && binding.targetId === agent.id),
     // Running and connected to the MCP bridge: it can be messaged now.
     connected: !!agentRegistry.get(agent.id) && !!getAgentConnection(agent.id),
     branch,
@@ -136,22 +141,33 @@ async function connectedAgentsOrNone(project: Project, toolName: string, include
   }
 }
 
-async function listAgents(): Promise<McpToolResult> {
+async function listAgents(callerId: string): Promise<McpToolResult> {
   const projects = await projectStore.list();
   const rows: Record<string, unknown>[] = [];
   for (const project of projects) {
-    for (const agent of await connectedAgentsOrNone(project, 'list_agents', true)) rows.push(await describeAgent(project, agent, projects));
+    for (const agent of await connectedAgentsOrNone(project, 'list_agents', true)) rows.push(await describeAgent(project, agent, projects, callerId));
+  }
+  for (const [id, registration] of agentRegistry.getAllRegistrations()) {
+    if (mcpCallerKind(id) !== 'quick' || rows.some((row) => row.id === id)) continue;
+    rows.push({ id, name: id, kind: 'quick', project: { path: registration.projectPath },
+      status: helperStatus({ id } as DurableAgentConfig).status,
+      connected: !!getAgentConnection(id),
+      connected_to_dispatcher: bindingManager.getBindingsForAgent(callerId).some((binding) => binding.targetKind === 'agent' && binding.targetId === id),
+    });
   }
   for (const satellite of getSatellites()) {
     if (!isNetworkComputer(satellite.fingerprint) || !satellite.snapshot) continue;
-    for (const agents of Object.values(satellite.snapshot.agents)) {
+    for (const agents of Object.values({ ...satellite.snapshot.agents, ...Object.fromEntries(Object.entries(satellite.snapshot.quickAgents ?? {}).map(([id, agents]) => [`quick:${id}`, agents])) })) {
       for (const value of agents) {
         if (!value || typeof value !== 'object') continue;
         const agent = value as Record<string, unknown>;
-        if (typeof agent.id !== 'string' || agent.parentAgentId || agent.disposedAt) continue;
+        if (typeof agent.id !== 'string' || agent.disposedAt) continue;
         rows.push({
           id: `${agent.id}@${satellite.fingerprint}`,
+          connected_to_dispatcher: bindingManager.getBindingsForAgent(callerId).some((binding) => binding.targetKind === 'agent' && binding.targetId === `${agent.id}@${satellite.fingerprint}`),
           name: typeof agent.name === 'string' ? agent.name : agent.id,
+          ...(typeof agent.projectId === 'string' && { project_id: agent.projectId }),
+          ...(typeof agent.parentAgentId === 'string' && { parent_agent_id: agent.parentAgentId }),
           machine: { fingerprint: satellite.fingerprint, name: satellite.alias },
           status: typeof agent.status === 'string' ? agent.status : 'unknown',
         });
@@ -267,14 +283,14 @@ export function registerDispatcherTools(): void {
     'list_agents',
     {
       description:
-        'All durable agents in every project and on Annex Network computers, including agents not connected to you: id, name, project, status, whether it orchestrates, ' +
-        'whether it can be messaged now (`connected`), branch, helpers, and its card (what it\'s for, when to ' +
+        'All non-disposed agents in every project and on Annex Network computers, including agents not connected to you: id, name, project, status, whether it orchestrates, ' +
+        'whether it has a Dispatcher connection (`connected_to_dispatcher`), whether its bridge is running (`connected`, local agents only), branch, helpers, and its card (what it\'s for, when to ' +
         'reach it, what it owns) with its page in memory.',
       inputSchema: { type: 'object', properties: {} },
     },
     async (agentId) => {
       try {
-        return await listAgents();
+        return await listAgents(agentId);
       } catch (err) {
         // telemetry-exempt: the error reaches the Dispatcher as the tool result
         appLog('core:mcp', 'warn', 'list_agents failed', { meta: { agentId, error: errorText(err) } });

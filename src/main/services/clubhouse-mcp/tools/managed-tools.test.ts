@@ -260,13 +260,26 @@ describe('builder tools for the Dispatcher (#2900)', () => {
     expect(r.isError).toBe(true);
     expect(r.content[0].text).toMatch(/builtin_read_only/);
     state.agents.set('a', { id: 'a', name: 'release-lead', color: 'indigo', createdAt: '', worktreePath: '/w/a', managed: { version: 1, blocks: [], skills: [], mcps: [] } });
-    const set = await call('set_agent_setup', { project: 'Clubhouse', agent: 'release-lead', blocks: ['builtin-block-identity'], skills: [], mcps: [] });
+    agentRegistry.register('dispatcher', { projectPath: state.base, orchestrator: 'claude-code', runtime: 'pty' });
+    const args = { project: 'Clubhouse', agent: 'release-lead', blocks: ['builtin-block-identity'], skills: [], mcps: [] };
+    const modelChange = await call('set_agent_setup', { ...args, model: 'opus' });
+    expect(modelChange.isError).toBe(true);
+    expect(modelChange.content[0].text).toContain('require an existing connection');
+    expect(listGrantRequests().filter((r) => r.agentId === 'dispatcher')).toEqual([]);
+    const asked = await call('set_agent_setup', args);
+    expect(asked.content[0].text).toContain('Needs you');
+    expect(state.agents.get('a')!.managed!.blocks).toEqual([]);
+    expect(takeGrantRequest(listGrantRequests().find((r) => r.agentId === 'dispatcher')!.requestId, true)).toBeTruthy();
+    const set = await call('set_agent_setup', args);
     expect(set.json).toMatchObject({ blocks: ['builtin-block-identity'], mcps: [CLUBHOUSE_MCP_PART_ID], note: CLUBHOUSE_PART_ALWAYS_ON });
     expect(state.agents.get('a')!.managed!.blocks).toEqual(['builtin-block-identity']);
     expect(state.agents.get('a')!.managed!.mcps).toEqual([CLUBHOUSE_MCP_PART_ID]);
     // Naming it gives no note.
+    grantMock.granted = true;
     const kept = await call('set_agent_setup', { project: 'Clubhouse', agent: 'release-lead', blocks: [], skills: [], mcps: [CLUBHOUSE_MCP_PART_ID] });
     expect(kept.json).not.toHaveProperty('note');
+    agentRegistry.untrack('dispatcher');
+    _resetGrantRequestsForTesting();
   });
 
   it('keeps the Clubhouse MCP part in a template saved without it, and says so (D69)', async () => {

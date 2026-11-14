@@ -45,7 +45,7 @@ import { CLUBHOUSE_MCP_PART_ID, CLUBHOUSE_PART_ALWAYS_ON, isListed, type Managed
 import type { DurableAgentConfig, Project } from '../../../../shared/types';
 import { agentRegistry } from '../../agent-registry';
 import { capToHolder, checkToolGrant } from '../grant-check';
-import { describeCallsForAsk } from '../ask-first';
+import { askFirst, describeCallsForAsk } from '../ask-first';
 import { resolveArgTargets, type ArgTargets } from '../arg-targets';
 import { isDisposedAgent } from '../../../../shared/agent-helpers';
 import { deleteAgent } from '../../agent-delete';
@@ -253,6 +253,8 @@ function tool(name: string, grant: ToolGrant, description: string, properties: R
     }
   }, { group: ORCHESTRATOR_READS.has(name) ? ['dispatcher', 'orchestration'] : 'dispatcher', grant });
 }
+
+const SETUP_GRANT: ToolGrantDeclaration = { actions: ['agent.grant', 'agent.configure'], target: 'agent_arg', from: { args: ['agent'], project: 'project' } };
 
 const DELETE_GRANT: ToolGrant = { actions: ['agent.dispose'], target: 'agent_arg', from: { args: ['agent'], project: 'project' } };
 const CREATE_GRANTS: readonly ToolGrantDeclaration[] = [
@@ -530,10 +532,23 @@ export function registerManagedTools(): void {
       }
     });
 
-  tool('set_agent_setup', { actions: ['agent.grant'], target: 'agent_arg', from: { args: ['agent'], project: 'project' } },
-    'Replace a managed agent\'s parts: blocks in the order it reads them, skills and MCP servers. The Clubhouse MCP part always stays in the setup. Applies at its next start; use restart_agent for a running one.',
+  tool('set_agent_setup', { ...SETUP_GRANT, askHandledByTool: true },
+    'Replace a managed agent\'s parts: blocks in the order it reads them, skills and MCP servers. The Clubhouse MCP part always stays in the setup. Setup edits on unconnected agents ask first by default. This tool does not change model, CLI or context. Applies at its next start; use restart_agent for a running one.',
     { project: PROJECT, agent: AGENT, blocks: IDS, skills: IDS, mcps: IDS }, ['project', 'agent', 'blocks', 'skills', 'mcps'],
     async (callerId, args) => {
+      if (Object.keys(args).some((key) => !['project', 'agent', 'blocks', 'skills', 'mcps'].includes(key))) {
+        throw new ArgError('set_agent_setup changes parts only. Model, CLI and context controls require an existing connection and their separate tools.');
+      }
+      const targets = await resolveArgTargets(callerId, SETUP_GRANT, args);
+      const check = checkToolGrant(callerId, SETUP_GRANT, args, undefined, targets);
+      if (check.ok === false) {
+        if (check.reason !== 'ask_first') return fail(check.message);
+        const approval = await askFirst(callerId, 'set_agent_setup', args, check.asks, grantApprovalContext(callerId, 'set_agent_setup', args, SETUP_GRANT, targets));
+        if (approval.kind === 'asked') return fail(approval.text);
+      }
+      const freshTargets = await resolveArgTargets(callerId, SETUP_GRANT, args);
+      const fresh = checkToolGrant(callerId, { ...SETUP_GRANT, askHandledByTool: true }, args, undefined, freshTargets);
+      if (fresh.ok === false) return fail(fresh.message);
       const t = await resolveAgent(args);
       const current = await svc().getSetup(t.project.path, t.agentId);
       if (!current) throw new ArgError(`${t.agentName} isn't Clubhouse managed.`);

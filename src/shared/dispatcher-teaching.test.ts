@@ -22,6 +22,13 @@ function actionsShown(groups: CapabilityGroup[]): Set<GrantAction> {
 const UNSAID: ReadonlySet<GrantAction> = new Set(['memory.write', 'models.read', 'grant.request', 'browser.read', 'browser.act', 'group_project.read', 'group_project.post', 'group_project.lead', 'group_project.admin']);
 
 describe('dispatcherCapabilities: built from the real grants (#3048)', () => {
+  it('describes unconnected setup edits and connections as asking, without claiming model changes', () => {
+    const text = capabilitiesText(dispatcherCapabilities(DISPATCHER));
+    expect(text).toMatch(/Edit the setup of any agent, after asking you/);
+    expect(text).toMatch(/Make and remove connections for any agent, after asking you/);
+    expect(text).not.toContain('change the model');
+  });
+
   it('answers the Dispatcher\'s defaults in the five groups, in order', () => {
     const groups = dispatcherCapabilities(DISPATCHER);
     expect(groups.map((g) => g.id)).toEqual(CAPABILITY_GROUPS.map((g) => g.id));

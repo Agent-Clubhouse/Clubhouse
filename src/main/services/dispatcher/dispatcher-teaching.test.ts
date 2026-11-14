@@ -84,6 +84,8 @@ describe('readDispatcherAbilities follows the Dispatcher\'s live grants', () => 
       'Your agents', 'New agents and connections', 'Schedules and follow-ups', 'Projects and settings', 'Keeping track',
     ]);
     expect(line(groups, 'projects', 'Change app settings')).toBe('Change app settings, after asking you');
+    expect(line(groups, 'agents', 'Edit the setup')).toBe('Edit the setup of any agent, after asking you');
+    expect(line(groups, 'new', 'connections for any')).toBe('Make and remove connections for any agent, after asking you');
   });
 
   it('changes when a grant is changed on its permissions page', async () => {
@@ -105,7 +107,7 @@ describe('readDispatcherAbilities follows the Dispatcher\'s live grants', () => 
     expect(line(after, 'off', 'Wake')).toBe('Wake agents connected to me');
     expect(line(after, 'projects', 'Change app settings')).toBe('Change app settings');
     // Allowed now, it joins the other things it does to any agent, and no longer asks.
-    expect(line(after, 'agents', 'delete any agent')).toBe('Restart, rename, change the setup and permissions of or delete any agent');
+    expect(line(after, 'agents', 'delete any agent')).toBe('Restart, rename, change the permissions of or delete any agent');
   });
 });
 

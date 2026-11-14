@@ -863,6 +863,15 @@ describe('AgentTools', () => {
       expect(suffixes('dispatcher-1')).not.toContain('wake_agent');
     });
 
+    it('keeps provider, context and message controls unavailable for an unconnected target despite configure ANY Ask first', async () => {
+      bindingManager.unbind('dispatcher-1', 'orch-1');
+      for (const suffix of ['change_provider', 'preview_provider', 'clear_agent', 'compact_agent', 'send_message', 'wake_agent', 'sleep_agent']) {
+        const name = agentToolName(toTarget, suffix);
+        expect(getScopedToolList('dispatcher-1').map((tool) => tool.name)).not.toContain(name);
+        expect((await callTool('dispatcher-1', name, { provider: 'claude-code', expectedState: 'old' })).isError).toBe(true);
+      }
+    });
+
     it('are not listed for a caller that is not the Dispatcher', () => {
       expect(suffixes('agent-1')).not.toContain('preview_provider');
       expect(suffixes('agent-1')).not.toContain('change_provider');

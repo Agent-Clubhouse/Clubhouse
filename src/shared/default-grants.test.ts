@@ -33,6 +33,19 @@ describe('connection management (#3336)', () => {
       expect(evaluateGrant({ caller: { kind: 'agent' }, action: 'connection.manage', target: { kind: 'agent', relations: [...relations] } }, grants).outcome).toBe(relations.length ? 'allow' : 'ask');
     }
   });
+  it('asks to edit an unconnected setup, retains connected controls and respects saved Off choices', () => {
+    const defaults = defaultGrants({ dispatcher: true, helper: false, orchestrates: false, crossProject: false });
+    for (const action of ['connection.manage', 'agent.configure'] as const) {
+      const call = { caller: { kind: 'agent' as const }, action, target: { kind: 'agent' as const, relations: [] } };
+      expect(evaluateGrant(call, defaults).outcome).toBe('ask');
+      const changes = { changes: [{ action, target: { kind: 'any' as const }, mode: 'off' as const }] };
+      expect(evaluateGrant(call, applyGrantChanges(defaults, changes)).outcome).toBe('refuse');
+      expect(changes.changes[0].mode).toBe('off');
+    }
+    for (const action of ['agent.message', 'agent.wake', 'agent.sleep', 'agent.reset'] as const) {
+      expect(evaluateGrant({ caller: { kind: 'agent' }, action, target: { kind: 'agent', relations: [] } }, defaults).outcome).toBe('refuse');
+    }
+  });
   it('asks before ordinary agents manage their own connections without widening their reach', () => {
     for (const helper of [false, true]) {
       const grants = defaultGrants({ dispatcher: false, helper, orchestrates: false, crossProject: false });
