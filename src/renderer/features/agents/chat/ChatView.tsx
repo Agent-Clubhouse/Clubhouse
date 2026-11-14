@@ -7,7 +7,7 @@
  * ChatCapabilities are hidden or disabled; nothing here checks provider ids.
  */
 
-import { useCallback, useMemo, useRef, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { isDispatcherAgent } from '../../dispatcher/dispatcherStore';
 import { DispatcherBehaviorChip } from '../../dispatcher/BehaviorChip';
 import { PendingApprovals } from '../../dispatcher/PendingApprovals';
@@ -26,9 +26,10 @@ import { DOT_LABEL, StatusDot } from '../agent-status';
 import { Button } from '../../../components/Button';
 import { useAgentReview } from '../review/useAgentReview';
 import { useAgentDetailsStore } from '../details/detailsStore';
+import { ApprovalAgentContext, InlineApprovalContext } from './InlineApproval';
 import { PermissionCard, QuestionCard } from './ApprovalDock';
 import { XIcon } from './icons';
-import { Composer, LevelPill, QueueList, TaskList, type ComposerContext, type ComposerLayout } from './Composer';
+import { Composer, QueueList, TaskList, type ComposerContext, type ComposerLayout } from './Composer';
 import { contextSummary, pendingContextChoice } from '../ContextWindowField';
 import { useDurableConfig } from '../details/useDurableConfig';
 import { openAgentSettingsOn } from '../agentSettingsPages';
@@ -163,11 +164,47 @@ export function ChatViewBody({ agent, state, actions, loading, onSwitchToTermina
   const running = isRunningState(state.state);
   // Only a queue the runtime holds can be edited; a CLI that queues natively (Claude) already has the message.
   const queueEditable = state.capabilities?.queue === 'client';
-  const permission = state.pendingPermissions[0];
-  const question = state.pendingQuestions[0];
+  const pending = useMemo(() => [
+    ...state.pendingPermissions.map((request) => ({ kind: 'permission' as const, request })),
+    ...state.pendingQuestions.map((request) => ({ kind: 'question' as const, request })),
+  ].sort((a, b) => {
+    const order = (id: string) => state.items.findIndex((item) =>
+      (item.kind === 'permission' ? item.request.requestId : item.kind === 'question' ? item.requestId : null) === id);
+    return a.request.ts - b.request.ts || order(a.request.requestId) - order(b.request.requestId);
+  }), [state.pendingPermissions, state.pendingQuestions, state.items]);
+  const [selectedRequest, selectRequest] = useState<string | null>(null);
+  const selectedIndex = Math.max(0, pending.findIndex((p) => p.request.requestId === selectedRequest));
+  const selected = pending[selectedIndex];
+  const permission = selected?.kind === 'permission' ? selected.request : undefined;
+  const question = selected?.kind === 'question' ? selected.request : undefined;
   // An answer sent from another view of this agent disables the card here too.
-  const permissionBusy = useAnswering(agent.id, permission?.requestId ?? '');
-  const questionBusy = useAnswering(agent.id, question?.requestId ?? '');
+  const [answered, setAnswered] = useState<ReadonlySet<string>>(new Set());
+  const answerLocks = useRef(new Set<string>());
+  useEffect(() => {
+    answerLocks.current.clear();
+    setAnswered(new Set());
+    selectRequest(null);
+  }, [agent.id, state.sessionId]);
+  useEffect(() => {
+    const ids = new Set(pending.map((p) => p.request.requestId));
+    for (const id of answerLocks.current) if (!ids.has(id)) answerLocks.current.delete(id);
+    setAnswered((previous) => previous.size && [...previous].some((id) => !ids.has(id))
+      ? new Set([...previous].filter((id) => ids.has(id))) : previous);
+  }, [pending]);
+  const answer = async (id: string, send: () => Promise<boolean>) => {
+    if (answerLocks.current.has(id)) return false;
+    answerLocks.current.add(id);
+    setAnswered(new Set(answerLocks.current));
+    let ok = false;
+    try { ok = await send(); return ok; }
+    finally {
+      if (!ok) { answerLocks.current.delete(id); setAnswered(new Set(answerLocks.current)); }
+    }
+  };
+  const respondPermission: ChatActions['respondPermission'] = (id, ...response) => answer(id, () => actions.respondPermission(id, ...response));
+  const answerQuestion: ChatActions['answerQuestion'] = (id, answers) => answer(id, () => actions.answerQuestion(id, answers));
+  const permissionBusy = useAnswering(agent.id, permission?.requestId ?? '') || answered.has(permission?.requestId ?? '');
+  const questionBusy = useAnswering(agent.id, question?.requestId ?? '') || answered.has(question?.requestId ?? '');
   const plan = permission ? planForRequest(state.items, permission) : undefined;
   const ended = isSessionEnded(state);
   const composerContext = useComposerContext(agent, state, context);
@@ -256,43 +293,36 @@ export function ChatViewBody({ agent, state, actions, loading, onSwitchToTermina
     })();
   };
 
-  let dock: ReactNode;
+  let approval: ReactNode;
   if (permission) {
-    dock = (
+    approval = (
       <PermissionCard
         key={permission.requestId}
         agentName={agent.name}
         // Another desktop's permission command carries only the choice: no plan edits or feedback (#2390).
-              extras={remote ? undefined : state.capabilities?.permissionExtras}
+        extras={remote ? undefined : state.capabilities?.permissionExtras}
         request={permission}
         busy={permissionBusy}
         plan={plan}
         diffs={diffsForRequest(state.items, permission)}
         command={commandForRequest(state.items, permission)}
-        queueSize={state.pendingPermissions.length}
-        onRespond={actions.respondPermission}
+        compact
+        queueSize={1}
+        onRespond={respondPermission}
       />
     );
-    // The card replaces the composer, and with it the level pill: keep the pill reachable, so the user can
-    // move to a looser level from here. It sits outside the card so its keys never answer the request.
-    dock = (
-      <>
-        <div key={permission.requestId} className="min-h-0 overflow-y-auto" data-testid="chat-permission-scroll">{dock}</div>
-        <div className="flex-shrink-0 flex items-center" data-testid="chat-permission-level">
-          <LevelPill
-            level={state.level}
-            capabilities={state.capabilities}
-            levelNames={state.levelNames}
-            onChange={(l) => { void actions.setLevel(l); }}
-            compact={composerLayout !== 'wide'}
-          />
-        </div>
-      </>
-    );
   } else if (question) {
-    dock = <QuestionCard key={question.requestId} request={question} busy={questionBusy} onAnswer={actions.answerQuestion} />;
-  } else {
-    dock = (
+    approval = <QuestionCard key={question.requestId} request={question} busy={questionBusy} onAnswer={answerQuestion} />;
+  }
+  const inlineApproval = (requestId: string, busy: boolean) => {
+    const p = state.pendingPermissions.find((r) => r.requestId === requestId);
+    if (p) return <PermissionCard autoFocus={false} busy={busy || answered.has(requestId)} key={p.requestId} request={p} agentName={agent.name} queueSize={1}
+      extras={remote ? undefined : state.capabilities?.permissionExtras} plan={planForRequest(state.items, p)}
+      diffs={diffsForRequest(state.items, p)} command={commandForRequest(state.items, p)} onRespond={respondPermission} />;
+    const q = state.pendingQuestions.find((r) => r.requestId === requestId);
+    return q ? <QuestionCard busy={busy || answered.has(requestId)} key={q.requestId} request={q} autoFocus={false} onAnswer={answerQuestion} /> : null;
+  };
+  const dock = (
       <>
         <PlanHandoff state={state} onImplement={onImplement} />
         <Composer
@@ -326,7 +356,6 @@ export function ChatViewBody({ agent, state, actions, loading, onSwitchToTermina
         />
       </>
     );
-  }
 
   return (
     <div ref={rootRef} className="flex flex-col h-full min-h-0 bg-ctp-base" data-testid="chat-view" data-agent-pane={agent.id} data-view-context={context} data-state={state.state ?? 'none'}>
@@ -368,6 +397,8 @@ export function ChatViewBody({ agent, state, actions, loading, onSwitchToTermina
       <div className={`flex-1 min-h-0 flex ${reviewing ? 'hidden' : ''}`}>
         <div ref={columnRef} className="flex-1 min-w-0 min-h-0 flex flex-col">
           {/* Canvas cards stay quiet: the focused view announces replies, not every card on the board. */}
+          <ApprovalAgentContext.Provider value={agent.id}>
+          <InlineApprovalContext.Provider value={inlineApproval}>
           <ChatStream
             state={state}
             agentName={agent.name}
@@ -381,9 +412,10 @@ export function ChatViewBody({ agent, state, actions, loading, onSwitchToTermina
             debugMarks={debugMarks}
             emptyState={dispatcherIntro}
           />
-          {/* An approval card is capped so it can't squeeze the transcript out (#2412): the card and the lists
-              above it scroll inside the cap. The composer is never capped or wrapped: its menus open upward. */}
-          <div className={`flex-shrink-0 flex justify-center ${permission || question ? 'max-h-[60%]' : ''} ${narrow || short ? 'px-2 pb-2' : 'px-7 pb-4'}`} data-testid="chat-dock">
+          </InlineApprovalContext.Provider>
+          </ApprovalAgentContext.Provider>
+          {/* Only the approval scrolls inside its cap. Composer menus can still open upward. */}
+          <div className={`flex-shrink-0 flex justify-center ${narrow || short ? 'px-2 pb-2' : 'px-7 pb-4'}`} data-testid="chat-dock">
             <div className="w-full max-w-[740px] min-h-0 flex flex-col gap-2">
               <ProtocolDriftNote state={state} compact={context === 'canvas' || narrow} />
               <LoginBanner state={state} onSwitchToTerminal={onSwitchToTerminal} />
@@ -401,6 +433,23 @@ export function ChatViewBody({ agent, state, actions, loading, onSwitchToTermina
               {/* Managed agents (#2896): the setup changed after this session started. Main pane only, like the helper header. */}
               {context === 'main' && <SetupChangedBar agent={agent} variant="dock" />}
               {dispatcher && <PendingApprovals agentId={agent.id} />}
+              {selected && (
+                <div className="min-h-0 max-h-[min(40vh,320px)] overflow-y-auto flex-shrink" data-testid="chat-pinned-approval">
+                  <div className="flex items-center gap-2 py-1 text-[12px] text-ctp-subtext0">
+                    <span role="status">{pending.length} pending</span>
+                    {pending.length > 1 && <>
+                      <button type="button" disabled={selectedIndex === 0} onClick={() => selectRequest(pending[selectedIndex - 1].request.requestId)}>Previous request</button>
+                      <span>{selectedIndex + 1} of {pending.length}</span>
+                      <button type="button" disabled={selectedIndex === pending.length - 1} onClick={() => selectRequest(pending[selectedIndex + 1].request.requestId)}>Next request</button>
+                    </>}
+                    <button type="button" className="ml-auto" onClick={() => {
+                      const item = state.items.find((i) => (i.kind === 'permission' ? i.request.requestId : i.kind === 'question' ? i.requestId : null) === selected.request.requestId);
+                      if (item) setJump((j) => ({ subagentId: '', itemId: item.id, nonce: (j?.nonce ?? 0) + 1 }));
+                    }}>Show in conversation</button>
+                  </div>
+                  {approval}
+                </div>
+              )}
               {dock}
             </div>
           </div>
