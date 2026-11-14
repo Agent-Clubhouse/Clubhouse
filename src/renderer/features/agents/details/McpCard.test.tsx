@@ -111,8 +111,7 @@ describe('MCP servers card', () => {
     ] });
     render(<AgentDetails agent={agent} />);
     await waitFor(() => expect(screen.getByTestId('details-mcp-wires')).toBeInTheDocument());
-    expect(screen.getByText('Wired to Dispatcher controller')).toBeInTheDocument();
-    expect(screen.getByText('Wired to Rosie')).toBeInTheDocument();
+    expect(screen.getAllByText('Wired to Rosie')).toHaveLength(2);
     expect(screen.getByText('Wired to curious-tapir')).toBeInTheDocument();
     expect(useMcpBindingStore.getState().bindings[0].targetName).toBe('Rosie');
   });

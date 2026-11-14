@@ -15,7 +15,9 @@ vi.mock('./dispatcher/dispatcher-service', () => ({
   onDispatcherChanged: (listener: () => void) => { state.changed = listener; return () => { state.changed = undefined; }; },
 }));
 state.base = fs.mkdtempSync(path.join(os.tmpdir(), 'dispatcher-federation-'));
-import { controllerDirection, federationBindingSource, learnFederationController, localFederationController, watchFederation } from './dispatcher-federation';
+import { controllerDirection, federationBindingSource, learnFederationController, localFederationController, remoteFederationController, watchFederation } from './dispatcher-federation';
+import { buildToolName } from './clubhouse-mcp/tool-registry';
+import { resetAllSettingsStoresForTests } from './settings-store';
 import { federationStatus } from './dispatcher-federation-policy';
 import { getConnectionDirection, linkConnectionDirections, setConnectionDirections, setConnectionLink, setConnectionTools } from './connection-grants-store';
 import { devicesChanged, resetDeviceSignalForTests } from './annex-device-signal';
@@ -41,6 +43,34 @@ describe('membership-owned controller links (#3345)', () => {
     expect(controllerDirection(remote, local)?.link).toBeDefined();
     expect(controllerDirection(local, { agentId: 'controller-phone', machineId: 'phone' })).toBeUndefined();
     expect(controllerDirection(local, { agentId: 'controller-paired', machineId: 'paired' })).toBeUndefined();
+  });
+  it('keeps callable tool names stable when a peer upgrades and renames', async () => {
+    state.peers = [peer('desk')];
+    await learnFederationController('desk', info('controller-desk'));
+    const before = (await federationBindingSource.collect())[0];
+    const key = buildToolName(before, 'send_message');
+    for (const displayName of ['Tael', 'Navi']) {
+      await learnFederationController('desk', { ...info('controller-desk'), displayName });
+      const next = (await federationBindingSource.collect())[0];
+      expect(buildToolName(next, 'send_message')).toBe(key);
+      expect(next.label).toBe(`${displayName} on desk`);
+    }
+  });
+  it('keeps published and saved display names on one line', async () => {
+    state.peers = [peer('desk')];
+    const multiline = 'Rosie\n the\tSecond';
+    await learnFederationController('desk', { ...info('controller-desk'), displayName: multiline });
+    expect(remoteFederationController('desk')?.displayName).toBe('Rosie the Second');
+    expect((await federationBindingSource.collect())[0].label).not.toMatch(/[\p{Cc}\p{Cf}]/u);
+    const file = path.join(state.base, 'dispatcher-federation.json');
+    const saved = JSON.parse(fs.readFileSync(file, 'utf8'));
+    saved.controllers.desk.displayName = multiline;
+    fs.writeFileSync(file, JSON.stringify(saved));
+    resetAllSettingsStoresForTests();
+    expect(remoteFederationController('desk')?.displayName).toBe('Rosie the Second');
+    expect(JSON.parse(fs.readFileSync(file, 'utf8')).controllers.desk.displayName).toBe(multiline);
+    await learnFederationController('desk', { ...info('controller-desk'), displayName: '\n\t' });
+    expect(remoteFederationController('desk')?.displayName).toBe('Dispatcher');
   });
   it('learns a member missed during a join on the next authenticated exchange', async () => {
     state.peers = [];

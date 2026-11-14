@@ -865,7 +865,7 @@ async function writeInstructions(agent: DurableAgentConfig, dir: string = getDis
   }
   const role: DispatcherRole = isDispatcherChatPath(dir) ? 'chat' : 'work';
   const skills = (await writeSkills(dir, role, provider)) ?? undefined;
-  await provider.writeInstructions(dir, await withDispatcherMemory(role === 'chat' ? chatInstructions(agent, skills) : instructionsWithSkills(DISPATCHER_INSTRUCTIONS, 'work', skills)));
+  await provider.writeInstructions(dir, await withDispatcherMemory(role === 'chat' ? chatInstructions(agent, skills) : appendSection(instructionsWithSkills(DISPATCHER_INSTRUCTIONS, 'work', skills), `Your name is ${cleanDispatcherName(agent.name) || DEFAULT_DISPATCHER_NAME}. The user chose it; use it when you introduce yourself.`)));
   instructionsWrittenFor.set(dir, instructionsKey(agent, dir));
 }
 
@@ -878,10 +878,10 @@ export function chatInstructions(agent: Pick<DurableAgentConfig, 'name'>, skills
   return appendSection(instructionsWithSkills(DISPATCHER_CHAT_INSTRUCTIONS, 'chat', skills), personalityInstructions(agent.name, getDispatcherPersonality()));
 }
 
-/** What an instructions file depends on besides memory: the CLI, and for the chat its name. */
-function instructionsKey(agent: DurableAgentConfig, dir: string): string {
+/** What an instructions file depends on besides memory: the CLI and shared name. */
+function instructionsKey(agent: DurableAgentConfig, _dir: string): string {
   const provider = agent.orchestrator ?? defaultDispatcherOrchestrator() ?? '';
-  return isDispatcherChatPath(dir) ? `${provider}\n${agent.name}` : provider;
+  return `${provider}\n${agent.name}`;
 }
 
 /**

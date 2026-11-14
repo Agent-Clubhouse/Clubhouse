@@ -130,7 +130,7 @@ test('Settings > Dispatcher: identity, behavior, connected agents, and Forget ev
     return bindings.find((b) => b.agentId === ORCHESTRATOR_ID && b.targetId === coordinator.id);
   }, { timeout: 15_000 }).toMatchObject({
     agentId: ORCHESTRATOR_ID, targetId: coordinator.id,
-    label: 'Dispatcher controller', targetName: 'Rosie',
+    label: 'Rosie', targetName: 'Rosie',
   });
   expect(await hasWire(w, coordinator.id)).toBe(true);
 

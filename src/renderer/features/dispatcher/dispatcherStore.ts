@@ -81,7 +81,7 @@ export function dispatcherAgentDisplayName(
   name: string,
   state: DispatcherState | null = useDispatcherStore.getState().state,
 ): string {
-  if (agentId === state?.agentId) return dispatcherRoleDisplayName('work');
+  if (agentId === state?.agentId) return dispatcherRoleDisplayName('chat', state.config?.name || name);
   if (agentId === state?.chatAgentId) return dispatcherRoleDisplayName('chat', state.config?.name || name);
   return name;
 }

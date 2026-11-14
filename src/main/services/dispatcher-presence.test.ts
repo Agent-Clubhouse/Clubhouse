@@ -6,7 +6,7 @@ import type { AnnexPeer } from '../../shared/types';
 
 const state = vi.hoisted(() => ({
   base: '', local: 'controller-here' as string | null, enabled: true, peers: [] as AnnexPeer[],
-  workRunning: true, requestsUnderWay: 0, online: new Set<string>(),
+  name: 'Dispatcher', workRunning: true, requestsUnderWay: 0, online: new Set<string>(),
   dispatcherListeners: new Set<() => void>(),
 }));
 vi.mock('electron', () => ({ app: { getPath: () => state.base, isPackaged: false } }));
@@ -16,7 +16,7 @@ vi.mock('./annex-peers', () => ({ listPeers: () => state.peers }));
 vi.mock('./dispatcher/dispatcher-service', () => ({
   getDispatcherAgentId: () => state.local, isDispatcherEnabled: () => state.enabled,
   getDispatcherState: () => ({ workRunning: state.workRunning, requestsUnderWay: state.requestsUnderWay }),
-  dispatcherDisplayName: () => 'Dispatcher',
+  dispatcherDisplayName: () => state.name,
   onDispatcherChanged: (listener: () => void) => { state.dispatcherListeners.add(listener); return () => { state.dispatcherListeners.delete(listener); }; },
 }));
 state.base = fs.mkdtempSync(path.join(os.tmpdir(), 'dispatcher-presence-'));
@@ -34,7 +34,7 @@ const connected = (machine: string) => state.online.has(machine.toLowerCase());
 let stops: Array<() => void> = [];
 
 beforeEach(() => {
-  state.local = 'controller-here'; state.enabled = true; state.workRunning = true; state.requestsUnderWay = 0;
+  state.name = 'Dispatcher'; state.local = 'controller-here'; state.enabled = true; state.workRunning = true; state.requestsUnderWay = 0;
   state.online = new Set(['desk', 'laptop']);
   state.peers = [peer('desk', 'Desk'), peer('laptop', 'Laptop'), peer('phone', 'Phone', { kind: 'phone' }), peer('paired', 'Paired', { role: 'satellite' })];
   stops = [watchFederation(() => {}, connected), watchDispatcherPresence(connected)];
@@ -101,6 +101,19 @@ describe('remote Dispatcher presence (#3349)', () => {
     expect(getDispatcherPresence().remotes[0].state).toBe('online');
     await learnFederationController('desk', controller('controller-desk', { state: 'busy-ish' }));
     expect(getDispatcherPresence().remotes[0]).toMatchObject({ state: 'online', dispatcherName: 'Studio Dispatcher' });
+  });
+
+  it('publishes the chosen name and updates remote presence after a rename', async () => {
+    expect(localFederationController()).toMatchObject({ name: 'Dispatcher controller', displayName: 'Dispatcher' });
+    state.name = 'Tael';
+    await learnFederationController('desk', { ...localFederationController(), agentId: 'controller-desk' });
+    expect(remoteDispatcherLabelFor('desk')).toBe('Tael on Desk');
+    state.name = 'Navi';
+    await learnFederationController('desk', { ...localFederationController(), agentId: 'controller-desk' });
+    expect(remoteDispatcherLabelFor('desk')).toBe('Navi on Desk');
+    state.name = 'Dispatcher';
+    await learnFederationController('desk', { ...localFederationController(), agentId: 'controller-desk' });
+    expect(remoteDispatcherLabelFor('desk')).toBe('Dispatcher on Desk');
   });
 
   it('publishes this Dispatcher as asleep, working or online, and nothing while it is off', () => {

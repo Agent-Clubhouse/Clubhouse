@@ -106,7 +106,7 @@ const facts: EngineFacts & { parentOf(id: string): string | undefined; agentWork
   // The Dispatcher counts as an agent here, so its subscriptions can message it (#3042).
   agentExists: (id) => !!knownAgent(id) || isDispatcherAgentId(id),
   isRunning: (id) => isAgentRunning(id),
-  agentName: (id) => isDispatcherAgentId(id) ? dispatcherDisplayName('work') : knownAgent(id)?.name,
+  agentName: (id) => isDispatcherAgentId(id) ? dispatcherDisplayName() : knownAgent(id)?.name,
   isQuickAgent: (id) => knownAgent(id)?.quick === true,
   agentProjectId: (id) => {
     const a = knownAgent(id);

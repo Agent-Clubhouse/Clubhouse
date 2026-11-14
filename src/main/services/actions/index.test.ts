@@ -187,13 +187,13 @@ it.each(['Dispatcher', 'Rosie'])('labels real Action targets as controller with 
   h.known.set('disp', { projectPath: 'dispatcher-folder', name });
   h.known.set('disp-chat', { projectPath: 'dispatcher-chat-folder', name });
   h.known.set('ordinary', { projectPath: 'project-folder', name: 'Builder' });
-  expect(actionNames().agent('disp')).toBe('Dispatcher controller');
+  expect(actionNames().agent('disp')).toBe(name);
   expect(actionNames().agent('disp-chat')).toBe(name);
   expect(actionNames().agent('ordinary')).toBe('Builder');
   const action = createAction({ trigger: nightly, steps: message('hello') }, { kind: 'user' });
   runActionNow(action.id);
   await flush();
-  expect(h.deliver).toHaveBeenCalledWith(expect.objectContaining({ targetId: 'disp', targetName: 'Dispatcher controller' }));
+  expect(h.deliver).toHaveBeenCalledWith(expect.objectContaining({ targetId: 'disp', targetName: name }));
   expect(getAction(action.id)).toMatchObject({ owner: { kind: 'user' }, steps: [{ kind: 'message', agentId: 'disp', text: 'hello' }] });
   expect(actionHistory(action.id)[0]).toMatchObject({ outcome: 'done' });
 });
@@ -399,7 +399,7 @@ describe('Clubhouse’s own actions (#3040)', () => {
     expect(actionHistory(mine.id)).toEqual([
       expect.objectContaining({
         outcome: 'done',
-        steps: [expect.objectContaining({ detail: "Queued for Dispatcher controller's next turn", delivery: 'queued' })],
+        steps: [expect.objectContaining({ detail: "Queued for Rosie's next turn", delivery: 'queued' })],
       }),
     ]);
   });

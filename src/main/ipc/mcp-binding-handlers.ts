@@ -606,7 +606,7 @@ export function restorePersistedBindings(): Promise<void> {
       },
       runTool: runAgentToolForRemoteCaller,
       describeLocalAgent: describeAgentHere,
-      nameOfLocalSender: (id) => isDispatcherAgentId(id) ? dispatcherDisplayName('work')
+      nameOfLocalSender: (id) => isDispatcherAgentId(id) ? dispatcherDisplayName()
         : isDispatcherChatAgentId(id) ? dispatcherDisplayName() : undefined,
       authorizeQueuedCall: authorizeQueuedAnnexCall,
       // News a follower queued for the lead and the lead didn't take shows here instead (#3352).

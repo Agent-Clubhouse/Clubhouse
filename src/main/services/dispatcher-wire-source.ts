@@ -53,7 +53,7 @@ type Pair = { agentId: string; targetId: string };
  */
 function pairBindings(dispatcherId: string, agent: DurableAgentConfig, projectName?: string): PersistedBinding[] {
   const project = projectName ? { projectName } : {};
-  const name = dispatcherDisplayName('work');
+  const name = dispatcherDisplayName();
   // Both directions use narrow defaults when no user-owned switches are saved (#3281).
   return [
     {

@@ -30,6 +30,7 @@ import { localConnectionWakeOn } from '../connection-grants-store';
 import { localizeAgentArgs } from './agent-addresses';
 import { forwardAgentCall, remoteMachineOf } from '../annex-agent-calls';
 import { getProvider } from '../../orchestrators';
+import { parseAgentAddress } from '../../../shared/agent-address';
 
 /** The refusal a Dispatcher tool returns for any other agent. */
 export const DISPATCHER_ONLY_MESSAGE = 'Only the Dispatcher can use this tool.';
@@ -1043,7 +1044,11 @@ export async function callTool(
 
   // A wire to an agent on another machine runs there, which checks it again against its own store (#3064).
   if (binding.targetKind === 'agent' && remoteMachineOf(binding.targetId)) {
-    return forwardAgentCall(agentId, binding.targetId, binding.targetName || binding.label || 'That agent', parsed.suffix, args);
+    const address = parseAgentAddress(binding.targetId);
+    const controller = address.machine ? (await import('../dispatcher-federation')).remoteFederationController(address.machine) : undefined;
+    // Keep targetName for callable tool keys; use the label for display.
+    const display = controller?.agentId === address.agentId ? binding.label : binding.targetName || binding.label || 'That agent';
+    return forwardAgentCall(agentId, binding.targetId, display, parsed.suffix, args);
   }
 
   return withSettingsSurface('mcp', agentId, () => template.handler(binding.targetId, agentId, args));
