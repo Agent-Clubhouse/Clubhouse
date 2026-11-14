@@ -14,6 +14,23 @@ import agentsOrchestratedHelpers from './content/agents-orchestrated-helpers.md'
 import agentsActions from './content/agents-actions.md';
 import groupProjects from './content/group-projects.md';
 import groupProjectGlossary from './content/group-project-glossary.md';
+import agentsHandoffs from './content/agents-handoffs.md';
+import { PREPARE_HANDOFF_SKILL_MD } from '../../../shared/prepare-handoff-skill';
+
+/**
+ * The prepare-handoff skill exactly as agents get it (#3344), so the Handoffs
+ * article can link to what it says. Generated from the delivered text.
+ */
+export const PREPARE_HANDOFF_SKILL_TOPIC_CONTENT = [
+  '# The prepare-handoff skill',
+  '',
+  'Clubhouse gives this skill to agents that may offer handoffs, at their next start. This is its exact text. [Back to Handoffs](#help:agents-handoffs)',
+  '',
+  '```markdown',
+  PREPARE_HANDOFF_SKILL_MD.trimEnd(),
+  '```',
+  '',
+].join('\n');
 import agentsDispatcherChrome from './content/agents-dispatcher.chrome.md';
 import settingsOrchestrators from './content/settings-orchestrators.md';
 import pluginsOverview from './content/plugins-overview.md';
@@ -89,6 +106,8 @@ export const HELP_SECTIONS: HelpSection[] = [
       { id: 'agents-terminal', title: 'CLI & Transcripts', content: agentsTerminal },
       { id: 'agents-orchestrated-helpers', title: 'Orchestrated Helpers', content: agentsOrchestratedHelpers },
       { id: 'agents-actions', title: 'Actions', content: agentsActions },
+      { id: 'agents-handoffs', title: 'Handoffs', content: agentsHandoffs },
+      { id: 'agents-prepare-handoff', title: 'The prepare-handoff skill', content: PREPARE_HANDOFF_SKILL_TOPIC_CONTENT },
       { id: 'orchestrators', title: 'Agent providers', content: settingsOrchestrators },
     ],
   },
@@ -159,6 +178,8 @@ export const CHROME_HELP_SECTIONS: HelpSection[] = [
       { id: 'agents-terminal', title: 'CLI and transcripts', content: agentsTerminalChrome },
       { id: 'agents-orchestrated-helpers', title: 'Orchestrated helpers', content: agentsOrchestratedHelpers },
       { id: 'agents-actions', title: 'Actions', content: agentsActions },
+      { id: 'agents-handoffs', title: 'Handoffs', content: agentsHandoffs },
+      { id: 'agents-prepare-handoff', title: 'The prepare-handoff skill', content: PREPARE_HANDOFF_SKILL_TOPIC_CONTENT },
       { id: 'orchestrators', title: 'Agent providers', content: settingsOrchestrators },
     ],
   },

@@ -1,6 +1,7 @@
 import { describe, it, expect, afterEach } from 'vitest';
 import { HELP_SECTIONS, CHROME_HELP_SECTIONS, DISPATCHER_TOPIC, GROUP_PROJECT_TOPICS, getHelpSections } from './help-content';
 import { useChromeFlagStore } from '../../chrome/chromeFlag';
+import { PREPARE_HANDOFF_SKILL_MD } from '../../../shared/prepare-handoff-skill';
 
 describe('help-content', () => {
   it('has 6 sections', () => {
@@ -12,9 +13,9 @@ describe('help-content', () => {
     expect(ids).toEqual(['general', 'projects', 'agents', 'plugins', 'settings', 'troubleshooting']);
   });
 
-  it('has 24 total topics', () => {
+  it('has 26 total topics', () => {
     const total = HELP_SECTIONS.reduce((sum, s) => sum + s.topics.length, 0);
-    expect(total).toBe(24);
+    expect(total).toBe(26);
   });
 
   it('each section has at least 1 topic', () => {
@@ -46,9 +47,9 @@ describe('help-content', () => {
     expect(general?.topics).toHaveLength(5);
   });
 
-  it('Agents & Orchestrators section has 7 topics', () => {
+  it('Agents & Orchestrators section has 9 topics', () => {
     const agents = HELP_SECTIONS.find((s) => s.id === 'agents');
-    expect(agents?.topics).toHaveLength(7);
+    expect(agents?.topics).toHaveLength(9);
   });
 
   it('Settings section has 4 topics', () => {
@@ -236,5 +237,19 @@ describe('help-content in the new shell', () => {
     expect(settingsIds(getHelpSections())).toEqual(['settings-themes', 'settings-sound', 'settings-notifications', 'settings-annex', 'settings-logging']);
     // Only the new shell's sections get it: the classic articles are left as they were.
     expect(settingsIds(CHROME_HELP_SECTIONS)).not.toContain('settings-annex');
+  });
+});
+
+describe('Handoffs help (#3344)', () => {
+  it('is in both layouts and names the prepare-handoff skill and who gets it', () => {
+    for (const sections of [HELP_SECTIONS, CHROME_HELP_SECTIONS]) {
+      const topic = sections.flatMap((s) => s.topics).find((t) => t.id === 'agents-handoffs');
+      expect(topic?.content).toContain('prepare-handoff');
+      expect(topic?.content).toContain('Offer handoffs');
+      // It links the skill's own topic, which shows the exact text agents get.
+      expect(topic?.content).toContain('](#help:agents-prepare-handoff)');
+      const skill = sections.flatMap((s) => s.topics).find((t) => t.id === 'agents-prepare-handoff');
+      expect(skill?.content).toContain(PREPARE_HANDOFF_SKILL_MD.trimEnd());
+    }
   });
 });

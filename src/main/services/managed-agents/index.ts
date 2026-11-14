@@ -11,6 +11,8 @@ import { IPC } from '../../../shared/ipc-channels';
 import { appLog } from '../log-service';
 import type { OrchestratorProvider } from '../../orchestrators/types';
 import type { DurableAgentConfig, McpServerDef, QuickTemplateChoice } from '../../../shared/types';
+import { PREPARE_HANDOFF_SKILL_ID } from '../../../shared/managed-agents-types';
+import { agentHoldsAction } from '../agent-grants-service';
 import type { ManagedAgentSetup, ManagedAgentStatus, ManagedMcpProblem, ManagedPlainChoice, ManagedPlainPreview, ManagedRunningSnapshot } from '../../../shared/managed-agents-types';
 import { createManagedAgentsService, ManagedError, type ManagedAgentsService } from './service';
 import { createManagedStateStore, managedStateDir } from './state-store';
@@ -35,12 +37,17 @@ import {
   quickManagedLaunch,
   removeManagedClaudeExcludes,
   resolveManagedSetup,
+  setGrantedSkills,
   setupFingerprint,
   type DeliveryRecord,
   type QuickManagedLaunch,
 } from './delivery';
 
 let service: ManagedAgentsService | null = null;
+
+// Built-in skills that follow what an agent may do (#3344): prepare-handoff while it holds handoff.offer.
+// Read when an agent's setup resolves, never at import, so the import cycle through agent-config is harmless.
+setGrantedSkills((agent) => (agentHoldsAction(agent.id, agent, 'handoff.offer') ? [PREPARE_HANDOFF_SKILL_ID] : []));
 
 function isRunning(agentId: string): boolean {
   // Lazy: agent-system imports this module through the spawn path.
@@ -91,9 +98,9 @@ export async function followRemappedSetup(agent: DurableAgentConfig, before: Man
   const record = delivered.get(agent.id);
   if (!record) return;
   const svc = managedAgents();
-  const was = setupFingerprint({ ...agent, managed: before }, await resolveManagedSetup(svc, before));
+  const was = setupFingerprint({ ...agent, managed: before }, await resolveManagedSetup(svc, before, agent));
   if (was.fingerprint !== record.fingerprint) return;
-  const now = setupFingerprint({ ...agent, managed: after }, await resolveManagedSetup(svc, after));
+  const now = setupFingerprint({ ...agent, managed: after }, await resolveManagedSetup(svc, after, agent));
   delivered.set(agent.id, { ...record, fingerprint: now.fingerprint, parts: now.parts, order: now.order });
 }
 
@@ -193,7 +200,7 @@ export async function quickLaunchFor(
 
 export async function managedMcpServersFor(agent: DurableAgentConfig): Promise<Record<string, McpServerDef>> {
   if (!agent.managed) return {};
-  return mcpServersOf(await resolveManagedSetup(managedAgents(), agent.managed));
+  return mcpServersOf(await resolveManagedSetup(managedAgents(), agent.managed, agent));
 }
 
 export async function statusFor(projectPath: string, agentId: string): Promise<ManagedAgentStatus> {
@@ -215,7 +222,7 @@ export async function statusFor(projectPath: string, agentId: string): Promise<M
   }
   const record = delivered.get(agentId);
   if (!running || !record) return { managed: true, running, waiting: false, changes: [], cliChanged: false, ...notice };
-  const resolved = await resolveManagedSetup(managedAgents(), agent.managed);
+  const resolved = await resolveManagedSetup(managedAgents(), agent.managed, agent);
   const now = setupFingerprint(agent, resolved);
   if (now.fingerprint === record.fingerprint) {
     return { managed: true, running, waiting: false, changes: [], deliveredAt: record.deliveredAt, cliChanged: false, ...notice };
@@ -398,7 +405,7 @@ export async function restartManagedAgent(projectPath: string, agentId: string, 
   restarting.add(agentId);
   try {
     const service = managedAgents();
-    const requested = setupFingerprint(target, await resolveManagedSetup(service, target.managed));
+    const requested = setupFingerprint(target, await resolveManagedSetup(service, target.managed, target));
     return await restartWithReceipt({
       agentId, fresh: !!options.fresh, whenTurnEnds: !!options.whenTurnEnds, requestedParts: partRevisions(requested.parts),
     }, (receipt) => service.recordRestartReceipt(receipt), async () => {

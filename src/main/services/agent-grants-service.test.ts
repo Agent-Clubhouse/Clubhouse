@@ -22,7 +22,7 @@ vi.mock('./dispatcher/dispatcher-service', () => ({
   resolveDispatcherIdentity: (projectPath: string, agentId: string) => ({ projectPath, agentId }),
 }));
 
-import { readAgentGrants, setAgentGrant } from './agent-grants-service';
+import { agentHoldsAction, readAgentGrants, setAgentGrant } from './agent-grants-service';
 
 const row = (view: Awaited<ReturnType<typeof readAgentGrants>>, action: string, kind: string) =>
   view.rows.find((r) => r.action === action && r.target.kind === kind);
@@ -99,5 +99,24 @@ describe('start and dispose rows follow the approval setting (#2970)', () => {
     await setAgentGrant('/p', 'o1', { action: 'settings.app.write', target: { kind: 'app' }, mode: 'ask' });
     expect(mocks.setOrchestrationPolicy).not.toHaveBeenCalled();
     expect(mocks.changes).toMatchObject({ changes: [{ action: 'settings.app.write', mode: 'ask', by: 'user' }] });
+  });
+});
+
+describe('agentHoldsAction (#3344)', () => {
+  it('holds it by default only toward other computers\' Dispatchers while connected to the Dispatcher (#3455)', () => {
+    const connected = { ...mocks.config, orchestration: { orchestrate: true, connectToDispatcher: true } } as DurableAgentConfig;
+    expect(agentHoldsAction('o1', connected, 'handoff.offer')).toBe(true);
+  });
+
+  it('is false for an agent whose handoff.offer is Off, and true once it is Ask first or Allow', async () => {
+    mocks.config = { ...mocks.config, orchestration: { orchestrate: true, control: 'hands-off', connectToDispatcher: false } } as Partial<DurableAgentConfig>;
+    const config = mocks.config as DurableAgentConfig;
+    expect(agentHoldsAction('o1', config, 'handoff.offer')).toBe(false);
+    const offer = (await readAgentGrants('/p', 'o1')).rows.find((r) => r.action === 'handoff.offer');
+    expect(offer).toBeDefined();
+    await setAgentGrant('/p', 'o1', { action: 'handoff.offer', target: offer!.target, mode: 'ask' });
+    expect(agentHoldsAction('o1', config, 'handoff.offer')).toBe(true);
+    await setAgentGrant('/p', 'o1', { action: 'handoff.offer', target: offer!.target, mode: 'allow' });
+    expect(agentHoldsAction('o1', config, 'handoff.offer')).toBe(true);
   });
 });

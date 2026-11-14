@@ -46,6 +46,12 @@ export interface ManagedHelperChanges {
  */
 export const CLUBHOUSE_MCP_PART_ID = 'builtin-mcp-clubhouse';
 
+/**
+ * The built-in prepare-handoff skill (#3344). Never chosen in a setup: an agent
+ * gets it while it holds handoff.offer, and never without it.
+ */
+export const PREPARE_HANDOFF_SKILL_ID = 'builtin-skill-prepare-handoff';
+
 /** The built-in Identity block a durable agent gets, and the working one a helper or quick agent gets in its place (#2902). */
 export const IDENTITY_BLOCK_ID = 'builtin-block-identity';
 export const WORKING_IDENTITY_BLOCK_ID = 'builtin-block-identity-helper';
@@ -57,9 +63,13 @@ export function workingIdentityBlocks(blocks: string[]): string[] {
   return mapped.filter((id, i) => id !== WORKING_IDENTITY_BLOCK_ID || mapped.indexOf(id) === i);
 }
 
-/** Whether a part or template is offered for new choices: everything but retired built-ins. */
-export function isListed(item: { retired?: boolean }): boolean {
-  return !item.retired;
+/**
+ * Whether a part or template is offered for new choices: everything but
+ * retired built-ins and prepare-handoff, which follows the agent's
+ * handoff.offer permission and is never chosen (#3344).
+ */
+export function isListed(item: { retired?: boolean; id?: string }): boolean {
+  return !item.retired && item.id !== PREPARE_HANDOFF_SKILL_ID;
 }
 
 /** What the builder's MCP page says beside the Clubhouse part's disabled switch. */
@@ -337,6 +347,11 @@ export interface ManagedPreview {
    */
   keptSkills?: string[];
   keptSkillsReason?: 'link' | 'git';
+  /**
+   * Grant-gated built-ins (prepare-handoff, #3344) not delivered because a
+   * skill the person chose installs to the same folder; theirs wins. One line each.
+   */
+  grantedSkipped?: string[];
   /** Instruction files above the agent's folder that the CLI is told not to read. */
   notRead?: string[];
   /** Instruction files the CLI reads besides the setup, which Clubhouse can't turn off. */

@@ -21,7 +21,8 @@
  */
 import manifestJson from './builtin-text/manifest.json';
 import { BUILTIN_SKILL_TEXT, BUILTIN_TEXT } from './builtin-text/index';
-import { CLUBHOUSE_MCP_PART_ID, IDENTITY_BLOCK_ID, WORKING_IDENTITY_BLOCK_ID, workingIdentityBlocks, type ManagedTemplate, type ManagedTemplateSettings } from '../../../shared/managed-agents-types';
+import { PREPARE_HANDOFF_SKILL_MD, PREPARE_HANDOFF_SKILL_NAME } from './app-skills/prepare-handoff';
+import { CLUBHOUSE_MCP_PART_ID, PREPARE_HANDOFF_SKILL_ID, IDENTITY_BLOCK_ID, WORKING_IDENTITY_BLOCK_ID, workingIdentityBlocks, type ManagedTemplate, type ManagedTemplateSettings } from '../../../shared/managed-agents-types';
 import type { BlockAssetPayload, McpAssetPayload, SkillAssetPayload } from '../../../shared/asset-catalog-types';
 
 export interface BuiltinPart {
@@ -130,6 +131,14 @@ export function builtinParts(): BuiltinPart[] {
       description: 'Helpers, messages and the Dispatcher. Without it the agent can\'t orchestrate.',
       // Never delivered as written: the live bridge is injected per spawn with its own port and nonce.
       payload: { serverKey: 'clubhouse', transport: 'stdio', command: 'clubhouse-mcp-bridge' },
+    },
+    {
+      // App-owned, not from the builder export: it ships with the handoff tools (#3344).
+      id: PREPARE_HANDOFF_SKILL_ID,
+      kind: 'skill',
+      name: 'Prepare handoff',
+      description: 'Summarise the task, choose what to send, and offer it to another agent or computer. Given to agents allowed to offer handoffs.',
+      payload: { skillName: PREPARE_HANDOFF_SKILL_NAME, files: [{ path: 'SKILL.md', content: PREPARE_HANDOFF_SKILL_MD }] },
     },
   ];
 }

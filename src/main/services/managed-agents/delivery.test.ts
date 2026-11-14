@@ -4,7 +4,7 @@ import * as path from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { DurableAgentConfig } from '../../../shared/types';
-import { CLUBHOUSE_MCP_PART_ID, isListed } from '../../../shared/managed-agents-types';
+import { CLUBHOUSE_MCP_PART_ID, PREPARE_HANDOFF_SKILL_ID, isListed } from '../../../shared/managed-agents-types';
 
 vi.mock('electron', () => ({ app: { isPackaged: false, getPath: () => os.tmpdir() } }));
 vi.mock('../log-service', () => ({ appLog: vi.fn() }));
@@ -22,6 +22,7 @@ import {
   isSameFolder,
   parentInstructionFiles,
   previewManagedSetup,
+  setGrantedSkills,
   rootFileExcludes,
   quickManagedLaunch,
   removeManagedClaudeExcludes,
@@ -180,6 +181,48 @@ describe('deliverManagedSetup', () => {
     expect(fs.existsSync(path.join(skills, 'notes'))).toBe(false);
     // Without a place to move it, a folder Clubhouse didn't write is left alone.
     expect(fs.existsSync(path.join(skills, 'mine'))).toBe(true);
+  });
+
+  it('delivers prepare-handoff only while the agent holds handoff.offer, never from its setup (#3344)', async () => {
+    let holds = false;
+    const stop = setGrantedSkills((a) => (a.id === agent.id && holds ? [PREPARE_HANDOFF_SKILL_ID] : []));
+    try {
+      const skills = path.join(agent.worktreePath!, '.claude', 'skills');
+      // Even listed in the setup by hand, it isn't delivered without the permission.
+      agent.managed = { version: 1, blocks: [], skills: [PREPARE_HANDOFF_SKILL_ID], mcps: [] };
+      await user(() => deliverManagedSetup({ service, projectPath: project, agent, provider: provider() }));
+      expect(fs.existsSync(path.join(skills, 'prepare-handoff'))).toBe(false);
+      expect((await previewManagedSetup({ service, projectPath: project, agent, provider: provider() })).skills).toEqual([]);
+      holds = true;
+      agent.managed = { version: 1, blocks: [], skills: [], mcps: [] };
+      await user(() => deliverManagedSetup({ service, projectPath: project, agent, provider: provider() }));
+      expect(fs.readFileSync(path.join(skills, 'prepare-handoff', 'SKILL.md'), 'utf8')).toMatch(/^---\nname: prepare-handoff\n/);
+      expect((await previewManagedSetup({ service, projectPath: project, agent, provider: provider() })).skills.map((sk) => sk.id)).toEqual([PREPARE_HANDOFF_SKILL_ID]);
+      // Revoked: the next start removes the folder Clubhouse wrote.
+      holds = false;
+      await user(() => deliverManagedSetup({ service, projectPath: project, agent, provider: provider() }));
+      expect(fs.existsSync(path.join(skills, 'prepare-handoff'))).toBe(false);
+    } finally { stop(); }
+  });
+
+  it('lets a chosen skill that installs to prepare-handoff/ win over the granted built-in, and says so (#3344, D75)', async () => {
+    const stop = setGrantedSkills((a) => (a.id === agent.id ? [PREPARE_HANDOFF_SKILL_ID] : []));
+    try {
+      const mine = await user(() => service.createPart({ name: 'My handoff notes', content: { kind: 'skill', skillName: 'Prepare-Handoff', files: [{ path: 'SKILL.md', content: '# Mine' }] } }));
+      agent.managed = { version: 1, blocks: [], skills: [mine.id], mcps: [] };
+      await user(() => deliverManagedSetup({ service, projectPath: project, agent, provider: provider() }));
+      const skills = path.join(agent.worktreePath!, '.claude', 'skills');
+      const folder = fs.readdirSync(skills).find((f) => f.toLowerCase() === 'prepare-handoff')!;
+      expect(fs.readFileSync(path.join(skills, folder, 'SKILL.md'), 'utf8')).toBe('# Mine');
+      const preview = await previewManagedSetup({ service, projectPath: project, agent, provider: provider() });
+      expect(preview.skills.map((sk) => sk.id)).toEqual([mine.id]);
+      expect(preview.grantedSkipped).toEqual(['My handoff notes uses prepare-handoff/, so the built-in Prepare handoff skill isn\'t delivered. Rename one to get both.']);
+      // Without the collision the built-in is back, and the note is gone.
+      agent.managed = { version: 1, blocks: [], skills: [], mcps: [] };
+      const clear = await previewManagedSetup({ service, projectPath: project, agent, provider: provider() });
+      expect(clear.skills.map((sk) => sk.id)).toEqual([PREPARE_HANDOFF_SKILL_ID]);
+      expect(clear.grantedSkipped).toBeUndefined();
+    } finally { stop(); }
   });
 
   it('writes a supporting folder\'s files at their nested path, like .github/skills/sample-skill/assets/note.md (#3247)', async () => {
