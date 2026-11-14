@@ -115,6 +115,8 @@ export interface AgentRuntime {
   getState(): ChatSessionState;
   /** Work not yet reflected by the coarse state, including accepted messages and queued turns. */
   hasPendingWork?(): boolean;
+  /** Whether this runtime has accepted input or started a turn since launch, including direct MCP/Annex input. */
+  hasReceivedInput?(): boolean;
   /** Clubhouse chat session identity, used to reject stale remote commands. */
   getSessionId?(): string;
   /** When the running turn started (ms), or null between turns. Chat runtimes only. */

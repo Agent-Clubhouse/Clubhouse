@@ -10,7 +10,7 @@ import { addProject } from './smoke-helpers';
 
 /**
  * An agent's Dispatcher card in Details (#3049), over a fake `claude` that is
- * never started, so no tokens are spent:
+ * initialized idle, with no prompt, so no tokens are spent:
  * - the card is titled with the Dispatcher's name, and an orchestrator is
  *   connected by default; the Orchestration card has no Connect switch;
  * - an asleep agent hasn't been asked yet: "No description yet";
@@ -109,6 +109,7 @@ test('the Dispatcher card: connected by default, Edit, Permissions, and off with
 
   await expect(w.locator('[data-testid="dispatcher-row"]')).toBeVisible({ timeout: 15_000 });
   const id = await dispatcherId();
+  await expect.poll(() => w.evaluate(() => window.clubhouse.dispatcher.get().then((s) => s.workRunning))).toBe(true);
   await addProject(app.electronApp, w, projectDir);
   await openDispatcherCard(w);
 
@@ -162,6 +163,10 @@ test('the Dispatcher card: connected by default, Edit, Permissions, and off with
   await expect(w.locator('[data-testid="dispatcher-card-contact"]')).toContainText('Release planning and tagging');
   expect(await agentPageText()).toContain('When to reach it: Release planning and tagging');
 
-  // Nothing ever started the CLI.
-  expect((await fakes.report('claude').catch(() => undefined))?.consumed ?? 0).toBe(0);
+  // session-info's first two replay lines are initialize request/response;
+  // its next line waits for a user prompt, which idle launch must not send.
+  await expect.poll(async () => {
+    const report = await fakes!.report('claude', id).catch((): undefined => undefined);
+    return report && { consumed: report.consumed, mismatch: report.mismatch, unexpected: report.unexpected, exitCode: report.exitCode };
+  }).toEqual({ consumed: 2, mismatch: null, unexpected: [], exitCode: null });
 });

@@ -65,10 +65,12 @@ function boundTarget(agentId: string, wire: GrantCheckWire): GrantCallTarget | n
   const { binding } = wire;
   switch (binding.targetKind) {
     case 'agent': {
-      const isDispatcher = isTrackedDispatcher(binding.targetId);
+      // Dispatcher wake uses its own grant, as send_message does: a connection's
+      // general Wake it grant must not override Dispatcher-specific Ask first or Off.
+      const isDispatcher = isDispatcherCoordinatorId(binding.targetId) || isTrackedDispatcher(binding.targetId);
       if (binding.targetId === agentId) return { kind: 'agent', relations: ['self'], isDispatcher };
       if (mcpCallerParent(agentId) === binding.targetId) return { kind: 'agent', relations: ['parent'], isDispatcher };
-      return { kind: 'agent', relations: ['connected'], isDispatcher, ...((wire.wakeOn ?? localConnectionWakeOn(agentId, binding.targetId)) && { wakeOn: true }) };
+      return { kind: 'agent', relations: ['connected'], isDispatcher, ...(!isDispatcher && (wire.wakeOn ?? localConnectionWakeOn(agentId, binding.targetId)) && { wakeOn: true }) };
     }
     case 'browser':
       return { kind: 'browser', relations: ['connected'] };

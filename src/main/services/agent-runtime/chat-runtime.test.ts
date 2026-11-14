@@ -80,6 +80,25 @@ afterEach(() => {
   vi.useRealTimers();
 });
 
+it('remembers direct runtime input even after the turn ends, so idle startup cannot discard accepted work', async () => {
+  const driver = new FakeChatDriver();
+  const { runtime } = makeRuntime(driver);
+  await runtime.start();
+  try {
+    expect(runtime.hasReceivedInput()).toBe(false);
+    await runtime.sendMessage('handoff offer sent directly', { source: 'mcp' });
+    expect(runtime.hasReceivedInput()).toBe(true);
+    driver.last.emit({ type: 'turn_started', turnId: 'direct', data: {} });
+    driver.last.emit({ type: 'turn_ended', turnId: 'direct', data: {} });
+    await flush();
+    expect(runtime.getState()).toBe('idle');
+    expect(runtime.hasPendingWork()).toBe(false);
+    expect(runtime.hasReceivedInput()).toBe(true);
+  } finally {
+    await runtime.stop();
+  }
+});
+
 describe('held message diagnostics (#3297)', () => {
   const minute = 60_000;
   const runtimes: ChatAgentRuntime[] = [];

@@ -615,6 +615,7 @@ vi.stubGlobal('clubhouse', {
     onChanged: () => noop,
   },
   dispatcher: {
+    wake: asyncNoop,
     get: async () => DISPATCHER_OFF,
     setEnabled: async () => DISPATCHER_OFF,
     clearChat: async () => ({ cleared: 'now' as const }),

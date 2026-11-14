@@ -48,6 +48,7 @@ export function registerDispatcherHandlers(): void {
   if (registered) return;
   registered = true;
 
+  ipcMain.handle(IPC.DISPATCHER.WAKE, () => dispatcher.wakeDispatcherController());
   ipcMain.handle(IPC.DISPATCHER.GET, (): DispatcherState => dispatcher.getDispatcherState());
   ipcMain.handle(IPC.DISPATCHER.SET_ENABLED, withValidatedArgs(
     [booleanArg()],

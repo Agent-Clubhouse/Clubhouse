@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { rendererLog } from '../../plugins/renderer-logger';
 import { useAgentStore } from '../../stores/agentStore';
 import { AgentTerminal } from '../agents/AgentTerminal';
 import { AgentRuntimePane } from '../agents/chat/AgentRuntimePane';
@@ -54,6 +55,14 @@ export function DispatcherView() {
   const remoteSatellite = remoteId ? parseNamespacedId(remoteId)?.satelliteId : undefined;
   const remoteMachine = useAnnexClientStore((s) => s.satellites.find((sat) => sat.id === remoteSatellite)?.fingerprint.toLowerCase());
   const selectedLead = !!remoteId && !!followed && (remoteId === followed.agent?.id || remoteMachine === followed.state.lead?.machine);
+
+  useEffect(() => {
+    if (state?.enabled && !remoteId && !followed && !workOpen) {
+      void window.clubhouse.dispatcher.wake().catch((err) => {
+        rendererLog('core:dispatcher', 'warn', 'Could not wake the controller when opening its chat', { meta: { error: String(err) } });
+      });
+    }
+  }, [state?.enabled, state?.agentId, remoteId, followed, workOpen]);
 
   // A false→true change is what moves focus into the terminal (AgentTerminal).
   const [focused, setFocused] = useState(false);

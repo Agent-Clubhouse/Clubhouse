@@ -756,6 +756,7 @@ export const IPC = {
   /** The app-wide Dispatcher agent (#2533). */
   DISPATCHER: {
     GET: 'dispatcher:get',
+    WAKE: 'dispatcher:wake',
     SET_ENABLED: 'dispatcher:set-enabled',
     /** Behavior (#3045): light, standard or thorough. Resolves with the DispatcherState. */
     SET_BEHAVIOR: 'dispatcher:set-behavior',

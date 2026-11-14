@@ -93,7 +93,7 @@ import type { TelemetryRuntime } from '../telemetry/types';
 // But the module has state (Maps), so we need to handle that.
 // We'll use dynamic imports or reset between tests.
 
-import { getBuffer, getBufferSnapshot, getSerializedBuffer, getSerializedBufferSnapshot, getLastActivity, isRunning, spawn, spawnShell, resize, write, writeBinary, gracefulKill, isShellBusy, kill, killAll, killShell, startStaleSweep, stopStaleSweep, validateSpawnCwd } from './pty-manager';
+import { getBuffer, getBufferSnapshot, getSerializedBuffer, getSerializedBufferSnapshot, getLastActivity, hasReceivedInput, isRunning, spawn, spawnShell, resize, write, writeBinary, gracefulKill, isShellBusy, kill, killAll, killShell, startStaleSweep, stopStaleSweep, validateSpawnCwd } from './pty-manager';
 import { broadcastToAllWindows, flushPendingFor } from '../util/ipc-broadcast';
 import * as annexEventBus from './annex-event-bus';
 import { getShellCwd } from './pty-manager';
@@ -672,7 +672,9 @@ describe('pty-manager', () => {
 
     it('writes data to the PTY process', async () => {
       await spawn('agent_w', '/test', '/usr/local/bin/claude', []);
+      expect(hasReceivedInput('agent_w')).toBe(false);
       write('agent_w', 'hello\n');
+      expect(hasReceivedInput('agent_w')).toBe(true);
       expect(mockProcess.write).toHaveBeenCalledWith('hello\n');
     });
 
@@ -1845,9 +1847,11 @@ describe('pty-manager', () => {
 
     it('writeBinary writes binary strings byte-for-byte (latin1, not UTF-8)', async () => {
       await spawnShell('shell_bin', '/project');
+      expect(hasReceivedInput('shell_bin')).toBe(false);
       // X10 mouse report with a coordinate byte above 0x7F
       writeBinary('shell_bin', '\x1b[M ' + String.fromCharCode(0xe8) + '%');
 
+      expect(hasReceivedInput('shell_bin')).toBe(true);
       const written = mockProcess.write.mock.calls.at(-1)![0];
       expect(Buffer.isBuffer(written)).toBe(true);
       expect([...written]).toEqual([0x1b, 0x5b, 0x4d, 0x20, 0xe8, 0x25]);

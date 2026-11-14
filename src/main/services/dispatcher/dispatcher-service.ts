@@ -15,8 +15,9 @@
  * which nothing reads.
  *
  * On by default in the new layout: a missing switch creates the agent's record
- * and writes its instructions. Nothing here ever starts it, so that costs no
- * tokens. See resolveDispatcherEnablement for the rules.
+ * and writes its instructions. The controller starts idle when enabled, with
+ * no first prompt: launch opens a session without requesting a model turn.
+ * See resolveDispatcherEnablement for the rules.
  *
  * Two agents, one identity (#3036): the agent in this folder keeps the id,
  * connections, links and grants it always had, and does the work. It is never
@@ -47,7 +48,7 @@
  * and the configs alone, so turning it back on resumes where it left off. MCP going off
  * at app level derives it off and stops nothing: a running Dispatcher keeps
  * running, loses its connections, and can't be started again until MCP is back,
- * when it returns to what its saved values say without being started.
+ * when it returns to what its saved values say and wakes the controller idle.
  */
 import { withSavedAccess } from '../free-agent-settings';
 import * as fsp from 'fs/promises';
@@ -203,6 +204,7 @@ export async function prepareDispatcherSessionStart(projectPath: string, agentId
     : isDispatcherCoordinatorPath(projectPath) && isDispatcherAgentId(agentId) ? config
       : null;
   if (!agent) return null;
+  if (isDispatcherChatPath(projectPath)) await wakeDispatcherController();
   const dir = isDispatcherChatPath(projectPath) ? getDispatcherChatPath() : getDispatcherPath();
   const role: DispatcherRole = isDispatcherChatPath(projectPath) ? 'chat' : 'work';
   return enqueue(async () => {
@@ -987,13 +989,26 @@ function watchChanges(): void {
   stopWatching = () => { for (const unsubscribe of unsubscribers) unsubscribe(); };
 }
 
+/** Wake the hidden controller without a prompt. Never called from inside the settings queue: spawn prepares there too. */
+export async function wakeDispatcherController(options: { refreshRuntime?: boolean } = {}): Promise<void> {
+  if (!isDispatcherEnabled() || !config) return;
+  const { wakeDispatcher } = await import('../clubhouse-mcp/tools/dispatcher-delivery');
+  const result = await wakeDispatcher({
+    callerId: config.id, targetId: config.id, targetName: config.name,
+  }, options);
+  if (result.isError) {
+    const reason = result.content[0]?.type === 'text' ? result.content[0].text : 'Could not wake the controller.';
+    throw new Error(reason);
+  }
+}
+
 /**
  * At app start: read the existing record, and when the Dispatcher is on,
  * create it if needed and rewrite its instructions so a new app version's text reaches it.
- * Creates nothing while it is off, and never starts it.
+ * Creates nothing while it is off. Starts only the controller, idle, after reconciliation.
  */
 export function initDispatcher(): Promise<void> {
-  return enqueue(reconcile).catch((err) => {
+  return enqueue(reconcile).then(() => wakeDispatcherController()).catch((err) => {
     appLog(NS, 'error', 'Dispatcher start-up failed', {
       meta: { error: err instanceof Error ? err.message : String(err) },
     });
@@ -1013,6 +1028,7 @@ export async function setDispatcherEnabled(on: boolean): Promise<DispatcherState
   if (on !== isDispatcherEnabled()) switchGeneration++;
   await updateSettings((current) => ({ ...current, enabled: on }));
   await enqueue(reconcile);
+  await wakeDispatcherController();
   return getDispatcherState();
 }
 
@@ -1026,7 +1042,7 @@ export function getDispatcherSwitchGeneration(): number {
 
 /** The experimental flags changed; a saved `dispatcher` may have flipped. */
 export function onExperimentalSettingsChanged(): Promise<void> {
-  return enqueue(reconcile).catch((err) => {
+  return enqueue(reconcile).then(() => wakeDispatcherController({ refreshRuntime: true })).catch((err) => {
     appLog(NS, 'error', 'Dispatcher update after a flag change failed', {
       meta: { error: err instanceof Error ? err.message : String(err) },
     });

@@ -23,7 +23,7 @@ import { DEFAULT_PASTE_TIMING } from '../../agent-runtime/pty-runtime';
 import { isAgentStoppingError } from '../../agent-runtime/agent-stopping';
 import { getProvider } from '../../../orchestrators';
 import { sleepAgent, wakeWiredAgent } from './agent-lifecycle';
-import { deliverToDispatcher, isDispatcherTarget, sleepingDispatcherHint } from './dispatcher-delivery';
+import { deliverToDispatcher, isDispatcherTarget, sleepingDispatcherHint, wakeDispatcher } from './dispatcher-delivery';
 import { dispatcherDisplayName, isDispatcherAgentId, isDispatcherEnabled } from '../../dispatcher/dispatcher-service';
 import { noteAgentReached } from '../../dispatcher/dispatcher-requests';
 import type { RoutedMessagePart, RuntimeSendResult } from '../../../../shared/chat';
@@ -675,7 +675,10 @@ export function registerAgentTools(): void {
       const targetName = senderOf(agentId, targetId).targetName;
       const taskId = `t_${Date.now().toString(36)}`;
       const tagged = message ? buildTaggedMessage(agentId, targetId, message, taskId) : undefined;
-      const result = await wakeWiredAgent({ callerId: agentId, targetId, targetName, mission: tagged?.text, missionRouted: tagged?.routed });
+      const wake = { callerId: agentId, targetId, targetName, mission: tagged?.text, missionRouted: tagged?.routed };
+      const result = isDispatcherTarget(targetId)
+        ? await wakeDispatcher(wake)
+        : await wakeWiredAgent(wake);
       if (tagged && !result.isError) noteDispatcherReached(agentId, targetId);
       return result;
     },

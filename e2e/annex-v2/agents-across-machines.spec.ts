@@ -449,7 +449,7 @@ test('default native Copilot SDK fixtures accept one remote input and replay a s
   const senderId = await startAgent(here, senderProject, 'sdk-sender', 'copilot-cli');
   const receiverId = await startAgent(there, receiverProject, 'sdk-receiver', 'copilot-cli');
   for (const [app, fakes, id, home] of [[here, fakesHere, senderId, senderHome], [there, fakesThere, receiverId, receiverHome]] as const) {
-    const report = await fakes.report('copilot');
+    const report = await fakes.report('copilot', id);
     expect(report.protocol).toBe('copilot-sdk');
     expect(report.argv).toEqual(expect.arrayContaining(['--headless', '--port', '0']));
     expect(report.env.COPILOT_HOME).toBe(home);
@@ -462,15 +462,15 @@ test('default native Copilot SDK fixtures accept one remote input and replay a s
   await pairDesktops(here, there, senderId, receiverId);
   const requestsPath = path.join(scratch, 'received-call-ids.jsonl');
   await observeDeliveryRequests(there, requestsPath);
-  const mcp = await connectMcp((await fakesHere.report('copilot')).env);
+  const mcp = await connectMcp((await fakesHere.report('copilot', senderId)).env);
   const send = (await mcp.toolNames()).find((name) => name.endsWith('__send_message'));
   expect(send).toBeTruthy();
   const args = { message: 'one native SDK fixture input', task_id: 'native-sdk-delivery', idempotency_key: 'native-sdk-delivery' };
   const first = await mcp.call(send!, args);
   expect(first.isError).toBe(false);
   expect(await mcp.call(send!, args)).toEqual(first);
-  await expect.poll(async () => (await fakesThere!.report('copilot')).complete).toBe(true);
-  const report = await fakesThere.report('copilot');
+  await expect.poll(async () => (await fakesThere!.report('copilot', receiverId)).complete).toBe(true);
+  const report = await fakesThere.report('copilot', receiverId);
   expect(report.mismatch).toBeNull();
   expect(report.unexpected).toEqual([]);
   const input = await there.window.evaluate(async (id) => (await window.clubhouse.chat.readTranscript(id))

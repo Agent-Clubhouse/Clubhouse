@@ -107,6 +107,7 @@ test('Settings > Dispatcher: identity, behavior, connected agents, and Forget ev
 
   await expect(w.locator('[data-testid="dispatcher-row"]')).toBeVisible({ timeout: 15_000 });
   const coordinator = await recordOf(dispatcherDir());
+  await expect.poll(() => w.evaluate(() => window.clubhouse.dispatcher.get().then((s) => s.workRunning))).toBe(true);
   await addProject(app.electronApp, w, projectDir);
   await expect.poll(() => hasWire(w, coordinator.id), { timeout: 15_000 }).toBe(true);
 
@@ -217,6 +218,10 @@ test('Settings > Dispatcher: identity, behavior, connected agents, and Forget ev
   await expect(w.locator('[data-testid="dispatcher-view"]')).toBeVisible();
   await expect(w.locator('[data-testid="dispatcher-setup"]')).toHaveAttribute('data-step', 'look');
 
-  // Nothing ever started the CLI.
-  expect((await fakes.report('claude').catch((): undefined => undefined))?.consumed ?? 0).toBe(0);
+  // Only session-info's initialize request/response have been consumed;
+  // its next replay line still waits for a user prompt.
+  await expect.poll(async () => {
+    const report = await fakes!.report('claude', coordinator.id).catch((): undefined => undefined);
+    return report && { consumed: report.consumed, mismatch: report.mismatch, unexpected: report.unexpected, exitCode: report.exitCode };
+  }).toEqual({ consumed: 2, mismatch: null, unexpected: [], exitCode: null });
 });

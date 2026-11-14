@@ -15,6 +15,8 @@ import type { DispatcherPresenceSnapshot } from '../shared/dispatcher-presence';
 export const dispatcher = {
   dispatcher: {
     get: (): Promise<DispatcherState> => ipcRenderer.invoke(IPC.DISPATCHER.GET),
+    /** Open its controller idle when the person opens its chat. */
+    wake: (): Promise<void> => ipcRenderer.invoke(IPC.DISPATCHER.WAKE),
     /** Turns the Dispatcher on or off; resolves with the state afterwards. */
     setEnabled: (on: boolean): Promise<DispatcherState> => ipcRenderer.invoke(IPC.DISPATCHER.SET_ENABLED, on),
     /** Sets its Behavior (#3045); resolves with the state afterwards. */

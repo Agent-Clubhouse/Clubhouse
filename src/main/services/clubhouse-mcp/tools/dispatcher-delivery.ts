@@ -25,6 +25,8 @@ import * as agentConfig from '../../agent-config';
 import { agentRegistry } from '../../agent-registry';
 import { getAgentRuntime } from '../../agent-runtime';
 import * as agentSystem from '../../agent-system';
+import { resolveRuntimeMode } from '../../chat-runtime-settings';
+import { resolveChatDriver } from '../../agent-runtime/chat-drivers';
 import { getDispatcherAgentId, getDispatcherPath, isDispatcherAgentId, isDispatcherEnabled, isDispatcherIdentityAgentId } from '../../dispatcher/dispatcher-service';
 import { recordAgentMessage } from '../../dispatcher/dispatcher-news-inbox';
 import { appLog } from '../../log-service';
@@ -32,7 +34,8 @@ import { askFirst } from '../ask-first';
 import { decideGrant } from '../grant-check';
 import type { GrantCallTarget, GrantDecision } from '../../../../shared/agent-grants';
 import type { MessageDelivery, RoutedMessagePart, RuntimeSendOptions } from '../../../../shared/chat';
-import { wakeWiredAgent, type DurableAgentLocation } from './agent-lifecycle';
+import type { McpToolResult } from '../types';
+import { wakeWiredAgent, type WakeAgentRequest, type DurableAgentLocation } from './agent-lifecycle';
 
 /** The Dispatcher as a connected agent sees it, for the wake grant. */
 const DISPATCHER_TARGET: GrantCallTarget = { kind: 'agent', relations: ['connected'], isDispatcher: true };
@@ -101,6 +104,24 @@ export type DispatcherDelivery =
 
 /** One delivery at a time per Dispatcher session. */
 const queues = new Map<string, Promise<unknown>>();
+/** Only a session started without input can be safely moved out of the terminal, whose turn state is unknown. */
+const idleStarts = new Map<string, { registration: NonNullable<ReturnType<typeof agentRegistry.get>>; requested: string }>();
+
+function runtimeRequest(location: DurableAgentLocation) {
+  const provider = location.agentConfig.orchestrator ?? 'claude-code';
+  const desired = resolveRuntimeMode(provider, location.agentConfig.runtimeMode);
+  const driver = resolveChatDriver(provider, desired.driver);
+  return { provider, wantsChat: desired.mode === 'chat' && !!driver, key: JSON.stringify([desired.mode, driver?.id ?? desired.driver, !!driver]) };
+}
+
+/** Runtime proof covers input paths outside this module, including handoff offers and terminal typing. */
+function untouched(agentId: string): boolean {
+  const runtime = getAgentRuntime(agentId);
+  return runtime?.hasReceivedInput?.() === false
+    && (runtime.kind !== 'chat' || (runtime.getState() === 'idle' && runtime.hasPendingWork?.() === false));
+}
+
+class ControllerReceivedInputError extends Error {}
 
 function inOrder<T>(key: string, fn: () => Promise<T>): Promise<T> {
   const run = (queues.get(key) ?? Promise.resolve()).then(fn, fn);
@@ -128,6 +149,60 @@ export function deliverToDispatcher(req: DispatcherDeliveryRequest): Promise<Dis
   });
 }
 
+/** The shared wake: the Dispatcher lives outside project agent configs. */
+async function wakeController(req: WakeAgentRequest): Promise<McpToolResult> {
+  const targetId = dispatcherInboxId(req.targetId);
+  const wasRunning = agentSystem.isAgentRunning(targetId);
+  if (req.mission) idleStarts.delete(targetId);
+  const location = !wasRunning && !req.mission ? await locateDispatcher(targetId) : null;
+  const requested = location ? runtimeRequest(location).key : undefined;
+  const result = await wakeWiredAgent({ ...req, targetId, locate: locateDispatcher });
+  if (!wasRunning && !req.mission && !result.isError) {
+    const registration = agentRegistry.get(targetId);
+    if (registration && requested && agentSystem.isAgentRunning(targetId)) idleStarts.set(targetId, { registration, requested });
+  }
+  return result;
+}
+
+/**
+ * Explicit wake, serialized with deliveries. The wire tool declares agent.wake,
+ * so callTool checks it (including Ask first) before reaching this function.
+ * Clubhouse itself uses the same path to open an idle controller without a prompt.
+ */
+export function wakeDispatcher(req: WakeAgentRequest, options: { refreshRuntime?: boolean } = {}): Promise<McpToolResult> {
+  const inboxId = dispatcherInboxId(req.targetId);
+  return inOrder(inboxId, async () => {
+    if (!isDispatcherEnabled()) return { content: [{ type: 'text', text: `${req.targetName} is turned off.` }], isError: true };
+    if (options.refreshRuntime) {
+      const registration = agentRegistry.get(inboxId);
+      const idle = idleStarts.get(inboxId);
+      if (registration && idle?.registration === registration && agentSystem.isAgentRunning(inboxId) && untouched(inboxId)) {
+        const durable = await locateDispatcher(inboxId);
+        if (durable) {
+          const desired = runtimeRequest(durable);
+          // A chat request may have fallen back to the terminal. Retry only when the requested runtime changes.
+          if (desired.key !== idle.requested) {
+            if ((registration.runtime === 'chat') !== desired.wantsChat) {
+              const beforeStop = () => {
+                if (agentRegistry.get(inboxId) !== registration || !untouched(inboxId)) throw new ControllerReceivedInputError();
+              };
+              try {
+                await agentSystem.killAgent(inboxId, durable.projectPath, desired.provider, 'user', { waitForExit: true, throwOnFailure: true, beforeStop });
+              } catch (err) {
+                // Direct input can arrive during stop preparation. Keep that session and its work.
+                if (!(err instanceof ControllerReceivedInputError)) throw err;
+              }
+            } else {
+              idle.requested = desired.key;
+            }
+          }
+        }
+      }
+    }
+    return wakeController(req);
+  });
+}
+
 /**
  * Note the agent for the group chat (#3043), so the Dispatcher's news can name
  * it. The Dispatcher's chat handing work over isn't news from an agent.
@@ -152,6 +227,7 @@ async function deliver(inboxId: string, req: DispatcherDeliveryRequest): Promise
     if (req.wakeAsReceiver && runtime.kind === 'chat' && (runtime.getState() !== 'idle' || runtime.hasPendingWork?.())) {
       return { delivered: false, text: 'The receiving controller is not ready for remote input.' };
     }
+    idleStarts.delete(inboxId);
     const sent = await runtime.sendMessage(req.text, {
       source: req.messageOptions ? 'action' : 'mcp', taskId: req.taskId, submit: req.submit, routed: req.routed,
       ...(req.messageOptions && { delivery: 'queued', ...req.messageOptions }),
@@ -190,8 +266,8 @@ async function deliver(inboxId: string, req: DispatcherDeliveryRequest): Promise
   }
 
   appLog('core:mcp', 'info', 'send_message: waking the Dispatcher to deliver', { meta });
-  const result = await wakeWiredAgent({
-    callerId: req.wakeAsReceiver ? inboxId : senderId, targetId: inboxId, targetName, mission: req.text, missionRouted: req.routed, locate: locateDispatcher,
+  const result = await wakeController({
+    callerId: req.wakeAsReceiver ? inboxId : senderId, targetId: inboxId, targetName, mission: req.text, missionRouted: req.routed,
     ...(req.admission && { admission: req.admission }),
   });
   const text = result.content[0]?.type === 'text' ? result.content[0].text : '';
@@ -217,4 +293,5 @@ async function deliver(inboxId: string, req: DispatcherDeliveryRequest): Promise
 /** For tests. */
 export function _resetDispatcherDeliveryForTesting(): void {
   queues.clear();
+  idleStarts.clear();
 }

@@ -70,6 +70,10 @@ export class PtyAgentRuntime implements AgentRuntime {
     return this.isRunning() ? 'idle' : 'sleeping';
   }
 
+  hasReceivedInput(): boolean {
+    return ptyManager.hasReceivedInput(this.agentId);
+  }
+
   async sendMessage(content: string | ContentBlock[], opts: RuntimeSendOptions): Promise<RuntimeSendResult> {
     return runAgentWork(this.agentId, () => this.deliverMessage(content, opts));
   }

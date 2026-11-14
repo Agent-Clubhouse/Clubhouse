@@ -21,6 +21,7 @@ vi.mock('../services/dispatcher/dispatcher-service', () => ({
   completeDispatcherSetup: vi.fn(async () => ({ ...ON, setup: { status: 'done', upgrade: false } })),
   onDispatcherChanged: vi.fn((l: (s: DispatcherState) => void) => { h.listener = l; return () => {}; }),
   initDispatcher: vi.fn(async () => undefined),
+  wakeDispatcherController: vi.fn(async () => undefined),
 }));
 vi.mock('../services/dispatcher/dispatcher-clear-chat', () => ({ clearDispatcherChat: vi.fn(async () => ({ cleared: 'now' })) }));
 vi.mock('../services/dispatcher/dispatcher-news', () => ({ installGroupChat: vi.fn() }));
@@ -56,6 +57,11 @@ describe('dispatcher handlers', () => {
   it('starts the service once and answers get', async () => {
     expect(dispatcher.initDispatcher).toHaveBeenCalledTimes(1);
     expect(await h.handlers.get(IPC.DISPATCHER.GET)!({})).toEqual(ON);
+  });
+
+  it('opening its chat wakes the controller through the main-owned path (#3465)', async () => {
+    await h.handlers.get(IPC.DISPATCHER.WAKE)!({});
+    expect(dispatcher.wakeDispatcherController).toHaveBeenCalledTimes(1);
   });
 
   it('makes its chat a group chat, and clears the chat on request (#3043)', async () => {
