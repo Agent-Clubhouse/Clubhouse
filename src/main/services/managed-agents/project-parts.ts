@@ -38,7 +38,7 @@ import { MAX_LISTED_SKILLS } from '../../../shared/skills-folder';
 import type { CatalogEntry } from '../../../shared/asset-catalog-types';
 import { declaredDependencies } from './dependencies';
 import { entries, mcpServerContent, missing, readFile, readMcpServers, readSkillBundle, safeName, SourceError, sourceProblem } from './discovery';
-import { ManagedError, type ManagedAgentsService } from './service';
+import { builtinPart, ManagedError, type ManagedAgentsService } from './service';
 
 const SKILLS = `${PROJECT_PARTS_FOLDER}/skills`;
 const INSTRUCTIONS = `${PROJECT_PARTS_FOLDER}/instructions`;
@@ -46,7 +46,7 @@ const MCP_FILE = `${PROJECT_PARTS_FOLDER}/mcp.json`;
 
 /** What the person's project-part calls need from the managed service. */
 export type ProjectPartsService = Pick<ManagedAgentsService,
-  'liveEntries' | 'getPart' | 'createPart' | 'updatePart' | 'projectPartHashes' | 'keepProjectVersion'>;
+  'liveEntries' | 'getPart' | 'headContent' | 'createPart' | 'updatePart' | 'projectPartHashes' | 'keepProjectVersion'>;
 
 export interface ProjectRef { id: string; name: string; path: string }
 
@@ -198,10 +198,12 @@ export async function reviewProjectPart(service: ProjectPartsService, projectPat
   for (const entry of Object.values(live)) {
     if (entry.kind !== repo.kind || entry.id === item.partId) continue;
     const sameName = entry.name.toLowerCase() === repo.name.toLowerCase() || entry.name.toLowerCase() === `${project.name}: ${repo.name}`.toLowerCase();
-    const p = await service.getPart(entry.id);
-    if (p.retired) continue;
-    const sameContent = projectContentHash(p.content) === repo.hash;
-    if (sameName || sameContent) matches.push({ id: p.id, name: p.name, sameContent, builtin: p.builtin });
+    // Content only: a full summary would read every project's agents once per part.
+    if (entry.source.kind === 'builtin' && builtinPart(entry.id)?.retired) continue;
+    const head = await service.headContent(entry.id);
+    if (!head) continue;
+    const sameContent = projectContentHash(head.content) === repo.hash;
+    if (sameName || sameContent) matches.push({ id: entry.id, name: entry.name, sameContent, builtin: entry.source.kind === 'builtin' });
   }
   let currentPart: ProjectPartReview['current'];
   if (item.partId) {
