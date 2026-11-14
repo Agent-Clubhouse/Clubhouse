@@ -34,6 +34,7 @@ const NOT_SETTINGS = new Set([
   'action-history.json',
   // Handoff lifecycle records and append-only history are operational state, not a person's settings.
   'handoffs.json',
+  'handoff-preparations.json',
   // The parameterized Annex store holds operational outbox/inbox, receipt and status records.
   path.join('services', 'annex-delivery-store.ts'),
   // Federated requests, outcomes and link pauses are operational delivery history.
@@ -55,6 +56,8 @@ const NOT_SETTINGS = new Set([
 
 /** Per-project policy stores audit their person-facing writer, without exposing the policy map. */
 const MANUALLY_AUDITED = new Map([
+  ['handoff-project-links.json', "auditChanged('app', 'handoff.project_links')"],
+  ['handoff-transfer-settings.json', "auditChanged('project', 'handoff.transfer_bounds', projectId)"],
   ['handoff-secret-settings.json', "auditChanged('project', 'handoff.not_secret_paths', projectId)"],
 ]);
 

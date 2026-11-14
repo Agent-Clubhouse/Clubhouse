@@ -1,3 +1,4 @@
+import { HandoffTransferSettingsSection } from './HandoffTransferSettingsSection';
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { useProjectStore } from '../../stores/projectStore';
 import { useUIStore } from '../../stores/uiStore';
@@ -581,6 +582,7 @@ export function ProjectSettings({ projectId }: { projectId?: string }) {
       <LaunchWrapperSection key={project.id} projectId={project.id} projectPath={project.path} />
       <BlueprintBundleSection projectId={project.id} projectPath={project.path} projectName={name} />
       <LinkedProjectsSection projectId={project.id} />
+      <HandoffTransferSettingsSection key={`transfer-${project.id}`} projectId={project.id} />
       <HandoffSecretSettingsSection key={project.id} projectId={project.id} />
       <RemoveProjectSection projectId={project.id} projectPath={project.path} projectName={name} />
     </SettingsPage>

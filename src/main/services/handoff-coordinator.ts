@@ -33,6 +33,8 @@ export interface HandoffCoordinatorOptions {
   changed?(record: Handoff): Promise<void>;
   now?: () => number;
   peerRemoved?(machine: string): boolean;
+  bindOffer?(record: Handoff): Promise<void>;
+  offerSettled?(id: string): void;
 }
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
 
@@ -86,8 +88,9 @@ export class HandoffCoordinator {
         // The delivery proof is durable before an offer can become visible to a concurrent cancel.
         preparingId = next.id; this.preparing.add(next.id);
         if (next.from.machine !== next.to.machine) await this.options.commands.markUndelivered?.(next.id);
+        await this.options.bindOffer?.(next);
       });
-    } finally { if (preparingId) this.preparing.delete(preparingId); }
+    } finally { if (preparingId) { this.preparing.delete(preparingId); this.options.offerSettled?.(preparingId); } }
     await this.changed(record);
     await this.trySync(record.id);
     return this.options.store.get(record.id)!;
@@ -103,6 +106,13 @@ export class HandoffCoordinator {
     const record = await this.service.respond(id, actor, accept, current.version, target, reason);
     await this.changed(record);
     await this.trySync(id);
+    return this.options.store.get(id)!;
+  }
+
+  /** Receiver worker transitions share the same retained synchronization and notice path. */
+  async advance(id: string, update: Parameters<HandoffService['advance']>[1], expectedVersion: number): Promise<Handoff> {
+    const record = await this.service.advance(id, update, expectedVersion);
+    await this.changed(record); await this.trySync(id);
     return this.options.store.get(id)!;
   }
 

@@ -37,7 +37,7 @@ export interface HandoffManifestFile {
   path: string;
   size: number;
   sha256: string;
-  mode: '100644' | '100755';
+  mode: '100644' | '100755' | '120000';
 }
 
 export interface HandoffWorktreeManifest {
@@ -47,6 +47,8 @@ export interface HandoffWorktreeManifest {
   exclude: string[];
   files: HandoffManifestFile[];
   deletions: string[];
+  /** Private Git bundle artifact; never materialized as a worktree path. */
+  bundle?: { size: number; sha256: string };
   total_bytes: number;
   manifest_sha256: string;
 }
@@ -109,7 +111,7 @@ const portableKey = (path: string) => path.normalize('NFC').toLowerCase();
 
 export function parseHandoffManifest(raw: unknown, limits: HandoffTransferBounds = HANDOFF_TRANSFER_DEFAULTS): HandoffWorktreeManifest {
   const bounds = validateHandoffBounds(limits);
-  requireValid(object(raw) && keys(raw, ['v', 'repo', 'include', 'exclude', 'files', 'deletions', 'total_bytes', 'manifest_sha256'])
+  requireValid(object(raw) && keys(raw, ['v', 'repo', 'include', 'exclude', 'files', 'deletions', 'bundle', 'total_bytes', 'manifest_sha256'])
     && raw.v === 1 && object(raw.repo) && keys(raw.repo, ['remote', 'base', 'branch']) && validRemote(raw.repo.remote)
     && typeof raw.repo.base === 'string' && COMMIT.test(raw.repo.base) && isSafeHandoffBranch(raw.repo.branch)
     && object(raw.include) && keys(raw.include, ['tracked_changes', 'untracked', 'ignored'])
@@ -117,13 +119,20 @@ export function parseHandoffManifest(raw: unknown, limits: HandoffTransferBounds
     && Array.isArray(raw.files) && Array.isArray(raw.deletions) && raw.files.length + raw.deletions.length <= bounds.maxFiles
     && integer(raw.total_bytes) && raw.total_bytes <= bounds.totalBytes
     && typeof raw.manifest_sha256 === 'string' && SHA256.test(raw.manifest_sha256));
+  let bundle: HandoffWorktreeManifest['bundle'];
+  if (raw.bundle !== undefined) {
+    requireValid(object(raw.bundle) && keys(raw.bundle, ['size', 'sha256']) && integer(raw.bundle.size) && raw.bundle.size > 0
+      && raw.bundle.size <= bounds.perFileBytes && typeof raw.bundle.sha256 === 'string' && SHA256.test(raw.bundle.sha256)
+      && raw.files.length + raw.deletions.length + 1 <= bounds.maxFiles);
+    bundle = { size: raw.bundle.size, sha256: raw.bundle.sha256 };
+  }
   const files: HandoffManifestFile[] = [];
-  let total = 0;
+  let total = bundle?.size ?? 0;
   const paths = new Set<string>();
   for (const file of raw.files) {
     requireValid(object(file) && keys(file, ['path', 'size', 'sha256', 'mode']) && isSafeHandoffPath(file.path)
       && integer(file.size) && file.size <= bounds.perFileBytes && typeof file.sha256 === 'string' && SHA256.test(file.sha256)
-      && (file.mode === '100644' || file.mode === '100755'));
+      && (file.mode === '100644' || file.mode === '100755' || file.mode === '120000' && file.size > 0 && file.size <= 4096));
     const key = portableKey(file.path);
     requireValid(!paths.has(key));
     paths.add(key);
@@ -150,7 +159,7 @@ export function parseHandoffManifest(raw: unknown, limits: HandoffTransferBounds
     v: 1, repo: { remote: raw.repo.remote, base: raw.repo.base, branch: raw.repo.branch },
     include: { tracked_changes: raw.include.tracked_changes, untracked: raw.include.untracked, ignored: patterns(raw.include.ignored) },
     exclude: patterns(raw.exclude), files: files.sort((a, b) => compare(a.path, b.path)), deletions: deletions.sort(compare),
-    total_bytes: total, manifest_sha256: raw.manifest_sha256,
+    ...(bundle && { bundle }), total_bytes: total, manifest_sha256: raw.manifest_sha256,
   };
   if (new TextEncoder().encode(JSON.stringify(parsed)).byteLength > HANDOFF_MANIFEST_MAX_BYTES) throw new Error('Handoff manifest is too large.');
   return parsed;
@@ -163,4 +172,9 @@ export function canonicalHandoffManifest(manifest: HandoffWorktreeManifest, boun
   const canonical = JSON.stringify(body);
   if (new TextEncoder().encode(canonical).byteLength > HANDOFF_MANIFEST_MAX_BYTES) throw new Error('Handoff manifest is too large.');
   return canonical;
+}
+
+
+export function summarizeHandoffManifest(manifest: HandoffWorktreeManifest) {
+  return { fileCount: manifest.files.length + manifest.deletions.length + (manifest.bundle ? 1 : 0), totalBytes: manifest.total_bytes, sha256: manifest.manifest_sha256 };
 }

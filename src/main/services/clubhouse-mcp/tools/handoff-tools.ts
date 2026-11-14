@@ -38,8 +38,35 @@ export function registerHandoffTools(): void {
     }
   }, { group: 'handoffs', grant: READ });
 
+  registerGlobalTool('prepare_handoff', {
+    description: 'Freeze your selected branch or worktree files into a hash-verified handoff manifest. Requires a Git worktree with at least one commit. Runs secret/path/size checks before any transfer, including the fallback Git bundle. Returns manifest, summary and bounds. Pass summary to offer_handoff.manifest within 15 minutes. check_handoff remains a cheaper read-only preview. Branch mode requires committed work; ignored selections apply to worktree mode. Agents cannot raise limits or override secret blocks.',
+    inputSchema: { type: 'object', properties: {
+      mode: { type: 'string', enum: ['branch', 'worktree'] },
+      include: { type: 'object', properties: { tracked_changes: { type: 'boolean' }, untracked: { type: 'boolean' }, ignored: { type: 'array', items: { type: 'string' }, maxItems: 100 } }, additionalProperties: false },
+      exclude: { type: 'array', items: { type: 'string' }, maxItems: 100 },
+    }, required: ['mode'] },
+  }, async (agentId, args) => {
+    const include = args.include;
+    const patterns = (value: unknown) => Array.isArray(value) && value.length <= 100 && value.every((entry) => typeof entry === 'string' && entry.length <= 1024);
+    if (!known(args, ['mode', 'include', 'exclude']) || !['branch', 'worktree'].includes(String(args.mode)) || args.exclude !== undefined && !patterns(args.exclude)
+      || include !== undefined && (!include || typeof include !== 'object' || Array.isArray(include)
+        || !known(include as Record<string, unknown>, ['tracked_changes', 'untracked', 'ignored'])
+        || Object.entries(include).some(([key, value]) => key === 'ignored' ? !patterns(value) : typeof value !== 'boolean'))) return text('Give mode (branch/worktree), optional include and exclude only. No source/project path, limits, allowlist or rule overrides can be supplied.', true);
+    try {
+      return text(await (await import('../../handoff-preparations')).prepareCallerHandoff(agentId, args.mode as 'branch' | 'worktree', {
+        include: include as Partial<import('../../../../shared/handoff-manifest').HandoffWorktreeManifest['include']> | undefined, exclude: args.exclude as string[] | undefined,
+      }));
+    } catch (error) {
+      // telemetry-exempt: bounded, sanitized preparation findings are returned to the caller
+      const { HandoffSnapshotError } = await import('../../handoff-snapshot');
+      if (error instanceof HandoffSnapshotError) return text({ ready: false, reason: error.code, findings: error.findings ?? [], ...error.boundsReport,
+        ...(error.instruction && { instruction: error.instruction }) });
+      return text('Handoff preparation is unavailable. Check the registered project, safe selections and storage capacity.', true);
+    }
+  }, { group: 'handoffs', grant: READ });
+
   registerGlobalTool('offer_handoff', {
-    description: 'Offer a task, brief and code to another agent or a computer’s Dispatcher. Unlike hand_off, which records how an orchestrator took a helper’s work, this starts a durable agreement with a receiver. Needs handoff.offer and an existing connection, or a receiving Dispatcher. Accepting authorizes automatic verified transfer/apply. Keep the returned id; get_handoff shows retained history. A refused or expired offer is terminal: make a new offer to try again.',
+    description: 'Offer a task, brief and code to another agent or a computer’s Dispatcher. Requires a Git worktree with at least one commit. Unlike hand_off, which records how an orchestrator took a helper’s work, this starts a durable agreement with a receiver. Needs handoff.offer and an existing connection, or a receiving Dispatcher. Accepting authorizes automatic verified transfer/apply. Keep the returned id; get_handoff shows retained history. A refused or expired offer is terminal: make a new offer to try again.',
     inputSchema: { type: 'object', properties: {
       to: { type: 'string', description: 'Agent id/name, agent@machine (fingerprint or unambiguous name), or machine:<name> for that computer’s Dispatcher.' },
       task: { type: 'string', description: 'Task title, up to 256 characters.' }, brief: { type: 'string', description: 'Goal, progress, remaining work and verification; up to 16000 characters. Never include secrets.' },
@@ -53,19 +80,25 @@ export function registerHandoffTools(): void {
       const host = await import('../../handoff-host');
       const target = await host.resolveHandoffTarget(args.to);
       const senderName = await host.handoffSenderName(agentId);
-      const record = await withHandoffAgreementCall({ agentId, name: 'offer_handoff', args }, () => host.handoffHost().coordinator.offer({
-        to: target, senderName, task: { title: args.task as string, brief: args.brief as string }, mode: args.mode as 'branch' | 'worktree',
-        ...(args.manifest !== undefined && { manifest: args.manifest as HandoffManifestSummary }),
-      }, host.localHandoffAgent(agentId)));
+      const record = await withHandoffAgreementCall({ agentId, name: 'offer_handoff', args }, async () => {
+        const manifest = await (await import('../../handoff-preparations')).ensurePreparedHandoff(agentId, args.mode as 'branch' | 'worktree', args.manifest as HandoffManifestSummary | undefined);
+        return host.handoffHost().coordinator.offer({
+          to: target, senderName, task: { title: args.task as string, brief: args.brief as string }, mode: args.mode as 'branch' | 'worktree', manifest,
+        }, host.localHandoffAgent(agentId));
+      });
       return text(record);
-    } catch {
+    } catch (error) {
+      // telemetry-exempt: bounded, sanitized preparation findings are returned to the caller
+      const { HandoffSnapshotError } = await import('../../handoff-snapshot');
+      if (error instanceof HandoffSnapshotError) return text({ ready: false, reason: error.code, findings: error.findings ?? [], ...error.boundsReport,
+        ...(error.instruction && { instruction: error.instruction }) });
       // telemetry-exempt: never reflect task text, secret values or store paths
       return text('Handoff offer was refused or could not be persisted. Check the target, connection, permissions and secret-free metadata.', true);
     }
   }, { group: 'handoffs', grant: HANDOFF_OFFER_GRANT });
 
   registerGlobalTool('respond_to_handoff', {
-    description: 'Accept or decline an offer addressed to you. A receiving Dispatcher can name a local target_agent, or new_helper to prepare a fresh helper asleep until apply. target_project selects its registered project (otherwise the first registered project by id). Acceptance authorizes automatic verified transfer and fresh-worktree apply without another prompt. This is distinct from the helper result tool hand_off.',
+    description: 'Accept or decline an offer addressed to you. A receiving Dispatcher can name a local target_agent, or new_helper to prepare a fresh helper asleep until apply. target_project selects a matching registered project; by default the Dispatcher chooses a matching project and agent. Acceptance authorizes automatic verified transfer and fresh-worktree apply without another prompt. This is distinct from the helper result tool hand_off.',
     inputSchema: { type: 'object', properties: { id: { type: 'string' }, accept: { type: 'boolean' }, reason: { type: 'string' }, target_agent: { type: 'string' }, target_project: { type: 'string' } }, required: ['id', 'accept'] },
   }, async (agentId, args) => {
     if (!known(args, ['id', 'accept', 'reason', 'target_agent', 'target_project']) || !id(args) || typeof args.accept !== 'boolean' || !reason(args)
@@ -77,7 +110,7 @@ export function registerHandoffTools(): void {
       return await withHandoffAgreementCall({ agentId, name: 'respond_to_handoff', args }, async () => {
         const target = args.target_agent === 'new_helper'
           ? await host.prepareNewHandoffHelper(agentId, args.id as string, args.target_project as string | undefined)
-          : args.target_agent === undefined ? undefined : await host.resolveHandoffTarget(args.target_agent as string);
+          : args.target_agent === undefined ? args.accept === true ? await host.defaultHandoffReceivingAgent(agentId, args.id as string) : undefined : await host.resolveHandoffTarget(args.target_agent as string);
         if (target && 'content' in target) return target;
         if (target && (!('agentId' in target) || target.machine !== host.localHandoffAgent(agentId).machine)) return text('The accepting target must be a local agent.', true);
         return text(await host.handoffHost().coordinator.respond(args.id as string,

@@ -9,6 +9,7 @@ vi.mock('./agent-config', () => ({ peekDurableConfigs: async () => state.configs
 vi.mock('./project-store', () => ({ peekProjects: async () => [{ id: 'registered', path: projectPath }] }));
 vi.mock('./handoff-snapshot', () => ({ checkHandoffSnapshot: (...args: unknown[]) => state.check(...args) }));
 vi.mock('./handoff-secret-settings', () => ({ HandoffSecretPolicy: { forProject: (...args: unknown[]) => state.policy(...args) } }));
+vi.mock('./handoff-transfer-settings', () => ({ getHandoffTransferBounds: async () => ({ totalBytes: 1024, perFileBytes: 512, maxFiles: 100 }) }));
 import { checkCallerHandoff } from './handoff-preflight-host';
 beforeEach(() => { state.live = undefined; state.configs = []; vi.clearAllMocks(); state.check.mockResolvedValue({ ready: true }); state.policy.mockResolvedValue({ mainOwned: true }); });
 it('selects the registered durable caller source and project policy itself', async () => {
@@ -16,7 +17,7 @@ it('selects the registered durable caller source and project policy itself', asy
   const include = { ignored: ['fixtures/example.txt'] };
   await checkCallerHandoff('caller', include, ['build/**']);
   expect(state.policy).toHaveBeenCalledWith('registered');
-  expect(state.check).toHaveBeenCalledWith({ worktreeRoot: worktree, include, exclude: ['build/**'], secretPolicy: { mainOwned: true } });
+  expect(state.check).toHaveBeenCalledWith({ worktreeRoot: worktree, include, exclude: ['build/**'], bounds: { totalBytes: 1024, perFileBytes: 512, maxFiles: 100 }, secretPolicy: { mainOwned: true } });
 });
 it('uses a running quick caller folder but refuses an unregistered project or another agent', async () => {
   state.live = { projectPath, cwd: worktree }; await checkCallerHandoff('quick');

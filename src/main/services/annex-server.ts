@@ -1,3 +1,4 @@
+import { HandoffTransferBusy } from '../../shared/handoff-transfer';
 import { hasSessionCaptureFailure } from './session-capture-barrier';
 import { legacyDefaultsNotCopied } from './legacy-defaults';
 import { accessFromLegacy, legacyFreeAgentMode, type AccessLevel } from '../../shared/agent-access';
@@ -66,7 +67,7 @@ import * as networkChannel from './annex-network-channel';
 import * as membership from './annex-network-membership';
 import * as agentCalls from './annex-agent-calls';
 import { receiveCapacityProbe } from './handoff-capacity-host';
-import { receiveNetworkHandoff } from './handoff-host';
+import { receiveNetworkHandoff, receiveHandoffTransfer } from './handoff-host';
 import { cachedRepoKeys } from './project-repo-keys';
 import { NETWORK_MESSAGE_MAX_BYTES, NETWORK_PROTOCOL_VERSION, parseNetworkMessage } from '../../shared/annex-network-protocol';
 import { parseAgentAddress, routeOf } from '../../shared/agent-address';
@@ -3689,6 +3690,24 @@ async function handleGroupProjectNetworkRoute(ctx: AnnexRouteContext, kind: 'syn
   }
 }
 
+/** Content responses use their own route rather than the small agent-call envelope. */
+async function handleNetworkHandoffTransferRoute(ctx: AnnexRouteContext): Promise<void> {
+  if (ctx.requireMtls()) { ctx.req.resume(); return; }
+  const machine = agentCallPeer(ctx);
+  if (!machine) { ctx.req.resume(); sendJson(ctx.res, 403, { error: 'not_a_computer' }); return; }
+  const body = await readAgentCallBody(ctx);
+  if (body === undefined || ctx.requireMtls()) return;
+  if (agentCallPeer(ctx) !== machine) { sendJson(ctx.res, 403, { error: 'not_a_computer' }); return; }
+  try {
+    const reply = await receiveHandoffTransfer(machine, body);
+    if (ctx.requireMtls()) return;
+    if (agentCallPeer(ctx) !== machine) { sendJson(ctx.res, 403, { error: 'not_a_computer' }); return; }
+    sendJson(ctx.res, 200, reply);
+  } catch (error) { // telemetry-exempt: no content, paths or private storage diagnostics in failures
+    sendJson(ctx.res, error instanceof HandoffTransferBusy ? 503 : 400, { error: 'handoff_transfer_refused' });
+  }
+}
+
 async function handleNetworkConnectionsRoute(ctx: AnnexRouteContext): Promise<void> {
   const machine = agentCallPeer(ctx);
   if (!machine) { ctx.req.resume(); sendJson(ctx.res, 403, { error: 'not_a_computer', message: 'Only a computer in this Annex Network can share connections here.' }); return; }
@@ -4464,6 +4483,7 @@ const ANNEX_HTTP_ROUTE_TABLE: AnnexHttpRoute[] = [
   { method: 'POST', pattern: /^\/api\/v1\/network\/agent-delivery-capabilities$/, handler: handleNetworkAgentDeliveryCapabilitiesRoute },
   { method: 'POST', pattern: /^\/api\/v1\/network\/handoff-capacity$/, handler: handleNetworkCapacityRoute },
   { method: 'POST', pattern: /^\/api\/v1\/network\/handoffs$/, handler: handleNetworkHandoffsRoute },
+  { method: 'POST', pattern: /^\/api\/v1\/network\/handoffs\/transfer$/, handler: handleNetworkHandoffTransferRoute },
   { method: 'POST', pattern: /^\/api\/v1\/network\/connections$/, handler: handleNetworkConnectionsRoute },
   { method: 'POST', pattern: /^\/api\/v1\/network\/group-projects\/sync$/, handler: (ctx) => handleGroupProjectNetworkRoute(ctx, 'sync') },
   { method: 'POST', pattern: /^\/api\/v1\/network\/group-projects\/write$/, handler: (ctx) => handleGroupProjectNetworkRoute(ctx, 'write') },

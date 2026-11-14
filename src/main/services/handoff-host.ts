@@ -1,3 +1,19 @@
+import { getAgentGrantChanges } from './agent-grants-store';
+import { localDirectionTools } from '../../shared/connection-grants';
+import { deliverNow } from './clubhouse-mcp/tools/helper-delivery';
+import { handoffProjectsLinked } from './handoff-project-links';
+import { recoverPendingHandoffApply } from './handoff-apply';
+import { app } from 'electron';
+import * as fs from 'fs';
+import * as path from 'path';
+import { normalizeGitRemote } from '../../shared/git-remote';
+import type { HandoffWorktreeManifest } from '../../shared/handoff-manifest';
+import { HandoffWorker, HandoffProjectUnavailable, HandoffAuthorizationChanged } from './handoff-worker';
+import { callerHandoffSource } from './handoff-preflight-host';
+import { openHandoffRepository, readHandoffSnapshotManifest } from './handoff-snapshot';
+import { requestHandoffTransfer, readHandoffTransferManifest } from './handoff-transfer-transport';
+import { HandoffTransferSource } from './handoff-transfer-source';
+import { bindPreparedHandoff, settleHandoffPreparationBinding, pruneHandoffPreparations, preparedSourceForRecord } from './handoff-preparations';
 import { evaluateGrant, type GrantCallTarget } from '../../shared/agent-grants';
 import { parseAgentAddress } from '../../shared/agent-address';
 import { isDisposedAgent } from '../../shared/agent-helpers';
@@ -14,7 +30,7 @@ import { peekDurableConfigs } from './agent-config';
 import { peekProjects } from './project-store';
 import { getDispatcherState, isDispatcherAgentId } from './dispatcher/dispatcher-service';
 import { effectiveAgentGrants } from './agent-grants-service';
-import { getConnectionDirection } from './connection-grants-store';
+import { getConnectionDirection, localConnectionWakeOn } from './connection-grants-store';
 import { bindingManager } from './clubhouse-mcp/binding-manager';
 import { notifyToolGateChange } from './clubhouse-mcp/orchestration-gate';
 import { callerGrants } from './clubhouse-mcp/grant-check';
@@ -128,7 +144,7 @@ function acceptsRemote(): boolean {
   return networkEnabled(settings) && settings.enableServer && !('acceptHandoffs' in settings && settings.acceptHandoffs === false);
 }
 
-interface Host { store: HandoffStore; commands: HandoffCommandStore; coordinator: HandoffCoordinator; machine: string }
+interface Host { store: HandoffStore; commands: HandoffCommandStore; coordinator: HandoffCoordinator; machine: string; transfer: HandoffTransferSource; worker: HandoffWorker; ready: Promise<void> }
 let host: Host | undefined;
 let sweep: ReturnType<typeof setInterval> | undefined;
 let offConnected: (() => void) | undefined;
@@ -152,14 +168,51 @@ async function authorize(request: HandoffAuthorization): Promise<boolean> {
   }
   if (receiver && !('via' in record.to) && !(receiver.machine === ownMachine() && isDispatcherAgentId(receiver.agentId)) && !hasConnection(record.from, receiver)) return false;
   if (actor.machine !== ownMachine()) return true; // Its own computer checks its saved grant before sending.
+  let targetAdmission: (() => boolean) | undefined;
+  if (action === 'handoff.accept' && stage === 'accepted' && request.target) {
+    try { targetAdmission = await authorizeSelectedTarget(record, actor, request.target); }
+    catch { return false; /* telemetry-exempt: a selected agent never acquires the brief without current target and Dispatcher rights */ }
+  }
   if ((action === 'handoff.offer' && stage === 'offered') || (action === 'handoff.accept' && stage === 'accepted')) {
-    return handoffAgreementCallApproved(actor.agentId, action);
+    const approved = await handoffAgreementCallApproved(actor.agentId, action);
+    return approved && (targetAdmission?.() ?? true);
   }
   const location = await localAgent(actor.agentId);
   const grants = agentRegistry.get(actor.agentId) ? callerGrants(actor.agentId) : await effectiveAgentGrants(location.projectPath, actor.agentId);
   const peer = action === 'handoff.offer' ? record.to : record.from;
   const target = action === 'handoff.offer' ? await peerTarget(actor, peer) : await resolveAcceptancePeer(record, actor);
   return evaluateGrant({ caller: { kind: 'agent', agentId: actor.agentId, projectPath: location.projectPath }, action, target }, grants).outcome !== 'refuse';
+}
+
+/** Saved grants are synchronous; a change during any asynchronous lookup invalidates its result. */
+function grantPolicyStamp(agents: HandoffAgent[]): string {
+  return JSON.stringify(agents.filter((agent) => agent.machine === ownMachine()).map((agent) => [agent.agentId, getAgentGrantChanges(agent.agentId)]));
+}
+
+async function authorizeSelectedTarget(record: Handoff, by: HandoffAgent, target: HandoffAgent): Promise<() => boolean> {
+  if (sameHandoffAgent(by, target)) return () => true; // The receiver consumed its own exact approval.
+  const machine = ownMachine();
+  const stamp = grantPolicyStamp([by, target]);
+  // Complete every asynchronous lookup before evaluating any connection or grant.
+  const targetLocation = await localAgent(target.agentId);
+  const targetGrants = agentRegistry.get(target.agentId) ? callerGrants(target.agentId) : await effectiveAgentGrants(targetLocation.projectPath, target.agentId);
+  const senderLocation = record.from.machine === machine ? await localAgent(record.from.agentId) : undefined;
+  const dispatcher = await localAgent(by.agentId);
+  const grants = agentRegistry.get(by.agentId) ? callerGrants(by.agentId) : await effectiveAgentGrants(dispatcher.projectPath, by.agentId);
+  const current = () => {
+    if (stamp !== grantPolicyStamp([by, target]) || !getDispatcherState().enabled || !isDispatcherAgentId(by.agentId) || !hasConnection(by, target)) return false;
+    const direction = getConnectionDirection(relative(by), relative(target));
+    const binding = bindingManager.getBindingsForAgent(by.agentId).find((wire) => wire.targetKind === 'agent' && wire.targetId === target.agentId);
+    const switches = localDirectionTools(direction, binding?.disabledTools, binding?.enabledTools);
+    if (!localConnectionWakeOn(by.agentId, target.agentId) || !switches.allowed.includes('send_message')) return false;
+    const senderTarget: GrantCallTarget = { kind: 'agent', agentId: addressText(record.from), relations: hasConnection(record.from, target) ? ['connected'] : [],
+      isDispatcher: record.from.machine === machine && isDispatcherAgentId(record.from.agentId), ...(senderLocation && { projectPath: senderLocation.projectPath }) };
+    if (evaluateGrant({ caller: { kind: 'agent', agentId: target.agentId, projectPath: targetLocation.projectPath }, action: 'handoff.accept', target: senderTarget }, targetGrants).outcome !== 'allow') return false;
+    const peer: GrantCallTarget = { kind: 'agent', agentId: addressText(target), projectPath: targetLocation.projectPath, relations: ['connected'], isDispatcher: isDispatcherAgentId(target.agentId) };
+    return (['agent.wake', 'agent.message'] as const).every((action) => evaluateGrant({ caller: { kind: 'agent', agentId: by.agentId, projectPath: dispatcher.projectPath }, action, target: peer }, grants).outcome === 'allow');
+  };
+  if (!current()) throw new HandoffAuthorizationChanged();
+  return current;
 }
 
 async function resolveAcceptancePeer(record: Handoff, actor: HandoffAgent): Promise<GrantCallTarget> {
@@ -200,6 +253,8 @@ async function notifyRecord(record: Handoff): Promise<void> {
 export function handoffHost(): Host {
   const machine = ownMachine();
   if (host?.machine === machine) return host;
+  void host?.worker.stop();
+  void host?.transfer.close();
   const store = new HandoffStore();
   const commands = new HandoffCommandStore();
   const service = new HandoffService({ machine, store, authorize,
@@ -209,6 +264,7 @@ export function handoffHost(): Host {
     }, isDispatcher: (agent) => agent.machine === machine && isDispatcherAgentId(agent.agentId) && getDispatcherState().enabled });
   const coordinator = new HandoffCoordinator({
     machine, store, service, commands,
+    bindOffer: bindPreparedHandoff, offerSettled: settleHandoffPreparationBinding,
     peerRemoved: (peer) => !isNetworkComputer(peer),
     connected: (peer) => isNetworkComputer(peer) && annexClient.isMachineConnected(peer),
     post: async (peer, body) => {
@@ -232,13 +288,72 @@ export function handoffHost(): Host {
       }
     },
     changed: async (record) => {
+      if (isTerminalHandoff(record.state)) await host?.transfer.close(record.id);
+      if (record.from.machine === machine && isTerminalHandoff(record.state)) await pruneHandoffPreparations(store.list());
       const participants = [record.from, ...('agentId' in record.to ? [record.to] : getDispatcherState().agentId ? [localHandoffAgent(getDispatcherState().agentId!)] : []), ...(record.acceptance ? [record.acceptance.target] : [])];
       for (const participant of participants) if (participant.machine === machine) notifyToolGateChange(participant.agentId);
       await notifyRecord(record);
+      if (record.to.machine === machine && record.acceptance && !isTerminalHandoff(record.state)) void host?.worker.run(record.id);
     },
   });
-  host = { machine, store, commands, coordinator };
-  void service.recover().catch(() => { /* telemetry-exempt: tools fail closed if recovery/storage is unavailable */ });
+  const transfer = new HandoffTransferSource({
+    machine, record: (id) => store.get(id), prepared: preparedSourceForRecord,
+    authorize: async (record, peer) => {
+      if (peer !== machine && !isNetworkComputer(peer)
+        || !await authorize({ record, actor: record.from, action: 'handoff.offer', stage: 'transferring' })) throw new Error('Handoff transfer unavailable.');
+    },
+  });
+  const ready = service.recover().then(async (recovered) => {
+    const projects = await peekProjects();
+    for (const record of recovered) {
+      if (!record.checkpoint) continue;
+      const project = projects.find((value) => value.id === record.checkpoint!.projectId);
+      if (!project) continue;
+      try { await recoverPendingHandoffApply(project.path, record.id, record.checkpoint); }
+      catch { /* telemetry-exempt: the explicit indeterminate_apply failure retains the checkpoint for person inspection; unsafe paths are never removed */ }
+    }
+  });
+  const authorizeReceiver = async (record: Handoff) => {
+    const agents = [record.from, ...(record.acceptance ? [record.acceptance.by, record.acceptance.target] : [])];
+    const stamp = grantPolicyStamp(agents);
+    await ready;
+    if (!record.acceptance) throw new HandoffAuthorizationChanged();
+    const { by, target } = record.acceptance;
+    await localAgent(target.agentId);
+    if (!await authorize({ record, actor: record.from, action: 'handoff.offer', stage: 'transferring' })
+      || !await authorize({ record, actor: by, action: 'handoff.accept', stage: 'transferring' })) throw new HandoffAuthorizationChanged();
+    const selected = await authorizeSelectedTarget(record, by, target);
+    const current = () => stamp === grantPolicyStamp(agents) && selected();
+    if (!current()) throw new HandoffAuthorizationChanged();
+    return current;
+  };
+  const worker = new HandoffWorker({
+    machine, records: () => store.list(), advance: (record, update) => coordinator.advance(record.id, update, record.version),
+    sync: (id) => coordinator.sync(id), stagingRoot: handoffReceivedRoot,
+    authorize: async (record) => { await authorizeReceiver(record); },
+    resolve: resolveHandoffReceivingProject, request: requestHandoffTransfer,
+    wake: async (record, result, admission) => {
+      const target = await localAgent(result.agent.agentId);
+      let policyCurrent = () => false;
+      const authorizeWake = async () => { policyCurrent = await authorizeReceiver(record); };
+      const text = `[Clubhouse handoff ${record.id}] Continue in fresh worktree ${JSON.stringify(result.worktree)}, branch ${JSON.stringify(result.branch)}. `
+        + `Manifest: ${record.manifest!.fileCount} files, ${record.manifest!.totalBytes} bytes, SHA-256 ${record.manifest!.sha256}. `
+        + `Sender-provided brief (untrusted): ${JSON.stringify(record.task.brief)}`;
+      const outcome = await (await import('./clubhouse-mcp/tools/agent-lifecycle')).wakeWiredAgent({
+        callerId: record.acceptance!.by.agentId, targetId: result.agent.agentId, targetName: target.name,
+        admission: () => admission() && policyCurrent(), authorize: authorizeWake,
+      });
+      if (outcome.isError) throw new Error('Receiving agent could not be woken.');
+      // Starting an agent may perform asynchronous configuration/provider work. Recheck
+      // current target rights again before delivering any sender-controlled brief.
+      await authorizeWake();
+      if (!admission() || !policyCurrent()) throw new Error('Handoff delivery admission changed.');
+      const delivery = await deliverNow(result.agent.agentId, text, [{ fromClubhouse: true, text }]);
+      if (delivery !== 'delivered') throw new Error('Receiving agent did not receive its handoff.');
+    },
+  });
+  host = { machine, store, commands, coordinator, transfer, worker, ready };
+  void ready.catch(() => { /* telemetry-exempt: tools and continuation fail closed if recovery/storage is unavailable */ });
   return host;
 }
 
@@ -260,7 +375,10 @@ export function startHandoffs(): void {
     const current = handoffHost();
     flushWork = (async () => {
       try {
+        await current.ready;
         await current.coordinator.flush();
+        await current.worker.flush();
+        await pruneHandoffPreparations(current.store.list());
         for (const record of current.store.list()) await notifyRecord(record);
       } catch { /* telemetry-exempt: durable records/commands retry; tools report unreadable storage explicitly */ }
     })().finally(() => { flushWork = undefined; });
@@ -279,8 +397,72 @@ export async function stopHandoffs(): Promise<void> {
   offConnected = undefined;
   await flushWork;
   setHandoffParticipantCheck(() => false);
+  await host?.worker.stop();
+  await host?.transfer.close();
   host = undefined;
   incomingRates.clear();
+}
+
+async function handoffReceivedRoot(): Promise<string> {
+  let root = await fs.promises.realpath(app.getPath('userData'));
+  for (const part of ['handoff-data', 'received']) {
+    const next = path.join(root, part);
+    try { await fs.promises.mkdir(next, { mode: 0o700 }); }
+    catch (error) { if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error; }
+    const stat = await fs.promises.lstat(next);
+    if (!stat.isDirectory() || stat.isSymbolicLink() || !path.isAbsolute(next) || path.relative(next, await fs.promises.realpath(next)) !== '') throw new Error('Invalid receiving directory.');
+    root = next;
+  }
+  return root;
+}
+
+async function isLinkedHandoffProject(projectId: string, record: Handoff): Promise<boolean> {
+  const local = record.from.machine === ownMachine();
+  const sourceProject = local ? (await callerHandoffSource(record.from.agentId)).project.id
+    : Object.entries(annexClient.getSatellite(record.from.machine)?.snapshot?.agents ?? {}).find(([, agents]) => Array.isArray(agents) && agents.some((agent) => !!agent && typeof agent === 'object' && 'id' in agent && agent.id === record.from.agentId))?.[0];
+  return !!sourceProject && handoffProjectsLinked(projectId, record.from.machine, sourceProject, local);
+}
+
+async function projectMatchesHandoff(project: { id: string; path: string }, manifest: HandoffWorktreeManifest, record: Handoff): Promise<boolean> {
+  try {
+    const repository = await openHandoffRepository(project.path);
+    if (await isLinkedHandoffProject(project.id, record)) return true;
+    const remote = normalizeGitRemote(manifest.repo.remote);
+    if (remote) return normalizeGitRemote(repository.repo.remote) === remote;
+    return (await repository.read(['cat-file', '-t', manifest.repo.base]))?.toString('ascii').trim() === 'commit';
+  } catch { return false; /* telemetry-exempt: inaccessible or unrelated projects are never guessed */ }
+}
+
+async function resolveHandoffReceivingProject(record: Handoff) {
+  if (!record.acceptance) throw new HandoffProjectUnavailable();
+  const source = await callerHandoffSource(record.acceptance.target.agentId);
+  const manifest = record.state === 'verifying'
+    ? await readHandoffSnapshotManifest(path.join(await handoffReceivedRoot(), record.id), record.manifest!, source.bounds)
+    : await readHandoffTransferManifest(record, source.bounds);
+  if (!await projectMatchesHandoff(source.project, manifest, record)) throw new HandoffProjectUnavailable();
+  return { projectId: source.project.id, projectRoot: source.project.path, bounds: source.bounds, secretPolicy: source.secretPolicy, linkedProject: await isLinkedHandoffProject(source.project.id, record) };
+}
+
+/** The addressed Dispatcher chooses an existing matching-project agent before accepting. */
+export async function defaultHandoffReceivingAgent(agentId: string, id: string) {
+  if (!isDispatcherAgentId(agentId)) return undefined;
+  const record = handoffHost().coordinator.service.get(id, localHandoffAgent(agentId));
+  if (record.to.machine !== ownMachine() || 'agentId' in record.to && record.to.agentId !== agentId) throw new Error('Only the addressed Dispatcher chooses a receiving agent.');
+  if (record.acceptance) return record.acceptance.target;
+  const manifest = await readHandoffTransferManifest(record);
+  for (const project of [...await peekProjects()].sort((a, b) => a.id.localeCompare(b.id))) {
+    if (!await projectMatchesHandoff(project, manifest, record)) continue;
+    const agent = (await peekDurableConfigs(project.path)).filter((config) => !isDisposedAgent(config)
+      && !(record.from.machine === ownMachine() && record.from.agentId === config.id)).sort((a, b) => a.id.localeCompare(b.id))[0];
+    if (agent) return localHandoffAgent(agent.id);
+  }
+  return prepareNewHandoffHelper(agentId, id);
+}
+
+/** Internal same-machine reads use this boundary too; the HTTP route supplies its pinned peer. */
+export async function receiveHandoffTransfer(machine: string, body: unknown) {
+  if (machine !== ownMachine() && !isNetworkComputer(machine)) throw new Error('Handoff transfer unavailable.');
+  return handoffHost().transfer.receive(machine, body);
 }
 
 const incomingRates = new Map<string, number[]>();
@@ -306,14 +488,18 @@ export async function prepareNewHandoffHelper(agentId: string, id: string, proje
   if (record.state !== 'offered') throw new Error('Handoff cannot be accepted.');
   const projects = [...await peekProjects()].sort((a, b) => a.id.localeCompare(b.id));
   const exact = projectReference === undefined ? [] : projects.filter((candidate) => candidate.id === projectReference || candidate.path === projectReference);
-  const matches = projectReference === undefined ? projects.slice(0, 1) : exact.length ? exact : projects.filter((candidate) => candidate.name.toLowerCase() === projectReference.toLowerCase());
+  const manifest = await readHandoffTransferManifest(record);
+  const candidates = projectReference === undefined ? projects : exact.length ? exact : projects.filter((candidate) => candidate.name.toLowerCase() === projectReference.toLowerCase());
+  const matches = [];
+  for (const project of candidates) if (await projectMatchesHandoff(project, manifest, record)) matches.push(project);
+  if (projectReference === undefined && matches.length > 1) matches.splice(1);
   if (matches.length !== 1) throw new Error('Choose an unambiguous registered project for the new helper.');
   const project = matches[0];
   const name = `handoff-${id}`;
   const prior = (await peekDurableConfigs(project.path)).find((config) => config.name === name && !isDisposedAgent(config));
   if (prior) return localHandoffAgent(prior.id);
   const templateId = await (await import('./managed-agents')).managedAgents().defaultHelperTemplateId();
-  const result = await callTool(agentId, 'create_managed_agent', { name, project: project.path, templateId, connectToDispatcher: false });
+  const result = await callTool(agentId, 'create_managed_agent', { name, project: project.path, templateId, connectToDispatcher: true });
   if (!result.isError) {
     for (const block of result.content) {
       if (block.type !== 'text') continue;

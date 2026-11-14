@@ -336,6 +336,7 @@ const TOOL_ANNOTATIONS: Partial<Record<'global' | BindingTargetKind, Readonly<Re
     request_grant: INTERNAL_WRITE,
     update_my_card: INTERNAL_WRITE,
     check_handoff: INTERNAL_READ,
+    prepare_handoff: INTERNAL_WRITE,
     offer_handoff: OPEN_WRITE,
     respond_to_handoff: OPEN_WRITE,
     get_handoff: INTERNAL_READ,

@@ -15,6 +15,15 @@ const state = vi.hoisted(() => ({
 }));
 vi.mock('electron', () => ({ app: { getPath: () => state.dir } }));
 vi.mock('../telemetry/persist', () => ({ persist: { recovery: vi.fn(), timed: (_area: string, work: () => Promise<void>) => work() } }));
+// These cases own lifecycle admission; real transfer/apply is exercised by the worker/fixture-repo tests.
+vi.mock('./handoff-worker', async (original) => ({ ...await original<typeof import('./handoff-worker')>(),
+  HandoffWorker: class { async run() {} async flush() {} stop() {} },
+}));
+vi.mock('./handoff-transfer-transport', () => ({ readHandoffTransferManifest: async () => ({ repo: { remote: 'https://example.invalid/project.git', base: 'a'.repeat(40) } }), requestHandoffTransfer: vi.fn() }));
+vi.mock('./handoff-snapshot', async (original) => ({ ...await original<typeof import('./handoff-snapshot')>(),
+  openHandoffRepository: async () => ({ repo: { remote: 'https://example.invalid/project.git' }, read: async () => Buffer.from('commit') }),
+}));
+vi.mock('./handoff-preparations', () => ({ bindPreparedHandoff: async () => {}, settleHandoffPreparationBinding: () => {}, pruneHandoffPreparations: async () => {}, preparedSourceForRecord: async () => { throw new Error('No prepared bytes in authorization fixture'); } }));
 vi.mock('./annex-identity', () => ({ getIdentity: () => ({ fingerprint: state.machine }), getOrCreateIdentity: () => ({ fingerprint: state.machine }) }));
 vi.mock('./annex-settings', () => ({ getSettings: () => ({ alias: 'this-computer', enableServer: true, networkEnabled: true, acceptHandoffs: state.accepting }), networkEnabled: () => true }));
 vi.mock('./annex-peers', () => ({ listPeers: () => [{ fingerprint: state.peer, alias: 'other-computer', role: 'member', kind: 'desktop' }] }));
@@ -25,8 +34,8 @@ vi.mock('./agent-runtime', () => ({ getAgentRuntime: () => ({ isRunning: () => s
 vi.mock('./agent-config', () => ({ peekDurableConfigs: async () => [{ id: 'sender', name: 'Sender' }, { id: 'receiver', name: 'Receiver' }, ...(state.extraAgent ? [state.extraAgent] : [])] }));
 vi.mock('./project-store', () => ({ peekProjects: async () => [{ id: 'project', name: 'Project', path: state.dir }] }));
 vi.mock('./dispatcher/dispatcher-service', () => ({ getDispatcherState: () => ({ enabled: true, agentId: 'dispatcher', path: state.dir, config: { name: 'Dispatcher' } }), isDispatcherAgentId: (id: string) => id === 'dispatcher' }));
-vi.mock('./agent-grants-service', () => ({ effectiveAgentGrants: async () => state.allowed ? [{ action: 'handoff.offer', target: { kind: 'any' }, mode: 'allow' }, { action: 'handoff.accept', target: { kind: 'any' }, mode: 'allow' }] : [] }));
-vi.mock('./connection-grants-store', () => ({ getConnectionDirection: () => state.connected ? { link: true } : undefined }));
+vi.mock('./agent-grants-service', () => ({ effectiveAgentGrants: async () => state.allowed ? [{ action: 'handoff.offer', target: { kind: 'any' }, mode: 'allow' }, { action: 'handoff.accept', target: { kind: 'any' }, mode: 'allow' }, { action: 'agent.wake', target: { kind: 'any' }, mode: 'allow' }, { action: 'agent.message', target: { kind: 'any' }, mode: 'allow' }] : [] }));
+vi.mock('./connection-grants-store', () => ({ localConnectionWakeOn: () => true, getConnectionDirection: (from: { agentId: string }) => state.connected || from.agentId === 'dispatcher' ? { link: true, disabledTools: [], enabledTools: ['wake_agent'] } : undefined }));
 vi.mock('./clubhouse-mcp/binding-manager', () => ({ bindingManager: { getAllBindings: () => [], getBindingsForAgent: () => [] } }));
 vi.mock('./clubhouse-mcp/grant-check', () => ({ callerGrants: () => [] }));
 vi.mock('./clubhouse-mcp/tool-registry', () => ({ callTool: (...args: unknown[]) => state.create(...args), setHandoffParticipantCheck: (check: (id: string) => boolean) => { state.participant = check; } }));
@@ -104,7 +113,7 @@ it('prepares one asleep managed helper using the normal creation boundary and re
     return { content: [{ type: 'text', text: JSON.stringify({ id: 'new-agent', name: args.name, agentStarted: false }) }] };
   });
   expect(await prepareNewHandoffHelper('dispatcher', record.id)).toEqual(localHandoffAgent('new-agent'));
-  expect(state.create).toHaveBeenCalledWith('dispatcher', 'create_managed_agent', { name: `handoff-${record.id}`, project: state.dir, templateId: 'person-helper-template', connectToDispatcher: false });
+  expect(state.create).toHaveBeenCalledWith('dispatcher', 'create_managed_agent', { name: `handoff-${record.id}`, project: state.dir, templateId: 'person-helper-template', connectToDispatcher: true });
   await stopHandoffs();
   expect(await prepareNewHandoffHelper('dispatcher', record.id)).toEqual(localHandoffAgent('new-agent'));
   expect(state.create).toHaveBeenCalledTimes(1);
@@ -126,7 +135,7 @@ it.each(['Receiver', 'new_helper'])('routes machine:<name> to a remote Dispatche
   const sender = new HandoffCoordinator({ machine: remoteMachine, store, service, commands: { list: () => [], put: async () => {}, remove: async () => {} }, connected: () => true, authorizeOutgoing: async () => true,
     post: (_peer, body) => receiveNetworkHandoff(remoteMachine, body) });
   state.post.mockImplementation(async (_peer, _route, body) => ({ status: 200, body: await sender.receive(localMachine, body) }));
-  state.connected = false; // The addressed Dispatcher is the explicit connection exception.
+  state.connected = false; // The remote sender needs no direct connection to the addressed Dispatcher; local Dispatcher-to-target control is explicit.
   const record = await sender.offer({ ...offer(), to, senderName: 'Remote sender', manifest: { fileCount: 0, totalBytes: 0, sha256: '0'.repeat(64) } }, { agentId: 'remote-sender', machine: remoteMachine });
   expect(state.send.mock.calls[0][0]).toContain('Computer: "other-computer"');
   expect(await resolveHandoffGrantTarget('dispatcher', { id: record.id, accept: true })).toMatchObject({ relations: [] });
