@@ -71,7 +71,7 @@ test('a lead reaches the other computer, which follows its chat, keeps messages 
   await there.window.locator('[data-testid="dispatcher-view"] [data-testid="wake-button"]').click();
   // Laptop's chat is running there before Desk is expected to show it live.
   await expect.poll(async () => (await there.window.evaluate(() => window.clubhouse.dispatcher.get())).chatRunning, { timeout: 30_000 }).toBe(true);
-  await here.window.getByTestId('remote-dispatcher-group').getByRole('button').click({ timeout: 30_000 });
+  await here.window.getByTestId('remote-dispatcher-row').click({ timeout: 30_000 });
   await expect(here.window.getByTestId('follower-heading')).toContainText('on Laptop', { timeout: 30_000 });
   // Typed on Desk, it's the person's message in Laptop's chat, not one from Desk or its Dispatcher.
   const composer = here.window.locator('[data-testid="follower-dispatcher-view"]').getByLabel('Message');
@@ -100,9 +100,13 @@ test('a lead reaches the other computer, which follows its chat, keeps messages 
   await expect.poll(async () => (await userMessages(there.window, laptopChatId)).some((e) => e.data.content?.some((c) => c.text === 'Hello from Desk')), { timeout: 30_000 }).toBe(true);
   await expect(here.window.getByTestId('follower-lead-offline')).toHaveCount(0, { timeout: 30_000 });
 
-  // Take back changes only Desk.
+  // Take back changes only Desk, from the lead's row picked directly, and the pane goes back to Desk's own Dispatcher.
+  await here.window.getByTestId('remote-dispatcher-row').click();
+  await expect(here.window.getByTestId('follower-heading')).toContainText('on Laptop');
   await here.window.getByTestId('follower-take-back').click();
   await expect(here.window.getByTestId('follower-dispatcher-view')).toHaveCount(0);
+  await expect(here.window.getByTestId('dispatcher-view')).toBeVisible();
+  await expect(here.window.getByTestId('remote-dispatcher-row')).not.toHaveAttribute('aria-current', 'true');
   expect((await lead(here.window))).toMatchObject({ role: 'follower', tookBack: true });
   expect((await lead(there.window)).role).toBe('lead');
 

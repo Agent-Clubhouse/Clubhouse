@@ -5,7 +5,7 @@ import { useUIStore } from '../stores/uiStore';
 import { useAgentStore } from '../stores/agentStore';
 import { useQuickAgentStore } from '../stores/quickAgentStore';
 import { useAnnexClientStore, type SatelliteConnection } from '../stores/annexClientStore';
-import { useRemoteProjectStore, satellitePrefix, namespacedAgentId, parseNamespacedId } from '../stores/remoteProjectStore';
+import { useRemoteProjectStore, satellitePrefix } from '../stores/remoteProjectStore';
 import { useCommandPaletteStore } from '../stores/commandPaletteStore';
 import { usePluginStore } from '../plugins/plugin-store';
 import { useOrderedShallow } from '../hooks/useOrderedShallow';
@@ -46,7 +46,7 @@ import { FeedbackButton } from '../features/feedback/FeedbackButton';
 import { AppNotices } from '../features/app/AppNotices';
 import { TruncatedLabel } from '../components/TruncatedLabel';
 import { DISPATCHER_PROJECT_ID } from '../../shared/dispatcher-types';
-import { DispatcherRow, DispatcherWorkRow } from './sidebar/DispatcherRow';
+import { DispatcherRow, DispatcherWorkRow, RemoteDispatcherRow } from './sidebar/DispatcherRow';
 import { useFollowedLead, useFollowerApprovals } from '../features/dispatcher/leadStore';
 import { dispatcherNeedsYouLine } from '../features/dispatcher/RemoteApprovals';
 import { useDispatcherDebug, useDispatcherWorkOpen } from '../features/dispatcher/dispatcherDebug';
@@ -55,6 +55,7 @@ import { requestCloseProject } from '../features/projects/close-project';
 import { useDispatcherPresence } from '../features/dispatcher/useDispatcherPresence';
 import { useRemoteDispatcherSelection } from '../features/dispatcher/remoteDispatcherSelection';
 import { closeDispatcher, openDispatcher } from '../features/dispatcher/dispatcherNav';
+import { remoteDispatcherChat, resolveRemoteDispatcherTarget } from '../features/dispatcher/remoteDispatcherTarget';
 
 /**
  * Sidebar for the new chrome (docs/chrome-redesign-spec.md §2, §4.2): the host
@@ -351,7 +352,8 @@ export function ChromeSidebar() {
   // The debug view (#3188): a row for its controller, whose chat the Dispatcher's view shows instead.
   const dispatcherDebug = useDispatcherDebug();
   const dispatcherPresence = useDispatcherPresence();
-  const selectedRemoteDispatcher = useRemoteDispatcherSelection((s) => s.agentId);
+  const selectedRemoteMachine = useRemoteDispatcherSelection((s) => s.machine);
+  const remoteAgentIcons = useRemoteProjectStore((s) => s.remoteAgentIcons);
   const localDispatcherSelected = useRemoteDispatcherSelection((s) => s.local);
   const dispatcherWorkOpen = useDispatcherWorkOpen();
   const dispatcherWorkId = useDispatcherStore((s) => s.state?.agentId ?? null);
@@ -829,7 +831,7 @@ export function ChromeSidebar() {
           agent={dispatcherAgent}
           detailed={detailed[dispatcherAgentId]}
           requestsUnderWay={dispatcherRequestsUnderWay}
-          active={dispatcherShown && !dispatcherWorkOpen && !selectedRemoteDispatcher && (!followedLead || localDispatcherSelected)}
+          active={dispatcherShown && !dispatcherWorkOpen && !selectedRemoteMachine && (!followedLead || localDispatcherSelected)}
           projectPath={dispatcherPath}
           loadError={dispatcherLoadError}
           onSelect={openDispatcherRow}
@@ -839,30 +841,29 @@ export function ChromeSidebar() {
         <DispatcherWorkRow
           agentId={dispatcherWorkId}
           running={dispatcherWorkRunning}
-          active={dispatcherShown && dispatcherWorkOpen && !selectedRemoteDispatcher}
+          active={dispatcherShown && dispatcherWorkOpen && !selectedRemoteMachine}
           onSelect={openDispatcherWorkRow}
         />
       )}
 
 
       {dispatcherAgentId && dispatcherPresence?.remotes.map((remote) => {
-        const satellite = satellites.find((sat) => sat.fingerprint.toLowerCase() === remote.machineId);
-        const chat = satellite?.snapshot?.dispatcher?.agent;
-        const id = satellite && chat ? namespacedAgentId(satellite.id, chat.id) : null;
-        const isLead = followedLead?.state.lead?.machine === remote.machineId;
-        const selectedOnMachine = !!satellite && !!selectedRemoteDispatcher && parseNamespacedId(selectedRemoteDispatcher)?.satelliteId === satellite.id;
-        const active = dispatcherShown && !dispatcherWorkOpen && (selectedRemoteDispatcher === id && !!id
-          || !!isLead && (!selectedRemoteDispatcher || selectedOnMachine) && !localDispatcherSelected);
-        return <div key={remote.machineId} className="px-1.5" data-testid="remote-dispatcher-group">
-          <button type="button" disabled={!id && !isLead} onClick={() => isLead ? openDispatcher() : id && openDispatcher({ remoteAgentId: id })}
-            aria-current={active ? 'true' : undefined}
-            className={`w-full rounded text-left text-[13px] disabled:opacity-60 py-1 pl-7 pr-2 ${active ? 'bg-surface-0 text-ctp-text' : 'text-ctp-subtext1 hover:bg-surface-0/60'}`}>
-            {remote.label}{remote.state === 'offline' ? ' · Offline' : ''}
-          </button>
-          {dispatcherDebug && remote.address && <div className="pl-12 py-1 text-xs text-ctp-overlay1" data-testid="remote-dispatcher-controller">
-            Dispatcher controller · {remote.state}
-          </div>}
-        </div>;
+        const target = resolveRemoteDispatcherTarget(remote.machineId, satellites, followedLead?.state.lead?.machine);
+        const isLead = target.kind === 'lead';
+        const active = dispatcherShown && !dispatcherWorkOpen && (selectedRemoteMachine === remote.machineId
+          || isLead && !selectedRemoteMachine && !localDispatcherSelected);
+        // Its avatar doesn't depend on where a click goes: the followed lead has one too.
+        const chat = remoteDispatcherChat(remote.machineId, satellites) ?? undefined;
+        return <RemoteDispatcherRow
+          key={remote.machineId}
+          remote={remote}
+          chat={chat}
+          iconUrl={chat ? remoteAgentIcons[chat.id] : undefined}
+          active={active}
+          showController={dispatcherDebug}
+          // The followed lead is the follower view, not an explicit pick: Take back then leaves it for this computer's own.
+          onSelect={() => isLead ? openDispatcher() : openDispatcher({ remoteMachine: remote.machineId })}
+        />;
       })}
 
       </div>

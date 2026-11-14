@@ -1,8 +1,13 @@
 import { create } from 'zustand';
 
-/** A remote Dispatcher chat selected from the sidebar. */
-export const useRemoteDispatcherSelection = create<{ agentId: string | null; local: boolean; select: (agentId: string | null, local?: boolean) => void }>((set) => ({
-  agentId: null,
+/**
+ * Which Dispatcher the sidebar picked besides this computer's own: another
+ * computer's, by its machine (lowercased fingerprint), not by a chat id, so
+ * the pick holds across that computer's connect, snapshot and reconnect.
+ * `local` is this computer's earlier chat while following a lead.
+ */
+export const useRemoteDispatcherSelection = create<{ machine: string | null; local: boolean; select: (machine: string | null, local?: boolean) => void }>((set) => ({
+  machine: null,
   local: false,
-  select: (agentId, local = false) => set({ agentId, local }),
+  select: (machine, local = false) => set({ machine, local }),
 }));

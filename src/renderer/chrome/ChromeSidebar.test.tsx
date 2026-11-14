@@ -806,39 +806,104 @@ describe('ChromeSidebar Dispatcher (#2538)', () => {
     expect(within(screen.getByTestId('agent-list')).queryByTestId('agent-item-disp')).toBeNull();
   });
 
-  it('shows another computer’s Dispatcher beneath this one and opens its chat', async () => {
+  const remotePresence = (over: Record<string, unknown> = {}) => ({ machineId: 'fp1', machineName: 'Mini', address: 'work@fp1', dispatcherName: 'Tael', label: 'Tael on Mini', state: 'online', link: { state: 'active' }, ...over });
+  const satelliteFor = (chat: Agent | null, over: Record<string, unknown> = {}) => ({ id: 's1', alias: 'Mini', state: 'connected', fingerprint: 'fp1', icon: '', color: 'blue', host: 'h', mainPort: 1, pairingPort: 2, snapshot: chat ? { dispatcher: { agent: chat } } : null, lastError: null, ...over } as never);
+  const leadState = (machine: string, following: boolean) => ({ available: true, following, role: 'follower', lead: { machine, name: 'Mini', self: false, online: true }, choices: [], outbox: { waiting: 0, oldestAt: null, expired: 0, failed: null }, localNews: { count: 0, needsUser: false } } as never);
+  const levelOf = (row: HTMLElement) => ({ level: row.getAttribute('aria-level'), pad: row.style.paddingLeft });
+
+  it('shows another computer’s Dispatcher as a peer of this one and opens its chat', async () => {
     turnOn();
-    const machine = 'fp1';
     const chat = agent('remote-chat', DISPATCHER_PROJECT_ID, { name: 'Tael', executionMode: 'chat' });
     const remoteId = namespacedAgentId('s1', chat.id);
-    useAnnexClientStore.setState({ satellites: [{ id: 's1', alias: 'Mini', state: 'connected', fingerprint: machine, icon: '', color: 'blue', host: 'h', mainPort: 1, pairingPort: 2, snapshot: { dispatcher: { agent: chat } }, lastError: null } as never] });
+    useAnnexClientStore.setState({ satellites: [satelliteFor(chat)] });
     useRemoteProjectStore.setState({ remoteAgents: { [remoteId]: { ...chat, id: remoteId, projectId: namespacedProjectId('s1', DISPATCHER_PROJECT_ID) } } });
-    const presence = vi.spyOn(window.clubhouse.dispatcher, 'getPresence').mockResolvedValue({ remotes: [{ machineId: machine, machineName: 'Mini', address: 'work@fp1', dispatcherName: 'Tael', label: 'Tael on Mini', state: 'online', link: { state: 'active' } }] });
+    const presence = vi.spyOn(window.clubhouse.dispatcher, 'getPresence').mockResolvedValue({ remotes: [remotePresence()] } as never);
     render(<ChromeSidebar />);
-    const row = await screen.findByRole('button', { name: 'Tael on Mini' });
+    const row = await screen.findByRole('treeitem', { name: 'Tael on Mini' });
     expect(screen.getByTestId('dispatcher-group')).toContainElement(row);
     expect(screen.queryByTestId('remote-dispatcher-controller')).toBeNull();
-    expect(row).not.toHaveClass('bg-surface-0');
-    fireEvent.click(row);
-    expect(row).toHaveAttribute('aria-current', 'true');
-    expect(row).toHaveClass('bg-surface-0', 'text-ctp-text');
-    expect(useRemoteDispatcherSelection.getState().agentId).toBe(remoteId);
+    // The same level and indent as this computer's own Dispatcher.
+    expect(levelOf(row)).toEqual(levelOf(within(screen.getByTestId('dispatcher-row')).getByRole('treeitem')));
+    const target = screen.getByTestId('remote-dispatcher-row');
+    expect(target).not.toHaveClass('bg-surface-0');
+    fireEvent.click(target);
+    expect(target).toHaveAttribute('aria-current', 'true');
+    expect(target).toHaveClass('bg-surface-0', 'text-ctp-text');
+    expect(useRemoteDispatcherSelection.getState().machine).toBe('fp1');
     expect(useUIStore.getState().dispatcherOpen).toBe(true);
+    presence.mockRestore();
+  });
+
+  it('nests the controller rows, the local one and a remote one, one level under their Dispatcher, only in Debug', async () => {
+    turnOn();
+    useAnnexClientStore.setState({ satellites: [satelliteFor(null)] });
+    const presence = vi.spyOn(window.clubhouse.dispatcher, 'getPresence').mockResolvedValue({ remotes: [remotePresence()] } as never);
+    render(<ChromeSidebar />);
+    const remote = await screen.findByRole('treeitem', { name: 'Tael on Mini' });
+    expect(screen.queryByTestId('remote-dispatcher-controller')).toBeNull();
+    expect(screen.queryByTestId('dispatcher-work-row')).toBeNull();
     act(() => useDispatcherDebugStore.setState({ on: true }));
+    const remoteController = within(screen.getByTestId('remote-dispatcher-controller')).getByRole('treeitem');
+    const localController = within(screen.getByTestId('dispatcher-work-row')).getByRole('treeitem');
+    expect(levelOf(remoteController)).toEqual({ level: '2', pad: '28px' });
+    expect(levelOf(localController)).toEqual(levelOf(remoteController));
+    expect(levelOf(remote)).toEqual({ level: '1', pad: '8px' });
     expect(screen.getByTestId('remote-dispatcher-controller')).toHaveTextContent('Dispatcher controller');
+    // Neither controller shows an empty circle.
+    expect(within(screen.getByTestId('remote-dispatcher-controller')).getByTestId('dispatcher-avatar-fallback')).toHaveTextContent('D');
+    expect(within(screen.getByTestId('dispatcher-work-row')).getByTestId('dispatcher-avatar-fallback')).toHaveTextContent('D');
     presence.mockRestore();
     useDispatcherDebugStore.setState({ on: false });
   });
 
-  it('keeps a followed lead nested under this computer’s Dispatcher', async () => {
+  it('gives a remote Dispatcher its published icon, or the fallback while this computer has no chat for it', async () => {
+    turnOn();
+    const chat = agent('remote-chat', DISPATCHER_PROJECT_ID, { name: 'Tael', executionMode: 'chat', icon: 'tael.png' });
+    const remoteId = namespacedAgentId('s1', chat.id);
+    useAnnexClientStore.setState({ satellites: [satelliteFor(chat)] });
+    useRemoteProjectStore.setState({ remoteAgentIcons: { [remoteId]: 'data:image/png;base64,AAAA' } });
+    const presence = vi.spyOn(window.clubhouse.dispatcher, 'getPresence').mockResolvedValue({ remotes: [remotePresence()] } as never);
+    render(<ChromeSidebar />);
+    const avatar = await screen.findByTestId('remote-dispatcher-avatar');
+    expect(avatar.querySelector('img')).toHaveAttribute('src', 'data:image/png;base64,AAAA');
+    act(() => useAnnexClientStore.setState({ satellites: [] }));
+    expect(screen.queryByTestId('remote-dispatcher-avatar')).toBeNull();
+    expect(within(screen.getByTestId('remote-dispatcher-row')).getByTestId('dispatcher-avatar-fallback')).toHaveTextContent('T');
+    presence.mockRestore();
+    useRemoteProjectStore.setState({ remoteAgentIcons: {} });
+  });
+
+  it('opens the chat from the side that has its snapshot, and the status from the side that has none', async () => {
+    turnOn();
+    const wake = vi.spyOn(window.clubhouse.dispatcher, 'wake').mockResolvedValue();
+    const presence = vi.spyOn(window.clubhouse.dispatcher, 'getPresence').mockResolvedValue({ remotes: [remotePresence()] } as never);
+    const getLead = vi.spyOn(window.clubhouse.dispatcher, 'getLead').mockImplementation(async () => useLeadStore.getState().state!);
+    // This computer holds no connection to Mini: the row is still a target, and opens what is known.
+    useAnnexClientStore.setState({ satellites: [] });
+    render(<><ChromeSidebar /><DispatcherView /></>);
+    const target = await screen.findByTestId('remote-dispatcher-row');
+    wake.mockClear();
+    fireEvent.click(target);
+    expect(target).toHaveAttribute('aria-current', 'true');
+    expect(await screen.findByTestId('remote-dispatcher-details')).toHaveTextContent('Tael on Mini');
+    expect(wake).not.toHaveBeenCalled();
+    // The connection comes up: the same selection now shows its chat.
+    const chat = agent('remote-chat', DISPATCHER_PROJECT_ID, { name: 'Tael', executionMode: 'chat' });
+    act(() => useAnnexClientStore.setState({ satellites: [satelliteFor(chat)] }));
+    expect(screen.queryByTestId('remote-dispatcher-details')).toBeNull();
+    expect(target).toHaveAttribute('aria-current', 'true');
+    presence.mockRestore(); getLead.mockRestore(); wake.mockRestore();
+  });
+
+  it('keeps a followed lead beside this computer’s Dispatcher, and selecting it shows the follower view', async () => {
     turnOn();
     const chat = agent('remote-chat', DISPATCHER_PROJECT_ID, { name: 'Tael' });
-    useAnnexClientStore.setState({ satellites: [{ id: 's1', alias: 'Mini', state: 'connected', fingerprint: 'fp1', icon: '', color: 'blue', host: 'h', mainPort: 1, pairingPort: 2, snapshot: { dispatcher: { agent: chat } }, lastError: null } as never] });
-    useLeadStore.setState({ state: { available: true, following: true, role: 'follower', lead: { machine: 'fp1', name: 'Mini', self: false, online: true }, choices: [], outbox: { waiting: 0, oldestAt: null, expired: 0, failed: null }, localNews: { count: 0, needsUser: false } } as never });
+    useAnnexClientStore.setState({ satellites: [satelliteFor(chat)] });
+    useLeadStore.setState({ state: leadState('fp1', true) });
     const getLead = vi.spyOn(window.clubhouse.dispatcher, 'getLead').mockImplementation(async () => useLeadStore.getState().state!);
-    const presence = vi.spyOn(window.clubhouse.dispatcher, 'getPresence').mockResolvedValue({ remotes: [{ machineId: 'fp1', machineName: 'Mini', address: 'work@fp1', dispatcherName: 'Tael', label: 'Tael on Mini', state: 'online', link: { state: 'active' } }] });
+    const presence = vi.spyOn(window.clubhouse.dispatcher, 'getPresence').mockResolvedValue({ remotes: [remotePresence()] } as never);
     render(<><ChromeSidebar /><DispatcherView /></>);
-    const remote = await screen.findByRole('button', { name: 'Tael on Mini' });
+    const remote = await screen.findByTestId('remote-dispatcher-row');
     expect(screen.getByTestId('dispatcher-row')).toHaveTextContent('Dispatcher');
     expect(screen.getByTestId('dispatcher-group')).toContainElement(remote);
     const local = within(screen.getByTestId('dispatcher-row')).getByTestId('agent-item-disp');
@@ -863,22 +928,61 @@ describe('ChromeSidebar Dispatcher (#2538)', () => {
     presence.mockRestore(); getLead.mockRestore();
   });
 
+  it('goes back to this computer’s own Dispatcher on Take back, after the lead row was clicked directly', async () => {
+    turnOn();
+    const chat = agent('remote-chat', DISPATCHER_PROJECT_ID, { name: 'Tael' });
+    useAnnexClientStore.setState({ satellites: [satelliteFor(chat)] });
+    useLeadStore.setState({ state: leadState('fp1', true) });
+    const getLead = vi.spyOn(window.clubhouse.dispatcher, 'getLead').mockImplementation(async () => useLeadStore.getState().state!);
+    const takeBack = vi.spyOn(window.clubhouse.dispatcher, 'takeBack').mockImplementation(async () => { useLeadStore.setState({ state: leadState('fp1', false) }); return undefined as never; });
+    const wake = vi.spyOn(window.clubhouse.dispatcher, 'wake').mockResolvedValue();
+    const presence = vi.spyOn(window.clubhouse.dispatcher, 'getPresence').mockResolvedValue({ remotes: [remotePresence()] } as never);
+    render(<><ChromeSidebar /><DispatcherView /></>);
+    const remote = await screen.findByTestId('remote-dispatcher-row');
+    fireEvent.click(remote);
+    expect(screen.getByTestId('follower-heading')).toHaveTextContent('Following Tael on Mini');
+    wake.mockClear();
+    fireEvent.click(screen.getByTestId('follower-take-back'));
+    await waitFor(() => expect(screen.queryByTestId('follower-dispatcher-view')).toBeNull());
+    expect(screen.queryByTestId('remote-dispatcher-details')).toBeNull();
+    expect(remote).not.toHaveAttribute('aria-current');
+    expect(within(screen.getByTestId('dispatcher-row')).getByTestId('agent-item-disp')).toHaveAttribute('data-active', 'true');
+    expect(useRemoteDispatcherSelection.getState().machine).toBeNull();
+    await waitFor(() => expect(wake).toHaveBeenCalled());
+    presence.mockRestore(); getLead.mockRestore(); takeBack.mockRestore(); wake.mockRestore();
+  });
+
+  it('keeps the followed lead’s icon on its row', async () => {
+    turnOn();
+    const chat = agent('remote-chat', DISPATCHER_PROJECT_ID, { name: 'Tael', icon: 'tael.png' });
+    useAnnexClientStore.setState({ satellites: [satelliteFor(chat)] });
+    useRemoteProjectStore.setState({ remoteAgentIcons: { [namespacedAgentId('s1', chat.id)]: 'data:image/png;base64,BBBB' } });
+    useLeadStore.setState({ state: leadState('fp1', true) });
+    const getLead = vi.spyOn(window.clubhouse.dispatcher, 'getLead').mockImplementation(async () => useLeadStore.getState().state!);
+    const presence = vi.spyOn(window.clubhouse.dispatcher, 'getPresence').mockResolvedValue({ remotes: [remotePresence()] } as never);
+    render(<ChromeSidebar />);
+    const avatar = await screen.findByTestId('remote-dispatcher-avatar');
+    expect(avatar.querySelector('img')).toHaveAttribute('src', 'data:image/png;base64,BBBB');
+    expect(screen.queryByTestId('dispatcher-avatar-fallback')).toBeNull();
+    presence.mockRestore(); getLead.mockRestore();
+    useRemoteProjectStore.setState({ remoteAgentIcons: {} });
+  });
+
   it('keeps the followed lead row selected when its snapshot clears offline', async () => {
     turnOn();
     const machine = 'fp-offline';
     const chat = agent('remote-chat', DISPATCHER_PROJECT_ID, { name: 'Tael', executionMode: 'chat' });
     const id = namespacedAgentId('s1', chat.id);
     useRemoteProjectStore.setState({ remoteAgents: { [id]: { ...chat, id, projectId: namespacedProjectId('s1', DISPATCHER_PROJECT_ID) } } });
-    useAnnexClientStore.setState({ satellites: [{ id: 's1', alias: 'Mini', state: 'connected', fingerprint: machine, icon: '', color: 'blue', host: 'h', mainPort: 1, pairingPort: 2, snapshot: { dispatcher: { agent: chat } }, lastError: null } as never] });
-    const lead = { available: true, following: true, role: 'follower', lead: { machine, name: 'Mini', self: false, online: true }, choices: [], outbox: { waiting: 0, oldestAt: null, expired: 0, failed: null }, localNews: { count: 0, needsUser: false } };
-    useLeadStore.setState({ state: { ...lead, following: false } as never });
+    useAnnexClientStore.setState({ satellites: [satelliteFor(chat, { fingerprint: machine })] });
+    useLeadStore.setState({ state: leadState(machine, false) });
     const getLead = vi.spyOn(window.clubhouse.dispatcher, 'getLead').mockImplementation(async () => useLeadStore.getState().state!);
-    const presence = vi.spyOn(window.clubhouse.dispatcher, 'getPresence').mockResolvedValue({ remotes: [{ machineId: machine, machineName: 'Mini', address: 'work@fp-offline', dispatcherName: 'Tael', label: 'Tael on Mini', state: 'online', link: { state: 'active' } }] });
+    const presence = vi.spyOn(window.clubhouse.dispatcher, 'getPresence').mockResolvedValue({ remotes: [remotePresence({ machineId: machine, address: 'work@fp-offline' })] } as never);
     render(<><ChromeSidebar /><DispatcherView /></>);
-    const row = await screen.findByRole('button', { name: 'Tael on Mini' });
+    const row = await screen.findByTestId('remote-dispatcher-row');
     fireEvent.click(row);
-    expect(useRemoteDispatcherSelection.getState().agentId).toBe(id);
-    act(() => useLeadStore.setState({ state: lead as never }));
+    expect(useRemoteDispatcherSelection.getState().machine).toBe(machine);
+    act(() => useLeadStore.setState({ state: leadState(machine, true) }));
     expect(screen.getByTestId('follower-heading')).toHaveTextContent('Following Tael on Mini');
     act(() => useAnnexClientStore.setState((state) => ({ satellites: state.satellites.map((sat) => ({ ...sat, state: 'disconnected' as const, snapshot: null })) })));
     expect(screen.getByTestId('follower-offline-input')).toBeInTheDocument();

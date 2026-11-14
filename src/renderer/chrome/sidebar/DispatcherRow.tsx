@@ -5,7 +5,9 @@ import { agentDot } from './treeModel';
 import { StatusDot, dispatcherDot, dispatcherWorkingText, type AgentDot } from '../../features/agents/agent-status';
 import { useChatStore } from '../../stores/chatStore';
 import { activeRunFailing } from '../../features/dispatcher/work-conversation';
-import { DISPATCHER_CONTROLLER_NAME } from '../../../shared/dispatcher-name';
+import { DISPATCHER_CONTROLLER_NAME, DEFAULT_DISPATCHER_NAME } from '../../../shared/dispatcher-name';
+import type { RemoteDispatcherPresence, RemoteDispatcherState } from '../../../shared/dispatcher-presence';
+import { AgentAvatar } from '../../features/agents/AgentAvatar';
 
 /**
  * The Dispatcher's pinned row (#2538), above every project and shown with
@@ -69,43 +71,96 @@ export function DispatcherRow({ agent, detailed, requestsUnderWay = 0, active, p
   );
 }
 
+/** Where a Dispatcher row sits: peers at one level, a controller one level under its owner. */
+const OWNER_LEVEL = { level: 1, indent: 8 } as const;
+const CONTROLLER_LEVEL = { level: 2, indent: 28 } as const;
+
 /**
- * The row before its agent is in the agent store: the status dot, a blank
+ * The avatar of a row that has no agent record or icon to draw: the name's
+ * first letter in the same 18px circle an agent's initials use.
+ */
+function FallbackAvatar({ name }: { name: string }) {
+  return (
+    <span
+      data-testid="dispatcher-avatar-fallback"
+      aria-hidden="true"
+      className="w-[18px] h-[18px] flex-shrink-0 rounded-full flex items-center justify-center bg-surface-2 text-ctp-subtext0 text-[8px] font-bold"
+    >
+      {Array.from(name.trim())[0]?.toUpperCase() ?? 'D'}
+    </span>
+  );
+}
+
+/**
+ * A Dispatcher group row in AgentRow's layout (status dot, avatar, name, a
+ * short note) for the ones that have no agent in this computer's store, so no
+ * menu or hover card. Without `onSelect` it is a label, not a target.
+ */
+function GroupRow({ testId, label, name, level, dot, avatar, note, noteClass = 'text-ctp-overlay1', active = false, dimmed = false, onSelect }: {
+  testId?: string;
+  label: string;
+  name: string;
+  level: { level: number; indent: number };
+  dot: AgentDot;
+  avatar: React.ReactNode;
+  note?: string;
+  noteClass?: string;
+  active?: boolean;
+  dimmed?: boolean;
+  onSelect?: () => void;
+}) {
+  const noteId = useId();
+  return (
+    <div
+      data-testid={testId}
+      data-active={active}
+      aria-current={active ? 'true' : undefined}
+      onClick={onSelect}
+      className={`relative w-full h-[30px] flex-shrink-0 rounded-md flex items-center transition-colors duration-100 ${onSelect ? 'cursor-pointer' : ''} ${
+        active ? 'bg-surface-0 text-ctp-text' : onSelect ? 'text-ctp-subtext1 hover:bg-surface-0/60 hover:text-ctp-text' : 'text-ctp-subtext1'
+      }${dimmed ? ' opacity-60' : ''}`}
+    >
+      <div
+        role="treeitem"
+        tabIndex={onSelect ? 0 : -1}
+        aria-level={level.level}
+        aria-selected={active}
+        aria-label={label}
+        aria-describedby={note ? noteId : undefined}
+        onKeyDown={onSelect ? (e) => {
+          if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onSelect(); }
+        } : undefined}
+        style={{ paddingLeft: level.indent }}
+        className="relative min-w-0 flex-1 h-full pr-1 rounded-md flex items-center gap-2 text-[13px] text-left focus-ring"
+      >
+        <StatusDot dot={dot} />
+        {avatar}
+        <span className="truncate font-medium">{name}</span>
+        {note && <span id={noteId} className={`ml-auto flex-shrink-0 text-xs ${noteClass}`}>{note}</span>}
+      </div>
+    </div>
+  );
+}
+
+/**
+ * The row before its agent is in the agent store: the status dot, a fallback
  * avatar, the name and a short note, in AgentRow's layout. Without the agent
  * there's no menu or hover card.
  */
 function PendingRow({ failed, active, onSelect }: { failed: boolean; active: boolean; onSelect: () => void }) {
-  const noteId = useId();
   return (
-    <div
-      data-testid="dispatcher-row-pending"
-      data-active={active}
-      aria-current={active ? 'true' : undefined}
-      onClick={onSelect}
-      className={`relative w-full h-[30px] flex-shrink-0 rounded-md flex items-center cursor-pointer transition-colors duration-100 ${
-        active ? 'bg-surface-0 text-ctp-text' : 'text-ctp-subtext1 hover:bg-surface-0/60 hover:text-ctp-text'
-      }`}
-    >
-      <div
-        role="treeitem"
-        aria-level={1}
-        aria-selected={active}
-        aria-label="Dispatcher"
-        aria-describedby={noteId}
-        onKeyDown={(e) => {
-          if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onSelect(); }
-        }}
-        style={{ paddingLeft: 8 }}
-        className="relative min-w-0 flex-1 h-full pr-1 rounded-md flex items-center gap-2 text-[13px] text-left focus-ring"
-      >
-        <StatusDot dot={failed ? 'error' : 'starting'} />
-        <span className="w-[18px] h-[18px] flex-shrink-0 rounded-full bg-surface-1" aria-hidden="true" />
-        <span className="truncate font-medium">Dispatcher</span>
-        <span id={noteId} className={`ml-auto flex-shrink-0 text-xs ${failed ? 'text-ctp-error' : 'text-ctp-overlay1'}`}>
-          {failed ? 'couldn’t load' : 'loading'}
-        </span>
-      </div>
-    </div>
+    <GroupRow
+      testId="dispatcher-row-pending"
+      label="Dispatcher"
+      name="Dispatcher"
+      level={OWNER_LEVEL}
+      dot={failed ? 'error' : 'starting'}
+      avatar={<FallbackAvatar name="Dispatcher" />}
+      note={failed ? 'couldn’t load' : 'loading'}
+      noteClass={failed ? 'text-ctp-error' : 'text-ctp-overlay1'}
+      active={active}
+      onSelect={onSelect}
+    />
   );
 }
 
@@ -122,40 +177,86 @@ export function DispatcherWorkRow({ agentId, running, active, onSelect }: {
   active: boolean;
   onSelect: () => void;
 }) {
-  const noteId = useId();
   const inTurn = useChatStore((s) => !!s.agents[agentId]?.turnStartedAt);
   // Only the active run's last turn counts (#3242): errors kept from ended runs are history.
   const failing = useChatStore((s) => activeRunFailing(s.agents[agentId]));
   const dot: AgentDot = !running ? 'sleeping' : inTurn ? 'working' : failing ? 'error' : 'idle';
   return (
     <div role="tree" aria-label={`${DISPATCHER_CONTROLLER_NAME} (debug)`} data-testid="dispatcher-work-row" className="flex-shrink-0 px-1.5 pb-1">
-      <div
-        data-active={active}
-        aria-current={active ? 'true' : undefined}
-        onClick={onSelect}
-        className={`relative w-full h-[30px] flex-shrink-0 rounded-md flex items-center cursor-pointer transition-colors duration-100 ${
-          active ? 'bg-surface-0 text-ctp-text' : 'text-ctp-subtext1 hover:bg-surface-0/60 hover:text-ctp-text'
-        }`}
-      >
-        <div
-          role="treeitem"
-          tabIndex={0}
-          aria-level={2}
-          aria-selected={active}
-          aria-label={DISPATCHER_CONTROLLER_NAME}
-          aria-describedby={noteId}
-          onKeyDown={(e) => {
-            if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onSelect(); }
-          }}
-          style={{ paddingLeft: 28 }}
-          className="relative min-w-0 flex-1 h-full pr-1 rounded-md flex items-center gap-2 text-[13px] text-left focus-ring"
-        >
-          <StatusDot dot={dot} />
-          <span className="w-[18px] h-[18px] flex-shrink-0 rounded-full bg-surface-1" aria-hidden="true" />
-          <span className="truncate font-medium">{DISPATCHER_CONTROLLER_NAME}</span>
-          <span id={noteId} className="ml-auto flex-shrink-0 text-xs text-ctp-overlay1">debug</span>
-        </div>
-      </div>
+      <GroupRow
+        label={DISPATCHER_CONTROLLER_NAME}
+        name={DISPATCHER_CONTROLLER_NAME}
+        level={CONTROLLER_LEVEL}
+        dot={dot}
+        avatar={<FallbackAvatar name={DISPATCHER_CONTROLLER_NAME} />}
+        note="debug"
+        active={active}
+        onSelect={onSelect}
+      />
+    </div>
+  );
+}
+
+/** A remote Dispatcher's published state as a status dot. */
+function remoteDot(state: RemoteDispatcherState): AgentDot {
+  switch (state) {
+    case 'online': return 'idle';
+    case 'working': return 'working';
+    case 'unknown': return 'starting';
+    default: return 'sleeping';
+  }
+}
+
+const REMOTE_NOTE: Partial<Record<RemoteDispatcherState, string>> = { offline: 'offline', off: 'off' };
+
+/**
+ * Another computer's Dispatcher (#3473), a peer of this computer's: the same
+ * level, status dot and avatar. Its avatar is the one it published with its
+ * chat agent when this computer has that, else a plain fallback. It stays a
+ * target while this computer has no chat for it, and opens its status then.
+ * Its controller, in the debug view, sits one level under it, as a label:
+ * its traffic isn't shown here (#3474).
+ */
+export function RemoteDispatcherRow({ remote, chat, iconUrl, active, onSelect, showController }: {
+  remote: RemoteDispatcherPresence;
+  /** Its chat agent under this computer's namespaced id, once its snapshot is here. */
+  chat?: Agent;
+  /** The icon that snapshot carries for it. */
+  iconUrl?: string;
+  active: boolean;
+  onSelect: () => void;
+  showController: boolean;
+}) {
+  const name = remote.dispatcherName || DEFAULT_DISPATCHER_NAME;
+  const dot = remoteDot(remote.state);
+  return (
+    <div role="tree" aria-label={remote.label} data-testid="remote-dispatcher-group" className="flex-shrink-0 px-1.5 pb-1">
+      <GroupRow
+        testId="remote-dispatcher-row"
+        label={remote.label}
+        name={remote.label}
+        level={OWNER_LEVEL}
+        dot={dot}
+        avatar={chat
+          ? <span data-testid="remote-dispatcher-avatar" className="flex-shrink-0"><AgentAvatar agent={chat} size="2xs" iconUrl={iconUrl} /></span>
+          : <FallbackAvatar name={name} />}
+        note={REMOTE_NOTE[remote.state]}
+        dimmed={remote.state === 'offline'}
+        active={active}
+        onSelect={onSelect}
+      />
+      {showController && remote.address && (
+        <GroupRow
+          testId="remote-dispatcher-controller"
+          label={`${DISPATCHER_CONTROLLER_NAME} (${remote.state})`}
+          name={DISPATCHER_CONTROLLER_NAME}
+          level={CONTROLLER_LEVEL}
+          dot={dot}
+          avatar={<FallbackAvatar name={DISPATCHER_CONTROLLER_NAME} />}
+          note={remote.state}
+          dimmed={remote.state === 'offline'}
+        />
+      )}
     </div>
   );
 }

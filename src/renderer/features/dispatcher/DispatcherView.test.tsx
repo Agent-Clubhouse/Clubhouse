@@ -18,6 +18,7 @@ import { useDispatcherStore } from './dispatcherStore';
 import { ClearChatHost, StartFreshHost } from './ClearChat';
 import { useDispatcherDebugStore } from './dispatcherDebug';
 import { useRemoteProjectStore } from '../../stores/remoteProjectStore';
+import { useAnnexClientStore } from '../../stores/annexClientStore';
 import { useRemoteDispatcherSelection } from './remoteDispatcherSelection';
 import { useChatStore } from '../../stores/chatStore';
 
@@ -31,6 +32,7 @@ beforeEach(() => {
   useDispatcherStore.getState().setState({ enabled: true, flagOn: true, agentId: 'disp-work', path: 'dispatcher-work-dir', chatAgentId: 'disp', chatPath: 'dispatcher-dir', config: null });
 });
 afterEach(() => {
+  useAnnexClientStore.setState({ satellites: [] });
   useDispatcherStore.getState().setState(DISPATCHER_OFF);
   useDispatcherStore.setState({ loadError: null });
 });
@@ -72,10 +74,34 @@ describe('DispatcherView', () => {
     const wake = vi.spyOn(window.clubhouse.dispatcher, 'wake').mockResolvedValue();
     const remote = dispatcher({ id: 'remote||s1||chat', projectId: 'remote||s1||__dispatcher__', name: 'Tael', status: 'running' });
     useRemoteProjectStore.setState({ remoteAgents: { [remote.id]: remote } });
-    useRemoteDispatcherSelection.getState().select(remote.id);
+    useAnnexClientStore.setState({ satellites: [{ id: 's1', alias: 'Mini', fingerprint: 'FP1', state: 'connected', snapshot: { dispatcher: { agent: { ...remote, id: 'chat', projectId: DISPATCHER_PROJECT_ID } } } }] } as never);
+    useRemoteDispatcherSelection.getState().select('fp1');
     render(<DispatcherView />);
     expect(screen.getByTestId('runtime-pane')).toHaveTextContent(remote.id);
     expect(wake).not.toHaveBeenCalled();
+  });
+
+  it('shows a selected Dispatcher’s status until this computer has its chat, then the chat', () => {
+    const chat = { id: 'chat', projectId: DISPATCHER_PROJECT_ID, name: 'Tael', kind: 'durable', status: 'running', executionMode: 'chat' };
+    useRemoteDispatcherSelection.getState().select('fp1');
+    useAnnexClientStore.setState({ satellites: [] });
+    render(<DispatcherView />);
+    expect(screen.getByTestId('remote-dispatcher-details')).toBeInTheDocument();
+    act(() => useAnnexClientStore.setState({ satellites: [{ id: 's1', alias: 'Mini', fingerprint: 'fp1', state: 'connected', snapshot: { dispatcher: { agent: chat } } }] } as never));
+    expect(screen.getByTestId('runtime-pane')).toHaveTextContent('remote||s1||chat');
+    expect(screen.queryByTestId('remote-dispatcher-details')).toBeNull();
+  });
+
+  it('says why there is no chat for a selected Dispatcher this computer has no connection to', async () => {
+    const wake = vi.spyOn(window.clubhouse.dispatcher, 'wake').mockResolvedValue();
+    const presence = vi.spyOn(window.clubhouse.dispatcher, 'getPresence').mockResolvedValue({ remotes: [{ machineId: 'fp1', machineName: 'Mini', address: 'work@fp1', dispatcherName: 'Tael', label: 'Tael on Mini', state: 'online', link: { state: 'active' } }] });
+    useAnnexClientStore.setState({ satellites: [] });
+    useRemoteDispatcherSelection.getState().select('fp1');
+    render(<DispatcherView />);
+    expect(await screen.findByText('Tael on Mini')).toBeInTheDocument();
+    expect(screen.getByTestId('remote-dispatcher-details')).toHaveTextContent('isn’t connected to Mini yet');
+    expect(wake).not.toHaveBeenCalled();
+    presence.mockRestore();
   });
 
   it('wakes the controller when opening its chat, including when the chat is already running (#3465)', async () => {
@@ -221,7 +247,7 @@ describe('DispatcherView on a follower (#3352)', () => {
     useRemoteProjectStore.setState({ remoteAgents: { [remote.id]: remote } });
     useAnnexClientStore.setState({ satellites: [{ id: 'sat-laptop', alias: 'Laptop', fingerprint: 'LAPTOP', state: 'connected', snapshot: { dispatcher: { agent: { ...remote, id: 'lead-chat', projectId: DISPATCHER_PROJECT_ID } } } }] } as never);
     useAgentStore.setState({ agents: { disp: dispatcher({ status: 'running' }) } });
-    useRemoteDispatcherSelection.getState().select(remote.id);
+    useRemoteDispatcherSelection.getState().select('laptop');
     useLeadStore.setState({ state: { ...LEAD, following: false } });
     const getLead = vi.spyOn(window.clubhouse.dispatcher, 'getLead').mockImplementation(async () => useLeadStore.getState().state!);
     render(<DispatcherView />);
