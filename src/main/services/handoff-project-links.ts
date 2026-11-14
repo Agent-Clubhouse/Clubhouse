@@ -1,3 +1,4 @@
+import { sharedHandoffProjectsLinked } from './project-links-store';
 import { createSettingsStore, type SettingsStore } from './settings-store';
 import { currentSettingsOrigin, auditChanged } from './settings-audit';
 function parse(raw: unknown): string[][] {
@@ -28,6 +29,10 @@ function store() {
   });
 }
 export function handoffProjectsLinked(localProject: string, sourceMachine: string, sourceProject: string, localSource = false): boolean {
+  try {
+    const shared = sharedHandoffProjectsLinked(localProject, sourceMachine, sourceProject, localSource);
+    if (shared !== undefined) return shared;
+  } catch { return false; /* telemetry-exempt: unreadable shared routing fails closed */ }
   if (unavailable) return false;
   if (!committed) { const value = store().get(); if (unreadable) return false; committed = parse(value.groups); }
   const remote = `remote||${sourceMachine}||${sourceProject}`;

@@ -301,3 +301,46 @@ Decisions made while building, for the maintainer to revisit. Newest last. D180 
 ## Dispatchers across the network
 
 Computer members publish their hidden Dispatcher controllers and derive two-way coordination links. Each receiver triages remote work under its own grants. A person may choose a network lead for a shared conversation; local controllers and memory stay on their own computers. Offline delivery, explicit outcomes, manual Take back and human-only approval routing are described in [Federated Dispatchers](dispatcher.md#federated-dispatchers-2834). See the [controller-link and remote-request terms](glossary.md).
+
+### Shared project links
+
+Project links and Keep separate choices are one network-wide set. The sidebar
+and project settings edit that set; Show remains a preference of this computer.
+Suggested links enter the set only after the person accepts them. Manual links
+use the same set. Git remotes never create shared links automatically.
+
+Computers replicate this state over authenticated pinned-member REST routes,
+following group-project replication and delivery capability negotiation:
+`POST /api/v1/network/project-links-capabilities` returns
+`{ "version": 1, "maxRecords": 200 }`, then
+`POST /api/v1/network/project-links` exchanges records in pages of at most 200.
+The request contains `version: 1`, optional `records`, an optional `after` cursor,
+and optional `read: false` for a publication without a response page. A read
+returns `version`, `records`, and `next` when another page remains. Peers without
+the capability are skipped. Changes push to connected members; connect and
+reconnect push and pull for catch-up. `/network` remains membership-only; its
+socket protocol is unchanged. Phones and one-to-one controller pairings cannot
+use these member replication routes.
+
+`network-project-links.json` stores records keyed by a canonical pair of
+`{ machine, projectId }` references, where machine is the Annex identity
+fingerprint. Each record contains `projects`, `linked`, `at` and `by`. A new edit
+uses the greater of the current millisecond timestamp and one greater than every
+observed clock. For a pair the newest clock wins, with separation winning an
+equal clock and writer fingerprint breaking remaining ties deterministically.
+Unlink, split and Keep separate retain negative records as tombstones; offline
+members cannot resurrect an older link. Display groups are derived
+deterministically from positive pairs, newest first, and cannot indirectly join
+an explicitly separated pair. Linking whole groups deliberately replaces their
+cross-group pair decisions with the newer positive edit.
+
+On upgrade each computer imports its `clubhouse.networkSidebar` localStorage
+links and keptSeparate choices and its `handoff-project-links.json` mirror once.
+Legacy choices have clock zero, so a Keep separate choice wins an untimed legacy
+conflict and a newer shared decision wins over any legacy import. Migration
+markers are local to the replica. Saved legacy values remain untouched, including
+when Show changes. New writes go only to the shared record. Handoff project
+matching uses the same shared groups after migration. Project identifiers remain
+qualified by their computer even when a phone is connected to just one member;
+a phone connected to several members sees replicas of the same set, not separate
+per-computer preferences.

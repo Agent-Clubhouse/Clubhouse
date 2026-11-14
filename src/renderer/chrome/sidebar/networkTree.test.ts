@@ -47,13 +47,15 @@ describe('the sidebar across machines (#3065)', () => {
 describe('what the sidebar across machines remembers', () => {
   beforeEach(() => _resetNetworkSidebarForTesting());
 
-  it('remembers Show, links and pairs kept separate across a reload', () => {
+  it('keeps Show local and preserves legacy links and Keep separate values', () => {
+    const legacy = { links: [['old', 'copy']], keptSeparate: ['old\ncopy'] };
+    localStorage.setItem('clubhouse.networkSidebar', JSON.stringify(legacy));
     const s = useNetworkSidebarStore.getState();
     s.setShow('s1');
     s.link('a', 'r||s1||a');
     s.keepSeparate('b', 'r||s1||c');
     const saved = JSON.parse(localStorage.getItem('clubhouse.networkSidebar')!);
-    expect(saved).toEqual({ show: 's1', links: [['a', 'r||s1||a']], keptSeparate: [pairKey('b', 'r||s1||c')] });
+    expect(saved).toEqual({ show: 's1', ...legacy });
   });
 
   it('a split remembers its pairs as kept separate, and linking them again forgets that', () => {

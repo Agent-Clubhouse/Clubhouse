@@ -61,9 +61,12 @@ describe('linking the same project on two computers (#3066)', () => {
     expect(screen.getByTestId('linked-project')).not.toHaveTextContent('remote||');
   });
 
-  it('shows a failed handoff routing save and retries without resending links on display changes', async () => {
-    const save = vi.fn().mockRejectedValueOnce(new Error('disk')).mockResolvedValue(undefined);
-    window.clubhouse.project.setHandoffProjectLinks = save;
+  it('shows a failed shared link save and retries without resending links on display changes', async () => {
+    const view = { revision: 1, links: [['p1', REMOTE]], keptSeparate: [] };
+    const save = vi.fn().mockRejectedValueOnce(new Error('disk')).mockResolvedValue(view);
+    window.clubhouse.project.hydrateProjectLinks = vi.fn().mockResolvedValue({ ...view, revision: 0, links: [] });
+    window.clubhouse.project.onProjectLinksChanged = vi.fn(() => () => {});
+    window.clubhouse.project.changeProjectLinks = save;
     render(<LinkedProjectsSection projectId="p1" />);
     fireEvent.click((await screen.findByTestId('linked-project-suggestion')).querySelector('button')!);
     expect(await screen.findByRole('alert')).toHaveTextContent('Could not save project links');
@@ -71,8 +74,8 @@ describe('linking the same project on two computers (#3066)', () => {
     expect(save).toHaveBeenCalledTimes(1);
     fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
     await waitFor(() => expect(screen.queryByRole('alert')).not.toBeInTheDocument());
-    expect(save).toHaveBeenLastCalledWith([['p1', REMOTE]]);
-    window.clubhouse.project.setHandoffProjectLinks = vi.fn().mockResolvedValue(undefined);
+    expect(save).toHaveBeenLastCalledWith({ type: 'link', a: 'p1', b: REMOTE });
+    delete (window.clubhouse.project as Partial<typeof window.clubhouse.project>).hydrateProjectLinks;
   });
 
   it('shows nothing without another computer or a link', () => {

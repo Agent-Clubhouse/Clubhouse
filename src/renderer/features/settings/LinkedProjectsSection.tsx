@@ -51,7 +51,7 @@ export function LinkedProjectsSection({ projectId }: { projectId: string }) {
       <p className="text-xs text-ctp-overlay1 pb-2">
         Linked projects show as one group in the sidebar and let accepted handoffs choose the matching local project. Each agent runs on its own computer, in its own folder.
       </p>
-      {handoffLinkError && <div role="alert" className="text-xs text-ctp-red pb-2">Could not save project links for receiving handoffs. <Button onClick={retryHandoffLinks} kind="ghost">Retry</Button></div>}
+      {handoffLinkError && <div role="alert" className="text-xs text-ctp-red pb-2">Could not save project links. <Button onClick={retryHandoffLinks} kind="ghost">Retry</Button></div>}
       {suggestions.map((s) => (
         <SettingsField
           key={s.remote.id}

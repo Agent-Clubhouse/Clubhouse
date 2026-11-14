@@ -1,3 +1,4 @@
+import { hydrateProjectLinks, changeProjectLinks, projectLinksStore } from '../services/project-links-store';
 import { setHandoffProjectLinks } from '../services/handoff-project-links';
 import { getHandoffTransferBounds, setHandoffTransferBounds } from '../services/handoff-transfer-settings';
 import { getHandoffSecretSettings, setHandoffSecretSettings } from '../services/handoff-secret-settings';
@@ -41,6 +42,9 @@ function forwardProjectChanges(): void {
 
 export function registerProjectHandlers(): void {
   registerProjectImportHandlers();
+  projectLinksStore().onChange(() => broadcastToAllWindows(IPC.PROJECT.LINKS_CHANGED, projectLinksStore().view()));
+  ipcMain.handle(IPC.PROJECT.LINKS_HYDRATE, withValidatedArgs([objectArg()], (_event, legacy) => hydrateProjectLinks(legacy)));
+  ipcMain.handle(IPC.PROJECT.LINKS_APPLY, withValidatedArgs([objectArg()], (_event, op) => changeProjectLinks(op)));
   ipcMain.handle(IPC.PROJECT.SET_HANDOFF_PROJECT_LINKS, withValidatedArgs([arrayArg(arrayArg(stringArg({ maxLength: 512 }), { maxLength: 200 }), { maxLength: 200 })], (_event, groups) => setHandoffProjectLinks(groups)));
   ipcMain.handle(IPC.PROJECT.GET_HANDOFF_TRANSFER_BOUNDS, withValidatedArgs([stringArg({ maxLength: 128 })], (_event, id) => getHandoffTransferBounds(id)));
   ipcMain.handle(IPC.PROJECT.SET_HANDOFF_TRANSFER_BOUNDS, withValidatedArgs([stringArg({ maxLength: 128 }), objectArg()], (_event, id, bounds) => setHandoffTransferBounds(id, bounds)));

@@ -1,3 +1,5 @@
+import { networkEnabled } from '../services/annex-settings';
+import { startProjectLinksNetwork } from '../services/project-links-network';
 import { startFederatedRequests } from '../services/dispatcher-federation-runtime';
 import { federationReceiver } from '../services/dispatcher-federation-receiver';
 /**
@@ -477,6 +479,7 @@ let stopWatchingOrchestratorConnections: (() => void) | null = null;
 let stopWatchingDispatcherWires: (() => void) | null = null;
 let stopWatchingAgentCards: (() => void) | null = null;
 let stopWatchingDispatcherConnections: (() => void) | null = null;
+let stopProjectLinksNetwork: (() => void) | undefined;
 let stopFederatedRequests: (() => void) | undefined;
 let stopWatchingFederation: (() => void) | null = null;
 let stopDispatcherLead: (() => void) | null = null;
@@ -613,6 +616,17 @@ export function restorePersistedBindings(): Promise<void> {
       onDeliveryFailure: async (notice) => (await newsDeliveryFailed(notice)) || reportAnnexDeliveryFailure(notice),
     });
     stopFederatedRequests = startFederatedRequests();
+    stopProjectLinksNetwork = startProjectLinksNetwork({
+      transport: {
+        connected: (machine) => annexClient.isMachineConnected(machine),
+        post: (machine, urlPath, body) => annexClient.postToMachine(machine, urlPath, body),
+        onConnected: (listener) => annexClient.onSatelliteConnected(listener),
+      },
+      isMember: (machine) => networkEnabled() && isNetworkComputer(machine),
+      members: () => networkEnabled() ? annexPeers.listPeers().map((p) => p.fingerprint.toLowerCase()).filter((machine) => isNetworkComputer(machine)) : [],
+      pairing: (machine) => { const peer = annexPeers.getPeer(machine); return peer && JSON.stringify([peer.tlsCertificateFingerprint, peer.pairingId]); },
+      onMembershipChanged: (listener) => onNetworkMembershipChanged(listener),
+    });
     // Network group projects (#3363): copies of other computers' group projects, and writes to their hosts.
     startGroupProjectNetwork({
       transport: {
@@ -669,6 +683,8 @@ export function _resetHandlersForTesting(): void {
   handlersRegistered = false;
   persistedSourcesRegistered = false;
   stopWatchingFederation?.();
+  stopProjectLinksNetwork?.();
+  stopProjectLinksNetwork = undefined;
   stopFederatedRequests?.();
   stopFederatedRequests = undefined;
   stopWatchingFederation = null;
