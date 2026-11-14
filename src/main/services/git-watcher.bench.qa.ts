@@ -13,7 +13,7 @@ import { execFileSync } from 'node:child_process';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
-import { afterAll, describe, it, vi } from 'vitest';
+import { afterAll, describe, expect, it, vi } from 'vitest';
 
 vi.mock('./agent-config', () => ({ listDurable: vi.fn(async () => []), onAgentConfigChanged: vi.fn(() => () => undefined) }));
 vi.mock('./agent-registry', () => ({ getAgentCwd: vi.fn(() => undefined) }));
@@ -73,10 +73,11 @@ describe('git watcher rebuild benchmark', () => {
 
     for (const recursiveWatch of [false, true]) {
       const mode = recursiveWatch ? 'recursive' : 'folders';
-      const w = new GitWatcher({ publish: () => undefined, pollMs: 0, recursiveWatch, watchRemovableDirs: true });
+      const w = new GitWatcher({ publish: () => undefined, pollMs: 0, maxRepos: N + 2, recursiveWatch, watchRemovableDirs: true });
       const step = async (name: string, paths: string[]) => {
         const { maxDriftMs } = await withDrift(() => w.setPaths(paths));
         const s = w.lastRebuildStats() as RebuildStats;
+        expect(s.watched).toBe(paths.length); // Include the helper even above the production cap.
         rows.push({
           mode, step: name, watched: w.watchedDirCount(), created: s.watchersCreated, closed: s.watchersClosed,
           watchSyncMs: s.watchSyncMs, totalMs: s.totalMs, maxDriftMs,
