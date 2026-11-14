@@ -11,7 +11,7 @@ import { remoteDispatcherLabel, type DispatcherPresenceSnapshot, type RemoteDisp
 import { listPeers } from './annex-peers';
 import { onDevicesChanged } from './annex-device-signal';
 import { getDispatcherAgentId, isDispatcherEnabled, onDispatcherChanged } from './dispatcher/dispatcher-service';
-import { onFederationControllersChanged, remoteFederationController } from './dispatcher-federation';
+import { federationDisplayName, onFederationControllersChanged, remoteFederationController } from './dispatcher-federation';
 import { federationStatus, onFederationStatusChanged } from './dispatcher-federation-policy';
 
 type Connected = (machine: string) => boolean;
@@ -28,7 +28,7 @@ function presenceFor(peer: ReturnType<typeof listPeers>[number]): RemoteDispatch
   const controller = remoteFederationController(machineId);
   const isConnected = connected(machineId);
   const address = controller?.agentId ? formatAgentAddress({ agentId: controller.agentId, machine: machineId }) : null;
-  const dispatcherName = controller?.name ?? null;
+  const dispatcherName = controller ? federationDisplayName(controller) : null;
   const state: RemoteDispatcherPresence['state'] = !isConnected ? 'offline'
     : !controller ? 'unknown'
       : !controller.enabled ? 'off'

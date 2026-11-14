@@ -29,6 +29,8 @@ vi.mock('fs/promises', () => ({
   writeFile: vi.fn().mockResolvedValue(undefined),
 }));
 
+const remoteController = vi.hoisted(() => ({ id: '' }));
+vi.mock('../dispatcher-federation', () => ({ remoteFederationController: () => remoteController.id ? { agentId: remoteController.id } : undefined }));
 const forwarded = vi.hoisted(() => ({ calls: [] as unknown[][] }));
 vi.mock('../annex-agent-calls', () => ({
   remoteMachineOf: (id: string) => (id.includes('@') ? id.slice(id.indexOf('@') + 1) : null),
@@ -498,6 +500,20 @@ describe('ToolRegistry', () => {
       bindingManager.setDisabledTools('agent-1', far, ['send_message']);
       expect(refusalReasonOf(await callTool('agent-1', toolName, { message: 'again' }))).toBe('tool_denied');
       expect(forwarded.calls).toHaveLength(1);
+    });
+
+    it('uses a remote Dispatcher display label without changing its callable name', async () => {
+      registerToolTemplate('agent', 'send_message', { description: 'Send', inputSchema: { type: 'object' } }, vi.fn());
+      const far = `controller@${Array(16).fill('bb').join(':')}`;
+      remoteController.id = 'controller';
+      try {
+        bindingManager.bind('agent-1', { targetId: far, targetKind: 'agent', label: 'Tael on Desk', targetName: 'Dispatcher controller', projectName: 'Desk' });
+        const binding = makeBinding({ agentId: 'agent-1', targetId: far, targetKind: 'agent', targetName: 'Dispatcher controller', projectName: 'Desk' });
+        const tool = buildToolName(binding, 'send_message');
+        forwarded.calls.length = 0;
+        await callTool('agent-1', tool, { message: 'hello' });
+        expect(forwarded.calls[0]).toEqual(['agent-1', far, 'Tael on Desk', 'send_message', { message: 'hello' }]);
+      } finally { remoteController.id = ''; }
     });
 
     it('returns error for unknown tool', async () => {

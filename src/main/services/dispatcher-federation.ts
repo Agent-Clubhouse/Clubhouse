@@ -1,6 +1,8 @@
 /** Membership owns controller links. The pinned computer publishes its controller,
  * never its visible chat. Offline metadata is retained, but revocation wins on
  * every lookup, including attempts already waiting in durable delivery. */
+import { DEFAULT_DISPATCHER_NAME, DISPATCHER_CONTROLLER_NAME } from '../../shared/dispatcher-name';
+import { cleanDispatcherName } from '../../shared/dispatcher-personality';
 import { formatAgentAddress } from '../../shared/agent-address';
 import type { AgentAddress, ConnectionDirection } from '../../shared/connection-grants';
 import { createSettingsStore } from './settings-store';
@@ -14,7 +16,10 @@ import type { PersistedBindingSource } from './persisted-bindings';
 
 export interface FederationController {
   agentId: string | null;
+  /** Legacy tool-addressing name. Never changes on a rename. */
   name: string;
+  /** User-facing name, absent on older computers. */
+  displayName?: string;
   enabled: boolean;
   /** Whether it is working or asleep, for presence (#3349). Older computers don't send it. */
   state?: PublishedDispatcherState;
@@ -26,9 +31,14 @@ const controllers = createSettingsStore<{ controllers: Record<string, Federation
   { atomic: true, audit: { key: 'dispatcher_federation' } },
 );
 const listeners = new Set<() => void>();
+export function federationDisplayName(info: FederationController): string {
+  const name = info.displayName ?? (info.name === DISPATCHER_CONTROLLER_NAME ? DEFAULT_DISPATCHER_NAME : info.name);
+  return cleanDispatcherName(name) || DEFAULT_DISPATCHER_NAME;
+}
+
 export function localFederationController(): FederationController {
   const enabled = isDispatcherEnabled();
-  return { agentId: getDispatcherAgentId(), name: dispatcherDisplayName(), enabled, ...(enabled && { state: localDispatcherState() }) };
+  return { agentId: getDispatcherAgentId(), name: DISPATCHER_CONTROLLER_NAME, displayName: dispatcherDisplayName(), enabled, ...(enabled && { state: localDispatcherState() }) };
 }
 
 /** As the Dispatcher's own badge judges it: asleep while its agent isn't running, working while requests are under way. */
@@ -46,7 +56,9 @@ export function onFederationControllersChanged(listener: () => void): () => void
 export function remoteFederationController(machine: string): FederationController | undefined {
   const peer = listPeers().find((p) => p.fingerprint.toLowerCase() === machine.toLowerCase() && p.role === 'member' && p.kind !== 'phone');
   const saved = controllers.get().controllers[machine.toLowerCase()];
-  return peer && saved && saved.pairingId === peer.pairingId && (saved.ownPairingId ?? 'legacy') === (ownPairing()?.id ?? 'legacy') ? saved : undefined;
+  if (!peer || !saved || saved.pairingId !== peer.pairingId || (saved.ownPairingId ?? 'legacy') !== (ownPairing()?.id ?? 'legacy')) return undefined;
+  return { ...saved, displayName: typeof saved.displayName === 'string' ? cleanDispatcherName(saved.displayName) || DEFAULT_DISPATCHER_NAME : undefined };
+
 }
 export async function learnFederationController(machine: string, raw: unknown, publication?: FederationPublicationGuard): Promise<void> {
   const peer = listPeers().find((p) => p.fingerprint.toLowerCase() === machine.toLowerCase() && p.role === 'member' && p.kind !== 'phone');
@@ -59,9 +71,10 @@ export async function learnFederationController(machine: string, raw: unknown, p
   const value = raw as FederationController | null;
   if (!value || typeof value !== 'object' || typeof value.enabled !== 'boolean'
     || typeof value.name !== 'string' || !value.name || value.name.length > 200
+    || (value.displayName !== undefined && (typeof value.displayName !== 'string' || value.displayName.length > 200))
     || (value.agentId !== null && (typeof value.agentId !== 'string' || !value.agentId || value.agentId.length > 200 || value.agentId.includes('@')))
     || (value.state !== undefined && !isPublishedDispatcherState(value.state))) return;
-  const info = { agentId: value.agentId, name: value.name, enabled: value.enabled, ...(value.state && { state: value.state }),
+  const info = { agentId: value.agentId, name: value.name, ...(value.displayName !== undefined && { displayName: cleanDispatcherName(value.displayName) || DEFAULT_DISPATCHER_NAME }), enabled: value.enabled, ...(value.state && { state: value.state }),
     ownPairingId: selfPairing, ...(peer.pairingId && { pairingId: peer.pairingId }) };
   if (JSON.stringify(remoteFederationController(machine)) === JSON.stringify(info)) return;
   const stale = new Error('Controller publication belongs to an earlier network pairing or service.');
@@ -103,10 +116,10 @@ export const federationBindingSource: PersistedBindingSource = {
       if (!remote?.agentId) return [];
       const address = formatAgentAddress({ agentId: remote.agentId, machine: peer.fingerprint.toLowerCase() });
       return [{ agentId: local.agentId!, targetId: address,
-        targetKind: 'agent' as const, label: `${remote.name} on ${peer.alias}`, agentName: local.name,
+        targetKind: 'agent' as const, label: `${federationDisplayName(remote)} on ${peer.alias}`, agentName: federationDisplayName(local),
         targetName: remote.name, projectName: peer.alias, disabledTools: [...FEDERATION_DISABLED_TOOLS], enabledTools: [] as string[], startingTools: true as const }, {
           agentId: address, targetId: local.agentId!, targetKind: 'agent' as const,
-          label: local.name, agentName: remote.name, targetName: local.name, projectName: peer.alias,
+          label: federationDisplayName(local), agentName: federationDisplayName(remote), targetName: local.name, projectName: peer.alias,
           disabledTools: [...FEDERATION_DISABLED_TOOLS], enabledTools: [] as string[], startingTools: true as const,
         }];
     });

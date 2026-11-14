@@ -104,7 +104,7 @@ describe('remote Dispatcher presence (#3349)', () => {
   });
 
   it('publishes the chosen name and updates remote presence after a rename', async () => {
-    expect(localFederationController().name).toBe('Dispatcher');
+    expect(localFederationController()).toMatchObject({ name: 'Dispatcher controller', displayName: 'Dispatcher' });
     state.name = 'Tael';
     await learnFederationController('desk', { ...localFederationController(), agentId: 'controller-desk' });
     expect(remoteDispatcherLabelFor('desk')).toBe('Tael on Desk');

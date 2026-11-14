@@ -1152,13 +1152,14 @@ describe('AgentTools', () => {
     });
 
     it('labels controller messages without changing the reply tool', async () => {
+      vi.spyOn(dispatcher, 'dispatcherDisplayName').mockReturnValue('Rosie');
       const result = await sendMessage('dispatcher-1', agentToolName(toOrchestrator, 'send_message'), { message: 'hi', task_id: 'd1' });
       expect(result.isError).toBeFalsy();
       // Two-way pairs add reply instructions, so the message goes as a bracketed paste.
       expect(mockPtyWrite.mock.calls[0][0]).toBe('orch-1');
       expect(mockPtyWrite.mock.calls.map(c => c[1]).join('')).not.toContain('Dispatcher@');
-      expect(mockPtyWrite.mock.calls.map(c => c[1]).join('')).toContain('[TASK:d1] [FROM:Dispatcher] hi');
-      expect(mockPtyWrite.mock.calls.map(c => c[1]).join('')).toContain(`Reply to Dispatcher via tool "${agentToolName(toDispatcher, 'send_message')}"`);
+      expect(mockPtyWrite.mock.calls.map(c => c[1]).join('')).toContain('[TASK:d1] [FROM:Rosie] hi');
+      expect(mockPtyWrite.mock.calls.map(c => c[1]).join('')).toContain(`Reply to Rosie via tool "${agentToolName(toDispatcher, 'send_message')}"`);
     });
 
     it('labels an orchestrator message to the Dispatcher with its project', async () => {
