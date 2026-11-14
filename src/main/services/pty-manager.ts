@@ -43,6 +43,7 @@ interface ManagedSession {
   agentId: string;
   generation: number;
   lastActivity: number;
+  receivedInput?: boolean;
   killing: boolean;
   outputChunks: string[];
   outputHead: number;
@@ -702,6 +703,12 @@ export function isShellBusy(id: string): boolean {
 /** Defense-in-depth ceiling for a single write() call (64 KB). */
 const MAX_WRITE_LENGTH = 64 * 1024;
 
+/** Unknown sessions cannot prove that a live controller has never received input. */
+export function hasReceivedInput(agentId: string): boolean {
+  const session = sessions.get(agentId);
+  return !session || session.receivedInput === true;
+}
+
 export function write(agentId: string, data: string): void {
   assertAgentWorkOpen();
   const session = sessions.get(agentId);
@@ -713,6 +720,7 @@ export function write(agentId: string, data: string): void {
     return;
   }
 
+  if (data.length) session.receivedInput = true;
   session.process.write(data);
 }
 
@@ -733,6 +741,7 @@ export function writeBinary(agentId: string, data: string): void {
     return;
   }
 
+  if (data.length) session.receivedInput = true;
   session.process.write(Buffer.from(data, 'latin1'));
 }
 

@@ -30,8 +30,9 @@ const mocks = vi.hoisted(() => ({
 }));
 vi.mock('../../chat-runtime-settings', () => ({ resolveRuntimeMode: () => ({ mode: mocks.chatMode ? 'chat' : 'terminal' }) }));
 vi.mock('../../agent-runtime/chat-drivers', () => ({ resolveChatDriver: () => ({}) }));
-vi.mock('../../agent-registry', () => ({ agentRegistry: { get: mocks.registryGet } }));
+vi.mock('../../agent-registry', () => ({ agentRegistry: { get: mocks.registryGet, setUserLaunchAccess: vi.fn(), reportLaunchAccess: vi.fn() } }));
 vi.mock('../../agent-runtime', () => ({ getAgentRuntime: mocks.getAgentRuntime }));
+vi.mock('../../agent-runtime/chat-transcript', () => ({ appendChatEvent: vi.fn(async () => {}), readChatTranscript: vi.fn(async () => []) }));
 vi.mock('../../agent-runtime/checkpoint-tracker', () => ({ BUSY_STATES: new Set(['running']) }));
 vi.mock('./helper-delivery', () => ({ deliverNow: mocks.deliverNow }));
 vi.mock('../../helper-index', () => ({ listHelpersEverywhere: vi.fn(async () => []) }));
@@ -59,6 +60,8 @@ import {
   type DispatcherDeliveryRequest,
 } from './dispatcher-delivery';
 import { clearAgentMessages, findInInbox } from '../../dispatcher/dispatcher-news-inbox';
+import { ChatAgentRuntime } from '../../agent-runtime/chat-runtime';
+import { FakeChatDriver } from '../../agent-runtime/fake-chat-driver';
 
 const DISPATCHER_PATH = '/home/.clubhouse/dispatcher';
 
@@ -89,7 +92,7 @@ describe('messages to the Dispatcher (#3037)', () => {
     system.spawnAgent.mockImplementation(async () => { running = true; });
     mocks.registryGet.mockImplementation((id: string) => (id === 'disp' && running ? { projectPath: DISPATCHER_PATH, runtime: 'chat' } : undefined));
     mocks.sendMessage.mockResolvedValue(undefined);
-    mocks.getAgentRuntime.mockReturnValue({ kind: 'chat', sendMessage: mocks.sendMessage, isRunning: () => true });
+    mocks.getAgentRuntime.mockReturnValue({ kind: 'chat', sendMessage: mocks.sendMessage, isRunning: () => true, getState: () => 'idle', hasPendingWork: () => false, hasReceivedInput: () => false });
     mocks.deliverNow.mockResolvedValue('delivered');
     mocks.listProjects.mockResolvedValue([]);
     mocks.getDurableConfig.mockImplementation(async (dir: string, id: string) => (dir === DISPATCHER_PATH && id === 'disp'
@@ -203,7 +206,7 @@ describe('messages to the Dispatcher (#3037)', () => {
     await wakeDispatcher(req);
     mocks.chatMode = !initialChat;
     await wakeDispatcher(req, { refreshRuntime: true });
-    expect(system.killAgent).toHaveBeenCalledExactlyOnceWith('disp', DISPATCHER_PATH, 'claude-code', 'user', { waitForExit: true, throwOnFailure: true });
+    expect(system.killAgent).toHaveBeenCalledExactlyOnceWith('disp', DISPATCHER_PATH, 'claude-code', 'user', { waitForExit: true, throwOnFailure: true, beforeStop: expect.any(Function) });
     expect(registration?.runtime).toBe(initialChat ? 'pty' : 'chat');
     expect(system.spawnAgent).toHaveBeenCalledTimes(2);
     for (const [params] of system.spawnAgent.mock.calls) expect(params.mission).toBeUndefined();
@@ -249,6 +252,66 @@ describe('messages to the Dispatcher (#3037)', () => {
     expect(registration?.runtime).toBe('chat');
     expect(system.spawnAgent).toHaveBeenCalledTimes(2);
     expect(mocks.sendMessage).toHaveBeenCalledExactlyOnceWith(request().text, expect.objectContaining({ routed: request().routed }));
+  });
+
+  it('does not churn an untouched controller after a terminal fallback', async () => {
+    const registration = { projectPath: DISPATCHER_PATH, orchestrator: 'claude-code', runtime: 'pty' };
+    mocks.registryGet.mockImplementation(() => running ? registration : undefined);
+    const req = { callerId: 'disp', targetId: 'disp', targetName: 'Dispatcher' };
+    await wakeDispatcher(req); // Chat requested, terminal actually chosen.
+    await wakeDispatcher(req, { refreshRuntime: true });
+    await wakeDispatcher(req, { refreshRuntime: true });
+    expect(system.killAgent).not.toHaveBeenCalled();
+    expect(system.spawnAgent).toHaveBeenCalledTimes(1);
+  });
+
+  it.each([false, true])('preserves direct real-runtime handoff input (arrives during stop preparation: %s)', async (duringStop) => {
+    const driver = new FakeChatDriver();
+    const runtime = new ChatAgentRuntime({ agentId: 'disp', provider: 'claude-code', driverId: driver.id, cwd: DISPATCHER_PATH, level: 'ask', idleTimeoutMs: 0,
+      startSession: () => driver.start({ agentId: 'disp', provider: 'claude-code', cwd: DISPATCHER_PATH, binaryPath: '/fake', level: 'ask' }),
+    });
+    const registration = { projectPath: DISPATCHER_PATH, orchestrator: 'claude-code', runtime: 'chat' };
+    mocks.registryGet.mockImplementation(() => running ? registration : undefined);
+    mocks.getAgentRuntime.mockReturnValue(runtime);
+    system.spawnAgent.mockImplementation(async () => { running = true; await runtime.start(); });
+    const req = { callerId: 'disp', targetId: 'disp', targetName: 'Dispatcher' };
+    try {
+      await wakeDispatcher(req);
+      expect(runtime.hasReceivedInput()).toBe(false);
+      // handoff-host/Annex bypass deliverToDispatcher and call this directly.
+      if (duringStop) {
+        system.killAgent.mockImplementation(async (_id, _dir, _provider, _trigger, opts) => {
+          await runtime.sendMessage('handoff offer', { source: 'mcp' });
+          opts.beforeStop();
+          throw new Error('A touched controller must never reach the stop side effect');
+        });
+      } else {
+        await runtime.sendMessage('handoff offer', { source: 'mcp' });
+      }
+      mocks.chatMode = false;
+      await wakeDispatcher(req, { refreshRuntime: true });
+      expect(driver.last.sent).toHaveLength(1);
+      expect(system.killAgent).toHaveBeenCalledTimes(duringStop ? 1 : 0);
+      expect(system.spawnAgent).toHaveBeenCalledTimes(1);
+      expect(driver.last.closed).toBe(false);
+    } finally {
+      await runtime.stop();
+    }
+  });
+
+  it('keeps the idle marker when stopping fails so a later setting change can retry', async () => {
+    mocks.chatMode = false;
+    const registration = { projectPath: DISPATCHER_PATH, orchestrator: 'claude-code', runtime: 'pty' };
+    mocks.registryGet.mockImplementation(() => running ? registration : undefined);
+    const req = { callerId: 'disp', targetId: 'disp', targetName: 'Dispatcher' };
+    await wakeDispatcher(req);
+    mocks.chatMode = true;
+    system.killAgent.mockRejectedValueOnce(new Error('stop failed'));
+    await expect(wakeDispatcher(req, { refreshRuntime: true })).rejects.toThrow('stop failed');
+    system.killAgent.mockImplementation(async () => { running = false; });
+    await wakeDispatcher(req, { refreshRuntime: true });
+    expect(system.killAgent).toHaveBeenCalledTimes(2);
+    expect(system.spawnAgent).toHaveBeenCalledTimes(2);
   });
 
   it('an action (#3042): the Dispatcher’s own subscription wakes it with no grant check', async () => {

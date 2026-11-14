@@ -105,7 +105,23 @@ export type DispatcherDelivery =
 /** One delivery at a time per Dispatcher session. */
 const queues = new Map<string, Promise<unknown>>();
 /** Only a session started without input can be safely moved out of the terminal, whose turn state is unknown. */
-const idleStarts = new Map<string, NonNullable<ReturnType<typeof agentRegistry.get>>>();
+const idleStarts = new Map<string, { registration: NonNullable<ReturnType<typeof agentRegistry.get>>; requested: string }>();
+
+function runtimeRequest(location: DurableAgentLocation) {
+  const provider = location.agentConfig.orchestrator ?? 'claude-code';
+  const desired = resolveRuntimeMode(provider, location.agentConfig.runtimeMode);
+  const driver = resolveChatDriver(provider, desired.driver);
+  return { provider, wantsChat: desired.mode === 'chat' && !!driver, key: JSON.stringify([desired.mode, driver?.id ?? desired.driver, !!driver]) };
+}
+
+/** Runtime proof covers input paths outside this module, including handoff offers and terminal typing. */
+function untouched(agentId: string): boolean {
+  const runtime = getAgentRuntime(agentId);
+  return runtime?.hasReceivedInput?.() === false
+    && (runtime.kind !== 'chat' || (runtime.getState() === 'idle' && runtime.hasPendingWork?.() === false));
+}
+
+class ControllerReceivedInputError extends Error {}
 
 function inOrder<T>(key: string, fn: () => Promise<T>): Promise<T> {
   const run = (queues.get(key) ?? Promise.resolve()).then(fn, fn);
@@ -138,10 +154,12 @@ async function wakeController(req: WakeAgentRequest): Promise<McpToolResult> {
   const targetId = dispatcherInboxId(req.targetId);
   const wasRunning = agentSystem.isAgentRunning(targetId);
   if (req.mission) idleStarts.delete(targetId);
+  const location = !wasRunning && !req.mission ? await locateDispatcher(targetId) : null;
+  const requested = location ? runtimeRequest(location).key : undefined;
   const result = await wakeWiredAgent({ ...req, targetId, locate: locateDispatcher });
   if (!wasRunning && !req.mission && !result.isError) {
     const registration = agentRegistry.get(targetId);
-    if (registration && agentSystem.isAgentRunning(targetId)) idleStarts.set(targetId, registration);
+    if (registration && requested && agentSystem.isAgentRunning(targetId)) idleStarts.set(targetId, { registration, requested });
   }
   return result;
 }
@@ -157,15 +175,26 @@ export function wakeDispatcher(req: WakeAgentRequest, options: { refreshRuntime?
     if (!isDispatcherEnabled()) return { content: [{ type: 'text', text: `${req.targetName} is turned off.` }], isError: true };
     if (options.refreshRuntime) {
       const registration = agentRegistry.get(inboxId);
-      if (registration && idleStarts.get(inboxId) === registration && agentSystem.isAgentRunning(inboxId)) {
+      const idle = idleStarts.get(inboxId);
+      if (registration && idle?.registration === registration && agentSystem.isAgentRunning(inboxId) && untouched(inboxId)) {
         const durable = await locateDispatcher(inboxId);
         if (durable) {
-          const provider = durable.agentConfig.orchestrator ?? registration.orchestrator;
-          const desired = resolveRuntimeMode(provider, durable.agentConfig.runtimeMode);
-          const wantsChat = desired.mode === 'chat' && !!resolveChatDriver(provider, desired.driver);
-          if ((registration.runtime === 'chat') !== wantsChat) {
-            idleStarts.delete(inboxId);
-            await agentSystem.killAgent(inboxId, durable.projectPath, provider, 'user', { waitForExit: true, throwOnFailure: true });
+          const desired = runtimeRequest(durable);
+          // A chat request may have fallen back to the terminal. Retry only when the requested runtime changes.
+          if (desired.key !== idle.requested) {
+            if ((registration.runtime === 'chat') !== desired.wantsChat) {
+              const beforeStop = () => {
+                if (agentRegistry.get(inboxId) !== registration || !untouched(inboxId)) throw new ControllerReceivedInputError();
+              };
+              try {
+                await agentSystem.killAgent(inboxId, durable.projectPath, desired.provider, 'user', { waitForExit: true, throwOnFailure: true, beforeStop });
+              } catch (err) {
+                // Direct input can arrive during stop preparation. Keep that session and its work.
+                if (!(err instanceof ControllerReceivedInputError)) throw err;
+              }
+            } else {
+              idle.requested = desired.key;
+            }
           }
         }
       }

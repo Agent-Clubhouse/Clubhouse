@@ -191,6 +191,7 @@ export class ChatAgentRuntime implements AgentRuntime {
   private sessionId: string;
   private seq: number;
   private state: ChatSessionState = 'starting';
+  private receivedInput = false;
   private turnId: string | undefined;
   /** When the running turn started, for status timestamps (Annex). */
   private turnStartedAt: number | null = null;
@@ -430,6 +431,7 @@ export class ChatAgentRuntime implements AgentRuntime {
   private async observe(draft: ChatEventDraft): Promise<void> {
     switch (draft.type) {
       case 'turn_started':
+        this.receivedInput = true;
         {
           const pending = this.pendingTurns.values().next().value;
           if (pending) this.pendingTurns.delete(pending);
@@ -639,8 +641,13 @@ export class ChatAgentRuntime implements AgentRuntime {
     return this.turnId !== undefined || this.draining || this.queued.length > 0 || this.pendingTurns.size > 0;
   }
 
+  hasReceivedInput(): boolean {
+    return this.receivedInput;
+  }
+
   private async deliverMessage(content: string | ContentBlock[], opts: RuntimeSendOptions): Promise<RuntimeSendResult> {
     const session = this.requireSession();
+    this.receivedInput = true;
     const blocks: ContentBlock[] = typeof content === 'string' ? [{ type: 'text', text: content }] : content;
     // While the queue drains, the state still reads idle; a prompt now would race the drained one.
     const running = this.draining

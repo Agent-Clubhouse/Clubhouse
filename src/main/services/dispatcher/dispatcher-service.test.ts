@@ -23,7 +23,7 @@ const h = vi.hoisted(() => ({
 
 vi.mock('../base-dir', () => ({ getBaseDirPath: () => h.baseDir }));
 vi.mock('../log-service', () => ({ appLog: vi.fn() }));
-vi.mock('../experimental-settings', () => ({ getSettings: () => h.experimental }));
+vi.mock('../experimental-settings', () => ({ getSettings: () => h.experimental, isGraduatedFeatureOn: (key: string) => h.experimental[key] !== false }));
 vi.mock('../../window-chrome', () => ({ newChromeEnabled: () => h.newLayout }));
 vi.mock('../orchestrator-settings', () => ({ getSettings: () => ({ enabled: h.enabledProviders }), whenDefaultsDetected: () => h.detection }));
 // The Auto mapping (#3044), faked per provider so no CLI is asked for its models.
