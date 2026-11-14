@@ -5,7 +5,7 @@ import { useUIStore } from '../stores/uiStore';
 import { useAgentStore } from '../stores/agentStore';
 import { useQuickAgentStore } from '../stores/quickAgentStore';
 import { useAnnexClientStore, type SatelliteConnection } from '../stores/annexClientStore';
-import { useRemoteProjectStore, satellitePrefix } from '../stores/remoteProjectStore';
+import { useRemoteProjectStore, satellitePrefix, namespacedAgentId, parseNamespacedId } from '../stores/remoteProjectStore';
 import { useCommandPaletteStore } from '../stores/commandPaletteStore';
 import { usePluginStore } from '../plugins/plugin-store';
 import { useOrderedShallow } from '../hooks/useOrderedShallow';
@@ -51,6 +51,8 @@ import { dispatcherNeedsYouLine } from '../features/dispatcher/RemoteApprovals';
 import { useDispatcherDebug, useDispatcherWorkOpen } from '../features/dispatcher/dispatcherDebug';
 import { visibleRequestAgentId, isDispatcherAgent, useDispatcherAgentId, useDispatcherStore } from '../features/dispatcher/dispatcherStore';
 import { requestCloseProject } from '../features/projects/close-project';
+import { useDispatcherPresence } from '../features/dispatcher/useDispatcherPresence';
+import { useRemoteDispatcherSelection } from '../features/dispatcher/remoteDispatcherSelection';
 import { closeDispatcher, openDispatcher } from '../features/dispatcher/dispatcherNav';
 
 /**
@@ -347,6 +349,9 @@ export function ChromeSidebar() {
   const dispatcherShown = useUIStore((s) => s.dispatcherOpen) && !!dispatcherAgentId;
   // The debug view (#3188): a row for its controller, whose chat the Dispatcher's view shows instead.
   const dispatcherDebug = useDispatcherDebug();
+  const dispatcherPresence = useDispatcherPresence();
+  const selectedRemoteDispatcher = useRemoteDispatcherSelection((s) => s.agentId);
+  const localDispatcherSelected = useRemoteDispatcherSelection((s) => s.local);
   const dispatcherWorkOpen = useDispatcherWorkOpen();
   const dispatcherWorkId = useDispatcherStore((s) => s.state?.agentId ?? null);
   // The controller's own running state: `running` is true while either of its agents runs.
@@ -652,7 +657,7 @@ export function ChromeSidebar() {
   }, [openAgent]);
 
   const openDispatcherRow = useCallback(() => {
-    openDispatcher();
+    openDispatcher({ local: true });
     reportChromeFeature('dispatcher_open');
   }, []);
   const openDispatcherWorkRow = useCallback(() => openDispatcher({ work: true }), []);
@@ -818,14 +823,13 @@ export function ChromeSidebar() {
 
       <AppRow inline={inlineItems} overflow={overflowItems} explorerTab={explorerTab} onOpen={openAppItem} />
 
+      <div data-testid="dispatcher-group">
       {dispatcherAgentId && (
         <DispatcherRow
-          agent={followedLead?.agent ?? dispatcherAgent}
-          detailed={followedLead?.agent ? remoteDetailed[followedLead.agent.id] : detailed[dispatcherAgentId]}
-          requestsUnderWay={followedLead?.agent ? 0 : dispatcherRequestsUnderWay}
-          machine={followedLead ? followedLead.machineName : undefined}
-          offline={!!followedLead && !followedLead.online}
-          active={dispatcherShown && !dispatcherWorkOpen}
+          agent={dispatcherAgent}
+          detailed={detailed[dispatcherAgentId]}
+          requestsUnderWay={dispatcherRequestsUnderWay}
+          active={dispatcherShown && !dispatcherWorkOpen && !selectedRemoteDispatcher && (!followedLead || localDispatcherSelected)}
           projectPath={dispatcherPath}
           loadError={dispatcherLoadError}
           onSelect={openDispatcherRow}
@@ -835,10 +839,33 @@ export function ChromeSidebar() {
         <DispatcherWorkRow
           agentId={dispatcherWorkId}
           running={dispatcherWorkRunning}
-          active={dispatcherShown && dispatcherWorkOpen}
+          active={dispatcherShown && dispatcherWorkOpen && !selectedRemoteDispatcher}
           onSelect={openDispatcherWorkRow}
         />
       )}
+
+
+      {dispatcherAgentId && dispatcherPresence?.remotes.map((remote) => {
+        const satellite = satellites.find((sat) => sat.fingerprint.toLowerCase() === remote.machineId);
+        const chat = satellite?.snapshot?.dispatcher?.agent;
+        const id = satellite && chat ? namespacedAgentId(satellite.id, chat.id) : null;
+        const isLead = followedLead?.state.lead?.machine === remote.machineId;
+        const selectedOnMachine = !!satellite && !!selectedRemoteDispatcher && parseNamespacedId(selectedRemoteDispatcher)?.satelliteId === satellite.id;
+        const active = dispatcherShown && !dispatcherWorkOpen && (selectedRemoteDispatcher === id && !!id
+          || !!isLead && (!selectedRemoteDispatcher || selectedOnMachine) && !localDispatcherSelected);
+        return <div key={remote.machineId} className="px-1.5" data-testid="remote-dispatcher-group">
+          <button type="button" disabled={!id && !isLead} onClick={() => isLead ? openDispatcher() : id && openDispatcher({ remoteAgentId: id })}
+            aria-current={active ? 'true' : undefined}
+            className={`w-full rounded text-left text-[13px] disabled:opacity-60 py-1 pl-7 pr-2 ${active ? 'bg-surface-0 text-ctp-text' : 'text-ctp-subtext1 hover:bg-surface-0/60'}`}>
+            {remote.label}{remote.state === 'offline' ? ' · Offline' : ''}
+          </button>
+          {dispatcherDebug && remote.address && <div className="pl-12 py-1 text-xs text-ctp-overlay1" data-testid="remote-dispatcher-controller">
+            Dispatcher controller · {remote.state}
+          </div>}
+        </div>;
+      })}
+
+      </div>
 
       {mode !== 'tree' && (
         <>

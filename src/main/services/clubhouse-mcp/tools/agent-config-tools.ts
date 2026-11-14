@@ -27,14 +27,18 @@ export function registerAgentConfigTools(): void {
     }
     try {
       const target = await resolveAgentConfigTarget(args.agent, args.project as string | undefined);
-      const concrete = await resolvedAgentGrantTarget(callerId, target.agent, target.project.path);
-      const targets: ArgTargets = new Map([[READ_GRANT, [concrete]]]);
-      const allowed = () => callGrantIsApproved(callerId, 'read_agent_config', args,
-        checkToolGrant(callerId, READ_GRANT, args, undefined, targets),
-        grantApprovalContext(callerId, 'read_agent_config', args, READ_GRANT, targets));
-      if (!allowed()) return failure();
+      const allowed = async () => {
+        // Keep the resolved identity pinned, but refresh relations: a connection
+        // may be revoked while the instruction files are being read.
+        const concrete = await resolvedAgentGrantTarget(callerId, target.agent, target.project.path);
+        const targets: ArgTargets = new Map([[READ_GRANT, [concrete]]]);
+        return callGrantIsApproved(callerId, 'read_agent_config', args,
+          checkToolGrant(callerId, READ_GRANT, args, undefined, targets),
+          grantApprovalContext(callerId, 'read_agent_config', args, READ_GRANT, targets));
+      };
+      if (!await allowed()) return failure();
       const result = await readResolvedAgentConfig(target);
-      return allowed() ? { content: [{ type: 'text', text: JSON.stringify(result) }] } : failure();
+      return await allowed() ? { content: [{ type: 'text', text: JSON.stringify(result) }] } : failure();
     }
     catch { return failure(); /* telemetry-exempt: read failure returned without file contents or paths */ }
   }, { grant: READ_GRANT });

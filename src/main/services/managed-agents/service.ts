@@ -73,7 +73,7 @@ export interface ManagedAgentsDeps {
   listProjects(): Promise<Array<{ path: string; name: string }>>;
   listAgents(projectPath: string): Promise<readonly DurableAgentConfig[]>;
   getAgent(projectPath: string, agentId: string): Promise<DurableAgentConfig | null>;
-  setManagedSetup(projectPath: string, agentId: string, setup: ManagedAgentSetup | null): Promise<void>;
+  setManagedSetup(projectPath: string, agentId: string, setup: ManagedAgentSetup | null, precondition?: import('../agent-config').ManagedSetupCommitPrecondition): Promise<void>;
   isRunning(agentId: string): boolean;
   /** Called after anything that may change what an agent gets, so the UI can refresh. */
   onChanged?(): void;
@@ -387,7 +387,7 @@ export function createManagedAgentsService(deps: ManagedAgentsDeps) {
     projectPath: string,
     agentId: string,
     setup: ManagedAgentSetup,
-    opts: { before?: DurableAgentConfig | null; helperChanges?: ManagedHelperChanges; actor?: string } = {},
+    opts: { before?: DurableAgentConfig | null; helperChanges?: ManagedHelperChanges; actor?: string; precondition?: import('../agent-config').ManagedSetupCommitPrecondition } = {},
   ): Promise<ManagedAgentSetup> {
     const before = opts.before !== undefined ? opts.before : await deps.getAgent(projectPath, agentId);
     const kept = before?.managed?.helperChanges && sameParts(before.managed, setup) ? before.managed.helperChanges : undefined;
@@ -403,7 +403,8 @@ export function createManagedAgentsService(deps: ManagedAgentsDeps) {
       updatedAt: new Date().toISOString(),
       ...(actor && { updatedBy: actor }),
     };
-    await deps.setManagedSetup(projectPath, agentId, written);
+    if (opts.precondition) await deps.setManagedSetup(projectPath, agentId, written, opts.precondition);
+    else await deps.setManagedSetup(projectPath, agentId, written);
     return written;
   }
 
@@ -905,7 +906,7 @@ export function createManagedAgentsService(deps: ManagedAgentsDeps) {
       projectPath: string,
       agentId: string,
       setup: Omit<ManagedAgentSetup, 'version'>,
-      opts: { helperChanges?: ManagedHelperChanges; actor?: string } = {},
+      opts: { helperChanges?: ManagedHelperChanges; actor?: string; precondition?: import('../agent-config').ManagedSetupCommitPrecondition } = {},
     ): Promise<ManagedAgentSetup> {
       const agent = await deps.getAgent(projectPath, agentId);
       if (!agent) throw new ManagedError('not_found');

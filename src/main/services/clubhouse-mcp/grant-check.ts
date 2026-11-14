@@ -107,6 +107,7 @@ function resolveTarget(agentId: string, target: ToolGrantTarget, wire: GrantChec
     case 'parent': return { kind: 'agent', relations: ['parent'] };
     case 'my_helpers': return { kind: 'agent', relations: ['my_helper'] };
     case 'created_by_me': return { kind: 'agent', relations: ['created_by_me'] };
+    case 'all_agents': return { kind: 'agent', relations: [] };
     case 'connected': return { kind: 'agent', relations: ['connected'] };
     case 'app': return { kind: 'app' };
     case 'library': return { kind: 'library' };

@@ -30,6 +30,17 @@ describe('read_agent_config grants and routing', () => {
     expect((await callTool('caller', 'read_agent_config', { agent: 'target' })).isError).toBe(true);
     expect(mocks.read).not.toHaveBeenCalled();
   });
+  it('withholds content when the connection is unbound during the read', async () => {
+    wire();
+    mocks.read.mockImplementationOnce(async () => {
+      bindingManager.unbind('caller', 'target');
+      return { instructions: { text: 'Rules' } };
+    });
+    const result = await callTool('caller', 'read_agent_config', { agent: 'target' });
+    expect(mocks.read).toHaveBeenCalledOnce();
+    expect(result.isError).toBe(true);
+    expect(JSON.stringify(result)).not.toContain('Rules');
+  });
   it('refuses an unknown project for a real unconnected id without reading content', async () => {
     expect((await callTool('caller', 'read_agent_config', { agent: 'target', project: 'does-not-exist' })).isError).toBe(true);
     expect(mocks.read).not.toHaveBeenCalled();

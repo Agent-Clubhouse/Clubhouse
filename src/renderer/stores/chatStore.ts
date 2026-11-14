@@ -148,6 +148,13 @@ export interface PlanDocumentItem extends ChatItemBase {
   decision?: 'approved' | 'rejected';
 }
 
+/** Permission prompts remain in the transcript after their dock card clears. */
+export interface PermissionItem extends ChatItemBase {
+  kind: 'permission';
+  request: PendingPermission;
+  decision?: ChatEventDataMap['permission_resolved']['decision'];
+}
+
 /** A question the agent asked, kept in the transcript with its answer once given. */
 export interface QuestionItem extends ChatItemBase {
   kind: 'question';
@@ -180,6 +187,7 @@ export type ChatItem =
   | ErrorItem
   | PlanDocumentItem
   | QuestionItem
+  | PermissionItem
   | TurnEndItem;
 
 export type PendingPermission = ChatEventDataMap['permission_request'] & { turnId?: string; ts: number };
@@ -884,9 +892,16 @@ export function reduceChatEvent(prev: ChatViewState | undefined, event: ChatEven
       const req: PendingPermission = { ...event.data, ts: event.ts };
       if (event.turnId) req.turnId = event.turnId;
       const pendingPermissions = state.pendingPermissions.filter((p) => p.requestId !== req.requestId);
-      return { ...state, pendingPermissions: [...pendingPermissions, req] };
+      const id = `permission:${sid}:${req.requestId}`;
+      const items = upsertItem<PermissionItem>(state.items, id,
+        () => ({ ...itemBase(event, id), kind: 'permission', request: req }),
+        (existing) => ({ ...existing, request: req }));
+      return { ...state, items, pendingPermissions: [...pendingPermissions, req] };
     }
     case 'permission_resolved': {
+      state = { ...state, items: state.items.map((item) =>
+        item.kind === 'permission' && item.request.requestId === event.data.requestId
+          ? { ...item, decision: event.data.decision } : item) };
       const resolved = state.pendingPermissions.find((p) => p.requestId === event.data.requestId);
       const pendingPermissions = state.pendingPermissions.filter((p) => p.requestId !== event.data.requestId);
       // A plan approval (or denial) settles the plan card for that tool call.

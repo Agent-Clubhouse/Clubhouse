@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import type { AgentRuntime, ChatEvent } from '../../shared/chat';
-import { MobileCommandService, MobileControlError, parseMobileCommand, executeChatCommand, pendingInteractions, MOBILE_COMMAND_TTL_MS } from './mobile-control';
+import { MobileCommandService, MobileControlError, parseMobileCommand, executeChatCommand, pendingInteractions, MOBILE_COMMAND_TTL_MS, chatControls } from './mobile-control';
 
 const command = (service: MobileCommandService, extra = {}) => ({ version: 1, epoch: service.epoch, commandId: 'cmd-1', type: 'chat.send', agentId: 'agent-1', sessionId: 'session-1', text: 'hello', ...extra });
 const event = (type: string, data: object, seq = 1) => ({ v: 1, type, data, seq, agentId: 'agent-1', sessionId: 'session-1', ts: 1 }) as ChatEvent;
@@ -392,5 +392,46 @@ describe('agent.create and agent.update parsing (#2451, #2452)', () => {
     const response = await service.execute('peer', { ...update({ name: 'x y' }), epoch: service.epoch },
       async () => { throw new MobileControlError('invalid_name', 400, 'rejected', 'Names cannot contain spaces'); });
     expect(response).toMatchObject({ statusCode: 400, body: { status: 'rejected', error: { code: 'invalid_name', message: 'Names cannot contain spaces' } } });
+  });
+});
+
+
+describe('mobile chatControls startModel (#3408)', () => {
+  it('always emits null until the session names a model', () => {
+    expect(chatControls([], undefined)).toHaveProperty('startModel', null);
+    expect(chatControls([event('session_started', {}), event('session_info', { model: null }, 2)], undefined)).toHaveProperty('startModel', null);
+  });
+
+  it('keeps the first model when the session switches, without relying on the model catalog', () => {
+    const controls = chatControls([
+      event('session_started', { model: 'opus' }),
+      event('model_changed', { modelId: 'sonnet' }, 2),
+      event('session_info', { model: 'sonnet', models: [{ id: 'sonnet', label: 'Sonnet' }] }, 3),
+    ], undefined);
+    expect(controls).toMatchObject({ model: 'sonnet', startModel: 'opus' });
+  });
+
+  it('emits equal IDs when the model has not changed', () => {
+    expect(chatControls([event('session_started', { model: 'opus' }), event('model_changed', { modelId: 'opus' }, 2)], undefined))
+      .toMatchObject({ model: 'opus', startModel: 'opus' });
+  });
+
+  it.each(['session_info', 'model_changed'])('fills an unset start model from the first non-null %s', (type) => {
+    const first = type === 'session_info' ? { model: 'opus' } : { modelId: 'opus' };
+    const events = [event('session_started', {}), event('session_info', { model: null }, 2), event(type, first, 3),
+      event('session_info', { model: 'sonnet' }, 4), event('model_changed', { modelId: 'haiku' }, 5)];
+    expect(chatControls(events, undefined)).toMatchObject({ model: 'haiku', startModel: 'opus' });
+  });
+
+  it('resets startModel when a new session starts with a model', () => {
+    expect(chatControls([event('session_started', { model: 'opus' }), event('model_changed', { modelId: 'sonnet' }, 2),
+      event('session_started', { model: 'haiku' }, 3)], undefined)).toMatchObject({ model: 'haiku', startModel: 'haiku' });
+  });
+
+  it('resets to null when a new session omits its model, then fills from that session', () => {
+    const events = [event('session_started', { model: 'opus' }), event('session_started', {}, 2)];
+    expect(chatControls(events, undefined)).toHaveProperty('startModel', null);
+    expect(chatControls([...events, event('session_info', { model: null }, 3), event('model_changed', { modelId: 'sonnet' }, 4)], undefined))
+      .toMatchObject({ model: 'sonnet', startModel: 'sonnet' });
   });
 });

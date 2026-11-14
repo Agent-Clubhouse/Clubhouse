@@ -72,7 +72,7 @@ describe('chatControls snapshot fields', () => {
   it('folds model, effort, level, lists and capability fields from the session', () => {
     const events = [...sessionEvents(), event('mode_changed', { level: 'plan' })];
     expect(chatControls(events, caps({ modelSwitch: 'per_turn', effortSwitch: 'per_turn' }))).toEqual({
-      model: 'opus', modelUnknown: false, effort: 'high', effortIsDefault: false, effortReported: true, level: 'plan',
+      model: 'opus', startModel: 'opus', modelUnknown: false, effort: 'high', effortIsDefault: false, effortReported: true, level: 'plan',
       models: [{ id: 'opus', label: 'Opus' }, { id: 'haiku', label: 'Haiku' }], efforts: ['low', 'high'],
       levelNames: { ask: 'default', plan: 'plan' }, liveLevels: ['plan', 'ask', 'auto_edit', 'full_access'],
       modelSwitch: 'per_turn', effortSwitch: 'per_turn', effortDefault: true, switchNote: 'Applies from the next message.', context: null,

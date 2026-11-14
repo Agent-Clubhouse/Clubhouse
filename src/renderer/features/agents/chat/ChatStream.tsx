@@ -26,6 +26,7 @@ import {
   TurnFooter,
   UserMessage,
 } from './MessageBlocks';
+import { InlineApproval } from './InlineApproval';
 import { ChevronDown, ChevronUp } from './icons';
 import {
   AwaitingApprovalContext,
@@ -199,7 +200,8 @@ function BlockBody(props: BlockProps) {
     case 'thought': return <ThoughtRow item={item} />;
     case 'tool_call': return <ToolCallView tool={item} mcpServers={mcpServers} expansionKey={`${block.key}:tool`} />;
     case 'plan_document': return <PlanDocumentCard item={item} error={block.tool && toolErrorText(block.tool)} />;
-    case 'question': return <QuestionRow item={item} error={block.tool && toolErrorText(block.tool)} />;
+    case 'permission': return <InlineApproval item={item} />;
+    case 'question': return <InlineApproval item={item}><QuestionRow item={item} error={block.tool && toolErrorText(block.tool)} /></InlineApproval>;
     case 'notice': return <NoticeRow item={item} />;
     case 'error': return <ErrorRow item={item} timing={errorTiming} />;
     case 'turn_end': return <TurnFooter item={item} turnNumber={turnNumber} capabilities={capabilities} />;
@@ -210,6 +212,7 @@ function BlockBody(props: BlockProps) {
 /** A request to scroll the stream to a subagent's work; `nonce` repeats a jump to the same one. */
 export interface StreamJump {
   subagentId: string;
+  itemId?: string;
   nonce: number;
 }
 
@@ -594,11 +597,11 @@ const ChatStreamInner = memo(function ChatStreamInner({
   }, [blocks]);
 
   const jumpRequest = useMemo(
-    () => jump ? { subagentId: jump.subagentId, nonce: jump.nonce } : null,
-    [jump?.subagentId, jump?.nonce],
+    () => jump ? { subagentId: jump.subagentId, itemId: jump.itemId, nonce: jump.nonce } : null,
+    [jump?.subagentId, jump?.itemId, jump?.nonce],
   );
   const jumpTargetIndex = useMemo(
-    () => jumpRequest ? targetBlockIndex(blocks, jumpRequest.subagentId) : -1,
+    () => jumpRequest ? (jumpRequest.itemId ? blocks.findIndex((b) => blockItems(b).some((i) => i.id === jumpRequest.itemId)) : targetBlockIndex(blocks, jumpRequest.subagentId)) : -1,
     [blocks, jumpRequest],
   );
   const jumpTargetOutsideWindow = jumpTargetIndex >= 0 && (jumpTargetIndex < start || jumpTargetIndex >= end);
@@ -622,7 +625,7 @@ const ChatStreamInner = memo(function ChatStreamInner({
       return;
     }
     const root = scroller.current;
-    const target = root?.querySelector<HTMLElement>(`[data-subagent-id="${CSS.escape(jumpRequest.subagentId)}"]`);
+    const target = root?.querySelector<HTMLElement>(jumpRequest.itemId ? `[data-block-index="${jumpTargetIndex}"]` : `[data-subagent-id="${CSS.escape(jumpRequest.subagentId)}"]`);
     onJumpResultRef.current?.(jumpRequest, !!target);
     if (!root || !target) return;
     leaveBottom('jump');
@@ -637,7 +640,7 @@ const ChatStreamInner = memo(function ChatStreamInner({
     const t = setTimeout(clear, JUMP_HIGHLIGHT_MS);
     // A newer jump (or unmount) clears this one's outline straight away.
     return () => { clearTimeout(t); clear(); };
-  }, [jumpRequest, jumpTargetStatus, jumpWindowStart, leaveBottom, noteUserInput]);
+  }, [jumpRequest, jumpTargetStatus, jumpTargetIndex, jumpWindowStart, leaveBottom, noteUserInput]);
 
   const onScroll = () => {
     const el = scroller.current;

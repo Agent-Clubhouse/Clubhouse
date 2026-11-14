@@ -68,7 +68,9 @@ export function managedAgents(): ManagedAgentsService {
       },
       listAgentsChecked: (projectPath) => agentConfig.peekDurableConfigsChecked(projectPath),
       getAgent: (projectPath, agentId) => agentConfig.getDurableConfig(projectPath, agentId),
-      setManagedSetup: (projectPath, agentId, setup) => agentConfig.setManagedSetup(projectPath, agentId, setup),
+      setManagedSetup: (projectPath, agentId, setup, precondition) => precondition
+        ? agentConfig.setManagedSetup(projectPath, agentId, setup, precondition)
+        : agentConfig.setManagedSetup(projectPath, agentId, setup),
       isRunning,
       onChanged: () => broadcastToAllWindows(IPC.MANAGED.CHANGED),
       setHelperTemplate: async (projectPath, agentId, templateId) => { await agentConfig.updateDurableConfig(projectPath, agentId, { helperTemplateId: templateId }); },

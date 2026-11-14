@@ -3,6 +3,7 @@ import { useChromeStore } from '../../chrome/chromeStore';
 import { requestLeaveAgentSettings } from '../agents/agentSettingsPages';
 import { useDispatcherStore, visibleDispatcherAgentId } from './dispatcherStore';
 import { useDispatcherDebugStore } from './dispatcherDebug';
+import { useRemoteDispatcherSelection } from './remoteDispatcherSelection';
 
 /**
  * Opening and closing the Dispatcher's view (#2538). The view is a uiStore
@@ -36,7 +37,7 @@ export function openDispatcherNavTarget(target: string): void {
  * Show the Dispatcher's view. Does nothing while it's turned off. `work` shows
  * its controller's chat instead, with the debug view on (#3188).
  */
-export function openDispatcher(opts: { work?: boolean } = {}): void {
+export function openDispatcher(opts: { work?: boolean; remoteAgentId?: string; local?: boolean } = {}): void {
   if (!useDispatcherStore.getState().project) return;
   requestLeaveAgentSettings(() => {
     useChromeStore.getState().closeNewAgent();
@@ -46,6 +47,7 @@ export function openDispatcher(opts: { work?: boolean } = {}): void {
     else if (ui.explorerTab === 'help') ui.toggleHelp();
     else if (ui.explorerTab.startsWith('plugin:app:')) ui.setExplorerTab('agents');
     useDispatcherDebugStore.getState().setWorkOpen(!!opts.work);
+    useRemoteDispatcherSelection.getState().select(opts.remoteAgentId ?? null, !!opts.local);
     useUIStore.getState().setDispatcherOpen(true);
   });
 }

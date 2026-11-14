@@ -139,5 +139,6 @@ global:cancel_repository_import readOnly=false destructive=false openWorld=false
 global:request_app_update readOnly=false destructive=false openWorld=false
 global:get_delivery readOnly=true destructive=false openWorld=false
 global:get_annex_network_settings readOnly=true destructive=false openWorld=false
-global:update_annex_network_settings readOnly=false destructive=true openWorld=false"
+global:update_annex_network_settings readOnly=false destructive=true openWorld=false
+global:set_theme readOnly=false destructive=false openWorld=false"
 `;

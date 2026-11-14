@@ -366,6 +366,7 @@ const TOOL_ANNOTATIONS: Partial<Record<'global' | BindingTargetKind, Readonly<Re
     get_annex_network_settings: INTERNAL_READ,
     // Restricting to loopback interrupts existing remote connections.
     update_annex_network_settings: INTERNAL_DESTRUCTIVE,
+    set_theme: INTERNAL_WRITE,
   },
 };
 

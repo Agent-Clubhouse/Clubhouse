@@ -61,6 +61,9 @@ interface ThemeState {
   refreshAvailable: () => void;
 }
 
+// Only the latest theme read may apply or sync its result.
+let themeLoadVersion = 0;
+
 export const useThemeStore = create<ThemeState>((set, get) => ({
   themeId: 'catppuccin-mocha',
   theme: BUILTIN_THEMES['catppuccin-mocha'],
@@ -68,11 +71,13 @@ export const useThemeStore = create<ThemeState>((set, get) => ({
   experimentalGradients: true,
 
   loadTheme: async () => {
+    const version = ++themeLoadVersion;
     try {
       const [settings, experimental] = await Promise.all([
         window.clubhouse.app.getTheme(),
         window.clubhouse.app.getExperimentalSettings().catch(() => ({} as Record<string, boolean>)),
       ]);
+      if (version !== themeLoadVersion) return;
       const id = (settings?.themeId || 'catppuccin-mocha') as ThemeId;
       const theme = resolveTheme(id);
       const experimentalGradients = isGraduatedFlagOn(experimental, 'themeGradients');
@@ -80,6 +85,7 @@ export const useThemeStore = create<ThemeState>((set, get) => ({
       syncAppliedTheme(theme, experimentalGradients);
       set({ themeId: id, theme, experimentalGradients, availableThemeIds: getAllThemeIds() });
     } catch {
+      if (version !== themeLoadVersion) return;
       // Use default on error
       applyTheme(BUILTIN_THEMES['catppuccin-mocha']);
     }
@@ -88,6 +94,7 @@ export const useThemeStore = create<ThemeState>((set, get) => ({
   setTheme: async (id) => {
     const theme = getTheme(id);
     if (!theme) return;
+    ++themeLoadVersion;
     const { experimentalGradients } = get();
     applyTheme(theme, { experimentalGradients });
     syncAppliedTheme(theme, experimentalGradients);

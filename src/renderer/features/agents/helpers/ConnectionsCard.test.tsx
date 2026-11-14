@@ -116,6 +116,14 @@ describe('Connections card (#2232)', () => {
     await waitFor(() => expect(useAgentStore.getState().activeAgentId).toBe('h1'));
   });
 
+  it('shows controller connections on the visible Dispatcher chat card', () => {
+    useDispatcherStore.getState().setState({ ...DISPATCHER_OFF, agentId: 'work', chatAgentId: 'chat', config: { id: 'work', name: 'Navi', color: 'indigo', createdAt: 'then' } });
+    useMcpBindingStore.setState({ bindings: [wire('work', 'lead', ['Navi', 'epic-lead'])] });
+    const chat = { ...lead, id: 'chat', name: 'Navi' };
+    render(<ConnectionsCard agent={chat} helperIds={new Set()} open onToggle={() => {}} />);
+    expect(screen.getByTestId('connection-row')).toHaveTextContent('epic-lead');
+  });
+
   it.each(['Dispatcher', 'Rosie'])('distinguishes controller and chat connections named %s without changing ordinary rows or directions', (name) => {
     useDispatcherStore.getState().setState({
       ...DISPATCHER_OFF, agentId: 'work', chatAgentId: 'chat',

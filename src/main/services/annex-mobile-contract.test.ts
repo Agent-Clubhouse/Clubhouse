@@ -1030,7 +1030,7 @@ describe('Annex mobile contract fixtures', { timeout: TEST_TIMEOUT_MS }, () => {
 
   it('chat snapshots and sessions', async () => {
     const live = await exchange('GET', '/api/v1/mobile/agents/durable_chat/chat');
-    expect(live.response.body.chatControls).not.toBeNull();
+    expect(live.response.body.chatControls).toMatchObject({ model: 'opus', startModel: 'opus' });
     expect(live.response.body.slashCommands).toHaveLength(3);
     expect(JSON.stringify(live)).not.toContain('/Users/me');
     fixtures.set('chat-snapshot.json', live);
@@ -1043,6 +1043,24 @@ describe('Annex mobile contract fixtures', { timeout: TEST_TIMEOUT_MS }, () => {
     });
     fixtures.set('chat-page.json', await exchange('GET', '/api/v1/mobile/agents/durable_chat/chat?beforeSeq=6&limit=2'));
     fixtures.set('chat-sessions.json', await exchange('GET', '/api/v1/mobile/agents/durable_chat/chat/sessions'));
+  });
+
+  it('exposes the original model in snapshots and bounded pages after a live model change (#3408)', async () => {
+    const events = [...LIVE_TRANSCRIPT, envelope(13, 'model_changed', { modelId: 'sonnet', effort: 'high' })];
+    registerChatRuntime(chatRuntime('durable_chat', 'sess_live', CHAT_CAPS, events, true) as never);
+    try {
+      const snapshot = await exchange('GET', '/api/v1/mobile/agents/durable_chat/chat');
+      const page = await exchange('GET', '/api/v1/mobile/agents/durable_chat/chat?limit=1');
+      for (const response of [snapshot, page]) {
+        expect(response.response.status).toBe(200);
+        expect(response.response.body.chatControls).toMatchObject({ model: 'sonnet', startModel: 'opus' });
+      }
+      expect(page.response.body.events).toHaveLength(1);
+      expect(page.response.body.events[0].type).toBe('model_changed');
+      fixtures.set('chat-start-model.json', { note: 'The running session changed from opus to sonnet. The durable agent still saves opus for its next start.', snapshot, page });
+    } finally {
+      registerChatRuntime(chatRuntime('durable_chat', 'sess_live', CHAT_CAPS, LIVE_TRANSCRIPT, true) as never);
+    }
   });
 
   it('agent state, for catching up after a reconnect', async () => {

@@ -19,9 +19,17 @@ function actionsShown(groups: CapabilityGroup[]): Set<GrantAction> {
 }
 
 /** Not offered to the reader, on purpose (see ABILITIES). */
-const UNSAID: ReadonlySet<GrantAction> = new Set(['memory.write', 'models.read', 'grant.request', 'browser.read', 'browser.act', 'group_project.read', 'group_project.post', 'group_project.lead', 'group_project.admin']);
+const UNSAID: ReadonlySet<GrantAction> = new Set(['agent.grant', 'memory.write', 'models.read', 'grant.request', 'browser.read', 'browser.act', 'group_project.read', 'group_project.post', 'group_project.lead', 'group_project.admin']);
 
 describe('dispatcherCapabilities: built from the real grants (#3048)', () => {
+  it('describes unconnected setup edits and connections as asking, without claiming model changes', () => {
+    const text = capabilitiesText(dispatcherCapabilities(DISPATCHER));
+    expect(text).toMatch(/Edit the setup of any agent, after asking you/);
+    expect(text).toMatch(/Make and remove connections for any agent, after asking you/);
+    expect(text).not.toContain('change the model');
+    expect(text).not.toContain('permissions of');
+  });
+
   it('answers the Dispatcher\'s defaults in the five groups, in order', () => {
     const groups = dispatcherCapabilities(DISPATCHER);
     expect(groups.map((g) => g.id)).toEqual(CAPABILITY_GROUPS.map((g) => g.id));
@@ -184,7 +192,7 @@ describe('dispatcherIntro', () => {
 
   it('counts one agent in words, and says how to connect one when none are', () => {
     expect(dispatcherIntro({ name: 'Rosie', reachable: 1 })[0]).toBe('Hi, I\'m Rosie. I can reach one of your agents.');
-    expect(dispatcherIntro({ name: 'Rosie', reachable: 0 })[0]).toMatch(/No agents are connected to me yet\. .*Details/);
+    expect(dispatcherIntro({ name: 'Rosie', reachable: 0 })[0]).toMatch(/No agents are connected to me yet\. .*ask you first/);
   });
 
   it('reads the working name as a role', () => {

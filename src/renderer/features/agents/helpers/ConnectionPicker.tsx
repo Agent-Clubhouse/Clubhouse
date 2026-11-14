@@ -7,6 +7,7 @@ import type { McpBindingEntry } from '../../../stores/mcpBindingStore';
 import { Button } from '../../../components/Button';
 import { Modal } from '../../../components/Modal';
 import { Toggle } from '../../../components/Toggle';
+import { useDispatcherDebug } from '../../dispatcher/dispatcherDebug';
 
 const starts = () => CONNECTION_SWITCHES.filter((item) => !NEW_CONNECTION_DISABLED_TOOLS.includes(item.tool)).map((item) => item.tool);
 const keyOf = (target: ConnectionPickerTarget) => `${target.kind}:${target.id}@${target.machineId ?? ''}`;
@@ -29,11 +30,12 @@ export function validateTypedAddress(value: string, directory: ConnectionPickerD
 }
 
 export function targetConnected(agentId: string, target: ConnectionPickerTarget, bindings: readonly McpBindingEntry[], grants: readonly ConnectionDirection[]): boolean {
-  const other = target.machineId ? `${target.id}@${target.machineId}` : target.id;
+  const endpoint = target.routeId ?? target.id;
+  const other = target.machineId ? `${endpoint}@${target.machineId}` : endpoint;
   if (bindings.some((binding) => (binding.agentId === agentId && binding.targetId === other) || (binding.agentId === other && binding.targetId === agentId))) return true;
   if (target.kind === 'group-project') return false;
-  return grants.some((d) => (!!d.link || !!d.cardLink || !!activeAgentLinks(d).length) && ((!d.from.machineId && d.from.agentId === agentId && d.to.agentId === target.id && d.to.machineId === target.machineId)
-    || (!d.to.machineId && d.to.agentId === agentId && d.from.agentId === target.id && d.from.machineId === target.machineId)));
+  return grants.some((d) => (!!d.link || !!d.cardLink || !!activeAgentLinks(d).length) && ((!d.from.machineId && d.from.agentId === agentId && d.to.agentId === endpoint && d.to.machineId === target.machineId)
+    || (!d.to.machineId && d.to.agentId === agentId && d.from.agentId === endpoint && d.from.machineId === target.machineId)));
 }
 
 export function ConnectionPicker({ agentId, agentName, bindings, grants, onClose, onCreated }: {
@@ -44,6 +46,7 @@ export function ConnectionPicker({ agentId, agentName, bindings, grants, onClose
   onClose: () => void;
   onCreated: (target: ConnectionPickerTarget) => void;
 }) {
+  const debug = useDispatcherDebug();
   const [directory, setDirectory] = useState<ConnectionPickerDirectory | null>(null);
   const [query, setQuery] = useState('');
   const [address, setAddress] = useState('');
@@ -60,7 +63,7 @@ export function ConnectionPicker({ agentId, agentName, bindings, grants, onClose
     return () => { live = false; };
   }, [agentId]);
   const sections = useMemo(() => {
-    const targets = (directory?.targets ?? []).filter((target) => `${target.name} ${target.project ?? ''} ${target.machineName ?? ''} ${target.id}`.toLowerCase().includes(query.trim().toLowerCase()));
+    const targets = (directory?.targets ?? []).filter((target) => !target.controllerOf && `${target.name} ${target.project ?? ''} ${target.machineName ?? ''} ${target.id}`.toLowerCase().includes(query.trim().toLowerCase()));
     return [
       { title: 'This computer', targets: targets.filter((t) => t.kind === 'agent' && !t.machineId) },
       { title: 'Other computers', targets: targets.filter((t) => t.kind === 'agent' && !!t.machineId) },
@@ -78,10 +81,12 @@ export function ConnectionPicker({ agentId, agentName, bindings, grants, onClose
     }
     return [...groups.entries()];
   };
+  const visibleDirectory = directory && { ...directory, targets: directory.targets.filter((target) => debug || !target.controllerOf) };
   const chooseAddress = () => {
     if (!directory) return;
-    const result = validateTypedAddress(address, directory);
+    const result = validateTypedAddress(address, visibleDirectory!);
     if (!result.target) { setError(result.error ?? 'That address is invalid.'); return; }
+    if (result.target.controllerOf && result.target.machineId) { setError('Remote controllers are shown for diagnostics only.'); return; }
     if (targetConnected(agentId, result.target, bindings, grants)) { setError('That target is already connected.'); return; }
     setSelected(result.target);
     setError('');
@@ -122,13 +127,19 @@ export function ConnectionPicker({ agentId, agentName, bindings, grants, onClose
               <h5 className="text-xs text-ctp-overlay1 ml-2 mb-1">{group.split('\u0000')[1]}</h5>
             </> : group && <h4 className="text-xs text-ctp-subtext1 mt-2 mb-1">{group}</h4>}
             {targets.map((target) => {
-            const connected = targetConnected(agentId, target, bindings, grants);
-            const detail = [target.machineName ?? (target.kind === 'dispatcher' && !target.machineId ? 'This computer' : undefined), target.project, target.online === false ? 'Offline' : ''].filter(Boolean).join(' / ');
-            return <button key={keyOf(target)} type="button" disabled={connected} aria-pressed={selected && keyOf(selected) === keyOf(target) || false} onClick={() => { setSelected(target); setError(''); }}
-              className={`w-full text-left rounded px-2 py-1 text-xs text-ctp-text hover:bg-surface-0 disabled:opacity-50 ${target.online === false ? 'opacity-60' : ''}`} data-testid="connection-picker-target">
-              <span>{target.name}</span>{detail && <span className="text-ctp-overlay1"> {detail}</span>}{connected && <span className="text-ctp-overlay1"> Connected</span>}
-            </button>;
-          })}</div>)}
+              const connected = targetConnected(agentId, target, bindings, grants);
+              const detail = [target.machineName ?? (target.kind === 'dispatcher' && !target.machineId ? 'This computer' : undefined), target.project, target.online === false ? 'Offline' : ''].filter(Boolean).join(' / ');
+              const controllers = debug && target.kind === 'dispatcher' ? (directory?.targets ?? []).filter((item) => item.controllerOf === target.id && item.machineId === target.machineId) : [];
+              return <div key={keyOf(target)}>
+                <button type="button" disabled={connected} aria-pressed={selected && keyOf(selected) === keyOf(target) || false} onClick={() => { setSelected(target); setError(''); }}
+                  className={`w-full text-left rounded px-2 py-1 text-xs text-ctp-text hover:bg-surface-0 disabled:opacity-50 ${target.online === false ? 'opacity-60' : ''}`} data-testid="connection-picker-target">
+                  <span>{target.name}</span>{detail && <span className="text-ctp-overlay1"> {detail}</span>}{connected && <span className="text-ctp-overlay1"> Connected</span>}
+                </button>
+                {controllers.map((controller) => <button key={keyOf(controller)} type="button" disabled={!!controller.machineId || targetConnected(agentId, controller, bindings, grants)}
+                  className="block w-full text-left rounded pl-6 py-1 text-xs text-ctp-subtext1 hover:bg-surface-0 disabled:opacity-50"
+                  onClick={() => { setSelected(controller); setError(''); }} data-testid="connection-picker-controller">{controller.name}</button>)}
+              </div>;
+            })}</div>)}
         </section>)}
         <section aria-label="Typed address">
           <h3 className="text-xs font-medium text-ctp-text mb-1">Typed address</h3>
