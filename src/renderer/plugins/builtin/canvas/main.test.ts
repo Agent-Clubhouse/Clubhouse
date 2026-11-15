@@ -660,6 +660,98 @@ describe('canvas main', () => {
       }
     });
 
+    it.each([false, true])('invalidates a hung writer without a remote snapshot (return local first: %s)', async (returnFirst) => {
+      const storage = memoryStorage();
+      const api = createMockAPI({
+        context: { mode: 'app', projectId: undefined, projectPath: undefined },
+        storage: { project: storage, projectLocal: storage, global: storage },
+      });
+      const store = canvasModule.useAppCanvasStore;
+      act(() => { useUIStore.setState({ activeHostId: null }); store.setState({ autosaveFailed: false, unsavedRecoveryCopy: false }); useRemoteProjectStore.setState({ remoteAppCanvasState: {} }); });
+      const panel = render(React.createElement(canvasModule.MainPanel, { api }));
+      await waitFor(() => expect(storage.read).toHaveBeenCalledWith('canvas-wires'));
+      let release!: () => void;
+      const gate = new Promise<void>((resolve) => { release = resolve; });
+      const write = storage.write.getMockImplementation()!;
+      storage.write.mockImplementation(async (key, value) => { if (key === 'canvas-instances-backup') await gate; return write(key, value); });
+      vi.useFakeTimers();
+      try {
+        act(() => { store.getState().addView('agent', { x: 7, y: 9 }); });
+        act(() => { useUIStore.setState({ activeHostId: 'no-snapshot-host' }); });
+        await act(async () => { await vi.advanceTimersByTimeAsync(5_001); });
+        expect(store.getState().autosaveFailed).toBe(true);
+        if (returnFirst) await act(async () => { useUIStore.setState({ activeHostId: null }); await Promise.resolve(); });
+        const newer = [{ ...store.getState().canvases[0], name: 'NEWER-DISK-DATA' }];
+        storage.files.set('canvas-instances', newer);
+        await act(async () => { release(); await gate; });
+        expect(storage.files.get('canvas-instances')).toBe(newer);
+        expect(store.getState().autosaveFailed).toBe(true);
+        vi.useRealTimers();
+        if (!returnFirst) act(() => { useUIStore.setState({ activeHostId: null }); });
+        fireEvent.click(await screen.findByText('Retry'));
+        expect(await screen.findByText('Your unsaved canvas changes were kept as a recovery copy.')).toBeTruthy();
+        await waitFor(() => expect(store.getState().canvases[0].name).toBe('NEWER-DISK-DATA'));
+      } finally {
+        release();
+        vi.useRealTimers();
+        panel.unmount();
+        act(() => { useUIStore.setState({ activeHostId: null }); });
+      }
+    });
+
+    it('keeps remote wires out of recovery copies through real panel source switches', async () => {
+      const storage = memoryStorage();
+      const api = createMockAPI({
+        context: { mode: 'app', projectId: undefined, projectPath: undefined },
+        storage: { project: storage, projectLocal: storage, global: storage },
+      });
+      const store = canvasModule.useAppCanvasStore;
+      const local = { ...store.getState().canvases[0], id: 'local-provenance', name: 'old-local', views: [] };
+      storage.files.set('canvas-instances', [local]);
+      storage.files.set('canvas-instances-backup', [local]);
+      act(() => {
+        store.setState({ autosaveFailed: false });
+        useRemoteProjectStore.setState({ remoteAppCanvasState: { 'provenance-host': {
+          canvases: [{ ...local, id: 'remote-provenance' }], activeCanvasId: 'remote-provenance',
+          wireDefinitions: [{ agentId: 'REMOTE-SECRET', targetId: 'remote-target', targetKind: 'agent', label: 'Remote wire' }],
+        } } });
+        useUIStore.setState({ activeHostId: 'provenance-host' });
+      });
+      const panel = render(React.createElement(canvasModule.MainPanel, { api }));
+      await waitFor(() => expect(store.getState().dataOrigin).toBe('remote'));
+      let release!: () => void;
+      const gate = new Promise<void>((resolve) => { release = resolve; });
+      const read = storage.read.getMockImplementation()!;
+      const write = storage.write.getMockImplementation()!;
+      let failing = true;
+      storage.read.mockImplementation(async (key) => { if (key === 'canvas-wires' && failing) { await gate; throw new Error('wire read failed'); } return read(key); });
+      storage.write.mockImplementation(async (key, value) => { if (failing && key === 'canvas-instances-backup') throw new Error('disk full'); return write(key, value); });
+      try {
+        act(() => { useUIStore.setState({ activeHostId: null }); });
+        await waitFor(() => expect(store.getState().dataOrigin).toBe('local'));
+        expect(store.getState().wireDefinitions).toEqual([]);
+        expect(store.getState().wiresLoaded).toBe(false);
+        expect(storage.write).not.toHaveBeenCalled();
+        act(() => { store.getState().addView('agent', { x: 1, y: 2 }); });
+        await act(async () => { release(); await gate; });
+        await waitFor(() => expect(store.getState().autosaveFailed).toBe(true), { timeout: 3_000 });
+        act(() => { useUIStore.setState({ activeHostId: 'provenance-host' }); });
+        await waitFor(() => expect(store.getState().dataOrigin).toBe('remote'));
+        storage.files.set('canvas-instances', [{ ...local, name: 'newer-local' }]);
+        storage.files.set('canvas-instances-backup', [{ ...local, name: 'newer-local' }]);
+        failing = false;
+        act(() => { useUIStore.setState({ activeHostId: null }); });
+        expect(await screen.findByText('Your unsaved canvas changes were kept as a recovery copy.')).toBeTruthy();
+        const copy = [...storage.files.entries()].find(([key]) => key.startsWith('canvas-unsaved-copy-'));
+        expect(copy).toBeDefined();
+        expect(JSON.stringify(copy?.[1])).not.toContain('REMOTE-SECRET');
+      } finally {
+        release();
+        panel.unmount();
+        act(() => { useUIStore.setState({ activeHostId: null }); });
+      }
+    });
+
     it('keeps the remote canvas when a superseded local reload completes later', async () => {
       const storage = memoryStorage();
       const api = createMockAPI({

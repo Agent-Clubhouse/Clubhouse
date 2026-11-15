@@ -368,6 +368,54 @@ describe('canvas hydration safety', () => {
     expect(copy?.[1]).toEqual(expect.objectContaining({ canvases: retained }));
   });
 
+  it('preserves a newer divergent backup before autosave can rotate either disk copy', async () => {
+    const original = canvasWith(card('original'));
+    const { map, storage } = createStorage({ 'canvas-instances': original, 'canvas-instances-backup': original });
+    const store = createCanvasStore();
+    await store.getState().loadCanvas(storage);
+    await store.getState().loadWires(storage);
+    store.getState().addView('agent', { x: 1, y: 2 });
+    store.setState({ autosaveFailed: true });
+    const retained = store.getState().canvases;
+    store.getState().hydrateFromRemote([{ ...original[0], id: 'remote', views: [] }], 'remote', [], []);
+    const newer = canvasWith(card('newer-backup'));
+    map.set('canvas-instances-backup', newer);
+    await store.getState().restoreFailedLocalState(storage);
+    expect(store.getState().views.map((v) => v.id)).toEqual(['newer-backup']);
+    const copy = [...map.entries()].find(([key]) => key.startsWith('canvas-unsaved-copy-'));
+    expect(copy?.[1]).toEqual(expect.objectContaining({ canvases: retained, diskCopies: { primary: original, backup: newer } }));
+    await store.getState().saveCanvas(storage);
+    expect(JSON.stringify(map.get('canvas-instances-backup'))).toContain('newer-backup');
+    expect(JSON.stringify(map.get('canvas-instances'))).toContain('newer-backup');
+  });
+
+  it('never retains remote wire fields when local canvas hydration precedes its wire read', async () => {
+    const original = canvasWith(card('local'));
+    const { map, storage } = createStorage({ 'canvas-instances': original });
+    const store = createCanvasStore();
+    const remote = [{ ...original[0], id: 'remote', views: [] }];
+    store.getState().hydrateFromRemote(remote, 'remote', [{ agentId: 'REMOTE-SECRET', targetId: 'remote-target', targetKind: 'agent', label: 'remote' }], []);
+    await store.getState().loadCanvas(storage);
+    expect(store.getState().wireDefinitions).toEqual([]);
+    expect(store.getState().wiresLoaded).toBe(false);
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => { release = resolve; });
+    const read = vi.mocked(storage.read).getMockImplementation()!;
+    vi.mocked(storage.read).mockImplementation(async (key) => { if (key === 'canvas-wires') await gate; return read(key); });
+    const loading = store.getState().loadWires(storage);
+    store.setState({ autosaveFailed: true });
+    store.getState().hydrateFromRemote(remote, 'remote', [], []);
+    release();
+    await loading;
+    const newer = canvasWith(card('newer'));
+    map.set('canvas-instances', newer);
+    map.set('canvas-instances-backup', newer);
+    await store.getState().restoreFailedLocalState(storage);
+    const copy = [...map.entries()].find(([key]) => key.startsWith('canvas-unsaved-copy-'));
+    expect(copy).toBeDefined();
+    expect(JSON.stringify(copy?.[1])).not.toContain('REMOTE-SECRET');
+  });
+
   it('keeps retained edits in memory when disk cannot be checked, and retries once readable', async () => {
     let unreadable = false;
     const { storage } = createStorage({}, () => unreadable);

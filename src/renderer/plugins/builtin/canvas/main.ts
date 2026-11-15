@@ -86,7 +86,7 @@ async function waitForSaveBeforeSwitch(store: ReturnType<typeof createCanvasStor
     // The writer may finish later. It still owns only its captured local data,
     // and must not clear the retained failure after the panel has switched.
     if (result) timedOutSaves.add(result);
-    store.setState({ autosaveFailed: true });
+    store.getState().markSaveTimedOut();
     rendererLog('canvas', 'error', 'Canvas changes not saved', { meta: { error: error instanceof Error ? error.message : String(error) } });
   }
 }
