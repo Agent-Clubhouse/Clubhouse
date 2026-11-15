@@ -623,11 +623,14 @@ class CodexChatSession implements ChatDriverSession {
   }
 
   async close(): Promise<void> {
-    this.logRedactor.endRun();
-    if (!this.client.alive) return;
-    this.closing = true;
-    this.client.kill();
-    await Promise.race([this.exited, new Promise((resolve) => setTimeout(resolve, CLOSE_TIMEOUT_MS))]);
+    try {
+      if (!this.client.alive) return;
+      this.closing = true;
+      this.client.kill();
+      await Promise.race([this.exited, new Promise((resolve) => setTimeout(resolve, CLOSE_TIMEOUT_MS))]);
+    } finally {
+      this.logRedactor.endRun();
+    }
   }
 
   private onNotification(notification: ServerNotification): void {

@@ -7,6 +7,20 @@ import { LogRedactor } from '../../../shared/log-redaction';
 import { launchCopilotServer } from './launch';
 
 describe('Copilot diagnostic stderr tail', () => {
+  it('keeps startup content registered until the failed startup settles', async () => {
+    const child = Object.assign(new EventEmitter(), { stdout: new EventEmitter(), stderr: new EventEmitter(), exitCode: null, kill: vi.fn(), pid: 123 });
+    vi.mocked(spawn).mockReturnValue(child as unknown as ReturnType<typeof spawn>);
+    const prompt = 'PRIVATE-COPILOT-STARTUP-1919';
+    const logRedactor = new LogRedactor([], [prompt]);
+    const abort = new AbortController();
+    const opened = launchCopilotServer({ binary: 'fake', timeoutMs: 3000, logRedactor, signal: abort.signal });
+    abort.abort();
+    expect(redactActiveRunText(prompt)).not.toContain(prompt);
+    await expect(opened).rejects.toThrow('Copilot start cancelled');
+    expect(redactActiveRunText(prompt)).toBe(prompt);
+    child.emit('close', 1);
+  });
+
   it('scrubs later turns and split echoes before any tail truncation, retaining raw UI stderr (#1919 QA)', async () => {
     const child = Object.assign(new EventEmitter(), { stdout: new EventEmitter(), stderr: new EventEmitter(), exitCode: null, kill: vi.fn(), pid: 123 });
     vi.mocked(spawn).mockReturnValue(child as unknown as ReturnType<typeof spawn>);

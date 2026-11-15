@@ -897,6 +897,17 @@ describe('CodexChatDriver', () => {
 
   // ── Ending ───────────────────────────────────────────────────────────────
 
+  it('keeps known prompts registered while close waits for the process exit', async () => {
+    const prompt = 'PRIVATE-CODEX-CLOSING-1919';
+    const session = await new CodexChatDriver().start({ ...baseOpts, systemPrompt: prompt });
+    server.proc.kill.mockImplementation(() => {});
+    const closing = session.close();
+    expect(redactActiveRunText(prompt)).not.toContain(prompt);
+    server.exit(0);
+    await closing;
+    expect(redactActiveRunText(prompt)).toBe(prompt);
+  });
+
   it('close stops the process and ends the stream as stopped', async () => {
     const { session, take, rest } = await startSession();
     await skipStart(take);
