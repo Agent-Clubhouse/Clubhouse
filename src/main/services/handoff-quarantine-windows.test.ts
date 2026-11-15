@@ -26,6 +26,9 @@ it('keeps hostile path characters in the environment, outside the fixed PowerShe
   expect(args.slice(0, 3)).toEqual(['-NoProfile', '-NonInteractive', '-EncodedCommand']);
   const script = Buffer.from(args[3], 'base64').toString('utf16le');
   expect(script).not.toContain(hostile);
+  expect(script).not.toMatch(/(?:Get|Set)-Acl|Get-Item|Write-Output/);
+  expect(script).toContain('[System.IO.Directory]::GetAccessControl');
+  expect(script).toContain('[System.IO.Directory]::SetAccessControl');
   expect(script).not.toContain('Write-Output injected');
   expect(options).toMatchObject({ shell: false, windowsHide: true, timeout: 10_000, env: { CLUBHOUSE_QUARANTINE_PATH: hostile, CLUBHOUSE_QUARANTINE_INITIALIZE: '1' } });
   await verifyWindowsQuarantineRoot('C:\\Users\\other', false);

@@ -9,7 +9,8 @@ const SCRIPT = `
 $ErrorActionPreference = 'Stop'
 $target = $env:CLUBHOUSE_QUARANTINE_PATH
 $sid = [System.Security.Principal.WindowsIdentity]::GetCurrent().User
-$entry = Get-Item -LiteralPath $target -Force
+$entry = [System.IO.DirectoryInfo]::new($target)
+if (-not $entry.Exists) { throw 'missing' }
 while ($null -ne $entry) {
   if ($entry -isnot [System.IO.DirectoryInfo] -or ($entry.Attributes -band [System.IO.FileAttributes]::ReparsePoint)) { throw 'reparse' }
   $entry = $entry.Parent
@@ -20,16 +21,16 @@ if ($env:CLUBHOUSE_QUARANTINE_INITIALIZE -eq '1') {
   $security.SetAccessRuleProtection($true, $false)
   $rule = [System.Security.AccessControl.FileSystemAccessRule]::new($sid, 'FullControl', 'ContainerInherit,ObjectInherit', 'None', 'Allow')
   $security.AddAccessRule($rule)
-  Set-Acl -LiteralPath $target -AclObject $security
+  [System.IO.Directory]::SetAccessControl($target, $security)
 }
-$acl = Get-Acl -LiteralPath $target
+$acl = [System.IO.Directory]::GetAccessControl($target)
 if ($acl.GetOwner([System.Security.Principal.SecurityIdentifier]).Value -ne $sid.Value) { throw 'owner' }
 if (-not $acl.AreAccessRulesProtected) { throw 'inheritance' }
 $rules = @($acl.GetAccessRules($true, $true, [System.Security.Principal.SecurityIdentifier]))
 if ($rules.Count -ne 1) { throw 'rules' }
 $rule = $rules[0]
 if ($rule.IdentityReference.Value -ne $sid.Value -or $rule.AccessControlType -ne 'Allow' -or $rule.IsInherited -or $rule.FileSystemRights -ne 'FullControl' -or $rule.InheritanceFlags -ne 'ContainerInherit,ObjectInherit' -or $rule.PropagationFlags -ne 'None') { throw 'access' }
-Write-Output '{"verified":true}'
+[Console]::Out.WriteLine('{"verified":true}')
 `;
 
 /** Only a newly/exclusively created root may have its DACL initialized. Existing
