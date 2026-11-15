@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
-  applyMembershipPatch, isEmptyPatch, membershipPatch, readSyncResponse, readWriteRequest,
+  applyMembershipPatch, isEmptyPatch, membershipPatch, qualifyQueuedPatch, readSyncResponse, readWriteRequest,
 } from './group-project-network';
 import type { GroupProjectMembership } from './group-project-types';
 
@@ -59,5 +59,26 @@ describe('group project network protocol (#3363)', () => {
       excluded: [{ address: 'c', excludedAt: 't' }],
       autoJoinOffer: 'accepted',
     });
+  });
+});
+
+describe('a queued patch from before entries were keyed by address (#3516)', () => {
+  const empty = { addExplicit: [], removeExplicit: [], addExcluded: [], removeExcluded: [] };
+  const held = { version: 1, autoJoin: false, explicit: [], excluded: [], disabledTools: { lead: ['a'] } } as unknown as GroupProjectMembership;
+
+  it('rekeys this computer\'s bare ids to id@<self>, keeps the host\'s entries, and returns what it can\'t attribute', () => {
+    const patch = { ...empty, set: { disabledTools: { lead: ['a'], builder: ['b'], ghost: ['c'] }, subscriptions: { builder: { add: ['x'], remove: [] } } } };
+    const out = qualifyQueuedPatch(patch, OTHER, held, (id) => id === 'builder');
+    // 'lead' is held by the host's record and not ours; 'builder' is ours; 'ghost' is neither.
+    expect(out.patch.set).toEqual({
+      disabledTools: { lead: ['a'], [`builder@${OTHER}`]: ['b'] },
+      subscriptions: { [`builder@${OTHER}`]: { add: ['x'], remove: [] } },
+    });
+    expect(out.unattributed).toEqual(['ghost']);
+  });
+
+  it('leaves qualified keys and patches without these maps alone', () => {
+    const patch = { ...empty, set: { disabledTools: { [`builder@${OTHER}`]: ['b'] }, autoJoin: true } };
+    expect(qualifyQueuedPatch(patch, OTHER, held, () => true)).toEqual({ patch, unattributed: [] });
   });
 });

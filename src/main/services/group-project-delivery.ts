@@ -466,26 +466,39 @@ export function watchGroupProjectDelivery(): () => void {
 
 // ── Subscriptions ───────────────────────────────────────────────────────────
 
+/**
+ * The key a member's subscriptions have in the record: its host-relative
+ * address, like the delivery above. On a copy this computer's agents are
+ * `id@<self>`, which is the only key the host accepts from this computer (#3516).
+ */
+async function subscriptionKey(groupProjectId: string, agentId: string): Promise<string> {
+  const gp = await groupProjectHost.get(groupProjectId);
+  return gp ? groupProjectHost.addressOf(gp, agentId) : agentId;
+}
+
 /** Subscribe a member to a topic's notices, or unsubscribe it. Returns its topics now. */
 export async function setTopicSubscription(groupProjectId: string, agentId: string, name: string, topic: string, on: boolean): Promise<string[]> {
   const canonical = await usableTopic(groupProjectId, topic);
   if (!canonical) throw new Error(NEW_CHANNEL_NAME_MESSAGE);
+  const key = await subscriptionKey(groupProjectId, agentId);
   const { membership } = await groupProjectHost.updateMembership(groupProjectId, (draft) => {
-    const own = { add: [...(draft.subscriptions?.[agentId]?.add ?? [])], remove: [...(draft.subscriptions?.[agentId]?.remove ?? [])] };
+    const own = { add: [...(draft.subscriptions?.[key]?.add ?? [])], remove: [...(draft.subscriptions?.[key]?.remove ?? [])] };
     own.add = own.add.filter((t) => t !== canonical);
     own.remove = own.remove.filter((t) => t !== canonical);
     (on ? own.add : own.remove).push(canonical);
     if (own.add.length + own.remove.length > MAX_SUBSCRIPTIONS) throw new Error(`At most ${MAX_SUBSCRIPTIONS} channel changes per member.`);
-    draft.subscriptions = { ...draft.subscriptions, [agentId]: own };
+    draft.subscriptions = { ...draft.subscriptions, [key]: own };
   });
   const inbox = await groupProjectHost.inboxFor(groupProjectId, name, agentId);
-  return [...memberSubscriptions(membership, agentId, inbox)].sort();
+  return [...memberSubscriptions(membership, key, inbox)].sort();
 }
 
 /** A member's subscribed topics. */
 export async function listTopicSubscriptions(groupProjectId: string, agentId: string, name: string): Promise<string[]> {
-  const [membership, inbox] = await Promise.all([groupProjectHost.getMembership(groupProjectId), groupProjectHost.inboxFor(groupProjectId, name, agentId)]);
-  return [...memberSubscriptions(membership, agentId, inbox)].sort();
+  const [membership, inbox, key] = await Promise.all([
+    groupProjectHost.getMembership(groupProjectId), groupProjectHost.inboxFor(groupProjectId, name, agentId), subscriptionKey(groupProjectId, agentId),
+  ]);
+  return [...memberSubscriptions(membership, key, inbox)].sort();
 }
 
 /** For tests. */

@@ -21,6 +21,7 @@ interface Machine {
   registry?: typeof import('./group-project-registry');
   bulletin?: typeof import('./group-project-bulletin');
   membership?: typeof import('./group-project-membership');
+  delivery?: typeof import('./group-project-delivery');
   persisted?: typeof import('./persisted-bindings');
   bindings?: typeof import('./clubhouse-mcp/binding-manager');
 }
@@ -106,6 +107,7 @@ beforeEach(async () => {
     m.registry = await import('./group-project-registry');
     m.bulletin = await import('./group-project-bulletin');
     m.membership = await import('./group-project-membership');
+    m.delivery = await import('./group-project-delivery');
     m.persisted = await import('./persisted-bindings');
     m.bindings = await import('./clubhouse-mcp/binding-manager');
     m.host.groupProjectHost.setNetworkLink(linkFor(m));
@@ -118,6 +120,7 @@ afterEach(async () => {
     m.host!.groupProjectHost._resetForTesting();
     m.registry!.groupProjectRegistry._resetForTesting();
     m.membership!._resetMembershipForTesting();
+    m.delivery!._resetDeliveryForTesting();
     m.persisted!._resetPersistedBindingSourcesForTesting();
     m.bindings!.bindingManager._resetForTesting();
     await fsp.rm(m.home, { recursive: true, force: true });
@@ -448,6 +451,40 @@ describe('network group projects across two desktops (#3363)', () => {
       const onHost = await as(A, (h) => h.groupProjectHost.getMembership(id));
       expect(onHost.disabledTools).toEqual({ lead: POLICY.lead.tools, [`builder@${B.fp}`]: ['broadcast'] });
       await expect(as(B, () => B.membership!.savedMemberDisabledTools(id, 'builder'))).resolves.toEqual(['broadcast']);
+    });
+    it('a subscription saved on the copy lands under this computer\'s address on the host and reads back', async () => {
+      const id = await policyProject();
+      await expect(as(B, () => B.delivery!.setTopicSubscription(id, 'builder', 'builder', 'releases', true))).resolves.toContain('releases');
+      const onHost = await as(A, (h) => h.groupProjectHost.getMembership(id));
+      expect(onHost.subscriptions).toEqual({ [`builder@${B.fp}`]: { add: ['releases'], remove: [] } });
+      await expect(as(B, () => B.delivery!.listTopicSubscriptions(id, 'builder', 'builder'))).resolves.toContain('releases');
+      // A host-side member keeps its bare key.
+      await as(A, () => A.delivery!.setTopicSubscription(id, 'lead', 'lead', 'releases', true));
+      expect(Object.keys((await as(A, (h) => h.groupProjectHost.getMembership(id))).subscriptions ?? {}).sort()).toEqual([`builder@${B.fp}`, 'lead']);
+    });
+
+    it('a switch queued before the fix with a bare id is applied under this computer\'s address, not dropped', async () => {
+      const id = await policyProject();
+      down.add('Desk');
+      // What an older build queued: this computer's agent named by its bare id.
+      await as(B, (h) => h.groupProjectHost.updateMembership(id, (m) => { m.disabledTools = { ...m.disabledTools, builder: ['broadcast'] }; }));
+      expect(await as(B, (h) => h.groupProjectHost.get(id))).toMatchObject({ network: { waitingWrites: 1 } });
+      down.delete('Desk');
+      await as(B, (h) => h.groupProjectHost.flushOutbox(A.fp));
+      const onHost = await as(A, (h) => h.groupProjectHost.getMembership(id));
+      // The host held ['shoulder_tap'] for it; the user's saved change wins.
+      expect(onHost.disabledTools).toEqual({ lead: POLICY.lead.tools, [`builder@${B.fp}`]: ['broadcast'] });
+      expect(refusals).toEqual([]);
+    });
+
+    it('a bare id queued before the fix that is not one of this computer\'s agents is refused visibly, not dropped as applied', async () => {
+      const id = await policyProject();
+      down.add('Desk');
+      await as(B, (h) => h.groupProjectHost.updateMembership(id, (m) => { m.disabledTools = { ...m.disabledTools, ghost: ['broadcast'] }; }));
+      down.delete('Desk');
+      await as(B, (h) => h.groupProjectHost.flushOutbox(A.fp));
+      expect((await as(A, (h) => h.groupProjectHost.getMembership(id))).disabledTools).toEqual({ lead: POLICY.lead.tools, [`builder@${B.fp}`]: POLICY.builder.tools });
+      expect(refusals).toEqual([expect.objectContaining({ on: 'Studio', refusal: expect.objectContaining({ reason: expect.stringContaining('ghost') }) })]);
     });
   });
 });
