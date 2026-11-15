@@ -56,6 +56,8 @@ export interface CanvasState {
    *  unreadable even after retries). The canvas stays unloaded and every save
    *  is refused, so an empty placeholder is never written over the real data. */
   loadError: string | null;
+  /** Unsaved edits stay in memory across panel remounts until a save succeeds. */
+  autosaveFailed: boolean;
   /**
    * Bumped whenever the store's canvases are replaced wholesale (a load, or a
    * satellite's state). Zone expansion treats the next pass as a hydration, so
@@ -441,6 +443,7 @@ export function createCanvasStore(): UseBoundStore<StoreApi<CanvasState>> {
     dataOrigin: null,
     wiresLoaded: false,
     loadError: null,
+    autosaveFailed: false,
     hydrationSeq: 0,
 
     activeCanvas: () => {

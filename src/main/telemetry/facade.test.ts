@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { setDiagSink } from './diag-sink';
 import { ATTR } from '../../shared/telemetry/attributes';
 import {
   abortPending,
@@ -34,6 +35,7 @@ function fakeRuntime(overrides: Partial<TelemetryRuntime> = {}): TelemetryRuntim
 afterEach(() => {
   setRuntime(null);
   setLocalSink(null);
+  setDiagSink(null);
   abortPending();
 });
 
@@ -197,6 +199,26 @@ describe('flushBeforeExit', () => {
     setRuntime(rt);
     await flushBeforeExit(1234);
     expect(rt.forceFlush).toHaveBeenCalledWith(1234);
+  });
+
+  it.each([false, true])('awaits the local log flush and bounds it when hung=%s', async (hung) => {
+    vi.useFakeTimers();
+    let release!: () => void;
+    const flush = vi.fn(() => new Promise<void>((resolve) => { release = resolve; }));
+    setDiagSink({ writeDiag: vi.fn(), noteDiagDropped: vi.fn(), flush });
+    let finished = false;
+    try {
+      const pending = flushBeforeExit(30).then(() => { finished = true; });
+      await vi.advanceTimersByTimeAsync(20);
+      expect(flush).toHaveBeenCalledOnce();
+      expect(finished).toBe(false);
+      if (!hung) release();
+      await vi.advanceTimersByTimeAsync(10);
+      await pending;
+      expect(finished).toBe(true);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('never waits past its timeout or throws', async () => {
