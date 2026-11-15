@@ -48,6 +48,7 @@ import { bindingManager } from './clubhouse-mcp/binding-manager';
 import { annexEphemeralSession } from './annex-network-profile';
 import { appLog } from './log-service';
 import { publishAppEvent } from './app-event-bus';
+import { linkedAgents, projectsExplicitlyLinked } from './group-project-linked-agents';
 
 export type GroupProjectHostErrorCode =
   | 'not_found' | 'changed' | 'invalid' | 'network_unavailable' | 'out_of_scope'
@@ -58,6 +59,14 @@ export class GroupProjectHostError extends Error {
   constructor(readonly code: GroupProjectHostErrorCode, message: string) {
     super(message);
     this.name = 'GroupProjectHostError';
+  }
+}
+
+/** #3431's review contract, shared by scope changes and linked-copy departures. */
+export function requireExactLeavingReview(leaving: readonly string[], confirmed: readonly string[] | undefined, kind = 'change'): void {
+  const addresses = new Set(confirmed ?? []);
+  if (leaving.length !== addresses.size || leaving.some((address) => !addresses.has(address))) {
+    throw new GroupProjectHostError('changed', `The members who would leave have changed. Review the ${kind} again.`);
   }
 }
 
@@ -422,6 +431,14 @@ class GroupProjectHostService {
     await this.reconcile();
     const tombstoned = new Set((await this.loadTombstones()).map((t) => t.groupProjectId));
     const network = this.scopeOptions().network;
+    const membershipOptions = options?.membership;
+    if (membershipOptions !== undefined && (!membershipOptions || typeof membershipOptions !== 'object'
+      || typeof membershipOptions.autoJoin !== 'boolean' || typeof membershipOptions.includeLinkedComputers !== 'boolean'
+      || membershipOptions.excluded !== undefined && (!Array.isArray(membershipOptions.excluded) || membershipOptions.excluded.some((address) => typeof address !== 'string' || !address.trim())))) {
+      throw new GroupProjectHostError('invalid', 'Invalid automatic membership options.');
+    }
+    // Validate addresses before creating anything. Membership and exclusions are written together below.
+    const excluded = [...new Set((membershipOptions?.excluded ?? []).map((address) => canonicalMemberAddress(address, this.selfMachine())))];
     const created = await groupProjectRegistry.create(
       name, options, { machine: this.selfMachine() },
       (input, registered) => resolveGroupProjectScope(input, registered, network), (id) => !tombstoned.has(id),
@@ -429,7 +446,12 @@ class GroupProjectHostService {
     await this.commit(created.id, 'record', async ({ reserve }) => {
       const seq = await reserve();
       // A new group project has no wire members to carry over: its scope decides from the start (#3355).
-      await writeMembershipFile(created.id, { ...emptyMembership(), scopeMembersRecorded: 'wire-3355' });
+      await writeMembershipFile(created.id, {
+        ...emptyMembership(), scopeMembersRecorded: 'wire-3355', membershipPolicy: 'project-3546',
+        autoJoin: created.scope?.level === 'project' && (membershipOptions?.autoJoin ?? true),
+        includeLinkedComputers: created.scope?.level === 'project' && created.scope.reach === 'network' && (membershipOptions?.includeLinkedComputers ?? true),
+        excluded: excluded.map((address) => ({ address, excludedAt: new Date().toISOString() })),
+      });
       try {
         await ensureProjectChannels(created.id, seq);
       } catch (err) {
@@ -575,7 +597,7 @@ class GroupProjectHostService {
 
   /** Change the membership record. `fn` edits a copy; a throw changes nothing. */
   async updateMembership(
-    id: string, fn: (draft: GroupProjectMembership) => GroupProjectMembership | void, options: { withinExclusive?: boolean } = {},
+    id: string, fn: (draft: GroupProjectMembership) => GroupProjectMembership | void | Promise<GroupProjectMembership | void>, options: { withinExclusive?: boolean } = {},
   ): Promise<{ membership: GroupProjectMembership; seq: number; queued?: boolean }> {
     const replica = await this.replicaFor(id).catch((): null => null);
     if (replica) {
@@ -583,8 +605,11 @@ class GroupProjectHostService {
       const hostMachine = this.hostMachineOf(replica);
       const current = await readMembershipFile(id, hostMachine);
       const draft = structuredClone(current);
-      const next = validateMembership(fn(draft) ?? draft, hostMachine);
+      const next = validateMembership((await fn(draft)) ?? draft, hostMachine);
       const patch = membershipPatch(current, next);
+      if (['autoJoin', 'includeLinkedComputers', 'membershipPolicy'].some((key) => key in patch.set)) {
+        throw new GroupProjectHostError('not_host', 'Only the host can change automatic membership.');
+      }
       const seq = await this.seqOf(id);
       if (isEmptyPatch(patch)) return { membership: current, seq };
       return this.forward(replica, { op: 'membership', patch }, { label: 'membership' },
@@ -594,13 +619,31 @@ class GroupProjectHostService {
       const hostMachine = this.hostMachineOf(project);
       const current = await readMembershipFile(id, hostMachine);
       const draft = structuredClone(current);
-      const next = validateMembership(fn(draft) ?? draft, hostMachine);
+      const next = validateMembership((await fn(draft)) ?? draft, hostMachine);
       if (sameJson(current, next)) return { membership: current, seq: await this.seqOf(id) };
       const seq = await reserve();
       await writeMembershipFile(id, next);
+      const removed = current.explicit.filter((entry) => parseAgentAddress(entry.address).machine
+        && !current.excluded.some((e) => e.address === entry.address)
+        && (!next.explicit.some((e) => e.address === entry.address) || next.excluded.some((e) => e.address === entry.address)));
+      this.revokeRemoteRoles(id, removed.map((entry) => entry.address));
       return { membership: next, seq };
     }, options.withinExclusive);
   }
+
+  /** Remote members have no binding on the host; mirror the local leave lifecycle for their role grants. */
+  private revokeRemoteRoles(id: string, addresses: string[]): void {
+    if (!addresses.length) return;
+    void import('./group-project-roles').then(async ({ revokeGroupProjectRoles }) => {
+      for (const address of addresses) await revokeGroupProjectRoles(id, address);
+    }).catch((error) => {
+      // telemetry-exempt: as with local lifecycle cleanup, lack of membership already refuses role tools
+      appLog('core:group-project', 'warn', 'Could not take roles from remote members that left', { meta: { groupProjectId: id, error: String(error) } });
+    });
+  }
+
+  /** Membership may inspect only currently admitted network computers. */
+  isNetworkMember(machine: string): boolean { return this.link?.isMember(machine) ?? false; }
 
   /** #3357 registers who is a member; until then, wires decide. */
   setMemberResolver(resolver: GroupProjectMemberResolver | null): void {
@@ -687,9 +730,22 @@ class GroupProjectHostService {
     const project = await this.requireProject(id);
     return {
       scope: next,
-      leaving: membersLeavingScope(next, await this.resolveMembers(id)),
+      leaving: await this.membersLeaving(project, next),
       returning: await this.returningWith(project, next),
     };
+  }
+
+  private async membersLeaving(project: GroupProject, next: GroupProjectScope): Promise<GroupProjectMemberView[]> {
+    const members = await this.resolveMembers(project.id);
+    if ((await this.getMembership(project.id)).membershipPolicy !== 'project-3546') return membersLeavingScope(next, members);
+    return members.filter((member) => {
+      const machine = parseAgentAddress(member.address).machine;
+      if (machine && next.level === 'project' && next.reach === 'network') {
+        const self = this.selfMachine();
+        return !!member.projectId && (!self || !projectsExplicitlyLinked(self, next.projectId, machine, member.projectId));
+      }
+      return memberInScope(next, member) === false;
+    });
   }
 
   /** Agents a scope moved out (excluded for scope) that `next` covers again: widening lets them back. */
@@ -723,12 +779,9 @@ class GroupProjectHostService {
       // Shared with the network, a group project names its host by fingerprint: this computer.
       const self = this.selfMachine();
       if (next.reach === 'network' && !project.host?.machine && self) await groupProjectRegistry.pinHost(id, self);
-      const leaving = membersLeavingScope(next, await this.resolveMembers(id));
+      const leaving = await this.membersLeaving(project, next);
       const returning = new Set((await this.returningWith(project, next)).map((member) => member.address));
-      const confirmed = new Set(options.confirmLeaving ?? []);
-      if (leaving.length !== confirmed.size || leaving.some((member) => !confirmed.has(member.address))) {
-        throw new GroupProjectHostError('changed', 'The members who would leave have changed. Review the scope change again.');
-      }
+      requireExactLeavingReview(leaving.map((member) => member.address), options.confirmLeaving, 'scope change');
       const seq = await reserve();
       const updated = await groupProjectRegistry.setScope(id, next);
       const hostMachine = this.hostMachineOf(project);
@@ -746,6 +799,7 @@ class GroupProjectHostService {
           ...[...leavingAddresses].filter((address) => !already.has(address)).map((address) => ({ address, excludedAt, reason: 'scope' })),
         ];
         await writeMembershipFile(id, validateMembership({ ...membership, explicit, excluded }, hostMachine));
+        this.revokeRemoteRoles(id, [...leavingAddresses].filter((address) => !!parseAgentAddress(address).machine));
         for (const b of bindingManager.getAllBindings()) {
           if (b.targetKind === 'group-project' && b.targetId === id && leavingAddresses.has(this.addressOf(project, b.agentId))) {
             bindingManager.unbind(b.agentId, id);
@@ -839,7 +893,13 @@ class GroupProjectHostService {
     }
     const projectId = (await this.agentProjects()).get(agentId);
     const local = projectId ? (await projectStore.list()).find((p) => p.id === projectId) : undefined;
-    if (!local || !project.scopeProjectKey) return undefined;
+    if (!local) return undefined;
+    const membership = await this.getMembership(project.id);
+    if (membership.membershipPolicy === 'project-3546') {
+      const host = this.hostMachineOf(project), self = this.selfMachine();
+      return !!host && !!self && projectsExplicitlyLinked(host, scope.projectId, self, local.id);
+    }
+    if (!project.scopeProjectKey) return undefined;
     try {
       return (await agentConfig.projectKey(local.path)) === project.scopeProjectKey;
     } catch {
@@ -1654,7 +1714,19 @@ class GroupProjectHostService {
           await this.update(id, write.fields);
           break;
         case 'membership':
-          await this.updateMembership(id, (draft) => applyMembershipPatch(draft, system ? patchForMachine(write.patch, machine, draft) : write.patch));
+          if ((!system && ['autoJoin', 'includeLinkedComputers', 'membershipPolicy'].some((key) => key in write.patch.set))
+            || write.patch.addExplicit.some((entry) => entry.autoProject !== undefined)) return refuse('Only the host can change automatic membership.');
+          await this.updateMembership(id, async (draft) => {
+            const patch = system ? patchForMachine(write.patch, machine, draft) : write.patch;
+            if (draft.membershipPolicy === 'project-3546' && project.scope?.level === 'project') {
+              const linked = await linkedAgents(project.scope, this.selfMachine(), (fp) => this.isNetworkMember(fp));
+              for (const entry of patch.addExplicit) {
+                if (draft.explicit.some((old) => old.address === entry.address)) continue;
+                if (!linked.available.some((agent) => agent.agentId === entry.address && agent.kind === entry.kind)) throw new GroupProjectHostError('out_of_scope', 'Remote agents must belong to an explicitly linked project copy with a verified inventory.');
+              }
+            }
+            return applyMembershipPatch(draft, patch);
+          });
           break;
         case 'ensureChannels':
           await this.ensureChannels(id);

@@ -13,7 +13,7 @@
  *   their id, so two runs drawing the same name get separate inboxes (#1646).
  * - **Migration.** A group project from before this record keeps exactly the
  *   members its wires gave it, with auto-join off, and the directory offers
- *   "Include every agent in scope" once. A new group project auto-joins.
+ *   "Include every agent in scope" once. A new app group starts empty; a project group auto-joins by default.
  *
  * The record is a pruning binding source ({@link membershipBindingSource}):
  * restores are silent, and canvas cleanup (a card or canvas closing) keeps a
@@ -26,9 +26,9 @@
  */
 
 import type {
-  AutoJoinPreview, GroupProject, GroupProjectScope, GroupProjectMemberKind, GroupProjectMembership, GroupProjectMembershipView, GroupProjectMemberView, ResolvedGroupProjectMember,
+  AutoJoinPreview, GroupProject, GroupProjectMembershipOptions, GroupProjectScope, GroupProjectMemberKind, GroupProjectMembership, GroupProjectMembershipView, GroupProjectMemberView, ResolvedGroupProjectMember,
 } from '../../shared/group-project-types';
-import { GroupProjectHostError, groupProjectHost } from './group-project-host';
+import { GroupProjectHostError, groupProjectHost, requireExactLeavingReview } from './group-project-host';
 import * as projectStore from './project-store';
 import { listDurable, onAgentConfigChanged } from './agent-config';
 import { knownQuickAgents } from './quick-agent-events';
@@ -44,6 +44,7 @@ import { canvasWireBindingSource } from './canvas-wire-source';
 import { setRecordDecidesMembers } from './group-project-lifecycle';
 import { readAllCanvasStores } from './canvas-store-reader';
 import { appLog } from './log-service';
+import { linkedAgents, linkedProjectCopies, watchLinkedAgents, type LinkedAgents } from './group-project-linked-agents';
 
 export const GROUP_PROJECT_MEMBERSHIP_SOURCE_ID = 'group-project-membership';
 
@@ -123,7 +124,7 @@ export function quickMemberName(name: string, agentId: string): string {
 
 /** A record the membership owns. A missing file reads as unmanaged: its group project still uses wires. */
 export function isManagedMembership(m: GroupProjectMembership): boolean {
-  return m.autoJoin || m.autoJoinOffer !== undefined;
+  return m.membershipPolicy === 'project-3546' || m.autoJoin || m.autoJoinOffer !== undefined;
 }
 
 function inScope(gp: GroupProject, agent: AgentFact): boolean {
@@ -167,7 +168,7 @@ function resolveReplica(gp: GroupProject, m: GroupProjectMembership, inventory: 
       continue;
     }
     if (agent.disposed) continue;
-    members.set(id, { agentId: id, name: agent.name, kind: agent.helper ? 'helper' : 'durable', via: 'explicit', projectId: agent.projectId, projectName: agent.projectName });
+    members.set(id, { agentId: id, name: agent.name, kind: agent.helper ? 'helper' : 'durable', via: entry.autoProject ? 'auto' : 'explicit', projectId: agent.projectId, projectName: agent.projectName });
   }
   return { members: [...members.values()], unverified };
 }
@@ -204,6 +205,13 @@ export function resolveMembership(
       });
       continue;
     }
+    if (groupProjectHost.localAgentId(gp, entry.address) === null) {
+      members.set(entry.address, {
+        agentId: entry.address, name: entry.name ?? entry.address, kind: entry.kind,
+        via: entry.autoProject ? 'auto' : 'explicit', projectId: entry.projectId, projectName: entry.projectName,
+      });
+      continue;
+    }
     const agent = inventory.agents.get(entry.address);
     if (!agent) {
       if (inventory.unreadable.size > 0) unverified.push(entry.address);
@@ -225,6 +233,12 @@ export function resolveMembership(
  */
 export function memberPolicyKey(gp: GroupProject, agentId: string): string {
   return groupProjectHost.addressOf(gp, agentId);
+}
+
+/** Resolved replica members are already local ids; hosted records also contain remote addresses. */
+function localMembers(snapshot: Snapshot): ResolvedGroupProjectMember[] {
+  return snapshot.resolution.members.filter((member) => isReplica(snapshot.gp)
+    || groupProjectHost.localAgentId(snapshot.gp, member.agentId) !== null);
 }
 
 function memberBinding(gp: GroupProject, m: GroupProjectMembership, member: ResolvedGroupProjectMember): PersistedBinding {
@@ -259,6 +273,7 @@ async function snapshotAll(): Promise<{ snapshots: Snapshot[]; inventory: Invent
   const [projects, inventory, quick] = await Promise.all([groupProjectHost.list(), readInventory(), liveQuickAgents()]);
   const snapshots: Snapshot[] = [];
   for (const gp of projects) {
+    if (!isReplica(gp)) await reconcileLinkedMembers(gp);
     const membership = await groupProjectHost.getMembership(gp.id);
     if (!isManagedMembership(membership)) { managedSeen.delete(gp.id); continue; }
     managedSeen.add(gp.id);
@@ -319,11 +334,11 @@ export const membershipBindingSource: PersistedBindingSource = {
     const bindings: PersistedBinding[] = [];
     const unverified: Array<{ agentId: string; targetId: string }> = [];
     for (const s of snapshots) {
-      bindings.push(...s.resolution.members.map((member) => memberBinding(s.gp, s.membership, member)));
+      bindings.push(...localMembers(s).map((member) => memberBinding(s.gp, s.membership, member)));
       unverified.push(...s.resolution.unverified.map((agentId) => ({ agentId, targetId: s.gp.id })));
     }
     // The first rebuild is the baseline: later changes are announced as joins and leaves.
-    if (!listed) listed = new Map(snapshots.map((s) => [s.gp.id, new Set(s.resolution.members.map((m) => m.agentId))]));
+    if (!listed) listed = new Map(snapshots.map((s) => [s.gp.id, new Set(localMembers(s).map((m) => m.agentId))]));
     return { bindings, unverified };
   },
   afterRebuild(complete) {
@@ -339,7 +354,7 @@ export const membershipBindingSource: PersistedBindingSource = {
 };
 
 /**
- * Give every group project without a record one: a new one auto-joins; one
+ * Give every group project without a record one: a new project group auto-joins; one
  * from before keeps the members its wires gave it, nothing more, and gets the
  * one-time offer to include everyone in scope.
  */
@@ -392,15 +407,19 @@ async function readCanvasWiresStrictly(): Promise<PersistedBinding[]> {
 }
 
 /**
- * Give a group project its record. A new one auto-joins. A legacy one keeps
+ * Give a group project its record. A new project group auto-joins. A legacy one keeps
  * exactly its members (live bindings and every canvas wire to it), each
  * with the tool switches and instructions its wire had, and gets the
  * one-time offer.
  */
 async function adopt(gp: GroupProject, inventory: Inventory, canvasWires?: PersistedBinding[]): Promise<void> {
   if (isNewGroupProject(gp)) {
-    await groupProjectHost.updateMembership(gp.id, (draft) => { draft.autoJoin = true; });
-    appLog('core:group-project', 'info', 'New group project auto-joins agents in scope', { meta: { groupProjectId: gp.id } });
+    await groupProjectHost.updateMembership(gp.id, (draft) => {
+      draft.autoJoin = gp.scope?.level === 'project';
+      draft.membershipPolicy = 'project-3546';
+      draft.includeLinkedComputers = gp.scope?.reach === 'network';
+    });
+    appLog('core:group-project', 'info', 'New group project membership initialized', { meta: { groupProjectId: gp.id } });
     return;
   }
   const wires = (canvasWires ?? await readCanvasWiresStrictly()).filter((w) => w.targetKind === 'group-project' && w.targetId === gp.id);
@@ -457,10 +476,11 @@ export async function reconcileMembership(): Promise<void> {
   const next = new Map<string, Set<string>>();
   const changed = new Set<string>();
   for (const s of snapshots) {
-    const ids = new Set(s.resolution.members.map((m) => m.agentId));
+    const ids = new Set(localMembers(s).map((m) => m.agentId));
     next.set(s.gp.id, ids);
     const before = listed.get(s.gp.id) ?? new Set<string>();
     for (const member of s.resolution.members) {
+      if (!isReplica(s.gp) && groupProjectHost.localAgentId(s.gp, member.agentId) === null) continue;
       if (before.has(member.agentId)) continue;
       const binding = memberBinding(s.gp, s.membership, member);
       const outcome = claimSourceBinding(GROUP_PROJECT_MEMBERSHIP_SOURCE_ID, binding);
@@ -495,6 +515,7 @@ async function tidy(s: Snapshot, inventory: Inventory, quick: ReadonlyMap<string
       const run = quick.get(e.address);
       return !run || (!!e.runId && e.runId !== run.runId);
     }
+    if (groupProjectHost.localAgentId(s.gp, e.address) === null) return false;
     if (inventory.unreadable.size > 0) return false;
     const agent = inventory.agents.get(e.address);
     return !agent || agent.disposed;
@@ -531,6 +552,14 @@ let stopWatching: (() => void) | null = null;
 export function watchGroupProjectMembership(): () => void {
   if (stopWatching) return stopWatching;
   const offs = [
+    watchLinkedAgents(() => {
+      scheduleReconcile();
+      // Also refresh previews when a link disappears without changing any local bindings.
+      void groupProjectHost.list().then((groups) => groups.forEach((gp) => notify(gp.id))).catch((error) => {
+        // telemetry-exempt: the scheduled reconcile retries and logs the underlying read failure
+        appLog('core:group-project', 'warn', 'Could not refresh linked membership previews', { meta: { error: String(error) } });
+      });
+    }),
     onAgentConfigChanged(() => scheduleReconcile()),
     projectStore.onProjectsChanged(() => scheduleReconcile()),
     groupProjectHost.onChange((change) => {
@@ -558,6 +587,79 @@ export function watchGroupProjectMembership(): () => void {
   return stopWatching;
 }
 
+/** Persist remote auto members on the host; only this inventory is allowed to add them. */
+async function reconcileLinkedMembers(gp: GroupProject): Promise<void> {
+  const current = await groupProjectHost.getMembership(gp.id);
+  if (current.membershipPolicy !== 'project-3546' || !current.autoJoin || !current.includeLinkedComputers) return;
+  await groupProjectHost.updateMembership(gp.id, async (draft) => {
+    if (!draft.autoJoin || !draft.includeLinkedComputers) return;
+    const linked = await linkedAgents(gp.scope, groupProjectHost.selfMachine(), (machine) => groupProjectHost.isNetworkMember(machine));
+    const excluded = new Set(draft.excluded.map((entry) => entry.address));
+    // Unknown/offline copies keep their saved members. An unlink is held for the person's review.
+    const verifiedCopies = new Set(linked.copies.map((copy) => `${copy.machine}/${copy.projectId}`)
+      .filter((key) => !linked.unknown.some((copy) => copy.projectId === key)));
+    const eligible = new Set(linked.agents.map((agent) => agent.agentId));
+    draft.explicit = draft.explicit.filter((entry) => !entry.autoProject
+      || !verifiedCopies.has(`${entry.autoProject.machine}/${entry.autoProject.projectId}`) || eligible.has(entry.address));
+    for (const agent of linked.agents) {
+      if (excluded.has(agent.agentId) || draft.explicit.some((entry) => entry.address === agent.agentId)) continue;
+      draft.explicit.push({ address: agent.agentId, kind: 'durable', name: agent.name, addedAt: new Date().toISOString(),
+        autoProject: { machine: agent.machine, projectId: agent.projectId! }, projectId: agent.projectId, projectName: agent.projectName });
+    }
+  });
+}
+
+/** Unlinked automatic members remain members until a matching review is applied. */
+function coverageLeaving(gp: GroupProject, membership: GroupProjectMembership): ResolvedGroupProjectMember[] {
+  if (gp.scope?.level !== 'project') return [];
+  const copies = linkedProjectCopies(groupProjectHost.selfMachine(), gp.scope.projectId);
+  return membership.explicit.filter((entry) => entry.autoProject && !membership.excluded.some((e) => e.address === entry.address)
+    && !copies.some((copy) => copy.machine === entry.autoProject!.machine && copy.projectId === entry.autoProject!.projectId))
+    .map((entry) => ({ agentId: entry.address, name: entry.name ?? entry.address, kind: entry.kind, via: 'auto', projectId: entry.projectId, projectName: entry.projectName }));
+}
+
+export async function confirmUnlinkedMembers(groupProjectId: string, confirmLeaving: string[]): Promise<GroupProjectMembershipView> {
+  const gp = await requireGroupProject(groupProjectId);
+  if (isReplica(gp)) throw new GroupProjectHostError('not_host', 'Only the host can review linked membership.');
+  await groupProjectHost.updateMembership(groupProjectId, (draft) => {
+    const leaving = coverageLeaving(gp, draft), confirmed = new Set(confirmLeaving);
+    requireExactLeavingReview(leaving.map((member) => member.agentId), confirmLeaving);
+    draft.explicit = draft.explicit.filter((entry) => !confirmed.has(entry.address));
+  });
+  await runReconcile();
+  notify(groupProjectId);
+  return describeMembership(groupProjectId);
+}
+
+/** Host-only toggles. Turning either off first materialises everyone it currently includes. */
+export async function setAutomaticMembership(groupProjectId: string, options: GroupProjectMembershipOptions): Promise<GroupProjectMembershipView> {
+  const gp = await requireGroupProject(groupProjectId);
+  if (isReplica(gp)) throw new GroupProjectHostError('not_host', 'Only the host can change automatic membership.');
+  if (gp.scope?.level !== 'project') throw new GroupProjectHostError('invalid', 'Automatic membership controls require a project group.');
+  if (!(await isMembershipManaged(gp.id))) await adopt(gp, await readInventory());
+  if (typeof options.autoJoin !== 'boolean' || typeof options.includeLinkedComputers !== 'boolean') throw new Error('Invalid automatic membership options.');
+  await groupProjectHost.updateMembership(groupProjectId, async (draft) => {
+    const [inventory, quick] = await Promise.all([readInventory(), liveQuickAgents()]);
+    if ((draft.autoJoin && !options.autoJoin) || (draft.includeLinkedComputers && !options.includeLinkedComputers)) {
+      const current = resolveMembership(gp, draft, inventory, quick);
+      // An unreadable inventory cannot materialise the complete current membership safely.
+      if (current.unverified.length) throw new Error('Some current members could not be checked. Try again when their project is readable.');
+      for (const member of current.members) {
+        const entry = draft.explicit.find((e) => e.address === member.agentId);
+        if (entry) { delete entry.autoProject; continue; }
+        draft.explicit.push({ address: member.agentId, kind: member.kind, name: member.name, addedAt: new Date().toISOString() });
+      }
+    }
+    draft.autoJoin = options.autoJoin;
+    draft.includeLinkedComputers = gp.scope?.reach === 'network' && options.includeLinkedComputers;
+    // Opting into the new controls is deliberate; no existing record is migrated automatically.
+    draft.membershipPolicy = 'project-3546';
+  });
+  await runReconcile();
+  notify(groupProjectId);
+  return describeMembership(groupProjectId);
+}
+
 // ── Changes ─────────────────────────────────────────────────────────────────
 
 async function requireGroupProject(groupProjectId: string): Promise<GroupProject> {
@@ -567,12 +669,18 @@ async function requireGroupProject(groupProjectId: string): Promise<GroupProject
 }
 
 /**
- * A group project just created: every top-level durable agent in its scope
- * joins, now and later. Call right after creating it.
+ * Initialize the bindings for a newly created group's saved membership policy.
+ * App groups start empty; project groups include eligible agents now and later.
  */
 export async function beginAutoJoin(groupProjectId: string): Promise<void> {
+  const gp = await requireGroupProject(groupProjectId);
+  if (isReplica(gp)) throw new GroupProjectHostError('not_host', 'Only the host can initialize membership.');
   await groupProjectHost.updateMembership(groupProjectId, (draft) => {
-    if (!isManagedMembership(draft)) draft.autoJoin = true;
+    if (!isManagedMembership(draft)) {
+      draft.membershipPolicy = 'project-3546';
+      draft.autoJoin = gp.scope?.level === 'project';
+      draft.includeLinkedComputers = gp.scope?.reach === 'network';
+    }
   });
   await runReconcile();
 }
@@ -587,6 +695,21 @@ export async function addMember(groupProjectId: string, agentId: string): Promis
   const [inventory, quick] = await Promise.all([readInventory(), liveQuickAgents()]);
   const replica = isReplica(gp);
   if (!replica && !(await isMembershipManaged(gp.id))) await adopt(gp, inventory);
+  if (!replica && groupProjectHost.localAgentId(gp, agentId) === null) {
+    const linked = await linkedAgents(gp.scope, groupProjectHost.selfMachine(), (machine) => groupProjectHost.isNetworkMember(machine));
+    const remote = linked.available.find((agent) => agent.agentId === agentId);
+    if (!remote) throw new GroupProjectHostError('out_of_scope', 'That agent must belong to an explicitly linked project copy with a verified inventory.');
+    await groupProjectHost.updateMembership(gp.id, (draft) => {
+      draft.excluded = draft.excluded.filter((entry) => entry.address !== agentId);
+      if (!draft.explicit.some((entry) => entry.address === agentId)) draft.explicit.push({ address: agentId, kind: remote.kind, name: remote.name,
+        projectId: remote.projectId, projectName: remote.projectName, addedAt: new Date().toISOString(),
+        ...(remote.kind === 'durable' && draft.autoJoin && draft.includeLinkedComputers && { autoProject: { machine: remote.machine, projectId: remote.projectId! } }),
+      });
+    });
+    await runReconcile();
+    notify(gp.id);
+    return describeMembership(gp.id);
+  }
   const agent = inventory.agents.get(agentId);
   const run = quick.get(agentId);
   if (!run && (!agent || agent.disposed)) throw new Error('That agent does not exist here.');
@@ -640,7 +763,7 @@ export async function excludeMember(groupProjectId: string, agentId: string): Pr
     // including an agent whose project can't be read now.
     const addedOnly = agent ? agent.helper : quick.has(agentId) || entry?.kind === 'helper' || entry?.kind === 'quick';
     if (!addedOnly && !draft.excluded.some((e) => e.address === address)) {
-      draft.excluded.push({ address, excludedAt: now });
+      draft.excluded.push({ address, excludedAt: now, name: agent?.name ?? entry?.name });
     }
   });
   await runReconcile();
@@ -689,6 +812,7 @@ export async function describeMembership(groupProjectId: string): Promise<GroupP
   const membership = await groupProjectHost.getMembership(groupProjectId);
   const managed = isManagedMembership(membership);
   const [inventory, quick] = await Promise.all([readInventory(), liveQuickAgents()]);
+  const projects = await projectStore.list();
   const nameOf = (id: string, fallback?: string) => inventory.agents.get(id)?.name ?? quick.get(id)?.name ?? fallback ?? id;
   let members: ResolvedGroupProjectMember[];
   if (managed) {
@@ -708,8 +832,16 @@ export async function describeMembership(groupProjectId: string): Promise<GroupP
     managed,
     ...(!managed && migrationDeferred && { deferred: migrationDeferred }),
     autoJoin: membership.autoJoin,
+    includeLinkedComputers: membership.includeLinkedComputers ?? false,
+    ...(gp.scope?.level === 'project' && { automaticMembership: {
+      scope: gp.scope,
+      projectName: projects.find((p) => p.id === (gp.scope?.level === 'project' ? gp.scope.projectId : ''))?.displayName
+        || projects.find((p) => p.id === (gp.scope?.level === 'project' ? gp.scope.projectId : ''))?.name || 'this project',
+      editable: !isReplica(gp),
+    } }),
+    coverageLeaving: isReplica(gp) ? [] : coverageLeaving(gp, membership),
     members,
-    excluded: membership.excluded.map((e) => ({ agentId: e.address, name: nameOf(e.address), excludedAt: e.excludedAt })),
+    excluded: membership.excluded.map((e) => ({ agentId: e.address, name: nameOf(e.address, e.name), excludedAt: e.excludedAt })),
   };
   if (membership.autoJoinOffer) {
     const current = new Set(members.map((m) => m.agentId));
@@ -727,18 +859,23 @@ export async function describeMembership(groupProjectId: string): Promise<GroupP
  * the same inventory and rules as auto-join. Projects whose agents can't be
  * read are listed, since their agents would join once readable.
  */
-export async function previewAutoJoin(untrusted: unknown): Promise<AutoJoinPreview> {
+export async function previewAutoJoin(untrusted: unknown, options?: GroupProjectMembershipOptions): Promise<AutoJoinPreview> {
   const [inventory, projects] = await Promise.all([readInventory(), projectStore.list()]);
   // The same check creation makes: a known shape, a registered project.
-  const scope: GroupProjectScope = resolveGroupProjectScope({ scope: untrusted }, new Set(projects.map((p) => p.id)));
+  const scope: GroupProjectScope = resolveGroupProjectScope({ scope: untrusted }, new Set(projects.map((p) => p.id)), groupProjectHost.scopeOptions().network);
+  const linked = options?.autoJoin !== false && options?.includeLinkedComputers !== false
+    ? await linkedAgents(scope, groupProjectHost.selfMachine(), (machine) => groupProjectHost.isNetworkMember(machine)) : { agents: [] as LinkedAgents['agents'], unknown: [] as LinkedAgents['unknown'] };
+  const exclusions = new Set(options?.excluded ?? []);
   const gp = { id: 'preview', name: '', description: '', instructions: '', createdAt: '', metadata: {}, scope } as GroupProject;
   return {
-    wouldJoin: autoCandidates(gp, inventory).map((a): ResolvedGroupProjectMember => ({
-      agentId: a.id, name: a.name, kind: 'durable', via: 'auto', projectId: a.projectId, projectName: a.projectName,
-    })),
-    unreadableProjects: projects
-      .filter((p) => inventory.unreadable.has(p.id) && (scope.level === 'app' || scope.projectId === p.id))
-      .map((p) => ({ projectId: p.id, name: p.displayName || p.name })),
+    wouldJoin: scope.level === 'app' || options?.autoJoin === false ? [] : [
+      ...autoCandidates(gp, inventory).map((a): ResolvedGroupProjectMember => ({
+        agentId: a.id, name: a.name, kind: 'durable', via: 'auto', projectId: a.projectId, projectName: a.projectName,
+      })), ...linked.agents,
+    ].filter((agent) => !exclusions.has(agent.agentId)),
+    unreadableProjects: scope.level === 'app' || options?.autoJoin === false ? [] : [...linked.unknown, ...projects
+      .filter((p) => inventory.unreadable.has(p.id) && scope.projectId === p.id)
+      .map((p) => ({ projectId: p.id, name: p.displayName || p.name }))],
   };
 }
 

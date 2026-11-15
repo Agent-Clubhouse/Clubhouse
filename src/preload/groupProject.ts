@@ -2,7 +2,7 @@ import { ipcRenderer } from 'electron';
 import { IPC } from '../shared/ipc-channels';
 import type {
   AutoJoinPreview, GroupProject, GroupProjectCreateOptions, GroupProjectDeleteImpact, GroupProjectMemberView, GroupProjectMembershipView,
-  GroupProjectRolesView, GroupProjectScope, GroupProjectScopeOptions,
+  GroupProjectRolesView, GroupProjectMembershipOptions, GroupProjectScope, GroupProjectScopeOptions,
 } from '../shared/group-project-types';
 
 export const groupProject = {
@@ -77,8 +77,12 @@ export const groupProject = {
     ipcRenderer.invoke(IPC.GROUP_PROJECT.SET_ROLE, projectId, agentId, role, mode),
   setOwnGrant: (projectId: string, grant: 'deliver' | 'wake' | 'actions', mode: 'allow' | 'off'): Promise<GroupProjectRolesView> =>
     ipcRenderer.invoke(IPC.GROUP_PROJECT.SET_OWN_GRANT, projectId, grant, mode),
-  previewAutoJoin: (scope: GroupProjectScope): Promise<AutoJoinPreview> =>
-    ipcRenderer.invoke(IPC.GROUP_PROJECT.PREVIEW_AUTO_JOIN, scope),
+  setAutomaticMembership: (projectId: string, options: GroupProjectMembershipOptions): Promise<GroupProjectMembershipView> =>
+    ipcRenderer.invoke(IPC.GROUP_PROJECT.SET_AUTOMATIC_MEMBERSHIP, projectId, options),
+  confirmUnlinkedMembers: (projectId: string, confirmLeaving: string[]): Promise<GroupProjectMembershipView> =>
+    ipcRenderer.invoke(IPC.GROUP_PROJECT.CONFIRM_UNLINKED_MEMBERS, projectId, { confirmLeaving }),
+  previewAutoJoin: (scope: GroupProjectScope, options?: GroupProjectMembershipOptions): Promise<AutoJoinPreview> =>
+    ipcRenderer.invoke(IPC.GROUP_PROJECT.PREVIEW_AUTO_JOIN, scope, options),
   onMembershipChanged: (callback: (projectId: string) => void) => {
     const listener = (_event: Electron.IpcRendererEvent, projectId: string) => callback(projectId);
     ipcRenderer.on(IPC.GROUP_PROJECT.MEMBERSHIP_CHANGED, listener);

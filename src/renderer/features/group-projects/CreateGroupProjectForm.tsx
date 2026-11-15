@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react'
 import type { AutoJoinPreview, GroupProject, GroupProjectScope } from '../../../shared/group-project-types';
 import { Button } from '../../components/Button';
 import { useGroupProjectStore } from '../../stores/groupProjectStore';
+import { useProjectStore } from '../../stores/projectStore';
 import { ipcErrorMessage } from '../../utils/ipc-error';
 import { SettingsBlock, SettingsSection, settingsError, settingsHelp, settingsInput, settingsLabel } from '../settings/SettingsLayout';
 import { GroupProjectScopeFields, useScopeOptions } from '../settings/GroupProjectScopeFields';
@@ -13,6 +14,10 @@ export function CreateGroupProjectForm({ defaultScope = { level: 'app', reach: '
   onCancel?: () => void;
 }) {
   const create = useGroupProjectStore((s) => s.create);
+  const projects = useProjectStore((s) => s.projects);
+  const [autoJoin, setAutoJoin] = useState(true);
+  const [includeLinkedComputers, setIncludeLinkedComputers] = useState(true);
+  const [excluded, setExcluded] = useState<string[]>([]);
   const scopeOptions = useScopeOptions();
   // From the directory, a new group project covers the app on this computer unless the person picks otherwise (#3355).
   const [scope, setScope] = useState<GroupProjectScope>(defaultScope);
@@ -30,7 +35,7 @@ export function CreateGroupProjectForm({ defaultScope = { level: 'app', reach: '
     const version = ++previewVersion.current;
     setPreviewLoading(true);
     try {
-      const result = await window.clubhouse.groupProject.previewAutoJoin(scope);
+      const result = await window.clubhouse.groupProject.previewAutoJoin(scope, { autoJoin, includeLinkedComputers });
       if (version !== previewVersion.current) return;
       setPreview(result);
       setPreviewError(null);
@@ -40,7 +45,7 @@ export function CreateGroupProjectForm({ defaultScope = { level: 'app', reach: '
       setPreview(null);
       setPreviewError(ipcErrorMessage(err));
     } finally { if (version === previewVersion.current) setPreviewLoading(false); }
-  }, [scope]);
+  }, [scope, autoJoin, includeLinkedComputers]);
   useEffect(() => {
     void loadPreview();
     const offProject = window.clubhouse.project.onChanged(() => { void loadPreview(); });
@@ -62,7 +67,11 @@ export function CreateGroupProjectForm({ defaultScope = { level: 'app', reach: '
     setError(null);
     setCreated(false);
     try {
-      const project = await create(trimmed, { scope });
+      const project = await create(trimmed, { scope, membership: {
+        autoJoin: scope.level === 'project' && autoJoin,
+        includeLinkedComputers: scope.level === 'project' && scope.reach === 'network' && includeLinkedComputers,
+        excluded,
+      } });
       setName('');
       setCreated(true);
       onCreated?.(project);
@@ -79,14 +88,16 @@ export function CreateGroupProjectForm({ defaultScope = { level: 'app', reach: '
     <SettingsSection title="Create a group project">
       <SettingsBlock>
         <p className={`${settingsHelp} mb-3`}>
-          New group projects cover the whole app on this computer unless you choose a project. Top-level durable agents in scope join automatically. Helpers and quick agents join only when added.
+          App-wide group projects start with no members. Project groups can keep adding agents from their project, now and later. Helpers and quick agents join only when added.
         </p>
         {previewLoading && <p className={settingsHelp}>Loading agents who will join...</p>}
         {previewError && <div className="flex flex-col items-start gap-2"><p role="alert" className={settingsError}>Could not preview members: {previewError}</p><Button onClick={() => void loadPreview()}>Retry preview</Button></div>}
         {preview && <div className={`${settingsHelp} mb-3`}>
-          <p>{preview.wouldJoin.length} {preview.wouldJoin.length === 1 ? 'agent will' : 'agents will'} join now.</p>
+          <p>{preview.wouldJoin.filter((agent) => !excluded.includes(agent.agentId)).length} {preview.wouldJoin.filter((agent) => !excluded.includes(agent.agentId)).length === 1 ? 'agent will' : 'agents will'} join now.</p>
           {preview.wouldJoin.length > 0 && <ul aria-label="Agents who will join" className="list-disc pl-5">
-            {preview.wouldJoin.map((agent) => <li key={agent.agentId}>{agent.name}{agent.projectName ? ` (${agent.projectName})` : ''}</li>)}
+            {preview.wouldJoin.map((agent) => <li key={agent.agentId}><label className="flex items-center gap-2"><input type="checkbox" checked={!excluded.includes(agent.agentId)} disabled={creating}
+              onChange={(event) => setExcluded((current) => event.target.checked ? current.filter((id) => id !== agent.agentId) : [...current, agent.agentId])} />
+              {agent.name}{agent.projectName ? ` (${agent.projectName})` : ''}</label></li>)}
           </ul>}
           {preview.unreadableProjects.length > 0 && <p>Could not check agents in: {preview.unreadableProjects.map((project) => project.name).join(', ')}. The preview may be incomplete.</p>}
         </div>}
@@ -102,12 +113,19 @@ export function CreateGroupProjectForm({ defaultScope = { level: 'app', reach: '
           <GroupProjectScopeFields
             idPrefix="new-group-project-scope"
             value={scope}
-            onChange={(next) => { setPreview(null); setPreviewLoading(true); setScope(next); setCreated(false); }}
+            onChange={(next) => { setPreview(null); setPreviewLoading(true); setScope(next); setExcluded([]); setCreated(false); }}
             options={scopeOptions}
             disabled={creating}
           />
+          {scope.level === 'project' && <fieldset disabled={creating} className="flex flex-col gap-2">
+            <label className="flex items-center gap-2 text-xs text-ctp-text"><input type="checkbox" checked={autoJoin} onChange={(event) => setAutoJoin(event.target.checked)} />
+              Start with every agent in {projects.find((p) => p.id === scope.projectId)?.displayName || projects.find((p) => p.id === scope.projectId)?.name || 'this project'}
+            </label>
+            <p className={settingsHelp}>Also adds agents that join the project later. Unchecked agents stay excluded.</p>
+            {scope.reach === 'network' && <label className="flex items-center gap-2 text-xs text-ctp-text"><input type="checkbox" checked={includeLinkedComputers} disabled={!autoJoin} onChange={(event) => setIncludeLinkedComputers(event.target.checked)} />Include linked computers</label>}
+          </fieldset>}
           <div className="flex items-center gap-2">
-            <Button type="submit" kind="primary" disabled={creating || previewLoading}>
+            <Button type="submit" kind="primary" disabled={creating || previewLoading || !!previewError}>
               {creating ? 'Creating...' : 'Create group project'}
             </Button>
             {onCancel && <Button onClick={onCancel} disabled={creating}>Close</Button>}
@@ -119,3 +137,4 @@ export function CreateGroupProjectForm({ defaultScope = { level: 'app', reach: '
     </SettingsSection>
   );
 }
+

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import type { GroupProjectMembershipView, ResolvedGroupProjectMember } from '../../../shared/group-project-types';
+import type { AutoJoinPreview, GroupProjectMembershipOptions, GroupProjectMembershipView, ResolvedGroupProjectMember } from '../../../shared/group-project-types';
 import { Button } from '../../components/Button';
 import { ipcErrorMessage } from '../../utils/ipc-error';
 import { SettingsBlock, SettingsSection, settingsError, settingsHelp } from '../settings/SettingsLayout';
@@ -25,6 +25,8 @@ export function GroupProjectMembersSection({ groupProjectId }: { groupProjectId:
   const [loadError, setLoadError] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [review, setReview] = useState<{ options: GroupProjectMembershipOptions; preview: AutoJoinPreview } | null>(null);
+  const [unlinkReview, setUnlinkReview] = useState<ResolvedGroupProjectMember[] | null>(null);
 
   const load = useCallback(async () => {
     try {
@@ -39,6 +41,8 @@ export function GroupProjectMembersSection({ groupProjectId }: { groupProjectId:
   useEffect(() => {
     setView(null);
     setActionError(null);
+    setReview(null);
+    setUnlinkReview(null);
     void load();
     return window.clubhouse.groupProject.onMembershipChanged((id) => {
       if (id === groupProjectId) void load();
@@ -59,6 +63,20 @@ export function GroupProjectMembersSection({ groupProjectId }: { groupProjectId:
   };
 
   const api = window.clubhouse.groupProject;
+  const reviewAutomatic = async (options: GroupProjectMembershipOptions) => {
+    if (!view?.automaticMembership) return;
+    setBusy(true);
+    setActionError(null);
+    try {
+      const preview = await api.previewAutoJoin(view.automaticMembership.scope, {
+        ...options, excluded: view.excluded.map((entry) => entry.agentId),
+      });
+      setReview({ options, preview });
+    } catch (err) {
+      // telemetry-exempt: the policy is unchanged, with the preview failure shown inline.
+      setActionError(`Could not review this change. ${ipcErrorMessage(err)}`);
+    } finally { setBusy(false); }
+  };
 
   return (
     <SettingsSection title="Members">
@@ -84,6 +102,34 @@ export function GroupProjectMembersSection({ groupProjectId }: { groupProjectId:
                   : 'Only the agents listed here are members.'}
               </p>
             )}
+            {view.automaticMembership && <div className="flex flex-col items-start gap-2">
+              {!view.automaticMembership.editable && <p className={settingsHelp}>Only the host can change automatic membership.</p>}
+              <label className="flex items-center gap-2 text-xs text-ctp-text"><input type="checkbox" checked={view.autoJoin} disabled={busy || !view.automaticMembership.editable}
+                onChange={(event) => void reviewAutomatic({ autoJoin: event.target.checked, includeLinkedComputers: view.includeLinkedComputers ?? false })} />
+                Start with every agent in {view.automaticMembership.projectName}
+              </label>
+              {view.automaticMembership.scope.reach === 'network' && <label className="flex items-center gap-2 text-xs text-ctp-text"><input type="checkbox" checked={view.includeLinkedComputers ?? false} disabled={busy || !view.autoJoin || !view.automaticMembership.editable}
+                onChange={(event) => void reviewAutomatic({ autoJoin: view.autoJoin, includeLinkedComputers: event.target.checked })} />Include linked computers</label>}
+              <p className={settingsHelp}>Keeps adding eligible agents created later. Turning either toggle off keeps current members as explicitly added members. Exclusions stay.</p>
+            </div>}
+            {review && <div role="region" aria-label="Automatic membership review" className="flex flex-col items-start gap-2">
+              <p className={settingsHelp}>{review.options.autoJoin ? `Agents who would join: ${names(review.preview.wouldJoin.filter((agent) => !view.members.some((m) => m.agentId === agent.agentId))) || 'None now'}.` : 'Current members stay. New agents stop joining automatically.'}</p>
+              {review.preview.unreadableProjects.length > 0 && <p className={settingsHelp}>Could not check: {review.preview.unreadableProjects.map((p) => p.name).join(', ')}. Agents on linked computers join when their inventory can be verified.</p>}
+              <Button disabled={busy} onClick={() => void act(async () => { const result = await api.setAutomaticMembership(groupProjectId, review.options); setReview(null); return result; }, 'Not changed.')}>Apply automatic membership</Button>
+              <Button disabled={busy} onClick={() => setReview(null)}>Cancel</Button>
+            </div>}
+            {!!view.coverageLeaving?.length && <div className="flex flex-col items-start gap-2">
+              <p className={settingsHelp}>A project copy was unlinked. Its automatic members stay until you review who leaves.</p>
+              <Button disabled={busy || !view.automaticMembership?.editable} onClick={() => setUnlinkReview(view.coverageLeaving ?? [])}>Review linked membership</Button>
+            </div>}
+            {unlinkReview && <div role="region" aria-label="Linked membership review" className="flex flex-col items-start gap-2">
+              <p className={settingsHelp}>These members leave: {unlinkReview.map((member) => `${member.name}${member.projectName ? ` (${member.projectName})` : ''}`).join(', ')}.</p>
+              <Button disabled={busy} onClick={() => void act(async () => {
+                try { return await api.confirmUnlinkedMembers(groupProjectId, unlinkReview.map((m) => m.agentId)); }
+                finally { setUnlinkReview(null); void load(); }
+              }, 'Membership not changed. Review again.')}>Apply and remove {unlinkReview.length}</Button>
+              <Button disabled={busy} onClick={() => setUnlinkReview(null)}>Cancel</Button>
+            </div>}
             {view.autoJoinOffer?.state === 'pending' && (
               <div className="flex flex-col items-start gap-2">
                 <p className={settingsHelp}>

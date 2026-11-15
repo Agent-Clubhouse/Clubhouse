@@ -651,6 +651,8 @@ export const IPC = {
     /** Accept or dismiss "Include every agent in scope" on a migrated group project. */
     ANSWER_AUTO_JOIN_OFFER: 'group-project:answer-auto-join-offer',
     /** Who would auto-join a group project with a scope, before creating it. Read-only. */
+    SET_AUTOMATIC_MEMBERSHIP: 'group-project:set-automatic-membership',
+    CONFIRM_UNLINKED_MEMBERS: 'group-project:confirm-unlinked-members',
     PREVIEW_AUTO_JOIN: 'group-project:preview-auto-join',
     /** Its own grants and who holds lead and admin (#3360). */
     GET_ROLES: 'group-project:get-roles',

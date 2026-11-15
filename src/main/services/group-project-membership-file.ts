@@ -22,6 +22,8 @@ export function validateMembership(value: unknown, hostMachine: string | null = 
     || !Array.isArray(value.explicit) || !Array.isArray(value.excluded)) {
     throw new Error('Group project membership is not a valid version 1 record.');
   }
+  if (value.membershipPolicy !== undefined && value.membershipPolicy !== 'project-3546'
+    || value.includeLinkedComputers !== undefined && typeof value.includeLinkedComputers !== 'boolean') throw new Error('Invalid automatic membership policy.');
   const unique = (list: unknown[], label: string, dated: string): Array<Record<string, unknown> & { address: string }> => {
     const seen = new Set<string>();
     return list.map((entry) => {

@@ -11,6 +11,14 @@ export interface GroupProjectCreateOptions {
   /** Supplies the default scope only when scope is omitted. */
   projectId?: string;
   scope?: GroupProjectScope;
+  membership?: GroupProjectMembershipOptions;
+}
+
+/** Ongoing membership for new project groups. Exclusions are host-relative addresses. */
+export interface GroupProjectMembershipOptions {
+  autoJoin: boolean;
+  includeLinkedComputers: boolean;
+  excluded?: string[];
 }
 
 /**
@@ -74,6 +82,10 @@ export interface GroupProjectExplicitMember {
   /** Host-relative agent address: a bare id on the host machine, `id@<fingerprint>` elsewhere. */
   address: string;
   kind: 'durable' | 'helper' | 'quick';
+  /** Host-maintained automatic membership from an explicitly linked project copy. */
+  autoProject?: { machine: string; projectId: string };
+  projectId?: string;
+  projectName?: string;
   addedAt: string;
   runId?: string;
   /** Display only, never identity. */
@@ -83,6 +95,7 @@ export interface GroupProjectExplicitMember {
 
 export interface GroupProjectExclusion {
   address: string;
+  name?: string;
   excludedAt: string;
   [extra: string]: unknown;
 }
@@ -95,6 +108,9 @@ export interface GroupProjectExclusion {
 export interface GroupProjectMembership {
   version: 1;
   autoJoin: boolean;
+  /** Absent on existing groups: preserves their previous policy and migration. */
+  membershipPolicy?: 'project-3546';
+  includeLinkedComputers?: boolean;
   explicit: GroupProjectExplicitMember[];
   excluded: GroupProjectExclusion[];
   /**
@@ -245,6 +261,11 @@ export interface GroupProjectMembershipView {
   /** Why it isn't migrated yet, when a Canvas store couldn't be read. */
   deferred?: string;
   autoJoin: boolean;
+  includeLinkedComputers?: boolean;
+  /** Controls are host-only and available for project groups. */
+  automaticMembership?: { scope: GroupProjectScope; projectName: string; editable: boolean };
+  /** Lost links keep their auto members until this exact list is reviewed and confirmed. */
+  coverageLeaving?: ResolvedGroupProjectMember[];
   members: ResolvedGroupProjectMember[];
   excluded: Array<{ agentId: string; name: string; excludedAt: string }>;
   /** Pending only on a migrated group project; `wouldJoin` lists who accepting adds. */

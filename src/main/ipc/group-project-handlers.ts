@@ -9,13 +9,13 @@ import { listPausedPolling, onPollingPauseChanged, resumePausedPolling, setProje
 import { groupProjectHost } from '../services/group-project-host';
 import { initGroupProjectLifecycle } from '../services/group-project-lifecycle';
 import { describeGroupProjectRoles, grantGroupProjectRole, setOwnGrant } from '../services/group-project-roles';
-import { addMember, answerAutoJoinOffer, beginAutoJoin, describeMembership, excludeMember, onMembershipChanged, previewAutoJoin, releaseMembershipBindings } from '../services/group-project-membership';
+import { addMember, answerAutoJoinOffer, beginAutoJoin, describeMembership, excludeMember, onMembershipChanged, previewAutoJoin, setAutomaticMembership, confirmUnlinkedMembers, releaseMembershipBindings } from '../services/group-project-membership';
 import { executeShoulderTap } from '../services/group-project-shoulder-tap';
 import * as annexEventBus from '../services/annex-event-bus';
 import { appLog } from '../services/log-service';
 import { broadcastToAllWindows } from '../util/ipc-broadcast';
 import { withValidatedArgs, stringArg, objectArg, numberArg, booleanArg, digestSinceArg } from './validation';
-import type { DigestSince, GroupProjectCreateOptions, GroupProjectScope } from '../../shared/group-project-types';
+import type { DigestSince, GroupProjectCreateOptions, GroupProjectMembershipOptions, GroupProjectScope } from '../../shared/group-project-types';
 import { agentRegistry } from '../services/agent-registry';
 import { getAgentRuntime } from '../services/agent-runtime';
 import { injectPtyText } from '../services/agent-runtime/pty-input';
@@ -100,7 +100,20 @@ export function registerGroupProjectHandlers(): void {
     },
   ));
   ipcMain.handle(IPC.GROUP_PROJECT.PREVIEW_AUTO_JOIN, withValidatedArgs(
-    [objectArg<GroupProjectScope>()], (_event, scope) => previewAutoJoin(scope),
+    [objectArg<GroupProjectScope>(), objectArg<GroupProjectMembershipOptions>({ optional: true })],
+    (_event, scope, options) => previewAutoJoin(scope, options as GroupProjectMembershipOptions | undefined),
+  ));
+  ipcMain.handle(IPC.GROUP_PROJECT.SET_AUTOMATIC_MEMBERSHIP, withValidatedArgs(
+    [stringArg(), objectArg<GroupProjectMembershipOptions>()],
+    (_event, id, options) => setAutomaticMembership(id as string, options as GroupProjectMembershipOptions),
+  ));
+  ipcMain.handle(IPC.GROUP_PROJECT.CONFIRM_UNLINKED_MEMBERS, withValidatedArgs(
+    [stringArg(), objectArg<{ confirmLeaving: string[] }>()],
+    (_event, id, options) => {
+      const confirmed = (options as { confirmLeaving?: unknown }).confirmLeaving;
+      if (!Array.isArray(confirmed) || confirmed.some((address) => typeof address !== 'string')) throw new Error('confirmLeaving must be a list of member addresses.');
+      return confirmUnlinkedMembers(id as string, confirmed);
+    },
   ));
   ipcMain.handle(IPC.GROUP_PROJECT.ANSWER_AUTO_JOIN_OFFER, withValidatedArgs(
     [stringArg(), booleanArg()], (_event, id, accept) => answerAutoJoinOffer(id as string, accept as boolean),
@@ -122,7 +135,7 @@ export function registerGroupProjectHandlers(): void {
     [stringArg(), objectArg<GroupProjectCreateOptions>({ optional: true })],
     async (_event, name, options) => {
       const project = await groupProjectHost.create(name as string, options as GroupProjectCreateOptions | undefined);
-      // Everyone in scope joins a new group project (#3357).
+      // The host has recorded the chosen initial membership policy and exclusions.
       await beginAutoJoin(project.id);
       annexEventBus.emitGroupProjectChanged('created', project);
       appLog('core:group-project', 'info', 'Group project created', { meta: { id: project.id, name: project.name } });
