@@ -49,6 +49,7 @@ function pluginScopeArg(value: unknown, argName: string): PluginScope {
 
 /** Host configuration uses this existing KV namespace, including before plugins load. */
 function isHostStorageKey(key: string | undefined): boolean {
+  if (!key || /[/\\\0]/.test(key) || key === '.' || key === '..') return false;
   return key === 'external-plugins-enabled' || key === 'app-enabled' ||
     !!key && (key.startsWith('project-enabled-') || key.startsWith('settings-'));
 }
@@ -66,22 +67,33 @@ function assertPluginDataAccess(
   permission: 'storage' | 'files',
   operation: string,
 ): void {
-  if (permission === 'storage' && req.pluginId === '_system' &&
-      req.scope === 'global' && (operation === 'read' || operation === 'write') && isHostStorageKey(req.key)) return;
+  const refuse = (required: PluginPermission, reason: string): never => {
+    // Do not include request IDs, keys, paths or values in refusal logs/errors.
+    appLog('core:plugins', 'warn', 'Plugin data access refused', {
+      meta: { operation, permission: required, reason },
+    });
+    throw new Error('Plugin data access refused');
+  };
 
-  // agentConfig has always kept its bookkeeping here; authorize its owning
-  // plugin without moving existing data or requiring the unrelated storage API.
-  const agentConfig = permission === 'storage' && req.pluginId.startsWith('_agentconfig:');
+  // Reserved namespaces never fall through to generic manifest authorization,
+  // even if a stale or invalid registry entry once claimed one of these IDs.
+  if (req.pluginId === '_system') {
+    if (permission === 'storage' && req.scope === 'global' &&
+        (operation === 'read' || operation === 'write') && isHostStorageKey(req.key)) return;
+    return refuse(permission, 'reserved namespace');
+  }
+
+  // agentConfig keeps its bookkeeping at the existing project path; only its
+  // owning plugin's agent-config permission authorizes these KV operations.
+  const agentConfig = req.pluginId.startsWith('_agentconfig');
+  if (agentConfig && (permission !== 'storage' || req.scope !== 'project' || !req.pluginId.startsWith('_agentconfig:'))) {
+    return refuse(permission, 'reserved namespace');
+  }
   const pluginId = agentConfig ? req.pluginId.slice('_agentconfig:'.length) : req.pluginId;
   const required: PluginPermission = agentConfig ? 'agent-config' : permission;
   const manifest = pluginManifestRegistry.getManifest(pluginId);
-  if (manifest && manifest.permissions?.includes(required) && (!agentConfig || req.scope === 'project')) return;
-
-  // Do not include request IDs, keys, paths or values in refusal logs/errors.
-  appLog('core:plugins', 'warn', 'Plugin data access refused', {
-    meta: { operation, permission: required, reason: manifest ? 'permission denied' : 'unregistered or disabled' },
-  });
-  throw new Error('Plugin data access refused');
+  if (manifest?.permissions?.includes(required)) return;
+  return refuse(required, manifest ? 'permission denied' : 'unregistered or disabled');
 }
 
 export function registerPluginHandlers(): void {
@@ -326,6 +338,8 @@ export function registerPluginHandlers(): void {
   // The main process is the sole authority for plugin security policy —
   // no manifest payload is accepted from the renderer.
   ipcMain.handle(IPC.PLUGIN.REFRESH_MANIFEST_FROM_DISK, withValidatedArgs([stringArg()], async (_event, pluginId: string) => {
-    return pluginDiscovery.refreshManifestFromDisk(pluginId);
+    await manifestsReady;
+    await pluginManifestRegistry.refreshManifest(pluginId);
+    return pluginManifestRegistry.getManifest(pluginId) ?? null;
   }));
 }

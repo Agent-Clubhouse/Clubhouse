@@ -58,6 +58,7 @@ vi.mock('../services/log-service', () => ({ appLog: vi.fn() }));
 vi.mock('../services/plugin-manifest-registry', () => ({
   initializeTrustedManifests: vi.fn(),
   unregisterManifest: vi.fn(),
+  refreshManifest: vi.fn(async () => {}),
   getManifest: vi.fn(),
 }));
 
@@ -231,9 +232,16 @@ describe('plugin-handlers', () => {
   });
 
   it.each(dataOperations)('does not exempt arbitrary host namespace requests on %s', async (channel, method) => {
-    vi.mocked(pluginManifestRegistry.getManifest).mockReturnValue(undefined);
+    // Even a stale registry entry granting all permissions cannot authorize it.
+    vi.mocked(pluginManifestRegistry.getManifest).mockReturnValue({ id: '_system', permissions: ['storage', 'files'] } as PluginManifest);
     await expect(invokeData(channel, '_system')).rejects.toThrow('Plugin data access refused');
     expect(pluginStorage[method]).not.toHaveBeenCalled();
+  });
+
+  it.each(['_agentconfig:p1', '_agentconfigevil'])('never lets reserved ID %s use a stale manifest to authorize raw files', async (pluginId) => {
+    vi.mocked(pluginManifestRegistry.getManifest).mockReturnValue({ id: pluginId, permissions: ['files', 'storage'] } as PluginManifest);
+    await expect(invokeData(IPC.PLUGIN.FILE_READ, pluginId)).rejects.toThrow('Plugin data access refused');
+    expect(pluginStorage.readPluginFile).not.toHaveBeenCalled();
   });
 
   it('keeps agent-config bookkeeping at its existing path with its owning manifest permission', async () => {
@@ -386,10 +394,11 @@ describe('plugin-handlers', () => {
     expect(revokePluginTokens).toHaveBeenCalledWith('p1');
   });
 
-  it('REFRESH_MANIFEST_FROM_DISK delegates to pluginDiscovery.refreshManifestFromDisk', async () => {
+  it('REFRESH_MANIFEST_FROM_DISK uses the gated main registry', async () => {
     const handler = handlers.get(IPC.PLUGIN.REFRESH_MANIFEST_FROM_DISK)!;
     await handler({}, 'p1');
-    expect(pluginDiscovery.refreshManifestFromDisk).toHaveBeenCalledWith('p1');
+    expect(pluginManifestRegistry.refreshManifest).toHaveBeenCalledWith('p1');
+    expect(pluginDiscovery.refreshManifestFromDisk).not.toHaveBeenCalled();
   });
 
   it('LIST_PROJECT_INJECTIONS delegates to pluginDiscovery.listProjectPluginInjections', async () => {

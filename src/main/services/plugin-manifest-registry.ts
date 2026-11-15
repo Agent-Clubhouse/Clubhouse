@@ -1,7 +1,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import type { PluginManifest } from '../../shared/plugin-types';
-import { validateManifest } from '../../shared/manifest-validator';
+import { isValidPluginId, validateManifest } from '../../shared/manifest-validator';
 import { manifest as filesManifest } from '../../renderer/plugins/builtin/files/manifest';
 import { manifest as terminalManifest } from '../../renderer/plugins/builtin/terminal/manifest';
 import { manifest as browserManifest } from '../../renderer/plugins/builtin/browser/manifest';
@@ -50,7 +50,6 @@ const builtinManifestById = new Map<string, PluginManifest>([
 ]);
 
 let manifestsEnabled = true;
-let communityManifestsEnabled = false;
 
 function readExternalPluginsEnabled(): boolean {
   const externalPluginsFlagPath = path.join(
@@ -94,21 +93,19 @@ async function loadTrustedCommunityManifest(pluginId: string): Promise<PluginMan
 export async function initializeTrustedManifests(): Promise<void> {
   clear();
   manifestsEnabled = process.env.CLUBHOUSE_SAFE_MODE !== '1';
-  communityManifestsEnabled = false;
 
   if (!manifestsEnabled) return;
 
   for (const manifest of builtinManifestById.values()) {
-    trustedManifests.set(manifest.id, manifest);
+    registerTrustedManifest(manifest.id, manifest);
   }
 
-  communityManifestsEnabled = readExternalPluginsEnabled();
-  if (!communityManifestsEnabled) return;
+  if (!readExternalPluginsEnabled()) return;
 
   for (const { manifest: rawManifest, pluginPath } of await discoverCommunityPlugins()) {
     const { manifest, errors } = validateTrustedManifest(rawManifest);
     if (manifest) {
-      trustedManifests.set(manifest.id, manifest);
+      registerTrustedManifest(manifest.id, manifest);
       continue;
     }
 
@@ -126,11 +123,11 @@ export async function refreshManifest(pluginId: string): Promise<void> {
 
   const builtinManifest = builtinManifestById.get(pluginId);
   if (builtinManifest) {
-    trustedManifests.set(pluginId, builtinManifest);
+    registerTrustedManifest(pluginId, builtinManifest);
     return;
   }
 
-  if (!communityManifestsEnabled) {
+  if (!readExternalPluginsEnabled()) {
     trustedManifests.delete(pluginId);
     return;
   }
@@ -141,7 +138,7 @@ export async function refreshManifest(pluginId: string): Promise<void> {
     return;
   }
 
-  trustedManifests.set(pluginId, trustedCommunityManifest);
+  registerTrustedManifest(pluginId, trustedCommunityManifest);
 }
 
 /**
@@ -149,14 +146,32 @@ export async function refreshManifest(pluginId: string): Promise<void> {
  * Preserves all fields including security-sensitive ones.
  */
 export function registerTrustedManifest(pluginId: string, manifest: PluginManifest): void {
-  trustedManifests.set(pluginId, manifest);
+  // All policy writes, including future callers, use the same gates. Reserved
+  // host namespaces (_system and _agentconfig*) cannot be manifest IDs: the
+  // shared validator's lowercase/digit/hyphen allowlist excludes them.
+  if (!manifestsEnabled || (!builtinManifestById.has(pluginId) && !readExternalPluginsEnabled())) {
+    trustedManifests.delete(pluginId);
+    return;
+  }
+  const validated = validateTrustedManifest(manifest).manifest;
+  if (!isValidPluginId(pluginId) || !validated || validated.id !== pluginId) {
+    trustedManifests.delete(pluginId);
+    appLog('core:plugins', 'warn', 'Plugin manifest registration refused');
+    return;
+  }
+  trustedManifests.set(pluginId, validated);
 }
 
 /**
  * Get the manifest for a plugin from the trusted registry.
  */
 export function getManifest(pluginId: string): PluginManifest | undefined {
-  return trustedManifests.get(pluginId);
+  const manifest = trustedManifests.get(pluginId);
+  if (!manifest || !manifestsEnabled) return undefined;
+  // The external support switch can change without restarting. Read the same
+  // persisted flag Settings writes, so stale registrations confer no access.
+  if (!builtinManifestById.has(pluginId) && !readExternalPluginsEnabled()) return undefined;
+  return manifest;
 }
 
 /**
@@ -164,7 +179,7 @@ export function getManifest(pluginId: string): PluginManifest | undefined {
  * Only returns commands from trusted (disk-sourced) manifests.
  */
 export function getAllowedCommands(pluginId: string): string[] {
-  return trustedManifests.get(pluginId)?.allowedCommands ?? [];
+  return getManifest(pluginId)?.allowedCommands ?? [];
 }
 
 /**
@@ -172,7 +187,7 @@ export function getAllowedCommands(pluginId: string): string[] {
  * Used by the annex snapshot to advertise installed plugins.
  */
 export function listAllManifests(): PluginManifest[] {
-  return Array.from(trustedManifests.values());
+  return Array.from(trustedManifests.values()).filter((manifest) => getManifest(manifest.id) !== undefined);
 }
 
 export function unregisterManifest(pluginId: string): boolean {
@@ -182,5 +197,4 @@ export function unregisterManifest(pluginId: string): boolean {
 export function clear(): void {
   trustedManifests.clear();
   manifestsEnabled = true;
-  communityManifestsEnabled = false;
 }
