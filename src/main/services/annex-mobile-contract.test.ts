@@ -344,6 +344,14 @@ vi.mock('./agent-config', async () => {
     listDurable: async (projectPath: string) => W.durables[projectPath] ?? [],
     readAgentIconData: async (icon: string) => (icon ? 'data:image/png;base64,R0lGODlhAQABAAAAACw=' : null),
     agentIconFilePath: async (icon: string) => (icon ? `R0lGODlhAQABAAAAACw=|${icon}` : null),
+    createDurable: async (projectPath: string, name: string, color: string, model: string | undefined, _worktree: boolean, orchestrator: string, level: string | undefined) => {
+      if (name === 'taken') throw new Error('A folder named taken already exists in .clubhouse/agents');
+      const config = { id: 'durable_managed', name, color, model, orchestrator, access: level,
+        createdAt: '2026-10-30T00:00:00.000Z', branch: `${name}/standby`, worktreePath: `/work/app/.clubhouse/agents/${name}` };
+      W.durables[projectPath] = [...(W.durables[projectPath] ?? []).filter((d) => d.id !== config.id), config];
+      return config;
+    },
+    deleteDurable: async () => {},
     getDurableConfig: async (projectPath: string, id: string) => find(projectPath, id),
     updateDurableConfig: async (projectPath: string, id: string, updates: Record<string, unknown>) => {
       const agent = find(projectPath, id) ?? {};
@@ -470,6 +478,7 @@ vi.mock('./agent-system', () => ({
   checkAvailability: async (_path: string, id: string) => (id === 'codex-cli' && !W.guidedAvailable ? { available: false, error: 'Codex CLI not found' } : { available: true }),
   resolveOrchestrator: async (_path: string, id?: string) => ({
     id: id ?? 'claude-code',
+    checkAvailability: async () => ({ available: true }),
     getCapabilities: () => ({ permissions: true, sessionResume: true }),
     inspectInstructions: async () => 'Fixture shared instructions',
     getContextWindowOptions: async (model?: string) => W.contextOptions ?? (await import('../../shared/context-window')).claudeContextWindowOptions(model),
@@ -491,6 +500,29 @@ vi.mock('../../shared/name-generator', async (importOriginal) => ({
 }));
 vi.mock('../../shared/agent-id', () => ({ generateQuickAgentId: () => 'quick_new' }));
 vi.mock('../util/ipc-broadcast', () => ({ broadcastToAllWindows: () => {} }));
+// Managed library leaves: the creation/merge services remain real, all records stay in W.
+vi.mock('./managed-agents', () => {
+  const templates = [
+    { id: 'user-lead', name: 'Team lead', description: 'Coordinates work', builtin: false, settings: { orchestrator: 'claude-code', model: 'opus', access: 'plan' }, setup: { blocks: ['builtin-block-identity'], skills: ['builtin-skill-build'], mcps: ['builtin-mcp-clubhouse'] } },
+    { id: 'builtin-retired', name: 'Retired', description: '', builtin: true, retired: true, settings: {}, setup: { blocks: [], skills: [], mcps: [] } },
+    { id: 'builtin-template-helper', name: 'Helper', description: 'A focused helper', builtin: true, settings: {}, setup: { blocks: ['builtin-block-identity'], skills: [], mcps: ['builtin-mcp-clubhouse'] } },
+  ];
+  return { managedAgents: () => ({
+    listTemplates: async () => templates,
+    setupFromTemplate: async (id: string) => {
+      const t = templates.find((t) => t.id === id);
+      if (!t) {
+        const { ManagedError } = await import('./managed-agents/service');
+        throw new ManagedError('not_found');
+      }
+      return { setup: { version: 1, ...t.setup, templateId: id }, settings: t.settings };
+    },
+    saveSetup: async (projectPath: string, id: string, setup: object) => {
+      const agent = W.durables[projectPath].find((a) => a.id === id)!;
+      agent.managed = { version: 1, ...setup };
+    },
+  }) };
+});
 // mobile-agents' leaves: settings, CLIs, git and personas.
 vi.mock('./agent-creation', async (importOriginal) => ({
   ...await importOriginal<typeof import('./agent-creation')>(),
@@ -982,6 +1014,7 @@ describe('Annex mobile contract fixtures', { timeout: TEST_TIMEOUT_MS }, () => {
     const res = await send('GET', '/api/v1/mobile/capabilities');
     expect(res.status).toBe(200);
     expect(res.body.controlAvailable).toBe(true);
+    expect(res.body.managedCreate).toEqual({ version: 1 });
     epoch = res.body.epoch;
     // The bound port is the OS's choice.
     if (res.body.routes) res.body.routes.port = 7432;
@@ -1093,7 +1126,12 @@ describe('Annex mobile contract fixtures', { timeout: TEST_TIMEOUT_MS }, () => {
   });
 
   it('create options and agent settings', async () => {
-    fixtures.set('create-options.json', await exchange('GET', '/api/v1/mobile/projects/proj_app/create-options'));
+    const createOptions = await exchange('GET', '/api/v1/mobile/projects/proj_app/create-options');
+    expect(createOptions.response.body.managed).toEqual({ defaultOn: true, templates: [
+      { id: 'builtin-template-helper', name: 'Helper', description: 'A focused helper', builtin: true },
+      { id: 'user-lead', name: 'Team lead', description: 'Coordinates work', builtin: false, orchestrator: 'claude-code', model: 'opus', access: 'plan' },
+    ] });
+    fixtures.set('create-options.json', createOptions);
     fixtures.set('create-options-errors.json', { projectNotFound: await exchange('GET', '/api/v1/mobile/projects/missing/create-options') });
     const settings = await exchange('GET', '/api/v1/mobile/agents/durable_sleepy/settings');
     expect(settings.response.body.details.changes).toMatchObject({ files: 2 });
@@ -1321,6 +1359,40 @@ describe('Annex mobile contract fixtures', { timeout: TEST_TIMEOUT_MS }, () => {
     await command('level_not_live', { type: 'chat.setLevel', ...chat, level: 'auto' });
     await command('level_switch_not_supported', { type: 'chat.setLevel', agentId: 'durable_basic', sessionId: 'sess_basic', level: 'plan' });
     await command('invalid_command (unknown level)', { type: 'chat.setLevel', ...chat, level: 'yolo' });
+  });
+
+  it('managed agent.create contract', async () => {
+    const base = { type: 'agent.create', projectId: 'proj_app', name: 'managed-otter', color: 'emerald', managed: true };
+    let number = 0;
+    const managedCommand = (name: string, fields: object) => command(name, { ...base, ...fields }, { commandId: `cmd_managed_${++number}` });
+    const cases = [
+      ['accepted managed template', { templateId: 'user-lead' }, 200, undefined],
+      ['accepted managed template overrides', { templateId: 'user-lead', orchestrator: 'codex-cli', model: 'gpt-5' }, 200, undefined],
+      ['accepted managed blank', { blank: true }, 200, undefined],
+      ['template_not_found', { templateId: 'removed' }, 404, 'template_not_found'],
+      ['invalid_managed_selection (both)', { templateId: 'user-lead', blank: true }, 400, 'invalid_managed_selection'],
+      ['invalid_managed_selection (neither)', {}, 400, 'invalid_managed_selection'],
+      ['invalid_managed_selection (blank false)', { blank: false }, 400, 'invalid_managed_selection'],
+      ['managed_required (template)', { managed: false, templateId: 'user-lead' }, 400, 'managed_required'],
+      ['managed_required (blank)', { managed: false, blank: true }, 400, 'managed_required'],
+      ['managed_options_conflict', { blank: true, useWorktree: false }, 400, 'managed_options_conflict'],
+      ['managed_agent (managed persona)', { blank: true, persona: 'qa' }, 409, 'managed_agent'],
+      ['invalid_command (managed unknown field)', { blank: true, setup: {} }, 400, 'invalid_command'],
+      ['create_refused (managed)', { blank: true, name: 'taken' }, 409, 'create_refused'],
+    ] as const;
+    for (const [name, fields, status, code] of cases) {
+      const reply = await managedCommand(name, fields);
+      expect(reply.status, name).toBe(status);
+      if (code) expect(reply.body.error, name).toMatchObject({ code });
+      else {
+        expect(reply.body.status, name).toBe('completed');
+        const config = W.durables[APP].find((a) => a.id === 'durable_managed')!;
+        expect(config.managed).toMatchObject({ version: 1, blocks: ['builtin-block-identity'], mcps: ['builtin-mcp-clubhouse'] });
+        if ('templateId' in fields) expect(config).toMatchObject({ model: 'model' in fields ? fields.model : 'opus', access: 'plan', managed: { templateId: 'user-lead', skills: ['builtin-skill-build'] } });
+        else expect(config.managed).not.toHaveProperty('templateId');
+      }
+    }
+    W.durables[APP] = W.durables[APP].filter((d) => d.id !== 'durable_managed');
   });
 
   it('agent commands', async () => {

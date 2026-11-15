@@ -38,7 +38,7 @@ export const MOBILE_COMMAND_FIELDS: Readonly<Record<MobileCommand['type'], reado
   'agent.providerPreview': ['agentId', 'provider'],
   'agent.providerChange': ['agentId', 'provider', 'expectedState'],
   'agent.spawn': ['projectId', 'prompt', 'model', 'orchestrator'],
-  'agent.create': ['projectId', 'name', 'color', 'orchestrator', 'model', 'persona', 'freeAgentMode', 'access', 'useWorktree', 'mcpIds', 'branchName', 'branchFrom', 'folderName', 'orchestration'],
+  'agent.create': ['managed', 'templateId', 'blank', 'projectId', 'name', 'color', 'orchestrator', 'model', 'persona', 'freeAgentMode', 'access', 'useWorktree', 'mcpIds', 'branchName', 'branchFrom', 'folderName', 'orchestration'],
   'agent.update': ['agentId', 'name', 'color', 'emoji', 'orchestrator', 'model', 'runtime', 'persona', 'clubhouseMode', 'freeAgentMode', 'access', 'idleSleep', 'contextWindow', 'orchestration'],
   'project.setPinned': ['projectId', 'pinned'],
   'project.setInactive': ['projectId', 'inactive'],
@@ -60,14 +60,14 @@ export const MOBILE_COMMAND_FIELDS: Readonly<Record<MobileCommand['type'], reado
 /** Fields a command may leave out. Every agent.update setting is optional, but it needs at least one. */
 const OPTIONAL = new Set(['reviewedDigest', 'delivery', 'message', 'resume', 'model', 'orchestrator', 'attachmentIds', 'force', 'effort', 'cells', 'reset', 'expectedProvider', 'expectedSessionId', 'waitForStopped', 'updateMode']);
 const ROUTING_OPTIONAL = new Set(['projectId', 'auto', 'copilotAuto']);
-const CREATE_OPTIONAL = new Set(['orchestrator', 'model', 'persona', 'freeAgentMode', 'access', 'useWorktree', 'mcpIds', 'branchName', 'branchFrom', 'folderName', 'orchestration']);
+const CREATE_OPTIONAL = new Set(['managed', 'templateId', 'blank', 'orchestrator', 'model', 'persona', 'freeAgentMode', 'access', 'useWorktree', 'mcpIds', 'branchName', 'branchFrom', 'folderName', 'orchestration']);
 /** Commands whose fields are all optional, with at least one set: Settings > Dispatcher's (#3206). */
 const ANY_OF = new Set<string>(['dispatcher.update', 'dispatcher.setModels']);
 export const isOptionalCommandField = (type: MobileCommand['type'], key: string): boolean =>
   ANY_OF.has(type) ? true : type === 'agent.update' ? key !== 'agentId' : type === 'agent.create' ? CREATE_OPTIONAL.has(key)
     : type === 'helperRouting.update' && ROUTING_OPTIONAL.has(key) ? true
       : type === 'chat.setModel' && key === 'model' ? false : OPTIONAL.has(key);
-const BOOLEAN_FIELDS = new Set(['waitForStopped', 'resume', 'useWorktree', 'clubhouseMode', 'pinned', 'inactive', 'force', 'freeAgentMode', 'enabled', 'byHand', 'copilotAuto']);
+const BOOLEAN_FIELDS = new Set(['managed', 'blank', 'waitForStopped', 'resume', 'useWorktree', 'clubhouseMode', 'pinned', 'inactive', 'force', 'freeAgentMode', 'enabled', 'byHand', 'copilotAuto']);
 /** Fields agent.update clears with null. */
 export const NULLABLE_ON_UPDATE = new Set(['emoji', 'persona', 'orchestration', 'contextWindow']);
 const record = (v: unknown): v is Record<string, unknown> => !!v && typeof v === 'object' && !Array.isArray(v);

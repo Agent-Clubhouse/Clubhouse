@@ -3800,6 +3800,7 @@ async function handleMobileCapabilitiesRoute(ctx: AnnexRouteContext): Promise<vo
     chatLinks: { version: 1, path: '/api/v1/mobile/agents/{agentId}/link?href={href}', maxEntries: MOBILE_LINK_MAX_ENTRIES },
     attachments: MOBILE_ATTACHMENTS_CAPABILITY,
     events: { transport: 'annex-websocket', replayRequest: 'mobile:replay', queueState: 'queue_state' },
+    managedCreate: { version: 1 },
     createOptions: { version: 1, path: '/api/v1/mobile/projects/{projectId}/create-options' },
     agentSettings: { version: 1, path: '/api/v1/mobile/agents/{agentId}/settings' },
     contextWindow: { version: 1 },

@@ -435,3 +435,31 @@ describe('mobile chatControls startModel (#3408)', () => {
       .toMatchObject({ model: 'sonnet', startModel: 'sonnet' });
   });
 });
+
+
+describe('managed create command parsing and retries (#3538)', () => {
+  const fields = { type: 'agent.create', projectId: 'p1', name: 'otter', color: 'indigo' };
+  const create = (service: MobileCommandService, extra = {}) => ({ version: 1, epoch: service.epoch, commandId: 'create-1', ...fields, ...extra });
+  it('keeps legacy JSON untouched and accepts the two additive shapes', () => {
+    const service = new MobileCommandService();
+    for (const extra of [{}, { managed: true, templateId: 'tpl' }, { managed: true, blank: true }]) {
+      const input = create(service, extra);
+      expect(JSON.stringify(parseMobileCommand(input))).toBe(JSON.stringify(input));
+    }
+  });
+  it.each([{ managed: 'true' }, { blank: 1 }, { templateId: '' }, { templateId: null }, { setup: {} }, { managed: true, templateId: 'tpl', grants: [] }])('refuses invalid field shapes and unknown fields %j', (extra) => {
+    const service = new MobileCommandService();
+    expect(() => parseMobileCommand(create(service, extra))).toThrow(MobileControlError);
+  });
+  it('deduplicates managed retries and fingerprints template, blank and managed', async () => {
+    const service = new MobileCommandService();
+    const input = create(service, { managed: true, templateId: 'tpl' });
+    const run = vi.fn(async () => ({ agentId: 'created' }));
+    const result = await service.execute('phone', input, run);
+    expect(await service.execute('phone', input, run)).toEqual(result);
+    for (const extra of [{ templateId: 'other' }, { blank: true }, { managed: false }]) {
+      expect((await service.execute('phone', { ...input, ...extra }, run)).body.error?.code).toBe('command_conflict');
+    }
+    expect(run).toHaveBeenCalledTimes(1);
+  });
+});

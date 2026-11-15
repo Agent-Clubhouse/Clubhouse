@@ -11,7 +11,7 @@
 import { spawnSync } from 'node:child_process';
 
 const check = process.argv.includes('--check');
-const result = spawnSync('npx', ['vitest', 'run', '--project', 'main', 'src/main/services/annex-mobile-contract.test.ts'], {
+const result = spawnSync('npx', ['vitest', 'run', '--maxWorkers=2', '--project', 'main', 'src/main/services/annex-mobile-contract.test.ts'], {
   stdio: 'inherit',
   shell: process.platform === 'win32',
   env: { ...process.env, ANNEX_MOBILE_FIXTURES: check ? 'check' : 'write' },

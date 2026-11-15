@@ -286,6 +286,9 @@
         "scope": "peer-and-epoch",
         "ttlMs": 3600000
       },
+      "managedCreate": {
+        "version": 1
+      },
       "network": {
         "event": "network:changed",
         "membersPath": "/api/v1/mobile/network/members",
