@@ -525,6 +525,29 @@ describe('canvas main', () => {
       second.unmount();
     });
 
+    it('does not surface an older save failure after a newer save succeeded', async () => {
+      const { store, mountAndLoad } = setup('autosave-stale-failure');
+      const view = await mountAndLoad();
+      let rejectOlder!: (error: Error) => void;
+      const older = new Promise<void>((_resolve, reject) => { rejectOlder = reject; });
+      const original = { saveCanvas: store.getState().saveCanvas, saveWires: store.getState().saveWires };
+      const saveCanvas = vi.fn().mockImplementationOnce(() => older).mockResolvedValue(undefined);
+      const saveWires = vi.fn().mockResolvedValue(undefined);
+      act(() => { store.setState({ saveCanvas, saveWires }); });
+      try {
+        act(() => { store.getState().addView('agent', { x: 100, y: 200 }); });
+        await waitFor(() => expect(saveCanvas).toHaveBeenCalledTimes(1));
+        act(() => { store.getState().addView('agent', { x: 300, y: 400 }); });
+        await waitFor(() => expect(saveCanvas).toHaveBeenCalledTimes(2));
+        await act(async () => { rejectOlder(new Error('older write failed')); });
+        expect(store.getState().autosaveFailed).toBe(false);
+        expect(screen.queryByText('Canvas changes not saved')).toBeNull();
+      } finally {
+        act(() => { store.setState(original); });
+        view.unmount();
+      }
+    });
+
     const placedFor = (store: ReturnType<typeof canvasModule.getProjectCanvasStore>, agentId: string) =>
       store.getState().canvases.flatMap((c) => c.views.map((v) => ({ canvasId: c.id, view: v })))
         .find(({ view }) => (view as { agentId?: string }).agentId === agentId);

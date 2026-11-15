@@ -353,7 +353,7 @@ export function MainPanel({ api }: { api: PluginAPI }) {
       inflightSaves.set(store, saving.then(() => {
         if (flushResults.get(store) === saving) store.setState({ autosaveFailed: false });
       }, (error: unknown) => {
-        store.setState({ autosaveFailed: true });
+        if (flushResults.get(store) === saving) store.setState({ autosaveFailed: true });
         rendererLog('canvas', 'error', 'Canvas changes not saved', {
           meta: { error: error instanceof Error ? error.message : String(error) },
         });
