@@ -1251,7 +1251,7 @@ The app-wide Dispatcher (#2533): one durable agent that coordinates the orchestr
 
 ### Snapshot
 
-The snapshot's `dispatcher` is `null` while the Dispatcher is off (or was never created). While it is on:
+The snapshot's `dispatcher` is `null` only until the Dispatcher is first created. After that it is always present: while it is off it has `enabled: false`, keeps `agent`, and adds the fields in [While it is off](#while-it-is-off). While it is on:
 
 ```json
 "dispatcher":{"enabled":true,"flagOn":true,"requestsUnderWay":0,"projectId":"__dispatcher__",
