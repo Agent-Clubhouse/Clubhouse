@@ -22,11 +22,12 @@ export function redactSpawnArgs(args: readonly string[]): string[] {
   let safeValue = false;
   let positional = false;
   let promptValue = false;
+  let optionalPrompt = false;
   const promptFlags = new Set(['-p', '--print', '--prompt', '--system-prompt', '--append-system-prompt', '--mission', '--message', '--instructions']);
   return args.map((arg) => {
     if (promptValue) {
       promptValue = false;
-      return String(redactLogValue(arg));
+      if (!optionalPrompt || !/^--?[a-zA-Z]/.test(arg)) return String(redactLogValue(arg));
     }
     if (!positional && arg === '--') {
       positional = true;
@@ -39,6 +40,7 @@ export function redactSpawnArgs(args: readonly string[]): string[] {
       safeValue = SAFE_VALUE_FLAGS.has(flag);
       if (eq < 0) {
         promptValue = promptFlags.has(flag);
+        optionalPrompt = flag === '-p' || flag === '--print';
         return flag;
       }
       const value = arg.slice(eq + 1);
@@ -55,12 +57,14 @@ export function redactSpawnArgs(args: readonly string[]): string[] {
 /** Per-run content scrubber: retain short diagnostic prose, never known prompts. */
 export class LogRedactor {
   private readonly content = new Set<string>();
+  private readonly prefixes = new Map<string, Uint32Array>();
 
   constructor(args: readonly string[] = [], content: readonly string[] = []) {
     for (const text of content) this.rememberText(text);
     const safe = redactSpawnArgs(args);
     args.forEach((arg, i) => {
       if (arg === safe[i]) return;
+      this.rememberText(arg);
       const eq = arg.indexOf('=');
       const value = arg.startsWith('-') && eq >= 0 ? arg.slice(eq + 1) : arg;
       this.rememberText(value);
@@ -75,11 +79,13 @@ export class LogRedactor {
   }
 
   rememberText(text: string): void {
-    if (!text) return;
+    // Tiny values are too common in ordinary diagnostic prose. Structural
+    // prompt/argument fields are still redacted regardless of their size.
+    if (text.length < 8) return;
     this.content.add(text);
     this.content.add(JSON.stringify(text).slice(1, -1));
     // Providers sometimes echo just one line of a multi-line system prompt.
-    for (const line of text.split(/\r?\n/)) if (line.trim()) this.content.add(line);
+    for (const line of text.split(/\r?\n/)) if (line.trim().length >= 8) this.content.add(line);
   }
 
   /** Extract content strings from request structures, without retaining safe config values. */
@@ -99,6 +105,45 @@ export class LogRedactor {
       out = out.split(content).join(String(redactLogValue(content)));
     }
     return out.length > limit ? `${out.slice(0, limit)}…[cut]` : out;
+  }
+
+  /** Keep a possible prompt prefix between chunks; never emit half a known prompt. */
+  stream(): { feed(chunk: string): string; flush(): string } {
+    let pending = '';
+    return {
+      feed: (chunk) => {
+        const safe = this.text(pending + chunk, Infinity);
+        let overlap = 0;
+        for (const content of this.content) {
+          let prefix = this.prefixes.get(content);
+          if (!prefix) {
+            prefix = new Uint32Array(content.length);
+            for (let i = 1, j = 0; i < content.length; i++) {
+              while (j && content[i] !== content[j]) j = prefix[j - 1];
+              if (content[i] === content[j]) j++;
+              prefix[i] = j;
+            }
+            this.prefixes.set(content, prefix);
+          }
+          // KMP over at most one prompt-length suffix; the retained buffer is
+          // bounded by the longest known prompt, never the stream's length.
+          let matched = 0;
+          for (let i = Math.max(0, safe.length - content.length + 1); i < safe.length; i++) {
+            while (matched && safe[i] !== content[matched]) matched = prefix[matched - 1];
+            if (safe[i] === content[matched]) matched++;
+          }
+          overlap = Math.max(overlap, matched);
+        }
+        pending = overlap ? safe.slice(-overlap) : '';
+        return safe.slice(0, safe.length - overlap);
+      },
+      flush: () => {
+        // An incomplete echo at EOF is also private.
+        const out = pending ? String(redactLogValue(pending)) : '';
+        pending = '';
+        return out;
+      },
+    };
   }
 
   meta(meta?: Record<string, unknown>): Record<string, unknown> | undefined {

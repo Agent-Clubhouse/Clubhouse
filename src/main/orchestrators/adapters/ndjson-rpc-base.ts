@@ -127,13 +127,19 @@ export abstract class NdjsonRpcBase<TOpts extends BaseRpcOpts> {
     this.proc.stdout?.setEncoding('utf8');
     this.proc.stdout?.on('data', (chunk: string) => this.feed(chunk));
 
+    const stderrLog = this.logRedactor.stream();
+    const logStderr = (text: string) => { if (text.trim()) this.log('warn', `${this.processLabel} stderr`, { text: text.trim() }); };
     this.proc.stderr?.setEncoding('utf8');
     this.proc.stderr?.on('data', (chunk: string) => {
       this.stderrBuffer.push(chunk);
-      this.log('warn', `${this.processLabel} stderr`, { text: chunk.trim() });
+      logStderr(stderrLog.feed(chunk));
     });
 
-    this.proc.on('exit', (code, signal) => this.handleProcessExit(code, signal));
+    this.proc.stderr?.on('end', () => logStderr(stderrLog.flush()));
+    this.proc.on('exit', (code, signal) => {
+      logStderr(stderrLog.flush());
+      this.handleProcessExit(code, signal);
+    });
     this.proc.on('error', (err) => {
       this.log('error', `${this.processLabel} spawn error`, { error: err.message });
       this.rejectAllPending(err);

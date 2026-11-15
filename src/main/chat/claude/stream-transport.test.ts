@@ -67,6 +67,23 @@ async function startWith(child: ScriptedChild): Promise<{ transport: ClaudeStrea
 const tick = () => new Promise((r) => setImmediate(r));
 
 describe('ClaudeStreamTransport process lifecycle', () => {
+  it.each(['CLAUDE-SPLIT-PRIVATE-TURN-1919', 'CLAUDE-SPLIT-🌟-PRIVATE-TURN-1919'])('does not log split stderr prompt fragments including split UTF-8 (%s)', async (prompt) => {
+    const child = new ScriptedChild();
+    const log = vi.fn();
+    child.on('host-message', (m) => { if (m.request?.subtype === 'initialize') child.line({ type: 'control_response', response: { subtype: 'success', request_id: m.request_id, response: {} } }); });
+    const transport = new ClaudeStreamTransport({ binary: 'claude', cwd: '.', permissionMode: 'default', log }, () => child as unknown as ChildProcess);
+    await transport.start();
+    transport.send({ text: prompt });
+    const bytes = Buffer.from(prompt);
+    const split = prompt.includes('🌟') ? bytes.indexOf(Buffer.from('🌟')) + 2 : 20;
+    child.stderr.write(Buffer.concat([Buffer.from('warning: '), bytes.subarray(0, split)]));
+    expect(JSON.stringify(log.mock.calls)).not.toContain('CLAUDE-SPLIT-');
+    child.stderr.write(bytes.subarray(split));
+    child.emit('close', 1, null);
+    expect(JSON.stringify(log.mock.calls)).toContain(`<redacted: ${prompt.length} chars>`);
+    expect(JSON.stringify(log.mock.calls)).not.toContain('CLAUDE-SPLIT-');
+  });
+
   it('scrubs planted turn/system text from transport diagnostics while preserving wire content (#1919)', async () => {
     const child = new ScriptedChild();
     const log = vi.fn();

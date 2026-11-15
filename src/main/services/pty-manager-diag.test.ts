@@ -75,6 +75,23 @@ afterEach(() => {
 });
 
 describe('PTY exit diag line', () => {
+  it('scrubs later runtime input assembled across chunked bracketed paste writes (#1919 QA)', async () => {
+    const prompt = 'PTY-LATER-PRIVATE-TURN-1919';
+    await spawn('agent_later', '/test', 'claude', []);
+    resize('agent_later', 100, 40);
+    const { writeChunkedBracketedPaste } = await import('./agent-runtime/pty-input');
+    await writeChunkedBracketedPaste('agent_later', prompt, 5, 0, 0);
+    write('agent_later', '\r');
+    const data = mockProcess.onData.mock.calls.at(-1)![0] as (d: string) => void;
+    data(`warning: ${prompt.slice(0, 12)}\x1b[31m${prompt.slice(12)}\x1b[0m\n`);
+    const exit = mockProcess.onExit.mock.calls.at(-1)![0] as (e: { exitCode: number }) => void;
+    exit({ exitCode: 1 });
+    const line = ptyLines('PTY exited')[0]!;
+    expect(line.meta?.lastOutput).toBe(`warning: <redacted: ${prompt.length} chars>\n`);
+    expect(JSON.stringify(lines)).not.toContain(prompt.slice(0, 12));
+    expect(mockProcess.write.mock.calls.map((c) => c[0]).join('')).toContain(prompt);
+  });
+
   it('scrubs planted mission/system prompts from a failed exit, retaining short diagnostics (#1919)', async () => {
     const mission = 'PTY-EXIT-PRIVATE-MISSION-1919';
     const system = 'PTY-EXIT-PRIVATE-SYSTEM-1919';

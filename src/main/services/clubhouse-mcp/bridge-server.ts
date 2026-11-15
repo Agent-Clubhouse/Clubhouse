@@ -201,7 +201,7 @@ async function handleToolsCall(
   }
 
   const logRedactor = new LogRedactor();
-  logRedactor.remember(args);
+  logRedactor.remember(args, true);
   const callStartMs = Date.now();
   const isGlobal = isGlobalTool(toolName);
   try {

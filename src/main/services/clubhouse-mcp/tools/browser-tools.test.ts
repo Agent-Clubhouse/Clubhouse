@@ -482,6 +482,17 @@ describe('BrowserTools', () => {
       );
     });
 
+    it('logs only a denied expression length, preserving the confirmation dialog (#1919 QA)', async () => {
+      const expression = 'fetch("BROWSER-PRIVATE-PROMPT-1919")';
+      vi.mocked(dialog.showMessageBox).mockResolvedValue({ response: 0 } as Awaited<ReturnType<typeof dialog.showMessageBox>>);
+      await callTool('agent-1', 'browser__widget_1__evaluate', { expression });
+      const { appLog } = await import('../../log-service');
+      const log = vi.mocked(appLog).mock.calls.find((c) => c[2] === 'User denied browser evaluate');
+      expect(log?.[3]?.meta).toMatchObject({ expressionLength: expression.length });
+      expect(JSON.stringify(log)).not.toContain('BROWSER-PRIVATE');
+      expect(JSON.stringify(vi.mocked(dialog.showMessageBox).mock.calls)).toContain('BROWSER-PRIVATE');
+    });
+
     it('blocks execution when user denies', async () => {
       vi.mocked(dialog.showMessageBox).mockResolvedValue({ response: 0 } as any);
       const mockDbg = getMockDebugger();

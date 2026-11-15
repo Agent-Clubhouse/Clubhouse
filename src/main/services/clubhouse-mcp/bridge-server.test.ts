@@ -310,7 +310,7 @@ describe('BridgeServer', () => {
     bindingManager.bind('agent-1', binding);
     const toolName = buildToolName(binding, 'private_error');
     vi.mocked(appLog).mockClear();
-    const { body } = await makeRequest(port, 'POST', '/mcp/agent-1', { jsonrpc: '2.0', id: 23, method: 'tools/call', params: { name: toolName, arguments: { task: marker } } }, 'test-nonce');
+    const { body } = await makeRequest(port, 'POST', '/mcp/agent-1', { jsonrpc: '2.0', id: 23, method: 'tools/call', params: { name: toolName, arguments: { opaqueToolInput: marker } } }, 'test-nonce');
     const logs = vi.mocked(appLog).mock.calls;
     expect(JSON.stringify(logs)).not.toContain(marker);
     expect(JSON.stringify(logs)).toContain(`<redacted: ${marker.length} chars>`);

@@ -260,7 +260,6 @@ export class CopilotSdkChatSession implements ChatDriverSession {
   private sessionTokens: TokenUsage | undefined;
   private context: { used: number; size: number } | undefined;
 
-  private readonly logRedactor = new LogRedactor();
   private readonly log: Log;
 
   constructor(
@@ -269,7 +268,9 @@ export class CopilotSdkChatSession implements ChatDriverSession {
     private readonly opts: ChatDriverStartOptions,
     log: Log,
     private readonly overrides: Partial<SessionConfig> = {},
+    private readonly logRedactor = new LogRedactor(),
   ) {
+    this.logRedactor.remember(opts);
     this.log = (level, message, meta) => meta ? log(level, message, this.logRedactor.meta(meta)) : log(level, message);
     // Auto has no equivalent, so it asks first: never more access than asked for.
     this.level = COPILOT_SDK_CAPABILITIES.liveLevels.includes(opts.level) ? opts.level : 'ask';
@@ -831,7 +832,7 @@ export class CopilotSdkChatSession implements ChatDriverSession {
       exitCode: this.server.exitCode(),
       closing: this.closing,
       turnRunning: this.turnRunning,
-      ...(!this.closing && { stderr: this.server.stderrTail() }),
+      ...(!this.closing && { stderr: this.server.stderrTailForLog?.() ?? this.server.stderrTail() }),
     });
     this.settlePending('agent');
     this.endTurn(this.closing || this.interrupting ? 'cancelled' : 'error');
@@ -1096,6 +1097,8 @@ export class CopilotSdkChatDriver implements ChatDriver {
   }
 
   async start(opts: ChatDriverStartOptions): Promise<ChatDriverSession> {
+    const logRedactor = new LogRedactor(opts.extraArgs);
+    logRedactor.remember(opts);
     const server = await launchCopilotServer({
       binary: opts.binaryPath,
       extraArgs: opts.extraArgs,
@@ -1104,6 +1107,7 @@ export class CopilotSdkChatDriver implements ChatDriver {
       env: opts.env,
       timeoutMs: START_TIMEOUT_MS,
       signal: opts.signal,
+      logRedactor,
     });
     // Killing the CLI settles whatever request is pending, so the start rejects.
     const onAbort = (): void => { void server.kill(); };
@@ -1116,7 +1120,7 @@ export class CopilotSdkChatDriver implements ChatDriver {
         // The probe's answer can be cached from before a logout. Handshake and
         // createSession succeed logged out, so only the first send would say.
         if (!auth.isAuthenticated && !copilotProviderFromEnv({ ...process.env, ...opts.env })) throw new Error(LOGIN_MESSAGE);
-        const session = new CopilotSdkChatSession(client, server, opts, this.log, this.options.sessionOverrides);
+        const session = new CopilotSdkChatSession(client, server, opts, this.log, this.options.sessionOverrides, logRedactor);
         await session.open(status.version);
         return session;
       })();

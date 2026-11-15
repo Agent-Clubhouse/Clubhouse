@@ -72,6 +72,19 @@ describe('agent-lifecycle', () => {
     mocks.getBindingsForAgent.mockReturnValue([{ agentName: 'Dispatcher', targetId: 'target' }]);
   });
 
+  it('scrubs a planted mission in the wake caller log while preserving the UI error (#1919 QA)', async () => {
+    running = false;
+    const mission = 'WAKE-CALLER-PRIVATE-MISSION-1919';
+    system.spawnAgent.mockRejectedValueOnce(new Error(`EACCES: ${mission}`));
+    const result = await wakeWiredAgent({ ...request, mission });
+    const { appLog } = await import('../../log-service');
+    const log = vi.mocked(appLog).mock.calls.find((c) => c[2] === 'wake_agent: could not wake target');
+    expect(log?.[3]?.meta?.error).toBe(`EACCES: <redacted: ${mission.length} chars>`);
+    expect(JSON.stringify(log)).not.toContain(mission);
+    expect(result.content[0].text).toContain(mission);
+    expect(mocks.broadcast).toHaveBeenCalledWith(expect.anything(), 'target', `EACCES: ${mission}`);
+  });
+
   describe('sleepAgent', () => {
     it('reports already_sleeping and stops nothing', async () => {
       running = false;

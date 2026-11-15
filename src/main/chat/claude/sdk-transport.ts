@@ -1,3 +1,4 @@
+import { StringDecoder } from 'string_decoder';
 import { LogRedactor } from '../../../shared/log-redaction';
 import type { ChildProcess } from 'child_process';
 import type {
@@ -112,7 +113,7 @@ export class ClaudeSdkTransport extends ClaudeTransportBase {
         return (result ?? { behavior: 'deny', message: 'Request cancelled', toolUseID: o.toolUseID }) as PermissionResult;
       },
       spawnClaudeCodeProcess: (so) => {
-        const child = sdkSpawnHook(so, opts.commandPrefix, (level, message, meta) => this.log(level, message, meta));
+        const child = sdkSpawnHook(so, opts.commandPrefix, (level, message, meta) => this.log(level, message, meta), this.logRedactor);
         this.child = child;
         return child as unknown as SpawnedProcess;
       },
@@ -291,11 +292,20 @@ export function sdkSpawnHook(
   so: { command: string; args: string[]; cwd?: string; env: Record<string, string | undefined>; signal: AbortSignal },
   commandPrefix: string | undefined,
   log: ClaudeTransportLog,
+  logRedactor = new LogRedactor(so.args),
 ): ChildProcess {
-  const logRedactor = new LogRedactor(so.args);
   const child = spawnClaude({ binary: so.command, args: so.args, cwd: so.cwd, env: so.env, commandPrefix });
   child.stdin?.on('error', (err) => log('warn', 'claude stdin error', logRedactor.meta({ error: err.message })));
-  child.stderr?.on('data', (d: Buffer) => log('warn', 'claude stderr', logRedactor.meta({ stderr: d.toString() })));
+  const stderrDecoder = new StringDecoder('utf8');
+  const stderrLog = logRedactor.stream();
+  const logStderr = (stderr: string) => { if (stderr) log('warn', 'claude stderr', logRedactor.meta({ stderr })); };
+  child.stderr?.on('data', (d: Buffer) => logStderr(stderrLog.feed(stderrDecoder.write(d))));
+  const flushStderrLog = () => {
+    logStderr(stderrLog.feed(stderrDecoder.end()));
+    logStderr(stderrLog.flush());
+  };
+  child.stderr?.on('end', flushStderrLog);
+  child.on('close', flushStderrLog);
   so.signal.addEventListener('abort', () => { void killStructuredChild(child, { endStdin: false }); }, { once: true });
   return child;
 }

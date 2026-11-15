@@ -674,6 +674,30 @@ describe('AgentTools', () => {
   describe('send_message error handling', () => {
     const sendToolName = agentToolName(sourceBinding, 'send_message');
 
+    it('scrubs a planted message from the earlier Dispatcher send rejection log (#1919 QA)', async () => {
+      const message = 'SEND-DISPATCHER-PRIVATE-MESSAGE-1919';
+      dispatcherDelivery.isDispatcherTarget.mockReturnValue(true);
+      dispatcherDelivery.deliverToDispatcher.mockRejectedValueOnce(new Error(`delivery failed: ${message}`));
+      const result = await callTool('agent-1', sendToolName, { message });
+      const { appLog } = await import('../../log-service');
+      const log = vi.mocked(appLog).mock.calls.find((c) => c[2] === 'Failed to send message to the Dispatcher');
+      expect(log?.[3]?.meta?.error).toBe(`delivery failed: <redacted: ${message.length} chars>`);
+      expect(JSON.stringify(log)).not.toContain(message);
+      expect(result.content[0].text).toContain(message);
+    });
+
+    it('scrubs a planted message from the earlier send rejection log (#1919 QA)', async () => {
+      const message = 'SEND-CALLER-PRIVATE-MESSAGE-1919';
+      mockAgentRegistryGet.mockReturnValue({ runtime: 'pty', orchestrator: 'claude-code' });
+      mockPtyWrite.mockImplementation(() => { throw new Error(`write failed: ${message}`); });
+      const result = await callTool('agent-1', sendToolName, { message });
+      const { appLog } = await import('../../log-service');
+      const log = vi.mocked(appLog).mock.calls.find((c) => c[2] === 'Failed to send message to agent');
+      expect(log?.[3]?.meta?.error).toBe(`write failed: <redacted: ${message.length} chars>`);
+      expect(JSON.stringify(log)).not.toContain(message);
+      expect(result.content[0].text).toContain(message);
+    });
+
     it('handles PTY write failure', async () => {
       mockAgentRegistryGet.mockReturnValue({ runtime: 'pty', orchestrator: 'claude-code' });
       mockPtyWrite.mockImplementation(() => { throw new Error('PTY write failed'); });

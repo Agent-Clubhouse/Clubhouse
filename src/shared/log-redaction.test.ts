@@ -27,6 +27,33 @@ describe('spawn log redaction', () => {
     expect(redactLogValue('')).toBe('<redacted: 0 chars>');
   });
 
+  it('keeps flag names after value-less Claude print mode', () => {
+    expect(redactSpawnArgs(['-p', '--output-format', 'stream-json', '--model', 'opus'])).toEqual(['-p', '--output-format', 'stream-json', '--model', 'opus']);
+    expect(redactSpawnArgs(['--print', '--system-prompt', 'private-system'])).toEqual(['--print', '--system-prompt', '<redacted: 14 chars>']);
+  });
+
+  it('keeps short values out of substring scrubbing while redacting structural content', () => {
+    const redactor = new LogRedactor(['-p', 'a']);
+    redactor.remember({ prompt: 'text' });
+    expect(redactor.text('a fatal text error')).toBe('a fatal text error');
+    expect(redactSpawnArgs(['-p', 'a'])).toEqual(['-p', '<redacted: 1 chars>']);
+    expect(redactor.meta({ prompt: 'a' })).toEqual({ prompt: '<redacted: 1 chars>' });
+  });
+
+  it('withholds known prompt prefixes at every chunk boundary, including incomplete EOF', () => {
+    const prompt = 'PRIVATE-CHUNKED-PROMPT-1919';
+    const redactor = new LogRedactor([], [prompt]);
+    for (let split = 1; split < prompt.length; split++) {
+      const stream = redactor.stream();
+      expect(stream.feed('warning: ' + prompt.slice(0, split))).toBe('warning: ');
+      expect(stream.feed(prompt.slice(split))).toBe(`<redacted: ${prompt.length} chars>`);
+      expect(stream.flush()).toBe('');
+    }
+    const stream = redactor.stream();
+    expect(stream.feed('warning: PRIVATE-CHUNKED')).toBe('warning: ');
+    expect(stream.flush()).toBe('<redacted: 15 chars>');
+  });
+
   it('recognizes Codex system instructions in config overrides for diagnostic scrubbing', () => {
     const marker = 'CODEX-CONFIG-PRIVATE-SYSTEM';
     const redactor = new LogRedactor(['-c', 'developer_instructions=' + JSON.stringify(marker)]);

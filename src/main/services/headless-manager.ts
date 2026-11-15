@@ -301,6 +301,7 @@ interface IOState {
   stderrChunks: string[];
   stderrChunkSizes: number[];
   stderrBytes: number;
+  stderrForLog?: string;
 }
 
 /** Build the cleaned environment for the spawned process. */
@@ -533,9 +534,15 @@ function setupStderrHandler(
   io: IOState,
 ): () => void {
   const decoder = new StringDecoder('utf8');
+  const stderrLog = (session.logRedactor ?? new LogRedactor()).stream();
+  const logStderr = (text: string, retain = true) => {
+    if (!text) return;
+    if (retain) io.stderrForLog = ((io.stderrForLog ?? '') + text).slice(-2000);
+    if (text.trim()) appLog('core:headless', 'warn', 'stderr', { meta: { agentId, message: session.logRedactor?.text(text.trim()) ?? text.trim() } });
+  };
   const consume = (str: string) => {
     const msg = str.trim();
-    if (!msg) return;
+    if (!msg) { logStderr(stderrLog.feed(str)); return; }
 
     const msgBytes = Buffer.byteLength(msg, 'utf-8');
     io.stderrChunks.push(msg);
@@ -544,9 +551,9 @@ function setupStderrHandler(
 
     if (io.stderrBytes > maxStderrBytes) {
       io.stderrBytes = evictOldStderrChunks(io.stderrChunks, io.stderrChunkSizes, io.stderrBytes);
+      io.stderrForLog = '';
     }
-
-    appLog('core:headless', 'warn', `stderr`, { meta: { agentId, message: session.logRedactor?.text(msg) ?? msg } });
+    logStderr(stderrLog.feed(str), io.stderrChunks.length > 0);
 
     // Forward stderr to renderer + annex so headless view can show errors
     if (!canEmitSessionHooks(session)) return;
@@ -564,6 +571,7 @@ function setupStderrHandler(
     if (ended) return;
     ended = true;
     consume(decoder.end());
+    logStderr(stderrLog.flush());
   };
   proc.stderr?.on('data', onData);
   proc.stderr?.on('end', onEnd);
@@ -692,7 +700,7 @@ function setupExitHandlers(
       cleanupHeadlessSession(agentId);
 
       appLog('core:headless', 'info', `Process exited`, {
-        meta: { ...runDiagnostics(session), exitCode, signal, stdoutBytes: io.stdoutBytes, stderr: session.logRedactor?.text(io.stderrChunks.join('\n'), 500) ?? '' },
+        meta: { ...runDiagnostics(session), exitCode, signal, stdoutBytes: io.stdoutBytes, stderr: (io.stderrForLog ?? '').slice(-500) },
       });
 
       runFinalizationStep(agentId, 'registry exit', () => session.onExitCallback?.(agentId, exitCode));
