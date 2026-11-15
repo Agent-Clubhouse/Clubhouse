@@ -86,6 +86,48 @@ afterEach(async () => {
   (await import('node:fs')).rmSync(receiptRoot, { recursive: true, force: true });
 });
 
+describe('built-in skill status (#3517)', () => {
+  it('exposes current applicability and only a successful current running delivery', async () => {
+    const { managedAgents } = await import('./index');
+    const { setGrantedSkills, resolveManagedSetup, setupFingerprint } = await import('./delivery');
+    const { delivered, failedDeliveries } = await import('./delivery-records');
+    const { PREPARE_HANDOFF_SKILL_ID } = await import('../../../shared/managed-agents-types');
+    const { notifyToolGateChange } = await import('../clubhouse-mcp/orchestration-gate');
+    const { broadcastToAllWindows } = await import('../../util/ipc-broadcast');
+    const { IPC } = await import('../../../shared/ipc-channels');
+    let holds = true;
+    const stop = setGrantedSkills(() => holds ? [PREPARE_HANDOFF_SKILL_ID] : []);
+    try {
+      add('handoff', true);
+      const agent = state.agents.get('handoff')!;
+      const svc = managedAgents();
+      await svc.ensureBuiltins();
+      const expected = { id: PREPARE_HANDOFF_SKILL_ID, name: 'Prepare handoff' };
+      expect((await statusFor('/p', agent.id)).builtinSkills).toEqual([expected]);
+      state.running.add(agent.id);
+      expect((await statusFor('/p', agent.id)).builtinSkills).toEqual([expected]);
+      const record = { ...setupFingerprint(agent, await resolveManagedSetup(svc, agent.managed!, agent)), deliveredSkillIds: [PREPARE_HANDOFF_SKILL_ID] };
+      delivered.set(agent.id, record);
+      expect((await statusFor('/p', agent.id)).builtinSkills).toEqual([{ ...expected, deliveredAt: record.deliveredAt }]);
+      agent.model = 'changed';
+      expect((await statusFor('/p', agent.id)).builtinSkills).toEqual([expected]);
+      delete agent.model;
+      failedDeliveries.set(agent.id, 'failed');
+      expect((await statusFor('/p', agent.id)).builtinSkills).toEqual([expected]);
+      failedDeliveries.delete(agent.id);
+      state.running.delete(agent.id);
+      expect((await statusFor('/p', agent.id)).builtinSkills).toEqual([expected]);
+      holds = false;
+      expect((await statusFor('/p', agent.id)).builtinSkills).toEqual([]);
+      vi.mocked(broadcastToAllWindows).mockClear();
+      notifyToolGateChange(agent.id);
+      expect(broadcastToAllWindows).toHaveBeenCalledWith(IPC.MANAGED.CHANGED);
+      delete agent.managed;
+      expect((await statusFor('/p', agent.id)).builtinSkills ?? []).toEqual([]);
+    } finally { stop(); forgetDelivery('handoff'); }
+  });
+});
+
 describe('restartManagedAgent', () => {
   it('refuses an agent that isn\'t managed, even when it is running', async () => {
     add('plain', false);

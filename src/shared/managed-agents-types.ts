@@ -312,6 +312,8 @@ export interface ManagedAgentStatus {
   /** Human-readable summary of what changed, e.g. "Coding standards was edited". */
   changes: string[];
   deliveredAt?: string;
+  /** Built-in skills added outside the saved setup, from the agent's current grants. */
+  builtinSkills?: Array<{ id: string; name: string; deliveredAt?: string }>;
   /** True when the CLI changed since the session started, so a restart can't resume it. */
   cliChanged: boolean;
   /** Set when this session's setup couldn't be written: the reason. The session runs on whatever files were there. */

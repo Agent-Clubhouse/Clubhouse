@@ -756,6 +756,8 @@ export interface DeliveryRecord {
   /** Parts the setup lists that no longer exist, skipped this start. */
   missing?: number;
   deliveredAt: string;
+  /** Skill ids actually written, excluding folders left to the project's own copy. */
+  deliveredSkillIds?: string[];
   /** The effective provider actually used, including a project-default provider. */
   provider?: string;
   orchestrator?: string;
@@ -790,6 +792,16 @@ export function setupFingerprint(agent: DurableAgentConfig, resolved: Resolved):
   };
   const fingerprint = canonicalHash({ parts, order, orchestrator: agent.orchestrator ?? null, ...launch });
   return { fingerprint, deliveredAt: new Date().toISOString(), ...(agent.orchestrator && { orchestrator: agent.orchestrator }), parts, order, launch };
+}
+
+/** Current grant-gated skills, with evidence only for a current successful delivery. */
+export function builtinSkillStatus(resolved: Resolved, record?: DeliveryRecord) {
+  return resolved.skills.filter((skill) => GRANT_GATED_SKILLS.includes(skill.id)).map((skill) => ({
+    id: skill.id,
+    name: skill.name,
+    ...(record?.deliveredSkillIds?.includes(skill.id) && record.parts[skill.id]?.revision === skill.revision
+      && { deliveredAt: record.deliveredAt }),
+  }));
 }
 
 /**
@@ -835,6 +847,7 @@ export async function deliverManagedSetup(params: {
   return {
     ...record,
     provider: provider.id,
+    deliveredSkillIds: resolved.skills.filter((sk) => !projectOwn.includes(sk.content.skillName)).map((sk) => sk.id),
     snapshot: {
       deliveredAt: record.deliveredAt,
       instructions,

@@ -13,6 +13,7 @@ import type { OrchestratorProvider } from '../../orchestrators/types';
 import type { DurableAgentConfig, McpServerDef, QuickTemplateChoice } from '../../../shared/types';
 import { PREPARE_HANDOFF_SKILL_ID } from '../../../shared/managed-agents-types';
 import { agentHoldsAction } from '../agent-grants-service';
+import { onOrchestrationGateChange } from '../clubhouse-mcp/orchestration-gate';
 import type { ManagedAgentSetup, ManagedAgentStatus, ManagedMcpProblem, ManagedPlainChoice, ManagedPlainPreview, ManagedRunningSnapshot } from '../../../shared/managed-agents-types';
 import { createManagedAgentsService, ManagedError, type ManagedAgentsService } from './service';
 import { createManagedStateStore, managedStateDir } from './state-store';
@@ -31,6 +32,7 @@ import { getAgentRuntime } from '../agent-runtime';
 import { processIdentity } from '../pty-manager';
 import { isDeepStrictEqual } from 'node:util';
 import {
+  builtinSkillStatus,
   deliverManagedSetup,
   managedSettingsRows,
   mcpServersOf,
@@ -48,6 +50,9 @@ let service: ManagedAgentsService | null = null;
 // Built-in skills that follow what an agent may do (#3344): prepare-handoff while it holds handoff.offer.
 // Read when an agent's setup resolves, never at import, so the import cycle through agent-config is harmless.
 setGrantedSkills((agent) => (agentHoldsAction(agent.id, agent, 'handoff.offer') ? [PREPARE_HANDOFF_SKILL_ID] : []));
+
+// Grants and orchestration settings are read live by built-in skill applicability.
+onOrchestrationGateChange(() => broadcastToAllWindows(IPC.MANAGED.CHANGED));
 
 function isRunning(agentId: string): boolean {
   // Lazy: agent-system imports this module through the spawn path.
@@ -213,19 +218,21 @@ export async function statusFor(projectPath: string, agentId: string): Promise<M
     const migrationFailed = agent?.managedMigrationFailure?.message;
     return { managed: false, running, waiting: false, changes: [], cliChanged: false, ...(migrationFailed && { migrationFailed }) };
   }
+  const resolved = await resolveManagedSetup(managedAgents(), agent.managed, agent);
+  const now = setupFingerprint(agent, resolved);
+  const record = delivered.get(agentId);
+  const failed = failedDeliveries.get(agentId);
+  const currentDelivery = running && !failed && record?.fingerprint === now.fingerprint ? record : undefined;
   const problems = running ? mcpProblems.get(agentId) : undefined;
   const notice = {
+    builtinSkills: builtinSkillStatus(resolved, currentDelivery),
     ...(agent.managedMigration && !agent.managedMigration.dismissed && { migrated: { from: agent.managedMigration.from, backup: agent.managedMigration.backup } }),
     ...(problems && problems.length > 0 && { mcpProblems: problems }),
   };
-  const failed = failedDeliveries.get(agentId);
   if (running && failed) {
     return { managed: true, running, waiting: true, changes: [`Setup couldn't be written: ${failed}`], cliChanged: false, deliveryFailed: failed, ...notice };
   }
-  const record = delivered.get(agentId);
   if (!running || !record) return { managed: true, running, waiting: false, changes: [], cliChanged: false, ...notice };
-  const resolved = await resolveManagedSetup(managedAgents(), agent.managed, agent);
-  const now = setupFingerprint(agent, resolved);
   if (now.fingerprint === record.fingerprint) {
     return { managed: true, running, waiting: false, changes: [], deliveredAt: record.deliveredAt, cliChanged: false, ...notice };
   }
