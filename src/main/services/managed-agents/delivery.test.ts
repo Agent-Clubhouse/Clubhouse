@@ -685,7 +685,8 @@ describe('exactly its parts (#2819)', () => {
     const backupRoot = path.join(root, 'backup');
     vi.mocked(appLog).mockClear();
     for (let start = 0; start < 2; start++) {
-      await user(() => deliverManagedSetup({ service, projectPath: project, agent, provider: provider(), backupRoot }));
+      const record = await user(() => deliverManagedSetup({ service, projectPath: project, agent, provider: provider(), backupRoot }));
+      expect(record!.deliveredSkillIds).toEqual([BUILTIN_SKILL_IDS.validate]);
       expect(fs.readFileSync(path.join(skills, 'build', 'SKILL.md'), 'utf-8')).toBe('# ours');
       expect(fs.readFileSync(path.join(skills, 'validate', 'SKILL.md'), 'utf-8')).toBe(BUILTIN_SKILL_TEXT['skills/validate/SKILL.md']);
       expect(JSON.parse(fs.readFileSync(path.join(skills, '.clubhouse-managed-skills.json'), 'utf-8'))).toEqual({ skills: ['validate'] });

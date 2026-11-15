@@ -226,6 +226,7 @@ export async function statusFor(projectPath: string, agentId: string): Promise<M
   const problems = running ? mcpProblems.get(agentId) : undefined;
   const notice = {
     builtinSkills: builtinSkillStatus(resolved, currentDelivery),
+    deliveredSkillIds: currentDelivery?.deliveredSkillIds ?? [],
     ...(agent.managedMigration && !agent.managedMigration.dismissed && { migrated: { from: agent.managedMigration.from, backup: agent.managedMigration.backup } }),
     ...(problems && problems.length > 0 && { mcpProblems: problems }),
   };

@@ -24,7 +24,7 @@ import { MAX_QUICK_RUN_CHANGES, type DurableAgentConfig, type McpServerDef, type
 import type { OrchestratorProvider } from '../../orchestrators/types';
 import {
   CLUBHOUSE_MCP_PART_ID,
-  PREPARE_HANDOFF_SKILL_ID,
+  GRANT_GATED_SKILL_IDS,
   type ManagedAgentSetup,
   type ManagedMcpContent,
   type ManagedPreview,
@@ -63,7 +63,6 @@ interface Resolved {
  * (#3344): prepare-handoff while it holds handoff.offer. Set at startup from
  * the grants; none until then, and none without an agent (a template).
  */
-const GRANT_GATED_SKILLS: readonly string[] = [PREPARE_HANDOFF_SKILL_ID];
 let grantedSkills: (agent: DurableAgentConfig) => readonly string[] = () => [];
 export function setGrantedSkills(provider: (agent: DurableAgentConfig) => readonly string[]): () => void {
   grantedSkills = provider;
@@ -80,8 +79,8 @@ async function resolveSetup(service: ManagedAgentsService, saved: ManagedAgentSe
   // so a setup saved before the Clubhouse part was required fingerprints the same.
   const base = withClubhouseSetup(saved);
   // A setup never chooses a grant-gated skill: what the agent may do decides it, after the person's own skills.
-  const setup = { ...base, skills: base.skills.filter((id) => !GRANT_GATED_SKILLS.includes(id)) };
-  const granted = agent ? grantedSkills(agent).filter((id) => GRANT_GATED_SKILLS.includes(id)) : [];
+  const setup = { ...base, skills: base.skills.filter((id) => !GRANT_GATED_SKILL_IDS.includes(id)) };
+  const granted = agent ? grantedSkills(agent).filter((id) => GRANT_GATED_SKILL_IDS.includes(id)) : [];
   const out: Resolved = { blocks: [], skills: [], mcps: [], missing: [] };
   for (const id of setup.blocks) {
     const head = await service.headContent(id);
@@ -796,7 +795,7 @@ export function setupFingerprint(agent: DurableAgentConfig, resolved: Resolved):
 
 /** Current grant-gated skills, with evidence only for a current successful delivery. */
 export function builtinSkillStatus(resolved: Resolved, record?: DeliveryRecord) {
-  return resolved.skills.filter((skill) => GRANT_GATED_SKILLS.includes(skill.id)).map((skill) => ({
+  return resolved.skills.filter((skill) => GRANT_GATED_SKILL_IDS.includes(skill.id)).map((skill) => ({
     id: skill.id,
     name: skill.name,
     ...(record?.deliveredSkillIds?.includes(skill.id) && record.parts[skill.id]?.revision === skill.revision

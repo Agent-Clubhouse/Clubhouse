@@ -108,9 +108,9 @@ describe('built-in skill status (#3517)', () => {
       expect((await statusFor('/p', agent.id)).builtinSkills).toEqual([expected]);
       const record = { ...setupFingerprint(agent, await resolveManagedSetup(svc, agent.managed!, agent)), deliveredSkillIds: [PREPARE_HANDOFF_SKILL_ID] };
       delivered.set(agent.id, record);
-      expect((await statusFor('/p', agent.id)).builtinSkills).toEqual([{ ...expected, deliveredAt: record.deliveredAt }]);
+      expect(await statusFor('/p', agent.id)).toMatchObject({ builtinSkills: [{ ...expected, deliveredAt: record.deliveredAt }], deliveredSkillIds: [PREPARE_HANDOFF_SKILL_ID] });
       agent.model = 'changed';
-      expect((await statusFor('/p', agent.id)).builtinSkills).toEqual([expected]);
+      expect(await statusFor('/p', agent.id)).toMatchObject({ builtinSkills: [expected], deliveredSkillIds: [] });
       delete agent.model;
       failedDeliveries.set(agent.id, 'failed');
       expect((await statusFor('/p', agent.id)).builtinSkills).toEqual([expected]);

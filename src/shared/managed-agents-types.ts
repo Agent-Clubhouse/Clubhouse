@@ -52,6 +52,9 @@ export const CLUBHOUSE_MCP_PART_ID = 'builtin-mcp-clubhouse';
  */
 export const PREPARE_HANDOFF_SKILL_ID = 'builtin-skill-prepare-handoff';
 
+/** These skills follow current grants and never come from saved setup selections. */
+export const GRANT_GATED_SKILL_IDS: readonly string[] = [PREPARE_HANDOFF_SKILL_ID];
+
 /** The built-in Identity block a durable agent gets, and the working one a helper or quick agent gets in its place (#2902). */
 export const IDENTITY_BLOCK_ID = 'builtin-block-identity';
 export const WORKING_IDENTITY_BLOCK_ID = 'builtin-block-identity-helper';
@@ -312,6 +315,8 @@ export interface ManagedAgentStatus {
   /** Human-readable summary of what changed, e.g. "Coding standards was edited". */
   changes: string[];
   deliveredAt?: string;
+  /** Skill ids actually written by the current successful delivery, excluding project-owned copies. */
+  deliveredSkillIds?: string[];
   /** Built-in skills added outside the saved setup, from the agent's current grants. */
   builtinSkills?: Array<{ id: string; name: string; deliveredAt?: string }>;
   /** True when the CLI changed since the session started, so a restart can't resume it. */

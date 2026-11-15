@@ -1,4 +1,5 @@
 import type { Agent } from '../../../../shared/types';
+import { GRANT_GATED_SKILL_IDS } from '../../../../shared/managed-agents-types';
 import type { ChatViewState } from '../../../stores/chatStore';
 import { useProjectStore } from '../../../stores/projectStore';
 import { CardNote, CardRow, DetailsCard } from './DetailsCard';
@@ -23,14 +24,14 @@ export function ProviderSkillsCard({ agent, chat, open, onToggle, embedded }: {
   const installedIds = setup?.skills ?? [];
   // Skills are copied when the agent starts, so the setup alone only says what is set up. Delivery evidence
   // (a running session that got its setup, with no edit since and no failure) says they are installed.
-  const { value: status } = useManagedStatus(project?.path, agent.id);
+  const { value: status } = useManagedStatus(project?.path, agent.id, agent.status === 'running');
   const delivered = agent.status === 'running' && !!status?.deliveredAt && !status.waiting && !status.deliveryFailed;
   const { value: parts } = useManagedParts('skill', installedIds.length > 0);
   const builtinSkills = status?.builtinSkills ?? [];
   const skills = [
-    ...installedIds.filter((id) => !builtinSkills.some((skill) => skill.id === id)).flatMap((id) => {
+    ...installedIds.filter((id) => !GRANT_GATED_SKILL_IDS.includes(id)).flatMap((id) => {
       const part = parts?.find((p) => p.id === id);
-      return part ? [{ id, name: part.name, delivered }] : [];
+      return part ? [{ id, name: part.name, delivered: delivered && !!status?.deliveredSkillIds?.includes(id) }] : [];
     }),
     ...builtinSkills.map((skill) => ({ ...skill, delivered: agent.status === 'running' && !!skill.deliveredAt })),
   ];
