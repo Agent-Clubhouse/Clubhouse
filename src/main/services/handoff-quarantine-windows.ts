@@ -11,7 +11,7 @@ $target = $env:CLUBHOUSE_QUARANTINE_PATH
 $sid = [System.Security.Principal.WindowsIdentity]::GetCurrent().User
 $entry = Get-Item -LiteralPath $target -Force
 while ($null -ne $entry) {
-  if (-not $entry.PSIsContainer -or ($entry.Attributes -band [System.IO.FileAttributes]::ReparsePoint)) { throw 'reparse' }
+  if ($entry -isnot [System.IO.DirectoryInfo] -or ($entry.Attributes -band [System.IO.FileAttributes]::ReparsePoint)) { throw 'reparse' }
   $entry = $entry.Parent
 }
 if ($env:CLUBHOUSE_QUARANTINE_INITIALIZE -eq '1') {

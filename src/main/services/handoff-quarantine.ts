@@ -79,7 +79,9 @@ async function assertRoot(root: string, owner: fs.Stats): Promise<void> {
 
 /** Never recursively rm a path through a potentially replaced ancestor. Recheck
  * every ancestor immediately before each non-following unlink/rmdir operation.
- * Windows additionally relies on the verified owner-only profile-root DACL. */
+ * Windows additionally relies on the verified owner-only profile-root DACL.
+ * Node has no handle-relative unlink/rmdir: a final-syscall race remains for
+ * same-user/admin actors with rights to rename those protected ancestors. */
 async function removeTree(directory: string, before: fs.Stats, guard: () => Promise<void>): Promise<void> {
   const check = async () => { await guard(); await assertIdentity(directory, before, false); };
   await check();

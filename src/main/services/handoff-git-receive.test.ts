@@ -146,6 +146,10 @@ it.each([['pack filename', 150], ['explicit Git directory', 170], ['repository p
         const cwd = (call[2] as { cwd: string }).cwd;
         expect(cwd.length).toBeLessThan(260);
         expect(cwd.startsWith(destination)).toBe(false);
+        if (platform.value === 'win32') {
+          const profileRoot = await fs.promises.realpath(path.join(process.env.LOCALAPPDATA!, 'ch-q'));
+          expect(cwd.startsWith(profileRoot + path.sep)).toBe(true);
+        }
         expect(fs.existsSync(cwd)).toBe(false);
         const gitDir = (call[1] as string[]).find((arg) => arg.startsWith('--git-dir='));
         if (gitDir) expect(Buffer.byteLength(gitDir.slice('--git-dir='.length))).toBeLessThan(220);

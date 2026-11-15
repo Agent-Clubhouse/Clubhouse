@@ -58,3 +58,12 @@ it.skipIf(process.platform !== 'win32')('initializes and verifies a private SID/
     await expect(verifyWindowsQuarantineRoot(directory, false)).rejects.toThrow();
   } finally { fs.rmSync(parent, { recursive: true, force: true }); }
 }, 30_000);
+
+it.skipIf(process.platform !== 'win32')('accepts the normal LOCALAPPDATA ancestor chain', async () => {
+  expect(process.env.LOCALAPPDATA).toBeDefined();
+  const directory = fs.mkdtempSync(path.join(process.env.LOCALAPPDATA!, 'ch-q-acl-chain-'));
+  try {
+    await verifyWindowsQuarantineRoot(directory, true);
+    await verifyWindowsQuarantineRoot(directory, false);
+  } finally { fs.rmSync(directory, { recursive: true, force: true }); }
+}, 30_000);
