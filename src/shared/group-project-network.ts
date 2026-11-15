@@ -324,3 +324,33 @@ export function applyMembershipPatch(current: GroupProjectMembership, patch: Mem
   }
   return next;
 }
+
+/**
+ * A queued membership patch made before per-member entries were keyed by
+ * host-relative address (#3516): its per-address maps name this computer's
+ * agents by bare id, which the host reads as its own agents and drops. Rekey
+ * the entries that are known to be this computer's agents (`isOwn`) to
+ * `id@<self>`. A bare id the copy's record holds is the host's agent and stays.
+ * Any other bare id can't be attributed: it is taken out and returned, so the
+ * change is refused visibly instead of being dropped as applied.
+ */
+export function qualifyQueuedPatch(
+  patch: MembershipPatch, self: string, current: GroupProjectMembership, isOwn: (agentId: string) => boolean,
+): { patch: MembershipPatch; unattributed: string[] } {
+  const set: Record<string, unknown> = { ...patch.set };
+  const unattributed: string[] = [];
+  for (const field of ['subscriptions', 'disabledTools'] as const) {
+    const value = patch.set[field];
+    if (!isRecord(value)) continue;
+    const held = current[field] ?? {};
+    const next: Record<string, unknown> = {};
+    for (const [key, entry] of Object.entries(value)) {
+      if (key.includes('@')) next[key] = entry;
+      else if (isOwn(key)) next[`${key}@${self}`] = entry;
+      else if (key in held) next[key] = entry;
+      else unattributed.push(key);
+    }
+    set[field] = next;
+  }
+  return { patch: { ...patch, set }, unattributed: [...new Set(unattributed)] };
+}

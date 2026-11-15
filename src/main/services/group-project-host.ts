@@ -35,7 +35,7 @@ import {
 } from './group-project-paths';
 import { createHash, randomUUID } from 'crypto';
 import {
-  applyMembershipPatch, isEmptyPatch, membershipPatch,
+  applyMembershipPatch, isEmptyPatch, membershipPatch, qualifyQueuedPatch,
   type MembershipPatch, type QueuedWrite, type ReplicaSnapshot, type SyncRequest, type SyncResponse, type WriteAuthor, type WriteOp, type WriteRequest, type WriteResponse, type WriteResult,
 } from '../../shared/group-project-network';
 import { readJsonFile, writeJsonFile } from './group-project-json-file';
@@ -1281,19 +1281,45 @@ class GroupProjectHostService {
         }
         const batch = (await this.loadOutbox()).filter((i) => i.host === host).slice(0, FLUSH_BATCH);
         if (batch.length === 0 || !this.link?.connected(host)) break;
-        const response = await this.link.sendWrites(host, batch.map(stripHost));
+        const replay = await Promise.all(batch.map((item) => this.qualifiedForReplay(stripHost(item))));
+        const response = await this.link.sendWrites(host, replay.map((r) => r.item));
         const answered: OutboxItem[] = [];
         for (const item of batch) {
           const result = response.results.find((r) => r.id === item.id);
           if (!result) break;
           answered.push(item);
           if (result.status === 'refused') await this.recordRefusal(item, result.reason);
+          const unattributed = replay[batch.indexOf(item)].unattributed;
+          if (result.status === 'applied' && unattributed.length > 0) {
+            await this.recordRefusal(item, `A saved change for ${unattributed.join(', ')} couldn't be applied: it wasn't clear which computer's agent it was for.`);
+          }
         }
         if (answered.length === 0) break;
         await this.removeFromOutbox(new Set(answered.map((i) => i.id)));
       }
       groupProjectRegistry.touch();
     }).then(() => this.syncFrom(host));
+  }
+
+  /**
+   * A membership write queued before per-member entries were keyed by address (#3516)
+   * names this computer's agents by bare id, which the host would drop. Rekey the ones
+   * known to be this computer's; what can't be attributed is left out and returned.
+   */
+  private async qualifiedForReplay(item: QueuedWrite): Promise<{ item: QueuedWrite; unattributed: string[] }> {
+    const self = this.selfMachine();
+    if (item.write.op !== 'membership' || !self) return { item, unattributed: [] };
+    try {
+      const replica = await this.replicaFor(item.groupProjectId);
+      if (!replica) return { item, unattributed: [] };
+      const [current, facts] = await Promise.all([readMembershipFile(item.groupProjectId, this.hostMachineOf(replica)), this.agentFacts()]);
+      const { patch, unattributed } = qualifyQueuedPatch(item.write.patch, self, current, (id) => facts.has(id));
+      return { item: { ...item, write: { op: 'membership', patch } }, unattributed };
+    } catch (err) {
+      // telemetry-exempt: sent as queued; the host refuses or drops what it can't read
+      appLog('core:group-project', 'warn', 'Could not rekey a waiting membership write', { meta: { id: item.groupProjectId, error: err instanceof Error ? err.message : String(err) } });
+      return { item, unattributed: [] };
+    }
   }
 
   private async loadReplicaTombstones(): Promise<ReplicaTombstone[]> {
