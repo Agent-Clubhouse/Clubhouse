@@ -13,6 +13,8 @@ import { receiveHandoffCommit } from './handoff-git-receive';
 import { openHandoffRepository } from './handoff-snapshot';
 import * as gitPaths from './handoff-git-paths';
 import * as quarantines from './handoff-quarantine';
+import * as bundles from './handoff-git-bundle';
+import { HandoffSnapshotError } from './handoff-snapshot';
 const execution = vi.hoisted(() => ({ exec: vi.fn(), spawn: vi.fn() }));
 vi.mock('child_process', async (importOriginal) => {
   const actual = await importOriginal<typeof import('child_process')>();
@@ -156,7 +158,7 @@ it.each([['pack filename', 150], ['explicit Git directory', 170], ['repository p
   expect(fs.readFileSync(path.join(receiver, 'public.txt'), 'utf8')).toBe('Receiver original');
   expect(fs.readdirSync(destination).some((name) => name.startsWith('quarantine-'))).toBe(false);
 }, 30_000);
-it.each(['setup', 'init'] as const)('cleans an external quarantine after %s failure', async (failure) => {
+it.each(['setup', 'init', 'timeout', 'hash mismatch', 'secret rejection'] as const)('cleans an external quarantine after %s failure', async (failure) => {
   const options = await prepared();
   const destination = path.join(root, 'x'.repeat(220 - root.length - 1));
   await fs.promises.rename(options.snapshot.root, destination);
@@ -174,16 +176,20 @@ it.each(['setup', 'init'] as const)('cleans an external quarantine after %s fail
       if (path.basename(args[0].toString()) === 'hooks') throw new Error('Injected setup failure');
       return mkdir(...args);
     });
+  } else if (failure === 'secret rejection') {
+    vi.spyOn(bundles, 'scanHandoffGitHistory').mockRejectedValueOnce(new HandoffSnapshotError('secret_blocked'));
   } else {
     const run = execution.exec.getMockImplementation()!;
     execution.exec.mockImplementation(async (...args) => {
-      if ((args[1] as string[]).includes('init')) throw Object.assign(new Error('Injected init failure'), { code: 128 });
+      const command = args[1] as string[];
+      if (failure === 'hash mismatch' && command.includes('list-heads')) return { stdout: Buffer.from(`${'0'.repeat(40)} HEAD`), stderr: Buffer.alloc(0) };
+      if (failure !== 'hash mismatch' && command.includes('init')) throw Object.assign(new Error('Injected Git failure'), failure === 'timeout' ? { code: 'ETIMEDOUT', killed: true } : { code: 128 });
       return run(...args);
     });
   }
   await expect(receiveHandoffCommit(options)).rejects.toThrow();
   expect(directory).toBeDefined();
-  expect(path.dirname(directory!)).toBe(path.join(root, 'q'));
+  expect(path.dirname(directory!)).toBe(await fs.promises.realpath(path.join(root, 'q')));
   expect(fs.existsSync(directory!)).toBe(false);
   await expect(git(receiver, 'cat-file', '-e', `${options.snapshot.manifest.repo.base}^{commit}`)).rejects.toThrow();
 }, 30_000);

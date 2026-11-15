@@ -2,13 +2,13 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
-import { createHandoffQuarantine, handoffQuarantineFits, handoffQuarantineRoots, HANDOFF_QUARANTINE_MAX_AGE, sweepHandoffQuarantines } from './handoff-quarantine';
+import { createHandoffQuarantine, handoffQuarantineFits, handoffQuarantineRoots, HANDOFF_QUARANTINE_MAX_AGE, sweepHandoffQuarantines, windowsHandoffQuarantineRoots } from './handoff-quarantine';
 
 let fixture: string;
 let staging: string;
 let short: string;
-beforeEach(() => {
-  fixture = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'ch-q-test-')));
+beforeEach(async () => {
+  fixture = await fs.promises.realpath(fs.mkdtempSync(path.join(os.tmpdir(), 'ch-q-test-')));
   staging = path.join(fixture, 'x'.repeat(100), 'y'.repeat(100));
   fs.mkdirSync(staging, { recursive: true });
   short = path.join(fixture, 'short');
@@ -42,11 +42,11 @@ it('selects the shortest usable canonical root regardless of candidate order', a
   await owned.cleanup();
 });
 
-it('uses only absolute app-owned roots derived from temp and local app data', () => {
-  vi.stubEnv('LOCALAPPDATA', fixture);
-  expect(handoffQuarantineRoots()).toContainEqual(expect.stringMatching(new RegExp('ch-q-[a-f0-9]{12}$')));
-  expect(handoffQuarantineRoots()).toContain(path.join(fixture, path.basename(handoffQuarantineRoots()[0])));
-  vi.stubEnv('LOCALAPPDATA', 'relative');
+it('uses only profile-local LOCALAPPDATA on Windows, ignoring shared or custom temp', () => {
+  expect(windowsHandoffQuarantineRoots('C:\\Users\\me\\AppData\\Local', 'C:\\Users\\me')).toEqual(['C:\\Users\\me\\AppData\\Local\\ch-q']);
+  for (const candidate of [undefined, 'relative', 'C:\\Temp', 'D:\\Shared', 'C:\\Users\\me-other', 'C:\\Users\\me\\..\\other']) {
+    expect(windowsHandoffQuarantineRoots(candidate, 'C:\\Users\\me')).toEqual([]);
+  }
   expect(handoffQuarantineRoots().every(path.isAbsolute)).toBe(true);
 });
 
@@ -58,13 +58,13 @@ it('creates unique private directories and rejects a symlink root', async () => 
   }
   const link = path.join(fixture, 'link');
   fs.symlinkSync(short, link, process.platform === 'win32' ? 'junction' : 'dir');
-  await expect(create([link])).rejects.toThrow('No safe short');
+  await expect(create([link])).rejects.toMatchObject({ code: 'git_failed', message: expect.stringContaining('stderr=path_too_long.') });
   await first.cleanup(); await second.cleanup();
 });
 
 it.skipIf(process.platform === 'win32')('rejects an app root accessible by other users', async () => {
   fs.mkdirSync(short, { mode: 0o755 });
-  await expect(create()).rejects.toThrow('No safe short');
+  await expect(create()).rejects.toMatchObject({ code: 'git_failed', message: expect.stringContaining('stderr=path_too_long.') });
 });
 
 it('cleans only the owned directory and refuses a replacement symlink', async () => {
@@ -108,3 +108,52 @@ it('cleans partial contents before Git has initialized', async () => {
   await owned.cleanup();
   expect(fs.readdirSync(short)).toEqual([]);
 });
+
+it.skipIf(process.platform === 'win32')('tries the next root when the shortest private root is unwritable', async () => {
+  fs.mkdirSync(short, { mode: 0o500 });
+  const longer = path.join(fixture, 'longer-root');
+  try {
+    const owned = await create([short, longer]);
+    expect(path.dirname(owned.directory)).toBe(longer);
+    await owned.cleanup();
+  } finally { fs.chmodSync(short, 0o700); }
+});
+
+it.skipIf(process.platform === 'win32')('skips deletion when an app-root ancestor is replaced by a symlink', async () => {
+  const owned = await create();
+  await owned.cleanup();
+  const staleName = `q-${'8'.repeat(32)}`;
+  const stale = path.join(short, staleName); fs.mkdirSync(stale, { mode: 0o700 }); old(stale);
+  const outside = path.join(fixture, 'outside'); fs.mkdirSync(outside, { mode: 0o700 });
+  const victim = path.join(outside, staleName); fs.mkdirSync(victim, { mode: 0o700 });
+  fs.writeFileSync(path.join(victim, 'keep'), 'keep');
+  const readdir = fs.promises.readdir;
+  let swapped = false;
+  vi.spyOn(fs.promises, 'readdir').mockImplementation(async (...args: Parameters<typeof readdir>) => {
+    const result = await readdir(...args);
+    if (args[0] === stale && !swapped) {
+      swapped = true;
+      fs.renameSync(short, `${short}-moved`);
+      fs.symlinkSync(outside, short, 'dir');
+    }
+    return result;
+  });
+  await sweepHandoffQuarantines({ roots: [short] });
+  expect(swapped).toBe(true);
+  expect(fs.readFileSync(path.join(victim, 'keep'), 'utf8')).toBe('keep');
+});
+
+it.skipIf(process.platform !== 'win32')('rejects a junction anywhere in the external root ancestor chain', async () => {
+  const parent = path.join(fixture, 'parent'); fs.mkdirSync(parent);
+  const junction = path.join(fixture, 'junction'); fs.symlinkSync(parent, junction, 'junction');
+  await expect(create([path.join(junction, 'q')])).rejects.toMatchObject({ code: 'git_failed', message: expect.stringContaining('stderr=path_too_long.') });
+  expect(fs.readdirSync(parent)).toEqual([]);
+});
+
+it.skipIf(process.platform !== 'win32')('refuses allocation and sweeping under an unverified inherited Windows ACL', async () => {
+  fs.mkdirSync(short);
+  const stale = path.join(short, `q-${'7'.repeat(32)}`); fs.mkdirSync(stale); old(stale);
+  await expect(create()).rejects.toMatchObject({ code: 'git_failed', message: expect.stringContaining('stderr=path_too_long.') });
+  await sweepHandoffQuarantines({ roots: [short] });
+  expect(fs.readdirSync(short)).toEqual([path.basename(stale)]);
+}, 30_000);
