@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { act, render, screen } from '@testing-library/react';
+import { act, render, screen, waitFor, within } from '@testing-library/react';
 import type { Agent } from '../../../../shared/types';
 import { createChatViewState, type ChatViewState } from '../../../stores/chatStore';
 import { ProviderSkillsCard } from './ProviderSkillsCard';
@@ -69,8 +69,97 @@ describe('ProviderSkillsCard', () => {
     expect(screen.queryByTestId('details-card-provider-skills')).toBeNull();
   });
 
+  it('refreshes an already-mounted card when the agent starts after delivery was broadcast', async () => {
+    const managed = window.clubhouse.managed;
+    const saved = { ...managed };
+    let running = false;
+    const listeners = new Set<() => void>();
+    managed.getSetup = vi.fn(async () => ({ ok: true, value: null }));
+    managed.status = vi.fn(async () => ({ ok: true, value: {
+      managed: true, running, waiting: false, changes: [], cliChanged: false,
+      builtinSkills: [{ id: 'builtin-skill-prepare-handoff', name: 'Prepare handoff', ...(running && { deliveredAt: 't' }) }],
+    } }));
+    managed.onChanged = vi.fn((callback) => { listeners.add(callback); return () => { listeners.delete(callback); }; });
+    useProjectStore.setState({ projects: [{ id: 'p', name: 'project', path: '/project', orchestrator: 'codex-cli' }] });
+    try {
+      const props = { chat: chat(null), open: true, onToggle: vi.fn() };
+      const { rerender } = render(<ProviderSkillsCard {...props} agent={{ ...agent, status: 'sleeping' }} />);
+      expect(await screen.findByRole('list', { name: 'Set up by Clubhouse' })).toHaveTextContent('Prepare handoff');
+      // Delivery broadcasts before the runtime starts, so this reload still sees sleeping metadata.
+      const calls = vi.mocked(managed.status).mock.calls.length;
+      act(() => { for (const changed of listeners) changed(); });
+      await waitFor(() => expect(managed.status).toHaveBeenCalledTimes(calls + 1));
+      running = true;
+      rerender(<ProviderSkillsCard {...props} agent={agent} />);
+      expect(await screen.findByRole('list', { name: 'Installed by Clubhouse' })).toHaveTextContent('Prepare handoff');
+      expect(managed.status).toHaveBeenCalledTimes(calls + 2);
+    } finally { Object.assign(managed, saved); }
+  });
+
   it.each([
-    ['delivered to a running session', { deliveredAt: 't', waiting: false }, 'running', 'Installed by Clubhouse', '1 installed by Clubhouse'],
+    [[], 'Set up by Clubhouse'],
+    [['builtin-skill-build'], 'Installed by Clubhouse'],
+  ])('requires written evidence for saved skills and ignores a revoked saved handoff skill (%j)', async (deliveredSkillIds, label) => {
+    const managed = (window as unknown as { clubhouse: { managed: Record<string, unknown> } }).clubhouse.managed;
+    const saved = { ...managed };
+    managed.getSetup = vi.fn(async () => ({ ok: true, value: { version: 1, blocks: [], skills: ['builtin-skill-build', 'builtin-skill-prepare-handoff'], mcps: [] } }));
+    managed.listParts = vi.fn(async () => ({ ok: true, value: [
+      { id: 'builtin-skill-build', name: 'Build', kind: 'skill' },
+      { id: 'builtin-skill-prepare-handoff', name: 'Prepare handoff', kind: 'skill' },
+    ] }));
+    managed.status = vi.fn(async () => ({ ok: true, value: { managed: true, running: true, waiting: false, changes: [], cliChanged: false, deliveredAt: 't', deliveredSkillIds, builtinSkills: [] } }));
+    managed.onChanged = vi.fn(() => () => {});
+    useProjectStore.setState({ projects: [{ id: 'p', name: 'project', path: '/project' }] });
+    try {
+      render(<ProviderSkillsCard agent={agent} chat={chat(null)} open onToggle={vi.fn()} />);
+      expect(await screen.findByRole('list', { name: label })).toHaveTextContent('Build');
+      expect(screen.queryByText('Prepare handoff')).toBeNull();
+      expect(screen.getByTestId('details-card-provider-skills-summary')).toHaveTextContent(`1 ${deliveredSkillIds.length ? 'installed' : 'set up'} by Clubhouse`);
+    } finally { Object.assign(managed, saved); }
+  });
+
+  it.each([
+    ['with delivery evidence', 'running', 't', 'Installed by Clubhouse'],
+    ['without delivery evidence', 'running', undefined, 'Set up by Clubhouse'],
+    ['while sleeping', 'sleeping', 't', 'Set up by Clubhouse'],
+  ])('lists built-in skills outside the saved setup %s', async (_name, agentStatus, deliveredAt, label) => {
+    const managed = window.clubhouse.managed;
+    const saved = { ...managed };
+    const skill = { id: 'builtin-skill-prepare-handoff', name: 'Prepare handoff', deliveredAt };
+    let builtinSkills = [skill];
+    let changed = () => {};
+    managed.getSetup = vi.fn(async () => ({ ok: true, value: null }));
+    managed.status = vi.fn(async () => ({ ok: true, value: { managed: true, running: true, waiting: false, changes: [], cliChanged: false, builtinSkills } }));
+    managed.onChanged = vi.fn((callback) => { changed = callback; return () => {}; });
+    useProjectStore.setState({ projects: [{ id: 'p', name: 'project', path: '/project', orchestrator: 'codex-cli' }] });
+    try {
+      render(<ProviderSkillsCard agent={{ ...agent, orchestrator: 'codex-cli', status: agentStatus as Agent['status'] }} chat={chat()} open onToggle={vi.fn()} />);
+      expect(await screen.findByText('Prepare handoff')).toBeInTheDocument();
+      expect(within(screen.getByRole('list', { name: label })).getByText('Prepare handoff')).toBeInTheDocument();
+      expect(screen.getByTestId('details-card-provider-skills-summary')).toHaveTextContent(`1 ${label === 'Installed by Clubhouse' ? 'installed' : 'set up'} by Clubhouse`);
+      // Current applicability changes remove the built-in even if an older session got it.
+      builtinSkills = [];
+      act(() => changed());
+      await waitFor(() => expect(screen.queryByText('Prepare handoff')).toBeNull());
+      expect(screen.queryByTestId('details-card-provider-skills')).toBeNull();
+    } finally { Object.assign(managed, saved); }
+  });
+
+  it('hides the card when no built-in or managed skills apply and nothing was reported', async () => {
+    const managed = window.clubhouse.managed;
+    const saved = { ...managed };
+    managed.getSetup = vi.fn(async () => ({ ok: true, value: null }));
+    managed.status = vi.fn(async () => ({ ok: true, value: { managed: false, running: true, waiting: false, changes: [], cliChanged: false, builtinSkills: [] } }));
+    useProjectStore.setState({ projects: [{ id: 'p', name: 'project', path: '/project' }] });
+    try {
+      render(<ProviderSkillsCard agent={agent} chat={chat(null)} open onToggle={vi.fn()} />);
+      await waitFor(() => expect(managed.status).toHaveBeenCalledWith('/project', 'a'));
+      expect(screen.queryByTestId('details-card-provider-skills')).toBeNull();
+    } finally { Object.assign(managed, saved); }
+  });
+
+  it.each([
+    ['delivered to a running session', { deliveredAt: 't', waiting: false, deliveredSkillIds: ['builtin-skill-build'] }, 'running', 'Installed by Clubhouse', '1 installed by Clubhouse'],
     ['edited while running', { deliveredAt: 't', waiting: true }, 'running', 'Set up by Clubhouse', '1 set up by Clubhouse'],
     ['delivery failed', { deliveredAt: 't', waiting: false, deliveryFailed: 'x' }, 'running', 'Set up by Clubhouse', '1 set up by Clubhouse'],
     ['never started', null, 'sleeping', 'Set up by Clubhouse', '1 set up by Clubhouse'],

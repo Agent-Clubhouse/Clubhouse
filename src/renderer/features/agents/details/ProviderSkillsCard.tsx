@@ -1,11 +1,12 @@
 import type { Agent } from '../../../../shared/types';
+import { GRANT_GATED_SKILL_IDS } from '../../../../shared/managed-agents-types';
 import type { ChatViewState } from '../../../stores/chatStore';
 import { useProjectStore } from '../../../stores/projectStore';
 import { CardNote, CardRow, DetailsCard } from './DetailsCard';
 import { useManagedParts, useManagedSetup, useManagedStatus } from '../../managed/managedApi';
 import { reportedSkillsFor } from './reported-skills';
 
-/** Only renders metadata already in chat state. No filesystem reads or provider requests. */
+/** Renders provider snapshots and Clubhouse setup/delivery metadata. No provider requests. */
 export function ProviderSkillsCard({ agent, chat, open, onToggle, embedded }: {
   agent: Agent;
   chat: ChatViewState;
@@ -23,25 +24,43 @@ export function ProviderSkillsCard({ agent, chat, open, onToggle, embedded }: {
   const installedIds = setup?.skills ?? [];
   // Skills are copied when the agent starts, so the setup alone only says what is set up. Delivery evidence
   // (a running session that got its setup, with no edit since and no failure) says they are installed.
-  const { value: status } = useManagedStatus(agent.status === 'running' ? project?.path : undefined, agent.id);
+  const { value: status } = useManagedStatus(project?.path, agent.id, agent.status === 'running');
   const delivered = agent.status === 'running' && !!status?.deliveredAt && !status.waiting && !status.deliveryFailed;
-  const label = delivered ? 'Installed by Clubhouse' : 'Set up by Clubhouse';
   const { value: parts } = useManagedParts('skill', installedIds.length > 0);
-  const installed = installedIds.flatMap((id) => { const part = parts?.find((p) => p.id === id); return part ? [part.name] : []; });
-  const installedList = installed.length > 0 && (
-    <>
-      <p className="pr-3.5 pl-[33px] pt-1.5 pb-0.5 text-xs text-ctp-overlay1">{label}</p>
-      {!delivered && <p className="pr-3.5 pl-[33px] pb-0.5 text-xs text-ctp-overlay1">Applies when the agent next starts.</p>}
-      <ul className="pr-3.5 pl-[33px] py-1 text-xs text-ctp-text break-words" aria-label={label} data-testid="details-installed-skills">
-        {installed.map((name) => <li key={name}>{name}</li>)}
-      </ul>
-    </>
+  const builtinSkills = status?.builtinSkills ?? [];
+  const skills = [
+    ...installedIds.filter((id) => !GRANT_GATED_SKILL_IDS.includes(id)).flatMap((id) => {
+      const part = parts?.find((p) => p.id === id);
+      return part ? [{ id, name: part.name, delivered: delivered && !!status?.deliveredSkillIds?.includes(id) }] : [];
+    }),
+    ...builtinSkills.map((skill) => ({ ...skill, delivered: agent.status === 'running' && !!skill.deliveredAt })),
+  ];
+  const installedCount = skills.filter((skill) => skill.delivered).length;
+  const setupCount = skills.length - installedCount;
+  const summary = installedCount && setupCount
+    ? `${installedCount} installed, ${setupCount} set up by Clubhouse`
+    : `${skills.length} ${installedCount ? 'installed' : 'set up'} by Clubhouse`;
+  const installedList = skills.length > 0 && (
+    <div data-testid="details-installed-skills">
+      {[true, false].map((isDelivered) => {
+        const group = skills.filter((skill) => skill.delivered === isDelivered);
+        if (!group.length) return null;
+        const label = isDelivered ? 'Installed by Clubhouse' : 'Set up by Clubhouse';
+        return <div key={label}>
+          <p className="pr-3.5 pl-[33px] pt-1.5 pb-0.5 text-xs text-ctp-overlay1">{label}</p>
+          {!isDelivered && <p className="pr-3.5 pl-[33px] pb-0.5 text-xs text-ctp-overlay1">Applies when the agent next starts.</p>}
+          <ul className="pr-3.5 pl-[33px] py-1 text-xs text-ctp-text break-words" aria-label={label}>
+            {group.map((skill) => <li key={skill.id}>{skill.name}</li>)}
+          </ul>
+        </div>;
+      })}
+    </div>
   );
   if (names == null) {
     // Nothing reported: show only what Clubhouse knows it installed, or nothing at all.
     if (!installedList) return null;
     return (
-      <DetailsCard id="provider-skills" title="Skills" summary={`${installed.length} ${delivered ? 'installed' : 'set up'} by Clubhouse`} open={open} onToggle={onToggle} embedded={embedded}>
+      <DetailsCard id="provider-skills" title="Skills" summary={summary} open={open} onToggle={onToggle} embedded={embedded}>
         {installedList}
       </DetailsCard>
     );

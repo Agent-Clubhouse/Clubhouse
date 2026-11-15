@@ -17,6 +17,8 @@ import { BUILTIN_BLOCK_IDS, BUILTIN_SKILL_IDS, builtinParts, builtinTemplates } 
 import { BUILTIN_SKILL_TEXT } from './builtin-text/index';
 import { appLog } from '../log-service';
 import {
+  builtinSkillStatus,
+  resolveManagedSetup,
   deliverManagedSetup,
   EXCLUDES_MANIFEST,
   isSameFolder,
@@ -202,6 +204,48 @@ describe('deliverManagedSetup', () => {
       holds = false;
       await user(() => deliverManagedSetup({ service, projectPath: project, agent, provider: provider() }));
       expect(fs.existsSync(path.join(skills, 'prepare-handoff'))).toBe(false);
+    } finally { stop(); }
+  });
+
+  it('reports current grant-gated skills and requires actual delivery evidence (#3517)', async () => {
+    let holds = false;
+    const stop = setGrantedSkills(() => holds ? [PREPARE_HANDOFF_SKILL_ID] : []);
+    agent.managed = { version: 1, blocks: [], skills: [], mcps: [] };
+    const current = () => resolveManagedSetup(service, agent.managed!, agent);
+    const expected = { id: PREPARE_HANDOFF_SKILL_ID, name: 'Prepare handoff' };
+    try {
+      expect(builtinSkillStatus(await current())).toEqual([]);
+      holds = true;
+      expect(builtinSkillStatus(await current())).toEqual([expected]);
+      const record = await user(() => deliverManagedSetup({ service, projectPath: project, agent, provider: provider() }));
+      expect(builtinSkillStatus(await current(), record!)).toEqual([{ ...expected, deliveredAt: record!.deliveredAt }]);
+      // Older records and fingerprints alone cannot establish that the skill was written.
+      expect(builtinSkillStatus(await current(), { ...record!, deliveredSkillIds: undefined })).toEqual([expected]);
+      holds = false;
+      expect(builtinSkillStatus(await current(), record!)).toEqual([]);
+      holds = true;
+      const mine = await user(() => service.createPart({ name: 'My handoff', content: { kind: 'skill', skillName: 'prepare-handoff', files: [{ path: 'SKILL.md', content: '# Mine' }] } }));
+      agent.managed.skills = [mine.id];
+      expect(builtinSkillStatus(await current(), record!)).toEqual([]);
+    } finally { stop(); }
+  });
+
+  it('does not claim installation of a grant-gated skill left to the project (#3517)', async () => {
+    const stop = setGrantedSkills(() => [PREPARE_HANDOFF_SKILL_ID]);
+    try {
+      const wt = agent.worktreePath!;
+      git(wt, 'init', '-q');
+      const folder = path.join(wt, '.claude', 'skills', 'prepare-handoff');
+      fs.mkdirSync(folder, { recursive: true });
+      fs.writeFileSync(path.join(folder, 'SKILL.md'), '# Project handoff');
+      git(wt, 'add', '.claude/skills/prepare-handoff/SKILL.md');
+      agent.managed = { version: 1, blocks: [], skills: [], mcps: [] };
+      const record = await user(() => deliverManagedSetup({ service, projectPath: project, agent, provider: provider() }));
+      expect(record!.deliveredSkillIds).toEqual([]);
+      expect(builtinSkillStatus(await resolveManagedSetup(service, agent.managed, agent), record!)).toEqual([
+        { id: PREPARE_HANDOFF_SKILL_ID, name: 'Prepare handoff' },
+      ]);
+      expect(fs.readFileSync(path.join(folder, 'SKILL.md'), 'utf8')).toBe('# Project handoff');
     } finally { stop(); }
   });
 
@@ -641,7 +685,8 @@ describe('exactly its parts (#2819)', () => {
     const backupRoot = path.join(root, 'backup');
     vi.mocked(appLog).mockClear();
     for (let start = 0; start < 2; start++) {
-      await user(() => deliverManagedSetup({ service, projectPath: project, agent, provider: provider(), backupRoot }));
+      const record = await user(() => deliverManagedSetup({ service, projectPath: project, agent, provider: provider(), backupRoot }));
+      expect(record!.deliveredSkillIds).toEqual([BUILTIN_SKILL_IDS.validate]);
       expect(fs.readFileSync(path.join(skills, 'build', 'SKILL.md'), 'utf-8')).toBe('# ours');
       expect(fs.readFileSync(path.join(skills, 'validate', 'SKILL.md'), 'utf-8')).toBe(BUILTIN_SKILL_TEXT['skills/validate/SKILL.md']);
       expect(JSON.parse(fs.readFileSync(path.join(skills, '.clubhouse-managed-skills.json'), 'utf-8'))).toEqual({ skills: ['validate'] });

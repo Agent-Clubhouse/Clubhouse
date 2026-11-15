@@ -95,10 +95,11 @@ export function useManagedTemplates() {
   return useLive<Array<ManagedTemplate & { usedBy: number }>>(() => unwrap(managed().listTemplates()), []);
 }
 
-export function useManagedStatus(projectPath: string | undefined, agentId: string | undefined) {
+/** A mounted card can refetch after startup, whose delivery event precedes the running runtime. */
+export function useManagedStatus(projectPath: string | undefined, agentId: string | undefined, running?: boolean) {
   return useLive<ManagedAgentStatus | null>(
     () => (projectPath && agentId ? unwrap(managed().status(projectPath, agentId)) : Promise.resolve(null)),
-    [projectPath, agentId],
+    [projectPath, agentId, running],
     !!projectPath && !!agentId,
   );
 }
