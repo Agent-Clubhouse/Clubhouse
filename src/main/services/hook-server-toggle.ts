@@ -235,7 +235,8 @@ export async function applyEnabledForOrchestrator(orchestratorId: string): Promi
       // Snapshot the (possibly user-edited) current state before we re-inject,
       // so a future disable can restore it cleanly.
       const hookConfigPath = configPipeline.getHooksConfigPath(provider, registration.cwd);
-      if (hookConfigPath) {
+      // Launch-flag hooks (Codex) reach the agent on restart and leave no file to restore.
+      if (hookConfigPath && !provider.buildHookArgs) {
         await configPipeline.snapshotFile(agentId, hookConfigPath);
       }
       await provider.writeHooksConfig(registration.cwd, hookUrl);

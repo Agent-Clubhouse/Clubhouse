@@ -159,7 +159,8 @@ export interface OrchestratorConventions {
    *
    * Snapshot, restore and strip all key off this path, so it must match what
    * `writeHooksConfig` actually writes — otherwise Clubhouse-managed hooks are
-   * never cleaned out of the user's worktree.
+   * never cleaned out of the user's worktree.  Codex now takes its hooks as
+   * launch flags, and this path is where older Clubhouse entries get stripped.
    */
   hooksFile?: string;
   /** Format of the settings and MCP config files. Defaults to 'json'. */
@@ -237,6 +238,12 @@ export interface PasteSubmitTiming {
 /** Providers that support hook configuration and event parsing */
 export interface HookCapable {
   writeHooksConfig(cwd: string, hookUrl: string): Promise<void>;
+  /**
+   * Launch flags that carry the hooks, for a CLI that takes them that way
+   * (Codex, #1728). Clubhouse appends them before trailingArgs. A provider
+   * with this writes no hook file it needs snapshotted.
+   */
+  buildHookArgs?(hookUrl: string): string[];
   parseHookEvent(raw: unknown): NormalizedHookEvent | null;
 }
 

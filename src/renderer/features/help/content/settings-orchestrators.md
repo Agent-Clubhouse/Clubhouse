@@ -48,6 +48,12 @@ While **Rich chat content** is on, paired phones (Clubhouse Go) can read any fil
 | Session resume | Yes | Yes | Yes (`--last` / most recent only; no resume-by-ID) |
 | Permissions | Yes | Yes | Yes (sandbox) |
 
+### Codex hooks
+
+The **Hook server** setting is off for Codex by default. When you turn it on, Codex asks you to approve Clubhouse's hooks once: run `/hooks` in a Codex agent's CLI view and trust them. The approval holds across launches and for every Codex agent, including the Dispatcher. Until then, Codex skips the hooks, so permission requests and tool events from Codex agents don't reach Clubhouse.
+
+Clubhouse passes these hooks when it starts Codex. It doesn't add files to the agent's folder or change your Codex config.
+
 ## Per-project selection
 
 Each project can use a different agent provider. To choose it, set **Agents run on** on the project's **Agents & providers** settings page. Only enabled providers with detected binaries appear as options.

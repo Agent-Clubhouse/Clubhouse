@@ -320,6 +320,21 @@ describe('hook-server-toggle', () => {
       expect(affected).toEqual(['agent-a']);
     });
 
+    it('snapshots no hook file for launch-flag hooks, so restore can\'t bring back stripped entries (#1728)', async () => {
+      const codex = { id: 'codex-cli', writeHooksConfig: vi.fn(() => Promise.resolve()), buildHookArgs: vi.fn(() => []) };
+      mockGetProvider.mockReturnValue(codex);
+      mockGetHooksConfigPath.mockReturnValue('/p/a/.codex/hooks.json');
+      mockSnapshotFile.mockClear();
+      mockGetAllRegistrations.mockReturnValue(new Map([
+        ['agent-a', { projectPath: '/p', cwd: '/p/a', orchestrator: 'codex-cli', runtime: 'pty' }],
+      ]));
+      const affected = await applyEnabledForOrchestrator('codex-cli');
+      expect(codex.writeHooksConfig).toHaveBeenCalledWith('/p/a', 'http://127.0.0.1:12345/hook');
+      expect(mockSnapshotFile).not.toHaveBeenCalled();
+      // The flags reach the agent when it restarts.
+      expect(affected).toEqual(['agent-a']);
+    });
+
     it('returns early for an unknown provider', async () => {
       mockGetProvider.mockReturnValue(undefined);
       mockGetAllRegistrations.mockReturnValue(new Map([

@@ -57,6 +57,7 @@ import { getShellEnvironment, invalidateShellEnvironmentCache } from '../util/sh
 import { appLog } from '../services/log-service';
 import { CodexCliProvider, parseCodexDebugModels } from './codex-cli-provider';
 import { getBridgeScriptPath } from '../services/clubhouse-mcp/injection';
+import { buildHookCurlCommand } from './shared';
 import { skillsFolderOf } from '../../shared/skills-folder';
 import { onAppEvent, publishFromHookEvent, resetAppEventBus, type AppEvent } from '../services/app-event-bus';
 
@@ -1091,129 +1092,88 @@ describe('CodexCliProvider', () => {
     });
   });
 
-  describe('writeHooksConfig', () => {
-    it('adds interrupt and compaction hooks idempotently while preserving user hooks', async () => {
-      const cwd = path.resolve('project');
-      const userHook = { hooks: [{ type: 'command', command: 'user-hook' }] };
-      vi.mocked(fsp.readFile).mockResolvedValueOnce(JSON.stringify({
-        customKey: 'preserved',
-        hooks: { Interrupt: [userHook], PostCompact: [userHook], Stop: [userHook] },
-      }));
-      await provider.writeHooksConfig(cwd, 'http://127.0.0.1:9999/hook');
-      const first = String(vi.mocked(fsp.writeFile).mock.calls.at(-1)![1]);
-      vi.mocked(fsp.readFile).mockResolvedValueOnce(first);
-      await provider.writeHooksConfig(cwd, 'http://127.0.0.1:9999/hook');
-      const second = JSON.parse(String(vi.mocked(fsp.writeFile).mock.calls.at(-1)![1]));
-      expect(second).toEqual(JSON.parse(first));
-      expect(second.customKey).toBe('preserved');
-      expect(second.hooks.Interrupt).toHaveLength(2);
-      expect(second.hooks.Interrupt[0]).toEqual(userHook);
-      expect(second.hooks.PostCompact).toHaveLength(2);
-      expect(second.hooks.PostCompact[0]).toEqual(userHook);
-      expect(second.hooks.Stop[0]).toEqual(userHook);
-      expect(fsp.writeFile).toHaveBeenCalledTimes(1);
+  describe('buildHookArgs', () => {
+    /** The `-c hooks.<Event>=…` flags, keyed by event. */
+    function hookFlags(args: string[]): Record<string, string> {
+      const flags: Record<string, string> = {};
+      for (let i = 0; i < args.length; i += 2) {
+        expect(args[i]).toBe('-c');
+        const match = /^hooks\.([A-Za-z]+)=(.*)$/.exec(args[i + 1]);
+        expect(match).not.toBeNull();
+        flags[match![1]] = match![2];
+      }
+      return flags;
+    }
+    /** The command string inside a flag; TOML basic-string escapes read as JSON here. */
+    function commandOf(flag: string): string {
+      const match = /command=("(?:[^"\\]|\\.)*")/.exec(flag);
+      expect(match).not.toBeNull();
+      return JSON.parse(match![1]) as string;
+    }
+
+    it('is identical across launches with different hook server ports (#1718)', () => {
+      const first = provider.buildHookArgs('http://127.0.0.1:9999/hook');
+      const second = provider.buildHookArgs('http://127.0.0.1:41234/hook');
+      // Codex keys hook trust on the flag position and the command hash.
+      expect(second).toEqual(first);
+      expect(first.join(' ')).not.toContain('9999');
+      expect(first.join(' ')).toContain('CLUBHOUSE_HOOK_PORT');
     });
 
-    it('creates .codex dir and writes hooks.json', async () => {
-      await provider.writeHooksConfig('/project', 'http://127.0.0.1:9999/hook');
-
-      expect(fsp.mkdir).toHaveBeenCalledWith(
-        path.join('/project', '.codex'),
-        { recursive: true },
-      );
-      const writeCalls = vi.mocked(fsp.writeFile).mock.calls;
-      const hookCall = writeCalls.find(c => String(c[0]).includes('hooks.json'));
-      expect(hookCall).toBeDefined();
-      const written = JSON.parse(hookCall![1] as string);
-      expect(written.hooks).toBeDefined();
-      expect(written.hooks.PreToolUse).toBeDefined();
-      expect(written.hooks.PostToolUse).toBeDefined();
-      expect(written.hooks.Stop).toBeDefined();
-      expect(written.hooks.PermissionRequest).toBeDefined();
-    });
-
-    it('curl command uses env var references for agent ID and nonce', async () => {
-      await provider.writeHooksConfig('/project', 'http://127.0.0.1:9999/hook');
-      const writeCalls = vi.mocked(fsp.writeFile).mock.calls;
-      const hookCall = writeCalls.find(c => String(c[0]).includes('hooks.json'));
-      const written = JSON.parse(hookCall![1] as string);
-      const command = written.hooks.PreToolUse[0].hooks[0].command as string;
-      expect(command).toContain(
-        process.platform === 'win32' ? '%CLUBHOUSE_AGENT_ID%' : '${CLUBHOUSE_AGENT_ID}',
-      );
-      expect(command).toContain(
-        process.platform === 'win32' ? '%CLUBHOUSE_HOOK_NONCE%' : '${CLUBHOUSE_HOOK_NONCE}',
-      );
-    });
-
-    it('PermissionRequest has 120s timeout', async () => {
-      await provider.writeHooksConfig('/project', 'http://127.0.0.1:9999/hook');
-      const writeCalls = vi.mocked(fsp.writeFile).mock.calls;
-      const hookCall = writeCalls.find(c => String(c[0]).includes('hooks.json'));
-      const written = JSON.parse(hookCall![1] as string);
-      const permHook = written.hooks.PermissionRequest[0].hooks[0];
-      expect(permHook.timeout).toBe(120);
-      expect(permHook.async).toBeUndefined(); // sync for permission approval
-    });
-
-    it('standard hooks have async: true and 5s timeout', async () => {
-      await provider.writeHooksConfig('/project', 'http://127.0.0.1:9999/hook');
-      const writeCalls = vi.mocked(fsp.writeFile).mock.calls;
-      const hookCall = writeCalls.find(c => String(c[0]).includes('hooks.json'));
-      const written = JSON.parse(hookCall![1] as string);
-      const preToolHook = written.hooks.PreToolUse[0].hooks[0];
-      expect(preToolHook.async).toBe(true);
-      expect(preToolHook.timeout).toBe(5);
-    });
-
-    it('merges with existing hooks.json', async () => {
-      vi.mocked(fsp.readFile).mockResolvedValueOnce(JSON.stringify({
-        customKey: 'preserved',
-        hooks: { PreToolUse: [{ type: 'custom', command: 'echo user' }] },
-      }));
-
-      await provider.writeHooksConfig('/project', 'http://127.0.0.1:9999/hook');
-      const writeCalls = vi.mocked(fsp.writeFile).mock.calls;
-      const hookCall = writeCalls.find(c => String(c[0]).includes('hooks.json'));
-      const written = JSON.parse(hookCall![1] as string);
-      expect(written.customKey).toBe('preserved');
-      // User hook preserved + our hook added
-      expect(written.hooks.PreToolUse.length).toBe(2);
-    });
-
-    it('registers only events Codex actually defines', async () => {
-      await provider.writeHooksConfig('/project', 'http://127.0.0.1:9999/hook');
-      const writeCalls = vi.mocked(fsp.writeFile).mock.calls;
-      const hookCall = writeCalls.find(c => String(c[0]).includes('hooks.json'));
-      const written = JSON.parse(hookCall![1] as string);
-      const events = Object.keys(written.hooks).sort();
+    it('registers only events Codex actually defines, in a stable order', () => {
+      const events = Object.keys(hookFlags(provider.buildHookArgs('http://127.0.0.1:9999/hook')));
+      // The order is part of each hook's trust key: changing it re-asks the user.
       expect(events).toEqual([
-        'Interrupt', 'PermissionRequest', 'PostCompact', 'PostToolUse', 'PreToolUse',
-        'SessionStart', 'Stop', 'UserPromptSubmit',
+        'PreToolUse', 'PostToolUse', 'Stop', 'Interrupt', 'PostCompact',
+        'SessionStart', 'UserPromptSubmit', 'PermissionRequest',
       ]);
-      // Claude Code event names that Codex has no equivalent for
-      expect(events).not.toContain('PostToolUseFailure');
-      expect(events).not.toContain('Notification');
     });
 
-    it('reads the hook server port from the environment so the trust hash is stable', async () => {
-      await provider.writeHooksConfig('/project', 'http://127.0.0.1:9999/hook');
-      const writeCalls = vi.mocked(fsp.writeFile).mock.calls;
-      const hookCall = writeCalls.find(c => String(c[0]).includes('hooks.json'));
-      const raw = hookCall![1] as string;
-      // Codex hashes hook commands for its trust model; an ephemeral port baked
-      // into the command re-marks trusted hooks as modified on every launch.
-      expect(raw).not.toContain('9999');
-      expect(raw).toContain('CLUBHOUSE_HOOK_PORT');
+    it('runs the Clubhouse hook command, reading agent id, nonce and port from the env', () => {
+      const flags = hookFlags(provider.buildHookArgs('http://127.0.0.1:9999/hook'));
+      const command = commandOf(flags.PreToolUse);
+      expect(command).toBe(buildHookCurlCommand('http://127.0.0.1:9999/hook'));
+      const ref = (name: string) => process.platform === 'win32' ? `%${name}%` : `\${${name}}`;
+      for (const name of ['CLUBHOUSE_AGENT_ID', 'CLUBHOUSE_HOOK_NONCE', 'CLUBHOUSE_HOOK_PORT']) {
+        expect(command).toContain(ref(name));
+      }
+      for (const flag of Object.values(flags)) expect(commandOf(flag)).toBe(command);
     });
 
-    it('writes hooks to the same path config-pipeline cleans up', async () => {
+    it('holds PermissionRequest synchronously for remote approval; the rest are async', () => {
+      const flags = hookFlags(provider.buildHookArgs('http://127.0.0.1:9999/hook'));
+      expect(flags.PermissionRequest).toMatch(/timeout=120}/);
+      expect(flags.PermissionRequest).not.toContain('async');
+      expect(flags.PreToolUse).toMatch(/,async=true,timeout=5}/);
+    });
+
+    it('rejects a hook URL with shell metacharacters', () => {
+      expect(() => provider.buildHookArgs('http://127.0.0.1:9999/hook;rm -rf /')).toThrow();
+    });
+  });
+
+  describe('writeHooksConfig', () => {
+    it('writes no hook file or folder into the agent folder (#1728)', async () => {
+      withLaunchCodexHome(path.resolve('codex-home'));
       await provider.writeHooksConfig('/project', 'http://127.0.0.1:9999/hook');
-      const writeCalls = vi.mocked(fsp.writeFile).mock.calls;
-      const hookCall = writeCalls.find(c => String(c[0]).includes('hooks.json'));
-      expect(hookCall).toBeDefined();
-      expect(String(hookCall![0])).toBe(path.join('/project', '.codex', 'hooks.json'));
-      // getHooksConfigPath composes configDir + (hooksFile ?? localSettingsFile)
+      expect(fsp.mkdir).not.toHaveBeenCalled();
+      expect(fsp.writeFile).not.toHaveBeenCalled();
+    });
+
+    it('never touches the user config in CODEX_HOME', async () => {
+      const home = path.resolve('codex-home');
+      withLaunchCodexHome(home);
+      provider.buildHookArgs('http://127.0.0.1:9999/hook');
+      await provider.writeHooksConfig('/project', 'http://127.0.0.1:9999/hook');
+      const touched = [...vi.mocked(fsp.writeFile).mock.calls, ...vi.mocked(fsp.readFile).mock.calls].map((c) => String(c[0]));
+      const userHome = path.join(os.homedir(), '.codex');
+      expect(touched.filter((file) => file.startsWith(home) || file.startsWith(userHome))).toEqual([]);
+    });
+
+    it('keeps the hooks path config-pipeline strips older entries from', () => {
+      // getHooksConfigPath composes configDir + (hooksFile ?? localSettingsFile);
+      // config-pipeline.codex-cleanup.test.ts covers the stripping on disk.
+      expect(provider.conventions.configDir).toBe('.codex');
       expect(provider.conventions.hooksFile).toBe('hooks.json');
     });
   });

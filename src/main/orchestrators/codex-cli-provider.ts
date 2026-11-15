@@ -27,10 +27,10 @@ import { probeCodexModels, type ModelProbeContext } from './model-probes';
 import { cwdKey } from './copilot-session-store';
 import { createCodexHeadlessNormalizer } from './codex-headless-events';
 import { isInjectedClubhouseBridge } from '../services/clubhouse-mcp/injection';
-import { cliStateDir, homePath, testModelProbesDisabled, validateHookUrl, buildHookCurlCommand, writeTerminalHooksConfig, parseJsonlFile } from './shared';
+import { cliStateDir, homePath, testModelProbesDisabled, validateHookUrl, buildHookCurlCommand, parseJsonlFile } from './shared';
 import { getShellEnvironment, invalidateShellEnvironmentCache } from '../util/shell';
 import { resolveProcessLaunch } from '../util/process-launch';
-import { isClubhouseHookEntry, preserveUnchangedSnapshot, removeEmptyCodexHooksDirectory } from '../services/config-pipeline';
+import { stripClubhouseHooksFromFile } from '../services/config-pipeline';
 import { appLog } from '../services/log-service';
 import { stripTerminalEscapes } from '../../shared/terminal-text';
 
@@ -538,36 +538,40 @@ export class CodexCliProvider extends BaseProvider implements HeadlessCapable, H
 
   // ── HookCapable ─────────────────────────────────────────────────────────
 
+  /**
+   * Clubhouse no longer writes `.codex/hooks.json` (see buildHookArgs). This
+   * only strips entries an older Clubhouse wrote there, keeping the user's own
+   * hooks, and removes the folder only when that leaves it empty.
+   */
   async writeHooksConfig(cwd: string, hookUrl: string): Promise<void> {
-    const safeUrl = validateHookUrl(hookUrl);
-    const curl = buildHookCurlCommand(safeUrl);
+    validateHookUrl(hookUrl);
+    await stripClubhouseHooksFromFile(path.join(cwd, '.codex', 'hooks.json'));
+  }
 
+  /**
+   * Clubhouse's hooks as `-c hooks.<Event>=…` launch flags (#1728).
+   *
+   * Codex reads a folder's `.codex/hooks.json` only when its user config
+   * trusts that exact folder, and agent worktrees and the Dispatcher's folders
+   * never are. Hooks from launch flags load in any folder (source
+   * `sessionFlags`, probed on Codex 0.163 with hooks/list). Codex still asks
+   * the user to approve them once in /hooks. That approval is keyed on the
+   * flag's position and the command's hash, neither of which depends on the
+   * folder or the hook server's port (#1718), so it holds across launches and
+   * agents. Keep the event order stable: reordering changes the keys.
+   */
+  buildHookArgs(hookUrl: string): string[] {
+    const command = tomlValue(buildHookCurlCommand(validateHookUrl(hookUrl)));
     // Only events Codex actually defines — see EVENT_NAME_MAP.  Registering an
-    // unknown event name is at best inert and at worst rejects the whole file.
-    const hooks: Record<string, unknown[]> = {
-      PreToolUse: [{ hooks: [{ type: 'command', command: curl, async: true, timeout: 5 }] }],
-      PostToolUse: [{ hooks: [{ type: 'command', command: curl, async: true, timeout: 5 }] }],
-      Stop: [{ hooks: [{ type: 'command', command: curl, async: true, timeout: 5 }] }],
-      Interrupt: [{ hooks: [{ type: 'command', command: curl, async: true, timeout: 5 }] }],
-      PostCompact: [{ hooks: [{ type: 'command', command: curl, async: true, timeout: 5 }] }],
-      SessionStart: [{ hooks: [{ type: 'command', command: curl, async: true, timeout: 5 }] }],
-      UserPromptSubmit: [{ hooks: [{ type: 'command', command: curl, async: true, timeout: 5 }] }],
-      // A longer timeout so the hook server can hold the response while a
-      // remote approval decision comes back from the Annex iOS client.
-      PermissionRequest: [{ hooks: [{ type: 'command', command: curl, timeout: PERMISSION_HOOK_TIMEOUT_SEC }] }],
-    };
-
-    const codexDir = path.join(cwd, '.codex');
-    const hooksPath = path.join(codexDir, 'hooks.json');
-
-    try {
-      await fsp.mkdir(codexDir, { recursive: true });
-      await writeTerminalHooksConfig(hooksPath, hooks, isClubhouseHookEntry);
-    } catch (err) {
-      await preserveUnchangedSnapshot(hooksPath);
-      await removeEmptyCodexHooksDirectory(hooksPath);
-      throw err;
-    }
+    // unknown event name is at best inert and at worst rejects the whole set.
+    const asyncEvents = ['PreToolUse', 'PostToolUse', 'Stop', 'Interrupt', 'PostCompact', 'SessionStart', 'UserPromptSubmit'];
+    const args = asyncEvents.flatMap((event) => [
+      '-c', `hooks.${event}=[{hooks=[{type="command",command=${command},async=true,timeout=5}]}]`,
+    ]);
+    // A longer timeout so the hook server can hold the response while a
+    // remote approval decision comes back from the Annex iOS client.
+    args.push('-c', `hooks.PermissionRequest=[{hooks=[{type="command",command=${command},timeout=${PERMISSION_HOOK_TIMEOUT_SEC}}]}]`);
+    return args;
   }
 
   parseHookEvent(raw: unknown): NormalizedHookEvent | null {

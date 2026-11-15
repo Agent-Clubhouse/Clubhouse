@@ -434,7 +434,8 @@ function AppAgentSettings() {
                   {hookCapable && (
                     <SettingsField
                       label="Hook server"
-                      help="Receives terminal hook callbacks, like permission requests and tool events. Chat uses its runtime protocol for status and approvals. Running agents need a restart for the change to take full effect."
+                      help={'Receives terminal hook callbacks, like permission requests and tool events. Chat uses its runtime protocol for status and approvals. Running agents need a restart for the change to take full effect.'
+                        + (o.id === 'codex-cli' ? ' Codex asks you to approve these hooks once with /hooks in a Codex agent. The approval holds across launches and agents.' : '')}
                     >
                       <Toggle
                         aria-label={`Hook server for ${o.displayName}`}

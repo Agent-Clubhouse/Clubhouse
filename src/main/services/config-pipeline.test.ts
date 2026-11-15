@@ -2,7 +2,6 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import * as path from 'path';
 import { readCopilotHooksConfig } from '../orchestrators/copilot-hooks-config';
 import { ClaudeCodeProvider } from '../orchestrators/claude-code-provider';
-import { CodexCliProvider } from '../orchestrators/codex-cli-provider';
 
 vi.mock('fs/promises', () => ({
   readFile: vi.fn(() => Promise.reject(new Error('ENOENT'))),
@@ -598,8 +597,8 @@ describe('config-pipeline', () => {
 
   describe('restoreAll', () => {
     it.each([
+      // Codex writes no hook file (#1728); config-pipeline.codex-cleanup.test.ts covers its cleanup.
       ['Claude', () => new ClaudeCodeProvider(), '.claude/settings.local.json'],
-      ['Codex', () => new CodexCliProvider(), '.codex/hooks.json'],
     ] as const)('leaves a refused %s hook setup byte-identical on shutdown', async (_name, makeProvider, relative) => {
       const original = JSON.stringify({
         permissions: { allow: ['Read'] },
