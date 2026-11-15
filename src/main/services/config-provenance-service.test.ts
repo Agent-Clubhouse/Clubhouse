@@ -5,6 +5,7 @@ vi.mock('electron', () => ({
 }));
 
 vi.mock('fs/promises', () => ({
+  copyFile: vi.fn(async () => {}),
   readFile: vi.fn(() => Promise.reject(new Error('ENOENT'))),
   writeFile: vi.fn(() => Promise.resolve(undefined)),
   mkdir: vi.fn(() => Promise.resolve(undefined)),
@@ -26,6 +27,15 @@ vi.mock('fs', () => ({
     readdir: vi.fn(() => Promise.resolve([])),
     rm: vi.fn(() => Promise.resolve(undefined)),
     access: vi.fn(() => Promise.reject(new Error('ENOENT'))),
+  },
+}));
+
+vi.mock('./settings-store', async (importOriginal) => ({
+  ...await importOriginal<typeof import('./settings-store')>(),
+  backupUnreadableFile: vi.fn(),
+  replaceFile: async (file: string, body: string) => {
+    const fs = await import('fs/promises');
+    await fs.writeFile(file, body, 'utf-8');
   },
 }));
 

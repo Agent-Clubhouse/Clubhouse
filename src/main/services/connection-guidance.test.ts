@@ -181,11 +181,13 @@ describe('durable directional connection guidance', () => {
 
   it('observes and blocks actual legacy grant-temp cleanup, restores real imports, and leaves strict inspection untouched', () => {
     const file = path.join(userData.dir, 'connection-grants.json');
-    const temp = `${file}.tmp-0-retained`;
+    const temp = `${file}.tmp-999999-1`;
     const direction = { from: { agentId: 'a' }, to: { agentId: 'b' }, disabledTools: ['send_message'], updatedAt: '2026-11-07' };
     const bytes = JSON.stringify({ version: 1, directions: [direction] });
     fs.writeFileSync(file, bytes);
     fs.writeFileSync(temp, 'Protected uncommitted bytes');
+    const old = new Date(Date.now() - 48 * 60 * 60 * 1000);
+    fs.utimesSync(temp, old, old);
     resetAllSettingsStoresForTests();
     const originalRemove = fs.rmSync;
     const blocked = vi.spyOn(fs, 'rmSync').mockImplementation(() => { throw new Error('Protected test temp deletion'); });

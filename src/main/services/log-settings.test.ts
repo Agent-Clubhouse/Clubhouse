@@ -2,14 +2,19 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import * as os from 'os';
 import * as path from 'path';
 
-vi.mock('fs', () => ({
-  existsSync: vi.fn(),
-  readFileSync: vi.fn(),
-  promises: {
-    writeFile: vi.fn(async () => {}),
-  },
-  mkdirSync: vi.fn(),
-}));
+vi.mock('fs', async () => {
+  const { atomicFsPromises } = await import('../../../test/atomic-fs-mock');
+  const writeFile = vi.fn(async () => {});
+  return {
+    existsSync: vi.fn(),
+    readFileSync: vi.fn(),
+    promises: {
+      ...atomicFsPromises(writeFile),
+      writeFile,
+    },
+    mkdirSync: vi.fn(),
+  };
+});
 
 import * as fs from 'fs';
 import { resetAllSettingsStoresForTests } from './settings-store';
@@ -63,7 +68,7 @@ describe('log-settings', () => {
       await saveSettings(settings);
       expect(vi.mocked(fs.promises.writeFile)).toHaveBeenCalledTimes(1);
       const [path, data] = vi.mocked(fs.promises.writeFile).mock.calls[0] as [string, string, string];
-      expect(path).toBe(SETTINGS_PATH);
+      expect(fs.promises.rename).toHaveBeenCalledWith(path, SETTINGS_PATH);
       const parsed = JSON.parse(data);
       expect(parsed.enabled).toBe(false);
       expect(parsed.namespaces['app:ipc']).toBe(false);

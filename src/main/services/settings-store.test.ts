@@ -8,7 +8,7 @@ vi.mock('electron', () => ({
 }));
 
 const handle = vi.hoisted(() => ({
-  writeFile: vi.fn(async () => {}),
+  writeFile: vi.fn(async (_body: string, _encoding: string) => {}),
   sync: vi.fn(async () => {}),
   close: vi.fn(async () => {}),
 }));
@@ -18,6 +18,7 @@ vi.mock('fs', () => ({
   readFileSync: vi.fn(() => { throw new Error('ENOENT'); }),
   readdirSync: vi.fn(() => []),
   rmSync: vi.fn(),
+  lstatSync: vi.fn(() => ({ isFile: () => true, mtimeMs: 0 })),
   promises: {
     writeFile: vi.fn(async () => {}),
     chmod: vi.fn(async () => {}),
@@ -186,8 +187,7 @@ describe('settings-store', () => {
 
       await store.save(settings);
 
-      expect(vi.mocked(fs.promises.writeFile)).toHaveBeenCalledWith(
-        path.join('/tmp/test-app', 'test.json'),
+      expect(vi.mocked(handle.writeFile)).toHaveBeenCalledWith(
         expect.any(String),
         'utf-8',
       );
@@ -199,13 +199,13 @@ describe('settings-store', () => {
 
       await store.save(settings);
 
-      const written = vi.mocked(fs.promises.writeFile).mock.calls[0][1] as string;
+      const written = vi.mocked(handle.writeFile).mock.calls[0][0] as string;
       expect(written).toBe(JSON.stringify(settings, null, 2));
     });
 
     it('updates the cache immediately before async persistence completes', async () => {
       let resolveWrite: (() => void) | undefined;
-      vi.mocked(fs.promises.writeFile).mockImplementation(
+      vi.mocked(handle.writeFile).mockImplementation(
         () => new Promise<void>((resolve) => { resolveWrite = resolve; }),
       );
 
@@ -215,10 +215,10 @@ describe('settings-store', () => {
       const savePromise = store.save(settings);
 
       expect(store.get()).toEqual(settings);
-      expect(vi.mocked(fs.readFileSync)).not.toHaveBeenCalled();
+      expect(vi.mocked(fs.readFileSync)).toHaveBeenCalledTimes(1);
 
       await vi.waitFor(() => {
-        expect(vi.mocked(fs.promises.writeFile)).toHaveBeenCalledTimes(1);
+        expect(vi.mocked(handle.writeFile)).toHaveBeenCalledTimes(1);
       });
       resolveWrite?.();
       await savePromise;
@@ -231,12 +231,12 @@ describe('settings-store', () => {
       await store.save(settings);
 
       expect(store.get()).toEqual(settings);
-      expect(vi.mocked(fs.readFileSync)).not.toHaveBeenCalled();
+      expect(vi.mocked(fs.readFileSync)).toHaveBeenCalledTimes(1);
     });
 
     it('queues writes in call order', async () => {
       const writeOrder: string[] = [];
-      vi.mocked(fs.promises.writeFile).mockImplementation(async (_filePath, data) => {
+      vi.mocked(handle.writeFile).mockImplementation(async (data) => {
         writeOrder.push(JSON.parse(String(data)).name);
       });
 
@@ -260,9 +260,9 @@ describe('settings-store', () => {
       await storeA.save({ name: 'a-value', count: 1, nested: { flag: false } });
       await storeB.save({ name: 'b-value', count: 2, nested: { flag: true } });
 
-      const [callA, callB] = vi.mocked(fs.promises.writeFile).mock.calls;
-      expect(callA[0]).toContain('store-a.json');
-      expect(callB[0]).toContain('store-b.json');
+      const [callA, callB] = vi.mocked(fs.promises.rename).mock.calls;
+      expect(callA[1]).toContain('store-a.json');
+      expect(callB[1]).toContain('store-b.json');
     });
   });
 
@@ -294,8 +294,8 @@ describe('settings-store', () => {
       mockGetPath.mockReturnValue('/tmp/overridden');
       await store.save({ name: 'written', count: 1, nested: { flag: false } });
 
-      const writeCall = vi.mocked(fs.promises.writeFile).mock.calls[0];
-      expect(writeCall[0]).toBe(path.join('/tmp/overridden', 'test.json'));
+      const writeCall = vi.mocked(fs.promises.rename).mock.calls[0];
+      expect(writeCall[1]).toBe(path.join('/tmp/overridden', 'test.json'));
     });
   });
 
@@ -309,8 +309,8 @@ describe('settings-store', () => {
 
       expect(result.count).toBe(6);
       expect(result.name).toBe('original');
-      expect(vi.mocked(fs.promises.writeFile)).toHaveBeenCalledTimes(1);
-      const written = JSON.parse(vi.mocked(fs.promises.writeFile).mock.calls[0][1] as string);
+      expect(vi.mocked(handle.writeFile)).toHaveBeenCalledTimes(1);
+      const written = JSON.parse(vi.mocked(handle.writeFile).mock.calls[0][0] as string);
       expect(written.count).toBe(6);
     });
 
@@ -357,8 +357,8 @@ describe('settings-store', () => {
       await store.update((current) => ({ ...current, count: current.count + 1 }));
 
       expect(store.get().count).toBe(3);
-      const writes = vi.mocked(fs.promises.writeFile).mock.calls.map(
-        (call) => JSON.parse(call[1] as string).count,
+      const writes = vi.mocked(handle.writeFile).mock.calls.map(
+        (call) => JSON.parse(call[0] as string).count,
       );
       expect(writes).toEqual([2, 3]);
     });
@@ -378,11 +378,13 @@ describe('file mode option', () => {
     const store = createSettingsStore<TestSettings>('secret.json', DEFAULTS, undefined, { mode: 0o600 });
     await store.save({ ...DEFAULTS, name: 'x' });
     const filePath = path.join('/tmp/test-app', 'secret.json');
-    expect(fs.promises.writeFile).toHaveBeenCalledWith(filePath, expect.any(String), { encoding: 'utf-8', mode: 0o600 });
+    const tmp = vi.mocked(fs.promises.open).mock.calls[0][0];
+    expect(fs.promises.open).toHaveBeenCalledWith(tmp, 'w', 0o600);
+    expect(fs.promises.rename).toHaveBeenCalledWith(tmp, filePath);
     if (process.platform === 'win32') {
       expect(fs.promises.chmod).not.toHaveBeenCalled();
     } else {
-      expect(fs.promises.chmod).toHaveBeenCalledWith(filePath, 0o600);
+      expect(fs.promises.chmod).toHaveBeenCalledWith(tmp, 0o600);
     }
   });
 
@@ -393,13 +395,13 @@ describe('file mode option', () => {
   });
 });
 
-describe('atomic option', () => {
+describe('atomic writes by default', () => {
   const filePath = path.join('/tmp/test-app', 'atomic.json');
   const platform = Object.getOwnPropertyDescriptor(process, 'platform')!;
   const setPlatform = (value: string) => Object.defineProperty(process, 'platform', { ...platform, value });
   const tempOf = (n = 0) => vi.mocked(fs.promises.open).mock.calls[n][0] as string;
   const atomicStore = (extra: { mode?: number } = {}) =>
-    createSettingsStore<TestSettings>('atomic.json', DEFAULTS, undefined, { atomic: true, ...extra });
+    createSettingsStore<TestSettings>('atomic.json', DEFAULTS, undefined, extra);
 
   beforeEach(() => {
     vi.clearAllMocks();
@@ -473,18 +475,18 @@ describe('atomic option', () => {
   it('removes temp files other processes left behind when it loads, and none of its own', () => {
     vi.mocked(fs.readdirSync).mockReturnValueOnce([
       'atomic.json',
-      'atomic.json.tmp-1-1',
-      `atomic.json.tmp-${process.pid}-7`,
+      '.atomic.json.tmp-1-1',
+      `.atomic.json.tmp-${process.pid}-7`,
       'other.json.tmp-1-1',
     ] as unknown as ReturnType<typeof fs.readdirSync>);
     atomicStore().get();
     expect(fs.rmSync).toHaveBeenCalledTimes(1);
-    expect(fs.rmSync).toHaveBeenCalledWith(path.join('/tmp/test-app', 'atomic.json.tmp-1-1'), { force: true });
+    expect(fs.rmSync).toHaveBeenCalledWith(path.join('/tmp/test-app', '.atomic.json.tmp-1-1'), { force: true });
   });
 
-  it('sweeps nothing for a store that isn\'t atomic', () => {
+  it('sweeps temp files for a store without explicit options', () => {
     createSettingsStore<TestSettings>('plain.json', DEFAULTS).get();
-    expect(fs.readdirSync).not.toHaveBeenCalled();
+    expect(fs.readdirSync).toHaveBeenCalled();
   });
 });
 
@@ -500,7 +502,7 @@ describe('LB-SP-003: write errors are surfaced, not silently swallowed', () => {
     const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
     const store = createSettingsStore<TestSettings>('test.json', DEFAULTS);
     const writeError = new Error('ENOSPC: no space left on device');
-    vi.mocked(fs.promises.writeFile).mockRejectedValue(writeError);
+    vi.mocked(handle.writeFile).mockRejectedValue(writeError);
 
     await expect(store.save(DEFAULTS)).rejects.toThrow('ENOSPC');
 
@@ -518,7 +520,7 @@ describe('LB-SP-003: write errors are surfaced, not silently swallowed', () => {
     let rejectFirst!: (err: Error) => void;
     let callCount = 0;
     // Each save is queued via the pendingWrite chain. First save returns a promise we control.
-    vi.mocked(fs.promises.writeFile).mockImplementation(() => {
+    vi.mocked(handle.writeFile).mockImplementation(() => {
       callCount++;
       if (callCount === 1) {
         return new Promise<void>((_, reject) => {
@@ -552,7 +554,7 @@ describe('LB-SP-003: write errors are surfaced, not silently swallowed', () => {
   it('reject propagates to the caller — write errors are not silently swallowed', async () => {
     vi.spyOn(console, 'error').mockImplementation(() => {});
     const store = createSettingsStore<TestSettings>('test.json', DEFAULTS);
-    vi.mocked(fs.promises.writeFile).mockRejectedValue(new Error('write error'));
+    vi.mocked(handle.writeFile).mockRejectedValue(new Error('write error'));
 
     await expect(store.save(DEFAULTS)).rejects.toThrow('write error');
   });
@@ -562,7 +564,7 @@ describe('LB-SP-003: write errors are surfaced, not silently swallowed', () => {
 
     it('keeps a failed save in memory by default, which some stores rely on', async () => {
       const store = createSettingsStore<TestSettings>('test.json', DEFAULTS);
-      vi.mocked(fs.promises.writeFile).mockRejectedValueOnce(new Error('write error'));
+      vi.mocked(handle.writeFile).mockRejectedValueOnce(new Error('write error'));
       await expect(store.save(named('attempted'))).rejects.toThrow('write error');
       expect(store.get().name).toBe('attempted');
     });
@@ -570,14 +572,14 @@ describe('LB-SP-003: write errors are surfaced, not silently swallowed', () => {
     it('goes back to the value before a failed save when asked', async () => {
       const store = createSettingsStore<TestSettings>('test.json', DEFAULTS, undefined, { rollBackFailedSaves: true });
       await store.save(named('saved'));
-      vi.mocked(fs.promises.writeFile).mockRejectedValueOnce(new Error('write error'));
+      vi.mocked(handle.writeFile).mockRejectedValueOnce(new Error('write error'));
       await expect(store.save(named('attempted'))).rejects.toThrow('write error');
       expect(store.get().name).toBe('saved');
     });
 
     it('doesn\'t undo a newer save that has replaced the failed one', async () => {
       const store = createSettingsStore<TestSettings>('test.json', DEFAULTS, undefined, { rollBackFailedSaves: true });
-      vi.mocked(fs.promises.writeFile).mockRejectedValueOnce(new Error('write error'));
+      vi.mocked(handle.writeFile).mockRejectedValueOnce(new Error('write error'));
       const failed = store.save(named('attempted'));
       const newer = store.save(named('newer'));
       await expect(failed).rejects.toThrow('write error');

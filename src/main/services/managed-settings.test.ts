@@ -9,13 +9,18 @@ vi.mock('electron', () => ({
   },
 }));
 
-vi.mock('fs', () => ({
-  existsSync: vi.fn(() => false),
-  readFileSync: vi.fn(() => { throw new Error('ENOENT'); }),
-  promises: {
-    writeFile: vi.fn(async () => {}),
-  },
-}));
+vi.mock('fs', async () => {
+  const { atomicFsPromises } = await import('../../../test/atomic-fs-mock');
+  const writeFile = vi.fn(async () => {});
+  return {
+    existsSync: vi.fn(() => false),
+    readFileSync: vi.fn(() => { throw new Error('ENOENT'); }),
+    promises: {
+      ...atomicFsPromises(writeFile),
+      writeFile,
+    },
+  };
+});
 
 vi.mock('../telemetry/feature-events', async (importActual) => ({
   ...(await importActual<typeof import('../telemetry/feature-events')>()),
@@ -116,7 +121,7 @@ describe('managed-settings', () => {
       await saveHandler({} as any, newSettings);
 
       expect(vi.mocked(fs.promises.writeFile)).toHaveBeenCalledWith(
-        path.join('/tmp/test-app', 'test-settings.json'),
+        expect.stringContaining('test-settings.json'),
         JSON.stringify(newSettings, null, 2),
         'utf-8',
       );
@@ -137,7 +142,7 @@ describe('managed-settings', () => {
       await managed.saveSettings({ enabled: true, name: 'direct' });
 
       expect(vi.mocked(fs.promises.writeFile)).toHaveBeenCalledWith(
-        path.join('/tmp/test-app', 'test-settings.json'),
+        expect.stringContaining('test-settings.json'),
         expect.any(String),
         'utf-8',
       );

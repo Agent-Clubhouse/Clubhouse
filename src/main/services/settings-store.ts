@@ -116,21 +116,50 @@ const recoveryCopyPath = (source: string, n: number): string => `${source}.unrea
  * so a file that stays broken across launches is copied once. Throws if it can't.
  */
 export function backupUnreadableSettings(filename: string): void {
-  const source = path.join(app.getPath('userData'), filename);
+  backupUnreadableFile(path.join(app.getPath('userData'), filename));
+}
+
+/** The same bounded, durable recovery copies for project-local settings. */
+export function backupUnreadableFile(source: string): void {
   const bytes = fs.readFileSync(source);
   const mode = fs.statSync(source).mode & 0o777;
   for (let n = 0; n < MAX_RECOVERY_COPIES; n++) {
     const target = recoveryCopyPath(source, n);
     if (fs.existsSync(target)) {
-      if (fs.readFileSync(target).equals(bytes)) return;
-      continue;
+      if (!fs.readFileSync(target).equals(bytes)) continue;
+      // A prior attempt may have written the bytes but failed to flush them.
+      const handle = fs.openSync(target, process.platform === 'win32' ? 'r+' : 'r');
+      try { fs.fsyncSync(handle); } finally { fs.closeSync(handle); }
+    } else {
+      const handle = fs.openSync(target, 'wx', mode);
+      try {
+        fs.writeFileSync(handle, bytes);
+        // Creation is subject to umask; carry over the original permissions too.
+        if (process.platform !== 'win32') fs.fchmodSync(handle, mode);
+        fs.fsyncSync(handle);
+      } finally {
+        fs.closeSync(handle);
+      }
     }
-    fs.writeFileSync(target, bytes, { flag: 'wx', mode });
-    // The create mode is subject to the umask. No-op on Windows, where POSIX modes don't apply.
-    if (process.platform !== 'win32') fs.chmodSync(target, mode);
+    syncRecoveryDirectory(path.dirname(source));
     return;
   }
   throw new Error('Too many recovery copies');
+}
+
+/** Persist the new directory entry where directory fsync is supported. */
+function syncRecoveryDirectory(dir: string): void {
+  if (process.platform === 'win32') return;
+  let handle: number | undefined;
+  try {
+    handle = fs.openSync(dir, 'r');
+    fs.fsyncSync(handle);
+  } catch (err) {
+    // telemetry-exempt: these filesystems do not implement directory fsync.
+    if (!['EINVAL', 'ENOTSUP', 'ENOSYS', 'EBADF'].includes((err as NodeJS.ErrnoException)?.code ?? '')) throw err;
+  } finally {
+    if (handle !== undefined) fs.closeSync(handle);
+  }
 }
 
 /** The newest recovery copy of a settings file, if there is one. */
@@ -143,7 +172,8 @@ export function latestRecoveryCopy(filename: string): string | undefined {
 
 let tempFileCounter = 0;
 
-const tempPrefix = (filePath: string): string => `${filePath}.tmp-`;
+// Dot-prefixed siblings stay on the same filesystem and out of ordinary file listings.
+const tempPrefix = (filePath: string): string => path.join(path.dirname(filePath), `.${path.basename(filePath)}.tmp-`);
 
 /**
  * Windows can refuse a rename while another process (often a virus scanner or
@@ -207,12 +237,12 @@ export async function replaceFile(
 
 /**
  * Remove temp files a crash left beside `filePath`, from other processes only:
- * this one's own may still be in flight.
+ * this one's own may still be in flight. Only exact generated names at least
+ * a day old are eligible; similarly named user recovery files stay untouched.
  */
 function sweepTempFiles(filePath: string): void {
   const dir = path.dirname(filePath);
-  const prefix = path.basename(tempPrefix(filePath));
-  const own = `${prefix}${process.pid}-`;
+  const prefixes = [path.basename(tempPrefix(filePath)), `${path.basename(filePath)}.tmp-`];
   let names: string[];
   try {
     names = fs.readdirSync(dir);
@@ -220,9 +250,15 @@ function sweepTempFiles(filePath: string): void {
     // telemetry-exempt: nothing to sweep when the folder can't be listed
     return;
   }
+  const oldest = Date.now() - 24 * 60 * 60 * 1000;
   for (const name of names) {
-    if (!name.startsWith(prefix) || name.startsWith(own)) continue;
+    const prefix = prefixes.find((candidate) => name.startsWith(candidate));
+    if (!prefix) continue;
+    const generated = /^([1-9]\d*)-([1-9]\d*)$/.exec(name.slice(prefix.length));
+    if (!generated || Number(generated[1]) === process.pid) continue;
     try {
+      const stat = fs.lstatSync(path.join(dir, name));
+      if (!stat.isFile() || stat.mtimeMs > oldest) continue;
       fs.rmSync(path.join(dir, name), { force: true });
     } catch {
       // telemetry-exempt: a leftover temp file is harmless; the next launch tries again
@@ -250,9 +286,9 @@ export function createSettingsStore<T>(
      * target, so a crash or power loss mid-write leaves the old file whole
      * instead of a torn one that loads as defaults. Temp files left by a crash
      * are removed at the next load. A symlinked file is replaced by a regular
-     * one. Off by default; turned on store by store.
+     * one. Always enabled; retained for callers that previously opted in.
      */
-    atomic?: boolean;
+    atomic?: true;
   },
 ): SettingsStore<T> {
   // Resolve filePath lazily on each access. `createSettingsStore` runs at
@@ -264,6 +300,7 @@ export function createSettingsStore<T>(
   const getFilePath = () => path.join(app.getPath('userData'), filename);
   let cachedSettings: T | null = null;
   let cacheLoaded = false;
+  let needsRecoveryCopy = false;
   let pendingWrite: Promise<void> = Promise.resolve();
   // Serializes concurrent update() calls so each read sees the prior write's result.
   let updateLock: Promise<unknown> = Promise.resolve();
@@ -287,7 +324,7 @@ export function createSettingsStore<T>(
 
   function loadSettings(): void {
     const filePath = getFilePath();
-    if (options?.atomic) sweepTempFiles(filePath);
+    sweepTempFiles(filePath);
     try {
       const raw = fs.readFileSync(filePath, 'utf-8');
       cachedSettings = parseSettings(raw);
@@ -296,6 +333,14 @@ export function createSettingsStore<T>(
     } catch (err) {
       notifyLoad({ error: err });
       if (fs.existsSync(filePath)) {
+        needsRecoveryCopy = true;
+        try {
+          backupUnreadableSettings(filename);
+          needsRecoveryCopy = false;
+        } catch (backupError) {
+          // Defaults remain readable, but a save must not destroy the only copy.
+          console.warn(`[settings-store] Could not preserve unreadable ${filename}:`, backupError instanceof Error ? backupError.message : backupError);
+        }
         persist.recovery('settings', 'reset_to_default');
         // A parser's message quotes the file, which stays out of the log.
         console.warn(
@@ -320,19 +365,11 @@ export function createSettingsStore<T>(
       })
       .then(() => persist.timed('settings', async () => {
         if (precondition) { await precondition.prepare(); precondition.check(); }
-        if (options?.atomic) {
-          await replaceFile(filePath, serialized, options.mode, precondition);
-          return;
+        if (needsRecoveryCopy) {
+          backupUnreadableSettings(filename);
+          needsRecoveryCopy = false;
         }
-        if (options?.mode == null) {
-          await fs.promises.writeFile(filePath, serialized, 'utf-8');
-          return;
-        }
-        await fs.promises.writeFile(filePath, serialized, { encoding: 'utf-8', mode: options.mode });
-        // writeFile's mode only applies when it creates the file; tighten a
-        // pre-existing file (e.g. created 0644 by hand or an older version) too.
-        // No-op on Windows, where POSIX modes don't apply.
-        if (process.platform !== 'win32') await fs.promises.chmod(filePath, options.mode);
+        await replaceFile(filePath, serialized, options?.mode, precondition);
       }))
       .catch((err) => {
         console.error(`[settings-store] Write to ${filename} failed — cache may diverge from disk:`, err instanceof Error ? err.message : err);
@@ -379,6 +416,8 @@ export function createSettingsStore<T>(
     },
     save(settings: T, precondition?: SettingsCommitPrecondition) {
       precondition?.check();
+      // Even save-before-get must preserve an unreadable existing file.
+      if (!cacheLoaded) loadSettings();
       const before = auditSnapshot();
       const previous = options?.rollBackFailedSaves || precondition ? store.get() : undefined;
       const attempted = cloneSettings(settings);
@@ -411,6 +450,7 @@ export function createSettingsStore<T>(
   settingsStoreResetters.add(() => {
     cachedSettings = null;
     cacheLoaded = false;
+    needsRecoveryCopy = false;
     pendingWrite = Promise.resolve();
     updateLock = Promise.resolve();
   });

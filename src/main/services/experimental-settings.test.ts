@@ -4,13 +4,18 @@ vi.mock('electron', () => ({
   app: { getPath: () => '/tmp/test-app' },
 }));
 
-vi.mock('fs', () => ({
-  existsSync: vi.fn(() => false),
-  readFileSync: vi.fn(() => { throw Object.assign(new Error('ENOENT'), { code: 'ENOENT' }); }),
-  promises: {
-    writeFile: vi.fn(async () => {}),
-  },
-}));
+vi.mock('fs', async () => {
+  const { atomicFsPromises } = await import('../../../test/atomic-fs-mock');
+  const writeFile = vi.fn(async () => {});
+  return {
+    existsSync: vi.fn(() => false),
+    readFileSync: vi.fn(() => { throw Object.assign(new Error('ENOENT'), { code: 'ENOENT' }); }),
+    promises: {
+      ...atomicFsPromises(writeFile),
+      writeFile,
+    },
+  };
+});
 
 import * as fs from 'fs';
 import { resetAllSettingsStoresForTests } from './settings-store';

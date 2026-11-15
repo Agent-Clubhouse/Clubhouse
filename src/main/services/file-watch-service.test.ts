@@ -38,6 +38,7 @@ vi.mock('../../shared/ipc-channels', () => ({
 
 import { startWatch, stopWatch, stopAllWatches, cleanupWatchesForWindow, getActiveWatchCount, extractBaseDir, compileWatchGlob, _activeWatches, _watchKey, MAX_PENDING_EVENTS } from './file-watch-service';
 import type { BrowserWindow } from 'electron';
+import { replaceFile } from './settings-store';
 
 /**
  * Create a mock Electron WebContents with support for once/removeListener
@@ -108,6 +109,26 @@ describe('file-watch-service', () => {
   });
 
   describe('startWatch', () => {
+    it('ignores hidden settings temp events and observes repeated replacements through its directory watch', async () => {
+      const sender = makeSender();
+      const target = path.join(tmpDir, 'settings.json');
+      startWatch('settings', path.join(tmpDir, '*'), sender as unknown as Electron.WebContents);
+      for (const count of [1, 2]) {
+        await replaceFile(target, JSON.stringify({ count }), undefined);
+        await fireEvent('rename', `.settings.json.tmp-${process.pid}-${count}`);
+        await fireEvent('change', `.settings.json.tmp-${process.pid}-${count}`);
+        expect(_activeWatches.get(_watchKey(sender.id, 'settings'))!.pendingEvents.size).toBe(0);
+        await fireEvent('rename', 'settings.json');
+        await vi.advanceTimersByTimeAsync(200);
+        expect(JSON.parse(fs.readFileSync(target, 'utf-8'))).toEqual({ count });
+      }
+      expect(sentEvents(sender)).toEqual([
+        { type: 'created', path: target },
+        { type: 'created', path: target },
+      ]);
+      expect(fs.readdirSync(tmpDir)).toEqual(['settings.json']);
+    });
+
     it('throws if base directory does not exist', () => {
       const sender = makeSender();
       expect(() =>

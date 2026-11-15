@@ -16,13 +16,18 @@ vi.mock('electron', () => ({
   },
 }));
 
-vi.mock('fs', () => ({
-  existsSync: vi.fn(() => false),
-  readFileSync: vi.fn(() => { throw new Error('ENOENT'); }),
-  promises: {
-    writeFile: vi.fn(async () => {}),
-  },
-}));
+vi.mock('fs', async () => {
+  const { atomicFsPromises } = await import('../../../test/atomic-fs-mock');
+  const writeFile = vi.fn(async () => {});
+  return {
+    existsSync: vi.fn(() => false),
+    readFileSync: vi.fn(() => { throw new Error('ENOENT'); }),
+    promises: {
+      ...atomicFsPromises(writeFile),
+      writeFile,
+    },
+  };
+});
 
 import * as fs from 'fs';
 import { resetAllSettingsStoresForTests } from '../services/settings-store';
@@ -103,7 +108,7 @@ describe('settings-handlers', () => {
       const handler = registeredHandlers.get('settings:clipboard:save')!;
       await handler({} as any, { clipboardCompat: true });
       expect(vi.mocked(fs.promises.writeFile)).toHaveBeenCalledWith(
-        path.join('/tmp/test-app', 'clipboard-settings.json'),
+        expect.stringContaining('clipboard-settings.json'),
         JSON.stringify({ clipboardCompat: true }, null, 2),
         'utf-8',
       );
