@@ -3,11 +3,12 @@ import { promisify } from 'util';
 import * as fs from 'fs';
 import * as path from 'path';
 import { devNull } from 'os';
+import { createHash, timingSafeEqual } from 'crypto';
 import { normalizeGitRemote } from '../../shared/git-remote';
 import type { HandoffTransferBounds } from '../../shared/handoff-manifest';
 import { summarizeHandoffManifest } from '../../shared/handoff-manifest';
 import type { HandoffSecretPolicy } from './handoff-secret-settings';
-import { openHandoffRepository, verifyHandoffSnapshot, HandoffSnapshotError, type HandoffSnapshot } from './handoff-snapshot';
+import { openHandoffRepository, openHandoffSnapshotArtifact, verifyHandoffSnapshot, HandoffSnapshotError, type HandoffSnapshot } from './handoff-snapshot';
 import { scanHandoffGitHistory } from './handoff-git-bundle';
 import { handoffGitPlatformFlags, reportHandoffGitFailure } from './handoff-git-diagnostics';
 import { handoffGitFile, handoffGitLocation } from './handoff-git-paths';
@@ -90,7 +91,28 @@ export async function receiveHandoffCommit(options: {
       if (!acquired) {
         if (!snapshot.manifest.bundle) throw new Error('Handoff commit is unavailable.');
         source = 'bundle';
-        const bundle = handoffGitFile(location.cwd, path.join(root, 'bundle.bin'));
+        let inputBundle = path.join(root, 'bundle.bin');
+        if (path.dirname(quarantine) !== root) {
+          // Git's bundle reader can reject an overlong input filename too. Pin
+          // and reverify the original through Node, then give Git a short copy.
+          inputBundle = path.join(quarantine, 'incoming.bundle');
+          const artifact = await openHandoffSnapshotArtifact({ snapshot: { ...snapshot, root }, file: -1,
+            bounds, policy: secretPolicy, handoffId, side: 'receiver', authorize: check });
+          try {
+            const output = await fs.promises.open(inputBundle, 'wx', 0o600);
+            try {
+              const hash = createHash('sha256');
+              let offset = 0;
+              while (offset < artifact.size) {
+                const bytes = await artifact.read(offset);
+                if (!bytes.length) throw new HandoffSnapshotError('source_changed');
+                hash.update(bytes); await output.writeFile(bytes); offset += bytes.length;
+              }
+              if ((await output.stat()).size !== artifact.size || !timingSafeEqual(hash.digest(), Buffer.from(snapshot.manifest.bundle.sha256, 'hex'))) throw new HandoffSnapshotError('hash_mismatch');
+            } finally { await output.close(); }
+          } finally { await artifact.close(); }
+        }
+        const bundle = handoffGitFile(location.cwd, inputBundle);
         const heads = (await readBare(['bundle', 'list-heads', bundle])).toString('ascii').trim();
         if (heads !== `${commit} HEAD`) throw new HandoffSnapshotError('hash_mismatch');
         await readBare(['-c', 'protocol.file.allow=always', 'fetch', '--no-tags', '--', bundle, 'HEAD']);

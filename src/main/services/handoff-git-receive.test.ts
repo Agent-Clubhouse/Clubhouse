@@ -15,6 +15,7 @@ import * as gitPaths from './handoff-git-paths';
 import * as quarantines from './handoff-quarantine';
 import * as bundles from './handoff-git-bundle';
 import { HandoffSnapshotError } from './handoff-snapshot';
+import * as snapshotArtifacts from './handoff-snapshot';
 const execution = vi.hoisted(() => ({ exec: vi.fn(), spawn: vi.fn() }));
 vi.mock('child_process', async (importOriginal) => {
   const actual = await importOriginal<typeof import('child_process')>();
@@ -151,7 +152,13 @@ it.each([['pack filename', 150], ['explicit Git directory', 170], ['repository p
           expect(cwd.startsWith(profileRoot + path.sep)).toBe(true);
         }
         expect(fs.existsSync(cwd)).toBe(false);
-        const gitDir = (call[1] as string[]).find((arg) => arg.startsWith('--git-dir='));
+        const command = call[1] as string[];
+        if (command.includes('list-heads')) {
+          const bundle = path.resolve(cwd, command.at(-1)!);
+          expect(path.dirname(bundle)).toBe(cwd);
+          expect(bundle.length).toBeLessThan(260);
+        }
+        const gitDir = command.find((arg) => arg.startsWith('--git-dir='));
         if (gitDir) expect(Buffer.byteLength(gitDir.slice('--git-dir='.length))).toBeLessThan(220);
       }
     }
@@ -162,7 +169,7 @@ it.each([['pack filename', 150], ['explicit Git directory', 170], ['repository p
   expect(fs.readFileSync(path.join(receiver, 'public.txt'), 'utf8')).toBe('Receiver original');
   expect(fs.readdirSync(destination).some((name) => name.startsWith('quarantine-'))).toBe(false);
 }, 30_000);
-it.each(['setup', 'init', 'timeout', 'hash mismatch', 'secret rejection'] as const)('cleans an external quarantine after %s failure', async (failure) => {
+it.each(['setup', 'init', 'timeout', 'hash mismatch', 'secret rejection', 'copied bundle mismatch'] as const)('cleans an external quarantine after %s failure', async (failure) => {
   const options = await prepared();
   const destination = path.join(root, 'x'.repeat(220 - root.length - 1));
   await fs.promises.rename(options.snapshot.root, destination);
@@ -180,6 +187,16 @@ it.each(['setup', 'init', 'timeout', 'hash mismatch', 'secret rejection'] as con
       if (path.basename(args[0].toString()) === 'hooks') throw new Error('Injected setup failure');
       return mkdir(...args);
     });
+  } else if (failure === 'copied bundle mismatch') {
+    const open = snapshotArtifacts.openHandoffSnapshotArtifact;
+    vi.spyOn(snapshotArtifacts, 'openHandoffSnapshotArtifact').mockImplementation(async (request) => {
+      const artifact = await open(request);
+      return { ...artifact, read: async (...args: Parameters<typeof artifact.read>) => {
+        const bytes = await artifact.read(...args);
+        if (bytes.length) bytes[0] ^= 1;
+        return bytes;
+      } };
+    });
   } else if (failure === 'secret rejection') {
     vi.spyOn(bundles, 'scanHandoffGitHistory').mockRejectedValueOnce(new HandoffSnapshotError('secret_blocked'));
   } else {
@@ -191,7 +208,8 @@ it.each(['setup', 'init', 'timeout', 'hash mismatch', 'secret rejection'] as con
       return run(...args);
     });
   }
-  await expect(receiveHandoffCommit(options)).rejects.toThrow();
+  if (failure === 'copied bundle mismatch') await expect(receiveHandoffCommit(options)).rejects.toMatchObject({ code: 'hash_mismatch' });
+  else await expect(receiveHandoffCommit(options)).rejects.toThrow();
   expect(directory).toBeDefined();
   expect(path.dirname(directory!)).toBe(await fs.promises.realpath(path.join(root, 'q')));
   expect(fs.existsSync(directory!)).toBe(false);
