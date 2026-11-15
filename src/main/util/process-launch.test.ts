@@ -20,6 +20,7 @@ beforeEach(async () => {
 
 afterEach(async () => {
   vi.restoreAllMocks();
+  vi.unstubAllEnvs();
   await fs.promises.rm(tmp, { recursive: true, force: true, maxRetries: 20, retryDelay: 100 });
 });
 
@@ -108,6 +109,48 @@ describe('resolveProcessLaunch', () => {
 // Picked up by both existing Windows CI unit shards. These exercise the same
 // execFile API the five callers use, with a real node child that echoes JSON.
 describe.runIf(nativeWindows)('real Windows argv (#2239)', () => {
+  it('Codex availability runs an npm shim from PATH with an envOverride', async () => {
+    const { CodexCliProvider } = await import('../orchestrators/codex-cli-provider');
+    const { clearBinaryCache } = await import('../orchestrators/shared');
+    const { invalidateShellEnvironmentCache } = await import('./shell');
+    // Keep discovery on the fixture PATH, away from any installed CLI. All
+    // actual discovery, launch resolution and child-process code stays real.
+    class FixtureCodexProvider extends CodexCliProvider {
+      protected getExtraBinaryPaths(): string[] { return []; }
+    }
+    const script = path.join(tmp, 'version.cjs');
+    const report = path.join(tmp, 'availability.json');
+    await fs.promises.writeFile(path.join(tmp, 'codex.cmd'), '@node "%~dp0\\version.cjs" %*\r\n');
+    await fs.promises.writeFile(script, [
+      'const fs = require("fs");',
+      'const argv = process.argv.slice(2);',
+      'if (JSON.stringify(argv) !== JSON.stringify(["--version"])) process.exit(2);',
+      'fs.writeFileSync(process.env.CLUBHOUSE_AVAILABILITY_REPORT, JSON.stringify({ argv, marker: process.env.CLUBHOUSE_AVAILABILITY_MARKER }));',
+      'console.log("codex 0.0.0-fixture");',
+    ].join('\n'));
+    // No node.exe on the discovery PATH: execution must use the overridden
+    // PATH to find the npm shim's interpreter.
+    vi.stubEnv('PATH', tmp);
+    vi.stubEnv('PATHEXT', '.CMD;.EXE');
+    vi.stubEnv('CLUBHOUSE_TEST_CLI_BINARIES', undefined);
+    clearBinaryCache();
+    invalidateShellEnvironmentCache();
+    try {
+      const result = await new FixtureCodexProvider().checkAvailability({
+        PATH: `${tmp};${path.dirname(process.execPath)}`,
+        CLUBHOUSE_AVAILABILITY_REPORT: report,
+        CLUBHOUSE_AVAILABILITY_MARKER: 'a&calc|^%PATH%!x! "quoted"',
+      });
+      expect(result).toEqual({ available: true });
+      expect(JSON.parse(await fs.promises.readFile(report, 'utf8'))).toEqual({
+        argv: ['--version'], marker: 'a&calc|^%PATH%!x! "quoted"',
+      });
+    } finally {
+      clearBinaryCache();
+      invalidateShellEnvironmentCache();
+    }
+  }, 20_000);
+
   it.each([false, true])('preserves positional flags for an ordinary batch reader (trailing slash: %s)', async (trailingSlash) => {
     const reader = path.join(tmp, 'reader.cmd');
     await fs.promises.writeFile(reader, '@echo off\r\nif "%~1"=="-f" echo file is %~2\r\n');
