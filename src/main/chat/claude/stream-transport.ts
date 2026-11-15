@@ -1,3 +1,4 @@
+import { StringDecoder } from 'string_decoder';
 import type { ChildProcess } from 'child_process';
 import type { ClaudePermissionMode } from './events';
 import { initializedFromWire, permissionRequestFromWire, type ClaudeWireMessage } from './normalizer';
@@ -101,13 +102,22 @@ export class ClaudeStreamTransport extends ClaudeTransportBase {
 
     child.stdout?.setEncoding('utf8');
     child.stdout?.on('data', (chunk: string) => this.onStdout(chunk));
-    child.stderr?.on('data', (d: Buffer) => this.log('warn', 'claude stderr', { data: d.toString().slice(0, 2000) }));
+    const stderrDecoder = new StringDecoder('utf8');
+    const stderrLog = this.logRedactor.stream();
+    const logStderr = (stderr: string) => { if (stderr) this.log('warn', 'claude stderr', { stderr }); };
+    child.stderr?.on('data', (d: Buffer) => logStderr(stderrLog.feed(stderrDecoder.write(d))));
+    const flushStderrLog = () => {
+      logStderr(stderrLog.feed(stderrDecoder.end()));
+      logStderr(stderrLog.flush());
+    };
+    child.stderr?.on('end', flushStderrLog);
     // 'exit' can fire before stdout is drained, so it only records the status;
     // teardown waits for 'close', after all stdio has ended.
     let exitStatus: { code: number | null; signal: NodeJS.Signals | null } = { code: null, signal: null };
     child.on('exit', (code, signal) => { exitStatus = { code, signal }; });
     this.exited = new Promise((resolve) => {
       child.on('close', (code: number | null, signal: NodeJS.Signals | null) => {
+        flushStderrLog();
         this.onStdout('\n'); // flush a final unterminated line
         const status = { code: code ?? exitStatus.code, signal: signal ?? exitStatus.signal };
         this.failPendingControl(new Error(`claude exited (code ${status.code}, signal ${status.signal})`));
@@ -130,6 +140,7 @@ export class ClaudeStreamTransport extends ClaudeTransportBase {
   }
 
   send(input: ClaudeUserInput): void {
+    this.logRedactor.remember(input);
     this.requireRunning();
     this.write(toWireUserMessage(input, this.sessionId));
   }
@@ -212,11 +223,11 @@ export class ClaudeStreamTransport extends ClaudeTransportBase {
     try {
       msg = JSON.parse(line);
     } catch {
-      this.log('warn', 'Malformed stream-json line from claude', { line: line.slice(0, 500) });
+      this.log('warn', 'Malformed stream-json line from claude', { line: line });
       return;
     }
     if (!isObj(msg) || typeof msg.type !== 'string') {
-      this.log('warn', 'stream-json line without a type', { line: line.slice(0, 500) });
+      this.log('warn', 'stream-json line without a type', { line: line });
       return;
     }
     switch (msg.type) {

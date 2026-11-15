@@ -44,6 +44,29 @@ beforeEach(() => {
 });
 
 describe('Copilot SDK callback wiring with fake transport', () => {
+  it.each(['empty_response', 'query'])('scrubs planted turn/system prompts from %s errors and exit stderr (#1919)', async (errorType) => {
+    const prompt = `COPILOT-${errorType}-PRIVATE-TURN-1919`;
+    const system = `COPILOT-${errorType}-PRIVATE-SYSTEM-1919`;
+    let exit!: () => void;
+    fake.launch.mockResolvedValue({ uri: 'fake', connectionToken: 'fake', exited: new Promise<void>((r) => { exit = r; }), kill: async () => exit(), stderrTail: () => `warning: ${system} ${prompt}`, exitCode: () => 1 });
+    const send = vi.fn(async () => 'message-1');
+    fake.create.mockImplementationOnce(async (config) => { fake.configs.push(config); return { ...sdkSession(), send }; });
+    const log = vi.fn();
+    const session = await new CopilotSdkChatDriver({ log }).start({ agentId: 'fixture', provider: 'copilot-cli', cwd: '/synthetic', binaryPath: 'fake', level: 'auto_edit' });
+    await session.send([{ type: 'text', text: system }, { type: 'text', text: prompt }], 'prompt');
+    fake.configs[0].onEvent({ type: 'session.error', data: { errorType, errorCode: errorType, message: `rejected: ${system} ${prompt}` } });
+    exit();
+    await new Promise((r) => setImmediate(r));
+    const errorLog = log.mock.calls.find((c) => c[1] === (errorType === 'empty_response' ? 'Copilot returned no response' : 'Copilot session error'));
+    expect(errorLog?.[2]?.message).toContain('rejected: <redacted:');
+    const exitLog = log.mock.calls.find((c) => c[1] === 'Copilot CLI exited');
+    expect(exitLog?.[2]).toMatchObject({ exitCode: 1, stderr: expect.stringContaining('warning: <redacted:') });
+    expect(JSON.stringify(log.mock.calls)).not.toContain(prompt);
+    expect(JSON.stringify(log.mock.calls)).not.toContain(system);
+    expect(send).toHaveBeenCalledWith(expect.objectContaining({ prompt: `${system}\n${prompt}` }));
+    await session.close();
+  });
+
   it.each([
     { errorType: 'query', message: 'No response was returned. Send your message again to retry.' },
     { errorType: 'empty_response', message: 'Empty answer' },

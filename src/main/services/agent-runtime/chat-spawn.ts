@@ -1,3 +1,4 @@
+import { LogRedactor } from '../../../shared/log-redaction';
 /**
  * Starts an agent in the chat runtime when the experimental Chat flag is on,
  * the provider (or the agent) is set to Chat, and a chat driver is registered
@@ -146,8 +147,9 @@ function errorCodeOf(err: unknown): string | undefined {
 }
 
 /** Tell the user (toast) and the log why an agent didn't get the chat it asked for. */
-function notifyFallback(agentId: string, notice: ChatRuntimeNotice): void {
-  appLog('core:chat', 'warn', notice.message, { meta: { agentId, code: notice.code } });
+function notifyFallback(agentId: string, notice: ChatRuntimeNotice, context: { mission?: string; systemPrompt?: string }): void {
+  const logRedactor = new LogRedactor([], [context.mission ?? '', context.systemPrompt ?? '']);
+  appLog('core:chat', 'warn', logRedactor.text(notice.message), { meta: { agentId, code: notice.code } });
   broadcastToAllWindows(IPC.CHAT.RUNTIME_NOTICE, agentId, notice);
 }
 
@@ -348,7 +350,7 @@ export async function tryStartChatAgent(
     ? `${DRIVER_LABELS[resolved.driver] ?? resolved.driver} is not registered for ${cliLabel(provider.id)}`
     : undefined;
   if (candidates.length === 0) {
-    if (unavailablePreference) notifyFallback(params.agentId, { level: 'warn', code: 'fallback', message: `Opened in the CLI view: ${unavailablePreference}${copilotRecoveryHint(provider.id, resolved.driver)}` });
+    if (unavailablePreference) notifyFallback(params.agentId, { level: 'warn', code: 'fallback', message: `Opened in the CLI view: ${unavailablePreference}${copilotRecoveryHint(provider.id, resolved.driver)}` }, params);
     appLog('core:chat', 'info', 'No chat driver registered for provider; using the terminal', {
       meta: { agentId: params.agentId, provider: provider.id },
     });
@@ -495,7 +497,7 @@ async function runChatStart(
         facts.resumeHonored = resumeOpen.honored;
         if (resumeOpen.timing) facts.resumeTiming = resumeOpen.timing;
       }
-      if (fallbackNotice) notifyFallback(params.agentId, fallbackNotice);
+      if (fallbackNotice) notifyFallback(params.agentId, fallbackNotice, params);
       return 'chat';
     }
     if (outcome.errorCode) attempt.errorCode = outcome.errorCode;
@@ -536,7 +538,7 @@ async function runChatStart(
         code: 'login_required',
         message: `${cliLabel(provider.id)} needs you to log in. Opening the CLI view so you can log in${login.hint ? ` (${login.hint})` : ''}. Chat starts next time.`,
       }
-    : { level: 'warn', code: 'fallback', message: `Opened in the CLI view: ${skipped.join('; ')}${copilotRecoveryHint(provider.id, candidates[0]?.id)}` });
+    : { level: 'warn', code: 'fallback', message: `Opened in the CLI view: ${skipped.join('; ')}${copilotRecoveryHint(provider.id, candidates[0]?.id)}` }, params);
   return 'terminal';
 
   /** Nonce, Clubhouse MCP bridge + project servers and env: once, before the first start attempt. */
@@ -749,7 +751,7 @@ async function runChatStart(
       unregisterChatRuntime(params.agentId, runtime);
       if (guardFailed) throw err;
       const message = err instanceof Error ? err.message : String(err);
-      appLog('core:chat', 'warn', 'Chat start failed', { meta: { agentId: params.agentId, driver: driver.id, error: message, sessionStarted } });
+      appLog('core:chat', 'warn', 'Chat start failed', { meta: { agentId: params.agentId, driver: driver.id, error: new LogRedactor([], [params.mission ?? '', params.systemPrompt ?? '']).text(message), sessionStarted } });
       recordBreadcrumb('error', `chat.start_failed.${codePart(driver.id)}`);
       const code = errorCodeOf(err);
       return { ok: false, error: message, ...(code && { errorCode: code }), sessionStarted };

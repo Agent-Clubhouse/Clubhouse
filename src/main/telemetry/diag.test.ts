@@ -67,7 +67,7 @@ describe('diag gating', () => {
     setDiagSink(sink);
     diag('core:agent', 'info', `Spawning in ${HOME}/repo`, { args: ['-p', 'secret mission'], cwd: `${HOME}/repo`, token: 'abc', exitCode: 1 });
     expect(sink.lines).toEqual([
-      { ns: 'core:agent', level: 'info', msg: 'Spawning in <home>/repo', meta: { args: '<redacted: 2 items>', cwd: '<home>/repo', token: '<redacted>', exitCode: 1 } },
+      { ns: 'core:agent', level: 'info', msg: 'Spawning in <home>/repo', meta: { args: ['-p', '<redacted: 14 chars>'], cwd: '<home>/repo', token: '<redacted>', exitCode: 1 } },
     ]);
   });
 

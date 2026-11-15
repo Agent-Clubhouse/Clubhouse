@@ -62,6 +62,9 @@ describe('diag redaction', () => {
   it('never writes prompt or response content, tool or RPC arguments, or env values (#1919)', () => {
     const mission = 'MISSION-CANARY fix the login bug';
     const out = r.meta({
+      line: mission,
+      promptLength: mission.length,
+      hasSystemPrompt: true,
       prompt: mission,
       systemPrompt: mission,
       appendSystemPrompt: mission,
@@ -87,7 +90,10 @@ describe('diag redaction', () => {
     expect(JSON.stringify(out)).not.toContain('/usr/bin');
     expect(out).toMatchObject({
       prompt: `<redacted: ${mission.length} chars>`,
-      args: '<redacted: 4 items>',
+      args: ['-p', `<redacted: ${mission.length} chars>`, '--model', 'opus'],
+      line: `<redacted: ${mission.length} chars>`,
+      promptLength: mission.length,
+      hasSystemPrompt: true,
       params: '<redacted: 2 keys>',
       messages: '<redacted: 1 items>',
       // Which variables were set is kept; their values never are.

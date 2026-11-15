@@ -67,6 +67,51 @@ async function startWith(child: ScriptedChild): Promise<{ transport: ClaudeStrea
 const tick = () => new Promise((r) => setImmediate(r));
 
 describe('ClaudeStreamTransport process lifecycle', () => {
+  it.each(['CLAUDE-SPLIT-PRIVATE-TURN-1919', 'CLAUDE-SPLIT-🌟-PRIVATE-TURN-1919'])('does not log split stderr prompt fragments including split UTF-8 (%s)', async (prompt) => {
+    const child = new ScriptedChild();
+    const log = vi.fn();
+    child.on('host-message', (m) => { if (m.request?.subtype === 'initialize') child.line({ type: 'control_response', response: { subtype: 'success', request_id: m.request_id, response: {} } }); });
+    const transport = new ClaudeStreamTransport({ binary: 'claude', cwd: '.', permissionMode: 'default', log }, () => child as unknown as ChildProcess);
+    await transport.start();
+    transport.send({ text: prompt });
+    const bytes = Buffer.from(prompt);
+    const split = prompt.includes('🌟') ? bytes.indexOf(Buffer.from('🌟')) + 2 : 20;
+    child.stderr.write(Buffer.concat([Buffer.from('warning: '), bytes.subarray(0, split)]));
+    expect(JSON.stringify(log.mock.calls)).not.toContain('CLAUDE-SPLIT-');
+    child.stderr.write(bytes.subarray(split));
+    child.emit('close', 1, null);
+    expect(JSON.stringify(log.mock.calls)).toContain(`<redacted: ${prompt.length} chars>`);
+    expect(JSON.stringify(log.mock.calls)).not.toContain('CLAUDE-SPLIT-');
+  });
+
+  it('scrubs planted turn/system text from transport diagnostics while preserving wire content (#1919)', async () => {
+    const child = new ScriptedChild();
+    const log = vi.fn();
+    const prompt = 'CLAUDE-STREAM-PRIVATE-TURN-1919';
+    const system = 'CLAUDE-STREAM-PRIVATE-SYSTEM-1919';
+    child.on('host-message', (m) => {
+      if (m.request?.subtype === 'initialize') child.line({ type: 'control_response', response: { subtype: 'success', request_id: m.request_id, response: {} } });
+    });
+    const transport = new ClaudeStreamTransport({ binary: 'claude', cwd: '.', permissionMode: 'default', appendSystemPrompt: system, log }, () => child as unknown as ChildProcess);
+    await transport.start();
+    transport.send({ text: prompt });
+    child.stderr.write(`warning: ${prompt} ${system}`);
+    child.stdout.write(prompt + '\n');
+    child.line({ prompt }); // valid JSON, no type
+    child.stdin.emit('error', new Error(`stdin failed: ${prompt}`));
+    child.emit('error', new Error(`process failed: ${system}`));
+    for (const msg of ['claude stderr', 'Malformed stream-json line from claude', 'stream-json line without a type', 'claude stdin error', 'claude process error']) {
+      const entry = log.mock.calls.find((c) => c[1].endsWith(msg));
+      expect(entry, msg).toBeDefined();
+      expect(JSON.stringify(entry), msg).toContain('<redacted:');
+    }
+    expect(JSON.stringify(log.mock.calls)).not.toContain(prompt);
+    expect(JSON.stringify(log.mock.calls)).not.toContain(system);
+    expect(JSON.stringify(child.written)).toContain(prompt);
+    expect(JSON.stringify(log.mock.calls)).toContain('warning:');
+    child.emit('close', 1, null);
+  });
+
   it("keeps stdout that arrives after 'exit' and ends on 'close'", async () => {
     const child = new ScriptedChild();
     const { events, done } = await startWith(child);

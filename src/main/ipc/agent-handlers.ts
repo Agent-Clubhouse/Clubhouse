@@ -1,3 +1,4 @@
+import { LogRedactor } from '../../shared/log-redaction';
 import { contextWindowOptionsFor } from '../services/context-window';
 import { readAgentGrants, resetAgentGrants, setAgentGrant } from '../services/agent-grants-service';
 import { grantToolMap } from '../services/clubhouse-mcp/tool-registry';
@@ -617,13 +618,15 @@ export function registerAgentHandlers(): void {
         // it uses a durable agent's worktree and quick-agent defaults.
         await agentSystem.spawnAgent({ ...params, ...(params.kind === 'quick' && { quickOwner: { kind: 'user' }, chain: [] }) });
       } catch (err) {
+        const logRedactor = new LogRedactor();
+        logRedactor.remember(params);
         appLog('core:ipc', 'error', 'Agent spawn failed', {
           meta: {
             agentId: params.agentId,
             kind: params.kind,
             orchestrator: params.orchestrator,
-            error: err instanceof Error ? err.message : String(err),
-            stack: err instanceof Error ? err.stack : undefined,
+            error: logRedactor.text(err instanceof Error ? err.message : String(err)),
+            stack: err instanceof Error && err.stack ? logRedactor.text(err.stack) : undefined,
           },
         });
         throw err;

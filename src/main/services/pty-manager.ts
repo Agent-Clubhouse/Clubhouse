@@ -1,3 +1,4 @@
+import { LogRedactor, redactLogValue } from '../../shared/log-redaction';
 import * as fs from 'fs';
 import * as fsp from 'fs/promises';
 import * as path from 'path';
@@ -44,6 +45,9 @@ interface ManagedSession {
   generation: number;
   lastActivity: number;
   receivedInput?: boolean;
+  logRedactor: LogRedactor;
+  logInput: string;
+  logInputOverflow: boolean;
   killing: boolean;
   outputChunks: string[];
   outputHead: number;
@@ -175,7 +179,8 @@ const EXIT_REDACT_CHARS = EXIT_TAIL_CHARS * 2;
  * would have caught. When the redacted window starts mid-output, its first
  * line may hold a value cut off from its key (`password: x`) and is dropped.
  */
-function exitTailForDiag(buffer: string): string {
+function exitTailForDiag(buffer: string, redactor: LogRedactor): string {
+  buffer = redactor.text(stripTerminalEscapes(buffer), Infinity);
   let text = stripTerminalEscapes(buffer.slice(-EXIT_SCAN_CHARS));
   const truncated = buffer.length > EXIT_SCAN_CHARS || text.length > EXIT_REDACT_CHARS;
   text = text.slice(-EXIT_REDACT_CHARS);
@@ -194,14 +199,14 @@ function spawnErrno(err: unknown): string | undefined {
 }
 
 /**
- * Record a failed `pty.spawn` call: the full message in a diag line, and the
+ * Record a failed `pty.spawn` call: the scrubbed message in a diag line, and the
  * errno, when the registry names it, as the error type of the step it
  * escapes (else the caller's `pty_spawn_failed`).
  */
-function reportSpawnFailure(err: unknown, msg: string, meta: Record<string, unknown>): void {
+function reportSpawnFailure(err: unknown, msg: string, meta: Record<string, unknown>, redactor = new LogRedactor()): void {
   const errno = spawnErrno(err);
   if (errno && SPAWN_ERRNO_TYPES.has(errno)) tagError(err, errno as ErrorType);
-  diag('core:pty', 'error', msg, { ...meta, code: errno, error: err instanceof Error ? err.message : String(err) });
+  diag('core:pty', 'error', msg, { ...meta, code: errno, error: redactor.text(err instanceof Error ? err.message : String(err)) });
 }
 
 /**
@@ -270,6 +275,9 @@ function createSession(process: pty.IPty, agentId: string, pendingCommand?: stri
   return {
     process,
     agentId,
+    logRedactor: new LogRedactor(),
+    logInput: '',
+    logInputOverflow: false,
     generation: ++sessionGeneration,
     lastActivity: Date.now(),
     killing: false,
@@ -480,6 +488,7 @@ function cleanupSession(agentId: string): void {
 }
 
 export async function spawn(agentId: string, cwd: string, binary: string, args: string[] = [], extraEnv?: Record<string, string>, onExit?: (agentId: string, exitCode: number, buffer?: string, killed?: boolean) => void, commandPrefix?: string, managed?: { beforeCreate(): void; onCreated(identity: string): void; onObservedExit(): void }): Promise<void> {
+  const logRedactor = new LogRedactor(args);
   await validateSpawnCwd(cwd);
 
   if (sessions.has(agentId)) {
@@ -534,11 +543,12 @@ export async function spawn(agentId: string, cwd: string, binary: string, args: 
       });
     }
   } catch (err) {
-    reportSpawnFailure(err, 'Failed to spawn PTY process', { agentId, binary: binaryName(binary), cwd });
+    reportSpawnFailure(err, 'Failed to spawn PTY process', { agentId, binary: binaryName(binary), cwd }, logRedactor);
     throw err;
   }
 
   const session = createSession(proc, agentId, pendingCommand);
+  session.logRedactor = logRedactor;
   session.onExitCallback = onExit;
   sessions.set(agentId, session);
   session.requireObservedExit = !!managed;
@@ -581,11 +591,13 @@ export async function spawn(agentId: string, cwd: string, binary: string, args: 
     // Plain text for the renderer's launch error (#2088); the raw slice can
     // start mid escape sequence, so strip a wider window first.
     const ptyBuffer = stripTerminalEscapes(fullBuffer.slice(-EXIT_SCAN_CHARS)).slice(-EXIT_TAIL_CHARS);
-    // The last output is the clue on an exit nobody asked for (#2306), so
-    // only a failed one keeps it; it stays in the local diag line.
+    // Register a partial, unsubmitted input too. Binary or oversized input
+    // cannot be proven scrubbed, so those runs retain only the output size.
+    current.logRedactor.rememberText(stripTerminalEscapes(current.logInput));
+    // Scrub known prompt values before cutting any diagnostic output.
     const failed = exitCode !== 0 && !current.killing;
     diag('core:pty', failed ? 'error' : 'info', 'PTY exited', {
-      agentId, exitCode, binary: binaryName(binary), ...(failed ? { lastOutput: exitTailForDiag(fullBuffer) } : {}),
+      agentId, exitCode, binary: binaryName(binary), ...(failed ? { lastOutput: current.logInputOverflow ? redactLogValue(fullBuffer) : exitTailForDiag(fullBuffer, current.logRedactor) } : {}),
     });
 
     if (annexEventBus.isActive()) {
@@ -709,6 +721,21 @@ export function hasReceivedInput(agentId: string): boolean {
   return !session || session.receivedInput === true;
 }
 
+/** Assemble bracketed/chunked pastes before registering their diagnostic redaction. */
+function rememberPtyInput(session: ManagedSession, data: string): void {
+  if (session.logInputOverflow) return;
+  session.logInput += data;
+  if (session.logInput.length > 1024 * 1024) {
+    session.logInputOverflow = true;
+    session.logInput = '';
+    return;
+  }
+  const pasting = session.logInput.includes('\x1b[200~') && !session.logInput.includes('\x1b[201~');
+  if (pasting || !/[\r\n]/.test(data) && !session.logInput.includes('\x1b[201~')) return;
+  session.logRedactor.rememberText(stripTerminalEscapes(session.logInput).replace(/\r\n?/g, '\n').trimEnd());
+  session.logInput = '';
+}
+
 export function write(agentId: string, data: string): void {
   assertAgentWorkOpen();
   const session = sessions.get(agentId);
@@ -721,6 +748,7 @@ export function write(agentId: string, data: string): void {
   }
 
   if (data.length) session.receivedInput = true;
+  rememberPtyInput(session, data);
   session.process.write(data);
 }
 
@@ -742,6 +770,7 @@ export function writeBinary(agentId: string, data: string): void {
   }
 
   if (data.length) session.receivedInput = true;
+  if (data.length) session.logInputOverflow = true;
   session.process.write(Buffer.from(data, 'latin1'));
 }
 

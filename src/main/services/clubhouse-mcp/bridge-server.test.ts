@@ -299,6 +299,25 @@ describe('BridgeServer', () => {
     expect(vi.mocked(appLog).mock.calls.filter(([ns]) => ns === 'core:mcp')).toEqual([]);
   });
 
+  it.each(['result', 'throw'])('scrubs planted prompt/task strings from RPC %s diagnostics (#1919)', async (failure) => {
+    const marker = `MCP-${failure}-PRIVATE-TASK-1919`;
+    const handler = vi.fn(async () => {
+      if (failure === 'throw') throw new Error(`request failed: ${marker}`);
+      return { isError: true, content: [{ type: 'text', text: `request failed: ${marker}` }] };
+    });
+    registerToolTemplate('agent', 'private_error', { description: 'Errors', inputSchema: { type: 'object' } }, handler);
+    const binding = { agentId: 'agent-1', targetId: 'agent-2', targetKind: 'agent' as const, label: 'A2', targetName: 'robin', projectName: 'app' };
+    bindingManager.bind('agent-1', binding);
+    const toolName = buildToolName(binding, 'private_error');
+    vi.mocked(appLog).mockClear();
+    const { body } = await makeRequest(port, 'POST', '/mcp/agent-1', { jsonrpc: '2.0', id: 23, method: 'tools/call', params: { name: toolName, arguments: { opaqueToolInput: marker } } }, 'test-nonce');
+    const logs = vi.mocked(appLog).mock.calls;
+    expect(JSON.stringify(logs)).not.toContain(marker);
+    expect(JSON.stringify(logs)).toContain(`<redacted: ${marker.length} chars>`);
+    expect(JSON.stringify(body)).toContain(marker);
+    expect(JSON.stringify(logs)).toContain('request failed:');
+  });
+
   it('logs a tool error result at warn without the args', async () => {
     registerToolTemplate('agent', 'err_tool', {
       description: 'Errors',

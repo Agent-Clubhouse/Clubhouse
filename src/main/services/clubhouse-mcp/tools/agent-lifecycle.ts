@@ -1,3 +1,4 @@
+import { LogRedactor } from '../../../../shared/log-redaction';
 /**
  * Waking and sleeping another agent over MCP (#2577).
  *
@@ -239,7 +240,7 @@ export async function wakeWiredAgent({ callerId, targetId, targetName, mission, 
     // telemetry-exempt: logged, and the error reaches the caller as the tool result
     const reason = errorText(err);
     if (announced) broadcastToAllWindows(IPC.AGENT.AGENT_WAKE_FAILED, targetId, reason);
-    appLog('core:mcp', 'warn', 'wake_agent: could not wake target', { meta: { callerId, targetId, error: reason } });
+    appLog('core:mcp', 'warn', 'wake_agent: could not wake target', { meta: { callerId, targetId, error: new LogRedactor([], [mission ?? '']).text(reason) } });
     return { content: [{ type: 'text', text: `Failed to wake agent: ${reason}` }], isError: true };
   } finally {
     waking.delete(targetId);

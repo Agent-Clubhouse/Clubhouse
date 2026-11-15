@@ -1,3 +1,4 @@
+import { LogRedactor } from '../../../../shared/log-redaction';
 import { federationMessageDirection } from '../../dispatcher-federation-policy';
 import { dispatcherProviderControl } from '../../dispatcher-provider-control';
 /**
@@ -255,7 +256,7 @@ export function registerAgentTools(): void {
             return { content: [{ type: 'text', text: `${tagged.targetName} is shutting down, so the message was not delivered. Try again in a moment.` }], isError: true };
           }
           appLog('core:mcp', 'error', 'Failed to send message to the Dispatcher', {
-            meta: { sourceAgent: agentId, targetAgent: targetId, error: err instanceof Error ? err.message : String(err) },
+            meta: { sourceAgent: agentId, targetAgent: targetId, error: new LogRedactor([], [message]).text(err instanceof Error ? err.message : String(err)) },
           });
           return { content: [{ type: 'text', text: `Failed to send message: ${err instanceof Error ? err.message : String(err)}` }], isError: true };
         }
@@ -293,7 +294,7 @@ export function registerAgentTools(): void {
           return { content: [{ type: 'text', text: `${targetName} is shutting down, so the message was not delivered.` }], isError: true };
         }
         appLog('core:mcp', 'error', 'Failed to send message to agent', {
-          meta: { sourceAgent: agentId, targetAgent: targetId, error: err instanceof Error ? err.message : String(err) },
+          meta: { sourceAgent: agentId, targetAgent: targetId, error: new LogRedactor([], [message]).text(err instanceof Error ? err.message : String(err)) },
         });
         return { content: [{ type: 'text', text: `Failed to send message: ${err instanceof Error ? err.message : String(err)}` }], isError: true };
       }

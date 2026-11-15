@@ -435,6 +435,21 @@ describe('agent-system', () => {
   });
 
   describe('spawnAgent', () => {
+    it.each(['durable', 'quick'] as const)('redacts planted mission/system prompts in the %s PTY spawn log (#1919)', async (kind) => {
+      const mission = `PTY-${kind}-PRIVATE-MISSION-1919`;
+      const system = `PTY-${kind}-PRIVATE-SYSTEM-1919`;
+      const args = ['-p', mission, '--system-prompt', system, '--model', 'opus'];
+      mockProvider.buildSpawnCommand.mockResolvedValueOnce({ binary: '/usr/local/bin/claude', args });
+      mockTryStartChatAgent.mockResolvedValueOnce(false);
+      await spawnAgent({ agentId: 'agent-1', projectPath: '/project', cwd: '/project', kind, mission });
+      const logs = mockAppLog.mock.calls;
+      const log = logs.find((call) => call[2] === `Spawning ${kind} agent`);
+      expect(log?.[3]?.meta.args).toEqual(['-p', `<redacted: ${mission.length} chars>`, '--system-prompt', `<redacted: ${system.length} chars>`, '--model', 'opus']);
+      expect(JSON.stringify(logs)).not.toContain(mission);
+      expect(JSON.stringify(logs)).not.toContain(system);
+      expect(mockPtySpawn.mock.calls.at(-1)?.[3]).toEqual(args);
+    });
+
     it('rechecks the strict creation guard after the PTY preparation await', async () => {
       let permitted = true;
       const effect = vi.fn();

@@ -70,6 +70,26 @@ afterEach(() => {
 });
 
 describe('ClaudeSdkTransport.close on Windows', () => {
+  it('shares the later-turn scrubber with the SDK hook before truncation (#1919 QA)', async () => {
+    const { q, loader } = fakeSdk();
+    const log = vi.fn();
+    const prompt = 'PRIVATE-SDK-LATE-TURN-1919-' + 'x'.repeat(200);
+    const transport = new ClaudeSdkTransport({ binary: 'claude', cwd: '.', permissionMode: 'default', log }, loader);
+    await transport.start();
+    transport.send({ text: prompt });
+    const child = h.child as ReturnType<typeof fakeChild>;
+    (child.stderr as EventEmitter).emit('data', Buffer.from('warning: ' + prompt.slice(0, 20)));
+    expect(JSON.stringify(log.mock.calls)).not.toContain(prompt.slice(0, 20));
+    (child.stderr as EventEmitter).emit('data', Buffer.from(prompt.slice(20)));
+    (child.stderr as EventEmitter).emit('data', Buffer.from('warning: ' + 'z'.repeat(1950) + prompt));
+    expect(JSON.stringify(log.mock.calls)).not.toContain(prompt.slice(0, 20));
+    expect(JSON.stringify(log.mock.calls)).toContain(`<redacted: ${prompt.length} chars>`);
+    Object.assign(child, { exitCode: 1 });
+    child.emit('close', 1, null);
+    q.close();
+    await transport.close();
+  });
+
   it('kills the CLI process tree (taskkill /T) when the CLI ignores stdin EOF', async () => {
     setPlatform('win32');
     const { q, loader } = fakeSdk();

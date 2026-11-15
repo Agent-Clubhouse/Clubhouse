@@ -1,3 +1,4 @@
+import { LogRedactor } from '../../../shared/log-redaction';
 /**
  * Actions service (#2918): the engine wired to the app. Runs in the main
  * process whenever the app is open, with or without a window or project.
@@ -391,7 +392,9 @@ function createEngine(): ActionsEngine {
     hooks: {
       changed: broadcastChanged,
       failed: (action, reason) => {
-        appLog('core:actions', 'warn', 'An action couldn’t run', { meta: { actionId: action.id, reason } });
+        const logRedactor = new LogRedactor();
+        logRedactor.remember(action);
+        appLog('core:actions', 'warn', 'An action couldn’t run', { meta: { actionId: action.id, reason: logRedactor.text(reason) } });
         broadcastToAllWindows(IPC.ACTIONS.NOTICE, { actionId: action.id, name: action.name, message: `“${action.name}” couldn’t run. ${reason}`, exists: !!engine?.get(action.id) } satisfies ActionNotice);
       },
       turnedOff: (action, reason) => {

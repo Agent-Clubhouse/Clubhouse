@@ -1,3 +1,4 @@
+import { redactSpawnArgs, LogRedactor } from '../../shared/log-redaction';
 import { spawn as cpSpawn, ChildProcess } from 'child_process';
 import * as fs from 'fs';
 import * as fsPromises from 'fs/promises';
@@ -40,6 +41,7 @@ export function setMaxStderrBytes(bytes: number): void {
 }
 
 interface HeadlessSession {
+  logRedactor?: LogRedactor;
   process: ChildProcess;
   agentId: string;
   outputKind: HeadlessOutputKind;
@@ -299,6 +301,7 @@ interface IOState {
   stderrChunks: string[];
   stderrChunkSizes: number[];
   stderrBytes: number;
+  stderrForLog?: string;
 }
 
 /** Build the cleaned environment for the spawned process. */
@@ -531,9 +534,15 @@ function setupStderrHandler(
   io: IOState,
 ): () => void {
   const decoder = new StringDecoder('utf8');
+  const stderrLog = (session.logRedactor ?? new LogRedactor()).stream();
+  const logStderr = (text: string, retain = true) => {
+    if (!text) return;
+    if (retain) io.stderrForLog = ((io.stderrForLog ?? '') + text).slice(-2000);
+    if (text.trim()) appLog('core:headless', 'warn', 'stderr', { meta: { agentId, message: session.logRedactor?.text(text.trim()) ?? text.trim() } });
+  };
   const consume = (str: string) => {
     const msg = str.trim();
-    if (!msg) return;
+    if (!msg) { logStderr(stderrLog.feed(str)); return; }
 
     const msgBytes = Buffer.byteLength(msg, 'utf-8');
     io.stderrChunks.push(msg);
@@ -542,9 +551,9 @@ function setupStderrHandler(
 
     if (io.stderrBytes > maxStderrBytes) {
       io.stderrBytes = evictOldStderrChunks(io.stderrChunks, io.stderrChunkSizes, io.stderrBytes);
+      io.stderrForLog = '';
     }
-
-    appLog('core:headless', 'warn', `stderr`, { meta: { agentId, message: msg } });
+    logStderr(stderrLog.feed(str), io.stderrChunks.length > 0);
 
     // Forward stderr to renderer + annex so headless view can show errors
     if (!canEmitSessionHooks(session)) return;
@@ -562,6 +571,7 @@ function setupStderrHandler(
     if (ended) return;
     ended = true;
     consume(decoder.end());
+    logStderr(stderrLog.flush());
   };
   proc.stderr?.on('data', onData);
   proc.stderr?.on('end', onEnd);
@@ -678,7 +688,7 @@ function setupExitHandlers(
     runFinalizationStep(agentId, 'transcript end', () => endTranscript(logStream, agentId));
 
     if (error) {
-      appLog('core:headless', 'error', `Process error`, { meta: { agentId, error: error.message } });
+      appLog('core:headless', 'error', `Process error`, { meta: { agentId, error: session.logRedactor?.text(error.message) ?? error.message } });
     }
 
     // Only clean up and broadcast exit if this session has not been replaced.
@@ -690,7 +700,7 @@ function setupExitHandlers(
       cleanupHeadlessSession(agentId);
 
       appLog('core:headless', 'info', `Process exited`, {
-        meta: { ...runDiagnostics(session), exitCode, signal, stdoutBytes: io.stdoutBytes, stderr: io.stderrChunks.join('\n').slice(0, 500) },
+        meta: { ...runDiagnostics(session), exitCode, signal, stdoutBytes: io.stdoutBytes, stderr: (io.stderrForLog ?? '').slice(-500) },
       });
 
       runFinalizationStep(agentId, 'registry exit', () => session.onExitCallback?.(agentId, exitCode));
@@ -737,9 +747,10 @@ export async function spawnHeadless(
   const env = prepareSpawnEnv(extraEnv);
 
   appLog('core:headless', 'info', `Spawning headless agent`, {
-    meta: { agentId, binary, args: args.join(' '), cwd, hasAnthropicKey: !!env.ANTHROPIC_API_KEY },
+    meta: { agentId, binary, args: redactSpawnArgs(args), cwd, hasAnthropicKey: !!env.ANTHROPIC_API_KEY },
   });
 
+  const logRedactor = new LogRedactor(args);
   const turn = startHeadlessTurn(agentId);
   let proc: ChildProcess;
   try {
@@ -762,12 +773,13 @@ export async function spawnHeadless(
   }
 
   const session = createSessionRecord(agentId, proc, outputKind, transcriptPath, onExit, createEventNormalizer, turn, quickRun);
+  session.logRedactor = logRedactor;
   sessions.set(agentId, session);
   agentRunStarted(agentId, 'headless');
 
   const logStream = fs.createWriteStream(transcriptPath, { flags: 'w' });
   logStream.on('error', (err: Error) => {
-    appLog('core:headless', 'error', 'transcript stream error', { meta: { agentId, error: err.message } });
+    appLog('core:headless', 'error', 'transcript stream error', { meta: { agentId, error: logRedactor.text(err.message) } });
   });
   const io: IOState = { stdoutBytes: 0, stderrChunks: [], stderrChunkSizes: [], stderrBytes: 0 };
 

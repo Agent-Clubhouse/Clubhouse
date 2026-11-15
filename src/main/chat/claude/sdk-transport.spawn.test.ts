@@ -26,6 +26,17 @@ function start(log = vi.fn()) {
 }
 
 describe('sdkSpawnHook', () => {
+  it('scrubs planted system text from stderr and stdin errors (#1919)', () => {
+    const marker = 'CLAUDE-SDK-SPAWN-PRIVATE-1919';
+    const log = vi.fn();
+    child = sdkSpawnHook({ command: process.execPath, args: [...CHILD, '--', '--append-system-prompt', marker], env: { ...process.env }, signal: new AbortController().signal }, undefined, log);
+    child.stderr?.emit('data', Buffer.from(`warning: ${marker}`));
+    child.stdin?.emit('error', new Error(`write failed: ${marker}`));
+    expect(log).toHaveBeenCalledWith('warn', 'claude stderr', { stderr: `warning: <redacted: ${marker.length} chars>` });
+    expect(log).toHaveBeenCalledWith('warn', 'claude stdin error', { error: `write failed: <redacted: ${marker.length} chars>` });
+    expect(JSON.stringify(log.mock.calls)).not.toContain(marker);
+  });
+
   it('abort kills the process without ending the stdin the SDK owns', async () => {
     const { child, controller, exited } = start();
 
@@ -60,6 +71,6 @@ describe('sdkSpawnHook', () => {
   it('logs stderr', async () => {
     const { log } = start();
 
-    await vi.waitFor(() => expect(log).toHaveBeenCalledWith('warn', 'claude stderr', { data: 'hello' }));
+    await vi.waitFor(() => expect(log).toHaveBeenCalledWith('warn', 'claude stderr', { stderr: 'hello' }));
   });
 });

@@ -1,3 +1,4 @@
+import { redactSpawnArgs } from '../../shared/log-redaction';
 import { readCopilotHooksConfig } from '../orchestrators/copilot-hooks-config';
 import { AgentResumeError, assertProviderSelection } from './agent-transition';
 import { withManagedActivationLaunch } from './managed-activation';
@@ -1070,12 +1071,12 @@ async function spawnPtyAgent(
       agentId: params.agentId,
       orchestrator: provider.id,
       binary,
-      args: args.join(' '),
+      args: redactSpawnArgs(args),
       cwd: params.cwd,
       model: params.model,
       hookConfigPath: hookConfigPath || 'none',
       allowedTools: allowedTools?.join(',') || 'none',
-      commandPrefix: commandPrefix || 'none',
+      hasCommandPrefix: !!commandPrefix,
     },
   });
 

@@ -1,3 +1,4 @@
+import { LogRedactor } from '../../../shared/log-redaction';
 import { AsyncQueue } from '../../orchestrators/adapters/async-queue';
 import type { ClaudeChatEvent, ClaudeChatEventBody, ClaudePermissionMode, ClaudePermissionUpdate } from './events';
 import { ClaudeNormalizer, type ClaudeWireMessage } from './normalizer';
@@ -179,7 +180,11 @@ export abstract class ClaudeTransportBase implements ClaudeTransport {
   private readonly pendingPermissions = new Map<string, PendingPermission>();
   private ended = false;
 
-  constructor(protected readonly opts: ClaudeTransportOptions) {}
+  protected readonly logRedactor = new LogRedactor();
+
+  constructor(protected readonly opts: ClaudeTransportOptions) {
+    this.logRedactor.remember(opts);
+  }
 
   get events(): AsyncIterable<ClaudeChatEvent> {
     return this.queue;
@@ -210,7 +215,7 @@ export abstract class ClaudeTransportBase implements ClaudeTransport {
   }
 
   protected log(level: 'debug' | 'info' | 'warn' | 'error', message: string, meta?: Record<string, unknown>): void {
-    this.opts.log?.(level, `[claude-${this.kind}] ${message}`, meta);
+    this.opts.log?.(level, `[claude-${this.kind}] ${message}`, this.logRedactor.meta(meta));
   }
 
   protected pushWire(msg: ClaudeWireMessage): void {

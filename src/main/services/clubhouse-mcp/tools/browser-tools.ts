@@ -388,7 +388,7 @@ export function registerBrowserTools(): void {
 
       if (response !== 1) {
         appLog('core:mcp', 'warn', 'User denied browser evaluate', {
-          meta: { agentId, targetId, expression: truncated },
+          meta: { agentId, targetId, expressionLength: expression.length },
         });
         return errorResult('User denied JavaScript execution');
       }

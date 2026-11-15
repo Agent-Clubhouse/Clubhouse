@@ -1,3 +1,5 @@
+import { StringDecoder } from 'string_decoder';
+import { LogRedactor } from '../../../shared/log-redaction';
 import { spawn, type ChildProcess } from 'child_process';
 import { randomBytes } from 'crypto';
 import { killStructuredChild, resolveStructuredSpawn } from '../../orchestrators/adapters/structured-spawn';
@@ -18,6 +20,8 @@ export interface CopilotLaunchOptions {
   cwd?: string;
   env?: Record<string, string>;
   timeoutMs: number;
+  /** Shared with the session: later turns must be scrubbed before tail truncation. */
+  logRedactor?: LogRedactor;
   signal?: AbortSignal;
 }
 
@@ -32,6 +36,7 @@ export interface CopilotServer {
   exitCode(): number | null;
   /** The end of what it wrote to stderr, for error messages. */
   stderrTail(): string;
+  stderrTailForLog?(): string;
   kill(): Promise<void>;
 }
 
@@ -68,6 +73,10 @@ export function launchCopilotServer(opts: CopilotLaunchOptions): Promise<Copilot
 
     let stdout = '';
     let stderr = '';
+    let stderrForLog = '';
+    const stderrDecoder = new StringDecoder('utf8');
+    const stderrLog = (opts.logRedactor ?? new LogRedactor(opts.extraArgs)).stream();
+    const addDiagnostic = (text: string) => { stderrForLog = (stderrForLog + text).slice(-STDERR_TAIL_CHARS); };
     let settled = false;
     const kill = () => killStructuredChild(child, { endStdin: false });
     const exited = new Promise<void>((done) => { child.once('close', () => done()); child.once('error', () => done()); });
@@ -87,14 +96,24 @@ export function launchCopilotServer(opts: CopilotLaunchOptions): Promise<Copilot
     const timer = setTimeout(() => fail(`Copilot did not start listening within ${opts.timeoutMs}ms`, 'rpc_timeout'), opts.timeoutMs);
     opts.signal?.addEventListener('abort', onAbort, { once: true });
 
-    child.stderr?.on('data', (d: Buffer) => { stderr = (stderr + d.toString()).slice(-STDERR_TAIL_CHARS); });
+    child.stderr?.on('data', (d: Buffer) => {
+      const text = d.toString();
+      addDiagnostic(stderrLog.feed(stderrDecoder.write(d)));
+      stderr = (stderr + text).slice(-STDERR_TAIL_CHARS);
+    });
+    const flushDiagnostic = () => {
+      addDiagnostic(stderrLog.feed(stderrDecoder.end()));
+      addDiagnostic(stderrLog.flush());
+    };
+    child.stderr?.on('end', flushDiagnostic);
+    child.on('close', flushDiagnostic);
     // Keep draining stdout after the port line, so the CLI can never block on a full pipe.
     child.stdout?.on('data', (d: Buffer) => {
       if (settled) return;
       stdout = (stdout + d.toString()).slice(-STDERR_TAIL_CHARS);
       const port = LISTENING_RE.exec(stdout)?.[1];
       if (!port) return;
-      settle(() => resolve({ uri: `http://127.0.0.1:${port}`, connectionToken, exited, exitCode: () => child.exitCode, stderrTail: tail, kill }));
+      settle(() => resolve({ uri: `http://127.0.0.1:${port}`, connectionToken, exited, exitCode: () => child.exitCode, stderrTail: tail, stderrTailForLog: () => stderrForLog.trim(), kill }));
     });
     child.once('error', (err) => fail(`Could not launch ${opts.binary}: ${err.message}`, 'spawn_failed'));
     child.once('close', (code) => fail(`Copilot exited with code ${code} before it was ready${tail() ? `: ${tail()}` : ''}`, 'process_exited'));

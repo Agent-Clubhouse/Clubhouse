@@ -818,6 +818,19 @@ describe('agent-handlers', () => {
       await expect(Promise.resolve().then(() => handler({}, { ...quick, ...bad }))).rejects.toThrow();
     }
   });
+  it('SPAWN_AGENT scrubs a planted mission in both message and stack without changing the thrown error (#1919 QA)', async () => {
+    const mission = 'IPC-SPAWN-PRIVATE-MISSION-1919';
+    const error = new Error(`EACCES: ${mission}`);
+    vi.mocked(agentSystem.spawnAgent).mockRejectedValueOnce(error);
+    const handler = handlers.get(IPC.AGENT.SPAWN_AGENT)!;
+    await expect(handler({}, { agentId: 'a1', projectPath: '/p', cwd: '/p', kind: 'quick', mission })).rejects.toBe(error);
+    const log = vi.mocked(appLog).mock.calls.find((c) => c[2] === 'Agent spawn failed');
+    expect(log?.[3]?.meta?.error).toBe(`EACCES: <redacted: ${mission.length} chars>`);
+    expect(log?.[3]?.meta?.stack).toContain(`<redacted: ${mission.length} chars>`);
+    expect(JSON.stringify(log)).not.toContain(mission);
+    expect(error.stack).toContain(mission);
+  });
+
   it('SPAWN_AGENT logs and rethrows on error', async () => {
     vi.mocked(agentSystem.spawnAgent).mockRejectedValueOnce(new Error('spawn failed'));
     const handler = handlers.get(IPC.AGENT.SPAWN_AGENT)!;
