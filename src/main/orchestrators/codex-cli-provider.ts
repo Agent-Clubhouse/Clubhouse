@@ -29,6 +29,7 @@ import { createCodexHeadlessNormalizer } from './codex-headless-events';
 import { isInjectedClubhouseBridge } from '../services/clubhouse-mcp/injection';
 import { cliStateDir, homePath, testModelProbesDisabled, validateHookUrl, buildHookCurlCommand, writeTerminalHooksConfig, parseJsonlFile } from './shared';
 import { getShellEnvironment, invalidateShellEnvironmentCache } from '../util/shell';
+import { resolveProcessLaunch } from '../util/process-launch';
 import { isClubhouseHookEntry, preserveUnchangedSnapshot, removeEmptyCodexHooksDirectory } from '../services/config-pipeline';
 import { appLog } from '../services/log-service';
 import { stripTerminalEscapes } from '../../shared/terminal-text';
@@ -322,11 +323,14 @@ export class CodexCliProvider extends BaseProvider implements HeadlessCapable, H
   /** app-server's model/list has no context fields; `codex debug models` does, and sends no prompt. */
   async getContextWindowOptions(model: string | undefined, opts?: ListModelsOptions): Promise<ContextWindowOptions> {
     const catalog = testModelProbesDisabled() ? null : await this.cachedContextCatalog(opts, async () => {
-      const { stdout } = await execFileAsync(this.findBinary(), ['debug', 'models'], {
+      const env = { ...getShellEnvironment(), ...opts?.env };
+      const launch = resolveProcessLaunch(this.findBinary(), ['debug', 'models'], env);
+      const { stdout } = await execFileAsync(launch.binary, launch.args, {
         timeout: 5000,
         maxBuffer: 32 * 1024 * 1024,
-        shell: process.platform === 'win32',
-        env: { ...getShellEnvironment(), ...opts?.env },
+        shell: false,
+        windowsVerbatimArguments: launch.windowsVerbatimArguments,
+        env,
       });
       return parseCodexContextCatalog(stdout);
     });
@@ -376,10 +380,13 @@ export class CodexCliProvider extends BaseProvider implements HeadlessCapable, H
 
     // Binary found — verify it actually runs (catches broken installs / wrong arch)
     try {
-      await execFileAsync(binary, ['--version'], {
+      const env = { ...getShellEnvironment(), ...envOverride };
+      const launch = resolveProcessLaunch(binary, ['--version'], env);
+      await execFileAsync(launch.binary, launch.args, {
         timeout: 10000,
-        shell: process.platform === 'win32',
-        env: { ...getShellEnvironment(), ...envOverride },
+        shell: false,
+        windowsVerbatimArguments: launch.windowsVerbatimArguments,
+        env,
       });
     } catch {
       return {

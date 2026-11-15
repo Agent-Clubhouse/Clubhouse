@@ -15,6 +15,12 @@ vi.mock('fs/promises', () => ({
   writeFile: vi.fn(async () => undefined),
 }));
 
+// Filesystem/process behavior is stubbed in this composition suite. Actual
+// Windows PATH/npm-shim availability is covered by the real-process tests.
+vi.mock('../util/process-launch', () => ({
+  resolveProcessLaunch: vi.fn((binary: string, args: string[]) => ({ binary, args })),
+}));
+
 vi.mock('child_process', () => ({
   execSync: vi.fn(() => { throw new Error('not found'); }),
   execFileSync: vi.fn(() => { throw new Error('not found'); }),
@@ -37,6 +43,7 @@ import { CopilotCliProvider } from './copilot-cli-provider';
 import { CodexCliProvider } from './codex-cli-provider';
 import { isHookCapable, isHeadlessCapable, isSessionCapable } from './types';
 import { clearBinaryCache } from './shared';
+import { resolveProcessLaunch } from '../util/process-launch';
 
 /** Check if path's basename matches a known binary name (with or without Windows extensions) */
 function isKnownBinary(p: string | Buffer | URL): boolean {
@@ -1058,6 +1065,7 @@ describe('Provider integration tests', () => {
     });
 
     it('CodexCli: accepts envOverride without error', async () => {
+      vi.spyOn(process, 'platform', 'get').mockReturnValue('win32');
       const provider = new CodexCliProvider();
       // Codex runs --version check, so mock execFile to succeed
       vi.mocked(execFile).mockImplementation(
@@ -1066,8 +1074,10 @@ describe('Provider integration tests', () => {
           return {} as any;
         },
       );
-      const result = await provider.checkAvailability();
+      const envOverride = { CODEX_HOME: path.join(os.tmpdir(), 'custom-codex-home') };
+      const result = await provider.checkAvailability(envOverride);
       expect(result.available).toBe(true);
+      expect(resolveProcessLaunch).toHaveBeenCalledWith(expect.any(String), ['--version'], expect.objectContaining(envOverride));
     });
 
   });

@@ -1,3 +1,4 @@
+import { resolveProcessLaunch } from '../util/process-launch';
 import * as path from 'path';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
@@ -18,6 +19,11 @@ vi.mock('fs/promises', () => ({
     birthtime: new Date('2026-04-01T10:00:00Z'),
     mtime: new Date('2026-04-01T12:00:00Z'),
   })),
+}));
+
+// Launch resolution has filesystem/Windows integration coverage in process-launch.test.ts.
+vi.mock('../util/process-launch', () => ({
+  resolveProcessLaunch: vi.fn((binary: string, args: string[]) => ({ binary, args })),
 }));
 
 vi.mock('child_process', () => ({
@@ -404,6 +410,12 @@ describe('CopilotCliProvider', () => {
         const b = await provider.buildSpawnCommand({ cwd: '/project', interactive: true });
         expect(a.sessionId).not.toBe(b.sessionId);
         expect(vi.mocked(childProcess.execFile).mock.calls.filter((c) => (c[1] as string[])?.[0] === '--help')).toHaveLength(1);
+      });
+
+      it('uses the prepared launch for help with shell disabled (#2239)', async () => {
+        vi.mocked(resolveProcessLaunch).mockReturnValueOnce({ binary: 'resolved-cmd.exe', args: ['escaped-line'], windowsVerbatimArguments: true });
+        await provider.supportsSessionIdFlag('copilot.cmd');
+        expect(childProcess.execFile).toHaveBeenCalledWith('resolved-cmd.exe', ['escaped-line'], expect.objectContaining({ shell: false, windowsVerbatimArguments: true }));
       });
 
       it('leaves the flag off for an older CLI without it', async () => {

@@ -2,6 +2,7 @@ import { ipcMain, app } from 'electron';
 import { execFile } from 'child_process';
 import { IPC } from '../../shared/ipc-channels';
 import { getShellEnvironment } from '../util/shell';
+import { resolveProcessLaunch } from '../util/process-launch';
 import { getAllowedCommands, refreshManifest } from '../services/plugin-manifest-registry';
 import { arrayArg, numberArg, objectArg, stringArg, withValidatedArgs } from './validation';
 
@@ -85,7 +86,8 @@ export function registerProcessHandlers(): void {
       !command ||
       command.includes('/') ||
       command.includes('\\') ||
-      command.includes('..')
+      command.includes('..') ||
+      (process.platform === 'win32' && !/^[a-zA-Z0-9_][a-zA-Z0-9_.+-]*$/.test(command))
     ) {
       return { stdout: '', stderr: `Invalid command: "${command}"`, exitCode: 1 };
     }
@@ -114,6 +116,13 @@ export function registerProcessHandlers(): void {
     }
 
     const cwd = projectPath || app.getPath('home');
+    const env = getShellEnvironment();
+    let launch: ReturnType<typeof resolveProcessLaunch>;
+    try {
+      launch = resolveProcessLaunch(command, args, env, cwd, { allowBatch: false });
+    } catch (error) {
+      return { stdout: '', stderr: error instanceof Error ? error.message : String(error), exitCode: 1 };
+    }
 
     trackSpawn(pluginId);
     return new Promise((resolve) => {
@@ -121,13 +130,14 @@ export function registerProcessHandlers(): void {
       let settled = false;
 
       const child = execFile(
-        command,
-        args,
+        launch.binary,
+        launch.args,
         {
-          shell: process.platform === 'win32', // .cmd/.bat commands need shell on Windows
+          shell: false,
+          windowsVerbatimArguments: launch.windowsVerbatimArguments,
           cwd,
           timeout,
-          env: getShellEnvironment(),
+          env,
           maxBuffer: 10 * 1024 * 1024,
         },
         (error, stdout, stderr) => {

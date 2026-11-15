@@ -1,3 +1,4 @@
+import { resolveProcessLaunch } from '../util/process-launch';
 import { describe, it, expect, vi, beforeEach, afterEach, onTestFinished } from 'vitest';
 import * as path from 'path';
 import * as os from 'os';
@@ -19,6 +20,11 @@ vi.mock('fs/promises', () => ({
   access: vi.fn(async () => { throw new Error('ENOENT'); }),
   readdir: vi.fn(async () => []),
   open: vi.fn(async () => { throw new Error('ENOENT'); }),
+}));
+
+// Launch resolution has filesystem/Windows integration coverage in process-launch.test.ts.
+vi.mock('../util/process-launch', () => ({
+  resolveProcessLaunch: vi.fn((binary: string, args: string[]) => ({ binary, args })),
 }));
 
 vi.mock('child_process', () => ({
@@ -217,6 +223,12 @@ describe('CodexCliProvider', () => {
       expect(invalidateShellEnvironmentCache).toHaveBeenCalled();
     });
 
+    it('uses the prepared launch with shell disabled (#2239)', async () => {
+      vi.mocked(resolveProcessLaunch).mockReturnValueOnce({ binary: 'resolved-cmd.exe', args: ['escaped-line'], windowsVerbatimArguments: true });
+      await provider.checkAvailability();
+      expect(childProcess.execFile).toHaveBeenCalledWith('resolved-cmd.exe', ['escaped-line'], expect.objectContaining({ shell: false, windowsVerbatimArguments: true }), expect.any(Function));
+    });
+
     it('passes shell environment to execFile for --version check', async () => {
       const mockEnv = {
         PATH: '/custom/path:/usr/bin',
@@ -267,6 +279,12 @@ describe('CodexCliProvider', () => {
       expect(args.slice(args.indexOf('-c'), args.indexOf('-c') + 2)).toEqual(['-c', 'model_context_window=500000']);
       expect(trailingArgs).toEqual(['go']);
       expect((await provider.buildSpawnCommand({ cwd: '/p' })).args).not.toContain('-c');
+    });
+
+    it('uses the prepared launch with shell disabled (#2239)', async () => {
+      vi.mocked(resolveProcessLaunch).mockReturnValueOnce({ binary: 'resolved-cmd.exe', args: ['escaped-line'], windowsVerbatimArguments: true });
+      await provider.getContextWindowOptions('default');
+      expect(childProcess.execFile).toHaveBeenCalledWith('resolved-cmd.exe', ['escaped-line'], expect.objectContaining({ shell: false, windowsVerbatimArguments: true }), expect.any(Function));
     });
 
     it('reads the catalog once for many looks, and shares one read', async () => {
