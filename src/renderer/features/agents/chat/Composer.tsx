@@ -3,6 +3,7 @@
  * steer, otherwise "Stop and send" (interrupt, then prompt); Cmd+Enter (Ctrl+Enter
  * on Windows and Linux) queues. Stop (Esc) interrupts the turn and keeps the session.
  *
+ * Cmd/Ctrl+B/I edit Markdown source; Tab indents only a list item.
  * Every other key is the textarea's (#2314). Shift+Enter and Option/Alt+Enter
  * are soft returns, Up/Down move the caret (there's no history recall), and
  * the slash menu takes Up/Down/Tab/Enter/Esc only while it's open.
@@ -14,6 +15,7 @@ import type { PlanEntry } from '../../../../shared/chat';
 import type { QueuedMessage } from '../../../stores/chatStore';
 import { CheckIcon, ChevronDown, FileIcon, PaperclipIcon, PlanIcon, PlusIcon, ShieldIcon, StopIcon, UpIcon, XIcon } from './icons';
 import { attachmentFromFile, attachmentName, type ComposerAttachment } from './attachments';
+import { continueList, indentList, toggleEmphasis, type TextEdit } from './markdown-aids';
 import { composerModes, LEVEL_DESCRIPTIONS, LEVEL_LABELS, modelLabel, type SendAction } from './view-model';
 
 const ACTION_LABELS: Record<SendAction, string> = {
@@ -683,8 +685,8 @@ export function Composer(props: ComposerProps) {
   const submit = (action: SendAction) => {
     const trimmed = text.trim();
     if ((!trimmed && !attachments.length) || disabled) return;
-    if (attachments.length) props.onSend(trimmed, action, attachments.map((a) => a.id));
-    else props.onSend(trimmed, action);
+    if (attachments.length) props.onSend(text, action, attachments.map((a) => a.id));
+    else props.onSend(text, action);
     setText('');
     // A failed send restores this same text from outside; the caret read from it no longer counts.
     setCaretAt(null);
@@ -710,12 +712,33 @@ export function Composer(props: ComposerProps) {
     setText(next);
   };
 
-  const insertNewline = (el: HTMLTextAreaElement) => {
-    // insertText keeps the native undo stack; jsdom has no execCommand, so splice the value there.
-    if (document.execCommand?.('insertText', false, '\n')) return;
-    el.setRangeText('\n', el.selectionStart, el.selectionEnd, 'end');
+  const applyEdit = (el: HTMLTextAreaElement, edit: TextEdit) => {
+    // One native replacement keeps the browser's undo history. Restrict it to
+    // the changed range so ordinary typing before/after the aid stays native.
+    const before = el.value;
+    let start = 0;
+    while (start < before.length && start < edit.text.length && before[start] === edit.text[start]) start++;
+    let oldEnd = before.length;
+    let newEnd = edit.text.length;
+    while (oldEnd > start && newEnd > start && before[oldEnd - 1] === edit.text[newEnd - 1]) { oldEnd--; newEnd--; }
+    if (before !== edit.text) {
+      el.setSelectionRange(start, oldEnd);
+      const inserted = edit.text.slice(start, newEnd);
+      if (!document.execCommand?.('insertText', false, inserted)) {
+        // jsdom and environments without the native editing command.
+        el.setRangeText(inserted, start, oldEnd, 'end');
+      }
+      // Native insertText dispatches input/onChange. Also synchronize explicitly
+      // for the fallback, through the same caller-owned draft callback.
+      setText(el.value);
+    }
+    el.setSelectionRange(edit.selection.start, edit.selection.end);
     trackCaret(el);
-    setText(el.value);
+  };
+
+  const insertNewline = (el: HTMLTextAreaElement) => {
+    const at = el.selectionStart;
+    applyEdit(el, { text: el.value.slice(0, at) + '\n' + el.value.slice(el.selectionEnd), selection: { start: at + 1, end: at + 1 } });
   };
 
   const trackCaret = (el: HTMLTextAreaElement) => setCaretAt({ text: el.value, at: el.selectionStart ?? el.value.length });
@@ -740,6 +763,23 @@ export function Composer(props: ComposerProps) {
         setDismissedAt(slash?.start ?? null);
         return;
       }
+    }
+    const el = e.currentTarget;
+    const selection = { start: el.selectionStart, end: el.selectionEnd };
+    const formatMod = isMac() ? e.metaKey && !e.ctrlKey : e.ctrlKey && !e.metaKey;
+    if (formatMod && !e.altKey && !e.shiftKey && /^(b|i)$/i.test(e.key)) {
+      e.preventDefault();
+      e.stopPropagation();
+      applyEdit(el, toggleEmphasis(el.value, selection, e.key.toLowerCase() === 'b' ? '**' : '*'));
+      return;
+    }
+    if (e.key === 'Tab' && !e.metaKey && !e.ctrlKey && !e.altKey && slashMatches.length === 0) {
+      const edit = indentList(el.value, selection, e.shiftKey);
+      if (edit) { e.preventDefault(); applyEdit(el, edit); return; }
+    }
+    if (e.key === 'Enter' && (e.shiftKey || e.altKey) && !e.metaKey && !e.ctrlKey) {
+      const edit = continueList(el.value, selection);
+      if (edit) { e.preventDefault(); applyEdit(el, edit); return; }
     }
     if (e.key === 'Escape' && modes.canStop) {
       e.preventDefault();
@@ -883,6 +923,8 @@ export function Composer(props: ComposerProps) {
       onPaste={onPaste}
       placeholder={placeholder}
       aria-label="Message"
+      aria-description={`${isMac() ? 'Cmd' : 'Ctrl'}+B bold, ${isMac() ? 'Cmd' : 'Ctrl'}+I italic. Shift+Enter or Alt+Enter continues lists; an empty item exits. Tab indents; Shift+Tab outdents.`}
+      title={`${isMac() ? 'Cmd' : 'Ctrl'}+B bold · ${isMac() ? 'Cmd' : 'Ctrl'}+I italic · Shift/Alt+Enter continues lists (empty item exits) · Tab/Shift+Tab indents/outdents`}
       className={`resize-none bg-transparent text-[13px] text-ctp-text placeholder:text-ctp-overlay0 focus:outline-none ${
         line ? 'flex-1 min-w-0 px-1.5 py-1.5' : 'px-3.5 pt-3 pb-1.5 min-h-[44px]'
       }`}

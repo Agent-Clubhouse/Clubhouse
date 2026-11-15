@@ -32,6 +32,24 @@ beforeEach(() => {
 });
 
 describe('UserMessage', () => {
+  it('renders only the lightweight prompt subset, including nested lists', () => {
+    render(<UserMessage item={item({ text: '**bold** and *italic*\n- bullet\n  * child\n3. step' })} />);
+    const body = screen.getByTestId('chat-you-body');
+    expect(body.querySelector('strong')).toHaveTextContent('bold');
+    expect(body.querySelector('em')).toHaveTextContent('italic');
+    expect(body.querySelectorAll('ul')).toHaveLength(2);
+    expect(body.querySelector('ul ul')).toHaveTextContent('child');
+    expect(body.querySelector('ol')).toHaveAttribute('start', '3');
+  });
+
+  it('keeps other Markdown and HTML literal and escaped', () => {
+    const text = '# heading\n```js\n**literal code**\n```\npath_with_underscores/file.ts\n<tag>hi</tag>\n[link](https://example.com)\n    **indented block**';
+    render(<UserMessage item={item({ text })} />);
+    const body = screen.getByTestId('chat-you-body');
+    expect(body.textContent).toBe(text);
+    expect(body.querySelector('h1, pre, code, a, tag, strong')).toBeNull();
+  });
+
   it('labels the user\'s message You, on the right, with the text as typed', () => {
     render(<UserMessage item={item({ text: '[FROM:x] mine' })} />);
     const row = screen.getByTestId('chat-user-message');
@@ -179,6 +197,24 @@ describe('UserMessage', () => {
     expect(screen.getByTestId('chat-sent-body').textContent).toContain(long);
     fireEvent.click(toggle);
     expect(screen.queryByTestId('chat-sent-body')).toBeNull();
+  });
+
+  it('copies the original source from an expanded routed message', async () => {
+    const user = userEvent.setup();
+    const copy = vi.spyOn(navigator.clipboard, 'writeText').mockResolvedValue();
+    const text = '**bold**\n- first\n  * nested';
+    render(<UserMessage item={item({ text: 'x', source: 'mcp', routed: routed(text) })} />);
+    await user.click(screen.getByTestId('chat-sent-toggle'));
+    await user.click(screen.getByRole('button', { name: 'Copy message from typecheck-leak' }));
+    expect(copy).toHaveBeenCalledWith(text);
+    await user.click(screen.getByTestId('chat-sent-toggle'));
+    expect(screen.queryByTestId('chat-sent-body')).toBeNull();
+  });
+
+  it('keeps your own long formatted message fully expanded', () => {
+    render(<UserMessage item={item({ text: '**bold**\n- ' + long })} />);
+    expect(screen.queryByTestId('chat-sent-toggle')).toBeNull();
+    expect(screen.getByTestId('chat-you-body')).toHaveTextContent(long);
   });
 
   it('expands from the keyboard', async () => {

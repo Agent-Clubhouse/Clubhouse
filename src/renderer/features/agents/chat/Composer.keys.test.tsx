@@ -155,3 +155,100 @@ describe('Composer editing keys (#2314)', () => {
     expect(onSend).not.toHaveBeenCalled();
   });
 });
+
+describe('Composer Markdown source aids (#3540)', () => {
+  afterEach(() => setPlatform(originalPlatform as KeyPlatform));
+
+  it.each(['Shift+Enter', 'Alt+Enter'])('%s continues and exits lists without sending', (chord) => {
+    const onSend = vi.fn();
+    render(<Harness initial="1. first" onSend={onSend} />);
+    caretAt(8);
+    expect(press(chord)).toBe(true);
+    expect(box()).toHaveValue('1. first\n2. ');
+    expect(box().selectionStart).toBe(12);
+    press(chord);
+    expect(box()).toHaveValue('1. first\n');
+    expect(onSend).not.toHaveBeenCalled();
+  });
+
+  it.each([['darwin', 'Meta'], ['win32', 'Ctrl'], ['linux', 'Ctrl']] as const)('formats on %s and sends source byte for byte', (platform, mod) => {
+    setPlatform(platform);
+    const onSend = vi.fn();
+    render(<Harness initial={'  word\n'} onSend={onSend} />);
+    box().setSelectionRange(2, 6);
+    press(`${mod}+B`);
+    expect(box()).toHaveValue('  **word**\n');
+    expect([box().selectionStart, box().selectionEnd]).toEqual([4, 8]);
+    press(`${mod}+B`);
+    expect(box()).toHaveValue('  word\n');
+    press(`${mod}+I`);
+    expect(box()).toHaveValue('  *word*\n');
+    press('Enter');
+    expect(onSend).toHaveBeenCalledWith('  *word*\n', 'send');
+  });
+
+  it('Tab only indents list items and the slash menu still owns Tab', () => {
+    render(<Harness initial="- item" />);
+    caretAt(6);
+    expect(press('Tab')).toBe(true);
+    expect(box()).toHaveValue('  - item');
+    expect(press('Shift+Tab')).toBe(true);
+    expect(box()).toHaveValue('- item');
+    fireEvent.change(box(), { target: { value: 'plain' } });
+    expect(press('Tab')).toBe(false);
+    expect(press('Shift+Tab')).toBe(false);
+    fireEvent.change(box(), { target: { value: '- /co', selectionStart: 5, selectionEnd: 5 } });
+    expect(screen.getByTestId('chat-slash-menu')).toBeInTheDocument();
+    expect(press('Tab')).toBe(true);
+    expect(box()).toHaveValue('- /compact ');
+  });
+
+  it.each([{ isComposing: true }, { keyCode: 229 }])('leaves all aid keys to IME: %s', (extra) => {
+    setPlatform('darwin');
+    render(<Harness initial="- item" />);
+    caretAt(6);
+    for (const chord of ['Meta+B', 'Meta+I', 'Tab', 'Shift+Tab', 'Shift+Enter', 'Alt+Enter']) {
+      expect(press(chord, extra)).toBe(false);
+      expect(box()).toHaveValue('- item');
+    }
+  });
+
+  it('does not take Ctrl+B on macOS or modified formatting chords', () => {
+    setPlatform('darwin');
+    render(<Harness initial="draft" />);
+    for (const chord of ['Ctrl+B', 'Meta+Shift+B', 'Meta+Alt+I', 'Meta+ArrowLeft', 'Meta+Z']) expect(press(chord)).toBe(false);
+    expect(box()).toHaveValue('draft');
+  });
+
+  it('uses a single native insertion for the aid, leaving undo to the textarea', () => {
+    setPlatform('darwin');
+    const native = vi.fn((_command: string, _ui: boolean, inserted: string) => {
+      box().setRangeText(inserted, box().selectionStart, box().selectionEnd, 'end');
+      fireEvent.input(box());
+      return true;
+    });
+    const previous = document.execCommand;
+    document.execCommand = native;
+    try {
+      render(<Harness initial="- item" />);
+      caretAt(6);
+      press('Shift+Enter');
+      expect(native).toHaveBeenCalledExactlyOnceWith('insertText', false, '\n- ');
+      expect(box()).toHaveValue('- item\n- ');
+      expect(press('Meta+Z')).toBe(false);
+    } finally { document.execCommand = previous; }
+  });
+
+  it('fallback updates the caller draft, which survives remounting', () => {
+    let draft = '- item';
+    const onTextChange = (value: string) => { draft = value; };
+    const { unmount } = render(<Harness text={draft} onTextChange={onTextChange} />);
+    caretAt(6);
+    press('Shift+Enter');
+    expect(draft).toBe('- item\n- ');
+    unmount();
+    render(<Harness text={draft} onTextChange={onTextChange} />);
+    expect(box()).toHaveValue('- item\n- ');
+    expect(screen.queryByTestId('chat-slash-menu')).not.toBeInTheDocument();
+  });
+});

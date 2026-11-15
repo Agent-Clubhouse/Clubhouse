@@ -175,6 +175,31 @@ for (const p of PROVIDERS) {
     test('send, stream and finish two turns', async () => {
       const { electronApp, window, chat } = await openChat(p, 'multi-turn');
       try {
+        // #3540: real Chromium undo, with the fake already verified above.
+        const composer = chat.getByRole('textbox', { name: 'Message', exact: true });
+        const mod = process.platform === 'darwin' ? 'Meta' : 'Control';
+        for (const [before, chord, after] of [
+          ['- first', 'Shift+Enter', '- first\n- '],
+          ['8. first\n9. next', 'Alt+Enter', '8. first\n9. \n10. next'],
+          ['- ', 'Shift+Enter', ''],
+          ['- first', 'Tab', '  - first'],
+          ['  - first', 'Shift+Tab', '- first'],
+          ['word', `${mod}+b`, '**word**'],
+          ['word', `${mod}+i`, '*word*'],
+        ]) {
+          await composer.fill(before);
+          if (chord.endsWith('+b') || chord.endsWith('+i')) await composer.press(`${mod}+a`);
+          else {
+            await composer.press(process.platform === 'darwin' ? 'Meta+ArrowUp' : 'Control+Home');
+            await composer.press(process.platform === 'darwin' ? 'Meta+ArrowRight' : 'End');
+          }
+          await composer.press(chord);
+          await expect(composer).toHaveValue(after);
+          await composer.press(`${mod}+z`);
+          await expect(composer).toHaveValue(before);
+          await expect(chat).toHaveAttribute('data-state', 'idle');
+        }
+
         await send(window, 'Reply with the word one.');
         const footers = chat.locator('[data-testid="chat-turn-footer"]');
         await expect(footers).toHaveCount(1, { timeout: ENDED_TIMEOUT });

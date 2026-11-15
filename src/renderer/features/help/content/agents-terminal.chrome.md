@@ -2,6 +2,8 @@
 
 Select an agent and the pane shows what it's doing, in a chat or in its CLI view. Agents open in chat by default. To use the CLI view, choose **CLI** for a provider in **Settings > Agents & providers**, or set one agent's **Runtime** setting. If a provider's CLI can't run chat, its agents open in the CLI view.
 
+In chat, Cmd+B / Cmd+I (Ctrl on Windows/Linux) wrap or unwrap bold / italic Markdown source. Start a list with `- `, `* ` or `1. `: Shift+Enter or Alt+Enter continues it, and an empty item exits. Tab / Shift+Tab indents / outdents a list item by two spaces; numbered items renumber as you continue or exit. Enter still sends, steers or queues as usual.
+
 ## The agent's CLI view
 
 The CLI view works like any terminal emulator:
