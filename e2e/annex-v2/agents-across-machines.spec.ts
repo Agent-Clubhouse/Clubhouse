@@ -33,7 +33,7 @@ import { addProject, assertRunLayout, createDurableAgent } from '../smoke-helper
 import { isNewLayout } from '../layout';
 import { SDK_FIXTURE_ENV, writeAuthenticatedSdkFixture } from '../chat-rich/copilot-sdk-fixture';
 import { enableAnnexViaPreload } from './helpers';
-import { armDeliveryCommitBarrier, observeDeliveryRequests, readOwnedSenderIdentity, restoreDeliveryInstrumentation, type DeliveryBoundary } from './delivery-crash';
+import { armDeliveryCommitBarrier, observeDeliveryRequests, readOwnedSenderIdentity, restoreDeliveryInstrumentation, waitForDurableDeliveryPath, waitForFakeCliRegistration, type DeliveryBoundary } from './delivery-crash';
 
 let fakesHere: FakeClis | undefined;
 let fakesThere: FakeClis | undefined;
@@ -317,17 +317,27 @@ test('a sender crash after a durable200 replays the same identity once, then pre
   there = await launchDesktop('crash-receiver', fakesThere, 'Studio');
   const senderId = await startAgent(here, senderProject, 'durable-sender');
   const receiverId = await startAgent(there, receiverProject, 'durable-receiver');
-  await expect.poll(async () => (await fakesHere!.report('claude')).env.CLUBHOUSE_AGENT_ID).toBe(senderId);
-  const oldCliPid = (await fakesHere.report('claude')).pid;
+  const senderReport = await waitForFakeCliRegistration(here, fakesHere, senderId);
+  const oldCliPid = senderReport.pid;
   const { senderFingerprint, receiverFingerprint } = await pairDesktops(here, there, senderId, receiverId);
-  let mcp = await connectMcp((await fakesHere.report('claude')).env);
+  // Both stores and the authenticated network path must be ready before going offline.
+  await waitForDurableDeliveryPath(here, there, receiverFingerprint);
+  await waitForDurableDeliveryPath(there, here, senderFingerprint);
+  let mcp = await connectMcp(senderReport.env);
   const send = (await mcp.toolNames()).find((name) => name.endsWith('__send_message'));
   expect(send).toBeTruthy();
-  await here.window.evaluate((fingerprint) => window.clubhouse.annexClient.disconnect(fingerprint), receiverFingerprint);
+  // A one-shot disconnect can be undone by discovery or membership reconciliation.
+  // Keep the client off until both durable admissions are persisted and the barrier is armed.
+  await here.window.evaluate(async () => {
+    const settings = await window.clubhouse.annex.getSettings();
+    await window.clubhouse.annex.saveSettings({ ...settings, enableClient: false });
+  });
   await expect.poll(async () => {
-    const satellites: Array<{ fingerprint: string; state: string }> = await here!.window.evaluate(() => window.clubhouse.annexClient.getSatellites());
-    return satellites.find((satellite) => satellite.fingerprint.toLowerCase() === receiverFingerprint)?.state;
-  }).toBe('disconnected');
+    return here!.window.evaluate(async () => ({
+      enabled: (await window.clubhouse.annex.getSettings()).enableClient,
+      satellites: (await window.clubhouse.annexClient.getSatellites()).length,
+    }));
+  }, { timeout: 30_000, message: 'Sender client must be stopped before queuing the two offline deliveries' }).toEqual({ enabled: false, satellites: 0 });
   const firstArgs = { message: 'durable first input', task_id: 'durable-first', idempotency_key: 'durable-first' };
   const secondArgs = { message: 'durable second input', task_id: 'durable-second', idempotency_key: 'durable-second' };
   expect((await mcp.call(send!, firstArgs)).text).toContain('delivery_id=');
@@ -342,7 +352,10 @@ test('a sender crash after a durable200 replays the same identity once, then pre
   const requestsPath = path.join(scratch, 'received-call-ids.jsonl');
   await observeDeliveryRequests(there, requestsPath);
   const senderIdentity = await armDeliveryCommitBarrier(here, firstId, boundaryPath);
-  await here.window.evaluate((fingerprint) => window.clubhouse.annexClient.connect(fingerprint), receiverFingerprint);
+  await here.window.evaluate(async () => {
+    const settings = await window.clubhouse.annex.getSettings();
+    await window.clubhouse.annex.saveSettings({ ...settings, enableClient: true });
+  });
   await expect.poll(() => fs.existsSync(boundaryPath), { timeout: 30_000 }).toBe(true);
   const boundary: DeliveryBoundary = JSON.parse(await fs.promises.readFile(boundaryPath, 'utf8'));
   expect(boundary).toMatchObject({ callId: firstId, status: 200, outboxIds: [firstId, secondId] });
@@ -370,6 +383,7 @@ test('a sender crash after a durable200 replays the same identity once, then pre
   expect(here.userDataDir).toBe(profile.userDataDir);
   expect(profile.disposed).toBe(false);
   expect(await fingerprintOf(here.window)).toBe(senderFingerprint);
+  await waitForDurableDeliveryPath(here, there, receiverFingerprint);
   await expect.poll(async () => (await readSender()).outbox.length, { timeout: 30_000 }).toBe(0);
   const after = await readSender();
   expect(after.deliveries.find((row) => row.callId === firstId)).toMatchObject({ state: 'delivered', attempts: 2 });
@@ -378,11 +392,8 @@ test('a sender crash after a durable200 replays the same identity once, then pre
     const running = await window.clubhouse.agent.getRunningStatuses([id]);
     if (!running.includes(id)) await window.clubhouse.agent.spawnAgent({ agentId: id, projectPath: project, cwd: project, kind: 'durable', orchestrator: 'claude-code' });
   }, { id: senderId, project: senderProject });
-  await expect.poll(async () => {
-    const report = await fakesHere!.report('claude');
-    return report.pid !== oldCliPid && report.env.CLUBHOUSE_AGENT_ID === senderId;
-  }).toBe(true);
-  mcp = await connectMcp((await fakesHere.report('claude')).env);
+  const restartedReport = await waitForFakeCliRegistration(here, fakesHere, senderId, oldCliPid);
+  mcp = await connectMcp(restartedReport.env);
   const duplicate = await mcp.call(send!, firstArgs);
   expect(duplicate.isError).toBe(false);
   expect(createHash('sha256').update(JSON.stringify(duplicate.result)).digest('hex')).toBe(boundary.resultHash);
@@ -418,8 +429,8 @@ test('a sender crash after a durable200 replays the same identity once, then pre
   const persistedReceipt: DeliveryFile = JSON.parse(await fs.promises.readFile(receiverStore, 'utf8'));
   expect(persistedReceipt.inbox.find((row) => row.key === receipt!.key)).toEqual(receipt);
   const otherId = await createDurableAgent(here.window, { projectName: path.basename(senderProject), name: 'other-delivery-caller', orchestrator: 'claude-code' });
-  await expect.poll(async () => (await fakesHere!.report('claude')).env.CLUBHOUSE_AGENT_ID).toBe(otherId);
-  const otherMcp = await connectMcp((await fakesHere.report('claude')).env);
+  const otherReport = await waitForFakeCliRegistration(here, fakesHere, otherId);
+  const otherMcp = await connectMcp(otherReport.env);
   expect(await otherMcp.call(statusTool!, { delivery_id: firstId })).toMatchObject({ isError: true, text: 'No retained delivery with that id belongs to you.' });
   await info.attach('durable-replay-witness', { body: JSON.stringify({ firstId, secondId, attempts: [2, 1], actualRequestIds: ids, runtimeInputs: 3, fileBytes: Buffer.byteLength(content), fileHash: createHash('sha256').update(content).digest('hex') }), contentType: 'application/json' });
 });

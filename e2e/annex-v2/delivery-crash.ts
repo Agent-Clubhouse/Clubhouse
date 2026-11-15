@@ -3,6 +3,71 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { ELECTRON_DIST_DIR } from '../e2e-cleanup';
 import { assertOwnedMainProcess } from '../owned-process-receipts';
+import { expect } from '@playwright/test';
+import * as https from 'https';
+import { X509Certificate } from 'crypto';
+import type { FakeClis } from '../chat-fake-cli';
+import type { FakeCliReport } from '../../src/main/orchestrators/adapters/testing/fake-cli';
+
+/** Probe the real capability route as the paired desktop, without sending agent input. */
+export async function readDeliveryCapabilities(sender: LaunchedApp, receiver: LaunchedApp) {
+  const { port } = await receiver.window.evaluate(() => window.clubhouse.annex.getStatus());
+  const local = JSON.parse(await fs.promises.readFile(path.join(sender.userDataDir, 'annex-tls-cert.json'), 'utf8'));
+  const peer = JSON.parse(await fs.promises.readFile(path.join(receiver.userDataDir, 'annex-tls-cert.json'), 'utf8'));
+  const pin = new X509Certificate(peer.certPem).fingerprint256;
+  return new Promise<{ status: number; body: unknown }>((resolve, reject) => {
+    const request = https.request(`https://127.0.0.1:${port}/api/v1/network/agent-delivery-capabilities`, {
+      method: 'POST', cert: local.certPem, key: local.keyPem, ca: [peer.certPem], rejectUnauthorized: true, agent: false,
+      checkServerIdentity: (_host, certificate) => certificate.raw && new X509Certificate(certificate.raw).fingerprint256 === pin
+        ? undefined : new Error('Delivery readiness peer certificate changed'),
+    }, (response) => {
+      let body = '';
+      response.on('data', (chunk: Buffer) => { body += chunk.toString('utf8'); });
+      response.on('error', (error) => { clearTimeout(timer); reject(error); });
+      response.on('end', () => {
+        clearTimeout(timer);
+        try { resolve({ status: response.statusCode ?? 0, body: JSON.parse(body) }); }
+        catch (error) { reject(error); }
+      });
+    });
+    // Bound the whole probe, including a peer that accepts TLS but never answers.
+    const timer = setTimeout(() => request.destroy(new Error('Delivery readiness probe timed out')), 5_000);
+    request.on('error', (error) => { clearTimeout(timer); reject(error); });
+    request.end('{}');
+  });
+}
+
+export async function waitForDurableDeliveryPath(sender: LaunchedApp, receiver: LaunchedApp, receiverFingerprint: string, timeout = 60_000): Promise<void> {
+  await expect.poll(async () => {
+    const satellites: Array<{ fingerprint: string; state: string }> = await sender.window.evaluate(() => window.clubhouse.annexClient.getSatellites());
+    const state = satellites.find((satellite) => satellite.fingerprint.toLowerCase() === receiverFingerprint)?.state;
+    if (state !== 'connected') return { connection: state ?? 'missing' };
+    try { return await readDeliveryCapabilities(sender, receiver); }
+    catch (error) { return { error: error instanceof Error ? error.message : String(error) }; }
+  }, { timeout, message: 'Paired desktop must be connected and advertise a readable durable delivery store before agent input' }).toEqual({
+    status: 200, body: { deliveryVersion: 1, receiptBoundary: 'runtime-accepted' },
+  });
+}
+
+/** A report on disk can belong to the process killed with the previous desktop. */
+export async function waitForFakeCliRegistration(app: LaunchedApp, fakes: FakeClis, agentId: string, previousPid?: number, timeout = 60_000): Promise<FakeCliReport> {
+  let registered: FakeCliReport | undefined;
+  await expect.poll(async () => {
+    const running = await app.window.evaluate((id) => window.clubhouse.agent.getRunningStatuses([id]), agentId);
+    if (!running.includes(agentId)) return 'app has not registered a live agent runtime';
+    try {
+      const report = await fakes.report('claude', agentId);
+      if (report.env.CLUBHOUSE_AGENT_ID !== agentId) return 'fake CLI report belongs to a different agent';
+      if (!report.pid || report.pid === previousPid) return 'fake CLI report still belongs to the pre-crash process';
+      registered = report;
+      return 'registered';
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === 'ENOENT') return 'fake CLI has not published its per-agent report';
+      throw error;
+    }
+  }, { timeout, message: `Agent ${agentId} must register a live runtime and a fresh fake Claude CLI process${previousPid ? ` after PID ${previousPid}` : ''}` }).toBe('registered');
+  return registered!;
+}
 
 export interface DeliveryBoundary {
   pid: number;
