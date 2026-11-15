@@ -2,7 +2,7 @@ import React, { useEffect, useCallback, useRef, useState } from 'react';
 import type { PluginContext, PluginAPI, PluginModule, CanvasWidgetFilter } from '../../../../shared/plugin-types';
 import type { CanvasMutation } from '../../../../shared/types';
 import type { CanvasView, CanvasViewType, AgentCanvasView } from './canvas-types';
-import { createCanvasStore } from './canvas-store';
+import { createCanvasStore, type CanvasSaveToken } from './canvas-store';
 import { withCanvasPersistenceTimeout } from './canvas-persistence-timeout';
 import { canPlaceAgentCard, queueAgentCard, takeAgentCards, subscribeAgentCards, placeAgentCard, canvasOfView, type PendingAgentCard } from './agent-card-queue';
 import { findAgentCard } from './canvas-operations';
@@ -74,20 +74,30 @@ export const useAppCanvasStore = createCanvasStore();
 const inflightSaves = new WeakMap<object, Promise<unknown>>();
 const flushResults = new WeakMap<object, Promise<unknown>>();
 const timedOutSaves = new WeakSet<Promise<unknown>>();
+const saveTokens = new WeakMap<Promise<unknown>, CanvasSaveToken>();
 
 async function waitForSaveBeforeSwitch(store: ReturnType<typeof createCanvasStore>): Promise<void> {
-  const saving = inflightSaves.get(store);
-  if (!saving) return;
-  const result = flushResults.get(store);
-  if (result && timedOutSaves.has(result)) return;
-  try {
-    await withCanvasPersistenceTimeout(saving);
-  } catch (error) {
-    // The writer may finish later. It still owns only its captured local data,
-    // and must not clear the retained failure after the panel has switched.
-    if (result) timedOutSaves.add(result);
-    store.getState().markSaveTimedOut();
-    rendererLog('canvas', 'error', 'Canvas changes not saved', { meta: { error: error instanceof Error ? error.message : String(error) } });
+  for (;;) {
+    const saving = inflightSaves.get(store);
+    if (!saving) return;
+    const result = flushResults.get(store);
+    if (result && timedOutSaves.has(result)) return;
+    try {
+      await withCanvasPersistenceTimeout(saving);
+    } catch (error) {
+      // A remount can start a newer save while this waiter still owns the old
+      // one. Cancel only the old writer, and leave the newer save's status alone.
+      const token = result && saveTokens.get(result);
+      if (token) token.cancelled = true;
+      if (result) timedOutSaves.add(result);
+      if (result && flushResults.get(store) === result) {
+        store.getState().markSaveTimedOut(token);
+        rendererLog('canvas', 'error', 'Canvas changes not saved', { meta: { error: error instanceof Error ? error.message : String(error) } });
+      }
+    }
+    // Follow a newer save before hydrating, so a remount cannot reload stale
+    // disk data while that save is still writing.
+    if (inflightSaves.get(store) === saving) return;
   }
 }
 
@@ -369,10 +379,12 @@ export function MainPanel({ api }: { api: PluginAPI }) {
     const run = (): void => {
       // Wait for both writers even on failure, so a remount or flush cannot
       // overtake the other writer while it is still persisting changes.
-      const saving = Promise.allSettled([store.getState().saveCanvas(storage), store.getState().saveWires(storage)]).then((results) => {
+      const token: CanvasSaveToken = { cancelled: false };
+      const saving = Promise.allSettled([store.getState().saveCanvas(storage, token), store.getState().saveWires(storage, token)]).then((results) => {
         const failure = results.find((result) => result.status === 'rejected');
         if (failure?.status === 'rejected') throw failure.reason;
       });
+      saveTokens.set(saving, token);
       flushResults.set(store, saving);
       inflightSaves.set(store, saving.then(() => {
         if (flushResults.get(store) === saving && !timedOutSaves.has(saving)) store.setState({ autosaveFailed: false });

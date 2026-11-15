@@ -43,6 +43,11 @@ import { removeGroupProjectCanvasReferences } from '../../../../shared/group-pro
 
 // ── Store state ──────────────────────────────────────────────────────
 
+/** A timeout cancels only the save that owns this token. */
+export interface CanvasSaveToken {
+  cancelled: boolean;
+}
+
 export interface CanvasState {
   canvases: CanvasInstance[];
   activeCanvasId: string;
@@ -71,9 +76,9 @@ export interface CanvasState {
   // Lifecycle
   loadCanvas: (storage: ScopedStorage, preferredCopy?: 'backup') => Promise<void>;
   hydrateForNavigation: (snapshot: CanvasNavigationSnapshot, canvasId: string) => void;
-  saveCanvas: (storage: ScopedStorage) => Promise<void>;
+  saveCanvas: (storage: ScopedStorage, token?: CanvasSaveToken) => Promise<void>;
   /** Restore this store's failed local edits after viewing a satellite. */
-  markSaveTimedOut: () => void;
+  markSaveTimedOut: (token?: CanvasSaveToken) => void;
   restoreFailedLocalState: (storage: ScopedStorage) => Promise<boolean>;
   hydrateFromRemote: (canvasData: unknown[], activeCanvasId: string, wireDefinitions?: unknown[], zoneWireDefinitions?: unknown[]) => void;
 
@@ -82,7 +87,7 @@ export interface CanvasState {
   // because definitions are not removed when the main process cleans up bindings.
   wireDefinitions: McpBindingEntry[];
   loadWires: (storage: ScopedStorage) => Promise<void>;
-  saveWires: (storage: ScopedStorage) => Promise<void>;
+  saveWires: (storage: ScopedStorage, token?: CanvasSaveToken) => Promise<void>;
   addWireDefinition: (entry: McpBindingEntry) => void;
   removeWireDefinition: (agentId: string, targetId: string) => void;
   updateWireDefinition: (agentId: string, targetId: string, updates: Partial<McpBindingEntry>) => void;
@@ -725,10 +730,10 @@ export function createCanvasStore(): UseBoundStore<StoreApi<CanvasState>> {
       return loadResult;
     }, { classify: canvasLoadOutcome }).then((): void => undefined),
 
-    saveCanvas: async (storage) => {
+    saveCanvas: async (storage, token) => {
       const generation = _loadGeneration;
       const assertCurrent = () => {
-        if (generation !== _loadGeneration) throw new Error('Canvas source changed before the local save completed');
+        if (token?.cancelled || generation !== _loadGeneration) throw new Error('Canvas source changed before the local save completed');
       };
       const diskBaseline = _diskBaseline;
       if (_restoredBaseline && await verifyRestoredDisk(storage)) return;
@@ -908,7 +913,7 @@ export function createCanvasStore(): UseBoundStore<StoreApi<CanvasState>> {
       }
     },
 
-    saveWires: async (storage) => {
+    saveWires: async (storage, token) => {
       const generation = _loadGeneration;
       const diskBaseline = _diskBaseline;
       if (_restoredBaseline && await verifyRestoredDisk(storage)) return;
@@ -920,7 +925,7 @@ export function createCanvasStore(): UseBoundStore<StoreApi<CanvasState>> {
         rendererLog('canvas', 'warn', 'saveWires skipped — persisted wires could not be read');
         return;
       }
-      if (generation !== _loadGeneration) throw new Error('Canvas source changed before the local wire save');
+      if (token?.cancelled || generation !== _loadGeneration) throw new Error('Canvas source changed before the local wire save');
       // Persist wire definitions — the canvas-owned source of truth.
       // Unlike MCP bindings, wire definitions are not cleared when agents sleep.
       const data = get().wireDefinitions.map((b) => ({
@@ -937,11 +942,11 @@ export function createCanvasStore(): UseBoundStore<StoreApi<CanvasState>> {
       }));
       await storage.write(STORAGE_KEY_WIRES, data);
       diskBaseline.set(STORAGE_KEY_WIRES, diskFingerprint(data));
-      if (generation === _loadGeneration && get().dataOrigin === 'local') _failedLocalState = undefined;
+      if (token?.cancelled || generation !== _loadGeneration) throw new Error('Canvas source changed before the local wire save completed');
+      if (get().dataOrigin === 'local') _failedLocalState = undefined;
     },
 
     addWireDefinition: (entry) => {
-      if (get().dataOrigin === 'local') _wiresOrigin = 'local';
       set((state) => {
         const exists = state.wireDefinitions.some(
           (w) => w.agentId === entry.agentId && w.targetId === entry.targetId,
@@ -952,7 +957,6 @@ export function createCanvasStore(): UseBoundStore<StoreApi<CanvasState>> {
     },
 
     removeWireDefinition: (agentId, targetId) => {
-      if (get().dataOrigin === 'local') _wiresOrigin = 'local';
       set((state) => ({
         wireDefinitions: state.wireDefinitions.filter(
           (w) => !(w.agentId === agentId && w.targetId === targetId),
@@ -961,7 +965,6 @@ export function createCanvasStore(): UseBoundStore<StoreApi<CanvasState>> {
     },
 
     updateWireDefinition: (agentId, targetId, updates) => {
-      if (get().dataOrigin === 'local') _wiresOrigin = 'local';
       set((state) => ({
         wireDefinitions: state.wireDefinitions.map((w) =>
           w.agentId === agentId && w.targetId === targetId
@@ -988,9 +991,11 @@ export function createCanvasStore(): UseBoundStore<StoreApi<CanvasState>> {
       }));
     },
 
-    markSaveTimedOut: () => {
-      // Invalidate writers NOW, even if the satellite has no snapshot yet.
-      ++_loadGeneration;
+    markSaveTimedOut: (token) => {
+      // Stop this writer even when no satellite snapshot has arrived. A newer
+      // save may already be running, so a timeout must not invalidate it.
+      if (token) token.cancelled = true;
+      else ++_loadGeneration;
       if (get().dataOrigin === 'local') _restoredBaseline = _diskBaseline;
       set({ autosaveFailed: true });
     },
@@ -1451,5 +1456,12 @@ export function createCanvasStore(): UseBoundStore<StoreApi<CanvasState>> {
       })));
     },
   }));
+  // Wire definitions can also change while resolving deferred blueprint wires,
+  // removing views, or applying navigation. Track every local mutation centrally.
+  store.subscribe((state, previous) => {
+    if (state.dataOrigin !== 'local' || previous.dataOrigin !== 'local') return;
+    if (state.wireDefinitions !== previous.wireDefinitions) _wiresOrigin = 'local';
+    if (state.zoneWireDefinitions !== previous.zoneWireDefinitions) _zoneWiresOrigin = 'local';
+  });
   return store;
 }

@@ -210,7 +210,7 @@ describe('canvas main', () => {
       source.indexOf('scheduleSave'),
       source.indexOf('const previous = pendingSaveRef.current'),
     );
-    expect(saveBlock).toContain('saveWires(storage)');
+    expect(saveBlock).toMatch(/saveWires\(storage(?:, token)?\)/);
     // Should NOT pass bindingsRef.current to saveWires
     expect(saveBlock).not.toContain('saveWires(storage, bindingsRef');
 
@@ -611,6 +611,60 @@ describe('canvas main', () => {
         }
       },
     );
+
+    it.each([false, true])('does not cancel a newer local save when an older save times out (newer still writing: %s)', async (holdNewer) => {
+      const { store, storage, mount, mountAndLoad } = setup(`older-save-timeout-${holdNewer}`);
+      const panel = await mountAndLoad();
+      let releaseOld!: () => void;
+      let releaseNew!: () => void;
+      const oldGate = new Promise<void>((resolve) => { releaseOld = resolve; });
+      const newGate = new Promise<void>((resolve) => { releaseNew = resolve; });
+      const write = storage.write.getMockImplementation()!;
+      let backups = 0;
+      let primaryStarted = false;
+      storage.write.mockImplementation(async (key, value) => {
+        if (key === 'canvas-instances-backup' && ++backups === 1) await oldGate;
+        if (key === 'canvas-instances') {
+          primaryStarted = true;
+          if (holdNewer) await newGate;
+        }
+        return write(key, value);
+      });
+      let remount: ReturnType<typeof mount> | undefined;
+      vi.useFakeTimers();
+      try {
+        act(() => { store.getState().addView('agent', { x: 7, y: 9 }); });
+        panel.unmount(); // Save A is stuck at its backup write.
+        remount = mount(); // This hydration waiter still owns A.
+        await act(async () => { await Promise.resolve(); });
+        act(() => {
+          store.getState().addView('agent', { x: 17, y: 19 });
+          store.getState().addZoneWireDefinition({ sourceZoneId: 'new-zone', targetId: 'local-agent', targetType: 'agent' });
+        });
+        const expected = store.getState();
+        await act(async () => { await vi.advanceTimersByTimeAsync(501); });
+        expect(primaryStarted).toBe(true); // Save B has reached its primary write.
+        await act(async () => { await vi.advanceTimersByTimeAsync(4_501); });
+        expect(store.getState().autosaveFailed).toBe(false);
+        await act(async () => { releaseNew(); await newGate; });
+        expect(storage.files.get('canvas-active-id')).toBe(expected.activeCanvasId);
+        expect(storage.files.get('canvas-zone-wires')).toEqual(expected.zoneWireDefinitions);
+        expect(storage.files.get('canvas-instances')).toEqual(expect.arrayContaining([
+          expect.objectContaining({ views: expected.views }),
+        ]));
+        const newerPrimary = storage.files.get('canvas-instances');
+        await act(async () => { releaseOld(); await oldGate; });
+        expect(storage.files.get('canvas-instances')).toBe(newerPrimary);
+        expect(store.getState().autosaveFailed).toBe(false);
+        expect(screen.queryByText('Canvas changes not saved')).toBeNull();
+      } finally {
+        releaseOld();
+        releaseNew();
+        remount?.unmount();
+        panel.unmount();
+        vi.useRealTimers();
+      }
+    });
 
     it.each(['write', 'read'])('opens remote after a hung local %s and ignores its late completion', async (kind) => {
       const storage = memoryStorage();

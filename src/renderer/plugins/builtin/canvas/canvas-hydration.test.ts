@@ -416,6 +416,37 @@ describe('canvas hydration safety', () => {
     expect(JSON.stringify(copy?.[1])).not.toContain('REMOTE-SECRET');
   });
 
+  it('retains a deferred blueprint wire resolved locally before local wires finish loading', async () => {
+    const local = [{
+      ...canvasWith(card('lead'), { ...card('stub'), agentId: null })[0],
+      deferredWires: [{ wire: { sourceRef: 'lead', targetRef: 'stub' }, sourceViewId: 'lead', targetViewId: 'stub' }],
+    }];
+    const { map, storage } = createStorage({ 'canvas-instances': local, 'canvas-instances-backup': local });
+    const store = createCanvasStore();
+    const remote = [{ ...canvasWith()[0], id: 'remote' }];
+    store.getState().hydrateFromRemote(remote, 'remote', [{ agentId: 'REMOTE-SECRET', targetId: 'remote-target', targetKind: 'agent', label: 'remote' }], []);
+    await store.getState().loadCanvas(storage);
+    expect(store.getState().wiresLoaded).toBe(false);
+    store.getState().updateView('stub', { agentId: 'local-new-agent' });
+    expect(store.getState().wireDefinitions).toEqual([
+      expect.objectContaining({ agentId: 'durable_lead', targetId: 'local-new-agent' }),
+    ]);
+    expect(store.getState().activeCanvas().deferredWires).toBeUndefined();
+    store.setState({ autosaveFailed: true });
+    store.getState().hydrateFromRemote(remote, 'remote', [], []);
+    const newer = canvasWith(card('newer'));
+    map.set('canvas-instances', newer);
+    map.set('canvas-instances-backup', newer);
+    await store.getState().restoreFailedLocalState(storage);
+    const copy = [...map.entries()].find(([key]) => key.startsWith('canvas-unsaved-copy-'));
+    expect(copy?.[1]).toMatchObject({
+      version: 1,
+      wireDefinitions: [expect.objectContaining({ agentId: 'durable_lead', targetId: 'local-new-agent' })],
+    });
+    expect(JSON.stringify(copy?.[1])).not.toContain('REMOTE-SECRET');
+    expect(storage.delete).not.toHaveBeenCalled();
+  });
+
   it('keeps retained edits in memory when disk cannot be checked, and retries once readable', async () => {
     let unreadable = false;
     const { storage } = createStorage({}, () => unreadable);
