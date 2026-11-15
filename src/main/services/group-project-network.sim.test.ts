@@ -315,6 +315,11 @@ describe('network group projects across two desktops (#3363)', () => {
     }] }))));
     expect(attempted.results[0]).toMatchObject({ status: 'refused', reason: expect.stringContaining('Only the host') });
     expect((await as(A, (h) => h.groupProjectHost.getMembership(project.id))).autoJoin).toBe(true);
+    await as(B, () => B.membership!.excludeMember(project.id, 'builder'));
+    await as(B, () => B.membership!.addMember(project.id, 'builder'));
+    const includedAgain = (await as(A, (h) => h.groupProjectHost.getMembership(project.id))).explicit.find((entry) => entry.address === `builder@${B.fp}`);
+    expect(includedAgain?.autoProject).toEqual({ machine: B.fp, projectId: 'proj_b' });
+
   });
 
   describe('the host decides who may write (#3446 review)', () => {
@@ -331,6 +336,16 @@ describe('network group projects across two desktops (#3363)', () => {
       expect((await writeAs(id, { agentId: 'member', label: 'm' }, { op: 'update', fields: { name: 'Renamed' } })).results[0])
         .toMatchObject({ status: 'refused', reason: expect.stringContaining('grant') });
       expect((await as(A, (h) => h.groupProjectHost.get(id)))!.name).toBe('Launch');
+    });
+
+    it('checks an exclusion before the explicit-entry authorization fallback', async () => {
+      const id = await sharedProject();
+      await as(A, (h) => h.groupProjectHost.updateMembership(id, (membership) => {
+        membership.explicit.push({ address: `member@${B.fp}`, kind: 'durable', addedAt: 'x' });
+        membership.excluded.push({ address: `member@${B.fp}`, excludedAt: 'x' });
+      }));
+      expect((await writeAs(id, { agentId: 'member', label: 'Member' }, { op: 'post', sender: 'Member', topic: 'work', body: 'excluded' })).results[0])
+        .toMatchObject({ status: 'refused', reason: expect.stringContaining('member') });
     });
 
     it('asks the registered grant check for an agent\'s change, with its address and the action', async () => {

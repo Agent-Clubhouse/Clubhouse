@@ -577,6 +577,13 @@ describe('project membership controls (#3546)', () => {
     expect((await getMembership('gp_controls')).excluded.map((e) => e.address)).toEqual(['dev']);
   });
 
+  it('refuses to turn off while the scoped inventory is unreadable, even before bindings are restored', async () => {
+    const group = await groupProjectHost.create('Unreadable', { projectId: PROJ_A.id });
+    vi.mocked(listDurable).mockImplementationOnce(async () => { throw new Error('unreadable'); });
+    await expect(setAutomaticMembership(group.id, { autoJoin: false, includeLinkedComputers: false })).rejects.toThrow(/could not be checked/);
+    expect((await getMembership(group.id)).autoJoin).toBe(true);
+  });
+
   it('leaves an existing app auto-join policy and existing explicit membership unchanged across restart', async () => {
     groupProjectRegistry._setForTesting(legacyGp('gp_existing', { scope: { level: 'app', reach: 'local' } }));
     await updateMembership('gp_existing', (m) => { m.autoJoin = true; m.explicit.push({ address: 'helper1', kind: 'helper', addedAt: 'old' }); });
@@ -671,6 +678,15 @@ describe('linked automatic membership (#3546)', () => {
     expect((await describeMembership('gp_linked')).members.map((m) => m.agentId)).not.toContain(remoteAddress('remote'));
     linkCopy(); await reconcileMembership();
     expect((await describeMembership('gp_linked')).members.map((m) => m.agentId)).toContain(remoteAddress('remote'));
+  });
+
+  it('remote helpers remain explicit additions and remote quick agents cannot join', async () => {
+    await linkedGroup(); linkCopy(); await reconcileMembership();
+    await addMember('gp_linked', remoteAddress('remote-helper'));
+    const entry = (await getMembership('gp_linked')).explicit.find((e) => e.address === remoteAddress('remote-helper'));
+    expect(entry).toMatchObject({ kind: 'helper' });
+    expect(entry?.autoProject).toBeUndefined();
+    await expect(addMember('gp_linked', remoteAddress('remote-quick'))).rejects.toThrow(/explicitly linked project copy/);
   });
 
   it('turning linked computers off preserves remote auto members explicitly, including across unlink', async () => {

@@ -636,14 +636,16 @@ export async function setAutomaticMembership(groupProjectId: string, options: Gr
   const gp = await requireGroupProject(groupProjectId);
   if (isReplica(gp)) throw new GroupProjectHostError('not_host', 'Only the host can change automatic membership.');
   if (gp.scope?.level !== 'project') throw new GroupProjectHostError('invalid', 'Automatic membership controls require a project group.');
+  if (!options || typeof options.autoJoin !== 'boolean' || typeof options.includeLinkedComputers !== 'boolean') throw new Error('Invalid automatic membership options.');
   if (!(await isMembershipManaged(gp.id))) await adopt(gp, await readInventory());
-  if (typeof options.autoJoin !== 'boolean' || typeof options.includeLinkedComputers !== 'boolean') throw new Error('Invalid automatic membership options.');
   await groupProjectHost.updateMembership(groupProjectId, async (draft) => {
     const [inventory, quick] = await Promise.all([readInventory(), liveQuickAgents()]);
     if ((draft.autoJoin && !options.autoJoin) || (draft.includeLinkedComputers && !options.includeLinkedComputers)) {
       const current = resolveMembership(gp, draft, inventory, quick);
       // An unreadable inventory cannot materialise the complete current membership safely.
-      if (current.unverified.length) throw new Error('Some current members could not be checked. Try again when their project is readable.');
+      if (current.unverified.length || (gp.scope?.level === 'project' && inventory.unreadable.has(gp.scope.projectId))) {
+        throw new Error('Some current members could not be checked. Try again when their project is readable.');
+      }
       for (const member of current.members) {
         const entry = draft.explicit.find((e) => e.address === member.agentId);
         if (entry) { delete entry.autoProject; continue; }

@@ -2,6 +2,7 @@
 import type { GroupProjectScope, ResolvedGroupProjectMember } from '../../shared/group-project-types';
 import type { NetworkProjectRef } from '../../shared/project-links';
 import { projectLinksStore } from './project-links-store';
+import { appLog } from './log-service';
 import { isDisposedAgent } from '../../shared/agent-helpers';
 import type { DurableAgentConfig } from '../../shared/types';
 
@@ -36,11 +37,11 @@ export async function linkedAgents(
   for (const copy of copies) {
     const sat = satellites.find((s) => s.fingerprint.toLowerCase() === copy.machine);
     const snapshot = sat?.snapshot;
-    const project = snapshot?.projects.find((raw) => raw && typeof raw === 'object' && (raw as { id?: unknown }).id === copy.projectId) as { name?: string; displayName?: string } | undefined;
+    const project = snapshot?.projects?.find((raw) => raw && typeof raw === 'object' && (raw as { id?: unknown }).id === copy.projectId) as { name?: string; displayName?: string } | undefined;
     const name = `${project?.displayName || project?.name || copy.projectId} on ${sat?.alias || 'a linked computer'}`;
     if (!isMember(copy.machine) || sat?.state !== 'connected' || sat.snapshotUnavailable || !snapshot || !project
       || snapshot.snapshotTruncated?.omitted?.some((field) => field === 'agents' || field === 'projects')
-      || !Array.isArray(snapshot.agents[copy.projectId])) {
+      || !Array.isArray(snapshot.agents?.[copy.projectId])) {
       unknown.push({ projectId: `${copy.machine}/${copy.projectId}`, name });
       continue;
     }
@@ -64,6 +65,9 @@ export function watchLinkedAgents(changed: () => void): () => void {
   let offSnapshot: (() => void) | undefined;
   void import('./annex-client').then((client) => {
     if (!stopped) offSnapshot = client.onSatelliteSnapshot(changed);
+  }).catch((error) => {
+    // telemetry-exempt: local membership continues; linked additions still require a verified inventory
+    appLog('core:group-project', 'warn', 'Could not watch linked agent inventories', { meta: { error: String(error) } });
   });
   return () => { stopped = true; offLinks(); offSnapshot?.(); };
 }

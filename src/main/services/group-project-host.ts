@@ -1656,7 +1656,8 @@ class GroupProjectHostService {
     if (author.agentId) {
       const address = memberAddress(parseAgentAddress(author.agentId).agentId, machine, this.hostMachineOf(project));
       const [members, membership] = await Promise.all([this.resolveMembers(project.id), this.getMembership(project.id)]);
-      const isMember = members.some((m) => m.address === address) || membership.explicit.some((e) => e.address === address);
+      const isMember = !membership.excluded.some((entry) => entry.address === address)
+        && (members.some((m) => m.address === address) || membership.explicit.some((e) => e.address === address));
       const action = REMOTE_ACTION[write.op];
       if (this.remoteWriteGate) return this.remoteWriteGate({ project, machine, write: item, address, isMember, action });
       if (!isMember) return 'Only a member of this group project can do that.';
@@ -1717,12 +1718,19 @@ class GroupProjectHostService {
           if ((!system && ['autoJoin', 'includeLinkedComputers', 'membershipPolicy'].some((key) => key in write.patch.set))
             || write.patch.addExplicit.some((entry) => entry.autoProject !== undefined)) return refuse('Only the host can change automatic membership.');
           await this.updateMembership(id, async (draft) => {
-            const patch = system ? patchForMachine(write.patch, machine, draft) : write.patch;
+            const patch = system ? patchForMachine(write.patch, machine, draft) : structuredClone(write.patch);
             if (draft.membershipPolicy === 'project-3546' && project.scope?.level === 'project') {
               const linked = await linkedAgents(project.scope, this.selfMachine(), (fp) => this.isNetworkMember(fp));
               for (const entry of patch.addExplicit) {
                 if (draft.explicit.some((old) => old.address === entry.address)) continue;
-                if (!linked.available.some((agent) => agent.agentId === entry.address && agent.kind === entry.kind)) throw new GroupProjectHostError('out_of_scope', 'Remote agents must belong to an explicitly linked project copy with a verified inventory.');
+                const agent = linked.available.find((candidate) => candidate.agentId === entry.address && candidate.kind === entry.kind);
+                if (!agent) throw new GroupProjectHostError('out_of_scope', 'Remote agents must belong to an explicitly linked project copy with a verified inventory.');
+                entry.projectId = agent.projectId;
+                entry.projectName = agent.projectName;
+                entry.name = agent.name;
+                if (draft.autoJoin && draft.includeLinkedComputers && agent.kind === 'durable') {
+                  entry.autoProject = { machine: agent.machine, projectId: agent.projectId! };
+                }
               }
             }
             return applyMembershipPatch(draft, patch);
