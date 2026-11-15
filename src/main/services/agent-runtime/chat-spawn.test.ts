@@ -533,6 +533,19 @@ require('readline').createInterface({ input: process.stdin }).on('line', line =>
     });
   });
 
+  it('scrubs planted mission/system text from a failed start log, retaining the original failure (#1919)', async () => {
+    const mission = 'CHAT-START-PRIVATE-MISSION-1919';
+    const system = 'CHAT-START-PRIVATE-SYSTEM-1919';
+    const driver = new FakeChatDriver();
+    driver.start = async () => { throw new Error(`start failed: ${mission} ${system}`); };
+    registerChatDriver(driver);
+    await tryStartChatAgent({ ...params, mission, systemPrompt: system }, provider, undefined, null);
+    const log = vi.mocked(appLog).mock.calls.find((c) => c[2] === 'Chat start failed');
+    expect(log?.[3]?.meta?.error).toBe(`start failed: <redacted: ${mission.length} chars> <redacted: ${system.length} chars>`);
+    expect(JSON.stringify(vi.mocked(appLog).mock.calls)).not.toContain(mission);
+    expect(JSON.stringify(vi.mocked(appLog).mock.calls)).not.toContain(system);
+  });
+
   it('recognizes login-required errors from each CLI', () => {
     expect(isLoginRequiredError('RPC error -32000: Authentication required')).toBe(true);
     expect(isLoginRequiredError('not logged in')).toBe(true);

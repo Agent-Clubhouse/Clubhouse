@@ -1,3 +1,4 @@
+import { redactSpawnArgs, LogRedactor } from '../../shared/log-redaction';
 import { spawn as cpSpawn, ChildProcess } from 'child_process';
 import * as fs from 'fs';
 import * as fsPromises from 'fs/promises';
@@ -40,6 +41,7 @@ export function setMaxStderrBytes(bytes: number): void {
 }
 
 interface HeadlessSession {
+  logRedactor?: LogRedactor;
   process: ChildProcess;
   agentId: string;
   outputKind: HeadlessOutputKind;
@@ -544,7 +546,7 @@ function setupStderrHandler(
       io.stderrBytes = evictOldStderrChunks(io.stderrChunks, io.stderrChunkSizes, io.stderrBytes);
     }
 
-    appLog('core:headless', 'warn', `stderr`, { meta: { agentId, message: msg } });
+    appLog('core:headless', 'warn', `stderr`, { meta: { agentId, message: session.logRedactor?.text(msg) ?? msg } });
 
     // Forward stderr to renderer + annex so headless view can show errors
     if (!canEmitSessionHooks(session)) return;
@@ -678,7 +680,7 @@ function setupExitHandlers(
     runFinalizationStep(agentId, 'transcript end', () => endTranscript(logStream, agentId));
 
     if (error) {
-      appLog('core:headless', 'error', `Process error`, { meta: { agentId, error: error.message } });
+      appLog('core:headless', 'error', `Process error`, { meta: { agentId, error: session.logRedactor?.text(error.message) ?? error.message } });
     }
 
     // Only clean up and broadcast exit if this session has not been replaced.
@@ -690,7 +692,7 @@ function setupExitHandlers(
       cleanupHeadlessSession(agentId);
 
       appLog('core:headless', 'info', `Process exited`, {
-        meta: { ...runDiagnostics(session), exitCode, signal, stdoutBytes: io.stdoutBytes, stderr: io.stderrChunks.join('\n').slice(0, 500) },
+        meta: { ...runDiagnostics(session), exitCode, signal, stdoutBytes: io.stdoutBytes, stderr: session.logRedactor?.text(io.stderrChunks.join('\n'), 500) ?? '' },
       });
 
       runFinalizationStep(agentId, 'registry exit', () => session.onExitCallback?.(agentId, exitCode));
@@ -737,9 +739,10 @@ export async function spawnHeadless(
   const env = prepareSpawnEnv(extraEnv);
 
   appLog('core:headless', 'info', `Spawning headless agent`, {
-    meta: { agentId, binary, args: args.join(' '), cwd, hasAnthropicKey: !!env.ANTHROPIC_API_KEY },
+    meta: { agentId, binary, args: redactSpawnArgs(args), cwd, hasAnthropicKey: !!env.ANTHROPIC_API_KEY },
   });
 
+  const logRedactor = new LogRedactor(args);
   const turn = startHeadlessTurn(agentId);
   let proc: ChildProcess;
   try {
@@ -762,12 +765,13 @@ export async function spawnHeadless(
   }
 
   const session = createSessionRecord(agentId, proc, outputKind, transcriptPath, onExit, createEventNormalizer, turn, quickRun);
+  session.logRedactor = logRedactor;
   sessions.set(agentId, session);
   agentRunStarted(agentId, 'headless');
 
   const logStream = fs.createWriteStream(transcriptPath, { flags: 'w' });
   logStream.on('error', (err: Error) => {
-    appLog('core:headless', 'error', 'transcript stream error', { meta: { agentId, error: err.message } });
+    appLog('core:headless', 'error', 'transcript stream error', { meta: { agentId, error: logRedactor.text(err.message) } });
   });
   const io: IOState = { stdoutBytes: 0, stderrChunks: [], stderrChunkSizes: [], stderrBytes: 0 };
 

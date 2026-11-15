@@ -98,6 +98,34 @@ describe('CodexAppServerClient', () => {
     return client;
   }
 
+  it('scrubs planted prompts in spawn, RPC errors and transport diagnostics, keeping method/id only (#1919)', async () => {
+    const mission = 'CODEX-SPAWN-PRIVATE-1919';
+    const prompt = 'CODEX-TURN-PRIVATE-1919';
+    const system = 'CODEX-SYSTEM-PRIVATE-1919';
+    const onLog = vi.fn();
+    const client = await startClient({ args: ['app-server', '--mission', mission], onLog });
+    const pending = client.requestRaw('turn/start', { input: textInput(prompt), developerInstructions: system });
+    const id = lastSent(mockProc).id;
+    expect(lastSent(mockProc)).toMatchObject({ params: { input: textInput(prompt), developerInstructions: system } });
+    expect(onLog).toHaveBeenCalledWith('debug', 'RPC request → turn/start', { id, method: 'turn/start' });
+    mockProc.stderr.emit('data', `warning: ${prompt} ${system} ${mission}`);
+    emitData(mockProc, prompt + '\n');
+    client.respondWithError(99, -1, `cannot do: ${prompt}`);
+    expect(lastSent(mockProc)).toMatchObject({ error: { message: `cannot do: ${prompt}` } });
+    emitMessage(mockProc, { id, error: { code: 400, message: `rejected: ${system}`, data: { prompt } } });
+    await expect(pending).rejects.toThrow(system);
+    mockProc.emit('exit', 1, null);
+    for (const msg of ['Spawning Codex app-server process', 'Codex app-server stderr', 'Malformed JSON line from Codex stdout', 'RPC error response → id=99', `RPC error ← id=${id}`, 'Codex app-server process exited']) {
+      const entry = onLog.mock.calls.find((c) => c[1] === msg);
+      expect(entry, msg).toBeDefined();
+      expect(JSON.stringify(entry), msg).toContain('<redacted:');
+    }
+    const logged = JSON.stringify(onLog.mock.calls);
+    for (const marker of [mission, prompt, system]) expect(logged).not.toContain(marker);
+    expect(logged).toContain('warning:');
+    expect(logged).toContain('400');
+  });
+
   // ── Transport ────────────────────────────────────────────────────────────
 
   describe('transport', () => {
@@ -247,7 +275,7 @@ describe('CodexAppServerClient', () => {
       emitData(mockProc, 'garbage data\n');
       emitMessage(mockProc, fx.completedTurnNotifications[1]);
 
-      expect(onLog).toHaveBeenCalledWith('warn', 'Malformed JSON line from Codex stdout', expect.objectContaining({ line: 'garbage data' }));
+      expect(onLog).toHaveBeenCalledWith('warn', 'Malformed JSON line from Codex stdout', expect.objectContaining({ line: '<redacted: 12 chars>' }));
       expect(onCodexNotification).toHaveBeenCalledTimes(1);
     });
 

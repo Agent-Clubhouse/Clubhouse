@@ -202,6 +202,7 @@ export class CodexAppServerClient extends NdjsonRpcBase<CodexAppServerClientOpts
 
   /** Send an untyped request. Rejects with RpcError on an error response, or after the timeout. */
   requestRaw(method: string, params?: unknown, options?: RpcRequestOptions): Promise<unknown> {
+    this.logRedactor.remember(params);
     const id = this.nextId++;
     const msg: Record<string, unknown> = { id, method };
     if (params !== undefined) msg.params = params;

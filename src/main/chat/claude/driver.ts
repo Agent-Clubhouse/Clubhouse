@@ -1,3 +1,4 @@
+import { LogRedactor } from '../../../shared/log-redaction';
 import { CLAUDE_WORKING_WINDOW_NOTE, type ContextLimits } from '../../../shared/context-window';
 import * as fsp from 'fs/promises';
 import * as os from 'os';
@@ -609,12 +610,17 @@ export class ClaudeChatDriverSession implements ChatDriverSession {
   /** False once the SDK showed it has no mcpServerStatus(). */
   private mcpStatusAvailable = true;
 
+  private readonly logRedactor = new LogRedactor();
+  private readonly log?: ClaudeTransportLog;
+
   constructor(
     readonly driverId: ClaudeChatDriverId,
     private readonly transport: ClaudeTransport,
     private readonly opts: ChatDriverStartOptions,
-    private readonly log?: ClaudeTransportLog,
+    log?: ClaudeTransportLog,
   ) {
+    this.logRedactor.remember(opts);
+    this.log = log && ((level, message, meta) => log(level, message, this.logRedactor.meta(meta)));
     this.level = opts.level;
     this.model = opts.model;
     this.effort = opts.effort;
@@ -745,6 +751,7 @@ export class ClaudeChatDriverSession implements ChatDriverSession {
   }
 
   async send(content: ContentBlock[], delivery: MessageDelivery): Promise<MessageDelivery> {
+    this.logRedactor.remember(content);
     const text = content
       .map((b) => (b.type === 'text' ? b.text : b.type === 'file' ? b.path : b.type === 'resource' ? b.text ?? b.uri : ''))
       .filter(Boolean)

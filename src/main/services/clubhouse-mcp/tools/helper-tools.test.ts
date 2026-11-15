@@ -1252,6 +1252,33 @@ describe('start_helper cli "auto" (#2671)', () => {
     expect(listStartRequests()[0].args).toMatchObject({ cli: 'auto', difficulty: 'hard' });
   });
 
+  it('scrubs a planted task from the background-start failure log (#1919)', async () => {
+    const marker = 'HELPER-BACKGROUND-PRIVATE-TASK-1919';
+    const { appLog } = await import('../../log-service');
+    const creation = controllableCreation();
+    mockRecordSpawnResult.mockImplementationOnce(() => { throw new Error(`background failed: ${marker}`); });
+    await start({ task: marker });
+    creation.ready('helper_h');
+    await _settleHelperStartsForTesting();
+    const log = vi.mocked(appLog).mock.calls.find((c) => c[2] === 'start_helper: background start failed');
+    expect(log?.[3]?.meta?.error).toBe(`background failed: <redacted: ${marker.length} chars>`);
+    expect(JSON.stringify(log)).not.toContain(marker);
+  });
+
+  it('scrubs a planted helper task from spawn failure logs, keeping it in the caller result (#1919)', async () => {
+    const marker = 'HELPER-START-PRIVATE-TASK-1919';
+    const { appLog } = await import('../../log-service');
+    const creation = controllableCreation();
+    mockSpawnAgent.mockRejectedValueOnce(new Error(`spawn failed: ${marker}`));
+    await start({ task: marker });
+    creation.ready('helper_h');
+    await _settleHelperStartsForTesting();
+    const log = vi.mocked(appLog).mock.calls.find((c) => c[2] === 'start_helper: helper spawn failed');
+    expect(log?.[3]?.meta?.error).toBe(`spawn failed: <redacted: ${marker.length} chars>`);
+    expect(JSON.stringify(log)).not.toContain(marker);
+    expect(sent.get('orch')?.at(-1)).toContain(marker);
+  });
+
   it('a failed spawn leaves the helper where it is, sets a cooldown, and doesn\'t move it', async () => {
     const creation = controllableCreation();
     mockSpawnAgent.mockRejectedValueOnce(new Error('spawn failed'));

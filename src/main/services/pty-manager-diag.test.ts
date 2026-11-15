@@ -75,6 +75,21 @@ afterEach(() => {
 });
 
 describe('PTY exit diag line', () => {
+  it('scrubs planted mission/system prompts from a failed exit, retaining short diagnostics (#1919)', async () => {
+    const mission = 'PTY-EXIT-PRIVATE-MISSION-1919';
+    const system = 'PTY-EXIT-PRIVATE-SYSTEM-1919';
+    await spawn('agent_private', '/test', '/opt/tools/bin/claude', ['-p', mission, '--system-prompt=' + system]);
+    resize('agent_private', 100, 40);
+    const data = mockProcess.onData.mock.calls.at(-1)![0] as (d: string) => void;
+    data(`warning: ${mission} ${system}\n`);
+    const exit = mockProcess.onExit.mock.calls.at(-1)![0] as (e: { exitCode: number }) => void;
+    exit({ exitCode: 1 });
+    const line = ptyLines('PTY exited')[0]!;
+    expect(line.meta).toMatchObject({ exitCode: 1, binary: 'claude', lastOutput: `warning: <redacted: ${mission.length} chars> <redacted: ${system.length} chars>\n` });
+    expect(JSON.stringify(lines)).not.toContain(mission);
+    expect(JSON.stringify(lines)).not.toContain(system);
+  });
+
   it('keeps the exit code, the binary name and the redacted, capped, plain last output of a failed exit', async () => {
     const exit = await spawnWithOutput('agent_fail', [
       'x'.repeat(3000) + '\n',
@@ -134,6 +149,15 @@ describe('PTY exit diag line', () => {
 });
 
 describe('PTY spawn failure', () => {
+  it('scrubs a planted prompt from spawn failure diagnostics without changing the error (#1919)', async () => {
+    const mission = 'PTY-SPAWN-PRIVATE-1919';
+    const error = Object.assign(new Error(`EACCES: ${mission}`), { code: 'EACCES' });
+    vi.mocked(pty.spawn).mockImplementationOnce(() => { throw error; });
+    await expect(spawn('agent_private_spawn', '/test', 'claude', ['-p', mission])).rejects.toBe(error);
+    expect(ptyLines('Failed to spawn PTY process')[0]!.meta).toMatchObject({ code: 'EACCES', error: `EACCES: <redacted: ${mission.length} chars>` });
+    expect(JSON.stringify(lines)).not.toContain(mission);
+  });
+
   it('writes the full message to diag and tags the step with the errno', async () => {
     const err = Object.assign(new Error(`spawn ${HOME}/bin/zsh EACCES`), { code: 'EACCES' });
     vi.mocked(pty.spawn).mockImplementationOnce(() => { throw err; });

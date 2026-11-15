@@ -334,6 +334,17 @@ describe('messages to the Dispatcher (#3037)', () => {
     expect(system.spawnAgent).not.toHaveBeenCalled();
   });
 
+  it('scrubs a planted Dispatcher mission in wake-failure logs, keeping the caller error (#1919)', async () => {
+    const marker = 'DISPATCHER-WAKE-PRIVATE-1919';
+    const { appLog } = await import('../../log-service');
+    system.spawnAgent.mockRejectedValue(new Error(`spawn failed: ${marker}`));
+    const result = await deliverToDispatcher(request({ text: marker }));
+    expect(result).toMatchObject({ delivered: false, text: expect.stringContaining(marker) });
+    const log = vi.mocked(appLog).mock.calls.find((c) => c[2] === 'send_message: the Dispatcher could not be woken');
+    expect(log?.[3]?.meta?.error).toContain(`<redacted: ${marker.length} chars>`);
+    expect(JSON.stringify(log)).not.toContain(marker);
+  });
+
   it('tells the sender clearly when the Dispatcher fails to start', async () => {
     system.spawnAgent.mockRejectedValue(new Error('claude CLI not found'));
     const result = await deliverToDispatcher(request());

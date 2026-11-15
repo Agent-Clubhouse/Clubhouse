@@ -38,6 +38,39 @@ afterEach(() => {
 });
 
 describe('Claude SDK initialization deadline', () => {
+  it('scrubs planted turn/system prompts from SDK stream errors (#1919)', async () => {
+    const prompt = 'SDK-STREAM-PRIVATE-TURN-1919';
+    const system = 'SDK-STREAM-PRIVATE-SYSTEM-1919';
+    let fail!: (e: Error) => void;
+    const next = new Promise<never>((_resolve, reject) => { fail = reject; });
+    const q = { [Symbol.asyncIterator]: () => ({ next: () => next }), initializationResult: healthy, close: vi.fn() };
+    const log = vi.fn();
+    const transport = new ClaudeSdkTransport({ ...OPTS, appendSystemPrompt: system, log }, async () => ({ query: (() => q) as unknown as (a: unknown) => Query }));
+    await transport.start();
+    transport.send({ text: prompt });
+    fail(new Error(`stream failed: ${prompt} ${system}`));
+    await vi.advanceTimersByTimeAsync(0);
+    expect(log).toHaveBeenCalledWith('error', '[claude-sdk] Claude SDK stream failed', { error: `stream failed: <redacted: ${prompt.length} chars> <redacted: ${system.length} chars>` });
+    expect(JSON.stringify(log.mock.calls)).not.toContain(prompt);
+    expect(JSON.stringify(log.mock.calls)).not.toContain(system);
+    await transport.close();
+  });
+
+  it('scrubs a planted system prompt if abandoning a timed-out query throws (#1919)', async () => {
+    const marker = 'SDK-CLOSE-PRIVATE-SYSTEM-1919';
+    const q = fakeQuery(never);
+    const close = q.close.getMockImplementation()!;
+    q.close.mockImplementation(() => { close(); throw new Error(`close failed: ${marker}`); });
+    const log = vi.fn();
+    const transport = new ClaudeSdkTransport({ ...OPTS, appendSystemPrompt: marker, log }, loaderFor([q]));
+    const started = transport.start().catch((err: unknown) => err);
+    await vi.advanceTimersByTimeAsync(SDK_INIT_TIMEOUT_MS);
+    expect(await started).toBeInstanceOf(ClaudeStartupTimeoutError);
+    expect(log).toHaveBeenCalledWith('warn', '[claude-sdk] Claude SDK query close failed', { error: `close failed: <redacted: ${marker.length} chars>` });
+    expect(JSON.stringify(log.mock.calls)).not.toContain(marker);
+    await transport.close();
+  });
+
   it('times out a never-settling initialize, closes the query and ends the transport', async () => {
     const q = fakeQuery(never);
     const transport = new ClaudeSdkTransport(OPTS, loaderFor([q]));

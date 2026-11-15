@@ -1,3 +1,4 @@
+import { LogRedactor } from '../../../shared/log-redaction';
 import * as fsp from 'fs/promises';
 import * as os from 'os';
 import * as path from 'path';
@@ -259,13 +260,17 @@ export class CopilotSdkChatSession implements ChatDriverSession {
   private sessionTokens: TokenUsage | undefined;
   private context: { used: number; size: number } | undefined;
 
+  private readonly logRedactor = new LogRedactor();
+  private readonly log: Log;
+
   constructor(
     private readonly client: CopilotClient,
     private readonly server: CopilotServer,
     private readonly opts: ChatDriverStartOptions,
-    private readonly log: Log,
+    log: Log,
     private readonly overrides: Partial<SessionConfig> = {},
   ) {
+    this.log = (level, message, meta) => meta ? log(level, message, this.logRedactor.meta(meta)) : log(level, message);
     // Auto has no equivalent, so it asks first: never more access than asked for.
     this.level = COPILOT_SDK_CAPABILITIES.liveLevels.includes(opts.level) ? opts.level : 'ask';
     if (this.level !== 'plan') this.actingLevel = this.level;
@@ -417,6 +422,7 @@ export class CopilotSdkChatSession implements ChatDriverSession {
   }
 
   async send(content: ContentBlock[], delivery: MessageDelivery): Promise<MessageDelivery> {
+    this.logRedactor.remember(content);
     const command = await this.commandIn(content);
     if (command === 'hidden') return delivery;
     if (command) {
@@ -496,6 +502,7 @@ export class CopilotSdkChatSession implements ChatDriverSession {
           if (result.mode) await session.rpc.mode.set({ mode: result.mode });
           const prompt = this.heldPreamble ? `${this.heldPreamble}\n${result.prompt}` : result.prompt;
           this.heldPreamble = undefined;
+          this.logRedactor.rememberText(prompt);
           await session.send({ prompt, displayPrompt: result.displayPrompt, ...(ownsTurn ? {} : { mode: 'immediate' as const }) });
           // The turn now runs like any other, and ends on session.idle.
           continues = true;

@@ -1,3 +1,4 @@
+import { LogRedactor } from '../../../../shared/log-redaction';
 /**
  * Messages from agents to the Dispatcher (#3037, part of #3034). An agent's
  * send_message to the Dispatcher goes through deliverToDispatcher, whether it
@@ -272,7 +273,7 @@ async function deliver(inboxId: string, req: DispatcherDeliveryRequest): Promise
   });
   const text = result.content[0]?.type === 'text' ? result.content[0].text : '';
   if (result.isError) {
-    appLog('core:mcp', 'warn', 'send_message: the Dispatcher could not be woken', { meta: { ...meta, error: text } });
+    appLog('core:mcp', 'warn', 'send_message: the Dispatcher could not be woken', { meta: { ...meta, error: new LogRedactor([], [req.text]).text(text) } });
     return { delivered: false, text: `${targetName} is asleep and could not be started, so the message was not delivered. ${text}` };
   }
   let status: unknown;

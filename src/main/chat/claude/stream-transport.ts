@@ -101,7 +101,7 @@ export class ClaudeStreamTransport extends ClaudeTransportBase {
 
     child.stdout?.setEncoding('utf8');
     child.stdout?.on('data', (chunk: string) => this.onStdout(chunk));
-    child.stderr?.on('data', (d: Buffer) => this.log('warn', 'claude stderr', { data: d.toString().slice(0, 2000) }));
+    child.stderr?.on('data', (d: Buffer) => this.log('warn', 'claude stderr', { stderr: d.toString() }));
     // 'exit' can fire before stdout is drained, so it only records the status;
     // teardown waits for 'close', after all stdio has ended.
     let exitStatus: { code: number | null; signal: NodeJS.Signals | null } = { code: null, signal: null };
@@ -130,6 +130,7 @@ export class ClaudeStreamTransport extends ClaudeTransportBase {
   }
 
   send(input: ClaudeUserInput): void {
+    this.logRedactor.remember(input);
     this.requireRunning();
     this.write(toWireUserMessage(input, this.sessionId));
   }
@@ -212,11 +213,11 @@ export class ClaudeStreamTransport extends ClaudeTransportBase {
     try {
       msg = JSON.parse(line);
     } catch {
-      this.log('warn', 'Malformed stream-json line from claude', { line: line.slice(0, 500) });
+      this.log('warn', 'Malformed stream-json line from claude', { line: line });
       return;
     }
     if (!isObj(msg) || typeof msg.type !== 'string') {
-      this.log('warn', 'stream-json line without a type', { line: line.slice(0, 500) });
+      this.log('warn', 'stream-json line without a type', { line: line });
       return;
     }
     switch (msg.type) {

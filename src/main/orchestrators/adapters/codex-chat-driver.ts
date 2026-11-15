@@ -1,3 +1,4 @@
+import { LogRedactor, redactSpawnArgs } from '../../../shared/log-redaction';
 // Codex chat driver: `codex app-server` (v2 over stdio) behind the shared
 // ChatDriver seam (src/shared/chat/runtime.ts). One CLI process and one
 // Codex thread per chat session. The driver only translates: the chat
@@ -287,10 +288,16 @@ class CodexChatSession implements ChatDriverSession {
   /** `effort` is the model's default, not one chosen in the session (#2136). */
   private effortIsDefault = false;
 
-  constructor(private readonly opts: ChatDriverStartOptions, private readonly log?: LogFn, private readonly ephemeralThread = false) {
+  private readonly logRedactor: LogRedactor;
+  private readonly log?: LogFn;
+
+  constructor(private readonly opts: ChatDriverStartOptions, log?: LogFn, private readonly ephemeralThread = false) {
+    this.logRedactor = new LogRedactor(opts.extraArgs);
+    this.logRedactor.remember(opts);
+    this.log = log && ((level, message, meta) => log(level, message, this.logRedactor.meta(meta)));
     const { args, dropped } = appServerArgs(opts.extraArgs ?? []);
     if (dropped.length > 0) {
-      log?.('warn', 'Ignoring extraArgs that codex app-server does not accept', { dropped });
+      this.log?.('warn', 'Ignoring extraArgs that codex app-server does not accept', { dropped: redactSpawnArgs(dropped) });
     }
     const spawnCmd = resolveStructuredSpawn(opts.binaryPath, ['app-server', ...args], opts.commandPrefix);
     let markExited: () => void = () => {};
@@ -299,7 +306,7 @@ class CodexChatSession implements ChatDriverSession {
       ...spawnCmd,
       cwd: opts.cwd,
       env: opts.env,
-      onLog: log,
+      onLog: this.log,
       onCodexNotification: (n) => this.onNotification(n),
       onCodexServerRequest: (request) => {
         const threadId = threadOf(request.params);
@@ -456,6 +463,7 @@ class CodexChatSession implements ChatDriverSession {
   }
 
   async send(content: ContentBlock[], delivery: MessageDelivery): Promise<MessageDelivery> {
+    this.logRedactor.remember(content);
     const threadId = this.requireThread();
     const command = parseCodexSlashCommand(content);
     if (command) {

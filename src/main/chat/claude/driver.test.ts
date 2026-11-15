@@ -554,6 +554,23 @@ describe('ClaudeChatDriverSession mapping (scripted transport)', () => {
     await drafts.waitFor('session_started');
     return { transport, session, drafts };
   }
+  it('scrubs a planted system prompt from driver-level RPC error diagnostics (#1919)', async () => {
+    const marker = 'CLAUDE-DRIVER-PRIVATE-SYSTEM-1919';
+    const transport = new ScriptedTransport();
+    const fail = async () => { throw new Error(`read failed: ${marker}`); };
+    Object.assign(transport, { contextUsage: fail, planUsage: fail });
+    transport.readApplied = fail;
+    const log = vi.fn();
+    const session = await new ClaudeChatDriver('claude_agent_sdk', { createTransport: () => transport, log }).start({ agentId: 'a', provider: 'claude-code', cwd: os.tmpdir(), binaryPath: 'claude', level: 'ask', systemPrompt: marker });
+    await new Promise((r) => setImmediate(r));
+    for (const suffix of ['Could not read the context limits', 'Could not read plan usage', 'Could not read the applied model and effort']) {
+      const entry = log.mock.calls.find((c) => c[1].endsWith(suffix));
+      expect(entry?.[2]?.error, suffix).toBe(`read failed: <redacted: ${marker.length} chars>`);
+    }
+    expect(JSON.stringify(log.mock.calls)).not.toContain(marker);
+    await session.close();
+  });
+
   const result = (over: Partial<Extract<ClaudeChatEventBody, { kind: 'turn_ended' }>> = {}): ClaudeChatEventBody =>
     ({ kind: 'turn_ended', subtype: 'success', isError: false, ...over });
   const settle = () => new Promise((r) => setImmediate(r));

@@ -1,3 +1,4 @@
+import { LogRedactor } from '../../../shared/log-redaction';
 /**
  * Bridge Server — HTTP server on localhost that handles MCP JSON-RPC
  * requests from bridge scripts. Same lifecycle pattern as hook-server.ts.
@@ -199,6 +200,8 @@ async function handleToolsCall(
     return jsonRpcError(id, -32602, 'Missing tool name');
   }
 
+  const logRedactor = new LogRedactor();
+  logRedactor.remember(args);
   const callStartMs = Date.now();
   const isGlobal = isGlobalTool(toolName);
   try {
@@ -211,7 +214,7 @@ async function handleToolsCall(
     if (result.isError) {
       const errorText = result.content?.find(c => c.type === 'text')?.text;
       appLog('core:mcp', 'warn', 'Tool call returned error', {
-        meta: { agentId, toolName, ...(errorText ? { errorDetail: errorText } : {}) },
+        meta: { agentId, toolName, ...(errorText ? { errorDetail: logRedactor.text(errorText) } : {}) },
       });
     }
 
@@ -242,7 +245,7 @@ async function handleToolsCall(
   } catch (err) {
     recordMcpToolCall(toolName, callStartMs, 'threw', isGlobal, { agentId });
     appLog('core:mcp', 'error', 'Tool call threw exception', {
-      meta: { agentId, toolName, error: err instanceof Error ? err.message : String(err) },
+      meta: { agentId, toolName, error: logRedactor.text(err instanceof Error ? err.message : String(err)) },
     });
     return jsonRpcError(id, -32000, err instanceof Error ? err.message : String(err));
   }

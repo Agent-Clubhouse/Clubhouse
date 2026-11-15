@@ -1,3 +1,4 @@
+import { LogRedactor } from '../../../shared/log-redaction';
 import type { ChildProcess } from 'child_process';
 import type {
   Options,
@@ -189,6 +190,7 @@ export class ClaudeSdkTransport extends ClaudeTransportBase {
   }
 
   send(input: ClaudeUserInput): void {
+    this.logRedactor.remember(input);
     if (!this.query || this.isEnded) throw new Error('Claude SDK session is not running');
     this.input.push(toWireUserMessage(input, this.sessionId) as unknown as SDKUserMessage);
   }
@@ -290,9 +292,10 @@ export function sdkSpawnHook(
   commandPrefix: string | undefined,
   log: ClaudeTransportLog,
 ): ChildProcess {
+  const logRedactor = new LogRedactor(so.args);
   const child = spawnClaude({ binary: so.command, args: so.args, cwd: so.cwd, env: so.env, commandPrefix });
-  child.stdin?.on('error', (err) => log('warn', 'claude stdin error', { error: err.message }));
-  child.stderr?.on('data', (d: Buffer) => log('warn', 'claude stderr', { data: d.toString().slice(0, 2000) }));
+  child.stdin?.on('error', (err) => log('warn', 'claude stdin error', logRedactor.meta({ error: err.message })));
+  child.stderr?.on('data', (d: Buffer) => log('warn', 'claude stderr', logRedactor.meta({ stderr: d.toString() })));
   so.signal.addEventListener('abort', () => { void killStructuredChild(child, { endStdin: false }); }, { once: true });
   return child;
 }

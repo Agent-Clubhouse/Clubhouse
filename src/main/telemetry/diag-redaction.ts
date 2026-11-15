@@ -1,3 +1,4 @@
+import { redactLogValue, redactSpawnArgs } from '../../shared/log-redaction';
 /**
  * Content redaction for diag lines (spec §6.12, #2299). Not the export
  * scrubber: paths, error text and raw ids are what makes a diag line useful,
@@ -38,7 +39,7 @@ export function isSecretKey(key: string): boolean {
 }
 
 const CONTENT_KEYS = new Set([
-  'instructions', 'messages', 'content', 'contents', 'text', 'body', 'data', 'payload', 'chunk',
+  'line', 'instructions', 'messages', 'content', 'contents', 'text', 'body', 'data', 'payload', 'chunk',
   'input', 'inputs', 'toolinput', 'args', 'argv', 'arguments', 'params', 'parameters', 'query',
   'env', 'environment', 'response', 'responsebody', 'requestbody', 'result', 'reply', 'answer', 'delta',
   'stdin', 'stdout', 'usermessage', 'assistantmessage', 'messagetext',
@@ -47,7 +48,7 @@ const CONTENT_KEY_PARTS = ['prompt', 'mission', 'transcript', 'completion'];
 /**
  * Keys whose value is prompt or response content (#1919): `prompt`,
  * `systemPrompt`, `promptText`, `initialMission`, `args`, `params`, `result`,
- * `stdout`, ... `stderr` and `lastOutput` stay: they carry the failure.
+ * `stdout`, ... Diagnostic errors and tails are scrubbed per run at their source.
  */
 export function isContentKey(key: string): boolean {
   const k = norm(key);
@@ -98,12 +99,6 @@ function cut(s: string, max = DIAG_MAX_STRING_CHARS): string {
   return s.length > max ? `${s.slice(0, max)}…[cut]` : s;
 }
 
-function sizeOf(value: unknown): string {
-  if (typeof value === 'string') return `<redacted: ${value.length} chars>`;
-  if (Array.isArray(value)) return `<redacted: ${value.length} items>`;
-  if (value && typeof value === 'object') return `<redacted: ${Object.keys(value).length} keys>`;
-  return REDACTED;
-}
 
 /**
  * Every spelling of the home directory (case, slashes, JSON escapes, URL
@@ -193,13 +188,15 @@ export function createDiagRedactor(ctx: { homeDir?: string } = {}): DiagRedactor
         continue;
       }
       const k = cut(text(key), MAX_KEY_CHARS);
-      if (isContentKey(key)) {
+      if (isContentKey(key) && typeof raw !== 'number' && typeof raw !== 'boolean') {
         // Env keys are useful (which variables were set); their values never are.
         const n = norm(key);
         out[k] =
           (n === 'env' || n === 'environment') && raw && typeof raw === 'object' && !Array.isArray(raw)
             ? Object.fromEntries(Object.keys(raw).slice(0, MAX_KEYS).map((ek) => [cut(ek, MAX_KEY_CHARS), REDACTED]))
-            : sizeOf(raw);
+            : (n === 'args' || n === 'argv') && Array.isArray(raw) && raw.every((v) => typeof v === 'string')
+              ? redactSpawnArgs(raw).map(text)
+              : redactLogValue(raw);
         continue;
       }
       if (isSecretKey(key) && typeof raw !== 'number' && typeof raw !== 'boolean' && raw !== null && raw !== undefined) {

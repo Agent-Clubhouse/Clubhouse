@@ -1,3 +1,4 @@
+import { LogRedactor } from '../../../shared/log-redaction';
 import { spawn, type ChildProcess } from 'child_process';
 import { killStructuredChild } from './structured-spawn';
 import { cleanInheritedEnv, cleanSpawnEnv } from '../../util/shell';
@@ -83,12 +84,15 @@ export abstract class NdjsonRpcBase<TOpts extends BaseRpcOpts> {
    */
   protected abstract readonly malformedLabel: string;
 
+  protected readonly logRedactor: LogRedactor;
+
   constructor(opts: TOpts) {
     this.opts = opts;
+    this.logRedactor = new LogRedactor(opts.args);
   }
 
   protected log(level: 'debug' | 'info' | 'warn' | 'error', message: string, meta?: Record<string, unknown>): void {
-    this.opts.onLog?.(level, message, meta);
+    this.opts.onLog?.(level, message, this.logRedactor.meta(meta));
   }
 
   getStderr(): string {
@@ -161,7 +165,7 @@ export abstract class NdjsonRpcBase<TOpts extends BaseRpcOpts> {
         this.dispatch(parsed);
       } catch {
         this.log('warn', `Malformed JSON line from ${this.malformedLabel} stdout`, {
-          line: line.length > 500 ? line.substring(0, 500) + '…' : line,
+          line: line,
         });
       }
     }
@@ -217,7 +221,7 @@ export abstract class NdjsonRpcBase<TOpts extends BaseRpcOpts> {
       code,
       signal,
       pendingRequests: this.pending.size,
-      ...(stderr ? { stderr: stderr.length > 2000 ? stderr.substring(0, 2000) + '…' : stderr } : {}),
+      ...(stderr ? { stderr: stderr } : {}),
     });
     this.flush();
     this.rejectAllPending(new ProcessExitedError(code, signal));

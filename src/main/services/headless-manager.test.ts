@@ -156,6 +156,29 @@ describe('headless-manager', () => {
     vi.useRealTimers();
   });
 
+  it('scrubs planted mission/system prompts from spawn, stderr, process errors and exit logs (#1919)', async () => {
+    const mission = 'HEADLESS-PRIVATE-MISSION-1919';
+    const system = 'HEADLESS-PRIVATE-SYSTEM-1919';
+    const args = ['-p', mission, '--append-system-prompt=' + system, '--model', 'opus'];
+    await spawnHeadless('test-agent', '/project', 'fake-cli', args);
+    mockProcess.stderr!.emit('data', Buffer.from(`warning: ${mission} ${system}`));
+    const streamError = mockWriteStream.on.mock.calls.find((call) => call[0] === 'error')?.[1] as (err: Error) => void;
+    streamError(new Error(`stream failed: ${mission}`));
+    mockProcess.emit('error', new Error(`failed: ${mission} ${system}`));
+    mockProcess.emit('close', 1);
+    const logs = vi.mocked(appLog).mock.calls;
+    for (const msg of ['Spawning headless agent', 'stderr', 'Process error', 'Process exited', 'transcript stream error']) {
+      const log = logs.find((call) => call[2] === msg);
+      expect(log, msg).toBeDefined();
+      expect(JSON.stringify(log), msg).toContain('<redacted:');
+    }
+    expect(JSON.stringify(logs)).not.toContain(mission);
+    expect(JSON.stringify(logs)).not.toContain(system);
+    expect(logs.find((call) => call[2] === 'stderr')?.[3]?.meta?.message).toContain('warning:');
+    expect(mockCpSpawn.mock.calls[0]?.[1]).toEqual(args);
+    expect(JSON.stringify(mockSend.mock.calls)).toContain(mission);
+  });
+
   // ============================================================
   describe('headless Action turn outcomes', () => {
     it('correlates an exit during replacement preparation with the run that actually spawned it', async () => {

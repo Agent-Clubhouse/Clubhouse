@@ -1,3 +1,4 @@
+import { LogRedactor } from '../../../../shared/log-redaction';
 import { HELPER_TASK_PROFILES, type HelperTaskProfile } from '../../../../shared/telemetry/helper-usage-contract';
 /**
  * Helper tools (#2227): an orchestrator starts, lists, sleeps and wakes its
@@ -518,7 +519,7 @@ async function finishHelperStart(
     spawnFailures.set(helperId, reason);
     broadcastToAllWindows(IPC.AGENT.AGENT_WAKE_FAILED, helperId, reason);
     appLog('core:mcp', 'warn', 'start_helper: helper spawn failed', {
-      meta: { orchestratorId: orchestrator.id, helperId, error: reason },
+      meta: { orchestratorId: orchestrator.id, helperId, error: new LogRedactor([], [task]).text(reason) },
     });
     notifyOrchestrator(orchestrator.id,
       `Helper "${helperName}" (${helperId}) was created but failed to start: ${reason} Its task is saved: wake_helper delivers it.`);
@@ -862,7 +863,7 @@ async function runHelperStart(orchestratorId: string, args: HelperStartArgs, app
     recordHelperDecision({ ...decision, helperId });
     const background = finishHelperStart(homePath, target.path, orchestrator, helperId, name, task, access, plan?.effort, done, decision.decisionId)
       .catch((err) => {
-        appLog('core:mcp', 'error', 'start_helper: background start failed', { meta: { helperId, error: errorText(err) } });
+        appLog('core:mcp', 'error', 'start_helper: background start failed', { meta: { helperId, error: new LogRedactor([], [task]).text(errorText(err)) } });
       });
     inflight.add(background);
     void background.finally(() => inflight.delete(background));

@@ -1,3 +1,4 @@
+import { LogRedactor } from '../../shared/log-redaction';
 import * as fs from 'fs';
 import * as fsp from 'fs/promises';
 import * as path from 'path';
@@ -175,7 +176,8 @@ const EXIT_REDACT_CHARS = EXIT_TAIL_CHARS * 2;
  * would have caught. When the redacted window starts mid-output, its first
  * line may hold a value cut off from its key (`password: x`) and is dropped.
  */
-function exitTailForDiag(buffer: string): string {
+function exitTailForDiag(buffer: string, redactor: LogRedactor): string {
+  buffer = redactor.text(buffer, Infinity);
   let text = stripTerminalEscapes(buffer.slice(-EXIT_SCAN_CHARS));
   const truncated = buffer.length > EXIT_SCAN_CHARS || text.length > EXIT_REDACT_CHARS;
   text = text.slice(-EXIT_REDACT_CHARS);
@@ -194,14 +196,14 @@ function spawnErrno(err: unknown): string | undefined {
 }
 
 /**
- * Record a failed `pty.spawn` call: the full message in a diag line, and the
+ * Record a failed `pty.spawn` call: the scrubbed message in a diag line, and the
  * errno, when the registry names it, as the error type of the step it
  * escapes (else the caller's `pty_spawn_failed`).
  */
-function reportSpawnFailure(err: unknown, msg: string, meta: Record<string, unknown>): void {
+function reportSpawnFailure(err: unknown, msg: string, meta: Record<string, unknown>, redactor = new LogRedactor()): void {
   const errno = spawnErrno(err);
   if (errno && SPAWN_ERRNO_TYPES.has(errno)) tagError(err, errno as ErrorType);
-  diag('core:pty', 'error', msg, { ...meta, code: errno, error: err instanceof Error ? err.message : String(err) });
+  diag('core:pty', 'error', msg, { ...meta, code: errno, error: redactor.text(err instanceof Error ? err.message : String(err)) });
 }
 
 /**
@@ -480,6 +482,7 @@ function cleanupSession(agentId: string): void {
 }
 
 export async function spawn(agentId: string, cwd: string, binary: string, args: string[] = [], extraEnv?: Record<string, string>, onExit?: (agentId: string, exitCode: number, buffer?: string, killed?: boolean) => void, commandPrefix?: string, managed?: { beforeCreate(): void; onCreated(identity: string): void; onObservedExit(): void }): Promise<void> {
+  const logRedactor = new LogRedactor(args);
   await validateSpawnCwd(cwd);
 
   if (sessions.has(agentId)) {
@@ -534,7 +537,7 @@ export async function spawn(agentId: string, cwd: string, binary: string, args: 
       });
     }
   } catch (err) {
-    reportSpawnFailure(err, 'Failed to spawn PTY process', { agentId, binary: binaryName(binary), cwd });
+    reportSpawnFailure(err, 'Failed to spawn PTY process', { agentId, binary: binaryName(binary), cwd }, logRedactor);
     throw err;
   }
 
@@ -581,11 +584,10 @@ export async function spawn(agentId: string, cwd: string, binary: string, args: 
     // Plain text for the renderer's launch error (#2088); the raw slice can
     // start mid escape sequence, so strip a wider window first.
     const ptyBuffer = stripTerminalEscapes(fullBuffer.slice(-EXIT_SCAN_CHARS)).slice(-EXIT_TAIL_CHARS);
-    // The last output is the clue on an exit nobody asked for (#2306), so
-    // only a failed one keeps it; it stays in the local diag line.
+    // Scrub known prompt values before cutting any diagnostic output.
     const failed = exitCode !== 0 && !current.killing;
     diag('core:pty', failed ? 'error' : 'info', 'PTY exited', {
-      agentId, exitCode, binary: binaryName(binary), ...(failed ? { lastOutput: exitTailForDiag(fullBuffer) } : {}),
+      agentId, exitCode, binary: binaryName(binary), ...(failed ? { lastOutput: exitTailForDiag(fullBuffer, logRedactor) } : {}),
     });
 
     if (annexEventBus.isActive()) {

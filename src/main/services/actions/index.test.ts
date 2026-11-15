@@ -373,6 +373,18 @@ describe('Clubhouse’s own actions (#3040)', () => {
     expect(outcomes).toEqual(['done']);
   });
 
+  it('scrubs a planted Action prompt from delivery-failure diagnostics (#1919)', async () => {
+    const marker = 'ACTION-PRIVATE-PROMPT-1919';
+    const { appLog } = await import('../log-service');
+    h.deliver.mockResolvedValueOnce({ delivered: false, text: `delivery failed: ${marker}` });
+    const action = createAction({ trigger: nightly, steps: message(marker) }, { kind: 'user' });
+    runActionNow(action.id);
+    await flush();
+    const log = vi.mocked(appLog).mock.calls.find((c) => c[2] === 'An action couldn’t run');
+    expect(log?.[3]?.meta?.reason).toContain(`<redacted: ${marker.length} chars>`);
+    expect(JSON.stringify(log)).not.toContain(marker);
+  });
+
   it('forgets the background mark when the message couldn’t be delivered', async () => {
     h.deliver.mockResolvedValueOnce({ delivered: false, text: 'Rosie is turned off.' });
     const upkeep = ensureAppAction('Upkeep', { trigger: nightly, steps: message('tidy up'), overlap: 'skip', enabled: true });
