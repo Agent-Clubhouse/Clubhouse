@@ -1,3 +1,4 @@
+import { redactActiveRunText } from '../../../shared/log-redaction';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { EventEmitter } from 'events';
 
@@ -423,12 +424,14 @@ describe('CodexChatDriver', () => {
     useServer({ 'model/list': () => ({ error: { code: 400, message: `catalog failed: ${system}` } }) });
     const onLog = vi.fn();
     const session = await new CodexChatDriver({ onLog }).start({ ...baseOpts, extraArgs: [prompt, '--mission=' + prompt], systemPrompt: system });
+    expect(redactActiveRunText(`${prompt} ${system}`)).not.toContain('PRIVATE');
     expect(onLog).toHaveBeenCalledWith('warn', 'Ignoring extraArgs that codex app-server does not accept', { dropped: [`<redacted: ${prompt.length} chars>`, `--mission=<redacted: ${prompt.length} chars>`] });
     expect(onLog).toHaveBeenCalledWith('warn', 'Codex model/list failed; no model menu', { error: `RPC error 400: catalog failed: <redacted: ${system.length} chars>` });
     const logged = JSON.stringify(onLog.mock.calls);
     expect(logged).not.toContain(prompt);
     expect(logged).not.toContain(system);
     await session.close();
+    expect(redactActiveRunText(`${prompt} ${system}`)).toBe(`${prompt} ${system}`);
   });
 
   it('passes app-server options through extraArgs and drops terminal flags', async () => {
@@ -893,6 +896,17 @@ describe('CodexChatDriver', () => {
   });
 
   // ── Ending ───────────────────────────────────────────────────────────────
+
+  it('keeps known prompts registered while close waits for the process exit', async () => {
+    const prompt = 'PRIVATE-CODEX-CLOSING-1919';
+    const session = await new CodexChatDriver().start({ ...baseOpts, systemPrompt: prompt });
+    server.proc.kill.mockImplementation(() => {});
+    const closing = session.close();
+    expect(redactActiveRunText(prompt)).not.toContain(prompt);
+    server.exit(0);
+    await closing;
+    expect(redactActiveRunText(prompt)).toBe(prompt);
+  });
 
   it('close stops the process and ends the stream as stopped', async () => {
     const { session, take, rest } = await startSession();

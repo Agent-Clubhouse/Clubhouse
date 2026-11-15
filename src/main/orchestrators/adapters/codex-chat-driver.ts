@@ -351,9 +351,11 @@ class CodexChatSession implements ChatDriverSession {
         });
         this.flushEarly();
         this.queue.finish();
+        this.logRedactor.endRun();
         markExited();
       },
     });
+    this.logRedactor.startRun();
   }
 
   get nativeSessionId(): string | undefined {
@@ -367,6 +369,7 @@ class CodexChatSession implements ChatDriverSession {
   /** Kill app-server for a cancelled start. Its exit ends the session as stopped. */
   abortStart(): void {
     this.closing = true;
+    this.logRedactor.endRun();
     this.client.kill();
   }
 
@@ -406,6 +409,7 @@ class CodexChatSession implements ChatDriverSession {
       }
     } catch (err) {
       this.closing = true;
+      this.logRedactor.endRun();
       this.client.kill();
       throw err;
     }
@@ -619,10 +623,14 @@ class CodexChatSession implements ChatDriverSession {
   }
 
   async close(): Promise<void> {
-    if (!this.client.alive) return;
-    this.closing = true;
-    this.client.kill();
-    await Promise.race([this.exited, new Promise((resolve) => setTimeout(resolve, CLOSE_TIMEOUT_MS))]);
+    try {
+      if (!this.client.alive) return;
+      this.closing = true;
+      this.client.kill();
+      await Promise.race([this.exited, new Promise((resolve) => setTimeout(resolve, CLOSE_TIMEOUT_MS))]);
+    } finally {
+      this.logRedactor.endRun();
+    }
   }
 
   private onNotification(notification: ServerNotification): void {

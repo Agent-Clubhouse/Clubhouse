@@ -129,6 +129,7 @@ function cleanupHeadlessSession(agentId: string): void {
   if (session?.killTimer) {
     clearTimeout(session.killTimer);
   }
+  session?.logRedactor?.endRun();
   sessions.delete(agentId);
 }
 
@@ -647,6 +648,7 @@ function setupExitHandlers(
   session.finalize = (code, signal, error) => {
     if (finalized) return;
     finalized = true;
+    session.logRedactor?.endRun();
     proc.off('exit', noteExit);
     if (session.killTimer) clearTimeout(session.killTimer);
     // A descendant may still own the pipes. Stop accepting output before
@@ -740,6 +742,8 @@ export async function spawnHeadless(
     // End the old turn before the replacement can start emitting. Its late
     // close still flushes the transcript but cannot end the new turn.
     finishHeadlessTurn(sessions.get(agentId)!.turn, 'interrupted');
+    // The old run has ended here even if its child never closes the pipes.
+    sessions.get(agentId)!.logRedactor?.endRun();
   }
 
   await ensureLogsDir();
@@ -773,7 +777,7 @@ export async function spawnHeadless(
   }
 
   const session = createSessionRecord(agentId, proc, outputKind, transcriptPath, onExit, createEventNormalizer, turn, quickRun);
-  session.logRedactor = logRedactor;
+  session.logRedactor = logRedactor.startRun();
   sessions.set(agentId, session);
   agentRunStarted(agentId, 'headless');
 

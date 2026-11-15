@@ -1,3 +1,4 @@
+import { redactActiveRunText } from '../../shared/log-redaction';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { EventEmitter } from 'events';
 import { Readable } from 'stream';
@@ -173,10 +174,12 @@ describe('headless-manager', () => {
     const system = 'HEADLESS-PRIVATE-SYSTEM-1919';
     const args = ['-p', mission, '--append-system-prompt=' + system, '--model', 'opus'];
     await spawnHeadless('test-agent', '/project', 'fake-cli', args);
+    expect(redactActiveRunText(`${mission} ${system}`)).not.toContain('PRIVATE');
     mockProcess.stderr!.emit('data', Buffer.from(`warning: ${mission} ${system}`));
     const streamError = mockWriteStream.on.mock.calls.find((call) => call[0] === 'error')?.[1] as (err: Error) => void;
     streamError(new Error(`stream failed: ${mission}`));
     mockProcess.emit('error', new Error(`failed: ${mission} ${system}`));
+    expect(redactActiveRunText(`${mission} ${system}`)).toBe(`${mission} ${system}`);
     mockProcess.emit('close', 1);
     const logs = vi.mocked(appLog).mock.calls;
     for (const msg of ['Spawning headless agent', 'stderr', 'Process error', 'Process exited', 'transcript stream error']) {
@@ -278,13 +281,21 @@ describe('headless-manager', () => {
     it('ends a replaced run as interrupted before the new run starts and ignores its late close', async () => {
       const events: AppEvent[] = [];
       onAppEvent((event) => events.push(event));
-      await spawnHeadless('test-agent', '/project', 'fake-cli', []);
+      const oldPrompt = 'OLD-HEADLESS-PRIVATE-PROMPT';
+      const newPrompt = 'NEW-HEADLESS-PRIVATE-PROMPT';
+      await spawnHeadless('test-agent', '/project', 'fake-cli', ['-p', oldPrompt]);
+      expect(redactActiveRunText(oldPrompt)).not.toContain(oldPrompt);
       const old = mockProcess;
       mockProcess = createMockProcess();
-      await spawnHeadless('test-agent', '/project', 'fake-cli', []);
+      await spawnHeadless('test-agent', '/project', 'fake-cli', ['-p', newPrompt]);
+      // Forget replaced runs without depending on a late (or missing) close.
+      expect(redactActiveRunText(oldPrompt)).toBe(oldPrompt);
+      expect(redactActiveRunText(newPrompt)).not.toContain(newPrompt);
       old.stdout!.emit('data', Buffer.from('{"type":"result","is_error":true}\n'));
       old.emit('close', 1);
+      expect(redactActiveRunText(newPrompt)).not.toContain(newPrompt);
       mockProcess.emit('close', 0);
+      expect(redactActiveRunText(newPrompt)).toBe(newPrompt);
       expect(events.filter((event) => event.type.startsWith('turn.'))).toMatchObject([
         { type: 'turn.started' }, { type: 'turn.ended', outcome: 'interrupted' },
         { type: 'turn.started' }, { type: 'turn.ended', outcome: 'completed' },

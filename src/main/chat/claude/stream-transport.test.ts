@@ -1,3 +1,4 @@
+import { redactActiveRunText } from '../../../shared/log-redaction';
 import { buildStreamJsonArgs } from './stream-transport';
 /**
  * Process-lifecycle edge cases for the stream-json transport, driven by a
@@ -95,11 +96,13 @@ describe('ClaudeStreamTransport process lifecycle', () => {
     const transport = new ClaudeStreamTransport({ binary: 'claude', cwd: '.', permissionMode: 'default', appendSystemPrompt: system, log }, () => child as unknown as ChildProcess);
     await transport.start();
     transport.send({ text: prompt });
+    expect(redactActiveRunText(`${prompt} ${system}`)).not.toContain('PRIVATE');
     child.stderr.write(`warning: ${prompt} ${system}`);
     child.stdout.write(prompt + '\n');
     child.line({ prompt }); // valid JSON, no type
     child.stdin.emit('error', new Error(`stdin failed: ${prompt}`));
     child.emit('error', new Error(`process failed: ${system}`));
+    expect(redactActiveRunText(`${prompt} ${system}`)).toBe(`${prompt} ${system}`);
     for (const msg of ['claude stderr', 'Malformed stream-json line from claude', 'stream-json line without a type', 'claude stdin error', 'claude process error']) {
       const entry = log.mock.calls.find((c) => c[1].endsWith(msg));
       expect(entry, msg).toBeDefined();

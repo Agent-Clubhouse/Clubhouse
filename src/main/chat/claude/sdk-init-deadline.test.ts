@@ -1,3 +1,4 @@
+import { redactActiveRunText } from '../../../shared/log-redaction';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
@@ -48,8 +49,10 @@ describe('Claude SDK initialization deadline', () => {
     const transport = new ClaudeSdkTransport({ ...OPTS, appendSystemPrompt: system, log }, async () => ({ query: (() => q) as unknown as (a: unknown) => Query }));
     await transport.start();
     transport.send({ text: prompt });
+    expect(redactActiveRunText(`${prompt} ${system}`)).not.toContain('PRIVATE');
     fail(new Error(`stream failed: ${prompt} ${system}`));
     await vi.advanceTimersByTimeAsync(0);
+    expect(redactActiveRunText(`${prompt} ${system}`)).toBe(`${prompt} ${system}`);
     expect(log).toHaveBeenCalledWith('error', '[claude-sdk] Claude SDK stream failed', { error: `stream failed: <redacted: ${prompt.length} chars> <redacted: ${system.length} chars>` });
     expect(JSON.stringify(log.mock.calls)).not.toContain(prompt);
     expect(JSON.stringify(log.mock.calls)).not.toContain(system);

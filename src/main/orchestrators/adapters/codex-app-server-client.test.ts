@@ -1,3 +1,4 @@
+import { redactActiveRunText } from '../../../shared/log-redaction';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { EventEmitter } from 'events';
 
@@ -105,6 +106,7 @@ describe('CodexAppServerClient', () => {
     const onLog = vi.fn();
     const client = await startClient({ args: ['app-server', '--mission', mission], onLog });
     const pending = client.requestRaw('turn/start', { input: textInput(prompt), developerInstructions: system });
+    expect(redactActiveRunText(`${mission} ${prompt} ${system}`)).not.toContain('PRIVATE');
     const id = lastSent(mockProc).id;
     expect(lastSent(mockProc)).toMatchObject({ params: { input: textInput(prompt), developerInstructions: system } });
     expect(onLog).toHaveBeenCalledWith('debug', 'RPC request → turn/start', { id, method: 'turn/start' });
@@ -115,6 +117,7 @@ describe('CodexAppServerClient', () => {
     emitMessage(mockProc, { id, error: { code: 400, message: `rejected: ${system}`, data: { prompt } } });
     await expect(pending).rejects.toThrow(system);
     mockProc.emit('exit', 1, null);
+    expect(redactActiveRunText(`${mission} ${prompt} ${system}`)).toBe(`${mission} ${prompt} ${system}`);
     for (const msg of ['Spawning Codex app-server process', 'Codex app-server stderr', 'Malformed JSON line from Codex stdout', 'RPC error response → id=99', `RPC error ← id=${id}`, 'Codex app-server process exited']) {
       const entry = onLog.mock.calls.find((c) => c[1] === msg);
       expect(entry, msg).toBeDefined();

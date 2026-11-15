@@ -479,6 +479,7 @@ export function isStopping(agentId: string): boolean {
 function cleanupSession(agentId: string): void {
   const session = sessions.get(agentId);
   if (session) {
+    session.logRedactor.endRun();
     if (session.eofTimer) clearTimeout(session.eofTimer);
     if (session.termTimer) clearTimeout(session.termTimer);
     if (session.killTimer) clearTimeout(session.killTimer);
@@ -548,7 +549,7 @@ export async function spawn(agentId: string, cwd: string, binary: string, args: 
   }
 
   const session = createSession(proc, agentId, pendingCommand);
-  session.logRedactor = logRedactor;
+  session.logRedactor = logRedactor.startRun();
   session.onExitCallback = onExit;
   sessions.set(agentId, session);
   session.requireObservedExit = !!managed;

@@ -52,7 +52,8 @@ const STDERR_TAIL_CHARS = 4_000;
 export function launchCopilotServer(opts: CopilotLaunchOptions): Promise<CopilotServer> {
   const cmd = resolveStructuredSpawn(opts.binary, ['--headless', '--port', '0', ...(opts.extraArgs ?? [])], opts.commandPrefix);
   const connectionToken = randomBytes(32).toString('hex');
-  return new Promise((resolve, reject) => {
+  const logRedactor = opts.logRedactor ?? new LogRedactor(opts.extraArgs);
+  return new Promise<CopilotServer>((resolve, reject) => {
     if (opts.signal?.aborted) {
       reject(new CopilotLaunchError('Copilot start cancelled', 'spawn_failed'));
       return;
@@ -75,11 +76,16 @@ export function launchCopilotServer(opts: CopilotLaunchOptions): Promise<Copilot
     let stderr = '';
     let stderrForLog = '';
     const stderrDecoder = new StringDecoder('utf8');
-    const stderrLog = (opts.logRedactor ?? new LogRedactor(opts.extraArgs)).stream();
+    logRedactor.startRun();
+    const stderrLog = logRedactor.stream();
     const addDiagnostic = (text: string) => { stderrForLog = (stderrForLog + text).slice(-STDERR_TAIL_CHARS); };
     let settled = false;
     const kill = () => killStructuredChild(child, { endStdin: false });
-    const exited = new Promise<void>((done) => { child.once('close', () => done()); child.once('error', () => done()); });
+    const exited = new Promise<void>((done) => {
+      const end = () => { logRedactor.endRun(); done(); };
+      child.once('close', end);
+      child.once('error', end);
+    });
     const tail = () => stderr.trim();
     const settle = (fn: () => void) => {
       if (settled) return;
@@ -117,5 +123,9 @@ export function launchCopilotServer(opts: CopilotLaunchOptions): Promise<Copilot
     });
     child.once('error', (err) => fail(`Could not launch ${opts.binary}: ${err.message}`, 'spawn_failed'));
     child.once('close', (code) => fail(`Copilot exited with code ${code} before it was ready${tail() ? `: ${tail()}` : ''}`, 'process_exited'));
+  }).catch((error) => {
+    // The failed startup has settled. Successful launches stay registered until exit.
+    logRedactor.endRun();
+    throw error;
   });
 }

@@ -103,6 +103,7 @@ export abstract class NdjsonRpcBase<TOpts extends BaseRpcOpts> {
     if (this.killed) return;
     this.killed = true;
     this.flush();
+    this.logRedactor.endRun();
     // Ends stdin, then kills the whole process tree (a Windows .cmd shim's
     // cmd.exe and the CLI under it), not just the direct child.
     if (this.proc) void killStructuredChild(this.proc);
@@ -124,6 +125,7 @@ export abstract class NdjsonRpcBase<TOpts extends BaseRpcOpts> {
       ...(this.opts.windowsVerbatimArguments && { windowsVerbatimArguments: true }),
     });
 
+    this.logRedactor.startRun();
     this.proc.stdout?.setEncoding('utf8');
     this.proc.stdout?.on('data', (chunk: string) => this.feed(chunk));
 
@@ -141,6 +143,7 @@ export abstract class NdjsonRpcBase<TOpts extends BaseRpcOpts> {
       this.handleProcessExit(code, signal);
     });
     this.proc.on('error', (err) => {
+      this.logRedactor.endRun();
       this.log('error', `${this.processLabel} spawn error`, { error: err.message });
       this.rejectAllPending(err);
       this.opts.onExit?.(null, null);
@@ -231,6 +234,7 @@ export abstract class NdjsonRpcBase<TOpts extends BaseRpcOpts> {
     });
     this.flush();
     this.rejectAllPending(new ProcessExitedError(code, signal));
+    this.logRedactor.endRun();
     this.opts.onExit?.(code, signal);
   }
 

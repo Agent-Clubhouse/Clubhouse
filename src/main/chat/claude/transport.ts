@@ -184,6 +184,7 @@ export abstract class ClaudeTransportBase implements ClaudeTransport {
 
   constructor(protected readonly opts: ClaudeTransportOptions) {
     this.logRedactor.remember(opts);
+    this.logRedactor.startRun();
   }
 
   get events(): AsyncIterable<ClaudeChatEvent> {
@@ -275,6 +276,7 @@ export abstract class ClaudeTransportBase implements ClaudeTransport {
   protected end(exitCode: number | null, signal: string | null, reason?: string): void {
     if (this.ended) return;
     this.ended = true;
+    this.logRedactor.endRun();
     for (const requestId of [...this.pendingPermissions.keys()]) this.cancelPermission(requestId);
     this.pushEvent({ kind: 'session_ended', exitCode, signal, reason });
     this.queue.finish();

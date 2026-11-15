@@ -180,17 +180,21 @@ export class ClaudeStreamTransport extends ClaudeTransportBase {
   }
 
   async close(): Promise<void> {
-    const child = this.child;
-    if (!child || this.isEnded) return;
-    child.stdin?.end();
-    const exited = await Promise.race([
-      this.exited.then(() => true),
-      new Promise<false>((r) => setTimeout(() => r(false), CLOSE_GRACE_MS).unref?.()),
-    ]);
-    if (!exited) {
-      this.log('warn', 'claude did not exit after stdin closed; killing');
-      await killStructuredChild(child);
-      await this.exited;
+    try {
+      const child = this.child;
+      if (!child || this.isEnded) return;
+      child.stdin?.end();
+      const exited = await Promise.race([
+        this.exited.then(() => true),
+        new Promise<false>((r) => setTimeout(() => r(false), CLOSE_GRACE_MS).unref?.()),
+      ]);
+      if (!exited) {
+        this.log('warn', 'claude did not exit after stdin closed; killing');
+        await killStructuredChild(child);
+        await this.exited;
+      }
+    } finally {
+      this.logRedactor.endRun();
     }
   }
 

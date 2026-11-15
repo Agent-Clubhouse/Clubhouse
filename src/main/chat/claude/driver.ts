@@ -620,6 +620,7 @@ export class ClaudeChatDriverSession implements ChatDriverSession {
     log?: ClaudeTransportLog,
   ) {
     this.logRedactor.remember(opts);
+    this.logRedactor.startRun();
     this.log = log && ((level, message, meta) => log(level, message, this.logRedactor.meta(meta)));
     this.level = opts.level;
     this.model = opts.model;
@@ -650,12 +651,17 @@ export class ClaudeChatDriverSession implements ChatDriverSession {
   }
 
   async start(): Promise<void> {
-    this.pump = this.drain();
-    await this.transport.start();
-    // Before the first prompt, so the request order on the wire is fixed.
-    await this.refreshApplied();
-    void this.refreshPlanUsage();
-    void this.refreshContextLimits();
+    try {
+      this.pump = this.drain();
+      await this.transport.start();
+      // Before the first prompt, so the request order on the wire is fixed.
+      await this.refreshApplied();
+      void this.refreshPlanUsage();
+      void this.refreshContextLimits();
+    } catch (err) {
+      this.logRedactor.endRun();
+      throw err;
+    }
   }
 
   /** Read the working window and compaction point; best-effort, and sends nothing to the model. */
@@ -947,8 +953,12 @@ export class ClaudeChatDriverSession implements ChatDriverSession {
 
   async close(): Promise<void> {
     this.closing = true;
-    await this.transport.close();
-    await this.pump;
+    try {
+      await this.transport.close();
+      await this.pump;
+    } finally {
+      this.logRedactor.endRun();
+    }
   }
 
   // ── Mapping ───────────────────────────────────────────────────────────────
@@ -980,6 +990,7 @@ export class ClaudeChatDriverSession implements ChatDriverSession {
     try {
       for await (const ev of this.transport.events) this.map(ev);
     } finally {
+      this.logRedactor.endRun();
       this.queue.finish();
     }
   }

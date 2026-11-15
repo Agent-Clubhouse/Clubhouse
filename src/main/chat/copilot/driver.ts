@@ -271,6 +271,7 @@ export class CopilotSdkChatSession implements ChatDriverSession {
     private readonly logRedactor = new LogRedactor(),
   ) {
     this.logRedactor.remember(opts);
+    this.logRedactor.startRun();
     this.log = (level, message, meta) => meta ? log(level, message, this.logRedactor.meta(meta)) : log(level, message);
     // Auto has no equivalent, so it asks first: never more access than asked for.
     this.level = COPILOT_SDK_CAPABILITIES.liveLevels.includes(opts.level) ? opts.level : 'ask';
@@ -591,15 +592,19 @@ export class CopilotSdkChatSession implements ChatDriverSession {
   }
 
   async close(): Promise<void> {
-    this.closing = true;
-    this.settlePending('agent');
-    this.quietFailedWrites();
-    const grace = (work: Promise<unknown>) => withTimeout(work, CLOSE_GRACE_MS, 'Copilot close').catch(() => this.log('warn', 'Copilot did not close cleanly'));
-    if (this.sdk) await grace(this.sdk.disconnect());
-    await grace(this.client.stop());
-    await this.server.kill();
-    await grace(this.server.exited);
-    this.onExit();
+    try {
+      this.closing = true;
+      this.settlePending('agent');
+      this.quietFailedWrites();
+      const grace = (work: Promise<unknown>) => withTimeout(work, CLOSE_GRACE_MS, 'Copilot close').catch(() => this.log('warn', 'Copilot did not close cleanly'));
+      if (this.sdk) await grace(this.sdk.disconnect());
+      await grace(this.client.stop());
+      await this.server.kill();
+      await grace(this.server.exited);
+      this.onExit();
+    } finally {
+      this.logRedactor.endRun();
+    }
   }
 
   /**
@@ -836,6 +841,7 @@ export class CopilotSdkChatSession implements ChatDriverSession {
     });
     this.settlePending('agent');
     this.endTurn(this.closing || this.interrupting ? 'cancelled' : 'error');
+    this.logRedactor.endRun();
     this.finished = true;
     this.queue.finish();
   }
@@ -1131,8 +1137,12 @@ export class CopilotSdkChatDriver implements ChatDriver {
       }
       return session;
     } catch (err) {
-      await client?.forceStop().catch(ignore);
-      await server.kill();
+      try {
+        await client?.forceStop().catch(ignore);
+        await server.kill();
+      } finally {
+        logRedactor.endRun();
+      }
       throw err;
     } finally {
       opts.signal?.removeEventListener('abort', onAbort);
