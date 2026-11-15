@@ -3,13 +3,13 @@ import { replaceWildcards, type WildcardContext } from '../../shared/wildcard-re
 import { auditChanges, projectAuditTarget, type AuditKeyFormat } from './settings-audit';
 import { noteRoutingPolicyChanged } from './helper-routing-changes';
 import * as fsp from 'fs/promises';
-import { constants as fsConstants } from 'fs';
+import { constants as fsConstants, realpathSync, statSync } from 'fs';
 import * as path from 'path';
 import * as os from 'os';
 import { McpServerEntry, SkillEntry, AgentTemplateEntry, PermissionsConfig, ProjectAgentDefaults, LaunchWrapperConfig, McpCatalogEntry, WrapperCatalogSnapshot } from '../../shared/types';
 import { appLog } from './log-service';
 import { pathExists } from './fs-utils';
-import { replaceFile } from './settings-store';
+import { backupUnreadableFile, replaceFile } from './settings-store';
 import { validateCommandPrefix } from './command-prefix-validation';
 
 const LOG_NS = 'core:agent-settings';
@@ -252,14 +252,32 @@ async function readSettings(projectPath: string): Promise<ProjectSettings> {
   }
 }
 
+/** One queue and mutation witness for symlink/case aliases of a project. */
+function projectSettingsKey(projectPath: string): string {
+  let resolved: string;
+  try {
+    resolved = realpathSync(projectPath);
+  } catch {
+    // telemetry-exempt: a not-yet-created project still needs a stable queue key.
+    resolved = path.resolve(projectPath);
+  }
+  try {
+    const stats = statSync(resolved, { bigint: true });
+    if (stats.ino) return `directory:${stats.dev}:${stats.ino}`;
+  } catch {
+    // telemetry-exempt: absent directories fall back to the resolved spelling.
+  }
+  return resolved;
+}
+
 // Read-only launch witnesses, including a write already pending at capture time.
 const settingsMutations = new Map<string, { generation: number; pending: number }>();
 export function projectSettingsMutationState(projectPath: string): { generation: number; pending: boolean } {
-  const state = settingsMutations.get(path.resolve(projectPath));
+  const state = settingsMutations.get(projectSettingsKey(projectPath));
   return { generation: state?.generation ?? 0, pending: (state?.pending ?? 0) > 0 };
 }
 async function settingsMutation<T>(projectPath: string, run: () => Promise<T>): Promise<T> {
-  const key = path.resolve(projectPath);
+  const key = projectSettingsKey(projectPath);
   const state = settingsMutations.get(key) ?? { generation: 0, pending: 0 };
   settingsMutations.set(key, state); state.generation++; state.pending++;
   try { return await run(); } finally { state.pending--; }
@@ -268,7 +286,7 @@ async function settingsMutation<T>(projectPath: string, run: () => Promise<T>): 
 // Every read-modify-write shares this queue, including source-folder discovery.
 const settingsWrites = new Map<string, Promise<void>>();
 function updateSettings<T>(projectPath: string, update: (settings: ProjectSettings) => T | Promise<T>): Promise<T> {
-  const key = path.resolve(projectPath);
+  const key = projectSettingsKey(projectPath);
   return settingsMutation(projectPath, () => {
     const previous = settingsWrites.get(key);
     const run = async () => {
@@ -290,11 +308,18 @@ async function writeSettings(projectPath: string, settings: ProjectSettings): Pr
   const dir = path.join(projectPath, '.clubhouse');
   const file = path.join(dir, 'settings.json');
   await fsp.mkdir(dir, { recursive: true });
+  let readable = false;
+  let unreadable = false;
   try {
-    await fsp.copyFile(file, `${file}.bak`);
+    const previous: unknown = JSON.parse(await fsp.readFile(file, 'utf-8'));
+    readable = previous !== null && typeof previous === 'object' && !Array.isArray(previous);
+    unreadable = !readable;
   } catch (err) {
-    if (!isEnoent(err)) throw err;
+    // telemetry-exempt: never replace a recoverable backup with unreadable live bytes.
+    unreadable = !isEnoent(err);
   }
+  if (readable) await fsp.copyFile(file, `${file}.bak`);
+  else if (unreadable) backupUnreadableFile(file);
   await replaceFile(file, JSON.stringify(settings, null, 2), undefined);
 }
 

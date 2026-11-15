@@ -18,6 +18,7 @@ vi.mock('fs', () => ({
   readFileSync: vi.fn(() => { throw new Error('ENOENT'); }),
   readdirSync: vi.fn(() => []),
   rmSync: vi.fn(),
+  lstatSync: vi.fn(() => ({ isFile: () => true, mtimeMs: 0 })),
   promises: {
     writeFile: vi.fn(async () => {}),
     chmod: vi.fn(async () => {}),

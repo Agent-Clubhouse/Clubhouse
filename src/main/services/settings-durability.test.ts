@@ -1,5 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import * as fs from 'fs';
+import nativeFs from 'fs';
+import { syncBuiltinESMExports } from 'node:module';
 import * as os from 'os';
 import * as path from 'path';
 
@@ -8,7 +10,7 @@ vi.mock('electron', () => ({ app: { getPath: () => state.dir } }));
 vi.mock('./log-service', () => ({ appLog: vi.fn() }));
 vi.mock('./settings-audit', () => ({ auditChanges: vi.fn(), projectAuditTarget: vi.fn() }));
 
-import { createSettingsStore, replaceFile } from './settings-store';
+import { backupUnreadableFile, createSettingsStore, replaceFile } from './settings-store';
 import {
   createAgentTemplateDir, createSkillDir, projectSettingsMutationState,
   updateProjectAgentDefaults, writeDefaultMcps, writeLaunchWrapper, writeMcpCatalog,
@@ -22,6 +24,7 @@ beforeEach(() => {
 });
 afterEach(() => {
   vi.restoreAllMocks();
+  syncBuiltinESMExports();
   fs.rmSync(state.dir, { recursive: true, force: true });
 });
 
@@ -100,6 +103,62 @@ describe('settings persistence on disk', () => {
 });
 
 describe('project settings persistence on disk', () => {
+  it('keeps a good backup and quarantines corrupt live bytes when a recovered update fails before commit', async () => {
+    fs.mkdirSync(path.dirname(projectFile()));
+    const good = '{"defaults":{},"quickOverrides":{},"defaultMcps":["keep"],"legacy":true}';
+    const broken = '{"defaultMcps":["recoverable"';
+    fs.writeFileSync(`${projectFile()}.bak`, good);
+    fs.writeFileSync(projectFile(), broken);
+    vi.spyOn(fs.promises, 'rename').mockRejectedValueOnce(new Error('crash before commit'));
+    await expect(writeMcpConfigs(state.dir, { server: { url: 'local' } })).rejects.toThrow('crash before commit');
+    expect(fs.readFileSync(projectFile(), 'utf-8')).toBe(broken);
+    expect(fs.readFileSync(`${projectFile()}.bak`, 'utf-8')).toBe(good);
+    expect(fs.readFileSync(`${projectFile()}.unreadable`, 'utf-8')).toBe(broken);
+    await writeMcpConfigs(state.dir, { server: { url: 'local' } });
+    expect(JSON.parse(fs.readFileSync(projectFile(), 'utf-8'))).toMatchObject({
+      defaultMcps: ['keep'], legacy: true, mcpConfigs: { server: { url: 'local' } },
+    });
+    expect(fs.readFileSync(`${projectFile()}.bak`, 'utf-8')).toBe(good);
+    expect(fs.readdirSync(path.dirname(projectFile()))).toEqual(['settings.json', 'settings.json.bak', 'settings.json.unreadable']);
+  });
+
+  it('shares both the queue and mutation witnesses through a project symlink', async () => {
+    const alias = path.join(state.dir, 'alias');
+    fs.symlinkSync(state.dir, alias, 'junction');
+    const first = writeDefaultMcps(state.dir, ['server']);
+    expect(projectSettingsMutationState(alias)).toEqual(projectSettingsMutationState(state.dir));
+    expect(projectSettingsMutationState(alias).pending).toBe(true);
+    await Promise.all([first, writeMcpConfigs(alias, { server: { url: 'local' } })]);
+    expect(JSON.parse(fs.readFileSync(projectFile(), 'utf-8'))).toMatchObject({ defaultMcps: ['server'], mcpConfigs: { server: { url: 'local' } } });
+    expect(projectSettingsMutationState(alias)).toEqual(projectSettingsMutationState(state.dir));
+    expect(projectSettingsMutationState(alias).pending).toBe(false);
+  });
+
+  it('shares case aliases on case-insensitive volumes', async ({ skip }) => {
+    const project = path.join(state.dir, 'MixedCase');
+    const alias = path.join(state.dir, 'mixedcase');
+    fs.mkdirSync(project);
+    if (!fs.existsSync(alias)) { skip(); return; }
+    const first = writeDefaultMcps(project, ['server']);
+    expect(projectSettingsMutationState(alias)).toEqual(projectSettingsMutationState(project));
+    expect(projectSettingsMutationState(alias).pending).toBe(true);
+    await Promise.all([first, writeMcpConfigs(alias, { server: { url: 'local' } })]);
+    expect(JSON.parse(fs.readFileSync(path.join(project, '.clubhouse', 'settings.json'), 'utf-8'))).toMatchObject({ defaultMcps: ['server'], mcpConfigs: { server: { url: 'local' } } });
+  });
+
+  it('does not combine distinct directories on case-sensitive volumes', async ({ skip }) => {
+    const project = path.join(state.dir, 'MixedCase');
+    const other = path.join(state.dir, 'mixedcase');
+    fs.mkdirSync(project);
+    if (fs.existsSync(other)) { skip(); return; }
+    fs.mkdirSync(other);
+    const first = writeDefaultMcps(project, ['server']);
+    expect(projectSettingsMutationState(project).pending).toBe(true);
+    expect(projectSettingsMutationState(other).pending).toBe(false);
+    await first;
+    expect(fs.existsSync(path.join(other, '.clubhouse'))).toBe(false);
+  });
+
   it('serializes all writers, preserves legacy values, and backs up the previous file', async () => {
     fs.mkdirSync(path.dirname(projectFile()));
     const legacy = { defaults: { old: true }, quickOverrides: { old: 'value' }, futureKey: [1, 2] };
@@ -143,5 +202,82 @@ describe('project settings persistence on disk', () => {
     // A rejected transaction must not poison the shared queue.
     await writeMcpConfigs(state.dir, { server: { url: 'local' } });
     expect(JSON.parse(fs.readFileSync(projectFile(), 'utf-8'))).toMatchObject({ defaultMcps: ['old'], mcpConfigs: { server: { url: 'local' } } });
+  });
+});
+
+
+describe('durable recovery copies and conservative temp cleanup', () => {
+  it('flushes recovery bytes and the supported directory before replacing the source', async () => {
+    fs.writeFileSync(file(), '{broken');
+    const sync = fs.fsyncSync;
+    const flushed: string[] = [];
+    const flush = vi.spyOn(nativeFs, 'fsyncSync').mockImplementation((fd) => {
+      flushed.push(fs.fstatSync(fd).isDirectory() ? 'directory' : 'file');
+      sync(fd);
+    });
+    syncBuiltinESMExports();
+    const rename = vi.spyOn(fs.promises, 'rename');
+    const settings = store();
+    expect(settings.get()).toEqual({ count: 0 });
+    expect(flushed[0]).toBe('file');
+    if (process.platform !== 'win32') expect(flushed).toContain('directory');
+    await settings.save({ count: 1 });
+    expect(flush.mock.invocationCallOrder.at(-1)).toBeLessThan(rename.mock.invocationCallOrder[0]);
+  });
+
+  it.each(['file', ...(process.platform === 'win32' ? [] : ['directory'])])('refuses overwrite after a %s fsync failure, and retries the existing copy', async (kind) => {
+    fs.writeFileSync(file(), '{broken');
+    const sync = fs.fsyncSync;
+    const flush = vi.spyOn(nativeFs, 'fsyncSync').mockImplementation((fd) => {
+      const type = fs.fstatSync(fd).isDirectory() ? 'directory' : 'file';
+      if (type === kind) throw Object.assign(new Error('sync failed'), { code: 'EIO' });
+      sync(fd);
+    });
+    syncBuiltinESMExports();
+    const settings = store();
+    expect(settings.get()).toEqual({ count: 0 });
+    await expect(settings.save({ count: 1 })).rejects.toThrow('sync failed');
+    expect(fs.readFileSync(file(), 'utf-8')).toBe('{broken');
+    flush.mockRestore();
+    syncBuiltinESMExports();
+    await settings.save({ count: 1 });
+    expect(fs.readdirSync(state.dir)).toEqual(['settings.json', 'settings.json.unreadable']);
+  });
+
+  it('cleans only old regular files with exact generated names, preserving manual recovery files', () => {
+    const retained = [
+      'settings.json.tmp-manual-recovery', 'settings.json.tmp-notes',
+      '.settings.json.tmp-999999-1-notes', '.settings.json.tmp-0-1',
+      '.settings.json.tmp-999999-2', `.settings.json.tmp-${process.pid}-1`,
+    ];
+    const stale = ['.settings.json.tmp-999999-1', 'settings.json.tmp-999999-1'];
+    const old = new Date(Date.now() - 48 * 60 * 60 * 1000);
+    for (const name of [...retained, ...stale]) {
+      const target = path.join(state.dir, name);
+      fs.writeFileSync(target, 'recoverable bytes');
+      if (name !== '.settings.json.tmp-999999-2') fs.utimesSync(target, old, old);
+    }
+    const directory = path.join(state.dir, '.settings.json.tmp-999999-3');
+    fs.mkdirSync(directory);
+    fs.utimesSync(directory, old, old);
+    const link = path.join(state.dir, '.settings.json.tmp-999999-4');
+    fs.symlinkSync(directory, link, 'junction');
+    store().get();
+    for (const name of retained) expect(fs.readFileSync(path.join(state.dir, name), 'utf-8')).toBe('recoverable bytes');
+    for (const name of stale) expect(fs.existsSync(path.join(state.dir, name))).toBe(false);
+    expect(fs.lstatSync(directory).isDirectory()).toBe(true);
+    expect(fs.lstatSync(link).isSymbolicLink()).toBe(true);
+  });
+
+  it.runIf(process.platform !== 'win32')('accepts filesystems that explicitly do not support directory fsync', () => {
+    fs.writeFileSync(file(), '{broken');
+    const sync = fs.fsyncSync;
+    vi.spyOn(nativeFs, 'fsyncSync').mockImplementation((fd) => {
+      if (fs.fstatSync(fd).isDirectory()) throw Object.assign(new Error('unsupported'), { code: 'EINVAL' });
+      sync(fd);
+    });
+    syncBuiltinESMExports();
+    expect(() => backupUnreadableFile(file())).not.toThrow();
+    expect(fs.readFileSync(`${file()}.unreadable`, 'utf-8')).toBe('{broken');
   });
 });

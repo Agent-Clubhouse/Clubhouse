@@ -32,6 +32,7 @@ vi.mock('fs', () => ({
 
 vi.mock('./settings-store', async (importOriginal) => ({
   ...await importOriginal<typeof import('./settings-store')>(),
+  backupUnreadableFile: vi.fn(),
   replaceFile: async (file: string, body: string) => {
     const fs = await import('fs/promises');
     await fs.writeFile(file, body, 'utf-8');

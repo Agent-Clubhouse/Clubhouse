@@ -116,21 +116,50 @@ const recoveryCopyPath = (source: string, n: number): string => `${source}.unrea
  * so a file that stays broken across launches is copied once. Throws if it can't.
  */
 export function backupUnreadableSettings(filename: string): void {
-  const source = path.join(app.getPath('userData'), filename);
+  backupUnreadableFile(path.join(app.getPath('userData'), filename));
+}
+
+/** The same bounded, durable recovery copies for project-local settings. */
+export function backupUnreadableFile(source: string): void {
   const bytes = fs.readFileSync(source);
   const mode = fs.statSync(source).mode & 0o777;
   for (let n = 0; n < MAX_RECOVERY_COPIES; n++) {
     const target = recoveryCopyPath(source, n);
     if (fs.existsSync(target)) {
-      if (fs.readFileSync(target).equals(bytes)) return;
-      continue;
+      if (!fs.readFileSync(target).equals(bytes)) continue;
+      // A prior attempt may have written the bytes but failed to flush them.
+      const handle = fs.openSync(target, process.platform === 'win32' ? 'r+' : 'r');
+      try { fs.fsyncSync(handle); } finally { fs.closeSync(handle); }
+    } else {
+      const handle = fs.openSync(target, 'wx', mode);
+      try {
+        fs.writeFileSync(handle, bytes);
+        // Creation is subject to umask; carry over the original permissions too.
+        if (process.platform !== 'win32') fs.fchmodSync(handle, mode);
+        fs.fsyncSync(handle);
+      } finally {
+        fs.closeSync(handle);
+      }
     }
-    fs.writeFileSync(target, bytes, { flag: 'wx', mode });
-    // The create mode is subject to the umask. No-op on Windows, where POSIX modes don't apply.
-    if (process.platform !== 'win32') fs.chmodSync(target, mode);
+    syncRecoveryDirectory(path.dirname(source));
     return;
   }
   throw new Error('Too many recovery copies');
+}
+
+/** Persist the new directory entry where directory fsync is supported. */
+function syncRecoveryDirectory(dir: string): void {
+  if (process.platform === 'win32') return;
+  let handle: number | undefined;
+  try {
+    handle = fs.openSync(dir, 'r');
+    fs.fsyncSync(handle);
+  } catch (err) {
+    // telemetry-exempt: these filesystems do not implement directory fsync.
+    if (!['EINVAL', 'ENOTSUP', 'ENOSYS', 'EBADF'].includes((err as NodeJS.ErrnoException)?.code ?? '')) throw err;
+  } finally {
+    if (handle !== undefined) fs.closeSync(handle);
+  }
 }
 
 /** The newest recovery copy of a settings file, if there is one. */
@@ -208,7 +237,8 @@ export async function replaceFile(
 
 /**
  * Remove temp files a crash left beside `filePath`, from other processes only:
- * this one's own may still be in flight.
+ * this one's own may still be in flight. Only exact generated names at least
+ * a day old are eligible; similarly named user recovery files stay untouched.
  */
 function sweepTempFiles(filePath: string): void {
   const dir = path.dirname(filePath);
@@ -220,10 +250,15 @@ function sweepTempFiles(filePath: string): void {
     // telemetry-exempt: nothing to sweep when the folder can't be listed
     return;
   }
+  const oldest = Date.now() - 24 * 60 * 60 * 1000;
   for (const name of names) {
     const prefix = prefixes.find((candidate) => name.startsWith(candidate));
-    if (!prefix || name.startsWith(`${prefix}${process.pid}-`)) continue;
+    if (!prefix) continue;
+    const generated = /^([1-9]\d*)-([1-9]\d*)$/.exec(name.slice(prefix.length));
+    if (!generated || Number(generated[1]) === process.pid) continue;
     try {
+      const stat = fs.lstatSync(path.join(dir, name));
+      if (!stat.isFile() || stat.mtimeMs > oldest) continue;
       fs.rmSync(path.join(dir, name), { force: true });
     } catch {
       // telemetry-exempt: a leftover temp file is harmless; the next launch tries again
