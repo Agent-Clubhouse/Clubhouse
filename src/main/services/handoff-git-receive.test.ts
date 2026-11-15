@@ -12,6 +12,10 @@ import { prepareHandoffBundle } from './handoff-git-bundle';
 import { receiveHandoffCommit } from './handoff-git-receive';
 import { openHandoffRepository } from './handoff-snapshot';
 import * as gitPaths from './handoff-git-paths';
+import * as quarantines from './handoff-quarantine';
+import * as bundles from './handoff-git-bundle';
+import { HandoffSnapshotError } from './handoff-snapshot';
+import * as snapshotArtifacts from './handoff-snapshot';
 const execution = vi.hoisted(() => ({ exec: vi.fn(), spawn: vi.fn() }));
 vi.mock('child_process', async (importOriginal) => {
   const actual = await importOriginal<typeof import('child_process')>();
@@ -91,7 +95,7 @@ it('classifies an impossible launch layout before spawning and cleans its quaran
   expect(execution.exec.mock.calls.some((call) => (call[1] as string[]).includes('init'))).toBe(false);
   expect(fs.readdirSync(options.snapshot.root).some((name) => name.startsWith('quarantine-'))).toBe(false);
 }, 30_000);
-it.each([['pack filename', 150], ['explicit Git directory', 170], ['repository path', 220]] as const)('handles bundle packs beyond the Windows %s limit with isolated Git configuration', async (limit, rootLength) => {
+it.each([['pack filename', 150], ['explicit Git directory', 170], ['repository path', 220], ['very deep repository path', 300]] as const)('handles bundle packs beyond the Windows %s limit (root%i) with isolated Git configuration', async (limit, rootLength) => {
   const options = await prepared();
   // Windows CI checks out on D: while temp staging is on C:. Exercise that
   // boundary too: making only the final fetch source relative cannot fix it.
@@ -103,7 +107,10 @@ it.each([['pack filename', 150], ['explicit Git directory', 170], ['repository p
     options.projectRoot = receiver;
   }
   const canonical = await fs.promises.realpath(root);
-  const destination = path.join(canonical, 'deep-' + 'x'.repeat(rootLength - canonical.length - 6));
+  let destination = canonical;
+  while (destination.length + 81 < rootLength) destination = path.join(destination, 'x'.repeat(80));
+  destination = path.join(destination, 'deep-' + 'x'.repeat(rootLength - destination.length - 6));
+  await fs.promises.mkdir(path.dirname(destination), { recursive: true });
   expect(destination.length).toBe(rootLength);
   await fs.promises.rename(options.snapshot.root, destination);
   options.snapshot.root = destination;
@@ -112,8 +119,8 @@ it.each([['pack filename', 150], ['explicit Git directory', 170], ['repository p
   const pack = (repo: string) => path.join(repo, 'objects', 'pack', `pack-${'a'.repeat(40)}.pack`);
   expect(pack(bare).length).toBeGreaterThan(260);
   expect(pack(path.join(quarantine, 'repo')).length).toBeGreaterThan(260);
-  if (limit === 'repository path') expect(path.join(quarantine, 'repo').length).toBeGreaterThan(260);
-  if (process.platform === 'win32' && limit !== 'repository path') {
+  if (rootLength >= 220) expect(path.join(quarantine, 'repo').length).toBeGreaterThan(260);
+  if (process.platform === 'win32' && rootLength < 220) {
     // Reproduce the original isolated-config failure without changing global Git.
     await git(destination, '-c', 'core.longpaths=false', 'init', '--bare', '--template=', bare);
     const diagnostic = limit === 'pack filename' ? /Filename too long[\s\S]*error: index-pack died/ : /'\$GIT_DIR' too big/;
@@ -127,38 +134,86 @@ it.each([['pack filename', 150], ['explicit Git directory', 170], ['repository p
     await fs.promises.rm(path.dirname(bare), { recursive: true, force: true });
   }
   const platform = Object.getOwnPropertyDescriptor(process, 'platform')!;
-  const knownWindowsInitLimit = limit === 'repository path' && platform.value === 'win32';
-  const receivingHead = knownWindowsInitLimit ? (await git(receiver, 'rev-parse', 'HEAD')).stdout.trim() : undefined;
-  if (limit === 'repository path') Object.defineProperty(process, 'platform', { ...platform, value: 'win32' });
+  const receivingHead = (await git(receiver, 'rev-parse', 'HEAD')).stdout.trim();
+  if (rootLength >= 220) Object.defineProperty(process, 'platform', { ...platform, value: 'win32' });
   execution.exec.mockClear();
   try {
-    if (knownWindowsInitLimit) {
-      // #3501: short cwd fixes process launch, but Git init still rejects this layout.
-      await expect(receiveHandoffCommit(options)).rejects.toMatchObject({
-        code: 'git_failed', message: expect.stringContaining('Git: init; exit=128; stderr=path_too_long.'),
-      });
-    } else {
-      expect(await receiveHandoffCommit(options)).toEqual({ commit: options.snapshot.manifest.repo.base, source: 'bundle' });
-    }
-    if (limit === 'repository path') {
+    expect(await receiveHandoffCommit(options)).toEqual({ commit: options.snapshot.manifest.repo.base, source: 'bundle' });
+    if (rootLength >= 220) {
       const quarantineCalls = execution.exec.mock.calls.filter((call) => (call[1] as string[]).includes('init')
         || (call[1] as string[]).some((arg) => arg.startsWith('--git-dir=')));
       expect(quarantineCalls.length).toBeGreaterThan(0);
       for (const call of quarantineCalls) {
-        expect((call[2] as { cwd: string }).cwd.length).toBeLessThan(260);
-        const gitDir = (call[1] as string[]).find((arg) => arg.startsWith('--git-dir='));
+        const cwd = (call[2] as { cwd: string }).cwd;
+        expect(cwd.length).toBeLessThan(260);
+        expect(cwd.startsWith(destination)).toBe(false);
+        if (platform.value === 'win32') {
+          const profileRoot = await fs.promises.realpath(path.join(process.env.LOCALAPPDATA!, 'ch-q'));
+          expect(cwd.startsWith(profileRoot + path.sep)).toBe(true);
+        }
+        expect(fs.existsSync(cwd)).toBe(false);
+        const command = call[1] as string[];
+        if (command.includes('list-heads')) {
+          const bundle = path.resolve(cwd, command.at(-1)!);
+          expect(path.dirname(bundle)).toBe(cwd);
+          expect(bundle.length).toBeLessThan(260);
+        }
+        const gitDir = command.find((arg) => arg.startsWith('--git-dir='));
         if (gitDir) expect(Buffer.byteLength(gitDir.slice('--git-dir='.length))).toBeLessThan(220);
       }
     }
   } finally { Object.defineProperty(process, 'platform', platform); }
-  if (knownWindowsInitLimit) {
-    await expect(git(receiver, 'cat-file', '-e', `${options.snapshot.manifest.repo.base}^{commit}`)).rejects.toThrow();
-    expect((await git(receiver, 'rev-parse', 'HEAD')).stdout.trim()).toBe(receivingHead);
-    expect(fs.readFileSync(path.join(receiver, 'public.txt'), 'utf8')).toBe('Receiver original');
-  } else {
-    expect((await git(receiver, 'cat-file', '-t', options.snapshot.manifest.repo.base)).stdout.trim()).toBe('commit');
-  }
+  expect((await git(receiver, 'cat-file', '-t', options.snapshot.manifest.repo.base)).stdout.trim()).toBe('commit');
+  expect((await git(receiver, 'show', `${options.snapshot.manifest.repo.base}:public.txt`)).stdout).toBe('Sender base');
+  expect((await git(receiver, 'rev-parse', 'HEAD')).stdout.trim()).toBe(receivingHead);
+  expect(fs.readFileSync(path.join(receiver, 'public.txt'), 'utf8')).toBe('Receiver original');
   expect(fs.readdirSync(destination).some((name) => name.startsWith('quarantine-'))).toBe(false);
+}, 30_000);
+it.each(['setup', 'init', 'timeout', 'hash mismatch', 'secret rejection', 'copied bundle mismatch'] as const)('cleans an external quarantine after %s failure', async (failure) => {
+  const options = await prepared();
+  const destination = path.join(root, 'x'.repeat(220 - root.length - 1));
+  await fs.promises.rename(options.snapshot.root, destination);
+  options.snapshot.root = destination;
+  const allocate = quarantines.createHandoffQuarantine;
+  let directory: string | undefined;
+  vi.spyOn(quarantines, 'createHandoffQuarantine').mockImplementation(async (staging) => {
+    const owned = await allocate(staging, { roots: [path.join(root, 'q')], windows: true });
+    directory = owned.directory;
+    return owned;
+  });
+  if (failure === 'setup') {
+    const mkdir = fs.promises.mkdir;
+    vi.spyOn(fs.promises, 'mkdir').mockImplementation(async (...args: Parameters<typeof mkdir>) => {
+      if (path.basename(args[0].toString()) === 'hooks') throw new Error('Injected setup failure');
+      return mkdir(...args);
+    });
+  } else if (failure === 'copied bundle mismatch') {
+    const open = snapshotArtifacts.openHandoffSnapshotArtifact;
+    vi.spyOn(snapshotArtifacts, 'openHandoffSnapshotArtifact').mockImplementation(async (request) => {
+      const artifact = await open(request);
+      return { ...artifact, read: async (...args: Parameters<typeof artifact.read>) => {
+        const bytes = await artifact.read(...args);
+        if (bytes.length) bytes[0] ^= 1;
+        return bytes;
+      } };
+    });
+  } else if (failure === 'secret rejection') {
+    vi.spyOn(bundles, 'scanHandoffGitHistory').mockRejectedValueOnce(new HandoffSnapshotError('secret_blocked'));
+  } else {
+    const run = execution.exec.getMockImplementation()!;
+    execution.exec.mockImplementation(async (...args) => {
+      const command = args[1] as string[];
+      if (failure === 'hash mismatch' && command.includes('list-heads')) return { stdout: Buffer.from(`${'0'.repeat(40)} HEAD`), stderr: Buffer.alloc(0) };
+      if (failure !== 'hash mismatch' && command.includes('init')) throw Object.assign(new Error('Injected Git failure'), failure === 'timeout' ? { code: 'ETIMEDOUT', killed: true } : { code: 128 });
+      return run(...args);
+    });
+  }
+  if (failure === 'copied bundle mismatch') await expect(receiveHandoffCommit(options)).rejects.toMatchObject({ code: 'hash_mismatch' });
+  else await expect(receiveHandoffCommit(options)).rejects.toThrow();
+  expect(directory).toBeDefined();
+  expect(path.dirname(directory!)).toBe(await fs.promises.realpath(path.join(root, 'q')));
+  expect(fs.existsSync(directory!)).toBe(false);
+  await expect(git(receiver, 'cat-file', '-e', `${options.snapshot.manifest.repo.base}^{commit}`)).rejects.toThrow();
 }, 30_000);
 it('rejects hash-valid secret-bearing bundle history before importing it into the registered repository', async () => {
   const token = `ghp_${'a'.repeat(36)}`; fs.writeFileSync(path.join(sender, 'retired.txt'), token);
