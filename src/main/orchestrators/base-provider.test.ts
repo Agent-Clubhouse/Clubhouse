@@ -19,6 +19,11 @@ vi.mock('fs/promises', () => ({
   rm: vi.fn(async () => {}),
 }));
 
+// Launch resolution has filesystem/Windows integration coverage in process-launch.test.ts.
+vi.mock('../util/process-launch', () => ({
+  resolveProcessLaunch: vi.fn((binary: string, args: string[]) => ({ binary, args })),
+}));
+
 vi.mock('child_process', () => ({
   execFile: vi.fn(),
   execSync: vi.fn(() => { throw new Error('not found'); }),
@@ -34,6 +39,7 @@ vi.mock('../util/shell', () => ({
 
 import * as fs from 'fs';
 import * as fsp from 'fs/promises';
+import { resolveProcessLaunch } from '../util/process-launch';
 import { BaseProvider, FALLBACK_MODEL_LIST_TTL_MS, MODEL_LIST_TTL_MS, MODEL_PROBE_TIMEOUT_MS } from './base-provider';
 import type { ModelProbeContext } from './model-probes';
 import type {
@@ -294,6 +300,13 @@ describe('BaseProvider', () => {
       vi.mocked(execFile).mockImplementation(() => {
         throw new Error('not found');
       });
+    });
+
+    it('uses the prepared Windows launch for model fetching with shell disabled', async () => {
+      const { execFile } = await import('child_process');
+      vi.mocked(resolveProcessLaunch).mockReturnValueOnce({ binary: 'resolved-cmd.exe', args: ['escaped-line'], windowsVerbatimArguments: true });
+      await fetchProvider.getModelOptions();
+      expect(execFile).toHaveBeenCalledWith('resolved-cmd.exe', ['escaped-line'], expect.objectContaining({ shell: false, windowsVerbatimArguments: true }));
     });
 
     it('falls back to static list when binary help fails', async () => {

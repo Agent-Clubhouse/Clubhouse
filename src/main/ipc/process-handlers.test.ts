@@ -5,6 +5,11 @@ vi.mock('electron', () => ({
   app: { getPath: vi.fn(() => '/home/user') },
 }));
 
+// Launch resolution has filesystem/Windows integration coverage in process-launch.test.ts.
+vi.mock('../util/process-launch', () => ({
+  resolveProcessLaunch: vi.fn((binary: string, args: string[]) => ({ binary, args })),
+}));
+
 vi.mock('child_process', () => ({
   execFile: vi.fn(),
 }));
@@ -23,6 +28,7 @@ import { execFile } from 'child_process';
 import { IPC } from '../../shared/ipc-channels';
 import { registerProcessHandlers } from './process-handlers';
 import { getAllowedCommands, refreshManifest } from '../services/plugin-manifest-registry';
+import { resolveProcessLaunch } from '../util/process-launch';
 
 describe('process-handlers', () => {
   let handlers: Map<string, (...args: any[]) => any>;
@@ -200,6 +206,43 @@ describe('process-handlers', () => {
   });
 
   // ── Execution behavior ─────────────────────────────────────────────
+
+  it.each(['a&calc', 'node | calc', 'node^', '%PATH%', '!x!', '"node"', 'node\ncalc', 'node\0calc'])(
+    'rejects a Windows command token %j even when the manifest permits it', async (command) => {
+      vi.spyOn(process, 'platform', 'get').mockReturnValue('win32');
+      vi.mocked(getAllowedCommands).mockReturnValue([command]);
+      const result = await handlers.get(IPC.PROCESS.EXEC)!({}, { pluginId: 'p1', command, args: [] });
+      expect(result.exitCode).toBe(1);
+      expect(result.stderr).toContain('Invalid command');
+      expect(execFile).not.toHaveBeenCalled();
+    },
+  );
+
+  it.each([false, true])('executes the resolved launch with shell false (verbatim: %s)', async (verbatim) => {
+    const binary = verbatim ? 'system-cmd.exe' : 'resolved-tool.exe';
+    const args = verbatim ? ['/d', '/v:off', '/s', '/c', 'escaped-line'] : ['a&calc', '%PATH%', '!x!'];
+    vi.mocked(resolveProcessLaunch).mockReturnValueOnce({ binary, args, windowsVerbatimArguments: verbatim });
+    vi.mocked(getAllowedCommands).mockReturnValue(['tool']);
+    vi.mocked(execFile).mockImplementation(((_cmd: any, _args: any, _opts: any, callback: any) => {
+      callback(null, 'ok', '');
+      return {};
+    }) as any);
+    const inputArgs = ['a&calc', '%PATH%', '!x!'];
+    const result = await handlers.get(IPC.PROCESS.EXEC)!({}, {
+      pluginId: 'p1', command: 'tool', args: inputArgs, projectPath: '/project',
+    });
+    expect(result.exitCode).toBe(0);
+    expect(resolveProcessLaunch).toHaveBeenCalledWith('tool', inputArgs, expect.objectContaining({ PATH: '/usr/bin' }), '/project');
+    expect(execFile).toHaveBeenCalledWith(binary, args, expect.objectContaining({ shell: false, windowsVerbatimArguments: verbatim }), expect.any(Function));
+  });
+
+  it('returns resolution errors without launching or consuming a concurrency slot', async () => {
+    vi.mocked(getAllowedCommands).mockReturnValue(['tool']);
+    vi.mocked(resolveProcessLaunch).mockImplementationOnce(() => { throw new Error('unsafe batch argument'); });
+    const result = await handlers.get(IPC.PROCESS.EXEC)!({}, { pluginId: 'p1', command: 'tool', args: ['a\nb'] });
+    expect(result).toEqual({ stdout: '', stderr: 'unsafe batch argument', exitCode: 1 });
+    expect(execFile).not.toHaveBeenCalled();
+  });
 
   it('executes valid commands via execFile', async () => {
     vi.mocked(getAllowedCommands).mockReturnValue(['ls']);

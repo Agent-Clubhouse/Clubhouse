@@ -27,6 +27,7 @@ import { homePath, launchEnvValue, parseModelChoicesFromHelp, validateHookUrl, b
 import { isCopilotClubhouseHookEntry } from './copilot-hooks-document';
 import { appLog } from '../services/log-service';
 import { buildCliSpawnEnv, getShellEnvironment } from '../util/shell';
+import { resolveProcessLaunch } from '../util/process-launch';
 import { copilotContextWindowOptions, type ContextWindowOptions } from '../../shared/context-window';
 import type { ListModelsOptions } from './types';
 import { testModelProbesDisabled } from './shared';
@@ -253,10 +254,15 @@ export class CopilotCliProvider extends BaseProvider implements HookCapable, Hea
   async supportsSessionIdFlag(binary: string): Promise<boolean> {
     let help = this.helpCache.get(binary);
     if (!help) {
-      help = execFileAsync(binary, ['--help'], {
-        timeout: 5000,
-        shell: process.platform === 'win32',
-        env: getShellEnvironment(),
+      help = Promise.resolve().then(() => {
+        const env = getShellEnvironment();
+        const launch = resolveProcessLaunch(binary, ['--help'], env);
+        return execFileAsync(launch.binary, launch.args, {
+          timeout: 5000,
+          shell: false,
+          windowsVerbatimArguments: launch.windowsVerbatimArguments,
+          env,
+        });
       }).then((r) => (r ? String(r.stdout) : null)).catch((): null => null);
       this.helpCache.set(binary, help);
     }

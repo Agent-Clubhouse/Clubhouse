@@ -29,8 +29,8 @@ export function isWindowsLauncher(file: string): boolean {
  * Launcher extensions in PATHEXT order, like cmd.exe's own lookup, keeping
  * only those Clubhouse can launch.
  */
-export function windowsLauncherExtensions(): string[] {
-  const exts = (process.env.PATHEXT || DEFAULT_PATHEXT)
+export function windowsLauncherExtensions(pathExt = process.env.PATHEXT): string[] {
+  const exts = (pathExt || DEFAULT_PATHEXT)
     .split(';')
     .map((e) => e.trim().toLowerCase())
     .filter((e) => WINDOWS_LAUNCHER_EXTS.includes(e));
@@ -43,9 +43,9 @@ export function windowsLauncherExtensions(): string[] {
  * launcher, otherwise `candidate` plus each launcher extension. The bare
  * candidate is never returned unless it is itself a launcher.
  */
-export function windowsLauncherCandidates(candidate: string): string[] {
+export function windowsLauncherCandidates(candidate: string, pathExt = process.env.PATHEXT): string[] {
   if (isWindowsLauncher(candidate)) return [candidate];
-  return windowsLauncherExtensions().map((ext) => candidate + ext);
+  return windowsLauncherExtensions(pathExt).map((ext) => candidate + ext);
 }
 
 /**

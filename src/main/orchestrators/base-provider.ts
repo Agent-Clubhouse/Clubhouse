@@ -17,6 +17,7 @@ import type {
 } from './types';
 import { findBinaryInPath, testBinaryOverride, testModelProbesDisabled } from './shared';
 import { getShellEnvironment } from '../util/shell';
+import { resolveProcessLaunch } from '../util/process-launch';
 import type { ModelProbeContext } from './model-probes';
 import type { PlanQuotaReading } from '../../shared/helper-routing';
 import type { ContextWindowOptions } from '../../shared/context-window';
@@ -276,10 +277,13 @@ export abstract class BaseProvider implements OrchestratorProvider {
     if (this.modelFetchConfig && !testModelProbesDisabled()) {
       try {
         const binary = this.findBinary();
-        const { stdout } = await execFileAsync(binary, this.modelFetchConfig.args, {
+        const env = { ...getShellEnvironment(), ...opts.env };
+        const launch = resolveProcessLaunch(binary, this.modelFetchConfig.args, env);
+        const { stdout } = await execFileAsync(launch.binary, launch.args, {
           timeout: this.modelFetchConfig.timeout ?? 5000,
-          shell: process.platform === 'win32',
-          env: { ...getShellEnvironment(), ...opts.env },
+          shell: false,
+          windowsVerbatimArguments: launch.windowsVerbatimArguments,
+          env,
         });
         const parsed = this.modelFetchConfig.parser(stdout);
         if (parsed) return fallback('command', parsed);
