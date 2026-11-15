@@ -13,7 +13,9 @@ import { launchAccessFor, providerAccessLevel, resolveHelperAccess, type AgentLa
 const mockSnapshotFile = vi.fn();
 const mockRestoreForAgent = vi.fn();
 const mockGetHooksConfigPath = vi.fn(() => '/project/.claude/settings.local.json');
+const mockStripClubhouseHooksFromFile = vi.fn(async () => false);
 vi.mock('./config-pipeline', () => ({
+  stripClubhouseHooksFromFile: (...args: unknown[]) => mockStripClubhouseHooksFromFile(...args),
   snapshotFile: (...args: unknown[]) => mockSnapshotFile(...args),
   restoreForAgent: (...args: unknown[]) => mockRestoreForAgent(...args),
   getHooksConfigPath: (...args: unknown[]) => mockGetHooksConfigPath(...args),
@@ -118,6 +120,7 @@ vi.mock('./agent-runtime/chat-spawn', async (importOriginal) => {
 });
 
 const mockCleanupStaleJsonInTomlConfigs = vi.fn();
+const mockStripLegacyClubhouseBridgeToml = vi.fn(async () => false);
 const mockDeliverForSpawn = vi.fn(async () => {});
 const mockQuickLaunchFor = vi.fn();
 vi.mock('./managed-agents', () => ({
@@ -135,6 +138,7 @@ vi.mock('./agent-mcp-servers', () => ({
 }));
 vi.mock('./toml-config-cleanup', () => ({
   cleanupStaleJsonInTomlConfigs: (...args: unknown[]) => mockCleanupStaleJsonInTomlConfigs(...args),
+  stripLegacyClubhouseBridgeToml: (...args: unknown[]) => mockStripLegacyClubhouseBridgeToml(...args),
 }));
 
 // Mock agent-settings-service
@@ -1286,6 +1290,44 @@ describe('agent-system', () => {
       expect(buildHookArgs).toHaveBeenCalledWith('http://127.0.0.1:12345/hook');
       expect(mockPtySpawn.mock.calls.at(-1)![3]).toEqual(['--full-auto', '-c', 'mcp_servers.clubhouse.command=node', '-c', 'hooks.Stop=[]', 'Fix the bug']);
       for (const call of mockSnapshotFile.mock.calls) expect(String(call[1])).not.toContain(path.join('.codex', 'hooks.json'));
+    });
+
+    it.each(['chat', 'headless', 'terminal'] as const)('cleans up what an older Clubhouse left in .codex before a %s start, hooks off (#1728)', async (mode) => {
+      const codex = mockCodexProvider as unknown as Record<string, unknown>;
+      const caps = mockCodexProvider.getCapabilities;
+      codex.getCapabilities = vi.fn(() => ({ ...caps(), hooks: true }));
+      codex.writeHooksConfig = vi.fn(() => Promise.resolve());
+      codex.buildHookArgs = vi.fn(() => []);
+      mockIsHookServerEnabled.mockReturnValue(false);
+      mockGetHooksConfigPath.mockReturnValue('/project/.codex/hooks.json');
+      if (mode === 'headless') {
+        mockGetSpawnMode.mockReturnValueOnce('headless' as never);
+        codex.buildHeadlessCommand = vi.fn(() => Promise.resolve({ binary: 'codex', args: ['exec'], env: {}, outputKind: 'stream-json' as const }));
+      }
+      mockStripLegacyClubhouseBridgeToml.mockClear();
+      mockStripClubhouseHooksFromFile.mockClear();
+      mockTryStartChatAgent.mockClear();
+      mockPtySpawn.mockClear();
+      if (mode === 'chat') mockTryStartChatAgent.mockResolvedValueOnce(true);
+      try {
+        await spawnAgent({ agentId: 'agent-1', projectPath: '/project', cwd: '/project', kind: mode === 'headless' ? 'quick' : 'durable', orchestrator: 'codex-cli', mission: 'Go' } as never);
+      } finally {
+        codex.getCapabilities = caps;
+        delete codex.writeHooksConfig;
+        delete codex.buildHookArgs;
+        delete codex.buildHeadlessCommand;
+        mockIsHookServerEnabled.mockReturnValue(true);
+        mockGetHooksConfigPath.mockReturnValue('/project/.claude/settings.local.json');
+        untrackAgent('agent-1');
+      }
+      expect(mockStripLegacyClubhouseBridgeToml).toHaveBeenCalledWith('/project', mockCodexProvider.conventions);
+      expect(mockStripClubhouseHooksFromFile).toHaveBeenCalledWith('/project/.codex/hooks.json');
+      // Before the runtime is chosen, so a chat start gets it too.
+      if (mode === 'chat') {
+        expect(mockTryStartChatAgent).toHaveBeenCalled();
+        expect(mockPtySpawn).not.toHaveBeenCalledWith('agent-1', expect.anything(), expect.anything(), expect.anything(), expect.anything(), expect.anything(), expect.anything());
+        expect(mockStripClubhouseHooksFromFile.mock.invocationCallOrder[0]).toBeLessThan(mockTryStartChatAgent.mock.invocationCallOrder[0]);
+      }
     });
 
     it('appends nothing extra when the provider has no trailingArgs', async () => {

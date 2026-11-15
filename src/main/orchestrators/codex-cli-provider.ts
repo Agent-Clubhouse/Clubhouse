@@ -559,6 +559,10 @@ export class CodexCliProvider extends BaseProvider implements HeadlessCapable, H
    * flag's position and the command's hash, neither of which depends on the
    * folder or the hook server's port (#1718), so it holds across launches and
    * agents. Keep the event order stable: reordering changes the keys.
+   *
+   * On Windows these flags add about 2.5-2.9k characters to a launch line
+   * cmd.exe caps at 8191; one `-c hooks={…}` value would barely shorten it,
+   * since each event repeats the command.
    */
   buildHookArgs(hookUrl: string): string[] {
     const command = tomlValue(buildHookCurlCommand(validateHookUrl(hookUrl)));

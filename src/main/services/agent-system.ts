@@ -461,6 +461,10 @@ async function spawnAgentInner(inParams: SpawnAgentParams, facts: SpawnFacts, ma
       try {
         await cleanupStaleJsonInTomlConfigs(params.cwd, provider.conventions);
         await stripLegacyClubhouseBridgeToml(params.cwd, provider.conventions);
+        // Every Codex start, whatever the runtime or hook setting: hook entries an
+        // older Clubhouse wrote, and a .codex folder that leaves empty (#1728).
+        const hooksPath = isHookCapable(provider) && provider.buildHookArgs ? configPipeline.getHooksConfigPath(provider, params.cwd) : null;
+        if (hooksPath) await configPipeline.stripClubhouseHooksFromFile(hooksPath);
       } catch (err) {
         appLog('core:agent', 'warn', 'TOML config cleanup failed, continuing spawn', {
           meta: { agentId: params.agentId, error: err instanceof Error ? err.message : String(err) },

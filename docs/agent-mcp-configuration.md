@@ -202,11 +202,18 @@ flags in the terminal and session config in chat. Codex can still add a
 trusted folder's project-layer servers on top of those.
 
 Terminal and headless Codex agents get the bridge only as `-c` launch flags,
-like chat, and their hooks too (`-c hooks.<Event>=…`, #1728). Before each
-start Clubhouse removes a bridge section an older version left in
-`.codex/config.toml`, matched by the bridge script it runs, and the file and
-folder only when nothing else is in them. Hook trust is covered in the
-**Agent providers** help page.
+like chat, and their hooks too (`-c hooks.<Event>=…`, #1728). Before every
+Codex start, in any runtime, Clubhouse removes what an older version left in
+`.codex`: Clubhouse entries in `hooks.json`, and the bridge section in
+`config.toml` only when every line of it is what Clubhouse wrote. Only those
+lines go, and a file or folder is removed only when nothing else is in it.
+A file Clubhouse can't follow as TOML (an unterminated string, array or
+header) is left alone. Hook trust is covered in the **Agent providers** help
+page.
+
+On Windows the eight hook flags add about 2.5-2.9k characters to the launch
+line, which cmd.exe caps at 8191. Collapsing them into one `-c hooks={…}`
+value would save under 100, since each event repeats the command.
 
 The same JSON configuration rules apply on macOS, Linux and Windows. Validation
 uses synthetic configuration and an in-memory driver, with no provider/server
