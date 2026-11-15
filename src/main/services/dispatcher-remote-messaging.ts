@@ -32,5 +32,5 @@ export async function sendRemoteDispatcherNews(agentId: string, toolName: string
   if (!current()) throw new Error('The sender permission or remote Dispatcher changed.');
   const body = { [field]: args[field], ...(args.task_id !== undefined && { task_id: args.task_id }),
     ...(args.idempotency_key !== undefined && { idempotency_key: args.idempotency_key }), ...(tool === 'send_file' && args.filename !== undefined && { filename: args.filename }) };
-  return forwardPreparedAgentCall(agentId, peer.address, peer.label, tool, body, Date.now(), federationRequestRouter()?.cause(agentId), undefined, { authorization: { policyHash }, current });
+  return forwardPreparedAgentCall(agentId, peer.address, peer.label, tool, body, Date.now(), undefined, undefined, { authorization: { policyHash }, current }, () => federationRequestRouter()?.cause(agentId, args));
 }

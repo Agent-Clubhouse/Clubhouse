@@ -38,7 +38,7 @@ export type AppEvent = Stamp & (
   | { type: 'agent.asleep'; agentId: string; exitCode?: number }
   | { type: 'agent.created'; agentId: string; projectPath: string; name?: string; parentAgentId?: string }
   | { type: 'agent.deleted'; agentId: string; projectPath: string; name?: string; parentAgentId?: string }
-  | { type: 'turn.started'; agentId: string; via: TurnVia }
+  | { type: 'turn.started'; agentId: string; via: TurnVia; continuation?: true }
   | { type: 'turn.ended'; agentId: string; via: TurnVia; outcome: TurnOutcome }
   | { type: 'agent.waiting'; agentId: string; via: TurnVia; reason: 'permission' | 'question' }
   | { type: 'agent.error'; agentId: string; via: TurnVia; message: string }
@@ -228,9 +228,9 @@ export interface HookFacts {
   message?: string;
 }
 
-function startHookTurn(agentId: string, at: number, turnId?: string): void {
+function startHookTurn(agentId: string, at: number, turnId?: string, continuation = false): void {
   hookTurns.set(agentId, { lastAt: at, ended: false, turnId });
-  publishAppEvent({ type: 'turn.started', agentId, via: 'hook', at });
+  publishAppEvent({ type: 'turn.started', agentId, via: 'hook', at, ...(continuation && { continuation: true }) });
 }
 
 /**
@@ -276,7 +276,7 @@ export function publishFromHookEvent(agentId: string, facts: HookFacts, now = Da
         if (turnId === turn.turnId && turn.ended) return;
         if (turnId !== turn.turnId) return;
       }
-      if (!turn || turn.ended || now - turn.lastAt > HOOK_TURN_STALE_MS) startHookTurn(agentId, now, turnId);
+      if (!turn || turn.ended || now - turn.lastAt > HOOK_TURN_STALE_MS) startHookTurn(agentId, now, turnId, !!turn && !turn.ended);
       else turn.lastAt = now;
       if (kind === 'pre_tool' && toolName && QUESTION_TOOLS.has(toolName)) {
         publishAppEvent({ type: 'agent.waiting', agentId, via: 'hook', reason: 'question', at: now });

@@ -88,6 +88,8 @@ function buildTaggedMessage(agentId: string, targetId: string, message: string, 
     text += `\n\n---\nReply to ${senderName} via tool "${replyToolName}" with task_id="${taskId}". ${fallback}` +
       `Prefix your response with TASK_RESULT:${taskId}.`;
   }
+  const remote = currentRemoteCaller();
+  if (remote && isDispatcherTarget(targetId)) text += `\n\n[REMOTE NEWS:${remote.deliveryId}] If this input causes a federated call, caused_by may select this id. Omitting linkage still inherits this turn's remote causation.`;
   const routed = [{ sender: { agentId, name: senderName }, text: message }];
   return { text, routed, senderLabel, targetName, isBidirectional: !!reverseBinding };
 }
@@ -189,6 +191,9 @@ export function registerAgentTools(): void {
             'Optional correlation ID. If provided, the message is prefixed with [TASK:<task_id>] ' +
             'so the target agent knows to tag its response with TASK_RESULT:<task_id>. ' +
             'If omitted, one is auto-generated and returned.',
+        },
+        caused_by: {
+          type: 'string', description: 'For Dispatcher federation: select an incoming request/news/reply id delivered into this turn. Omission still inherits this turn’s remote causation.',
         },
         idempotency_key: {
           type: 'string',
@@ -487,6 +492,9 @@ export function registerAgentTools(): void {
           type: 'string',
           description:
             'Optional correlation ID. Works the same as send_message task_id.',
+        },
+        caused_by: {
+          type: 'string', description: 'For Dispatcher federation: select an incoming request/news/reply id delivered into this turn. Omission still inherits this turn’s remote causation.',
         },
         idempotency_key: {
           type: 'string',

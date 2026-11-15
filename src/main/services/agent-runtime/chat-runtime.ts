@@ -18,7 +18,8 @@
  * dropped, whatever its decision; a driver's own cancellation of a request
  * the runtime never answered still goes through.
  */
-
+import { captureFederationInput, prepareFederationInput } from '../dispatcher-federation-context';
+import type { FederatedRequest } from '../../../shared/dispatcher-federation-requests';
 import { ACCESS_LEVELS as FIVE_LEVELS } from '../../../shared/agent-access';
 import { randomUUID } from 'crypto';
 import {
@@ -163,6 +164,7 @@ export class ChatStartCancelledError extends Error {
  * `parts` holds each message's content, in order.
  */
 interface QueuedMessage {
+  federationInputs?: FederatedRequest[];
   trace?: ChatTraceContext;
   messageId: string;
   source: MessageSource;
@@ -647,6 +649,7 @@ export class ChatAgentRuntime implements AgentRuntime {
 
   private async deliverMessage(content: string | ContentBlock[], opts: RuntimeSendOptions): Promise<RuntimeSendResult> {
     const session = this.requireSession();
+    const federationInput = captureFederationInput();
     this.receivedInput = true;
     const blocks: ContentBlock[] = typeof content === 'string' ? [{ type: 'text', text: content }] : content;
     // While the queue drains, the state still reads idle; a prompt now would race the drained one.
@@ -654,7 +657,7 @@ export class ChatAgentRuntime implements AgentRuntime {
       || this.state === 'running' || this.state === 'waiting_permission' || this.state === 'waiting_input';
     const caps = this.capabilities ?? session.capabilities;
     // Keep Action messages removable even when the driver normally queues natively.
-    const clientQueue = caps.queue !== 'native' || opts.actionQueue !== undefined;
+    const clientQueue = caps.queue !== 'native' || opts.actionQueue !== undefined || federationInput !== undefined;
 
     let wanted: MessageDelivery;
     const requested = opts.delivery ?? (opts.actionQueue ? 'queued' : 'auto');
@@ -688,6 +691,7 @@ export class ChatAgentRuntime implements AgentRuntime {
       const tail = this.queued[this.queued.length - 1];
       if (opts.source === 'mcp' && tail?.source === 'mcp') {
         tail.parts.push(blocks);
+        if (federationInput) (tail.federationInputs ??= []).push(federationInput);
         this.logQueueChange('queued', tail);
         this.armHeldWarning();
         await this.emit({
@@ -698,6 +702,7 @@ export class ChatAgentRuntime implements AgentRuntime {
       }
       const preamble = this.withSystemPrompt([], caps);
       const item: QueuedMessage = {
+        ...(federationInput && { federationInputs: [federationInput] }),
         messageId, source: opts.source, queuedAt: this.now(), parts: [blocks], preamble, trace: traceContext,
         ...(opts.actionQueue && { actionQueue: { ...opts.actionQueue } }),
         ...(opts.actionQueue?.maxWaitMs !== undefined && { expiresAt: this.now() + opts.actionQueue.maxWaitMs }),
@@ -731,12 +736,15 @@ export class ChatAgentRuntime implements AgentRuntime {
     let delivered: MessageDelivery;
     const pending = wanted === 'prompt' || wanted === 'queued' ? Symbol() : undefined;
     if (pending) this.pendingTurns.add(pending);
+    const federation = prepareFederationInput(this.agentId, federationInput, wanted);
     try { delivered = await session.send(outgoing, wanted); }
     catch (error) {
+      federation?.refused();
       if (pending) this.pendingTurns.delete(pending);
       if (this.pendingTrace === traceContext) { this.pendingTrace = undefined; this.pendingTraceAssigned = false; }
       throw error;
     }
+    federation?.accepted(delivered);
     if (pending && delivered !== 'prompt' && delivered !== 'queued') this.pendingTurns.delete(pending);
     if (wanted === 'prompt' && delivered !== 'prompt' && this.pendingTrace === traceContext) {
       this.pendingTrace = undefined;
@@ -945,6 +953,7 @@ export class ChatAgentRuntime implements AgentRuntime {
     this.armHeldWarning();
     let failed = false;
     const pending = Symbol();
+    let federation: ReturnType<typeof prepareFederationInput>[] = [];
     this.draining = true;
     try {
       this.clearIdleTimer();
@@ -964,11 +973,14 @@ export class ChatAgentRuntime implements AgentRuntime {
         this.pendingTrace = this.pendingTraceAssigned ? undefined : next.trace;
         this.pendingTraceAssigned = true;
         this.pendingTurns.add(pending);
-        await session.send([...next.preamble, ...coalesceUpdateContent(next.parts)], 'prompt');
+        federation = (next.federationInputs ?? []).map((input) => prepareFederationInput(this.agentId, input));
+        const delivered = await session.send([...next.preamble, ...coalesceUpdateContent(next.parts)], 'prompt');
+        for (const context of federation) context?.accepted(delivered);
         this.settleQueued(next, 'delivered');
         if (this.session === session) await this.emitQueueState([next.messageId], 'delivered');
       }
     } catch (err) {
+      for (const context of federation) context?.refused();
       this.pendingTurns.delete(pending);
       if (this.pendingTrace === next.trace) { this.pendingTrace = undefined; this.pendingTraceAssigned = false; }
       if (this.session !== session) return;

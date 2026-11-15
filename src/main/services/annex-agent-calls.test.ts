@@ -567,6 +567,27 @@ describe('durable receipts and crash boundaries (#3334)', () => {
     } finally { restoreRouter(); restoreLookup(); }
   });
 
+  it('reuses admitted news before validating a caused_by selector from an ended turn', async () => {
+    connected = false;
+    const context = { rootId: 'delivered-root', depth: 4, parentId: 'delivered-item' };
+    const cause = vi.fn(() => context);
+    const before = vi.fn(async () => {});
+    const restore = setFederationRequestRouter({ before, allowed: () => true, cause, offer: async () => ok('unused') });
+    try {
+      const args = { message: 'News once', caused_by: 'delivered-item', idempotency_key: 'selected-news' };
+      const first = await forwardAgentCall('here', `there@${OTHER}`, 'Remote Dispatcher', 'send_message', args, now);
+      cause.mockImplementation(() => { throw new Error('caused_by is no longer delivered in this turn'); });
+      const retry = await forwardAgentCall('here', `there@${OTHER}`, 'Remote Dispatcher', 'send_message', args, now);
+      expect(first.isError).toBeFalsy(); expect(retry.isError).toBeFalsy();
+      expect(textOf(retry)).toContain(waitingFor(OTHER)[0].id);
+      expect(waitingFor(OTHER)).toHaveLength(1);
+      expect(waitingFor(OTHER)[0].body.context).toEqual(context);
+      expect(cause).toHaveBeenCalledTimes(1);
+      const fresh = await forwardAgentCall('here', `there@${OTHER}`, 'Remote Dispatcher', 'send_message', { ...args, idempotency_key: 'different-news' }, now);
+      expect(fresh.isError).toBe(true); expect(textOf(fresh)).toContain('no longer delivered');
+    } finally { restore(); }
+  });
+
   it('keeps keyed queued news in one slot with its first causal context', async () => {
     connected = false;
     const args = { message: 'queued once', idempotency_key: 'queued-context' };
@@ -637,6 +658,30 @@ describe('durable receipts and crash boundaries (#3334)', () => {
     respond = (_path, body) => delivered(body);
     await flushOutbox(OTHER);
     expect(getDelivery('here', id)).toMatchObject({ state: 'delivered', attempts: 2 });
+  });
+
+  it('automatically drains waiting terminal news within its TTL without changing cause or recounting admission', async () => {
+    vi.useFakeTimers();
+    const before = vi.fn(async () => {});
+    const cause = { rootId: 'terminal-work', depth: 6, parentId: 'incoming' };
+    const restore = setFederationRequestRouter({ before, allowed: () => true, cause: () => cause, offer: async () => ok('unused') });
+    try {
+      const restoreLookup = setFederationMessageLookup((from, to) => ({ from, to, disabledTools: [], updatedAt: new Date().toISOString(), link: { createdAt: new Date().toISOString() } }));
+      try {
+        respond = (_path, body) => ({ status: 200, body: { result: { ...ok('Waiting for terminal turn'), isError: true }, delivery: { callId: body.callId, state: 'retry_later', reason: 'target_not_ready' } } });
+        const direct = { authorization: { policyHash: 'approved' }, current: () => true };
+        const queued = await forwardPreparedAgentCall('here', `there@${OTHER}`, 'Dispatcher', 'send_message', { message: 'News', idempotency_key: 'terminal-wait' }, Date.now(), cause, undefined, direct);
+        expect(queued.isError).toBeFalsy(); const id = waitingFor(OTHER)[0].id;
+        expect(getDelivery('here', id)?.state).toBe('retry_later');
+        expect(before).toHaveBeenCalledTimes(1);
+        respond = (_path, body) => delivered(body);
+        await vi.advanceTimersByTimeAsync(130_000);
+        await vi.waitFor(() => expect(waitingFor(OTHER)).toHaveLength(0));
+        expect(getDelivery('here', id)).toMatchObject({ state: 'delivered', attempts: 2 });
+        expect(posts.filter((p) => p.path.endsWith('agent-call')).every((p) => JSON.stringify(p.body.context) === JSON.stringify(cause))).toBe(true);
+        expect(before).toHaveBeenCalledTimes(1);
+      } finally { restoreLookup(); }
+    } finally { restore(); vi.useRealTimers(); }
   });
 
   it('never retries a legacy ACK whose receiver cannot prove a durable receipt', async () => {

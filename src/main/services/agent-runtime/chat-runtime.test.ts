@@ -1,3 +1,5 @@
+import { federationTurnInputs, startFederationTurnTracking, withFederationInput } from '../dispatcher-federation-context';
+import type { FederatedRequest } from '../../../shared/dispatcher-federation-requests';
 import { describe, it, expect, vi, beforeEach, afterEach, afterAll } from 'vitest';
 import type { ChatEvent, ChatCapabilities } from '../../../shared/chat';
 import { MINIMAL_CHAT_CAPABILITIES } from '../../../shared/chat';
@@ -2060,5 +2062,57 @@ describe('ambiguous provider turn attribution', () => {
       await flush();
       expect(contexts).toEqual([undefined]);
     } finally { await runtime.stop(); setLocalSink(null); await rec.stop(); }
+  });
+});
+
+
+describe('federation input follows actual runtime dispatch (#3553)', () => {
+  const remote = (id: string) => ({ id, cause: { rootId: id, depth: 4 } } as FederatedRequest);
+  it('keeps queued remote news out of a preceding human turn and attributes its own dispatched turn', async () => {
+    const driver = new FakeChatDriver('claude_stream_json', 'claude-code', STEERLESS);
+    const { runtime } = makeRuntime(driver); const stop = startFederationTurnTracking(runtime.agentId);
+    try {
+      await runtime.start(); driver.last.emit({ type: 'turn_started', data: { trigger: 'prompt' } }); await flush();
+      await runtime.sendMessage('human first', { source: 'user', delivery: 'queued' });
+      await withFederationInput(remote('private-remote-id'), () => runtime.sendMessage('news second', { source: 'mcp', delivery: 'queued' }));
+      expect(federationTurnInputs(runtime.agentId)).toEqual([]);
+      driver.last.emit({ type: 'turn_ended', data: { stopReason: 'end_turn' } }); await flush();
+      driver.last.emit({ type: 'turn_started', data: { trigger: 'queued' } }); await flush();
+      expect(federationTurnInputs(runtime.agentId)).toEqual([]);
+      driver.last.emit({ type: 'turn_ended', data: { stopReason: 'end_turn' } }); await flush();
+      driver.last.emit({ type: 'turn_started', data: { trigger: 'queued' } }); await flush();
+      expect(federationTurnInputs(runtime.agentId).map((r) => r.id)).toEqual(['private-remote-id']);
+      driver.last.emit({ type: 'turn_ended', data: { stopReason: 'end_turn' } }); await flush();
+      driver.last.emit({ type: 'turn_started', data: { trigger: 'prompt' } }); await flush();
+      expect(federationTurnInputs(runtime.agentId)).toEqual([]);
+      expect(JSON.stringify(transcript)).not.toContain('private-remote-id');
+    } finally { await runtime.stop(); stop(); }
+  });
+  it.each(['remove', 'send-failure', 'clear'] as const)('does not inherit a queued remote input after %s', async (mode) => {
+    const driver = new FakeChatDriver('claude_stream_json', 'claude-code', STEERLESS);
+    const { runtime } = makeRuntime(driver); const stop = startFederationTurnTracking(runtime.agentId);
+    try {
+      await runtime.start(); driver.last.emit({ type: 'turn_started', data: { trigger: 'prompt' } }); await flush();
+      const queued = await withFederationInput(remote('dropped'), () => runtime.sendMessage('queued news', { source: 'mcp', delivery: 'queued' }));
+      if (mode === 'remove') await runtime.removeQueued([queued.messageId!]);
+      if (mode === 'clear') await runtime.clearContext();
+      if (mode === 'send-failure') driver.last.send = async () => { throw new Error('not delivered'); };
+      driver.last.emit({ type: 'turn_ended', data: { stopReason: 'end_turn' } }); await flush();
+      driver.last.emit({ type: 'turn_started', data: { trigger: 'prompt' } }); await flush();
+      expect(federationTurnInputs(runtime.agentId)).toEqual([]);
+    } finally { await runtime.stop(); stop(); }
+  });
+  it('combines coalesced remote inputs and retains a steer only for the current turn', async () => {
+    const driver = new FakeChatDriver();
+    const { runtime } = makeRuntime(driver); const stop = startFederationTurnTracking(runtime.agentId);
+    try {
+      await runtime.start(); driver.last.emit({ type: 'turn_started', data: { trigger: 'prompt' } }); await flush();
+      await withFederationInput(remote('steer'), () => runtime.sendMessage('steer', { source: 'mcp', delivery: 'steer' }));
+      expect(federationTurnInputs(runtime.agentId).map((r) => r.id)).toEqual(['steer']);
+      for (const id of ['one', 'two']) await withFederationInput(remote(id), () => runtime.sendMessage(id, { source: 'mcp', delivery: 'queued' }));
+      driver.last.emit({ type: 'turn_ended', data: { stopReason: 'end_turn' } }); await flush();
+      driver.last.emit({ type: 'turn_started', data: { trigger: 'queued' } }); await flush();
+      expect(federationTurnInputs(runtime.agentId).map((r) => r.id)).toEqual(['one', 'two']);
+    } finally { await runtime.stop(); stop(); }
   });
 });

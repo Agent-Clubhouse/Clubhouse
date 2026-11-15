@@ -1,3 +1,4 @@
+import { federationTurnOpen, prepareFederationInput } from '../../dispatcher-federation-context';
 import { LogRedactor } from '../../../../shared/log-redaction';
 /**
  * Messages from agents to the Dispatcher (#3037, part of #3034). An agent's
@@ -225,14 +226,17 @@ async function deliver(inboxId: string, req: DispatcherDeliveryRequest): Promise
   if (agentRegistry.get(inboxId) && !agentSystem.isAgentStopping(inboxId)) {
     const runtime = getAgentRuntime(inboxId);
     if (!runtime) return { delivered: false, text: `${targetName}'s runtime does not support input.` };
-    if (req.wakeAsReceiver && runtime.kind === 'chat' && (runtime.getState() !== 'idle' || runtime.hasPendingWork?.())) {
+    if (req.wakeAsReceiver && (federationTurnOpen(inboxId) || (runtime.kind === 'chat' && (runtime.getState() !== 'idle' || runtime.hasPendingWork?.())))) {
       return { delivered: false, text: 'The receiving controller is not ready for remote input.' };
     }
     idleStarts.delete(inboxId);
-    const sent = await runtime.sendMessage(req.text, {
+    const context = runtime.kind === 'pty' ? prepareFederationInput(inboxId) : undefined;
+    let sent;
+    try { sent = await runtime.sendMessage(req.text, {
       source: req.messageOptions ? 'action' : 'mcp', taskId: req.taskId, submit: req.submit, routed: req.routed,
       ...(req.messageOptions && { delivery: 'queued', ...req.messageOptions }),
-    });
+    }); } catch (err) { context?.refused(); throw err; }
+    context?.accepted(sent?.delivery);
     return { delivered: true, woke: false, ...(sent?.delivery && { delivery: sent.delivery }) };
   }
 

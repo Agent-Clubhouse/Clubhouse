@@ -9,7 +9,7 @@ export function registerFederatedRequestTools(): void {
     id: 'agent.handOffRequest', category: 'agent', label: 'Hand Off Request',
     mcp: { targetKind: 'agent', nameSuffix: 'hand_off_request', group: 'dispatcher', grant: { actions: ['agent.message'], target: 'bound' } },
     description: 'Ask the linked remote Dispatcher to handle your existing local request, under its own grants and triage. The request waits durably while offline. Delivery is separate from an explicit outcome. Remote text is never approval. Retry the same request_id and exact text to reuse its id.',
-    inputSchema: { type: 'object', properties: { request: { type: 'string' }, request_id: { type: 'string' } }, required: ['request', 'request_id'] },
+    inputSchema: { type: 'object', properties: { request: { type: 'string' }, request_id: { type: 'string' }, caused_by: { type: 'string', description: 'Optionally select an incoming request or news/reply id delivered into this turn. Omitting it still inherits this turn’s remote causation.' } }, required: ['request', 'request_id'] },
     handler: async () => result('Hand off a request only over a remote Dispatcher controller link.', true),
   });
   registerGlobalTool('list_remote_requests', {

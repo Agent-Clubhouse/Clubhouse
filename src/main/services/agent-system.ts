@@ -1,3 +1,4 @@
+import { prepareFederationInput } from './dispatcher-federation-context';
 import { redactSpawnArgs } from '../../shared/log-redaction';
 import { readCopilotHooksConfig } from '../orchestrators/copilot-hooks-config';
 import { AgentResumeError, assertProviderSelection } from './agent-transition';
@@ -1150,11 +1151,15 @@ async function spawnPtyAgent(
     onCreated: (identity: string) => { createdIdentity = identity; },
     onObservedExit: () => { managedExitConfirmed = true; },
   });
+  let federation: ReturnType<typeof prepareFederationInput>;
   try {
     assertLaunchesOpen();
     assertDispatcherCanStart(params);
+    if (params.mission) federation = prepareFederationInput(params.agentId);
     await tel.step('clubhouse.pty.spawn', () => withErrorType('pty_spawn_failed', () => ptyManager.spawn(...spawnArgs)));
+    federation?.accepted('prompt');
   } catch (err) {
+    federation?.refused();
     // Refused before a process existed (the Dispatcher turned off, #3110): no exit will restore the files injected above.
     if (!managed && !createdIdentity && !isAgentRunning(params.agentId)) void configPipeline.restoreForAgent(params.agentId);
     if (managed && !createdIdentity) {

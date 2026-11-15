@@ -1,3 +1,5 @@
+import { federationTurnInputs, startFederationTurnTracking, withFederationInput } from './dispatcher-federation-context';
+import type { FederatedRequest } from '../../shared/dispatcher-federation-requests';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import * as path from 'path';
 import type { OrchestratorConventions } from '../orchestrators';
@@ -363,7 +365,7 @@ import * as os from 'os';
 import { broadcastAgentExit } from './agent-exit-broadcast';
 import { agentRegistry } from './agent-registry';
 import { resolveProjectMcpServers } from './agent-mcp-servers';
-import { onAppEvent, resetAppEventBus, type AppEvent } from './app-event-bus';
+import { onAppEvent, publishAppEvent, resetAppEventBus, type AppEvent } from './app-event-bus';
 import { clearQuickAgentRuns, knownQuickAgents } from './quick-agent-events';
 
 /** Give a mock provider the SessionCapable surface, with the real CLIs' "resume <uuid>" pattern. */
@@ -439,6 +441,23 @@ describe('agent-system', () => {
   });
 
   describe('spawnAgent', () => {
+    it('registers a terminal mission after old-session teardown and chat fallback', async () => {
+      const stop = startFederationTurnTracking('agent-1');
+      const input = { id: 'remote-mission', cause: { rootId: 'root', depth: 4 } } as FederatedRequest;
+      mockTryStartChatAgent.mockImplementationOnce(async () => {
+        publishAppEvent({ type: 'agent.asleep', agentId: 'agent-1' });
+        return false;
+      });
+      mockPtySpawn.mockImplementationOnce(async () => {
+        // The old session has ended. The new process can call tools before spawn returns.
+        publishAppEvent({ type: 'turn.started', agentId: 'agent-1', via: 'hook' });
+        expect(federationTurnInputs('agent-1')).toEqual([input]);
+      });
+      try {
+        await withFederationInput(input, () => spawnAgent({ agentId: 'agent-1', projectPath: '/project', cwd: '/project', kind: 'durable', mission: 'Remote work' }));
+        expect(mockPtySpawn).toHaveBeenCalledTimes(1);
+      } finally { stop(); }
+    });
     it.each(['durable', 'quick'] as const)('redacts planted mission/system prompts in the %s PTY spawn log (#1919)', async (kind) => {
       const mission = `PTY-${kind}-PRIVATE-MISSION-1919`;
       const system = `PTY-${kind}-PRIVATE-SYSTEM-1919`;

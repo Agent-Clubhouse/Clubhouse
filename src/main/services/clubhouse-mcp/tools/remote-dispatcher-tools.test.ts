@@ -45,7 +45,7 @@ describe('authorized agent to remote Dispatcher (#3348)', () => {
     expect(fixture.forward).not.toHaveBeenCalled();
     takeGrantRequest(request.requestId, true);
     expect(await callTool('sender', 'message_remote_dispatcher', args)).toEqual({ content: [{ type: 'text', text: 'Queued durably for Laptop' }] });
-    expect(fixture.forward).toHaveBeenCalledWith('sender', `remote-controller@${fixture.machine}`, 'Dispatcher on Laptop', 'send_message', { message: 'News', task_id: 'origin-task' }, expect.any(Number), undefined, undefined, expect.objectContaining({ authorization: { policyHash: expect.any(String) } }));
+    expect(fixture.forward).toHaveBeenCalledWith('sender', `remote-controller@${fixture.machine}`, 'Dispatcher on Laptop', 'send_message', { message: 'News', task_id: 'origin-task' }, expect.any(Number), undefined, undefined, expect.objectContaining({ authorization: { policyHash: expect.any(String) } }), expect.any(Function));
     expect(await callTool('sender', 'message_remote_dispatcher', { ...args, message: 'Different' })).toMatchObject({ isError: true });
     expect(fixture.forward).toHaveBeenCalledTimes(1);
   });
