@@ -15,6 +15,7 @@
  * change is also noted as a feedback breadcrumb (#2098): one IPC send per
  * actual change, carrying only the view name.
  */
+import { GROUP_PROJECTS_VIEW_ID } from './coreAppItems';
 import { ATTR, setTelemetrySurface, setTelemetryView as setTelemetryViewOnly, tel, type TelemetryView } from '../telemetry';
 import { recordBreadcrumb } from '../telemetry/breadcrumbs';
 
@@ -45,6 +46,8 @@ export function viewForTab(explorerTab: string): TelemetryView {
   if (explorerTab === 'agents') return 'agent';
   if (explorerTab === 'settings') return 'settings';
   if (BUILTIN_VIEWS[explorerTab]) return BUILTIN_VIEWS[explorerTab];
+  // A core app view is the app's own, not a plugin.
+  if (explorerTab === `plugin:app:${GROUP_PROJECTS_VIEW_ID}`) return 'other';
   if (explorerTab.startsWith('plugin:')) return 'plugin';
   return 'other';
 }

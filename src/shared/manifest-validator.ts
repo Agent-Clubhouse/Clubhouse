@@ -8,6 +8,14 @@ export { DEPRECATED_PLUGIN_API_VERSIONS };
 const PLUGIN_ID_REGEX = /^[a-z0-9-]+$/;
 
 /**
+ * App view ids the app itself provides in the sidebar's app row (#3544). They
+ * open at `plugin:app:<id>`, so a plugin using one would be shadowed by, or
+ * shadow, the core view: no manifest may claim them. A validation rule, not
+ * plugin API surface.
+ */
+export const RESERVED_APP_VIEW_IDS: readonly string[] = ['group-projects'];
+
+/**
  * True when `id` is a well-formed plugin id. The allowlist (lowercase
  * alphanumerics and hyphens) also guarantees the id is a single, safe path
  * segment — no separators, `..`, or absolute paths — so it can be used to
@@ -45,6 +53,8 @@ export function validateManifest(raw: unknown): ValidationResult {
     errors.push('Missing required field: id');
   } else if (!PLUGIN_ID_REGEX.test(m.id)) {
     errors.push(`Invalid plugin id "${m.id}": must match /^[a-z0-9-]+$/`);
+  } else if (RESERVED_APP_VIEW_IDS.includes(m.id)) {
+    errors.push(`Plugin id "${m.id}" is reserved for a built-in app view`);
   }
 
   if (typeof m.name !== 'string' || !m.name) {

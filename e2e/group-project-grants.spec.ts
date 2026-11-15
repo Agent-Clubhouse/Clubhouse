@@ -25,6 +25,7 @@ test('group project lead and admin grants persist independently', async () => {
     await addProject(app.electronApp, app.window, dir);
     await app.window.getByTestId('nav-settings').click();
     await app.window.getByTestId('settings-nav-app-group-projects').click();
+    await app.window.getByRole('button', { name: 'New group project', exact: true }).click();
     await app.window.getByLabel('New group project name').fill('Grant fixture');
     await app.window.getByRole('button', { name: 'Create group project' }).click();
     await app.window.getByRole('button', { name: 'Grant fixture', exact: true }).click();

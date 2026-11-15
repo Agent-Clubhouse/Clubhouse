@@ -16,6 +16,8 @@ import { getAgentColorHex } from '../../shared/name-generator';
 import { sanitizeSvg } from '../utils/sanitize-svg';
 import { requestCloseProject } from '../features/projects/close-project';
 import { FeedbackButton } from '../features/feedback/FeedbackButton';
+import { CORE_APP_ITEMS, GROUP_PROJECTS_VIEW_ID, groupProjectsIcon } from '../chrome/coreAppItems';
+import { openGroupProjectsHub } from '../features/group-projects/groupProjectsNav';
 
 function ProjectContextMenu({ position, onClose, onSettings, onCloseProject }: {
   position: { x: number; y: number };
@@ -207,6 +209,42 @@ function PluginRailButton({ entry, isActive, onClick, expanded, dimmed }: {
             <Badge type={pluginBadge.type} value={pluginBadge.value} />
           </span>
         )}
+      </div>
+      <span className={`text-xs font-medium truncate pr-3 whitespace-nowrap text-ctp-text transition-opacity duration-200 ${expanded ? 'opacity-100' : 'opacity-0'}`}>{label}</span>
+    </button>
+  );
+}
+
+/** The app's own rail entry (Group Projects, #3544): not a plugin, so no badge and no annex gate. */
+function CoreRailButton({ label, isActive, onClick, expanded }: {
+  label: string;
+  isActive: boolean;
+  onClick: () => void;
+  expanded: boolean;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      title={label}
+      aria-label={label}
+      aria-current={isActive ? 'page' : undefined}
+      data-testid="rail-group-projects"
+      className={`w-full h-10 flex items-center gap-3 rounded-lg flex-shrink-0 cursor-pointer ${expanded ? 'hover:bg-surface-0' : ''}`}
+    >
+      <div
+        className={`
+          w-10 h-10 rounded-lg flex items-center justify-center flex-shrink-0
+          transition-colors duration-100
+          ${isActive
+            ? 'bg-ctp-accent text-ctp-on-accent shadow-lg shadow-ctp-accent/30'
+            : expanded
+              ? 'bg-surface-1 text-ctp-subtext0'
+              : 'bg-surface-1 text-ctp-subtext0 hover:bg-surface-2 hover:text-ctp-text'
+          }
+        `}
+      >
+        {groupProjectsIcon(18)}
       </div>
       <span className={`text-xs font-medium truncate pr-3 whitespace-nowrap text-ctp-text transition-opacity duration-200 ${expanded ? 'opacity-100' : 'opacity-0'}`}>{label}</span>
     </button>
@@ -468,6 +506,17 @@ export function ProjectRail() {
     });
   };
 
+  /** The core entries after the plugin buttons: Group Projects opens this machine's hub on any host. */
+  const renderCoreButtons = () => CORE_APP_ITEMS.map((item) => (
+    <CoreRailButton
+      key={item.id}
+      label={item.label}
+      isActive={explorerTab === `plugin:app:${item.id}`}
+      onClick={() => exitSettingsAndNavigate(() => { if (item.id === GROUP_PROJECTS_VIEW_ID) openGroupProjectsHub(); })}
+      expanded={expanded}
+    />
+  ));
+
   return (
     <div
       className="relative h-full min-h-0"
@@ -523,10 +572,9 @@ export function ProjectRail() {
 
             {/* Top app-scoped plugin items */}
             {renderPluginButtons(topPluginItems, false)}
+            {renderCoreButtons()}
 
-            {topPluginItems.length > 0 && (
-              <div className="border-t border-surface-2 my-1 flex-shrink-0" />
-            )}
+            <div className="border-t border-surface-2 my-1 flex-shrink-0" />
 
             <div ref={scrollContainerRef} className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden flex flex-col gap-2 pt-1">
               {projects.map((p, i) => (
@@ -624,10 +672,9 @@ export function ProjectRail() {
 
             {/* Top app-scoped plugin items (annex-gated) */}
             {renderPluginButtons(topPluginItems, true)}
+            {renderCoreButtons()}
 
-            {topPluginItems.length > 0 && (
-              <div className="border-t border-surface-2 my-1 flex-shrink-0" />
-            )}
+            <div className="border-t border-surface-2 my-1 flex-shrink-0" />
 
             {/* Remote projects for active satellite */}
             <div ref={scrollContainerRef} className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden flex flex-col gap-2 pt-1">

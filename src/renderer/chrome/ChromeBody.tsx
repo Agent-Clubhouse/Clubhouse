@@ -8,6 +8,7 @@ import { PluginContentView } from '../panels/PluginContentView';
 import { AnnexDisabledView } from '../panels/AnnexDisabledView';
 import { HelpView } from '../features/help/HelpView';
 import { ChromeSidebar } from './ChromeSidebar';
+import { coreAppViewFor } from './coreAppViews';
 import { useChromeStore, syncProjectScopeWithActiveAgent, syncProjectActivityWithAgents, syncCollapsedAgentsWithAgents } from './chromeStore';
 import { useSidebarMode, type SidebarMode } from './listTabs';
 import { useChromeScope } from './scope';
@@ -34,6 +35,12 @@ const SURFACE_FOR_MODE: Record<SidebarMode, ChromeSurface> = {
 };
 
 function AppPluginContent({ pluginId }: { pluginId: string }) {
+  // A core app view (Group Projects) is the app's own: no plugin gating, and it never reaches the plugin host.
+  const CoreView = coreAppViewFor(pluginId);
+  return CoreView ? <CoreView /> : <GatedAppPlugin pluginId={pluginId} />;
+}
+
+function GatedAppPlugin({ pluginId }: { pluginId: string }) {
   const activeHostId = useUIStore((s) => s.activeHostId);
   const matches = useRemoteProjectStore((s) => (activeHostId ? s.pluginMatchState[activeHostId] : undefined));
   // Same Annex gating as the legacy shell: on a satellite, only annex-enabled app plugins render.

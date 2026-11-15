@@ -28,6 +28,12 @@ describe('TitleBar', () => {
     expect(screen.getByTestId('title-bar').textContent).toBe('Settings');
   });
 
+  it('names the core Group Projects view in the classic title bar, with no plugin behind it (#3544)', () => {
+    useUIStore.setState({ explorerTab: 'plugin:app:group-projects' });
+    render(<TitleBar />);
+    expect(screen.getByTestId('title-bar').textContent).toBe('Group Projects');
+  });
+
   it('shows manifest label for project-scoped plugin tab', () => {
     registerPlugin('terminal', {
       name: 'Terminal',

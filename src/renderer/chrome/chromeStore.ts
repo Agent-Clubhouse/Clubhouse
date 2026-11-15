@@ -19,6 +19,38 @@ export const SIDEBAR_MIN = 220;
 export const SIDEBAR_MAX = 480;
 export const SIDEBAR_DEFAULT = 264;
 
+/**
+ * The sidebar's app row (Canvas, Review, Group Projects, More) has two layouts
+ * (#3544, maintainer decision). At or above APP_ROW_LABELS_MIN_SIDEBAR every
+ * entry shows its label. Narrower, only the SELECTED entry shows its label and
+ * the others are icon-only, APP_ROW_ICON_BUTTON_PX wide; with nothing selected
+ * they are all icon-only and share the row. Every entry always has an aria-label,
+ * and a tooltip while its label is hidden.
+ *
+ * The row's inner width is the sidebar width minus APP_ROW_SIDEBAR_INSET: the
+ * row's `px-2` on both sides (16px) and the sidebar's `border-r` (1px). Three
+ * labelled buttons and the 30px More button need about 347px (appRowNeeds in the
+ * tests), rounded up to 352px for slack. 352px of row is 369px of sidebar, so the
+ * labels of all three show from 369 up to SIDEBAR_MAX (480), and only the
+ * selected one below that, down to SIDEBAR_MIN (220).
+ *
+ * At SIDEBAR_MIN (203px of row) two icons, the selected label and More fit for
+ * Canvas and Review. Group Projects is the longest label: with no More it fits
+ * to within a pixel or two, and with More (Goobers, or a plugin's top rail item)
+ * its label is cut off and shows in its tooltip. To change where the labels of
+ * all three appear, change APP_ROW_LABELS_MIN_INNER only.
+ */
+export const APP_ROW_SIDEBAR_INSET = 17;
+export const APP_ROW_LABELS_MIN_INNER = 352;
+export const APP_ROW_LABELS_MIN_SIDEBAR = APP_ROW_LABELS_MIN_INNER + APP_ROW_SIDEBAR_INSET;
+/** An icon-only entry beside a labelled selected one: its icon plus a 2px border and 4px of padding each side, over the 24px minimum target. */
+export const APP_ROW_ICON_BUTTON_PX = 26;
+
+/** Whether the app row shows every label at this sidebar width (otherwise only the selected entry's). */
+export function appRowShowsLabels(sidebarWidth: number): boolean {
+  return sidebarWidth >= APP_ROW_LABELS_MIN_SIDEBAR;
+}
+
 const PERSIST_DEBOUNCE_MS = 300;
 
 /** A per-project fold inside the tree: sleeping agents or finished quick agents. */

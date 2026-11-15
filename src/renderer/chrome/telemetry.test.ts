@@ -73,6 +73,9 @@ describe('chrome telemetry', () => {
   it('maps tabs onto the coarse clubhouse.view enum', () => {
     expect(viewForTab('agents')).toBe('agent');
     expect(viewForTab('settings')).toBe('settings');
+    // A core app view is the app's own, not a plugin.
+    expect(viewForTab('plugin:app:group-projects')).toBe('other');
+    expect(viewForTab('plugin:app:review')).toBe('plugin');
     expect(viewForTab('plugin:files')).toBe('files');
     expect(viewForTab('plugin:git')).toBe('git');
     expect(viewForTab('plugin:terminal')).toBe('terminal');

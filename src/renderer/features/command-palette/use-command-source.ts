@@ -25,6 +25,10 @@ import { useAnnexClientStore } from '../../stores/annexClientStore';
 import { useRemoteProjectStore } from '../../stores/remoteProjectStore';
 import { isDispatcherAgent } from '../dispatcher/dispatcherStore';
 import { closeDispatcher, openDispatcher } from '../dispatcher/dispatcherNav';
+import { useGroupProjectStore } from '../../stores/groupProjectStore';
+import { openGroupProjectsHub, openGroupWorkspace } from '../group-projects/groupProjectsNav';
+import { hostNameOf, scopeReachLine } from '../group-projects/groupProjectsDirectory';
+import { hostLine } from '../settings/GroupProjectScopeFields';
 
 /** Canvas metadata loaded from storage for non-active projects */
 interface CrossProjectCanvas {
@@ -578,6 +582,31 @@ export function useCommandSource(): CommandItem[] {
     removeProject, setSettingsContext, setSettingsSubPage, openProjectSettings,
   ]);
 
+  // Group Projects (#3544): the hub, and each group by its stable id, never by name alone.
+  // The group's scope and host disambiguate same-named groups. Settings > Group Projects stays as an alias.
+  const groupProjects = useGroupProjectStore((s) => s.projects);
+  const groupProjectItems = useMemo((): CommandItem[] => {
+    const known = projects.map((p) => ({ id: p.id, name: p.name, displayName: p.displayName }));
+    return [
+      {
+        id: 'group-projects:open',
+        label: 'Group Projects',
+        category: CATEGORY.commands,
+        keywords: ['group', 'projects', 'board', 'groups'],
+        execute: () => openGroupProjectsHub(),
+      },
+      ...groupProjects.map((group): CommandItem => ({
+        id: `group-project:${group.id}`,
+        label: group.name,
+        category: CATEGORY.groupProjects,
+        detail: `${scopeReachLine(group, known)} ${hostLine(group)}`,
+        keywords: ['group', 'project', 'board', hostNameOf(group)],
+        searchOnly: true,
+        execute: () => openGroupWorkspace({ groupId: group.id }),
+      })),
+    ];
+  }, [groupProjects, projects]);
+
   const pluginCommandItems = useMemo((): CommandItem[] =>
     pluginHotkeyRegistry.getAll().map((shortcut) => {
       const pluginEntry = pluginsMap[shortcut.pluginId];
@@ -652,7 +681,7 @@ export function useCommandSource(): CommandItem[] {
 
   // Combine all category memos — only rebuilds when a sub-memo changes
   return useMemo(
-    () => [...agentItems, ...projectItems, ...hostItems, ...spaceItems, ...settingsItems, ...navigationItems, ...actionItems, ...pluginCommandItems],
-    [projectItems, agentItems, hostItems, spaceItems, navigationItems, settingsItems, actionItems, pluginCommandItems],
+    () => [...agentItems, ...projectItems, ...hostItems, ...spaceItems, ...groupProjectItems, ...settingsItems, ...navigationItems, ...actionItems, ...pluginCommandItems],
+    [projectItems, agentItems, hostItems, spaceItems, groupProjectItems, navigationItems, settingsItems, actionItems, pluginCommandItems],
   );
 }

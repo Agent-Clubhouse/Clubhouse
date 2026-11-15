@@ -499,8 +499,26 @@ the person came from and Back returns there (`groupWorkspaceSource.ts`).
 
 ## Local directory
 
-Settings > Group Projects and the command palette open the directory. It lists
-group projects even when no canvas references them. Creation previews the
+The **Group Projects** entry in the sidebar's app row (beside Canvas and Review),
+the command palette, a project's start page and Settings > Group Projects all
+open the same hub (#3544). The hub is a searchable list sectioned by project and
+app-wide, each row giving scope, reach and host in plain text. The start page's
+Group projects link opens the hub as that project's view: groups verified to
+cover the project, plus app-wide groups, with an All groups escape. A copy of
+another computer's project group is listed there as "Coverage not verified on
+this computer" until verified network coverage lands (#3549). A group's row opens
+its workspace through one route, `{ groupId, section? }`, which defaults to the
+Board (`features/group-projects/groupProjectRoute.ts`); until the workspace
+slice (#3545) lands, it renders the editor and sections described here. Settings
+shows the same hub, with the selected group's sections under it.
+
+In the sidebar's app row, all three entries show their labels from 369px of
+sidebar (a 352px row). Narrower, only the selected entry shows its label and the
+others are icons, each with an aria-label and a tooltip (`APP_ROW_LABELS_MIN_SIDEBAR`
+in `chrome/chromeStore.ts`). The Group Projects entry is a core entry, not a
+plugin rail item, so it stays when Canvas is off and is never in More app views.
+
+The hub lists group projects even when no canvas references them. Creation previews the
 top-level durable agents that will auto-join, and defaults to app/local. Scope
 changes preview leavers before applying. A canvas may reference an existing
 group project, and removing a card does not change membership.

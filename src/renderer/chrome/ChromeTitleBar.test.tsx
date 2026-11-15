@@ -7,6 +7,8 @@ import { useProjectStore } from '../stores/projectStore';
 import { useAgentStore } from '../stores/agentStore';
 import { usePluginStore } from '../plugins/plugin-store';
 import { useChromeStore, SIDEBAR_DEFAULT } from './chromeStore';
+import { useGroupProjectsNavStore } from '../features/group-projects/groupProjectsNavStore';
+import { useGroupProjectStore } from '../stores/groupProjectStore';
 import type { PluginManifest, PluginSource } from '../../shared/plugin-types';
 
 const originalPlatform = window.clubhouse.platform;
@@ -81,6 +83,23 @@ describe('ChromeTitleBar', () => {
     render(<ChromeTitleBar />);
     expect(screen.queryByTestId('explorer-tab-agents')).toBeNull();
     expect(screen.getByTestId('title-bar').textContent).toBe('Settings');
+  });
+
+  it('names Group Projects in the breadcrumb with no plugin behind it, and the open group under it', () => {
+    useUIStore.setState({ explorerTab: 'plugin:app:group-projects' });
+    useGroupProjectsNavStore.setState({ route: null });
+    render(<ChromeTitleBar />);
+    expect(screen.queryByTestId('explorer-tab-agents')).toBeNull();
+    expect(screen.getByTestId('title-bar').textContent).toBe('Group Projects');
+    act(() => {
+      useGroupProjectStore.setState({ projects: [{ id: 'gp1', name: 'Release checks' } as never] });
+      useGroupProjectsNavStore.setState({ route: { groupId: 'gp1' } });
+    });
+    expect(screen.getByTestId('title-bar').textContent).toBe('Group Projects/Release checks');
+    act(() => {
+      useGroupProjectsNavStore.setState({ route: null });
+      useGroupProjectStore.setState({ projects: [] });
+    });
   });
 
   it("hides project tabs in the Dispatcher's view, which is in no project (#2538)", () => {

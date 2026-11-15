@@ -11,6 +11,9 @@ import { computeOverflow } from './titlebar/overflow';
 import { titleBarPadding } from './titlebar/platform';
 import { useClickOutside } from './sidebar/useClickOutside';
 import { Tooltip } from '../components/Tooltip';
+import { coreAppItemFor, GROUP_PROJECTS_VIEW_ID } from './coreAppItems';
+import { useGroupProjectsNavStore } from '../features/group-projects/groupProjectsNavStore';
+import { useGroupProjectStore } from '../stores/groupProjectStore';
 
 /**
  * Title bar for the new chrome (docs/chrome-redesign-spec.md §4.2): the drag
@@ -216,9 +219,15 @@ function useBreadcrumb(projectLabel: string | undefined, tabLabel: string | unde
   const dynamicTitle = usePluginStore((s) => (pluginId ? s.pluginTitles[pluginId] : undefined));
   const appPluginLabel = usePluginStore((s) => {
     if (!appPluginId) return undefined;
+    // A core app view has no plugin entry; it names itself.
+    const core = coreAppItemFor(appPluginId);
+    if (core) return core.title;
     const rail = s.plugins[appPluginId]?.manifest.contributes?.railItem;
     return rail?.title || rail?.label || s.plugins[appPluginId]?.manifest.name;
   });
+  // In a group's workspace the breadcrumb names the group under Group Projects.
+  const openGroupId = useGroupProjectsNavStore((nav) => nav.route?.groupId);
+  const openGroupName = useGroupProjectStore((s) => (openGroupId ? s.projects.find((p) => p.id === openGroupId)?.name : undefined));
   const projectPluginTitle = usePluginStore((s) => {
     if (!projectPluginId) return undefined;
     const tab = s.plugins[projectPluginId]?.manifest.contributes?.tab;
@@ -229,6 +238,7 @@ function useBreadcrumb(projectLabel: string | undefined, tabLabel: string | unde
   if (dispatcherOpen) return { current: 'Dispatcher' };
   if (explorerTab === 'settings') return { current: 'Settings' };
   if (explorerTab === 'help') return { current: 'Help' };
+  if (appPluginId === GROUP_PROJECTS_VIEW_ID && openGroupName) return { parent: 'Group Projects', current: openGroupName };
   if (appPluginId) return { current: dynamicTitle || appPluginLabel || appPluginId };
   if (!projectLabel) return { current: 'Clubhouse' };
   if (agentSettings) return { parent: projectLabel, middle: agentSettings.name, current: 'Settings' };

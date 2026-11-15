@@ -40,7 +40,10 @@ import { PopupMenu, type MenuItem } from '../components/PopupMenu';
 import { useClickOutside } from './sidebar/useClickOutside';
 import { hostOf, returnToThisMachine, switchHost } from './hosts';
 import { openNewAgentOrDialog } from './startPage';
-import { useChromeStore, type AppLaunchParams } from './chromeStore';
+import { useChromeStore, appRowShowsLabels, APP_ROW_ICON_BUTTON_PX, type AppLaunchParams } from './chromeStore';
+import { CORE_APP_ITEMS, GROUP_PROJECTS_VIEW_ID } from './coreAppItems';
+import { openGroupProjectsHub } from '../features/group-projects/groupProjectsNav';
+import { openAppView } from './openAppView';
 import { reportChromeFeature, reportChromeActionFailed } from './telemetry';
 import { FeedbackButton } from '../features/feedback/FeedbackButton';
 import { AppNotices } from '../features/app/AppNotices';
@@ -130,6 +133,21 @@ function MenuButton({ label, testId, children, items, disabled }: {
   );
 }
 
+interface AppRowEntry {
+  id: string;
+  label: string;
+  /** Shown in the tooltip when it differs from the label. */
+  title: string;
+  icon: React.ReactNode;
+}
+
+/**
+ * The app row: Canvas and Review (plugin rail items), Group Projects (a core
+ * entry, never in More), then More app views (#3544). Below
+ * APP_ROW_LABELS_MIN_SIDEBAR (chromeStore.ts) only the selected entry shows its
+ * label and the rest are icons. A button's aria-label is always its label; a
+ * tooltip shows while its label is hidden, or when a shown label is cut off.
+ */
 function AppRow({ inline, overflow, explorerTab, onOpen }: {
   inline: PluginRegistryEntry[];
   overflow: PluginRegistryEntry[];
@@ -138,36 +156,82 @@ function AppRow({ inline, overflow, explorerTab, onOpen }: {
 }) {
   const [moreOpen, setMoreOpen] = useState(false);
   const moreRef = useRef<HTMLDivElement>(null);
+  const moreButtonRef = useRef<HTMLButtonElement>(null);
   const close = useCallback(() => setMoreOpen(false), []);
   useClickOutside(moreRef, moreOpen, close);
-  if (inline.length === 0 && overflow.length === 0) return null;
+  const labels = appRowShowsLabels(useChromeStore((s) => s.sidebarWidth));
+
+  const entries: AppRowEntry[] = [
+    ...inline.map((entry) => {
+      const rail = entry.manifest.contributes!.railItem!;
+      return { id: entry.manifest.id, label: rail.label, title: rail.title || rail.label, icon: railIcon(entry) };
+    }),
+    ...CORE_APP_ITEMS,
+  ];
+
+  // Narrow, the selected entry's label is the one that shows; with none selected they share the row as icons.
+  const selectionShown = !labels && entries.some((entry) => explorerTab === `plugin:app:${entry.id}`);
+
+  const menuItems = () => Array.from(moreRef.current?.querySelectorAll<HTMLElement>('[role="menuitem"]') ?? []);
+  const focusItem = (index: number) => {
+    const items = menuItems();
+    items[(index + items.length) % items.length]?.focus();
+  };
+  const onMoreKeyDown = (event: React.KeyboardEvent) => {
+    if (event.key === 'Escape' && moreOpen) {
+      setMoreOpen(false);
+      moreButtonRef.current?.focus();
+    } else if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+      event.preventDefault();
+      const items = menuItems();
+      const at = items.indexOf(document.activeElement as HTMLElement);
+      if (!moreOpen) {
+        setMoreOpen(true);
+        // The menu mounts on the next render; its first item takes focus then.
+        requestAnimationFrame(() => focusItem(event.key === 'ArrowDown' ? 0 : -1));
+      } else if (at === -1) {
+        focusItem(event.key === 'ArrowDown' ? 0 : -1);
+      } else {
+        focusItem(at + (event.key === 'ArrowDown' ? 1 : -1));
+      }
+    }
+  };
+
   return (
     <nav aria-label="App views" className="flex-shrink-0 px-2 pb-2 flex items-center gap-1.5">
-      {inline.map((entry) => {
-        const rail = entry.manifest.contributes!.railItem!;
-        const active = explorerTab === `plugin:app:${entry.manifest.id}`;
+      {entries.map((entry) => {
+        const active = explorerTab === `plugin:app:${entry.id}`;
+        const showLabel = labels || active;
+        // With the label shown, a title that differs from it is the tooltip; otherwise the label's own
+        // tooltip opens only if it is cut off. With it hidden, the tooltip always names the entry.
+        const distinctTitle = entry.title !== entry.label;
         return (
-          <Tooltip key={entry.manifest.id} content={rail.title || rail.label} disabled={!rail.title || rail.title === rail.label}>
+          <Tooltip key={entry.id} content={entry.title} disabled={showLabel && !distinctTitle}>
           <button
             type="button"
-            data-testid={`app-row-${entry.manifest.id}`}
+            data-testid={`app-row-${entry.id}`}
             data-active={active}
-            onClick={() => onOpen(entry.manifest.id)}
-            className={`flex-1 min-w-0 h-[30px] px-2 rounded-md border flex items-center gap-1.5 text-[13px] font-medium cursor-pointer [&_svg]:w-[15px] [&_svg]:h-[15px] ${
+            aria-label={entry.label}
+            aria-current={active ? 'page' : undefined}
+            onClick={() => onOpen(entry.id)}
+            style={showLabel || !selectionShown ? undefined : { width: APP_ROW_ICON_BUTTON_PX }}
+            className={`min-w-0 h-[30px] rounded-md border flex items-center text-[13px] font-medium cursor-pointer [&_svg]:w-[15px] [&_svg]:h-[15px] [&_svg]:flex-shrink-0 ${
+              showLabel ? 'flex-auto px-2 gap-1.5' : selectionShown ? 'flex-none justify-center' : 'flex-1 justify-center'
+            } ${
               active ? 'border-surface-2 bg-surface-0 text-ctp-text' : 'border-surface-0 text-ctp-subtext1 hover:bg-surface-0/60 hover:text-ctp-text'
             }`}
           >
-            {railIcon(entry)}
-            {/* With a distinct title the outer Tooltip already says it all; don't open a second. */}
-            {rail.title && rail.title !== rail.label ? <span className="truncate">{rail.label}</span> : <TruncatedLabel text={rail.label} />}
+            {entry.icon}
+            {showLabel && (distinctTitle ? <span className="truncate">{entry.label}</span> : <TruncatedLabel text={entry.label} />)}
           </button>
           </Tooltip>
         );
       })}
       {overflow.length > 0 && (
-        <div ref={moreRef} className="relative">
+        <div ref={moreRef} className="relative" onKeyDown={onMoreKeyDown}>
           <Tooltip content="More app views" disabled={moreOpen}>
             <button
+              ref={moreButtonRef}
               type="button"
               aria-haspopup="menu"
               aria-expanded={moreOpen}
@@ -535,15 +599,11 @@ export function ChromeSidebar() {
   const reviewEnabled = inlineItems.some((e) => e.manifest.id === 'review');
 
   // Every open goes through launchApp, so a plain open ends a visit that Needs you started.
+  // Group Projects opens its hub (all groups); any open group closes. Every other entry is a plain app view.
   const openAppItem = useCallback((id: string, params?: AppLaunchParams) => {
-    // App views are this machine's (#3065): nothing on screen would say they showed another one.
-    returnToThisMachine();
-    useChromeStore.getState().launchApp(id, params);
-    useChromeStore.getState().closeNewAgent();
-    closeDispatcher();
-    setExplorerTab(`plugin:app:${id}`);
-    reportChromeFeature('app_item_open');
-  }, [setExplorerTab]);
+    if (id === GROUP_PROJECTS_VIEW_ID) openGroupProjectsHub();
+    else openAppView(id, params);
+  }, []);
   // Needs you > Review shows only the agents waiting on you, for this visit (#2021).
   const openNeedsYouReview = useCallback(() => {
     openAppItem('review', { needsYouOnly: true });
