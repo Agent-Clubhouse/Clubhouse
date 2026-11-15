@@ -2,6 +2,7 @@ import * as path from 'path';
 import * as fs from 'fs';
 import { app, BrowserWindow, ipcMain, powerMonitor, session, net, protocol } from 'electron';
 import { cleanupTranscriptStaging } from './services/agent-runtime/chat-transcript';
+import { sweepHandoffQuarantines } from './services/handoff-quarantine';
 import { scheduleChatMediaPrune } from './services/agent-runtime/chat-media-retention';
 import { registerAllHandlers } from './ipc';
 import { configurePluginMcpHost } from './ipc/plugin-mcp-handlers';
@@ -237,6 +238,7 @@ installClientCertificatePolicy(app);
 
 app.on('ready', () => {
   void cleanupTranscriptStaging();
+  void sweepHandoffQuarantines();
   // Chat media is capped across agents (#2828); check once a few minutes after startup.
   scheduleChatMediaPrune(5 * 60_000);
   // Pre-warm the shell environment cache in background so the first agent

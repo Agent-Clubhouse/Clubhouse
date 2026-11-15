@@ -2,7 +2,6 @@ import { execFile } from 'child_process';
 import { promisify } from 'util';
 import * as fs from 'fs';
 import * as path from 'path';
-import { randomUUID } from 'crypto';
 import { devNull } from 'os';
 import { normalizeGitRemote } from '../../shared/git-remote';
 import type { HandoffTransferBounds } from '../../shared/handoff-manifest';
@@ -12,6 +11,7 @@ import { openHandoffRepository, verifyHandoffSnapshot, HandoffSnapshotError, typ
 import { scanHandoffGitHistory } from './handoff-git-bundle';
 import { handoffGitPlatformFlags, reportHandoffGitFailure } from './handoff-git-diagnostics';
 import { handoffGitFile, handoffGitLocation } from './handoff-git-paths';
+import { createHandoffQuarantine } from './handoff-quarantine';
 const exec = promisify(execFile);
 
 /** Acquires objects only after receiver-side checks. It never checks out or alters an existing branch. */
@@ -35,17 +35,20 @@ export async function receiveHandoffCommit(options: {
   const before = await fs.promises.lstat(snapshot.root, { bigint: true });
   if (!before.isDirectory() || before.isSymbolicLink()) throw new HandoffSnapshotError('invalid_staging');
   const root = await fs.promises.realpath(snapshot.root);
-  const quarantine = path.join(root, `quarantine-${randomUUID()}`);
+  const ownedQuarantine = await createHandoffQuarantine(root);
+  const quarantine = ownedQuarantine.directory;
   const hooks = path.join(quarantine, 'hooks'); const config = path.join(quarantine, 'empty-config');
-  await fs.promises.mkdir(quarantine, { mode: 0o700 }); await fs.promises.mkdir(hooks, { mode: 0o700 }); await fs.promises.writeFile(config, '', { mode: 0o600 });
   const flags = ['--no-replace-objects', '-c', `core.hooksPath=${hooks}`, '-c', 'core.fsmonitor=false', '-c', 'protocol.ext.allow=never', '-c', 'fetch.fsckObjects=true', '-c', 'transfer.fsckObjects=true'];
   const check = async () => {
     await options.authorize(); secretPolicy?.assertCurrent();
     const current = await fs.promises.lstat(root, { bigint: true });
     if (!current.isDirectory() || current.isSymbolicLink() || current.dev !== before.dev || current.ino !== before.ino) throw new HandoffSnapshotError('source_changed');
+    await ownedQuarantine.assertCurrent();
     await repository.assertCurrent();
   };
   try {
+    await fs.promises.mkdir(hooks, { mode: 0o700 });
+    await fs.promises.writeFile(config, '', { mode: 0o600, flag: 'wx' });
     let source: 'existing' | 'remote' | 'bundle' = 'existing';
     if (!await hasCommit()) {
       const bare = path.join(quarantine, 'repo');
@@ -68,8 +71,8 @@ export async function receiveHandoffCommit(options: {
           throw reported;
         }
       };
-      // Preserve UUID ownership while separating Windows' process cwd limit
-      // from Git's 220-byte explicit GIT_DIR guard.
+      // Keep process startup and Git's explicit GIT_DIR setup within their
+      // independent Windows limits, including when quarantine uses another drive.
       await read(['init', '--bare', '--template=', location.gitDir]);
       const readBare = (args: string[], diagnostics: { expected?: boolean } = {}) => read([`--git-dir=${location.gitDir}`, ...args], diagnostics);
       let acquired = false;
@@ -114,7 +117,6 @@ export async function receiveHandoffCommit(options: {
     if (!await hasCommit()) throw new HandoffSnapshotError('hash_mismatch');
     return { commit, source };
   } finally {
-    const current = await fs.promises.lstat(root, { bigint: true });
-    if (current.isDirectory() && !current.isSymbolicLink() && current.dev === before.dev && current.ino === before.ino) await fs.promises.rm(quarantine, { recursive: true, force: true });
+    await ownedQuarantine.cleanup();
   }
 }
