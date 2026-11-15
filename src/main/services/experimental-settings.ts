@@ -74,9 +74,9 @@ export function savedSettingsUnreadable(): boolean {
 const fileUnreadableNow = (): boolean => peekStoredSettingsSync(FILENAME) === 'unreadable';
 
 /**
- * Saves queued or being written by this process. A write truncates the file
- * first, so until it finishes a read can see part of it, which isn't a broken
- * file. Meanwhile the answer stays what it was before they started.
+ * Saves queued or being written by this process. Until the atomic replacement
+ * commits, an unreadable original remains unreadable. Keep the answer from
+ * before the queued saves until they finish.
  */
 let savesInFlight = 0;
 let unreadableBeforeSaves = false;

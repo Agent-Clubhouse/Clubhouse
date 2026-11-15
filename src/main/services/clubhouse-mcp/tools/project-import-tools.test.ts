@@ -1077,7 +1077,7 @@ describe('public Dispatcher repository import (#2808)', () => {
       let revoked = false;
       const stage = vi.spyOn(fs.promises, 'open').mockImplementation(async (...params) => {
         const handle = await open(...params);
-        if (String(params[0]).startsWith(connectionFile + '.tmp-')) {
+        if (String(params[0]).startsWith(path.join(path.dirname(connectionFile), '.connection-grants.json.tmp-'))) {
           const sync = handle.sync.bind(handle);
           vi.spyOn(handle, 'sync').mockImplementation(async () => {
             await sync();

@@ -9,6 +9,7 @@ import * as os from 'os';
 import { McpServerEntry, SkillEntry, AgentTemplateEntry, PermissionsConfig, ProjectAgentDefaults, LaunchWrapperConfig, McpCatalogEntry, WrapperCatalogSnapshot } from '../../shared/types';
 import { appLog } from './log-service';
 import { pathExists } from './fs-utils';
+import { replaceFile } from './settings-store';
 import { validateCommandPrefix } from './command-prefix-validation';
 
 const LOG_NS = 'core:agent-settings';
@@ -264,13 +265,37 @@ async function settingsMutation<T>(projectPath: string, run: () => Promise<T>): 
   try { return await run(); } finally { state.pending--; }
 }
 
-async function writeSettings(projectPath: string, settings: ProjectSettings): Promise<void> {
-  return settingsMutation(projectPath, () => writeSettingsInner(projectPath, settings));
+// Every read-modify-write shares this queue, including source-folder discovery.
+const settingsWrites = new Map<string, Promise<void>>();
+function updateSettings<T>(projectPath: string, update: (settings: ProjectSettings) => T | Promise<T>): Promise<T> {
+  const key = path.resolve(projectPath);
+  return settingsMutation(projectPath, () => {
+    const previous = settingsWrites.get(key);
+    const run = async () => {
+      const settings = await readSettings(projectPath);
+      const value = await update(settings);
+      // null means the caller found nothing to change.
+      if (value !== null) await writeSettings(projectPath, settings);
+      return value;
+    };
+    const result = previous ? previous.then(run) : run();
+    const settled = result.then((): void => undefined, (): void => undefined);
+    settingsWrites.set(key, settled);
+    void settled.then(() => { if (settingsWrites.get(key) === settled) settingsWrites.delete(key); });
+    return result;
+  });
 }
-async function writeSettingsInner(projectPath: string, settings: ProjectSettings): Promise<void> {
+
+async function writeSettings(projectPath: string, settings: ProjectSettings): Promise<void> {
   const dir = path.join(projectPath, '.clubhouse');
+  const file = path.join(dir, 'settings.json');
   await fsp.mkdir(dir, { recursive: true });
-  await fsp.writeFile(path.join(dir, 'settings.json'), JSON.stringify(settings, null, 2), 'utf-8');
+  try {
+    await fsp.copyFile(file, `${file}.bak`);
+  } catch (err) {
+    if (!isEnoent(err)) throw err;
+  }
+  await replaceFile(file, JSON.stringify(settings, null, 2), undefined);
 }
 
 export async function listSourceSkills(projectPath: string): Promise<SkillEntry[]> {
@@ -456,12 +481,10 @@ export async function createSkillDir(basePath: string, name: string, isSource: b
     const projectPath = path.resolve(basePath, '..', '..');
     // Only if basePath is under .clubhouse/
     if (basePath.includes(path.join('.clubhouse', ''))) {
-      const settings = await readSettings(projectPath);
-      if (!settings.defaultSkillsPath) {
-        const relative = path.relative(path.join(projectPath, '.clubhouse'), basePath);
-        settings.defaultSkillsPath = relative;
-        await writeSettings(projectPath, settings);
-      }
+      await updateSettings(projectPath, (settings): void | null => {
+        if (settings.defaultSkillsPath) return null;
+        settings.defaultSkillsPath = path.relative(path.join(projectPath, '.clubhouse'), basePath);
+      });
     }
   }
 
@@ -483,12 +506,10 @@ export async function createAgentTemplateDir(basePath: string, name: string, isS
   if (isSource) {
     const projectPath = path.resolve(basePath, '..', '..');
     if (basePath.includes(path.join('.clubhouse', ''))) {
-      const settings = await readSettings(projectPath);
-      if (!settings.defaultAgentsPath) {
-        const relative = path.relative(path.join(projectPath, '.clubhouse'), basePath);
-        settings.defaultAgentsPath = relative;
-        await writeSettings(projectPath, settings);
-      }
+      await updateSettings(projectPath, (settings): void | null => {
+        if (settings.defaultAgentsPath) return null;
+        settings.defaultAgentsPath = path.relative(path.join(projectPath, '.clubhouse'), basePath);
+      });
     }
   }
 
@@ -771,47 +792,28 @@ const PROJECT_DEFAULTS_AUDIT_CATALOG: Readonly<Record<keyof ProjectAgentDefaults
  * Write project-level agent defaults to .clubhouse/settings.json.
  */
 export async function writeProjectAgentDefaults(projectPath: string, defaults: ProjectAgentDefaults): Promise<void> {
-  return settingsMutation(projectPath, () => defaultsWriteQueue(projectPath, () => writeProjectAgentDefaultsInner(projectPath, defaults)));
+  await updateProjectAgentDefaults(projectPath, () => defaults);
 }
 
-/**
- * Read, change and write a project's defaults with no other defaults write in
- * between, so a change to one field can't undo a newer change to another (#3244).
- * Every writer goes through here (#3262). `update` returns null to write nothing.
- */
+/** Change project defaults within the same queue as every other settings writer. */
 export async function updateProjectAgentDefaults(
   projectPath: string,
   update: (current: ProjectAgentDefaults) => ProjectAgentDefaults | null,
 ): Promise<ProjectAgentDefaults | null> {
-  return settingsMutation(projectPath, () => defaultsWriteQueue(projectPath, async () => {
-    const next = update(await readProjectAgentDefaults(projectPath));
-    if (next) await writeProjectAgentDefaultsInner(projectPath, next);
-    return next;
-  }));
-}
-
-const defaultsWrites = new Map<string, Promise<void>>();
-function defaultsWriteQueue<T>(projectPath: string, run: () => Promise<T>): Promise<T> {
-  const key = path.resolve(projectPath);
-  const previous = defaultsWrites.get(key);
-  const result = previous ? previous.then(run) : run();
-  const settled: Promise<void> = result.then((): void => undefined, (): void => undefined);
-  defaultsWrites.set(key, settled);
-  void settled.then((): void => { if (defaultsWrites.get(key) === settled) defaultsWrites.delete(key); });
-  return result;
-}
-async function writeProjectAgentDefaultsInner(projectPath: string, defaults: ProjectAgentDefaults): Promise<void> {
-  if (defaults.commandPrefix) {
-    validateCommandPrefix(defaults.commandPrefix);
+  let previous: ProjectAgentDefaults = {};
+  const next = await updateSettings(projectPath, (settings) => {
+    previous = settings.agentDefaults ?? {};
+    const defaults = update(previous);
+    if (!defaults) return null;
+    if (defaults.commandPrefix) validateCommandPrefix(defaults.commandPrefix);
+    settings.agentDefaults = defaults;
+    return defaults;
+  });
+  if (next) {
+    await auditChanges('project', 'project.defaults', projectAuditTarget(projectPath), previous as Record<string, unknown>, next as Record<string, unknown>, PROJECT_DEFAULTS_AUDIT_CATALOG);
+    if (next.helperAuto !== previous.helperAuto) noteRoutingPolicyChanged();
   }
-  const settings = await readSettings(projectPath);
-  const previousAuto = settings.agentDefaults?.helperAuto;
-  const previous = settings.agentDefaults ?? {};
-  settings.agentDefaults = defaults;
-  await writeSettings(projectPath, settings);
-  await auditChanges('project', 'project.defaults', projectAuditTarget(projectPath), previous as Record<string, unknown>, defaults as Record<string, unknown>, PROJECT_DEFAULTS_AUDIT_CATALOG);
-  // A project's `off` decides Auto (#2671).
-  if (defaults.helperAuto !== previousAuto) noteRoutingPolicyChanged();
+  return next;
 }
 
 function jsonEscapedWildcards(ctx: WildcardContext): WildcardContext {
@@ -929,31 +931,31 @@ export async function readDefaultMcps(projectPath: string): Promise<string[]> {
  * Pass undefined to remove the wrapper.
  */
 export async function writeLaunchWrapper(projectPath: string, wrapper: LaunchWrapperConfig | undefined): Promise<void> {
-  const settings = await readSettings(projectPath);
-  if (wrapper) {
-    settings.launchWrapper = wrapper;
-  } else {
-    delete settings.launchWrapper;
-  }
-  await writeSettings(projectPath, settings);
+  await updateSettings(projectPath, (settings) => {
+    if (wrapper) {
+      settings.launchWrapper = wrapper;
+    } else {
+      delete settings.launchWrapper;
+    }
+  });
 }
 
 /**
  * Write the MCP catalog to .clubhouse/settings.json.
  */
 export async function writeMcpCatalog(projectPath: string, catalog: McpCatalogEntry[]): Promise<void> {
-  const settings = await readSettings(projectPath);
-  settings.mcpCatalog = catalog;
-  await writeSettings(projectPath, settings);
+  await updateSettings(projectPath, (settings) => {
+    settings.mcpCatalog = catalog;
+  });
 }
 
 /**
  * Write project default MCP IDs to .clubhouse/settings.json.
  */
 export async function writeDefaultMcps(projectPath: string, mcpIds: string[]): Promise<void> {
-  const settings = await readSettings(projectPath);
-  settings.defaultMcps = mcpIds;
-  await writeSettings(projectPath, settings);
+  await updateSettings(projectPath, (settings) => {
+    settings.defaultMcps = mcpIds;
+  });
 }
 
 /**
@@ -970,13 +972,13 @@ export async function readWrapperCatalogSnapshot(projectPath: string): Promise<W
  * Pass undefined to remove the snapshot.
  */
 export async function writeWrapperCatalogSnapshot(projectPath: string, snapshot: WrapperCatalogSnapshot | undefined): Promise<void> {
-  const settings = await readSettings(projectPath);
-  if (snapshot) {
-    settings.wrapperCatalogSnapshot = snapshot;
-  } else {
-    delete settings.wrapperCatalogSnapshot;
-  }
-  await writeSettings(projectPath, settings);
+  await updateSettings(projectPath, (settings) => {
+    if (snapshot) {
+      settings.wrapperCatalogSnapshot = snapshot;
+    } else {
+      delete settings.wrapperCatalogSnapshot;
+    }
+  });
 }
 
 export async function readMcpConfigs(projectPath: string): Promise<Record<string, Record<string, string>>> {
@@ -985,11 +987,11 @@ export async function readMcpConfigs(projectPath: string): Promise<Record<string
 }
 
 export async function writeMcpConfigs(projectPath: string, configs: Record<string, Record<string, string>>): Promise<void> {
-  const settings = await readSettings(projectPath);
-  if (Object.keys(configs).length > 0) {
-    settings.mcpConfigs = configs;
-  } else {
-    delete settings.mcpConfigs;
-  }
-  await writeSettings(projectPath, settings);
+  await updateSettings(projectPath, (settings) => {
+    if (Object.keys(configs).length > 0) {
+      settings.mcpConfigs = configs;
+    } else {
+      delete settings.mcpConfigs;
+    }
+  });
 }

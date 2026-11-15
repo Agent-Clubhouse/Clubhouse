@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import * as fs from 'fs';
 import * as fsp from 'fs/promises';
+import { atomicFsPromises } from '../../../test/atomic-fs-mock';
 
 // Mock electron before importing
 vi.mock('electron', () => ({
@@ -39,6 +40,8 @@ describe('sound-service', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     resetAllSettingsStoresForTests();
+    Object.assign(fs.promises, atomicFsPromises(fs.promises.writeFile));
+    vi.mocked(fs.readdirSync).mockReturnValue([]);
 
     // Default: readFileSync throws (file not found)
     vi.mocked(fs.readFileSync).mockImplementation(() => {

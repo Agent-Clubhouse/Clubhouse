@@ -3,12 +3,20 @@ import { describe, it, expect, beforeEach, vi } from 'vitest';
 import * as path from 'path';
 
 vi.mock('fs/promises', () => ({
+  copyFile: vi.fn(async () => {}),
   readFile: vi.fn(),
   writeFile: vi.fn(),
   mkdir: vi.fn(),
   readdir: vi.fn(() => Promise.resolve([])),
   rm: vi.fn(),
   unlink: vi.fn(),
+}));
+
+vi.mock('./settings-store', () => ({
+  replaceFile: async (file: string, body: string) => {
+    const fs = await import('fs/promises');
+    await fs.writeFile(file, body, 'utf-8');
+  },
 }));
 
 vi.mock('./fs-utils', () => ({

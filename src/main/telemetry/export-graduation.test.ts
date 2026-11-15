@@ -71,12 +71,28 @@ function exportAttempts(): number {
 
 /** Writes to this one settings file fail; everything else goes through. */
 function failWritesTo(name: string): void {
-  const realWrite = fs.promises.writeFile;
-  vi.spyOn(fs.promises, 'writeFile').mockImplementation((target, ...rest) => (
+  const realRename = fs.promises.rename;
+  vi.spyOn(fs.promises, 'rename').mockImplementation((source, target) => (
     String(target).endsWith(name)
       ? Promise.reject(new Error('disk full'))
-      : realWrite(target, ...rest as [string])
+      : realRename(source, target)
   ));
+}
+
+/** Hold the commit after the temp file is complete; readers still see the original. */
+function holdSettingsRename(name: string): { release: () => void; staged: () => boolean } {
+  const realRename = fs.promises.rename;
+  let release: () => void = () => undefined;
+  const held = new Promise<void>((resolve) => { release = resolve; });
+  let staged = false;
+  vi.spyOn(fs.promises, 'rename').mockImplementation(async (source, target) => {
+    if (!staged && String(target).endsWith(name)) {
+      staged = true;
+      await held;
+    }
+    return realRename(source, target);
+  });
+  return { release, staged: () => staged };
 }
 
 /** One run of the app, as far as telemetry's startup goes. */
@@ -501,7 +517,7 @@ describe('a failed save', () => {
     expect(getTelemetrySettings().destinations.some((d) => d.enabled)).toBe(false);
     setFramebriarTelemetrySource(null);
 
-    vi.mocked(fs.promises.writeFile).mockRestore();
+    vi.mocked(fs.promises.rename).mockRestore();
     await launchAndWaitForMarker();
     expect(readSaved().destinations).toEqual(expectedOff(raw, true).map((d) => (d.kind === 'framebriar' ? { ...d, confirmedHost: FB_HOST } : d)));
     expect(exportAttempts()).toBe(0);
@@ -616,7 +632,7 @@ describe('a saved false always wins', () => {
     expect(isTelemetryConfigured()).toBe(false);
     expect(exportAttempts()).toBe(0);
 
-    vi.mocked(fs.promises.writeFile).mockRestore();
+    vi.mocked(fs.promises.rename).mockRestore();
     await upgradeAndWaitForOff();
     expect(readSaved().destinations.find((d) => d.kind === 'framebriar')?.framebriar).toEqual({ userOff: true });
     expect(exportAttempts()).toBe(0);
@@ -646,7 +662,7 @@ describe('a saved false always wins', () => {
       // This run is back on the saved value too, so nothing reads a true that never landed.
       expect(experimentalSettings.getStoredSettings().telemetry).toBe(false);
 
-      vi.mocked(fs.promises.writeFile).mockRestore();
+      vi.mocked(fs.promises.rename).mockRestore();
       await control.setEnabled(id, true, ack);
       expect(entryOf(id).enabled).toBe(true);
       await vi.waitFor(() => expect(savedFlags().telemetry).toBe(true));
@@ -845,7 +861,7 @@ describe('an unreadable flag file', () => {
     });
   });
 
-  it('with nothing active: nothing suspended, nothing written, no copy', async () => {
+  it('with nothing active: nothing suspended or rewritten, and unreadable flags preserved', async () => {
     seedGate(undefined, true);
     corruptFlags();
     writeJson(SETTINGS_FILE, graduated(otlp(false), framebriar({ userOff: true })));
@@ -854,7 +870,7 @@ describe('an unreadable flag file', () => {
     await new Promise((resolve) => setTimeout(resolve, 50));
     expect(getTelemetrySettings().exportSuspended).toBeUndefined();
     expect(readText(SETTINGS_FILE)).toBe(bytes);
-    expect(recoveryCopies()).toEqual([]);
+    expect(recoveryCopies()).toEqual([`${FLAG_FILE}.unreadable`]);
   });
 
   it('a fresh install is unaffected, with no telemetry file written', async () => {
@@ -979,7 +995,7 @@ describe('an unreadable flag file', () => {
     expect(isTelemetryConfigured()).toBe(false);
     expect(exportAttempts()).toBe(0);
 
-    vi.mocked(fs.promises.writeFile).mockRestore();
+    vi.mocked(fs.promises.rename).mockRestore();
     await launch();
     await vi.waitFor(() => expect(readSaved().exportSuspended).toBe('flag_unreadable'));
     expect(exportAttempts()).toBe(0);
@@ -998,7 +1014,7 @@ describe('an unreadable flag file', () => {
       expect(readSaved().exportSuspended).toBeUndefined();
       await experimentalSettings.saveSettings({ themeGradients: true });
       await vi.waitFor(() => expect(JSON.parse(readText(FLAG_FILE)).themeGradients).toBe(true));
-      vi.mocked(fs.promises.writeFile).mockRestore();
+      vi.mocked(fs.promises.rename).mockRestore();
     }
 
     /** A launch where the pause can't be saved, and it isn't. */
@@ -1011,7 +1027,7 @@ describe('an unreadable flag file', () => {
       expect(getTelemetrySettings().exportSuspended).toBe('flag_unreadable');
       expect(exportAttempts()).toBe(0);
     }
-    const endFailures = () => vi.mocked(fs.promises.writeFile).mockRestore();
+    const endFailures = () => vi.mocked(fs.promises.rename).mockRestore();
 
     it.each([2, 3])('%i unrelated saves in one run keep the marker, on disk and in memory', async (saves) => {
       seedGate(undefined, true);
@@ -1145,24 +1161,14 @@ describe('an unreadable flag file', () => {
       seedGate(true, true);
       writeJson(SETTINGS_FILE, graduated(otlp(true), framebriar()));
       await launch();
-      const realWrite = fs.promises.writeFile;
-      let release: () => void = () => undefined;
-      const held = new Promise<void>((resolve) => { release = resolve; });
-      let first = true;
-      vi.spyOn(fs.promises, 'writeFile').mockImplementation(async (target, data, options) => {
-        if (first && String(target).endsWith(FLAG_FILE)) {
-          first = false;
-          // A real write truncates first: this is what's on disk while it runs.
-          fs.writeFileSync(String(target), String(data).slice(0, 5));
-          await held;
-        }
-        return realWrite(target, data, options as never);
-      });
+      const held = holdSettingsRename(FLAG_FILE);
+      const original = readText(FLAG_FILE);
 
       const firstSave = experimentalSettings.saveSettings({ themeGradients: true });
-      await vi.waitFor(() => expect(readText(FLAG_FILE)).toHaveLength(5));
+      await vi.waitFor(() => expect(held.staged()).toBe(true));
+      expect(readText(FLAG_FILE)).toBe(original);
       const secondSave = experimentalSettings.saveSettings({ themeGradients: false });
-      release();
+      held.release();
       await Promise.all([firstSave, secondSave]);
 
       expect(JSON.parse(readText(FLAG_FILE))).toEqual({ telemetry: true, themeGradients: false });
@@ -1193,11 +1199,11 @@ describe('an unreadable flag file', () => {
 
     it('over a corrupt file, keeps a choice it can\'t read from being guessed away, in the same write', async () => {
       await paused();
-      const writes = vi.spyOn(fs.promises, 'writeFile');
+      const writes = vi.spyOn(fs.promises, 'rename');
       await control.resumeExport();
-      const flagWrites = writes.mock.calls.filter(([target]) => String(target).endsWith(FLAG_FILE));
+      const flagWrites = writes.mock.calls.filter(([, target]) => String(target).endsWith(FLAG_FILE));
       expect(flagWrites).toHaveLength(1);
-      expect(JSON.parse(String(flagWrites[0][1]))).toEqual({ telemetry: true, chat: false, richChatContent: false, newChrome: false });
+      expect(JSON.parse(readText(FLAG_FILE))).toEqual({ telemetry: true, chat: false, richChatContent: false, newChrome: false });
       await launch();
       expect(experimentalSettings.isGraduatedFeatureOn('chat')).toBe(false);
       expect(experimentalSettings.isGraduatedFeatureOn('richChatContent')).toBe(false);
@@ -1223,10 +1229,10 @@ describe('an unreadable flag file', () => {
 
     it('a save that fails once, over a corrupt file, leaves the file as it was: it stays paused', async () => {
       await paused();
-      vi.spyOn(fs.promises, 'writeFile').mockImplementationOnce(() => Promise.reject(new Error('disk full')));
+      vi.spyOn(fs.promises, 'rename').mockImplementationOnce(() => Promise.reject(new Error('disk full')));
       vi.spyOn(console, 'error').mockImplementation(() => undefined);
       expect(await control.resumeExport()).toMatchObject({ ok: false, reason: 'opt_in_not_saved' });
-      vi.mocked(fs.promises.writeFile).mockRestore();
+      vi.mocked(fs.promises.rename).mockRestore();
       expect(readText(FLAG_FILE)).toBe(RAW);
       expect(experimentalSettings.getStoredSettings()).not.toHaveProperty('telemetry');
       await launch();
@@ -1314,37 +1320,22 @@ describe('the renderer doesn\'t own the telemetry flag', () => {
 describe('reading the flags while this process is writing them', () => {
   const FLAG_FILE = 'experimental-settings.json';
 
-  /** The next write of the flags file leaves part of itself on disk, as a real write does, until released. */
-  function holdNextWrite(): () => void {
-    const realWrite = fs.promises.writeFile;
-    let release: () => void = () => undefined;
-    const held = new Promise<void>((resolve) => { release = resolve; });
-    let first = true;
-    vi.spyOn(fs.promises, 'writeFile').mockImplementation(async (target, data, options) => {
-      if (first && String(target).endsWith(FLAG_FILE)) {
-        first = false;
-        fs.writeFileSync(String(target), String(data).slice(0, 5));
-        await held;
-      }
-      return realWrite(target, data, options as never);
-    });
-    return release;
-  }
-
   it('a healthy file isn\'t taken for unreadable: the structured-mode notice saving at startup can\'t skip the chat tip or turn chat off', async () => {
     seedGate(undefined, true);
     writeJson(FLAG_FILE, { structuredModeRemovedNotice: true, themeGradients: true });
     resetAllSettingsStoresForTests();
-    const release = holdNextWrite();
+    const original = readText(FLAG_FILE);
+    const held = holdSettingsRename(FLAG_FILE);
 
     const saving = experimentalSettings.saveSettings({ themeGradients: true });
-    await vi.waitFor(() => expect(readText(FLAG_FILE)).toHaveLength(5));
+    await vi.waitFor(() => expect(held.staged()).toBe(true));
+    expect(readText(FLAG_FILE)).toBe(original);
 
     expect(experimentalSettings.savedSettingsUnreadable()).toBe(false);
     expect(experimentalSettings.getSettingsForRenderer()).not.toHaveProperty('chat');
     expect(experimentalSettings.isGraduatedFeatureOn('chat')).toBe(true);
 
-    release();
+    held.release();
     await saving;
     expect(experimentalSettings.savedSettingsUnreadable()).toBe(false);
   });
@@ -1353,31 +1344,40 @@ describe('reading the flags while this process is writing them', () => {
     seedGate(undefined, true);
     fs.writeFileSync(userDataPath(FLAG_FILE), '{broken');
     resetAllSettingsStoresForTests();
-    const release = holdNextWrite();
+    const original = readText(FLAG_FILE);
+    const held = holdSettingsRename(FLAG_FILE);
 
     const saving = experimentalSettings.saveSettings({ themeGradients: true });
     expect(experimentalSettings.savedSettingsUnreadable()).toBe(true);
-    await vi.waitFor(() => expect(readText(FLAG_FILE)).toHaveLength(5));
+    await vi.waitFor(() => expect(held.staged()).toBe(true));
+    expect(readText(FLAG_FILE)).toBe(original);
     expect(experimentalSettings.savedSettingsUnreadable()).toBe(true);
     expect(experimentalSettings.isGraduatedFeatureOn('chat')).toBe(false);
 
-    release();
+    held.release();
     await saving;
     expect(experimentalSettings.savedSettingsUnreadable()).toBe(false);
     expect(experimentalSettings.isGraduatedFeatureOn('chat')).toBe(false);
   });
 
-  it('a write that fails part way shows as unreadable afterwards: nothing hides a real one', async () => {
+  it('a failed temp write leaves the original flags readable', async () => {
     seedGate(undefined, true);
     writeJson(FLAG_FILE, { themeGradients: true });
     resetAllSettingsStoresForTests();
     vi.spyOn(console, 'error').mockImplementation(() => undefined);
-    vi.spyOn(fs.promises, 'writeFile').mockImplementationOnce(async (target) => {
-      fs.writeFileSync(String(target), '{"them');
-      throw new Error('disk full');
+    const realOpen = fs.promises.open;
+    vi.spyOn(fs.promises, 'open').mockImplementationOnce(async (...args) => {
+      const handle = await realOpen(...args);
+      const write = handle.writeFile.bind(handle);
+      vi.spyOn(handle, 'writeFile').mockImplementationOnce(async () => {
+        await write('{"them');
+        throw new Error('disk full');
+      });
+      return handle;
     });
     await expect(experimentalSettings.saveSettings({ themeGradients: false })).rejects.toThrow('disk full');
-    expect(experimentalSettings.savedSettingsUnreadable()).toBe(true);
+    expect(experimentalSettings.savedSettingsUnreadable()).toBe(false);
+    expect(JSON.parse(readText(FLAG_FILE))).toEqual({ themeGradients: true });
   });
 });
 
@@ -1390,7 +1390,7 @@ describe('a failed save of the experimental flags, through the real store', () =
     resetAllSettingsStoresForTests();
     vi.spyOn(console, 'error').mockImplementation(() => undefined);
   });
-  const failNextWrite = () => vi.spyOn(fs.promises, 'writeFile').mockImplementationOnce(() => Promise.reject(new Error('disk full')));
+  const failNextWrite = () => vi.spyOn(fs.promises, 'rename').mockImplementationOnce(() => Promise.reject(new Error('disk full')));
 
   it('doesn\'t stay in memory: a page opened again reads what\'s saved', async () => {
     failNextWrite();
@@ -1403,7 +1403,7 @@ describe('a failed save of the experimental flags, through the real store', () =
   it('doesn\'t get written by the next save, which starts from a fresh read', async () => {
     failNextWrite();
     await expect(experimentalSettings.saveSettings({ themeGradients: true })).rejects.toThrow('disk full');
-    vi.mocked(fs.promises.writeFile).mockRestore();
+    vi.mocked(fs.promises.rename).mockRestore();
     await experimentalSettings.saveSettings({ ...experimentalSettings.getSettings(), chat: true });
     expect(saved()).toEqual({ telemetry: true, themeGradients: false, chat: true });
   });
