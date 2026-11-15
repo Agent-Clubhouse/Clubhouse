@@ -612,6 +612,133 @@ describe('canvas main', () => {
       },
     );
 
+    it.each(['write', 'read'])('opens remote after a hung local %s and ignores its late completion', async (kind) => {
+      const storage = memoryStorage();
+      const api = createMockAPI({
+        context: { mode: 'app', projectId: undefined, projectPath: undefined },
+        storage: { project: storage, projectLocal: storage, global: storage },
+      });
+      const store = canvasModule.useAppCanvasStore;
+      act(() => { useUIStore.setState({ activeHostId: null }); store.setState({ autosaveFailed: false }); });
+      const panel = render(React.createElement(canvasModule.MainPanel, { api }));
+      await waitFor(() => expect(storage.read).toHaveBeenCalledWith('canvas-wires'));
+      let release!: () => void;
+      const gate = new Promise<void>((resolve) => { release = resolve; });
+      const read = storage.read.getMockImplementation()!;
+      const write = storage.write.getMockImplementation()!;
+      storage.read.mockImplementation(async (key) => { if (kind === 'read' && key === 'canvas-instances') await gate; return read(key); });
+      storage.write.mockImplementation(async (key, value) => { if (kind === 'write' && key === 'canvas-instances-backup') await gate; return write(key, value); });
+      vi.useFakeTimers();
+      try {
+        act(() => { store.getState().addView('agent', { x: 7, y: 9 }); });
+        const edits = store.getState().canvases;
+        act(() => {
+          useRemoteProjectStore.setState({ remoteAppCanvasState: { 'hung-satellite': {
+            canvases: [{ ...edits[0], id: 'remote-hung-board', views: [] }], activeCanvasId: 'remote-hung-board', wireDefinitions: [],
+          } } });
+          useUIStore.setState({ activeHostId: 'hung-satellite' });
+        });
+        await act(async () => { await vi.advanceTimersByTimeAsync(5_001); });
+        expect(store.getState().dataOrigin).toBe('remote');
+        expect(store.getState().activeCanvasId).toBe('remote-hung-board');
+        expect(store.getState().autosaveFailed).toBe(true);
+        await act(async () => { release(); await gate; });
+        vi.useRealTimers();
+        await act(async () => { await Promise.resolve(); });
+        expect(store.getState().autosaveFailed).toBe(true);
+        act(() => { useUIStore.setState({ activeHostId: null }); });
+        expect(await screen.findByText('Canvas changes not saved')).toBeTruthy();
+        expect(store.getState().canvases).toBe(edits);
+        for (const [, value] of storage.write.mock.calls) expect(JSON.stringify(value)).not.toContain('remote-hung-board');
+        fireEvent.click(screen.getByText('Retry'));
+        await waitFor(() => expect(screen.queryByText('Canvas changes not saved')).toBeNull());
+      } finally {
+        release();
+        vi.useRealTimers();
+        panel.unmount();
+        act(() => { useUIStore.setState({ activeHostId: null }); });
+      }
+    });
+
+    it('keeps the remote canvas when a superseded local reload completes later', async () => {
+      const storage = memoryStorage();
+      const api = createMockAPI({
+        context: { mode: 'app', projectId: undefined, projectPath: undefined },
+        storage: { project: storage, projectLocal: storage, global: storage },
+      });
+      const store = canvasModule.useAppCanvasStore;
+      const local = { ...store.getState().canvases[0], id: 'local-race', views: [] };
+      storage.files.set('canvas-instances', [local]);
+      act(() => {
+        store.setState({ autosaveFailed: false });
+        useRemoteProjectStore.setState({ remoteAppCanvasState: { 'race-satellite': {
+          canvases: [{ ...local, id: 'remote-race' }], activeCanvasId: 'remote-race', wireDefinitions: [],
+        } } });
+        useUIStore.setState({ activeHostId: 'race-satellite' });
+      });
+      const panel = render(React.createElement(canvasModule.MainPanel, { api }));
+      await waitFor(() => expect(store.getState().dataOrigin).toBe('remote'));
+      let release!: () => void;
+      const gate = new Promise<void>((resolve) => { release = resolve; });
+      const read = storage.read.getMockImplementation()!;
+      storage.read.mockImplementation(async (key) => { if (key === 'canvas-instances') await gate; return read(key); });
+      try {
+        act(() => { useUIStore.setState({ activeHostId: null }); });
+        await waitFor(() => expect(storage.read).toHaveBeenCalledWith('canvas-instances'));
+        act(() => { useUIStore.setState({ activeHostId: 'race-satellite' }); });
+        await act(async () => { await Promise.resolve(); });
+        await act(async () => { release(); await gate; });
+        expect(store.getState().dataOrigin).toBe('remote');
+        expect(store.getState().activeCanvasId).toBe('remote-race');
+        expect(screen.queryByText('Loading canvas...')).toBeNull();
+        expect(storage.write).not.toHaveBeenCalled();
+      } finally {
+        panel.unmount();
+        act(() => { useUIStore.setState({ activeHostId: null }); });
+      }
+    });
+
+    it('shows the recovery notice and keeps newer disk data when returning from remote', async () => {
+      const storage = memoryStorage();
+      const api = createMockAPI({
+        context: { mode: 'app', projectId: undefined, projectPath: undefined },
+        storage: { project: storage, projectLocal: storage, global: storage },
+      });
+      const store = canvasModule.useAppCanvasStore;
+      act(() => { useUIStore.setState({ activeHostId: null }); store.setState({ autosaveFailed: false, unsavedRecoveryCopy: false }); });
+      const panel = render(React.createElement(canvasModule.MainPanel, { api }));
+      await waitFor(() => expect(storage.read).toHaveBeenCalledWith('canvas-wires'));
+      const write = storage.write.getMockImplementation()!;
+      let failing = true;
+      storage.write.mockImplementation(async (key, value) => { if (failing && key === 'canvas-instances-backup') throw new Error('disk full'); return write(key, value); });
+      act(() => { store.getState().addView('agent', { x: 1, y: 2 }); });
+      const local = store.getState();
+      act(() => {
+        useRemoteProjectStore.setState({ remoteAppCanvasState: { 'recovery-satellite': {
+          canvases: [{ ...local.canvases[0], id: 'remote-recovery', views: [] }], activeCanvasId: 'remote-recovery', wireDefinitions: [],
+        } } });
+        useUIStore.setState({ activeHostId: 'recovery-satellite' });
+      });
+      try {
+        await waitFor(() => expect(store.getState().dataOrigin).toBe('remote'));
+        const newer = [{ ...local.canvases[0], views: [{ ...local.views[0], id: 'newer-on-disk' }] }];
+        storage.files.set('canvas-instances', newer);
+        storage.files.set('canvas-instances-backup', newer);
+        failing = false;
+        act(() => { useUIStore.setState({ activeHostId: null }); });
+        expect(await screen.findByText('Your unsaved canvas changes were kept as a recovery copy.')).toBeTruthy();
+        expect(store.getState().views.map((v) => v.id)).toEqual(['newer-on-disk']);
+        expect(screen.queryByText('Canvas changes not saved')).toBeNull();
+        expect(screen.queryByText(/canvas-unsaved-copy-/)).toBeNull();
+        const copies = [...storage.files.keys()].filter((key) => key.startsWith('canvas-unsaved-copy-'));
+        expect(copies).toHaveLength(1);
+        expect(storage.files.get(copies[0])).toEqual(expect.objectContaining({ version: 1, canvases: local.canvases }));
+        expect(storage.files.get('canvas-instances')).toBe(newer);
+      } finally {
+        panel.unmount();
+      }
+    });
+
     it('keeps failed local project edits in their own store while visiting a satellite project', async () => {
       const { api, store, storage, mountAndLoad } = setup('project-remote-flush');
       const panel = await mountAndLoad();

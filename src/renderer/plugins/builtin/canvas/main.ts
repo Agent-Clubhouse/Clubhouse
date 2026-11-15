@@ -3,6 +3,7 @@ import type { PluginContext, PluginAPI, PluginModule, CanvasWidgetFilter } from 
 import type { CanvasMutation } from '../../../../shared/types';
 import type { CanvasView, CanvasViewType, AgentCanvasView } from './canvas-types';
 import { createCanvasStore } from './canvas-store';
+import { withCanvasPersistenceTimeout } from './canvas-persistence-timeout';
 import { canPlaceAgentCard, queueAgentCard, takeAgentCards, subscribeAgentCards, placeAgentCard, canvasOfView, type PendingAgentCard } from './agent-card-queue';
 import { findAgentCard } from './canvas-operations';
 import { isDispatcherAgent } from '../../../features/dispatcher/dispatcherStore';
@@ -72,6 +73,23 @@ export const useAppCanvasStore = createCanvasStore();
 /** Saves still writing, per canvas store, so a remount reads after them. */
 const inflightSaves = new WeakMap<object, Promise<unknown>>();
 const flushResults = new WeakMap<object, Promise<unknown>>();
+const timedOutSaves = new WeakSet<Promise<unknown>>();
+
+async function waitForSaveBeforeSwitch(store: ReturnType<typeof createCanvasStore>): Promise<void> {
+  const saving = inflightSaves.get(store);
+  if (!saving) return;
+  const result = flushResults.get(store);
+  if (result && timedOutSaves.has(result)) return;
+  try {
+    await withCanvasPersistenceTimeout(saving);
+  } catch (error) {
+    // The writer may finish later. It still owns only its captured local data,
+    // and must not clear the retained failure after the panel has switched.
+    if (result) timedOutSaves.add(result);
+    store.setState({ autosaveFailed: true });
+    rendererLog('canvas', 'error', 'Canvas changes not saved', { meta: { error: error instanceof Error ? error.message : String(error) } });
+  }
+}
 
 // Project-mode canvas stores: one per project, keyed by projectId
 const projectCanvasStores = new Map<string, ReturnType<typeof createCanvasStore>>();
@@ -198,6 +216,7 @@ export function MainPanel({ api }: { api: PluginAPI }) {
   const wiresLoaded = store((s) => s.wiresLoaded);
   const loadError = store((s) => s.loadError);
   const autosaveFailed = store((s) => s.autosaveFailed);
+  const unsavedRecoveryCopy = store((s) => s.unsavedRecoveryCopy);
   const wireDefinitions = store((s) => s.wireDefinitions);
   const zoneWireDefinitions = store((s) => s.zoneWireDefinitions);
   const minimapAutoHide = store((s) => s.minimapAutoHide);
@@ -268,7 +287,7 @@ export function MainPanel({ api }: { api: PluginAPI }) {
       void (async () => {
         // Wait for both writers and their failure status before replacing the
         // local store. hydrateFromRemote retains failed local edits + guards.
-        await inflightSaves.get(store);
+        await waitForSaveBeforeSwitch(store);
         if (cancelled) return;
         remoteHydrationReadyRef.current = true;
         // Read the latest snapshot after the wait, including any live updates
@@ -287,12 +306,14 @@ export function MainPanel({ api }: { api: PluginAPI }) {
     // access to the loaded canvas views.
     (async () => {
       // A save flushed by the previous mount may still be writing; read after it.
-      await inflightSaves.get(store);
+      await waitForSaveBeforeSwitch(store);
       if (cancelled) return;
-      store.getState().restoreFailedLocalState();
+      const restored = await store.getState().restoreFailedLocalState(storage);
+      if (cancelled) return;
       // Keep the only in-memory copy of edits whose last save failed.
-      if (!store.getState().autosaveFailed || store.getState().dataOrigin !== 'local') {
+      if (!restored && (!store.getState().autosaveFailed || store.getState().dataOrigin !== 'local')) {
         await store.getState().loadCanvas(storage);
+        if (cancelled) return;
         await store.getState().loadWires(storage);
       }
       if (!cancelled) setHydrated(true);
@@ -354,9 +375,9 @@ export function MainPanel({ api }: { api: PluginAPI }) {
       });
       flushResults.set(store, saving);
       inflightSaves.set(store, saving.then(() => {
-        if (flushResults.get(store) === saving) store.setState({ autosaveFailed: false });
+        if (flushResults.get(store) === saving && !timedOutSaves.has(saving)) store.setState({ autosaveFailed: false });
       }, (error: unknown) => {
-        if (flushResults.get(store) === saving) store.setState({ autosaveFailed: true });
+        if (flushResults.get(store) === saving && !timedOutSaves.has(saving)) store.setState({ autosaveFailed: true });
         rendererLog('canvas', 'error', 'Canvas changes not saved', {
           meta: { error: error instanceof Error ? error.message : String(error) },
         });
@@ -797,6 +818,9 @@ export function MainPanel({ api }: { api: PluginAPI }) {
       onPopOutCanvas: handlePopOutCanvas,
       onExportBlueprint: handleExportBlueprint,
     }),
+    unsavedRecoveryCopy && !isRemote && !isRemoteApp
+      ? React.createElement('div', { role: 'status', className: 'px-3 py-1 text-xs text-ctp-subtext0' }, 'Your unsaved canvas changes were kept as a recovery copy.')
+      : null,
     autosaveFailed && !isRemote && !isRemoteApp
       ? React.createElement('div', { role: 'status', className: 'flex items-center gap-2 px-3 py-1 text-xs text-ctp-subtext0' },
           React.createElement('span', null, 'Canvas changes not saved'),

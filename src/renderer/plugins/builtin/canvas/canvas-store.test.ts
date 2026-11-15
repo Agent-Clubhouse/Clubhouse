@@ -1455,7 +1455,7 @@ describe('canvas store: remote then local', () => {
     }
   });
 
-  it('saves the local zone wires a save captured before the store went remote', async () => {
+  it('stops a late local save before further writes once the store went remote', async () => {
     let releaseBackup!: () => void;
     const backupWrite = new Promise<void>((r) => { releaseBackup = r; });
     const { storage, files } = memory();
@@ -1474,10 +1474,10 @@ describe('canvas store: remote then local', () => {
     // The store goes remote while the save is writing.
     store.getState().hydrateFromRemote([REMOTE_CANVAS], 'REMOTE-CANVAS', [REMOTE_WIRE], [REMOTE_ZONE_WIRE]);
     releaseBackup();
-    await saving;
+    await expect(saving).rejects.toThrow('Canvas source changed');
 
     const zoneWires = JSON.stringify(files.get('canvas-zone-wires'));
-    expect(zoneWires).toContain(local.id);
+    expect(zoneWires).not.toContain(local.id);
     expect(zoneWires).not.toContain('REMOTE-ZONE-WIRE');
     expect(JSON.stringify(files.get('canvas-instances'))).not.toContain('REMOTE-CANVAS');
   });
