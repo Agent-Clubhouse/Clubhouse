@@ -201,6 +201,20 @@ driver directly. A managed Codex agent gets its MCP parts as `-c` launch
 flags in the terminal and session config in chat. Codex can still add a
 trusted folder's project-layer servers on top of those.
 
+Terminal and headless Codex agents get the bridge only as `-c` launch flags,
+like chat, and their hooks too (`-c hooks.<Event>=…`, #1728). Before every
+Codex start, in any runtime, Clubhouse cleans up what an older version left
+in `.codex`. It strips Clubhouse entries from `hooks.json`, and deletes
+`config.toml` only when the whole file is exactly one Clubhouse wrote on its
+own (the bridge alone, in one of its historical forms). It never edits part
+of a TOML file, so an older worktree whose bridge file someone changed keeps
+it, and keeps Codex's trust warning. A folder is removed only when empty.
+Hook trust is covered in the **Agent providers** help page.
+
+On Windows the eight hook flags add about 2.5-2.9k characters to the launch
+line, which cmd.exe caps at 8191. Collapsing them into one `-c hooks={…}`
+value would save under 100, since each event repeats the command.
+
 The same JSON configuration rules apply on macOS, Linux and Windows. Validation
 uses synthetic configuration and an in-memory driver, with no provider/server
 processes, authentication, grants, scans or app restarts.

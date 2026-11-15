@@ -13,7 +13,9 @@ import { launchAccessFor, providerAccessLevel, resolveHelperAccess, type AgentLa
 const mockSnapshotFile = vi.fn();
 const mockRestoreForAgent = vi.fn();
 const mockGetHooksConfigPath = vi.fn(() => '/project/.claude/settings.local.json');
+const mockStripClubhouseHooksFromFile = vi.fn(async () => false);
 vi.mock('./config-pipeline', () => ({
+  stripClubhouseHooksFromFile: (...args: unknown[]) => mockStripClubhouseHooksFromFile(...args),
   snapshotFile: (...args: unknown[]) => mockSnapshotFile(...args),
   restoreForAgent: (...args: unknown[]) => mockRestoreForAgent(...args),
   getHooksConfigPath: (...args: unknown[]) => mockGetHooksConfigPath(...args),
@@ -118,6 +120,7 @@ vi.mock('./agent-runtime/chat-spawn', async (importOriginal) => {
 });
 
 const mockCleanupStaleJsonInTomlConfigs = vi.fn();
+const mockStripLegacyClubhouseBridgeToml = vi.fn(async () => false);
 const mockDeliverForSpawn = vi.fn(async () => {});
 const mockQuickLaunchFor = vi.fn();
 vi.mock('./managed-agents', () => ({
@@ -135,6 +138,7 @@ vi.mock('./agent-mcp-servers', () => ({
 }));
 vi.mock('./toml-config-cleanup', () => ({
   cleanupStaleJsonInTomlConfigs: (...args: unknown[]) => mockCleanupStaleJsonInTomlConfigs(...args),
+  stripLegacyClubhouseBridgeToml: (...args: unknown[]) => mockStripLegacyClubhouseBridgeToml(...args),
 }));
 
 // Mock agent-settings-service
@@ -1182,12 +1186,14 @@ describe('agent-system', () => {
       expect(env).toMatchObject({ CLUBHOUSE_AGENT_ID: 'agent-1', CLUBHOUSE_HOOK_NONCE: nonce, CLUBHOUSE_MCP_PORT: '23456' });
       expect(args.join(' ')).not.toContain(nonce);
       // injectClubhouseMcp(cwd, agentId, port, conventions): no nonce argument.
-      expect(mockInjectClubhouseMcp).toHaveBeenCalledTimes(1);
-      const injectArgs = (mockInjectClubhouseMcp.mock.calls[0] as unknown[]);
-      expect(injectArgs.slice(0, 3)).toEqual(['/project/worktree', 'agent-1', 23456]);
-      // Nothing decides whether it's injected: every agent gets the bridge.
-      expect(injectArgs).toHaveLength(4);
-      expect(JSON.stringify(injectArgs)).not.toContain(nonce);
+      // Codex gets the bridge only as launch flags, never in .codex/config.toml (#1728).
+      expect(mockInjectClubhouseMcp).toHaveBeenCalledTimes(orchestrator === 'codex-cli' ? 0 : 1);
+      for (const injectArgs of mockInjectClubhouseMcp.mock.calls as unknown[][]) {
+        expect(injectArgs.slice(0, 3)).toEqual(['/project/worktree', 'agent-1', 23456]);
+        // Nothing decides whether it's injected: every agent gets the bridge.
+        expect(injectArgs).toHaveLength(4);
+        expect(JSON.stringify(injectArgs)).not.toContain(nonce);
+      }
       // Codex takes MCP servers as `-c` launch flags built from this definition.
       if (orchestrator === 'codex-cli') expect(mockBuildClubhouseMcpDef).toHaveBeenCalled();
       for (const call of mockBuildClubhouseMcpDef.mock.calls as unknown[][]) {
@@ -1259,6 +1265,77 @@ describe('agent-system', () => {
       );
     });
 
+    it('passes Codex hooks as launch flags before trailingArgs, with no hook file snapshotted (#1728)', async () => {
+      const codex = mockCodexProvider as unknown as Record<string, unknown>;
+      const caps = mockCodexProvider.getCapabilities;
+      codex.getCapabilities = vi.fn(() => ({ ...caps(), hooks: true }));
+      codex.writeHooksConfig = vi.fn(() => Promise.resolve());
+      const buildHookArgs = vi.fn(() => ['-c', 'hooks.Stop=[]']);
+      codex.buildHookArgs = buildHookArgs;
+      mockIsHookServerEnabled.mockReturnValue(true);
+      mockSnapshotFile.mockClear();
+      mockStripClubhouseHooksFromFile.mockClear();
+      mockGetHooksConfigPath.mockReturnValue('/project/.codex/hooks.json');
+      mockMcpWaitReady.mockResolvedValueOnce(23456);
+      (mockCodexProvider.buildSpawnCommand as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
+        binary: '/usr/local/bin/codex',
+        args: ['--full-auto'],
+        trailingArgs: ['Fix the bug'],
+      });
+      try {
+        await spawnAgent({ agentId: 'agent-1', projectPath: '/project', cwd: '/project', kind: 'durable', orchestrator: 'codex-cli', mission: 'Fix the bug' });
+      } finally {
+        codex.getCapabilities = caps;
+        delete codex.writeHooksConfig;
+        delete codex.buildHookArgs;
+        mockGetHooksConfigPath.mockReturnValue('/project/.claude/settings.local.json');
+      }
+      expect(buildHookArgs).toHaveBeenCalledWith('http://127.0.0.1:12345/hook');
+      // Older entries are stripped once per start, before the runtime is chosen.
+      expect(mockStripClubhouseHooksFromFile).toHaveBeenCalledTimes(1);
+      expect(mockStripClubhouseHooksFromFile).toHaveBeenCalledWith('/project/.codex/hooks.json');
+      expect(mockPtySpawn.mock.calls.at(-1)![3]).toEqual(['--full-auto', '-c', 'mcp_servers.clubhouse.command=node', '-c', 'hooks.Stop=[]', 'Fix the bug']);
+      for (const call of mockSnapshotFile.mock.calls) expect(String(call[1])).not.toContain(path.join('.codex', 'hooks.json'));
+    });
+
+    it.each(['chat', 'headless', 'terminal'] as const)('cleans up what an older Clubhouse left in .codex before a %s start, hooks off (#1728)', async (mode) => {
+      const codex = mockCodexProvider as unknown as Record<string, unknown>;
+      const caps = mockCodexProvider.getCapabilities;
+      codex.getCapabilities = vi.fn(() => ({ ...caps(), hooks: true }));
+      codex.writeHooksConfig = vi.fn(() => Promise.resolve());
+      codex.buildHookArgs = vi.fn(() => []);
+      mockIsHookServerEnabled.mockReturnValue(false);
+      mockGetHooksConfigPath.mockReturnValue('/project/.codex/hooks.json');
+      if (mode === 'headless') {
+        mockGetSpawnMode.mockReturnValueOnce('headless' as never);
+        codex.buildHeadlessCommand = vi.fn(() => Promise.resolve({ binary: 'codex', args: ['exec'], env: {}, outputKind: 'stream-json' as const }));
+      }
+      mockStripLegacyClubhouseBridgeToml.mockClear();
+      mockStripClubhouseHooksFromFile.mockClear();
+      mockTryStartChatAgent.mockClear();
+      mockPtySpawn.mockClear();
+      if (mode === 'chat') mockTryStartChatAgent.mockResolvedValueOnce(true);
+      try {
+        await spawnAgent({ agentId: 'agent-1', projectPath: '/project', cwd: '/project', kind: mode === 'headless' ? 'quick' : 'durable', orchestrator: 'codex-cli', mission: 'Go' } as never);
+      } finally {
+        codex.getCapabilities = caps;
+        delete codex.writeHooksConfig;
+        delete codex.buildHookArgs;
+        delete codex.buildHeadlessCommand;
+        mockIsHookServerEnabled.mockReturnValue(true);
+        mockGetHooksConfigPath.mockReturnValue('/project/.claude/settings.local.json');
+        untrackAgent('agent-1');
+      }
+      expect(mockStripLegacyClubhouseBridgeToml).toHaveBeenCalledWith('/project', mockCodexProvider.conventions);
+      expect(mockStripClubhouseHooksFromFile).toHaveBeenCalledWith('/project/.codex/hooks.json');
+      // Before the runtime is chosen, so a chat start gets it too.
+      if (mode === 'chat') {
+        expect(mockTryStartChatAgent).toHaveBeenCalled();
+        expect(mockPtySpawn).not.toHaveBeenCalledWith('agent-1', expect.anything(), expect.anything(), expect.anything(), expect.anything(), expect.anything(), expect.anything());
+        expect(mockStripClubhouseHooksFromFile.mock.invocationCallOrder[0]).toBeLessThan(mockTryStartChatAgent.mock.invocationCallOrder[0]);
+      }
+    });
+
     it('appends nothing extra when the provider has no trailingArgs', async () => {
       mockMcpWaitReady.mockResolvedValueOnce(23456);
       (mockCodexProvider.buildSpawnCommand as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
@@ -1321,7 +1398,9 @@ describe('agent-system', () => {
       withConfig(own);
       await spawn();
       expect(mockEnsureMcpBridge).toHaveBeenCalled();
-      expect(mockInjectClubhouseMcp).toHaveBeenCalledTimes(1);
+      // Codex's bridge is the launch flag, with nothing written to .codex/config.toml (#1728).
+      expect(mockInjectClubhouseMcp).not.toHaveBeenCalled();
+      expect(mockSnapshotFile).not.toHaveBeenCalledWith('agent-1', path.join('/project', '.codex', 'config.toml'));
       expect(Object.keys(flagsFromBuild()!).sort()).toEqual(['clubhouse', 'github']);
     });
 
@@ -1381,7 +1460,6 @@ describe('agent-system', () => {
 
       it('always gets the bridge, which its hooks share the nonce with', async () => {
         await quick();
-        expect(mockInjectClubhouseMcp).toHaveBeenCalled();
         expect(Object.keys(flagsFromBuild()!).sort()).toEqual(['clubhouse', 'workiq']);
         const env = mockPtySpawn.mock.calls.at(-1)![4] as Record<string, string>;
         expect(env.CLUBHOUSE_HOOK_NONCE).toBe(agentRegistry.get('quick-1')?.nonce);
@@ -1426,7 +1504,7 @@ describe('agent-system', () => {
     it('does not start a helper whose MCP config could not be written', async () => {
       withConfig({ parentAgentId: 'orch-1' });
       mockInjectClubhouseMcp.mockRejectedValueOnce(new Error('EACCES'));
-      await expect(spawn()).rejects.toThrow(/needs Clubhouse MCP.*EACCES/);
+      await expect(spawnAgent({ agentId: 'agent-1', projectPath: '/project', cwd: '/project', kind: 'durable' })).rejects.toThrow(/needs Clubhouse MCP.*EACCES/);
       expect(mockPtySpawn).not.toHaveBeenCalled();
     });
 
@@ -1491,7 +1569,9 @@ describe('agent-system', () => {
       expect(Object.keys((mcpArgs.mock.calls[0] as unknown[])[0] as Record<string, unknown>)).toEqual(['clubhouse']);
       expect(mockBuildClubhouseMcpDef).toHaveBeenCalledWith(23456, 'quick-1');
       expect(mockHeadlessSpawn.mock.calls.at(-1)![3]).toEqual(['-p', 'mission', '--mcp-flag']);
-      expect(mockInjectClubhouseMcp).toHaveBeenCalledWith('/project/parent-wt', 'quick-1', 23456, provider.conventions);
+      // Codex reads MCP only from launch flags, so nothing goes in .codex/config.toml (#1728).
+      if (orchestrator === 'codex-cli') expect(mockInjectClubhouseMcp).not.toHaveBeenCalled();
+      else expect(mockInjectClubhouseMcp).toHaveBeenCalledWith('/project/parent-wt', 'quick-1', 23456, provider.conventions);
     });
 
     it('starts without the bridge when it isn\'t up, after asking for it again', async () => {

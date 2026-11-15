@@ -836,6 +836,8 @@ describe('Provider integration tests', () => {
     ])('%s: writes an identical hook command whatever port the server bound', async (_name, make) => {
       const provider = make();
       const capture = async (port: number) => {
+        // Codex takes its hooks as launch flags (#1728), so those are what Codex hashes.
+        if (provider instanceof CodexCliProvider) return provider.buildHookArgs(`http://127.0.0.1:${port}/hook`).join('\n');
         vi.mocked(fsp.writeFile).mockClear();
         await provider.writeHooksConfig('/project', `http://127.0.0.1:${port}/hook`);
         const call = vi.mocked(fsp.writeFile).mock.calls.at(-1)!;

@@ -20,7 +20,7 @@ import * as configPipeline from './config-pipeline';
 import { getDurableConfig, addSessionEntry, updateDurableConfig } from './agent-config';
 import type { QuickManagedLaunch } from './managed-agents/delivery';
 import { isDisposedAgent, isEffortValue } from '../../shared/agent-helpers';
-import { cleanupStaleJsonInTomlConfigs } from './toml-config-cleanup';
+import { cleanupStaleJsonInTomlConfigs, stripLegacyClubhouseBridgeToml } from './toml-config-cleanup';
 import { readProjectAgentDefaults, readLaunchWrapper, readDefaultMcps, readMcpConfigs } from './agent-settings-service';
 import { applyLaunchWrapper, validateWrapperConfig } from '../orchestrators/shared';
 import type { DurableAgentConfig, LaunchWrapperConfig, FreeAgentPermissionMode, QuickTemplateChoice } from '../../shared/types';
@@ -460,6 +460,11 @@ async function spawnAgentInner(inParams: SpawnAgentParams, facts: SpawnFacts, ma
     if (provider.conventions.settingsFormat === 'toml') {
       try {
         await cleanupStaleJsonInTomlConfigs(params.cwd, provider.conventions);
+        await stripLegacyClubhouseBridgeToml(params.cwd, provider.conventions);
+        // Every Codex start, whatever the runtime or hook setting: hook entries an
+        // older Clubhouse wrote, and a .codex folder that leaves empty (#1728).
+        const hooksPath = isHookCapable(provider) && provider.buildHookArgs ? configPipeline.getHooksConfigPath(provider, params.cwd) : null;
+        if (hooksPath) await configPipeline.stripClubhouseHooksFromFile(hooksPath);
       } catch (err) {
         appLog('core:agent', 'warn', 'TOML config cleanup failed, continuing spawn', {
           meta: { agentId: params.agentId, error: err instanceof Error ? err.message : String(err) },
@@ -781,7 +786,8 @@ async function spawnAgentInner(inParams: SpawnAgentParams, facts: SpawnFacts, ma
         // first, restored on exit), which Claude reads, and in the launch flags
         // for CLIs that take MCP servers only that way (Codex, Copilot).
         const mcpPort = await waitMcpBridgeReady().catch(() => 0);
-        if (mcpPort > 0) {
+        // Not for a TOML CLI (Codex): the launch flags below are its only path (#1728).
+        if (mcpPort > 0 && provider.conventions.settingsFormat !== 'toml') {
           const mcpConfigPath = path.join(params.cwd, provider.conventions.mcpConfigFile || '.mcp.json');
           configPipeline.snapshotFile(params.agentId, mcpConfigPath);
           await tel.step('clubhouse.mcp.inject', () => injectClubhouseMcp(params.cwd, params.agentId, mcpPort, provider.conventions)).catch((err) => {
@@ -933,7 +939,9 @@ async function spawnPtyAgent(
 
   // Snapshot hooks config before writing so we can restore on exit
   const hookConfigPath = configPipeline.getHooksConfigPath(provider, params.cwd);
-  if (hookConfigPath && !managed) {
+  // Hooks that go in as launch flags (Codex) leave no file to restore, and a
+  // snapshot would put back the old entries writeHooksConfig strips.
+  if (hookConfigPath && !managed && !(isHookCapable(provider) && provider.buildHookArgs)) {
     configPipeline.snapshotFile(params.agentId, hookConfigPath);
   }
 
@@ -948,9 +956,11 @@ async function spawnPtyAgent(
       durableConfig = await getDurableConfig(params.projectPath, params.agentId);
     } catch { /* config not available */ }
   }
-  // Snapshot MCP config for all formats — TOML injection is now supported
-  // and the config-pipeline restore logic handles both JSON and TOML files.
-  if (!managed) {
+  // A TOML CLI (Codex) takes the bridge only as launch flags (buildMcpArgs),
+  // as in chat. Writing it into .codex/config.toml too only made a folder
+  // Codex asks the user to trust (#1728).
+  const injectMcpFile = provider.conventions.settingsFormat !== 'toml';
+  if (!managed && injectMcpFile) {
     configPipeline.snapshotFile(params.agentId, mcpJsonPath);
   }
 
@@ -960,6 +970,7 @@ async function spawnPtyAgent(
 
   // Run hook server setup, MCP bridge setup, and command building in parallel.
   let mcpPort = 0;
+  let hookArgs: string[] = [];
   const [, , spawnCmd] = await tel.step('clubhouse.agent.prepare_pty', () => Promise.all([
     managed ? Promise.resolve() : waitHookServerReady().then((port) => tel.step('clubhouse.hooks.configure', async () => {
       // Inject Clubhouse hooks only when the provider supports them AND the
@@ -971,11 +982,12 @@ async function spawnPtyAgent(
         facts.hooksEnabled = true;
         const hookUrl = `http://127.0.0.1:${port}/hook`;
         await provider.writeHooksConfig(params.cwd, hookUrl);
+        hookArgs = provider.buildHookArgs?.(hookUrl) ?? [];
       }
     })),
     managed ? Promise.resolve() : waitMcpBridgeReady().then((port) => tel.step('clubhouse.mcp.inject', async () => {
       mcpPort = port;
-      await injectClubhouseMcp(params.cwd, params.agentId, port, provider.conventions);
+      if (injectMcpFile) await injectClubhouseMcp(params.cwd, params.agentId, port, provider.conventions);
     })).catch((err) => {
       // A helper without the bridge couldn't report to its parent, so it doesn't start (#2610).
       if (durableConfig?.parentAgentId) throw helperMcpError(err);
@@ -1043,6 +1055,7 @@ async function spawnPtyAgent(
       })];
     }
   }
+  if (hookArgs.length > 0) args = [...args, ...hookArgs];
   // trailingArgs (e.g. Codex's bare mission prompt) must come after any
   // dynamically-injected flags above, not before — see SpawnCommandResult.
   if (spawnCmd.trailingArgs && spawnCmd.trailingArgs.length > 0) {
