@@ -281,13 +281,21 @@ describe('headless-manager', () => {
     it('ends a replaced run as interrupted before the new run starts and ignores its late close', async () => {
       const events: AppEvent[] = [];
       onAppEvent((event) => events.push(event));
-      await spawnHeadless('test-agent', '/project', 'fake-cli', []);
+      const oldPrompt = 'OLD-HEADLESS-PRIVATE-PROMPT';
+      const newPrompt = 'NEW-HEADLESS-PRIVATE-PROMPT';
+      await spawnHeadless('test-agent', '/project', 'fake-cli', ['-p', oldPrompt]);
+      expect(redactActiveRunText(oldPrompt)).not.toContain(oldPrompt);
       const old = mockProcess;
       mockProcess = createMockProcess();
-      await spawnHeadless('test-agent', '/project', 'fake-cli', []);
+      await spawnHeadless('test-agent', '/project', 'fake-cli', ['-p', newPrompt]);
+      // Forget replaced runs without depending on a late (or missing) close.
+      expect(redactActiveRunText(oldPrompt)).toBe(oldPrompt);
+      expect(redactActiveRunText(newPrompt)).not.toContain(newPrompt);
       old.stdout!.emit('data', Buffer.from('{"type":"result","is_error":true}\n'));
       old.emit('close', 1);
+      expect(redactActiveRunText(newPrompt)).not.toContain(newPrompt);
       mockProcess.emit('close', 0);
+      expect(redactActiveRunText(newPrompt)).toBe(newPrompt);
       expect(events.filter((event) => event.type.startsWith('turn.'))).toMatchObject([
         { type: 'turn.started' }, { type: 'turn.ended', outcome: 'interrupted' },
         { type: 'turn.started' }, { type: 'turn.ended', outcome: 'completed' },

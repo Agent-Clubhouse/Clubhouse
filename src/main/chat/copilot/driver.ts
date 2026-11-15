@@ -1137,6 +1137,7 @@ export class CopilotSdkChatDriver implements ChatDriver {
       }
       return session;
     } catch (err) {
+      logRedactor.endRun();
       await client?.forceStop().catch(ignore);
       await server.kill();
       throw err;

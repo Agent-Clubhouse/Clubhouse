@@ -742,6 +742,8 @@ export async function spawnHeadless(
     // End the old turn before the replacement can start emitting. Its late
     // close still flushes the transcript but cannot end the new turn.
     finishHeadlessTurn(sessions.get(agentId)!.turn, 'interrupted');
+    // The old run has ended here even if its child never closes the pipes.
+    sessions.get(agentId)!.logRedactor?.endRun();
   }
 
   await ensureLogsDir();
