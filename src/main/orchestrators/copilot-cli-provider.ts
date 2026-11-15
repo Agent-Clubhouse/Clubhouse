@@ -391,9 +391,9 @@ export class CopilotCliProvider extends BaseProvider implements HookCapable, Hea
    * workspace.yaml (#2156). The old scan looked for flat `<id>.json(l)` files,
    * a layout current Copilot no longer writes, and didn't filter by cwd.
    */
-  async listSessions(cwd: string): Promise<Array<{ sessionId: string; startedAt: string; lastActiveAt: string }>> {
+  async listSessions(cwd: string, options?: { fresh?: boolean }): Promise<Array<{ sessionId: string; startedAt: string; lastActiveAt: string }>> {
     try {
-      return await listCopilotSessions(this.sessionStateDir(), cwd);
+      return await listCopilotSessions(this.sessionStateDir(), cwd, options);
     } catch (err) {
       appLog('core:orchestrator', 'warn', 'Failed to read GHCP session store', {
         meta: { error: err instanceof Error ? err.message : String(err) },

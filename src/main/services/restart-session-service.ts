@@ -86,7 +86,7 @@ export async function captureSessionState(
       // this agent's, because it is the one that was just running in it.
       if (!sessionId) {
         try {
-          const [newest] = await provider.listSessions(cwd);
+          const [newest] = await provider.listSessions(cwd, { fresh: true });
           if (newest) sessionId = newest.sessionId;
           // Nothing on disk for this directory while it was running: it never started one
           else sessionStarted = false;

@@ -1109,7 +1109,12 @@ describe('CopilotCliProvider', () => {
       it('lists sessions for the cwd from ~/.copilot/session-state', async () => {
         vi.mocked(listCopilotSessions).mockResolvedValue([{ sessionId: 'x', startedAt: 'a', lastActiveAt: 'b' }]);
         expect(await provider.listSessions('/project')).toEqual([{ sessionId: 'x', startedAt: 'a', lastActiveAt: 'b' }]);
-        expect(listCopilotSessions).toHaveBeenCalledWith(store, '/project');
+        expect(listCopilotSessions).toHaveBeenCalledWith(store, '/project', undefined);
+      });
+
+      it('passes fresh listing requests through for restart capture', async () => {
+        await provider.listSessions('/project', { fresh: true });
+        expect(listCopilotSessions).toHaveBeenCalledWith(store, '/project', { fresh: true });
       });
 
       it('returns [] when the store read throws', async () => {
@@ -1154,7 +1159,7 @@ describe('CopilotCliProvider', () => {
           process.env.COPILOT_HOME = '/proc-copilot';
           vi.mocked(getShellEnvironment).mockReturnValue({ COPILOT_HOME: '/custom-copilot' });
           await provider.listSessions('/wt');
-          expect(listCopilotSessions).toHaveBeenCalledWith(custom, '/wt');
+          expect(listCopilotSessions).toHaveBeenCalledWith(custom, '/wt', undefined);
         });
 
         it('expands a leading ~', async () => {
