@@ -1,6 +1,11 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import type { PluginManifest } from '../../shared/plugin-types';
 
+// Fixtures enter through the same external-plugin gate as disk manifests.
+vi.mock('fs', async (original) => ({ ...await original<typeof import('fs')>(), readFileSync: vi.fn(() => 'true') }));
+vi.mock('../services/plugin-discovery', () => ({ discoverCommunityPlugins: vi.fn(async () => []) }));
+vi.mock('../services/plugin-storage', () => ({ getGlobalPluginDataDir: () => '/plugin-data' }));
+
 vi.mock('electron', () => ({
   ipcMain: { handle: vi.fn(), on: vi.fn(), removeHandler: vi.fn(), removeListener: vi.fn() },
   BrowserWindow: { fromWebContents: vi.fn() },
@@ -25,7 +30,7 @@ import {
   resolvePluginToolCall,
 } from '../services/clubhouse-mcp/plugin-tool-registry';
 import { _resetForTesting as resetTokens, resolveToken } from '../services/clubhouse-mcp/plugin-mcp-tokens';
-import { clear as clearManifests, registerTrustedManifest } from '../services/plugin-manifest-registry';
+import { clear as clearManifests, registerTrustedManifest, initializeTrustedManifests } from '../services/plugin-manifest-registry';
 import { IPC } from '../../shared/ipc-channels';
 import { _resetForTesting as resetHandlers, configurePluginMcpHost, documentUrl, registerPluginMcpHandlers } from './plugin-mcp-handlers';
 
@@ -73,11 +78,12 @@ describe('plugin-mcp-handlers', () => {
     return await handler(IPC.PLUGIN_MCP.ISSUE_TOKEN)(p.event, s, pluginId) as string;
   }
 
-  beforeEach(() => {
+  beforeEach(async () => {
     vi.clearAllMocks();
     resetTokens();
     resetHandlers();
     clearManifests();
+    await initializeTrustedManifests();
     vi.mocked(BrowserWindow.fromWebContents).mockReturnValue({} as never);
     registerTrustedManifest('plugin-a', manifest('plugin-a', ['mcp.tools']));
     registerTrustedManifest('plugin-b', manifest('plugin-b', ['mcp.tools']));

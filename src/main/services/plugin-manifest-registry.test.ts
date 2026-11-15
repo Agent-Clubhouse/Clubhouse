@@ -49,10 +49,12 @@ function makeManifest(overrides: Partial<PluginManifest> = {}): PluginManifest {
 }
 
 describe('plugin-manifest-registry', () => {
-  beforeEach(() => {
+  beforeEach(async () => {
     delete process.env.CLUBHOUSE_SAFE_MODE;
     vi.clearAllMocks();
     clear();
+    vi.mocked(fs.readFileSync).mockReturnValue('true');
+    await initializeTrustedManifests();
   });
 
   it('returns undefined for unregistered plugin', () => {
@@ -69,7 +71,7 @@ describe('plugin-manifest-registry', () => {
     it('registers and retrieves a manifest', () => {
       const manifest = makeManifest({ allowedCommands: ['git', 'node'] });
       registerTrustedManifest('test-plugin', manifest);
-      expect(getManifest('test-plugin')).toBe(manifest);
+      expect(getManifest('test-plugin')).toEqual(manifest);
     });
 
     it('returns allowedCommands from trusted manifest', () => {
@@ -142,6 +144,47 @@ describe('plugin-manifest-registry', () => {
     });
   });
 
+  it.each(['_system', '_agentconfig', '_agentconfig:owner', '_agentconfigevil'])('never registers reserved manifest ID %s', async (id) => {
+    registerTrustedManifest(id, makeManifest({ id, permissions: ['storage', 'files'] }));
+    expect(getManifest(id)).toBeUndefined();
+    vi.mocked(pluginDiscovery.discoverCommunityPlugins).mockResolvedValue([
+      { manifest: makeManifest({ id, permissions: ['files'] }), pluginPath: '/plugins/fixture', fromMarketplace: false },
+    ]);
+    await initializeTrustedManifests();
+    await refreshManifest(id);
+    expect(getManifest(id)).toBeUndefined();
+  });
+
+  it('removes a previously registered entry when its replacement is invalid', () => {
+    registerTrustedManifest('test-plugin', makeManifest());
+    registerTrustedManifest('test-plugin', { id: 'test-plugin' } as PluginManifest);
+    expect(getManifest('test-plugin')).toBeUndefined();
+  });
+
+  it('rejects a manifest whose ID does not match the registration key', () => {
+    registerTrustedManifest('test-plugin', makeManifest({ id: 'other-plugin' }));
+    expect(getManifest('test-plugin')).toBeUndefined();
+  });
+
+  it('direct registration and refresh cannot bypass safe mode', async () => {
+    process.env.CLUBHOUSE_SAFE_MODE = '1';
+    await initializeTrustedManifests();
+    registerTrustedManifest('test-plugin', makeManifest());
+    registerTrustedManifest('files', makeManifest({ id: 'files' }));
+    await refreshManifest('test-plugin');
+    await refreshManifest('files');
+    expect(getManifest('test-plugin')).toBeUndefined();
+    expect(getManifest('files')).toBeUndefined();
+  });
+
+  it('direct community registration and refresh cannot bypass external support off', async () => {
+    vi.mocked(fs.readFileSync).mockReturnValue('false');
+    await initializeTrustedManifests();
+    registerTrustedManifest('test-plugin', makeManifest());
+    await refreshManifest('test-plugin');
+    expect(getManifest('test-plugin')).toBeUndefined();
+  });
+
   it('loads trusted builtin manifests at initialization', async () => {
     await initializeTrustedManifests();
 
@@ -153,6 +196,9 @@ describe('plugin-manifest-registry', () => {
     expect(getManifest('canvas')).toBeDefined();
     expect(getManifest('sessions')).toBeUndefined();
     expect(getManifest('group-project')).toBeDefined();
+    expect(getManifest('review')).toBeDefined();
+    expect(getManifest('sticky-note')).toBeDefined();
+    expect(getManifest('goobers')).toBeDefined();
   });
 
   it('group-project manifest declares annex permission for canvas-over-annex support', async () => {

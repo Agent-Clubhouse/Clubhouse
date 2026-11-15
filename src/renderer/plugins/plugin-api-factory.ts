@@ -5,7 +5,7 @@ import type {
   PluginManifest,
   PluginContextInfo,
 } from '../../shared/plugin-types';
-import { gated, hasPermission } from './plugin-api-shared';
+import { bindPluginContext, gated, hasPermission } from './plugin-api-shared';
 import { createStorageAPI } from './plugin-api-storage';
 import { createProjectAPI, createProjectsAPI, createGitAPI } from './plugin-api-project';
 import { createUIAPI, createCommandsAPI, createEventsAPI, createNavigationAPI, createWidgetsAPI } from './plugin-api-ui';
@@ -34,6 +34,11 @@ export { _resetBadgeStoreCache } from './plugin-api-badges';
 export { _resetPluginMcpStateForTests } from './plugin-mcp-host';
 
 export function createPluginAPI(ctx: PluginContext, mode?: PluginRenderMode, manifest?: PluginManifest): PluginAPI {
+  // Capture the activation context once. API methods use this ID even if the
+  // caller later mutates its context or borrows a method with a different `this`.
+  // This does not isolate same-realm code from the shared preload bridge (#2080).
+  ctx = bindPluginContext(ctx);
+
   // Ref used to pass the fully-constructed API to createCanvasAPI without a circular reference.
   // By the time a plugin calls api.canvas.registerWidgetType(), api is already assigned.
   const apiRef: { current: PluginAPI | null } = { current: null };

@@ -4,7 +4,7 @@ import { app } from 'electron';
 import type { PluginManifest } from '../../shared/plugin-types';
 import { getGlobalPluginDataDir } from './plugin-storage';
 import * as agentSettings from './agent-settings-service';
-import { registerTrustedManifest } from './plugin-manifest-registry';
+import { getManifest, refreshManifest } from './plugin-manifest-registry';
 import { pathExists } from './fs-utils';
 import { tel } from '../telemetry/facade';
 import { ATTR } from '../../shared/telemetry/attributes';
@@ -67,12 +67,8 @@ export async function discoverCommunityPlugins(): Promise<DiscoveredPlugin[]> {
         const manifest = JSON.parse(raw) as PluginManifest;
         const pluginDir = path.join(pluginsDir, dir.name);
         const fromMarketplace = await pathExists(path.join(pluginDir, '.marketplace'));
-        // Register manifest as trusted in main-process registry.
-        // This is the authoritative source for security-sensitive fields
-        // like allowedCommands — the renderer cannot override these.
-        if (manifest.id) {
-          registerTrustedManifest(manifest.id, manifest);
-        }
+        // Discovery is read-only. Only the registry may validate and admit a
+        // manifest under its safe-mode/external-plugin policy (#1682).
         results.push({
           manifest,
           pluginPath: pluginDir,
@@ -97,28 +93,8 @@ export async function discoverCommunityPlugins(): Promise<DiscoveredPlugin[]> {
  */
 export async function refreshManifestFromDisk(pluginId: string): Promise<PluginManifest | null> {
   assertSafePluginId(pluginId);
-  const pluginsDir = getCommunityPluginsDir();
-  const pluginDir = path.join(pluginsDir, pluginId);
-  const manifestPath = path.join(pluginDir, 'manifest.json');
-
-  try {
-    // Verify the plugin directory is actually inside the plugins directory
-    // to prevent path traversal attacks.
-    const resolvedDir = await fsp.realpath(pluginDir);
-    const resolvedPluginsDir = await fsp.realpath(pluginsDir);
-    if (!resolvedDir.startsWith(resolvedPluginsDir + path.sep) && resolvedDir !== resolvedPluginsDir) {
-      return null;
-    }
-
-    const raw = await fsp.readFile(manifestPath, 'utf-8');
-    const manifest = JSON.parse(raw) as PluginManifest;
-    if (manifest.id) {
-      registerTrustedManifest(manifest.id, manifest);
-    }
-    return manifest;
-  } catch {
-    return null;
-  }
+  await refreshManifest(pluginId);
+  return getManifest(pluginId) ?? null;
 }
 
 /** `clubhouse.plugin.uninstall` (spec §4.11); the id is hashed. */

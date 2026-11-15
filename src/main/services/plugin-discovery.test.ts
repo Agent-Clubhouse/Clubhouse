@@ -19,6 +19,8 @@ vi.mock('./fs-utils', () => ({
 
 vi.mock('./plugin-manifest-registry', () => ({
   registerTrustedManifest: vi.fn(),
+  refreshManifest: vi.fn(async () => {}),
+  getManifest: vi.fn(),
 }));
 
 vi.mock('./agent-settings-service', () => ({
@@ -40,7 +42,7 @@ vi.mock('./agent-settings-service', () => ({
 import * as fsp from 'fs/promises';
 import { pathExists } from './fs-utils';
 import * as agentSettings from './agent-settings-service';
-import { registerTrustedManifest } from './plugin-manifest-registry';
+import { getManifest, refreshManifest, registerTrustedManifest } from './plugin-manifest-registry';
 import {
   discoverCommunityPlugins,
   refreshManifestFromDisk,
@@ -589,7 +591,7 @@ describe('plugin-discovery', () => {
   // ── Trusted manifest registration during discovery ─────────────────
 
   describe('trusted manifest registration', () => {
-    it('registers discovered manifests as trusted during discovery', async () => {
+    it('keeps discovery read-only so it cannot bypass registry policy', async () => {
       vi.mocked(pathExists).mockImplementation(async (p: any) => {
         const s = String(p);
         if (s === PLUGINS_DIR) return true;
@@ -610,10 +612,7 @@ describe('plugin-discovery', () => {
 
       await discoverCommunityPlugins();
 
-      expect(registerTrustedManifest).toHaveBeenCalledWith('my-plugin', expect.objectContaining({
-        id: 'my-plugin',
-        allowedCommands: ['git'],
-      }));
+      expect(registerTrustedManifest).not.toHaveBeenCalled();
     });
 
     it('does not register manifest without an id', async () => {
@@ -642,35 +641,19 @@ describe('plugin-discovery', () => {
   // ── refreshManifestFromDisk ──────────────────────────────────────────
 
   describe('refreshManifestFromDisk', () => {
-    it('reads manifest from disk and registers as trusted', async () => {
-      vi.mocked(fsp.realpath).mockImplementation(async (p: any) => String(p));
-      vi.mocked(fsp.readFile).mockResolvedValue(JSON.stringify({
-        id: 'my-plugin',
-        name: 'My Plugin',
-        version: '2.0.0',
-        engine: { api: 0.9 },
-        scope: 'project',
-        allowedCommands: ['node'],
-      }));
-
-      const result = await refreshManifestFromDisk('my-plugin');
-
-      expect(result).not.toBeNull();
-      expect(result!.id).toBe('my-plugin');
-      expect(result!.allowedCommands).toEqual(['node']);
-      expect(registerTrustedManifest).toHaveBeenCalledWith('my-plugin', expect.objectContaining({
-        id: 'my-plugin',
-        allowedCommands: ['node'],
-      }));
+    it('delegates refresh to the validated and gated registry', async () => {
+      const manifest = { id: 'my-plugin', allowedCommands: ['node'] };
+      vi.mocked(getManifest).mockReturnValue(manifest as any);
+      expect(await refreshManifestFromDisk('my-plugin')).toBe(manifest);
+      expect(refreshManifest).toHaveBeenCalledWith('my-plugin');
+      expect(registerTrustedManifest).not.toHaveBeenCalled();
+      expect(fsp.readFile).not.toHaveBeenCalled();
     });
 
-    it('returns null when manifest file does not exist', async () => {
-      vi.mocked(fsp.realpath).mockImplementation(async (p: any) => String(p));
-      vi.mocked(fsp.readFile).mockRejectedValue(new Error('ENOENT'));
-
-      const result = await refreshManifestFromDisk('nonexistent-plugin');
-
-      expect(result).toBeNull();
+    it('returns null when registry policy excludes the plugin', async () => {
+      vi.mocked(getManifest).mockReturnValue(undefined);
+      expect(await refreshManifestFromDisk('excluded-plugin')).toBeNull();
+      expect(refreshManifest).toHaveBeenCalledWith('excluded-plugin');
       expect(registerTrustedManifest).not.toHaveBeenCalled();
     });
 
@@ -688,14 +671,7 @@ describe('plugin-discovery', () => {
       expect(registerTrustedManifest).not.toHaveBeenCalled();
     });
 
-    it('returns null for invalid JSON in manifest', async () => {
-      vi.mocked(fsp.realpath).mockImplementation(async (p: any) => String(p));
-      vi.mocked(fsp.readFile).mockResolvedValue('{{invalid json');
 
-      const result = await refreshManifestFromDisk('bad-plugin');
-
-      expect(result).toBeNull();
-    });
   });
 });
 

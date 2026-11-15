@@ -204,6 +204,27 @@ describe('plugin-api-factory', () => {
 
   // ── StorageAPI ────────────────────────────────────────────────────────
 
+  it.each([0.7, 0.8, 0.9])('binds normal storage API calls to the captured ctx ID on API %s', async (version) => {
+    const ctx = makeCtx();
+    const api = createPluginAPI(ctx, undefined, makeAllPermsManifest({ engine: { api: version } }));
+    ctx.pluginId = 'other-plugin';
+    for (const storage of [api.storage.project, api.storage.projectLocal, api.storage.global]) {
+      const borrowed = { pluginId: 'other-plugin' };
+      await storage.read.call(borrowed, 'key');
+      await storage.write.call(borrowed, 'key', { pluginId: 'other-plugin' });
+      await storage.delete.call(borrowed, 'key');
+      await storage.list.call(borrowed);
+    }
+    for (const bridge of [mockPlugin.storageRead, mockPlugin.storageWrite, mockPlugin.storageDelete, mockPlugin.storageList]) {
+      expect(bridge).toHaveBeenCalledTimes(3);
+      for (const [req] of bridge.mock.calls) expect(req.pluginId).toBe('test-plugin');
+    }
+    // Context fields exposed to a plugin are informational, not a caller-ID override.
+    api.context.projectId = 'different-project';
+    await api.storage.global.read('key');
+    expect(mockPlugin.storageRead).toHaveBeenLastCalledWith(expect.objectContaining({ pluginId: 'test-plugin' }));
+  });
+
   describe('storage API', () => {
     let api: PluginAPI;
 

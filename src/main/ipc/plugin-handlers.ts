@@ -6,6 +6,7 @@ import * as path from 'path';
 import { IPC } from '../../shared/ipc-channels';
 import type {
   PluginFileRequest,
+  PluginPermission,
   PluginStorageDeleteRequest,
   PluginStorageListRequest,
   PluginStorageReadRequest,
@@ -46,8 +47,59 @@ function pluginScopeArg(value: unknown, argName: string): PluginScope {
   return scope;
 }
 
+/** Host configuration uses this existing KV namespace, including before plugins load. */
+function isHostStorageKey(key: string | undefined): boolean {
+  if (!key || /[/\\\0]/.test(key) || key === '.' || key === '..') return false;
+  return key === 'external-plugins-enabled' || key === 'app-enabled' ||
+    !!key && (key.startsWith('project-enabled-') || key.startsWith('settings-'));
+}
+
+/**
+ * Registry/permission hardening, not authenticated caller identity (#1682).
+ * A malicious same-realm plugin can still call the shared preload bridge with
+ * another registered plugin's ID (including these host namespaces). Execution
+ * isolation is tracked by #2080. Per-plugin Settings toggles are not checked:
+ * activation currently precedes persistence of those lists. The registry does
+ * exclude safe-mode plugins and community plugins when external support is off.
+ */
+function assertPluginDataAccess(
+  req: { pluginId: string; scope: PluginScope; key?: string },
+  permission: 'storage' | 'files',
+  operation: string,
+): void {
+  const refuse = (required: PluginPermission, reason: string): never => {
+    // Do not include request IDs, keys, paths or values in refusal logs/errors.
+    appLog('core:plugins', 'warn', 'Plugin data access refused', {
+      meta: { operation, permission: required, reason },
+    });
+    throw new Error('Plugin data access refused');
+  };
+
+  // Reserved namespaces never fall through to generic manifest authorization,
+  // even if a stale or invalid registry entry once claimed one of these IDs.
+  if (req.pluginId === '_system') {
+    if (permission === 'storage' && req.scope === 'global' &&
+        (operation === 'read' || operation === 'write') && isHostStorageKey(req.key)) return;
+    return refuse(permission, 'reserved namespace');
+  }
+
+  // agentConfig keeps its bookkeeping at the existing project path; only its
+  // owning plugin's agent-config permission authorizes these KV operations.
+  const agentConfig = req.pluginId.startsWith('_agentconfig');
+  if (agentConfig && (permission !== 'storage' || req.scope !== 'project' || !req.pluginId.startsWith('_agentconfig:'))) {
+    return refuse(permission, 'reserved namespace');
+  }
+  const pluginId = agentConfig ? req.pluginId.slice('_agentconfig:'.length) : req.pluginId;
+  const required: PluginPermission = agentConfig ? 'agent-config' : permission;
+  const manifest = pluginManifestRegistry.getManifest(pluginId);
+  if (manifest?.permissions?.includes(required)) return;
+  return refuse(required, manifest ? 'permission denied' : 'unregistered or disabled');
+}
+
 export function registerPluginHandlers(): void {
-  pluginManifestRegistry.initializeTrustedManifests();
+  // Community discovery is asynchronous; data calls must wait for its trusted
+  // manifests rather than intermittently refusing plugins during startup.
+  const manifestsReady = pluginManifestRegistry.initializeTrustedManifests();
 
   // ── Discovery ────────────────────────────────────────────────────────
   ipcMain.handle(IPC.PLUGIN.DISCOVER_COMMUNITY, async () => {
@@ -63,6 +115,8 @@ export function registerPluginHandlers(): void {
       optional(stringArg())(req.projectPath, `${argName}.projectPath`);
     },
   })], async (_event, req) => {
+    await manifestsReady;
+    assertPluginDataAccess(req, 'storage', 'read');
     return pluginStorage.readKey(req);
   }));
 
@@ -74,6 +128,8 @@ export function registerPluginHandlers(): void {
       optional(stringArg())(req.projectPath, `${argName}.projectPath`);
     },
   })], async (_event, req) => {
+    await manifestsReady;
+    assertPluginDataAccess(req, 'storage', 'write');
     await pluginStorage.writeKey(req);
   }));
 
@@ -85,6 +141,8 @@ export function registerPluginHandlers(): void {
       optional(stringArg())(req.projectPath, `${argName}.projectPath`);
     },
   })], async (_event, req) => {
+    await manifestsReady;
+    assertPluginDataAccess(req, 'storage', 'delete');
     await pluginStorage.deleteKey(req);
   }));
 
@@ -95,6 +153,8 @@ export function registerPluginHandlers(): void {
       optional(stringArg())(req.projectPath, `${argName}.projectPath`);
     },
   })], async (_event, req) => {
+    await manifestsReady;
+    assertPluginDataAccess(req, 'storage', 'list');
     return pluginStorage.listKeys(req);
   }));
 
@@ -107,6 +167,8 @@ export function registerPluginHandlers(): void {
       optional(stringArg())(req.projectPath, `${argName}.projectPath`);
     },
   })], async (_event, req) => {
+    await manifestsReady;
+    assertPluginDataAccess(req, 'files', 'read');
     return pluginStorage.readPluginFile(req);
   }));
 
@@ -119,6 +181,8 @@ export function registerPluginHandlers(): void {
       optional(stringArg())(req.projectPath, `${argName}.projectPath`);
     },
   })], async (_event, req) => {
+    await manifestsReady;
+    assertPluginDataAccess(req, 'files', 'write');
     await pluginStorage.writePluginFile(req);
   }));
 
@@ -130,6 +194,8 @@ export function registerPluginHandlers(): void {
       optional(stringArg())(req.projectPath, `${argName}.projectPath`);
     },
   })], async (_event, req) => {
+    await manifestsReady;
+    assertPluginDataAccess(req, 'files', 'delete');
     await pluginStorage.deletePluginFile(req);
   }));
 
@@ -141,6 +207,8 @@ export function registerPluginHandlers(): void {
       optional(stringArg())(req.projectPath, `${argName}.projectPath`);
     },
   })], async (_event, req) => {
+    await manifestsReady;
+    assertPluginDataAccess(req, 'files', 'exists');
     return pluginStorage.pluginFileExists(req);
   }));
 
@@ -152,6 +220,8 @@ export function registerPluginHandlers(): void {
       optional(stringArg())(req.projectPath, `${argName}.projectPath`);
     },
   })], async (_event, req) => {
+    await manifestsReady;
+    assertPluginDataAccess(req, 'files', 'list');
     return pluginStorage.listPluginDir(req);
   }));
 
@@ -187,6 +257,8 @@ export function registerPluginHandlers(): void {
 
   // ── Misc ─────────────────────────────────────────────────────────────
   ipcMain.handle(IPC.PLUGIN.MKDIR, withValidatedArgs([stringArg(), stringArg(), stringArg(), stringArg({ optional: true })], async (_event, pluginId: string, scope: string, relativePath: string, projectPath?: string) => {
+    await manifestsReady;
+    assertPluginDataAccess({ pluginId, scope: pluginScopeArg(scope, 'arg2') }, 'files', 'mkdir');
     await pluginStorage.mkdirPlugin(pluginId, scope as 'project' | 'global', relativePath, projectPath);
   }));
 
@@ -266,6 +338,8 @@ export function registerPluginHandlers(): void {
   // The main process is the sole authority for plugin security policy —
   // no manifest payload is accepted from the renderer.
   ipcMain.handle(IPC.PLUGIN.REFRESH_MANIFEST_FROM_DISK, withValidatedArgs([stringArg()], async (_event, pluginId: string) => {
-    return pluginDiscovery.refreshManifestFromDisk(pluginId);
+    await manifestsReady;
+    await pluginManifestRegistry.refreshManifest(pluginId);
+    return pluginManifestRegistry.getManifest(pluginId) ?? null;
   }));
 }

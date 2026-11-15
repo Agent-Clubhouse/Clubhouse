@@ -1,9 +1,14 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const gate = vi.hoisted(() => ({ access: 'open' as 'open' | 'closed' }));
+// Fixtures enter through the same external-plugin gate as disk manifests.
+vi.mock('fs', async (original) => ({ ...await original<typeof import('fs')>(), readFileSync: vi.fn(() => 'true') }));
+vi.mock('../plugin-discovery', () => ({ discoverCommunityPlugins: vi.fn(async () => []) }));
+vi.mock('../plugin-storage', () => ({ getGlobalPluginDataDir: () => '/plugin-data' }));
+
 vi.mock('./mcp-call-gate', async (original) => ({ ...await original<typeof import('./mcp-call-gate')>(), mcpCallAccess: () => gate.access }));
 import type { PluginManifest } from '../../../shared/plugin-types';
-import { clear as clearManifestRegistry, registerTrustedManifest } from '../plugin-manifest-registry';
+import { clear as clearManifestRegistry, registerTrustedManifest, initializeTrustedManifests } from '../plugin-manifest-registry';
 
 vi.mock('../log-service', () => ({ appLog: vi.fn() }));
 const { fromId } = vi.hoisted(() => ({ fromId: vi.fn((): unknown => undefined) }));
@@ -52,8 +57,9 @@ describe('plugin-tool-registry', () => {
   let secret: string;
   const send = vi.fn();
 
-  beforeEach(() => {
+  beforeEach(async () => {
     clearManifestRegistry();
+    await initializeTrustedManifests();
     _resetForTesting();
     resetToolRegistry();
     resetTokens();
@@ -144,12 +150,12 @@ describe('plugin-tool-registry', () => {
       expect(() => registerPluginTools('acme', [tool('find_notes'), tool('find-notes2')])).not.toThrow();
     });
 
-    it('plugin ids that sanitize alike list the name once, and calls go to the first binding', async () => {
+    it('refuses invalid plugin IDs that could collide after sanitizing', async () => {
       trust('acme-x');
       trust('acme_x');
       issueToken(PAGE, secret, 'acme-x');
       registerPluginTools('acme-x', [tool('lookup')]);
-      registerPluginTools('acme_x', [tool('lookup')]);
+      expect(() => registerPluginTools('acme_x', [tool('lookup')])).toThrow(/requires 'mcp.tools'/);
       bindingManager.bind('agent-1', { targetId: 'acme-x', targetKind: 'plugin', label: 'one' });
       bindingManager.bind('agent-1', { targetId: 'acme_x', targetKind: 'plugin', label: 'two' });
 
