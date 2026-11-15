@@ -60,7 +60,8 @@ vi.mock('../../../hooks/useRemoteProject', () => ({
   useRemoteProject: () => ({ isRemote: false, satelliteId: null }),
 }));
 
-import { GroupProjectCanvasWidget, openChannel, clearUnread } from './GroupProjectCanvasWidget';
+import { GroupProjectCanvasWidget } from './GroupProjectCanvasWidget';
+import { openChannel, clearUnread } from '../../../features/group-projects/board/GroupProjectBoardParts';
 import { useBulletinReadStore } from '../../../stores/bulletinReadStore';
 
 const PROJECT_ID = 'gp1';

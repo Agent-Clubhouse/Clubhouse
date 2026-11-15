@@ -2,7 +2,14 @@ import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'fs';
 import { join } from 'path';
 
-const source = readFileSync(join(__dirname, 'GroupProjectCanvasWidget.tsx'), 'utf-8');
+// The card and the group workspace share one board (#3545), so the board's source is read with the card's.
+const boardDir = join(__dirname, '..', '..', '..', 'features', 'group-projects', 'board');
+const source = [
+  join(__dirname, 'GroupProjectCanvasWidget.tsx'),
+  join(boardDir, 'GroupProjectBoard.tsx'),
+  join(boardDir, 'GroupProjectBoardParts.tsx'),
+  join(boardDir, 'GroupProjectDefaultsPanel.tsx'),
+].map((file) => readFileSync(file, 'utf-8')).join('\n');
 
 // ── Chrome style (#2186) ────────────────────────────────────────────
 

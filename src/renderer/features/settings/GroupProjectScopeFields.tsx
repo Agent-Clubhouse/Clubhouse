@@ -24,6 +24,19 @@ export function scopeMeaning(scope: GroupProjectScope, projects: readonly Projec
     : `Agents in ${name} and in projects linked to it on your other computers.`;
 }
 
+/** One line on what a group project covers; an unresolved legacy scope is said to be, never guessed. */
+export function scopeDescription(scope: GroupProject['scope']): string {
+  if (!scope || (scope.reach !== 'local' && scope.reach !== 'network')
+    || (scope.level !== 'app' && scope.level !== 'project')
+    || (scope.level === 'project' && (typeof scope.projectId !== 'string' || !scope.projectId.trim()))) {
+    return 'Scope unresolved: legacy or missing scope. No scope is inferred here.';
+  }
+  const level = scope.level === 'app' ? 'App' : `Project (${scope.projectId})`;
+  return scope.reach === 'local'
+    ? `${level} / This computer: covers ${scope.level === 'app' ? 'this app' : 'that project'} on this machine.`
+    : `${level} / Network: covers your other computers in your Annex Network too.`;
+}
+
 /** Loads whether network reach can be chosen, and why not. */
 export function useScopeOptions(): GroupProjectScopeOptions | null {
   const load = useGroupProjectStore((s) => s.scopeOptions);

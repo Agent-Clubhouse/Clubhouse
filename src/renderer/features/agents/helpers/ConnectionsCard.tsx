@@ -261,7 +261,7 @@ export function ConnectionsCard({ agent, helperIds, parentId, open, onToggle, on
                         Disconnect
                       </button>
                     )}
-                    <ConnectionOpenAction targetId={c.id} targetKind={c.kind} name={c.name} projectId={agent.projectId} />
+                    <ConnectionOpenAction targetId={c.id} targetKind={c.kind} name={c.name} projectId={agent.projectId} sourceAgent={{ id: agent.id, name: agent.name, projectId: agent.projectId }} />
                   </span>
                 </div>
               </li>

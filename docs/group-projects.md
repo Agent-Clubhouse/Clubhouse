@@ -478,6 +478,25 @@ using the tombstone (#3364).
 **Read state** stays per computer. Copies keep the host's message timestamps,
 so the same read markers give the same unread counts on both computers (#1559).
 
+## Group workspace
+
+One group project opens in a workspace with sections Board (the default),
+Members, Permissions, Actions, Delivery, Canvases and Details. A route names the
+group by its id and may name a section (`groupProjectRoute.ts`); a missing or
+unknown section means Board. The workspace needs no canvas. The Board is one
+component (`features/group-projects/board/GroupProjectBoard.tsx`) that the
+canvas card's expanded view also renders, so topics and unread counts, posting,
+shoulder taps and broadcast, message and topic deletion, clear-all, topic
+protection, retention and its trim review, and legacy polling are the same in
+both places. Default tool switches and each member's tools and instructions are
+under Permissions. Details holds name, description and instructions with an
+explicit Save, the scope review (#3431) and Delete with its impact, token and
+cascade. Owned Actions are made and edited in place on the host with
+`ActionCard` and `ActionForm`; a copy shows the host's read-only summaries. On a
+copy, scope change, delete, clear-all and retention are disabled with a plain
+reason, and a remote Ask first request is still refused. The header names where
+the person came from and Back returns there (`groupWorkspaceSource.ts`).
+
 ## Local directory
 
 Settings > Group Projects and the command palette open the directory. It lists
@@ -525,7 +544,8 @@ until switched to notices; new group projects use notices.
 - `src/main/services/group-project-delete-service.ts`: confirmation, cleanup and recovery.
 - `src/main/services/group-project-delete-inventory.ts`: deletion impact.
 - `src/main/services/group-project-network.ts` and `src/shared/group-project-network.ts`: host and replica synchronization and protocol.
-- `src/renderer/features/settings/GroupProjectsSettingsView.tsx`: directory and editing.
+- `src/renderer/features/settings/GroupProjectsSettingsView.tsx`: the directory and creation; opens the workspace.
+- `src/renderer/features/group-projects/GroupProjectWorkspace.tsx`, `board/`, `GroupProjectDetailsSection.tsx`: the workspace, the shared board and Details.
 - `e2e/group-project-membership.spec.ts`, `group-project-notices.spec.ts`,
   `group-project-delete.spec.ts` and `e2e/annex-v2/network-group-projects.spec.ts`:
   membership, notice, deletion and two-desktop coverage. Fake CLIs avoid paid prompts.

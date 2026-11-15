@@ -1,31 +1,17 @@
-import { Fragment, useCallback, useEffect, useRef, useState, type FormEvent } from 'react';
-import type { AutoJoinPreview, GroupProject, GroupProjectScope } from '../../../shared/group-project-types';
+import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react';
+import type { AutoJoinPreview, GroupProjectScope } from '../../../shared/group-project-types';
 import { Button } from '../../components/Button';
-import { GroupProjectLocations } from './GroupProjectLocations';
-import { GroupProjectMembersSection } from '../group-projects/GroupProjectMembersSection';
-import { GroupProjectDeliverySection } from '../group-projects/GroupProjectDeliverySection';
-import { GroupProjectRolesSection } from '../group-projects/GroupProjectRolesSection';
+import { GroupProjectWorkspace } from '../group-projects/GroupProjectWorkspace';
+import { openGroupWorkspace } from '../group-projects/groupProjectsNav';
+import { useGroupProjectsNavStore } from '../group-projects/groupProjectsNavStore';
+import { useGroupWorkspaceBack } from '../group-projects/groupWorkspaceSource';
 import { useGroupProjectStore } from '../../stores/groupProjectStore';
 import { ipcErrorMessage } from '../../utils/ipc-error';
-import { DeleteGroupProjectDialog } from './DeleteGroupProjectDialog';
-import { GroupProjectActionsSection } from '../group-projects/GroupProjectActionsSection';
 import {
   SettingsBlock, SettingsPage, SettingsSection,
-  settingsError, settingsHelp, settingsInput, settingsLabel, settingsTextArea,
+  settingsError, settingsHelp, settingsInput, settingsLabel,
 } from './SettingsLayout';
-import { GroupProjectRefusals, GroupProjectScopeEditor, GroupProjectScopeFields, hostLine, useScopeOptions } from './GroupProjectScopeFields';
-
-function scopeDescription(scope: GroupProject['scope']): string {
-  if (!scope || (scope.reach !== 'local' && scope.reach !== 'network')
-    || (scope.level !== 'app' && scope.level !== 'project')
-    || (scope.level === 'project' && (typeof scope.projectId !== 'string' || !scope.projectId.trim()))) {
-    return 'Scope unresolved: legacy or missing scope. No scope is inferred here.';
-  }
-  const level = scope.level === 'app' ? 'App' : `Project (${scope.projectId})`;
-  return scope.reach === 'local'
-    ? `${level} / This computer: covers ${scope.level === 'app' ? 'this app' : 'that project'} on this machine.`
-    : `${level} / Network: covers your other computers in your Annex Network too.`;
-}
+import { GroupProjectScopeFields, hostLine, scopeDescription, useScopeOptions } from './GroupProjectScopeFields';
 
 function MemberCount({ id }: { id: string }) {
   const [count, setCount] = useState<number | null>();
@@ -154,107 +140,6 @@ function CreateGroupProject() {
   );
 }
 
-function editableFields(project: GroupProject) {
-  return { name: project.name, description: project.description, instructions: project.instructions };
-}
-
-function GroupProjectEditor({ project }: { project: GroupProject }) {
-  const update = useGroupProjectStore((s) => s.update);
-  const remove = useGroupProjectStore((s) => s.remove);
-  const [deleting, setDeleting] = useState(false);
-  const loadImpact = useCallback(() => window.clubhouse.groupProject.previewDelete(project.id), [project.id]);
-  const confirmDelete = useCallback((token: string) => remove(project.id, token), [remove, project.id]);
-  const [baseline, setBaseline] = useState(() => editableFields(project));
-  const [draft, setDraft] = useState(baseline);
-  const [saving, setSaving] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [saved, setSaved] = useState(false);
-  const pending = useRef(false);
-  const dirty = draft.name !== baseline.name || draft.description !== baseline.description
-    || draft.instructions !== baseline.instructions;
-
-  useEffect(() => {
-    if (!dirty && !saving) {
-      const fields = editableFields(project);
-      setBaseline(fields);
-      setDraft(fields);
-    }
-  }, [project, dirty, saving]);
-
-  const submit = async (event: FormEvent) => {
-    event.preventDefault();
-    if (pending.current) return;
-    if (!draft.name.trim()) {
-      setError('Not saved. Enter a group project name.');
-      return;
-    }
-    const next = { ...draft, name: draft.name.trim() };
-    const fields: Partial<typeof next> = {};
-    if (next.name !== baseline.name) fields.name = next.name;
-    if (next.description !== baseline.description) fields.description = next.description;
-    if (next.instructions !== baseline.instructions) fields.instructions = next.instructions;
-    pending.current = true;
-    setSaving(true);
-    setError(null);
-    setSaved(false);
-    try {
-      await update(project.id, fields);
-      setBaseline(next);
-      setDraft(next);
-      setSaved(true);
-    } catch (err) {
-      // telemetry-exempt: the failed save is shown inline and its draft is retained.
-      setError(`Not saved. ${ipcErrorMessage(err)}`);
-    } finally {
-      pending.current = false;
-      setSaving(false);
-    }
-  };
-
-  return (
-    <SettingsSection title="Edit group project">
-      <SettingsBlock>
-        <p className={`${settingsHelp} mb-3 break-words`}>{scopeDescription(project.scope)}</p>
-        <form onSubmit={submit} className="flex flex-col items-start gap-2">
-          <label htmlFor="group-project-name" className={settingsLabel}>Name</label>
-          <input
-            id="group-project-name"
-            className={`${settingsInput} w-full min-w-0`}
-            value={draft.name}
-            disabled={saving}
-            onChange={(event) => { setDraft({ ...draft, name: event.target.value }); setSaved(false); }}
-          />
-          <label htmlFor="group-project-description" className={settingsLabel}>Description</label>
-          <textarea
-            id="group-project-description"
-            className={settingsTextArea}
-            rows={3}
-            value={draft.description}
-            disabled={saving}
-            onChange={(event) => { setDraft({ ...draft, description: event.target.value }); setSaved(false); }}
-          />
-          <label htmlFor="group-project-instructions" className={settingsLabel}>Instructions</label>
-          <textarea
-            id="group-project-instructions"
-            className={settingsTextArea}
-            rows={6}
-            value={draft.instructions}
-            disabled={saving}
-            onChange={(event) => { setDraft({ ...draft, instructions: event.target.value }); setSaved(false); }}
-          />
-          <Button type="submit" kind="primary" disabled={saving || !dirty}>
-            {saving ? 'Saving...' : 'Save changes'}
-          </Button>
-          {error && <p role="alert" className={settingsError}>{error}</p>}
-          {saved && <p role="status" className={settingsHelp}>Changes saved to the local registry.</p>}
-        </form>
-        <div className="mt-4"><Button kind="danger" onClick={() => setDeleting(true)}>Delete group project</Button></div>
-        {deleting && <DeleteGroupProjectDialog name={project.name} loadImpact={loadImpact} confirmDelete={confirmDelete} onClose={() => setDeleting(false)} />}
-      </SettingsBlock>
-    </SettingsSection>
-  );
-}
-
 export function GroupProjectsSettingsView() {
   const projects = useGroupProjectStore((s) => s.projects);
   const loaded = useGroupProjectStore((s) => s.loaded);
@@ -262,13 +147,15 @@ export function GroupProjectsSettingsView() {
   const loadProjects = useGroupProjectStore((s) => s.loadProjects);
   const [retrying, setRetrying] = useState(false);
   const retryPending = useRef(false);
-  const selectedId = useGroupProjectStore((s) => s.directorySelection);
-  const setSelectedId = useGroupProjectStore((s) => s.selectDirectoryProject);
-  const selected = projects.find((project) => project.id === selectedId);
+  const route = useGroupProjectsNavStore((s) => s.route);
+  const { source, back } = useGroupWorkspaceBack();
 
   useEffect(() => {
     if (!loaded) void loadProjects();
   }, [loaded, loadProjects]);
+
+  // Leaving this page leaves the group, so coming back shows the directory rather than the last group opened.
+  useEffect(() => () => useGroupProjectsNavStore.getState().setRoute(null), []);
 
   const retry = async () => {
     if (retryPending.current) return;
@@ -281,6 +168,11 @@ export function GroupProjectsSettingsView() {
       setRetrying(false);
     }
   };
+
+  // A group opened from a row or a link shows its workspace, Board first, in place of the directory.
+  if (route) {
+    return <GroupProjectWorkspace key={route.groupId} groupId={route.groupId} section={route.section} source={source} onBack={back} />;
+  }
 
   return (
     <SettingsPage
@@ -306,9 +198,8 @@ export function GroupProjectsSettingsView() {
                         type="button"
                         aria-label={project.name}
                         aria-describedby={`group-project-scope-${project.id} group-project-members-${project.id} group-project-host-${project.id}`}
-                        aria-pressed={selectedId === project.id}
-                        onClick={() => setSelectedId(project.id)}
-                        className={`w-full min-w-0 rounded-md px-2.5 py-2 text-left text-xs focus-ring hover:bg-surface-0 ${selectedId === project.id ? 'bg-surface-1 text-ctp-text' : 'text-ctp-subtext1'}`}
+                        onClick={() => openGroupWorkspace({ groupId: project.id })}
+                        className="w-full min-w-0 rounded-md px-2.5 py-2 text-left text-xs focus-ring hover:bg-surface-0 text-ctp-subtext1"
                       >
                         <span className="block font-medium break-words">{project.name}</span>
                         <MemberCount id={project.id} />
@@ -322,21 +213,7 @@ export function GroupProjectsSettingsView() {
               )}
         </SettingsBlock>
       </SettingsSection>
-      {loaded && !loadError && !retrying && (
-        <>
-          {selected && <Fragment key={selected.id}>
-            <GroupProjectEditor project={selected} />
-            <GroupProjectRefusals project={selected} />
-            {selected.network?.role !== 'replica' && <GroupProjectScopeEditor project={selected} />}
-            <GroupProjectMembersSection groupProjectId={selected.id} />
-            <GroupProjectDeliverySection groupProjectId={selected.id} />
-            <GroupProjectRolesSection groupProjectId={selected.id} />
-            <GroupProjectActionsSection groupProjectId={selected.id} />
-            <GroupProjectLocations id={selected.id} />
-          </Fragment>}
-          <CreateGroupProject />
-        </>
-      )}
+      {loaded && !loadError && !retrying && <CreateGroupProject />}
     </SettingsPage>
   );
 }

@@ -1,4 +1,4 @@
-import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, renderHook, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Agent, Project } from '../../../../shared/types';
 import type { CanvasNavigationSnapshot, CanvasPopoutReveal, CanvasPopoutRevealResult, GroupProjectNavigationIndex } from '../../../../shared/canvas-index-types';
@@ -12,6 +12,8 @@ import { useProjectStore } from '../../../stores/projectStore';
 import { useUIStore } from '../../../stores/uiStore';
 import { useMcpBindingStore } from '../../../stores/mcpBindingStore';
 import { useGroupProjectStore } from '../../../stores/groupProjectStore';
+import { useGroupProjectsNavStore } from '../../group-projects/groupProjectsNavStore';
+import { useGroupWorkspaceBack } from '../../group-projects/groupWorkspaceSource';
 import { usePluginStore } from '../../../plugins/plugin-store';
 import { ConnectionOpenAction } from './ConnectionOpenAction';
 import { ConnectionsCard } from './ConnectionsCard';
@@ -115,6 +117,7 @@ beforeEach(() => {
   useAgentStore.setState({ agents: { lead }, activeAgentId: lead.id });
   useMcpBindingStore.setState({ bindings: [] });
   useGroupProjectStore.setState({ projects: [], loaded: false, loadError: null });
+  useGroupProjectsNavStore.setState({ route: null });
   _resetActiveContexts();
   usePluginStore.setState({ plugins: {}, modules: {}, pluginSettings: {}, appEnabled: [], projectEnabled: {} });
   for (const store of [useAppCanvasStore, ...projects.map((project) => getProjectCanvasStore(project.id))]) {
@@ -268,16 +271,24 @@ describe('connection Open navigation', () => {
     expect(await screen.findByRole('alert')).toHaveTextContent('lookup is incomplete');
   });
 
-  it('opens a group project in its directory without touching canvases or membership', () => {
+  it('opens a group project in its workspace, Board first, without touching canvases or membership', () => {
     const unbind = vi.spyOn(window.clubhouse.mcpBinding, 'unbind');
     render(<ConnectionOpenAction targetId="gp_actual" targetKind="group-project" name="Renamed project" projectId="nav-one" />);
-    fireEvent.click(screen.getByRole('button', { name: 'Open in directory' }));
-    expect(useGroupProjectStore.getState().directorySelection).toBe('gp_actual');
-    expect(useUIStore.getState().settingsContext).toBe('app');
-    expect(useUIStore.getState().settingsSubPage).toBe('group-projects');
-    expect(useUIStore.getState().explorerTab).toBe('settings');
+    fireEvent.click(screen.getByRole('button', { name: 'Open group project' }));
+    expect(useGroupProjectsNavStore.getState().route).toEqual({ groupId: 'gp_actual' });
     expect(window.clubhouse.canvas.getTargetCanvases).not.toHaveBeenCalled();
     expect(unbind).not.toHaveBeenCalled();
+  });
+
+  it('names the agent a group project was opened from, and Back returns to it', () => {
+    useUIStore.setState({ explorerTab: 'agents' });
+    render(<ConnectionOpenAction targetId="gp_actual" targetKind="group-project" name="Project" projectId="nav-one"
+      sourceAgent={{ id: 'agent-1', name: 'Analyst', projectId: 'nav-one' }} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Open group project' }));
+    const { result } = renderHook(() => useGroupWorkspaceBack());
+    expect(result.current.source?.label).toBe('Analyst');
+    act(() => result.current.back());
+    expect(useGroupProjectsNavStore.getState().route).toBeNull();
   });
 
   it('keeps a mounted Canvas navigation-only when another owning board is opened', async () => {
