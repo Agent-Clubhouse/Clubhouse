@@ -629,10 +629,11 @@ export function createCanvasStore(): UseBoundStore<StoreApi<CanvasState>> {
           primary = await storage.read(STORAGE_KEY_INSTANCES);
           backup = await storage.read(STORAGE_KEY_INSTANCES_BACKUP);
         } catch (err) {
-          rendererLog('canvas', 'warn', 'saveCanvas deferred — could not confirm storage is empty', {
+          rendererLog('canvas', 'warn', 'saveCanvas failed — could not confirm storage is empty', {
             meta: { error: errorMessage(err) },
           });
-          return;
+          // Keep the guard closed and let autosave retain the edits and offer Retry.
+          throw err;
         }
         const hasData = (v: unknown) => v !== null && v !== undefined && !(Array.isArray(v) && v.length === 0);
         if (hasData(primary) || hasData(backup)) {

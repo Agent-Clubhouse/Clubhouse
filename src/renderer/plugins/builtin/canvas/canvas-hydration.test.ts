@@ -104,7 +104,28 @@ describe('canvas hydration safety', () => {
     expect(store.getState().views.map((v) => v.id)).toEqual(['a']);
   });
 
-  it('does not overwrite data that reappears after an empty (missing) load', async () => {
+  it.each(['canvas-instances', 'canvas-instances-backup'])(
+    'rejects a failed empty-canvas confirmation of %s without writing, then retries', async (failedKey) => {
+      let failing = false;
+      const { map, storage } = createStorage({}, (key) => failing && key === failedKey);
+      const store = createCanvasStore();
+      await store.getState().loadCanvas(storage);
+      store.getState().addView('agent', { x: 123, y: 456 });
+      const edits = store.getState().canvases;
+
+      failing = true;
+      await expect(store.getState().saveCanvas(storage)).rejects.toThrow('EACCES');
+      expect(storage.write).not.toHaveBeenCalled();
+      expect(store.getState().canvases).toBe(edits);
+
+      failing = false;
+      await store.getState().saveCanvas(storage);
+      expect(map.get('canvas-instances')).toEqual(map.get('canvas-instances-backup'));
+      expect((map.get('canvas-instances') as any[])[0].views).toEqual(edits[0].views);
+    },
+  );
+
+  it.each(['canvas-instances', 'canvas-instances-backup'])('reloads data that reappears in %s after an empty load without overwriting it', async (key) => {
     // The directory read as absent during load (e.g. briefly unmounted)…
     const { map, storage } = createStorage({});
     const store = createCanvasStore();
@@ -114,13 +135,13 @@ describe('canvas hydration safety', () => {
 
     // …and is back by the time the debounced autosave runs.
     const original = canvasWith(card('a'), card('b'));
-    map.set('canvas-instances', original);
-    map.set('canvas-instances-backup', original);
+    store.getState().addView('agent', { x: 123, y: 456 });
+    map.set(key, original);
 
     await store.getState().saveCanvas(storage);
 
     expect(storage.write).not.toHaveBeenCalled();
-    expect(map.get('canvas-instances')).toBe(original);
+    expect(map.get(key)).toBe(original);
     // The real canvas is reloaded instead.
     expect(store.getState().views.map((v) => v.id)).toEqual(['a', 'b']);
 
