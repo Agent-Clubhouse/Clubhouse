@@ -499,6 +499,42 @@ describe('canvas main', () => {
       },
     );
 
+    it.each(['canvas-instances', 'canvas-instances-backup'])(
+      'shows a failed %s empty-canvas confirm, keeps edits on remount, and retries', async (failedKey) => {
+        const { store, storage, mount, mountAndLoad } = setup(`confirm-failure-${failedKey}`);
+        const first = await mountAndLoad();
+        const read = storage.read.getMockImplementation()!;
+        let failing = true;
+        storage.read.mockImplementation(async (key) => {
+          if (failing && key === failedKey) throw new Error('confirm read failed');
+          return read(key);
+        });
+        act(() => { store.getState().addView('agent', { x: 123, y: 456 }); });
+        const edits = store.getState().canvases;
+
+        expect(await screen.findByText('Canvas changes not saved')).toBeTruthy();
+        expect(storage.write.mock.calls.filter(([key]) => key !== 'canvas-wires')).toEqual([]);
+        expect(store.getState().canvases).toBe(edits);
+        first.unmount();
+        const reads = storage.read.mock.calls.length;
+        const second = mount();
+        try {
+          await waitFor(() => expect(screen.getByText('Canvas changes not saved')).toBeTruthy());
+          expect(store.getState().canvases).toBe(edits);
+          expect(storage.read.mock.calls.length).toBe(reads);
+
+          failing = false;
+          fireEvent.click(screen.getByText('Retry'));
+          await waitFor(() => expect(screen.queryByText('Canvas changes not saved')).toBeNull());
+          expect(storage.files.get('canvas-instances')).toEqual(expect.arrayContaining([
+            expect.objectContaining({ views: edits[0].views }),
+          ]));
+        } finally {
+          second.unmount();
+        }
+      },
+    );
+
     it('waits for the other writer after a failed save before allowing remount hydration', async () => {
       const { store, storage, mount, mountAndLoad } = setup('autosave-failure-inflight');
       const first = await mountAndLoad();
