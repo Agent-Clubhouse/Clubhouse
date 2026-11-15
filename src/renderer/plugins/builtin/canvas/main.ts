@@ -194,6 +194,7 @@ export function MainPanel({ api }: { api: PluginAPI }) {
   const selectedViewId = store((s) => s.selectedViewId);
   const selectedViewIds = store((s) => s.selectedViewIds);
   const loaded = store((s) => s.loaded);
+  const dataOrigin = store((s) => s.dataOrigin);
   const wiresLoaded = store((s) => s.wiresLoaded);
   const loadError = store((s) => s.loadError);
   const autosaveFailed = store((s) => s.autosaveFailed);
@@ -232,6 +233,7 @@ export function MainPanel({ api }: { api: PluginAPI }) {
   const isRemote = projectId ? isRemoteProjectId(projectId) : false;
   const activeHostId = useUIStore((s) => s.activeHostId);
   const isRemoteApp = isAppMode && !!activeHostId;
+  const originMatchesContext = dataOrigin === (isRemote || isRemoteApp ? 'remote' : 'local');
   // The debounced local save, if one is waiting (see the auto-save below).
   const pendingSaveRef = useRef<{ timer: ReturnType<typeof setTimeout>; owner: object; run: () => void } | null>(null);
   /** Run a waiting local save now. */
@@ -375,10 +377,10 @@ export function MainPanel({ api }: { api: PluginAPI }) {
   }, [store, storage, isRemote, isRemoteApp, flushSave]);
 
   useEffect(() => {
-    if (!loaded || !wiresLoaded || navigationUnavailable) return;
+    if (!loaded || !wiresLoaded || !originMatchesContext || navigationUnavailable) return;
     if (navigationHandoff && isNavigationHydrationUnchanged(store.getState(), navigationHandoff)) return;
     scheduleSave();
-  }, [canvases, views, viewport, zoomedViewId, wireDefinitions, zoneWireDefinitions, minimapAutoHide, elkAlgorithm, elkDirection, layoutCenterId, loaded, wiresLoaded, scheduleSave, navigationHandoff, store, navigationUnavailable]);
+  }, [canvases, views, viewport, zoomedViewId, wireDefinitions, zoneWireDefinitions, minimapAutoHide, elkAlgorithm, elkDirection, layoutCenterId, loaded, wiresLoaded, originMatchesContext, scheduleSave, navigationHandoff, store, navigationUnavailable]);
 
   useEffect(() => () => flushSave(), [flushSave]);
 
@@ -678,7 +680,7 @@ export function MainPanel({ api }: { api: PluginAPI }) {
   const [agentCardTick, setAgentCardTick] = useState(0);
   useEffect(() => subscribeAgentCards(store, () => setAgentCardTick((n) => n + 1)), [store]);
   useEffect(() => {
-    if (!hydrated || !loaded) return;
+    if (!hydrated || !loaded || !originMatchesContext) return;
     const { activeCanvasId: canvasId, canvases: all } = store.getState();
     const cards = takeAgentCards(store, canvasId, all.map((c) => c.id));
     if (cards.length === 0) return;
@@ -687,7 +689,7 @@ export function MainPanel({ api }: { api: PluginAPI }) {
     // page often lands just before the user opens the page again.
     scheduleSave();
     flushSave();
-  }, [hydrated, loaded, activeCanvasId, agentCardTick, store, placeQueuedAgentCard, scheduleSave, flushSave]);
+  }, [hydrated, loaded, originMatchesContext, activeCanvasId, agentCardTick, store, placeQueuedAgentCard, scheduleSave, flushSave]);
 
   const handleZoomView = useCallback((viewId: string | null) => {
     remoteForward({ type: 'zoomView', viewId });
@@ -752,7 +754,9 @@ export function MainPanel({ api }: { api: PluginAPI }) {
     return React.createElement('div', { role: 'alert', className: 'p-4 text-xs text-ctp-subtext0' },
       'The Canvas or target node was deleted before it opened. Return to Connections and retry Open. No replacement Canvas was created.');
   }
-  if (!loaded) {
+  // The outgoing canvas stays in memory during a flush/load, but its controls
+  // must not apply edits in the destination's context before hydration finishes.
+  if (!loaded || !originMatchesContext) {
     // A failed load must not fall through to an empty, autosaving canvas —
     // the saved canvas is left untouched until it can be read.
     if (loadError) {

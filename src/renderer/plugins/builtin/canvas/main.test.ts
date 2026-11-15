@@ -216,8 +216,8 @@ describe('canvas main', () => {
 
     // Auto-save effect should react to wireDefinitions, not bindings
     const autoSaveEffect = source.slice(
-      source.indexOf('wireDefinitions, zoneWireDefinitions, minimapAutoHide, elkAlgorithm, elkDirection, layoutCenterId, loaded, wiresLoaded, scheduleSave'),
-      source.indexOf('wireDefinitions, zoneWireDefinitions, minimapAutoHide, elkAlgorithm, elkDirection, layoutCenterId, loaded, wiresLoaded, scheduleSave') + 160,
+      source.indexOf('wireDefinitions, zoneWireDefinitions, minimapAutoHide, elkAlgorithm, elkDirection, layoutCenterId, loaded, wiresLoaded, originMatchesContext, scheduleSave'),
+      source.indexOf('wireDefinitions, zoneWireDefinitions, minimapAutoHide, elkAlgorithm, elkDirection, layoutCenterId, loaded, wiresLoaded, originMatchesContext, scheduleSave') + 160,
     );
     expect(autoSaveEffect).toBeTruthy();
   });
@@ -580,6 +580,8 @@ describe('canvas main', () => {
           act(() => { useRemoteProjectStore.setState({ remoteAppCanvasState: { 'sat-flush': { ...remote, canvases: [{ ...remote.canvases[0], name: 'Latest remote' }] } } }); });
           expect(store.getState().dataOrigin).toBe('local');
           expect(store.getState().canvases).toBe(edits.canvases);
+          expect(screen.getByText('Loading canvas...')).toBeTruthy();
+          expect(screen.queryByTestId('canvas-add-button')).toBeNull();
           await act(async () => { rejectFlush(new Error('flush failed')); });
           await waitFor(() => expect(store.getState().dataOrigin).toBe('remote'));
           expect(store.getState().activeCanvasId).toBe('remote-board');
