@@ -140,6 +140,38 @@ export function sortByRecent<T extends { id: string }>(items: readonly T[], acti
 }
 
 /**
+ * Each project row's latest known activity, for the Recent order (#3542). A row
+ * can stand for several projects: a linked group, or another machine's project.
+ * Project activity is recorded only on this machine and under each project's
+ * own id, so a row takes the newest of its members' activity and of what its
+ * running agents last did (their status time, or their last spawn or turn
+ * here), wherever they run. Sleeping agents don't count, as in the idle rule.
+ */
+export function projectRecency(
+  rowIds: readonly string[],
+  input: {
+    projectActivity: Readonly<Record<string, number>>;
+    /** The project ids each row stands for; a row missing here is just itself. */
+    members?: Readonly<Record<string, readonly string[]>>;
+    agentsByProject: Readonly<Record<string, readonly Agent[]>>;
+    agentActivity?: Readonly<Record<string, number>>;
+    detailed?: Readonly<Record<string, AgentDetailedStatus | undefined>>;
+  },
+): Record<string, number> {
+  const out: Record<string, number> = {};
+  for (const rowId of rowIds) {
+    let at = Number.NEGATIVE_INFINITY;
+    for (const id of input.members?.[rowId] ?? [rowId]) at = Math.max(at, input.projectActivity[id] ?? at);
+    for (const agent of input.agentsByProject[rowId] ?? []) {
+      if (agent.status !== 'running') continue;
+      at = Math.max(at, input.detailed?.[agent.id]?.timestamp ?? at, input.agentActivity?.[agent.id] ?? at);
+    }
+    if (Number.isFinite(at)) out[rowId] = at;
+  }
+  return out;
+}
+
+/**
  * `items` in the order of `heldIds`, then any items that are new since, in
  * their own order. Keeps rows from moving under the pointer while the Recent
  * order changes (#2116).
