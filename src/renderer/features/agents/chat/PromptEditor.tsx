@@ -61,7 +61,7 @@ export const PromptEditor = forwardRef<PromptEditorHandle, Props>(function Promp
         'aria-description': latest.current.description, title: latest.current.description,
         'aria-disabled': String(!!latest.current.disabled), 'aria-readonly': String(!!latest.current.disabled),
         'data-placeholder': latest.current.placeholder,
-        'data-empty': String(!viewRef.current?.state.doc.textContent && viewRef.current?.state.doc.childCount === 1),
+        'data-empty': String(viewRef.current?.state.doc.childCount === 1 && viewRef.current.state.doc.firstChild?.type.name === 'paragraph' && viewRef.current.state.doc.firstChild.content.size === 0),
         class: `relative outline-none min-w-0 text-[13px] text-ctp-text whitespace-pre-wrap break-words overflow-y-auto [&_p]:m-0 [&_ul]:list-disc [&_ol]:list-decimal [&_ul]:pl-5 [&_ol]:pl-5 [&_li]:pl-0 [&_li>p]:inline [&_strong]:font-bold [&_em]:italic ${latest.current.line ? 'px-1.5 py-1.5 max-h-[72px]' : 'px-3.5 pt-3 pb-1.5 min-h-[44px] max-h-[200px]'} data-[empty=true]:before:content-[attr(data-placeholder)] data-[empty=true]:before:absolute data-[empty=true]:before:pointer-events-none data-[empty=true]:before:text-ctp-overlay0`,
       }),
       dispatchTransaction(tr) {

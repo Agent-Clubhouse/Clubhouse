@@ -279,6 +279,16 @@ describe('structured composer accessibility and paste', () => {
     expect(box().querySelector('b, strong, img')).toBeNull();
   });
 
+  it('shows the placeholder only for an empty paragraph, not an empty list or soft return', () => {
+    render(<Harness />);
+    expect(box()).toHaveAttribute('data-empty', 'true');
+    typePrompt(box(), '- ');
+    expect(box()).toHaveAttribute('data-empty', 'false');
+    typePrompt(box(), '');
+    press('Shift+Enter');
+    expect(box()).toHaveAttribute('data-empty', 'false');
+  });
+
   it('keeps disabled drafts readable without editing', () => {
     render(<Harness disabled initial="- saved" />);
     expect(box()).toHaveAttribute('contenteditable', 'false');
