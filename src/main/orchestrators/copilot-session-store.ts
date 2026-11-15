@@ -31,6 +31,11 @@ export const RUN_WINDOW_SLACK_MS = 5_000;
 const LIST_SCAN_MAX = 2_000;
 /** Directories stat'ed at once. */
 const STAT_BATCH = 256;
+/** Listings may lag an existing session's touch by at most one second. Run capture stays fresh. */
+const LIST_CACHE_TTL_MS = 1_000;
+const LIST_CACHE_MAX_STORES = 8;
+type ListingEntry = { session: SessionDir; workspace: CopilotWorkspace | null };
+const listingCache = new Map<string, { mtimeMs: number; expiresAt: number; entries: Promise<ListingEntry[]> }>();
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -136,12 +141,46 @@ async function sessionDirs(stateDir: string): Promise<SessionDir[]> {
   return dirs.sort((a, b) => b.mtimeMs - a.mtimeMs);
 }
 
-/** Sessions Copilot recorded for `cwd`, most recently active first. */
-export async function listCopilotSessions(stateDir: string, cwd: string): Promise<CopilotSessionSummary[]> {
+/**
+ * Share the newest candidates across cwd listings (Dispatcher searches list
+ * each folder separately). Parent mtime catches additions/removals immediately;
+ * TTL catches touches and workspace edits, which don't change the parent mtime.
+ * Cache workspaces too, so a warm listing performs only one store stat.
+ */
+async function listingEntries(stateDir: string, fresh: boolean): Promise<ListingEntry[]> {
+  let mtimeMs: number;
+  try {
+    mtimeMs = (await fsp.stat(stateDir)).mtimeMs;
+  } catch {
+    // telemetry-exempt: missing/unreadable store; don't reuse stale entries
+    listingCache.delete(stateDir);
+    return [];
+  }
+  const now = Date.now();
+  const cached = listingCache.get(stateDir);
+  if (!fresh && cached && cached.mtimeMs === mtimeMs && cached.expiresAt > now) return cached.entries;
+
+  const entries = (async () => {
+    const out: ListingEntry[] = [];
+    for (const session of (await sessionDirs(stateDir)).slice(0, LIST_SCAN_MAX)) {
+      out.push({ session, workspace: await readWorkspace(session.dir) });
+    }
+    return out;
+  })();
+  // Bound memory when callers use many COPILOT_HOME roots.
+  listingCache.delete(stateDir);
+  if (listingCache.size >= LIST_CACHE_MAX_STORES) listingCache.delete(listingCache.keys().next().value!);
+  listingCache.set(stateDir, { mtimeMs, expiresAt: now + LIST_CACHE_TTL_MS, entries });
+  return entries;
+}
+
+/** Sessions Copilot recorded for `cwd`, most recently active first (up to one second old). */
+export async function listCopilotSessions(
+  stateDir: string, cwd: string, options?: { fresh?: boolean },
+): Promise<CopilotSessionSummary[]> {
   const forms = cwdForms(cwd);
   const out: CopilotSessionSummary[] = [];
-  for (const d of (await sessionDirs(stateDir)).slice(0, LIST_SCAN_MAX)) {
-    const ws = await readWorkspace(d.dir);
+  for (const { session: d, workspace: ws } of await listingEntries(stateDir, options?.fresh ?? false)) {
     if (!ws || !sameCwd(ws.cwd, forms)) continue;
     const mtime = new Date(d.mtimeMs).toISOString();
     out.push({ sessionId: ws.id || d.name, startedAt: ws.createdAt || mtime, lastActiveAt: ws.updatedAt || mtime });

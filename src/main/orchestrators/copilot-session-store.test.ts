@@ -62,7 +62,10 @@ beforeEach(() => {
   fs.mkdirSync(cwd, { recursive: true });
   fs.mkdirSync(otherCwd, { recursive: true });
 });
-afterEach(() => fs.rmSync(root, { recursive: true, force: true }));
+afterEach(() => {
+  vi.restoreAllMocks();
+  fs.rmSync(root, { recursive: true, force: true });
+});
 
 describe('parseWorkspaceYaml', () => {
   it('reads id, cwd and timestamps, quoted or not', () => {
@@ -152,6 +155,95 @@ describe('listCopilotSessions', () => {
     const list = await listCopilotSessions(store, cwd);
     expect(list.map((s) => s.sessionId)).toEqual([C, A]);
     expect(list[0]).toEqual({ sessionId: C, startedAt: iso(T0 + 5_000), lastActiveAt: iso(T0 + 9_000) });
+  });
+
+  it('shares a listing across cwds with only one stat per warm call', async () => {
+    vi.spyOn(Date, 'now').mockReturnValue(T0);
+    for (let i = 0; i < 300; i++) {
+      fs.mkdirSync(path.join(store, `00000000-0000-4000-8000-${String(i).padStart(12, '0')}`));
+    }
+    session(A, { cwd, created: T0 });
+    session(B, { cwd: otherCwd, created: T0 });
+    const cold = await listCopilotSessions(store, cwd);
+    vi.clearAllMocks();
+
+    expect(await listCopilotSessions(store, cwd)).toEqual(cold);
+    expect((await listCopilotSessions(store, otherCwd)).map((s) => s.sessionId)).toEqual([B]);
+    expect(fsp.stat).toHaveBeenCalledTimes(2);
+    expect(vi.mocked(fsp.stat).mock.calls.every(([p]) => p === store)).toBe(true);
+    expect(fsp.readdir).not.toHaveBeenCalled();
+  });
+
+  it('invalidates on additions and removals and matches a fresh listing', async () => {
+    vi.spyOn(Date, 'now').mockReturnValue(T0);
+    // Explicit mtimes avoid relying on filesystem timestamp resolution.
+    const parentTime = (offset: number) => fs.utimesSync(store, (T0 + offset) / 1000, (T0 + offset) / 1000);
+    session(A, { cwd, created: T0 });
+    parentTime(0);
+    await listCopilotSessions(store, cwd);
+
+    session(B, { cwd, created: T0 + 1_000 });
+    parentTime(1_000);
+    const added = await listCopilotSessions(store, cwd);
+    expect(added.map((s) => s.sessionId)).toEqual([B, A]);
+    // Explicit bypass exercises the same path restart capture uses.
+    expect(await listCopilotSessions(store, cwd, { fresh: true })).toEqual(added);
+
+    fs.rmSync(path.join(store, B), { recursive: true });
+    parentTime(2_000);
+    const removed = await listCopilotSessions(store, cwd);
+    expect(removed.map((s) => s.sessionId)).toEqual([A]);
+    expect(await listCopilotSessions(store, cwd, { fresh: true })).toEqual(removed);
+  });
+
+  it('refreshes touched sessions and workspace edits at TTL expiry without a parent change', async () => {
+    const clock = vi.spyOn(Date, 'now').mockReturnValue(T0);
+    session(A, { cwd, created: T0 });
+    session(B, { cwd, created: T0 + 1_000 });
+    const cold = await listCopilotSessions(store, cwd);
+    const parentMtime = fs.statSync(store).mtimeMs;
+    // Touch an older session, including timestamps used when YAML has none.
+    fs.writeFileSync(path.join(store, A, 'workspace.yaml'), `id: ${A}\ncwd: ${cwd}\n`);
+    fs.utimesSync(path.join(store, A), (T0 + 2_000) / 1000, (T0 + 2_000) / 1000);
+    expect(fs.statSync(store).mtimeMs).toBe(parentMtime);
+    clock.mockReturnValue(T0 + 999);
+    expect(await listCopilotSessions(store, cwd)).toEqual(cold);
+    clock.mockReturnValue(T0 + 1_000);
+    const touched = await listCopilotSessions(store, cwd);
+    expect(touched.map((s) => s.sessionId)).toEqual([A, B]);
+    expect(touched[0].lastActiveAt).toBe(iso(T0 + 2_000));
+    expect(await listCopilotSessions(store, cwd, { fresh: true })).toEqual(touched);
+  });
+
+  it('bypasses a warm snapshot when restart capture asks for fresh sessions', async () => {
+    vi.spyOn(Date, 'now').mockReturnValue(T0);
+    session(A, { cwd, created: T0 });
+    const cold = await listCopilotSessions(store, cwd);
+    session(A, { cwd, created: T0, updated: T0 + 1_000 });
+    expect(await listCopilotSessions(store, cwd)).toEqual(cold);
+    const fresh = await listCopilotSessions(store, cwd, { fresh: true });
+    expect(fresh[0].lastActiveAt).toBe(iso(T0 + 1_000));
+  });
+
+  it('never uses cached candidates for terminal capture or resume existence', async () => {
+    vi.spyOn(Date, 'now').mockReturnValue(T0);
+    session(A, { cwd, created: T0 - 60_000 });
+    await listCopilotSessions(store, cwd);
+    const parentMtime = fs.statSync(store).mtimeMs;
+    session(A, { cwd, created: T0 + 1_000 }); // existing directory; no parent mtime change
+    expect(fs.statSync(store).mtimeMs).toBe(parentMtime);
+    expect(await findCopilotRunSession(store, { cwd, startedAt: T0, endedAt: T0 + 2_000 })).toBe(A);
+    fs.rmSync(path.join(store, A), { recursive: true });
+    expect(await hasCopilotSession(store, A)).toBe(false);
+    expect(await findCopilotRunSession(store, { cwd, startedAt: T0, endedAt: T0 + 2_000, resumedId: A })).toBeNull();
+  });
+
+  it('drops cached entries when the store disappears', async () => {
+    vi.spyOn(Date, 'now').mockReturnValue(T0);
+    session(A, { cwd, created: T0 });
+    await listCopilotSessions(store, cwd);
+    fs.rmSync(store, { recursive: true });
+    expect(await listCopilotSessions(store, cwd)).toEqual([]);
   });
 
   it('returns [] with no store', async () => {

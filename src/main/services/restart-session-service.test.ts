@@ -197,7 +197,7 @@ describe('restart-session-service', () => {
         sessionId: 'existing-session', kind: 'durable', freeAgentMode: true,
       })]);
       expect(pathExists).toHaveBeenCalledWith(worktreePath);
-      if (runtime === 'pty') expect(listSessions).toHaveBeenCalledWith(worktreePath);
+      if (runtime === 'pty') expect(listSessions).toHaveBeenCalledWith(worktreePath, { fresh: true });
       else expect(listSessions).not.toHaveBeenCalled();
       expect(getDurableConfig).toHaveBeenCalledTimes(1);
     });

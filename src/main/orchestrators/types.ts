@@ -279,8 +279,8 @@ export interface TranscriptReadStats {
  * (CLAUDE_CONFIG_DIR, CODEX_HOME, COPILOT_HOME), else the default location.
  */
 export interface SessionCapable {
-  /** List available CLI sessions for the given project directory */
-  listSessions(cwd: string): Promise<Array<{ sessionId: string; startedAt: string; lastActiveAt: string }>>;
+  /** List available CLI sessions for the given project directory. `fresh` bypasses listing caches for resume capture. */
+  listSessions(cwd: string, options?: { fresh?: boolean }): Promise<Array<{ sessionId: string; startedAt: string; lastActiveAt: string }>>;
 
   /** Read a historical session transcript from the CLI's own storage.
    *  Returns raw StreamJsonEvent[] or null if session not found. */
