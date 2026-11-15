@@ -98,7 +98,7 @@ export function GroupProjectBoard({ groupProjectId, ctx, variant, onUpdateMetada
         }
       } catch { /* telemetry-exempt: the next poll reads again */ }
 
-      // Message fetches stay unfiltered — `since` drives unread counts only,
+      // Message fetches stay unfiltered: `since` drives unread counts only,
       // the panes still show the full history of the selected channel.
       if (selectedTopic === ALL_TOPICS_KEY) {
         try {

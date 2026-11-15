@@ -57,12 +57,18 @@ function scopeLabel(project: GroupProject, projectName: (id: string) => string |
  * Actions, Delivery, Canvases and Details. It needs no canvas, and it mounts
  * from any route: the Group Projects view, Settings, or a test.
  */
-export function GroupProjectWorkspace({ groupId, section, source, onBack, onSectionChange }: GroupProjectWorkspaceProps) {
+export function GroupProjectWorkspace(props: GroupProjectWorkspaceProps) {
+  // Keyed on the group: moving to another group starts clean, so a draft for one can never be saved to the next.
+  return <WorkspaceFor key={props.groupId} {...props} />;
+}
+
+function WorkspaceFor({ groupId, section, source, onBack, onSectionChange }: GroupProjectWorkspaceProps) {
   const requested = resolveGroupWorkspaceRoute({ groupId, section }).section;
   const [active, setActive] = useState<GroupWorkspaceSection>(requested);
   useEffect(() => { setActive(requested); }, [groupId, requested]);
 
   const loaded = useGroupProjectStore((s) => s.loaded);
+  const loadError = useGroupProjectStore((s) => s.loadError);
   const loadProjects = useGroupProjectStore((s) => s.loadProjects);
   const projects = useProjectStore((s) => s.projects);
   const ctx = useGroupProjectContext(groupId, false, null, null);
@@ -94,6 +100,16 @@ export function GroupProjectWorkspace({ groupId, section, source, onBack, onSect
 
   const backLabel = `Back to ${source?.label ?? 'Group Projects'}`;
   const backButton = <Button kind="quiet" onClick={onBack}>{backLabel}</Button>;
+
+  if (loadError && !project) {
+    return (
+      <div ref={rootRef} className="flex h-full flex-col bg-ctp-base px-6 py-4" data-testid="group-project-workspace">
+        <div>{backButton}</div>
+        <p role="alert" className={`${settingsError} mt-3`}>Could not load group projects. {loadError}</p>
+        <div className="mt-2"><Button onClick={() => void loadProjects()}>Retry</Button></div>
+      </div>
+    );
+  }
 
   if (!loaded) {
     return (

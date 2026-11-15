@@ -130,6 +130,30 @@ describe('GroupProjectWorkspace routing', () => {
     expect(onBack).toHaveBeenCalled();
   });
 
+  it('starts clean when the same mounted workspace moves to another group, so a draft is never saved to it', async () => {
+    useGroupProjectStore.setState({ projects: [hostGroup, { ...hostGroup, id: 'gp_other', name: 'Other', description: 'Other purpose' }] });
+    const update = vi.spyOn(api(), 'update').mockResolvedValue(hostGroup);
+    const onBack = vi.fn();
+    const { rerender } = render(<GroupProjectWorkspace groupId={GP} section="details" onBack={onBack} />);
+    fireEvent.change(await screen.findByLabelText('Description'), { target: { value: 'Unsaved draft for the first' } });
+    rerender(<GroupProjectWorkspace groupId="gp_other" section="details" onBack={onBack} />);
+    expect(await screen.findByRole('heading', { name: 'Other' })).toBeInTheDocument();
+    expect(screen.getByLabelText('Description')).toHaveValue('Other purpose');
+    expect(screen.getByRole('button', { name: 'Save changes' })).toBeDisabled();
+    expect(update).not.toHaveBeenCalled();
+  });
+
+  it('shows the load error with a Retry, not "not on this computer", when the list could not be read', async () => {
+    useGroupProjectStore.setState({ projects: [], loaded: true, loadError: 'Registry unreadable' });
+    const list = vi.spyOn(api(), 'list').mockResolvedValue([hostGroup]);
+    mount();
+    expect(await screen.findByRole('alert')).toHaveTextContent('Could not load group projects. Registry unreadable');
+    expect(screen.queryByText(/not on this computer/)).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
+    await waitFor(() => expect(list).toHaveBeenCalled());
+    expect(await screen.findByRole('heading', { name: 'Release checks' })).toBeInTheDocument();
+  });
+
   it('shows a select for the sections when it is narrow', async () => {
     const original = globalThis.ResizeObserver;
     class Narrow {
