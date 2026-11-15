@@ -612,6 +612,68 @@ describe('canvas main', () => {
       },
     );
 
+    it.each([
+      ['canvas-instances', false], ['canvas-instances', true],
+      ['canvas-zone-wires', false], ['canvas-zone-wires', true],
+    ] as const)('orders a newer save behind an issued %s write (newer also times out: %s)', async (heldKey, timeOutNewer) => {
+      const { store, storage, mount, mountAndLoad } = setup(`issued-write-order-${heldKey}-${timeOutNewer}`);
+      const panel = await mountAndLoad();
+      let release!: () => void;
+      const gate = new Promise<void>((resolve) => { release = resolve; });
+      const write = storage.write.getMockImplementation()!;
+      let held = false;
+      storage.write.mockImplementation(async (key, value) => {
+        if (key === heldKey && !held) { held = true; await gate; }
+        return write(key, value);
+      });
+      let remount: ReturnType<typeof mount> | undefined;
+      vi.useFakeTimers();
+      try {
+        act(() => { store.getState().addView('agent', { x: 7, y: 9 }); });
+        panel.unmount();
+        remount = mount();
+        await act(async () => { await Promise.resolve(); });
+        expect(held).toBe(true); // A's write is already inside storage.
+        act(() => {
+          store.getState().addView('agent', { x: 17, y: 19 });
+          store.getState().addZoneWireDefinition({ sourceZoneId: 'new-zone', targetId: 'local-agent', targetType: 'agent' });
+        });
+        const expected = store.getState();
+        await act(async () => { await vi.advanceTimersByTimeAsync(5_002); });
+        // B cannot issue its write to this key while A's IPC is outstanding.
+        expect(storage.write.mock.calls.filter(([key]) => key === heldKey)).toHaveLength(1);
+        expect(store.getState().views).toBe(expected.views);
+        if (timeOutNewer) {
+          await act(async () => { await vi.advanceTimersByTimeAsync(5_001); });
+          expect(screen.getByText('Canvas changes not saved')).toBeTruthy();
+          expect(store.getState().autosaveFailed).toBe(true);
+        }
+        await act(async () => { release(); await gate; });
+        if (timeOutNewer) {
+          expect(store.getState().autosaveFailed).toBe(true);
+          await act(async () => { fireEvent.click(screen.getByText('Retry')); await vi.advanceTimersByTimeAsync(501); });
+        }
+        expect(storage.files.get('canvas-instances')).toEqual(expect.arrayContaining([
+          expect.objectContaining({ views: expected.views }),
+        ]));
+        expect(storage.files.get('canvas-zone-wires')).toEqual(expected.zoneWireDefinitions);
+        expect(store.getState().autosaveFailed).toBe(false);
+        await act(async () => { await vi.advanceTimersByTimeAsync(501); });
+        remount.unmount();
+        remount = mount();
+        await act(async () => { await Promise.resolve(); });
+        expect(store.getState().views).toEqual(expected.views);
+        expect(store.getState().zoneWireDefinitions).toEqual(expected.zoneWireDefinitions);
+        expect(screen.queryByText('Canvas changes not saved')).toBeNull();
+        expect(storage.delete).not.toHaveBeenCalled();
+      } finally {
+        release();
+        remount?.unmount();
+        panel.unmount();
+        vi.useRealTimers();
+      }
+    });
+
     it.each([false, true])('does not cancel a newer local save when an older save times out (newer still writing: %s)', async (holdNewer) => {
       const { store, storage, mount, mountAndLoad } = setup(`older-save-timeout-${holdNewer}`);
       const panel = await mountAndLoad();
@@ -620,10 +682,17 @@ describe('canvas main', () => {
       const oldGate = new Promise<void>((resolve) => { releaseOld = resolve; });
       const newGate = new Promise<void>((resolve) => { releaseNew = resolve; });
       const write = storage.write.getMockImplementation()!;
-      let backups = 0;
+      const read = storage.read.getMockImplementation()!;
+      let oldReadStarted = false;
+      storage.read.mockImplementation(async (key) => {
+        if (key === 'canvas-instances' && !oldReadStarted) {
+          oldReadStarted = true;
+          await oldGate;
+        }
+        return read(key);
+      });
       let primaryStarted = false;
       storage.write.mockImplementation(async (key, value) => {
-        if (key === 'canvas-instances-backup' && ++backups === 1) await oldGate;
         if (key === 'canvas-instances') {
           primaryStarted = true;
           if (holdNewer) await newGate;
@@ -634,7 +703,7 @@ describe('canvas main', () => {
       vi.useFakeTimers();
       try {
         act(() => { store.getState().addView('agent', { x: 7, y: 9 }); });
-        panel.unmount(); // Save A is stuck at its backup write.
+        panel.unmount(); // Save A is stuck confirming the empty disk before writing.
         remount = mount(); // This hydration waiter still owns A.
         await act(async () => { await Promise.resolve(); });
         act(() => {

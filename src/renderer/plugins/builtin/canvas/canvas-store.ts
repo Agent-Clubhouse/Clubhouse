@@ -420,6 +420,22 @@ function normalizeCanvasInstance(
 
 export function createCanvasStore(): UseBoundStore<StoreApi<CanvasState>> {
   const initialCanvas = createCanvasInstance();
+  // This store owns one local storage scope across panel remounts. Keep an
+  // issued IPC write ahead of all later writes to its key: cancellation cannot
+  // revoke IPC that is already inside storage.write.
+  const pendingWrites = new Map<string, Promise<void>>();
+  const writeInOrder = (storage: ScopedStorage, key: string, value: unknown, assertCurrent: () => void = () => {}): Promise<void> => {
+    const write = async () => {
+      assertCurrent();
+      await storage.write(key, value);
+    };
+    const previous = pendingWrites.get(key);
+    const pending = previous ? previous.then(write, write) : write();
+    pendingWrites.set(key, pending);
+    const settled = () => { if (pendingWrites.get(key) === pending) pendingWrites.delete(key); };
+    void pending.then(settled, settled);
+    return pending;
+  };
   let _loadGeneration = 0;
   let _wiresLoading: number | undefined;
   let _wiresOrigin: 'local' | 'remote' | null = null;
@@ -462,7 +478,7 @@ export function createCanvasStore(): UseBoundStore<StoreApi<CanvasState>> {
         // recovery key. A fresh UUID avoids replacing any previous copy.
         const key = `${STORAGE_KEY_UNSAVED_COPY_PREFIX}${Date.now()}-${crypto.randomUUID()}`;
         if ((await withCanvasPersistenceTimeout(storage.list())).includes(key)) throw new Error('Canvas recovery copy already exists');
-        await withCanvasPersistenceTimeout(storage.write(key, {
+        await withCanvasPersistenceTimeout(writeInOrder(storage, key, {
           version: 1, canvases: state.canvases, activeCanvasId: state.activeCanvasId,
           wireDefinitions: localWires, zoneWireDefinitions: localZoneWires,
           // A divergent backup may be the newer half of an interrupted save.
@@ -772,7 +788,7 @@ export function createCanvasStore(): UseBoundStore<StoreApi<CanvasState>> {
       }
       if (_canvasPersist === 'snapshot-first') {
         // If this write fails we stay in 'snapshot-first' and retry next save.
-        await storage.write(`${STORAGE_KEY_INSTANCES_RECOVERY_PREFIX}${Date.now()}`, _recoverySnapshot);
+        await writeInOrder(storage, `${STORAGE_KEY_INSTANCES_RECOVERY_PREFIX}${Date.now()}`, _recoverySnapshot, assertCurrent);
         assertCurrent();
         if (_canvasPersist !== 'snapshot-first') return;
         _recoverySnapshot = undefined;
@@ -812,19 +828,19 @@ export function createCanvasStore(): UseBoundStore<StoreApi<CanvasState>> {
       // back to. We intentionally avoid an atomic temp-file+rename here: the
       // extra filesystem events it generates regress unrelated plugins on
       // Linux CI, whereas an ordered pair of plain writes does not.
-      await storage.write(STORAGE_KEY_INSTANCES_BACKUP, data);
+      await writeInOrder(storage, STORAGE_KEY_INSTANCES_BACKUP, data, assertCurrent);
       diskBaseline.set(STORAGE_KEY_INSTANCES_BACKUP, diskFingerprint(data));
       assertCurrent();
-      await storage.write(STORAGE_KEY_INSTANCES, data);
+      await writeInOrder(storage, STORAGE_KEY_INSTANCES, data, assertCurrent);
       diskBaseline.set(STORAGE_KEY_INSTANCES, diskFingerprint(data));
       assertCurrent();
-      await storage.write(STORAGE_KEY_ACTIVE, activeCanvasId);
+      await writeInOrder(storage, STORAGE_KEY_ACTIVE, activeCanvasId, assertCurrent);
       assertCurrent();
 
       // Persist zone wire definitions — the canvas-owned source of truth for
       // zone-level wires. They survive reload and feed the annex snapshot.
       if (!zoneWiresBlocked) {
-        await storage.write(STORAGE_KEY_ZONE_WIRES, zoneData);
+        await writeInOrder(storage, STORAGE_KEY_ZONE_WIRES, zoneData, assertCurrent);
         diskBaseline.set(STORAGE_KEY_ZONE_WIRES, diskFingerprint(zoneData));
       }
       assertCurrent();
@@ -925,7 +941,10 @@ export function createCanvasStore(): UseBoundStore<StoreApi<CanvasState>> {
         rendererLog('canvas', 'warn', 'saveWires skipped — persisted wires could not be read');
         return;
       }
-      if (token?.cancelled || generation !== _loadGeneration) throw new Error('Canvas source changed before the local wire save');
+      const assertCurrent = () => {
+        if (token?.cancelled || generation !== _loadGeneration) throw new Error('Canvas source changed before the local wire save');
+      };
+      assertCurrent();
       // Persist wire definitions — the canvas-owned source of truth.
       // Unlike MCP bindings, wire definitions are not cleared when agents sleep.
       const data = get().wireDefinitions.map((b) => ({
@@ -940,7 +959,7 @@ export function createCanvasStore(): UseBoundStore<StoreApi<CanvasState>> {
         ...(b.disabledTools && b.disabledTools.length > 0 ? { disabledTools: b.disabledTools } : {}),
         ...(b.routedPath ? { routedPath: b.routedPath } : {}),
       }));
-      await storage.write(STORAGE_KEY_WIRES, data);
+      await writeInOrder(storage, STORAGE_KEY_WIRES, data, assertCurrent);
       diskBaseline.set(STORAGE_KEY_WIRES, diskFingerprint(data));
       if (token?.cancelled || generation !== _loadGeneration) throw new Error('Canvas source changed before the local wire save completed');
       if (get().dataOrigin === 'local') _failedLocalState = undefined;
