@@ -135,7 +135,7 @@ describe('sent message attachments', () => {
     fireEvent.click(chip);
     expect(await screen.findByTestId('chat-file-preview')).toBeTruthy();
     expect(readFilePreview).toHaveBeenCalledWith('a1', '/work/notes.md');
-    fireEvent.click(screen.getByRole('button', { name: 'Source' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Source' }));
     expect(await screen.findByTestId('monaco')).toHaveTextContent('hello');
   });
 
