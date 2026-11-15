@@ -218,12 +218,22 @@ export function resolveMembership(
   return { members: [...members.values()], unverified };
 }
 
+/**
+ * The key a member's own entries (tool switches, instructions) have in the
+ * record. The record is the host's, so keys are host-relative addresses: on a
+ * copy this machine's agents are `id@<self>` (#3516), on the host a bare id.
+ */
+export function memberPolicyKey(gp: GroupProject, agentId: string): string {
+  return groupProjectHost.addressOf(gp, agentId);
+}
+
 function memberBinding(gp: GroupProject, m: GroupProjectMembership, member: ResolvedGroupProjectMember): PersistedBinding {
-  const own = m.disabledTools?.[member.agentId];
+  const key = memberPolicyKey(gp, member.agentId);
+  const own = m.disabledTools?.[key];
   const fallback = gp.metadata?.defaultDisabledTools;
   const disabledTools = Array.isArray(own) ? own
     : Array.isArray(fallback) && fallback.every((t) => typeof t === 'string') ? fallback as string[] : undefined;
-  const instructions = m.instructions?.[member.agentId];
+  const instructions = m.instructions?.[key];
   return {
     agentId: member.agentId,
     targetId: gp.id,
@@ -652,15 +662,17 @@ export async function answerAutoJoinOffer(groupProjectId: string, accept: boolea
 /** Keep a member's own tool switches (#2084), so the binding the record makes after a restart has them. */
 export async function recordMemberDisabledTools(groupProjectId: string, agentId: string, disabledTools: string[]): Promise<void> {
   if (!(await isMembershipManaged(groupProjectId))) return;
+  const key = memberPolicyKey(await requireGroupProject(groupProjectId), agentId);
   await groupProjectHost.updateMembership(groupProjectId, (draft) => {
-    draft.disabledTools = { ...draft.disabledTools, [agentId]: [...disabledTools] };
+    draft.disabledTools = { ...draft.disabledTools, [key]: [...disabledTools] };
   });
 }
 
 /** A member's saved tool switches, or undefined when none were saved. */
 export async function savedMemberDisabledTools(groupProjectId: string, agentId: string): Promise<string[] | undefined> {
   if (!(await isMembershipManaged(groupProjectId))) return undefined;
-  const saved = (await groupProjectHost.getMembership(groupProjectId)).disabledTools?.[agentId];
+  const key = memberPolicyKey(await requireGroupProject(groupProjectId), agentId);
+  const saved = (await groupProjectHost.getMembership(groupProjectId)).disabledTools?.[key];
   return Array.isArray(saved) ? [...saved] : undefined;
 }
 

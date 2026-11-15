@@ -60,7 +60,7 @@ import { initGroupProjectLifecycle, _resetLifecycleForTesting } from './group-pr
 import { roleModeOf, setGroupProjectRole } from './group-project-roles';
 import {
   _resetMembershipForTesting, addMember, answerAutoJoinOffer, previewAutoJoin, describeMembership, excludeMember, membershipBindingSource,
-  releaseMembershipBindings, quickMemberName, reconcileMembership, recordMemberDisabledTools, savedMemberDisabledTools, watchGroupProjectMembership,
+  releaseMembershipBindings, quickMemberName, memberPolicyKey, reconcileMembership, recordMemberDisabledTools, savedMemberDisabledTools, watchGroupProjectMembership,
 } from './group-project-membership';
 
 const PROJ_A = { id: 'proj_a', name: 'Alpha', path: path.join('work', 'alpha') };
@@ -400,6 +400,17 @@ describe('a copy of a group project hosted on another machine (#3363)', () => {
     expect(membersOf('gp_remote')).toEqual(['dev']);
     // Nothing removed because this machine doesn't know 'ghost', and no auto-join from local agents.
     expect((await groupProjectHost.getMembership('gp_remote')).explicit.map((e) => e.address)).toEqual(['lead', `dev@${SELF}`, `ghost@${SELF}`]);
+    vi.restoreAllMocks();
+  });
+
+  it('keys a member\'s own entries by its host-relative address (#3516)', async () => {
+    vi.spyOn(groupProjectHost, 'selfMachine').mockReturnValue(SELF);
+    // On a copy this machine's agents are `id@<self>`.
+    expect(memberPolicyKey(remote('gp_remote'), 'dev')).toBe(`dev@${SELF}`);
+    expect(memberPolicyKey(remote('gp_remote'), `dev@${SELF}`)).toBe(`dev@${SELF}`);
+    // On the host its own agents are bare ids, however they are named.
+    expect(memberPolicyKey(gp('gp_here', shared), 'dev')).toBe('dev');
+    expect(memberPolicyKey(gp('gp_here', shared), `dev@${SELF}`)).toBe('dev');
     vi.restoreAllMocks();
   });
 

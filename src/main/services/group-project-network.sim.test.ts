@@ -20,6 +20,9 @@ interface Machine {
   host?: typeof import('./group-project-host');
   registry?: typeof import('./group-project-registry');
   bulletin?: typeof import('./group-project-bulletin');
+  membership?: typeof import('./group-project-membership');
+  persisted?: typeof import('./persisted-bindings');
+  bindings?: typeof import('./clubhouse-mcp/binding-manager');
 }
 
 const world = vi.hoisted(() => ({
@@ -33,8 +36,17 @@ vi.mock('./annex-network-profile', () => ({ annexEphemeralSession: () => false }
 vi.mock('./annex-identity', () => ({ getIdentity: () => (world.als?.getStore() ? { fingerprint: world.als.getStore()!.fp } : null) }));
 vi.mock('./annex-settings', () => ({ networkEnabled: () => true }));
 const projectsHere = () => world.als?.getStore()?.projects ?? [];
-vi.mock('./project-store', () => ({ list: vi.fn(async () => projectsHere().map(({ id, name, path }) => ({ id, name, path }))) }));
+vi.mock('./project-store', () => ({
+  list: vi.fn(async () => projectsHere().map(({ id, name, path }) => ({ id, name, path }))),
+  onProjectsChanged: vi.fn(() => () => undefined),
+}));
+vi.mock('./quick-agent-events', () => ({ knownQuickAgents: () => new Map() }));
+vi.mock('./canvas-store-reader', () => ({ readAllCanvasStores: async () => [] }));
+vi.mock('./canvas-wire-source', () => ({ canvasWireBindingSource: { id: 'canvas-wires', collect: async () => [], inspect: async () => [] } }));
 vi.mock('./agent-config', () => ({
+  listDurable: vi.fn(async (projectPath: string) => (projectsHere().find((p) => p.path === projectPath)?.agents ?? [])
+    .map((a) => ({ ...a, color: 'emerald', createdAt: '2026-01-01T00:00:00.000Z' }))),
+  onAgentConfigChanged: vi.fn(() => () => undefined),
   peekDurableConfigsChecked: vi.fn(async (projectPath: string) => ({ agents: projectsHere().find((p) => p.path === projectPath)?.agents ?? [], readable: true })),
   projectKey: vi.fn(async (projectPath: string) => projectsHere().find((p) => p.path === projectPath)?.key ?? 'unknown'),
 }));
@@ -93,6 +105,9 @@ beforeEach(async () => {
     m.host = await import('./group-project-host');
     m.registry = await import('./group-project-registry');
     m.bulletin = await import('./group-project-bulletin');
+    m.membership = await import('./group-project-membership');
+    m.persisted = await import('./persisted-bindings');
+    m.bindings = await import('./clubhouse-mcp/binding-manager');
     m.host.groupProjectHost.setNetworkLink(linkFor(m));
   }
 });
@@ -102,6 +117,9 @@ afterEach(async () => {
     await as(m, async (h) => { await h.groupProjectHost.flushRegistry(); await h.groupProjectHost.flushBoards(); });
     m.host!.groupProjectHost._resetForTesting();
     m.registry!.groupProjectRegistry._resetForTesting();
+    m.membership!._resetMembershipForTesting();
+    m.persisted!._resetPersistedBindingSourcesForTesting();
+    m.bindings!.bindingManager._resetForTesting();
     await fsp.rm(m.home, { recursive: true, force: true });
   }
   await fsp.rm(world.fallbackHome, { recursive: true, force: true });
@@ -371,6 +389,65 @@ describe('network group projects across two desktops (#3363)', () => {
       await as(B, (h) => h.groupProjectHost.syncFrom(A.fp));
       expect(await as(B, (h) => h.groupProjectHost.get(id))).toBeNull();
       B.host!.groupProjectHost.setNetworkLink(link);
+    });
+  });
+
+  describe('a member\'s own tool switches and instructions are keyed by address (#3516)', () => {
+    const POLICY = {
+      lead: { tools: ['broadcast'], instructions: { reviewer: 'host agent rule' } },
+      builder: { tools: ['shoulder_tap'], instructions: { designer: 'copy agent rule' } },
+    };
+
+    /** The host's record: its own agent bare, the other computer's with its machine; both with switches and instructions. */
+    async function policyProject(): Promise<string> {
+      const id = await sharedProject();
+      await as(A, (h) => h.groupProjectHost.updateMembership(id, (m) => {
+        m.autoJoin = false;
+        m.autoJoinOffer = 'dismissed';
+        m.explicit.push(
+          { address: 'lead', kind: 'durable', addedAt: '2026-11-13T00:00:00.000Z' },
+          { address: `builder@${B.fp}`, kind: 'durable', addedAt: '2026-11-13T00:00:00.000Z' },
+        );
+        m.disabledTools = { lead: POLICY.lead.tools, [`builder@${B.fp}`]: POLICY.builder.tools };
+        m.instructions = { lead: POLICY.lead.instructions, [`builder@${B.fp}`]: POLICY.builder.instructions };
+      }));
+      await as(B, (h) => h.groupProjectHost.syncFrom(A.fp));
+      return id;
+    }
+
+    /** Bind from the record, as the app does at startup, and read the binding each of this machine's agents got. */
+    async function bindingOf(m: Machine, agentId: string, id: string) {
+      return as(m, async () => {
+        m.persisted!.registerPersistedBindingSource(m.membership!.membershipBindingSource);
+        await m.persisted!.rebuildPersistedBindings();
+        await m.membership!.reconcileMembership();
+        return m.bindings!.bindingManager.getBindingsForAgent(agentId).find((b) => b.targetId === id);
+      });
+    }
+
+    it('a copy\'s own member gets the tool switches and instructions the host holds for its address', async () => {
+      const id = await policyProject();
+      const binding = await bindingOf(B, 'builder', id);
+      expect(binding?.disabledTools).toEqual(POLICY.builder.tools);
+      expect(binding?.instructions).toEqual(POLICY.builder.instructions);
+    });
+
+    it('the host\'s own member is unaffected, and the copy does not bind the host\'s agent', async () => {
+      const id = await policyProject();
+      const onHost = await bindingOf(A, 'lead', id);
+      expect(onHost?.disabledTools).toEqual(POLICY.lead.tools);
+      expect(onHost?.instructions).toEqual(POLICY.lead.instructions);
+      // A bare id on the copy is the host's agent, never this computer's.
+      expect(await as(B, async () => B.bindings!.bindingManager.getBindingsForAgent('lead'))).toEqual([]);
+    });
+
+    it('a switch saved on the copy lands under this computer\'s address on the host', async () => {
+      const id = await policyProject();
+      await bindingOf(B, 'builder', id);
+      await as(B, () => B.membership!.recordMemberDisabledTools(id, 'builder', ['broadcast']));
+      const onHost = await as(A, (h) => h.groupProjectHost.getMembership(id));
+      expect(onHost.disabledTools).toEqual({ lead: POLICY.lead.tools, [`builder@${B.fp}`]: ['broadcast'] });
+      await expect(as(B, () => B.membership!.savedMemberDisabledTools(id, 'builder'))).resolves.toEqual(['broadcast']);
     });
   });
 });
