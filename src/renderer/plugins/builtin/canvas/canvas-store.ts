@@ -69,6 +69,8 @@ export interface CanvasState {
   loadCanvas: (storage: ScopedStorage) => Promise<void>;
   hydrateForNavigation: (snapshot: CanvasNavigationSnapshot, canvasId: string) => void;
   saveCanvas: (storage: ScopedStorage) => Promise<void>;
+  /** Restore this store's failed local edits after viewing a satellite. */
+  restoreFailedLocalState: () => boolean;
   hydrateFromRemote: (canvasData: unknown[], activeCanvasId: string, wireDefinitions?: unknown[], zoneWireDefinitions?: unknown[]) => void;
 
   // Wire persistence — wireDefinitions is the canvas-owned source of truth for
@@ -420,10 +422,27 @@ export function createCanvasStore(): UseBoundStore<StoreApi<CanvasState>> {
   //  - 'snapshot-first': malformed records were dropped; copy the raw data to
   //                      a recovery key before the first write replaces it.
   //  - 'ok':             clean hydration.
-  let _canvasPersist: 'blocked' | 'verify-empty' | 'snapshot-first' | 'ok' = 'blocked';
+  type CanvasPersist = 'blocked' | 'verify-empty' | 'snapshot-first' | 'ok';
+  let _canvasPersist: CanvasPersist = 'blocked';
   let _recoverySnapshot: unknown;
-  let _zoneWiresPersistBlocked = false;
-  let _wiresPersistBlocked = false;
+  type WirePersistBlock = 'remote' | 'local-unreadable' | null;
+  let _zoneWiresPersistBlocked: WirePersistBlock = null;
+  let _wiresPersistBlocked: WirePersistBlock = null;
+  // Compare wire content so no-op edits do not turn hydration's empty list
+  // into a failed save. Never persist over data we could not read.
+  let _unreadableWiresBaseline: string | undefined;
+  let _unreadableZoneWiresBaseline: string | undefined;
+  // Each project has its own store; Home has a singleton store. Keep the
+  // failed local state AND its persistence guards here while viewing remote.
+  let _failedLocalState: {
+    state: CanvasState;
+    canvasPersist: CanvasPersist;
+    recoverySnapshot: unknown;
+    wiresPersistBlocked: WirePersistBlock;
+    zoneWiresPersistBlocked: WirePersistBlock;
+    unreadableWiresBaseline: typeof _unreadableWiresBaseline;
+    unreadableZoneWiresBaseline: typeof _unreadableZoneWiresBaseline;
+  } | undefined;
 
   return create<CanvasState>((set, get) => ({
     canvases: [initialCanvas],
@@ -482,8 +501,8 @@ export function createCanvasStore(): UseBoundStore<StoreApi<CanvasState>> {
         return { id: wire.id, sourceZoneId: wire.sourceZoneId, targetId: wire.targetId, targetType: wire.targetType };
       });
       _canvasPersist = 'ok';
-      _wiresPersistBlocked = false;
-      _zoneWiresPersistBlocked = false;
+      _wiresPersistBlocked = null;
+      _zoneWiresPersistBlocked = null;
       set({
         canvases, activeCanvasId: canvasId, wireDefinitions, zoneWireDefinitions, loaded: true, dataOrigin: 'local', wiresLoaded: true, loadError: null,
         ...syncDerivedState(canvases, canvasId),
@@ -594,7 +613,8 @@ export function createCanvasStore(): UseBoundStore<StoreApi<CanvasState>> {
           : canvases[0].id;
 
         _canvasPersist = nextPersist;
-        _zoneWiresPersistBlocked = nextZoneWiresBlocked;
+        _zoneWiresPersistBlocked = nextZoneWiresBlocked ? 'local-unreadable' : null;
+        _unreadableZoneWiresBaseline = JSON.stringify(loadedZoneWires);
         set((state) => ({ canvases, activeCanvasId, zoneWireDefinitions: loadedZoneWires, loaded: true, dataOrigin: 'local', loadError: null, hydrationSeq: state.hydrationSeq + 1, ...syncDerivedState(canvases, activeCanvasId) }));
         span.set(
           ATTR.canvasCount(canvases.length),
@@ -654,6 +674,9 @@ export function createCanvasStore(): UseBoundStore<StoreApi<CanvasState>> {
         _canvasPersist = 'ok';
       }
       if (_canvasPersist !== 'ok') return;
+      if (_zoneWiresPersistBlocked === 'local-unreadable' && JSON.stringify(get().zoneWireDefinitions) !== _unreadableZoneWiresBaseline) {
+        throw new Error('Canvas zone wire changes not saved: persisted zone wires could not be read');
+      }
 
       // Capture everything before the first await: the store can switch to a
       // satellite's canvas while these writes are in flight.
@@ -703,7 +726,8 @@ export function createCanvasStore(): UseBoundStore<StoreApi<CanvasState>> {
         } catch (err) {
           // Unreadable — mark loaded so canvas autosave isn't held up, but
           // block saveWires so the empty list never overwrites the real wires.
-          _wiresPersistBlocked = true;
+          if (_wiresPersistBlocked !== 'local-unreadable') _unreadableWiresBaseline = JSON.stringify(get().wireDefinitions);
+          _wiresPersistBlocked = 'local-unreadable';
           rendererLog('canvas', 'error', 'Canvas wires unreadable — wire saves disabled for this session', {
             meta: { error: errorMessage(err) },
           });
@@ -714,7 +738,7 @@ export function createCanvasStore(): UseBoundStore<StoreApi<CanvasState>> {
         // store may still hold a satellite's (hydrateFromRemote), and they must
         // never be saved here. No local wires means none, not the satellite's.
         if (!saved || !Array.isArray(saved) || saved.length === 0) {
-          _wiresPersistBlocked = false;
+          _wiresPersistBlocked = null;
           set({ wireDefinitions: [], wiresLoaded: true });
           return;
         }
@@ -747,12 +771,13 @@ export function createCanvasStore(): UseBoundStore<StoreApi<CanvasState>> {
             // keep the wire definition so the wire remains visible and persisted
           }
         }
-        _wiresPersistBlocked = false;
+        _wiresPersistBlocked = null;
         set({ wireDefinitions: restoredDefinitions, wiresLoaded: true });
       } catch (err) {
         // Restore failed part-way — keep whatever was persisted rather than
         // overwriting it with a partial list, but don't hold up canvas autosave.
-        _wiresPersistBlocked = true;
+        if (_wiresPersistBlocked !== 'local-unreadable') _unreadableWiresBaseline = JSON.stringify(get().wireDefinitions);
+        _wiresPersistBlocked = 'local-unreadable';
         rendererLog('canvas', 'error', 'Canvas wire restore failed — wire saves disabled for this session', {
           meta: { error: errorMessage(err) },
         });
@@ -763,7 +788,11 @@ export function createCanvasStore(): UseBoundStore<StoreApi<CanvasState>> {
     },
 
     saveWires: async (storage) => {
-      if (_wiresPersistBlocked) {
+      if (_wiresPersistBlocked === 'remote') return;
+      if (_wiresPersistBlocked === 'local-unreadable') {
+        if (JSON.stringify(get().wireDefinitions) !== _unreadableWiresBaseline) {
+          throw new Error('Canvas wire changes not saved: persisted wires could not be read');
+        }
         rendererLog('canvas', 'warn', 'saveWires skipped — persisted wires could not be read');
         return;
       }
@@ -829,15 +858,37 @@ export function createCanvasStore(): UseBoundStore<StoreApi<CanvasState>> {
       }));
     },
 
+    restoreFailedLocalState: () => {
+      if (!_failedLocalState) return false;
+      const local = _failedLocalState;
+      _failedLocalState = undefined;
+      _canvasPersist = local.canvasPersist;
+      _recoverySnapshot = local.recoverySnapshot;
+      _wiresPersistBlocked = local.wiresPersistBlocked;
+      _zoneWiresPersistBlocked = local.zoneWiresPersistBlocked;
+      _unreadableWiresBaseline = local.unreadableWiresBaseline;
+      _unreadableZoneWiresBaseline = local.unreadableZoneWiresBaseline;
+      set({ ...local.state, hydrationSeq: get().hydrationSeq + 1 });
+      return true;
+    },
+
     hydrateFromRemote: (canvasData, activeId, remoteWireDefinitions?, remoteZoneWireDefinitions?) => {
       if (!canvasData || !Array.isArray(canvasData) || canvasData.length === 0) return;
+      const local = get();
+      if (local.dataOrigin === 'local' && local.autosaveFailed) {
+        _failedLocalState = {
+          state: local, canvasPersist: _canvasPersist, recoverySnapshot: _recoverySnapshot,
+          wiresPersistBlocked: _wiresPersistBlocked, zoneWiresPersistBlocked: _zoneWiresPersistBlocked,
+          unreadableWiresBaseline: _unreadableWiresBaseline, unreadableZoneWiresBaseline: _unreadableZoneWiresBaseline,
+        };
+      }
       // From here the store holds a satellite's canvas, which must never be
       // written to this machine's storage (the app canvas store is shared by
       // the local and remote views). The next loadCanvas/loadWires from local
       // storage re-opens the guards.
       _canvasPersist = 'blocked';
-      _wiresPersistBlocked = true;
-      _zoneWiresPersistBlocked = true;
+      _wiresPersistBlocked = 'remote';
+      _zoneWiresPersistBlocked = 'remote';
       const existingState = get();
       const existingCanvasMap = new Map(existingState.canvases.map((c) => [c.id, c]));
 

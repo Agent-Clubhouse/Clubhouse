@@ -149,7 +149,7 @@ describe('canvas main', () => {
     // Find the async IIFE that wraps the load calls
     const asyncBlock = source.slice(
       source.indexOf('(async () =>'),
-      source.indexOf('return () => { cancelled = true; }'),
+      source.lastIndexOf('return () => { cancelled = true; }'),
     );
     // Both loadCanvas and loadWires must be awaited inside the IIFE
     expect(asyncBlock).toContain('await store.getState().loadCanvas(storage)');
@@ -531,6 +531,157 @@ describe('canvas main', () => {
           ]));
         } finally {
           second.unmount();
+        }
+      },
+    );
+
+    it.each(['write', 'confirm-read'])(
+      'retains unsaved Home cards and wires across a remote switch after a failed %s flush', async (failure) => {
+        const storage = memoryStorage();
+        const api = createMockAPI({
+          context: { mode: 'app', projectId: undefined, projectPath: undefined },
+          storage: { project: storage, projectLocal: storage, global: storage },
+        });
+        const store = canvasModule.useAppCanvasStore;
+        act(() => { useUIStore.setState({ activeHostId: null }); store.setState({ autosaveFailed: false }); });
+        const panel = render(React.createElement(canvasModule.MainPanel, { api }));
+        await waitFor(() => expect(storage.read).toHaveBeenCalledWith('canvas-wires'));
+        const read = storage.read.getMockImplementation()!;
+        const write = storage.write.getMockImplementation()!;
+        let rejectFlush!: (error: Error) => void;
+        const flushGate = new Promise<void>((_resolve, reject) => { rejectFlush = reject; });
+        let failing = true;
+        storage.read.mockImplementation(async (key) => {
+          if (failing && failure === 'confirm-read' && key === 'canvas-instances') await flushGate;
+          return read(key);
+        });
+        storage.write.mockImplementation(async (key, value) => {
+          if (failing && failure === 'write' && key === 'canvas-instances-backup') await flushGate;
+          return write(key, value);
+        });
+        act(() => {
+          store.getState().addView('agent', { x: 123, y: 456 });
+          store.getState().addWireDefinition({ agentId: 'local-a', targetId: 'local-b', targetKind: 'agent', label: 'Local wire' });
+          store.getState().addZoneWireDefinition({ sourceZoneId: 'local-zone', targetId: 'local-a', targetType: 'agent' });
+        });
+        const edits = store.getState();
+        const remote = {
+          canvases: [{ ...edits.canvases[0], id: 'remote-board', name: 'Remote', views: [] }],
+          activeCanvasId: 'remote-board',
+          wireDefinitions: [{ agentId: 'remote-a', targetId: 'remote-b', targetKind: 'agent', label: 'Remote wire' }],
+          zoneWireDefinitions: [],
+        };
+        try {
+          act(() => {
+            useRemoteProjectStore.setState({ remoteAppCanvasState: { 'sat-flush': remote } });
+            useUIStore.setState({ activeHostId: 'sat-flush' });
+          });
+          // A live update must not bypass the outstanding flush either.
+          act(() => { useRemoteProjectStore.setState({ remoteAppCanvasState: { 'sat-flush': { ...remote, canvases: [{ ...remote.canvases[0], name: 'Latest remote' }] } } }); });
+          expect(store.getState().dataOrigin).toBe('local');
+          expect(store.getState().canvases).toBe(edits.canvases);
+          await act(async () => { rejectFlush(new Error('flush failed')); });
+          await waitFor(() => expect(store.getState().dataOrigin).toBe('remote'));
+          expect(store.getState().activeCanvasId).toBe('remote-board');
+          expect(store.getState().canvases[0].name).toBe('Latest remote');
+          act(() => { useRemoteProjectStore.setState({ remoteAppCanvasState: { 'sat-flush': { ...remote } } }); });
+          const writes = storage.write.mock.calls.length;
+          await store.getState().saveCanvas(storage);
+          await store.getState().saveWires(storage);
+          expect(storage.write.mock.calls).toHaveLength(writes);
+
+          act(() => { useUIStore.setState({ activeHostId: null }); });
+          expect(await screen.findByText('Canvas changes not saved')).toBeTruthy();
+          expect(store.getState().canvases).toBe(edits.canvases);
+          expect(store.getState().wireDefinitions).toBe(edits.wireDefinitions);
+          expect(store.getState().zoneWireDefinitions).toBe(edits.zoneWireDefinitions);
+          failing = false;
+          fireEvent.click(screen.getByText('Retry'));
+          await waitFor(() => expect(screen.queryByText('Canvas changes not saved')).toBeNull());
+          expect((storage.files.get('canvas-instances') as any[])[0].views).toEqual(edits.views);
+          expect(storage.files.get('canvas-wires')).toEqual(expect.arrayContaining([expect.objectContaining({ agentId: 'local-a' })]));
+          expect(storage.files.get('canvas-zone-wires')).toEqual(edits.zoneWireDefinitions);
+          for (const [, value] of storage.write.mock.calls) expect(JSON.stringify(value)).not.toContain('remote-');
+          expect(storage.delete).not.toHaveBeenCalled();
+        } finally {
+          panel.unmount();
+          act(() => { useUIStore.setState({ activeHostId: null }); });
+        }
+      },
+    );
+
+    it('keeps failed local project edits in their own store while visiting a satellite project', async () => {
+      const { api, store, storage, mountAndLoad } = setup('project-remote-flush');
+      const panel = await mountAndLoad();
+      let failing = true;
+      const write = storage.write.getMockImplementation()!;
+      storage.write.mockImplementation(async (key, value) => {
+        if (failing && key === 'canvas-instances-backup') throw new Error('disk full');
+        return write(key, value);
+      });
+      act(() => { store.getState().addView('agent', { x: 11, y: 22 }); });
+      const edits = store.getState().canvases;
+      const projectId = 'remote||sat-project-flush||project';
+      const remoteStore = canvasModule.getProjectCanvasStore(projectId);
+      act(() => {
+        useRemoteProjectStore.setState({ remoteCanvasState: { [projectId]: {
+          canvases: [{ ...edits[0], id: 'remote-project-board', views: [] }],
+          activeCanvasId: 'remote-project-board', wireDefinitions: [],
+        } } });
+      });
+      const remoteApi = createMockAPI({
+        context: { mode: 'project', projectId, projectPath: '/remote/project' },
+        storage: { project: storage, projectLocal: storage, global: storage },
+      });
+      try {
+        panel.rerender(React.createElement(canvasModule.MainPanel, { api: remoteApi }));
+        await waitFor(() => expect(remoteStore.getState().dataOrigin).toBe('remote'));
+        await waitFor(() => expect(store.getState().autosaveFailed).toBe(true));
+        panel.rerender(React.createElement(canvasModule.MainPanel, { api }));
+        expect(await screen.findByText('Canvas changes not saved')).toBeTruthy();
+        expect(store.getState().canvases).toBe(edits);
+        failing = false;
+        fireEvent.click(screen.getByText('Retry'));
+        await waitFor(() => expect(screen.queryByText('Canvas changes not saved')).toBeNull());
+        for (const [, value] of storage.write.mock.calls) expect(JSON.stringify(value)).not.toContain('remote-project-board');
+      } finally {
+        panel.unmount();
+      }
+    });
+
+    it.each(['canvas-wires', 'canvas-zone-wires'])(
+      'shows not-saved status and retains pending edits after an unreadable %s load', async (key) => {
+        const storage = memoryStorage();
+        const read = storage.read.getMockImplementation()!;
+        storage.read.mockImplementation(async (k) => {
+          if (k === key) throw new Error('wire read failed');
+          return read(k);
+        });
+        const { store, mount, mountAndLoad } = setup(`unreadable-${key}`, storage);
+        const panel = await mountAndLoad();
+        await waitFor(() => expect(store.getState().wiresLoaded).toBe(true));
+        act(() => {
+          if (key === 'canvas-wires') {
+            store.getState().addWireDefinition({ agentId: 'a', targetId: 'b', targetKind: 'agent', label: 'B' });
+          } else {
+            store.getState().addZoneWireDefinition({ sourceZoneId: 'z', targetId: 'a', targetType: 'agent' });
+          }
+        });
+        const edits = store.getState();
+        expect(await screen.findByText('Canvas changes not saved')).toBeTruthy();
+        expect(storage.write.mock.calls.some(([k]) => k === key)).toBe(false);
+        panel.unmount();
+        const remount = mount();
+        try {
+          expect(await screen.findByText('Canvas changes not saved')).toBeTruthy();
+          expect(store.getState().wireDefinitions).toBe(edits.wireDefinitions);
+          expect(store.getState().zoneWireDefinitions).toBe(edits.zoneWireDefinitions);
+          fireEvent.click(screen.getByText('Retry'));
+          await waitFor(() => expect(store.getState().autosaveFailed).toBe(true));
+          expect(storage.write.mock.calls.some(([k]) => k === key)).toBe(false);
+          expect(storage.delete).not.toHaveBeenCalled();
+        } finally {
+          remount.unmount();
         }
       },
     );

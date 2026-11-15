@@ -251,6 +251,63 @@ describe('canvas hydration safety', () => {
     expect(map.get('canvas-wires')).toBe(wires);
   });
 
+  it.each(['canvas-wires', 'canvas-zone-wires'])(
+    'rejects pending edits after an unreadable %s load without writing, and reopens after a successful re-read', async (key) => {
+      const original = [{ agentId: 'durable_a', targetId: 'durable_b', targetKind: 'agent', label: 'B' }];
+      const originalZones = [{ id: 'zw_1', sourceZoneId: 'z1', targetId: 'durable_a', targetType: 'agent' }];
+      let unreadable = true;
+      const { map, storage } = createStorage({
+        'canvas-instances': canvasWith(card('a'), card('b')),
+        'canvas-wires': original,
+        'canvas-zone-wires': originalZones,
+      }, (k) => unreadable && k === key);
+      const store = createCanvasStore();
+      await store.getState().loadCanvas(storage);
+      await store.getState().loadWires(storage);
+      const edit = () => {
+        if (key === 'canvas-wires') {
+          store.getState().addWireDefinition({ agentId: 'durable_b', targetId: 'durable_a', targetKind: 'agent', label: 'A' });
+        } else {
+          store.getState().addZoneWireDefinition({ sourceZoneId: 'z2', targetId: 'durable_b', targetType: 'agent' });
+        }
+      };
+      const save = () => key === 'canvas-wires' ? store.getState().saveWires(storage) : store.getState().saveCanvas(storage);
+      // No-op removals create fresh arrays but do not create pending edits.
+      if (key === 'canvas-wires') store.getState().removeWireDefinition('missing', 'missing');
+      else store.getState().removeZoneWireDefinition('missing');
+      await save();
+      vi.mocked(storage.write).mockClear();
+      edit();
+      await expect(save()).rejects.toThrow(/changes not saved.*could not be read/);
+      expect(storage.write).not.toHaveBeenCalled();
+      expect(map.get('canvas-wires')).toBe(original);
+      expect(map.get('canvas-zone-wires')).toBe(originalZones);
+      if (key === 'canvas-wires') {
+        await store.getState().loadWires(storage);
+        await expect(save()).rejects.toThrow(/changes not saved.*could not be read/);
+      }
+
+      unreadable = false;
+      await store.getState().loadCanvas(storage);
+      await store.getState().loadWires(storage);
+      edit();
+      await save();
+      expect(map.get(key)).toHaveLength(2);
+      expect(storage.delete).not.toHaveBeenCalled();
+    },
+  );
+
+  it('keeps remote-owned wire and zone-wire saves silent even with edits', async () => {
+    const { storage } = createStorage({});
+    const store = createCanvasStore();
+    store.getState().hydrateFromRemote(canvasWith(card('remote')), 'canvas_1', [], []);
+    store.getState().addWireDefinition({ agentId: 'remote-a', targetId: 'remote-b', targetKind: 'agent', label: 'B' });
+    store.getState().addZoneWireDefinition({ sourceZoneId: 'remote-zone', targetId: 'remote-a', targetType: 'agent' });
+    await expect(store.getState().saveCanvas(storage)).resolves.toBeUndefined();
+    await expect(store.getState().saveWires(storage)).resolves.toBeUndefined();
+    expect(storage.write).not.toHaveBeenCalled();
+  });
+
   it('refuses to save a store that was never hydrated from storage', async () => {
     const { storage } = createStorage({ 'canvas-instances': canvasWith(card('a')) });
     const store = createCanvasStore();

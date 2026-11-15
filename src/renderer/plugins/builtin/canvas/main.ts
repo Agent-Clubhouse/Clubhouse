@@ -251,42 +251,43 @@ export function MainPanel({ api }: { api: PluginAPI }) {
   // Whether this mount has loaded the canvas. The store outlives the panel,
   // but a remount reloads it, so queued agent cards wait for this.
   const [hydrated, setHydrated] = useState(false);
+  const remoteHydrationReadyRef = useRef(false);
   useEffect(() => {
     let cancelled = false;
     setHydrated(false);
+    remoteHydrationReadyRef.current = false;
     if (navigationHandoff) {
       consumeCanvasNavigationHandoff(store, navigationHandoff);
       setHydrated(true);
       return;
     }
-    // App-mode with active satellite: hydrate from remote app canvas state
-    if (isRemoteApp && activeHostId) {
-      const remoteState = useRemoteProjectStore.getState().remoteAppCanvasState[activeHostId];
-      if (remoteState) {
-        // Save any local edit still waiting before the store takes the
-        // satellite's canvas. saveCanvas/saveWires capture their data before
-        // their first await, and hydrateFromRemote closes the guards, so
-        // nothing remote is written.
-        flushSave();
-        store.getState().hydrateFromRemote(remoteState.canvases, remoteState.activeCanvasId, remoteState.wireDefinitions, (remoteState as { zoneWireDefinitions?: unknown[] }).zoneWireDefinitions);
+    if (isRemoteApp || isRemote) {
+      flushSave();
+      void (async () => {
+        // Wait for both writers and their failure status before replacing the
+        // local store. hydrateFromRemote retains failed local edits + guards.
+        await inflightSaves.get(store);
+        if (cancelled) return;
+        remoteHydrationReadyRef.current = true;
+        // Read the latest snapshot after the wait, including any live updates
+        // that arrived while the local flush was still in flight.
+        const remoteState = isRemoteApp && activeHostId
+          ? useRemoteProjectStore.getState().remoteAppCanvasState[activeHostId]
+          : projectId ? useRemoteProjectStore.getState().remoteCanvasState[projectId] : undefined;
+        if (remoteState) {
+          store.getState().hydrateFromRemote(remoteState.canvases, remoteState.activeCanvasId, remoteState.wireDefinitions, (remoteState as { zoneWireDefinitions?: unknown[] }).zoneWireDefinitions);
+        }
         setHydrated(true);
-        return;
-      }
-    }
-    if (isRemote && projectId) {
-      const remoteState = useRemoteProjectStore.getState().remoteCanvasState[projectId];
-      if (remoteState) {
-        flushSave();
-        store.getState().hydrateFromRemote(remoteState.canvases, remoteState.activeCanvasId, remoteState.wireDefinitions, (remoteState as { zoneWireDefinitions?: unknown[] }).zoneWireDefinitions);
-        setHydrated(true);
-        return;
-      }
+      })();
+      return () => { cancelled = true; remoteHydrationReadyRef.current = false; };
     }
     // Await loadCanvas before loadWires so that wire reconciliation has
     // access to the loaded canvas views.
     (async () => {
       // A save flushed by the previous mount may still be writing; read after it.
       await inflightSaves.get(store);
+      if (cancelled) return;
+      store.getState().restoreFailedLocalState();
       // Keep the only in-memory copy of edits whose last save failed.
       if (!store.getState().autosaveFailed || store.getState().dataOrigin !== 'local') {
         await store.getState().loadCanvas(storage);
@@ -303,7 +304,7 @@ export function MainPanel({ api }: { api: PluginAPI }) {
     let prevState = useRemoteProjectStore.getState().remoteCanvasState[projectId];
     return useRemoteProjectStore.subscribe((state) => {
       const newState = state.remoteCanvasState[projectId];
-      if (newState && newState !== prevState && store.getState().loaded) {
+      if (newState && newState !== prevState && remoteHydrationReadyRef.current) {
         prevState = newState;
         store.getState().hydrateFromRemote(newState.canvases, newState.activeCanvasId, newState.wireDefinitions, (newState as { zoneWireDefinitions?: unknown[] }).zoneWireDefinitions);
       }
@@ -316,7 +317,7 @@ export function MainPanel({ api }: { api: PluginAPI }) {
     let prevState = useRemoteProjectStore.getState().remoteAppCanvasState[activeHostId];
     return useRemoteProjectStore.subscribe((state) => {
       const newState = state.remoteAppCanvasState[activeHostId];
-      if (newState && newState !== prevState && store.getState().loaded) {
+      if (newState && newState !== prevState && remoteHydrationReadyRef.current) {
         prevState = newState;
         store.getState().hydrateFromRemote(newState.canvases, newState.activeCanvasId, newState.wireDefinitions, (newState as { zoneWireDefinitions?: unknown[] }).zoneWireDefinitions);
       }
@@ -449,7 +450,7 @@ export function MainPanel({ api }: { api: PluginAPI }) {
   // (skip for remote projects/app — the satellite broadcasts its own state)
   const scope = isAppMode ? 'global' : 'project';
   useEffect(() => {
-    if (!loaded || isRemote || isRemoteApp) return;
+    if (!loaded || isRemote || isRemoteApp || store.getState().dataOrigin !== 'local') return;
     // Only broadcast from the main window, not from pop-outs
     if (window.clubhouse.window.isPopout()) return;
     broadcastCanvasState(
@@ -474,9 +475,9 @@ export function MainPanel({ api }: { api: PluginAPI }) {
    * simply has a different view ID at the same position.
    */
   const remoteForward = useCallback((mutation: CanvasMutation): void => {
-    if (!isRemote || !projectId) return;
+    if (!isRemote || !projectId || store.getState().dataOrigin !== 'remote') return;
     sendRemoteCanvasMutation(projectId, activeCanvasId, scope, mutation);
-  }, [isRemote, projectId, activeCanvasId, scope]);
+  }, [isRemote, projectId, activeCanvasId, scope, store]);
 
   // ── Pop-out handler ─────────────────────────────────────────────
 
