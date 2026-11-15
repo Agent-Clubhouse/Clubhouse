@@ -98,7 +98,7 @@ describe('MainPanel', () => {
   }
   /** AgentView for an agent running in chat: the transcript and its composer. */
   function StubChat({ agentId }: { agentId: string }) {
-    return <div data-testid={`chat-${agentId}`}><div data-testid="chat-composer"><textarea aria-label="Message" /></div></div>;
+    return <div data-testid={`chat-${agentId}`}><div data-testid="chat-composer"><div role="textbox" contentEditable aria-label="Message" /></div></div>;
   }
 
   function makeApi(initial: AgentInfo[], opts: {

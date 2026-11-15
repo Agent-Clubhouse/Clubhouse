@@ -1,64 +1,32 @@
-import type { ReactNode } from 'react';
-import { listItem } from './markdown-aids';
+import { useMemo, type ReactNode } from 'react';
+import type { Node as PMNode } from 'prosemirror-model';
+import { parsePrompt } from './prompt-codec';
 
-/** Only the composer's small source-formatting vocabulary. React escapes all
- * text: HTML, links, headings, paths, fences and other Markdown stay literal. */
-function inline(text: string): ReactNode[] {
-  const parts: ReactNode[] = [];
-  const pattern = /\*\*([^*\n]+)\*\*|(?<!\*)\*([^*\n]+)\*(?!\*)/g;
-  let from = 0;
-  for (const match of text.matchAll(pattern)) {
-    parts.push(text.slice(from, match.index));
-    parts.push(match[1] !== undefined
-      ? <strong key={match.index}>{match[1]}</strong>
-      : <em key={match.index}>{match[2]}</em>);
-    from = match.index + match[0].length;
-  }
-  parts.push(text.slice(from));
-  return parts;
-}
-
+/** The same restricted subset as the composer; React escapes literal text.
+ * No HTML parser, links, code, headings or underscore formatting. */
 export function PromptMarkdown({ text }: { text: string }) {
-  const lines = text.split('\n');
-  let at = 0;
-  let fence: string | null = null;
-  const nodes: ReactNode[] = [];
-  function list(indent: number): ReactNode {
-    const first = listItem(lines[at])!;
-    const ordered = first[2].endsWith('.');
-    const key = at;
-    const items: ReactNode[] = [];
-    while (at < lines.length) {
-      const item = listItem(lines[at]);
-      if (!item || item[1].length !== indent || item[2].endsWith('.') !== ordered) break;
-      const itemKey = at++;
-      const children: ReactNode[] = [];
-      while (at < lines.length) {
-        const child = listItem(lines[at]);
-        if (!child || child[1].length <= indent) break;
-        children.push(list(child[1].length));
-      }
-      items.push(<li key={itemKey}>{inline(item[3])}{children}</li>);
+  const doc = useMemo(() => parsePrompt(text), [text]);
+  function render(node: PMNode, key: number): ReactNode {
+    if (node.isText) {
+      let result: ReactNode = node.text;
+      for (const mark of node.marks) result = mark.type.name === 'strong' ? <strong>{result}</strong> : <em>{result}</em>;
+      return <span key={key}>{result}</span>;
     }
-    const className = 'my-0 pl-5 whitespace-pre-wrap';
-    return ordered
-      ? <ol key={key} start={Number.parseInt(first[2], 10)} className={`${className} list-decimal`}>{items}</ol>
-      : <ul key={key} className={`${className} list-disc`}>{items}</ul>;
-  }
-  while (at < lines.length) {
-    const line = lines[at];
-    const delimiter = /^\s*(`{3,}|~{3,})/.exec(line)?.[1];
-    if (delimiter) {
-      if (!fence) fence = delimiter;
-      else if (delimiter[0] === fence[0] && delimiter.length >= fence.length) fence = null;
-      nodes.push(<span key={at} className="whitespace-pre-wrap">{line}{at < lines.length - 1 ? '\n' : ''}</span>);
-      at++;
-    } else if (!fence && listItem(line)) {
-      nodes.push(list(listItem(line)![1].length));
-    } else {
-      nodes.push(<span key={at} className="whitespace-pre-wrap">{fence || /^ {4}/.test(line) ? line : inline(line)}{at < lines.length - 1 ? '\n' : ''}</span>);
-      at++;
+    const children: ReactNode[] = [];
+    node.forEach((child, offset) => children.push(render(child, offset)));
+    switch (node.type.name) {
+      case 'hard_break': return <br key={key} />;
+      case 'paragraph': return <span key={key} className="whitespace-pre-wrap">{children}</span>;
+      case 'list_item': return <li key={key}>{children}</li>;
+      case 'ordered_list': return <ol key={key} start={node.attrs.order} className="my-0 pl-5 list-decimal whitespace-pre-wrap">{children}</ol>;
+      case 'bullet_list': return <ul key={key} className="my-0 pl-5 list-disc whitespace-pre-wrap">{children}</ul>;
+      default: return null;
     }
   }
-  return <>{nodes}</>;
+  const blocks: ReactNode[] = [];
+  doc.forEach((node, offset, index) => {
+    if (index && node.type.name === 'paragraph') blocks.push('\n');
+    blocks.push(render(node, offset));
+  });
+  return <>{blocks}</>;
 }

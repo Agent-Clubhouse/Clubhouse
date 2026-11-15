@@ -1,3 +1,4 @@
+import { typePrompt, promptSource } from './prompt-editor.testing';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import type { Agent } from '../../../../shared/types';
@@ -335,7 +336,7 @@ describe('ChatView approvals', () => {
     const before = base.filter((e) => e.type !== 'permission_request');
     const { rerender } = renderState(fold(before), actions);
     const input = screen.getByLabelText('Message');
-    fireEvent.change(input, { target: { value: 'Still writing' } });
+    typePrompt(input, 'Still writing');
     input.focus();
     expect(input).toHaveFocus();
     rerender(<ChatViewBody agent={agent} state={fold(base)} actions={actions} />);
@@ -350,7 +351,7 @@ describe('ChatView approvals', () => {
     fireEvent.keyDown(input, { key: '1' });
     expect(actions.respondPermission).not.toHaveBeenCalled();
     expect(actions.answerQuestion).not.toHaveBeenCalled();
-    expect(input).toHaveValue('Still writing');
+    expect(promptSource(input)).toBe('Still writing');
   });
 
   it('unlocks both question cards after a failed answer, then guards a successful inline answer', async () => {
@@ -489,7 +490,7 @@ describe('ChatView plans and questions', () => {
 
 describe('ChatView composer', () => {
   function type(text: string) {
-    fireEvent.change(screen.getByLabelText('Message'), { target: { value: text } });
+    typePrompt(screen.getByLabelText('Message'), text);
   }
 
   it('sends with Enter when idle', () => {
@@ -498,7 +499,7 @@ describe('ChatView composer', () => {
     type('Yes, do that too');
     fireEvent.keyDown(screen.getByLabelText('Message'), { key: 'Enter' });
     expect(actions.send).toHaveBeenCalledWith('Yes, do that too', 'auto');
-    expect(screen.getByLabelText('Message')).toHaveValue('');
+    expect(promptSource(screen.getByLabelText('Message'))).toBe('');
   });
 
   it('keeps Shift+Enter as a newline when idle', () => {
@@ -675,7 +676,7 @@ describe('ChatView composer', () => {
     type('/co');
     expect(screen.getByTestId('chat-slash-menu')).toHaveTextContent('/compact');
     fireEvent.keyDown(screen.getByLabelText('Message'), { key: 'Tab' });
-    expect(screen.getByLabelText('Message')).toHaveValue('/compact ');
+    expect(promptSource(screen.getByLabelText('Message'))).toBe('/compact ');
     unmount();
 
     renderState(withCommands('codex'));
@@ -706,7 +707,7 @@ describe('ChatView attachments', () => {
     const chip = await screen.findByTestId('chat-attachment');
     expect(stage).toHaveBeenCalledWith(FIXTURE_AGENT_ID, expect.any(File), { imagesAllowed: true });
     expect(chip.querySelector('img')?.getAttribute('src')).toMatch(/^data:image\/png;base64,/);
-    fireEvent.change(screen.getByLabelText('Message'), { target: { value: 'What is wrong here?' } });
+    typePrompt(screen.getByLabelText('Message'), 'What is wrong here?');
     fireEvent.keyDown(screen.getByLabelText('Message'), { key: 'Enter' });
     expect(actions.send).toHaveBeenCalledWith('What is wrong here?', 'auto', ['staged-image.png']);
     expect(screen.queryByTestId('chat-attachment')).not.toBeInTheDocument();
@@ -796,10 +797,10 @@ describe('ChatView attachments', () => {
     renderFixture('claude', 'conversation', actions);
     paste([png()]);
     await screen.findByTestId('chat-attachment');
-    fireEvent.change(screen.getByLabelText('Message'), { target: { value: 'look' } });
+    typePrompt(screen.getByLabelText('Message'), 'look');
     fireEvent.keyDown(screen.getByLabelText('Message'), { key: 'Enter' });
     expect(await screen.findByTestId('chat-attachment')).toHaveTextContent('shot.png');
-    expect(screen.getByLabelText('Message')).toHaveValue('look');
+    expect(promptSource(screen.getByLabelText('Message'))).toBe('look');
   });
 
   it('shows attachments on sent messages', () => {
@@ -894,7 +895,7 @@ describe('ChatView failures', () => {
     const footer = screen.getByTestId('chat-turn-footer');
     expect(footer).toHaveAttribute('data-stop-reason', 'error');
     expect(footer).toHaveTextContent('Turn failed');
-    expect(screen.getByLabelText('Message')).not.toBeDisabled();
+    expect(screen.getByLabelText('Message')).toHaveAttribute('aria-disabled', 'false');
     expect(screen.queryByLabelText('Streaming')).not.toBeInTheDocument();
   });
 
@@ -902,7 +903,7 @@ describe('ChatView failures', () => {
     renderFixture(p, 'protocol_drift');
     expect(screen.getByTestId('chat-protocol-unknown')).toHaveTextContent('sent 2 messages Clubhouse doesn\'t recognize');
     expect(screen.getByRole('alert')).toHaveTextContent('The CLI exited unexpectedly');
-    expect(screen.getByLabelText('Message')).toBeDisabled();
+    expect(screen.getByLabelText('Message')).toHaveAttribute('aria-disabled', 'true');
     expect(screen.getByTestId('pane-status')).toHaveTextContent('Error');
   });
 });
@@ -1065,7 +1066,7 @@ describe('ChatView (store-bound)', () => {
     vi.mocked(window.clubhouse.chat).sendMessage = sendMessage;
     render(<ChatView agent={agent} />);
     await screen.findByTestId('chat-turn-footer');
-    fireEvent.change(screen.getByLabelText('Message'), { target: { value: 'hi' } });
+    typePrompt(screen.getByLabelText('Message'), 'hi');
     fireEvent.keyDown(screen.getByLabelText('Message'), { key: 'Enter' });
     await waitFor(() => expect(sendMessage).toHaveBeenCalledWith(FIXTURE_AGENT_ID, 'hi', 'auto'));
   });
@@ -1076,21 +1077,21 @@ describe('ChatView review fixes', () => {
     const actions = makeActions();
     const before = chatFixture('claude', 'approval').filter((e) => e.type !== 'permission_request' && !(e.type === 'session_state' && e.data.state === 'waiting_permission'));
     const { rerender } = render(<ChatViewBody agent={agent} state={fold(before)} actions={actions} providerName="P" />);
-    fireEvent.change(screen.getByLabelText('Message'), { target: { value: 'half-written thought' } });
+    typePrompt(screen.getByLabelText('Message'), 'half-written thought');
     const pending = chatFixture('claude', 'approval');
     rerender(<ChatViewBody agent={agent} state={fold(pending)} actions={actions} providerName="P" />);
-    expect(screen.getByLabelText('Message')).toHaveValue('half-written thought');
+    expect(promptSource(screen.getByLabelText('Message'))).toBe('half-written thought');
     rerender(<ChatViewBody agent={agent} state={fold(extend(pending, { type: 'permission_resolved', data: { requestId: 'perm-1', decision: 'allow', by: 'user' } }))} actions={actions} providerName="P" />);
-    expect(screen.getByLabelText('Message')).toHaveValue('half-written thought');
+    expect(promptSource(screen.getByLabelText('Message'))).toBe('half-written thought');
   });
 
   it('puts the text back when a message fails to send', async () => {
     const actions = makeActions();
     actions.send.mockResolvedValueOnce(null);
     renderState(fold(chatFixture('claude', 'conversation')), actions);
-    fireEvent.change(screen.getByLabelText('Message'), { target: { value: 'try this' } });
+    typePrompt(screen.getByLabelText('Message'), 'try this');
     fireEvent.keyDown(screen.getByLabelText('Message'), { key: 'Enter' });
-    await waitFor(() => expect(screen.getByLabelText('Message')).toHaveValue('try this'));
+    await waitFor(() => expect(promptSource(screen.getByLabelText('Message'))).toBe('try this'));
   });
 
   it('opens a second pending question unlocked', () => {
@@ -1437,7 +1438,7 @@ describe('ChatView login banner', () => {
 describe('compound actions stop when their first step fails (#2057)', () => {
   it('sends after a successful interrupt (Stop & send)', async () => {
     const { actions } = renderFixture('copilot', 'steer', makeActions(), FEWER_CAPABILITIES);
-    fireEvent.change(screen.getByLabelText('Message'), { target: { value: 'Skip the tests' } });
+    typePrompt(screen.getByLabelText('Message'), 'Skip the tests');
     fireEvent.click(screen.getByTestId('chat-send-primary'));
     await waitFor(() => expect(actions.send).toHaveBeenCalledWith('Skip the tests', 'auto'));
     expect(actions.interrupt).toHaveBeenCalledTimes(1);
@@ -1447,10 +1448,10 @@ describe('compound actions stop when their first step fails (#2057)', () => {
     const actions = makeActions();
     actions.interrupt.mockResolvedValueOnce(false);
     renderFixture('copilot', 'steer', actions, FEWER_CAPABILITIES);
-    fireEvent.change(screen.getByLabelText('Message'), { target: { value: 'Skip the tests' } });
+    typePrompt(screen.getByLabelText('Message'), 'Skip the tests');
     fireEvent.click(screen.getByTestId('chat-send-primary'));
     await waitFor(() => expect(actions.interrupt).toHaveBeenCalledTimes(1));
-    await waitFor(() => expect(screen.getByLabelText('Message')).toHaveValue('Skip the tests'));
+    await waitFor(() => expect(promptSource(screen.getByLabelText('Message'))).toBe('Skip the tests'));
     expect(actions.send).not.toHaveBeenCalled();
   });
 

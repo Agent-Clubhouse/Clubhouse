@@ -1,3 +1,4 @@
+import { typePrompt } from './prompt-editor.testing';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import * as fs from 'fs';
 import * as os from 'os';
@@ -100,7 +101,7 @@ describe('Copilot composer through renderer store, real IPC handlers and runtime
   it.each(['click', 'Enter'] as const)('Stop & send on a driver that cannot steer interrupts before the next send via %s', async (input) => {
     const { operations } = await running(false);
     expect(screen.getByTestId('chat-send-primary')).toHaveTextContent('Stop & send');
-    fireEvent.change(screen.getByLabelText('Message'), { target: { value: 'synthetic message' } });
+    typePrompt(screen.getByLabelText('Message'), 'synthetic message');
     if (input === 'click') fireEvent.click(screen.getByTestId('chat-send-primary'));
     else fireEvent.keyDown(screen.getByLabelText('Message'), { key: 'Enter' });
     await waitFor(() => expect(operations).toEqual(['interrupt', 'send:prompt']));
@@ -109,7 +110,7 @@ describe('Copilot composer through renderer store, real IPC handlers and runtime
   it.each([false, true])('SDK active capabilities select Steer and never interrupt (resume=%s)', async (resume) => {
     const { operations } = await running(true, resume);
     expect(screen.getByTestId('chat-send-primary')).toHaveTextContent('Steer');
-    fireEvent.change(screen.getByLabelText('Message'), { target: { value: 'synthetic steer' } });
+    typePrompt(screen.getByLabelText('Message'), 'synthetic steer');
     fireEvent.keyDown(screen.getByLabelText('Message'), { key: 'Enter' });
     await waitFor(() => expect(operations).toEqual(['send:steer']));
   });
@@ -130,7 +131,7 @@ describe('Copilot composer through renderer store, real IPC handlers and runtime
     const replay = foldChatEvents(undefined, agent.id, bridge.events);
     current.view.rerender(<ChatViewBody agent={agent} state={replay} actions={current.actions} providerName="Copilot" />);
     expect(screen.getByTestId('chat-send-primary')).toHaveTextContent('Steer');
-    fireEvent.change(screen.getByLabelText('Message'), { target: { value: 'after reconnect' } });
+    typePrompt(screen.getByLabelText('Message'), 'after reconnect');
     fireEvent.click(screen.getByTestId('chat-send-primary'));
     await waitFor(() => expect(current.operations).toEqual(['send:steer']));
   });

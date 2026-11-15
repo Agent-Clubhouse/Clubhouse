@@ -3,19 +3,21 @@
  * steer, otherwise "Stop and send" (interrupt, then prompt); Cmd+Enter (Ctrl+Enter
  * on Windows and Linux) queues. Stop (Esc) interrupts the turn and keeps the session.
  *
- * Cmd/Ctrl+B/I edit Markdown source; Tab indents only a list item.
- * Every other key is the textarea's (#2314). Shift+Enter and Option/Alt+Enter
+ * Cmd/Ctrl+B/I toggle inline formatting; Tab indents only list items.
+ * The structured editor owns editing keys (#2314). Shift+Enter and Option/Alt+Enter
  * are soft returns, Up/Down move the caret (there's no history recall), and
  * the slash menu takes Up/Down/Tab/Enter/Esc only while it's open.
  */
 
-import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type ClipboardEvent, type DragEvent, type KeyboardEvent, type MouseEvent, type ReactNode } from 'react';
+import { useCallback, useEffect, useId, useMemo, useRef, useState, type DragEvent, type MouseEvent, type ReactNode } from 'react';
 import { CHAT_ATTACHMENTS_MAX, PERMISSION_LEVELS, messageSummary, switchNote, type AvailableCommand, type ChatCapabilities, type ChatModelOption, type PermissionLevel } from '../../../../shared/chat';
 import type { PlanEntry } from '../../../../shared/chat';
 import type { QueuedMessage } from '../../../stores/chatStore';
 import { CheckIcon, ChevronDown, FileIcon, PaperclipIcon, PlanIcon, PlusIcon, ShieldIcon, StopIcon, UpIcon, XIcon } from './icons';
 import { attachmentFromFile, attachmentName, type ComposerAttachment } from './attachments';
-import { continueList, indentList, toggleEmphasis, type TextEdit } from './markdown-aids';
+import type { EditorView } from 'prosemirror-view';
+import { PromptEditor, type PromptEditorHandle, type PromptToken } from './PromptEditor';
+import { editingKey, indentItems, softReturn } from './prompt-editor';
 import { composerModes, LEVEL_DESCRIPTIONS, LEVEL_LABELS, modelLabel, type SendAction } from './view-model';
 
 const ACTION_LABELS: Record<SendAction, string> = {
@@ -580,14 +582,13 @@ export function Composer(props: ComposerProps) {
   // caller: when it changes from outside (a restored draft after a failed send,
   // another agent's draft), the caret is unknown until the user types or moves it,
   // so no menu opens on its own.
-  const [caretAt, setCaretAt] = useState<{ text: string; at: number } | null>(null);
+  const [caretAt, setCaretAt] = useState<{ text: string; at: number; token: PromptToken | null } | null>(null);
   const caret = caretAt?.text === text ? Math.min(caretAt.at, text.length) : null;
   // Where the slash was when Esc closed the menu; it stays closed for that word.
   const [dismissedAt, setDismissedAt] = useState<number | null>(null);
-  const pendingCaret = useRef<number | null>(null);
   const [attachError, setAttachError] = useState<string | null>(null);
   const [dragging, setDragging] = useState(false);
-  const area = useRef<HTMLTextAreaElement>(null);
+  const area = useRef<PromptEditorHandle>(null);
   const picker = useRef<HTMLInputElement>(null);
   // Adding files is async; keep the latest list so concurrent adds don't drop
   // each other, and count adds in flight so the cap holds across them.
@@ -599,16 +600,9 @@ export function Composer(props: ComposerProps) {
   const line = layout === 'line';
   const [moreOpen, setMoreOpen] = useState(false);
 
-  useEffect(() => {
-    const el = area.current;
-    if (!el) return;
-    el.style.height = 'auto';
-    el.style.height = `${Math.min(el.scrollHeight, line ? 72 : 200)}px`;
-  }, [text, line]);
-
   const slash = useMemo(
-    () => (capabilities?.slashCommands && caret !== null ? slashTokenAt(text, caret) : null),
-    [capabilities?.slashCommands, text, caret],
+    () => (capabilities?.slashCommands && caret !== null ? caretAt?.token ?? null : null),
+    [capabilities?.slashCommands, caret, caretAt],
   );
   const slashMatches = useMemo(() => {
     if (!slash || slash.start === dismissedAt) return [];
@@ -621,13 +615,6 @@ export function Composer(props: ComposerProps) {
   useEffect(() => {
     if (dismissedAt !== null && slash?.start !== dismissedAt) setDismissedAt(null);
   }, [slash, dismissedAt]);
-
-  useLayoutEffect(() => {
-    const at = pendingCaret.current;
-    if (at === null || !area.current) return;
-    pendingCaret.current = null;
-    area.current.setSelectionRange(at, at);
-  }, [text]);
 
   useEffect(() => { setCmdIndex(0); }, [slashMatches.length]);
 
@@ -660,11 +647,12 @@ export function Composer(props: ComposerProps) {
     setAttachError(null);
   };
 
-  const onPaste = (e: ClipboardEvent<HTMLTextAreaElement>) => {
+  const onPaste = (e: ClipboardEvent): boolean => {
     const files = Array.from(e.clipboardData?.files ?? []);
-    if (!canAttach || !files.length) return;
+    if (!canAttach || !files.length) return false;
     e.preventDefault();
     void addFiles(files);
+    return true;
   };
 
   const hasFiles = (e: DragEvent) => Array.from(e.dataTransfer?.types ?? []).includes('Files');
@@ -696,111 +684,53 @@ export function Composer(props: ComposerProps) {
 
   const pickCommand = (c: AvailableCommand) => {
     if (!slash) return;
-    // Replace only the word being typed; keep one space after it.
-    const after = text.slice(slash.end).replace(/^ /, '');
-    const inserted = `/${c.name} `;
-    const at = slash.start + inserted.length;
-    const next = text.slice(0, slash.start) + inserted + after;
-    setCaretAt({ text: next, at });
-    area.current?.focus();
-    if (next === text) {
-      // Nothing re-renders the textarea, so place the caret now rather than after the next edit.
-      area.current?.setSelectionRange(at, at);
-      return;
-    }
-    pendingCaret.current = at;
-    setText(next);
+    // Replace only the slash token and at most one existing trailing space.
+    const end = slash.end + (text[slash.end] === ' ' ? 1 : 0);
+    area.current?.replace(slash.start, end, `/${c.name} `);
   };
 
-  const applyEdit = (el: HTMLTextAreaElement, edit: TextEdit) => {
-    // One native replacement keeps the browser's undo history. Restrict it to
-    // the changed range so ordinary typing before/after the aid stays native.
-    const before = el.value;
-    let start = 0;
-    while (start < before.length && start < edit.text.length && before[start] === edit.text[start]) start++;
-    let oldEnd = before.length;
-    let newEnd = edit.text.length;
-    while (oldEnd > start && newEnd > start && before[oldEnd - 1] === edit.text[newEnd - 1]) { oldEnd--; newEnd--; }
-    if (before !== edit.text) {
-      el.setSelectionRange(start, oldEnd);
-      const inserted = edit.text.slice(start, newEnd);
-      if (!document.execCommand?.('insertText', false, inserted)) {
-        // jsdom and environments without the native editing command.
-        el.setRangeText(inserted, start, oldEnd, 'end');
-      }
-      // Native insertText dispatches input/onChange. Also synchronize explicitly
-      // for the fallback, through the same caller-owned draft callback.
-      setText(el.value);
-    }
-    el.setSelectionRange(edit.selection.start, edit.selection.end);
-    trackCaret(el);
-  };
-
-  const insertNewline = (el: HTMLTextAreaElement) => {
-    const at = el.selectionStart;
-    applyEdit(el, { text: el.value.slice(0, at) + '\n' + el.value.slice(el.selectionEnd), selection: { start: at + 1, end: at + 1 } });
-  };
-
-  const trackCaret = (el: HTMLTextAreaElement) => setCaretAt({ text: el.value, at: el.selectionStart ?? el.value.length });
-
-  const onKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
-    // While an IME is composing, its keys are its own: Enter commits, Esc cancels. None picks, sends or stops.
-    // keyCode 229 covers the keydown that ends a composition, which some IMEs report with isComposing false.
-    if (e.nativeEvent.isComposing || e.keyCode === 229) return;
+  const onKeyDown = (view: EditorView, e: KeyboardEvent): boolean => {
+    if (disabled || view.composing || e.isComposing || e.keyCode === 229) return false;
     if (slashMatches.length > 0) {
-      if (e.key === 'ArrowDown') { e.preventDefault(); setCmdIndex((i) => (i + 1) % slashMatches.length); return; }
-      if (e.key === 'ArrowUp') { e.preventDefault(); setCmdIndex((i) => (i - 1 + slashMatches.length) % slashMatches.length); return; }
+      if (e.key === 'ArrowDown') { e.preventDefault(); setCmdIndex((i) => (i + 1) % slashMatches.length); return true; }
+      if (e.key === 'ArrowUp') { e.preventDefault(); setCmdIndex((i) => (i - 1 + slashMatches.length) % slashMatches.length); return true; }
       // Enter picks only once a name is started: "yes and /" sends as typed. Tab always picks.
       const enterPicks = e.key === 'Enter' && !e.shiftKey && !e.altKey && !e.metaKey && !e.ctrlKey && !!slash?.query && slash.query !== slashMatches[cmdIndex].name;
       if (e.key === 'Tab' || enterPicks) {
         e.preventDefault();
         pickCommand(slashMatches[cmdIndex]);
-        return;
+        return true;
       }
       // Esc closes the menu and leaves the text as typed; it doesn't stop the turn.
       if (e.key === 'Escape') {
         e.preventDefault();
         setDismissedAt(slash?.start ?? null);
-        return;
+        return true;
       }
     }
-    const el = e.currentTarget;
-    const selection = { start: el.selectionStart, end: el.selectionEnd };
-    const formatMod = isMac() ? e.metaKey && !e.ctrlKey : e.ctrlKey && !e.metaKey;
-    if (formatMod && !e.altKey && !e.shiftKey && /^(b|i)$/i.test(e.key)) {
-      e.preventDefault();
-      e.stopPropagation();
-      applyEdit(el, toggleEmphasis(el.value, selection, e.key.toLowerCase() === 'b' ? '**' : '*'));
-      return;
-    }
     if (e.key === 'Tab' && !e.metaKey && !e.ctrlKey && !e.altKey && slashMatches.length === 0) {
-      const edit = indentList(el.value, selection, e.shiftKey);
-      if (edit) { e.preventDefault(); applyEdit(el, edit); return; }
+      if (indentItems(view, e.shiftKey)) { e.preventDefault(); return true; }
+      return false;
     }
-    if (e.key === 'Enter' && (e.shiftKey || e.altKey) && !e.metaKey && !e.ctrlKey) {
-      const edit = continueList(el.value, selection);
-      if (edit) { e.preventDefault(); applyEdit(el, edit); return; }
-    }
+    if (editingKey(view, e, isMac())) { e.preventDefault(); e.stopPropagation(); return true; }
     if (e.key === 'Escape' && modes.canStop) {
       e.preventDefault();
       props.onStop();
-      return;
+      return true;
     }
-    if (e.key !== 'Enter') return;
-    // Shift+Enter and Option/Alt+Enter are soft returns. The textarea inserts Shift+Enter's newline;
-    // Chromium treats Alt+Enter as a system key on Windows and Linux, so that one is inserted here.
-    if (e.shiftKey) return;
-    if (e.altKey) {
+    if (e.key !== 'Enter') return false;
+    if (e.shiftKey || e.altKey) {
       e.preventDefault();
-      insertNewline(e.currentTarget);
-      return;
+      softReturn(view);
+      return true;
     }
     // Cmd+Enter (Ctrl+Enter off macOS) sends without steering or stopping: it queues during a turn.
-    // On macOS, Ctrl+Enter is left to the textarea.
+    // On macOS, Ctrl+Enter is left to the editor.
     const mod = isMac() ? e.metaKey : e.ctrlKey;
-    if (!mod && (e.metaKey || e.ctrlKey)) return;
+    if (!mod && (e.metaKey || e.ctrlKey)) return false;
     e.preventDefault();
     submit(mod ? modes.secondary ?? modes.primary : modes.primary);
+    return true;
   };
 
   const empty = !text.trim() && !attachments.length;
@@ -911,23 +841,18 @@ export function Composer(props: ComposerProps) {
     </span>
   );
 
-  const textarea = (
-    <textarea
+  const editor = (
+    <PromptEditor
       ref={area}
-      rows={1}
-      value={text}
+      text={text}
       disabled={disabled}
-      onChange={(e) => { trackCaret(e.target); setText(e.target.value); }}
-      onSelect={(e) => trackCaret(e.currentTarget)}
+      onChange={setText}
+      onSelection={(value, at, token) => setCaretAt({ text: value, at, token })}
       onKeyDown={onKeyDown}
-      onPaste={onPaste}
+      onPasteFiles={onPaste}
       placeholder={placeholder}
-      aria-label="Message"
-      aria-description={`${isMac() ? 'Cmd' : 'Ctrl'}+B bold, ${isMac() ? 'Cmd' : 'Ctrl'}+I italic. Shift+Enter or Alt+Enter continues lists; an empty item exits. Tab indents; Shift+Tab outdents.`}
-      title={`${isMac() ? 'Cmd' : 'Ctrl'}+B bold · ${isMac() ? 'Cmd' : 'Ctrl'}+I italic · Shift/Alt+Enter continues lists (empty item exits) · Tab/Shift+Tab indents/outdents`}
-      className={`resize-none bg-transparent text-[13px] text-ctp-text placeholder:text-ctp-overlay0 focus:outline-none ${
-        line ? 'flex-1 min-w-0 px-1.5 py-1.5' : 'px-3.5 pt-3 pb-1.5 min-h-[44px]'
-      }`}
+      description={`${isMac() ? 'Cmd' : 'Ctrl'}+B bold, ${isMac() ? 'Cmd' : 'Ctrl'}+I italic. Type - , * or 1. followed by a space to start a list. Shift+Enter or Alt+Enter splits an item; an empty item exits or outdents. Tab indents; Shift+Tab outdents. Enter sends.`}
+      line={line}
     />
   );
   const attachErrorNote = attachError && <p className="px-3.5 pb-1 text-[11.5px] text-ctp-red" role="alert" data-testid="chat-attach-error">{attachError}</p>;
@@ -979,14 +904,14 @@ export function Composer(props: ComposerProps) {
               >
                 <PlusIcon size={14} />
               </button>
-              {textarea}
+              {editor}
               {sendButtons}
             </div>
             {attachErrorNote}
           </>
         ) : (
           <>
-            {textarea}
+            {editor}
             {attachErrorNote}
             <div className="flex flex-wrap items-center gap-1.5 px-2 pb-2 pt-1.5" data-testid="chat-composer-footer">
               {tools}

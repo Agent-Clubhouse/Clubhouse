@@ -1,3 +1,4 @@
+import { typePrompt, promptSource, promptSelection } from './prompt-editor.testing';
 import { describe, it, expect, vi } from 'vitest';
 import { useState } from 'react';
 import { act, fireEvent, render, screen } from '@testing-library/react';
@@ -41,11 +42,11 @@ function Harness(props: Partial<ComposerProps>) {
   );
 }
 
-const box = () => screen.getByLabelText('Message') as HTMLTextAreaElement;
+const box = () => screen.getByLabelText('Message') as HTMLElement;
 /** Types the whole value with the caret at `caret` (the end by default). */
 function type(value: string, caret = value.length) {
   const el = box();
-  fireEvent.change(el, { target: { value, selectionStart: caret, selectionEnd: caret } });
+  typePrompt(el, value, caret);
 }
 const menu = () => screen.queryByTestId('chat-slash-menu');
 
@@ -77,7 +78,7 @@ describe('Composer slash menu (#2090)', () => {
     type('this is a test message for the screenshot /effor');
     expect(menu()).toHaveTextContent('/effort');
     fireEvent.keyDown(box(), { key: 'Tab' });
-    expect(box()).toHaveValue('this is a test message for the screenshot /effort ');
+    expect(promptSource(box())).toBe('this is a test message for the screenshot /effort ');
     expect(menu()).toBeNull();
   });
 
@@ -86,7 +87,7 @@ describe('Composer slash menu (#2090)', () => {
     type('please /co then stop', 10);
     expect(menu()).toHaveTextContent('/compact');
     fireEvent.keyDown(box(), { key: 'Enter' });
-    expect(box()).toHaveValue('please /compact then stop');
+    expect(promptSource(box())).toBe('please /compact then stop');
   });
 
   it('still works at the start of the message', () => {
@@ -94,7 +95,7 @@ describe('Composer slash menu (#2090)', () => {
     type('/re');
     expect(menu()).toHaveTextContent('/review');
     fireEvent.mouseDown(screen.getByRole('option', { name: /review/ }));
-    expect(box()).toHaveValue('/review ');
+    expect(promptSource(box())).toBe('/review ');
   });
 
   it('Esc closes the menu, keeps the text and does not stop the turn', () => {
@@ -104,7 +105,7 @@ describe('Composer slash menu (#2090)', () => {
     expect(menu()).not.toBeNull();
     fireEvent.keyDown(box(), { key: 'Escape' });
     expect(menu()).toBeNull();
-    expect(box()).toHaveValue('hello /eff');
+    expect(promptSource(box())).toBe('hello /eff');
     expect(onStop).not.toHaveBeenCalled();
     // Typing on in the same word keeps it closed; a new slash word opens it again.
     type('hello /effo');
@@ -143,17 +144,17 @@ describe('Composer slash menu (#2090)', () => {
     render(<Harness />);
     type('/effort foo', 7);
     fireEvent.keyDown(box(), { key: 'Tab' });
-    expect(box()).toHaveValue('/effort foo');
-    expect(box().selectionStart).toBe(8);
+    expect(promptSource(box())).toBe('/effort foo');
+    expect(promptSelection(box())[0]).toBe(8);
     type('a/effort foo', 1);
-    expect(box().selectionStart).toBe(1);
+    expect(promptSelection(box())[0]).toBe(1);
   });
 
   it('a draft changed from outside opens no menu until the user types', () => {
     render(<Harness />);
     type('hello!', 6);
     act(() => setDraftFromOutside('see /co'));
-    expect(box()).toHaveValue('see /co');
+    expect(promptSource(box())).toBe('see /co');
     expect(menu()).toBeNull();
     type('see /com');
     expect(menu()).toHaveTextContent('/compact');
@@ -168,14 +169,14 @@ describe('Composer slash menu (#2090)', () => {
     expect(onSend).toHaveBeenCalledWith('yes and /', 'send');
     type('yes and /');
     fireEvent.keyDown(box(), { key: 'Tab' });
-    expect(box()).toHaveValue('yes and /effort ');
+    expect(promptSource(box())).toBe('yes and /effort ');
   });
 
   it('an Enter that commits an IME composition does not pick', () => {
     render(<Harness />);
     type('hi /co');
     fireEvent.keyDown(box(), { key: 'Enter', isComposing: true });
-    expect(box()).toHaveValue('hi /co');
+    expect(promptSource(box())).toBe('hi /co');
   });
 
   it('a failed send restoring the same draft opens no menu on its own', () => {
@@ -220,4 +221,13 @@ describe('Composer slash menu (#2090)', () => {
       expect(menu()).toBeNull();
     });
   });
+});
+
+it('completes a slash inside a formatted list item without losing the list', () => {
+  render(<Harness />);
+  type('- **hello** /co');
+  expect(menu()).toHaveTextContent('/compact');
+  fireEvent.keyDown(box(), { key: 'Tab' });
+  expect(promptSource(box())).toBe('- **hello** /compact ');
+  expect(box().querySelector('li strong')).toHaveTextContent('hello');
 });
