@@ -251,6 +251,283 @@ describe('canvas hydration safety', () => {
     expect(map.get('canvas-wires')).toBe(wires);
   });
 
+  it.each(['canvas-wires', 'canvas-zone-wires'])(
+    'rejects pending edits after an unreadable %s load without writing, and reopens after a successful re-read', async (key) => {
+      const original = [{ agentId: 'durable_a', targetId: 'durable_b', targetKind: 'agent', label: 'B' }];
+      const originalZones = [{ id: 'zw_1', sourceZoneId: 'z1', targetId: 'durable_a', targetType: 'agent' }];
+      let unreadable = true;
+      const { map, storage } = createStorage({
+        'canvas-instances': canvasWith(card('a'), card('b')),
+        'canvas-wires': original,
+        'canvas-zone-wires': originalZones,
+      }, (k) => unreadable && k === key);
+      const store = createCanvasStore();
+      await store.getState().loadCanvas(storage);
+      await store.getState().loadWires(storage);
+      const edit = () => {
+        if (key === 'canvas-wires') {
+          store.getState().addWireDefinition({ agentId: 'durable_b', targetId: 'durable_a', targetKind: 'agent', label: 'A' });
+        } else {
+          store.getState().addZoneWireDefinition({ sourceZoneId: 'z2', targetId: 'durable_b', targetType: 'agent' });
+        }
+      };
+      const save = () => key === 'canvas-wires' ? store.getState().saveWires(storage) : store.getState().saveCanvas(storage);
+      // No-op removals create fresh arrays but do not create pending edits.
+      if (key === 'canvas-wires') store.getState().removeWireDefinition('missing', 'missing');
+      else store.getState().removeZoneWireDefinition('missing');
+      await save();
+      vi.mocked(storage.write).mockClear();
+      edit();
+      await expect(save()).rejects.toThrow(/changes not saved.*could not be read/);
+      expect(storage.write).not.toHaveBeenCalled();
+      expect(map.get('canvas-wires')).toBe(original);
+      expect(map.get('canvas-zone-wires')).toBe(originalZones);
+      if (key === 'canvas-wires') {
+        await store.getState().loadWires(storage);
+        await expect(save()).rejects.toThrow(/changes not saved.*could not be read/);
+      }
+
+      unreadable = false;
+      await store.getState().loadCanvas(storage);
+      await store.getState().loadWires(storage);
+      edit();
+      await save();
+      expect(map.get(key)).toHaveLength(2);
+      expect(storage.delete).not.toHaveBeenCalled();
+    },
+  );
+
+  it('keeps remote-owned wire and zone-wire saves silent even with edits', async () => {
+    const { storage } = createStorage({});
+    const store = createCanvasStore();
+    store.getState().hydrateFromRemote(canvasWith(card('remote')), 'canvas_1', [], []);
+    store.getState().addWireDefinition({ agentId: 'remote-a', targetId: 'remote-b', targetKind: 'agent', label: 'B' });
+    store.getState().addZoneWireDefinition({ sourceZoneId: 'remote-zone', targetId: 'remote-a', targetType: 'agent' });
+    await expect(store.getState().saveCanvas(storage)).resolves.toBeUndefined();
+    await expect(store.getState().saveWires(storage)).resolves.toBeUndefined();
+    expect(storage.write).not.toHaveBeenCalled();
+  });
+
+  it('keeps a newer local disk version and puts all retained edits in a separate recovery bundle', async () => {
+    const original = canvasWith(card('original'));
+    const { map, storage } = createStorage({ 'canvas-instances': original });
+    const store = createCanvasStore();
+    await store.getState().loadCanvas(storage);
+    await store.getState().loadWires(storage);
+    store.getState().addView('agent', { x: 1, y: 2 });
+    store.getState().addWireDefinition({ agentId: 'local-a', targetId: 'local-b', targetKind: 'agent', label: 'B' });
+    store.getState().addZoneWireDefinition({ sourceZoneId: 'local-zone', targetId: 'local-a', targetType: 'agent' });
+    store.setState({ autosaveFailed: true });
+    const retained = store.getState();
+    store.getState().hydrateFromRemote([{ ...original[0], id: 'remote', views: [] }], 'remote', [], []);
+    const newer = canvasWith(card('newer-disk-card'));
+    map.set('canvas-instances', newer);
+    map.set('canvas-instances-backup', newer);
+    vi.mocked(storage.write).mockClear();
+
+    expect(await store.getState().restoreFailedLocalState(storage)).toBe(true);
+    expect(store.getState().views.map((v) => v.id)).toEqual(['newer-disk-card']);
+    expect(store.getState().unsavedRecoveryCopy).toBe(true);
+    const keys = [...map.keys()].filter((key) => key.startsWith('canvas-unsaved-copy-'));
+    expect(keys).toHaveLength(1);
+    expect(map.get(keys[0])).toEqual({
+      version: 1, canvases: retained.canvases, activeCanvasId: retained.activeCanvasId,
+      wireDefinitions: retained.wireDefinitions, zoneWireDefinitions: retained.zoneWireDefinitions,
+    });
+    expect(storage.write).toHaveBeenCalledTimes(1);
+    expect(map.get('canvas-instances')).toBe(newer);
+    expect(map.get('canvas-instances-backup')).toBe(newer);
+    await store.getState().saveCanvas(storage);
+    expect(JSON.stringify(map.get('canvas-instances'))).toContain('newer-disk-card');
+    expect(storage.delete).not.toHaveBeenCalled();
+  });
+
+  it('stops a timed-out writer before it can replace a newer primary and keeps both versions', async () => {
+    const { map, storage } = createStorage({ 'canvas-instances': canvasWith(card('original')) });
+    const store = createCanvasStore();
+    await store.getState().loadCanvas(storage);
+    await store.getState().loadWires(storage);
+    store.getState().addView('agent', { x: 1, y: 2 });
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => { release = resolve; });
+    const write = vi.mocked(storage.write).getMockImplementation()!;
+    vi.mocked(storage.write).mockImplementation(async (key, value) => { if (key === 'canvas-instances-backup') await gate; return write(key, value); });
+    const saving = store.getState().saveCanvas(storage);
+    store.setState({ autosaveFailed: true });
+    const retained = store.getState().canvases;
+    store.getState().hydrateFromRemote([{ ...retained[0], id: 'remote', views: [] }], 'remote', [], []);
+    const newer = canvasWith(card('newer'));
+    map.set('canvas-instances', newer);
+    map.set('canvas-instances-backup', newer);
+    release();
+    await expect(saving).rejects.toThrow('Canvas source changed');
+    expect(map.get('canvas-instances')).toBe(newer);
+    await store.getState().restoreFailedLocalState(storage);
+    expect(store.getState().views.map((v) => v.id)).toEqual(['newer']);
+    const copy = [...map.entries()].find(([key]) => key.startsWith('canvas-unsaved-copy-'));
+    expect(copy?.[1]).toEqual(expect.objectContaining({ canvases: retained }));
+  });
+
+  it('preserves a newer divergent backup before autosave can rotate either disk copy', async () => {
+    const original = canvasWith(card('original'));
+    const { map, storage } = createStorage({ 'canvas-instances': original, 'canvas-instances-backup': original });
+    const store = createCanvasStore();
+    await store.getState().loadCanvas(storage);
+    await store.getState().loadWires(storage);
+    store.getState().addView('agent', { x: 1, y: 2 });
+    store.setState({ autosaveFailed: true });
+    const retained = store.getState().canvases;
+    store.getState().hydrateFromRemote([{ ...original[0], id: 'remote', views: [] }], 'remote', [], []);
+    const newer = canvasWith(card('newer-backup'));
+    map.set('canvas-instances-backup', newer);
+    await store.getState().restoreFailedLocalState(storage);
+    expect(store.getState().views.map((v) => v.id)).toEqual(['newer-backup']);
+    const copy = [...map.entries()].find(([key]) => key.startsWith('canvas-unsaved-copy-'));
+    expect(copy?.[1]).toEqual(expect.objectContaining({ canvases: retained, diskCopies: { primary: original, backup: newer } }));
+    await store.getState().saveCanvas(storage);
+    expect(JSON.stringify(map.get('canvas-instances-backup'))).toContain('newer-backup');
+    expect(JSON.stringify(map.get('canvas-instances'))).toContain('newer-backup');
+  });
+
+  it('never retains remote wire fields when local canvas hydration precedes its wire read', async () => {
+    const original = canvasWith(card('local'));
+    const { map, storage } = createStorage({ 'canvas-instances': original });
+    const store = createCanvasStore();
+    const remote = [{ ...original[0], id: 'remote', views: [] }];
+    store.getState().hydrateFromRemote(remote, 'remote', [{ agentId: 'REMOTE-SECRET', targetId: 'remote-target', targetKind: 'agent', label: 'remote' }], []);
+    await store.getState().loadCanvas(storage);
+    expect(store.getState().wireDefinitions).toEqual([]);
+    expect(store.getState().wiresLoaded).toBe(false);
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => { release = resolve; });
+    const read = vi.mocked(storage.read).getMockImplementation()!;
+    vi.mocked(storage.read).mockImplementation(async (key) => { if (key === 'canvas-wires') await gate; return read(key); });
+    const loading = store.getState().loadWires(storage);
+    store.setState({ autosaveFailed: true });
+    store.getState().hydrateFromRemote(remote, 'remote', [], []);
+    release();
+    await loading;
+    const newer = canvasWith(card('newer'));
+    map.set('canvas-instances', newer);
+    map.set('canvas-instances-backup', newer);
+    await store.getState().restoreFailedLocalState(storage);
+    const copy = [...map.entries()].find(([key]) => key.startsWith('canvas-unsaved-copy-'));
+    expect(copy).toBeDefined();
+    expect(JSON.stringify(copy?.[1])).not.toContain('REMOTE-SECRET');
+  });
+
+  it('retains a deferred blueprint wire resolved locally before local wires finish loading', async () => {
+    const local = [{
+      ...canvasWith(card('lead'), { ...card('stub'), agentId: null })[0],
+      deferredWires: [{ wire: { sourceRef: 'lead', targetRef: 'stub' }, sourceViewId: 'lead', targetViewId: 'stub' }],
+    }];
+    const { map, storage } = createStorage({ 'canvas-instances': local, 'canvas-instances-backup': local });
+    const store = createCanvasStore();
+    const remote = [{ ...canvasWith()[0], id: 'remote' }];
+    store.getState().hydrateFromRemote(remote, 'remote', [{ agentId: 'REMOTE-SECRET', targetId: 'remote-target', targetKind: 'agent', label: 'remote' }], []);
+    await store.getState().loadCanvas(storage);
+    expect(store.getState().wiresLoaded).toBe(false);
+    store.getState().updateView('stub', { agentId: 'local-new-agent' });
+    expect(store.getState().wireDefinitions).toEqual([
+      expect.objectContaining({ agentId: 'durable_lead', targetId: 'local-new-agent' }),
+    ]);
+    expect(store.getState().activeCanvas().deferredWires).toBeUndefined();
+    store.setState({ autosaveFailed: true });
+    store.getState().hydrateFromRemote(remote, 'remote', [], []);
+    const newer = canvasWith(card('newer'));
+    map.set('canvas-instances', newer);
+    map.set('canvas-instances-backup', newer);
+    await store.getState().restoreFailedLocalState(storage);
+    const copy = [...map.entries()].find(([key]) => key.startsWith('canvas-unsaved-copy-'));
+    expect(copy?.[1]).toMatchObject({
+      version: 1,
+      wireDefinitions: [expect.objectContaining({ agentId: 'durable_lead', targetId: 'local-new-agent' })],
+    });
+    expect(JSON.stringify(copy?.[1])).not.toContain('REMOTE-SECRET');
+    expect(storage.delete).not.toHaveBeenCalled();
+  });
+
+  it('keeps retained edits in memory when disk cannot be checked, and retries once readable', async () => {
+    let unreadable = false;
+    const { storage } = createStorage({}, () => unreadable);
+    const store = createCanvasStore();
+    await store.getState().loadCanvas(storage);
+    await store.getState().loadWires(storage);
+    store.getState().addView('agent', { x: 1, y: 2 });
+    store.setState({ autosaveFailed: true });
+    const retained = store.getState().canvases;
+    store.getState().hydrateFromRemote([{ ...retained[0], id: 'remote', views: [] }], 'remote', [], []);
+    unreadable = true;
+    await store.getState().restoreFailedLocalState(storage);
+    expect(store.getState().canvases).toBe(retained);
+    expect(store.getState().autosaveFailed).toBe(true);
+    await expect(store.getState().saveCanvas(storage)).rejects.toThrow('EACCES');
+    expect(storage.write).not.toHaveBeenCalled();
+    unreadable = false;
+    await store.getState().saveCanvas(storage);
+    expect(storage.write).toHaveBeenCalledWith('canvas-instances', expect.any(Array));
+  });
+
+  it.each(['navigation', 'save'])('invalidates retained state after a newer local %s', async (path) => {
+    const { storage } = createStorage({ 'canvas-instances': canvasWith(card('original')) });
+    const store = createCanvasStore();
+    await store.getState().loadCanvas(storage);
+    await store.getState().loadWires(storage);
+    store.setState({ autosaveFailed: true });
+    store.getState().hydrateFromRemote([{ ...canvasWith()[0], id: 'remote' }], 'remote', [], []);
+    if (path === 'navigation') {
+      store.getState().hydrateForNavigation({ canvases: canvasWith(card('newer')), wires: [], zoneWires: [] }, 'canvas_1');
+    } else {
+      await store.getState().loadCanvas(storage);
+      store.getState().addView('agent', { x: 7, y: 8 });
+      await store.getState().saveCanvas(storage);
+    }
+    const local = store.getState().canvases;
+    expect(await store.getState().restoreFailedLocalState(storage)).toBe(false);
+    expect(store.getState().canvases).toBe(local);
+  });
+
+  it('reports wire edits made during the first unreadable wire read as unsaved', async () => {
+    const { storage } = createStorage({ 'canvas-instances': canvasWith(card('a'), card('b')) });
+    const store = createCanvasStore();
+    await store.getState().loadCanvas(storage);
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => { release = resolve; });
+    const read = vi.mocked(storage.read).getMockImplementation()!;
+    vi.mocked(storage.read).mockImplementation(async (key) => {
+      if (key === 'canvas-wires') { await gate; throw eacces(); }
+      return read(key);
+    });
+    const loading = store.getState().loadWires(storage);
+    store.getState().addWireDefinition({ agentId: 'durable_a', targetId: 'durable_b', targetKind: 'agent', label: 'B' });
+    release();
+    await loading;
+    await expect(store.getState().saveWires(storage)).rejects.toThrow(/changes not saved/);
+    expect(storage.write).not.toHaveBeenCalled();
+  });
+
+  it.each(['canvas', 'wires'])('does not publish a superseded local %s load into a remote store', async (kind) => {
+    const { storage } = createStorage({ 'canvas-instances': canvasWith(card('local')) });
+    const store = createCanvasStore();
+    const remote = [{ ...canvasWith()[0], id: 'remote' }];
+    store.getState().hydrateFromRemote(remote, 'remote', [], []);
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => { release = resolve; });
+    const read = vi.mocked(storage.read).getMockImplementation()!;
+    const key = kind === 'canvas' ? 'canvas-instances' : 'canvas-wires';
+    vi.mocked(storage.read).mockImplementation(async (k) => { if (k === key) await gate; return read(k); });
+    const loading = kind === 'canvas' ? store.getState().loadCanvas(storage) : store.getState().loadWires(storage);
+    await vi.waitFor(() => expect(storage.read).toHaveBeenCalledWith(key));
+    store.getState().hydrateFromRemote(remote, 'remote', [], []);
+    release();
+    await loading;
+    expect(store.getState().dataOrigin).toBe('remote');
+    expect(store.getState().activeCanvasId).toBe('remote');
+    await store.getState().saveCanvas(storage);
+    await store.getState().saveWires(storage);
+    expect(storage.write).not.toHaveBeenCalled();
+  });
+
   it('refuses to save a store that was never hydrated from storage', async () => {
     const { storage } = createStorage({ 'canvas-instances': canvasWith(card('a')) });
     const store = createCanvasStore();

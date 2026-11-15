@@ -6,6 +6,7 @@ import type { CanvasView, CanvasViewType, CanvasInstance, CanvasInstanceData, Ag
 import type { CanvasWidgetMetadata, CanvasWidgetFilter, CanvasWidgetHandle } from '../../../../shared/plugin-types';
 import type { McpBindingEntry } from '../../../stores/mcpBindingStore';
 import { generateZoneWireId, type ZoneWireDefinition } from './zone-wire-store';
+import { withCanvasPersistenceTimeout } from './canvas-persistence-timeout';
 import { persist } from '../../../telemetry/persist';
 import { ATTR, tel } from '../../../telemetry';
 import { countBucket } from '../../../../shared/telemetry/attributes';
@@ -42,6 +43,11 @@ import { removeGroupProjectCanvasReferences } from '../../../../shared/group-pro
 
 // ── Store state ──────────────────────────────────────────────────────
 
+/** A timeout cancels only the save that owns this token. */
+export interface CanvasSaveToken {
+  cancelled: boolean;
+}
+
 export interface CanvasState {
   canvases: CanvasInstance[];
   activeCanvasId: string;
@@ -58,6 +64,8 @@ export interface CanvasState {
   loadError: string | null;
   /** Unsaved edits stay in memory across panel remounts until a save succeeds. */
   autosaveFailed: boolean;
+  /** A conflict copy was saved separately before newer local data was loaded. */
+  unsavedRecoveryCopy: boolean;
   /**
    * Bumped whenever the store's canvases are replaced wholesale (a load, or a
    * satellite's state). Zone expansion treats the next pass as a hydration, so
@@ -66,9 +74,12 @@ export interface CanvasState {
   hydrationSeq: number;
 
   // Lifecycle
-  loadCanvas: (storage: ScopedStorage) => Promise<void>;
+  loadCanvas: (storage: ScopedStorage, preferredCopy?: 'backup') => Promise<void>;
   hydrateForNavigation: (snapshot: CanvasNavigationSnapshot, canvasId: string) => void;
-  saveCanvas: (storage: ScopedStorage) => Promise<void>;
+  saveCanvas: (storage: ScopedStorage, token?: CanvasSaveToken) => Promise<void>;
+  /** Restore this store's failed local edits after viewing a satellite. */
+  markSaveTimedOut: (token?: CanvasSaveToken) => void;
+  restoreFailedLocalState: (storage: ScopedStorage) => Promise<boolean>;
   hydrateFromRemote: (canvasData: unknown[], activeCanvasId: string, wireDefinitions?: unknown[], zoneWireDefinitions?: unknown[]) => void;
 
   // Wire persistence — wireDefinitions is the canvas-owned source of truth for
@@ -76,7 +87,7 @@ export interface CanvasState {
   // because definitions are not removed when the main process cleans up bindings.
   wireDefinitions: McpBindingEntry[];
   loadWires: (storage: ScopedStorage) => Promise<void>;
-  saveWires: (storage: ScopedStorage) => Promise<void>;
+  saveWires: (storage: ScopedStorage, token?: CanvasSaveToken) => Promise<void>;
   addWireDefinition: (entry: McpBindingEntry) => void;
   removeWireDefinition: (agentId: string, targetId: string) => void;
   updateWireDefinition: (agentId: string, targetId: string, updates: Partial<McpBindingEntry>) => void;
@@ -172,6 +183,9 @@ const STORAGE_KEY_INSTANCES_RECOVERY_PREFIX = 'canvas-instances-recovery-';
 const STORAGE_KEY_ACTIVE = 'canvas-active-id';
 const STORAGE_KEY_WIRES = 'canvas-wires';
 const STORAGE_KEY_ZONE_WIRES = 'canvas-zone-wires';
+const STORAGE_KEY_UNSAVED_COPY_PREFIX = 'canvas-unsaved-copy-';
+const DISK_CONTENT_KEYS = [STORAGE_KEY_INSTANCES, STORAGE_KEY_INSTANCES_BACKUP, STORAGE_KEY_WIRES, STORAGE_KEY_ZONE_WIRES];
+const diskFingerprint = (value: unknown): string => JSON.stringify(value ?? null);
 
 // ── Helpers ──────────────────────────────────────────────────────────
 
@@ -406,7 +420,48 @@ function normalizeCanvasInstance(
 
 export function createCanvasStore(): UseBoundStore<StoreApi<CanvasState>> {
   const initialCanvas = createCanvasInstance();
-  let _wiresLoading = false;
+  // This store owns one local storage scope across panel remounts. An issued
+  // IPC write cannot be revoked. Keep one in flight and only the newest pending
+  // request per key, so wedged storage cannot retain an unbounded save history.
+  interface PendingWrite {
+    storage: ScopedStorage;
+    value: unknown;
+    assertCurrent: () => void;
+    resolve: () => void;
+    reject: (error: unknown) => void;
+  }
+  interface WriteQueue { pending?: PendingWrite }
+  const writeQueues = new Map<string, WriteQueue>();
+  const runWrite = async (key: string, queue: WriteQueue, request: PendingWrite): Promise<void> => {
+    try {
+      request.assertCurrent();
+      await request.storage.write(key, request.value);
+      request.resolve();
+    } catch (error) {
+      request.reject(error);
+    } finally {
+      const next = queue.pending;
+      queue.pending = undefined;
+      if (next) void runWrite(key, queue, next);
+      else writeQueues.delete(key);
+    }
+  };
+  const writeInOrder = (storage: ScopedStorage, key: string, value: unknown, assertCurrent: () => void = () => {}): Promise<void> => new Promise((resolve, reject) => {
+    const request = { storage, value, assertCurrent, resolve, reject };
+    const queue = writeQueues.get(key);
+    if (queue) {
+      queue.pending?.reject(new Error('Canvas save superseded by newer local changes'));
+      queue.pending = request;
+    } else {
+      const created: WriteQueue = {};
+      writeQueues.set(key, created);
+      void runWrite(key, created, request);
+    }
+  });
+  let _loadGeneration = 0;
+  let _wiresLoading: number | undefined;
+  let _wiresOrigin: 'local' | 'remote' | null = null;
+  let _zoneWiresOrigin: 'local' | 'remote' | null = null;
 
   // Persistence gates, set by loadCanvas/loadWires. Autosave fires shortly
   // after hydration regardless of user edits, and each save rewrites the
@@ -420,12 +475,89 @@ export function createCanvasStore(): UseBoundStore<StoreApi<CanvasState>> {
   //  - 'snapshot-first': malformed records were dropped; copy the raw data to
   //                      a recovery key before the first write replaces it.
   //  - 'ok':             clean hydration.
-  let _canvasPersist: 'blocked' | 'verify-empty' | 'snapshot-first' | 'ok' = 'blocked';
+  type CanvasPersist = 'blocked' | 'verify-empty' | 'snapshot-first' | 'ok';
+  let _canvasPersist: CanvasPersist = 'blocked';
   let _recoverySnapshot: unknown;
-  let _zoneWiresPersistBlocked = false;
-  let _wiresPersistBlocked = false;
+  // Last observed local disk contents, updated after each successful write.
+  let _diskBaseline = new Map<string, string>();
+  let _restoredBaseline: Map<string, string> | undefined;
+  let _checkingRestore: { generation: number; promise: Promise<boolean> } | undefined;
+  const verifyRestoredDisk = async (storage: ScopedStorage): Promise<boolean> => {
+    if (!_restoredBaseline) return false;
+    if (_checkingRestore?.generation === _loadGeneration) return _checkingRestore.promise;
+    const baseline = _restoredBaseline;
+    const generation = _loadGeneration;
+    store.setState({ loaded: false });
+    const checking = (async () => {
+      const values = await withCanvasPersistenceTimeout(Promise.all(DISK_CONTENT_KEYS.map((key) => storage.read(key))));
+      if (generation !== _loadGeneration) throw new Error('Canvas source changed while checking unsaved changes');
+      const changed = DISK_CONTENT_KEYS.some((key, index) => baseline.get(key) !== diskFingerprint(values[index]));
+      if (changed) {
+        const state = store.getState();
+        const localWires = _wiresOrigin === 'local' ? state.wireDefinitions : [];
+        const localZoneWires = _zoneWiresOrigin === 'local' ? state.zoneWireDefinitions : [];
+        // Use an independent versioned bundle, never an active or automatic
+        // recovery key. A fresh UUID avoids replacing any previous copy.
+        const key = `${STORAGE_KEY_UNSAVED_COPY_PREFIX}${Date.now()}-${crypto.randomUUID()}`;
+        if ((await withCanvasPersistenceTimeout(storage.list())).includes(key)) throw new Error('Canvas recovery copy already exists');
+        await withCanvasPersistenceTimeout(writeInOrder(storage, key, {
+          version: 1, canvases: state.canvases, activeCanvasId: state.activeCanvasId,
+          wireDefinitions: localWires, zoneWireDefinitions: localZoneWires,
+          // A divergent backup may be the newer half of an interrupted save.
+          // Keep BOTH disk versions before any normal autosave can rotate them.
+          ...(diskFingerprint(values[0]) !== diskFingerprint(values[1])
+            ? { diskCopies: { primary: values[0] ?? null, backup: values[1] ?? null } } : {}),
+        }));
+        if (generation !== _loadGeneration) throw new Error('Canvas source changed while keeping unsaved changes');
+        rendererLog('canvas', 'info', 'Kept unsaved canvas recovery copy', { meta: { key } });
+        _restoredBaseline = undefined;
+        // Keep all retained wires closed while the newer disk version loads.
+        _wiresPersistBlocked = 'remote';
+        _zoneWiresPersistBlocked = 'remote';
+        const backupChanged = baseline.get(STORAGE_KEY_INSTANCES_BACKUP) !== diskFingerprint(values[1]);
+        const loading = state.loadCanvas(storage, backupChanged ? 'backup' : undefined);
+        const localGeneration = _loadGeneration;
+        await loading;
+        if (localGeneration !== _loadGeneration) return true;
+        await state.loadWires(storage);
+        if (localGeneration !== _loadGeneration) return true;
+        store.setState({ unsavedRecoveryCopy: true, autosaveFailed: !store.getState().loaded });
+        // This save was requested for the retained version, not the newer
+        // disk data. Leave the latter alone until its own next edit/save.
+        return true;
+      }
+      _restoredBaseline = undefined;
+      return false;
+    })().finally(() => {
+      if (generation === _loadGeneration) store.setState({ loaded: true });
+      if (_checkingRestore?.promise === checking) _checkingRestore = undefined;
+    });
+    _checkingRestore = { generation, promise: checking };
+    return checking;
+  };
+  type WirePersistBlock = 'remote' | 'local-unreadable' | null;
+  let _zoneWiresPersistBlocked: WirePersistBlock = null;
+  let _wiresPersistBlocked: WirePersistBlock = null;
+  // Compare wire content so no-op edits do not turn hydration's empty list
+  // into a failed save. Never persist over data we could not read.
+  let _unreadableWiresBaseline: string | undefined;
+  let _unreadableZoneWiresBaseline: string | undefined;
+  // Each project has its own store; Home has a singleton store. Keep the
+  // failed local state AND its persistence guards here while viewing remote.
+  let _failedLocalState: {
+    state: CanvasState;
+    canvasPersist: CanvasPersist;
+    recoverySnapshot: unknown;
+    wiresPersistBlocked: WirePersistBlock;
+    zoneWiresPersistBlocked: WirePersistBlock;
+    unreadableWiresBaseline: typeof _unreadableWiresBaseline;
+    unreadableZoneWiresBaseline: typeof _unreadableZoneWiresBaseline;
+    diskBaseline: Map<string, string>;
+    wiresOrigin: typeof _wiresOrigin;
+    zoneWiresOrigin: typeof _zoneWiresOrigin;
+  } | undefined;
 
-  return create<CanvasState>((set, get) => ({
+  const store = create<CanvasState>((set, get) => ({
     canvases: [initialCanvas],
     activeCanvasId: initialCanvas.id,
     views: initialCanvas.views,
@@ -444,6 +576,7 @@ export function createCanvasStore(): UseBoundStore<StoreApi<CanvasState>> {
     wiresLoaded: false,
     loadError: null,
     autosaveFailed: false,
+    unsavedRecoveryCopy: false,
     hydrationSeq: 0,
 
     activeCanvas: () => {
@@ -481,9 +614,14 @@ export function createCanvasStore(): UseBoundStore<StoreApi<CanvasState>> {
         }
         return { id: wire.id, sourceZoneId: wire.sourceZoneId, targetId: wire.targetId, targetType: wire.targetType };
       });
+      ++_loadGeneration;
+      _failedLocalState = undefined;
+      _restoredBaseline = undefined;
+      _wiresOrigin = 'local';
+      _zoneWiresOrigin = 'local';
       _canvasPersist = 'ok';
-      _wiresPersistBlocked = false;
-      _zoneWiresPersistBlocked = false;
+      _wiresPersistBlocked = null;
+      _zoneWiresPersistBlocked = null;
       set({
         canvases, activeCanvasId: canvasId, wireDefinitions, zoneWireDefinitions, loaded: true, dataOrigin: 'local', wiresLoaded: true, loadError: null,
         ...syncDerivedState(canvases, canvasId),
@@ -492,8 +630,10 @@ export function createCanvasStore(): UseBoundStore<StoreApi<CanvasState>> {
 
     // Measured as `clubhouse.canvas.load` (spec §4.10); `loadResult` records
     // which branch hydration took. Recovery details are persist telemetry.
-    loadCanvas: (storage) => tel.flow<Promise<CanvasLoadResult>>('clubhouse.canvas.load', {}, async (span) => {
+    loadCanvas: (storage, preferredCopy) => tel.flow<Promise<CanvasLoadResult>>('clubhouse.canvas.load', {}, async (span) => {
+      const generation = ++_loadGeneration;
       let loadResult: CanvasLoadResult = 'failed';
+      const nextBaseline = new Map<string, string>();
       _canvasPersist = 'blocked';
       _recoverySnapshot = undefined;
       try {
@@ -508,6 +648,7 @@ export function createCanvasStore(): UseBoundStore<StoreApi<CanvasState>> {
         let nextPersist: 'blocked' | 'verify-empty' | 'snapshot-first' | 'ok' = 'blocked';
         try {
           const savedZoneWires = await readWithRetry(storage, STORAGE_KEY_ZONE_WIRES) as ZoneWireDefinition[] | null;
+          nextBaseline.set(STORAGE_KEY_ZONE_WIRES, diskFingerprint(savedZoneWires));
           if (savedZoneWires && Array.isArray(savedZoneWires)) {
             loadedZoneWires = savedZoneWires.filter(
               (w) => w && w.id && w.sourceZoneId && w.targetId && w.targetType,
@@ -525,9 +666,13 @@ export function createCanvasStore(): UseBoundStore<StoreApi<CanvasState>> {
         // is always a complete old-or-new copy and is safe to fall back to when
         // the primary is torn, missing, unreadable or has malformed records.
         const primary = await readInstancesCopy(storage, STORAGE_KEY_INSTANCES);
-        let chosen: InstancesCopy = primary;
+        const backup = await readInstancesCopy(storage, STORAGE_KEY_INSTANCES_BACKUP);
+        if (generation !== _loadGeneration) return 'ok';
+        for (const [key, copy] of [[STORAGE_KEY_INSTANCES, primary], [STORAGE_KEY_INSTANCES_BACKUP, backup]] as const) {
+          if (copy.status !== 'unreadable') nextBaseline.set(key, diskFingerprint(copy.status === 'missing' ? undefined : copy.raw));
+        }
+        let chosen: InstancesCopy = preferredCopy === 'backup' && backup.status === 'ok' ? backup : primary;
         if (primary.status !== 'ok') {
-          const backup = await readInstancesCopy(storage, STORAGE_KEY_INSTANCES_BACKUP);
           if (backup.status === 'ok') {
             loadResult = 'recovered_from_backup';
             persist.recovery('canvas', 'restored_from_backup');
@@ -593,14 +738,23 @@ export function createCanvasStore(): UseBoundStore<StoreApi<CanvasState>> {
           ? savedActive
           : canvases[0].id;
 
+        if (generation !== _loadGeneration) return 'ok';
+        if (_diskBaseline.has(STORAGE_KEY_WIRES)) nextBaseline.set(STORAGE_KEY_WIRES, _diskBaseline.get(STORAGE_KEY_WIRES)!);
+        _diskBaseline = nextBaseline;
+        _restoredBaseline = undefined;
         _canvasPersist = nextPersist;
-        _zoneWiresPersistBlocked = nextZoneWiresBlocked;
-        set((state) => ({ canvases, activeCanvasId, zoneWireDefinitions: loadedZoneWires, loaded: true, dataOrigin: 'local', loadError: null, hydrationSeq: state.hydrationSeq + 1, ...syncDerivedState(canvases, activeCanvasId) }));
+        _zoneWiresOrigin = 'local';
+        const resetRemoteWires = _wiresOrigin !== 'local';
+        if (resetRemoteWires) _wiresOrigin = null;
+        _zoneWiresPersistBlocked = nextZoneWiresBlocked ? 'local-unreadable' : null;
+        _unreadableZoneWiresBaseline = JSON.stringify(loadedZoneWires);
+        set((state) => ({ canvases, activeCanvasId, ...(resetRemoteWires ? { wireDefinitions: [], wiresLoaded: false } : {}), zoneWireDefinitions: loadedZoneWires, loaded: true, dataOrigin: 'local', loadError: null, hydrationSeq: state.hydrationSeq + 1, ...syncDerivedState(canvases, activeCanvasId) }));
         span.set(
           ATTR.canvasCount(canvases.length),
           ATTR.canvasViewCount(countBucket(canvases.reduce((n, c) => n + c.views.length, 0))),
         );
       } catch (err) {
+        if (generation !== _loadGeneration) return 'ok';
         // Unexpected failure — never substitute an empty canvas, which the
         // next autosave would persist over the user's data.
         _canvasPersist = 'blocked';
@@ -614,7 +768,13 @@ export function createCanvasStore(): UseBoundStore<StoreApi<CanvasState>> {
       return loadResult;
     }, { classify: canvasLoadOutcome }).then((): void => undefined),
 
-    saveCanvas: async (storage) => {
+    saveCanvas: async (storage, token) => {
+      const generation = _loadGeneration;
+      const assertCurrent = () => {
+        if (token?.cancelled || generation !== _loadGeneration) throw new Error('Canvas source changed before the local save completed');
+      };
+      const diskBaseline = _diskBaseline;
+      if (_restoredBaseline && await verifyRestoredDisk(storage)) return;
       if (_canvasPersist === 'blocked') {
         persist.guardBlocked('canvas', 'not_hydrated');
         rendererLog('canvas', 'warn', 'saveCanvas skipped — canvas was not hydrated from storage');
@@ -627,7 +787,9 @@ export function createCanvasStore(): UseBoundStore<StoreApi<CanvasState>> {
         let backup: unknown;
         try {
           primary = await storage.read(STORAGE_KEY_INSTANCES);
+          assertCurrent();
           backup = await storage.read(STORAGE_KEY_INSTANCES_BACKUP);
+          assertCurrent();
         } catch (err) {
           rendererLog('canvas', 'warn', 'saveCanvas failed — could not confirm storage is empty', {
             meta: { error: errorMessage(err) },
@@ -648,13 +810,18 @@ export function createCanvasStore(): UseBoundStore<StoreApi<CanvasState>> {
       }
       if (_canvasPersist === 'snapshot-first') {
         // If this write fails we stay in 'snapshot-first' and retry next save.
-        await storage.write(`${STORAGE_KEY_INSTANCES_RECOVERY_PREFIX}${Date.now()}`, _recoverySnapshot);
+        await writeInOrder(storage, `${STORAGE_KEY_INSTANCES_RECOVERY_PREFIX}${Date.now()}`, _recoverySnapshot, assertCurrent);
+        assertCurrent();
         if (_canvasPersist !== 'snapshot-first') return;
         _recoverySnapshot = undefined;
         _canvasPersist = 'ok';
       }
       if (_canvasPersist !== 'ok') return;
+      if (_zoneWiresPersistBlocked === 'local-unreadable' && JSON.stringify(get().zoneWireDefinitions) !== _unreadableZoneWiresBaseline) {
+        throw new Error('Canvas zone wire changes not saved: persisted zone wires could not be read');
+      }
 
+      assertCurrent();
       // Capture everything before the first await: the store can switch to a
       // satellite's canvas while these writes are in flight.
       const { canvases, activeCanvasId, zoneWireDefinitions } = get();
@@ -683,19 +850,30 @@ export function createCanvasStore(): UseBoundStore<StoreApi<CanvasState>> {
       // back to. We intentionally avoid an atomic temp-file+rename here: the
       // extra filesystem events it generates regress unrelated plugins on
       // Linux CI, whereas an ordered pair of plain writes does not.
-      await storage.write(STORAGE_KEY_INSTANCES_BACKUP, data);
-      await storage.write(STORAGE_KEY_INSTANCES, data);
-      await storage.write(STORAGE_KEY_ACTIVE, activeCanvasId);
+      await writeInOrder(storage, STORAGE_KEY_INSTANCES_BACKUP, data, assertCurrent);
+      diskBaseline.set(STORAGE_KEY_INSTANCES_BACKUP, diskFingerprint(data));
+      assertCurrent();
+      await writeInOrder(storage, STORAGE_KEY_INSTANCES, data, assertCurrent);
+      diskBaseline.set(STORAGE_KEY_INSTANCES, diskFingerprint(data));
+      assertCurrent();
+      await writeInOrder(storage, STORAGE_KEY_ACTIVE, activeCanvasId, assertCurrent);
+      assertCurrent();
 
       // Persist zone wire definitions — the canvas-owned source of truth for
       // zone-level wires. They survive reload and feed the annex snapshot.
-      if (zoneWiresBlocked) return;
-      await storage.write(STORAGE_KEY_ZONE_WIRES, zoneData);
+      if (!zoneWiresBlocked) {
+        await writeInOrder(storage, STORAGE_KEY_ZONE_WIRES, zoneData, assertCurrent);
+        diskBaseline.set(STORAGE_KEY_ZONE_WIRES, diskFingerprint(zoneData));
+      }
+      assertCurrent();
+      if (get().dataOrigin === 'local') _failedLocalState = undefined;
     },
 
     loadWires: async (storage) => {
-      if (_wiresLoading) return;
-      _wiresLoading = true;
+      const generation = _loadGeneration;
+      if (_wiresLoading === generation) return;
+      _wiresLoading = generation;
+      if (_wiresPersistBlocked !== 'local-unreadable') _unreadableWiresBaseline = JSON.stringify(_wiresOrigin === 'remote' ? [] : get().wireDefinitions);
       try {
         let saved: McpBindingEntry[] | null;
         try {
@@ -703,18 +881,24 @@ export function createCanvasStore(): UseBoundStore<StoreApi<CanvasState>> {
         } catch (err) {
           // Unreadable — mark loaded so canvas autosave isn't held up, but
           // block saveWires so the empty list never overwrites the real wires.
-          _wiresPersistBlocked = true;
+          if (generation !== _loadGeneration) return;
+          _wiresPersistBlocked = 'local-unreadable';
           rendererLog('canvas', 'error', 'Canvas wires unreadable — wire saves disabled for this session', {
             meta: { error: errorMessage(err) },
           });
-          set({ wiresLoaded: true });
+          const clearRemote = _wiresOrigin === 'remote';
+          _wiresOrigin = 'local';
+          set({ ...(clearRemote ? { wireDefinitions: [] } : {}), wiresLoaded: true });
           return;
         }
+        if (generation !== _loadGeneration) return;
+        _diskBaseline.set(STORAGE_KEY_WIRES, diskFingerprint(saved));
         // Re-open the guard only with the set() that swaps in local wires: the
         // store may still hold a satellite's (hydrateFromRemote), and they must
         // never be saved here. No local wires means none, not the satellite's.
         if (!saved || !Array.isArray(saved) || saved.length === 0) {
-          _wiresPersistBlocked = false;
+          _wiresPersistBlocked = null;
+          _wiresOrigin = 'local';
           set({ wireDefinitions: [], wiresLoaded: true });
           return;
         }
@@ -747,26 +931,42 @@ export function createCanvasStore(): UseBoundStore<StoreApi<CanvasState>> {
             // keep the wire definition so the wire remains visible and persisted
           }
         }
-        _wiresPersistBlocked = false;
+        if (generation !== _loadGeneration) return;
+        _wiresPersistBlocked = null;
+        _wiresOrigin = 'local';
         set({ wireDefinitions: restoredDefinitions, wiresLoaded: true });
       } catch (err) {
         // Restore failed part-way — keep whatever was persisted rather than
         // overwriting it with a partial list, but don't hold up canvas autosave.
-        _wiresPersistBlocked = true;
+        if (generation !== _loadGeneration) return;
+        _wiresPersistBlocked = 'local-unreadable';
         rendererLog('canvas', 'error', 'Canvas wire restore failed — wire saves disabled for this session', {
           meta: { error: errorMessage(err) },
         });
-        set({ wiresLoaded: true });
+        const clearRemote = _wiresOrigin === 'remote';
+        _wiresOrigin = 'local';
+        set({ ...(clearRemote ? { wireDefinitions: [] } : {}), wiresLoaded: true });
       } finally {
-        _wiresLoading = false;
+        if (_wiresLoading === generation) _wiresLoading = undefined;
       }
     },
 
-    saveWires: async (storage) => {
-      if (_wiresPersistBlocked) {
+    saveWires: async (storage, token) => {
+      const generation = _loadGeneration;
+      const diskBaseline = _diskBaseline;
+      if (_restoredBaseline && await verifyRestoredDisk(storage)) return;
+      if (_wiresPersistBlocked === 'remote') return;
+      if (_wiresPersistBlocked === 'local-unreadable') {
+        if (JSON.stringify(get().wireDefinitions) !== _unreadableWiresBaseline) {
+          throw new Error('Canvas wire changes not saved: persisted wires could not be read');
+        }
         rendererLog('canvas', 'warn', 'saveWires skipped — persisted wires could not be read');
         return;
       }
+      const assertCurrent = () => {
+        if (token?.cancelled || generation !== _loadGeneration) throw new Error('Canvas source changed before the local wire save');
+      };
+      assertCurrent();
       // Persist wire definitions — the canvas-owned source of truth.
       // Unlike MCP bindings, wire definitions are not cleared when agents sleep.
       const data = get().wireDefinitions.map((b) => ({
@@ -781,7 +981,10 @@ export function createCanvasStore(): UseBoundStore<StoreApi<CanvasState>> {
         ...(b.disabledTools && b.disabledTools.length > 0 ? { disabledTools: b.disabledTools } : {}),
         ...(b.routedPath ? { routedPath: b.routedPath } : {}),
       }));
-      await storage.write(STORAGE_KEY_WIRES, data);
+      await writeInOrder(storage, STORAGE_KEY_WIRES, data, assertCurrent);
+      diskBaseline.set(STORAGE_KEY_WIRES, diskFingerprint(data));
+      if (token?.cancelled || generation !== _loadGeneration) throw new Error('Canvas source changed before the local wire save completed');
+      if (get().dataOrigin === 'local') _failedLocalState = undefined;
     },
 
     addWireDefinition: (entry) => {
@@ -829,15 +1032,79 @@ export function createCanvasStore(): UseBoundStore<StoreApi<CanvasState>> {
       }));
     },
 
+    markSaveTimedOut: (token) => {
+      // Stop this writer even when no satellite snapshot has arrived. A newer
+      // save may already be running, so a timeout must not invalidate it.
+      if (token) token.cancelled = true;
+      else ++_loadGeneration;
+      if (get().dataOrigin === 'local') _restoredBaseline = _diskBaseline;
+      set({ autosaveFailed: true });
+    },
+
+    restoreFailedLocalState: async (storage) => {
+      if (!_failedLocalState) return false;
+      const local = _failedLocalState;
+      _failedLocalState = undefined;
+      ++_loadGeneration;
+      _canvasPersist = local.canvasPersist;
+      _recoverySnapshot = local.recoverySnapshot;
+      _wiresPersistBlocked = local.wiresPersistBlocked;
+      _zoneWiresPersistBlocked = local.zoneWiresPersistBlocked;
+      _unreadableWiresBaseline = local.unreadableWiresBaseline;
+      _unreadableZoneWiresBaseline = local.unreadableZoneWiresBaseline;
+      _wiresOrigin = local.wiresOrigin;
+      _zoneWiresOrigin = local.zoneWiresOrigin;
+      _diskBaseline = local.diskBaseline;
+      _restoredBaseline = local.diskBaseline;
+      set({ ...local.state, autosaveFailed: true, hydrationSeq: get().hydrationSeq + 1 });
+      try {
+        const recovered = await verifyRestoredDisk(storage);
+        if (!recovered && !get().wiresLoaded && get().dataOrigin === 'local') {
+          const pending = get().wireDefinitions;
+          const generation = _loadGeneration;
+          // These wires were edited before the previous local read finished;
+          // a failed re-read must not classify them as already persisted.
+          _wiresPersistBlocked = 'local-unreadable';
+          _unreadableWiresBaseline = '[]';
+          await withCanvasPersistenceTimeout(get().loadWires(storage));
+          if (generation === _loadGeneration && pending.length) {
+            for (const wire of pending) {
+              get().addWireDefinition(wire);
+              get().updateWireDefinition(wire.agentId, wire.targetId, wire);
+            }
+          }
+        }
+      } catch (error) {
+        rendererLog('canvas', 'warn', 'Could not resume retained canvas save', { meta: { error: errorMessage(error) } });
+      }
+      return true;
+    },
+
     hydrateFromRemote: (canvasData, activeId, remoteWireDefinitions?, remoteZoneWireDefinitions?) => {
       if (!canvasData || !Array.isArray(canvasData) || canvasData.length === 0) return;
+      const local = get();
+      if (local.dataOrigin === 'local' && local.autosaveFailed) {
+        _failedLocalState = {
+          state: { ...local,
+            wireDefinitions: _wiresOrigin === 'local' ? local.wireDefinitions : [],
+            zoneWireDefinitions: _zoneWiresOrigin === 'local' ? local.zoneWireDefinitions : [],
+          }, canvasPersist: _canvasPersist, recoverySnapshot: _recoverySnapshot,
+          wiresPersistBlocked: _wiresPersistBlocked, zoneWiresPersistBlocked: _zoneWiresPersistBlocked,
+          unreadableWiresBaseline: _unreadableWiresBaseline, unreadableZoneWiresBaseline: _unreadableZoneWiresBaseline,
+          diskBaseline: _diskBaseline, wiresOrigin: _wiresOrigin, zoneWiresOrigin: _zoneWiresOrigin,
+        };
+      }
+      ++_loadGeneration;
+      _restoredBaseline = undefined;
       // From here the store holds a satellite's canvas, which must never be
       // written to this machine's storage (the app canvas store is shared by
       // the local and remote views). The next loadCanvas/loadWires from local
       // storage re-opens the guards.
       _canvasPersist = 'blocked';
-      _wiresPersistBlocked = true;
-      _zoneWiresPersistBlocked = true;
+      _wiresPersistBlocked = 'remote';
+      _zoneWiresPersistBlocked = 'remote';
+      _wiresOrigin = 'remote';
+      _zoneWiresOrigin = 'remote';
       const existingState = get();
       const existingCanvasMap = new Map(existingState.canvases.map((c) => [c.id, c]));
 
@@ -1230,4 +1497,12 @@ export function createCanvasStore(): UseBoundStore<StoreApi<CanvasState>> {
       })));
     },
   }));
+  // Wire definitions can also change while resolving deferred blueprint wires,
+  // removing views, or applying navigation. Track every local mutation centrally.
+  store.subscribe((state, previous) => {
+    if (state.dataOrigin !== 'local' || previous.dataOrigin !== 'local') return;
+    if (state.wireDefinitions !== previous.wireDefinitions) _wiresOrigin = 'local';
+    if (state.zoneWireDefinitions !== previous.zoneWireDefinitions) _zoneWiresOrigin = 'local';
+  });
+  return store;
 }
