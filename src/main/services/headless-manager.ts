@@ -129,6 +129,7 @@ function cleanupHeadlessSession(agentId: string): void {
   if (session?.killTimer) {
     clearTimeout(session.killTimer);
   }
+  session?.logRedactor?.endRun();
   sessions.delete(agentId);
 }
 
@@ -647,6 +648,7 @@ function setupExitHandlers(
   session.finalize = (code, signal, error) => {
     if (finalized) return;
     finalized = true;
+    session.logRedactor?.endRun();
     proc.off('exit', noteExit);
     if (session.killTimer) clearTimeout(session.killTimer);
     // A descendant may still own the pipes. Stop accepting output before
@@ -773,7 +775,7 @@ export async function spawnHeadless(
   }
 
   const session = createSessionRecord(agentId, proc, outputKind, transcriptPath, onExit, createEventNormalizer, turn, quickRun);
-  session.logRedactor = logRedactor;
+  session.logRedactor = logRedactor.startRun();
   sessions.set(agentId, session);
   agentRunStarted(agentId, 'headless');
 

@@ -75,11 +75,16 @@ export function launchCopilotServer(opts: CopilotLaunchOptions): Promise<Copilot
     let stderr = '';
     let stderrForLog = '';
     const stderrDecoder = new StringDecoder('utf8');
-    const stderrLog = (opts.logRedactor ?? new LogRedactor(opts.extraArgs)).stream();
+    const logRedactor = (opts.logRedactor ?? new LogRedactor(opts.extraArgs)).startRun();
+    const stderrLog = logRedactor.stream();
     const addDiagnostic = (text: string) => { stderrForLog = (stderrForLog + text).slice(-STDERR_TAIL_CHARS); };
     let settled = false;
     const kill = () => killStructuredChild(child, { endStdin: false });
-    const exited = new Promise<void>((done) => { child.once('close', () => done()); child.once('error', () => done()); });
+    const exited = new Promise<void>((done) => {
+      const end = () => { logRedactor.endRun(); done(); };
+      child.once('close', end);
+      child.once('error', end);
+    });
     const tail = () => stderr.trim();
     const settle = (fn: () => void) => {
       if (settled) return;
@@ -89,6 +94,7 @@ export function launchCopilotServer(opts: CopilotLaunchOptions): Promise<Copilot
       fn();
     };
     const fail = (message: string, code: CopilotLaunchErrorCode) => settle(() => {
+      logRedactor.endRun();
       void kill();
       reject(new CopilotLaunchError(message, code));
     });

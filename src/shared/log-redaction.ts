@@ -54,10 +54,41 @@ export function redactSpawnArgs(args: readonly string[]): string[] {
   });
 }
 
+// References to existing per-run content only. No extra prompt copies or history.
+// Transient call-site redactors are deliberately not registered.
+const activeRuns = new Map<LogRedactor, ReadonlySet<string>>();
+
+function scrubText(input: string, content: Iterable<string>, limit: number): string {
+  let out = input;
+  for (const text of [...new Set(content)].sort((a, b) => b.length - a.length)) {
+    out = out.split(text).join(String(redactLogValue(text)));
+  }
+  return out.length > limit ? `${out.slice(0, limit)}…[cut]` : out;
+}
+
+/** Catch-all diagnostics have no run context. Scrub every active run before cutting. */
+export function redactActiveRunText(input: string, limit = 2000): string {
+  return scrubText(input, [...activeRuns.values()].flatMap((content) => [...content]), limit);
+}
+
 /** Per-run content scrubber: retain short diagnostic prose, never known prompts. */
 export class LogRedactor {
   private readonly content = new Set<string>();
   private readonly prefixes = new Map<string, Uint32Array>();
+  private activeRun = false;
+
+  /** Run owners pair this with endRun on exit, failed start, and disposal. */
+  startRun(): this {
+    this.activeRun = true;
+    if (this.content.size) activeRuns.set(this, this.content);
+    return this;
+  }
+
+  /** Drop the global reference. Keep local scrubbing for late process diagnostics. */
+  endRun(): void {
+    this.activeRun = false;
+    activeRuns.delete(this);
+  }
 
   constructor(args: readonly string[] = [], content: readonly string[] = []) {
     for (const text of content) this.rememberText(text);
@@ -86,6 +117,7 @@ export class LogRedactor {
     this.content.add(JSON.stringify(text).slice(1, -1));
     // Providers sometimes echo just one line of a multi-line system prompt.
     for (const line of text.split(/\r?\n/)) if (line.trim().length >= 8) this.content.add(line);
+    if (this.activeRun) activeRuns.set(this, this.content);
   }
 
   /** Extract content strings from request structures, without retaining safe config values. */
@@ -100,11 +132,7 @@ export class LogRedactor {
   }
 
   text(input: string, limit = 2000): string {
-    let out = input;
-    for (const content of [...this.content].sort((a, b) => b.length - a.length)) {
-      out = out.split(content).join(String(redactLogValue(content)));
-    }
-    return out.length > limit ? `${out.slice(0, limit)}…[cut]` : out;
+    return scrubText(input, this.content, limit);
   }
 
   /** Keep a possible prompt prefix between chunks; never emit half a known prompt. */

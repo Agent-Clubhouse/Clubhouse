@@ -1,3 +1,4 @@
+import { redactActiveRunText } from '../../shared/log-redaction';
 /**
  * PTY diagnostics on the diag tier (#2306): exit and spawn-failure text,
  * stale sweeps and rejected writes reach local diag lines, redacted and
@@ -96,11 +97,13 @@ describe('PTY exit diag line', () => {
     const mission = 'PTY-EXIT-PRIVATE-MISSION-1919';
     const system = 'PTY-EXIT-PRIVATE-SYSTEM-1919';
     await spawn('agent_private', '/test', '/opt/tools/bin/claude', ['-p', mission, '--system-prompt=' + system]);
+    expect(redactActiveRunText(`${mission} ${system}`)).not.toContain('PRIVATE');
     resize('agent_private', 100, 40);
     const data = mockProcess.onData.mock.calls.at(-1)![0] as (d: string) => void;
     data(`warning: ${mission} ${system}\n`);
     const exit = mockProcess.onExit.mock.calls.at(-1)![0] as (e: { exitCode: number }) => void;
     exit({ exitCode: 1 });
+    expect(redactActiveRunText(`${mission} ${system}`)).toBe(`${mission} ${system}`);
     const line = ptyLines('PTY exited')[0]!;
     expect(line.meta).toMatchObject({ exitCode: 1, binary: 'claude', lastOutput: `warning: <redacted: ${mission.length} chars> <redacted: ${system.length} chars>\n` });
     expect(JSON.stringify(lines)).not.toContain(mission);

@@ -1,3 +1,4 @@
+import { redactActiveRunText } from '../../shared/log-redaction';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { EventEmitter } from 'events';
 import { Readable } from 'stream';
@@ -173,10 +174,12 @@ describe('headless-manager', () => {
     const system = 'HEADLESS-PRIVATE-SYSTEM-1919';
     const args = ['-p', mission, '--append-system-prompt=' + system, '--model', 'opus'];
     await spawnHeadless('test-agent', '/project', 'fake-cli', args);
+    expect(redactActiveRunText(`${mission} ${system}`)).not.toContain('PRIVATE');
     mockProcess.stderr!.emit('data', Buffer.from(`warning: ${mission} ${system}`));
     const streamError = mockWriteStream.on.mock.calls.find((call) => call[0] === 'error')?.[1] as (err: Error) => void;
     streamError(new Error(`stream failed: ${mission}`));
     mockProcess.emit('error', new Error(`failed: ${mission} ${system}`));
+    expect(redactActiveRunText(`${mission} ${system}`)).toBe(`${mission} ${system}`);
     mockProcess.emit('close', 1);
     const logs = vi.mocked(appLog).mock.calls;
     for (const msg of ['Spawning headless agent', 'stderr', 'Process error', 'Process exited', 'transcript stream error']) {

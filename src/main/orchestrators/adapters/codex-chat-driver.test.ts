@@ -1,3 +1,4 @@
+import { redactActiveRunText } from '../../../shared/log-redaction';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { EventEmitter } from 'events';
 
@@ -423,12 +424,14 @@ describe('CodexChatDriver', () => {
     useServer({ 'model/list': () => ({ error: { code: 400, message: `catalog failed: ${system}` } }) });
     const onLog = vi.fn();
     const session = await new CodexChatDriver({ onLog }).start({ ...baseOpts, extraArgs: [prompt, '--mission=' + prompt], systemPrompt: system });
+    expect(redactActiveRunText(`${prompt} ${system}`)).not.toContain('PRIVATE');
     expect(onLog).toHaveBeenCalledWith('warn', 'Ignoring extraArgs that codex app-server does not accept', { dropped: [`<redacted: ${prompt.length} chars>`, `--mission=<redacted: ${prompt.length} chars>`] });
     expect(onLog).toHaveBeenCalledWith('warn', 'Codex model/list failed; no model menu', { error: `RPC error 400: catalog failed: <redacted: ${system.length} chars>` });
     const logged = JSON.stringify(onLog.mock.calls);
     expect(logged).not.toContain(prompt);
     expect(logged).not.toContain(system);
     await session.close();
+    expect(redactActiveRunText(`${prompt} ${system}`)).toBe(`${prompt} ${system}`);
   });
 
   it('passes app-server options through extraArgs and drops terminal flags', async () => {

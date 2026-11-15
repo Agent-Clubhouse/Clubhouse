@@ -14,7 +14,7 @@ import { getThemeColorsForTitleBar } from './title-bar-colors';
 import * as safeMode from './services/safe-mode';
 import { appLog } from './services/log-service';
 import { startMainStallMonitor } from './services/main-stall-monitor';
-import { isFailedCopilotWrite } from './chat/copilot/failed-writes';
+import { installProcessErrorHandlers } from './process-error-handlers';
 import { startPeriodicChecks as startUpdateChecks, stopPeriodicChecks as stopUpdateChecks, applyUpdateOnQuit, shouldAutoCheckOnStartup } from './services/auto-update-service';
 import { startPeriodicPluginUpdateChecks, stopPeriodicPluginUpdateChecks } from './services/plugin-update-service';
 import * as annexServer from './services/annex-server';
@@ -39,7 +39,7 @@ import { cleanupRetiredPluginData } from './services/retired-plugin-cleanup';
 import { noteRetiredPlugins } from './services/retired-plugin-data';
 import * as projectStore from './services/project-store';
 import { initTelemetry, recordAppSession, flushBeforeExit, tel, ATTR } from './telemetry';
-import { installCrashTelemetry, reportMainProcessError } from './telemetry/crash-handlers';
+import { installCrashTelemetry } from './telemetry/crash-handlers';
 import { installHealthTelemetry } from './telemetry/health';
 import { installWorkspaceTelemetry } from './telemetry/workspace-gauges';
 import {
@@ -145,28 +145,7 @@ protocol.registerSchemesAsPrivileged([
 
 // Catch-all handlers for truly unexpected errors. Lines logged before the
 // recorder is ready are held and written once it is (#2301).
-process.on('uncaughtException', (err) => {
-  appLog('core:process', 'fatal', 'Uncaught exception', {
-    meta: { error: err.message, stack: err.stack },
-  });
-  reportMainProcessError(err, 'uncaught');
-});
-process.on('unhandledRejection', (reason) => {
-  const msg = reason instanceof Error ? reason.message : String(reason);
-  const stack = reason instanceof Error ? reason.stack : undefined;
-  // A failed Copilot message write, usually to a CLI that is going away, that
-  // its caller already got as an error. vscode-jsonrpc 8.2.1 left a second
-  // copy of every failed request write; 10.0.0 doesn't, but a notification
-  // write still rethrows, so the guard stays (#2706, failed-writes.ts).
-  if (isFailedCopilotWrite(reason)) {
-    appLog('core:process', 'warn', 'A Copilot message write failed, and its request already failed with it', { meta: { error: msg, stack } });
-    return;
-  }
-  appLog('core:process', 'error', 'Unhandled promise rejection', {
-    meta: { error: msg, stack },
-  });
-  reportMainProcessError(reason, 'unhandled-rejection');
-});
+installProcessErrorHandlers();
 
 
 declare const MAIN_WINDOW_WEBPACK_ENTRY: string;

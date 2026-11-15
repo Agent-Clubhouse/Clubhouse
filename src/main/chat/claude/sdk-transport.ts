@@ -238,22 +238,26 @@ export class ClaudeSdkTransport extends ClaudeTransportBase {
   }
 
   async close(): Promise<void> {
-    if (!this.query) return;
-    this.input.finish();
-    const exited = await Promise.race([
-      this.pump?.then(() => true),
-      new Promise<false>((r) => setTimeout(() => r(false), CLOSE_GRACE_MS).unref?.()),
-    ]);
-    if (!exited) {
-      this.log('warn', 'Claude did not exit after stdin closed; closing query');
-      // query.close() kills only its direct child, which on Windows is a .cmd shim's cmd.exe.
-      if (this.child) void killStructuredChild(this.child, { endStdin: false });
-      this.query.close();
-      // Bounded too: a query that doesn't end on close must not hang close() (#2274).
-      await Promise.race([
-        this.pump,
-        new Promise<void>((r) => setTimeout(r, CLOSE_GRACE_MS).unref?.()),
+    try {
+      if (!this.query) return;
+      this.input.finish();
+      const exited = await Promise.race([
+        this.pump?.then(() => true),
+        new Promise<false>((r) => setTimeout(() => r(false), CLOSE_GRACE_MS).unref?.()),
       ]);
+      if (!exited) {
+        this.log('warn', 'Claude did not exit after stdin closed; closing query');
+        // query.close() kills only its direct child, which on Windows is a .cmd shim's cmd.exe.
+        if (this.child) void killStructuredChild(this.child, { endStdin: false });
+        this.query.close();
+        // Bounded too: a query that doesn't end on close must not hang close() (#2274).
+        await Promise.race([
+          this.pump,
+          new Promise<void>((r) => setTimeout(r, CLOSE_GRACE_MS).unref?.()),
+        ]);
+      }
+    } finally {
+      this.logRedactor.endRun();
     }
   }
 

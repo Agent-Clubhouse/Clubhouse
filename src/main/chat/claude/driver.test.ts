@@ -1,3 +1,4 @@
+import { redactActiveRunText } from '../../../shared/log-redaction';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
@@ -568,7 +569,9 @@ describe('ClaudeChatDriverSession mapping (scripted transport)', () => {
       expect(entry?.[2]?.error, suffix).toBe(`read failed: <redacted: ${marker.length} chars>`);
     }
     expect(JSON.stringify(log.mock.calls)).not.toContain(marker);
+    expect(redactActiveRunText(marker)).not.toContain(marker);
     await session.close();
+    expect(redactActiveRunText(marker)).toBe(marker);
   });
 
   const result = (over: Partial<Extract<ClaudeChatEventBody, { kind: 'turn_ended' }>> = {}): ClaudeChatEventBody =>
