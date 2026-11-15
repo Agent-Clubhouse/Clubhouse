@@ -420,22 +420,44 @@ function normalizeCanvasInstance(
 
 export function createCanvasStore(): UseBoundStore<StoreApi<CanvasState>> {
   const initialCanvas = createCanvasInstance();
-  // This store owns one local storage scope across panel remounts. Keep an
-  // issued IPC write ahead of all later writes to its key: cancellation cannot
-  // revoke IPC that is already inside storage.write.
-  const pendingWrites = new Map<string, Promise<void>>();
-  const writeInOrder = (storage: ScopedStorage, key: string, value: unknown, assertCurrent: () => void = () => {}): Promise<void> => {
-    const write = async () => {
-      assertCurrent();
-      await storage.write(key, value);
-    };
-    const previous = pendingWrites.get(key);
-    const pending = previous ? previous.then(write, write) : write();
-    pendingWrites.set(key, pending);
-    const settled = () => { if (pendingWrites.get(key) === pending) pendingWrites.delete(key); };
-    void pending.then(settled, settled);
-    return pending;
+  // This store owns one local storage scope across panel remounts. An issued
+  // IPC write cannot be revoked. Keep one in flight and only the newest pending
+  // request per key, so wedged storage cannot retain an unbounded save history.
+  interface PendingWrite {
+    storage: ScopedStorage;
+    value: unknown;
+    assertCurrent: () => void;
+    resolve: () => void;
+    reject: (error: unknown) => void;
+  }
+  interface WriteQueue { pending?: PendingWrite }
+  const writeQueues = new Map<string, WriteQueue>();
+  const runWrite = async (key: string, queue: WriteQueue, request: PendingWrite): Promise<void> => {
+    try {
+      request.assertCurrent();
+      await request.storage.write(key, request.value);
+      request.resolve();
+    } catch (error) {
+      request.reject(error);
+    } finally {
+      const next = queue.pending;
+      queue.pending = undefined;
+      if (next) void runWrite(key, queue, next);
+      else writeQueues.delete(key);
+    }
   };
+  const writeInOrder = (storage: ScopedStorage, key: string, value: unknown, assertCurrent: () => void = () => {}): Promise<void> => new Promise((resolve, reject) => {
+    const request = { storage, value, assertCurrent, resolve, reject };
+    const queue = writeQueues.get(key);
+    if (queue) {
+      queue.pending?.reject(new Error('Canvas save superseded by newer local changes'));
+      queue.pending = request;
+    } else {
+      const created: WriteQueue = {};
+      writeQueues.set(key, created);
+      void runWrite(key, created, request);
+    }
+  });
   let _loadGeneration = 0;
   let _wiresLoading: number | undefined;
   let _wiresOrigin: 'local' | 'remote' | null = null;

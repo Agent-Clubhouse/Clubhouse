@@ -612,6 +612,61 @@ describe('canvas main', () => {
       },
     );
 
+    it('retains at most two save snapshots behind a wedged storage key', async () => {
+      const { store, storage, mountAndLoad } = setup('bounded-wedged-saves');
+      const panel = await mountAndLoad();
+      let release!: () => void;
+      const gate = new Promise<void>((resolve) => { release = resolve; });
+      const write = storage.write.getMockImplementation()!;
+      let held = false;
+      storage.write.mockImplementation(async (key, value) => {
+        if (key === 'canvas-instances-backup' && !held) { held = true; await gate; }
+        return write(key, value);
+      });
+      const tokens: WeakRef<{ cancelled: boolean }>[] = [];
+      const viewports: WeakRef<object>[] = [];
+      const saveCanvas = store.getState().saveCanvas;
+      store.setState({ saveCanvas: async (storage, token) => {
+        if (token) {
+          tokens.push(new WeakRef(token));
+          viewports.push(new WeakRef(store.getState().viewport));
+        }
+        return saveCanvas(storage, token);
+      } });
+      const v8 = await import('node:v8');
+      const vm = await import('node:vm');
+      const timers = await import('node:timers/promises');
+      v8.setFlagsFromString('--expose_gc');
+      const collect = vm.runInNewContext('gc') as () => void;
+      vi.useFakeTimers();
+      try {
+        for (let i = 0; i < 200; i++) {
+          act(() => { store.getState().setViewport({ panX: i + 1 }); });
+          await act(async () => { await vi.advanceTimersByTimeAsync(501); });
+          const token = tokens.at(-1)?.deref();
+          if (i < 199 && token) act(() => { store.getState().markSaveTimedOut(token); });
+        }
+        expect(held).toBe(true);
+        expect(tokens.length).toBeGreaterThanOrEqual(200);
+        expect(storage.write.mock.calls.filter(([key]) => key === 'canvas-instances-backup')).toHaveLength(1);
+        await timers.setImmediate();
+        collect();
+        collect();
+        await timers.setImmediate();
+        expect(tokens.filter((ref) => ref.deref() !== undefined)).toHaveLength(2);
+        expect(viewports.filter((ref) => ref.deref() !== undefined)).toHaveLength(2);
+        await act(async () => { release(); await gate; });
+        expect((storage.files.get('canvas-instances') as { viewport: { panX: number } }[])[0].viewport.panX).toBe(200);
+        expect(store.getState().autosaveFailed).toBe(false);
+      } finally {
+        await act(async () => { release(); await gate; for (let i = 0; i < 500; i++) await Promise.resolve(); });
+        store.setState({ saveCanvas });
+        panel.unmount();
+        vi.useRealTimers();
+        v8.setFlagsFromString('--no-expose-gc');
+      }
+    });
+
     it.each([
       ['canvas-instances', false], ['canvas-instances', true],
       ['canvas-zone-wires', false], ['canvas-zone-wires', true],
