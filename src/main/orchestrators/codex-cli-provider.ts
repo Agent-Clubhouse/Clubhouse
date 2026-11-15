@@ -30,7 +30,6 @@ import { isInjectedClubhouseBridge } from '../services/clubhouse-mcp/injection';
 import { cliStateDir, homePath, testModelProbesDisabled, validateHookUrl, buildHookCurlCommand, parseJsonlFile } from './shared';
 import { getShellEnvironment, invalidateShellEnvironmentCache } from '../util/shell';
 import { resolveProcessLaunch } from '../util/process-launch';
-import { stripClubhouseHooksFromFile } from '../services/config-pipeline';
 import { appLog } from '../services/log-service';
 import { stripTerminalEscapes } from '../../shared/terminal-text';
 
@@ -539,13 +538,12 @@ export class CodexCliProvider extends BaseProvider implements HeadlessCapable, H
   // ── HookCapable ─────────────────────────────────────────────────────────
 
   /**
-   * Clubhouse no longer writes `.codex/hooks.json` (see buildHookArgs). This
-   * only strips entries an older Clubhouse wrote there, keeping the user's own
-   * hooks, and removes the folder only when that leaves it empty.
+   * Clubhouse no longer writes `.codex/hooks.json` (see buildHookArgs), so
+   * this only checks the URL. agent-system strips entries an older Clubhouse
+   * wrote there once before every Codex start, whatever the runtime.
    */
-  async writeHooksConfig(cwd: string, hookUrl: string): Promise<void> {
+  async writeHooksConfig(_cwd: string, hookUrl: string): Promise<void> {
     validateHookUrl(hookUrl);
-    await stripClubhouseHooksFromFile(path.join(cwd, '.codex', 'hooks.json'));
   }
 
   /**

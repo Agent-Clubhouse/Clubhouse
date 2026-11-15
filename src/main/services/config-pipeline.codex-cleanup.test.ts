@@ -31,6 +31,7 @@ describe('Codex hook directory cleanup', () => {
   const bakedPortCommand = "cat | curl -s -X POST http://127.0.0.1:51234/hook/${CLUBHOUSE_AGENT_ID} -H 'Content-Type: application/json' -H \"X-Clubhouse-Nonce: ${CLUBHOUSE_HOOK_NONCE}\" --data-binary @- || true";
   const userGroup = { hooks: [{ type: 'command', command: 'echo user' }] };
 
+  // agent-system runs stripClubhouseHooksFromFile on the Codex hooks path once before every start.
   it('creates no .codex folder in a clean agent folder (#1728)', async () => {
     await new CodexCliProvider().writeHooksConfig(cwd, 'http://127.0.0.1:9999/hook');
     await expect(fsp.stat(codexDir)).rejects.toMatchObject({ code: 'ENOENT' });
@@ -39,7 +40,7 @@ describe('Codex hook directory cleanup', () => {
   it('strips hooks an older Clubhouse wrote, then removes the folder they leave empty', async () => {
     await fsp.mkdir(codexDir);
     await fsp.writeFile(hooksPath, JSON.stringify({ hooks: { Stop: [legacyGroup()], PreToolUse: [legacyGroup(bakedPortCommand)] } }));
-    await new CodexCliProvider().writeHooksConfig(cwd, 'http://127.0.0.1:9999/hook');
+    await stripClubhouseHooksFromFile(hooksPath);
     await expect(fsp.stat(codexDir)).rejects.toMatchObject({ code: 'ENOENT' });
   });
 
@@ -49,7 +50,7 @@ describe('Codex hook directory cleanup', () => {
     const config = 'model = "saved-legacy-model"\n';
     await fsp.writeFile(configPath, config);
     await fsp.writeFile(hooksPath, JSON.stringify({ custom: 'kept', hooks: { Stop: [userGroup, legacyGroup()], PostToolUse: [legacyGroup()] } }));
-    await new CodexCliProvider().writeHooksConfig(cwd, 'http://127.0.0.1:9999/hook');
+    await stripClubhouseHooksFromFile(hooksPath);
     expect(await fsp.readFile(configPath, 'utf-8')).toBe(config);
     expect(JSON.parse(await fsp.readFile(hooksPath, 'utf-8'))).toEqual({ custom: 'kept', hooks: { Stop: [userGroup] } });
   });
@@ -58,7 +59,7 @@ describe('Codex hook directory cleanup', () => {
     await fsp.mkdir(codexDir);
     const mixed = { hooks: [...legacyGroup().hooks, ...userGroup.hooks] };
     await fsp.writeFile(hooksPath, JSON.stringify({ hooks: { Stop: [mixed] } }));
-    await new CodexCliProvider().writeHooksConfig(cwd, 'http://127.0.0.1:9999/hook');
+    await stripClubhouseHooksFromFile(hooksPath);
     expect(JSON.parse(await fsp.readFile(hooksPath, 'utf-8'))).toEqual({ hooks: { Stop: [userGroup] } });
   });
 
@@ -66,7 +67,7 @@ describe('Codex hook directory cleanup', () => {
     await fsp.mkdir(codexDir);
     const broken = `// commented\n${JSON.stringify({ hooks: { Stop: [legacyGroup()] } })}`;
     await fsp.writeFile(hooksPath, broken);
-    await new CodexCliProvider().writeHooksConfig(cwd, 'http://127.0.0.1:9999/hook');
+    await stripClubhouseHooksFromFile(hooksPath);
     expect(await fsp.readFile(hooksPath, 'utf-8')).toBe(broken);
   });
 
@@ -74,7 +75,7 @@ describe('Codex hook directory cleanup', () => {
     await fsp.mkdir(codexDir);
     const raw = JSON.stringify({ hooks: { Stop: [userGroup] } });
     await fsp.writeFile(hooksPath, raw);
-    await new CodexCliProvider().writeHooksConfig(cwd, 'http://127.0.0.1:9999/hook');
+    await stripClubhouseHooksFromFile(hooksPath);
     expect(await fsp.readFile(hooksPath, 'utf-8')).toBe(raw);
   });
 

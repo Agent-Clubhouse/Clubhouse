@@ -2,9 +2,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import * as fsp from 'fs/promises';
 import * as os from 'os';
 import * as path from 'path';
-import { getBridgeScriptPath } from './clubhouse-mcp/injection';
-import { injectMcpServerSection, mcpServerToToml } from './toml-utils';
-import { stripLegacyClubhouseBridgeToml, withoutInjectedBridgeSection } from './toml-config-cleanup';
+import { CLUBHOUSE_BRIDGE_ENV_VARS, getBridgeScriptPath } from './clubhouse-mcp/injection';
+import { injectMcpServerSection } from './toml-utils';
+import { isClubhouseBridgeOnlyToml, stripLegacyClubhouseBridgeToml } from './toml-config-cleanup';
 
 vi.mock('./log-service', () => ({ appLog: vi.fn() }));
 
@@ -19,12 +19,59 @@ const conventions = {
   agentTemplatesDir: 'agents',
 };
 
-/** The section an older Clubhouse injected, as injectClubhouseMcp wrote it. */
-const withBridge = (toml: string) => injectMcpServerSection(toml, 'clubhouse', {
+/** A file as injectClubhouseMcp wrote it into an empty .codex/config.toml, today's bridge definition. */
+const current = (bridgePath = getBridgeScriptPath()) => injectMcpServerSection('', 'clubhouse', {
   command: 'node',
-  args: [getBridgeScriptPath()],
-  env: { CLUBHOUSE_MCP_PORT: '23456', CLUBHOUSE_AGENT_ID: 'agent-1' },
-  env_vars: ['CLUBHOUSE_HOOK_NONCE'],
+  args: [bridgePath],
+  env: { CLUBHOUSE_MCP_FALLBACK_PORT: '23456', CLUBHOUSE_MCP_FALLBACK_AGENT_ID: 'durable_1731-abc' },
+  env_vars: [...CLUBHOUSE_BRIDGE_ENV_VARS],
+});
+/** The same, with the bridge definition from before #2222. */
+const beforeNonceFix = (env: Record<string, string> = {
+  CLUBHOUSE_MCP_PORT: '51234', CLUBHOUSE_AGENT_ID: 'agent-1', CLUBHOUSE_HOOK_NONCE: '3f2b8c1e-0a4d-4f6e-9b7a-1c2d3e4f5a6b',
+}) => injectMcpServerSection('', 'clubhouse', { command: 'node', args: ['/Applications/Clubhouse.app/Contents/Resources/app.asar.unpacked/.webpack/main/bridge/clubhouse-mcp-bridge.js'], env });
+
+describe('isClubhouseBridgeOnlyToml (#1728)', () => {
+  it('recognises every file Clubhouse wrote on its own', () => {
+    expect(isClubhouseBridgeOnlyToml(current())).toBe(true);
+    expect(isClubhouseBridgeOnlyToml(current('C:\\Users\\me\\AppData\\Local\\clubhouse\\app-0.42.0\\resources\\app.asar.unpacked\\.webpack\\main\\bridge\\clubhouse-mcp-bridge.js'))).toBe(true);
+    expect(isClubhouseBridgeOnlyToml(beforeNonceFix())).toBe(true);
+    // A snapshot restore scrubbed the nonce line from the older file.
+    expect(isClubhouseBridgeOnlyToml(beforeNonceFix({ CLUBHOUSE_MCP_PORT: '51234', CLUBHOUSE_AGENT_ID: 'agent-1' }))).toBe(true);
+  });
+
+  it('ignores line endings and trailing whitespace', () => {
+    expect(isClubhouseBridgeOnlyToml(current().replace(/\n/g, '\r\n'))).toBe(true);
+    expect(isClubhouseBridgeOnlyToml(current().replace(/\n/g, '   \n') + '\n\n')).toBe(true);
+  });
+
+  it('rejects anything a person could have added or changed', () => {
+    const variants = [
+      // User settings beside the bridge.
+      `model = "o3"\n\n${current()}`,
+      `${current()}\n[mcp_servers.github]\ncommand = "gh"\n`,
+      `${current()}  [mcp_servers.user]\n  command = "mine"\n`,
+      `notes = """\n\n\n[x]\n"""\n${current()}`,
+      // A user env setting or forwarded variable that shares the prefix.
+      current().replace('CLUBHOUSE_MCP_FALLBACK_AGENT_ID', 'CLUBHOUSE_USER_SETTING = "x"\nCLUBHOUSE_MCP_FALLBACK_AGENT_ID'),
+      current().replace('"CLUBHOUSE_MCP_PORT"]', '"CLUBHOUSE_MCP_PORT", "CLUBHOUSE_MY_API_KEY"]'),
+      // Comments, extra keys and edited values.
+      current().replace('command = "node"', '# mine now\ncommand = "node"'),
+      current().replace('command = "node"', 'command = "node"\nstartup_timeout_sec = 30'),
+      current().replace('command = "node"', 'command = "/usr/local/bin/node"'),
+      current().replace('clubhouse-mcp-bridge.js', 'clubhouse-mcp-bridge.js", "--debug'),
+      // Duplicate keys and malformed TOML.
+      current().replace(/(CLUBHOUSE_MCP_FALLBACK_AGENT_ID = .*)/, '$1\n$1'),
+      `model = definitely-not-toml\n${current()}`,
+      current().replace('command = "node"', 'command = "node'),
+      `${current()}\n[mcp_servers.clubhouse]\ncommand = "node"\n`,
+      // Other bridge-looking servers.
+      current('/x/other-bridge.js'),
+      current().replace('[mcp_servers.clubhouse]', '[mcp_servers.my_clubhouse]').replace('[mcp_servers.clubhouse.env]', '[mcp_servers.my_clubhouse.env]'),
+      '',
+    ];
+    for (const variant of variants) expect(isClubhouseBridgeOnlyToml(variant), variant).toBe(false);
+  });
 });
 
 describe('stripLegacyClubhouseBridgeToml (#1728)', () => {
@@ -43,128 +90,31 @@ describe('stripLegacyClubhouseBridgeToml (#1728)', () => {
     await fsp.rm(cwd, { recursive: true, force: true });
   });
 
-  it('deletes a config holding only the injected bridge, and the folder it leaves empty', async () => {
-    await fsp.writeFile(configPath, withBridge(''));
+  it('deletes a Clubhouse-only config, and the folder it leaves empty', async () => {
+    await fsp.writeFile(configPath, current());
     expect(await stripLegacyClubhouseBridgeToml(cwd, conventions)).toBe(true);
     await expect(fsp.stat(codexDir)).rejects.toMatchObject({ code: 'ENOENT' });
   });
 
-  it('keeps the user\'s settings and servers, and the folder', async () => {
-    const user = 'model = "saved-legacy-model"\n\n[mcp_servers.github]\ncommand = "gh"\n';
-    await fsp.writeFile(configPath, withBridge(user));
-    expect(await stripLegacyClubhouseBridgeToml(cwd, conventions)).toBe(true);
-    const left = await fsp.readFile(configPath, 'utf-8');
-    expect(left).toContain('model = "saved-legacy-model"');
-    expect(left).toContain('[mcp_servers.github]');
-    expect(left).not.toContain('mcp_servers.clubhouse');
-  });
-
   it('keeps a folder with other files when the config goes', async () => {
-    await fsp.writeFile(configPath, withBridge(''));
+    await fsp.writeFile(configPath, current());
     await fsp.writeFile(path.join(codexDir, 'hooks.json'), '{"hooks":{}}');
-    await stripLegacyClubhouseBridgeToml(cwd, conventions);
+    expect(await stripLegacyClubhouseBridgeToml(cwd, conventions)).toBe(true);
     await expect(fsp.stat(configPath)).rejects.toMatchObject({ code: 'ENOENT' });
     expect(await fsp.readFile(path.join(codexDir, 'hooks.json'), 'utf-8')).toBe('{"hooks":{}}');
   });
 
-  it('leaves a user\'s own server named clubhouse alone', async () => {
-    const user = '[mcp_servers.clubhouse]\ncommand = "my-clubhouse-server"\n';
-    await fsp.writeFile(configPath, user);
-    expect(await stripLegacyClubhouseBridgeToml(cwd, conventions)).toBe(false);
-    expect(await fsp.readFile(configPath, 'utf-8')).toBe(user);
-  });
-
-  it('keeps a user server that mentions the bridge in a comment or env value', async () => {
+  it('leaves any other file byte for byte, bridge included', async () => {
     for (const user of [
-      '[mcp_servers.clubhouse]\n# was clubhouse-mcp-bridge.js\ncommand = "my-server"\n',
-      '[mcp_servers.clubhouse]\ncommand = "my-server"\n\n[mcp_servers.clubhouse.env]\nNOTE = "/x/clubhouse-mcp-bridge.js"\n',
-      // The exact shape plus one comment is no longer only what Clubhouse wrote.
-      withBridge('').replace('[mcp_servers.clubhouse]\n', '[mcp_servers.clubhouse]\n# mine now\n'),
-      withBridge('').replace('command = "node"', 'command = "node"\nstartup_timeout_sec = 30'),
+      `model = "saved-legacy-model"\n\n${current()}`,
+      '[mcp_servers.clubhouse]\ncommand = "my-clubhouse-server"\n',
+      current().replace(/(CLUBHOUSE_MCP_FALLBACK_AGENT_ID = .*)/, '$1\n$1'),
+      `${current()}  [mcp_servers.user]\n  command = "mine"\n`,
     ]) {
       await fsp.writeFile(configPath, user);
       expect(await stripLegacyClubhouseBridgeToml(cwd, conventions)).toBe(false);
       expect(await fsp.readFile(configPath, 'utf-8')).toBe(user);
     }
-  });
-
-  it('leaves a section whose values are not valid TOML untouched', async () => {
-    for (const broken of [
-      withBridge('').replace('command = "node"', 'command = "node'),
-      withBridge('').replace(/args = \[(.*)\]/, 'args = [$1'),
-      `${withBridge('')}\n[mcp_servers.clubhouse]\ncommand = "node"\n`,
-    ]) {
-      await fsp.writeFile(configPath, broken);
-      expect(await stripLegacyClubhouseBridgeToml(cwd, conventions)).toBe(false);
-      expect(await fsp.readFile(configPath, 'utf-8')).toBe(broken);
-    }
-  });
-
-  it('removes only the section\'s lines, keeping the rest byte for byte', async () => {
-    const before = '# my settings\nmodel   =  "o3"   # inline\n\n';
-    const after = '[mcp_servers.github]\ncommand = "gh"\n';
-    const section = mcpServerToToml('clubhouse', { command: 'node', args: [getBridgeScriptPath()], env: { CLUBHOUSE_MCP_FALLBACK_PORT: '1' } });
-    // The blank line after the section is the section's; the one before is the user's.
-    expect(withoutInjectedBridgeSection(`${before}${section}\n\n${after}`)).toBe(`${before}${after}`);
-  });
-
-  it('keeps an indented user table that follows the section (QA #3527)', async () => {
-    const user = '  [mcp_servers.user]\n  command = "mine"\n';
-    await fsp.writeFile(configPath, `${withBridge('')}${user}`);
-    expect(await stripLegacyClubhouseBridgeToml(cwd, conventions)).toBe(true);
-    expect(await fsp.readFile(configPath, 'utf-8')).toBe(user);
-  });
-
-  it('keeps multiline strings byte for byte, and isn\'t fooled by a header inside one', async () => {
-    const user = 'notes = """\nfirst\n\n\n\n[mcp_servers.clubhouse]\nlast"""\nraw = \'\'\'\n[x]\n\'\'\'\n';
-    await fsp.writeFile(configPath, `${user}\n${withBridge('')}`);
-    expect(await stripLegacyClubhouseBridgeToml(cwd, conventions)).toBe(true);
-    expect(await fsp.readFile(configPath, 'utf-8')).toBe(`${user}\n`);
-  });
-
-  it('isn\'t fooled by a [ line inside a multiline array', () => {
-    const user = 'matrix = [\n[1, 2],\n  [3, 4],\n]\n';
-    expect(withoutInjectedBridgeSection(`${user}${withBridge('')}`)).toBe(user);
-  });
-
-  it('leaves the bridge alone when something else adds to its table', () => {
-    for (const extra of [
-      'mcp_servers.clubhouse.startup_timeout_sec = 30\n',
-      '[mcp_servers]\nclubhouse.enabled = false\n',
-      '[mcp_servers."clubhouse".tools]\nx = 1\n',
-      '  [ mcp_servers . clubhouse ]\ncommand = "dup"\n',
-    ]) {
-      expect(withoutInjectedBridgeSection(`${extra}\n${withBridge('')}`)).toBeNull();
-    }
-  });
-
-  it('leaves malformed TOML elsewhere in the file untouched', async () => {
-    for (const broken of [
-      `title = "unterminated\n${withBridge('')}`,
-      `notes = """never closed\n${withBridge('')}`,
-      `list = [1, 2\n${withBridge('')}`,
-      `[unclosed\n${withBridge('')}`,
-      `just words\n${withBridge('')}`,
-    ]) {
-      await fsp.writeFile(configPath, broken);
-      expect(await stripLegacyClubhouseBridgeToml(cwd, conventions)).toBe(false);
-      expect(await fsp.readFile(configPath, 'utf-8')).toBe(broken);
-    }
-  });
-
-  it('recognises every shape Clubhouse wrote, Windows paths included', () => {
-    const shapes = [
-      // Before #2222: port, agent id and nonce in env, no env_vars.
-      { command: 'node', args: ['/Applications/Clubhouse.app/Contents/Resources/app.asar.unpacked/.webpack/main/bridge/clubhouse-mcp-bridge.js'], env: { CLUBHOUSE_MCP_PORT: '1', CLUBHOUSE_AGENT_ID: 'a-1', CLUBHOUSE_HOOK_NONCE: 'n' } },
-      { command: 'node', args: ['C:\\Users\\me\\AppData\\Local\\clubhouse\\bridge\\clubhouse-mcp-bridge.js'], env: { CLUBHOUSE_MCP_FALLBACK_PORT: '1', CLUBHOUSE_MCP_FALLBACK_AGENT_ID: 'a-1' }, env_vars: ['CLUBHOUSE_MCP_PORT', 'CLUBHOUSE_HOOK_NONCE'] },
-      { command: 'node', args: ['/x/clubhouse-mcp-bridge.js'] },
-    ];
-    for (const def of shapes) {
-      expect(withoutInjectedBridgeSection(`${mcpServerToToml('clubhouse', def)}\n`)).toBe('');
-      expect(withoutInjectedBridgeSection(`${mcpServerToToml('clubhouse', def).replace(/\n/g, '\r\n')}\r\n`)).toBe('');
-    }
-    expect(withoutInjectedBridgeSection(mcpServerToToml('clubhouse', { command: 'node', args: ['/x/other.js'] }))).toBeNull();
-    expect(withoutInjectedBridgeSection(mcpServerToToml('clubhouse', { command: 'python', args: ['/x/clubhouse-mcp-bridge.js'] }))).toBeNull();
   });
 
   it('does nothing without a config file', async () => {

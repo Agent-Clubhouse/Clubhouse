@@ -1274,6 +1274,8 @@ describe('agent-system', () => {
       codex.buildHookArgs = buildHookArgs;
       mockIsHookServerEnabled.mockReturnValue(true);
       mockSnapshotFile.mockClear();
+      mockStripClubhouseHooksFromFile.mockClear();
+      mockGetHooksConfigPath.mockReturnValue('/project/.codex/hooks.json');
       mockMcpWaitReady.mockResolvedValueOnce(23456);
       (mockCodexProvider.buildSpawnCommand as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
         binary: '/usr/local/bin/codex',
@@ -1286,8 +1288,12 @@ describe('agent-system', () => {
         codex.getCapabilities = caps;
         delete codex.writeHooksConfig;
         delete codex.buildHookArgs;
+        mockGetHooksConfigPath.mockReturnValue('/project/.claude/settings.local.json');
       }
       expect(buildHookArgs).toHaveBeenCalledWith('http://127.0.0.1:12345/hook');
+      // Older entries are stripped once per start, before the runtime is chosen.
+      expect(mockStripClubhouseHooksFromFile).toHaveBeenCalledTimes(1);
+      expect(mockStripClubhouseHooksFromFile).toHaveBeenCalledWith('/project/.codex/hooks.json');
       expect(mockPtySpawn.mock.calls.at(-1)![3]).toEqual(['--full-auto', '-c', 'mcp_servers.clubhouse.command=node', '-c', 'hooks.Stop=[]', 'Fix the bug']);
       for (const call of mockSnapshotFile.mock.calls) expect(String(call[1])).not.toContain(path.join('.codex', 'hooks.json'));
     });

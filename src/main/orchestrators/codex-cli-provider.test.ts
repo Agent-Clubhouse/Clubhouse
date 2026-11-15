@@ -1158,6 +1158,9 @@ describe('CodexCliProvider', () => {
       await provider.writeHooksConfig('/project', 'http://127.0.0.1:9999/hook');
       expect(fsp.mkdir).not.toHaveBeenCalled();
       expect(fsp.writeFile).not.toHaveBeenCalled();
+      // Cleanup of older entries happens once per start in agent-system, not here.
+      expect(fsp.readFile).not.toHaveBeenCalled();
+      expect(fsp.access).not.toHaveBeenCalled();
     });
 
     it('never touches the user config in CODEX_HOME', async () => {

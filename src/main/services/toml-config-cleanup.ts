@@ -38,30 +38,62 @@ export async function cleanupStaleJsonInTomlConfigs(
 }
 
 /**
- * Lines of the `[mcp_servers.clubhouse]` section injectClubhouseMcp wrote
- * (mcpServerToToml's output, every version): `command = "node"`, one bridge
- * script in `args`, CLUBHOUSE_* names in `env_vars`, and CLUBHOUSE_* string
- * values in its `.env` subtable. There is no TOML parser here, so a section
- * matches only when every line is one of these exactly; anything else, a
- * comment or a key Clubhouse never wrote included, leaves the file alone.
+ * Every `.codex/config.toml` Clubhouse wrote on its own: injectClubhouseMcp
+ * into an empty file (mcpServerToToml's output plus a newline), in each
+ * version of the bridge definition. Placeholders are the values that varied
+ * per agent: the bridge path, the port, the agent id and the nonce.
  */
-const BRIDGE_TABLE_LINE = [
-  /^command = "node"$/,
-  /^args = \["(?:[^"\\]|\\\\)*(?:\/|\\\\)clubhouse-mcp-bridge\.js"\]$/,
-  /^env_vars = \["CLUBHOUSE_[A-Z_]+"(?:, "CLUBHOUSE_[A-Z_]+")*\]$/,
+const PLACEHOLDERS: Record<string, string> = {
+  PATH: String.raw`(?:[^"\\\n]|\\\\)*(?:/|\\\\)clubhouse-mcp-bridge\.js`,
+  PORT: String.raw`\d{1,5}`,
+  AGENT_ID: String.raw`[A-Za-z0-9_.:-]+`,
+  NONCE: String.raw`[0-9A-Fa-f-]+`,
+};
+const BRIDGE_TEMPLATES: readonly string[] = [
+  // March 2026 (#1028) to #2222: port, agent id and nonce in env.
+  `[mcp_servers.clubhouse]
+command = "node"
+args = ["{PATH}"]
+
+[mcp_servers.clubhouse.env]
+CLUBHOUSE_MCP_PORT = "{PORT}"
+CLUBHOUSE_AGENT_ID = "{AGENT_ID}"
+CLUBHOUSE_HOOK_NONCE = "{NONCE}"`,
+  // The same file after a snapshot restore scrubbed its nonce (#2222).
+  `[mcp_servers.clubhouse]
+command = "node"
+args = ["{PATH}"]
+
+[mcp_servers.clubhouse.env]
+CLUBHOUSE_MCP_PORT = "{PORT}"
+CLUBHOUSE_AGENT_ID = "{AGENT_ID}"`,
+  // #2222 onward: fallback port and agent id in env, the rest forwarded by name.
+  `[mcp_servers.clubhouse]
+command = "node"
+args = ["{PATH}"]
+env_vars = ["CLUBHOUSE_AGENT_ID", "CLUBHOUSE_HOOK_NONCE", "CLUBHOUSE_MCP_PORT"]
+
+[mcp_servers.clubhouse.env]
+CLUBHOUSE_MCP_FALLBACK_PORT = "{PORT}"
+CLUBHOUSE_MCP_FALLBACK_AGENT_ID = "{AGENT_ID}"`,
 ];
-const BRIDGE_ENV_LINE = /^CLUBHOUSE_[A-Z_]+ = "[^"\\]*"$/;
-const MAIN_HEADER = '[mcp_servers.clubhouse]';
-const ENV_HEADER = '[mcp_servers.clubhouse.env]';
+const BRIDGE_TEMPLATE_RES = BRIDGE_TEMPLATES.map((template) => new RegExp(`^${template
+  .split(/(\{[A-Z_]+\})/)
+  .map((part) => (/^\{[A-Z_]+\}$/.test(part) ? PLACEHOLDERS[part.slice(1, -1)] : part.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')))
+  .join('')}$`));
+
+/** Whether a whole file is one Clubhouse wrote, line endings and trailing whitespace aside. */
+export function isClubhouseBridgeOnlyToml(toml: string): boolean {
+  const normalized = toml.replace(/\r\n/g, '\n').split('\n').map((line) => line.trimEnd()).join('\n').trimEnd();
+  return BRIDGE_TEMPLATE_RES.some((template) => template.test(normalized));
+}
 
 /**
- * Remove the `[mcp_servers.clubhouse]` section an older Clubhouse injected
- * into a TOML CLI's MCP config (#1728). Codex takes the bridge as launch
- * flags, and the file only made a `.codex` folder Codex asks the user to
- * trust. Only the section's own lines go, so the rest of the file keeps its
- * bytes; the file is deleted only when nothing else is left, and its folder
- * only when that leaves it empty. A file that can't be read, or whose
- * section isn't exactly what Clubhouse wrote, is left alone.
+ * Delete a `.codex/config.toml` an older Clubhouse wrote holding only its
+ * MCP bridge (#1728), and the folder when that leaves it empty. Codex takes
+ * the bridge as launch flags, and the file only made a `.codex` folder Codex
+ * asks the user to trust. Any other file, a bridge file someone edited
+ * included, is left exactly as it is.
  */
 export async function stripLegacyClubhouseBridgeToml(
   worktreePath: string,
@@ -75,220 +107,16 @@ export async function stripLegacyClubhouseBridgeToml(
     // telemetry-exempt: no file means nothing an older Clubhouse left behind
     return false;
   }
-  const stripped = withoutInjectedBridgeSection(content);
-  if (stripped === null) return false;
-
-  const empty = stripped.trim() === '';
-  if (empty) {
-    await fsp.unlink(filePath);
-    try {
-      // rmdir only removes an empty folder, so other config files stay.
-      await fsp.rmdir(path.dirname(filePath));
-    } catch {
-      // telemetry-exempt: the folder holds other files, which stay
-    }
-  } else {
-    await fsp.writeFile(filePath, stripped, 'utf-8');
+  if (!isClubhouseBridgeOnlyToml(content)) return false;
+  await fsp.unlink(filePath);
+  try {
+    // rmdir only removes an empty folder, so other config files stay.
+    await fsp.rmdir(path.dirname(filePath));
+  } catch {
+    // telemetry-exempt: the folder holds other files, which stay
   }
-  appLog('core:materialization', 'info', 'Removed the Clubhouse MCP entry an older version wrote to a TOML config', {
-    meta: { filePath, deleted: empty },
+  appLog('core:materialization', 'info', 'Removed the Clubhouse MCP config an older version wrote', {
+    meta: { filePath },
   });
   return true;
-}
-
-interface TomlLine {
-  /** The table a `[header]` line opens, key parts unquoted and joined with dots (`[[array]]` tables keep their brackets). */
-  header?: string;
-  /** The dotted key a `key = value` line sets, unquoted. */
-  key?: string;
-}
-
-/** Split a dotted TOML key into unquoted parts; null when it isn't one. */
-function keyParts(text: string): string[] | null {
-  const parts: string[] = [];
-  let i = 0;
-  while (i < text.length) {
-    while (text[i] === ' ' || text[i] === '\t') i++;
-    const quote = text[i];
-    if (quote === '"' || quote === "'") {
-      const close = text.indexOf(quote, i + 1);
-      if (close < 0) return null;
-      parts.push(text.slice(i + 1, close));
-      i = close + 1;
-    } else {
-      const bareKey = /^[A-Za-z0-9_-]+/.exec(text.slice(i));
-      if (!bareKey) return null;
-      parts.push(bareKey[0]);
-      i += bareKey[0].length;
-    }
-    while (text[i] === ' ' || text[i] === '\t') i++;
-    if (i < text.length) {
-      if (text[i] !== '.') return null;
-      i++;
-      if (i >= text.length) return null;
-    }
-  }
-  return parts.length > 0 ? parts : null;
-}
-
-const KEY_PART = String.raw`(?:[A-Za-z0-9_-]+|"[^"]*"|'[^']*')`;
-const KEY_LINE = new RegExp(String.raw`^\s*(${KEY_PART}(?:\s*\.\s*${KEY_PART})*)\s*=`);
-
-/**
- * Say which TOML lines open a table and which set a key, following strings
- * (multiline included), multiline arrays and comments, so a `[` inside a
- * string or an array isn't taken for a header. Null for text this can't
- * follow: an unterminated string, array or header, or a line that is none
- * of a header, a key, a comment or blank.
- */
-function scanToml(lines: string[]): TomlLine[] | null {
-  const out: TomlLine[] = [];
-  let multiline: string | null = null;
-  let depth = 0;
-  for (const raw of lines) {
-    const line = raw.replace(/\r$/, '');
-    const info: TomlLine = {};
-    let i = 0;
-    if (!multiline && depth === 0) {
-      const trimmed = line.trimStart();
-      if (trimmed.startsWith('[')) {
-        const arrayTable = trimmed.startsWith('[[');
-        const open = arrayTable ? 2 : 1;
-        let j = open;
-        let quote: string | null = null;
-        for (; j < trimmed.length; j++) {
-          const ch = trimmed[j];
-          if (quote) {
-            if (ch === quote) quote = null;
-          } else if (ch === '"' || ch === "'") {
-            quote = ch;
-          } else if (ch === ']') {
-            break;
-          }
-        }
-        if (j >= trimmed.length || (arrayTable && trimmed[j + 1] !== ']')) return null;
-        const parts = keyParts(trimmed.slice(open, j));
-        if (!parts) return null;
-        const rest = trimmed.slice(j + open).trim();
-        if (rest && !rest.startsWith('#')) return null;
-        info.header = arrayTable ? `[${parts.join('.')}]` : parts.join('.');
-        out.push(info);
-        continue;
-      }
-      const keyLine = KEY_LINE.exec(line);
-      if (keyLine) {
-        const parts = keyParts(keyLine[1]);
-        if (!parts) return null;
-        info.key = parts.join('.');
-        i = keyLine[0].length;
-      } else if (trimmed && !trimmed.startsWith('#')) {
-        return null;
-      }
-    }
-    while (i < line.length) {
-      if (multiline) {
-        if (multiline === '"""' && line[i] === '\\') { i += 2; continue; }
-        if (line.startsWith(multiline, i)) {
-          i += 3;
-          // Up to two more quotes can end the string's content.
-          while (line[i] === multiline[0]) i++;
-          multiline = null;
-          continue;
-        }
-        i++;
-        continue;
-      }
-      const ch = line[i];
-      if (ch === '#') break;
-      const triple = line.slice(i, i + 3);
-      if (triple === '"""' || triple === "'''") {
-        multiline = triple;
-        i += 3;
-        continue;
-      }
-      if (ch === '"' || ch === "'") {
-        let j = i + 1;
-        for (; j < line.length; j++) {
-          if (ch === '"' && line[j] === '\\') { j++; continue; }
-          if (line[j] === ch) break;
-        }
-        if (j >= line.length) return null;
-        i = j + 1;
-        continue;
-      }
-      if (ch === '[' || ch === '{') depth++;
-      else if (ch === ']' || ch === '}') {
-        depth--;
-        if (depth < 0) return null;
-      }
-      i++;
-    }
-    out.push(info);
-  }
-  if (multiline || depth !== 0) return null;
-  return out;
-}
-
-const BRIDGE_TABLE = 'mcp_servers.clubhouse';
-
-/** Whether a table or key path is the bridge's table or inside it. */
-const inBridgeTable = (name: string) => name === BRIDGE_TABLE || name.startsWith(`${BRIDGE_TABLE}.`);
-
-/**
- * The text without Clubhouse's injected bridge section, or null when there is
- * none to remove, the section isn't exactly what Clubhouse wrote, or the TOML
- * can't be followed. Only the section's lines go; every other byte stays.
- */
-export function withoutInjectedBridgeSection(toml: string): string | null {
-  const lines = toml.split('\n');
-  const scanned = scanToml(lines);
-  if (!scanned) return null;
-  const bare = (i: number) => lines[i].replace(/\r$/, '').trimEnd();
-
-  // Exactly one bridge table, with the header as Clubhouse wrote it.
-  const opens = scanned.flatMap((line, i) => (line.header === BRIDGE_TABLE ? [i] : []));
-  if (opens.length !== 1 || bare(opens[0]) !== MAIN_HEADER) return null;
-  const start = opens[0];
-
-  // The section runs to the next header, through Clubhouse's `.env` subtable.
-  // The empty piece after a final newline isn't the section's: keep that newline.
-  const last = lines[lines.length - 1] === '' ? lines.length - 1 : lines.length;
-  let end = start + 1;
-  let inEnv = false;
-  const seen = new Set<number>();
-  for (; end < last; end++) {
-    const { header } = scanned[end];
-    const line = bare(end);
-    if (header !== undefined) {
-      if (header !== `${BRIDGE_TABLE}.env` || inEnv) break;
-      if (line !== ENV_HEADER) return null;
-      inEnv = true;
-      continue;
-    }
-    if (line === '') continue;
-    if (inEnv) {
-      if (!BRIDGE_ENV_LINE.test(line)) return null;
-      continue;
-    }
-    const kind = BRIDGE_TABLE_LINE.findIndex((re) => re.test(line));
-    if (kind < 0 || seen.has(kind)) return null;
-    seen.add(kind);
-  }
-  // command and args are what make it the bridge.
-  if (!seen.has(0) || !seen.has(1)) return null;
-
-  // Nothing else may add to the bridge's table: another header or a dotted key.
-  let table = '';
-  for (let i = 0; i < lines.length; i++) {
-    if (i >= start && i < end) continue;
-    const { header, key } = scanned[i];
-    if (header !== undefined) {
-      table = header.replace(/^\[(.*)\]$/, '$1');
-      if (inBridgeTable(table)) return null;
-    } else if (key !== undefined && inBridgeTable(table ? `${table}.${key}` : key)) {
-      return null;
-    }
-  }
-
-  return [...lines.slice(0, start), ...lines.slice(end)].join('\n');
 }
