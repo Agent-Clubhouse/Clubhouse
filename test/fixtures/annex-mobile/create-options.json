@@ -86,6 +86,26 @@
         "allowed": true
       },
       "isGitRepo": true,
+      "managed": {
+        "defaultOn": true,
+        "templates": [
+          {
+            "builtin": true,
+            "description": "A focused helper",
+            "id": "builtin-template-helper",
+            "name": "Helper"
+          },
+          {
+            "access": "plan",
+            "builtin": false,
+            "description": "Coordinates work",
+            "id": "user-lead",
+            "model": "opus",
+            "name": "Team lead",
+            "orchestrator": "claude-code"
+          }
+        ]
+      },
       "mcp": {
         "catalog": [
           {

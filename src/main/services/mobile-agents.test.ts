@@ -1,10 +1,30 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import type { ManagedTemplate } from '../../shared/managed-agents-types';
 import type { DurableAgentConfig } from '../../shared/types';
 
+const managedTest = vi.hoisted(() => ({ service: null as import('./managed-agents/service').ManagedAgentsService | null, templates: [] as ManagedTemplate[], agents: new Map<string, DurableAgentConfig>() }));
+vi.mock('./managed-agents', () => ({ managedAgents: () => managedTest.service ?? ({
+  listTemplates: async () => managedTest.templates,
+  setupFromTemplate: async (id: string) => {
+    const template = managedTest.templates.find((t) => t.id === id);
+    if (!template) {
+      const { ManagedError } = await import('./managed-agents/service');
+      throw new ManagedError('not_found');
+    }
+    return { setup: { version: 1, ...template.setup, templateId: id }, settings: template.settings };
+  },
+  saveSetup: async (_p: string, id: string, setup: DurableAgentConfig['managed']) => { managedTest.agents.get(id)!.managed = { version: 1, ...setup! }; },
+}) }));
 vi.mock('./agent-config', () => ({
+  createDurable: vi.fn(async (_p, name, color, model, _wt, orchestrator, access) => {
+    const config = { id: 'managed_new', name, color, model, orchestrator, access, createdAt: 'now', worktreePath: `/work/app/.clubhouse/agents/${name}`, branch: `${name}/standby` };
+    managedTest.agents.set(config.id, config);
+    return config;
+  }),
+  deleteDurable: vi.fn(async () => {}),
   updateDurableConfig: vi.fn(async () => undefined),
   updateDurable: vi.fn(async () => undefined),
-  getDurableConfig: vi.fn(async () => null),
+  getDurableConfig: vi.fn(async (_p, id) => managedTest.agents.get(id) ?? null),
 }));
 vi.mock('./agent-creation', async (importOriginal) => ({
   ...await importOriginal<typeof import('./agent-creation')>(),
@@ -16,6 +36,7 @@ vi.mock('./agent-system', () => ({
   checkAvailability: vi.fn(async () => ({ available: true })),
   resolveOrchestrator: vi.fn(async (_path: string, id?: string) => ({
     id: id ?? 'claude-code',
+    checkAvailability: async () => ({ available: true }),
     getModelOptions: (opts?: unknown) => getModelOptions(id, opts),
   })),
 }));
@@ -77,6 +98,9 @@ async function refusal(promise: Promise<unknown>) {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  managedTest.service = null;
+  managedTest.templates = [];
+  managedTest.agents.clear();
   vi.mocked(getAvailableOrchestrators).mockReturnValue([orchestrator('claude-code'), orchestrator('codex-cli', false), orchestrator('copilot-cli')] as never);
   vi.mocked(startDurableCreation).mockImplementation(async (_path, params) => ({
     agentId: 'durable_new',
@@ -749,4 +773,125 @@ describe('the Dispatcher from a phone (#2533)', () => {
     await update({ orchestrator: 'claude-code' }, undefined, dispatcherAgent({ orchestrator: undefined }));
     expect(agentConfig.updateDurableConfig).toHaveBeenCalledWith(folder.path, 'durable_d', { orchestrator: 'claude-code', model: 'default' });
   });
+});
+
+
+describe('managed agent.create v1', () => {
+  const command = { projectId: 'p1', name: 'managed-otter', color: 'emerald', managed: true };
+  const template = (extra = {}): ManagedTemplate => ({
+    id: 'tpl', name: 'Lead', description: 'Coordinates work', builtin: false, updatedAt: 'now',
+    setup: { blocks: ['identity'], skills: ['build'], mcps: ['clubhouse'] },
+    settings: { orchestrator: 'claude-code', model: 'opus', access: 'plan' }, ...extra,
+  });
+
+  it('lists only listed templates, Built-in first, with stable order and only fixed settings', async () => {
+    managedTest.templates = [template({ id: 'user-b' }), template({ id: 'builtin-b', builtin: true, settings: {} }), template({ id: 'retired', retired: true }), template({ id: 'user-a', settings: { model: 'default' } }), template({ id: 'builtin-a', builtin: true })];
+    expect((await buildCreateOptions(project)).managed).toEqual({ defaultOn: true, templates: [
+      { id: 'builtin-b', name: 'Lead', description: 'Coordinates work', builtin: true },
+      { id: 'builtin-a', name: 'Lead', description: 'Coordinates work', builtin: true, orchestrator: 'claude-code', model: 'opus', access: 'plan' },
+      { id: 'user-b', name: 'Lead', description: 'Coordinates work', builtin: false, orchestrator: 'claude-code', model: 'opus', access: 'plan' },
+      { id: 'user-a', name: 'Lead', description: 'Coordinates work', builtin: false, model: 'default' },
+    ] });
+  });
+
+  it.each([{}, { orchestrator: 'codex-cli', model: 'gpt-5' }])('produces the desktop template setup/config with runtime overrides %j', async (overrides) => {
+    managedTest.templates = [template()];
+    const { createManagedAgent } = await import('./managed-agents/agents');
+    const desktop = structuredClone(await createManagedAgent(project.path, { name: command.name, color: command.color, templateId: 'tpl', settings: overrides }));
+    const result = await createMobileAgent(project, { ...command, templateId: 'tpl', ...overrides }, allow);
+    expect(managedTest.agents.get(result.agentId)).toEqual(desktop);
+    expect(desktop.managed).toEqual({ version: 1, ...template().setup, templateId: 'tpl' });
+    expect(desktop).toMatchObject({ orchestrator: 'claude-code', model: 'opus', access: 'plan', ...overrides });
+    expect(startDurableCreation).not.toHaveBeenCalled();
+  });
+
+  it('uses the desktop blank seed, keeps legacy values and never copies legacy defaults', async () => {
+    const { createManagedAgent } = await import('./managed-agents/agents');
+    const desktop = structuredClone(await createManagedAgent(project.path, { name: command.name, color: command.color }));
+    vi.mocked(readProjectAgentDefaults).mockResolvedValueOnce({ instructions: 'Use pnpm.' });
+    const result = await createMobileAgent(project, { ...command, blank: true }, allow);
+    expect(managedTest.agents.get(result.agentId)).toEqual(desktop);
+    expect(desktop.managed).toEqual({ version: 1, blocks: ['builtin-block-identity'], skills: [], mcps: ['builtin-mcp-clubhouse'] });
+    expect(result).toMatchObject({ legacyDefaults: 'not_copied' });
+    expect(vi.mocked(agentConfig.createDurable).mock.lastCall).toHaveLength(7);
+    vi.mocked(readProjectAgentDefaults).mockResolvedValue({});
+  });
+
+  it.each([
+    [{ templateId: 'tpl', blank: true }, 'invalid_managed_selection', 400],
+    [{}, 'invalid_managed_selection', 400],
+    [{ blank: false }, 'invalid_managed_selection', 400],
+    [{ managed: false, templateId: 'tpl' }, 'managed_required', 400],
+    [{ managed: undefined, blank: true }, 'managed_required', 400],
+    [{ templateId: 'missing' }, 'template_not_found', 404],
+    ...['useWorktree', 'mcpIds', 'branchName', 'branchFrom', 'folderName', 'freeAgentMode', 'access', 'orchestration'].map((key) => [{ blank: true, [key]: false }, 'managed_options_conflict', 400]),
+  ])('refuses managed combination %j with %s', async (extra, code, statusCode) => {
+    expect(await refusal(createMobileAgent(project, { ...command, ...extra }, allow))).toMatchObject({ code, statusCode, detail: expect.any(String) });
+    expect(agentConfig.createDurable).not.toHaveBeenCalled();
+    expect(startDurableCreation).not.toHaveBeenCalled();
+  });
+
+  it('returns template_not_found when a listed template was removed while the sheet was open', async () => {
+    managedTest.templates = [template()];
+    expect((await buildCreateOptions(project)).managed.templates).toHaveLength(1);
+    managedTest.templates = [];
+    expect(await refusal(createMobileAgent(project, { ...command, templateId: 'tpl' }, allow))).toMatchObject({ code: 'template_not_found', statusCode: 404 });
+    expect(agentConfig.createDurable).not.toHaveBeenCalled();
+  });
+
+  it('rechecks authorization after preparation and preserves persona refusal', async () => {
+    const revoked = () => { throw new MobileControlError('authorization_revoked', 403); };
+    expect(await refusal(createMobileAgent(project, { ...command, blank: true }, revoked))).toMatchObject({ code: 'authorization_revoked', statusCode: 403 });
+    expect(await refusal(createMobileAgent(project, { ...command, blank: true, persona: 'qa' }, allow))).toMatchObject({ code: 'managed_agent', statusCode: 409 });
+    expect(agentConfig.createDurable).not.toHaveBeenCalled();
+  });
+});
+
+
+it('mobile and desktop create identical managed configs using the real library, including blank (#3538)', async () => {
+  const fs = await import('node:fs/promises');
+  const os = await import('node:os');
+  const path = await import('node:path');
+  const { createAssetCatalogStore } = await import('./asset-catalog/store');
+  const { createManagedStateStore } = await import('./managed-agents/state-store');
+  const { createManagedAgentsService } = await import('./managed-agents/service');
+  const { createManagedAgent } = await import('./managed-agents/agents');
+  const { withSettingsSurface } = await import('./settings-audit');
+  const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'mobile-managed-create-'));
+  vi.useFakeTimers({ toFake: ['Date'] });
+  vi.setSystemTime(new Date('2026-11-15T20:00:00.000Z'));
+  const user = <T>(fn: () => T) => withSettingsSurface('ui', undefined, fn);
+  try {
+    const service = createManagedAgentsService({
+      catalog: createAssetCatalogStore({ dir: path.join(dir, 'catalog') }),
+      state: createManagedStateStore(path.join(dir, 'state')),
+      listProjects: async () => [], listAgents: async () => [...managedTest.agents.values()],
+      getAgent: async (_p, id) => managedTest.agents.get(id) ?? null,
+      setManagedSetup: async (_p, id, setup) => { managedTest.agents.get(id)!.managed = setup!; },
+      isRunning: () => false,
+    });
+    managedTest.service = service;
+    await service.ensureBuiltins();
+    const template = await user(() => service.saveTemplate({ name: 'Lead', description: 'Real template',
+      setup: { blocks: ['builtin-block-identity'], skills: [], mcps: ['builtin-mcp-clubhouse'] },
+      settings: { orchestrator: 'claude-code', model: 'opus', access: 'plan', effort: 'high', idleSleep: 'never' },
+    }));
+    vi.mocked(agentConfig.updateDurableConfig).mockImplementation(async (_p, id, updates) => { Object.assign(managedTest.agents.get(id)!, updates); });
+    for (const variant of [{ templateId: template.id }, { templateId: template.id, orchestrator: 'codex-cli', model: 'gpt-5' }, { blank: true }] as const) {
+      const identity = { name: 'managed-otter', color: 'emerald' };
+      const settings = { ...('orchestrator' in variant && { orchestrator: variant.orchestrator }), ...('model' in variant && { model: variant.model }) };
+      const desktop = structuredClone(await user(() => createManagedAgent(project.path, { ...identity, ...('templateId' in variant && { templateId: variant.templateId }), settings })));
+      const result = await user(() => createMobileAgent(project, { projectId: project.id, ...identity, managed: true, ...variant }, allow));
+      expect(managedTest.agents.get(result.agentId)).toEqual(desktop);
+      if ('templateId' in variant) expect(desktop).toMatchObject({ effort: 'high', idleSleep: 'never', access: 'plan', managed: { templateId: template.id } });
+      else expect(desktop.managed).toMatchObject({ version: 1, blocks: ['builtin-block-identity'], skills: [], mcps: ['builtin-mcp-clubhouse'] });
+      expect(vi.mocked(agentConfig.createDurable).mock.lastCall).toEqual([project.path, identity.name, identity.color, desktop.model, true, desktop.orchestrator, desktop.access]);
+      expect(desktop).toMatchObject({ worktreePath: '/work/app/.clubhouse/agents/managed-otter', branch: 'managed-otter/standby' });
+    }
+    expect(startDurableCreation).not.toHaveBeenCalled();
+  } finally {
+    vi.useRealTimers();
+    managedTest.service = null;
+    await fs.rm(dir, { recursive: true, force: true });
+  }
 });

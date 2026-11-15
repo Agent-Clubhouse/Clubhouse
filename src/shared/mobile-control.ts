@@ -52,6 +52,8 @@ export type MobileCommand = CommandBase & (
 );
 /** A durable agent, as the New agent page makes one. */
 export interface MobileAgentCreate {
+  /** Managed create v1: exactly one of templateId or blank: true. */
+  managed?: boolean; templateId?: string; blank?: boolean;
   projectId: string; name: string; color: string; orchestrator?: string; model?: string; persona?: string;
   freeAgentMode?: boolean; useWorktree?: boolean; mcpIds?: string[]; branchName?: string; branchFrom?: string; folderName?: string;
   /** Access (#3207): the level it starts at. Wins over `freeAgentMode`; neither gives the desktop's Default access. */

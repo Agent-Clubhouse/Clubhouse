@@ -6,11 +6,15 @@
  * it can already approve every request one by one.
  */
 
+import { isListed } from '../../shared/managed-agents-types';
+import { managedAgents } from './managed-agents';
+import { createManagedAgent, prepareManagedAgentCreation, type CreateManagedAgentInput } from './managed-agents/agents';
+import { ManagedError } from './managed-agents/service';
 import { legacyDefaultsNotCopied } from './legacy-defaults';
 import { mobileHelperRoutingDetail } from './mobile-helper-routing';
 import { CONTEXT_WINDOW_APPLIES, type ContextWindowOptions } from '../../shared/context-window';
 import { contextWindowCheck, contextWindowOptionsFor } from './context-window';
-import type { DurableAgentConfig, DurableConfigUpdates, McpCatalogEntry, StartDurableCreationParams } from '../../shared/types';
+import type { DurableAgentConfig, DurableConfigUpdates, McpCatalogEntry, OrchestratorId, StartDurableCreationParams } from '../../shared/types';
 import { dispatcherNotHonored, type MobileAccess, type MobileAccessLevel, type MobileAgentCreate, type MobileAgentUpdate, type MobileContextWindow, type MobileSettingEditable } from '../../shared/mobile-control';
 import {
   ACCESS_DESCRIPTIONS, ACCESS_LEVELS as AGENT_ACCESS_LEVELS, accessLabel, accessLevelsFor, startableAccess, type AccessLevel, type AccessRuntime,
@@ -151,6 +155,14 @@ export async function buildAgentOptions(projectPath: string) {
 
 /** The New agent page's form for one project (#2451). */
 export async function buildCreateOptions(project: MobileAgentProject) {
+  const listed = (await managedAgents().listTemplates()).filter(isListed);
+  // TemplateStep shows Built-in, then Your templates, keeping service order within each.
+  const templates = [...listed.filter((t) => t.builtin), ...listed.filter((t) => !t.builtin)].map((t) => ({
+    id: t.id, name: t.name, description: t.description, builtin: t.builtin,
+    ...(t.settings.orchestrator !== undefined && { orchestrator: t.settings.orchestrator }),
+    ...(t.settings.model !== undefined && { model: t.settings.model }),
+    ...(t.settings.access !== undefined && { access: t.settings.access }),
+  }));
   const [options, isGitRepo, catalog, defaultMcps] = await Promise.all([
     buildAgentOptions(project.path),
     isInsideGitRepo(project.path).catch(() => false),
@@ -159,6 +171,8 @@ export async function buildCreateOptions(project: MobileAgentProject) {
   ]);
   return {
     projectId: project.id,
+    // Shipped desktop default; its remembered choice lives only in renderer localStorage.
+    managed: { defaultOn: true, templates },
     ...options,
     mcp: { catalog: catalog.map(({ id, name, description }) => ({ id, name, description })), defaults: defaultMcps },
     isGitRepo,
@@ -462,6 +476,10 @@ export async function createMobileAgent(project: MobileAgentProject, command: Mo
   const name = command.name.trim();
   if (!name) throw invalid('invalid_name');
   assertColor(command.color);
+  if (command.managed !== true && (command.templateId !== undefined || command.blank !== undefined)) {
+    throw invalid('managed_required', 'templateId and blank require managed: true.');
+  }
+  if (command.managed === true) return createMobileManagedAgent(project, command, name, assertAuthorized);
   const isGit = await isInsideGitRepo(project.path).catch(() => false);
   const useWorktree = command.useWorktree ?? isGit;
   if (useWorktree && !isGit) throw new MobileControlError('not_git_repo', 409);
@@ -512,6 +530,47 @@ export async function createMobileAgent(project: MobileAgentProject, command: Mo
     state: config.creation?.state === 'creating' ? 'creating' as const : 'sleeping' as const,
     ...(legacy && { legacyDefaults: legacy }),
   };
+}
+
+/** The desktop CREATE_AGENT IPC's service, with only the phone's identity/runtime overrides. */
+async function createMobileManagedAgent(project: MobileAgentProject, command: MobileAgentCreate, name: string, assertAuthorized: () => void) {
+  if (command.persona != null) refusePersona(name);
+  if ((command.templateId !== undefined) === (command.blank === true) || (command.blank !== undefined && command.blank !== true)) {
+    throw invalid('invalid_managed_selection', 'Choose exactly one templateId or blank: true.');
+  }
+  const plainOnly = ['useWorktree', 'mcpIds', 'branchName', 'branchFrom', 'folderName', 'freeAgentMode', 'access', 'orchestration'] as const;
+  const conflicting = plainOnly.filter((key) => command[key] !== undefined);
+  if (conflicting.length) throw invalid('managed_options_conflict', `Managed creation does not accept: ${conflicting.join(', ')}. Use the template settings or Blank.`);
+  assertGitName(name, 'folder', 'invalid_name');
+  if (command.orchestrator !== undefined) assertOrchestrator(command.orchestrator);
+  const input: CreateManagedAgentInput = {
+    name, color: command.color,
+    ...(command.templateId !== undefined && { templateId: command.templateId }),
+    settings: {
+      ...(command.orchestrator !== undefined && { orchestrator: command.orchestrator as OrchestratorId }),
+      ...(command.model !== undefined && { model: command.model }),
+    },
+  };
+  try {
+    // Resolve the template once, then recheck the phone's authorization before writes.
+    const prepared = await prepareManagedAgentCreation(project.path, input);
+    assertOrchestrator(prepared.settings.orchestrator!);
+    assertAuthorized();
+    const config = await createManagedAgent(project.path, input, undefined, prepared);
+    const legacy = await legacyDefaultsNotCopied(project.path);
+    return {
+      agentId: config.id, projectId: project.id, name: config.name,
+      branch: config.branch ?? null, worktreePath: config.worktreePath ?? null,
+      state: config.creation?.state === 'creating' ? 'creating' as const : 'sleeping' as const,
+      ...(legacy && { legacyDefaults: legacy }),
+    };
+  } catch (err) {
+    if (err instanceof MobileControlError) throw err;
+    if (err instanceof ManagedError && err.code === 'not_found' && command.templateId !== undefined) {
+      throw new MobileControlError('template_not_found', 404, 'rejected', 'This template no longer exists. Refresh the templates and choose another, or Blank.');
+    }
+    throw new MobileControlError('create_refused', 409, 'rejected', err instanceof Error ? err.message : 'Could not create the managed agent.');
+  }
 }
 
 /**

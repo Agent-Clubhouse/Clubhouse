@@ -1,6 +1,373 @@
 {
   "cases": [
     {
+      "name": "accepted managed template",
+      "request": {
+        "color": "emerald",
+        "commandId": "cmd_managed_1",
+        "epoch": "00000000-0000-4000-8000-000000000001",
+        "managed": true,
+        "name": "managed-otter",
+        "projectId": "proj_app",
+        "templateId": "user-lead",
+        "type": "agent.create",
+        "version": 1
+      },
+      "response": {
+        "body": {
+          "commandId": "cmd_managed_1",
+          "epoch": "00000000-0000-4000-8000-000000000001",
+          "result": {
+            "agentId": "durable_managed",
+            "branch": "managed-otter/standby",
+            "name": "managed-otter",
+            "projectId": "proj_app",
+            "state": "sleeping",
+            "worktreePath": "/work/app/.clubhouse/agents/managed-otter"
+          },
+          "status": "completed",
+          "version": 1
+        },
+        "status": 200
+      }
+    },
+    {
+      "name": "accepted managed template overrides",
+      "request": {
+        "color": "emerald",
+        "commandId": "cmd_managed_2",
+        "epoch": "00000000-0000-4000-8000-000000000001",
+        "managed": true,
+        "model": "gpt-5",
+        "name": "managed-otter",
+        "orchestrator": "codex-cli",
+        "projectId": "proj_app",
+        "templateId": "user-lead",
+        "type": "agent.create",
+        "version": 1
+      },
+      "response": {
+        "body": {
+          "commandId": "cmd_managed_2",
+          "epoch": "00000000-0000-4000-8000-000000000001",
+          "result": {
+            "agentId": "durable_managed",
+            "branch": "managed-otter/standby",
+            "name": "managed-otter",
+            "projectId": "proj_app",
+            "state": "sleeping",
+            "worktreePath": "/work/app/.clubhouse/agents/managed-otter"
+          },
+          "status": "completed",
+          "version": 1
+        },
+        "status": 200
+      }
+    },
+    {
+      "name": "accepted managed blank",
+      "request": {
+        "blank": true,
+        "color": "emerald",
+        "commandId": "cmd_managed_3",
+        "epoch": "00000000-0000-4000-8000-000000000001",
+        "managed": true,
+        "name": "managed-otter",
+        "projectId": "proj_app",
+        "type": "agent.create",
+        "version": 1
+      },
+      "response": {
+        "body": {
+          "commandId": "cmd_managed_3",
+          "epoch": "00000000-0000-4000-8000-000000000001",
+          "result": {
+            "agentId": "durable_managed",
+            "branch": "managed-otter/standby",
+            "name": "managed-otter",
+            "projectId": "proj_app",
+            "state": "sleeping",
+            "worktreePath": "/work/app/.clubhouse/agents/managed-otter"
+          },
+          "status": "completed",
+          "version": 1
+        },
+        "status": 200
+      }
+    },
+    {
+      "name": "template_not_found",
+      "request": {
+        "color": "emerald",
+        "commandId": "cmd_managed_4",
+        "epoch": "00000000-0000-4000-8000-000000000001",
+        "managed": true,
+        "name": "managed-otter",
+        "projectId": "proj_app",
+        "templateId": "removed",
+        "type": "agent.create",
+        "version": 1
+      },
+      "response": {
+        "body": {
+          "commandId": "cmd_managed_4",
+          "epoch": "00000000-0000-4000-8000-000000000001",
+          "error": {
+            "code": "template_not_found",
+            "message": "This template no longer exists. Refresh the templates and choose another, or Blank."
+          },
+          "status": "rejected",
+          "version": 1
+        },
+        "status": 404
+      }
+    },
+    {
+      "name": "invalid_managed_selection (both)",
+      "request": {
+        "blank": true,
+        "color": "emerald",
+        "commandId": "cmd_managed_5",
+        "epoch": "00000000-0000-4000-8000-000000000001",
+        "managed": true,
+        "name": "managed-otter",
+        "projectId": "proj_app",
+        "templateId": "user-lead",
+        "type": "agent.create",
+        "version": 1
+      },
+      "response": {
+        "body": {
+          "commandId": "cmd_managed_5",
+          "epoch": "00000000-0000-4000-8000-000000000001",
+          "error": {
+            "code": "invalid_managed_selection",
+            "message": "Choose exactly one templateId or blank: true."
+          },
+          "status": "rejected",
+          "version": 1
+        },
+        "status": 400
+      }
+    },
+    {
+      "name": "invalid_managed_selection (neither)",
+      "request": {
+        "color": "emerald",
+        "commandId": "cmd_managed_6",
+        "epoch": "00000000-0000-4000-8000-000000000001",
+        "managed": true,
+        "name": "managed-otter",
+        "projectId": "proj_app",
+        "type": "agent.create",
+        "version": 1
+      },
+      "response": {
+        "body": {
+          "commandId": "cmd_managed_6",
+          "epoch": "00000000-0000-4000-8000-000000000001",
+          "error": {
+            "code": "invalid_managed_selection",
+            "message": "Choose exactly one templateId or blank: true."
+          },
+          "status": "rejected",
+          "version": 1
+        },
+        "status": 400
+      }
+    },
+    {
+      "name": "invalid_managed_selection (blank false)",
+      "request": {
+        "blank": false,
+        "color": "emerald",
+        "commandId": "cmd_managed_7",
+        "epoch": "00000000-0000-4000-8000-000000000001",
+        "managed": true,
+        "name": "managed-otter",
+        "projectId": "proj_app",
+        "type": "agent.create",
+        "version": 1
+      },
+      "response": {
+        "body": {
+          "commandId": "cmd_managed_7",
+          "epoch": "00000000-0000-4000-8000-000000000001",
+          "error": {
+            "code": "invalid_managed_selection",
+            "message": "Choose exactly one templateId or blank: true."
+          },
+          "status": "rejected",
+          "version": 1
+        },
+        "status": 400
+      }
+    },
+    {
+      "name": "managed_required (template)",
+      "request": {
+        "color": "emerald",
+        "commandId": "cmd_managed_8",
+        "epoch": "00000000-0000-4000-8000-000000000001",
+        "managed": false,
+        "name": "managed-otter",
+        "projectId": "proj_app",
+        "templateId": "user-lead",
+        "type": "agent.create",
+        "version": 1
+      },
+      "response": {
+        "body": {
+          "commandId": "cmd_managed_8",
+          "epoch": "00000000-0000-4000-8000-000000000001",
+          "error": {
+            "code": "managed_required",
+            "message": "templateId and blank require managed: true."
+          },
+          "status": "rejected",
+          "version": 1
+        },
+        "status": 400
+      }
+    },
+    {
+      "name": "managed_required (blank)",
+      "request": {
+        "blank": true,
+        "color": "emerald",
+        "commandId": "cmd_managed_9",
+        "epoch": "00000000-0000-4000-8000-000000000001",
+        "managed": false,
+        "name": "managed-otter",
+        "projectId": "proj_app",
+        "type": "agent.create",
+        "version": 1
+      },
+      "response": {
+        "body": {
+          "commandId": "cmd_managed_9",
+          "epoch": "00000000-0000-4000-8000-000000000001",
+          "error": {
+            "code": "managed_required",
+            "message": "templateId and blank require managed: true."
+          },
+          "status": "rejected",
+          "version": 1
+        },
+        "status": 400
+      }
+    },
+    {
+      "name": "managed_options_conflict",
+      "request": {
+        "blank": true,
+        "color": "emerald",
+        "commandId": "cmd_managed_10",
+        "epoch": "00000000-0000-4000-8000-000000000001",
+        "managed": true,
+        "name": "managed-otter",
+        "projectId": "proj_app",
+        "type": "agent.create",
+        "useWorktree": false,
+        "version": 1
+      },
+      "response": {
+        "body": {
+          "commandId": "cmd_managed_10",
+          "epoch": "00000000-0000-4000-8000-000000000001",
+          "error": {
+            "code": "managed_options_conflict",
+            "message": "Managed creation does not accept: useWorktree. Use the template settings or Blank."
+          },
+          "status": "rejected",
+          "version": 1
+        },
+        "status": 400
+      }
+    },
+    {
+      "name": "managed_agent (managed persona)",
+      "request": {
+        "blank": true,
+        "color": "emerald",
+        "commandId": "cmd_managed_11",
+        "epoch": "00000000-0000-4000-8000-000000000001",
+        "managed": true,
+        "name": "managed-otter",
+        "persona": "qa",
+        "projectId": "proj_app",
+        "type": "agent.create",
+        "version": 1
+      },
+      "response": {
+        "body": {
+          "commandId": "cmd_managed_11",
+          "epoch": "00000000-0000-4000-8000-000000000001",
+          "error": {
+            "code": "managed_agent",
+            "message": "Personas were retired, so managed-otter can't take one. Clubhouse-managed agents get their instructions from their setup."
+          },
+          "status": "rejected",
+          "version": 1
+        },
+        "status": 409
+      }
+    },
+    {
+      "name": "invalid_command (managed unknown field)",
+      "request": {
+        "blank": true,
+        "color": "emerald",
+        "commandId": "cmd_managed_12",
+        "epoch": "00000000-0000-4000-8000-000000000001",
+        "managed": true,
+        "name": "managed-otter",
+        "projectId": "proj_app",
+        "setup": {},
+        "type": "agent.create",
+        "version": 1
+      },
+      "response": {
+        "body": {
+          "epoch": "00000000-0000-4000-8000-000000000001",
+          "error": {
+            "code": "invalid_command",
+            "message": "invalid_command"
+          },
+          "status": "rejected",
+          "version": 1
+        },
+        "status": 400
+      }
+    },
+    {
+      "name": "create_refused (managed)",
+      "request": {
+        "blank": true,
+        "color": "emerald",
+        "commandId": "cmd_managed_13",
+        "epoch": "00000000-0000-4000-8000-000000000001",
+        "managed": true,
+        "name": "taken",
+        "projectId": "proj_app",
+        "type": "agent.create",
+        "version": 1
+      },
+      "response": {
+        "body": {
+          "commandId": "cmd_managed_13",
+          "epoch": "00000000-0000-4000-8000-000000000001",
+          "error": {
+            "code": "create_refused",
+            "message": "A folder named taken already exists in .clubhouse/agents"
+          },
+          "status": "rejected",
+          "version": 1
+        },
+        "status": 409
+      }
+    },
+    {
       "name": "accepted",
       "request": {
         "branchFrom": "main",
