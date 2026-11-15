@@ -1,4 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach, vi, type Mock } from 'vitest';
+import * as telemetry from '../telemetry/facade';
 import { settingsChanged, themeChanged } from '../telemetry/feature-events';
 
 vi.mock('../services/free-agent-settings');
@@ -880,6 +881,21 @@ describe('app-handlers', () => {
     vi.mocked(autoUpdateService.applyUpdate).mockImplementationOnce(async () => { order.push('apply'); });
     await handleHandlers.get(IPC.APP.APPLY_UPDATE)!({});
     expect(order).toEqual(['flush', 'apply']);
+  });
+
+  it('RESTART awaits the bounded exit flush before exiting', async () => {
+    let release!: () => void;
+    const flush = vi.spyOn(telemetry, 'flushBeforeExit').mockImplementation(() => new Promise<void>((resolve) => { release = resolve; }));
+    try {
+      const pending = handleHandlers.get(IPC.APP.RESTART)!({});
+      await vi.waitFor(() => expect(flush).toHaveBeenCalledOnce());
+      expect(app.exit).not.toHaveBeenCalled();
+      release();
+      await pending;
+      expect(app.exit).toHaveBeenCalledWith(0);
+    } finally {
+      flush.mockRestore();
+    }
   });
 
   it('RESTART flushes pending agent configs before exiting', async () => {

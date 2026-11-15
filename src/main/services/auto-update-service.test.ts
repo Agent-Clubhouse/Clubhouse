@@ -6,6 +6,7 @@ import * as https from 'https';
 import { execFileSync, spawn } from 'child_process';
 import { app } from 'electron';
 import { isNewerVersion, parseVersion, verifySHA256, appendTelemetryParams, isTransientError, withRetry, shellEscape, buildMacUpdateScript, buildMacQuitUpdateScript, getSquirrelReleasesUrl, getSquirrelUpdateExePath, applyUpdate, applyUpdateOnQuit, applyLinuxUpdate, applyMacUpdate, applyPlatformUpdate, applyWindowsUpdate, platformUpdateHandlers, writePendingUpdateInfo, readPendingUpdateInfo, readApplyAttempt, platformKey } from './auto-update-service';
+import * as telemetry from '../telemetry/facade';
 import * as fsUtils from './fs-utils';
 import * as fs from 'fs';
 import * as path from 'path';
@@ -450,6 +451,42 @@ describe('auto-update-service', () => {
         platformSpy.mockRestore();
       }
     });
+
+    it.each(['mac', 'windows', 'deb', 'rpm', 'fallback'] as const)(
+      '%s awaits the bounded exit flush before exiting', async (route) => {
+        let release!: () => void;
+        const flush = vi.spyOn(telemetry, 'flushBeforeExit').mockImplementation(() => new Promise<void>((resolve) => { release = resolve; }));
+        const pathExists = vi.spyOn(fsUtils, 'pathExists').mockResolvedValue(true);
+        const getPath = vi.spyOn(app, 'getPath').mockImplementation((name: string) =>
+          name === 'exe' ? '/Applications/Clubhouse.app/Contents/MacOS/Clubhouse' : testUserDataPath,
+        );
+        vi.mocked(execFileSync).mockImplementation(((_cmd: string, args: string[]) => {
+          if (_cmd === 'unzip') fs.mkdirSync(path.join(args[args.length - 1], 'Clubhouse.app'), { recursive: true });
+          return '';
+        }) as unknown as typeof execFileSync);
+        vi.mocked(spawn).mockImplementation(spawnedChild);
+        const handler = route === 'fallback'
+          ? vi.spyOn(platformUpdateHandlers, process.platform === 'darwin' ? 'applyMacUpdate' : process.platform === 'win32' ? 'applyWindowsUpdate' : 'applyLinuxUpdate').mockResolvedValue(false)
+          : undefined;
+        const context = { downloadPath: `/tmp/update.${route}`, version: '2.0.0', artifactUrl: null };
+        try {
+          const pending = route === 'mac' ? applyMacUpdate(context, { relaunch: true })
+            : route === 'windows' ? applyWindowsUpdate(context, { relaunch: true })
+            : route === 'fallback' ? applyUpdate(readyStatus)
+            : applyLinuxUpdate(context, { relaunch: true });
+          await vi.waitFor(() => expect(flush).toHaveBeenCalledOnce());
+          expect(mockApp.exit).not.toHaveBeenCalled();
+          release();
+          await pending;
+          expect(mockApp.exit).toHaveBeenCalledWith(0);
+        } finally {
+          flush.mockRestore();
+          pathExists.mockRestore();
+          getPath.mockRestore();
+          handler?.mockRestore();
+        }
+      },
+    );
 
     it('applyMacUpdate runs beforeExit before flushing and exiting on relaunch', async () => {
       const tempDir = fs.mkdtempSync(path.join(testUserDataPath, 'before-exit-'));

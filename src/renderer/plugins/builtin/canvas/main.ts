@@ -196,6 +196,7 @@ export function MainPanel({ api }: { api: PluginAPI }) {
   const loaded = store((s) => s.loaded);
   const wiresLoaded = store((s) => s.wiresLoaded);
   const loadError = store((s) => s.loadError);
+  const autosaveFailed = store((s) => s.autosaveFailed);
   const wireDefinitions = store((s) => s.wireDefinitions);
   const zoneWireDefinitions = store((s) => s.zoneWireDefinitions);
   const minimapAutoHide = store((s) => s.minimapAutoHide);
@@ -286,8 +287,11 @@ export function MainPanel({ api }: { api: PluginAPI }) {
     (async () => {
       // A save flushed by the previous mount may still be writing; read after it.
       await inflightSaves.get(store);
-      await store.getState().loadCanvas(storage);
-      await store.getState().loadWires(storage);
+      // Keep the only in-memory copy of edits whose last save failed.
+      if (!store.getState().autosaveFailed || store.getState().dataOrigin !== 'local') {
+        await store.getState().loadCanvas(storage);
+        await store.getState().loadWires(storage);
+      }
       if (!cancelled) setHydrated(true);
     })();
     return () => { cancelled = true; };
@@ -339,9 +343,21 @@ export function MainPanel({ api }: { api: PluginAPI }) {
       return;
     }
     const run = (): void => {
-      const saving = Promise.all([store.getState().saveCanvas(storage), store.getState().saveWires(storage)]);
-      inflightSaves.set(store, saving.catch((): undefined => undefined));
+      // Wait for both writers even on failure, so a remount or flush cannot
+      // overtake the other writer while it is still persisting changes.
+      const saving = Promise.allSettled([store.getState().saveCanvas(storage), store.getState().saveWires(storage)]).then((results) => {
+        const failure = results.find((result) => result.status === 'rejected');
+        if (failure?.status === 'rejected') throw failure.reason;
+      });
       flushResults.set(store, saving);
+      inflightSaves.set(store, saving.then(() => {
+        if (flushResults.get(store) === saving) store.setState({ autosaveFailed: false });
+      }, (error: unknown) => {
+        if (flushResults.get(store) === saving) store.setState({ autosaveFailed: true });
+        rendererLog('canvas', 'error', 'Canvas changes not saved', {
+          meta: { error: error instanceof Error ? error.message : String(error) },
+        });
+      }));
       const clearSettled = () => { if (flushResults.get(store) === saving) flushResults.delete(store); };
       void saving.then(clearSettled, clearSettled);
     };
@@ -776,6 +792,12 @@ export function MainPanel({ api }: { api: PluginAPI }) {
       onPopOutCanvas: handlePopOutCanvas,
       onExportBlueprint: handleExportBlueprint,
     }),
+    autosaveFailed && !isRemote && !isRemoteApp
+      ? React.createElement('div', { role: 'status', className: 'flex items-center gap-2 px-3 py-1 text-xs text-ctp-subtext0' },
+          React.createElement('span', null, 'Canvas changes not saved'),
+          React.createElement('button', { className: 'underline hover:text-ctp-text', onClick: scheduleSave }, 'Retry'),
+        )
+      : null,
     poppedOutWindowId !== undefined
       ? React.createElement('div', { className: 'flex-1 min-h-0' },
           React.createElement(PoppedOutPlaceholder, {

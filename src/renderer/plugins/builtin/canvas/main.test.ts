@@ -6,6 +6,7 @@ import { manifest } from './manifest';
 import * as canvasModule from './main';
 import { createMockContext, createMockAPI } from '../../testing';
 import { useUIStore } from '../../../stores/uiStore';
+import * as logger from '../../renderer-logger';
 import { queueAgentCard } from './agent-card-queue';
 import { useRemoteProjectStore } from '../../../stores/remoteProjectStore';
 
@@ -148,7 +149,7 @@ describe('canvas main', () => {
     // Find the async IIFE that wraps the load calls
     const asyncBlock = source.slice(
       source.indexOf('(async () =>'),
-      source.indexOf('(async () =>') + 300,
+      source.indexOf('return () => { cancelled = true; }'),
     );
     // Both loadCanvas and loadWires must be awaited inside the IIFE
     expect(asyncBlock).toContain('await store.getState().loadCanvas(storage)');
@@ -207,7 +208,7 @@ describe('canvas main', () => {
     // scheduleSave should call saveWires without passing bindings
     const saveBlock = source.slice(
       source.indexOf('scheduleSave'),
-      source.indexOf('scheduleSave') + 500,
+      source.indexOf('const previous = pendingSaveRef.current'),
     );
     expect(saveBlock).toContain('saveWires(storage)');
     // Should NOT pass bindingsRef.current to saveWires
@@ -457,6 +458,95 @@ describe('canvas main', () => {
       }
       return { api, store, storage, mount, mountAndLoad };
     }
+
+    it.each(['canvas-instances-backup', 'canvas-instances', 'canvas-active-id', 'canvas-zone-wires', 'canvas-wires'])(
+      'catches and logs a rejected %s autosave, keeps edits on remount, and retries', async (failedKey) => {
+        const { store, storage, mount, mountAndLoad } = setup(`autosave-failure-${failedKey}`);
+        const log = vi.spyOn(logger, 'rendererLog');
+        const unhandled = vi.fn();
+        window.addEventListener('unhandledrejection', unhandled);
+        const write = storage.write.getMockImplementation()!;
+        let failing = true;
+        storage.write.mockImplementation(async (key, value) => {
+          if (failing && key === failedKey) throw new Error('disk full');
+          return write(key, value);
+        });
+        try {
+          const first = await mountAndLoad();
+          act(() => { store.getState().addView('agent', { x: 123, y: 456 }); });
+          const edits = store.getState().canvases;
+          expect(await screen.findByText('Canvas changes not saved')).toBeTruthy();
+          expect(log).toHaveBeenCalledWith('canvas', 'error', 'Canvas changes not saved', {
+            meta: { error: 'disk full' },
+          });
+          first.unmount();
+          const second = mount();
+          await waitFor(() => expect(screen.getByText('Canvas changes not saved')).toBeTruthy());
+          expect(store.getState().canvases).toBe(edits);
+          failing = false;
+          fireEvent.click(screen.getByText('Retry'));
+          await waitFor(() => expect(screen.queryByText('Canvas changes not saved')).toBeNull());
+          expect(storage.files.get('canvas-instances')).toEqual(expect.arrayContaining([
+            expect.objectContaining({ views: expect.arrayContaining([expect.objectContaining({ position: edits[0].views[0].position })]) }),
+          ]));
+          expect(storage.delete).not.toHaveBeenCalled();
+          expect(unhandled).not.toHaveBeenCalled();
+          second.unmount();
+        } finally {
+          window.removeEventListener('unhandledrejection', unhandled);
+          log.mockRestore();
+        }
+      },
+    );
+
+    it('waits for the other writer after a failed save before allowing remount hydration', async () => {
+      const { store, storage, mount, mountAndLoad } = setup('autosave-failure-inflight');
+      const first = await mountAndLoad();
+      await store.getState().saveCanvas(storage);
+      act(() => { store.getState().addView('agent', { x: 100, y: 200 }); });
+      const edits = store.getState().canvases;
+      let release!: () => void;
+      const gate = new Promise<void>((resolve) => { release = resolve; });
+      const write = storage.write.getMockImplementation()!;
+      storage.write.mockImplementation(async (key, value) => {
+        if (key === 'canvas-instances-backup') throw new Error('disk full');
+        if (key === 'canvas-wires') await gate;
+        return write(key, value);
+      });
+      first.unmount();
+      const reads = storage.read.mock.calls.length;
+      const second = mount();
+      await act(async () => { await Promise.resolve(); });
+      expect(storage.read.mock.calls.length).toBe(reads);
+      await act(async () => { release(); await gate; });
+      expect(await screen.findByText('Canvas changes not saved')).toBeTruthy();
+      expect(store.getState().canvases).toBe(edits);
+      expect(storage.read.mock.calls.length).toBe(reads);
+      second.unmount();
+    });
+
+    it('does not surface an older save failure after a newer save succeeded', async () => {
+      const { store, mountAndLoad } = setup('autosave-stale-failure');
+      const view = await mountAndLoad();
+      let rejectOlder!: (error: Error) => void;
+      const older = new Promise<void>((_resolve, reject) => { rejectOlder = reject; });
+      const original = { saveCanvas: store.getState().saveCanvas, saveWires: store.getState().saveWires };
+      const saveCanvas = vi.fn().mockImplementationOnce(() => older).mockResolvedValue(undefined);
+      const saveWires = vi.fn().mockResolvedValue(undefined);
+      act(() => { store.setState({ saveCanvas, saveWires }); });
+      try {
+        act(() => { store.getState().addView('agent', { x: 100, y: 200 }); });
+        await waitFor(() => expect(saveCanvas).toHaveBeenCalledTimes(1));
+        act(() => { store.getState().addView('agent', { x: 300, y: 400 }); });
+        await waitFor(() => expect(saveCanvas).toHaveBeenCalledTimes(2));
+        await act(async () => { rejectOlder(new Error('older write failed')); });
+        expect(store.getState().autosaveFailed).toBe(false);
+        expect(screen.queryByText('Canvas changes not saved')).toBeNull();
+      } finally {
+        act(() => { store.setState(original); });
+        view.unmount();
+      }
+    });
 
     const placedFor = (store: ReturnType<typeof canvasModule.getProjectCanvasStore>, agentId: string) =>
       store.getState().canvases.flatMap((c) => c.views.map((v) => ({ canvasId: c.id, view: v })))
@@ -834,13 +924,14 @@ describe('canvas main', () => {
       env.nothingRemoteSaved();
     });
 
-    it('does not keep a satellite\'s wires when the local wires file is empty', async () => {
+    it.each([false, true])('does not keep satellite wires on returning local with failed-save status %s', async (failed) => {
       const env = appSetup();
       env.files.set('canvas-wires', []);
       const view = await mountLocal(env);
       env.goRemote();
       await waitFor(() => expect(env.store.getState().wireDefinitions.some((w) => w.agentId === 'REMOTE-AGENT')).toBe(true));
 
+      act(() => { env.store.setState({ autosaveFailed: failed }); });
       const before = env.wireReads();
       env.goLocal();
       await waitFor(() => expect(env.wireReads()).toBeGreaterThan(before));
