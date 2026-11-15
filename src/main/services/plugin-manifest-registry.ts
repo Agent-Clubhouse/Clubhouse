@@ -7,6 +7,9 @@ import { manifest as terminalManifest } from '../../renderer/plugins/builtin/ter
 import { manifest as browserManifest } from '../../renderer/plugins/builtin/browser/manifest';
 import { manifest as gitManifest } from '../../renderer/plugins/builtin/git/manifest';
 import { manifest as canvasManifest } from '../../renderer/plugins/builtin/canvas/manifest';
+import { manifest as reviewManifest } from '../../renderer/plugins/builtin/review/manifest';
+import { manifest as stickyNoteManifest } from '../../renderer/plugins/builtin/sticky-note/manifest';
+import { manifest as goobersManifest } from '../../renderer/plugins/builtin/goobers/manifest';
 import { manifest as groupProjectManifest } from '../../renderer/plugins/builtin/group-project/manifest';
 import { appLog } from './log-service';
 import { discoverCommunityPlugins } from './plugin-discovery';
@@ -41,6 +44,9 @@ const builtinManifestById = new Map<string, PluginManifest>([
   [gitManifest.id, gitManifest],
   [canvasManifest.id, canvasManifest],
   [groupProjectManifest.id, groupProjectManifest],
+  [reviewManifest.id, reviewManifest],
+  [stickyNoteManifest.id, stickyNoteManifest],
+  [goobersManifest.id, goobersManifest],
 ]);
 
 let manifestsEnabled = true;

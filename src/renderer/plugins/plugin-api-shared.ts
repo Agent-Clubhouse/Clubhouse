@@ -1,6 +1,19 @@
-import type { PluginManifest, PluginPermission } from '../../shared/plugin-types';
+import type { PluginContext, PluginManifest, PluginPermission } from '../../shared/plugin-types';
 import { rendererLog } from './renderer-logger';
 import { usePluginStore } from './plugin-store';
+
+// Keep one captured context per activation: MCP token lifetime is keyed by
+// context object identity, so rebuilding an API must reuse the same snapshot.
+const boundContexts = new WeakMap<PluginContext, PluginContext>();
+
+export function bindPluginContext(ctx: PluginContext): PluginContext {
+  let bound = boundContexts.get(ctx);
+  if (!bound) {
+    bound = Object.freeze({ ...ctx });
+    boundContexts.set(ctx, bound);
+  }
+  return bound;
+}
 
 /**
  * Creates a Proxy that defers scope-violation errors to invocation time.
@@ -91,7 +104,7 @@ export function permissionDeniedProxy<T>(pluginId: string, permission: PluginPer
   }) as T;
 }
 
-/** Returns true if the manifest grants the given permission. */
+/** Renderer API gating only; the shared preload bridge is still reachable by same-realm plugins (#2080). */
 export function hasPermission(manifest: PluginManifest | undefined, perm: PluginPermission): boolean {
   if (!manifest) return false;
   return Array.isArray(manifest.permissions) && manifest.permissions.includes(perm);

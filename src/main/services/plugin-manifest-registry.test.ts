@@ -153,6 +153,9 @@ describe('plugin-manifest-registry', () => {
     expect(getManifest('canvas')).toBeDefined();
     expect(getManifest('sessions')).toBeUndefined();
     expect(getManifest('group-project')).toBeDefined();
+    expect(getManifest('review')).toBeDefined();
+    expect(getManifest('sticky-note')).toBeDefined();
+    expect(getManifest('goobers')).toBeDefined();
   });
 
   it('group-project manifest declares annex permission for canvas-over-annex support', async () => {

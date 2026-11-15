@@ -53,9 +53,12 @@ vi.mock('../services/safe-mode', () => ({
   isSafeModeActive: vi.fn(() => false),
 }));
 
+vi.mock('../services/log-service', () => ({ appLog: vi.fn() }));
+
 vi.mock('../services/plugin-manifest-registry', () => ({
   initializeTrustedManifests: vi.fn(),
   unregisterManifest: vi.fn(),
+  getManifest: vi.fn(),
 }));
 
 import { removePluginTools } from '../services/clubhouse-mcp/plugin-tool-registry';
@@ -68,12 +71,17 @@ import * as pluginDiscovery from '../services/plugin-discovery';
 import * as gitignoreManager from '../services/gitignore-manager';
 import * as safeMode from '../services/safe-mode';
 import * as pluginManifestRegistry from '../services/plugin-manifest-registry';
+import { appLog } from '../services/log-service';
+import type { PluginManifest } from '../../shared/plugin-types';
 
 describe('plugin-handlers', () => {
   let handlers: Map<string, (...args: any[]) => any>;
 
   beforeEach(() => {
     vi.clearAllMocks();
+    vi.mocked(pluginManifestRegistry.getManifest).mockReturnValue({
+      id: 'p1', permissions: ['storage', 'files'],
+    } as PluginManifest);
     handlers = new Map();
     vi.mocked(ipcMain.handle).mockImplementation((channel: string, handler: any) => {
       handlers.set(channel, handler);
@@ -102,6 +110,143 @@ describe('plugin-handlers', () => {
     for (const channel of expectedChannels) {
       expect(handlers.has(channel)).toBe(true);
     }
+  });
+
+  it('waits for trusted manifest discovery before authorizing startup data calls', async () => {
+    let ready!: () => void;
+    vi.mocked(pluginManifestRegistry.initializeTrustedManifests).mockReturnValue(new Promise<void>((resolve) => { ready = resolve; }));
+    registerPluginHandlers();
+    const pending = handlers.get(IPC.PLUGIN.STORAGE_READ)!({}, { pluginId: 'p1', scope: 'global', key: 'theme' });
+    expect(pluginStorage.readKey).not.toHaveBeenCalled();
+    ready();
+    await expect(pending).resolves.toBe('value');
+  });
+
+  const dataOperations = [
+    [IPC.PLUGIN.STORAGE_READ, 'readKey', 'storage'],
+    [IPC.PLUGIN.STORAGE_WRITE, 'writeKey', 'storage'],
+    [IPC.PLUGIN.STORAGE_DELETE, 'deleteKey', 'storage'],
+    [IPC.PLUGIN.STORAGE_LIST, 'listKeys', 'storage'],
+    [IPC.PLUGIN.FILE_READ, 'readPluginFile', 'files'],
+    [IPC.PLUGIN.FILE_WRITE, 'writePluginFile', 'files'],
+    [IPC.PLUGIN.FILE_DELETE, 'deletePluginFile', 'files'],
+    [IPC.PLUGIN.FILE_EXISTS, 'pluginFileExists', 'files'],
+    [IPC.PLUGIN.FILE_LIST_DIR, 'listPluginDir', 'files'],
+    [IPC.PLUGIN.MKDIR, 'mkdirPlugin', 'files'],
+  ] as const;
+
+  function invokeData(channel: string, pluginId: string) {
+    const handler = handlers.get(channel)!;
+    return channel === IPC.PLUGIN.MKDIR
+      ? handler({}, pluginId, 'global', 'private/path')
+      : handler({}, { pluginId, scope: 'global', key: 'secret-key', value: 'secret-value', relativePath: 'private/path', content: 'secret-content' });
+  }
+
+  describe.each(dataOperations)('%s access checks', (channel, method, permission) => {
+    it.each(['unknown', 'excluded-by-safe-mode-or-external-support-off'])('refuses %s IDs absent from the main registry', async (pluginId) => {
+      vi.mocked(pluginManifestRegistry.getManifest).mockReturnValue(undefined);
+      await expect(invokeData(channel, pluginId)).rejects.toThrow('Plugin data access refused');
+      expect(pluginStorage[method]).not.toHaveBeenCalled();
+      expect(appLog).toHaveBeenCalledWith('core:plugins', 'warn', 'Plugin data access refused', {
+        meta: expect.objectContaining({ permission, reason: 'unregistered or disabled' }),
+      });
+      const logged = JSON.stringify(vi.mocked(appLog).mock.calls);
+      for (const privateValue of [pluginId, 'secret-key', 'secret-value', 'private/path', 'secret-content']) {
+        expect(logged).not.toContain(privateValue);
+      }
+    });
+
+    it('refuses a built-in disabled by the real main registry in safe mode', async () => {
+      const registry = await vi.importActual<typeof pluginManifestRegistry>('../services/plugin-manifest-registry');
+      const previous = process.env.CLUBHOUSE_SAFE_MODE;
+      process.env.CLUBHOUSE_SAFE_MODE = '1';
+      try {
+        await registry.initializeTrustedManifests();
+        vi.mocked(pluginManifestRegistry.getManifest).mockImplementation(registry.getManifest);
+        await expect(invokeData(channel, 'files')).rejects.toThrow('Plugin data access refused');
+        expect(pluginStorage[method]).not.toHaveBeenCalled();
+      } finally {
+        if (previous === undefined) delete process.env.CLUBHOUSE_SAFE_MODE;
+        else process.env.CLUBHOUSE_SAFE_MODE = previous;
+        registry.clear();
+      }
+    });
+
+    it('refuses a registered plugin without the required permission', async () => {
+      vi.mocked(pluginManifestRegistry.getManifest).mockReturnValue({
+        id: 'p1', permissions: [permission === 'files' ? 'storage' : 'files'],
+      } as PluginManifest);
+      await expect(invokeData(channel, 'p1')).rejects.toThrow('Plugin data access refused');
+      expect(pluginStorage[method]).not.toHaveBeenCalled();
+      expect(appLog).toHaveBeenCalledWith('core:plugins', 'warn', 'Plugin data access refused', {
+        meta: expect.objectContaining({ permission, reason: 'permission denied' }),
+      });
+    });
+
+    it.each([0.7, 0.8, 0.9])('allows a registered, permitted plugin on API %s', async (api) => {
+      vi.mocked(pluginManifestRegistry.getManifest).mockReturnValue({
+        id: 'p1', engine: { api }, permissions: [permission],
+      } as PluginManifest);
+      await invokeData(channel, 'p1');
+      expect(pluginStorage[method]).toHaveBeenCalledOnce();
+      expect(appLog).not.toHaveBeenCalled();
+    });
+
+    it('KNOWN LIMITATION #2080: direct shared-bridge calls can forge another registered, permitted plugin ID', async () => {
+      // IPC carries no authenticated plugin caller. A can send B's ID; the
+      // registry/permission checks authorize B. This test documents the gap.
+      vi.mocked(pluginManifestRegistry.getManifest).mockImplementation((pluginId) => pluginId === 'victim'
+        ? { id: 'victim', permissions: [permission] } as PluginManifest : undefined);
+      await invokeData(channel, 'victim');
+      expect(pluginStorage[method]).toHaveBeenCalledOnce();
+    });
+
+    it('keeps real storage path traversal checks after authorization', async () => {
+      const actual = await vi.importActual<typeof pluginStorage>('../services/plugin-storage');
+      vi.mocked(pluginStorage[method]).mockImplementation(actual[method] as typeof pluginStorage[typeof method]);
+      const handler = handlers.get(channel)!;
+      const result = channel === IPC.PLUGIN.MKDIR
+        ? handler({}, 'p1', 'project', '../../../../../escape', '/project')
+        : handler({}, {
+          pluginId: 'p1', scope: 'project', projectPath: '/project',
+          key: '../../../../../escape', relativePath: '../../../../../escape', content: 'x', value: 'x',
+        });
+      // STORAGE_LIST has no caller-provided subpath; its plugin ID is checked instead.
+      if (channel === IPC.PLUGIN.STORAGE_LIST) {
+        await result;
+        await expect(handler({}, { pluginId: '../escape', scope: 'project', projectPath: '/project' })).rejects.toThrow('Invalid plugin ID');
+      } else {
+        await expect(result).rejects.toThrow('Path traversal');
+      }
+    });
+  });
+
+  it.each(['external-plugins-enabled', 'app-enabled', 'project-enabled-project-1', 'settings-app-p1'])('preserves host bootstrap/config KV reads and writes for %s', async (key) => {
+    vi.mocked(pluginManifestRegistry.getManifest).mockReturnValue(undefined);
+    const req = { pluginId: '_system', scope: 'global', key, value: [] };
+    await handlers.get(IPC.PLUGIN.STORAGE_READ)!({}, req);
+    await handlers.get(IPC.PLUGIN.STORAGE_WRITE)!({}, req);
+    expect(pluginStorage.readKey).toHaveBeenCalledWith(req);
+    expect(pluginStorage.writeKey).toHaveBeenCalledWith(req);
+  });
+
+  it.each(dataOperations)('does not exempt arbitrary host namespace requests on %s', async (channel, method) => {
+    vi.mocked(pluginManifestRegistry.getManifest).mockReturnValue(undefined);
+    await expect(invokeData(channel, '_system')).rejects.toThrow('Plugin data access refused');
+    expect(pluginStorage[method]).not.toHaveBeenCalled();
+  });
+
+  it('keeps agent-config bookkeeping at its existing path with its owning manifest permission', async () => {
+    vi.mocked(pluginManifestRegistry.getManifest).mockImplementation((id) => id === 'p1'
+      ? { id, permissions: ['agent-config'] } as PluginManifest : undefined);
+    const req = { pluginId: '_agentconfig:p1', scope: 'project', projectPath: '/project', key: 'injected-skills', value: [] };
+    for (const channel of [IPC.PLUGIN.STORAGE_READ, IPC.PLUGIN.STORAGE_WRITE, IPC.PLUGIN.STORAGE_DELETE, IPC.PLUGIN.STORAGE_LIST]) {
+      await handlers.get(channel)!({}, req);
+    }
+    expect(pluginStorage.writeKey).toHaveBeenCalledWith(req);
+    await expect(handlers.get(IPC.PLUGIN.STORAGE_READ)!({}, { ...req, pluginId: '_agentconfig:unknown' })).rejects.toThrow('Plugin data access refused');
+    vi.mocked(pluginManifestRegistry.getManifest).mockReturnValue({ id: 'p1', permissions: ['storage'] } as PluginManifest);
+    await expect(handlers.get(IPC.PLUGIN.STORAGE_READ)!({}, req)).rejects.toThrow('Plugin data access refused');
   });
 
   it('DISCOVER_COMMUNITY delegates to pluginDiscovery', async () => {
