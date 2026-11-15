@@ -218,10 +218,10 @@ describe('process-handlers', () => {
     },
   );
 
-  it.each([false, true])('executes the resolved launch with shell false (verbatim: %s)', async (verbatim) => {
-    const binary = verbatim ? 'system-cmd.exe' : 'resolved-tool.exe';
-    const args = verbatim ? ['/d', '/v:off', '/s', '/c', 'escaped-line'] : ['a&calc', '%PATH%', '!x!'];
-    vi.mocked(resolveProcessLaunch).mockReturnValueOnce({ binary, args, windowsVerbatimArguments: verbatim });
+  it('executes the resolved native launch with shell false', async () => {
+    const binary = 'resolved-tool.exe';
+    const args = ['a&calc', '%PATH%', '!x!'];
+    vi.mocked(resolveProcessLaunch).mockReturnValueOnce({ binary, args });
     vi.mocked(getAllowedCommands).mockReturnValue(['tool']);
     vi.mocked(execFile).mockImplementation(((_cmd: any, _args: any, _opts: any, callback: any) => {
       callback(null, 'ok', '');
@@ -232,8 +232,8 @@ describe('process-handlers', () => {
       pluginId: 'p1', command: 'tool', args: inputArgs, projectPath: '/project',
     });
     expect(result.exitCode).toBe(0);
-    expect(resolveProcessLaunch).toHaveBeenCalledWith('tool', inputArgs, expect.objectContaining({ PATH: '/usr/bin' }), '/project');
-    expect(execFile).toHaveBeenCalledWith(binary, args, expect.objectContaining({ shell: false, windowsVerbatimArguments: verbatim }), expect.any(Function));
+    expect(resolveProcessLaunch).toHaveBeenCalledWith('tool', inputArgs, expect.objectContaining({ PATH: '/usr/bin' }), '/project', { allowBatch: false });
+    expect(execFile).toHaveBeenCalledWith(binary, args, expect.objectContaining({ shell: false, windowsVerbatimArguments: undefined }), expect.any(Function));
   });
 
   it('returns resolution errors without launching or consuming a concurrency slot', async () => {

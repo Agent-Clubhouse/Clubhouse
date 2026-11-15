@@ -75,13 +75,26 @@ describe('resolveProcessLaunch', () => {
     }
   });
 
+  it.each(['tool.cmd', 'tool.bat'])('rejects a plugin batch %s without invoking cmd.exe', async (name) => {
+    await fs.promises.writeFile(path.join(tmp, name), '@echo off\r\nnode echo.js %*\r\n');
+    expect(() => resolveProcessLaunch(name, HOSTILE_ARGS, { PATH: tmp }, tmp, { allowBatch: false }))
+      .toThrow('Plugins cannot run Windows batch files');
+  });
+
+  it('uses one escape layer for a batch program that reads its positional parameters', async () => {
+    const binary = path.join(tmp, 'reader.cmd');
+    await fs.promises.writeFile(binary, '@echo off\r\nif "%~1"=="-f" echo file is %~2\r\n');
+    const launch = resolveProcessLaunch('reader', ['-f', 'C:\\file with spaces\\'], { PATH: tmp });
+    expect(launch.args.at(-1)).toBe('"' + binary.replace(/ /g, '^ ') + ' ^"-f^" ^"C^:\\file with spaces\\^""');
+  });
+
   it('bypasses a node shim and resolves node.exe using the child environment', async () => {
     const script = path.join(tmp, 'cli.js');
     const node = path.join(tmp, 'node.exe');
     await fs.promises.writeFile(script, '');
     await fs.promises.writeFile(node, '');
     await fs.promises.writeFile(path.join(tmp, 'tool.cmd'), '@node "%~dp0\\cli.js" %*\r\n');
-    expect(resolveProcessLaunch('tool', ['line\nbreak', ...HOSTILE_ARGS], { PATH: tmp })).toEqual({
+    expect(resolveProcessLaunch('tool', ['line\nbreak', ...HOSTILE_ARGS], { PATH: tmp }, tmp, { allowBatch: false })).toEqual({
       binary: node, args: [script, 'line\nbreak', ...HOSTILE_ARGS],
     });
   });
@@ -95,6 +108,18 @@ describe('resolveProcessLaunch', () => {
 // Picked up by both existing Windows CI unit shards. These exercise the same
 // execFile API the five callers use, with a real node child that echoes JSON.
 describe.runIf(nativeWindows)('real Windows argv (#2239)', () => {
+  it.each([false, true])('preserves positional flags for an ordinary batch reader (trailing slash: %s)', async (trailingSlash) => {
+    const reader = path.join(tmp, 'reader.cmd');
+    await fs.promises.writeFile(reader, '@echo off\r\nif "%~1"=="-f" echo file is %~2\r\n');
+    const file = trailingSlash ? path.join(tmp, 'project files') + path.sep : path.join(tmp, 'project files', 'pom.xml');
+    const launch = resolveProcessLaunch(reader, ['-f', file]);
+    const { stdout, stderr } = await execFileAsync(launch.binary, launch.args, {
+      shell: false, windowsVerbatimArguments: launch.windowsVerbatimArguments, timeout: 10_000,
+    });
+    expect(stderr).toBe('');
+    expect(stdout.trimEnd()).toBe(`file is ${file}`);
+  }, 20_000);
+
   it.each(['exe', 'cmd', 'bat', 'npm'])('preserves hostile args through %s', async (kind) => {
     const script = path.join(tmp, 'echo args.js');
     await fs.promises.writeFile(script, 'process.stdout.write(JSON.stringify(process.argv.slice(2)));\n');

@@ -87,12 +87,16 @@ export function quoteWindowsArg(arg: string): string {
  * the same for npm shims). The binary is only parsed once.
  *
  * Line breaks can't be expressed: cmd.exe ends the command at one.
+ * Callers launching an ordinary batch argument reader pass doubleEscape=false;
+ * only a wrapper that forwards %* needs the second layer.
  */
-export function buildWindowsCmdLine(binary: string, args: string[]): string {
-  const batch = WINDOWS_BATCH_RE.test(binary);
+export function buildWindowsCmdLine(binary: string, args: string[], doubleEscape = WINDOWS_BATCH_RE.test(binary)): string {
   const escaped = args.map((a) => {
-    const once = caretEscape(quoteWindowsArg(a));
-    return batch ? caretEscape(once) : once;
+    // Batch positional parameters use cmd's quote rules, not MSVCRT's:
+    // backslashes have no special meaning, including before the closing quote.
+    const quoted = WINDOWS_BATCH_RE.test(binary) && !doubleEscape ? `"${a}"` : quoteWindowsArg(a);
+    const once = caretEscape(quoted);
+    return doubleEscape ? caretEscape(once) : once;
   });
   return [binary.replace(CMD_COMMAND_META_RE, '^$1'), ...escaped].join(' ');
 }
@@ -115,6 +119,27 @@ const FOREIGN_SET_RE = /^[ \t@]*set[ \t]+(?!"?(?:dp0|_prog|PATHEXT)=)/im;
 
 /** Shims are a few hundred bytes; anything much bigger isn't one. */
 const MAX_SHIM_BYTES = 16 * 1024;
+
+/**
+ * Only a simple batch forwarder needs a second escape layer: its sole command
+ * passes %* to another process. Ordinary batch programs that inspect %1/%~1
+ * would instead receive leftover carets. Keep unknown scripts on one layer.
+ */
+export function isSimpleWindowsBatchForwarder(file: string): boolean {
+  try {
+    if (fs.statSync(file).size > MAX_SHIM_BYTES) return false;
+    const lines = fs.readFileSync(file, 'utf8').trim().split(/\r?\n/)
+      .map((line) => line.trim()).filter((line) => line && !/^@?echo[ \t]+off$/i.test(line));
+    if (lines.length !== 1) return false;
+    const line = lines[0];
+    // No other parameter expansions, shell builtins, branching or operators.
+    if (/^@?(?:call|echo|if|for|set|setlocal|endlocal|goto|exit|rem|start|cmd(?:\.exe)?)\b/i.test(line)
+      || /%/.test(line.replace(/%\*$/, '').replace(/%(?:~dp0|dp0%)/gi, ''))) return false;
+    return /^@?(?:"[^"\r\n]+"|[^\s"&|<>^()%!]+)(?:[ \t]+(?:"[^"\r\n]*"|[^\s"&|<>^()%!]+))*[ \t]+%\*$/.test(line);
+  } catch {
+    return false;
+  }
+}
 
 /**
  * For an npm-style `.cmd` shim that only runs a node script, the node binary

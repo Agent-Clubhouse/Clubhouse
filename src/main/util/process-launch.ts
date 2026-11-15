@@ -1,6 +1,6 @@
 import * as fs from 'fs';
 import * as path from 'path';
-import { buildWindowsCmdLine, resolveNodeShim, windowsLauncherCandidates, WINDOWS_BATCH_RE } from './windows-launcher';
+import { buildWindowsCmdLine, isSimpleWindowsBatchForwarder, resolveNodeShim, windowsLauncherCandidates, WINDOWS_BATCH_RE } from './windows-launcher';
 
 interface ProcessLaunch {
   binary: string;
@@ -35,15 +35,17 @@ function resolveWindowsExecutable(binary: string, env: NodeJS.ProcessEnv, cwd: s
 /**
  * Prepare argv for execFile/spawn with shell: false. POSIX is unchanged.
  * Windows native binaries run directly; npm node shims bypass cmd.exe when
- * possible. Other batch shims use the existing #2339/#2340 quoting, including
- * the second escape layer needed when a shim forwards %*. No caller input is
- * interpreted as a command line. Batch shims cannot represent line breaks.
+ * possible. Providers can run other batch files with the existing #2339/#2340
+ * quoting, adding the second escape layer only for simple %* forwarders.
+ * Plugins set allowBatch=false: they never pass their arguments through a
+ * shell. Batch shims cannot represent line breaks.
  */
 export function resolveProcessLaunch(
   binary: string,
   args: string[],
   env: NodeJS.ProcessEnv = process.env,
   cwd = process.cwd(),
+  options: { allowBatch?: boolean } = {},
 ): ProcessLaunch {
   if (process.platform !== 'win32') return { binary, args };
   if ([binary, ...args].some((a) => a.includes('\0'))) {
@@ -57,13 +59,16 @@ export function resolveProcessLaunch(
     const node = shim.node === 'node' ? 'node.exe' : shim.node;
     return { binary: resolveWindowsExecutable(node, env, cwd), args: [shim.script, ...args] };
   }
+  if (options.allowBatch === false) {
+    throw new Error('Plugins cannot run Windows batch files unless they are recognized npm node shims; use a native executable instead');
+  }
   if ([resolved, ...args].some((a) => /[\r\n]/.test(a))) {
     throw new Error('Cannot launch a Windows batch shim with an argument containing a line break');
   }
   return {
     // Use the system command interpreter, not a project-local cmd.exe.
     binary: path.join(envValue(env, 'SYSTEMROOT') || 'C:\\Windows', 'System32', 'cmd.exe'),
-    args: ['/d', '/v:off', '/s', '/c', `"${buildWindowsCmdLine(resolved, args)}"`],
+    args: ['/d', '/v:off', '/s', '/c', `"${buildWindowsCmdLine(resolved, args, isSimpleWindowsBatchForwarder(resolved))}"`],
     windowsVerbatimArguments: true,
   };
 }

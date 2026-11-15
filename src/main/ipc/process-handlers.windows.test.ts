@@ -29,13 +29,13 @@ describe.runIf(process.platform === 'win32')('plugin process argv on real Window
     await fs.promises.rm(tmp, { recursive: true, force: true, maxRetries: 20, retryDelay: 100 });
   });
 
-  it.each(['exe', 'cmd', 'bat'])('round-trips plugin args through an allowed %s', async (kind) => {
+  it.each(['exe', 'npm'])('round-trips plugin args through an allowed %s', async (kind) => {
     const script = path.join(tmp, 'echo args.js');
     await fs.promises.writeFile(script, 'process.stdout.write(JSON.stringify(process.argv.slice(2)));\n');
     const hostile = ['a&calc', '|', '^', '%PATH%', '!x!', '<in>out', 'say "hi"', '"&calc&"', 'C:\\data\\', 'with spaces', 'trailing '];
-    const command = kind === 'exe' ? 'node' : `tool.${kind}`;
+    const command = kind === 'exe' ? 'node' : 'tool.cmd';
     if (kind !== 'exe') {
-      await fs.promises.writeFile(path.join(tmp, command), `@echo off\r\n"${process.execPath}" "${script}" %*\r\n`);
+      await fs.promises.writeFile(path.join(tmp, command), '@node "%~dp0\\echo args.js" %*\r\n');
     }
     vi.mocked(getAllowedCommands).mockReturnValue([command]);
     const result = await handler({ sender: new EventEmitter() }, {
@@ -46,14 +46,15 @@ describe.runIf(process.platform === 'win32')('plugin process argv on real Window
     expect(JSON.parse(result.stdout)).toEqual(hostile);
   }, 20_000);
 
-  it('rejects a line break in an allowed batch command before executing it', async () => {
-    await fs.promises.writeFile(path.join(tmp, 'tool.cmd'), '@echo should never run\r\n');
-    vi.mocked(getAllowedCommands).mockReturnValue(['tool.cmd']);
+  it.each(['cmd', 'bat'])('refuses a plugin %s even when allowed by its manifest', async (extension) => {
+    const command = `tool.${extension}`;
+    await fs.promises.writeFile(path.join(tmp, command), `@echo should never run\r\n`);
+    vi.mocked(getAllowedCommands).mockReturnValue([command]);
     const result = await handler({ sender: new EventEmitter() }, {
-      pluginId: 'argv-plugin', command: 'tool.cmd', args: ['a\r\ncalc'], projectPath: tmp,
+      pluginId: 'argv-plugin', command, args: ['a&calc'], projectPath: tmp,
     });
     expect(result.exitCode).toBe(1);
-    expect(result.stderr).toContain('line break');
+    expect(result.stderr).toContain('Plugins cannot run Windows batch files');
     expect(result.stdout).toBe('');
   });
 });

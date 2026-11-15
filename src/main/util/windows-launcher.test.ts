@@ -2,7 +2,7 @@ import { describe, it, expect, afterEach } from 'vitest';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
-import { buildWindowsCmdLine, quoteWindowsArg, resolveNodeShim } from './windows-launcher';
+import { buildWindowsCmdLine, isSimpleWindowsBatchForwarder, quoteWindowsArg, resolveNodeShim } from './windows-launcher';
 
 // A model of what happens to a cmd.exe line, so the escaping can be checked on
 // any OS. structured-spawn.windows.test.ts runs the same matrix through a real
@@ -216,6 +216,21 @@ describe('resolveNodeShim', () => {
     '@IF EXIST "%~dp0\\node.exe" (', '  "%~dp0\\node.exe"  "%~dp0\\cli.js" %*', ') ELSE (', '  @SETLOCAL',
     '  @SET PATHEXT=%PATHEXT:;.JS;=;%', '  node  "%~dp0\\cli.js" %*', ')', '',
   ].join('\r\n');
+
+  it.each([
+    ['@echo off\r\n"C:\\node.exe" "C:\\cli.js" %*\r\n', true],
+    ['@node "%~dp0\\cli.js" %*\r\n', true],
+    ['@echo off\r\nif "%~1"=="-f" echo file is %~2\r\n', false],
+    ['@echo off\r\ncall node cli.js %*\r\n', false],
+    ['@echo off\r\necho %*\r\n', false],
+    ['@echo off\r\nnode cli.js %* & echo done\r\n', false],
+    ['@echo off\r\nnode cli.js %1 %*\r\n', false],
+    ['@echo off\r\nset X=1\r\nnode cli.js %*\r\n', false],
+    ['@echo off\r\nnode cli.js "%~1" %*\r\n', false],
+  ])('detects only a simple percent-star forwarding wrapper: %j', async (body, expected) => {
+    const shim = await writeShim('tool.cmd', body);
+    expect(isSimpleWindowsBatchForwarder(shim)).toBe(expected);
+  });
 
   it.each([['current', CURRENT], ['older', OLDER]])('resolves the %s npm template to node and its script', async (_label, body) => {
     const shim = await writeShim('claude.cmd', body);

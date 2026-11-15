@@ -119,7 +119,7 @@ export function registerProcessHandlers(): void {
     const env = getShellEnvironment();
     let launch: ReturnType<typeof resolveProcessLaunch>;
     try {
-      launch = resolveProcessLaunch(command, args, env, cwd);
+      launch = resolveProcessLaunch(command, args, env, cwd, { allowBatch: false });
     } catch (error) {
       return { stdout: '', stderr: error instanceof Error ? error.message : String(error), exitCode: 1 };
     }

@@ -67,6 +67,12 @@ vi.mock('electron', () => ({
 }));
 
 // ── child_process ──────────────────────────────────────────────────────
+// This composition suite stubs both the process and its environment; real
+// Windows resolution/argv round trips live in process-handlers.windows.test.ts.
+vi.mock('../util/process-launch', () => ({
+  resolveProcessLaunch: vi.fn((binary: string, args: string[]) => ({ binary, args })),
+}));
+
 vi.mock('child_process', () => ({
   execSync: vi.fn(() => '0'),
   execFile: vi.fn(),
