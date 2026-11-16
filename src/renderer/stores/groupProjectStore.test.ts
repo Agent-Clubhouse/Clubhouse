@@ -5,6 +5,8 @@ import type { GroupProject } from '../../shared/group-project-types';
 // Mock window.clubhouse.groupProject IPC
 const mockList = vi.fn();
 const mockOnChanged = vi.fn(() => () => {});
+const mockGetOperations = vi.fn();
+const mockOnOperationsChanged = vi.fn((_callback: (id: string) => void) => () => {});
 
 vi.stubGlobal('window', {
   clubhouse: {
@@ -16,6 +18,8 @@ vi.stubGlobal('window', {
       postBulletinMessage: vi.fn(),
       sendShoulderTap: vi.fn(),
       onChanged: mockOnChanged,
+      getOperations: mockGetOperations,
+      onOperationsChanged: mockOnOperationsChanged,
     },
   },
 });

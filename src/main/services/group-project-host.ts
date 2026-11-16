@@ -13,7 +13,8 @@
 
 import type {
   BulletinMessage, GroupProject, GroupProjectChange, GroupProjectChangePart, GroupProjectCreateOptions, GroupProjectHost,
-  DigestSince, GroupProjectMemberView, GroupProjectMembership, GroupProjectNetworkRefusal, GroupProjectNetworkState,
+  DigestSince, GroupOperationSection, GroupProjectMemberView, GroupProjectMembership, GroupProjectNetworkRefusal, GroupProjectNetworkState,
+  GroupProjectOperation, GroupProjectOperations, GroupWriteOutcome,
   GroupProjectScope, GroupProjectScopeOptions, GroupProjectTombstone, TopicDigest,
 } from '../../shared/group-project-types';
 import {
@@ -30,7 +31,7 @@ import { emptyMembership, readMembershipFile, validateMembership, writeMembershi
 import * as fs from 'fs';
 import { AsyncLocalStorage } from 'async_hooks';
 import {
-  assertGroupProjectId, groupProjectDir, hostStatePath, networkAppliedPath, networkOutboxPath, networkRefusalsPath, replicaStatePath,
+  assertGroupProjectId, groupProjectDir, hostStatePath, networkAppliedPath, networkOperationsPath, networkOutboxPath, networkRefusalsPath, replicaStatePath,
   replicaTombstonesPath, tombstonesPath,
 } from './group-project-paths';
 import { createHash, randomUUID } from 'crypto';
@@ -156,6 +157,35 @@ const OUTBOX_MAX_TOTAL = 1000;
 const OUTBOX_EXPIRY_MS = 24 * 60 * 60 * 1000;
 const FLUSH_BATCH = 20;
 const REFUSALS_MAX = 200;
+/** Answered changes kept for status (#3550): this many, no older than this. */
+const OPERATIONS_SETTLED_MAX = 200;
+const OPERATIONS_SETTLED_TTL_MS = 60 * 60 * 1000;
+/** The most waiting changes one status read lists; the rest are counted. */
+const OPERATIONS_QUEUED_READ_MAX = 50;
+const OPERATIONS_SETTLED_READ_MAX = 20;
+
+/** Where a change's status shows. Housekeeping (channels, inboxes) has no place on the page. */
+const OPERATION_SECTION: Partial<Record<WriteOp['op'], GroupOperationSection>> = {
+  post: 'posts',
+  update: 'details',
+  membership: 'members',
+  deleteMessage: 'cleanup',
+  deleteTopic: 'cleanup',
+  setTopicProtected: 'cleanup',
+};
+
+/** A kept answer. Malformed entries read as nothing: an unknown status is never an applied one. */
+function validSettled(value: unknown): GroupProjectOperation | null {
+  const v = value as Partial<GroupProjectOperation> | null;
+  if (!v || typeof v !== 'object' || typeof v.id !== 'string' || typeof v.groupProjectId !== 'string' || typeof v.op !== 'string'
+    || typeof v.since !== 'string' || typeof v.settledAt !== 'string' || !Number.isFinite(Date.parse(v.settledAt))
+    || !v.section || !['members', 'details', 'cleanup', 'posts'].includes(v.section)
+    || !v.author || typeof v.author !== 'object' || typeof v.author.label !== 'string') return null;
+  const outcome = v.outcome as Partial<GroupWriteOutcome> | undefined;
+  if (outcome?.status === 'applied') return v as GroupProjectOperation;
+  if (outcome?.status === 'refused' && typeof outcome.reason === 'string') return v as GroupProjectOperation;
+  return null;
+}
 
 function validateStoredList<T>(value: unknown): StoredList<T> {
   const v = value as Partial<StoredList<T>> | null;
@@ -235,6 +265,9 @@ class GroupProjectHostService {
   private senderChains = new Map<string, Promise<unknown>>();
   private replicaTombstones: ReplicaTombstone[] | null = null;
   private appliedWrites: AppliedWrite[] | null = null;
+  /** Changes made here that their hosts applied or refused, lately (#3550). Waiting ones are the outbox. */
+  private settled: GroupProjectOperation[] | null = null;
+  private operationListeners = new Set<(groupProjectId: string) => void>();
 
   // ── Identity ─────────────────────────────────────────────────────────────
 
@@ -1224,8 +1257,12 @@ class GroupProjectHostService {
     });
   }
 
-  private removeFromOutbox(ids: ReadonlySet<string>): Promise<void> {
-    return this.editOutbox((items) => ({ items: items.filter((i) => !ids.has(i.id)), result: undefined }));
+  private async removeFromOutbox(ids: ReadonlySet<string>): Promise<void> {
+    const groups = await this.editOutbox((items) => ({
+      items: items.filter((i) => !ids.has(i.id)),
+      result: new Set(items.filter((i) => ids.has(i.id)).map((i) => i.groupProjectId)),
+    }));
+    for (const group of groups) this.emitOperations(group);
   }
 
   private async loadRefusals(): Promise<GroupProjectNetworkRefusal[]> {
@@ -1235,15 +1272,24 @@ class GroupProjectHostService {
     return this.refusals;
   }
 
-  private async recordRefusal(item: OutboxItem, reason: string): Promise<void> {
+  /**
+   * Keep a refusal for the directory, once per write id (a replay after a crash finds it), and settle the
+   * write's status as refused unless the write was applied and only part of it wasn't.
+   */
+  private async recordRefusal(item: OutboxItem, reason: string, options: { settle?: boolean } = {}): Promise<void> {
     const refusal: GroupProjectNetworkRefusal = {
       id: item.id, groupProjectId: item.groupProjectId, op: item.write.op, reason, at: new Date().toISOString(), author: item.author,
     };
-    await this.serial(this.fileChains, 'refusals', async () => {
-      const items = [...(await this.loadRefusals()), refusal].slice(-REFUSALS_MAX);
+    if (options.settle !== false) await this.settle(item, { status: 'refused', reason });
+    const fresh = await this.serial(this.fileChains, 'refusals', async () => {
+      const current = await this.loadRefusals();
+      if (current.some((r) => r.id === item.id)) return false;
+      const items = [...current, refusal].slice(-REFUSALS_MAX);
       await writeJsonFile(networkRefusalsPath(), { version: 1, items } satisfies StoredList<GroupProjectNetworkRefusal>);
       this.refusals = items;
+      return true;
     });
+    if (!fresh) return;
     try {
       this.link?.notifyRefusal?.(refusal);
     } catch {
@@ -1258,7 +1304,19 @@ class GroupProjectHostService {
       await writeJsonFile(networkRefusalsPath(), { version: 1, items } satisfies StoredList<GroupProjectNetworkRefusal>);
       this.refusals = items;
     });
+    // The refusals are seen; their statuses go with them. Applied and waiting ones stay.
+    await this.serial(this.fileChains, 'operations', async () => {
+      const current = await this.loadSettled();
+      const items = current.filter((op) => !(op.groupProjectId === id && op.outcome.status === 'refused'));
+      if (items.length === current.length) return;
+      await this.saveSettled(items);
+      this.settled = items;
+    }).catch((err: unknown) => {
+      // telemetry-exempt: the statuses age out on their own
+      appLog('core:group-project', 'warn', 'Could not clear change statuses', { meta: { id, error: err instanceof Error ? err.message : String(err) } });
+    });
     groupProjectRegistry.touch();
+    this.emitOperations(id);
   }
 
   private async replicaState(id: string): Promise<ReplicaState> {
@@ -1284,40 +1342,139 @@ class GroupProjectHostService {
    */
   private async forward<T>(project: GroupProject, write: WriteOp, author: WriteAuthor, applied: (result: unknown) => T, queued: (item: OutboxItem) => T): Promise<T> {
     const host = project.host!.machine!;
-    const replica = await this.replicaState(project.id).catch((): ReplicaState => ({ version: 1 }));
-    if (replica.hostRemoved || (this.link && !this.link.isMember(host))) {
-      throw new GroupProjectHostError('read_only', `${this.hostNameOf(project)} left your network. This group project is read-only here.`);
-    }
     const item: OutboxItem = {
       id: randomUUID(), host, groupProjectId: project.id, author, queuedAt: new Date().toISOString(), write,
     };
-    const outcome = await this.serial(this.hostChains, host, async (): Promise<{ result?: WriteResult }> => {
-      const waiting = (await this.loadOutbox()).some((i) => i.host === host);
-      if (this.link?.connected(host) && !waiting) {
-        let response: WriteResponse | undefined;
-        try {
-          response = await this.link.sendWrites(host, [stripHost(item)]);
-        } catch (err) {
-          // telemetry-exempt: the host went away mid-request; the write is queued below, and the
-          // host recognizes it by id if it did arrive
-          appLog('core:group-project', 'info', 'Host unreachable; queuing the write', { meta: { id: project.id, error: err instanceof Error ? err.message : String(err) } });
+    const replica = await this.replicaState(project.id).catch((): ReplicaState => ({ version: 1 }));
+    if (replica.hostRemoved || (this.link && !this.link.isMember(host))) {
+      const reason = `${this.hostNameOf(project)} left your network. This group project is read-only here.`;
+      await this.settle(item, { status: 'refused', reason });
+      throw new GroupProjectHostError('read_only', reason);
+    }
+    let outcome: { result?: WriteResult };
+    try {
+      outcome = await this.serial(this.hostChains, host, async (): Promise<{ result?: WriteResult }> => {
+        const waiting = (await this.loadOutbox()).some((i) => i.host === host);
+        if (this.link?.connected(host) && !waiting) {
+          let response: WriteResponse | undefined;
+          try {
+            response = await this.link.sendWrites(host, [stripHost(item)]);
+          } catch (err) {
+            // telemetry-exempt: the host went away mid-request; the write is queued below, and the
+            // host recognizes it by id if it did arrive
+            appLog('core:group-project', 'info', 'Host unreachable; queuing the write', { meta: { id: project.id, error: err instanceof Error ? err.message : String(err) } });
+          }
+          const result = response?.results.find((r) => r.id === item.id);
+          if (result) return { result };
         }
-        const result = response?.results.find((r) => r.id === item.id);
-        if (result) return { result };
-      }
-      await this.enqueue(project, item);
-      return {};
-    });
+        await this.enqueue(project, item);
+        return {};
+      });
+    } catch (err) {
+      // telemetry-exempt: a full queue is the answer, shown to the author as a refusal
+      if (err instanceof GroupProjectHostError && err.code === 'queue_full') await this.settle(item, { status: 'refused', reason: err.message });
+      throw err;
+    }
     if (outcome.result?.status === 'applied') {
+      await this.settle(item, { status: 'applied' });
       await this.syncFrom(host).catch((err: unknown) => {
         // telemetry-exempt: the copy catches up on the host's next notice
         appLog('core:group-project', 'warn', 'Could not catch up after a write', { meta: { id: project.id, error: err instanceof Error ? err.message : String(err) } });
       });
       return applied(outcome.result.result);
     }
-    if (outcome.result?.status === 'refused') throw new GroupProjectHostError('refused', `${this.hostNameOf(project)} refused this change: ${outcome.result.reason}`);
+    if (outcome.result?.status === 'refused') {
+      await this.settle(item, { status: 'refused', reason: outcome.result.reason });
+      throw new GroupProjectHostError('refused', `${this.hostNameOf(project)} refused this change: ${outcome.result.reason}`);
+    }
     groupProjectRegistry.touch();
+    this.emitOperations(project.id);
     return queued(item);
+  }
+
+  // ── Change status (#3550) ──
+
+  private async loadSettled(): Promise<GroupProjectOperation[]> {
+    if (!this.settled) {
+      try {
+        const stored = await readJsonFile(networkOperationsPath(), (): StoredList<unknown> => ({ version: 1, items: [] }), validateStoredList<unknown>);
+        this.settled = stored.items.map(validSettled).filter((op): op is GroupProjectOperation => op !== null);
+      } catch (err) {
+        // telemetry-exempt: a status file that can't be read leaves statuses unknown; nothing is shown as applied
+        appLog('core:group-project', 'warn', 'Could not read change statuses', { meta: { error: err instanceof Error ? err.message : String(err) } });
+        this.settled = [];
+      }
+    }
+    return this.settled;
+  }
+
+  private saveSettled(items: GroupProjectOperation[]): Promise<void> {
+    return writeJsonFile(networkOperationsPath(), { version: 1, items } satisfies StoredList<GroupProjectOperation>);
+  }
+
+  /**
+   * Record a change's answer under its own write id, once: a replay of a write
+   * the host already answered finds the first answer and changes nothing.
+   * Writes with no place on the page (housekeeping) are not recorded.
+   */
+  private async settle(item: OutboxItem, outcome: Exclude<GroupWriteOutcome, { status: 'queued' }>): Promise<void> {
+    const section = OPERATION_SECTION[item.write.op];
+    if (!section) return;
+    try {
+      await this.serial(this.fileChains, 'operations', async () => {
+        const now = Date.now();
+        const current = await this.loadSettled();
+        if (current.some((op) => op.id === item.id)) return;
+        const operation: GroupProjectOperation = {
+          id: item.id, groupProjectId: item.groupProjectId, op: item.write.op, section, author: item.author,
+          since: item.queuedAt, settledAt: new Date(now).toISOString(), outcome,
+        };
+        const items = [...current.filter((op) => now - Date.parse(op.settledAt!) < OPERATIONS_SETTLED_TTL_MS), operation].slice(-OPERATIONS_SETTLED_MAX);
+        await this.saveSettled(items);
+        this.settled = items;
+      });
+    } catch (err) {
+      // telemetry-exempt: the status is a convenience; the change itself is already decided
+      appLog('core:group-project', 'warn', 'Could not record a change status', { meta: { id: item.groupProjectId, error: err instanceof Error ? err.message : String(err) } });
+    }
+    this.emitOperations(item.groupProjectId);
+  }
+
+  /**
+   * A group project's changes made here: those waiting for its host (the
+   * outbox), and those answered in the last hour. Bounded, newest last.
+   */
+  async operations(id: string): Promise<GroupProjectOperations> {
+    assertGroupProjectId(id);
+    const project = await groupProjectRegistry.get(id);
+    const waitingFor = project && this.isReplica(project) ? this.hostNameOf(project) : 'its host';
+    const answered = new Set((await this.loadSettled()).map((op) => op.id));
+    const queued = (await this.loadOutbox())
+      .filter((i) => i.groupProjectId === id && OPERATION_SECTION[i.write.op] && !answered.has(i.id))
+      .map((i): GroupProjectOperation => ({
+        id: i.id, groupProjectId: id, op: i.write.op, section: OPERATION_SECTION[i.write.op]!, author: i.author, since: i.queuedAt,
+        outcome: { status: 'queued', waitingFor, since: i.queuedAt },
+      }));
+    const now = Date.now();
+    const settled = (await this.loadSettled())
+      .filter((op) => op.groupProjectId === id && now - Date.parse(op.settledAt!) < OPERATIONS_SETTLED_TTL_MS)
+      .slice(-OPERATIONS_SETTLED_READ_MAX);
+    return { operations: [...queued.slice(-OPERATIONS_QUEUED_READ_MAX), ...settled], omittedQueued: Math.max(0, queued.length - OPERATIONS_QUEUED_READ_MAX) };
+  }
+
+  onOperationsChanged(listener: (groupProjectId: string) => void): () => void {
+    this.operationListeners.add(listener);
+    return () => { this.operationListeners.delete(listener); };
+  }
+
+  private emitOperations(groupProjectId: string): void {
+    for (const listener of this.operationListeners) {
+      try {
+        listener(groupProjectId);
+      } catch {
+        // telemetry-exempt: a status listener failing must not fail the change
+      }
+    }
   }
 
   private enqueue(project: GroupProject, item: OutboxItem): Promise<void> {
@@ -1342,8 +1499,9 @@ class GroupProjectHostService {
         const now = Date.now();
         const expired = (await this.loadOutbox()).filter((i) => i.host === host && now - Date.parse(i.queuedAt) > OUTBOX_EXPIRY_MS);
         if (expired.length > 0) {
-          await this.removeFromOutbox(new Set(expired.map((i) => i.id)));
+          // Refused before it leaves the outbox: a crash between the two refuses it again, once.
           for (const item of expired) await this.recordRefusal(item, `It waited more than a day for ${this.link?.machineName(host) || 'its host'}.`);
+          await this.removeFromOutbox(new Set(expired.map((i) => i.id)));
         }
         const batch = (await this.loadOutbox()).filter((i) => i.host === host).slice(0, FLUSH_BATCH);
         if (batch.length === 0 || !this.link?.connected(host)) break;
@@ -1356,8 +1514,13 @@ class GroupProjectHostService {
           answered.push(item);
           if (result.status === 'refused') await this.recordRefusal(item, result.reason);
           const unattributed = replay[batch.indexOf(item)].unattributed;
-          if (result.status === 'applied' && unattributed.length > 0) {
-            await this.recordRefusal(item, `A saved change for ${unattributed.join(', ')} couldn't be applied: it wasn't clear which computer's agent it was for.`);
+          if (result.status === 'applied') {
+            // Before it leaves the outbox: a crash between the two replays the write, which settles nothing twice.
+            await this.settle(item, { status: 'applied' });
+            // The host applied what it was sent; the part that couldn't be attributed is kept in the refusal list only.
+            if (unattributed.length > 0) {
+              await this.recordRefusal(item, `A saved change for ${unattributed.join(', ')} couldn't be applied: it wasn't clear which computer's agent it was for.`, { settle: false });
+            }
           }
         }
         if (answered.length === 0) break;
@@ -1524,8 +1687,8 @@ class GroupProjectHostService {
       if (!project || !this.isReplica(project)) return;
       const last = await this.view(project);
       const waiting = (await this.loadOutbox()).filter((i) => i.groupProjectId === id);
-      await this.removeFromOutbox(new Set(waiting.map((i) => i.id)));
       for (const item of waiting) await this.recordRefusal(item, reason);
+      await this.removeFromOutbox(new Set(waiting.map((i) => i.id)));
       await groupProjectRegistry.delete(id);
       await groupProjectRegistry.flush();
       this.seqs.delete(id);
@@ -1547,8 +1710,8 @@ class GroupProjectHostService {
         const state = await this.replicaState(project.id).catch((): ReplicaState => ({ version: 1 }));
         await writeJsonFile(replicaStatePath(project.id), { ...state, hostRemoved: true } satisfies ReplicaState);
         const waiting = (await this.loadOutbox()).filter((i) => i.groupProjectId === project.id);
-        await this.removeFromOutbox(new Set(waiting.map((i) => i.id)));
         for (const item of waiting) await this.recordRefusal(item, `${this.hostNameOf(project)} left your network.`);
+        await this.removeFromOutbox(new Set(waiting.map((i) => i.id)));
       } else if (!this.isReplica(project) && project.scope?.reach === 'network') {
         await this.updateMembership(project.id, (draft) => {
           draft.explicit = draft.explicit.filter((e) => parseAgentAddress(e.address).machine !== fp);
@@ -1793,6 +1956,8 @@ class GroupProjectHostService {
     this.senderChains.clear();
     this.replicaTombstones = null;
     this.appliedWrites = null;
+    this.settled = null;
+    this.operationListeners.clear();
   }
 }
 

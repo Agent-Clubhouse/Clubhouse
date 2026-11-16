@@ -37,6 +37,8 @@ export const replicaTombstonesPath = (): string => path.join(groupProjectsDir(),
 export const networkAppliedPath = (): string => path.join(groupProjectsDir(), 'network-applied.json');
 /** Writes a host refused, for their authors. */
 export const networkRefusalsPath = (): string => path.join(groupProjectsDir(), 'network-refusals.json');
+/** As the asking computer: recently applied or refused changes, kept so their status can be shown (#3550). */
+export const networkOperationsPath = (): string => path.join(groupProjectsDir(), 'network-operations.json');
 /** As host: the answer to each create another computer asked for, by request id (#3547). */
 export const networkCreateAnswersPath = (): string => path.join(groupProjectsDir(), 'network-create-answers.json');
 /** As the asking computer: creates sent to other hosts, saved before sending so a retry reuses the id (#3547). */

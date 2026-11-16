@@ -4,6 +4,7 @@ import { Button } from '../../components/Button';
 import { ipcErrorMessage } from '../../utils/ipc-error';
 import { SettingsBlock, SettingsSection, settingsError, settingsHelp } from '../settings/SettingsLayout';
 import { CoverageSummary } from './CoverageSummary';
+import { GroupOperationStatus } from './GroupOperationStatus';
 import { useOneGroupCoverage } from './useGroupCoverage';
 import { isCopyRoster, rosterGaps, rosterMemberDetail, rosterUnavailableText, rosterVouched, time, useGroupRoster, useIsCopy } from './useGroupRoster';
 import type { GroupProjectRosterView } from '../../../shared/group-project-roster';
@@ -219,6 +220,7 @@ export function GroupProjectMembersSection({ groupProjectId }: { groupProjectId:
                 </ul>
               </div>
             )}
+            <GroupOperationStatus groupProjectId={groupProjectId} sections={['members']} label="Membership changes" />
             {actionError && <p role="alert" className={settingsError}>{actionError}</p>}
           </div>
         )}

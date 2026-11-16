@@ -1,10 +1,11 @@
 import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react';
-import type { GroupProject } from '../../../shared/group-project-types';
+import type { GroupProject, GroupProjectOperation } from '../../../shared/group-project-types';
 import { Button } from '../../components/Button';
 import { useGroupProjectStore } from '../../stores/groupProjectStore';
 import { ipcErrorMessage } from '../../utils/ipc-error';
 import { DeleteGroupProjectDialog } from '../settings/DeleteGroupProjectDialog';
 import { GroupProjectScopeEditor, hostLine, scopeDescription } from '../settings/GroupProjectScopeFields';
+import { GroupOperationStatus, useSectionOperations } from './GroupOperationStatus';
 import { SettingsBlock, SettingsSection, settingsError, settingsHelp, settingsInput, settingsLabel, settingsTextArea } from '../settings/SettingsLayout';
 
 function editableFields(project: GroupProject) {
@@ -24,6 +25,7 @@ export function hostOnlyReason(project: GroupProject, what: string): string | nu
 export function GroupProjectDetailsSection({ project }: { project: GroupProject }) {
   const update = useGroupProjectStore((s) => s.update);
   const remove = useGroupProjectStore((s) => s.remove);
+  const loadOperations = useGroupProjectStore((s) => s.loadOperations);
   const [deleting, setDeleting] = useState(false);
   const loadImpact = useCallback(() => window.clubhouse.groupProject.previewDelete(project.id), [project.id]);
   const confirmDelete = useCallback((token: string) => remove(project.id, token), [remove, project.id]);
@@ -38,13 +40,23 @@ export function GroupProjectDetailsSection({ project }: { project: GroupProject 
   const hostOnlyScope = hostOnlyReason(project, 'change the scope');
   const hostOnlyDelete = hostOnlyReason(project, 'delete this group project');
 
+  // A copy's change waits for its host: until the host's own values change, the form keeps what was
+  // submitted. It goes back to the host's values once nothing waits and the newest change is not applied (refused, or unknown).
+  const heldAt = useRef<string | null>(null);
+  const projectKey = JSON.stringify(editableFields(project));
+  const detailOps = useSectionOperations(project.id, ['details']);
+  const latest = detailOps.reduce<GroupProjectOperation | null>((a, b) => (!a || b.since >= a.since ? b : a), null);
+  // Held while a change waits, or while the newest one is applied and the host's values have not arrived yet.
+  const holding = detailOps.some((o) => o.outcome.status === 'queued') || latest?.outcome.status === 'applied';
+
   useEffect(() => {
-    if (!dirty && !saving) {
+    if (heldAt.current !== null && (heldAt.current !== projectKey || !holding)) heldAt.current = null;
+    if (!dirty && !saving && heldAt.current === null) {
       const fields = editableFields(project);
       setBaseline(fields);
       setDraft(fields);
     }
-  }, [project, dirty, saving]);
+  }, [project, projectKey, dirty, saving, holding]);
 
   const submit = async (event: FormEvent) => {
     event.preventDefault();
@@ -64,6 +76,12 @@ export function GroupProjectDetailsSection({ project }: { project: GroupProject 
     setSaved(false);
     try {
       await update(project.id, fields);
+      if (project.network?.role === 'replica') {
+        // Read its status before the form settles, so a change that only waits is not shown as saved.
+        await loadOperations(project.id);
+        const waiting = useGroupProjectStore.getState().operations[project.id]?.operations.some((o) => o.section === 'details' && o.outcome.status === 'queued');
+        if (waiting) heldAt.current = projectKey;
+      }
       setBaseline(next);
       setDraft(next);
       setSaved(true);
@@ -113,9 +131,8 @@ export function GroupProjectDetailsSection({ project }: { project: GroupProject 
               {saving ? 'Saving...' : 'Save changes'}
             </Button>
             {error && <p role="alert" className={settingsError}>{error}</p>}
-            {saved && <p role="status" className={settingsHelp}>
-              {project.network?.role === 'replica' ? `Submitted. Some changes may be waiting for ${project.hostName ?? 'the host'}.` : 'Changes saved to the local registry.'}
-            </p>}
+            {saved && project.network?.role !== 'replica' && <p role="status" className={settingsHelp}>Changes saved to the local registry.</p>}
+            {project.network?.role === 'replica' && <GroupOperationStatus groupProjectId={project.id} sections={['details']} label="Details changes" />}
           </form>
         </SettingsBlock>
       </SettingsSection>

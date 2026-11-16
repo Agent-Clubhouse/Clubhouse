@@ -1,6 +1,7 @@
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { AutoJoinPreview, GroupProjectMembershipView } from '../../../shared/group-project-types';
+import { useGroupProjectStore } from '../../stores/groupProjectStore';
 import { GroupProjectMembersSection } from './GroupProjectMembersSection';
 
 const view = (extra: Partial<GroupProjectMembershipView> = {}): GroupProjectMembershipView => ({
@@ -72,6 +73,38 @@ describe('GroupProjectMembersSection', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Exclude lead' }));
     expect(await screen.findByRole('alert')).toHaveTextContent('Not changed. Disk unavailable');
     expect(screen.getByRole('list', { name: 'Members' })).toHaveTextContent('lead');
+  });
+
+  describe('outcomes of changes made on a copy (#3550)', () => {
+    const since = '2026-11-16T10:00:00.000Z';
+    const queued = { id: 'w1', groupProjectId: 'gp1', op: 'membership', section: 'members' as const, author: { label: 'membership' }, since, outcome: { status: 'queued' as const, waitingFor: 'Studio Mac', since } };
+
+    beforeEach(() => { useGroupProjectStore.setState({ operations: {} }); });
+
+    it('shows a membership change that only waits as waiting for the host, with the list unchanged', async () => {
+      vi.spyOn(window.clubhouse.groupProject, 'excludeMember').mockResolvedValue(view());
+      vi.spyOn(window.clubhouse.groupProject, 'getOperations').mockResolvedValue({ operations: [queued], omittedQueued: 0 });
+      render(<GroupProjectMembersSection groupProjectId="gp1" />);
+      expect(await screen.findByText(/Membership change: Waiting for Studio Mac since/)).toBeInTheDocument();
+      expect(screen.getByRole('list', { name: 'Members' })).toHaveTextContent('lead');
+      expect(screen.queryByText(/saved/i)).toBeNull();
+    });
+
+    it('shows Applied, and a later refusal with its reason', async () => {
+      const get = vi.spyOn(window.clubhouse.groupProject, 'getOperations')
+        .mockResolvedValue({ operations: [{ ...queued, outcome: { status: 'applied' }, settledAt: since }], omittedQueued: 0 });
+      render(<GroupProjectMembersSection groupProjectId="gp1" />);
+      expect(await screen.findByText('Membership change: Applied')).toBeInTheDocument();
+      get.mockResolvedValue({ operations: [{ ...queued, outcome: { status: 'refused', reason: 'Studio Mac left your network.' }, settledAt: since }], omittedQueued: 0 });
+      await act(async () => { await useGroupProjectStore.getState().loadOperations('gp1'); });
+      expect(screen.getByText('Membership change: Refused: Studio Mac left your network.')).toBeInTheDocument();
+    });
+
+    it('shows nothing for a group whose changes are not forwarded', async () => {
+      render(<GroupProjectMembersSection groupProjectId="gp1" />);
+      await screen.findByRole('list', { name: 'Members' });
+      expect(screen.queryByTestId('group-operation-status')).toBeNull();
+    });
   });
 });
 

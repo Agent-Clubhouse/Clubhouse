@@ -235,6 +235,28 @@ describe('GroupProjectBoard without a canvas', () => {
       expect(within(panel).getByRole('button', { name: 'Save' })).toBeDisabled();
     });
 
+    it('a cleanup that only waits for the host leaves the board as it is and says it is waiting; a refusal says why', async () => {
+      useGroupProjectStore.setState({ projects: [{ ...copy, network: { ...copy.network!, state: 'online' } }], operations: {} });
+      const since = '2026-11-16T10:00:00.000Z';
+      const queued = { id: 'w1', groupProjectId: GP, op: 'deleteTopic', section: 'cleanup' as const, author: { label: 'user' }, since, outcome: { status: 'queued' as const, waitingFor: 'Studio Mac', since } };
+      const delTopic = vi.spyOn(api(), 'deleteTopic').mockResolvedValue(true);
+      const get = vi.spyOn(api(), 'getOperations').mockResolvedValue({ operations: [], omittedQueued: 0 });
+      await renderBoard();
+      dialogs.confirm.mockResolvedValueOnce(true);
+      get.mockResolvedValue({ operations: [queued], omittedQueued: 0 });
+      fireEvent.click(screen.getAllByRole('button', { name: 'Delete topic' })[0]);
+      await waitFor(() => expect(delTopic).toHaveBeenCalledWith(GP, 'general'));
+      await act(async () => { await useGroupProjectStore.getState().loadOperations(GP); });
+      const note = screen.getByTestId('group-project-copy-note');
+      expect(note).toHaveTextContent(/Topic deletion: Waiting for Studio Mac since/);
+      // The host has not deleted it: the topic is still on the board.
+      expect(screen.getByText('general')).toBeInTheDocument();
+
+      get.mockResolvedValue({ operations: [{ ...queued, outcome: { status: 'refused', reason: 'Not allowed.' }, settledAt: since }], omittedQueued: 0 });
+      await act(async () => { await useGroupProjectStore.getState().loadOperations(GP); });
+      expect(note).toHaveTextContent('Topic deletion: Refused: Not allowed.');
+    });
+
     it('explains which controls are the host\'s on an online copy', async () => {
       useGroupProjectStore.setState({ projects: [{ ...copy, network: { ...copy.network!, state: 'online' } }] });
       await renderBoard();

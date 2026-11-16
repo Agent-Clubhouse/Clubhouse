@@ -206,6 +206,10 @@ export function registerGroupProjectHandlers(): void {
     return true;
   }));
 
+  // #3550: what became of changes made on a copy: waiting for the host, applied, or refused.
+  ipcMain.handle(IPC.GROUP_PROJECT.GET_OPERATIONS, withValidatedArgs([stringArg()], (_event, id) => groupProjectHost.operations(id as string)));
+  groupProjectHost.onOperationsChanged((id) => broadcastToAllWindows(IPC.GROUP_PROJECT.OPERATIONS_CHANGED, id));
+
   ipcMain.handle(IPC.GROUP_PROJECT.PREVIEW_SCOPE, withValidatedArgs(
     [stringArg(), objectArg<GroupProjectScope>()],
     async (_event, id, scope) => groupProjectHost.previewScope(id as string, scope),

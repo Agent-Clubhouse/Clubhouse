@@ -634,6 +634,22 @@ describe('digestSinceArg', () => {
 });
 
 
+describe('change status IPC (#3550)', () => {
+  it('reads one group project\'s operations from the host, and rejects anything but an id', async () => {
+    const operations = { operations: [{ id: 'w1', groupProjectId: 'gp-1', op: 'update', section: 'details', author: { label: 'user' }, since: 't', outcome: { status: 'applied' } }], omittedQueued: 0 };
+    vi.mocked(groupProjectHost.operations).mockResolvedValueOnce(operations as never);
+    expect(await getHandler(IPC.GROUP_PROJECT.GET_OPERATIONS)(fakeEvent, 'gp-1')).toEqual(operations);
+    expect(groupProjectHost.operations).toHaveBeenLastCalledWith('gp-1');
+    expect(() => getHandler(IPC.GROUP_PROJECT.GET_OPERATIONS)(fakeEvent, 42)).toThrow('must be a string');
+  });
+
+  it('tells every window which group project\'s changes moved', () => {
+    const [listener] = vi.mocked(groupProjectHost.onOperationsChanged).mock.calls.at(-1)!;
+    listener('gp-1');
+    expect(broadcastToAllWindows).toHaveBeenCalledWith(IPC.GROUP_PROJECT.OPERATIONS_CHANGED, 'gp-1');
+  });
+});
+
 describe('membership policy IPC (#3546)', () => {
   const view = { groupProjectId: 'gp-1', managed: true, autoJoin: false, members: [], excluded: [] };
 

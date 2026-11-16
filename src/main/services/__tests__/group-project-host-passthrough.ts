@@ -79,6 +79,8 @@ export async function passthroughHostModule() {
     applyRemoteWrites: vi.fn(async () => ({ v: 1, results: [] })),
     machineRemoved: vi.fn(async () => undefined),
     dismissRefusals: vi.fn(async () => undefined),
+    operations: vi.fn(async () => ({ operations: [], omittedQueued: 0 })),
+    onOperationsChanged: vi.fn((): (() => void) => () => undefined),
     removedGroupProjectIds: vi.fn(async () => []),
     pendingViewPurges: vi.fn(async () => []),
     markViewsPurged: vi.fn(async () => undefined),
