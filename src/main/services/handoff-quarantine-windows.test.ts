@@ -73,6 +73,9 @@ it.skipIf(process.platform !== 'win32')('inspects a real root: recoverable only 
   const parent = fs.mkdtempSync(path.join(os.tmpdir(), 'ch-q-inspect-'));
   const directory = path.join(parent, 'q'); fs.mkdirSync(directory);
   try {
+    // An elevated process creates folders owned by Administrators, not its SID;
+    // initializing sets the SID owner, which is what recovery requires.
+    await verifyWindowsQuarantineRoot(directory, true);
     expect(await inspectWindowsQuarantineRoot(directory)).toBe(true);
     fs.writeFileSync(path.join(directory, 'file'), 'x');
     expect(await inspectWindowsQuarantineRoot(directory)).toBe(false);
