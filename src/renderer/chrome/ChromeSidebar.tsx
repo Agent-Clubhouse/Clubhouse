@@ -32,7 +32,7 @@ import { useHelperStartRequestStore, startRequestsByOrchestrator, describeHelper
 import { describeGrantRequests, grantRequestsByAgent, useGrantRequestStore } from '../stores/grantRequestStore';
 import { useAgentDetailsStore } from '../features/agents/details/detailsStore';
 import { ShowMenu, LOCAL_HOST } from './sidebar/ShowMenu';
-import { buildNetworkProjects } from './sidebar/networkTree';
+import { buildNetworkProjects, linkGroupOf } from './sidebar/networkTree';
 import { useNetworkSidebarStore } from './sidebar/networkSidebarStore';
 import { useVisibleProjectLinks } from './sidebar/projectLinks';
 import { LinkSuggestionLine } from './sidebar/LinkSuggestionLine';
@@ -462,6 +462,8 @@ export function ChromeSidebar() {
     return map;
   }, [treeAgents, network]);
   const isRemoteProject = useCallback((projectId: string) => hostOf(projectId) !== null, []);
+  // Linked copies share Pin and Mark inactive across computers.
+  const isLinkedProject = useCallback((projectId: string) => !!linkGroupOf(links, projectId), [links]);
   // A short label for an agent on another machine, and whether that machine is offline; none for this machine's.
   // One object per machine, so rows (and the memoized groups) see the same value until that machine changes.
   const machineInfo = useMemo(
@@ -930,6 +932,7 @@ export function ChromeSidebar() {
           onCloseProject={closeProject}
           onReorderAgents={reorderProjectAgents}
           isRemoteProject={isRemoteProject}
+          isLinkedProject={isLinkedProject}
           agentMachine={agentMachine}
           projectMenuItems={projectMenuItems}
           onSelectCompleted={selectCompleted}

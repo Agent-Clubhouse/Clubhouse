@@ -101,6 +101,30 @@
         },
         "status": 409
       }
+    },
+    {
+      "name": "linked: project_pinned (pinned on another copy)",
+      "request": {
+        "commandId": "cmd_linked_2",
+        "epoch": "00000000-0000-4000-8000-000000000001",
+        "inactive": true,
+        "projectId": "proj_docs",
+        "type": "project.setInactive",
+        "version": 1
+      },
+      "response": {
+        "body": {
+          "commandId": "cmd_linked_2",
+          "epoch": "00000000-0000-4000-8000-000000000001",
+          "error": {
+            "code": "project_pinned",
+            "message": "project_pinned"
+          },
+          "status": "rejected",
+          "version": 1
+        },
+        "status": 409
+      }
     }
   ],
   "type": "project.setInactive"

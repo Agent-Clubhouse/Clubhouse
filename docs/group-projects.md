@@ -463,8 +463,8 @@ computer's members (`localAgentId`). A first copy's history isn't announced.
 binds only this machine's agents on a copy, and never auto-joins, adopts or
 tidies there.
 
-**Project scope over the network.** Project links (#3066) are kept by the
-renderer, so the main process can't read them. A copy of a project-scoped
+**Project scope over the network.** Project links (#3066) were kept by the
+renderer when this was built (they are now shared by main, #3479). A copy of a project-scoped
 network group project carries its host project's repository key
 (`scopeProjectKey`), the key link suggestions use.
 

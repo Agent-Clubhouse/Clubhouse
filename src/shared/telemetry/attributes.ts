@@ -984,6 +984,8 @@ export const ATTR = {
     'POST /api/v1/network/agent-delivery-capabilities',
     'POST /api/v1/network/project-links-capabilities',
     'POST /api/v1/network/project-links',
+    'POST /api/v1/network/linked-project-state-capabilities',
+    'POST /api/v1/network/linked-project-state',
     'POST /api/v1/network/handoff-capacity',
     'POST /api/v1/network/handoffs',
     'POST /api/v1/network/handoffs/transfer',

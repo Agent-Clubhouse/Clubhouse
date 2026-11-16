@@ -435,6 +435,20 @@ describe('ProjectTree sort modes and inactive projects (#2116)', () => {
     expect(shownProjects()).toEqual(['b', 'a']);
   });
 
+  it('offers Mark inactive on another machine\'s row only when it is linked, whose copies share the mark', () => {
+    const remoteId = 'remote||sat||b';
+    setup({ projects: [project('a'), project(remoteId)], isRemoteProject: (id) => id === remoteId, isLinkedProject: (id) => id === remoteId });
+    fireEvent.contextMenu(key(`project:${remoteId}`));
+    expect(screen.queryByText('Mark inactive')).not.toBeNull();
+  });
+
+  it('keeps Mark inactive off another machine\'s row that is not linked', () => {
+    const remoteId = 'remote||sat||b';
+    setup({ projects: [project('a'), project(remoteId)], isRemoteProject: (id) => id === remoteId, isLinkedProject: () => false });
+    fireEvent.contextMenu(key(`project:${remoteId}`));
+    expect(screen.queryByText('Mark inactive')).toBeNull();
+  });
+
   it('Mark inactive moves a project to the idle row at once; Mark active brings it back', () => {
     useChromeStore.setState({ idleOpen: true });
     setup();

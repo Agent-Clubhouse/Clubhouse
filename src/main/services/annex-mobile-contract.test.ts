@@ -219,13 +219,25 @@ vi.mock('./agent-runtime/chat-transcript', async (importOriginal) => ({
 vi.mock('./project-state-store', async () => {
   const shared = await import('../../shared/project-state');
   let state = shared.DEFAULT_PROJECT_STATE;
+  let writer: ((op: import('../../shared/project-state').ProjectStateOp, before: import('../../shared/project-state').ProjectState) => void) | null = null;
   const listeners = new Set<(change: unknown) => void>();
   return {
     isProjectStateReady: () => W.projectStateReady,
     getProjectState: () => state,
     onProjectStateChange: (l: (change: unknown) => void) => { listeners.add(l); return () => listeners.delete(l); },
     applyProjectStateChange: (op: import('../../shared/project-state').ProjectStateOp) => {
+      // As the real store: an accepted Pin or Mark inactive goes to linked copies too.
+      const refused = op.type === 'setInactive' && op.inactive && state.pinnedProjectIds.includes(op.projectId);
+      if (writer && (op.type === 'setPinned' || op.type === 'setInactive') && !refused) writer(op, state);
       const next = shared.applyProjectStateOp(state, op);
+      if (next === state) return false;
+      state = next;
+      for (const l of listeners) l({ state, acked: {} });
+      return true;
+    },
+    setLinkedProjectStateWriter: (w: typeof writer) => { writer = w; },
+    reprojectProjectState: (project: (s: typeof state) => typeof state) => {
+      const next = project(state);
       if (next === state) return false;
       state = next;
       for (const l of listeners) l({ state, acked: {} });
@@ -280,6 +292,12 @@ vi.mock('./project-links-store', async (importOriginal) => {
     self: () => NET.self.fingerprint, legacyMirror: () => undefined, now: () => 1_800_000_000_000,
   });
   return { ...actual, projectLinksStore: () => LINK_REPLICA.store!, hydrateProjectLinks: () => LINK_REPLICA.store!.migrate() };
+});
+const LINKED_REPLICA = vi.hoisted(() => ({ store: undefined as import('./linked-project-state-store').LinkedProjectStateStore | undefined }));
+vi.mock('./linked-project-state-store', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('./linked-project-state-store')>();
+  LINKED_REPLICA.store = new actual.LinkedProjectStateStore({ read: () => ({ version: 1, records: [] }), save: async () => {} });
+  return { ...actual, linkedProjectStateStore: () => LINKED_REPLICA.store! };
 });
 vi.mock('./annex-network-membership', () => ({
   unknownPeerReason: () => 'unknown',
@@ -645,6 +663,7 @@ vi.mock('./helper-dispose-decisions', async (importOriginal) => {
 import forge from 'node-forge';
 import * as annexServer from './annex-server';
 import * as projectStateStore from './project-state-store';
+import { startLinkedProjectStateService } from './linked-project-state-service';
 import * as finishedQuickStore from './finished-quick-agents-store';
 import * as eventReplay from './annex-event-replay';
 import { recordStartRequest, _resetStartRequestsForTesting } from './helper-start-requests';
@@ -3324,6 +3343,56 @@ describe('Annex mobile contract fixtures', { timeout: TEST_TIMEOUT_MS }, () => {
     });
   });
 
+
+  it('Pin and Mark inactive of a linked project apply to every copy (linkedProjectState)', async () => {
+    const links = LINK_REPLICA.store!, linked = LINKED_REPLICA.store!;
+    const other = NET.network.members[1].fingerprint, self = NET.self.fingerprint;
+    const copy = { machine: other, projectId: 'proj_docs_copy' };
+    const service = startLinkedProjectStateService();
+    try {
+      await links.apply({ type: 'link', a: 'proj_docs', b: `remote||${other}||proj_docs_copy` });
+      await service.settled();
+      const ws = await connect();
+      const snapshot = frames(ws).find((f) => f.type === 'snapshot');
+      expect(snapshot.payload.projectState.proj_docs.linked).toBe(true);
+      expect(snapshot.payload.projectState.proj_app).not.toHaveProperty('linked');
+      // The phone's Pin on one copy is written for every copy, with one clock.
+      ws.send.mockClear();
+      const pinned = await command('linked: applies to every copy', { type: 'project.setPinned', projectId: 'proj_docs', pinned: true }, { commandId: 'cmd_linked_1' });
+      expect(pinned.body.result).toMatchObject({ projectId: 'proj_docs', pinned: true, linked: true });
+      await service.settled();
+      const written = linked.records().filter((r) => r.field === 'pinned' && r.value);
+      expect(written.map((r) => r.project)).toEqual(expect.arrayContaining([{ machine: self, projectId: 'proj_docs' }, copy]));
+      expect(new Set(written.map((r) => r.at)).size).toBe(1);
+      await eventually(() => expect(frames(ws).some((f) => f.type === 'snapshot')).toBe(true));
+      const afterPin = frames(ws).filter((f) => f.type === 'snapshot').at(-1);
+      // An unpin made on the other computer arrives and changes the group here; phones get a fresh snapshot.
+      ws.send.mockClear();
+      await linked.merge([{ project: copy, field: 'pinned', value: false, at: NOW + 1000, by: other }], other);
+      await service.settled();
+      await eventually(() => expect(frames(ws).some((f) => f.type === 'snapshot' && f.payload.projectState.proj_docs.pinned === false)).toBe(true));
+      const fromPeer = frames(ws).filter((f) => f.type === 'snapshot').at(-1);
+      // As snapshot.json: the host platform recorded as a Mac's, so the file is the same on every runner.
+      fromPeer.payload.ptyHost = annexPtyHost('darwin', undefined);
+      // Pinned again from the other computer: Mark inactive here is refused for the group.
+      await linked.merge([{ project: copy, field: 'pinned', value: true, at: NOW + 2000, by: other }], other);
+      await service.settled();
+      const refused = await command('linked: project_pinned (pinned on another copy)', { type: 'project.setInactive', projectId: 'proj_docs', inactive: true }, { commandId: 'cmd_linked_2' });
+      expect(refused.status).toBe(409);
+      fixtures.set('linked-project-state.json', {
+        direction: 'desktop-to-phone',
+        capability: { linkedProjectState: { version: 1 } },
+        note: 'proj_docs is linked with a copy on another computer (see project-links.json). Its pinned and inactive are the group\'s; a phone command on any copy applies to every copy. Changes arriving from another computer reach the phone as a fresh top-level snapshot frame (changedOnAnotherComputer.frame), the same message as snapshot.json, not a sequenced event.',
+        snapshot: { projectState: snapshot.payload.projectState },
+        pinned: { request: pinned, snapshot: { projectState: afterPin.payload.projectState } },
+        // The whole frame a phone receives when the group changes on another computer: the ordinary snapshot.
+        changedOnAnotherComputer: { frame: fromPeer },
+      });
+    } finally {
+      service.stop();
+      await links.apply({ type: 'unlink', a: 'proj_docs' });
+    }
+  });
 
   it('the Dispatcher\'s chat reaches a phone as its group chat, and other agents\' whole (#3043)', async () => {
     resetWorld();

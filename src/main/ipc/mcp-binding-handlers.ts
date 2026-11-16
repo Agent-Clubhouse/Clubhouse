@@ -1,5 +1,7 @@
 import { networkEnabled } from '../services/annex-settings';
 import { startProjectLinksNetwork } from '../services/project-links-network';
+import { startLinkedProjectStateNetwork } from '../services/linked-project-state-network';
+import type { ReplicaNetworkOptions } from '../services/replica-network';
 import { startFederatedRequests } from '../services/dispatcher-federation-runtime';
 import { federationReceiver } from '../services/dispatcher-federation-receiver';
 /**
@@ -480,6 +482,7 @@ let stopWatchingDispatcherWires: (() => void) | null = null;
 let stopWatchingAgentCards: (() => void) | null = null;
 let stopWatchingDispatcherConnections: (() => void) | null = null;
 let stopProjectLinksNetwork: (() => void) | undefined;
+let stopLinkedProjectStateNetwork: (() => void) | undefined;
 let stopFederatedRequests: (() => void) | undefined;
 let stopWatchingFederation: (() => void) | null = null;
 let stopDispatcherLead: (() => void) | null = null;
@@ -617,7 +620,7 @@ export function restorePersistedBindings(): Promise<void> {
       onDeliveryFailure: async (notice) => (await newsDeliveryFailed(notice)) || reportAnnexDeliveryFailure(notice),
     });
     stopFederatedRequests = startFederatedRequests();
-    stopProjectLinksNetwork = startProjectLinksNetwork({
+    const replicaOptions: ReplicaNetworkOptions = {
       transport: {
         connected: (machine) => annexClient.isMachineConnected(machine),
         post: (machine, urlPath, body) => annexClient.postToMachine(machine, urlPath, body, { maxResponseBytes: 1024 * 1024 }),
@@ -627,7 +630,10 @@ export function restorePersistedBindings(): Promise<void> {
       members: () => networkEnabled() ? annexPeers.listPeers().map((p) => p.fingerprint.toLowerCase()).filter((machine) => isNetworkComputer(machine)) : [],
       pairing: (machine) => { const peer = annexPeers.getPeer(machine); return peer && JSON.stringify([peer.tlsCertificateFingerprint, peer.pairingId]); },
       onMembershipChanged: (listener) => onNetworkMembershipChanged(listener),
-    });
+    };
+    stopProjectLinksNetwork = startProjectLinksNetwork(replicaOptions);
+    // Pin and Mark inactive of linked copies, on the same members and transport.
+    stopLinkedProjectStateNetwork = startLinkedProjectStateNetwork(replicaOptions);
     // Network group projects (#3363): copies of other computers' group projects, and writes to their hosts.
     startGroupProjectNetwork({
       transport: {
@@ -686,6 +692,8 @@ export function _resetHandlersForTesting(): void {
   stopWatchingFederation?.();
   stopProjectLinksNetwork?.();
   stopProjectLinksNetwork = undefined;
+  stopLinkedProjectStateNetwork?.();
+  stopLinkedProjectStateNetwork = undefined;
   stopFederatedRequests?.();
   stopFederatedRequests = undefined;
   stopWatchingFederation = null;

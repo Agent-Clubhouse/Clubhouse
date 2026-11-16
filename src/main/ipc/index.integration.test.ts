@@ -1,4 +1,5 @@
 vi.mock('../services/project-links-network', () => ({ startProjectLinksNetwork: vi.fn(() => () => {}) }));
+vi.mock('../services/linked-project-state-network', () => ({ startLinkedProjectStateNetwork: vi.fn(() => () => {}) }));
 /**
  * Integration tests for registerAllHandlers().
  *

@@ -96,6 +96,8 @@ vi.mock('../services/project-state-store', () => ({
   onProjectStateChange: vi.fn(),
 }));
 
+vi.mock('../services/linked-project-state-service', () => ({ startLinkedProjectStateService: vi.fn() }));
+
 vi.mock('../util/ipc-broadcast', () => ({ broadcastToAllWindows: vi.fn() }));
 
 vi.mock('../services/path-sandbox', () => ({

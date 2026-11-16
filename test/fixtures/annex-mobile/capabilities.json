@@ -286,6 +286,9 @@
         "scope": "peer-and-epoch",
         "ttlMs": 3600000
       },
+      "linkedProjectState": {
+        "version": 1
+      },
       "managedCreate": {
         "version": 1
       },
