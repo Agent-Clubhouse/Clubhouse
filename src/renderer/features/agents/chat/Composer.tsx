@@ -673,8 +673,8 @@ export function Composer(props: ComposerProps) {
   const submit = (action: SendAction) => {
     const trimmed = text.trim();
     if ((!trimmed && !attachments.length) || disabled) return;
-    if (attachments.length) props.onSend(text, action, attachments.map((a) => a.id));
-    else props.onSend(text, action);
+    if (attachments.length) props.onSend(trimmed, action, attachments.map((a) => a.id));
+    else props.onSend(trimmed, action);
     setText('');
     // A failed send restores this same text from outside; the caret read from it no longer counts.
     setCaretAt(null);

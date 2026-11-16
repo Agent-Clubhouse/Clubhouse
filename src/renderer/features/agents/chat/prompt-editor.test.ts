@@ -89,7 +89,7 @@ describe('structured prompt editing', () => {
   it('indents and outdents every selected item, with semantic nesting', () => {
     editor('1. parent\n2. second\n3. third\n4. last', 13, 27);
     expect(indentItems(view, false)).toBe(true);
-    expect(source()).toBe('1. parent\n  1. second\n  2. third\n2. last');
+    expect(source()).toBe('1. parent\n   1. second\n   2. third\n2. last');
     expect(indentItems(view, true)).toBe(true);
     expect(source()).toBe('1. parent\n2. second\n3. third\n4. last');
   });
@@ -128,27 +128,20 @@ describe('structured prompt editing', () => {
     expect(source()).toBe('- first\n- second');
   });
 
-  it('pastes literal Markdown and HTML as plain text, with a stable draft reload', () => {
+  it('pastes literal Markdown and HTML byte for byte', () => {
     editor('');
     const text = '- item\n**bold**\n<tag>hi</tag>\n# heading';
     insertPlainText(view, text);
     expect(view.state.doc.textBetween(0, view.state.doc.content.size, '\n', '\n')).toBe(text);
     expect(view.dom.querySelector('ul, strong, tag, h1')).toBeNull();
-    const markdown = source();
-    replaceDraft(view, markdown);
-    expect(view.dom.querySelector('ul, strong, tag, h1')).toBeNull();
-    expect(source()).toBe(markdown);
-    expect(view.state.doc.textBetween(0, view.state.doc.content.size, '\n', '\n')).toBe(text);
+    expect(source()).toBe(text);
   });
 
-  it.each(['1. pasted\n2. next', '**a*****b***', '- first\n- second'])('keeps pasted %j literal after a draft reload', (text) => {
+  it.each(['1. pasted\n2. next', '**a*****b***', '- first\n- second'])('sends pasted %j exactly, prioritizing text over reload structure', (text) => {
     editor('');
     insertPlainText(view, text);
-    const markdown = source();
-    replaceDraft(view, markdown);
+    expect(source()).toBe(text);
     expect(view.dom.querySelector('ul, ol, strong, em')).toBeNull();
-    expect(view.state.doc.textBetween(0, view.state.doc.content.size, '\n', '\n')).toBe(text);
-    expect(source()).toBe(markdown);
   });
 
   it('retains overlapping marks and adjacent text across draft reloads', () => {
@@ -165,6 +158,28 @@ describe('structured prompt editing', () => {
     replaceDraft(view, markdown);
     expect(signature()).toEqual(before);
     expect(source()).toBe(markdown);
+  });
+
+  it('property: random literal strings are sent byte for byte, including after an edit drops source metadata', () => {
+    editor('');
+    let seed = 3541;
+    const alphabet = 'abc012_*`- .:/\\\n\r\t';
+    for (let sample = 0; sample < 400; sample++) {
+      let text = '';
+      for (let i = 0; i < 80; i++) {
+        seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0;
+        text += alphabet[seed % alphabet.length];
+      }
+      replaceDraft(view, ''); insertPlainText(view, text);
+      expect(source(), `literal sample ${sample}`).toBe(text);
+      view.dispatch(view.state.tr.setNodeMarkup(0, undefined, { source: null, literal: true }));
+      expect(source(), `edited literal sample ${sample}`).toBe(text);
+    }
+  });
+
+  it('lets Tab move focus when the first item cannot sink', () => {
+    editor('- first');
+    expect(indentItems(view, false)).toBe(false);
   });
 
   it('external restored drafts reset history and retain unsupported text', () => {

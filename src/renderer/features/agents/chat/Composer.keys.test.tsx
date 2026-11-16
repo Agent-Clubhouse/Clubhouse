@@ -186,7 +186,7 @@ describe('Composer Markdown source aids (#3540)', () => {
     press(`${mod}+I`);
     expect(promptSource(box())).toBe('  *word*\n');
     press('Enter');
-    expect(onSend).toHaveBeenCalledWith('  *word*\n', 'send');
+    expect(onSend).toHaveBeenCalledWith('*word*', 'send');
   });
 
   it('Tab only indents list items and the slash menu still owns Tab', () => {
@@ -248,9 +248,11 @@ describe('Composer Markdown source aids (#3540)', () => {
 
 describe('structured composer accessibility and paste', () => {
   it('exposes a multiline textbox, semantic lists and discoverable shortcuts', () => {
-    render(<Harness initial={'4. first\n5. second\n  - nested'} />);
+    render(<Harness initial={'4. first\n5. second\n   - nested'} />);
     expect(box()).toHaveAttribute('role', 'textbox');
     expect(box()).toHaveAttribute('aria-multiline', 'true');
+    expect(box()).toHaveAttribute('aria-placeholder');
+    expect(box()).not.toHaveAttribute('title');
     expect(box()).toHaveAttribute('contenteditable', 'true');
     expect(box()).toHaveAttribute('aria-description', expect.stringContaining('+B bold'));
     expect(box().querySelector('ol')).toHaveAttribute('start', '4');
@@ -266,7 +268,7 @@ describe('structured composer accessibility and paste', () => {
     } });
     expect(box().querySelector('ul, strong, tag, h1')).toBeNull();
     expect(box()).toHaveTextContent('- pasted**literal**<tag>literal</tag>');
-    expect(promptSource(box())).toContain('\\- pasted');
+    expect(promptSource(box())).toBe(text);
   });
 
   it('extracts text from HTML-only clipboard content without inserting HTML', () => {
@@ -277,6 +279,20 @@ describe('structured composer accessibility and paste', () => {
     } });
     expect(box()).toHaveTextContent('plain');
     expect(box().querySelector('b, strong, img')).toBeNull();
+  });
+
+  it.each([
+    ['<p>first</p><p>second</p>', 'first\nsecond'],
+    ['<div>first<br>second</div><div>third</div>', 'first\nsecond\nthird'],
+    ['<ul><li>first</li><li>second</li></ul><script>bad()</script>', 'first\nsecond'],
+    ['<p>first<br></p>', 'first\n'],
+  ])('keeps block breaks from inert HTML-only paste %s', (html, expected) => {
+    render(<Harness />);
+    fireEvent.paste(box(), { clipboardData: {
+      files: [], types: ['text/html'], getData: (kind: string) => kind === 'text/html' ? html : '',
+    } });
+    expect(promptSource(box())).toBe(expected);
+    expect(box().querySelector('script, ul')).toBeNull();
   });
 
   it('shows the placeholder only for an empty paragraph, not an empty list or soft return', () => {

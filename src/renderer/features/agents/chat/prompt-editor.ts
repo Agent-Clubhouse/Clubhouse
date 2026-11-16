@@ -45,14 +45,15 @@ export function softReturn(view: EditorView): boolean {
     return action(view, splitListItem(promptSchema.nodes.list_item));
   }
   const tr = view.state.tr.replaceSelectionWith(promptSchema.nodes.hard_break.create()).scrollIntoView();
+  const parent = tr.selection.$from;
+  tr.setNodeMarkup(parent.before(), undefined, { ...parent.parent.attrs, source: null, literal: true });
   view.dispatch(closeHistory(tr));
   return true;
 }
 
 export function indentItems(view: EditorView, outdent: boolean): boolean {
   if (!inList(view.state)) return false;
-  action(view, (outdent ? liftListItem : sinkListItem)(promptSchema.nodes.list_item));
-  return true;
+  return action(view, (outdent ? liftListItem : sinkListItem)(promptSchema.nodes.list_item));
 }
 
 /** schema-list joins item containers first. Merge adjacent paragraph bodies in
@@ -115,7 +116,7 @@ export function replaceDraft(view: EditorView, text: string): void {
 
 export function insertPlainText(view: EditorView, text: string): void {
   // A hard break for each LF, never parse pasted Markdown/HTML into nodes.
-  const lines = text.replace(/\r\n?/g, '\n').split('\n');
+  const lines = text.split('\n');
   const content = lines.flatMap((line, i) => [
     ...(i ? [promptSchema.nodes.hard_break.create()] : []),
     ...(line ? [promptSchema.text(line)] : []),
@@ -124,5 +125,14 @@ export function insertPlainText(view: EditorView, text: string): void {
   let at = tr.selection.from;
   for (const node of content) { tr = tr.insert(at, node); at += node.nodeSize; }
   tr.setSelection(TextSelection.create(tr.doc, at));
+  const affected: { pos: number; node: typeof tr.doc }[] = [];
+  tr.doc.descendants((node, pos) => {
+    if (node.isTextblock && pos <= at && pos + node.nodeSize >= tr.mapping.map(view.state.selection.from)) affected.push({ pos, node });
+  });
+  for (const { pos, node } of affected) {
+    const unformatted = !Array.from({ length: node.childCount }, (_, i) => node.child(i)).some((child) => child.marks.length);
+    tr.setNodeMarkup(pos, undefined, { ...node.attrs, literal: true,
+      source: unformatted ? node.textBetween(0, node.content.size, '\n', '\n') : null });
+  }
   view.dispatch(closeHistory(tr).scrollIntoView());
 }

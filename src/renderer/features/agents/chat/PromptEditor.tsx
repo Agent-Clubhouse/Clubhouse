@@ -32,6 +32,31 @@ export const promptView = (element: HTMLElement): EditorView => {
   return view;
 };
 
+/** Read an inert detached tree. Block elements and BR keep their line breaks;
+ * scripts/styles never become editor nodes or executable document content. */
+export function clipboardHtmlText(html: string): string {
+  const template = document.createElement('template');
+  template.innerHTML = html;
+  const blocks = new Set(['P', 'DIV', 'LI', 'UL', 'OL', 'PRE', 'BLOCKQUOTE', 'H1', 'H2', 'H3', 'H4', 'H5', 'H6', 'TR']);
+  let result = '';
+  let structuralBreak = false;
+  const read = (node: Node): void => {
+    if (node.nodeType === Node.TEXT_NODE) { result += node.textContent ?? ''; if (node.textContent) structuralBreak = false; return; }
+    if (node instanceof Element) {
+      if (['SCRIPT', 'STYLE', 'NOSCRIPT'].includes(node.tagName)) return;
+      if (node.tagName === 'BR') { result += '\n'; structuralBreak = false; return; }
+    }
+    for (const child of node.childNodes) {
+      const block = child instanceof Element && blocks.has(child.tagName);
+      if (block && result && !result.endsWith('\n')) result += '\n';
+      read(child);
+      if (block && !result.endsWith('\n')) { result += '\n'; structuralBreak = true; }
+    }
+  };
+  read(template.content);
+  return structuralBreak ? result.slice(0, -1) : result;
+}
+
 export const PromptEditor = forwardRef<PromptEditorHandle, Props>(function PromptEditor(props, ref) {
   const mount = useRef<HTMLDivElement>(null);
   const viewRef = useRef<EditorView | null>(null);
@@ -58,7 +83,7 @@ export const PromptEditor = forwardRef<PromptEditorHandle, Props>(function Promp
       editable: () => !latest.current.disabled,
       attributes: () => ({
         role: 'textbox', 'aria-multiline': 'true', 'aria-label': 'Message',
-        'aria-description': latest.current.description, title: latest.current.description,
+        'aria-description': latest.current.description, 'aria-placeholder': latest.current.placeholder,
         'aria-disabled': String(!!latest.current.disabled), 'aria-readonly': String(!!latest.current.disabled),
         'data-placeholder': latest.current.placeholder,
         'data-empty': String(viewRef.current?.state.doc.childCount === 1 && viewRef.current.state.doc.firstChild?.type.name === 'paragraph' && viewRef.current.state.doc.firstChild.content.size === 0),
@@ -101,7 +126,7 @@ export const PromptEditor = forwardRef<PromptEditorHandle, Props>(function Promp
         if (!text) {
           // A detached template is inert, and only its text leaves this branch.
           const html = event.clipboardData?.getData('text/html');
-          if (html) { const template = document.createElement('template'); template.innerHTML = html; text = template.content.textContent ?? ''; }
+          if (html) text = clipboardHtmlText(html);
         }
         insertPlainText(editor, text);
         return true;
