@@ -508,9 +508,10 @@ cover the project, plus app-wide groups, with an All groups escape. A copy of
 another computer's project group is listed there as "Coverage not verified on
 this computer" until verified network coverage lands (#3549). A group's row opens
 its workspace through one route, `{ groupId, section? }`, which defaults to the
-Board (`features/group-projects/groupProjectRoute.ts`); until the workspace
-slice (#3545) lands, it renders the editor and sections described here. Settings
-shows the same hub, with the selected group's sections under it.
+Board (`features/group-projects/groupProjectRoute.ts`), and every opener goes
+through `openGroupWorkspace` (`groupProjectsNav.ts`). Settings > Group Projects
+renders the same hub and workspace, opening a group in place, with Open in main
+view.
 
 In the sidebar's app row, all three entries show their labels from 369px of
 sidebar (a 352px row). Narrower, only the selected entry shows its label and the
@@ -562,7 +563,7 @@ until switched to notices; new group projects use notices.
 - `src/main/services/group-project-delete-service.ts`: confirmation, cleanup and recovery.
 - `src/main/services/group-project-delete-inventory.ts`: deletion impact.
 - `src/main/services/group-project-network.ts` and `src/shared/group-project-network.ts`: host and replica synchronization and protocol.
-- `src/renderer/features/settings/GroupProjectsSettingsView.tsx`: the directory and creation; opens the workspace.
+- `src/renderer/features/group-projects/GroupProjectsHub.tsx` and `GroupProjectsPane.tsx`: the hub, in the main pane and in Settings (`features/settings/GroupProjectsSettingsView.tsx` is a wrapper); `CreateGroupProjectForm.tsx` is creation.
 - `src/renderer/features/group-projects/GroupProjectWorkspace.tsx`, `board/`, `GroupProjectDetailsSection.tsx`: the workspace, the shared board and Details.
 - `e2e/group-project-membership.spec.ts`, `group-project-notices.spec.ts`,
   `group-project-delete.spec.ts` and `e2e/annex-v2/network-group-projects.spec.ts`:

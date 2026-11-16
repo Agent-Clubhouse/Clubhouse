@@ -6,6 +6,7 @@ import { useGroupProjectStore } from '../../stores/groupProjectStore';
 import { useProjectStore } from '../../stores/projectStore';
 import { GroupProjectsSettingsView } from '../settings/GroupProjectsSettingsView';
 import { GroupProjectsPane } from './GroupProjectsPane';
+import { openGroupWorkspaceFrom } from './groupWorkspaceSource';
 import { openGroupProjectsForProject, openGroupProjectsHub, openGroupWorkspace } from './groupProjectsNav';
 import { useGroupProjectsNavStore } from './groupProjectsNavStore';
 
@@ -16,7 +17,7 @@ const alpha: GroupProject = {
 const beta: GroupProject = { ...alpha, id: 'gp-beta', name: 'Beta', scope: { level: 'project', projectId: 'p1', reach: 'local' } };
 
 beforeEach(() => {
-  useGroupProjectStore.setState({ projects: [], loaded: false, loadError: null, directorySelection: null });
+  useGroupProjectStore.setState({ projects: [], loaded: false, loadError: null });
   useGroupProjectsNavStore.setState({ route: null, view: { kind: 'all' }, query: '' });
   useUIStore.setState({ explorerTab: 'agents', activeHostId: null });
   useProjectStore.setState({ projects: [{ id: 'p1', name: 'Clubhouse', path: '/ch' }] as never });
@@ -30,7 +31,8 @@ describe('GroupProjectsPane, main pane', () => {
     expect(useGroupProjectsNavStore.getState().route).toEqual({ groupId: 'gp-alpha' });
     expect(useUIStore.getState().explorerTab).toBe('plugin:app:group-projects');
     expect(await screen.findByTestId('group-project-workspace')).toBeInTheDocument();
-    expect(screen.getByLabelText('Name')).toHaveValue('Alpha');
+    // Board first: no section named.
+    expect(await screen.findByTestId('group-project-section-board')).toBeInTheDocument();
   });
 
   it('goes back to the hub with the view and search it left', async () => {
@@ -46,16 +48,30 @@ describe('GroupProjectsPane, main pane', () => {
   it('opens a route set elsewhere, loading the directory first', async () => {
     act(() => openGroupWorkspace({ groupId: 'gp-beta', section: 'members' }));
     render(<GroupProjectsPane surface="main" />);
-    expect(await screen.findByLabelText('Name')).toHaveValue('Beta');
+    expect(await screen.findByTestId('group-project-section-members')).toBeInTheDocument();
     expect(useGroupProjectsNavStore.getState().route).toEqual({ groupId: 'gp-beta', section: 'members' });
   });
 
   it('says a group is gone when its id is no longer known, and goes back from there', async () => {
     useGroupProjectsNavStore.setState({ route: { groupId: 'gp-gone' } });
     render(<GroupProjectsPane surface="main" />);
-    expect(await screen.findByText('This group project is no longer available on this computer.')).toBeInTheDocument();
+    expect(await screen.findByText(/This group project is not on this computer/)).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'Back to Group Projects' }));
     expect(await screen.findByRole('button', { name: 'Alpha' })).toBeInTheDocument();
+  });
+});
+
+describe('a group opened from another view', () => {
+  it('names where it came from, selects Group Projects, and Back restores that view', async () => {
+    const restore = vi.fn();
+    act(() => openGroupWorkspaceFrom({ groupId: 'gp-alpha' }, { label: 'Canvas', restore }));
+    expect(useUIStore.getState().explorerTab).toBe('plugin:app:group-projects');
+    render(<GroupProjectsPane surface="main" />);
+    // The workspace loads the directory first; its Back button is replaced when it has.
+    await screen.findByTestId('group-project-section-board');
+    fireEvent.click(screen.getByRole('button', { name: 'Back to Canvas' }));
+    expect(restore).toHaveBeenCalledOnce();
+    expect(useGroupProjectsNavStore.getState().route).toBeNull();
   });
 });
 
@@ -95,18 +111,19 @@ describe('Settings > Group Projects renders the same UI', () => {
     expect(within(settings).getByRole('heading', { level: 2 })).toHaveTextContent('Group Projects');
   });
 
-  it('keeps its deep link: a directory selection opens that group under the hub', async () => {
-    useGroupProjectStore.getState().selectDirectoryProject('gp-beta');
+  it('opens a group from a row in its workspace in place, Board first, without touching the main route', async () => {
     render(<GroupProjectsSettingsView />);
-    expect(await screen.findByLabelText('Name')).toHaveValue('Beta');
-    expect(screen.getByRole('button', { name: 'Beta' })).toHaveAttribute('aria-pressed', 'true');
-    expect(screen.getByRole('button', { name: 'Alpha' })).toHaveAttribute('aria-pressed', 'false');
+    fireEvent.click(await screen.findByRole('button', { name: 'Beta' }));
+    expect(await screen.findByTestId('group-project-section-board')).toBeInTheDocument();
+    expect(useGroupProjectsNavStore.getState().route).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: 'Back to Group Projects' }));
+    expect(await screen.findByTestId('group-projects-hub')).toBeInTheDocument();
   });
 
-  it('opens the selected group in the main view, at the same route, leaving Settings', async () => {
+  it('opens the open group in the main view, at the route, leaving Settings', async () => {
     useUIStore.setState({ explorerTab: 'settings' });
-    useGroupProjectStore.getState().selectDirectoryProject('gp-beta');
     render(<GroupProjectsSettingsView />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Beta' }));
     fireEvent.click(await screen.findByRole('button', { name: 'Open in main view' }));
     expect(useGroupProjectsNavStore.getState().route).toEqual({ groupId: 'gp-beta' });
     expect(useUIStore.getState().explorerTab).toBe('plugin:app:group-projects');

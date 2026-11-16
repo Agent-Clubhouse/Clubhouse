@@ -22,6 +22,11 @@ function deferred<T>() {
   return { promise, resolve, reject };
 }
 
+/** The creation form is behind New group project, in the hub's header. */
+function openCreate() {
+  fireEvent.click(screen.getByRole('button', { name: 'New group project' }));
+}
+
 /** Open a group project from the directory, then its section: opening a row lands on Board. */
 function select(name = 'Alpha', section: string | null = 'Details') {
   const back = screen.queryByRole('button', { name: /^Back to/ });
@@ -38,28 +43,31 @@ describe('GroupProjectsSettingsView', () => {
     vi.spyOn(window.clubhouse.groupProject, 'list').mockResolvedValue([alpha, beta]);
   });
 
-  it('opens a group project named by a route in its workspace, on the section the route names', async () => {
-    useGroupProjectsNavStore.setState({ route: { groupId: 'gp-beta', section: 'details' } });
+  it('opens a group project from a row in its workspace, in place, on Details when asked', async () => {
     render(<GroupProjectsSettingsView />);
+    await screen.findByRole('button', { name: 'Alpha' });
+    select('Beta');
     expect(await screen.findByLabelText('Name')).toHaveValue('Beta');
+    // Settings keeps the group in the page: the main pane's route is untouched.
+    expect(useGroupProjectsNavStore.getState().route).toBeNull();
   });
 
   it('lands on Board when a row or a route names no section', async () => {
     render(<GroupProjectsSettingsView />);
-    await screen.findByRole('list');
+    await screen.findByRole('button', { name: 'Alpha' });
     select('Alpha', null);
     expect(await screen.findByTestId('group-project-section-board')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Board' })).toHaveAttribute('aria-current', 'page');
     expect(screen.getByRole('button', { name: 'Back to Group Projects' })).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'Back to Group Projects' }));
-    expect(await screen.findByRole('list', { name: 'Local group projects' })).toBeInTheDocument();
+    expect(await screen.findByRole('button', { name: 'Alpha' })).toBeInTheDocument();
     expect(useGroupProjectsNavStore.getState().route).toBeNull();
   });
 
   it('offers the selected polling project a switch to notices', async () => {
     const setPolling = vi.spyOn(window.clubhouse.groupProject, 'setPolling').mockResolvedValue(undefined);
     render(<GroupProjectsSettingsView />);
-    await screen.findByRole('list');
+    await screen.findByRole('button', { name: 'Alpha' });
     select('Beta', 'Delivery');
     fireEvent.click(screen.getByRole('button', { name: 'Switch to notices' }));
     await waitFor(() => expect(setPolling).toHaveBeenCalledWith('gp-beta', false));
@@ -68,7 +76,7 @@ describe('GroupProjectsSettingsView', () => {
   it('edits permissions for the selected group project', async () => {
     const setOwnGrant = vi.spyOn(window.clubhouse.groupProject, 'setOwnGrant');
     render(<GroupProjectsSettingsView />);
-    await screen.findByRole('list');
+    await screen.findByRole('button', { name: 'Alpha' });
     select('Beta', 'Permissions');
     const wake = await screen.findByLabelText('Wake sleeping members');
     fireEvent.change(wake, { target: { value: 'allow' } });
@@ -81,6 +89,8 @@ describe('GroupProjectsSettingsView', () => {
       unreadableProjects: [{ projectId: 'unreadable', name: 'Offline' }],
     });
     render(<GroupProjectsSettingsView />);
+    await screen.findByRole('button', { name: 'Alpha' });
+    openCreate();
     expect(await screen.findByText('1 agent will join now.')).toBeInTheDocument();
     expect(screen.getByRole('list', { name: 'Agents who will join' })).toHaveTextContent('Ada (Work)');
     expect(screen.getByText(/Could not check agents in: Offline/)).toBeInTheDocument();
@@ -93,6 +103,8 @@ describe('GroupProjectsSettingsView', () => {
     vi.spyOn(window.clubhouse.groupProject, 'onMembershipChanged').mockImplementation((cb) => { membershipListeners.push(cb); return () => {}; });
     const preview = vi.spyOn(window.clubhouse.groupProject, 'previewAutoJoin').mockResolvedValue({ wouldJoin: [], unreadableProjects: [] });
     render(<GroupProjectsSettingsView />);
+    await screen.findByRole('button', { name: 'Alpha' });
+    openCreate();
     await screen.findByText('0 agents will join now.');
     const initial = preview.mock.calls.length;
     await act(async () => { projectsChanged(); });
@@ -104,15 +116,19 @@ describe('GroupProjectsSettingsView', () => {
 
   it('lists every local registry record without a Canvas, and leaves legacy scope unresolved', async () => {
     render(<GroupProjectsSettingsView />);
-    expect(await screen.findByRole('list', { name: 'Local group projects' })).toBeInTheDocument();
+    // One list per section: Alpha is app-wide, Beta has no scope yet and waits for review.
+    expect(await screen.findByRole('list', { name: 'App-wide group projects' })).toHaveTextContent('Alpha');
+    expect(screen.getByRole('list', { name: 'Needs scope review group projects' })).toHaveTextContent('Beta');
     expect(screen.getByText('Alpha')).toBeInTheDocument();
     expect(screen.getByText('Beta')).toBeInTheDocument();
     expect(await screen.findAllByText('0 members')).toHaveLength(2);
     expect(screen.getAllByText('Host: This computer')).toHaveLength(2);
     expect(screen.getAllByText('Polling on')).toHaveLength(2);
-    expect(screen.getAllByText(/Scope unresolved: legacy or missing scope/)).toHaveLength(1);
+    // The hub row says a legacy scope is unresolved in its own words.
+    expect(screen.getByText('Scope unresolved. Existing members kept.')).toBeInTheDocument();
     expect(screen.getByText(/including network copies/)).toBeInTheDocument();
     // Network reach is disabled, with its reason, in creation (#3355) and then in the scope editor.
+    openCreate();
     await waitFor(() => expect(screen.getAllByText(/Network reach needs Annex Network/)).toHaveLength(1));
     select('Beta');
     expect(screen.getByLabelText('Name')).toHaveValue('Beta');
@@ -127,7 +143,10 @@ describe('GroupProjectsSettingsView', () => {
     render(<GroupProjectsSettingsView />);
     expect(screen.getByRole('status')).toHaveTextContent('Loading group projects');
     await act(async () => { list.resolve([]); });
-    expect(screen.getByText('No group projects stored on this machine.')).toBeInTheDocument();
+    expect(screen.getByText('No group projects yet.')).toBeInTheDocument();
+    // The first-run button opens the form; its submit then refuses a blank name.
+    fireEvent.click(screen.getByRole('button', { name: 'Create group project' }));
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Create group project' })).toBeEnabled());
     fireEvent.click(screen.getByRole('button', { name: 'Create group project' }));
     expect(screen.getByRole('alert')).toHaveTextContent('Enter a group project name');
     expect(create).not.toHaveBeenCalled();
@@ -149,9 +168,11 @@ describe('GroupProjectsSettingsView', () => {
     const cleanup = initGroupProjectListener();
     const { result } = renderHook(() => useGroupProjectContext(created.id, false, null, createMockAPI().annex));
     render(<GroupProjectsSettingsView />);
-    await screen.findByRole('list');
+    await screen.findByRole('button', { name: 'Alpha' });
+    openCreate();
     fireEvent.change(screen.getByLabelText('New group project name'), { target: { value: '  Directory group  ' } });
     const button = screen.getByRole('button', { name: 'Create group project' });
+    await waitFor(() => expect(button).toBeEnabled());
     fireEvent.click(button);
     fireEvent.click(button);
     expect(create).toHaveBeenCalledExactlyOnceWith('Directory group', { scope: { level: 'app', reach: 'local' } });
@@ -177,7 +198,7 @@ describe('GroupProjectsSettingsView', () => {
     const update = vi.spyOn(window.clubhouse.groupProject, 'update').mockResolvedValue(next);
     const { result } = renderHook(() => useGroupProjectContext(alpha.id, false, null, createMockAPI().annex));
     render(<GroupProjectsSettingsView />);
-    await screen.findByRole('list');
+    await screen.findByRole('button', { name: 'Alpha' });
     select();
     fireEvent.change(screen.getByLabelText('Name'), { target: { value: ' Renamed ' } });
     fireEvent.change(screen.getByLabelText('Description'), { target: { value: next.description } });
@@ -201,7 +222,7 @@ describe('GroupProjectsSettingsView', () => {
     else if (outcome === 'partial') update.mockResolvedValue({ id: alpha.id, name: 'Partial response' });
     else update.mockResolvedValue({ ...alpha, instructions: 7 });
     render(<GroupProjectsSettingsView />);
-    await screen.findByRole('list');
+    await screen.findByRole('button', { name: 'Alpha' });
     select();
     fireEvent.change(screen.getByLabelText('Name'), { target: { value: '   ' } });
     fireEvent.click(screen.getByRole('button', { name: 'Save changes' }));
@@ -227,10 +248,10 @@ describe('GroupProjectsSettingsView', () => {
     vi.mocked(window.clubhouse.groupProject.list).mockRejectedValueOnce(new Error('Registry unreadable'));
     render(<GroupProjectsSettingsView />);
     expect(await screen.findByRole('alert')).toHaveTextContent('The inventory is unavailable. Registry unreadable');
-    expect(screen.queryByRole('list')).not.toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: 'Create group project' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Alpha' })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'New group project' })).toBeDisabled();
     fireEvent.click(screen.getByRole('button', { name: 'Retry loading' }));
-    expect(await screen.findByRole('list')).toBeInTheDocument();
+    expect(await screen.findByRole('button', { name: 'Alpha' })).toBeInTheDocument();
     expect(window.clubhouse.groupProject.list).toHaveBeenCalledTimes(2);
     expect(useGroupProjectStore.getState().loadError).toBeNull();
     expect(log).toHaveBeenCalled();
@@ -240,7 +261,7 @@ describe('GroupProjectsSettingsView', () => {
     const pending = deferred<GroupProject | null>();
     const update = vi.spyOn(window.clubhouse.groupProject, 'update').mockReturnValue(pending.promise);
     render(<GroupProjectsSettingsView />);
-    await screen.findByRole('list');
+    await screen.findByRole('button', { name: 'Alpha' });
     select();
     fireEvent.change(screen.getByLabelText('Description'), { target: { value: 'Alpha update' } });
     const button = screen.getByRole('button', { name: 'Save changes' });
@@ -271,7 +292,8 @@ describe('GroupProjectsSettingsView', () => {
 
     it('disables network reach with its reason when Annex Network is off', async () => {
       render(<GroupProjectsSettingsView />);
-      await screen.findByRole('list', { name: 'Local group projects' });
+      await screen.findByRole('button', { name: 'Alpha' });
+      openCreate();
       await waitFor(() => {
         const network = screen.getAllByRole('radio', { name: 'Network' });
         expect(network[0]).toBeDisabled();
@@ -283,7 +305,8 @@ describe('GroupProjectsSettingsView', () => {
       const create = vi.spyOn(window.clubhouse.groupProject, 'create').mockResolvedValue({ ...alpha, id: 'gp-new', name: 'New' });
       const preview = vi.spyOn(window.clubhouse.groupProject, 'previewAutoJoin');
       render(<GroupProjectsSettingsView />);
-      await screen.findByRole('list', { name: 'Local group projects' });
+      await screen.findByRole('button', { name: 'Alpha' });
+      openCreate();
       fireEvent.change(screen.getByLabelText('New group project name'), { target: { value: 'New' } });
       fireEvent.change(screen.getAllByLabelText('Covers')[0], { target: { value: 'project:proj-b' } });
       expect(screen.getByText('Agents in Proj B on this computer.')).toBeInTheDocument();
@@ -301,7 +324,7 @@ describe('GroupProjectsSettingsView', () => {
       const narrowed = { ...alpha, scope: { level: 'project' as const, projectId: 'proj-a', reach: 'local' as const } };
       const setScope = vi.spyOn(window.clubhouse.groupProject, 'setScope').mockResolvedValue({ project: narrowed, left: [] });
       render(<GroupProjectsSettingsView />);
-      await screen.findByRole('list', { name: 'Local group projects' });
+      await screen.findByRole('button', { name: 'Alpha' });
       select('Alpha');
       const editor = screen.getByRole('region', { name: 'Scope' });
       fireEvent.change(within(editor).getByLabelText('Covers'), { target: { value: 'project:proj-a' } });
@@ -318,7 +341,7 @@ describe('GroupProjectsSettingsView', () => {
       vi.spyOn(window.clubhouse.groupProject, 'previewScope').mockResolvedValue({ scope: { level: 'app', reach: 'local' }, leaving: [] });
       vi.spyOn(window.clubhouse.groupProject, 'setScope').mockRejectedValue(new Error('The members who would leave have changed.'));
       render(<GroupProjectsSettingsView />);
-      await screen.findByRole('list', { name: 'Local group projects' });
+      await screen.findByRole('button', { name: 'Alpha' });
       select('Beta');
       const editor = screen.getByRole('region', { name: 'Scope' });
       fireEvent.click(within(editor).getByRole('button', { name: 'Review change' }));
@@ -344,7 +367,7 @@ describe('GroupProjectsSettingsView', () => {
 
     it('replaces an untouched draft when the scope changes elsewhere', async () => {
       render(<GroupProjectsSettingsView />);
-      await screen.findByRole('list', { name: 'Local group projects' });
+      await screen.findByRole('button', { name: 'Alpha' });
       select('Alpha');
       const editor = screen.getByRole('region', { name: 'Scope' });
       expect(within(editor).getByLabelText('Covers')).toHaveValue('app');
@@ -372,7 +395,7 @@ describe('GroupProjectsSettingsView', () => {
     it('names the host, never its fingerprint, with whether it is reachable and what waits for it', async () => {
       vi.spyOn(window.clubhouse.groupProject, 'list').mockResolvedValue([alpha, copy]);
       render(<GroupProjectsSettingsView />);
-      await screen.findByRole('list', { name: 'Local group projects' });
+      await screen.findByRole('button', { name: 'Alpha' });
       expect(screen.getByText('Host: Desk, offline. Showing a saved copy, 2 changes wait for it.')).toBeInTheDocument();
       expect(screen.getByText('Host: This computer')).toBeInTheDocument();
       expect(screen.queryByText(/aa:aa/)).not.toBeInTheDocument();
@@ -382,7 +405,7 @@ describe('GroupProjectsSettingsView', () => {
       vi.spyOn(window.clubhouse.groupProject, 'list').mockResolvedValue([copy]);
       const dismiss = vi.spyOn(window.clubhouse.groupProject, 'dismissRefusals');
       render(<GroupProjectsSettingsView />);
-      await screen.findByRole('list', { name: 'Local group projects' });
+      await screen.findByRole('button', { name: 'Launch' });
       select('Launch');
       expect(screen.getByRole('list', { name: 'Changes the host refused' })).toHaveTextContent('A post by builder@Studio: This group project was deleted.');
       // Only the host can change the scope or delete: this computer holds a copy, and says so.
