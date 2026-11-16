@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  readRemoteCreateAnswer, readRemoteCreateRequest, supportsRemoteCreate,
   applyMembershipPatch, isEmptyPatch, membershipPatch, qualifyQueuedPatch, readSyncResponse, readWriteRequest,
 } from './group-project-network';
 import type { GroupProjectMembership } from './group-project-types';
@@ -80,5 +81,37 @@ describe('a queued patch from before entries were keyed by address (#3516)', () 
   it('leaves qualified keys and patches without these maps alone', () => {
     const patch = { ...empty, set: { disabledTools: { [`builder@${OTHER}`]: ['b'] }, autoJoin: true } };
     expect(qualifyQueuedPatch(patch, OTHER, held, () => true)).toEqual({ patch, unattributed: [] });
+  });
+});
+
+describe('remote create on the wire (#3547)', () => {
+  const request = { v: 1, requestId: 'rc_1', name: '  Launch  ', scope: { level: 'project', projectId: 'proj_a' }, membership: { autoJoin: true, includeLinkedComputers: false, excluded: ['a', 'a', 'b@x'] } };
+
+  it('reads a request, trimming the name and dropping repeated exclusions', () => {
+    expect(readRemoteCreateRequest(request)).toEqual({ ...request, name: 'Launch', membership: { ...request.membership, excluded: ['a', 'b@x'] } });
+    expect(readRemoteCreateRequest({ ...request, scope: { level: 'app', projectId: 'ignored' } }).scope).toEqual({ level: 'app' });
+  });
+
+  it('refuses anything malformed', () => {
+    for (const bad of [
+      { ...request, v: 2 }, { ...request, requestId: '../x' }, { ...request, name: ' ' }, { ...request, name: 'x'.repeat(101) },
+      { ...request, scope: { level: 'project' } }, { ...request, scope: { level: 'galaxy' } },
+      { ...request, membership: { ...request.membership, autoJoin: 'yes' } }, { ...request, membership: { ...request.membership, excluded: [''] } },
+    ]) expect(() => readRemoteCreateRequest(bad)).toThrow('Invalid group project network');
+  });
+
+  it('reads only an answer to the request it sent', () => {
+    expect(readRemoteCreateAnswer({ v: 1, requestId: 'rc_1', status: 'created', groupProjectId: 'gp_1' }, 'rc_1')).toMatchObject({ status: 'created' });
+    expect(readRemoteCreateAnswer({ v: 1, requestId: 'rc_1', status: 'declined', reason: 'no' }, 'rc_1')).toMatchObject({ status: 'declined', reason: 'no' });
+    expect(() => readRemoteCreateAnswer({ v: 1, requestId: 'rc_2', status: 'created', groupProjectId: 'gp_1' }, 'rc_1')).toThrow();
+    expect(() => readRemoteCreateAnswer({ v: 1, requestId: 'rc_1', status: 'waiting', expiresAt: 'never' }, 'rc_1')).toThrow();
+    expect(() => readRemoteCreateAnswer({ v: 1, requestId: 'rc_1', status: 'applied' }, 'rc_1')).toThrow();
+  });
+
+  it('a capability is versioned and additive', () => {
+    expect(supportsRemoteCreate({ v: 1, remoteCreate: 1 })).toBe(true);
+    expect(supportsRemoteCreate({ v: 1, remoteCreate: 2, more: true })).toBe(true);
+    expect(supportsRemoteCreate({ v: 1 })).toBe(false);
+    expect(supportsRemoteCreate(null)).toBe(false);
   });
 });

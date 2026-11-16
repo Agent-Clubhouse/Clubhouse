@@ -44,6 +44,11 @@ export async function answerGrantRequest(requestId: string, allow: boolean, upda
   if (peekGrantRequest(requestId)?.deleteReview && currentSettingsOrigin().surface !== 'ui') {
     return { ok: false, error: 'Review this deletion batch in Needs you on the originating computer.' };
   }
+  // A create another computer asked for (#3547) is answered here or on a phone paired with this computer,
+  // never from a desktop in the network: pairing doesn't approve it.
+  if (peekGrantRequest(requestId)?.remoteCreateReview && !['ui', 'mobile'].includes(currentSettingsOrigin().surface)) {
+    return { ok: false, error: 'Answer this request on the computer it was sent to.' };
+  }
   if (peekGrantRequest(requestId)?.update) {
     const { answerAppUpdateRequest } = await import('./app-update-request');
     assertAuthorized?.();
@@ -76,6 +81,8 @@ export async function answerGrantRequest(requestId: string, allow: boolean, upda
   appLog('core:mcp', 'info', allow ? 'Permission request allowed' : 'Permission request declined', {
     meta: { agentId: request.agentId, requestId, kind: request.kind, surface: currentSettingsOrigin().surface },
   });
+  // The remote create module saw the answer; no agent made this call.
+  if (request.remoteCreateReview) return { ok: true };
   if (!allow) tell(request.agentId, `The user declined ${what(request)}. Don't ask again for the same thing; carry on without it or ask them in your reply.`);
   else if (request.kind === 'call') tell(request.agentId, `The user allowed ${what(request)}. Make the same call again, with the same arguments, to run it once.`);
   else tell(request.agentId, `The user allowed ${what(request)}. You have it now.`);

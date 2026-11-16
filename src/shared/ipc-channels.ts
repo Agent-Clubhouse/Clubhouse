@@ -610,6 +610,9 @@ export const IPC = {
   },
   GROUP_PROJECT: {
     CREATE: 'group-project:create',
+    /** #3547: the computers a group project can be created on, and creating on another one. */
+    CREATE_HOSTS: 'group-project:create-hosts',
+    CREATE_ON_HOST: 'group-project:create-on-host',
     GET: 'group-project:get',
     LIST: 'group-project:list',
     UPDATE: 'group-project:update',

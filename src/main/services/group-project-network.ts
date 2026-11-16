@@ -10,10 +10,11 @@
 import {
   GROUP_PROJECT_CHANGED_PATH, GROUP_PROJECT_SYNC_PATH, GROUP_PROJECT_WRITE_PATH,
   readChangedNotice, readSyncRequest, readSyncResponse, readWriteRequest, readWriteResponse,
-  type ChangedNotice, type QueuedWrite, type SyncRequest, type SyncResponse, type WriteResponse,
+  type ChangedNotice, type QueuedWrite, type RemoteCreateAnswer, type RemoteCreateCapabilities, type SyncRequest, type SyncResponse, type WriteResponse,
 } from '../../shared/group-project-network';
 import type { GroupProjectNetworkRefusal } from '../../shared/group-project-types';
 import { groupProjectHost } from './group-project-host';
+import { groupProjectRemoteCreate } from './group-project-remote-create';
 import { appLog } from './log-service';
 
 export interface GroupProjectNetworkTransport {
@@ -104,6 +105,15 @@ export function startGroupProjectNetwork(start: StartGroupProjectNetworkOptions)
     },
   });
 
+  // Creating on another computer (#3547): sent at once or not at all, never queued.
+  groupProjectRemoteCreate.setLink({
+    connected: (machine) => start.transport.connected(machine),
+    isMember: (machine) => start.isMember(machine),
+    members: () => start.members(),
+    machineName: (machine) => start.transport.machineName(machine),
+    post: (machine, path, body) => start.transport.post(machine, path, body),
+  });
+
   // On connect: send what waited, then catch up.
   const offConnected = start.transport.onConnected((machine) => {
     if (start.isMember(machine)) void pullFrom(machine.toLowerCase(), true);
@@ -166,6 +176,7 @@ export function startGroupProjectNetwork(start: StartGroupProjectNetworkOptions)
     offMembers();
     if (timer) clearTimeout(timer);
     groupProjectHost.setNetworkLink(null);
+    groupProjectRemoteCreate.setLink(null);
     options = null;
     pullChains.clear();
   };
@@ -184,4 +195,13 @@ export async function receiveGroupProjectWrites(machine: string, raw: unknown): 
 export function receiveGroupProjectChanged(machine: string, raw: unknown): void {
   readChangedNotice(raw);
   void pullFrom(machine.toLowerCase(), false);
+}
+
+/** A person on another computer asks to create a group project here (#3547). */
+export function receiveGroupProjectCreate(machine: string, raw: unknown): Promise<RemoteCreateAnswer> {
+  return groupProjectRemoteCreate.receive(machine, raw);
+}
+
+export function groupProjectCreateCapabilities(): RemoteCreateCapabilities {
+  return groupProjectRemoteCreate.capabilities();
 }

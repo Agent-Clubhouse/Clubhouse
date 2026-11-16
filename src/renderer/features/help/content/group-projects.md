@@ -26,6 +26,8 @@ Older group projects that already poll keep polling until you choose **Switch to
 
 A network group project has one host computer. Other computers in the network show a saved copy and send changes to the host. If it is offline, the directory shows the cached state and waiting changes; refused changes are shown there. If the host leaves the network, the copy is read-only. Only the host can delete or change scope.
 
+With network reach you can choose its **Host**: this computer, or another computer in your network that is online and up to date. The host can't be changed later. Creating on another computer asks a person there to approve it in **Needs you** on that computer (or a phone paired with it), every time. Until then the form says **Waiting for approval** and nothing is created. If that computer doesn't answer, nothing is created or queued; **Retry** sends the same request again and can never create two. A declined or expired request creates nothing; start a new one to ask again. A project group created there covers the project on that computer that is explicitly linked to yours.
+
 To permanently delete a group project, select it in the directory and choose **Delete group project**. Review the impact, then confirm. This deletes its board, membership, permissions, owned Actions and canvas references and cannot be undone. A network copy is removed when it next catches up with the host's deletion.
 
 ## Upgrading existing group projects

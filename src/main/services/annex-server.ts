@@ -3729,7 +3729,7 @@ async function handleNetworkHandoffsRoute(ctx: AnnexRouteContext): Promise<void>
 }
 
 /** Network group projects (#3363): catch-up, writes and change notices, between computers in the network only. */
-async function handleGroupProjectNetworkRoute(ctx: AnnexRouteContext, kind: 'sync' | 'write' | 'changed'): Promise<void> {
+async function handleGroupProjectNetworkRoute(ctx: AnnexRouteContext, kind: 'sync' | 'write' | 'changed' | 'create' | 'create-capabilities'): Promise<void> {
   const machine = agentCallPeer(ctx);
   if (!machine) { ctx.req.resume(); sendJson(ctx.res, 403, { error: 'not_a_computer', message: 'Only a computer in this Annex Network can reach group projects here.' }); return; }
   const body = await readAgentCallBody(ctx);
@@ -3738,6 +3738,9 @@ async function handleGroupProjectNetworkRoute(ctx: AnnexRouteContext, kind: 'syn
   try {
     if (kind === 'sync') sendJson(ctx.res, 200, await groupProjectNetwork.receiveGroupProjectSync(machine, body));
     else if (kind === 'write') sendJson(ctx.res, 200, await groupProjectNetwork.receiveGroupProjectWrites(machine, body));
+    // #3547: the sender is the authenticated computer, never a field in the body.
+    else if (kind === 'create') sendJson(ctx.res, 200, await groupProjectNetwork.receiveGroupProjectCreate(machine, body));
+    else if (kind === 'create-capabilities') sendJson(ctx.res, 200, groupProjectNetwork.groupProjectCreateCapabilities());
     else {
       groupProjectNetwork.receiveGroupProjectChanged(machine, body);
       sendJson(ctx.res, 200, { ok: true });
@@ -4558,6 +4561,8 @@ const ANNEX_HTTP_ROUTE_TABLE: AnnexHttpRoute[] = [
   { method: 'POST', pattern: /^\/api\/v1\/network\/group-projects\/sync$/, handler: (ctx) => handleGroupProjectNetworkRoute(ctx, 'sync') },
   { method: 'POST', pattern: /^\/api\/v1\/network\/group-projects\/write$/, handler: (ctx) => handleGroupProjectNetworkRoute(ctx, 'write') },
   { method: 'POST', pattern: /^\/api\/v1\/network\/group-projects\/changed$/, handler: (ctx) => handleGroupProjectNetworkRoute(ctx, 'changed') },
+  { method: 'POST', pattern: /^\/api\/v1\/network\/group-projects\/create$/, handler: (ctx) => handleGroupProjectNetworkRoute(ctx, 'create') },
+  { method: 'POST', pattern: /^\/api\/v1\/network\/group-projects\/create-capabilities$/, handler: (ctx) => handleGroupProjectNetworkRoute(ctx, 'create-capabilities') },
   { method: 'GET', pattern: /^\/api\/v1\/mobile\/canvas$/, handler: handleMobileCanvasRoute },
   { method: 'GET', pattern: /^\/api\/v1\/mobile\/canvas\/([^/]+)$/, handler: handleMobileCanvasRoute },
   { method: 'DELETE', pattern: /^\/api\/v1\/mobile\/pairing$/, handler: handleMobilePairingDeleteRoute },

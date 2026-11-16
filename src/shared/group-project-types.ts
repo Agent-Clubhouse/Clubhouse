@@ -14,6 +14,26 @@ export interface GroupProjectCreateOptions {
   membership?: GroupProjectMembershipOptions;
 }
 
+/** A computer a group project can be created on (#3547). `this` is this computer. */
+export interface GroupProjectCreateHost {
+  machine: string | null;
+  name: string;
+  /** `online`: choosable. Anything else says why not. */
+  state: 'online' | 'offline' | 'needs_update' | 'unavailable';
+  reason?: string;
+}
+
+/**
+ * What became of a create sent to another computer (#3547). Nothing is made
+ * or queued unless it says `created`; every retry of `requestId` is safe.
+ */
+export type RemoteCreateOutcome = { requestId: string; host: string; hostName: string } & (
+  | { status: 'created'; groupProjectId: string; project: GroupProject | null }
+  | { status: 'waiting'; expiresAt: string }
+  /** `unreachable`: not answered, nothing queued. `unsupported`: that computer needs an update. */
+  | { status: 'refused' | 'declined' | 'expired' | 'busy' | 'unreachable' | 'unsupported'; reason: string }
+);
+
 /** Ongoing membership for new project groups. Exclusions are host-relative addresses. */
 export interface GroupProjectMembershipOptions {
   autoJoin: boolean;

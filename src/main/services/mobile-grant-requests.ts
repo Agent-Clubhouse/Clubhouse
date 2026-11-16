@@ -23,7 +23,7 @@
 
 import * as path from 'path';
 import {
-  describeGrantRequest, grantRequestActionLabels, grantRequestAllowEffect, type GrantRequest,
+  REMOTE_CREATE_TOOL, describeGrantRequest, grantRequestActionLabels, grantRequestAllowEffect, type GrantRequest,
 } from '../../shared/grant-requests';
 import type { MobileCommand, MobileGrantAnswer, MobileGrantRequest } from '../../shared/mobile-control';
 import { answerGrantRequest } from './grant-request-answers';
@@ -85,8 +85,22 @@ export function deviceNamedBy(kind: GrantRequest['kind'], actions: readonly stri
   }
 }
 
+/** The computer that asked for a remote create (#3547), from the request's arguments. */
+function remoteCreateAsker(argumentsText: string | null | undefined): string | null {
+  try {
+    const args: unknown = argumentsText ? JSON.parse(argumentsText) : null;
+    const machine = args && typeof args === 'object' ? (args as Record<string, unknown>).machine : undefined;
+    return typeof machine === 'string' ? machine.toLowerCase() : null;
+  } catch {
+    // telemetry-exempt: the remote create module wrote this JSON; unreadable names no computer
+    return null;
+  }
+}
+
 /** Whether a device may see and answer a row: not a Manage devices call about that device itself. */
-export function grantRowVisibleTo(row: Pick<MobileGrantRequest, 'kind' | 'actions' | 'arguments'>, viewer: string | null | undefined): boolean {
+export function grantRowVisibleTo(row: Pick<MobileGrantRequest, 'kind' | 'actions' | 'arguments'> & { toolName?: string | null }, viewer: string | null | undefined): boolean {
+  // A computer never sees, so never answers, the approval of a create it asked for (#3547).
+  if (row.toolName === REMOTE_CREATE_TOOL && viewer && remoteCreateAsker(row.arguments) === viewer.toLowerCase()) return false;
   const device = deviceNamedBy(row.kind, row.actions, row.arguments);
   return !device || !viewer || device !== viewer.toLowerCase();
 }

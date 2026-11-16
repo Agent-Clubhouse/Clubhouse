@@ -9,6 +9,8 @@
  * - `POST /api/v1/network/group-projects/sync`: catch up from the host.
  * - `POST /api/v1/network/group-projects/write`: writes for the host to apply or refuse, in order.
  * - `POST /api/v1/network/group-projects/changed`: the host's notice that something changed.
+ * - `POST /api/v1/network/group-projects/create`: a person on another computer asks to create a group project here (#3547).
+ * - `POST /api/v1/network/group-projects/create-capabilities`: whether this computer takes those; an older one answers 404.
  */
 import type {
   BulletinMessage, GroupProject, GroupProjectMembership, GroupProjectTombstone,
@@ -18,6 +20,11 @@ export const GROUP_PROJECT_NETWORK_VERSION = 1;
 export const GROUP_PROJECT_SYNC_PATH = '/api/v1/network/group-projects/sync';
 export const GROUP_PROJECT_WRITE_PATH = '/api/v1/network/group-projects/write';
 export const GROUP_PROJECT_CHANGED_PATH = '/api/v1/network/group-projects/changed';
+export const GROUP_PROJECT_CREATE_PATH = '/api/v1/network/group-projects/create';
+export const GROUP_PROJECT_CREATE_CAPABILITIES_PATH = '/api/v1/network/group-projects/create-capabilities';
+/** The version of remote create a host takes. Additive: a later host keeps answering version 1. */
+export const GROUP_PROJECT_REMOTE_CREATE_VERSION = 1;
+export const GROUP_PROJECT_NAME_MAX = 100;
 
 /** The board as the host has it, from a sequence number on. */
 export interface ReplicaBoard {
@@ -106,6 +113,31 @@ export interface ChangedNotice {
   v: 1;
   ids: string[];
 }
+
+/**
+ * A person's request to create a group project on another computer (#3547).
+ * The scope names the asking computer's project: the host finds its own
+ * project explicitly linked to it. Exclusions are addresses relative to the
+ * asking computer. The request id is saved before sending and reused by every
+ * retry, so the host answers it once.
+ */
+export interface RemoteCreateRequest {
+  v: 1;
+  requestId: string;
+  name: string;
+  scope: { level: 'app' } | { level: 'project'; projectId: string };
+  membership: { autoJoin: boolean; includeLinkedComputers: boolean; excluded: string[] };
+}
+
+/** Why a create was not made. `declined` and `expired` are the host person's answer or its absence. */
+export type RemoteCreateRefusal = 'refused' | 'declined' | 'expired' | 'busy';
+
+export type RemoteCreateAnswer =
+  | { v: 1; requestId: string; status: 'created'; groupProjectId: string }
+  | { v: 1; requestId: string; status: 'waiting'; expiresAt: string }
+  | { v: 1; requestId: string; status: RemoteCreateRefusal; reason: string };
+
+export interface RemoteCreateCapabilities { v: 1; remoteCreate: number }
 
 // ── Validation (everything here crossed a machine boundary) ────────────────
 
@@ -353,4 +385,40 @@ export function qualifyQueuedPatch(
     set[field] = next;
   }
   return { patch: { ...patch, set }, unattributed: [...new Set(unattributed)] };
+}
+
+const MAX_EXCLUDED = 500;
+
+export function readRemoteCreateRequest(raw: unknown): RemoteCreateRequest {
+  if (!isRecord(raw) || raw.v !== 1 || !isString(raw.requestId) || !SAFE_ID.test(raw.requestId) || !isString(raw.name)
+    || !isRecord(raw.scope) || !isRecord(raw.membership)) fail('create request');
+  const name = raw.name.trim();
+  if (!name || name.length > GROUP_PROJECT_NAME_MAX) fail('create request name');
+  const scope = raw.scope;
+  let readScope: RemoteCreateRequest['scope'];
+  if (scope.level === 'app') readScope = { level: 'app' };
+  else if (scope.level === 'project' && isString(scope.projectId) && SAFE_ID.test(scope.projectId)) readScope = { level: 'project', projectId: scope.projectId };
+  else fail('create request scope');
+  const m = raw.membership;
+  if (typeof m.autoJoin !== 'boolean' || typeof m.includeLinkedComputers !== 'boolean' || !Array.isArray(m.excluded)
+    || m.excluded.length > MAX_EXCLUDED || !m.excluded.every((a) => isString(a) && a.trim() && a.length <= 300)) fail('create request membership');
+  return {
+    v: 1, requestId: raw.requestId, name, scope: readScope,
+    membership: { autoJoin: m.autoJoin, includeLinkedComputers: m.includeLinkedComputers, excluded: [...new Set(m.excluded as string[])] },
+  };
+}
+
+export function readRemoteCreateAnswer(raw: unknown, requestId: string): RemoteCreateAnswer {
+  if (!isRecord(raw) || raw.v !== 1 || raw.requestId !== requestId) fail('create answer');
+  if (raw.status === 'created' && isString(raw.groupProjectId) && SAFE_ID.test(raw.groupProjectId)) return { v: 1, requestId, status: 'created', groupProjectId: raw.groupProjectId };
+  if (raw.status === 'waiting' && isString(raw.expiresAt) && Number.isFinite(Date.parse(raw.expiresAt))) return { v: 1, requestId, status: 'waiting', expiresAt: raw.expiresAt };
+  if ((raw.status === 'refused' || raw.status === 'declined' || raw.status === 'expired' || raw.status === 'busy') && isString(raw.reason)) {
+    return { v: 1, requestId, status: raw.status, reason: raw.reason.slice(0, 1000) };
+  }
+  fail('create answer');
+}
+
+/** Whether a host's capability answer says it takes remote create. */
+export function supportsRemoteCreate(raw: unknown): boolean {
+  return isRecord(raw) && raw.v === 1 && Number.isSafeInteger(raw.remoteCreate) && (raw.remoteCreate as number) >= GROUP_PROJECT_REMOTE_CREATE_VERSION;
 }

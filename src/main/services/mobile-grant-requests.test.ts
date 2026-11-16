@@ -133,6 +133,14 @@ describe('grantRequests in the snapshot (#3205)', () => {
     expect(grantRowVisibleTo({ ...row, actions: ['settings.app.write'] }, PHONE_ID)).toBe(true);
   });
 
+  it('leaves out, for the computer that asked, the approval of its own remote create (#3547)', () => {
+    const row = { kind: 'call' as const, actions: ['connection.manage'], toolName: 'remote_create_group_project', arguments: JSON.stringify({ machine: 'AA:AA', requestId: 'rc_1' }) };
+    expect(grantRowVisibleTo(row, 'aa:aa')).toBe(false);
+    expect(grantRowVisibleTo(row, PHONE_ID)).toBe(true);
+    // Only that tool: the same arguments on another call name no asker.
+    expect(grantRowVisibleTo({ ...row, toolName: 'something_else' }, 'aa:aa')).toBe(true);
+  });
+
   it('opened events carry who asked and the id, never the arguments', () => {
     callRequest('disp', '/base/dispatcher');
     const [row] = buildMobileGrantRequests(places);

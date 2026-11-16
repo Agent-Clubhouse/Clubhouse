@@ -235,6 +235,7 @@ class GroupProjectRegistry {
     name: string, options?: GroupProjectCreateOptions, host: GroupProjectHost = { machine: null },
     resolveScope: (options: unknown, registered: ReadonlySet<string>) => GroupProjectScope = resolveGroupProjectScope,
     isUnusedId: (id: string) => boolean = () => true,
+    metadata: Record<string, unknown> = {},
   ): Promise<GroupProject> {
     await this.ensureLoaded();
     const registered = new Set(options === undefined ? [] : (await projectStore.list()).map((project) => project.id));
@@ -251,7 +252,7 @@ class GroupProjectRegistry {
       createdAt: new Date().toISOString(),
       scope,
       host: { machine: host.machine },
-      metadata: {},
+      metadata: { ...metadata },
     };
     this.projects.set(id, project);
     this.markDirty();

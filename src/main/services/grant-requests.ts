@@ -184,6 +184,12 @@ export function takeGrantRequest(requestId: string, allowed: boolean, now = Date
   return entry.request;
 }
 
+/** Whether a live one-time approval waits for this call, without using it. */
+export function hasCallApproval(key: string, now = Date.now()): boolean {
+  const approval = approvals.get(key);
+  return !!approval && approval.until > now;
+}
+
 /** Use a one-time approval for this call, if the user gave one. */
 export function consumeCallApproval(key: string, now = Date.now()): boolean {
   const approval = approvals.get(key);
