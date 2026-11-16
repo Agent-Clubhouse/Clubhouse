@@ -144,26 +144,28 @@ function agentsBackupPath(projectPath: string): string {
   return path.join(clubhouseDir(projectPath), 'agents.json.bak');
 }
 
-const GITIGNORE_BLOCK = `# Clubhouse agent manager
-.clubhouse/agents/
-.clubhouse/.local/
-.clubhouse/agents.json
-.clubhouse/settings.local.json`;
+const GITIGNORE_HEADER = '# Clubhouse agent manager';
+
+// Settings backups (.bak) and recovery copies (.unreadable, .unreadable.N) can hold
+// a project's settings or corrupt bytes, so `git add -A` must not pick them up.
+const GITIGNORE_LINES = [
+  '.clubhouse/agents/',
+  '.clubhouse/.local/',
+  '.clubhouse/agents.json',
+  '.clubhouse/agents.json.bak',
+  '.clubhouse/settings.local.json',
+  '.clubhouse/settings.json.bak',
+  '.clubhouse/settings.json.unreadable*',
+];
+
+const GITIGNORE_BLOCK = [GITIGNORE_HEADER, ...GITIGNORE_LINES].join('\n');
 
 function gitignoreAddition(content?: string): string | undefined {
   if (content === undefined) return `${GITIGNORE_BLOCK}\n`;
-  const requiredLines = [
-    '.clubhouse/agents/',
-    '.clubhouse/.local/',
-    '.clubhouse/agents.json',
-    '.clubhouse/agents.json.bak',
-    '.clubhouse/settings.local.json',
-  ];
-
-  const missing = requiredLines.filter((line) => !content.includes(line));
+  const missing = GITIGNORE_LINES.filter((line) => !content.includes(line));
   if (missing.length === 0) return undefined;
   const parts: string[] = [];
-  if (!content.includes('# Clubhouse agent manager')) parts.push('# Clubhouse agent manager');
+  if (!content.includes(GITIGNORE_HEADER)) parts.push(GITIGNORE_HEADER);
   parts.push(...missing);
   return `\n${parts.join('\n')}\n`;
 }
