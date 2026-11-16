@@ -82,6 +82,7 @@ export const ANNEX_SHARDS = {
     'annex-v2/dispatcher-lead-approvals.spec.ts',
     'annex-v2/lifecycle.spec.ts',
     'annex-v2/minimal-test.spec.ts',
+    'annex-v2/network-group-project-remote-create.spec.ts',
     'annex-v2/network-join.spec.ts',
     'annex-v2/remote-control.spec.ts',
     'annex-v2/remote-pty.spec.ts',

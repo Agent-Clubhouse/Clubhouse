@@ -41,18 +41,18 @@ function makeProject(prefix: string, agents: Array<{ id: string; name: string }>
   return dir;
 }
 
-async function createGroup(window: Page, name: string, covers?: string) {
-  await window.getByRole('button', { name: 'New group project', exact: true }).click();
-  await window.getByLabel('New group project name').fill(name);
-  if (covers) await window.getByLabel('Covers').selectOption({ label: covers });
-  await window.getByRole('button', { name: 'Create group project' }).click();
+async function createGroup(page: Page, name: string, covers?: string) {
+  await page.getByRole('button', { name: 'New group project', exact: true }).click();
+  await page.getByLabel('New group project name').fill(name);
+  if (covers) await page.getByLabel('Covers').selectOption({ label: covers });
+  await page.getByRole('button', { name: 'Create group project' }).click();
   // Creating opens the new group on its Board.
-  await expect(window.getByRole('heading', { name })).toBeVisible();
-  await expect(window.getByTestId('group-project-section-board')).toBeVisible();
+  await expect(page.getByRole('heading', { name })).toBeVisible();
+  await expect(page.getByTestId('group-project-section-board')).toBeVisible();
 }
 
-const back = (window: Page) => window.getByRole('button', { name: /^Back to / });
-const row = (window: Page, name: string) => window.getByTestId('group-projects-hub').getByRole('button', { name, exact: true });
+const back = (page: Page) => page.getByRole('button', { name: /^Back to / });
+const row = (page: Page, name: string) => page.getByTestId('group-projects-hub').getByRole('button', { name, exact: true });
 
 test('groups in app and two project scopes list apart, narrow to a project, keep their own grants, and delete one at a time', async () => {
   fakes = await installFakeClis({});
@@ -62,32 +62,32 @@ test('groups in app and two project scopes list apart, narrow to a project, keep
   const nameB = path.basename(dirB);
   profile = createDisposableProfile({ label: 'gp-scopes' });
   app = await launchApp({ profile, env: fakes.env });
-  const { window, electronApp } = app;
-  await addProject(electronApp, window, dirA);
-  await addProject(electronApp, window, dirB);
+  const { window: page, electronApp } = app;
+  await addProject(electronApp, page, dirA);
+  await addProject(electronApp, page, dirB);
 
-  await window.getByTestId('app-row-group-projects').click();
-  await expect(window.getByTestId('group-projects-hub')).toBeVisible();
+  await page.getByTestId('app-row-group-projects').click();
+  await expect(page.getByTestId('group-projects-hub')).toBeVisible();
 
   // One app-wide group (starts with no members) and one group for each project.
-  await createGroup(window, 'Everyone');
-  await back(window).click();
-  await createGroup(window, 'Team A', nameA);
-  await back(window).click();
-  await createGroup(window, 'Team B', nameB);
-  await back(window).click();
+  await createGroup(page, 'Everyone');
+  await back(page).click();
+  await createGroup(page, 'Team A', nameA);
+  await back(page).click();
+  await createGroup(page, 'Team B', nameB);
+  await back(page).click();
 
-  const hub = window.getByTestId('group-projects-hub');
+  const hub = page.getByTestId('group-projects-hub');
   await expect(hub.getByRole('region', { name: nameA }).getByRole('button', { name: 'Team A', exact: true })).toBeVisible();
   await expect(hub.getByRole('region', { name: nameB }).getByRole('button', { name: 'Team B', exact: true })).toBeVisible();
   await expect(hub.getByRole('region', { name: 'App-wide' }).getByRole('button', { name: 'Everyone', exact: true })).toBeVisible();
 
   // Grants: a project group starts with its project's agents, and lead and admin are per member.
-  await row(window, 'Team A').click();
-  await window.getByRole('button', { name: 'Permissions', exact: true }).click();
-  const alphaLead = window.getByLabel('Lead for alpha');
-  const alphaAdmin = window.getByLabel('Admin for alpha');
-  const betaLead = window.getByLabel('Lead for beta');
+  await row(page, 'Team A').click();
+  await page.getByRole('button', { name: 'Permissions', exact: true }).click();
+  const alphaLead = page.getByLabel('Lead for alpha');
+  const alphaAdmin = page.getByLabel('Admin for alpha');
+  const betaLead = page.getByLabel('Lead for beta');
   await expect(alphaLead).toHaveValue('off');
   await expect(alphaAdmin).toHaveValue('off');
   await alphaLead.selectOption('allow');
@@ -95,32 +95,67 @@ test('groups in app and two project scopes list apart, narrow to a project, keep
   await expect(alphaAdmin).toHaveValue('off');
   await expect(betaLead).toHaveValue('off');
   // Team A holds only its own project's agents.
-  await expect(window.getByLabel('Lead for gamma')).toHaveCount(0);
-  await back(window).click();
+  await expect(page.getByLabel('Lead for gamma')).toHaveCount(0);
+  await back(page).click();
 
   // The project view: that project's groups and the app-wide ones, with an escape to every group.
-  await selectProject(window, nameA);
-  await window.getByTestId('start-page-group-projects').click();
-  await expect(window.getByRole('heading', { name: `${nameA} and app-wide`, level: 2 })).toBeVisible();
-  await expect(row(window, 'Team A')).toBeVisible();
-  await expect(row(window, 'Everyone')).toBeVisible();
-  await expect(row(window, 'Team B')).toHaveCount(0);
-  await window.getByRole('button', { name: 'All groups', exact: true }).click();
-  await expect(row(window, 'Team B')).toBeVisible();
-  await expect(row(window, 'Team A')).toBeVisible();
+  await selectProject(page, nameA);
+  await page.getByTestId('start-page-group-projects').click();
+  await expect(page.getByRole('heading', { name: `${nameA} and app-wide`, level: 2 })).toBeVisible();
+  await expect(row(page, 'Team A')).toBeVisible();
+  await expect(row(page, 'Everyone')).toBeVisible();
+  await expect(row(page, 'Team B')).toHaveCount(0);
+  await page.getByRole('button', { name: 'All groups', exact: true }).click();
+  await expect(row(page, 'Team B')).toBeVisible();
+  await expect(row(page, 'Team A')).toBeVisible();
 
-  // Delete one group. The others, and their grants, stay.
-  await row(window, 'Team B').click();
-  await window.getByRole('button', { name: 'Details', exact: true }).click();
-  await window.getByRole('button', { name: 'Delete group project' }).click();
-  const dialog = window.getByRole('dialog', { name: 'Delete Team B?' });
+  // Delete one group. It is in the command palette until it is deleted.
+  const paletteOption = (name: string) => page.locator('[data-testid="command-palette-overlay"] [role="option"]').filter({ hasText: name });
+  const searchPalette = async (query: string) => {
+    await page.keyboard.press('Meta+k');
+    await expect(page.getByTestId('command-palette-overlay')).toBeVisible();
+    await page.locator('[data-testid="command-palette-overlay"] input').fill(query);
+  };
+  await searchPalette('Team B');
+  await expect(paletteOption('Team B').first()).toBeVisible();
+  await page.keyboard.press('Escape');
+  const idB = await page.evaluate(async () => ((await window.clubhouse.groupProject.list()) as Array<{ id: string; name: string }>).find((g) => g.name === 'Team B')!.id);
+
+  await row(page, 'Team B').click();
+  await page.getByRole('button', { name: 'Details', exact: true }).click();
+  await page.getByRole('button', { name: 'Delete group project' }).click();
+  const dialog = page.getByRole('dialog', { name: 'Delete Team B?' });
   await dialog.getByRole('button', { name: 'Delete permanently' }).click();
   await expect(dialog).not.toBeVisible();
-  await back(window).click();
-  await expect(row(window, 'Team B')).toHaveCount(0);
-  await expect(row(window, 'Team A')).toBeVisible();
-  await expect(row(window, 'Everyone')).toBeVisible();
-  await row(window, 'Team A').click();
-  await window.getByRole('button', { name: 'Permissions', exact: true }).click();
-  await expect(window.getByLabel('Lead for alpha')).toHaveValue('allow');
+
+  // Nothing of it is left open: no Board or section, no row, no palette entry, no record. The others stay.
+  await expect(page.getByTestId('group-project-section-details')).toHaveCount(0);
+  await expect(page.getByTestId('group-project-section-board')).toHaveCount(0);
+  await back(page).click();
+  await expect(row(page, 'Team B')).toHaveCount(0);
+  await expect(row(page, 'Team A')).toBeVisible();
+  await expect(row(page, 'Everyone')).toBeVisible();
+  await page.getByRole('searchbox', { name: 'Search group projects' }).fill('Team B');
+  await expect(page.getByText('No matches.')).toBeVisible();
+  await page.getByRole('button', { name: 'Clear search' }).click();
+  await searchPalette('Team B');
+  await expect(paletteOption('Team B')).toHaveCount(0);
+  await page.keyboard.press('Escape');
+  const listed = async () => page.evaluate(async () => ((await window.clubhouse.groupProject.list()) as Array<{ id: string; name: string }>).map((g) => g.id));
+  expect(await listed()).not.toContain(idB);
+  await row(page, 'Team A').click();
+  await page.getByRole('button', { name: 'Permissions', exact: true }).click();
+  await expect(page.getByLabel('Lead for alpha')).toHaveValue('allow');
+
+  // After a restart it is still gone, and the grant is still there.
+  await app.electronApp.close();
+  app = await launchApp({ profile, env: fakes.env });
+  await app.window.getByTestId('app-row-group-projects').click();
+  await expect(row(app.window, 'Team A')).toBeVisible();
+  await expect(row(app.window, 'Everyone')).toBeVisible();
+  await expect(row(app.window, 'Team B')).toHaveCount(0);
+  expect(await app.window.evaluate(async () => ((await window.clubhouse.groupProject.list()) as Array<{ id: string }>).length)).toBe(2);
+  await row(app.window, 'Team A').click();
+  await app.window.getByRole('button', { name: 'Permissions', exact: true }).click();
+  await expect(app.window.getByLabel('Lead for alpha')).toHaveValue('allow');
 });
