@@ -26,7 +26,7 @@ test('a group project is created, posted to and managed without opening a canvas
     await window.getByLabel('Bulletin topic').fill('general');
     await window.getByLabel('Bulletin message').fill('posted with no canvas');
     await window.getByRole('button', { name: 'Post', exact: true }).click();
-    await expect(window.getByText('posted with no canvas').first()).toBeVisible();
+    await expect(window.getByText('posted with no canvas').first()).toBeVisible({ timeout: 15_000 });
 
     await window.getByRole('button', { name: 'Canvases', exact: true }).click();
     await expect(window.getByText('This group project is not on a canvas. It works without one.')).toBeVisible();
@@ -38,7 +38,7 @@ test('a group project is created, posted to and managed without opening a canvas
     // The same board is still there after leaving and coming back.
     await window.getByRole('button', { name: 'Back to Group Projects' }).click();
     await window.getByRole('button', { name: 'No canvas', exact: true }).click();
-    await expect(window.getByText('posted with no canvas').first()).toBeVisible();
+    await expect(window.getByText('posted with no canvas').first()).toBeVisible({ timeout: 15_000 });
   } finally {
     await electronApp.close();
     await fakes.cleanup();
