@@ -646,7 +646,9 @@ describe('membership policy IPC (#3546)', () => {
   it('reads verified coverage for every group from the coverage service, read-only', async () => {
     const list = vi.spyOn(coverageService, 'listCoverage').mockResolvedValue([]);
     expect(await getHandler(IPC.GROUP_PROJECT.GET_COVERAGE)(fakeEvent)).toEqual([]);
-    expect(list).toHaveBeenCalledTimes(1);
+    expect(list).toHaveBeenLastCalledWith(undefined);
+    await getHandler(IPC.GROUP_PROJECT.GET_COVERAGE)(fakeEvent, 'gp-1');
+    expect(list).toHaveBeenLastCalledWith('gp-1');
     list.mockRestore();
   });
 

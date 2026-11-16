@@ -167,6 +167,12 @@ describe('verified network coverage (#3549)', () => {
     expect(coverageOf(replica, 'p-atlas', new Map([['g7', cov({ localUnknown: true, complete: false })]]))).toBe('not-verified');
   });
 
+  it('is "not verified", never "no", for a network group that is not this project\'s until its coverage is read', () => {
+    expect(coverageOf(atlasNetwork, 'p-beacon')).toBe('not-verified');
+    expect(coverageOf(atlasNetwork, 'p-beacon', new Map())).toBe('not-verified');
+    expect(coverageOf(atlasLocal, 'p-beacon')).toBe('no');
+  });
+
   it('a repository match never covers', () => {
     const matched = new Map([['g7', cov({ repositoryMatches: [{ projectId: 'p-atlas', name: 'Atlas' }] })]]);
     expect(coverageOf(replica, 'p-atlas', matched)).toBe('no');

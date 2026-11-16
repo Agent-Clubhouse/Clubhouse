@@ -297,7 +297,6 @@ export interface GroupProjectMembershipView {
   automaticMembership?: { scope: GroupProjectScope; projectName: string; editable: boolean };
   /** Lost links keep their auto members until this exact list is reviewed and confirmed. */
   coverageLeaving?: ResolvedGroupProjectMember[];
-  coverage?: GroupProjectCoverage;
   members: ResolvedGroupProjectMember[];
   excluded: Array<{ agentId: string; name: string; excludedAt: string }>;
   /** Pending only on a migrated group project; `wouldJoin` lists who accepting adds. */

@@ -36,6 +36,7 @@ vi.mock('./project-links-store', () => ({ projectLinksStore: () => ({
   groups: () => fx.linkGroups,
   onChange: (fn: (change: { recordsChanged: boolean }) => void) => { fx.linkChanged = () => fn({ recordsChanged: true }); return () => { fx.linkChanged = null; }; },
 }) }));
+vi.mock('./project-links-network', () => ({ projectLinksSyncedWith: () => true }));
 vi.mock('./annex-client', () => ({
   getSatellites: () => fx.satellites,
   onSatelliteSnapshot: (fn: () => void) => { fx.snapshotChanged = fn; return () => { fx.snapshotChanged = null; }; },
@@ -68,6 +69,8 @@ import {
 } from './persisted-bindings';
 import { groupProjectRegistry } from './group-project-registry';
 import { groupProjectHost } from './group-project-host';
+import * as coverageService from './group-project-coverage';
+import { listCoverage } from './group-project-coverage';
 import { initGroupProjectLifecycle, _resetLifecycleForTesting } from './group-project-lifecycle';
 import { roleModeOf, setGroupProjectRole } from './group-project-roles';
 import {
@@ -659,22 +662,32 @@ describe('linked automatic membership (#3546)', () => {
     expect((await getMembership('gp_linked')).explicit.map((e) => e.address).sort()).toEqual([remoteAddress('later'), remoteAddress('remote')].sort());
   });
 
-  it('shows the same coverage in Members and the create preview as the service reads (#3549)', async () => {
+  it('previews coverage from the same read the directory shows, and keeps it out of the member list (#3549)', async () => {
     await linkedGroup();
     const scope = { level: 'project', projectId: PROJ_A.id, reach: 'network' } as const;
+    const coverageOf = async () => (await listCoverage('gp_linked'))[0];
     // A repository match with no link: neither covered nor joined.
-    expect((await describeMembership('gp_linked')).coverage?.copies.map((c) => c.projectId)).toEqual([PROJ_A.id]);
     expect((await previewAutoJoin(scope)).coverage.copies.map((c) => c.projectId)).toEqual([PROJ_A.id]);
     linkCopy(); await reconcileMembership();
-    const members = (await describeMembership('gp_linked')).coverage!;
+    const service = await coverageOf();
     const preview = (await previewAutoJoin(scope)).coverage;
-    expect(members.copies.map((c) => `${c.machine}/${c.projectId}`)).toEqual([`${SELF}/${PROJ_A.id}`, `${REMOTE}/remote_project`]);
-    expect({ ...preview, groupProjectId: members.groupProjectId }).toEqual(members);
+    expect(service.copies.map((c) => `${c.machine}/${c.projectId}`)).toEqual([`${SELF}/${PROJ_A.id}`, `${REMOTE}/remote_project`]);
+    expect({ ...preview, groupProjectId: service.groupProjectId }).toEqual(service);
     // The agents the preview adds come from exactly the copies it says it covers.
     expect((await previewAutoJoin(scope)).wouldJoin.filter((m) => m.agentId.includes('@')).map((m) => m.projectId)).toEqual(['remote_project']);
     fx.satellites[0].state = 'disconnected';
-    expect((await describeMembership('gp_linked')).coverage?.copies.find((c) => c.machine === REMOTE)?.state).toBe('unknown');
+    expect((await coverageOf()).copies.find((c) => c.machine === REMOTE)?.state).toBe('unknown');
     expect((await previewAutoJoin(scope)).unreadableProjects.map((p) => p.projectId)).toContain(`${REMOTE}/remote_project`);
+  });
+
+  it('does not compute coverage when listing members: the hub lists every group', async () => {
+    await linkedGroup(); linkCopy();
+    const describe = vi.spyOn(coverageService, 'describeCoverage');
+    const list = vi.spyOn(coverageService, 'listCoverage');
+    const view = await describeMembership('gp_linked');
+    expect(view).not.toHaveProperty('coverage');
+    expect(describe).not.toHaveBeenCalled();
+    expect(list).not.toHaveBeenCalled();
   });
 
   it('never auto-joins a remote inventory row with an unknown kind', async () => {

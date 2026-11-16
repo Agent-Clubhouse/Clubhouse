@@ -104,7 +104,7 @@ export function registerGroupProjectHandlers(): void {
     [objectArg<GroupProjectScope>(), objectArg<GroupProjectMembershipOptions>({ optional: true })],
     (_event, scope, options) => previewAutoJoin(scope, options as GroupProjectMembershipOptions | undefined),
   ));
-  ipcMain.handle(IPC.GROUP_PROJECT.GET_COVERAGE, () => listCoverage());
+  ipcMain.handle(IPC.GROUP_PROJECT.GET_COVERAGE, withValidatedArgs([stringArg({ optional: true })], (_event, id) => listCoverage(id as string | undefined)));
   ipcMain.handle(IPC.GROUP_PROJECT.SET_AUTOMATIC_MEMBERSHIP, withValidatedArgs(
     [stringArg(), objectArg<GroupProjectMembershipOptions>()],
     (_event, id, options) => setAutomaticMembership(id as string, options as GroupProjectMembershipOptions),

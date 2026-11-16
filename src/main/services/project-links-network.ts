@@ -28,6 +28,21 @@ export function receiveProjectLinks(source: string, raw: unknown, current: () =>
   return receiveReplica(PROJECT_LINKS_REPLICA, store, source, raw, current);
 }
 
+/** Machines whose project links were fully synced with this computer's, since they last connected. */
+const synced = new Set<string>();
+
+/**
+ * Whether this computer's link records are known to include that machine's: a
+ * full push and pull succeeded since it connected. False for a peer that has
+ * not synced yet, lags, or predates project link sync. Absence of a link is
+ * evidence only when this is true.
+ */
+export function projectLinksSyncedWith(machine: string): boolean { return synced.has(machine.toLowerCase()); }
+
 export function startProjectLinksNetwork(options: ProjectLinksNetworkOptions): () => void {
-  return startReplicaNetwork(PROJECT_LINKS_REPLICA, options.store ?? projectLinksStore(), options);
+  const stop = startReplicaNetwork(PROJECT_LINKS_REPLICA, options.store ?? projectLinksStore(), {
+    ...options,
+    onSynced: (machine, ok) => { if (ok) synced.add(machine); else synced.delete(machine); options.onSynced?.(machine, ok); },
+  });
+  return () => { stop(); synced.clear(); };
 }

@@ -43,6 +43,12 @@ export interface ReplicaNetworkOptions {
   /** A pin or pairing change invalidates in-flight publications. */
   pairing(machine: string): string | undefined;
   onMembershipChanged(listener: () => void): () => void;
+  /**
+   * A machine's records are fully synced (pushed and pulled with no error) or no
+   * longer known to be: a reconnect, a pairing change, a failure, or a peer
+   * without this sync. Readers who would conclude "absent" from the records need it.
+   */
+  onSynced?(machine: string, synced: boolean): void;
 }
 const object = (v: unknown): v is Record<string, unknown> => !!v && typeof v === 'object' && !Array.isArray(v);
 const capital = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
@@ -71,6 +77,7 @@ export function startReplicaNetwork<R>(spec: ReplicaSpec<R>, store: ReplicaStore
   const generations = new Map<string, number>();
   const running = new Set<string>(), dirty = new Set<string>();
   const retries = new Map<string, ReturnType<typeof setTimeout>>();
+  const setSynced = (machine: string, synced: boolean) => options.onSynced?.(machine.toLowerCase(), synced);
   const online = (machine: string) => !stopped && options.isMember(machine) && options.transport.connected(machine);
   const queue = (machine: string) => {
     machine = machine.toLowerCase();
@@ -98,7 +105,7 @@ export function startReplicaNetwork<R>(spec: ReplicaSpec<R>, store: ReplicaStore
           else supported.set(machine, object(probe.body) && probe.body.version === 1
             && typeof probe.body.maxRecords === 'number' && probe.body.maxRecords >= spec.pageSize);
         }
-        if (!supported.get(machine)) break;
+        if (!supported.get(machine)) { setSynced(machine, false); break; }
         // Push the durable full set, including tombstones, in bounded pages.
         const records = store.records();
         for (let i = 0; i < records.length; i += spec.pageSize) {
@@ -119,8 +126,10 @@ export function startReplicaNetwork<R>(spec: ReplicaSpec<R>, store: ReplicaStore
           await store.merge(spec.parseIncoming(rows, spec.pageSize), machine, current);
           after = body.next as string | undefined;
         } while (after !== undefined && current());
+        if (current()) setSynced(machine, true);
       }
     } catch (error) { // telemetry-exempt: a failed sync is retried; no project paths or records are logged
+      setSynced(machine, false);
       appLog('core:annex', 'warn', `${capital(spec.plural)} could not synchronize`, { meta: { machine, error: error instanceof Error ? error.message : String(error) } });
       if (current() && !retries.has(machine)) {
         const timer = setTimeout(() => { retries.delete(machine); queue(machine); }, 30_000);
@@ -135,6 +144,7 @@ export function startReplicaNetwork<R>(spec: ReplicaSpec<R>, store: ReplicaStore
     machine = machine.toLowerCase();
     generations.set(machine, (generations.get(machine) ?? 0) + 1);
     supported.delete(machine);
+    setSynced(machine, false);
     const timer = retries.get(machine);
     if (timer) { clearTimeout(timer); retries.delete(machine); }
     queue(machine);
@@ -145,7 +155,7 @@ export function startReplicaNetwork<R>(spec: ReplicaSpec<R>, store: ReplicaStore
   });
   const offMembers = options.onMembershipChanged(() => {
     supported.clear();
-    for (const machine of options.members()) generations.set(machine, (generations.get(machine) ?? 0) + 1);
+    for (const machine of options.members()) { generations.set(machine, (generations.get(machine) ?? 0) + 1); setSynced(machine, false); }
     for (const [machine, timer] of retries) if (!options.isMember(machine)) { clearTimeout(timer); retries.delete(machine); supported.delete(machine); dirty.delete(machine); }
     for (const machine of options.members()) queue(machine);
   });
@@ -154,6 +164,7 @@ export function startReplicaNetwork<R>(spec: ReplicaSpec<R>, store: ReplicaStore
   void store.migrate().catch((error) => appLog('core:annex', 'warn', `${Noun} migration failed`, { meta: { error: error instanceof Error ? error.message : String(error) } }));
   return () => {
     stopped = true; offConnected(); offChanged(); offMembers();
+    for (const machine of options.members()) setSynced(machine, false);
     for (const timer of retries.values()) clearTimeout(timer);
     retries.clear(); dirty.clear(); supported.clear();
   };

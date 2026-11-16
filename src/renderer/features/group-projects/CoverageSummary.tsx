@@ -31,14 +31,21 @@ export function OfferToLink({ coverage, className }: { coverage: GroupProjectCov
   );
 }
 
-/** What a group project covers, from the main process's read: the same text in the hub, Members and the create preview. */
-export function CoverageSummary({ coverage }: { coverage: GroupProjectCoverage | undefined }) {
+/** Said under a preview made here for a group another computer will host: only that host can verify its coverage. */
+export const VERIFIED_ON_HOST = 'Coverage is verified on the host when the group is created.';
+
+/**
+ * What a group project covers, from the main process's read: the same text in the hub, Members and the
+ * create preview. `remoteHost` is for a preview made here for a group another computer will host: it
+ * says what this computer sees, and that the host verifies coverage itself.
+ */
+export function CoverageSummary({ coverage, remoteHost = false }: { coverage: GroupProjectCoverage | undefined; remoteHost?: boolean }) {
   const line = coverageLine(coverage);
   if (!coverage?.scoped) return null;
   return (
     <div data-testid="coverage-summary">
-      {line && <p className={settingsHelp}>{line}</p>}
-      <p className={settingsHelp}>Coverage comes from your project links. A project with the same repository is covered only after you link it.</p>
+      {line && <p className={settingsHelp}>{remoteHost ? `As seen from this computer: ${line.charAt(0).toLowerCase()}${line.slice(1)}` : line}</p>}
+      {remoteHost && <p className={settingsHelp}>{VERIFIED_ON_HOST}</p>}
       <OfferToLink coverage={coverage} />
     </div>
   );

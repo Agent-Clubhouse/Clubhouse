@@ -15,6 +15,7 @@ const fx = vi.hoisted(() => ({
   groups: [] as unknown[],
   linksThrow: false,
   member: true,
+  synced: new Set<string>(),
 }));
 const SELF = 'aa:aa:aa:aa:aa:aa:aa:aa:aa:aa:aa:aa:aa:aa:aa:aa';
 const REMOTE = 'bb:bb:bb:bb:bb:bb:bb:bb:bb:bb:bb:bb:bb:bb:bb:bb';
@@ -23,6 +24,7 @@ vi.mock('electron', () => ({ app: { isPackaged: false, getPath: () => '' } }));
 vi.mock('./log-service', () => ({ appLog: vi.fn() }));
 vi.mock('./project-store', () => ({ list: async () => fx.projects }));
 vi.mock('./project-repo-keys', () => ({ repoKeysFor: async () => fx.repoKeys }));
+vi.mock('./project-links-network', () => ({ projectLinksSyncedWith: (machine: string) => fx.synced.has(machine) }));
 vi.mock('./annex-client', () => ({ getSatellites: () => fx.satellites }));
 vi.mock('./project-links-store', () => ({ projectLinksStore: () => ({
   groups: () => { if (fx.linksThrow) throw new Error('Shared project links could not be read.'); return fx.linkGroups; },
@@ -56,7 +58,7 @@ const replica = (over: Partial<GroupProject> = {}) => gp({
 
 beforeEach(() => {
   fx.projects = [ATLAS, OTHER]; fx.linkGroups = []; fx.records = []; fx.satellites = [sat()]; fx.repoKeys = {};
-  fx.groups = []; fx.linksThrow = false; fx.member = true;
+  fx.groups = []; fx.linksThrow = false; fx.member = true; fx.synced = new Set([REMOTE]);
 });
 
 describe('coverage of a group this computer hosts', () => {
@@ -127,7 +129,7 @@ describe('coverage of a copy of another computer\'s group', () => {
     expect(coverage).toMatchObject({ localUnknown: false, complete: true });
   });
 
-  it('does not cover an unlinked project when the host is connected to say so', async () => {
+  it('does not cover an unlinked project once the host is connected, a member, and its links are synced', async () => {
     const coverage = await describeCoverage(replica());
     expect(coverage.copies.some((c) => c.thisComputer)).toBe(false);
     expect(coverage.localUnknown).toBe(false);
@@ -137,6 +139,26 @@ describe('coverage of a copy of another computer\'s group', () => {
     fx.satellites = [sat({ state: 'disconnected' })];
     const coverage = await describeCoverage(replica());
     expect(coverage).toMatchObject({ localUnknown: true, complete: false });
+  });
+
+  it.each([
+    ['link sync is lagging or has not finished', () => { fx.synced = new Set(); }],
+    ['the host predates project link sync', () => { fx.synced = new Set(); fx.records = []; }],
+    ['the host is not a network member', () => { fx.member = false; }],
+  ])('is unknown, not "not covered", with a connected host when %s', async (_name, arrange) => {
+    arrange();
+    const coverage = await describeCoverage(replica());
+    expect(coverage).toMatchObject({ localUnknown: true, complete: false });
+    expect(coverage.copies.some((c) => c.thisComputer)).toBe(false);
+  });
+
+  it('covers once a link arrives in the lagging sync, and the lens can then show it', async () => {
+    fx.synced = new Set();
+    expect((await describeCoverage(replica())).localUnknown).toBe(true);
+    link([REMOTE, 'remote-atlas'], [SELF, ATLAS.id]);
+    const coverage = await describeCoverage(replica());
+    expect(coverage.copies.filter((c) => c.thisComputer).map((c) => c.projectId)).toEqual([ATLAS.id]);
+    expect(coverage.localUnknown).toBe(false);
   });
 
   it('keeps a known link covering while the host is offline', async () => {
@@ -183,6 +205,12 @@ describe('one rule for the directory, Members and the create preview', () => {
     expect({ ...preview, groupProjectId: '' }).toEqual({ ...real, groupProjectId: '' });
   });
 
+  it('reads one group\'s coverage by id', async () => {
+    fx.groups = [gp(), replica()];
+    expect((await listCoverage('g-replica')).map((c) => c.groupProjectId)).toEqual(['g-replica']);
+    expect(await listCoverage('missing')).toEqual([]);
+  });
+
   it('lists coverage for every group in one read, changing no group', async () => {
     fx.groups = [gp(), replica()];
     link([SELF, ATLAS.id], [REMOTE, 'remote-atlas']);
@@ -202,7 +230,7 @@ describe('computeCoverage', () => {
   it('is pure over its inputs: no self means nothing is verified for a copy', () => {
     const inputs: CoverageInputs = {
       groupProjectId: 'g', scope: { level: 'project', projectId: 'x', reach: 'network' }, replica: true, host: REMOTE, self: null,
-      isMember: () => true, projects: [], satellites: [], repoKeys: {},
+      isMember: () => true, linksSynced: () => true, projects: [], satellites: [], repoKeys: {},
     };
     expect(computeCoverage(inputs)).toMatchObject({ localUnknown: true, complete: false, copies: [] });
   });

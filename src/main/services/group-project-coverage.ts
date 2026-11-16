@@ -9,12 +9,13 @@
  * directory all read this one rule.
  */
 import type { CoverageCopy, GroupProject, GroupProjectCoverage, GroupProjectScope } from '../../shared/group-project-types';
-import { projectRefKey, type NetworkProjectRef } from '../../shared/project-links';
+import { projectLinkPairKey, type NetworkProjectRef } from '../../shared/project-links';
 import { projectLinksStore } from './project-links-store';
 import { linkedProjectCopies, verifyCopy } from './group-project-linked-agents';
 import { groupProjectHost } from './group-project-host';
 import * as projectStore from './project-store';
 import { repoKeysFor } from './project-repo-keys';
+import { projectLinksSyncedWith } from './project-links-network';
 import { appLog } from './log-service';
 
 type Satellites = Parameters<typeof verifyCopy>[1];
@@ -29,6 +30,8 @@ export interface CoverageInputs {
   host: string | null;
   self: string | null;
   isMember: (machine: string) => boolean;
+  /** Whether this computer's link records are known to include that machine's (a full link sync succeeded). */
+  linksSynced: (machine: string) => boolean;
   projects: readonly LocalProject[];
   satellites: Satellites;
   repoKeys: Readonly<Record<string, string>>;
@@ -40,10 +43,9 @@ const NOT_SCOPED = (groupProjectId: string): GroupProjectCoverage => ({
   groupProjectId, scoped: false, copies: [], localUnknown: false, complete: true, repositoryMatches: [],
 });
 
-/** Whether the person told this computer to keep the two projects apart. */
-function keptApart(a: NetworkProjectRef, b: NetworkProjectRef): boolean {
-  const keys = new Set([projectRefKey(a), projectRefKey(b)]);
-  return projectLinksStore().records().some((r) => !r.linked && r.projects.every((p) => keys.has(projectRefKey(p))));
+/** The pairs the person told this computer to keep apart or unlink, read once for a group's matches. */
+function separatedPairs(): Set<string> {
+  return new Set(projectLinksStore().records().filter((r) => !r.linked).map((r) => projectLinkPairKey(...r.projects)));
 }
 
 export function computeCoverage(i: CoverageInputs): GroupProjectCoverage {
@@ -74,7 +76,7 @@ export function computeCoverage(i: CoverageInputs): GroupProjectCoverage {
         const entry = copy.machine === i.self ? thisComputer(copy) : other(copy);
         if (entry) copies.push(entry);
       }
-    } catch (error) {
+    } catch (error) { // telemetry-exempt: logged by linksUnreadable; coverage is shown as not verified
       return linksUnreadable(i, error, finish);
     }
     return finish(false);
@@ -91,17 +93,20 @@ export function computeCoverage(i: CoverageInputs): GroupProjectCoverage {
       const entry = copy.machine === i.self ? thisComputer(copy) : other(copy);
       if (entry) copies.push(entry);
     }
-  } catch (error) {
+  } catch (error) { // telemetry-exempt: logged by linksUnreadable; coverage is shown as not verified
     return linksUnreadable(i, error, finish);
   }
   const linkedHere = new Set(copies.filter((c) => c.thisComputer).map((c) => c.projectId));
   const hostKey = hostView.project?.repoKey;
-  const repositoryMatches = hostKey ? i.projects
-    .filter((p) => !linkedHere.has(p.id) && i.repoKeys[p.id] === hostKey && !keptApart(hostRef, { machine: i.self!, projectId: p.id }))
-    .map((p) => ({ projectId: p.id, name: labelOf(p) })) : [];
-  // Not linked here, and the host isn't connected to say otherwise: this computer's projects are unknown.
-  const hostConnected = hostView.sat?.state === 'connected';
-  return finish(linkedHere.size === 0 && !hostConnected, repositoryMatches);
+  const candidates = hostKey ? i.projects.filter((p) => !linkedHere.has(p.id) && i.repoKeys[p.id] === hostKey) : [];
+  const separated = candidates.length ? separatedPairs() : new Set<string>();
+  const repositoryMatches = candidates
+    .filter((p) => !separated.has(projectLinkPairKey(hostRef, { machine: i.self!, projectId: p.id })))
+    .map((p) => ({ projectId: p.id, name: labelOf(p) }));
+  // No link here is "not covered" only when this computer's link records are known to include the host's:
+  // connected, a network member, and a full link sync done. A lagging sync or an old peer leaves it unknown.
+  const linksKnown = hostView.sat?.state === 'connected' && i.isMember(i.host) && i.linksSynced(i.host);
+  return finish(linkedHere.size === 0 && !linksKnown, repositoryMatches);
 }
 
 function linksUnreadable(i: CoverageInputs, error: unknown, finish: (unknown: boolean) => GroupProjectCoverage): GroupProjectCoverage {
@@ -110,7 +115,7 @@ function linksUnreadable(i: CoverageInputs, error: unknown, finish: (unknown: bo
   return finish(true);
 }
 
-type Environment = Pick<CoverageInputs, 'self' | 'isMember' | 'projects' | 'satellites' | 'repoKeys'>;
+type Environment = Pick<CoverageInputs, 'self' | 'isMember' | 'linksSynced' | 'projects' | 'satellites' | 'repoKeys'>;
 
 /** Repository keys are read only when a copy of another computer's group needs them: they run git. */
 async function environment(needRepoKeys: boolean): Promise<Environment> {
@@ -118,6 +123,7 @@ async function environment(needRepoKeys: boolean): Promise<Environment> {
   return {
     self: groupProjectHost.selfMachine(),
     isMember: (machine) => groupProjectHost.isNetworkMember(machine),
+    linksSynced: projectLinksSyncedWith,
     projects, satellites: getSatellites(), repoKeys: needRepoKeys ? await repoKeysFor(projects) : {},
   };
 }
@@ -136,8 +142,9 @@ export async function previewCoverage(scope: GroupProjectScope): Promise<GroupPr
   return computeCoverage(inputsFor({ id: 'preview', scope, host: undefined, network: undefined }, await environment(false)));
 }
 
-export async function listCoverage(): Promise<GroupProjectCoverage[]> {
-  const groups = await groupProjectHost.list();
+/** Every group's coverage, or just the one named. */
+export async function listCoverage(groupProjectId?: string): Promise<GroupProjectCoverage[]> {
+  const groups = (await groupProjectHost.list()).filter((gp) => groupProjectId === undefined || gp.id === groupProjectId);
   const env = await environment(groups.some((gp) => gp.network?.role === 'replica'));
   return groups.map((gp) => computeCoverage(inputsFor(gp, env)));
 }

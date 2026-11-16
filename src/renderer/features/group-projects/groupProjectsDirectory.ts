@@ -56,15 +56,17 @@ export type CoverageById = ReadonlyMap<string, GroupProjectCoverage>;
  * this computer holds covers the project it names. Anything else covers a project
  * only through an explicit project link, which the main process reads (#3549); a
  * repository match never counts. A copy of another computer's group with no link
- * to the project is "no" only once its coverage was checked and is complete;
- * until then, or when this computer can't tell, it is "not-verified".
+ * to the project is "no" only once its coverage was checked and this computer
+ * can tell; until then, or when it can't, it is "not-verified".
  */
 export function coverageOf(project: GroupProject, projectId: string, coverage?: CoverageById): 'covers' | 'not-verified' | 'no' {
   if (scopeKind(project) !== 'project') return 'no';
-  if (!isReplica(project)) {
-    if (project.scope?.level === 'project' && project.scope.projectId === projectId) return 'covers';
-    return coverage?.get(project.id)?.copies.some((c) => c.thisComputer && c.projectId === projectId && c.state === 'verified') ? 'covers' : 'no';
+  if (!isReplica(project) && project.scope?.level === 'project') {
+    // A project group this computer holds covers the project it names; a local-reach one covers nothing else.
+    if (project.scope.projectId === projectId) return 'covers';
+    if (project.scope.reach === 'local') return 'no';
   }
+  // Anything else is judged by its links. With no read yet, or a failed one, that is "not verified", never "no".
   const view = coverage?.get(project.id);
   if (view?.copies.some((c) => c.thisComputer && c.projectId === projectId && c.state === 'verified')) return 'covers';
   return view && !view.localUnknown ? 'no' : 'not-verified';
