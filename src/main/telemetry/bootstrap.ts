@@ -325,6 +325,26 @@ async function start(): Promise<boolean> {
  * override. Returns immediately; the SDK loads in the background.
  */
 /**
+ * The settings writes startup starts and doesn't wait for: the export
+ * graduation's save, the developer rule's save, and the Phase 1 secret move
+ * after ready. Kept so a test can wait for the real completion, rather than
+ * poll a file for a time that depends on how loaded the machine is (#3577).
+ */
+const startupWrites = new Set<Promise<unknown>>();
+
+function trackStartupWrite<T>(write: Promise<T>): Promise<T> {
+  startupWrites.add(write);
+  const done = () => { startupWrites.delete(write); };
+  write.then(done, done);
+  return write;
+}
+
+/** Resolves once every startup write begun so far, and any they lead to, has settled (success or not). */
+export async function whenStartupWritesSettled(): Promise<void> {
+  while (startupWrites.size > 0) await Promise.allSettled([...startupWrites]);
+}
+
+/**
  * Move a Phase 1 plaintext secret out of telemetry-settings.json once the app
  * is ready, whatever the settings say: a user who turned telemetry off, or had
  * it switched off when export left Experimental, must not keep the plaintext forever.
@@ -348,7 +368,7 @@ function finishExportGraduation(graduation: NonNullable<ReturnType<typeof applyE
   appLog(LOG_NS, 'info', 'Telemetry export settings migrated for this install', { meta: { outcome: graduation.outcome } });
   // As turning a destination off does: a queue from before must not be sent if it's turned on again.
   if (graduation.outcome === 'off' || graduation.outcome === 'opted_out') void deleteOfflineData().catch(() => {});
-  graduation.saved.catch((err) => {
+  trackStartupWrite(graduation.saved).catch((err) => {
     // telemetry-exempt: logged; this run uses the migrated settings and the next launch saves again.
     appLog(LOG_NS, 'warn', 'Could not save the telemetry export settings migration', {
       meta: { error: err instanceof Error ? err.message : String(err) },
@@ -372,14 +392,17 @@ export function initTelemetry(): void {
   // so startup signals are recorded even with no export destination.
   void syncLocalRecording();
   if (graduation) finishExportGraduation(graduation);
-  saveDeveloperRuleMigration()?.catch((err) => {
-    // telemetry-exempt: logged; this run uses the migrated settings and the next launch migrates again.
-    appLog(LOG_NS, 'warn', 'Could not save the developer destination migration', {
-      meta: { error: err instanceof Error ? err.message : String(err) },
+  const developerRuleSaved = saveDeveloperRuleMigration();
+  if (developerRuleSaved) {
+    trackStartupWrite(developerRuleSaved).catch((err) => {
+      // telemetry-exempt: logged; this run uses the migrated settings and the next launch migrates again.
+      appLog(LOG_NS, 'warn', 'Could not save the developer destination migration', {
+        meta: { error: err instanceof Error ? err.message : String(err) },
+      });
     });
-  });
+  }
   try {
-    if (getTelemetrySettings().legacyDestination) void migrateLegacySecretsOnReady();
+    if (getTelemetrySettings().legacyDestination) void trackStartupWrite(migrateLegacySecretsOnReady());
     if (!isTelemetryConfigured()) {
       const held = awaitingFramebriar(getTelemetrySettings());
       if (held) holdForFramebriar();

@@ -8,6 +8,7 @@ import type {
   GitCommit,
   ProjectInfo,
 } from '../../shared/plugin-types';
+import type { Agent } from '../../shared/types';
 import { useProjectStore } from '../stores/projectStore';
 import { useAgentStore } from '../stores/agentStore';
 import { useChromeStore } from '../chrome/chromeStore';
@@ -63,12 +64,19 @@ export function createProjectsAPI(): ProjectsAPI {
       // In the new sidebar's order (#2447), so a canvas card's picker matches it: pinned first,
       // idle last. The classic layout shows store order, so it keeps that.
       const projectState = useProjectStore.getState();
+      const agents = Object.values(useAgentStore.getState().agents).filter((a) => a.kind !== 'companion');
+      const agentsByProject: Record<string, Agent[]> = {};
+      for (const agent of agents) (agentsByProject[agent.projectId] ??= []).push(agent);
       const ordered = isNewChromeEnabled() ? sidebarProjectOrder(projectState.projects, useChromeStore.getState(), {
         // Companions don't keep a project out of the idle row in the sidebar either.
-        runningIds: new Set(Object.values(useAgentStore.getState().agents).filter((a) => a.status === 'running' && a.kind !== 'companion').map((a) => a.projectId)),
+        runningIds: new Set(agents.filter((a) => a.status === 'running').map((a) => a.projectId)),
         // Pickers open in app views (the canvas), where the sidebar exempts no selected project.
         activeProjectId: null,
         now: Date.now(),
+        // The Recent order puts running agents first, as the sidebar's does (#3558); the picker lists
+        // local projects only, so each row is just itself.
+        agentsByProject,
+        agentActivity: useChromeStore.getState().agentActivity,
       }) : projectState.projects;
       const local = ordered.map((p) => ({
         id: p.id,

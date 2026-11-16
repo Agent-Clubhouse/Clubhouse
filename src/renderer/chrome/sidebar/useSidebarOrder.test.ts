@@ -3,7 +3,7 @@ import { renderHook } from '@testing-library/react';
 import type { Agent } from '../../../shared/types';
 import { useChromeStore } from '../chromeStore';
 import { useSidebarOrder } from './useSidebarOrder';
-import { sidebarProjectGroups } from './sidebarProjectOrder';
+import { sidebarProjectGroups, sidebarProjectOrder } from './sidebarProjectOrder';
 
 const NOW = 1_800_000_000_000;
 const HOUR = 60 * 60 * 1000;
@@ -106,5 +106,84 @@ describe('useSidebarOrder Recent order across machines (#3542)', () => {
     // A real change still moves the rows.
     rerender({ agents: { a: [agent('a1', 'a', 'sleeping')] } });
     expect(result.current.projects.map((p) => p.id)).toEqual(['b', 'a']);
+  });
+});
+
+describe('sidebarProjectGroups idle fold across linked copies (#3557)', () => {
+  const state = (projectActivity: Record<string, number>, over: Partial<Parameters<typeof sidebarProjectGroups>[1]> = {}) => ({
+    projectSort: 'manual' as const, projectActivity, pinnedProjectIds: [], inactiveProjectIds: [], idleDays: 7, ...over,
+  });
+  const groups = (
+    ids: string[], activity: Record<string, number>, members?: Record<string, string[]>,
+    over: Partial<Parameters<typeof sidebarProjectGroups>[1]> = {},
+  ) => {
+    const g = sidebarProjectGroups(ids.map((id) => ({ id })), state(activity, over), { runningIds: new Set(), activeProjectId: null, now: NOW, members });
+    return { active: g.active.map((p) => p.id), idle: g.idle.map((p) => p.id) };
+  };
+
+  it('keeps a linked group out of the fold when only another copy was active', () => {
+    const members = { go: ['go', REMOTE] };
+    const activity = { go: NOW - 20 * DAY, [REMOTE]: NOW - HOUR };
+    expect(groups(['go'], activity, members)).toEqual({ active: ['go'], idle: [] });
+    // Without the members, the old rule: the row's own activity only.
+    expect(groups(['go'], activity)).toEqual({ active: [], idle: ['go'] });
+  });
+
+  it('folds a linked group when every copy is past the window', () => {
+    const members = { go: ['go', REMOTE] };
+    expect(groups(['go'], { go: NOW - 20 * DAY, [REMOTE]: NOW - 9 * DAY }, members)).toEqual({ active: [], idle: ['go'] });
+  });
+
+  it('leaves unlinked projects as they were, with or without members', () => {
+    const activity = { a: NOW - HOUR, b: NOW - 20 * DAY };
+    const expected = { active: ['a'], idle: ['b'] };
+    expect(groups(['a', 'b'], activity)).toEqual(expected);
+    expect(groups(['a', 'b'], activity, { a: ['a'], b: ['b'] })).toEqual(expected);
+  });
+
+  it('ignores copies\' times that are not finite, and a group with none stays active', () => {
+    const members = { go: ['go', REMOTE] };
+    expect(groups(['go'], { go: NOW - 20 * DAY, [REMOTE]: Number.POSITIVE_INFINITY }, members)).toEqual({ active: [], idle: ['go'] });
+    expect(groups(['go'], { go: NOW - 20 * DAY, [REMOTE]: Number.NaN }, members)).toEqual({ active: [], idle: ['go'] });
+    expect(groups(['go'], {}, members)).toEqual({ active: ['go'], idle: [] });
+  });
+
+  it('keeps pins, inactive marks and the never-idle setting as they were', () => {
+    const members = { go: ['go', REMOTE], old: ['old', 'remote||sat||old'] };
+    const activity = { go: NOW - 20 * DAY, [REMOTE]: NOW - HOUR, old: NOW - 20 * DAY };
+    // Marked inactive: idle at once, whatever a copy did.
+    expect(groups(['go', 'old'], activity, members, { inactiveProjectIds: ['go'] })).toEqual({ active: [], idle: ['go', 'old'] });
+    // Pinned rows are in the pinned section, not the fold.
+    const pinned = sidebarProjectGroups(['go', 'old'].map((id) => ({ id })), state(activity, { pinnedProjectIds: ['old'] }),
+      { runningIds: new Set(), activeProjectId: null, now: NOW, members });
+    expect(pinned.pinned.map((p) => p.id)).toEqual(['old']);
+    // idleDays 0: never idle.
+    expect(groups(['old'], activity, members, { idleDays: 0 })).toEqual({ active: ['old'], idle: [] });
+  });
+});
+
+describe('sidebarProjectOrder Recent order matches the sidebar (#3558)', () => {
+  it('puts a project with a long-running agent first, as the sidebar does', () => {
+    const projects = ['site', 'go', 'docs'];
+    const activity = { site: NOW - DAY, docs: NOW - 2 * DAY, go: NOW - 9 * DAY };
+    const agentsByProject = { go: [agent('a1', 'go')] };
+    const sidebar = order(projects, agentsByProject, activity);
+    const picker = sidebarProjectOrder(projects.map((id) => ({ id })), {
+      projectSort: 'recent', projectActivity: activity, pinnedProjectIds: [], inactiveProjectIds: [], idleDays: 0,
+    }, { runningIds: new Set(['go']), activeProjectId: null, now: NOW, agentsByProject, agentActivity: {} });
+    expect(sidebar).toEqual(['go', 'site', 'docs']);
+    expect(picker.map((p) => p.id)).toEqual(sidebar);
+  });
+
+  it('orders running projects by their agents\' spawns and turns, as the sidebar does', () => {
+    const projects = ['a', 'b'];
+    const activity = { a: NOW - 2 * DAY, b: NOW - DAY };
+    const agentsByProject = { a: [agent('a1', 'a')], b: [agent('b1', 'b')] };
+    const agentActivity = { a1: NOW - 60_000 };
+    const sidebar = order(projects, agentsByProject, activity, undefined, agentActivity);
+    const picker = sidebarProjectOrder(projects.map((id) => ({ id })), {
+      projectSort: 'recent', projectActivity: activity, pinnedProjectIds: [], inactiveProjectIds: [], idleDays: 0,
+    }, { runningIds: new Set(['a', 'b']), activeProjectId: null, now: NOW, agentsByProject, agentActivity });
+    expect(picker.map((p) => p.id)).toEqual(sidebar);
   });
 });

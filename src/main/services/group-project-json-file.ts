@@ -25,8 +25,11 @@ export async function readJsonFile<T>(file: string, fallback: () => T, validate:
   return validate(parsed);
 }
 
-/** `createDir: false` writes only into a folder that still exists, so a write can't bring back a removed one. */
-export async function writeJsonFile(file: string, value: unknown, options: { createDir?: boolean } = {}): Promise<void> {
+/**
+ * `createDir: false` writes only into a folder that still exists, so a write can't bring back a removed one.
+ * `compact` skips the indentation, for a file that can be large and isn't edited by hand.
+ */
+export async function writeJsonFile(file: string, value: unknown, options: { createDir?: boolean; compact?: boolean } = {}): Promise<void> {
   if (options.createDir !== false) await fsp.mkdir(path.dirname(file), { recursive: true });
-  await replaceFile(file, JSON.stringify(value, null, 2), undefined);
+  await replaceFile(file, options.compact ? JSON.stringify(value) : JSON.stringify(value, null, 2), undefined);
 }

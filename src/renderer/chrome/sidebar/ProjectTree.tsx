@@ -34,6 +34,8 @@ export interface ProjectTreeProps {
   projects: Project[];
   projectIcons: Record<string, string>;
   agentsByProject: Record<string, Agent[]>;
+  /** The project ids each row stands for (linked copies); the idle fold counts their activity too (#3557). */
+  members?: Readonly<Record<string, readonly string[]>>;
   detailed: Record<string, AgentDetailedStatus>;
   completedByProject: Record<string, CompletedQuickAgent[]>;
   activeProjectId: string | null;
@@ -296,7 +298,7 @@ export function ProjectTree(props: ProjectTreeProps) {
   // Already sorted (useSidebarOrder); the same grouping canvas pickers use (#2447).
   const { pinned, active, idle } = useMemo(() => sidebarProjectGroups(projects, {
     projectSort: 'manual', projectActivity, pinnedProjectIds, inactiveProjectIds, idleDays,
-  }, { runningIds, activeProjectId, now: Date.now() }), [projects, projectActivity, pinnedProjectIds, runningIds, activeProjectId, idleDays, inactiveProjectIds]);
+  }, { runningIds, activeProjectId, now: Date.now(), members: props.members }), [projects, props.members, projectActivity, pinnedProjectIds, runningIds, activeProjectId, idleDays, inactiveProjectIds]);
 
   const collapsedSet = useMemo(() => new Set(collapsedProjectIds), [collapsedProjectIds]);
   const foldSet = useMemo(() => new Set(expandedFolds), [expandedFolds]);

@@ -47,13 +47,20 @@ const RATE_WINDOW_MS = 60_000;
 export const ROSTER_FRESH_MS = 15_000;
 /** An old host's 404 is believed this long. */
 const UNSUPPORTED_TTL_MS = 60_000;
-/** A saved roster bigger than this is not read. */
-export const ROSTER_CACHE_MAX_BYTES = 1024 * 1024;
+/**
+ * A saved roster bigger than this is not read. The worst case (1000 members with
+ * the longest ids and labels, 32 copies) is a little over 1 MB even written compact.
+ */
+export const ROSTER_CACHE_MAX_BYTES = 2 * 1024 * 1024;
 const PAGE_ATTEMPTS = 3;
-/** A change since the saved roster reads again at once, but not more often than this. */
+/** A membership or record change since the saved roster reads again at once, but not more often than this. */
 export const ROSTER_MIN_REFETCH_MS = 3_000;
 
-interface CachedRoster { version: 1; fetchedAt: string; truncated: boolean; page: RosterPage }
+interface CachedRoster {
+  version: 1; fetchedAt: string; truncated: boolean; page: RosterPage;
+  /** The copy's own record and membership when this was read; a later `seq` with the same basis is only board posts. */
+  basis?: string;
+}
 
 const ROLE_MODES = new Set<RosterRoleMode>(['allow', 'ask', 'off']);
 const roleMode = (mode: unknown): RosterRoleMode => (ROLE_MODES.has(mode as RosterRoleMode) ? mode as RosterRoleMode : 'off');
@@ -192,6 +199,22 @@ class GroupProjectRosterService {
     return this.toView(gp, { ...rest, members: all, page: { offset: 0, total: all.length } }, 'host', rest.generatedAt, false);
   }
 
+  /**
+   * What the roster depends on that this copy holds: the synced record and membership. A board post
+   * advances `seq` and leaves this alone, so a busy board doesn't make the roster read again (#3581).
+   * Unknown (undefined) counts as changed.
+   */
+  private async basisOf(gp: GroupProject): Promise<string | undefined> {
+    try {
+      const { seq: _seq, hostName: _hostName, network: _network, ...record } = gp;
+      const membership = await groupProjectHost.getMembership(gp.id);
+      return createHash('sha256').update(JSON.stringify({ record, membership })).digest('hex');
+    } catch {
+      // telemetry-exempt: an unreadable record only makes the roster read again, as before; nothing to report
+      return undefined;
+    }
+  }
+
   private async replicaView(gp: GroupProject): Promise<GroupProjectRosterView> {
     const host = gp.host!.machine!;
     const hostName = groupProjectHost.hostNameOf(gp);
@@ -205,12 +228,14 @@ class GroupProjectRosterService {
     if (!this.link || !this.link.connected(host) || !this.link.isMember(host)) return fromCache('offline', 'offline');
     const knownOld = this.unsupported.get(host);
     if (knownOld !== undefined && Date.now() - knownOld < UNSUPPORTED_TTL_MS) return unavailable('unsupported');
-    const changedSince = !!cached && (gp.seq ?? 0) > cached.page.seq;
+    const basis = await this.basisOf(gp);
+    // The group moved on since, in what the roster shows: not a board post alone.
+    const changedSince = !!cached && (gp.seq ?? 0) > cached.page.seq && (basis === undefined || basis !== cached.basis);
     const age = cached ? Date.now() - Date.parse(cached.fetchedAt) : Infinity;
     // A fetch time in the future (a clock moved back) is never fresh.
     const fresh = age >= 0 && age < ROSTER_FRESH_MS && (!changedSince || age < ROSTER_MIN_REFETCH_MS);
     if (cached && fresh) {
-      return this.toView(gp, cached.page, 'cache', cached.fetchedAt, cached.truncated);
+      return this.toView(gp, cached.page, 'cache', cached.fetchedAt, cached.truncated, changedSince ? 'changed' : undefined);
     }
     const fetched = await this.fetch(gp.id, host);
     if (fetched.kind === 'unsupported') {
@@ -221,7 +246,7 @@ class GroupProjectRosterService {
     if (fetched.kind === 'not_found') return unavailable('not_found');
     if (fetched.kind === 'busy') return fromCache(changedSince ? 'changed' : 'failed', 'busy');
     if (fetched.kind !== 'ok') return fromCache(changedSince ? 'changed' : 'failed', 'failed');
-    const entry: CachedRoster = { version: 1, fetchedAt: new Date().toISOString(), truncated: fetched.truncated, page: fetched.page };
+    const entry: CachedRoster = { version: 1, fetchedAt: new Date().toISOString(), truncated: fetched.truncated, page: fetched.page, ...(basis && { basis }) };
     await this.save(gp.id, entry);
     return this.toView(gp, entry.page, 'live', entry.fetchedAt, entry.truncated);
   }
@@ -291,7 +316,7 @@ class GroupProjectRosterService {
       // The copy's folder goes when the copy does: never bring it back for a roster.
       const gp = await groupProjectHost.get(groupProjectId);
       if (!gp || !groupProjectHost.isReplica(gp)) return;
-      await writeJsonFile(rosterCachePath(groupProjectId), entry, { createDir: false });
+      await writeJsonFile(rosterCachePath(groupProjectId), entry, { createDir: false, compact: true });
     } catch (err) {
       // telemetry-exempt: the roster still shows from memory; only a restart while the host is offline loses it; logged
       appLog('core:group-project', 'warn', 'Could not save a group project roster', { meta: { groupProjectId, error: err instanceof Error ? err.message : String(err) } });
@@ -310,17 +335,15 @@ class GroupProjectRosterService {
       if (machine === here) return 'This computer';
       return this.link?.machineName(machine) || named.get(machine) || (machine === hostMachine ? groupProjectHost.hostNameOf(gp) : 'Another computer');
     };
-    // A saved roster is stale once the copy has caught up past it.
-    const staleNow = stale ?? (source === 'cache' && (gp.seq ?? 0) > page.seq ? 'changed' : undefined);
     const copies = page.copies.map((c) => ({ ...c, thisComputer: c.machine === here }));
     return {
       groupProjectId: gp.id, status: 'available', source, hostName: groupProjectHost.hostNameOf(gp), fetchedAt,
-      ...(staleNow && { stale: staleNow }),
+      ...(stale && { stale }),
       members: page.members.map((m) => ({
         ...m, key: `${m.agentId}@${m.machine}`, machineLabel: machineLabel(m.machine), thisComputer: m.machine === here,
       })),
       copies, copiesCut: !!page.copiesCut, hostInventory: page.hostInventory, truncated,
-      complete: !staleNow && !truncated && !page.copiesCut && page.hostInventory === 'complete' && copies.every((c) => c.state === 'verified')
+      complete: !stale && !truncated && !page.copiesCut && page.hostInventory === 'complete' && copies.every((c) => c.state === 'verified')
         && page.members.every((m) => m.inventory === 'verified'),
     };
   }
@@ -342,7 +365,7 @@ function validateCached(raw: unknown, groupProjectId: string, host: string): Cac
   // The same checks as an answer off the wire: a saved file is no more trusted.
   const page = readRosterAnswer(v.page, host, { v: 1, groupProjectId, offset: 0, limit: ROSTER_MEMBERS_MAX });
   if (page.status !== 'ok') throw new Error('The saved roster is not a roster.');
-  return { version: 1, fetchedAt: v.fetchedAt, truncated: v.truncated, page };
+  return { version: 1, fetchedAt: v.fetchedAt, truncated: v.truncated, page, ...(typeof v.basis === 'string' && /^[0-9a-f]{64}$/.test(v.basis) && { basis: v.basis }) };
 }
 
 export const groupProjectRoster = new GroupProjectRosterService();

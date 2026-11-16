@@ -427,7 +427,7 @@ describe('the authoritative roster (#3548)', () => {
     resetCopyCache(B);
     expect(await roster(B, id)).toMatchObject({ status: 'unavailable', reason: 'offline' });
 
-    await fsp.writeFile(rosterFile(B, id), JSON.stringify({ ...saved, pad: 'x'.repeat(1024 * 1024 + 1) }));
+    await fsp.writeFile(rosterFile(B, id), JSON.stringify({ ...saved, pad: 'x'.repeat(A.roster!.ROSTER_CACHE_MAX_BYTES + 1) }));
     resetCopyCache(B);
     expect(await roster(B, id)).toMatchObject({ status: 'unavailable', reason: 'offline' });
 
@@ -438,6 +438,66 @@ describe('the authoritative roster (#3548)', () => {
     await fsp.writeFile(rosterFile(B, id), JSON.stringify({ ...saved, page: { ...saved.page, members: [{ agentId: 'x', machine: 'nope' }] } }));
     resetCopyCache(B);
     expect(await roster(B, id)).toMatchObject({ status: 'unavailable', reason: 'offline' });
+  });
+
+  it('a maximum-size roster is saved, survives a restart, and shows from the saved copy while the host is offline (#3581)', async () => {
+    // The longest ids, and labels at their cap in three-byte characters, for the most members a copy reads.
+    const wide = '\u9f8d'.repeat(120);
+    A.projects![0].name = wide;
+    A.projects![0].agents = Array.from({ length: ROSTER_MEMBERS_MAX }, (_, i) => ({ id: `${String(i).padStart(4, '0')}${'a'.repeat(196)}`, name: `${wide}${i}` }));
+    const id = await linkedGroup([B]);
+    const live = available(await roster(B, id));
+    expect(live.members).toHaveLength(ROSTER_MEMBERS_MAX);
+    const size = (await fsp.stat(rosterFile(B, id))).size;
+    // Big enough that the old pretty-printed file would have gone past the old 1 MB cap, and within the cap now.
+    expect(size).toBeGreaterThan(700 * 1024);
+    expect(size).toBeLessThanOrEqual(B.roster!.ROSTER_CACHE_MAX_BYTES);
+    expect(Buffer.byteLength(JSON.stringify(JSON.parse(await fsp.readFile(rosterFile(B, id), 'utf-8')), null, 2))).toBeGreaterThan(1024 * 1024);
+    // Restart while the host is offline: the saved roster is read, not ignored.
+    down.add('Desk');
+    resetCopyCache(B);
+    const after = available(await roster(B, id));
+    expect(after).toMatchObject({ source: 'cache', stale: 'offline' });
+    expect(after.members).toHaveLength(ROSTER_MEMBERS_MAX);
+  });
+
+  it('sustained board posts with an open panel stay under the host\'s page limit and never fail the roster (#3581)', { timeout: 60_000 }, async () => {
+    // Two pages a read: a read every 3 seconds would be 40 pages a minute, past the host's 25.
+    A.projects![0].agents = Array.from({ length: 250 }, (_, i) => ({ id: `agent_${String(i).padStart(4, '0')}`, name: `Agent ${i}` }));
+    const id = await linkedGroup([B]);
+    vi.useFakeTimers({ toFake: ['Date'], now: Date.now() });
+    // A panel open for five minutes that asks on each change, as a post lands every 3 seconds.
+    for (let step = 0; step < 100; step++) {
+      vi.setSystemTime(Date.now() + 3000);
+      await as(A, () => A.host!.groupProjectHost.post(id, 'Lead', 'general', `post ${step}`));
+      await as(B, () => B.host!.groupProjectHost.syncFrom(A.fp));
+      const view = available(await roster(B, id));
+      // Nothing about the members changed, so a post never makes the roster stale, busy or incomplete.
+      expect(view.stale).toBeUndefined();
+      expect(view).toMatchObject({ complete: true });
+      expect(view.members).toHaveLength(251);
+    }
+    // At most one read (two pages) per 15 seconds: 40 pages in five minutes, nowhere near 25 a minute.
+    expect(rosterPosts.get('Desk')!).toBeLessThanOrEqual(2 * 21);
+    expect(rosterPosts.get('Desk')! / 5).toBeLessThan(A.roster!.ROSTER_RATE_LIMIT);
+  });
+
+  it('a membership change during sustained posts is still read again once the floor passes (#3581)', async () => {
+    const id = await linkedGroup([B]);
+    vi.useFakeTimers({ toFake: ['Date'], now: Date.now() });
+    available(await roster(B, id));
+    const before = rosterPosts.get('Desk')!;
+    vi.setSystemTime(Date.now() + 4_000);
+    await as(A, () => A.host!.groupProjectHost.post(id, 'Lead', 'general', 'hello'));
+    await as(B, () => B.host!.groupProjectHost.syncFrom(A.fp));
+    // Only a post: still the saved roster, no read.
+    expect(available(await roster(B, id))).toMatchObject({ source: 'cache' });
+    expect(rosterPosts.get('Desk')).toBe(before);
+    await as(A, () => A.membership!.excludeMember(id, 'builder_a'));
+    await as(B, () => B.host!.groupProjectHost.syncFrom(A.fp));
+    const fresh = available(await roster(B, id));
+    expect(fresh).toMatchObject({ source: 'live' });
+    expect(fresh.members.map((m) => m.agentId)).not.toContain('builder_a');
   });
 
   it('caps each answer\'s bytes: an oversized page fails the read, never shows', async () => {
