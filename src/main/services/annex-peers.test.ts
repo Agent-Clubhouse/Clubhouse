@@ -26,9 +26,10 @@ import {
   updateLastSeen, checkBruteForce, recordFailedAttempt, recordSuccessfulAttempt, forgiveFailedAttempt,
   unlockPairing, isPairingLocked, resetForTests, peerNeedsPairing, listPeersForDisplay,
   noteReached, setTypedHost, recordLastSeen, controlsThisMachine,
+  trustOf, commitVerifiedRoute, withSavedRoutes,
 } from './annex-peers';
 import { app } from 'electron';
-import { reachCandidates } from './annex-reach';
+import { isPrivateHost, reachCandidates } from './annex-reach';
 
 it('does not authorize an introduced desktop for control until reciprocal membership is confirmed', () => {
   expect(controlsThisMachine({ role: 'member', networkPending: true })).toBe(false);
@@ -119,6 +120,115 @@ describe('annex-peers', () => {
       resetForTests();
       expect(listPeers()).toHaveLength(1);
       expect(getPeer('aa:bb:cc')).toBeTruthy();
+    });
+  });
+
+  describe('saved routes (#3608)', () => {
+    const member = (overrides: Partial<AnnexPeer> = {}): AnnexPeer => ({
+      ...makePeer('aa:bb:cc', 'Studio'), role: 'member', kind: 'desktop', pairingId: 'pairing-1',
+      tlsCertificateFingerprint: 'CERT-1', tlsCertificatePem: 'PEM-1', knownHosts: ['192.168.1.5'], mainPort: 9443, ...overrides,
+    });
+
+    it('saves a checked route only when identity, pin and pairing are unchanged', () => {
+      addPeer(member({ typedHost: '127.0.0.1:7443', typedHostCert: 'CERT-1' }));
+      const trust = trustOf(getPeer('aa:bb:cc')!);
+      // The pin changed between the check and the save: nothing is written, the old route stays.
+      addPeer({ ...getPeer('aa:bb:cc')!, tlsCertificateFingerprint: 'CERT-2', tlsCertificatePem: 'PEM-2' });
+      expect(commitVerifiedRoute('aa:bb:cc', trust, '127.0.0.1:7555', '127.0.0.1')).toBe(false);
+      expect(getPeer('aa:bb:cc')).toMatchObject({ typedHost: '127.0.0.1:7443', typedHostCert: 'CERT-1' });
+    });
+
+    it('rejects a stale save after pairing again, being removed, or a pending join', () => {
+      addPeer(member());
+      const trust = trustOf(getPeer('aa:bb:cc')!);
+      addPeer({ ...getPeer('aa:bb:cc')!, pairingId: 'pairing-2' });
+      expect(commitVerifiedRoute('aa:bb:cc', trust, 'studio.ts.net', 'studio.ts.net')).toBe(false);
+      addPeer(member({ networkPending: true }));
+      expect(commitVerifiedRoute('aa:bb:cc', trust, 'studio.ts.net', 'studio.ts.net')).toBe(false);
+      removePeer('aa:bb:cc');
+      expect(commitVerifiedRoute('aa:bb:cc', trust, 'studio.ts.net', 'studio.ts.net')).toBe(false);
+    });
+
+    it('saves a current check, records the certificate it was checked against, and keeps the host private', () => {
+      addPeer(member());
+      expect(commitVerifiedRoute('aa:bb:cc', trustOf(getPeer('aa:bb:cc')!), '10.20.0.5:7443', '10.20.0.5')).toBe(true);
+      resetForTests();
+      expect(getPeer('aa:bb:cc')).toMatchObject({ typedHost: '10.20.0.5:7443', typedHostCert: 'CERT-1', privateHosts: ['10.20.0.5'] });
+      // Cleared, the address is forgotten but stays private: it was never the device's own.
+      setTypedHost('aa:bb:cc', undefined);
+      expect(getPeer('aa:bb:cc')!.typedHost).toBeUndefined();
+      expect(getPeer('aa:bb:cc')!.privateHosts).toEqual(['10.20.0.5']);
+    });
+
+    it('treats a typed host saved by an older build as private', () => {
+      fs.writeFileSync(path.join(tmpDir, 'annex-peers.json'), JSON.stringify([member({ typedHost: 'Studio.ts.net:7000' })]));
+      expect(getPeer('aa:bb:cc')!.privateHosts).toEqual(['studio.ts.net']);
+    });
+
+    it('a host the device itself announced stays shared even if it was also typed', () => {
+      addPeer(member({ privateHosts: ['192.168.1.9'] }));
+      expect(isPrivateHost(getPeer('aa:bb:cc'), '192.168.1.9')).toBe(true);
+      noteReached('aa:bb:cc', '192.168.1.9', 9443, 'discovered');
+      expect(isPrivateHost(getPeer('aa:bb:cc'), '192.168.1.9')).toBe(false);
+      // Loopback is never shared this way.
+      noteReached('aa:bb:cc', '127.0.0.1', 7443, 'discovered');
+      expect(getPeer('aa:bb:cc')!.sharedHosts).toEqual(['192.168.1.9']);
+    });
+
+    it('a private route never becomes the shared default port', () => {
+      addPeer(member({ privateHosts: ['10.20.0.5'] }));
+      noteReached('aa:bb:cc', '10.20.0.5', 7443);
+      expect(getPeer('aa:bb:cc')).toMatchObject({ mainPort: 9443, hostPorts: expect.objectContaining({ '10.20.0.5': 7443 }) });
+    });
+
+    describe('pairing again', () => {
+      const next = (overrides: Partial<AnnexPeer> = {}): AnnexPeer => ({
+        ...makePeer('aa:bb:cc', 'Studio'), role: 'member', kind: 'desktop', pairingId: 'pairing-1',
+        tlsCertificateFingerprint: 'CERT-1', knownHosts: ['192.168.1.5'], hostPorts: { '192.168.1.5': 9443 }, mainPort: 9443, ...overrides,
+      });
+      const previous = member({
+        typedHost: '127.0.0.1:7555', typedHostCert: 'CERT-1', privateHosts: ['10.20.0.5'],
+        knownHosts: ['127.0.0.1', '10.20.0.5', '192.168.1.5'], hostPorts: { '127.0.0.1': 7443, '10.20.0.5': 7000, '192.168.1.5': 9443 },
+      });
+
+      it('keeps every saved route for the same verified peer', () => {
+        const out = withSavedRoutes(previous, next(), true);
+        expect(out).toMatchObject({ typedHost: '127.0.0.1:7555', typedHostCert: 'CERT-1', privateHosts: ['10.20.0.5'] });
+        expect(out.knownHosts).toEqual(['192.168.1.5', '127.0.0.1', '10.20.0.5']);
+        expect(out.hostPorts).toEqual({ '127.0.0.1': 7443, '10.20.0.5': 7000, '192.168.1.5': 9443 });
+        expect(out.heldRoutes).toBeUndefined();
+      });
+
+      it('holds, never drops or retargets, saved routes when the certificate is not shown to be the same', () => {
+        const out = withSavedRoutes(previous, next({ tlsCertificateFingerprint: 'CERT-ROGUE' }), false);
+        expect(out.typedHost).toBeUndefined();
+        expect(out.knownHosts).toEqual(['192.168.1.5']);
+        expect(out.heldRoutes).toMatchObject({
+          certFingerprint: 'CERT-1', typedHost: '127.0.0.1:7555',
+          knownHosts: ['127.0.0.1', '10.20.0.5', '192.168.1.5'], hostPorts: { '127.0.0.1': 7443, '10.20.0.5': 7000, '192.168.1.5': 9443 },
+        });
+        // Still private: holding only ever narrows what's shared.
+        expect(out.privateHosts).toEqual(['10.20.0.5']);
+        // A second hold keeps the first one's values.
+        const again = withSavedRoutes({ ...out, typedHost: '127.0.0.1:7999' }, next({ tlsCertificateFingerprint: 'CERT-3' }), false);
+        expect(again.heldRoutes).toMatchObject({ typedHost: '127.0.0.1:7999', knownHosts: expect.arrayContaining(['10.20.0.5', '127.0.0.1']) });
+      });
+
+      it('never carries routes to a different identity', () => {
+        const out = withSavedRoutes(previous, { ...next(), publicKey: 'someone-else' }, true);
+        expect(out.typedHost).toBeUndefined();
+        expect(out.heldRoutes?.typedHost).toBe('127.0.0.1:7555');
+      });
+
+      it('keeps held routes, the new local fields, and unknown fields across a restart', () => {
+        addPeer(withSavedRoutes(previous, next({ tlsCertificateFingerprint: 'CERT-2' }), false));
+        resetForTests();
+        const reloaded = getPeer('aa:bb:cc')!;
+        expect(reloaded.heldRoutes?.typedHost).toBe('127.0.0.1:7555');
+        expect(reloaded.privateHosts).toEqual(['10.20.0.5']);
+        const raw = JSON.parse(fs.readFileSync(path.join(tmpDir, 'annex-peers.json'), 'utf8')) as AnnexPeer[];
+        expect(raw[0]).toMatchObject({ heldRoutes: expect.any(Object), privateHosts: ['10.20.0.5'], mainPort: 9443 });
+      });
     });
   });
 

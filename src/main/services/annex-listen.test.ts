@@ -21,6 +21,20 @@ describe('listenPreferringPort', () => {
     expect(listen.mock.calls).toEqual([[53123], [0]]);
   });
 
+  it('says when the remembered port was taken and where it listens instead, touching nothing else (#3608)', async () => {
+    const listen = vi.fn(async (port: number) => {
+      if (port === 53123) throw errno('EADDRINUSE');
+      return 61000;
+    });
+    const onMoved = vi.fn();
+    await expect(listenPreferringPort(listen, 53123, onMoved)).resolves.toBe(61000);
+    expect(onMoved).toHaveBeenCalledExactlyOnceWith({ preferred: 53123, bound: 61000, code: 'EADDRINUSE' });
+    // Free port: nothing to say.
+    const quiet = vi.fn();
+    await listenPreferringPort(vi.fn(async (port: number) => port), 53124, quiet);
+    expect(quiet).not.toHaveBeenCalled();
+  });
+
   it('passes other listen errors on without retrying', async () => {
     const listen = vi.fn(async () => { throw errno('EADDRNOTAVAIL'); });
     await expect(listenPreferringPort(listen, 53123)).rejects.toThrow('EADDRNOTAVAIL');
@@ -48,9 +62,14 @@ describe('listenPreferringPort', () => {
       });
     });
     try {
-      const bound = await listenPreferringPort(listen, taken);
+      const onMoved = vi.fn();
+      const bound = await listenPreferringPort(listen, taken, onMoved);
       expect(bound).toBeGreaterThan(0);
       expect(bound).not.toBe(taken);
+      expect(onMoved).toHaveBeenCalledWith(expect.objectContaining({ preferred: taken, bound }));
+      // The program holding the port (a forward, say) is left alone and still listening.
+      expect(blocker.listening).toBe(true);
+      expect((blocker.address() as { port: number }).port).toBe(taken);
     } finally {
       server.close();
       blocker.close();

@@ -80,6 +80,7 @@ vi.mock('./annex-tls', () => ({
   PIN_MISMATCH_CODE: 'ERR_ANNEX_PIN_MISMATCH',
   createPinnedTlsClientOptions: vi.fn().mockReturnValue({ pinned: true }),
   probePeerCertificate: vi.fn(),
+  verifyPinnedEndpoint: vi.fn(async () => undefined),
   signCertBinding: vi.fn().mockReturnValue('cert-binding'),
   sameCertificateFingerprint: (a?: string, b?: string) => !!a && a.replace(/:/g, '').toLowerCase() === b?.replace(/:/g, '').toLowerCase(),
 }));
@@ -98,6 +99,9 @@ vi.mock('./annex-peers', () => ({
   listPeers: vi.fn().mockReturnValue([]),
   // Peers in these tests are pinned unless a test says otherwise.
   peerNeedsPairing: vi.fn().mockReturnValue(false),
+  trustOf: (p: Record<string, unknown>) => ({ fingerprint: p.fingerprint, tlsCertificateFingerprint: p.tlsCertificateFingerprint, pairingId: p.pairingId }),
+  commitVerifiedRoute: vi.fn(() => true),
+  withSavedRoutes: vi.fn((_previous: unknown, next: unknown) => next),
 }));
 
 vi.mock('./annex-settings', () => ({
@@ -111,6 +115,7 @@ vi.mock('./annex-settings', () => ({
     color: 'indigo',
     autoReconnect: true,
   }),
+  getLastPorts: vi.fn(() => ({ mainPort: 0, pairingPort: 0 })),
 }));
 
 vi.mock('./log-service', () => ({
@@ -189,6 +194,10 @@ function resetAllMocks() {
   vi.mocked(annexPeers.listPeers).mockReturnValue([]);
   vi.mocked(annexTls.createPinnedTlsClientOptions).mockReturnValue({ pinned: true } as any);
   vi.mocked(annexTls.signCertBinding).mockReturnValue('cert-binding');
+  vi.mocked(annexTls.verifyPinnedEndpoint).mockResolvedValue(undefined);
+  vi.mocked(annexPeers.commitVerifiedRoute).mockReturnValue(true);
+  vi.mocked(annexPeers.withSavedRoutes).mockImplementation((_previous, next) => next);
+  vi.mocked(annexSettings.getLastPorts).mockReturnValue({ mainPort: 0, pairingPort: 0 });
   WebSocketMock.mockImplementation(function (this: any, _url?: string, _opts?: Record<string, any>) {
     this.readyState = WebSocketMock.OPEN;
     this.socket = {
@@ -2821,23 +2830,132 @@ describe('annex-client', () => {
       expect(sockets.map((x) => x.url)).toEqual(['wss://[2001:db8::5]:9000/ws?client=desktop']);
     });
 
-    it('takes a typed host, refuses one that is not a host, and tries it at once', () => {
+    it('remembers an address the device announced as shared, and a known one without saying so (#3608)', async () => {
+      peer = { ...base };
+      mockHttpGetIdentity({ fingerprint: FP, alias: 'Studio', icon: 'server', color: 'green', publicKey: 'sat-pk' });
+      annexClient.startClient();
+      await bonjourFindCallback!(makeService({ addresses: ['192.168.1.77'], referer: { address: '192.168.1.77' } }));
+      sockets.at(-1)!.handlers.open();
+      expect(annexPeers.noteReached).toHaveBeenLastCalledWith(FP, '192.168.1.77', 9000, 'discovered');
+    });
+
+    /** Saving a checked route updates the peer the way the real store does. */
+    const committing = () => vi.mocked(annexPeers.commitVerifiedRoute).mockImplementation((_fp, _trust, host) => { peer = { ...peer, typedHost: host }; return true; });
+
+    it('takes a typed host, refuses one that is not a host, and tries it at once', async () => {
       peer = { ...base, mainPort: 9443 };
       annexClient.startClient();
-      expect(annexClient.setSatelliteHost(FP, 'https://studio')).toEqual({ ok: false, error: expect.stringMatching(/name or address/) });
-      expect(annexPeers.setTypedHost).not.toHaveBeenCalled();
-      vi.mocked(annexPeers.setTypedHost).mockImplementation((_fp, host) => { peer = { ...peer, typedHost: host }; return true; });
-      expect(annexClient.setSatelliteHost(FP, 'studio.tail1234.ts.net')).toEqual({ ok: true });
-      expect(annexPeers.setTypedHost).toHaveBeenCalledWith(FP, 'studio.tail1234.ts.net');
+      expect(await annexClient.setSatelliteHost(FP, 'https://studio')).toEqual({ ok: false, error: expect.stringMatching(/name or address/) });
+      expect(annexPeers.commitVerifiedRoute).not.toHaveBeenCalled();
+      committing();
+      expect(await annexClient.setSatelliteHost(FP, 'studio.tail1234.ts.net')).toEqual({ ok: true });
+      expect(annexTls.verifyPinnedEndpoint).toHaveBeenCalledWith('studio.tail1234.ts.net', 9443, { pinned: true }, annexClient.ROUTE_CHECK_TIMEOUT_MS);
+      expect(annexPeers.commitVerifiedRoute).toHaveBeenCalledWith(FP, expect.objectContaining({ fingerprint: FP, tlsCertificateFingerprint: 'AB:CD' }), 'studio.tail1234.ts.net', 'studio.tail1234.ts.net');
       expect(sockets.at(-1)!.url).toBe('wss://studio.tail1234.ts.net:9443/ws?client=desktop');
       expect(annexClient.satelliteAddress(FP)).toBe('studio.tail1234.ts.net:9443');
-      expect(annexClient.setSatelliteHost(FP, '')).toEqual({ ok: true });
+      expect(await annexClient.setSatelliteHost(FP, '')).toEqual({ ok: true });
       expect(annexPeers.setTypedHost).toHaveBeenLastCalledWith(FP, undefined);
     });
 
-    it('can reuse a remembered address-specific port when no legacy default is stored', () => {
+    it('can reuse a remembered address-specific port when no legacy default is stored', async () => {
       peer = { ...base, knownHosts: ['127.0.0.1'], hostPorts: { '127.0.0.1': 7443 } };
-      expect(annexClient.setSatelliteHost(FP, '127.0.0.1')).toEqual({ ok: true });
+      expect(await annexClient.setSatelliteHost(FP, '127.0.0.1')).toEqual({ ok: true });
+      expect(annexTls.verifyPinnedEndpoint).toHaveBeenCalledWith('127.0.0.1', 7443, expect.anything(), expect.any(Number));
+    });
+
+    describe('saved routes (#3608)', () => {
+      it('checks the pinned certificate before saving, and keeps the old route when it does not match', async () => {
+        peer = { ...base, typedHost: '127.0.0.1:7443', knownHosts: ['10.0.0.4'], mainPort: 9443 };
+        vi.mocked(annexTls.verifyPinnedEndpoint).mockRejectedValueOnce(mismatch());
+        const result = await annexClient.setSatelliteHost(FP, '127.0.0.1:7555');
+        expect(result).toEqual({ ok: false, error: expect.stringMatching(/showed a different certificate\. Nothing was changed/) });
+        expect(annexPeers.commitVerifiedRoute).not.toHaveBeenCalled();
+        expect(annexPeers.setTypedHost).not.toHaveBeenCalled();
+        expect(peer.typedHost).toBe('127.0.0.1:7443');
+      });
+
+      it('keeps the old route when the new address cannot be reached in time', async () => {
+        peer = { ...base, typedHost: '127.0.0.1:7443', mainPort: 9443 };
+        vi.mocked(annexTls.verifyPinnedEndpoint).mockRejectedValueOnce(Object.assign(new Error('Timed out'), { code: 'ETIMEDOUT' }));
+        const result = await annexClient.setSatelliteHost(FP, '127.0.0.1:7555');
+        expect(result.ok).toBe(false);
+        expect(annexPeers.commitVerifiedRoute).not.toHaveBeenCalled();
+      });
+
+      it('saves nothing when the pairing changed while the address was checked', async () => {
+        peer = { ...base, mainPort: 9443 };
+        vi.mocked(annexPeers.commitVerifiedRoute).mockReturnValueOnce(false);
+        const result = await annexClient.setSatelliteHost(FP, '127.0.0.1:7555');
+        expect(result).toEqual({ ok: false, error: expect.stringMatching(/changed while its address was checked/) });
+        expect(sockets).toHaveLength(0);
+      });
+
+      it('adds a route for an existing member with no pairing and no membership change', async () => {
+        peer = { ...base, role: 'member', kind: 'desktop', pairingId: 'pairing-1', mainPort: 9443 };
+        committing();
+        expect(await annexClient.setSatelliteHost(FP, '127.0.0.1:7555')).toEqual({ ok: true });
+        expect(annexTls.probePeerCertificate).not.toHaveBeenCalled();
+        expect(annexPeers.addPeer).not.toHaveBeenCalled();
+        const membershipMod = await import('./annex-network-membership');
+        expect(membershipMod.noteLocalJoin).not.toHaveBeenCalled();
+        expect(peer.pairingId).toBe('pairing-1');
+      });
+
+      it("refuses this computer's own Annex port without touching any listener", async () => {
+        peer = { ...base, mainPort: 9443 };
+        vi.mocked(annexSettings.getLastPorts).mockReturnValue({ mainPort: 7443, pairingPort: 7444 });
+        const own = await annexClient.setSatelliteHost(FP, '127.0.0.1:7443');
+        expect(own).toEqual({ ok: false, error: expect.stringMatching(/Port 7443 is this computer's own Annex port/) });
+        expect(await annexClient.setSatelliteHost(FP, 'localhost:7444')).toMatchObject({ ok: false });
+        expect(annexTls.verifyPinnedEndpoint).not.toHaveBeenCalled();
+        expect(annexSettings.getLastPorts).toHaveBeenCalled();
+      });
+
+      it('refuses a local port already saved for another computer, naming it', async () => {
+        peer = { ...base, mainPort: 9443 };
+        vi.mocked(annexPeers.listPeers).mockReturnValue([
+          { ...base, fingerprint: 'other', alias: 'Laptop', typedHost: '127.0.0.1:7555' } as any,
+        ]);
+        const result = await annexClient.setSatelliteHost(FP, '[::1]:7555');
+        expect(result).toEqual({ ok: false, error: expect.stringMatching(/Port 7555 on this computer is already saved for Laptop/) });
+        expect(annexTls.verifyPinnedEndpoint).not.toHaveBeenCalled();
+        // A direct address on that port is a different machine's port: no collision.
+        expect((await annexClient.setSatelliteHost(FP, '10.0.0.9:7555')).ok).toBe(true);
+      });
+
+      it('refuses while the device needs pairing again', async () => {
+        peer = { ...base, mainPort: 9443 };
+        vi.mocked(annexPeers.peerNeedsPairing).mockReturnValue(true);
+        expect(await annexClient.setSatelliteHost(FP, '127.0.0.1:7555')).toEqual({ ok: false, error: expect.stringMatching(/Pair with Studio again first/) });
+        expect(annexTls.verifyPinnedEndpoint).not.toHaveBeenCalled();
+      });
+
+      it('keeps "showed a different certificate" when the new address fails its check', async () => {
+        peer = { ...base, knownHosts: ['10.0.0.4'], mainPort: 9443 };
+        annexClient.startClient();
+        sockets[0].handlers.error(mismatch());
+        expect(annexClient.getSatellite(FP)?.needsPairing).toBe(true);
+        vi.mocked(annexTls.verifyPinnedEndpoint).mockRejectedValueOnce(mismatch());
+        expect((await annexClient.setSatelliteHost(FP, 'studio.tail1234.ts.net')).ok).toBe(false);
+        expect(annexClient.getSatellite(FP)).toMatchObject({ needsPairing: true, problem: { code: 'cert-mismatch' } });
+        expect(sockets).toHaveLength(1);
+      });
+
+      it("says a loopback address on this computer's own port reaches this computer, not that it was reset", async () => {
+        vi.useFakeTimers();
+        vi.mocked(annexSettings.getLastPorts).mockReturnValue({ mainPort: 7443, pairingPort: 7444 });
+        peer = { ...base, knownHosts: ['127.0.0.1', '10.0.0.4'], hostPorts: { '127.0.0.1': 7443, '10.0.0.4': 9443 }, mainPort: 9443 };
+        annexClient.startClient();
+        expect(sockets[0].url).toBe('wss://127.0.0.1:7443/ws?client=desktop');
+        sockets[0].handlers.error(mismatch());
+        expect(annexClient.getSatellite(FP)).toMatchObject({ state: 'disconnected', problem: { code: 'own-listener', message: expect.stringMatching(/port 7443.*own Annex port/) } });
+        expect(annexClient.getSatellite(FP)?.needsPairing).toBeFalsy();
+        await vi.advanceTimersByTimeAsync(300);
+        // The other address is still tried; a mismatch there alone does not stop reconnecting.
+        expect(sockets[1].url).toBe('wss://10.0.0.4:9443/ws?client=desktop');
+        sockets[1].handlers.error(mismatch());
+        expect(annexClient.getSatellite(FP)).toMatchObject({ needsPairing: true, problem: { code: 'cert-mismatch' } });
+      });
     });
 
     const mismatch = () => Object.assign(new Error('pin'), { code: 'ERR_ANNEX_PIN_MISMATCH' });
@@ -2864,26 +2982,26 @@ describe('annex-client', () => {
       expect(annexClient.getSatellite(FP)).toMatchObject({ needsPairing: true, problem: { code: 'cert-mismatch' } });
     });
 
-    it('a new address clears "showed a different certificate" and tries again', () => {
+    it('a new address that shows the pinned certificate clears "showed a different certificate" and tries again', async () => {
       peer = { ...base, knownHosts: ['10.0.0.4'], mainPort: 9443 };
       annexClient.startClient();
       sockets[0].handlers.error(mismatch());
       expect(annexClient.getSatellite(FP)?.needsPairing).toBe(true);
-      vi.mocked(annexPeers.setTypedHost).mockImplementation((_fp, host) => { peer = { ...peer, typedHost: host }; return true; });
-      expect(annexClient.setSatelliteHost(FP, 'studio.tail1234.ts.net').ok).toBe(true);
+      committing();
+      expect((await annexClient.setSatelliteHost(FP, 'studio.tail1234.ts.net')).ok).toBe(true);
       expect(sockets.at(-1)!.url).toBe('wss://studio.tail1234.ts.net:9443/ws?client=desktop');
     });
 
-    it('asks for a port when it has never reached the satellite', () => {
+    it('asks for a port when it has never reached the satellite', async () => {
       peer = { ...base };
-      expect(annexClient.setSatelliteHost(FP, 'studio.local')).toEqual({ ok: false, error: expect.stringMatching(/add its port/) });
-      expect(annexClient.setSatelliteHost(FP, 'studio.local:9443')).toEqual({ ok: true });
+      expect(await annexClient.setSatelliteHost(FP, 'studio.local')).toEqual({ ok: false, error: expect.stringMatching(/add its port/) });
+      expect(await annexClient.setSatelliteHost(FP, 'studio.local:9443')).toEqual({ ok: true });
     });
 
-    it('saves a typed host without connecting while Connect to satellites is off', () => {
+    it('saves a checked typed host without connecting while Connect to satellites is off', async () => {
       vi.mocked(annexSettings.getSettings).mockReturnValue({ enableServer: true, enableClient: false } as any);
-      expect(annexClient.setSatelliteHost(FP, 'studio.local')).toEqual({ ok: true });
-      expect(annexPeers.setTypedHost).toHaveBeenCalledWith(FP, 'studio.local');
+      expect(await annexClient.setSatelliteHost(FP, 'studio.local')).toEqual({ ok: true });
+      expect(annexPeers.commitVerifiedRoute).toHaveBeenCalledWith(FP, expect.anything(), 'studio.local', 'studio.local');
       expect(sockets).toHaveLength(0);
     });
 
@@ -2935,9 +3053,9 @@ describe('annex-client', () => {
       expect(membershipMod.noteLocalRemoval).toHaveBeenCalledWith(FP);
     });
 
-    it('never sets a typed host on a device that controls this machine', () => {
+    it('never sets a typed host on a device that controls this machine', async () => {
       peer = { ...base, role: 'controller' };
-      expect(annexClient.setSatelliteHost(FP, 'studio').ok).toBe(false);
+      expect((await annexClient.setSatelliteHost(FP, 'studio')).ok).toBe(false);
     });
 
     it('does nothing on wake while Connect to satellites is off', () => {
@@ -3196,6 +3314,40 @@ describe('annex-client', () => {
       expect(annexPeers.addPeer).toHaveBeenCalledWith(expect.objectContaining({
         fingerprint: SAT_FP, knownHosts: ['127.0.0.1'], hostPorts: { '127.0.0.1': 7443 }, mainPort: 7443,
       }));
+    });
+
+    describe('own routes and pairing again (#3608)', () => {
+      const saved = () => vi.mocked(annexPeers.addPeer).mock.calls.at(-1)![0];
+
+      it('a plain link pairing on a LAN address stays shared, with nothing private', async () => {
+        expect(await annexClient.pairWithLink(await link())).toMatchObject({ success: true });
+        expect(saved()).toMatchObject({ knownHosts: ['192.168.1.60'], sharedHosts: ['192.168.1.60'] });
+        expect(saved().privateHosts).toBeUndefined();
+      });
+
+      it('a non-loopback override address is this computer\'s own, while the link hosts stay shared', async () => {
+        expect(await annexClient.pairWithLink(await link(), '10.20.0.5:7443')).toMatchObject({ success: true });
+        expect(saved()).toMatchObject({ privateHosts: ['10.20.0.5'], sharedHosts: ['192.168.1.60'], hostPorts: { '10.20.0.5': 7443, '192.168.1.60': 9443 } });
+      });
+
+      it('the address used to pair without a link is this computer\'s own', async () => {
+        expect(await annexClient.pairWithEndpoint('10.20.0.5:7443', '123456', CERT)).toMatchObject({ success: true });
+        expect(saved()).toMatchObject({ privateHosts: ['10.20.0.5'] });
+        expect(saved().sharedHosts).toBeUndefined();
+      });
+
+      it('carries saved routes over only for the same pinned certificate', async () => {
+        const stored = { fingerprint: SAT_FP, publicKey: 'sat-pk', alias: 'Mini', icon: 'server', color: 'teal', pairedAt: '', lastSeen: '',
+          role: 'member' as const, tlsCertificateFingerprint: CERT_COLONS, typedHost: '127.0.0.1:7555' };
+        vi.mocked(annexPeers.getPeer).mockReturnValue(stored);
+        await annexClient.pairWithLink(await link());
+        expect(annexPeers.withSavedRoutes).toHaveBeenLastCalledWith(stored, expect.objectContaining({ fingerprint: SAT_FP }), true);
+
+        // The same identity at a new certificate: nothing in the answer proves it's the same machine, so routes are held.
+        vi.mocked(annexPeers.getPeer).mockReturnValue({ ...stored, tlsCertificateFingerprint: 'cd'.repeat(32) });
+        await annexClient.pairWithLink(await link());
+        expect(annexPeers.withSavedRoutes).toHaveBeenLastCalledWith(expect.objectContaining({ typedHost: '127.0.0.1:7555' }), expect.anything(), false);
+      });
     });
 
     it('pairs manually using bracketed IPv6 and remembers the unbracketed host with its port', async () => {

@@ -1,5 +1,7 @@
 import { describe, it, expect } from 'vitest';
-import { formatAddress, KNOWN_HOSTS_MAX, parseTypedHost, rankAddresses, reachCandidates, rememberHost, withReachableAs } from './annex-reach';
+import {
+  formatAddress, isPrivateHost, KNOWN_HOSTS_MAX, parseTypedHost, rankAddresses, reachCandidates, rememberHost, routeCollision, savedLoopbackRoutes, withReachableAs,
+} from './annex-reach';
 
 describe('annex reach (#3058)', () => {
   describe('a typed host', () => {
@@ -97,5 +99,38 @@ describe('annex reach (#3058)', () => {
     expect(rememberHost(undefined, 'x')).toEqual(['x']);
     const many = Array.from({ length: 10 }, (_, i) => `h${i}`);
     expect(rememberHost(many, 'new')).toHaveLength(KNOWN_HOSTS_MAX);
+  });
+});
+
+describe('saved routes and collisions (#3608)', () => {
+  it('a loopback host is always private; a typed one is unless the device itself also gave it', () => {
+    expect(isPrivateHost(undefined, '127.0.0.1')).toBe(true);
+    expect(isPrivateHost({}, '192.168.1.5')).toBe(false);
+    expect(isPrivateHost({ privateHosts: ['Studio.ts.net'] }, 'studio.ts.net')).toBe(true);
+    expect(isPrivateHost({ privateHosts: ['192.168.1.5'], sharedHosts: ['192.168.1.5'] }, '192.168.1.5')).toBe(false);
+    expect(isPrivateHost({ privateHosts: [], sharedHosts: ['127.0.0.1'] }, '127.0.0.1')).toBe(true);
+  });
+
+  it("finds this computer's own Annex ports on any loopback address, and leaves direct addresses alone", () => {
+    const own = { mainPort: 7443, pairingPort: 7444 };
+    expect(routeCollision({ host: '127.0.0.1', port: 7443 }, own, [])).toEqual({ kind: 'own-listener', port: 7443 });
+    expect(routeCollision({ host: '::1', port: 7444 }, own, [])).toEqual({ kind: 'own-listener', port: 7444 });
+    expect(routeCollision({ host: 'localhost', port: 7443 }, own, [])).toEqual({ kind: 'own-listener', port: 7443 });
+    expect(routeCollision({ host: '192.168.1.5', port: 7443 }, own, [])).toBeNull();
+    expect(routeCollision({ host: '127.0.0.1', port: 7555 }, own, [])).toBeNull();
+  });
+
+  it('finds a local port already saved for another device', () => {
+    const others = [{ alias: 'Laptop', routes: savedLoopbackRoutes({ typedHost: '127.0.0.1:7555' }) },
+      { alias: 'Mini', routes: savedLoopbackRoutes({ knownHosts: ['::1', '10.0.0.4'], hostPorts: { '::1': 8443, '10.0.0.4': 7556 } }) }];
+    expect(routeCollision({ host: 'localhost', port: 7555 }, {}, others)).toEqual({ kind: 'other-forward', port: 7555, alias: 'Laptop' });
+    expect(routeCollision({ host: '127.0.0.1', port: 8443 }, {}, others)).toEqual({ kind: 'other-forward', port: 8443, alias: 'Mini' });
+    // A direct address on another device is not a local forward.
+    expect(routeCollision({ host: '127.0.0.1', port: 7556 }, {}, others)).toBeNull();
+  });
+
+  it('reads a typed loopback route without a port from the saved ports', () => {
+    expect(savedLoopbackRoutes({ typedHost: '127.0.0.1', hostPorts: { '127.0.0.1': 7600 } })).toEqual([{ host: '127.0.0.1', port: 7600, source: 'typed' }]);
+    expect(savedLoopbackRoutes({ typedHost: 'studio.ts.net:7000' })).toEqual([]);
   });
 });

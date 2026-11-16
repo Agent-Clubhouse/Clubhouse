@@ -34,8 +34,7 @@ import * as annexTls from './annex-tls';
 import * as networkChannel from './annex-network-channel';
 import { devicesChanged } from './annex-device-signal';
 import { appLog } from './log-service';
-import { hostPortsWithFallback } from './annex-reach';
-import { isAnnexLoopback } from '../../shared/annex-problems';
+import { hostPortsWithFallback, isPrivateHost } from './annex-reach';
 
 // ---------------------------------------------------------------------------
 // Stored state
@@ -130,12 +129,16 @@ export function initNetworkMembership(h: Hooks): void {
 /** A member peer as the protocol describes it. */
 function toMember(peer: AnnexPeer): NetworkMember | null {
   if (!peer.tlsCertificateFingerprint || !peer.tlsCertificatePem) return null;
-  const port = peer.announcedReach ? peer.announcedReach.port : peer.mainPort;
   const knownPorts = hostPortsWithFallback(peer.knownHosts, peer.mainPort, peer.hostPorts);
-  // The v1 wire contract has one port. Only announcements can vouch for a loopback endpoint.
+  // Routes this machine saved for itself (loopback forwards, typed addresses, the address it paired
+  // through) are never shared, nor is a port only they use (#3608). Only announcements can vouch for loopback.
+  const shared = (peer.knownHosts ?? []).filter((host) => !isPrivateHost(peer, host));
+  const port = peer.announcedReach ? peer.announcedReach.port
+    : shared.some((host) => knownPorts[lower(host)] === peer.mainPort) ? peer.mainPort : undefined;
+  // The v1 wire contract has one port.
   const hosts = [...new Set([
     ...(peer.announcedReach?.hosts ?? []),
-    ...(peer.knownHosts ?? []).filter((host) => !isAnnexLoopback(host) && knownPorts[lower(host)] === port),
+    ...shared.filter((host) => knownPorts[lower(host)] === port),
   ])].slice(0, 8);
   return {
     fingerprint: peer.fingerprint,
@@ -393,7 +396,7 @@ function addMember(input: NetworkMember, from: string, s: MembershipState): bool
     const own = lower(from) === lower(member.fingerprint);
     const knownPorts = hostPortsWithFallback(existing.knownHosts, existing.mainPort, existing.hostPorts);
     // Its announcement cannot replace the local forward needed to reach it.
-    const localHosts = (existing.knownHosts ?? []).filter((host) => isAnnexLoopback(host) && knownPorts[lower(host)] > 0
+    const localHosts = (existing.knownHosts ?? []).filter((host) => isPrivateHost(existing, host) && knownPorts[lower(host)] > 0
       && !(existing.announcedReach?.hosts.some((announced) => lower(announced) === lower(host))
         && existing.announcedReach.port === knownPorts[lower(host)]));
     const hosts = own

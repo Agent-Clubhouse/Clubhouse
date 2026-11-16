@@ -113,6 +113,149 @@ describe('Annex Network membership (#3061)', () => {
     expect(membership.currentView().members.find((m) => m.fingerprint === A)).toMatchObject({ hosts: ['10.0.0.2'], port: 9443 });
   });
 
+  describe('a member never travels with an older removal of itself (#3608, phone safety)', () => {
+    const OLD = 'pairing-old';
+    const NEW = 'pairing-new';
+    const oldRemoval = { fingerprint: N, removedAt: '2026-11-08T12:00:00.000Z', pairingId: OLD, joinedAt: '2026-11-01T09:00:00.000Z' };
+    // Its only addresses are this computer's own forward, so it is listed with no hosts and no port.
+    const newer = (extra: Partial<NetworkMember> = {}) => member(N, '0e', 'Forwarded Mac', { pairingId: NEW, joinedAt: '2026-11-10T09:00:00.000Z', hosts: [], port: undefined, ...extra });
+
+    /** What every phone and member is sent: no removal of a listed member unless it ends that member's pairing. */
+    function expectNoNewerMemberWithOlderRemoval(): void {
+      const v = membership.currentView();
+      for (const r of v.removals) {
+        const m = v.members.find((x) => x.fingerprint.toLowerCase() === r.fingerprint.toLowerCase());
+        if (!m) continue;
+        const ends = r.pairingId ? (!m.pairingId || m.pairingId === r.pairingId || (!!r.joinedAt && Date.parse(m.joinedAt) <= Date.parse(r.joinedAt)))
+          : Date.parse(r.removedAt) >= Date.parse(m.joinedAt);
+        expect(ends).toBe(true);
+      }
+    }
+    const listed = () => membership.currentView().members.find((m) => m.fingerprint === N);
+    const removed = () => membership.currentView().removals.find((r) => r.fingerprint === N);
+
+    it('a member update: both in one message, removal first, as a sender orders them', () => {
+      listener!(A, view([member(A, '0a', 'Studio'), newer()], [oldRemoval]));
+      expect(listed()).toMatchObject({ pairingId: NEW, hosts: [] });
+      expect(listed()?.port).toBeUndefined();
+      expect(removed()).toBeUndefined();
+      expectNoNewerMemberWithOlderRemoval();
+    });
+
+    it('catching up after being offline: an old removal kept from before, then the newer member', () => {
+      listener!(A, view([], [oldRemoval]));
+      expect(removed()).toBeDefined();
+      listener!(B, view([member(B, '0b', 'Laptop'), newer()]));
+      expect(listed()?.pairingId).toBe(NEW);
+      expect(removed()).toBeUndefined();
+      expectNoNewerMemberWithOlderRemoval();
+    });
+
+    it('an old removal relayed again later never comes back beside the newer member', () => {
+      listener!(A, view([member(A, '0a', 'Studio'), newer()]));
+      listener!(B, view([], [oldRemoval]));
+      listener!(B, { v: 1, type: 'member-removed', removal: oldRemoval });
+      expect(listed()?.pairingId).toBe(NEW);
+      expect(removed()).toBeUndefined();
+      expectNoNewerMemberWithOlderRemoval();
+    });
+
+    it('pairing again here drops the old removal', () => {
+      listener!(A, view([], [oldRemoval]));
+      peers.set(N.toLowerCase(), memberPeer(N, '0e', 'Forwarded Mac', { pairingId: NEW, pairedAt: '2026-11-10T09:00:00.000Z', knownHosts: ['127.0.0.1'], hostPorts: { '127.0.0.1': 7555 }, mainPort: 7555 }));
+      membership.noteLocalJoin(N);
+      expect(listed()).toMatchObject({ pairingId: NEW, hosts: [] });
+      expect(removed()).toBeUndefined();
+      expectNoNewerMemberWithOlderRemoval();
+    });
+
+    it('a phone vouching for it again drops the old removal', () => {
+      const PHONE = fp('0f');
+      peers.set(PHONE.toLowerCase(), memberPeer(PHONE, '0f', 'Phone', { kind: 'phone', knownHosts: [] }));
+      listener!(A, view([], [oldRemoval]));
+      membership.vouchFromPhone(PHONE, [newer()]);
+      expect(listed()).toBeDefined();
+      expect(removed()).toBeUndefined();
+      expectNoNewerMemberWithOlderRemoval();
+    });
+
+    it('a removal that does end its pairing ends the member, so the two are not left side by side', () => {
+      listener!(A, view([member(A, '0a', 'Studio'), newer()]));
+      listener!(A, view([], [{ ...oldRemoval, pairingId: NEW, joinedAt: '2026-11-10T09:00:00.000Z', removedAt: '2026-11-11T09:00:00.000Z' }]));
+      expect(hooks.endDevice).toHaveBeenCalledWith(N.toLowerCase());
+      expect(listed()).toBeUndefined();
+      expectNoNewerMemberWithOlderRemoval();
+    });
+  });
+
+  describe("this computer's own routes are never shared (#3608)", () => {
+    const viewOf = () => membership.currentView().members.find((m) => m.fingerprint === A)!;
+
+    it('leaves out a non-loopback pairing override address', () => {
+      peers.set(A.toLowerCase(), memberPeer(A, '0a', 'Studio', {
+        knownHosts: ['10.20.0.5', '192.168.1.5'], hostPorts: { '10.20.0.5': 9443, '192.168.1.5': 9443 }, mainPort: 9443,
+        privateHosts: ['10.20.0.5'], sharedHosts: ['192.168.1.5'],
+      }));
+      expect(viewOf()).toMatchObject({ hosts: ['192.168.1.5'], port: 9443 });
+    });
+
+    it('leaves out the address used to pair without a link, and its port', () => {
+      peers.set(A.toLowerCase(), memberPeer(A, '0a', 'Studio', {
+        knownHosts: ['10.20.0.5'], hostPorts: { '10.20.0.5': 7443 }, mainPort: 7443, privateHosts: ['10.20.0.5'],
+      }));
+      const m = viewOf();
+      expect(m.hosts).toEqual([]);
+      expect(m.port).toBeUndefined();
+    });
+
+    it('never shares a loopback-first default port as `port`', () => {
+      peers.set(A.toLowerCase(), memberPeer(A, '0a', 'Studio', { knownHosts: ['127.0.0.1'], hostPorts: { '127.0.0.1': 7443 }, mainPort: 7443 }));
+      expect(viewOf()).toMatchObject({ hosts: [] });
+      expect(viewOf().port).toBeUndefined();
+    });
+
+    it('shares only the shared hosts of a mixed set, with their port', () => {
+      peers.set(A.toLowerCase(), memberPeer(A, '0a', 'Studio', {
+        knownHosts: ['127.0.0.1', 'studio.ts.net', '10.20.0.5', '192.168.1.5', 'studio.local'],
+        hostPorts: { '127.0.0.1': 7443, 'studio.ts.net': 9443, '10.20.0.5': 9443, '192.168.1.5': 9443, 'studio.local': 9443 },
+        mainPort: 9443, privateHosts: ['studio.ts.net', '10.20.0.5'], typedHost: 'studio.ts.net',
+      }));
+      expect(viewOf()).toMatchObject({ hosts: ['192.168.1.5', 'studio.local'], port: 9443 });
+      const wire = JSON.stringify(membership.currentView());
+      for (const own of ['studio.ts.net', '10.20.0.5', '127.0.0.1', '7443']) expect(wire).not.toContain(own);
+    });
+
+    it('still shares an address the device itself gave, even if it was also typed here', () => {
+      peers.set(A.toLowerCase(), memberPeer(A, '0a', 'Studio', {
+        knownHosts: ['192.168.1.5'], hostPorts: { '192.168.1.5': 9443 }, mainPort: 9443,
+        privateHosts: ['192.168.1.5'], sharedHosts: ['192.168.1.5'],
+      }));
+      expect(viewOf()).toMatchObject({ hosts: ['192.168.1.5'], port: 9443 });
+    });
+
+    it('keeps its own forward when the device announces itself, and still never shares it', () => {
+      peers.set(A.toLowerCase(), memberPeer(A, '0a', 'Studio', {
+        knownHosts: ['10.20.0.5'], hostPorts: { '10.20.0.5': 7443 }, mainPort: 7443, privateHosts: ['10.20.0.5'],
+      }));
+      listener!(A, { v: 1, type: 'hello', member: member(A, '0a', 'Studio', { hosts: ['192.168.1.5'], port: 9443 }) });
+      const saved = peers.get(A.toLowerCase())!;
+      expect(saved.knownHosts).toContain('10.20.0.5');
+      expect(saved.hostPorts?.['10.20.0.5']).toBe(7443);
+      expect(viewOf()).toMatchObject({ hosts: ['192.168.1.5'], port: 9443 });
+    });
+
+    it('merges a member record from an older build, which has hosts and a port', () => {
+      listener!(A, view([member(A, '0a', 'Studio'), member(N, '0e', 'Old Mac', { hosts: ['10.0.0.30'], port: 9443 })]));
+      expect(peers.get(N.toLowerCase())).toMatchObject({ knownHosts: ['10.0.0.30'], mainPort: 9443 });
+    });
+
+    it('merges a record with no hosts and no port, as this build may now send', () => {
+      listener!(A, view([member(A, '0a', 'Studio'), member(N, '0e', 'Forwarded Mac', { hosts: [], port: undefined })]));
+      expect(peers.get(N.toLowerCase())).toMatchObject({ role: 'member', alias: 'Forwarded Mac', knownHosts: [] });
+      expect(peers.get(N.toLowerCase())?.mainPort).toBeUndefined();
+    });
+  });
+
   it.each([undefined, 9443])('shares a self-announced loopback endpoint and follows its later port change (saved port: %s)', (port) => {
     peers.set(A.toLowerCase(), memberPeer(A, '0a', 'Studio', {
       knownHosts: ['127.0.0.1'], hostPorts: port ? { '127.0.0.1': port } : undefined, mainPort: port,

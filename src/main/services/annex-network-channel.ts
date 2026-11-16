@@ -166,6 +166,16 @@ export function connectedMembers(): Set<string> {
   return out;
 }
 
+/**
+ * Devices with an open channel they opened to this machine (#3608): each one
+ * authenticated with its pinned certificate, and still paired with it.
+ */
+export function inboundMembers(): Set<string> {
+  const out = new Set<string>();
+  for (const ch of channels) if (ch.direction === 'in' && ch.ws.readyState === WebSocket.OPEN && stillPaired(ch)) out.add(ch.fingerprint);
+  return out;
+}
+
 // ---------------------------------------------------------------------------
 // Checks
 // ---------------------------------------------------------------------------

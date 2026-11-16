@@ -22,6 +22,7 @@ export type AnnexProblemCode =
   | 'cert-expired'
   | 'cert-not-yet-valid'
   | 'cert-mismatch'
+  | 'own-listener'
   | 'not-found-yet'
   | 'client-off'
   | 'connection-failed';
@@ -62,7 +63,7 @@ const PAIRING_ACTIONS: Partial<Record<AnnexProblemCode, string>> = {
 export function describeAnnexProblem(
   code: AnnexProblemCode,
   alias: string,
-  detail?: { status?: number; pairing?: boolean; host?: string },
+  detail?: { status?: number; pairing?: boolean; host?: string; port?: number },
 ): AnnexProblem {
   const name = alias || 'That computer';
   const text = ((): [string, string] => {
@@ -97,6 +98,11 @@ export function describeAnnexProblem(
         return [`${name}'s certificate isn't valid yet.`, 'Check the date and time on both computers, then retry.'];
       case 'cert-mismatch':
         return [`${name} showed a different certificate.`, 'If it was reset, pair again.'];
+      case 'own-listener':
+        return [
+          `The saved address for ${name}${detail?.port ? ` uses port ${detail.port}, which` : ''} is this computer's own Annex port, so it reaches this computer instead.`,
+          `Forward a different local port to ${name}'s Annex port, then save that address.`,
+        ];
       case 'not-found-yet':
         return [`${name} hasn't been found on the network yet.`, 'Check that Clubhouse is open there with Annex turned on.'];
       case 'client-off':

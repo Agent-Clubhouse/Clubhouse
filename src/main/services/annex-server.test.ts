@@ -241,7 +241,9 @@ vi.mock('./annex-tls', () => ({
 }));
 
 // Mock annex-peers
-vi.mock('./annex-peers', () => ({
+vi.mock('./annex-peers', async (importOriginal) => ({
+  // The real rule for keeping saved routes when a device pairs again (#3608).
+  withSavedRoutes: (await importOriginal<typeof import('./annex-peers')>()).withSavedRoutes,
   controlsThisMachine: (p?: { role?: string; networkPending?: boolean } | null) => !p?.networkPending && (p?.role === 'controller' || p?.role === 'member'),
   controlledFromHere: (p?: { role?: string; kind?: string } | null) => p?.role === 'satellite' || (p?.role === 'member' && p.kind !== 'phone'),
   checkBruteForce: vi.fn().mockReturnValue({ allowed: true, delayMs: 0, locked: false, attemptsRemaining: 3 }),
@@ -3633,6 +3635,39 @@ describe('annex-server', () => {
       const close = vi.spyOn(accepted!, 'close');
       annexServer.regeneratePin();
       expect(close).not.toHaveBeenCalled();
+    });
+
+    describe("this computer's saved routes when a device pairs again (#3608)", () => {
+      const routes = { typedHost: '127.0.0.1:7555', knownHosts: ['127.0.0.1'], hostPorts: { '127.0.0.1': 7555 }, privateHosts: ['10.20.0.5'] };
+
+      it('keeps them when it pairs again with the same certificate', async () => {
+        await startServer();
+        const computer = device();
+        peers.set(computer.fingerprint, pinned(computer, routes));
+        expect((await pair(computer)).status).toBe(200);
+        expect(peers.get(computer.fingerprint)).toMatchObject({ ...routes, tlsCertificateFingerprint: computer.certFingerprint });
+        expect(peers.get(computer.fingerprint)?.heldRoutes).toBeUndefined();
+      });
+
+      it('keeps them for a new certificate its identity key signed for', async () => {
+        await startServer();
+        const computer = device();
+        peers.set(computer.fingerprint, pinned(computer, routes));
+        const renewed = device(undefined, computer);
+        expect((await pair(renewed, { certBinding: binding(computer, renewed.der) })).status).toBe(200);
+        expect(peers.get(computer.fingerprint)).toMatchObject({ ...routes, tlsCertificateFingerprint: renewed.certFingerprint });
+      });
+
+      it('holds them, without using or dropping them, for an entry it cannot show is the same', async () => {
+        await startServer();
+        const computer = device();
+        peers.set(computer.fingerprint, pinned(computer, { ...routes, role: undefined, tlsCertificateFingerprint: undefined }));
+        expect((await pair(computer)).status).toBe(200);
+        const saved = peers.get(computer.fingerprint)!;
+        expect(saved.typedHost).toBeUndefined();
+        expect(saved.heldRoutes).toMatchObject({ typedHost: '127.0.0.1:7555', hostPorts: { '127.0.0.1': 7555 } });
+        expect(saved.privateHosts).toEqual(['10.20.0.5']);
+      });
     });
 
     it('an entry from before pinning pairs again over TLS and is pinned', async () => {

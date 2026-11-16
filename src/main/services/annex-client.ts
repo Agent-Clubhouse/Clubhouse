@@ -19,7 +19,10 @@ import { annexNetworkProfile } from './annex-network-profile';
 import * as networkChannel from './annex-network-channel';
 import * as annexControl from './annex-control';
 import * as membership from './annex-network-membership';
-import { formatAddress, parseTypedHost, rankAddresses, reachCandidates, rememberHost, type ReachAddress } from './annex-reach';
+import {
+  formatAddress, parseTypedHost, rankAddresses, reachCandidates, rememberHost, routeCollision, savedLoopbackRoutes,
+  type ReachAddress, type RouteCollision,
+} from './annex-reach';
 import { WebSocket } from 'ws';
 import * as annexIdentity from './annex-identity';
 import * as annexTls from './annex-tls';
@@ -39,6 +42,7 @@ import {
   classifyConnectionError,
   classifyRefusal,
   describeAnnexProblem,
+  isAnnexLoopback,
   type AnnexProblem,
   type AnnexProblemCode,
 } from '../../shared/annex-problems';
@@ -171,7 +175,7 @@ interface SatelliteConnectionInternal {
   snapshot: SatelliteSnapshot | null;
   lastError: string | null;
   /** The classified reason behind `lastError`. */
-  problem?: { code: AnnexProblemCode; status?: number } | null;
+  problem?: { code: AnnexProblemCode; status?: number; port?: number } | null;
   ws: WebSocket | null;
   reconnectTimer: ReturnType<typeof setTimeout> | null;
   reconnectAttempt: number;
@@ -193,6 +197,8 @@ interface SatelliteConnectionInternal {
   mismatches?: number;
   /** Icons its snapshots left out for size and were fetched instead (#3649). */
   iconState?: RemoteIconState;
+  /** Loopback addresses in this round that are this machine's own Annex port (#3608): not the satellite's doing. */
+  ownListenerHits?: number;
 }
 
 /** An icon body past this is refused: the satellite serves at most ICON_SERVED_MAX_BYTES. */
@@ -569,7 +575,7 @@ function setState(
   sat: SatelliteConnectionInternal,
   state: SatelliteState,
   error?: string,
-  problem?: { code: AnnexProblemCode; status?: number },
+  problem?: { code: AnnexProblemCode; status?: number; port?: number },
 ): void {
   const prev = sat.state;
   sat.state = state;
@@ -767,14 +773,29 @@ function haltForTlsError(sat: SatelliteConnectionInternal, err: unknown): boolea
   if (code === 'CERT_HAS_EXPIRED') { haltSatellite(sat, 'pairing', CERT_EXPIRED_MESSAGE, 'cert-expired'); return true; }
   if (code === 'CERT_NOT_YET_VALID') { haltSatellite(sat, 'clock', CERT_NOT_YET_VALID_MESSAGE, 'cert-not-yet-valid'); return true; }
   if (code && (code === annexTls.PIN_MISMATCH_CODE || MISMATCH_CODES.includes(code))) {
+    // A loopback address on this machine's own Annex port reaches this machine, not the satellite (#3608):
+    // say so, and don't count it as the satellite showing another certificate.
+    if (hitsOwnListener(sat)) { sat.ownListenerHits = (sat.ownListenerHits ?? 0) + 1; return false; }
     // Another server at one of several addresses (a typo, or another service on that port):
     // move on to the next. Only when every address shows another certificate does it stop.
     sat.mismatches = (sat.mismatches ?? 0) + 1;
-    if (sat.mismatches < candidatesFor(sat).length) return false;
+    if (sat.mismatches + (sat.ownListenerHits ?? 0) < candidatesFor(sat).length) return false;
     haltSatellite(sat, 'mismatch', certMismatchMessage(sat.alias), 'cert-mismatch');
     return true;
   }
   return false;
+}
+
+/** This machine's own Annex listener ports (#3608), set by the server while it runs. */
+let ownListenerPorts: () => { mainPort?: number; pairingPort?: number } = () => annexSettings.getLastPorts();
+
+export function setOwnListenerPortsProvider(provider: (() => { mainPort?: number; pairingPort?: number }) | null): void {
+  ownListenerPorts = provider ?? (() => annexSettings.getLastPorts());
+}
+
+/** Whether the satellite's current address is a loopback one on this machine's own Annex port. */
+function hitsOwnListener(sat: SatelliteConnectionInternal): boolean {
+  return !!sat.host && !!sat.mainPort && routeCollision({ host: sat.host, port: sat.mainPort }, ownListenerPorts(), [])?.kind === 'own-listener';
 }
 
 /** A REST answer of 401 needs_pairing or peer_not_paired means what it does on the WebSocket. */
@@ -936,9 +957,11 @@ async function connectToSatellite(sat: SatelliteConnectionInternal): Promise<voi
       setState(sat, 'connected');
       sat.reconnectAttempt = 0;
       sat.mismatches = 0;
+      sat.ownListenerHits = 0;
       // Remembered, so it's found again after a restart without waiting for discovery (#3058).
       // A typed address is kept as typed instead: clearing it then forgets it, and its port stays its own.
       if (sat.candidateSource === 'typed') annexPeers.updateLastSeen(sat.fingerprint);
+      else if (sat.candidateSource === 'discovered') annexPeers.noteReached(sat.fingerprint, sat.host, sat.mainPort, 'discovered');
       else annexPeers.noteReached(sat.fingerprint, sat.host, sat.mainPort);
       sat.candidateIndex = 0;
       // The membership channel (#3060), to the same address and certificate.
@@ -1000,7 +1023,8 @@ async function connectToSatellite(sat: SatelliteConnectionInternal): Promise<voi
         meta: { fingerprint: sat.fingerprint, error: errorText, attempt: sat.reconnectAttempt },
       });
       sat.ws = null;
-      setState(sat, 'disconnected', errorText, { code: classifyConnectionError(err) });
+      const ownListener = classifyConnectionError(err) === 'cert-mismatch' && hitsOwnListener(sat);
+      setState(sat, 'disconnected', errorText, ownListener ? { code: 'own-listener', port: sat.mainPort } : { code: classifyConnectionError(err) });
       if (!sat.reconnectTimer) scheduleReconnect(sat);
     });
   };
@@ -1367,7 +1391,7 @@ function scheduleReconnect(sat: SatelliteConnectionInternal): void {
   // An address announced during that attempt goes next, at once: it's where the satellite is now.
   const announcedNext = candidates[0]?.source === 'discovered' && !sat.discoveredTried;
   if (announcedNext) nextIndex = 0;
-  if (nextIndex === 0) sat.mismatches = 0;
+  if (nextIndex === 0) { sat.mismatches = 0; sat.ownListenerHits = 0; }
   sat.candidateIndex = nextIndex;
   let delay: number;
   if (nextIndex !== 0 || announcedNext) {
@@ -1698,12 +1722,41 @@ export function connect(fingerprint: string): void {
 
 export type SetHostResult = { ok: true } | { ok: false; error: string };
 
+/** How long checking a new address may take before it's given up on (#3608). */
+export const ROUTE_CHECK_TIMEOUT_MS = 5_000;
+
+/** Why a loopback route can't be saved, in words (#3608). */
+function collisionError(collision: RouteCollision, alias: string): string {
+  if (collision.kind === 'own-listener') {
+    return `Port ${collision.port} is this computer's own Annex port, so that address reaches this computer, not ${alias || 'that computer'}. Forward a different local port to its Annex port, then save that address.`;
+  }
+  return `Port ${collision.port} on this computer is already saved for ${collision.alias || 'another computer'}. Each computer needs its own forward. Forward a different local port, then save that address.`;
+}
+
+/** Why checking a new address failed, in words. The old address is kept either way. */
+function routeCheckError(err: unknown, alias: string, host: string): string {
+  const code = (err as { code?: string } | null)?.code;
+  const name = alias || 'that computer';
+  if (code === annexTls.PIN_MISMATCH_CODE || (code && MISMATCH_CODES.includes(code))) {
+    return `The computer at that address isn't ${name}: it showed a different certificate. Nothing was changed.`;
+  }
+  return `${annexProblemText(describeAnnexProblem(classifyConnectionError(err), alias, { host }))} Nothing was changed.`;
+}
+
 /**
  * Sets the host name or address a person typed for a satellite (#3058), such as
- * its tailnet name, with an optional port. An empty value clears it. A
- * disconnected satellite tries it straight away; a live connection is left alone.
+ * its tailnet name or a local forward, with an optional port. It's this
+ * machine's own route there (#3608): kept on this machine and never sent to
+ * other members, and adding one needs no pairing and changes no membership.
+ *
+ * A new address is checked first, with a TLS handshake that must show the
+ * satellite's pinned certificate and sends nothing else. Only then, if the
+ * satellite's identity, pin and pairing are still what was checked, is it saved.
+ * Anything else keeps the old address and any stop on reconnecting. A loopback
+ * address on this machine's own Annex port, or one already saved for another
+ * device, is refused without touching either listener. An empty value clears it.
  */
-export function setSatelliteHost(fingerprint: string, input: string): SetHostResult {
+export async function setSatelliteHost(fingerprint: string, input: string): Promise<SetHostResult> {
   const peer = annexPeers.getPeer(fingerprint);
   if (!peer || !annexPeers.controlledFromHere(peer)) return { ok: false, error: "That computer isn't one this computer connects to." };
   const value = input.trim();
@@ -1712,25 +1765,59 @@ export function setSatelliteHost(fingerprint: string, input: string): SetHostRes
     return { ok: false, error: 'Type a name or address, such as studio.local, a tailnet name or 192.168.1.20, with an optional :port.' };
   }
   const sat = satellites.get(fingerprint);
-  if (parsed && !parsed.port && !(peer.hostPorts && Object.prototype.hasOwnProperty.call(peer.hostPorts, parsed.host)) && !peer.mainPort && !sat?.mainPort) {
+  if (!parsed) {
+    annexPeers.setTypedHost(fingerprint, undefined);
+    appLog('core:annex-client', 'info', 'Typed host cleared for satellite', { meta: { fingerprint } });
+    broadcastSatellitesChanged();
+    return { ok: true };
+  }
+  const port = parsed.port ?? (peer.hostPorts && Object.prototype.hasOwnProperty.call(peer.hostPorts, parsed.host) ? peer.hostPorts[parsed.host] : undefined)
+    ?? peer.mainPort ?? sat?.mainPort;
+  if (!port) {
     return { ok: false, error: "This computer hasn't reached it yet, so add its port too, such as studio.local:9443. Its Annex settings show the port." };
   }
-  annexPeers.setTypedHost(fingerprint, value || undefined);
-  appLog('core:annex-client', 'info', value ? 'Typed host set for satellite' : 'Typed host cleared for satellite', { meta: { fingerprint } });
+  if (annexPeers.peerNeedsPairing(peer) || peer.networkPending || (sat?.needsPairing && sat.halt !== 'mismatch') || !peer.tlsCertificatePem || !peer.tlsCertificateFingerprint) {
+    return { ok: false, error: `Pair with ${peer.alias || 'that computer'} again first. Its address can be changed once it's paired.` };
+  }
+  const others = annexPeers.listPeers()
+    .filter((p) => p.fingerprint !== peer.fingerprint)
+    .map((p) => ({ alias: p.alias, routes: savedLoopbackRoutes(p) }));
+  const collision = routeCollision({ host: parsed.host, port }, ownListenerPorts(), others);
+  if (collision) {
+    appLog('core:annex-client', 'warn', 'Typed host refused: the local port is already in use for Annex', { meta: { fingerprint, kind: collision.kind, port } });
+    return { ok: false, error: collisionError(collision, peer.alias) };
+  }
+
+  // Checked against the satellite as it is now; saved only if it's still that afterwards.
+  const trust = annexPeers.trustOf(peer);
+  try {
+    const options = annexTls.createPinnedTlsClientOptions(annexIdentity.getOrCreateIdentity(), { certPem: peer.tlsCertificatePem, fingerprint: peer.tlsCertificateFingerprint });
+    await annexTls.verifyPinnedEndpoint(parsed.host, port, options, ROUTE_CHECK_TIMEOUT_MS);
+  } catch (err) { // telemetry-exempt: shown to the person, and nothing is saved
+    appLog('core:annex-client', 'warn', 'Typed host not saved: checking it failed', { meta: { fingerprint, code: (err as { code?: string } | null)?.code } });
+    return { ok: false, error: routeCheckError(err, peer.alias, parsed.host) };
+  }
+  if (!annexPeers.commitVerifiedRoute(fingerprint, trust, value, parsed.host)) {
+    appLog('core:annex-client', 'warn', 'Typed host not saved: the pairing changed while it was checked', { meta: { fingerprint } });
+    return { ok: false, error: `${peer.alias || 'That computer'} changed while its address was checked. Nothing was changed. Try again.` };
+  }
+  appLog('core:annex-client', 'info', 'Typed host set for satellite', { meta: { fingerprint } });
+
   // Saved either way; connecting waits for Connect to satellites.
   if (!annexSettings.getSettings().enableClient) { broadcastSatellitesChanged(); return { ok: true }; }
-  if (!sat) { if (value) connect(fingerprint); broadcastSatellitesChanged(); return { ok: true }; }
-  // A new address is a fresh chance after "showed a different certificate": that may have been the old address.
-  if (sat.halt === 'mismatch') { sat.halt = null; sat.needsPairing = false; sat.mismatches = 0; }
-  if (value && (sat.state === 'disconnected' || sat.state === 'discovering') && !sat.needsPairing) {
+  const current = satellites.get(fingerprint);
+  if (!current) { connect(fingerprint); broadcastSatellitesChanged(); return { ok: true }; }
+  // Checked to show the pinned certificate, so a stop for "showed a different certificate" can lift.
+  if (current.halt === 'mismatch') { current.halt = null; current.needsPairing = false; current.mismatches = 0; current.ownListenerHits = 0; }
+  if ((current.state === 'disconnected' || current.state === 'discovering') && !current.needsPairing) {
     // Try what was typed now: it's the first candidate unless discovery has an address.
-    const candidates = candidatesFor(sat);
+    const candidates = candidatesFor(current);
     const index = candidates.findIndex((a) => a.source === 'typed');
-    sat.candidateIndex = index === -1 ? 0 : index;
-    sat.reconnectAttempt = 0;
-    if (sat.reconnectTimer) { clearTimeout(sat.reconnectTimer); sat.reconnectTimer = null; }
-    useCandidate(sat, candidates);
-    if (sat.host && sat.mainPort) connectToSatellite(sat);
+    current.candidateIndex = index === -1 ? 0 : index;
+    current.reconnectAttempt = 0;
+    if (current.reconnectTimer) { clearTimeout(current.reconnectTimer); current.reconnectTimer = null; }
+    useCandidate(current, candidates);
+    if (current.host && current.mainPort) connectToSatellite(current);
   }
   broadcastSatellitesChanged();
   return { ok: true };
@@ -2727,7 +2814,15 @@ async function pairOverTls(target: {
   const joined = body.network === 1 && annexSettings.networkEnabled(localSettings);
   const serverPairing = joined ? membership.readPairing(body.serverPairing) : undefined;
   const myPairing = joined ? membership.readPairing(body.pairing) : undefined;
-  annexPeers.addPeer({
+  // The address used, when it isn't one the link lists (an override, or pairing without a link),
+  // is this machine's own route there: never shared with other members (#3608).
+  const ownRoute = !(target.linkHosts ?? []).some((host) => host.toLowerCase() === target.host.toLowerCase());
+  const stored = annexPeers.getPeer(fingerprint);
+  // Saved routes carry over only to the same identity with the same pinned certificate: nothing in a
+  // pairing answer proves a new certificate belongs to it, so a changed one holds them back instead.
+  const certContinuity = !!stored?.tlsCertificateFingerprint
+    && annexTls.sameCertificateFingerprint(stored.tlsCertificateFingerprint, target.pinned.fingerprint);
+  annexPeers.addPeer(annexPeers.withSavedRoutes(stored, {
     fingerprint,
     publicKey,
     alias,
@@ -2747,9 +2842,11 @@ async function pairOverTls(target: {
       [target.host.toLowerCase()]: target.port,
     },
     mainPort: target.linkPort ?? target.port,
-    // A typed host survives pairing again.
-    ...(annexPeers.getPeer(fingerprint)?.typedHost && { typedHost: annexPeers.getPeer(fingerprint)!.typedHost }),
-  });
+    ...(ownRoute && { privateHosts: [target.host.toLowerCase()] }),
+    // The link's own hosts came from the device itself: shared, even if one was also typed here.
+    ...((target.linkHosts ?? []).some((host) => !isAnnexLoopback(host))
+      && { sharedHosts: [...new Set((target.linkHosts ?? []).filter((host) => !isAnnexLoopback(host)).map((host) => host.toLowerCase()))] }),
+  }, certContinuity));
 
   probedCertificates.delete(fingerprint);
   if (myPairing) membership.adoptOwnPairing(myPairing);

@@ -9,13 +9,20 @@ const PORT_UNAVAILABLE_CODES = new Set(['EADDRINUSE', 'EACCES']);
  * again after a relaunch. If that port is taken or not allowed, take any free
  * one (port 0). Other errors are passed on.
  */
-export async function listenPreferringPort(listen: ListenFn, preferredPort: number): Promise<number> {
+export async function listenPreferringPort(
+  listen: ListenFn,
+  preferredPort: number,
+  /** Told when the preferred port couldn't be had (#3608), so the move can be explained. Nothing is changed. */
+  onMoved?: (moved: { preferred: number; bound: number; code: string }) => void,
+): Promise<number> {
   if (!Number.isInteger(preferredPort) || preferredPort <= 0 || preferredPort > 65535) return listen(0);
   try {
     return await listen(preferredPort);
   } catch (err) {
     const code = (err as NodeJS.ErrnoException | null)?.code;
     if (!code || !PORT_UNAVAILABLE_CODES.has(code)) throw err;
-    return listen(0);
+    const bound = await listen(0);
+    onMoved?.({ preferred: preferredPort, bound, code });
+    return bound;
   }
 }

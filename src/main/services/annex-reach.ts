@@ -168,3 +168,61 @@ export function rememberHost(known: readonly string[] | undefined, host: string)
   const h = host.toLowerCase();
   return [h, ...(known ?? []).filter((k) => k.toLowerCase() !== h)].slice(0, KNOWN_HOSTS_MAX);
 }
+
+/**
+ * Whether `host` is one this machine saved for itself (#3608), never sent to other members:
+ * - loopback, always (only the device's own announcement can vouch for loopback);
+ * - one in `privateHosts` (a typed address, or one used to pair without a link or with
+ *   an override), unless the device itself also gave it, through its pairing link or
+ *   discovery (`sharedHosts`). The same address learned both ways is shared.
+ */
+export function isPrivateHost(peer: { privateHosts?: readonly string[]; sharedHosts?: readonly string[] } | undefined, host: string): boolean {
+  if (isAnnexLoopback(host)) return true;
+  const h = host.toLowerCase();
+  if (!peer?.privateHosts?.some((p) => p.toLowerCase() === h)) return false;
+  return !peer.sharedHosts?.some((p) => p.toLowerCase() === h);
+}
+
+/** `hosts` with `host` added once, lowercase. */
+export function withPrivateHost(hosts: readonly string[] | undefined, host: string): string[] {
+  const h = host.toLowerCase();
+  return (hosts ?? []).some((k) => k.toLowerCase() === h) ? [...(hosts ?? [])] : [...(hosts ?? []), h];
+}
+
+/** The loopback endpoints a peer record holds for this machine: its typed address and loopback known hosts. */
+export function savedLoopbackRoutes(peer: {
+  typedHost?: string; knownHosts?: readonly string[]; hostPorts?: Readonly<Record<string, number>>; mainPort?: number;
+}): ReachAddress[] {
+  const out: ReachAddress[] = [];
+  const typed = peer.typedHost ? parseTypedHost(peer.typedHost) : null;
+  const typedPort = typed && (typed.port ?? peer.hostPorts?.[typed.host] ?? peer.mainPort);
+  if (typed && typedPort && isAnnexLoopback(typed.host)) out.push({ host: typed.host, port: typedPort, source: 'typed' });
+  for (const host of peer.knownHosts ?? []) {
+    const port = peer.hostPorts?.[host.toLowerCase()];
+    if (port && isAnnexLoopback(host) && !out.some((a) => a.port === port)) out.push({ host: host.toLowerCase(), port, source: 'known' });
+  }
+  return out;
+}
+
+export type RouteCollision =
+  | { kind: 'own-listener'; port: number }
+  | { kind: 'other-forward'; port: number; alias: string };
+
+/**
+ * Whether a loopback route would reach something other than the device it's for
+ * (#3608): this machine's own Annex listener, or a forward already saved for
+ * another device. Any loopback address counts as the same one, since a forward
+ * and a listener on one port usually share it. Read-only: it never touches a listener.
+ */
+export function routeCollision(
+  target: { host: string; port: number },
+  own: { mainPort?: number; pairingPort?: number },
+  others: ReadonlyArray<{ alias: string; routes: readonly ReachAddress[] }>,
+): RouteCollision | null {
+  if (!isAnnexLoopback(target.host)) return null;
+  if (target.port === own.mainPort || target.port === own.pairingPort) return { kind: 'own-listener', port: target.port };
+  for (const other of others) {
+    if (other.routes.some((r) => r.port === target.port)) return { kind: 'other-forward', port: target.port, alias: other.alias };
+  }
+  return null;
+}
