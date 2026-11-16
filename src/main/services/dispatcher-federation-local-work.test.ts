@@ -141,9 +141,10 @@ describe('durable local delegation through real chat-runtime/ALS input', () => {
     expect((await localCausalInputs('controller', undefined, undefined, true))[0].cause.depth).toBe(3);
     expect((await federation().offer('controller', 'other-desktop', 'remote-controller', 'long-session', 'Continue')).cause.depth).toBe(4);
   }
+  // 51 fsynced saves: ~2s on a good Windows run, past the 5s default when the runner's disk is slow (#3591).
   it('keeps real-runtime round trips in one lineage slim and bounded at realistic text size, through every durable save', async () => {
     await roundTripsStaySlim(25, false);
-  });
+  }, 30_000);
   it('keeps hundreds of real-runtime round trips in one lineage slim and bounded at realistic text size', async () => {
     // Writes the file once at the end instead of fsyncing every save, so a slow disk can't time the run out.
     await roundTripsStaySlim(300, true);
