@@ -97,11 +97,11 @@ describe('automatic membership and lost-link review', () => {
 
   it('previews enabling linked computers with exclusions and can cancel without mutation', async () => {
     vi.mocked(window.clubhouse.groupProject.listMembers).mockResolvedValue(view({ automaticMembership, includeLinkedComputers: false }));
-    const preview = vi.spyOn(window.clubhouse.groupProject, 'previewAutoJoin').mockResolvedValue({ wouldJoin: [{ agentId: 'remote', name: 'Remote', kind: 'durable', via: 'auto' }], unreadableProjects: [] });
+    const preview = vi.spyOn(window.clubhouse.groupProject, 'previewAutoJoin').mockResolvedValue({ wouldJoin: [{ agentId: 'remote', name: 'Remote', kind: 'durable', via: 'auto', projectName: 'Alpha on Laptop' }], unreadableProjects: [] });
     const set = vi.spyOn(window.clubhouse.groupProject, 'setAutomaticMembership');
     render(<GroupProjectMembersSection groupProjectId="gp1" />);
     fireEvent.click(await screen.findByLabelText('Include linked computers'));
-    expect(await screen.findByRole('region', { name: 'Automatic membership review' })).toHaveTextContent('Remote');
+    expect(await screen.findByRole('region', { name: 'Automatic membership review' })).toHaveTextContent('Remote (Alpha on Laptop)');
     expect(preview).toHaveBeenCalledWith(automaticMembership.scope, { autoJoin: true, includeLinkedComputers: true, excluded: ['dev'] });
     fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
     expect(set).not.toHaveBeenCalled();

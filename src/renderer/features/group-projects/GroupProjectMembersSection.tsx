@@ -17,7 +17,7 @@ function memberDetail(member: ResolvedGroupProjectMember): string {
 }
 
 function names(members: ResolvedGroupProjectMember[]): string {
-  return members.map((m) => m.name).join(', ');
+  return members.map((m) => `${m.name}${m.projectName ? ` (${m.projectName})` : ''}`).join(', ');
 }
 
 export function GroupProjectMembersSection({ groupProjectId }: { groupProjectId: string }) {
@@ -105,7 +105,9 @@ export function GroupProjectMembersSection({ groupProjectId }: { groupProjectId:
             {view.managed && (
               <p className={settingsHelp}>
                 {view.autoJoin
-                  ? 'Every top-level agent in scope is a member, including agents created later, unless excluded. Helpers and quick agents join only when added.'
+                  ? view.automaticMembership
+                    ? 'Top-level agents in this project join now and later, unless excluded. Agents on linked computers follow the toggle below. Helpers and quick agents join only when added.'
+                    : 'Every top-level agent in scope is a member, including agents created later, unless excluded. Helpers and quick agents join only when added.'
                   : 'Only the agents listed here are members.'}
               </p>
             )}

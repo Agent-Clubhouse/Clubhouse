@@ -72,7 +72,7 @@ import { initGroupProjectLifecycle, _resetLifecycleForTesting } from './group-pr
 import { roleModeOf, setGroupProjectRole } from './group-project-roles';
 import {
   _resetMembershipForTesting, addMember, answerAutoJoinOffer, previewAutoJoin, describeMembership, excludeMember, membershipBindingSource,
-  releaseMembershipBindings, setAutomaticMembership, confirmUnlinkedMembers, quickMemberName, memberPolicyKey, reconcileMembership, recordMemberDisabledTools, savedMemberDisabledTools, watchGroupProjectMembership,
+  releaseMembershipBindings, onMembershipChanged, setAutomaticMembership, confirmUnlinkedMembers, quickMemberName, memberPolicyKey, reconcileMembership, recordMemberDisabledTools, savedMemberDisabledTools, watchGroupProjectMembership,
 } from './group-project-membership';
 
 const PROJ_A = { id: 'proj_a', name: 'Alpha', path: path.join('work', 'alpha') };
@@ -659,6 +659,25 @@ describe('linked automatic membership (#3546)', () => {
       expect(view.excluded.map((e) => e.agentId)).toContain(remoteAddress('remote'));
       expect(view.members.map((m) => m.agentId)).not.toContain(remoteAddress('remote'));
       stop();
+    } finally { vi.useRealTimers(); }
+  });
+
+  it('notifies the host UI after a remote-only membership change commits', async () => {
+    vi.useFakeTimers();
+    try {
+      await linkedGroup(); linkCopy(); await reconcileMembership();
+      const stop = watchGroupProjectMembership();
+      await vi.waitFor(() => expect(fx.snapshotChanged).not.toBeNull());
+      const changed = vi.fn();
+      const off = onMembershipChanged(changed);
+      fx.satellites[0].snapshot = remoteSnapshot([agent('remote'), agent('later')]);
+      fx.snapshotChanged!();
+      await vi.advanceTimersByTimeAsync(300);
+      await vi.waitFor(async () => expect((await getMembership('gp_linked')).explicit.some((e) => e.address === remoteAddress('later'))).toBe(true));
+      // One refresh for the inventory, another for its committed host record.
+      await vi.waitFor(() => expect(changed.mock.calls.length).toBeGreaterThanOrEqual(2));
+      expect(changed).toHaveBeenCalledWith('gp_linked');
+      off(); stop();
     } finally { vi.useRealTimers(); }
   });
 

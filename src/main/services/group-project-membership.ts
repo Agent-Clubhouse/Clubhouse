@@ -565,7 +565,12 @@ export function watchGroupProjectMembership(): () => void {
     groupProjectHost.onChange((change) => {
       // A deleted group project's members go at once; its record went with it.
       if (change.part === 'deleted') releaseMembershipBindings(change.groupProjectId);
-      else scheduleReconcile();
+      else {
+        scheduleReconcile();
+        // Remote-only changes have no local binding delta to announce. A scope
+        // change also commits its membership before the host emits the record event.
+        if (change.part === 'membership' || change.part === 'record') notify(change.groupProjectId);
+      }
     }),
     onAppEvent((event) => {
       if (event.type === 'agent.quick_finished' || event.type === 'agent.created' || event.type === 'agent.deleted') scheduleReconcile();
