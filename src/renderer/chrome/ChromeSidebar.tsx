@@ -473,7 +473,8 @@ export function ChromeSidebar() {
     return host ? machineInfo.get(host) ?? { label: shortMachineLabel(undefined), offline: true } : undefined;
   }, [machineInfo]);
   // Manual or most-recent order (#2116), shared by the tree and the filter results.
-  const ordered = useSidebarOrder(treeProjects, agentsByProject);
+  // A row's Recent activity counts its linked copies and its running agents on any machine (#3542).
+  const ordered = useSidebarOrder(treeProjects, agentsByProject, network.members);
 
   // Helpers an orchestrator asked to dispose under "ask-everything" (#2229).
   const pendingDisposes = useHelperDisposeRequestStore((s) => s.requests);

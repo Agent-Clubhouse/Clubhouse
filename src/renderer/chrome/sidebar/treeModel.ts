@@ -140,6 +140,43 @@ export function sortByRecent<T extends { id: string }>(items: readonly T[], acti
 }
 
 /**
+ * Project rows most recent first, for the Recent order (#3542). A row can stand
+ * for several projects: a linked group, or another machine's project. Project
+ * activity is recorded only on this machine and under each project's own id,
+ * so rows with a running agent on any machine come first, then the rest; in
+ * each tier a row takes the newest of its members' activity and of its running
+ * agents' spawns and turn starts here. Live status times aren't used: they
+ * change with every tool call, and rows would trade places all the time.
+ * Sleeping agents don't count, as in the idle rule. Ties keep the given order.
+ */
+export function sortProjectsByRecent<T extends { id: string }>(
+  items: readonly T[],
+  input: {
+    projectActivity: Readonly<Record<string, number>>;
+    /** The project ids each row stands for; a row missing here is just itself. */
+    members?: Readonly<Record<string, readonly string[]>>;
+    agentsByProject: Readonly<Record<string, readonly Agent[]>>;
+    agentActivity?: Readonly<Record<string, number>>;
+  },
+): T[] {
+  // Remote values are untrusted: only finite times count.
+  const time = (v: number | undefined) => (typeof v === 'number' && Number.isFinite(v) ? v : Number.NEGATIVE_INFINITY);
+  return items
+    .map((item, i) => {
+      let at = Number.NEGATIVE_INFINITY, running = false;
+      for (const id of input.members?.[item.id] ?? [item.id]) at = Math.max(at, time(input.projectActivity[id]));
+      for (const agent of input.agentsByProject[item.id] ?? []) {
+        if (agent.status !== 'running') continue;
+        running = true;
+        at = Math.max(at, time(input.agentActivity?.[agent.id]));
+      }
+      return { item, i, running, at };
+    })
+    .sort((a, b) => Number(b.running) - Number(a.running) || (a.at === b.at ? a.i - b.i : b.at - a.at))
+    .map((e) => e.item);
+}
+
+/**
  * `items` in the order of `heldIds`, then any items that are new since, in
  * their own order. Keeps rows from moving under the pointer while the Recent
  * order changes (#2116).

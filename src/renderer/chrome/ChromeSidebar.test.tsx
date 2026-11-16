@@ -417,7 +417,8 @@ describe('ChromeSidebar', () => {
     try {
       render(<ChromeSidebar />);
       const projectOrder = () => [...document.querySelectorAll<HTMLElement>('[data-testid^="project-group-"]')].map((el) => el.dataset.testid!.slice(14));
-      expect(projectOrder()).toEqual(['p2', 'p3', 'p1']);
+      // p1 and p2 have running agents, so they come first (#3542), each tier by activity.
+      expect(projectOrder()).toEqual(['p2', 'p1', 'p3']);
       // Sleeping a2, a3: a3 woke last.
       const sleeping = [...document.querySelectorAll<HTMLElement>('[data-agent-id]')].map((el) => el.dataset.agentId).filter((id) => id === 'a2' || id === 'a3');
       expect(sleeping).toEqual(['a3', 'a2']);

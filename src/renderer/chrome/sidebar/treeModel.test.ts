@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import type { Agent, AgentDetailedStatus } from '../../../shared/types';
-import { agentDot, buildAgentForest, buildProjectTree, descendants, forestSiblingGroups, filterTree, groupProjectAgents, helperRollup, siblingGroups, moveProject, moveWithinGroup, orderProjects, sortByRecent, holdOrder, projectRollup, selectNeedsAttention, selectRemoteNeedsAttention, mergeNeedsAttention } from './treeModel';
+import { agentDot, buildAgentForest, buildProjectTree, descendants, forestSiblingGroups, filterTree, groupProjectAgents, helperRollup, siblingGroups, moveProject, moveWithinGroup, orderProjects, sortByRecent, holdOrder, sortProjectsByRecent, projectRollup, selectNeedsAttention, selectRemoteNeedsAttention, mergeNeedsAttention } from './treeModel';
 
 const agent = (id: string, over: Partial<Agent> = {}): Agent => ({
   id, projectId: 'p1', name: id, kind: 'durable', status: 'running', color: 'blue', ...over,
@@ -240,6 +240,23 @@ describe('moveWithinGroup (#2115)', () => {
     expect(moveWithinGroup(order, awake, 'a1', 'a1')).toBeNull();
     expect(moveWithinGroup(order, awake, 's1', 'a1')).toBeNull();
     expect(moveWithinGroup(order, awake, 'a1', 's1')).toBeNull();
+  });
+});
+
+describe('sortProjectsByRecent (#3542)', () => {
+  it('puts rows with a running agent first, then by the newest of members and agent activity, ignoring sleeping agents and bad times', () => {
+    const rows = [{ id: 'quiet' }, { id: 'g' }, { id: 'solo' }, { id: 'nan' }];
+    const order = sortProjectsByRecent(rows, {
+      projectActivity: { quiet: 90, g: 10, 'remote||m||g': 30, solo: 20, nan: Number.NaN },
+      members: { g: ['g', 'remote||m||g'] },
+      agentsByProject: {
+        g: [agent('r1', { projectId: 'remote||m||g' })],
+        solo: [agent('s1'), agent('z1', { status: 'sleeping' })],
+        quiet: [agent('q1', { status: 'sleeping' })],
+      },
+      agentActivity: { s1: 40, z1: 99, r1: Number.NaN },
+    });
+    expect(order.map((r) => r.id)).toEqual(['solo', 'g', 'quiet', 'nan']);
   });
 });
 
