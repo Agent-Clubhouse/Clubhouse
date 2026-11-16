@@ -328,3 +328,11 @@ describe('AgentMessage', () => {
     expect(screen.getByTestId('chat-command-output').textContent).toBe('TASK_RESULT:t_1: Done');
   });
 });
+
+
+it.each(['src/*foo*/x', 'file_*name*', 'http://x/*a*/b', '/path/**glob**/name'])('keeps own-message paths and globs literal: %s', (text) => {
+  render(<UserMessage item={item({ text })} />);
+  const body = screen.getByTestId('chat-you-body');
+  expect(body.textContent).toBe(text);
+  expect(body.querySelector('em, strong')).toBeNull();
+});

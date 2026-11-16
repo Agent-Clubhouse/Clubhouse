@@ -36,7 +36,8 @@ function parseInline(source: string, literal = false): { nodes: PMNode[]; offset
   function tokens(items: Token[], base: number, marks: PMNode['marks'] = []) {
     let at = base;
     for (const token of items) {
-      if ((token.type === 'strong' || token.type === 'em') && token.raw.startsWith('*')) {
+      if ((token.type === 'strong' || token.type === 'em') && token.raw.startsWith('*')
+        && (at === base || /[\s([{]/.test(source[at - 1]))) {
         const width = token.type === 'strong' ? 2 : 1;
         offsets[offsets.length - 1] = at + width;
         tokens(token.tokens, at + width, [...marks, promptSchema.marks[token.type].create()]);
@@ -177,7 +178,12 @@ export function serializePrompt(doc: PMNode): PromptSource {
       let output = render(line, () => 0);
       for (const simplify of candidates) {
         const candidate = render(line, simplify);
-        if (parseInline(candidate.value).nodes.map((child) => child.text ?? '').join('') === plain) { output = candidate; break; }
+        const parsed = parseInline(candidate.value).nodes.flatMap((child) => {
+          const mask = child.marks.reduce((bits, mark) => bits | (mark.type === promptSchema.marks.strong ? 2 : 1), 0);
+          return (child.text ?? '').split('').map((value) => ({ value, mask }));
+        });
+        if (parsed.map((char) => char.value).join('') === plain && parsed.length === line.length
+          && parsed.every((char, i) => char.mask === simplify(line[i].mask))) { output = candidate; break; }
       }
       const base = text.length; text += output.value;
       output.mapped.forEach((offset, at) => { positions[at] = base + offset; });
@@ -188,7 +194,8 @@ export function serializePrompt(doc: PMNode): PromptSource {
       if (!char.break) { line.push(char); continue; }
       writeLine(line); line = [];
       positions[char.at] = text.length;
-      text += (node.attrs.literal ? '\n' : '  \n') + continuation;
+      // Literal paste must not acquire list indentation on the next keystroke.
+      text += node.attrs.literal ? '\n' : '  \n' + continuation;
       positions[char.at + 1] = text.length;
     }
     writeLine(line);

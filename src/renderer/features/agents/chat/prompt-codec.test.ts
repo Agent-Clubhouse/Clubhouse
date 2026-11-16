@@ -163,3 +163,17 @@ it.each([
   expect(body.textContent).toBe(doc.textContent);
   expect(parsePrompt(markdown).textContent).toBe(doc.textContent);
 });
+
+
+it.each(['src/*foo*/x', 'file_*name*', 'http://x/*a*/b', '/path/**glob**/name', 'foo*bar*baz'])('keeps paths, URLs, globs and intraword markers literal: %s', (text) => {
+  const doc = parsePrompt(text);
+  expect(doc.textContent).toBe(text);
+  expect(doc.firstChild?.firstChild?.marks).toEqual([]);
+  expect(serializePrompt(withoutSources(doc)).text).toBe(text);
+});
+
+it('drops intraword italic that cannot honestly round-trip with the parser boundary rule', () => {
+  const { nodes: n, marks: m } = promptSchema;
+  const doc = n.doc.create(null, n.paragraph.create(null, [promptSchema.text('foo'), promptSchema.text('bar', [m.em.create()]), promptSchema.text('baz')]));
+  expect(serializePrompt(doc).text).toBe('foobarbaz');
+});

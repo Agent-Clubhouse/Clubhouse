@@ -197,3 +197,17 @@ describe('structured prompt editing', () => {
     expect(view.dom.querySelector('strong')).toBeNull();
   });
 });
+
+
+it('does not add indentation to multiline paste in a list after typing or reload', () => {
+  editor('- item');
+  insertPlainText(view, ' a\nb\n- c');
+  expect(source()).toBe('- item a\nb\n- c');
+  type('x');
+  const sent = '- item a\nb\n- cx';
+  expect(source()).toBe(sent);
+  replaceDraft(view, sent);
+  expect(source()).toBe(sent);
+  select(sent.length); type('y');
+  expect(source()).toBe(sent + 'y');
+});
