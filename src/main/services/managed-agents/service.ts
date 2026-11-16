@@ -327,11 +327,16 @@ export function createManagedAgentsService(deps: ManagedAgentsDeps) {
     try {
       const live = await liveEntries();
       if ((await allTemplates()).some((t) => t.setup.blocks.includes(blockId))) return keep;
+      // "No agents" and "couldn't read them" differ here (as in D99): without the checked reads, or with
+      // any project list or agent list unreadable, a copy stays.
+      if (!deps.listProjectsChecked || !deps.listAgentsChecked) return keep;
+      const registered = await deps.listProjectsChecked();
+      if (!registered.readable) return keep;
       const users: DurableAgentConfig[] = [];
-      for (const project of await deps.listProjects()) {
-        // Unlike managedAgents(), a project that can't be read keeps a copy instead of counting as no agents.
-        const agents = await deps.listAgents(project.path);
-        users.push(...agents.filter((a) => a.managed && !a.disposedAt && a.managed.blocks.includes(blockId)));
+      for (const project of registered.projects) {
+        const read = await deps.listAgentsChecked(project.path);
+        if (!read.readable) return keep;
+        users.push(...read.agents.filter((a) => a.managed && !a.disposedAt && a.managed.blocks.includes(blockId)));
       }
       if (users.length === 0) return keep;
       for (const personaId of personaIds) {
@@ -1289,7 +1294,6 @@ export function createManagedAgentsService(deps: ManagedAgentsDeps) {
       };
     },
 
-    /** Read a part's head content, for delivery. */
     /**
      * The agent's custom blocks that repeat a built-in persona's whole text
      * (#3579). Reads only: removal is the person's choice, one click each.
@@ -1309,15 +1313,18 @@ export function createManagedAgentsService(deps: ManagedAgentsDeps) {
     /**
      * Remove a block's duplicate persona copies, as a new revision of the block,
      * so the text before stays in its history (fromRevision) for Undo. Refused
-     * as stale when the block changed since the person saw the offer.
+     * as stale when the block changed since the person saw the offer, or the
+     * removal would now take out a different number of copies than it said
+     * (`expectedRemoved`), for example because where the block is used changed.
      */
-    async removePersonaCopies(input: { projectPath: string; agentId: string; id: string; expectedRevision: number }): Promise<ManagedPersonaCopiesRemoval> {
+    async removePersonaCopies(input: { projectPath: string; agentId: string; id: string; expectedRevision: number; expectedRemoved: number }): Promise<ManagedPersonaCopiesRemoval> {
       const agent = await deps.getAgent(input.projectPath, input.agentId);
       if (!agent?.managed?.blocks.includes(input.id)) throw new ManagedError('not_found');
       const entry = await entryOf(input.id);
       if (entry.headRevision !== input.expectedRevision) throw new ManagedError('stale', 'It changed since you opened it.');
       const plan = await personaCopiesPlan(entry);
       if (!plan) throw new ManagedError('invalid', 'This block has no duplicate persona copies now.');
+      if (plan.summary.removed !== input.expectedRemoved) throw new ManagedError('stale', 'What this would remove changed since it was offered. Check the offer again.');
       const saved = await api.updatePart({ id: entry.id, expectedRevision: entry.headRevision, content: { kind: 'block', content: plan.next } });
       appLog('core:managed', 'info', 'Removed duplicate persona copies from a block', { meta: { partId: entry.id, removed: plan.summary.removed, bytesSaved: plan.summary.bytesSaved, fromRevision: entry.headRevision, revision: saved.revision } });
       return { blockId: entry.id, fromRevision: entry.headRevision, revision: saved.revision, removed: plan.summary.removed, bytesSaved: plan.summary.bytesSaved };
@@ -1341,6 +1348,7 @@ export function createManagedAgentsService(deps: ManagedAgentsDeps) {
       return api.updatePart({ id: entry.id, expectedRevision: input.expectedRevision, content: payloadToContent(entry.kind as ManagedPartKind, payload).content });
     },
 
+    /** Read a part's head content, for delivery. */
     async headContent(id: string): Promise<{ entry: CatalogEntry; content: ManagedPartContent; droppedEnvValues: string[]; fromRetiredBuiltin?: true } | null> {
       const live = await liveEntries();
       const entry = live[id];

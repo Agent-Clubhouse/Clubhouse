@@ -40,8 +40,8 @@ const managed = {
   deletePart: (id: string, expectedRevision: number, mode: 'copy' | 'remove') => call<void>(IPC.MANAGED.DELETE_PART, id, expectedRevision, mode),
   /** Blocks in the agent's setup that repeat a built-in persona's text (#3579). Reads only. */
   personaCopies: (projectPath: string, agentId: string) => call<ManagedPersonaCopies[]>(IPC.MANAGED.PERSONA_COPIES, projectPath, agentId),
-  /** Remove a block's duplicate persona copies as a new revision. */
-  removePersonaCopies: (projectPath: string, agentId: string, id: string, expectedRevision: number) => call<ManagedPersonaCopiesRemoval>(IPC.MANAGED.REMOVE_PERSONA_COPIES, projectPath, agentId, id, expectedRevision),
+  /** Remove a block's duplicate persona copies as a new revision. Refused as stale when the block or the count offered changed. */
+  removePersonaCopies: (projectPath: string, agentId: string, id: string, expectedRevision: number, expectedRemoved: number) => call<ManagedPersonaCopiesRemoval>(IPC.MANAGED.REMOVE_PERSONA_COPIES, projectPath, agentId, id, expectedRevision, expectedRemoved),
   /** Save an earlier revision of a custom part as its newest (Undo). */
   restorePartRevision: (id: string, revision: number, expectedRevision: number) => call<ManagedPartSummary>(IPC.MANAGED.RESTORE_PART_REVISION, id, revision, expectedRevision),
   consumers: (id: string) => call<ManagedPartConsumer[]>(IPC.MANAGED.CONSUMERS, id),

@@ -1,3 +1,4 @@
+import { readFileSync, writeFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { copiesRemoved, findPersonaCopies, fingerprintOf, PERSONA_BUILTIN_BLOCK, removePersonaCopies, type PersonaFingerprintTable } from './persona-copies';
 import { BUILTIN_BLOCK_IDS, BUILTIN_MANIFEST } from './builtins';
@@ -43,6 +44,18 @@ describe('findPersonaCopies', () => {
     const edited = OLD.replace('Read the work.', 'Read the work twice.');
     expect(findPersonaCopies(`${edited}\n${OLD}`, TABLE)).toEqual([]);
     expect(findPersonaCopies(`> ${OLD}\n> ${OLD}`, TABLE)).toEqual([]);
+  });
+
+  it('skips a persona quoted in a fenced code block, with ``` or ~~~ fences', () => {
+    const quoted = `Here is what the old persona said:\n\n\`\`\`markdown\n${OLD}\`\`\`\n\n~~~\n${OLD}~~~\n`;
+    expect(findPersonaCopies(`${quoted}${OLD}`, TABLE)).toEqual([]);
+    // A fence closes only on its own marker: ~~~ inside a ``` fence doesn't end it.
+    expect(findPersonaCopies(`\`\`\`\n~~~\n${OLD}\n${OLD}\`\`\`\n`, TABLE)).toEqual([]);
+    // Copies outside the fence still count, and the quoted one stays.
+    const text = `\`\`\`\n${OLD}\`\`\`\n\n${OLD}\n${OLD}`;
+    const [found] = findPersonaCopies(text, TABLE);
+    expect(found.copies).toHaveLength(2);
+    expect(removePersonaCopies(text, [found], one)).toBe(`\`\`\`\n${OLD}\`\`\`\n\n${OLD}`);
   });
 
   it('finds CRLF copies with the shipped table', () => {
@@ -96,6 +109,15 @@ describe('removePersonaCopies', () => {
     expect(removePersonaCopies(text, found, (id) => (id === 'qa' ? 'none' : 'one'))).toBe(OLD);
   });
 
+  it('removes only the loop\'s separator after a copy, and keeps extra blank lines', () => {
+    const text = `Notes\n\n${OLD}\n\n\n\nMine\n\n${OLD}`;
+    const found = findPersonaCopies(text, TABLE);
+    // The copy and two line breaks go; the other two blank lines are the person's.
+    expect(removePersonaCopies(text, found, one)).toBe(`Notes\n\n\n\nMine\n\n${OLD}`);
+    const crlf = `Notes\r\n\r\n${OLD}\r\n\r\n\r\nMine\r\n${OLD}`;
+    expect(removePersonaCopies(crlf, findPersonaCopies(crlf, TABLE), one)).toBe(`Notes\r\n\r\n\r\nMine\r\n${OLD}`);
+  });
+
   it('changes nothing with no copies found', () => {
     expect(removePersonaCopies('just text\n', [], one)).toBe('just text\n');
   });
@@ -114,5 +136,27 @@ describe('shipped data', () => {
     const versions = (table as PersonaFingerprintTable).personas.orchestrator.versions;
     expect(versions.length).toBeGreaterThanOrEqual(4);
     for (const v of versions) expect(v.first).toBe('# Orchestrator');
+  });
+});
+
+/**
+ * Check a real block, read only, from a copy of it (never the live catalog):
+ *   cp ~/.clubhouse/asset-catalog/revisions/<block id>/<revision>.json /tmp/block.json
+ *   CLUBHOUSE_PERSONA_COPIES_FILE=/tmp/block.json npx vitest run src/main/services/managed-agents/persona-copies.test.ts
+ * A revision file's `content` is read; any other file is read as plain text.
+ * The report is written beside the copy, as <file>.report.json.
+ */
+describe.runIf(!!process.env.CLUBHOUSE_PERSONA_COPIES_FILE)('a copy of a real block', () => {
+  it('reports the persona copies it has and what removal would leave', () => {
+    const raw = readFileSync(process.env.CLUBHOUSE_PERSONA_COPIES_FILE!, 'utf8');
+    let text = raw;
+    try { text = (JSON.parse(raw) as { content?: string }).content ?? raw; } catch { /* plain text */ }
+    const found = findPersonaCopies(text);
+    const left = removePersonaCopies(text, found, one);
+    writeFileSync(`${process.env.CLUBHOUSE_PERSONA_COPIES_FILE!}.report.json`, JSON.stringify({
+      bytes: Buffer.byteLength(text), personas: found.map((p) => ({ persona: p.personaName, copies: p.copies.length })),
+      keepOneBytes: Buffer.byteLength(left), removed: copiesRemoved(found, one),
+    }, null, 2));
+    expect(findPersonaCopies(left)).toEqual([]);
   });
 });

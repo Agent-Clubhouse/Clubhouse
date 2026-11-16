@@ -8,8 +8,8 @@
  * A copy is the whole text of a version Clubhouse shipped, starting at the
  * start of a line: persona-copy-fingerprints.json has every version's first
  * line, length and SHA-256 (scripts/persona-copy-fingerprints.mjs), and the
- * persona text Clubhouse ships now is added here. A repeated heading, or a
- * copy someone edited, is never a copy.
+ * persona text Clubhouse ships now is added here. A repeated heading, a
+ * copy someone edited, or one quoted in a fenced code block is never a copy.
  *
  * Nothing here writes: the service offers removal and saves it as a new
  * revision of the block, which Undo or the catalog's revision history can
@@ -108,11 +108,20 @@ export function findPersonaCopies(text: string, table: PersonaFingerprintTable =
   for (const list of byFirst.values()) list.sort((a, b) => b.length - a.length);
 
   const found = new Map<string, Array<{ start: number; end: number }>>();
+  // A persona quoted in a fenced code block is the person's text, not a copy: no match inside a fence.
+  let fence: { char: string; length: number } | null = null;
   let pos = 0;
   while (pos < text.length) {
     const lineEnd = text.indexOf('\n', pos);
     const line = text.slice(pos, lineEnd === -1 ? text.length : lineEnd).replace(/\r$/, '');
-    const match = byFirst.get(line)?.find((v) => pos + v.length <= text.length && fingerprintOf(text.slice(pos, pos + v.length)).sha256 === v.sha256);
+    const marker = /^ {0,3}(`{3,}|~{3,})/.exec(line)?.[1];
+    if (marker && (!fence || (marker[0] === fence.char && marker.length >= fence.length && !line.trim().slice(marker.length).trim()))) {
+      fence = fence ? null : { char: marker[0], length: marker.length };
+      if (lineEnd === -1) break;
+      pos = lineEnd + 1;
+      continue;
+    }
+    const match = !fence && byFirst.get(line)?.find((v) => pos + v.length <= text.length && fingerprintOf(text.slice(pos, pos + v.length)).sha256 === v.sha256);
     if (match) {
       const end = pos + match.length;
       const list = found.get(match.personaId) ?? [];
@@ -137,7 +146,7 @@ export function findPersonaCopies(text: string, table: PersonaFingerprintTable =
 /**
  * The text with duplicate copies removed: every copy but the last for a
  * persona kept once, every copy for one kept none. Each removed copy goes
- * with the line breaks right after it (the loop's separator). Everything else,
+ * with at most two line breaks right after it (the loop's separator). Everything else,
  * text before, between and after the copies, stays exactly as it was.
  */
 export function removePersonaCopies(text: string, found: PersonaCopies[], keep: (personaId: string) => PersonaCopiesKeep): string {
@@ -149,7 +158,8 @@ export function removePersonaCopies(text: string, found: PersonaCopies[], keep: 
   for (const span of spans) {
     out += text.slice(at, span.start);
     at = span.end;
-    while (text.startsWith('\r\n', at) || text[at] === '\n') at += text[at] === '\r' ? 2 : 1;
+    // The loop's separator only: at most two line breaks. Further blank lines stay.
+    for (let breaks = 0; breaks < 2 && (text.startsWith('\r\n', at) || text[at] === '\n'); breaks++) at += text[at] === '\r' ? 2 : 1;
   }
   return out + text.slice(at);
 }

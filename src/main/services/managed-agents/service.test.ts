@@ -42,6 +42,8 @@ function serviceAt(dir: string): ManagedAgentsService {
     state: createManagedStateStore(path.join(dir, 'managed')),
     listProjects: async () => [{ path: '/p', name: 'Project' }],
     listAgents: async () => [...agents.values()],
+    listProjectsChecked: async () => ({ projects: [{ path: '/p', name: 'Project' }], readable: true }),
+    listAgentsChecked: async () => ({ agents: [...agents.values()], readable: true }),
     getAgent: async (_p, id) => agents.get(id) ?? null,
     setManagedSetup: async (_p, id, setup) => {
       const a = agents.get(id);
@@ -1035,7 +1037,7 @@ describe('duplicate persona copies (#3579)', () => {
     const expected = `${before}${between}${persona}${after}`;
     expect(offer.bytesSaved).toBe(Buffer.byteLength(bloated) - Buffer.byteLength(expected));
 
-    const removal = await user(() => service.removePersonaCopies({ projectPath: '/p', agentId: 'panda', id: block.id, expectedRevision: block.revision }));
+    const removal = await user(() => service.removePersonaCopies({ projectPath: '/p', agentId: 'panda', id: block.id, expectedRevision: block.revision, expectedRemoved: 2 }));
     expect(removal).toMatchObject({ blockId: block.id, fromRevision: block.revision, revision: block.revision + 1, removed: 2 });
     expect(await blockText(block.id)).toBe(expected);
     expect(await user(() => service.personaCopies('/p', 'panda'))).toEqual([]);
@@ -1044,7 +1046,7 @@ describe('duplicate persona copies (#3579)', () => {
   it('Undo brings the text back as a newer revision, and the earlier revisions stay in the catalog', async () => {
     const block = await notesBlock();
     agent('panda', { blocks: [block.id] });
-    const removal = await user(() => service.removePersonaCopies({ projectPath: '/p', agentId: 'panda', id: block.id, expectedRevision: block.revision }));
+    const removal = await user(() => service.removePersonaCopies({ projectPath: '/p', agentId: 'panda', id: block.id, expectedRevision: block.revision, expectedRemoved: 2 }));
     const undone = await user(() => service.restorePartRevision({ id: block.id, revision: removal.fromRevision, expectedRevision: removal.revision }));
     expect(undone.revision).toBe(removal.revision + 1);
     expect(await blockText(block.id)).toBe(bloated);
@@ -1058,10 +1060,21 @@ describe('duplicate persona copies (#3579)', () => {
     const block = await notesBlock();
     agent('panda', { blocks: [block.id] });
     await user(() => service.updatePart({ id: block.id, expectedRevision: block.revision, content: { kind: 'block', content: `${bloated}\nmore` } }));
-    await expectCode(user(() => service.removePersonaCopies({ projectPath: '/p', agentId: 'panda', id: block.id, expectedRevision: block.revision })), 'stale');
-    const removal = await user(() => service.removePersonaCopies({ projectPath: '/p', agentId: 'panda', id: block.id, expectedRevision: block.revision + 1 }));
+    await expectCode(user(() => service.removePersonaCopies({ projectPath: '/p', agentId: 'panda', id: block.id, expectedRevision: block.revision, expectedRemoved: 2 })), 'stale');
+    const removal = await user(() => service.removePersonaCopies({ projectPath: '/p', agentId: 'panda', id: block.id, expectedRevision: block.revision + 1, expectedRemoved: 2 }));
     await user(() => service.updatePart({ id: block.id, expectedRevision: removal.revision, content: { kind: 'block', content: 'edited since' } }));
     await expectCode(user(() => service.restorePartRevision({ id: block.id, revision: removal.fromRevision, expectedRevision: removal.revision })), 'stale');
+  });
+
+  it('refuses a removal whose count changed since the offer', async () => {
+    const block = await notesBlock();
+    agent('panda', { blocks: [block.id] });
+    const [offer] = await user(() => service.personaCopies('/p', 'panda'));
+    expect(offer.removed).toBe(2);
+    // The built-in is added meanwhile: removal would now take all three.
+    agent('panda', { blocks: [block.id, BUILTIN_BLOCK_IDS.orchestrator] });
+    await expectCode(user(() => service.removePersonaCopies({ projectPath: '/p', agentId: 'panda', id: block.id, expectedRevision: offer.revision, expectedRemoved: offer.removed })), 'stale');
+    expect(await blockText(block.id)).toBe(bloated);
   });
 
   it('keeps none only when every agent using the block has the built-in Orchestrator block and no template lists it', async () => {
@@ -1081,25 +1094,32 @@ describe('duplicate persona copies (#3579)', () => {
     await user(() => service.saveTemplate({ name: 'Notes template', description: '', setup: { blocks: [block.id], skills: [], mcps: [CLUBHOUSE_MCP_PART_ID] }, settings: {} }));
     expect((await user(() => service.personaCopies('/p', 'panda')))[0].personas[0].keep).toBe('one');
 
-    const unreadable = createManagedAgentsService({
+    // Production reads say "unreadable" instead of throwing: any unreadable project or agent list keeps one.
+    const withReads = (checked: Partial<Pick<import('./service').ManagedAgentsDeps, 'listProjectsChecked' | 'listAgentsChecked'>>) => createManagedAgentsService({
       catalog: createAssetCatalogStore({ dir: path.join(root, 'catalog') }),
       state: createManagedStateStore(path.join(root, 'managed')),
-      listProjects: async () => [{ path: '/p', name: 'Project' }, { path: '/q', name: 'Gone' }],
-      listAgents: async (p) => { if (p === '/q') throw new Error('unreadable'); return [...agents.values()]; },
+      listProjects: async () => [{ path: '/p', name: 'Project' }],
+      listAgents: async () => [...agents.values()],
       getAgent: async (_p, id) => agents.get(id) ?? null,
       setManagedSetup: async () => {},
       isRunning: () => false,
+      ...checked,
     });
-    const lone = await user(() => unreadable.createPart({ name: 'lone notes', content: { kind: 'block', content: bloated } }));
+    const lone = await user(() => service.createPart({ name: 'lone notes', content: { kind: 'block', content: bloated } }));
     agent('lone', { blocks: [lone.id, BUILTIN_BLOCK_IDS.orchestrator] });
-    expect((await user(() => unreadable.personaCopies('/p', 'lone')))[0].personas[0].keep).toBe('one');
+    const keepOf = async (svc: ManagedAgentsService) => (await user(() => svc.personaCopies('/p', 'lone')))[0].personas[0].keep;
+    const readable = { listProjectsChecked: async () => ({ projects: [{ path: '/p', name: 'Project' }, { path: '/q', name: 'Other' }], readable: true }) };
+    expect(await keepOf(withReads({ ...readable, listAgentsChecked: async (p) => ({ agents: p === '/q' ? [] : [...agents.values()], readable: true }) }))).toBe('none');
+    expect(await keepOf(withReads({ ...readable, listAgentsChecked: async (p) => ({ agents: p === '/q' ? [] : [...agents.values()], readable: p !== '/q' }) }))).toBe('one');
+    expect(await keepOf(withReads({ listProjectsChecked: async () => ({ projects: [{ path: '/p', name: 'Project' }], readable: false }), listAgentsChecked: async () => ({ agents: [...agents.values()], readable: true }) }))).toBe('one');
+    expect(await keepOf(withReads({}))).toBe('one');
   });
 
   it('never offers a block that only repeats a heading, and never a built-in', async () => {
     const bison = await user(() => service.createPart({ name: 'humble-bison notes', content: { kind: 'block', content: '## Project: expense-tracker\n\nA.\n\n## Project: expense-tracker\n\nB.\n' } }));
     agent('bison', { blocks: [bison.id, BUILTIN_BLOCK_IDS.orchestrator] });
     expect(await user(() => service.personaCopies('/p', 'bison'))).toEqual([]);
-    await expectCode(user(() => service.removePersonaCopies({ projectPath: '/p', agentId: 'bison', id: bison.id, expectedRevision: bison.revision })), 'invalid');
-    await expectCode(user(() => service.removePersonaCopies({ projectPath: '/p', agentId: 'bison', id: 'not-in-setup', expectedRevision: 1 })), 'not_found');
+    await expectCode(user(() => service.removePersonaCopies({ projectPath: '/p', agentId: 'bison', id: bison.id, expectedRevision: bison.revision, expectedRemoved: 1 })), 'invalid');
+    await expectCode(user(() => service.removePersonaCopies({ projectPath: '/p', agentId: 'bison', id: 'not-in-setup', expectedRevision: 1, expectedRemoved: 1 })), 'not_found');
   });
 });

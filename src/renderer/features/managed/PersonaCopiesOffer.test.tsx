@@ -44,7 +44,7 @@ describe('PersonaCopiesOffer', () => {
     expect(await screen.findByTestId('details-setup-persona-copies')).toHaveTextContent('clever-panda notes repeats the Orchestrator persona 21 times. Removing 20 copies keeps one and saves 121 KB.');
     expect(remove).not.toHaveBeenCalled();
     fireEvent.click(screen.getByTestId('details-setup-persona-copies-remove'));
-    await waitFor(() => expect(remove).toHaveBeenCalledWith('/p', 'panda', 'asset-notes', 1));
+    await waitFor(() => expect(remove).toHaveBeenCalledWith('/p', 'panda', 'asset-notes', 1, 20));
     expect(await screen.findByTestId('details-setup-persona-copies-done')).toHaveTextContent('Removed 20 copies from clever-panda notes and saved 121 KB.');
     expect(screen.queryByTestId('details-setup-persona-copies')).toBeNull();
 

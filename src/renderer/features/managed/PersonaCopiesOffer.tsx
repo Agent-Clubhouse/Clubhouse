@@ -47,7 +47,7 @@ function Offer({ projectPath, agentId, offer, onRemoved }: {
     setBusy(true);
     setError(null);
     try {
-      onRemoved(await unwrap(managed().removePersonaCopies(projectPath, agentId, offer.blockId, offer.revision)), offer.blockName);
+      onRemoved(await unwrap(managed().removePersonaCopies(projectPath, agentId, offer.blockId, offer.revision, offer.removed)), offer.blockName);
     } catch (err) {
       // telemetry-exempt: shown in the card.
       setError(errorText(err));
