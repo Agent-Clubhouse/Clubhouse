@@ -2930,6 +2930,17 @@ describe('annex-client', () => {
         expect(annexTls.verifyPinnedEndpoint).not.toHaveBeenCalled();
       });
 
+      it('keeps "showed a different certificate" when the pairing changed during the check, even though the address passed', async () => {
+        peer = { ...base, knownHosts: ['10.0.0.4'], mainPort: 9443 };
+        annexClient.startClient();
+        sockets[0].handlers.error(mismatch());
+        expect(annexClient.getSatellite(FP)?.needsPairing).toBe(true);
+        vi.mocked(annexPeers.commitVerifiedRoute).mockReturnValueOnce(false);
+        expect((await annexClient.setSatelliteHost(FP, 'studio.tail1234.ts.net')).ok).toBe(false);
+        expect(annexClient.getSatellite(FP)).toMatchObject({ needsPairing: true, problem: { code: 'cert-mismatch' } });
+        expect(sockets).toHaveLength(1);
+      });
+
       it('keeps "showed a different certificate" when the new address fails its check', async () => {
         peer = { ...base, knownHosts: ['10.0.0.4'], mainPort: 9443 };
         annexClient.startClient();
