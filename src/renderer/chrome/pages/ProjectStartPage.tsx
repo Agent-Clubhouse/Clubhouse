@@ -8,6 +8,7 @@ import { useChromeStore } from '../chromeStore';
 import { openNewAgentOrDialog } from '../startPage';
 import { reportChromeActionFailed, reportChromeFeature } from '../telemetry';
 import type { Agent, CompletedQuickAgent, Project } from '../../../shared/types';
+import { openGroupProjectsForProject } from '../../features/group-projects/groupProjectsNav';
 import { markdownToPlainText } from '../../utils/safe-markdown';
 
 /**
@@ -224,6 +225,10 @@ export function ProjectStartPage({ project }: { project: Project }) {
             </button>
             <button type="button" data-testid="start-page-settings" onClick={() => openProjectSettings(project.id)} className={linkClass}>
               Project settings
+            </button>
+            {/* This project's view of Group Projects: groups verified to cover it, plus app-wide groups (#3544). */}
+            <button type="button" data-testid="start-page-group-projects" onClick={() => { openGroupProjectsForProject(project.id); }} className={linkClass}>
+              Group projects
             </button>
           </div>
         </div>

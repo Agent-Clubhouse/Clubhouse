@@ -10,6 +10,7 @@ import { usePluginStore } from '../plugins/plugin-store';
 import { useAnnexClientStore } from '../stores/annexClientStore';
 import { useRemoteProjectStore } from '../stores/remoteProjectStore';
 import { ProjectRail } from './ProjectRail';
+import { useGroupProjectsNavStore } from '../features/group-projects/groupProjectsNavStore';
 import { feedbackStatus, setFeedback } from '../features/feedback/feedback-test-utils';
 import { showConfirmDialog } from '../plugins/PluginDialog';
 import * as nameGenerator from '../../shared/name-generator';
@@ -1002,3 +1003,32 @@ describe('ProjectRail feedback button', () => {
   });
 });
 
+
+describe('ProjectRail Group Projects entry (#3544)', () => {
+  beforeEach(() => {
+    vi.stubGlobal('ResizeObserver', class {
+      constructor(_cb: () => void) {}
+      observe = vi.fn();
+      disconnect = vi.fn();
+    });
+    resetStores();
+  });
+
+  it('has a core Group Projects button with no plugin, labelled and titled for the icon-only rail', () => {
+    render(<ProjectRail />);
+    const button = screen.getByTestId('rail-group-projects');
+    expect(button).toHaveAttribute('aria-label', 'Group Projects');
+    expect(button).toHaveAttribute('title', 'Group Projects');
+    expect(button).not.toHaveAttribute('aria-current');
+  });
+
+  it('opens the hub in the main pane and shows as selected there', () => {
+    useGroupProjectsNavStore.setState({ route: { groupId: 'gp1' } });
+    const { rerender } = render(<ProjectRail />);
+    fireEvent.click(screen.getByTestId('rail-group-projects'));
+    expect(useUIStore.getState().explorerTab).toBe('plugin:app:group-projects');
+    expect(useGroupProjectsNavStore.getState().route).toBeNull();
+    rerender(<ProjectRail />);
+    expect(screen.getByTestId('rail-group-projects')).toHaveAttribute('aria-current', 'page');
+  });
+});

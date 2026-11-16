@@ -15,6 +15,7 @@ vi.mock('./pages/NewAgentPage', () => ({ NewAgentPage: ({ request }: { request: 
 import { ChromeBody } from './ChromeBody';
 import { useChromeFlagStore } from './chromeFlag';
 import { useChromeStore } from './chromeStore';
+import { useGroupProjectsNavStore } from '../features/group-projects/groupProjectsNavStore';
 import { useUIStore } from '../stores/uiStore';
 import { useProjectStore } from '../stores/projectStore';
 import { useAgentStore } from '../stores/agentStore';
@@ -36,6 +37,24 @@ beforeEach(() => {
 });
 
 afterEach(() => useChromeFlagStore.setState({ enabled: false }));
+
+describe('ChromeBody core app views (#3544)', () => {
+  it('renders the Group Projects hub at its app-view route, ahead of any plugin', () => {
+    useUIStore.setState({ explorerTab: 'plugin:app:group-projects' });
+    render(<ChromeBody />);
+    expect(screen.getByTestId('group-projects-hub')).toBeTruthy();
+    expect(screen.queryByTestId('main-content')).toBeNull();
+    expect(screen.queryByTestId('start-page')).toBeNull();
+  });
+
+  it('opens a group in the workspace when the route names one, and no plugin is consulted', () => {
+    useGroupProjectsNavStore.setState({ route: { groupId: 'gp-missing' } });
+    useUIStore.setState({ explorerTab: 'plugin:app:group-projects' });
+    render(<ChromeBody />);
+    expect(screen.getByTestId('group-project-workspace')).toBeTruthy();
+    useGroupProjectsNavStore.setState({ route: null });
+  });
+});
 
 describe('ChromeBody Dispatcher view (#2538)', () => {
   beforeEach(() => {

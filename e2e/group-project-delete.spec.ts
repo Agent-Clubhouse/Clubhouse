@@ -7,6 +7,7 @@ test('directory deletion requires an impact check and confirmation', async () =>
   try {
     await window.getByTestId('nav-settings').click();
     await window.getByTestId('settings-nav-app-group-projects').click();
+    await window.getByRole('button', { name: 'New group project', exact: true }).click();
     await window.getByLabel('New group project name').fill('Deletion fixture');
     await window.getByRole('button', { name: 'Create group project' }).click();
     // A row opens the group's workspace on its Board; Delete is under Details.

@@ -55,6 +55,14 @@ describe('validateManifest', () => {
     expect(r.errors).toContainEqual(expect.stringContaining('id'));
   });
 
+  it('reserves the id of the app\'s own Group Projects view', () => {
+    const result = validateManifest(validManifest({ id: 'group-projects' }));
+    expect(result.valid).toBe(false);
+    expect(result.errors.join(' ')).toContain('reserved for a built-in app view');
+    // The built-in Canvas widget plugin is a different id and stays valid.
+    expect(validateManifest(validManifest({ id: 'group-project' })).valid).toBe(true);
+  });
+
   it('rejects invalid id format', () => {
     const r = validateManifest(validManifest({ id: 'UPPER_CASE' }));
     expect(r.valid).toBe(false);

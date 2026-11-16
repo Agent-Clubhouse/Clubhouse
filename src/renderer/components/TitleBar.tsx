@@ -1,6 +1,7 @@
 import { useProjectStore } from '../stores/projectStore';
 import { useUIStore } from '../stores/uiStore';
 import { usePluginStore } from '../plugins/plugin-store';
+import { coreAppItemFor } from '../chrome/coreAppItems';
 
 const CORE_LABELS: Record<string, string> = {
   agents: 'Agents',
@@ -34,7 +35,7 @@ export function TitleBar() {
   const tabLabel = (() => {
     // Dynamic title from window.setTitle() takes priority
     if (dynamicTitle) return dynamicTitle;
-    if (!activePluginEntry) return CORE_LABELS[explorerTab] || explorerTab;
+    if (!activePluginEntry) return CORE_LABELS[explorerTab] || (isAppPlugin && activePluginId ? coreAppItemFor(activePluginId)?.title : undefined) || explorerTab;
     if (explorerTab.startsWith('plugin:app:')) {
       return activePluginEntry.manifest.contributes?.railItem?.title
         || activePluginEntry.manifest.contributes?.railItem?.label

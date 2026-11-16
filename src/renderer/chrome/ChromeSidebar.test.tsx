@@ -18,7 +18,11 @@ import { useQuickAgentStore } from '../stores/quickAgentStore';
 import { useAnnexClientStore } from '../stores/annexClientStore';
 import { useRemoteProjectStore, namespacedAgentId, namespacedProjectId } from '../stores/remoteProjectStore';
 import { usePluginStore } from '../plugins/plugin-store';
-import { useChromeStore, SIDEBAR_DEFAULT, syncProjectScopeWithActiveAgent } from './chromeStore';
+import {
+  useChromeStore, SIDEBAR_DEFAULT, SIDEBAR_MIN, SIDEBAR_MAX, APP_ROW_LABELS_MIN_INNER, APP_ROW_LABELS_MIN_SIDEBAR, APP_ROW_SIDEBAR_INSET, APP_ROW_ICON_BUTTON_PX,
+  appRowShowsLabels, syncProjectScopeWithActiveAgent,
+} from './chromeStore';
+import { useGroupProjectsNavStore } from '../features/group-projects/groupProjectsNavStore';
 import { useNetworkSidebarStore, _resetNetworkSidebarForTesting } from './sidebar/networkSidebarStore';
 import { useAgentSettingsPages } from '../features/agents/agentSettingsPages';
 import type { PluginManifest, PluginSource } from '../../shared/plugin-types';
@@ -80,6 +84,7 @@ beforeEach(() => {
     selectedCompletedId: null,
   });
   usePluginStore.setState({ plugins: {}, appEnabled: [] });
+  useGroupProjectsNavStore.setState({ route: null, view: { kind: 'all' }, query: '' });
   useChromeStore.setState({ sidebarWidth: SIDEBAR_DEFAULT, sidebarCollapsed: false, pinnedProjectIds: [], collapsedProjectIds: [], expandedFolds: [] });
   useUIStore.setState({ activeHostId: null });
   _resetNetworkSidebarForTesting();
@@ -272,13 +277,247 @@ describe('ChromeSidebar', () => {
     expect(screen.getByTestId('needs-you-row-b1').getAttribute('data-agent-id')).toBe('b1');
   });
 
-  it('gives the Canvas and Review buttons the app-row test ids', () => {
+  it('gives the Canvas, Review and Group Projects buttons the app-row test ids', () => {
     registerAppPlugin('canvas', 'Canvas');
     registerAppPlugin('review', 'Review');
     usePluginStore.setState({ appEnabled: ['canvas', 'review'] });
     render(<ChromeSidebar />);
     expect(screen.getByTestId('app-row-canvas')).toBeTruthy();
     expect(screen.getByTestId('app-row-review')).toBeTruthy();
+    expect(screen.getByTestId('app-row-group-projects')).toBeTruthy();
+  });
+
+  describe('app row (#3544)', () => {
+    const row = () => within(screen.getByRole('navigation', { name: 'App views' }));
+    const withCanvasAndReview = () => {
+      registerAppPlugin('canvas', 'Canvas');
+      registerAppPlugin('review', 'Review');
+      usePluginStore.setState({ appEnabled: ['canvas', 'review'] });
+    };
+    const entries = () => ['canvas', 'review', 'group-projects'].map((id) => screen.getByTestId(`app-row-${id}`));
+
+    it('puts Group Projects after Canvas and Review, with no plugin at all', () => {
+      render(<ChromeSidebar />);
+      expect(screen.getByTestId('app-row-group-projects')).toBeTruthy();
+      expect(screen.queryByLabelText('More app views')).toBeNull();
+    });
+
+    it('keeps Canvas, Review and Group Projects in that tab order, then More', () => {
+      withCanvasAndReview();
+      registerAppPlugin('goobers', 'Goobers');
+      usePluginStore.setState({ appEnabled: ['canvas', 'review', 'goobers'] });
+      render(<ChromeSidebar />);
+      const buttons = row().getAllByRole('button');
+      expect(buttons.map((b) => b.getAttribute('aria-label'))).toEqual(['Canvas', 'Review', 'Group Projects', 'More app views']);
+    });
+
+    it('never offers Group Projects in More app views', () => {
+      withCanvasAndReview();
+      registerAppPlugin('goobers', 'Goobers');
+      usePluginStore.setState({ appEnabled: ['canvas', 'review', 'goobers'] });
+      render(<ChromeSidebar />);
+      fireEvent.click(screen.getByLabelText('More app views'));
+      const items = screen.getAllByRole('menuitem').map((i) => i.textContent);
+      expect(items).toEqual(['Goobers']);
+    });
+
+    it('stays when Canvas and Review are off', () => {
+      usePluginStore.setState({ appEnabled: [] });
+      render(<ChromeSidebar />);
+      expect(row().getAllByRole('button').map((b) => b.getAttribute('aria-label'))).toEqual(['Group Projects']);
+    });
+
+    describe('collapse rule', () => {
+      it('is tied to one constant: the sidebar minus its 17px of inset is the row, which needs 352px for all three labels', () => {
+        expect(APP_ROW_SIDEBAR_INSET).toBe(17);
+        expect(APP_ROW_LABELS_MIN_INNER).toBe(352);
+        expect(APP_ROW_LABELS_MIN_SIDEBAR).toBe(369);
+        expect(appRowShowsLabels(APP_ROW_LABELS_MIN_SIDEBAR - 1)).toBe(false);
+        expect(appRowShowsLabels(APP_ROW_LABELS_MIN_SIDEBAR)).toBe(true);
+      });
+
+      it('shows every label only from the threshold up: not at the minimum or default width, yes at the maximum', () => {
+        expect(appRowShowsLabels(SIDEBAR_MIN)).toBe(false);
+        expect(appRowShowsLabels(SIDEBAR_DEFAULT)).toBe(false);
+        expect(appRowShowsLabels(SIDEBAR_MAX)).toBe(true);
+      });
+
+      // 2px border + 16px padding + 15px icon + 6px gap per labelled button, ~7px a character at 13px medium,
+      // the 30px More button and a 6px gap between items. (jsdom has no layout to measure.)
+      const BUTTON_CHROME = 2 + 16 + 15 + 6;
+      const CHAR = 7;
+      const MORE = 30;
+      const GAP = 6;
+      const labelled = (label: string) => BUTTON_CHROME + label.length * CHAR;
+      const rowNeeds = (labels: string[], selected: string | null, more: boolean) => {
+        const entries = labels.reduce((sum, l) => sum + (selected === null ? 0 : l === selected ? labelled(l) : APP_ROW_ICON_BUTTON_PX), 0);
+        const items = labels.length + (more ? 1 : 0);
+        return entries + (more ? MORE : 0) + (items - 1) * GAP;
+      };
+      const ROW = ['Canvas', 'Review', 'Group Projects'];
+
+      it('has room for all three labels and More at its threshold, with under 10px to spare', () => {
+        const need = ROW.reduce((sum, l) => sum + labelled(l), 0) + MORE + 3 * GAP;
+        expect(need).toBeLessThanOrEqual(APP_ROW_LABELS_MIN_INNER);
+        expect(APP_ROW_LABELS_MIN_INNER - need).toBeLessThan(10);
+      });
+
+      it('fits two icons, the selected label and More at the minimum width, for Canvas and Review', () => {
+        const inner = SIDEBAR_MIN - APP_ROW_SIDEBAR_INSET;
+        expect(rowNeeds(ROW, 'Canvas', true)).toBeLessThanOrEqual(inner);
+        expect(rowNeeds(ROW, 'Review', true)).toBeLessThanOrEqual(inner);
+      });
+
+      it('fits Group Projects selected at the minimum width with no More, and cuts its label (with a tooltip) when More is there', () => {
+        const inner = SIDEBAR_MIN - APP_ROW_SIDEBAR_INSET;
+        expect(rowNeeds(ROW, 'Group Projects', false)).toBeLessThanOrEqual(inner);
+        expect(rowNeeds(ROW, 'Group Projects', true)).toBeGreaterThan(inner);
+      });
+    });
+
+    describe.each([
+      ['the default width', SIDEBAR_DEFAULT],
+      ['the minimum width', SIDEBAR_MIN],
+      ['one pixel under the threshold', APP_ROW_LABELS_MIN_SIDEBAR - 1],
+    ])('at %s (narrow: only the selected entry has its label)', (_name, width) => {
+      beforeEach(() => { useChromeStore.setState({ sidebarWidth: width }); withCanvasAndReview(); });
+      const LABELS = { canvas: 'Canvas', review: 'Review', 'group-projects': 'Group Projects' } as const;
+      const IDS = ['canvas', 'review', 'group-projects'] as const;
+
+      it('shows only icons when nothing in the row is selected, and every entry keeps its aria-label', () => {
+        render(<ChromeSidebar />);
+        for (const id of IDS) {
+          const button = screen.getByTestId(`app-row-${id}`);
+          expect(button).toHaveAttribute('aria-label', LABELS[id]);
+          expect(button.textContent).toBe('');
+          expect(button.querySelector('svg')).toBeTruthy();
+          expect(button).toHaveAttribute('data-active', 'false');
+        }
+      });
+
+      it.each(IDS)('with %s selected shows its own label and no other', (selected) => {
+        useUIStore.setState({ explorerTab: `plugin:app:${selected}` });
+        render(<ChromeSidebar />);
+        for (const id of IDS) {
+          const button = screen.getByTestId(`app-row-${id}`);
+          expect(button).toHaveAttribute('aria-label', LABELS[id]);
+          expect(button.querySelector('svg')).toBeTruthy();
+          expect(button.textContent).toBe(id === selected ? LABELS[id] : '');
+          expect(button).toHaveAttribute('data-active', id === selected ? 'true' : 'false');
+          if (id === selected) expect(button).toHaveAttribute('aria-current', 'page');
+          else expect(button).not.toHaveAttribute('aria-current');
+        }
+      });
+
+      it.each(IDS)('with %s selected, shows a tooltip naming each of the others on keyboard focus, and none on the selected', (selected) => {
+        useUIStore.setState({ explorerTab: `plugin:app:${selected}` });
+        render(<ChromeSidebar />);
+        fireEvent.keyDown(document, { key: 'Tab' });
+        for (const id of IDS.filter((i) => i !== selected)) {
+          act(() => { screen.getByTestId(`app-row-${id}`).focus(); });
+          expect(screen.getByRole('tooltip')).toHaveTextContent(LABELS[id]);
+        }
+        act(() => { screen.getByTestId(`app-row-${selected}`).focus(); });
+        expect(screen.queryByRole('tooltip')).toBeNull();
+      });
+
+      it('keeps the icon-only entries at the shared icon width, and the selected one flexible', () => {
+        useUIStore.setState({ explorerTab: 'plugin:app:review' });
+        render(<ChromeSidebar />);
+        expect(screen.getByTestId('app-row-canvas').style.width).toBe(`${APP_ROW_ICON_BUTTON_PX}px`);
+        expect(screen.getByTestId('app-row-group-projects').style.width).toBe(`${APP_ROW_ICON_BUTTON_PX}px`);
+        expect(screen.getByTestId('app-row-review').style.width).toBe('');
+      });
+
+      it('keeps a selection elsewhere (Settings, the tree) out of the row: all icons', () => {
+        useUIStore.setState({ explorerTab: 'settings' });
+        render(<ChromeSidebar />);
+        for (const id of IDS) expect(screen.getByTestId(`app-row-${id}`).textContent).toBe('');
+      });
+    });
+
+    describe.each([
+      ['the threshold', APP_ROW_LABELS_MIN_SIDEBAR],
+      ['the maximum width', SIDEBAR_MAX],
+    ])('at %s (wide: every entry has its label)', (_name, width) => {
+      beforeEach(() => { useChromeStore.setState({ sidebarWidth: width }); withCanvasAndReview(); });
+
+      it('shows each label as text that matches its aria-label, selected or not', () => {
+        for (const explorerTab of ['agents', 'plugin:app:canvas', 'plugin:app:group-projects']) {
+          useUIStore.setState({ explorerTab });
+          const { unmount } = render(<ChromeSidebar />);
+          entries().forEach((button, i) => {
+            const label = ['Canvas', 'Review', 'Group Projects'][i];
+            expect(button).toHaveAttribute('aria-label', label);
+            expect(button.textContent).toBe(label);
+            expect(button.style.width).toBe('');
+          });
+          unmount();
+        }
+      });
+
+      it('opens no tooltip on focus while the labels are whole', () => {
+        render(<ChromeSidebar />);
+        fireEvent.keyDown(document, { key: 'Tab' });
+        act(() => { screen.getByTestId('app-row-group-projects').focus(); });
+        expect(screen.queryByRole('tooltip')).toBeNull();
+      });
+
+      it('marks the selected entry', () => {
+        useUIStore.setState({ explorerTab: 'plugin:app:review' });
+        render(<ChromeSidebar />);
+        expect(screen.getByTestId('app-row-review')).toHaveAttribute('aria-current', 'page');
+        expect(screen.getByTestId('app-row-group-projects')).toHaveAttribute('data-active', 'false');
+      });
+    });
+
+    it('opens the hub in the main pane from Group Projects, closing a group that was open', () => {
+      useGroupProjectsNavStore.setState({ route: { groupId: 'gp_1' }, view: { kind: 'project', projectId: 'p1' } });
+      render(<ChromeSidebar />);
+      fireEvent.click(screen.getByTestId('app-row-group-projects'));
+      expect(useUIStore.getState().explorerTab).toBe('plugin:app:group-projects');
+      expect(useGroupProjectsNavStore.getState().route).toBeNull();
+      expect(useGroupProjectsNavStore.getState().view).toEqual({ kind: 'all' });
+    });
+
+    it('leaves a satellite for this machine, as every app view does', () => {
+      useUIStore.setState({ activeHostId: 'sat-1' });
+      render(<ChromeSidebar />);
+      fireEvent.click(screen.getByTestId('app-row-group-projects'));
+      expect(useUIStore.getState().activeHostId).toBeNull();
+    });
+
+    describe('More app views keyboard', () => {
+      beforeEach(() => {
+        registerAppPlugin('goobers', 'Goobers');
+        registerAppPlugin('extra', 'Extra');
+        usePluginStore.setState({ appEnabled: ['goobers', 'extra'] });
+      });
+
+      it('opens on ArrowDown and focuses the first item, then moves with ArrowDown and ArrowUp', async () => {
+        render(<ChromeSidebar />);
+        const more = screen.getByLabelText('More app views');
+        act(() => more.focus());
+        fireEvent.keyDown(more, { key: 'ArrowDown' });
+        await waitFor(() => expect(screen.getByRole('menuitem', { name: 'Goobers' })).toHaveFocus());
+        fireEvent.keyDown(document.activeElement!, { key: 'ArrowDown' });
+        expect(screen.getByRole('menuitem', { name: 'Extra' })).toHaveFocus();
+        fireEvent.keyDown(document.activeElement!, { key: 'ArrowDown' });
+        expect(screen.getByRole('menuitem', { name: 'Goobers' })).toHaveFocus();
+        fireEvent.keyDown(document.activeElement!, { key: 'ArrowUp' });
+        expect(screen.getByRole('menuitem', { name: 'Extra' })).toHaveFocus();
+      });
+
+      it('closes on Escape and returns focus to the button', async () => {
+        render(<ChromeSidebar />);
+        const more = screen.getByLabelText('More app views');
+        fireEvent.click(more);
+        act(() => screen.getByRole('menuitem', { name: 'Goobers' }).focus());
+        fireEvent.keyDown(document.activeElement!, { key: 'Escape' });
+        expect(screen.queryByRole('menu')).toBeNull();
+        expect(more).toHaveFocus();
+      });
+    });
   });
 
   it('opens Review from Needs you with Needs you only for that visit, and plainly from the app row', () => {
@@ -741,7 +980,7 @@ describe('ChromeSidebar', () => {
       useUIStore.setState({ activeHostId: 's1' });
       useProjectStore.setState({ activeProjectId: rp });
       render(<ChromeSidebar />);
-      fireEvent.click(screen.getByText('Canvas'));
+      fireEvent.click(screen.getByTestId('app-row-canvas'));
       expect(useUIStore.getState().activeHostId).toBeNull();
     });
 

@@ -12,6 +12,7 @@ import { useQuickAgentStore } from '../../stores/quickAgentStore';
 import { useOrchestratorStore } from '../../stores/orchestratorStore';
 import { useUIStore } from '../../stores/uiStore';
 import { useChromeStore } from '../chromeStore';
+import { useGroupProjectsNavStore } from '../../features/group-projects/groupProjectsNavStore';
 import type { Project } from '../../../shared/types';
 
 const project = { id: 'p1', name: 'Clubhouse', path: '/tmp/ch' } as Project;
@@ -45,6 +46,17 @@ beforeEach(() => {
 });
 
 const type = (text: string) => fireEvent.change(screen.getByTestId('start-page-prompt'), { target: { value: text } });
+
+describe('ProjectStartPage Group projects link (#3544)', () => {
+  it('opens the hub as this project\'s view, with an All groups escape in the hub', () => {
+    useGroupProjectsNavStore.setState({ route: { groupId: 'gp-x' }, view: { kind: 'all' }, query: '' });
+    render(<ProjectStartPage project={project} />);
+    fireEvent.click(screen.getByTestId('start-page-group-projects'));
+    expect(useUIStore.getState().explorerTab).toBe('plugin:app:group-projects');
+    expect(useGroupProjectsNavStore.getState()).toMatchObject({ route: null, view: { kind: 'project', projectId: 'p1' } });
+    expect(screen.getByRole('button', { name: 'Group projects' })).toBeTruthy();
+  });
+});
 
 describe('ProjectStartPage', () => {
   it('starts a quick agent at the project root and makes it the selection', async () => {

@@ -8,6 +8,7 @@ export const CATEGORY = {
   projects: 'Projects',
   hosts: 'Hosts',
   canvases: 'Canvases',
+  groupProjects: 'Group Projects',
   settings: 'Settings',
   commands: 'Commands',
   help: 'Help',

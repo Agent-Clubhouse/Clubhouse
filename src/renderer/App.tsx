@@ -40,6 +40,7 @@ import { useChromeFlagStore } from './chrome/chromeFlag';
 import { useChromeStore } from './chrome/chromeStore';
 import { ChromeTitleBar } from './chrome/ChromeTitleBar';
 import { ChromeBody } from './chrome/ChromeBody';
+import { coreAppViewFor } from './chrome/coreAppViews';
 import { RepositoryImports } from './features/projects/RepositoryImports';
 
 export function App() {
@@ -342,7 +343,11 @@ export function App() {
 
     // When a satellite is active, gate app plugins by annex permission
     let appPluginContent;
-    if (activeHostId) {
+    const CoreView = coreAppViewFor(appPluginId);
+    if (CoreView) {
+      // A core app view (Group Projects) is the app's own: no plugin gating.
+      appPluginContent = <CoreView />;
+    } else if (activeHostId) {
       const matches = pluginMatchState[activeHostId];
       if (matches !== undefined) {
         const match = matches.find((p) => p.id === appPluginId);

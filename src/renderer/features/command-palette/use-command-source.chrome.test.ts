@@ -5,6 +5,8 @@ import { useChromeFlagStore } from '../../chrome/chromeFlag';
 import { useChromeStore } from '../../chrome/chromeStore';
 import { useQuickPromptStore } from '../../chrome/quickPromptStore';
 import { useUIStore } from '../../stores/uiStore';
+import { useGroupProjectStore } from '../../stores/groupProjectStore';
+import { useGroupProjectsNavStore } from '../group-projects/groupProjectsNavStore';
 import { useProjectStore } from '../../stores/projectStore';
 import { useAgentStore } from '../../stores/agentStore';
 import { usePluginStore } from '../../plugins/plugin-store';
@@ -94,6 +96,30 @@ describe('palette in the new shell', () => {
   it('shows no shortcut on a disabled tab', () => {
     useChromeStore.setState({ titleTabs: [{ id: 'agents' }, { id: 'plugin:files', disabled: true }] });
     expect(items().find((i) => i.id === 'nav:plugin:files')?.shortcut).toBeUndefined();
+  });
+
+  it('opens the Group Projects hub, and each group by its stable id with scope and host', () => {
+    useGroupProjectStore.setState({
+      projects: [
+        { id: 'gp1', name: 'Release checks', description: '', instructions: '', createdAt: 't', metadata: {}, scope: { level: 'project', projectId: 'p1', reach: 'local' } },
+        { id: 'gp2', name: 'Release checks', description: '', instructions: '', createdAt: 't', metadata: {}, scope: { level: 'app', reach: 'network' }, hostName: 'Studio' },
+      ],
+    });
+    const list = items();
+    const hub = list.find((i) => i.id === 'group-projects:open')!;
+    expect(hub).toMatchObject({ label: 'Group Projects', category: 'Commands' });
+    act(() => hub.execute());
+    expect(useUIStore.getState().explorerTab).toBe('plugin:app:group-projects');
+    expect(useGroupProjectsNavStore.getState().route).toBeNull();
+
+    // Same name, two groups: told apart by scope and host, opened by id.
+    const [first, second] = ['gp1', 'gp2'].map((id) => list.find((i) => i.id === `group-project:${id}`)!);
+    expect(first).toMatchObject({ label: 'Release checks', category: 'Group Projects', searchOnly: true });
+    expect(first.detail).toBe('Scope: Clubhouse. Reach: This computer. Host: This computer');
+    expect(second.detail).toBe('Scope: App-wide. Reach: Network. Host: Studio');
+    act(() => second.execute());
+    expect(useGroupProjectsNavStore.getState().route).toEqual({ groupId: 'gp2' });
+    useGroupProjectStore.setState({ projects: [] });
   });
 
   it('adds none of this in the legacy shell', () => {
