@@ -110,6 +110,14 @@ The E2E specs launch `.webpack/<arch>/main` with Electron from `node_modules` (`
 
 The E2E, Annex E2E, Chat E2E, Stable-mode E2E and Classic layout E2E jobs for that OS each run `npm ci`, download the artifact and run. The sharded E2E job skips `e2e/chat-rich` and the specs with their own jobs (`PLAYWRIGHT_IGNORE_CHAT_RICH`), so the chat specs add a parallel job instead of lengthening a shard. Before, every E2E and Annex E2E job packaged the app itself.
 
+## Unit shards
+
+The unit job runs `npm test -- --shard=i/2`, and `test/unit-sequencer.ts` decides which files each shard gets. vitest's own split sorts files by a hash of their path and cuts the list into equal counts. That put every git-heavy handoff test in shard 2/2: over three main runs in November 2026, Windows spent 11 to 15 minutes of test time in shard 1/2 and 31 to 35 in shard 2/2. At 14.2 minutes median (p90 17.9), that shard was the run's long pole.
+
+The sequencer packs files by measured time instead: heaviest first, each into the lightest shard so far. The times are in `test/unit-shards.mjs`, as JUnit seconds on Windows plus Linux for the slow files. Every other file counts as one second. The split depends only on the set of files, so every shard computes the same one, and each file runs in exactly one shard (`test/unit-shards.test.ts`). A stale time only makes the split less even.
+
+To refresh the times, download the `test-results-*` artifacts of a few main runs, sum each file's testcase times per OS, and take the median.
+
 ## Caching and skipped downloads
 
 - **npm:** `actions/setup-node` caches it.
@@ -186,7 +194,7 @@ Gating the `build` job on `complete`, as #1984 did, gives a lean PR:
 ## Follow-ups
 
 - **Webpack-only build:** E2E only needs `.webpack/`, but `electron-forge package` also packages the app into `out/`. A webpack-only build, or a webpack filesystem cache, would take a minute or two off each `build` job, which is the critical path.
-- **Shard balancing:** done in #2843. The E2E, Annex E2E, Chat E2E and Classic layout E2E jobs each run explicit lists balanced from the per-shard JUnit times, because Playwright's `--shard` splits by test count. A new spec goes in the list with the most room in `e2e/e2e-shards.mjs`, `e2e/chat-shards.mjs` or `e2e/classic-specs.mjs`; `test/e2e-shards.test.ts` and `test/chat-e2e-shards.test.ts` fail if one is missing. JUnit leaves out each spec's app launch, a few seconds per spec (twice that for Annex), so count it when balancing.
+- **Shard balancing:** done in #2843. The E2E, Annex E2E, Chat E2E and Classic layout E2E jobs each run explicit lists balanced from the per-shard JUnit times, because Playwright's `--shard` splits by test count. A new spec goes in the list with the most room in `e2e/e2e-shards.mjs`, `e2e/chat-shards.mjs` or `e2e/classic-specs.mjs`; `test/e2e-shards.test.ts` and `test/chat-e2e-shards.test.ts` fail if one is missing. JUnit leaves out each spec's app launch, a few seconds per spec (twice that for Annex), so count it when balancing. The unit shards are packed by measured time too ("Unit shards" above).
 
 ## Stable candidate
 

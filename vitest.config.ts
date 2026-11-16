@@ -1,6 +1,7 @@
 import { defineConfig, Plugin } from 'vitest/config';
 import * as path from 'path';
 import * as fs from 'fs';
+import { UnitShardSequencer } from './test/unit-sequencer';
 
 /** Vite plugin that loads .md files as raw strings (matching Webpack's asset/source). */
 function rawMarkdown(): Plugin {
@@ -49,6 +50,8 @@ export default defineConfig({
   test: {
     ...sharedTestConfig,
     globalSetup: ['./test/global-setup.ts'],
+    // --shard packs files by measured time, not by count (test/unit-shards.mjs).
+    sequence: { sequencer: UnitShardSequencer },
     coverage: {
       thresholds: {
         lines: 60,
