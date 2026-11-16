@@ -71,7 +71,8 @@ export function startLinkedProjectState(options: LinkedProjectStateOptions): Lin
       const groups = groupsOrEmpty();
       if (!groups.length) return;
       // Values from before sharing first, so the group's value counts them.
-      await options.linked.write(legacyLinkedStateRecords(options.projectState.get(), groups, self));
+      const current = options.projectState.get();
+      await options.linked.writeWith((records) => legacyLinkedStateRecords(current, groups, self, records));
       const listed = options.listed ?? (() => true);
       options.projectState.reproject((state) => projectLinkedState(state, groups, options.linked.index(), self, now(), listed));
     }).catch((err) => warn('Linked project state could not be applied', err));

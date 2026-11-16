@@ -143,6 +143,36 @@ describe('values from before sharing', () => {
     expect(groupLinkedState(indexLinkedState(bothInactive), groups[0], 'inactive')?.value).toBe(true);
   });
 
+  it('are offered once: the group\'s value shown afterwards never replaces this computer\'s own, and the group stays inactive only if all', () => {
+    const groups = [[a, b]];
+    const first = mergeLinkedStateRecords([], [
+      ...legacyLinkedStateRecords(state({ inactiveProjectIds: ['site'] }), groups, A),
+      ...legacyLinkedStateRecords(state(), groups, B),
+    ]);
+    expect(groupLinkedState(indexLinkedState(first), groups[0], 'inactive')?.value).toBe(false);
+    const shown = project(first, groups, A, state({ inactiveProjectIds: ['site'] }));
+    expect(shown.inactiveProjectIds).toEqual([]);
+    // Offering the state it now shows changes nothing.
+    expect(legacyLinkedStateRecords(shown, groups, A, first)).toEqual([rec(a, 'pinned', false, 0)]);
+    expect(first).toContainEqual(rec(a, 'inactive', true, 0));
+    // Still offered for a copy it has no record for yet.
+    expect(legacyLinkedStateRecords(shown, [[a, b, ref(A, 'site2')]], A, first)).toEqual([
+      rec(a, 'pinned', false, 0), rec(ref(A, 'site2'), 'pinned', false, 0), rec(ref(A, 'site2'), 'inactive', false, 0),
+    ]);
+  });
+
+  it('never replace a clock-zero record from another computer either, whichever writer won the tie', () => {
+    // B's view of A's copy, from an earlier group where every copy was inactive, won the tie over A's own.
+    const earlier = mergeLinkedStateRecords([], [rec(a, 'inactive', true, 0, A), rec(a, 'inactive', true, 0, B)]);
+    expect(earlier).toEqual([rec(a, 'inactive', true, 0, B)]);
+    // Linked again with an active copy, A shows active; offering that would drop the saved mark.
+    const groups = [[a, ref(B, 'other')]];
+    const records = mergeLinkedStateRecords(earlier, [rec(ref(B, 'other'), 'inactive', false, 0, B)]);
+    const shown = project(records, groups, A, state({ inactiveProjectIds: ['site'] }));
+    expect(shown.inactiveProjectIds).toEqual([]);
+    expect(legacyLinkedStateRecords(shown, groups, A, records)).toEqual([rec(a, 'pinned', false, 0)]);
+  });
+
   it('lose to any explicit edit, even one made earlier on another copy', () => {
     const groups = [[a, b]];
     const records = mergeLinkedStateRecords([rec(b, 'pinned', false, 5, B)], legacyLinkedStateRecords(state({ pinnedProjectIds: ['site'] }), groups, A));
@@ -195,6 +225,27 @@ describe('projection onto each computer', () => {
     // An unpin on A's copy alone, after the split, doesn't reach B's.
     const later = mergeLinkedStateRecords(shared, linkedStateWrite(shared, [], { type: 'setPinned', projectId: 'site', pinned: false }, A, 20));
     expect(groupLinkedState(indexLinkedState(later), [b], 'pinned')?.value).toBe(true);
+  });
+
+  it('a copy leaving its group keeps the linked value, and the saved value from before sharing stays in the records', () => {
+    const records = [rec(a, 'inactive', true, 0), rec(b, 'inactive', false, 0, B)];
+    const linked = project(records, [[a, b]], A, state({ inactiveProjectIds: ['site'] }));
+    expect(linked.inactiveProjectIds).toEqual([]);
+    expect(project(records, [], A, linked)).toBe(linked);
+    expect(legacyLinkedStateRecords(linked, [[a, b]], A, records)).toEqual([rec(a, 'pinned', false, 0)]);
+  });
+
+  it('a copy that joined a group with an explicit value keeps that value when it leaves, not its mark from before sharing', () => {
+    const groups = [[a, b, c]];
+    // A and B's group had an explicit Mark active; C, inactive before sharing, joins.
+    const explicit = linkedStateWrite([], [[a, b]], { type: 'setInactive', projectId: 'site', inactive: false, at: 10 }, A, 10);
+    const joined = mergeLinkedStateRecords([], [...explicit, ...legacyLinkedStateRecords(state({ inactiveProjectIds: ['site-c'] }), groups, C)]);
+    const onC = project(joined, groups, C, state({ inactiveProjectIds: ['site-c'] }));
+    expect(onC.inactiveProjectIds).toEqual([]);
+    // C offers the value it now shows: the explicit one supersedes its own from before sharing.
+    const settled = mergeLinkedStateRecords(joined, legacyLinkedStateRecords(onC, groups, C, joined));
+    expect(settled).toContainEqual(rec(c, 'inactive', false, 0, C));
+    expect(project(settled, [[a, b]], C, onC)).toBe(onC);
   });
 
   it('a late offline member with older edits converges to the newer value; with newer edits it wins', () => {
