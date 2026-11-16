@@ -199,6 +199,9 @@ for (const p of PROVIDERS) {
         await expect(composer.locator('ul ul')).toHaveCount(0);
 
         await composer.fill('');
+        // Type only into the cleared draft: "8. " inside a leftover list item is literal text (#3589).
+        await expect(composer).toHaveAttribute('data-empty', 'true');
+        await expect(composer.locator('ul, ol')).toHaveCount(0);
         await composer.pressSequentially('8. first');
         await composer.press('Alt+Enter');
         await composer.pressSequentially('second');

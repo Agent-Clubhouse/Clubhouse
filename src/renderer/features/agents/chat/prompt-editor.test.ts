@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { EditorView } from 'prosemirror-view';
-import { TextSelection } from 'prosemirror-state';
+import { NodeSelection, TextSelection } from 'prosemirror-state';
 import { undo, redo } from 'prosemirror-history';
 import { undoInputRule } from 'prosemirror-inputrules';
 import { createPromptState, editingKey, indentItems, insertPlainText, replaceDraft, softReturn } from './prompt-editor';
@@ -221,6 +221,92 @@ describe('clearing the whole draft', () => {
     selectAll();
     expect(key('Backspace')).toBe(true);
     expect(view.state.doc.toString()).toBe('doc(paragraph)');
+  });
+
+  /** #3589: Playwright's fill('') selects the DOM contents and presses Delete a few ms later.
+   * The selectionchange that tells ProseMirror about it is async, so state can still hold the old caret. */
+  describe.each(['Delete', 'Backspace'])('%s straight after a DOM select-all, before ProseMirror has seen the selection', (name) => {
+    afterEach(() => { document.getSelection()?.removeAllRanges(); view.dom.parentElement?.remove(); });
+    const domSelectAll = () => {
+      document.body.append(view.dom.parentElement!);
+      document.getSelection()!.setBaseAndExtent(view.dom, 0, view.dom, view.dom.childNodes.length);
+    };
+
+    it.each([['- first\n- second', 'a bullet list'], ['8. first\n9. second', 'a numbered list'], ['text', 'plain text']])('clears %s to one empty paragraph', (text) => {
+      editor(text);
+      domSelectAll();
+      expect(view.state.selection.empty).toBe(true);
+      expect(key(name)).toBe(true);
+      expect(view.state.doc.toString()).toBe('doc(paragraph)');
+      type('8. ');
+      expect(view.state.doc.firstChild?.type.name).toBe('ordered_list');
+    });
+
+    it('leaves the selection alone while an IME composition is running', () => {
+      editor('- first\n- second');
+      domSelectAll();
+      const before = view.state.selection;
+      view.dom.dispatchEvent(new CompositionEvent('compositionstart'));
+      expect(view.composing).toBe(true);
+      key(name);
+      expect(view.state.selection.eq(before)).toBe(true);
+      expect(source()).toBe('- first\n- second');
+    });
+
+    it('ignores a DOM selection outside the editor', () => {
+      editor('- first\n- second');
+      const outside = document.createElement('p');
+      outside.textContent = 'elsewhere';
+      document.body.append(view.dom.parentElement!, outside);
+      document.getSelection()!.setBaseAndExtent(outside, 0, outside, 1);
+      const before = view.state.selection;
+      key(name);
+      outside.remove();
+      expect(view.state.selection.eq(before)).toBe(true);
+      expect(source()).toBe('- first\n- second');
+    });
+
+    it('a caret inside a list item is left to the browser, with the caret where it was', () => {
+      editor('- first\n- second', 4);
+      document.body.append(view.dom.parentElement!);
+      const caret = view.state.selection.from;
+      const at = view.domAtPos(caret);
+      document.getSelection()!.setBaseAndExtent(at.node, at.offset, at.node, at.offset);
+      expect(key(name)).toBe(false);
+      expect(source()).toBe('- first\n- second');
+      expect(view.state.selection.from).toBe(caret);
+    });
+  });
+
+  describe('Backspace with the DOM selection inside the editor', () => {
+    afterEach(() => { document.getSelection()?.removeAllRanges(); view.dom.parentElement?.remove(); });
+
+    it('at the start of the first item still lifts it out of the list', () => {
+      editor('- first\n- second', 2);
+      document.body.append(view.dom.parentElement!);
+      const at = view.domAtPos(view.state.selection.from);
+      document.getSelection()!.setBaseAndExtent(at.node, at.offset, at.node, at.offset);
+      expect(key('Backspace')).toBe(true);
+      expect(view.state.doc.firstChild?.type.name).toBe('paragraph');
+      expect(source()).toBe('first\n- second');
+    });
+
+    it('a block NodeSelection is deleted as a block, not turned into a text selection', () => {
+      const run = (domCaret: boolean) => {
+        editor('- first\n- second');
+        view.dispatch(view.state.tr.setSelection(NodeSelection.create(view.state.doc, 1)));
+        if (domCaret) {
+          document.body.append(view.dom.parentElement!);
+          const text = view.dom.querySelector('li')!.firstChild!.firstChild!;
+          document.getSelection()!.setBaseAndExtent(text, 2, text, 2);
+        }
+        key('Backspace');
+        return view.state.doc.toString();
+      };
+      const expected = run(false);
+      expect(expected).not.toBe('doc(bullet_list(list_item(paragraph("first")), list_item(paragraph("second"))))');
+      expect(run(true)).toBe(expected);
+    });
   });
 
   it('clearing is one undo event that brings the list back', () => {
