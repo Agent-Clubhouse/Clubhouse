@@ -34,10 +34,16 @@ describe('restricted prompt codec', () => {
     expect(doc.textContent).toBe('firstnestednext');
   });
 
-  it('keeps irregular numbering exactly instead of renumbering it', () => {
+  it('normalizes numbered siblings deterministically', () => {
+    const once = roundTrip('8. a\n40. b\n    6. child\n100. c');
+    expect(once).toBe('8. a\n9. b\n   6. child\n10. c');
+    expect(roundTrip(once)).toBe(once);
+  });
+
+  it('keeps irregular numbering exactly for the composer', () => {
     const text = '8. a\n40. b\n    6. child\n100. c';
-    expect(roundTrip(text)).toBe(text);
-    expect(parsePrompt('8. a\n9. b\n   6. child\n10. c').firstChild?.type.name).toBe('ordered_list');
+    expect(serializePrompt(parsePrompt(text, { exact: true })).text).toBe(text);
+    expect(parsePrompt('8. a\n9. b\n   6. child\n10. c', { exact: true }).firstChild?.type.name).toBe('ordered_list');
   });
 
   it('maps slash-token offsets through list and emphasis syntax', () => {
@@ -180,6 +186,6 @@ it('drops intraword italic that cannot honestly round-trip with the parser bound
 });
 
 it.each(pastedDrafts)('restores pasted text exactly: %j', (text) => {
-  expect(roundTrip(text)).toBe(text);
-  expect(serializePrompt(withoutSources(parsePrompt(text))).text).toBe(text);
+  expect(serializePrompt(parsePrompt(text, { exact: true })).text).toBe(text);
+  expect(serializePrompt(withoutSources(parsePrompt(text, { exact: true }))).text).toBe(text);
 });

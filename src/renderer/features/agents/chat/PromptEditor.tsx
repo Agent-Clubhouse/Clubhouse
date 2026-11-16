@@ -175,7 +175,7 @@ export const PromptEditor = forwardRef<PromptEditorHandle, Props>(function Promp
 /** Model-backed input helper used by component tests and no browser globals. */
 export function setPromptText(element: HTMLElement, text: string, caret = text.length) {
   const view = promptView(element);
-  const doc = parsePrompt(text);
+  const doc = parsePrompt(text, { exact: true });
   const tr = view.state.tr.replaceWith(0, view.state.doc.content.size, doc.content);
   view.dispatch(tr.setSelection(TextSelection.create(tr.doc, sourcePosition(tr.doc, caret))));
 }

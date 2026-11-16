@@ -50,8 +50,10 @@ function parseInline(source: string, literal = false): { nodes: PMNode[]; offset
 }
 
 /** One source line per paragraph preserves unsupported Markdown and blank lines.
- * Only list prefixes and asterisk emphasis are interpreted. Never parses HTML. */
-export function parsePrompt(markdown: string): PMNode {
+ * Only list prefixes and asterisk emphasis are interpreted. Never parses HTML.
+ * `exact` (the composer) keeps any block the serializer would rewrite literal;
+ * rendering a sent message leaves it off so pasted lists still display as lists. */
+export function parsePrompt(markdown: string, { exact = false } = {}): PMNode {
   const lines = markdown.split('\n');
   let at = 0;
   let fence: string | null = null;
@@ -116,7 +118,7 @@ export function parsePrompt(markdown: string): PMNode {
     // The serializer normalizes markers, numbering, indentation and breaks. A
     // block it cannot reproduce byte-for-byte (usually a paste) stays literal.
     const source = lines.slice(start, at);
-    if (serializePrompt(promptSchema.nodes.doc.create(null, blocks[blocks.length - 1])).text !== source.join('\n')) {
+    if (exact && serializePrompt(promptSchema.nodes.doc.create(null, blocks[blocks.length - 1])).text !== source.join('\n')) {
       blocks.splice(-1, 1, ...source.map((text) => paragraph(text, true)));
     }
   }
