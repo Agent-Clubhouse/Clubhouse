@@ -709,6 +709,20 @@ describe('linked automatic membership (#3546)', () => {
     await expect(addMember('gp_linked', remoteAddress('remote-quick'))).rejects.toThrow(/explicitly linked project copy/);
   });
 
+  it('keeps an excluded saved auto entry excluded through off, and includes it again explicitly', async () => {
+    await linkedGroup(); linkCopy(); await reconcileMembership();
+    await updateMembership('gp_linked', (membership) => {
+      membership.excluded.push({ address: remoteAddress('remote'), excludedAt: 'x' });
+    });
+    await setAutomaticMembership('gp_linked', { autoJoin: false, includeLinkedComputers: false });
+    expect((await describeMembership('gp_linked')).members.map((m) => m.agentId)).not.toContain(remoteAddress('remote'));
+    expect((await getMembership('gp_linked')).excluded.map((e) => e.address)).toContain(remoteAddress('remote'));
+    await addMember('gp_linked', remoteAddress('remote'));
+    expect((await describeMembership('gp_linked')).members.find((m) => m.agentId === remoteAddress('remote'))?.via).toBe('explicit');
+    fx.linkGroups = []; await reconcileMembership();
+    expect((await describeMembership('gp_linked')).coverageLeaving).toEqual([]);
+  });
+
   it('turning linked computers off preserves remote auto members explicitly, including across unlink', async () => {
     await linkedGroup(); linkCopy(); await reconcileMembership();
     await setAutomaticMembership('gp_linked', { autoJoin: true, includeLinkedComputers: false });

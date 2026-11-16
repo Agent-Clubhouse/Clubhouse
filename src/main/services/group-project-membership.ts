@@ -653,9 +653,12 @@ export async function setAutomaticMembership(groupProjectId: string, options: Gr
       }
       for (const member of current.members) {
         const entry = draft.explicit.find((e) => e.address === member.agentId);
-        if (entry) { delete entry.autoProject; continue; }
+        if (entry) continue;
         draft.explicit.push({ address: member.agentId, kind: member.kind, name: member.name, addedAt: new Date().toISOString() });
       }
+      // Exclusions can overlay saved entries. Including one again while off
+      // must restore an explicit member, with no stale automatic source.
+      for (const entry of draft.explicit) delete entry.autoProject;
     }
     draft.autoJoin = options.autoJoin;
     draft.includeLinkedComputers = gp.scope?.reach === 'network' && options.includeLinkedComputers;
