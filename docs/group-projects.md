@@ -122,9 +122,11 @@ membership record, inventory and role grants; on a copy, fetched from
   already sends every network group's membership record. The roster adds the
   host's lead and admin grants and inventory states.
 - **Cache.** A copy saves the last roster in `group-projects/<id>/roster.json`
-  (atomic write, ignored when damaged, over 1 MB or for another host, never
-  recreating a removed copy's folder) and reads again after 15 seconds, or
-  when the group changed since (at most every 3 seconds). A fetch time in the
+  (compact, atomic write, ignored when damaged, over 2 MB or for another host,
+  never recreating a removed copy's folder) and reads again after 15 seconds,
+  or when the group's record or membership changed since (at most every 3
+  seconds). Board posts advance the sequence number but don't count, so a busy
+  board doesn't use up the host's pages. A fetch time in the
   future is never fresh. With the host offline it shows the saved roster as
   stale, with when it was read. An open panel asks again every 15 seconds,
   shows "as of" the fetch time, and stops calling a roster complete once it is
