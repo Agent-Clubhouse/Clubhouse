@@ -889,6 +889,16 @@ export async function describeMembership(groupProjectId: string): Promise<GroupP
 }
 
 /**
+ * Whether this computer couldn't read every project a group it hosts covers,
+ * so its members may be incomplete (#3548's roster says so).
+ */
+export async function hostInventoryPartial(gp: GroupProject): Promise<boolean> {
+  const inventory = await readInventory();
+  if (!gp.scope || gp.scope.level === 'app') return inventory.unreadable.size > 0;
+  return inventory.unreadable.has(gp.scope.projectId);
+}
+
+/**
  * Who would auto-join a group project with this scope, before it's created:
  * the same inventory and rules as auto-join. Projects whose agents can't be
  * read are listed, since their agents would join once readable.

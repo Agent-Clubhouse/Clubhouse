@@ -4,6 +4,7 @@ import type {
   AutoJoinPreview, GroupProject, GroupProjectCoverage, GroupProjectCreateHost, GroupProjectCreateOptions, RemoteCreateOutcome, GroupProjectDeleteImpact, GroupProjectMemberView, GroupProjectMembershipView,
   GroupProjectRolesView, GroupProjectMembershipOptions, GroupProjectScope, GroupProjectScopeOptions,
 } from '../shared/group-project-types';
+import type { GroupProjectRosterView } from '../shared/group-project-roster';
 
 export const groupProject = {
   groupProject: {
@@ -87,6 +88,9 @@ export const groupProject = {
     ipcRenderer.invoke(IPC.GROUP_PROJECT.CONFIRM_UNLINKED_MEMBERS, projectId, { confirmLeaving }),
   previewAutoJoin: (scope: GroupProjectScope, options?: GroupProjectMembershipOptions): Promise<AutoJoinPreview> =>
     ipcRenderer.invoke(IPC.GROUP_PROJECT.PREVIEW_AUTO_JOIN, scope, options),
+  /** #3548: the host's roster, or why only this computer's members can be shown. */
+  getRoster: (projectId: string): Promise<GroupProjectRosterView> =>
+    ipcRenderer.invoke(IPC.GROUP_PROJECT.GET_ROSTER, projectId),
   getCoverage: (projectId?: string): Promise<GroupProjectCoverage[]> =>
     ipcRenderer.invoke(IPC.GROUP_PROJECT.GET_COVERAGE, projectId),
   onMembershipChanged: (callback: (projectId: string) => void) => {

@@ -87,6 +87,40 @@ at creation. So scope affects only new joins, and no existing member is dropped
 silently.
 
 
+## The authoritative roster (#3548)
+
+A copy of a network group project only knows its own computer's agents well,
+so it never builds a member list from its record. Members and Permissions read
+the host's roster instead (`group-project-roster.ts`): on the host, from its
+membership record, inventory and role grants; on a copy, fetched from
+`POST /api/v1/network/group-projects/roster` over the pinned mTLS route.
+
+- **Identity and provenance.** Each member is an agent id plus the machine
+  fingerprint it's on, with a display label, kind, and how it joined
+  (`auto`, `explicit`, or `linked` for a linked project copy). Two agents
+  with one name on two computers stay apart.
+- **Completeness.** Each linked copy is `verified`, `offline`, `truncated`
+  (its snapshot left agents out) or `unknown`, by the same evidence as
+  coverage (#3549). A member the host can't see in an inventory is still
+  listed, marked unverified. A roster is complete only when every inventory
+  was checked, nothing was cut, and it isn't stale.
+- **Roles.** Lead and admin come from the host's grants, the ones it checks
+  for remote writes. A copy shows them read-only; its own grants, which gate
+  lead tools its agents run there, stay editable under "On this computer".
+- **Bounds.** Pages of at most 200, 1000 members read in all (more is shown as
+  cut), 32 copies, labels clipped to 100 characters. No paths, project ids,
+  instructions, tool switches or secrets. A host answers each computer 25
+  pages a minute, then `busy`. Every refusal (not here, not shared, a copy,
+  not in the network) is the same `not_found`.
+- **Cache.** A copy saves the last roster in `group-projects/<id>/roster.json`
+  (atomic write, ignored when damaged, over 1 MB or for another host) and
+  reads again after 15 seconds, or at once when the group changed since. With
+  the host offline it shows the saved roster as stale, with when it was read.
+- **Older hosts** answer 404. The copy shows its own members, labelled
+  "Members on this computer", and asks again after a minute.
+
+Changing members and roles stays on the existing host-enforced paths.
+
 ## Creating on another computer (#3547)
 
 A person can create a network group project hosted on another computer in the

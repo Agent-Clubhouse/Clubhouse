@@ -661,6 +661,7 @@ export const IPC = {
     PREVIEW_AUTO_JOIN: 'group-project:preview-auto-join',
     /** Which project copies each group project covers through explicit project links. Read-only (#3549). */
     GET_COVERAGE: 'group-project:get-coverage',
+    GET_ROSTER: 'group-project:get-roster',
     /** Its own grants and who holds lead and admin (#3360). */
     GET_ROLES: 'group-project:get-roles',
     /** Give an agent lead or admin on it: Allow, Ask first or Off. */
