@@ -266,3 +266,25 @@ describe('choosing the host (#3547)', () => {
     await waitFor(() => expect(hostRadio('Studio')).toBeEnabled());
   });
 });
+
+describe('coverage preview for another host (#3547, #3568)', () => {
+  it('says what this computer sees, and that the host verifies, only when another computer is chosen', async () => {
+    vi.spyOn(window.clubhouse.groupProject, 'createHosts').mockResolvedValue([
+      { machine: null, name: 'This computer', state: 'online' }, { machine: 'bb:bb', name: 'Studio', state: 'online' },
+    ]);
+    vi.mocked(window.clubhouse.groupProject.previewAutoJoin).mockResolvedValue({
+      wouldJoin: [], unreadableProjects: [],
+      coverage: { groupProjectId: 'preview', scoped: true, complete: true, localUnknown: false, repositoryMatches: [],
+        copies: [{ machine: 'a', projectId: 'atlas', name: 'Atlas', thisComputer: true, state: 'verified' }] },
+    } as never);
+    render(<CreateGroupProject defaultScope={scope} />);
+    expect(await screen.findByText('Covers Atlas.')).toBeInTheDocument();
+    const host = within(await screen.findByRole('group', { name: 'Host' }));
+    await waitFor(() => expect(host.getByRole('radio', { name: 'Studio' })).toBeEnabled());
+    fireEvent.click(host.getByRole('radio', { name: 'Studio' }));
+    expect(screen.getByText('As seen from this computer, it covers Atlas.')).toBeInTheDocument();
+    expect(screen.getByText('Coverage is verified on the host when the group is created.')).toBeInTheDocument();
+    fireEvent.click(host.getByRole('radio', { name: 'This computer' }));
+    expect(screen.getByText('Covers Atlas.')).toBeInTheDocument();
+  });
+});

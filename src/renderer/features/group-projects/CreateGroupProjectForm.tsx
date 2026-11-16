@@ -181,7 +181,7 @@ export function CreateGroupProjectForm({ defaultScope = { level: 'app', reach: '
         {previewLoading && <p className={settingsHelp}>Loading agents who will join...</p>}
         {previewError && <div className="flex flex-col items-start gap-2"><p role="alert" className={settingsError}>Could not preview members: {previewError}</p><Button onClick={() => void loadPreview()}>Retry preview</Button></div>}
         {preview && <div className={`${settingsHelp} mb-3`}>
-          <CoverageSummary coverage={preview.coverage} />
+          <CoverageSummary coverage={preview.coverage} remoteHost={network && host !== null} />
           <p>{preview.wouldJoin.filter((agent) => !excluded.includes(agent.agentId)).length} {preview.wouldJoin.filter((agent) => !excluded.includes(agent.agentId)).length === 1 ? 'agent will' : 'agents will'} join now.</p>
           {preview.wouldJoin.length > 0 && <ul aria-label="Agents who will join" className="list-disc pl-5">
             {preview.wouldJoin.map((agent) => <li key={agent.agentId}><label className="flex items-center gap-2"><input type="checkbox" checked={!excluded.includes(agent.agentId)} disabled={locked}

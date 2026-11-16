@@ -18,8 +18,18 @@ describe('CoverageSummary', () => {
   it('claims no certainty for a remote host: it says what this computer sees and that the host verifies', () => {
     render(<CoverageSummary coverage={coverage} remoteHost />);
     const summary = screen.getByTestId('coverage-summary');
-    expect(summary).toHaveTextContent('As seen from this computer: covers Atlas.');
+    expect(summary).toHaveTextContent('As seen from this computer, it covers Atlas.');
     expect(summary).toHaveTextContent(VERIFIED_ON_HOST);
+  });
+
+  it('says what isn\'t verified once, in plain words, for a remote host', () => {
+    const unknown = { machine: 'b', projectId: 'q', name: 'Atlas on Laptop', thisComputer: false, state: 'unknown' as const };
+    const { unmount } = render(<CoverageSummary coverage={{ ...coverage, copies: [...coverage.copies, unknown] }} remoteHost />);
+    expect(screen.getByTestId('coverage-summary')).toHaveTextContent('As seen from this computer, it covers Atlas. Not verified: Atlas on Laptop.');
+    expect(screen.getByTestId('coverage-summary')).not.toHaveTextContent(/on this computer:/);
+    unmount();
+    render(<CoverageSummary coverage={{ ...coverage, copies: [unknown] }} remoteHost />);
+    expect(screen.getByTestId('coverage-summary')).toHaveTextContent('As seen from this computer, not verified: Atlas on Laptop.');
   });
 
   it('shows nothing for an app-wide group', () => {
