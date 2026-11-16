@@ -1,6 +1,7 @@
 import { partitionIdle } from '../projectActivity';
-import { orderProjects, sortByRecent } from './treeModel';
+import { orderProjects, sortProjectsByRecent } from './treeModel';
 import type { SidebarSort } from '../chromeStore';
+import type { Agent } from '../../../shared/types';
 
 export interface SidebarOrderState {
   projectSort: SidebarSort;
@@ -16,6 +17,9 @@ export interface SidebarOrderContext {
   now: number;
   /** The project ids each row stands for (linked copies, other machines'); a row missing here is just itself. */
   members?: Readonly<Record<string, readonly string[]>>;
+  /** For the Recent order: each row's agents, and their activity, so running ones count (#3558). */
+  agentsByProject?: Readonly<Record<string, readonly Agent[]>>;
+  agentActivity?: Readonly<Record<string, number>>;
 }
 
 /**
@@ -56,7 +60,12 @@ export function sidebarProjectGroups<P extends { id: string }>(
   state: SidebarOrderState,
   context: SidebarOrderContext,
 ): { pinned: P[]; active: P[]; idle: P[] } {
-  const sorted = state.projectSort === 'recent' ? sortByRecent(projects, state.projectActivity) : [...projects];
+  const sorted = state.projectSort === 'recent'
+    ? sortProjectsByRecent(projects, {
+      projectActivity: state.projectActivity, members: context.members,
+      agentsByProject: context.agentsByProject ?? {}, agentActivity: context.agentActivity,
+    })
+    : [...projects];
   const { pinned, rest } = orderProjects(sorted, state.pinnedProjectIds);
   const { active, idle } = partitionIdle(rest, {
     activity: rowActivity(rest, state.projectActivity, context.members), pinnedIds: state.pinnedProjectIds, runningIds: context.runningIds,

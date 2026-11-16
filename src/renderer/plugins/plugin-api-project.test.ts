@@ -161,7 +161,15 @@ describe('createProjectsAPI', () => {
     it('follows the new sidebar: sorted, pinned first, idle and inactive last, the store\'s selection not exempt', () => {
       useChromeFlagStore.setState({ enabled: true });
       seed();
-      expect(createProjectsAPI().list().map((p) => p.id)).toEqual(['d', 'a', 'e', 'c', 'b', 'f']);
+      expect(createProjectsAPI().list().map((p) => p.id)).toEqual(['d', 'e', 'a', 'c', 'b', 'f']);
+    });
+
+    it('puts a project with a long-running agent first in Recent, as the sidebar does (#3558)', () => {
+      useChromeFlagStore.setState({ enabled: true });
+      seed();
+      // e's agent has run for days: its project activity is 90 days old, but it is running now.
+      useChromeStore.setState({ pinnedProjectIds: [], inactiveProjectIds: [], idleDays: 0 } as any);
+      expect(createProjectsAPI().list().map((p) => p.id)).toEqual(['e', 'c', 'a', 'd', 'b', 'f']);
     });
 
     it('keeps store order in the classic layout, whatever sidebar state is saved', () => {

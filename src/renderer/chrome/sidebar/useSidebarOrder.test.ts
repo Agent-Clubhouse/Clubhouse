@@ -3,7 +3,7 @@ import { renderHook } from '@testing-library/react';
 import type { Agent } from '../../../shared/types';
 import { useChromeStore } from '../chromeStore';
 import { useSidebarOrder } from './useSidebarOrder';
-import { sidebarProjectGroups } from './sidebarProjectOrder';
+import { sidebarProjectGroups, sidebarProjectOrder } from './sidebarProjectOrder';
 
 const NOW = 1_800_000_000_000;
 const HOUR = 60 * 60 * 1000;
@@ -159,5 +159,31 @@ describe('sidebarProjectGroups idle fold across linked copies (#3557)', () => {
     expect(pinned.pinned.map((p) => p.id)).toEqual(['old']);
     // idleDays 0: never idle.
     expect(groups(['old'], activity, members, { idleDays: 0 })).toEqual({ active: ['old'], idle: [] });
+  });
+});
+
+describe('sidebarProjectOrder Recent order matches the sidebar (#3558)', () => {
+  it('puts a project with a long-running agent first, as the sidebar does', () => {
+    const projects = ['site', 'go', 'docs'];
+    const activity = { site: NOW - DAY, docs: NOW - 2 * DAY, go: NOW - 9 * DAY };
+    const agentsByProject = { go: [agent('a1', 'go')] };
+    const sidebar = order(projects, agentsByProject, activity);
+    const picker = sidebarProjectOrder(projects.map((id) => ({ id })), {
+      projectSort: 'recent', projectActivity: activity, pinnedProjectIds: [], inactiveProjectIds: [], idleDays: 0,
+    }, { runningIds: new Set(['go']), activeProjectId: null, now: NOW, agentsByProject, agentActivity: {} });
+    expect(sidebar).toEqual(['go', 'site', 'docs']);
+    expect(picker.map((p) => p.id)).toEqual(sidebar);
+  });
+
+  it('orders running projects by their agents\' spawns and turns, as the sidebar does', () => {
+    const projects = ['a', 'b'];
+    const activity = { a: NOW - 2 * DAY, b: NOW - DAY };
+    const agentsByProject = { a: [agent('a1', 'a')], b: [agent('b1', 'b')] };
+    const agentActivity = { a1: NOW - 60_000 };
+    const sidebar = order(projects, agentsByProject, activity, undefined, agentActivity);
+    const picker = sidebarProjectOrder(projects.map((id) => ({ id })), {
+      projectSort: 'recent', projectActivity: activity, pinnedProjectIds: [], inactiveProjectIds: [], idleDays: 0,
+    }, { runningIds: new Set(['a', 'b']), activeProjectId: null, now: NOW, agentsByProject, agentActivity });
+    expect(picker.map((p) => p.id)).toEqual(sidebar);
   });
 });
