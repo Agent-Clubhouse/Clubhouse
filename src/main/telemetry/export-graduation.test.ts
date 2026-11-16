@@ -25,7 +25,7 @@ vi.mock('./lazy-chunks', () => chunks);
 import { TELEMETRY_SETTINGS } from '../../shared/settings-definitions';
 import * as experimentalSettings from '../services/experimental-settings';
 import { resetAllSettingsStoresForTests } from '../services/settings-store';
-import { FRAMEBRIAR_STARTUP_HOLD_MS, initTelemetry, isTelemetryConfigured, whenStarted } from './bootstrap';
+import { FRAMEBRIAR_STARTUP_HOLD_MS, initTelemetry, isTelemetryConfigured, whenStarted, whenStartupWritesSettled } from './bootstrap';
 import * as control from './control';
 import { setFramebriarTelemetrySource } from './destinations/framebriar-source';
 import { abortPending, getLocalSink, isPending } from './facade';
@@ -107,13 +107,13 @@ async function launch(): Promise<void> {
 async function launchAndWaitForMarker(): Promise<void> {
   await launch();
   // A Phase 1 file is written twice: the marker, then the secret move after
-  // ready, which launch() doesn't wait for. Wait for both, so nothing writes
-  // while a test reads (#2985).
-  await vi.waitFor(() => {
-    const saved = readSaved();
-    expect(saved.exportGraduation).toBe(1);
-    expect(saved).not.toHaveProperty('legacyDestination');
-  });
+  // ready, which launch() doesn't wait for. Wait for both to finish, so nothing
+  // writes while a test reads (#2985). Startup says when they have: a polling
+  // window would depend on how slow the runner's disk is (#3577).
+  await whenStartupWritesSettled();
+  const saved = readSaved();
+  expect(saved.exportGraduation).toBe(1);
+  expect(saved).not.toHaveProperty('legacyDestination');
 }
 
 /** The stored destinations with `off` applied: what a switched-off setup should hold. */
@@ -183,15 +183,14 @@ describe('a setup the old gate held back ends up off', () => {
     writeJson(SETTINGS_FILE, raw);
     await launch();
     expect(getTelemetrySettings().destinations.some((d) => d.enabled)).toBe(false);
-    // The move happens after ready; the mock app is ready at once. One whole,
-    // parsed file: an empty one caught mid-write doesn't contain the value either.
-    await vi.waitFor(() => {
-      const text = readText(SETTINGS_FILE);
-      const saved = JSON.parse(text);
-      expect(saved).not.toHaveProperty('legacyDestination');
-      expect(text).not.toContain('plaintext-value');
-      expect(saved.exportGraduation).toBe(1);
-    });
+    // The move happens after ready; the mock app is ready at once. Wait for it
+    // to finish, then read one whole, parsed file.
+    await whenStartupWritesSettled();
+    const text = readText(SETTINGS_FILE);
+    const saved = JSON.parse(text);
+    expect(saved).not.toHaveProperty('legacyDestination');
+    expect(text).not.toContain('plaintext-value');
+    expect(saved.exportGraduation).toBe(1);
   });
 
   it('clears the offline queue, as turning a destination off does', async () => {
