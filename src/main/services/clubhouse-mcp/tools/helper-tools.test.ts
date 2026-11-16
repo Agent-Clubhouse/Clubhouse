@@ -432,6 +432,21 @@ describe('start_helper', () => {
       expect(file.records).toEqual([expect.objectContaining({ sender: 'orch', receiver: 'helper_causal', taskId: 'helper_causal' })]);
     } finally { stop(); forgetHookTurn('orch'); _setLocalWorkStoreForTesting(); }
   });
+  it('writes the helper\'s causal record before acknowledging, since no checkpoint precedes the acknowledgement', async () => {
+    let file: LocalWorkFile = { version: 1, records: [], current: {} }; const options: unknown[] = [];
+    _setLocalWorkStoreForTesting({ get: () => structuredClone(file), settled: async () => {}, update: async (change, option) => { options.push(option); const next = structuredClone(file); change(next); file = next; } });
+    const stop = startFederationTurnTracking('orch');
+    const request = { id: 'remote-durable', cause: { rootId: 'root', depth: 4 }, expiresAt: Date.now() + 60_000, targetId: 'orch' } as FederatedRequest;
+    controllableCreation();
+    try {
+      prepareFederationInput('orch', request)?.accepted('prompt');
+      publishFromHookEvent('orch', { kind: 'pre_tool', rawName: 'UserPromptSubmit' });
+      expect(parse(await callTool('orch', 'start_helper', { name: 'durable', task: 'Remote subtask' }))).toMatchObject({ state: 'starting' });
+      expect(file.records).toHaveLength(1);
+      expect(options.length).toBeGreaterThan(0);
+      expect(options.every((option) => (option as { durable?: boolean } | undefined)?.durable !== false)).toBe(true);
+    } finally { stop(); forgetHookTurn('orch'); _setLocalWorkStoreForTesting(); }
+  });
   it('returns "starting" before the creation completes, then spawns with the task and tells the orchestrator', async () => {
     const creation = controllableCreation();
     const result = await callTool('orch', 'start_helper', { name: 'fixer', task: 'Fix the bug', folder: 'fixer-1', branchFrom: 'main' });

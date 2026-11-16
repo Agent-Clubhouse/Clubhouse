@@ -15,7 +15,7 @@ import { FakeChatDriver } from './agent-runtime/fake-chat-driver';
 import { registerChatRuntime, unregisterChatRuntime } from './agent-runtime';
 import { FEDERATED_REQUEST_LIMITS } from './dispatcher-federation-requests';
 import { startFederationTurnTracking, withFederationInput } from './dispatcher-federation-context';
-import { _setLocalWorkStoreForTesting, _settleLocalWorkForTesting, createLocalWorkStore, localCausalInputs, localOutputInputs, withLocalCausalCall } from './dispatcher-federation-local-work';
+import { _setLocalWorkStoreForTesting, _settleLocalWorkForTesting, bindLocalCausalInputs, createLocalWorkStore, localCausalInputs, LOCAL_WORK_MAX_BYTES, savedLocalWorkInputs, localOutputInputs, withLocalCausalCall } from './dispatcher-federation-local-work';
 
 const LEDGER = 'dispatcher-federation-local-work.json';
 const runtimes: ChatAgentRuntime[] = [];
@@ -145,5 +145,33 @@ describe('durable writes per local round trip', () => {
     expect(ledger.get().records.map((r) => r.id)).toEqual(['kept']);
     await ledger.update(record('after'));
     expect(createLocalWorkStore().get().records.map((r) => r.id)).toEqual(['kept', 'after']);
+  });
+  it('keeps a helper start\'s lineage across a crash before its spawn checkpoint, and refuses it if the write fails', async () => {
+    const inputs = [remote(5, 'orchestrated')];
+    const mission = 'Do the subtask';
+    // start_helper is acknowledged before any checkpoint, so its record is written before it returns.
+    await bindLocalCausalInputs('orch', 'helper_a', 'helper_a', mission, inputs, true);
+    _setLocalWorkStoreForTesting(createLocalWorkStore()); // crash: nothing else was flushed
+    expect(savedLocalWorkInputs('orch', 'helper_a', 'helper_a', mission).map((r) => r.cause.depth)).toEqual([5]);
+    // wake_helper reads exactly this; a second send on the same ledger still merges, never lowers.
+    const woken = await bindLocalCausalInputs('orch', 'helper_a', 'helper_a', mission, [...savedLocalWorkInputs('orch', 'helper_a', 'helper_a', mission), remote(2, 'orchestrated')]);
+    expect(Math.max(...woken.map((r) => r.cause.depth))).toBe(5);
+    vi.spyOn(fs.promises, 'rename').mockRejectedValueOnce(new Error('disk full'));
+    await expect(bindLocalCausalInputs('orch', 'helper_b', 'helper_b', mission, inputs, true)).rejects.toThrow('disk full');
+  });
+  it('keeps a deferred change made while the ledger is held in memory for capacity', async () => {
+    const ledger = createLocalWorkStore();
+    const huge = { ...remote(7, 'huge'), origin: { ...remote(7).origin, machineName: 'x'.repeat(LOCAL_WORK_MAX_BYTES) } };
+    await ledger.update((file) => { file.current.big = ['big']; file.currentInputs = { big: [huge] }; });
+    expect(fs.existsSync(path.join(fixture.base, LEDGER))).toBe(false); // held in memory only
+    // The change that brings it back under the limit is itself deferred: it must replace the in-memory copy.
+    await ledger.update((file) => {
+      delete file.currentInputs; delete file.current.big;
+      file.records.push({ id: 'during-overflow', sender: 's', receiver: 'r', hash: 'h', expiresAt: Date.now() + 60_000, inputs: [remote(1)] });
+    }, { durable: false });
+    expect(ledger.get().records.map((r) => r.id)).toEqual(['during-overflow']);
+    expect(ledger.get().currentInputs).toBeUndefined();
+    await ledger.flush();
+    expect(createLocalWorkStore().get().records.map((r) => r.id)).toEqual(['during-overflow']);
   });
 });

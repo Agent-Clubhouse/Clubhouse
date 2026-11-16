@@ -867,11 +867,12 @@ async function runHelperStart(orchestratorId: string, args: HelperStartArgs, app
     const { agentId: helperId, config, done } = started;
     spawning.add(helperId);
     // Keep the pending task beside its main-only lineage even if Clubhouse
-    // restarts while worktree creation is still running.
+    // restarts while worktree creation is still running. start_helper is acknowledged before the spawn
+    // checkpoint, so its record is written now: a crash in between must not turn the helper into a root.
     let helperInputs: readonly FederatedRequest[];
     try {
       await agentConfig.setHelperStartFields(target.path, helperId, { pendingTask: task });
-      helperInputs = await bindLocalCausalInputs(orchestratorId, helperId, helperId, helperMission(orchestrator.name, task), causalInputs);
+      helperInputs = await bindLocalCausalInputs(orchestratorId, helperId, helperId, helperMission(orchestrator.name, task), causalInputs, true);
     } catch (err) {
       // telemetry-exempt: leave the helper asleep when its task provenance cannot be saved
       spawning.delete(helperId); abandonDecision();

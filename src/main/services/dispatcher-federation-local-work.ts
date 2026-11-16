@@ -116,7 +116,8 @@ export function createLocalWorkStore(filename = 'dispatcher-federation-local-wor
         // depth in main memory. Capacity never rejects a send or invents a root.
         if (Buffer.byteLength(JSON.stringify(file)) > LOCAL_WORK_MAX_BYTES) { overflow = file; pending = undefined; return; }
         if (!durable) {
-          pending = file;
+          // The file fits again, so this supersedes any overflow copy instead of hiding behind it.
+          overflow = undefined; pending = file;
           lazyFlush ??= setTimeout(() => { lazyFlush = undefined; void flush().catch((error) => appLog('core:dispatcher', 'error', 'Could not save local causal work', { meta: { error: String(error) } })); }, LAZY_FLUSH_MS);
           lazyFlush.unref?.();
           return;
@@ -173,12 +174,13 @@ export async function localCausalInputs(target: string, taskId: string | undefin
 
 /**
  * A record is history. What a restart needs is the checkpoint that `activateLocalCausalInput` writes before the
- * work is dispatched, and that checkpoint carries its own binding and inputs. Nothing is acknowledged on the strength
- * of the record, so it rides on that write, which saves it too, instead of costing a write of its own.
+ * work is dispatched, and that checkpoint carries its own binding and inputs. A send acknowledged to an agent is
+ * only ever acknowledged after that write, which saves the record too, so by default the record rides on it
+ * instead of costing a write of its own. A caller whose acknowledgement comes before any checkpoint passes `durable`.
  */
 const DEFERRED = { durable: false };
-/** Main-owned delayed work binds its immutable snapshot before the initiating tool returns. */
-export async function bindLocalCausalInputs(sender: string, target: string, task: string | undefined, payload: unknown, original: readonly FederatedRequest[]): Promise<readonly FederatedRequest[]> {
+/** Main-owned delayed work binds its immutable snapshot before the initiating tool returns. `durable` writes it before that. */
+export async function bindLocalCausalInputs(sender: string, target: string, task: string | undefined, payload: unknown, original: readonly FederatedRequest[], durable = false): Promise<readonly FederatedRequest[]> {
   const now = Date.now(); const inputs = distinct(original, now);
   if (!inputs.length) return [];
   await store().settled();
@@ -190,7 +192,7 @@ export async function bindLocalCausalInputs(sender: string, target: string, task
     && r.inputs.some((old) => inputs.some((input) => causeKey(input) === causeKey(old))));
   if (previous) {
     const merged = distinct([...previous.inputs, ...inputs], now).map((r) => ({ ...r, targetId: target, localWorkIds: [previous.id] }));
-    await store().update((saved) => { const retained = saved.records.find((r) => r.id === previous.id); if (retained) { retained.inputs = merged; retained.expiresAt = Math.max(...merged.map((r) => r.expiresAt)); } }, DEFERRED);
+    await store().update((saved) => { const retained = saved.records.find((r) => r.id === previous.id); if (retained) { retained.inputs = merged; retained.expiresAt = Math.max(...merged.map((r) => r.expiresAt)); } }, durable ? undefined : DEFERRED);
     return merged;
   }
   const id = randomUUID();
@@ -199,7 +201,7 @@ export async function bindLocalCausalInputs(sender: string, target: string, task
   await store().update((saved) => {
     saved.records = saved.records.filter((r) => r.expiresAt > now);
     saved.records.push({ id, sender, receiver: target, taskId: task, hash, expiresAt, inputs: tagged });
-  }, DEFERRED);
+  }, durable ? undefined : DEFERRED);
   return tagged;
 }
 
