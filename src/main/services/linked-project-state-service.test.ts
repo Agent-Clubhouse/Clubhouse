@@ -149,7 +149,7 @@ describe('Pin and Mark inactive shared by linked copies', () => {
     });
   });
 
-  it('keeps this computer\'s own Mark inactive from before linking when the group shows active, and unlink brings it back', async () => {
+  it('keeps this computer\'s own Mark inactive from before linking in the records; the view shows the group, and unlink keeps it', async () => {
     const a = desktop(A, { inactiveProjectIds: ['site'] }), b = desktop(B);
     net = mesh(a, b);
     await a.links.apply({ type: 'link', a: 'site', b: remote(B, 'site-b') });
@@ -162,25 +162,72 @@ describe('Pin and Mark inactive shared by linked copies', () => {
     const own = () => a.linked.records().find((r) => r.project.machine === A && r.field === 'inactive');
     expect(own()).toEqual({ project: { machine: A, projectId: 'site' }, field: 'inactive', value: true, at: 0, by: A });
     await a.links.apply({ type: 'unlink', a: 'site' });
-    await vi.waitFor(() => expect(a.state.inactiveProjectIds).toContain('site'));
-    await b.service.settled();
-    expect(b.state.inactiveProjectIds).toEqual([]);
+    await vi.waitFor(() => expect(a.links.groups()).toEqual([]));
+    await a.service.settled();
+    expect(a.state.inactiveProjectIds).not.toContain('site');
+    expect(own()).toEqual({ project: { machine: A, projectId: 'site' }, field: 'inactive', value: true, at: 0, by: A });
   });
 
-  it('a Mark active after unlinking holds over the mark from before sharing', async () => {
-    const a = desktop(A, { inactiveProjectIds: ['site'] }), b = desktop(B);
+  it('a saved mark survives linking to an inactive copy, unlinking, then linking to an active one', async () => {
+    // Without the guard, B (sorting after A) offers its clock-zero view of A's copy and wins the tie over A's own.
+    const a = desktop(A, { inactiveProjectIds: ['site'] }), b = desktop(B, { inactiveProjectIds: ['q'] });
     net = mesh(a, b);
-    await a.links.apply({ type: 'link', a: 'site', b: remote(B, 'site-b') });
-    await vi.waitFor(() => expect(a.linked.records().length).toBeGreaterThanOrEqual(2));
-    await a.service.settled();
+    const mark = () => a.linked.records().find((r) => r.project.machine === A && r.project.projectId === 'site' && r.field === 'inactive');
+    await a.links.apply({ type: 'link', a: 'site', b: remote(B, 'q') });
+    await vi.waitFor(() => {
+      expect(a.state.inactiveProjectIds).toContain(remote(B, 'q'));
+      expect(b.state.inactiveProjectIds).toContain(remote(A, 'site'));
+    });
+    await a.service.settled(); await b.service.settled();
     await a.links.apply({ type: 'unlink', a: 'site' });
-    await vi.waitFor(() => expect(a.state.inactiveProjectIds).toContain('site'));
-    clock += 1000;
-    a.apply({ type: 'setInactive', projectId: 'site', inactive: false, at: clock });
-    await a.service.settled();
+    await vi.waitFor(() => expect(b.links.groups()).toEqual([]));
+    await a.links.apply({ type: 'link', a: 'site', b: remote(B, 'r') });
+    await vi.waitFor(() => {
+      expect(b.links.groups()).toHaveLength(1);
+      expect(a.state.inactiveProjectIds).not.toContain('site');
+    });
+    await a.service.settled(); await b.service.settled();
     await new Promise((r) => setTimeout(r, 20));
+    await a.service.settled(); await b.service.settled();
+    expect(mark()).toMatchObject({ value: true, at: 0 });
+    expect(b.linked.records().find((r) => r.project.machine === A && r.field === 'inactive')).toMatchObject({ value: true, at: 0 });
+  });
+
+  it('after a downgrade, an unlink and Mark active there stay as they are on upgrade', async () => {
+    // Records saved while linked on this version; the older one unlinked and marked active without any.
+    const a = desktop(A);
+    await a.linked.write([{ project: { machine: A, projectId: 'site' }, field: 'inactive', value: true, at: 0, by: A }]);
+    await a.service.settled();
+    await a.links.apply({ type: 'link', a: 'other', b: remote(B, 'other-b') });
     await a.service.settled();
     expect(a.state.inactiveProjectIds).toEqual([]);
+  });
+
+  it('a Mark active whose shared write fails isn\'t undone by the next reconcile', async () => {
+    // On B, whose clock-zero records win ties, so its own mark stays its own.
+    let failing = false;
+    const b = desktop(B, { inactiveProjectIds: ['site-b'] }, { save: async () => { if (failing) throw new Error('disk full'); } });
+    const a = desktop(A, { inactiveProjectIds: ['site'] });
+    net = mesh(a, b);
+    await b.links.apply({ type: 'link', a: 'site-b', b: remote(A, 'site') });
+    await vi.waitFor(() => expect(b.state.inactiveProjectIds).toContain(remote(A, 'site')));
+    await b.links.apply({ type: 'unlink', a: 'site-b' });
+    await vi.waitFor(() => expect(b.links.groups()).toEqual([]));
+    await b.service.settled();
+    expect(b.state.inactiveProjectIds).toContain('site-b');
+    expect(b.linked.records().find((r) => r.project.machine === B && r.field === 'inactive')).toEqual({
+      project: { machine: B, projectId: 'site-b' }, field: 'inactive', value: true, at: 0, by: B,
+    });
+    failing = true;
+    clock += 1000;
+    b.apply({ type: 'setInactive', projectId: 'site-b', inactive: false, at: clock });
+    await b.service.settled();
+    failing = false;
+    await b.links.apply({ type: 'link', a: 'other-b', b: remote(A, 'other') });
+    await b.service.settled();
+    await new Promise((r) => setTimeout(r, 20));
+    await b.service.settled();
+    expect(b.state.inactiveProjectIds).not.toContain('site-b');
   });
 
   it('a third copy joining a group with an explicit value keeps it after a split, not its mark from before sharing', async () => {

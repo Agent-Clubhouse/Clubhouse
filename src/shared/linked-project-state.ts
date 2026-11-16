@@ -141,20 +141,24 @@ export function linkedStateWrite(
 
 /**
  * Clock-zero records for what this computer had before sharing, for every
- * linked copy it has a say in: its own projects, pinned or not, and another
- * machine's row it pinned or marked. Merging them is a no-op once any
- * explicit edit exists, so they can be offered again safely. A field this
- * computer already has a clock-zero record for in `saved` isn't offered
- * again while the group's value for it is from before sharing too: by then
- * its state shows the group's value, and offering that would replace the
- * value it had before sharing. Once the group has an explicit value, the
- * copy keeps that one (unlink keeps the value), so it's offered as before.
+ * linked copy it has a say in: its own projects, pinned or not and inactive
+ * or not, and another machine's row it pinned. Only a project's own computer
+ * offers its Mark inactive: another's view of the row may already be the
+ * group's, and would hold off the owner's own value.
+ *
+ * Merging them is a no-op once any explicit edit exists, so they can be
+ * offered again safely. A field that already has a clock-zero record in
+ * `saved`, from any computer, isn't offered again while the group's value for
+ * it is from before sharing too: by then this computer's state shows the
+ * group's value, and offering that would replace a saved value from before
+ * sharing. Once the group has an explicit value, the copy keeps that one
+ * (unlink keeps the value), so it's offered as before.
  */
 export function legacyLinkedStateRecords(
   state: ProjectState, groups: readonly NetworkProjectRef[][], self: string, saved: readonly LinkedProjectStateRecord[] = [],
 ): LinkedProjectStateRecord[] {
   const pinned = new Set(state.pinnedProjectIds), inactive = new Set(state.inactiveProjectIds);
-  const offered = new Set(saved.filter((r) => r.at === 0 && r.by === self).map(linkedStateRecordKey));
+  const offered = new Set(saved.filter((r) => r.at === 0).map(linkedStateRecordKey));
   const index = indexLinkedState(saved);
   const out: LinkedProjectStateRecord[] = [];
   for (const group of groups) {
@@ -166,7 +170,7 @@ export function legacyLinkedStateRecords(
       const id = sidebarProjectId(project, self);
       const own = project.machine === self;
       if (own || pinned.has(id)) offer(project, 'pinned', pinned.has(id));
-      if (own || inactive.has(id)) offer(project, 'inactive', inactive.has(id));
+      if (own) offer(project, 'inactive', inactive.has(id));
     }
   }
   return out;
@@ -179,9 +183,7 @@ export function legacyLinkedStateRecords(
  * stays forgotten here while its group's records stay. Projects that aren't
  * linked, and fields no copy has a record for, are left as they are. A pinned
  * group is never inactive. Newly pinned copies go after the pinned ones,
- * oldest pin first. A copy no longer in any group gets back this computer's
- * own Mark inactive from before sharing, unless an explicit edit replaced it
- * (on the copy, or on its group while linked: see legacyLinkedStateRecords).
+ * oldest pin first.
  * Returns `state` itself when nothing changes.
  */
 export function projectLinkedState(
@@ -207,12 +209,6 @@ export function projectLinkedState(
       const at = Math.min(active.at, now);
       for (const id of ids) if ((state.projectActivity[id] ?? Number.NEGATIVE_INFINITY) < at) (activity ??= { ...state.projectActivity })[id] = at;
     }
-  }
-  const grouped = new Set(groups.flat().map(projectRefKey));
-  for (const r of index.values()) {
-    if (r.field !== 'inactive' || !r.value || r.at !== 0 || r.by !== self || grouped.has(projectRefKey(r.project)) || !listed(r.project)) continue;
-    const id = sidebarProjectId(r.project, self);
-    if (!inactive.has(id) && !pinned.has(id)) { inactive.add(id); inactiveChanged = true; }
   }
   if (!unpin.size && !pins.length && !inactiveChanged && !activity) return state;
   pins.sort((a, b) => a[1] - b[1] || compare(a[0], b[0]));

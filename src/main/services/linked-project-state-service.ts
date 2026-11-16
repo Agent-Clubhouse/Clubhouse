@@ -7,8 +7,7 @@
  * links change or the state changes, this computer's values from before
  * sharing are offered at clock zero and every linked copy is given its group's
  * values in project-state.json, so the sidebar, the idle rule and phones read
- * them as before. A copy that leaves its group keeps the last shared value,
- * except that this computer's own Mark inactive from before sharing comes back.
+ * them as before. A copy that leaves its group keeps the last shared value.
  */
 import { sidebarProjectRef, type NetworkProjectRef } from '../../shared/project-links';
 import { groupOfRef, legacyLinkedStateRecords, linkedStateWrite, projectLinkedState } from '../../shared/linked-project-state';
@@ -70,9 +69,8 @@ export function startLinkedProjectState(options: LinkedProjectStateOptions): Lin
       const self = options.self();
       if (stopped || !self || !options.projectState.ready()) return;
       const groups = groupsOrEmpty();
-      // Values from before sharing first, so the group's value counts them. Even
-      // with nothing linked this waits for earlier edits, so a Mark active made
-      // after unlinking isn't undone by the mark from before sharing.
+      if (!groups.length) return;
+      // Values from before sharing first, so the group's value counts them.
       const current = options.projectState.get();
       await options.linked.writeWith((records) => legacyLinkedStateRecords(current, groups, self, records));
       const listed = options.listed ?? (() => true);

@@ -159,6 +159,18 @@ describe('values from before sharing', () => {
     expect(legacyLinkedStateRecords(shown, [[a, b, ref(A, 'site2')]], A, first)).toEqual([rec(ref(A, 'site2'), 'pinned', false, 0), rec(ref(A, 'site2'), 'inactive', false, 0)]);
   });
 
+  it('never replace a clock-zero record from another computer either, whichever writer won the tie', () => {
+    // B's view of A's copy, from an earlier group where every copy was inactive, won the tie over A's own.
+    const earlier = mergeLinkedStateRecords([], [rec(a, 'inactive', true, 0, A), rec(a, 'inactive', true, 0, B)]);
+    expect(earlier).toEqual([rec(a, 'inactive', true, 0, B)]);
+    // Linked again with an active copy, A shows active; offering that would drop the saved mark.
+    const groups = [[a, ref(B, 'other')]];
+    const records = mergeLinkedStateRecords(earlier, [rec(ref(B, 'other'), 'inactive', false, 0, B)]);
+    const shown = project(records, groups, A, state({ inactiveProjectIds: ['site'] }));
+    expect(shown.inactiveProjectIds).toEqual([]);
+    expect(legacyLinkedStateRecords(shown, groups, A, records)).toEqual([rec(a, 'pinned', false, 0)]);
+  });
+
   it('lose to any explicit edit, even one made earlier on another copy', () => {
     const groups = [[a, b]];
     const records = mergeLinkedStateRecords([rec(b, 'pinned', false, 5, B)], legacyLinkedStateRecords(state({ pinnedProjectIds: ['site'] }), groups, A));
@@ -213,18 +225,12 @@ describe('projection onto each computer', () => {
     expect(groupLinkedState(indexLinkedState(later), [b], 'pinned')?.value).toBe(true);
   });
 
-  it('a copy leaving its group gets back this computer\'s own Mark inactive from before sharing, not an explicit edit\'s value', () => {
+  it('a copy leaving its group keeps the linked value, and the saved value from before sharing stays in the records', () => {
     const records = [rec(a, 'inactive', true, 0), rec(b, 'inactive', false, 0, B)];
     const linked = project(records, [[a, b]], A, state({ inactiveProjectIds: ['site'] }));
     expect(linked.inactiveProjectIds).toEqual([]);
-    expect(project(records, [], A, linked).inactiveProjectIds).toEqual(['site']);
-    // Not on another computer, not on a pinned copy, not on one it no longer lists.
-    expect(project(records, [], B, state())).toEqual(state());
-    expect(project(records, [], A, state({ pinnedProjectIds: ['site'] })).inactiveProjectIds).toEqual([]);
-    expect(projectLinkedState(state(), [], indexLinkedState(records), A, NOW, () => false).inactiveProjectIds).toEqual([]);
-    // An explicit Mark active replaced it: the split keeps that.
-    const marked = mergeLinkedStateRecords(records, linkedStateWrite(records, [[a, b]], { type: 'setInactive', projectId: 'site', inactive: false, at: 10 }, A, 10));
-    expect(project(marked, [], A, linked)).toBe(linked);
+    expect(project(records, [], A, linked)).toBe(linked);
+    expect(legacyLinkedStateRecords(linked, [[a, b]], A, records)).toEqual([rec(a, 'pinned', false, 0)]);
   });
 
   it('a copy that joined a group with an explicit value keeps that value when it leaves, not its mark from before sharing', () => {
