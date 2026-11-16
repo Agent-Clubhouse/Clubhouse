@@ -162,7 +162,8 @@ it.skipIf(process.platform !== 'win32')('refuses allocation and sweeping under a
 const failClosed = { code: 'git_failed', message: expect.stringContaining('stderr=path_too_long.') };
 const options = (verify: (directory: string, created: boolean) => Promise<void>, inspect?: (directory: string) => Promise<boolean>) =>
   ({ roots: [short], windows: true, verify, inspect, retryDelay: 1 });
-const deny = () => Object.assign(new Error('Unverified Windows quarantine root.'), { killed: true });
+const deny = () => Object.assign(new Error('Unverified Windows quarantine root.'), { code: 1 });
+const timeout = () => Object.assign(new Error('timeout'), { killed: true });
 
 it('removes a root it just created when verification fails, so the next attempt initializes it again', async () => {
   const verify = vi.fn().mockRejectedValueOnce(deny()).mockResolvedValue(undefined);
@@ -240,4 +241,40 @@ it('attempts recovery only once, and fails closed if the re-created root still d
   expect(inspect).toHaveBeenCalledTimes(1);
   expect(verify.mock.calls.map((call) => call[1])).toEqual([false, false, false, true]);
   expect(fs.existsSync(short)).toBe(false);
+});
+
+it('fails closed when no inspection is available, never recovering on its own say-so', async () => {
+  fs.mkdirSync(short, { mode: 0o700 });
+  const verify = vi.fn(async (directory: string, created: boolean) => { if (!created) throw deny(); });
+  await expect(createHandoffQuarantine(staging, options(verify))).rejects.toMatchObject(failClosed);
+  expect(verify.mock.calls.every((call) => call[1] === false)).toBe(true);
+  expect(fs.existsSync(short)).toBe(true);
+});
+
+it.each([['existing', true], ['fresh', false]] as const)('stops at the first timed-out verification of a %s root instead of retrying or recovering', async (_kind, existing) => {
+  if (existing) fs.mkdirSync(short, { mode: 0o700 });
+  const verify = vi.fn().mockRejectedValue(timeout());
+  const inspect = vi.fn().mockResolvedValue(true);
+  await expect(createHandoffQuarantine(staging, options(verify, inspect))).rejects.toMatchObject(failClosed);
+  expect(verify).toHaveBeenCalledTimes(1);
+  expect(inspect).not.toHaveBeenCalled();
+  expect(fs.existsSync(short)).toBe(existing);
+});
+
+it('removes its child and fails closed if the verified root is replaced while the child is created', async () => {
+  const verify = vi.fn().mockResolvedValue(undefined);
+  const mkdir = fs.promises.mkdir;
+  let swapped = false;
+  vi.spyOn(fs.promises, 'mkdir').mockImplementation(async (...args: Parameters<typeof mkdir>) => {
+    if (!swapped && /^q-[a-f0-9]{32}$/.test(path.basename(args[0].toString()))) {
+      // A racing recovery removes the verified root and re-creates an uninitialized one.
+      swapped = true;
+      // Keep the original alive so the replacement cannot reuse its inode.
+      fs.renameSync(short, `${short}-moved`); fs.mkdirSync(short, { mode: 0o700 });
+    }
+    return mkdir(...args);
+  });
+  await expect(createHandoffQuarantine(staging, options(verify))).rejects.toMatchObject(failClosed);
+  expect(swapped).toBe(true);
+  expect(fs.readdirSync(short)).toEqual([]);
 });

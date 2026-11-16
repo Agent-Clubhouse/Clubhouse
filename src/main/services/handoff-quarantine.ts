@@ -188,8 +188,12 @@ async function openRoot(candidate: string, options: QuarantineRootOptions): Prom
       last = error as RootFailure; lastCreated = !!fresh;
       appLog('core:handoff', 'warn', 'Handoff quarantine root rejected', { meta: { failure: rootFailureClass(last), attempt, created: lastCreated } });
       if (fresh) await removeEmptyRoot(candidate, fresh);
+      // A timed-out verify is a slow machine, not a broken root: stop here so
+      // worst-case latency stays bounded (each further PowerShell may take 20 s).
+      if (rootFailureClass(last) === 'verify:timeout') throw last;
       // An existing root may still be mid-initialization by a concurrent creator.
-      else if (attempt < VERIFY_ATTEMPTS && last.stage === 'verify') await sleep(delay * attempt);
+      if (fresh) continue;
+      if (attempt < VERIFY_ATTEMPTS && last.stage === 'verify') await sleep(delay * attempt);
       else break;
     }
   }
@@ -199,7 +203,7 @@ async function openRoot(candidate: string, options: QuarantineRootOptions): Prom
     // when it is provably ours and empty. Removal is non-recursive.
     try {
       const stat = await fs.promises.lstat(candidate);
-      if (!stat.isDirectory() || stat.isSymbolicLink() || !privateDirectory(stat) || await inspect?.(candidate) === false) throw new Error('not recoverable');
+      if (!stat.isDirectory() || stat.isSymbolicLink() || !privateDirectory(stat) || (await inspect?.(candidate)) !== true) throw new Error('not recoverable');
       if (!await removeEmptyRoot(candidate, stat)) throw new Error('not removable');
       const fresh = await createRoot(candidate);
       if (!fresh) throw new Error('recreated concurrently');
@@ -216,6 +220,13 @@ async function openRoot(candidate: string, options: QuarantineRootOptions): Prom
     // unwritable root must not prevent trying another usable root.
     const child = path.join(candidate, `q-${randomBytes(16).toString('hex')}`);
     await fs.promises.mkdir(child, { mode: 0o700 });
+    try { await assertRoot(candidate, prepared.owner); }
+    catch (error) {
+      // The root was replaced (e.g. a racing recovery) while the child was created:
+      // never leave a child in a root that was not the one verified.
+      try { await fs.promises.rmdir(child); } catch { /* telemetry-exempt: best-effort non-recursive removal of the just-created empty child */ }
+      throw error;
+    }
     return { owner: prepared.owner, directory: child };
   } catch (error) { throw new RootFailure('child', error); }
 }
