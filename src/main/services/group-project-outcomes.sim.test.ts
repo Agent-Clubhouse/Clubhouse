@@ -161,6 +161,16 @@ const asMember = async (id: string) => {
   }));
 };
 const agentB = { agentId: 'agent_b', label: 'builder@Studio' };
+/** The next write of this computer's file fails, as a power cut would leave it. */
+const failRenameOf = (m: Machine, name: string, times = 1) => {
+  const rename = fs.promises.rename;
+  let left = times;
+  return vi.spyOn(fs.promises, 'rename').mockImplementation(async (from, to) => {
+    if (left > 0 && String(to).startsWith(m.home) && path.basename(String(to)) === name) { left -= 1; throw new Error('power cut'); }
+    await rename(from, to);
+  });
+};
+const ringIds = (m: Machine): string[] => (JSON.parse(fs.readFileSync(path.join(m.home, '.clubhouse-dev', 'group-projects', 'network-operations.json'), 'utf-8')) as { items: Array<{ id: string }> }).items.map((i) => i.id);
 
 describe('queued, applied and refused outcomes for changes made on a copy (#3550)', () => {
   it('a change made with the host connected is applied, and says so under its own id', async () => {
@@ -219,6 +229,69 @@ describe('queued, applied and refused outcomes for changes made on a copy (#3550
     expect(ring.items.filter((i) => i.id === queuedId)).toHaveLength(1);
     expect((await as(A, (h) => h.groupProjectHost.readTopic(id, 'work'))).map((m) => m.body)).toEqual(['once']);
     expect(events.length).toBeGreaterThan(0);
+  });
+
+  it('a crash after the answer is settled but before the outbox is saved: Applied shows, and the restart replay settles once', async () => {
+    const id = await sharedProject();
+    down.add('Desk');
+    await as(B, (h) => h.groupProjectHost.post(id, 'user', 'work', 'once', { author: { label: 'user' } }));
+    const [queuedId] = await outboxIds(B);
+    down.delete('Desk');
+
+    const spy = failRenameOf(B, 'network-outbox.json');
+    await expect(as(B, (h) => h.groupProjectHost.flushOutbox(A.fp))).rejects.toThrow('power cut');
+    spy.mockRestore();
+    // The host applied it and the status was settled; the write is still in the outbox.
+    expect(await outboxIds(B)).toEqual([queuedId]);
+    expect((await operations(B, id)).operations).toEqual([expect.objectContaining({ id: queuedId, outcome: { status: 'applied' } })]);
+
+    // Restart: the replay carries the same id, the host answers as before, nothing is settled twice.
+    B.host!.groupProjectHost._resetForTesting();
+    B.host!.groupProjectHost.setNetworkLink(linkFor(B));
+    expect((await operations(B, id)).operations).toEqual([expect.objectContaining({ id: queuedId, outcome: { status: 'applied' } })]);
+    await as(B, (h) => h.groupProjectHost.flushOutbox(A.fp));
+    expect(await outboxIds(B)).toEqual([]);
+    expect(ringIds(B)).toEqual([queuedId]);
+    expect((await operations(B, id)).operations).toEqual([expect.objectContaining({ id: queuedId, outcome: { status: 'applied' } })]);
+    expect((await as(A, (h) => h.groupProjectHost.readTopic(id, 'work'))).map((m) => m.body)).toEqual(['once']);
+  });
+
+  it('a replayed membership write the host applied, except for what could not be attributed, is applied with one refusal-list entry', async () => {
+    const id = await sharedProject();
+    down.add('Desk');
+    await as(B, (h) => h.groupProjectHost.updateMembership(id, (m) => {
+      m.explicit.push({ address: `agent_b@${B.fp}`, kind: 'durable', addedAt: '2026-11-13T00:00:00.000Z', name: 'builder' });
+      // What an older build queued: an agent named by a bare id that is not one of this computer's.
+      m.disabledTools = { ...m.disabledTools, ghost: ['broadcast'] };
+    }));
+    down.delete('Desk');
+    await as(B, (h) => h.groupProjectHost.flushOutbox(A.fp));
+    expect((await as(A, (h) => h.groupProjectHost.getMembership(id))).explicit.map((e) => e.address)).toEqual([`agent_b@${B.fp}`]);
+    expect((await operations(B, id)).operations).toEqual([expect.objectContaining({ op: 'membership', outcome: { status: 'applied' } })]);
+    const shown = (await as(B, (h) => h.groupProjectHost.get(id)))!.network!.refusals;
+    expect(shown).toEqual([expect.objectContaining({ op: 'membership', reason: expect.stringContaining('ghost') })]);
+  });
+
+  it('a crash while refusing expired changes refuses them once, whichever side of the outbox it fell on', async () => {
+    const id = await sharedProject();
+    down.add('Desk');
+    await as(B, (h) => h.groupProjectHost.update(id, { name: 'Late' }));
+    down.delete('Desk');
+    vi.useFakeTimers({ toFake: ['Date'], now: Date.now() + 24 * 60 * 60 * 1000 + 1000 });
+    try {
+      const spy = failRenameOf(B, 'network-outbox.json');
+      await expect(as(B, (h) => h.groupProjectHost.flushOutbox(A.fp))).rejects.toThrow('power cut');
+      spy.mockRestore();
+      // Refused before it left the outbox, so the crash lost nothing: it is refused again on the next flush, once.
+      expect(await outboxIds(B)).toHaveLength(1);
+      await as(B, (h) => h.groupProjectHost.flushOutbox(A.fp));
+    } finally {
+      vi.useRealTimers();
+    }
+    expect(await outboxIds(B)).toEqual([]);
+    expect((await as(B, (h) => h.groupProjectHost.get(id)))!.network!.refusals).toHaveLength(1);
+    expect((await operations(B, id)).operations).toEqual([expect.objectContaining({ outcome: { status: 'refused', reason: expect.stringContaining('more than a day') } })]);
+    expect(refusals).toHaveLength(1);
   });
 
   it('membership changed meanwhile: the host refuses the queued post, and the same id is refused in both lists', async () => {

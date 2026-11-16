@@ -1272,16 +1272,24 @@ class GroupProjectHostService {
     return this.refusals;
   }
 
-  private async recordRefusal(item: OutboxItem, reason: string): Promise<void> {
+  /**
+   * Keep a refusal for the directory, once per write id (a replay after a crash finds it), and settle the
+   * write's status as refused unless the write was applied and only part of it wasn't.
+   */
+  private async recordRefusal(item: OutboxItem, reason: string, options: { settle?: boolean } = {}): Promise<void> {
     const refusal: GroupProjectNetworkRefusal = {
       id: item.id, groupProjectId: item.groupProjectId, op: item.write.op, reason, at: new Date().toISOString(), author: item.author,
     };
-    await this.settle(item, { status: 'refused', reason });
-    await this.serial(this.fileChains, 'refusals', async () => {
-      const items = [...(await this.loadRefusals()), refusal].slice(-REFUSALS_MAX);
+    if (options.settle !== false) await this.settle(item, { status: 'refused', reason });
+    const fresh = await this.serial(this.fileChains, 'refusals', async () => {
+      const current = await this.loadRefusals();
+      if (current.some((r) => r.id === item.id)) return false;
+      const items = [...current, refusal].slice(-REFUSALS_MAX);
       await writeJsonFile(networkRefusalsPath(), { version: 1, items } satisfies StoredList<GroupProjectNetworkRefusal>);
       this.refusals = items;
+      return true;
     });
+    if (!fresh) return;
     try {
       this.link?.notifyRefusal?.(refusal);
     } catch {
@@ -1491,8 +1499,9 @@ class GroupProjectHostService {
         const now = Date.now();
         const expired = (await this.loadOutbox()).filter((i) => i.host === host && now - Date.parse(i.queuedAt) > OUTBOX_EXPIRY_MS);
         if (expired.length > 0) {
-          await this.removeFromOutbox(new Set(expired.map((i) => i.id)));
+          // Refused before it leaves the outbox: a crash between the two refuses it again, once.
           for (const item of expired) await this.recordRefusal(item, `It waited more than a day for ${this.link?.machineName(host) || 'its host'}.`);
+          await this.removeFromOutbox(new Set(expired.map((i) => i.id)));
         }
         const batch = (await this.loadOutbox()).filter((i) => i.host === host).slice(0, FLUSH_BATCH);
         if (batch.length === 0 || !this.link?.connected(host)) break;
@@ -1505,11 +1514,13 @@ class GroupProjectHostService {
           answered.push(item);
           if (result.status === 'refused') await this.recordRefusal(item, result.reason);
           const unattributed = replay[batch.indexOf(item)].unattributed;
-          if (result.status === 'applied' && unattributed.length > 0) {
-            await this.recordRefusal(item, `A saved change for ${unattributed.join(', ')} couldn't be applied: it wasn't clear which computer's agent it was for.`);
-          } else if (result.status === 'applied') {
+          if (result.status === 'applied') {
             // Before it leaves the outbox: a crash between the two replays the write, which settles nothing twice.
             await this.settle(item, { status: 'applied' });
+            // The host applied what it was sent; the part that couldn't be attributed is kept in the refusal list only.
+            if (unattributed.length > 0) {
+              await this.recordRefusal(item, `A saved change for ${unattributed.join(', ')} couldn't be applied: it wasn't clear which computer's agent it was for.`, { settle: false });
+            }
           }
         }
         if (answered.length === 0) break;
@@ -1676,8 +1687,8 @@ class GroupProjectHostService {
       if (!project || !this.isReplica(project)) return;
       const last = await this.view(project);
       const waiting = (await this.loadOutbox()).filter((i) => i.groupProjectId === id);
-      await this.removeFromOutbox(new Set(waiting.map((i) => i.id)));
       for (const item of waiting) await this.recordRefusal(item, reason);
+      await this.removeFromOutbox(new Set(waiting.map((i) => i.id)));
       await groupProjectRegistry.delete(id);
       await groupProjectRegistry.flush();
       this.seqs.delete(id);
@@ -1699,8 +1710,8 @@ class GroupProjectHostService {
         const state = await this.replicaState(project.id).catch((): ReplicaState => ({ version: 1 }));
         await writeJsonFile(replicaStatePath(project.id), { ...state, hostRemoved: true } satisfies ReplicaState);
         const waiting = (await this.loadOutbox()).filter((i) => i.groupProjectId === project.id);
-        await this.removeFromOutbox(new Set(waiting.map((i) => i.id)));
         for (const item of waiting) await this.recordRefusal(item, `${this.hostNameOf(project)} left your network.`);
+        await this.removeFromOutbox(new Set(waiting.map((i) => i.id)));
       } else if (!this.isReplica(project) && project.scope?.reach === 'network') {
         await this.updateMembership(project.id, (draft) => {
           draft.explicit = draft.explicit.filter((e) => parseAgentAddress(e.address).machine !== fp);

@@ -79,6 +79,20 @@ describe('GroupProjectDetailsSection outcomes', () => {
     expect(screen.getByText('Details change: Refused: Only an admin can do that.')).toBeInTheDocument();
   });
 
+  it('when nothing is waiting any more and the latest is not applied, the held form goes back to the host\'s values', async () => {
+    setup(copy, [waiting()]);
+    fireEvent.change(screen.getByLabelText('Name'), { target: { value: 'Release 2' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Save changes' }));
+    await screen.findByText(/Waiting for Studio Mac/);
+    expect(screen.getByLabelText('Name')).toHaveValue('Release 2');
+
+    // The status is gone (unknown), not applied: nothing holds the form.
+    vi.mocked(api().getOperations).mockResolvedValue({ operations: [], omittedQueued: 0 });
+    await act(async () => { await useGroupProjectStore.getState().loadOperations(GP); });
+    await waitFor(() => expect(screen.getByLabelText('Name')).toHaveValue('Release'));
+    expect(screen.queryByTestId('group-operation-status')).toBeNull();
+  });
+
   it('a change refused at once is an error on the form, with the draft kept', async () => {
     useGroupProjectStore.setState({ projects: [copy], loaded: true, loadError: null, operations: {} });
     vi.spyOn(api(), 'getOperations').mockResolvedValue({ operations: [], omittedQueued: 0 });

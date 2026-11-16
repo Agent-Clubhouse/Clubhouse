@@ -530,6 +530,13 @@ Details and Board sections show each as "Waiting for <host> since …",
 "Applied" or "Refused: <reason>". Details never says it saved a change that only
 waits. Clearing a group project's refusals clears its refused statuses too. The
 refusal list itself is unchanged, and there is no way to cancel a queued write.
+A change refused because the copy's host left the network (`read_only`) or
+because the queue was full (`queue_full`) gets an id and a refused status but is
+never sent or put in the outbox, so it has nothing to replay. A write the host
+applied except for part that couldn't be attributed to a computer's agent is
+applied; the unattributed part is only in the refusal list. Refusals are
+recorded before a write leaves the outbox and once per id, so a crash between
+the two refuses it again without a second entry.
 
 **Who may write.** The host decides, and fails closed. An agent's write carries
 the agent (its author), and the host checks it as `<agent>@<sending computer>`.

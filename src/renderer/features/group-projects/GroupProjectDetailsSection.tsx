@@ -41,20 +41,22 @@ export function GroupProjectDetailsSection({ project }: { project: GroupProject 
   const hostOnlyDelete = hostOnlyReason(project, 'delete this group project');
 
   // A copy's change waits for its host: until the host's own values change, the form keeps what was
-  // submitted, unless the host refused it, when the form goes back to the host's values.
+  // submitted. It goes back to the host's values once nothing waits and the newest change is not applied (refused, or unknown).
   const heldAt = useRef<string | null>(null);
   const projectKey = JSON.stringify(editableFields(project));
-  const latest = useSectionOperations(project.id, ['details']).reduce<GroupProjectOperation | null>((a, b) => (!a || b.since >= a.since ? b : a), null);
-  const refused = latest?.outcome.status === 'refused';
+  const detailOps = useSectionOperations(project.id, ['details']);
+  const latest = detailOps.reduce<GroupProjectOperation | null>((a, b) => (!a || b.since >= a.since ? b : a), null);
+  // Held while a change waits, or while the newest one is applied and the host's values have not arrived yet.
+  const holding = detailOps.some((o) => o.outcome.status === 'queued') || latest?.outcome.status === 'applied';
 
   useEffect(() => {
-    if (heldAt.current !== null && (heldAt.current !== projectKey || refused)) heldAt.current = null;
+    if (heldAt.current !== null && (heldAt.current !== projectKey || !holding)) heldAt.current = null;
     if (!dirty && !saving && heldAt.current === null) {
       const fields = editableFields(project);
       setBaseline(fields);
       setDraft(fields);
     }
-  }, [project, projectKey, dirty, saving, refused]);
+  }, [project, projectKey, dirty, saving, holding]);
 
   const submit = async (event: FormEvent) => {
     event.preventDefault();
