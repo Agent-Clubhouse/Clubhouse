@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { EditorView } from 'prosemirror-view';
-import { TextSelection } from 'prosemirror-state';
+import { NodeSelection, TextSelection } from 'prosemirror-state';
 import { undo, redo } from 'prosemirror-history';
 import { undoInputRule } from 'prosemirror-inputrules';
 import { createPromptState, editingKey, indentItems, insertPlainText, replaceDraft, softReturn } from './prompt-editor';
@@ -276,17 +276,36 @@ describe('clearing the whole draft', () => {
       expect(source()).toBe('- first\n- second');
       expect(view.state.selection.from).toBe(caret);
     });
+  });
 
-    it('Backspace at the start of the first item still lifts it out of the list', () => {
+  describe('Backspace with the DOM selection inside the editor', () => {
+    afterEach(() => { document.getSelection()?.removeAllRanges(); view.dom.parentElement?.remove(); });
+
+    it('at the start of the first item still lifts it out of the list', () => {
       editor('- first\n- second', 2);
       document.body.append(view.dom.parentElement!);
       const at = view.domAtPos(view.state.selection.from);
       document.getSelection()!.setBaseAndExtent(at.node, at.offset, at.node, at.offset);
-      if (name === 'Backspace') {
-        expect(key(name)).toBe(true);
-        expect(view.state.doc.firstChild?.type.name).toBe('paragraph');
-        expect(source()).toBe('first\n- second');
-      }
+      expect(key('Backspace')).toBe(true);
+      expect(view.state.doc.firstChild?.type.name).toBe('paragraph');
+      expect(source()).toBe('first\n- second');
+    });
+
+    it('a block NodeSelection is deleted as a block, not turned into a text selection', () => {
+      const run = (domCaret: boolean) => {
+        editor('- first\n- second');
+        view.dispatch(view.state.tr.setSelection(NodeSelection.create(view.state.doc, 1)));
+        if (domCaret) {
+          document.body.append(view.dom.parentElement!);
+          const text = view.dom.querySelector('li')!.firstChild!.firstChild!;
+          document.getSelection()!.setBaseAndExtent(text, 2, text, 2);
+        }
+        key('Backspace');
+        return view.state.doc.toString();
+      };
+      const expected = run(false);
+      expect(expected).not.toBe('doc(bullet_list(list_item(paragraph("first")), list_item(paragraph("second"))))');
+      expect(run(true)).toBe(expected);
     });
   });
 

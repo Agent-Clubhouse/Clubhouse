@@ -2,7 +2,7 @@ import { InputRule, inputRules, undoInputRule } from 'prosemirror-inputrules';
 import { history, closeHistory, undo, redo } from 'prosemirror-history';
 import { baseKeymap, chainCommands, deleteSelection, joinBackward, joinForward, selectNodeBackward, selectNodeForward, toggleMark } from 'prosemirror-commands';
 import { sinkListItem, liftListItem, splitListItem } from 'prosemirror-schema-list';
-import { EditorState, Plugin, Selection, TextSelection, type Command, type Transaction } from 'prosemirror-state';
+import { EditorState, NodeSelection, Plugin, Selection, TextSelection, type Command, type Transaction } from 'prosemirror-state';
 import { canJoin, findWrapping } from 'prosemirror-transform';
 import { type Node as ProseNode, type NodeType } from 'prosemirror-model';
 import { keymap } from 'prosemirror-keymap';
@@ -134,7 +134,7 @@ export const clearDraft: Command = (state, dispatch) => {
  * the browser deletes natively, leaving an empty list item (#3589). Read the live
  * DOM selection into state before a deletion decides what it covers. */
 function syncDomSelection(view: EditorView): void {
-  if (view.composing) return;
+  if (view.composing || view.state.selection instanceof NodeSelection) return;
   const { anchorNode, anchorOffset, focusNode, focusOffset } = (view.root as Document).getSelection() ?? {};
   if (!anchorNode || !focusNode || !view.dom.contains(anchorNode) || !view.dom.contains(focusNode)) return;
   const { doc } = view.state;
