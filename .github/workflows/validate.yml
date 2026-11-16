@@ -279,6 +279,24 @@ jobs:
         with:
           node-version: '22.23.4'
           cache: npm
+      # The handoff, git and project-import tests create repos in the temp dir
+      # and run git thousands of times. Path exclusions only, on a disposable
+      # GitHub-hosted VM: no process or extension exclusions, and real-time
+      # protection stays on (docs/ci.md, "Windows unit and Defender"). Records
+      # what it added, so the cleanup step removes only that.
+      - name: Exclude workspace and temp dirs from Windows Defender
+        id: defender
+        if: runner.os == 'Windows' && runner.environment == 'github-hosted'
+        continue-on-error: true
+        shell: pwsh
+        run: |
+          try { Get-MpComputerStatus | Format-List AMServiceEnabled, RealTimeProtectionEnabled } catch { Write-Output "Get-MpComputerStatus failed: $_" }
+          $existing = @((Get-MpPreference).ExclusionPath | Where-Object { $_ })
+          $paths = @($env:GITHUB_WORKSPACE, $env:RUNNER_TEMP, $env:TEMP, (Join-Path $env:LOCALAPPDATA 'Temp')) | Where-Object { $_ } | ForEach-Object { $_.TrimEnd('\') } | Select-Object -Unique
+          $added = @($paths | Where-Object { $existing -notcontains $_ })
+          if ($added.Count -gt 0) { Add-MpPreference -ExclusionPath $added }
+          Write-Output "Added Defender path exclusions: $($added -join ', ')"
+          "added=$($added -join ';')" >> $env:GITHUB_OUTPUT
       - run: npm ci
       - run: npm test -- --shard=${{ matrix.shard }}/2 --passWithNoTests --reporter=default --reporter=junit --outputFile.junit=test-results.xml
       - uses: actions/upload-artifact@v7
@@ -286,6 +304,16 @@ jobs:
         with:
           name: test-results-${{ matrix.os }}-${{ matrix.shard }}
           path: test-results.xml
+      # Also on failure and cancellation. Disposing of the VM is the backstop.
+      - name: Remove the Defender exclusions this job added
+        if: always() && steps.defender.outputs.added != ''
+        continue-on-error: true
+        shell: pwsh
+        env:
+          ADDED: ${{ steps.defender.outputs.added }}
+        run: |
+          Remove-MpPreference -ExclusionPath ($env:ADDED -split ';')
+          Write-Output "Removed Defender path exclusions: $($env:ADDED -replace ';', ', ')"
 
   # Builds the app once per OS; the E2E shards and Annex E2E reuse it. E2E
   # launches .webpack/<arch>/main with Electron from node_modules (e2e/launch.ts),

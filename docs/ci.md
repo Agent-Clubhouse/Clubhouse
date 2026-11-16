@@ -110,6 +110,16 @@ The E2E specs launch `.webpack/<arch>/main` with Electron from `node_modules` (`
 
 The E2E, Annex E2E, Chat E2E, Stable-mode E2E and Classic layout E2E jobs for that OS each run `npm ci`, download the artifact and run. The sharded E2E job skips `e2e/chat-rich` and the specs with their own jobs (`PLAYWRIGHT_IGNORE_CHAT_RICH`), so the chat specs add a parallel job instead of lengthening a shard. Before, every E2E and Annex E2E job packaged the app itself.
 
+## Windows unit and Defender
+
+The Windows unit job adds Windows Defender path exclusions before `npm ci`, for the workspace, `RUNNER_TEMP` and the user temp dir. The handoff, git and project-import tests create repositories there and run git thousands of times.
+- **Scope:** path exclusions only, only in this job, only on a GitHub-hosted runner (`runner.environment == 'github-hosted'`). There are no process or extension exclusions, and real-time protection stays on everywhere else.
+- **Cleanup:** the step records which paths it added, and an `if: always()` step removes only those, also after a failure or cancellation. The runner VM is discarded after the job anyway.
+- **Logging:** the step logs whether real-time protection is on.
+- **Security:** files the job writes to those paths aren't scanned during the job. The job already runs the PR's code and its dependencies' install scripts, has `contents: read` and no secrets, so Defender is no boundary there.
+
+The build and E2E jobs have long excluded the workspace for the same reason (#116), as a best-effort step (`continue-on-error`, since Defender sometimes answers 0x800106ba).
+
 ## Caching and skipped downloads
 
 - **npm:** `actions/setup-node` caches it.
