@@ -2,8 +2,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, render } from '@testing-library/react';
 import { undo } from 'prosemirror-history';
 import { ECHO_WINDOW_MS, PromptEditor, promptView } from './PromptEditor';
-import { softReturn } from './prompt-editor';
+import { insertPlainText, softReturn } from './prompt-editor';
 import { serializePrompt } from './prompt-codec';
+import { pastedDrafts } from './prompt-editor.testing';
 
 /** #3564: the owner hands text back through props after the editor reported it,
  * and React can run those effects after the next keystroke. */
@@ -94,5 +95,37 @@ describe('PromptEditor draft sync', () => {
       act(() => rerenderWith('ab'));
       expect(source()).toBe('ab');
     });
+  });
+});
+
+describe('pasted text after a restore', () => {
+  const paste = (editor: HTMLElement, text: string) => act(() => { insertPlainText(promptView(editor), text); });
+  const type = (editor: HTMLElement, text: string) => act(() => {
+    const view = promptView(editor);
+    view.dispatch(view.state.tr.insertText(text, view.state.doc.content.size - 1));
+  });
+  const last = (onChange: ReturnType<typeof vi.fn>) => onChange.mock.calls.at(-1)?.[0] as string;
+
+  it.each(pastedDrafts)('survives a remount and the next keystroke: %j', (text) => {
+    const first = mount('');
+    paste(first.editor, text);
+    expect(last(first.onChange)).toBe(text);
+    // Switching agents or showing an approval card mounts a new editor on the stored draft.
+    const second = mount(last(first.onChange));
+    expect(second.source()).toBe(text);
+    type(second.editor, '!');
+    expect(last(second.onChange)).toBe(`${text}!`);
+  });
+
+  it.each(pastedDrafts)('survives a failed-send restore and the next keystroke: %j', (text) => {
+    const { editor, onChange, rerenderWith, source } = mount('');
+    paste(editor, text);
+    act(() => rerenderWith(text));
+    // Sending clears the draft, and a failed send puts it back.
+    act(() => rerenderWith(''));
+    act(() => rerenderWith(text));
+    expect(source()).toBe(text);
+    type(editor, '!');
+    expect(last(onChange)).toBe(`${text}!`);
   });
 });

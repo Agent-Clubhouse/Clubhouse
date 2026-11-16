@@ -58,7 +58,7 @@ export function promptRules() {
 
 export function createPromptState(text: string) {
   return EditorState.create({
-    schema: promptSchema, doc: parsePrompt(text),
+    schema: promptSchema, doc: parsePrompt(text, { exact: true }),
     plugins: [promptRules(), historyBoundaries, history(), keymap(Object.fromEntries(Object.entries(baseKeymap).filter(([key]) => key !== 'Enter')))],
   });
 }

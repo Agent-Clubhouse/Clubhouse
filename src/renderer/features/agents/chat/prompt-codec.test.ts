@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { marked } from 'marked';
 import { parsePrompt, serializePrompt, sourcePosition, promptSchema } from './prompt-codec';
+import { pastedDrafts } from './prompt-editor.testing';
 const roundTrip = (text: string) => serializePrompt(parsePrompt(text)).text;
 
 describe('restricted prompt codec', () => {
@@ -37,6 +38,12 @@ describe('restricted prompt codec', () => {
     const once = roundTrip('8. a\n40. b\n    6. child\n100. c');
     expect(once).toBe('8. a\n9. b\n   6. child\n10. c');
     expect(roundTrip(once)).toBe(once);
+  });
+
+  it('keeps irregular numbering exactly for the composer', () => {
+    const text = '8. a\n40. b\n    6. child\n100. c';
+    expect(serializePrompt(parsePrompt(text, { exact: true })).text).toBe(text);
+    expect(parsePrompt('8. a\n9. b\n   6. child\n10. c', { exact: true }).firstChild?.type.name).toBe('ordered_list');
   });
 
   it('maps slash-token offsets through list and emphasis syntax', () => {
@@ -176,4 +183,9 @@ it('drops intraword italic that cannot honestly round-trip with the parser bound
   const { nodes: n, marks: m } = promptSchema;
   const doc = n.doc.create(null, n.paragraph.create(null, [promptSchema.text('foo'), promptSchema.text('bar', [m.em.create()]), promptSchema.text('baz')]));
   expect(serializePrompt(doc).text).toBe('foobarbaz');
+});
+
+it.each(pastedDrafts)('restores pasted text exactly: %j', (text) => {
+  expect(serializePrompt(parsePrompt(text, { exact: true })).text).toBe(text);
+  expect(serializePrompt(withoutSources(parsePrompt(text, { exact: true }))).text).toBe(text);
 });
