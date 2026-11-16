@@ -88,6 +88,7 @@ export function parsePrompt(markdown: string): PMNode {
   };
   const blocks: PMNode[] = [];
   while (at < lines.length) {
+    const start = at;
     const line = lines[at];
     const delimiter = /^\s*(`{3,}|~{3,})/.exec(line)?.[1];
     if (delimiter) {
@@ -111,6 +112,12 @@ export function parsePrompt(markdown: string): PMNode {
         }
         blocks.push(promptSchema.nodes.paragraph.create(null, content));
       } else { blocks.push(paragraph(line, literal)); at++; }
+    }
+    // The serializer normalizes markers, numbering, indentation and breaks. A
+    // block it cannot reproduce byte-for-byte (usually a paste) stays literal.
+    const source = lines.slice(start, at);
+    if (serializePrompt(promptSchema.nodes.doc.create(null, blocks[blocks.length - 1])).text !== source.join('\n')) {
+      blocks.splice(-1, 1, ...source.map((text) => paragraph(text, true)));
     }
   }
   return promptSchema.nodes.doc.create(null, blocks);

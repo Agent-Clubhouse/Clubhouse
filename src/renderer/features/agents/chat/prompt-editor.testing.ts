@@ -17,3 +17,14 @@ export function selectPrompt(element: HTMLElement, from: number, to = from) {
   act(() => view.dispatch(view.state.tr.setSelection(TextSelection.create(view.state.doc,
     sourcePosition(view.state.doc, from), sourcePosition(view.state.doc, to)))));
 }
+
+// Pasted text is stored literally. A remount or a failed-send restore parses
+// the stored draft again, which must not rewrite it.
+export const pastedDrafts = [
+  '  * build\n  * test',
+  '1. a\n1. b',
+  '3. a\n5. b',
+  '- a\n* b',
+  '- first\n  continuation',
+  '- step\n  ```sh\n  npm test\n  ```',
+];
