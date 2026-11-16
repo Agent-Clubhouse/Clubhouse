@@ -4,7 +4,7 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import { afterEach, expect, it, vi } from 'vitest';
-import { verifyWindowsQuarantineRoot } from './handoff-quarantine-windows';
+import { inspectWindowsQuarantineRoot, verifyWindowsQuarantineRoot } from './handoff-quarantine-windows';
 
 const execution = vi.hoisted(() => ({ exec: vi.fn() }));
 vi.mock('child_process', async (importOriginal) => {
@@ -30,7 +30,7 @@ it('keeps hostile path characters in the environment, outside the fixed PowerShe
   expect(script).toContain('[System.IO.Directory]::GetAccessControl');
   expect(script).toContain('[System.IO.Directory]::SetAccessControl');
   expect(script).not.toContain('Write-Output injected');
-  expect(options).toMatchObject({ shell: false, windowsHide: true, timeout: 10_000, env: { CLUBHOUSE_QUARANTINE_PATH: hostile, CLUBHOUSE_QUARANTINE_INITIALIZE: '1' } });
+  expect(options).toMatchObject({ shell: false, windowsHide: true, timeout: 20_000, env: { CLUBHOUSE_QUARANTINE_PATH: hostile, CLUBHOUSE_QUARANTINE_INITIALIZE: '1' } });
   await verifyWindowsQuarantineRoot('C:\\Users\\other', false);
   expect(execution.exec.mock.calls[1][1]).toEqual(args);
   expect(execution.exec.mock.calls[1][2].env.CLUBHOUSE_QUARANTINE_INITIALIZE).toBe('0');
@@ -47,6 +47,41 @@ it('refuses failed or timed out ACL checks', async () => {
     await expect(verifyWindowsQuarantineRoot('C:\\Users\\me\\q', false)).rejects.toThrow();
   }
 });
+
+it('inspects recoverability with a fixed script that checks owner, reparse points and emptiness, and never initializes', async () => {
+  vi.stubEnv('SystemRoot', 'C:\\Windows');
+  execution.exec.mockResolvedValueOnce({ stdout: '{"recoverable":true}\r\n' });
+  expect(await inspectWindowsQuarantineRoot("C:\\Users\\me\\q';$(x)")).toBe(true);
+  const [, args, options] = execution.exec.mock.calls.at(-1)!;
+  const script = Buffer.from(args[3], 'base64').toString('utf16le');
+  expect(script).toContain('ReparsePoint');
+  expect(script).toContain('GetOwner');
+  expect(script).toContain('EnumerateFileSystemEntries');
+  expect(script).not.toContain('SetAccessControl');
+  expect(script).not.toContain("q';$(x)");
+  expect(options).toMatchObject({ shell: false, env: { CLUBHOUSE_QUARANTINE_PATH: "C:\\Users\\me\\q';$(x)" } });
+});
+
+it.each(['', '{"recoverable":false}'])('treats %j or a failing inspection as not recoverable', async (stdout) => {
+  execution.exec.mockResolvedValueOnce({ stdout });
+  expect(await inspectWindowsQuarantineRoot('C:\\Users\\me\\q')).toBe(false);
+  execution.exec.mockRejectedValueOnce(Object.assign(new Error('failure'), { code: 1 }));
+  expect(await inspectWindowsQuarantineRoot('C:\\Users\\me\\q')).toBe(false);
+});
+
+it.skipIf(process.platform !== 'win32')('inspects a real root: recoverable only when empty and ours', async () => {
+  const parent = fs.mkdtempSync(path.join(os.tmpdir(), 'ch-q-inspect-'));
+  const directory = path.join(parent, 'q'); fs.mkdirSync(directory);
+  try {
+    expect(await inspectWindowsQuarantineRoot(directory)).toBe(true);
+    fs.writeFileSync(path.join(directory, 'file'), 'x');
+    expect(await inspectWindowsQuarantineRoot(directory)).toBe(false);
+    fs.rmSync(path.join(directory, 'file')); fs.rmSync(directory, { recursive: true });
+    fs.mkdirSync(path.join(parent, 'target'));
+    fs.symlinkSync(path.join(parent, 'target'), directory, 'junction');
+    expect(await inspectWindowsQuarantineRoot(directory)).toBe(false);
+  } finally { fs.rmSync(parent, { recursive: true, force: true }); }
+}, 30_000);
 
 it.skipIf(process.platform !== 'win32')('initializes and verifies a private SID/DACL and refuses inherited or broadened ACLs', async () => {
   const parent = fs.mkdtempSync(path.join(os.tmpdir(), 'ch-q-acl-'));

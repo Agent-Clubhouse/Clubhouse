@@ -1,4 +1,4 @@
-import { execFile } from 'child_process';
+import { execFile, execFileSync, type ChildProcess } from 'child_process';
 import { promisify } from 'util';
 import * as fs from 'fs';
 import * as os from 'os';
@@ -16,12 +16,18 @@ import * as quarantines from './handoff-quarantine';
 import * as bundles from './handoff-git-bundle';
 import { HandoffSnapshotError } from './handoff-snapshot';
 import * as snapshotArtifacts from './handoff-snapshot';
-const execution = vi.hoisted(() => ({ exec: vi.fn(), spawn: vi.fn() }));
+const execution = vi.hoisted(() => ({ exec: vi.fn(), spawn: vi.fn(), children: new Set<import('child_process').ChildProcess>() }));
 vi.mock('child_process', async (importOriginal) => {
   const actual = await importOriginal<typeof import('child_process')>();
   const { promisify } = await import('util');
-  execution.exec = vi.fn(promisify(actual.execFile));
-  execution.spawn = vi.fn(actual.spawn);
+  // Remember every Git child so cleanup can wait for it, even after a timed-out case.
+  const track = <T extends import('child_process').ChildProcess | undefined>(child: T): T => {
+    if (child) { execution.children.add(child); child.once('close', () => execution.children.delete(child)); }
+    return child;
+  };
+  const run = promisify(actual.execFile) as (...args: unknown[]) => Promise<unknown> & { child?: import('child_process').ChildProcess };
+  execution.exec = vi.fn((...args: unknown[]) => { const result = run(...args); track(result.child); return result; });
+  execution.spawn = vi.fn((...args: Parameters<typeof actual.spawn>) => track(actual.spawn(...args)));
   const wrapped = Object.assign(vi.fn(actual.execFile), { [promisify.custom]: execution.exec });
   return { ...actual, execFile: wrapped, spawn: execution.spawn };
 });
@@ -42,10 +48,41 @@ beforeEach(async () => {
   // An absent file remote fails locally and deterministically; no test reaches the internet.
   await git(receiver, 'config', `url.${pathToFileURL(path.join(root, 'absent.git')).href}.insteadOf`, url);
 });
-afterEach(() => {
-  vi.unstubAllEnvs(); fs.rmSync(root, { recursive: true, force: true });
-  if (crossDriveRoot) { fs.rmSync(crossDriveRoot, { recursive: true, force: true }); crossDriveRoot = undefined; }
+// Every receive is tracked: a case that times out leaves its receive (and Git
+// children) running, and they would otherwise hold folders open during cleanup.
+const receiving = new Set<Promise<unknown>>();
+const receive = (options: Parameters<typeof receiveHandoffCommit>[0]) => {
+  const pending = receiveHandoffCommit(options);
+  const settled = pending.then(() => undefined, () => undefined).finally(() => receiving.delete(settled));
+  receiving.add(settled);
+  return pending;
+};
+const within = (promise: Promise<unknown>, ms: number) => new Promise<void>((resolve) => {
+  const timer = setTimeout(resolve, ms); promise.then(() => { clearTimeout(timer); resolve(); });
 });
+const exited = (child: ChildProcess) => child.exitCode !== null || child.signalCode !== null;
+function killTree(child: ChildProcess) {
+  if (exited(child)) return;
+  try {
+    if (process.platform === 'win32' && child.pid) execFileSync('taskkill', ['/pid', String(child.pid), '/T', '/F'], { stdio: 'ignore' });
+    else child.kill('SIGKILL');
+  } catch { /* already gone */ }
+}
+async function settleGit() {
+  await within(Promise.all([...receiving]), 5_000);
+  for (const child of execution.children) killTree(child);
+  await within(Promise.all([...execution.children].map((child) => new Promise((resolve) => child.once('close', resolve)))), 10_000);
+  await within(Promise.all([...receiving]), 10_000);
+}
+// Windows holds folders open briefly after a process exits (EBUSY/EPERM/ENOTEMPTY):
+// retry with a short bounded backoff (about 1.5 s total at the defaults below).
+const remove = (directory: string) => fs.promises.rm(directory, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
+afterEach(async () => {
+  vi.unstubAllEnvs();
+  await settleGit();
+  await remove(root);
+  if (crossDriveRoot) { await remove(crossDriveRoot); crossDriveRoot = undefined; }
+}, 60_000);
 async function prepared() {
   const handoffId = randomUUID(); const snapshot = await prepareHandoffSnapshot({ worktreeRoot: sender, stagingRoot: staging, handoffId });
   return { projectRoot: receiver, snapshot: await prepareHandoffBundle({ worktreeRoot: sender, snapshot, handoffId, bounds: HANDOFF_TRANSFER_DEFAULTS }), handoffId, bounds: HANDOFF_TRANSFER_DEFAULTS, authorize: async () => {} };
@@ -55,14 +92,14 @@ it('prefers a configured shared remote and arrives at the exact commit without c
   await git(receiver, 'config', '--unset-all', `url.${pathToFileURL(path.join(root, 'absent.git')).href}.insteadOf`);
   await git(receiver, 'config', `url.${pathToFileURL(remote).href}.insteadOf`, url);
   const options = await prepared(); const before = (await git(receiver, 'rev-parse', 'HEAD')).stdout.trim();
-  expect(await receiveHandoffCommit(options)).toEqual({ commit: options.snapshot.manifest.repo.base, source: 'remote' });
+  expect(await receive(options)).toEqual({ commit: options.snapshot.manifest.repo.base, source: 'remote' });
   expect((await git(receiver, 'cat-file', '-t', options.snapshot.manifest.repo.base)).stdout.trim()).toBe('commit');
   expect((await git(receiver, 'rev-parse', 'HEAD')).stdout.trim()).toBe(before);
   expect(fs.readFileSync(path.join(receiver, 'public.txt'), 'utf8')).toBe('Receiver original');
 }, 30_000);
 it('falls back to an independently scanned bundle when the configured remote lacks the commit', async () => {
   const options = await prepared(); const before = (await git(receiver, 'rev-parse', 'HEAD')).stdout.trim();
-  expect(await receiveHandoffCommit(options)).toEqual({ commit: options.snapshot.manifest.repo.base, source: 'bundle' });
+  expect(await receive(options)).toEqual({ commit: options.snapshot.manifest.repo.base, source: 'bundle' });
   expect((await git(receiver, 'rev-parse', 'HEAD')).stdout.trim()).toBe(before);
   expect(fs.readdirSync(options.snapshot.root).some((name) => name.startsWith('quarantine-'))).toBe(false);
 }, 30_000);
@@ -72,7 +109,7 @@ it('passes exactly one Windows longpaths setting at every handoff Git execution 
   execution.exec.mockClear(); execution.spawn.mockClear();
   Object.defineProperty(process, 'platform', { ...platform, value: 'win32' });
   try {
-    expect(await receiveHandoffCommit(options)).toMatchObject({ source: 'bundle' });
+    expect(await receive(options)).toMatchObject({ source: 'bundle' });
     const repository = await openHandoffRepository(receiver);
     const oid = (await repository.read(['rev-parse', `${options.snapshot.manifest.repo.base}:public.txt`]))!.toString('ascii').trim();
     await repository.streamBlob(oid, Buffer.byteLength('Sender base'), async () => {}, async () => {});
@@ -138,7 +175,7 @@ it.each([['pack filename', 150], ['explicit Git directory', 170], ['repository p
   if (rootLength >= 220) Object.defineProperty(process, 'platform', { ...platform, value: 'win32' });
   execution.exec.mockClear();
   try {
-    expect(await receiveHandoffCommit(options)).toEqual({ commit: options.snapshot.manifest.repo.base, source: 'bundle' });
+    expect(await receive(options)).toEqual({ commit: options.snapshot.manifest.repo.base, source: 'bundle' });
     if (rootLength >= 220) {
       const quarantineCalls = execution.exec.mock.calls.filter((call) => (call[1] as string[]).includes('init')
         || (call[1] as string[]).some((arg) => arg.startsWith('--git-dir=')));
@@ -168,7 +205,7 @@ it.each([['pack filename', 150], ['explicit Git directory', 170], ['repository p
   expect((await git(receiver, 'rev-parse', 'HEAD')).stdout.trim()).toBe(receivingHead);
   expect(fs.readFileSync(path.join(receiver, 'public.txt'), 'utf8')).toBe('Receiver original');
   expect(fs.readdirSync(destination).some((name) => name.startsWith('quarantine-'))).toBe(false);
-}, 30_000);
+}, 60_000);
 it.each(['setup', 'init', 'timeout', 'hash mismatch', 'secret rejection', 'copied bundle mismatch'] as const)('cleans an external quarantine after %s failure', async (failure) => {
   const options = await prepared();
   const destination = path.join(root, 'x'.repeat(220 - root.length - 1));
@@ -235,7 +272,7 @@ it('refuses a different registered repository without creating any worktree or i
 
 it('allows a different registered repository only with the main-owned person link decision', async () => {
   const options = await prepared(); await git(receiver, 'config', 'remote.origin.url', 'https://example.invalid/team/linked.git');
-  expect(await receiveHandoffCommit({ ...options, linkedProject: true })).toEqual({ commit: options.snapshot.manifest.repo.base, source: 'bundle' });
+  expect(await receive({ ...options, linkedProject: true })).toEqual({ commit: options.snapshot.manifest.repo.base, source: 'bundle' });
   expect(fs.readFileSync(path.join(receiver, 'public.txt'), 'utf8')).toBe('Receiver original');
 }, 30_000);
 

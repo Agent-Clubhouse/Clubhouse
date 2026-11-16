@@ -35,6 +35,7 @@ export const KNOWN_LOG_NAMESPACES: readonly string[] = [
   'core:finished-quick-agents',
   'core:git',
   'core:group-project',
+  'core:handoff',
   'core:headless',
   'core:hook-server',
   'core:hook-server-toggle',

@@ -157,3 +157,87 @@ it.skipIf(process.platform !== 'win32')('refuses allocation and sweeping under a
   await sweepHandoffQuarantines({ roots: [short] });
   expect(fs.readdirSync(short)).toEqual([path.basename(stale)]);
 }, 30_000);
+
+// Injected verification: deterministic on every platform.
+const failClosed = { code: 'git_failed', message: expect.stringContaining('stderr=path_too_long.') };
+const options = (verify: (directory: string, created: boolean) => Promise<void>, inspect?: (directory: string) => Promise<boolean>) =>
+  ({ roots: [short], windows: true, verify, inspect, retryDelay: 1 });
+const deny = () => Object.assign(new Error('Unverified Windows quarantine root.'), { killed: true });
+
+it('removes a root it just created when verification fails, so the next attempt initializes it again', async () => {
+  const verify = vi.fn().mockRejectedValueOnce(deny()).mockResolvedValue(undefined);
+  const owned = await createHandoffQuarantine(staging, options(verify));
+  expect(verify.mock.calls.map((call) => call[1])).toEqual([true, true]);
+  expect(path.dirname(owned.directory)).toBe(short);
+  await owned.cleanup();
+});
+
+it('fails closed without Git and leaves nothing behind when every attempt on a fresh root fails verification', async () => {
+  const verify = vi.fn().mockRejectedValue(deny());
+  await expect(createHandoffQuarantine(staging, options(verify))).rejects.toMatchObject(failClosed);
+  expect(verify).toHaveBeenCalledTimes(3);
+  expect(fs.existsSync(short)).toBe(false);
+});
+
+it('retries an existing root that is still being initialized by a concurrent creator', async () => {
+  fs.mkdirSync(short, { mode: 0o700 });
+  const verify = vi.fn().mockRejectedValueOnce(deny()).mockResolvedValue(undefined);
+  const owned = await createHandoffQuarantine(staging, options(verify));
+  expect(verify.mock.calls.map((call) => call[1])).toEqual([false, false]);
+  expect(path.dirname(owned.directory)).toBe(short);
+  await owned.cleanup();
+});
+
+it('recovers an empty, owned, non-reparse root left unverifiable by an earlier timed-out create', async () => {
+  fs.mkdirSync(short, { mode: 0o700 });
+  const verify = vi.fn(async (directory: string, created: boolean) => { if (!created) throw deny(); });
+  const inspect = vi.fn().mockResolvedValue(true);
+  const owned = await createHandoffQuarantine(staging, options(verify, inspect));
+  expect(inspect).toHaveBeenCalledTimes(1);
+  expect(verify.mock.calls.map((call) => call[1])).toEqual([false, false, false, true]);
+  expect(path.dirname(owned.directory)).toBe(short);
+  await owned.cleanup();
+});
+
+it('never recovers a non-empty root, and leaves its contents untouched', async () => {
+  fs.mkdirSync(short, { mode: 0o700 });
+  fs.writeFileSync(path.join(short, 'keep'), 'keep');
+  const verify = vi.fn(async (directory: string, created: boolean) => { if (!created) throw deny(); });
+  const inspect = vi.fn().mockResolvedValue(true);
+  await expect(createHandoffQuarantine(staging, options(verify, inspect))).rejects.toMatchObject(failClosed);
+  expect(fs.readFileSync(path.join(short, 'keep'), 'utf8')).toBe('keep');
+  expect(verify.mock.calls.every((call) => call[1] === false)).toBe(true);
+});
+
+it('never recovers a root another user owns', async () => {
+  fs.mkdirSync(short, { mode: 0o700 });
+  const verify = vi.fn(async (directory: string, created: boolean) => { if (!created) throw deny(); });
+  const inspect = vi.fn().mockResolvedValue(false);
+  await expect(createHandoffQuarantine(staging, options(verify, inspect))).rejects.toMatchObject(failClosed);
+  expect(inspect).toHaveBeenCalledTimes(1);
+  expect(fs.existsSync(short)).toBe(true);
+  expect(verify.mock.calls.every((call) => call[1] === false)).toBe(true);
+});
+
+it('never recovers a reparse point, and never touches its target', async () => {
+  const target = path.join(fixture, 'target'); fs.mkdirSync(target, { mode: 0o700 });
+  fs.writeFileSync(path.join(target, 'keep'), 'keep');
+  const link = path.join(fixture, 'link');
+  fs.symlinkSync(target, link, process.platform === 'win32' ? 'junction' : 'dir');
+  const verify = vi.fn().mockResolvedValue(undefined);
+  const inspect = vi.fn().mockResolvedValue(true);
+  await expect(createHandoffQuarantine(staging, { roots: [link], windows: true, verify, inspect, retryDelay: 1 })).rejects.toMatchObject(failClosed);
+  expect(inspect).not.toHaveBeenCalled();
+  expect(fs.lstatSync(link).isSymbolicLink()).toBe(true);
+  expect(fs.readFileSync(path.join(target, 'keep'), 'utf8')).toBe('keep');
+});
+
+it('attempts recovery only once, and fails closed if the re-created root still does not verify', async () => {
+  fs.mkdirSync(short, { mode: 0o700 });
+  const verify = vi.fn().mockRejectedValue(deny());
+  const inspect = vi.fn().mockResolvedValue(true);
+  await expect(createHandoffQuarantine(staging, options(verify, inspect))).rejects.toMatchObject(failClosed);
+  expect(inspect).toHaveBeenCalledTimes(1);
+  expect(verify.mock.calls.map((call) => call[1])).toEqual([false, false, false, true]);
+  expect(fs.existsSync(short)).toBe(false);
+});
