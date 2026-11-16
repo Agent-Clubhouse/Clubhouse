@@ -2,7 +2,7 @@ import { InputRule, inputRules, undoInputRule } from 'prosemirror-inputrules';
 import { history, closeHistory, undo, redo } from 'prosemirror-history';
 import { baseKeymap, chainCommands, deleteSelection, joinBackward, joinForward, selectNodeBackward, selectNodeForward, toggleMark } from 'prosemirror-commands';
 import { sinkListItem, liftListItem, splitListItem } from 'prosemirror-schema-list';
-import { EditorState, Plugin, TextSelection, type Command, type Transaction } from 'prosemirror-state';
+import { EditorState, Plugin, Selection, TextSelection, type Command, type Transaction } from 'prosemirror-state';
 import { canJoin, findWrapping } from 'prosemirror-transform';
 import { type Node as ProseNode, type NodeType } from 'prosemirror-model';
 import { keymap } from 'prosemirror-keymap';
@@ -114,6 +114,29 @@ function joinItems(command: Command): Command {
   }), view);
 }
 
+/** A selection that spans the whole draft leaves an empty list item behind when
+ * it is deleted inside a list (select-all, Delete in a one-item list gives "- "),
+ * which neither shows the placeholder nor lets "- " start a list. Clearing the
+ * whole draft always means one empty paragraph. */
+export const clearDraft: Command = (state, dispatch) => {
+  const { selection, doc } = state;
+  if (selection.empty || selection.from > Selection.atStart(doc).from || selection.to < Selection.atEnd(doc).to) return false;
+  if (dispatch) {
+    const tr = state.tr.replaceWith(0, doc.content.size, promptSchema.nodes.paragraph.create());
+    dispatch(tr.setSelection(TextSelection.atStart(tr.doc)));
+  }
+  return true;
+};
+
+/** The list markers are input rules, which prosemirror-view runs from its DOM
+ * diff after the browser has already inserted the space. Run them from the
+ * keydown instead, so "- " converts without depending on that diff matching. */
+function spaceStartsList(view: EditorView, e: KeyboardEvent): boolean {
+  if (e.key !== ' ' || e.metaKey || e.ctrlKey || e.altKey || !view.state.selection.empty) return false;
+  const { from, to } = view.state.selection;
+  return !!view.someProp('handleTextInput', (rules) => rules(view, from, to, ' ', () => view.state.tr.insertText(' ', from, to)));
+}
+
 /** All IME/229 guards run before this; the host handles send/slash first. */
 export function editingKey(view: EditorView, e: KeyboardEvent, mac: boolean): boolean {
   const mod = mac ? e.metaKey && !e.ctrlKey : e.ctrlKey && !e.metaKey;
@@ -132,9 +155,10 @@ export function editingKey(view: EditorView, e: KeyboardEvent, mac: boolean): bo
       const nested = $from.depth > 3;
       if (nested || $from.index($from.depth - 2) === 0) return listAction(view, liftListItem(promptSchema.nodes.list_item));
     }
-    return action(view, chainCommands(deleteSelection, joinItems(joinBackward), selectNodeBackward));
+    return action(view, chainCommands(clearDraft, deleteSelection, joinItems(joinBackward), selectNodeBackward));
   }
-  if (e.key === 'Delete' && !e.metaKey && !e.altKey && !e.ctrlKey) return action(view, chainCommands(deleteSelection, joinItems(joinForward), selectNodeForward));
+  if (e.key === 'Delete' && !e.metaKey && !e.altKey && !e.ctrlKey) return action(view, chainCommands(clearDraft, deleteSelection, joinItems(joinForward), selectNodeForward));
+  if (spaceStartsList(view, e)) return true;
   return false;
 }
 

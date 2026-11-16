@@ -199,6 +199,80 @@ describe('structured prompt editing', () => {
 });
 
 
+/** #3564: the structured-composer E2E clears the draft (select-all, Delete) and types "- " again. */
+describe('clearing the whole draft', () => {
+  const selectAll = () => {
+    const doc = view.state.doc;
+    view.dispatch(view.state.tr.setSelection(TextSelection.between(doc.resolve(0), doc.resolve(doc.content.size))));
+  };
+
+  it.each([['- first', 'one item'], ['- first\n- second', 'two items'], ['8. first\n9. second', 'a numbered list'], ['- a\n  - b', 'a nested list'], ['text', 'plain text']])('Delete over everything in %s leaves one empty paragraph', (text) => {
+    editor(text);
+    selectAll();
+    expect(key('Delete')).toBe(true);
+    expect(view.state.doc.toString()).toBe('doc(paragraph)');
+    expect(source()).toBe('');
+    type('- ');
+    expect(view.state.doc.firstChild?.type.name).toBe('bullet_list');
+  });
+
+  it('Backspace over everything clears it the same way', () => {
+    editor('- first');
+    selectAll();
+    expect(key('Backspace')).toBe(true);
+    expect(view.state.doc.toString()).toBe('doc(paragraph)');
+  });
+
+  it('clearing is one undo event that brings the list back', () => {
+    editor('- first\n- second');
+    selectAll();
+    key('Delete');
+    expect(key('z', { metaKey: true })).toBe(true);
+    expect(source()).toBe('- first\n- second');
+  });
+
+  it('a partial selection still deletes only what is selected', () => {
+    editor('- first\n- second', 2, 11);
+    key('Delete');
+    expect(view.state.doc.firstChild?.type.name).toBe('bullet_list');
+    expect(source()).toBe('- econd');
+  });
+});
+
+describe('the space key starts a list from keydown', () => {
+  it.each([['-', 'bullet_list'], ['*', 'bullet_list'], ['8.', 'ordered_list']])('%s then Space converts without waiting for the browser to insert the space', (marker, kind) => {
+    editor('');
+    type(marker);
+    expect(key(' ')).toBe(true);
+    expect(view.state.doc.firstChild?.type.name).toBe(kind);
+    expect(view.state.doc.textContent).toBe('');
+    // And one Mod+Z undoes the conversion to the literal marker.
+    expect(key('z', { metaKey: true })).toBe(true);
+    expect(view.state.doc.textContent).toBe(`${marker} `);
+  });
+
+  it.each(['a-', 'word', '', '1 .'])('leaves Space after %j to the browser', (text) => {
+    editor('');
+    type(text);
+    const before = view.state.doc;
+    expect(key(' ')).toBe(false);
+    expect(view.state.doc.eq(before)).toBe(true);
+  });
+
+  it('leaves Space alone with a modifier, over a selection, or while composing', () => {
+    editor(''); type('-');
+    expect(key(' ', { metaKey: true })).toBe(false);
+    expect(key(' ', { ctrlKey: true })).toBe(false);
+    select(0, 1);
+    expect(key(' ')).toBe(false);
+    select(1);
+    Object.defineProperty(view, 'composing', { value: true, configurable: true });
+    expect(key(' ')).toBe(false);
+    expect(view.state.doc.firstChild?.type.name).toBe('paragraph');
+  });
+});
+
+
 it('does not add indentation to multiline paste in a list after typing or reload', () => {
   editor('- item');
   insertPlainText(view, ' a\nb\n- c');
