@@ -1,7 +1,7 @@
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, render } from '@testing-library/react';
 import { undo } from 'prosemirror-history';
-import { PromptEditor, promptView } from './PromptEditor';
+import { ECHO_WINDOW_MS, PromptEditor, promptView } from './PromptEditor';
 import { softReturn } from './prompt-editor';
 import { serializePrompt } from './prompt-codec';
 
@@ -50,5 +50,49 @@ describe('PromptEditor draft sync', () => {
     act(() => rerenderWith('restored'));
     expect(source()).toBe('restored');
     expect(undo(view.state, view.dispatch)).toBe(false);
+  });
+
+  describe('echoes that never came back', () => {
+    beforeEach(() => { vi.useFakeTimers({ toFake: ['Date'], now: 1_000_000 }); });
+    afterEach(() => { vi.useRealTimers(); });
+    const type = (view: ReturnType<typeof promptView>, text: string) => act(() => { view.dispatch(view.state.tr.insertText(text)); });
+
+    it('a text that came and went in one batch cannot swallow a later external clear', () => {
+      const { editor, rerenderWith, source } = mount('');
+      const view = promptView(editor);
+      type(view, 'h');
+      act(() => { view.dispatch(view.state.tr.delete(1, 2)); });
+      // Both renders coalesced away: the owner still has '' and never saw 'h'.
+      vi.advanceTimersByTime(ECHO_WINDOW_MS + 500);
+      type(view, 'h');
+      act(() => rerenderWith('h'));
+      // Sending clears the draft from outside.
+      act(() => rerenderWith(''));
+      expect(source()).toBe('');
+    });
+
+    it('a text typed and deleted in one batch cannot swallow a later external edit', () => {
+      const { editor, rerenderWith, source } = mount('a');
+      const view = promptView(editor);
+      view.focus();
+      act(() => { view.dispatch(view.state.tr.insertText('b', view.state.doc.content.size - 1)); });
+      act(() => { view.dispatch(view.state.tr.delete(view.state.doc.content.size - 2, view.state.doc.content.size - 1)); });
+      expect(source()).toBe('a');
+      vi.advanceTimersByTime(ECHO_WINDOW_MS + 500);
+      act(() => rerenderWith('ab'));
+      expect(source()).toBe('ab');
+    });
+
+    it('an echo inside the window is still recognised as late', () => {
+      const { editor, rerenderWith, source } = mount('');
+      const view = promptView(editor);
+      type(view, 'a');
+      vi.advanceTimersByTime(ECHO_WINDOW_MS - 500);
+      type(view, 'b');
+      act(() => rerenderWith('a'));
+      expect(source()).toBe('ab');
+      act(() => rerenderWith('ab'));
+      expect(source()).toBe('ab');
+    });
   });
 });

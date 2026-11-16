@@ -4,6 +4,9 @@ import { TextSelection } from 'prosemirror-state';
 import { parsePrompt, serializePrompt, sourcePosition } from './prompt-codec';
 import { createPromptState, insertPlainText, replaceDraft } from './prompt-editor';
 
+/** How long a text the editor reported can still arrive back as a late prop. */
+export const ECHO_WINDOW_MS = 1500;
+
 export interface PromptToken { start: number; end: number; query: string }
 
 export interface PromptEditorHandle {
@@ -65,7 +68,10 @@ export const PromptEditor = forwardRef<PromptEditorHandle, Props>(function Promp
   // Source text the editor reported through onChange that the owner has not
   // handed back as props yet. React can run a render's effect after the next
   // keystroke, so a stale prop that matches an echo is not an external edit.
-  const echoes = useRef<string[]>([]);
+  // Renders can also coalesce (a text that came and went never reaches props),
+  // leaving an echo nobody will hand back, so an echo only counts for
+  // ECHO_WINDOW_MS: later than that, an equal prop is a real external edit.
+  const echoes = useRef<{ text: string; at: number }[]>([]);
 
   useImperativeHandle(ref, () => ({
     get view() { return viewRef.current; },
@@ -96,7 +102,7 @@ export const PromptEditor = forwardRef<PromptEditorHandle, Props>(function Promp
         view.updateState(view.state.apply(tr));
         const source = serializePrompt(view.state.doc);
         if (tr.docChanged) {
-          echoes.current = [...echoes.current, source.text].slice(-32);
+          echoes.current = [...echoes.current, { text: source.text, at: Date.now() }].slice(-32);
           latest.current.onChange(source.text);
         }
         if (tr.docChanged || tr.selectionSet) {
@@ -152,7 +158,9 @@ export const PromptEditor = forwardRef<PromptEditorHandle, Props>(function Promp
   useEffect(() => {
     const view = viewRef.current;
     if (!view) return;
-    const echo = echoes.current.indexOf(props.text);
+    const fresh = Date.now() - ECHO_WINDOW_MS;
+    echoes.current = echoes.current.filter((e) => e.at >= fresh);
+    const echo = echoes.current.findIndex((e) => e.text === props.text);
     if (echo >= 0) echoes.current = echoes.current.slice(echo + 1);
     else if (props.text !== serializePrompt(view.state.doc).text) {
       echoes.current = [];
