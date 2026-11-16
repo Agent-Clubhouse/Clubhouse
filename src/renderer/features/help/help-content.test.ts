@@ -223,7 +223,7 @@ describe('help-content in the new shell', () => {
     for (const part of [
       'only the selected one shows its label', 'All groups', 'lands on its **Board**', 'Start with every agent in', 'Include linked computers',
       'never added automatically', 'explicit project link', 'Offer to link', 'Coverage not verified on this computer', 'Needs you',
-      'Waiting for approval', 'Members on this computer', 'On this computer',
+      'Waiting for approval', 'Members on this computer', 'On this computer', '**Applied** means the host made it', '**Refused** gives the host',
     ]) expect(content, part).toContain(part);
     expect(content).not.toMatch(/[A-Z]{4,} [A-Z]{4,}/);
   });
