@@ -72,6 +72,23 @@ describe('ProjectTree idle projects', () => {
   });
 });
 
+describe('ProjectTree idle fold for linked rows (#3557)', () => {
+  const REMOTE = 'remote||sat||old';
+
+  it('keeps a linked group out of the idle row when only its other copy was active', () => {
+    useChromeStore.setState({ projectActivity: { a: Date.now(), b: Date.now(), c: Date.now(), old: Date.now() - 10 * DAY, [REMOTE]: Date.now() - 1000 } });
+    setup({ members: { old: ['old', REMOTE] } });
+    expect(screen.queryByTestId('idle-projects')).toBeNull();
+    expect(screen.getByTestId('project-old')).toBeTruthy();
+  });
+
+  it('still folds an unlinked project that is past the window', () => {
+    useChromeStore.setState({ projectActivity: { a: Date.now(), b: Date.now(), c: Date.now(), old: Date.now() - 10 * DAY, [REMOTE]: Date.now() - 1000 } });
+    setup({ members: { a: ['a'], old: ['old'] } });
+    expect(screen.getByTestId('idle-projects').textContent).toContain('1 idle project');
+  });
+});
+
 describe('ProjectTree keyboard', () => {
   it('is a tree with one tab stop, on the selection', () => {
     setup();

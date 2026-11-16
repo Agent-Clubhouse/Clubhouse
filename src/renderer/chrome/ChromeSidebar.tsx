@@ -977,6 +977,7 @@ export function ChromeSidebar() {
           projects={ordered.projects}
           projectIcons={treeIcons}
           agentsByProject={ordered.agentsByProject}
+          members={network.members}
           detailed={treeDetailed}
           completedByProject={completedByProject}
           activeProjectId={treeActiveProjectId}
