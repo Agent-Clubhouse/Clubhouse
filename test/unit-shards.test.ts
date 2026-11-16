@@ -74,29 +74,14 @@ describe('specKey', () => {
 describe('UnitShardSequencer', () => {
   const heavy = Object.keys(UNIT_FILE_SECONDS).slice(0, 4);
   const light = Array.from({ length: 20 }, (_, i) => `src/light${i}.test.ts`);
-  const spec = (file: string, groupOrder = 0) =>
-    ({ moduleId: path.join(ROOT, file), project: { name: 'main', config: { sequence: { groupOrder }, isolate: true } } }) as unknown as TestSpecification;
-  const sequencer = (shard?: { index: number; count: number }) =>
-    new UnitShardSequencer({
-      config: { root: ROOT, shard },
-      cache: { getFileTestResults: () => undefined, getFileStats: () => undefined },
-    } as unknown as Vitest);
+  const spec = (file: string) => ({ moduleId: path.join(ROOT, file), project: { name: 'main' } }) as unknown as TestSpecification;
+  const sequencer = (shard: { index: number; count: number }) =>
+    new UnitShardSequencer({ config: { root: ROOT, shard } } as unknown as Vitest);
   const key = (s: TestSpecification) => specKey(ROOT, s.moduleId);
 
   it('gives each spec to exactly one shard', async () => {
     const specs = [...light, ...heavy].map((f) => spec(f));
     const shards = await Promise.all([1, 2, 3].map((index) => sequencer({ index, count: 3 }).shard(specs)));
     expect(shards.flat().map(key).sort()).toEqual([...light, ...heavy].sort());
-  });
-
-  it('starts the heaviest files first in a sharded run, within groupOrder', async () => {
-    const specs = [spec(light[0]), spec(heavy[3]), spec(heavy[0], 1), spec(light[1]), spec(heavy[1])];
-    const sorted = await sequencer({ index: 1, count: 2 }).sort(specs);
-    expect(sorted.map(key)).toEqual([heavy[1], heavy[3], light[0], light[1], heavy[0]]);
-  });
-
-  it("keeps vitest's order without --shard", async () => {
-    const specs = [spec(light[0]), spec(heavy[3]), spec(light[1]), spec(heavy[1])];
-    expect((await sequencer().sort(specs)).map(key)).toEqual([light[0], heavy[3], light[1], heavy[1]]);
   });
 });

@@ -6,8 +6,7 @@
  * on Windows took about three times as long as shard 1/2 and was the run's
  * long pole (docs/ci.md, "Unit shards"). test/unit-sequencer.ts uses
  * partitionByWeight instead: every shard gets every file exactly once, packed
- * by measured time. Within a shard it starts the heaviest files first, so a
- * five-minute file doesn't begin last and set the shard's end.
+ * by measured time.
  *
  * UNIT_FILE_SECONDS: the files that take 5 s or more on Windows, the slowest
  * OS, in seconds of JUnit test time on windows-latest: the larger of the median
@@ -18,8 +17,9 @@
  *
  * A stale entry only makes the split less even; it can't drop or repeat a
  * file. A name that no longer matches a file is ignored. Refresh from recent
- * Windows runs (docs/ci.md, "Unit shards"), and after #3574 lands, which
- * speeds up dispatcher-federation-local-work and dispatcher-federation-requests.
+ * Windows runs (docs/ci.md, "Unit shards"). The four files #3574 sped up use
+ * its reported Windows times (dispatcher-federation-local-work and -requests;
+ * managed-agents' activation and retired-builtins now fall under 5 s).
  *
  * Plain .mjs with no vitest imports, so the sequencer and its test can both load it.
  */
@@ -35,11 +35,9 @@ export const UNIT_FILE_SECONDS = {
   'src/main/services/framebriar/feedback-service.sdk.test.ts': 111,
   'src/main/services/annex-server.test.ts': 75,
   'src/main/services/project-import/service.test.ts': 73,
-  'src/main/services/dispatcher-federation-requests.test.ts': 60,
   'src/main/services/clubhouse-mcp/tools/project-import-tools.test.ts': 58,
   'src/main/services/handoff-git-bundle.test.ts': 55,
   'src/main/services/git-service.branch.test.ts': 53,
-  'src/main/services/dispatcher-federation-local-work.test.ts': 52,
   'src/main/services/handoff-transfer-integration.test.ts': 52,
   'src/main/services/agent-runtime/checkpoints.test.ts': 36,
   'src/renderer/plugins/builtin/canvas/main.test.ts': 33,
@@ -53,6 +51,7 @@ export const UNIT_FILE_SECONDS = {
   'src/main/services/asset-catalog/store.test.ts': 19,
   'src/main/services/dispatcher-controls.test.ts': 19,
   'src/main/services/managed-agents/delivery.test.ts': 19,
+  'src/main/services/dispatcher-federation-local-work.test.ts': 18,
   'src/main/chat/copilot/fixture-replay.test.ts': 17,
   'src/main/services/agent-config-helpers.git.test.ts': 17,
   'src/main/services/annex-agent-calls.test.ts': 17,
@@ -63,7 +62,6 @@ export const UNIT_FILE_SECONDS = {
   'src/main/services/agent-runtime/agent-mcp-launch.test.ts': 14,
   'src/main/services/clubhouse-mcp/tools/managed-tools.test.ts': 14,
   'src/main/services/handoff-retention.test.ts': 14,
-  'src/main/services/managed-agents/retired-builtins.test.ts': 14,
   'src/main/services/pty-headless-terminal.budget.test.ts': 14,
   'src/main/services/annex-chat-pages.test.ts': 13,
   'src/renderer/features/agents/AgentSettingsView.test.tsx': 13,
@@ -74,7 +72,6 @@ export const UNIT_FILE_SECONDS = {
   'src/main/services/annex-chat-bounds.test.ts': 11,
   'src/main/services/handoff-quarantine.test.ts': 11,
   'src/main/services/handoff-secret-snapshot.test.ts': 11,
-  'src/main/services/managed-agents/activation.test.ts': 11,
   'src/main/services/managed-agents/plain.test.ts': 11,
   'src/main/services/managed-agents/service.test.ts': 11,
   'src/renderer/features/agents/chat/ChatStream.reading.test.tsx': 11,
@@ -87,6 +84,7 @@ export const UNIT_FILE_SECONDS = {
   'src/main/services/clubhouse-mcp/tools/connection-tools.test.ts': 9,
   'src/main/services/headless-prompt.test.ts': 9,
   'src/main/services/managed-agents/git-excludes.git.test.ts': 9,
+  'src/main/services/dispatcher-federation-requests.test.ts': 8,
   'src/renderer/features/agents/details/AgentDetailsAsleep.test.tsx': 8,
   'src/renderer/features/feedback/FeedbackReviewDialog.test.tsx': 8,
   'src/renderer/features/settings/DispatcherSettingsView.test.tsx': 8,
