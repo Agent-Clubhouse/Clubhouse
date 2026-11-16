@@ -280,7 +280,7 @@ describe('sending a call to another machine', () => {
     expect(textOf(result)).toBe('send_message is turned off on this connection.');
   });
 
-  it('while the machine is offline: a message waits and goes, in order, when it\'s back; a read says offline; others are refused', async () => {
+  it('while the machine is offline: a message waits and goes, in order, when it\'s back; a read says offline; others are refused', { timeout: 15_000 }, async () => {
     connected = false;
     const first = await forwardAgentCall('here', `there@${OTHER}`, 'Far agent', 'send_message', { message: 'one', task_id: 't1' });
     expect(first.isError).toBeFalsy();
@@ -296,7 +296,10 @@ describe('sending a call to another machine', () => {
 
     connected = true;
     connectedListener!(OTHER);
-    await vi.waitFor(() => expect(waitingFor(OTHER)).toHaveLength(0));
+    // The reconnect flush makes four durable writes. It takes ~50 ms locally, but a
+    // contended Windows runner ran this file 6x slower and can retry each rename for
+    // up to 3 s, so the 1 s default failed there (#3598).
+    await vi.waitFor(() => expect(waitingFor(OTHER)).toHaveLength(0), { timeout: 10_000 });
     const calls = posts.filter((p) => p.path === '/api/v1/network/agent-call');
     expect(calls.map((p) => p.body.tool)).toEqual(['send_message', 'send_file']);
   });
