@@ -1,4 +1,7 @@
 import { LogRedactor } from '../../../../shared/log-redaction';
+import type { FederatedRequest } from '../../../../shared/dispatcher-federation-requests';
+import { bindLocalCausalInputs, localCallInputs, savedLocalWorkInputs } from '../../dispatcher-federation-local-work';
+import { captureFederationInputs, hasFederationInputScope, withFederationInputs } from '../../dispatcher-federation-context';
 import { HELPER_TASK_PROFILES, type HelperTaskProfile } from '../../../../shared/telemetry/helper-usage-contract';
 /**
  * Helper tools (#2227): an orchestrator starts, lists, sleeps and wakes its
@@ -254,7 +257,11 @@ async function resolveTargetProject(homePath: string, orchestratorId: string, re
  * or user decision should be held for that.
  */
 function notifyOrchestrator(orchestratorId: string, text: string): void {
-  deliverHelperUpdate(orchestratorId, `[Clubhouse] ${text}`, { fromClubhouse: true, text }).then((delivery) => {
+  const deliver = () => deliverHelperUpdate(orchestratorId, `[Clubhouse] ${text}`, { fromClubhouse: true, text });
+  const delivery = hasFederationInputScope()
+    ? withFederationInputs(captureFederationInputs().map((r) => ({ ...r, targetId: orchestratorId })), deliver)
+    : deliver();
+  delivery.then((delivery) => {
     if (delivery === 'delivered') return;
     appLog('core:mcp', 'warn', 'Helper update not delivered: the orchestrator is not running', {
       meta: { orchestratorId, delivery },
@@ -640,6 +647,7 @@ function noticeApprovalNeeded(orchestrator: DurableAgentConfig, args: HelperStar
  * gets the creation, with `parentProjectPath` when it is another project.
  */
 async function runHelperStart(orchestratorId: string, args: HelperStartArgs, approvedIn?: string): Promise<StartOutcome> {
+  const causalInputs = structuredClone(hasFederationInputScope() ? captureFederationInputs() : localCallInputs());
   validateStartArgs(args);
   // Clubhouse-managed helpers (#2899): every helper is built from a template
   // and never gets a persona, so the persona is dropped before anything plans
@@ -778,6 +786,7 @@ async function runHelperStart(orchestratorId: string, args: HelperStartArgs, app
         const held: HelperStartArgs = target.cross ? { ...rest, project: target.path } : rest;
         const recorded = recordStartRequest(homePath, orchestratorId, orchestrator.name, held, undefined, quotaWarning);
         if (recorded.ok === false) return { kind: 'too_many', waiting: recorded.waiting };
+        if (!recorded.reused) heldCausalInputs.set(recorded.request.requestId, causalInputs);
         noticeApprovalNeeded(orchestrator, args, target);
         appLog('core:mcp', 'info', 'start_helper needs user approval', {
           meta: { agentId: orchestratorId, control: policy.control, requestId: recorded.request.requestId, reused: recorded.reused, crossProject: target.cross },
@@ -856,12 +865,22 @@ async function runHelperStart(orchestratorId: string, args: HelperStartArgs, app
     }
 
     const { agentId: helperId, config, done } = started;
-    // Before anything is awaited: no wake may spawn it while this start owns it.
     spawning.add(helperId);
+    // Keep the pending task beside its main-only lineage even if Clubhouse
+    // restarts while worktree creation is still running.
+    let helperInputs: readonly FederatedRequest[];
+    try {
+      await agentConfig.setHelperStartFields(target.path, helperId, { pendingTask: task });
+      helperInputs = await bindLocalCausalInputs(orchestratorId, helperId, helperId, helperMission(orchestrator.name, task), causalInputs);
+    } catch (err) {
+      // telemetry-exempt: leave the helper asleep when its task provenance cannot be saved
+      spawning.delete(helperId); abandonDecision();
+      return refused(`Could not save ${name}'s task: ${errorText(err)}`);
+    }
     // The helper's row now counts it, and an Auto reservation names it, so it is counted once.
     commitAutoDecision(decision.decisionId, helperId);
     recordHelperDecision({ ...decision, helperId });
-    const background = finishHelperStart(homePath, target.path, orchestrator, helperId, name, task, access, plan?.effort, done, decision.decisionId)
+    const background = withFederationInputs(helperInputs, () => finishHelperStart(homePath, target.path, orchestrator, helperId, name, task, access, plan?.effort, done, decision.decisionId))
       .catch((err) => {
         appLog('core:mcp', 'error', 'start_helper: background start failed', { meta: { helperId, error: new LogRedactor([], [task]).text(errorText(err)) } });
       });
@@ -886,6 +905,12 @@ async function runHelperStart(orchestratorId: string, args: HelperStartArgs, app
 const PENDING_NOTE =
   'Waiting requests are kept in memory only: each expires after 24 hours and all are cleared when ' +
   'Clubhouse quits or your orchestration is turned off. If you hear nothing, ask the user or call start_helper again.';
+
+// Approval requests themselves are memory-only. Their provenance is main-only too.
+const heldCausalInputs = new Map<string, readonly FederatedRequest[]>();
+onStartRequestsChanged((change) => {
+  if (change.kind === 'closed') for (const id of change.requestIds) heldCausalInputs.delete(id);
+});
 
 /** Said in start_helper's result when an orchestrator passes a persona, which managed helpers don't take (#2901). */
 export const HELPER_PERSONA_IGNORED = 'persona was ignored: helpers start from a template. Pass cli or model to choose them.';
@@ -1000,12 +1025,13 @@ export async function approveHelperStart(projectPath: string, requestId: string)
   if (!waiting) return { ok: false, message: NOT_WAITING };
   const blocker = approvalBlocker(waiting);
   if (blocker) return { ok: false, message: blocker };
+  const causalInputs = heldCausalInputs.get(requestId) ?? [];
   const request = takeStartRequest(projectPath, requestId);
   if (!request) return { ok: false, message: NOT_WAITING };
   const { orchestratorId, args } = request;
   let outcome: StartOutcome;
   try {
-    outcome = await runHelperStart(orchestratorId, args, request.projectPath);
+    outcome = await withFederationInputs(causalInputs, () => runHelperStart(orchestratorId, args, request.projectPath));
   } catch (err) {
     // telemetry-exempt: the reason reaches the user and the orchestrator
     outcome = refused(errorText(err));
@@ -1268,7 +1294,9 @@ async function wakeHelper(agentId: string, args: Record<string, unknown>): Promi
       taskTaken = true;
     }
     broadcastToAllWindows(IPC.AGENT.AGENT_WAKING, helper.id);
-    await agentSystem.spawnAgent({
+    const pendingInputs = helper.pendingTask ? savedLocalWorkInputs(agentId, helper.id, helper.id, helperMission(caller.config.name, helper.pendingTask)) : [];
+    const currentInputs = hasFederationInputScope() ? captureFederationInputs() : localCallInputs();
+    const wake = () => agentSystem.spawnAgent({
       agentId: helper.id,
       projectPath: helperPath,
       cwd: helper.worktreePath || helperPath,
@@ -1282,6 +1310,11 @@ async function wakeHelper(agentId: string, args: Record<string, unknown>): Promi
       resume,
       ...(resume && { sessionId: helper.lastSessionId }),
     });
+    if (pendingInputs.length) {
+      const inputs = await bindLocalCausalInputs(agentId, helper.id, helper.id, mission, [...pendingInputs, ...currentInputs]);
+      await withFederationInputs(inputs, wake);
+    }
+    else await wake();
   } catch (err) {
     const reason = errorText(err);
     if (taskTaken && helper.pendingTask) await restoreTask(helperPath, helper.id, helper.pendingTask);
@@ -1518,5 +1551,6 @@ export function _resetHelperToolsForTesting(): void {
   inflight.clear();
   startChain = Promise.resolve();
   lastApprovalNotice.clear();
+  heldCausalInputs.clear();
   _resetHelperDeliveryForTesting();
 }

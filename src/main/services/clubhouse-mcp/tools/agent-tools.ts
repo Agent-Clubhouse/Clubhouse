@@ -1,3 +1,5 @@
+import { activateLocalCausalInput, localOutputInputs } from '../../dispatcher-federation-local-work';
+import { federationTurnInputs, prepareFederationInputs } from '../../dispatcher-federation-context';
 import { LogRedactor } from '../../../../shared/log-redaction';
 import { federationMessageDirection } from '../../dispatcher-federation-policy';
 import { dispatcherProviderControl } from '../../dispatcher-provider-control';
@@ -390,6 +392,11 @@ export function registerAgentTools(): void {
         if (!text) {
           return { content: [{ type: 'text', text: 'No output available' }] };
         }
+        const inputs = localOutputInputs(agentId, targetId);
+        if (inputs.length) {
+          await activateLocalCausalInput(agentId, [...federationTurnInputs(agentId), ...inputs]);
+          prepareFederationInputs(agentId, inputs, 'steer');
+        }
         return { content: [{ type: 'text', text }] };
       } catch (err) {
         return { content: [{ type: 'text', text: `Failed to read output: ${err instanceof Error ? err.message : String(err)}` }], isError: true };
@@ -684,7 +691,7 @@ export function registerAgentTools(): void {
       const targetName = senderOf(agentId, targetId).targetName;
       const taskId = `t_${Date.now().toString(36)}`;
       const tagged = message ? buildTaggedMessage(agentId, targetId, message, taskId) : undefined;
-      const wake = { callerId: agentId, targetId, targetName, mission: tagged?.text, missionRouted: tagged?.routed };
+      const wake = { taskId, callerId: agentId, targetId, targetName, mission: tagged?.text, missionRouted: tagged?.routed };
       const result = isDispatcherTarget(targetId)
         ? await wakeDispatcher(wake)
         : await wakeWiredAgent(wake);

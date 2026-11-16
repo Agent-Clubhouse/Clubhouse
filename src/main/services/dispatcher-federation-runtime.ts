@@ -39,7 +39,7 @@ export function startFederatedRequests(): () => void {
   trackController();
   const stopControllerWatch = onDispatcherChanged(trackController);
   const instance = createFederatedRequests({
-    store: createFederationRequestStore(), now: () => Date.now(), inputs: federationTurnInputs,
+    store: createFederationRequestStore(), now: () => Date.now(), inputs: federationTurnInputs, requestInputs: (caller, id) => caller === getDispatcherAgentId() ? getRequest(id)?.federationInputs ?? [] : [],
     self: () => ({ machineId: getIdentity()?.fingerprint.toLowerCase() ?? '', machineName: 'this computer', agentId: getDispatcherAgentId() ?? '', agentName: dispatcherDisplayName() }),
     epoch: (machine) => ({ sender: ownPairing()?.id ?? 'legacy', receiver: listPeers().find((p) => p.fingerprint.toLowerCase() === machine)?.pairingId ?? 'legacy' }),
     authorized: (machine, agent, epoch) => {

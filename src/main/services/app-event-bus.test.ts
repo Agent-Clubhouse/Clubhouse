@@ -98,9 +98,9 @@ describe('from terminal hooks', () => {
     publishFromHookEvent('a1', { kind: 'notification', rawName: 'userPromptSubmitted' }, 10 * 60_000 + 1);
     publishFromHookEvent('a1', { kind: 'stop', rawName: 'agentStop' }, 10 * 60_000 + 2);
     expect(events).toEqual([
-      { type: 'turn.started', agentId: 'a1', via: 'hook', at: 0 },
+      { type: 'turn.started', agentId: 'a1', via: 'hook', at: 0, prompt: true },
       { type: 'turn.ended', agentId: 'a1', via: 'hook', outcome: 'completed', at: 1 },
-      { type: 'turn.started', agentId: 'a1', via: 'hook', at: 10 * 60_000 + 1 },
+      { type: 'turn.started', agentId: 'a1', via: 'hook', at: 10 * 60_000 + 1, prompt: true },
       { type: 'turn.ended', agentId: 'a1', via: 'hook', outcome: 'completed', at: 10 * 60_000 + 2 },
     ]);
   });

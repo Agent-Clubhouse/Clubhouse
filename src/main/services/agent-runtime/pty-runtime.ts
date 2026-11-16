@@ -1,3 +1,5 @@
+import { withLocalCausalInput, activateLocalCausalInput } from '../dispatcher-federation-local-work';
+import { captureFederationInputs, prepareFederationInputs } from '../dispatcher-federation-context';
 /**
  * AgentRuntime over a PTY. Wraps the terminal-specific input path (chunked
  * bracketed paste, provider-timed submit, slash commands, Ctrl-C) that was
@@ -75,14 +77,18 @@ export class PtyAgentRuntime implements AgentRuntime {
   }
 
   async sendMessage(content: string | ContentBlock[], opts: RuntimeSendOptions): Promise<RuntimeSendResult> {
-    return runAgentWork(this.agentId, () => this.deliverMessage(content, opts));
+    return withLocalCausalInput(this.agentId, opts.taskId, content, () => runAgentWork(this.agentId, () => this.deliverMessage(content, opts)));
   }
 
   private async deliverMessage(content: string | ContentBlock[], opts: RuntimeSendOptions): Promise<RuntimeSendResult> {
     // A process that is exiting (gracefulKill sent its exit command) would swallow the text.
     if (ptyManager.isStopping(this.agentId)) throw new AgentStoppingError(this.agentId);
+    const inputs = captureFederationInputs();
+    const rollbackAssignment = await activateLocalCausalInput(this.agentId, inputs);
+    const contexts = prepareFederationInputs(this.agentId, inputs);
     const text = contentToText(content);
     const timing = this.timing();
+    try {
     if (text.includes('\n')) {
       await writeChunkedBracketedPaste(this.agentId, text, timing.chunkSize, timing.chunkDelayMs, timing.postEndMarkerDelayMs);
     } else {
@@ -91,7 +97,13 @@ export class PtyAgentRuntime implements AgentRuntime {
     if (opts.submit !== false) {
       await submitAfterPaste(this.agentId, timing);
     }
+    for (const context of contexts) context?.accepted('prompt');
     return { delivery: 'prompt' };
+    } catch (error) {
+      for (const context of contexts) context?.refused();
+      await rollbackAssignment();
+      throw error;
+    }
   }
 
   async interrupt(): Promise<void> {

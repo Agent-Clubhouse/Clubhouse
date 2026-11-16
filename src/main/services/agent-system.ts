@@ -1,4 +1,5 @@
-import { prepareFederationInput } from './dispatcher-federation-context';
+import { activateLocalCausalInput, withLocalCausalInput } from './dispatcher-federation-local-work';
+import { captureFederationInputs, prepareFederationInputs } from './dispatcher-federation-context';
 import { redactSpawnArgs } from '../../shared/log-redaction';
 import { readCopilotHooksConfig } from '../orchestrators/copilot-hooks-config';
 import { AgentResumeError, assertProviderSelection } from './agent-transition';
@@ -106,6 +107,8 @@ export interface SpawnAgentParams {
   /** Read from a durable agent's config here, so every start and wake gets it (#2671). */
   effort?: string;
   mission?: string;
+  /** Main-only correlation of the local delegated work carried by this mission. */
+  causalTaskId?: string;
   /** Who sent the mission, for chat to show. The mission text itself is what the agent gets. */
   missionRouted?: RoutedMessagePart[];
   systemPrompt?: string;
@@ -312,7 +315,7 @@ export async function spawnAgent(params: SpawnAgentParams): Promise<void> {
   const quickRun = params.kind === 'quick' ? beginQuickAgentRun(params) : undefined;
   const spawn = withManagedActivationLaunch(params, () => isAgentRunning(params.agentId), (managed) => {
     assertProviderSelection(params.agentId, params.orchestrator);
-    return spawnAgentTracked(params, managed);
+    return withLocalCausalInput(params.agentId, params.causalTaskId, params.mission, () => spawnAgentTracked(params, managed), !params.mission);
   });
   inflightSpawns.add(spawn);
   try {
@@ -1151,15 +1154,19 @@ async function spawnPtyAgent(
     onCreated: (identity: string) => { createdIdentity = identity; },
     onObservedExit: () => { managedExitConfirmed = true; },
   });
-  let federation: ReturnType<typeof prepareFederationInput>;
+  let federation: ReturnType<typeof prepareFederationInputs> = [];
+  let rollbackAssignment: (() => Promise<void>) | undefined;
   try {
     assertLaunchesOpen();
     assertDispatcherCanStart(params);
-    if (params.mission) federation = prepareFederationInput(params.agentId);
+    const inputs = captureFederationInputs();
+    rollbackAssignment = await activateLocalCausalInput(params.agentId, inputs);
+    federation = prepareFederationInputs(params.agentId, inputs);
     await tel.step('clubhouse.pty.spawn', () => withErrorType('pty_spawn_failed', () => ptyManager.spawn(...spawnArgs)));
-    federation?.accepted('prompt');
+    for (const context of federation) context?.accepted('prompt');
   } catch (err) {
-    federation?.refused();
+    for (const context of federation) context?.refused();
+    if (!createdIdentity) await rollbackAssignment?.();
     // Refused before a process existed (the Dispatcher turned off, #3110): no exit will restore the files injected above.
     if (!managed && !createdIdentity && !isAgentRunning(params.agentId)) void configPipeline.restoreForAgent(params.agentId);
     if (managed && !createdIdentity) {

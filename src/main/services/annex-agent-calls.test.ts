@@ -582,6 +582,12 @@ describe('durable receipts and crash boundaries (#3334)', () => {
       expect(textOf(retry)).toContain(waitingFor(OTHER)[0].id);
       expect(waitingFor(OTHER)).toHaveLength(1);
       expect(waitingFor(OTHER)[0].body.context).toEqual(context);
+      const admitted = waitingFor(OTHER)[0];
+      expect(admitted.body.args).not.toHaveProperty('caused_by');
+      expect(createAnnexDeliveryStore().get().deliveries.find((r) => r.callId === admitted.id)?.payloadHash).toBe(deliveryHash({ from: 'here', to: 'there', tool: 'send_message', args: { message: 'News once', idempotency_key: 'selected-news' }, epoch: admitted.body.epoch, context }));
+      const differentSelection = await forwardAgentCall('here', `there@${OTHER}`, 'Remote Dispatcher', 'send_message', { ...args, caused_by: 'another-turn-item' }, now);
+      expect(differentSelection.isError).toBeFalsy();
+      expect(waitingFor(OTHER)).toHaveLength(1);
       expect(cause).toHaveBeenCalledTimes(1);
       const fresh = await forwardAgentCall('here', `there@${OTHER}`, 'Remote Dispatcher', 'send_message', { ...args, idempotency_key: 'different-news' }, now);
       expect(fresh.isError).toBe(true); expect(textOf(fresh)).toContain('no longer delivered');

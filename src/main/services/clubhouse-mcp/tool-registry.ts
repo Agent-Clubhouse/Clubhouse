@@ -1,3 +1,4 @@
+import { withLocalCausalCall } from '../dispatcher-federation-local-work';
 /**
  * Tool Registry — manages tool definitions and generates scoped tool lists
  * based on an agent's current bindings.
@@ -939,7 +940,7 @@ export async function callTool(
     return approvedCall.run({
       key: callKey(agentId, toolName, args),
       approval,
-    }, () => withSettingsSurface('mcp', agentId, () => globalTool.handler(agentId, args)));
+    }, () => withSettingsSurface('mcp', agentId, () => withLocalCausalCall(agentId, args, () => globalTool.handler(agentId, args))));
   }
 
   const bindings = bindingManager.getBindingsForAgent(agentId);
@@ -1054,7 +1055,7 @@ export async function callTool(
     return forwardAgentCall(agentId, binding.targetId, display, parsed.suffix, args);
   }
 
-  return withSettingsSurface('mcp', agentId, () => template.handler(binding.targetId, agentId, args));
+  return withSettingsSurface('mcp', agentId, () => withLocalCausalCall(agentId, args, () => template.handler(binding.targetId, agentId, args)));
 }
 
 /**

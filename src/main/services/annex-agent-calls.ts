@@ -274,6 +274,7 @@ export async function forwardPreparedAgentCall(callerId: string, targetId: strin
     catch (err) { return text(err instanceof Error ? err.message : String(err), true); } // telemetry-exempt: invalid ancestry selection is returned to the caller
   }
   context = retainedContext ?? context ?? { rootId: callId, depth: 0 };
+  delete args.caused_by; // Local selector is not remote task data or part of idempotent payload identity.
   const sender = await describe(callerId);
   const body: AgentCallBody = {
     v: AGENT_CALL_VERSION,

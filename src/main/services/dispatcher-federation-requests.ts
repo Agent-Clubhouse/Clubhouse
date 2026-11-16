@@ -8,7 +8,8 @@ import { federationStatusChanged } from './dispatcher-federation-policy';
 
 export class FederationInputNotReady extends Error {}
 
-export const FEDERATED_REQUEST_LIMITS = Object.freeze({ depth: 8, queued: 30, perMinute: 20, ttl: 7 * 24 * 60 * 60_000, records: 1000 });
+export { FEDERATED_REQUEST_LIMITS } from '../../shared/dispatcher-federation-requests';
+import { FEDERATED_REQUEST_LIMITS } from '../../shared/dispatcher-federation-requests';
 export interface FederationRequestFile {
   version: 1;
   requests: FederatedRequest[];
@@ -76,6 +77,7 @@ export interface FederationRequestDependencies {
   now(): number;
   /** Runtime-owned input actually delivered into this caller's current turn. */
   inputs?(callerId: string): readonly FederatedRequest[];
+  requestInputs?(callerId: string, requestId: string): readonly FederatedRequest[];
   self(): { machineId: string; machineName: string; agentId: string; agentName: string };
   /** Both pairing epochs and the derived controller direction must still match. */
   authorized(machine: string, agentId: string, epoch: AnnexDeliveryEpoch): boolean;
@@ -322,15 +324,18 @@ export function createFederatedRequests(d: FederationRequestDependencies) {
     list(callerId: string) { return d.store.get().requests.filter((r) => r.callerId === callerId || d.self().agentId === callerId); },
     /** IDs may select a delivered item, but can never suppress runtime ancestry. */
     cause(callerId: string, requestId?: string, causedBy?: unknown) {
-      const active = (d.inputs?.(callerId) ?? []).filter((r) => r.targetId === callerId && current(r));
+      const active = (d.inputs?.(callerId) ?? []).filter((r) => r.targetId === callerId && r.expiresAt > d.now() && current(r));
+      const linked = requestId ? [...d.store.get().requests.filter((r) => r.direction === 'incoming' && r.localRequestId === requestId && r.targetId === callerId), ...(d.requestInputs?.(callerId, requestId) ?? [])].filter((r) => r.expiresAt > d.now() && current(r)) : [];
+      const candidates = [...active, ...linked];
+      const select = (parent: FederatedRequest | undefined) => parent && ({ ...parent, cause: { ...parent.cause, depth: Math.max(parent.cause.depth, ...candidates.map((r) => r.cause.depth)) } });
       if (causedBy !== undefined) {
         if (!idValid(causedBy)) throw new Error('caused_by must identify input delivered into this turn.');
-        const selected = active.find((r) => r.id === causedBy);
+        const selected = candidates.find((r) => r.id === causedBy);
         if (!selected) throw new Error('caused_by must identify authorized input delivered into this turn.');
-        return selected;
+        return select(selected);
       }
       const matching = requestId ? active.filter((r) => r.localRequestId === requestId) : [];
-      return [...(matching.length ? matching : active)].sort((a, b) => b.cause.depth - a.cause.depth)[0];
+      return select([...(matching.length ? matching : linked.length ? linked : active)].sort((a, b) => b.cause.depth - a.cause.depth)[0]);
     },
     async offer(callerId: string, machineId: string, targetId: string, originRequestId: string, text: string, causedBy?: unknown) {
       if (!idValid(originRequestId) || !textValid(text)) throw new Error('Give an origin request id and request text (at most 8000 characters).');

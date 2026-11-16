@@ -1,4 +1,4 @@
-import { federationTurnOpen, prepareFederationInput } from '../../dispatcher-federation-context';
+import { federationTurnOpen } from '../../dispatcher-federation-context';
 import { LogRedactor } from '../../../../shared/log-redaction';
 /**
  * Messages from agents to the Dispatcher (#3037, part of #3034). An agent's
@@ -230,13 +230,10 @@ async function deliver(inboxId: string, req: DispatcherDeliveryRequest): Promise
       return { delivered: false, text: 'The receiving controller is not ready for remote input.' };
     }
     idleStarts.delete(inboxId);
-    const context = runtime.kind === 'pty' ? prepareFederationInput(inboxId) : undefined;
-    let sent;
-    try { sent = await runtime.sendMessage(req.text, {
+    const sent = await runtime.sendMessage(req.text, {
       source: req.messageOptions ? 'action' : 'mcp', taskId: req.taskId, submit: req.submit, routed: req.routed,
       ...(req.messageOptions && { delivery: 'queued', ...req.messageOptions }),
-    }); } catch (err) { context?.refused(); throw err; }
-    context?.accepted(sent?.delivery);
+    });
     return { delivered: true, woke: false, ...(sent?.delivery && { delivery: sent.delivery }) };
   }
 
@@ -272,7 +269,7 @@ async function deliver(inboxId: string, req: DispatcherDeliveryRequest): Promise
 
   appLog('core:mcp', 'info', 'send_message: waking the Dispatcher to deliver', { meta });
   const result = await wakeController({
-    callerId: req.wakeAsReceiver ? inboxId : senderId, targetId: inboxId, targetName, mission: req.text, missionRouted: req.routed,
+    callerId: req.wakeAsReceiver ? inboxId : senderId, targetId: inboxId, targetName, mission: req.text, missionRouted: req.routed, taskId: req.taskId,
     ...(req.admission && { admission: req.admission }),
   });
   const text = result.content[0]?.type === 'text' ? result.content[0].text : '';

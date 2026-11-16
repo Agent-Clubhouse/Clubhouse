@@ -44,7 +44,7 @@ state.base = fs.mkdtempSync(path.join(os.tmpdir(), 'federation-receiver-'));
 import { receiveAgentCall, startAgentCalls, waitingFor, _clearOutboxForTesting } from './annex-agent-calls';
 import { prepareFederationInput } from './dispatcher-federation-context';
 import { publishChatEvent } from './agent-runtime/chat-event-bus';
-import { forgetHookTurn, publishAppEvent, publishFromHookEvent } from './app-event-bus';
+import { forgetHookTurn, HOOK_TURN_STALE_MS, publishAppEvent, publishFromHookEvent } from './app-event-bus';
 import { federationRequestRouter } from './dispatcher-federation-policy';
 import type { ChatEvent } from '../../shared/chat';
 import { federationReceiver } from './dispatcher-federation-receiver';
@@ -206,13 +206,16 @@ describe('production remote request admission and triage (#3346)', () => {
   it('tracks real incoming news at the runtime boundary and respects terminal hook boundaries', async () => {
     stopRequests = startFederatedRequests();
     await receiveAgentCall(PEER, { ...call('news-input'), context: { rootId: 'news-root', depth: 3 } });
-    publishAppEvent({ type: 'turn.started', agentId: 'controller', via: 'hook' });
+    publishAppEvent({ type: 'turn.started', agentId: 'controller', via: 'hook', prompt: true });
     expect(federationRequestRouter()!.cause('controller', {})).toEqual({ rootId: 'news-root', depth: 4, parentId: 'news-input' });
     expect(federationRequestRouter()!.cause('other-agent', {})).toBeUndefined();
     publishAppEvent({ type: 'turn.ended', agentId: 'other-agent', via: 'hook', outcome: 'completed' });
     expect(federationRequestRouter()!.cause('controller', {})?.depth).toBe(4);
     publishAppEvent({ type: 'turn.ended', agentId: 'controller', via: 'hook', outcome: 'completed' });
-    publishAppEvent({ type: 'turn.started', agentId: 'controller', via: 'hook' });
+    publishFromHookEvent('controller', { kind: 'stop', rawName: 'Stop' });
+    publishFromHookEvent('controller', { kind: 'pre_tool', rawName: 'PreToolUse' });
+    expect(federationRequestRouter()!.cause('controller', {})?.depth).toBe(4);
+    publishFromHookEvent('controller', { kind: 'pre_tool', rawName: 'UserPromptSubmit' });
     expect(federationRequestRouter()!.cause('controller', {})).toBeUndefined();
   });
   it('waits durably during an open terminal turn and delivers after the turn ends', async () => {
@@ -227,6 +230,34 @@ describe('production remote request admission and triage (#3346)', () => {
     publishFromHookEvent('controller', { kind: 'pre_tool', rawName: 'UserPromptSubmit' });
     expect(federationRequestRouter()!.cause('controller', {})).toEqual({ rootId: 'waiting-root', depth: 3, parentId: 'waiting-terminal' });
     expect(state.send).toHaveBeenCalledTimes(1);
+  });
+  it('waits for terminal input already submitted but not yet acknowledged by the first hook', async () => {
+    stopRequests = startFederatedRequests(); state.running = true; state.runtime = 'pty';
+    expect(await receiveAgentCall(PEER, call('submitted-terminal'))).toMatchObject({ delivery: { state: 'delivered' } });
+    // No UserPromptSubmit/pre-tool hook has arrived yet: a second remote input must wait.
+    const next = call('next-terminal');
+    expect(await receiveAgentCall(PEER, next)).toMatchObject({ delivery: { state: 'retry_later', reason: 'target_not_ready' } });
+    expect(state.send).toHaveBeenCalledTimes(1);
+    publishFromHookEvent('controller', { kind: 'pre_tool', rawName: 'UserPromptSubmit' });
+    publishFromHookEvent('controller', { kind: 'stop', rawName: 'Stop' });
+    expect(await receiveAgentCall(PEER, next)).toMatchObject({ delivery: { state: 'delivered' } });
+    expect(state.send).toHaveBeenCalledTimes(2);
+  });
+  it('unblocks a stuck terminal after real hook inactivity, and replaces hookless pending history', async () => {
+    let now = Date.now(); const clock = vi.spyOn(Date, 'now').mockImplementation(() => now);
+    try {
+      stopRequests = startFederatedRequests(); state.running = true; state.runtime = 'pty';
+      publishFromHookEvent('controller', { kind: 'pre_tool', rawName: 'UserPromptSubmit' });
+      expect(await receiveAgentCall(PEER, call('stuck-terminal'))).toMatchObject({ delivery: { state: 'retry_later' } });
+      now += HOOK_TURN_STALE_MS + 1;
+      expect(await receiveAgentCall(PEER, call('stuck-terminal'))).toMatchObject({ delivery: { state: 'delivered' } });
+      for (let i = 0; i < 40; i++) {
+        now += HOOK_TURN_STALE_MS + 1;
+        expect(await receiveAgentCall(PEER, { ...call(`hookless-${i}`), context: { rootId: `root-${i}`, depth: 0 } })).toMatchObject({ delivery: { state: 'delivered' } });
+        expect(federationRequestRouter()!.cause('controller', {})).toEqual({ rootId: `root-${i}`, parentId: `hookless-${i}`, depth: 1 });
+      }
+      expect(federatedRequests()!.allowed(PEER, {})).toBe(true);
+    } finally { clock.mockRestore(); }
   });
   it('does not count repeated waiting news attempts against federation bounds during a long terminal turn', async () => {
     stopRequests = startFederatedRequests(); state.running = true; state.runtime = 'pty';
