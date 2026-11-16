@@ -1010,9 +1010,19 @@ describe('annex-server', () => {
         expect(status.port).toBeGreaterThan(0);
         expect(status.port).not.toBe(taken);
         expect(annexSettings.saveLastPorts).toHaveBeenCalledWith({ mainPort: status.port, pairingPort: status.pairingPort });
+        // Said in Settings (#3608), and whatever held the port is left alone.
+        expect(status.listenerPortsMoved).toEqual({ main: { preferred: taken, bound: status.port } });
+        expect(blocker.listening).toBe(true);
+        expect((blocker.address() as net.AddressInfo).port).toBe(taken);
       } finally {
         blocker.close();
       }
+    });
+
+    it('says nothing about a moved port when the remembered one was free (#3608)', async () => {
+      annexServer.start();
+      await vi.waitFor(() => expect(annexServer.getStatus().port).toBeGreaterThan(0));
+      expect(annexServer.getStatus().listenerPortsMoved).toBeUndefined();
     });
   });
 
@@ -3294,6 +3304,22 @@ describe('annex-server', () => {
         await pair(oneToOne, { pairingMode: 'persistent' });
         expect((await call('GET', '/api/v1/mobile/network', oneToOne)).body).toMatchObject({ joined: false, removals: [] });
         expect((await call('GET', '/api/v1/mobile/network', null)).status).toBe(403);
+      });
+
+      it('lists a desktop reached only through a private forward with no hosts and no port, in the same shape (#3608)', async () => {
+        await startServer();
+        const membershipMod = await import('./annex-network-membership');
+        const { port: _unused, ...noPort } = memberRecord(AA_FP);
+        vi.mocked(membershipMod.currentView).mockReturnValue({ members: [{ ...noPort, hosts: [] } as never], removals: [] });
+        const member = device();
+        await pair(member, { network: 1, pairingMode: 'persistent' });
+        const listed = await call('GET', '/api/v1/mobile/network', member);
+        expect(listed).toMatchObject({ status: 200, body: { version: 1, joined: true, removals: [] } });
+        const desktop = listed.body.members[0];
+        expect(desktop).toMatchObject({ fingerprint: AA_FP, kind: 'desktop', hosts: [], certFingerprint: expect.any(String), certPem: expect.stringContaining('BEGIN'), online: false });
+        expect(desktop).not.toHaveProperty('port');
+        // Every required field is still there; only the optional port is absent.
+        expect(Object.keys(desktop).sort()).toEqual(['certFingerprint', 'certPem', 'color', 'fingerprint', 'hosts', 'icon', 'joinedAt', 'kind', 'name', 'online', 'publicKey']);
       });
 
       it('tells a removed phone on its open connections, before they are cut', async () => {

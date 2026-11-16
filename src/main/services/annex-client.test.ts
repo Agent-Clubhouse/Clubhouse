@@ -2941,6 +2941,26 @@ describe('annex-client', () => {
         expect(sockets).toHaveLength(1);
       });
 
+      it('after a restart with no discovery, reconnects through the saved forward, and again after it drops and returns', async () => {
+        vi.useFakeTimers();
+        peer = { ...base, role: 'member', kind: 'desktop', typedHost: '127.0.0.1:7555', mainPort: 9443 };
+        annexClient.startClient();
+        expect(sockets[0].url).toBe('wss://127.0.0.1:7555/ws?client=desktop');
+        sockets[0].handlers.open();
+        expect(annexClient.getSatellite(FP)?.state).toBe('connected');
+        // The forward drops: refused, and the advice names the local forward.
+        sockets[0].handlers.close(1006, Buffer.from(''));
+        await vi.advanceTimersByTimeAsync(5_000);
+        sockets.at(-1)!.handlers.error(refused());
+        expect(annexClient.getSatellite(FP)?.problem?.action).toMatch(/local forward is running/);
+        expect(annexClient.getSatellite(FP)?.needsPairing).toBeFalsy();
+        // It comes back: the same saved address is tried again and connects.
+        await vi.advanceTimersByTimeAsync(60_000);
+        expect(sockets.at(-1)!.url).toBe('wss://127.0.0.1:7555/ws?client=desktop');
+        sockets.at(-1)!.handlers.open();
+        expect(annexClient.getSatellite(FP)?.state).toBe('connected');
+      });
+
       it("says a loopback address on this computer's own port reaches this computer, not that it was reset", async () => {
         vi.useFakeTimers();
         vi.mocked(annexSettings.getLastPorts).mockReturnValue({ mainPort: 7443, pairingPort: 7444 });
