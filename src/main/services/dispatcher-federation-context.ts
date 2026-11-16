@@ -107,9 +107,11 @@ export function startFederationTurnTracking(agentId: string): () => void {
     if (!('agentId' in event) || event.agentId !== agentId) return;
     if (event.type === 'turn.started' && event.via !== 'chat') { context.start(!!event.prompt, 'hook'); startedInput(agentId, context); }
     if (event.type === 'turn.ended' && event.via !== 'chat') context.end();
-    if (event.type === 'agent.asleep' || event.type === 'agent.deleted') context.clear();
+    if (event.type === 'agent.asleep') context.clear();
+    if (event.type === 'agent.deleted') stopTracking();
   });
-  return () => { stopChat(); stopApp(); context.clear(); if (agents.get(agentId) === context) agents.delete(agentId); };
+  const stopTracking = () => { stopChat(); stopApp(); context.clear(); if (agents.get(agentId) === context) agents.delete(agentId); };
+  return stopTracking;
 }
 export function prepareFederationInput(agentId: string, request = captureFederationInput(), delivery: MessageDelivery = 'prompt', append = false) {
   if (!request) return;

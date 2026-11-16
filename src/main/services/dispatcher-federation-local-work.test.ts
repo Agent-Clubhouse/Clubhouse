@@ -20,7 +20,7 @@ import { PtyAgentRuntime } from './agent-runtime/pty-runtime';
 import { registerChatRuntime, unregisterChatRuntime } from './agent-runtime';
 import { createFederatedRequests, FEDERATED_REQUEST_LIMITS } from './dispatcher-federation-requests';
 import { federationTurnInputs, startFederationTurnTracking, withFederationInput, withFederationInputs } from './dispatcher-federation-context';
-import { _setLocalWorkStoreForTesting, _settleLocalWorkForTesting, activateLocalCausalInput, createLocalWorkStore, localCausalInputs, withLocalCausalCall, withLocalCausalInput } from './dispatcher-federation-local-work';
+import { _setLocalWorkStoreForTesting, _settleLocalWorkForTesting, activateLocalCausalInput, createLocalWorkStore, localCausalInputs, localOutputInputs, withLocalCausalCall, withLocalCausalInput, LOCAL_WORK_MAX_BYTES } from './dispatcher-federation-local-work';
 import { deliverHelperUpdate, flushHelperUpdates, _resetHelperDeliveryForTesting } from './clubhouse-mcp/tools/helper-delivery';
 import { forgetHookTurn, publishFromHookEvent } from './app-event-bus';
 
@@ -46,7 +46,7 @@ function desktop(agentId: string) {
   return { runtime, driver, stopTracking,
     async start() { await runtime.start(); },
     async turn() { driver.last.emit({ type: 'turn_started', data: { trigger: 'prompt' } }); await flush(); await _settleLocalWorkForTesting(); },
-    async end() { driver.last.emit({ type: 'turn_ended', data: { stopReason: 'end_turn' } }); await flush(); },
+    async end() { driver.last.emit({ type: 'turn_ended', data: { stopReason: 'end_turn' } }); await flush(); await _settleLocalWorkForTesting(); await flush(); },
   };
 }
 function federation(agentId = 'controller') {
@@ -71,6 +71,60 @@ afterEach(async () => {
   _setLocalWorkStoreForTesting(); vi.restoreAllMocks(); fs.rmSync(fixture.base, { recursive: true, force: true });
 });
 describe('durable local delegation through real chat-runtime/ALS input', () => {
+  it('keeps independent assignments independent when their task labels and result text repeat', async () => {
+    const controller = desktop('controller'); const worker = desktop('worker'); await controller.start(); await worker.start();
+    for (const depth of [6, 0]) {
+      await withFederationInput(remote(depth, `independent-${depth}`), () => controller.runtime.sendMessage('Independent input', { source: 'mcp' })); await controller.turn();
+      await withLocalCausalCall('controller', {}, () => worker.runtime.sendMessage('Same task text', { source: 'mcp', taskId: 'reused-label' })); await worker.turn();
+      expect(Math.max(...federationTurnInputs('worker').map((r) => r.cause.depth))).toBe(depth);
+      await controller.end(); await worker.end();
+      await withLocalCausalCall('worker', {}, () => controller.runtime.sendMessage('Done', { source: 'mcp', taskId: 'reused-label' })); await controller.turn();
+      expect(Math.max(...federationTurnInputs('controller').map((r) => r.cause.depth))).toBe(depth);
+      await controller.end();
+    }
+  });
+  it('evicts history at capacity without rejecting sends or losing an assigned result across restart', async () => {
+    const controller = desktop('controller'); const worker = desktop('worker'); await controller.start(); await worker.start();
+    await withFederationInput(remote(6), () => controller.runtime.sendMessage('Remote', { source: 'mcp' })); await controller.turn();
+    await withLocalCausalCall('controller', {}, () => worker.runtime.sendMessage('Assigned', { source: 'mcp', taskId: 'assigned' })); await worker.turn();
+    const ledger = createLocalWorkStore();
+    await ledger.update((file) => {
+      file.records.push({ id: 'oversized-history', sender: 'old', receiver: 'other', hash: 'x'.repeat(LOCAL_WORK_MAX_BYTES), expiresAt: Date.now() + 60_000, inputs: [remote(1)] });
+    });
+    expect(ledger.get().records.some((r) => r.id === 'oversized-history')).toBe(false);
+    await ledger.update((file) => {
+      for (let i = 0; i <= FEDERATED_REQUEST_LIMITS.records; i++) file.records.push({ id: `history-${i}`, sender: 'old', receiver: 'other', hash: `${i}`, expiresAt: Date.now() + 60_000, inputs: [remote(1, `history-cause-${i}`)] });
+    });
+    _setLocalWorkStoreForTesting(createLocalWorkStore());
+    expect(createLocalWorkStore().get().records).toHaveLength(FEDERATED_REQUEST_LIMITS.records);
+    expect((await localCausalInputs('worker', undefined, undefined, true))[0].cause.depth).toBe(6);
+    expect(localOutputInputs('controller', 'worker')[0].cause.depth).toBe(6);
+    await withLocalCausalCall('worker', { task_id: 'assigned' }, () => controller.runtime.sendMessage('Result after capacity', { source: 'mcp', taskId: 'assigned' }));
+    expect(Buffer.byteLength(fs.readFileSync(path.join(fixture.base, 'dispatcher-federation-local-work.json')))).toBeLessThan(LOCAL_WORK_MAX_BYTES);
+  });
+  it('keeps hundreds of real-runtime round trips in one lineage slim and bounded at realistic text size', async () => {
+    const controller = desktop('controller'); const worker = desktop('worker'); await controller.start(); await worker.start();
+    const text = 'PRIVATE_REMOTE_TASK_'.padEnd(8_000, 'x');
+    await withFederationInput({ ...remote(3), text }, () => controller.runtime.sendMessage(text, { source: 'mcp' })); await controller.turn();
+    for (let i = 0; i < 300; i++) {
+      const taskId = `round-${i}`;
+      await withLocalCausalCall('controller', { task_id: taskId }, () => worker.runtime.sendMessage(text, { source: 'mcp', taskId })); await worker.turn();
+      await controller.end(); await worker.end();
+      await withLocalCausalCall('worker', { task_id: taskId }, () => controller.runtime.sendMessage(text, { source: 'mcp', taskId })); await controller.turn();
+      expect(federationTurnInputs('controller')).toHaveLength(1);
+      expect(federationTurnInputs('controller')[0].cause.depth).toBe(3);
+    }
+    const body = fs.readFileSync(path.join(fixture.base, 'dispatcher-federation-local-work.json'), 'utf8');
+    expect(Buffer.byteLength(body)).toBeLessThan(LOCAL_WORK_MAX_BYTES);
+    expect(Buffer.byteLength(body)).toBeLessThan(1_000_000);
+    expect(body).not.toContain('PRIVATE_REMOTE_TASK_');
+    const saved = createLocalWorkStore().get();
+    expect(saved.records).toHaveLength(600);
+    expect(saved.records.every((r) => r.inputs.length === 1 && r.inputs[0].localWorkIds?.length === 1 && !('text' in r.inputs[0]))).toBe(true);
+    _setLocalWorkStoreForTesting(createLocalWorkStore());
+    expect((await localCausalInputs('controller', undefined, undefined, true))[0].cause.depth).toBe(3);
+    expect((await federation().offer('controller', 'other-desktop', 'remote-controller', 'long-session', 'Continue')).cause.depth).toBe(4);
+  }, 90_000);
   it('queues a human prompt racing an accepted remote prompt until its actual turn ends', async () => {
     const controller = desktop('controller'); await controller.start();
     await withFederationInput(remote(7), () => controller.runtime.sendMessage('Remote first', { source: 'mcp' }));
@@ -216,15 +270,16 @@ describe('durable local delegation through real chat-runtime/ALS input', () => {
     await flush(); await flushHelperUpdates('controller'); await pending; await controller.turn();
     expect((await federation().offer('controller', 'other-desktop', 'remote-controller', 'after-helper', 'Continue')).cause.depth).toBe(5);
   });
-  it('bounds and expires stored delegation lineage and refuses to reuse an old lower-depth result', async () => {
+  it('expires stored delegation lineage and merges a deeper input on an identical resend', async () => {
     const controller = desktop('controller'); const worker = desktop('worker'); await controller.start(); await worker.start();
     await withFederationInput(remote(1, 'low'), () => controller.runtime.sendMessage('Low', { source: 'mcp' })); await controller.turn();
     await withLocalCausalCall('controller', { task_id: 'job' }, () => worker.runtime.sendMessage('Job', { source: 'mcp', taskId: 'job' })); await worker.turn();
     await withLocalCausalCall('worker', { task_id: 'job' }, () => localCausalInputs('controller', 'job', 'Same result'));
     const high = remote(6, 'high');
-    await worker.end();
-    await withFederationInput({ ...high, targetId: 'worker' }, () => worker.runtime.sendMessage('Higher cause', { source: 'mcp' })); await worker.turn();
-    await expect(withLocalCausalCall('worker', { task_id: 'job' }, () => localCausalInputs('controller', 'job', 'Same result'))).rejects.toThrow('earlier causation');
+    await withFederationInput({ ...high, targetId: 'worker' }, () => worker.runtime.sendMessage('Higher cause', { source: 'mcp' }));
+    const resent = await withLocalCausalCall('worker', { task_id: 'job' }, () => localCausalInputs('controller', 'job', 'Same result'));
+    expect(Math.max(...resent.map((r) => r.cause.depth))).toBe(6);
+    expect(new Set(resent.map((r) => r.id))).toEqual(new Set(['low', 'high']));
     vi.spyOn(Date, 'now').mockReturnValue(high.expiresAt + 1);
     expect(await withLocalCausalCall('worker', { task_id: 'job' }, () => localCausalInputs('controller', 'job', 'Expired'))).toEqual([]);
     expect(createLocalWorkStore().get().records.length).toBeLessThanOrEqual(FEDERATED_REQUEST_LIMITS.records);

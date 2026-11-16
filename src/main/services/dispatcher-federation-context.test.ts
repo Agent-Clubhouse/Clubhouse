@@ -1,9 +1,20 @@
 import { describe, expect, it } from 'vitest';
 import type { FederatedRequest } from '../../shared/dispatcher-federation-requests';
-import { captureFederationInput, createFederationTurnContext, withFederationInput } from './dispatcher-federation-context';
+import { captureFederationInput, createFederationTurnContext, withFederationInput, onFederationTurnInput, prepareFederationInput } from './dispatcher-federation-context';
+import { publishAppEvent } from './app-event-bus';
 const input = (id: string) => ({ id } as FederatedRequest);
 
 describe('runtime-delivered federation ancestry', () => {
+  it('removes auto-tracking listeners when an agent is deleted before its identity is reused', () => {
+    let starts = 0; const stop = onFederationTurnInput((id) => { if (id === 'deleted-agent') starts++; });
+    try {
+      prepareFederationInput('deleted-agent', input('old'))?.accepted('prompt');
+      publishAppEvent({ type: 'agent.deleted', agentId: 'deleted-agent', projectPath: '/fake' });
+      prepareFederationInput('deleted-agent', input('new'))?.accepted('prompt');
+      publishAppEvent({ type: 'turn.started', agentId: 'deleted-agent', via: 'hook', prompt: true });
+      expect(starts).toBe(1);
+    } finally { publishAppEvent({ type: 'agent.deleted', agentId: 'deleted-agent', projectPath: '/fake' }); stop(); }
+  });
   it('does not leave input metadata on long-lived async tasks created during a wake', async () => {
     let later!: () => void;
     let seen: FederatedRequest | undefined;
