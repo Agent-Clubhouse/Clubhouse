@@ -636,7 +636,8 @@ describe('linked automatic membership (#3546)', () => {
     expect((await describeMembership('gp_linked')).members.map((m) => m.agentId).sort()).toEqual(['dev', 'lead', remoteAddress('remote')].sort());
     // Host bindings always remain local; the remote computer binds only the host's saved entries.
     expect(membersOf('gp_linked')).toEqual(['dev', 'lead']);
-    fx.satellites[0].snapshot = remoteSnapshot([agent('remote'), agent('later'), agent('helper', { parentAgentId: 'remote' })]);
+    fx.satellites[0].snapshot = remoteSnapshot([agent('remote'), agent('later'), agent('helper', { parentAgentId: 'remote' }),
+      Object.assign(agent('quick-in-durables'), { kind: 'quick' }), Object.assign(agent('helper-kind'), { kind: 'helper' })]);
     await reconcileMembership();
     expect((await getMembership('gp_linked')).explicit.map((e) => e.address).sort()).toEqual([remoteAddress('later'), remoteAddress('remote')].sort());
   });

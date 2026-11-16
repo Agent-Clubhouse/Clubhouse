@@ -48,11 +48,14 @@ export async function linkedAgents(
     for (const raw of snapshot.agents[copy.projectId]) {
       if (!raw || typeof raw !== 'object') continue;
       const agent = raw as DurableAgentConfig;
+      const kind = (raw as { kind?: unknown }).kind;
+      if (kind !== undefined && kind !== 'durable' && kind !== 'helper') continue;
+      const helper = !!agent.parentAgentId || kind === 'helper';
       if (typeof agent.id !== 'string' || typeof agent.name !== 'string' || isDisposedAgent(agent)) continue;
       // quickAgents is a separate snapshot inventory and is deliberately never read here.
-      const member = { agentId: `${agent.id}@${copy.machine}`, name: agent.name, kind: agent.parentAgentId ? 'helper' as const : 'durable' as const, via: 'explicit' as const, projectId: copy.projectId, projectName: name, machine: copy.machine };
+      const member = { agentId: `${agent.id}@${copy.machine}`, name: agent.name, kind: helper ? 'helper' as const : 'durable' as const, via: 'explicit' as const, projectId: copy.projectId, projectName: name, machine: copy.machine };
       available.push(member);
-      if (!agent.parentAgentId) agents.push({ ...member, via: 'auto' });
+      if (!helper) agents.push({ ...member, via: 'auto' });
     }
   }
   return { copies, agents, available, unknown };
