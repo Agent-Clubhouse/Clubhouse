@@ -166,3 +166,34 @@ describe('automatic membership and lost-link review', () => {
     expect(screen.getByRole('list', { name: 'Members' })).toHaveTextContent('lead');
   });
 });
+
+describe('coverage in Members (#3549)', () => {
+  const coverage = {
+    groupProjectId: 'gp1', scoped: true, complete: false, localUnknown: false,
+    copies: [
+      { machine: 'a', projectId: 'p', name: 'Alpha', thisComputer: true, state: 'verified' as const },
+      { machine: 'b', projectId: 'r', name: 'Alpha on Laptop', thisComputer: false, state: 'unknown' as const },
+    ],
+    repositoryMatches: [{ projectId: 'p-other', name: 'Alpha clone' }],
+  };
+
+  it('says what the group covers, what is not verified, and offers a link without including the match', async () => {
+    vi.spyOn(window.clubhouse.groupProject, 'listMembers').mockResolvedValue(view());
+    const read = vi.spyOn(window.clubhouse.groupProject, 'getCoverage').mockResolvedValue([coverage]);
+    render(<GroupProjectMembersSection groupProjectId="gp1" />);
+    const summary = await screen.findByTestId('coverage-summary');
+    expect(read).toHaveBeenCalledWith('gp1');
+    expect(summary).toHaveTextContent('Covers Alpha.');
+    expect(summary).toHaveTextContent('Coverage not verified on this computer: Alpha on Laptop.');
+    expect(screen.getByRole('button', { name: 'Offer to link Alpha clone' })).toBeInTheDocument();
+    expect(screen.getByRole('list', { name: 'Members' })).not.toHaveTextContent('Alpha clone');
+  });
+
+  it('shows no coverage for an app-wide group', async () => {
+    vi.spyOn(window.clubhouse.groupProject, 'listMembers').mockResolvedValue(view());
+    vi.spyOn(window.clubhouse.groupProject, 'getCoverage').mockResolvedValue([{ ...coverage, scoped: false, copies: [], repositoryMatches: [] }]);
+    render(<GroupProjectMembersSection groupProjectId="gp1" />);
+    await screen.findByRole('list', { name: 'Members' });
+    expect(screen.queryByTestId('coverage-summary')).not.toBeInTheDocument();
+  });
+});

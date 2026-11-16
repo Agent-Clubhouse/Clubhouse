@@ -1,7 +1,7 @@
 import { ipcRenderer } from 'electron';
 import { IPC } from '../shared/ipc-channels';
 import type {
-  AutoJoinPreview, GroupProject, GroupProjectCreateOptions, GroupProjectDeleteImpact, GroupProjectMemberView, GroupProjectMembershipView,
+  AutoJoinPreview, GroupProject, GroupProjectCoverage, GroupProjectCreateOptions, GroupProjectDeleteImpact, GroupProjectMemberView, GroupProjectMembershipView,
   GroupProjectRolesView, GroupProjectMembershipOptions, GroupProjectScope, GroupProjectScopeOptions,
 } from '../shared/group-project-types';
 
@@ -83,6 +83,8 @@ export const groupProject = {
     ipcRenderer.invoke(IPC.GROUP_PROJECT.CONFIRM_UNLINKED_MEMBERS, projectId, { confirmLeaving }),
   previewAutoJoin: (scope: GroupProjectScope, options?: GroupProjectMembershipOptions): Promise<AutoJoinPreview> =>
     ipcRenderer.invoke(IPC.GROUP_PROJECT.PREVIEW_AUTO_JOIN, scope, options),
+  getCoverage: (projectId?: string): Promise<GroupProjectCoverage[]> =>
+    ipcRenderer.invoke(IPC.GROUP_PROJECT.GET_COVERAGE, projectId),
   onMembershipChanged: (callback: (projectId: string) => void) => {
     const listener = (_event: Electron.IpcRendererEvent, projectId: string) => callback(projectId);
     ipcRenderer.on(IPC.GROUP_PROJECT.MEMBERSHIP_CHANGED, listener);

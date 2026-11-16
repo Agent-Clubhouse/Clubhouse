@@ -16,6 +16,25 @@ export function projectsExplicitlyLinked(host: string, hostProject: string, mach
   return linkedProjectCopies(host, hostProject).some((p) => p.machine === machine && p.projectId === projectId);
 }
 
+type Satellite = ReturnType<typeof import('./annex-client').getSatellites>[number];
+
+/**
+ * What this computer can verify about one linked project copy: its name, and its
+ * snapshot's project and agent list when that snapshot is a connected, complete
+ * one from a network member. Anything less leaves the copy unknown, never absent.
+ * Agent eligibility and coverage both judge a copy by this one rule.
+ */
+export function verifyCopy(copy: NetworkProjectRef, satellites: readonly Satellite[], isMember: (machine: string) => boolean) {
+  const sat = satellites.find((s) => s.fingerprint.toLowerCase() === copy.machine);
+  const snapshot = sat?.snapshot;
+  const project = snapshot?.projects?.find((raw) => raw && typeof raw === 'object' && (raw as { id?: unknown }).id === copy.projectId) as { name?: string; displayName?: string; repoKey?: string } | undefined;
+  const name = `${project?.displayName || project?.name || copy.projectId} on ${sat?.alias || 'a linked computer'}`;
+  const verified = !!sat && isMember(copy.machine) && sat.state === 'connected' && !sat.snapshotUnavailable && !!snapshot && !!project
+    && !snapshot.snapshotTruncated?.omitted?.some((field) => field === 'agents' || field === 'projects')
+    && Array.isArray(snapshot.agents?.[copy.projectId]);
+  return { sat, snapshot, project, name, verified };
+}
+
 export interface LinkedAgents {
   copies: NetworkProjectRef[];
   agents: Array<ResolvedGroupProjectMember & { machine: string }>;
@@ -35,17 +54,12 @@ export async function linkedAgents(
   const satellites = getSatellites();
   const agents: LinkedAgents['agents'] = [], available: LinkedAgents['available'] = [], unknown: LinkedAgents['unknown'] = [];
   for (const copy of copies) {
-    const sat = satellites.find((s) => s.fingerprint.toLowerCase() === copy.machine);
-    const snapshot = sat?.snapshot;
-    const project = snapshot?.projects?.find((raw) => raw && typeof raw === 'object' && (raw as { id?: unknown }).id === copy.projectId) as { name?: string; displayName?: string } | undefined;
-    const name = `${project?.displayName || project?.name || copy.projectId} on ${sat?.alias || 'a linked computer'}`;
-    if (!isMember(copy.machine) || sat?.state !== 'connected' || sat.snapshotUnavailable || !snapshot || !project
-      || snapshot.snapshotTruncated?.omitted?.some((field) => field === 'agents' || field === 'projects')
-      || !Array.isArray(snapshot.agents?.[copy.projectId])) {
+    const { snapshot, name, verified } = verifyCopy(copy, satellites, isMember);
+    if (!verified || !snapshot) {
       unknown.push({ projectId: `${copy.machine}/${copy.projectId}`, name });
       continue;
     }
-    for (const raw of snapshot.agents[copy.projectId]) {
+    for (const raw of snapshot.agents![copy.projectId]) {
       if (!raw || typeof raw !== 'object') continue;
       const agent = raw as DurableAgentConfig;
       const kind = (raw as { kind?: unknown }).kind;

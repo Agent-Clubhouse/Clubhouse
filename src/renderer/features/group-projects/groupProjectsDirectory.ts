@@ -1,4 +1,4 @@
-import type { GroupProject } from '../../../shared/group-project-types';
+import type { GroupProject, GroupProjectCoverage } from '../../../shared/group-project-types';
 import type { GroupProjectsView } from './groupProjectsNavStore';
 
 /** The parts of a project the directory needs to name and match groups. */
@@ -48,20 +48,40 @@ export function isReplica(project: GroupProject): boolean {
 
 export const projectLabel = (project: DirectoryProject) => project.displayName || project.name;
 
+/** The main process's coverage read for each group, by group id. A group with no entry hasn't been checked yet. */
+export type CoverageById = ReadonlyMap<string, GroupProjectCoverage>;
+
 /**
- * Whether a group is verified to cover a project, from what this computer can
- * check: a project-scoped group this computer holds covers the project it names.
- * A copy of another computer's group names that computer's project id, which
- * means nothing here; matching it to a local project is by repository key in the
- * main process, and no renderer check exists yet.
- *
- * TODO(#3549): verified network coverage. Until then a copy is only ever
- * "not verified" (see COVERAGE_NOT_VERIFIED), never "covers" or "doesn't cover".
+ * Whether a group covers one of this computer's projects. A project-scoped group
+ * this computer holds covers the project it names. Anything else covers a project
+ * only through an explicit project link, which the main process reads (#3549); a
+ * repository match never counts. A copy of another computer's group with no link
+ * to the project is "no" only once its coverage was checked and this computer
+ * can tell; until then, or when it can't, it is "not-verified".
  */
-export function coverageOf(project: GroupProject, projectId: string): 'covers' | 'not-verified' | 'no' {
+export function coverageOf(project: GroupProject, projectId: string, coverage?: CoverageById): 'covers' | 'not-verified' | 'no' {
   if (scopeKind(project) !== 'project') return 'no';
-  if (isReplica(project)) return 'not-verified';
-  return project.scope?.level === 'project' && project.scope.projectId === projectId ? 'covers' : 'no';
+  if (!isReplica(project) && project.scope?.level === 'project') {
+    // A project group this computer holds covers the project it names; a local-reach one covers nothing else.
+    if (project.scope.projectId === projectId) return 'covers';
+    if (project.scope.reach === 'local') return 'no';
+  }
+  // Anything else is judged by its links. With no read yet, or a failed one, that is "not verified", never "no".
+  const view = coverage?.get(project.id);
+  if (view?.copies.some((c) => c.thisComputer && c.projectId === projectId && c.state === 'verified')) return 'covers';
+  return view && !view.localUnknown ? 'no' : 'not-verified';
+}
+
+/** "Covers Atlas, Atlas on Laptop." and, for copies this computer can't check, what isn't verified. Null when nothing is covered. */
+export function coverageLine(coverage: GroupProjectCoverage | undefined): string | null {
+  if (!coverage?.scoped) return null;
+  const covered = coverage.copies.filter((c) => c.state === 'verified').map((c) => c.name);
+  const unknown = coverage.copies.filter((c) => c.state === 'unknown').map((c) => c.name);
+  const parts: string[] = [];
+  if (covered.length) parts.push(`Covers ${covered.join(', ')}.`);
+  if (unknown.length) parts.push(`${COVERAGE_NOT_VERIFIED}: ${unknown.join(', ')}.`);
+  else if (coverage.localUnknown) parts.push(`${COVERAGE_NOT_VERIFIED}.`);
+  return parts.join(' ') || null;
 }
 
 const byText = (a: string, b: string) => a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' });
@@ -88,11 +108,12 @@ export function matchesQuery(project: GroupProject, projects: readonly Directory
 /**
  * Sections for the hub. All groups: one section per project, then app-wide, then
  * groups whose scope needs review. A project view: that project's groups, then
- * app-wide groups, then copies of other computers' project groups, which can't be
- * verified here. The view only filters; it never changes a group's scope.
+ * app-wide groups, then copies of other computers' project groups this computer
+ * can't verify. The view only filters; it never changes a group's scope.
  */
 export function buildDirectory(
   groups: readonly GroupProject[], projects: readonly DirectoryProject[], view: GroupProjectsView, query: string,
+  coverage?: CoverageById,
 ): Directory {
   const matching = groups.filter((g) => matchesQuery(g, projects, query));
   const sections: DirectorySection[] = [];
@@ -102,9 +123,9 @@ export function buildDirectory(
 
   if (view.kind === 'project') {
     const project = projects.find((p) => p.id === view.projectId);
-    const covering = matching.filter((g) => coverageOf(g, view.projectId) === 'covers');
+    const covering = matching.filter((g) => coverageOf(g, view.projectId, coverage) === 'covers');
     const appWide = matching.filter((g) => scopeKind(g) === 'app');
-    const notVerified = matching.filter((g) => coverageOf(g, view.projectId) === 'not-verified');
+    const notVerified = matching.filter((g) => coverageOf(g, view.projectId, coverage) === 'not-verified');
     add(`project:${view.projectId}`, project ? projectLabel(project) : 'This project', covering);
     add('app', APP_WIDE_HEADING, appWide);
     add('not-verified', 'Copies from other computers', notVerified, `${COVERAGE_NOT_VERIFIED}. These cover a project on the computer that hosts them.`);
@@ -132,7 +153,9 @@ export function buildDirectory(
   }).sort((a, b) => byText(a.heading, b.heading) || (a.id < b.id ? -1 : 1));
   for (const { id, heading, list } of headed) add(`project:${id}`, heading, list);
   for (const host of [...byHost.keys()].sort(byText)) {
-    add(`host:${host}`, `Projects on ${host}`, byHost.get(host)!, `${COVERAGE_NOT_VERIFIED}.`);
+    const list = byHost.get(host)!;
+    // Each row says what it covers. The section only says so while a copy's coverage hasn't been read.
+    add(`host:${host}`, `Projects on ${host}`, list, list.some((g) => !coverage?.has(g.id)) ? `${COVERAGE_NOT_VERIFIED}.` : undefined);
   }
   add('app', APP_WIDE_HEADING, appWide);
   add('review', NEEDS_REVIEW_HEADING, review, 'Legacy groups with no scope. Their members are kept, and no scope is inferred.');

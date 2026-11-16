@@ -248,9 +248,40 @@ export interface GroupProjectRolesView {
 
 /** Who would auto-join a group project with a given scope, shown before creating it (#3357). */
 export interface AutoJoinPreview {
+  /** Which project copies the group would cover: the same read the directory shows (#3549). */
+  coverage: GroupProjectCoverage;
   wouldJoin: ResolvedGroupProjectMember[];
   /** Projects in scope whose agents couldn't be read: their agents would join too once readable. */
   unreadableProjects: Array<{ projectId: string; name: string }>;
+}
+
+/** One project copy a group project covers through an explicit project link (or the group's own project). */
+export interface CoverageCopy {
+  machine: string;
+  projectId: string;
+  /** "Atlas", or "Atlas on Laptop" for a copy on another computer. */
+  name: string;
+  thisComputer: boolean;
+  /** Unknown when this computer can't verify the copy now (offline, snapshot incomplete): never "not covered". */
+  state: 'verified' | 'unknown';
+}
+
+/**
+ * Which project copies a group project covers, from explicit project links only.
+ * A repository match never adds a copy: it is listed under `repositoryMatches`
+ * so the person can be offered a link, and nothing else.
+ */
+export interface GroupProjectCoverage {
+  groupProjectId: string;
+  /** Only a project-scoped group covers project copies. */
+  scoped: boolean;
+  copies: CoverageCopy[];
+  /** A copy of another computer's group: this computer's projects can't be ruled in or out right now. */
+  localUnknown: boolean;
+  /** True when every copy is verified and nothing about this computer's projects is unknown. */
+  complete: boolean;
+  /** This computer's projects with the group project's repository but no link. Offered a link, never covered. */
+  repositoryMatches: Array<{ projectId: string; name: string }>;
 }
 
 /** What the directory shows about one group project's membership. */

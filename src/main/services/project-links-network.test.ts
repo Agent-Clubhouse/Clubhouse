@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import { ProjectLinksStore } from './project-links-store';
-import { receiveProjectLinks, startProjectLinksNetwork, projectLinksCapabilities, type ProjectLinksNetworkOptions } from './project-links-network';
+import { receiveProjectLinks, startProjectLinksNetwork, projectLinksCapabilities, projectLinksSyncedWith, type ProjectLinksNetworkOptions } from './project-links-network';
 import { PROJECT_LINKS_CAPABILITIES_PATH, PROJECT_LINKS_SYNC_PATH, mergeProjectLinkRecords, type ProjectLinkRecord } from '../../shared/project-links';
 const A = Array(16).fill('aa').join(':'), B = Array(16).fill('bb').join(':');
 const remote = `remote||${B}||copy`;
@@ -35,6 +35,38 @@ describe('project links pinned-member REST replication', () => {
       expect(f.post.mock.calls.filter((c) => c[1] === PROJECT_LINKS_CAPABILITIES_PATH)).toHaveLength(2);
       await local.apply({ type: 'link', a: 'site', b: remote });
       await vi.waitFor(() => expect(peer.groups()).toHaveLength(1));
+    } finally { stop(); }
+  });
+  it('reports a machine synced only after a full push and pull, and not after a reconnect, failure, repin or removal', async () => {
+    const local = store(), peer = store(B);
+    await local.migrate(); await peer.migrate();
+    const f = network(local, peer), stop = startProjectLinksNetwork(f.options);
+    try {
+      await vi.waitFor(() => expect(projectLinksSyncedWith(B)).toBe(true));
+      expect(projectLinksSyncedWith(B.toUpperCase())).toBe(true);
+      // A reconnect clears it until the new connection has synced.
+      let release!: (r: { status: number; body: unknown }) => void;
+      f.post.mockImplementationOnce(() => new Promise((resolve) => { release = resolve; }));
+      f.reconnect();
+      expect(projectLinksSyncedWith(B)).toBe(false);
+      await vi.waitFor(() => expect(release).toBeTypeOf('function'));
+      release({ status: 500, body: {} });
+      await new Promise((resolve) => setTimeout(resolve, 20));
+      expect(projectLinksSyncedWith(B)).toBe(false);
+      f.repin();
+      await vi.waitFor(() => expect(projectLinksSyncedWith(B)).toBe(true));
+      f.repin();
+      expect(projectLinksSyncedWith(B)).toBe(false);
+    } finally { stop(); }
+    expect(projectLinksSyncedWith(B)).toBe(false);
+  });
+  it('never reports an older peer without project link sync as synced', async () => {
+    const f = network(store(), store(B));
+    f.post.mockImplementation(async () => ({ status: 404, body: {} }));
+    const stop = startProjectLinksNetwork(f.options);
+    try {
+      await vi.waitFor(() => expect(f.post).toHaveBeenCalledTimes(1));
+      expect(projectLinksSyncedWith(B)).toBe(false);
     } finally { stop(); }
   });
   it('skips older peers after a capability probe and probes again on reconnect', async () => {

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import type { GroupProject } from '../../../shared/group-project-types';
+import type { GroupProject, GroupProjectCoverage } from '../../../shared/group-project-types';
 import {
-  buildDirectory, coverageOf, COVERAGE_NOT_VERIFIED, matchesQuery, scopeKind, scopeReachLine, type DirectoryProject,
+  buildDirectory, coverageLine, coverageOf, COVERAGE_NOT_VERIFIED, matchesQuery, scopeKind, scopeReachLine, type DirectoryProject,
 } from './groupProjectsDirectory';
 
 const group = (id: string, name: string, over: Partial<GroupProject> = {}): GroupProject => ({
@@ -147,5 +147,70 @@ describe('scopeReachLine', () => {
     expect(scopeReachLine(atlasLocal, projects)).toBe('Scope: Atlas. Reach: This computer.');
     expect(scopeReachLine(replica, projects)).toBe('Scope: a project on Studio Mac. Reach: Network.');
     expect(scopeReachLine(legacy, projects)).toBe('Scope unresolved. Existing members kept.');
+  });
+});
+
+const cov = (over: Partial<GroupProjectCoverage> = {}): GroupProjectCoverage => ({
+  groupProjectId: 'g7', scoped: true, copies: [], localUnknown: false, complete: true, repositoryMatches: [], ...over,
+});
+const here = (projectId: string, name: string) => ({ machine: 'self', projectId, name, thisComputer: true, state: 'verified' as const });
+
+describe('verified network coverage (#3549)', () => {
+  it('a copy of another computer\'s group covers a project through a link, and a project it is not linked to is "no"', () => {
+    const linked = new Map([['g7', cov({ copies: [here('p-atlas', 'Atlas')] })]]);
+    expect(coverageOf(replica, 'p-atlas', linked)).toBe('covers');
+    expect(coverageOf(replica, 'p-beacon', linked)).toBe('no');
+  });
+
+  it('is "not verified", never "no", while coverage is unread or this computer can\'t tell', () => {
+    expect(coverageOf(replica, 'p-atlas', new Map())).toBe('not-verified');
+    expect(coverageOf(replica, 'p-atlas', new Map([['g7', cov({ localUnknown: true, complete: false })]]))).toBe('not-verified');
+  });
+
+  it('is "not verified", never "no", for a network group that is not this project\'s until its coverage is read', () => {
+    expect(coverageOf(atlasNetwork, 'p-beacon')).toBe('not-verified');
+    expect(coverageOf(atlasNetwork, 'p-beacon', new Map())).toBe('not-verified');
+    expect(coverageOf(atlasLocal, 'p-beacon')).toBe('no');
+  });
+
+  it('a repository match never covers', () => {
+    const matched = new Map([['g7', cov({ repositoryMatches: [{ projectId: 'p-atlas', name: 'Atlas' }] })]]);
+    expect(coverageOf(replica, 'p-atlas', matched)).toBe('no');
+  });
+
+  it('a hosted network group also covers a project its links reach on this computer, but never an unlinked one', () => {
+    const linked = new Map([['g2', cov({ groupProjectId: 'g2', copies: [here('p-atlas', 'Atlas')] })]]);
+    expect(coverageOf(atlasNetwork, 'p-atlas', linked)).toBe('covers');
+    expect(coverageOf(atlasNetwork, 'p-beacon', linked)).toBe('no');
+  });
+
+  it('puts a linked copy under the project in the project view, and an unverifiable one under copies from other computers', () => {
+    const linked = new Map([['g7', cov({ copies: [here('p-atlas', 'Atlas')] })]]);
+    const covered = buildDirectory(all, projects, { kind: 'project', projectId: 'p-atlas' }, '', linked);
+    expect(covered.sections.map((s) => s.heading)).toEqual(['Atlas', 'App-wide']);
+    expect(covered.sections[0].groups.map((g) => g.id)).toEqual(['g7', 'g1', 'g2']);
+    const unknown = buildDirectory(all, projects, { kind: 'project', projectId: 'p-atlas' }, '', new Map([['g7', cov({ localUnknown: true, complete: false })]]));
+    expect(unknown.sections.map((s) => s.heading)).toEqual(['Atlas', 'App-wide', 'Copies from other computers']);
+  });
+
+  it('leaves a verified not-covering copy out of the project view and counts it as hidden', () => {
+    const dir = buildDirectory(all, projects, { kind: 'project', projectId: 'p-atlas' }, '', new Map([['g7', cov()]]));
+    expect(dir.sections.flatMap((s) => s.groups.map((g) => g.id))).not.toContain('g7');
+    expect(dir.hiddenByView).toBe(3);
+  });
+
+  it('notes "not verified" on a host section only while a copy\'s coverage is unread', () => {
+    expect(buildDirectory(all, projects, { kind: 'all' }, '').sections[2].note).toContain(COVERAGE_NOT_VERIFIED);
+    expect(buildDirectory(all, projects, { kind: 'all' }, '', new Map([['g7', cov()]])).sections[2].note).toBeUndefined();
+  });
+
+  it('says what a group covers, and what is not verified', () => {
+    expect(coverageLine(cov({ copies: [here('p-atlas', 'Atlas'), { machine: 'b', projectId: 'r', name: 'Atlas on Laptop', thisComputer: false, state: 'verified' }] })))
+      .toBe('Covers Atlas, Atlas on Laptop.');
+    expect(coverageLine(cov({ copies: [here('p-atlas', 'Atlas'), { machine: 'b', projectId: 'r', name: 'Atlas on Laptop', thisComputer: false, state: 'unknown' }], complete: false })))
+      .toBe(`Covers Atlas. ${COVERAGE_NOT_VERIFIED}: Atlas on Laptop.`);
+    expect(coverageLine(cov({ localUnknown: true, complete: false }))).toBe(`${COVERAGE_NOT_VERIFIED}.`);
+    expect(coverageLine(cov({ scoped: false }))).toBeNull();
+    expect(coverageLine(undefined)).toBeNull();
   });
 });
