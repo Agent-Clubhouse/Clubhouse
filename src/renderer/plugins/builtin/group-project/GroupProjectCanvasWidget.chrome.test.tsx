@@ -1,6 +1,6 @@
 import React from 'react';
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { render, screen, waitFor, within } from '@testing-library/react';
+import { act, render, renderHook, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import type { Agent } from '../../../../shared/types';
 
@@ -27,7 +27,7 @@ let projectHostMachine: string | null = null;
 
 vi.mock('./useGroupProjectContext', () => ({
   useGroupProjectContext: () => ({
-    isRemote: false,
+    isRemote: remoteProject,
     satelliteId: null,
     project: projectAvailable ? { id: 'gp1', name: 'Launch', description: 'Ship the launch', instructions: 'Be brief', metadata: { admins }, scope: projectScope, host: { machine: projectHostMachine } } : undefined,
     members: [
@@ -64,10 +64,14 @@ vi.mock('../../PluginDialog', () => ({
   showApprovalDialog: () => ({ promise: Promise.resolve(null), cleanup: () => {} }),
 }));
 
-import { GroupProjectCanvasWidget, POLLING_HINT } from './GroupProjectCanvasWidget';
+import { GroupProjectCanvasWidget } from './GroupProjectCanvasWidget';
+import { POLLING_HINT } from '../../../features/group-projects/board/GroupProjectBoardParts';
 import { useAgentStore } from '../../../stores/agentStore';
 import { useGroupProjectStore } from '../../../stores/groupProjectStore';
 import { useAnnexStore } from '../../../stores/annexStore';
+import { useUIStore } from '../../../stores/uiStore';
+import { useGroupProjectsNavStore } from '../../../features/group-projects/groupProjectsNavStore';
+import { useGroupWorkspaceBack } from '../../../features/group-projects/groupWorkspaceSource';
 import { DOT_LABEL, type AgentDot } from '../../../features/agents/agent-status';
 
 const tapir: Agent = { id: 'a1', projectId: 'p1', name: 'curious-tapir', kind: 'durable', status: 'running', color: 'teal' };
@@ -311,5 +315,39 @@ describe('group project card (expanded)', () => {
     renderWidget();
     expect(screen.getByRole('switch', { name: 'Polling' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Retention settings' })).toHaveAttribute('aria-pressed', 'false');
+  });
+});
+
+describe('Open group project from the canvas card (#3545)', () => {
+  beforeEach(() => {
+    useGroupProjectsNavStore.setState({ route: null });
+    useUIStore.setState({ explorerTab: 'plugin:canvas', dispatcherOpen: false });
+  });
+
+  it.each([300, 900])('opens the workspace on its Board and names the canvas as the way back, at %ipx', async (width) => {
+    widgetWidth = width;
+    renderWidget();
+    await userEvent.click(await screen.findByRole('button', { name: 'Open group project' }));
+    expect(useGroupProjectsNavStore.getState().route).toEqual({ groupId: 'gp1' });
+    const { result } = renderHook(() => useGroupWorkspaceBack());
+    expect(result.current.source?.label).toBe('Canvas');
+    act(() => result.current.back());
+    expect(useUIStore.getState().explorerTab).toBe('plugin:canvas');
+    expect(useGroupProjectsNavStore.getState().route).toBeNull();
+  });
+
+  it('is not offered on a card showing another computer\'s group project', async () => {
+    remoteProject = true;
+    renderWidget({ groupProjectId: 'gp1', projectId: 'remote||sat||p1' });
+    await screen.findByRole('switch', { name: 'Polling' });
+    expect(screen.queryByRole('button', { name: 'Open group project' })).toBeNull();
+  });
+
+  it('is not offered in a popout, which has no main-window route to hand off to', async () => {
+    const popout = vi.spyOn(window.clubhouse.window, 'isPopout').mockReturnValue(true);
+    renderWidget();
+    await screen.findByRole('switch', { name: 'Polling' });
+    expect(screen.queryByRole('button', { name: 'Open group project' })).toBeNull();
+    popout.mockRestore();
   });
 });

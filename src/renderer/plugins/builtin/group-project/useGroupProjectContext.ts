@@ -110,7 +110,8 @@ export function useGroupProjectContext(
   groupProjectId: string | undefined,
   isRemote: boolean,
   satelliteId: string | null,
-  annex: AnnexAPI,
+  /** The satellite proxy a remote card talks through; the group workspace is always local and passes null. */
+  annex: AnnexAPI | null,
 ): GroupProjectContextValue {
   // --- Local store selectors ---
   const localProjects = useGroupProjectStore((s) => s.projects);
@@ -177,7 +178,7 @@ export function useGroupProjectContext(
 
   // --- Mutations ---
   const update = useCallback(async (gpId: string, fields: { name?: string; description?: string; instructions?: string; metadata?: Record<string, unknown> }) => {
-    if (isRemote && satelliteId) {
+    if (isRemote && satelliteId && annex) {
       const bareId = stripRemotePrefix(gpId);
       await annex.gpUpdate(satelliteId, bareId, fields);
       // Optimistically update local remote GP state so the UI reflects the change
@@ -200,7 +201,7 @@ export function useGroupProjectContext(
   }, [isRemote, satelliteId, localUpdate, annex]);
 
   const setPolling = useCallback(async (gpId: string, enabled: boolean) => {
-    if (isRemote && satelliteId) {
+    if (isRemote && satelliteId && annex) {
       const bareId = stripRemotePrefix(gpId);
       await annex.gpSetPolling(satelliteId, bareId, enabled);
       // Optimistically reflect the new setting so the UI updates immediately rather
@@ -218,7 +219,7 @@ export function useGroupProjectContext(
 
   // --- Bulletin reads ---
   const fetchDigest = useCallback(async (gpId: string, since?: DigestSince): Promise<TopicDigest[]> => {
-    if (isRemote && satelliteId) {
+    if (isRemote && satelliteId && annex) {
       // Carries the per-channel map too; a satellite that predates it ignores
       // the param and answers with no cutoff rather than erroring.
       return await annex.gpBulletinDigest(satelliteId, stripRemotePrefix(gpId), since) as TopicDigest[];
@@ -227,21 +228,21 @@ export function useGroupProjectContext(
   }, [isRemote, satelliteId, annex]);
 
   const fetchTopicMessages = useCallback(async (gpId: string, topic: string, since?: string, limit?: number): Promise<BulletinMessage[]> => {
-    if (isRemote && satelliteId) {
+    if (isRemote && satelliteId && annex) {
       return await annex.gpBulletinTopic(satelliteId, stripRemotePrefix(gpId), topic, since, limit) as BulletinMessage[];
     }
     return await window.clubhouse.groupProject.getTopicMessages(gpId, topic, since, limit) as BulletinMessage[];
   }, [isRemote, satelliteId, annex]);
 
   const fetchAllMessages = useCallback(async (gpId: string, since?: string, limit?: number): Promise<BulletinMessage[]> => {
-    if (isRemote && satelliteId) {
+    if (isRemote && satelliteId && annex) {
       return await annex.gpBulletinAll(satelliteId, stripRemotePrefix(gpId), since, limit) as BulletinMessage[];
     }
     return await window.clubhouse.groupProject.getAllMessages(gpId, since, limit) as BulletinMessage[];
   }, [isRemote, satelliteId, annex]);
 
   const postBulletinMessage = useCallback(async (gpId: string, topic: string, body: string): Promise<void> => {
-    if (isRemote && satelliteId) {
+    if (isRemote && satelliteId && annex) {
       await annex.gpBulletinPost(satelliteId, stripRemotePrefix(gpId), 'user', topic, body);
     } else {
       await window.clubhouse.groupProject.postBulletinMessage(gpId, topic, body);
@@ -250,7 +251,7 @@ export function useGroupProjectContext(
 
   // --- PTY injection: route through main process for proper chunked paste ---
   const injectMessage = useCallback(async (agentId: string, message: string): Promise<void> => {
-    if (isRemote && satelliteId) {
+    if (isRemote && satelliteId && annex) {
       await annex.gpInjectMessage(satelliteId, agentId, message);
     } else {
       await window.clubhouse.groupProject.injectMessage(agentId, message);
@@ -259,7 +260,7 @@ export function useGroupProjectContext(
 
   // --- Delete operations ---
   const deleteMessage = useCallback(async (gpId: string, topic: string, messageId: string): Promise<boolean> => {
-    if (isRemote && satelliteId) {
+    if (isRemote && satelliteId && annex) {
       const result = await annex.gpDeleteMessage(satelliteId, stripRemotePrefix(gpId), topic, messageId) as unknown;
       return (result as { deleted: boolean })?.deleted ?? false;
     }
@@ -267,7 +268,7 @@ export function useGroupProjectContext(
   }, [isRemote, satelliteId, annex]);
 
   const deleteTopic = useCallback(async (gpId: string, topic: string): Promise<boolean> => {
-    if (isRemote && satelliteId) {
+    if (isRemote && satelliteId && annex) {
       const result = await annex.gpDeleteTopic(satelliteId, stripRemotePrefix(gpId), topic) as unknown;
       return (result as { deleted: boolean })?.deleted ?? false;
     }
@@ -275,7 +276,7 @@ export function useGroupProjectContext(
   }, [isRemote, satelliteId, annex]);
 
   const setTopicProtection = useCallback(async (gpId: string, topic: string, isProtected: boolean): Promise<boolean> => {
-    if (isRemote && satelliteId) {
+    if (isRemote && satelliteId && annex) {
       await annex.gpSetTopicProtection(satelliteId, stripRemotePrefix(gpId), topic, isProtected);
       return true;
     }

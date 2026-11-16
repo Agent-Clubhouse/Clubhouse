@@ -5,6 +5,7 @@ import { createMockAPI } from '../../plugins/testing';
 import { useGroupProjectContext } from '../../plugins/builtin/group-project/useGroupProjectContext';
 import { initGroupProjectListener, useGroupProjectStore } from '../../stores/groupProjectStore';
 import { useProjectStore } from '../../stores/projectStore';
+import { useGroupProjectsNavStore } from '../group-projects/groupProjectsNavStore';
 import { GroupProjectsSettingsView } from './GroupProjectsSettingsView';
 
 const alpha: GroupProject = {
@@ -21,28 +22,45 @@ function deferred<T>() {
   return { promise, resolve, reject };
 }
 
-function select(name = 'Alpha') {
+/** Open a group project from the directory, then its section: opening a row lands on Board. */
+function select(name = 'Alpha', section: string | null = 'Details') {
+  const back = screen.queryByRole('button', { name: /^Back to/ });
+  if (back) fireEvent.click(back);
   fireEvent.click(screen.getByRole('button', { name }));
+  if (section) fireEvent.click(screen.getByRole('button', { name: section }));
 }
 
 describe('GroupProjectsSettingsView', () => {
   beforeEach(() => {
-    useGroupProjectStore.setState({ projects: [], loaded: false, loadError: null, directorySelection: null });
+    useGroupProjectStore.setState({ projects: [], loaded: false, loadError: null });
+    useGroupProjectsNavStore.setState({ route: null });
     useProjectStore.setState({ activeProjectId: 'selected-project' });
     vi.spyOn(window.clubhouse.groupProject, 'list').mockResolvedValue([alpha, beta]);
   });
 
-  it('opens a group project selected by a directory navigation request', async () => {
-    useGroupProjectStore.getState().selectDirectoryProject('gp-beta');
+  it('opens a group project named by a route in its workspace, on the section the route names', async () => {
+    useGroupProjectsNavStore.setState({ route: { groupId: 'gp-beta', section: 'details' } });
     render(<GroupProjectsSettingsView />);
     expect(await screen.findByLabelText('Name')).toHaveValue('Beta');
+  });
+
+  it('lands on Board when a row or a route names no section', async () => {
+    render(<GroupProjectsSettingsView />);
+    await screen.findByRole('list');
+    select('Alpha', null);
+    expect(await screen.findByTestId('group-project-section-board')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Board' })).toHaveAttribute('aria-current', 'page');
+    expect(screen.getByRole('button', { name: 'Back to Group Projects' })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Back to Group Projects' }));
+    expect(await screen.findByRole('list', { name: 'Local group projects' })).toBeInTheDocument();
+    expect(useGroupProjectsNavStore.getState().route).toBeNull();
   });
 
   it('offers the selected polling project a switch to notices', async () => {
     const setPolling = vi.spyOn(window.clubhouse.groupProject, 'setPolling').mockResolvedValue(undefined);
     render(<GroupProjectsSettingsView />);
     await screen.findByRole('list');
-    select('Beta');
+    select('Beta', 'Delivery');
     fireEvent.click(screen.getByRole('button', { name: 'Switch to notices' }));
     await waitFor(() => expect(setPolling).toHaveBeenCalledWith('gp-beta', false));
   });
@@ -51,7 +69,7 @@ describe('GroupProjectsSettingsView', () => {
     const setOwnGrant = vi.spyOn(window.clubhouse.groupProject, 'setOwnGrant');
     render(<GroupProjectsSettingsView />);
     await screen.findByRole('list');
-    select('Beta');
+    select('Beta', 'Permissions');
     const wake = await screen.findByLabelText('Wake sleeping members');
     fireEvent.change(wake, { target: { value: 'allow' } });
     await waitFor(() => expect(setOwnGrant).toHaveBeenCalledWith('gp-beta', 'wake', 'allow'));
@@ -92,12 +110,14 @@ describe('GroupProjectsSettingsView', () => {
     expect(await screen.findAllByText('0 members')).toHaveLength(2);
     expect(screen.getAllByText('Host: This computer')).toHaveLength(2);
     expect(screen.getAllByText('Polling on')).toHaveLength(2);
+    expect(screen.getAllByText(/Scope unresolved: legacy or missing scope/)).toHaveLength(1);
+    expect(screen.getByText(/including network copies/)).toBeInTheDocument();
+    // Network reach is disabled, with its reason, in creation (#3355) and then in the scope editor.
+    await waitFor(() => expect(screen.getAllByText(/Network reach needs Annex Network/)).toHaveLength(1));
     select('Beta');
     expect(screen.getByLabelText('Name')).toHaveValue('Beta');
-    expect(screen.getAllByText(/Scope unresolved: legacy or missing scope/)).toHaveLength(2);
-    expect(screen.getByText(/including network copies/)).toBeInTheDocument();
-    // Network reach is disabled, with its reason, in both creation and the scope editor (#3355).
-    await waitFor(() => expect(screen.getAllByText(/Network reach needs Annex Network/)).toHaveLength(2));
+    expect(screen.getAllByText(/Scope unresolved: legacy or missing scope/).length).toBeGreaterThan(0);
+    await waitFor(() => expect(screen.getAllByText(/Network reach needs Annex Network/)).toHaveLength(1));
   });
 
   it('shows loading and empty states, refuses blank creation, and preserves a failed create draft', async () => {
@@ -365,7 +385,12 @@ describe('GroupProjectsSettingsView', () => {
       await screen.findByRole('list', { name: 'Local group projects' });
       select('Launch');
       expect(screen.getByRole('list', { name: 'Changes the host refused' })).toHaveTextContent('A post by builder@Studio: This group project was deleted.');
+      // Only the host can change the scope or delete: this computer holds a copy, and says so.
+      select('Launch');
       expect(screen.queryByRole('region', { name: 'Scope' })).not.toBeInTheDocument();
+      expect(screen.getByRole('button', { name: 'Change scope' })).toBeDisabled();
+      expect(screen.getByRole('button', { name: 'Delete group project' })).toBeDisabled();
+      expect(screen.getAllByText(/Only Desk can/).length).toBe(2);
       fireEvent.click(screen.getByRole('button', { name: 'Clear this list' }));
       await waitFor(() => expect(dismiss).toHaveBeenCalledWith('gp-copy'));
       await waitFor(() => expect(screen.queryByRole('list', { name: 'Changes the host refused' })).not.toBeInTheDocument());

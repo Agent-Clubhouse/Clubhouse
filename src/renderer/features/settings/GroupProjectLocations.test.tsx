@@ -10,13 +10,12 @@ beforeEach(() => {
   vi.resetAllMocks();
   nav.lookup.mockResolvedValue({ hits: [hit] });
   nav.open.mockResolvedValue(undefined);
-  vi.spyOn(window.clubhouse.groupProject, 'getAllMessages').mockResolvedValue([{ id: 'msg', sender: 'Ada', topic: 'plans', body: 'Hello', timestamp: 'now' }]);
 });
 
 describe('group project locations', () => {
-  it('shows board messages and opens a selected canvas', async () => {
+  it('opens a selected canvas, and says a canvas is optional', async () => {
     render(<GroupProjectLocations id="gp" />);
-    expect(await screen.findByText('Hello')).toBeInTheDocument();
+    expect(await screen.findByText(/Removing a canvas card keeps this group project and its members/)).toBeInTheDocument();
     fireEvent.click(await screen.findByRole('button', { name: 'Home / Canvas One' }));
     await waitFor(() => expect(nav.open).toHaveBeenCalledWith('group-project', 'gp', hit, expect.any(AbortSignal)));
   });
@@ -25,6 +24,12 @@ describe('group project locations', () => {
     nav.lookup.mockRejectedValue(new Error('Canvas lookup is incomplete'));
     render(<GroupProjectLocations id="gp" />);
     expect(await screen.findByRole('alert')).toHaveTextContent('Canvas lookup is incomplete');
-    expect(screen.queryByText('This group project is not on a canvas.')).not.toBeInTheDocument();
+    expect(screen.queryByText(/This group project is not on a canvas/)).not.toBeInTheDocument();
+  });
+
+  it('says the group project works without a canvas when none holds it', async () => {
+    nav.lookup.mockResolvedValue({ hits: [] });
+    render(<GroupProjectLocations id="gp" />);
+    expect(await screen.findByText('This group project is not on a canvas. It works without one.')).toBeInTheDocument();
   });
 });

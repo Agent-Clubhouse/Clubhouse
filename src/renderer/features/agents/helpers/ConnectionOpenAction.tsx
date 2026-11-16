@@ -2,8 +2,8 @@ import { useEffect, useId, useRef, useState } from 'react';
 import { Modal } from '../../../components/Modal';
 import type { McpBindingEntry } from '../../../stores/mcpBindingStore';
 import { usePluginStore } from '../../../plugins/plugin-store';
-import { useGroupProjectStore } from '../../../stores/groupProjectStore';
-import { useUIStore } from '../../../stores/uiStore';
+import { currentViewSource, openGroupWorkspaceFrom } from '../../group-projects/groupWorkspaceSource';
+import { openAgent } from './orchestration-hooks';
 import {
   beginConnectionNavigationRequest, jumpToConnectionCanvas, lookupConnectionCanvases, openConnectionAgent, openConnectionPlugin,
   pluginNavigationReason, type ConnectionCanvasHit,
@@ -11,8 +11,10 @@ import {
 
 type State = { kind: 'idle' | 'loading' } | { kind: 'error'; message: string } | { kind: 'choose'; hits: ConnectionCanvasHit[] };
 
-export function ConnectionOpenAction({ targetId, targetKind, name, projectId }: {
+export function ConnectionOpenAction({ targetId, targetKind, name, projectId, sourceAgent }: {
   targetId: string; targetKind: McpBindingEntry['targetKind'] | 'plugin'; name: string; projectId: string;
+  /** The agent whose Connections this is: a group project's workspace says Back to it, and Back returns here. */
+  sourceAgent?: { id: string; name: string; projectId: string };
 }) {
   const [state, setState] = useState<State>({ kind: 'idle' });
   const request = useRef<AbortController | null>(null);
@@ -40,13 +42,10 @@ export function ConnectionOpenAction({ targetId, targetKind, name, projectId }: 
       } else if (targetKind === 'plugin') {
         openConnectionPlugin(targetId, projectId);
       } else if (targetKind === 'group-project') {
-        const ui = useUIStore.getState();
-        ui.setActiveHost(null);
-        ui.setDispatcherOpen(false);
-        useGroupProjectStore.getState().selectDirectoryProject(targetId);
-        ui.setSettingsContext('app');
-        ui.setSettingsSubPage('group-projects');
-        if (ui.explorerTab !== 'settings') ui.toggleSettings();
+        // The group project's workspace, Board first. Back returns to the agent whose Connections this is.
+        openGroupWorkspaceFrom({ groupId: targetId }, sourceAgent
+          ? { label: sourceAgent.name, restore: () => openAgent(sourceAgent.projectId, sourceAgent.id) }
+          : currentViewSource('where you were'));
       } else {
         const { hits, index } = await lookupConnectionCanvases(targetKind, targetId, controller.signal);
         if (!hits.length) {
@@ -71,10 +70,10 @@ export function ConnectionOpenAction({ targetId, targetKind, name, projectId }: 
     <>
       <button type="button" disabled={!!unsupported || state.kind === 'loading'} onClick={() => { void open(); }}
         aria-describedby={descriptionId} aria-busy={state.kind === 'loading'}
-        title={unsupported ?? (targetKind === 'group-project' ? `Open ${name} in directory` : `Open ${name}`)}
+        title={unsupported ?? `Open ${name}`}
         className="text-xs text-ctp-accent hover:underline cursor-pointer disabled:text-ctp-overlay1 disabled:no-underline disabled:cursor-not-allowed"
         data-testid="connection-open">
-        {targetKind === 'group-project' ? 'Open in directory' : 'Open'}
+        {targetKind === 'group-project' ? 'Open group project' : 'Open'}
       </button>
       <span id={descriptionId} className="sr-only">{unsupported ?? `Open target ${name} (${targetId}), without editing or removing the connection.`}</span>
       <Modal open={state.kind === 'choose' || state.kind === 'error'} onClose={close}

@@ -28,6 +28,7 @@ test('group project lead and admin grants persist independently', async () => {
     await app.window.getByLabel('New group project name').fill('Grant fixture');
     await app.window.getByRole('button', { name: 'Create group project' }).click();
     await app.window.getByRole('button', { name: 'Grant fixture', exact: true }).click();
+    await app.window.getByRole('button', { name: 'Permissions', exact: true }).click();
     const lead = app.window.getByLabel('Lead for dev');
     const admin = app.window.getByLabel('Admin for dev');
     await expect(lead).toHaveValue('off');
@@ -42,6 +43,7 @@ test('group project lead and admin grants persist independently', async () => {
     await app.window.getByTestId('nav-settings').click();
     await app.window.getByTestId('settings-nav-app-group-projects').click();
     await app.window.getByRole('button', { name: 'Grant fixture', exact: true }).click();
+    await app.window.getByRole('button', { name: 'Permissions', exact: true }).click();
     await expect(app.window.getByLabel('Lead for dev')).toHaveValue('allow');
     await expect(app.window.getByLabel('Admin for dev')).toHaveValue('ask');
   } finally {

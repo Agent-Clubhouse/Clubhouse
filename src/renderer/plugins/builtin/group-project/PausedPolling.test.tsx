@@ -1,6 +1,6 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest';
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
-import { PausedPolling } from './GroupProjectCanvasWidget';
+import { PausedPolling } from '../../../features/group-projects/board/GroupProjectBoardParts';
 
 let changed: (() => void) | null;
 
