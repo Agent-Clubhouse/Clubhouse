@@ -264,6 +264,23 @@ describe('Annex Network membership (#3061)', () => {
       expect(viewOf()).toMatchObject({ hosts: ['192.168.1.5'], port: 9443 });
     });
 
+    it.each([3, 5])('in a forward-only mesh of %i computers, no member record carries anyone\'s local forward', (machines) => {
+      const others = Array.from({ length: machines - 1 }, (_, i) => fp((0x40 + i).toString(16)));
+      peers.clear();
+      others.forEach((f, i) => peers.set(f.toLowerCase(), memberPeer(f, (0x40 + i).toString(16), `Target ${i + 1}`, {
+        knownHosts: ['127.0.0.1'], hostPorts: { '127.0.0.1': 7501 + i }, mainPort: 7501 + i,
+        typedHost: `127.0.0.1:${7501 + i}`, privateHosts: ['127.0.0.1'],
+      })));
+      const v = membership.currentView();
+      expect(v.members).toHaveLength(machines);
+      for (const m of v.members.filter((x) => others.includes(x.fingerprint))) {
+        expect(m.hosts).toEqual([]);
+        expect(m.port).toBeUndefined();
+      }
+      const wire = JSON.stringify(v);
+      for (let i = 0; i < machines - 1; i++) expect(wire).not.toContain(String(7501 + i));
+    });
+
     it('merges a member record from an older build, which has hosts and a port', () => {
       listener!(A, view([member(A, '0a', 'Studio'), member(N, '0e', 'Old Mac', { hosts: ['10.0.0.30'], port: 9443 })]));
       expect(peers.get(N.toLowerCase())).toMatchObject({ knownHosts: ['10.0.0.30'], mainPort: 9443 });

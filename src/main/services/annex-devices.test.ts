@@ -305,6 +305,23 @@ describe('annex device list', () => {
       expect(list({ ...sources, now: Date.now() }).reach?.inbound.state).toBe('unknown');
     });
 
+    it.each([3, 5])('keeps each direction of each computer separate in a mesh of %i', (machines) => {
+      const others = Array.from({ length: machines - 1 }, (_, i) => `fp-${i}`);
+      const peers = others.map((f, i) => studio({ fingerprint: f, alias: `Target ${i + 1}` }));
+      // Every other computer: this machine reaches the even ones, and the first half reach this machine.
+      const satellites = others.map((f, i) => satellite({ fingerprint: f, id: f, state: i % 2 === 0 ? 'connected' : 'disconnected',
+        ...(i % 2 === 0 ? {} : { problem: describeAnnexProblem('refused', `Target ${i + 1}`, { host: '127.0.0.1' }) }) }));
+      const inbound = new Set(others.filter((_, i) => i < (machines - 1) / 2));
+      const build = () => buildDeviceList({ ...empty, peers, satellites, connected: inbound, serverOn: true, ownPort: 7443, reach, now: Date.now() });
+      build();
+      vi.advanceTimersByTime(REACH_SETTLE_MS);
+      const devices = new Map(build().map((d) => [d.fingerprint, d.reach!]));
+      others.forEach((f, i) => {
+        expect(devices.get(f)!.outbound.state).toBe(i % 2 === 0 ? 'up' : 'down');
+        expect(devices.get(f)!.inbound.state).toBe(i < (machines - 1) / 2 ? 'up' : 'down');
+      });
+    });
+
     it('lists a held address so it can be checked again', () => {
       const device = buildDeviceList({ ...empty, peers: [studio({ heldRoutes: { heldAt: '', typedHost: '127.0.0.1:7555' } })], reach, now: Date.now() })[0];
       expect(device.heldTypedHost).toBe('127.0.0.1:7555');

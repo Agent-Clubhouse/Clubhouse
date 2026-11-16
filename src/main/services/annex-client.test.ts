@@ -2903,6 +2903,45 @@ describe('annex-client', () => {
         expect(real.getPeer(FP)?.typedHostCert).toBeUndefined();
       });
 
+      describe.each([3, 5])('a forward-only mesh of %i computers (#3608)', (machines) => {
+        // This machine plus the others; each other computer is a target with its own Annex port.
+        const targets = Array.from({ length: machines - 1 }, (_, i) => ({
+          fingerprint: Array(16).fill((0x40 + i).toString(16)).join(':'), alias: `Target ${i + 1}`, port: 7501 + i,
+        }));
+        const addTargets = () => {
+          for (const t of targets) {
+            real.addPeer({ ...base, fingerprint: t.fingerprint, alias: t.alias, role: 'member', kind: 'desktop', pairingId: `pairing-${t.alias}`, knownHosts: [], mainPort: t.port } as never);
+          }
+        };
+
+        it('saves one route to each other computer on distinct local ports, none of them its own', async () => {
+          addTargets();
+          annexClient.setOwnListenerPortsProvider(() => ({ mainPort: 7443, pairingPort: 7444 }));
+          for (const t of targets) {
+            expect(await annexClient.setSatelliteHost(t.fingerprint, `127.0.0.1:${t.port}`)).toEqual({ ok: true });
+          }
+          for (const t of targets) {
+            expect(real.getPeer(t.fingerprint)).toMatchObject({ typedHost: `127.0.0.1:${t.port}`, privateHosts: expect.arrayContaining(['127.0.0.1']) });
+          }
+          // N-1 routes from this machine, one per other computer.
+          expect(targets.filter((t) => real.getPeer(t.fingerprint)?.typedHost)).toHaveLength(machines - 1);
+        });
+
+        it("refuses a second computer on a local port already used, naming the first, and one on this computer's own port", async () => {
+          addTargets();
+          annexClient.setOwnListenerPortsProvider(() => ({ mainPort: 7443, pairingPort: 7444 }));
+          const [first, second] = targets;
+          expect((await annexClient.setSatelliteHost(first.fingerprint, `127.0.0.1:${first.port}`)).ok).toBe(true);
+          expect(await annexClient.setSatelliteHost(second.fingerprint, `localhost:${first.port}`)).toEqual({
+            ok: false, error: expect.stringMatching(new RegExp(`Port ${first.port} on this computer is already saved for ${first.alias}`)),
+          });
+          expect(await annexClient.setSatelliteHost(second.fingerprint, '127.0.0.1:7443')).toEqual({
+            ok: false, error: expect.stringMatching(/Port 7443 is this computer's own Annex port/),
+          });
+          expect(real.getPeer(second.fingerprint)?.typedHost).toBeUndefined();
+        });
+      });
+
       it('saves when nothing changed, recording the certificate it was checked against', async () => {
         expect(await annexClient.setSatelliteHost(FP, '127.0.0.1:7555')).toEqual({ ok: true });
         expect(real.getPeer(FP)).toMatchObject({ typedHost: '127.0.0.1:7555', typedHostCert: 'AB:CD', privateHosts: expect.arrayContaining(['127.0.0.1']), pairingId: 'pairing-1' });
