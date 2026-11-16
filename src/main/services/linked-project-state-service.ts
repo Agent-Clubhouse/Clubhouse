@@ -121,7 +121,7 @@ export function startLinkedProjectStateService(): LinkedProjectState {
   let localIds = new Set<string>();
   const listedListeners = new Set<() => void>();
   const refresh = () => {
-    projectStore.list().then((projects) => {
+    Promise.resolve().then(() => projectStore.list()).then((projects) => {
       localIds = new Set(projects.map((p) => p.id));
       for (const listener of listedListeners) listener();
     }).catch((err) => warn('Projects could not be read for linked project state', err));
