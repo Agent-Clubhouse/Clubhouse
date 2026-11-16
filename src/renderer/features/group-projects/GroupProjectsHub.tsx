@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import type { GroupProject } from '../../../shared/group-project-types';
 import { Button } from '../../components/Button';
 import { useGroupProjectStore } from '../../stores/groupProjectStore';
@@ -31,10 +31,9 @@ function MemberCount({ id }: { id: string }) {
   return <span id={`group-project-members-${id}`} className={`${settingsHelp} block`}>{count === undefined ? 'Loading members...' : count === null ? 'Member count unavailable' : `${count} ${count === 1 ? 'member' : 'members'}`}</span>;
 }
 
-function GroupRow({ project, projects, selected, onOpen }: {
+function GroupRow({ project, projects, onOpen }: {
   project: GroupProject;
   projects: readonly DirectoryProject[];
-  selected: boolean;
   onOpen: (id: string) => void;
 }) {
   return (
@@ -43,10 +42,9 @@ function GroupRow({ project, projects, selected, onOpen }: {
         type="button"
         aria-label={project.name}
         aria-describedby={`group-project-scope-${project.id} group-project-members-${project.id} group-project-host-${project.id}`}
-        aria-pressed={selected}
         data-testid={`group-project-row-${project.id}`}
         onClick={() => onOpen(project.id)}
-        className={`w-full min-w-0 rounded-md px-2.5 py-2 text-left text-xs focus-ring hover:bg-surface-0 ${selected ? 'bg-surface-1 text-ctp-text' : 'text-ctp-subtext1'}`}
+        className="w-full min-w-0 rounded-md px-2.5 py-2 text-left text-xs focus-ring hover:bg-surface-0 text-ctp-subtext1"
       >
         <span className="block font-medium break-words">{project.name}</span>
         <span id={`group-project-scope-${project.id}`} className={`${settingsHelp} block break-words`}>{scopeReachLine(project, projects)}</span>
@@ -65,15 +63,12 @@ function GroupRow({ project, projects, selected, onOpen }: {
  * decides where that goes. The view is every group or one project's view, which
  * filters and never changes a group's scope or members.
  */
-export function GroupProjectsHub({ view, onViewChange, query, onQueryChange, onOpenGroup, selectedId, children }: {
+export function GroupProjectsHub({ view, onViewChange, query, onQueryChange, onOpenGroup }: {
   view: GroupProjectsView;
   onViewChange: (view: GroupProjectsView) => void;
   query: string;
   onQueryChange: (query: string) => void;
   onOpenGroup: (id: string) => void;
-  selectedId?: string | null;
-  /** Shown under the list once it has loaded: Settings puts the selected group's workspace here. */
-  children?: ReactNode;
 }) {
   const groups = useGroupProjectStore((s) => s.projects);
   const loaded = useGroupProjectStore((s) => s.loaded);
@@ -175,7 +170,7 @@ export function GroupProjectsHub({ view, onViewChange, query, onQueryChange, onO
             {section.note && <p className={`${settingsHelp} px-2.5`}>{section.note}</p>}
             <ul aria-label={`${section.heading} group projects`} className="flex flex-col gap-1 mt-1">
               {section.groups.map((group) => (
-                <GroupRow key={group.id} project={group} projects={projects} selected={selectedId === group.id} onOpen={onOpenGroup} />
+                <GroupRow key={group.id} project={group} projects={projects} onOpen={onOpenGroup} />
               ))}
             </ul>
           </section>
@@ -189,11 +184,11 @@ export function GroupProjectsHub({ view, onViewChange, query, onQueryChange, onO
       {creating && (
         <CreateGroupProjectForm
           defaultScope={view.kind === 'project' ? { level: 'project', projectId: view.projectId, reach: 'local' } : undefined}
+          onCreated={(created) => { setCreating(false); onOpenGroup(created.id); }}
           onCancel={() => setCreating(false)}
         />
       )}
       {body}
-      {loaded && !loadError && !retrying && children}
     </SettingsPage>
   );
 }

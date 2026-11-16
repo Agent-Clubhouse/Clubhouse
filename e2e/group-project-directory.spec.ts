@@ -15,6 +15,10 @@ test('create a group project in the directory', async () => {
     await expect(window.getByText('0 agents will join now.')).toBeVisible();
     await window.getByLabel('New group project name').fill('Directory E2E');
     await window.getByRole('button', { name: 'Create group project' }).click();
+    // Creating closes the form and opens the new group on its Board.
+    await expect(window.getByRole('heading', { name: 'Directory E2E' })).toBeVisible();
+    await expect(window.getByTestId('group-project-section-board')).toBeVisible();
+    await window.getByRole('button', { name: 'Back to Group Projects' }).click();
     await expect(window.getByRole('button', { name: 'Directory E2E', exact: true })).toBeVisible();
   } finally {
     await electronApp.close();
@@ -37,9 +41,13 @@ test('Group Projects opens from the app row, shows a group in the hub, and Setti
     await hub.getByRole('button', { name: 'New group project', exact: true }).click();
     await window.getByLabel('New group project name').fill('Hub E2E');
     await window.getByRole('button', { name: 'Create group project' }).click();
-    const row = hub.getByRole('button', { name: 'Hub E2E', exact: true });
+    // Creating opens the new group on its Board; Back returns to the hub, where it is listed.
+    await expect(window.getByTestId('group-project-section-board')).toBeVisible();
+    await window.getByRole('button', { name: 'Back to Group Projects' }).click();
+    await expect(window.getByTestId('group-projects-hub')).toBeVisible();
+    const row = window.getByTestId('group-projects-hub').getByRole('button', { name: 'Hub E2E', exact: true });
     await expect(row).toBeVisible();
-    await expect(hub.getByRole('searchbox', { name: 'Search group projects' })).toBeVisible();
+    await expect(window.getByRole('searchbox', { name: 'Search group projects' })).toBeVisible();
     await row.click();
     await expect(window.getByTestId('group-project-workspace')).toBeVisible();
     await window.getByRole('button', { name: 'Back to Group Projects' }).click();

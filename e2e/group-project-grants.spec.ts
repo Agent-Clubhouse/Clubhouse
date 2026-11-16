@@ -28,7 +28,7 @@ test('group project lead and admin grants persist independently', async () => {
     await app.window.getByRole('button', { name: 'New group project', exact: true }).click();
     await app.window.getByLabel('New group project name').fill('Grant fixture');
     await app.window.getByRole('button', { name: 'Create group project' }).click();
-    await app.window.getByRole('button', { name: 'Grant fixture', exact: true }).click();
+    // Creating opens the new group's workspace.
     await app.window.getByRole('button', { name: 'Permissions', exact: true }).click();
     const lead = app.window.getByLabel('Lead for dev');
     const admin = app.window.getByLabel('Admin for dev');

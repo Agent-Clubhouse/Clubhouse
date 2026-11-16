@@ -10,8 +10,7 @@ test('directory deletion requires an impact check and confirmation', async () =>
     await window.getByRole('button', { name: 'New group project', exact: true }).click();
     await window.getByLabel('New group project name').fill('Deletion fixture');
     await window.getByRole('button', { name: 'Create group project' }).click();
-    // A row opens the group's workspace on its Board; Delete is under Details.
-    await window.getByRole('button', { name: 'Deletion fixture', exact: true }).click();
+    // Creating opens the group's workspace on its Board; Delete is under Details.
     await expect(window.getByTestId('group-project-section-board')).toBeVisible();
     await window.getByRole('button', { name: 'Details', exact: true }).click();
     await window.getByRole('button', { name: 'Delete group project' }).click();
