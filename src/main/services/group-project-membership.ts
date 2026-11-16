@@ -661,6 +661,7 @@ export async function setAutomaticMembership(groupProjectId: string, options: Gr
       for (const entry of draft.explicit) delete entry.autoProject;
     }
     draft.autoJoin = options.autoJoin;
+    if (draft.autoJoinOffer === 'pending' && options.autoJoin) draft.autoJoinOffer = 'accepted';
     draft.includeLinkedComputers = gp.scope?.reach === 'network' && options.includeLinkedComputers;
     // Opting into the new controls is deliberate; no existing record is migrated automatically.
     draft.membershipPolicy = 'project-3546';

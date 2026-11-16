@@ -584,6 +584,16 @@ describe('project membership controls (#3546)', () => {
     expect((await getMembership(group.id)).autoJoin).toBe(true);
   });
 
+  it('turning on a migrated project group also answers its pending offer and keeps exclusions', async () => {
+    groupProjectRegistry._setForTesting(legacyGp('gp_old_controls'));
+    await start();
+    await excludeMember('gp_old_controls', 'lead');
+    await setAutomaticMembership('gp_old_controls', { autoJoin: true, includeLinkedComputers: false });
+    expect((await getMembership('gp_old_controls')).autoJoinOffer).toBe('accepted');
+    expect(membersOf('gp_old_controls')).toEqual(['dev']);
+    expect((await getMembership('gp_old_controls')).excluded.map((entry) => entry.address)).toEqual(['lead']);
+  });
+
   it('leaves an existing app auto-join policy and existing explicit membership unchanged across restart', async () => {
     groupProjectRegistry._setForTesting(legacyGp('gp_existing', { scope: { level: 'app', reach: 'local' } }));
     await updateMembership('gp_existing', (m) => { m.autoJoin = true; m.explicit.push({ address: 'helper1', kind: 'helper', addedAt: 'old' }); });

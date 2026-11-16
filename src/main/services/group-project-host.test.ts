@@ -682,6 +682,9 @@ describe('group project host: #3431 re-review', () => {
     fixture.agents = { '/projects/a': [{ id: 'agent_a' }], '/projects/b': [{ id: 'agent_b' }] };
     const managed = await groupProjectHost.create('Managed', { projectId: 'proj_a' });
     const legacy = await groupProjectHost.create('Legacy', { projectId: 'proj_a' });
+    const off = await groupProjectHost.create('Off', { projectId: 'proj_a', membership: { autoJoin: false, includeLinkedComputers: false } });
+    await groupProjectHost.updateMembership(off.id, (m) => { delete m.scopeMembersRecorded; });
+    bindingManager.bind('agent_b', { targetId: off.id, targetKind: 'group-project', label: 'GP' });
     for (const id of [managed.id, legacy.id]) await groupProjectHost.updateMembership(id, (m) => { delete m.scopeMembersRecorded; delete m.membershipPolicy; delete m.includeLinkedComputers; m.autoJoin = false; });
     await groupProjectHost.updateMembership(managed.id, (m) => { m.autoJoin = true; });
     for (const id of [managed.id, legacy.id]) bindingManager.bind('agent_b', { targetId: id, targetKind: 'group-project', label: 'GP' });
@@ -691,6 +694,7 @@ describe('group project host: #3431 re-review', () => {
     fixture.unreadable = new Set();
     expect(await groupProjectHost.recordScopedWireMembers()).toBe(1);
     expect((await groupProjectHost.getMembership(managed.id)).explicit).toEqual([]);
+    expect((await groupProjectHost.getMembership(off.id)).explicit).toEqual([]);
     expect((await groupProjectHost.getMembership(legacy.id)).explicit.map((e) => e.address)).toEqual(['agent_b']);
   });
 });
