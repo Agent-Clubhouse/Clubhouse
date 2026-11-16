@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import type { AutoJoinPreview, GroupProjectMembershipOptions, GroupProjectMembershipView, ResolvedGroupProjectMember } from '../../../shared/group-project-types';
 import { Button } from '../../components/Button';
 import { ipcErrorMessage } from '../../utils/ipc-error';
@@ -21,6 +21,8 @@ function names(members: ResolvedGroupProjectMember[]): string {
 }
 
 export function GroupProjectMembersSection({ groupProjectId }: { groupProjectId: string }) {
+  const currentGroup = useRef(groupProjectId);
+  currentGroup.current = groupProjectId;
   const [view, setView] = useState<GroupProjectMembershipView | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
@@ -30,16 +32,20 @@ export function GroupProjectMembersSection({ groupProjectId }: { groupProjectId:
 
   const load = useCallback(async () => {
     try {
-      setView(await window.clubhouse.groupProject.listMembers(groupProjectId));
+      const result = await window.clubhouse.groupProject.listMembers(groupProjectId);
+      if (currentGroup.current !== groupProjectId) return;
+      setView(result);
       setLoadError(null);
     } catch (err) {
       // telemetry-exempt: shown inline with a retry; the record is unchanged.
-      setLoadError(ipcErrorMessage(err));
+      if (currentGroup.current === groupProjectId) setLoadError(ipcErrorMessage(err));
     }
   }, [groupProjectId]);
 
   useEffect(() => {
     setView(null);
+    setLoadError(null);
+    setBusy(false);
     setActionError(null);
     setReview(null);
     setUnlinkReview(null);
@@ -53,12 +59,13 @@ export function GroupProjectMembersSection({ groupProjectId }: { groupProjectId:
     setBusy(true);
     setActionError(null);
     try {
-      setView(await run());
+      const result = await run();
+      if (currentGroup.current === groupProjectId) setView(result);
     } catch (err) {
       // telemetry-exempt: shown inline; nothing was changed.
-      setActionError(`${failed} ${ipcErrorMessage(err)}`);
+      if (currentGroup.current === groupProjectId) setActionError(`${failed} ${ipcErrorMessage(err)}`);
     } finally {
-      setBusy(false);
+      if (currentGroup.current === groupProjectId) setBusy(false);
     }
   };
 
@@ -71,11 +78,11 @@ export function GroupProjectMembersSection({ groupProjectId }: { groupProjectId:
       const preview = await api.previewAutoJoin(view.automaticMembership.scope, {
         ...options, excluded: view.excluded.map((entry) => entry.agentId),
       });
-      setReview({ options, preview });
+      if (currentGroup.current === groupProjectId) setReview({ options, preview });
     } catch (err) {
       // telemetry-exempt: the policy is unchanged, with the preview failure shown inline.
-      setActionError(`Could not review this change. ${ipcErrorMessage(err)}`);
-    } finally { setBusy(false); }
+      if (currentGroup.current === groupProjectId) setActionError(`Could not review this change. ${ipcErrorMessage(err)}`);
+    } finally { if (currentGroup.current === groupProjectId) setBusy(false); }
   };
 
   return (
@@ -115,7 +122,7 @@ export function GroupProjectMembersSection({ groupProjectId }: { groupProjectId:
             {review && <div role="region" aria-label="Automatic membership review" className="flex flex-col items-start gap-2">
               <p className={settingsHelp}>{review.options.autoJoin ? `Agents who would join: ${names(review.preview.wouldJoin.filter((agent) => !view.members.some((m) => m.agentId === agent.agentId))) || 'None now'}.` : 'Current members stay. New agents stop joining automatically.'}</p>
               {review.preview.unreadableProjects.length > 0 && <p className={settingsHelp}>Could not check: {review.preview.unreadableProjects.map((p) => p.name).join(', ')}. Agents on linked computers join when their inventory can be verified.</p>}
-              <Button disabled={busy} onClick={() => void act(async () => { const result = await api.setAutomaticMembership(groupProjectId, review.options); setReview(null); return result; }, 'Not changed.')}>Apply automatic membership</Button>
+              <Button disabled={busy} onClick={() => void act(async () => { const result = await api.setAutomaticMembership(groupProjectId, review.options); if (currentGroup.current === groupProjectId) setReview(null); return result; }, 'Not changed.')}>Apply automatic membership</Button>
               <Button disabled={busy} onClick={() => setReview(null)}>Cancel</Button>
             </div>}
             {!!view.coverageLeaving?.length && <div className="flex flex-col items-start gap-2">
@@ -126,7 +133,7 @@ export function GroupProjectMembersSection({ groupProjectId }: { groupProjectId:
               <p className={settingsHelp}>These members leave: {unlinkReview.map((member) => `${member.name}${member.projectName ? ` (${member.projectName})` : ''}`).join(', ')}.</p>
               <Button disabled={busy} onClick={() => void act(async () => {
                 try { return await api.confirmUnlinkedMembers(groupProjectId, unlinkReview.map((m) => m.agentId)); }
-                finally { setUnlinkReview(null); void load(); }
+                finally { if (currentGroup.current === groupProjectId) { setUnlinkReview(null); void load(); } }
               }, 'Membership not changed. Review again.')}>Apply and remove {unlinkReview.length}</Button>
               <Button disabled={busy} onClick={() => setUnlinkReview(null)}>Cancel</Button>
             </div>}

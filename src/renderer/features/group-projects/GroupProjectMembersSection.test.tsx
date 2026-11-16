@@ -1,6 +1,6 @@
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import type { GroupProjectMembershipView } from '../../../shared/group-project-types';
+import type { AutoJoinPreview, GroupProjectMembershipView } from '../../../shared/group-project-types';
 import { GroupProjectMembersSection } from './GroupProjectMembersSection';
 
 const view = (extra: Partial<GroupProjectMembershipView> = {}): GroupProjectMembershipView => ({
@@ -118,6 +118,18 @@ describe('automatic membership and lost-link review', () => {
     render(<GroupProjectMembersSection groupProjectId="gp1" />);
     await screen.findByRole('list', { name: 'Members' });
     expect(screen.queryByRole('checkbox')).not.toBeInTheDocument();
+  });
+
+  it('ignores a preview that finishes after switching groups', async () => {
+    let resolve!: (preview: AutoJoinPreview) => void;
+    vi.mocked(window.clubhouse.groupProject.listMembers).mockImplementation(async (id) => view({ groupProjectId: id, automaticMembership, includeLinkedComputers: false }));
+    vi.spyOn(window.clubhouse.groupProject, 'previewAutoJoin').mockImplementation(() => new Promise((done) => { resolve = done; }));
+    const { rerender } = render(<GroupProjectMembersSection groupProjectId="gp1" />);
+    fireEvent.click(await screen.findByLabelText('Include linked computers'));
+    rerender(<GroupProjectMembersSection groupProjectId="gp2" />);
+    await screen.findByRole('list', { name: 'Members' });
+    await act(async () => resolve({ wouldJoin: [{ agentId: 'remote', name: 'Remote', kind: 'durable', via: 'auto' }], unreadableProjects: [] }));
+    expect(screen.queryByRole('region', { name: 'Automatic membership review' })).not.toBeInTheDocument();
   });
 
   it('lists lost-link members, confirms exact addresses, and requires another review after refusal', async () => {
