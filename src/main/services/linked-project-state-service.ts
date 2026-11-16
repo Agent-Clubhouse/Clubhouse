@@ -15,6 +15,9 @@ import type { ProjectState, ProjectStateChange, ProjectStateOp } from '../../sha
 import { linkedProjectStateStore, type LinkedProjectStateStore } from './linked-project-state-store';
 import { projectLinksStore } from './project-links-store';
 import { getIdentity } from './annex-identity';
+import * as annexPeers from './annex-peers';
+import { controlledFromHere } from './annex-peers';
+import * as projectStore from './project-store';
 import {
   getProjectState, isProjectStateReady, onProjectStateChange, reprojectProjectState, setLinkedProjectStateWriter,
 } from './project-state-store';
@@ -25,12 +28,20 @@ export interface LinkedProjectStateOptions {
   links: { groups(): NetworkProjectRef[][]; onChange(listener: (change: { recordsChanged: boolean }) => void): () => void };
   self(): string | null;
   now?(): number;
+  /**
+   * Whether this computer lists a copy: one of its projects, or a row of a
+   * machine it shows. Others aren't written into its state, so forgetting a
+   * project or machine sticks. Defaults to every copy.
+   */
+  listed?(ref: NetworkProjectRef): boolean;
+  /** Called when what `listed` answers changes. */
+  onListedChange?(listener: () => void): () => void;
   projectState: {
     get(): ProjectState;
     ready(): boolean;
     reproject(project: (state: ProjectState) => ProjectState): boolean;
     onChange(listener: (change: ProjectStateChange) => void): () => void;
-    setWriter(writer: ((op: ProjectStateOp) => void) | null): void;
+    setWriter(writer: ((op: ProjectStateOp, before: ProjectState) => void) | null): void;
   };
 }
 export interface LinkedProjectState {
@@ -61,14 +72,17 @@ export function startLinkedProjectState(options: LinkedProjectStateOptions): Lin
       if (!groups.length) return;
       // Values from before sharing first, so the group's value counts them.
       await options.linked.write(legacyLinkedStateRecords(options.projectState.get(), groups, self));
-      options.projectState.reproject((state) => projectLinkedState(state, groups, options.linked.index(), self, now()));
+      const listed = options.listed ?? (() => true);
+      options.projectState.reproject((state) => projectLinkedState(state, groups, options.linked.index(), self, now(), listed));
     }).catch((err) => warn('Linked project state could not be applied', err));
   };
-  options.projectState.setWriter((op) => {
+  options.projectState.setWriter((op, before) => {
     const self = options.self();
     if (!self) return;
-    const records = linkedStateWrite(options.linked.current(), groupsOrEmpty(), op, self, now());
-    if (records.length) void options.linked.write(records).catch((err) => warn('Linked project state could not be saved', err));
+    const wasInactive = 'projectId' in op && before.inactiveProjectIds.includes(op.projectId);
+    // Computed once earlier edits are saved, so a quick pin then unpin ends unpinned.
+    void options.linked.writeWith((records) => linkedStateWrite(records, groupsOrEmpty(), op, self, now(), wasInactive))
+      .catch((err) => warn('Linked project state could not be saved', err));
   });
   // Pins and marks this computer changed are offered again; activity alone isn't.
   let seen = '';
@@ -80,6 +94,7 @@ export function startLinkedProjectState(options: LinkedProjectStateOptions): Lin
   });
   const offLinked = options.linked.onChange(() => reconcile());
   const offLinks = options.links.onChange((change) => { if (change.recordsChanged) reconcile(); });
+  const offListed = options.onListedChange?.(() => reconcile()) ?? (() => {});
   reconcile();
   return {
     isLinked(projectId) {
@@ -91,7 +106,7 @@ export function startLinkedProjectState(options: LinkedProjectStateOptions): Lin
     settled: () => queue.then(() => options.linked.settled()),
     stop() {
       stopped = true;
-      offState(); offLinked(); offLinks();
+      offState(); offLinked(); offLinks(); offListed();
       options.projectState.setWriter(null);
     },
   };
@@ -100,10 +115,28 @@ export function startLinkedProjectState(options: LinkedProjectStateOptions): Lin
 let running: LinkedProjectState | undefined;
 /** Start sharing with the real stores, once, at startup. */
 export function startLinkedProjectStateService(): LinkedProjectState {
-  running ??= startLinkedProjectState({
+  if (running) return running;
+  const self = () => getIdentity()?.fingerprint.toLowerCase() ?? null;
+  // This computer's projects, refreshed as they change; none are listed until the first read.
+  let localIds = new Set<string>();
+  const listedListeners = new Set<() => void>();
+  const refresh = () => {
+    projectStore.list().then((projects) => {
+      localIds = new Set(projects.map((p) => p.id));
+      for (const listener of listedListeners) listener();
+    }).catch((err) => warn('Projects could not be read for linked project state', err));
+  };
+  projectStore.onProjectsChanged(refresh);
+  refresh();
+  running = startLinkedProjectState({
     linked: linkedProjectStateStore(),
     links: projectLinksStore(),
-    self: () => getIdentity()?.fingerprint.toLowerCase() ?? null,
+    self,
+    listed: (ref) => ref.machine === self()
+      ? localIds.has(ref.projectId)
+      // Another machine's rows show while it's paired with this one, connected or not.
+      : annexPeers.listPeers().some((p) => p.fingerprint.toLowerCase() === ref.machine && controlledFromHere(p)),
+    onListedChange: (listener) => { listedListeners.add(listener); return () => listedListeners.delete(listener); },
     projectState: {
       get: getProjectState, ready: isProjectStateReady, reproject: reprojectProjectState,
       onChange: onProjectStateChange, setWriter: setLinkedProjectStateWriter,

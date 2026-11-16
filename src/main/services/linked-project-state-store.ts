@@ -78,6 +78,17 @@ export class LinkedProjectStateStore implements ReplicaStore<LinkedProjectStateR
     const valid = parseLinkedStateRecords(records);
     return this.update((current) => mergeLinkedStateRecords(current, valid));
   }
+  /**
+   * This computer's explicit edit, computed from the records as they are once
+   * every earlier change has been saved, so back-to-back edits each see the
+   * one before and the later one wins.
+   */
+  writeWith(compute: (records: readonly LinkedProjectStateRecord[]) => LinkedProjectStateRecord[]): Promise<void> {
+    return this.update((current) => {
+      const records = compute(current);
+      return records.length ? mergeLinkedStateRecords(current, parseLinkedStateRecords(records)) : current;
+    });
+  }
   /** Records from another computer. */
   merge(raw: unknown, source: string, current?: () => boolean): Promise<void> {
     const incoming = parseIncomingLinkedStateRecords(raw, LINKED_PROJECT_STATE_MAX_RECORDS, (this.options.now ?? Date.now)());

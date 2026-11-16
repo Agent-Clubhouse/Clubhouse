@@ -356,8 +356,9 @@ Linked copies of a project show as one sidebar row, so they share Pin and Mark
 inactive: pinning or marking a linked project on any computer, or from a phone,
 applies to every copy, and every computer's sidebar shows the same within
 normal sync latency. Activity, the idle window, Terminal and Wake stay per
-computer, with one exception: an explicit Mark active is recorded as activity
-at that moment on every copy, so none shows idle right after. Projects that
+computer, with one exception: an explicit Mark active of a project that was
+inactive is recorded as activity at that moment on every copy, so none shows
+idle right after. Marking active a project idle only by time shares nothing. Projects that
 aren't linked, and other computers' rows that aren't linked, keep this
 computer's own pins and marks, as before.
 
@@ -368,9 +369,12 @@ like project links, over `POST /api/v1/network/linked-project-state-capabilities
 and `POST /api/v1/network/linked-project-state`, with the same pages, cursors,
 clock, one-day skew limit, catch-up on connect and refusal of non-members.
 
-- An explicit edit writes every current copy of the group with one clock.
-  Pinning also writes inactive false, so one edit never leaves a group pinned
-  and inactive. Marking inactive is refused while the group is pinned.
+- An explicit edit writes every current copy of the group with one clock,
+  computed after any earlier edit has been saved, so of two quick edits the
+  later wins. Pinning also writes inactive false. Marking inactive is refused
+  while the group is pinned. If edits made at the same time on different
+  computers leave both set, the group shows pinned and not inactive; the
+  records stay, and once it's unpinned the newest inactive record applies.
 - A group's value is the newest record among its copies (`compareLinkedStateWrites`
   in `src/shared/linked-project-state.ts`). Pins and marks from before sharing
   enter at clock zero: a group is pinned if any copy was pinned, and inactive
@@ -380,8 +384,10 @@ clock, one-day skew limit, catch-up on connect and refusal of non-members.
   back. Removing a project, or a computer, doesn't erase the records, so the
   other copies keep the group's value.
 - Each computer writes the group's values into its own `project-state.json`
-  under the ids it shows, so the sidebar, the idle rule and phones read them as
-  before. An edit made while some copies' computers are offline applies here at
+  under the ids it shows (its own projects, and rows of machines paired with
+  it), so the sidebar, the idle rule and phones read them as before. A project
+  removed here, or a machine unpaired, stays gone here while the group's
+  records stay for the other copies. An edit made while some copies' computers are offline applies here at
   once and reaches them when they reconnect.
 
 ## Reading another agent's configuration

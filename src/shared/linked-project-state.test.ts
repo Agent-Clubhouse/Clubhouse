@@ -89,6 +89,25 @@ describe('explicit writes', () => {
     expect(inactive.map((r) => r.field)).toEqual(['inactive', 'inactive']);
   });
 
+  it('records activity only for a real inactive to active change', () => {
+    // Idle only by time: no inactive record, nothing marked here.
+    expect(linkedStateWrite([], groups, { type: 'setInactive', projectId: 'site', inactive: false, at: 1 }, A, 100).some((r) => r.field === 'activated')).toBe(false);
+    // An unlinked project marked inactive here, with no record yet.
+    expect(linkedStateWrite([], [], { type: 'setInactive', projectId: 'solo', inactive: false, at: 1 }, A, 100, true).map((r) => r.field)).toEqual(['inactive', 'activated']);
+    expect(linkedStateWrite([], [], { type: 'setInactive', projectId: 'solo', inactive: false, at: 1 }, A, 100, false).map((r) => r.field)).toEqual(['inactive']);
+    // Pinned and inactive records together: pinned wins, so the group isn't inactive and Mark active records none.
+    const both = [rec(a, 'inactive', true, 5), rec(a, 'pinned', true, 6)];
+    expect(linkedStateWrite(both, groups, { type: 'setInactive', projectId: 'site', inactive: false, at: 1 }, A, 100).some((r) => r.field === 'activated')).toBe(false);
+  });
+
+  it('gives back-to-back edits rising clocks, so the later wins in the same millisecond', () => {
+    const first = linkedStateWrite([], groups, { type: 'setPinned', projectId: 'site', pinned: true }, A, 100);
+    const after = mergeLinkedStateRecords([], first);
+    const second = linkedStateWrite(after, groups, { type: 'setPinned', projectId: 'site', pinned: false }, A, 100);
+    expect(second[0].at).toBe(first[0].at + 1);
+    expect(groupLinkedState(indexLinkedState(mergeLinkedStateRecords(after, second)), groups[0], 'pinned')?.value).toBe(false);
+  });
+
   it('writes nothing when every copy already has the value from an explicit edit', () => {
     const records = [rec(a, 'pinned', true, 5), rec(b, 'pinned', true, 5), rec(a, 'inactive', false, 5), rec(b, 'inactive', false, 5)];
     expect(linkedStateWrite(records, groups, { type: 'setPinned', projectId: 'site', pinned: true }, A, 100)).toEqual([]);
@@ -187,12 +206,16 @@ describe('projection onto each computer', () => {
     expect(groupLinkedState(indexLinkedState(mergeLinkedStateRecords(online, newer)), groups[0], 'pinned')?.value).toBe(false);
   });
 
-  it('concurrent Pin and Mark inactive leave both set; the idle rule keeps pinned first', () => {
+  it('concurrent Pin and Mark inactive: pinned wins while it lasts, then the newest inactive record applies', () => {
     const groups = [[a, b]];
     const pin = linkedStateWrite([], groups, { type: 'setPinned', projectId: 'site', pinned: true }, A, 10);
     const mark = linkedStateWrite([], groups, { type: 'setInactive', projectId: 'site-b', inactive: true, at: 12 }, B, 12);
-    const out = project(mergeLinkedStateRecords([], [...pin, ...mark]), groups, A);
+    const both = mergeLinkedStateRecords([], [...pin, ...mark]);
+    const out = project(both, groups, A);
     expect(out.pinnedProjectIds).toContain('site');
-    expect(out.inactiveProjectIds).toContain('site');
+    expect(out.inactiveProjectIds).toEqual([]);
+    // The records stay; unpinning lets the newer inactive mark apply.
+    const unpinned = mergeLinkedStateRecords(both, linkedStateWrite(both, groups, { type: 'setPinned', projectId: 'site', pinned: false }, A, 20));
+    expect(project(unpinned, groups, A, out).inactiveProjectIds).toEqual(expect.arrayContaining(['site', `remote||${B}||site-b`]));
   });
 });

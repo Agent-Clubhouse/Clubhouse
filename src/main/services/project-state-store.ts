@@ -112,7 +112,7 @@ export function applyProjectStateChange(op: ProjectStateOp, source?: { clientId:
   // Linked copies share explicit Pin and Mark inactive; a refused mark isn't one.
   const refused = op.type === 'setInactive' && op.inactive && base.pinnedProjectIds.includes(op.projectId);
   if (linkedWriter && (op.type === 'setPinned' || op.type === 'setInactive') && !refused) {
-    try { linkedWriter(op); }
+    try { linkedWriter(op, base); }
     catch (err) { // telemetry-exempt: logged; this computer's own state still changes
       appLog('core:project-state', 'warn', 'Linked project state write failed', { meta: { error: err instanceof Error ? err.message : String(err) } });
     }
@@ -128,13 +128,13 @@ export function applyProjectStateChange(op: ProjectStateOp, source?: { clientId:
   return changed;
 }
 
-let linkedWriter: ((op: ProjectStateOp) => void) | null = null;
+let linkedWriter: ((op: ProjectStateOp, before: ProjectState) => void) | null = null;
 /**
  * Linked copies of a project share Pin and Mark inactive
  * (linked-project-state-service.ts): told of every explicit one accepted here,
- * from a window or a phone.
+ * from a window or a phone, with the state before it.
  */
-export function setLinkedProjectStateWriter(writer: ((op: ProjectStateOp) => void) | null): void {
+export function setLinkedProjectStateWriter(writer: ((op: ProjectStateOp, before: ProjectState) => void) | null): void {
   linkedWriter = writer;
 }
 

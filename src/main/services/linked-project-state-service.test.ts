@@ -12,6 +12,7 @@ import { applyProjectStateOp, DEFAULT_PROJECT_STATE, type ProjectState, type Pro
 import { PROJECT_LINKS_CAPABILITIES_PATH, PROJECT_LINKS_SYNC_PATH } from '../../shared/project-links';
 import { LINKED_PROJECT_STATE_CAPABILITIES_PATH, LINKED_PROJECT_STATE_SYNC_PATH } from '../../shared/linked-project-state';
 import type { ReplicaNetworkOptions } from './replica-network';
+import type { NetworkProjectRef } from '../../shared/project-links';
 
 const A = Array(16).fill('aa').join(':'), B = Array(16).fill('bb').join(':'), C = Array(16).fill('cc').join(':');
 const remote = (machine: string, id: string) => `remote||${machine}||${id}`;
@@ -24,15 +25,17 @@ const now = () => clock;
  * a refused mark isn't shared), its link and linked-state replicas, and the
  * sharing service between them.
  */
-function desktop(self: string, initial: Partial<ProjectState> = {}) {
+function desktop(self: string, initial: Partial<ProjectState> = {}, opts: { save?: () => Promise<void>; listed?: (ref: NetworkProjectRef) => boolean } = {}) {
   let state: ProjectState = { ...DEFAULT_PROJECT_STATE, ...initial };
-  let writer: ((op: ProjectStateOp) => void) | null = null;
+  let writer: ((op: ProjectStateOp, before: ProjectState) => void) | null = null;
+  const listedListeners = new Set<() => void>();
   const listeners = new Set<(change: ProjectStateChange) => void>();
   const notify = () => { for (const l of listeners) l({ state, acked: {} }); };
   const links = new ProjectLinksStore({ read: () => ({ version: 1, records: [], migrated: [] }), save: async () => {}, self: () => self, legacyMirror: () => undefined, now });
-  const linked = new LinkedProjectStateStore({ read: () => ({ version: 1, records: [] }), save: async () => {}, now });
+  const linked = new LinkedProjectStateStore({ read: () => ({ version: 1, records: [] }), save: opts.save ?? (async () => {}), now });
   const service: LinkedProjectState = startLinkedProjectState({
-    linked, links, self: () => self, now,
+    linked, links, self: () => self, now, listed: opts.listed,
+    onListedChange: (l) => { listedListeners.add(l); return () => listedListeners.delete(l); },
     projectState: {
       get: () => state, ready: () => true,
       reproject: (fn) => { const next = fn(state); if (next === state) return false; state = next; notify(); return true; },
@@ -43,10 +46,11 @@ function desktop(self: string, initial: Partial<ProjectState> = {}) {
   return {
     self, links, linked, service,
     get state() { return state; },
+    listedChanged() { for (const l of listedListeners) l(); },
     /** A window's or a phone's change, as applyProjectStateChange takes it. */
     apply(op: ProjectStateOp) {
       const refused = op.type === 'setInactive' && op.inactive && state.pinnedProjectIds.includes(op.projectId);
-      if (writer && (op.type === 'setPinned' || op.type === 'setInactive') && !refused) writer(op);
+      if (writer && (op.type === 'setPinned' || op.type === 'setInactive') && !refused) writer(op, state);
       const next = applyProjectStateOp(state, op);
       if (next !== state) { state = next; notify(); }
     },
@@ -241,16 +245,80 @@ describe('Pin and Mark inactive shared by linked copies', () => {
     expect(a.service.isLinked('solo')).toBe(false);
   });
 
-  it('removing a project here keeps the group\'s value for the other copies', async () => {
-    const a = desktop(A), b = desktop(B);
+  it('removing a project here keeps the group\'s value for the other copies, and stays removed here', async () => {
+    const gone = new Set<string>();
+    const a = desktop(A, {}, { listed: (ref) => !(ref.machine === A && gone.has(ref.projectId)) }), b = desktop(B);
     net = mesh(a, b);
     await a.links.apply({ type: 'link', a: 'site', b: remote(B, 'site-b') });
     clock += 1000;
     a.apply({ type: 'setPinned', projectId: 'site', pinned: true });
     await vi.waitFor(() => expect(b.state.pinnedProjectIds).toContain('site-b'));
+    gone.add('site');
+    a.listedChanged();
     a.apply({ type: 'forget', projectIds: ['site'] });
     await a.service.settled(); await b.service.settled();
+    expect(a.state.pinnedProjectIds).not.toContain('site');
+    // Another change to the group doesn't bring it back here.
+    clock += 1000;
+    b.apply({ type: 'setInactive', projectId: 'site-b', inactive: false, at: clock });
+    a.apply({ type: 'setPinned', projectId: remote(B, 'site-b'), pinned: true });
+    await a.service.settled();
+    expect(a.state.pinnedProjectIds).not.toContain('site');
     expect(b.state.pinnedProjectIds).toContain('site-b');
     expect(a.linked.records().some((r) => r.project.projectId === 'site' && r.field === 'pinned' && r.value)).toBe(true);
+  });
+
+  it('a machine leaving takes its rows with it here, and they stay gone', async () => {
+    const paired = new Set([B]);
+    const a = desktop(A, {}, { listed: (ref) => ref.machine === A || paired.has(ref.machine) }), b = desktop(B);
+    net = mesh(a, b);
+    await a.links.apply({ type: 'link', a: 'site', b: remote(B, 'site-b') });
+    clock += 1000;
+    a.apply({ type: 'setPinned', projectId: 'site', pinned: true });
+    await vi.waitFor(() => expect(a.state.pinnedProjectIds).toContain(remote(B, 'site-b')));
+    // Unpairing: the renderer forgets the machine's rows (forgetProjectsWithPrefix).
+    paired.delete(B);
+    a.listedChanged();
+    a.apply({ type: 'forget', projectIds: [remote(B, 'site-b')] });
+    await a.service.settled();
+    clock += 1000;
+    a.apply({ type: 'setPinned', projectId: 'site', pinned: false });
+    a.apply({ type: 'setPinned', projectId: 'site', pinned: true });
+    await a.service.settled();
+    expect(a.state.pinnedProjectIds).toEqual(['site']);
+  });
+
+  it('back-to-back edits while a save is slow end as the last one, in the same millisecond too', async () => {
+    let release: () => void = () => {};
+    let gate = Promise.resolve();
+    const a = desktop(A, {}, { save: () => gate });
+    await a.links.apply({ type: 'link', a: 'site', b: remote(B, 'site-b') });
+    await a.service.settled();
+    gate = new Promise((r) => { release = r; });
+    // Two windows, a double toggle, or a phone retry: pin then unpin, no time passing.
+    a.apply({ type: 'setPinned', projectId: 'site', pinned: true });
+    a.apply({ type: 'setPinned', projectId: 'site', pinned: false });
+    release();
+    await a.service.settled();
+    const pins = a.linked.records().filter((r) => r.field === 'pinned');
+    expect(pins.map((r) => r.value)).toEqual([false, false]);
+    expect(new Set(pins.map((r) => r.at)).size).toBe(1);
+    expect(a.state.pinnedProjectIds).toEqual([]);
+  });
+
+  it('Mark active on a group idle only by time, or an unlinked project, shares no activity', async () => {
+    const old = clock - 30 * 86_400_000;
+    const a = desktop(A, { projectActivity: { site: old, solo: old } }), b = desktop(B, { projectActivity: { 'site-b': old } });
+    net = mesh(a, b);
+    await a.links.apply({ type: 'link', a: 'site', b: remote(B, 'site-b') });
+    await vi.waitFor(() => expect(b.links.groups()).toHaveLength(1));
+    clock += 1000;
+    a.apply({ type: 'setInactive', projectId: 'site', inactive: false, at: clock });
+    a.apply({ type: 'setInactive', projectId: 'solo', inactive: false, at: clock });
+    await a.service.settled();
+    await new Promise((r) => setTimeout(r, 20));
+    await b.service.settled();
+    expect(a.linked.records().some((r) => r.field === 'activated')).toBe(false);
+    expect(b.state.projectActivity['site-b']).toBe(old);
   });
 });

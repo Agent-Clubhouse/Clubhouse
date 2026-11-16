@@ -97,26 +97,42 @@ export const groupOfRef = (groups: readonly NetworkProjectRef[][], ref: NetworkP
   groups.find((g) => g.some((p) => projectRefKey(p) === projectRefKey(ref)));
 
 /**
+ * Whether a group is inactive now: its newest inactive record says so and it
+ * isn't pinned. Concurrent edits can leave both set; pinned wins while it
+ * lasts, and the newest inactive record applies again once it's unpinned.
+ */
+export function groupIsInactive(index: LinkedStateIndex, group: readonly NetworkProjectRef[]): boolean | undefined {
+  const mark = groupLinkedState(index, group, 'inactive');
+  if (!mark) return undefined;
+  return mark.value && groupLinkedState(index, group, 'pinned')?.value !== true;
+}
+
+/**
  * The records an explicit Pin or Mark inactive writes, or none when it changes
  * nothing. One clock for every copy of the group (just the project when it
  * isn't linked, so an edit made before linking still counts as the newer one).
  * Pinning also clears inactive, so a group is never pinned and inactive
- * by one edit. Marking active records that moment as activity for every copy.
+ * by one edit. Marking active a project that was inactive (here, `wasInactive`,
+ * or by the group's records) records that moment as activity for every copy;
+ * one idle only by time records none. Clocks only go up, so of two edits the
+ * later wins whatever their values.
  */
 export function linkedStateWrite(
   records: readonly LinkedProjectStateRecord[], groups: readonly NetworkProjectRef[][], op: ProjectStateOp, self: string, now: number,
+  wasInactive = false,
 ): LinkedProjectStateRecord[] {
   if (op.type !== 'setPinned' && op.type !== 'setInactive') return [];
   let target: NetworkProjectRef;
   try { target = sidebarProjectRef(op.projectId, self); } catch { return []; }
   const group = groupOfRef(groups, target) ?? [target];
+  const index = indexLinkedState(records);
+  const activated = op.type === 'setInactive' && !op.inactive && (wasInactive || groupIsInactive(index, group) === true);
   const changes: Array<[LinkedProjectField, boolean]> = op.type === 'setPinned'
     ? (op.pinned ? [['pinned', true], ['inactive', false]] : [['pinned', false]])
-    : (op.inactive ? [['inactive', true]] : [['inactive', false], ['activated', true]]);
-  const index = indexLinkedState(records);
+    : (op.inactive ? [['inactive', true]] : [['inactive', false], ...(activated ? [['activated', true] as [LinkedProjectField, boolean]] : [])]);
   // Every copy already has the value: nothing to write, not even the activity.
-  const settled = changes.every(([field, value]) => field === 'activated'
-    || group.every((p) => index.get(linkedStateKey(p, field))?.value === value && index.get(linkedStateKey(p, field))!.at > 0));
+  const settled = !activated && changes.every(([field, value]) =>
+    group.every((p) => index.get(linkedStateKey(p, field))?.value === value && index.get(linkedStateKey(p, field))!.at > 0));
   if (settled) return [];
   const at = records.reduce((clock, r) => Math.max(clock, r.at + 1), Math.max(1, now));
   if (!Number.isSafeInteger(at) || at >= Number.MAX_SAFE_INTEGER) throw new Error('Linked project state clock is out of range.');
@@ -143,27 +159,30 @@ export function legacyLinkedStateRecords(state: ProjectState, groups: readonly N
 
 /**
  * This computer's state with every linked copy given its group's values,
- * under the id it shows (a local id, or `remote||machine||id`). Projects
- * that aren't linked, and fields no copy has a record for, are left as they
- * are. Newly pinned copies go after the pinned ones, oldest pin first. Returns
- * `state` itself when nothing changes.
+ * under the id it shows (a local id, or `remote||machine||id`). Only copies
+ * this computer lists (`listed`) are written, so a removed project or machine
+ * stays forgotten here while its group's records stay. Projects that aren't
+ * linked, and fields no copy has a record for, are left as they are. A pinned
+ * group is never inactive. Newly pinned copies go after the pinned ones,
+ * oldest pin first. Returns `state` itself when nothing changes.
  */
 export function projectLinkedState(
   state: ProjectState, groups: readonly NetworkProjectRef[][], index: LinkedStateIndex, self: string, now: number,
+  listed: (ref: NetworkProjectRef) => boolean = () => true,
 ): ProjectState {
   const pinned = new Set(state.pinnedProjectIds), inactive = new Set(state.inactiveProjectIds);
   const unpin = new Set<string>(), pins: Array<[string, number]> = [];
   let inactiveChanged = false, activity: Record<string, number> | undefined;
   for (const group of groups) {
-    const ids = group.map((p) => sidebarProjectId(p, self));
+    const ids = group.filter(listed).map((p) => sidebarProjectId(p, self));
     const pin = groupLinkedState(index, group, 'pinned');
     if (pin) for (const id of ids) {
       if (pin.value && !pinned.has(id)) { pinned.add(id); pins.push([id, pin.at]); }
       else if (!pin.value && pinned.has(id)) { pinned.delete(id); unpin.add(id); }
     }
-    const mark = groupLinkedState(index, group, 'inactive');
-    if (mark) for (const id of ids) {
-      if (mark.value !== inactive.has(id)) { inactiveChanged = true; if (mark.value) inactive.add(id); else inactive.delete(id); }
+    const mark = groupIsInactive(index, group);
+    if (mark !== undefined) for (const id of ids) {
+      if (mark !== inactive.has(id)) { inactiveChanged = true; if (mark) inactive.add(id); else inactive.delete(id); }
     }
     const active = groupLinkedState(index, group, 'activated');
     if (active && active.at > 0) {

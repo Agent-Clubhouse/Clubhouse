@@ -219,7 +219,7 @@ vi.mock('./agent-runtime/chat-transcript', async (importOriginal) => ({
 vi.mock('./project-state-store', async () => {
   const shared = await import('../../shared/project-state');
   let state = shared.DEFAULT_PROJECT_STATE;
-  let writer: ((op: import('../../shared/project-state').ProjectStateOp) => void) | null = null;
+  let writer: ((op: import('../../shared/project-state').ProjectStateOp, before: import('../../shared/project-state').ProjectState) => void) | null = null;
   const listeners = new Set<(change: unknown) => void>();
   return {
     isProjectStateReady: () => W.projectStateReady,
@@ -228,7 +228,7 @@ vi.mock('./project-state-store', async () => {
     applyProjectStateChange: (op: import('../../shared/project-state').ProjectStateOp) => {
       // As the real store: an accepted Pin or Mark inactive goes to linked copies too.
       const refused = op.type === 'setInactive' && op.inactive && state.pinnedProjectIds.includes(op.projectId);
-      if (writer && (op.type === 'setPinned' || op.type === 'setInactive') && !refused) writer(op);
+      if (writer && (op.type === 'setPinned' || op.type === 'setInactive') && !refused) writer(op, state);
       const next = shared.applyProjectStateOp(state, op);
       if (next === state) return false;
       state = next;
@@ -3372,6 +3372,8 @@ describe('Annex mobile contract fixtures', { timeout: TEST_TIMEOUT_MS }, () => {
       await service.settled();
       await eventually(() => expect(frames(ws).some((f) => f.type === 'snapshot' && f.payload.projectState.proj_docs.pinned === false)).toBe(true));
       const fromPeer = frames(ws).filter((f) => f.type === 'snapshot').at(-1);
+      // As snapshot.json: the host platform recorded as a Mac's, so the file is the same on every runner.
+      fromPeer.payload.ptyHost = annexPtyHost('darwin', undefined);
       // Pinned again from the other computer: Mark inactive here is refused for the group.
       await linked.merge([{ project: copy, field: 'pinned', value: true, at: NOW + 2000, by: other }], other);
       await service.settled();
