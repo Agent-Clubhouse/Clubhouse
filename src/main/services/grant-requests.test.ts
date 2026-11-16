@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { GRANT_REQUEST_TTL_MS, MAX_PENDING_GRANT_REQUESTS_PER_AGENT } from '../../shared/grant-requests';
+import { GRANT_REQUEST_TTL_MS, MAX_PENDING_GRANT_REQUESTS_PER_AGENT, MAX_PENDING_REMOTE_CREATES } from '../../shared/grant-requests';
 import {
   callKey, consumeCallApproval, consumeCallApprovalScope, dropGrantRequestsFor, listGrantRequests, onGrantRequestsChanged,
   peekGrantRequest, recordGrantRequest, restoreGrantRequest, takeGrantRequest, _resetGrantRequestsForTesting,
@@ -30,6 +30,25 @@ describe('permission requests (#2970)', () => {
     for (let i = 0; i < MAX_PENDING_GRANT_REQUESTS_PER_AGENT; i++) expect(recordGrantRequest(`k${i}`, base, 0).ok).toBe(true);
     expect(recordGrantRequest('more', base, 0)).toEqual({ ok: false, reason: 'too_many', waiting: MAX_PENDING_GRANT_REQUESTS_PER_AGENT });
     expect(recordGrantRequest('other', { ...base, agentId: 'a2' }, 0).ok).toBe(true);
+  });
+
+  it('counts remote create approvals apart, so they never block the agent\'s own requests (#3547)', () => {
+    const remote = { ...base, toolName: 'remote_create_group_project', remoteCreateReview: { machine: 'aa', machineName: 'Desk', name: 'G', scopeLabel: 'app', membershipLabel: 'none', excluded: [] } };
+    for (let i = 0; i < MAX_PENDING_REMOTE_CREATES; i++) expect(recordGrantRequest(`rc${i}`, remote, 0).ok).toBe(true);
+    expect(recordGrantRequest('rc-more', remote, 0)).toEqual({ ok: false, reason: 'too_many', waiting: MAX_PENDING_REMOTE_CREATES });
+    for (let i = 0; i < MAX_PENDING_GRANT_REQUESTS_PER_AGENT; i++) expect(recordGrantRequest(`own${i}`, base, 0).ok).toBe(true);
+    expect(recordGrantRequest('own-more', base, 0)).toMatchObject({ ok: false, waiting: MAX_PENDING_GRANT_REQUESTS_PER_AGENT });
+  });
+
+  it('says whether an answered request was allowed', () => {
+    const closed: Array<boolean | undefined> = [];
+    onGrantRequestsChanged((c) => { if (c.kind === 'closed') closed.push(c.allowed); });
+    const yes = recordGrantRequest('y', base, 0);
+    const no = recordGrantRequest('n', base, 0);
+    if (!yes.ok || !no.ok) throw new Error('not recorded');
+    takeGrantRequest(yes.request.requestId, true, 0);
+    takeGrantRequest(no.request.requestId, false, 0);
+    expect(closed).toEqual([true, false]);
   });
 
   it('expires after 24 hours, and says so', () => {

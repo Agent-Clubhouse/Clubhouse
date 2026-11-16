@@ -56,7 +56,7 @@ export function grantRequestsByAgent(
 export function describeGrantRequests(list: readonly GrantRequest[]): string {
   const first = list.find((request) => request.update) ?? list[0];
   if (!first) return 'Asks for a permission';
-  if (first.update) return list.length > 1 ? `${describeGrantRequest(first)} (${list.length} requests)` : describeGrantRequest(first);
+  if (first.update || first.remoteCreateReview) return list.length > 1 ? `${describeGrantRequest(first)} (${list.length} requests)` : describeGrantRequest(first);
   const label = grantRequestActionLabels(first).join(', ');
   return list.length > 1 ? `${label} (${list.length} requests)` : label;
 }

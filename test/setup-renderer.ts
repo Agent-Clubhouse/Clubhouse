@@ -468,6 +468,8 @@ vi.stubGlobal('clubhouse', {
     onDeleted: () => noop,
     list: async () => [],
     create: asyncNoop,
+    createHosts: async () => [{ machine: null, name: 'This computer', state: 'online' }],
+    createOnHost: async () => ({ requestId: 'rc_test', host: '', hostName: '', status: 'unreachable', reason: '' }),
     get: asyncNoop,
     update: asyncNoop,
     delete: async () => false,

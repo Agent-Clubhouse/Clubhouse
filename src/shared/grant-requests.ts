@@ -43,12 +43,33 @@ export interface GrantRequest {
   agentReview?: import('./project-import').ImportedAgentReview;
   /** Exact batch review generated on the originating computer. */
   deleteReview?: import('./delete-agents').DeleteAgentsReview;
+  /** A person on another computer asks to create a group project here (#3547): the exact create, made on this computer. */
+  remoteCreateReview?: RemoteCreateReview;
   createdAt: string;
   expiresAt: string;
 }
 
+/** The tool name a remote create's approval is recorded under (#3547). Not an MCP tool: no agent can call it. */
+export const REMOTE_CREATE_TOOL = 'remote_create_group_project';
+
+/** What Allow would create, resolved by this computer, never by the asking one. */
+export interface RemoteCreateReview {
+  /** The asking computer's fingerprint and its name here. */
+  machine: string;
+  machineName: string;
+  name: string;
+  /** "The whole app", or this computer's project the group covers. */
+  scopeLabel: string;
+  /** How starting members are chosen, in words. */
+  membershipLabel: string;
+  /** Addresses kept out, relative to this computer. */
+  excluded: string[];
+}
+
 export const GRANT_REQUEST_TTL_MS = 24 * 60 * 60 * 1000;
 export const MAX_PENDING_GRANT_REQUESTS_PER_AGENT = 3;
+/** Remote create approvals (#3547) waiting on this computer at once, counted apart from the agent's own. */
+export const MAX_PENDING_REMOTE_CREATES = 6;
 /** Longest reason kept, in characters. */
 export const GRANT_REQUEST_REASON_MAX = 500;
 /**
@@ -65,8 +86,9 @@ export function grantRequestActionLabels(request: Pick<GrantRequest, 'actions'>)
 }
 
 /** The request's line in Needs you, on the desktop and on a phone (#3205). */
-export function describeGrantRequest(request: Pick<GrantRequest, 'kind' | 'actions' | 'toolName' | 'where' | 'update' | 'deleteReview'>): string {
+export function describeGrantRequest(request: Pick<GrantRequest, 'kind' | 'actions' | 'toolName' | 'where' | 'update' | 'deleteReview' | 'remoteCreateReview'>): string {
   if (request.update) return `Update Clubhouse to ${request.update.version}`;
+  if (request.remoteCreateReview) return `${request.remoteCreateReview.machineName} asks to create the group project "${request.remoteCreateReview.name}" on this computer.`;
   if (request.deleteReview) {
     const count = request.deleteReview.items.filter((item) => item.status === 'ready').length;
     return `Review deleting ${count} ${count === 1 ? 'agent' : 'agents'} together.`;
@@ -78,7 +100,8 @@ export function describeGrantRequest(request: Pick<GrantRequest, 'kind' | 'actio
 }
 
 /** What Allow does, shown under the request. */
-export function grantRequestAllowEffect(request: Pick<GrantRequest, 'kind' | 'update'>): string {
+export function grantRequestAllowEffect(request: Pick<GrantRequest, 'kind' | 'update' | 'remoteCreateReview'>): string {
+  if (request.remoteCreateReview) return 'Allow creates this group project once, hosted on this computer. Decline creates nothing.';
   if (request.update) return 'Restart now interrupts the listed working agents, then stops any that do not become idle. Stopped agents will not resume. Restart when idle waits up to 30 minutes and never interrupts agents. Agent conversations resume, not interrupted turns.';
   return request.kind === 'call'
     ? 'Allow runs this one call when it tries again. Its permissions stay as they are.'

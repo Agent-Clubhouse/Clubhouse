@@ -44,9 +44,19 @@ export function CoverageSummary({ coverage, remoteHost = false }: { coverage: Gr
   if (!coverage?.scoped) return null;
   return (
     <div data-testid="coverage-summary">
-      {line && <p className={settingsHelp}>{remoteHost ? `As seen from this computer: ${line.charAt(0).toLowerCase()}${line.slice(1)}` : line}</p>}
+      {line && <p className={settingsHelp}>{remoteHost ? remoteLine(coverage) : line}</p>}
       {remoteHost && <p className={settingsHelp}>{VERIFIED_ON_HOST}</p>}
       <OfferToLink coverage={coverage} />
     </div>
   );
+}
+
+/** The same facts, said as this computer's view of a group another computer will host. */
+function remoteLine(coverage: GroupProjectCoverage): string {
+  const covered = coverage.copies.filter((c) => c.state === 'verified').map((c) => c.name);
+  const unknown = coverage.copies.filter((c) => c.state === 'unknown').map((c) => c.name);
+  const missing = unknown.length ? `: ${unknown.join(', ')}.` : coverage.localUnknown ? '.' : null;
+  if (!covered.length) return `As seen from this computer, not verified${missing ?? '.'}`;
+  const covers = `As seen from this computer, it covers ${covered.join(', ')}.`;
+  return missing ? `${covers} Not verified${missing}` : covers;
 }

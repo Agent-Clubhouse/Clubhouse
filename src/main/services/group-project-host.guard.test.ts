@@ -18,6 +18,8 @@ const STORE_FILES = new Set([
   'services/group-project-membership-file.ts',
   'services/group-project-json-file.ts',
   'services/group-project-paths.ts',
+  // #3547: its own answers and sent requests only; groups are made through the host's create.
+  'services/group-project-remote-create.ts',
 ]);
 
 function sourceFiles(dir: string): string[] {

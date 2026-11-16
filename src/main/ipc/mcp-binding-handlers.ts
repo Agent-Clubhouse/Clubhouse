@@ -46,7 +46,7 @@ import { MCP_UNBIND_CANVAS_CLEANUP, type McpBindCause, type McpBindResult, type 
 import { watchGroupProjectDelivery } from '../services/group-project-delivery';
 import { watchGroupProjectRoles } from '../services/group-project-roles';
 import {
-  excludeMember, isMembershipManaged, managedGroupProjectIds, membershipBindingSource, watchGroupProjectMembership,
+  beginAutoJoin, excludeMember, isMembershipManaged, managedGroupProjectIds, membershipBindingSource, watchGroupProjectMembership,
 } from '../services/group-project-membership';
 import { groupProjectHost } from '../services/group-project-host';
 import { bindToGroupProject } from '../services/group-project-bind';
@@ -69,6 +69,9 @@ import { startHandoffs } from '../services/handoff-host';
 import { addCardConnection, listConnectionPickerTargets, removeCardConnection, startCardConnections } from '../services/connection-card';
 import type { AddCardConnection } from '../../shared/connection-picker';
 import { startGroupProjectNetwork } from '../services/group-project-network';
+import { groupProjectRemoteCreate } from '../services/group-project-remote-create';
+import { setPairedPhoneCheck } from '../services/grant-request-answers';
+import * as annexEventBus from '../services/annex-event-bus';
 import { remoteGroupProjectGrantGate } from '../services/group-project-remote-grants';
 import { purgeGroupProjectViews } from '../services/group-project-delete-service';
 import { onMembershipChanged as onNetworkMembershipChanged } from '../services/annex-network-membership';
@@ -650,6 +653,20 @@ export function restorePersistedBindings(): Promise<void> {
     });
     // The host checks other computers' agents' writes against #3360's grants.
     groupProjectHost.setRemoteWriteGate(remoteGroupProjectGrantGate);
+    // Only a real phone paired with this computer answers them besides this computer's own UI.
+    setPairedPhoneCheck((fingerprint) => annexPeers.getPeer(fingerprint)?.kind === 'phone' && !isNetworkComputer(fingerprint));
+    // Creates other computers ask for wait for a person's approval here, on the Dispatcher's Needs you row (#3547).
+    groupProjectRemoteCreate.setHostDeps({
+      approvalPlace: () => {
+        const dispatcher = getDispatcherState();
+        if (!dispatcher.enabled || !dispatcher.agentId || !dispatcher.chatAgentId || !dispatcher.path) return null;
+        return { agentId: dispatcher.agentId, agentName: dispatcher.config?.name ?? dispatcherDisplayName(), projectPath: dispatcher.path };
+      },
+      afterCreate: async (project) => {
+        await beginAutoJoin(project.id);
+        annexEventBus.emitGroupProjectChanged('created', project);
+      },
+    });
   }
   return rebuildPersistedBindings().then(async (): Promise<void> => {
     // Once, after a rebuild has read every source: Dispatcher links from before #3215 get the new defaults.

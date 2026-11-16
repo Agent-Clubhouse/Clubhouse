@@ -17,13 +17,13 @@ import { createHash, randomUUID } from 'crypto';
 import type { GrantAction } from '../../shared/agent-grants';
 import { recordGrantRequest as recordRequestEvent } from './grant-telemetry';
 import {
-  GRANT_REQUEST_TTL_MS, MAX_PENDING_GRANT_REQUESTS_PER_AGENT, type GrantRequest,
+  GRANT_REQUEST_TTL_MS, MAX_PENDING_GRANT_REQUESTS_PER_AGENT, MAX_PENDING_REMOTE_CREATES, type GrantRequest,
 } from '../../shared/grant-requests';
 
 export type GrantRequestChange =
   | { kind: 'added'; request: GrantRequest }
   /** `answered`: someone took it to answer (it comes back as `added` if a lasting allow fails to save). `withdrawn`: its agent was deleted or its scope changed. */
-  | { kind: 'closed'; requestIds: string[]; reason: 'answered' | 'expired' | 'withdrawn' };
+  | { kind: 'closed'; requestIds: string[]; reason: 'answered' | 'expired' | 'withdrawn'; allowed?: boolean };
 
 type Listener = (change: GrantRequestChange) => void;
 
@@ -111,7 +111,9 @@ export function recordGrantRequest(
   scope?: CallApprovalScope,
 ): RecordGrantRequestResult {
   sweep(now);
-  let mine = [...pending.values()].filter((e) => e.request.agentId === request.agentId);
+  // Creates other computers ask for (#3547) have their own cap, so they never crowd out the agent's own requests.
+  const remote = !!request.remoteCreateReview;
+  let mine = [...pending.values()].filter((e) => e.request.agentId === request.agentId && !!e.request.remoteCreateReview === remote);
   const existing = mine.find((e) => e.key === key);
   if (existing) {
     if (JSON.stringify(stable(existing.scope)) === JSON.stringify(stable(scope))) return { ok: true, request: existing.request, reused: true };
@@ -119,7 +121,7 @@ export function recordGrantRequest(
     emit({ kind: 'closed', requestIds: [existing.request.requestId], reason: 'withdrawn' });
     mine = mine.filter((entry) => entry !== existing);
   }
-  if (mine.length >= MAX_PENDING_GRANT_REQUESTS_PER_AGENT) return { ok: false, reason: 'too_many', waiting: mine.length };
+  if (mine.length >= (remote ? MAX_PENDING_REMOTE_CREATES : MAX_PENDING_GRANT_REQUESTS_PER_AGENT)) return { ok: false, reason: 'too_many', waiting: mine.length };
   const full: GrantRequest = {
     ...request,
     requestId: `grant_${randomUUID()}`,
@@ -180,8 +182,14 @@ export function takeGrantRequest(requestId: string, allowed: boolean, now = Date
     ...(entry.scope && { scope: structuredClone(entry.scope) }),
   });
   schedule();
-  emit({ kind: 'closed', requestIds: [requestId], reason: 'answered' });
+  emit({ kind: 'closed', requestIds: [requestId], reason: 'answered', allowed });
   return entry.request;
+}
+
+/** Whether a live one-time approval waits for this call, without using it. */
+export function hasCallApproval(key: string, now = Date.now()): boolean {
+  const approval = approvals.get(key);
+  return !!approval && approval.until > now;
 }
 
 /** Use a one-time approval for this call, if the user gave one. */

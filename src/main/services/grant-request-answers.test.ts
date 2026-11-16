@@ -16,7 +16,7 @@ vi.mock('./clubhouse-mcp/tool-registry', () => ({ registerGlobalTool: vi.fn() })
 import { agentRegistry } from './agent-registry';
 import { registerGlobalTool } from './clubhouse-mcp/tool-registry';
 import { registerGrantRequestTools } from './clubhouse-mcp/tools/grant-request-tools';
-import { answerGrantRequest } from './grant-request-answers';
+import { answerGrantRequest, setPairedPhoneCheck } from './grant-request-answers';
 import { listGrantRequests, recordGrantRequest, _resetGrantRequestsForTesting } from './grant-requests';
 
 type Handler = (agentId: string, args: Record<string, unknown>) => Promise<{ content: Array<{ text?: string }>; isError?: boolean }>;
@@ -139,4 +139,43 @@ it.each(['mcp', 'dispatcher', 'mobile', 'annex_desktop', 'system'] as const)('a 
   expect(consumeCallApprovalScope(key)).toBeNull();
   expect(await withSettingsSurface('ui', undefined, () => answerGrantRequest(recorded.request.requestId, true))).toEqual({ ok: true });
   expect(consumeCallApprovalScope(key)?.scope.context).toBe('exact');
+});
+
+describe('a create another computer asked for (#3547)', () => {
+  const remoteCreate = () => {
+    const r = recordGrantRequest('rc', {
+      kind: 'call', agentId: 'dispatcher', agentName: 'Dispatcher', projectPath: '/dispatcher', actions: ['connection.manage'],
+      where: 'a new group project on this computer', toolName: 'remote_create_group_project', argumentsText: '{"machine":"aa","requestId":"rc_1"}',
+      remoteCreateReview: { machine: 'aa', machineName: 'Desk', name: 'Launch', scopeLabel: 'the whole app', membershipLabel: 'none', excluded: [] },
+    });
+    if (!r.ok) throw new Error('not recorded');
+    return r.request;
+  };
+
+  it('is answered on this computer or its phone, never from a desktop in the network: pairing doesn\'t approve it', async () => {
+    const { withSettingsSurface } = await import('./settings-audit');
+    const request = remoteCreate();
+    const fromDesktop = await withSettingsSurface('annex_desktop', 'aa', () => answerGrantRequest(request.requestId, true));
+    expect(fromDesktop).toEqual({ ok: false, error: expect.stringContaining('computer it was sent to') });
+    expect(listGrantRequests()).toHaveLength(1);
+    expect(await withSettingsSurface('ui', undefined, () => answerGrantRequest(request.requestId, true))).toEqual({ ok: true });
+    // A phone paired with this computer counts as this computer; a device that only claims the phone surface doesn't.
+    setPairedPhoneCheck((fp) => fp === 'phone');
+    try {
+      const fromPhone = remoteCreate();
+      expect(await withSettingsSurface('mobile', 'desk-with-phone-icon', () => answerGrantRequest(fromPhone.requestId, false))).toMatchObject({ ok: false });
+      expect(await withSettingsSurface('mobile', undefined, () => answerGrantRequest(fromPhone.requestId, false))).toMatchObject({ ok: false });
+      expect(await withSettingsSurface('mobile', 'phone', () => answerGrantRequest(fromPhone.requestId, false))).toEqual({ ok: true });
+    } finally { setPairedPhoneCheck(null); }
+    // With no check registered, no phone can.
+    const unchecked = remoteCreate();
+    expect(await withSettingsSurface('mobile', 'phone', () => answerGrantRequest(unchecked.requestId, true))).toMatchObject({ ok: false });
+  });
+
+  it('doesn\'t tell the Dispatcher to call again: no agent made this call', async () => {
+    const request = remoteCreate();
+    const { withSettingsSurface } = await import('./settings-audit');
+    await withSettingsSurface('ui', undefined, () => answerGrantRequest(request.requestId, true));
+    expect(mocks.deliver).not.toHaveBeenCalled();
+  });
 });

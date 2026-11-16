@@ -1,7 +1,7 @@
 import { ipcRenderer } from 'electron';
 import { IPC } from '../shared/ipc-channels';
 import type {
-  AutoJoinPreview, GroupProject, GroupProjectCoverage, GroupProjectCreateOptions, GroupProjectDeleteImpact, GroupProjectMemberView, GroupProjectMembershipView,
+  AutoJoinPreview, GroupProject, GroupProjectCoverage, GroupProjectCreateHost, GroupProjectCreateOptions, RemoteCreateOutcome, GroupProjectDeleteImpact, GroupProjectMemberView, GroupProjectMembershipView,
   GroupProjectRolesView, GroupProjectMembershipOptions, GroupProjectScope, GroupProjectScopeOptions,
 } from '../shared/group-project-types';
 
@@ -11,6 +11,10 @@ export const groupProject = {
     ipcRenderer.invoke(IPC.GROUP_PROJECT.LIST),
   create: (name: string, options?: GroupProjectCreateOptions): Promise<unknown> =>
     ipcRenderer.invoke(IPC.GROUP_PROJECT.CREATE, name, options),
+  createHosts: (): Promise<GroupProjectCreateHost[]> =>
+    ipcRenderer.invoke(IPC.GROUP_PROJECT.CREATE_HOSTS),
+  createOnHost: (host: string, name: string, options?: GroupProjectCreateOptions, retryOf?: string): Promise<RemoteCreateOutcome> =>
+    ipcRenderer.invoke(IPC.GROUP_PROJECT.CREATE_ON_HOST, host, name, options, retryOf),
   get: (id: string): Promise<unknown> =>
     ipcRenderer.invoke(IPC.GROUP_PROJECT.GET, id),
   update: (id: string, fields: { name?: string; description?: string; instructions?: string; metadata?: Record<string, unknown> }): Promise<unknown> =>

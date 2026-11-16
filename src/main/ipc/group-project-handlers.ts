@@ -13,6 +13,7 @@ import { addMember, answerAutoJoinOffer, beginAutoJoin, describeMembership, excl
 import { listCoverage } from '../services/group-project-coverage';
 import { executeShoulderTap } from '../services/group-project-shoulder-tap';
 import * as annexEventBus from '../services/annex-event-bus';
+import { groupProjectRemoteCreate } from '../services/group-project-remote-create';
 import { appLog } from '../services/log-service';
 import { broadcastToAllWindows } from '../util/ipc-broadcast';
 import { withValidatedArgs, stringArg, objectArg, numberArg, booleanArg, digestSinceArg } from './validation';
@@ -142,6 +143,18 @@ export function registerGroupProjectHandlers(): void {
       annexEventBus.emitGroupProjectChanged('created', project);
       appLog('core:group-project', 'info', 'Group project created', { meta: { id: project.id, name: project.name } });
       return project;
+    },
+  ));
+
+  ipcMain.handle(IPC.GROUP_PROJECT.CREATE_HOSTS, async () => groupProjectRemoteCreate.listHosts());
+
+  // #3547: a create on another computer. `retryOf` sends a saved request again, unchanged.
+  ipcMain.handle(IPC.GROUP_PROJECT.CREATE_ON_HOST, withValidatedArgs(
+    [stringArg(), stringArg(), objectArg<GroupProjectCreateOptions>({ optional: true }), stringArg({ optional: true })],
+    async (_event, host, name, options, retryOf) => {
+      const outcome = await groupProjectRemoteCreate.createOn(host as string, name as string, options as GroupProjectCreateOptions | undefined, retryOf as string | undefined);
+      appLog('core:group-project', 'info', 'Group project create on another computer', { meta: { host: outcome.host, requestId: outcome.requestId, status: outcome.status } });
+      return outcome;
     },
   ));
 

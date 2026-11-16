@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import type {
-  GroupProject, GroupProjectCreateOptions, GroupProjectMemberView, GroupProjectScope, GroupProjectScopeOptions,
+  GroupProject, GroupProjectCreateOptions, GroupProjectMemberView, GroupProjectScope, GroupProjectScopeOptions, RemoteCreateOutcome,
 } from '../../shared/group-project-types';
 
 function isGroupProject(v: unknown): v is GroupProject {
@@ -30,6 +30,8 @@ interface GroupProjectStoreState {
   loadError: string | null;
   loadProjects: () => Promise<void>;
   create: (name: string, options?: GroupProjectCreateOptions) => Promise<GroupProject>;
+  /** #3547: create on another computer; a created group's copy joins the list. */
+  createOnHost: (host: string, name: string, options?: GroupProjectCreateOptions, retryOf?: string) => Promise<RemoteCreateOutcome>;
   update: (id: string, fields: { name?: string; description?: string; instructions?: string; metadata?: Record<string, unknown> }) => Promise<void>;
   setPolling: (id: string, enabled: boolean) => Promise<void>;
   scopeOptions: () => Promise<GroupProjectScopeOptions>;
@@ -72,6 +74,15 @@ export const useGroupProjectStore = create<GroupProjectStoreState>((set) => ({
       ? state
       : { projects: [...state.projects, raw] });
     return raw;
+  },
+
+  createOnHost: async (host, name, options, retryOf) => {
+    const outcome = await window.clubhouse.groupProject.createOnHost(host, name, options, retryOf);
+    if (outcome.status === 'created' && isGroupProject(outcome.project)) {
+      const project = outcome.project;
+      set((state) => state.projects.some((p) => p.id === project.id) ? state : { projects: [...state.projects, project] });
+    }
+    return outcome;
   },
 
   update: async (id, fields) => {

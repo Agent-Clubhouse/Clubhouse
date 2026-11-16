@@ -427,7 +427,8 @@ class GroupProjectHostService {
     return project ? this.view(project) : null;
   }
 
-  async create(name: string, options?: GroupProjectCreateOptions): Promise<GroupProject> {
+  /** `metadata` is main's own (#3547 marks a remote create with its request), never a caller's. */
+  async create(name: string, options?: GroupProjectCreateOptions, internal: { metadata?: Record<string, unknown> } = {}): Promise<GroupProject> {
     await this.reconcile();
     const tombstoned = new Set((await this.loadTombstones()).map((t) => t.groupProjectId));
     const network = this.scopeOptions().network;
@@ -441,7 +442,7 @@ class GroupProjectHostService {
     const excluded = [...new Set((membershipOptions?.excluded ?? []).map((address) => canonicalMemberAddress(address, this.selfMachine())))];
     const created = await groupProjectRegistry.create(
       name, options, { machine: this.selfMachine() },
-      (input, registered) => resolveGroupProjectScope(input, registered, network), (id) => !tombstoned.has(id),
+      (input, registered) => resolveGroupProjectScope(input, registered, network), (id) => !tombstoned.has(id), internal.metadata,
     );
     await this.commit(created.id, 'record', async ({ reserve }) => {
       const seq = await reserve();
@@ -467,6 +468,11 @@ class GroupProjectHostService {
   async update(
     id: string, fields: { name?: string; description?: string; instructions?: string; metadata?: Record<string, unknown> }, options: { withinExclusive?: boolean; author?: WriteAuthor } = {},
   ): Promise<GroupProject | null> {
+    // The remote create mark (#3547) is main's own, set only at creation: no update writes or replaces it.
+    if (fields.metadata && 'remoteCreate' in fields.metadata) {
+      const { remoteCreate: _mark, ...metadata } = fields.metadata;
+      fields = { ...fields, metadata };
+    }
     const replica = await this.replicaFor(id).catch((): null => null);
     if (replica) {
       const current = await this.view(replica);
