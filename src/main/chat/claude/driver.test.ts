@@ -1482,3 +1482,35 @@ describe('context limits (#2660)', () => {
     expect(claudeTransportOptions(opts)).not.toHaveProperty('autocompact');
   });
 });
+
+describe('pre-approved Clubhouse tools (#3578)', () => {
+  const opts = { agentId: 'a', provider: 'claude-code', cwd: '/', binaryPath: 'claude', level: 'auto' as const };
+
+  it('become allow rules on the Clubhouse server\'s tool names, and a start without them allows nothing', () => {
+    expect(claudeTransportOptions({ ...opts, preapprovedClubhouseTools: ['start_work', 'tell_user'] }).allowedTools)
+      .toEqual(['mcp__clubhouse__start_work', 'mcp__clubhouse__tell_user']);
+    expect(claudeTransportOptions(opts)).not.toHaveProperty('allowedTools');
+    expect(claudeTransportOptions({ ...opts, preapprovedClubhouseTools: [] })).not.toHaveProperty('allowedTools');
+    // The level stays the agent's: Auto is still Auto for every other tool.
+    expect(claudeTransportOptions({ ...opts, preapprovedClubhouseTools: ['start_work'] }).permissionMode).toBe('auto');
+  });
+
+  it('a denial logs which check refused it, never the call\'s input', async () => {
+    const log = vi.fn();
+    const transport = new ScriptedTransport();
+    const session = await new ClaudeChatDriver('claude_agent_sdk', { createTransport: () => transport, log }).start(opts);
+    const drafts = new Drafts(session.events);
+    const raw = {
+      type: 'system', subtype: 'permission_denied', tool_name: 'mcp__clubhouse__start_work', tool_use_id: 't1',
+      decision_reason_type: 'classifier', decision_reason: 'Relays an approval the user did not give in this session',
+      message: 'denied', tool_input: { request: 'PRIVATE-REQUEST-3578' },
+    };
+    transport.emit(new ClaudeNormalizer().normalize(raw)[0]);
+    await drafts.waitFor('notice', (d) => d.data.code === 'permission_denied');
+    expect(log).toHaveBeenCalledWith('info', '[claude-chat] Tool call denied by the permission mode', {
+      toolName: 'mcp__clubhouse__start_work', reasonType: 'classifier', reason: 'Relays an approval the user did not give in this session',
+    });
+    expect(JSON.stringify(log.mock.calls)).not.toContain('PRIVATE-REQUEST-3578');
+    await session.close();
+  });
+});

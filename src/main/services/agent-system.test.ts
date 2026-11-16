@@ -102,11 +102,18 @@ vi.mock('./agent-config', () => ({
 }));
 const mockUpdateDurableConfig = vi.fn(async () => {});
 
-// One folder stands for the Dispatcher's (#3185).
+// One folder stands for the Dispatcher's (#3185), another for its chat's (#3578).
 vi.mock('./dispatcher/dispatcher-paths', async (importOriginal) => ({
   ...await importOriginal<typeof import('./dispatcher/dispatcher-paths')>(),
-  isDispatcherPath: (p: string | undefined | null) => p === '/dispatcher-folder',
+  isDispatcherPath: (p: string | undefined | null) => p === '/dispatcher-folder' || p === '/dispatcher-chat-folder',
+  isDispatcherChatPath: (p: string | undefined | null) => p === '/dispatcher-chat-folder',
 }));
+// The Dispatcher is off as saved unless a test turns it on, so its durable starts are refused.
+const dispatcherOn = vi.hoisted(() => ({ value: false }));
+vi.mock('./dispatcher/dispatcher-settings', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('./dispatcher/dispatcher-settings')>();
+  return { ...actual, dispatcherEnablement: () => (dispatcherOn.value ? { ...actual.dispatcherEnablement(), enabled: true } : actual.dispatcherEnablement()) };
+});
 
 // Chat start runs for real unless a test stands in for it (to fail a chat resume).
 const { mockTryStartChatAgent, mockCancelChatStart } = vi.hoisted(() => ({ mockTryStartChatAgent: vi.fn(), mockCancelChatStart: vi.fn() }));
@@ -870,6 +877,40 @@ describe('agent-system', () => {
       } finally {
         delete (mockProvider as { desktopControlOffArgs?: unknown }).desktopControlOffArgs;
       }
+    });
+
+    describe('the Dispatcher chat\'s own tools (#3578)', () => {
+      beforeEach(() => { dispatcherOn.value = true; });
+      afterEach(() => { dispatcherOn.value = false; });
+      const dispatcherStart = (projectPath: string) => spawnAgent({ agentId: 'd', projectPath, cwd: projectPath, kind: 'durable' });
+
+      it('skip the CLI\'s permission check for the chat alone: exactly start_work and tell_user, in chat and the terminal', async () => {
+        await dispatcherStart('/dispatcher-chat-folder');
+        expect(mockTryStartChatAgent.mock.calls.at(-1)![0].preapprovedClubhouseTools).toEqual(['start_work', 'tell_user']);
+        expect(mockProvider.buildSpawnCommand.mock.calls.at(-1)![0].allowedTools).toEqual(['mcp__clubhouse__start_work', 'mcp__clubhouse__tell_user']);
+      });
+
+      it.each([
+        ['the Dispatcher\'s coordinator', '/dispatcher-folder', 'durable'],
+        ['an ordinary agent', '/project', 'durable'],
+        ['a quick agent in the chat\'s folder', '/dispatcher-chat-folder', 'quick'],
+      ] as const)('are not given to %s', async (_who, projectPath, kind) => {
+        await spawnAgent({ agentId: 'a', projectPath, cwd: projectPath, kind });
+        expect(mockTryStartChatAgent.mock.calls.at(-1)![0]).not.toHaveProperty('preapprovedClubhouseTools');
+        const allowed = mockProvider.buildSpawnCommand.mock.calls.at(-1)![0].allowedTools ?? [];
+        expect(allowed.filter((t: string) => t.startsWith('mcp__'))).toEqual([]);
+      });
+
+      it('are pre-approved only on Claude Code; another CLI\'s terminal gets no Claude rule', async () => {
+        const id = mockProvider.id;
+        Object.assign(mockProvider, { id: 'codex-cli' });
+        try {
+          await dispatcherStart('/dispatcher-chat-folder');
+          expect(mockProvider.buildSpawnCommand.mock.calls.at(-1)![0].allowedTools).toBeUndefined();
+        } finally {
+          Object.assign(mockProvider, { id });
+        }
+      });
     });
 
     it('throws with descriptive error when pre-flight check fails', async () => {
