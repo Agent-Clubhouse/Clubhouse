@@ -16,6 +16,15 @@ name: Validate
 # Pushes to main and the daily schedule run the same two jobs (on main, the
 # build job only for macOS-relevant pushes). `full-ci` and manual runs add the
 # complete macOS matrix.
+#
+# macOS PAUSE (2026-11-16, maintainer): desktop macOS jobs are paused to free
+# the shared macOS runners for Clubhouse Go. While MACOS_PAUSED is 'true' in
+# the Plan step, no run starts a macOS job (PRs, main, schedule, full-ci); the
+# macOS jobs show as skipped, never as passed, and the run summary says so.
+# A one-off macOS validation: Actions > Validate > Run workflow, ref main,
+# "Run macOS jobs" checked (or `gh workflow run Validate --ref main -f macos=true`),
+# which runs the complete matrix including macOS. To resume normally, set
+# MACOS_PAUSED to 'false'. docs/ci.md, "Pausing macOS".
 
 on:
   pull_request:
@@ -38,6 +47,11 @@ on:
     # runner-image and toolchain drift that no change would trigger.
     - cron: '0 7 * * *'
   workflow_dispatch:
+    inputs:
+      macos:
+        description: Run macOS jobs (overrides the macOS pause for this run)
+        type: boolean
+        default: false
 
 # PRs: a newer push supersedes the running validation. main/nightly: let every
 # run finish so each merged commit gets a full result.
@@ -71,6 +85,7 @@ jobs:
   #   full         Linux/Windows extras: the Linux package smoke test
   #   e2e          build the app and run E2E (false for unit-test-only changes)
   #   macos_build  run the macOS build job
+  #   macos        any macOS job may run ('false' while macOS is paused)
   changes:
     needs: dependency-preflight
     if: ${{ always() && (needs.dependency-preflight.result == 'success' || needs.dependency-preflight.result == 'skipped') && !(github.event.action == 'labeled' && github.event.label.name != 'full-ci') }}
@@ -82,6 +97,7 @@ jobs:
       full: ${{ steps.plan.outputs.full }}
       e2e: ${{ steps.plan.outputs.e2e }}
       macos_build: ${{ steps.plan.outputs.macos_build }}
+      macos: ${{ steps.plan.outputs.macos }}
     steps:
       - uses: actions/checkout@v7
         with:
@@ -110,9 +126,18 @@ jobs:
           PR_BASE: ${{ github.event.pull_request.base.sha }}
           PR_HEAD: ${{ github.event.pull_request.head.sha }}
           PUSH_BEFORE: ${{ github.event.before }}
+          # Desktop macOS jobs are paused (see the header). 'false' resumes them.
+          MACOS_PAUSED: 'true'
+          MACOS_INPUT: ${{ github.event_name == 'workflow_dispatch' && inputs.macos || false }}
         run: |
           set -euo pipefail
           out() { printf '%s\n' "$@" | tee -a "$GITHUB_OUTPUT" >> "$GITHUB_STEP_SUMMARY"; }
+          if [ "$MACOS_INPUT" = "true" ] || [ "$MACOS_PAUSED" != "true" ]; then
+            out macos=true
+          else
+            out macos=false
+            echo "macOS jobs are paused for this run: they are skipped, not passed. Run Validate manually with 'Run macOS jobs' for a macOS check (docs/ci.md)." >> "$GITHUB_STEP_SUMMARY"
+          fi
           if [ "$EVENT" = "workflow_dispatch" ] || [ "$FULL_CI" = "true" ]; then
             out complete=true full=true e2e=true macos_build=false
           elif [ "$EVENT" = "schedule" ]; then
@@ -246,7 +271,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: ${{ fromJSON(needs.changes.outputs.complete == 'true' && '["ubuntu-latest","windows-latest","macos-latest"]' || '["ubuntu-latest","windows-latest"]') }}
+        os: ${{ fromJSON(needs.changes.outputs.complete == 'true' && needs.changes.outputs.macos == 'true' && '["ubuntu-latest","windows-latest","macos-latest"]' || '["ubuntu-latest","windows-latest"]') }}
         shard: [1, 2]
     steps:
       - uses: actions/checkout@v7
@@ -279,7 +304,7 @@ jobs:
         # breaking the node-pty rebuild during `electron-forge package`.
         # Track this pin in #1652 and revisit when the upstream fix lands or
         # GitHub announces windows-2022 deprecation, whichever comes first.
-        os: ${{ fromJSON(needs.changes.outputs.complete == 'true' && '["ubuntu-latest","windows-2022","macos-latest"]' || '["ubuntu-latest","windows-2022"]') }}
+        os: ${{ fromJSON(needs.changes.outputs.complete == 'true' && needs.changes.outputs.macos == 'true' && '["ubuntu-latest","windows-2022","macos-latest"]' || '["ubuntu-latest","windows-2022"]') }}
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v7
@@ -351,7 +376,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: ${{ fromJSON(needs.changes.outputs.complete == 'true' && '["ubuntu-latest","windows-2022","macos-latest"]' || '["ubuntu-latest","windows-2022"]') }}
+        os: ${{ fromJSON(needs.changes.outputs.complete == 'true' && needs.changes.outputs.macos == 'true' && '["ubuntu-latest","windows-2022","macos-latest"]' || '["ubuntu-latest","windows-2022"]') }}
         # One explicit list per shard (e2e/e2e-shards.mjs), balanced by hand
         # from measured times. Playwright's own sharding splits by test count.
         shard: [1, 2, 3]
@@ -408,7 +433,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: ${{ fromJSON(needs.changes.outputs.complete == 'true' && '["ubuntu-latest","windows-2022","macos-latest"]' || '["ubuntu-latest","windows-2022"]') }}
+        os: ${{ fromJSON(needs.changes.outputs.complete == 'true' && needs.changes.outputs.macos == 'true' && '["ubuntu-latest","windows-2022","macos-latest"]' || '["ubuntu-latest","windows-2022"]') }}
         # Every Annex spec launches two apps, so one job was the run's long
         # pole. One explicit list per shard, in e2e/e2e-shards.mjs.
         shard: [1, 2]
@@ -642,7 +667,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: ${{ fromJSON(needs.changes.outputs.complete == 'true' && '["ubuntu-latest","windows-2022","macos-latest"]' || '["ubuntu-latest","windows-2022"]') }}
+        os: ${{ fromJSON(needs.changes.outputs.complete == 'true' && needs.changes.outputs.macos == 'true' && '["ubuntu-latest","windows-2022","macos-latest"]' || '["ubuntu-latest","windows-2022"]') }}
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v7
@@ -679,7 +704,7 @@ jobs:
   # Linux and Windows.
   macos-unit:
     needs: changes
-    if: ${{ !cancelled() && needs.changes.result == 'success' && needs.changes.outputs.complete != 'true' }}
+    if: ${{ !cancelled() && needs.changes.result == 'success' && needs.changes.outputs.complete != 'true' && needs.changes.outputs.macos == 'true' }}
     name: macOS unit
     runs-on: macos-latest
     timeout-minutes: 15
@@ -734,7 +759,7 @@ jobs:
   # and the terminal's node-pty spawn helper.
   macos-build:
     needs: changes
-    if: ${{ !cancelled() && needs.changes.result == 'success' && needs.changes.outputs.macos_build == 'true' && needs.changes.outputs.complete != 'true' }}
+    if: ${{ !cancelled() && needs.changes.result == 'success' && needs.changes.outputs.macos_build == 'true' && needs.changes.outputs.complete != 'true' && needs.changes.outputs.macos == 'true' }}
     name: macOS build + E2E smoke
     runs-on: macos-latest
     timeout-minutes: 30
