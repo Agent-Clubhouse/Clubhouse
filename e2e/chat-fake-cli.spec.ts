@@ -212,6 +212,11 @@ for (const p of PROVIDERS) {
         await expect(composer.locator('ol > li')).toHaveText(['first', 'second']);
 
         await composer.fill('');
+        // Typing "- " converts only an empty line: the draft must be one empty
+        // paragraph with the caret in it, not an empty list item left behind (#3564).
+        await expect(composer).toBeFocused();
+        await expect(composer).toHaveAttribute('data-empty', 'true');
+        await expect(composer.locator('ul, ol')).toHaveCount(0);
         await composer.pressSequentially('- ');
         // Exit the empty item only once the conversion has rendered (#3564).
         await expect(composer.locator('ul > li')).toHaveCount(1);
