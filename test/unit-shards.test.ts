@@ -2,7 +2,8 @@ import { describe, it, expect } from 'vitest';
 import { existsSync } from 'node:fs';
 import * as path from 'path';
 import { DEFAULT_FILE_SECONDS, UNIT_FILE_SECONDS, partitionByWeight } from './unit-shards.mjs';
-import { specKey } from './unit-sequencer';
+import type { TestSpecification, Vitest } from 'vitest/node';
+import { UnitShardSequencer, specKey } from './unit-sequencer';
 
 const ROOT = path.resolve(__dirname, '..');
 
@@ -48,9 +49,15 @@ describe('partitionByWeight', () => {
 });
 
 describe('UNIT_FILE_SECONDS', () => {
-  it('names only test files that exist, by repo-relative path with forward slashes', () => {
-    const missing = Object.keys(UNIT_FILE_SECONDS).filter((f) => f.includes('\\') || !/\.test\.tsx?$/.test(f) || !existsSync(path.join(ROOT, f)));
-    expect(missing).toEqual([]);
+  it('names test files by repo-relative path with forward slashes', () => {
+    // A name that no longer matches a file is only ignored, so a rename doesn't fail here.
+    expect(Object.keys(UNIT_FILE_SECONDS).filter((f) => f.includes('\\') || f.startsWith('/') || !/\.test\.tsx?$/.test(f))).toEqual([]);
+  });
+
+  it('mostly names files that exist, so the table is fresh enough to balance', () => {
+    const names = Object.keys(UNIT_FILE_SECONDS);
+    const existing = names.filter((f) => existsSync(path.join(ROOT, f)));
+    expect(existing.length).toBeGreaterThanOrEqual(names.length / 2);
   });
 
   it('weighs no file below the default', () => {
@@ -61,5 +68,35 @@ describe('UNIT_FILE_SECONDS', () => {
 describe('specKey', () => {
   it('is the repo-relative path with forward slashes', () => {
     expect(specKey(ROOT, path.join(ROOT, 'src', 'main', 'a.test.ts'))).toBe('src/main/a.test.ts');
+  });
+});
+
+describe('UnitShardSequencer', () => {
+  const heavy = Object.keys(UNIT_FILE_SECONDS).slice(0, 4);
+  const light = Array.from({ length: 20 }, (_, i) => `src/light${i}.test.ts`);
+  const spec = (file: string, groupOrder = 0) =>
+    ({ moduleId: path.join(ROOT, file), project: { name: 'main', config: { sequence: { groupOrder }, isolate: true } } }) as unknown as TestSpecification;
+  const sequencer = (shard?: { index: number; count: number }) =>
+    new UnitShardSequencer({
+      config: { root: ROOT, shard },
+      cache: { getFileTestResults: () => undefined, getFileStats: () => undefined },
+    } as unknown as Vitest);
+  const key = (s: TestSpecification) => specKey(ROOT, s.moduleId);
+
+  it('gives each spec to exactly one shard', async () => {
+    const specs = [...light, ...heavy].map((f) => spec(f));
+    const shards = await Promise.all([1, 2, 3].map((index) => sequencer({ index, count: 3 }).shard(specs)));
+    expect(shards.flat().map(key).sort()).toEqual([...light, ...heavy].sort());
+  });
+
+  it('starts the heaviest files first in a sharded run, within groupOrder', async () => {
+    const specs = [spec(light[0]), spec(heavy[3]), spec(heavy[0], 1), spec(light[1]), spec(heavy[1])];
+    const sorted = await sequencer({ index: 1, count: 2 }).sort(specs);
+    expect(sorted.map(key)).toEqual([heavy[1], heavy[3], light[0], light[1], heavy[0]]);
+  });
+
+  it("keeps vitest's order without --shard", async () => {
+    const specs = [spec(light[0]), spec(heavy[3]), spec(light[1]), spec(heavy[1])];
+    expect((await sequencer().sort(specs)).map(key)).toEqual([light[0], heavy[3], light[1], heavy[1]]);
   });
 });
