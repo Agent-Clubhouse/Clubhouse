@@ -233,3 +233,14 @@ The archive contains the app, source-commit/ASAR-hash/fuse provenance and instru
 The Windows build also runs `scripts/ci/smoke-packaged.mjs`. This hosted-only check launches the actual packaged executable with an isolated profile, updates/Annex disabled, no inherited CI credentials and no sandbox or inspector override. It checks the existing startup log for `packaged: true` and the embedded Electron/Node/Chromium versions, verifies the six hardened fuse values, records the binary hash, then stops only its owned process tree. The uploaded `packaged-runtime-*` evidence covers packaged Windows startup; development E2E, Annex/network tests and other platforms' packaged launch are separate checks.
 
 The raw Linux package startup attempt in run 40053080627 aborted before runtime reporting because its `chrome-sandbox` lacked root ownership/mode 4755. No sandbox flags, privileged helper permissions or host security settings were changed. Linux installer production remains checked separately; this is not a successful Linux packaged-launch test.
+
+## Pausing macOS
+
+Since 2026-11-16, desktop macOS jobs in Validate are **paused** to free the shared macOS runners for Clubhouse Go (maintainer decision). While `MACOS_PAUSED` is `'true'` in the Validate "Plan the run" step:
+
+- No Validate run starts a macOS job: not on PRs, pushes to `main`, the daily schedule or `full-ci`. The `macOS unit` and `macOS build + E2E smoke` jobs show as **skipped**, never as passed, and the run summary says macOS was paused. Linux and Windows checks are unchanged.
+- Coverage gap: macOS-only behaviour (window chrome, Cmd shortcuts, the macOS node-pty spawn helper, macOS packaging) isn't checked per PR or per merge.
+- One-off macOS check: Actions > Validate > Run workflow on `main` with **Run macOS jobs** checked, or `gh workflow run Validate --ref main -f macos=true`. That runs the complete matrix, macOS included, for the chosen ref.
+- To resume: set `MACOS_PAUSED: 'false'` in `.github/workflows/validate.yml` and run one manual macOS check on `main` to catch anything that landed while paused.
+
+`release.yml` and `stable-candidate.yml` are unaffected; they're dispatched by hand for releases.
