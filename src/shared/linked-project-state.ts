@@ -147,12 +147,13 @@ export function linkedStateWrite(
  * group's, and would hold off the owner's own value.
  *
  * Merging them is a no-op once any explicit edit exists, so they can be
- * offered again safely. A field that already has a clock-zero record in
- * `saved`, from any computer, isn't offered again while the group's value for
- * it is from before sharing too: by then this computer's state shows the
- * group's value, and offering that would replace a saved value from before
- * sharing. Once the group has an explicit value, the copy keeps that one
- * (unlink keeps the value), so it's offered as before.
+ * offered again safely. A Mark inactive that already has a clock-zero record
+ * in `saved`, from any computer, isn't offered again while the group's value
+ * is from before sharing too: by then this computer's state shows the group's
+ * value, and offering that would replace a saved mark from before sharing.
+ * Once the group has an explicit value, the copy keeps that one (unlink keeps
+ * the value), so it's offered as before. Pins need no such rule: a clock-zero
+ * unpinned record never replaces a pinned one.
  */
 export function legacyLinkedStateRecords(
   state: ProjectState, groups: readonly NetworkProjectRef[][], self: string, saved: readonly LinkedProjectStateRecord[] = [],
@@ -164,7 +165,7 @@ export function legacyLinkedStateRecords(
   for (const group of groups) {
     const offer = (project: NetworkProjectRef, field: LinkedProjectField, value: boolean) => {
       const explicit = (groupLinkedState(index, group, field)?.at ?? 0) > 0;
-      if (explicit || !offered.has(linkedStateKey(project, field))) out.push({ project, field, value, at: 0, by: self });
+      if (field === 'pinned' || explicit || !offered.has(linkedStateKey(project, field))) out.push({ project, field, value, at: 0, by: self });
     };
     for (const project of group) {
       const id = sidebarProjectId(project, self);

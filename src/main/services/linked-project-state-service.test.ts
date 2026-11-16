@@ -193,6 +193,25 @@ describe('Pin and Mark inactive shared by linked copies', () => {
     expect(b.linked.records().find((r) => r.project.machine === A && r.field === 'inactive')).toMatchObject({ value: true, at: 0 });
   });
 
+  it('a pin from before sharing that a group gave a copy stays when that copy is linked again with an unpinned one', async () => {
+    const a = desktop(A, { pinnedProjectIds: ['site'] }), b = desktop(B);
+    net = mesh(a, b);
+    // B's unpinned value from before sharing is already saved on both when A shows the group's pin.
+    const unpinned = { project: { machine: B, projectId: 'q' }, field: 'pinned' as const, value: false, at: 0, by: B };
+    await a.linked.write([unpinned]); await b.linked.write([unpinned]);
+    await a.links.apply({ type: 'link', a: 'site', b: remote(B, 'q') });
+    await vi.waitFor(() => expect(b.state.pinnedProjectIds).toEqual(expect.arrayContaining([remote(A, 'site'), 'q'])));
+    await a.service.settled(); await b.service.settled();
+    await a.links.apply({ type: 'unlink', a: 'site' });
+    await vi.waitFor(() => expect(b.links.groups()).toEqual([]));
+    await b.links.apply({ type: 'link', a: 'q', b: 'r' });
+    await vi.waitFor(() => expect(b.links.groups()).toHaveLength(1));
+    await b.service.settled();
+    await new Promise((r) => setTimeout(r, 20));
+    await b.service.settled();
+    expect(b.state.pinnedProjectIds).toEqual(expect.arrayContaining(['q', 'r']));
+  });
+
   it('after a downgrade, an unlink and Mark active there stay as they are on upgrade', async () => {
     // Records saved while linked on this version; the older one unlinked and marked active without any.
     const a = desktop(A);

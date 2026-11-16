@@ -153,10 +153,12 @@ describe('values from before sharing', () => {
     const shown = project(first, groups, A, state({ inactiveProjectIds: ['site'] }));
     expect(shown.inactiveProjectIds).toEqual([]);
     // Offering the state it now shows changes nothing.
-    expect(legacyLinkedStateRecords(shown, groups, A, first)).toEqual([]);
+    expect(legacyLinkedStateRecords(shown, groups, A, first)).toEqual([rec(a, 'pinned', false, 0)]);
     expect(first).toContainEqual(rec(a, 'inactive', true, 0));
     // Still offered for a copy it has no record for yet.
-    expect(legacyLinkedStateRecords(shown, [[a, b, ref(A, 'site2')]], A, first)).toEqual([rec(ref(A, 'site2'), 'pinned', false, 0), rec(ref(A, 'site2'), 'inactive', false, 0)]);
+    expect(legacyLinkedStateRecords(shown, [[a, b, ref(A, 'site2')]], A, first)).toEqual([
+      rec(a, 'pinned', false, 0), rec(ref(A, 'site2'), 'pinned', false, 0), rec(ref(A, 'site2'), 'inactive', false, 0),
+    ]);
   });
 
   it('never replace a clock-zero record from another computer either, whichever writer won the tie', () => {
