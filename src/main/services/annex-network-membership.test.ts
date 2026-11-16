@@ -194,7 +194,7 @@ describe('Annex Network membership (#3061)', () => {
     it('leaves out a non-loopback pairing override address', () => {
       peers.set(A.toLowerCase(), memberPeer(A, '0a', 'Studio', {
         knownHosts: ['10.20.0.5', '192.168.1.5'], hostPorts: { '10.20.0.5': 9443, '192.168.1.5': 9443 }, mainPort: 9443,
-        privateHosts: ['10.20.0.5'], sharedHosts: ['192.168.1.5'],
+        privateHosts: ['10.20.0.5'], sharedEndpoints: { '192.168.1.5': 9443 },
       }));
       expect(viewOf()).toMatchObject({ hosts: ['192.168.1.5'], port: 9443 });
     });
@@ -228,9 +228,29 @@ describe('Annex Network membership (#3061)', () => {
     it('still shares an address the device itself gave, even if it was also typed here', () => {
       peers.set(A.toLowerCase(), memberPeer(A, '0a', 'Studio', {
         knownHosts: ['192.168.1.5'], hostPorts: { '192.168.1.5': 9443 }, mainPort: 9443,
-        privateHosts: ['192.168.1.5'], sharedHosts: ['192.168.1.5'],
+        privateHosts: ['192.168.1.5'], sharedEndpoints: { '192.168.1.5': 9443 },
       }));
       expect(viewOf()).toMatchObject({ hosts: ['192.168.1.5'], port: 9443 });
+    });
+
+    it('before its hello, a continuity re-pair through a private remapped port exports the link endpoint at the link port, never the private one', () => {
+      peers.set(A.toLowerCase(), memberPeer(A, '0a', 'Studio', {
+        knownHosts: ['10.20.0.5'], hostPorts: { '10.20.0.5': 7443 }, mainPort: 7443,
+        privateHosts: ['10.20.0.5'], sharedEndpoints: { '10.20.0.5': 9443 },
+      }));
+      expect(viewOf()).toMatchObject({ hosts: ['10.20.0.5'], port: 9443 });
+      expect(JSON.stringify(membership.currentView())).not.toContain('7443');
+    });
+
+    it('a private host and port on another IP never decides the port for a shared one', () => {
+      peers.set(A.toLowerCase(), memberPeer(A, '0a', 'Studio', {
+        knownHosts: ['10.30.0.7', '192.168.1.5'], hostPorts: { '10.30.0.7': 7443, '192.168.1.5': 9443 }, mainPort: 7443,
+        privateHosts: ['10.30.0.7'], sharedEndpoints: { '192.168.1.5': 9443 },
+      }));
+      expect(viewOf()).toMatchObject({ hosts: ['192.168.1.5'], port: 9443 });
+      const wire = JSON.stringify(membership.currentView());
+      expect(wire).not.toContain('10.30.0.7');
+      expect(wire).not.toContain('7443');
     });
 
     it('keeps its own forward when the device announces itself, and still never shares it', () => {

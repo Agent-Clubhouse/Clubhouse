@@ -786,11 +786,15 @@ function haltForTlsError(sat: SatelliteConnectionInternal, err: unknown): boolea
   return false;
 }
 
-/** This machine's own Annex listener ports (#3608), set by the server while it runs. */
-let ownListenerPorts: () => { mainPort?: number; pairingPort?: number } = () => annexSettings.getLastPorts();
+/**
+ * The ports this machine's Annex listeners are bound to now (#3608), from the server. Not the
+ * remembered ports: after a move, the remembered one belongs to whatever took it, which may
+ * be a forward. Nothing while the server is off, since then nothing of Annex's is listening.
+ */
+let ownListenerPorts: () => { mainPort?: number; pairingPort?: number } = () => ({});
 
 export function setOwnListenerPortsProvider(provider: (() => { mainPort?: number; pairingPort?: number }) | null): void {
-  ownListenerPorts = provider ?? (() => annexSettings.getLastPorts());
+  ownListenerPorts = provider ?? (() => ({}));
 }
 
 /** Whether the satellite's current address is a loopback one on this machine's own Annex port. */
@@ -2841,11 +2845,14 @@ async function pairOverTls(target: {
       ...Object.fromEntries((target.linkHosts ?? []).map((host) => [host.toLowerCase(), target.linkPort ?? target.port])),
       [target.host.toLowerCase()]: target.port,
     },
-    mainPort: target.linkPort ?? target.port,
+    // An address of this machine's own never becomes the default port when the old one can stand.
+    mainPort: target.linkPort ?? (ownRoute && certContinuity && stored?.mainPort ? stored.mainPort : target.port),
     ...(ownRoute && { privateHosts: [target.host.toLowerCase()] }),
-    // The link's own hosts came from the device itself: shared, even if one was also typed here.
-    ...((target.linkHosts ?? []).some((host) => !isAnnexLoopback(host))
-      && { sharedHosts: [...new Set((target.linkHosts ?? []).filter((host) => !isAnnexLoopback(host)).map((host) => host.toLowerCase()))] }),
+    // The link's own endpoints came from the device itself: shared at the link's port, even if a host was also typed here.
+    ...((target.linkHosts ?? []).some((host) => !isAnnexLoopback(host)) && {
+      sharedEndpoints: Object.fromEntries((target.linkHosts ?? []).filter((host) => !isAnnexLoopback(host))
+        .map((host) => [host.toLowerCase(), target.linkPort ?? target.port])),
+    }),
   }, certContinuity));
 
   probedCertificates.delete(fingerprint);

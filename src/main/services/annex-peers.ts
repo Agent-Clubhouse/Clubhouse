@@ -161,12 +161,12 @@ export function noteReached(fingerprint: string, host: string, port: number, fro
   const peers = loadPeers();
   const peer = peers.find((p) => p.fingerprint === fingerprint);
   if (!peer || !host || !(port > 0)) return;
-  // Announced on the network by the device itself: a shared address, even if it was also typed (#3608).
-  if (from === 'discovered' && !isAnnexLoopback(host)) peer.sharedHosts = withPrivateHost(peer.sharedHosts, host);
+  // Announced on the network by the device itself: shared at that port, even if the host was also typed (#3608).
+  if (from === 'discovered' && !isAnnexLoopback(host)) peer.sharedEndpoints = { ...peer.sharedEndpoints, [host.toLowerCase()]: port };
   peer.hostPorts = { ...hostPortsWithFallback(peer.knownHosts, peer.mainPort, peer.hostPorts), [host.toLowerCase()]: port };
   peer.knownHosts = rememberHost(peer.knownHosts, host);
   // A route this machine saved for itself never becomes the shared default port (#3608).
-  if (!peer.mainPort || !isPrivateHost(peer, host)) peer.mainPort = port;
+  if (!peer.mainPort || !isPrivateHost(peer, host, port)) peer.mainPort = port;
   peer.lastSeen = new Date().toISOString();
   savePeers(peers);
 }
@@ -260,9 +260,9 @@ export function withSavedRoutes(previous: AnnexPeer | undefined, next: AnnexPeer
       if (previous.typedHostCert) out.typedHostCert = previous.typedHostCert;
     }
     if (!out.announcedReach && previous.announcedReach) out.announcedReach = previous.announcedReach;
-    const shared = [...(out.sharedHosts ?? [])];
-    for (const host of previous.sharedHosts ?? []) if (!shared.includes(host)) shared.push(host);
-    if (shared.length) out.sharedHosts = shared;
+    // Endpoints the device gave, host and port together: the new pairing's win for a host it also lists.
+    const shared = { ...(previous.sharedEndpoints ?? {}), ...(next.sharedEndpoints ?? {}) };
+    if (Object.keys(shared).length) out.sharedEndpoints = shared;
     if (previous.heldRoutes && !out.heldRoutes) out.heldRoutes = previous.heldRoutes;
     return out;
   }

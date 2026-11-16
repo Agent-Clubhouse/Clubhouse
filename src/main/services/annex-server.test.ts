@@ -1012,6 +1012,9 @@ describe('annex-server', () => {
         expect(annexSettings.saveLastPorts).toHaveBeenCalledWith({ mainPort: status.port, pairingPort: status.pairingPort });
         // Said in Settings (#3608), and whatever held the port is left alone.
         expect(status.listenerPortsMoved).toEqual({ main: { preferred: taken, bound: status.port } });
+        // The own-port check uses the port bound now, not the remembered one another program holds.
+        expect(annexServer.liveListenerPorts()).toEqual({ mainPort: status.port, pairingPort: status.pairingPort });
+        expect(annexServer.liveListenerPorts().mainPort).not.toBe(taken);
         expect(blocker.listening).toBe(true);
         expect((blocker.address() as net.AddressInfo).port).toBe(taken);
       } finally {
@@ -1023,6 +1026,24 @@ describe('annex-server', () => {
       annexServer.start();
       await vi.waitFor(() => expect(annexServer.getStatus().port).toBeGreaterThan(0));
       expect(annexServer.getStatus().listenerPortsMoved).toBeUndefined();
+    });
+
+    it('reports the pairing port moving too, and no live ports once stopped (#3608)', async () => {
+      const blocker = net.createServer();
+      await new Promise<void>((r) => blocker.listen(0, '127.0.0.1', () => r()));
+      const taken = (blocker.address() as net.AddressInfo).port;
+      try {
+        vi.mocked(annexSettings.getLastPorts).mockReturnValue({ mainPort: 0, pairingPort: taken });
+        annexServer.start();
+        await vi.waitFor(() => expect(annexServer.getStatus().pairingPort).toBeGreaterThan(0));
+        const status = annexServer.getStatus();
+        expect(status.listenerPortsMoved).toEqual({ pairing: { preferred: taken, bound: status.pairingPort } });
+        expect(blocker.listening).toBe(true);
+        annexServer.stop();
+        expect(annexServer.liveListenerPorts()).toEqual({});
+      } finally {
+        blocker.close();
+      }
     });
   });
 

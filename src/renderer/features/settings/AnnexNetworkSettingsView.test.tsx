@@ -135,6 +135,19 @@ describe('AnnexNetworkSettingsView (#3067)', () => {
     expect(screen.getByTestId('pairing-wizard')).toBeInTheDocument();
   });
 
+  it('shows the Annex port, and says when either listener had to move, leaving the other program alone (#3608)', () => {
+    setup(ON);
+    const { unmount } = render(<AnnexNetworkSettingsView />);
+    expect(screen.getByTestId('annex-listener-port')).toHaveTextContent('7432');
+    expect(screen.getByTestId('annex-listener-port')).toHaveTextContent('A forward from another computer to this one must reach this port.');
+    unmount();
+    setup(ON, { status: { ...STATUS, listenerPortsMoved: { main: { preferred: 7400, bound: 7432 }, pairing: { preferred: 7401, bound: 7433 } } } });
+    render(<AnnexNetworkSettingsView />);
+    expect(screen.getByTestId('annex-listener-port')).toHaveTextContent('Port 7400 was in use by another program when Annex started, so Annex listens on 7432 instead.');
+    expect(screen.getByTestId('annex-listener-port')).toHaveTextContent('The other program was left alone.');
+    expect(screen.getByTestId('annex-pairing-port-moved')).toHaveTextContent('The identity-hint port 7401 was also in use, so it listens on 7433.');
+  });
+
   it('offers to allow pairing again only while it is paused', () => {
     setup(ON, { status: { ...STATUS, pairingPaused: true } });
     render(<AnnexNetworkSettingsView />);

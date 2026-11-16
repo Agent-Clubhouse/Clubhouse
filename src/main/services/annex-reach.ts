@@ -169,18 +169,49 @@ export function rememberHost(known: readonly string[] | undefined, host: string)
   return [h, ...(known ?? []).filter((k) => k.toLowerCase() !== h)].slice(0, KNOWN_HOSTS_MAX);
 }
 
+type RouteProvenance = { privateHosts?: readonly string[]; sharedEndpoints?: Readonly<Record<string, number>> };
+
+/** The port the device itself gave with `host` (#3608), if it gave one. */
+export function sharedPortOf(peer: RouteProvenance | undefined, host: string): number | undefined {
+  if (isAnnexLoopback(host)) return undefined;
+  const ports = peer?.sharedEndpoints;
+  const h = host.toLowerCase();
+  return ports && Object.prototype.hasOwnProperty.call(ports, h) ? ports[h] : undefined;
+}
+
 /**
- * Whether `host` is one this machine saved for itself (#3608), never sent to other members:
+ * Whether `host` (at `port`, when given) is one this machine saved for itself (#3608),
+ * never sent to other members:
  * - loopback, always (only the device's own announcement can vouch for loopback);
  * - one in `privateHosts` (a typed address, or one used to pair without a link or with
- *   an override), unless the device itself also gave it, through its pairing link or
- *   discovery (`sharedHosts`). The same address learned both ways is shared.
+ *   an override), unless the device itself gave that host at that port (`sharedEndpoints`).
+ *   Without a port, a private host counts as private.
  */
-export function isPrivateHost(peer: { privateHosts?: readonly string[]; sharedHosts?: readonly string[] } | undefined, host: string): boolean {
+export function isPrivateHost(peer: RouteProvenance | undefined, host: string, port?: number): boolean {
   if (isAnnexLoopback(host)) return true;
   const h = host.toLowerCase();
   if (!peer?.privateHosts?.some((p) => p.toLowerCase() === h)) return false;
-  return !peer.sharedHosts?.some((p) => p.toLowerCase() === h);
+  return port === undefined || sharedPortOf(peer, h) !== port;
+}
+
+/**
+ * What a member record may share for a peer (#3608): each known host at the port it can be
+ * shared with, never a route this machine saved for itself. A host the device gave keeps the
+ * port it gave, even when this machine also reaches it at a private port.
+ */
+export function shareableEndpoints(peer: RouteProvenance & {
+  knownHosts?: readonly string[]; hostPorts?: Readonly<Record<string, number>>; mainPort?: number;
+}): ReachAddress[] {
+  const ports = hostPortsWithFallback(peer.knownHosts, peer.mainPort, peer.hostPorts);
+  const out: ReachAddress[] = [];
+  for (const host of peer.knownHosts ?? []) {
+    const h = host.toLowerCase();
+    if (isAnnexLoopback(h)) continue;
+    const given = sharedPortOf(peer, h);
+    const port = given ?? (isPrivateHost(peer, h) ? undefined : ports[h]);
+    if (port && !out.some((a) => a.host === h)) out.push({ host: h, port });
+  }
+  return out;
 }
 
 /** `hosts` with `host` added once, lowercase. */

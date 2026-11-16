@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import {
-  formatAddress, isPrivateHost, KNOWN_HOSTS_MAX, parseTypedHost, rankAddresses, reachCandidates, rememberHost, routeCollision, savedLoopbackRoutes, withReachableAs,
+  formatAddress, isPrivateHost, KNOWN_HOSTS_MAX, shareableEndpoints, parseTypedHost, rankAddresses, reachCandidates, rememberHost, routeCollision, savedLoopbackRoutes, withReachableAs,
 } from './annex-reach';
 
 describe('annex reach (#3058)', () => {
@@ -107,8 +107,27 @@ describe('saved routes and collisions (#3608)', () => {
     expect(isPrivateHost(undefined, '127.0.0.1')).toBe(true);
     expect(isPrivateHost({}, '192.168.1.5')).toBe(false);
     expect(isPrivateHost({ privateHosts: ['Studio.ts.net'] }, 'studio.ts.net')).toBe(true);
-    expect(isPrivateHost({ privateHosts: ['192.168.1.5'], sharedHosts: ['192.168.1.5'] }, '192.168.1.5')).toBe(false);
-    expect(isPrivateHost({ privateHosts: [], sharedHosts: ['127.0.0.1'] }, '127.0.0.1')).toBe(true);
+    // Provenance is the host and port together.
+    const both = { privateHosts: ['192.168.1.5'], sharedEndpoints: { '192.168.1.5': 9443 } };
+    expect(isPrivateHost(both, '192.168.1.5', 9443)).toBe(false);
+    expect(isPrivateHost(both, '192.168.1.5', 7443)).toBe(true);
+    expect(isPrivateHost(both, '192.168.1.5')).toBe(true);
+    expect(isPrivateHost({ sharedEndpoints: { '127.0.0.1': 9443 } }, '127.0.0.1', 9443)).toBe(true);
+  });
+
+  it('shares a host the device gave at the port it gave, never at a private port on the same host', () => {
+    // Same IP: the link gave 10.20.0.5:9443, this machine also reaches it through a forward at 7443.
+    expect(shareableEndpoints({
+      knownHosts: ['10.20.0.5'], hostPorts: { '10.20.0.5': 7443 }, mainPort: 7443,
+      privateHosts: ['10.20.0.5'], sharedEndpoints: { '10.20.0.5': 9443 },
+    })).toEqual([{ host: '10.20.0.5', port: 9443 }]);
+    // Different IPs: the shared one at its port, the private one not at all, loopback never.
+    expect(shareableEndpoints({
+      knownHosts: ['10.30.0.7', '192.168.1.5', '127.0.0.1'], hostPorts: { '10.30.0.7': 7443, '192.168.1.5': 9443, '127.0.0.1': 7555 },
+      mainPort: 9443, privateHosts: ['10.30.0.7'], sharedEndpoints: { '192.168.1.5': 9443 },
+    })).toEqual([{ host: '192.168.1.5', port: 9443 }]);
+    // A typed-only host has no shareable endpoint.
+    expect(shareableEndpoints({ knownHosts: ['10.30.0.7'], hostPorts: { '10.30.0.7': 7443 }, privateHosts: ['10.30.0.7'] })).toEqual([]);
   });
 
   it("finds this computer's own Annex ports on any loopback address, and leaves direct addresses alone", () => {

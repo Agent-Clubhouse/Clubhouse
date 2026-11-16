@@ -169,10 +169,29 @@ describe('annex-peers', () => {
       addPeer(member({ privateHosts: ['192.168.1.9'] }));
       expect(isPrivateHost(getPeer('aa:bb:cc'), '192.168.1.9')).toBe(true);
       noteReached('aa:bb:cc', '192.168.1.9', 9443, 'discovered');
-      expect(isPrivateHost(getPeer('aa:bb:cc'), '192.168.1.9')).toBe(false);
+      expect(isPrivateHost(getPeer('aa:bb:cc'), '192.168.1.9', 9443)).toBe(false);
       // Loopback is never shared this way.
       noteReached('aa:bb:cc', '127.0.0.1', 7443, 'discovered');
-      expect(getPeer('aa:bb:cc')!.sharedHosts).toEqual(['192.168.1.9']);
+      expect(getPeer('aa:bb:cc')!.sharedEndpoints).toEqual({ '192.168.1.9': 9443 });
+      // Reached at another port on that host, through this machine's own route: still private there.
+      expect(isPrivateHost(getPeer('aa:bb:cc'), '192.168.1.9', 7443)).toBe(true);
+    });
+
+    it('a continuity re-pair through a private remapped port keeps the link endpoint shared at its own port, across a restart', () => {
+      const linked = member({
+        knownHosts: ['10.20.0.5'], hostPorts: { '10.20.0.5': 9443 }, mainPort: 9443, sharedEndpoints: { '10.20.0.5': 9443 },
+      });
+      // Paired again with the same certificate, no link, at 10.20.0.5:7443 (a forward): that address is private.
+      const again: AnnexPeer = {
+        ...makePeer('aa:bb:cc', 'Studio'), role: 'member', kind: 'desktop', pairingId: 'pairing-1', tlsCertificateFingerprint: 'CERT-1',
+        knownHosts: ['10.20.0.5'], hostPorts: { '10.20.0.5': 7443 }, mainPort: 9443, privateHosts: ['10.20.0.5'],
+      };
+      addPeer(withSavedRoutes(linked, again, true));
+      resetForTests();
+      const saved = getPeer('aa:bb:cc')!;
+      expect(saved).toMatchObject({ hostPorts: { '10.20.0.5': 7443 }, sharedEndpoints: { '10.20.0.5': 9443 }, privateHosts: ['10.20.0.5'] });
+      expect(isPrivateHost(saved, '10.20.0.5', 7443)).toBe(true);
+      expect(isPrivateHost(saved, '10.20.0.5', 9443)).toBe(false);
     });
 
     it('a private route never becomes the shared default port', () => {

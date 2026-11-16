@@ -21,6 +21,8 @@ function noLongerController(fingerprint: string | undefined): void {
 }
 
 export function registerAnnexClientHandlers(): void {
+  // A saved loopback address on a port Annex listens on now reaches this machine (#3608).
+  annexClient.setOwnListenerPortsProvider(annexServer.liveListenerPorts);
   ipcMain.handle(IPC.ANNEX_CLIENT.GET_SATELLITES, () => {
     return annexClient.getSatellites();
   });

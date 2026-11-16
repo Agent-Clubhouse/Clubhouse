@@ -294,6 +294,17 @@ describe('annex device list', () => {
       expect(phone.reach).toBeUndefined();
     });
 
+    it('starts fresh after needing pairing again, rather than reporting a gap from before', () => {
+      const sources = { satellites: [satellite({ state: 'connected' })], connected: new Set<string>() };
+      expect(list(sources).reach?.inbound.state).toBe('unknown');
+      // It needs pairing for a long while: nothing is observed then.
+      expect(buildDeviceList({ ...empty, peers: [studio({ tlsCertificateFingerprint: undefined })], reach, now: Date.now() })[0].reach).toBeUndefined();
+      vi.advanceTimersByTime(REACH_SETTLE_MS * 4);
+      expect(onSettle).not.toHaveBeenCalled();
+      // Paired again: inbound is not known yet, not down from the old gap.
+      expect(list({ ...sources, now: Date.now() }).reach?.inbound.state).toBe('unknown');
+    });
+
     it('lists a held address so it can be checked again', () => {
       const device = buildDeviceList({ ...empty, peers: [studio({ heldRoutes: { heldAt: '', typedHost: '127.0.0.1:7555' } })], reach, now: Date.now() })[0];
       expect(device.heldTypedHost).toBe('127.0.0.1:7555');

@@ -216,6 +216,8 @@ export function buildDeviceList(sources: Sources): AnnexDevice[] {
     } else if (annexPeers.controlledFromHere(peer)) state = satelliteState(sat);
     else state = sources.connected.has(peer.fingerprint) ? 'connected' : 'offline';
     const reach = !sessionOnly && state !== 'needs-pairing' ? reachFor(peer, sat, sources) : undefined;
+    // Not observed while it needs pairing: forget what was, so it starts fresh once paired again.
+    if (!reach && sources.reach) { sources.reach.idle(peer.fingerprint, 'outbound'); sources.reach.idle(peer.fingerprint, 'inbound'); }
     devices.push({
       fingerprint: peer.fingerprint,
       alias: peer.alias || '',

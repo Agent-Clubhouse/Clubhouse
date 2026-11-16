@@ -6449,6 +6449,11 @@ export function stop(): void {
   appLog('core:annex', 'info', 'Annex server stopped');
 }
 
+/** The ports Annex's listeners are bound to right now (#3608); none while it isn't listening. */
+export function liveListenerPorts(): { mainPort?: number; pairingPort?: number } {
+  return { ...(serverPort > 0 && { mainPort: serverPort }), ...(pairingPort > 0 && { pairingPort }) };
+}
+
 export function getStatus(): AnnexStatus & { pairingPort: number; tlsEnabled: boolean; pairingPaused: boolean } {
   const settings = annexSettings.getSettings();
   const identity = annexIdentity.getPublicIdentity();

@@ -1219,12 +1219,13 @@ export interface AnnexPeer {
    */
   privateHosts?: string[];
   /**
-   * Lowercase hosts this machine learned from the device itself (#3608): its pairing
-   * link or its network announcement on discovery. A host here is shared even if it is
-   * also in `privateHosts`, so typing an address that is also a real one never hides it.
-   * Loopback hosts are never shared from here. Local only.
+   * Endpoints the device itself gave (#3608), lowercase host to the port it gave with it:
+   * its pairing link, or its announcement on discovery. Provenance is the host and port
+   * together: such an endpoint is shared at that port even if the host is also in
+   * `privateHosts`, and a private port on the same host never stands in for it.
+   * Loopback hosts are never recorded here. Local only.
    */
-  sharedHosts?: string[];
+  sharedEndpoints?: Record<string, number>;
   /**
    * Routes from before pairing again with a different certificate (#3608), kept but
    * not used: they reached the old certificate, so each needs checking again before
