@@ -175,7 +175,7 @@ describe('GroupProjectsSettingsView', () => {
     await waitFor(() => expect(button).toBeEnabled());
     fireEvent.click(button);
     fireEvent.click(button);
-    expect(create).toHaveBeenCalledExactlyOnceWith('Directory group', { scope: { level: 'app', reach: 'local' } });
+    expect(create).toHaveBeenCalledExactlyOnceWith('Directory group', { scope: { level: 'app', reach: 'local' }, membership: { autoJoin: false, includeLinkedComputers: false, excluded: [] } });
     expect(screen.getByRole('button', { name: 'Creating...' })).toBeDisabled();
     await act(async () => {
       // The registry can publish CHANGED before the CREATE response arrives.
@@ -310,10 +310,10 @@ describe('GroupProjectsSettingsView', () => {
       fireEvent.change(screen.getByLabelText('New group project name'), { target: { value: 'New' } });
       fireEvent.change(screen.getAllByLabelText('Covers')[0], { target: { value: 'project:proj-b' } });
       expect(screen.getByText('Agents in Proj B on this computer.')).toBeInTheDocument();
-      await waitFor(() => expect(preview).toHaveBeenLastCalledWith({ level: 'project', projectId: 'proj-b', reach: 'local' }));
+      await waitFor(() => expect(preview).toHaveBeenLastCalledWith({ level: 'project', projectId: 'proj-b', reach: 'local' }, { autoJoin: true, includeLinkedComputers: true }));
       await waitFor(() => expect(screen.getByRole('button', { name: 'Create group project' })).toBeEnabled());
       fireEvent.click(screen.getByRole('button', { name: 'Create group project' }));
-      await waitFor(() => expect(create).toHaveBeenCalledWith('New', { scope: { level: 'project', projectId: 'proj-b', reach: 'local' } }));
+      await waitFor(() => expect(create).toHaveBeenCalledWith('New', { scope: { level: 'project', projectId: 'proj-b', reach: 'local' }, membership: { autoJoin: true, includeLinkedComputers: false, excluded: [] } }));
     });
 
     it('shows who would leave before narrowing, and applies with exactly those members confirmed', async () => {

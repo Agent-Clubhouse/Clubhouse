@@ -16,6 +16,10 @@ const fx = vi.hoisted(() => ({
   quick: new Map<string, { agentId: string; name: string; projectPath: string; startedAt: number; finishedAt?: number }>(),
   canvasWires: [] as Array<Record<string, unknown>>,
   canvasUnreadable: false,
+  linkGroups: [] as Array<Array<{ machine: string; projectId: string }>>,
+  satellites: [] as Array<{ fingerprint: string; alias: string; state: string; snapshot: unknown; snapshotUnavailable?: boolean }>,
+  linkChanged: null as null | (() => void),
+  snapshotChanged: null as null | (() => void),
 }));
 
 vi.mock('electron', () => ({ app: { isPackaged: false, getPath: () => fx.home } }));
@@ -27,6 +31,14 @@ vi.mock('./project-store', () => ({
 vi.mock('./agent-config', () => ({
   listDurable: vi.fn(async (projectPath: string) => fx.configs.get(projectPath) ?? []),
   onAgentConfigChanged: vi.fn(() => () => undefined),
+}));
+vi.mock('./project-links-store', () => ({ projectLinksStore: () => ({
+  groups: () => fx.linkGroups,
+  onChange: (fn: (change: { recordsChanged: boolean }) => void) => { fx.linkChanged = () => fn({ recordsChanged: true }); return () => { fx.linkChanged = null; }; },
+}) }));
+vi.mock('./annex-client', () => ({
+  getSatellites: () => fx.satellites,
+  onSatelliteSnapshot: (fn: () => void) => { fx.snapshotChanged = fn; return () => { fx.snapshotChanged = null; }; },
 }));
 vi.mock('./quick-agent-events', () => ({ knownQuickAgents: () => fx.quick }));
 // Every Canvas store, read strictly for migration.
@@ -59,8 +71,8 @@ import { groupProjectHost } from './group-project-host';
 import { initGroupProjectLifecycle, _resetLifecycleForTesting } from './group-project-lifecycle';
 import { roleModeOf, setGroupProjectRole } from './group-project-roles';
 import {
-  _resetMembershipForTesting, addMember, answerAutoJoinOffer, previewAutoJoin, describeMembership, excludeMember, membershipBindingSource,
-  releaseMembershipBindings, quickMemberName, memberPolicyKey, reconcileMembership, recordMemberDisabledTools, savedMemberDisabledTools, watchGroupProjectMembership,
+  _resetMembershipForTesting, addMember, answerAutoJoinOffer, beginAutoJoin, previewAutoJoin, describeMembership, excludeMember, membershipBindingSource,
+  releaseMembershipBindings, onMembershipChanged, setAutomaticMembership, confirmUnlinkedMembers, quickMemberName, memberPolicyKey, reconcileMembership, recordMemberDisabledTools, savedMemberDisabledTools, watchGroupProjectMembership,
 } from './group-project-membership';
 
 const PROJ_A = { id: 'proj_a', name: 'Alpha', path: path.join('work', 'alpha') };
@@ -95,7 +107,7 @@ async function start(): Promise<void> {
   await vi.waitFor(async () => {
     for (const p of await groupProjectRegistry.list()) {
       const m = await getMembership(p.id);
-      expect(m.autoJoin || m.autoJoinOffer !== undefined).toBe(true);
+      expect(m.membershipPolicy === 'project-3546' || m.autoJoin || m.autoJoinOffer !== undefined).toBe(true);
     }
   });
   await reconcileMembership();
@@ -124,6 +136,7 @@ beforeEach(async () => {
   fx.quick = new Map();
   fx.canvasWires = [];
   fx.canvasUnreadable = false;
+  fx.linkGroups = []; fx.satellites = []; fx.linkChanged = null; fx.snapshotChanged = null;
   groupProjectRegistry._resetForTesting();
   restart();
 });
@@ -144,10 +157,18 @@ describe('auto-join', () => {
     expect(view.members.every((m) => m.via === 'auto' && m.kind === 'durable')).toBe(true);
   });
 
-  it('app scope includes every project\'s top-level durable agents', async () => {
+  it('a new app group starts empty', async () => {
     groupProjectRegistry._setForTesting(gp('gp1', { scope: { level: 'app', reach: 'local' } }));
     await start();
-    expect(membersOf('gp1')).toEqual(['dev', 'lead', 'other']);
+    expect(membersOf('gp1')).toEqual([]);
+    expect((await getMembership('gp1')).autoJoin).toBe(false);
+  });
+
+  it.each(['adopt', 'initialize'])('keeps linked computers off for a network app group via %s', async (method) => {
+    groupProjectRegistry._setForTesting(gp('gp_app', { scope: { level: 'app', reach: 'network' } }));
+    if (method === 'initialize') await beginAutoJoin('gp_app');
+    else await start();
+    expect(await getMembership('gp_app')).toMatchObject({ autoJoin: false, includeLinkedComputers: false });
   });
 
   it('a durable agent created later in scope joins; one leaving scope leaves', async () => {
@@ -298,6 +319,7 @@ describe('migration', () => {
 
     // Repaired: the next rebuild migrates.
     fx.canvasUnreadable = false;
+  fx.linkGroups = []; fx.satellites = []; fx.linkChanged = null; fx.snapshotChanged = null;
     await rebuildPersistedBindings();
     await vi.waitFor(async () => expect((await describeMembership('gp_old')).managed).toBe(true));
   });
@@ -327,8 +349,8 @@ describe('exclusions and preview', () => {
       return fx.configs.get(p) ?? [];
     });
     const app = await previewAutoJoin({ level: 'app', reach: 'local' });
-    expect(app.wouldJoin.map((m) => m.agentId).sort()).toEqual(['dev', 'lead']);
-    expect(app.unreadableProjects).toEqual([{ projectId: PROJ_B.id, name: PROJ_B.name }]);
+    expect(app.wouldJoin).toEqual([]);
+    expect(app.unreadableProjects).toEqual([]);
     const project = await previewAutoJoin({ level: 'project', projectId: PROJ_A.id, reach: 'local' });
     expect(project.unreadableProjects).toEqual([]);
     // Shape-checked like creation: unknown levels and unregistered projects are refused.
@@ -529,3 +551,303 @@ describe('scope decides explicit adds (#3355)', () => {
   });
 });
 
+
+
+describe('project membership controls (#3546)', () => {
+  it('defaults project groups on, respects off at creation, and keeps creation exclusions', async () => {
+    const on = await groupProjectHost.create('On', { projectId: PROJ_A.id });
+    const off = await groupProjectHost.create('Off', { projectId: PROJ_A.id, membership: { autoJoin: false, includeLinkedComputers: false } });
+    const excluded = await groupProjectHost.create('Excluded', { projectId: PROJ_A.id, membership: { autoJoin: true, includeLinkedComputers: false, excluded: ['dev'] } });
+    await start();
+    expect(membersOf(on.id)).toEqual(['dev', 'lead']);
+    expect(membersOf(off.id)).toEqual([]);
+    expect(membersOf(excluded.id)).toEqual(['lead']);
+    fx.configs.get(PROJ_A.path)!.push(agent('later'));
+    await reconcileMembership();
+    expect(membersOf(on.id)).toContain('later');
+    expect(membersOf(off.id)).toEqual([]);
+    expect(membersOf(excluded.id)).toEqual(['later', 'lead']);
+  });
+
+  it('turning off keeps auto members explicit, never revives exclusions, and turning on includes later agents', async () => {
+    groupProjectRegistry._setForTesting(gp('gp_controls'));
+    await start();
+    await excludeMember('gp_controls', 'dev');
+    await setAutomaticMembership('gp_controls', { autoJoin: false, includeLinkedComputers: false });
+    expect((await getMembership('gp_controls')).explicit).toEqual([expect.objectContaining({ address: 'lead', kind: 'durable' })]);
+    expect(membersOf('gp_controls')).toEqual(['lead']);
+    fx.configs.get(PROJ_A.path)!.push(agent('later'), agent('helperLater', { parentAgentId: 'lead' }));
+    await reconcileMembership();
+    expect(membersOf('gp_controls')).toEqual(['lead']);
+    await setAutomaticMembership('gp_controls', { autoJoin: true, includeLinkedComputers: false });
+    expect(membersOf('gp_controls')).toEqual(['later', 'lead']);
+    expect((await getMembership('gp_controls')).excluded.map((e) => e.address)).toEqual(['dev']);
+  });
+
+  it('refuses to turn off while the scoped inventory is unreadable, even before bindings are restored', async () => {
+    const group = await groupProjectHost.create('Unreadable', { projectId: PROJ_A.id });
+    vi.mocked(listDurable).mockImplementationOnce(async () => { throw new Error('unreadable'); });
+    await expect(setAutomaticMembership(group.id, { autoJoin: false, includeLinkedComputers: false })).rejects.toThrow(/could not be checked/);
+    expect((await getMembership(group.id)).autoJoin).toBe(true);
+  });
+
+  it('turning on a migrated project group also answers its pending offer and keeps exclusions', async () => {
+    groupProjectRegistry._setForTesting(legacyGp('gp_old_controls'));
+    await start();
+    await excludeMember('gp_old_controls', 'lead');
+    await setAutomaticMembership('gp_old_controls', { autoJoin: true, includeLinkedComputers: false });
+    expect((await getMembership('gp_old_controls')).autoJoinOffer).toBe('accepted');
+    expect(membersOf('gp_old_controls')).toEqual(['dev']);
+    expect((await getMembership('gp_old_controls')).excluded.map((entry) => entry.address)).toEqual(['lead']);
+  });
+
+  it('leaves an existing app auto-join policy and existing explicit membership unchanged across restart', async () => {
+    groupProjectRegistry._setForTesting(legacyGp('gp_existing', { scope: { level: 'app', reach: 'local' } }));
+    await updateMembership('gp_existing', (m) => { m.autoJoin = true; m.explicit.push({ address: 'helper1', kind: 'helper', addedAt: 'old' }); });
+    const before = await getMembership('gp_existing');
+    await start();
+    expect(membersOf('gp_existing')).toEqual(['dev', 'helper1', 'lead', 'other']);
+    restart(); await start();
+    expect(await getMembership('gp_existing')).toEqual(before);
+    fx.configs.get(PROJ_B.path)!.push(agent('new-in-old-policy'));
+    await reconcileMembership();
+    expect(membersOf('gp_existing')).toContain('new-in-old-policy');
+  });
+
+  it('rejects automatic membership changes on an app group and on a replica', async () => {
+    groupProjectRegistry._setForTesting(gp('gp_app', { scope: { level: 'app', reach: 'local' } }));
+    await expect(setAutomaticMembership('gp_app', { autoJoin: true, includeLinkedComputers: true })).rejects.toThrow(/project group/);
+    groupProjectRegistry._setForTesting(gp('gp_copy', { host: { machine: REMOTE } }));
+    const before = await getMembership('gp_copy');
+    await expect(setAutomaticMembership('gp_copy', { autoJoin: true, includeLinkedComputers: true })).rejects.toThrow(/Only the host/);
+    await expect(confirmUnlinkedMembers('gp_copy', [])).rejects.toThrow(/Only the host/);
+    expect(await getMembership('gp_copy')).toEqual(before);
+  });
+});
+
+const SELF = 'aa:aa:aa:aa:aa:aa:aa:aa:aa:aa:aa:aa:aa:aa:aa:aa';
+const REMOTE = 'bb:bb:bb:bb:bb:bb:bb:bb:bb:bb:bb:bb:bb:bb:bb:bb';
+const remoteAddress = (id: string) => `${id}@${REMOTE}`;
+function remoteSnapshot(agents = [agent('remote'), agent('remote-helper', { parentAgentId: 'remote' })]) {
+  return { projects: [{ id: 'remote_project', name: 'Remote Alpha', repositoryKey: 'same-repository' }],
+    agents: { remote_project: agents }, quickAgents: { remote_project: [{ id: 'remote-quick', name: 'Quick' }] } };
+}
+async function linkedGroup() {
+  vi.spyOn(groupProjectHost, 'selfMachine').mockReturnValue(SELF);
+  vi.spyOn(groupProjectHost, 'isNetworkMember').mockReturnValue(true);
+  vi.spyOn(groupProjectHost, 'scopeOptions').mockReturnValue({ network: { available: true } });
+  fx.satellites = [{ fingerprint: REMOTE, alias: 'Laptop', state: 'connected', snapshot: remoteSnapshot() }];
+  groupProjectRegistry._setForTesting(gp('gp_linked', { host: { machine: SELF }, scope: { level: 'project', projectId: PROJ_A.id, reach: 'network' } }));
+  await updateMembership('gp_linked', (m) => { m.membershipPolicy = 'project-3546'; m.autoJoin = true; m.includeLinkedComputers = true; });
+  await start();
+}
+function linkCopy() { fx.linkGroups = [[{ machine: SELF, projectId: PROJ_A.id }, { machine: REMOTE, projectId: 'remote_project' }]]; }
+
+describe('linked automatic membership (#3546)', () => {
+  afterEach(() => vi.restoreAllMocks());
+
+  it('repository equality alone never joins; an explicit link adds existing and future durable agents only', async () => {
+    await linkedGroup();
+    expect((await describeMembership('gp_linked')).members.map((m) => m.agentId)).toEqual(expect.not.arrayContaining([remoteAddress('remote')]));
+    linkCopy(); await reconcileMembership();
+    expect((await describeMembership('gp_linked')).members.map((m) => m.agentId).sort()).toEqual(['dev', 'lead', remoteAddress('remote')].sort());
+    // Host bindings always remain local; the remote computer binds only the host's saved entries.
+    expect(membersOf('gp_linked')).toEqual(['dev', 'lead']);
+    fx.satellites[0].snapshot = remoteSnapshot([agent('remote'), agent('later'), agent('helper', { parentAgentId: 'remote' }),
+      Object.assign(agent('quick-in-durables'), { kind: 'quick' }), Object.assign(agent('helper-kind'), { kind: 'helper' })]);
+    await reconcileMembership();
+    expect((await getMembership('gp_linked')).explicit.map((e) => e.address).sort()).toEqual([remoteAddress('later'), remoteAddress('remote')].sort());
+  });
+
+  it('never auto-joins a remote inventory row with an unknown kind', async () => {
+    await linkedGroup(); linkCopy();
+    fx.satellites[0].snapshot = remoteSnapshot([Object.assign(agent('unknown-kind'), { kind: 'future-agent-kind' })]);
+    await reconcileMembership();
+    expect((await getMembership('gp_linked')).explicit).toEqual([]);
+    expect((await previewAutoJoin({ level: 'project', projectId: PROJ_A.id, reach: 'network' })).wouldJoin.map((m) => m.agentId)).not.toContain(remoteAddress('unknown-kind'));
+  });
+
+  it('reviews remote members with missing or unlinked project IDs as leaving a policy scope', async () => {
+    await linkedGroup(); linkCopy(); await reconcileMembership();
+    await updateMembership('gp_linked', (m) => {
+      m.explicit.push({ address: remoteAddress('missing-project'), name: 'Missing project', kind: 'durable', addedAt: 'x' });
+      m.explicit.push({ address: remoteAddress('unlinked-project'), name: 'Unlinked project', projectId: 'other-copy', kind: 'durable', addedAt: 'x' });
+    });
+    const stop = watchGroupProjectMembership();
+    try {
+      const next = { level: 'project' as const, projectId: PROJ_B.id, reach: 'network' as const };
+      fx.linkGroups = [[{ machine: SELF, projectId: PROJ_B.id }, { machine: REMOTE, projectId: 'remote_project' }]];
+      const { leaving } = await groupProjectHost.previewScope('gp_linked', next);
+      expect(leaving.map((m) => m.address).sort()).toEqual(['dev', 'lead', remoteAddress('missing-project'), remoteAddress('unlinked-project')].sort());
+      await expect(groupProjectHost.setScope('gp_linked', next, { confirmLeaving: ['dev', 'lead'] })).rejects.toThrow(/Review.*again/);
+    } finally { stop(); }
+  });
+
+  it('verifies and fills remote project IDs when opting an existing membership record into the policy', async () => {
+    await linkedGroup(); linkCopy();
+    await updateMembership('gp_linked', (m) => {
+      delete m.membershipPolicy;
+      m.autoJoin = false; m.autoJoinOffer = 'dismissed';
+      m.explicit.push({ address: remoteAddress('remote'), name: 'Remote', kind: 'durable', addedAt: 'x' });
+    });
+    fx.satellites[0].state = 'disconnected';
+    await expect(setAutomaticMembership('gp_linked', { autoJoin: true, includeLinkedComputers: true })).rejects.toThrow(/remote members could not be verified/);
+    expect((await getMembership('gp_linked')).membershipPolicy).toBeUndefined();
+    fx.satellites[0].state = 'connected';
+    await setAutomaticMembership('gp_linked', { autoJoin: true, includeLinkedComputers: true });
+    expect((await getMembership('gp_linked')).explicit.find((e) => e.address === remoteAddress('remote'))).toMatchObject({ projectId: 'remote_project', projectName: 'Remote Alpha on Laptop' });
+  });
+
+  it.each(['offline', 'unavailable', 'truncated', 'unknown', 'unlinked'])('keeps remote explicit entries when a copy is %s, and prunes only after verified absence', async (state) => {
+    await linkedGroup(); linkCopy(); await reconcileMembership();
+    await addMember('gp_linked', remoteAddress('remote-helper'));
+    await setAutomaticMembership('gp_linked', { autoJoin: false, includeLinkedComputers: false });
+    fx.satellites[0].snapshot = remoteSnapshot([]);
+    if (state === 'offline') fx.satellites[0].state = 'disconnected';
+    if (state === 'unavailable') fx.satellites[0].snapshotUnavailable = true;
+    if (state === 'truncated') fx.satellites[0].snapshot = { ...remoteSnapshot([]), snapshotTruncated: { omitted: ['agents'] } };
+    if (state === 'unknown') fx.satellites[0].snapshot = { projects: [], agents: {} };
+    if (state === 'unlinked') fx.linkGroups = [];
+    await reconcileMembership();
+    expect((await getMembership('gp_linked')).explicit.filter((e) => e.address.includes('@')).map((e) => e.address).sort()).toEqual([remoteAddress('remote'), remoteAddress('remote-helper')].sort());
+    linkCopy(); fx.satellites[0].state = 'connected'; fx.satellites[0].snapshotUnavailable = false;
+    fx.satellites[0].snapshot = remoteSnapshot([]);
+    await reconcileMembership();
+    expect((await getMembership('gp_linked')).explicit.filter((e) => e.address.includes('@'))).toEqual([]);
+  });
+
+  it.each([{ autoJoin: false, includeLinkedComputers: true }, { autoJoin: true, includeLinkedComputers: false }])('refuses toggle-off with a pending unlink review: %j', async (options) => {
+    await linkedGroup(); linkCopy(); await reconcileMembership();
+    fx.linkGroups = []; await reconcileMembership();
+    const before = await getMembership('gp_linked');
+    await expect(setAutomaticMembership('gp_linked', options)).rejects.toThrow(/Review who leaves.*before changing automatic membership/);
+    expect(await getMembership('gp_linked')).toEqual(before);
+    expect((await describeMembership('gp_linked')).coverageLeaving?.map((m) => m.agentId)).toEqual([remoteAddress('remote')]);
+    await confirmUnlinkedMembers('gp_linked', [remoteAddress('remote')]);
+    await setAutomaticMembership('gp_linked', options);
+    expect((await describeMembership('gp_linked')).coverageLeaving).toEqual([]);
+  });
+
+  it('announces remote membership removal only after lead and admin have been revoked', async () => {
+    await linkedGroup(); linkCopy(); await reconcileMembership();
+    await setGroupProjectRole('gp_linked', remoteAddress('remote'), 'lead', 'allow');
+    await setGroupProjectRole('gp_linked', remoteAddress('remote'), 'admin', 'allow');
+    const rolesAtNotification: string[][] = [];
+    const off = groupProjectHost.onChange((change) => {
+      if (change.groupProjectId === 'gp_linked' && change.part === 'membership') rolesAtNotification.push([
+        roleModeOf(remoteAddress('remote'), 'gp_linked', 'lead'), roleModeOf(remoteAddress('remote'), 'gp_linked', 'admin'),
+      ]);
+    });
+    try { await excludeMember('gp_linked', remoteAddress('remote')); }
+    finally { off(); }
+    expect(rolesAtNotification.length).toBeGreaterThan(0);
+    expect(rolesAtNotification.every((roles) => roles.every((mode) => mode === 'off'))).toBe(true);
+  });
+
+  it('watches incoming links and new remote snapshots, and keeps exclusions through both toggles', async () => {
+    vi.useFakeTimers();
+    try {
+      await linkedGroup();
+      const stop = watchGroupProjectMembership();
+      await vi.waitFor(() => expect(fx.snapshotChanged).not.toBeNull());
+      linkCopy(); fx.linkChanged!(); await vi.advanceTimersByTimeAsync(300);
+      await vi.waitFor(async () => expect((await getMembership('gp_linked')).explicit).toHaveLength(1));
+      await excludeMember('gp_linked', remoteAddress('remote'));
+      await setAutomaticMembership('gp_linked', { autoJoin: true, includeLinkedComputers: false });
+      await setAutomaticMembership('gp_linked', { autoJoin: true, includeLinkedComputers: true });
+      fx.satellites[0].snapshot = remoteSnapshot([agent('remote'), agent('later')]);
+      fx.snapshotChanged!(); await vi.advanceTimersByTimeAsync(300);
+      await vi.waitFor(async () => expect((await getMembership('gp_linked')).explicit.some((e) => e.address === remoteAddress('later'))).toBe(true));
+      const view = await describeMembership('gp_linked');
+      expect(view.excluded.map((e) => e.agentId)).toContain(remoteAddress('remote'));
+      expect(view.members.map((m) => m.agentId)).not.toContain(remoteAddress('remote'));
+      stop();
+    } finally { vi.useRealTimers(); }
+  });
+
+  it('notifies the host UI after a remote-only membership change commits', async () => {
+    vi.useFakeTimers();
+    try {
+      await linkedGroup(); linkCopy(); await reconcileMembership();
+      const stop = watchGroupProjectMembership();
+      await vi.waitFor(() => expect(fx.snapshotChanged).not.toBeNull());
+      const changed = vi.fn();
+      const off = onMembershipChanged(changed);
+      fx.satellites[0].snapshot = remoteSnapshot([agent('remote'), agent('later')]);
+      fx.snapshotChanged!();
+      await vi.advanceTimersByTimeAsync(300);
+      await vi.waitFor(async () => expect((await getMembership('gp_linked')).explicit.some((e) => e.address === remoteAddress('later'))).toBe(true));
+      // One refresh for the inventory, another for its committed host record.
+      await vi.waitFor(() => expect(changed.mock.calls.length).toBeGreaterThanOrEqual(2));
+      expect(changed).toHaveBeenCalledWith('gp_linked');
+      off(); stop();
+    } finally { vi.useRealTimers(); }
+  });
+
+  it('unlink keeps members pending review, refuses a stale list, then removes exactly the reviewed members', async () => {
+    await linkedGroup(); linkCopy(); await reconcileMembership();
+    fx.linkGroups = []; await reconcileMembership();
+    await setGroupProjectRole('gp_linked', remoteAddress('remote'), 'lead', 'allow');
+    const view = await describeMembership('gp_linked');
+    expect(view.members.map((m) => m.agentId)).toContain(remoteAddress('remote'));
+    expect(view.coverageLeaving?.map((m) => m.agentId)).toEqual([remoteAddress('remote')]);
+    await expect(confirmUnlinkedMembers('gp_linked', [])).rejects.toThrow(/Review.*again/);
+    linkCopy();
+    await expect(confirmUnlinkedMembers('gp_linked', [remoteAddress('remote')])).rejects.toThrow(/Review.*again/);
+    fx.linkGroups = [];
+    await confirmUnlinkedMembers('gp_linked', [remoteAddress('remote')]);
+    await vi.waitFor(() => expect(roleModeOf(remoteAddress('remote'), 'gp_linked', 'lead')).toBe('off'));
+    expect((await describeMembership('gp_linked')).members.map((m) => m.agentId)).not.toContain(remoteAddress('remote'));
+    linkCopy(); await reconcileMembership();
+    expect((await describeMembership('gp_linked')).members.map((m) => m.agentId)).toContain(remoteAddress('remote'));
+  });
+
+  it('remote helpers remain explicit additions and remote quick agents cannot join', async () => {
+    await linkedGroup(); linkCopy(); await reconcileMembership();
+    await addMember('gp_linked', remoteAddress('remote-helper'));
+    const entry = (await getMembership('gp_linked')).explicit.find((e) => e.address === remoteAddress('remote-helper'));
+    expect(entry).toMatchObject({ kind: 'helper' });
+    expect(entry?.autoProject).toBeUndefined();
+    await expect(addMember('gp_linked', remoteAddress('remote-quick'))).rejects.toThrow(/explicitly linked project copy/);
+  });
+
+  it('keeps an excluded saved auto entry excluded through off, and includes it again explicitly', async () => {
+    await linkedGroup(); linkCopy(); await reconcileMembership();
+    await updateMembership('gp_linked', (membership) => {
+      membership.excluded.push({ address: remoteAddress('remote'), excludedAt: 'x' });
+    });
+    await setAutomaticMembership('gp_linked', { autoJoin: false, includeLinkedComputers: false });
+    expect((await describeMembership('gp_linked')).members.map((m) => m.agentId)).not.toContain(remoteAddress('remote'));
+    expect((await getMembership('gp_linked')).excluded.map((e) => e.address)).toContain(remoteAddress('remote'));
+    await addMember('gp_linked', remoteAddress('remote'));
+    expect((await describeMembership('gp_linked')).members.find((m) => m.agentId === remoteAddress('remote'))?.via).toBe('explicit');
+    fx.linkGroups = []; await reconcileMembership();
+    expect((await describeMembership('gp_linked')).coverageLeaving).toEqual([]);
+  });
+
+  it('turning linked computers off preserves remote auto members explicitly, including across unlink', async () => {
+    await linkedGroup(); linkCopy(); await reconcileMembership();
+    await setAutomaticMembership('gp_linked', { autoJoin: true, includeLinkedComputers: false });
+    expect((await getMembership('gp_linked')).explicit.find((e) => e.address === remoteAddress('remote'))?.autoProject).toBeUndefined();
+    fx.linkGroups = []; await reconcileMembership();
+    expect((await describeMembership('gp_linked')).members.map((m) => m.agentId)).toContain(remoteAddress('remote'));
+    expect((await describeMembership('gp_linked')).coverageLeaving).toEqual([]);
+  });
+
+  it('does not add from an offline, unavailable or truncated copy and reports unknown in preview', async () => {
+    await linkedGroup(); linkCopy();
+    fx.satellites[0].state = 'disconnected';
+    await reconcileMembership();
+    const preview = await previewAutoJoin({ level: 'project', projectId: PROJ_A.id, reach: 'network' });
+    expect(preview.wouldJoin.some((m) => m.agentId === remoteAddress('remote'))).toBe(false);
+    expect(preview.unreadableProjects).toEqual([expect.objectContaining({ name: 'Remote Alpha on Laptop' })]);
+    fx.satellites[0].state = 'connected';
+    fx.satellites[0].snapshotUnavailable = true;
+    await reconcileMembership();
+    expect((await getMembership('gp_linked')).explicit).toEqual([]);
+    fx.satellites[0].snapshotUnavailable = false;
+    fx.satellites[0].snapshot = { ...remoteSnapshot(), snapshotTruncated: { omitted: ['agents'] } };
+    await reconcileMembership();
+    expect((await getMembership('gp_linked')).explicit).toEqual([]);
+  });
+});

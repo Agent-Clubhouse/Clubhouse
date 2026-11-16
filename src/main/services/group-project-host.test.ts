@@ -87,6 +87,21 @@ describe('group project host: identity and creation', () => {
     expect(groupProjectHost.isThisMachine({ machine: FP_B })).toBe(false);
   });
 
+  it('records app-wide empty and project membership choices and exclusions in the creating write', async () => {
+    const app = await groupProjectHost.create('App', { membership: { autoJoin: true, includeLinkedComputers: true } });
+    expect(await groupProjectHost.getMembership(app.id)).toMatchObject({ membershipPolicy: 'project-3546', autoJoin: false, includeLinkedComputers: false, explicit: [] });
+    const project = await groupProjectHost.create('Project', { projectId: 'proj_a', membership: { autoJoin: false, includeLinkedComputers: false, excluded: ['keep-out'] } });
+    expect(await groupProjectHost.getMembership(project.id)).toMatchObject({ autoJoin: false, excluded: [{ address: 'keep-out' }] });
+    const defaultProject = await groupProjectHost.create('Default', { projectId: 'proj_a' });
+    expect((await groupProjectHost.getMembership(defaultProject.id)).autoJoin).toBe(true);
+  });
+
+  it('rejects malformed membership choices before creating a registry record', async () => {
+    await expect(groupProjectHost.create('Bad', { membership: { autoJoin: 'true', includeLinkedComputers: false } } as never)).rejects.toMatchObject({ code: 'invalid' });
+    await expect(groupProjectHost.create('Bad', { membership: { autoJoin: true, includeLinkedComputers: false, excluded: [42] } } as never)).rejects.toMatchObject({ code: 'invalid' });
+    expect(await groupProjectHost.list()).toEqual([]);
+  });
+
   it('records a null host with no identity, and legacy records load as this machine', async () => {
     const project = await groupProjectHost.create('Local');
     expect(project.host).toEqual({ machine: null });
@@ -634,7 +649,7 @@ describe('group project host: joins fail closed (#3431 review)', () => {
     wire('agent_a', app.id);
     // Group projects from before #3355 have no marker; new ones are marked at creation.
     expect((await groupProjectHost.getMembership(scoped.id)).scopeMembersRecorded).toBe('wire-3355');
-    for (const id of [scoped.id, app.id]) await groupProjectHost.updateMembership(id, (m) => { delete m.scopeMembersRecorded; });
+    for (const id of [scoped.id, app.id]) await groupProjectHost.updateMembership(id, (m) => { delete m.scopeMembersRecorded; delete m.membershipPolicy; delete m.includeLinkedComputers; m.autoJoin = false; });
     expect(await groupProjectHost.recordScopedWireMembers()).toBe(3);
     const membership = await groupProjectHost.getMembership(scoped.id);
     expect(membership.explicit.map((e) => [e.address, e.kind, e.migratedFrom])).toEqual([
@@ -667,7 +682,10 @@ describe('group project host: #3431 re-review', () => {
     fixture.agents = { '/projects/a': [{ id: 'agent_a' }], '/projects/b': [{ id: 'agent_b' }] };
     const managed = await groupProjectHost.create('Managed', { projectId: 'proj_a' });
     const legacy = await groupProjectHost.create('Legacy', { projectId: 'proj_a' });
-    for (const id of [managed.id, legacy.id]) await groupProjectHost.updateMembership(id, (m) => { delete m.scopeMembersRecorded; });
+    const off = await groupProjectHost.create('Off', { projectId: 'proj_a', membership: { autoJoin: false, includeLinkedComputers: false } });
+    await groupProjectHost.updateMembership(off.id, (m) => { delete m.scopeMembersRecorded; });
+    bindingManager.bind('agent_b', { targetId: off.id, targetKind: 'group-project', label: 'GP' });
+    for (const id of [managed.id, legacy.id]) await groupProjectHost.updateMembership(id, (m) => { delete m.scopeMembersRecorded; delete m.membershipPolicy; delete m.includeLinkedComputers; m.autoJoin = false; });
     await groupProjectHost.updateMembership(managed.id, (m) => { m.autoJoin = true; });
     for (const id of [managed.id, legacy.id]) bindingManager.bind('agent_b', { targetId: id, targetKind: 'group-project', label: 'GP' });
     fixture.unreadable = new Set(['/projects/b']);
@@ -676,6 +694,7 @@ describe('group project host: #3431 re-review', () => {
     fixture.unreadable = new Set();
     expect(await groupProjectHost.recordScopedWireMembers()).toBe(1);
     expect((await groupProjectHost.getMembership(managed.id)).explicit).toEqual([]);
+    expect((await groupProjectHost.getMembership(off.id)).explicit).toEqual([]);
     expect((await groupProjectHost.getMembership(legacy.id)).explicit.map((e) => e.address)).toEqual(['agent_b']);
   });
 });

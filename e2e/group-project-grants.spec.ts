@@ -30,6 +30,12 @@ test('group project lead and admin grants persist independently', async () => {
     await app.window.getByRole('button', { name: 'Create group project' }).click();
     // Creating opens the new group's workspace.
     await app.window.getByRole('button', { name: 'Permissions', exact: true }).click();
+    // App-wide groups start empty; membership is explicit and grants stay separate.
+    await app.window.evaluate(async () => {
+      const groups = await window.clubhouse.groupProject.list() as Array<{ id: string; name: string }>;
+      const group = groups.find((entry) => entry.name === 'Grant fixture')!;
+      await window.clubhouse.groupProject.addMember(group.id, 'durable_grants_dev');
+    });
     const lead = app.window.getByLabel('Lead for dev');
     const admin = app.window.getByLabel('Admin for dev');
     await expect(lead).toHaveValue('off');

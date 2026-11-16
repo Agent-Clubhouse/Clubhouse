@@ -29,6 +29,7 @@ interface Machine {
 const world = vi.hoisted(() => ({
   als: null as unknown as AsyncLocalStorage<{ home: string; fp: string; projects?: Array<{ id: string; name: string; path: string; key: string; agents: Array<{ id: string; name: string }> }> }>,
   fallbackHome: '',
+  links: [] as Array<Array<{ machine: string; projectId: string }>>,
 }));
 
 vi.mock('electron', () => ({ app: { isPackaged: false, getPath: () => world.als?.getStore()?.home ?? world.fallbackHome } }));
@@ -40,6 +41,14 @@ const projectsHere = () => world.als?.getStore()?.projects ?? [];
 vi.mock('./project-store', () => ({
   list: vi.fn(async () => projectsHere().map(({ id, name, path }) => ({ id, name, path }))),
   onProjectsChanged: vi.fn(() => () => undefined),
+}));
+vi.mock('./project-links-store', () => ({ projectLinksStore: () => ({ groups: () => world.links, onChange: () => () => {} }) }));
+vi.mock('./annex-client', () => ({
+  getSatellites: () => machines.filter((m) => m.fp !== world.als?.getStore()?.fp).map((m) => ({
+    fingerprint: m.fp, alias: m.name, state: down.has(m.name) ? 'disconnected' : 'connected',
+    snapshot: { projects: m.projects, agents: Object.fromEntries((m.projects ?? []).map((p) => [p.id, p.agents])), quickAgents: {} },
+  })),
+  onSatelliteSnapshot: () => () => {},
 }));
 vi.mock('./quick-agent-events', () => ({ knownQuickAgents: () => new Map() }));
 vi.mock('./canvas-store-reader', () => ({ readAllCanvasStores: async () => [] }));
@@ -93,7 +102,7 @@ beforeEach(async () => {
   const cache = path.join(process.cwd(), 'node_modules', '.cache');
   await fsp.mkdir(cache, { recursive: true });
   world.fallbackHome = await fsp.mkdtemp(path.join(cache, 'gp-net-none-'));
-  down.clear();
+  down.clear(); world.links = [];
   refusals.length = 0;
   A.projects = [{ id: 'proj_a', name: 'App', path: '/a/app', key: 'github.com/org/app', agents: [{ id: 'lead', name: 'lead' }] }];
   B.projects = [
@@ -265,14 +274,52 @@ describe('network group projects across two desktops (#3363)', () => {
     expect(await as(B, (h) => h.groupProjectHost.get(id))).toBeNull();
   });
 
-  it('a project scope over the network covers the other computer\'s project of the same repository', async () => {
+  it('an existing project group keeps repository coverage unchanged', async () => {
     const project = await as(A, (h) => h.groupProjectHost.create('App team', { scope: { level: 'project', projectId: 'proj_a', reach: 'network' } }));
+    await as(B, (h) => h.groupProjectHost.syncFrom(A.fp));
+    // A pre-3546 record keeps its exact previous behaviour.
+    await as(A, (h) => h.groupProjectHost.updateMembership(project.id, (m) => { delete m.membershipPolicy; delete m.includeLinkedComputers; }));
     await as(B, (h) => h.groupProjectHost.syncFrom(A.fp));
     expect(await as(B, (h) => h.groupProjectHost.get(project.id))).toMatchObject({ scopeProjectKey: 'github.com/org/app' });
     expect(await as(B, (h) => h.groupProjectHost.inScope(project.id, 'builder'))).toBe(true);
     expect(await as(B, (h) => h.groupProjectHost.inScope(project.id, 'stranger'))).toBe(false);
     expect(await as(B, (h) => h.groupProjectHost.admits(project.id, 'builder'))).toBe(true);
     expect(await as(B, (h) => h.groupProjectHost.admits(project.id, 'stranger'))).toBe(false);
+  });
+
+  it('new project groups require explicit links on both host and replica, then keep joining future agents', async () => {
+    const project = await as(A, (h) => h.groupProjectHost.create('Linked team', { projectId: 'proj_a', scope: { level: 'project', projectId: 'proj_a', reach: 'network' } }));
+    await as(B, (h) => h.groupProjectHost.syncFrom(A.fp));
+    expect(await as(B, (h) => h.groupProjectHost.inScope(project.id, 'builder'))).toBe(false);
+    world.links = [[{ machine: A.fp, projectId: 'proj_a' }, { machine: B.fp, projectId: 'proj_b' }]];
+    expect(await as(B, (h) => h.groupProjectHost.inScope(project.id, 'builder'))).toBe(true);
+    expect(await as(B, (h) => h.groupProjectHost.inScope(project.id, 'stranger'))).toBe(false);
+    for (const m of machines) await as(m, async () => {
+      m.persisted!.registerPersistedBindingSource(m.membership!.membershipBindingSource);
+      await m.persisted!.rebuildPersistedBindings();
+    });
+    await as(A, () => A.membership!.reconcileMembership());
+    await as(B, (h) => h.groupProjectHost.syncFrom(A.fp));
+    await as(B, () => B.membership!.reconcileMembership());
+    expect(await as(B, async () => B.bindings!.bindingManager.getBindingsForAgent('builder').map((b) => b.targetId))).toContain(project.id);
+    B.projects![0].agents.push({ id: 'later', name: 'Later' });
+    await as(A, () => A.membership!.reconcileMembership());
+    await as(B, (h) => h.groupProjectHost.syncFrom(A.fp));
+    await as(B, () => B.membership!.reconcileMembership());
+    expect(await as(B, async () => B.bindings!.bindingManager.getBindingsForAgent('later').map((b) => b.targetId))).toContain(project.id);
+    await expect(as(B, () => B.membership!.setAutomaticMembership(project.id, { autoJoin: false, includeLinkedComputers: false }))).rejects.toMatchObject({ code: 'not_host' });
+    await expect(as(B, (h) => h.groupProjectHost.updateMembership(project.id, (m) => { m.autoJoin = false; }))).rejects.toMatchObject({ code: 'not_host', message: expect.stringContaining('Only the host') });
+    const attempted = await as(A, (h) => h.groupProjectHost.applyRemoteWrites(B.fp, readWriteRequest(wire({ v: 1, writes: [{
+      id: 'replica-policy', groupProjectId: project.id, queuedAt: new Date().toISOString(), author: { label: 'user' },
+      write: { op: 'membership', patch: { addExplicit: [], removeExplicit: [], addExcluded: [], removeExcluded: [], set: { autoJoin: false } } },
+    }] }))));
+    expect(attempted.results[0]).toMatchObject({ status: 'refused', reason: expect.stringContaining('Only the host') });
+    expect((await as(A, (h) => h.groupProjectHost.getMembership(project.id))).autoJoin).toBe(true);
+    await as(B, () => B.membership!.excludeMember(project.id, 'builder'));
+    await as(B, () => B.membership!.addMember(project.id, 'builder'));
+    const includedAgain = (await as(A, (h) => h.groupProjectHost.getMembership(project.id))).explicit.find((entry) => entry.address === `builder@${B.fp}`);
+    expect(includedAgain?.autoProject).toEqual({ machine: B.fp, projectId: 'proj_b' });
+
   });
 
   describe('the host decides who may write (#3446 review)', () => {
@@ -289,6 +336,16 @@ describe('network group projects across two desktops (#3363)', () => {
       expect((await writeAs(id, { agentId: 'member', label: 'm' }, { op: 'update', fields: { name: 'Renamed' } })).results[0])
         .toMatchObject({ status: 'refused', reason: expect.stringContaining('grant') });
       expect((await as(A, (h) => h.groupProjectHost.get(id)))!.name).toBe('Launch');
+    });
+
+    it('checks an exclusion before the explicit-entry authorization fallback', async () => {
+      const id = await sharedProject();
+      await as(A, (h) => h.groupProjectHost.updateMembership(id, (membership) => {
+        membership.explicit.push({ address: `member@${B.fp}`, kind: 'durable', addedAt: 'x' });
+        membership.excluded.push({ address: `member@${B.fp}`, excludedAt: 'x' });
+      }));
+      expect((await writeAs(id, { agentId: 'member', label: 'Member' }, { op: 'post', sender: 'Member', topic: 'work', body: 'excluded' })).results[0])
+        .toMatchObject({ status: 'refused', reason: expect.stringContaining('member') });
     });
 
     it('asks the registered grant check for an agent\'s change, with its address and the action', async () => {

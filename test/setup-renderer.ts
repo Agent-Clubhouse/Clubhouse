@@ -497,6 +497,8 @@ vi.stubGlobal('clubhouse', {
     addMember: async (groupProjectId: string) => ({ groupProjectId, managed: true, autoJoin: true, members: [], excluded: [] }),
     excludeMember: async (groupProjectId: string) => ({ groupProjectId, managed: true, autoJoin: true, members: [], excluded: [] }),
     answerAutoJoinOffer: async (groupProjectId: string) => ({ groupProjectId, managed: true, autoJoin: true, members: [], excluded: [] }),
+    setAutomaticMembership: async () => ({ groupProjectId: '', managed: true, autoJoin: false, members: [], excluded: [] }),
+    confirmUnlinkedMembers: async () => ({ groupProjectId: '', managed: true, autoJoin: false, members: [], excluded: [] }),
     previewAutoJoin: async () => ({ wouldJoin: [], unreadableProjects: [] }),
     getRoles: async (groupProjectId: string) => ({ groupProjectId, own: { deliver: 'allow', wake: 'off' }, holders: [] }),
     setRole: async (groupProjectId: string) => ({ groupProjectId, own: { deliver: 'allow', wake: 'off' }, holders: [] }),

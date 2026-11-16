@@ -109,6 +109,7 @@ import { executeShoulderTap } from '../services/group-project-shoulder-tap';
 import * as annexEventBus from '../services/annex-event-bus';
 import { broadcastToAllWindows } from '../util/ipc-broadcast';
 import { registerGroupProjectHandlers, _resetHandlersForTesting } from './group-project-handlers';
+import * as membershipService from '../services/group-project-membership';
 import { digestSinceArg } from './validation';
 
 type HandlerFn = (...args: unknown[]) => unknown;
@@ -628,5 +629,58 @@ describe('digestSinceArg', () => {
       .toThrow('may not contain the key "constructor"');
     expect(() => validate({ prototype: '2026-07-25T10:00:00.000Z' }, 'arg2'))
       .toThrow('may not contain the key "prototype"');
+  });
+});
+
+
+describe('membership policy IPC (#3546)', () => {
+  const view = { groupProjectId: 'gp-1', managed: true, autoJoin: false, members: [], excluded: [] };
+
+  it('passes one create request with both toggles and host-relative exclusions to the host', async () => {
+    const options = { scope: { level: 'project' as const, projectId: 'proj', reach: 'network' as const }, membership: { autoJoin: true, includeLinkedComputers: true, excluded: ['excluded@computer'] } };
+    await getHandler(IPC.GROUP_PROJECT.CREATE)(fakeEvent, 'Team', options);
+    expect(groupProjectHost.create).toHaveBeenCalledWith('Team', options);
+  });
+
+  it('previews the selected ongoing policy and exclusions through the membership service', async () => {
+    const preview = vi.spyOn(membershipService, 'previewAutoJoin').mockResolvedValue({ wouldJoin: [], unreadableProjects: [] });
+    const scope = { level: 'project', projectId: 'proj', reach: 'network' };
+    const options = { autoJoin: true, includeLinkedComputers: false, excluded: ['agent'] };
+    await getHandler(IPC.GROUP_PROJECT.PREVIEW_AUTO_JOIN)(fakeEvent, scope, options);
+    expect(preview).toHaveBeenCalledWith(scope, options);
+    preview.mockRestore();
+  });
+
+  it.each([
+    { autoJoin: true, includeLinkedComputers: true },
+    { autoJoin: false, includeLinkedComputers: true },
+    { autoJoin: true, includeLinkedComputers: false },
+  ])('delegates toggle changes to the host-enforced membership service: %j', async (options) => {
+    const set = vi.spyOn(membershipService, 'setAutomaticMembership').mockResolvedValue(view);
+    expect(await getHandler(IPC.GROUP_PROJECT.SET_AUTOMATIC_MEMBERSHIP)(fakeEvent, 'gp-1', options)).toEqual(view);
+    expect(set).toHaveBeenCalledWith('gp-1', options);
+    set.mockRestore();
+  });
+
+  it('propagates host-only refusal without trying another writer', async () => {
+    const set = vi.spyOn(membershipService, 'setAutomaticMembership').mockRejectedValue(new Error('Only the host can change automatic membership.'));
+    await expect(getHandler(IPC.GROUP_PROJECT.SET_AUTOMATIC_MEMBERSHIP)(fakeEvent, 'gp-1', { autoJoin: true, includeLinkedComputers: true })).rejects.toThrow('Only the host');
+    set.mockRestore();
+  });
+
+  it('passes the exact unlink review list, and propagates stale refusal', async () => {
+    const confirm = vi.spyOn(membershipService, 'confirmUnlinkedMembers').mockResolvedValue(view);
+    await getHandler(IPC.GROUP_PROJECT.CONFIRM_UNLINKED_MEMBERS)(fakeEvent, 'gp-1', { confirmLeaving: ['agent@computer'] });
+    expect(confirm).toHaveBeenCalledWith('gp-1', ['agent@computer']);
+    confirm.mockRejectedValue(new Error('Review the change again.'));
+    await expect(getHandler(IPC.GROUP_PROJECT.CONFIRM_UNLINKED_MEMBERS)(fakeEvent, 'gp-1', { confirmLeaving: [] })).rejects.toThrow('Review the change again');
+    confirm.mockRestore();
+  });
+
+  it('refuses malformed unlink addresses before invoking the service', () => {
+    const confirm = vi.spyOn(membershipService, 'confirmUnlinkedMembers');
+    expect(() => getHandler(IPC.GROUP_PROJECT.CONFIRM_UNLINKED_MEMBERS)(fakeEvent, 'gp-1', { confirmLeaving: [42] })).toThrow(/member addresses/);
+    expect(confirm).not.toHaveBeenCalled();
+    confirm.mockRestore();
   });
 });
