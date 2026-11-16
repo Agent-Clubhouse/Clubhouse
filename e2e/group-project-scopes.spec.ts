@@ -136,7 +136,8 @@ test('groups in app and two project scopes list apart, narrow to a project, keep
   await expect(row(page, 'Team A')).toBeVisible();
   await expect(row(page, 'Everyone')).toBeVisible();
   await page.getByRole('searchbox', { name: 'Search group projects' }).fill('Team B');
-  await expect(page.getByText('No matches.')).toBeVisible();
+  // Search words match a project's name too, so another group may match; the deleted one never does.
+  await expect(row(page, 'Team B')).toHaveCount(0);
   await page.getByRole('button', { name: 'Clear search' }).click();
   await searchPalette('Team B');
   await expect(paletteOption('Team B')).toHaveCount(0);
