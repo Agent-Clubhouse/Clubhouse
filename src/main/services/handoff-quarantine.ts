@@ -2,9 +2,10 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import { createHash, randomBytes, randomUUID } from 'crypto';
-import { verifyWindowsQuarantineRoot } from './handoff-quarantine-windows';
+import { inspectWindowsQuarantineRoot, verifyWindowsQuarantineRoot } from './handoff-quarantine-windows';
 import { HandoffSnapshotError } from './handoff-snapshot';
 import { reportHandoffGitFailure } from './handoff-git-diagnostics';
+import { appLog } from './log-service';
 
 const WINDOWS = process.platform === 'win32';
 
@@ -123,7 +124,114 @@ export async function sweepHandoffQuarantines(options: { roots?: string[]; now?:
   }
 }
 
-export async function createHandoffQuarantine(staging: string, options: { roots?: string[]; windows?: boolean } = {}): Promise<{
+type RootStage = 'mkdir' | 'identity' | 'verify' | 'recover' | 'child';
+export interface QuarantineRootOptions {
+  roots?: string[]; windows?: boolean;
+  /** Verifies (and, when `created`, initializes) a root's owner-only ACL. Defaults to the Windows check. */
+  verify?: (directory: string, created: boolean) => Promise<void>;
+  /** True only if the root is owned by the current user, is no reparse point, and is empty. */
+  inspect?: (directory: string) => Promise<boolean>;
+  retryDelay?: number;
+}
+const VERIFY_ATTEMPTS = 3;
+const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
+
+class RootFailure extends Error {
+  constructor(readonly stage: RootStage, readonly cause: unknown) { super(`Quarantine root ${stage} failed.`); }
+}
+
+/** Closed classification only: never log paths or error text. */
+function rootFailureClass(failure: RootFailure): string {
+  const value = failure.cause && typeof failure.cause === 'object' ? failure.cause as { killed?: unknown; code?: unknown } : {};
+  const kind = value.killed === true || value.code === 'ETIMEDOUT' ? 'timeout'
+    : value.code === 'EACCES' || value.code === 'EPERM' ? 'permission'
+      : value.code === 'EBUSY' ? 'busy' : 'other';
+  return `${failure.stage}:${kind}`;
+}
+
+/** Remove a root this call created but could not verify, so the next attempt
+ * re-initializes it instead of failing on an uninitialized inherited DACL forever.
+ * Non-recursive: fails (and leaves it) if anything is inside or identity changed. */
+async function removeEmptyRoot(root: string, before: fs.Stats): Promise<boolean> {
+  try {
+    await assertIdentity(root, before, false);
+    if ((await fs.promises.readdir(root)).length) return false;
+    await fs.promises.rmdir(root);
+    return true;
+  } catch { return false; /* telemetry-exempt: an unremovable root stays and fails closed */ }
+}
+
+async function prepareRoot(candidate: string, created: boolean, verify: QuarantineRootOptions['verify']): Promise<{ owner: fs.Stats; created: boolean }> {
+  let owner: fs.Stats;
+  try { owner = await identity(candidate); } catch (error) { throw new RootFailure('identity', error); }
+  try { if (verify) await verify(candidate, created); await assertRoot(candidate, owner); }
+  catch (error) { throw new RootFailure('verify', error); }
+  return { owner, created };
+}
+
+async function createRoot(candidate: string): Promise<fs.Stats | undefined> {
+  try { await fs.promises.mkdir(candidate, { mode: 0o700 }); return await fs.promises.lstat(candidate); }
+  catch (error) { if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw new RootFailure('mkdir', error); return undefined; }
+}
+
+/** Open (creating if needed) one verified private root, then an exclusive child. */
+async function openRoot(candidate: string, options: QuarantineRootOptions): Promise<{ owner: fs.Stats; directory: string }> {
+  const verify = options.verify ?? (WINDOWS ? verifyWindowsQuarantineRoot : undefined);
+  const inspect = options.inspect ?? (WINDOWS ? inspectWindowsQuarantineRoot : undefined);
+  const delay = options.retryDelay ?? 250;
+  let prepared: { owner: fs.Stats; created: boolean } | undefined;
+  let last: RootFailure | undefined; let lastCreated = false;
+  for (let attempt = 1; attempt <= VERIFY_ATTEMPTS && !prepared; attempt++) {
+    const fresh = await createRoot(candidate);
+    try { prepared = await prepareRoot(candidate, !!fresh, verify); }
+    catch (error) { // telemetry-exempt: classified and logged below as a closed failure class
+      last = error as RootFailure; lastCreated = !!fresh;
+      appLog('core:handoff', 'warn', 'Handoff quarantine root rejected', { meta: { failure: rootFailureClass(last), attempt, created: lastCreated } });
+      if (fresh) await removeEmptyRoot(candidate, fresh);
+      // A timed-out verify is a slow machine, not a broken root: stop here so
+      // worst-case latency stays bounded (each further PowerShell may take 20 s).
+      if (rootFailureClass(last) === 'verify:timeout') throw last;
+      // An existing root may still be mid-initialization by a concurrent creator.
+      if (fresh) continue;
+      if (attempt < VERIFY_ATTEMPTS && last.stage === 'verify') await sleep(delay * attempt);
+      else break;
+    }
+  }
+  if (!prepared) {
+    if (!last || last.stage !== 'verify' || lastCreated) throw last ?? new RootFailure('verify', undefined);
+    // Recovery for a root left uninitialized by an earlier timed-out create: only
+    // when it is provably ours and empty. Removal is non-recursive.
+    try {
+      const stat = await fs.promises.lstat(candidate);
+      if (!stat.isDirectory() || stat.isSymbolicLink() || !privateDirectory(stat) || (await inspect?.(candidate)) !== true) throw new Error('not recoverable');
+      if (!await removeEmptyRoot(candidate, stat)) throw new Error('not removable');
+      const fresh = await createRoot(candidate);
+      if (!fresh) throw new Error('recreated concurrently');
+      try { prepared = await prepareRoot(candidate, true, verify); }
+      catch (error) { await removeEmptyRoot(candidate, fresh); throw error; }
+    } catch (error) {
+      const failure = new RootFailure('recover', error instanceof RootFailure ? error.cause : error);
+      appLog('core:handoff', 'warn', 'Handoff quarantine root rejected', { meta: { failure: rootFailureClass(failure), recovery: true } });
+      throw failure;
+    }
+  }
+  try {
+    // Creating the child is part of the candidate attempt: a private but
+    // unwritable root must not prevent trying another usable root.
+    const child = path.join(candidate, `q-${randomBytes(16).toString('hex')}`);
+    await fs.promises.mkdir(child, { mode: 0o700 });
+    try { await assertRoot(candidate, prepared.owner); }
+    catch (error) {
+      // The root was replaced (e.g. a racing recovery) while the child was created:
+      // never leave a child in a root that was not the one verified.
+      try { await fs.promises.rmdir(child); } catch { /* telemetry-exempt: best-effort non-recursive removal of the just-created empty child */ }
+      throw error;
+    }
+    return { owner: prepared.owner, directory: child };
+  } catch (error) { throw new RootFailure('child', error); }
+}
+
+export async function createHandoffQuarantine(staging: string, options: QuarantineRootOptions = {}): Promise<{
   directory: string; assertCurrent(): Promise<void>; cleanup(): Promise<void>;
 }> {
   const nested = path.join(staging, `quarantine-${randomUUID()}`);
@@ -139,21 +247,13 @@ export async function createHandoffQuarantine(staging: string, options: { roots?
     for (const candidate of [...new Set(roots)].sort((a, b) => a.length - b.length || a.localeCompare(b))) {
       if (!handoffQuarantineFits(path.join(candidate, `q-${'0'.repeat(32)}`), true)) continue;
       try {
-        let created = false;
-        try { await fs.promises.mkdir(candidate, { mode: 0o700 }); created = true; }
-        catch (error) { if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error; }
-        const candidateOwner = await identity(candidate);
-        if (WINDOWS) await verifyWindowsQuarantineRoot(candidate, created);
-        await assertRoot(candidate, candidateOwner);
-        const child = path.join(candidate, `q-${randomBytes(16).toString('hex')}`);
-        // Creating the child is part of the candidate attempt: a private but
-        // unwritable root must not prevent trying another usable root.
-        await fs.promises.mkdir(child, { mode: 0o700 });
-        owner = candidateOwner;
-        root = candidate;
-        directory = child;
+        const opened = await openRoot(candidate, options);
+        owner = opened.owner; root = candidate; directory = opened.directory;
         break;
-      } catch { /* telemetry-exempt: try another root; unverified Windows ACLs fail closed */ }
+      } catch (error) { // telemetry-exempt: openRoot logged a closed failure class
+        // Identity, verify and recover rejections were logged by openRoot; try another root. Unverified Windows ACLs fail closed.
+        if (error instanceof RootFailure && (error.stage === 'mkdir' || error.stage === 'child')) appLog('core:handoff', 'warn', 'Handoff quarantine root rejected', { meta: { failure: rootFailureClass(error) } });
+      }
     }
     if (!root || !owner) throw pathTooLong();
   } else {
