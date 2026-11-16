@@ -67,7 +67,7 @@ export interface FederationRequestRouter {
   /** The limit that tripped this link, while it is paused. */
   pauseReason?(machine: string): string | undefined;
   before(callerId: string, machine: string, targetId: string, cause: import('../../shared/annex-delivery').AnnexCallContext | undefined, args: Record<string, unknown>, tool: string): Promise<void>;
-  cause(callerId: string): import('../../shared/annex-delivery').AnnexCallContext | undefined;
+  cause(callerId: string, args?: Record<string, unknown>): import('../../shared/annex-delivery').AnnexCallContext | undefined;
 }
 let requests: FederationRequestRouter | undefined;
 export function federationRequestRouter(): FederationRequestRouter | undefined { return requests; }

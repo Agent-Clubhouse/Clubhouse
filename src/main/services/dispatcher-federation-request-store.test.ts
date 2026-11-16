@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 const fixture = vi.hoisted(() => ({ dir: '' }));
 vi.mock('electron', () => ({ app: { getPath: () => fixture.dir, isPackaged: false } }));
 vi.mock('./log-service', () => ({ appLog: vi.fn() }));
+import type { FederatedRequest } from '../../shared/dispatcher-federation-requests';
 import { createFederationRequestStore } from './dispatcher-federation-requests';
 beforeEach(() => { fixture.dir = fs.mkdtempSync(path.join(os.tmpdir(), 'federation-request-store-')); });
 afterEach(() => { vi.restoreAllMocks(); fs.rmSync(fixture.dir, { recursive: true, force: true }); });
@@ -26,6 +27,21 @@ describe('durable federation request records', () => {
     vi.spyOn(fs.promises, 'open').mockImplementation(async (...args) => { const handle = await open(...args); current = false; return handle; });
     await expect(store.update((f) => { f.paused.laptop = 'old pairing'; }, () => current)).rejects.toThrow('authorization changed');
     expect(store.get().paused).toEqual({});
+  });
+  it('loads old v1 request, reply, news and paused records without changing saved depths or bytes', () => {
+    const request: FederatedRequest = {
+      id: 'old-request', direction: 'incoming', machineId: 'laptop', callerId: 'controller', targetId: 'controller',
+      origin: { machineId: 'laptop', machineName: 'Laptop', agentId: 'peer-controller', agentName: 'Dispatcher' },
+      originRequestId: 'old-local', localRequestId: 'remote-old', text: 'Old work',
+      cause: { rootId: 'old-root', depth: 7, parentId: 'old-parent' }, epoch: { sender: 'self-pair', receiver: 'peer-pair' },
+      createdAt: 1, expiresAt: 2, delivery: 'delivered', outcome: 'under_way', revision: 1, receivedRevision: 0, duplicates: 3,
+      replies: [{ revision: 1, outcome: 'under_way', text: 'Old progress', deliveryId: 'old-reply', delivery: 'delivered' }],
+    };
+    const value = { version: 1, requests: [request], paused: { laptop: 'Paused by the person' }, crossings: {}, news: { laptop: { ...request, localRequestId: '', cause: { rootId: 'old-news', depth: 6 } } } };
+    const raw = JSON.stringify(value, null, 2);
+    const filename = path.join(fixture.dir, 'dispatcher-federation-requests.json'); fs.writeFileSync(filename, raw);
+    expect(createFederationRequestStore().get()).toEqual(value);
+    expect(fs.readFileSync(filename, 'utf8')).toBe(raw);
   });
   it.each(['null', '{"version":1}', '{"version":1,"requests":[{}],"paused":{},"crossings":{}}'])('fails closed for unreadable records: %s', async (raw) => {
     fs.writeFileSync(path.join(fixture.dir, 'dispatcher-federation-requests.json'), raw);

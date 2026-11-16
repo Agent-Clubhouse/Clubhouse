@@ -8,6 +8,10 @@ import type { ModelList } from '../../../orchestrators/types';
 import type { McpToolResult } from '../types';
 import { IPC } from '../../../../shared/ipc-channels';
 import { resolveHelperAccess, type AgentLaunchAccess } from '../../../../shared/orchestration-policy';
+import type { FederatedRequest } from '../../../../shared/dispatcher-federation-requests';
+import { captureFederationInputs, prepareFederationInput, startFederationTurnTracking } from '../../dispatcher-federation-context';
+import { _setLocalWorkStoreForTesting, type LocalWorkFile } from '../../dispatcher-federation-local-work';
+import { publishFromHookEvent, forgetHookTurn } from '../../app-event-bus';
 
 // ── Mocks: no CLI, git or disk is touched ──────────────────────────────────
 
@@ -408,6 +412,26 @@ describe('gating', () => {
 // ── start_helper ───────────────────────────────────────────────────────────
 
 describe('start_helper', () => {
+  it('binds causation before a delayed background creation and retains it for its eventual mission', async () => {
+    let file: LocalWorkFile = { version: 1, records: [], current: {} };
+    _setLocalWorkStoreForTesting({ get: () => structuredClone(file), settled: async () => {}, update: async (change) => { const next = structuredClone(file); change(next); file = next; } });
+    const stop = startFederationTurnTracking('orch');
+    const request = { id: 'remote-start', cause: { rootId: 'root', depth: 5 }, expiresAt: Date.now() + 60_000, targetId: 'orch' } as FederatedRequest;
+    const creation = controllableCreation();
+    try {
+      prepareFederationInput('orch', request)?.accepted('prompt');
+      publishFromHookEvent('orch', { kind: 'pre_tool', rawName: 'UserPromptSubmit' });
+      expect(parse(await callTool('orch', 'start_helper', { name: 'causal', task: 'Remote subtask' }))).toMatchObject({ state: 'starting' });
+      publishFromHookEvent('orch', { kind: 'stop', rawName: 'Stop' });
+      publishFromHookEvent('orch', { kind: 'pre_tool', rawName: 'UserPromptSubmit' });
+      mockSpawnAgent.mockImplementationOnce(async () => {
+        expect(captureFederationInputs()).toEqual([expect.objectContaining({ id: 'remote-start', targetId: 'helper_causal', cause: { rootId: 'root', depth: 5 } })]);
+      });
+      creation.ready('helper_causal'); await _settleHelperStartsForTesting();
+      expect(mockSpawnAgent).toHaveBeenCalledTimes(1);
+      expect(file.records).toEqual([expect.objectContaining({ sender: 'orch', receiver: 'helper_causal', taskId: 'helper_causal' })]);
+    } finally { stop(); forgetHookTurn('orch'); _setLocalWorkStoreForTesting(); }
+  });
   it('returns "starting" before the creation completes, then spawns with the task and tells the orchestrator', async () => {
     const creation = controllableCreation();
     const result = await callTool('orch', 'start_helper', { name: 'fixer', task: 'Fix the bug', folder: 'fixer-1', branchFrom: 'main' });

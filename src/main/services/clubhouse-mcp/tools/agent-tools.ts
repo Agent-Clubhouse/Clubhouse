@@ -1,3 +1,5 @@
+import { activateLocalCausalInput, localOutputInputs } from '../../dispatcher-federation-local-work';
+import { federationTurnInputs, prepareFederationInputs } from '../../dispatcher-federation-context';
 import { LogRedactor } from '../../../../shared/log-redaction';
 import { federationMessageDirection } from '../../dispatcher-federation-policy';
 import { dispatcherProviderControl } from '../../dispatcher-provider-control';
@@ -88,6 +90,8 @@ function buildTaggedMessage(agentId: string, targetId: string, message: string, 
     text += `\n\n---\nReply to ${senderName} via tool "${replyToolName}" with task_id="${taskId}". ${fallback}` +
       `Prefix your response with TASK_RESULT:${taskId}.`;
   }
+  const remote = currentRemoteCaller();
+  if (remote && isDispatcherTarget(targetId)) text += `\n\n[REMOTE NEWS:${remote.deliveryId}] If this input causes a federated call, caused_by may select this id. Omitting linkage still inherits this turn's remote causation.`;
   const routed = [{ sender: { agentId, name: senderName }, text: message }];
   return { text, routed, senderLabel, targetName, isBidirectional: !!reverseBinding };
 }
@@ -189,6 +193,9 @@ export function registerAgentTools(): void {
             'Optional correlation ID. If provided, the message is prefixed with [TASK:<task_id>] ' +
             'so the target agent knows to tag its response with TASK_RESULT:<task_id>. ' +
             'If omitted, one is auto-generated and returned.',
+        },
+        caused_by: {
+          type: 'string', description: 'For Dispatcher federation: select an incoming request/news/reply id delivered into this turn. Omission still inherits this turn’s remote causation.',
         },
         idempotency_key: {
           type: 'string',
@@ -385,6 +392,11 @@ export function registerAgentTools(): void {
         if (!text) {
           return { content: [{ type: 'text', text: 'No output available' }] };
         }
+        const inputs = localOutputInputs(agentId, targetId);
+        if (inputs.length) {
+          await activateLocalCausalInput(agentId, [...federationTurnInputs(agentId), ...inputs]);
+          prepareFederationInputs(agentId, inputs, 'steer');
+        }
         return { content: [{ type: 'text', text }] };
       } catch (err) {
         return { content: [{ type: 'text', text: `Failed to read output: ${err instanceof Error ? err.message : String(err)}` }], isError: true };
@@ -487,6 +499,9 @@ export function registerAgentTools(): void {
           type: 'string',
           description:
             'Optional correlation ID. Works the same as send_message task_id.',
+        },
+        caused_by: {
+          type: 'string', description: 'For Dispatcher federation: select an incoming request/news/reply id delivered into this turn. Omission still inherits this turn’s remote causation.',
         },
         idempotency_key: {
           type: 'string',
@@ -676,7 +691,7 @@ export function registerAgentTools(): void {
       const targetName = senderOf(agentId, targetId).targetName;
       const taskId = `t_${Date.now().toString(36)}`;
       const tagged = message ? buildTaggedMessage(agentId, targetId, message, taskId) : undefined;
-      const wake = { callerId: agentId, targetId, targetName, mission: tagged?.text, missionRouted: tagged?.routed };
+      const wake = { taskId, callerId: agentId, targetId, targetName, mission: tagged?.text, missionRouted: tagged?.routed };
       const result = isDispatcherTarget(targetId)
         ? await wakeDispatcher(wake)
         : await wakeWiredAgent(wake);

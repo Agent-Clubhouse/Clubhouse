@@ -1,3 +1,5 @@
+import { localCallInputs } from '../dispatcher-federation-local-work';
+import type { FederatedRequest } from '../../../shared/dispatcher-federation-requests';
 /**
  * The user's requests to the Dispatcher (#3237, #3204). Each start_work gets a
  * request id that stays with it until its outcome reaches the chat:
@@ -43,6 +45,8 @@ export type RequestEnding = 'failed' | 'cancelled' | 'timed_out';
 export type RequestTurn = 'sending' | 'awaiting' | 'in_turn' | 'past';
 
 export interface DispatcherRequest {
+  /** Main-only lineage captured when local work is created, never accepted from tool args. */
+  federationInputs?: FederatedRequest[];
   id: string;
   /** Authenticated remote provenance; never parsed from request text. */
   remote?: { machineId: string; machineName: string; agentId: string; agentName: string; originRequestId: string };
@@ -222,7 +226,7 @@ function changed(now = Date.now()): void {
 }
 
 function copy(r: DispatcherRequest): DispatcherRequest {
-  return { ...r, ...(r.remote && { remote: { ...r.remote } }), agents: [...r.agents], ...(r.done && { done: [...r.done] }), ...(r.reachedAt && { reachedAt: { ...r.reachedAt } }) };
+  return { ...r, ...(r.federationInputs && { federationInputs: structuredClone(r.federationInputs) }), ...(r.remote && { remote: { ...r.remote } }), agents: [...r.agents], ...(r.done && { done: [...r.done] }), ...(r.reachedAt && { reachedAt: { ...r.reachedAt } }) };
 }
 
 function find(id: string): DispatcherRequest | undefined {
@@ -318,6 +322,7 @@ export function beginRequest(text: string, now = Date.now(), id?: string): Begin
   const ended = same.filter((r) => r.status === 'failed' || r.status === 'cancelled' || r.status === 'timed_out').pop();
   if (ended) return reopen(ended, now);
   const request: DispatcherRequest = {
+    ...(localCallInputs().length && { federationInputs: structuredClone(localCallInputs()) }),
     id: newId(now), text: text.slice(0, TEXT_MAX), at: now, handedOffAt: now, status: 'under_way', turn: 'sending', agents: [],
   };
   all.push(request);

@@ -1,3 +1,6 @@
+import { hasLocalCausalCall, localCausalInputs } from '../../dispatcher-federation-local-work';
+import { captureFederationInputs, hasFederationInputScope, withFederationInputs } from '../../dispatcher-federation-context';
+import type { FederatedRequest } from '../../../../shared/dispatcher-federation-requests';
 /**
  * Helper updates to a parent, batched (#2414). message_parent reports and
  * Clubhouse's helper notices reach a busy parent as one message per short
@@ -23,6 +26,7 @@ export type Delivery = 'delivered' | 'not_running' | 'stopping';
 export const HELPER_UPDATE_WINDOW_MS = 3000;
 
 interface Batch {
+  inputs: FederatedRequest[];
   texts: string[];
   routed: RoutedMessagePart[];
   timer: ReturnType<typeof setTimeout>;
@@ -52,12 +56,12 @@ function mergesItsQueue(runtime: Runtime): boolean {
  * does. A terminal agent that is shutting down refuses the text (its runtime
  * throws AgentStoppingError), which comes back as 'stopping'.
  */
-export async function deliverNow(targetId: string, text: string, routed?: RoutedMessagePart[]): Promise<Delivery> {
+export async function deliverNow(targetId: string, text: string, routed?: RoutedMessagePart[], taskId = `helper_${Date.now().toString(36)}`): Promise<Delivery> {
   const runtime = getAgentRuntime(targetId);
   // A chat runtime that is ending is still registered for a moment.
   if (!runtime?.isRunning()) return 'not_running';
   try {
-    await runtime.sendMessage(text, { source: 'mcp', taskId: `helper_${Date.now().toString(36)}`, ...(routed && { routed }) });
+    await runtime.sendMessage(text, { source: 'mcp', taskId, ...(routed && { routed }) });
   } catch (err) {
     if (isAgentStoppingError(err)) return 'stopping';
     throw err;
@@ -76,19 +80,27 @@ function routedFor(text: string, part?: RoutedMessagePart): RoutedMessagePart[] 
  * the parent's runtime.
  */
 export function deliverHelperUpdate(targetId: string, text: string, part?: RoutedMessagePart): Promise<Delivery> {
+  if (hasFederationInputScope()) return enqueueHelperUpdate(targetId, text, part, captureFederationInputs());
+  if (!hasLocalCausalCall()) return enqueueHelperUpdate(targetId, text, part, []);
+  return localCausalInputs(targetId, undefined, text).then((inputs) => enqueueHelperUpdate(targetId, text, part, inputs));
+}
+
+function enqueueHelperUpdate(targetId: string, text: string, part: RoutedMessagePart | undefined, inputs: readonly FederatedRequest[]): Promise<Delivery> {
   const runtime = getAgentRuntime(targetId);
   if (!runtime) return Promise.resolve('not_running');
   const pending = batches.get(targetId);
-  if (!pending && (!isBusy(runtime) || mergesItsQueue(runtime))) return deliverNow(targetId, text, routedFor(text, part));
+  if (!pending && (!isBusy(runtime) || mergesItsQueue(runtime))) return withFederationInputs(inputs, () => deliverNow(targetId, text, routedFor(text, part)));
 
   return new Promise<Delivery>((resolve, reject) => {
     if (pending) {
+      pending.inputs.push(...inputs);
       pending.texts.push(text);
       pending.routed.push(...routedFor(text, part));
       pending.waiters.push({ resolve, reject });
       return;
     }
     const batch: Batch = {
+      inputs: [...inputs],
       texts: [text],
       routed: routedFor(text, part),
       timer: setTimeout(() => { void flushHelperUpdates(targetId); }, HELPER_UPDATE_WINDOW_MS),
@@ -113,7 +125,7 @@ export async function flushHelperUpdates(targetId: string): Promise<void> {
   clearTimeout(batch.timer);
   batch.unsubscribe?.();
   try {
-    const delivery = await deliverNow(targetId, coalesceUpdateTexts(batch.texts), batch.routed);
+    const delivery = await withFederationInputs(batch.inputs, () => deliverNow(targetId, coalesceUpdateTexts(batch.texts), batch.routed));
     for (const w of batch.waiters) w.resolve(delivery);
   } catch (err) {
     // telemetry-exempt: every waiter gets the error, as an unbatched send would

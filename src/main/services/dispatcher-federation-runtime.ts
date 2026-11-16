@@ -1,4 +1,5 @@
 /** Production adapter: remote work enters the hidden controller under local grants. */
+import { federationTurnInputs, startFederationTurnTracking, withFederationInput } from './dispatcher-federation-context';
 import { parseAgentAddress, formatAgentAddress } from '../../shared/agent-address';
 import { tel } from '../telemetry/facade';
 import { recordFederatedRequest, recordFederationLimit } from '../telemetry/dispatcher-telemetry';
@@ -10,8 +11,8 @@ import { listPeers } from './annex-peers';
 import { controllerDirection, remoteFederationController } from './dispatcher-federation';
 import { setFederationHandoffObserver, setFederationRequestRouter } from './dispatcher-federation-policy';
 import { createFederatedRequests, createFederationRequestStore, FederationInputNotReady, type FederatedRequests } from './dispatcher-federation-requests';
-import { dispatcherDisplayName, getDispatcherAgentId, isDispatcherEnabled } from './dispatcher/dispatcher-service';
-import { beginRemoteRequest, getRequest, getRequests, noteHandedOff, settleFederatedRequest, workTurnMark } from './dispatcher/dispatcher-requests';
+import { dispatcherDisplayName, getDispatcherAgentId, isDispatcherEnabled, onDispatcherChanged } from './dispatcher/dispatcher-service';
+import { beginRemoteRequest, getRequest, noteHandedOff, settleFederatedRequest, workTurnMark } from './dispatcher/dispatcher-requests';
 import { deliverToDispatcher } from './clubhouse-mcp/tools/dispatcher-delivery';
 import { deliverToChat } from './dispatcher/dispatcher-channel';
 import { appendTimeline } from './dispatcher/dispatcher-memory-timeline';
@@ -27,8 +28,18 @@ const messageOf = (value: McpToolResult) => value.content.filter((c) => c.type =
 
 export function startFederatedRequests(): () => void {
   let active = true;
+  let contextController: string | null = null;
+  let stopContext = () => {};
+  const trackController = () => {
+    const controller = getDispatcherAgentId();
+    if (controller === contextController) return;
+    stopContext(); contextController = controller;
+    stopContext = controller ? startFederationTurnTracking(controller) : () => {};
+  };
+  trackController();
+  const stopControllerWatch = onDispatcherChanged(trackController);
   const instance = createFederatedRequests({
-    store: createFederationRequestStore(), now: () => Date.now(),
+    store: createFederationRequestStore(), now: () => Date.now(), inputs: federationTurnInputs, requestInputs: (caller, id) => caller === getDispatcherAgentId() ? getRequest(id)?.federationInputs ?? [] : [],
     self: () => ({ machineId: getIdentity()?.fingerprint.toLowerCase() ?? '', machineName: 'this computer', agentId: getDispatcherAgentId() ?? '', agentName: dispatcherDisplayName() }),
     epoch: (machine) => ({ sender: ownPairing()?.id ?? 'legacy', receiver: listPeers().find((p) => p.fingerprint.toLowerCase() === machine)?.pairingId ?? 'legacy' }),
     authorized: (machine, agent, epoch) => {
@@ -72,10 +83,10 @@ export function startFederatedRequests(): () => void {
           + 'Choose now, check_in, needs_user or decline with triage_remote_request. All work uses your own local grants. '
           + `Report explicit progress/outcomes with report_remote_request and id ${r.id}. A receipt or turn end does not answer the request.\n\n${r.text}`;
         const mark = workTurnMark();
-        const delivery = await deliverToDispatcher({ senderId: `${remoteAgent}@${r.machineId}`, targetId: controller, targetName: dispatcherDisplayName(), text,
+        const delivery = await withFederationInput({ ...r, ...(kind === 'reply' && { origin: { ...r.origin, machineId: r.machineId, agentId: remoteAgent } }), direction: 'incoming', targetId: controller }, () => deliverToDispatcher({ senderId: `${remoteAgent}@${r.machineId}`, targetId: controller, targetName: dispatcherDisplayName(), text,
           routed: [{ sender: { agentId: `${remoteAgent}@${r.machineId}`, name: sender }, text: kind === 'reply' ? r.reason ?? '' : r.text }], taskId: r.localRequestId, submit: true,
           toolName: 'hand_off_request', args: {}, wakeAsReceiver: true, admission: () => active && guard.current() && guard.epoch.sender === r.epoch.sender && guard.epoch.receiver === r.epoch.receiver && isDispatcherEnabled()
-            && !!controllerDirection({ agentId: remoteAgent, machineId: r.machineId }, { agentId: controller }) });
+            && !!controllerDirection({ agentId: remoteAgent, machineId: r.machineId }, { agentId: controller }) }));
         if ('text' in delivery) {
           if (delivery.text === 'The receiving controller is not ready for remote input.') throw new FederationInputNotReady(delivery.text);
           throw new Error(delivery.text);
@@ -112,11 +123,9 @@ export function startFederatedRequests(): () => void {
       if (!target.machine || typeof args.request !== 'string' || typeof args.request_id !== 'string') return result('Give request and the local request_id on a remote controller link.', true);
       const local = getRequest(args.request_id);
       if (!local) return result('request_id must identify your own existing Dispatcher request.', true);
-      const parent = instance.cause();
-      const fresh = !local.remote && (!parent || local.at > parent.createdAt);
       const peer = listPeers().find((p) => p.fingerprint.toLowerCase() === target.machine)?.alias ?? 'the other computer';
       try {
-        const request = await instance.offer(callerId, target.machine, target.agentId, args.request_id, args.request, fresh);
+        const request = await instance.offer(callerId, target.machine, target.agentId, args.request_id, args.request, args.caused_by);
         return result({ request, message: `Waiting for ${peer}. Delivery and its explicit work outcome are recorded separately.` });
       }
       catch (err) { return result(err instanceof Error ? err.message : String(err), true); }
@@ -124,10 +133,8 @@ export function startFederatedRequests(): () => void {
     allowed: (machine, args, tool) => instance.allowed(machine, args, tool),
     pauseReason: (machine) => instance.pauseReason(machine),
     before: async (caller, machine, target, cause, args, tool) => instance.outgoingNews(machine, target, cause ?? { rootId: '', depth: 0 }, args, tool, caller),
-    cause: (caller) => {
-      if (caller !== getDispatcherAgentId()) return undefined;
-      const parent = instance.cause();
-      if (parent && getRequests().some((r) => !r.remote && r.turn === 'in_turn' && r.at > parent.createdAt)) return undefined;
+    cause: (caller, args) => {
+      const parent = instance.cause(caller, typeof args?.request_id === 'string' ? args.request_id : undefined, args?.caused_by);
       return parent ? { rootId: parent.cause.rootId, depth: parent.cause.depth + 1, parentId: parent.id } : undefined;
     },
   });
@@ -136,7 +143,7 @@ export function startFederatedRequests(): () => void {
     appLog('core:dispatcher', 'warn', 'Federated requests could not be reconciled', { meta: { error: err instanceof Error ? err.message : String(err) } });
   }); };
   const timer = setInterval(reconcile, 5_000); timer.unref(); reconcile();
-  return () => { active = false; clearInterval(timer); stopRouter(); stopHandoffs(); stopTelemetry(); if (requests === instance) requests = undefined; };
+  return () => { active = false; clearInterval(timer); stopRouter(); stopControllerWatch(); stopContext(); stopHandoffs(); stopTelemetry(); if (requests === instance) requests = undefined; };
 }
 
 export async function receiveFederatedRequest(request: Parameters<DispatcherAgentCallReceiver['receive']>[0]) {
@@ -145,8 +152,8 @@ export async function receiveFederatedRequest(request: Parameters<DispatcherAgen
   catch (err) { return { ...result(err instanceof Error ? err.message : String(err), true), annexDelivery: { state: 'refused' as const, reason: 'request_refused' } }; }
 }
 
-export async function receiveFederatedNewsCause(request: Parameters<DispatcherAgentCallReceiver['receive']>[0]): Promise<void> {
-  await requests?.news(request.origin, request.targetId, request.cause, request.args, request.tool);
+export async function receiveFederatedNewsCause(request: Parameters<DispatcherAgentCallReceiver['receive']>[0]) {
+  return requests?.news(request.origin, request.targetId, request.cause, request.args, request.tool, request.deliveryId);
 }
 
 export async function countFederatedDuplicate(origin: { machineId: string; agentId: string }, args: Record<string, unknown>, tool: string): Promise<void> {

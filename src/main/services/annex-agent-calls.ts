@@ -235,12 +235,12 @@ export function getDelivery(callerId: string, callId: string): AnnexDeliveryStat
 export async function forwardAgentCall(callerId: string, targetId: string, targetName: string, tool: string, args: Record<string, unknown>, now = Date.now(), context?: AnnexCallContext): Promise<McpToolResult> {
   const router = federationRequestRouter();
   if (tool === 'hand_off_request' && router) return router.offer(callerId, targetId, args);
-  return forwardPreparedAgentCall(callerId, targetId, targetName, tool, args, now, context ?? router?.cause(callerId));
+  return forwardPreparedAgentCall(callerId, targetId, targetName, tool, args, now, context, undefined, undefined, () => router?.cause(callerId, args));
 }
 
 /** Main-only transport entry. A model never supplies the causal context or prepared envelope. */
 export async function forwardPreparedAgentCall(callerId: string, targetId: string, targetName: string, tool: string, args: Record<string, unknown>, now = Date.now(), context?: AnnexCallContext, prepared?: (id: string) => void,
-  direct?: { authorization: { policyHash: string }; current(): boolean }): Promise<McpToolResult> {
+  direct?: { authorization: { policyHash: string }; current(): boolean }, resolveCause?: () => AnnexCallContext | undefined): Promise<McpToolResult> {
   const { agentId: to } = parseAgentAddress(targetId);
   const machine = remoteMachineOf(targetId);
   const self = selfFingerprint();
@@ -267,7 +267,14 @@ export async function forwardPreparedAgentCall(callerId: string, targetId: strin
     ? deliveryHash([self, callerId, machine, to, tool, args.idempotency_key ?? args.task_id, undefined, epoch])
     : randomUUID();
   const previous = QUEUED_TOOLS.has(tool) ? deliveries.get().deliveries.find((r) => r.callId === callId) : undefined;
-  context = previous?.context ?? deliveries.get().outbox.find((item) => item.id === callId)?.body.context ?? context ?? { rootId: callId, depth: 0 };
+  const retainedContext = previous?.context ?? deliveries.get().outbox.find((item) => item.id === callId)?.body.context
+    ?? (previous ? { rootId: callId, depth: 0 } : undefined);
+  if (!retainedContext && !context) {
+    try { context = resolveCause?.(); }
+    catch (err) { return text(err instanceof Error ? err.message : String(err), true); } // telemetry-exempt: invalid ancestry selection is returned to the caller
+  }
+  context = retainedContext ?? context ?? { rootId: callId, depth: 0 };
+  delete args.caused_by; // Local selector is not remote task data or part of idempotent payload identity.
   const sender = await describe(callerId);
   const body: AgentCallBody = {
     v: AGENT_CALL_VERSION,

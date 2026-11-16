@@ -38,7 +38,7 @@ export type AppEvent = Stamp & (
   | { type: 'agent.asleep'; agentId: string; exitCode?: number }
   | { type: 'agent.created'; agentId: string; projectPath: string; name?: string; parentAgentId?: string }
   | { type: 'agent.deleted'; agentId: string; projectPath: string; name?: string; parentAgentId?: string }
-  | { type: 'turn.started'; agentId: string; via: TurnVia }
+  | { type: 'turn.started'; agentId: string; via: TurnVia; continuation?: true; prompt?: true }
   | { type: 'turn.ended'; agentId: string; via: TurnVia; outcome: TurnOutcome }
   | { type: 'agent.waiting'; agentId: string; via: TurnVia; reason: 'permission' | 'question' }
   | { type: 'agent.error'; agentId: string; via: TurnVia; message: string }
@@ -208,7 +208,7 @@ export function finishHeadlessTurn(turn: HeadlessTurn, outcome: TurnOutcome, err
  * no interruption hook when the person interrupts a turn. Silence alone is
  * not evidence of an interrupted outcome, so this only resets start detection.
  */
-const HOOK_TURN_STALE_MS = 5 * 60 * 1000;
+export const HOOK_TURN_STALE_MS = 5 * 60 * 1000;
 
 /** Raw hook names that mean the person (or Clubhouse) sent a prompt. */
 const PROMPT_HOOKS: ReadonlySet<string> = new Set(['UserPromptSubmit', 'userPromptSubmitted']);
@@ -228,9 +228,9 @@ export interface HookFacts {
   message?: string;
 }
 
-function startHookTurn(agentId: string, at: number, turnId?: string): void {
+function startHookTurn(agentId: string, at: number, turnId?: string, continuation = false, prompt = false): void {
   hookTurns.set(agentId, { lastAt: at, ended: false, turnId });
-  publishAppEvent({ type: 'turn.started', agentId, via: 'hook', at });
+  publishAppEvent({ type: 'turn.started', agentId, via: 'hook', at, ...(continuation && { continuation: true }), ...(prompt && { prompt: true }) });
 }
 
 /**
@@ -261,7 +261,7 @@ export function publishFromHookEvent(agentId: string, facts: HookFacts, now = Da
   if (rawName && PROMPT_HOOKS.has(rawName)) {
     if (turnId && turn?.turnId === turnId) return;
     if (rawName === 'userPromptSubmitted') completedCopilotHookTurns.delete(agentId);
-    startHookTurn(agentId, now, turnId);
+    startHookTurn(agentId, now, turnId, false, true);
     return;
   }
   if (rawName === 'PostCompact') {
@@ -276,7 +276,7 @@ export function publishFromHookEvent(agentId: string, facts: HookFacts, now = Da
         if (turnId === turn.turnId && turn.ended) return;
         if (turnId !== turn.turnId) return;
       }
-      if (!turn || turn.ended || now - turn.lastAt > HOOK_TURN_STALE_MS) startHookTurn(agentId, now, turnId);
+      if (!turn || turn.ended || now - turn.lastAt > HOOK_TURN_STALE_MS) startHookTurn(agentId, now, turnId, !!turn && !turn.ended);
       else turn.lastAt = now;
       if (kind === 'pre_tool' && toolName && QUESTION_TOOLS.has(toolName)) {
         publishAppEvent({ type: 'agent.waiting', agentId, via: 'hook', reason: 'question', at: now });
@@ -324,3 +324,6 @@ export function resetAppEventBus(): void {
   completedCopilotHookTurns.clear();
   headlessTurns.clear();
 }
+
+/** Read-only hook liveness for input readiness; inactivity never discards causal ancestry. */
+export function hookTurnActivity(agentId: string): number | undefined { return hookTurns.get(agentId)?.lastAt; }

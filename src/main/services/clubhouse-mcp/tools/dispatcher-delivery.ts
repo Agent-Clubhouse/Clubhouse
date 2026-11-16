@@ -1,3 +1,4 @@
+import { federationTurnOpen } from '../../dispatcher-federation-context';
 import { LogRedactor } from '../../../../shared/log-redaction';
 /**
  * Messages from agents to the Dispatcher (#3037, part of #3034). An agent's
@@ -225,7 +226,7 @@ async function deliver(inboxId: string, req: DispatcherDeliveryRequest): Promise
   if (agentRegistry.get(inboxId) && !agentSystem.isAgentStopping(inboxId)) {
     const runtime = getAgentRuntime(inboxId);
     if (!runtime) return { delivered: false, text: `${targetName}'s runtime does not support input.` };
-    if (req.wakeAsReceiver && runtime.kind === 'chat' && (runtime.getState() !== 'idle' || runtime.hasPendingWork?.())) {
+    if (req.wakeAsReceiver && (federationTurnOpen(inboxId) || (runtime.kind === 'chat' && (runtime.getState() !== 'idle' || runtime.hasPendingWork?.())))) {
       return { delivered: false, text: 'The receiving controller is not ready for remote input.' };
     }
     idleStarts.delete(inboxId);
@@ -268,7 +269,7 @@ async function deliver(inboxId: string, req: DispatcherDeliveryRequest): Promise
 
   appLog('core:mcp', 'info', 'send_message: waking the Dispatcher to deliver', { meta });
   const result = await wakeController({
-    callerId: req.wakeAsReceiver ? inboxId : senderId, targetId: inboxId, targetName, mission: req.text, missionRouted: req.routed,
+    callerId: req.wakeAsReceiver ? inboxId : senderId, targetId: inboxId, targetName, mission: req.text, missionRouted: req.routed, taskId: req.taskId,
     ...(req.admission && { admission: req.admission }),
   });
   const text = result.content[0]?.type === 'text' ? result.content[0].text : '';

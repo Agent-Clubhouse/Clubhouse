@@ -39,6 +39,8 @@ const NOT_SETTINGS = new Set([
   path.join('services', 'annex-delivery-store.ts'),
   // Federated requests, outcomes and link pauses are operational delivery history.
   path.join('services', 'dispatcher-federation-requests.ts'),
+  // Local delegation provenance is expiring delivery history, never a person's choices.
+  path.join('services', 'dispatcher-federation-local-work.ts'),
   'annex-ports.json',
   // Annex Network membership state (removals, confirmations), kept by Clubhouse: not settings.
   'annex-network.json',

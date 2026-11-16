@@ -152,6 +152,8 @@ export async function sleepAgent({ callerId, targetId, targetName, force }: Slee
 }
 
 export interface WakeAgentRequest {
+  /** Main-only task correlation, generated/validated by the local handler. */
+  taskId?: string;
   callerId: string;
   targetId: string;
   targetName: string;
@@ -178,7 +180,7 @@ const waking = new Set<string>();
  * still stopping is waited on and then woken for real, so the mission goes to
  * a new session instead of the one that is exiting.
  */
-export async function wakeWiredAgent({ callerId, targetId, targetName, mission, missionRouted, locate = findDurableAgentConfig, admission, authorize }: WakeAgentRequest): Promise<McpToolResult> {
+export async function wakeWiredAgent({ taskId, callerId, targetId, targetName, mission, missionRouted, locate = findDurableAgentConfig, admission, authorize }: WakeAgentRequest): Promise<McpToolResult> {
   const target = { agentId: targetId, agentName: targetName };
   const undelivered = mission ? { messageDelivered: false } : {};
   const stillStopping = () => jsonResult({
@@ -200,7 +202,7 @@ export async function wakeWiredAgent({ callerId, targetId, targetName, mission, 
   if (agentSystem.isAgentRunning(targetId)) {
     // A sleep that began during the wait above.
     if (agentSystem.isAgentStopping(targetId)) return stillStopping();
-    const delivery = mission ? await deliverNow(targetId, mission, missionRouted) : undefined;
+    const delivery = mission ? await deliverNow(targetId, mission, missionRouted, taskId) : undefined;
     if (delivery === 'stopping') return stillStopping();
     return jsonResult({ ...target, status: 'already_running', ...(mission && { messageDelivered: delivery === 'delivered' }) });
   }
@@ -229,6 +231,7 @@ export async function wakeWiredAgent({ callerId, targetId, targetName, mission, 
       model: agentConfig.model,
       mission,
       missionRouted,
+      causalTaskId: taskId,
       orchestrator: agentConfig.orchestrator,
       freeAgentMode: agentConfig.freeAgentMode,
       resume,

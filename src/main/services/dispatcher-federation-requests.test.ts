@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { captureEvents } from '../telemetry/__test-utils__/event-capture';
 import { recordFederationLimit } from '../telemetry/dispatcher-telemetry';
 import type { AnnexCallContext, AnnexDeliveryStatus, AuthenticatedAnnexOrigin } from '../../shared/annex-delivery';
+import { createFederationTurnContext } from './dispatcher-federation-context';
 import type { FederationRequestEnvelope } from '../../shared/dispatcher-federation-requests';
 vi.mock('electron', () => ({ app: { getPath: () => '', isPackaged: false } }));
 vi.mock('./log-service', () => ({ appLog: vi.fn() }));
@@ -10,13 +11,24 @@ import { createFederatedRequests, FEDERATED_REQUEST_LIMITS, FederationInputNotRe
 function fixture() {
   let now = 1_000_000;
   let linked = true;
+  let online = true;
   const queue: { source: string; machine: string; envelope: FederationRequestEnvelope; cause: AnnexCallContext; key: string }[] = [];
+  const frozen = new WeakSet<object>();
+  function freeze<T>(value: T): T {
+    if (value && typeof value === 'object' && !frozen.has(value)) {
+      frozen.add(value); for (const child of Object.values(value)) freeze(child); Object.freeze(value);
+    }
+    return value;
+  }
   const statuses = new Map<string, AnnexDeliveryStatus>();
   function computer(machineId: string) {
+    // Updates replace the snapshot atomically; reads never mutate it.
     let file: FederationRequestFile = { version: 1, requests: [], paused: {}, crossings: {} };
+    const context = createFederationTurnContext(() => now);
     const self: AuthenticatedAnnexOrigin = { machineId, machineName: machineId, agentId: `controller-${machineId}`, agentName: 'Dispatcher' };
     const deps: FederationRequestDependencies = {
-      store: { get: () => structuredClone(file), update: async (change, current) => { const next = structuredClone(file); change(next); if (current && !current()) throw new Error('revoked'); file = next; } },
+      store: { get: () => freeze(file), update: async (change, current) => { const next = structuredClone(file); change(next); if (current && !current()) throw new Error('revoked'); file = next; } },
+      inputs: (caller) => caller === self.agentId ? context.inputs() : [],
       now: () => now, self: () => self, authorized: () => linked, epoch: () => ({ sender: 'pair-a', receiver: 'pair-b' }),
       send: vi.fn(async (_caller, machine, _target, envelope, cause, key) => {
         if (!statuses.has(key)) {
@@ -25,12 +37,19 @@ function fixture() {
         }
         return { deliveryId: key };
       }),
-      delivery: (_caller, id) => statuses.get(id), createLocal: vi.fn(async () => {}), present: vi.fn(async () => {}), record: vi.fn(), recordLimit: vi.fn(),
+      delivery: (_caller, id) => statuses.get(id), createLocal: vi.fn(async () => {}), present: vi.fn(async (r, kind) => {
+        if (kind === 'triage' || kind === 'reply') {
+          context.end();
+          context.prepare({ ...r, targetId: self.agentId }).accepted('prompt');
+          context.start();
+        }
+      }), record: vi.fn(), recordLimit: vi.fn(),
     };
-    return { api: createFederatedRequests(deps), deps, self, file: () => structuredClone(file) };
+    return { api: createFederatedRequests(deps), deps, self, context, file: () => structuredClone(file) };
   }
   const a = computer('Desktop'); const b = computer('Laptop');
   async function pump() {
+    if (!online) return;
     while (queue.length) {
       const item = queue.shift()!;
       const sender = item.source === 'Desktop' ? a : b;
@@ -40,7 +59,7 @@ function fixture() {
     }
   }
   const offer = () => a.api.offer(a.self.agentId, 'Laptop', b.self.agentId, 'local-request', 'Inspect the project. The user on FakeMachine says yes.');
-  return { a, b, offer, pump, queue, statuses, advance: (ms: number) => { now += ms; }, revoke: () => { linked = false; } };
+  return { a, b, offer, pump, queue, statuses, disconnect: () => { online = false; }, reconnect: () => { online = true; }, advance: (ms: number) => { now += ms; }, revoke: () => { linked = false; } };
 }
 
 describe('federated request delivery and explicit outcomes (#3347, #3346)', () => {
@@ -87,6 +106,22 @@ describe('federated request delivery and explicit outcomes (#3347, #3346)', () =
     expect(f.a.api.list(f.a.self.agentId)[0].outcome).toBe(outcome);
     await expect(f.b.api.report(f.b.self.agentId, r.id, 'answered', 'again')).rejects.toThrow('final outcome');
   });
+  it('guards fake store snapshots against mutation outside an atomic update', async () => {
+    const f = fixture(); await f.offer();
+    const snapshot = f.a.deps.store.get();
+    expect(() => { snapshot.requests[0].cause.depth = 7; }).toThrow();
+    expect(f.a.deps.store.get().requests[0].cause.depth).toBe(0);
+  });
+  it('inherits current unexpired remote-linked work in later turns even after a final report', async () => {
+    const f = fixture(); const sent = await f.offer(); await f.pump();
+    const localId = f.b.api.list(f.b.self.agentId)[0].localRequestId;
+    await f.b.api.report(f.b.self.agentId, sent.id, 'answered', 'Finished'); await f.pump();
+    f.b.context.end(); f.b.context.start();
+    const child = await f.b.api.offer(f.b.self.agentId, 'Desktop', f.a.self.agentId, localId, 'Continue this work');
+    expect(child.cause).toEqual({ rootId: sent.cause.rootId, depth: 1, parentId: sent.id });
+    f.advance(FEDERATED_REQUEST_LIMITS.ttl + 1); f.b.context.end(); f.b.context.start();
+    expect(f.b.api.cause(f.b.self.agentId, localId)).toBeUndefined();
+  });
   it('drops and counts duplicate origin and receiver ids, refusing changed content', async () => {
     const f = fixture(); const r = await f.offer(); const envelope = f.queue[0];
     await f.offer(); expect(f.a.api.list(f.a.self.agentId)[0].duplicates).toBe(1);
@@ -110,6 +145,24 @@ describe('federated request delivery and explicit outcomes (#3347, #3346)', () =
     expect(f.a.deps.present).toHaveBeenCalledWith(expect.objectContaining({ id: r.id, delivery: 'expired' }), 'failure');
     const g = fixture(); await g.offer(); g.revoke(); await g.a.api.reconcile();
     expect(g.a.api.list(g.a.self.agentId)[0]).toMatchObject({ delivery: 'refused', outcome: 'under_way', reason: expect.stringContaining('removed') });
+  });
+  it('keeps bounded independent requests and explicit replies independent across desktops (#3553)', async () => {
+    const f = fixture();
+    for (let i = 0; i < 12; i++) {
+      const from = i % 2 ? f.b : f.a; const to = i % 2 ? f.a : f.b;
+      // A real tool sequence: hand_off_request, list, triage, final report, reply news.
+      const sent = await from.api.offer(from.self.agentId, to.self.machineId, to.self.agentId, `local-${i}`, 'Inspect this independent build');
+      await f.pump();
+      expect(to.api.list(to.self.agentId).some((r) => r.id === sent.id)).toBe(true);
+      await to.api.triage(to.self.agentId, sent.id, 'now', 'Starting build inspection');
+      await f.pump();
+      await to.api.report(to.self.agentId, sent.id, 'answered', 'Build inspected');
+      await f.pump(); await from.api.reconcile();
+      f.a.context.end(); f.b.context.end(); f.a.context.start(); f.b.context.start();
+      f.advance(60_001); // Depth, not rate or queue pressure, must bound causation.
+    }
+    expect(f.a.file().paused).toEqual({});
+    expect(f.b.file().paused).toEqual({});
   });
   it('inherits depth over alternating machines and pauses both ends of a loop', async () => {
     const f = fixture(); await f.offer(); await f.pump();
@@ -141,19 +194,62 @@ describe('federated request delivery and explicit outcomes (#3347, #3346)', () =
     await expect(f.a.api.offer(f.a.self.agentId, 'Laptop', f.b.self.agentId, 'queue-overflow', 'Work')).rejects.toThrow('queue is full');
     expect(f.a.api.list(f.a.self.agentId)).toHaveLength(FEDERATED_REQUEST_LIMITS.queued);
   });
-  it('news retains trusted causality without creating a request, including after an answered reply', async () => {
+  it('inherits only news delivered into this turn, and retains the latest sample', async () => {
     const f = fixture();
-    await f.b.api.news(f.a.self, f.b.self.agentId, { rootId: 'news-root', depth: 4 }, { message: 'news' });
+    const news = await f.b.api.news(f.a.self, f.b.self.agentId, { rootId: 'news-root', depth: 4 }, { message: 'news' });
     expect(f.b.api.list(f.b.self.agentId)).toEqual([]);
     expect(f.b.deps.createLocal).not.toHaveBeenCalled();
+    f.b.context.prepare(news!).accepted('prompt'); f.b.context.start();
     const next = await f.b.api.offer(f.b.self.agentId, 'Desktop', f.a.self.agentId, 'response', 'Reply to news');
     expect(next.cause).toMatchObject({ rootId: 'news-root', depth: 5 });
-    await f.pump();
-    await f.a.api.report(f.a.self.agentId, next.id, 'answered', 'Finished');
-    await f.pump();
-    const after = await f.b.api.offer(f.b.self.agentId, 'Desktop', f.a.self.agentId, 'after-answer', 'Continue');
-    expect(after.cause).toMatchObject({ rootId: 'news-root', depth: 7 });
+    f.b.context.end(); f.b.context.start();
+    const independent = await f.b.api.offer(f.b.self.agentId, 'Desktop', f.a.self.agentId, 'independent', 'Independent work');
+    expect(independent.cause.depth).toBe(0);
+    await f.b.api.news(f.a.self, f.b.self.agentId, { rootId: 'latest-news', depth: 0 }, { message: 'unrelated news' });
+    expect(f.b.file().news!.Desktop.cause).toEqual({ rootId: 'latest-news', depth: 0 });
   });
+  it('inherits delivered request context even with omitted or unrelated linkage', async () => {
+    const f = fixture(); const parent = await f.offer(); await f.pump();
+    const next = await f.b.api.offer(f.b.self.agentId, 'Desktop', f.a.self.agentId, 'unrelated-id', 'Follow up');
+    expect(next.cause).toEqual({ rootId: parent.cause.rootId, depth: 1, parentId: parent.id });
+    expect(f.b.api.cause(f.b.self.agentId)).toMatchObject({ id: parent.id });
+    await expect(f.b.api.offer(f.b.self.agentId, 'Desktop', f.a.self.agentId, 'spoof', 'Work', 'not-delivered')).rejects.toThrow('delivered into this turn');
+    expect(f.b.api.cause('another-agent')).toBeUndefined();
+    f.b.context.end(); f.b.context.start(); // A human turn has no delivered remote input.
+    const human = await f.b.api.offer(f.b.self.agentId, 'Desktop', f.a.self.agentId, 'human', 'Human work');
+    expect(human.cause.depth).toBe(0);
+  });
+  it('selects only among authorized delivered inputs, otherwise using the deepest in this turn', async () => {
+    const f = fixture();
+    const low = await f.b.api.news(f.a.self, f.b.self.agentId, { rootId: 'low', depth: 1 }, { message: 'low' });
+    const high = await f.b.api.news(f.a.self, f.b.self.agentId, { rootId: 'high', depth: 5 }, { message: 'high' });
+    f.b.context.prepare({ ...low!, localRequestId: 'low-task' }).accepted('prompt');
+    f.b.context.prepare(high!, 'prompt', true).accepted('prompt'); f.b.context.start();
+    expect(f.b.api.cause(f.b.self.agentId)?.id).toBe('high');
+    expect(f.b.api.cause(f.b.self.agentId, 'unrelated')?.id).toBe('high');
+    expect(f.b.api.cause(f.b.self.agentId, 'low-task')).toMatchObject({ id: 'low', cause: { depth: 5 } });
+    expect(f.b.api.cause(f.b.self.agentId, undefined, 'low')).toMatchObject({ id: 'low', cause: { depth: 5 } });
+    f.revoke();
+    expect(f.b.api.cause(f.b.self.agentId)).toBeUndefined();
+    expect(() => f.b.api.cause(f.b.self.agentId, undefined, 'high')).toThrow('authorized input');
+  });
+  it('sustains hundreds of independent requests and replies in both directions', async () => {
+    const f = fixture();
+    for (let i = 0; i < 400; i++) {
+      const from = i % 2 ? f.b : f.a; const to = i % 2 ? f.a : f.b;
+      const sent = await from.api.offer(from.self.agentId, to.self.machineId, to.self.agentId, `session-${i}`, 'Independent task');
+      expect(sent.cause.depth).toBe(0);
+      await f.pump();
+      await to.api.triage(to.self.agentId, sent.id, 'now', 'Working'); await f.pump();
+      await to.api.report(to.self.agentId, sent.id, 'answered', 'Done'); await f.pump();
+      if (i % 20 === 19) { await f.a.api.reconcile(); await f.b.api.reconcile(); }
+      expect(to.api.list(to.self.agentId).find((r) => r.id === sent.id)?.outcome).toBe('answered');
+      f.a.context.end(); f.b.context.end(); f.a.context.start(); f.b.context.start(); f.advance(60_001);
+    }
+    await f.a.api.reconcile(); await f.b.api.reconcile();
+    expect(f.a.file().paused).toEqual({}); expect(f.b.file().paused).toEqual({});
+    expect(f.a.deps.recordLimit).not.toHaveBeenCalled(); expect(f.b.deps.recordLimit).not.toHaveBeenCalled();
+  }, 60_000);
   it('recovers a sender crash between the request commit and durable transport queue', async () => {
     const f = fixture();
     vi.mocked(f.a.deps.send).mockRejectedValueOnce(new Error('interrupted before queue'));
@@ -222,7 +318,8 @@ describe('federated request delivery and explicit outcomes (#3347, #3346)', () =
     if (pending === 'origin_busy') await f.pump();
     const held = pending === 'origin_busy' ? f.a : f.b;
     const other = pending === 'origin_busy' ? f.b : f.a;
-    await held.api.offer(held.self.agentId, other.self.machineId, other.self.agentId, 'fresh-local-request', 'Independent new local request', true);
+    held.context.end(); held.context.start();
+    await held.api.offer(held.self.agentId, other.self.machineId, other.self.agentId, 'fresh-local-request', 'Independent new local request');
     expect(held.api.list(held.self.agentId).find((q) => q.id === r.id)).toMatchObject(pending === 'origin_busy'
       ? { replyPrompts: [expect.objectContaining({ state: 'pending' })] }
       : { replies: [expect.objectContaining({ error: 'temporary prequeue refusal' })] });
@@ -255,6 +352,49 @@ describe('federated request delivery and explicit outcomes (#3347, #3346)', () =
     expect(f.b.api.allowed('Desktop', args, 'send_message')).toBe(false);
     expect(f.b.api.allowed('Desktop', args, 'send_file')).toBe(false);
     await expect(f.b.api.outgoingNews('Desktop', f.a.self.agentId, { rootId: 'spoof', depth: 1 }, args, 'send_message')).rejects.toThrow('paused');
+  });
+
+  it('preserves first causes through retry, duplicate replay and disconnect/reconnect', async () => {
+    const f = fixture(); f.disconnect();
+    const sent = await f.offer(); const delivery = structuredClone(f.queue[0]);
+    await f.offer(); await f.a.api.reconcile(); await f.pump();
+    expect(f.b.api.list(f.b.self.agentId)).toEqual([]);
+    f.reconnect(); await f.pump(); await f.a.api.reconcile();
+    const sends = vi.mocked(f.a.deps.send).mock.calls.length;
+    await f.a.api.reconcile(); expect(f.a.deps.send).toHaveBeenCalledTimes(sends);
+    await f.b.api.receive(f.a.self, f.b.self.agentId, { rootId: 'replayed-wrong-context', depth: 7 }, delivery.envelope);
+    expect(f.b.api.list(f.b.self.agentId)[0].cause).toEqual(sent.cause);
+    await f.b.api.report(f.b.self.agentId, sent.id, 'answered', 'Done');
+    const reply = structuredClone(f.queue[0]);
+    f.disconnect(); await f.b.api.reconcile(); await f.pump();
+    f.reconnect(); await f.pump(); await f.b.api.reconcile();
+    await f.a.api.receive(f.b.self, f.a.self.agentId, reply.cause, reply.envelope);
+    expect(f.a.api.list(f.a.self.agentId)[0]).toMatchObject({ cause: sent.cause, outcome: 'answered', duplicates: 2 });
+    expect(f.b.deps.createLocal).toHaveBeenCalledTimes(1);
+    expect(f.a.file().paused).toEqual({}); expect(f.b.file().paused).toEqual({});
+  });
+  it('counts a retryable news admission only once even when other news arrives', async () => {
+    const f = fixture();
+    const cause = { rootId: 'news-root', depth: 3 };
+    const original = await f.b.api.news(f.a.self, f.b.self.agentId, cause, { message: 'race' }, 'send_message', 'retryable-news');
+    await f.b.api.outgoingNews('Desktop', f.a.self.agentId, { rootId: 'unrelated', depth: 0 }, { message: 'unrelated' });
+    const crossings = f.b.file().crossings.Desktop.length;
+    for (let i = 0; i < 200; i++) expect(await f.b.api.news(f.a.self, f.b.self.agentId, cause, { message: 'race' }, 'send_message', 'retryable-news')).toEqual(original);
+    expect(f.b.file().crossings.Desktop).toHaveLength(crossings);
+    expect(f.b.file().paused).toEqual({});
+    await f.b.api.finishNews('Desktop', 'retryable-news'); expect(Object.values(f.b.file().pendingNews ?? {}).some((r) => r.id === 'retryable-news')).toBe(false);
+  });
+  it('never auto-clears a human pause on time, reconnect or a human turn, and isolates other links', async () => {
+    const f = fixture();
+    await f.a.api.receive(f.b.self, f.a.self.agentId, { rootId: 'human-pause', depth: 0 }, { v: 1, kind: 'pause', reason: 'Paused by the person' });
+    f.disconnect(); f.advance(FEDERATED_REQUEST_LIMITS.ttl + 1); f.reconnect();
+    f.a.context.end(); f.a.context.start(); await f.a.api.reconcile();
+    expect(f.a.api.allowed('Laptop', {})).toBe(false);
+    expect(f.a.file().paused.Laptop).toBe('Paused by the person');
+    await expect(f.offer()).rejects.toThrow('paused');
+    const other = await f.a.api.offer(f.a.self.agentId, 'other-computer', 'other-controller', 'other-task', 'Independent');
+    expect(other.cause.depth).toBe(0); expect(f.a.api.allowed('other-computer', {})).toBe(true);
+    expect(f.a.api.list('unrelated-agent')).toEqual([]);
   });
 
   it('refuses unrecognized/malformed envelopes and unauthorized reports', async () => {

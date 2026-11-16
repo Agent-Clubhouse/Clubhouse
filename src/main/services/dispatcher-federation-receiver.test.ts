@@ -4,7 +4,7 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-const state = vi.hoisted(() => ({ base: '', running: false, enabled: true, busy: false, inputState: undefined as string | undefined, pendingWork: false, pairing: 'peer-pairing', config: vi.fn(), spawn: vi.fn(), send: vi.fn(), grant: vi.fn() }));
+const state = vi.hoisted(() => ({ base: '', running: false, enabled: true, busy: false, inputState: undefined as string | undefined, runtime: 'chat' as 'chat' | 'pty', pendingWork: false, pairing: 'peer-pairing', config: vi.fn(), spawn: vi.fn(), send: vi.fn(), grant: vi.fn() }));
 const SELF = Array(16).fill('aa').join(':');
 const PEER = Array(16).fill('bb').join(':');
 vi.mock('electron', async () => { const os = await import('os'); return { app: { isPackaged: false, getPath: (name: string) => name === 'temp' ? os.tmpdir() : state.base }, BrowserWindow: { getAllWindows: () => [] } }; });
@@ -19,9 +19,14 @@ vi.mock('./dispatcher/dispatcher-service', () => ({
 }));
 vi.mock('./dispatcher/dispatcher-settings', () => ({ isDispatcherEnabled: () => state.enabled }));
 vi.mock('./agent-registry', () => ({ agentRegistry: { get: (id: string) => id === 'controller' && state.running ? { runtime: 'chat', projectPath: state.base } : undefined } }));
-vi.mock('./agent-runtime', () => ({ getAgentRuntime: () => state.running ? {
-  kind: 'chat', sendMessage: state.send, getState: () => state.inputState ?? (state.busy ? 'running' : 'idle'), hasPendingWork: () => state.pendingWork,
-} : undefined }));
+vi.mock('./agent-runtime', async () => {
+  const { prepareFederationInput } = await import('./dispatcher-federation-context');
+  return { getAgentRuntime: () => state.running ? {
+  kind: state.runtime, sendMessage: async (...args: unknown[]) => {
+    const context = prepareFederationInput('controller');
+    const sent = await state.send(...args); context?.accepted(sent?.delivery); return sent;
+  }, getState: () => state.inputState ?? (state.busy ? 'running' : 'idle'), hasPendingWork: () => state.pendingWork,
+} : undefined }; });
 vi.mock('./agent-system', () => ({
   isAgentRunning: () => state.running, isAgentStopping: () => false, waitForAgentStopped: async () => true,
   spawnAgent: state.spawn,
@@ -37,6 +42,11 @@ vi.mock('./clubhouse-mcp/grant-check', async (original) => ({ ...await original<
 vi.mock('../util/ipc-broadcast', () => ({ broadcastToAllWindows: vi.fn() }));
 state.base = fs.mkdtempSync(path.join(os.tmpdir(), 'federation-receiver-'));
 import { receiveAgentCall, startAgentCalls, waitingFor, _clearOutboxForTesting } from './annex-agent-calls';
+import { prepareFederationInput } from './dispatcher-federation-context';
+import { publishChatEvent } from './agent-runtime/chat-event-bus';
+import { forgetHookTurn, HOOK_TURN_STALE_MS, publishAppEvent, publishFromHookEvent } from './app-event-bus';
+import { federationRequestRouter } from './dispatcher-federation-policy';
+import type { ChatEvent } from '../../shared/chat';
 import { federationReceiver } from './dispatcher-federation-receiver';
 import { learnFederationController, watchFederation } from './dispatcher-federation';
 import { registerAgentTools } from './clubhouse-mcp/tools/agent-tools';
@@ -65,9 +75,11 @@ beforeEach(async () => {
   _resetGrantRequestsForTesting();
   fs.rmSync(path.join(state.base, 'dispatcher-federation-requests.json'), { force: true });
   fs.rmSync(path.join(state.base, '.clubhouse-dev', 'dispatcher-requests.json'), { force: true });
+  forgetHookTurn('controller');
+  state.runtime = 'chat';
   state.running = false; state.enabled = true; state.busy = false; state.inputState = undefined; state.pendingWork = false; state.pairing = 'peer-pairing';
   state.config.mockResolvedValue({ id: 'controller', name: 'Dispatcher', orchestrator: 'claude-code', model: 'fake' });
-  state.spawn.mockImplementation(async () => { state.running = true; });
+  state.spawn.mockImplementation(async () => { const input = prepareFederationInput('controller'); state.running = true; input?.accepted('prompt'); });
   state.send.mockResolvedValue({ delivery: 'prompt' });
   // Remote callers have no local grant. The receiver's own subscription may wake itself.
   state.grant.mockReturnValue({ outcome: 'refuse' });
@@ -142,7 +154,9 @@ describe('production sleeping-controller delivery (#3345)', () => {
     state.running = true; state.busy = true;
     expect(await receiveAgentCall(PEER, call('busy'))).toMatchObject({ delivery: { state: 'retry_later' } });
     expect(state.send).not.toHaveBeenCalled();
-    state.running = false; state.enabled = false;
+    forgetHookTurn('controller');
+  state.runtime = 'chat';
+  state.running = false; state.enabled = false;
     expect(await receiveAgentCall(PEER, call('off'))).toMatchObject({ error: 'dispatcher_unavailable' });
     state.enabled = true;
     expect(await receiveAgentCall(PEER, call('explicit-wake', 'wake_agent'))).toMatchObject({ error: 'tool_not_allowed' });
@@ -168,13 +182,116 @@ describe('production remote request admission and triage (#3346)', () => {
     expect(state.spawn).toHaveBeenCalledTimes(1);
     expect(federatedRequests()!.list('controller')[0].duplicates).toBe(1);
   });
+  it.each(['wake', 'prompt'])('tracks %s input before synchronous tool calls, then clears ancestry for a human turn', async (mode) => {
+    stopRequests = startFederatedRequests();
+    const event = (type: 'turn_started' | 'turn_ended') => publishChatEvent({
+      agentId: 'controller', sessionId: 'fake-session', eventId: 'fake-event', seq: 1, timestamp: new Date().toISOString(),
+      type, data: type === 'turn_started' ? { trigger: 'prompt' } : { stopReason: 'end_turn' },
+    } as ChatEvent);
+    const duringDelivery = () => {
+      event('turn_started');
+      expect(federationRequestRouter()!.cause('controller', {})).toEqual({ rootId: 'tracked', depth: 5, parentId: 'tracked' });
+      expect(federationRequestRouter()!.cause('controller', { request_id: 'unrelated' })?.depth).toBe(5);
+    };
+    if (mode === 'prompt') {
+      state.running = true;
+      state.send.mockImplementationOnce(async () => { duringDelivery(); return { delivery: 'prompt' }; });
+    } else state.spawn.mockImplementationOnce(async () => { const input = prepareFederationInput('controller'); state.running = true; duringDelivery(); input?.accepted('prompt'); });
+    expect(await receiveAgentCall(PEER, { ...handoff('tracked'), context: { rootId: 'tracked', depth: 4 } })).toMatchObject({ delivery: { state: 'delivered' } });
+    expect(federationRequestRouter()!.cause('controller', {})?.depth).toBe(5);
+    event('turn_ended'); event('turn_started');
+    expect(federationRequestRouter()!.cause('controller', {})).toBeUndefined();
+    expect(federatedRequests()!.list('controller')[0].outcome).toBe('under_way');
+  });
+  it('tracks real incoming news at the runtime boundary and respects terminal hook boundaries', async () => {
+    stopRequests = startFederatedRequests();
+    await receiveAgentCall(PEER, { ...call('news-input'), context: { rootId: 'news-root', depth: 3 } });
+    publishAppEvent({ type: 'turn.started', agentId: 'controller', via: 'hook', prompt: true });
+    expect(federationRequestRouter()!.cause('controller', {})).toEqual({ rootId: 'news-root', depth: 4, parentId: 'news-input' });
+    expect(federationRequestRouter()!.cause('other-agent', {})).toBeUndefined();
+    publishAppEvent({ type: 'turn.ended', agentId: 'other-agent', via: 'hook', outcome: 'completed' });
+    expect(federationRequestRouter()!.cause('controller', {})?.depth).toBe(4);
+    publishAppEvent({ type: 'turn.ended', agentId: 'controller', via: 'hook', outcome: 'completed' });
+    publishFromHookEvent('controller', { kind: 'stop', rawName: 'Stop' });
+    publishFromHookEvent('controller', { kind: 'pre_tool', rawName: 'PreToolUse' });
+    expect(federationRequestRouter()!.cause('controller', {})?.depth).toBe(4);
+    publishFromHookEvent('controller', { kind: 'pre_tool', rawName: 'UserPromptSubmit' });
+    expect(federationRequestRouter()!.cause('controller', {})).toBeUndefined();
+  });
+  it('waits durably during an open terminal turn and delivers after the turn ends', async () => {
+    stopRequests = startFederatedRequests(); state.running = true; state.runtime = 'pty';
+    publishFromHookEvent('controller', { kind: 'pre_tool', rawName: 'UserPromptSubmit' });
+    const request = { ...call('waiting-terminal'), context: { rootId: 'waiting-root', depth: 2 } };
+    expect(await receiveAgentCall(PEER, request)).toMatchObject({ delivery: { state: 'retry_later', reason: 'target_not_ready' } });
+    expect(state.send).not.toHaveBeenCalled();
+    expect(federatedRequests()!.allowed(PEER, {})).toBe(true);
+    publishFromHookEvent('controller', { kind: 'stop', rawName: 'Stop' });
+    expect(await receiveAgentCall(PEER, request)).toMatchObject({ delivery: { state: 'delivered' } });
+    publishFromHookEvent('controller', { kind: 'pre_tool', rawName: 'UserPromptSubmit' });
+    expect(federationRequestRouter()!.cause('controller', {})).toEqual({ rootId: 'waiting-root', depth: 3, parentId: 'waiting-terminal' });
+    expect(state.send).toHaveBeenCalledTimes(1);
+  });
+  it('waits for terminal input already submitted but not yet acknowledged by the first hook', async () => {
+    stopRequests = startFederatedRequests(); state.running = true; state.runtime = 'pty';
+    expect(await receiveAgentCall(PEER, call('submitted-terminal'))).toMatchObject({ delivery: { state: 'delivered' } });
+    // No UserPromptSubmit/pre-tool hook has arrived yet: a second remote input must wait.
+    const next = call('next-terminal');
+    expect(await receiveAgentCall(PEER, next)).toMatchObject({ delivery: { state: 'retry_later', reason: 'target_not_ready' } });
+    expect(state.send).toHaveBeenCalledTimes(1);
+    publishFromHookEvent('controller', { kind: 'pre_tool', rawName: 'UserPromptSubmit' });
+    publishFromHookEvent('controller', { kind: 'stop', rawName: 'Stop' });
+    expect(await receiveAgentCall(PEER, next)).toMatchObject({ delivery: { state: 'delivered' } });
+    expect(state.send).toHaveBeenCalledTimes(2);
+  });
+  it('unblocks a stuck terminal after real hook inactivity, and replaces hookless pending history', async () => {
+    let now = Date.now(); const clock = vi.spyOn(Date, 'now').mockImplementation(() => now);
+    try {
+      stopRequests = startFederatedRequests(); state.running = true; state.runtime = 'pty';
+      publishFromHookEvent('controller', { kind: 'pre_tool', rawName: 'UserPromptSubmit' });
+      expect(await receiveAgentCall(PEER, call('stuck-terminal'))).toMatchObject({ delivery: { state: 'retry_later' } });
+      now += HOOK_TURN_STALE_MS + 1;
+      expect(await receiveAgentCall(PEER, call('stuck-terminal'))).toMatchObject({ delivery: { state: 'delivered' } });
+      for (let i = 0; i < 40; i++) {
+        now += HOOK_TURN_STALE_MS + 1;
+        expect(await receiveAgentCall(PEER, { ...call(`hookless-${i}`), context: { rootId: `root-${i}`, depth: 0 } })).toMatchObject({ delivery: { state: 'delivered' } });
+        expect(federationRequestRouter()!.cause('controller', {})).toEqual({ rootId: `root-${i}`, parentId: `hookless-${i}`, depth: 1 });
+      }
+      expect(federatedRequests()!.allowed(PEER, {})).toBe(true);
+    } finally { clock.mockRestore(); }
+  });
+  it('does not count repeated waiting news attempts against federation bounds during a long terminal turn', async () => {
+    stopRequests = startFederatedRequests(); state.running = true; state.runtime = 'pty';
+    publishFromHookEvent('controller', { kind: 'pre_tool', rawName: 'UserPromptSubmit' });
+    for (let attempt = 0; attempt < 200; attempt++) {
+      const received = await federationReceiver.receive({
+        origin: { machineId: PEER, machineName: 'Laptop', agentId: 'peer-controller', agentName: 'Dispatcher' },
+        targetId: 'controller', deliveryId: `waiting-${attempt % 20}`, cause: { rootId: `root-${attempt % 20}`, depth: 6 },
+        tool: 'send_message', args: { message: 'Waiting news' },
+      });
+      expect(received.annexDelivery?.state).toBe('retry_later');
+    }
+    expect(federatedRequests()!.allowed(PEER, {})).toBe(true);
+    expect(federatedRequests()!.list('controller')).toEqual([]); expect(state.send).not.toHaveBeenCalled();
+    publishFromHookEvent('controller', { kind: 'stop', rawName: 'Stop' });
+    expect(await receiveAgentCall(PEER, call('after-long-terminal'))).toMatchObject({ delivery: { state: 'delivered' } });
+  });
+  it('keeps terminal causation across stale pre-tool continuations, clearing only on a real new prompt', async () => {
+    stopRequests = startFederatedRequests(); state.running = true; state.runtime = 'pty';
+    expect(await receiveAgentCall(PEER, { ...call('long-terminal'), context: { rootId: 'long-root', depth: 5 } })).toMatchObject({ delivery: { state: 'delivered' } });
+    publishFromHookEvent('controller', { kind: 'pre_tool', rawName: 'PreToolUse' }, 1_000);
+    expect(federationRequestRouter()!.cause('controller', {})?.depth).toBe(6);
+    publishFromHookEvent('controller', { kind: 'pre_tool', rawName: 'PreToolUse' }, 10 * 60_000);
+    expect(federationRequestRouter()!.cause('controller', {})?.depth).toBe(6);
+    publishFromHookEvent('controller', { kind: 'pre_tool', rawName: 'UserPromptSubmit' }, 11 * 60_000);
+    expect(federationRequestRouter()!.cause('controller', {})).toBeUndefined();
+  });
   it('delivers a correlated subtask answer to the origin hidden controller after readiness, leaving the parent live', async () => {
     stopRequests = startFederatedRequests();
     const parent = beginRequest('Build on Laptop, then use its result on Desk');
     if (parent.kind !== 'new') throw new Error('Expected new parent request');
     const outgoing = await federatedRequests()!.offer('controller', PEER, 'peer-controller', parent.request.id, 'Build artifact');
     state.running = true; state.busy = true;
-    const reply = { ...call('correlated-reply', 'hand_off_request'), context: { rootId: outgoing.id, depth: 1 },
+    const reply = { ...call('correlated-reply', 'hand_off_request'), context: { rootId: outgoing.id, depth: 1, parentId: outgoing.id },
       args: { envelope: { v: 1, kind: 'reply', id: outgoing.id, originRequestId: parent.request.id, revision: 1, outcome: 'answered', text: 'Artifact ready; continue on Desk.' } } };
     expect(await receiveAgentCall(PEER, reply)).toMatchObject({ delivery: { state: 'delivered' } });
     expect(state.send).not.toHaveBeenCalled();
@@ -183,6 +300,7 @@ describe('production remote request admission and triage (#3346)', () => {
     expect(state.send).toHaveBeenCalledWith(expect.stringContaining('[REMOTE REPLY:'), expect.objectContaining({ taskId: parent.request.id }));
     expect(state.send.mock.calls[0][0]).toContain('Artifact ready; continue on Desk.');
     expect(state.send.mock.calls[0][0]).toContain('does not complete your local request');
+    expect(federationRequestRouter()!.cause('controller', {})).toEqual({ rootId: outgoing.id, depth: 2, parentId: outgoing.id });
     expect(deliverToChat).not.toHaveBeenCalled();
     expect(getRequests().find((r) => r.id === parent.request.id)?.status).toBe('under_way');
     await receiveAgentCall(PEER, reply); await federatedRequests()!.reconcile();
