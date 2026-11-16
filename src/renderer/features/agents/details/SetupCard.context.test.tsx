@@ -65,4 +65,12 @@ describe('Setup card context and session model (#2790)', () => {
     expect(useAgentSettingsPages.getState().requestedPage).toEqual({ agentId: 'm1', page: 'settings' });
     expect(openAgentSettings).toHaveBeenCalledWith('m1');
   });
+
+  it('offers Remove duplicate copies for a block that repeats a persona (#3579)', async () => {
+    window.clubhouse.agent.getDurableConfig = vi.fn(async () => ({ id: 'm1' })) as never;
+    vi.spyOn(m(), 'personaCopies').mockResolvedValue({ ok: true, value: [{ blockId: 'b1', blockName: 'scout notes', revision: 3, personas: [{ name: 'Orchestrator', copies: 21, keep: 'one' }], removed: 20, bytesSaved: 124_000 }] } as never);
+    render(<SettingsCard agent={agent} projectPath="/work/proj" provider="Claude Code" />);
+    expect(await screen.findByTestId('details-setup-persona-copies')).toHaveTextContent('scout notes repeats the Orchestrator persona 21 times.');
+    expect(m().personaCopies).toHaveBeenCalledWith('/work/proj', 'm1');
+  });
 });

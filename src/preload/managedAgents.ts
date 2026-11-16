@@ -9,6 +9,8 @@ import type {
   ManagedPartContent,
   ManagedPartKind,
   ManagedPartSummary,
+  ManagedPersonaCopies,
+  ManagedPersonaCopiesRemoval,
   ManagedPlainChoice,
   ManagedPlainPreview,
   ManagedPreview,
@@ -36,6 +38,12 @@ const managed = {
   forkPart: (id: string, agent?: { projectPath: string; agentId: string }, name?: string) => call<ManagedPartSummary>(IPC.MANAGED.FORK_PART, id, agent, name),
   backToShared: (projectPath: string, agentId: string, id: string) => call<void>(IPC.MANAGED.BACK_TO_SHARED, projectPath, agentId, id),
   deletePart: (id: string, expectedRevision: number, mode: 'copy' | 'remove') => call<void>(IPC.MANAGED.DELETE_PART, id, expectedRevision, mode),
+  /** Blocks in the agent's setup that repeat a built-in persona's text (#3579). Reads only. */
+  personaCopies: (projectPath: string, agentId: string) => call<ManagedPersonaCopies[]>(IPC.MANAGED.PERSONA_COPIES, projectPath, agentId),
+  /** Remove a block's duplicate persona copies as a new revision. */
+  removePersonaCopies: (projectPath: string, agentId: string, id: string, expectedRevision: number) => call<ManagedPersonaCopiesRemoval>(IPC.MANAGED.REMOVE_PERSONA_COPIES, projectPath, agentId, id, expectedRevision),
+  /** Save an earlier revision of a custom part as its newest (Undo). */
+  restorePartRevision: (id: string, revision: number, expectedRevision: number) => call<ManagedPartSummary>(IPC.MANAGED.RESTORE_PART_REVISION, id, revision, expectedRevision),
   consumers: (id: string) => call<ManagedPartConsumer[]>(IPC.MANAGED.CONSUMERS, id),
   getSetup: (projectPath: string, agentId: string) => call<ManagedAgentSetup | null>(IPC.MANAGED.GET_SETUP, projectPath, agentId),
   saveSetup: (projectPath: string, agentId: string, setup: SetupInput) => call<ManagedAgentSetup>(IPC.MANAGED.SAVE_SETUP, projectPath, agentId, setup),

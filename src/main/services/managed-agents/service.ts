@@ -36,6 +36,8 @@ import {
   type ManagedPartContent,
   type ManagedPartKind,
   type ManagedPartSummary,
+  type ManagedPersonaCopies,
+  type ManagedPersonaCopiesRemoval,
   type ManagedTemplate,
   type ManagedTemplateChange,
   type ManagedTemplatePushTarget,
@@ -44,6 +46,7 @@ import {
 } from '../../../shared/managed-agents-types';
 import { builtinParts, builtinTemplates, DEFAULT_HELPER_TEMPLATE_ID, type BuiltinPart } from './builtins';
 import type { ManagedStateStore } from './state-store';
+import { copiesRemoved, findPersonaCopies, PERSONA_BUILTIN_BLOCK, removePersonaCopies, type PersonaCopiesKeep } from './persona-copies';
 import type { ManagedRestartReceipt } from './activation-receipts';
 
 export class ManagedError extends Error {
@@ -311,6 +314,60 @@ export function createManagedAgentsService(deps: ManagedAgentsDeps) {
       .map(({ projectPath, projectName, agent }) => ({
         projectPath, projectName, agentId: agent.id, agentName: agent.name, color: agent.color, running: deps.isRunning(agent.id),
       }));
+  }
+
+  /**
+   * Whether removing a block's persona copies may keep none (#3579): only when
+   * the persona's built-in block is installed, every agent that uses this block
+   * also has that built-in, and no template lists this block. A project
+   * Clubhouse can't read, or anything else it can't tell, keeps one copy.
+   */
+  async function personaCopiesKeep(blockId: string, personaIds: string[]): Promise<Map<string, PersonaCopiesKeep>> {
+    const keep = new Map<string, PersonaCopiesKeep>(personaIds.map((p) => [p, 'one']));
+    try {
+      const live = await liveEntries();
+      if ((await allTemplates()).some((t) => t.setup.blocks.includes(blockId))) return keep;
+      const users: DurableAgentConfig[] = [];
+      for (const project of await deps.listProjects()) {
+        // Unlike managedAgents(), a project that can't be read keeps a copy instead of counting as no agents.
+        const agents = await deps.listAgents(project.path);
+        users.push(...agents.filter((a) => a.managed && !a.disposedAt && a.managed.blocks.includes(blockId)));
+      }
+      if (users.length === 0) return keep;
+      for (const personaId of personaIds) {
+        const builtinId = PERSONA_BUILTIN_BLOCK[personaId];
+        if (!builtinId || !live[builtinId] || BUILTINS.get(builtinId)?.retired) continue;
+        if (users.every((a) => a.managed!.blocks.includes(builtinId))) keep.set(personaId, 'none');
+      }
+    } catch (err) {
+      // telemetry-exempt: logged; removal keeps one copy of each persona.
+      appLog('core:managed', 'warn', 'Could not tell where a block with persona copies is used; removal keeps one copy', { meta: { partId: blockId, error: err instanceof Error ? err.message : String(err) } });
+      return new Map(personaIds.map((p) => [p, 'one']));
+    }
+    return keep;
+  }
+
+  /** A custom block's persona copies and the text without its duplicates, or null when it has none. */
+  async function personaCopiesPlan(entry: CatalogEntry | undefined): Promise<{ summary: ManagedPersonaCopies; next: string } | null> {
+    if (!entry || entry.kind !== 'block' || entry.source.kind === 'builtin') return null;
+    const content = await contentOf(entry);
+    if (content.kind !== 'block') return null;
+    const found = findPersonaCopies(content.content);
+    if (found.length === 0) return null;
+    const keep = await personaCopiesKeep(entry.id, found.map((p) => p.personaId));
+    const keepOf = (personaId: string) => keep.get(personaId) ?? 'one';
+    const next = removePersonaCopies(content.content, found, keepOf);
+    return {
+      next,
+      summary: {
+        blockId: entry.id,
+        blockName: entry.name,
+        revision: entry.headRevision,
+        personas: found.map((p) => ({ name: p.personaName, copies: p.copies.length, keep: keepOf(p.personaId) })),
+        removed: copiesRemoved(found, keepOf),
+        bytesSaved: Buffer.byteLength(content.content, 'utf8') - Buffer.byteLength(next, 'utf8'),
+      },
+    };
   }
 
   /** Setting values as the push dialog shows them, with helper templates by name. */
@@ -1233,6 +1290,57 @@ export function createManagedAgentsService(deps: ManagedAgentsDeps) {
     },
 
     /** Read a part's head content, for delivery. */
+    /**
+     * The agent's custom blocks that repeat a built-in persona's whole text
+     * (#3579). Reads only: removal is the person's choice, one click each.
+     */
+    async personaCopies(projectPath: string, agentId: string): Promise<ManagedPersonaCopies[]> {
+      const agent = await deps.getAgent(projectPath, agentId);
+      if (!agent?.managed) return [];
+      const live = await liveEntries();
+      const out: ManagedPersonaCopies[] = [];
+      for (const id of agent.managed.blocks) {
+        const plan = await personaCopiesPlan(live[id]);
+        if (plan) out.push(plan.summary);
+      }
+      return out;
+    },
+
+    /**
+     * Remove a block's duplicate persona copies, as a new revision of the block,
+     * so the text before stays in its history (fromRevision) for Undo. Refused
+     * as stale when the block changed since the person saw the offer.
+     */
+    async removePersonaCopies(input: { projectPath: string; agentId: string; id: string; expectedRevision: number }): Promise<ManagedPersonaCopiesRemoval> {
+      const agent = await deps.getAgent(input.projectPath, input.agentId);
+      if (!agent?.managed?.blocks.includes(input.id)) throw new ManagedError('not_found');
+      const entry = await entryOf(input.id);
+      if (entry.headRevision !== input.expectedRevision) throw new ManagedError('stale', 'It changed since you opened it.');
+      const plan = await personaCopiesPlan(entry);
+      if (!plan) throw new ManagedError('invalid', 'This block has no duplicate persona copies now.');
+      const saved = await api.updatePart({ id: entry.id, expectedRevision: entry.headRevision, content: { kind: 'block', content: plan.next } });
+      appLog('core:managed', 'info', 'Removed duplicate persona copies from a block', { meta: { partId: entry.id, removed: plan.summary.removed, bytesSaved: plan.summary.bytesSaved, fromRevision: entry.headRevision, revision: saved.revision } });
+      return { blockId: entry.id, fromRevision: entry.headRevision, revision: saved.revision, removed: plan.summary.removed, bytesSaved: plan.summary.bytesSaved };
+    },
+
+    /**
+     * Save an earlier revision's content as a new revision of a custom part:
+     * Undo for Remove duplicate copies. Revisions are never deleted, so the
+     * one undone stays in the history too.
+     */
+    async restorePartRevision(input: { id: string; revision: number; expectedRevision: number }): Promise<ManagedPartSummary> {
+      const entry = await entryOf(input.id);
+      if (!entry.revisions.some((r) => r.revision === input.revision)) throw new ManagedError('not_found');
+      let payload: AssetPayload;
+      try {
+        payload = await catalog.readRevision(entry.id, input.revision);
+      } catch (err) {
+        // telemetry-exempt: rethrown as a ManagedError with a code the caller shows.
+        mapCatalogError(err);
+      }
+      return api.updatePart({ id: entry.id, expectedRevision: input.expectedRevision, content: payloadToContent(entry.kind as ManagedPartKind, payload).content });
+    },
+
     async headContent(id: string): Promise<{ entry: CatalogEntry; content: ManagedPartContent; droppedEnvValues: string[]; fromRetiredBuiltin?: true } | null> {
       const live = await liveEntries();
       const entry = live[id];

@@ -306,6 +306,33 @@ export interface ManagedMigrationFailure {
   message: string;
 }
 
+/**
+ * A block in an agent's setup that repeats a built-in persona's whole text
+ * (#3579), left by the retired Save to Clubhouse loop. Offered for removal,
+ * never removed on its own.
+ */
+export interface ManagedPersonaCopies {
+  blockId: string;
+  blockName: string;
+  /** The block revision this was read from: removal is refused when the block changed since. */
+  revision: number;
+  /** Each persona repeated in it, with how many copies it has and whether removal keeps one. */
+  personas: Array<{ name: string; copies: number; keep: 'one' | 'none' }>;
+  /** Copies removal takes out. */
+  removed: number;
+  /** Bytes (UTF-8) the block gets smaller by. */
+  bytesSaved: number;
+}
+
+/** A removal of duplicate persona copies, saved as a new revision. `fromRevision` holds the text before, for Undo. */
+export interface ManagedPersonaCopiesRemoval {
+  blockId: string;
+  fromRevision: number;
+  revision: number;
+  removed: number;
+  bytesSaved: number;
+}
+
 /** What a running managed agent is waiting on. */
 export interface ManagedAgentStatus {
   managed: boolean;

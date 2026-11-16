@@ -1014,3 +1014,92 @@ describe('stale renames and description edits (#2897, D92)', () => {
     await user(() => service.updatePart({ id: bare.id, expectedRevision: bare.revision, expectedDescription: '', description: 'Now one' }));
   });
 });
+
+describe('duplicate persona copies (#3579)', () => {
+  const persona = BUILTIN_TEXT['orchestrator.md'];
+  const before = '# Project\n\nUse pnpm.\n\n';
+  const between = 'Ask before merging.\n\n';
+  const after = '\n## Mine\n\nKeep this.\n';
+  const bloated = `${before}${persona}\n\n${persona}\n\n${between}${persona}${after}`;
+  const blockText = async (id: string) => {
+    const content = (await user(() => service.getPart(id))).content;
+    return content.kind === 'block' ? content.content : null;
+  };
+  const notesBlock = async (content = bloated) => user(() => service.createPart({ name: 'clever-panda notes', content: { kind: 'block', content } }));
+
+  it('offers the block with its count and size, and removing keeps one copy and the person\'s text, as a new revision', async () => {
+    const block = await notesBlock();
+    agent('panda', { blocks: [block.id] });
+    const [offer] = await user(() => service.personaCopies('/p', 'panda'));
+    expect(offer).toMatchObject({ blockId: block.id, blockName: 'clever-panda notes', revision: block.revision, personas: [{ name: 'Orchestrator', copies: 3, keep: 'one' }], removed: 2 });
+    const expected = `${before}${between}${persona}${after}`;
+    expect(offer.bytesSaved).toBe(Buffer.byteLength(bloated) - Buffer.byteLength(expected));
+
+    const removal = await user(() => service.removePersonaCopies({ projectPath: '/p', agentId: 'panda', id: block.id, expectedRevision: block.revision }));
+    expect(removal).toMatchObject({ blockId: block.id, fromRevision: block.revision, revision: block.revision + 1, removed: 2 });
+    expect(await blockText(block.id)).toBe(expected);
+    expect(await user(() => service.personaCopies('/p', 'panda'))).toEqual([]);
+  });
+
+  it('Undo brings the text back as a newer revision, and the earlier revisions stay in the catalog', async () => {
+    const block = await notesBlock();
+    agent('panda', { blocks: [block.id] });
+    const removal = await user(() => service.removePersonaCopies({ projectPath: '/p', agentId: 'panda', id: block.id, expectedRevision: block.revision }));
+    const undone = await user(() => service.restorePartRevision({ id: block.id, revision: removal.fromRevision, expectedRevision: removal.revision }));
+    expect(undone.revision).toBe(removal.revision + 1);
+    expect(await blockText(block.id)).toBe(bloated);
+    // Read straight from the catalog on disk: nothing was deleted, so either text can be brought back later.
+    const catalog = createAssetCatalogStore({ dir: path.join(root, 'catalog') });
+    expect(await catalog.readRevision(block.id, removal.fromRevision)).toMatchObject({ content: bloated });
+    expect(await catalog.readRevision(block.id, removal.revision)).toMatchObject({ content: `${before}${between}${persona}${after}` });
+  });
+
+  it('refuses a stale removal and a stale Undo', async () => {
+    const block = await notesBlock();
+    agent('panda', { blocks: [block.id] });
+    await user(() => service.updatePart({ id: block.id, expectedRevision: block.revision, content: { kind: 'block', content: `${bloated}\nmore` } }));
+    await expectCode(user(() => service.removePersonaCopies({ projectPath: '/p', agentId: 'panda', id: block.id, expectedRevision: block.revision })), 'stale');
+    const removal = await user(() => service.removePersonaCopies({ projectPath: '/p', agentId: 'panda', id: block.id, expectedRevision: block.revision + 1 }));
+    await user(() => service.updatePart({ id: block.id, expectedRevision: removal.revision, content: { kind: 'block', content: 'edited since' } }));
+    await expectCode(user(() => service.restorePartRevision({ id: block.id, revision: removal.fromRevision, expectedRevision: removal.revision })), 'stale');
+  });
+
+  it('keeps none only when every agent using the block has the built-in Orchestrator block and no template lists it', async () => {
+    const block = await notesBlock();
+    agent('panda', { blocks: [block.id, BUILTIN_BLOCK_IDS.orchestrator] });
+    const [offer] = await user(() => service.personaCopies('/p', 'panda'));
+    expect(offer.personas).toEqual([{ name: 'Orchestrator', copies: 3, keep: 'none' }]);
+    expect(offer.removed).toBe(3);
+    // Another agent uses the block without the built-in: one copy stays.
+    agent('bison', { blocks: [block.id] });
+    expect((await user(() => service.personaCopies('/p', 'panda')))[0].personas[0].keep).toBe('one');
+  });
+
+  it('keeps one when a template lists the block, or a project can\'t be read', async () => {
+    const block = await notesBlock();
+    agent('panda', { blocks: [block.id, BUILTIN_BLOCK_IDS.orchestrator] });
+    await user(() => service.saveTemplate({ name: 'Notes template', description: '', setup: { blocks: [block.id], skills: [], mcps: [CLUBHOUSE_MCP_PART_ID] }, settings: {} }));
+    expect((await user(() => service.personaCopies('/p', 'panda')))[0].personas[0].keep).toBe('one');
+
+    const unreadable = createManagedAgentsService({
+      catalog: createAssetCatalogStore({ dir: path.join(root, 'catalog') }),
+      state: createManagedStateStore(path.join(root, 'managed')),
+      listProjects: async () => [{ path: '/p', name: 'Project' }, { path: '/q', name: 'Gone' }],
+      listAgents: async (p) => { if (p === '/q') throw new Error('unreadable'); return [...agents.values()]; },
+      getAgent: async (_p, id) => agents.get(id) ?? null,
+      setManagedSetup: async () => {},
+      isRunning: () => false,
+    });
+    const lone = await user(() => unreadable.createPart({ name: 'lone notes', content: { kind: 'block', content: bloated } }));
+    agent('lone', { blocks: [lone.id, BUILTIN_BLOCK_IDS.orchestrator] });
+    expect((await user(() => unreadable.personaCopies('/p', 'lone')))[0].personas[0].keep).toBe('one');
+  });
+
+  it('never offers a block that only repeats a heading, and never a built-in', async () => {
+    const bison = await user(() => service.createPart({ name: 'humble-bison notes', content: { kind: 'block', content: '## Project: expense-tracker\n\nA.\n\n## Project: expense-tracker\n\nB.\n' } }));
+    agent('bison', { blocks: [bison.id, BUILTIN_BLOCK_IDS.orchestrator] });
+    expect(await user(() => service.personaCopies('/p', 'bison'))).toEqual([]);
+    await expectCode(user(() => service.removePersonaCopies({ projectPath: '/p', agentId: 'bison', id: bison.id, expectedRevision: bison.revision })), 'invalid');
+    await expectCode(user(() => service.removePersonaCopies({ projectPath: '/p', agentId: 'bison', id: 'not-in-setup', expectedRevision: 1 })), 'not_found');
+  });
+});
