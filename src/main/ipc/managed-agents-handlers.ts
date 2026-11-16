@@ -137,6 +137,15 @@ export function registerManagedAgentsHandlers(): void {
     [idArg(), numberArg(), modeArg()],
     (_e, id, expectedRevision, mode) => result(() => s().deletePart({ id, expectedRevision, mode })),
   ));
+  ipcMain.handle(IPC.MANAGED.PERSONA_COPIES, withValidatedArgs([stringArg(), idArg()], (_e, projectPath, agentId) => result(() => s().personaCopies(projectPath, agentId))));
+  ipcMain.handle(IPC.MANAGED.REMOVE_PERSONA_COPIES, withValidatedArgs(
+    [stringArg(), idArg(), idArg(), numberArg({ integer: true, min: 1 }), numberArg({ integer: true, min: 1 })],
+    (_e, projectPath, agentId, id, expectedRevision, expectedRemoved) => result(() => s().removePersonaCopies({ projectPath, agentId, id, expectedRevision, expectedRemoved })),
+  ));
+  ipcMain.handle(IPC.MANAGED.RESTORE_PART_REVISION, withValidatedArgs(
+    [idArg(), numberArg({ integer: true, min: 1 }), numberArg({ integer: true, min: 1 })],
+    (_e, id, revision, expectedRevision) => result(() => s().restorePartRevision({ id, revision, expectedRevision })),
+  ));
   ipcMain.handle(IPC.MANAGED.CONSUMERS, withValidatedArgs([idArg()], (_e, id) => result(() => s().consumers(id))));
 
   ipcMain.handle(IPC.MANAGED.GET_SETUP, withValidatedArgs([stringArg(), idArg()], (_e, projectPath, agentId) => result(() => s().getSetup(projectPath, agentId))));

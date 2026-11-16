@@ -6,6 +6,7 @@
  * is waiting. An agent Clubhouse switched on its own says so until the
  * notice is dismissed (D59). A helper says what start_helper changed from its
  * template (D91), and a setup or template the Dispatcher changed says so (D90).
+ * A block that repeats a built-in persona is offered for cleanup (#3579).
  */
 import { useState } from 'react';
 import type { Agent } from '../../../../shared/types';
@@ -15,6 +16,7 @@ import { errorText, managed, unwrap, useManagedParts, useManagedStatus, useManag
 import { builtFromLine, changedLine } from '../../managed/attribution';
 import { migratedLine } from '../../managed/legacy';
 import { PENDING_RESTART_NOTE, useManagedRestart } from '../../managed/restart';
+import { PersonaCopiesOffer } from '../../managed/PersonaCopiesOffer';
 import { openAgentSettingsOn } from '../agentSettingsPages';
 import { CardNote, CardRow, DetailsCard } from './DetailsCard';
 import { useAgentDetailsStore } from './detailsStore';
@@ -150,6 +152,7 @@ export function SetupCard({ agent, projectPath, setup, runsOn, context = null, a
         </div>
       )}
       {dismissError && <CardNote><span className="text-ctp-error" role="alert">{dismissError}</span></CardNote>}
+      <PersonaCopiesOffer projectPath={projectPath} agentId={agent.id} />
       <div className="pr-3.5 pl-[33px] pt-1 flex items-center gap-1.5">
         <Button kind="ghost" onClick={() => openAgentSettingsOn(agent.id, 'instructions')} data-testid="details-setup-open-builder">Open builder</Button>
         {/* Model, effort and context are changed on the agent's Settings page. */}

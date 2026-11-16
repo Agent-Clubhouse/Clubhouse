@@ -37,6 +37,10 @@ export const IPC = {
     RESTART: 'managed:restart',
     SET_CLUBHOUSE_FEATURES: 'managed:set-clubhouse-features',
     DISMISS_MIGRATION_NOTICE: 'managed:dismiss-migration-notice',
+    /** Blocks in an agent's setup that repeat a built-in persona (#3579), removing the copies, and Undo. */
+    PERSONA_COPIES: 'managed:persona-copies',
+    REMOVE_PERSONA_COPIES: 'managed:remove-persona-copies',
+    RESTORE_PART_REVISION: 'managed:restore-part-revision',
     /** The root-file names git ignores for the whole repository because of the project's managed agents (D97). */
     PROJECT_GIT_EXCLUDES: 'managed:project-git-excludes',
     /** Skill import: whether each dropped or picked file is executable, by its mode (D96). */

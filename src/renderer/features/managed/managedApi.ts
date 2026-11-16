@@ -10,6 +10,7 @@ import type {
   ManagedErrorCode,
   ManagedPartKind,
   ManagedPartSummary,
+  ManagedPersonaCopies,
   ManagedResult,
   ManagedTemplate,
   ProjectPartsInventory,
@@ -93,6 +94,15 @@ export function useProjectParts(projectPath: string | undefined) {
 
 export function useManagedTemplates() {
   return useLive<Array<ManagedTemplate & { usedBy: number }>>(() => unwrap(managed().listTemplates()), []);
+}
+
+/** Blocks in the agent's setup that repeat a built-in persona's text (#3579), read again whenever parts change. */
+export function useManagedPersonaCopies(projectPath: string | undefined, agentId: string | undefined) {
+  return useLive<ManagedPersonaCopies[]>(
+    () => (projectPath && agentId ? unwrap(managed().personaCopies(projectPath, agentId)) : Promise.resolve([])),
+    [projectPath, agentId],
+    !!projectPath && !!agentId,
+  );
 }
 
 /** A mounted card can refetch after startup, whose delivery event precedes the running runtime. */
