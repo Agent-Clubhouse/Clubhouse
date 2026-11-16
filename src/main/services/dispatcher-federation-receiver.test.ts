@@ -243,6 +243,7 @@ describe('production remote request admission and triage (#3346)', () => {
     expect(await receiveAgentCall(PEER, next)).toMatchObject({ delivery: { state: 'delivered' } });
     expect(state.send).toHaveBeenCalledTimes(2);
   });
+  // 30s on the loop-heavy tests: ~2.5s on a good Windows run and past the 5s default on a slow one (#3591); the clock is already faked.
   it('unblocks a stuck terminal after real hook inactivity, and replaces hookless pending history', async () => {
     let now = Date.now(); const clock = vi.spyOn(Date, 'now').mockImplementation(() => now);
     try {
@@ -258,7 +259,7 @@ describe('production remote request admission and triage (#3346)', () => {
       }
       expect(federatedRequests()!.allowed(PEER, {})).toBe(true);
     } finally { clock.mockRestore(); }
-  });
+  }, 30_000);
   it('does not count repeated waiting news attempts against federation bounds during a long terminal turn', async () => {
     stopRequests = startFederatedRequests(); state.running = true; state.runtime = 'pty';
     publishFromHookEvent('controller', { kind: 'pre_tool', rawName: 'UserPromptSubmit' });
@@ -274,7 +275,7 @@ describe('production remote request admission and triage (#3346)', () => {
     expect(federatedRequests()!.list('controller')).toEqual([]); expect(state.send).not.toHaveBeenCalled();
     publishFromHookEvent('controller', { kind: 'stop', rawName: 'Stop' });
     expect(await receiveAgentCall(PEER, call('after-long-terminal'))).toMatchObject({ delivery: { state: 'delivered' } });
-  });
+  }, 30_000);
   it('keeps terminal causation across stale pre-tool continuations, clearing only on a real new prompt', async () => {
     stopRequests = startFederatedRequests(); state.running = true; state.runtime = 'pty';
     expect(await receiveAgentCall(PEER, { ...call('long-terminal'), context: { rootId: 'long-root', depth: 5 } })).toMatchObject({ delivery: { state: 'delivered' } });
