@@ -143,6 +143,22 @@ describe('values from before sharing', () => {
     expect(groupLinkedState(indexLinkedState(bothInactive), groups[0], 'inactive')?.value).toBe(true);
   });
 
+  it('are offered once: the group\'s value shown afterwards never replaces this computer\'s own, and the group stays inactive only if all', () => {
+    const groups = [[a, b]];
+    const first = mergeLinkedStateRecords([], [
+      ...legacyLinkedStateRecords(state({ inactiveProjectIds: ['site'] }), groups, A),
+      ...legacyLinkedStateRecords(state(), groups, B),
+    ]);
+    expect(groupLinkedState(indexLinkedState(first), groups[0], 'inactive')?.value).toBe(false);
+    const shown = project(first, groups, A, state({ inactiveProjectIds: ['site'] }));
+    expect(shown.inactiveProjectIds).toEqual([]);
+    // Offering the state it now shows changes nothing.
+    expect(legacyLinkedStateRecords(shown, groups, A, first)).toEqual([]);
+    expect(first).toContainEqual(rec(a, 'inactive', true, 0));
+    // Still offered for a copy it has no record for yet.
+    expect(legacyLinkedStateRecords(shown, [[a, b, ref(A, 'site2')]], A, first)).toEqual([rec(ref(A, 'site2'), 'pinned', false, 0), rec(ref(A, 'site2'), 'inactive', false, 0)]);
+  });
+
   it('lose to any explicit edit, even one made earlier on another copy', () => {
     const groups = [[a, b]];
     const records = mergeLinkedStateRecords([rec(b, 'pinned', false, 5, B)], legacyLinkedStateRecords(state({ pinnedProjectIds: ['site'] }), groups, A));
@@ -195,6 +211,20 @@ describe('projection onto each computer', () => {
     // An unpin on A's copy alone, after the split, doesn't reach B's.
     const later = mergeLinkedStateRecords(shared, linkedStateWrite(shared, [], { type: 'setPinned', projectId: 'site', pinned: false }, A, 20));
     expect(groupLinkedState(indexLinkedState(later), [b], 'pinned')?.value).toBe(true);
+  });
+
+  it('a copy leaving its group gets back this computer\'s own Mark inactive from before sharing, not an explicit edit\'s value', () => {
+    const records = [rec(a, 'inactive', true, 0), rec(b, 'inactive', false, 0, B)];
+    const linked = project(records, [[a, b]], A, state({ inactiveProjectIds: ['site'] }));
+    expect(linked.inactiveProjectIds).toEqual([]);
+    expect(project(records, [], A, linked).inactiveProjectIds).toEqual(['site']);
+    // Not on another computer, not on a pinned copy, not on one it no longer lists.
+    expect(project(records, [], B, state())).toEqual(state());
+    expect(project(records, [], A, state({ pinnedProjectIds: ['site'] })).inactiveProjectIds).toEqual([]);
+    expect(projectLinkedState(state(), [], indexLinkedState(records), A, NOW, () => false).inactiveProjectIds).toEqual([]);
+    // An explicit Mark active replaced it: the split keeps that.
+    const marked = mergeLinkedStateRecords(records, linkedStateWrite(records, [[a, b]], { type: 'setInactive', projectId: 'site', inactive: false, at: 10 }, A, 10));
+    expect(project(marked, [], A, linked)).toBe(linked);
   });
 
   it('a late offline member with older edits converges to the newer value; with newer edits it wins', () => {

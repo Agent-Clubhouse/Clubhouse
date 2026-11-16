@@ -149,6 +149,40 @@ describe('Pin and Mark inactive shared by linked copies', () => {
     });
   });
 
+  it('keeps this computer\'s own Mark inactive from before linking when the group shows active, and unlink brings it back', async () => {
+    const a = desktop(A, { inactiveProjectIds: ['site'] }), b = desktop(B);
+    net = mesh(a, b);
+    await a.links.apply({ type: 'link', a: 'site', b: remote(B, 'site-b') });
+    // Inactive only if every copy is: B's isn't, so the group shows active on both.
+    await vi.waitFor(() => expect(b.linked.records()).toHaveLength(4));
+    await a.service.settled(); await b.service.settled();
+    expect(a.state.inactiveProjectIds).not.toContain('site');
+    expect(b.state.inactiveProjectIds).toEqual([]);
+    // The reprojection is offered again at clock zero; A's own saved mark survives it.
+    const own = () => a.linked.records().find((r) => r.project.machine === A && r.field === 'inactive');
+    expect(own()).toEqual({ project: { machine: A, projectId: 'site' }, field: 'inactive', value: true, at: 0, by: A });
+    await a.links.apply({ type: 'unlink', a: 'site' });
+    await vi.waitFor(() => expect(a.state.inactiveProjectIds).toContain('site'));
+    await b.service.settled();
+    expect(b.state.inactiveProjectIds).toEqual([]);
+  });
+
+  it('a Mark active after unlinking holds over the mark from before sharing', async () => {
+    const a = desktop(A, { inactiveProjectIds: ['site'] }), b = desktop(B);
+    net = mesh(a, b);
+    await a.links.apply({ type: 'link', a: 'site', b: remote(B, 'site-b') });
+    await vi.waitFor(() => expect(a.linked.records().length).toBeGreaterThanOrEqual(2));
+    await a.service.settled();
+    await a.links.apply({ type: 'unlink', a: 'site' });
+    await vi.waitFor(() => expect(a.state.inactiveProjectIds).toContain('site'));
+    clock += 1000;
+    a.apply({ type: 'setInactive', projectId: 'site', inactive: false, at: clock });
+    await a.service.settled();
+    await new Promise((r) => setTimeout(r, 20));
+    await a.service.settled();
+    expect(a.state.inactiveProjectIds).toEqual([]);
+  });
+
   it('Mark active records that moment as activity on every copy', async () => {
     const a = desktop(A), b = desktop(B, { projectActivity: { 'site-b': clock - 30 * 86_400_000 } });
     net = mesh(a, b);
