@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import type {
-  GroupProject, GroupProjectCreateOptions, GroupProjectMemberView, GroupProjectScope, GroupProjectScopeOptions, RemoteCreateOutcome,
+  GroupProject, GroupProjectCreateOptions, GroupProjectMemberView, GroupProjectOperations, GroupProjectScope, GroupProjectScopeOptions, RemoteCreateOutcome,
 } from '../../shared/group-project-types';
 
 function isGroupProject(v: unknown): v is GroupProject {
@@ -28,6 +28,9 @@ interface GroupProjectStoreState {
   projects: GroupProject[];
   loaded: boolean;
   loadError: string | null;
+  /** #3550: each group project's changes waiting for its host or lately answered, as last read. */
+  operations: Record<string, GroupProjectOperations>;
+  loadOperations: (id: string) => Promise<void>;
   loadProjects: () => Promise<void>;
   create: (name: string, options?: GroupProjectCreateOptions) => Promise<GroupProject>;
   /** #3547: create on another computer; a created group's copy joins the list. */
@@ -50,10 +53,26 @@ interface GroupProjectStoreState {
   estimateTrim: (projectId: string, maxPerTopic: number, maxTotal: number) => Promise<{ wouldRemove: number }>;
 }
 
+/** Reads of one group project's operations that began; an older read never replaces a newer one. */
+const operationReads = new Map<string, number>();
+
 export const useGroupProjectStore = create<GroupProjectStoreState>((set) => ({
   projects: [],
   loaded: false,
   loadError: null,
+  operations: {},
+
+  loadOperations: async (id) => {
+    const read = (operationReads.get(id) ?? 0) + 1;
+    operationReads.set(id, read);
+    try {
+      const result = await window.clubhouse.groupProject.getOperations(id);
+      if (operationReads.get(id) !== read || !result || !Array.isArray(result.operations)) return;
+      set((state) => ({ operations: { ...state.operations, [id]: result } }));
+    } catch {
+      // telemetry-exempt: the last read stays; the next change in status reads again
+    }
+  },
 
   loadProjects: async () => {
     try {
@@ -177,10 +196,13 @@ export const useGroupProjectStore = create<GroupProjectStoreState>((set) => ({
 
 /** Initialize listener for group project changes from main process. */
 export function initGroupProjectListener(): () => void {
-  return window.clubhouse.groupProject.onChanged((projects) => {
+  const stopProjects = window.clubhouse.groupProject.onChanged((projects) => {
     const valid = Array.isArray(projects) ? (projects as unknown[]).filter(isGroupProject) : [];
     // A delivered list is authoritative: it also clears an earlier load failure,
     // which would otherwise leave group-project wires waiting all session.
     useGroupProjectStore.setState(Array.isArray(projects) ? { projects: valid, loaded: true, loadError: null } : { projects: valid });
   });
+  // #3550: a change made on a copy moved (queued, applied or refused); read its status again.
+  const stopOperations = window.clubhouse.groupProject.onOperationsChanged((id) => { void useGroupProjectStore.getState().loadOperations(id); });
+  return () => { stopProjects(); stopOperations(); };
 }

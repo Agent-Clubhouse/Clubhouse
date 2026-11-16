@@ -622,6 +622,10 @@ export const IPC = {
     PREVIEW_SCOPE: 'group-project:preview-scope',
     SET_SCOPE: 'group-project:set-scope',
     DISMISS_REFUSALS: 'group-project:dismiss-refusals',
+    /** #3550: changes made on a copy that wait for their host or were lately answered. Read-only, bounded. */
+    GET_OPERATIONS: 'group-project:get-operations',
+    /** Main → renderer: a group project's changes made on a copy moved (its id). */
+    OPERATIONS_CHANGED: 'group-project:operations-changed',
     GET_BULLETIN_DIGEST: 'group-project:get-bulletin-digest',
     GET_TOPIC_MESSAGES: 'group-project:get-topic-messages',
     GET_ALL_MESSAGES: 'group-project:get-all-messages',

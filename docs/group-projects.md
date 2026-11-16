@@ -512,6 +512,25 @@ patch (entries added and removed, fields set) that the host applies to its own
 current record. Only the host deletes, clears, changes retention or changes
 scope (`not_host`, "Only <host> can …").
 
+**Outcomes (#3550).** Every forwarded change that has a place on the group
+project's page (post, details, membership, message and topic cleanup) has one of
+three outcomes: `applied`, `queued { waitingFor, since }` or `refused { reason }`.
+A `GroupProjectOperation` carries it under the write's own id, the one the host
+recognizes a replay by and a refusal is kept under: no other id is made and
+nothing is sent again under a new one. Queued ones are read from the outbox;
+answered ones (applied or refused, at once or on reconnect, expiry, a deleted
+group project or a removed host) go into `network-operations.json`, written
+atomically, at most 200 and no older than an hour, first answer kept, so a
+replay of a write the host already answered settles nothing twice. A file that
+can't be read, or an entry that isn't well formed, leaves the status unknown and
+never reads as applied. `group-project:get-operations` is the bounded read (up
+to 50 waiting and 20 answered, with a count of the rest), and
+`group-project:operations-changed` tells windows to read again. The Members,
+Details and Board sections show each as "Waiting for <host> since …",
+"Applied" or "Refused: <reason>". Details never says it saved a change that only
+waits. Clearing a group project's refusals clears its refused statuses too. The
+refusal list itself is unchanged, and there is no way to cancel a queued write.
+
 **Who may write.** The host decides, and fails closed. An agent's write carries
 the agent (its author), and the host checks it as `<agent>@<sending computer>`.
 The agent must be a member, and anything beyond posting (lead: deleting

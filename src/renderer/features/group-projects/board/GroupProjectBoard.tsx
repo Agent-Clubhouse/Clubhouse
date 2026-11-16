@@ -9,6 +9,7 @@ import { useAgentStore } from '../../../stores/agentStore';
 import { pollingNudgeMsg } from '../../../../shared/polling-messages';
 import { showConfirmDialog } from '../../../plugins/PluginDialog';
 import { Button } from '../../../components/Button';
+import { GroupOperationStatus } from '../GroupOperationStatus';
 import { Tooltip } from '../../../components/Tooltip';
 import { hostLine } from '../../settings/GroupProjectScopeFields';
 import {
@@ -171,26 +172,30 @@ export function GroupProjectBoard({ groupProjectId, ctx, variant, onUpdateMetada
     const { promise } = showConfirmDialog('Delete this message?');
     if (!(await promise)) return;
     await deleteMessage(groupProjectId, topic, messageId);
+    // On a copy the change waits for its host, so the message stays until the host's board says otherwise.
+    if (copy) return;
     setMessages((prev) => prev.filter((m) => m.id !== messageId));
     if (selectedMessageId === messageId) setSelectedMessageId(null);
-  }, [groupProjectId, deleteMessage, selectedMessageId]);
+  }, [groupProjectId, deleteMessage, selectedMessageId, copy]);
 
   const handleDeleteTopic = useCallback(async (topic: string) => {
     const { promise } = showConfirmDialog(`Delete the "${topic}" topic and its messages?`);
     if (!(await promise)) return;
     await deleteTopic(groupProjectId, topic);
+    if (copy) return;
     setTopics((prev) => prev.filter((t) => t.topic !== topic));
     if (selectedTopic === topic) {
       setSelectedTopic(ALL_TOPICS_KEY);
       setSelectedMessageId(null);
       setMessages([]);
     }
-  }, [groupProjectId, deleteTopic, selectedTopic]);
+  }, [groupProjectId, deleteTopic, selectedTopic, copy]);
 
   const handleToggleProtection = useCallback(async (topic: string, currentlyProtected: boolean) => {
     await setTopicProtection(groupProjectId, topic, !currentlyProtected);
+    if (copy) return;
     setTopics((prev) => prev.map((t) => t.topic === topic ? { ...t, isProtected: !currentlyProtected } : t));
-  }, [groupProjectId, setTopicProtection]);
+  }, [groupProjectId, setTopicProtection, copy]);
 
   const handleClearAll = useCallback(async () => {
     const { promise } = showConfirmDialog('Clear every message? The description, instructions and wires stay.');
@@ -249,6 +254,7 @@ export function GroupProjectBoard({ groupProjectId, ctx, variant, onUpdateMetada
               ? 'Saved messages stay readable. Posting is unavailable.'
               : `You are viewing a copy on this computer. Only ${hostName} can clear all messages or change retention.`}
           </p>
+          <GroupOperationStatus groupProjectId={groupProjectId} sections={['cleanup']} label="Cleanup changes" />
         </div>
       )}
 

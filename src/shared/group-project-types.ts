@@ -97,6 +97,43 @@ export interface GroupProjectNetworkState {
   refusals: GroupProjectNetworkRefusal[];
 }
 
+/**
+ * What became of a change made on a copy of a network group project (#3550).
+ * Applied: its host has it. Queued: saved here, waiting for its host, which
+ * answers it later. Refused: not applied, with the reason shown to the person.
+ */
+export type GroupWriteOutcome =
+  | { status: 'applied' }
+  | { status: 'queued'; waitingFor: string; since: string }
+  | { status: 'refused'; reason: string };
+
+/** The part of the group project's page a change shows its status in. */
+export type GroupOperationSection = 'members' | 'details' | 'cleanup' | 'posts';
+
+/**
+ * One forwarded change and its outcome. `id` is the write's own id, the one the
+ * host recognizes a replay by and a refusal is kept under: no other id is made.
+ */
+export interface GroupProjectOperation {
+  id: string;
+  groupProjectId: string;
+  op: string;
+  section: GroupOperationSection;
+  author: { agentId?: string; label: string };
+  /** When the change was made here. */
+  since: string;
+  /** When it was applied or refused. */
+  settledAt?: string;
+  outcome: GroupWriteOutcome;
+}
+
+/** A bounded read of a group project's changes waiting for, or recently answered by, its host. */
+export interface GroupProjectOperations {
+  operations: GroupProjectOperation[];
+  /** Waiting changes beyond those listed. */
+  omittedQueued: number;
+}
+
 /** One member recorded explicitly (helpers, quick agents, or a person's addition). */
 export interface GroupProjectExplicitMember {
   /** Host-relative agent address: a bare id on the host machine, `id@<fingerprint>` elsewhere. */

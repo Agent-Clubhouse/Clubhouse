@@ -1,7 +1,7 @@
 import { ipcRenderer } from 'electron';
 import { IPC } from '../shared/ipc-channels';
 import type {
-  AutoJoinPreview, GroupProject, GroupProjectCoverage, GroupProjectCreateHost, GroupProjectCreateOptions, RemoteCreateOutcome, GroupProjectDeleteImpact, GroupProjectMemberView, GroupProjectMembershipView,
+  AutoJoinPreview, GroupProject, GroupProjectOperations, GroupProjectCoverage, GroupProjectCreateHost, GroupProjectCreateOptions, RemoteCreateOutcome, GroupProjectDeleteImpact, GroupProjectMemberView, GroupProjectMembershipView,
   GroupProjectRolesView, GroupProjectMembershipOptions, GroupProjectScope, GroupProjectScopeOptions,
 } from '../shared/group-project-types';
 import type { GroupProjectRosterView } from '../shared/group-project-roster';
@@ -26,6 +26,14 @@ export const groupProject = {
     ipcRenderer.invoke(IPC.GROUP_PROJECT.DELETE, id, token),
   dismissRefusals: (id: string): Promise<boolean> =>
     ipcRenderer.invoke(IPC.GROUP_PROJECT.DISMISS_REFUSALS, id),
+  /** #3550: this group project's changes waiting for its host, and those lately answered. */
+  getOperations: (id: string): Promise<GroupProjectOperations> =>
+    ipcRenderer.invoke(IPC.GROUP_PROJECT.GET_OPERATIONS, id),
+  onOperationsChanged: (callback: (id: string) => void) => {
+    const listener = (_event: Electron.IpcRendererEvent, id: string) => callback(id);
+    ipcRenderer.on(IPC.GROUP_PROJECT.OPERATIONS_CHANGED, listener);
+    return () => { ipcRenderer.removeListener(IPC.GROUP_PROJECT.OPERATIONS_CHANGED, listener); };
+  },
   scopeOptions: (): Promise<GroupProjectScopeOptions> =>
     ipcRenderer.invoke(IPC.GROUP_PROJECT.SCOPE_OPTIONS),
   previewScope: (id: string, scope: GroupProjectScope): Promise<{ scope: GroupProjectScope; leaving: GroupProjectMemberView[]; returning: GroupProjectMemberView[] }> =>
