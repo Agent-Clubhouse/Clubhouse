@@ -1,7 +1,7 @@
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { DurableAgentConfig } from '../../../shared/types';
 import { captureAuditEvents, type AuditCapture } from '../../telemetry/__test-utils__/audit-capture';
 
@@ -21,8 +21,18 @@ import { CLUBHOUSE_MCP_PART_ID } from '../../../shared/managed-agents-types';
 let root: string, service: ManagedAgentsService, agent: DurableAgentConfig, capture: AuditCapture;
 const user = <T>(fn: () => T) => withSettingsSurface('ui', undefined, fn);
 
+const noAgents = { listProjects: async () => [], listAgents: async () => [], getAgent: async () => null, setManagedSetup: async () => {}, isRunning: () => true };
+let seed: string;
+// Installing every built-in is dozens of fsync'd writes, slow on a busy Windows disk. Do it once, and give each test a copy.
+beforeAll(async () => {
+  seed = fs.mkdtempSync(path.join(os.tmpdir(), 'managed-activation-seed-'));
+  await createManagedAgentsService({ ...noAgents, catalog: createAssetCatalogStore({ dir: path.join(seed, 'catalog') }), state: createManagedStateStore(path.join(seed, 'managed')) }).ensureBuiltins();
+}, 60_000);
+afterAll(() => { fs.rmSync(seed, { recursive: true, force: true }); });
+
 beforeEach(async () => {
   root = fs.mkdtempSync(path.join(os.tmpdir(), 'managed-activation-receipt-'));
+  fs.cpSync(seed, root, { recursive: true });
   capture = captureAuditEvents();
   _resetSettingsAuditForTesting(true);
   agent = { id: 'target', name: 'Target', color: 'indigo', createdAt: '', orchestrator: 'copilot-cli',

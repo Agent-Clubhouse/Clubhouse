@@ -4,8 +4,20 @@ import * as path from 'path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { FederatedRequest } from '../../shared/dispatcher-federation-requests';
 import type { FederationRequestFile } from './dispatcher-federation-requests';
-const fixture = vi.hoisted(() => ({ base: '' }));
+const fixture = vi.hoisted(() => ({ base: '', deferDisk: false, deferred: new Set<() => Promise<void>>() }));
 vi.mock('electron', () => ({ app: { getPath: () => fixture.base, isPackaged: false }, BrowserWindow: { getAllWindows: () => [] } }));
+// A test that sets `fixture.deferDisk` keeps the store's saves in memory and writes the latest file once, at
+// `flushDeferredSaves()`. Per-save fsync + rename is the cost of a long run (minutes on a slow Windows disk) and
+// is covered by every other test here, which keep the real store.
+vi.mock('./settings-store', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('./settings-store')>();
+  return { ...actual, createSettingsStore: (...args: Parameters<typeof actual.createSettingsStore>) => {
+    const real = actual.createSettingsStore(...args); let latest: unknown;
+    fixture.deferred.add(async () => { if (latest !== undefined) { const file = latest; latest = undefined; await real.save(file as never); } });
+    return { ...real, get: () => (latest ?? real.get()) as never,
+      save: async (file: never, precondition?: never) => { if (fixture.deferDisk) latest = structuredClone(file); else { latest = undefined; await real.save(file, precondition); } } };
+  } };
+});
 vi.mock('./log-service', () => ({ appLog: vi.fn() }));
 vi.mock('./agent-runtime/chat-transcript', () => ({
   appendChatEvent: vi.fn(async () => {}), readChatTranscript: vi.fn(async () => []), agentMediaDir: () => fixture.base,
@@ -26,6 +38,7 @@ import { forgetHookTurn, publishFromHookEvent } from './app-event-bus';
 
 const runtimes: ChatAgentRuntime[] = [];
 const stops: Array<() => void> = [];
+const flushDeferredSaves = async () => { for (const write of fixture.deferred) await write(); };
 const flush = async () => { for (let i = 0; i < 12; i++) await new Promise((resolve) => setImmediate(resolve)); };
 function remote(depth: number, id = 'remote-request'): FederatedRequest {
   return {
@@ -60,7 +73,7 @@ function federation(agentId = 'controller') {
   });
 }
 beforeEach(() => {
-  fixture.base = fs.mkdtempSync(path.join(os.tmpdir(), 'federation-local-work-'));
+  fixture.base = fs.mkdtempSync(path.join(os.tmpdir(), 'federation-local-work-')); fixture.deferDisk = false; fixture.deferred.clear();
   _setLocalWorkStoreForTesting(createLocalWorkStore());
 });
 afterEach(async () => {
@@ -102,11 +115,13 @@ describe('durable local delegation through real chat-runtime/ALS input', () => {
     await withLocalCausalCall('worker', { task_id: 'assigned' }, () => controller.runtime.sendMessage('Result after capacity', { source: 'mcp', taskId: 'assigned' }));
     expect(Buffer.byteLength(fs.readFileSync(path.join(fixture.base, 'dispatcher-federation-local-work.json')))).toBeLessThan(LOCAL_WORK_MAX_BYTES);
   });
-  it('keeps hundreds of real-runtime round trips in one lineage slim and bounded at realistic text size', async () => {
+  /** `trips` worker round trips in one lineage at realistic text size; the file on disk and a restart must hold the same. */
+  async function roundTripsStaySlim(trips: number, deferDisk: boolean) {
+    fixture.deferDisk = deferDisk;
     const controller = desktop('controller'); const worker = desktop('worker'); await controller.start(); await worker.start();
     const text = 'PRIVATE_REMOTE_TASK_'.padEnd(8_000, 'x');
     await withFederationInput({ ...remote(3), text }, () => controller.runtime.sendMessage(text, { source: 'mcp' })); await controller.turn();
-    for (let i = 0; i < 300; i++) {
+    for (let i = 0; i < trips; i++) {
       const taskId = `round-${i}`;
       await withLocalCausalCall('controller', { task_id: taskId }, () => worker.runtime.sendMessage(text, { source: 'mcp', taskId })); await worker.turn();
       await controller.end(); await worker.end();
@@ -114,16 +129,24 @@ describe('durable local delegation through real chat-runtime/ALS input', () => {
       expect(federationTurnInputs('controller')).toHaveLength(1);
       expect(federationTurnInputs('controller')[0].cause.depth).toBe(3);
     }
+    await flushDeferredSaves(); fixture.deferDisk = false;
     const body = fs.readFileSync(path.join(fixture.base, 'dispatcher-federation-local-work.json'), 'utf8');
     expect(Buffer.byteLength(body)).toBeLessThan(LOCAL_WORK_MAX_BYTES);
     expect(Buffer.byteLength(body)).toBeLessThan(1_000_000);
     expect(body).not.toContain('PRIVATE_REMOTE_TASK_');
     const saved = createLocalWorkStore().get();
-    expect(saved.records).toHaveLength(600);
+    expect(saved.records).toHaveLength(trips * 2);
     expect(saved.records.every((r) => r.inputs.length === 1 && r.inputs[0].localWorkIds?.length === 1 && !('text' in r.inputs[0]))).toBe(true);
     _setLocalWorkStoreForTesting(createLocalWorkStore());
     expect((await localCausalInputs('controller', undefined, undefined, true))[0].cause.depth).toBe(3);
     expect((await federation().offer('controller', 'other-desktop', 'remote-controller', 'long-session', 'Continue')).cause.depth).toBe(4);
+  }
+  it('keeps real-runtime round trips in one lineage slim and bounded at realistic text size, through every durable save', async () => {
+    await roundTripsStaySlim(25, false);
+  });
+  it('keeps hundreds of real-runtime round trips in one lineage slim and bounded at realistic text size', async () => {
+    // Writes the file once at the end instead of fsyncing every save, so a slow disk can't time the run out.
+    await roundTripsStaySlim(300, true);
   }, 90_000);
   it('queues a human prompt racing an accepted remote prompt until its actual turn ends', async () => {
     const controller = desktop('controller'); await controller.start();

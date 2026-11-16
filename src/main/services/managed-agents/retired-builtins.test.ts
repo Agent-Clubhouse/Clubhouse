@@ -6,7 +6,7 @@
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { DurableAgentConfig } from '../../../shared/types';
 import { CLUBHOUSE_MCP_PART_ID, isListed, type ManagedAgentSetup } from '../../../shared/managed-agents-types';
 
@@ -77,21 +77,31 @@ function filesOf(dir: string): Record<string, string> {
   return out;
 }
 
-beforeEach(async () => {
+let seed: string;
+// As an earlier version left it: every built-in installed, the retired ones too. That is dozens of fsync'd writes,
+// slow on a busy Windows disk, so it is done once and each test gets a copy.
+beforeAll(async () => {
+  seed = fs.mkdtempSync(path.join(os.tmpdir(), 'managed-retired-seed-'));
+  _resetSettingsAuditForTesting(false);
+  const earlier = createAssetCatalogStore({ dir: path.join(seed, 'catalog') });
+  await withSettingsSurface('system', undefined, async () => {
+    for (const p of builtinParts()) {
+      await installBuiltinAsset(earlier, { assetId: p.id, kind: p.kind, name: p.name, builtinId: p.id, expectedRevision: 0, payload: p.payload });
+    }
+  });
+}, 60_000);
+afterAll(() => { fs.rmSync(seed, { recursive: true, force: true }); });
+
+beforeEach(() => {
   root = fs.mkdtempSync(path.join(os.tmpdir(), 'managed-retired-'));
   project = path.join(root, 'project');
   _resetSettingsAuditForTesting(false);
+  fs.cpSync(seed, root, { recursive: true });
   catalog = createAssetCatalogStore({ dir: path.join(root, 'catalog') });
   state = createManagedStateStore(path.join(root, 'managed'));
   agents = new Map();
   unreadable = false;
   remapped = [];
-  // As an earlier version left it: every built-in installed, the retired ones too.
-  await withSettingsSurface('system', undefined, async () => {
-    for (const p of builtinParts()) {
-      await installBuiltinAsset(catalog, { assetId: p.id, kind: p.kind, name: p.name, builtinId: p.id, expectedRevision: 0, payload: p.payload });
-    }
-  });
   service = makeService();
 });
 
