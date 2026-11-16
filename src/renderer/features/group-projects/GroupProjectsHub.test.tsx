@@ -109,10 +109,25 @@ describe('GroupProjectsHub list', () => {
     expect(screen.getByText('5 group projects')).toBeInTheDocument();
   });
 
-  it('marks the selected row with aria-pressed', async () => {
-    render(<GroupProjectsHub view={{ kind: 'all' }} onViewChange={() => {}} query="" onQueryChange={() => {}} onOpenGroup={() => {}} selectedId="g2" />);
-    expect(await screen.findByRole('button', { name: 'Daily coordination' })).toHaveAttribute('aria-pressed', 'true');
-    expect(screen.getByRole('button', { name: 'Beacon board' })).toHaveAttribute('aria-pressed', 'false');
+  it('lists rows as plain buttons, with no pressed state a screen reader would announce', async () => {
+    render(<Harness />);
+    const row = await screen.findByRole('button', { name: 'Daily coordination' });
+    expect(row).not.toHaveAttribute('aria-pressed');
+  });
+
+  it('closes the form and opens the new group when one is created', async () => {
+    const created = group('g9', 'Fresh group');
+    vi.spyOn(window.clubhouse.groupProject, 'create').mockResolvedValue(created);
+    const onOpen = vi.fn();
+    render(<Harness onOpen={onOpen} />);
+    await screen.findByRole('button', { name: 'Daily coordination' });
+    fireEvent.click(screen.getByRole('button', { name: 'New group project' }));
+    fireEvent.change(await screen.findByLabelText('New group project name'), { target: { value: 'Fresh group' } });
+    const submit = screen.getByRole('button', { name: 'Create group project' });
+    await waitFor(() => expect(submit).toBeEnabled());
+    fireEvent.click(submit);
+    await waitFor(() => expect(onOpen).toHaveBeenCalledExactlyOnceWith('g9'));
+    expect(screen.queryByLabelText('New group project name')).not.toBeInTheDocument();
   });
 });
 
