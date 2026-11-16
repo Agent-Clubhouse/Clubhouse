@@ -210,6 +210,7 @@ class GroupProjectRosterService {
       const membership = await groupProjectHost.getMembership(gp.id);
       return createHash('sha256').update(JSON.stringify({ record, membership })).digest('hex');
     } catch {
+      // telemetry-exempt: an unreadable record only makes the roster read again, as before; nothing to report
       return undefined;
     }
   }
