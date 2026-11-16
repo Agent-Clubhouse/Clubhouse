@@ -93,6 +93,8 @@ interface AnswerEntry {
   key?: string;
   context?: string;
   plan?: Plan;
+  /** A created answer whose membership start (afterCreate) hasn't run yet. Absent: it has, or it predates this. */
+  started?: false;
 }
 
 interface SentRequest {
@@ -187,6 +189,8 @@ class GroupProjectRemoteCreate {
           : this.finalEntry(entry, { status: 'expired', reason: 'This computer restarted before anyone answered. Nothing was created. Ask again.' }));
       }
       this.answers = answers;
+      // A group recovered by its mark is started once, after the store is ready.
+      if (answers.some((e) => e.started === false)) void Promise.resolve().then(() => this.startPending());
     }
     return this.answers;
   }
@@ -206,7 +210,37 @@ class GroupProjectRemoteCreate {
   }
 
   private finalEntry(entry: AnswerEntry, answer: { status: 'created'; groupProjectId: string } | { status: 'refused' | 'declined' | 'expired'; reason: string }): AnswerEntry {
-    return { machine: entry.machine, requestId: entry.requestId, hash: entry.hash, at: new Date().toISOString(), answer: { v: 1, requestId: entry.requestId, ...answer } };
+    return {
+      machine: entry.machine, requestId: entry.requestId, hash: entry.hash, at: new Date().toISOString(), answer: { v: 1, requestId: entry.requestId, ...answer },
+      ...(answer.status === 'created' && { started: false as const }),
+    };
+  }
+
+  /**
+   * Start a group made here for another computer (membership, the created
+   * notice): once, whichever path found it made. Call inside its computer's chain.
+   */
+  private async start(machine: string, requestId: string): Promise<void> {
+    const entry = (await this.loadAnswers()).find((e) => e.machine === machine && e.requestId === requestId);
+    if (!entry || entry.started !== false || entry.answer.status !== 'created') return;
+    const project = await groupProjectHost.get(entry.answer.groupProjectId).catch((): null => null);
+    if (project) {
+      await this.deps?.afterCreate?.(project).catch((err: unknown) => {
+        // telemetry-exempt: the group exists; membership catches up on its next reconcile
+        appLog('core:group-project', 'warn', 'Could not start membership of a remote create', { meta: { id: project.id, error: errorText(err) } });
+      });
+    }
+    const { started: _pending, ...done } = entry;
+    await this.saveAnswer(done);
+  }
+
+  private async startPending(): Promise<void> {
+    for (const entry of (this.answers ?? []).filter((e) => e.started === false)) {
+      await this.serial(`machine:${entry.machine}`, () => this.start(entry.machine, entry.requestId)).catch((err: unknown) => {
+        // telemetry-exempt: tried again on the next request for it
+        appLog('core:group-project', 'warn', 'Could not start a recovered remote create', { meta: { error: errorText(err) } });
+      });
+    }
   }
 
   /** The group a request made here, by the mark its create left: the computer, the request id and the request's hash. */
@@ -242,9 +276,11 @@ class GroupProjectRemoteCreate {
       if (made) {
         const created = this.finalEntry(earlier ?? entry, { status: 'created', groupProjectId: made });
         await this.saveAnswer(created);
+        await this.start(machine, requestId);
         return created.answer;
       }
     }
+    if (earlier?.started === false) await this.start(machine, requestId);
     if (earlier) {
       if (earlier.answer.status === 'waiting' && Date.parse(earlier.answer.expiresAt) <= Date.now()) {
         const expired = this.finalEntry(earlier, { status: 'expired', reason: 'Nobody answered the approval in time. Nothing was created. Ask again.' });
@@ -398,10 +434,7 @@ class GroupProjectRemoteCreate {
     }
     await this.saveAnswer(this.finalEntry(entry, { status: 'created', groupProjectId: project.id }));
     appLog('core:group-project', 'info', 'Group project created for another computer', { meta: { id: project.id, machine: entry.machine } });
-    await this.deps?.afterCreate?.(project).catch((err: unknown) => {
-      // telemetry-exempt: the group exists; membership catches up on its next reconcile
-      appLog('core:group-project', 'warn', 'Could not start membership of a remote create', { meta: { id: project.id, error: errorText(err) } });
-    });
+    await this.start(entry.machine, entry.requestId);
   }
 
   // ── The asking computer ─────────────────────────────────────────────────

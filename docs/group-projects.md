@@ -103,9 +103,10 @@ person's request isn't exempt, pairing doesn't waive it). It records an ordinary
 call request (`grant-requests.ts`, tool `remote_create_group_project`) on its
 Dispatcher's Needs you row, with `remoteCreateReview` showing exactly what Allow
 creates, resolved on the host. These requests have their own cap
-(`MAX_PENDING_REMOTE_CREATES`), apart from the Dispatcher's own three. A phone
-paired with the host (a peer of kind `phone`, not a network computer) counts as
-the host and may answer; a desktop in the network may not
+(`MAX_PENDING_REMOTE_CREATES`), apart from the Dispatcher's own three. A phone in
+your network (a peer of kind `phone`, not a network computer) counts as the host
+and may answer; a phone connected to the host only for one session, or one-to-one
+without kind `phone`, sees the row but its answer is refused; a desktop in the network may not
 (`grant-request-answers.ts`), and the asking computer never sees it
 (`grantRowVisibleTo`). With the Dispatcher off the host answers `busy`, since
 nothing could show the approval; Retry works once it is on. Allow is consumed once, the plan is resolved again and

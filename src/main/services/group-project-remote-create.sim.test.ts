@@ -78,6 +78,8 @@ const byFp = (f: string) => machines.find((m) => m.fp === f.toLowerCase())!;
 const down = new Set<string>();
 /** Computers on a Clubhouse from before #3547: they answer 404. */
 const old = new Set<string>();
+/** Groups each computer started (afterCreate: membership and the created notice), in order. */
+const startedOn = new Map<string, string[]>();
 /** The next answer from this computer is lost after it acted. */
 const loseNext = new Set<string>();
 
@@ -150,7 +152,10 @@ async function load(m: Machine): Promise<void> {
   const membership = m.membership;
   m.remote.groupProjectRemoteCreate.setHostDeps({
     approvalPlace: () => (m.dispatcherOn ? { agentId: 'dispatcher', agentName: 'Dispatcher', projectPath: '/dispatcher' } : null),
-    afterCreate: async (project) => { await as(m, () => membership.beginAutoJoin(project.id)); },
+    afterCreate: async (project) => {
+      startedOn.set(m.name, [...(startedOn.get(m.name) ?? []), project.id]);
+      await as(m, () => membership.beginAutoJoin(project.id));
+    },
   });
 }
 
@@ -171,7 +176,7 @@ beforeEach(async () => {
   const cache = path.join(process.cwd(), 'node_modules', '.cache');
   await fsp.mkdir(cache, { recursive: true });
   world.fallbackHome = await fsp.mkdtemp(path.join(cache, 'gp-rc-none-'));
-  down.clear(); old.clear(); loseNext.clear(); world.links = [];
+  down.clear(); old.clear(); loseNext.clear(); startedOn.clear(); world.links = [];
   A.projects = [{ id: 'proj_a', name: 'App', path: '/a/app', key: 'github.com/org/app', agents: [{ id: 'lead', name: 'lead' }] }];
   B.projects = [
     { id: 'proj_b', name: 'App', path: '/b/app', key: 'github.com/org/app', agents: [{ id: 'builder', name: 'builder' }] },
@@ -251,6 +256,7 @@ describe('creating a group project on another computer (#3547)', () => {
     // The approval was used once: it can't make another.
     expect(await as(B, () => B.grants!.hasCallApproval(B.grants!.callKey('dispatcher', REMOTE_CREATE_TOOL, { machine: A.fp, requestId: asked.requestId })))).toBe(false);
     expect(await hosted(B)).toHaveLength(1);
+    expect(startedOn.get('Studio')).toEqual([made[0].id]);
   });
 
   it('Decline creates nothing, and a retry with the same id is told so', async () => {
@@ -319,13 +325,21 @@ describe('creating a group project on another computer (#3547)', () => {
     const waitingFile = await fsp.readFile(answersFile(B), 'utf-8');
     await answer(B, request.requestId, true);
     expect(await hosted(B)).toHaveLength(1);
-    // The group was made and flushed; the answer never reached the file.
+    // The group was made and flushed; the answer never reached the file, and nothing after the create ran.
     await fsp.writeFile(answersFile(B), waitingFile);
+    startedOn.clear();
     await unload(B);
     await load(B);
-    expect(await retry(A, B, asked.requestId)).toMatchObject({ status: 'created', groupProjectId: (await hosted(B))[0].id });
+    const [made] = await hosted(B);
+    expect(await retry(A, B, asked.requestId)).toMatchObject({ status: 'created', groupProjectId: made.id });
     expect(await retry(A, B, asked.requestId)).toMatchObject({ status: 'created' });
     expect(await hosted(B)).toHaveLength(1);
+    // Recovered, it is started once, then never again.
+    await vi.waitFor(() => expect(startedOn.get('Studio')).toEqual([made.id]));
+    await unload(B);
+    await load(B);
+    await retry(A, B, asked.requestId);
+    expect(startedOn.get('Studio')).toEqual([made.id]);
   });
 
   it('a stale answer is never given over the group its request made', async () => {
@@ -350,8 +364,12 @@ describe('creating a group project on another computer (#3547)', () => {
     await vi.waitFor(() => expect(flush).toHaveBeenCalled());
     await vi.waitFor(async () => expect(await hosted(B)).toHaveLength(1));
     flush.mockRestore();
+    expect(startedOn.get('Studio')).toBeUndefined();
+    expect(await retry(A, B, asked.requestId)).toMatchObject({ status: 'created' });
     expect(await retry(A, B, asked.requestId)).toMatchObject({ status: 'created' });
     expect(await hosted(B)).toHaveLength(1);
+    // Found by its mark, it is started once.
+    expect(startedOn.get('Studio')).toEqual([(await hosted(B))[0].id]);
   });
 
   it('an Allow stays an Allow when the Dispatcher\'s permissions change right after it', async () => {
