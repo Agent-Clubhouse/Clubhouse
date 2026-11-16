@@ -611,7 +611,7 @@ describe('createDurable', () => {
     });
     vi.mocked(fsp.readFile).mockImplementation(async (p: any) => {
       if (String(p).endsWith('.gitignore'))
-        return '# Clubhouse agent manager\n.clubhouse/agents/\n.clubhouse/.local/\n.clubhouse/agents.json\n.clubhouse/agents.json.bak\n.clubhouse/settings.local.json\n';
+        return '# Clubhouse agent manager\n.clubhouse/agents/\n.clubhouse/.local/\n.clubhouse/agents.json\n.clubhouse/agents.json.bak\n.clubhouse/settings.local.json\n.clubhouse/settings.json.bak\n.clubhouse/settings.json.unreadable*\n';
       return '[]';
     });
 
@@ -647,9 +647,27 @@ describe('createDurable', () => {
     expect(appended).toContain('.clubhouse/.local/');
     expect(appended).toContain('.clubhouse/agents.json');
     expect(appended).toContain('.clubhouse/settings.local.json');
+    expect(appended).toContain('.clubhouse/settings.json.bak');
+    expect(appended).toContain('.clubhouse/settings.json.unreadable*');
     expect(appended).not.toContain('.clubhouse/agents/');
     // Header should not be duplicated
     expect(appended).not.toContain('# Clubhouse agent manager');
+  });
+
+  it('adds only the settings backup lines to a project with the earlier block, keeping its own lines', async () => {
+    const appendedData: string[] = [];
+    vi.mocked(pathExists).mockImplementation(async (p: any) => String(p).endsWith('.gitignore') || String(p).endsWith('.git'));
+    vi.mocked(fsp.readFile).mockImplementation(async (p: any) => {
+      if (String(p).endsWith('.gitignore'))
+        return 'my-own-line\n# Clubhouse agent manager\n.clubhouse/agents/\n.clubhouse/.local/\n.clubhouse/agents.json\n.clubhouse/agents.json.bak\n.clubhouse/settings.local.json\n';
+      return '[]';
+    });
+    vi.mocked(fsp.appendFile).mockImplementation(async (_p: any, data: any) => {
+      appendedData.push(String(data));
+    });
+
+    await createDurable(PROJECT_PATH, 'upgrade-gitignore-test', 'indigo');
+    expect(appendedData.join('')).toBe('\n.clubhouse/settings.json.bak\n.clubhouse/settings.json.unreadable*\n');
   });
 
   it('uses async exec (non-blocking) for git operations', async () => {
@@ -2421,6 +2439,8 @@ describe('ensureGitignore edge cases', () => {
     const gitignoreWrite = writeCalls.find((c) => String(c[0]).endsWith('.gitignore'));
     expect(gitignoreWrite).toBeDefined();
     expect(String(gitignoreWrite![1])).toContain('.clubhouse/agents/');
+    expect(String(gitignoreWrite![1])).toContain('.clubhouse/settings.json.bak\n');
+    expect(String(gitignoreWrite![1])).toContain('.clubhouse/settings.json.unreadable*\n');
   });
 });
 
