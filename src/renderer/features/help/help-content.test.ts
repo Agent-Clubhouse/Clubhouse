@@ -218,6 +218,16 @@ describe('help-content in the new shell', () => {
     for (const topic of GROUP_PROJECT_TOPICS) expect(topic.content).not.toContain('—');
   });
 
+  it('describes the Group Projects entry, Board, hosts, membership and roster that shipped (#3552)', () => {
+    const content = GROUP_PROJECT_TOPICS[0].content;
+    for (const part of [
+      'only the selected one shows its label', 'All groups', 'lands on its **Board**', 'Start with every agent in', 'Include linked computers',
+      'never added automatically', 'explicit project link', 'Offer to link', 'Coverage not verified on this computer', 'Needs you',
+      'Waiting for approval', 'Members on this computer', 'On this computer',
+    ]) expect(content, part).toContain(part);
+    expect(content).not.toMatch(/[A-Z]{4,} [A-Z]{4,}/);
+  });
+
   it('describes what the Dispatcher does today, in plain words (#3053)', () => {
     const content = DISPATCHER_TOPIC.content;
     for (const part of [
