@@ -235,7 +235,9 @@ describe('federated request delivery and explicit outcomes (#3347, #3346)', () =
   });
   it('sustains hundreds of independent requests and replies in both directions', async () => {
     const f = fixture();
-    for (let i = 0; i < 400; i++) {
+    // The fixture deep-clones and deep-freezes the whole snapshot on every update, so the run grows with the square of
+    // the count (12 s at 400 locally, 60 s on a slow Windows runner). 200 is still hundreds, in both directions.
+    for (let i = 0; i < 200; i++) {
       const from = i % 2 ? f.b : f.a; const to = i % 2 ? f.a : f.b;
       const sent = await from.api.offer(from.self.agentId, to.self.machineId, to.self.agentId, `session-${i}`, 'Independent task');
       expect(sent.cause.depth).toBe(0);
