@@ -23,11 +23,11 @@ import { reportChromeActionFailed } from '../../../chrome/telemetry';
 let appliedLaunchSeq = 0;
 
 /** Fields and the jump list keep their keys; everything else in the view is browsing. */
-const OWN_KEYS = 'input, textarea, select, [role="menu"], [role="dialog"], .xterm';
+const OWN_KEYS = 'input, textarea, [contenteditable], select, [role="menu"], [role="dialog"], .xterm';
 const ownsKeys = (el: HTMLElement) => el.isContentEditable || !!el.closest?.(OWN_KEYS);
 
 /** Where an agent running in chat is typed to; the terminal's equivalent is .xterm. */
-const COMPOSER = '[data-testid="chat-composer"] textarea';
+const COMPOSER = '[data-testid="chat-composer"] [role="textbox"]';
 
 type SlideDirection = 'left' | 'right' | null;
 
@@ -256,7 +256,7 @@ export function MainPanel({ api }: { api: PluginAPI }) {
     // the chat composer for an agent running in chat, xterm otherwise.
     requestAnimationFrame(() => requestAnimationFrame(() => {
       if (!typingRef.current) return;
-      const composer = contentRef.current?.querySelector<HTMLTextAreaElement>(COMPOSER);
+      const composer = contentRef.current?.querySelector<HTMLElement>(COMPOSER);
       if (composer) composer.focus();
       else window.dispatchEvent(new Event(FOCUS_ACTIVE_TERMINAL_EVENT));
     }));

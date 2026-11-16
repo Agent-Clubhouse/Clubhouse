@@ -46,7 +46,7 @@ test('claude: 30 queued messages stay in a capped list, the composer stays usabl
   await expect(dom.composer).toBeInViewport();
   await expect(box).toBeInViewport();
   await box.fill('still typing');
-  await expect(box).toHaveValue('still typing');
+  await expect(box).toHaveText('still typing');
   await box.fill('');
 
   // Folding it leaves the header, and the composer where it was.

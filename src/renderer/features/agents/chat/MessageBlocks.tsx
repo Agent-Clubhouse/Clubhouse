@@ -1,3 +1,4 @@
+import { PromptMarkdown } from './PromptMarkdown';
 import { useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { renderMarkdownSafe } from '../../../utils/safe-markdown';
 import { isRemoteAgentId, isRemoteProjectId } from '../../../stores/remoteProjectStore';
@@ -224,8 +225,8 @@ export function UserMessage({ item, expansionKey }: { item: UserMessageItem; exp
       <span className="text-[11px] text-ctp-overlay0" data-testid="chat-you-label">{['You', ...metaLabels(item)].join(' · ')}</span>
       <MessageAttachments content={item.content} align="end" />
       {display.text && (
-        <div className="max-w-full bg-surface-0 text-ctp-text rounded-xl rounded-br px-3 py-2 text-[13px] whitespace-pre-wrap wrap-anywhere" data-testid="chat-you-body">
-          {display.text}
+        <div className="max-w-full bg-surface-0 text-ctp-text rounded-xl rounded-br px-3 py-2 text-[13px] wrap-anywhere" data-testid="chat-you-body">
+          <PromptMarkdown text={display.text} />
         </div>
       )}
     </div>

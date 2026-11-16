@@ -2,6 +2,8 @@
 
 Every agent has a CLI view showing real-time output, plus a structured transcript for organized review. Agents open in chat by default. To use the CLI view, choose **CLI** for a provider in **Settings > Agents & providers**, or set one agent's **Runtime** setting. If a provider's CLI can't run chat, its agents open in the CLI view.
 
+In chat, Cmd+B / Cmd+I (Ctrl on Windows/Linux) toggles bold / italic; typing `*word*` or `**word**` formats it as you finish. Start a list with `- `, `* ` or `1. `: markers render as you type, and Shift+Enter or Alt+Enter splits an item (an empty item exits or outdents). Tab / Shift+Tab indents / outdents selected list items; numbering updates automatically. Enter still sends, steers or queues as usual. Drafts are saved and sent as Markdown, and paste stays plain text.
+
 ## CLI View
 
 The CLI view (built on xterm.js) behaves like a standard terminal emulator:

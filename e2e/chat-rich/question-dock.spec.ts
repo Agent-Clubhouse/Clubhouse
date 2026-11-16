@@ -148,7 +148,7 @@ async function approveLongRequest(s: RichChat, cli: ChatFixtureCli, prompt: stri
   const dom = chatDom(window);
   await s.send(prompt);
   await expect(dom.permission).toBeVisible({ timeout: TURN_TIMEOUT });
-  await expect(dom.composer.locator('textarea')).toBeFocused();
+  await expect(dom.composer.getByRole('textbox', { name: 'Message', exact: true })).toBeFocused();
   await expect(chat).toHaveAttribute('data-state', 'waiting_permission');
   // Enter the card explicitly before using its controls.
   await dom.permission.focus();
@@ -206,7 +206,7 @@ test.describe('claude: questions, then an approval, in one session', () => {
     await session.send('Plan the helpers.');
     await expect(dom.question).toBeVisible({ timeout: TURN_TIMEOUT });
     // Incoming questions preserve the draft's focus. Move into the card explicitly.
-    await expect(dom.composer.locator('textarea')).toBeFocused();
+    await expect(dom.composer.getByRole('textbox', { name: 'Message', exact: true })).toBeFocused();
     await dom.question.focus();
     await expect(dom.question).toBeFocused();
     await expect(chat).toHaveAttribute('data-state', 'waiting_input');

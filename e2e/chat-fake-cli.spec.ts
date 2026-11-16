@@ -175,6 +175,58 @@ for (const p of PROVIDERS) {
     test('send, stream and finish two turns', async () => {
       const { electronApp, window, chat } = await openChat(p, 'multi-turn');
       try {
+        // #3540: real contenteditable typing, semantic lists and editor undo.
+        // The fake is verified before any input; no extra provider prompt needed.
+        const composer = chat.getByRole('textbox', { name: 'Message', exact: true });
+        const mod = process.platform === 'darwin' ? 'Meta' : 'Control';
+        await composer.fill('');
+        await composer.pressSequentially('- first');
+        await expect(composer.locator('ul > li')).toHaveCount(1);
+        await expect(composer.locator('li')).toHaveText(['first']);
+        await composer.press('Shift+Enter');
+        await expect(composer.locator('ul > li')).toHaveCount(2);
+        await composer.press(`${mod}+z`);
+        await expect(composer.locator('li')).toHaveText(['first']);
+        await composer.press('Alt+Enter');
+        await composer.pressSequentially('second');
+        await composer.press('Tab');
+        await expect(composer.locator('ul ul > li')).toHaveText(['second']);
+        await composer.press(`${mod}+z`);
+        await expect(composer.locator('ul ul')).toHaveCount(0);
+        await expect(composer.locator('li')).toHaveText(['first', 'second']);
+        await composer.press('Tab');
+        await composer.press('Shift+Tab');
+        await expect(composer.locator('ul ul')).toHaveCount(0);
+
+        await composer.fill('');
+        await composer.pressSequentially('8. first');
+        await composer.press('Alt+Enter');
+        await composer.pressSequentially('second');
+        await expect(composer.locator('ol')).toHaveAttribute('start', '8');
+        await expect(composer.locator('ol > li')).toHaveText(['first', 'second']);
+        await composer.press(process.platform === 'darwin' ? 'Meta+ArrowUp' : 'Control+Home');
+        await composer.press(process.platform === 'darwin' ? 'Meta+ArrowRight' : 'End');
+        await composer.press('Shift+Enter');
+        await expect(composer.locator('ol > li')).toHaveCount(3);
+        await composer.press(`${mod}+z`);
+        await expect(composer.locator('ol > li')).toHaveText(['first', 'second']);
+
+        await composer.fill('');
+        await composer.pressSequentially('- ');
+        await composer.press('Shift+Enter');
+        await expect(composer.locator('ul')).toHaveCount(0);
+        await composer.press(`${mod}+z`);
+        await expect(composer.locator('ul > li')).toHaveCount(1);
+        for (const [typed, tag] of [['**word**', 'strong'], ['*word*', 'em']]) {
+          await composer.fill('');
+          await composer.pressSequentially(typed);
+          await expect(composer.locator(tag)).toHaveText('word');
+          await composer.press(`${mod}+z`);
+          await expect(composer.locator(tag)).toHaveCount(0);
+          await expect(composer).toHaveText(typed);
+        }
+        await expect(chat).toHaveAttribute('data-state', 'idle');
+
         await send(window, 'Reply with the word one.');
         const footers = chat.locator('[data-testid="chat-turn-footer"]');
         await expect(footers).toHaveCount(1, { timeout: ENDED_TIMEOUT });
