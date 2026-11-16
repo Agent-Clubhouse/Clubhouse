@@ -95,6 +95,25 @@ describe('automatic membership and lost-link review', () => {
     expect(screen.getByRole('list', { name: 'Members' })).toHaveTextContent('lead');
   });
 
+  it('explains that turning linked computers off keeps members and stops only future linked joins', async () => {
+    render(<GroupProjectMembersSection groupProjectId="gp1" />);
+    fireEvent.click(await screen.findByLabelText('Include linked computers'));
+    const review = await screen.findByRole('region', { name: 'Automatic membership review' });
+    expect(review).toHaveTextContent('Current members stay. Agents on linked computers stop joining automatically. Agents in this project on this computer keep joining.');
+  });
+
+  it('requires the pending unlink review before a toggle change can be applied', async () => {
+    vi.mocked(window.clubhouse.groupProject.listMembers).mockResolvedValue(view({ automaticMembership, includeLinkedComputers: true,
+      coverageLeaving: [{ agentId: 'remote@machine', name: 'Remote', kind: 'durable', via: 'auto' }],
+    }));
+    const set = vi.spyOn(window.clubhouse.groupProject, 'setAutomaticMembership');
+    render(<GroupProjectMembersSection groupProjectId="gp1" />);
+    fireEvent.click(await screen.findByLabelText('Start with every agent in Alpha'));
+    expect(await screen.findByRole('region', { name: 'Automatic membership review' })).toHaveTextContent('Review who leaves the unlinked project copy before changing automatic membership.');
+    expect(screen.getByRole('button', { name: 'Apply automatic membership' })).toBeDisabled();
+    expect(set).not.toHaveBeenCalled();
+  });
+
   it('previews enabling linked computers with exclusions and can cancel without mutation', async () => {
     vi.mocked(window.clubhouse.groupProject.listMembers).mockResolvedValue(view({ automaticMembership, includeLinkedComputers: false }));
     const preview = vi.spyOn(window.clubhouse.groupProject, 'previewAutoJoin').mockResolvedValue({ wouldJoin: [{ agentId: 'remote', name: 'Remote', kind: 'durable', via: 'auto', projectName: 'Alpha on Laptop' }], unreadableProjects: [] });

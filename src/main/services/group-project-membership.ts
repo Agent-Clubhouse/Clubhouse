@@ -39,6 +39,7 @@ import {
   type CollectedBindings, type PersistedBinding, type PersistedBindingSource,
 } from './persisted-bindings';
 import { isDisposedAgent } from '../../shared/agent-helpers';
+import { parseAgentAddress } from '../../shared/agent-address';
 import { resolveGroupProjectScope } from '../../shared/group-project-scope';
 import { canvasWireBindingSource } from './canvas-wire-source';
 import { setRecordDecidesMembers } from './group-project-lifecycle';
@@ -417,7 +418,7 @@ async function adopt(gp: GroupProject, inventory: Inventory, canvasWires?: Persi
     await groupProjectHost.updateMembership(gp.id, (draft) => {
       draft.autoJoin = gp.scope?.level === 'project';
       draft.membershipPolicy = 'project-3546';
-      draft.includeLinkedComputers = gp.scope?.reach === 'network';
+      draft.includeLinkedComputers = gp.scope?.level === 'project' && gp.scope.reach === 'network';
     });
     appLog('core:group-project', 'info', 'New group project membership initialized', { meta: { groupProjectId: gp.id } });
     return;
@@ -510,12 +511,20 @@ export async function reconcileMembership(): Promise<void> {
 
 /** Drop explicit entries whose agent is gone for good: a deleted or disposed helper, a finished quick run. */
 async function tidy(s: Snapshot, inventory: Inventory, quick: ReadonlyMap<string, QuickFact>): Promise<void> {
+  const linked = s.membership.explicit.some((entry) => groupProjectHost.localAgentId(s.gp, entry.address) === null)
+    ? await linkedAgents(s.gp.scope, groupProjectHost.selfMachine(), (machine) => groupProjectHost.isNetworkMember(machine)) : null;
   const gone = (e: GroupProjectMembership['explicit'][number]): boolean => {
     if (e.kind === 'quick') {
       const run = quick.get(e.address);
       return !run || (!!e.runId && e.runId !== run.runId);
     }
-    if (groupProjectHost.localAgentId(s.gp, e.address) === null) return false;
+    if (groupProjectHost.localAgentId(s.gp, e.address) === null) {
+      const machine = parseAgentAddress(e.address).machine;
+      const copyKey = `${machine}/${e.projectId}`;
+      const verified = linked?.copies.some((copy) => copy.machine === machine && copy.projectId === e.projectId)
+        && !linked.unknown.some((copy) => copy.projectId === copyKey);
+      return !!verified && !linked?.available.some((agent) => agent.agentId === e.address && agent.projectId === e.projectId);
+    }
     if (inventory.unreadable.size > 0) return false;
     const agent = inventory.agents.get(e.address);
     return !agent || agent.disposed;
@@ -644,6 +653,19 @@ export async function setAutomaticMembership(groupProjectId: string, options: Gr
   if (!options || typeof options.autoJoin !== 'boolean' || typeof options.includeLinkedComputers !== 'boolean') throw new Error('Invalid automatic membership options.');
   if (!(await isMembershipManaged(gp.id))) await adopt(gp, await readInventory());
   await groupProjectHost.updateMembership(groupProjectId, async (draft) => {
+    if (coverageLeaving(gp, draft).length > 0) {
+      throw new Error('Review who leaves the unlinked project copy before changing automatic membership.');
+    }
+    if (draft.membershipPolicy !== 'project-3546') {
+      const linked = await linkedAgents(gp.scope, groupProjectHost.selfMachine(), (machine) => groupProjectHost.isNetworkMember(machine));
+      for (const entry of draft.explicit) {
+        if (groupProjectHost.localAgentId(gp, entry.address) !== null) continue;
+        const remote = linked.available.find((agent) => agent.agentId === entry.address);
+        if (!remote) throw new Error('Some remote members could not be verified in an explicitly linked project copy. Try again when their inventory is available.');
+        entry.projectId = remote.projectId;
+        entry.projectName = remote.projectName;
+      }
+    }
     const [inventory, quick] = await Promise.all([readInventory(), liveQuickAgents()]);
     if ((draft.autoJoin && !options.autoJoin) || (draft.includeLinkedComputers && !options.includeLinkedComputers)) {
       const current = resolveMembership(gp, draft, inventory, quick);
@@ -690,7 +712,7 @@ export async function beginAutoJoin(groupProjectId: string): Promise<void> {
     if (!isManagedMembership(draft)) {
       draft.membershipPolicy = 'project-3546';
       draft.autoJoin = gp.scope?.level === 'project';
-      draft.includeLinkedComputers = gp.scope?.reach === 'network';
+      draft.includeLinkedComputers = gp.scope?.level === 'project' && gp.scope.reach === 'network';
     }
   });
   await runReconcile();

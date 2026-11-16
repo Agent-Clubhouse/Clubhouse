@@ -626,15 +626,15 @@ class GroupProjectHostService {
       const removed = current.explicit.filter((entry) => parseAgentAddress(entry.address).machine
         && !current.excluded.some((e) => e.address === entry.address)
         && (!next.explicit.some((e) => e.address === entry.address) || next.excluded.some((e) => e.address === entry.address)));
-      this.revokeRemoteRoles(id, removed.map((entry) => entry.address));
+      await this.revokeRemoteRoles(id, removed.map((entry) => entry.address));
       return { membership: next, seq };
     }, options.withinExclusive);
   }
 
   /** Remote members have no binding on the host; mirror the local leave lifecycle for their role grants. */
-  private revokeRemoteRoles(id: string, addresses: string[]): void {
+  private async revokeRemoteRoles(id: string, addresses: string[]): Promise<void> {
     if (!addresses.length) return;
-    void import('./group-project-roles').then(async ({ revokeGroupProjectRoles }) => {
+    await import('./group-project-roles').then(async ({ revokeGroupProjectRoles }) => {
       for (const address of addresses) await revokeGroupProjectRoles(id, address);
     }).catch((error) => {
       // telemetry-exempt: as with local lifecycle cleanup, lack of membership already refuses role tools
@@ -740,9 +740,9 @@ class GroupProjectHostService {
     if ((await this.getMembership(project.id)).membershipPolicy !== 'project-3546') return membersLeavingScope(next, members);
     return members.filter((member) => {
       const machine = parseAgentAddress(member.address).machine;
-      if (machine && next.level === 'project' && next.reach === 'network') {
+      if (machine && next.level === 'project') {
         const self = this.selfMachine();
-        return !!member.projectId && (!self || !projectsExplicitlyLinked(self, next.projectId, machine, member.projectId));
+        return next.reach !== 'network' || !member.projectId || !self || !projectsExplicitlyLinked(self, next.projectId, machine, member.projectId);
       }
       return memberInScope(next, member) === false;
     });
@@ -799,7 +799,7 @@ class GroupProjectHostService {
           ...[...leavingAddresses].filter((address) => !already.has(address)).map((address) => ({ address, excludedAt, reason: 'scope' })),
         ];
         await writeMembershipFile(id, validateMembership({ ...membership, explicit, excluded }, hostMachine));
-        this.revokeRemoteRoles(id, [...leavingAddresses].filter((address) => !!parseAgentAddress(address).machine));
+        await this.revokeRemoteRoles(id, [...leavingAddresses].filter((address) => !!parseAgentAddress(address).machine));
         for (const b of bindingManager.getAllBindings()) {
           if (b.targetKind === 'group-project' && b.targetId === id && leavingAddresses.has(this.addressOf(project, b.agentId))) {
             bindingManager.unbind(b.agentId, id);

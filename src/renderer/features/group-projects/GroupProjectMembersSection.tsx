@@ -122,9 +122,10 @@ export function GroupProjectMembersSection({ groupProjectId }: { groupProjectId:
               <p className={settingsHelp}>Keeps adding eligible agents created later. Turning either toggle off keeps current members as explicitly added members. Exclusions stay.</p>
             </div>}
             {review && <div role="region" aria-label="Automatic membership review" className="flex flex-col items-start gap-2">
-              <p className={settingsHelp}>{review.options.autoJoin ? `Agents who would join: ${names(review.preview.wouldJoin.filter((agent) => !view.members.some((m) => m.agentId === agent.agentId))) || 'None now'}.` : 'Current members stay. New agents stop joining automatically.'}</p>
-              {review.preview.unreadableProjects.length > 0 && <p className={settingsHelp}>Could not check: {review.preview.unreadableProjects.map((p) => p.name).join(', ')}. Agents on linked computers join when their inventory can be verified.</p>}
-              <Button disabled={busy} onClick={() => void act(async () => { const result = await api.setAutomaticMembership(groupProjectId, review.options); if (currentGroup.current === groupProjectId) setReview(null); return result; }, 'Not changed.')}>Apply automatic membership</Button>
+              <p className={settingsHelp}>{!review.options.autoJoin ? 'Current members stay. New agents stop joining automatically.' : view.includeLinkedComputers && !review.options.includeLinkedComputers ? 'Current members stay. Agents on linked computers stop joining automatically. Agents in this project on this computer keep joining.' : `Agents who would join: ${names(review.preview.wouldJoin.filter((agent) => !view.members.some((m) => m.agentId === agent.agentId))) || 'None now'}.`}</p>
+              {review.preview.unreadableProjects.length > 0 && <p className={settingsHelp}>Could not check: {review.preview.unreadableProjects.map((p) => p.name).join(', ')}. The preview may be incomplete.</p>}
+              {!!view.coverageLeaving?.length && <p className={settingsHelp}>Review who leaves the unlinked project copy before changing automatic membership.</p>}
+              <Button disabled={busy || !!view.coverageLeaving?.length} onClick={() => void act(async () => { const result = await api.setAutomaticMembership(groupProjectId, review.options); if (currentGroup.current === groupProjectId) setReview(null); return result; }, 'Not changed.')}>Apply automatic membership</Button>
               <Button disabled={busy} onClick={() => setReview(null)}>Cancel</Button>
             </div>}
             {!!view.coverageLeaving?.length && <div className="flex flex-col items-start gap-2">
