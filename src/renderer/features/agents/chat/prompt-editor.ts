@@ -1,11 +1,43 @@
-import { InputRule, inputRules, undoInputRule, wrappingInputRule } from 'prosemirror-inputrules';
+import { InputRule, inputRules, undoInputRule } from 'prosemirror-inputrules';
 import { history, closeHistory, undo, redo } from 'prosemirror-history';
 import { baseKeymap, chainCommands, deleteSelection, joinBackward, joinForward, selectNodeBackward, selectNodeForward, toggleMark } from 'prosemirror-commands';
 import { sinkListItem, liftListItem, splitListItem } from 'prosemirror-schema-list';
-import { EditorState, TextSelection, type Command, type Transaction } from 'prosemirror-state';
+import { EditorState, Plugin, TextSelection, type Command, type Transaction } from 'prosemirror-state';
+import { canJoin, findWrapping } from 'prosemirror-transform';
+import { type Node as ProseNode, type NodeType } from 'prosemirror-model';
 import { keymap } from 'prosemirror-keymap';
 import { type EditorView } from 'prosemirror-view';
 import { parsePrompt, promptSchema } from './prompt-codec';
+
+const boundaryMeta = 'promptHistoryBoundary';
+
+/** Marks a list operation as its own undo event. prosemirror-history groups
+ * steps that land within newGroupDelay of each other, so without this one
+ * Mod+Z after a fast "- " + exit would also undo the typing around it, and a
+ * slow one would not. closeHistory starts a new event at this transaction; the
+ * boundary plugin below closes it again so later typing cannot join it. */
+function boundary(tr: Transaction): Transaction {
+  return closeHistory(tr).setMeta(boundaryMeta, true);
+}
+
+const historyBoundaries = new Plugin({
+  appendTransaction: (trs, _old, state) => trs.some((tr) => tr.getMeta(boundaryMeta)) ? closeHistory(state.tr) : null,
+});
+
+/** prosemirror-inputrules' wrappingInputRule, with the conversion as its own history event. */
+function listRule(match: RegExp, type: NodeType, getAttrs: (m: RegExpMatchArray) => Record<string, unknown>,
+  joinPredicate?: (m: RegExpMatchArray, before: ProseNode) => boolean) {
+  return new InputRule(match, (state, m, start, end) => {
+    const tr = state.tr.delete(start, end);
+    const range = tr.doc.resolve(start).blockRange();
+    const wrapping = range && findWrapping(range, type, getAttrs(m));
+    if (!range || !wrapping) return null;
+    tr.wrap(range, wrapping);
+    const before = tr.doc.resolve(start - 1).nodeBefore;
+    if (before && before.type === type && canJoin(tr.doc, start - 1) && (!joinPredicate || joinPredicate(m, before))) tr.join(start - 1);
+    return boundary(tr);
+  });
+}
 
 export function promptRules() {
   const { bullet_list, ordered_list } = promptSchema.nodes;
@@ -18,8 +50,8 @@ export function promptRules() {
     },
   );
   return inputRules({ rules: [
-    wrappingInputRule(/^([-*]) $/, bullet_list, (m) => ({ bullet: m[1] })),
-    wrappingInputRule(/^(\d+)\. $/, ordered_list, (m) => ({ order: +m[1] }), (m, node) => node.attrs.order + node.childCount === +m[1]),
+    listRule(/^([-*]) $/, bullet_list, (m) => ({ bullet: m[1] })),
+    listRule(/^(\d+)\. $/, ordered_list, (m) => ({ order: +m[1] }), (m, node) => node.attrs.order + node.childCount === +m[1]),
     emphasisRule(true), emphasisRule(false),
   ] });
 }
@@ -27,7 +59,7 @@ export function promptRules() {
 export function createPromptState(text: string) {
   return EditorState.create({
     schema: promptSchema, doc: parsePrompt(text),
-    plugins: [promptRules(), history(), keymap(Object.fromEntries(Object.entries(baseKeymap).filter(([key]) => key !== 'Enter')))],
+    plugins: [promptRules(), historyBoundaries, history(), keymap(Object.fromEntries(Object.entries(baseKeymap).filter(([key]) => key !== 'Enter')))],
   });
 }
 
@@ -38,11 +70,12 @@ export function inList(state: EditorState): boolean {
 }
 
 const action = (view: EditorView, command: Command) => command(view.state, (tr) => view.dispatch(closeHistory(tr)), view);
+const listAction = (view: EditorView, command: Command) => command(view.state, (tr) => view.dispatch(boundary(tr)), view);
 
 export function softReturn(view: EditorView): boolean {
   if (inList(view.state)) {
-    if (!view.state.selection.$from.parent.content.size) return action(view, liftListItem(promptSchema.nodes.list_item));
-    return action(view, splitListItem(promptSchema.nodes.list_item));
+    if (!view.state.selection.$from.parent.content.size) return listAction(view, liftListItem(promptSchema.nodes.list_item));
+    return listAction(view, splitListItem(promptSchema.nodes.list_item));
   }
   const tr = view.state.tr.replaceSelectionWith(promptSchema.nodes.hard_break.create()).scrollIntoView();
   const parent = tr.selection.$from;
@@ -53,7 +86,7 @@ export function softReturn(view: EditorView): boolean {
 
 export function indentItems(view: EditorView, outdent: boolean): boolean {
   if (!inList(view.state)) return false;
-  return action(view, (outdent ? liftListItem : sinkListItem)(promptSchema.nodes.list_item));
+  return listAction(view, (outdent ? liftListItem : sinkListItem)(promptSchema.nodes.list_item));
 }
 
 /** schema-list joins item containers first. Merge adjacent paragraph bodies in
@@ -97,7 +130,7 @@ export function editingKey(view: EditorView, e: KeyboardEvent, mac: boolean): bo
     const { $from, empty } = view.state.selection;
     if (empty && !$from.parentOffset && inList(view.state)) {
       const nested = $from.depth > 3;
-      if (nested || $from.index($from.depth - 2) === 0) return action(view, liftListItem(promptSchema.nodes.list_item));
+      if (nested || $from.index($from.depth - 2) === 0) return listAction(view, liftListItem(promptSchema.nodes.list_item));
     }
     return action(view, chainCommands(deleteSelection, joinItems(joinBackward), selectNodeBackward));
   }

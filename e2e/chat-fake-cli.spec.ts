@@ -213,6 +213,8 @@ for (const p of PROVIDERS) {
 
         await composer.fill('');
         await composer.pressSequentially('- ');
+        // Exit the empty item only once the conversion has rendered (#3564).
+        await expect(composer.locator('ul > li')).toHaveCount(1);
         await composer.press('Shift+Enter');
         await expect(composer.locator('ul')).toHaveCount(0);
         await composer.press(`${mod}+z`);
