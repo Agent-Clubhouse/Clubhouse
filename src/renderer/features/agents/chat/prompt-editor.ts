@@ -128,6 +128,26 @@ export const clearDraft: Command = (state, dispatch) => {
   return true;
 };
 
+/** ProseMirror learns the DOM selection from an async selectionchange, so a key
+ * that arrives right after a programmatic select-all (Playwright's fill(''), an
+ * assistive tool) still sees the old caret in state. clearDraft then declines and
+ * the browser deletes natively, leaving an empty list item (#3589). Read the live
+ * DOM selection into state before a deletion decides what it covers. */
+function syncDomSelection(view: EditorView): void {
+  if (view.composing) return;
+  const { anchorNode, anchorOffset, focusNode, focusOffset } = (view.root as Document).getSelection() ?? {};
+  if (!anchorNode || !focusNode || !view.dom.contains(anchorNode) || !view.dom.contains(focusNode)) return;
+  const { doc } = view.state;
+  let selection: Selection;
+  try {
+    selection = TextSelection.between(doc.resolve(view.posAtDOM(anchorNode, anchorOffset!)), doc.resolve(view.posAtDOM(focusNode, focusOffset!)));
+  } catch {
+    // telemetry-exempt: a DOM position the model cannot map just means there is nothing to sync.
+    return;
+  }
+  if (!selection.eq(view.state.selection)) view.dispatch(view.state.tr.setSelection(selection).setMeta('addToHistory', false));
+}
+
 /** The list markers are input rules, which prosemirror-view runs from its DOM
  * diff after the browser has already inserted the space. Run them from the
  * keydown instead, so "- " converts without depending on that diff matching. */
@@ -149,7 +169,9 @@ export function editingKey(view: EditorView, e: KeyboardEvent, mac: boolean): bo
     }
     if (!mac && e.key.toLowerCase() === 'y' && !e.shiftKey) return redo(view.state, view.dispatch);
   }
-  if (e.key === 'Backspace' && !e.metaKey && !e.altKey && !e.ctrlKey) {
+  const deleting = (e.key === 'Backspace' || e.key === 'Delete') && !e.metaKey && !e.altKey && !e.ctrlKey;
+  if (deleting) syncDomSelection(view);
+  if (e.key === 'Backspace' && deleting) {
     const { $from, empty } = view.state.selection;
     if (empty && !$from.parentOffset && inList(view.state)) {
       const nested = $from.depth > 3;
