@@ -137,4 +137,3 @@ export function CreateGroupProjectForm({ defaultScope = { level: 'app', reach: '
     </SettingsSection>
   );
 }
-

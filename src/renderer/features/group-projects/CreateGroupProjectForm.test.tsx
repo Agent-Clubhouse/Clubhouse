@@ -36,6 +36,23 @@ describe('starting membership controls', () => {
     await waitFor(() => expect(create).toHaveBeenCalledWith('Group', { scope: { level: 'app', reach: 'local' }, membership: { autoJoin: false, includeLinkedComputers: false, excluded: [] } }));
   });
 
+  it('keeps project defaults and creation and close callbacks from the navigation form', async () => {
+    const project = { id: 'gp-new', name: 'Group' };
+    const create = vi.spyOn(window.clubhouse.groupProject, 'create').mockResolvedValue(project);
+    const onCreated = vi.fn();
+    const onCancel = vi.fn();
+    render(<CreateGroupProject defaultScope={scope} onCreated={onCreated} onCancel={onCancel} />);
+    await screen.findByText('2 agents will join now.');
+    expect(screen.getByLabelText('Start with every agent in Atlas')).toBeChecked();
+    fireEvent.click(screen.getByRole('button', { name: 'Close' }));
+    expect(onCancel).toHaveBeenCalledTimes(1);
+    expect(create).not.toHaveBeenCalled();
+    fireEvent.change(screen.getByLabelText('New group project name'), { target: { value: 'Group' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Create group project' }));
+    await waitFor(() => expect(onCreated).toHaveBeenCalledExactlyOnceWith(project));
+    expect(create).toHaveBeenCalledExactlyOnceWith('Group', { scope, membership: { autoJoin: true, includeLinkedComputers: true, excluded: [] } });
+  });
+
   it('defaults project membership on, previews linked agents and sends exclusions with the one create request', async () => {
     const create = vi.spyOn(window.clubhouse.groupProject, 'create').mockResolvedValue({ id: 'gp-new', name: 'Group' });
     render(<CreateGroupProject />);
