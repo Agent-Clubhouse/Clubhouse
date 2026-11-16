@@ -5,6 +5,7 @@ import { useAgentStore } from '../../stores/agentStore';
 import { useProjectStore } from '../../stores/projectStore';
 import { ProjectTree, type ProjectTreeProps } from './ProjectTree';
 import { useChromeStore } from '../chromeStore';
+import { useSidebarOrder } from './useSidebarOrder';
 import type { Agent, Project } from '../../../shared/types';
 
 const DAY = 24 * 60 * 60 * 1000;
@@ -407,6 +408,24 @@ describe('ProjectTree sort modes and inactive projects (#2116)', () => {
     fireEvent.pointerLeave(screen.getByTestId('project-tree'));
     expect(shownProjects()).toEqual(['c', 'a', 'b']);
     expect(shownAgents()).toEqual(['a3', 'a1']);
+  });
+
+  it('holds the Recent order from useSidebarOrder while an agent starts under the pointer (#3542)', () => {
+    const now = Date.now();
+    useChromeStore.setState({ projectSort: 'recent', collapsedProjectIds: ['a', 'b', 'c'], projectActivity: { a: now - 1000, b: now - 2000, c: now - 3000 } });
+    const projects = [project('a'), project('b'), project('c')];
+    function Ordered({ agentsByProject }: { agentsByProject: Record<string, Agent[]> }) {
+      const ordered = useSidebarOrder(projects, agentsByProject);
+      return <ProjectTree {...baseProps()} projects={ordered.projects} agentsByProject={ordered.agentsByProject} activeProjectId={null} activeAgentId={null} />;
+    }
+    const { rerender } = render(<Ordered agentsByProject={{}} />);
+    expect(shownProjects()).toEqual(['a', 'b', 'c']);
+    fireEvent.pointerEnter(screen.getByTestId('project-tree'));
+    // An agent starts running in the oldest project: it would go first.
+    rerender(<Ordered agentsByProject={{ c: [agent('c1', 'c')] }} />);
+    expect(shownProjects()).toEqual(['a', 'b', 'c']);
+    fireEvent.pointerLeave(screen.getByTestId('project-tree'));
+    expect(shownProjects()).toEqual(['c', 'a', 'b']);
   });
 
   it('does not hold the order in manual mode, so a reorder shows at once', () => {
