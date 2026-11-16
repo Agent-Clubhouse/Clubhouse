@@ -237,6 +237,12 @@ export interface ChatDriverStartOptions {
    */
   mcpHttpEndpoints?: Record<string, McpHttpEndpoint>;
   /**
+   * Clubhouse MCP tools, by bare name (`start_work`), the CLI runs without its
+   * own permission check. Only the Dispatcher chat gets any (#3578); Clubhouse's
+   * grant check still runs on every call. Drivers whose CLI has no such rule ignore it.
+   */
+  preapprovedClubhouseTools?: readonly string[];
+  /**
    * Provider-specific extra CLI args (e.g. Copilot --agent / --source).
    * Best-effort: drivers whose transport can't pass CLI args (the Claude Agent
    * SDK) ignore them and should log that they did.

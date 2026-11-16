@@ -24,7 +24,7 @@ import type {
   UsageLimit,
 } from '../../../shared/chat/events';
 import { COMPACTION_STARTED } from '../../../shared/chat/events';
-import type { ChatProviderInventory } from '../../../shared/chat/provider-inventory';
+import { claudeMcpToolPrefix, type ChatProviderInventory } from '../../../shared/chat/provider-inventory';
 import type {
   ChatDriver,
   ChatDriverProbe,
@@ -1151,6 +1151,12 @@ export class ClaudeChatDriverSession implements ChatDriverSession {
         this.push({ type: 'permission_resolved', data: { requestId: ev.requestId, decision: 'cancelled', by: 'agent' } }, true);
         return;
       case 'permission_denied':
+        // Which check refused it, so a denial can be explained from the log (#3578). Not the call's input.
+        this.log?.('info', '[claude-chat] Tool call denied by the permission mode', {
+          toolName: ev.toolName,
+          reasonType: str(ev.raw.decision_reason_type),
+          reason: str(ev.raw.decision_reason)?.slice(0, 500),
+        });
         this.push({ type: 'notice', data: { level: 'info', code: 'permission_denied', message: `${ev.toolName ?? 'A tool'} was denied by the permission mode` } }, true);
         return;
       case 'turn_ended': {
@@ -1436,6 +1442,10 @@ export function claudeTransportOptions(opts: ChatDriverStartOptions, log?: Claud
     appendSystemPrompt: opts.systemPrompt,
     resume: opts.resumeNativeSessionId,
     mcpServers: opts.mcpServers as ClaudeTransportOptions['mcpServers'],
+    // Allow rules, which Auto mode's classifier doesn't second-guess (#3578).
+    ...(opts.preapprovedClubhouseTools?.length && {
+      allowedTools: opts.preapprovedClubhouseTools.map((tool) => `${claudeMcpToolPrefix('clubhouse')}${tool}`),
+    }),
     log,
     signal: opts.signal,
   };

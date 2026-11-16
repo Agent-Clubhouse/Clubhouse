@@ -59,6 +59,7 @@ import { getAllProviders, getProvider, type OrchestratorId, type OrchestratorPro
 import { getSettings as getOrchestratorSettings, whenDefaultsDetected } from '../orchestrator-settings';
 import dispatcherInstructions from './dispatcher-instructions.md';
 import dispatcherChatInstructions from './dispatcher-chat-instructions.md';
+import { DISPATCHER_INTERNAL_TOOLS } from './dispatcher-internal-tools';
 import { withMemoryIndex } from './dispatcher-memory-migration';
 import { appendSection, instructionsWithSkills, writeDispatcherSkills, type SkillsConventions } from './dispatcher-skills';
 
@@ -108,11 +109,7 @@ export const DISPATCHER_INSTRUCTIONS: string = dispatcherInstructions;
 export const DISPATCHER_CHAT_INSTRUCTIONS: string = dispatcherChatInstructions;
 /** Its default name; the one constant is in shared/dispatcher-name.ts. */
 export const DISPATCHER_NAME = DEFAULT_DISPATCHER_NAME;
-/**
- * The Clubhouse MCP tools that join its two agents (#3036). No chat shows a
- * call to them, on any provider, desktop or phone (concealed-tools).
- */
-export const DISPATCHER_INTERNAL_TOOLS: ReadonlySet<string> = new Set(['start_work', 'tell_user']);
+export { DISPATCHER_INTERNAL_TOOLS };
 
 /** The coordinator's config as last read from disk; null before the Dispatcher was first created. */
 

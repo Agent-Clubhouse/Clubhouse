@@ -27,12 +27,14 @@ import { readProjectAgentDefaults, readLaunchWrapper, readDefaultMcps, readMcpCo
 import { applyLaunchWrapper, validateWrapperConfig } from '../orchestrators/shared';
 import type { DurableAgentConfig, LaunchWrapperConfig, FreeAgentPermissionMode, QuickTemplateChoice } from '../../shared/types';
 import type { AgentRuntime, RoutedMessagePart } from '../../shared/chat';
+import { claudeMcpToolPrefix } from '../../shared/chat/provider-inventory';
 import { agentRegistry, resolveOrchestrator, untrackAgent, readProjectOrchestrator, DEFAULT_ORCHESTRATOR } from './agent-registry';
 import { waitReady as waitMcpBridgeReady } from './clubhouse-mcp/bridge-server';
 import { injectClubhouseMcp } from './clubhouse-mcp/injection';
-import { syncDispatcherGate } from './clubhouse-mcp/dispatcher-gate';
+import { isTrackedDispatcherChat, syncDispatcherGate } from './clubhouse-mcp/dispatcher-gate';
 import { setMcpCaller, setMcpCallerQuick, setMcpCallerUnreadable } from './clubhouse-mcp/mcp-call-gate';
-import { isDispatcherPath } from './dispatcher/dispatcher-paths';
+import { isDispatcherChatPath, isDispatcherPath } from './dispatcher/dispatcher-paths';
+import { preapprovedClubhouseToolsFor } from './dispatcher/dispatcher-internal-tools';
 import { dispatcherEnablement } from './dispatcher/dispatcher-settings';
 import { bindingManager } from './clubhouse-mcp/binding-manager';
 import { ensureMcpBridge } from './mcp-bridge-starter';
@@ -701,6 +703,12 @@ async function spawnAgentInner(inParams: SpawnAgentParams, facts: SpawnFacts, ma
     assertDispatcherCanStart(params);
     // The Dispatcher acts through the Clubhouse MCP, never by driving the app's windows (#3185).
     const desktopControlOff = isDispatcherPath(params.projectPath) ? provider.desktopControlOffArgs?.() ?? [] : [];
+    // The Dispatcher chat's own tools skip the CLI's check; Clubhouse's grants still apply (#3578).
+    // Its folder and its agent id both, as the gate checked above: no other agent in that folder gets them.
+    const preapprovedClubhouseTools = preapprovedClubhouseToolsFor(params.kind, isDispatcherChatPath(params.projectPath) && isTrackedDispatcherChat(params.agentId));
+    if (preapprovedClubhouseTools && provider.id === 'claude-code') {
+      allowedTools = [...(allowedTools ?? []), ...preapprovedClubhouseTools.map((tool) => `${claudeMcpToolPrefix('clubhouse')}${tool}`)];
+    }
     const startChat = async (p: SpawnAgentParams): Promise<ChatStartResult> => {
       try {
         const result = await withErrorType('chat_start_failed', () => tryStartChatAgent({
@@ -723,6 +731,7 @@ async function spawnAgentInner(inParams: SpawnAgentParams, facts: SpawnFacts, ma
           sessionId: p.sessionId,
           interactive: p.interactive,
           ...(desktopControlOff.length > 0 && { extraArgs: desktopControlOff }),
+          ...(preapprovedClubhouseTools && { preapprovedClubhouseTools }),
           beforeCreate: p.beforeCreate,
         }, provider, commandPrefix, durableConfig, () => { chatStartMs = Date.now(); }, chatFacts));
         recordChatStart(chatStartMs, result, chatFacts, chatContext);

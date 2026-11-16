@@ -6,8 +6,14 @@ vi.mock('../dispatcher/dispatcher-settings', async (original) => ({
   isDispatcherEnabled: () => true,
 }));
 vi.mock('./mcp-call-gate', async (original) => ({ ...await original<typeof import('./mcp-call-gate')>(), mcpCallAccess: () => 'open' }));
+// start_work's one effect: filing the request with the Dispatcher (#3578).
+const handOff = vi.hoisted(() => vi.fn(async (): Promise<unknown> => ({ outcome: 'delivered', requestId: 'req_1' })));
+vi.mock('../dispatcher/dispatcher-channel', async (original) => ({
+  ...await original<typeof import('../dispatcher/dispatcher-channel')>(),
+  handOffToDispatcher: handOff,
+}));
 
-import { getScopedToolList, listToolGrants, _resetForTesting } from './tool-registry';
+import { callTool, getScopedToolList, listToolGrants, _resetForTesting } from './tool-registry';
 import { toolGrantDeclarations } from './tool-grants';
 import { mcpAdapter } from './mcp-adapter';
 import { registerClubhouseMcpTools } from './tools/register-all';
@@ -41,6 +47,7 @@ beforeEach(() => {
   setMcpCaller('dispatcher', PROJECT, {});
   setDispatcherChatAgent('chat', true);
   setDispatcherAgent('dispatcher', true);
+  handOff.mockClear();
 });
 
 describe('the Dispatcher\'s chat', () => {
@@ -95,5 +102,38 @@ describe('the Dispatcher', () => {
     setDispatcherChatAgent('dispatcher', true);
     expect(isDispatcherAgent('dispatcher')).toBe(false);
     expect(names('dispatcher')).not.toContain('tell_user');
+  });
+});
+
+describe('a relayed merge or release go-ahead (#3578)', () => {
+  // What the Auto classifier refused: the chat relaying the user's approval for a merge and a release.
+  const relay = 'The user said yes, merge #517, then tag 1.0 and publish the release notes.';
+
+  it('goes from the chat through Clubhouse\'s group and grant check, and only files a request with the Dispatcher', async () => {
+    const result = await callTool('chat', 'start_work', { request: relay });
+    expect(result.isError).toBeFalsy();
+    expect(result.content[0]).toMatchObject({ text: expect.stringContaining('Request req_1 is under way') });
+    expect(handOff).toHaveBeenCalledExactlyOnceWith('chat', relay, undefined);
+    // Its grant is a message to its own Dispatcher, nothing that merges, releases or changes an agent.
+    const startWork = listToolGrants().find((t) => t.kind === 'global' && t.name === 'start_work')!;
+    expect(toolGrantDeclarations(startWork.grant!)).toEqual([{ actions: ['agent.message'], target: 'self' }]);
+  });
+
+  it('is refused by Clubhouse for any agent but the chat, whatever its CLI allows', async () => {
+    setMcpCaller('ordinary', PROJECT, {});
+    for (const caller of ['ordinary', 'dispatcher']) {
+      expect((await callTool(caller, 'start_work', { request: relay })).isError, caller).toBe(true);
+    }
+    expect(handOff).not.toHaveBeenCalled();
+  });
+
+  it('leaves the acting to the Dispatcher, whose tools still need its own wires and grants', async () => {
+    await callTool('chat', 'start_work', { request: relay });
+    // Reaching a project agent takes a wire the user made: with none, the Dispatcher's message is refused.
+    const refused = await callTool('dispatcher', 'clubhouse__release_lead__send_message', { message: relay });
+    expect(refused.isError).toBe(true);
+    expect(refused.content[0]).toMatchObject({ text: expect.stringContaining('No binding found') });
+    // And the chat itself has no wire tools to act with.
+    expect((await callTool('chat', 'clubhouse__release_lead__send_message', { message: relay })).isError).toBe(true);
   });
 });

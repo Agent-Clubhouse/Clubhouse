@@ -73,6 +73,8 @@ export interface ChatSpawnParams {
   strictResume?: boolean;
   sessionId?: string;
   extraArgs?: string[];
+  /** Clubhouse MCP tools the CLI runs without its own check: the Dispatcher chat's own (#3578), else none. */
+  preapprovedClubhouseTools?: readonly string[];
   /** A quick agent someone will talk to (started from a phone) gets chat like a durable one. */
   interactive?: boolean;
   /** Main-only; a refusal fails this launch, never another driver or CLI fallback. */
@@ -691,6 +693,7 @@ async function runChatStart(
         mcpServers,
         mcpHttpEndpoints,
         ...(params.extraArgs?.length ? { extraArgs: params.extraArgs } : {}),
+        ...(params.preapprovedClubhouseTools?.length ? { preapprovedClubhouseTools: params.preapprovedClubhouseTools } : {}),
         ...(startSignal ? { signal: startSignal } : {}),
         });
         if (params.strictResume && resumeId && (session.nativeSessionId !== resumeId || session.resumeFallback)) {
