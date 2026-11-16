@@ -2,7 +2,7 @@ import * as fs from 'node:fs';
 import { captureAuditEvents, type AuditCapture } from '../../telemetry/__test-utils__/audit-capture';
 import * as os from 'node:os';
 import * as path from 'node:path';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { DurableAgentConfig } from '../../../shared/types';
 import { CLUBHOUSE_MCP_PART_ID } from '../../../shared/managed-agents-types';
 
@@ -32,9 +32,20 @@ async function managedRows() {
 
 afterEach(() => { capture?.stop(); capture = undefined; });
 
+const noAgents = { listProjects: async () => [], listAgents: async () => [], getAgent: async () => null, setManagedSetup: async () => {}, isRunning: () => false };
+let seed: string;
+// Installing every built-in is dozens of fsync'd writes, slow on a busy Windows disk (#3599). Do it once, and give each test a copy.
+beforeAll(async () => {
+  seed = fs.mkdtempSync(path.join(os.tmpdir(), 'managed-audit-seed-'));
+  W.home = seed;
+  await createManagedAgentsService({ ...noAgents, catalog: createAssetCatalogStore({ dir: path.join(seed, 'catalog') }), state: createManagedStateStore(path.join(seed, 'managed')) }).ensureBuiltins();
+}, 60_000);
+afterAll(() => { fs.rmSync(seed, { recursive: true, force: true }); });
+
 beforeEach(async () => {
   capture = captureAuditEvents();
   W.home = fs.mkdtempSync(path.join(os.tmpdir(), 'managed-audit-'));
+  fs.cpSync(seed, W.home, { recursive: true });
   agents = new Map();
   service = createManagedAgentsService({
     catalog: createAssetCatalogStore({ dir: path.join(W.home, 'catalog') }),
