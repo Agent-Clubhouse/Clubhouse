@@ -1042,7 +1042,8 @@ describe('guarded standard ignore writes', () => {
   });
 });
 
-describe('cancellation, interruption and unsafe incidental execution', () => {
+// Real Git imports, like the QA engine block: about 2 s each on Windows CI, and one passed the 5 s default (#3603).
+describe('cancellation, interruption and unsafe incidental execution', { timeout: 30_000 }, () => {
   it('cancels only the tracked owned import, preserves partial state and does not re-clone on retry', async () => {
     const f = fixture();
     const original = f.runner.run;
