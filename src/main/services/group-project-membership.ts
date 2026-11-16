@@ -46,6 +46,7 @@ import { setRecordDecidesMembers } from './group-project-lifecycle';
 import { readAllCanvasStores } from './canvas-store-reader';
 import { appLog } from './log-service';
 import { linkedAgents, linkedProjectCopies, watchLinkedAgents, type LinkedAgents } from './group-project-linked-agents';
+import { describeCoverage, previewCoverage } from './group-project-coverage';
 
 export const GROUP_PROJECT_MEMBERSHIP_SOURCE_ID = 'group-project-membership';
 
@@ -873,6 +874,7 @@ export async function describeMembership(groupProjectId: string): Promise<GroupP
       editable: !isReplica(gp),
     } }),
     coverageLeaving: isReplica(gp) ? [] : coverageLeaving(gp, membership),
+    coverage: await describeCoverage(gp),
     members,
     excluded: membership.excluded.map((e) => ({ agentId: e.address, name: nameOf(e.address, e.name), excludedAt: e.excludedAt })),
   };
@@ -901,6 +903,7 @@ export async function previewAutoJoin(untrusted: unknown, options?: GroupProject
   const exclusions = new Set(options?.excluded ?? []);
   const gp = { id: 'preview', name: '', description: '', instructions: '', createdAt: '', metadata: {}, scope } as GroupProject;
   return {
+    coverage: await previewCoverage(scope),
     wouldJoin: scope.level === 'app' || options?.autoJoin === false ? [] : [
       ...autoCandidates(gp, inventory).map((a): ResolvedGroupProjectMember => ({
         agentId: a.id, name: a.name, kind: 'durable', via: 'auto', projectId: a.projectId, projectName: a.projectName,

@@ -656,6 +656,8 @@ export const IPC = {
     CONFIRM_UNLINKED_MEMBERS: 'group-project:confirm-unlinked-members',
     /** Who would auto-join with this scope and policy, before applying it. Read-only. */
     PREVIEW_AUTO_JOIN: 'group-project:preview-auto-join',
+    /** Which project copies each group project covers through explicit project links. Read-only (#3549). */
+    GET_COVERAGE: 'group-project:get-coverage',
     /** Its own grants and who holds lead and admin (#3360). */
     GET_ROLES: 'group-project:get-roles',
     /** Give an agent lead or admin on it: Allow, Ask first or Off. */

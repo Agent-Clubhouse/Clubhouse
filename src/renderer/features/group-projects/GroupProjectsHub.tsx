@@ -6,7 +6,9 @@ import { useProjectStore } from '../../stores/projectStore';
 import { hostLine } from '../settings/GroupProjectScopeFields';
 import { SettingsPage, settingsError, settingsHelp, settingsInput } from '../settings/SettingsLayout';
 import { CreateGroupProjectForm } from './CreateGroupProjectForm';
-import { buildDirectory, projectLabel, scopeReachLine, type DirectoryProject } from './groupProjectsDirectory';
+import { OfferToLink } from './CoverageSummary';
+import { buildDirectory, coverageLine, projectLabel, scopeReachLine, type CoverageById, type DirectoryProject } from './groupProjectsDirectory';
+import { useGroupCoverage } from './useGroupCoverage';
 import type { GroupProjectsView } from './groupProjectsNavStore';
 
 function MemberCount({ id }: { id: string }) {
@@ -31,17 +33,20 @@ function MemberCount({ id }: { id: string }) {
   return <span id={`group-project-members-${id}`} className={`${settingsHelp} block`}>{count === undefined ? 'Loading members...' : count === null ? 'Member count unavailable' : `${count} ${count === 1 ? 'member' : 'members'}`}</span>;
 }
 
-function GroupRow({ project, projects, onOpen }: {
+function GroupRow({ project, projects, coverage, onOpen }: {
   project: GroupProject;
   projects: readonly DirectoryProject[];
+  coverage: CoverageById;
   onOpen: (id: string) => void;
 }) {
+  const verified = coverage.get(project.id);
+  const line = coverageLine(verified);
   return (
     <li>
       <button
         type="button"
         aria-label={project.name}
-        aria-describedby={`group-project-scope-${project.id} group-project-members-${project.id} group-project-host-${project.id}`}
+        aria-describedby={`group-project-scope-${project.id} group-project-members-${project.id} group-project-host-${project.id}${line ? ` group-project-coverage-${project.id}` : ''}`}
         data-testid={`group-project-row-${project.id}`}
         onClick={() => onOpen(project.id)}
         className="w-full min-w-0 rounded-md px-2.5 py-2 text-left text-xs focus-ring hover:bg-surface-0 text-ctp-subtext1"
@@ -49,9 +54,11 @@ function GroupRow({ project, projects, onOpen }: {
         <span className="block font-medium break-words">{project.name}</span>
         <span id={`group-project-scope-${project.id}`} className={`${settingsHelp} block break-words`}>{scopeReachLine(project, projects)}</span>
         <span id={`group-project-host-${project.id}`} className={`${settingsHelp} block break-words`}>{hostLine(project)}</span>
+        {line && <span id={`group-project-coverage-${project.id}`} className={`${settingsHelp} block break-words`}>{line}</span>}
         <MemberCount id={project.id} />
         <span className={`${settingsHelp} block`}>{project.metadata?.pollingEnabled ? 'Polling on' : 'Polling off'}</span>
       </button>
+      <OfferToLink coverage={verified} className="px-2.5" />
     </li>
   );
 }
@@ -101,7 +108,8 @@ export function GroupProjectsHub({ view, onViewChange, query, onQueryChange, onO
   );
   const lensProject = view.kind === 'project' ? projects.find((p) => p.id === view.projectId) : undefined;
   const lensName = view.kind === 'project' ? (lensProject ? projectLabel(lensProject) : 'This project') : null;
-  const directory = useMemo(() => buildDirectory(groups, projects, view, query), [groups, projects, view, query]);
+  const { coverage, failed: coverageFailed } = useGroupCoverage(groups);
+  const directory = useMemo(() => buildDirectory(groups, projects, view, query, coverage), [groups, projects, view, query, coverage]);
   const searching = query.trim().length > 0;
   const all: GroupProjectsView = { kind: 'all' };
 
@@ -160,6 +168,7 @@ export function GroupProjectsHub({ view, onViewChange, query, onQueryChange, onO
             <button type="button" className="underline cursor-pointer focus-ring rounded" onClick={() => onViewChange(all)}>Show all groups</button>
           )}
         </p>
+        {coverageFailed && <p role="status" className={settingsHelp}>Coverage could not be read. Copies from other computers show as not verified.</p>}
         {view.kind === 'project' && !directory.sections.some((s) => s.key === `project:${view.projectId}`) && !searching && (
           <p className="text-[13px] text-ctp-text mt-2">No group projects just for {lensName}.</p>
         )}
@@ -170,7 +179,7 @@ export function GroupProjectsHub({ view, onViewChange, query, onQueryChange, onO
             {section.note && <p className={`${settingsHelp} px-2.5`}>{section.note}</p>}
             <ul aria-label={`${section.heading} group projects`} className="flex flex-col gap-1 mt-1">
               {section.groups.map((group) => (
-                <GroupRow key={group.id} project={group} projects={projects} onOpen={onOpenGroup} />
+                <GroupRow key={group.id} project={group} projects={projects} coverage={coverage} onOpen={onOpenGroup} />
               ))}
             </ul>
           </section>

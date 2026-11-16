@@ -1,9 +1,10 @@
 import { useState } from 'react';
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import type { GroupProject } from '../../../shared/group-project-types';
+import type { GroupProject, GroupProjectCoverage } from '../../../shared/group-project-types';
 import { useGroupProjectStore } from '../../stores/groupProjectStore';
 import { useProjectStore } from '../../stores/projectStore';
+import { useUIStore } from '../../stores/uiStore';
 import { GroupProjectsHub } from './GroupProjectsHub';
 import type { GroupProjectsView } from './groupProjectsNavStore';
 
@@ -181,5 +182,59 @@ describe('GroupProjectsHub project view (lens)', () => {
     fireEvent.change(screen.getByRole('searchbox', { name: 'Search group projects' }), { target: { value: 'daily' } });
     expect(screen.getByRole('button', { name: 'Daily coordination' })).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Release checks' })).not.toBeInTheDocument();
+  });
+});
+
+describe('GroupProjectsHub verified coverage (#3549)', () => {
+  const coverage = (over: Partial<GroupProjectCoverage> = {}): GroupProjectCoverage => ({
+    groupProjectId: 'g5', scoped: true, copies: [], localUnknown: false, complete: true, repositoryMatches: [], ...over,
+  });
+  const linked = coverage({ copies: [
+    { machine: 'self', projectId: 'p-atlas', name: 'Atlas', thisComputer: true, state: 'verified' },
+    { machine: 'host', projectId: 'host-project', name: 'Atlas on Studio Mac', thisComputer: false, state: 'verified' },
+  ] });
+  const show = (list: GroupProjectCoverage[]) => vi.spyOn(window.clubhouse.groupProject, 'getCoverage').mockResolvedValue(list);
+
+  it('lists a copy linked to this project under the project, with what it covers', async () => {
+    show([linked]);
+    render(<Harness initial={{ kind: 'project', projectId: 'p-atlas' }} />);
+    await screen.findByRole('button', { name: 'Release planning' });
+    await waitFor(() => expect(screen.getAllByRole('heading', { level: 3 }).map((h) => h.textContent)).toEqual(['Atlas', 'App-wide']));
+    expect(screen.getByText('Covers Atlas, Atlas on Studio Mac.')).toBeInTheDocument();
+    expect(screen.queryByText(/Coverage not verified on this computer/)).not.toBeInTheDocument();
+  });
+
+  it('shows a copy this computer cannot check as not verified, and a checked non-covering copy not at all', async () => {
+    show([coverage({ localUnknown: true, complete: false })]);
+    const { unmount } = render(<Harness initial={{ kind: 'project', projectId: 'p-atlas' }} />);
+    await screen.findByRole('button', { name: 'Release planning' });
+    await waitFor(() => expect(screen.getAllByText(/Coverage not verified on this computer/).length).toBeGreaterThan(0));
+    expect(screen.getAllByRole('heading', { level: 3 }).map((h) => h.textContent)).toContain('Copies from other computers');
+    unmount();
+    show([coverage()]);
+    render(<Harness initial={{ kind: 'project', projectId: 'p-atlas' }} />);
+    await screen.findByRole('button', { name: 'Daily coordination' });
+    await waitFor(() => expect(screen.queryByRole('button', { name: 'Release planning' })).not.toBeInTheDocument());
+  });
+
+  it('shows not verified, and says so, when coverage cannot be read', async () => {
+    vi.spyOn(window.clubhouse.groupProject, 'getCoverage').mockRejectedValue(new Error('boom'));
+    render(<Harness initial={{ kind: 'project', projectId: 'p-atlas' }} />);
+    expect(await screen.findByText(/Coverage could not be read/)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Release planning' })).toBeInTheDocument();
+    expect(screen.getAllByText(/Coverage not verified on this computer/).length).toBeGreaterThan(0);
+  });
+
+  it('offers a link for a repository match without linking, covering or including it', async () => {
+    show([coverage({ repositoryMatches: [{ projectId: 'p-atlas', name: 'Atlas' }] })]);
+    const openProjectSettings = vi.fn();
+    useUIStore.setState({ openProjectSettings });
+    const link = vi.spyOn(window.clubhouse.groupProject, 'setAutomaticMembership');
+    render(<Harness />);
+    const offer = await screen.findByRole('button', { name: 'Offer to link Atlas' });
+    expect(screen.getByText(/not linked, so it is not covered/)).toBeInTheDocument();
+    fireEvent.click(offer);
+    expect(openProjectSettings).toHaveBeenCalledExactlyOnceWith('p-atlas');
+    expect(link).not.toHaveBeenCalled();
   });
 });

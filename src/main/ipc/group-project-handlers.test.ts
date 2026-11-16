@@ -110,6 +110,7 @@ import * as annexEventBus from '../services/annex-event-bus';
 import { broadcastToAllWindows } from '../util/ipc-broadcast';
 import { registerGroupProjectHandlers, _resetHandlersForTesting } from './group-project-handlers';
 import * as membershipService from '../services/group-project-membership';
+import * as coverageService from '../services/group-project-coverage';
 import { digestSinceArg } from './validation';
 
 type HandlerFn = (...args: unknown[]) => unknown;
@@ -642,8 +643,15 @@ describe('membership policy IPC (#3546)', () => {
     expect(groupProjectHost.create).toHaveBeenCalledWith('Team', options);
   });
 
+  it('reads verified coverage for every group from the coverage service, read-only', async () => {
+    const list = vi.spyOn(coverageService, 'listCoverage').mockResolvedValue([]);
+    expect(await getHandler(IPC.GROUP_PROJECT.GET_COVERAGE)(fakeEvent)).toEqual([]);
+    expect(list).toHaveBeenCalledTimes(1);
+    list.mockRestore();
+  });
+
   it('previews the selected ongoing policy and exclusions through the membership service', async () => {
-    const preview = vi.spyOn(membershipService, 'previewAutoJoin').mockResolvedValue({ wouldJoin: [], unreadableProjects: [] });
+    const preview = vi.spyOn(membershipService, 'previewAutoJoin').mockResolvedValue({ coverage: { groupProjectId: 'preview', scoped: true, copies: [], localUnknown: false, complete: true, repositoryMatches: [] }, wouldJoin: [], unreadableProjects: [] });
     const scope = { level: 'project', projectId: 'proj', reach: 'network' };
     const options = { autoJoin: true, includeLinkedComputers: false, excluded: ['agent'] };
     await getHandler(IPC.GROUP_PROJECT.PREVIEW_AUTO_JOIN)(fakeEvent, scope, options);

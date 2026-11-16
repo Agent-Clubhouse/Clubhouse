@@ -3,6 +3,7 @@ import type { AutoJoinPreview, GroupProjectMembershipOptions, GroupProjectMember
 import { Button } from '../../components/Button';
 import { ipcErrorMessage } from '../../utils/ipc-error';
 import { SettingsBlock, SettingsSection, settingsError, settingsHelp } from '../settings/SettingsLayout';
+import { CoverageSummary } from './CoverageSummary';
 
 /**
  * A group project's members, exclusions and the one-time auto-join offer
@@ -111,6 +112,7 @@ export function GroupProjectMembersSection({ groupProjectId }: { groupProjectId:
                   : 'Only the agents listed here are members.'}
               </p>
             )}
+            <CoverageSummary coverage={view.coverage} />
             {view.automaticMembership && <div className="flex flex-col items-start gap-2">
               {!view.automaticMembership.editable && <p className={settingsHelp}>Only the host can change automatic membership.</p>}
               <label className="flex items-center gap-2 text-xs text-ctp-text"><input type="checkbox" checked={view.autoJoin} disabled={busy || !view.automaticMembership.editable}

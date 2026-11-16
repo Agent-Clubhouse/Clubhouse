@@ -659,6 +659,24 @@ describe('linked automatic membership (#3546)', () => {
     expect((await getMembership('gp_linked')).explicit.map((e) => e.address).sort()).toEqual([remoteAddress('later'), remoteAddress('remote')].sort());
   });
 
+  it('shows the same coverage in Members and the create preview as the service reads (#3549)', async () => {
+    await linkedGroup();
+    const scope = { level: 'project', projectId: PROJ_A.id, reach: 'network' } as const;
+    // A repository match with no link: neither covered nor joined.
+    expect((await describeMembership('gp_linked')).coverage?.copies.map((c) => c.projectId)).toEqual([PROJ_A.id]);
+    expect((await previewAutoJoin(scope)).coverage.copies.map((c) => c.projectId)).toEqual([PROJ_A.id]);
+    linkCopy(); await reconcileMembership();
+    const members = (await describeMembership('gp_linked')).coverage!;
+    const preview = (await previewAutoJoin(scope)).coverage;
+    expect(members.copies.map((c) => `${c.machine}/${c.projectId}`)).toEqual([`${SELF}/${PROJ_A.id}`, `${REMOTE}/remote_project`]);
+    expect({ ...preview, groupProjectId: members.groupProjectId }).toEqual(members);
+    // The agents the preview adds come from exactly the copies it says it covers.
+    expect((await previewAutoJoin(scope)).wouldJoin.filter((m) => m.agentId.includes('@')).map((m) => m.projectId)).toEqual(['remote_project']);
+    fx.satellites[0].state = 'disconnected';
+    expect((await describeMembership('gp_linked')).coverage?.copies.find((c) => c.machine === REMOTE)?.state).toBe('unknown');
+    expect((await previewAutoJoin(scope)).unreadableProjects.map((p) => p.projectId)).toContain(`${REMOTE}/remote_project`);
+  });
+
   it('never auto-joins a remote inventory row with an unknown kind', async () => {
     await linkedGroup(); linkCopy();
     fx.satellites[0].snapshot = remoteSnapshot([Object.assign(agent('unknown-kind'), { kind: 'future-agent-kind' })]);

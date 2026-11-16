@@ -92,4 +92,27 @@ describe('starting membership controls', () => {
     await act(async () => changed('gp'));
     expect(screen.getByText(/Could not check agents in: Atlas on Laptop/)).toBeInTheDocument();
   });
+
+  it('previews coverage from the same read: a linked copy covered, an unchecked one not verified, a repository match offered', async () => {
+    let changed!: (id: string) => void;
+    vi.spyOn(window.clubhouse.groupProject, 'onMembershipChanged').mockImplementation((fn) => { changed = fn; return () => {}; });
+    render(<CreateGroupProject />);
+    await chooseProject();
+    vi.mocked(window.clubhouse.groupProject.previewAutoJoin).mockResolvedValue({
+      coverage: {
+        groupProjectId: 'preview', scoped: true, complete: false, localUnknown: false,
+        copies: [
+          { machine: 'a', projectId: 'p', name: 'Atlas', thisComputer: true, state: 'verified' },
+          { machine: 'b', projectId: 'r', name: 'Atlas on Laptop', thisComputer: false, state: 'unknown' },
+        ],
+        repositoryMatches: [{ projectId: 'p-clone', name: 'Atlas clone' }],
+      },
+      wouldJoin: [], unreadableProjects: [],
+    });
+    await act(async () => changed('gp'));
+    const summary = await screen.findByTestId('coverage-summary');
+    expect(summary).toHaveTextContent('Covers Atlas.');
+    expect(summary).toHaveTextContent('Coverage not verified on this computer: Atlas on Laptop.');
+    expect(screen.getByRole('button', { name: 'Offer to link Atlas clone' })).toBeInTheDocument();
+  });
 });

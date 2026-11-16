@@ -6,6 +6,7 @@ import { useProjectStore } from '../../stores/projectStore';
 import { ipcErrorMessage } from '../../utils/ipc-error';
 import { SettingsBlock, SettingsSection, settingsError, settingsHelp, settingsInput, settingsLabel } from '../settings/SettingsLayout';
 import { GroupProjectScopeFields, useScopeOptions } from '../settings/GroupProjectScopeFields';
+import { CoverageSummary } from './CoverageSummary';
 
 export function CreateGroupProjectForm({ defaultScope = { level: 'app', reach: 'local' }, onCreated, onCancel }: {
   /** The scope the form starts on: the project view supplies its project, the hub the whole app. */
@@ -93,6 +94,7 @@ export function CreateGroupProjectForm({ defaultScope = { level: 'app', reach: '
         {previewLoading && <p className={settingsHelp}>Loading agents who will join...</p>}
         {previewError && <div className="flex flex-col items-start gap-2"><p role="alert" className={settingsError}>Could not preview members: {previewError}</p><Button onClick={() => void loadPreview()}>Retry preview</Button></div>}
         {preview && <div className={`${settingsHelp} mb-3`}>
+          <CoverageSummary coverage={preview.coverage} />
           <p>{preview.wouldJoin.filter((agent) => !excluded.includes(agent.agentId)).length} {preview.wouldJoin.filter((agent) => !excluded.includes(agent.agentId)).length === 1 ? 'agent will' : 'agents will'} join now.</p>
           {preview.wouldJoin.length > 0 && <ul aria-label="Agents who will join" className="list-disc pl-5">
             {preview.wouldJoin.map((agent) => <li key={agent.agentId}><label className="flex items-center gap-2"><input type="checkbox" checked={!excluded.includes(agent.agentId)} disabled={creating}

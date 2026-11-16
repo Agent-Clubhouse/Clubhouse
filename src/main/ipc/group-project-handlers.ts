@@ -10,6 +10,7 @@ import { groupProjectHost } from '../services/group-project-host';
 import { initGroupProjectLifecycle } from '../services/group-project-lifecycle';
 import { describeGroupProjectRoles, grantGroupProjectRole, setOwnGrant } from '../services/group-project-roles';
 import { addMember, answerAutoJoinOffer, beginAutoJoin, describeMembership, excludeMember, onMembershipChanged, previewAutoJoin, setAutomaticMembership, confirmUnlinkedMembers, releaseMembershipBindings } from '../services/group-project-membership';
+import { listCoverage } from '../services/group-project-coverage';
 import { executeShoulderTap } from '../services/group-project-shoulder-tap';
 import * as annexEventBus from '../services/annex-event-bus';
 import { appLog } from '../services/log-service';
@@ -103,6 +104,7 @@ export function registerGroupProjectHandlers(): void {
     [objectArg<GroupProjectScope>(), objectArg<GroupProjectMembershipOptions>({ optional: true })],
     (_event, scope, options) => previewAutoJoin(scope, options as GroupProjectMembershipOptions | undefined),
   ));
+  ipcMain.handle(IPC.GROUP_PROJECT.GET_COVERAGE, () => listCoverage());
   ipcMain.handle(IPC.GROUP_PROJECT.SET_AUTOMATIC_MEMBERSHIP, withValidatedArgs(
     [stringArg(), objectArg<GroupProjectMembershipOptions>()],
     (_event, id, options) => setAutomaticMembership(id as string, options as GroupProjectMembershipOptions),
