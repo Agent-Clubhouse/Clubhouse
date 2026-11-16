@@ -8,8 +8,10 @@ export const DISPATCHER_INTERNAL_TOOLS: ReadonlySet<string> = new Set(['start_wo
 
 /**
  * The Clubhouse MCP tools the CLI runs without its own permission check, by
- * bare name, for an agent starting in this folder (#3578): the Dispatcher's
- * internal tools for the chat, nothing for anything else.
+ * bare name (#3578): the Dispatcher's internal tools for the chat, nothing for
+ * anything else. `isDispatcherChat` is the gate's answer (dispatcher-gate
+ * syncDispatcherGate): the chat's own agent id in the chat's own folder, so
+ * another agent placed in that folder gets nothing.
  *
  * At Auto, Claude Code's classifier read start_work's request text and
  * refused relayed merge or release go-aheads it couldn't verify, leaving the
@@ -20,6 +22,6 @@ export const DISPATCHER_INTERNAL_TOOLS: ReadonlySet<string> = new Set(['start_wo
  * and whatever the request leads to is done by agents under their own
  * access, grants and asks.
  */
-export function preapprovedClubhouseToolsFor(kind: string, isDispatcherChatFolder: boolean): string[] | undefined {
-  return kind === 'durable' && isDispatcherChatFolder ? [...DISPATCHER_INTERNAL_TOOLS] : undefined;
+export function preapprovedClubhouseToolsFor(kind: string, isDispatcherChat: boolean): string[] | undefined {
+  return kind === 'durable' && isDispatcherChat ? [...DISPATCHER_INTERNAL_TOOLS] : undefined;
 }

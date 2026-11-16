@@ -31,7 +31,7 @@ import { claudeMcpToolPrefix } from '../../shared/chat/provider-inventory';
 import { agentRegistry, resolveOrchestrator, untrackAgent, readProjectOrchestrator, DEFAULT_ORCHESTRATOR } from './agent-registry';
 import { waitReady as waitMcpBridgeReady } from './clubhouse-mcp/bridge-server';
 import { injectClubhouseMcp } from './clubhouse-mcp/injection';
-import { syncDispatcherGate } from './clubhouse-mcp/dispatcher-gate';
+import { isTrackedDispatcherChat, syncDispatcherGate } from './clubhouse-mcp/dispatcher-gate';
 import { setMcpCaller, setMcpCallerQuick, setMcpCallerUnreadable } from './clubhouse-mcp/mcp-call-gate';
 import { isDispatcherChatPath, isDispatcherPath } from './dispatcher/dispatcher-paths';
 import { preapprovedClubhouseToolsFor } from './dispatcher/dispatcher-internal-tools';
@@ -704,7 +704,8 @@ async function spawnAgentInner(inParams: SpawnAgentParams, facts: SpawnFacts, ma
     // The Dispatcher acts through the Clubhouse MCP, never by driving the app's windows (#3185).
     const desktopControlOff = isDispatcherPath(params.projectPath) ? provider.desktopControlOffArgs?.() ?? [] : [];
     // The Dispatcher chat's own tools skip the CLI's check; Clubhouse's grants still apply (#3578).
-    const preapprovedClubhouseTools = preapprovedClubhouseToolsFor(params.kind, isDispatcherChatPath(params.projectPath));
+    // Its folder and its agent id both, as the gate checked above: no other agent in that folder gets them.
+    const preapprovedClubhouseTools = preapprovedClubhouseToolsFor(params.kind, isDispatcherChatPath(params.projectPath) && isTrackedDispatcherChat(params.agentId));
     if (preapprovedClubhouseTools && provider.id === 'claude-code') {
       allowedTools = [...(allowedTools ?? []), ...preapprovedClubhouseTools.map((tool) => `${claudeMcpToolPrefix('clubhouse')}${tool}`)];
     }

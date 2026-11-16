@@ -108,6 +108,11 @@ vi.mock('./dispatcher/dispatcher-paths', async (importOriginal) => ({
   isDispatcherPath: (p: string | undefined | null) => p === '/dispatcher-folder' || p === '/dispatcher-chat-folder',
   isDispatcherChatPath: (p: string | undefined | null) => p === '/dispatcher-chat-folder',
 }));
+// 'dispatcher-chat-id' is the chat's agent id (#3578); the gate asks the service.
+vi.mock('./dispatcher/dispatcher-service', async (importOriginal) => ({
+  ...await importOriginal<typeof import('./dispatcher/dispatcher-service')>(),
+  isDispatcherChatAgentId: (id: string | undefined | null) => id === 'dispatcher-chat-id',
+}));
 // The Dispatcher is off as saved unless a test turns it on, so its durable starts are refused.
 const dispatcherOn = vi.hoisted(() => ({ value: false }));
 vi.mock('./dispatcher/dispatcher-settings', async (importOriginal) => {
@@ -882,7 +887,7 @@ describe('agent-system', () => {
     describe('the Dispatcher chat\'s own tools (#3578)', () => {
       beforeEach(() => { dispatcherOn.value = true; });
       afterEach(() => { dispatcherOn.value = false; });
-      const dispatcherStart = (projectPath: string) => spawnAgent({ agentId: 'd', projectPath, cwd: projectPath, kind: 'durable' });
+      const dispatcherStart = (projectPath: string) => spawnAgent({ agentId: 'dispatcher-chat-id', projectPath, cwd: projectPath, kind: 'durable' });
 
       it('skip the CLI\'s permission check for the chat alone: exactly start_work and tell_user, in chat and the terminal', async () => {
         await dispatcherStart('/dispatcher-chat-folder');
@@ -894,7 +899,9 @@ describe('agent-system', () => {
         ['the Dispatcher\'s coordinator', '/dispatcher-folder', 'durable'],
         ['an ordinary agent', '/project', 'durable'],
         ['a quick agent in the chat\'s folder', '/dispatcher-chat-folder', 'quick'],
+        ['another durable agent in the chat\'s folder', '/dispatcher-chat-folder', 'durable'],
       ] as const)('are not given to %s', async (_who, projectPath, kind) => {
+        // Its id is not the chat's, whatever folder it starts in.
         await spawnAgent({ agentId: 'a', projectPath, cwd: projectPath, kind });
         expect(mockTryStartChatAgent.mock.calls.at(-1)![0]).not.toHaveProperty('preapprovedClubhouseTools');
         const allowed = mockProvider.buildSpawnCommand.mock.calls.at(-1)![0].allowedTools ?? [];
