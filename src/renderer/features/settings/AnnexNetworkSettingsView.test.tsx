@@ -148,6 +148,14 @@ describe('AnnexNetworkSettingsView (#3067)', () => {
     expect(screen.getByTestId('annex-pairing-port-moved')).toHaveTextContent('The identity-hint port 7401 was also in use, so it listens on 7433.');
   });
 
+  it('says the identity-hint port moved on its own without "also" when the main port did not (#3608)', () => {
+    setup(ON, { status: { ...STATUS, listenerPortsMoved: { pairing: { preferred: 7401, bound: 7433 } } } });
+    render(<AnnexNetworkSettingsView />);
+    expect(screen.getByTestId('annex-listener-port')).toHaveTextContent('A forward from another computer to this one must reach this port.');
+    expect(screen.getByTestId('annex-pairing-port-moved')).toHaveTextContent('The identity-hint port 7401 was in use by another program when Annex started, so it listens on 7433.');
+    expect(screen.getByTestId('annex-pairing-port-moved')).not.toHaveTextContent('also');
+  });
+
   it('offers to allow pairing again only while it is paused', () => {
     setup(ON, { status: { ...STATUS, pairingPaused: true } });
     render(<AnnexNetworkSettingsView />);

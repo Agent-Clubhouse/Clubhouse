@@ -236,7 +236,9 @@ export function AnnexNetworkSettingsView() {
                   : 'A forward from another computer to this one must reach this port.'}
                 {status.listenerPortsMoved?.pairing && (
                   <span className="block" data-testid="annex-pairing-port-moved">
-                    {`The identity-hint port ${status.listenerPortsMoved.pairing.preferred} was also in use, so it listens on ${status.listenerPortsMoved.pairing.bound}. Pairing and control don't use it.`}
+                    {status.listenerPortsMoved.main
+                      ? `The identity-hint port ${status.listenerPortsMoved.pairing.preferred} was also in use, so it listens on ${status.listenerPortsMoved.pairing.bound}. Pairing and control don't use it.`
+                      : `The identity-hint port ${status.listenerPortsMoved.pairing.preferred} was in use by another program when Annex started, so it listens on ${status.listenerPortsMoved.pairing.bound}. Pairing and control don't use it.`}
                   </span>
                 )}
               </>
