@@ -109,6 +109,14 @@ export function applyProjectStateChange(op: ProjectStateOp, source?: { clientId:
   const base = pick(current);
   const next = applyProjectStateOp(base, op);
   const changed = next !== base;
+  // Linked copies share explicit Pin and Mark inactive; a refused mark isn't one.
+  const refused = op.type === 'setInactive' && op.inactive && base.pinnedProjectIds.includes(op.projectId);
+  if (linkedWriter && (op.type === 'setPinned' || op.type === 'setInactive') && !refused) {
+    try { linkedWriter(op); }
+    catch (err) { // telemetry-exempt: logged; this computer's own state still changes
+      appLog('core:project-state', 'warn', 'Linked project state write failed', { meta: { error: err instanceof Error ? err.message : String(err) } });
+    }
+  }
   if (source) {
     acked.delete(source.clientId);
     acked.set(source.clientId, source.seq);
@@ -120,6 +128,32 @@ export function applyProjectStateChange(op: ProjectStateOp, source?: { clientId:
   return changed;
 }
 
+let linkedWriter: ((op: ProjectStateOp) => void) | null = null;
+/**
+ * Linked copies of a project share Pin and Mark inactive
+ * (linked-project-state-service.ts): told of every explicit one accepted here,
+ * from a window or a phone.
+ */
+export function setLinkedProjectStateWriter(writer: ((op: ProjectStateOp) => void) | null): void {
+  linkedWriter = writer;
+}
+
+/**
+ * Replace the state with `project(state)`, as linked copies' shared values
+ * arrive or links change. Nothing happens before the state has moved into
+ * main. Returns whether it changed; a change is saved and broadcast.
+ */
+export function reprojectProjectState(project: (state: ProjectState) => ProjectState): boolean {
+  const current = store.get();
+  if (!current.migrated) return false;
+  const base = pick(current);
+  const next = project(base);
+  if (next === base) return false;
+  save({ ...current, ...next });
+  notify();
+  return true;
+}
+
 /** For tests: resolves once the latest write has finished. */
 export function flushProjectStateForTests(): Promise<void> {
   return lastWrite;
@@ -129,4 +163,5 @@ export function flushProjectStateForTests(): Promise<void> {
 export function resetProjectStateForTests(): void {
   acked.clear();
   listeners.clear();
+  linkedWriter = null;
 }

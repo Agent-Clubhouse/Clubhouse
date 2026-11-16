@@ -20,6 +20,10 @@ const text = (v: unknown): v is string => typeof v === 'string' && v.length > 0 
 const compare = (a: string, b: string) => a < b ? -1 : a > b ? 1 : 0;
 export const projectRefKey = (ref: NetworkProjectRef): string => JSON.stringify([ref.machine, ref.projectId]);
 export const projectLinkPairKey = (a: NetworkProjectRef, b: NetworkProjectRef): string => JSON.stringify([projectRefKey(a), projectRefKey(b)].sort(compare));
+/** A machine's Annex identity fingerprint as records carry it. */
+export const isNetworkMachine = (v: unknown): v is string => typeof v === 'string' && FP.test(v);
+/** A project reference from untrusted JSON, with a lowercase machine. Throws when it isn't one. */
+export function parseNetworkProjectRef(raw: unknown): NetworkProjectRef { return ref(raw); }
 function ref(raw: unknown): NetworkProjectRef {
   if (!object(raw) || Object.keys(raw).some((k) => k !== 'machine' && k !== 'projectId')
     || typeof raw.machine !== 'string' || !FP.test(raw.machine) || !text(raw.projectId)) throw new Error('Invalid project reference.');

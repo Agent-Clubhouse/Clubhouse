@@ -15,7 +15,9 @@ import {
   hydrateProjectState,
   isProjectStateReady,
   onProjectStateChange,
+  reprojectProjectState,
   resetProjectStateForTests,
+  setLinkedProjectStateWriter,
 } from './project-state-store';
 import { DEFAULT_PROJECT_STATE } from '../../shared/project-state';
 
@@ -86,5 +88,33 @@ describe('project-state-store (#2458)', () => {
     expect(await stored()).toMatchObject({ pinnedProjectIds: ['p'] });
     restart();
     expect(getProjectState().pinnedProjectIds).toEqual(['p']);
+  });
+  it('tells the linked writer of every accepted Pin and Mark inactive, but not refused marks or activity', () => {
+    hydrateProjectState({ ...DEFAULT_PROJECT_STATE, pinnedProjectIds: ['p'] });
+    const writer = vi.fn();
+    setLinkedProjectStateWriter(writer);
+    applyProjectStateChange({ type: 'setInactive', projectId: 'p', inactive: true, at: 1 });
+    applyProjectStateChange({ type: 'markActivity', projectId: 'p', at: 1 });
+    expect(writer).not.toHaveBeenCalled();
+    // Already pinned here: still offered, as a linked copy elsewhere may differ.
+    applyProjectStateChange({ type: 'setPinned', projectId: 'p', pinned: true });
+    applyProjectStateChange({ type: 'setInactive', projectId: 'q', inactive: false, at: 2 });
+    expect(writer.mock.calls.map((c) => c[0].type)).toEqual(['setPinned', 'setInactive']);
+    // A failing writer doesn't stop this computer's own change.
+    setLinkedProjectStateWriter(() => { throw new Error('boom'); });
+    expect(applyProjectStateChange({ type: 'setPinned', projectId: 'r', pinned: true })).toBe(true);
+  });
+
+  it('reprojects only after migration, and saves and broadcasts a change', async () => {
+    const listener = vi.fn();
+    onProjectStateChange(listener);
+    const pin = (s: typeof DEFAULT_PROJECT_STATE) => (s.pinnedProjectIds.includes('linked') ? s : { ...s, pinnedProjectIds: [...s.pinnedProjectIds, 'linked'] });
+    expect(reprojectProjectState(pin)).toBe(false);
+    hydrateProjectState(DEFAULT_PROJECT_STATE);
+    listener.mockClear();
+    expect(reprojectProjectState(pin)).toBe(true);
+    expect(listener).toHaveBeenCalledWith(expect.objectContaining({ state: expect.objectContaining({ pinnedProjectIds: ['linked'] }) }));
+    expect(reprojectProjectState(pin)).toBe(false);
+    expect(await stored()).toMatchObject({ pinnedProjectIds: ['linked'] });
   });
 });

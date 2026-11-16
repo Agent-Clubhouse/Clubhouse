@@ -1,6 +1,8 @@
 import { mobileProjectLinks, MOBILE_PROJECT_LINKS_EVENT } from './mobile-project-links';
 import { hydrateProjectLinks, projectLinksStore } from './project-links-store';
 import { projectLinksCapabilities, receiveProjectLinks } from './project-links-network';
+import { linkedProjectStateCapabilities, receiveLinkedProjectState } from './linked-project-state-network';
+import { isLinkedProject } from './linked-project-state-service';
 import { HandoffTransferBusy } from '../../shared/handoff-transfer';
 import { hasSessionCaptureFailure } from './session-capture-barrier';
 import { legacyDefaultsNotCopied } from './legacy-defaults';
@@ -920,6 +922,8 @@ function projectStateEntry(projectId: string, runningIds: ReadonlySet<string>, n
       activity: state.projectActivity, pinnedIds: state.pinnedProjectIds, inactiveIds: state.inactiveProjectIds,
       runningIds, activeProjectId: null, idleDays: state.idleDays, now,
     }),
+    // Pinned and inactive are its linked group's, shared by every copy.
+    ...(isLinkedProject(projectId) && { linked: true as const }),
   };
 }
 
@@ -3639,12 +3643,28 @@ async function handleNetworkAgentCallRoute(ctx: AnnexRouteContext): Promise<void
   else sendJson(ctx.res, outcome.status, { error: outcome.error, message: outcome.message, ...(outcome.delivery && { delivery: outcome.delivery }) });
 }
 
+/** A replicated set member desktops sync over the routes below (replica-network.ts). */
+interface NetworkReplicaRoute {
+  capabilities(): Record<string, unknown>;
+  receive(machine: string, body: unknown, current: () => boolean): Promise<Record<string, unknown>>;
+  refused: string;
+  logRefused: string;
+}
+const PROJECT_LINKS_ROUTE: NetworkReplicaRoute = {
+  capabilities: () => projectLinksCapabilities(), receive: (machine, body, current) => receiveProjectLinks(machine, body, current),
+  refused: 'project_links_refused', logRefused: 'Project link request refused',
+};
+const LINKED_PROJECT_STATE_ROUTE: NetworkReplicaRoute = {
+  capabilities: () => linkedProjectStateCapabilities(), receive: (machine, body, current) => receiveLinkedProjectState(machine, body, current),
+  refused: 'linked_project_state_refused', logRefused: 'Linked project state request refused',
+};
+
 /** Same pinned-member REST shape as delivery negotiation; no /network socket extension. */
-async function handleProjectLinksNetworkRoute(ctx: AnnexRouteContext, capabilities: boolean): Promise<void> {
+async function handleReplicaNetworkRoute(ctx: AnnexRouteContext, replica: NetworkReplicaRoute, capabilities: boolean): Promise<void> {
   if (ctx.requireMtls()) { ctx.req.resume(); return; }
   const machine = agentCallPeer(ctx);
   if (!machine || !annexSettings.networkEnabled()) { ctx.req.resume(); sendJson(ctx.res, 403, { error: 'not_a_computer' }); return; }
-  if (capabilities) { ctx.req.resume(); sendJson(ctx.res, 200, projectLinksCapabilities()); return; }
+  if (capabilities) { ctx.req.resume(); sendJson(ctx.res, 200, replica.capabilities()); return; }
   const pin = annexPeers.getPeer(machine);
   const pairing = JSON.stringify([pin?.tlsCertificateFingerprint, pin?.pairingId]);
   const current = () => agentCallPeer(ctx) === machine && annexSettings.networkEnabled()
@@ -3652,10 +3672,10 @@ async function handleProjectLinksNetworkRoute(ctx: AnnexRouteContext, capabiliti
   const body = await readAgentCallBody(ctx);
   if (body === undefined || ctx.requireMtls()) return;
   if (!current()) { sendJson(ctx.res, 403, { error: 'not_a_computer' }); return; }
-  try { sendJson(ctx.res, 200, await receiveProjectLinks(machine, body, current)); }
+  try { sendJson(ctx.res, 200, await replica.receive(machine, body, current)); }
   catch (error) { // telemetry-exempt: do not return project identifiers or storage diagnostics
-    appLog('core:annex', 'warn', 'Project link request refused', { meta: { error: error instanceof Error ? error.message : String(error) } });
-    sendJson(ctx.res, current() ? 400 : 403, { error: 'project_links_refused' });
+    appLog('core:annex', 'warn', replica.logRefused, { meta: { error: error instanceof Error ? error.message : String(error) } });
+    sendJson(ctx.res, current() ? 400 : 403, { error: replica.refused });
   }
 }
 
@@ -3830,6 +3850,8 @@ async function handleMobileCapabilitiesRoute(ctx: AnnexRouteContext): Promise<vo
     orchestration: { version: 1 },
     idempotency: { scope: 'peer-and-epoch', maxEntries: MOBILE_COMMAND_MAX_ENTRIES, ttlMs: MOBILE_COMMAND_TTL_MS },
     projectState: { version: 1 },
+    // Pin and Mark inactive of a project in a `projectLinks` group apply to all its copies; entries carry `linked: true`.
+    linkedProjectState: { version: 1 },
     projectLinks: { version: 1, snapshotField: 'projectLinks', event: MOBILE_PROJECT_LINKS_EVENT },
     finishedQuickAgents: { version: 1 },
     // A snapshot over its limit says what it left out in `snapshotTruncated`; these fetch canvases.
@@ -4525,8 +4547,10 @@ const ANNEX_HTTP_ROUTE_TABLE: AnnexHttpRoute[] = [
   { method: 'POST', pattern: /^\/api\/v1\/mobile\/network\/members$/, handler: handleMobileNetworkMembersRoute },
   { method: 'POST', pattern: /^\/api\/v1\/network\/agent-call$/, handler: handleNetworkAgentCallRoute },
   { method: 'POST', pattern: /^\/api\/v1\/network\/agent-delivery-capabilities$/, handler: handleNetworkAgentDeliveryCapabilitiesRoute },
-  { method: 'POST', pattern: /^\/api\/v1\/network\/project-links-capabilities$/, handler: (ctx) => handleProjectLinksNetworkRoute(ctx, true) },
-  { method: 'POST', pattern: /^\/api\/v1\/network\/project-links$/, handler: (ctx) => handleProjectLinksNetworkRoute(ctx, false) },
+  { method: 'POST', pattern: /^\/api\/v1\/network\/project-links-capabilities$/, handler: (ctx) => handleReplicaNetworkRoute(ctx, PROJECT_LINKS_ROUTE, true) },
+  { method: 'POST', pattern: /^\/api\/v1\/network\/project-links$/, handler: (ctx) => handleReplicaNetworkRoute(ctx, PROJECT_LINKS_ROUTE, false) },
+  { method: 'POST', pattern: /^\/api\/v1\/network\/linked-project-state-capabilities$/, handler: (ctx) => handleReplicaNetworkRoute(ctx, LINKED_PROJECT_STATE_ROUTE, true) },
+  { method: 'POST', pattern: /^\/api\/v1\/network\/linked-project-state$/, handler: (ctx) => handleReplicaNetworkRoute(ctx, LINKED_PROJECT_STATE_ROUTE, false) },
   { method: 'POST', pattern: /^\/api\/v1\/network\/handoff-capacity$/, handler: handleNetworkCapacityRoute },
   { method: 'POST', pattern: /^\/api\/v1\/network\/handoffs$/, handler: handleNetworkHandoffsRoute },
   { method: 'POST', pattern: /^\/api\/v1\/network\/handoffs\/transfer$/, handler: handleNetworkHandoffTransferRoute },

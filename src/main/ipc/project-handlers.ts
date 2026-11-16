@@ -21,6 +21,7 @@ import { arrayArg, numberArg, objectArg, stringArg, withValidatedArgs } from './
 import { assertAllowedPath } from '../services/path-sandbox';
 import type { IpcResponse } from '../../shared/ipc-types';
 import { applyProjectStateChange, hydrateProjectState, onProjectStateChange } from '../services/project-state-store';
+import { startLinkedProjectStateService } from '../services/linked-project-state-service';
 import { parseProjectStateOp } from '../../shared/project-state';
 import { broadcastToAllWindows } from '../util/ipc-broadcast';
 import { registerProjectImportHandlers } from './project-import-handlers';
@@ -52,6 +53,8 @@ export function registerProjectHandlers(): void {
   ipcMain.handle(IPC.PROJECT.SET_HANDOFF_SECRET_SETTINGS, withValidatedArgs([stringArg({ maxLength: 128 }), arrayArg(stringArg({ maxLength: 1024 }), { maxLength: HANDOFF_SECRET_MAX_PATHS })], (_event, id, names) => setHandoffSecretSettings(id, names)));
   // Pins, inactive marks and activity (#2458). Every window, and Annex, hears each change.
   onProjectStateChange((change) => broadcastToAllWindows(IPC.PROJECT.STATE_CHANGED, change));
+  // Linked copies on other computers share Pin and Mark inactive.
+  startLinkedProjectStateService();
   forwardProjectChanges();
 
   ipcMain.handle(IPC.PROJECT.STATE_HYDRATE, withValidatedArgs([objectArg()], (_event, legacy: unknown) =>

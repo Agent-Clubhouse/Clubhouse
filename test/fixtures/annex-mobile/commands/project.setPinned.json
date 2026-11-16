@@ -101,6 +101,34 @@
         },
         "status": 409
       }
+    },
+    {
+      "name": "linked: applies to every copy",
+      "request": {
+        "commandId": "cmd_linked_1",
+        "epoch": "00000000-0000-4000-8000-000000000001",
+        "pinned": true,
+        "projectId": "proj_docs",
+        "type": "project.setPinned",
+        "version": 1
+      },
+      "response": {
+        "body": {
+          "commandId": "cmd_linked_1",
+          "epoch": "00000000-0000-4000-8000-000000000001",
+          "result": {
+            "idle": false,
+            "inactive": false,
+            "lastActivityAt": 1799222400000,
+            "linked": true,
+            "pinned": true,
+            "projectId": "proj_docs"
+          },
+          "status": "completed",
+          "version": 1
+        },
+        "status": 200
+      }
     }
   ],
   "type": "project.setPinned"

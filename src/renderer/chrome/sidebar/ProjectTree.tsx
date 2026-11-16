@@ -59,9 +59,12 @@ export interface ProjectTreeProps {
   /**
    * A project on another machine (#3065): it's shown with this machine's, and
    * the actions that change a project here (new agent, settings, close,
-   * reordering, marking inactive, the terminal) are left out for it.
+   * reordering, the terminal, and marking inactive unless it's linked) are
+   * left out for it.
    */
   isRemoteProject?: (projectId: string) => boolean;
+  /** A project in a linked group: its Pin and Mark inactive are shared by every copy, so a remote row may mark it too. */
+  isLinkedProject?: (projectId: string) => boolean;
   /** For an agent on another machine: a short label for it, and whether that machine is offline. */
   agentMachine?: (agent: Agent) => { label?: string; offline?: boolean } | undefined;
   /** More items for a project's menu: Merge with… and Split per machine. */
@@ -437,7 +440,7 @@ export function ProjectTree(props: ProjectTreeProps) {
       onMoveProject={onReorder && !remoteOf(project.id) ? onMoveProject : undefined}
       sortedByRecent={!!props.onReorder && !onReorder}
       inSection={underIdle ? 'idle' : sectionOf.get(project.id) ?? 'active'}
-      onSetInactive={props.onReorder && !remoteOf(project.id) ? onSetInactive : undefined}
+      onSetInactive={props.onReorder && (!remoteOf(project.id) || props.isLinkedProject?.(project.id)) ? onSetInactive : undefined}
       onAgentReorderHint={props.onReorderAgents && !onReorderAgents && !remoteOf(project.id) ? onAgentReorderHint : undefined}
       canMoveUp={neighbour(project.id, -1) !== null}
       canMoveDown={neighbour(project.id, 1) !== null}
