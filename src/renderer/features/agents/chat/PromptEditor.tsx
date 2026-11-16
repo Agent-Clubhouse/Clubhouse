@@ -62,7 +62,10 @@ export const PromptEditor = forwardRef<PromptEditorHandle, Props>(function Promp
   const viewRef = useRef<EditorView | null>(null);
   const latest = useRef(props);
   latest.current = props;
-  const echoed = useRef(props.text);
+  // Source text the editor reported through onChange that the owner has not
+  // handed back as props yet. React can run a render's effect after the next
+  // keystroke, so a stale prop that matches an echo is not an external edit.
+  const echoes = useRef<string[]>([]);
 
   useImperativeHandle(ref, () => ({
     get view() { return viewRef.current; },
@@ -93,7 +96,7 @@ export const PromptEditor = forwardRef<PromptEditorHandle, Props>(function Promp
         view.updateState(view.state.apply(tr));
         const source = serializePrompt(view.state.doc);
         if (tr.docChanged) {
-          echoed.current = source.text;
+          echoes.current = [...echoes.current, source.text].slice(-32);
           latest.current.onChange(source.text);
         }
         if (tr.docChanged || tr.selectionSet) {
@@ -149,8 +152,10 @@ export const PromptEditor = forwardRef<PromptEditorHandle, Props>(function Promp
   useEffect(() => {
     const view = viewRef.current;
     if (!view) return;
-    if (props.text !== echoed.current) {
-      echoed.current = props.text;
+    const echo = echoes.current.indexOf(props.text);
+    if (echo >= 0) echoes.current = echoes.current.slice(echo + 1);
+    else if (props.text !== serializePrompt(view.state.doc).text) {
+      echoes.current = [];
       replaceDraft(view, props.text);
     }
     view.setProps({ editable: () => !latest.current.disabled });

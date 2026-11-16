@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { EditorView } from 'prosemirror-view';
 import { TextSelection } from 'prosemirror-state';
 import { undo, redo } from 'prosemirror-history';
@@ -210,4 +210,114 @@ it('does not add indentation to multiline paste in a list after typing or reload
   expect(source()).toBe(sent);
   select(sent.length); type('y');
   expect(source()).toBe(sent + 'y');
+});
+
+/** #3564: prosemirror-history merges steps within newGroupDelay (500 ms), so one
+ * Mod+Z after a list operation must not depend on how fast the keys arrived. */
+describe.each([['fast', 0], ['slow', 2000]] as const)('list operations are their own undo event (%s)', (_speed, gap) => {
+  beforeEach(() => { vi.useFakeTimers({ toFake: ['Date'], now: 1_000_000 }); });
+  afterEach(() => { vi.useRealTimers(); });
+  const wait = () => { vi.advanceTimersByTime(gap); };
+  const mod = () => key('z', { metaKey: true });
+  /** Types one character, as its own tick, with the gap before it. */
+  const typeAfterGap = (text: string) => { wait(); type(text); };
+  const listItems = () => view.dom.querySelectorAll('ul > li, ol > li').length;
+
+  it('exit, then undo, restores exactly the empty item', () => {
+    editor('');
+    typeAfterGap('- ');
+    wait(); softReturn(view);
+    expect(listItems()).toBe(0);
+    wait(); expect(mod()).toBe(true);
+    expect(listItems()).toBe(1);
+    expect(source()).toBe('- ');
+  });
+
+  it('exit after typed text does not take the typing with it', () => {
+    editor('- first\n- ');
+    wait(); softReturn(view);
+    expect(source()).toBe('- first\n');
+    wait(); mod();
+    expect(source()).toBe('- first\n- ');
+  });
+
+  it('split, then undo, restores the unsplit item and keeps the text typed before it', () => {
+    editor('');
+    typeAfterGap('- ');
+    typeAfterGap('ab');
+    wait(); select(3); softReturn(view);
+    expect(source()).toBe('- a\n- b');
+    wait(); mod();
+    expect(source()).toBe('- ab');
+  });
+
+  it('typing after a split is a separate event from the split', () => {
+    editor('- ab', 3);
+    softReturn(view);
+    typeAfterGap('c');
+    expect(source()).toBe('- a\n- cb');
+    mod();
+    expect(source()).toBe('- a\n- b');
+    mod();
+    expect(source()).toBe('- ab');
+  });
+
+  it('conversion, then undo, reverts only the conversion, never the typing before it', () => {
+    editor('');
+    type('-');
+    wait(); type(' ');
+    expect(listItems()).toBe(1);
+    wait(); undo(view.state, view.dispatch);
+    expect(view.state.doc.firstChild?.type.name).toBe('paragraph');
+    expect(view.state.doc.textContent).toBe('-');
+  });
+
+  it('typing right after a conversion is a separate event from the conversion', () => {
+    editor('');
+    type('- ');
+    typeAfterGap('x');
+    expect(source()).toBe('- x');
+    undo(view.state, view.dispatch);
+    expect(source()).toBe('- ');
+    expect(listItems()).toBe(1);
+    undo(view.state, view.dispatch);
+    expect(listItems()).toBe(0);
+  });
+
+  it('an ordered conversion is its own event too', () => {
+    editor('');
+    type('3');
+    typeAfterGap('.'); typeAfterGap(' ');
+    expect(view.state.doc.firstChild?.attrs.order).toBe(3);
+    wait(); undo(view.state, view.dispatch);
+    expect(view.state.doc.textContent).toBe('3.');
+  });
+
+  it('indent, then undo, reverts only the indent', () => {
+    editor('- parent\n- child', 14);
+    wait(); expect(indentItems(view, false)).toBe(true);
+    expect(source()).toBe('- parent\n  - child');
+    wait(); mod();
+    expect(source()).toBe('- parent\n- child');
+  });
+
+  it('outdent, then undo, reverts only the outdent, and typing after it stays separate', () => {
+    editor('- parent\n  - child', 16);
+    wait(); expect(indentItems(view, true)).toBe(true);
+    expect(source()).toBe('- parent\n- child');
+    typeAfterGap('!');
+    mod();
+    expect(source()).toBe('- parent\n- child');
+    mod();
+    expect(source()).toBe('- parent\n  - child');
+  });
+
+  it('Backspace at the start of the first item exits it as its own event', () => {
+    editor('- ', 2);
+    typeAfterGap('x'); select(2);
+    wait(); key('Backspace');
+    expect(listItems()).toBe(0);
+    wait(); mod();
+    expect(source()).toBe('- x');
+  });
 });
