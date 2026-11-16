@@ -183,6 +183,28 @@ describe('Pin and Mark inactive shared by linked copies', () => {
     expect(a.state.inactiveProjectIds).toEqual([]);
   });
 
+  it('a third copy joining a group with an explicit value keeps it after a split, not its mark from before sharing', async () => {
+    const a = desktop(A), b = desktop(B), c = desktop(C, { inactiveProjectIds: ['site-c'] });
+    net = mesh(a, b, c);
+    await a.links.apply({ type: 'link', a: 'site', b: remote(B, 'site-b') });
+    await vi.waitFor(() => expect(b.links.groups()).toHaveLength(1));
+    clock += 1000;
+    a.apply({ type: 'setInactive', projectId: 'site', inactive: false, at: clock });
+    await vi.waitFor(() => expect(b.linked.records().filter((r) => r.field === 'inactive' && r.at > 0)).toHaveLength(2));
+    await b.links.apply({ type: 'link', a: 'site-b', b: remote(C, 'site-c') });
+    await vi.waitFor(() => {
+      expect(c.links.groups()[0]).toHaveLength(3);
+      expect(c.state.inactiveProjectIds).not.toContain('site-c');
+    });
+    await c.service.settled();
+    await c.links.apply({ type: 'split', a: 'site-c' });
+    await vi.waitFor(() => expect(c.links.groups()).toEqual([]));
+    await c.service.settled();
+    await new Promise((r) => setTimeout(r, 20));
+    await c.service.settled();
+    expect(c.state.inactiveProjectIds).not.toContain('site-c');
+  });
+
   it('Mark active records that moment as activity on every copy', async () => {
     const a = desktop(A), b = desktop(B, { projectActivity: { 'site-b': clock - 30 * 86_400_000 } });
     net = mesh(a, b);

@@ -227,6 +227,19 @@ describe('projection onto each computer', () => {
     expect(project(marked, [], A, linked)).toBe(linked);
   });
 
+  it('a copy that joined a group with an explicit value keeps that value when it leaves, not its mark from before sharing', () => {
+    const groups = [[a, b, c]];
+    // A and B's group had an explicit Mark active; C, inactive before sharing, joins.
+    const explicit = linkedStateWrite([], [[a, b]], { type: 'setInactive', projectId: 'site', inactive: false, at: 10 }, A, 10);
+    const joined = mergeLinkedStateRecords([], [...explicit, ...legacyLinkedStateRecords(state({ inactiveProjectIds: ['site-c'] }), groups, C)]);
+    const onC = project(joined, groups, C, state({ inactiveProjectIds: ['site-c'] }));
+    expect(onC.inactiveProjectIds).toEqual([]);
+    // C offers the value it now shows: the explicit one supersedes its own from before sharing.
+    const settled = mergeLinkedStateRecords(joined, legacyLinkedStateRecords(onC, groups, C, joined));
+    expect(settled).toContainEqual(rec(c, 'inactive', false, 0, C));
+    expect(project(settled, [[a, b]], C, onC)).toBe(onC);
+  });
+
   it('a late offline member with older edits converges to the newer value; with newer edits it wins', () => {
     const groups = [[a, b]];
     const online = mergeLinkedStateRecords([], linkedStateWrite([], groups, { type: 'setPinned', projectId: 'site', pinned: true }, A, 100));
