@@ -25,6 +25,8 @@ export interface LocalWorkFile {
   currentBindings?: Record<string, Array<Omit<LocalWork, 'inputs'>>>;
 }
 export const LOCAL_WORK_MAX_BYTES = 16 * 1024 * 1024;
+/** How long a record that no checkpoint followed waits before it is written alone. */
+const LAZY_FLUSH_MS = 1000;
 
 /** Keep only provenance. Task text and transitive work IDs must never enter this ledger. */
 function slim(input: FederatedRequest): FederatedRequest {
@@ -70,12 +72,33 @@ export function createLocalWorkStore(filename = 'dispatcher-federation-local-wor
     return raw as unknown as LocalWorkFile;
   }, { atomic: true, mode: 0o600, rollBackFailedSaves: true, onLoad: (result) => { if ('error' in result && (result.error as NodeJS.ErrnoException)?.code !== 'ENOENT') unreadable = true; } });
   let serial = Promise.resolve();
+  // Changes made with `durable: false`: newest state, ahead of the file until the next save carries it.
+  let pending: LocalWorkFile | undefined;
+  let lazyFlush: ReturnType<typeof setTimeout> | undefined;
+  const newest = () => overflow ?? pending ?? settings.get();
+  /** Only `update` and `flush` call this, inside `serial`: one atomic write for everything pending. */
+  async function persist(file: LocalWorkFile) {
+    await settings.save(file);
+    overflow = undefined; pending = undefined;
+  }
+  /** Writes anything a deferred update left behind. Idle when the file is already current. */
+  function flush() {
+    if (lazyFlush) { clearTimeout(lazyFlush); lazyFlush = undefined; }
+    const next = serial.catch(() => {}).then(async () => { if (pending) await persist(pending); });
+    serial = next; return next;
+  }
   return {
     settled: () => serial,
-    get: () => { const file = overflow ?? settings.get(); if (unreadable) throw new Error('Local causal work records are unreadable.'); return structuredClone(file); },
-    update(change: (file: LocalWorkFile) => void) {
+    flush,
+    get: () => { const file = newest(); if (unreadable) throw new Error('Local causal work records are unreadable.'); return structuredClone(file); },
+    /**
+     * Applies `change`, then by default writes the whole file before resolving. A `durable: false` change is applied
+     * in memory at once and rides on the next durable write, or on a write a moment later if none comes, so a
+     * record and the checkpoint that follows it cost one fsync together.
+     */
+    update(change: (file: LocalWorkFile) => void, { durable = true }: { durable?: boolean } = {}) {
       const next = serial.catch(() => {}).then(async () => {
-        const file = structuredClone(overflow ?? settings.get()); if (unreadable) throw new Error('Local causal work records are unreadable.'); change(file);
+        const file = structuredClone(newest()); if (unreadable) throw new Error('Local causal work records are unreadable.'); change(file);
         const now = Date.now();
         file.records = file.records.filter((r) => r.expiresAt > now).map((r) => ({ ...r, inputs: distinct(r.inputs, now) }));
         for (const [agent, inputs] of Object.entries(file.currentInputs ?? {})) {
@@ -91,9 +114,16 @@ export function createLocalWorkStore(filename = 'dispatcher-federation-local-wor
         }
         // If current checkpoints alone exceed disk capacity, retain their full
         // depth in main memory. Capacity never rejects a send or invents a root.
-        if (Buffer.byteLength(JSON.stringify(file)) > LOCAL_WORK_MAX_BYTES) { overflow = file; return; }
-        await settings.save(file);
-        overflow = undefined;
+        if (Buffer.byteLength(JSON.stringify(file)) > LOCAL_WORK_MAX_BYTES) { overflow = file; pending = undefined; return; }
+        if (!durable) {
+          pending = file;
+          lazyFlush ??= setTimeout(() => { lazyFlush = undefined; void flush().catch((error) => appLog('core:dispatcher', 'error', 'Could not save local causal work', { meta: { error: String(error) } })); }, LAZY_FLUSH_MS);
+          lazyFlush.unref?.();
+          return;
+        }
+        // A failed write drops this change only; earlier deferred ones stay pending for the next write.
+        const before = { overflow, pending };
+        try { await persist(file); } catch (error) { ({ overflow, pending } = before); throw error; }
       });
       serial = next; return next;
     },
@@ -141,6 +171,12 @@ export async function localCausalInputs(target: string, taskId: string | undefin
   return bindLocalCausalInputs(caller.sender, target, task, payload, inputs);
 }
 
+/**
+ * A record is history. What a restart needs is the checkpoint that `activateLocalCausalInput` writes before the
+ * work is dispatched, and that checkpoint carries its own binding and inputs. Nothing is acknowledged on the strength
+ * of the record, so it rides on that write, which saves it too, instead of costing a write of its own.
+ */
+const DEFERRED = { durable: false };
 /** Main-owned delayed work binds its immutable snapshot before the initiating tool returns. */
 export async function bindLocalCausalInputs(sender: string, target: string, task: string | undefined, payload: unknown, original: readonly FederatedRequest[]): Promise<readonly FederatedRequest[]> {
   const now = Date.now(); const inputs = distinct(original, now);
@@ -154,7 +190,7 @@ export async function bindLocalCausalInputs(sender: string, target: string, task
     && r.inputs.some((old) => inputs.some((input) => causeKey(input) === causeKey(old))));
   if (previous) {
     const merged = distinct([...previous.inputs, ...inputs], now).map((r) => ({ ...r, targetId: target, localWorkIds: [previous.id] }));
-    await store().update((saved) => { const retained = saved.records.find((r) => r.id === previous.id); if (retained) { retained.inputs = merged; retained.expiresAt = Math.max(...merged.map((r) => r.expiresAt)); } });
+    await store().update((saved) => { const retained = saved.records.find((r) => r.id === previous.id); if (retained) { retained.inputs = merged; retained.expiresAt = Math.max(...merged.map((r) => r.expiresAt)); } }, DEFERRED);
     return merged;
   }
   const id = randomUUID();
@@ -163,7 +199,7 @@ export async function bindLocalCausalInputs(sender: string, target: string, task
   await store().update((saved) => {
     saved.records = saved.records.filter((r) => r.expiresAt > now);
     saved.records.push({ id, sender, receiver: target, taskId: task, hash, expiresAt, inputs: tagged });
-  });
+  }, DEFERRED);
   return tagged;
 }
 
@@ -225,4 +261,4 @@ export function localOutputInputs(reader: string, worker: string): FederatedRequ
     .flatMap((r) => r.inputs.filter((input) => live(input, now)).map((input) => ({ ...input, targetId: reader })));
 }
 export function _setLocalWorkStoreForTesting(value?: ReturnType<typeof createLocalWorkStore>): void { retained = value; assignments.clear(); saveError = undefined; }
-export async function _settleLocalWorkForTesting(): Promise<void> { await retained?.settled(); }
+export async function _settleLocalWorkForTesting(): Promise<void> { await retained?.flush(); }
