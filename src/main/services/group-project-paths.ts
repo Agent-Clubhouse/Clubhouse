@@ -41,3 +41,5 @@ export const networkRefusalsPath = (): string => path.join(groupProjectsDir(), '
 export const networkCreateAnswersPath = (): string => path.join(groupProjectsDir(), 'network-create-answers.json');
 /** As the asking computer: creates sent to other hosts, saved before sending so a retry reuses the id (#3547). */
 export const networkCreateRequestsPath = (): string => path.join(groupProjectsDir(), 'network-create-requests.json');
+/** A copy of a group project hosted elsewhere: the host's roster as last fetched (#3548). Goes with the copy's folder. */
+export const rosterCachePath = (id: string): string => path.join(groupProjectDir(id), 'roster.json');

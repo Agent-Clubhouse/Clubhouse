@@ -5,6 +5,8 @@ import { ipcErrorMessage } from '../../utils/ipc-error';
 import { SettingsBlock, SettingsSection, settingsError, settingsHelp } from '../settings/SettingsLayout';
 import { CoverageSummary } from './CoverageSummary';
 import { useOneGroupCoverage } from './useGroupCoverage';
+import { isCopyRoster, rosterGaps, rosterMemberDetail, rosterUnavailableText, rosterVouched, time, useGroupRoster, useIsCopy } from './useGroupRoster';
+import type { GroupProjectRosterView } from '../../../shared/group-project-roster';
 
 /**
  * A group project's members, exclusions and the one-time auto-join offer
@@ -28,6 +30,10 @@ export function GroupProjectMembersSection({ groupProjectId }: { groupProjectId:
   const [view, setView] = useState<GroupProjectMembershipView | null>(null);
   // Read again whenever the list is: a membership or link change reloads both.
   const coverage = useOneGroupCoverage(groupProjectId, view);
+  // #3548: every member on every computer, from the host.
+  const roster = useGroupRoster(groupProjectId, view);
+  const where = useIsCopy(groupProjectId);
+  const copy = where.copy || isCopyRoster(roster);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -162,6 +168,16 @@ export function GroupProjectMembersSection({ groupProjectId }: { groupProjectId:
                 </div>
               </div>
             )}
+            {roster?.status === 'available'
+              ? <RosterMembers roster={roster} view={view} busy={busy} onRemove={(agentId) => void act(() => api.excludeMember(groupProjectId, agentId), 'Not changed.')} />
+              : <>
+            {copy && (
+              <p className={settingsHelp} data-testid="members-local-only">
+                Members on this computer. {roster?.status === 'unavailable'
+                  ? `${rosterUnavailableText(roster)} Members on other computers aren't shown.`
+                  : `Checking ${where.hostName} for members on other computers.`}
+              </p>
+            )}
             {view.members.length === 0
               ? <p className={settingsHelp}>No members.</p>
               : (
@@ -183,6 +199,7 @@ export function GroupProjectMembersSection({ groupProjectId }: { groupProjectId:
                   ))}
                 </ul>
               )}
+              </>}
             {view.excluded.length > 0 && (
               <div className="flex flex-col gap-1">
                 <p className={settingsHelp}>Excluded. These agents don't join automatically.</p>
@@ -207,5 +224,66 @@ export function GroupProjectMembersSection({ groupProjectId }: { groupProjectId:
         )}
       </SettingsBlock>
     </SettingsSection>
+  );
+}
+
+/**
+ * The host's roster (#3548). Says what it can't vouch for, and offers Exclude
+ * or Remove only where this computer can make that change today: on the host
+ * for every member, on a copy for this computer's own agents.
+ */
+function RosterMembers({ roster, view, busy, onRemove }: {
+  roster: Extract<GroupProjectRosterView, { status: 'available' }>;
+  view: GroupProjectMembershipView;
+  busy: boolean;
+  onRemove: (agentId: string) => void;
+}) {
+  const copy = roster.source !== 'host';
+  const gaps = rosterGaps(roster);
+  const vouched = rosterVouched(roster);
+  const local = new Set(view.members.map((m) => m.agentId));
+  const actionId = (m: (typeof roster.members)[number]): string | null => {
+    const id = m.thisComputer ? m.agentId : copy ? null : `${m.agentId}@${m.machine}`;
+    return id && local.has(id) ? id : null;
+  };
+  const elsewhere = copy && roster.members.some((m) => !m.thisComputer);
+  return (
+    <div className="flex flex-col gap-2" data-testid="members-roster">
+      {vouched
+        ? <p className={settingsHelp}>
+          {copy ? `Every member on every computer, from ${roster.hostName}, as of ${time(roster.fetchedAt)}.` : 'Every member on every computer.'}
+        </p>
+        : <div className="flex flex-col gap-0.5" role="status" aria-label="Member list may be incomplete">
+          <p className={settingsHelp}>This list may be incomplete.</p>
+          {gaps.map((gap) => <p key={gap} className={settingsHelp}>{gap}</p>)}
+        </div>}
+      {elsewhere && <p className={settingsHelp}>Members on other computers can be changed on {roster.hostName}.</p>}
+      {roster.members.length === 0
+        ? <p className={settingsHelp}>No members.</p>
+        : (
+          <ul aria-label="Members" className="flex flex-col gap-1">
+            {roster.members.map((member) => {
+              const id = actionId(member);
+              return (
+                <li key={member.key} className="flex items-center justify-between gap-2">
+                  <span className="min-w-0">
+                    <span className="text-sm text-ctp-text">{member.label}</span>
+                    <span className={`${settingsHelp} block`}>{rosterMemberDetail(member)}</span>
+                  </span>
+                  {id && (
+                    <Button
+                      disabled={busy}
+                      aria-label={`${member.kind === 'durable' ? 'Exclude' : 'Remove'} ${member.label} on ${member.machineLabel}`}
+                      onClick={() => onRemove(id)}
+                    >
+                      {member.kind === 'durable' ? 'Exclude' : 'Remove'}
+                    </Button>
+                  )}
+                </li>
+              );
+            })}
+          </ul>
+        )}
+    </div>
   );
 }

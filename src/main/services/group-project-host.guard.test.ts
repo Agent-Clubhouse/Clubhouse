@@ -20,6 +20,8 @@ const STORE_FILES = new Set([
   'services/group-project-paths.ts',
   // #3547: its own answers and sent requests only; groups are made through the host's create.
   'services/group-project-remote-create.ts',
+  // #3548: a copy's saved roster from its host, in the copy's own folder; never a group's record.
+  'services/group-project-roster.ts',
 ]);
 
 function sourceFiles(dir: string): string[] {

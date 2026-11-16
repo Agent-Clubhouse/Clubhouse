@@ -995,6 +995,7 @@ export const ATTR = {
     'POST /api/v1/network/group-projects/changed',
     'POST /api/v1/network/group-projects/create',
     'POST /api/v1/network/group-projects/create-capabilities',
+    'POST /api/v1/network/group-projects/roster',
     'GET /api/v1/mobile/canvas',
     'GET /api/v1/mobile/canvas/:id',
     'DELETE /api/v1/mobile/pairing',

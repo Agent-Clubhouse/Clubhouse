@@ -15,11 +15,13 @@ import {
 import type { GroupProjectNetworkRefusal } from '../../shared/group-project-types';
 import { groupProjectHost } from './group-project-host';
 import { groupProjectRemoteCreate } from './group-project-remote-create';
+import { groupProjectRoster } from './group-project-roster';
+import type { RosterAnswer } from '../../shared/group-project-roster';
 import { appLog } from './log-service';
 
 export interface GroupProjectNetworkTransport {
   connected(machine: string): boolean;
-  post(machine: string, path: string, body: Record<string, unknown>): Promise<{ status: number; body: unknown }>;
+  post(machine: string, path: string, body: Record<string, unknown>, options?: { maxResponseBytes?: number }): Promise<{ status: number; body: unknown }>;
   onConnected(listener: (machine: string) => void): () => void;
   machineName(machine: string): string | undefined;
 }
@@ -114,6 +116,14 @@ export function startGroupProjectNetwork(start: StartGroupProjectNetworkOptions)
     post: (machine, path, body) => start.transport.post(machine, path, body),
   });
 
+  // The host's roster (#3548): read-only, asked for when a person looks.
+  groupProjectRoster.setLink({
+    connected: (machine) => start.transport.connected(machine),
+    isMember: (machine) => start.isMember(machine),
+    machineName: (machine) => start.transport.machineName(machine),
+    post: (machine, path, body, postOptions) => start.transport.post(machine, path, body, postOptions),
+  });
+
   // On connect: send what waited, then catch up.
   const offConnected = start.transport.onConnected((machine) => {
     if (start.isMember(machine)) void pullFrom(machine.toLowerCase(), true);
@@ -177,6 +187,7 @@ export function startGroupProjectNetwork(start: StartGroupProjectNetworkOptions)
     if (timer) clearTimeout(timer);
     groupProjectHost.setNetworkLink(null);
     groupProjectRemoteCreate.setLink(null);
+    groupProjectRoster.setLink(null);
     options = null;
     pullChains.clear();
   };
@@ -204,4 +215,9 @@ export function receiveGroupProjectCreate(machine: string, raw: unknown): Promis
 
 export function groupProjectCreateCapabilities(): RemoteCreateCapabilities {
   return groupProjectRemoteCreate.capabilities();
+}
+
+/** Another computer asks for a page of a group project's roster (#3548). */
+export function receiveGroupProjectRoster(machine: string, raw: unknown): Promise<RosterAnswer> {
+  return groupProjectRoster.receive(machine, raw);
 }

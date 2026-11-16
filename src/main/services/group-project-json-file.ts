@@ -25,7 +25,8 @@ export async function readJsonFile<T>(file: string, fallback: () => T, validate:
   return validate(parsed);
 }
 
-export async function writeJsonFile(file: string, value: unknown): Promise<void> {
-  await fsp.mkdir(path.dirname(file), { recursive: true });
+/** `createDir: false` writes only into a folder that still exists, so a write can't bring back a removed one. */
+export async function writeJsonFile(file: string, value: unknown, options: { createDir?: boolean } = {}): Promise<void> {
+  if (options.createDir !== false) await fsp.mkdir(path.dirname(file), { recursive: true });
   await replaceFile(file, JSON.stringify(value, null, 2), undefined);
 }

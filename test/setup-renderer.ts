@@ -503,6 +503,8 @@ vi.stubGlobal('clubhouse', {
     confirmUnlinkedMembers: async () => ({ groupProjectId: '', managed: true, autoJoin: false, members: [], excluded: [] }),
     previewAutoJoin: async () => ({ coverage: { groupProjectId: 'preview', scoped: false, copies: [], localUnknown: false, complete: true, repositoryMatches: [] }, wouldJoin: [], unreadableProjects: [] }),
     getCoverage: async () => [],
+    // #3548: no roster unless a test gives one, so a section shows only what it already knows.
+    getRoster: async () => null,
     getRoles: async (groupProjectId: string) => ({ groupProjectId, own: { deliver: 'allow', wake: 'off' }, holders: [] }),
     setRole: async (groupProjectId: string) => ({ groupProjectId, own: { deliver: 'allow', wake: 'off' }, holders: [] }),
     setOwnGrant: async (groupProjectId: string) => ({ groupProjectId, own: { deliver: 'allow', wake: 'off' }, holders: [] }),
