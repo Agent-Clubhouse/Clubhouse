@@ -5,7 +5,7 @@ import { ipcErrorMessage } from '../../utils/ipc-error';
 import { SettingsBlock, SettingsSection, settingsError, settingsHelp } from '../settings/SettingsLayout';
 import { CoverageSummary } from './CoverageSummary';
 import { useOneGroupCoverage } from './useGroupCoverage';
-import { isCopyRoster, rosterGaps, rosterMemberDetail, rosterUnavailableText, useGroupRoster } from './useGroupRoster';
+import { isCopyRoster, rosterGaps, rosterMemberDetail, rosterUnavailableText, rosterVouched, time, useGroupRoster, useIsCopy } from './useGroupRoster';
 import type { GroupProjectRosterView } from '../../../shared/group-project-roster';
 
 /**
@@ -32,6 +32,8 @@ export function GroupProjectMembersSection({ groupProjectId }: { groupProjectId:
   const coverage = useOneGroupCoverage(groupProjectId, view);
   // #3548: every member on every computer, from the host.
   const roster = useGroupRoster(groupProjectId, view);
+  const where = useIsCopy(groupProjectId);
+  const copy = where.copy || isCopyRoster(roster);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -169,9 +171,11 @@ export function GroupProjectMembersSection({ groupProjectId }: { groupProjectId:
             {roster?.status === 'available'
               ? <RosterMembers roster={roster} view={view} busy={busy} onRemove={(agentId) => void act(() => api.excludeMember(groupProjectId, agentId), 'Not changed.')} />
               : <>
-            {isCopyRoster(roster) && roster?.status === 'unavailable' && (
+            {copy && (
               <p className={settingsHelp} data-testid="members-local-only">
-                Members on this computer. {rosterUnavailableText(roster)} Members on other computers aren't shown.
+                Members on this computer. {roster?.status === 'unavailable'
+                  ? `${rosterUnavailableText(roster)} Members on other computers aren't shown.`
+                  : `Checking ${where.hostName} for members on other computers.`}
               </p>
             )}
             {view.members.length === 0
@@ -223,11 +227,6 @@ export function GroupProjectMembersSection({ groupProjectId }: { groupProjectId:
   );
 }
 
-const time = (iso: string) => {
-  const date = new Date(iso);
-  return Number.isNaN(date.getTime()) ? 'an unknown time' : date.toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' });
-};
-
 /**
  * The host's roster (#3548). Says what it can't vouch for, and offers Exclude
  * or Remove only where this computer can make that change today: on the host
@@ -241,6 +240,7 @@ function RosterMembers({ roster, view, busy, onRemove }: {
 }) {
   const copy = roster.source !== 'host';
   const gaps = rosterGaps(roster);
+  const vouched = rosterVouched(roster);
   const local = new Set(view.members.map((m) => m.agentId));
   const actionId = (m: (typeof roster.members)[number]): string | null => {
     const id = m.thisComputer ? m.agentId : copy ? null : `${m.agentId}@${m.machine}`;
@@ -249,10 +249,9 @@ function RosterMembers({ roster, view, busy, onRemove }: {
   const elsewhere = copy && roster.members.some((m) => !m.thisComputer);
   return (
     <div className="flex flex-col gap-2" data-testid="members-roster">
-      {roster.complete
+      {vouched
         ? <p className={settingsHelp}>
-          {copy ? `Every member on every computer, from ${roster.hostName}.` : 'Every member on every computer.'}
-          {roster.source === 'cache' && ` Saved ${time(roster.fetchedAt)}.`}
+          {copy ? `Every member on every computer, from ${roster.hostName}, as of ${time(roster.fetchedAt)}.` : 'Every member on every computer.'}
         </p>
         : <div className="flex flex-col gap-0.5" role="status" aria-label="Member list may be incomplete">
           <p className={settingsHelp}>This list may be incomplete.</p>

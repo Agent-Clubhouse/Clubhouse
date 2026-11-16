@@ -21,7 +21,7 @@ import { appLog } from './log-service';
 
 export interface GroupProjectNetworkTransport {
   connected(machine: string): boolean;
-  post(machine: string, path: string, body: Record<string, unknown>): Promise<{ status: number; body: unknown }>;
+  post(machine: string, path: string, body: Record<string, unknown>, options?: { maxResponseBytes?: number }): Promise<{ status: number; body: unknown }>;
   onConnected(listener: (machine: string) => void): () => void;
   machineName(machine: string): string | undefined;
 }
@@ -121,7 +121,7 @@ export function startGroupProjectNetwork(start: StartGroupProjectNetworkOptions)
     connected: (machine) => start.transport.connected(machine),
     isMember: (machine) => start.isMember(machine),
     machineName: (machine) => start.transport.machineName(machine),
-    post: (machine, path, body) => start.transport.post(machine, path, body),
+    post: (machine, path, body, postOptions) => start.transport.post(machine, path, body, postOptions),
   });
 
   // On connect: send what waited, then catch up.

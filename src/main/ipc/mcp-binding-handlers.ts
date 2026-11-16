@@ -641,7 +641,7 @@ export function restorePersistedBindings(): Promise<void> {
     startGroupProjectNetwork({
       transport: {
         connected: (machine) => annexClient.isMachineConnected(machine),
-        post: (machine, urlPath, body) => annexClient.postToMachine(machine, urlPath, body),
+        post: (machine, urlPath, body, options) => annexClient.postToMachine(machine, urlPath, body, options),
         onConnected: (listener) => annexClient.onSatelliteConnected(listener),
         machineName: (machine) => annexClient.machineAlias(machine) || annexPeers.listPeers().find((p) => p.fingerprint.toLowerCase() === machine.toLowerCase())?.alias,
       },

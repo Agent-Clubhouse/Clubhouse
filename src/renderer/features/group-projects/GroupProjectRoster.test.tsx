@@ -1,7 +1,8 @@
 /** #3548: the Members and Permissions sections with the host's roster, an incomplete one, and none. */
-import { fireEvent, render, screen, within } from '@testing-library/react';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
-import type { GroupProjectMembershipView, GroupProjectRolesView } from '../../../shared/group-project-types';
+import { act, fireEvent, render, screen, within } from '@testing-library/react';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import type { GroupProject, GroupProjectMembershipView, GroupProjectRolesView } from '../../../shared/group-project-types';
+import { useGroupProjectStore } from '../../stores/groupProjectStore';
 import type { GroupProjectRosterMember, GroupProjectRosterView } from '../../../shared/group-project-roster';
 import { GroupProjectMembersSection } from './GroupProjectMembersSection';
 import { GroupProjectRolesSection } from './GroupProjectRolesSection';
@@ -22,7 +23,7 @@ const member = (agentId: string, machine: string, machineLabel: string, extra: P
 });
 
 const fullRoster = (extra: Partial<Extract<GroupProjectRosterView, { status: 'available' }>> = {}): GroupProjectRosterView => ({
-  groupProjectId: 'gp1', status: 'available', source: 'live', hostName: 'Desk', fetchedAt: '2026-11-15T10:50:00.000Z',
+  groupProjectId: 'gp1', status: 'available', source: 'live', hostName: 'Desk', fetchedAt: new Date().toISOString(),
   members: [
     member('builder_a', DESK, 'Desk', { provenance: 'auto', lead: 'allow', admin: 'ask' }),
     member('builder_b', STUDIO, 'This computer', { lead: 'ask' }),
@@ -32,11 +33,19 @@ const fullRoster = (extra: Partial<Extract<GroupProjectRosterView, { status: 'av
     { machine: STUDIO, label: 'App on Studio', state: 'verified', thisComputer: true },
     { machine: ATTIC, label: 'App on Attic', state: 'verified', thisComputer: false },
   ],
-  hostInventory: 'complete', truncated: false, complete: true, ...extra,
+  hostInventory: 'complete', truncated: false, copiesCut: false, complete: true, ...extra,
 });
 
 const roles = (): GroupProjectRolesView => ({
   groupProjectId: 'gp1', own: { deliver: 'allow', wake: 'off', actions: 'allow' }, holders: [{ agentId: 'builder_b', lead: 'allow', admin: 'off' }],
+});
+
+const replica = { id: 'gp1', name: 'Release', description: '', instructions: '', createdAt: '', metadata: {}, hostName: 'Desk',
+  host: { machine: DESK }, network: { role: 'replica', state: 'online', waitingWrites: 0, refusals: [] } } as unknown as GroupProject;
+
+afterEach(() => {
+  vi.useRealTimers();
+  useGroupProjectStore.setState({ projects: [] });
 });
 
 beforeEach(() => {
@@ -50,7 +59,7 @@ describe('Members with the host\'s roster (#3548)', () => {
     const exclude = vi.spyOn(window.clubhouse.groupProject, 'excludeMember').mockResolvedValue(localView());
     render(<GroupProjectMembersSection groupProjectId="gp1" />);
     const roster = await screen.findByTestId('members-roster');
-    expect(roster).toHaveTextContent('Every member on every computer, from Desk.');
+    expect(roster).toHaveTextContent(/Every member on every computer, from Desk, as of /);
     const items = within(within(roster).getByRole('list', { name: 'Members' })).getAllByRole('listitem');
     expect(items.map((li) => li.textContent)).toEqual([
       expect.stringContaining('Desk, Agent, joined by being in scope, App'),
@@ -93,6 +102,41 @@ describe('Members with the host\'s roster (#3548)', () => {
     expect(screen.queryByTestId('members-roster')).toBeNull();
   });
 
+  it('on a copy, labels its own list while the host hasn\'t answered yet', async () => {
+    useGroupProjectStore.setState({ projects: [replica] });
+    vi.spyOn(window.clubhouse.groupProject, 'getRoster').mockReturnValue(new Promise(() => {}));
+    render(<GroupProjectMembersSection groupProjectId="gp1" />);
+    expect(await screen.findByTestId('members-local-only')).toHaveTextContent('Members on this computer. Checking Desk for members on other computers.');
+    expect(screen.getByRole('list', { name: 'Members' })).toHaveTextContent('Builder');
+  });
+
+  it('on a copy, labels its own list after the roster read failed', async () => {
+    useGroupProjectStore.setState({ projects: [replica] });
+    vi.spyOn(window.clubhouse.groupProject, 'getRoster').mockRejectedValue(new Error('boom'));
+    render(<GroupProjectMembersSection groupProjectId="gp1" />);
+    expect(await screen.findByTestId('members-local-only')).toHaveTextContent('Members on this computer.');
+  });
+
+  it('a roster read long ago is no longer called complete, and an open panel asks again', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    const getRoster = vi.spyOn(window.clubhouse.groupProject, 'getRoster').mockResolvedValue(fullRoster({ fetchedAt: new Date(Date.now() - 10 * 60_000).toISOString() }));
+    render(<GroupProjectMembersSection groupProjectId="gp1" />);
+    const status = await screen.findByRole('status', { name: 'Member list may be incomplete' });
+    expect(status).toHaveTextContent('Desk hasn\'t confirmed it since, so this may be out of date.');
+    expect(screen.queryByText(/Every member on every computer/)).toBeNull();
+    const before = getRoster.mock.calls.length;
+    getRoster.mockResolvedValue(fullRoster());
+    await act(async () => { vi.advanceTimersByTime(15_000); });
+    expect(getRoster.mock.calls.length).toBeGreaterThan(before);
+    expect(await screen.findByText(/Every member on every computer, from Desk/)).toBeInTheDocument();
+  });
+
+  it('more linked computers than a roster lists is never complete', async () => {
+    vi.spyOn(window.clubhouse.groupProject, 'getRoster').mockResolvedValue(fullRoster({ copiesCut: true, complete: false }));
+    render(<GroupProjectMembersSection groupProjectId="gp1" />);
+    expect(await screen.findByRole('status', { name: 'Member list may be incomplete' })).toHaveTextContent('More linked computers than can be listed.');
+  });
+
   it('with no roster known, shows the list it has and claims nothing more', async () => {
     render(<GroupProjectMembersSection groupProjectId="gp1" />);
     expect(await screen.findByRole('list', { name: 'Members' })).toHaveTextContent('Builder');
@@ -106,7 +150,7 @@ describe('Permissions with the host\'s roles (#3548)', () => {
     vi.spyOn(window.clubhouse.groupProject, 'getRoster').mockResolvedValue(fullRoster());
     render(<GroupProjectRolesSection groupProjectId="gp1" />);
     const host = await screen.findByTestId('roles-host');
-    expect(host).toHaveTextContent('Lead and admin on Desk.');
+    expect(host).toHaveTextContent(/Lead and admin on Desk, as of /);
     expect(host).toHaveTextContent('can\'t be changed from here');
     expect(within(host).getByLabelText('Lead for Builder on Desk on Desk')).toHaveTextContent('Lead allow');
     expect(within(host).getByLabelText('Admin for Builder on Desk on Desk')).toHaveTextContent('Admin ask first');
@@ -123,6 +167,14 @@ describe('Permissions with the host\'s roles (#3548)', () => {
     render(<GroupProjectRolesSection groupProjectId="gp1" />);
     expect(await screen.findByTestId('roles-host-unavailable')).toHaveTextContent('Lead and admin on Desk can\'t be shown. Desk is offline');
     expect(screen.getByRole('combobox', { name: 'Lead for Builder' })).toBeInTheDocument();
+  });
+
+  it('on a copy, says the host\'s roles are being checked before any roster arrives', async () => {
+    useGroupProjectStore.setState({ projects: [replica] });
+    vi.spyOn(window.clubhouse.groupProject, 'getRoster').mockReturnValue(new Promise(() => {}));
+    render(<GroupProjectRolesSection groupProjectId="gp1" />);
+    expect(await screen.findByTestId('roles-host-checking')).toHaveTextContent('Checking Desk for its lead and admin grants.');
+    expect(screen.getByTestId('roles-this-computer')).toHaveTextContent('Desk doesn\'t use them');
   });
 
   it('on the host, names other computers\' members and keeps every role editable', async () => {

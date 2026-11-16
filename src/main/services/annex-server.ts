@@ -3752,6 +3752,8 @@ async function handleGroupProjectNetworkRoute(ctx: AnnexRouteContext, kind: 'syn
     if (!invalid) {
       appLog('core:annex', 'warn', 'Network group project request failed', { meta: { kind, error: err instanceof Error ? err.message : String(err) } });
     }
+    // #3548: a roster failure says only that it failed: no message, no paths.
+    if (kind === 'roster') { sendJson(ctx.res, invalid ? 400 : 500, { error: invalid ? 'invalid_request' : 'failed' }); return; }
     sendJson(ctx.res, invalid ? 400 : 500, { error: invalid ? 'invalid_request' : 'failed', message: err instanceof Error ? err.message : String(err) });
   }
 }

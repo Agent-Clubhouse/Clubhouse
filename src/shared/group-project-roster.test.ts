@@ -7,7 +7,7 @@ const request = { v: 1 as const, groupProjectId: 'gp1', offset: 0, limit: 2 };
 const page = (extra: Record<string, unknown> = {}) => ({
   v: 1, roster: 1, status: 'ok', groupProjectId: 'gp1', host: { machine: HOST }, seq: 3, generatedAt: '2026-11-15T00:00:00.000Z',
   members: [{ agentId: 'lead', machine: HOST, label: 'Lead', kind: 'durable', provenance: 'auto', inventory: 'verified', lead: 'allow', admin: 'off' }],
-  copies: [], hostInventory: 'complete', machines: [], page: { offset: 0, total: 1 }, ...extra,
+  copies: [], hostInventory: 'complete', machines: [], etag: 'a'.repeat(64), page: { offset: 0, total: 1 }, ...extra,
 });
 
 describe('group project roster wire (#3548)', () => {

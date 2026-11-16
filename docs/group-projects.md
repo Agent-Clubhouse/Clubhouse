@@ -107,15 +107,29 @@ membership record, inventory and role grants; on a copy, fetched from
 - **Roles.** Lead and admin come from the host's grants, the ones it checks
   for remote writes. A copy shows them read-only; its own grants, which gate
   lead tools its agents run there, stay editable under "On this computer".
-- **Bounds.** Pages of at most 200, 1000 members read in all (more is shown as
-  cut), 32 copies, labels clipped to 100 characters. No paths, project ids,
-  instructions, tool switches or secrets. A host answers each computer 25
-  pages a minute, then `busy`. Every refusal (not here, not shared, a copy,
-  not in the network) is the same `not_found`.
+- **Bounds.** Pages of at most 200 and 512 KB (the copy stops reading past
+  that), 1000 members read in all (more is shown as cut), 32 copies (more is
+  marked `copiesCut`, never complete), labels clipped to 100 characters. No
+  paths, project ids, instructions, tool switches or secrets. A host answers
+  each computer 25 pages a minute, then `busy`. Every refusal (not here, not
+  shared, a copy, not in the network) is the same `not_found`, and a failure
+  answers a bare `failed` with no message.
+- **Paging.** Every page carries the roster's `etag` (a digest of all of it)
+  and `seq`. A copy that sees either change between pages starts again, so it
+  never stitches two rosters together.
+- **Who can read it.** Any computer in your Annex Network can read the roster
+  of any network group project hosted here, the same exposure as sync, which
+  already sends every network group's membership record. The roster adds the
+  host's lead and admin grants and inventory states.
 - **Cache.** A copy saves the last roster in `group-projects/<id>/roster.json`
-  (atomic write, ignored when damaged, over 1 MB or for another host) and
-  reads again after 15 seconds, or at once when the group changed since. With
-  the host offline it shows the saved roster as stale, with when it was read.
+  (atomic write, ignored when damaged, over 1 MB or for another host, never
+  recreating a removed copy's folder) and reads again after 15 seconds, or
+  when the group changed since (at most every 3 seconds). A fetch time in the
+  future is never fresh. With the host offline it shows the saved roster as
+  stale, with when it was read. An open panel asks again every 15 seconds,
+  shows "as of" the fetch time, and stops calling a roster complete once it is
+  45 seconds old. On a copy, until a roster arrives, the lists are labelled as
+  this computer's.
 - **Older hosts** answer 404. The copy shows its own members, labelled
   "Members on this computer", and asks again after a minute.
 

@@ -4,7 +4,7 @@ import { Button } from '../../components/Button';
 import { ipcErrorMessage } from '../../utils/ipc-error';
 import { SettingsBlock, SettingsSection, settingsError, settingsHelp } from '../settings/SettingsLayout';
 import type { GroupProjectRosterView } from '../../../shared/group-project-roster';
-import { isCopyRoster, rosterGaps, rosterUnavailableText, useGroupRoster } from './useGroupRoster';
+import { isCopyRoster, rosterGaps, rosterUnavailableText, rosterVouched, time, useGroupRoster, useIsCopy } from './useGroupRoster';
 
 /**
  * The group project as a principal (#3360): what it may do by itself, and who
@@ -38,7 +38,9 @@ export function GroupProjectRolesSection({ groupProjectId }: { groupProjectId: s
   const api = window.clubhouse.groupProject;
   // #3548: the roles the host enforces, for every member on every computer.
   const roster = useGroupRoster(groupProjectId, members);
-  const copy = isCopyRoster(roster);
+  const where = useIsCopy(groupProjectId);
+  const copy = where.copy || isCopyRoster(roster);
+  const hostName = roster?.hostName ?? where.hostName;
 
   const load = useCallback(async () => {
     try {
@@ -117,12 +119,12 @@ export function GroupProjectRolesSection({ groupProjectId }: { groupProjectId: s
                 </label>
               ))}
             </div>
-            {copy && roster && <HostRoles roster={roster} />}
+            {copy && <HostRoles roster={roster} hostName={hostName} />}
             <div className="flex flex-col gap-1">
-              {copy && roster && (
+              {copy && (
                 <p className={settingsHelp} data-testid="roles-this-computer">
                   On this computer. These grants cover lead tools that agents here run, such as tapping, waking or
-                  broadcasting to members. {roster.hostName} doesn't use them when it applies a change, so the two lists can differ.
+                  broadcasting to members. {hostName} doesn't use them when it applies a change, so the two lists can differ.
                 </p>
               )}
               <p className={settingsHelp}>
@@ -166,8 +168,15 @@ export function GroupProjectRolesSection({ groupProjectId }: { groupProjectId: s
  * change from another computer can't set the host's grants, and Ask first
  * can't be answered for one.
  */
-function HostRoles({ roster }: { roster: GroupProjectRosterView }) {
-  const host = roster.hostName;
+function HostRoles({ roster, hostName }: { roster: GroupProjectRosterView | null; hostName: string }) {
+  const host = roster?.hostName ?? hostName;
+  if (!roster) {
+    return (
+      <div className="flex flex-col gap-1" data-testid="roles-host-checking">
+        <p className={settingsHelp}>Checking {host} for its lead and admin grants. Until it answers, only this computer's grants are shown.</p>
+      </div>
+    );
+  }
   if (roster.status === 'unavailable') {
     return (
       <div className="flex flex-col gap-1" data-testid="roles-host-unavailable">
@@ -179,10 +188,10 @@ function HostRoles({ roster }: { roster: GroupProjectRosterView }) {
   return (
     <div className="flex flex-col gap-1" data-testid="roles-host">
       <p className={settingsHelp}>
-        Lead and admin on {host}. {host} checks these when it applies a change from any computer, such as deleting a
+        Lead and admin on {host}, as of {time(roster.fetchedAt)}. {host} checks these when it applies a change from any computer, such as deleting a
         post or changing members. They're set on {host} and can't be changed from here.
       </p>
-      {!roster.complete && (
+      {!rosterVouched(roster) && (
         <div className="flex flex-col gap-0.5" role="status" aria-label="Role list may be incomplete">
           <p className={settingsHelp}>This list may be incomplete.</p>
           {gaps.map((gap) => <p key={gap} className={settingsHelp}>{gap}</p>)}

@@ -14,11 +14,11 @@
  * Read-only: changing members and roles stays with the existing host-enforced
  * paths.
  */
-import * as fs from 'fs';
 import * as fsp from 'fs/promises';
+import { createHash } from 'crypto';
 import type { GroupProject, ResolvedGroupProjectMember } from '../../shared/group-project-types';
 import {
-  GROUP_PROJECT_ROSTER_PATH, GROUP_PROJECT_ROSTER_VERSION, ROSTER_COPIES_MAX, ROSTER_MEMBERS_MAX, ROSTER_PAGE_MAX,
+  GROUP_PROJECT_ROSTER_PATH, GROUP_PROJECT_ROSTER_VERSION, ROSTER_COPIES_MAX, ROSTER_MEMBERS_MAX, ROSTER_PAGE_MAX, ROSTER_RESPONSE_MAX_BYTES,
   clipLabel, readRosterAnswer, readRosterRequest,
   type GroupProjectRosterView, type RosterAnswer, type RosterCopy, type RosterCopyState, type RosterMember, type RosterPage,
   type RosterProvenance, type RosterRequest, type RosterRoleMode,
@@ -29,7 +29,7 @@ import { describeMembership, hostInventoryPartial } from './group-project-member
 import { linkedAgents, linkedProjectCopies, verifyCopy } from './group-project-linked-agents';
 import { listGroupProjectRoles } from './group-project-roles';
 import { readJsonFile, writeJsonFile } from './group-project-json-file';
-import { groupProjectDir, rosterCachePath } from './group-project-paths';
+import { rosterCachePath } from './group-project-paths';
 import { appLog } from './log-service';
 
 /** How the roster reaches a host; group-project-network.ts provides it. */
@@ -37,7 +37,7 @@ export interface GroupProjectRosterLink {
   connected(machine: string): boolean;
   isMember(machine: string): boolean;
   machineName(machine: string): string | undefined;
-  post(machine: string, path: string, body: Record<string, unknown>): Promise<{ status: number; body: unknown }>;
+  post(machine: string, path: string, body: Record<string, unknown>, options?: { maxResponseBytes?: number }): Promise<{ status: number; body: unknown }>;
 }
 
 /** A host answers each computer at most this many roster pages a minute: five full rosters. */
@@ -50,6 +50,8 @@ const UNSUPPORTED_TTL_MS = 60_000;
 /** A saved roster bigger than this is not read. */
 export const ROSTER_CACHE_MAX_BYTES = 1024 * 1024;
 const PAGE_ATTEMPTS = 3;
+/** A change since the saved roster reads again at once, but not more often than this. */
+export const ROSTER_MIN_REFETCH_MS = 3_000;
 
 interface CachedRoster { version: 1; fetchedAt: string; truncated: boolean; page: RosterPage }
 
@@ -102,8 +104,11 @@ class GroupProjectRosterService {
     const copies: RosterCopy[] = [];
     const machines = new Map<string, string>();
     for (const sat of satellites) if (sat.alias) machines.set(sat.fingerprint.toLowerCase(), clipLabel(sat.alias));
+    let copiesCut = false;
     if (gp.scope?.level === 'project' && gp.scope.reach === 'network') {
-      for (const copy of linkedProjectCopies(self, gp.scope.projectId).slice(0, ROSTER_COPIES_MAX)) {
+      const linkedCopies = linkedProjectCopies(self, gp.scope.projectId);
+      copiesCut = linkedCopies.length > ROSTER_COPIES_MAX;
+      for (const copy of linkedCopies.slice(0, ROSTER_COPIES_MAX)) {
         const { state, label } = copyState(copy, satellites, isMember);
         copies.push({ machine: copy.machine, label: clipLabel(label), state });
       }
@@ -133,10 +138,13 @@ class GroupProjectRosterService {
     }
     all.sort((a, b) => a.label.localeCompare(b.label) || a.machine.localeCompare(b.machine) || a.agentId.localeCompare(b.agentId));
     const used = new Set([...all.map((m) => m.machine), ...copies.map((c) => c.machine)]);
+    const hostInventory = partial ? 'partial' as const : 'complete' as const;
+    // Every page of one roster carries this; a copy that sees two starts again.
+    const etag = createHash('sha256').update(JSON.stringify({ all, copies, copiesCut, hostInventory })).digest('hex');
     return {
       v: 1, roster: GROUP_PROJECT_ROSTER_VERSION, status: 'ok', groupProjectId: gp.id,
       host: { machine: self ?? '' }, seq: gp.seq ?? 0, generatedAt: new Date().toISOString(),
-      copies, hostInventory: partial ? 'partial' : 'complete',
+      copies, ...(copiesCut && { copiesCut: true }), etag, hostInventory,
       machines: [...machines].filter(([m]) => used.has(m) && m !== self).slice(0, ROSTER_COPIES_MAX).map(([machine, label]) => ({ machine, label })),
       all,
     };
@@ -198,7 +206,10 @@ class GroupProjectRosterService {
     const knownOld = this.unsupported.get(host);
     if (knownOld !== undefined && Date.now() - knownOld < UNSUPPORTED_TTL_MS) return unavailable('unsupported');
     const changedSince = !!cached && (gp.seq ?? 0) > cached.page.seq;
-    if (cached && !changedSince && Date.now() - Date.parse(cached.fetchedAt) < ROSTER_FRESH_MS) {
+    const age = cached ? Date.now() - Date.parse(cached.fetchedAt) : Infinity;
+    // A fetch time in the future (a clock moved back) is never fresh.
+    const fresh = age >= 0 && age < ROSTER_FRESH_MS && (!changedSince || age < ROSTER_MIN_REFETCH_MS);
+    if (cached && fresh) {
       return this.toView(gp, cached.page, 'cache', cached.fetchedAt, cached.truncated);
     }
     const fetched = await this.fetch(gp.id, host);
@@ -228,7 +239,7 @@ class GroupProjectRosterService {
         const request: RosterRequest = { v: 1, groupProjectId, offset: members.length, limit: Math.min(ROSTER_PAGE_MAX, ROSTER_MEMBERS_MAX - members.length) };
         let answer: RosterAnswer;
         try {
-          const response = await this.link!.post(host, GROUP_PROJECT_ROSTER_PATH, request as unknown as Record<string, unknown>);
+          const response = await this.link!.post(host, GROUP_PROJECT_ROSTER_PATH, request as unknown as Record<string, unknown>, { maxResponseBytes: ROSTER_RESPONSE_MAX_BYTES });
           if (response.status === 404) return { kind: 'unsupported' };
           if (response.status !== 200) throw new Error(`The roster answered ${response.status}.`);
           answer = readRosterAnswer(response.body, host, request);
@@ -240,7 +251,7 @@ class GroupProjectRosterService {
           return { kind: 'failed' };
         }
         if (answer.status !== 'ok') return { kind: answer.status };
-        if (first && (answer.seq !== first.seq || answer.page.total !== first.page.total)) { restart = true; break; }
+        if (first && (answer.etag !== first.etag || answer.seq !== first.seq || answer.page.total !== first.page.total)) { restart = true; break; }
         first ??= answer;
         members.push(...answer.members);
         if (answer.members.length === 0 || members.length >= answer.page.total) break;
@@ -279,8 +290,8 @@ class GroupProjectRosterService {
     try {
       // The copy's folder goes when the copy does: never bring it back for a roster.
       const gp = await groupProjectHost.get(groupProjectId);
-      if (!gp || !groupProjectHost.isReplica(gp) || !fs.existsSync(groupProjectDir(groupProjectId))) return;
-      await writeJsonFile(rosterCachePath(groupProjectId), entry);
+      if (!gp || !groupProjectHost.isReplica(gp)) return;
+      await writeJsonFile(rosterCachePath(groupProjectId), entry, { createDir: false });
     } catch (err) {
       // telemetry-exempt: the roster still shows from memory; only a restart while the host is offline loses it; logged
       appLog('core:group-project', 'warn', 'Could not save a group project roster', { meta: { groupProjectId, error: err instanceof Error ? err.message : String(err) } });
@@ -308,8 +319,8 @@ class GroupProjectRosterService {
       members: page.members.map((m) => ({
         ...m, key: `${m.agentId}@${m.machine}`, machineLabel: machineLabel(m.machine), thisComputer: m.machine === here,
       })),
-      copies, hostInventory: page.hostInventory, truncated,
-      complete: !staleNow && !truncated && page.hostInventory === 'complete' && copies.every((c) => c.state === 'verified')
+      copies, copiesCut: !!page.copiesCut, hostInventory: page.hostInventory, truncated,
+      complete: !staleNow && !truncated && !page.copiesCut && page.hostInventory === 'complete' && copies.every((c) => c.state === 'verified')
         && page.members.every((m) => m.inventory === 'verified'),
     };
   }

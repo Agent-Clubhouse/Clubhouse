@@ -10,10 +10,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import * as fsp from 'fs/promises';
 import * as path from 'path';
 import { readSyncRequest, readSyncResponse, readWriteRequest, readWriteResponse } from '../../shared/group-project-network';
-import { GROUP_PROJECT_ROSTER_PATH, ROSTER_MEMBERS_MAX, ROSTER_PAGE_MAX, type GroupProjectRosterView } from '../../shared/group-project-roster';
+import { GROUP_PROJECT_ROSTER_PATH, ROSTER_MEMBERS_MAX, ROSTER_PAGE_MAX, readRosterAnswer, type GroupProjectRosterView } from '../../shared/group-project-roster';
 
 type Project = { id: string; name: string; path: string; agents: Array<{ id: string; name: string; parentAgentId?: string }> };
-type Holder = { agentId: string; lead: 'allow' | 'ask' | 'off'; admin: 'allow' | 'ask' | 'off' };
 
 interface Machine {
   name: string;
@@ -26,14 +25,15 @@ interface Machine {
   persisted?: typeof import('./persisted-bindings');
   bindings?: typeof import('./clubhouse-mcp/binding-manager');
   roster?: typeof import('./group-project-roster');
+  roles?: typeof import('./group-project-roles');
 }
 
 const world = vi.hoisted(() => ({
   als: null as unknown as AsyncLocalStorage<{ home: string; fp: string; projects?: Project[] }>,
   fallbackHome: '',
   links: [] as Array<Array<{ machine: string; projectId: string }>>,
-  /** Role grants each computer holds, by group project: what that computer enforces. */
-  roles: {} as Record<string, Record<string, Holder[]>>,
+  /** Runs once between a host's first and second roster page. */
+  betweenPages: null as null | (() => Promise<void>),
 }));
 
 vi.mock('electron', () => ({ app: { isPackaged: false, getPath: () => world.als?.getStore()?.home ?? world.fallbackHome } }));
@@ -58,10 +58,6 @@ vi.mock('./annex-client', () => ({
     },
   })),
   onSatelliteSnapshot: () => () => {},
-}));
-vi.mock('./group-project-roles', () => ({
-  listGroupProjectRoles: (id: string) => world.roles[world.als.getStore()!.fp]?.[id] ?? [],
-  revokeGroupProjectRoles: async () => false,
 }));
 vi.mock('./quick-agent-events', () => ({ knownQuickAgents: () => new Map() }));
 vi.mock('./canvas-store-reader', () => ({ readAllCanvasStores: async () => [] }));
@@ -89,6 +85,10 @@ const old = new Set<string>();
 const outsiders = new Set<string>();
 /** Roster pages each host answered, by host name. */
 const rosterPosts = new Map<string, number>();
+/** Hosts that pad their answers past any sane size. */
+const bloated = new Set<string>();
+/** The byte limits copies asked for. */
+const askedLimits: Array<number | undefined> = [];
 
 function as<T>(m: Machine, fn: () => Promise<T> | T): Promise<T> {
   return world.als.run({ home: m.home, fp: m.fp, projects: m.projects }, async () => fn());
@@ -124,13 +124,20 @@ function rosterLinkFor(self: Machine) {
     connected: (machine: string) => connected(self, machine),
     isMember,
     machineName: (machine: string) => byFp(machine).name,
-    post: async (machine: string, urlPath: string, body: Record<string, unknown>) => {
+    post: async (machine: string, urlPath: string, body: Record<string, unknown>, options?: { maxResponseBytes?: number }) => {
       if (!connected(self, machine)) throw new Error('Satellite not connected');
       const other = byFp(machine);
       if (old.has(other.name) || urlPath !== GROUP_PROJECT_ROSTER_PATH) return { status: 404, body: { error: 'not_found' } };
-      rosterPosts.set(other.name, (rosterPosts.get(other.name) ?? 0) + 1);
+      askedLimits.push(options?.maxResponseBytes);
+      const count = (rosterPosts.get(other.name) ?? 0) + 1;
+      rosterPosts.set(other.name, count);
+      if (count === 2 && world.betweenPages) { const run = world.betweenPages; world.betweenPages = null; await run(); }
       try {
-        return { status: 200, body: wire(await as(other, () => other.roster!.groupProjectRoster.receive(self.fp, wire(body)))) };
+        const answer = await as(other, () => other.roster!.groupProjectRoster.receive(self.fp, wire(body)));
+        const text = JSON.stringify(bloated.has(other.name) ? { ...answer, pad: 'x'.repeat(600 * 1024) } : answer);
+        // What annex-client's postToMachine does with the limit.
+        if (options?.maxResponseBytes !== undefined && Buffer.byteLength(text) > options.maxResponseBytes) throw new Error('Annex response exceeds its byte limit.');
+        return { status: 200, body: JSON.parse(text) };
       } catch (err) {
         if (err instanceof Error && err.name === 'GroupProjectNetworkError') return { status: 400, body: { error: 'invalid_request' } };
         return { status: 500, body: { error: 'failed' } };
@@ -147,6 +154,7 @@ async function load(m: Machine): Promise<void> {
   m.persisted = await import('./persisted-bindings');
   m.bindings = await import('./clubhouse-mcp/binding-manager');
   m.roster = await import('./group-project-roster');
+  m.roles = await import('./group-project-roles');
   m.host.groupProjectHost.setNetworkLink(linkFor(m));
   m.roster.groupProjectRoster.setLink(rosterLinkFor(m));
 }
@@ -166,9 +174,10 @@ beforeEach(async () => {
   const cache = path.join(process.cwd(), 'node_modules', '.cache');
   await fsp.mkdir(cache, { recursive: true });
   world.fallbackHome = await fsp.mkdtemp(path.join(cache, 'gp-roster-none-'));
-  down.clear(); truncated.clear(); old.clear(); outsiders.clear(); rosterPosts.clear();
+  down.clear(); truncated.clear(); old.clear(); outsiders.clear(); rosterPosts.clear(); bloated.clear();
+  askedLimits.length = 0;
   world.links = [];
-  world.roles = {};
+  world.betweenPages = null;
   A.projects = [{ id: 'proj_a', name: 'App', path: '/a/app', agents: [{ id: 'lead', name: 'Lead' }, { id: 'builder_a', name: 'Builder' }] }];
   B.projects = [{ id: 'proj_b', name: 'App', path: '/b/app', agents: [{ id: 'builder_b', name: 'Builder' }] }];
   C.projects = [{ id: 'proj_c', name: 'App', path: '/c/app', agents: [{ id: 'checker', name: 'Checker' }] }];
@@ -302,22 +311,31 @@ describe('the authoritative roster (#3548)', () => {
     expect(stale).toMatchObject({ source: 'cache', stale: 'offline', complete: false });
     expect(stale.members).toHaveLength(first.members.length);
     down.delete('Desk');
+    // Past the short floor between reads, which keeps a burst of changes to one read.
+    vi.useFakeTimers({ toFake: ['Date'], now: Date.now() + 4_000 });
     const fresh = available(await roster(B, id));
     // Read again at once, not after the freshness window: the group changed since.
     expect(fresh).toMatchObject({ source: 'live' });
     expect(fresh.members.map((m) => m.agentId)).not.toContain('builder_a');
   });
 
-  it('roles come from the host\'s grants, not the copy\'s', async () => {
+  it('roles come from the host\'s real grant store, by host-relative address, not the copy\'s', async () => {
     const id = await linkedGroup();
-    world.roles[A.fp] = { [id]: [
-      { agentId: 'lead', lead: 'allow', admin: 'allow' },
-      { agentId: `builder_b@${B.fp}`, lead: 'ask', admin: 'off' },
+    // The host's own agent by bare id, another computer's by `id@machine`: the keys the remote write gate checks.
+    await as(A, async () => {
+      await A.roles!.setGroupProjectRole(id, 'lead', 'lead', 'allow');
+      await A.roles!.setGroupProjectRole(id, 'lead', 'admin', 'allow');
+      await A.roles!.setGroupProjectRole(id, `builder_b@${B.fp}`, 'lead', 'ask');
       // Not a member: never shown as one.
-      { agentId: `ghost@${C.fp}`, lead: 'allow', admin: 'allow' },
-    ] };
+      await A.roles!.setGroupProjectRole(id, `ghost@${C.fp}`, 'lead', 'allow');
+    });
+    // A bare id on the host is the host's agent, never Studio's agent of the same id.
+    await as(A, () => A.roles!.setGroupProjectRole(id, 'builder_b', 'admin', 'allow'));
     // Studio's own grants say otherwise; the host doesn't enforce them for its changes.
-    world.roles[B.fp] = { [id]: [{ agentId: 'builder_b', lead: 'allow', admin: 'allow' }] };
+    await as(B, async () => {
+      await B.roles!.setGroupProjectRole(id, 'builder_b', 'lead', 'allow');
+      await B.roles!.setGroupProjectRole(id, 'builder_b', 'admin', 'allow');
+    });
     const view = available(await roster(B, id));
     const byKey = new Map(view.members.map((m) => [m.key, m]));
     expect(byKey.get(`lead@${A.fp}`)).toMatchObject({ lead: 'allow', admin: 'allow' });
@@ -420,6 +438,58 @@ describe('the authoritative roster (#3548)', () => {
     await fsp.writeFile(rosterFile(B, id), JSON.stringify({ ...saved, page: { ...saved.page, members: [{ agentId: 'x', machine: 'nope' }] } }));
     resetCopyCache(B);
     expect(await roster(B, id)).toMatchObject({ status: 'unavailable', reason: 'offline' });
+  });
+
+  it('caps each answer\'s bytes: an oversized page fails the read, never shows', async () => {
+    const id = await linkedGroup();
+    bloated.add('Desk');
+    expect(await roster(B, id)).toMatchObject({ status: 'unavailable', reason: 'failed' });
+    expect(askedLimits.every((limit) => limit === 512 * 1024)).toBe(true);
+    // Validated too: a generatedAt that isn't a date, or a page with no digest, is refused.
+    const page = await as(A, () => A.roster!.groupProjectRoster.receive(B.fp, wire({ v: 1, groupProjectId: id, offset: 0, limit: 10 })));
+    const request = { v: 1 as const, groupProjectId: id, offset: 0, limit: 10 };
+    expect(() => readRosterAnswer({ ...(page as object), generatedAt: 'x'.repeat(41) }, A.fp, request)).toThrow();
+    expect(() => readRosterAnswer({ ...(page as object), generatedAt: 'yesterday' }, A.fp, request)).toThrow();
+    expect(() => readRosterAnswer({ ...(page as object), etag: undefined }, A.fp, request)).toThrow();
+  });
+
+  it('a roster that changes between pages is read again from the start, never stitched', async () => {
+    A.projects![0].agents = Array.from({ length: 250 }, (_, i) => ({ id: `agent_${String(i).padStart(4, '0')}`, name: `Agent ${i}` }));
+    const id = await linkedGroup([B]);
+    // An agent appears on the host between page one and two: no sequence number changes, but the digest does.
+    world.betweenPages = async () => { A.projects![0].agents.unshift({ id: 'aaa_new', name: 'Aaa new' }); };
+    const view = available(await roster(B, id));
+    expect(view.members.map((m) => m.agentId)).toContain('aaa_new');
+    expect(view.members).toHaveLength(252);
+    expect(new Set(view.members.map((m) => m.key)).size).toBe(252);
+    expect(rosterPosts.get('Desk')).toBe(4);
+  });
+
+  it('more linked copies than a page carries are cut and marked, never complete', async () => {
+    const extra = Array.from({ length: 40 }, (_, i) => ({ machine: fp(i.toString(16).padStart(2, '0').replace(/^(aa|bb|cc)$/, 'dd')), projectId: `p${i}` }));
+    const id = await linkedGroup([B]);
+    world.links[0].push(...extra);
+    const page = await as(A, () => A.roster!.groupProjectRoster.receive(B.fp, wire({ v: 1, groupProjectId: id, offset: 0, limit: 10 }))) as { copies: unknown[]; copiesCut?: boolean };
+    expect(page.copies).toHaveLength(32);
+    expect(page.copiesCut).toBe(true);
+    expect(await roster(B, id)).toMatchObject({ status: 'available', copiesCut: true, complete: false });
+  });
+
+  it('a saved roster with a fetch time in the future is not fresh', async () => {
+    const id = await linkedGroup();
+    await roster(B, id);
+    const posts = rosterPosts.get('Desk');
+    // The clock moved back a minute: the saved roster now looks fetched in the future.
+    vi.useFakeTimers({ toFake: ['Date'], now: Date.now() - 60_000 });
+    expect(await roster(B, id)).toMatchObject({ source: 'live' });
+    expect(rosterPosts.get('Desk')).toBeGreaterThan(posts!);
+  });
+
+  it('never brings back the folder of a copy that went', async () => {
+    const id = await linkedGroup();
+    await fsp.rm(path.dirname(rosterFile(B, id)), { recursive: true, force: true });
+    await roster(B, id);
+    await expect(fsp.stat(path.dirname(rosterFile(B, id)))).rejects.toMatchObject({ code: 'ENOENT' });
   });
 
   it('a host that left the network leaves only the saved roster, stale', async () => {

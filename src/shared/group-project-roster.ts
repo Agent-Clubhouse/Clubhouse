@@ -25,6 +25,8 @@ export const ROSTER_PAGE_MAX = 200;
 export const ROSTER_MEMBERS_MAX = 1000;
 export const ROSTER_COPIES_MAX = 32;
 export const ROSTER_LABEL_MAX = 100;
+/** The most a copy reads of one page's answer. A page at its caps is far smaller. */
+export const ROSTER_RESPONSE_MAX_BYTES = 512 * 1024;
 
 export type RosterRoleMode = 'allow' | 'ask' | 'off';
 /** How a member joined: in scope on the host, added by someone, or by being in a linked project copy. */
@@ -71,6 +73,10 @@ export interface RosterPage {
   members: RosterMember[];
   /** Linked project copies whose agents may be members. */
   copies: RosterCopy[];
+  /** More linked copies than a page carries: the roster can't be complete. */
+  copiesCut?: boolean;
+  /** A digest of the whole roster: pages with different digests are from different rosters. */
+  etag: string;
   /** Whether the host could read every one of its own projects in scope. */
   hostInventory: 'complete' | 'partial';
   /** Names the host knows computers by, as a fallback for computers this one doesn't know. */
@@ -117,6 +123,8 @@ export type GroupProjectRosterView =
     hostInventory: 'complete' | 'partial';
     /** More members than a copy reads. */
     truncated: boolean;
+    /** More linked copies than a roster lists. */
+    copiesCut: boolean;
     /** True only when every inventory was checked, nothing was cut, and the roster isn't stale. */
     complete: boolean;
   }
@@ -126,6 +134,7 @@ export type GroupProjectRosterView =
 
 const isRecord = (v: unknown): v is Record<string, unknown> => !!v && typeof v === 'object' && !Array.isArray(v);
 const SAFE_ID = /^[A-Za-z0-9_-]{1,128}$/;
+const ETAG = /^[0-9a-f]{64}$/;
 const AGENT_ID = /^[A-Za-z0-9_.:-]{1,200}$/;
 const MODES = new Set<RosterRoleMode>(['allow', 'ask', 'off']);
 const KINDS = new Set(['durable', 'helper', 'quick']);
@@ -195,7 +204,10 @@ export function readRosterAnswer(raw: unknown, host: string, request: RosterRequ
   if (raw.status !== 'ok' || !Number.isSafeInteger(raw.roster) || (raw.roster as number) < 1) fail('answer');
   if (raw.groupProjectId !== request.groupProjectId) fail('answer');
   if (!isRecord(raw.host) || typeof raw.host.machine !== 'string' || raw.host.machine.toLowerCase() !== host.toLowerCase()) fail('host');
-  if (!Number.isSafeInteger(raw.seq) || (raw.seq as number) < 0 || typeof raw.generatedAt !== 'string') fail('answer');
+  if (!Number.isSafeInteger(raw.seq) || (raw.seq as number) < 0) fail('answer');
+  if (typeof raw.generatedAt !== 'string' || raw.generatedAt.length > 40 || Number.isNaN(Date.parse(raw.generatedAt))) fail('answer');
+  if (typeof raw.etag !== 'string' || !ETAG.test(raw.etag)) fail('answer');
+  if (raw.copiesCut !== undefined && typeof raw.copiesCut !== 'boolean') fail('answer');
   if (!Array.isArray(raw.members) || raw.members.length > request.limit) fail('members');
   if (!Array.isArray(raw.copies) || raw.copies.length > ROSTER_COPIES_MAX) fail('copies');
   if (!Array.isArray(raw.machines) || raw.machines.length > ROSTER_COPIES_MAX + 1) fail('machines');
@@ -204,9 +216,10 @@ export function readRosterAnswer(raw: unknown, host: string, request: RosterRequ
   if (!isRecord(page) || page.offset !== request.offset || !Number.isSafeInteger(page.total) || (page.total as number) < 0) fail('page');
   return {
     v: 1, roster: raw.roster as number, status: 'ok', groupProjectId: request.groupProjectId,
-    host: { machine: host.toLowerCase() }, seq: raw.seq as number, generatedAt: raw.generatedAt,
+    host: { machine: host.toLowerCase() }, seq: raw.seq as number, generatedAt: new Date(raw.generatedAt).toISOString(), etag: raw.etag,
     members: raw.members.map(readMember),
     copies: raw.copies.map(readCopy),
+    ...(raw.copiesCut === true && { copiesCut: true }),
     hostInventory: raw.hostInventory,
     machines: raw.machines.map((m) => {
       if (!isRecord(m)) fail('machines');
