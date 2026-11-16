@@ -186,6 +186,26 @@ describe('choosing the host (#3547)', () => {
     } finally { vi.useRealTimers(); }
   });
 
+  it('a check that fails while approval waits keeps the request and the lock, and says it may still be approved', async () => {
+    const createOnHost = vi.spyOn(window.clubhouse.groupProject, 'createOnHost')
+      .mockResolvedValueOnce({ ...base, status: 'waiting', expiresAt: '2026-11-16T12:00:00.000Z' })
+      .mockResolvedValueOnce({ ...base, status: 'unreachable', reason: 'Studio didn\'t answer.' })
+      .mockResolvedValueOnce({ ...base, status: 'declined', reason: 'A person there declined it. Nothing was created.' });
+    await onStudio();
+    fireEvent.click(screen.getByRole('button', { name: 'Create on Studio' }));
+    await screen.findByText(/Waiting for approval on Studio/);
+    expect(screen.getByText(/Closing this form stops checking/)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Check now' }));
+    expect(await screen.findByText(/Couldn't check just now\. Studio didn't answer\. The request still stands and may be approved/)).toBeInTheDocument();
+    expect(screen.getByText(/Waiting for approval on Studio/)).toBeInTheDocument();
+    expect(screen.getByLabelText('New group project name')).toBeDisabled();
+    expect(screen.queryByRole('button', { name: 'Retry' })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Check now' }));
+    expect(await screen.findByText('Declined. A person there declined it. Nothing was created.')).toBeInTheDocument();
+    expect(createOnHost).toHaveBeenLastCalledWith(studio, 'Launch', options, 'rc_1');
+    expect(screen.getByLabelText('New group project name')).toBeEnabled();
+  });
+
   it('an unreachable host offers Retry with the same id, or this computer instead', async () => {
     const createOnHost = vi.spyOn(window.clubhouse.groupProject, 'createOnHost')
       .mockResolvedValue({ ...base, status: 'unreachable', reason: 'Studio is offline. Nothing was created and nothing is queued.' });

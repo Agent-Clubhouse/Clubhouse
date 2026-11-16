@@ -16,7 +16,7 @@ vi.mock('./clubhouse-mcp/tool-registry', () => ({ registerGlobalTool: vi.fn() })
 import { agentRegistry } from './agent-registry';
 import { registerGlobalTool } from './clubhouse-mcp/tool-registry';
 import { registerGrantRequestTools } from './clubhouse-mcp/tools/grant-request-tools';
-import { answerGrantRequest } from './grant-request-answers';
+import { answerGrantRequest, setPairedPhoneCheck } from './grant-request-answers';
 import { listGrantRequests, recordGrantRequest, _resetGrantRequestsForTesting } from './grant-requests';
 
 type Handler = (agentId: string, args: Record<string, unknown>) => Promise<{ content: Array<{ text?: string }>; isError?: boolean }>;
@@ -159,8 +159,17 @@ describe('a create another computer asked for (#3547)', () => {
     expect(fromDesktop).toEqual({ ok: false, error: expect.stringContaining('computer it was sent to') });
     expect(listGrantRequests()).toHaveLength(1);
     expect(await withSettingsSurface('ui', undefined, () => answerGrantRequest(request.requestId, true))).toEqual({ ok: true });
-    const fromPhone = remoteCreate();
-    expect(await withSettingsSurface('mobile', 'phone', () => answerGrantRequest(fromPhone.requestId, false))).toEqual({ ok: true });
+    // A phone paired with this computer counts as this computer; a device that only claims the phone surface doesn't.
+    setPairedPhoneCheck((fp) => fp === 'phone');
+    try {
+      const fromPhone = remoteCreate();
+      expect(await withSettingsSurface('mobile', 'desk-with-phone-icon', () => answerGrantRequest(fromPhone.requestId, false))).toMatchObject({ ok: false });
+      expect(await withSettingsSurface('mobile', undefined, () => answerGrantRequest(fromPhone.requestId, false))).toMatchObject({ ok: false });
+      expect(await withSettingsSurface('mobile', 'phone', () => answerGrantRequest(fromPhone.requestId, false))).toEqual({ ok: true });
+    } finally { setPairedPhoneCheck(null); }
+    // With no check registered, no phone can.
+    const unchecked = remoteCreate();
+    expect(await withSettingsSurface('mobile', 'phone', () => answerGrantRequest(unchecked.requestId, true))).toMatchObject({ ok: false });
   });
 
   it('doesn\'t tell the Dispatcher to call again: no agent made this call', async () => {

@@ -38,7 +38,7 @@ import { groupProjectHost } from './group-project-host';
 import { linkedProjectCopies } from './group-project-linked-agents';
 import * as projectStore from './project-store';
 import {
-  callKey, consumeCallApprovalScope, hasCallApproval, onGrantRequestsChanged, peekGrantRequest, recordGrantRequest,
+  callKey, consumeCallApprovalScope, onGrantRequestsChanged, peekGrantRequest, recordGrantRequest, type ConsumedCallApproval,
 } from './grant-requests';
 import { appLog } from './log-service';
 
@@ -141,7 +141,16 @@ class GroupProjectRemoteCreate {
     this.offRequests?.();
     this.offRequests = deps ? onGrantRequestsChanged((change) => {
       if (change.kind !== 'closed') return;
-      void this.closed(change.requestIds, change.reason).catch((err) => {
+      // Allow is taken now, with the answer: nothing later (a permissions change) can turn it into a decline.
+      const approvals = new Map<string, ConsumedCallApproval | null>();
+      if (change.reason === 'answered' && change.allowed) {
+        for (const entry of this.answers ?? []) {
+          if (entry.answer.status === 'waiting' && entry.grantRequestId && entry.key && change.requestIds.includes(entry.grantRequestId)) {
+            approvals.set(entry.grantRequestId, consumeCallApprovalScope(entry.key));
+          }
+        }
+      }
+      void this.closed(change.requestIds, change.reason, change.allowed === true, approvals).catch((err) => {
         // telemetry-exempt: the answer is kept for a retry once the store can be written
         appLog('core:group-project', 'warn', 'Could not record an answer to a remote create', { meta: { error: errorText(err) } });
       });
@@ -167,10 +176,17 @@ class GroupProjectRemoteCreate {
   private async loadAnswers(): Promise<AnswerEntry[]> {
     if (!this.answers) {
       const items = (await readJsonFile(networkCreateAnswersPath(), (): StoredList<AnswerEntry> => ({ version: 1, items: [] }), validateList<AnswerEntry>)).items;
-      // Approvals live in memory: one waiting from before a restart can't be answered any more.
-      this.answers = items.map((entry) => entry.answer.status === 'waiting' && (!entry.grantRequestId || !peekGrantRequest(entry.grantRequestId))
-        ? this.finalEntry(entry, { status: 'expired', reason: 'This computer restarted before anyone answered. Nothing was created. Ask again.' })
-        : entry);
+      // Approvals live in memory: one waiting from before a restart can't be answered any more,
+      // unless it was allowed and created just before the restart, which its mark shows.
+      const answers: AnswerEntry[] = [];
+      for (const entry of items) {
+        if (entry.answer.status !== 'waiting' || (entry.grantRequestId && peekGrantRequest(entry.grantRequestId))) { answers.push(entry); continue; }
+        const made = await this.madeFor(entry.machine, entry.requestId, entry.hash);
+        answers.push(made
+          ? this.finalEntry(entry, { status: 'created', groupProjectId: made })
+          : this.finalEntry(entry, { status: 'expired', reason: 'This computer restarted before anyone answered. Nothing was created. Ask again.' }));
+      }
+      this.answers = answers;
     }
     return this.answers;
   }
@@ -193,6 +209,15 @@ class GroupProjectRemoteCreate {
     return { machine: entry.machine, requestId: entry.requestId, hash: entry.hash, at: new Date().toISOString(), answer: { v: 1, requestId: entry.requestId, ...answer } };
   }
 
+  /** The group a request made here, by the mark its create left: the computer, the request id and the request's hash. */
+  private async madeFor(machine: string, requestId: string, hash: string): Promise<string | null> {
+    const made = (await groupProjectHost.list()).find((p) => {
+      const mark = p.metadata?.remoteCreate as { machine?: unknown; requestId?: unknown; hash?: unknown } | undefined;
+      return mark?.machine === machine && mark.requestId === requestId && mark.hash === hash && !groupProjectHost.isReplica(p);
+    });
+    return made?.id ?? null;
+  }
+
   /** What the host answers: `machine` is the authenticated computer that sent it. */
   receive(machine: string, raw: unknown): Promise<RemoteCreateAnswer> {
     const request = readRemoteCreateRequest(raw);
@@ -210,6 +235,16 @@ class GroupProjectRemoteCreate {
     const transient = (status: 'refused' | 'busy', reason: string): RemoteCreateAnswer => ({ v: 1, requestId, status, reason });
     const earlier = (await this.loadAnswers()).find((e) => e.machine === machine && e.requestId === requestId);
     if (earlier && earlier.hash !== hash) return transient('refused', 'This request id was already used for a different group project. Nothing was created.');
+    const entry: AnswerEntry = { machine, requestId, hash, at: new Date().toISOString(), answer: { v: 1, requestId, status: 'refused', reason: '' } };
+    // A group it made answers first: a crash may have lost the answer, or left an older one.
+    if (earlier?.answer.status !== 'created') {
+      const made = await this.madeFor(machine, requestId, hash);
+      if (made) {
+        const created = this.finalEntry(earlier ?? entry, { status: 'created', groupProjectId: made });
+        await this.saveAnswer(created);
+        return created.answer;
+      }
+    }
     if (earlier) {
       if (earlier.answer.status === 'waiting' && Date.parse(earlier.answer.expiresAt) <= Date.now()) {
         const expired = this.finalEntry(earlier, { status: 'expired', reason: 'Nobody answered the approval in time. Nothing was created. Ask again.' });
@@ -217,17 +252,6 @@ class GroupProjectRemoteCreate {
         return expired.answer;
       }
       return earlier.answer;
-    }
-    // A create made before a crash that lost its answer is found by its mark.
-    const made = (await groupProjectHost.list()).find((p) => {
-      const mark = p.metadata?.remoteCreate as { machine?: unknown; requestId?: unknown } | undefined;
-      return mark?.machine === machine && mark.requestId === requestId && !groupProjectHost.isReplica(p);
-    });
-    const entry: AnswerEntry = { machine, requestId, hash, at: new Date().toISOString(), answer: { v: 1, requestId, status: 'refused', reason: '' } };
-    if (made) {
-      const created = this.finalEntry(entry, { status: 'created', groupProjectId: made.id });
-      await this.saveAnswer(created);
-      return created.answer;
     }
 
     // A new request: limited per computer, so a paired computer can't flood Needs you.
@@ -249,7 +273,7 @@ class GroupProjectRemoteCreate {
       return refused.answer;
     }
     const place = this.deps?.approvalPlace() ?? null;
-    if (!place) return transient('refused', 'This computer can\'t show the approval: its Dispatcher is off. Nothing was created. Turn it on there, then retry.');
+    if (!place) return transient('busy', 'That computer can\'t show the approval while its Dispatcher is off. Nothing was created. Retry once it is on.');
 
     const key = callKey(place.agentId, REMOTE_CREATE_TOOL, { machine, requestId });
     const context = `${REMOTE_CREATE_TOOL}\0${machine}\0${requestId}\0${hashOf(plan)}`;
@@ -315,14 +339,14 @@ class GroupProjectRemoteCreate {
   }
 
   /** Approvals answered, expired or withdrawn in Needs you. */
-  private async closed(requestIds: string[], reason: 'answered' | 'expired' | 'withdrawn'): Promise<void> {
+  private async closed(requestIds: string[], reason: 'answered' | 'expired' | 'withdrawn', allowed: boolean, approvals: ReadonlyMap<string, ConsumedCallApproval | null>): Promise<void> {
     const entries = (await this.loadAnswers()).filter((e) => e.answer.status === 'waiting' && e.grantRequestId && requestIds.includes(e.grantRequestId));
     for (const entry of entries) {
       await this.serial(`machine:${entry.machine}`, async () => {
         const current = (await this.loadAnswers()).find((e) => e.machine === entry.machine && e.requestId === entry.requestId);
         if (!current || current.answer.status !== 'waiting') return;
-        if (reason === 'answered' && current.key && hasCallApproval(current.key)) {
-          await this.approved(current);
+        if (reason === 'answered' && allowed) {
+          await this.approved(current, approvals.get(current.grantRequestId!) ?? null);
           return;
         }
         const final = reason === 'answered'
@@ -336,8 +360,7 @@ class GroupProjectRemoteCreate {
   }
 
   /** Allowed: used once, checked again, then created. */
-  private async approved(entry: AnswerEntry): Promise<void> {
-    const approval = consumeCallApprovalScope(entry.key!);
+  private async approved(entry: AnswerEntry, approval: ConsumedCallApproval | null): Promise<void> {
     const refuse = async (reason: string) => { await this.saveAnswer(this.finalEntry(entry, { status: 'refused', reason })); };
     if (!approval || approval.scope.context !== entry.context || !entry.request || !entry.plan) {
       await refuse('The approval didn\'t match this request. Nothing was created.');
@@ -358,13 +381,19 @@ class GroupProjectRemoteCreate {
     let project: GroupProject;
     try {
       project = await groupProjectHost.create(plan.name, { scope: plan.scope, membership: plan.membership }, {
-        metadata: { remoteCreate: { machine: entry.machine, requestId: entry.requestId } },
+        metadata: { remoteCreate: { machine: entry.machine, requestId: entry.requestId, hash: entry.hash } },
       });
-      // Saved before it's answered: a crash after this finds the group by its mark.
-      await groupProjectHost.flushRegistry();
     } catch (err) {
       // telemetry-exempt: answered to the asking computer, which shows it
       await refuse(`It was approved, but creating it failed: ${errorText(err)} Nothing was created.`);
+      return;
+    }
+    try {
+      // Saved before it's answered: a crash after this finds the group by its mark.
+      await groupProjectHost.flushRegistry();
+    } catch (err) {
+      // telemetry-exempt: the group exists; no answer is recorded, so a retry finds it by its mark
+      appLog('core:group-project', 'warn', 'A remote create was made but not yet saved', { meta: { id: project.id, error: errorText(err) } });
       return;
     }
     await this.saveAnswer(this.finalEntry(entry, { status: 'created', groupProjectId: project.id }));

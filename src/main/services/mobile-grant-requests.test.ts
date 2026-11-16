@@ -164,7 +164,7 @@ describe('the store says when a request opens and why it closes', () => {
     expect(listGrantRequests()).toEqual([]);
     expect(changes).toEqual([
       { kind: 'added', request: expect.objectContaining({ requestId: answered }) },
-      { kind: 'closed', requestIds: [answered], reason: 'answered' },
+      { kind: 'closed', requestIds: [answered], reason: 'answered', allowed: false },
       { kind: 'added', request: expect.objectContaining({ requestId: expiring }) },
       { kind: 'closed', requestIds: [expiring], reason: 'expired' },
     ]);

@@ -70,6 +70,7 @@ import { addCardConnection, listConnectionPickerTargets, removeCardConnection, s
 import type { AddCardConnection } from '../../shared/connection-picker';
 import { startGroupProjectNetwork } from '../services/group-project-network';
 import { groupProjectRemoteCreate } from '../services/group-project-remote-create';
+import { setPairedPhoneCheck } from '../services/grant-request-answers';
 import * as annexEventBus from '../services/annex-event-bus';
 import { remoteGroupProjectGrantGate } from '../services/group-project-remote-grants';
 import { purgeGroupProjectViews } from '../services/group-project-delete-service';
@@ -652,6 +653,8 @@ export function restorePersistedBindings(): Promise<void> {
     });
     // The host checks other computers' agents' writes against #3360's grants.
     groupProjectHost.setRemoteWriteGate(remoteGroupProjectGrantGate);
+    // Only a real phone paired with this computer answers them besides this computer's own UI.
+    setPairedPhoneCheck((fingerprint) => annexPeers.getPeer(fingerprint)?.kind === 'phone' && !isNetworkComputer(fingerprint));
     // Creates other computers ask for wait for a person's approval here, on the Dispatcher's Needs you row (#3547).
     groupProjectRemoteCreate.setHostDeps({
       approvalPlace: () => {

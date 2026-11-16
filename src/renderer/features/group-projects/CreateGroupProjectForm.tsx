@@ -40,6 +40,10 @@ export function CreateGroupProjectForm({ defaultScope = { level: 'app', reach: '
   const [hostsError, setHostsError] = useState<string | null>(null);
   /** The last answer from another computer; its request id is what Retry sends again. */
   const [remote, setRemote] = useState<RemoteCreateOutcome | null>(null);
+  /** While waiting: the last check couldn't reach the host. The request stands and may still be approved. */
+  const [pollProblem, setPollProblem] = useState<string | null>(null);
+  const remoteRef = useRef(remote);
+  remoteRef.current = remote;
   const remoteDraft = useRef<{ host: string; name: string; options: GroupProjectCreateOptions } | null>(null);
   const network = scope.reach === 'network';
 
@@ -95,6 +99,12 @@ export function CreateGroupProjectForm({ defaultScope = { level: 'app', reach: '
     setError(null);
     try {
       const outcome = await createOnHost(draft.host, draft.name, draft.options, retryOf);
+      // A failed check while approval waits changes nothing: the request may still be approved there.
+      if (remoteRef.current?.status === 'waiting' && (outcome.status === 'unreachable' || outcome.status === 'busy')) {
+        setPollProblem(outcome.reason);
+        return;
+      }
+      setPollProblem(null);
       setRemote(outcome);
       if (outcome.status === 'created') {
         remoteDraft.current = null;
@@ -104,7 +114,8 @@ export function CreateGroupProjectForm({ defaultScope = { level: 'app', reach: '
       }
     } catch (err) {
       // telemetry-exempt: shown inline; the draft is kept
-      setError(`Not created. ${ipcErrorMessage(err)}`);
+      if (remoteRef.current?.status === 'waiting') setPollProblem(ipcErrorMessage(err));
+      else setError(`Not created. ${ipcErrorMessage(err)}`);
     } finally {
       pending.current = false;
       setCreating(false);
@@ -211,10 +222,10 @@ export function CreateGroupProjectForm({ defaultScope = { level: 'app', reach: '
             {onCancel && <Button onClick={onCancel} disabled={creating}>Close</Button>}
           </div>
           {error && <p role="alert" className={settingsError}>{error}</p>}
-          {remote && <RemoteStatus outcome={remote} hostName={hostName} busy={creating}
+          {remote && <RemoteStatus outcome={remote} hostName={hostName} busy={creating} pollProblem={pollProblem}
             onRetry={() => void sendRemote(remote.requestId)}
-            onHere={() => { setHost(null); setRemote(null); remoteDraft.current = null; }}
-            onStartOver={() => { setRemote(null); remoteDraft.current = null; }} />}
+            onHere={() => { setHost(null); setRemote(null); setPollProblem(null); remoteDraft.current = null; }}
+            onStartOver={() => { setRemote(null); setPollProblem(null); remoteDraft.current = null; }} />}
           {created && <p role="status" className={settingsHelp}>{remote?.status === 'created' ? `Created on ${hostName}.` : 'Created.'} Open it from the list.</p>}
         </form>
       </SettingsBlock>
@@ -252,10 +263,11 @@ function HostChoice({ hosts, error, value, disabled, onChange, onReload }: {
 }
 
 /** What another computer answered, with what can be done next. Nothing is ever queued. */
-function RemoteStatus({ outcome, hostName, busy, onRetry, onHere, onStartOver }: {
+function RemoteStatus({ outcome, hostName, busy, pollProblem, onRetry, onHere, onStartOver }: {
   outcome: RemoteCreateOutcome;
   hostName: string;
   busy: boolean;
+  pollProblem: string | null;
   onRetry: () => void;
   onHere: () => void;
   onStartOver: () => void;
@@ -267,7 +279,8 @@ function RemoteStatus({ outcome, hostName, busy, onRetry, onHere, onStartOver }:
       return (
         <div role="status" className="flex flex-col items-start gap-1">
           <p className={settingsHelp}>Waiting for approval on {hostName}. A person there approves it in Needs you. Nothing has been created yet.</p>
-          <p className={settingsHelp}>The request ends {new Date(outcome.expiresAt).toLocaleString()} if nobody answers.</p>
+          <p className={settingsHelp}>The request ends {new Date(outcome.expiresAt).toLocaleString()} if nobody answers. Closing this form stops checking, but the request may still be approved there.</p>
+          {pollProblem && <p className={settingsError}>Couldn't check just now. {pollProblem} The request still stands and may be approved; this form keeps checking.</p>}
           <Button onClick={onRetry} disabled={busy}>Check now</Button>
         </div>
       );

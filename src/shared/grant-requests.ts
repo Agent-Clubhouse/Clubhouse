@@ -68,6 +68,8 @@ export interface RemoteCreateReview {
 
 export const GRANT_REQUEST_TTL_MS = 24 * 60 * 60 * 1000;
 export const MAX_PENDING_GRANT_REQUESTS_PER_AGENT = 3;
+/** Remote create approvals (#3547) waiting on this computer at once, counted apart from the agent's own. */
+export const MAX_PENDING_REMOTE_CREATES = 6;
 /** Longest reason kept, in characters. */
 export const GRANT_REQUEST_REASON_MAX = 500;
 /**

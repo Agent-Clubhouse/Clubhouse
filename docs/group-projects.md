@@ -102,19 +102,29 @@ Ask first there (#3543 decision 3: the destination's approval applies, a
 person's request isn't exempt, pairing doesn't waive it). It records an ordinary
 call request (`grant-requests.ts`, tool `remote_create_group_project`) on its
 Dispatcher's Needs you row, with `remoteCreateReview` showing exactly what Allow
-creates, resolved on the host. Its phone may answer; a desktop in the network may
-not (`grant-request-answers.ts`), and the asking computer never sees it
-(`grantRowVisibleTo`). With the Dispatcher off the host refuses, since nothing
-could show the approval. Allow is consumed once, the plan is resolved again and
+creates, resolved on the host. These requests have their own cap
+(`MAX_PENDING_REMOTE_CREATES`), apart from the Dispatcher's own three. A phone
+paired with the host (a peer of kind `phone`, not a network computer) counts as
+the host and may answer; a desktop in the network may not
+(`grant-request-answers.ts`), and the asking computer never sees it
+(`grantRowVisibleTo`). With the Dispatcher off the host answers `busy`, since
+nothing could show the approval; Retry works once it is on. Allow is consumed once, the plan is resolved again and
 must match, then `groupProjectHost.create` makes it with a
-`metadata.remoteCreate` mark. Decline, the 24-hour expiry, or a host restart
+`metadata.remoteCreate` mark of the computer, request id and request hash.
+`update` never writes that key, locally or from another computer. Allow is taken
+with the answer itself, so a later permissions change can't turn it into a
+decline. A failed registry flush after the create records no answer; the mark
+answers the retry. Decline, the 24-hour expiry, or a host restart
 (requests live in memory) end the request; asking again needs a new id.
 
 Answers are kept per (computer, request id) in
 `group-projects/network-create-answers.json` (500 at most, seven days), so a
-retry, including one after a lost answer, gets the same answer; a group whose
-answer was lost in a crash is found by its mark. A computer may make five new
-requests per ten minutes and have two waiting. A project scope must name the
+retry, including one after a lost answer, gets the same answer. The mark is
+checked before any answer other than `created` is given, and before a request
+waiting from before a restart is expired, so a crash between the create and its
+answer still answers `created`. A computer may make five new
+requests per ten minutes and have two waiting; the window is in memory and
+starts again when the host restarts. A project scope must name the
 asker's project explicitly linked to exactly one project on the host (#3546).
 Allow and Off for persons are not configurable (a possible later setting).
 

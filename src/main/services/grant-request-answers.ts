@@ -40,13 +40,27 @@ function what(request: GrantRequest): string {
   return `${GRANT_ACTION_LABELS[action] ?? action} (${action}) on ${request.where}`;
 }
 
+/** Whether a device is a phone paired with this computer, not a computer in its network; set at startup. */
+let isPairedPhone: ((fingerprint: string) => boolean) | null = null;
+
+export function setPairedPhoneCheck(check: ((fingerprint: string) => boolean) | null): void {
+  isPairedPhone = check;
+}
+
+/** This computer's own UI, or a phone paired with it. Anything else, or an unknown device, can't. */
+function mayAnswerRemoteCreate(): boolean {
+  const { surface, actorId } = currentSettingsOrigin();
+  if (surface === 'ui') return true;
+  return surface === 'mobile' && !!actorId && !!isPairedPhone?.(actorId);
+}
+
 export async function answerGrantRequest(requestId: string, allow: boolean, updateMode?: import('../../shared/app-update').AppUpdateMode, assertAuthorized?: () => void): Promise<GrantRequestAnswer> {
   if (peekGrantRequest(requestId)?.deleteReview && currentSettingsOrigin().surface !== 'ui') {
     return { ok: false, error: 'Review this deletion batch in Needs you on the originating computer.' };
   }
-  // A create another computer asked for (#3547) is answered here or on a phone paired with this computer,
-  // never from a desktop in the network: pairing doesn't approve it.
-  if (peekGrantRequest(requestId)?.remoteCreateReview && !['ui', 'mobile'].includes(currentSettingsOrigin().surface)) {
+  // A create another computer asked for (#3547) is answered here or on a phone paired with this computer
+  // (that phone counts as this computer), never from a desktop in the network: pairing doesn't approve it.
+  if (peekGrantRequest(requestId)?.remoteCreateReview && !mayAnswerRemoteCreate()) {
     return { ok: false, error: 'Answer this request on the computer it was sent to.' };
   }
   if (peekGrantRequest(requestId)?.update) {

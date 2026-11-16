@@ -468,6 +468,11 @@ class GroupProjectHostService {
   async update(
     id: string, fields: { name?: string; description?: string; instructions?: string; metadata?: Record<string, unknown> }, options: { withinExclusive?: boolean; author?: WriteAuthor } = {},
   ): Promise<GroupProject | null> {
+    // The remote create mark (#3547) is main's own, set only at creation: no update writes or replaces it.
+    if (fields.metadata && 'remoteCreate' in fields.metadata) {
+      const { remoteCreate: _mark, ...metadata } = fields.metadata;
+      fields = { ...fields, metadata };
+    }
     const replica = await this.replicaFor(id).catch((): null => null);
     if (replica) {
       const current = await this.view(replica);

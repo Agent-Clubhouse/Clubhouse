@@ -215,6 +215,7 @@ const answer = async (m: Machine, requestId: string, allow: boolean) => {
     expect(answers.items.some((e) => e.grantRequestId === requestId && e.answer.status === 'waiting')).toBe(false);
   });
 };
+const answersFile = (m: Machine) => path.join(m.home, '.clubhouse-dev', 'group-projects', 'network-create-answers.json');
 const hosted = (m: Machine) => as(m, async () => (await m.host!.groupProjectHost.list()).filter((p) => !m.host!.groupProjectHost.isReplica(p)));
 
 describe('creating a group project on another computer (#3547)', () => {
@@ -312,6 +313,68 @@ describe('creating a group project on another computer (#3547)', () => {
     expect(await hosted(B)).toHaveLength(1);
   });
 
+  it('a crash after the create but before its answer was saved still answers created after a restart (QA #3569)', async () => {
+    const asked = await ask(A, B, 'Crash window');
+    const [request] = await waitingOn(B);
+    const waitingFile = await fsp.readFile(answersFile(B), 'utf-8');
+    await answer(B, request.requestId, true);
+    expect(await hosted(B)).toHaveLength(1);
+    // The group was made and flushed; the answer never reached the file.
+    await fsp.writeFile(answersFile(B), waitingFile);
+    await unload(B);
+    await load(B);
+    expect(await retry(A, B, asked.requestId)).toMatchObject({ status: 'created', groupProjectId: (await hosted(B))[0].id });
+    expect(await retry(A, B, asked.requestId)).toMatchObject({ status: 'created' });
+    expect(await hosted(B)).toHaveLength(1);
+  });
+
+  it('a stale answer is never given over the group its request made', async () => {
+    const asked = await ask(A, B, 'Stale');
+    const [request] = await waitingOn(B);
+    const waitingFile = JSON.parse(await fsp.readFile(answersFile(B), 'utf-8')) as { items: Array<{ answer: Record<string, unknown> }> };
+    await answer(B, request.requestId, true);
+    // Left with an older non-created answer, the mark still wins.
+    waitingFile.items[0].answer = { v: 1, requestId: asked.requestId, status: 'expired', reason: 'old' };
+    await fsp.writeFile(answersFile(B), JSON.stringify(waitingFile));
+    await unload(B);
+    await load(B);
+    expect(await retry(A, B, asked.requestId)).toMatchObject({ status: 'created' });
+    expect(await hosted(B)).toHaveLength(1);
+  });
+
+  it('a failed save after the create records no refusal; the retry finds the group by its mark', async () => {
+    const asked = await ask(A, B, 'Flush fails');
+    const [request] = await waitingOn(B);
+    const flush = vi.spyOn(B.host!.groupProjectHost, 'flushRegistry').mockRejectedValueOnce(new Error('disk full'));
+    await as(B, () => { B.grants!.takeGrantRequest(request.requestId, true); B.grants!.finishGrantAnswer(request.requestId); });
+    await vi.waitFor(() => expect(flush).toHaveBeenCalled());
+    await vi.waitFor(async () => expect(await hosted(B)).toHaveLength(1));
+    flush.mockRestore();
+    expect(await retry(A, B, asked.requestId)).toMatchObject({ status: 'created' });
+    expect(await hosted(B)).toHaveLength(1);
+  });
+
+  it('an Allow stays an Allow when the Dispatcher\'s permissions change right after it', async () => {
+    const asked = await ask(A, B, 'Kept');
+    const [request] = await waitingOn(B);
+    await as(B, () => {
+      B.grants!.takeGrantRequest(request.requestId, true);
+      B.grants!.dropCallApprovalsFor('dispatcher');
+      B.grants!.finishGrantAnswer(request.requestId);
+    });
+    await vi.waitFor(async () => expect(await retry(A, B, asked.requestId)).toMatchObject({ status: 'created' }));
+  });
+
+  it('the mark can\'t be written by an update, here or from another computer, so it can\'t forge a created answer', async () => {
+    const existing = await as(B, () => B.host!.groupProjectHost.create('Existing', { scope: { level: 'app', reach: 'network' } }));
+    const forged = { machine: A.fp, requestId: 'rc_forged', hash: 'x' };
+    await as(B, () => B.host!.groupProjectHost.update(existing.id, { metadata: { remoteCreate: forged, other: 1 } }));
+    expect((await as(B, () => B.host!.groupProjectHost.get(existing.id)))!.metadata).toEqual({ other: 1 });
+    await as(A, () => A.host!.groupProjectHost.syncFrom(B.fp));
+    await as(A, () => A.host!.groupProjectHost.update(existing.id, { metadata: { remoteCreate: forged } }));
+    expect((await as(B, () => B.host!.groupProjectHost.get(existing.id)))!.metadata.remoteCreate).toBeUndefined();
+  });
+
   it('an unreachable host gets nothing: nothing is created or queued, and Retry is safe later', async () => {
     down.add('Studio');
     const asked = await ask(A, B, 'Offline');
@@ -391,7 +454,8 @@ describe('creating a group project on another computer (#3547)', () => {
   it('a host whose Dispatcher is off can\'t show the approval, so it refuses; Retry works once it is on', async () => {
     B.dispatcherOn = false;
     const asked = await ask(A, B, 'Quiet');
-    expect(asked).toMatchObject({ status: 'refused', reason: expect.stringContaining('Dispatcher is off') });
+    // Not final: the asker is offered Retry.
+    expect(asked).toMatchObject({ status: 'busy', reason: expect.stringContaining('Dispatcher is off') });
     B.dispatcherOn = true;
     expect(await retry(A, B, asked.requestId)).toMatchObject({ status: 'waiting' });
   });
