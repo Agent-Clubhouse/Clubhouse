@@ -23,7 +23,7 @@ vi.mock('./sdk-loader', () => ({
     },
   }),
 }));
-import { CopilotSdkChatDriver } from './driver';
+import { COPILOT_EAGER_TOOL_CEILING, CopilotSdkChatDriver } from './driver';
 
 const sdkSession = () => ({
   sessionId: 'fake-session',
@@ -149,15 +149,28 @@ describe('Copilot SDK callback wiring with fake transport', () => {
     expect(fake.resume).toHaveBeenCalledTimes(resumeNativeSessionId ? 1 : 0);
   });
 
-  it.each([undefined, 'prior-session'])('turns tool search off on create and resume when the start loads all tools (#3615) (%s)', async (resumeNativeSessionId) => {
+  it.each([undefined, 'prior-session'])('raises the tool search threshold to the ceiling on create and resume when the start loads all tools, without turning search on (#3615) (%s)', async (resumeNativeSessionId) => {
     const session = await new CopilotSdkChatDriver().start({ agentId: 'fixture', provider: 'copilot-cli', cwd: '/synthetic', binaryPath: 'fake', level: 'auto_edit', resumeNativeSessionId, loadAllTools: true });
-    expect(fake.configs[0].toolSearch).toEqual({ enabled: false });
+    expect(fake.configs[0].toolSearch).toEqual({ deferThreshold: COPILOT_EAGER_TOOL_CEILING });
+    expect(COPILOT_EAGER_TOOL_CEILING).toBe(120);
     await session.close();
   });
 
   it('leaves tool search to the CLI for any other start (#3615)', async () => {
     const session = await new CopilotSdkChatDriver().start({ agentId: 'fixture', provider: 'copilot-cli', cwd: '/synthetic', binaryPath: 'fake', level: 'auto_edit' });
     expect(fake.configs[0]).not.toHaveProperty('toolSearch');
+    await session.close();
+  });
+
+  it('keeps a lower default\'s search on and raises only its threshold (#3615)', async () => {
+    const session = await new CopilotSdkChatDriver({ sessionDefaults: { toolSearch: { enabled: true } } }).start({ agentId: 'fixture', provider: 'copilot-cli', cwd: '/synthetic', binaryPath: 'fake', level: 'auto_edit', loadAllTools: true });
+    expect(fake.configs[0].toolSearch).toEqual({ enabled: true, deferThreshold: COPILOT_EAGER_TOOL_CEILING });
+    await session.close();
+  });
+
+  it('lets an explicit session override of tool search beat loading all tools (#3615)', async () => {
+    const session = await new CopilotSdkChatDriver({ sessionOverrides: { toolSearch: { enabled: true } } }).start({ agentId: 'fixture', provider: 'copilot-cli', cwd: '/synthetic', binaryPath: 'fake', level: 'auto_edit', loadAllTools: true });
+    expect(fake.configs[0].toolSearch).toEqual({ enabled: true });
     await session.close();
   });
 

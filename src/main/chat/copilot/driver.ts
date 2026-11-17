@@ -49,6 +49,16 @@ const START_TIMEOUT_MS = 60_000;
 const CLOSE_GRACE_MS = 5_000;
 const MODEL_LIST_TIMEOUT_MS = 15_000;
 
+/**
+ * The most tools a start that loads every tool sends up front (#3615). At or
+ * under this total (the CLI's own tools included) the runtime sends them all
+ * and offers no tool search. Over it, the runtime defers every MCP tool behind
+ * its search, all or nothing, as it does for any session: the omission #3615
+ * describes comes back. OpenAI-style APIs take at most 128 tools per request;
+ * this leaves room for tool_search_tool and anything added outside the count.
+ */
+export const COPILOT_EAGER_TOOL_CEILING = 120;
+
 const LOGIN_MESSAGE = 'Not logged in to Copilot. Run copilot and use /login.';
 const LOGIN_HINT = 'Run copilot and use /login';
 
@@ -269,6 +279,7 @@ export class CopilotSdkChatSession implements ChatDriverSession {
     log: Log,
     private readonly overrides: Partial<SessionConfig> = {},
     private readonly logRedactor = new LogRedactor(),
+    private readonly defaults: Partial<SessionConfig> = {},
   ) {
     this.logRedactor.remember(opts);
     this.logRedactor.startRun();
@@ -298,14 +309,17 @@ export class CopilotSdkChatSession implements ChatDriverSession {
     const model = saved ?? env.COPILOT_MODEL ?? provider?.modelId;
     if (provider && !model) throw new Error('A Copilot provider (COPILOT_PROVIDER_BASE_URL) needs a model. Set COPILOT_MODEL, or choose a model for the agent.');
     const config: SessionConfig = {
+      ...this.defaults,
       clientName: 'Clubhouse',
       streaming: true,
       workingDirectory: this.opts.cwd,
       // Off by default in the SDK. Without it the session ignores the user's own
       // instructions, skills and MCP config, which Terminal loads.
       enableConfigDiscovery: true,
-      // Tool search leaves out tools the session already loaded (#3615).
-      ...(this.opts.loadAllTools && { toolSearch: { enabled: false } }),
+      // Tool search leaves out tools the session already loaded (#3615), so a
+      // start that loads every tool raises the point where it starts, without
+      // turning it on: a BYOK model keeps the runtime's own default.
+      ...(this.opts.loadAllTools && { toolSearch: { ...this.defaults.toolSearch, deferThreshold: COPILOT_EAGER_TOOL_CEILING } }),
       ...(model && { model }),
       ...(this.opts.contextWindow && { contextTier: this.opts.contextWindow as SessionConfig['contextTier'] }),
       ...(provider && { provider }),
@@ -1052,6 +1066,11 @@ export interface CopilotSdkDriverOptions {
   log?: Log;
   /** Session settings tests override, e.g. a fake model's `provider`. */
   sessionOverrides?: Partial<SessionConfig>;
+  /**
+   * Session settings tests start from, below the driver's own: a hosted
+   * model's tool search, which no BYOK setting turns on (#3615).
+   */
+  sessionDefaults?: Partial<SessionConfig>;
   probeTimeoutMs?: number;
 }
 
@@ -1128,7 +1147,7 @@ export class CopilotSdkChatDriver implements ChatDriver {
         // The probe's answer can be cached from before a logout. Handshake and
         // createSession succeed logged out, so only the first send would say.
         if (!auth.isAuthenticated && !copilotProviderFromEnv({ ...process.env, ...opts.env })) throw new Error(LOGIN_MESSAGE);
-        const session = new CopilotSdkChatSession(client, server, opts, this.log, this.options.sessionOverrides, logRedactor);
+        const session = new CopilotSdkChatSession(client, server, opts, this.log, this.options.sessionOverrides, logRedactor, this.options.sessionDefaults);
         await session.open(status.version);
         return session;
       })();

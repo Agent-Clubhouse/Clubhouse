@@ -5,10 +5,14 @@
  * driver.runtime.qa.ts: run only inside an authorized loopback-only sandbox
  * (docs/copilot-test-boundary.md).
  *
- * A BYOK model gets no tool search unless a session asks for it (hosted models
- * turn it on by their own capability), so the defect is shown with search
- * forced on. Set COPILOT_QA_MEASURE_OUT to a file path to record what each
- * request carried.
+ * A BYOK model gets no tool search unless a session asks for it; hosted models
+ * turn it on by their own capability, which no BYOK setting reaches. So the
+ * defect is shown with search forced on, and the fix is checked on a driver
+ * whose default turns search on below the driver's own settings, as a hosted
+ * model's would: without loadAllTools those checks fail. Whether the runtime
+ * ranks a real hosted default the same way can't be shown without a login.
+ * Set COPILOT_QA_MEASURE_OUT to a file path to record what each request
+ * carried.
  */
 import * as fs from 'fs';
 import * as os from 'os';
@@ -30,7 +34,7 @@ import type { SessionConfig } from '@github/copilot-sdk';
 import type { ChatEventDraft } from '../../../shared/chat/events';
 import type { ChatDriverSession, ChatDriverStartOptions } from '../../../shared/chat/runtime';
 import { COPILOT_OPTION_DENY } from './normalizer';
-import { CopilotSdkChatDriver } from './driver';
+import { COPILOT_EAGER_TOOL_CEILING, CopilotSdkChatDriver } from './driver';
 import { startFakeModel, type FakeModel } from './__fixtures__/fake-model';
 import * as bridge from '../../services/clubhouse-mcp/bridge-server';
 import { agentRegistry } from '../../services/agent-registry';
@@ -47,6 +51,8 @@ const PROJECT = path.join(tmp, 'project');
 fs.mkdirSync(PROJECT, { recursive: true });
 const invalid = 'invalid-test-token';
 const SEARCH_ON: Partial<SessionConfig> = { toolSearch: { enabled: true } };
+/** A driver whose sessions search by default, as a hosted model's do. */
+const hosted = () => new CopilotSdkChatDriver({ sessionDefaults: SEARCH_ON });
 /** How the runtime names a Clubhouse tool to the model. */
 const modelName = (tool: string) => `clubhouse-${tool}`;
 
@@ -180,12 +186,13 @@ describe('the Dispatcher\'s tools on the real runtime (#3615)', () => {
   }, 180_000);
 
   it('offers the Dispatcher every bridge tool at start, after a wake and a sleep, and calls one of each kind', async () => {
-    const s = await open(new CopilotSdkChatDriver(), { loadAllTools: true });
+    const s = await open(hosted(), { loadAllTools: true });
     const asleep = await s.turn('hi');
     expect(asleep.offered).not.toContain('tool_search_tool');
     expect(asleep.offered.filter((n) => n.startsWith('clubhouse-'))).toEqual(bridgeNames());
     expect(asleep.offered).toContain(modelName('create_managed_agent'));
     expect(asleep.offered.some((n) => n.endsWith('__wake_agent'))).toBe(true);
+    expect(asleep.offered.length).toBeLessThanOrEqual(COPILOT_EAGER_TOOL_CEILING);
     measured.allToolsAsleep = { tools: asleep.offered.length, clubhouseTools: bridgeNames().length, bytes: bytes(asleep.defs), clubhouseBytes: bytes(asleep.defs, true) };
 
     const global = modelName('list_settings');
@@ -198,6 +205,7 @@ describe('the Dispatcher\'s tools on the real runtime (#3615)', () => {
     expect(awake.offered.filter((n) => n.startsWith('clubhouse-'))).toEqual(bridgeNames());
     expect(awake.offered.some((n) => n.endsWith('__send_message'))).toBe(true);
     expect(awake.offered.some((n) => n.endsWith('__sleep_agent'))).toBe(true);
+    expect(awake.offered.length).toBeLessThanOrEqual(COPILOT_EAGER_TOOL_CEILING);
     measured.allToolsAwake = { tools: awake.offered.length, clubhouseTools: bridgeNames().length, bytes: bytes(awake.defs), clubhouseBytes: bytes(awake.defs, true) };
 
     const status = awake.offered.find((n) => n.endsWith('__get_status'))!;
@@ -213,7 +221,7 @@ describe('the Dispatcher\'s tools on the real runtime (#3615)', () => {
   }, 180_000);
 
   it('keeps every tool after a resume and after a compaction', async () => {
-    const driver = new CopilotSdkChatDriver();
+    const driver = hosted();
     const first = await open(driver, { loadAllTools: true });
     await first.turn('hi');
     const id = first.session.nativeSessionId;
@@ -234,15 +242,18 @@ describe('the Dispatcher\'s tools on the real runtime (#3615)', () => {
     await before.turn('find it', ...search('create_managed_agent'));
     const id = before.session.nativeSessionId;
     await before.close();
-    const after = await open(new CopilotSdkChatDriver(), { loadAllTools: true, resumeNativeSessionId: id });
+    const after = await open(hosted(), { loadAllTools: true, resumeNativeSessionId: id });
     expect(after.session.resumeFallback).toBeUndefined();
     const offered = (await after.turn('resumed on the fix')).offered;
     expect(offered).not.toContain('tool_search_tool');
     expect(offered.filter((n) => n.startsWith('clubhouse-'))).toEqual(bridgeNames());
   }, 180_000);
 
-  it.each([true, false])('asks before a Clubhouse tool that changes things runs at Ask, and a denial stops it, the same with every tool up front or not (%s)', async (loadAllTools) => {
-    const s = await open(new CopilotSdkChatDriver(), { loadAllTools, level: 'ask' });
+  it.each([
+    ['every tool up front on a searching driver', true],
+    ['no search on a BYOK driver, as before the fix', false],
+  ] as const)('asks before a Clubhouse tool that changes things runs at Ask, and a denial stops it: %s', async (_how, loadAllTools) => {
+    const s = await open(loadAllTools ? hosted() : new CopilotSdkChatDriver(), { loadAllTools, level: 'ask' });
     await s.turn('hi');
     model.script({ tools: [{ name: modelName('write_memory'), args: { path: 'qa.md', content: 'never written' } }] }, { text: 'ok' });
     await s.session.send([{ type: 'text', text: 'call it' }], 'prompt');
@@ -267,10 +278,51 @@ describe('the Dispatcher\'s tools on the real runtime (#3615)', () => {
   }, 180_000);
 
   it('offers the Dispatcher chat every bridge tool with every tool up front', async () => {
-    const s = await open(new CopilotSdkChatDriver(), { loadAllTools: true }, 'chat');
+    const s = await open(hosted(), { loadAllTools: true }, 'chat');
     const start = await s.turn('hi');
     expect(start.offered).not.toContain('tool_search_tool');
     expect(start.offered.filter((n) => n.startsWith('clubhouse-'))).toEqual(bridgeNames('chat'));
     measured.chatAllTools = { tools: start.offered.length, clubhouseTools: bridgeNames('chat').length, bytes: bytes(start.defs), clubhouseBytes: bytes(start.defs, true) };
   }, 180_000);
+
+  describe('at the ceiling', () => {
+    /** A stdio MCP server with `n` tools, and a searching session on it that loads every tool. */
+    const onServer = async (n: number) => {
+      const script = path.join(tmp, `server-${n}.js`);
+      fs.writeFileSync(script, `
+        const send = (o) => process.stdout.write(JSON.stringify(o) + '\\n');
+        const tools = Array.from({ length: ${n} }, (_, i) => ({ name: 'probe_' + String(i).padStart(3, '0'), description: 'probe tool number ' + i, inputSchema: { type: 'object', properties: {} } }));
+        require('readline').createInterface({ input: process.stdin }).on('line', (line) => {
+          const m = JSON.parse(line);
+          const reply = (result) => send({ jsonrpc: '2.0', id: m.id, result });
+          if (m.method === 'initialize') return reply({ protocolVersion: m.params.protocolVersion, capabilities: { tools: {} }, serverInfo: { name: 'many', version: '1' } });
+          if (m.method === 'tools/list') return reply({ tools });
+          if (m.id !== undefined) reply({});
+        });
+      `);
+      return open(hosted(), { loadAllTools: true, mcpServers: { many: { command: process.execPath, args: [script] } }, mcpHttpEndpoints: undefined });
+    };
+    /** The CLI's own tools, which count toward the ceiling. */
+    const ownTools = async () => (await (await open(hosted(), { loadAllTools: true, mcpServers: undefined, mcpHttpEndpoints: undefined })).turn('hi')).offered.length;
+
+    it('loads every tool when the total is exactly the ceiling', async () => {
+      const n = COPILOT_EAGER_TOOL_CEILING - await ownTools();
+      const offered = (await (await onServer(n)).turn('hi')).offered;
+      expect(offered).toHaveLength(COPILOT_EAGER_TOOL_CEILING);
+      expect(offered).not.toContain('tool_search_tool');
+      expect(offered.filter((t) => t.includes('probe_'))).toHaveLength(n);
+    }, 180_000);
+
+    it('falls back to the runtime\'s search one tool over: every MCP tool deferred and searchable, as before the fix', async () => {
+      const n = COPILOT_EAGER_TOOL_CEILING + 1 - await ownTools();
+      const s = await onServer(n);
+      const offered = (await s.turn('hi')).offered;
+      expect(offered).toContain('tool_search_tool');
+      expect(offered.filter((t) => t.includes('probe_'))).toEqual([]);
+      const found = await s.turn('find it', ...search('probe tool number 42'));
+      expect(searchResult()).toContain('probe_042');
+      expect(found.offered.some((t) => t.includes('probe_042'))).toBe(false);
+      expect((await s.turn('next')).offered.some((t) => t.includes('probe_042'))).toBe(true);
+    }, 180_000);
+  });
 });

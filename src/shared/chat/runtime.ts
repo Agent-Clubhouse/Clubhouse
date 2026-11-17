@@ -243,9 +243,10 @@ export interface ChatDriverStartOptions {
    */
   preapprovedClubhouseTools?: readonly string[];
   /**
-   * Offer the model every tool on every request, never behind the CLI's tool
-   * search. Only the Dispatcher's two agents get it (#3615). Drivers whose
-   * CLI has no tool search ignore it.
+   * Offer the model every tool on every request instead of behind the CLI's
+   * tool search, up to the driver's ceiling (Copilot: 120 tools in all; above
+   * it the CLI's search comes back). Only the Dispatcher's two agents get it
+   * (#3615). Drivers whose CLI has no tool search ignore it.
    */
   loadAllTools?: boolean;
   /**

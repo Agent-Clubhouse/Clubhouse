@@ -75,7 +75,7 @@ export interface ChatSpawnParams {
   extraArgs?: string[];
   /** Clubhouse MCP tools the CLI runs without its own check: the Dispatcher chat's own (#3578), else none. */
   preapprovedClubhouseTools?: readonly string[];
-  /** Every tool up front, never behind the CLI's tool search: the Dispatcher's two agents (#3615), else none. */
+  /** Every tool up front instead of behind the CLI's tool search, up to the driver's ceiling: the Dispatcher's two agents (#3615), else none. */
   loadAllTools?: boolean;
   /** A quick agent someone will talk to (started from a phone) gets chat like a durable one. */
   interactive?: boolean;

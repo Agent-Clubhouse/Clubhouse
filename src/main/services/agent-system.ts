@@ -709,7 +709,7 @@ async function spawnAgentInner(inParams: SpawnAgentParams, facts: SpawnFacts, ma
     if (preapprovedClubhouseTools && provider.id === 'claude-code') {
       allowedTools = [...(allowedTools ?? []), ...preapprovedClubhouseTools.map((tool) => `${claudeMcpToolPrefix('clubhouse')}${tool}`)];
     }
-    // The Dispatcher sees every tool it holds; Copilot's tool search hides ones already loaded (#3615).
+    // The Dispatcher sees every tool it holds, up to 120; Copilot's tool search hides ones already loaded (#3615).
     const loadAllTools = loadsAllToolsUpFront(params.kind, isDispatcherPath(params.projectPath));
     const startChat = async (p: SpawnAgentParams): Promise<ChatStartResult> => {
       try {
