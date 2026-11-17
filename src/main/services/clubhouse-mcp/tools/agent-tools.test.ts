@@ -191,8 +191,9 @@ describe('AgentTools', () => {
         await vi.advanceTimersByTimeAsync(1500);
         const result = await pending;
         expect(result.isError).toBeFalsy();
-        expect((result.content[0] as { text: string }).text).toContain('Delivered to Builder; a reply comes back as remote Dispatcher news');
+        expect((result.content[0] as { text: string }).text).toContain('Delivered to Builder. A reply comes back as a message from Builder if it answers.');
         expect(result.content[0].text).not.toContain('poll read_output');
+        expect(result.content[0].text).not.toContain('remote Dispatcher news');
         expect(mockPtyWrite.mock.calls[0][1]).toContain('[FROM:Scout@Atlas on Studio] hello');
       } finally {
         remoteCaller.value = undefined;

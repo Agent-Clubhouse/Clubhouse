@@ -407,8 +407,8 @@ from `list_other_dispatchers`, using local published presence. A client's cached
 wire `get_status` also reads that local presence after the normal wire and grant
 checks; it marks the result as potentially stale and includes last seen when
 available. It never forwards a remote runtime status read. Cross-computer send
-receipts point to remote Dispatcher news for replies, rather than inaccessible
-`read_output` polling.
+receipts say a reply comes back as a message from the target if it answers;
+they never direct a remote caller to inaccessible `read_output` polling.
 
 Sleeping local agent wires keep `send_message` discoverable. The existing
 sleeping hint and runtime queue behavior remain; this does not auto-wake a

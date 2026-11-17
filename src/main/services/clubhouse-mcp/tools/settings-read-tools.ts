@@ -57,6 +57,7 @@ export function registerSettingsReadTools(): void {
     (agentId, args) => guarded('list_settings', agentId, () => {
       if (Object.keys(args).some((key) => key !== 'agent')) throw new McpArgError('list_settings takes only agent.');
       const target = optionalString(args, 'agent');
+      if (target && !remoteMachineOf(target) && target !== agentId) throw new McpArgError('list_settings on this computer lists only your own key names. Omit agent, or use an agentId@machine for a remote Dispatcher read.');
       return target && remoteMachineOf(target) ? forwardAgentCall(agentId, target, 'That agent', 'list_settings', {}) : listSettings(actorFor(agentId));
     }, typeof args.agent === 'string' && !!remoteMachineOf(args.agent)),
     { grant: [{ actions: ['agent.read'], target: 'agent_arg', ifArgs: ['agent'], allowRemote: true, strictTargets: true, from: { args: ['agent'], missing: 'caller', names: 'registered' } }, { actions: ['settings.app.read'], target: 'app' }] },

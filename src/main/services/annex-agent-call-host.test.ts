@@ -170,20 +170,33 @@ describe('remote configuration host grants', () => {
 });
 
 describe('remote settings host grants (#3656)', () => {
+  it.each(['read_settings', 'list_settings'] as const)('refuses an ordinary connected member agent for %s', async (tool) => {
+    const result = await readConfigForRemoteCaller('peer', 'sender', 'receiver', tool, tool === 'read_settings' ? { select: ['agent.cli.model'] } : {});
+    expect(result).toMatchObject({ isError: true, content: [{ text: expect.stringContaining('Only a Dispatcher can read another agent') }] });
+    expect(mocks.settingsRead).not.toHaveBeenCalled();
+  });
+
+  it('rechecks the authenticated Dispatcher identity before returning settings', async () => {
+    mocks.settingsRead.mockImplementationOnce(async () => { mocks.controller = 'replacement'; return { targets: [{ model: 'PRIVATE' }] }; });
+    const result = await readConfigForRemoteCaller('peer', 'controller', 'receiver', 'read_settings', { select: ['agent.cli.model'] });
+    expect(result.isError).toBe(true);
+    expect(JSON.stringify(result)).not.toContain('PRIVATE');
+  });
+
   it.each(['read_settings', 'list_settings'] as const)('lets the host agent.read grant decide %s', async (tool) => {
     const args = tool === 'read_settings' ? { select: ['agent.cli.model'] } : {};
-    expect((await readConfigForRemoteCaller('peer', 'sender', 'receiver', tool, args)).isError).toBeFalsy();
+    expect((await readConfigForRemoteCaller('peer', 'controller', 'receiver', tool, args)).isError).toBeFalsy();
     expect(mocks.settingsRead).toHaveBeenCalledWith('receiver', tool, args);
     mocks.settingsRead.mockClear(); mocks.hostOff = true;
-    expect((await readConfigForRemoteCaller('peer', 'sender', 'receiver', tool, args)).isError).toBe(true);
+    expect((await readConfigForRemoteCaller('peer', 'controller', 'receiver', tool, args)).isError).toBe(true);
     expect(mocks.settingsRead).not.toHaveBeenCalled();
     mocks.hostOff = false; mocks.disabled = [tool];
-    expect((await readConfigForRemoteCaller('peer', 'sender', 'receiver', tool, args)).isError).toBe(true);
+    expect((await readConfigForRemoteCaller('peer', 'controller', 'receiver', tool, args)).isError).toBe(true);
   });
 
   it('rechecks host revocation before returning any settings bytes', async () => {
     mocks.settingsRead.mockImplementationOnce(async () => { mocks.hostOff = true; return { targets: [{ model: 'PRIVATE' }] }; });
-    const result = await readConfigForRemoteCaller('peer', 'sender', 'receiver', 'read_settings', { select: ['agent.cli.model'] });
+    const result = await readConfigForRemoteCaller('peer', 'controller', 'receiver', 'read_settings', { select: ['agent.cli.model'] });
     expect(result.isError).toBe(true);
     expect(JSON.stringify(result)).not.toContain('PRIVATE');
   });

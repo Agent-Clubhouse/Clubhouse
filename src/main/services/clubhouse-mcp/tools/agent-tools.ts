@@ -229,7 +229,7 @@ export function registerAgentTools(): void {
       const submitNote = forceSubmit ? '' : ' (force_submit=false, message injected without submitting)';
       const sentText = (targetName: string, isBidirectional: boolean, woke = false) => {
         const wokeNote = woke ? ` ${targetName} was asleep and was woken to take it.` : '';
-        if (currentRemoteCaller()) return `Delivered to ${targetName}; a reply comes back as remote Dispatcher news. task_id=${taskId}.${wokeNote}${submitNote}`;
+        if (currentRemoteCaller()) return `Delivered to ${targetName}. A reply comes back as a message from ${targetName} if it answers. task_id=${taskId}.${wokeNote}${submitNote}`;
         return isBidirectional
           ? `Message sent to ${targetName}. task_id=${taskId}. ` +
             `Bidirectional — ${targetName} can reply directly via send_message.${wokeNote}${submitNote}`

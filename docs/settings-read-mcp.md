@@ -193,13 +193,17 @@ A separate tool, such as `update_settings`, and a separate allowlist.
 ## One agent on another computer (#3656)
 
 `list_settings({agent: "agentId@machine"})` lists that target's readable key names.
+A local `agent` argument may name only the caller; another local target is refused.
 `read_settings({agent_ids: ["agentId@machine"], select: ["agent.cli.model"]})` reads one
 remote target; `detail`, `limit` and `cursor` retain their existing meaning.
 Remote calls reject mixed/bulk targets, project selectors and write arguments.
 They use the same authenticated computer-member read transport as
 `read_agent_config`, without entering the durable input-delivery ledger.
 
-The sender checks its grants. The receiving host independently checks its own
+The sender checks its grants. Only a paired member's authenticated federated
+Dispatcher may read another agent's settings remotely, matching the local rule
+that an ordinary agent reads only itself. An ordinary connected remote agent is
+refused. The receiving host independently checks its own
 `agent.read` permission, connection (or authenticated federated Dispatcher),
 per-tool switches and current membership, and rechecks authorization before
 returning bytes. Phones, pending members and non-members are refused. The host

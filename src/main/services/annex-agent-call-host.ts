@@ -130,12 +130,16 @@ export function isConfigDispatcher(machine: string, agentId: string): boolean {
 export async function readConfigForRemoteCaller(machine: string, agentId: string, targetId: string,
   tool: 'read_agent_config' | 'list_settings' | 'read_settings' = 'read_agent_config', args: Record<string, unknown> = {}): Promise<McpToolResult> {
   const address = formatAgentAddress({ agentId, machine });
+  const settingsRead = tool !== 'read_agent_config';
+  if (settingsRead && !isConfigDispatcher(machine, agentId)) return {
+    content: [{ type: 'text', text: 'Only a Dispatcher can read another agent’s settings, the same as on this computer.' }], isError: true,
+  };
   const allowed = () => {
     if (!isNetworkComputer(machine)) return false;
     const direction = getConnectionDirection({ agentId, machineId: machine }, { agentId: targetId });
     const connected = !!(direction?.link || direction?.cardLink || activeAgentLinks(direction).length);
     const dispatcher = isConfigDispatcher(machine, agentId);
-    if ((!connected && !dispatcher) || direction?.disabledTools.includes(tool)) return false;
+    if ((settingsRead && !dispatcher) || (!connected && !dispatcher) || direction?.disabledTools.includes(tool)) return false;
     return decideGrant(address, 'agent.read', { kind: 'agent', agentId: targetId, relations: connected ? ['connected'] : [] }, dispatcher).outcome === 'allow';
   };
   const refused = (): McpToolResult => ({ content: [{ type: 'text', text: 'The receiving host does not allow agent.read on that target.' }], isError: true });

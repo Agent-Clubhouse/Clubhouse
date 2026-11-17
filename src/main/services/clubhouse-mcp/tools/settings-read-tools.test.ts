@@ -86,6 +86,17 @@ describe('settings read tools', () => {
     } finally { grants.mockRestore(); }
   });
 
+  it('accepts an explicit self listing and refuses an unsupported different local target', async () => {
+    expect((await callTool('a1', 'list_settings', { agent: 'a1' })).isError).toBeFalsy();
+    expect(mocks.listSettings).toHaveBeenCalledWith({ scope: 'own', agentId: 'a1', projectPath: '/one' });
+    mocks.listSettings.mockClear();
+    const refused = await callTool('dispatcher', 'list_settings', { agent: 'a1' });
+    expect(refused.isError).toBe(true);
+    expect(text(refused)).toContain('lists only your own key names');
+    expect(mocks.listSettings).not.toHaveBeenCalled();
+    expect(mocks.forward).not.toHaveBeenCalled();
+  });
+
   it('asks with full scope for the running Dispatcher only', async () => {
     await callTool('dispatcher', 'read_settings', { select: ['app.system'], all_projects: true });
     expect(mocks.readSettings).toHaveBeenLastCalledWith({ scope: 'all', agentId: 'dispatcher' }, expect.objectContaining({ allProjects: true }));
