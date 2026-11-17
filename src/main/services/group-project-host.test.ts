@@ -710,3 +710,19 @@ it('persists a host-relative author address through disk and network snapshots',
   const response = await groupProjectHost.networkSnapshot({ v: 1, known: {} });
   expect(readSyncResponse(response, FP_A).projects[0].board.messages.find(m => m.body === 'hello')).toMatchObject({ senderAddress: 'one' });
 });
+
+it('serializes simultaneous admissions with a host post and keeps later admissions read-only', async () => {
+  const gp = await groupProjectHost.create('Race', { membership: { autoJoin: false, includeLinkedComputers: false } });
+  await groupProjectHost.updateMembership(gp.id, d => {
+    d.explicit.push({ address: 'one', kind: 'durable', name: 'One', addedAt: new Date().toISOString() });
+  });
+  await Promise.all([
+    ...Array.from({ length: 10 }, () => groupProjectHost.ensureMemberAdmission(gp.id, 'One', 'one')),
+    groupProjectHost.post(gp.id, 'user', 'general', 'concurrent'),
+  ]);
+  expect(await groupProjectHost.readTopic(gp.id, 'system')).toHaveLength(1);
+  expect(await groupProjectHost.readTopic(gp.id, 'inbox-one')).toHaveLength(1);
+  const before = (await groupProjectHost.get(gp.id))!.seq;
+  await groupProjectHost.ensureMemberAdmission(gp.id, 'One', 'one');
+  expect((await groupProjectHost.get(gp.id))!.seq).toBe(before);
+});
