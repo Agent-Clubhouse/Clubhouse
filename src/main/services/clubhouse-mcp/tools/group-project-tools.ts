@@ -687,7 +687,7 @@ export function registerGroupProjectTools(): void {
           },
         },
       },
-    handler: async (targetId: string, _agentId: string, args: Record<string, unknown>): Promise<McpToolResult> => {
+    handler: async (targetId: string, agentId: string, args: Record<string, unknown>): Promise<McpToolResult> => {
       const current = await getProjectPollingState(targetId);
       if (!current) {
         return { content: [{ type: 'text', text: `Group project ${targetId} not found.` }], isError: true };
@@ -696,17 +696,18 @@ export function registerGroupProjectTools(): void {
       const requested = optionalBoolean(args, 'enabled');
       const nextEnabled = requested === undefined ? !current.pollingEnabled : requested;
 
-      const result = await setProjectPolling(targetId, nextEnabled);
+      const result = await setProjectPolling(targetId, nextEnabled, { author: { agentId, label: agentId } });
       if (!result) {
         return { content: [{ type: 'text', text: `Group project ${targetId} not found.` }], isError: true };
       }
 
-      const notified = result.members.filter(m => m.status === 'connected');
+      const notified = result.queued ? [] : result.members.filter(m => m.status === 'connected');
       return {
         content: [{
           type: 'text',
           text: JSON.stringify({
             action: 'toggle_polling',
+            ...(result.queued && { queued: true }),
             pollingEnabled: result.pollingEnabled,
             notifiedMembers: notified.map(m => ({ agentId: m.agentId, agentName: m.agentName })),
             members: result.members,

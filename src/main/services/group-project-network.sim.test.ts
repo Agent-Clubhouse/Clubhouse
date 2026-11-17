@@ -18,6 +18,9 @@ interface Machine {
   home: string;
   projects?: Array<{ id: string; name: string; path: string; key: string; agents: Array<{ id: string; name: string }> }>;
   host?: typeof import('./group-project-host');
+  polling?: typeof import('./group-project-polling');
+  roles?: typeof import('./group-project-roles');
+  gate?: typeof import('./group-project-remote-grants');
   registry?: typeof import('./group-project-registry');
   bulletin?: typeof import('./group-project-bulletin');
   membership?: typeof import('./group-project-membership');
@@ -119,6 +122,9 @@ beforeEach(async () => {
     m.delivery = await import('./group-project-delivery');
     m.persisted = await import('./persisted-bindings');
     m.bindings = await import('./clubhouse-mcp/binding-manager');
+    m.polling = await import('./group-project-polling');
+    m.roles = await import('./group-project-roles');
+    m.gate = await import('./group-project-remote-grants');
     m.host.groupProjectHost.setNetworkLink(linkFor(m));
   }
 });
@@ -376,7 +382,7 @@ describe('network group projects across two desktops (#3363)', () => {
       expect(checks).toEqual([{ address: `lead@${B.fp}`, action: 'group_project.admin', isMember: false }]);
     });
 
-    it('binds a claimed agent address to the authenticated sending computer, ignoring a forged machine suffix', async () => {
+    it('rejects a forged author machine before consulting the grant gate', async () => {
       const id = await sharedProject();
       const checks: Array<{ address: string; machine: string }> = [];
       A.host!.groupProjectHost.setRemoteWriteGate((check) => {
@@ -385,7 +391,7 @@ describe('network group projects across two desktops (#3363)', () => {
       });
       const answer = await writeAs(id, { agentId: `lead@${A.fp}`, label: 'user' }, { op: 'update', fields: { name: 'Spoofed host lead' } });
       expect(answer.results[0]).toMatchObject({ status: 'refused', reason: expect.stringContaining('authenticated computer') });
-      expect(checks).toEqual([{ address: `lead@${B.fp}`, machine: B.fp }]);
+      expect(checks).toEqual([]);
       expect((await as(A, (h) => h.groupProjectHost.get(id)))!.name).toBe('Launch');
     });
 
@@ -576,5 +582,50 @@ describe('network group projects across two desktops (#3363)', () => {
       expect((await as(A, (h) => h.groupProjectHost.getMembership(id))).disabledTools).toEqual({ lead: POLICY.lead.tools, [`builder@${B.fp}`]: POLICY.builder.tools });
       expect(refusals).toEqual([expect.objectContaining({ on: 'Studio', refusal: expect.objectContaining({ reason: expect.stringContaining('ghost') }) })]);
     });
+  });
+});
+
+describe('polling author boundary (#3664)', () => {
+  it.each(['off', 'ask', 'allow'] as const)('uses the host grant gate for a replica polling toggle with %s grant', async mode => {
+    const id = await sharedProject();
+    const address = `builder@${B.fp}`;
+    await as(A, h => h.groupProjectHost.updateMembership(id, m => { m.explicit.push({ address, kind: 'durable', addedAt: 't' }); }));
+    await as(B, h => h.groupProjectHost.syncFrom(A.fp));
+    await as(A, async h => {
+      h.groupProjectHost.setRemoteWriteGate(A.gate!.remoteGroupProjectGrantGate);
+      await A.roles!.setGroupProjectRole(id, address, 'admin', mode);
+    });
+    const request = as(B, () => B.polling!.setProjectPolling(id, true, { author: { agentId: 'builder', label: 'user' } }));
+    if (mode === 'allow') {
+      expect((await request)?.pollingEnabled).toBe(true);
+    } else {
+      await expect(request).rejects.toMatchObject({ code: 'refused' });
+    }
+    expect(!!(await as(A, h => h.groupProjectHost.get(id)))?.metadata?.pollingEnabled).toBe(mode === 'allow');
+  });
+  it('rejects a missing replica update author before queueing while a person still toggles', async () => {
+    const id = await sharedProject();
+    await expect(as(B, h => h.groupProjectHost.update(id, { metadata: { pollingEnabled: true } }))).rejects.toMatchObject({ code: 'invalid' });
+    expect((await as(B, () => B.polling!.setProjectPolling(id, true, { author: { label: 'user' } })))?.pollingEnabled).toBe(true);
+  });
+  it('rejects a forged author machine and an anonymous legacy envelope', async () => {
+    const id = await sharedProject();
+    const gate = vi.fn(() => undefined);
+    A.host!.groupProjectHost.setRemoteWriteGate(gate);
+    for (const author of [{ agentId: `lead@${A.fp}`, label: 'user' }, { label: 'unknown' }, { agentId: '', label: 'user' }]) {
+      const result = await as(A, h => h.groupProjectHost.applyRemoteWrites(B.fp, { v: 1, writes: [{
+        id: `forge-${author.label}-${author.agentId}`, groupProjectId: id, queuedAt: new Date().toISOString(), author,
+        write: { op: 'update', fields: { metadata: { pollingEnabled: true } } },
+      }] }));
+      expect(result.results[0].status).toBe('refused');
+    }
+    expect(gate).not.toHaveBeenCalled();
+    expect((await as(A, h => h.groupProjectHost.get(id)))?.metadata?.pollingEnabled).not.toBe(true);
+  });
+  it('does not report a queued toggle as applied', async () => {
+    const id = await sharedProject();
+    down.add(A.name);
+    const result = await as(B, () => B.polling!.setProjectPolling(id, true, { author: { agentId: 'builder', label: 'Builder' } }));
+    expect(result).toMatchObject({ pollingEnabled: false, queued: true });
   });
 });

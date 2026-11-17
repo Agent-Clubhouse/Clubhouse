@@ -158,7 +158,7 @@ export function registerGroupProjectHandlers(): void {
   ipcMain.handle(IPC.GROUP_PROJECT.UPDATE, withValidatedArgs(
     [stringArg(), objectArg<{ name?: string; description?: string; instructions?: string; metadata?: Record<string, unknown> }>()],
     async (_event, id, fields) => {
-      const updated = await groupProjectHost.update(id as string, fields as { name?: string; description?: string; instructions?: string; metadata?: Record<string, unknown> });
+      const updated = await groupProjectHost.update(id as string, fields as { name?: string; description?: string; instructions?: string; metadata?: Record<string, unknown> }, { author: { label: 'user' } });
       if (updated) {
         annexEventBus.emitGroupProjectChanged('updated', updated);
         appLog('core:group-project', 'info', 'Group project updated', { meta: { id } });
@@ -260,21 +260,21 @@ export function registerGroupProjectHandlers(): void {
   ipcMain.handle(IPC.GROUP_PROJECT.DELETE_MESSAGE, withValidatedArgs(
     [stringArg(), stringArg(), stringArg()],
     async (_event, projectId, topic, messageId) => {
-      return groupProjectHost.deleteMessage(projectId as string, topic as string, messageId as string);
+      return groupProjectHost.deleteMessage(projectId as string, topic as string, messageId as string, { author: { label: 'user' } });
     },
   ));
 
   ipcMain.handle(IPC.GROUP_PROJECT.DELETE_TOPIC, withValidatedArgs(
     [stringArg(), stringArg()],
     async (_event, projectId, topic) => {
-      return groupProjectHost.deleteTopic(projectId as string, topic as string);
+      return groupProjectHost.deleteTopic(projectId as string, topic as string, { author: { label: 'user' } });
     },
   ));
 
   ipcMain.handle(IPC.GROUP_PROJECT.SET_TOPIC_PROTECTION, withValidatedArgs(
     [stringArg(), stringArg(), booleanArg()],
     async (_event, projectId, topic, isProtected) => {
-      await groupProjectHost.setTopicProtected(projectId as string, topic as string, isProtected as boolean);
+      await groupProjectHost.setTopicProtected(projectId as string, topic as string, isProtected as boolean, { author: { label: 'user' } });
       return true;
     },
   ));
@@ -349,7 +349,7 @@ export function registerGroupProjectHandlers(): void {
   ipcMain.handle(IPC.GROUP_PROJECT.SET_POLLING, withValidatedArgs(
     [stringArg(), booleanArg()],
     async (_event, projectId, enabled) => {
-      return setProjectPolling(projectId as string, enabled as boolean);
+      return setProjectPolling(projectId as string, enabled as boolean, { author: { label: 'user' } });
     },
   ));
 
