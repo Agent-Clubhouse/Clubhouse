@@ -47,6 +47,14 @@ export function namespacedProjectId(satelliteId: string, projectId: string): str
   return `${NS_PREFIX}${satelliteId}${NS_SEP}${projectId}`;
 }
 
+/**
+ * A remote agent's parent link, namespaced to the same computer so it matches the
+ * parent's namespaced id and the sidebar tree can nest the helper under it.
+ */
+function namespacedParentId(satelliteId: string, parentAgentId: string | undefined | null): string | undefined {
+  return parentAgentId ? namespacedAgentId(satelliteId, parentAgentId) : undefined;
+}
+
 /** Return the prefix used for all IDs belonging to a satellite. */
 export function satellitePrefix(satelliteId: string): string {
   return `${NS_PREFIX}${satelliteId}${NS_SEP}`;
@@ -284,6 +292,7 @@ export const useRemoteProjectStore = create<RemoteProjectStoreState>((set, get) 
           ...agent,
           id: nsId,
           projectId: namespacedProjectId(satelliteId, agent.projectId),
+          ...(agent.parentAgentId && { parentAgentId: namespacedParentId(satelliteId, agent.parentAgentId) }),
         };
       }
     }
@@ -551,7 +560,8 @@ export const useRemoteProjectStore = create<RemoteProjectStoreState>((set, get) 
         model: agent.model,
         orchestrator: agent.orchestrator,
         freeAgentMode: agent.freeAgentMode,
-        parentAgentId: agent.parentAgentId,
+        parentAgentId: namespacedParentId(satelliteId, agent.parentAgentId),
+        ...(agent.parentProjectPath && { parentProjectPath: agent.parentProjectPath }),
       };
       return {
         remoteAgents: {
