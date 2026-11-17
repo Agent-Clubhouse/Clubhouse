@@ -97,10 +97,13 @@ export async function askFirst(agentId: string, toolName: string, args: Record<s
     meta: { agentId, toolName, requestId: recorded.request.requestId, reused: recorded.reused },
   });
   const needs = asks.map((a) => `${GRANT_ACTION_LABELS[a.action] ?? a.action} (${a.action}) on ${a.where}`).join('; ');
+  const exactGrant = [...new Set(asks.filter((a) => a.requestTarget === 'remote_dispatcher')
+    .map((a) => `This call needs action="${a.action}", target="remote_dispatcher" if you use request_grant.`))].join(' ');
   return {
     kind: 'asked',
     created: !recorded.reused,
     text: `Not done yet: this needs the user's approval (${needs}). It's waiting in their Needs you list${recorded.reused ? ' (you asked already)' : ''}. `
-      + 'Clubhouse will message you when they answer. If they allow it, make the same call again with the same arguments; it goes through once.',
+      + 'Clubhouse will message you when they answer. If they allow it, make the same call again with the same arguments; it goes through once.'
+      + (exactGrant ? ` ${exactGrant}` : ''),
   };
 }

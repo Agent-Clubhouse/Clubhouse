@@ -31,6 +31,8 @@ vi.mock('fs/promises', () => ({
 
 const remoteController = vi.hoisted(() => ({ id: '' }));
 vi.mock('../dispatcher-federation', () => ({ remoteFederationController: () => remoteController.id ? { agentId: remoteController.id } : undefined }));
+const presence = vi.hoisted(() => ({ remotes: [] as Array<Record<string, unknown>> }));
+vi.mock('../dispatcher-presence', () => ({ getDispatcherPresence: () => ({ remotes: presence.remotes }) }));
 const forwarded = vi.hoisted(() => ({ calls: [] as unknown[][] }));
 vi.mock('../annex-agent-calls', () => ({
   remoteMachineOf: (id: string) => (id.includes('@') ? id.slice(id.indexOf('@') + 1) : null),
@@ -43,6 +45,7 @@ vi.mock('../dispatcher/dispatcher-settings', () => ({
 }));
 
 import { updateAgentGrantChanges } from '../agent-grants-store';
+import { FEDERATION_TOOLS, FEDERATION_DISABLED_TOOLS, setFederationLookup } from '../dispatcher-federation-policy';
 import { registerToolTemplate, registerGlobalTool, setTargetToolTemplates, getConnectionToolCatalog, getScopedToolList, callTool, refusalReasonOf, buildToolName, buildToolKey, parseToolName, shortHash, invalidateToolListCache, agentsWiredTo, sanitizeWireInstruction, _resetForTesting } from './tool-registry';
 import { bindingManager } from './binding-manager';
 import { MCP_CALLER_UNKNOWN_MESSAGE } from '../../../shared/orchestration-policy';
@@ -71,6 +74,7 @@ describe('ToolRegistry', () => {
     _resetOrchestrationGateForTesting();
     _resetDispatcherGateForTesting();
     dispatcherState.enabled = true;
+    remoteController.id = ''; presence.remotes = []; forwarded.calls.length = 0;
     // Clean up any registrations from previous tests
     agentRegistry.untrack('agent-2');
     agentRegistry.untrack('agent-3');
@@ -692,11 +696,11 @@ describe('ToolRegistry', () => {
       agentRegistry.untrack('agent-2');
     });
 
-    it('tool list excludes non-status tools when agent is untracked (LB-OA-006)', () => {
+    it('keeps messaging and status available when a local target is untracked (#3656)', () => {
       // The structural guard against the registry-delete race is in getScopedToolList:
-      // when an agent is not in the registry, only get_status is exposed.
+      // when an agent is not in the registry, send_message and get_status remain exposed.
       // This ensures that after an agent dies and the cache is invalidated,
-      // send_message and other action tools are no longer callable.
+      // other action tools are hidden; send_message returns the sleeping hint.
       registerToolTemplate('agent', 'send_message', { description: 'Send', inputSchema: { type: 'object' } }, vi.fn());
       registerToolTemplate('agent', 'get_status', { description: 'Status', inputSchema: { type: 'object' } }, vi.fn());
 
@@ -706,14 +710,77 @@ describe('ToolRegistry', () => {
       });
 
       // Agent not in registry (sleeping / untracked after race condition window)
-      // After invalidating the cache, getScopedToolList should only show get_status
+      // After invalidating the cache, getScopedToolList should keep messaging and status
       invalidateToolListCache();
       const tools = getScopedToolList('agent-1');
       const suffixes = tools.map(t => t.name.split('__').pop());
 
-      // send_message is NOT available — only get_status is (structural guard)
-      expect(suffixes).not.toContain('send_message');
+      // Messaging stays discoverable; the handler still enforces sleeping-target behavior
+      expect(suffixes).toContain('send_message');
       expect(suffixes).toContain('get_status');
+    });
+
+    it('remote Dispatcher wires list only news tools and stale status reads local presence (#3656)', async () => {
+      const machine = Array(16).fill('ab').join(':');
+      const target = `controller@${machine}`;
+      remoteController.id = 'controller';
+      const handler = vi.fn();
+      for (const suffix of ['send_message', 'send_file', 'get_status', 'read_output', 'check_connectivity', 'clear_agent', 'hand_off_request']) {
+        registerToolTemplate('agent', suffix, { description: suffix, inputSchema: { type: 'object' } }, handler,
+          suffix === 'get_status' ? { grant: { actions: ['agent.read'], target: 'bound' } } : undefined);
+      }
+      bindingManager.bind('agent-1', { targetId: target, targetKind: 'agent', label: 'Dispatcher on B' });
+      const binding = bindingManager.getBindingsForAgent('agent-1')[0];
+      expect(getScopedToolList('agent-1').map((t) => t.name.split('__').pop())).toEqual(['send_message', 'send_file']);
+      expect(getConnectionToolCatalog('agent-1', target, 'agent').tools.filter((t) => t.available).map((t) => t.suffix)).toEqual(['send_message', 'send_file']);
+      for (const state of ['working', 'asleep', 'offline', 'unknown']) {
+        presence.remotes = [{ machineId: machine, address: target, state, lastSeen: '2026-11-17T09:00:00Z', link: { state: 'paused' } }];
+        const result = await callTool('agent-1', buildToolName(binding, 'get_status'), {});
+        expect(JSON.parse(result.content[0].text!)).toMatchObject({ source: 'local_presence', stale: true, state, lastSeen: '2026-11-17T09:00:00Z' });
+      }
+      expect(forwarded.calls).toEqual([]);
+      expect(handler).not.toHaveBeenCalled();
+      await updateAgentGrantChanges('agent-1', () => ({ changes: [{ action: 'agent.read', target: { kind: 'connected' }, mode: 'off' }] }));
+      try {
+        expect((await callTool('agent-1', buildToolName(binding, 'get_status'), {})).isError).toBe(true);
+        expect(forwarded.calls).toEqual([]);
+      } finally { await updateAgentGrantChanges('agent-1', () => undefined); }
+      bindingManager.setDisabledTools('agent-1', target, ['get_status']);
+      expect((await callTool('agent-1', buildToolName(binding, 'get_status'), {})).isError).toBe(true);
+      expect(forwarded.calls).toEqual([]);
+      remoteController.id = 'replacement';
+      expect(getScopedToolList('agent-1').map((t) => t.name.split('__').pop())).toContain('read_output');
+    });
+
+    it('preserves exactly main’s controller-link template while ordinary/news wires stay restricted (#3656)', () => {
+      const machine = Array(16).fill('ab').join(':');
+      const target = `controller@${machine}`;
+      const templates = [...FEDERATION_TOOLS, ...FEDERATION_DISABLED_TOOLS];
+      for (const suffix of templates) {
+        registerToolTemplate('agent', suffix, { description: suffix, inputSchema: { type: 'object' } }, vi.fn());
+      }
+      // The membership-owned lookup verifies BOTH endpoints, independently of labels or tool args.
+      const off = setFederationLookup((from, to) => from.agentId === 'agent-1' && !from.machineId
+        && to.agentId === 'controller' && to.machineId === machine
+        ? { from, to, disabledTools: [...FEDERATION_DISABLED_TOOLS], link: { createdAt: '' }, updatedAt: '' } : undefined);
+      bindingManager.bind('agent-1', { targetId: target, targetKind: 'agent', label: 'Controller', disabledTools: [...FEDERATION_DISABLED_TOOLS] });
+      const suffixes = (id: string) => getScopedToolList(id).map((tool) => tool.name.split('__').pop()).sort();
+      try {
+        // Capture main's unfiltered behavior before the target is classified as a remote Dispatcher.
+        const mainTemplate = suffixes('agent-1');
+        const mainCatalog = getConnectionToolCatalog('agent-1', target, 'agent');
+        expect(mainTemplate).toEqual([...FEDERATION_TOOLS].sort());
+        remoteController.id = 'controller';
+        expect(suffixes('agent-1')).toEqual(mainTemplate);
+        expect(getConnectionToolCatalog('agent-1', target, 'agent')).toEqual(mainCatalog);
+
+        bindingManager.bind('agent-3', { targetId: target, targetKind: 'agent', label: 'Controller', agentName: 'agent-1', targetName: 'Dispatcher' });
+        expect(suffixes('agent-3')).toEqual(['send_file', 'send_message']);
+        expect(getConnectionToolCatalog('agent-3', target, 'agent').tools.filter((tool) => tool.available).map((tool) => tool.suffix).sort()).toEqual(['send_file', 'send_message']);
+
+        off(); // A revoked identity must also drop the exception from a cached list.
+        expect(suffixes('agent-1')).toEqual(['send_file', 'send_message']);
+      } finally { off(); }
     });
 
     it('works with browser tool names', async () => {
@@ -871,11 +938,11 @@ describe('ToolRegistry', () => {
       });
     });
 
-    it('only exposes get_status when target agent is sleeping (not in registry)', () => {
+    it('exposes send_message and get_status when a local target sleeps', () => {
       // agent-2 is NOT in agentRegistry → sleeping
       const tools = getScopedToolList('agent-1');
       const suffixes = tools.map(t => t.name.split('__').pop());
-      expect(suffixes).toEqual(['get_status']);
+      expect(suffixes).toEqual(['send_message', 'get_status']);
     });
 
     it('still lists send_message for a sleeping Dispatcher, which it wakes (#3108)', () => {
@@ -901,7 +968,7 @@ describe('ToolRegistry', () => {
     it('follows the target waking and sleeping without a binding change (#2564)', () => {
       const suffixes = () => getScopedToolList('agent-1').map(t => t.name.split('__').pop());
       const version = bindingManager.getVersion();
-      expect(suffixes()).toEqual(['get_status']);
+      expect(suffixes()).toEqual(['send_message', 'get_status']);
 
       // Spawn: register, then a new nonce (what agent-system does).
       agentRegistry.register('agent-2', { runtime: 'pty', projectPath: '/test', orchestrator: 'claude-code' });
@@ -909,7 +976,7 @@ describe('ToolRegistry', () => {
       expect(suffixes()).toEqual(['send_message', 'get_status', 'wake', 'read_output']);
 
       agentRegistry.untrack('agent-2');
-      expect(suffixes()).toEqual(['get_status']);
+      expect(suffixes()).toEqual(['send_message', 'get_status']);
       expect(bindingManager.getVersion()).toBe(version);
     });
 
@@ -1502,14 +1569,14 @@ describe('ToolRegistry', () => {
       });
 
       it('lists wake_agent beside get_status while the target sleeps', () => {
-        expect(suffixes('dispatcher')).toEqual(['get_status', 'wake_agent']);
+        expect(suffixes('dispatcher')).toEqual(['get_status', 'send_message', 'wake_agent']);
       });
 
       it('lists sleep_agent, not wake_agent, while the target runs', () => {
         agentRegistry.register('target', { runtime: 'chat', projectPath: '/test', orchestrator: 'claude-code' });
         expect(suffixes('dispatcher')).toEqual(['get_status', 'send_message', 'sleep_agent']);
         agentRegistry.untrack('target');
-        expect(suffixes('dispatcher')).toEqual(['get_status', 'wake_agent']);
+        expect(suffixes('dispatcher')).toEqual(['get_status', 'send_message', 'wake_agent']);
       });
 
       describe('a CLI that keeps its first tool list (#2603)', () => {
@@ -1530,7 +1597,7 @@ describe('ToolRegistry', () => {
 
         it.each(['claude-code', 'copilot-cli'])('keeps the state-based listing on %s', (orchestrator) => {
           registerCaller(orchestrator);
-          expect(suffixes('dispatcher')).toEqual(['get_status', 'wake_agent']);
+          expect(suffixes('dispatcher')).toEqual(['get_status', 'send_message', 'wake_agent']);
           agentRegistry.register('target', { runtime: 'chat', projectPath: '/test', orchestrator: 'claude-code' });
           expect(suffixes('dispatcher')).toEqual(['get_status', 'send_message', 'sleep_agent']);
           agentRegistry.untrack('target');
@@ -1538,7 +1605,7 @@ describe('ToolRegistry', () => {
 
         it('does not serve a cached list after the caller restarts on another CLI', () => {
           registerCaller('claude-code');
-          expect(suffixes('dispatcher')).toEqual(['get_status', 'wake_agent']);
+          expect(suffixes('dispatcher')).toEqual(['get_status', 'send_message', 'wake_agent']);
           registerCaller('codex-cli');
           expect(suffixes('dispatcher')).toEqual(all);
         });
@@ -1563,7 +1630,7 @@ describe('ToolRegistry', () => {
       });
 
       it('never lists them for any other caller, and refuses a stale call', async () => {
-        expect(suffixes('agent-1')).toEqual(['get_status']);
+        expect(suffixes('agent-1')).toEqual(['get_status', 'send_message']);
         agentRegistry.register('target', { runtime: 'chat', projectPath: '/test', orchestrator: 'claude-code' });
         expect(suffixes('agent-1')).toEqual(['get_status', 'send_message']);
         const binding = bindingManager.getBindingsForAgent('agent-1')[0];
@@ -1578,7 +1645,7 @@ describe('ToolRegistry', () => {
       it('drops them when the Dispatcher is turned off', () => {
         dispatcherState.enabled = false;
         invalidateToolListCache();
-        expect(suffixes('dispatcher')).toEqual(['get_status']);
+        expect(suffixes('dispatcher')).toEqual(['get_status', 'send_message']);
       });
 
       it('only reaches agents wired to the Dispatcher', async () => {

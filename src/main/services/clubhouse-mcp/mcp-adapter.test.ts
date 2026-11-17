@@ -3,6 +3,15 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 // What the gate decides is covered in mcp-call-gate.test.ts and test/mcp-off.
 vi.mock('./mcp-call-gate', async (original) => ({ ...await original<typeof import('./mcp-call-gate')>(), mcpCallAccess: () => 'open' }));
 
+// The production send handler is exercised below; process launch/input stays isolated.
+const sleepingDelivery = vi.hoisted(() => ({ wake: vi.fn(), dispatcherWake: vi.fn(), dispatcherDelivery: vi.fn(), write: vi.fn() }));
+vi.mock('./tools/agent-lifecycle', () => ({ sleepAgent: vi.fn(), wakeWiredAgent: sleepingDelivery.wake }));
+vi.mock('./tools/dispatcher-delivery', () => ({
+  isDispatcherTarget: () => false, deliverToDispatcher: sleepingDelivery.dispatcherDelivery,
+  wakeDispatcher: sleepingDelivery.dispatcherWake, sleepingDispatcherHint: () => 'Agent is sleeping.',
+}));
+vi.mock('../pty-manager', () => ({ write: sleepingDelivery.write, getBuffer: () => '', isStopping: () => false }));
+
 vi.mock('electron', () => ({
   app: { isPackaged: false, getPath: () => '/tmp/test-clubhouse' },
 }));
@@ -36,9 +45,24 @@ vi.mock('../group-project-registry', () => ({
 }));
 
 import { mcpAdapter } from './mcp-adapter';
+import { registerAgentTools } from './tools/agent-tools';
 import { _resetForTesting as resetTools, getScopedToolList, callTool } from './tool-registry';
 import { bindingManager } from './binding-manager';
 import type { McpToolResult } from './types';
+
+/** Keep this adapter/transport fixture small while using the real sleeping-send handler. */
+function registerRealSendMessage(): void {
+  const registrations = vi.spyOn(mcpAdapter, 'registerMcpCommand');
+  let send: Parameters<typeof mcpAdapter.registerMcpCommand>[0] | undefined;
+  try {
+    registerAgentTools();
+    send = registrations.mock.calls.find(([definition]) => definition.mcp.nameSuffix === 'send_message')?.[0];
+  } finally { registrations.mockRestore(); }
+  resetTools();
+  if (!send) throw new Error('Missing production send_message definition');
+  mcpAdapter.registerMcpCommand(send);
+  for (const mock of Object.values(sleepingDelivery)) mock.mockClear();
+}
 
 describe('McpCommandAdapter', () => {
   beforeEach(() => {
@@ -114,10 +138,10 @@ describe('McpCommandAdapter', () => {
       expect(result.content[0].text).toBe('done');
     });
 
-    it('respects sleeping agent filtering — only get_status visible', () => {
+    it('keeps send_message and get_status visible for sleeping local agents without waking (#3656)', async () => {
+      registerRealSendMessage();
       const statusHandler = vi.fn().mockResolvedValue({ content: [{ type: 'text', text: 'status' }] });
       const wakeHandler = vi.fn().mockResolvedValue({ content: [{ type: 'text', text: 'waking' }] });
-      const sendHandler = vi.fn().mockResolvedValue({ content: [{ type: 'text', text: 'sent' }] });
 
       mcpAdapter.registerMcpCommand({
         id: 'agent.getStatus2',
@@ -137,15 +161,6 @@ describe('McpCommandAdapter', () => {
         handler: wakeHandler,
       });
 
-      mcpAdapter.registerMcpCommand({
-        id: 'agent.send2',
-        category: 'agent',
-        label: 'Send',
-        description: 'Send message',
-        mcp: { targetKind: 'agent', nameSuffix: 'send_message' },
-        handler: sendHandler,
-      });
-
       // agent-2 is NOT in registry (sleeping)
       bindingManager.bind('agent-1', {
         targetId: 'agent-2',
@@ -161,9 +176,18 @@ describe('McpCommandAdapter', () => {
         return parts[parts.length - 1];
       });
 
-      expect(suffixes).toContain('get_status');
+      // #3656 item 4: listing a sleeping LOCAL wire does not grant wake or delivery.
+      expect(suffixes).toEqual(['send_message', 'get_status']);
       expect(suffixes).not.toContain('wake');
-      expect(suffixes).not.toContain('send_message');
+      const send = tools.find((tool) => tool.name.endsWith('__send_message'))!;
+      const result = await callTool('agent-1', send.name, { message: 'hello' });
+      expect(result.isError).toBe(true);
+      expect(result.content[0].text).toContain('Agent agent-2 is sleeping.');
+      expect(wakeHandler).not.toHaveBeenCalled();
+      expect(sleepingDelivery.wake).not.toHaveBeenCalled();
+      expect(sleepingDelivery.dispatcherWake).not.toHaveBeenCalled();
+      expect(sleepingDelivery.dispatcherDelivery).not.toHaveBeenCalled();
+      expect(sleepingDelivery.write).not.toHaveBeenCalled();
     });
 
     it('respects disabledTools on binding', () => {

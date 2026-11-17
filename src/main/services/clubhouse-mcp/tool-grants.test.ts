@@ -185,7 +185,7 @@ describe('tool grant declarations (#2967)', () => {
       search_memory: agent.read on self
       update_project: project.display on project_arg
       update_agent: agent.display on agent_arg
-      list_settings: settings.app.read on app
+      list_settings: agent.read on agent_arg if agent; settings.app.read on app
       read_settings: agent.read on agent_arg; project.read on project_arg; settings.app.read on app
       set_orchestrator_helpers: agent.configure on agent_arg
       connect_orchestrators: connection.manage on agent_arg

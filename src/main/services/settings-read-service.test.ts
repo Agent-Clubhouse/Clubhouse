@@ -42,6 +42,7 @@ vi.mock('./dispatcher/dispatcher-service', () => ({
 }));
 
 import { agentRegistry } from './agent-registry';
+import { readRemoteSettings } from './remote-settings-reader';
 import * as agentConfig from './agent-config';
 import { isOrchestrationEnabled, onOrchestrationGateChange, setOrchestrationEnabled } from './clubhouse-mcp/orchestration-gate';
 import { getOrchestrationPolicy } from './orchestration-policy';
@@ -136,6 +137,28 @@ afterEach(() => {
   vi.unstubAllEnvs();
   // A loaded project keeps a watcher open, which holds its folder on Windows.
   try { fs.rmSync(root, { recursive: true, force: true }); } catch { /* the OS clears its temp folder */ }
+});
+
+describe('remote single-agent settings adapter (#3656)', () => {
+  it('reads real model and orchestration settings through the existing redacted service without writing', async () => {
+    writeAgents(one, [agent('a1', {
+      model: 'opus', orchestration: { orchestrate: true, maxHelpers: 3 },
+      mcpConfigs: { ado: { token: CANARY } }, lastSessionId: CANARY,
+    })]);
+    const before = snapshot(root);
+    const keys = await readRemoteSettings('a1', 'list_settings', {}) as Awaited<ReturnType<typeof listSettings>>;
+    expect(keys.sections.flatMap((s) => s.keys)).toContain('agent.cli.model');
+    const result = await readRemoteSettings('a1', 'read_settings', {
+      select: ['agent.cli.model', 'agent.orchestration'], detail: true,
+    }) as Awaited<ReturnType<typeof readSettings>>;
+    expect(result.targets).toContainEqual(expect.objectContaining({ id: 'a1', settings: expect.objectContaining({
+      'agent.cli.model': expect.objectContaining({ stored: 'opus', effective: 'opus' }),
+      'agent.orchestration.max_helpers': expect.objectContaining({ stored: 3, effective: 3 }),
+    }) }));
+    expect(JSON.stringify(result)).not.toContain(CANARY);
+    await expect(readRemoteSettings('a1', 'read_settings', { select: ['app.system'] })).rejects.toMatchObject({ code: 'invalid' });
+    expect(snapshot(root)).toEqual(before);
+  });
 });
 
 describe('the allowlist', () => {

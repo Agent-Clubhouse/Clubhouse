@@ -16,6 +16,15 @@ vi.mock('http', async (original) => {
   return { ...actual, createServer, default: { ...actual, createServer } };
 });
 
+// The production send handler is exercised below; process launch/input stays isolated.
+const sleepingDelivery = vi.hoisted(() => ({ wake: vi.fn(), dispatcherWake: vi.fn(), dispatcherDelivery: vi.fn(), write: vi.fn() }));
+vi.mock('./tools/agent-lifecycle', () => ({ sleepAgent: vi.fn(), wakeWiredAgent: sleepingDelivery.wake }));
+vi.mock('./tools/dispatcher-delivery', () => ({
+  isDispatcherTarget: () => false, deliverToDispatcher: sleepingDelivery.dispatcherDelivery,
+  wakeDispatcher: sleepingDelivery.dispatcherWake, sleepingDispatcherHint: () => 'Agent is sleeping.',
+}));
+vi.mock('../pty-manager', () => ({ write: sleepingDelivery.write, getBuffer: () => '', isStopping: () => false }));
+
 vi.mock('electron', () => {
   const _os = require('os');
   const _path = require('path');
@@ -58,6 +67,8 @@ vi.mock('../../util/ipc-broadcast', () => ({
 }));
 
 import * as bridgeServer from './bridge-server';
+import { mcpAdapter } from './mcp-adapter';
+import { registerAgentTools } from './tools/agent-tools';
 import { appLog } from '../log-service';
 import { bindingManager } from './binding-manager';
 import { groupProjectRegistry } from '../group-project-registry';
@@ -65,6 +76,20 @@ import { registerBuiltinProviders } from '../../orchestrators';
 import { registerToolTemplate, registerGlobalTool, buildToolName, _resetForTesting as resetTools } from './tool-registry';
 import { setOrchestrationEnabled, _resetOrchestrationGateForTesting } from './orchestration-gate';
 import { IPC } from '../../../shared/ipc-channels';
+
+/** Keep this adapter/transport fixture small while using the real sleeping-send handler. */
+function registerRealSendMessage(): void {
+  const registrations = vi.spyOn(mcpAdapter, 'registerMcpCommand');
+  let send: Parameters<typeof mcpAdapter.registerMcpCommand>[0] | undefined;
+  try {
+    registerAgentTools();
+    send = registrations.mock.calls.find(([definition]) => definition.mcp.nameSuffix === 'send_message')?.[0];
+  } finally { registrations.mockRestore(); }
+  resetTools();
+  if (!send) throw new Error('Missing production send_message definition');
+  mcpAdapter.registerMcpCommand(send);
+  for (const mock of Object.values(sleepingDelivery)) mock.mockClear();
+}
 
 function makeRequest(port: number, method: string, path: string, body?: unknown, nonce?: string, rawBody?: string): Promise<{ statusCode: number; body: any }> {
   return new Promise((resolve, reject) => {
@@ -750,7 +775,7 @@ describe('BridgeServer', () => {
     });
 
     it('a wire target waking or sleeping sends tools/list_changed to the agents wired to it (#2564)', async () => {
-      registerToolTemplate('agent', 'send_message', { description: 'Send', inputSchema: { type: 'object' } }, vi.fn());
+      registerRealSendMessage();
       registerToolTemplate('agent', 'get_status', { description: 'Status', inputSchema: { type: 'object' } }, vi.fn());
       bindingManager.bind('agent-1', { targetId: 'agent-2', targetKind: 'agent', label: 'A2' });
       const awake = new Set<string>();
@@ -760,7 +785,24 @@ describe('BridgeServer', () => {
       const sid = await initialize();
       const headers = { ...NONCE, 'Mcp-Session-Id': sid };
       const list = async () => JSON.parse((await rawRequest(port, 'POST', '/mcp/agent-1', headers, { jsonrpc: '2.0', id: 2, method: 'tools/list' })).body).result.tools.map((t: { name: string }) => t.name.split('__').pop());
-      expect(await list()).toEqual(['get_status']);
+      // #3656 item 4: sleeping LOCAL wires keep send_message listed; it never auto-wakes.
+      expect(await list()).toEqual(['send_message', 'get_status']);
+
+      const send = buildToolName(bindingManager.getBindingsForAgent('agent-1')[0], 'send_message');
+      const assertSleepingSend = async () => {
+        const response = await rawRequest(port, 'POST', '/mcp/agent-1', headers, {
+          jsonrpc: '2.0', id: 3, method: 'tools/call', params: { name: send, arguments: { message: 'hello' } },
+        });
+        const result = JSON.parse(response.body).result;
+        expect(result.isError).toBe(true);
+        expect(result.content[0].text).toContain('Agent agent-2 is sleeping.');
+        expect(sleepingDelivery.wake).not.toHaveBeenCalled();
+        expect(sleepingDelivery.dispatcherWake).not.toHaveBeenCalled();
+        expect(sleepingDelivery.dispatcherDelivery).not.toHaveBeenCalled();
+        expect(sleepingDelivery.write).not.toHaveBeenCalled();
+        expect(awake.has('agent-2')).toBe(false);
+      };
+      await assertSleepingSend();
 
       const stream = await openStream(port, '/mcp/agent-1', { ...SSE, 'Mcp-Session-Id': sid });
       const unrelatedSid = await initialize('agent-3');
@@ -779,7 +821,8 @@ describe('BridgeServer', () => {
       awake.delete('agent-2');
       emitAuthChange('agent-2');
       await vi.waitFor(() => expect(notifications()).toBe(2), { timeout: 2000 });
-      expect(await list()).toEqual(['get_status']);
+      expect(await list()).toEqual(['send_message', 'get_status']);
+      await assertSleepingSend();
       expect(bindingManager.getVersion()).toBe(version);
       expect(unrelated.chunks.join('')).not.toContain('list_changed');
       stream.close();

@@ -403,11 +403,16 @@ test('the Dispatcher wakes a connected agent with a message and sleeps it again'
 
     const toolFor = (names: string[], suffix: string) => names.find((n) => n.endsWith(`__${suffix}`) && n.includes('conductor'));
 
-    // Sleeping: only status and wake.
+    // #3656 item 4: a sleeping LOCAL wire lists send_message, but sending never auto-wakes it.
     const asleep = await mcp.toolNames();
     expect(toolFor(asleep, 'get_status')).toBeTruthy();
-    expect(toolFor(asleep, 'send_message')).toBeUndefined();
+    expect(toolFor(asleep, 'send_message')).toBeTruthy();
     expect(toolFor(asleep, 'sleep_agent')).toBeUndefined();
+    const sleepingSend = await mcp.callText(toolFor(asleep, 'send_message')!, { message: 'stay asleep until explicitly woken' });
+    expect(sleepingSend.isError).toBe(true);
+    expect(sleepingSend.text).toContain(`Agent ${ORCHESTRATOR_ID} is sleeping.`);
+    expect((await mcp.call(toolFor(asleep, 'get_status')!)).body).toMatchObject({ status: 'sleeping', running: false });
+    expect(await startedAs()).toBe(dispatcherId); // No target CLI was started by send_message.
 
     // Wake with a message, which reaches the CLI as the first prompt.
     const woken = await mcp.call(toolFor(asleep, 'wake_agent')!, { message: 'first prompt from dispatcher' });

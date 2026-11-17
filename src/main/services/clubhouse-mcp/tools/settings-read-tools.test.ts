@@ -8,8 +8,10 @@ const mocks = vi.hoisted(() => ({
   readSettings: vi.fn(async () => ({ targets: [] as unknown[], total: 0 })),
   dispatcherOn: true,
   fixedList: false,
+  forward: vi.fn(async () => ({ content: [{ type: 'text', text: 'remote settings' }] })),
 }));
 
+vi.mock('../../annex-agent-calls', async (original) => ({ ...await original<typeof import('../../annex-agent-calls')>(), forwardAgentCall: mocks.forward }));
 vi.mock('../../log-service', () => ({ appLog: vi.fn() }));
 vi.mock('../../settings-read-service', () => {
   class SettingsReadError extends Error {
@@ -26,7 +28,9 @@ vi.mock('../../../orchestrators', async (importOriginal) => ({
   getProvider: () => ({ getCapabilities: () => ({ ignoresToolListChanged: mocks.fixedList }) }),
 }));
 
+import { bindingManager } from '../binding-manager';
 import { agentRegistry } from '../../agent-registry';
+import * as grantStore from '../../agent-grants-store';
 import { SettingsReadError } from '../../settings-read-service';
 import { callTool, getScopedToolList, invalidateToolListCache, _resetForTesting } from '../tool-registry';
 import { registerSettingsReadTools } from './settings-read-tools';
@@ -40,6 +44,8 @@ beforeEach(() => {
   for (const id of [...agentRegistry.getAllRegistrations().keys()]) agentRegistry.untrack(id);
   _resetForTesting();
   registerSettingsReadTools();
+  bindingManager._resetForTesting();
+  mocks.forward.mockResolvedValue({ content: [{ type: 'text', text: 'remote settings' }] });
   agentRegistry.register('a1', { projectPath: '/one', cwd: '/one/worktree', orchestrator: 'claude-code', runtime: 'chat' });
   agentRegistry.register('dispatcher', { projectPath: '/dispatcher', orchestrator: 'claude-code', runtime: 'chat' });
 });
@@ -62,10 +68,33 @@ describe('settings read tools', () => {
   it('asks as the agent, in its own scope', async () => {
     await callTool('a1', 'list_settings', {});
     expect(mocks.listSettings).toHaveBeenCalledWith({ scope: 'own', agentId: 'a1', projectPath: '/one' });
-    await callTool('a1', 'read_settings', { select: ['agent.idle'], agent_ids: ['a2'], project: 'p', limit: 5, cursor: '5', detail: true });
+    await callTool('a1', 'read_settings', { select: ['agent.idle'], agent_ids: ['a1'], limit: 5, cursor: '5', detail: true });
     expect(mocks.readSettings).toHaveBeenCalledWith({ scope: 'own', agentId: 'a1', projectPath: '/one' }, {
-      select: ['agent.idle'], agentIds: ['a2'], project: 'p', allAgents: undefined, allProjects: undefined, limit: 5, cursor: '5', detail: true,
+      select: ['agent.idle'], agentIds: ['a1'], project: undefined, allAgents: undefined, allProjects: undefined, limit: 5, cursor: '5', detail: true,
     });
+  });
+
+  it('keeps no-argument local listing under its existing grant, while reads still honor agent.read Off', async () => {
+    const grants = vi.spyOn(grantStore, 'getAgentGrantChanges').mockReturnValue({
+      changes: [{ action: 'agent.read', target: { kind: 'self' }, mode: 'off' }],
+    });
+    try {
+      expect((await callTool('a1', 'list_settings', {})).isError).toBeFalsy();
+      expect(mocks.listSettings).toHaveBeenCalledTimes(1);
+      expect((await callTool('a1', 'read_settings', { select: ['agent.cli.model'] })).isError).toBe(true);
+      expect(mocks.readSettings).not.toHaveBeenCalled();
+    } finally { grants.mockRestore(); }
+  });
+
+  it('accepts an explicit self listing and refuses an unsupported different local target', async () => {
+    expect((await callTool('a1', 'list_settings', { agent: 'a1' })).isError).toBeFalsy();
+    expect(mocks.listSettings).toHaveBeenCalledWith({ scope: 'own', agentId: 'a1', projectPath: '/one' });
+    mocks.listSettings.mockClear();
+    const refused = await callTool('dispatcher', 'list_settings', { agent: 'a1' });
+    expect(refused.isError).toBe(true);
+    expect(text(refused)).toContain('lists only your own key names');
+    expect(mocks.listSettings).not.toHaveBeenCalled();
+    expect(mocks.forward).not.toHaveBeenCalled();
   });
 
   it('asks with full scope for the running Dispatcher only', async () => {
@@ -87,6 +116,31 @@ describe('settings read tools', () => {
     expect((await callTool('a1', 'read_settings', {})).isError).toBe(true);
     expect((await callTool('a1', 'read_settings', { select: [1] })).isError).toBe(true);
     expect(mocks.readSettings).not.toHaveBeenCalled();
+  });
+
+  it('routes one qualified agent through the existing read transport and preserves host refusals (#3656)', async () => {
+    const machine = Array(16).fill('ab').join(':');
+    const target = `target@${machine}`;
+    bindingManager.bind('a1', { targetId: target, targetKind: 'agent', label: 'Remote agent' });
+    const args = { select: ['agent.cli.model'], agent_ids: [target], detail: true };
+    expect(await callTool('a1', 'read_settings', args)).toEqual({ content: [{ type: 'text', text: 'remote settings' }] });
+    expect(mocks.forward).toHaveBeenCalledWith('a1', target, 'That agent', 'read_settings', { select: ['agent.cli.model'], detail: true });
+    await callTool('a1', 'list_settings', { agent: target });
+    expect(mocks.forward).toHaveBeenLastCalledWith('a1', target, 'That agent', 'list_settings', {});
+    mocks.forward.mockResolvedValueOnce({ isError: true, content: [{ type: 'text', text: 'Host refuses agent.read' }] } as never);
+    expect((await callTool('a1', 'read_settings', args)).isError).toBe(true);
+    expect(mocks.readSettings).not.toHaveBeenCalled();
+  });
+
+  it('refuses unconnected remote targets and rejects remote bulk/project/write arguments', async () => {
+    const target = `target@${Array(16).fill('ab').join(':')}`;
+    expect((await callTool('a1', 'read_settings', { select: ['agent.cli.model'], agent_ids: [target] })).isError).toBe(true);
+    expect(mocks.forward).not.toHaveBeenCalled();
+    bindingManager.bind('a1', { targetId: target, targetKind: 'agent', label: 'Remote' });
+    for (const extra of [{ project: '/one' }, { all_agents: true }, { all_projects: true }, { value: 'write' }]) {
+      expect((await callTool('a1', 'read_settings', { select: ['agent.cli.model'], agent_ids: [target], ...extra })).isError).toBe(true);
+    }
+    expect(mocks.forward).not.toHaveBeenCalled();
   });
 
   it('turns a refusal into a tool error with its message, and a result into compact JSON', async () => {

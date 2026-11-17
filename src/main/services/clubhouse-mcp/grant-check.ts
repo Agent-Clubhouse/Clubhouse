@@ -36,7 +36,7 @@ import type { ArgTargets } from './arg-targets';
 import type { McpBinding } from './types';
 
 /** One action a call needs that is set to Ask first, and where (in the caller's terms). */
-export interface AskedAction { action: GrantAction; where: string }
+export interface AskedAction { action: GrantAction; where: string; requestTarget?: 'remote_dispatcher' }
 
 export type GrantCheck =
   | { ok: true }
@@ -181,6 +181,7 @@ export function whereText(target: GrantCallTarget): string {
  */
 function refusalMessage(reason: GrantRefusal, action: string, target: GrantCallTarget): string {
   if (reason !== 'no_grant') return GRANT_REFUSAL_MESSAGES[reason];
+  if (target.remoteDispatcher) return `You don't have the Clubhouse permission ${action} on another machine's Dispatcher. Request the exact grant with request_grant: action="${action}", target="remote_dispatcher", and your reason. Only the user can allow it.`;
   const where = whereText(target);
   const hint = (target.relations ?? []).includes('parent') ? ' To report to your orchestrator, use message_parent.'
     // Starting a helper in another project is what Cross-project helpers turns on (#2974).
@@ -261,7 +262,7 @@ export function checkToolGrant(agentId: string, grant: ToolGrant | undefined, ar
       for (const action of d.actions) {
         const decision = evaluateGrant({ caller, action, target }, grants);
         if (decision.outcome === 'refuse') return { ok: false, reason: decision.reason, message: refusalMessage(decision.reason, action, target), action, targetKind: target.kind };
-        if (decision.outcome === 'ask' && !d.askHandledByTool) asks.push({ action, where: whereText(target) });
+        if (decision.outcome === 'ask' && !d.askHandledByTool) asks.push({ action, where: whereText(target), ...(target.remoteDispatcher && { requestTarget: 'remote_dispatcher' as const }) });
       }
     }
   }
@@ -283,7 +284,7 @@ export function holdsGrant(agentId: string, action: GrantAction, target: GrantCa
 
 /**
  * As holdsGrant, with the whole decision. authenticatedDispatcherRead is a
- * main-verified federation identity used for configuration and controller-chat reads. The host's
+ * main-verified federation identity used for read-only agent setup and controller-chat reads. The host's
  * saved grant changes apply over that identity's read ANY default.
  */
 export function decideGrant(agentId: string, action: GrantAction, target: GrantCallTarget, authenticatedDispatcherRead = false): GrantDecision {

@@ -10,6 +10,7 @@ const mocks = vi.hoisted(() => ({
     readTranscript: ReturnType<typeof vi.fn>; sendMessage: ReturnType<typeof vi.fn>;
   },
   records: new Map<string, ActionRun>(), record: vi.fn(), ready: true,
+  settingsRead: vi.fn(async () => ({ targets: [{ model: 'safe-model' }] })),
   permissionHash: 'approved', member: true, controller: 'controller', hostOff: false, configRead: vi.fn(async () => ({ instructions: { text: 'Rules' } })),
 }));
 vi.mock('./agent-grants-service', () => ({ effectiveAgentGrants: async () => mocks.grants }));
@@ -31,6 +32,7 @@ vi.mock('./dispatcher-federation', () => ({ remoteFederationController: () => ({
 vi.mock('./agent-config-reader', () => ({ readAgentConfig: mocks.configRead }));
 vi.mock('./agent-grants-store', () => ({ getAgentGrantChanges: () => mocks.hostOff ? { changes: [{ action: 'agent.read', target: { kind: 'any' }, mode: 'off' }, { action: 'agent.read', target: { kind: 'connected' }, mode: 'off' }] } : undefined }));
 
+vi.mock('./remote-settings-reader', () => ({ readRemoteSettings: mocks.settingsRead }));
 import { isConfigDispatcher, readConfigForRemoteCaller, authorizeQueuedAnnexCall, reportAnnexDeliveryFailure } from './annex-agent-call-host';
 
 const item: DeliveryOutboxItem = {
@@ -164,5 +166,38 @@ describe('remote configuration host grants', () => {
     mocks.member = true;
     mocks.configRead.mockImplementationOnce(async () => { mocks.member = false; return { instructions: { text: 'Private' } }; });
     expect((await readConfigForRemoteCaller('peer', 'controller', 'receiver')).isError).toBe(true);
+  });
+});
+
+describe('remote settings host grants (#3656)', () => {
+  it.each(['read_settings', 'list_settings'] as const)('refuses an ordinary connected member agent for %s', async (tool) => {
+    const result = await readConfigForRemoteCaller('peer', 'sender', 'receiver', tool, tool === 'read_settings' ? { select: ['agent.cli.model'] } : {});
+    expect(result).toMatchObject({ isError: true, content: [{ text: expect.stringContaining('Only a Dispatcher can read another agent') }] });
+    expect(mocks.settingsRead).not.toHaveBeenCalled();
+  });
+
+  it('rechecks the authenticated Dispatcher identity before returning settings', async () => {
+    mocks.settingsRead.mockImplementationOnce(async () => { mocks.controller = 'replacement'; return { targets: [{ model: 'PRIVATE' }] }; });
+    const result = await readConfigForRemoteCaller('peer', 'controller', 'receiver', 'read_settings', { select: ['agent.cli.model'] });
+    expect(result.isError).toBe(true);
+    expect(JSON.stringify(result)).not.toContain('PRIVATE');
+  });
+
+  it.each(['read_settings', 'list_settings'] as const)('lets the host agent.read grant decide %s', async (tool) => {
+    const args = tool === 'read_settings' ? { select: ['agent.cli.model'] } : {};
+    expect((await readConfigForRemoteCaller('peer', 'controller', 'receiver', tool, args)).isError).toBeFalsy();
+    expect(mocks.settingsRead).toHaveBeenCalledWith('receiver', tool, args);
+    mocks.settingsRead.mockClear(); mocks.hostOff = true;
+    expect((await readConfigForRemoteCaller('peer', 'controller', 'receiver', tool, args)).isError).toBe(true);
+    expect(mocks.settingsRead).not.toHaveBeenCalled();
+    mocks.hostOff = false; mocks.disabled = [tool];
+    expect((await readConfigForRemoteCaller('peer', 'controller', 'receiver', tool, args)).isError).toBe(true);
+  });
+
+  it('rechecks host revocation before returning any settings bytes', async () => {
+    mocks.settingsRead.mockImplementationOnce(async () => { mocks.hostOff = true; return { targets: [{ model: 'PRIVATE' }] }; });
+    const result = await readConfigForRemoteCaller('peer', 'controller', 'receiver', 'read_settings', { select: ['agent.cli.model'] });
+    expect(result.isError).toBe(true);
+    expect(JSON.stringify(result)).not.toContain('PRIVATE');
   });
 });

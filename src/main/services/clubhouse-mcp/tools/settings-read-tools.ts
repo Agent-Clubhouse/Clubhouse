@@ -14,6 +14,7 @@ import { agentRegistry } from '../../agent-registry';
 import { appLog } from '../../log-service';
 import { listSettings, readSettings, SettingsReadError, type SettingsActor } from '../../settings-read-service';
 import { McpArgError, optionalBoolean, optionalNumber, optionalString } from './validation';
+import { forwardAgentCall, remoteMachineOf } from '../../annex-agent-calls';
 
 function actorFor(agentId: string): SettingsActor {
   if (isDispatcherAgent(agentId)) return { scope: 'all', agentId };
@@ -29,10 +30,11 @@ function stringList(args: Record<string, unknown>, key: string): string[] | unde
   return value as string[];
 }
 
-async function guarded(tool: string, agentId: string, run: () => unknown): Promise<McpToolResult> {
+async function guarded(tool: string, agentId: string, run: () => unknown, forwarded = false): Promise<McpToolResult> {
   try {
     // Compact: every agent pays for this output in tokens.
-    return { content: [{ type: 'text', text: JSON.stringify(await run()) }] };
+    const result = await run();
+    return forwarded ? result as McpToolResult : { content: [{ type: 'text', text: JSON.stringify(result) }] };
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     if (!(err instanceof SettingsReadError || err instanceof McpArgError)) {
@@ -49,19 +51,23 @@ export function registerSettingsReadTools(): void {
   registerGlobalTool(
     'list_settings',
     {
-      description: 'List the settings sections and keys you can read with read_settings. Names only.',
-      inputSchema: { type: 'object', properties: {} },
+      description: 'List readable settings sections and keys. Names only. agent may be agentId@machine for a single remote target.',
+      inputSchema: { type: 'object', properties: { agent: { type: 'string' } } },
     },
-    (agentId) => guarded('list_settings', agentId, () => listSettings(actorFor(agentId))),
-    { grant: { actions: ['settings.app.read'], target: 'app' } },
+    (agentId, args) => guarded('list_settings', agentId, () => {
+      if (Object.keys(args).some((key) => key !== 'agent')) throw new McpArgError('list_settings takes only agent.');
+      const target = optionalString(args, 'agent');
+      if (target && !remoteMachineOf(target) && target !== agentId) throw new McpArgError('list_settings on this computer lists only your own key names. Omit agent, or use an agentId@machine for a remote Dispatcher read.');
+      return target && remoteMachineOf(target) ? forwardAgentCall(agentId, target, 'That agent', 'list_settings', {}) : listSettings(actorFor(agentId));
+    }, typeof args.agent === 'string' && !!remoteMachineOf(args.agent)),
+    { grant: [{ actions: ['agent.read'], target: 'agent_arg', ifArgs: ['agent'], allowRemote: true, strictTargets: true, from: { args: ['agent'], missing: 'caller', names: 'registered' } }, { actions: ['settings.app.read'], target: 'app' }] },
   );
 
   registerGlobalTool(
     'read_settings',
     {
       description:
-        'Read settings by section or key: each effective value and its source. Changes nothing. ' +
-        'You can read yourself, your project and app defaults; the Dispatcher can read any agent or project.',
+        'Read effective settings and sources by key. No changes. Local scope: self/project/app defaults (Dispatcher: all). One agentId@machine in agent_ids uses host agent.read and read rules.',
       inputSchema: {
         type: 'object',
         properties: {
@@ -77,20 +83,32 @@ export function registerSettingsReadTools(): void {
         required: ['select'],
       },
     },
-    (agentId, args) => guarded('read_settings', agentId, () => {
-      const unknown = Object.keys(args).filter((key) => !READ_ARGS.includes(key));
-      if (unknown.length > 0) throw new McpArgError(`read_settings doesn't take ${unknown.join(', ')}.`);
-      return readSettings(actorFor(agentId), {
-        select: stringList(args, 'select') ?? [],
-        agentIds: stringList(args, 'agent_ids'),
-        project: optionalString(args, 'project'),
-        allAgents: optionalBoolean(args, 'all_agents'),
-        allProjects: optionalBoolean(args, 'all_projects'),
-        limit: optionalNumber(args, 'limit'),
-        cursor: optionalString(args, 'cursor'),
-        detail: optionalBoolean(args, 'detail'),
+    async (agentId, args) => {
+      const ids = Array.isArray(args.agent_ids) ? args.agent_ids : [];
+      if (ids.some((id) => typeof id === 'string' && remoteMachineOf(id))) {
+        return guarded('read_settings', agentId, async () => {
+          if (ids.length !== 1 || typeof ids[0] !== 'string' || Object.keys(args).some((key) => !['agent_ids', 'select', 'detail', 'limit', 'cursor'].includes(key))) {
+            throw new McpArgError('Remote settings reads take one agent_ids address and no project or bulk scope.');
+          }
+          const { agent_ids: _ids, ...read } = args;
+          return forwardAgentCall(agentId, ids[0], 'That agent', 'read_settings', read);
+        }, true);
+      }
+      return guarded('read_settings', agentId, () => {
+        const unknown = Object.keys(args).filter((key) => !READ_ARGS.includes(key));
+        if (unknown.length > 0) throw new McpArgError(`read_settings doesn't take ${unknown.join(', ')}.`);
+        return readSettings(actorFor(agentId), {
+          select: stringList(args, 'select') ?? [],
+          agentIds: stringList(args, 'agent_ids'),
+          project: optionalString(args, 'project'),
+          allAgents: optionalBoolean(args, 'all_agents'),
+          allProjects: optionalBoolean(args, 'all_projects'),
+          limit: optionalNumber(args, 'limit'),
+          cursor: optionalString(args, 'cursor'),
+          detail: optionalBoolean(args, 'detail'),
+        });
       });
-    }),
-    { grant: [{ actions: ['agent.read'], target: 'agent_arg', from: { args: ['agent_ids'], project: 'project', missing: 'caller', all: 'all_agents' } }, { actions: ['project.read'], target: 'project_arg', from: { args: ['project'], missing: 'caller', all: 'all_projects' } }, { actions: ['settings.app.read'], target: 'app' }] },
+    },
+    { grant: [{ actions: ['agent.read'], target: 'agent_arg', allowRemote: true, strictTargets: true, from: { args: ['agent_ids'], project: 'project', missing: 'caller', all: 'all_agents' } }, { actions: ['project.read'], target: 'project_arg', from: { args: ['project'], missing: 'caller', all: 'all_projects' } }, { actions: ['settings.app.read'], target: 'app' }] },
   );
 }
