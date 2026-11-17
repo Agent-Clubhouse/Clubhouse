@@ -463,7 +463,7 @@ describe('CopilotSdkChatDriver on the real runtime', () => {
     const file = path.join(tmp, 'pixel.png');
     fs.writeFileSync(file, Buffer.from(png, 'base64'));
     const vision = new CopilotSdkChatDriver({
-      sessionOverrides: { modelCapabilities: { supports: { vision: true } } },
+      sessionOverrides: { inference: { capabilities: { supports: { vision: true } } } },
     });
     const session = await vision.start(options());
     sessions.push(session);
