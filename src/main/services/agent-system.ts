@@ -389,21 +389,6 @@ function assertDispatcherCanStart({ kind, projectPath }: SpawnAgentParams): void
 async function spawnAgentInner(inParams: SpawnAgentParams, facts: SpawnFacts, managed: ManagedLaunchLease | null): Promise<void> {
   let params = inParams;
   assertDispatcherCanStart(params);
-  if (params.kind === 'durable' && isDispatcherPath(params.projectPath)) {
-    // Either of the Dispatcher's agents starts with its memory as it is now (#3036).
-    // Loaded here: dispatcher-service imports this module.
-    try {
-      const { prepareDispatcherSessionStart } = await import('./dispatcher/dispatcher-service');
-      // Its Behavior's model (#3045), or the model and provider chosen for it (#3191), win over what the caller last saw.
-      const behaviorModel = await prepareDispatcherSessionStart(params.projectPath, params.agentId);
-      params = withDispatcherStartModel(params, behaviorModel);
-    } catch (err) {
-      // telemetry-exempt: logged; it starts with the instructions file it already has
-      appLog('core:agent', 'warn', 'Could not refresh the Dispatcher\'s instructions before its start', {
-        meta: { agentId: params.agentId, error: err instanceof Error ? err.message : String(err) },
-      });
-    }
-  }
   // An agent still being created has no worktree yet, and a failed one never
   // will (#2226): refuse before anything touches its folder.
   // Read once here; the managed delivery step below uses the same read.
@@ -424,6 +409,21 @@ async function spawnAgentInner(inParams: SpawnAgentParams, facts: SpawnFacts, ma
       throw tagError(new Error(creation.state === 'creating'
         ? 'This agent is still being created. Start it once it is ready.'
         : `This agent could not be created: ${creation.reason ?? 'unknown reason'} Delete it and create it again.`), 'cwd_invalid');
+    }
+  }
+  if (params.kind === 'durable' && isDispatcherPath(params.projectPath)) {
+    // Either of the Dispatcher's agents starts with its memory as it is now (#3036).
+    // Loaded here: dispatcher-service imports this module.
+    try {
+      const { prepareDispatcherSessionStart } = await import('./dispatcher/dispatcher-service');
+      // Its Behavior's model (#3045), or the model and provider chosen for it (#3191), win over what the caller last saw.
+      const behaviorModel = await prepareDispatcherSessionStart(params.projectPath, params.agentId);
+      params = withDispatcherStartModel(params, behaviorModel);
+    } catch (err) {
+      // telemetry-exempt: logged; it starts with the instructions file it already has
+      appLog('core:agent', 'warn', 'Could not refresh the Dispatcher\'s instructions before its start', {
+        meta: { agentId: params.agentId, error: err instanceof Error ? err.message : String(err) },
+      });
     }
   }
   const provider = await tel.step('clubhouse.provider.resolve', () =>

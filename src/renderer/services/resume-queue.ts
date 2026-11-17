@@ -119,6 +119,7 @@ async function resumeAgent(entry: RestartSessionEntry): Promise<void> {
         durableConfig = await window.clubhouse.agent.getDurableConfig(
           entry.projectPath,
           entry.agentId,
+          true,
         );
       } catch {
         // Config unavailable — fall back to entry-only values
@@ -200,6 +201,7 @@ async function resumeAgent(entry: RestartSessionEntry): Promise<void> {
             fallbackConfig = await window.clubhouse.agent.getDurableConfig(
               entry.projectPath,
               entry.agentId,
+              true,
             );
           } catch { /* config unavailable */ }
         }

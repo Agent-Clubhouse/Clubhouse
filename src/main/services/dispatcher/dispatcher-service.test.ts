@@ -79,6 +79,8 @@ function notify(projectPath: string) {
 vi.mock('../agent-config', () => ({
   flushAgentConfig: vi.fn(async (_dir: string) => {}),
   listDurable: vi.fn(async (dir: string) => (h.agents.get(dir) ?? []).map((a) => ({ ...a }))),
+  peekDurableConfigs: vi.fn(async (dir: string) => (h.agents.get(dir) ?? []).map((a) => ({ ...a }))),
+  peekDurableConfigsChecked: vi.fn(async (dir: string) => ({ agents: h.agents.get(dir) ?? [], readable: true })),
   getDurableConfig: vi.fn(async (dir: string, id: string) => h.agents.get(dir)?.find((a) => a.id === id) ?? null),
   createDurable: vi.fn(async (dir: string, name: string, color: string, model: string | undefined, _wt: boolean, orchestrator: string | undefined, freeAgentMode: boolean | undefined) => {
     const config: DurableAgentConfig = {
@@ -718,6 +720,48 @@ describe('two agents, one identity (#3036)', () => {
     expect(svc.resolveDispatcherIdentity(chatDir(), 'durable_2')).toEqual({ projectPath: dispatcherDir(), agentId: 'durable_1' });
     expect(svc.resolveDispatcherIdentity('/p', 'other')).toEqual({ projectPath: '/p', agentId: 'other' });
     expect(svc.getDispatcherChatConfig()).toMatchObject({ id: 'durable_2', name: 'Dispatcher' });
+  });
+
+  it('refuses startup reconciliation before discovery can recover an older policy (#3686)', async () => {
+    await svc.setDispatcherEnabled(true);
+    const read = vi.spyOn(agentConfig, 'getDurableConfig').mockRejectedValue(new Error('corrupt primary'));
+    vi.mocked(agentConfig.listDurable).mockClear();
+    vi.mocked(agentConfig.updateDurableConfig).mockClear();
+    try {
+      await expect(svc.setDispatcherEnabled(true)).rejects.toThrow('corrupt primary');
+      expect(agentConfig.listDurable).not.toHaveBeenCalled();
+      expect(agentConfig.updateDurableConfig).not.toHaveBeenCalled();
+    } finally {
+      read.mockRestore();
+    }
+  });
+
+  it('does not recreate the Dispatcher when empty discovery has uncertain storage (#3686)', async () => {
+    await svc.setDispatcherEnabled(true);
+    vi.mocked(agentConfig.peekDurableConfigs).mockResolvedValue([]);
+    vi.mocked(agentConfig.peekDurableConfigsChecked).mockResolvedValue({ agents: [], readable: false });
+    vi.mocked(agentConfig.createDurable).mockClear();
+    await expect(svc.setDispatcherEnabled(true)).rejects.toThrow('Cannot verify the saved execution policy');
+    expect(agentConfig.createDurable).not.toHaveBeenCalled();
+  });
+
+  it('refuses standalone wake preparation before an ordinary read could restore an older backup (#3686)', async () => {
+    await svc.setDispatcherEnabled(true);
+    let recovered = false;
+    const file = path.join(chatDir(), 'CLAUDE.md');
+    const before = fs.readFileSync(file, 'utf-8');
+    const read = vi.spyOn(agentConfig, 'getDurableConfig').mockImplementation(async (_dir, id, options) => {
+      if (options?.forLaunch) throw new Error('corrupt primary');
+      recovered = true;
+      return { id, name: 'older backup', color: 'indigo', createdAt: '', access: 'full_access' };
+    });
+    try {
+      await expect(svc.prepareDispatcherSessionStart(chatDir(), 'durable_2')).rejects.toThrow('corrupt primary');
+      expect(recovered).toBe(false);
+      expect(fs.readFileSync(file, 'utf-8')).toBe(before);
+    } finally {
+      read.mockRestore();
+    }
   });
 
   it('rewrites each agent\'s instructions before its session starts, and nothing else\'s', async () => {

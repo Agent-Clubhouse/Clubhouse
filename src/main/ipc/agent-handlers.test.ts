@@ -370,6 +370,12 @@ describe('agent-handlers', () => {
     expect(agentConfig.updateDurable).toHaveBeenCalledWith('/project', 'agent-1', { name: 'Updated', color: '#00ff00' });
   });
 
+  it('GET_DURABLE_CONFIG can require a strict launch read before wake preparation (#3686)', async () => {
+    const handler = handlers.get(IPC.AGENT.GET_DURABLE_CONFIG)!;
+    await handler({}, '/project', 'agent-1', true);
+    expect(agentConfig.getDurableConfig).toHaveBeenCalledWith('/project', 'agent-1', { forLaunch: true });
+  });
+
   it('GET_DURABLE_CONFIG delegates to agentConfig.getDurableConfig', async () => {
     const handler = handlers.get(IPC.AGENT.GET_DURABLE_CONFIG)!;
     const result = await handler({}, '/project', 'agent-1');

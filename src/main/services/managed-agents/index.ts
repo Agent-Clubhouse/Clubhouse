@@ -339,7 +339,7 @@ export type RestartAuthorization = (() => void) & { refresh?: () => Promise<void
 
 async function restartConfig(projectPath: string, agentId: string) {
   const generation = agentConfig.agentConfigGeneration();
-  const agent = await agentConfig.getDurableConfig(projectPath, agentId);
+  const agent = await agentConfig.getDurableConfig(projectPath, agentId, { forLaunch: true });
   const current = agentConfig.peekCachedDurableConfig(projectPath, agentId);
   if (!agent?.managed || !current?.managed) throw new ManagedError('not_managed', 'The managed agent is no longer available. It was not started.');
   if (generation !== agentConfig.agentConfigGeneration()

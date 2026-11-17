@@ -212,6 +212,27 @@ function captureMainAgentWrite(setter: (value: string) => void) {
   });
 }
 
+describe('QA3686 dispatcher prelude storage evidence', () => {
+  it('an ordinary read recovers the older policy before a later strict read can reject the corrupt primary', async () => {
+    const id = 'durable_policy';
+    const backup = { id, name: 'old full-access backup', color: 'indigo', access: 'full_access', orchestrator: 'codex-cli' };
+    let primary = '{broken';
+    const writes = new Map<string, string>();
+    vi.mocked(pathExists).mockImplementation(async (p) => String(p).endsWith('agents.json') || String(p).endsWith('agents.json.bak'));
+    vi.mocked(fsp.readFile).mockImplementation(async (p) => String(p).endsWith('agents.json') ? primary : String(p).endsWith('.bak') ? JSON.stringify([backup]) : '');
+    vi.mocked(fsp.writeFile).mockImplementation(async (p, data) => { writes.set(String(p), String(data)); });
+    vi.mocked(fsp.rename).mockImplementation(async (from, to) => { if (String(to).endsWith('agents.json')) primary = writes.get(String(from))!; });
+    const ordinary = await getDurableConfig(PROJECT_PATH, id);
+    const strict = await getDurableConfig(PROJECT_PATH, id, { forLaunch: true });
+    expect(ordinary).toMatchObject(backup);
+    expect(strict).toMatchObject(backup);
+    expect(strict).not.toHaveProperty('sandbox');
+    expect(vi.mocked(fsp.readFile).mock.calls.some(([p]) => String(p).endsWith('.bak'))).toBe(true);
+    console.log('QA3686 actual-reader recovery receipt', JSON.stringify({ primaryAfterPrelude: JSON.parse(primary), strict }));
+  });
+});
+
+
 describe('strict saved execution settings for launch (#3686)', () => {
   const saved = { id: 'durable_policy', name: 'policy', color: 'indigo', sandbox: 'read-only', approvalPolicy: 'untrusted' };
   const launch = () => getDurableConfig(PROJECT_PATH, saved.id, { forLaunch: true });
@@ -229,11 +250,18 @@ describe('strict saved execution settings for launch (#3686)', () => {
     vi.mocked(fsp.readFile).mockRejectedValue(Object.assign(new Error('permission denied'), { code: 'EACCES' }));
     await expect(launch()).rejects.toThrow('permission denied');
   });
-  it('never recovers a legacy backup for a corrupt primary launch read', async () => {
+  it.each([
+    { id: saved.id, name: 'old full-access backup', color: 'indigo', access: 'full_access' },
+    saved,
+  ])('never restores a valid backup %j for a corrupt primary launch read', async (backup) => {
     mockAgentsFile([saved]);
-    vi.mocked(fsp.readFile).mockImplementation(async (p) => String(p).endsWith('agents.json') ? '{broken' : JSON.stringify([saved]));
+    vi.mocked(fsp.readFile).mockImplementation(async (p) => String(p).endsWith('agents.json') ? '{broken' : JSON.stringify([backup]));
+    const writesBefore = vi.mocked(fsp.writeFile).mock.calls.length;
+    const renamesBefore = vi.mocked(fsp.rename).mock.calls.length;
     await expect(launch()).rejects.toThrow();
     expect(vi.mocked(fsp.readFile).mock.calls.some(([p]) => String(p).endsWith('.bak'))).toBe(false);
+    expect(vi.mocked(fsp.writeFile).mock.calls.length).toBe(writesBefore);
+    expect(vi.mocked(fsp.rename).mock.calls.length).toBe(renamesBefore);
   });
   it.each(['[null]', '{}', 'not json'])('refuses corrupt primary storage %s rather than treating it as a missing record', async (raw) => {
     mockAgentsFile([saved]);

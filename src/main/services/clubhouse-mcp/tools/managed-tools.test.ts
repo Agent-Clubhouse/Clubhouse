@@ -1371,6 +1371,17 @@ describe('no agent sets Access above its own (D126)', () => {
     }
   });
 
+  it.each([false, true])('caps a partial-policy creation against the host-owned other axis (plain=%s) (#3686)', async (plain) => {
+    await runAt('auto_edit');
+    const name = `partial-${plain}`;
+    const result = await call('create_managed_agent', { project: 'Clubhouse', name, ...(plain && { managed: false }), settings: { orchestrator: 'codex-cli', access: 'ask', approvalPolicy: 'on-request' } });
+    expect(result.isError).toBe(true);
+    expect(result.content[0].text).toContain('Full access');
+    expect(state.agents.has(`new-${name}`)).toBe(false);
+    const bounded = await call('create_managed_agent', { project: 'Clubhouse', name: `bounded-${plain}`, ...(plain && { managed: false }), settings: { orchestrator: 'codex-cli', access: 'ask', sandbox: 'read-only', approvalPolicy: 'on-request' } });
+    expect(bounded.isError, bounded.content[0].text).toBeFalsy();
+  });
+
   it('a caller not running reads as Ask first', async () => {
     await runAt(null);
     expect((await call('create_managed_agent', { project: 'Clubhouse', name: 'auto-one', settings: { access: 'auto' } })).isError).toBe(true);

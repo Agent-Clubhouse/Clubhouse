@@ -95,6 +95,8 @@ vi.mock('../../../util/ipc-broadcast', () => ({
 const mockListDurable = vi.fn().mockResolvedValue([]);
 vi.mock('../../agent-config', () => ({
   listDurable: (...args: unknown[]) => mockListDurable(...args),
+  peekDurableConfigs: (...args: unknown[]) => mockListDurable(...args),
+  getDurableConfig: async (project: string, id: string) => (await mockListDurable(project)).find((agent: { id: string }) => agent.id === id) ?? null,
 }));
 
 const mockProjectList = vi.fn().mockResolvedValue([]);

@@ -50,6 +50,17 @@ export function accessWithExecutionPolicy<T extends 'plan' | 'ask' | 'auto_edit'
   return levels[Math.max(levels.indexOf(level), levels.indexOf(required))];
 }
 
+/** Conservative resulting policy when an explicit axis leaves the other axis host-owned. */
+export function accessWithResolvedExecutionPolicy<T extends 'plan' | 'ask' | 'auto_edit' | 'auto' | 'full_access'>(level: T, policy: { sandbox?: AgentSandbox | null; approvalPolicy?: AgentApprovalPolicy | null }, explicit = policy.sandbox !== undefined || policy.approvalPolicy !== undefined): 'plan' | 'ask' | 'auto_edit' | 'auto' | 'full_access' {
+  if (!explicit) return level;
+  return accessWithExecutionPolicy(level, {
+    // Auto's two defaults are set explicitly in both Codex transports. Other
+    // unset terminal axes remain host-owned and require their upper bound.
+    sandbox: policy.sandbox ?? (level === 'auto' ? 'workspace-write' : 'danger-full-access'),
+    approvalPolicy: policy.approvalPolicy ?? 'never',
+  });
+}
+
 /** Verified stable app-server schema floor, independent of the centrally enforced tested maximum. */
 export function supportsIndependentCodexPolicy(version: string | undefined): boolean {
   const match = /^(\d+)\.(\d+)\.(\d+)$/.exec(version ?? '');

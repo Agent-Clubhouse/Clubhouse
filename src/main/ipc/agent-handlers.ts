@@ -359,9 +359,9 @@ export function registerAgentHandlers(): void {
     }));
 
   ipcMain.handle(IPC.AGENT.GET_DURABLE_CONFIG, withValidatedArgs(
-    [stringArg(), stringArg()],
-    async (_event, projectPath, agentId) => {
-      const config = await agentConfig.getDurableConfig(projectPath, agentId);
+    [stringArg(), stringArg(), booleanArg({ optional: true })],
+    async (_event, projectPath, agentId, forLaunch) => {
+      const config = await agentConfig.getDurableConfig(projectPath, agentId, ...(forLaunch ? [{ forLaunch: true }] : []));
       return config ? withSavedAccess(config, projectPath) : config;
     },
   ));

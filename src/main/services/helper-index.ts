@@ -85,9 +85,9 @@ async function buildIndex(projectPathsInOrder: string[]): Promise<IndexedAgent[]
     seen.add(key);
     // A registered project whose folder is gone holds no agents; don't load it.
     if (projectPath !== homePath && !await pathExists(projectPath)) continue;
-    let agents: DurableAgentConfig[];
+    let agents: readonly DurableAgentConfig[];
     try {
-      agents = await agentConfig.listDurable(projectPath);
+      agents = await agentConfig.peekDurableConfigs(projectPath);
     } catch (err) {
       // telemetry-exempt: logged; one unreadable project doesn't hide the others' helpers.
       appLog('core:agent-config', 'warn', 'Helper index could not read a project', {

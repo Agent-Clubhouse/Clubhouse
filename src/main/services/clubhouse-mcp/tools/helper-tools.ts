@@ -165,10 +165,10 @@ interface Caller {
 }
 
 /** The calling agent's project and durable config. */
-async function resolveCaller(agentId: string): Promise<Caller> {
+async function resolveCaller(agentId: string, forLaunch = false): Promise<Caller> {
   const registration = agentRegistry.get(agentId);
   if (!registration) throw new HelperToolError('Your agent is not running in Clubhouse.');
-  const config = await agentConfig.getDurableConfig(registration.projectPath, agentId);
+  const config = await agentConfig.getDurableConfig(registration.projectPath, agentId, forLaunch ? { forLaunch: true } : undefined);
   if (!config) throw new HelperToolError('Only durable agents can use helper tools.');
   return { projectPath: registration.projectPath, config };
 }
@@ -1248,16 +1248,19 @@ function stillStopping(helper: DurableAgentConfig, message: string | undefined):
 async function wakeHelper(agentId: string, args: Record<string, unknown>): Promise<McpToolResult> {
   const ref = requireText(args, 'helper');
   const message = optionalText(args, 'message');
-  const caller = await resolveCaller(agentId);
+  const caller = await resolveCaller(agentId, true);
   const found = await resolveOwnHelper(caller, ref);
   const helperPath = found.projectPath;
-  let helper = found.config;
+  let helper = await agentConfig.getDurableConfig(helperPath, found.config.id, { forLaunch: true });
+  if (!helper) throw new HelperToolError('The helper is no longer available.');
   if (agentSystem.isAgentStopping(helper.id)) {
     // Asleep in a moment: wait for the exit, then wake it for real, so the
     // message goes to a new session instead of the one that is exiting.
     if (!(await agentSystem.waitForAgentStopped(helper.id))) return stillStopping(helper, message);
     // Re-read: the exit just saved the session id the wake resumes.
-    helper = (await resolveOwnHelper(caller, helper.id)).config;
+    const latest = await resolveOwnHelper(caller, helper.id);
+    helper = await agentConfig.getDurableConfig(latest.projectPath, latest.config.id, { forLaunch: true });
+    if (!helper) throw new HelperToolError('The helper is no longer available.');
   }
   if (helper.creation) {
     throw new HelperToolError(helper.creation.state === 'creating'

@@ -1,4 +1,4 @@
-import { accessWithExecutionPolicy, hasExecutionPolicy, validateStoredExecutionPolicy } from '../../../../shared/execution-policy';
+import { accessWithExecutionPolicy, accessWithResolvedExecutionPolicy, hasExecutionPolicy, validateStoredExecutionPolicy } from '../../../../shared/execution-policy';
 /**
  * Builder tools (#2900), in the `dispatcher` tool group: every builder
  * action as a Clubhouse MCP tool, so the
@@ -118,7 +118,7 @@ function settingsArg(args: Record<string, unknown>, keep?: ManagedTemplateSettin
     throw new ArgError('settings.orchestration must be an object.');
   }
   if (settings?.orchestration && 'connectToDispatcher' in settings.orchestration) {
-    throw new ArgError('settings.orchestration.connectToDispatcher is not accepted. When creating an agent, use the top-level connectToDispatcher option, which has its own permission. Only the user changes existing connections.');
+    throw new ArgError('settings.orchestration.connectToDispatcher is not accepted. An explicit sandbox or approval policy is checked with the resulting other axis; an unverified host default requires authority for its broadest possible policy. When creating an agent, use the top-level connectToDispatcher option, which has its own permission. Only the user changes existing connections.');
   }
   if (!settings) return undefined;
   // Older callers replacing other settings must not silently remove a sandbox.
@@ -284,12 +284,7 @@ function checkConsumerExecutionPolicy(callerId: string, agent: DurableAgentConfi
   // Terminal defaults are host configuration, so a reset without a verified
   // resolved policy requires authority for the broadest possible default.
   const level = isAccessLevel(after.access) ? after.access : agentAccess(after, projectPath);
-  const required = accessWithExecutionPolicy(level, {
-    // Auto explicitly sets workspace-write/never in both Codex transports.
-    // Other unset terminal axes remain host-owned, so use their upper bound.
-    sandbox: after.sandbox ?? (level === 'auto' ? 'workspace-write' : 'danger-full-access'),
-    approvalPolicy: after.approvalPolicy ?? 'never',
-  });
+  const required = accessWithResolvedExecutionPolicy(level, after, true);
   const refused = accessCeilingRefusal(callerId, required, `push resulting execution settings for ${agent.name}`);
   if (refused) throw new ArgError(refused);
 }
@@ -919,7 +914,7 @@ export function registerManagedTools(): void {
 
   describeCallsForAsk('create_managed_agent', (args) => `Create ${String(args.name)} in ${String(args.project)}.${args.connectToDispatcher === true ? ' Connect only that new agent to the Dispatcher controller in both directions. Each direction can read, message and wake, with clear and compact off. Existing user switches stay as they are.' : ''}`);
   tool('create_managed_agent', CREATE_GRANTS.map((g) => ({ ...g, askHandledByTool: true })),
-    'Create a durable agent, asleep. connectToDispatcher: true asks for the separate connection.bootstrap permission on only this new agent, Ask first by default. Once connected, its generated wake_agent and send_message tools become available. Without it, ask the user to enable Connect to Dispatcher; an unconnected agent cannot be woken or messaged here. Both connection directions start with read, message and wake on, clear and compact off. Retrying the same connected creation in this app session returns its receipt, not another agent. By default it is Clubhouse managed, from a template or a full setup, in its own worktree (or folder). Explicit settings override the template field by field; omitted settings inherit it. The CLI is settings.orchestrator and its model is settings.model, not top-level arguments or settings.provider. With no CLI in either, the project CLI then the app default applies. managed: false makes a plain agent instead, in its own worktree, that reads its own files; it takes settings but no template or parts. settings.orchestration.connectToDispatcher is not accepted.',
+    'Create a durable agent, asleep. connectToDispatcher: true asks for the separate connection.bootstrap permission on only this new agent, Ask first by default. Once connected, its generated wake_agent and send_message tools become available. Without it, ask the user to enable Connect to Dispatcher; an unconnected agent cannot be woken or messaged here. Both connection directions start with read, message and wake on, clear and compact off. Retrying the same connected creation in this app session returns its receipt, not another agent. By default it is Clubhouse managed, from a template or a full setup, in its own worktree (or folder). Explicit settings override the template field by field; omitted settings inherit it. The CLI is settings.orchestrator and its model is settings.model, not top-level arguments or settings.provider. With no CLI in either, the project CLI then the app default applies. managed: false makes a plain agent instead, in its own worktree, that reads its own files; it takes settings but no template or parts. settings.orchestration.connectToDispatcher is not accepted. An explicit sandbox or approval policy is checked with the resulting other axis; an unverified host default requires authority for its broadest possible policy.',
     { project: PROJECT, importId: { type: 'string', description: 'For an imported project, its owned import receipt id. Mandatory exact effective-choice human review; persistent no-duplicate creation/recovery link. Omit for unrelated projects.' }, name: S, color: S, connectToDispatcher: { type: 'boolean', description: 'Connect only the agent created by this call, with separate approval. Default false.' }, managed: { type: 'boolean', description: 'false for a plain (unmanaged) agent. Default true.' }, templateId: S, blocks: IDS, skills: IDS, mcps: IDS, settings: {
       type: 'object',
       description: 'Explicit settings override the template field by field. Confirm the CLI, model, access and orchestration with the user before creation.',

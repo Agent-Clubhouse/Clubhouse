@@ -127,7 +127,7 @@ async function deliverRunning(agentId: string, message: ChannelMessage): Promise
 
 /** Start a sleeping agent with the message as its first prompt, resuming its last session when it has one. */
 async function start(agentId: string, dir: string, message: ChannelMessage, announce: boolean): Promise<ChannelResult> {
-  const config: DurableAgentConfig | null = await agentConfig.getDurableConfig(dir, agentId);
+  const config: DurableAgentConfig | null = await agentConfig.getDurableConfig(dir, agentId, { forLaunch: true });
   if (!config) return { outcome: 'off', error: 'The Dispatcher is not set up yet.' };
   const resume = !!config.lastSessionId;
   if (announce) broadcastToAllWindows(IPC.AGENT.AGENT_WAKING, agentId);

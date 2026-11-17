@@ -186,8 +186,8 @@ export const agent = {
     ipcRenderer.on(IPC.AGENT.FINISHED_QUICK_CHANGED, listener);
     return () => { ipcRenderer.removeListener(IPC.AGENT.FINISHED_QUICK_CHANGED, listener); };
   },
-  getDurableConfig: (projectPath: string, agentId: string) =>
-    ipcRenderer.invoke(IPC.AGENT.GET_DURABLE_CONFIG, projectPath, agentId),
+  getDurableConfig: (projectPath: string, agentId: string, forLaunch?: boolean) =>
+    ipcRenderer.invoke(IPC.AGENT.GET_DURABLE_CONFIG, projectPath, agentId, ...(forLaunch === undefined ? [] : [forLaunch])),
   updateDurableConfig: (projectPath: string, agentId: string, updates: DurableConfigUpdates) =>
     ipcRenderer.invoke(IPC.AGENT.UPDATE_DURABLE_CONFIG, projectPath, agentId, updates),
 

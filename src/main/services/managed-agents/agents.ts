@@ -1,4 +1,4 @@
-import { accessWithExecutionPolicy, validateExecutionPolicy, hasExecutionPolicy } from '../../../shared/execution-policy';
+import { accessWithResolvedExecutionPolicy, validateExecutionPolicy, hasExecutionPolicy } from '../../../shared/execution-policy';
 /**
  * Agent-level managed operations (#2893): create a managed agent, preview
  * and switch an existing one to managed, and apply a template's settings.
@@ -84,7 +84,7 @@ function newAgentLevel(projectPath: string, access: boolean | AccessLevel | unde
   return accessForNewAgent(typeof access === 'boolean' ? { freeAgentMode: access } : { access }, projectPath);
 }
 
-const namesAccess = (s: ManagedTemplateSettings | undefined) => s?.access !== undefined || s?.freeAgentMode !== undefined || (s !== undefined && hasExecutionPolicy(s));
+const namesAccess = (s: ManagedTemplateSettings | undefined) => s?.access !== undefined || s?.freeAgentMode !== undefined || (s?.sandbox !== undefined || s?.approvalPolicy !== undefined);
 
 async function availableOrchestrator(projectPath: string, orchestrator: ManagedTemplateSettings['orchestrator']) {
   const provider = await resolveOrchestrator(projectPath, orchestrator);
@@ -183,7 +183,7 @@ export async function prepareManagedAgentCreation(projectPath: string, input: Cr
   const setup: Omit<ManagedAgentSetup, 'version'> = input.setup
     ? { ...input.setup, ...(input.templateId && { templateId: input.templateId }) }
     : base?.setup ?? { blocks: [BUILTIN_BLOCK_IDS.identity], skills: [], mcps: [CLUBHOUSE_MCP_PART_ID] };
-  checkAccess?.(accessWithExecutionPolicy(newAgentLevel(projectPath, settings.access ?? settings.freeAgentMode), settings), namesAccess(input.settings) ? 'settings' : namesAccess(base?.settings) ? 'template' : 'default');
+  checkAccess?.(accessWithResolvedExecutionPolicy(newAgentLevel(projectPath, settings.access ?? settings.freeAgentMode), settings), namesAccess(input.settings) ? 'settings' : namesAccess(base?.settings) ? 'template' : 'default');
   settings.orchestrator = await availableOrchestrator(projectPath, settings.orchestrator);
   return { settings, setup };
 }
@@ -192,7 +192,7 @@ export async function createManagedAgent(projectPath: string, input: CreateManag
   if (input.managed === false) return createPlainAgent(projectPath, input, checkAccess);
   const service = managedAgents();
   const { settings, setup } = prepared ?? await prepareManagedAgentCreation(projectPath, input, checkAccess);
-  if (prepared) checkAccess?.(accessWithExecutionPolicy(newAgentLevel(projectPath, settings.access ?? settings.freeAgentMode), settings), 'settings');
+  if (prepared) checkAccess?.(accessWithResolvedExecutionPolicy(newAgentLevel(projectPath, settings.access ?? settings.freeAgentMode), settings), 'settings');
   // Managed agents always get their own folder: a worktree in a git project, a plain folder otherwise.
   // Only the setup goes in it, delivered at start: never the project's legacy agent defaults (#3243).
   const config = await createAgentRecord(projectPath, input, settings);
@@ -230,7 +230,7 @@ async function createPlainAgent(projectPath: string, input: CreateManagedAgentIn
   validateExecutionPolicy(settings);
   if (settings.access !== undefined && !isAccessLevel(settings.access)) throw new ManagedError('invalid', 'access must be plan, ask, auto_edit, auto or full_access.');
   if (settings.freeAgentMode !== undefined && typeof settings.freeAgentMode !== 'boolean') throw new ManagedError('invalid', 'freeAgentMode must be true or false.');
-  checkAccess?.(accessWithExecutionPolicy(newAgentLevel(projectPath, settings.access ?? settings.freeAgentMode), settings), namesAccess(settings) ? 'settings' : 'default');
+  checkAccess?.(accessWithResolvedExecutionPolicy(newAgentLevel(projectPath, settings.access ?? settings.freeAgentMode), settings), namesAccess(settings) ? 'settings' : 'default');
   const orchestrator = await availableOrchestrator(projectPath, settings.orchestrator);
   const config = await createAgentRecord(projectPath, input, { ...settings, orchestrator });
   if (hasExecutionPolicy(settings) || (settings.orchestration && Object.keys(settings.orchestration).length > 0)) {

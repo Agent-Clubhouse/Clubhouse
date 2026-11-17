@@ -10,7 +10,7 @@ import { LogRedactor } from '../../../../shared/log-redaction';
  *   a helper at its orchestrator's ceiling.
  */
 
-import { listDurable } from '../../agent-config';
+import { listDurable, peekDurableConfigs, getDurableConfig } from '../../agent-config';
 import { agentRegistry } from '../../agent-registry';
 import { getAgentRuntime } from '../../agent-runtime';
 import { BUSY_STATES } from '../../agent-runtime/checkpoint-tracker';
@@ -43,10 +43,11 @@ export interface DurableAgentLocation {
 export async function findDurableAgentConfig(targetAgentId: string): Promise<DurableAgentLocation | null> {
   const projects = await projectStore.list();
   for (const proj of projects) {
-    const durables = await listDurable(proj.path);
+    const durables = await peekDurableConfigs(proj.path);
     const found = durables.find(d => d.id === targetAgentId);
     if (found) {
-      return { agentConfig: found, projectPath: proj.path };
+      const verified = await getDurableConfig(proj.path, found.id, { forLaunch: true });
+      return verified ? { agentConfig: verified, projectPath: proj.path } : null;
     }
   }
   return null;

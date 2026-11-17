@@ -569,6 +569,35 @@ describe('agent-system', () => {
       mockGetDurableConfig.mockReset();
     });
 
+    it('QA3686 dispatcher: verifies corrupt primary before a launch prelude can recover backup', async () => {
+      dispatcherOn.value = true;
+      const dispatcher = await import('./dispatcher/dispatcher-service');
+      let recovered = false;
+      mockGetDurableConfig.mockImplementation((async (_p: string, id: string, options?: { forLaunch?: boolean }) => {
+        if (options?.forLaunch && !recovered) throw new Error('corrupt primary');
+        if (!options?.forLaunch) recovered = true;
+        return { id, name: 'backup', access: 'full_access', orchestrator: 'codex-cli' };
+      }) as never);
+      // This is the ordinary read done by prepareDispatcherSessionStart at line 210.
+      const prepare = vi.spyOn(dispatcher, 'prepareDispatcherSessionStart').mockImplementation(async (dir, id) => {
+        await mockGetDurableConfig(dir, id);
+        return null;
+      });
+      try {
+        const result = await spawnAgent({ agentId: 'dispatcher-chat-id', projectPath: '/dispatcher-folder', cwd: '/dispatcher-folder', kind: 'durable', orchestrator: 'codex-cli' })
+          .then(() => 'LAUNCHED', (e) => String(e));
+        console.log('QA3686 dispatcher receipt', JSON.stringify({ result, preludeCalled: prepare.mock.calls.length, recovered, spawned: mockPtySpawn.mock.calls.length }));
+        expect(result).toContain('Cannot verify the saved execution policy');
+        expect(prepare).not.toHaveBeenCalled();
+        expect(mockPtySpawn).not.toHaveBeenCalled();
+      } finally {
+        prepare.mockRestore();
+        dispatcherOn.value = false;
+        mockGetDurableConfig.mockReset();
+        untrackAgent('dispatcher-chat-id');
+      }
+    });
+
     it('tracks agent project path', async () => {
       await spawnAgent({
         agentId: 'agent-1',

@@ -69,7 +69,7 @@ describe('getAgentRuntimeInfo (#2206)', () => {
   it('answers chat for a waking agent whose durable config resolves to chat', async () => {
     state.config = { orchestrator: 'github-copilot', runtimeMode: 'chat' };
     expect(await getAgentRuntimeInfo('a1', 'github-copilot', waking)).toEqual({ chat: true, live: false, chatAvailable: true });
-    expect(getDurableConfig).toHaveBeenCalledWith('/work/proj', 'a1');
+    expect(getDurableConfig).toHaveBeenCalledWith('/work/proj', 'a1', { forLaunch: true });
   });
 
   it('uses the provider default when the agent has no override', async () => {
