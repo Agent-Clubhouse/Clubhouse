@@ -3,7 +3,7 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import { GROUP_PROJECT_TOOL_SUFFIXES } from '../../../../shared/group-project-permissions';
-import type { GrantAction } from '../../../../shared/agent-grants';
+import type { GrantAction, GrantTarget } from '../../../../shared/agent-grants';
 import type { McpToolResult } from '../types';
 
 const m = vi.hoisted(() => ({
@@ -161,7 +161,7 @@ describe('management grants and catalog (#3617)', () => {
 describe('one concrete group target before grant approval', () => {
   it.each(GROUP_PROJECT_MANAGEMENT_TOOLS.filter(([name]) => !['preview_group_project_create', 'create_group_project'].includes(name)))('%s never resolves its granted group name again', async (name) => {
     setDispatcherAgent(caller, false);
-    await updateAgentGrantChanges(caller, () => ({ changes: (['group_project.admin', 'group_project.lead'] as GrantAction[]).map((action) => ({ action, target: { kind: 'single_group_project' as const, groupProjectId: 'gp_parity' }, mode: 'allow' as const })) }));
+    await updateAgentGrantChanges(caller, () => ({ changes: (['group_project.admin', 'group_project.lead'] as GrantAction[]).map((action) => ({ action, target: { kind: 'group_project', id: 'gp_parity' } satisfies GrantTarget, mode: 'allow' as const })) }));
     // The former handler lookup would find the same name on an ungranted id.
     m.list.mockResolvedValueOnce([m.project]).mockResolvedValue([{ ...m.project, id: 'gp_ungranted' }]);
     const args = { ...await argsFor(name), group_project: 'Team' };
