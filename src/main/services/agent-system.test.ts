@@ -2945,6 +2945,7 @@ describe('agent-system', () => {
         expect.any(Function),
         undefined, // commandPrefix
         undefined, // createEventNormalizer
+        undefined, // beforeSpawn: no fence given
       );
       expect(mockPtySpawn).not.toHaveBeenCalled();
     });
