@@ -1,7 +1,8 @@
 /**
  * Approvals from other computers in the lead's chat (#3606, S5): three Ask-first
  * requests from Laptop, of different lengths, answered from the head one after
- * another on Desk, at each window size. Two real desktops and fake CLIs, CI
+ * another on Desk, at the default and 820x520 sizes (no 640 here: this job is
+ * the CI long pole, #3606). Two real desktops and fake CLIs, CI
  * only, no tokens (the setup is dispatcher-lead-approvals.spec.ts's). A probe:
  * see e2e/approval-geometry.ts.
  */
@@ -62,6 +63,9 @@ async function wakeDispatcherChat(page: Page): Promise<string> {
   return state.chatAgentId!;
 }
 
+/** Two sizes, not three: each one costs three more cross-desktop round trips in the Annex job. */
+const SIZES = WINDOW_SIZES.slice(0, 2);
+
 const SENTENCE = 'because the task I was given touches this and the refusal named it, so I need the permission before I can carry on';
 
 /** Short, medium and long reasons. One action on three targets: each is its own request. */
@@ -71,7 +75,7 @@ const REQUESTS = [
   { action: 'settings.app.write', target: 'own_project', reason: Array.from({ length: 4 }, () => `I need to change this project's settings ${SENTENCE}.`).join(' ').slice(0, 480) },
 ];
 
-test('the lead’s remote approvals keep Allow in one place across three requests at three sizes', async () => {
+test('the lead’s remote approvals keep Allow in one place across three requests at two sizes', async () => {
   scratch = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'approval-geometry-remote-e2e-'));
   const fixture = path.join(scratch, 'quiet.jsonl');
   const lines = (await fs.promises.readFile(chatFixturePath('claude', 'session-info'), 'utf8')).split('\n').slice(0, 3);
@@ -103,7 +107,7 @@ test('the lead’s remote approvals keep Allow in one place across three request
   try {
     const rows = here.window.getByTestId('dispatcher-remote-approval');
     const original = await originalSize(here.window);
-    for (const size of WINDOW_SIZES) {
+    for (const size of SIZES) {
       await setWindowSize(here.electronApp, here.window, size, original);
       for (const request of REQUESTS) await raiseAskFirst(there.window, laptopController, request);
       await expect(rows).toHaveCount(REQUESTS.length, { timeout: 30_000 });
