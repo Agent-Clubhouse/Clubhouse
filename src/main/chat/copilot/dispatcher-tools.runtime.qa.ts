@@ -286,49 +286,84 @@ describe('the Dispatcher\'s tools on the real runtime (#3615)', () => {
   }, 180_000);
 
   describe('at the ceiling', () => {
-    /** A stdio MCP server with `n` tools, and a searching session on it that loads every tool. */
-    const onServer = async (n: number, driver = hosted()) => {
-      const script = path.join(tmp, `server-${n}.js`);
+    /**
+     * A stdio MCP server with `n` tools, and a searching session on it that loads
+     * every tool. A call to any of its tools adds `grow` more and says the list changed.
+     */
+    const onServer = async (n: number, grow = 0) => {
+      const script = path.join(tmp, `server-${n}-${grow}.js`);
       fs.writeFileSync(script, `
         const send = (o) => process.stdout.write(JSON.stringify(o) + '\\n');
-        const tools = Array.from({ length: ${n} }, (_, i) => ({ name: 'probe_' + String(i).padStart(3, '0'), description: 'probe tool number ' + i, inputSchema: { type: 'object', properties: {} } }));
+        const tool = (i) => ({ name: 'probe_' + String(i).padStart(3, '0'), description: 'probe tool number ' + i, inputSchema: { type: 'object', properties: {} } });
+        let count = ${n};
         require('readline').createInterface({ input: process.stdin }).on('line', (line) => {
           const m = JSON.parse(line);
           const reply = (result) => send({ jsonrpc: '2.0', id: m.id, result });
-          if (m.method === 'initialize') return reply({ protocolVersion: m.params.protocolVersion, capabilities: { tools: {} }, serverInfo: { name: 'many', version: '1' } });
-          if (m.method === 'tools/list') return reply({ tools });
+          if (m.method === 'initialize') return reply({ protocolVersion: m.params.protocolVersion, capabilities: { tools: { listChanged: true } }, serverInfo: { name: 'many', version: '1' } });
+          if (m.method === 'tools/list') return reply({ tools: Array.from({ length: count }, (_, i) => tool(i)) });
+          if (m.method === 'tools/call') { count += ${grow}; send({ jsonrpc: '2.0', method: 'notifications/tools/list_changed' }); return reply({ content: [{ type: 'text', text: 'grew' }] }); }
           if (m.id !== undefined) reply({});
         });
       `);
-      return open(driver, { loadAllTools: true, mcpServers: { many: { command: process.execPath, args: [script] } }, mcpHttpEndpoints: undefined });
+      const warnings: Array<Record<string, unknown> | undefined> = [];
+      const driver = new CopilotSdkChatDriver({ sessionDefaults: SEARCH_ON, log: (level, message, meta) => { if (level === 'warn' && message.includes('ceiling')) warnings.push(meta); } });
+      const s = await open(driver, { loadAllTools: true, mcpServers: { many: { command: process.execPath, args: [script] } }, mcpHttpEndpoints: undefined });
+      return { ...s, warnings };
     };
     /** The CLI's own tools, which count toward the ceiling. */
     const ownTools = async () => (await (await open(hosted(), { loadAllTools: true, mcpServers: undefined, mcpHttpEndpoints: undefined })).turn('hi')).offered.length;
+    const probes = (offered: string[]) => offered.filter((t) => t.includes('probe_'));
+    /** Lets the driver's after-turn count land before a check that nothing was logged. */
+    const settle = () => new Promise((r) => setTimeout(r, 500));
 
-    it('loads every tool when the total is exactly the ceiling', async () => {
-      const n = COPILOT_EAGER_TOOL_CEILING - await ownTools();
-      const warnings: unknown[] = [];
-      const offered = (await (await onServer(n, new CopilotSdkChatDriver({ sessionDefaults: SEARCH_ON, log: (level, message) => { if (level === 'warn' && message.includes('ceiling')) warnings.push(message); } }))).turn('hi')).offered;
-      expect(offered).toHaveLength(COPILOT_EAGER_TOOL_CEILING);
+    it.each([['one under', -1], ['exactly at', 0]] as const)('loads every tool, with nothing logged, %s the ceiling', async (_where, offset) => {
+      const total = COPILOT_EAGER_TOOL_CEILING + offset;
+      const n = total - await ownTools();
+      const s = await onServer(n);
+      const offered = (await s.turn('hi')).offered;
+      expect(offered).toHaveLength(total);
       expect(offered).not.toContain('tool_search_tool');
-      expect(offered.filter((t) => t.includes('probe_'))).toHaveLength(n);
-      await new Promise((r) => setTimeout(r, 500));
-      expect(warnings).toEqual([]);
+      expect(probes(offered)).toHaveLength(n);
+      await settle();
+      expect(s.warnings).toEqual([]);
     }, 180_000);
 
-    it('falls back to the runtime\'s search one tool over: every MCP tool deferred and searchable, as before the fix', async () => {
+    it('falls back to the runtime\'s search one tool over: every MCP tool deferred and searchable, as before the fix, and says so once', async () => {
       const n = COPILOT_EAGER_TOOL_CEILING + 1 - await ownTools();
-      const warnings: Array<Record<string, unknown> | undefined> = [];
-      const s = await onServer(n, new CopilotSdkChatDriver({ sessionDefaults: SEARCH_ON, log: (level, message, meta) => { if (level === 'warn' && message.includes('ceiling')) warnings.push(meta); } }));
+      const s = await onServer(n);
       const offered = (await s.turn('hi')).offered;
-      await s.until(() => warnings[0]);
-      expect(warnings[0]).toEqual({ agentId: 'dispatcher', total: COPILOT_EAGER_TOOL_CEILING + 1, ceiling: COPILOT_EAGER_TOOL_CEILING });
+      await s.until(() => s.warnings[0]);
+      expect(s.warnings).toEqual([{ agentId: 'dispatcher', total: COPILOT_EAGER_TOOL_CEILING + 1, ceiling: COPILOT_EAGER_TOOL_CEILING }]);
       expect(offered).toContain('tool_search_tool');
-      expect(offered.filter((t) => t.includes('probe_'))).toEqual([]);
+      expect(probes(offered)).toEqual([]);
       const found = await s.turn('find it', ...search('probe tool number 42'));
       expect(searchResult()).toContain('probe_042');
       expect(found.offered.some((t) => t.includes('probe_042'))).toBe(false);
       expect((await s.turn('next')).offered.some((t) => t.includes('probe_042'))).toBe(true);
+      await settle();
+      expect(s.warnings).toHaveLength(1);
+    }, 180_000);
+
+    it('falls back to the runtime\'s search the turn after the catalog grows past the ceiling mid-session, and says so once', async () => {
+      // A wake adds about 7 tools; three cross from one under.
+      const n = COPILOT_EAGER_TOOL_CEILING - 1 - await ownTools();
+      const s = await onServer(n, 3);
+      const before = (await s.turn('hi')).offered;
+      expect(before).toHaveLength(COPILOT_EAGER_TOOL_CEILING - 1);
+      await settle();
+      expect(s.warnings).toEqual([]);
+      await s.turn('grow', { tools: [{ name: before.find((t) => t.includes('probe_000'))! }] }, { text: 'ok' });
+      expect(s.of('tool_call_update').some((u) => JSON.stringify(u.data.content).includes('grew'))).toBe(true);
+      await new Promise((r) => setTimeout(r, 1_000));
+      // The runtime re-counts on the list change and defers every MCP tool, the one just called included.
+      const after = (await s.turn('after')).offered;
+      expect(after).toContain('tool_search_tool');
+      expect(probes(after)).toEqual([]);
+      await s.until(() => s.warnings[0]);
+      expect(s.warnings).toEqual([{ agentId: 'dispatcher', total: COPILOT_EAGER_TOOL_CEILING + 2, ceiling: COPILOT_EAGER_TOOL_CEILING }]);
+      expect(probes((await s.turn('later')).offered)).toEqual([]);
+      await settle();
+      expect(s.warnings).toHaveLength(1);
     }, 180_000);
   });
 });
