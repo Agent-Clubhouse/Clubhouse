@@ -1,6 +1,7 @@
 import { useRef, useState } from 'react';
 import type { MobileGrantAnswer } from '../../../shared/mobile-control';
 import { Button } from '../../components/Button';
+import { isRepeatClick } from '../../utils/repeat-click';
 import { ipcErrorMessage } from '../../utils/ipc-error';
 import { isFollowerApprovalPending, useFollowerApprovals, type FollowerApproval } from './leadStore';
 import type { GrantRequest } from '../../../shared/grant-requests';
@@ -89,7 +90,7 @@ function RemoteApproval({ item }: { item: FollowerApproval }) {
           {answered && <span className="text-xs text-ctp-overlay1" role="status" data-testid="dispatcher-remote-approval-answered">Answered.</span>}
           {!answered && answers.length === 0 && <span className="text-xs text-ctp-overlay1">Answer it on {item.machineName}.</span>}
           {!answered && answers.map((choice) => (
-            <Button key={choice} kind={choice === 'decline' ? 'ghost' : 'primary'} disabled={busy} onClick={() => void answer(choice)} data-testid={`dispatcher-remote-approval-${choice}`}>
+            <Button key={choice} kind={choice === 'decline' ? 'ghost' : 'primary'} disabled={busy} onClick={(e) => { if (!isRepeatClick(e)) void answer(choice); }} data-testid={`dispatcher-remote-approval-${choice}`}>
               {ANSWER_LABELS[choice]}
             </Button>
           ))}

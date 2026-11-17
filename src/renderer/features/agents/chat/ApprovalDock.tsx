@@ -9,6 +9,7 @@ import type { PendingPermission, PendingQuestion, PlanDocumentItem } from '../..
 import { PlanIcon, QuestionIcon, ShieldIcon } from './icons';
 import { ApprovalDiffPreview } from './ToolBlocks';
 import { shortName } from './view-model';
+import { isRepeatClick } from '../../../utils/repeat-click';
 
 const ALLOW_KINDS = new Set<PermissionOption['kind']>(['allow_once', 'allow_session', 'allow_always']);
 const REJECT_KINDS = new Set<PermissionOption['kind']>(['reject_once', 'reject_always', 'cancel_turn']);
@@ -173,7 +174,7 @@ export function PermissionCard({ request, plan, queueSize, agentName, extras, on
               key={opt.optionId}
               type="button"
               disabled={answered || (planEmpty && ALLOW_KINDS.has(opt.kind))}
-              onClick={() => choose(opt)}
+              onClick={(e) => { if (!isRepeatClick(e)) choose(opt); }}
               className={`flex items-center gap-2.5 h-[30px] px-2 rounded-md text-[12.5px] text-left disabled:opacity-50 ${isPrimary ? 'bg-surface-0 text-ctp-text ring-1 ring-surface-1' : 'text-ctp-subtext1 hover:bg-surface-0/60'}`}
               data-option-kind={opt.kind}
             >
@@ -374,7 +375,7 @@ export function QuestionCard({ request, onAnswer, busy, autoFocus = true }: Ques
                   <button
                     type="button"
                     disabled={sent}
-                    onClick={() => toggle(q, o.id)}
+                    onClick={(e) => { if (!isRepeatClick(e)) toggle(q, o.id); }}
                     aria-pressed={on}
                     className={`flex items-center gap-2.5 min-h-[30px] px-2 rounded-md text-[12.5px] text-left disabled:opacity-50 ${on ? 'bg-surface-0 text-ctp-text ring-1 ring-surface-1' : 'text-ctp-subtext1 hover:bg-surface-0/60'}`}
                   >
@@ -486,7 +487,7 @@ export function QuestionCard({ request, onAnswer, busy, autoFocus = true }: Ques
           <button
             type="button"
             disabled={!complete || sent}
-            onClick={() => submit()}
+            onClick={(e) => { if (!isRepeatClick(e)) submit(); }}
             className="ml-auto h-7 px-3 rounded-md bg-ctp-accent text-ctp-on-accent text-[12px] font-medium disabled:opacity-40"
           >
             Send answer

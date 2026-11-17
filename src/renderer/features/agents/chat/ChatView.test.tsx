@@ -1562,6 +1562,20 @@ describe('a queue of approvals answers the request the user acted on (#3606)', (
     expect(actions.respondPermission).toHaveBeenLastCalledWith('perm-2', 'run-always');
   });
 
+  it('a double click answers at most one request: the second press is not a click on the next card', () => {
+    const events = queue();
+    const { actions, rerender } = renderState(fold(events));
+    fireEvent.click(pinnedButtons()[0], { detail: 1 });
+    rerender(<ChatViewBody agent={agent} state={fold(resolved(events, 'perm-1'))} actions={actions} />);
+    expect(screen.getByTestId('chat-permission')).toHaveAttribute('data-request-id', 'perm-2');
+    fireEvent.click(pinnedButtons()[0], { detail: 2 });
+    expect(actions.respondPermission).toHaveBeenCalledExactlyOnceWith('perm-1', 'accept');
+    // A fresh click, and keyboard activation (detail 0), still answer it.
+    fireEvent.click(pinnedButtons()[0], { detail: 1 });
+    expect(actions.respondPermission).toHaveBeenLastCalledWith('perm-2', 'run');
+    expect(actions.respondPermission).toHaveBeenCalledTimes(2);
+  });
+
   it('refuses an answer for a request that stopped waiting, before the view has redrawn', async () => {
     const events = chatFixture('codex', 'approval');
     useChatStore.setState({ agents: {}, loading: {}, partial: {}, loaded: {}, answering: {} });

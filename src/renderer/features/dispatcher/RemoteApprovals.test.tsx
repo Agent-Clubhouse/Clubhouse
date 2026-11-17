@@ -117,6 +117,19 @@ describe('a queue of approvals from other computers answers the one acted on (#3
     expect(window.clubhouse.dispatcher.answerRemoteApproval).toHaveBeenCalledTimes(2);
   });
 
+  it('a double click answers at most one request: the second press is not a click on the next row', async () => {
+    useAnnexClientStore.setState({ satellites: [satellite([REQUEST, NEXT])] } as never);
+    render(<RemoteApprovals />);
+    await act(async () => {});
+    fireEvent.click(within(rows()[0]).getByTestId('dispatcher-remote-approval-allow_once'), { detail: 1 });
+    await screen.findByTestId('dispatcher-remote-approval-answered');
+    act(() => useAnnexClientStore.setState({ satellites: [satellite([NEXT])] } as never));
+    fireEvent.click(within(rows()[0]).getByTestId('dispatcher-remote-approval-allow_once'), { detail: 2 });
+    expect(window.clubhouse.dispatcher.answerRemoteApproval).toHaveBeenCalledExactlyOnceWith('laptop', 'gr_1', 'allow_once');
+    fireEvent.click(within(rows()[0]).getByTestId('dispatcher-remote-approval-allow_once'), { detail: 1 });
+    await waitFor(() => expect(window.clubhouse.dispatcher.answerRemoteApproval).toHaveBeenLastCalledWith('laptop', 'gr_2', 'allow_once'));
+  });
+
   it('refuses an answer for a request that left its snapshot, before the row has redrawn', async () => {
     useAnnexClientStore.setState({ satellites: [satellite([REQUEST, NEXT])] } as never);
     render(<RemoteApprovals />);

@@ -147,6 +147,17 @@ describe('a queue of permission requests answers the one acted on (#3606)', () =
     expect(window.clubhouse.agent.answerGrantRequest).toHaveBeenCalledTimes(2);
   });
 
+  it('a double click answers at most one request: the second press is not a click on the next row', async () => {
+    seed();
+    render(<GrantRequestList agentId="a1" agentName="Ada" />);
+    fireEvent.click(within(row('g1')).getByTestId('grant-request-allow'), { detail: 1 });
+    await waitFor(() => expect(screen.queryByTestId('grant-request-g1')).not.toBeInTheDocument());
+    fireEvent.click(within(row('g2')).getByTestId('grant-request-allow'), { detail: 2 });
+    expect(window.clubhouse.agent.answerGrantRequest).toHaveBeenCalledExactlyOnceWith('g1', true);
+    fireEvent.click(within(row('g2')).getByTestId('grant-request-allow'), { detail: 1 });
+    await waitFor(() => expect(window.clubhouse.agent.answerGrantRequest).toHaveBeenLastCalledWith('g2', true));
+  });
+
   it('refuses an answer for a request that closed, before the list has redrawn', () => {
     seed();
     render(<GrantRequestList agentId="a1" agentName="Ada" />);
