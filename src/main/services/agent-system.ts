@@ -34,7 +34,7 @@ import { injectClubhouseMcp } from './clubhouse-mcp/injection';
 import { isTrackedDispatcherChat, syncDispatcherGate } from './clubhouse-mcp/dispatcher-gate';
 import { setMcpCaller, setMcpCallerQuick, setMcpCallerUnreadable } from './clubhouse-mcp/mcp-call-gate';
 import { isDispatcherChatPath, isDispatcherPath } from './dispatcher/dispatcher-paths';
-import { preapprovedClubhouseToolsFor } from './dispatcher/dispatcher-internal-tools';
+import { loadsAllToolsUpFront, preapprovedClubhouseToolsFor } from './dispatcher/dispatcher-internal-tools';
 import { dispatcherEnablement } from './dispatcher/dispatcher-settings';
 import { bindingManager } from './clubhouse-mcp/binding-manager';
 import { ensureMcpBridge } from './mcp-bridge-starter';
@@ -709,6 +709,8 @@ async function spawnAgentInner(inParams: SpawnAgentParams, facts: SpawnFacts, ma
     if (preapprovedClubhouseTools && provider.id === 'claude-code') {
       allowedTools = [...(allowedTools ?? []), ...preapprovedClubhouseTools.map((tool) => `${claudeMcpToolPrefix('clubhouse')}${tool}`)];
     }
+    // The Dispatcher sees every tool it holds, up to 120; Copilot's tool search hides ones already loaded (#3615).
+    const loadAllTools = loadsAllToolsUpFront(params.kind, isDispatcherPath(params.projectPath));
     const startChat = async (p: SpawnAgentParams): Promise<ChatStartResult> => {
       try {
         const result = await withErrorType('chat_start_failed', () => tryStartChatAgent({
@@ -732,6 +734,7 @@ async function spawnAgentInner(inParams: SpawnAgentParams, facts: SpawnFacts, ma
           interactive: p.interactive,
           ...(desktopControlOff.length > 0 && { extraArgs: desktopControlOff }),
           ...(preapprovedClubhouseTools && { preapprovedClubhouseTools }),
+          ...(loadAllTools && { loadAllTools }),
           beforeCreate: p.beforeCreate,
         }, provider, commandPrefix, durableConfig, () => { chatStartMs = Date.now(); }, chatFacts));
         recordChatStart(chatStartMs, result, chatFacts, chatContext);

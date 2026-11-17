@@ -49,6 +49,16 @@ const START_TIMEOUT_MS = 60_000;
 const CLOSE_GRACE_MS = 5_000;
 const MODEL_LIST_TIMEOUT_MS = 15_000;
 
+/**
+ * The most tools a start that loads every tool sends up front (#3615). At or
+ * under this total (the CLI's own tools included) the runtime sends them all
+ * and offers no tool search. Over it, the runtime defers every MCP tool behind
+ * its search, all or nothing, as it does for any session: the omission #3615
+ * describes comes back. OpenAI-style APIs take at most 128 tools per request;
+ * this leaves room for tool_search_tool and anything added outside the count.
+ */
+export const COPILOT_EAGER_TOOL_CEILING = 120;
+
 const LOGIN_MESSAGE = 'Not logged in to Copilot. Run copilot and use /login.';
 const LOGIN_HINT = 'Run copilot and use /login';
 
@@ -250,6 +260,8 @@ export class CopilotSdkChatSession implements ChatDriverSession {
   private models: ModelInfo[] = [];
   private mcpReported = '';
   private skillsReported = '';
+  /** A start that loads every tool has said it went over the ceiling (#3615). */
+  private ceilingReported = false;
   private turn = 0;
   private turnRunning = false;
   private interrupting = false;
@@ -269,6 +281,7 @@ export class CopilotSdkChatSession implements ChatDriverSession {
     log: Log,
     private readonly overrides: Partial<SessionConfig> = {},
     private readonly logRedactor = new LogRedactor(),
+    private readonly defaults: Partial<SessionConfig> = {},
   ) {
     this.logRedactor.remember(opts);
     this.logRedactor.startRun();
@@ -298,12 +311,17 @@ export class CopilotSdkChatSession implements ChatDriverSession {
     const model = saved ?? env.COPILOT_MODEL ?? provider?.modelId;
     if (provider && !model) throw new Error('A Copilot provider (COPILOT_PROVIDER_BASE_URL) needs a model. Set COPILOT_MODEL, or choose a model for the agent.');
     const config: SessionConfig = {
+      ...this.defaults,
       clientName: 'Clubhouse',
       streaming: true,
       workingDirectory: this.opts.cwd,
       // Off by default in the SDK. Without it the session ignores the user's own
       // instructions, skills and MCP config, which Terminal loads.
       enableConfigDiscovery: true,
+      // Tool search leaves out tools the session already loaded (#3615), so a
+      // start that loads every tool raises the point where it starts, without
+      // turning it on: a BYOK model keeps the runtime's own default.
+      ...(this.opts.loadAllTools && { toolSearch: { ...this.defaults.toolSearch, deferThreshold: COPILOT_EAGER_TOOL_CEILING } }),
       ...(model && { model }),
       ...(this.opts.contextWindow && { contextTier: this.opts.contextWindow as SessionConfig['contextTier'] }),
       ...(provider && { provider }),
@@ -395,6 +413,31 @@ export class CopilotSdkChatSession implements ChatDriverSession {
           startOnly: true,
         })),
       },
+    });
+  }
+
+  /**
+   * Once per session, say when a start that loads every tool has more than the
+   * ceiling, so the runtime's search is back and #3615's omission with it.
+   * Counts only: no tool names. Checked after each turn, as a wake adds tools.
+   */
+  private async checkToolCeiling(): Promise<void> {
+    if (!this.opts.loadAllTools || this.ceilingReported || !this.sdk) return;
+    let tools: Awaited<ReturnType<CopilotSession['rpc']['tools']['getCurrentMetadata']>>['tools'];
+    try {
+      ({ tools } = await this.sdk.rpc.tools.getCurrentMetadata());
+    } catch {
+      // telemetry-exempt: a diagnostic only; the next turn checks again.
+      return;
+    }
+    // The list holds tool_search_tool once search is back; the ceiling counts the rest.
+    const total = tools?.filter((t) => t.name !== 'tool_search_tool').length ?? 0;
+    if (total <= COPILOT_EAGER_TOOL_CEILING || this.ceilingReported) return;
+    this.ceilingReported = true;
+    this.log('warn', 'More tools than the ceiling for loading every tool; tool search is back (#3615, #3641)', {
+      agentId: this.opts.agentId,
+      total,
+      ceiling: COPILOT_EAGER_TOOL_CEILING,
     });
   }
 
@@ -931,6 +974,7 @@ export class CopilotSdkChatSession implements ChatDriverSession {
       case 'session.idle':
         if (fromSubagent) return;
         this.endTurn(event.data.aborted || this.interrupting ? 'cancelled' : 'end_turn');
+        void this.checkToolCeiling();
         return;
       case 'abort':
         this.interrupting = true;
@@ -1050,6 +1094,11 @@ export interface CopilotSdkDriverOptions {
   log?: Log;
   /** Session settings tests override, e.g. a fake model's `provider`. */
   sessionOverrides?: Partial<SessionConfig>;
+  /**
+   * Session settings tests start from, below the driver's own: a hosted
+   * model's tool search, which no BYOK setting turns on (#3615).
+   */
+  sessionDefaults?: Partial<SessionConfig>;
   probeTimeoutMs?: number;
 }
 
@@ -1126,7 +1175,7 @@ export class CopilotSdkChatDriver implements ChatDriver {
         // The probe's answer can be cached from before a logout. Handshake and
         // createSession succeed logged out, so only the first send would say.
         if (!auth.isAuthenticated && !copilotProviderFromEnv({ ...process.env, ...opts.env })) throw new Error(LOGIN_MESSAGE);
-        const session = new CopilotSdkChatSession(client, server, opts, this.log, this.options.sessionOverrides, logRedactor);
+        const session = new CopilotSdkChatSession(client, server, opts, this.log, this.options.sessionOverrides, logRedactor, this.options.sessionDefaults);
         await session.open(status.version);
         return session;
       })();

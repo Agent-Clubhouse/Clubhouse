@@ -243,6 +243,13 @@ export interface ChatDriverStartOptions {
    */
   preapprovedClubhouseTools?: readonly string[];
   /**
+   * Offer the model every tool on every request instead of behind the CLI's
+   * tool search, up to the driver's ceiling (Copilot: 120 tools in all; above
+   * it the CLI's search comes back). Only the Dispatcher's two agents get it
+   * (#3615). Drivers whose CLI has no tool search ignore it.
+   */
+  loadAllTools?: boolean;
+  /**
    * Provider-specific extra CLI args (e.g. Copilot --agent / --source).
    * Best-effort: drivers whose transport can't pass CLI args (the Claude Agent
    * SDK) ignore them and should log that they did.

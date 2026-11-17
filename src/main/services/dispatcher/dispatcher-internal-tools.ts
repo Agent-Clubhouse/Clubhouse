@@ -25,3 +25,26 @@ export const DISPATCHER_INTERNAL_TOOLS: ReadonlySet<string> = new Set(['start_wo
 export function preapprovedClubhouseToolsFor(kind: string, isDispatcherChat: boolean): string[] | undefined {
   return kind === 'durable' && isDispatcherChat ? [...DISPATCHER_INTERNAL_TOOLS] : undefined;
 }
+
+/**
+ * Whether a start offers the model every tool up front instead of behind the
+ * CLI's tool search (#3615): the Dispatcher's two agents only, by their folders.
+ *
+ * Copilot's tool_search_tool leaves out tools the session already loaded,
+ * resumes included, so the coordinator searching for create_managed_agent or a
+ * wire tool, or the chat searching for start_work, finds nothing and gives up.
+ * Its override hook doesn't help: runtime 1.0.107 keeps its own search.
+ *
+ * Up to 120 tools in all (COPILOT_EAGER_TOOL_CEILING, the CLI's own included).
+ * Above that the runtime defers every MCP tool, as on any session, and the
+ * omission comes back. The coordinator has 110 with its connected agents
+ * asleep and 117 with one awake; each awake agent adds about 7, and the
+ * user's MCP servers count too. The chat has 36. The cost is the whole catalog
+ * on every request: about 85 KB of Clubhouse tools for the coordinator and
+ * 10 KB for the chat (dispatcher-tools.runtime.qa.ts). This grants nothing:
+ * the folder only picks how tools are offered, and every call still goes
+ * through Clubhouse's group and grant check and the CLI's own ask.
+ */
+export function loadsAllToolsUpFront(kind: string, isDispatcherFolder: boolean): boolean {
+  return kind === 'durable' && isDispatcherFolder;
+}
