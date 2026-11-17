@@ -20,6 +20,7 @@
  * was told ("What happened: web is pushed, pulled or fetched (main).").
  */
 
+import { parseAgentAddress } from '../../../shared/agent-address';
 import { QUICK_STEP_ACCESS, type ActionOwner, type ActionRunTrigger, type ActionStep, type ActionStepResult } from '../../../shared/actions';
 import type { ChatSessionState, MessageDelivery, RoutedMessagePart, RuntimeSendOptions } from '../../../shared/chat';
 import { setAgentChain } from '../app-event-bus';
@@ -30,6 +31,7 @@ import type { HelperDifficulty, HelperRouting } from '../../../shared/helper-rou
 import type { QuickAgentOwner } from '../../../shared/types';
 
 export interface StepDeps {
+  remoteMessage?(target: string, message: string, ctx: StepContext): Promise<ActionStepResult>;
   agentExists(agentId: string): boolean;
   agentName(agentId: string): string | undefined;
   agentWorktree(agentId: string): string | undefined;
@@ -216,6 +218,12 @@ export function createStepRunner(deps: StepDeps): StepRunner {
 
   return {
     async run(step, ctx) {
+      if ('agentId' in step && parseAgentAddress(step.agentId).machine) {
+        if (step.kind !== 'message') return fail(step, 'Remote targets support message steps only.', step.agentId);
+        if (!deps.remoteMessage) return fail(step, 'Remote message delivery is unavailable.', step.agentId);
+        const msg = actionMessage(ctx.action.name, step.text, happenedOf(ctx), true, ctx.trigger?.device);
+        return deps.remoteMessage(step.agentId, msg.text, ctx);
+      }
       switch (step.kind) {
         case 'group_post': {
           if (ctx.action.owner.kind !== 'group_project' || !deps.groupPost) return fail(step, 'The group project is unavailable.');

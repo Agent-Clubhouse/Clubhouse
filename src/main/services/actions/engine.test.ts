@@ -52,6 +52,7 @@ const START = new Date(2026, 10, 9, 8, 0).getTime();
 const MIN = 60_000;
 
 interface Setup {
+  facts?: Partial<EngineFacts>;
   historyFlush?: () => Promise<void>;
   boardLatestActivity?: (id: string) => Promise<number | null>;
   devices?: Map<string, boolean | undefined>;
@@ -81,6 +82,7 @@ function setup(opts: Setup = {}) {
   const saved: { actions: Action[]; state: EngineState } = { actions: opts.actions ?? [], state: opts.state ?? { nextAt: {}, waits: [] } };
   const runs = new Map<string, ActionRun>();
   const facts: EngineFacts = {
+    ...opts.facts,
     boardLatestActivity: opts.boardLatestActivity,
     deviceOnline: (id) => opts.devices?.get(id),
     agentExists: (id) => !!agents[id],
@@ -2626,4 +2628,54 @@ it('keeps handoff exception receipts private to the person and cannot execute th
   expect(engine.get(receipt.actionId)).toBeUndefined();
   expect(stepCalls).toEqual([]);
   await expect(engine.recordExternalRun({ ...receipt, chain: [], steps: [], owner: { kind: 'agent', agentId: 'lead' } })).rejects.toThrow('executable Action');
+});
+
+
+describe('remote message targets (local triggers)', () => {
+  const target = `worker@${'aa:'.repeat(15)}aa`;
+  const owner = { kind: 'agent', agentId: 'lead' } as const;
+  const message: ActionStep = { kind: 'message', agentId: target, text: 'Hello' };
+  const input = { trigger: weekdays9, steps: [message] };
+  it('creates, updates and persists a canonical remote target without widening local existence', () => {
+    const h = setup({ facts: { remoteMessageTarget: (id) => id === target, canonicalAgentReference: (id) => id === 'remote-worker' ? target : id } });
+    const action = h.engine.create({ ...input, steps: [{ ...message, agentId: 'remote-worker' }] }, owner);
+    expect(h.saved.actions[0].steps[0]).toMatchObject({ agentId: target });
+    h.engine.update(action.id, input);
+    expect(h.engine.get(action.id)?.steps).toEqual([message]);
+  });
+  it('checks grants at creation and again before running; Ask first refuses unattended', async () => {
+    let mode: 'allow' | 'ask' | 'off' = 'off';
+    const rights = createGrantRights({ agentName: () => 'Owner', parentOf: () => undefined, isConnected: () => true,
+      remoteMessageRefusal: () => null, dispatcherAgentId: () => 'dispatcher', agentProjectId: () => 'p1',
+      canStartAgents: () => false, agentAccess: () => 'ask', projectPath: () => '/p1', agentProjectPath: () => '/p1',
+      grantsOf: () => mode === 'off' ? [] : [{ action: 'agent.message', target: { kind: 'connected' }, mode }],
+    });
+    const h = setup({ rights, facts: { remoteMessageTarget: () => true } });
+    expect(() => h.engine.create(input, owner)).toThrow(/agent.message/);
+    mode = 'ask';
+    expect(() => h.engine.create(input, owner)).toThrow(/Ask first.*nobody there to ask/);
+    mode = 'allow';
+    const action = h.engine.create(input, owner);
+    mode = 'off';
+    h.engine.runNow(action.id); await flush();
+    expect(h.history(action.id).at(-1)).toMatchObject({ outcome: 'failed', refusal: 'rights_refused' });
+    expect(h.stepCalls).toHaveLength(0);
+    mode = 'ask';
+    h.engine.runNow(action.id); await flush();
+    expect(h.history(action.id).at(-1)?.reason).toMatch(/Ask first/);
+    mode = 'allow';
+    h.engine.runNow(action.id); await flush();
+    expect(h.stepCalls[0].ctx).toMatchObject({ stepIndex: 0, action: { owner } });
+  });
+  it('refuses offline identity at setup and keeps original-run durable receipts current', async () => {
+    expect(() => setup().engine.create(input, owner)).toThrow(/offline, unknown/);
+    const receipt = { callId: 'call', callerId: 'lead', targetId: target, tool: 'send_message', state: 'queued' as const, queuedAt: 'now', updatedAt: '1', attempts: 0 };
+    let current: import('../../../shared/annex-delivery').AnnexDeliveryStatus = receipt;
+    const h = setup({ facts: { remoteMessageTarget: () => true, remoteDelivery: () => current }, stepImpl: async () => ({ kind: 'message', outcome: 'done', detail: 'Queued', remoteDelivery: receipt }) });
+    const action = h.engine.create(input, owner); h.engine.runNow(action.id); await flush();
+    current = { ...receipt, state: 'delivered', updatedAt: '2' };
+    expect(h.history(action.id)[0].steps[0]).toMatchObject({ remoteDelivery: { state: 'delivered' }, detail: expect.stringContaining('accepted by the remote runtime') });
+    current = { ...receipt, state: 'indeterminate', updatedAt: '3' };
+    expect(h.history(action.id)[0]).toMatchObject({ outcome: 'failed', steps: [{ remoteDelivery: { state: 'indeterminate' } }] });
+  });
 });

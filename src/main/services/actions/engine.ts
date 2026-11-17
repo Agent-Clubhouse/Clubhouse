@@ -47,6 +47,8 @@ import {
   type EventTrigger,
   type MissedRunRule,
 } from '../../../shared/actions';
+import { parseAgentAddress } from '../../../shared/agent-address';
+import type { AnnexDeliveryStatus } from '../../../shared/annex-delivery';
 import type { AppEvent } from '../app-event-bus';
 import type { ActionQueueSettlement } from '../../../shared/chat';
 
@@ -105,6 +107,9 @@ export interface RunHistory {
 
 /** What the engine needs to know about agents and projects. Synchronous: answered from caches. */
 export interface EngineFacts {
+  canonicalAgentReference?(id: string): string;
+  remoteMessageTarget?(id: string): boolean;
+  remoteDelivery?(owner: ActionOwner | undefined, receipt: AnnexDeliveryStatus): AnnexDeliveryStatus | undefined;
   boardLatestActivity?(id: string): Promise<number | null>;
   /** Undefined during startup or while this computer is away. */
   deviceOnline?(deviceId: string): boolean | undefined;
@@ -130,6 +135,8 @@ export interface EngineFacts {
 export interface StepContext {
   action: Action;
   runId: string;
+  stepIndex?: number;
+  dispatcherAgentId?: string;
   /** The chain this run's steps pass on: the run's chain plus this action. */
   chain: string[];
   /** What set the run off. An event's detail ("web is pushed (main)") goes into messages. */
@@ -423,6 +430,18 @@ export class ActionsEngine {
 
   history(id?: string, reader?: ActionOwner): ActionRun[] {
     const runs = this.deps.history.list(id);
+    for (const run of runs) {
+      for (const step of run.steps) {
+        if (!step.remoteDelivery) continue;
+        const receipt = this.deps.facts.remoteDelivery?.(run.owner, step.remoteDelivery);
+        if (!receipt || receipt.updatedAt === step.remoteDelivery.updatedAt && receipt.state === step.remoteDelivery.state) continue;
+        step.remoteDelivery = receipt;
+        step.detail = receipt.state === 'delivered' ? 'Message accepted by the remote runtime (model processing is not confirmed)' : `Remote delivery ${receipt.state}${receipt.reason ? `: ${receipt.reason}` : ''}. delivery_id=${receipt.callId}`;
+        if (['refused', 'expired', 'indeterminate'].includes(receipt.state)) { step.outcome = 'failed'; run.outcome = 'failed'; run.reason = step.detail; }
+        run.deliveryUpdatedAt = this.now();
+        this.deps.history.put(run);
+      }
+    }
     if (!reader) return runs;
     return runs.flatMap((run) => {
       if (run.externalSource === 'handoff_secret' && reader.kind !== 'user') return [];
@@ -507,6 +526,7 @@ export class ActionsEngine {
     };
     if (trigger.kind === 'event') {
       // A "when X is deleted" trigger may name an agent that is about to go.
+      if (trigger.source.kind === 'agent' && parseAgentAddress(trigger.source.agentId).machine) throw new ActionError('invalid_input', 'Remote event sources are unavailable in Actions.');
       if (trigger.source.kind === 'agent' && trigger.event !== 'agent.deleted') agent(trigger.source.agentId);
       if (trigger.source.kind === 'project') project(trigger.source.projectId);
     }
@@ -514,6 +534,8 @@ export class ActionsEngine {
       if (s.kind === 'quick') {
         project(s.projectId);
         if (s.worktreeAgentId) agent(s.worktreeAgentId);
+      } else if (s.kind === 'message' && parseAgentAddress(s.agentId).machine) {
+        if (!f.remoteMessageTarget?.(s.agentId)) throw new ActionError('invalid_input', 'The remote message target is offline, unknown, or unsupported.');
       } else if (s.kind !== 'notify' && s.kind !== 'group_post') agent(s.agentId);
     }
   }
@@ -544,6 +566,14 @@ export class ActionsEngine {
 
   create(input: unknown, owner: ActionOwner, opts: { subscription?: boolean; author?: ActionOwner } = {}): Action {
     const valid = assertActionInput(input, this.now());
+    const canonical = this.deps.facts.canonicalAgentReference;
+    if (canonical) {
+      if (valid.trigger.kind === 'event' && valid.trigger.source.kind === 'agent') valid.trigger.source.agentId = canonical(valid.trigger.source.agentId);
+      for (const step of valid.steps) {
+        if ('agentId' in step) step.agentId = canonical(step.agentId);
+        if (step.kind === 'quick' && step.worktreeAgentId) step.worktreeAgentId = canonical(step.worktreeAgentId);
+      }
+    }
     this.checkRights(owner, valid.trigger, valid.steps);
     const quickAccess = owner.kind === 'group_project' ? this.checkGroupAuthor(opts.author ?? { kind: 'user' }, valid.steps) : undefined;
     this.checkTargets(valid.trigger, valid.steps);
@@ -616,6 +646,14 @@ export class ActionsEngine {
   update(id: string, input: unknown, author: ActionOwner = { kind: 'user' }): Action {
     const current = this.require(id);
     const valid = assertActionInput(input, this.now());
+    const canonical = this.deps.facts.canonicalAgentReference;
+    if (canonical) {
+      if (valid.trigger.kind === 'event' && valid.trigger.source.kind === 'agent') valid.trigger.source.agentId = canonical(valid.trigger.source.agentId);
+      for (const step of valid.steps) {
+        if ('agentId' in step) step.agentId = canonical(step.agentId);
+        if (step.kind === 'quick' && step.worktreeAgentId) step.worktreeAgentId = canonical(step.worktreeAgentId);
+      }
+    }
     this.checkRights(current.owner, valid.trigger, valid.steps);
     const authorCeiling = current.owner.kind === 'group_project' ? this.checkGroupAuthor(author, valid.steps) : undefined;
     if (current.owner.kind === 'group_project' && current.quickAccess !== 'full_access' && valid.steps.some((step) => step.kind === 'quick')) throw new ActionError('not_allowed', 'This Action was not authorized to start quick agents.');
@@ -1475,7 +1513,7 @@ export class ActionsEngine {
         this.deps.hooks?.changed?.();
       };
       try {
-        result = await this.deps.steps.run(step, { action, runId, chain: [...chain, actionId], trigger, deliveryChanged });
+        result = await this.deps.steps.run(step, { action, runId, stepIndex, dispatcherAgentId: this.deps.facts.dispatcherAgentId?.(), chain: [...chain, actionId], trigger, deliveryChanged });
       } catch (err) {
         // telemetry-exempt: recorded on the run and reported as a mechanical failure below
         threw = true;

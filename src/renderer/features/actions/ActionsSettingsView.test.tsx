@@ -4,6 +4,7 @@ import type { ActionView } from '../../../shared/actions';
 import { ActionsSettingsView, filterActions } from './ActionsSettingsView';
 import { useDispatcherStore } from '../dispatcher/dispatcherStore';
 import { ActionForm } from './ActionForm';
+import { useRemoteProjectStore } from '../../stores/remoteProjectStore';
 import { useAgentStore } from '../../stores/agentStore';
 import { useAnnexStore } from '../../stores/annexStore';
 import { useAnnexClientStore } from '../../stores/annexClientStore';
@@ -419,4 +420,19 @@ describe('Settings > Actions', () => {
     expect(filterActions(all, 'agents').map((a) => a.id)).toEqual(['b']);
     expect(filterActions(all, 'off').map((a) => a.id)).toEqual(['c']);
   });
+});
+
+it('offers canonical remote message targets by computer only for agent ownership, never as a source or wake target', () => {
+  const machine = 'aa:'.repeat(15) + 'aa';
+  const id = `remote||${machine}||worker`;
+  useAnnexStore.setState({ devices: [{ fingerprint: machine, alias: 'Laptop', state: 'connected', role: 'member', kind: 'desktop' }] } as never);
+  useRemoteProjectStore.setState({ remoteAgents: { [id]: { id, name: 'Worker', kind: 'durable', projectId: 'remote-project' } } } as never);
+  try {
+    render(<ActionForm open onClose={vi.fn()} action={action({ owner: { kind: 'agent', agentId: 'local' }, steps: [{ kind: 'message', agentId: `worker@${machine}`, text: 'Hello' }] })} />);
+    expect(screen.getByRole('option', { name: 'Worker on Laptop' })).toHaveValue(`worker@${machine}`);
+    fireEvent.change(screen.getByLabelText('Step 1 type'), { target: { value: 'wake' } });
+    expect(screen.queryByRole('option', { name: 'Worker on Laptop' })).toBeNull();
+    fireEvent.change(screen.getByLabelText('Runs'), { target: { value: 'event' } });
+    expect(screen.queryByRole('option', { name: 'Worker on Laptop' })).toBeNull();
+  } finally { useRemoteProjectStore.setState({ remoteAgents: {} }); useAnnexStore.setState({ devices: [] }); }
 });

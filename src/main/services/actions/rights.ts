@@ -26,12 +26,14 @@
  * the agent or project exists.
  */
 
+import { parseAgentAddress } from '../../../shared/agent-address';
 import { APP_EVENT_KINDS, QUICK_STEP_ACCESS, type ActionOwner, type ActionStep, type ActionTrigger } from '../../../shared/actions';
 import type { ActionRights } from './engine';
 import { accessLabel, type AccessLevel } from '../../../shared/agent-access';
 import { evaluateGrant, type Grant, type GrantAction, type GrantCallTarget } from '../../../shared/agent-grants';
 
 export interface RightsFacts {
+  remoteMessageRefusal?(sender: string, target: string): string | null;
   agentName(agentId: string): string | undefined;
   /** The helper's orchestrator, for helpers. */
   parentOf(agentId: string): string | undefined;
@@ -103,6 +105,16 @@ export function createGrantRights(facts: RightsFacts): ActionRights {
       return owner.kind === 'agent' && facts.canStartAgents(owner.agentId) && facts.agentAccess(owner.agentId) === QUICK_STEP_ACCESS ? 'full_access' : 'none';
     },
     checkStep(owner: ActionOwner, step: ActionStep): string | null {
+      const remote = 'agentId' in step ? parseAgentAddress(step.agentId).machine : step.kind === 'quick' && step.worktreeAgentId ? parseAgentAddress(step.worktreeAgentId).machine : undefined;
+      if (remote) {
+        if (step.kind !== 'message') return 'Remote targets support message steps only.';
+        if (owner.kind !== 'agent' && owner.kind !== 'dispatcher') return 'Remote messages require a local agent or Dispatcher owner.';
+        if (step.delivery === 'steer' || step.latestOnly || step.maxWaitMinutes !== undefined) return 'Remote message steps use the durable Annex queue; steer, latest-only and max-wait options are unavailable.';
+        const sender = ownerId(owner);
+        if (!sender || parseAgentAddress(sender).machine) return 'The Action needs a real local agent or Dispatcher owner.';
+        const refusal = facts.remoteMessageRefusal?.(sender, step.agentId) ?? (facts.remoteMessageRefusal ? null : 'Remote message targets are unavailable.');
+        if (refusal) return refusal;
+      }
       if ((step.kind === 'group_post' || step.kind === 'group_tap') && owner.kind !== 'group_project') return 'Only a group project may run this step.';
       if (owner.kind === 'user' || owner.kind === 'app') return null;
       if (owner.kind === 'group_project') {
@@ -156,6 +168,7 @@ export function createGrantRights(facts: RightsFacts): ActionRights {
     },
 
     checkSource(owner: ActionOwner, trigger: ActionTrigger): string | null {
+      if (trigger.kind === 'event' && trigger.source.kind === 'agent' && parseAgentAddress(trigger.source.agentId).machine) return 'Remote event sources are unavailable in Actions.';
       if (trigger.kind === 'event' && trigger.source.kind === 'group_project' && owner.kind !== 'group_project') return 'Only that group project can own an Action watching its board.';
       if (owner.kind === 'user' || owner.kind === 'app') return null;
       if (owner.kind === 'group_project') {
