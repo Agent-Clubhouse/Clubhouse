@@ -25,10 +25,26 @@ export function liftLegacyLimitPauses(file: FederationRequestFile): boolean {
   return changed;
 }
 
+/** Repair only the tracing arithmetic overflow written by older builds. */
+function repairStoredDepths(file: FederationRequestFile): boolean {
+  let repaired = false;
+  const repair = (cause: AnnexCallContext | undefined) => {
+    if (cause && Number.isInteger(cause.depth) && Number.isFinite(cause.depth) && cause.depth > Number.MAX_SAFE_INTEGER) {
+      cause.depth = Number.MAX_SAFE_INTEGER; repaired = true;
+    }
+  };
+  for (const record of [...file.requests, ...Object.values(file.news ?? {}), ...Object.values(file.pendingNews ?? {}),
+    ...Object.values(file.pauseNotices ?? {}).map((notice) => notice?.request)]) {
+    repair(record?.cause);
+    if (Array.isArray(record?.replyPrompts)) for (const prompt of record.replyPrompts) repair(prompt?.cause);
+  }
+  return repaired;
+}
+
 export class FederationInputNotReady extends Error {}
 
 export { FEDERATED_REQUEST_LIMITS } from '../../shared/dispatcher-federation-requests';
-import { FEDERATED_REQUEST_LIMITS, FederationBackpressure } from '../../shared/dispatcher-federation-requests';
+import { FEDERATED_REQUEST_LIMITS, FederationBackpressure, FederationRefusal, assertFederationDepth, nextFederationDepth } from '../../shared/dispatcher-federation-requests';
 export interface FederationRequestFile {
   version: 1;
   requests: FederatedRequest[];
@@ -50,8 +66,10 @@ export interface FederationRequestStore {
 const empty = (): FederationRequestFile => ({ version: 1, requests: [], paused: {}, crossings: {} });
 export function createFederationRequestStore(filename = 'dispatcher-federation-requests.json'): FederationRequestStore {
   let unreadable = false;
+  let depthRepairPending = false;
   const store = createSettingsStore<FederationRequestFile>(filename, empty(), (raw) => {
     if (raw.version !== 1 || !Array.isArray(raw.requests) || !raw.paused || !raw.crossings) throw new Error('Invalid federated requests');
+    depthRepairPending = repairStoredDepths(raw as unknown as FederationRequestFile) || depthRepairPending;
     const valid = (r: FederatedRequest) => r && typeof r.id === 'string' && typeof r.machineId === 'string'
       && typeof r.callerId === 'string' && typeof r.targetId === 'string' && typeof r.text === 'string' && typeof r.originRequestId === 'string'
       && r.origin && typeof r.origin.agentId === 'string' && typeof r.origin.machineId === 'string'
@@ -82,7 +100,7 @@ export function createFederationRequestStore(filename = 'dispatcher-federation-r
     }
     return structuredClone(committed);
   };
-  return { get, async ready() { get(); if (migrationPending) await this.update(() => {}); }, update(change, current = () => true) {
+  return { get, async ready() { get(); if (migrationPending || depthRepairPending) await this.update(() => {}); }, update(change, current = () => true) {
     const run = serial.catch(() => {}).then(async () => {
       const value = get();
       change(value);
@@ -94,6 +112,10 @@ export function createFederationRequestStore(filename = 'dispatcher-federation-r
         migrationPending = false;
         appLog('core:dispatcher', 'info', 'Retired Dispatcher limit pause cleared', { meta: { state: 'legacy_limit_pause_cleared' } });
         federationStatusChanged();
+      }
+      if (depthRepairPending) {
+        depthRepairPending = false;
+        appLog('core:dispatcher', 'info', 'Dispatcher tracing depth metadata repaired', { meta: { state: 'federation_depth_metadata_repaired' } });
       }
       // A link tripping (or a new pairing clearing it) changes its status everywhere it shows (#3349).
       if (JSON.stringify([value.paused, value.pauseEpochs]) !== pausesBefore) federationStatusChanged();
@@ -124,7 +146,7 @@ export interface FederationRequestDependencies {
   record(request: FederatedRequest, event: 'crossing' | 'duplicate' | 'triage'): void;
 }
 const terminal = (o: FederationOutcome) => ['answered', 'declined', 'failed'].includes(o);
-const nextCause = (r: FederatedRequest): AnnexCallContext => ({ rootId: r.cause.rootId, depth: r.cause.depth + 1, parentId: r.id });
+const nextCause = (r: FederatedRequest): AnnexCallContext => ({ rootId: r.cause.rootId, depth: nextFederationDepth(r.cause.depth), parentId: r.id });
 const textValid = (v: unknown): v is string => typeof v === 'string' && !!v.trim() && v.length <= 8000;
 const idValid = (v: unknown): v is string => typeof v === 'string' && !!v && v.length <= 200;
 export function parseFederationEnvelope(raw: unknown): FederationRequestEnvelope | undefined {
@@ -272,7 +294,27 @@ export function createFederatedRequests(d: FederationRequestDependencies) {
         if (status && status.state === 'delivered') await replace(r.id, (q) => { q.replies!.find((x) => x.revision === reply.revision)!.delivery = 'delivered'; });
         continue;
       }
-      const sent = await d.send(d.self().agentId, r.machineId, r.origin.agentId, { v: 1, kind: 'reply', id: r.id, originRequestId: r.originRequestId, revision: reply.revision, outcome: reply.outcome, text: reply.text }, nextCause(r), `${r.id}:reply:${reply.revision}`);
+      let cause: AnnexCallContext;
+      try { cause = nextCause(r); }
+      catch (err) {
+        if (!(err instanceof FederationRefusal)) throw err;
+        await replace(r.id, (q) => { const saved = q.replies!.find((x) => x.revision === reply.revision)!; saved.delivery = 'refused'; saved.error = err.code; });
+        continue; // A repaired legacy trace cannot block unrelated retained work.
+      }
+      if (!reply.rateAdmitted) {
+        // Unmarked legacy reports were already accepted. Reserve once before
+        // dispatch, retaining their original ID and existing retry behavior.
+        let pressure = false;
+        await replace(r.id, (q, file) => {
+          const saved = q.replies!.find((x) => x.revision === reply.revision)!;
+          if (saved.rateAdmitted) return;
+          const recent = (file.crossings[r.machineId] ?? []).filter((at) => d.now() - at < 60_000);
+          if (recent.length >= FEDERATED_REQUEST_LIMITS.perMinute) { pressure = true; return; }
+          file.crossings[r.machineId] = [...recent, d.now()]; saved.rateAdmitted = true;
+        }, () => current(r));
+        if (pressure) continue;
+      }
+      const sent = await d.send(d.self().agentId, r.machineId, r.origin.agentId, { v: 1, kind: 'reply', id: r.id, originRequestId: r.originRequestId, revision: reply.revision, outcome: reply.outcome, text: reply.text }, cause, `${r.id}:reply:${reply.revision}`);
       const admitted = sent.deliveryId && d.delivery(d.self().agentId, sent.deliveryId);
       await replace(r.id, (q) => { const saved = q.replies?.find((x) => x.revision === reply.revision); if (saved) { if (admitted) { saved.deliveryId = sent.deliveryId; saved.delivery = 'accepted'; } saved.error = sent.error ?? (!admitted ? 'The reply has not been admitted to durable delivery; retry pending.' : undefined); } });
     }
@@ -287,9 +329,10 @@ export function createFederatedRequests(d: FederationRequestDependencies) {
       return envelope?.kind === 'pause' || !file.paused[machine] || (!!file.pauseEpochs?.[machine] && deliveryHash(file.pauseEpochs[machine]) !== deliveryHash(d.epoch(machine)));
     },
     async crossing(machine: string, cause: AnnexCallContext | undefined, args: Record<string, unknown>, tool = 'hand_off_request') {
+      if (cause) assertFederationDepth(cause.depth);
       if (!this.allowed(machine, args, tool)) throw new Error('The controller link is paused after a fixed limit was reached.');
       const envelope = tool === 'hand_off_request' ? parseFederationEnvelope(args.envelope) : undefined;
-      if (envelope?.kind === 'pause' || envelope?.kind === 'request') return;
+      if (envelope?.kind === 'pause' || envelope?.kind === 'request' || envelope?.kind === 'reply') return; // Requests and replies reserve rate at durable admission.
       let pressure: FederationBackpressure | undefined;
       await d.store.update((file) => {
         const recent = (file.crossings[machine] ?? []).filter((at) => d.now() - at < 60_000);
@@ -307,6 +350,7 @@ export function createFederatedRequests(d: FederationRequestDependencies) {
       d.record(updated, 'duplicate');
     },
     async outgoingNews(machine: string, targetId: string, cause: AnnexCallContext, args: Record<string, unknown>, tool = 'send_message', callerId = d.self().agentId) {
+      assertFederationDepth(cause.depth);
       if (tool === 'hand_off_request' && parseFederationEnvelope(args.envelope)) return this.crossing(machine, cause, args, tool);
       const sample: FederatedRequest = {
         id: cause.rootId, direction: 'outgoing', callerId, machineId: machine, targetId, origin: { ...d.self(), agentId: callerId, ...(callerId !== d.self().agentId && { agentName: callerId }) }, originRequestId: cause.rootId,
@@ -318,6 +362,7 @@ export function createFederatedRequests(d: FederationRequestDependencies) {
       d.record(sample, 'crossing');
     },
     async news(origin: AuthenticatedAnnexOrigin, targetId: string, cause: AnnexCallContext, _args: Record<string, unknown>, _tool = 'send_message', deliveryId = cause.rootId) {
+      assertFederationDepth(cause.depth);
       const admissionId = deliveryHash([origin.machineId, d.epoch(origin.machineId), deliveryId]);
       const pending = d.store.get().pendingNews?.[admissionId];
       if (pending) {
@@ -401,6 +446,7 @@ export function createFederatedRequests(d: FederationRequestDependencies) {
       return read(id)!;
     },
     async receive(origin: AuthenticatedAnnexOrigin, targetId: string, cause: AnnexCallContext, raw: unknown) {
+      assertFederationDepth(cause.depth);
       const envelope = parseFederationEnvelope(raw);
       if (!envelope) throw new Error('Malformed federated request envelope.');
       const epoch = d.epoch(origin.machineId);
@@ -423,7 +469,7 @@ export function createFederatedRequests(d: FederationRequestDependencies) {
         const original = read(envelope.id);
         if (!original || original.direction !== 'outgoing' || original.machineId !== origin.machineId || original.targetId !== origin.agentId
           || original.originRequestId !== envelope.originRequestId || !current(original)
-          || cause.rootId !== original.cause.rootId || cause.depth !== original.cause.depth + 1 || cause.parentId !== original.id) throw new Error('Reply does not match an authorized origin request and cause.');
+          || cause.rootId !== original.cause.rootId || cause.depth !== nextFederationDepth(original.cause.depth) || cause.parentId !== original.id) throw new Error('Reply does not match an authorized origin request and cause.');
         if (envelope.revision <= original.receivedRevision) {
           const r = await replace(original.id, (r) => { r.duplicates++; }); d.record(r, 'duplicate'); return r;
         }
@@ -460,19 +506,28 @@ export function createFederatedRequests(d: FederationRequestDependencies) {
       try { await presentIncoming(request); } catch { d.fault?.(); } // telemetry-exempt: durable admission is retained and reconciled
       return read(request.id)!;
     },
-    async report(callerId: string, id: string, outcome: FederationOutcome, text: string) {
+    async report(callerId: string, id: string, outcome: FederationOutcome, text: string, triage?: FederationTriage) {
       const found = read(id);
       if (callerId !== d.self().agentId || !found || found.direction !== 'incoming' || !current(found)) throw new Error('Only this receiving controller can report this request.');
       if (!textValid(text)) throw new Error('Give a short explicit outcome or reason.');
       if (terminal(found.outcome)) throw new Error('This request already has a final outcome.');
-      const updated = await replace(id, (r) => {
-        if (terminal(r.outcome)) throw new Error('This request already has a final outcome.');
-        if ((r.replies?.length ?? 0) >= 64) throw new Error('This request has reached its report limit.');
-        r.outcome = outcome; r.reason = text; r.revision++;
-        (r.replies ??= []).push({ revision: r.revision, outcome, text, expiresAt: d.now() + FEDERATED_REQUEST_LIMITS.ttl });
-      }, () => current(found));
+      nextCause(found); // Checked before any report, triage, notice or rate mutation.
+      let updated: FederatedRequest;
+      try {
+        updated = await replace(id, (r, file) => {
+          if (terminal(r.outcome)) throw new Error('This request already has a final outcome.');
+          if ((r.replies?.length ?? 0) >= 64) throw new Error('This request has reached its report limit.');
+          const recent = (file.crossings[r.machineId] ?? []).filter((at) => d.now() - at < 60_000);
+          if (recent.length >= FEDERATED_REQUEST_LIMITS.perMinute) throw new FederationBackpressure('rate_limited', LEGACY_RATE_PAUSE, Math.max(1, Math.min(...recent) + 60_000 - d.now()));
+          file.crossings[r.machineId] = [...recent, d.now()];
+          if (triage) { r.triage = triage; if (triage === 'needs_user') r.noticePending = 'needs_user'; }
+          r.outcome = outcome; r.reason = text; r.revision++;
+          (r.replies ??= []).push({ rateAdmitted: true, revision: r.revision, outcome, text, expiresAt: d.now() + FEDERATED_REQUEST_LIMITS.ttl });
+        }, () => current(found));
+      } catch (err) { if (err instanceof FederationBackpressure) d.recordLimit(); throw err; }
+      if (triage) { d.record(updated, 'triage'); if (triage === 'needs_user') await showNotice(updated); }
       d.settleLocal?.(updated);
-      try { await sendPending(updated); } catch { d.fault?.(); } // telemetry-exempt: the explicit report is retained for durable retry
+      try { await sendPending(updated); } catch { d.fault?.(); } // telemetry-exempt: the admitted report is retained for durable retry
       d.record(updated, 'crossing');
       return updated;
     },
@@ -481,10 +536,7 @@ export function createFederatedRequests(d: FederationRequestDependencies) {
       const found = read(id);
       if (callerId !== d.self().agentId || !found || found.direction !== 'incoming' || terminal(found.outcome) || !current(found)) throw new Error('Only the receiving controller can triage this live request.');
       if (!textValid(reason)) throw new Error('Give the reason for this triage choice.');
-      const updated = await replace(id, (r) => { r.triage = choice; if (choice === 'needs_user') { r.reason = reason; r.noticePending = 'needs_user'; } }, () => current(found));
-      d.record(updated, 'triage');
-      if (choice === 'needs_user') await showNotice(updated);
-      return this.report(callerId, id, choice === 'decline' ? 'declined' : choice === 'needs_user' ? 'waiting_user' : 'under_way', reason);
+      return this.report(callerId, id, choice === 'decline' ? 'declined' : choice === 'needs_user' ? 'waiting_user' : 'under_way', reason, choice);
     },
     async reconcile() {
       await d.store.ready?.();

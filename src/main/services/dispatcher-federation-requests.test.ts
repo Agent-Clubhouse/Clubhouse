@@ -222,6 +222,28 @@ describe('federated request delivery and explicit outcomes (#3347, #3346)', () =
     expect((await f.a.api.offer(f.a.self.agentId, 'Laptop', f.b.self.agentId, 'queue-recovered', 'Work')).delivery).toBe('accepted');
     expect(f.a.deps.send).toHaveBeenCalledTimes(31);
   });
+  it('rejects unsafe direct news causes before writing any state', async () => {
+    const f = fixture(); const before = f.a.file();
+    const cause = { rootId: 'overflow', depth: Number.MAX_SAFE_INTEGER + 1 };
+    await expect(f.a.api.outgoingNews('Laptop', f.b.self.agentId, cause, { message: 'overflow' })).rejects.toMatchObject({ code: 'depth_unrepresentable' });
+    await expect(f.a.api.news(f.b.self, f.a.self.agentId, cause, { message: 'overflow' })).rejects.toMatchObject({ code: 'depth_unrepresentable' });
+    expect(f.a.file()).toEqual(before);
+  });
+  it('rate-admits an unmarked legacy reply only once before its existing retry', async () => {
+    const f = fixture(); const sent = await f.offer(); await f.pump();
+    await f.b.deps.store.update((file) => {
+      const r = file.requests.find((r) => r.id === sent.id)!;
+      r.outcome = 'answered'; r.revision = 1;
+      r.replies = [{ revision: 1, outcome: 'answered', text: 'Legacy accepted report', expiresAt: f.b.deps.now() + 100_000 }];
+      file.crossings.Desktop = Array(20).fill(f.b.deps.now());
+    });
+    await f.b.api.reconcile(); expect(f.b.deps.send).not.toHaveBeenCalled();
+    f.advance(60_001); await f.b.api.reconcile();
+    expect(f.b.deps.send).toHaveBeenCalledTimes(1);
+    expect(f.b.file().requests[0].replies?.[0].rateAdmitted).toBe(true);
+    expect(f.b.file().crossings.Desktop).toHaveLength(1);
+    await f.b.api.reconcile(); expect(f.b.file().crossings.Desktop).toHaveLength(1);
+  });
   it('never leaves a pending-news marker for rate-refused input, including concurrent attempts', async () => {
     const f = fixture();
     await f.b.deps.store.update((file) => { file.crossings.Desktop = Array(20).fill(f.b.deps.now()); });

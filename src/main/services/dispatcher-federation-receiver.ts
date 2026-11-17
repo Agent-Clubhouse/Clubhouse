@@ -1,5 +1,5 @@
 /** The production controller receiver, shared with the transport integration test. */
-import { FederationBackpressure } from '../../shared/dispatcher-federation-requests';
+import { FederationRefusal } from '../../shared/dispatcher-federation-requests';
 import { federationTurnOpen, withFederationInput } from './dispatcher-federation-context';
 import { countFederatedDuplicate, federatedRequests, receiveFederatedNewsCause, receiveFederatedRequest } from './dispatcher-federation-runtime';
 import type { AgentToolRunResult, DispatcherAgentCallReceiver } from './annex-agent-calls';
@@ -32,7 +32,7 @@ export const federationReceiver: DispatcherAgentCallReceiver = {
     let input: Awaited<ReturnType<typeof receiveFederatedNewsCause>>;
     if (request.tool === 'send_message' || request.tool === 'send_file') {
       try { input = await receiveFederatedNewsCause(request); }
-      catch (err) { return { content: [{ type: 'text', text: err instanceof FederationBackpressure ? JSON.stringify({ error: err.details() }) : err instanceof Error ? err.message : String(err) }], isError: true, annexDelivery: { state: 'refused', reason: err instanceof FederationBackpressure ? err.code : 'controller_limit' } }; }
+      catch (err) { return { content: [{ type: 'text', text: err instanceof FederationRefusal ? JSON.stringify({ error: err.details() }) : err instanceof Error ? err.message : String(err) }], isError: true, annexDelivery: { state: 'refused', reason: err instanceof FederationRefusal ? err.code : 'controller_limit' } }; }
     }
     const run = (args: Record<string, unknown>) => {
       const deliver = () => runAgentToolForRemoteCaller(request.tool, request.targetId, `${caller.agentId}@${caller.machineId}`, args);

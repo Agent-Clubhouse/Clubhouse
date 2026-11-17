@@ -2,10 +2,22 @@ import type { AnnexCallContext, AnnexDeliveryEpoch, AuthenticatedAnnexOrigin } f
 
 export const FEDERATED_REQUEST_LIMITS = Object.freeze({ queued: 30, perMinute: 20, ttl: 7 * 24 * 60 * 60_000, records: 1000 });
 
-/** An excess call was not admitted. The caller decides whether and when to try new work. */
-export class FederationBackpressure extends Error {
-  constructor(readonly code: 'rate_limited' | 'queue_full', message: string, readonly retryAfterMs: number) { super(message); }
-  details() { return { code: this.code, message: this.message, retryAfterMs: this.retryAfterMs }; }
+/** A protocol refusal is returned before accepting new work. */
+export class FederationRefusal extends Error {
+  constructor(readonly code: 'rate_limited' | 'queue_full' | 'depth_unrepresentable', message: string, readonly retryAfterMs?: number) { super(message); }
+  details() { return { code: this.code, message: this.message, ...(this.retryAfterMs !== undefined && { retryAfterMs: this.retryAfterMs }) }; }
+}
+export class FederationBackpressure extends FederationRefusal {
+  constructor(code: 'rate_limited' | 'queue_full', message: string, retryAfterMs: number) { super(code, message, retryAfterMs); }
+}
+export function assertFederationDepth(depth: number): void {
+  if (!Number.isSafeInteger(depth) || depth < 0) throw new FederationRefusal('depth_unrepresentable', 'The causal tracing depth cannot be represented safely.');
+}
+/** Tracing has no hop ceiling, but exact ancestry must remain representable. */
+export function nextFederationDepth(depth: number): number {
+  assertFederationDepth(depth);
+  if (depth === Number.MAX_SAFE_INTEGER) throw new FederationRefusal('depth_unrepresentable', 'The next causal tracing depth cannot be represented safely.');
+  return depth + 1;
 }
 
 /** Delivery is a transport fact. Only an explicit receiver report changes outcome. */
@@ -36,7 +48,7 @@ export interface FederatedRequest {
   deliveryId?: string;
   revision: number;
   receivedRevision: number;
-  replies?: { revision: number; outcome: FederationOutcome; text: string; deliveryId?: string; expiresAt?: number; delivery?: FederationDelivery; error?: string }[];
+  replies?: { rateAdmitted?: boolean; revision: number; outcome: FederationOutcome; text: string; deliveryId?: string; expiresAt?: number; delivery?: FederationDelivery; error?: string }[];
   replyPrompts?: { revision: number; outcome: FederationOutcome; text: string; cause: AnnexCallContext; state: 'pending' | 'claimed' | 'accepted' }[];
   duplicates: number;
   revocationNotified?: boolean;
