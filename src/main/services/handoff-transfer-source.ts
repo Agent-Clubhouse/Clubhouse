@@ -1,4 +1,5 @@
 import { createHash } from 'crypto';
+import { handoffTransferDiagnostic, tagHandoffTransferError } from '../../shared/handoff-transfer-diagnostics';
 import type { Handoff, HandoffManifestSummary } from '../../shared/handoffs';
 import type { HandoffTransferBounds, HandoffWorktreeManifest } from '../../shared/handoff-manifest';
 import { HANDOFF_CHUNK_BYTES, HANDOFF_TRANSFER_TIMEOUT_MS, parseHandoffTransferRequest, HandoffTransferBusy } from '../../shared/handoff-transfer';
@@ -48,14 +49,21 @@ export class HandoffTransferSource {
     if (!record || record.id !== id || record.from.machine !== this.options.machine || record.to.machine !== peer || !record.manifest
       || !['offered', 'accepted', 'transferring'].includes(record.state)
       || content && (!record.acceptance || !['accepted', 'transferring'].includes(record.state))
-      || binding !== undefined && this.binding(record, content) !== binding) throw new Error('Handoff transfer unavailable.');
+      || binding !== undefined && this.binding(record, content) !== binding) {
+      const code = !record ? 'record_missing'
+        : record.id !== id || record.from.machine !== this.options.machine || record.to.machine !== peer || !record.manifest ? 'record_identity'
+        : !['offered', 'accepted', 'transferring'].includes(record.state) ? 'record_state'
+        : content && (!record.acceptance || !['accepted', 'transferring'].includes(record.state)) ? 'acceptance' : 'agreement_binding';
+      throw tagHandoffTransferError(new Error('Handoff transfer unavailable.'), code);
+    }
     return record;
   }
 
   private async authorized(id: string, peer: string, content: boolean, binding?: string): Promise<Handoff> {
     const record = this.recordNow(id, peer, content, binding);
     const expected = binding ?? this.binding(record, content);
-    await this.options.authorize(record, peer);
+    try { await this.options.authorize(record, peer); }
+    catch (error) { throw tagHandoffTransferError(error, 'sender_authorization'); }
     return this.recordNow(id, peer, content, expected);
   }
 
@@ -72,12 +80,12 @@ export class HandoffTransferSource {
     for (const [key, item] of this.entries) if (now - item.used > 5 * 60_000) void this.invalidate(key, item);
     let entry = this.entries.get(id);
     const binding = this.binding(record, false);
-    if (entry && entry.binding !== binding) { void this.invalidate(id, entry); throw new Error('Handoff transfer unavailable.'); }
+    if (entry && entry.binding !== binding) { void this.invalidate(id, entry); throw tagHandoffTransferError(new Error('Handoff transfer unavailable.'), 'entry_binding'); }
     if (!entry) {
       if (this.entries.size >= 8) throw new HandoffTransferBusy();
       const current: Entry = { active: true, used: now, binding, source: Promise.resolve(undefined as never) };
       current.source = (async () => {
-        const prepared = await this.options.prepared(record);
+        const prepared = await this.options.prepared(record).catch((error) => { throw handoffTransferDiagnostic(error) === 'unknown' ? tagHandoffTransferError(error, 'prepared_source') : error; });
         beforeRead();
         const policy = prepared.source.secretPolicy;
         const fence = () => { beforeRead(); policy?.assertCurrent(); };
@@ -110,8 +118,8 @@ export class HandoffTransferSource {
     const beforeAct = () => {
       beforeRead();
       authority?.check();
-      secretPolicy?.assertCurrent();
-      if (expired || entry && (!entry.active || this.entries.get(request.id) !== entry)) throw new Error('Handoff transfer expired.');
+      try { secretPolicy?.assertCurrent(); } catch (error) { throw tagHandoffTransferError(error, 'secret_policy'); }
+      if (expired || entry && (!entry.active || this.entries.get(request.id) !== entry)) throw tagHandoffTransferError(new Error('Handoff transfer expired.'), expired ? 'request_expired' : 'entry_expired');
       this.recordNow(request.id, peer, content, binding);
     };
     const assertCurrent = async () => {

@@ -12,7 +12,8 @@ let root: string | undefined;
 let source: HandoffTransferSource | undefined;
 afterEach(async () => { vi.restoreAllMocks(); await source?.close(); source = undefined; if (root) fs.rmSync(root, { recursive: true, force: true }); root = undefined; });
 it.each(['peer-revoked', 'cancelled', 'acceptance-removed', 'record-removed', 'agreement-changed', 'target-changed', 'grant-generation', 'policy-generation'] as const)('P6 real handoff descriptor stat await: %s prevents the next filesystem read and closes its descriptor', async (change) => {
-  root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'binary-fence-')));
+  // Match production's async canonicalization (expands Windows DOS 8.3 aliases).
+  root = await fs.promises.realpath(fs.mkdtempSync(path.join(os.tmpdir(), 'binary-fence-')));
   fs.mkdirSync(path.join(root, 'files'));
   const bytes = Buffer.alloc(300000, 0x71);
   fs.writeFileSync(path.join(root, 'files', 'data.bin'), bytes);
@@ -56,7 +57,8 @@ it.each(['peer-revoked', 'cancelled', 'acceptance-removed', 'record-removed', 'a
 });
 
 it.each(['cancelled', 'grant-generation'] as const)('P6 real handoff path stat await: %s prevents the verification open', async (change) => {
-  root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'binary-fence-')));
+  // Match production's async canonicalization (expands Windows DOS 8.3 aliases).
+  root = await fs.promises.realpath(fs.mkdtempSync(path.join(os.tmpdir(), 'binary-fence-')));
   fs.mkdirSync(path.join(root, 'files'));
   const bytes = Buffer.alloc(300000, 0x71);
   fs.writeFileSync(path.join(root, 'files', 'data.bin'), bytes);
@@ -78,13 +80,17 @@ it.each(['cancelled', 'grant-generation'] as const)('P6 real handoff path stat a
   vi.spyOn(fs.promises, 'lstat').mockImplementation((async (...args: unknown[]) => {
     const result = await (lstat as (...args: unknown[]) => Promise<unknown>)(...args);
     // sourceStat(file), then inspect's own sourceStat(file), immediately before open.
-    if (args[0] === path.join(root!, 'files', 'data.bin') && ++count === 2) { enter(); await gate; }
+    if (path.relative(path.join(root!, 'files', 'data.bin'), String(args[0])) === '' && ++count === 2) { enter(); await gate; }
     return result;
   }) as any);
   const open = vi.spyOn(fs.promises, 'open');
   const pending = source.receive(peer, { op: 'read', id: record.id, file: 0, offset: 0 }).catch((e) => e);
-  await entered;
-  if (change === 'cancelled') record.state = 'cancelled'; else generation++;
-  release();
-  expect((await pending) instanceof Error).toBe(true); expect(open).not.toHaveBeenCalled();
+  try {
+    // If the path is not observed, fail promptly instead of hanging until the
+    // test timeout and leaving an owned service operation behind.
+    await Promise.race([entered, pending.then(() => { throw new Error('service completed before stat hold'); })]);
+    if (change === 'cancelled') record.state = 'cancelled'; else generation++;
+    release();
+    expect((await pending) instanceof Error).toBe(true); expect(open).not.toHaveBeenCalled();
+  } finally { release(); await pending; }
 });

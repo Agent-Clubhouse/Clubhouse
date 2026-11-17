@@ -172,7 +172,8 @@ handoff case on its original run and retry #1. Both retained failures showed
 the first `transferring` transition. The unrelated Windows telemetry failure
 was left unchanged. No local E2E or Playwright was run.
 
-**Root cause:** handoff acceptance/progress calls `notifyToolGateChange`, but
+**Reproduced contributor (not sufficient to fix the two-app CI failure):**
+handoff acceptance/progress calls `notifyToolGateChange`, but
 the sender's lease treated every generic tool-list notification as revocation.
 Acceptance synchronization can overlap real initial-manifest verification.
 That ordinary notification invalidated the unchanged authority, refused the
@@ -233,3 +234,47 @@ remain the previously validated fresh install, with no package/lockfile changes.
 Full commands and output are in `/tmp/annex-p6-ci-final-{tsc,lint,targeted,
 phone-fixture}.log`, with gate START/END at `/tmp/annex-p6-ci-final-original.log`.
 No follow-up E2E was run locally; the unchanged E2E spec will rerun in CI.
+
+
+## CI diagnostic follow-up (run 44162315523)
+
+The unchanged E2E still fails on both Ubuntu and Windows at `a8ab12294`.
+The notification correction above reproduced a real independent refusal, but
+was not sufficient to explain or fix the real TLS/two-desktop path. Downloaded
+`gh run view 44162315523 --log-failed` and all `gh run download 44162315523`
+artifacts into `/tmp/annex-p6-a8ab-ci-failed.log` and
+`/tmp/annex-p6-a8ab-artifacts/`. Both original/retry traces contain only
+`offered → accepted → failed`, `verification/verification_failed`; sender
+route logging and HTTP responses discard the underlying guard reason. These
+original CI failures remain evidence; no actual E2E root cause is claimed yet.
+
+This follow-up changes diagnostics, not guard predicates: sender refusals
+carry a fixed allowlisted label for record/binding, lease authority generation,
+grant/policy, expiry, snapshot or peer/link checks. Error identity/classes,
+status codes and failure step/code remain unchanged. The desktop HTTP error
+and sanitized handoff history/CI attachment preserve that label; arbitrary
+error text, paths and identifiers cannot become diagnostic labels. Snapshot
+error wrapping preserves the original label. CI must supply the actual failing
+label before any further guard change.
+
+Windows negative-test holds now canonicalize fixture paths with the same async
+`realpath` as production, compare with `path.relative` for Windows casing, fail
+promptly if the service finishes before entering the real `lstat` hold, and
+release the hold in `finally`. The cancelled/grant-generation cases still
+assert no verification open after the real stat await. No timeout increase,
+skip, local E2E or Playwright run was used.
+
+Gated tier-4 focused run `/tmp/annex-p6-diagnostics-original.log`: 40 tests
+passed (20:08:57Z). Gated tier-4 `tsc --noEmit` passed 20:10:39Z–20:10:48Z.
+Gated tier-4 final batch 20:11:38Z–20:12:59Z passed lint, 51 targeted tests,
+2 selected server tests, all 46 mutants and 66 phone fixtures. Commands and
+outputs: `/tmp/annex-p6-diagnostic-final-{lint,targeted,server,mutants,fixture}.log`;
+original-main/rejected-head/approved-head negative controls and every expected
+FAIL are retained in `/tmp/annex-p6-diagnostic-controls/`. The fresh local
+install remains unchanged. No new candidate FAIL or admission refusal occurred
+in these diagnostic runs; Windows execution and the E2E result await CI.
+Final label-refinement recheck at tier 4 **20:15:11Z–20:16:28Z** repeated
+lint, 51 focused tests, 2 server tests, 46 mutants and 66 phone fixtures: all
+PASS; receipt `/tmp/annex-p6-diagnostic-final-recheck.log`.
+Final tier-4 TypeScript recheck **20:16:37Z–20:16:45Z** PASS; receipt
+`/tmp/annex-p6-diagnostic-tsc-recheck.log`.

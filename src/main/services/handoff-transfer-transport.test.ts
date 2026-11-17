@@ -42,3 +42,16 @@ it('bounds a never-settling local sample too', async () => {
   await vi.advanceTimersByTimeAsync(HANDOFF_TRANSFER_TIMEOUT_MS + 1); await pending;
   expect(state.post).not.toHaveBeenCalled();
 });
+it.each(['agreement_binding', 'lease_authority', 'peer_or_link', 'private/path secret'])('propagates only allowlisted HTTP refusal diagnostic %s', async (reason) => {
+  state.post.mockResolvedValue({ status: 400, body: { error: 'handoff_transfer_refused', reason } });
+  const error = await requestHandoffTransfer(record(), request).catch((value) => value);
+  expect(error).toBeInstanceOf(HandoffTransferRefused);
+  expect(error.message).toBe(`Handoff transfer refused: ${reason === 'private/path secret' ? 'unknown' : reason}.`);
+});
+it('propagates a tagged local refusal through the same diagnostic allowlist', async () => {
+  const { tagHandoffTransferError } = await import('../../shared/handoff-transfer-diagnostics');
+  state.local.mockRejectedValue(tagHandoffTransferError(new Error('private verification detail'), 'lease_config_generation'));
+  const error = await requestHandoffTransfer(record(state.machine), request).catch((value) => value);
+  expect(error.message).toBe('Handoff transfer refused: lease_config_generation.');
+  expect(error.message).not.toContain('private');
+});

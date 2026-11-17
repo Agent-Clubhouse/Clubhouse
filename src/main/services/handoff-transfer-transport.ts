@@ -1,3 +1,4 @@
+import { handoffTransferDiagnostic } from '../../shared/handoff-transfer-diagnostics';
 import { createHash } from 'crypto';
 import { canonicalHandoffManifest, parseHandoffManifest, summarizeHandoffManifest, type HandoffTransferBounds } from '../../shared/handoff-manifest';
 import { HANDOFF_TRANSFER_ROUTE, HANDOFF_TRANSFER_TIMEOUT_MS, HANDOFF_TRANSFER_BODY_BYTES, HandoffTransferBusy, type HandoffTransferRequest } from '../../shared/handoff-transfer';
@@ -19,11 +20,11 @@ export async function requestHandoffTransfer(record: Handoff, request: HandoffTr
         try { return await (await import('./handoff-host')).receiveHandoffTransfer(record.to.machine, request); }
         catch (error) {
           if (error instanceof HandoffTransferBusy) throw new HandoffTransferInterrupted();
-          throw new HandoffTransferRefused(); // Local admission/verification failures match the HTTP 400 boundary.
+          throw new HandoffTransferRefused(handoffTransferDiagnostic(error)); // Local admission/verification failures match the HTTP 400 boundary.
         }
       }
       const response = await postToMachine(record.from.machine, HANDOFF_TRANSFER_ROUTE, request, { signal: controller.signal, maxResponseBytes: HANDOFF_TRANSFER_BODY_BYTES });
-      if ([400, 403, 404].includes(response.status)) throw new HandoffTransferRefused();
+      if ([400, 403, 404].includes(response.status)) throw new HandoffTransferRefused(response.body && typeof response.body === 'object' && 'reason' in response.body ? response.body.reason : undefined);
       if (response.status !== 200) throw new HandoffTransferInterrupted();
       return response.body;
     };

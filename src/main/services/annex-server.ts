@@ -1,3 +1,4 @@
+import { handoffTransferDiagnostic, tagHandoffTransferError } from '../../shared/handoff-transfer-diagnostics';
 import { mobileProjectLinks, MOBILE_PROJECT_LINKS_EVENT } from './mobile-project-links';
 import { hydrateProjectLinks, projectLinksStore } from './project-links-store';
 import { projectLinksCapabilities, receiveProjectLinks } from './project-links-network';
@@ -3880,14 +3881,16 @@ async function handleNetworkHandoffTransferRoute(ctx: AnnexRouteContext): Promis
   if (agentCallPeer(ctx) !== machine) { sendJson(ctx.res, 403, { error: 'not_a_computer' }); return; }
   try {
     const beforeRead = () => {
-      if (ctx.principal?.via === 'reverse' && !reverseRequestLive(ctx.req) || !stillAuthorized(ctx.principal, authorizerDeps) || agentCallPeer(ctx) !== machine) throw new Error('authorization_revoked');
+      if (ctx.principal?.via === 'reverse' && !reverseRequestLive(ctx.req) || !stillAuthorized(ctx.principal, authorizerDeps) || agentCallPeer(ctx) !== machine) throw tagHandoffTransferError(new Error('authorization_revoked'), 'peer_or_link');
     };
     const reply = await receiveHandoffTransfer(machine, body, beforeRead);
     if (ctx.requireMtls()) return;
     if (agentCallPeer(ctx) !== machine) { sendJson(ctx.res, 403, { error: 'not_a_computer' }); return; }
     sendJson(ctx.res, 200, reply);
-  } catch (error) { // telemetry-exempt: no content, paths or private storage diagnostics in failures
-    sendJson(ctx.res, error instanceof HandoffTransferBusy ? 503 : 400, { error: 'handoff_transfer_refused' });
+  } catch (error) {
+    const diagnostic = handoffTransferDiagnostic(error);
+    appLog('core:annex', 'warn', 'Handoff transfer refused', { meta: { diagnostic, operation: (body as { op?: unknown })?.op === 'read' ? 'read' : 'manifest', via: ctx.principal.via } });
+    sendJson(ctx.res, error instanceof HandoffTransferBusy ? 503 : 400, { error: 'handoff_transfer_refused', reason: diagnostic });
   }
 }
 

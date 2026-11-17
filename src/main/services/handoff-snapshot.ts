@@ -1,3 +1,4 @@
+import { handoffTransferDiagnostic, tagHandoffTransferError } from '../../shared/handoff-transfer-diagnostics';
 import { execFile, spawn } from 'child_process';
 import { createHash, timingSafeEqual } from 'crypto';
 import * as fs from 'fs';
@@ -92,7 +93,7 @@ interface GitModeAuthority {
 function failure(error: unknown): HandoffSnapshotError {
   if (error instanceof Error && error.message === 'Invalid handoff manifest.') return new HandoffSnapshotError('unsafe_entry');
   if (error instanceof Error && error.message === 'Handoff manifest is too large.') return new HandoffSnapshotError('bounds_exceeded');
-  return error instanceof HandoffSnapshotError ? error : new HandoffSnapshotError('filesystem_failed');
+  return error instanceof HandoffSnapshotError ? error : tagHandoffTransferError(new HandoffSnapshotError('filesystem_failed'), handoffTransferDiagnostic(error));
 }
 
 function gitEnvironment(): NodeJS.ProcessEnv {

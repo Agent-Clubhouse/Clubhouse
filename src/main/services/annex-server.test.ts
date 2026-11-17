@@ -2075,7 +2075,7 @@ describe('annex-server', () => {
     expect(receiveHandoffTransfer).toHaveBeenCalledWith(member.fingerprint, body, expect.any(Function));
     vi.mocked(receiveHandoffTransfer).mockRejectedValueOnce(new Error('private-host/private-path secret'));
     const failed = await request(port, 'POST', route, body);
-    expect(failed.status).toBe(400); expect(JSON.parse(failed.body)).toEqual({ error: 'handoff_transfer_refused' });
+    expect(failed.status).toBe(400); expect(JSON.parse(failed.body)).toEqual({ error: 'handoff_transfer_refused', reason: 'unknown' });
     vi.mocked(annexPeers.listPeers).mockReturnValue([{ ...member, kind: 'phone' }]);
     expect((await request(port, 'POST', route, body)).status).toBe(403);
     expect(receiveHandoffTransfer).toHaveBeenCalledTimes(2);

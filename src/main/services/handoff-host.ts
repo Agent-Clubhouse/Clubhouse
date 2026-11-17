@@ -1,3 +1,4 @@
+import { tagHandoffTransferError, type HandoffTransferDiagnostic } from '../../shared/handoff-transfer-diagnostics';
 import { getAgentGrantChanges, getAgentGrantRevision } from './agent-grants-store';
 import { localDirectionTools } from '../../shared/connection-grants';
 import { deliverNow } from './clubhouse-mcp/tools/helper-delivery';
@@ -200,19 +201,25 @@ function transferAuthority(record: Handoff, peer: string) {
     [...localIds].map((id) => [id, isOrchestrationEnabled(id), isCrossProjectEnabled(id), orchestrationControl(id), callerGrants(id)])]);
   const expected = stamp();
   let changed = false;
-  const off = [onConnectionGrantsChanged(() => { changed = true; }),
-    bindingManager.onChange(() => { changed = true; }),
+  let changeReason: HandoffTransferDiagnostic = 'lease_notification';
+  const authorityDiagnostic = (): HandoffTransferDiagnostic => {
+    const before = JSON.parse(expected) as unknown[]; const current = JSON.parse(stamp()) as unknown[];
+    const codes = ['lease_config_generation', 'lease_saved_grants', 'lease_grant_revision', 'lease_dispatcher', 'lease_dispatcher', 'lease_agent_authority'] as const;
+    return codes.find((_, index) => JSON.stringify(before[index]) !== JSON.stringify(current[index])) ?? 'lease_authority';
+  };
+  const off = [onConnectionGrantsChanged(() => { changed = true; changeReason = 'lease_connection_notification'; }),
+    bindingManager.onChange(() => { changed = true; changeReason = 'lease_binding_notification'; }),
     // This also announces handoff acceptance/progress and tool-list refreshes.
     // Invalidate only a real authority change, retaining the invalidation even
     // if the setting is restored before the pending filesystem await resolves.
-    onOrchestrationGateChange((id) => { if (localIds.has(id) && stamp() !== expected) changed = true; })];
+    onOrchestrationGateChange((id) => { if (localIds.has(id) && stamp() !== expected) { changed = true; changeReason = authorityDiagnostic(); } })];
   return {
     check: () => {
       if (changed || stamp() !== expected || peer !== ownMachine() && !isNetworkComputer(peer)
         || record.to.machine !== ownMachine() && !isNetworkComputer(record.to.machine)
         || record.from.machine !== ownMachine() && (!isNetworkComputer(record.from.machine) || !acceptsRemote())
         || 'agentId' in record.to && !(record.to.machine === ownMachine() && isDispatcherAgentId(record.to.agentId))
-          && !hasConnection(record.from, record.to)) throw new HandoffAuthorizationChanged();
+          && !hasConnection(record.from, record.to)) throw tagHandoffTransferError(new HandoffAuthorizationChanged(), changed ? changeReason : stamp() !== expected ? authorityDiagnostic() : 'lease_peer');
     },
     dispose: () => { for (const unsubscribe of off) unsubscribe(); },
   };

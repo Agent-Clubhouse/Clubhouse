@@ -1,3 +1,4 @@
+import { parseHandoffTransferDiagnostic, type HandoffTransferDiagnostic } from '../../shared/handoff-transfer-diagnostics';
 import * as fs from 'fs';
 import type { FileHandle } from 'fs/promises';
 import * as path from 'path';
@@ -14,7 +15,8 @@ export class HandoffTransferInterrupted extends Error {
 }
 /** Transport distinguishes a permanent peer refusal from a disconnected socket. */
 export class HandoffTransferRefused extends Error {
-  constructor() { super('Handoff transfer refused.'); }
+  readonly diagnostic: HandoffTransferDiagnostic;
+  constructor(code: unknown = 'unknown') { const diagnostic = parseHandoffTransferDiagnostic(code); super(`Handoff transfer refused: ${diagnostic}.`); this.diagnostic = diagnostic; }
 }
 const object = (raw: unknown): raw is Record<string, unknown> => !!raw && typeof raw === 'object' && !Array.isArray(raw);
 const identity = (stat: fs.BigIntStats) => [stat.dev, stat.ino, stat.mode].join(':');

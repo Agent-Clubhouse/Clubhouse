@@ -1,3 +1,4 @@
+import { HANDOFF_TRANSFER_DIAGNOSTICS } from '../src/shared/handoff-transfer-diagnostics';
 import { HANDOFF_STATES } from '../src/shared/handoffs';
 
 const steps = ['authorization', 'transfer', 'verification', 'apply', 'wake', 'recovery'];
@@ -11,6 +12,8 @@ const choice = (value: unknown, allowed: readonly string[]) => typeof value === 
 
 function reason(value: unknown) {
   if (typeof value !== 'string' || !value) return { reason: 'not_recorded' };
+  const transfer = /^Handoff transfer refused: ([a-z_]+)\.$/.exec(value);
+  if (transfer && (HANDOFF_TRANSFER_DIAGNOSTICS as readonly string[]).includes(transfer[1])) return { reason: 'transfer', diagnostic: transfer[1] };
   const snapshot = /^Handoff snapshot failed: ([a-z_]+)(?: \(([^)]*)\))?\.(?: Git: ([a-z-]+); exit=(unknown|[0-9]{1,3}); stderr=([a-z_]+)\.)?$/.exec(value);
   if (snapshot && snapshotCodes.includes(snapshot[1])) return {
     reason: 'snapshot', snapshotCode: snapshot[1],
