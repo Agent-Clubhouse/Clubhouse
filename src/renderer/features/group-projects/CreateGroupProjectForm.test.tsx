@@ -133,6 +133,29 @@ describe('starting membership controls', () => {
     expect(screen.queryByLabelText('Bea (Atlas on Laptop)')).not.toBeInTheDocument();
   });
 
+  it('coalesces the notifications produced by one satellite snapshot into one preview read (#3661 QA)', async () => {
+    let snapshot!: (machine: string) => void;
+    let computers!: (satellites: unknown[]) => void;
+    let membership!: (id: string) => void;
+    vi.spyOn(annexClientStore, 'onSatelliteSnapshot').mockImplementation((fn) => { snapshot = fn; return () => {}; });
+    vi.spyOn(window.clubhouse.annexClient, 'onSatellitesChanged').mockImplementation((fn) => { computers = fn; return () => {}; });
+    vi.spyOn(window.clubhouse.groupProject, 'onMembershipChanged').mockImplementation((fn) => { membership = fn; return () => {}; });
+    render(<CreateGroupProject defaultScope={scope} />);
+    await screen.findByText('2 agents will join now.');
+    const read = vi.mocked(window.clubhouse.groupProject.previewAutoJoin);
+    read.mockClear();
+
+    // annex-client emits both events for every accepted snapshot. The main
+    // membership watcher also announces each existing group for that snapshot.
+    await act(async () => {
+      computers([]);
+      snapshot('computer');
+      for (let group = 0; group < 10; group++) membership(`gp-${group}`);
+    });
+    await waitFor(() => expect(read).toHaveBeenCalled());
+    expect(read).toHaveBeenCalledTimes(1);
+  });
+
   it('previews coverage from the same read: a linked copy covered, an unchecked one not verified, a repository match offered', async () => {
     let changed!: (id: string) => void;
     vi.spyOn(window.clubhouse.groupProject, 'onMembershipChanged').mockImplementation((fn) => { changed = fn; return () => {}; });
