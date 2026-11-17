@@ -1,3 +1,5 @@
+import { createHash, webcrypto } from 'node:crypto';
+import { connectionApprovalView } from '../../../shared/approval-routing';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import type { Agent } from '../../../shared/types';
@@ -33,6 +35,7 @@ const lead = (over: Partial<FollowedLead> = {}, state: Partial<DispatcherLeadSta
 });
 
 beforeEach(() => {
+  vi.stubGlobal('crypto', webcrypto);
   _resetLeadStoreForTesting();
   useAnnexClientStore.setState({ satellites: [] });
   window.clubhouse.dispatcher.getLead = vi.fn(async () => useLeadStore.getState().state!);
@@ -64,7 +67,7 @@ describe('the follower’s Dispatcher pane (#3352, #3353)', () => {
     expect(screen.getByTestId('runtime-pane')).toBeTruthy();
     expect(screen.getByTestId('dispatcher-remote-approval')).toHaveTextContent('Mini: Dispatcher wants to connect agents.');
     fireEvent.click(screen.getByTestId('dispatcher-remote-approval-allow_once'));
-    await waitFor(() => expect(window.clubhouse.dispatcher.answerRemoteApproval).toHaveBeenCalledWith('mini', 'gr_connection', 'allow_once'));
+    await waitFor(() => expect(window.clubhouse.dispatcher.answerRemoteApproval).toHaveBeenCalledWith('mini', 'gr_connection', 'allow_once', createHash('sha256').update(connectionApprovalView(request)!.canonical!).digest('hex')));
   });
 
   it('keeps this computer’s earlier chat one click away, read-only, and comes back', () => {

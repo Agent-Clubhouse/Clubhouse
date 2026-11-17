@@ -345,6 +345,22 @@ malformed addresses and lasting grant requests confer no ownership. An endpoint
 need not exist to show the request; the requesting computer still validates the
 operation when it runs.
 
+Remote connection calls show a structured review of the tool, `from`, `to`,
+`twoWay`, and allowed/disabled tools, separately from the JSON preview. Even a
+padded row shows these operation fields. Unknown argument keys, invalid fields,
+unreadable JSON or arguments over 4,000 characters disable its answers with
+“Answer on <computer>”; review that request on its originating computer.
+
+For a reviewed connection call, the button computes SHA-256 of the canonical
+operation and exact arguments it rendered. Main checks that digest against the
+latest snapshot and includes it as `grant.answer.reviewedDigest`. The originating
+computer compares it against the still-pending stored request before consuming
+it. Changed arguments are refused as `grant_request_changed`; no answer is
+applied. Updated receivers require the digest for desktop connection answers.
+An older receiver may ignore the digest and cannot provide this protection;
+versions with strict command-field validation reject the new field. There is no
+automatic retry without the digest. Update both computers for this guarantee.
+
 They show while this computer's Dispatcher is on: with it off there's no chat
 or row to show them in, so they're answered on their own computers.
 
@@ -364,7 +380,7 @@ or row to show them in, so they're answered on their own computers.
   controller link, message or forwarded news reaches it, and a test scans the
   source for any other caller.
 - **Left to its computer.** A desktop update's restart choice, and an answer
-  the lead doesn't know, show "Answer it on <computer>." An offline computer's
+  the lead doesn't know, show "Answer on <computer>." An offline computer's
   requests aren't listed.
 
 ### Authorized agents reaching another computer's Dispatcher

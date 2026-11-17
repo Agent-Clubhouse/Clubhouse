@@ -157,8 +157,8 @@ export function registerDispatcherHandlers(): void {
   });
   // On the lead (#3354): only a person's click in its chat reaches this. No tool, controller or message does.
   ipcMain.handle(IPC.DISPATCHER.ANSWER_REMOTE_APPROVAL, withValidatedArgs(
-    [stringArg({ maxLength: 200 }), stringArg({ maxLength: 200 }), stringArg({ maxLength: 40 })],
-    async (_event, machine, requestId, answer): Promise<void> => answerFollowerApproval(machine, requestId, answer),
+    [stringArg({ maxLength: 200 }), stringArg({ maxLength: 200 }), stringArg({ maxLength: 40 }), stringArg({ optional: true, maxLength: 64 })],
+    async (_event, machine, requestId, answer, reviewedDigest): Promise<void> => answerFollowerApproval(machine, requestId, answer, reviewedDigest),
   ));
   const broadcastLead = () => broadcastToAllWindows(IPC.DISPATCHER.LEAD_CHANGED, leadView());
   onLeadChanged(broadcastLead);

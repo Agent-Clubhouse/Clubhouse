@@ -14,7 +14,8 @@
  */
 
 import { MOBILE_GRANT_ANSWERS } from '../../shared/mobile-control';
-import { connectionApprovalInvolves } from '../../shared/approval-routing';
+import { connectionApprovalInvolves, connectionApprovalView } from '../../shared/approval-routing';
+import { createHash } from 'node:crypto';
 import { getIdentity } from './annex-identity';
 import { grantRowVisibleTo } from './mobile-grant-requests';
 import * as annexClient from './annex-client';
@@ -25,6 +26,7 @@ import { appLog } from './log-service';
 /** Refusals in words, from the computer the request is on. */
 const REFUSALS: Record<string, string> = {
   grant_request_not_found: 'It was already answered, or it ended, on that computer.',
+  grant_request_changed: 'This request changed or cannot be reviewed safely here. Answer it on its own computer.',
   grant_answer_not_offered: 'That answer isn’t offered for this request. Answer it on that computer.',
   grant_answer_failed: 'That computer couldn’t apply the answer. Answer it there.',
   authorization_revoked: 'This computer is no longer paired with that one.',
@@ -32,7 +34,7 @@ const REFUSALS: Record<string, string> = {
   command_capacity: 'That computer is busy. Try again in a moment.',
 };
 
-export async function answerFollowerApproval(machine: string, requestId: string, answer: string): Promise<void> {
+export async function answerFollowerApproval(machine: string, requestId: string, answer: string, reviewedDigest?: string): Promise<void> {
   if (!(MOBILE_GRANT_ANSWERS as readonly string[]).includes(answer)) throw new Error('That isn’t an answer a request takes.');
   const fp = machine.toLowerCase();
   if (!listPeers().some((p) => p.fingerprint.toLowerCase() === fp && p.role === 'member' && p.kind !== 'phone' && !peerNeedsPairing(p))) {
@@ -49,7 +51,11 @@ export async function answerFollowerApproval(machine: string, requestId: string,
     throw new Error('Only the lead or a computer involved in this request can answer it.');
   }
   if (!row.answers.includes(answer as typeof row.answers[number])) throw new Error(REFUSALS.grant_answer_not_offered);
-  const receipt = await annexClient.answerRemoteGrantRequest(key, requestId, answer) as { status?: string; error?: { code?: string; message?: string } } | null;
+  const connection = connectionApprovalView(row);
+  if (connection && (!connection.canonical || !reviewedDigest
+    || createHash('sha256').update(connection.canonical).digest('hex') !== reviewedDigest)) throw new Error(REFUSALS.grant_request_changed);
+  const receipt = await (connection ? annexClient.answerRemoteGrantRequest(key, requestId, answer, reviewedDigest)
+    : annexClient.answerRemoteGrantRequest(key, requestId, answer)) as { status?: string; error?: { code?: string; message?: string } } | null;
   if (receipt?.status === 'completed') {
     appLog('core:dispatcher', 'info', 'Answered another computer’s request from this computer', { meta: { answer } });
     return;

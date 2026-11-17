@@ -31,7 +31,7 @@ export type MobileCommand = CommandBase & (
   | { type: 'helper.approve'; requestId: string; force?: boolean }
   | { type: 'helper.decline'; requestId: string }
   // A Clubhouse permission request waiting on the user (#3205): an Ask-first call or a request_grant ask.
-  | { type: 'grant.answer'; requestId: string; answer: MobileGrantAnswer; updateMode?: import('./app-update').AppUpdateMode }
+  | { type: 'grant.answer'; requestId: string; answer: MobileGrantAnswer; reviewedDigest?: string; updateMode?: import('./app-update').AppUpdateMode }
   | { type: 'app.update.check' }
   | { type: 'app.update.request' }
   | { type: 'app.update.cancel'; requestId: string }

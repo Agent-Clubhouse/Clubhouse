@@ -44,7 +44,7 @@ export const MOBILE_COMMAND_FIELDS: Readonly<Record<MobileCommand['type'], reado
   'project.setInactive': ['projectId', 'inactive'],
   'helper.approve': ['requestId', 'force'],
   'helper.decline': ['requestId'],
-  'grant.answer': ['requestId', 'answer', 'updateMode'],
+  'grant.answer': ['requestId', 'answer', 'updateMode', 'reviewedDigest'],
   'app.update.check': [],
   'app.update.request': [],
   'app.update.cancel': ['requestId'],

@@ -3070,8 +3070,8 @@ describe('annex-client', () => {
       vi.mocked(annexPeers.getPeer).mockReturnValue({ fingerprint: FP, tlsCertificatePem: 'B-CERT', tlsCertificateFingerprint: 'B-PIN' } as never);
       answers.push({ status: 200, body: { epoch: 'ep' } });
       answers.push({ status: 200, body: { status: 'completed', result: { requestId: 'gr_connection' } } });
-      await expect(annexClient.answerRemoteGrantRequest(FP, 'gr_connection', 'allow_once')).resolves.toMatchObject({ status: 'completed' });
-      expect(requests[1]).toMatchObject({ method: 'POST', body: { type: 'grant.answer', requestId: 'gr_connection', answer: 'allow_once', version: 1, epoch: 'ep' } });
+      await expect(annexClient.answerRemoteGrantRequest(FP, 'gr_connection', 'allow_once', 'a'.repeat(64))).resolves.toMatchObject({ status: 'completed' });
+      expect(requests[1]).toMatchObject({ method: 'POST', body: { type: 'grant.answer', requestId: 'gr_connection', answer: 'allow_once', reviewedDigest: 'a'.repeat(64), version: 1, epoch: 'ep' } });
       expect(requests[1].url).toMatch(/^https:.*\/api\/v1\/mobile\/commands$/);
       expect(annexTls.createPinnedTlsClientOptions).toHaveBeenCalledWith(LOCAL_IDENTITY, { certPem: 'B-CERT', fingerprint: 'B-PIN' });
       expect(https.request).toHaveBeenLastCalledWith(expect.any(String), expect.objectContaining({ pinned: true, method: 'POST' }), expect.any(Function));

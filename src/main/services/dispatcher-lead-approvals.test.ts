@@ -1,5 +1,8 @@
 /** Human-only cross-computer approvals (#3354, #3654). */
 import * as fs from 'fs';
+import { createHash } from 'node:crypto';
+import { connectionApprovalView } from '../../shared/approval-routing';
+import type { MobileGrantRequest } from '../../shared/mobile-control';
 import * as path from 'path';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -59,8 +62,9 @@ describe('answering another computer’s request from the lead (#3354)', () => {
   it.each(['follower', 'peer'] as const)('lets an involved %s answer, but rechecks the latest snapshot arguments', async (role) => {
     h.role = role;
     h.rows[0] = { ...h.rows[0], actions: ['connection.manage'], toolName: 'connect_agents', arguments: JSON.stringify({ from: 'dispatcher', to: `missing-agent@${h.self.toUpperCase()}` }) };
-    await answerFollowerApproval('LAPTOP', 'gr_1', 'allow_once');
-    expect(annexClient.answerRemoteGrantRequest).toHaveBeenCalledWith('LAPTOP', 'gr_1', 'allow_once');
+    const digest = createHash('sha256').update(connectionApprovalView(h.rows[0] as unknown as MobileGrantRequest)!.canonical!).digest('hex');
+    await answerFollowerApproval('LAPTOP', 'gr_1', 'allow_once', digest);
+    expect(annexClient.answerRemoteGrantRequest).toHaveBeenCalledWith('LAPTOP', 'gr_1', 'allow_once', digest);
     vi.mocked(annexClient.answerRemoteGrantRequest).mockClear();
     h.rows[0].arguments = JSON.stringify({ from: 'dispatcher', to: 'unrelated' });
     await expect(answerFollowerApproval('laptop', 'gr_1', 'decline')).rejects.toThrow('computer involved');
@@ -74,6 +78,19 @@ describe('answering another computer’s request from the lead (#3354)', () => {
     await expect(answerFollowerApproval('laptop', 'gr_1', 'decline')).rejects.toThrow('computer involved');
     h.rows[0] = { ...h.rows[0], actions: ['connection.manage'], toolName: 'connect_agents', arguments: JSON.stringify({ from: 'dispatcher', to: `agent@${h.self}` }) };
     await expect(answerFollowerApproval('laptop', 'gr_1', 'allow_lasting')).rejects.toThrow('isn’t offered');
+    expect(annexClient.answerRemoteGrantRequest).not.toHaveBeenCalled();
+  });
+
+  it('refuses an unreviewed or changed connection and the padded QA reproducer, even for the lead', async () => {
+    const args = { from: 'b', to: `sensitive@${h.self}`, twoWay: true, allow: ['send_file', 'wake_agent'] };
+    h.rows[0] = { ...h.rows[0], actions: ['connection.manage'], toolName: 'connect_agents', arguments: JSON.stringify(args) };
+    const digest = createHash('sha256').update(connectionApprovalView(h.rows[0] as unknown as MobileGrantRequest)!.canonical!).digest('hex');
+    await expect(answerFollowerApproval('laptop', 'gr_1', 'allow_once')).rejects.toThrow('changed or cannot be reviewed');
+    h.rows[0].arguments = JSON.stringify({ ...args, twoWay: false });
+    await expect(answerFollowerApproval('laptop', 'gr_1', 'allow_once', digest)).rejects.toThrow('changed or cannot be reviewed');
+    h.rows[0].arguments = JSON.stringify({ padding: 'x'.repeat(4500), ...args }, null, 2);
+    expect(connectionApprovalView(h.rows[0] as unknown as MobileGrantRequest)).toMatchObject({ from: 'b', to: args.to, twoWay: true, allow: args.allow });
+    await expect(answerFollowerApproval('laptop', 'gr_1', 'allow_once', digest)).rejects.toThrow('changed or cannot be reviewed');
     expect(annexClient.answerRemoteGrantRequest).not.toHaveBeenCalled();
   });
 

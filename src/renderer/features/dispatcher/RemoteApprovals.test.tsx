@@ -1,3 +1,5 @@
+import { createHash, webcrypto } from 'node:crypto';
+import { connectionApprovalView } from '../../../shared/approval-routing';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
@@ -32,6 +34,7 @@ const satellite = (grantRequests: MobileGrantRequest[], state = 'connected') => 
 });
 
 beforeEach(() => {
+  vi.stubGlobal('crypto', webcrypto);
   _resetLeadStoreForTesting();
   window.clubhouse.dispatcher.getLead = vi.fn(async () => useLeadStore.getState().state!);
   window.clubhouse.dispatcher.answerRemoteApproval = vi.fn(async () => {});
@@ -82,7 +85,7 @@ describe('approvals from other computers in the lead’s chat (#3354)', () => {
     rerender(<RemoteApprovals />);
     expect(screen.queryByTestId('dispatcher-remote-approvals')).toBeNull();
     act(() => useAnnexClientStore.setState({ satellites: [satellite([{ ...REQUEST, update: {} as never }])] } as never));
-    expect(screen.getByTestId('dispatcher-remote-approval').textContent).toContain('Answer it on Laptop.');
+    expect(screen.getByTestId('dispatcher-remote-approval').textContent).toContain('Answer on Laptop.');
     expect(approvalLine({ machine: 'laptop', machineName: 'Laptop', request: REQUEST })).toBe(`Laptop: docs-agent w${SUMMARY.slice(1)}`);
   });
 
@@ -98,7 +101,7 @@ describe('approvals from other computers in the lead’s chat (#3354)', () => {
     expect(screen.queryByText(/set_app_setting/)).toBeNull();
     expect(dispatcherNeedsYouLine([], [{ machine: 'laptop', machineName: 'Laptop', request: connection }])?.message).toContain('Laptop: docs-agent');
     fireEvent.click(screen.getByTestId('dispatcher-remote-approval-allow_once'));
-    await waitFor(() => expect(window.clubhouse.dispatcher.answerRemoteApproval).toHaveBeenCalledWith('laptop', 'gr_connection', 'allow_once'));
+    await waitFor(() => expect(window.clubhouse.dispatcher.answerRemoteApproval).toHaveBeenCalledWith('laptop', 'gr_connection', 'allow_once', createHash('sha256').update(connectionApprovalView(connection)!.canonical!).digest('hex')));
     act(() => useAnnexClientStore.setState({ satellites: [satellite([REQUEST])] } as never));
     expect(screen.queryByTestId('dispatcher-remote-approvals')).toBeNull();
   });
@@ -121,6 +124,41 @@ describe('approvals from other computers in the lead’s chat (#3354)', () => {
       useLeadStore.setState({ state: { ...state, choices: state.choices.filter((c) => c.self) } });
     });
     expect(screen.queryByTestId('dispatcher-remote-approval')).toBeNull();
+    expect(window.clubhouse.dispatcher.answerRemoteApproval).not.toHaveBeenCalled();
+  });
+
+  it('shows the structured operation despite QA padding, and disables approval for unknown or oversized args', async () => {
+    const machine = Array(16).fill('ab').join(':');
+    const args = { padding: 'x'.repeat(4500), from: 'b', to: `sensitive@${machine}`, twoWay: true, allow: ['send_file', 'wake_agent'] };
+    const padded = { ...REQUEST, requestId: 'actual', actions: ['connection.manage'], toolName: 'connect_agents', arguments: JSON.stringify(args, null, 2) } as MobileGrantRequest;
+    useLeadStore.setState({ state: { ...LEAD, role: 'follower', choices: LEAD.choices.map((c) => c.self ? { ...c, machine } : c) } });
+    useAnnexClientStore.setState({ satellites: [satellite([padded])] } as never);
+    render(<RemoteApprovals />);
+    await act(async () => {});
+    const structured = screen.getByTestId('dispatcher-remote-connection-details');
+    expect(structured).toHaveTextContent(args.to);
+    expect(structured).toHaveTextContent('from');
+    expect(structured).toHaveTextContent('to');
+    expect(structured).toHaveTextContent('twoWay');
+    expect(structured).toHaveTextContent('true');
+    expect(structured).toHaveTextContent('send_file');
+    expect(structured).toHaveTextContent('wake_agent');
+    expect(screen.getByTestId('dispatcher-remote-approval-allow_once')).toBeDisabled();
+    expect(screen.getByTestId('dispatcher-remote-approval')).toHaveTextContent('Answer on Laptop.');
+    fireEvent.click(screen.getByTestId('dispatcher-remote-approval-allow_once'));
+    expect(window.clubhouse.dispatcher.answerRemoteApproval).not.toHaveBeenCalled();
+    // Small unknown keys also fail closed; size alone is not the guard.
+    act(() => useAnnexClientStore.setState({ satellites: [satellite([{ ...padded, arguments: JSON.stringify({ ...args, padding: '' }) }])] } as never));
+    expect(screen.getByTestId('dispatcher-remote-approval-allow_once')).toBeDisabled();
+  });
+
+  it.each(['{', JSON.stringify({ from: 'b', to: 'a', allow: 'send_file' })])('disables Allow when connection args cannot be represented: %s', async (argumentsText) => {
+    useAnnexClientStore.setState({ satellites: [satellite([{ ...REQUEST, actions: ['connection.manage'], toolName: 'connect_agents', arguments: argumentsText }])] } as never);
+    render(<RemoteApprovals />);
+    await act(async () => {});
+    expect(screen.getByTestId('dispatcher-remote-approval-allow_once')).toBeDisabled();
+    expect(screen.getByTestId('dispatcher-remote-approval')).toHaveTextContent('Answer on Laptop.');
+    fireEvent.click(screen.getByTestId('dispatcher-remote-approval-allow_once'));
     expect(window.clubhouse.dispatcher.answerRemoteApproval).not.toHaveBeenCalled();
   });
 
@@ -181,7 +219,7 @@ describe('a queue of approvals from other computers answers the one acted on (#3
     fireEvent.click(within(rows()[0]).getByTestId('dispatcher-remote-approval-allow_lasting'));
     await waitFor(() => expect(window.clubhouse.dispatcher.answerRemoteApproval).toHaveBeenCalledExactlyOnceWith('laptop', 'gr_2', 'allow_lasting'));
     // Once it is answered, only the update is left: shown as before, to be answered on Laptop.
-    await waitFor(() => expect(rows()[0].textContent).toContain('Answer it on Laptop.'));
+    await waitFor(() => expect(rows()[0].textContent).toContain('Answer on Laptop.'));
   });
 
   it('an answered request does not block the next; focus goes to the count, and a repeated key answers nothing more', async () => {
