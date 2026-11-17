@@ -42,9 +42,9 @@ describe('PermissionCard', () => {
     expect(actions).not.toHaveClass('overflow-y-auto');
   });
 
-  it('Allow and Decline are the last row of the pinned card whatever else is offered (#3606)', () => {
+  it('Allow and Decline are the footer\'s last row, and the other options are in full at the end of the body (#3606)', () => {
     const options = [
-      { optionId: 'always', kind: 'allow_always' as const, label: 'Always allow', scope: 'Bash(npm test:*)' },
+      { optionId: 'always', kind: 'allow_always' as const, label: 'Always allow commands starting with npm test and everything under it', scope: 'Bash(npm test:*) in every workspace of this project' },
       { optionId: 'allow_once', kind: 'allow_once' as const, label: 'Allow once' },
       { optionId: 'session', kind: 'allow_session' as const, label: 'Allow for the session' },
       { optionId: 'reject_once', kind: 'reject_once' as const, label: 'Deny' },
@@ -52,16 +52,21 @@ describe('PermissionCard', () => {
     const respond = vi.fn(async () => true);
     render(<PermissionCard compact request={request({ options })} queueSize={1} agentName="a" onRespond={respond} />);
     const actions = screen.getByTestId('chat-permission-actions');
-    const last = actions.lastElementChild as HTMLElement;
-    expect(last).toHaveAttribute('data-testid', 'chat-permission-primary-actions');
-    expect(within(last).getAllByRole('button').map((b) => b.getAttribute('data-option-kind'))).toEqual(['allow_once', 'reject_once']);
-    // The extras are above it, and their number keys still count the provider's order.
+    const body = screen.getByTestId('chat-permission-body');
+    // The footer is the bottom row alone: its height doesn't depend on how many options there are.
+    expect(actions.lastElementChild).toHaveAttribute('data-testid', 'chat-permission-primary-actions');
+    expect(within(actions).getAllByRole('button').map((b) => b.getAttribute('data-option-kind'))).toEqual(['allow_once', 'reject_once']);
+    // The rest are the last thing in the scrolling body, directly above it, wrapping and not truncated.
     const extras = screen.getByTestId('chat-permission-extra-options');
-    expect(extras.compareDocumentPosition(last) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(body.lastElementChild).toBe(extras);
+    expect(extras).toHaveClass('flex-wrap');
     expect(within(extras).getAllByRole('button').map((b) => b.getAttribute('data-option-kind'))).toEqual(['allow_always', 'allow_session']);
-    // One line however many there are: no wrapping, and a truncated label keeps its full text as the title.
-    expect(extras).not.toHaveClass('flex-wrap');
-    expect(within(extras).getAllByRole('button')[0]).toHaveAttribute('title', 'Always allow Bash(npm test:*)');
+    const always = within(extras).getAllByRole('button')[0];
+    expect(always.className).not.toMatch(/(^| )h-\[30px\]/);
+    expect(always.querySelector('.truncate')).toBeNull();
+    expect(always).toHaveTextContent('Always allow commands starting with npm test and everything under it');
+    expect(always).toHaveTextContent('Bash(npm test:*) in every workspace of this project');
+    // Number keys still count the provider's order.
     fireEvent.keyDown(screen.getByTestId('chat-permission'), { key: '1' });
     expect(respond).toHaveBeenCalledWith('r1', 'always');
   });

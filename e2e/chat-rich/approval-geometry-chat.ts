@@ -1,7 +1,7 @@
 import { expect, type Locator } from '@playwright/test';
 import type { ChatFixtureCli } from '../../src/main/orchestrators/adapters/testing/fake-cli';
 import type { ScriptApproval, ScriptTurn } from '../../src/main/orchestrators/adapters/testing/chat-script';
-import { GeometryLog, originalSize, setWindowSize, WINDOW_SIZES } from '../approval-geometry';
+import { expectReachable, GeometryLog, MOVE_TOLERANCE_PX, originalSize, setWindowSize, settledBox, WINDOW_SIZES } from '../approval-geometry';
 import { chatDom, openRichChat, TURN_TIMEOUT } from './harness';
 
 /**
@@ -66,7 +66,16 @@ export async function expectPinnedApprovalsAnchored(cli: ChatFixtureCli): Promis
         });
         // What is being approved always shows: the request body keeps at least 48px, even with five options at 640 wide.
         expect(notes.bodyHeight, `${size.label}, request ${i + 1}: the request body is ${notes.bodyHeight}px high`).toBeGreaterThanOrEqual(48);
-        await log.record(window, size, i + 1, { allow, decline, scrollers: [pinned, pinned.locator('[data-testid="chat-permission-body"]')] }, notes);
+        const measured = await log.record(window, size, i + 1, { allow, decline, scrollers: [pinned, pinned.locator('[data-testid="chat-permission-body"]')] }, notes);
+        // The other options are at the end of the card's body, in full: scroll to each, and a click there lands on it,
+        // while Allow, in the footer, stays where it was.
+        const extras = pinned.locator('[data-testid="chat-permission-extra-options"] button');
+        for (let k = 0; k < await extras.count(); k++) {
+          const extra = extras.nth(k);
+          await extra.scrollIntoViewIfNeeded();
+          await expectReachable(extra);
+          expect(Math.abs((await settledBox(allow)).y - measured.box.y), `${size.label}, request ${i + 1}: Allow moved while the extra options were scrolled to`).toBeLessThanOrEqual(MOVE_TOLERANCE_PX);
+        }
         await clickAllow(allow);
       }
       await expect(dom.turnFooters).toHaveCount(turn + 1, { timeout: TURN_TIMEOUT });

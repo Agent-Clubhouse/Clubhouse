@@ -159,7 +159,8 @@ export function PermissionCard({ request, plan, queueSize, agentName, extras, on
       ))}
     </div>
   );
-  const optionButton = (opt: PermissionOption, i: number) => {
+  // `full` is for the pinned card's extra options: what an always-allow grants must be readable, so its label and scope wrap.
+  const optionButton = (opt: PermissionOption, i: number, full = false) => {
     const isPrimary = opt === primary;
     return (
       <button
@@ -168,13 +169,12 @@ export function PermissionCard({ request, plan, queueSize, agentName, extras, on
         disabled={answered || (planEmpty && ALLOW_KINDS.has(opt.kind))}
         onClick={(e) => { if (!isRepeatClick(e)) choose(opt); }}
         onKeyDown={swallowHeldKey}
-        title={opt.scope ? `${opt.label} ${opt.scope}` : opt.label}
-        className={`flex items-center gap-2.5 h-[30px] px-2 rounded-md text-[12.5px] text-left disabled:opacity-50 min-w-0 ${isPrimary ? 'bg-surface-0 text-ctp-text ring-1 ring-surface-1' : 'text-ctp-subtext1 hover:bg-surface-0/60'}`}
+        className={`flex items-center gap-2.5 ${full ? 'min-h-[30px] py-1' : 'h-[30px]'} px-2 rounded-md text-[12.5px] text-left disabled:opacity-50 min-w-0 ${isPrimary ? 'bg-surface-0 text-ctp-text ring-1 ring-surface-1' : 'text-ctp-subtext1 hover:bg-surface-0/60'}`}
         data-option-kind={opt.kind}
       >
         <span className="w-[18px] h-[18px] rounded bg-ctp-crust grid place-items-center text-[11px] text-ctp-overlay1 flex-shrink-0">{i + 1}</span>
-        <span className="truncate">{opt.label}</span>
-        {opt.scope && <span className="font-mono text-[11px] text-ctp-overlay1 truncate">{opt.scope}</span>}
+        <span className={full ? 'break-words' : 'truncate'}>{opt.label}</span>
+        {opt.scope && <span className={`font-mono text-[11px] text-ctp-overlay1 ${full ? 'break-all' : 'truncate'}`}>{opt.scope}</span>}
         {!dirty && isPrimary && <Key>⏎</Key>}
         {!dirty && opt === reject && <Key>Esc</Key>}
       </button>
@@ -274,29 +274,27 @@ export function PermissionCard({ request, plan, queueSize, agentName, extras, on
     );
   }
   // The pinned card (#3606): the request scrolls above its answers, which sit at the bottom of the card and so
-  // stay in one place, above the composer, whatever the request's length or the width of the pane. Allow and
-  // Decline are the last row, whatever else is offered; notes, extra options and the message field grow upward
-  // from it, and nothing that can scroll away sits between a note and the button it is about. The extras are one
-  // line, however many there are (each label truncates, and its full text is the button's title), so the card's
-  // height doesn't depend on how many options a provider offers.
+  // stay in one place, above the composer, whatever the request's length or the width of the pane. The footer is a
+  // constant height: the message field (when the provider takes one) and the Allow and Decline row, plus notes while
+  // there are any. Every other option the provider offers is in full at the end of the body, directly above the
+  // footer, so what an "always allow" grants is always readable by scrolling, and it never moves Allow.
   const notes = planNotes && <div className="pl-5 flex flex-wrap items-center gap-2 text-[12px] text-ctp-overlay1" data-testid="chat-permission-notes">{planNotes}</div>;
   return (
-    <div {...rootProps} className={`${rootClass} min-h-0`}>
-      {/* What is being approved always shows: at least 48px of it, and up to the pinned cap less the card's own chrome. */}
+    <div {...rootProps} className={`${rootClass.replace('gap-2', 'gap-1.5')} min-h-0`}>
       <div className="min-h-[48px] max-h-[calc(min(40vh,320px)-6rem)] flex flex-col gap-2 overflow-y-auto" data-testid="chat-permission-body">
         {heading}
         {details}
         {preview}
         {planEditor}
+        {extraOptions.length > 0 && (
+          <div className="flex flex-wrap gap-1" data-testid="chat-permission-extra-options">
+            {extraOptions.map((opt) => optionButton(opt, indexOf(opt), true))}
+          </div>
+        )}
       </div>
       <div className="flex-shrink-0 flex flex-col gap-1.5" data-testid="chat-permission-actions">
         {notes}
         {pausedNote}
-        {extraOptions.length > 0 && (
-          <div className="flex gap-1" data-testid="chat-permission-extra-options">
-            {extraOptions.map((opt) => optionButton(opt, indexOf(opt)))}
-          </div>
-        )}
         {feedbackInput}
         <div className="flex flex-wrap gap-1" data-testid="chat-permission-primary-actions">
           {bottomOptions.map((opt) => optionButton(opt, indexOf(opt)))}
