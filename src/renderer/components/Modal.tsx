@@ -27,6 +27,8 @@ interface Props {
   title?: ReactNode;
   /** Accessible name when there's no title row. */
   'aria-label'?: string;
+  /** The element that holds the dialog's explanation, read with its name when it opens. */
+  'aria-describedby'?: string;
   /** Width class; defaults to w-[360px]. */
   width?: string;
   /** Darker backdrop for image/media dialogs. */
@@ -51,7 +53,7 @@ function focusables(root: HTMLElement): HTMLElement[] {
 }
 
 export function Modal({
-  open, onClose, onDismiss, busy = false, dirty = false, title, 'aria-label': ariaLabel, width = 'w-[360px]', backdrop = 'default', backdropTestId, testId,
+  open, onClose, onDismiss, busy = false, dirty = false, title, 'aria-label': ariaLabel, 'aria-describedby': ariaDescribedBy, width = 'w-[360px]', backdrop = 'default', backdropTestId, testId,
   footer, padding = 'default', initialFocusRef, children,
 }: Props) {
   const panelRef = useRef<HTMLDivElement>(null);
@@ -119,6 +121,7 @@ export function Modal({
         aria-modal="true"
         aria-labelledby={title ? titleId : undefined}
         aria-label={title ? undefined : ariaLabel}
+        aria-describedby={ariaDescribedBy}
         tabIndex={-1}
         data-testid={testId}
         className={`flex flex-col max-h-[calc(100vh-48px)] bg-ctp-base border border-surface-1 rounded-[10px] shadow-2xl overflow-hidden outline-none ${width}`}

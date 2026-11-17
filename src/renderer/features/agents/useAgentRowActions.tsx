@@ -324,11 +324,11 @@ export function useAgentRowActions(agent: Agent, { onSpawnQuickChild }: { onSpaw
       });
     }
 
-    // Priority 4: Clear chat (#3043). The Dispatcher's conversation starts over; its memory stays.
+    // Priority 4: Start new chat (#3043). The Dispatcher's conversation starts over; its memory and work stay.
     if (isDispatcher && !isRemote) {
       list.push({
         id: 'clear-chat',
-        label: 'Clear chat',
+        label: 'Start new chat',
         icon: (
           <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
             <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
@@ -340,10 +340,10 @@ export function useAgentRowActions(agent: Agent, { onSpawnQuickChild }: { onSpaw
         visible: true,
         handler: handleClearChat,
       });
-      // Start fresh (#3240): its controller conversation, or both, when the work keeps failing.
+      // Restart Dispatcher (#3240): recovery when its work keeps failing, keeping the chat or starting it over too.
       list.push({
         id: 'start-fresh',
-        label: 'Start fresh',
+        label: 'Restart Dispatcher',
         icon: (
           <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
             <path d="M3 12a9 9 0 1 0 2.64-6.36" />

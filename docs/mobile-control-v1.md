@@ -1408,16 +1408,16 @@ Every command below refuses with 409 `dispatcher_off` while it is off. Their res
 
 #### Confirmations
 
-Clear chat and Forget everything each need explicit confirmation, the precondition pattern `agent.providerChange` uses. The phone reads the settings route, asks the person, and sends the `expectedState` it got for that action. Treat it as opaque. It is bound to this phone and this action, and to what the question showed. A token for one never confirms the other. It goes stale when:
+Start new chat (the `clearChat` command) and Forget everything each need explicit confirmation, the precondition pattern `agent.providerChange` uses. The phone reads the settings route, asks the person, and sends the `expectedState` it got for that action. Treat it as opaque. It is bound to this phone and this action, and to what the question showed. A token for one never confirms the other. It goes stale when:
 
-- that action has run since, from the phone, another phone or the desktop (Clear chat in its menu, Settings > Dispatcher's Forget everything);
+- that action has run since, from the phone, another phone or the desktop (Start new chat in its menu, Settings > Dispatcher's Forget everything);
 - its switch turned the Dispatcher off or on since;
-- for Clear chat, the conversation it would end changed, or the chat woke or went to sleep;
+- for Start new chat, the conversation it would end changed, or the chat woke or went to sleep;
 - for Forget everything, the memory changed since it was read: a file was added, removed or rewritten, which happens as the Dispatcher works. Read the route again right before asking, and expect `stale_state` if the person waits a long time.
 
 A token that doesn't match now is 409 `stale_state` (message: "This changed since you were asked. Check again and confirm.") and nothing happens. Read the route again and ask again. A token works once: after the action, a new command with it is `stale_state`, while an identical retry with the same commandId gets the receipt. Two commands with the same token can't both run. Tokens don't survive a desktop restart.
 
-**`dispatcher.clearChat`** `{expectedState}`: its conversation starts over, as Clear chat in its menu does. Its memory, its agents and their connections, Actions and news waiting for the next check-in all stay. Result `{cleared:"now"|"next_start"}`. A clear that fails is 409 `clear_failed` (outcome `failed`) with the reason. Desktop words: "Clear chat?" and "The conversation starts over. <name> still remembers what you decided and who is doing what, and your agents, connections and Actions stay as they are."
+**`dispatcher.clearChat`** `{expectedState}`: its conversation starts over, as Start new chat in its menu does. The command keeps the name `clearChat`. Its memory, its agents and their connections, Actions and news waiting for the next check-in all stay. Result `{cleared:"now"|"next_start"}`. A clear that fails is 409 `clear_failed` (outcome `failed`) with the reason. Desktop words: "Start a new chat?" with the button "Start new chat", and "The chat starts over. <name> still remembers what you decided and who is doing what, and keeps working on what it is handling. Your agents, connections and Actions stay as they are."
 
 **`dispatcher.forgetEverything`** `{expectedState}`: its memory goes and starts over empty, as Settings > Dispatcher's Forget everything does. This can't be undone. Its chat, agents, connections and Actions stay. Result `{removed, heldNews}`: folders removed, and news held for the next check-in that was dropped. Desktop words: "Forget everything?" and "<name> forgets its notes on your agents and your work, its timeline, and news waiting for the next check-in. This can’t be undone. Your agents, connections, Actions and its chat stay."
 

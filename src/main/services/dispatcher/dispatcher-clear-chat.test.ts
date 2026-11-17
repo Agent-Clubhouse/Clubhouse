@@ -118,7 +118,7 @@ describe('Start fresh (#3240)', () => {
     // Requests are taken before the clear, so a hand-off that lands during it isn't among them.
     expect(order).toEqual(['quarantine:true:work:bad-native', 'prepare:true:work', 'take-waiting', 'clear:work', 'end-waiting:req_1']);
     expect(notices).toEqual([['work', 'started_fresh'], ['chat', 'dispatcher_work_started_fresh']]);
-    expect(chatMessages.at(-1)).toContain('Dispatcher controller started fresh.');
+    expect(chatMessages.at(-1)).toContain('Dispatcher restarted.');
     // Work in progress in the old conversation is gone, so the chat says to ask again.
     expect(chatMessages.at(-1)).toContain('Ask again for anything that was in progress.');
   });

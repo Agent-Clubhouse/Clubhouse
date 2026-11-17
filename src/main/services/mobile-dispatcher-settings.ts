@@ -218,7 +218,7 @@ function assertConfirmed(action: ConfirmedAction, principal: string, expectedSta
 }
 
 /**
- * dispatcher.clearChat: its conversation starts over, as Clear chat in its
+ * dispatcher.clearChat: its conversation starts over, as Start new chat in its
  * menu does. Memory, its agents and their connections stay. `cleared` is
  * `now` for a running chat and `next_start` for a sleeping one.
  */
