@@ -157,14 +157,17 @@ describe('DispatcherView', () => {
     list.mockRestore();
   });
 
-  it('offers Clear chat in its menu, which asks first and then starts the conversation over (#3043)', async () => {
+  it('offers Start new chat in its menu, which asks first and then starts the conversation over (#3043)', async () => {
     const clearChat = vi.spyOn(window.clubhouse.dispatcher, 'clearChat');
     useAgentStore.setState({ agents: { disp: dispatcher() } });
     render(<><DispatcherView /><ClearChatHost /></>);
     fireEvent.click(screen.getByTestId('sleeping-more'));
     fireEvent.click(within(screen.getByTestId('agent-context-menu')).getByTestId('ctx-clear-chat'));
     const confirm = await waitFor(() => screen.getByTestId('dispatcher-clear-chat-confirm'));
+    expect(screen.getByRole('dialog', { name: 'Start a new chat?' })).toBe(confirm);
     expect(confirm.textContent).toContain('Dispatcher still remembers');
+    expect(confirm).toHaveAccessibleDescription(/keeps working on what it is handling/);
+    expect(within(confirm).getByRole('button', { name: 'Start new chat' })).toBeTruthy();
     expect(clearChat).not.toHaveBeenCalled();
     fireEvent.click(screen.getByTestId('dispatcher-clear-chat-confirm-button'));
     await waitFor(() => expect(screen.queryByTestId('dispatcher-clear-chat-confirm')).toBeNull());
@@ -172,17 +175,22 @@ describe('DispatcherView', () => {
     clearChat.mockRestore();
   });
 
-  it('offers Start fresh in its menu, for its controller or both conversations, keeping everything else (#3240)', async () => {
+  it('offers Restart Dispatcher in its menu, keeping the chat or starting it over too, and keeping everything else (#3240)', async () => {
     const startFresh = vi.spyOn(window.clubhouse.dispatcher, 'startFresh').mockResolvedValue({ work: 'next_start' });
     useAgentStore.setState({ agents: { disp: dispatcher() } });
     render(<><DispatcherView /><StartFreshHost /></>);
     fireEvent.click(screen.getByTestId('sleeping-more'));
     fireEvent.click(within(screen.getByTestId('agent-context-menu')).getByTestId('ctx-start-fresh'));
     const confirm = await waitFor(() => screen.getByTestId('dispatcher-start-fresh-confirm'));
-    expect(confirm.textContent).toContain('Dispatcher’s controller conversation ends and a new one starts.');
-    expect(confirm.textContent).toContain('Memory, agents, connections, Actions and settings stay as they are.');
+    expect(screen.getByRole('dialog', { name: 'Restart Dispatcher?' })).toBe(confirm);
+    expect(confirm.textContent).toContain('Anything it is handling or has queued stops');
+    expect(confirm.textContent).toContain('Work it already gave to other agents keeps going and is not undone.');
+    expect(confirm.textContent).toContain('Memory, agents, connections, Actions and settings stay as they are either way.');
+    expect(confirm.textContent).toContain('If Dispatcher is asleep, the restart happens when it next wakes.');
+    expect(confirm.textContent).not.toMatch(/controller|both conversations/i);
+    expect(confirm).toHaveAccessibleDescription(/Anything it is handling or has queued stops/);
     expect(startFresh).not.toHaveBeenCalled();
-    fireEvent.click(within(confirm).getByRole('button', { name: 'Controller only' }));
+    fireEvent.click(within(confirm).getByRole('button', { name: 'Restart, keep chat' }));
     await waitFor(() => expect(screen.queryByTestId('dispatcher-start-fresh-confirm')).toBeNull());
     expect(startFresh).toHaveBeenCalledWith('work');
 

@@ -217,7 +217,7 @@ export function PopoutWindow() {
         )}
       </div>
       <FilePreviewHost />
-      {/* The Dispatcher's menu offers Clear chat, which confirms first. */}
+      {/* The Dispatcher's menu offers Start new chat, which confirms first. */}
       {isAgent && isDispatcherProjectId(params.projectId) && <ClearChatHost />}
       <ToastContainer />
     </div>

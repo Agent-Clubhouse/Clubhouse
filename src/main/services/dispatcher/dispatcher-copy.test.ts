@@ -96,7 +96,7 @@ describe('the Dispatcher uses one identity and calls its controller by its curre
     // Choose models yourself's job label (#3191) is read too, and passes.
     expect(seen).toContain('Working in the background');
     expect(seen).toContain('Dispatcher controller');
-    expect(seen).toContain('Controller only');
+    expect(seen).toContain('Restart, keep chat');
   }, 60_000); // It parses every source file, which is slow on a loaded machine.
 
   it('no help page, and nothing either agent is told, mentions one either', () => {

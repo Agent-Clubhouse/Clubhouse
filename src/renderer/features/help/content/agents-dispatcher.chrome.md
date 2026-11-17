@@ -25,7 +25,8 @@ Its chat is your conversation with the Dispatcher. You never see tool calls, tas
 - **Agents' news** reaches you once, in the Dispatcher's words, with the agent named. When an agent has a question for you, answer it right there in the chat. What the Dispatcher and your agents say to each other along the way stays in each agent's own chat.
 - **What shows right away:** news that needs you, or that answers something you asked. Routine news waits for the next check-in, and some is never shown.
 - **Check-ins** sum up what changed since the last one, and appear only when something did.
-- **One long conversation.** It keeps one chat going and compacts it as it grows. **Clear chat** in its menu starts the conversation over, after asking. Clearing the chat never touches its memory.
+- **One long conversation.** It keeps one chat going and compacts it as it grows. **Start new chat** in its menu starts the conversation over, after asking. Starting a new chat never touches its memory or what it is working on.
+- **If it keeps failing.** **Restart Dispatcher**, next to Start new chat in its menu, is for when it keeps failing at its work. Anything it is handling or has queued stops, so you may need to ask again, and work already given to your agents keeps going. Choose **Restart, keep chat** to leave the chat as it is, or **Restart and start new chat** to clear it too. Memory, agents, connections, Actions and settings stay either way. If it is asleep, the restart happens when it next wakes.
 
 A message from one of your agents wakes it if it's asleep, so it doesn't need to stay running. Check-ins and upkeep wake it too.
 

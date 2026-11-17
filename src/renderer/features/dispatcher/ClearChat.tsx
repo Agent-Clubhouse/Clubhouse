@@ -1,13 +1,15 @@
 /**
- * Clear chat (#3043): the Dispatcher's ⋯ menu starts its conversation over,
- * after a confirm. The menu has nowhere to draw the confirm, so it asks
- * through requestClearChat and the agent dialog host draws it
- * (ClearChatHost). Clearing never touches what the Dispatcher remembers.
+ * Start new chat (#3043, once Clear chat): the Dispatcher's ⋯ menu starts its
+ * conversation over, after a confirm. The menu has nowhere to draw the confirm,
+ * so it asks through requestClearChat and the agent dialog host draws it
+ * (ClearChatHost). Starting a new chat never touches what the Dispatcher remembers.
  *
- * Start fresh (#3240) is the same for its controller conversation, or for both of
- * its conversations: requestStartFresh, drawn by StartFreshHost.
+ * Restart Dispatcher (#3240, once Start fresh) is the recovery action: it
+ * restarts how the Dispatcher does its work, keeping the chat or starting it over
+ * too: requestStartFresh, drawn by StartFreshHost. The scopes stay 'work' and
+ * 'both' (#3616).
  */
-import { useState } from 'react';
+import { useId, useState } from 'react';
 import { create } from 'zustand';
 import { Button } from '../../components/Button';
 import { Modal } from '../../components/Modal';
@@ -27,19 +29,21 @@ export function ClearChatDialog({ name, busy, onConfirm, onCancel }: {
   onConfirm: () => void;
   onCancel: () => void;
 }) {
+  const bodyId = useId();
   return (
     <Modal
       open
       onClose={onCancel}
-      title="Clear chat?"
+      title="Start a new chat?"
+      aria-describedby={bodyId}
       testId="dispatcher-clear-chat-confirm"
       footer={<>
         <Button onClick={onCancel} disabled={busy}>Cancel</Button>
-        <Button kind="primary" onClick={onConfirm} disabled={busy} data-testid="dispatcher-clear-chat-confirm-button">Clear chat</Button>
+        <Button kind="primary" onClick={onConfirm} disabled={busy} data-testid="dispatcher-clear-chat-confirm-button">Start new chat</Button>
       </>}
     >
-      <p className="text-[13px] text-ctp-subtext1">
-        The conversation starts over. {name} still remembers what you decided and who is doing what, and your agents, connections and Actions stay as they are.
+      <p id={bodyId} className="text-[13px] text-ctp-subtext1">
+        The chat starts over. {name} still remembers what you decided and who is doing what, and keeps working on what it is handling. Your agents, connections and Actions stay as they are.
       </p>
     </Modal>
   );
@@ -57,7 +61,7 @@ export function ClearChatHost() {
       close();
     } catch (err) {
       // telemetry-exempt: shown to the person, who can try again
-      useToastStore.getState().addToast(`Couldn't clear the chat. ${err instanceof Error ? err.message : String(err)}`, 'error');
+      useToastStore.getState().addToast(`Couldn't start a new chat. ${err instanceof Error ? err.message : String(err)}`, 'error');
     } finally {
       setBusy(false);
     }
@@ -78,25 +82,27 @@ export function StartFreshDialog({ name, busy, onConfirm, onCancel }: {
   onConfirm: (scope: StartFreshScope) => void;
   onCancel: () => void;
 }) {
+  const bodyId = useId();
   return (
     <Modal
       open
       onClose={onCancel}
-      title="Start fresh?"
+      title="Restart Dispatcher?"
+      aria-describedby={bodyId}
       width="w-[420px]"
       testId="dispatcher-start-fresh-confirm"
       footer={<>
         <Button onClick={onCancel} disabled={busy}>Cancel</Button>
-        <Button onClick={() => onConfirm('both')} disabled={busy} data-testid="dispatcher-start-fresh-both">Both conversations</Button>
-        <Button kind="primary" onClick={() => onConfirm('work')} disabled={busy} data-testid="dispatcher-start-fresh-work">Controller only</Button>
+        <Button onClick={() => onConfirm('both')} disabled={busy} data-testid="dispatcher-start-fresh-both">Restart and start new chat</Button>
+        <Button kind="primary" onClick={() => onConfirm('work')} disabled={busy} data-testid="dispatcher-start-fresh-work">Restart, keep chat</Button>
       </>}
     >
-      <div className="flex flex-col gap-2 text-[13px] text-ctp-subtext1">
+      <div id={bodyId} className="flex flex-col gap-2 text-[13px] text-ctp-subtext1">
         <p>
-          {name}&rsquo;s controller conversation ends and a new one starts. The old one is never resumed again. Use this when its work keeps failing.
+          Use this when {name} keeps failing at its work. Anything it is handling or has queued stops, and you may need to ask for it again. Work it already gave to other agents keeps going and is not undone.
         </p>
         <p>
-          Both conversations also clears the chat. Memory, agents, connections, Actions and settings stay as they are.
+          Restart, keep chat leaves this chat as it is. Restart and start new chat also clears it. Memory, agents, connections, Actions and settings stay as they are either way. If {name} is asleep, the restart happens when it next wakes.
         </p>
       </div>
     </Modal>
@@ -115,7 +121,7 @@ export function StartFreshHost() {
       close();
     } catch (err) {
       // telemetry-exempt: shown to the person, who can try again
-      useToastStore.getState().addToast(`Couldn't start fresh. ${err instanceof Error ? err.message : String(err)}`, 'error');
+      useToastStore.getState().addToast(`Couldn't restart the Dispatcher. ${err instanceof Error ? err.message : String(err)}`, 'error');
     } finally {
       setBusy(false);
     }
