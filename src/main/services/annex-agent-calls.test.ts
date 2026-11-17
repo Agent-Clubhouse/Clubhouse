@@ -1564,8 +1564,10 @@ describe('read_agent_config member transport', () => {
 
   it('discards settings bytes if membership becomes pending during the read', async () => {
     state.thirdRole = 'member';
+    await setConnectionLink({ agentId: 'controller', machineId: THIRD }, inbound.to, true);
     reader.read.mockImplementationOnce(async () => { state.thirdPending = true; return ok('private settings'); });
     const result = await receiveAgentCall(THIRD, call({ tool: 'read_settings', from: { agentId: 'controller', name: 'Dispatcher' }, args: { select: ['agent.cli.model'] } }), now);
+    expect(reader.read).toHaveBeenCalledTimes(1);
     expect(result).toMatchObject({ error: 'authorization_revoked' });
     expect(JSON.stringify(result)).not.toContain('private settings');
   });
