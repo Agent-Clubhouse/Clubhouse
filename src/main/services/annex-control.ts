@@ -15,8 +15,10 @@
  * acceptance check are injected by the server, so this module imports none of
  * them.
  *
- * Later slices add features to the hello (subscriptions, terminals, bulk
- * transfers) and their own lanes; P2's route abstraction calls `request()` for
+ * P4 adds `subscribe`: the requester receives the target's /ws stream, served
+ * by the server as a virtual /ws client and checked frame by frame. Later
+ * slices add features to the hello (terminals, bulk transfers) and their own
+ * lanes; P2's route abstraction calls `request()` for
  * a machine with no outbound route.
  */
 import type { IncomingMessage } from 'http';
@@ -31,6 +33,7 @@ import {
   CONTROL_CLOSE_PROTOCOL,
   CONTROL_CLOSE_REVOKED,
   CONTROL_CLOSE_VERSION,
+  CONTROL_EVENT_FRAME_MAX_BYTES,
   CONTROL_FEATURES,
   CONTROL_FRAME_MAX_BYTES,
   CONTROL_PROTOCOL_VERSION,
@@ -38,6 +41,7 @@ import {
   encodeControlBody,
   isReadOnlyMethod,
   parseControlMessage,
+  type ControlEndCode,
   type ControlErrorCode,
   type ControlFeature,
   type ControlHttpRequest,
@@ -155,6 +159,52 @@ export interface ControlTarget {
   stillAuthorized(principal: AnnexPrincipal): boolean;
   /** Runs a request already authorized as `principal` through the route table. */
   dispatch(principal: AnnexPrincipal, request: ControlHttpRequest, ctx: DispatchContext): Promise<DispatchResult>;
+  /**
+   * Starts a subscription for `principal` (P4): the server serves it the /ws
+   * stream through `sink`, fresh snapshot first. Null if it can't now.
+   * Absent on a target that serves none.
+   */
+  subscribe?(principal: AnnexPrincipal, sink: SubscriptionSink): SubscriptionHandle | null;
+}
+
+/** Where a target's subscription writes. The server's virtual /ws client calls it. */
+export interface SubscriptionSink {
+  /**
+   * One /ws frame, already serialized. Checked against the subscriber's access
+   * before it goes. False if it wasn't sent: the subscription is over, and the
+   * caller closes its side.
+   */
+  send(frame: string): boolean;
+  /** The server ended it (closed, revoked, stopping). */
+  end(code: ControlEndCode): void;
+}
+
+/** The server's side of a subscription. */
+export interface SubscriptionHandle {
+  /** The subscriber left, or the connection went: stop serving it. */
+  close(): void;
+}
+
+/** What a subscriber hears. */
+export interface SubscriptionHandlers {
+  /** One /ws frame, exactly as a /ws socket to that computer would receive it. */
+  onFrame(frame: Record<string, unknown>): void;
+  /** It's over: ended there, refused, or the connection went. Called once; never after `close()`. */
+  onEnd(code: ControlEndCode | ControlErrorCode): void;
+}
+
+/** A subscription this machine holds to another computer's stream. */
+export interface ControlSubscription {
+  readonly id: string;
+  /** Stop receiving. `onEnd` isn't called. */
+  close(): void;
+}
+
+/** Target: the subscription a connection is being served. */
+interface ServedSubscription {
+  id: string;
+  handle: SubscriptionHandle | null;
+  ended: boolean;
 }
 
 /** A handler's response. `complete`: it ended its response; anything else is never sent or remembered as an answer. */
@@ -194,6 +244,10 @@ interface Link {
   heartbeat: ReturnType<typeof setInterval> | null;
   alive: boolean;
   pending: Map<string, Pending>;
+  /** Requester: subscriptions this machine holds over this connection (at most one). */
+  subscriptions: Map<string, SubscriptionHandlers>;
+  /** Target: the subscription this connection is being served, if any. */
+  subscription: ServedSubscription | null;
   /** Target: requests this connection is owed an answer for, until it is written. Aborted on cancel or close. */
   replying: Map<string, AbortController>;
 }
@@ -357,11 +411,16 @@ function frameFits(message: ControlMessage): string | null {
  * CONTROL_SEND_BUFFER_MAX_BYTES is closed instead: the other side isn't reading.
  */
 function rawSend(link: Link, message: ControlMessage, onWritten?: () => void): boolean {
+  const text = frameFits(message);
+  if (text === null) { onWritten?.(); return false; }
+  return rawSendText(link, text, onWritten);
+}
+
+/** `rawSend` for a frame already serialized (a subscription's event, up to CONTROL_EVENT_FRAME_MAX_BYTES). */
+function rawSendText(link: Link, text: string, onWritten?: () => void): boolean {
   let called = false;
   const written = () => { if (!called) { called = true; onWritten?.(); } };
   if (link.closed || link.ws.readyState !== WebSocket.OPEN) { written(); return false; }
-  const text = frameFits(message);
-  if (text === null) { written(); return false; }
   if ((link.ws.bufferedAmount ?? 0) + Buffer.byteLength(text) > CONTROL_SEND_BUFFER_MAX_BYTES) {
     refuseLink(link, CONTROL_CLOSE_BACKLOG, 'backlog', 'the other side is not reading');
     written();
@@ -392,6 +451,10 @@ function closeLink(link: Link, code: number, reason: string, failWith: ControlEr
   // Requesters stop waiting; their runs go on to settle (or be cut off) on their own clocks.
   for (const reply of link.replying.values()) reply.abort('closed');
   link.replying.clear();
+  // A subscription lives only as long as its connection, on both sides.
+  stopServing(link);
+  for (const [, handlers] of [...link.subscriptions]) notify(() => handlers.onEnd(failWith));
+  link.subscriptions.clear();
   try { link.ws.close(code, reason); } catch { /* telemetry-exempt: already closing */ }
   const ws = link.ws;
   const timer = setTimeout(() => { try { ws.terminate(); } catch { /* telemetry-exempt: already gone */ } }, 250);
@@ -416,7 +479,7 @@ function inboundStillAllowed(link: Link): boolean {
 function attach(ws: WebSocket, fingerprint: string, pin: string, direction: 'in' | 'out', remoteAddress: string | undefined): Link {
   const link: Link = {
     ws, fingerprint, pin, direction, remoteAddress, features: null, offered: null, closed: false,
-    helloTimer: null, heartbeat: null, alive: true, pending: new Map(), replying: new Map(),
+    helloTimer: null, heartbeat: null, alive: true, pending: new Map(), replying: new Map(), subscriptions: new Map(), subscription: null,
   };
   links.add(link);
   link.helloTimer = setTimeout(() => {
@@ -444,7 +507,15 @@ function onFrame(link: Link, data: RawData, isBinary: boolean): void {
   link.alive = true;
   if (!inboundStillAllowed(link)) return;
   if (isBinary) { refuseLink(link, CONTROL_CLOSE_PROTOCOL, 'protocol', 'binary frame'); return; }
+  // The socket takes frames up to the event cap, but only a subscription's `event`, to the side that
+  // accepted the connection, may be that large. Everything else keeps CONTROL_FRAME_MAX_BYTES.
+  const bytes = rawLength(data);
+  if (bytes > CONTROL_FRAME_MAX_BYTES && link.direction === 'out') { refuseLink(link, CONTROL_CLOSE_TOO_LARGE, 'too_large', `${bytes} byte frame`); return; }
   const parsed = parseControlMessage(data.toString());
+  if (bytes > CONTROL_FRAME_MAX_BYTES && (!('message' in parsed) || parsed.message.type !== 'event')) {
+    refuseLink(link, CONTROL_CLOSE_TOO_LARGE, 'too_large', `${bytes} byte frame`);
+    return;
+  }
   if ('reason' in parsed) {
     if (parsed.reason === 'version') { refuseLink(link, CONTROL_CLOSE_VERSION, 'version', `version ${parsed.detail}`); return; }
     // A request this side would take, but malformed: answered, not fatal.
@@ -457,11 +528,24 @@ function onFrame(link: Link, data: RawData, isBinary: boolean): void {
   if (link.direction === 'out') {
     if (message.type === 'request') { void onRequest(link, message); return; }
     if (message.type === 'cancel') { link.replying.get(message.id)?.abort('cancelled'); return; }
-  } else if (message.type === 'response' || message.type === 'error') {
-    onAnswer(link, message);
-    return;
+    if (message.type === 'subscribe') { onSubscribe(link, message.id); return; }
+    if (message.type === 'unsubscribe') { if (link.subscription?.id === message.id) stopServing(link); return; }
+  } else {
+    if (message.type === 'event' || message.type === 'ended' || (message.type === 'error' && link.subscriptions.has(message.id))) {
+      onSubscriptionFrame(link, message);
+      return;
+    }
+    if (message.type === 'response' || message.type === 'error') { onAnswer(link, message); return; }
   }
   refuseLink(link, CONTROL_CLOSE_PROTOCOL, 'protocol', `unexpected ${message.type}`);
+}
+
+/** Close code for a frame larger than its type may be (the WebSocket "message too big"). */
+const CONTROL_CLOSE_TOO_LARGE = 1009;
+
+function rawLength(data: RawData): number {
+  if (Array.isArray(data)) return data.reduce((total, chunk) => total + chunk.length, 0);
+  return data instanceof ArrayBuffer ? data.byteLength : data.length;
 }
 
 /** The opener's hello: what it supports. It speaks first. */
@@ -577,7 +661,9 @@ function startRun(server: ControlTarget, principal: AnnexPrincipal, request: Con
   timer.unref?.();
   const ctx: DispatchContext = { remoteAddress: link.remoteAddress, signal: cancel.signal, deadline: deadline.signal, linkOpen: () => !link.closed };
   let dispatched: Promise<DispatchResult>;
-  try { dispatched = server.dispatch(principal, request, ctx); } catch (err) { dispatched = Promise.reject(err); }
+  try { dispatched = server.dispatch(principal, request, ctx); } catch (err) { // telemetry-exempt: passed on as a rejection, logged below
+    dispatched = Promise.reject(err);
+  }
   const done = dispatched
     .then((result): RunOutcome => (result.complete ? { kind: 'complete', response: toWire(result) } : { kind: 'incomplete', timedOut: deadline.signal.reason === 'timeout' }))
     .catch((err): RunOutcome => {
@@ -669,6 +755,124 @@ function runOnce(server: ControlTarget, principal: AnnexPrincipal, request: Cont
   onAbort(reply, () => run.cancel());
   void run.done.then((outcome) => slot.finish(retainedForRun(outcome)));
   return untilDone(run.done.then(answerForRun), reply, run.deadline);
+}
+
+// ---------------------------------------------------------------------------
+// Target: serving a subscription (P4)
+// ---------------------------------------------------------------------------
+
+/**
+ * Serves the requester this machine's /ws stream: the server registers a
+ * virtual /ws client for it, authorized as it would be had it connected
+ * directly, and every frame is checked again as it goes.
+ */
+function onSubscribe(link: Link, id: string): void {
+  if (!link.features?.has('subscribe')) { sendError(link, id, 'not_supported'); return; }
+  if (link.subscription) { sendError(link, id, 'busy'); return; }
+  const server = target;
+  if (!server?.subscribe) { sendError(link, id, 'unavailable'); return; }
+  // As if it had connected directly: the identity and certificate this connection verified, via reverse.
+  const auth = server.authorize({ fingerprint: link.fingerprint, pin: link.pin, via: 'reverse' });
+  if (isRefusal(auth)) {
+    appLog('core:annex', 'warn', 'Refused a reverse subscription', { meta: { fingerprint: link.fingerprint, error: auth.error, status: auth.status } });
+    sendError(link, id, 'authorization_revoked');
+    return;
+  }
+  const principal = auth.principal;
+  const served: ServedSubscription = { id, handle: null, ended: false };
+  link.subscription = served;
+  const end = (code: ControlEndCode) => {
+    if (served.ended) return;
+    served.ended = true;
+    if (link.subscription === served) link.subscription = null;
+    rawSend(link, { v: 1, type: 'ended', id, code });
+  };
+  const sink: SubscriptionSink = {
+    send: (frame) => {
+      if (served.ended || link.closed) return false;
+      // Every frame is authorized as it goes: nothing reaches a subscriber that has lost its access.
+      if (!server.stillAuthorized(principal)) {
+        end('authorization_revoked');
+        refuseLink(link, CONTROL_CLOSE_REVOKED, 'authorization_revoked', 'revoked during a subscription');
+        return false;
+      }
+      // The /ws frame goes in as it was serialized: no parse, no second encoding.
+      const text = `{"v":1,"type":"event","id":${JSON.stringify(id)},"frame":${frame}}`;
+      if (text.length * 3 > CONTROL_EVENT_FRAME_MAX_BYTES && Buffer.byteLength(text) > CONTROL_EVENT_FRAME_MAX_BYTES) {
+        end('frame_too_large');
+        return false;
+      }
+      return rawSendText(link, text);
+    },
+    end,
+  };
+  const handle = server.subscribe(principal, sink);
+  if (!handle) {
+    served.ended = true;
+    link.subscription = null;
+    sendError(link, id, 'unavailable');
+    return;
+  }
+  served.handle = handle;
+  // Over before it was handed back (its first frame was refused): close the server's side now.
+  if (served.ended) handle.close();
+}
+
+/** Stops serving the connection's subscription, if any, without telling the subscriber (it left, or the connection went). */
+function stopServing(link: Link): void {
+  const served = link.subscription;
+  if (!served) return;
+  link.subscription = null;
+  served.ended = true;
+  served.handle?.close();
+}
+
+/** A subscriber's callback must never break the connection. */
+function notify(fn: () => void): void {
+  try { fn(); } catch (err) { // telemetry-exempt: logged; a subscriber's own failure
+    appLog('core:annex', 'error', 'An Annex subscription handler failed', { meta: { error: err instanceof Error ? err.message : String(err) } });
+  }
+}
+
+/** Requester: a frame for a subscription this machine holds. */
+function onSubscriptionFrame(link: Link, message: Extract<ControlMessage, { type: 'event' | 'ended' | 'error' }>): void {
+  const handlers = link.subscriptions.get(message.id);
+  // For a subscription already closed here: dropped.
+  if (!handlers) return;
+  if (message.type === 'event') { notify(() => handlers.onFrame(message.frame)); return; }
+  link.subscriptions.delete(message.id);
+  notify(() => handlers.onEnd(message.code));
+}
+
+/**
+ * Subscribes to the /ws stream of the computer `fingerprint`, over the control
+ * connection it opened to this machine: a fresh snapshot, then live events, as
+ * a /ws socket to it would get them. It authorizes the subscription, and every
+ * frame, as if this machine had connected directly. One per connection; after
+ * it ends (or the connection goes), subscribe again for a fresh snapshot.
+ *
+ * Throws a `ControlRequestError` if it can't be sent.
+ */
+export function subscribe(fingerprint: string, handlers: SubscriptionHandlers): ControlSubscription {
+  const id = randomUUID();
+  const refuse = (code: ControlErrorCode) => new ControlRequestError(code, false, id);
+  const link = linkFor(fingerprint, 'in');
+  if (!link || link.ws.readyState !== WebSocket.OPEN || !link.features) throw refuse('transport_unavailable');
+  if (!link.features.has('subscribe')) throw refuse('not_supported');
+  if (!inboundStillAllowed(link)) throw refuse('authorization_revoked');
+  if (link.subscriptions.size > 0) throw refuse('busy');
+  link.subscriptions.set(id, handlers);
+  if (!rawSend(link, { v: 1, type: 'subscribe', id })) {
+    link.subscriptions.delete(id);
+    throw refuse('transport_unavailable');
+  }
+  return {
+    id,
+    close: () => {
+      if (!link.subscriptions.delete(id)) return;
+      rawSend(link, { v: 1, type: 'unsubscribe', id });
+    },
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -783,7 +987,7 @@ export function handleControlUpgrade(req: IncomingMessage, socket: Duplex, head:
     refuseUpgrade(socket, decision.status, { error: decision.error, message: decision.message });
     return;
   }
-  wss ??= new WebSocketServer({ noServer: true, maxPayload: CONTROL_FRAME_MAX_BYTES });
+  wss ??= new WebSocketServer({ noServer: true, maxPayload: CONTROL_EVENT_FRAME_MAX_BYTES });
   wss.handleUpgrade(req, socket, head, (ws) => {
     // One incoming connection per computer: a new one replaces the old (it reconnected, or the old is dead).
     closeFor(decision.fingerprint, 'in');
@@ -807,7 +1011,7 @@ export function connectTo(fingerprint: string, host: string, port: number, tlsOp
   const eligible = (pin: string | undefined) => !!target && !!pin && target.authorize({ fingerprint, pin, via: 'reverse' }).ok;
   if (!host || !port || !eligible(pinned)) return;
   const authority = net.isIPv6(host) ? `[${host}]` : host;
-  const ws = new WebSocket(`wss://${authority}:${port}${CONTROL_CHANNEL_PATH}`, { ...tlsOptions, handshakeTimeout: 10_000, maxPayload: CONTROL_FRAME_MAX_BYTES });
+  const ws = new WebSocket(`wss://${authority}:${port}${CONTROL_CHANNEL_PATH}`, { ...tlsOptions, handshakeTimeout: 10_000, maxPayload: CONTROL_EVENT_FRAME_MAX_BYTES });
   let link: Link | null = null;
   ws.on('upgrade', (res) => {
     const socket = res.socket;

@@ -97,12 +97,22 @@ async function flush(): Promise<void> {
   }
 }
 
+/** The server's side of subscriptions: each one's sink, principal and close. */
+interface Served { principal: AnnexPrincipal; sink: control.SubscriptionSink; close: ReturnType<typeof vi.fn> }
+let served: Served[] = [];
+const subscribeOnServer = vi.fn((principal: AnnexPrincipal, sink: control.SubscriptionSink): control.SubscriptionHandle => {
+  const close = vi.fn();
+  served.push({ principal, sink, close });
+  return { close };
+});
+
 function installServer(): void {
   control.setControlTarget({
     // Passed through as sent: the module itself must ask as a reverse caller.
     authorize: (caller) => authorize(caller, deps),
     stillAuthorized: (principal) => stillAuthorized(principal, deps),
     dispatch,
+    subscribe: subscribeOnServer,
   });
   control.setInboundAuthority({ accept: () => ({ ok: false, status: 401, error: 'unauthorized', message: '' }), stillAllowed: () => inboundAllowed });
 }
@@ -129,6 +139,8 @@ beforeEach(() => {
   inboundAllowed = true;
   handler = async () => ok({ hello: 'from A' });
   dispatch.mockClear();
+  served = [];
+  subscribeOnServer.mockClear();
   installServer();
 });
 
@@ -763,6 +775,213 @@ describe('bounds on lingering work, unfinished answers and unread output (#3613 
     targetWs.deliver({ v: 1, type: 'request', id: 'after-drain', method: 'GET', path: '/a' });
     await flush();
     expect(sentOfType(targetWs, 'response').map((m) => m.id)).toContain('after-drain');
+  });
+});
+
+describe('reverse subscription (P4)', () => {
+  function listen() {
+    const frames: Array<Record<string, unknown>> = [];
+    const ends: string[] = [];
+    return { frames, ends, handlers: { onFrame: (f: Record<string, unknown>) => frames.push(f), onEnd: (c: string) => ends.push(c) } };
+  }
+
+  it('subscribes as the requester via reverse, and carries each /ws frame as it was serialized, in order', async () => {
+    await connected();
+    const heard = listen();
+    control.subscribe(TARGET, heard.handlers);
+    await flush();
+    expect(subscribeOnServer).toHaveBeenCalledTimes(1);
+    expect(served[0].principal).toEqual({ fingerprint: REQUESTER, pin: REQUESTER_PIN, role: 'member', via: 'reverse' });
+    expect(served[0].sink.send('{"type":"snapshot","payload":{"lastSeq":7}}')).toBe(true);
+    expect(served[0].sink.send('{"type":"chat:event","payload":{"agentId":"a"},"seq":8}')).toBe(true);
+    await flush();
+    expect(heard.frames).toEqual([{ type: 'snapshot', payload: { lastSeq: 7 } }, { type: 'chat:event', payload: { agentId: 'a' }, seq: 8 }]);
+    expect(heard.ends).toEqual([]);
+  });
+
+  it('sends nothing for a subscription the other side did not agree to', async () => {
+    const { requesterWs } = await connected(['request']);
+    expect(control.hasReverseLink(TARGET, 'subscribe')).toBe(false);
+    expect(() => control.subscribe(TARGET, listen().handlers)).toThrow(expect.objectContaining({ code: 'not_supported' }));
+    expect(sentOfType(requesterWs, 'subscribe')).toEqual([]);
+  });
+
+  it('a target that agreed to no subscribe answers not_supported and starts nothing', async () => {
+    const { targetWs } = await connected(['request']);
+    targetWs.deliver({ v: 1, type: 'subscribe', id: 's1' });
+    await flush();
+    expect(sentOfType(targetWs, 'error')).toEqual([{ v: 1, type: 'error', id: 's1', code: 'not_supported' }]);
+    expect(subscribeOnServer).not.toHaveBeenCalled();
+  });
+
+  it('one subscription per connection', async () => {
+    const { targetWs } = await connected();
+    control.subscribe(TARGET, listen().handlers);
+    expect(() => control.subscribe(TARGET, listen().handlers)).toThrow(expect.objectContaining({ code: 'busy' }));
+    await flush();
+    targetWs.deliver({ v: 1, type: 'subscribe', id: 'second' });
+    await flush();
+    expect(sentOfType(targetWs, 'error')).toEqual([{ v: 1, type: 'error', id: 'second', code: 'busy' }]);
+    expect(subscribeOnServer).toHaveBeenCalledTimes(1);
+  });
+
+  for (const [name, world_] of [
+    ['pending member', { peer: peer({ networkPending: true }) }],
+    ['one-to-one controller', { peer: peer({ role: 'controller', kind: undefined }) }],
+    ['phone member', { peer: peer({ kind: 'phone' }) }],
+    ['removed', {}],
+  ] as const) {
+    it(`refuses a ${name}, and the server starts nothing`, async () => {
+      await connected();
+      world = world_ as World;
+      const heard = listen();
+      control.subscribe(TARGET, heard.handlers);
+      await flush();
+      expect(heard.ends).toEqual(['authorization_revoked']);
+      expect(subscribeOnServer).not.toHaveBeenCalled();
+    });
+  }
+
+  it('checks every frame: once the subscriber loses access, nothing more goes and the connection closes', async () => {
+    const { targetWs } = await connected();
+    const heard = listen();
+    control.subscribe(TARGET, heard.handlers);
+    await flush();
+    expect(served[0].sink.send('{"type":"snapshot","payload":{}}')).toBe(true);
+    world.peer = undefined;
+    expect(served[0].sink.send('{"type":"chat:event","payload":{"secret":true}}')).toBe(false);
+    await flush();
+    expect(heard.frames).toEqual([{ type: 'snapshot', payload: {} }]);
+    expect(heard.ends).toEqual(['authorization_revoked']);
+    expect(targetWs.closed?.code).toBe(CONTROL_CLOSE_REVOKED);
+    expect(JSON.stringify(targetWs.sent)).not.toContain('secret');
+  });
+
+  it('ends a subscription whose frame is too large for the connection, and the subscriber may subscribe again', async () => {
+    await connected();
+    const heard = listen();
+    control.subscribe(TARGET, heard.handlers);
+    await flush();
+    const big = `{"type":"snapshot","payload":{"x":"${'a'.repeat(CONTROL_FRAME_MAX_BYTES + 128 * 1024)}"}}`;
+    expect(served[0].sink.send(big)).toBe(false);
+    await flush();
+    expect(heard.ends).toEqual(['frame_too_large']);
+    control.subscribe(TARGET, listen().handlers);
+    await flush();
+    expect(subscribeOnServer).toHaveBeenCalledTimes(2);
+  });
+
+  it('carries a frame up to the event cap, past the request/response cap', async () => {
+    await connected();
+    const heard = listen();
+    control.subscribe(TARGET, heard.handlers);
+    await flush();
+    const near = `{"type":"snapshot","payload":{"x":"${'a'.repeat(CONTROL_FRAME_MAX_BYTES - 100)}"}}`;
+    expect(served[0].sink.send(near)).toBe(true);
+    await flush();
+    expect(heard.frames).toHaveLength(1);
+  });
+
+  it('the server ending it tells the subscriber why', async () => {
+    await connected();
+    const heard = listen();
+    control.subscribe(TARGET, heard.handlers);
+    await flush();
+    served[0].sink.end('closed');
+    await flush();
+    expect(heard.ends).toEqual(['closed']);
+    expect(served[0].sink.send('{"type":"snapshot"}')).toBe(false);
+  });
+
+  it('unsubscribing stops the server side and is not reported back', async () => {
+    await connected();
+    const heard = listen();
+    const sub = control.subscribe(TARGET, heard.handlers);
+    await flush();
+    sub.close();
+    await flush();
+    expect(served[0].close).toHaveBeenCalledTimes(1);
+    expect(heard.ends).toEqual([]);
+  });
+
+  it('the connection closing ends both sides', async () => {
+    await connected();
+    const heard = listen();
+    control.subscribe(TARGET, heard.handlers);
+    await flush();
+    control.closeFor(TARGET, 'in');
+    await flush();
+    expect(served[0].close).toHaveBeenCalledTimes(1);
+    expect(heard.ends).toEqual(['transport_unavailable']);
+  });
+
+  it('a subscriber that stops reading has its connection closed (4429), not frames dropped', async () => {
+    const { targetWs } = await connected();
+    const heard = listen();
+    control.subscribe(TARGET, heard.handlers);
+    await flush();
+    targetWs.bufferedAmount = control.CONTROL_SEND_BUFFER_MAX_BYTES;
+    expect(served[0].sink.send('{"type":"chat:event","payload":{}}')).toBe(false);
+    await flush();
+    expect(targetWs.closed?.code).toBe(CONTROL_CLOSE_BACKLOG);
+    expect(heard.ends).toEqual(['transport_unavailable']);
+    expect(served[0].close).toHaveBeenCalledTimes(1);
+  });
+
+  it('a target that serves no stream answers unavailable', async () => {
+    control.setControlTarget({ authorize: (caller) => authorize(caller, deps), stillAuthorized: (p) => stillAuthorized(p, deps), dispatch });
+    await connected();
+    const heard = listen();
+    control.subscribe(TARGET, heard.handlers);
+    await flush();
+    expect(heard.ends).toEqual(['unavailable']);
+  });
+
+  it('frames in the wrong direction close the connection', async () => {
+    const { requesterWs, targetWs } = await connected();
+    requesterWs.deliver({ v: 1, type: 'subscribe', id: 'x' });
+    expect(requesterWs.closed?.code).toBe(CONTROL_CLOSE_PROTOCOL);
+    const again = await connected();
+    again.targetWs.deliver({ v: 1, type: 'event', id: 'x', frame: { type: 'snapshot' } });
+    expect(again.targetWs.closed?.code).toBe(CONTROL_CLOSE_PROTOCOL);
+    expect(targetWs.readyState).toBe(3);
+  });
+});
+
+describe('inbound frame caps by type (P4 QA)', () => {
+  const pad = (bytes: number) => 'a'.repeat(bytes);
+
+  it('the target refuses a request over 8 MiB and closes 1009, running nothing', async () => {
+    const { targetWs } = await connected();
+    targetWs.deliver({ v: 1, type: 'request', id: 'big', method: 'POST', path: '/p', body: pad(CONTROL_FRAME_MAX_BYTES + 1) });
+    expect(targetWs.closed?.code).toBe(1009);
+    await flush();
+    expect(dispatch).not.toHaveBeenCalled();
+  });
+
+  it('the requester refuses a response over 8 MiB and closes 1009; what waited fails as transport_unavailable', async () => {
+    const { requesterWs } = await connected();
+    handler = async () => { await new Promise(() => {}); return ok({}); };
+    const pending = control.request(TARGET, { method: 'GET', path: '/a' }, { requestId: 'r-big' });
+    await flush();
+    requesterWs.deliver({ v: 1, type: 'response', id: 'r-big', status: 200, headers: {}, body: pad(CONTROL_FRAME_MAX_BYTES + 1), encoding: 'utf8' });
+    expect(requesterWs.closed?.code).toBe(1009);
+    await expect(pending).rejects.toMatchObject({ code: 'transport_unavailable' });
+  });
+
+  it('the requester takes a subscription event up to the event cap', async () => {
+    const { requesterWs } = await connected();
+    const frames: unknown[] = [];
+    const sub = control.subscribe(TARGET, { onFrame: (f) => frames.push(f), onEnd: () => {} });
+    requesterWs.deliver({ v: 1, type: 'event', id: sub.id, frame: { type: 'snapshot', payload: { x: pad(CONTROL_FRAME_MAX_BYTES + 32 * 1024) } } });
+    expect(requesterWs.closed).toBeNull();
+    expect(frames).toHaveLength(1);
+  });
+
+  it('the target refuses even an event-shaped frame over 8 MiB: events only go the other way', async () => {
+    const { targetWs } = await connected();
+    targetWs.deliver({ v: 1, type: 'event', id: 'x', frame: { type: 'snapshot', payload: { x: pad(CONTROL_FRAME_MAX_BYTES + 32 * 1024) } } });
+    expect(targetWs.closed?.code).toBe(1009);
   });
 });
 

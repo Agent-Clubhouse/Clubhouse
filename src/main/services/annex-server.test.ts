@@ -8553,7 +8553,7 @@ describe('annex-server', () => {
       });
       annexControl._attachForTesting(ws as never, MEMBER.fingerprint, pin, 'out');
       annexControl._sendHelloForTesting(MEMBER.fingerprint);
-      ws.emit('message', Buffer.from(JSON.stringify({ v: 1, type: 'hello', features: ['request'] })), false);
+      ws.emit('message', Buffer.from(JSON.stringify({ v: 1, type: 'hello', features: ['request', 'subscribe'] })), false);
       const send = (method: string, path: string, body: unknown, id: string) =>
         ws.emit('message', Buffer.from(JSON.stringify({ v: 1, type: 'request', id, method, path, ...(body !== undefined && { body: JSON.stringify(body), headers: { 'content-type': 'application/json' } }) })), false);
       const cancel = (id: string) => ws.emit('message', Buffer.from(JSON.stringify({ v: 1, type: 'cancel', id })), false);
@@ -8748,6 +8748,151 @@ describe('annex-server', () => {
         } finally {
           annexControl._setTargetTimeoutForTesting(null);
         }
+      }, 15_000);
+    });
+
+    describe('reverse subscription: this machine\'s /ws stream, served to the member over its connection (P4)', () => {
+      beforeEach(async () => {
+        // What a snapshot build reads, as the snapshot tests set it up (mockReset clears it between tests).
+        vi.mocked(pluginManifestRegistry.listAllManifests).mockReturnValue([]);
+        const { groupProjectRegistry } = await import('./group-project-registry');
+        vi.mocked(groupProjectRegistry.list).mockResolvedValue([]);
+        const themeService = await import('./theme-service');
+        vi.mocked(themeService.getSettings).mockReturnValue({ themeId: 'catppuccin-mocha' } as any);
+      });
+
+      /** A connection where MEMBER agreed to subscribe; `events()` is what it has received, as /ws frames. */
+      function subscribed() {
+        const link = targetLink();
+        const id = `sub-${++nextId}`;
+        link.ws.emit('message', Buffer.from(JSON.stringify({ v: 1, type: 'subscribe', id })), false);
+        const frames = () => link.ws.sent.filter((m) => m.type === 'event' && m.id === id).map((m) => m.frame);
+        const ended = () => link.ws.sent.filter((m) => (m.type === 'ended' || m.type === 'error') && m.id === id);
+        const virtual = () => [...annexServer._testing.wss!.clients].filter((c) => annexServer._testing.wsPeerFingerprints.get(c) === MEMBER.fingerprint);
+        return { ...link, id, frames, ended, virtual };
+      }
+
+      it('serves a fresh snapshot first, then live events with their seq, as a /ws socket from it would get them', async () => {
+        await startAndPair();
+        const sub = subscribed();
+        await vi.waitFor(() => expect(sub.frames()[0]).toMatchObject({ type: 'snapshot', payload: { lastSeq: expect.any(Number) } }));
+        expect(sub.virtual()).toHaveLength(1);
+        annexServer._testing.broadcastForTest({ type: 'theme:changed', payload: { themeId: 'x' } });
+        const onData = vi.mocked(annexEventBus.onPtyData).mock.calls.at(-1)![0];
+        onData('agent-1', 'hello', 5);
+        await vi.waitFor(() => expect(sub.frames().map((f) => f.type)).toEqual(['snapshot', 'theme:changed', 'pty:data']));
+        expect(sub.frames()[2]).toMatchObject({ payload: { agentId: 'agent-1', data: 'hello', outputSeq: 5 }, seq: expect.any(Number) });
+      }, 15_000);
+
+      it('never gets the lock, and has no path into the /ws handlers', async () => {
+        await startAndPair();
+        mockBroadcastToAllWindows.mockClear();
+        const sub = subscribed();
+        await vi.waitFor(() => expect(sub.frames()[0]).toMatchObject({ type: 'snapshot' }));
+        expect(mockBroadcastToAllWindows.mock.calls.some(([, payload]) => (payload as { locked?: boolean } | undefined)?.locked === true)).toBe(false);
+        const [virtual] = sub.virtual() as unknown as EventEmitter[];
+        expect(virtual.listenerCount('message')).toBe(0);
+        vi.mocked(agentSystem.killAgent).mockClear();
+        virtual.emit('message', Buffer.from(JSON.stringify({ type: 'agent:kill', payload: { agentId: 'a' } })));
+        await new Promise((resolve) => setTimeout(resolve, 20));
+        expect(agentSystem.killAgent).not.toHaveBeenCalled();
+      }, 15_000);
+
+      it('never receives another controller\'s private shell output', async () => {
+        await startAndPair();
+        const sub = subscribed();
+        await vi.waitFor(() => expect(sub.frames()[0]).toMatchObject({ type: 'snapshot' }));
+        const owner = Object.assign(new EventEmitter(), { readyState: 1, send: vi.fn(), close: vi.fn(), terminate: vi.fn(), ping: vi.fn() });
+        annexServer._testing.shellOwners.set('private-shell', owner as never);
+        try {
+          const onData = vi.mocked(annexEventBus.onPtyData).mock.calls.at(-1)![0];
+          onData('private-shell', 'secret', 1);
+          onData('agent-1', 'public', 2);
+          await vi.waitFor(() => expect(sub.frames().some((f) => f.type === 'pty:data')).toBe(true));
+          expect(owner.send).toHaveBeenCalledTimes(1);
+          expect(JSON.stringify(sub.frames())).not.toContain('secret');
+          expect(sub.frames().filter((f) => f.type === 'pty:data').map((f) => (f.payload as { agentId: string }).agentId)).toEqual(['agent-1']);
+        } finally {
+          annexServer._testing.shellOwners.delete('private-shell');
+        }
+      }, 15_000);
+
+      for (const [name, change] of [
+        ['removed', () => undefined],
+        ['made pending', () => ({ ...MEMBER, networkPending: true })],
+        ['re-pinned', () => ({ ...MEMBER, tlsCertificateFingerprint: 'AB:CD:EF:02' })],
+      ] as const) {
+        it(`stops at the next frame once the subscriber is ${name}: no frame after, the subscription and connection end`, async () => {
+          await startAndPair();
+          const sub = subscribed();
+          await vi.waitFor(() => expect(sub.frames()[0]).toMatchObject({ type: 'snapshot' }));
+          const before = sub.frames().length;
+          current = change();
+          annexServer._testing.broadcastForTest({ type: 'theme:changed', payload: { themeId: 'after' } });
+          expect(sub.frames()).toHaveLength(before);
+          expect(sub.ended()).toEqual([{ v: 1, type: 'ended', id: sub.id, code: 'authorization_revoked' }]);
+          expect(sub.ws.close).toHaveBeenCalledWith(4401, 'authorization_revoked');
+          expect(sub.virtual()).toHaveLength(0);
+        }, 15_000);
+      }
+
+      it('counts as connected only while the subscriber is allowed as reverse, even before its next frame', async () => {
+        await startAndPair();
+        const sub = subscribed();
+        await vi.waitFor(() => expect(sub.frames()[0]).toMatchObject({ type: 'snapshot' }));
+        expect(annexServer.connectedPeerFingerprints().has(MEMBER.fingerprint)).toBe(true);
+        // A one-to-one controller may control this machine directly, but never over a reverse connection.
+        current = { ...TEST_CONTROLLER };
+        expect(annexServer.connectedPeerFingerprints().has(MEMBER.fingerprint)).toBe(false);
+        expect(annexServer._testing.socketStillPaired(sub.virtual()[0])).toBe(false);
+      }, 15_000);
+
+      it('the server serves no subscription for a principal that is not a reverse one', async () => {
+        await startAndPair();
+        const sink = { send: vi.fn(() => true), end: vi.fn() };
+        const before = annexServer._testing.wss!.clients.size;
+        const handle = annexServer._testing.subscribeReverse({ fingerprint: MEMBER.fingerprint, pin: MEMBER.tlsCertificateFingerprint, role: 'member', via: 'direct' }, sink);
+        expect(handle).toBeNull();
+        expect(annexServer._testing.wss!.clients.size).toBe(before);
+        expect(sink.send).not.toHaveBeenCalled();
+      }, 15_000);
+
+      it('is refused to a subscriber that is not an active desktop member here, and nothing is registered', async () => {
+        await startAndPair();
+        current = { ...MEMBER, kind: 'phone' };
+        const sub = subscribed();
+        await vi.waitFor(() => expect(sub.ended()).toEqual([{ v: 1, type: 'error', id: sub.id, code: 'authorization_revoked' }]));
+        expect(sub.virtual()).toHaveLength(0);
+        expect(sub.frames()).toEqual([]);
+      }, 15_000);
+
+      it('ends when the subscriber is removed here, and when the server stops', async () => {
+        await startAndPair();
+        const first = subscribed();
+        await vi.waitFor(() => expect(first.frames()[0]).toMatchObject({ type: 'snapshot' }));
+        annexServer.revokePeer(MEMBER.fingerprint);
+        expect(first.virtual()).toHaveLength(0);
+        expect(first.ws.close).toHaveBeenCalledWith(4401, 'authorization_revoked');
+
+        current = MEMBER;
+        const second = subscribed();
+        await vi.waitFor(() => expect(second.frames()[0]).toMatchObject({ type: 'snapshot' }));
+        const clients = annexServer._testing.wss!.clients;
+        annexServer.stop();
+        expect([...clients].filter((c) => annexServer._testing.wsPeerFingerprints.get(c) === MEMBER.fingerprint)).toHaveLength(0);
+        expect(second.ended()).toEqual([{ v: 1, type: 'ended', id: second.id, code: 'closed' }]);
+      }, 15_000);
+
+      it('unsubscribing, or the connection closing, removes the virtual client', async () => {
+        await startAndPair();
+        const sub = subscribed();
+        await vi.waitFor(() => expect(sub.frames()[0]).toMatchObject({ type: 'snapshot' }));
+        sub.ws.emit('message', Buffer.from(JSON.stringify({ v: 1, type: 'unsubscribe', id: sub.id })), false);
+        expect(sub.virtual()).toHaveLength(0);
+        const again = subscribed();
+        await vi.waitFor(() => expect(again.frames()[0]).toMatchObject({ type: 'snapshot' }));
+        again.ws.emit('close');
+        expect(again.virtual()).toHaveLength(0);
       }, 15_000);
     });
 

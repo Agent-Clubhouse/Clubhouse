@@ -11,8 +11,23 @@ describe('Annex control protocol (#3613 P3)', () => {
     expect(parseControlMessage(JSON.stringify({ v: 1, type: 'error', id: 'a-1', code: 'busy' }))).toMatchObject({ ok: true });
   });
 
-  it('offers only the request feature in this slice', () => {
-    expect([...CONTROL_FEATURES]).toEqual(['request']);
+  it('offers request (P3) and subscribe (P4)', () => {
+    expect([...CONTROL_FEATURES]).toEqual(['request', 'subscribe']);
+  });
+
+  it('parses subscription frames exactly', () => {
+    expect(parseControlMessage(JSON.stringify({ v: 1, type: 'subscribe', id: 's1' }))).toEqual({ ok: true, message: { v: 1, type: 'subscribe', id: 's1' } });
+    expect(parseControlMessage(JSON.stringify({ v: 1, type: 'unsubscribe', id: 's1' }))).toEqual({ ok: true, message: { v: 1, type: 'unsubscribe', id: 's1' } });
+    expect(parseControlMessage(JSON.stringify({ v: 1, type: 'event', id: 's1', frame: { type: 'snapshot', payload: {} } })))
+      .toEqual({ ok: true, message: { v: 1, type: 'event', id: 's1', frame: { type: 'snapshot', payload: {} } } });
+    expect(parseControlMessage(JSON.stringify({ v: 1, type: 'ended', id: 's1', code: 'closed' }))).toMatchObject({ ok: true });
+    for (const bad of [
+      { v: 1, type: 'subscribe' },
+      { v: 1, type: 'event', id: 's1', frame: 'text' },
+      { v: 1, type: 'event', id: 's1', frame: { payload: {} } },
+      { v: 1, type: 'event', id: 's1', frame: [] },
+      { v: 1, type: 'ended', id: 's1', code: 'made_up' },
+    ]) expect(parseControlMessage(JSON.stringify(bad)).ok, JSON.stringify(bad)).toBe(false);
   });
 
   it('refuses what is not exactly a control message', () => {
