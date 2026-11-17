@@ -228,7 +228,25 @@ describe('the review dialog keeps its answers in one place (#3606)', () => {
     // The next request takes the first one's place in the same panel, with its answers in the same footer.
     await waitFor(() => expect(within(dialog).getByText(/much longer reason/)).toBeInTheDocument());
     expect(dialog.lastElementChild).toContainElement(within(dialog).getByTestId('grant-request-allow'));
-    expect(within(dialog).queryByRole('status')).toBeNull();
+    expect(within(dialog).getByRole('status')).toHaveTextContent('1 waiting');
+  });
+
+  it('moves focus to the next request\'s Allow, and keeps the count in a status region', async () => {
+    useGrantRequestStore.getState().add(asks('g1', 0, 'Short.'));
+    useGrantRequestStore.getState().add(asks('g2', 5, 'Second.'));
+    useGrantRequestStore.getState().review('a1');
+    render(<GrantRequestDialog />);
+    const dialog = await screen.findByTestId('grant-request-dialog');
+    expect(within(dialog).getByRole('status')).toHaveTextContent('1 of 2 waiting');
+    const user = userEvent.setup();
+    within(dialog).getByTestId('grant-request-allow').focus();
+    await user.keyboard('{Enter}');
+    await waitFor(() => expect(within(dialog).getByText('Its reason: Second.')).toBeInTheDocument());
+    await waitFor(() => expect(document.activeElement).toBe(within(dialog).getByTestId('grant-request-allow')));
+    expect(within(dialog).getByRole('status')).toHaveTextContent('1 waiting');
+    // The last answer closes the dialog; the Modal returns focus to where it was.
+    await user.keyboard('{Enter}');
+    await waitFor(() => expect(screen.queryByTestId('grant-request-dialog')).toBeNull());
   });
 
   it('shows a failed answer above the buttons, on the request it was for', async () => {

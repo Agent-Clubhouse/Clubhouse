@@ -8,8 +8,9 @@ import { chatDom, openRichChat, TURN_TIMEOUT } from './harness';
  * The pinned native permission card (#3606, S1): three consecutive approvals
  * of different lengths, answered one after another, at each window size. The
  * request scrolls inside the card, and Allow and Decline stay in one place,
- * inside the window. Claude's cards offer fewer options than Codex's, so the
- * two specs between them cover two option counts. See e2e/approval-geometry.ts.
+ * inside the window, and the second request offers an extra "always allow"
+ * option, so the option shape changes between requests. Claude's cards offer
+ * fewer options than Codex's, so the two specs between them cover four counts. See e2e/approval-geometry.ts.
  */
 
 const SENTENCE = 'which touches the build, the release notes and the migration guide, so it needs a decision before the helpers carry on';
@@ -21,6 +22,8 @@ const REQUESTS: ScriptApproval[] = [
     tool: 'Bash',
     input: { command: ['echo probe-r2', 'npm run build -- --workspace packages/web', 'npm run build -- --workspace packages/desktop'].join(' && \\\n  ') },
     title: 'Run probe-r2: build the release bundle for the web client and the desktop shell',
+    // A third option, "always allow": the options below Allow and Decline's row come and go with it.
+    alwaysAllow: 'npm run build',
     description: `This builds both bundles, ${SENTENCE}.`,
   },
   {
@@ -60,7 +63,7 @@ export async function expectPinnedApprovalsAnchored(cli: ChatFixtureCli): Promis
             bodyScrolls: (() => { const body = region.querySelector('[data-testid="chat-permission-body"]'); return !!body && body.scrollHeight > body.clientHeight; })(),
           };
         });
-        await log.record(window, size, i + 1, { allow, decline }, notes);
+        await log.record(window, size, i + 1, { allow, decline, scrollers: [pinned, pinned.locator('[data-testid="chat-permission-body"]')] }, notes);
         await clickAllow(allow);
       }
       await expect(dom.turnFooters).toHaveCount(turn + 1, { timeout: TURN_TIMEOUT });

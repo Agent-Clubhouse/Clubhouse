@@ -66,6 +66,16 @@ export async function originalSize(page: Page): Promise<{ width: number; height:
   return page.evaluate(() => ({ width: window.innerWidth, height: window.innerHeight }));
 }
 
+/** `locator` lies inside the window and is what a click at its center hits (nothing covers it). */
+export async function expectReachable(locator: Locator): Promise<void> {
+  await expect(locator).toBeVisible();
+  await expect.poll(() => locator.evaluate((el) => {
+    const r = el.getBoundingClientRect();
+    const top = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
+    return { inside: r.top >= 0 && r.left >= 0 && r.bottom <= window.innerHeight + 1 && r.right <= window.innerWidth + 1, hit: !!top && el.contains(top) };
+  })).toEqual({ inside: true, hit: true });
+}
+
 /** The box once it has stopped moving: the same two reads in a row, so an entry animation or a reflow has finished. */
 export async function settledBox(locator: Locator): Promise<Box> {
   const read = () => locator.evaluate((el) => {
@@ -87,7 +97,16 @@ export class GeometryLog {
   readonly samples: Sample[] = [];
   constructor(private readonly surface: string) {}
 
-  async record(page: Page, size: WindowSize, request: number, buttons: { allow: Locator; decline: Locator }, notes: Sample['notes'] = {}): Promise<Sample> {
+  /**
+   * Measure the two buttons. `scrollers` are the surface's scrolling areas: each must still be at the top, so a
+   * button is reached where it is and never by scrolling (a click that scrolled would show in the next request).
+   */
+  async record(page: Page, size: WindowSize, request: number, buttons: { allow: Locator; decline: Locator; scrollers?: Locator[] }, notes: Sample['notes'] = {}): Promise<Sample> {
+    const tops = await Promise.all((buttons.scrollers ?? []).map((scroller) => scroller.evaluate((el) => Math.round(el.scrollTop))));
+    expect(tops, `${this.surface} at ${size.label}, request ${request}: a scrolling area was scrolled`).toEqual(tops.map(() => 0));
+    // A button a person can press where it is: inside the window, and the element a click there lands on.
+    await expectReachable(buttons.allow);
+    await expectReachable(buttons.decline);
     const box = await settledBox(buttons.allow);
     const decline = await settledBox(buttons.decline);
     const [innerWidth, innerHeight] = await page.evaluate(() => [window.innerWidth, window.innerHeight]);

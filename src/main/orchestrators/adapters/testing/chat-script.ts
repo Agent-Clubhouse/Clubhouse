@@ -98,6 +98,12 @@ export interface ScriptApproval {
   description?: string;
   /** The tool's result once approved. Default: "Done." */
   result?: string;
+  /**
+   * A rule the CLI offers to remember, which adds an always-allow option to the card: Claude's
+   * `permission_suggestions` (an allow rule with this content), Codex's proposed exec policy
+   * (this command prefix). Copilot has none. Allow once still answers it.
+   */
+  alwaysAllow?: string;
 }
 
 export interface ScriptTurn {
@@ -316,14 +322,14 @@ function claudeTurn(turn: ScriptTurn, index: number, ctx: TurnContext): Entry[] 
       out.push(assistant([{ type: 'tool_use', id, name: 'Bash', input: { command: step.command, description: 'Run a command' } }]));
       out.push(toolResult(id, step.output, { tool_use_result: { stdout: step.output, stderr: '', interrupted: false, isImage: false } }));
     } else if (step.type === 'approval') {
-      const { tool, input, title, description, result: said = 'Done.' } = step.approval;
+      const { tool, input, title, description, alwaysAllow, result: said = 'Done.' } = step.approval;
       const id = `toolu_script_${++ctx.seq}`;
       const requestId = `perm-script-${ctx.seq}`;
       ctx.synthesized.add('can_use_tool title and description text, and a plain-text tool_result (fields as claude/permission-approve-edit)');
       out.push(assistant([{ type: 'tool_use', id, name: tool, input }]));
       out.push(cliEntry({
         type: 'control_request', request_id: requestId,
-        request: { subtype: 'can_use_tool', tool_name: tool, input, tool_use_id: id, permission_suggestions: [], ...(title && { title }), ...(description && { description }) },
+        request: { subtype: 'can_use_tool', tool_name: tool, input, tool_use_id: id, permission_suggestions: alwaysAllow ? [{ type: 'addRules', rules: [{ toolName: tool, ruleContent: alwaysAllow }], behavior: 'allow', destination: 'localSettings' }] : [], ...(title && { title }), ...(description && { description }) },
       }));
       // As claude/permission-approve-edit: allow echoes the input back as updatedInput.
       out.push(clientEntry(
@@ -425,6 +431,7 @@ function codexTurn(turn: ScriptTurn, index: number, ctx: TurnContext): Entry[] {
         cliEntry({ id: requestId, method: 'item/commandExecution/requestApproval', params: {
           kind: 'command', threadId, turnId, itemId, startedAtMs: 1792180000500, approvalId: null, environmentId: null,
           reason: step.approval.description ?? null, command, cwd: '/workspace/project', commandActions: actions,
+          ...(step.approval.alwaysAllow && { proposedExecpolicyAmendment: step.approval.alwaysAllow.split(' ') }),
           availableDecisions: ['accept', 'acceptForSession', 'decline', 'cancel'],
         } }),
         clientEntry({ id: requestId, result: { decision: 'accept' } }, { id: requestId, result: { decision: 'accept' } }),

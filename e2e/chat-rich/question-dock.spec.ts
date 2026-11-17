@@ -1,6 +1,7 @@
 import { test, expect, type Locator, type Page } from '@playwright/test';
 import type { ChatFixtureCli } from '../../src/main/orchestrators/adapters/testing/fake-cli';
 import type { ScriptApproval, ScriptQuestion } from '../../src/main/orchestrators/adapters/testing/chat-script';
+import { expectReachable } from '../approval-geometry';
 import { chatDom, expectNoPageScroll, openRichChat, TURN_TIMEOUT, type RichChat } from './harness';
 
 /**
@@ -72,16 +73,6 @@ async function expectNothingAroundScrolled(page: Page): Promise<void> {
     return out;
   });
   expect(scrolled).toEqual([]);
-}
-
-/** `locator` lies inside the window and is what a click at its center hits (nothing covers it). */
-async function expectReachable(locator: Locator): Promise<void> {
-  await expect(locator).toBeVisible();
-  await expect.poll(() => locator.evaluate((el) => {
-    const r = el.getBoundingClientRect();
-    const top = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
-    return { inside: r.top >= 0 && r.left >= 0 && r.bottom <= window.innerHeight + 1 && r.right <= window.innerWidth + 1, hit: !!top && el.contains(top) };
-  })).toEqual({ inside: true, hit: true });
 }
 
 /**

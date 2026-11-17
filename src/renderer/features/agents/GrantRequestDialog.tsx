@@ -5,9 +5,12 @@
  *
  * It shows the oldest request, and its answers sit in the footer of a panel
  * of fixed size, so Allow and Decline stay where they are as requests
- * resolve and the next one takes its place (#3606).
+ * resolve and the next one takes its place (#3606). The next request's Allow
+ * takes focus; when none is left the dialog closes and focus returns to where
+ * it was.
  */
 
+import { useEffect, useRef } from 'react';
 import { Modal } from '../../components/Modal';
 import { useAgentStore } from '../../stores/agentStore';
 import { grantRequestsFor, useGrantRequestStore } from '../../stores/grantRequestStore';
@@ -20,7 +23,15 @@ export function GrantRequestDialog() {
   const waiting = useGrantRequestStore((s) => (s.reviewing ? grantRequestsFor(s.requests, s.reviewing).length : 0));
   const review = useGrantRequestStore((s) => s.review);
   const liveName = useAgentStore((s) => (reviewing ? s.agents[reviewing]?.name : undefined));
-  const answering = useGrantAnswering();
+  const focusAfterAnswer = useRef(false);
+  const answering = useGrantAnswering(() => { focusAfterAnswer.current = true; });
+  const footer = useRef<HTMLDivElement>(null);
+  const headId = first?.requestId;
+  useEffect(() => {
+    if (!focusAfterAnswer.current) return;
+    focusAfterAnswer.current = false;
+    footer.current?.querySelector<HTMLElement>('button:not([disabled])')?.focus();
+  }, [headId]);
   if (!reviewing || !first) return null;
   const name = liveName ?? first.agentName;
   return (
@@ -32,7 +43,7 @@ export function GrantRequestDialog() {
       height="h-[min(520px,calc(100vh-48px))]"
       testId="grant-request-dialog"
       footer={(
-        <div className="flex w-full flex-col gap-1.5">
+        <div ref={footer} className="flex w-full flex-col gap-1.5">
           <GrantRequestError r={first} answering={answering} />
           <div className="flex justify-end"><GrantRequestActions r={first} answering={answering} /></div>
         </div>
@@ -40,7 +51,8 @@ export function GrantRequestDialog() {
     >
       <div data-testid="grant-request-list" aria-label={`${name}'s permission requests`}>
         <div data-testid={`grant-request-${first.requestId}`}>
-          {waiting > 1 && <p className="mb-2 text-xs text-ctp-overlay1" role="status">{`1 of ${waiting} waiting`}</p>}
+          {/* Always here, so a screen reader hears the count change; seen only when more than one waits. */}
+          <p role="status" className={waiting > 1 ? 'mb-2 text-xs text-ctp-overlay1' : 'sr-only'}>{waiting > 1 ? `1 of ${waiting} waiting` : '1 waiting'}</p>
           <GrantRequestBody r={first} />
         </div>
       </div>

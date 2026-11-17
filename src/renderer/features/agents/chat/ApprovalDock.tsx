@@ -157,28 +157,46 @@ export function PermissionCard({ request, plan, queueSize, agentName, extras, on
       ))}
     </div>
   );
+  const optionButton = (opt: PermissionOption, i: number) => {
+    const isPrimary = opt === primary;
+    return (
+      <button
+        key={opt.optionId}
+        type="button"
+        disabled={answered || (planEmpty && ALLOW_KINDS.has(opt.kind))}
+        onClick={(e) => { if (!isRepeatClick(e)) choose(opt); }}
+        className={`flex items-center gap-2.5 h-[30px] px-2 rounded-md text-[12.5px] text-left disabled:opacity-50 ${isPrimary ? 'bg-surface-0 text-ctp-text ring-1 ring-surface-1' : 'text-ctp-subtext1 hover:bg-surface-0/60'}`}
+        data-option-kind={opt.kind}
+      >
+        <span className="w-[18px] h-[18px] rounded bg-ctp-crust grid place-items-center text-[11px] text-ctp-overlay1 flex-shrink-0">{i + 1}</span>
+        <span className="truncate">{opt.label}</span>
+        {opt.scope && <span className="font-mono text-[11px] text-ctp-overlay1 truncate">{opt.scope}</span>}
+        {!dirty && isPrimary && <Key>⏎</Key>}
+        {!dirty && opt === reject && <Key>Esc</Key>}
+      </button>
+    );
+  };
   const optionButtons = (
     <div className={compact ? "flex flex-wrap gap-1" : "flex flex-col gap-0.5 pl-5"}>
-      {request.options.map((opt, i) => {
-        const isPrimary = opt === primary;
-        return (
-          <button
-            key={opt.optionId}
-            type="button"
-            disabled={answered || (planEmpty && ALLOW_KINDS.has(opt.kind))}
-            onClick={(e) => { if (!isRepeatClick(e)) choose(opt); }}
-            className={`flex items-center gap-2.5 h-[30px] px-2 rounded-md text-[12.5px] text-left disabled:opacity-50 ${isPrimary ? 'bg-surface-0 text-ctp-text ring-1 ring-surface-1' : 'text-ctp-subtext1 hover:bg-surface-0/60'}`}
-            data-option-kind={opt.kind}
-          >
-            <span className="w-[18px] h-[18px] rounded bg-ctp-crust grid place-items-center text-[11px] text-ctp-overlay1 flex-shrink-0">{i + 1}</span>
-            <span className="truncate">{opt.label}</span>
-            {opt.scope && <span className="font-mono text-[11px] text-ctp-overlay1 truncate">{opt.scope}</span>}
-            {!dirty && isPrimary && <Key>⏎</Key>}
-            {!dirty && opt === reject && <Key>Esc</Key>}
-          </button>
-        );
-      })}
+      {request.options.map((opt, i) => optionButton(opt, i))}
     </div>
+  );
+  // The pinned card's two defaults share a row of their own at the bottom; anything else the provider offers is above it.
+  const indexOf = (opt: PermissionOption) => request.options.indexOf(opt);
+  const bottomOptions = [primary, reject].filter((o): o is PermissionOption => !!o);
+  const extraOptions = request.options.filter((o) => !bottomOptions.includes(o));
+  const planNotes = canEditPlan && (planEdited || planEmpty) && (
+    <>
+      {planEdited && <span>Approving sends your edited plan.</span>}
+      {planEmpty && (
+        <>
+          <span className="text-ctp-warning" role="status">The plan is empty, so it can't be approved.</span>
+          <button type="button" onClick={() => setPlanText(plan!.markdown)} className="h-6 px-2 rounded-md bg-surface-0 text-ctp-subtext1">
+            Restore original
+          </button>
+        </>
+      )}
+    </>
   );
   const planEditor = canEditPlan && (
     <div className="pl-5 flex flex-col gap-1.5">
@@ -203,15 +221,7 @@ export function PermissionCard({ request, plan, queueSize, agentName, extras, on
         >
           {editing ? 'Hide plan editor' : 'Edit plan'}
         </button>
-        {planEdited && <span>Approving sends your edited plan.</span>}
-        {planEmpty && (
-          <>
-            <span className="text-ctp-warning" role="status">The plan is empty, so it can't be approved.</span>
-            <button type="button" onClick={() => setPlanText(plan!.markdown)} className="h-6 px-2 rounded-md bg-surface-0 text-ctp-subtext1">
-              Restore original
-            </button>
-          </>
-        )}
+        {!compact && planNotes}
       </div>
     </div>
   );
@@ -260,7 +270,10 @@ export function PermissionCard({ request, plan, queueSize, agentName, extras, on
     );
   }
   // The pinned card (#3606): the request scrolls above its answers, which sit at the bottom of the card and so
-  // stay in one place, above the composer, whatever the request's length or the width of the pane.
+  // stay in one place, above the composer, whatever the request's length or the width of the pane. Allow and
+  // Decline are the last row, whatever else is offered; notes, extra options and the message field grow upward
+  // from it, and nothing that can scroll away sits between a note and the button it is about.
+  const notes = planNotes && <div className="pl-5 flex flex-wrap items-center gap-2 text-[12px] text-ctp-overlay1" data-testid="chat-permission-notes">{planNotes}</div>;
   return (
     <div {...rootProps} className={`${rootClass} min-h-0`}>
       <div className="min-h-0 flex flex-col gap-2 overflow-y-auto" data-testid="chat-permission-body">
@@ -268,11 +281,19 @@ export function PermissionCard({ request, plan, queueSize, agentName, extras, on
         {details}
         {preview}
         {planEditor}
-        {pausedNote}
       </div>
       <div className="flex-shrink-0 flex flex-col gap-2" data-testid="chat-permission-actions">
-        {optionButtons}
+        {notes}
+        {pausedNote}
+        {extraOptions.length > 0 && (
+          <div className="flex flex-wrap gap-1" data-testid="chat-permission-extra-options">
+            {extraOptions.map((opt) => optionButton(opt, indexOf(opt)))}
+          </div>
+        )}
         {feedbackInput}
+        <div className="flex flex-wrap gap-1" data-testid="chat-permission-primary-actions">
+          {bottomOptions.map((opt) => optionButton(opt, indexOf(opt)))}
+        </div>
       </div>
     </div>
   );

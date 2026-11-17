@@ -64,7 +64,7 @@ test('the grant review dialog keeps Allow and Decline in one place across three 
           const r = panel.getBoundingClientRect();
           return { panelTop: Math.round(r.top), panelHeight: Math.round(r.height) };
         });
-        await log.record(window, size, i + 1, { allow, decline }, notes);
+        await log.record(window, size, i + 1, { allow, decline, scrollers: [dialog.getByTestId('grant-request-list').locator('xpath=..')] }, notes);
         await decline.click();
       }
       // The last answer closes the dialog.

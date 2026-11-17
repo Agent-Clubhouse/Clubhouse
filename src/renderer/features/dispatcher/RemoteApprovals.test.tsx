@@ -130,6 +130,47 @@ describe('a queue of approvals from other computers answers the one acted on (#3
     await waitFor(() => expect(window.clubhouse.dispatcher.answerRemoteApproval).toHaveBeenLastCalledWith('laptop', 'gr_2', 'allow_once'));
   });
 
+  it('a request only its own computer can answer does not hold up the ones behind it', async () => {
+    const update = { ...REQUEST, requestId: 'gr_u', update: {} as never };
+    useAnnexClientStore.setState({ satellites: [satellite([update, NEXT])] } as never);
+    render(<RemoteApprovals />);
+    await act(async () => {});
+    // The update is oldest, but the answerable one shows, with the count over both and a line for the one that waits there.
+    expect(rows()).toHaveLength(1);
+    expect(rows()[0].textContent).toContain('much longer call');
+    expect(screen.getByTestId('dispatcher-remote-approval-count')).toHaveTextContent('2 of 2');
+    expect(screen.getByTestId('dispatcher-remote-approval-elsewhere')).toHaveTextContent('1 waiting on Laptop');
+    fireEvent.click(within(rows()[0]).getByTestId('dispatcher-remote-approval-allow_lasting'));
+    await waitFor(() => expect(window.clubhouse.dispatcher.answerRemoteApproval).toHaveBeenCalledExactlyOnceWith('laptop', 'gr_2', 'allow_lasting'));
+    // Once it is answered, only the update is left: shown as before, to be answered on Laptop.
+    await waitFor(() => expect(rows()[0].textContent).toContain('Answer it on Laptop.'));
+  });
+
+  it('an answered request does not block the next, which takes focus', async () => {
+    useAnnexClientStore.setState({ satellites: [satellite([REQUEST, NEXT])] } as never);
+    render(<RemoteApprovals />);
+    await act(async () => {});
+    const user = userEvent.setup();
+    within(rows()[0]).getByTestId('dispatcher-remote-approval-allow_once').focus();
+    await user.keyboard('{Enter}');
+    // Its computer's snapshot hasn't dropped it, and the next request is already the head.
+    await waitFor(() => expect(rows()[0].textContent).toContain('much longer call'));
+    expect(screen.getByTestId('dispatcher-remote-approval-answered')).toBeInTheDocument();
+    await waitFor(() => expect(document.activeElement).toBe(within(rows()[0]).getByTestId('dispatcher-remote-approval-allow_once')));
+  });
+
+  it('moves focus to the composer when the last request is answered, and keeps the count in a status region', async () => {
+    render(<div data-testid="chat-dock"><RemoteApprovals /><textarea aria-label="Message" /></div>);
+    await act(async () => {});
+    // Mounted with one request too, for a screen reader to hear the count change.
+    expect(screen.getByRole('status')).toHaveTextContent('1 of 1');
+    const user = userEvent.setup();
+    within(rows()[0]).getByTestId('dispatcher-remote-approval-allow_once').focus();
+    await user.keyboard('{Enter}');
+    await waitFor(() => expect(document.activeElement).toBe(screen.getByLabelText('Message')));
+    expect(screen.getByRole('status')).toHaveTextContent('Answered.');
+  });
+
   it('refuses an answer for a request that left its snapshot, before the row has redrawn', async () => {
     useAnnexClientStore.setState({ satellites: [satellite([REQUEST, NEXT])] } as never);
     render(<RemoteApprovals />);

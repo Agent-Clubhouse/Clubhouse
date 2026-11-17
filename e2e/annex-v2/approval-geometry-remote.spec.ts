@@ -123,7 +123,7 @@ test('the lead’s remote approvals keep Allow and Decline in one place across t
           const r = el.getBoundingClientRect();
           return { rowTop: Math.round(r.top), rowHeight: Math.round(r.height) };
         });
-        await log.record(here.window, size, i + 1, { allow, decline }, notes);
+        await log.record(here.window, size, i + 1, { allow, decline, scrollers: [row.getByTestId('dispatcher-remote-approval-details')] }, notes);
         await decline.click();
         // Declined on Desk, applied on Laptop, and gone from Desk with Laptop's next snapshot.
         if (i < REQUESTS.length - 1) await expect(row).not.toContainText(request.reason.slice(0, 30), { timeout: 30_000 });
