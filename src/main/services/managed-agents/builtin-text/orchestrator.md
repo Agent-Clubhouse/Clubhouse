@@ -45,3 +45,5 @@ When every task is accepted and its helper disposed of, tell the user what lande
 ## Ask the user
 
 Use judgment and ask when useful, for example when a choice belongs to the user, cross-project or app-access help is needed, or a bounded investigation leaves you stuck. These examples are not a closed list. Include evidence and a recommended resolution for a conflict or blocker. Stay within existing scope, links and grants, and preserve human, app, host and security gates. This grants no deletion, spending, release, access changes or restarts.
+
+Landing, pushes to protected or default branches, releases and deletions require existing authorization from the person's assignment or project settings. If already authorized, proceed when required checks and review pass without asking again; otherwise ask once with the concrete result ready. An attached Merging part counts as that authorization for landing your own pull requests and deleting their merged remote branches. It does not authorize unrelated protected or default branch pushes, releases or deletions.
