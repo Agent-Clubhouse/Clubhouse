@@ -102,6 +102,11 @@ function gitArgv(): string[][] {
   return vi.mocked(execFile).mock.calls.map((c) => [...(c[1] as unknown as string[])]);
 }
 
+/** Git calls other than the lookup of the repository's exclude file (#3623), which every creation makes. */
+function gitArgvBesidesExcludeLookup(): string[][] {
+  return gitArgv().filter((args) => !args.includes('--git-common-dir'));
+}
+
 function diskAgents(): DurableAgentConfig[] {
   return JSON.parse(files.get(CONFIG_PATH) ?? '[]') as DurableAgentConfig[];
 }
@@ -208,7 +213,7 @@ describe('createDurable worktree options (#2226)', () => {
   ])('refuses %s before touching git or disk', async (_label, options, message) => {
     await expect(createDurable(PROJECT_PATH, 'ok-name', 'indigo', undefined, true, undefined, undefined, undefined, undefined, options))
       .rejects.toThrow(message);
-    expect(execFile).not.toHaveBeenCalled();
+    expect(gitArgvBesidesExcludeLookup()).toEqual([]);
     expect(files.has(CONFIG_PATH)).toBe(false);
   });
 
@@ -250,7 +255,7 @@ describe('createDurable worktree options (#2226)', () => {
     await expect(createDurable(PROJECT_PATH, 'taken', 'indigo')).rejects.toThrow(/left over from a removed agent.*"taken-2"/);
     expect(dirs.has(agentPath('taken'))).toBe(true);
     expect(fsp.rm).not.toHaveBeenCalled();
-    expect(execFile).not.toHaveBeenCalled();
+    expect(gitArgvBesidesExcludeLookup()).toEqual([]);
   });
 
   it('never deletes a folder that appeared before its own worktree add', async () => {
@@ -311,7 +316,7 @@ describe('concurrent creations (#2226 B1)', () => {
 describe('checkDurableCreation', () => {
   it('passes a creation that would start, and changes nothing', async () => {
     await expect(checkDurableCreation(PROJECT_PATH, { name: 'fresh', color: 'indigo', branchFrom: 'main' })).resolves.toBeUndefined();
-    expect(execFile).not.toHaveBeenCalled();
+    expect(gitArgvBesidesExcludeLookup()).toEqual([]);
     expect(await listDurable(PROJECT_PATH)).toEqual([]);
     // Nothing was reserved: the real creation still goes through.
     const started = await startDurableCreation(PROJECT_PATH, { name: 'fresh', color: 'indigo' });
@@ -616,7 +621,7 @@ describe('helpers (#2224) created asynchronously', () => {
   it('refuses an unknown parent before anything is created', async () => {
     await expect(startDurableCreation(PROJECT_PATH, { name: 'orphan', color: 'indigo', parentAgentId: 'durable_9_nope' }))
       .rejects.toThrow(/Parent agent not found/);
-    expect(execFile).not.toHaveBeenCalled();
+    expect(gitArgvBesidesExcludeLookup()).toEqual([]);
   });
 
   it('disposing a helper mid-create cancels the creation and settles it first', async () => {
@@ -751,7 +756,7 @@ describe('interrupted creation recovery (#2226)', () => {
     const [listed] = await listDurable(PROJECT_PATH);
     expect(listed.creation?.state).toBe('creating');
     expect(dirs.has(agentPath('crashed'))).toBe(true);
-    expect(execFile).not.toHaveBeenCalled();
+    expect(gitArgvBesidesExcludeLookup()).toEqual([]);
   });
 
   it('treats a creation stamped with this process id but another instance id as interrupted', async () => {
@@ -787,7 +792,7 @@ describe('interrupted creation recovery (#2226)', () => {
     clearAgentConfigCache(PROJECT_PATH);
     const [listed] = await listDurable(PROJECT_PATH);
     expect(listed.creation?.state).toBe('creating');
-    expect(execFile).not.toHaveBeenCalled();
+    expect(gitArgvBesidesExcludeLookup()).toEqual([]);
   });
 
   it('leaves a creation running in this process alone', async () => {

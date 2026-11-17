@@ -10,6 +10,7 @@ import { McpServerEntry, SkillEntry, AgentTemplateEntry, PermissionsConfig, Proj
 import { appLog } from './log-service';
 import { pathExists } from './fs-utils';
 import { backupUnreadableFile, replaceFile } from './settings-store';
+import { ensureLocalExcludesOnce } from './local-excludes';
 import { validateCommandPrefix } from './command-prefix-validation';
 
 const LOG_NS = 'core:agent-settings';
@@ -318,6 +319,8 @@ async function writeSettings(projectPath: string, settings: ProjectSettings): Pr
     // telemetry-exempt: never replace a recoverable backup with unreadable live bytes.
     unreadable = !isEnoent(err);
   }
+  // The backup and recovery copies below must not be committable by `git add -A` (#3623).
+  if (readable || unreadable) await ensureLocalExcludesOnce(projectPath);
   if (readable) await fsp.copyFile(file, `${file}.bak`);
   else if (unreadable) backupUnreadableFile(file);
   await replaceFile(file, JSON.stringify(settings, null, 2), undefined);
