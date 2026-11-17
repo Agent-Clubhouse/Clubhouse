@@ -146,29 +146,55 @@ describe('a queue of approvals from other computers answers the one acted on (#3
     await waitFor(() => expect(rows()[0].textContent).toContain('Answer it on Laptop.'));
   });
 
-  it('an answered request does not block the next, which takes focus', async () => {
+  it('an answered request does not block the next; focus goes to the count, and a repeated key answers nothing more', async () => {
     useAnnexClientStore.setState({ satellites: [satellite([REQUEST, NEXT])] } as never);
     render(<RemoteApprovals />);
     await act(async () => {});
     const user = userEvent.setup();
     within(rows()[0]).getByTestId('dispatcher-remote-approval-allow_once').focus();
-    await user.keyboard('{Enter}');
-    // Its computer's snapshot hasn't dropped it, and the next request is already the head.
+    // Two quick presses, then a held key.
+    await user.keyboard('{Enter}{Enter}');
+    await user.keyboard('{Enter>4}{/Enter}');
+    // Its computer's snapshot hasn't dropped it, and the next request is already the head, still open.
     await waitFor(() => expect(rows()[0].textContent).toContain('much longer call'));
     expect(screen.getByTestId('dispatcher-remote-approval-answered')).toBeInTheDocument();
-    await waitFor(() => expect(document.activeElement).toBe(within(rows()[0]).getByTestId('dispatcher-remote-approval-allow_once')));
+    await waitFor(() => expect(document.activeElement).toBe(screen.getByRole('status')));
+    expect(window.clubhouse.dispatcher.answerRemoteApproval).toHaveBeenCalledExactlyOnceWith('laptop', 'gr_1', 'allow_once');
   });
 
-  it('moves focus to the composer when the last request is answered, and keeps the count in a status region', async () => {
-    render(<div data-testid="chat-dock"><RemoteApprovals /><textarea aria-label="Message" /></div>);
+  it('keeps the count in a status region that takes focus when the last request is answered', async () => {
+    render(<RemoteApprovals />);
     await act(async () => {});
     // Mounted with one request too, for a screen reader to hear the count change.
     expect(screen.getByRole('status')).toHaveTextContent('1 of 1');
     const user = userEvent.setup();
     within(rows()[0]).getByTestId('dispatcher-remote-approval-allow_once').focus();
     await user.keyboard('{Enter}');
-    await waitFor(() => expect(document.activeElement).toBe(screen.getByLabelText('Message')));
+    await waitFor(() => expect(document.activeElement).toBe(screen.getByRole('status')));
     expect(screen.getByRole('status')).toHaveTextContent('Answered.');
+  });
+
+  it('clears the Answered notice when the head advances for any other reason', async () => {
+    const third = { ...NEXT, requestId: 'gr_3', requestedAt: '2026-11-13T10:10:00.000Z', summary: 'Asks for a third thing.' } as MobileGrantRequest;
+    useAnnexClientStore.setState({ satellites: [satellite([REQUEST, NEXT, third])] } as never);
+    render(<RemoteApprovals />);
+    await act(async () => {});
+    fireEvent.click(within(rows()[0]).getByTestId('dispatcher-remote-approval-allow_once'));
+    await waitFor(() => expect(rows()[0].textContent).toContain('much longer call'));
+    expect(screen.getByTestId('dispatcher-remote-approval-answered')).toBeInTheDocument();
+    // The next one is answered on its own computer: the head moves on, and the notice about the first goes.
+    act(() => useAnnexClientStore.setState({ satellites: [satellite([third])] } as never));
+    await waitFor(() => expect(rows()[0].textContent).toContain('third thing'));
+    expect(screen.queryByTestId('dispatcher-remote-approval-answered')).toBeNull();
+  });
+
+  it('cancels the repeats of a held Enter or Space on an answer button', async () => {
+    render(<RemoteApprovals />);
+    await act(async () => {});
+    const allow = screen.getByTestId('dispatcher-remote-approval-allow_once');
+    expect(fireEvent.keyDown(allow, { key: 'Enter', repeat: true })).toBe(false);
+    expect(fireEvent.keyDown(allow, { key: ' ', repeat: true })).toBe(false);
+    expect(fireEvent.keyDown(allow, { key: 'Enter', repeat: false })).toBe(true);
   });
 
   it('refuses an answer for a request that left its snapshot, before the row has redrawn', async () => {

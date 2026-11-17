@@ -12,7 +12,7 @@ import { reportChromeActionFailed } from '../../chrome/telemetry';
 import { grantRequestsFor, useGrantRequestStore } from '../../stores/grantRequestStore';
 import { ImportAgentReview, ImportReview } from '../projects/ImportReview';
 import { DeleteAgentsReview } from './DeleteAgentsReview';
-import { isRepeatClick } from '../../utils/repeat-click';
+import { isRepeatClick, swallowHeldKey } from '../../utils/repeat-click';
 
 type Answering = ReturnType<typeof useGrantAnswering>;
 
@@ -73,10 +73,10 @@ export function GrantRequestActions({ r, answering }: { r: GrantRequest; answeri
   return (
     <div className="flex items-center gap-2">
       {r.update ? <>
-        <Button kind="primary" onClick={(e) => { if (!isRepeatClick(e)) void answer(r, true, 'now'); }} disabled={busy !== null}>Restart now</Button>
-        <Button onClick={(e) => { if (!isRepeatClick(e)) void answer(r, true, 'when_idle'); }} disabled={busy !== null}>Restart when idle</Button>
-      </> : <Button kind="primary" onClick={(e) => { if (!isRepeatClick(e)) void answer(r, true); }} disabled={busy !== null} data-testid="grant-request-allow">Allow</Button>}
-      <Button onClick={(e) => { if (!isRepeatClick(e)) void answer(r, false); }} disabled={busy !== null} data-testid="grant-request-decline">{r.update ? 'Cancel' : 'Decline'}</Button>
+        <Button kind="primary" onKeyDown={swallowHeldKey} onClick={(e) => { if (!isRepeatClick(e)) void answer(r, true, 'now'); }} disabled={busy !== null}>Restart now</Button>
+        <Button onKeyDown={swallowHeldKey} onClick={(e) => { if (!isRepeatClick(e)) void answer(r, true, 'when_idle'); }} disabled={busy !== null}>Restart when idle</Button>
+      </> : <Button kind="primary" onKeyDown={swallowHeldKey} onClick={(e) => { if (!isRepeatClick(e)) void answer(r, true); }} disabled={busy !== null} data-testid="grant-request-allow">Allow</Button>}
+      <Button onKeyDown={swallowHeldKey} onClick={(e) => { if (!isRepeatClick(e)) void answer(r, false); }} disabled={busy !== null} data-testid="grant-request-decline">{r.update ? 'Cancel' : 'Decline'}</Button>
     </div>
   );
 }

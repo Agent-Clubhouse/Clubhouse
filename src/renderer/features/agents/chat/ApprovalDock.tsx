@@ -9,7 +9,7 @@ import type { PendingPermission, PendingQuestion, PlanDocumentItem } from '../..
 import { PlanIcon, QuestionIcon, ShieldIcon } from './icons';
 import { ApprovalDiffPreview } from './ToolBlocks';
 import { shortName } from './view-model';
-import { isRepeatClick } from '../../../utils/repeat-click';
+import { isRepeatClick, swallowHeldKey } from '../../../utils/repeat-click';
 
 const ALLOW_KINDS = new Set<PermissionOption['kind']>(['allow_once', 'allow_session', 'allow_always']);
 const REJECT_KINDS = new Set<PermissionOption['kind']>(['reject_once', 'reject_always', 'cancel_turn']);
@@ -130,6 +130,8 @@ export function PermissionCard({ request, plan, queueSize, agentName, extras, on
 
   const onKeyDown = (e: KeyboardEvent<HTMLDivElement>) => {
     if (ownsKey(e) || dirty) return;
+    // A held key repeats: it answers once, and never the request that takes this card's place.
+    if (e.repeat) { e.preventDefault(); return; }
     if (e.key === 'Enter') { e.preventDefault(); choose(primary); return; }
     if (e.key === 'Escape') { e.preventDefault(); choose(reject); return; }
     const i = digitIndex(e.key, request.options.length);
@@ -165,6 +167,7 @@ export function PermissionCard({ request, plan, queueSize, agentName, extras, on
         type="button"
         disabled={answered || (planEmpty && ALLOW_KINDS.has(opt.kind))}
         onClick={(e) => { if (!isRepeatClick(e)) choose(opt); }}
+        onKeyDown={swallowHeldKey}
         className={`flex items-center gap-2.5 h-[30px] px-2 rounded-md text-[12.5px] text-left disabled:opacity-50 ${isPrimary ? 'bg-surface-0 text-ctp-text ring-1 ring-surface-1' : 'text-ctp-subtext1 hover:bg-surface-0/60'}`}
         data-option-kind={opt.kind}
       >
@@ -276,7 +279,8 @@ export function PermissionCard({ request, plan, queueSize, agentName, extras, on
   const notes = planNotes && <div className="pl-5 flex flex-wrap items-center gap-2 text-[12px] text-ctp-overlay1" data-testid="chat-permission-notes">{planNotes}</div>;
   return (
     <div {...rootProps} className={`${rootClass} min-h-0`}>
-      <div className="min-h-0 flex flex-col gap-2 overflow-y-auto" data-testid="chat-permission-body">
+      {/* What is being approved always shows: at least 48px of it, and up to the pinned cap less the card's own chrome. */}
+      <div className="min-h-[48px] max-h-[calc(min(40vh,320px)-6rem)] flex flex-col gap-2 overflow-y-auto" data-testid="chat-permission-body">
         {heading}
         {details}
         {preview}
@@ -397,6 +401,7 @@ export function QuestionCard({ request, onAnswer, busy, autoFocus = true }: Ques
   // 1-9 pick an option of the open question; Enter sends once every question is answered.
   const onKeyDown = (e: KeyboardEvent<HTMLDivElement>) => {
     if (sent || ownsKey(e)) return;
+    if (e.repeat) { e.preventDefault(); return; }
     if (e.key === 'Enter' && !single) {
       if (complete) { e.preventDefault(); submit(); }
       return;
@@ -429,6 +434,7 @@ export function QuestionCard({ request, onAnswer, busy, autoFocus = true }: Ques
                     type="button"
                     disabled={sent}
                     onClick={(e) => { if (!isRepeatClick(e)) toggle(q, o.id); }}
+                    onKeyDown={swallowHeldKey}
                     aria-pressed={on}
                     className={`flex items-center gap-2.5 min-h-[30px] px-2 rounded-md text-[12.5px] text-left disabled:opacity-50 ${on ? 'bg-surface-0 text-ctp-text ring-1 ring-surface-1' : 'text-ctp-subtext1 hover:bg-surface-0/60'}`}
                   >
@@ -541,6 +547,7 @@ export function QuestionCard({ request, onAnswer, busy, autoFocus = true }: Ques
             type="button"
             disabled={!complete || sent}
             onClick={(e) => { if (!isRepeatClick(e)) submit(); }}
+            onKeyDown={swallowHeldKey}
             className="ml-auto h-7 px-3 rounded-md bg-ctp-accent text-ctp-on-accent text-[12px] font-medium disabled:opacity-40"
           >
             Send answer

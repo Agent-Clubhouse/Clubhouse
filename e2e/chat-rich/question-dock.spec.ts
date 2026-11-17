@@ -81,9 +81,9 @@ async function expectNothingAroundScrolled(page: Page): Promise<void> {
  * the transcript keeps the rest of the column
  * and still scrolls under the wheel; nothing around the pane scrolled.
  */
-async function expectDockBounded(page: Page): Promise<void> {
+async function expectDockBounded(page: Page, dockShare = 0.7): Promise<void> {
   await expectReachable(page.locator('[data-testid="chat-view"] [data-testid="agent-pane-toolbar"]'));
-  await expect.poll(() => page.locator('[data-testid="chat-dock"]').evaluate((dock, selectors) => {
+  await expect.poll(() => page.locator('[data-testid="chat-dock"]').evaluate((dock, { selectors, share }) => {
     const column = dock.parentElement!.getBoundingClientRect();
     const box = dock.getBoundingClientRect();
     const stream = document.querySelector<HTMLElement>('[data-testid="chat-stream"]')!;
@@ -92,7 +92,8 @@ async function expectDockBounded(page: Page): Promise<void> {
       dockOnScreen: box.top >= 0 && box.bottom <= window.innerHeight + 1,
       columnOnScreen: column.top >= 0 && column.bottom <= window.innerHeight + 1,
       // The approval respects its own cap, leaving the composer and transcript room.
-      dockBounded: box.height <= column.height * 0.7 + 2,
+      // A permission card may take more of the column (0.85), so the chat shrinks before the request text does (#3606).
+      dockBounded: box.height <= column.height * share + 2,
       approvalBounded: (() => {
         const approval = dock.querySelector('[data-testid="chat-pinned-approval"]')!.getBoundingClientRect();
         return approval.height > 0 && approval.height <= Math.min(window.innerHeight * 0.4, 320) + 2;
@@ -102,7 +103,7 @@ async function expectDockBounded(page: Page): Promise<void> {
       streamFillsRest: Math.abs(stream.getBoundingClientRect().height + box.height - column.height) <= 2,
       streamOverflows: stream.scrollHeight > stream.clientHeight,
     };
-  }, DOCK_PARTS), { timeout: TURN_TIMEOUT }).toEqual({
+  }, { selectors: DOCK_PARTS, share: dockShare }), { timeout: TURN_TIMEOUT }).toEqual({
     dockOnScreen: true, columnOnScreen: true, dockBounded: true, approvalBounded: true, contentsInDock: DOCK_PARTS.map(() => true), streamFillsRest: true, streamOverflows: true,
   });
 
@@ -148,7 +149,7 @@ async function approveLongRequest(s: RichChat, cli: ChatFixtureCli, prompt: stri
   // Copilot's request describes the command itself; the others carry their reason (Claude's description, Codex's reason).
   if (cli !== 'copilot') await expect(window.locator('[data-testid="chat-permission-description"]')).toContainText('Part 12');
   await expect(window.locator('[data-testid="chat-permission-text"]').first()).toContainText('npm run step-1 -- --workspace packages/helper-1 ');
-  await expectDockBounded(window);
+  await expectDockBounded(window, 0.85);
   // The request is taller than its share of the pane, so it scrolls inside the card's body (#3606); the options don't.
   await expectScrollsInside(window.locator('[data-testid="chat-permission-body"]'));
   // The composer stays outside the scrolling card, always on screen.

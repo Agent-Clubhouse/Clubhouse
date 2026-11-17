@@ -1136,6 +1136,16 @@ describe('ChatView review fixes', () => {
     expect(screen.getByTestId('chat-question-step')).toHaveTextContent('1 of 6');
   });
 
+  it('lets a pinned permission take more of the column, so the chat shrinks before its request text does (#3606)', () => {
+    renderFixture('codex', 'approval');
+    const dock = screen.getByTestId('chat-dock');
+    expect(dock).toHaveClass('max-h-[85%]');
+    expect(dock).not.toHaveClass('max-h-[70%]');
+    // The card's body is capped (and floored at 48px) inside the card; the region isn't capped on top of that.
+    expect(screen.getByTestId('chat-pinned-approval')).not.toHaveClass('max-h-[min(40vh,320px)]');
+    expect(within(screen.getByTestId('chat-pinned-approval')).getByTestId('chat-permission-body').className).toMatch(/min-h-\[48px\].*max-h-\[calc\(min\(40vh,320px\)/);
+  });
+
   it('leaves the composer uncapped so its toolbar and menus are never clipped', () => {
     renderFixture('codex', 'conversation');
     expect(screen.getByTestId('chat-dock')).not.toHaveClass('max-h-[60%]');

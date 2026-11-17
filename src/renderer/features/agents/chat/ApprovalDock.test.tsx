@@ -92,6 +92,20 @@ describe('PermissionCard', () => {
     expect(screen.getByTestId('chat-permission-body')).not.toContainElement(paused);
   });
 
+  it('the request body keeps at least 48px, and a held key answers nothing more (#3606)', () => {
+    const respond = vi.fn(async () => true);
+    render(<PermissionCard compact request={request()} queueSize={1} agentName="a" onRespond={respond} />);
+    expect(screen.getByTestId('chat-permission-body').className).toContain('min-h-[48px]');
+    const allow = screen.getByText('Allow once').closest('button')!;
+    // The repeats of a held Enter or Space are cancelled, on the card and on a button; the first press answers.
+    expect(fireEvent.keyDown(allow, { key: 'Enter', repeat: true })).toBe(false);
+    expect(fireEvent.keyDown(allow, { key: ' ', repeat: true })).toBe(false);
+    expect(fireEvent.keyDown(screen.getByTestId('chat-permission'), { key: 'Enter', repeat: true })).toBe(false);
+    expect(respond).not.toHaveBeenCalled();
+    fireEvent.keyDown(screen.getByTestId('chat-permission'), { key: 'Enter' });
+    expect(respond).toHaveBeenCalledExactlyOnceWith('r1', 'allow_once');
+  });
+
   it('the inline card keeps its single column, with no footer', () => {
     render(<PermissionCard request={request()} queueSize={1} agentName="a" onRespond={vi.fn(async () => true)} />);
     expect(screen.queryByTestId('chat-permission-body')).toBeNull();

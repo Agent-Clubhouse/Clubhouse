@@ -60,9 +60,12 @@ export async function expectPinnedApprovalsAnchored(cli: ChatFixtureCli): Promis
           return {
             options: region.querySelectorAll('[data-option-kind]').length,
             regionTop: Math.round(r.top), regionHeight: Math.round(r.height), cardTop: Math.round(card.top), cardHeight: Math.round(card.height),
+            bodyHeight: region.querySelector('[data-testid="chat-permission-body"]')?.clientHeight ?? 0,
             bodyScrolls: (() => { const body = region.querySelector('[data-testid="chat-permission-body"]'); return !!body && body.scrollHeight > body.clientHeight; })(),
           };
         });
+        // What is being approved always shows: the request body keeps at least 48px, even with five options at 640 wide.
+        expect(notes.bodyHeight, `${size.label}, request ${i + 1}: the request body is ${notes.bodyHeight}px high`).toBeGreaterThanOrEqual(48);
         await log.record(window, size, i + 1, { allow, decline, scrollers: [pinned, pinned.locator('[data-testid="chat-permission-body"]')] }, notes);
         await clickAllow(allow);
       }

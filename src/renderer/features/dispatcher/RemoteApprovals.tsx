@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import type { MobileGrantAnswer } from '../../../shared/mobile-control';
 import { Button } from '../../components/Button';
-import { isRepeatClick } from '../../utils/repeat-click';
+import { isRepeatClick, swallowHeldKey } from '../../utils/repeat-click';
 import { ipcErrorMessage } from '../../utils/ipc-error';
 import { isFollowerApprovalPending, useFollowerApprovals, type FollowerApproval } from './leadStore';
 import type { GrantRequest } from '../../../shared/grant-requests';
@@ -46,13 +46,6 @@ function answersHere(item: FollowerApproval): MobileGrantAnswer[] {
   return item.request.update ? [] : (item.request.answers ?? []).filter((a): a is MobileGrantAnswer => a in ANSWER_LABELS);
 }
 
-/** Focus the next request's first answer, or the composer when none is left to answer. */
-function moveFocus(root: HTMLElement | null): void {
-  const next = root?.querySelector<HTMLElement>('[data-testid^="dispatcher-remote-approval-allow"], [data-testid="dispatcher-remote-approval-decline"]');
-  const fallback = root?.closest('[data-testid="chat-dock"]')?.querySelector<HTMLElement>('[aria-label="Message"]');
-  (next ?? fallback)?.focus();
-}
-
 /**
  * On the lead (#3354): Ask-first requests from the other computers, in the
  * lead's chat, each with its computer first. A person's click answers one on
@@ -71,8 +64,9 @@ export function RemoteApprovals() {
   // Answered here, until their computer's next snapshot drops them: no second answer, and they don't hold the head.
   const [answered, setAnswered] = useState<ReadonlySet<string>>(new Set());
   const [notice, setNotice] = useState(false);
-  const root = useRef<HTMLDivElement>(null);
+  const status = useRef<HTMLParagraphElement>(null);
   const focusAfterAnswer = useRef(false);
+  const noticeArmed = useRef(false);
   useEffect(() => {
     const keys = new Set(items.map(keyOf));
     setAnswered((previous) => ([...previous].some((k) => !keys.has(k)) ? new Set([...previous].filter((k) => keys.has(k))) : previous));
@@ -82,9 +76,13 @@ export function RemoteApprovals() {
   const head = open.find((item) => answersHere(item).length > 0) ?? open[0];
   const headKey = head ? keyOf(head) : '';
   useEffect(() => {
+    // The notice belongs to the advance the answer caused; any later change of head clears it.
+    if (noticeArmed.current) noticeArmed.current = false;
+    else setNotice(false);
     if (!focusAfterAnswer.current) return;
     focusAfterAnswer.current = false;
-    moveFocus(root.current);
+    // Not the next Allow: a second press of the key that answered would answer it too (#3606).
+    status.current?.focus();
   }, [headKey]);
   if (items.length === 0) return null;
 
@@ -93,9 +91,9 @@ export function RemoteApprovals() {
   const waitingOn = [...elsewhere].map(([name, n]) => `${n} waiting on ${name}`).join(', ');
   const count = head ? `${open.indexOf(head) + 1} of ${open.length}` : '';
   return (
-    <div ref={root} className="flex flex-col gap-1" data-testid="dispatcher-remote-approvals">
+    <div className="flex flex-col gap-1" data-testid="dispatcher-remote-approvals">
       {/* Always here, so a screen reader hears the count change; seen only when there is something to say. */}
-      <p role="status" className={open.length > 1 || notice || waitingOn ? 'flex flex-wrap gap-x-2 text-xs text-ctp-overlay1' : 'sr-only'} data-testid="dispatcher-remote-approval-count">
+      <p ref={status} tabIndex={-1} role="status" className={`outline-none ${open.length > 1 || notice || waitingOn ? 'flex flex-wrap gap-x-2 text-xs text-ctp-overlay1' : 'sr-only'}`} data-testid="dispatcher-remote-approval-count">
         {notice && <span data-testid="dispatcher-remote-approval-answered">Answered.</span>}
         {count && <span>{count}</span>}
         {waitingOn && <span data-testid="dispatcher-remote-approval-elsewhere">{waitingOn}</span>}
@@ -106,6 +104,7 @@ export function RemoteApprovals() {
           item={head}
           onAnswered={() => {
             focusAfterAnswer.current = true;
+            noticeArmed.current = true;
             setNotice(true);
             setAnswered((previous) => new Set(previous).add(headKey));
           }}
@@ -156,7 +155,7 @@ function RemoteApproval({ item, onAnswered }: { item: FollowerApproval; onAnswer
       <div className="flex min-h-7 items-center justify-end gap-1.5">
         {answers.length === 0 && <span className="text-xs text-ctp-overlay1">Answer it on {item.machineName}.</span>}
         {answers.map((choice) => (
-          <Button key={choice} kind={choice === 'decline' ? 'ghost' : 'primary'} disabled={busy} onClick={(e) => { if (!isRepeatClick(e)) void answer(choice); }} data-testid={`dispatcher-remote-approval-${choice}`}>
+          <Button key={choice} kind={choice === 'decline' ? 'ghost' : 'primary'} disabled={busy} onKeyDown={swallowHeldKey} onClick={(e) => { if (!isRepeatClick(e)) void answer(choice); }} data-testid={`dispatcher-remote-approval-${choice}`}>
             {ANSWER_LABELS[choice]}
           </Button>
         ))}

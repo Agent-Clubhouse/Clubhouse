@@ -6,3 +6,11 @@
 export function isRepeatClick(e: { detail: number }): boolean {
   return e.detail > 1;
 }
+
+/**
+ * A held Enter or Space repeats keydown, and on a button each repeat is another click. Cancel the repeats, so
+ * holding the key answers once and never the request that takes the button's place.
+ */
+export function swallowHeldKey(e: { repeat: boolean; key: string; preventDefault: () => void }): void {
+  if (e.repeat && (e.key === 'Enter' || e.key === ' ')) e.preventDefault();
+}

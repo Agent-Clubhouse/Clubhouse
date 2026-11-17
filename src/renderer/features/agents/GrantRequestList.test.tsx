@@ -231,7 +231,7 @@ describe('the review dialog keeps its answers in one place (#3606)', () => {
     expect(within(dialog).getByRole('status')).toHaveTextContent('1 waiting');
   });
 
-  it('moves focus to the next request\'s Allow, and keeps the count in a status region', async () => {
+  it('moves focus to the count, not the next Allow, so a repeated key cannot answer it', async () => {
     useGrantRequestStore.getState().add(asks('g1', 0, 'Short.'));
     useGrantRequestStore.getState().add(asks('g2', 5, 'Second.'));
     useGrantRequestStore.getState().review('a1');
@@ -240,13 +240,28 @@ describe('the review dialog keeps its answers in one place (#3606)', () => {
     expect(within(dialog).getByRole('status')).toHaveTextContent('1 of 2 waiting');
     const user = userEvent.setup();
     within(dialog).getByTestId('grant-request-allow').focus();
-    await user.keyboard('{Enter}');
+    // Two quick presses, then a held key: only the first request is answered, and the second stays open.
+    await user.keyboard('{Enter}{Enter}');
+    await user.keyboard('{Enter>4}{/Enter}');
     await waitFor(() => expect(within(dialog).getByText('Its reason: Second.')).toBeInTheDocument());
-    await waitFor(() => expect(document.activeElement).toBe(within(dialog).getByTestId('grant-request-allow')));
+    expect(window.clubhouse.agent.answerGrantRequest).toHaveBeenCalledExactlyOnceWith('g1', true);
+    expect(useGrantRequestStore.getState().requests.g2).toBeDefined();
+    expect(document.activeElement).toBe(within(dialog).getByRole('status'));
     expect(within(dialog).getByRole('status')).toHaveTextContent('1 waiting');
-    // The last answer closes the dialog; the Modal returns focus to where it was.
-    await user.keyboard('{Enter}');
+    // The next request answers when the person presses its button.
+    await user.click(within(dialog).getByTestId('grant-request-allow'));
     await waitFor(() => expect(screen.queryByTestId('grant-request-dialog')).toBeNull());
+    expect(window.clubhouse.agent.answerGrantRequest).toHaveBeenLastCalledWith('g2', true);
+  });
+
+  it('cancels the repeats of a held Enter or Space on an answer button', () => {
+    useGrantRequestStore.getState().add(asks('g1', 0, 'Short.'));
+    render(<GrantRequestList agentId="a1" agentName="Ada" />);
+    const allow = screen.getByTestId('grant-request-allow');
+    expect(fireEvent.keyDown(allow, { key: 'Enter', repeat: true })).toBe(false);
+    expect(fireEvent.keyDown(allow, { key: ' ', repeat: true })).toBe(false);
+    expect(fireEvent.keyDown(allow, { key: 'Enter', repeat: false })).toBe(true);
+    expect(fireEvent.keyDown(allow, { key: 'a', repeat: true })).toBe(true);
   });
 
   it('shows a failed answer above the buttons, on the request it was for', async () => {
