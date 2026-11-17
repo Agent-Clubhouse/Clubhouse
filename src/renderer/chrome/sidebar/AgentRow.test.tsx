@@ -422,3 +422,65 @@ describe('AgentRow helpers and creation (#2231)', () => {
     expect(onSelect).not.toHaveBeenCalled();
   });
 });
+
+describe('AgentRow remote computer identity (#3607)', () => {
+  const LONG = 'Mason-Studio-Mac-Pro-Upstairs';
+
+  it('names the row with the full alias, not the clipped label', () => {
+    const { focusable } = setup(durable(), { machine: 'Mason-Studio-…', machineName: LONG });
+    expect(focusable).toHaveAccessibleName(`snazzy-fox on ${LONG}`);
+    expect(screen.getByRole('treeitem', { name: `snazzy-fox on ${LONG}` })).toBe(focusable);
+    expect(screen.getByTestId('agent-row-machine')).toHaveTextContent('Mason-Studio-…');
+  });
+
+  it('adds offline to the row name', () => {
+    const { focusable } = setup(durable(), { machine: 'Studio', machineName: 'Studio', offline: true });
+    expect(focusable).toHaveAccessibleName('snazzy-fox on Studio, offline');
+  });
+
+  it('keeps the agent name for a local row', () => {
+    const { focusable } = setup(durable());
+    expect(focusable).toHaveAccessibleName('snazzy-fox');
+  });
+
+  it('shows the whole alias in a Computer field of the hover card, wrapped rather than cut', () => {
+    vi.useFakeTimers();
+    const { row } = setup(durable(), { machine: 'Mason-Studio-…', machineName: LONG });
+    fireEvent.mouseEnter(row);
+    act(() => { vi.advanceTimersByTime(HOVER_OPEN_MS); });
+    const card = screen.getByTestId('agent-hover-card');
+    const term = Array.from(card.querySelectorAll('dt')).find((t) => t.textContent === 'Computer')!;
+    expect(term).toBeTruthy();
+    const value = term.nextElementSibling as HTMLElement;
+    expect(value).toHaveTextContent(LONG);
+    expect(value.className).not.toContain('truncate');
+    // "Runs on" still means the CLI and model.
+    expect(card).toHaveTextContent('Runs onClaude Code');
+  });
+
+  it('says offline in the Computer field of the card', () => {
+    vi.useFakeTimers();
+    const first = setup(durable(), { machine: 'Studio', machineName: 'Studio', offline: true });
+    fireEvent.mouseEnter(first.row);
+    act(() => { vi.advanceTimersByTime(HOVER_OPEN_MS); });
+    expect(screen.getByTestId('agent-hover-card')).toHaveTextContent('ComputerStudio (offline)');
+  });
+
+  it('has no Computer field for a local agent', () => {
+    vi.useFakeTimers();
+    const { row } = setup(durable());
+    fireEvent.mouseEnter(row);
+    act(() => { vi.advanceTimersByTime(HOVER_OPEN_MS); });
+    expect(screen.getByTestId('agent-hover-card')).not.toHaveTextContent('Computer');
+  });
+
+  it('opens the card with the full alias from keyboard focus and closes it on Escape', () => {
+    vi.useFakeTimers();
+    const { focusable } = setup(durable(), { machine: 'Mason-Studio-…', machineName: LONG });
+    fireEvent.focus(focusable);
+    act(() => { vi.advanceTimersByTime(HOVER_OPEN_MS); });
+    expect(screen.getByTestId('agent-hover-card')).toHaveTextContent(LONG);
+    fireEvent.keyDown(focusable, { key: 'Escape' });
+    expect(screen.queryByTestId('agent-hover-card')).toBeNull();
+  });
+});

@@ -128,7 +128,7 @@ export interface ProjectGroupProps {
   /** Agents are in Recent order: dragging a row says how to reorder instead (#2116). */
   onAgentReorderHint?: () => void;
   /** For an agent on another machine: a short label for it, and whether that machine is offline (#3065). */
-  agentMachine?: (agent: Agent) => { label?: string; offline?: boolean } | undefined;
+  agentMachine?: (agent: Agent) => { label?: string; fullName?: string; offline?: boolean } | undefined;
   /** More project menu items, after the project's own: Merge with… and Split per machine (#3065). */
   extraMenuItems?: MenuItem[];
   /** Tree depth of the header: 1, or 2 inside the idle row. */
@@ -304,6 +304,7 @@ export const ProjectGroup = React.memo(function ProjectGroup(props: ProjectGroup
         // A linked group's agents are in other projects too (#3066): each is active by its own project.
         active={agent.id === activeAgentId && (isActiveProject || agent.projectId === activeProjectId)}
         machine={agentMachine?.(agent)?.label}
+        machineName={agentMachine?.(agent)?.fullName}
         offline={agentMachine?.(agent)?.offline}
         indent={indent}
         level={level + depth}

@@ -359,6 +359,9 @@ function PaletteButton({ onOpen }: { onOpen: () => void }) {
   );
 }
 
+/** What the hover card and the row's name say for a computer with no alias (#3607). */
+const UNKNOWN_COMPUTER = 'Unknown computer';
+
 /** A machine's name, short enough for an agent row (#3065). */
 function shortMachineLabel(alias: string | undefined): string {
   const name = (alias || 'Other computer').trim();
@@ -531,12 +534,12 @@ export function ChromeSidebar() {
   // A short label for an agent on another machine, and whether that machine is offline; none for this machine's.
   // One object per machine, so rows (and the memoized groups) see the same value until that machine changes.
   const machineInfo = useMemo(
-    () => new Map(satellites.map((s) => [s.id, { label: shortMachineLabel(s.alias), offline: s.state !== 'connected' }])),
+    () => new Map(satellites.map((s) => [s.id, { label: shortMachineLabel(s.alias), fullName: s.alias?.trim() || UNKNOWN_COMPUTER, offline: s.state !== 'connected' }])),
     [satellites],
   );
   const agentMachine = useCallback((agent: Agent) => {
     const host = hostOf(agent.projectId);
-    return host ? machineInfo.get(host) ?? { label: shortMachineLabel(undefined), offline: true } : undefined;
+    return host ? machineInfo.get(host) ?? { label: shortMachineLabel(undefined), fullName: UNKNOWN_COMPUTER, offline: true } : undefined;
   }, [machineInfo]);
   // Manual or most-recent order (#2116), shared by the tree and the filter results.
   // A row's Recent activity counts its linked copies and its running agents on any machine (#3542).

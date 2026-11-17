@@ -861,6 +861,26 @@ describe('ChromeSidebar', () => {
       expect(screen.queryByTestId('host-switcher')).toBeNull();
     });
 
+    it.each([
+      ['Mason-Studio', 'Mason-Studio'], // 12, under the cut
+      ['Studio-Mac-Pro1', 'Studio-Mac-Pro1'], // 15 > 14
+      ['', 'Unknown computer'],
+    ])('names a remote agent\'s row with the computer\'s full alias %j (#3607)', (alias, full) => {
+      useAnnexClientStore.setState((st) => ({ satellites: st.satellites.map((x) => ({ ...x, alias })) }));
+      render(<ChromeSidebar />);
+      const row = screen.getByTestId(`agent-item-${ra}`);
+      expect(row.firstElementChild).toHaveAccessibleName(`${agent(ra, rp).name} on ${full}`);
+    });
+
+    it('keeps a long alias whole in the row\'s name while the visible label is short (#3607)', () => {
+      const alias = 'Studio-Mac-Pro-Upstairs-2';
+      useAnnexClientStore.setState((st) => ({ satellites: st.satellites.map((x) => ({ ...x, alias })) }));
+      render(<ChromeSidebar />);
+      const row = screen.getByTestId(`agent-item-${ra}`);
+      expect(within(row).getByTestId('agent-row-machine').textContent).toBe('Studio-Mac-Pr…');
+      expect(row.firstElementChild).toHaveAccessibleName(`${agent(ra, rp).name} on ${alias}`);
+    });
+
     it('lists blocked agents from every host, tagged with the host', () => {
       render(<ChromeSidebar />);
       const section = screen.getByTestId('needs-you');

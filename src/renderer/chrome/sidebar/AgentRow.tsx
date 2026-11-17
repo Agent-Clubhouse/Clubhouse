@@ -69,6 +69,8 @@ interface AgentRowProps {
   onToggleHelpers?: (agentId: string) => void;
   /** A short label for the machine the agent runs on, when it isn't this one (#3065). */
   machine?: string;
+  /** The machine's full alias, which the short label may cut: in the row's name and the hover card (#3607). */
+  machineName?: string;
   /** Its machine is offline: the row is dimmed and says so instead of a time; its chat stays readable. */
   offline?: boolean;
 }
@@ -137,7 +139,7 @@ function ActivityTime({ at, label }: { at: number; label: string }) {
 
 export const AgentRow = React.memo(function AgentRow({
   agent, dot, detailed, active, indent, projectPath, onSelect, onOpenTerminal, level = 2, parentKey, extraActions, highlight, drag, dropEdge,
-  helperCount = 0, helpersExpanded = true, helperNeeds = 0, helperWorking = 0, onToggleHelpers, machine, offline = false,
+  helperCount = 0, helpersExpanded = true, helperNeeds = 0, helperWorking = 0, onToggleHelpers, machine, machineName, offline = false,
 }: AgentRowProps) {
   // A durable agent being created (#2226) can take up to a minute while its worktree is made.
   const couldntStart = !!agent.creationFailed && agent.status === 'error';
@@ -153,6 +155,8 @@ export const AgentRow = React.memo(function AgentRow({
   const noteId = useId();
   const rollupId = useId();
   const orchestrator = useEffectiveOrchestrator(agent);
+  // The short label is clipped on screen, so the name carries the whole alias and the offline state.
+  const accessibleName = machine || machineName ? `${agent.name} on ${machineName ?? machine}${offline ? ', offline' : ''}` : agent.name;
   const describedBy = [note && noteId, folded && rollupId].filter(Boolean).join(' ') || undefined;
   const spawnedAt = useAgentStore((s) => s.agentSpawnedAt[agent.id]);
   const sleeping = agent.status === 'sleeping';
@@ -257,7 +261,7 @@ export const AgentRow = React.memo(function AgentRow({
           aria-level={level}
           aria-selected={active}
           aria-expanded={hasHelpers ? helpersExpanded : undefined}
-          aria-label={agent.name}
+          aria-label={accessibleName}
           aria-describedby={describedBy}
           data-tree-key={`agent:${agent.id}`}
           aria-keyshortcuts={canMove ? 'Alt+ArrowUp Alt+ArrowDown' : undefined}
@@ -341,6 +345,8 @@ export const AgentRow = React.memo(function AgentRow({
         <AgentHoverCard
           ref={cardRef}
           agent={agent}
+          machineName={machineName ?? machine}
+          offline={offline}
           dot={dot}
           detailed={detailed}
           projectPath={projectPath}

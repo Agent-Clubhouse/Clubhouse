@@ -68,7 +68,7 @@ export interface ProjectTreeProps {
   /** A project in a linked group: its Pin and Mark inactive are shared by every copy, so a remote row may mark it too. */
   isLinkedProject?: (projectId: string) => boolean;
   /** For an agent on another machine: a short label for it, and whether that machine is offline. */
-  agentMachine?: (agent: Agent) => { label?: string; offline?: boolean } | undefined;
+  agentMachine?: (agent: Agent) => { label?: string; fullName?: string; offline?: boolean } | undefined;
   /** More items for a project's menu: Merge with… and Split per machine. */
   projectMenuItems?: (projectId: string) => MenuItem[];
 }
