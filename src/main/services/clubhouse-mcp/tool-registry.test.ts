@@ -45,6 +45,7 @@ vi.mock('../dispatcher/dispatcher-settings', () => ({
 }));
 
 import { updateAgentGrantChanges } from '../agent-grants-store';
+import { FEDERATION_TOOLS, FEDERATION_DISABLED_TOOLS, setFederationLookup } from '../dispatcher-federation-policy';
 import { registerToolTemplate, registerGlobalTool, setTargetToolTemplates, getConnectionToolCatalog, getScopedToolList, callTool, refusalReasonOf, buildToolName, buildToolKey, parseToolName, shortHash, invalidateToolListCache, agentsWiredTo, sanitizeWireInstruction, _resetForTesting } from './tool-registry';
 import { bindingManager } from './binding-manager';
 import { MCP_CALLER_UNKNOWN_MESSAGE } from '../../../shared/orchestration-policy';
@@ -724,7 +725,7 @@ describe('ToolRegistry', () => {
       const target = `controller@${machine}`;
       remoteController.id = 'controller';
       const handler = vi.fn();
-      for (const suffix of ['send_message', 'send_file', 'get_status', 'read_output', 'check_connectivity', 'clear_agent']) {
+      for (const suffix of ['send_message', 'send_file', 'get_status', 'read_output', 'check_connectivity', 'clear_agent', 'hand_off_request']) {
         registerToolTemplate('agent', suffix, { description: suffix, inputSchema: { type: 'object' } }, handler,
           suffix === 'get_status' ? { grant: { actions: ['agent.read'], target: 'bound' } } : undefined);
       }
@@ -749,6 +750,37 @@ describe('ToolRegistry', () => {
       expect(forwarded.calls).toEqual([]);
       remoteController.id = 'replacement';
       expect(getScopedToolList('agent-1').map((t) => t.name.split('__').pop())).toContain('read_output');
+    });
+
+    it('preserves exactly main’s controller-link template while ordinary/news wires stay restricted (#3656)', () => {
+      const machine = Array(16).fill('ab').join(':');
+      const target = `controller@${machine}`;
+      const templates = [...FEDERATION_TOOLS, ...FEDERATION_DISABLED_TOOLS];
+      for (const suffix of templates) {
+        registerToolTemplate('agent', suffix, { description: suffix, inputSchema: { type: 'object' } }, vi.fn());
+      }
+      // The membership-owned lookup verifies BOTH endpoints, independently of labels or tool args.
+      const off = setFederationLookup((from, to) => from.agentId === 'agent-1' && !from.machineId
+        && to.agentId === 'controller' && to.machineId === machine
+        ? { from, to, disabledTools: [...FEDERATION_DISABLED_TOOLS], link: { createdAt: '' }, updatedAt: '' } : undefined);
+      bindingManager.bind('agent-1', { targetId: target, targetKind: 'agent', label: 'Controller', disabledTools: [...FEDERATION_DISABLED_TOOLS] });
+      const suffixes = (id: string) => getScopedToolList(id).map((tool) => tool.name.split('__').pop()).sort();
+      try {
+        // Capture main's unfiltered behavior before the target is classified as a remote Dispatcher.
+        const mainTemplate = suffixes('agent-1');
+        const mainCatalog = getConnectionToolCatalog('agent-1', target, 'agent');
+        expect(mainTemplate).toEqual([...FEDERATION_TOOLS].sort());
+        remoteController.id = 'controller';
+        expect(suffixes('agent-1')).toEqual(mainTemplate);
+        expect(getConnectionToolCatalog('agent-1', target, 'agent')).toEqual(mainCatalog);
+
+        bindingManager.bind('agent-3', { targetId: target, targetKind: 'agent', label: 'Controller', agentName: 'agent-1', targetName: 'Dispatcher' });
+        expect(suffixes('agent-3')).toEqual(['send_file', 'send_message']);
+        expect(getConnectionToolCatalog('agent-3', target, 'agent').tools.filter((tool) => tool.available).map((tool) => tool.suffix).sort()).toEqual(['send_file', 'send_message']);
+
+        off(); // A revoked identity must also drop the exception from a cached list.
+        expect(suffixes('agent-1')).toEqual(['send_file', 'send_message']);
+      } finally { off(); }
     });
 
     it('works with browser tool names', async () => {

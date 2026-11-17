@@ -402,7 +402,10 @@ Refusals name that exact target, and asking for `connected` explains that it
 covers a different grant. Requesting a grant never allows the call by itself;
 existing defaults and exact-call Ask first approvals are unchanged.
 
-Remote Dispatcher wires list only `send_message` and `send_file`. Status comes
+Ordinary/news remote Dispatcher wires list only `send_message` and `send_file`.
+Membership-verified controller bindings retain their existing federation template,
+including `hand_off_request`; this exception comes from the verified endpoints,
+never a caller argument or display name. Status comes
 from `list_other_dispatchers`, using local published presence. A client's cached
 wire `get_status` also reads that local presence after the normal wire and grant
 checks; it marks the result as potentially stale and includes last seen when

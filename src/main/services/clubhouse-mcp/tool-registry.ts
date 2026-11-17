@@ -30,6 +30,7 @@ import { CONNECTION_TOOLS, WAKE_TOOL } from '../../../shared/connection-grants';
 import { localConnectionWakeOn } from '../connection-grants-store';
 import { localizeAgentArgs } from './agent-addresses';
 import { forwardAgentCall, remoteMachineOf } from '../annex-agent-calls';
+import { federationDirection } from '../dispatcher-federation-policy';
 import { getProvider } from '../../orchestrators';
 import { formatAgentAddress, parseAgentAddress } from '../../../shared/agent-address';
 import { remoteFederationController } from '../dispatcher-federation';
@@ -489,6 +490,14 @@ function isRemoteDispatcherWire(binding: Pick<McpBinding, 'targetKind' | 'target
   return !!address.machine && remoteFederationController(address.machine)?.agentId === address.agentId;
 }
 
+/** Ordinary/news wires get the news tools. Verified controller links retain main's federation template. */
+function isRemoteDispatcherNewsWire(binding: McpBinding): boolean {
+  if (!isRemoteDispatcherWire(binding)) return false;
+  const address = parseAgentAddress(binding.targetId);
+  // This lookup is installed by membership-owned federation, never by tool arguments or display names.
+  return !federationDirection({ agentId: binding.agentId }, { agentId: address.agentId, machineId: address.machine! });
+}
+
 /** A cached get_status may still arrive. It reads only the same local presence as list_other_dispatchers. */
 function remoteDispatcherWireStatus(targetId: string): McpToolResult {
   const address = parseAgentAddress(targetId);
@@ -837,7 +846,7 @@ export function getConnectionToolCatalog(
     tools: templates.map((template) => ({
       suffix: template.nameSuffix,
       description: template.definition.description,
-      available: (!isRemoteDispatcherWire(binding) || REMOTE_DISPATCHER_WIRE_TOOLS.has(template.nameSuffix))
+      available: (!isRemoteDispatcherNewsWire(binding) || REMOTE_DISPATCHER_WIRE_TOOLS.has(template.nameSuffix))
         && templateListable(binding, template, deniedTools, wire),
     })),
   };
@@ -853,9 +862,9 @@ export function getScopedToolList(agentId: string): McpToolDefinition[] {
   if (access === 'closed') return [];
   const currentVersion = bindingManager.getVersion();
   const bindings = bindingManager.getBindingsForAgent(agentId);
-  const remoteDispatcherWires = new Set(bindings.filter(isRemoteDispatcherWire).map((b) => b.targetId));
+  const remoteDispatcherNewsWires = new Set(bindings.filter(isRemoteDispatcherNewsWire).map((b) => b.targetId));
   const allWireTools = keepsFirstToolList(agentId);
-  const currentWakeKey = (allWireTools ? 'all' : wakeKey(bindings)) + bindings.map((b) => remoteDispatcherWires.has(b.targetId) ? 'd' : '-').join('');
+  const currentWakeKey = (allWireTools ? 'all' : wakeKey(bindings)) + bindings.map((b) => remoteDispatcherNewsWires.has(b.targetId) ? 'd' : '-').join('');
   const currentConditions = conditionsKey(agentId);
   const cached = toolListCache.get(agentId);
   if (cached && cached.bindingVersion === currentVersion && cached.wakeKey === currentWakeKey && cached.conditionsKey === currentConditions) {
@@ -885,7 +894,7 @@ export function getScopedToolList(agentId: string): McpToolDefinition[] {
       : new Set<string>(binding.disabledTools ?? []);
 
     for (const template of templates) {
-      if (remoteDispatcherWires.has(binding.targetId) && !REMOTE_DISPATCHER_WIRE_TOOLS.has(template.nameSuffix)) continue;
+      if (remoteDispatcherNewsWires.has(binding.targetId) && !REMOTE_DISPATCHER_WIRE_TOOLS.has(template.nameSuffix)) continue;
       if (isTargetSleeping && !SLEEPING_TARGET_TOOLS.has(template.nameSuffix)) {
         continue;
       }
