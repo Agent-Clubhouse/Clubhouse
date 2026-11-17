@@ -1,3 +1,5 @@
+const rosterFx = vi.hoisted(() => ({ describe: vi.fn(async () => ({ status: 'unavailable', reason: 'unsupported' })) }));
+vi.mock('../../group-project-roster', () => ({ groupProjectRoster: rosterFx }));
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 
 // What the gate decides is covered in mcp-call-gate.test.ts and test/mcp-off.
@@ -270,6 +272,18 @@ describe('GroupProjectTools', () => {
     const members = JSON.parse(result.content[0].text!);
     expect(members).toHaveLength(2);
     expect(members.map((m: any) => m.agentName).sort()).toEqual(['falcon', 'robin']);
+  });
+
+  it.each(['list_members', 'query_polling', 'get_project_info'])('%s uses the host roster including remote members', async suffix => {
+    groupProjectRegistry._setForTesting({ id: 'gp_roster', name: 'Roster', description: '', instructions: '', createdAt: '' });
+    bindingManager.bind('agent-1', { targetId: 'gp_roster', targetKind: 'group-project', label: 'Roster' });
+    rosterFx.describe.mockResolvedValueOnce({ status: 'available', source: 'live', complete: false, stale: 'offline', members: [
+      { agentId: 'remote', key: 'remote@other', machine: 'other', label: 'Twin', machineLabel: 'MBP', thisComputer: false },
+    ] } as never);
+    const result = await callTool('agent-1', buildToolName(makeBinding({ agentId: 'agent-1', targetId: 'gp_roster', targetName: 'Roster' }), suffix), {});
+    const body = JSON.parse(result.content[0].text!);
+    const members = Array.isArray(body) ? body : body.members;
+    expect(members).toEqual([expect.objectContaining({ agentId: 'remote@other', agentName: 'Twin', status: 'unknown', rosterSource: 'live', rosterComplete: false, stale: 'offline' })]);
   });
 
   it('post_bulletin posts and returns confirmation', async () => {

@@ -157,8 +157,10 @@ describe('network group projects across two desktops (#3363)', () => {
       m.explicit.push({ address: `agent_b@${B.fp}`, kind: 'durable', addedAt: '2026-11-13T00:00:00.000Z' });
     }));
     const posted = await as(B, (h) => h.groupProjectHost.post(id, 'builder@Studio', 'work', 'from the studio', { author: { agentId: 'agent_b', label: 'builder@Studio' } }));
+    expect(posted.senderAddress).toBe(`agent_b@${B.fp}`);
     expect(posted.pending).toBeUndefined();
     expect(posted.seq).toBeGreaterThan(1);
+    expect((await as(B, (h) => h.groupProjectHost.readTopic(id, 'work')))[0].senderAddress).toBe(`agent_b@${B.fp}`);
     expect((await as(A, (h) => h.groupProjectHost.readTopic(id, 'work'))).map((m) => m.body)).toEqual(['from the studio']);
     expect((await as(B, (h) => h.groupProjectHost.readTopic(id, 'work'))).map((m) => m.body)).toEqual(['from the studio']);
   });

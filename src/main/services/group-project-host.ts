@@ -1028,7 +1028,9 @@ class GroupProjectHostService {
         replayed = true;
         return earlier;
       }
-      return board.postMessage(sender, topic, body, await reserve(), options.messageId);
+      const project = await this.requireProject(id);
+      const address = options.author?.agentId && this.addressOf(project, options.author.agentId);
+      return board.postMessage(sender, topic, body, await reserve(), options.messageId, address || undefined);
     }, options.withinExclusive);
     if (!replayed) publishAppEvent({ type: 'group_project.message_posted', groupProjectId: id, topic: message.topic, ...(options.chain && { chain: options.chain }) });
     return message;
@@ -1133,6 +1135,32 @@ class GroupProjectHostService {
       if (!(await board.hasTopic(name)) || !board.isTopicProtected(name)) return false;
     }
     return true;
+  }
+
+  /** Host-owned admission: one board transaction, independent of local binding restores. */
+  async ensureMemberAdmission(id: string, name: string, address: string): Promise<void> {
+    const gp = await this.get(id);
+    if (!gp || this.isReplica(gp)) return;
+    const board = getBulletinBoard(id);
+    const addressHere = this.addressOf(gp, address);
+    const inbox = await resolveInboxChannel(id, name, addressHere);
+    // Reconciliation is frequent. Existing admissions do not enter the write queue.
+    if ((await board.inboxOwner(inbox)) === addressHere && await board.hasTopic(inbox) && board.isTopicProtected(inbox)) return;
+    await this.commit(id, 'board', async ({ project, reserve }) => {
+      if (this.isReplica(project)) return;
+      const canonical = this.addressOf(project, address);
+      const board = getBulletinBoard(id);
+      const channel = await resolveInboxChannel(id, name, canonical);
+      const messageId = `join_${createHash('sha256').update(canonical).digest('hex')}`;
+      const joined = await board.getMessageById(messageId);
+      // Existing owned inboxes were admitted by the older lifecycle. Restores stay silent.
+      const legacy = (await board.inboxOwner(channel)) === canonical && await board.hasTopic(channel);
+      if (joined && legacy) return;
+      const seq = await reserve();
+      await ensureProjectChannels(id, seq);
+      await ensureInboxChannel(id, name, canonical, seq);
+      if (!joined && !legacy) await board.postMessage('system', 'system', `${name} joined project "${project.name}"`, seq, messageId);
+    });
   }
 
   /** Seed a member's inbox, kept apart from any other member with the same name (#1646). Returns its channel. */
@@ -1867,7 +1895,7 @@ class GroupProjectHostService {
           if (topic === 'system' && !(system && write.sender === 'system')) return refuse('The system channel is reserved.');
           // The same write always makes the same message, so a replay after a crash finds it.
           const messageId = `msg_${Date.parse(item.queuedAt) || 0}_${createHash('sha256').update(`${machine}\u0000${item.id}`).digest('hex').slice(0, 12)}`;
-          result = await this.post(id, write.sender, write.topic, write.body, { messageId });
+          result = await this.post(id, write.sender, write.topic, write.body, { messageId, author: { ...item.author, ...(item.author.agentId && { agentId: this.memberAddress(project, parseAgentAddress(item.author.agentId).agentId, machine) }) } });
           break;
         }
         case 'deleteMessage':

@@ -268,7 +268,7 @@ class BulletinBoard {
   }
 
   /** Post a message to a topic. `seq` is the host's sequence number for the post (#3356). */
-  async postMessage(sender: string, topic: string, body: string, seq?: number, id?: string): Promise<BulletinMessage> {
+  async postMessage(sender: string, topic: string, body: string, seq?: number, id?: string, senderAddress?: string): Promise<BulletinMessage> {
     await this.ensureLoaded();
 
     if (Buffer.byteLength(body, 'utf-8') > MAX_BODY_BYTES) {
@@ -280,6 +280,7 @@ class BulletinBoard {
     const message: BulletinMessage = {
       id: id ?? `msg_${Date.now()}_${randomBytes(6).toString('hex')}`,
       sender,
+      ...(senderAddress && { senderAddress }),
       topic: canonicalTopic,
       body,
       timestamp: new Date().toISOString(),

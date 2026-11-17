@@ -363,15 +363,14 @@ export const membershipBindingSource: PersistedBindingSource = {
 async function migrateLegacyGroupProjects(): Promise<void> {
   const inventory = await readInventory();
   let wires: PersistedBinding[] | null = null;
-  let changed = false;
   for (const gp of await groupProjectHost.list()) {
     // Only the host gives a group project its record (#3363).
     if (isReplica(gp) || await isMembershipManaged(gp.id)) continue;
     if (!isNewGroupProject(gp)) wires ??= await readCanvasWiresStrictly();
     await adopt(gp, inventory, wires ?? []);
-    changed = true;
   }
-  if (changed) await reconcileMembership();
+  // Also repair missing admissions in groups already managed before this launch.
+  await reconcileMembership();
 }
 
 function isNewGroupProject(gp: GroupProject): boolean {
@@ -478,6 +477,9 @@ export async function reconcileMembership(): Promise<void> {
   const next = new Map<string, Set<string>>();
   const changed = new Set<string>();
   for (const s of snapshots) {
+    if (!isReplica(s.gp)) {
+      for (const member of s.resolution.members) await groupProjectHost.ensureMemberAdmission(s.gp.id, member.name, member.agentId);
+    }
     const ids = new Set(localMembers(s).map((m) => m.agentId));
     next.set(s.gp.id, ids);
     const before = listed.get(s.gp.id) ?? new Set<string>();

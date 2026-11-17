@@ -68,6 +68,7 @@ interface NoticeMessage {
   id: string;
   topic: string;
   sender: string;
+  senderAddress?: string;
   mentioned: boolean;
 }
 
@@ -137,10 +138,13 @@ export function noteSenderAddress(messageId: string, address: string): void {
 }
 
 /** Whether a message is this member's own post. */
-function isOwnPost(message: NoticeMessage, state: MemberState): boolean {
-  const address = senderAddresses.get(message.id)?.address;
-  if (address) return address === state.agentId;
-  // Posted another way (the app, Annex): its label is the only identity there is.
+function isOwnPost(message: NoticeMessage, state: MemberState, gp: GroupProject): boolean {
+  if (message.senderAddress) return groupProjectHost.localAgentId(gp, message.senderAddress) === state.agentId;
+  const localSender = senderAddresses.get(message.id)?.address;
+  if (localSender) return localSender === state.agentId;
+  // Old replicas lack author identity. Names cannot disambiguate computers:
+  // prefer an occasional duplicate own-post notice to losing a teammate's post.
+  if (gp.network?.role === 'replica' || gp.scope?.reach === 'network') return false;
   return senderName(message.sender).toLowerCase() === state.name.toLowerCase();
 }
 
@@ -210,7 +214,7 @@ async function onPost(gp: GroupProject, message: BulletinMessage): Promise<void>
     return;
   }
   const [resolved, membership] = await Promise.all([groupProjectHost.resolveMembers(gp.id), groupProjectHost.getMembership(gp.id)]);
-  forgetFormerMembers(gp.id, resolved);
+  forgetFormerMembers(gp, resolved);
   for (const member of resolved) {
     // Each computer tells its own agents (#3363): the host's, and on a copy this computer's,
     // which hears of the post when the host tells it the group project changed.
@@ -225,7 +229,7 @@ async function onPost(gp: GroupProject, message: BulletinMessage): Promise<void>
       state.window = { messages: [] };
       state.timer = setTimeout(() => { void flush(state); }, COALESCE_MS);
     }
-    state.window.messages.push({ id: message.id, topic: message.topic, sender: message.sender, mentioned });
+    state.window.messages.push({ id: message.id, topic: message.topic, sender: message.sender, senderAddress: message.senderAddress, mentioned });
   }
 }
 
@@ -253,10 +257,10 @@ function forget(state: MemberState): void {
 }
 
 /** Drop what's held for agents no longer in the group project, taking back a queued notice. */
-function forgetFormerMembers(groupProjectId: string, resolved: ReadonlyArray<{ address: string }>): void {
-  const current = new Set(resolved.map((m) => m.address));
+function forgetFormerMembers(gp: GroupProject, resolved: ReadonlyArray<{ address: string }>): void {
+  const current = new Set(resolved.map((m) => groupProjectHost.localAgentId(gp, m.address)));
   for (const state of [...members.values()]) {
-    if (state.groupProjectId === groupProjectId && !current.has(state.agentId)) forget(state);
+    if (state.groupProjectId === gp.id && !current.has(state.agentId)) forget(state);
   }
 }
 
@@ -265,7 +269,9 @@ async function flush(state: MemberState): Promise<void> {
   state.window = null;
   state.timer = null;
   if (!window) return;
-  const batch: Batch = { messages: window.messages.filter((m) => !isOwnPost(m, state)) };
+  const gp = await stillMember(state);
+  if (!gp) { forget(state); return; }
+  const batch: Batch = { messages: window.messages.filter((m) => !isOwnPost(m, state, gp)) };
   if (batch.messages.length === 0) return;
   if (!(await stillMember(state))) { forget(state); return; }
   count('coalesced', batch.messages.length - 1);
@@ -433,7 +439,8 @@ export function watchGroupProjectDelivery(): () => void {
       void (async () => {
         const gp = await groupProjectHost.get(change.groupProjectId);
         const resolved = gp && !usesPolling(gp) && groupProjectMay(gp, 'deliver') ? await groupProjectHost.resolveMembers(gp.id) : [];
-        forgetFormerMembers(change.groupProjectId, resolved);
+        if (gp) forgetFormerMembers(gp, resolved);
+        else for (const state of [...members.values()]) if (state.groupProjectId === change.groupProjectId) forget(state);
       })().catch((err) => {
         // telemetry-exempt: held notices are re-checked when they go anyway; logged
         appLog('core:group-project', 'warn', 'Could not re-check group project notice recipients', { meta: { groupProjectId: change.groupProjectId, error: err instanceof Error ? err.message : String(err) } });
