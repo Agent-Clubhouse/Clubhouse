@@ -585,6 +585,8 @@ export const IPC = {
     CLIPBOARD_IMAGE: 'annex-client:clipboard-image',
     GIT_OPERATION: 'annex-client:git-operation',
     CHAT_PAGE: 'annex-client:chat-page',
+    CONTROLLER_CHAT_PAGE: 'annex-client:controller-chat-page',
+    CONTROLLER_CHAT_SESSIONS: 'annex-client:controller-chat-sessions',
     CHAT_SESSIONS: 'annex-client:chat-sessions',
     CHAT_COMMAND: 'annex-client:chat-command',
     SESSION_LIST: 'annex-client:session-list',

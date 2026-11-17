@@ -1281,7 +1281,7 @@ describe('ChromeSidebar Dispatcher (#2538)', () => {
     render(<ChromeSidebar />);
     const row = await screen.findByRole('treeitem', { name: 'Tael on Mini' });
     expect(screen.getByTestId('dispatcher-group')).toContainElement(row);
-    expect(screen.queryByTestId('remote-dispatcher-controller')).toBeNull();
+    expect(screen.getByTestId('remote-dispatcher-controller')).toBeInTheDocument();
     // The same level and indent as this computer's own Dispatcher.
     expect(levelOf(row)).toEqual(levelOf(within(screen.getByTestId('dispatcher-row')).getByRole('treeitem')));
     const target = screen.getByTestId('remote-dispatcher-row');
@@ -1294,13 +1294,20 @@ describe('ChromeSidebar Dispatcher (#2538)', () => {
     presence.mockRestore();
   });
 
-  it('nests the controller rows, the local one and a remote one, one level under their Dispatcher, only in Debug', async () => {
+  it('opens the remote controller without Debug, keeping the local controller gated', async () => {
     turnOn();
     useAnnexClientStore.setState({ satellites: [satelliteFor(null)] });
+    vi.mocked(window.clubhouse.annexClient.controllerChatPage).mockResolvedValue({ status: 'unavailable' });
     const presence = vi.spyOn(window.clubhouse.dispatcher, 'getPresence').mockResolvedValue({ remotes: [remotePresence()] } as never);
-    render(<ChromeSidebar />);
+    render(<><ChromeSidebar /><DispatcherView /></>);
     const remote = await screen.findByRole('treeitem', { name: 'Tael on Mini' });
-    expect(screen.queryByTestId('remote-dispatcher-controller')).toBeNull();
+    const remoteControllerWithoutDebug = within(screen.getByTestId('remote-dispatcher-controller')).getByRole('treeitem');
+    expect(remoteControllerWithoutDebug).toHaveAttribute('tabindex', '0');
+    fireEvent.keyDown(remoteControllerWithoutDebug, { key: 'Enter' });
+    expect(useRemoteDispatcherSelection.getState()).toMatchObject({ machine: 'fp1', controller: true });
+    expect(useUIStore.getState().dispatcherOpen).toBe(true);
+    expect(await screen.findByTestId('remote-controller-chat')).toBeInTheDocument();
+    expect(await screen.findByText(/not available on that computer’s version/)).toBeInTheDocument();
     expect(screen.queryByTestId('dispatcher-work-row')).toBeNull();
     act(() => useDispatcherDebugStore.setState({ on: true }));
     const remoteController = within(screen.getByTestId('remote-dispatcher-controller')).getByRole('treeitem');
@@ -1423,7 +1430,7 @@ describe('ChromeSidebar Dispatcher (#2538)', () => {
     render(<ChromeSidebar />);
     const avatar = await screen.findByTestId('remote-dispatcher-avatar');
     expect(avatar.querySelector('img')).toHaveAttribute('src', 'data:image/png;base64,BBBB');
-    expect(screen.queryByTestId('dispatcher-avatar-fallback')).toBeNull();
+    expect(within(screen.getByTestId('remote-dispatcher-row')).queryByTestId('dispatcher-avatar-fallback')).toBeNull();
     presence.mockRestore(); getLead.mockRestore();
     useRemoteProjectStore.setState({ remoteAgentIcons: {} });
   });

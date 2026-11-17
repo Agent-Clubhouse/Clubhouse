@@ -412,6 +412,8 @@ vi.stubGlobal('clubhouse', {
     purgeServerConfig: asyncNoop,
   },
   annexClient: {
+    controllerChatPage: vi.fn(async () => ({ status: 'offline' })),
+    controllerChatSessions: vi.fn(async () => ({ status: 'offline' })),
     getSatellites: async () => [],
     getDiscovered: async () => [],
     pairWith: async () => ({ success: false, error: 'mock' }),

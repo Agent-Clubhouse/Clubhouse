@@ -3041,6 +3041,31 @@ describe('annex-client', () => {
       annexClient._addConnectedSatelliteForTesting(FP);
     });
 
+    it.each([404, 405])('represents an old controller-chat server (%s) without retrying', async (status) => {
+      answers.push({ status, body: { error: 'not_found' } });
+      expect(await annexClient.requestControllerChatPage(FP)).toEqual({ status: 'unavailable' });
+      expect(requests).toHaveLength(1);
+      expect(requests[0]).toMatchObject({ method: 'GET' });
+      expect(requests[0].url).toContain('/api/v1/network/dispatcher/controller/chat');
+    });
+    it('reads controller pages and archives only over the dedicated GET routes', async () => {
+      answers.push({ status: 200, body: { version: 1, events: [], readOnly: true } });
+      expect(await annexClient.requestControllerChatPage(FP, { sessionId: 's?/#', beforeSeq: 20, limit: 10 })).toMatchObject({ status: 'ok', value: { events: [] } });
+      expect(requests[0].url).toMatch(/sessionId=s%3F%2F%23&beforeSeq=20&limit=10$/);
+      answers.push({ status: 200, body: { sessions: [] } });
+      expect(await annexClient.requestControllerChatSessions(FP)).toEqual({ status: 'ok', value: { sessions: [] } });
+      expect(requests[1].url).toMatch(/\/controller\/chat\/sessions$/);
+      expect(requests.every((r) => r.method === 'GET' && !r.body)).toBe(true);
+    });
+    it('represents offline, refused and failing controller reads safely', async () => {
+      expect(await annexClient.requestControllerChatPage('missing')).toEqual({ status: 'offline' });
+      expect(requests).toHaveLength(0);
+      answers.push({ status: 403, body: { error: 'agent_read_required' } });
+      expect(await annexClient.requestControllerChatPage(FP)).toEqual({ status: 'forbidden' });
+      answers.push({ status: 500, body: { error: 'private-error-text' } });
+      expect(await annexClient.requestControllerChatPage(FP)).toEqual({ status: 'error' });
+    });
+
     it('reads a chat page through the satellite\'s phone route, and remembers its epoch', async () => {
       answers.push({ status: 200, body: { epoch: 'ep_1', events: [] } });
       expect(await annexClient.requestChatPage(FP, 'durable_chat', { limit: 50 })).toEqual({ epoch: 'ep_1', events: [] });

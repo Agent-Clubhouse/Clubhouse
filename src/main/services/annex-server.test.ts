@@ -555,6 +555,62 @@ describe('annex-server', () => {
     annexServer._testing.setPinReusable(false);
   });
 
+  describe('desktop controller conversation (#3474)', () => {
+    const route = '/api/v1/network/dispatcher/controller/chat';
+    const member = { ...TEST_CONTROLLER, role: 'member' as const, kind: 'desktop' as const };
+    let grant: ReturnType<typeof vi.spyOn>;
+    beforeEach(async () => {
+      vi.mocked(annexPeers.getPeer).mockImplementation((fp) => fp === member.fingerprint ? { ...member } : undefined);
+      vi.mocked(annexPeers.listPeers).mockReturnValue([member]);
+      const dispatcher = await import('./dispatcher/dispatcher-service');
+      vi.spyOn(dispatcher, 'getDispatcherAgentId').mockReturnValue('controller');
+      const federation = await import('./dispatcher-federation');
+      vi.spyOn(federation, 'remoteFederationController').mockReturnValue({ agentId: 'caller', enabled: true } as ReturnType<typeof federation.remoteFederationController>);
+      const grants = await import('./clubhouse-mcp/grant-check');
+      grant = vi.spyOn(grants, 'decideGrant').mockReturnValue({ outcome: 'allow' });
+      const transcripts = await import('./agent-runtime/chat-transcript');
+      vi.spyOn(transcripts, 'readChatTranscript').mockResolvedValue([1, 2, 3].map((seq) => ({
+        agentId: 'controller', sessionId: 's', seq, ts: seq, type: 'agent_message', data: { messageId: `m${seq}`, text: `Full controller context ${seq}` },
+      })));
+      vi.spyOn(transcripts, 'listChatSessions').mockResolvedValue([{ sessionId: 's', startedAt: 1, lastActiveAt: 3, lastSeq: 3 }]);
+    });
+    it('serves an authenticated member history, pages and saved sessions', async () => {
+      const { port } = await startAndPair();
+      const first = await request(port, 'GET', `${route}?limit=2`);
+      expect(first.status).toBe(200);
+      expect(JSON.parse(first.body)).toMatchObject({ readOnly: true, nextBeforeSeq: 2, events: [{ seq: 2 }, { seq: 3 }] });
+      const older = await request(port, 'GET', `${route}?limit=2&beforeSeq=2`);
+      expect(JSON.parse(older.body)).toMatchObject({ nextBeforeSeq: null, events: [{ seq: 1 }] });
+      const sessions = await request(port, 'GET', `${route}/sessions`);
+      expect(JSON.parse(sessions.body)).toMatchObject({ sessions: [{ sessionId: 's' }] });
+    });
+    it('refuses a desktop without the host agent.read grant', async () => {
+      grant.mockReturnValue({ outcome: 'refuse', reason: 'no_grant' });
+      const { port } = await startAndPair();
+      expect((await request(port, 'GET', route)).status).toBe(403);
+    });
+    it.each([
+      { ...member, kind: 'phone' as const },
+      { ...member, networkPending: true },
+      { ...member, role: 'controller' as const },
+    ])('refuses nonmember, pending and phone principals: $role $kind $networkPending', async (peer) => {
+      vi.mocked(annexPeers.getPeer).mockReturnValue(peer);
+      vi.mocked(annexPeers.listPeers).mockReturnValue([peer]);
+      const { port } = await startAndPair();
+      expect((await request(port, 'GET', route)).status).toBe(403);
+      expect((await request(port, 'GET', `${route}/sessions`)).status).toBe(403);
+    });
+    it('requires the pinned certificate and has no write route or mobile controller read', async () => {
+      const { port } = await startAndPair();
+      vi.mocked(annexTls.extractPeerCertificateFingerprint).mockReturnValueOnce('wrong-pin');
+      expect((await request(port, 'GET', route)).status).toBe(401);
+      for (const method of ['POST', 'PUT', 'PATCH', 'DELETE']) expect((await request(port, method, route, { text: 'do work' })).status).toBe(404);
+      expect((await request(port, 'GET', '/api/v1/mobile/agents/controller/chat')).status).toBe(404);
+      expect(agentSystem.spawnAgent).not.toHaveBeenCalled();
+      expect(ptyManagerModule.write).not.toHaveBeenCalled();
+    });
+  });
+
   describe('verified MCP network host', () => {
     let saved: AnnexSettings;
     beforeEach(async () => {

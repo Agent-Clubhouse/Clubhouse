@@ -37,7 +37,7 @@ export function openDispatcherNavTarget(target: string): void {
  * Show the Dispatcher's view. Does nothing while it's turned off. `work` shows
  * its controller's chat instead, with the debug view on (#3188).
  */
-export function openDispatcher(opts: { work?: boolean; remoteMachine?: string; local?: boolean } = {}): void {
+export function openDispatcher(opts: { work?: boolean; remoteMachine?: string; remoteController?: boolean; local?: boolean } = {}): void {
   if (!useDispatcherStore.getState().project) return;
   requestLeaveAgentSettings(() => {
     useChromeStore.getState().closeNewAgent();
@@ -47,7 +47,7 @@ export function openDispatcher(opts: { work?: boolean; remoteMachine?: string; l
     else if (ui.explorerTab === 'help') ui.toggleHelp();
     else if (ui.explorerTab.startsWith('plugin:app:')) ui.setExplorerTab('agents');
     useDispatcherDebugStore.getState().setWorkOpen(!!opts.work);
-    useRemoteDispatcherSelection.getState().select(opts.remoteMachine?.toLowerCase() ?? null, !!opts.local);
+    useRemoteDispatcherSelection.getState().select(opts.remoteMachine?.toLowerCase() ?? null, !!opts.local, !!opts.remoteController);
     useUIStore.getState().setDispatcherOpen(true);
   });
 }

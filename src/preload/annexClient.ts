@@ -1,6 +1,7 @@
 import { ipcRenderer } from 'electron';
 import { IPC } from '../shared/ipc-channels';
 import type { GroupProjectRolesView } from '../shared/group-project-types';
+import type { ControllerChatQuery, ControllerChatPage, ControllerChatSessions, ControllerReadResult } from '../shared/controller-chat';
 
 export const annexClient = {
   annexClient: {
@@ -37,6 +38,11 @@ export const annexClient = {
     ipcRenderer.invoke(IPC.ANNEX_CLIENT.PTY_SPAWN_SHELL, satelliteId, sessionId, projectId),
   clipboardImage: (satelliteId: string, agentId: string, base64: string, mimeType: string): Promise<void> =>
     ipcRenderer.invoke(IPC.ANNEX_CLIENT.CLIPBOARD_IMAGE, satelliteId, agentId, base64, mimeType),
+  /** A page of a satellite chat agent's transcript and state (#2390). */
+  controllerChatPage: (machine: string, opts: ControllerChatQuery = {}): Promise<ControllerReadResult<ControllerChatPage>> =>
+    ipcRenderer.invoke(IPC.ANNEX_CLIENT.CONTROLLER_CHAT_PAGE, machine, opts),
+  controllerChatSessions: (machine: string): Promise<ControllerReadResult<ControllerChatSessions>> =>
+    ipcRenderer.invoke(IPC.ANNEX_CLIENT.CONTROLLER_CHAT_SESSIONS, machine),
   /** A page of a satellite chat agent's transcript and state (#2390). */
   chatPage: (satelliteId: string, agentId: string, opts?: { beforeSeq?: number; limit?: number }): Promise<unknown> =>
     ipcRenderer.invoke(IPC.ANNEX_CLIENT.CHAT_PAGE, satelliteId, agentId, opts ?? {}),

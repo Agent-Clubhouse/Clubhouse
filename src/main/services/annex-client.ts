@@ -26,6 +26,7 @@ import * as headlessTerminal from './pty-headless-terminal';
 import { appLog } from './log-service';
 import { broadcastToAllWindows } from '../util/ipc-broadcast';
 import { IPC } from '../../shared/ipc-channels';
+import { CONTROLLER_CHAT_PATH, CONTROLLER_CHAT_MAX_BYTES, type ControllerChatQuery, type ControllerChatPage, type ControllerChatSessions, type ControllerReadResult } from '../../shared/controller-chat';
 import type { DigestSince } from '../../shared/group-project-types';
 import { encodeDigestSince } from '../../shared/digest-since';
 import { normalizeCertFingerprint, parsePairingUrl } from './annex-pairing-url';
@@ -2224,6 +2225,34 @@ export async function requestChatPage(fingerprint: string, agentId: string, opts
   if (res.status !== 200) throw new Error(`HTTP ${res.status}`);
   rememberEpoch(fingerprint, res.body);
   return res.body;
+}
+
+/** Desktop controller reads use pinned TLS, but never the mobile command endpoint. */
+async function controllerChatRead<T>(machine: string, path: string): Promise<ControllerReadResult<T>> {
+  const sat = satelliteFor(machine);
+  if (!sat || sat.state !== 'connected') return { status: 'offline' };
+  try {
+    const res = await satelliteJson(sat.fingerprint, 'GET', path, undefined, { maxResponseBytes: CONTROLLER_CHAT_MAX_BYTES });
+    if (res.status === 404 || res.status === 405) return { status: 'unavailable' };
+    if (res.status === 401 || res.status === 403) return { status: 'forbidden' };
+    if (res.status !== 200 || !res.body || typeof res.body !== 'object') return { status: 'error' };
+    return { status: 'ok', value: res.body as T };
+  } catch {
+    // telemetry-exempt: a bounded state, never a remote error containing conversation text.
+    return { status: sat.state === 'connected' ? 'error' : 'offline' };
+  }
+}
+
+export function requestControllerChatPage(machine: string, opts: ControllerChatQuery = {}): Promise<ControllerReadResult<ControllerChatPage>> {
+  const query = new URLSearchParams();
+  for (const key of ['sessionId', 'beforeSeq', 'afterSeq', 'limit'] as const) {
+    if (opts[key] !== undefined) query.set(key, String(opts[key]));
+  }
+  return controllerChatRead(machine, `${CONTROLLER_CHAT_PATH}?${query}`);
+}
+
+export function requestControllerChatSessions(machine: string): Promise<ControllerReadResult<ControllerChatSessions>> {
+  return controllerChatRead(machine, `${CONTROLLER_CHAT_PATH}/sessions`);
 }
 
 /** A satellite chat agent's sessions, for its history. */

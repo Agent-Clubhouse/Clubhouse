@@ -6,8 +6,9 @@ import { create } from 'zustand';
  * the pick holds across that computer's connect, snapshot and reconnect.
  * `local` is this computer's earlier chat while following a lead.
  */
-export const useRemoteDispatcherSelection = create<{ machine: string | null; local: boolean; select: (machine: string | null, local?: boolean) => void }>((set) => ({
+export const useRemoteDispatcherSelection = create<{ machine: string | null; local: boolean; controller: boolean; select: (machine: string | null, local?: boolean, controller?: boolean) => void }>((set) => ({
   machine: null,
   local: false,
-  select: (machine, local = false) => set({ machine, local }),
+  controller: false,
+  select: (machine, local = false, controller = false) => set({ machine, local, controller: !!machine && controller }),
 }));
