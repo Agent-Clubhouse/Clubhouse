@@ -14,18 +14,13 @@ import { ImportAgentReview, ImportReview } from '../projects/ImportReview';
 import { DeleteAgentsReview } from './DeleteAgentsReview';
 import { isRepeatClick } from '../../utils/repeat-click';
 
-export function GrantRequestList({ agentId, agentName, onAnswered }: {
-  agentId: string;
-  agentName: string;
-  /** After an answer went through, so a page showing the agent's permissions can reload them. */
-  onAnswered?: () => void;
-}) {
-  const all = useGrantRequestStore((s) => s.requests);
-  const requests = useMemo(() => grantRequestsFor(all, agentId), [all, agentId]);
+type Answering = ReturnType<typeof useGrantAnswering>;
+
+/** Sends answers for the review surfaces: one at a time, to the request acted on (#3606). */
+export function useGrantAnswering(onAnswered?: () => void) {
   const remove = useGrantRequestStore((s) => s.remove);
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<{ id: string; message: string } | null>(null);
-
   // Set before the first await, so a second activation in the same tick finds it.
   const inFlight = useRef(false);
   const answer = async (request: GrantRequest, allow: boolean, updateMode?: import('../../../shared/app-update').AppUpdateMode) => {
@@ -52,29 +47,64 @@ export function GrantRequestList({ agentId, agentName, onAnswered }: {
       setBusy(null);
     }
   };
+  return { answer, busy, error };
+}
+
+/** What a request asks and why, with anything the user should read before answering. */
+export function GrantRequestBody({ r }: { r: GrantRequest }) {
+  return (
+    <div className="flex flex-col gap-1.5 text-[13px]">
+      <p className="text-ctp-text">{describeGrantRequest(r)}</p>
+      {r.reason && <p className="text-ctp-subtext1">Its reason: {r.reason}</p>}
+      {r.importReview && <ImportReview plan={r.importReview} />}
+      {r.agentReview && <ImportAgentReview review={r.agentReview} />}
+      {r.deleteReview && <DeleteAgentsReview review={r.deleteReview} />}
+      {r.details && (
+        <pre className="max-h-40 overflow-auto rounded bg-ctp-mantle p-2 text-xs text-ctp-subtext1 whitespace-pre-wrap break-words">{r.details}</pre>
+      )}
+      <p className="text-xs text-ctp-overlay1">{grantRequestAllowEffect(r)}</p>
+    </div>
+  );
+}
+
+/** A request's answers. An update has explicit restart choices, never a generic Allow. */
+export function GrantRequestActions({ r, answering }: { r: GrantRequest; answering: Answering }) {
+  const { answer, busy } = answering;
+  return (
+    <div className="flex items-center gap-2">
+      {r.update ? <>
+        <Button kind="primary" onClick={(e) => { if (!isRepeatClick(e)) void answer(r, true, 'now'); }} disabled={busy !== null}>Restart now</Button>
+        <Button onClick={(e) => { if (!isRepeatClick(e)) void answer(r, true, 'when_idle'); }} disabled={busy !== null}>Restart when idle</Button>
+      </> : <Button kind="primary" onClick={(e) => { if (!isRepeatClick(e)) void answer(r, true); }} disabled={busy !== null} data-testid="grant-request-allow">Allow</Button>}
+      <Button onClick={(e) => { if (!isRepeatClick(e)) void answer(r, false); }} disabled={busy !== null} data-testid="grant-request-decline">{r.update ? 'Cancel' : 'Decline'}</Button>
+    </div>
+  );
+}
+
+/** Why an answer didn't go through, on the request it was for. */
+export function GrantRequestError({ r, answering }: { r: GrantRequest; answering: Answering }) {
+  const { error } = answering;
+  return error?.id === r.requestId ? <p role="alert" className="text-xs text-ctp-error">{error.message}</p> : null;
+}
+
+export function GrantRequestList({ agentId, agentName, onAnswered }: {
+  agentId: string;
+  agentName: string;
+  /** After an answer went through, so a page showing the agent's permissions can reload them. */
+  onAnswered?: () => void;
+}) {
+  const all = useGrantRequestStore((s) => s.requests);
+  const requests = useMemo(() => grantRequestsFor(all, agentId), [all, agentId]);
+  const answering = useGrantAnswering(onAnswered);
 
   if (requests.length === 0) return null;
   return (
     <ul className="flex flex-col gap-3" data-testid="grant-request-list" aria-label={`${agentName}'s permission requests`}>
       {requests.map((r) => (
-        <li key={r.requestId} className="flex flex-col gap-1.5 text-[13px]" data-testid={`grant-request-${r.requestId}`}>
-          <p className="text-ctp-text">{describeGrantRequest(r)}</p>
-          {r.reason && <p className="text-ctp-subtext1">Its reason: {r.reason}</p>}
-          {r.importReview && <ImportReview plan={r.importReview} />}
-          {r.agentReview && <ImportAgentReview review={r.agentReview} />}
-          {r.deleteReview && <DeleteAgentsReview review={r.deleteReview} />}
-          {r.details && (
-            <pre className="max-h-40 overflow-auto rounded bg-ctp-mantle p-2 text-xs text-ctp-subtext1 whitespace-pre-wrap break-words">{r.details}</pre>
-          )}
-          <p className="text-xs text-ctp-overlay1">{grantRequestAllowEffect(r)}</p>
-          <div className="flex items-center gap-2">
-            {r.update ? <>
-              <Button kind="primary" onClick={(e) => { if (!isRepeatClick(e)) void answer(r, true, 'now'); }} disabled={busy !== null}>Restart now</Button>
-              <Button onClick={(e) => { if (!isRepeatClick(e)) void answer(r, true, 'when_idle'); }} disabled={busy !== null}>Restart when idle</Button>
-            </> : <Button kind="primary" onClick={(e) => { if (!isRepeatClick(e)) void answer(r, true); }} disabled={busy !== null} data-testid="grant-request-allow">Allow</Button>}
-            <Button onClick={(e) => { if (!isRepeatClick(e)) void answer(r, false); }} disabled={busy !== null} data-testid="grant-request-decline">{r.update ? 'Cancel' : 'Decline'}</Button>
-          </div>
-          {error?.id === r.requestId && <p role="alert" className="text-xs text-ctp-error">{error.message}</p>}
+        <li key={r.requestId} className="flex flex-col gap-1.5" data-testid={`grant-request-${r.requestId}`}>
+          <GrantRequestBody r={r} />
+          <GrantRequestActions r={r} answering={answering} />
+          <GrantRequestError r={r} answering={answering} />
         </li>
       ))}
     </ul>

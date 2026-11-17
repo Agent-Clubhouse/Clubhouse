@@ -438,8 +438,9 @@ export function ChatViewBody({ agent, state, actions, loading, onSwitchToTermina
               {context === 'main' && <SetupChangedBar agent={agent} variant="dock" />}
               {dispatcher && <PendingApprovals agentId={agent.id} />}
               {selected && (
-                <div className="min-h-0 max-h-[min(40vh,320px)] overflow-y-auto flex-shrink" data-testid="chat-pinned-approval">
-                  <div className="flex items-center gap-2 py-1 text-[12px] text-ctp-subtext0">
+                // A permission card keeps its answers at the bottom and scrolls its request inside itself (#3606); a question scrolls here.
+                <div className="min-h-0 max-h-[min(40vh,320px)] overflow-y-auto flex-shrink flex flex-col" data-testid="chat-pinned-approval">
+                  <div className="flex-shrink-0 flex items-center gap-2 py-1 text-[12px] text-ctp-subtext0">
                     <span role="status">{pending.length} pending</span>
                     {pending.length > 1 && <>
                       <button type="button" disabled={selectedIndex === 0} onClick={() => selectRequest(pending[selectedIndex - 1].request.requestId)}>Previous request</button>

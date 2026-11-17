@@ -168,14 +168,21 @@ describe('a queue of approvals from other computers answers the one acted on (#3
     expect(vi.mocked(window.clubhouse.dispatcher.answerRemoteApproval).mock.calls).toEqual([['laptop', 'gr_1', 'decline'], ['laptop', 'gr_1', 'decline']]);
   });
 
-  it('keyboard activation answers only the focused row', async () => {
-    useAnnexClientStore.setState({ satellites: [satellite([REQUEST, NEXT])] } as never);
+  it('shows the oldest request with how many wait, and keyboard activation answers it', async () => {
+    useAnnexClientStore.setState({ satellites: [satellite([NEXT, REQUEST])] } as never);
     render(<RemoteApprovals />);
     await act(async () => {});
+    // One block, the oldest first, with the count behind it; its answers are the last thing in it.
+    expect(rows()).toHaveLength(1);
+    expect(screen.getByTestId('dispatcher-remote-approval-count')).toHaveTextContent('1 of 2');
+    expect(rows()[0].textContent).toContain('docs-agent wants to run set_app_setting');
+    const buttons = within(rows()[0]).getAllByRole('button');
+    expect(buttons.map((b) => b.getAttribute('data-testid'))).toEqual(['dispatcher-remote-approval-allow_once', 'dispatcher-remote-approval-decline']);
+    expect(rows()[0].lastElementChild).toContainElement(buttons[1]);
     const user = userEvent.setup();
-    within(rows()[1]).getByTestId('dispatcher-remote-approval-allow_once').focus();
+    buttons[0].focus();
     await user.keyboard(' ');
-    await waitFor(() => expect(window.clubhouse.dispatcher.answerRemoteApproval).toHaveBeenCalledExactlyOnceWith('laptop', 'gr_2', 'allow_once'));
+    await waitFor(() => expect(window.clubhouse.dispatcher.answerRemoteApproval).toHaveBeenCalledExactlyOnceWith('laptop', 'gr_1', 'allow_once'));
   });
 });
 

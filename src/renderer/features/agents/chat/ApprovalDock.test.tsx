@@ -16,6 +16,39 @@ const request = (over: Partial<PendingPermission> = {}): PendingPermission => ({
 });
 
 describe('PermissionCard', () => {
+  it('the pinned card scrolls its request above its options, which sit in a footer of their own (#3606)', () => {
+    render(
+      <PermissionCard
+        compact
+        request={request({ description: 'Because it needs to.', content: [{ type: 'text', text: 'npm test' }] })}
+        queueSize={1}
+        agentName="a"
+        extras={{ denyMessage: true }}
+        onRespond={vi.fn(async () => true)}
+      />,
+    );
+    const card = screen.getByTestId('chat-permission');
+    const body = screen.getByTestId('chat-permission-body');
+    const actions = screen.getByTestId('chat-permission-actions');
+    // The request is in the scrolling body; every option, and the message field, in the footer after it.
+    expect(body).toHaveClass('overflow-y-auto');
+    expect(body).toHaveTextContent('Create file');
+    expect(within(body).getByTestId('chat-permission-description')).toBeInTheDocument();
+    expect(within(body).getByTestId('chat-permission-text')).toHaveTextContent('npm test');
+    expect(within(body).queryAllByRole('button')).toHaveLength(0);
+    expect(within(actions).getAllByRole('button').map((b) => b.getAttribute('data-option-kind'))).toEqual(['allow_once', 'reject_once']);
+    expect(within(actions).getByTestId('chat-permission-feedback')).toBeInTheDocument();
+    expect(card.lastElementChild).toBe(actions);
+    expect(actions).not.toHaveClass('overflow-y-auto');
+  });
+
+  it('the inline card keeps its single column, with no footer', () => {
+    render(<PermissionCard request={request()} queueSize={1} agentName="a" onRespond={vi.fn(async () => true)} />);
+    expect(screen.queryByTestId('chat-permission-body')).toBeNull();
+    expect(screen.queryByTestId('chat-permission-actions')).toBeNull();
+    expect(within(screen.getByTestId('chat-permission')).getAllByRole('button')).toHaveLength(2);
+  });
+
   it('shows the path and a preview of the change when the request carries them (#2159)', () => {
     render(
       <PermissionCard

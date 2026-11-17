@@ -45,18 +45,24 @@ const ARGUMENTS_SHOWN = 4_000;
  * the computer it came from, which checks it again there; the first answer
  * wins, and the other surface drops it with the next snapshot. Nothing else can
  * answer these: no agent, controller or message reaches the button's path.
+ *
+ * The oldest request shows, with how many wait behind it. Its answers sit at
+ * the bottom of the block, above the composer, and its details scroll in a
+ * bounded area above them, so the buttons stay where they are as requests
+ * come and go (#3606).
  */
 export function RemoteApprovals() {
   const items = useFollowerApprovals();
   if (items.length === 0) return null;
+  const head = items[0];
   return (
-    <div className="flex flex-col gap-1.5" data-testid="dispatcher-remote-approvals">
-      {items.map((item) => <RemoteApproval key={`${item.machine}:${item.request.requestId}`} item={item} />)}
+    <div data-testid="dispatcher-remote-approvals">
+      <RemoteApproval key={`${head.machine}:${head.request.requestId}`} item={head} waiting={items.length} />
     </div>
   );
 }
 
-function RemoteApproval({ item }: { item: FollowerApproval }) {
+function RemoteApproval({ item, waiting }: { item: FollowerApproval; waiting: number }) {
   const [busy, setBusy] = useState(false);
   const [answered, setAnswered] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -83,28 +89,31 @@ function RemoteApproval({ item }: { item: FollowerApproval }) {
     }
   };
   return (
-    <div className="rounded-lg border border-surface-0 px-3 py-2 text-sm" data-testid="dispatcher-remote-approval" data-machine={item.machine}>
-      <div className="flex items-center justify-between gap-3">
-        <span className="min-w-0">{approvalLine(item)}</span>
-        <span className="flex flex-shrink-0 gap-1.5">
-          {answered && <span className="text-xs text-ctp-overlay1" role="status" data-testid="dispatcher-remote-approval-answered">Answered.</span>}
-          {!answered && answers.length === 0 && <span className="text-xs text-ctp-overlay1">Answer it on {item.machineName}.</span>}
-          {!answered && answers.map((choice) => (
-            <Button key={choice} kind={choice === 'decline' ? 'ghost' : 'primary'} disabled={busy} onClick={(e) => { if (!isRepeatClick(e)) void answer(choice); }} data-testid={`dispatcher-remote-approval-${choice}`}>
-              {ANSWER_LABELS[choice]}
-            </Button>
-          ))}
-        </span>
+    <div className="flex flex-col gap-1.5 rounded-lg border border-surface-0 px-3 py-2 text-sm" data-testid="dispatcher-remote-approval" data-machine={item.machine}>
+      <div className="flex items-start justify-between gap-3">
+        <span className="min-w-0 break-words">{approvalLine(item)}</span>
+        {waiting > 1 && <span className="flex-shrink-0 text-xs text-ctp-overlay1" data-testid="dispatcher-remote-approval-count">1 of {waiting}</span>}
       </div>
-      {item.request.reason && <p className="mt-1 text-ctp-subtext1">Its reason: {item.request.reason}</p>}
-      {item.request.detail && <p className="mt-1 text-ctp-subtext1">{item.request.detail}</p>}
-      {item.request.arguments && (
-        <pre className="mt-1 max-h-40 overflow-auto rounded bg-ctp-mantle p-2 text-xs text-ctp-subtext1 whitespace-pre-wrap break-words" data-testid="dispatcher-remote-approval-arguments">
-          {item.request.arguments.length > ARGUMENTS_SHOWN ? `${item.request.arguments.slice(0, ARGUMENTS_SHOWN)}\n… (the rest is on ${item.machineName})` : item.request.arguments}
-        </pre>
-      )}
-      {item.request.allowEffect && <p className="mt-1 text-xs text-ctp-overlay1">{item.request.allowEffect}</p>}
-      {error && <p className="mt-1 text-xs text-ctp-error" role="alert" data-testid="dispatcher-remote-approval-error">{error}</p>}
+      <div className="flex max-h-[min(24vh,180px)] min-h-0 flex-col gap-1 overflow-y-auto" data-testid="dispatcher-remote-approval-details">
+        {item.request.reason && <p className="text-ctp-subtext1">Its reason: {item.request.reason}</p>}
+        {item.request.detail && <p className="text-ctp-subtext1">{item.request.detail}</p>}
+        {item.request.arguments && (
+          <pre className="rounded bg-ctp-mantle p-2 text-xs text-ctp-subtext1 whitespace-pre-wrap break-words" data-testid="dispatcher-remote-approval-arguments">
+            {item.request.arguments.length > ARGUMENTS_SHOWN ? `${item.request.arguments.slice(0, ARGUMENTS_SHOWN)}\n… (the rest is on ${item.machineName})` : item.request.arguments}
+          </pre>
+        )}
+        {item.request.allowEffect && <p className="text-xs text-ctp-overlay1">{item.request.allowEffect}</p>}
+      </div>
+      {error && <p className="text-xs text-ctp-error" role="alert" data-testid="dispatcher-remote-approval-error">{error}</p>}
+      <div className="flex min-h-7 items-center justify-end gap-1.5">
+        {answered && <span className="text-xs text-ctp-overlay1" role="status" data-testid="dispatcher-remote-approval-answered">Answered.</span>}
+        {!answered && answers.length === 0 && <span className="text-xs text-ctp-overlay1">Answer it on {item.machineName}.</span>}
+        {!answered && answers.map((choice) => (
+          <Button key={choice} kind={choice === 'decline' ? 'ghost' : 'primary'} disabled={busy} onClick={(e) => { if (!isRepeatClick(e)) void answer(choice); }} data-testid={`dispatcher-remote-approval-${choice}`}>
+            {ANSWER_LABELS[choice]}
+          </Button>
+        ))}
+      </div>
     </div>
   );
 }

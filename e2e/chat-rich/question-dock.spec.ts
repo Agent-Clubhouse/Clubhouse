@@ -139,8 +139,8 @@ async function expectNoMismatch(s: RichChat, cli: ChatFixtureCli): Promise<void>
 }
 
 /**
- * Send `prompt`, whose turn asks for APPROVAL: the long card scrolls inside
- * a bounded dock, Allow is reachable without scrolling the app, and the turn
+ * Send `prompt`, whose turn asks for APPROVAL: the long request scrolls inside
+ * its card in a bounded dock, Allow is reachable without scrolling anything, and the turn
  * (the `turn`th) finishes once it is allowed.
  */
 async function approveLongRequest(s: RichChat, cli: ChatFixtureCli, prompt: string, turn: number): Promise<void> {
@@ -158,14 +158,13 @@ async function approveLongRequest(s: RichChat, cli: ChatFixtureCli, prompt: stri
   if (cli !== 'copilot') await expect(window.locator('[data-testid="chat-permission-description"]')).toContainText('Part 12');
   await expect(window.locator('[data-testid="chat-permission-text"]').first()).toContainText('npm run step-1 -- --workspace packages/helper-1 ');
   await expectDockBounded(window);
-  // The card is taller than its share of the pane, so it scrolls inside the dock.
-  await expectScrollsInside(window.locator('[data-testid="chat-pinned-approval"]'));
+  // The request is taller than its share of the pane, so it scrolls inside the card's body (#3606); the options don't.
+  await expectScrollsInside(window.locator('[data-testid="chat-permission-body"]'));
   // The composer stays outside the scrolling card, always on screen.
   await expectReachable(dom.composer);
 
-  // Allow is reachable by scrolling the card itself, never the app.
+  // Allow sits in the card's footer: reachable as it is, with no scrolling of the card or the app (#3606).
   const allow = dom.permission.locator('[data-option-kind="allow_once"]');
-  await allow.scrollIntoViewIfNeeded();
   await expectReachable(allow);
   await expectNothingAroundScrolled(window);
   await allow.click();

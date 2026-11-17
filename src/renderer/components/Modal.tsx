@@ -31,6 +31,8 @@ interface Props {
   'aria-describedby'?: string;
   /** Width class; defaults to w-[360px]. */
   width?: string;
+  /** Fixed height class, so the panel keeps its size and place as its content changes; the body scrolls and the footer stays at the bottom. */
+  height?: string;
   /** Darker backdrop for image/media dialogs. */
   backdrop?: 'default' | 'heavy';
   /** Optional data-testid for the backdrop overlay div. */
@@ -53,7 +55,7 @@ function focusables(root: HTMLElement): HTMLElement[] {
 }
 
 export function Modal({
-  open, onClose, onDismiss, busy = false, dirty = false, title, 'aria-label': ariaLabel, 'aria-describedby': ariaDescribedBy, width = 'w-[360px]', backdrop = 'default', backdropTestId, testId,
+  open, onClose, onDismiss, busy = false, dirty = false, title, 'aria-label': ariaLabel, 'aria-describedby': ariaDescribedBy, width = 'w-[360px]', height, backdrop = 'default', backdropTestId, testId,
   footer, padding = 'default', initialFocusRef, children,
 }: Props) {
   const panelRef = useRef<HTMLDivElement>(null);
@@ -124,7 +126,7 @@ export function Modal({
         aria-describedby={ariaDescribedBy}
         tabIndex={-1}
         data-testid={testId}
-        className={`flex flex-col max-h-[calc(100vh-48px)] bg-ctp-base border border-surface-1 rounded-[10px] shadow-2xl overflow-hidden outline-none ${width}`}
+        className={`flex flex-col max-h-[calc(100vh-48px)] bg-ctp-base border border-surface-1 rounded-[10px] shadow-2xl overflow-hidden outline-none ${width} ${height ?? ''}`}
         onClick={(e) => e.stopPropagation()}
       >
         {title && (
@@ -144,7 +146,7 @@ export function Modal({
             </button>
           </div>
         )}
-        <div className={`min-h-0 overflow-auto ${padding === 'none' ? '' : 'p-4'}`}>
+        <div className={`min-h-0 overflow-auto ${height ? 'flex-1' : ''} ${padding === 'none' ? '' : 'p-4'}`}>
           {typeof children === 'function' ? children(requestClose) : children}
         </div>
         {footer && (
