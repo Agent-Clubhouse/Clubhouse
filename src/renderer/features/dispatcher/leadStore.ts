@@ -94,17 +94,25 @@ const NO_APPROVALS: FollowerApproval[] = [];
 export function useFollowerApprovals(): FollowerApproval[] {
   const state = useLeadState();
   const satellites = useAnnexClientStore((s) => s.satellites);
-  return useMemo(() => {
-    const members = state?.role === 'lead' ? state.choices.filter((c) => !c.self) : [];
-    if (!members.length) return NO_APPROVALS;
-    const out: FollowerApproval[] = [];
-    for (const member of members) {
-      const sat = satellites.find((x) => x.fingerprint.toLowerCase() === member.machine && x.state === 'connected');
-      for (const request of sat?.snapshot?.grantRequests ?? []) out.push({ machine: member.machine, machineName: member.name, request });
-    }
-    const at = (item: FollowerApproval) => Date.parse(item.request.requestedAt) || 0;
-    return out.length ? out.sort((a, b) => at(a) - at(b)) : NO_APPROVALS;
-  }, [state, satellites]);
+  return useMemo(() => followerApprovalsFrom(state, satellites), [state, satellites]);
+}
+
+function followerApprovalsFrom(state: DispatcherLeadState | null, satellites: ReturnType<typeof useAnnexClientStore.getState>['satellites']): FollowerApproval[] {
+  const members = state?.role === 'lead' ? state.choices.filter((c) => !c.self) : [];
+  if (!members.length) return NO_APPROVALS;
+  const out: FollowerApproval[] = [];
+  for (const member of members) {
+    const sat = satellites.find((x) => x.fingerprint.toLowerCase() === member.machine && x.state === 'connected');
+    for (const request of sat?.snapshot?.grantRequests ?? []) out.push({ machine: member.machine, machineName: member.name, request });
+  }
+  const at = (item: FollowerApproval) => Date.parse(item.request.requestedAt) || 0;
+  return out.length ? out.sort((a, b) => at(a) - at(b)) : NO_APPROVALS;
+}
+
+/** Whether this request is waiting right now, read from the stores and not from what a row last rendered. */
+export function isFollowerApprovalPending(machine: string, requestId: string): boolean {
+  return followerApprovalsFrom(useLeadStore.getState().state, useAnnexClientStore.getState().satellites)
+    .some((item) => item.machine === machine && item.request.requestId === requestId);
 }
 
 /** For tests: as if nothing had read the lead yet. */

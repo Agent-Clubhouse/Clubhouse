@@ -1526,3 +1526,99 @@ describe('context beside model and effort (#2790)', () => {
     expect(screen.queryByTestId('chat-model-menu-context-open')).toBeNull();
   });
 });
+
+describe('a queue of approvals answers the request the user acted on (#3606)', () => {
+  const SECOND = {
+    requestId: 'perm-2',
+    title: 'Run the tests',
+    toolName: 'Bash',
+    rawInput: { command: 'npm test' },
+    options: [
+      { optionId: 'run', name: 'Run', label: 'Run once', kind: 'allow_once' as const },
+      { optionId: 'run-always', name: 'Always', label: 'Always allow tests', scope: 'npm test', kind: 'allow_always' as const },
+      { optionId: 'skip', name: 'Skip', label: 'Skip', kind: 'reject_once' as const },
+    ],
+  };
+  const queue = () => extend(chatFixture('codex', 'approval'), { type: 'permission_request', data: SECOND });
+  const resolved = (events: ChatEvent[], requestId: string) =>
+    extend(events, { type: 'permission_resolved', data: { requestId, decision: 'allow', by: 'user' } });
+  const pinnedButtons = () => within(within(screen.getByTestId('chat-pinned-approval')).getByTestId('chat-permission')).getAllByRole('button');
+
+  it('a click aimed at the head request does not answer the one that takes its place', () => {
+    const events = queue();
+    const { actions, rerender } = renderState(fold(events));
+    const oldButton = pinnedButtons()[0];
+    expect(screen.getByTestId('chat-permission')).toHaveAttribute('data-request-id', 'perm-1');
+    fireEvent.click(oldButton);
+    expect(actions.respondPermission).toHaveBeenCalledExactlyOnceWith('perm-1', 'accept');
+    rerender(<ChatViewBody agent={agent} state={fold(resolved(events, 'perm-1'))} actions={actions} />);
+    expect(screen.getByTestId('chat-permission')).toHaveAttribute('data-request-id', 'perm-2');
+    // The second press of a double click lands on the old element's position, not on the old element.
+    fireEvent.click(oldButton);
+    expect(actions.respondPermission).toHaveBeenCalledTimes(1);
+    // An activation of the new card answers the new request, once.
+    fireEvent.click(pinnedButtons()[1]);
+    expect(actions.respondPermission).toHaveBeenCalledTimes(2);
+    expect(actions.respondPermission).toHaveBeenLastCalledWith('perm-2', 'run-always');
+  });
+
+  it('a double click answers at most one request: the second press is not a click on the next card', () => {
+    const events = queue();
+    const { actions, rerender } = renderState(fold(events));
+    fireEvent.click(pinnedButtons()[0], { detail: 1 });
+    rerender(<ChatViewBody agent={agent} state={fold(resolved(events, 'perm-1'))} actions={actions} />);
+    expect(screen.getByTestId('chat-permission')).toHaveAttribute('data-request-id', 'perm-2');
+    fireEvent.click(pinnedButtons()[0], { detail: 2 });
+    expect(actions.respondPermission).toHaveBeenCalledExactlyOnceWith('perm-1', 'accept');
+    // A fresh click, and keyboard activation (detail 0), still answer it.
+    fireEvent.click(pinnedButtons()[0], { detail: 1 });
+    expect(actions.respondPermission).toHaveBeenLastCalledWith('perm-2', 'run');
+    expect(actions.respondPermission).toHaveBeenCalledTimes(2);
+  });
+
+  it('refuses an answer for a request that stopped waiting, before the view has redrawn', async () => {
+    const events = chatFixture('codex', 'approval');
+    useChatStore.setState({ agents: {}, loading: {}, partial: {}, loaded: {}, answering: {} });
+    vi.mocked(window.clubhouse.chat).getAgentRuntime = vi.fn(async () => ({ chat: true, chatAvailable: true }));
+    vi.mocked(window.clubhouse.chat).readTranscript = vi.fn(async () => events);
+    const respond = vi.fn(async () => {});
+    vi.mocked(window.clubhouse.chat).respondPermission = respond;
+    render(<ChatView agent={agent} />);
+    await screen.findByTestId('chat-permission');
+    const stale = pinnedButtons()[0];
+    // The request resolved elsewhere; its card is still on screen until React redraws.
+    useChatStore.getState().applyEvent({ ...events[events.length - 1], seq: events.length + 1, type: 'permission_resolved', data: { requestId: 'perm-1', decision: 'deny', by: 'user' } } as ChatEvent);
+    fireEvent.click(stale);
+    expect(respond).not.toHaveBeenCalled();
+  });
+
+  it('sends one answer per activation and the id of the card it came from, from the keyboard too', () => {
+    const events = queue();
+    const { actions, rerender } = renderState(fold(events));
+    const card = screen.getByTestId('chat-permission');
+    fireEvent.keyDown(card, { key: 'Enter' });
+    fireEvent.keyDown(card, { key: 'Enter' });
+    fireEvent.keyDown(card, { key: '2' });
+    expect(actions.respondPermission).toHaveBeenCalledExactlyOnceWith('perm-1', 'accept');
+    rerender(<ChatViewBody agent={agent} state={fold(resolved(events, 'perm-1'))} actions={actions} />);
+    // A key aimed at the gone card finds nothing; the next card answers only for itself.
+    fireEvent.keyDown(card, { key: 'Enter' });
+    expect(actions.respondPermission).toHaveBeenCalledTimes(1);
+    fireEvent.keyDown(screen.getByTestId('chat-permission'), { key: 'Escape' });
+    expect(actions.respondPermission).toHaveBeenLastCalledWith('perm-2', 'skip');
+    expect(actions.respondPermission).toHaveBeenCalledTimes(2);
+  });
+
+  it('a failed answer unlocks the same request for a retry, which sends its own id', async () => {
+    const events = queue();
+    const actions = makeActions();
+    actions.respondPermission.mockResolvedValueOnce(false);
+    renderState(fold(events), actions);
+    const card = screen.getByTestId('chat-permission');
+    fireEvent.keyDown(card, { key: 'Enter' });
+    await waitFor(() => expect(within(card).getAllByRole('button')[0]).not.toBeDisabled());
+    fireEvent.click(within(card).getAllByRole('button')[0]);
+    expect(actions.respondPermission.mock.calls).toEqual([['perm-1', 'accept'], ['perm-1', 'accept']]);
+    expect(card).toHaveAttribute('data-request-id', 'perm-1');
+  });
+});

@@ -152,6 +152,46 @@ describe('QuestionCard', () => {
     expect(onAnswer).toHaveBeenCalledWith('qr', { q1: 'b', q2: 'c', q3: 'a' });
   });
 
+  it('a double click on a single-choice question answers at most one request', () => {
+    const onAnswer = vi.fn(async () => true);
+    const next: PendingQuestion = { requestId: 'qr2', questions: questions(1), ts: 1 };
+    const { rerender } = render(<QuestionCard key="qr" request={pending(questions(1))} onAnswer={onAnswer} />);
+    fireEvent.click(screen.getByText('Option 1b'), { detail: 1 });
+    expect(onAnswer).toHaveBeenCalledExactlyOnceWith('qr', { q1: 'b' });
+    // ChatView keys the card by request: the next request's card takes the first one's place.
+    rerender(<QuestionCard key="qr2" request={next} onAnswer={onAnswer} />);
+    fireEvent.click(screen.getByText('Option 1b'), { detail: 2 });
+    expect(onAnswer).toHaveBeenCalledTimes(1);
+    fireEvent.click(screen.getByText('Option 1b'), { detail: 1 });
+    expect(onAnswer).toHaveBeenLastCalledWith('qr2', { q1: 'b' });
+  });
+
+  it('a double click on a stepped question does not answer the question that opens next', () => {
+    const { onAnswer } = renderCard(questions(3));
+    fireEvent.click(screen.getByText('Option 1b'), { detail: 1 });
+    expect(screen.getByTestId('chat-question-step')).toHaveTextContent('2 of 3');
+    // The second press lands on question 2's option in the same place.
+    fireEvent.click(screen.getByText('Option 2b').closest('button')!, { detail: 2 });
+    expect(screen.getByTestId('chat-question-step')).toHaveTextContent('2 of 3');
+    expect(screen.getAllByTestId('chat-question-collapsed')[0]).toHaveTextContent('Option 1b');
+    expect(screen.getByText('Option 2b').closest('button')).toHaveAttribute('aria-pressed', 'false');
+    fireEvent.click(screen.getByText('Option 2b').closest('button')!, { detail: 1 });
+    expect(screen.getByTestId('chat-question-step')).toHaveTextContent('3 of 3');
+    expect(onAnswer).not.toHaveBeenCalled();
+  });
+
+  it('the second press of a double click on Send answer sends nothing', () => {
+    const { onAnswer } = renderCard(questions(2));
+    fireEvent.click(screen.getByText('Option 1a'));
+    fireEvent.click(screen.getByText('Option 2c'));
+    const send = screen.getByText('Send answer');
+    expect(send).not.toBeDisabled();
+    fireEvent.click(send, { detail: 2 });
+    expect(onAnswer).not.toHaveBeenCalled();
+    fireEvent.click(send, { detail: 1 });
+    expect(onAnswer).toHaveBeenCalledExactlyOnceWith('qr', { q1: 'a', q2: 'c' });
+  });
+
   it('keeps keyboard focus on the card after the open question changes', () => {
     const { card } = renderCard(questions(3));
     const option = screen.getByText('Option 1a').closest('button')!;

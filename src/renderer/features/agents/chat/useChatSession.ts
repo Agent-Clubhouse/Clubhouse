@@ -117,6 +117,10 @@ function reportFailure(what: string, err: unknown): void {
   useToastStore.getState().addToast(`${what}: ${detail}`, 'error');
 }
 
+function stillWaiting(state: ChatViewState | undefined, requestId: string): boolean {
+  return !!state && (state.pendingPermissions.some((p) => p.requestId === requestId) || state.pendingQuestions.some((q) => q.requestId === requestId));
+}
+
 export function useChatActions(agentId: string): ChatActions {
   const store = useChatStore;
   const wrap = useCallback(<A extends unknown[], R>(what: string, fn: (...args: A) => Promise<R>) =>
@@ -145,10 +149,13 @@ export function useChatActions(agentId: string): ChatActions {
       if (r.value.length === 0) useToastStore.getState().addToast('Already sent, so not removed', 'info');
       return r.value.length > 0;
     },
+    // An answer goes to the request the user acted on, read live: not to one that resolved after the card was drawn.
     respondPermission: async (requestId, optionId, extras) =>
-      (await wrap("Couldn't answer the request", store.getState().respondPermission)(agentId, requestId, optionId, extras)).ok,
+      stillWaiting(store.getState().agents[agentId], requestId)
+      && (await wrap("Couldn't answer the request", store.getState().respondPermission)(agentId, requestId, optionId, extras)).ok,
     answerQuestion: async (requestId, answers) =>
-      (await wrap("Couldn't send the answer", store.getState().answerQuestion)(agentId, requestId, answers)).ok,
+      stillWaiting(store.getState().agents[agentId], requestId)
+      && (await wrap("Couldn't send the answer", store.getState().answerQuestion)(agentId, requestId, answers)).ok,
     setLevel: async (level) => (await wrap("Couldn't change the permission level", store.getState().setLevel)(agentId, level)).ok,
     setModel: async (modelId, effort) => { await wrap("Couldn't change the model", store.getState().setModel)(agentId, modelId, effort); },
   }), [agentId, store, wrap]);

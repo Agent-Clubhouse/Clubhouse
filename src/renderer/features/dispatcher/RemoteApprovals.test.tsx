@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import type { DispatcherLeadState } from '../../../shared/dispatcher-lead';
 import type { MobileGrantRequest } from '../../../shared/mobile-control';
 import { useAnnexClientStore } from '../../stores/annexClientStore';
@@ -92,6 +93,89 @@ describe('approvals from other computers in the lead’s chat (#3354)', () => {
     const shown = screen.getByTestId('dispatcher-remote-approval-arguments').textContent!;
     expect(shown.length).toBeLessThan(4_100);
     expect(shown).toContain('the rest is on Laptop');
+  });
+});
+
+describe('a queue of approvals from other computers answers the one acted on (#3606)', () => {
+  const NEXT = { ...REQUEST, requestId: 'gr_2', requestedAt: '2026-11-13T10:05:00.000Z', summary: 'Asks to run a much longer call with several arguments.', answers: ['allow_once', 'allow_lasting', 'decline'] } as MobileGrantRequest;
+  const rows = () => screen.getAllByTestId('dispatcher-remote-approval');
+
+  it('a click aimed at the head request does not answer the one that takes its place', async () => {
+    useAnnexClientStore.setState({ satellites: [satellite([REQUEST, NEXT])] } as never);
+    render(<RemoteApprovals />);
+    await act(async () => {});
+    const oldAllow = within(rows()[0]).getByTestId('dispatcher-remote-approval-allow_once');
+    fireEvent.click(oldAllow);
+    await screen.findByTestId('dispatcher-remote-approval-answered');
+    // Its computer's next snapshot drops it; the next request moves up.
+    act(() => useAnnexClientStore.setState({ satellites: [satellite([NEXT])] } as never));
+    expect(rows()).toHaveLength(1);
+    fireEvent.click(oldAllow);
+    expect(window.clubhouse.dispatcher.answerRemoteApproval).toHaveBeenCalledTimes(1);
+    fireEvent.click(within(rows()[0]).getByTestId('dispatcher-remote-approval-allow_lasting'));
+    await waitFor(() => expect(window.clubhouse.dispatcher.answerRemoteApproval).toHaveBeenLastCalledWith('laptop', 'gr_2', 'allow_lasting'));
+    expect(window.clubhouse.dispatcher.answerRemoteApproval).toHaveBeenCalledTimes(2);
+  });
+
+  it('a double click answers at most one request: the second press is not a click on the next row', async () => {
+    useAnnexClientStore.setState({ satellites: [satellite([REQUEST, NEXT])] } as never);
+    render(<RemoteApprovals />);
+    await act(async () => {});
+    fireEvent.click(within(rows()[0]).getByTestId('dispatcher-remote-approval-allow_once'), { detail: 1 });
+    await screen.findByTestId('dispatcher-remote-approval-answered');
+    act(() => useAnnexClientStore.setState({ satellites: [satellite([NEXT])] } as never));
+    fireEvent.click(within(rows()[0]).getByTestId('dispatcher-remote-approval-allow_once'), { detail: 2 });
+    expect(window.clubhouse.dispatcher.answerRemoteApproval).toHaveBeenCalledExactlyOnceWith('laptop', 'gr_1', 'allow_once');
+    fireEvent.click(within(rows()[0]).getByTestId('dispatcher-remote-approval-allow_once'), { detail: 1 });
+    await waitFor(() => expect(window.clubhouse.dispatcher.answerRemoteApproval).toHaveBeenLastCalledWith('laptop', 'gr_2', 'allow_once'));
+  });
+
+  it('refuses an answer for a request that left its snapshot, before the row has redrawn', async () => {
+    useAnnexClientStore.setState({ satellites: [satellite([REQUEST, NEXT])] } as never);
+    render(<RemoteApprovals />);
+    await act(async () => {});
+    const stale = within(rows()[0]).getByTestId('dispatcher-remote-approval-allow_once');
+    // The snapshot changed; React has not drawn it yet, so the old button is still there.
+    useAnnexClientStore.setState({ satellites: [satellite([NEXT])] } as never);
+    fireEvent.click(stale);
+    expect(window.clubhouse.dispatcher.answerRemoteApproval).not.toHaveBeenCalled();
+  });
+
+  it('sends one answer per activation, even for two presses in the same tick', async () => {
+    render(<RemoteApprovals />);
+    await act(async () => {});
+    const button = screen.getByTestId('dispatcher-remote-approval-allow_once');
+    act(() => { button.click(); button.click(); });
+    await screen.findByTestId('dispatcher-remote-approval-answered');
+    expect(window.clubhouse.dispatcher.answerRemoteApproval).toHaveBeenCalledExactlyOnceWith('laptop', 'gr_1', 'allow_once');
+  });
+
+  it('a failed answer says why, keeps the request, and the retry answers the same one', async () => {
+    window.clubhouse.dispatcher.answerRemoteApproval = vi.fn()
+      .mockRejectedValueOnce(new Error('Laptop did not answer.'))
+      .mockResolvedValue(undefined);
+    useAnnexClientStore.setState({ satellites: [satellite([REQUEST, NEXT])] } as never);
+    render(<RemoteApprovals />);
+    await act(async () => {});
+    const user = userEvent.setup();
+    const decline = within(rows()[0]).getByTestId('dispatcher-remote-approval-decline');
+    decline.focus();
+    await user.keyboard('{Enter}');
+    expect(await screen.findByRole('alert')).toHaveTextContent('Laptop did not answer.');
+    await waitFor(() => expect(within(rows()[0]).getByTestId('dispatcher-remote-approval-decline')).toBeEnabled());
+    await user.click(within(rows()[0]).getByTestId('dispatcher-remote-approval-decline'));
+    await screen.findByTestId('dispatcher-remote-approval-answered');
+    expect(vi.mocked(window.clubhouse.dispatcher.answerRemoteApproval).mock.calls).toEqual([['laptop', 'gr_1', 'decline'], ['laptop', 'gr_1', 'decline']]);
+  });
+
+  it('keyboard activation answers only the focused row', async () => {
+    useAnnexClientStore.setState({ satellites: [satellite([REQUEST, NEXT])] } as never);
+    render(<RemoteApprovals />);
+    await act(async () => {});
+    const user = userEvent.setup();
+    within(rows()[1]).getByTestId('dispatcher-remote-approval-allow_once').focus();
+    await user.keyboard(' ');
+    await waitFor(() => expect(window.clubhouse.dispatcher.answerRemoteApproval).toHaveBeenCalledExactlyOnceWith('laptop', 'gr_2', 'allow_once'));
   });
 });
 

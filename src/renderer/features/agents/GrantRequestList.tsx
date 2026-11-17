@@ -5,13 +5,14 @@
  * closes the request, which removes it here.
  */
 
-import { useMemo, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import { describeGrantRequest, grantRequestAllowEffect, type GrantRequest } from '../../../shared/grant-requests';
 import { Button } from '../../components/Button';
 import { reportChromeActionFailed } from '../../chrome/telemetry';
 import { grantRequestsFor, useGrantRequestStore } from '../../stores/grantRequestStore';
 import { ImportAgentReview, ImportReview } from '../projects/ImportReview';
 import { DeleteAgentsReview } from './DeleteAgentsReview';
+import { isRepeatClick } from '../../utils/repeat-click';
 
 export function GrantRequestList({ agentId, agentName, onAnswered }: {
   agentId: string;
@@ -25,7 +26,12 @@ export function GrantRequestList({ agentId, agentName, onAnswered }: {
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<{ id: string; message: string } | null>(null);
 
+  // Set before the first await, so a second activation in the same tick finds it.
+  const inFlight = useRef(false);
   const answer = async (request: GrantRequest, allow: boolean, updateMode?: import('../../../shared/app-update').AppUpdateMode) => {
+    // Answers exactly the row the user acted on: not one that has left the store, and not twice.
+    if (inFlight.current || !useGrantRequestStore.getState().requests[request.requestId]) return;
+    inFlight.current = true;
     setBusy(request.requestId);
     setError(null);
     try {
@@ -40,8 +46,11 @@ export function GrantRequestList({ agentId, agentName, onAnswered }: {
     } catch (err) {
       reportChromeActionFailed('agent_settings_save', err);
       setError({ id: request.requestId, message: "Couldn't send your answer. Try again." });
+    } finally {
+      // Also when onAnswered throws: the lock must not outlive the call.
+      inFlight.current = false;
+      setBusy(null);
     }
-    setBusy(null);
   };
 
   if (requests.length === 0) return null;
@@ -60,10 +69,10 @@ export function GrantRequestList({ agentId, agentName, onAnswered }: {
           <p className="text-xs text-ctp-overlay1">{grantRequestAllowEffect(r)}</p>
           <div className="flex items-center gap-2">
             {r.update ? <>
-              <Button kind="primary" onClick={() => void answer(r, true, 'now')} disabled={busy !== null}>Restart now</Button>
-              <Button onClick={() => void answer(r, true, 'when_idle')} disabled={busy !== null}>Restart when idle</Button>
-            </> : <Button kind="primary" onClick={() => void answer(r, true)} disabled={busy !== null} data-testid="grant-request-allow">Allow</Button>}
-            <Button onClick={() => void answer(r, false)} disabled={busy !== null} data-testid="grant-request-decline">{r.update ? 'Cancel' : 'Decline'}</Button>
+              <Button kind="primary" onClick={(e) => { if (!isRepeatClick(e)) void answer(r, true, 'now'); }} disabled={busy !== null}>Restart now</Button>
+              <Button onClick={(e) => { if (!isRepeatClick(e)) void answer(r, true, 'when_idle'); }} disabled={busy !== null}>Restart when idle</Button>
+            </> : <Button kind="primary" onClick={(e) => { if (!isRepeatClick(e)) void answer(r, true); }} disabled={busy !== null} data-testid="grant-request-allow">Allow</Button>}
+            <Button onClick={(e) => { if (!isRepeatClick(e)) void answer(r, false); }} disabled={busy !== null} data-testid="grant-request-decline">{r.update ? 'Cancel' : 'Decline'}</Button>
           </div>
           {error?.id === r.requestId && <p role="alert" className="text-xs text-ctp-error">{error.message}</p>}
         </li>

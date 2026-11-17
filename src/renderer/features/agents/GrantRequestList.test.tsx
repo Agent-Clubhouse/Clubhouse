@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import type { GrantRequest } from '../../../shared/grant-requests';
 import { describeGrantRequests, useGrantRequestStore } from '../../stores/grantRequestStore';
 import { GrantRequestList } from './GrantRequestList';
@@ -118,4 +119,87 @@ it('shows refused row reasons without removal, force or helper consequences', ()
   expect(screen.queryByText(/Force is explicitly enabled/)).not.toBeInTheDocument();
   expect(screen.queryByText(/Never dispose/)).not.toBeInTheDocument();
   expect(screen.getByText(/Ignored files and work inside untracked nested repositories are not checked/)).toBeInTheDocument();
+});
+
+describe('a queue of permission requests answers the one acted on (#3606)', () => {
+  const first = () => request({ requestId: 'g1', reason: 'Short.' });
+  const second = () => request({
+    requestId: 'g2', createdAt: new Date(5).toISOString(), kind: 'call', toolName: 'set_helper_presets',
+    details: '{ "reset": {}, "presets": [1, 2, 3] }', reason: 'A much longer reason, so this row is taller than the one before it.', target: undefined,
+  });
+  const row = (id: string) => screen.getByTestId(`grant-request-${id}`);
+  const seed = () => {
+    useGrantRequestStore.getState().add(first());
+    useGrantRequestStore.getState().add(second());
+  };
+
+  it('a click aimed at the head request does not answer the one that takes its place', async () => {
+    seed();
+    render(<GrantRequestList agentId="a1" agentName="Ada" />);
+    const oldAllow = within(row('g1')).getByTestId('grant-request-allow');
+    fireEvent.click(oldAllow);
+    await waitFor(() => expect(screen.queryByTestId('grant-request-g1')).not.toBeInTheDocument());
+    expect(within(row('g2')).getByTestId('grant-request-allow')).toBeEnabled();
+    fireEvent.click(oldAllow);
+    expect(window.clubhouse.agent.answerGrantRequest).toHaveBeenCalledTimes(1);
+    fireEvent.click(within(row('g2')).getByTestId('grant-request-decline'));
+    await waitFor(() => expect(window.clubhouse.agent.answerGrantRequest).toHaveBeenLastCalledWith('g2', false));
+    expect(window.clubhouse.agent.answerGrantRequest).toHaveBeenCalledTimes(2);
+  });
+
+  it('a double click answers at most one request: the second press is not a click on the next row', async () => {
+    seed();
+    render(<GrantRequestList agentId="a1" agentName="Ada" />);
+    fireEvent.click(within(row('g1')).getByTestId('grant-request-allow'), { detail: 1 });
+    await waitFor(() => expect(screen.queryByTestId('grant-request-g1')).not.toBeInTheDocument());
+    fireEvent.click(within(row('g2')).getByTestId('grant-request-allow'), { detail: 2 });
+    expect(window.clubhouse.agent.answerGrantRequest).toHaveBeenCalledExactlyOnceWith('g1', true);
+    fireEvent.click(within(row('g2')).getByTestId('grant-request-allow'), { detail: 1 });
+    await waitFor(() => expect(window.clubhouse.agent.answerGrantRequest).toHaveBeenLastCalledWith('g2', true));
+  });
+
+  it('refuses an answer for a request that closed, before the list has redrawn', () => {
+    seed();
+    render(<GrantRequestList agentId="a1" agentName="Ada" />);
+    const stale = within(row('g1')).getByTestId('grant-request-allow');
+    // Main closed it (answered elsewhere or expired); the old button is still on screen until React redraws.
+    useGrantRequestStore.getState().remove(['g1']);
+    fireEvent.click(stale);
+    expect(window.clubhouse.agent.answerGrantRequest).not.toHaveBeenCalled();
+  });
+
+  it('sends one answer per activation, even for two presses in the same tick', async () => {
+    seed();
+    render(<GrantRequestList agentId="a1" agentName="Ada" />);
+    const button = within(row('g1')).getByTestId('grant-request-allow');
+    act(() => { button.click(); button.click(); });
+    await waitFor(() => expect(screen.queryByTestId('grant-request-g1')).not.toBeInTheDocument());
+    expect(window.clubhouse.agent.answerGrantRequest).toHaveBeenCalledExactlyOnceWith('g1', true);
+  });
+
+  it('a failed answer shows its error on its own row, and the retry answers the same request', async () => {
+    window.clubhouse.agent.answerGrantRequest = vi.fn()
+      .mockResolvedValueOnce({ ok: false as const, error: 'Agent not found' })
+      .mockResolvedValue({ ok: true as const });
+    seed();
+    render(<GrantRequestList agentId="a1" agentName="Ada" />);
+    const user = userEvent.setup();
+    within(row('g1')).getByTestId('grant-request-allow').focus();
+    await user.keyboard('{Enter}');
+    expect(await within(row('g1')).findByRole('alert')).toHaveTextContent('Agent not found');
+    expect(within(row('g2')).queryByRole('alert')).toBeNull();
+    await waitFor(() => expect(within(row('g1')).getByTestId('grant-request-allow')).toBeEnabled());
+    await user.click(within(row('g1')).getByTestId('grant-request-allow'));
+    await waitFor(() => expect(screen.queryByTestId('grant-request-g1')).not.toBeInTheDocument());
+    expect(vi.mocked(window.clubhouse.agent.answerGrantRequest).mock.calls).toEqual([['g1', true], ['g1', true]]);
+  });
+
+  it('keyboard activation answers only the focused row', async () => {
+    seed();
+    render(<GrantRequestList agentId="a1" agentName="Ada" />);
+    const user = userEvent.setup();
+    within(row('g2')).getByTestId('grant-request-decline').focus();
+    await user.keyboard(' ');
+    await waitFor(() => expect(window.clubhouse.agent.answerGrantRequest).toHaveBeenCalledExactlyOnceWith('g2', false));
+  });
 });

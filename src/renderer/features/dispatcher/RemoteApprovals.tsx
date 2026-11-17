@@ -1,8 +1,9 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import type { MobileGrantAnswer } from '../../../shared/mobile-control';
 import { Button } from '../../components/Button';
+import { isRepeatClick } from '../../utils/repeat-click';
 import { ipcErrorMessage } from '../../utils/ipc-error';
-import { useFollowerApprovals, type FollowerApproval } from './leadStore';
+import { isFollowerApprovalPending, useFollowerApprovals, type FollowerApproval } from './leadStore';
 import type { GrantRequest } from '../../../shared/grant-requests';
 import { describeGrantRequests } from '../../stores/grantRequestStore';
 
@@ -61,7 +62,12 @@ function RemoteApproval({ item }: { item: FollowerApproval }) {
   const [error, setError] = useState<string | null>(null);
   // An update's restart choice, and anything newer this computer doesn't know, are answered where they are.
   const answers = item.request.update ? [] : (item.request.answers ?? []).filter((a): a is MobileGrantAnswer => a in ANSWER_LABELS);
+  // Set before the first await, so a second activation in the same tick finds it.
+  const inFlight = useRef(false);
   const answer = async (choice: MobileGrantAnswer) => {
+    // Answers exactly this request: not one that has left its computer's snapshot, and not twice.
+    if (inFlight.current || !isFollowerApprovalPending(item.machine, item.request.requestId)) return;
+    inFlight.current = true;
     setBusy(true);
     setError(null);
     try {
@@ -72,6 +78,7 @@ function RemoteApproval({ item }: { item: FollowerApproval }) {
       // telemetry-exempt: shown on the row; the request stays as it was there.
       setError(ipcErrorMessage(err));
     } finally {
+      inFlight.current = false;
       setBusy(false);
     }
   };
@@ -83,7 +90,7 @@ function RemoteApproval({ item }: { item: FollowerApproval }) {
           {answered && <span className="text-xs text-ctp-overlay1" role="status" data-testid="dispatcher-remote-approval-answered">Answered.</span>}
           {!answered && answers.length === 0 && <span className="text-xs text-ctp-overlay1">Answer it on {item.machineName}.</span>}
           {!answered && answers.map((choice) => (
-            <Button key={choice} kind={choice === 'decline' ? 'ghost' : 'primary'} disabled={busy} onClick={() => void answer(choice)} data-testid={`dispatcher-remote-approval-${choice}`}>
+            <Button key={choice} kind={choice === 'decline' ? 'ghost' : 'primary'} disabled={busy} onClick={(e) => { if (!isRepeatClick(e)) void answer(choice); }} data-testid={`dispatcher-remote-approval-${choice}`}>
               {ANSWER_LABELS[choice]}
             </Button>
           ))}
