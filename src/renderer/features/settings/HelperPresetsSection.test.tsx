@@ -113,7 +113,7 @@ describe('HelperPresetsSection (#2671)', () => {
     window.clubhouse.app.getHelperRouting = vi.fn(async () => ({ ...settings(), copilotAuto: false }));
     render(<HelperPresetsSection />);
     await screen.findByTestId('helper-presets-claude-code');
-    expect(screen.getByText(/start a helper on Claude Code, the only provider besides Copilot/)).toBeTruthy();
+    expect(screen.getByText(/start a helper on Claude Code, the only provider that is turned on and available/)).toBeTruthy();
     expect(screen.queryByText(/with Copilot as a last resort/)).toBeNull();
   });
 
