@@ -497,9 +497,10 @@ export async function flushOutbox(machine: string): Promise<void> {
     if (generation === lifecycle) {
       if (waitingFor(machine).length > 0) {
         if (failed || !retryTimers.has(machine)) retryLater(machine);
-      } else if (!failed) {
-        // Nothing is left: a fallback set by an earlier interrupted pass must
-        // not later run a spurious sync and empty flush.
+      } else {
+        // Nothing is left, even if a later notice step failed: a fallback set
+        // by an earlier interrupted pass must not run a spurious sync and empty
+        // flush. Failure notices keep their own retry timer.
         const pending = retryTimers.get(machine);
         if (pending) clearTimeout(pending.timer);
         retryTimers.delete(machine);
