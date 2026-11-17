@@ -287,5 +287,35 @@
         "type": "string"
       }
     }
+  },
+  "copilotV2Audit": {
+    "baseCommit": "2f813c626",
+    "sdkPackage": "@microsoft/copilot-sdk",
+    "sdkVersion": "2.0.0",
+    "declaredPairedCliVersion": "1.0.113",
+    "installedCli": "/opt/homebrew/bin/copilot",
+    "installedCliVersion": "1.0.112",
+    "versionProbeBoundary": "temporary HOME/XDG/TMP, allowlisted environment, Seatbelt deny network and provider credential/keychain directories",
+    "versionProbeResult": "installed --version succeeds; SDK platform runtime --version is unsupported",
+    "priorHandshakeEvidence": "docs/copilot-test-boundary.md (#3685): installed 1.0.112/protocol3, separately labeled SDK platform runtime 1.0.113/protocol4",
+    "nativeSeam": "SessionOptionsBase.permissions.sandbox / SessionPermissionOptions.sandbox",
+    "serializer": "create/resume grouped permissions.sandbox",
+    "experimental": true,
+    "enforcementVerified": false,
+    "modelTurns": 0,
+    "files": {
+      "node_modules/@microsoft/copilot-sdk/package.json": {
+        "sha256": "6acd3bbc1e5faf9f7f42ac96f0efcede3ffd3e9d0495f71082f5e7f775833fbf"
+      },
+      "node_modules/@microsoft/copilot-sdk/dist/types.d.ts": {
+        "sha256": "35649f45100129995cffa4e1b81f60aa72931589ec2f556da65f3b56093463df"
+      },
+      "node_modules/@microsoft/copilot-sdk/dist/generated/rpc.d.ts": {
+        "sha256": "b9033bedbc1c0f75a06f1a5076bd23a0df62ce77744f05440676e312a3878b0d"
+      },
+      "node_modules/@microsoft/copilot-sdk/dist/client.js": {
+        "sha256": "ab3eac0b7f996978730d4eeb4c2e2781a3022399feb85d48ac13bb74d3a2f106"
+      }
+    }
   }
 }
