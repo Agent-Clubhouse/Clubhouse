@@ -8319,6 +8319,36 @@ describe('annex-server', () => {
       vi.mocked(projectStore.list).mockReturnValue([]);
     });
 
+    it('refuses a request whose connection presents another certificate before the body arrives', async () => {
+      vi.mocked(projectStore.list).mockReturnValue([{ id: 'test-proj-id', name: 'Test Project', path: '/test/path', icon: '' } as any]);
+      const { port } = await startAndPair();
+      const answer = await postWithHeldBody(port, '/api/v1/projects/test-proj-id/git/pull', JSON.stringify({ branch: 'main' }), () => {
+        // Same identity, same pairing; only the certificate the connection presents changes.
+        vi.mocked(annexTls.extractPeerCertificateFingerprint).mockReturnValue('AB:CD:EF:02');
+      });
+      expect(answer.split('\r\n')[0]).toBe('HTTP/1.1 401 Unauthorized');
+      expect(JSON.parse(answer.split('\r\n\r\n')[1])).toEqual({ error: 'peer_not_paired', message: expect.any(String) });
+      vi.mocked(projectStore.list).mockReturnValue([]);
+    });
+
+    it('runs no mobile command whose peer is removed, or whose connection changes certificate, before the body arrives', async () => {
+      const { port } = await startAndPair();
+      const capabilities = JSON.parse((await request(port, 'GET', '/api/v1/mobile/capabilities')).body);
+      const command = (commandId: string) => JSON.stringify({ version: 1, epoch: capabilities.epoch, commandId, type: 'agent.stop', agentId: 'a' });
+      for (const [commandId, change] of [
+        ['held-removed', () => { vi.mocked(annexPeers.getPeer).mockReturnValue(undefined); }],
+        ['held-cert', () => { vi.mocked(annexTls.extractPeerCertificateFingerprint).mockReturnValue('AB:CD:EF:02'); }],
+      ] as const) {
+        const answer = await postWithHeldBody(port, '/api/v1/mobile/commands', command(commandId), change);
+        expect(answer.split('\r\n')[0]).toBe('HTTP/1.1 403 Forbidden');
+        // Refused before it runs: no receipt, and not the in-command authorization_revoked.
+        expect(JSON.parse(answer.split('\r\n\r\n')[1])).toMatchObject({ status: 'rejected', error: { code: 'client_certificate_required' } });
+        vi.mocked(annexPeers.getPeer).mockImplementation((fp: string) => (fp === TEST_CONTROLLER.fingerprint ? { ...TEST_CONTROLLER } : undefined) as any);
+        vi.mocked(annexTls.extractPeerCertificateFingerprint).mockReturnValue(TEST_CONTROLLER.tlsCertificateFingerprint);
+      }
+      expect(agentSystem.killAgent).not.toHaveBeenCalled();
+    });
+
     it('refuses a request whose peer becomes pending or loses its role before the body arrives', async () => {
       vi.mocked(projectStore.list).mockReturnValue([{ id: 'test-proj-id', name: 'Test Project', path: '/test/path', icon: '' } as any]);
       const { port } = await startAndPair();

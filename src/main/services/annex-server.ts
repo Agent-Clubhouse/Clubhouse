@@ -4461,10 +4461,10 @@ async function handleMobileCommandRoute(ctx: AnnexRouteContext): Promise<void> {
     const input: unknown = JSON.parse((await readCappedBody(ctx.req, MAX_BODY_SIZE)).toString());
     // A peer can be revoked while its body is streaming; recheck before execution.
     const peer = findPairedPeer(ctx.mobilePrincipal);
-    const principal = stillAuthorized(ctx.principal, authorizerDeps) ? ctx.mobilePrincipal : undefined;
+    const principal = ctx.reauthorize().ok ? ctx.mobilePrincipal : undefined;
     const epoch = mobileCommands.epoch;
     const assertAuthorized = () => {
-      if (mobileCommands.epoch !== epoch || !principal || !stillAuthorized(ctx.principal, authorizerDeps)) {
+      if (mobileCommands.epoch !== epoch || !principal || !ctx.reauthorize().ok) {
         throw new MobileControlError('authorization_revoked', 403);
       }
     };
