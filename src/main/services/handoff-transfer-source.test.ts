@@ -82,3 +82,17 @@ it('keeps the total deadline when closing a failed descriptor never settles', as
   expect(await f.service.receive(peer, { op: 'manifest', id: f.record.id })).toEqual({ manifest: f.manifest });
   await f.service.close();
 });
+
+it('P6 retains a timed-out request slot until its actual service work settles', async () => {
+  vi.useFakeTimers(); const f = fixture(); f.options.timeoutMs = 50;
+  vi.mocked(f.options.prepared!).mockImplementation(() => new Promise(() => {}));
+  for (let i = 0; i < 2; i++) {
+    const result = f.service.receive(peer, { op: 'manifest', id: f.record.id }).catch((error) => error);
+    await vi.advanceTimersByTimeAsync(51); expect((await result).message).toContain('deadline');
+  }
+  const third = f.service.receive(peer, { op: 'manifest', id: f.record.id }).catch((error) => error);
+  await vi.advanceTimersByTimeAsync(51);
+  expect((await third).constructor.name).toBe('HandoffTransferBusy');
+  expect(f.options.prepared).toHaveBeenCalledTimes(2);
+  await f.service.close();
+});

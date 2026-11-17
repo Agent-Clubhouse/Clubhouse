@@ -53,6 +53,12 @@ import {
 import { isRefusal, type AnnexAuthResult, type AnnexCaller, type AnnexPrincipal } from './annex-authorizer';
 import * as annexTls from './annex-tls';
 import { appLog } from './log-service';
+import { CLIPBOARD_IMAGE_MAX_BASE64, MOBILE_CONTENT_MAX_BASE64 } from '../../shared/annex-binary-limits';
+import { ControlBulkLane, BULK_CHUNK_BYTES, type BulkKind } from './annex-control-bulk';
+import { CHAT_IMAGE_MAX_BYTES } from '../../shared/chat';
+import { FULL_EVENT_MAX_BYTES } from './annex-full-events';
+import { HANDOFF_TRANSFER_BODY_BYTES } from '../../shared/handoff-transfer';
+import { ICON_SERVED_MAX_BYTES } from '../../shared/icon-limits';
 
 // ---------------------------------------------------------------------------
 // Limits
@@ -62,7 +68,7 @@ import { appLog } from './log-service';
 export const HELLO_TIMEOUT_MS = 10_000;
 /** A ping this often; no pong by the next one and the connection is dead. */
 export const HEARTBEAT_MS = 30_000;
-/** How long a requester waits for an answer by default (the same as a direct REST call). */
+/** Request timeout, refreshed by progress on its bulk body as with a direct REST call. */
 export const REQUEST_TIMEOUT_MS = 30_000;
 /**
  * Longest a target lets one request run (the same bound as a direct request on
@@ -150,6 +156,8 @@ export interface DispatchContext {
   deadline: AbortSignal;
   /** The connection the request came over is still open. */
   linkOpen: () => boolean;
+  /** Response envelope budget; files/read retains its existing uncapped body with bulk. */
+  responseLimit?: number;
 }
 
 /** What the target side needs from the server: the authorizer and the route table. */
@@ -237,12 +245,15 @@ export interface DispatchResult extends ControlResult {
 interface Pending {
   id: string;
   method: ControlMethod;
+  path: string;
   resolve: (result: ControlResult) => void;
   reject: (err: ControlRequestError) => void;
   cleanup: () => void;
+  progress: () => void;
 }
 
 interface Link {
+  bulk: ControlBulkLane;
   ws: WebSocket;
   /** The other side's identity. */
   fingerprint: string;
@@ -322,7 +333,7 @@ export function canServe(): boolean {
  * never completed a response (timed out, cut off, failed). A retry gets
  * `replay_unavailable`, never a made-up answer and never a second run.
  */
-type Stored = { kind: 'response'; response: ControlHttpResponse } | { kind: 'not_retained' } | { kind: 'error'; code: ControlErrorCode };
+type Stored = { kind: 'response'; response: ControlResult } | { kind: 'not_retained' } | { kind: 'error'; code: ControlErrorCode };
 
 interface SeenEntry {
   peer: string;
@@ -412,6 +423,92 @@ function requestDigest(request: ControlHttpRequest): string {
   return hash.digest('hex');
 }
 
+/** Routes whose existing bodies belong on the bulk lane even when small. */
+function binaryPath(path: string): boolean {
+  return /\/(?:attachments|content|files\/read|handoffs\/transfer|icons\/|chat\/events\/)/.test(path);
+}
+function requestBodyLimit(path: string): number {
+  return /^\/api\/v1\/mobile\/agents\/[^/]+\/attachments$/.test(path) ? CHAT_IMAGE_MAX_BYTES : CONTROL_FRAME_MAX_BYTES;
+}
+/** Envelope limits only; route handlers retain their exact existing content limits. */
+export function responseBodyLimit(path: string): number {
+  if (/^\/api\/v1\/projects\/[^/]+\/files\/read(?:\?|$)/.test(path)) return Infinity;
+  if (/\/chat\/events\/\d+(?:\?|$)/.test(path)) return FULL_EVENT_MAX_BYTES;
+  if (/\/icons\//.test(path)) return ICON_SERVED_MAX_BYTES;
+  if (/\/handoffs\/transfer$/.test(path)) return HANDOFF_TRANSFER_BODY_BYTES;
+  // The content route caps raw bytes at 8 MiB, then base64 encodes them.
+  if (/\/content(?:\?|$)/.test(path)) return MOBILE_CONTENT_MAX_BASE64 + 64 * 1024;
+  return CONTROL_FRAME_MAX_BYTES + 64 * 1024;
+}
+function bulkAllowed(link: Link): boolean {
+  if (link.closed || !link.features?.has('bulk')) return false;
+  if (link.ws.readyState !== WebSocket.OPEN) { closeLink(link, 1000, 'closed'); return false; }
+  if (link.direction === 'in') return inboundStillAllowed(link);
+  if (target?.authorize({ fingerprint: link.fingerprint, pin: link.pin, via: 'reverse' }).ok) return true;
+  refuseLink(link, CONTROL_CLOSE_REVOKED, 'authorization_revoked', 'revoked during bulk'); return false;
+}
+function bulkMeta(kind: BulkKind, id: string, meta: Record<string, unknown>): ControlMessage | null {
+  const parsed = parseControlMessage(JSON.stringify({ ...meta, v: 1, type: kind, id,
+    ...(kind === 'response' && { body: '', encoding: 'utf8' }),
+  }));
+  return parsed.ok ? parsed.message : null;
+}
+let bulkTokenLimitForTests: number | undefined;
+function makeBulkLane(link: Link): ControlBulkLane {
+  return new ControlBulkLane({
+    allowed: () => bulkAllowed(link),
+    accept: (kind, id, meta, size) => {
+      const message = bulkMeta(kind, id, meta);
+      if (!message || message.type !== kind) return false;
+      if (kind === 'request' && message.type === 'request') return link.direction === 'out' && !!link.features?.has('request')
+        && !link.replying.has(id) && size <= requestBodyLimit(message.path);
+      if (kind === 'response') {
+        const pending = link.pending.get(id);
+        return link.direction === 'in' && !!pending && link.features!.has('request') && size <= responseBodyLimit(pending.path);
+      }
+      if (kind === 'client' && message.type === 'client') return link.direction === 'out' && !!link.features?.has('ws-control')
+        && link.subscription?.id === id && !link.subscription.ended && message.frame.type === 'clipboard:image'
+        && size <= CLIPBOARD_IMAGE_MAX_BASE64 && typeof message.frame.payload === 'object' && message.frame.payload !== null;
+      return false;
+    },
+    rejectStart: (kind, id, meta, size) => {
+      const message = bulkMeta(kind, id, meta);
+      if (link.direction !== 'out' || !link.features?.has('request') || link.replying.has(id) || message?.type !== 'request' || size <= requestBodyLimit(message.path) || !/\/attachments$/.test(message.path)) return false;
+      return rawSend(link, { v: 1, type: 'response', id, ...toWire(jsonResponse(413, { version: 1, error: 'too_large' })) });
+    },
+    complete: (kind, id, meta, body) => {
+      const message = bulkMeta(kind, id, meta);
+      if (!message) return;
+      if (message.type === 'request') { void onRequest(link, { ...message, ...encodeControlBody(body) }, true); return; }
+      if (message.type === 'response') {
+        const pending = link.pending.get(id);
+        if (!pending) return;
+        link.pending.delete(id); pending.cleanup(); pending.resolve({ status: message.status, headers: message.headers, body }); return;
+      }
+      if (message.type === 'client') {
+        const payload = message.frame.payload as Record<string, unknown>;
+        onClientFrame(link, { ...message, frame: { ...message.frame, payload: { ...payload, base64: body.toString('utf8') } } }, true);
+      }
+    },
+    send: (frame, written) => rawSend(link, frame, written),
+    binary: (bytes, written, stillOwned) => {
+      if (!bulkAllowed(link) || link.ws.readyState !== WebSocket.OPEN) return false;
+      // Hold at most one chunk per transfer while control/events drain; keep
+      // their socket budget available and reauthorize at the actual send.
+      const send = () => {
+        if (!stillOwned() || !bulkAllowed(link) || link.ws.readyState !== WebSocket.OPEN) { written(); return; }
+        if (link.ws.bufferedAmount + bytes.length > 2 * BULK_CHUNK_BYTES) {
+          const timer = setTimeout(send, 10); timer.unref?.(); return;
+        }
+        try { link.ws.send(bytes, written); } catch { closeLink(link, 1001, 'write_failed'); }
+      };
+      send(); return true;
+    },
+    progress: (id) => link.pending.get(id)?.progress(),
+    fail: () => refuseLink(link, CONTROL_CLOSE_PROTOCOL, 'protocol', 'invalid bulk transfer'),
+  }, bulkTokenLimitForTests);
+}
+
 // ---------------------------------------------------------------------------
 // One connection
 // ---------------------------------------------------------------------------
@@ -454,6 +551,7 @@ function rawSendText(link: Link, text: string, onWritten?: () => void): boolean 
 function closeLink(link: Link, code: number, reason: string, failWith: ControlErrorCode = 'transport_unavailable'): void {
   if (link.closed) return;
   link.closed = true;
+  link.bulk.close();
   links.delete(link);
   if (link.helloTimer) clearTimeout(link.helloTimer);
   if (link.heartbeat) clearInterval(link.heartbeat);
@@ -493,10 +591,11 @@ function inboundStillAllowed(link: Link): boolean {
 }
 
 function attach(ws: WebSocket, fingerprint: string, pin: string, direction: 'in' | 'out', remoteAddress: string | undefined): Link {
-  const link: Link = {
+  const link = {
     ws, fingerprint, pin, direction, remoteAddress, features: null, offered: null, closed: false,
     helloTimer: null, heartbeat: null, alive: true, pending: new Map(), replying: new Map(), subscriptions: new Map(), subscription: null,
-  };
+  } as Link;
+  link.bulk = makeBulkLane(link);
   links.add(link);
   link.helloTimer = setTimeout(() => {
     link.helloTimer = null;
@@ -511,7 +610,7 @@ function attach(ws: WebSocket, fingerprint: string, pin: string, direction: 'in'
   link.heartbeat.unref?.();
   ws.on('pong', () => { link.alive = true; });
   ws.on('message', (data: RawData, isBinary: boolean) => onFrame(link, data, isBinary));
-  ws.on('close', () => closeLink(link, 1000, 'closed'));
+  ws.on('close', (code: number) => closeLink(link, 1000, 'closed', code === CONTROL_CLOSE_REVOKED ? 'authorization_revoked' : 'transport_unavailable'));
   ws.on('error', (err) => {
     appLog('core:annex', 'debug', 'Annex control connection error', { meta: { fingerprint, direction, error: err.message } });
   });
@@ -522,7 +621,10 @@ function onFrame(link: Link, data: RawData, isBinary: boolean): void {
   if (link.closed) return;
   link.alive = true;
   if (!inboundStillAllowed(link)) return;
-  if (isBinary) { refuseLink(link, CONTROL_CLOSE_PROTOCOL, 'protocol', 'binary frame'); return; }
+  if (isBinary) {
+    if (!link.features?.has('bulk') || rawLength(data) > BULK_CHUNK_BYTES + 40) { refuseLink(link, CONTROL_CLOSE_PROTOCOL, 'protocol', 'binary frame'); return; }
+    link.bulk.binary(Array.isArray(data) ? Buffer.concat(data) : Buffer.from(data as Buffer)); return;
+  }
   // The socket takes frames up to the event cap, but only a subscription's `event`, to the side that
   // accepted the connection, may be that large. Everything else keeps CONTROL_FRAME_MAX_BYTES.
   const bytes = rawLength(data);
@@ -541,9 +643,13 @@ function onFrame(link: Link, data: RawData, isBinary: boolean): void {
   }
   const message = parsed.message;
   if (!link.features) { onHello(link, message); return; }
+  if (message.type === 'bulk') {
+    if (!link.features?.has('bulk')) { refuseLink(link, CONTROL_CLOSE_PROTOCOL, 'protocol', 'bulk without capability'); return; }
+    link.bulk.receive(message); return;
+  }
   if (link.direction === 'out') {
     if (message.type === 'request') { void onRequest(link, message); return; }
-    if (message.type === 'cancel') { link.replying.get(message.id)?.abort('cancelled'); return; }
+    if (message.type === 'cancel') { link.bulk.cancel(message.id); link.replying.get(message.id)?.abort('cancelled'); return; }
     if (message.type === 'subscribe') { onSubscribe(link, message.id); return; }
     if (message.type === 'unsubscribe') { if (link.subscription?.id === message.id) stopServing(link); return; }
     if (message.type === 'client') { onClientFrame(link, message); return; }
@@ -599,16 +705,17 @@ function sendError(link: Link, id: string, code: ControlErrorCode): void {
   rawSend(link, { v: 1, type: 'error', id, code });
 }
 
-function jsonResponse(status: number, body: unknown): ControlHttpResponse {
-  return { status, headers: { 'content-type': 'application/json' }, ...encodeControlBody(Buffer.from(JSON.stringify(body))) };
+function jsonResponse(status: number, body: unknown): ControlResult {
+  return { status, headers: { 'content-type': 'application/json' }, body: Buffer.from(JSON.stringify(body)) };
 }
 
 function toWire(result: ControlResult): ControlHttpResponse {
   return { status: result.status, headers: result.headers, ...encodeControlBody(result.body) };
 }
 
-async function onRequest(link: Link, message: Extract<ControlMessage, { type: 'request' }>): Promise<void> {
+async function onRequest(link: Link, message: Extract<ControlMessage, { type: 'request' }>, fromBulk = false): Promise<void> {
   const { id } = message;
+  if (!fromBulk && link.features?.has('bulk') && binaryPath(message.path) && message.body !== undefined) { refuseLink(link, CONTROL_CLOSE_PROTOCOL, 'protocol', 'binary body outside bulk'); return; }
   if (!link.features?.has('request')) { sendError(link, id, 'not_supported'); return; }
   if (link.replying.has(id)) { sendError(link, id, 'duplicate_id'); return; }
   if (link.replying.size >= MAX_IN_FLIGHT) { sendError(link, id, 'busy'); return; }
@@ -619,7 +726,7 @@ async function onRequest(link: Link, message: Extract<ControlMessage, { type: 'r
   const auth = server.authorize({ fingerprint: link.fingerprint, pin: link.pin, via: 'reverse' });
   if (isRefusal(auth)) {
     appLog('core:annex', 'warn', 'Refused a reverse request', { meta: { fingerprint: link.fingerprint, error: auth.error, status: auth.status } });
-    rawSend(link, { v: 1, type: 'response', id, ...jsonResponse(auth.status, { error: auth.error, message: auth.message }) });
+    rawSend(link, { v: 1, type: 'response', id, ...toWire(jsonResponse(auth.status, { error: auth.error, message: auth.message })) });
     return;
   }
   const principal = auth.principal;
@@ -643,14 +750,19 @@ async function onRequest(link: Link, message: Extract<ControlMessage, { type: 'r
     refuseLink(link, CONTROL_CLOSE_REVOKED, 'authorization_revoked', 'revoked while a request ran');
     return;
   }
-  let frame: ControlMessage = outcome.kind === 'response' ? { v: 1, type: 'response', id, ...outcome.response }
+  if (outcome.kind === 'response' && link.features?.has('bulk') && (binaryPath(request.path) || outcome.response.body.length > BULK_CHUNK_BYTES)) {
+    const { status, headers, body } = outcome.response;
+    if (link.bulk.send('response', id, { status, headers }, body, release)) return;
+    sendError(link, id, 'busy'); release(); return;
+  }
+  let frame: ControlMessage = outcome.kind === 'response' ? { v: 1, type: 'response', id, ...toWire(outcome.response) }
     : { v: 1, type: 'error', id, code: outcome.kind === 'error' ? outcome.code : 'replay_unavailable' };
   if (frameFits(frame) === null) frame = { v: 1, type: 'error', id, code: 'response_too_large' };
   rawSend(link, frame, release);
 }
 
 /** How one run of a handler ended. Only `complete` carries an answer. */
-type RunOutcome = { kind: 'complete'; response: ControlHttpResponse } | { kind: 'incomplete'; timedOut: boolean } | { kind: 'failed' };
+type RunOutcome = { kind: 'complete'; response: ControlResult } | { kind: 'incomplete'; timedOut: boolean } | { kind: 'failed' };
 
 interface Run {
   /** Settles with the handler's response. Its slot frees later, once the route's own work has settled too. */
@@ -676,13 +788,16 @@ function startRun(server: ControlTarget, principal: AnnexPrincipal, request: Con
   const deadline = new AbortController();
   const timer = setTimeout(() => deadline.abort('timeout'), targetTimeoutMs);
   timer.unref?.();
-  const ctx: DispatchContext = { remoteAddress: link.remoteAddress, signal: cancel.signal, deadline: deadline.signal, linkOpen: () => !link.closed };
+  const ctx: DispatchContext = { remoteAddress: link.remoteAddress, signal: cancel.signal, deadline: deadline.signal, linkOpen: () => !link.closed && link.ws.readyState === WebSocket.OPEN, responseLimit: link.features?.has('bulk') ? responseBodyLimit(request.path) : CONTROL_FRAME_MAX_BYTES };
   let dispatched: Promise<DispatchResult>;
   try { dispatched = server.dispatch(principal, request, ctx); } catch (err) { // telemetry-exempt: passed on as a rejection, logged below
     dispatched = Promise.reject(err);
   }
   const done = dispatched
-    .then((result): RunOutcome => (result.complete ? { kind: 'complete', response: toWire(result) } : { kind: 'incomplete', timedOut: deadline.signal.reason === 'timeout' }))
+    .then((result): RunOutcome => {
+      const { status, headers, body } = result;
+      return result.complete ? { kind: 'complete', response: { status, headers, body } } : { kind: 'incomplete', timedOut: deadline.signal.reason === 'timeout' };
+    })
     .catch((err): RunOutcome => {
       appLog('core:annex', 'error', 'A reverse request failed', { meta: { fingerprint: peer, method: request.method, error: err instanceof Error ? err.message : String(err) } });
       return { kind: 'failed' };
@@ -704,7 +819,7 @@ function startRun(server: ControlTarget, principal: AnnexPrincipal, request: Con
 
 /** What the requester that ran it gets. A handler that threw answers 500, as an uncaught failure would; one cut off answers `timeout`. */
 function answerForRun(outcome: RunOutcome): Stored {
-  if (outcome.kind === 'complete') return answerFor(outcome.response);
+  if (outcome.kind === 'complete') return { kind: 'response', response: outcome.response };
   if (outcome.kind === 'failed') return { kind: 'response', response: jsonResponse(500, { error: 'internal_error' }) };
   return { kind: 'error', code: outcome.timedOut ? 'timeout' : 'cancelled' };
 }
@@ -714,16 +829,9 @@ function retainedForRun(outcome: RunOutcome): Stored {
   return outcome.kind === 'complete' ? retainedFor(outcome.response) : { kind: 'not_retained' };
 }
 
-/** What the requester that ran it gets: the answer, unless it can't fit in a frame. */
-function answerFor(response: ControlHttpResponse): Stored {
-  return Buffer.byteLength(response.body) + 1024 <= CONTROL_FRAME_MAX_BYTES ? { kind: 'response', response } : { kind: 'error', code: 'response_too_large' };
-}
-
-/** What a retry gets: the same answer, or, for one too large to keep, `replay_unavailable`. Never a second run. */
-function retainedFor(response: ControlHttpResponse): Stored {
-  const answer = answerFor(response);
-  if (answer.kind !== 'response') return answer;
-  return Buffer.byteLength(response.body) <= SEEN_RETAIN_MAX_BYTES ? answer : { kind: 'not_retained' };
+/** What a retry gets: the original answer within the retention cap, otherwise no replay. */
+function retainedFor(response: ControlResult): Stored {
+  return response.body.length <= SEEN_RETAIN_MAX_BYTES ? { kind: 'response', response } : { kind: 'not_retained' };
 }
 
 function onAbort(signal: AbortSignal, fn: () => void): void {
@@ -842,7 +950,8 @@ function onSubscribe(link: Link, id: string): void {
  * only while the subscriber is still authorized; then the server's /ws handler
  * runs it for the subscription's virtual client and checks it again.
  */
-function onClientFrame(link: Link, message: Extract<ControlMessage, { type: 'client' }>): void {
+function onClientFrame(link: Link, message: Extract<ControlMessage, { type: 'client' }>, fromBulk = false): void {
+  if (!fromBulk && link.features?.has('bulk') && message.frame.type === 'clipboard:image') { refuseLink(link, CONTROL_CLOSE_PROTOCOL, 'protocol', 'clipboard outside bulk'); return; }
   if (!link.features?.has('ws-control')) { refuseLink(link, CONTROL_CLOSE_PROTOCOL, 'protocol', 'client frame without ws-control'); return; }
   const served = link.subscription;
   // For a subscription that has already ended here: it raced the end, and is dropped.
@@ -872,6 +981,7 @@ function stopServing(link: Link): void {
   if (!served) return;
   link.subscription = null;
   served.ended = true;
+  link.bulk.cancel(served.id);
   served.handle?.close();
 }
 
@@ -889,6 +999,7 @@ function onSubscriptionFrame(link: Link, message: Extract<ControlMessage, { type
   if (!handlers) return;
   if (message.type === 'event') { notify(() => handlers.onFrame(message.frame)); return; }
   link.subscriptions.delete(message.id);
+  link.bulk.cancel(message.id);
   notify(() => handlers.onEnd(message.code));
 }
 
@@ -918,12 +1029,22 @@ export function subscribe(fingerprint: string, handlers: SubscriptionHandlers): 
     id,
     close: () => {
       if (!link.subscriptions.delete(id)) return;
+      link.bulk.cancel(id);
       rawSend(link, { v: 1, type: 'unsubscribe', id });
     },
     send: (frame) => {
       if (!link.subscriptions.has(id) || !link.features?.has('ws-control')) return false;
       if (!(CONTROL_WS_CLIENT_TYPES as readonly string[]).includes(frame.type)) return false;
       if (!inboundStillAllowed(link)) return false;
+      if (frame.type === 'clipboard:image' && link.features?.has('bulk')) {
+        const { base64, ...payload } = frame.payload ?? {};
+        if (typeof base64 !== 'string') return false;
+        if (base64.length > CLIPBOARD_IMAGE_MAX_BASE64) {
+          notify(() => handlers.onFrame({ type: 'error', payload: { message: 'clipboard:image data exceeds 10MB limit' } }));
+          return true;
+        }
+        return link.bulk.send('client', id, { frame: { ...frame, payload } }, Buffer.from(base64));
+      }
       return rawSend(link, { v: 1, type: 'client', id, frame: { ...frame } });
     },
   };
@@ -937,7 +1058,9 @@ function onAnswer(link: Link, message: Extract<ControlMessage, { type: 'response
   const pending = link.pending.get(message.id);
   // An answer to a request no longer waited for (cancelled, timed out): dropped.
   if (!pending) return;
+  if (message.type === 'response' && message.status >= 200 && message.status < 300 && link.features?.has('bulk') && binaryPath(pending.path)) { refuseLink(link, CONTROL_CLOSE_PROTOCOL, 'protocol', 'binary answer outside bulk'); return; }
   link.pending.delete(message.id);
+  link.bulk.cancel(message.id);
   pending.cleanup();
   if (message.type === 'error') {
     // Only an answer that says it never ran is determinate.
@@ -984,7 +1107,7 @@ export function request(fingerprint: string, input: ControlRequestInput, options
   const bytes = input.body === undefined ? undefined : typeof input.body === 'string' ? Buffer.from(input.body, 'utf8') : input.body;
   const frame: ControlMessage = {
     v: 1, type: 'request', id, method: input.method, path: input.path,
-    ...(input.headers && { headers: input.headers }), ...(bytes && encodeControlBody(bytes)),
+    ...(input.headers && { headers: input.headers }), ...(bytes && !(link.features?.has('bulk') && (binaryPath(input.path) || bytes.length > BULK_CHUNK_BYTES)) && encodeControlBody(bytes)),
   };
   const readOnly = isReadOnlyMethod(input.method);
   return new Promise<ControlResult>((resolve, reject) => {
@@ -998,11 +1121,18 @@ export function request(fingerprint: string, input: ControlRequestInput, options
     function giveUp(code: ControlErrorCode): void {
       if (!link!.pending.delete(id)) return;
       cleanup();
+      link!.bulk.cancel(id);
       rawSend(link!, { v: 1, type: 'cancel', id });
       reject(new ControlRequestError(code, !readOnly, id));
     }
     options.signal?.addEventListener('abort', onAbort, { once: true });
-    link.pending.set(id, { id, method: input.method, resolve, reject, cleanup });
+    link.pending.set(id, { id, method: input.method, path: input.path, resolve, reject, cleanup, progress: () => timer.refresh?.() });
+    if (link.features?.has('bulk') && bytes && (binaryPath(input.path) || bytes.length > BULK_CHUNK_BYTES)) {
+      if (bytes.length > CONTROL_FRAME_MAX_BYTES && !/\/attachments$/.test(input.path)) { link.pending.delete(id); cleanup(); reject(new ControlRequestError('request_too_large', false, id)); return; }
+      const meta = { method: input.method, path: input.path, ...(input.headers && { headers: input.headers }) };
+      if (!link.bulk.send('request', id, meta, bytes)) { link.pending.delete(id); cleanup(); reject(new ControlRequestError('busy', false, id)); }
+      return;
+    }
     if (frameFits(frame) === null) {
       link.pending.delete(id);
       cleanup();
@@ -1120,6 +1250,7 @@ export function resetControlForTests(): void {
   seen.clear();
   activeRuns.clear();
   targetTimeoutMs = TARGET_TIMEOUT_MS;
+  bulkTokenLimitForTests = undefined;
   inboundAuthority = null;
   target = null;
 }
@@ -1154,3 +1285,6 @@ export function _setTargetTimeoutForTesting(ms: number | null): void {
 export function _activeRunsForTesting(fingerprint: string, pin: string): number {
   return activeRuns.get(runKey({ fingerprint, pin })) ?? 0;
 }
+
+/** Test helper: exercise lifetime exhaustion without allocating the production history budget. */
+export function _setBulkTokenLimitForTesting(limit: number): void { bulkTokenLimitForTests = limit; }

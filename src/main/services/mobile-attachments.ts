@@ -16,7 +16,7 @@
 import type * as http from 'http';
 import type { ChatCapabilities, ContentBlock } from '../../shared/chat';
 import { CHAT_ATTACHMENTS_MAX, CHAT_IMAGE_MAX_BYTES, CHAT_IMAGE_TYPES, mediaDimensions } from '../../shared/chat';
-import { resolveAttachments, stageAttachmentData, STAGED_TTL_MS } from './agent-runtime/chat-attachments';
+import { discardStagedAttachment, resolveAttachments, stageAttachmentData, STAGED_TTL_MS } from './agent-runtime/chat-attachments';
 
 export const MOBILE_UPLOAD_RATE = { max: 20, windowMs: 60 * 1000 };
 export const MOBILE_UPLOAD_QUOTA = { maxUploads: 200, maxBytes: 256 * 1024 * 1024, windowMs: STAGED_TTL_MS };
@@ -54,19 +54,17 @@ export function readCappedBody(req: http.IncomingMessage, max: number): Promise<
   return new Promise((resolve, reject) => {
     const chunks: Buffer[] = [];
     let total = 0;
+    const cleanup = () => { req.off('data', onData); req.off('end', onEnd); req.off('error', fail); req.off('aborted', aborted); };
+    const fail = (error: Error) => { cleanup(); reject(error); };
+    const aborted = () => fail(new Error('Request aborted'));
+    const onEnd = () => { cleanup(); resolve(Buffer.concat(chunks)); };
     const onData = (chunk: Buffer) => {
       total += chunk.length;
-      if (total > max) {
-        req.off('data', onData);
-        req.pause();
-        reject(new MobileUploadError('too_large', 413));
-        return;
-      }
+      if (total > max) { req.pause(); fail(new MobileUploadError('too_large', 413)); return; }
       chunks.push(chunk);
     };
-    req.on('data', onData);
-    req.on('end', () => resolve(Buffer.concat(chunks)));
-    req.on('error', reject);
+    if (req.destroyed) { aborted(); return; }
+    req.on('data', onData); req.on('end', onEnd); req.on('error', fail); req.on('aborted', aborted);
   });
 }
 
@@ -102,21 +100,30 @@ export class MobileAttachmentService {
   }
 
   /** Stage an uploaded image for `agentId` on behalf of `principal`. */
-  async upload(principal: string, agentId: string, data: Uint8Array): Promise<MobileUploadResult> {
+  async upload(principal: string, agentId: string, data: Uint8Array, beforeWrite?: () => void): Promise<MobileUploadResult> {
     this.checkLimits(principal, data.byteLength);
     if (!data.byteLength) throw new MobileUploadError('empty_body', 400);
     if (data.byteLength > CHAT_IMAGE_MAX_BYTES) throw new MobileUploadError('too_large', 413);
     // Counted before staging: a refused (non-image) body still used the peer's allowance.
     this.uploads.get(principal)!.push({ at: this.now(), bytes: data.byteLength });
     let staged;
-    try { staged = await this.stage(agentId, data, 'phone-image'); }
-    catch { // telemetry-exempt: the bytes weren't a supported image; the caller gets a bounded error, nothing is logged.
+    try { staged = beforeWrite ? await this.stage(agentId, data, 'phone-image', beforeWrite) : await this.stage(agentId, data, 'phone-image'); }
+    catch (error) { // telemetry-exempt: the bytes weren't a supported image; the caller gets a bounded error, nothing is logged.
+      if (error instanceof MobileUploadError) throw error;
       throw new MobileUploadError('unsupported_image', 415); }
+    try { beforeWrite?.(); } catch (error) { await discardStagedAttachment(agentId, staged.id); throw error; }
     const now = this.now();
     for (const [id, o] of this.owned) if (now - o.at > STAGED_TTL_MS) this.owned.delete(id);
     this.owned.set(staged.id, { principal, agentId, at: now });
     const size = staged.mimeType ? mediaDimensions(data, staged.mimeType) : undefined;
     return { version: 1, attachmentId: staged.id, mimeType: staged.mimeType!, bytes: staged.size, ...(size && { width: size.width, height: size.height }) };
+  }
+
+  /** A caller lost access before its upload reply could be published. */
+  async discard(principal: string, agentId: string, id: string): Promise<void> {
+    const owned = this.owned.get(id);
+    if (!owned || owned.principal !== principal || owned.agentId !== agentId) return;
+    this.owned.delete(id); await discardStagedAttachment(agentId, id);
   }
 
   /** Content blocks for ids `principal` uploaded for `agentId`; anything else throws. */

@@ -1,0 +1,124 @@
+#!/usr/bin/env python3
+"""Run through desktop-test-gate.sh (4 GB). Each child is targeted, one worker.
+Restores every production file even if interrupted. Logs every original FAIL.
+This script intentionally expects failing tests for main and guard mutants.
+"""
+from pathlib import Path
+import argparse
+import subprocess
+import sys
+
+parser = argparse.ArgumentParser()
+parser.add_argument('--logs', default='/tmp/annex-p6-binary-controls')
+parser.add_argument('--only')
+args = parser.parse_args()
+root = Path(__file__).resolve().parents[2]
+logs = Path(args.logs); logs.mkdir(parents=True, exist_ok=True)
+bulk = 'src/main/services/annex-control-bulk.ts'
+control = 'src/main/services/annex-control.ts'
+stage = 'src/main/services/agent-runtime/chat-attachments.ts'
+snapshot = 'src/main/services/handoff-snapshot.ts'
+source = 'src/main/services/handoff-transfer-source.ts'
+unit = 'src/main/services/annex-control-bulk.test.ts'
+transport = 'src/main/services/annex-control.test.ts'
+fences = 'src/main/services/annex-binary-fences.test.ts'
+staging = 'src/main/services/agent-runtime/chat-attachments.test.ts'
+# Each mutation removes a security property; overlapping guards are removed
+# together when they enforce the same boundary in more than one layer.
+mutants = [
+ ('count', bulk, 'this.incoming.size >= BULK_MAX_TRANSFERS', 'false', unit, 'bounds transfer count'),
+ ('metadata', bulk, 'Buffer.byteLength(JSON.stringify(frame.meta)) > 16 * 1024', 'false', unit, 'bounds metadata'),
+ ('admission', bulk, '!this.hooks.accept(frame.kind!, frame.id, frame.meta!, frame.size!)', 'false', unit, 'checks admission'),
+ ('sequence', bulk, 'bytes.readUInt32BE(36) !== t.seq', 'false', unit, 'invalid binary sequence'),
+ ('size', bulk, 'body.length !== Math.min(BULK_CHUNK_BYTES, t.size - t.offset)', 'false', unit, 'invalid binary size'),
+ ('token', bulk, 'if (!this.used.has(token)) this.hooks.fail();', '', unit, 'invalid binary token'),
+ ('digest', bulk, "receiving.hash.digest('hex') !== frame.digest", 'false', unit, 'final digest'),
+ ('final-length', bulk, 'receiving.offset !== receiving.size', 'false', unit, 'final length'),
+ ('final-owner', bulk, '!this.hooks.accept(receiving.kind, receiving.id, receiving.meta, receiving.size)', 'false', unit, 'final owner'),
+ ('frame-authority', bulk, 'if (!this.hooks.allowed()) return;', 'if (false) return;', unit, 'reauthorizes each binary'),
+ ('send-authority', bulk, '!this.hooks.allowed() || !t.credit', 'false || !t.credit', unit, 'sends nothing until|actual send authority'),
+ ('credit-accumulation', bulk, 'if (sending.credit)', 'if (false)', unit, 'cannot accumulate credits'),
+ ('credit-writing', bulk, 't.pumping || t.writing || !t.credit', 't.pumping || !t.credit', unit, 'written callback'),
+ ('subscription-owner', control, 'link.subscription?.id === id', 'true', transport, 'forged bulk clipboard-owner'),
+ ('clipboard-cap', control, 'size <= CLIPBOARD_IMAGE_MAX_BASE64', 'true', transport, 'forged bulk clipboard-size'),
+ ('request-cap', control, 'size <= requestBodyLimit(message.path)', 'true', transport, 'forged bulk request-size|attachment cap'),
+ ('direction', control, "link.direction === 'out' && !!link.features?.has('request')", "!!link.features?.has('request')", transport, 'forged bulk direction'),
+ ('capability', control, "if (!link.features?.has('bulk'))", 'if (false)', transport, 'forged bulk feature'),
+ ('deferred-owner', control, '!stillOwned() || !bulkAllowed(link)', '!bulkAllowed(link)', transport, 'cancels a bulk response'),
+ ('deferred-authority', control, '!stillOwned() || !bulkAllowed(link)', '!stillOwned()', transport, 'revocation at a pending binary write'),
+ ('staging-before-write', stage, '  await pruneSaved(dir, beforeWrite);\n  beforeWrite();', '  await pruneSaved(dir, beforeWrite);', staging, 'real readdir finishes'),
+ ('staging-publication', stage, '    beforeWrite();\n    return remember', '    return remember', staging, 'real realpath finishes'),
+ ('clipboard-digest-required', control, "!fromBulk && link.features?.has('bulk') && message.frame.type === 'clipboard:image'", 'false', transport, 'bypass the digest with a legacy JSON client'),
+ ('request-digest-required', control, "!fromBulk && link.features?.has('bulk') && binaryPath(message.path) && message.body !== undefined", 'false', transport, 'bypass the digest with a legacy JSON request'),
+ ('response-digest-required', control, "message.type === 'response' && message.status >= 200 && message.status < 300 && link.features?.has('bulk') && binaryPath(pending.path)", 'false', transport, 'bypass the digest with a legacy successful JSON answer'),
+ ('inactivity-progress', control, 'progress: (id) => link.pending.get(id)?.progress()', 'progress: () => {}', transport, 'bulk progress refreshes request inactivity'),
+ ('actual-work-slot', source, 'if (work) void work.then(release, release); else release();', 'release();', 'src/main/services/handoff-transfer-source.test.ts', 'retains a timed-out request slot'),
+ ('handoff-inner-open', snapshot, '  beforeRead();\n  const handle = await fs.promises.open', '  const handle = await fs.promises.open', fences, 'real handoff path stat await'),
+ ('handoff-inner-read', snapshot, '          beforeRead();', '', fences, 'real handoff descriptor stat await: peer-revoked'),
+ ('handoff-state', source, "!['offered', 'accepted', 'transferring'].includes(record.state)\n      || content && (!record.acceptance || !['accepted', 'transferring'].includes(record.state))", 'content && !record.acceptance', fences, 'real handoff descriptor stat await: cancelled'),
+ ('handoff-domain-binding', source, 'this.binding(record, content) !== binding', 'false', fences, 'real handoff descriptor stat await: target-changed|real handoff descriptor stat await: agreement-changed'),
+ ('handoff-authority-act', source, 'authority?.check();', '', fences, 'real handoff descriptor stat await: grant-generation|real handoff descriptor stat await: policy-generation'),
+ ('handoff-notification-ignored', 'src/main/services/handoff-host.ts', "if (localIds.has(id) && stamp() !== expected) { changed = true; changeReason = authorityDiagnostic(); }", 'void id;', 'src/main/services/handoff-host-transfer.test.ts', 'P6 host orchestration-off-restored|P6 host cross-project-off-restored'),
+ ('handoff-spurious-notification', 'src/main/services/handoff-host.ts', 'localIds.has(id) && stamp() !== expected', 'localIds.has(id)', 'src/main/services/handoff-host-transfer.test.ts', 'P6 accepted handoff synchronizes'),
+ ('handoff-binding-listener-ignored', 'src/main/services/handoff-host.ts', "      if (!localIds.has(id)) return;\n      const authorityChanged = stamp() !== expected;\n      const membershipChanged = bindingStamp('membership') !== bindings.membership;\n      const permissionsChanged = bindingStamp('permissions') !== bindings.permissions;\n      if (!authorityChanged && !membershipChanged && !permissionsChanged) return;\n      // Sticky even when the binding or its switches are restored before I/O\n      // resumes. Benign refreshes cannot overwrite the real invalidation.\n      changed = true;\n      changeReason = authorityChanged ? authorityDiagnostic() : membershipChanged ? 'lease_binding_membership' : 'lease_binding_permissions';", '      void id;', 'src/main/services/handoff-host-transfer.test.ts', 'P6 binding authority membership_restored|P6 binding authority permissions_restored|P6 binding authority tool_grants_restored'),
+ ('handoff-binding-authority-ignored', 'src/main/services/handoff-host.ts', "wire.targetKind === 'agent' && targets.has(wire.targetId)", 'false', 'src/main/services/handoff-host-transfer.test.ts', 'P6 binding authority membership|P6 binding authority permissions'),
+ ('handoff-binding-spurious-notification', 'src/main/services/handoff-host.ts', "      if (!localIds.has(id)) return;\n      const authorityChanged = stamp() !== expected;\n      const membershipChanged = bindingStamp('membership') !== bindings.membership;\n      const permissionsChanged = bindingStamp('permissions') !== bindings.permissions;\n      if (!authorityChanged && !membershipChanged && !permissionsChanged) return;\n      // Sticky even when the binding or its switches are restored before I/O\n      // resumes. Benign refreshes cannot overwrite the real invalidation.\n      changed = true;\n      changeReason = authorityChanged ? authorityDiagnostic() : membershipChanged ? 'lease_binding_membership' : 'lease_binding_permissions';", "      void id; changed = true; changeReason = 'lease_binding_notification';", 'src/main/services/handoff-host-transfer.test.ts', 'P6 binding authority unchanged|P6 binding authority metadata|P6 binding authority unrelated_agent|P6 binding authority other_target|P6 accepted handoff synchronizes'),
+ ('handoff-grant-generation', 'src/main/services/handoff-host.ts', '[...localIds].map((id) => getAgentGrantRevision(id))', '[]', 'src/main/services/handoff-host-transfer.test.ts', 'P6 host grant-generation'),
+ ('handoff-policy-generation', 'src/main/services/handoff-host.ts', 'JSON.stringify([agentConfigGeneration(), grantPolicyStamp(agents)', 'JSON.stringify([0, grantPolicyStamp(agents)', 'src/main/services/handoff-host-transfer.test.ts', 'P6 host agent-policy-generation'),
+ ('consumed-token', bulk, 'this.used.has(token) || this.used.size >= this.maxUsedTokens', 'this.used.size >= this.maxUsedTokens', transport, 'QA adversarial: a completed'),
+ ('cancelled-token', bulk, 'this.used.has(token) || this.used.size >= this.maxUsedTokens', 'this.used.size >= this.maxUsedTokens', transport, 'QA adversarial: a cancelled'),
+ ('cancelled-bytes', bulk, 'if (incoming) { clearTimeout(incoming.timer); incoming.chunks.length = 0; this.incoming.delete(token); }', '', transport, 'late chunks and cancels for a cancelled'),
+ ('outgoing-history', bulk, '    if (!this.reserve(token, id)) return false;', '', transport, 'used UUIDs from the opposite direction'),
+ ('late-cancel-owner', bulk, 'owner !== undefined && owner !== frame.id', 'false', transport, 'P6 late cancel wrong-operation'),
+ ('unknown-cancel', bulk, 'if (owner === undefined) { this.hooks.fail(); return; }', 'if (owner === undefined) return;', transport, 'P6 late cancel unknown'),
+ ('attachment-project', 'src/main/services/annex-server.ts', 'projects.pending || projects.generation !== projectGeneration', 'false', 'src/main/services/annex-server.test.ts', 'P6 attachment project-removed'),
+ ('history-bound', bulk, 'this.used.size >= this.maxUsedTokens', 'false', transport, 'lifetime tombstone capacity'),
+ ('attachment-runtime', 'src/main/services/annex-server.ts', 'getAgentRuntime(agentId) !== runtime || !runtime.isRunning()', 'false', 'src/main/services/annex-server.test.ts', 'P6 attachment stopped|P6 attachment replaced'),
+ ('attachment-registration', 'src/main/services/annex-server.ts', '!current || isDisposedAgent(current) || current.createdAt !== registration.createdAt', 'false', 'src/main/services/annex-server.test.ts', 'P6 attachment disposed|P6 attachment removed'),
+]
+paths = [bulk, control, stage, snapshot, source, 'src/main/services/annex-server.ts', 'src/main/services/mobile-attachments.ts', 'src/main/services/handoff-host.ts', 'src/main/services/annex-chat-content.ts', 'src/shared/annex-control-protocol.ts']
+original = {p: (root / p).read_bytes() for p in paths}
+
+def run(label, files, pattern):
+    cmd = [str(root / 'node_modules/.bin/vitest'), 'run', '--project', 'main', *files, '--maxWorkers=1', '-t', pattern]
+    result = subprocess.run(cmd, cwd=root, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+    (logs / f'{label}.log').write_text('COMMAND: ' + repr(cmd) + '\n' + result.stdout)
+    # A test assertion must fail; import/runtime failures are not killed mutants.
+    valid = result.returncode != 0 and ('AssertionError:' in result.stdout or 'expected' in result.stdout)
+    print(f'{label}: {"KILLED / expected FAIL" if valid else "SURVIVED / INVALID"}; rc={result.returncode}; {logs / (label + ".log")}', flush=True)
+    return valid
+
+ok = True
+try:
+    if args.only in (None, 'main'):
+        for p in paths:
+            if p == bulk: continue
+            (root / p).write_bytes(subprocess.check_output(['git', 'show', 'origin/main:' + p], cwd=root))
+        ok = run('negative-main', [transport, fences, staging], 'P6|binary bulk lane') and ok
+        for p, content in original.items(): (root / p).write_bytes(content)
+    if args.only in (None, 'qa-baseline'):
+        for p in paths:
+            (root / p).write_bytes(subprocess.check_output(['git', 'show', 'c35580c5f:' + p], cwd=root))
+        ok = run('negative-qa-c35580c5f', [transport, 'src/main/services/annex-binary-qa-regressions.test.ts'], 'QA adversarial') and ok
+        for p, content in original.items(): (root / p).write_bytes(content)
+    if args.only in (None, 'ci-baseline'):
+        for p in paths:
+            (root / p).write_bytes(subprocess.check_output(['git', 'show', '0283ecb14:' + p], cwd=root))
+        ok = run('negative-ci-0283ecb14', ['src/main/services/handoff-host-transfer.test.ts'], 'P6 accepted handoff synchronizes') and ok
+        for p, content in original.items(): (root / p).write_bytes(content)
+    if args.only in (None, 'binding-baseline'):
+        for p in paths:
+            (root / p).write_bytes(subprocess.check_output(['git', 'show', '775d35add:' + p], cwd=root))
+        ok = run('negative-binding-775d35add', ['src/main/services/handoff-host-transfer.test.ts'], 'P6 binding authority (unchanged|metadata|unrelated_agent|other_target)|P6 accepted handoff synchronizes') and ok
+        for p, content in original.items(): (root / p).write_bytes(content)
+    for label, p, old, new, test, pattern in mutants:
+        if args.only and args.only != label: continue
+        text = original[p].decode()
+        if old not in text:
+            print(f'{label}: INVALID source marker absent', flush=True); ok = False; continue
+        (root / p).write_text(text.replace(old, new))
+        try: ok = run(label, [test], pattern) and ok
+        finally: (root / p).write_bytes(original[p])
+finally:
+    for p, content in original.items(): (root / p).write_bytes(content)
+sys.exit(0 if ok else 1)

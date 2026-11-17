@@ -1,9 +1,15 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import * as fs from 'fs';
+import * as fsp from 'fs/promises';
 import * as os from 'os';
 import * as path from 'path';
 import type { ChatCapabilities } from '../../../shared/chat';
 import { CHAT_FILE_MAX_BYTES, CHAT_IMAGE_MAX_BYTES, MINIMAL_CHAT_CAPABILITIES } from '../../../shared/chat';
+
+vi.mock('fs/promises', async (importOriginal) => {
+  const real = await importOriginal<typeof import('fs/promises')>();
+  return { ...real, mkdir: vi.fn(real.mkdir), readdir: vi.fn(real.readdir), writeFile: vi.fn(real.writeFile), realpath: vi.fn(real.realpath) };
+});
 
 const paths = vi.hoisted(() => ({ userData: '' }));
 vi.mock('electron', () => ({ app: { getPath: () => paths.userData } }));
@@ -37,6 +43,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  vi.restoreAllMocks();
   fs.rmSync(dir, { recursive: true, force: true });
 });
 
@@ -145,5 +152,26 @@ describe('resolveAttachments', () => {
     await expect(resolveAttachments('agent-1', ['made-up'], withImages)).rejects.toThrow(/expired/);
     await expect(resolveAttachments('agent-2', [notes.id], withImages)).rejects.toThrow(/expired/);
     await expect(resolveAttachments('agent-1', Array.from({ length: 11 }, () => notes.id), withImages)).rejects.toThrow(/at most 10/);
+  });
+});
+
+
+describe('P6 staging fences inside real filesystem awaits', () => {
+  it.each(['mkdir', 'readdir', 'writeFile', 'realpath'] as const)('revoked while real %s finishes: no staged id or saved file survives', async (boundary) => {
+    const original = fs.promises[boundary].bind(fs.promises);
+    let entered!: () => void; let release!: () => void;
+    const ready = new Promise<void>((r) => { entered = r; });
+    const gate = new Promise<void>((r) => { release = r; });
+    vi.mocked(fsp[boundary]).mockImplementationOnce((async (...args: unknown[]) => {
+      const result = await (original as (...args: unknown[]) => Promise<unknown>)(...args);
+      entered(); await gate; return result;
+    }) as any);
+    vi.mocked(fsp.writeFile).mockClear();
+    let authorized = true;
+    const result = stageAttachmentData('a', PNG, 'phone-image', () => { if (!authorized) throw new Error('revoked'); }).catch((e) => e);
+    await ready; authorized = false; release();
+    expect(await result).toMatchObject({ message: 'revoked' });
+    expect(fs.readdirSync(attachmentsDir('a'))).toEqual([]);
+    expect(fsp.writeFile).toHaveBeenCalledTimes(boundary === 'mkdir' || boundary === 'readdir' ? 0 : 1);
   });
 });

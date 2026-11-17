@@ -349,6 +349,7 @@ vi.mock('./icon-images', async (importOriginal) => {
   };
 });
 vi.mock('./project-store', () => ({
+  projectRegistryMutationState: () => ({ generation: 0, pending: false }),
   list: async () => { if (W.projectsThrow) throw new Error('disk gone'); return W.projects; },
   readIconData: async (icon: string) => (icon ? 'data:image/png;base64,iVBORw0KGgo=' : null),
   onProjectsChanged: () => () => {},
@@ -360,6 +361,7 @@ vi.mock('./agent-config', async () => {
   return {
     flushAgentConfig: async () => {},
     listDurable: async (projectPath: string) => W.durables[projectPath] ?? [],
+    peekCachedDurableConfig: (projectPath: string, id: string) => find(projectPath, id),
     readAgentIconData: async (icon: string) => (icon ? 'data:image/png;base64,R0lGODlhAQABAAAAACw=' : null),
     agentIconFilePath: async (icon: string) => (icon ? `R0lGODlhAQABAAAAACw=|${icon}` : null),
     createDurable: async (projectPath: string, name: string, color: string, model: string | undefined, _worktree: boolean, orchestrator: string, level: string | undefined) => {

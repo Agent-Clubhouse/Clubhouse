@@ -5,7 +5,7 @@ import type { HandoffTransferBounds } from '../../shared/handoff-manifest';
 import type { HandoffTransferRequest } from '../../shared/handoff-transfer';
 import type { HandoffSecretPolicy } from './handoff-secret-settings';
 import type { HandoffService } from './handoff-service';
-import { receiveHandoffSnapshot, HandoffTransferInterrupted } from './handoff-transfer-receiver';
+import { receiveHandoffSnapshot, HandoffTransferInterrupted, HandoffTransferRefused } from './handoff-transfer-receiver';
 import { receiveHandoffCommit } from './handoff-git-receive';
 import { applyHandoffSnapshot } from './handoff-apply';
 import { HandoffSnapshotError, readHandoffSnapshotManifest, verifyHandoffSnapshot } from './handoff-snapshot';
@@ -64,7 +64,7 @@ export class HandoffWorker {
     const step = error instanceof HandoffAuthorizationChanged ? 'authorization' : error instanceof HandoffProjectUnavailable ? 'apply' : verification ? 'verification' : attempt.step;
     const code = step === 'authorization' ? 'authorization_changed' : step === 'verification' ? 'verification_failed' : step === 'apply' ? 'apply_failed' : step === 'wake' ? 'wake_failed' : 'transfer_failed';
     await this.options.advance(record, { state: 'failed', failure: { step, code },
-      ...(error instanceof HandoffAuthorizationChanged || error instanceof HandoffProjectUnavailable || error instanceof HandoffSnapshotError ? { reason: error.message.slice(0, 512) } : {}) });
+      ...(error instanceof HandoffAuthorizationChanged || error instanceof HandoffProjectUnavailable || error instanceof HandoffSnapshotError || error instanceof HandoffTransferRefused ? { reason: error.message.slice(0, 512) } : {}) });
   }
   async run(id: string): Promise<void> {
     if (this.stopped || this.active.has(id) || this.active.size >= 2) return;

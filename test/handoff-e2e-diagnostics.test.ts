@@ -47,3 +47,15 @@ it('retains only classified Git details in failure history', () => {
   ]);
   expect(JSON.stringify(result)).not.toContain('private');
 });
+it('shows only allowlisted transfer guard labels in CI history', () => {
+  const value = handoffE2eDiagnostics({ history: [
+    { state: 'failed', reason: 'Handoff transfer refused: agreement_binding.' },
+    { state: 'failed', reason: 'Handoff transfer refused: lease_authority.' },
+    { state: 'failed', reason: 'Handoff transfer refused: private_path.' },
+  ] });
+  expect(value.history).toEqual([
+    { state: 'failed', reason: 'transfer', diagnostic: 'agreement_binding' },
+    { state: 'failed', reason: 'transfer', diagnostic: 'lease_authority' },
+    { state: 'failed', reason: 'redacted' },
+  ]);
+});

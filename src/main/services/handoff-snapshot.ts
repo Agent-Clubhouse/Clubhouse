@@ -1,3 +1,4 @@
+import { handoffTransferDiagnostic, tagHandoffTransferError } from '../../shared/handoff-transfer-diagnostics';
 import { execFile, spawn } from 'child_process';
 import { createHash, timingSafeEqual } from 'crypto';
 import * as fs from 'fs';
@@ -92,7 +93,7 @@ interface GitModeAuthority {
 function failure(error: unknown): HandoffSnapshotError {
   if (error instanceof Error && error.message === 'Invalid handoff manifest.') return new HandoffSnapshotError('unsafe_entry');
   if (error instanceof Error && error.message === 'Handoff manifest is too large.') return new HandoffSnapshotError('bounds_exceeded');
-  return error instanceof HandoffSnapshotError ? error : new HandoffSnapshotError('filesystem_failed');
+  return error instanceof HandoffSnapshotError ? error : tagHandoffTransferError(new HandoffSnapshotError('filesystem_failed'), handoffTransferDiagnostic(error));
 }
 
 function gitEnvironment(): NodeJS.ProcessEnv {
@@ -485,10 +486,11 @@ async function validateSourceLink(root: SourceRoot, name: string, bytes: Uint8Ar
   } catch { throw new HandoffSnapshotError('unsafe_entry', safeHandoffDiagnosticPath(name)); }
 }
 
-async function inspect(root: SourceRoot, source: SourceFile, sink?: (chunk: Uint8Array) => Promise<void>, gitObjectHash?: 'sha1' | 'sha256', policy?: HandoffSecretPolicy, onContent?: (bytes: Uint8Array) => void): Promise<string> {
+async function inspect(root: SourceRoot, source: SourceFile, sink?: (chunk: Uint8Array) => Promise<void>, gitObjectHash?: 'sha1' | 'sha256', policy?: HandoffSecretPolicy, onContent?: (bytes: Uint8Array) => void, beforeRead: () => void = () => {}): Promise<string> {
   if (source.stat.isSymbolicLink()) {
     const before = await sourceStat(root, source.path, false, true);
     if (!before || stamp(before) !== stamp(source.stat)) throw new HandoffSnapshotError('source_changed', source.path);
+    beforeRead();
     const bytes = await fs.promises.readlink(path.join(root.root, source.path), { encoding: 'buffer' });
     await validateSourceLink(root, source.path, bytes);
     const after = await sourceStat(root, source.path, false, true);
@@ -504,6 +506,7 @@ async function inspect(root: SourceRoot, source: SourceFile, sink?: (chunk: Uint
   if (source.link && source.stat.size > 4096n) throw new HandoffSnapshotError('unsafe_entry', source.path);
   const initial = await sourceStat(root, source.path);
   if (!initial || stamp(initial) !== stamp(source.stat)) throw new HandoffSnapshotError('source_changed', safeHandoffDiagnosticPath(source.path));
+  beforeRead();
   const handle = await fs.promises.open(path.join(root.root, source.path), fs.constants.O_RDONLY
     | (fs.constants.O_NOFOLLOW ?? 0) | (fs.constants.O_NONBLOCK ?? 0));
   try {
@@ -520,6 +523,7 @@ async function inspect(root: SourceRoot, source: SourceFile, sink?: (chunk: Uint
     if (gitObjectHash) hash.update(`blob ${size}\0`);
     let position = 0;
     while (position < size) {
+      beforeRead();
       const { bytesRead } = await handle.read(buffer, 0, Math.min(buffer.length, size - position), position);
       if (!bytesRead) throw new HandoffSnapshotError('source_changed', safeHandoffDiagnosticPath(source.path));
       const current = await sourceStat(root, source.path);
@@ -700,6 +704,7 @@ export async function verifyHandoffSnapshot(
   snapshotRoot: string, rawManifest: unknown, expected: HandoffManifestSummary,
   limits: HandoffTransferBounds = HANDOFF_TRANSFER_DEFAULTS,
   localPolicy?: { policy: HandoffSecretPolicy; handoffId: string; side?: 'sender' | 'receiver' },
+  beforeRead: () => void = () => {},
 ): Promise<HandoffSnapshot> {
   try {
     const bounds = validateHandoffBounds(limits);
@@ -716,7 +721,7 @@ export async function verifyHandoffSnapshot(
     if (manifest.bundle) {
       const stat = await sourceStat(source, 'bundle.bin');
       if (!stat || stat.size !== BigInt(manifest.bundle.size)) throw new HandoffSnapshotError('hash_mismatch', 'bundle.bin');
-      const actual = await inspect(source, { path: 'bundle.bin', stat });
+      const actual = await inspect(source, { path: 'bundle.bin', stat }, undefined, undefined, undefined, undefined, beforeRead);
       if (!timingSafeEqual(Buffer.from(actual, 'hex'), Buffer.from(manifest.bundle.sha256, 'hex'))) throw new HandoffSnapshotError('hash_mismatch', 'bundle.bin');
     }
     const filesRoot = await directory(path.join(root, 'files'), source);
@@ -728,7 +733,7 @@ export async function verifyHandoffSnapshot(
         file.mode === '120000' ? (bytes) => {
           try { links.set(file.path, handoffLinkTarget(bytes)); }
           catch { throw new HandoffSnapshotError('unsafe_entry', safeHandoffDiagnosticPath(file.path)); }
-        } : undefined);
+        } : undefined, beforeRead);
       if (!timingSafeEqual(Buffer.from(actual, 'hex'), Buffer.from(file.sha256, 'hex'))) throw new HandoffSnapshotError('hash_mismatch', safeHandoffDiagnosticPath(file.path));
     }
     try { assertInternalHandoffLinks(links); } catch { throw new HandoffSnapshotError('unsafe_entry'); }
@@ -743,7 +748,7 @@ export async function verifyHandoffSnapshot(
 /** A verified, pinned source descriptor: chunks never follow a later path replacement. */
 export async function openHandoffSnapshotArtifact(options: {
   snapshot: HandoffSnapshot; file: number; bounds?: HandoffTransferBounds;
-  policy?: HandoffSecretPolicy; handoffId: string; side?: 'sender' | 'receiver'; authorize(): Promise<void>;
+  policy?: HandoffSecretPolicy; handoffId: string; side?: 'sender' | 'receiver'; authorize(): Promise<void>; beforeOpen?: () => void;
 }) {
   let handle: FileHandle | undefined;
   try {
@@ -762,30 +767,33 @@ export async function openHandoffSnapshotArtifact(options: {
     const name = bundle ? 'bundle.bin' : manifest.files[options.file].path;
     const stat = await sourceStat(root, name);
     if (!stat || stat.size !== BigInt(artifact.size)) throw new HandoffSnapshotError('hash_mismatch', name);
-    const actual = await inspect(root, { path: name, stat }, undefined, undefined, options.policy);
+    const actual = await inspect(root, { path: name, stat }, undefined, undefined, options.policy, undefined, options.beforeOpen);
     if (!timingSafeEqual(Buffer.from(actual, 'hex'), Buffer.from(artifact.sha256, 'hex'))) throw new HandoffSnapshotError('hash_mismatch', name);
+    options.beforeOpen?.();
     handle = await fs.promises.open(path.join(root.root, name), fs.constants.O_RDONLY | (fs.constants.O_NOFOLLOW ?? 0) | (fs.constants.O_NONBLOCK ?? 0));
     const pinned = handle;
     const check = async () => {
-      await options.authorize(); options.policy?.assertCurrent();
       const current = await sourceStat(root, name);
       if (!current || stamp(current) !== stamp(stat) || stamp(await pinned.stat({ bigint: true })) !== stamp(stat)) throw new HandoffSnapshotError('source_changed', name);
+      await options.authorize(); options.policy?.assertCurrent();
     };
     await check(); await options.policy?.recordUse(options.handoffId, options.side ?? 'sender'); await check();
     return {
       size: artifact.size,
-      read: async (offset: number, maximum = 256 * 1024): Promise<Buffer> => {
+      read: async (offset: number, maximum = 256 * 1024, beforeRead: () => void = () => {}): Promise<Buffer> => {
         try {
           if (!Number.isSafeInteger(offset) || offset < 0 || offset > artifact.size || !Number.isSafeInteger(maximum) || maximum < 1 || maximum > 256 * 1024) throw new HandoffSnapshotError('unsafe_entry');
           await check();
+          beforeRead();
           const bytes = Buffer.alloc(Math.min(maximum, artifact.size - offset));
           let position = 0;
           while (position < bytes.length) {
+            beforeRead(); options.policy?.assertCurrent();
             const { bytesRead } = await pinned.read(bytes, position, bytes.length - position, offset + position);
             if (!bytesRead) throw new HandoffSnapshotError('source_changed', name);
             position += bytesRead;
           }
-          await check(); return bytes;
+          await check(); beforeRead(); return bytes;
         } catch (error) { throw failure(error); }
       },
       close: () => pinned.close(),

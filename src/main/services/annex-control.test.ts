@@ -42,11 +42,12 @@ class FakeSocket extends EventEmitter {
   private heldWrites: Array<() => void> = [];
   ping() { this.pings++; }
   drain() { const held = this.heldWrites; this.heldWrites = []; for (const cb of held) cb(); }
-  send(data: string, cb?: () => void) {
-    this.sent.push(JSON.parse(data));
+  send(data: string | Buffer, cb?: () => void) {
+    const binary = Buffer.isBuffer(data);
+    this.sent.push(binary ? { type: 'binary', bytes: data } : JSON.parse(data as string));
     if (cb) { if (this.holdWrites) this.heldWrites.push(cb); else queueMicrotask(cb); }
     const peer = this.peer;
-    if (peer) queueMicrotask(() => { if (peer.readyState === 1) peer.emit('message', Buffer.from(data), false); });
+    if (peer) queueMicrotask(() => { if (peer.readyState === 1) peer.emit('message', Buffer.from(data), binary); });
   }
   close(code: number, reason: string) {
     if (this.readyState === 3) return;
@@ -54,8 +55,8 @@ class FakeSocket extends EventEmitter {
     this.readyState = 3;
     const peer = this.peer;
     queueMicrotask(() => {
-      this.emit('close');
-      if (peer && peer.readyState !== 3) { peer.readyState = 3; peer.closed = { code, reason }; peer.emit('close'); }
+      this.emit('close', code);
+      if (peer && peer.readyState !== 3) { peer.readyState = 3; peer.closed = { code, reason }; peer.emit('close', code); }
     });
   }
   terminate() { this.close(1006, ''); }
@@ -279,14 +280,14 @@ describe('reverse request and response', () => {
   });
 
   it('refuses locally a request that cannot fit in a frame, without sending it', async () => {
-    const { requesterWs } = await connected();
+    const { requesterWs } = await connected(['request']);
     await expect(control.request(TARGET, { method: 'POST', path: '/x', body: Buffer.alloc(CONTROL_FRAME_MAX_BYTES) }))
       .rejects.toMatchObject({ code: 'request_too_large', indeterminate: false });
     expect(sentOfType(requesterWs, 'request')).toEqual([]);
   });
 
   it('answers response_too_large for an answer that cannot fit in a frame', async () => {
-    await connected();
+    await connected(['request']);
     handler = async () => ({ status: 200, headers: {}, body: Buffer.alloc(CONTROL_FRAME_MAX_BYTES, 0x61) });
     await expect(control.request(TARGET, { method: 'GET', path: '/big' })).rejects.toMatchObject({ code: 'response_too_large', indeterminate: false });
   });
@@ -1062,3 +1063,314 @@ describe('reverse /ws control frames over a subscription (P5)', () => {
   });
 });
 
+
+
+describe('binary bulk lane (P6)', () => {
+  it.each([0, 1, 65535, 65536, 65537, 3932160])('attachment bytes round trip with digest at size %i', async (size) => {
+    const { requesterWs, targetWs } = await connected();
+    const bytes = Buffer.alloc(size, 0xff);
+    handler = async (_principal, request) => ({ status: 200, headers: {}, body: Buffer.from(request.body ?? '', request.encoding === 'base64' ? 'base64' : 'utf8') });
+    const result = await control.request(TARGET, { method: 'POST', path: '/api/v1/mobile/agents/a/attachments', body: bytes });
+    expect(result.body.equals(bytes)).toBe(true);
+    expect(sentOfType(requesterWs, 'bulk').some((f) => f.op === 'finish')).toBe(true);
+    expect(sentOfType(targetWs, 'bulk').some((f) => f.op === 'finish')).toBe(true);
+    for (const ws of [requesterWs, targetWs]) for (const f of sentOfType(ws, 'binary')) expect((f.bytes as Buffer).length).toBeLessThanOrEqual(65576);
+  });
+
+  it('clipboard at the existing 10 MiB base64 cap travels on bulk for its subscription', async () => {
+    const { requesterWs } = await connected();
+    const sub = control.subscribe(TARGET, { onFrame: () => {}, onEnd: () => {} });
+    await flush();
+    const base64 = 'a'.repeat(10 * 1024 * 1024);
+    expect(sub.send({ type: 'clipboard:image', payload: { agentId: 'terminal', mimeType: 'image/png', base64 } })).toBe(true);
+    await vi.waitFor(() => expect(served[0].receive).toHaveBeenCalledTimes(1));
+    expect(JSON.parse(served[0].receive.mock.calls[0][0])).toEqual({ type: 'clipboard:image', payload: { agentId: 'terminal', mimeType: 'image/png', base64 } });
+    expect(sentOfType(requesterWs, 'client')).toHaveLength(0);
+  });
+
+  it('clipboard over cap is refused before allocating or sending bulk, with the direct error', async () => {
+    const { requesterWs } = await connected();
+    const onFrame = vi.fn();
+    const sub = control.subscribe(TARGET, { onFrame, onEnd: () => {} });
+    await flush();
+    expect(sub.send({ type: 'clipboard:image', payload: { base64: 'a'.repeat(10 * 1024 * 1024 + 1) } })).toBe(true);
+    expect(onFrame).toHaveBeenCalledWith({ type: 'error', payload: { message: 'clipboard:image data exceeds 10MB limit' } });
+    expect(sentOfType(requesterWs, 'bulk')).toHaveLength(0);
+    expect(served[0].receive).not.toHaveBeenCalled();
+  });
+
+  it('full event at 32 MiB and an uncapped text file above it round trip without a JSON body envelope', async () => {
+    await connected();
+    for (const [path, size] of [['/api/v1/mobile/agents/a/chat/events/1?sessionId=s', 32 * 1024 * 1024], ['/api/v1/projects/p/files/read?path=big', 33 * 1024 * 1024]] as const) {
+      const bytes = Buffer.alloc(size, 0x80);
+      handler = async () => ({ status: 200, headers: {}, body: bytes });
+      expect((await control.request(TARGET, { method: 'GET', path })).body.equals(bytes)).toBe(true);
+    }
+  }, 10_000);
+
+  it('bulk waits behind queued control traffic while small requests continue', async () => {
+    const { targetWs } = await connected();
+    targetWs.bufferedAmount = 256 * 1024;
+    handler = async (_p, request) => ({ status: 200, headers: {}, body: request.path === '/large' ? Buffer.alloc(100000) : Buffer.from('ok') });
+    const large = control.request(TARGET, { method: 'GET', path: '/large' });
+    await flush();
+    expect(sentOfType(targetWs, 'binary')).toHaveLength(0);
+    expect((await control.request(TARGET, { method: 'GET', path: '/small' })).body.toString()).toBe('ok');
+    targetWs.bufferedAmount = 0;
+    expect((await large).body.length).toBe(100000);
+  });
+
+  it('revocation at a pending binary write stops that write and rejects its requester', async () => {
+    const { targetWs } = await connected();
+    targetWs.bufferedAmount = 256 * 1024;
+    handler = async () => ({ status: 200, headers: {}, body: Buffer.alloc(100000) });
+    const result = control.request(TARGET, { method: 'GET', path: '/large' }).catch((e) => e);
+    await flush();
+    world.peer = undefined;
+    targetWs.bufferedAmount = 0;
+    expect(await result).toMatchObject({ code: 'authorization_revoked' });
+    expect(sentOfType(targetWs, 'binary')).toHaveLength(0);
+  });
+
+  it('cancelling a body in flight prevents dispatch and releases its transfer', async () => {
+    const { requesterWs } = await connected();
+    requesterWs.bufferedAmount = 256 * 1024;
+    const abort = new AbortController();
+    const result = control.request(TARGET, { method: 'POST', path: '/api/v1/mobile/agents/a/attachments', body: Buffer.alloc(100000) }, { signal: abort.signal }).catch((e) => e);
+    await flush(); abort.abort();
+    expect(await result).toMatchObject({ code: 'cancelled' });
+    requesterWs.bufferedAmount = 0; await flush();
+    expect(dispatch).not.toHaveBeenCalled();
+  });
+});
+
+
+describe('P6 bulk negative controls', () => {
+  it('attachment cap+1 returns the direct 413 without reading or dispatching bytes', async () => {
+    const { requesterWs } = await connected();
+    const answer = await control.request(TARGET, { method: 'POST', path: '/api/v1/mobile/agents/a/attachments', body: Buffer.alloc(3932161) });
+    expect(answer.status).toBe(413); expect(JSON.parse(answer.body.toString())).toEqual({ version: 1, error: 'too_large' });
+    expect(sentOfType(requesterWs, 'binary')).toHaveLength(0); expect(dispatch).not.toHaveBeenCalled();
+  });
+  it.each(['clipboard-owner', 'clipboard-size', 'request-size', 'direction', 'feature'])('refuses forged bulk %s before credit or dispatch', async (guard) => {
+    const { requesterWs, targetWs } = await connected(guard === 'feature' ? ['request'] : undefined);
+    const sub = guard.startsWith('clipboard') ? control.subscribe(TARGET, { onFrame: () => {}, onEnd: () => {} }) : null;
+    await flush();
+    const start = { v: 1, type: 'bulk', op: 'start', transfer: '00000000-0000-4000-8000-000000000001', id: sub?.id ?? 'r', kind: 'request', size: 1, meta: { method: 'POST', path: '/x' } };
+    if (guard.startsWith('clipboard')) Object.assign(start, { kind: 'client', id: guard === 'clipboard-owner' ? 'foreign' : sub!.id, size: guard === 'clipboard-size' ? 10 * 1024 * 1024 + 1 : 1, meta: { frame: { type: 'clipboard:image', payload: { agentId: 'a' } } } });
+    if (guard === 'request-size') start.size = CONTROL_FRAME_MAX_BYTES + 1;
+    const receiver = guard === 'direction' ? requesterWs : targetWs;
+    receiver.deliver(start);
+    expect(receiver.closed?.code).toBe(CONTROL_CLOSE_PROTOCOL);
+    expect(sentOfType(targetWs, 'bulk').filter((f) => f.op === 'credit')).toHaveLength(0);
+    expect(dispatch).not.toHaveBeenCalled();
+  });
+  it('cancels a bulk response while a socket write is waiting and frees all in-flight work', async () => {
+    const { targetWs } = await connected();
+    targetWs.bufferedAmount = 256 * 1024;
+    handler = async () => ({ status: 200, headers: {}, body: Buffer.alloc(100000) });
+    const abort = new AbortController();
+    const result = control.request(TARGET, { method: 'GET', path: '/large' }, { signal: abort.signal }).catch((e) => e);
+    await flush(); abort.abort(); targetWs.bufferedAmount = 0;
+    expect(await result).toMatchObject({ code: 'cancelled', indeterminate: false });
+    await new Promise((r) => setTimeout(r, 20));
+    expect(sentOfType(targetWs, 'binary')).toHaveLength(0);
+  });
+});
+
+describe('P6 existing binary response families', () => {
+  for (const path of ['/api/v1/network/handoffs/transfer', '/api/v1/mobile/agents/a/content?ref=r', '/api/v1/icons/agents/a']) {
+    it.each([0, 1, 65535, 65536, 65537])(`${path}: exact bytes and digest at size %i`, async (size) => {
+      const { targetWs } = await connected();
+      const bytes = Buffer.alloc(size, 0xff);
+      handler = async () => ({ status: 200, headers: { 'content-type': 'application/octet-stream' }, body: bytes });
+      const result = await control.request(TARGET, { method: 'GET', path });
+      expect(result.body.equals(bytes)).toBe(true);
+      expect(sentOfType(targetWs, 'bulk').some((f) => f.op === 'finish')).toBe(true);
+    });
+  }
+  it.each([
+    ['/api/v1/network/handoffs/transfer', 3 * 1024 * 1024],
+    ['/api/v1/mobile/agents/a/content?ref=r', 8 * 1024 * 1024],
+    ['/api/v1/icons/agents/a', 72 * 1024],
+  ] as const)('%s carries its existing cap without a tighter frame cap', async (path, size) => {
+    await connected(); const bytes = Buffer.alloc(size, 0xff);
+    handler = async () => ({ status: 200, headers: {}, body: bytes });
+    expect((await control.request(TARGET, { method: 'GET', path })).body.equals(bytes)).toBe(true);
+  });
+  it('negotiated binary flows cannot bypass the digest with a legacy JSON client frame', async () => {
+    const { targetWs } = await connected();
+    const sub = control.subscribe(TARGET, { onFrame: () => {}, onEnd: () => {} }); await flush();
+    targetWs.deliver({ v: 1, type: 'client', id: sub.id, frame: { type: 'clipboard:image', payload: { base64: 'a' } } });
+    expect(targetWs.closed?.code).toBe(CONTROL_CLOSE_PROTOCOL); expect(served[0].receive).not.toHaveBeenCalled();
+  });
+  it('negotiated binary flows cannot bypass the digest with a legacy JSON request body', async () => {
+    const { targetWs } = await connected();
+    targetWs.deliver({ v: 1, type: 'request', id: 'forged', method: 'POST', path: '/api/v1/mobile/agents/a/attachments', body: 'a' });
+    expect(targetWs.closed?.code).toBe(CONTROL_CLOSE_PROTOCOL); expect(dispatch).not.toHaveBeenCalled();
+  });
+  it('negotiated binary flows cannot bypass the digest with a legacy successful JSON answer', async () => {
+    const { requesterWs } = await connected(); handler = async () => new Promise(() => {});
+    const result = control.request(TARGET, { method: 'GET', path: '/api/v1/icons/agents/a' }, { requestId: 'forged' }).catch((e) => e);
+    requesterWs.deliver({ v: 1, type: 'response', id: 'forged', status: 200, headers: {}, body: 'a', encoding: 'utf8' });
+    expect(requesterWs.closed?.code).toBe(CONTROL_CLOSE_PROTOCOL); expect(await result).toMatchObject({ code: 'transport_unavailable' });
+  });
+});
+
+
+it('P6 concurrent clipboard images retain distinct transfer tokens on the same subscription', async () => {
+  await connected();
+  const sub = control.subscribe(TARGET, { onFrame: () => {}, onEnd: () => {} });
+  await flush();
+  expect(sub.send({ type: 'clipboard:image', payload: { agentId: 'a', mimeType: 'image/png', base64: 'YQ==' } })).toBe(true);
+  expect(sub.send({ type: 'clipboard:image', payload: { agentId: 'a', mimeType: 'image/png', base64: 'Yg==' } })).toBe(true);
+  await vi.waitFor(() => expect(served[0].receive).toHaveBeenCalledTimes(2));
+  expect(served[0].receive.mock.calls.map((call) => JSON.parse(call[0]).payload.base64)).toEqual(['YQ==', 'Yg==']);
+});
+
+
+it('P6 rich content preserves the existing 8 MiB raw cap after base64 and JSON encoding', async () => {
+  await connected();
+  const raw = Buffer.alloc(8 * 1024 * 1024, 0xff);
+  const response = Buffer.from(JSON.stringify({ kind: 'image', name: 'media', mimeType: 'image/png', base64: raw.toString('base64') }));
+  handler = async () => ({ status: 200, headers: { 'content-type': 'application/json' }, body: response });
+  const result = await control.request(TARGET, { method: 'GET', path: '/api/v1/mobile/agents/a/content?mediaRef=m' });
+  expect(result.body.equals(response)).toBe(true);
+});
+
+for (const [path, cap] of [['/api/v1/icons/agents/a', 72 * 1024], ['/api/v1/network/handoffs/transfer', 3 * 1024 * 1024]] as const) {
+  it(`P6 ${path}: existing cap is accepted, cap+1 is refused before any binary frame`, async () => {
+    const { targetWs } = await connected();
+    handler = async () => ({ status: 200, headers: {}, body: Buffer.alloc(cap, 0xff) });
+    expect((await control.request(TARGET, { method: 'GET', path })).body.length).toBe(cap);
+    const written = sentOfType(targetWs, 'binary').length;
+    handler = async () => ({ status: 200, headers: {}, body: Buffer.alloc(cap + 1, 0xff) });
+    await expect(control.request(TARGET, { method: 'GET', path })).rejects.toMatchObject({ code: 'transport_unavailable' });
+    expect(sentOfType(targetWs, 'binary')).toHaveLength(written);
+  });
+}
+
+it('P6 bulk progress refreshes request inactivity without extending unrelated request timers', async () => {
+  vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+  const { targetWs } = await connected();
+  targetWs.bufferedAmount = 256 * 1024;
+  let release!: () => void;
+  const gate = new Promise<void>((r) => { release = r; });
+  handler = async () => { await gate; return { status: 200, headers: {}, body: Buffer.alloc(100000) }; };
+  let settled = false;
+  const result = control.request(TARGET, { method: 'GET', path: '/large' }).then((r) => { settled = true; return r; }, (e) => { settled = true; return e; });
+  await vi.advanceTimersByTimeAsync(25_000);
+  release(); await flush();
+  await vi.advanceTimersByTimeAsync(6_000);
+  expect(settled).toBe(false);
+  targetWs.bufferedAmount = 0;
+  await vi.advanceTimersByTimeAsync(20); await flush();
+  expect((await result).body.length).toBe(100000);
+});
+
+it('QA adversarial: a completed clipboard transfer UUID cannot be replayed', async () => {
+  const { createHash } = await import('crypto');
+  const { targetWs } = await connected();
+  const sub = control.subscribe(TARGET, { onFrame: () => {}, onEnd: () => {} });
+  await flush();
+  const transfer = '00000000-0000-4000-8000-000000000001';
+  const start = { v: 1, type: 'bulk', op: 'start', transfer, id: sub.id, kind: 'client', size: 4, meta: { frame: { type: 'clipboard:image', payload: { agentId: 'a', mimeType: 'image/png' } } } };
+  const bytes = Buffer.alloc(44); bytes.write(transfer, 0, 36); bytes.writeUInt32BE(0, 36); bytes.write('YQ==', 40);
+  const finish = { v: 1, type: 'bulk', op: 'finish', transfer, id: sub.id, digest: createHash('sha256').update('YQ==').digest('hex') };
+  targetWs.deliver(start); targetWs.emit('message', bytes, true); targetWs.deliver(finish);
+  expect(served[0].receive).toHaveBeenCalledTimes(1);
+  targetWs.deliver(start); targetWs.emit('message', bytes, true); targetWs.deliver(finish);
+  expect(served[0].receive).toHaveBeenCalledTimes(1);
+});
+
+it('QA adversarial: a cancelled UUID cannot rebind old bytes to a new operation', async () => {
+  const { createHash } = await import('crypto');
+  const { targetWs } = await connected();
+  const transfer = '00000000-0000-4000-8000-000000000001';
+  const start = { v: 1, type: 'bulk', op: 'start', transfer, id: 'old-op', kind: 'request', size: 1, meta: { method: 'GET', path: '/x' } };
+  targetWs.deliver(start);
+  targetWs.deliver({ ...start, op: 'cancel' });
+  targetWs.deliver({ ...start, id: 'new-op' });
+  const bytes = Buffer.alloc(41); bytes.write(transfer, 0, 36); bytes.writeUInt32BE(0, 36); bytes.write('a', 40);
+  targetWs.emit('message', bytes, true);
+  targetWs.deliver({ v: 1, type: 'bulk', op: 'finish', transfer, id: 'new-op', digest: createHash('sha256').update('a').digest('hex') });
+  await flush();
+  expect(dispatch).not.toHaveBeenCalled();
+});
+
+function clipboardTransfer(transfer: string, id: string, text = 'YQ==') {
+  const start = { v: 1, type: 'bulk', op: 'start', transfer, id, kind: 'client', size: text.length, meta: { frame: { type: 'clipboard:image', payload: { agentId: 'a', mimeType: 'image/png' } } } };
+  const bytes = Buffer.alloc(40 + text.length); bytes.write(transfer, 0, 36); bytes.writeUInt32BE(0, 36); bytes.write(text, 40);
+  return { start, bytes };
+}
+it.each(['completed', 'cancelled'])('P6 late chunks and cancels for a %s UUID never dispatch or damage a fresh transfer', async (state) => {
+  const { createHash, randomUUID } = await import('crypto');
+  const { targetWs } = await connected();
+  const sub = control.subscribe(TARGET, { onFrame: () => {}, onEnd: () => {} }); await flush();
+  const old = clipboardTransfer(randomUUID(), sub.id);
+  const finish = { v: 1, type: 'bulk', op: 'finish', transfer: old.start.transfer, id: sub.id, digest: createHash('sha256').update('YQ==').digest('hex') };
+  targetWs.deliver(old.start);
+  if (state === 'completed') { targetWs.emit('message', old.bytes, true); targetWs.deliver(finish); }
+  else targetWs.deliver({ ...old.start, op: 'cancel' });
+  targetWs.emit('message', old.bytes, true); targetWs.deliver(finish); targetWs.deliver({ ...old.start, op: 'cancel' });
+  expect(served[0].receive).toHaveBeenCalledTimes(state === 'completed' ? 1 : 0);
+  const fresh = clipboardTransfer(randomUUID(), sub.id);
+  targetWs.deliver(fresh.start); targetWs.emit('message', fresh.bytes, true);
+  targetWs.deliver({ ...finish, transfer: fresh.start.transfer });
+  expect(targetWs.closed).toBeNull();
+  expect(served[0].receive).toHaveBeenCalledTimes(state === 'completed' ? 2 : 1);
+});
+it('P6 used UUIDs from the opposite direction cannot become incoming transfers', async () => {
+  const { targetWs } = await connected();
+  handler = async () => ({ status: 200, headers: {}, body: Buffer.from('a') });
+  await control.request(TARGET, { method: 'GET', path: '/api/v1/icons/agents/a' });
+  const outbound = sentOfType(targetWs, 'bulk').find((f) => f.op === 'start')!;
+  const sub = control.subscribe(TARGET, { onFrame: () => {}, onEnd: () => {} }); await flush();
+  targetWs.deliver(clipboardTransfer(outbound.transfer as string, sub.id).start);
+  expect(targetWs.closed?.code).toBe(CONTROL_CLOSE_PROTOCOL);
+  expect(served[0].receive).not.toHaveBeenCalled();
+});
+it('P6 lifetime tombstone capacity closes without evicting history', async () => {
+  const { createHash, randomUUID } = await import('crypto');
+  control._setBulkTokenLimitForTesting(3);
+  const { targetWs } = await connected();
+  const sub = control.subscribe(TARGET, { onFrame: () => {}, onEnd: () => {} }); await flush();
+  for (let i = 0; i < 3; i++) {
+    const start = clipboardTransfer(randomUUID(), sub.id, '').start;
+    targetWs.deliver(start);
+    targetWs.deliver({ ...start, op: 'finish', digest: createHash('sha256').update('').digest('hex') });
+  }
+  expect(served[0].receive).toHaveBeenCalledTimes(3);
+  targetWs.deliver(clipboardTransfer(randomUUID(), sub.id).start);
+  expect(targetWs.closed?.code).toBe(CONTROL_CLOSE_PROTOCOL);
+  expect(served[0].receive).toHaveBeenCalledTimes(3);
+});
+it('P6 a fresh connection has isolated UUID history and old socket bytes cannot reach it', async () => {
+  const { createHash, randomUUID } = await import('crypto');
+  const old = await connected();
+  const sub = control.subscribe(TARGET, { onFrame: () => {}, onEnd: () => {} }); await flush();
+  const transfer = clipboardTransfer(randomUUID(), sub.id);
+  old.targetWs.deliver(transfer.start); old.targetWs.deliver({ ...transfer.start, op: 'cancel' });
+  old.targetWs.close(1001, 'reconnect'); await flush();
+  const next = await connected();
+  const current = control.subscribe(TARGET, { onFrame: () => {}, onEnd: () => {} }); await flush();
+  old.targetWs.emit('message', transfer.bytes, true);
+  const fresh = clipboardTransfer(transfer.start.transfer, current.id);
+  next.targetWs.deliver(fresh.start); next.targetWs.emit('message', fresh.bytes, true);
+  next.targetWs.deliver({ ...fresh.start, op: 'finish', digest: createHash('sha256').update('YQ==').digest('hex') });
+  expect(served[0].receive).not.toHaveBeenCalled(); expect(served[1].receive).toHaveBeenCalledOnce();
+  expect(next.targetWs.closed).toBeNull();
+});
+
+it.each(['unknown', 'wrong-operation'])('P6 late cancel %s cannot alter UUID ownership', async (reason) => {
+  const { createHash, randomUUID } = await import('crypto');
+  const { targetWs } = await connected();
+  const sub = control.subscribe(TARGET, { onFrame: () => {}, onEnd: () => {} }); await flush();
+  const transfer = clipboardTransfer(randomUUID(), sub.id);
+  if (reason === 'wrong-operation') {
+    targetWs.deliver(transfer.start); targetWs.emit('message', transfer.bytes, true);
+    targetWs.deliver({ ...transfer.start, op: 'finish', digest: createHash('sha256').update('YQ==').digest('hex') });
+  }
+  targetWs.deliver({ ...transfer.start, op: 'cancel', id: 'foreign' });
+  expect(targetWs.closed?.code).toBe(CONTROL_CLOSE_PROTOCOL);
+});

@@ -1,4 +1,5 @@
-import { getAgentGrantChanges } from './agent-grants-store';
+import { tagHandoffTransferError, type HandoffTransferDiagnostic } from '../../shared/handoff-transfer-diagnostics';
+import { getAgentGrantChanges, getAgentGrantRevision } from './agent-grants-store';
 import { localDirectionTools } from '../../shared/connection-grants';
 import { deliverNow } from './clubhouse-mcp/tools/helper-delivery';
 import { handoffProjectsLinked } from './handoff-project-links';
@@ -26,13 +27,13 @@ import * as annexClient from './annex-client';
 import { isNetworkComputer } from './annex-agent-calls';
 import { agentRegistry } from './agent-registry';
 import { getAgentRuntime } from './agent-runtime';
-import { peekDurableConfigs } from './agent-config';
+import { agentConfigGeneration, peekDurableConfigs } from './agent-config';
 import { peekProjects } from './project-store';
 import { getDispatcherState, isDispatcherAgentId } from './dispatcher/dispatcher-service';
 import { effectiveAgentGrants } from './agent-grants-service';
-import { getConnectionDirection, localConnectionWakeOn } from './connection-grants-store';
+import { getConnectionDirection, localConnectionWakeOn, onConnectionGrantsChanged } from './connection-grants-store';
 import { bindingManager } from './clubhouse-mcp/binding-manager';
-import { notifyToolGateChange } from './clubhouse-mcp/orchestration-gate';
+import { notifyToolGateChange, onOrchestrationGateChange, isOrchestrationEnabled, isCrossProjectEnabled, orchestrationControl } from './clubhouse-mcp/orchestration-gate';
 import { callerGrants } from './clubhouse-mcp/grant-check';
 import { callTool, setHandoffParticipantCheck } from './clubhouse-mcp/tool-registry';
 import { handoffAgreementCallApproved } from './clubhouse-mcp/handoff-permissions';
@@ -189,6 +190,62 @@ function grantPolicyStamp(agents: HandoffAgent[]): string {
   return JSON.stringify(agents.filter((agent) => agent.machine === ownMachine()).map((agent) => [agent.agentId, getAgentGrantChanges(agent.agentId)]));
 }
 
+/** Per-operation lease, captured before asynchronous authorization/verification.
+ * Revisions detect revoke-and-restore; notifications invalidate connection and
+ * orchestration policy too. Disposal follows actual work, including timeouts. */
+function transferAuthority(record: Handoff, peer: string) {
+  const agents = [record.from, ...(record.acceptance ? [record.acceptance.by, record.acceptance.target] : [])];
+  const localIds = new Set(agents.filter((a) => a.machine === ownMachine()).map((a) => a.agentId));
+  const stamp = () => JSON.stringify([agentConfigGeneration(), grantPolicyStamp(agents),
+    [...localIds].map((id) => getAgentGrantRevision(id)), getDispatcherState().enabled, getDispatcherState().agentId,
+    [...localIds].map((id) => [id, isOrchestrationEnabled(id), isCrossProjectEnabled(id), orchestrationControl(id), callerGrants(id)])]);
+  const expected = stamp();
+  const participants = [...agents, ...('agentId' in record.to ? [record.to] : [])];
+  const targets = new Set(participants.map(addressText));
+  // Labels/instructions and bindings to other targets do not authorize this
+  // handoff. Effective caller grants are captured separately in stamp().
+  const bindingStamp = (part: 'membership' | 'permissions') => JSON.stringify([...localIds].map((id) =>
+    [id, bindingManager.getBindingsForAgent(id).filter((wire) => wire.targetKind === 'agent' && targets.has(wire.targetId))
+      .map((wire) => [wire.targetKind, wire.targetId, ...(part === 'permissions'
+        ? [[...new Set(wire.disabledTools ?? [])].sort(), [...new Set(wire.enabledTools ?? [])].sort()] : [])])
+      .sort((a, b) => JSON.stringify(a).localeCompare(JSON.stringify(b)))]));
+  const bindings = { membership: bindingStamp('membership'), permissions: bindingStamp('permissions') };
+  let changed = false;
+  let changeReason: HandoffTransferDiagnostic = 'lease_notification';
+  const authorityDiagnostic = (): HandoffTransferDiagnostic => {
+    const before = JSON.parse(expected) as unknown[]; const current = JSON.parse(stamp()) as unknown[];
+    const codes = ['lease_config_generation', 'lease_saved_grants', 'lease_grant_revision', 'lease_dispatcher', 'lease_dispatcher', 'lease_agent_authority'] as const;
+    return codes.find((_, index) => JSON.stringify(before[index]) !== JSON.stringify(current[index])) ?? 'lease_authority';
+  };
+  const off = [onConnectionGrantsChanged(() => { changed = true; changeReason = 'lease_connection_notification'; }),
+    bindingManager.onChange((id) => {
+      if (!localIds.has(id)) return;
+      const authorityChanged = stamp() !== expected;
+      const membershipChanged = bindingStamp('membership') !== bindings.membership;
+      const permissionsChanged = bindingStamp('permissions') !== bindings.permissions;
+      if (!authorityChanged && !membershipChanged && !permissionsChanged) return;
+      // Sticky even when the binding or its switches are restored before I/O
+      // resumes. Benign refreshes cannot overwrite the real invalidation.
+      changed = true;
+      changeReason = authorityChanged ? authorityDiagnostic() : membershipChanged ? 'lease_binding_membership' : 'lease_binding_permissions';
+    }),
+    // This also announces handoff acceptance/progress and tool-list refreshes.
+    // Invalidate only a real authority change, retaining the invalidation even
+    // if the setting is restored before the pending filesystem await resolves.
+    onOrchestrationGateChange((id) => { if (localIds.has(id) && stamp() !== expected) { changed = true; changeReason = authorityDiagnostic(); } })];
+  return {
+    check: () => {
+      if (changed || stamp() !== expected || bindingStamp('permissions') !== bindings.permissions || peer !== ownMachine() && !isNetworkComputer(peer)
+        || record.to.machine !== ownMachine() && !isNetworkComputer(record.to.machine)
+        || record.from.machine !== ownMachine() && (!isNetworkComputer(record.from.machine) || !acceptsRemote())
+        || 'agentId' in record.to && !(record.to.machine === ownMachine() && isDispatcherAgentId(record.to.agentId))
+          && !hasConnection(record.from, record.to)) throw tagHandoffTransferError(new HandoffAuthorizationChanged(), changed ? changeReason : stamp() !== expected ? authorityDiagnostic() : bindingStamp('permissions') !== bindings.permissions
+            ? bindingStamp('membership') !== bindings.membership ? 'lease_binding_membership' : 'lease_binding_permissions' : 'lease_peer');
+    },
+    dispose: () => { for (const unsubscribe of off) unsubscribe(); },
+  };
+}
+
 async function authorizeSelectedTarget(record: Handoff, by: HandoffAgent, target: HandoffAgent): Promise<() => boolean> {
   if (sameHandoffAgent(by, target)) return () => true; // The receiver consumed its own exact approval.
   const machine = ownMachine();
@@ -297,7 +354,7 @@ export function handoffHost(): Host {
     },
   });
   const transfer = new HandoffTransferSource({
-    machine, record: (id) => store.get(id), prepared: preparedSourceForRecord,
+    machine, record: (id) => store.get(id), prepared: preparedSourceForRecord, authority: transferAuthority,
     authorize: async (record, peer) => {
       if (peer !== machine && !isNetworkComputer(peer)
         || !await authorize({ record, actor: record.from, action: 'handoff.offer', stage: 'transferring' })) throw new Error('Handoff transfer unavailable.');
@@ -460,9 +517,9 @@ export async function defaultHandoffReceivingAgent(agentId: string, id: string) 
 }
 
 /** Internal same-machine reads use this boundary too; the HTTP route supplies its pinned peer. */
-export async function receiveHandoffTransfer(machine: string, body: unknown) {
+export async function receiveHandoffTransfer(machine: string, body: unknown, beforeRead?: () => void) {
   if (machine !== ownMachine() && !isNetworkComputer(machine)) throw new Error('Handoff transfer unavailable.');
-  return handoffHost().transfer.receive(machine, body);
+  return handoffHost().transfer.receive(machine, body, beforeRead);
 }
 
 const incomingRates = new Map<string, number[]>();

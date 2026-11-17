@@ -12,6 +12,11 @@ import forgeLib from 'node-forge';
 import net from 'net';
 import { PassThrough } from 'stream';
 import fs from 'fs';
+import * as fsp from 'fs/promises';
+vi.mock('fs/promises', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('fs/promises')>();
+  return { ...actual, mkdir: vi.fn(actual.mkdir), readdir: vi.fn(actual.readdir), writeFile: vi.fn(actual.writeFile), realpath: vi.fn(actual.realpath) };
+});
 import os from 'os';
 import path from 'path';
 import * as nodeCrypto from 'crypto';
@@ -153,6 +158,7 @@ vi.mock('./log-service', () => ({
 
 // Mock project-store
 vi.mock('./project-store', () => ({
+  projectRegistryMutationState: vi.fn(() => ({ generation: 0, pending: false })),
   list: vi.fn().mockReturnValue([]),
   readIconData: vi.fn().mockReturnValue(null),
   iconFilePath: vi.fn(),
@@ -160,8 +166,11 @@ vi.mock('./project-store', () => ({
 }));
 
 // Mock agent-config
-vi.mock('./agent-config', () => ({
-  listDurable: vi.fn().mockReturnValue([]),
+vi.mock('./agent-config', () => {
+  const listDurable = vi.fn().mockReturnValue([]);
+  return {
+  listDurable,
+  peekCachedDurableConfig: (_projectPath: string, id: string) => listDurable(_projectPath).find((config: { id: string }) => config.id === id) ?? null,
   readAgentIconData: vi.fn().mockReturnValue(null),
   agentIconFilePath: vi.fn(),
   createDurable: vi.fn().mockResolvedValue({ id: 'durable_new', name: 'test-agent', color: 'indigo', createdAt: '2025-01-01' }),
@@ -170,7 +179,8 @@ vi.mock('./agent-config', () => ({
   deleteCommitAndPush: vi.fn().mockResolvedValue({ ok: true, message: 'Committed and pushed' }),
   deleteWithCleanupBranch: vi.fn().mockResolvedValue({ ok: true, message: 'Cleanup branch created' }),
   getWorktreeStatus: vi.fn().mockResolvedValue({ isValid: true, branch: 'main', uncommittedFiles: [], unpushedCommits: [], hasRemote: true }),
-}));
+};
+});
 
 // The delete service (#3199): its own tests cover settling helpers and stopping the agent.
 vi.mock('./agent-delete', () => ({
@@ -2062,10 +2072,10 @@ describe('annex-server', () => {
     const body = { op: 'read', id: nodeCrypto.randomUUID(), file: 0, offset: 0 };
     const response = await request(port, 'POST', route, body);
     expect(response.status).toBe(200); expect(JSON.parse(response.body)).toEqual(chunk);
-    expect(receiveHandoffTransfer).toHaveBeenCalledWith(member.fingerprint, body);
+    expect(receiveHandoffTransfer).toHaveBeenCalledWith(member.fingerprint, body, expect.any(Function));
     vi.mocked(receiveHandoffTransfer).mockRejectedValueOnce(new Error('private-host/private-path secret'));
     const failed = await request(port, 'POST', route, body);
-    expect(failed.status).toBe(400); expect(JSON.parse(failed.body)).toEqual({ error: 'handoff_transfer_refused' });
+    expect(failed.status).toBe(400); expect(JSON.parse(failed.body)).toEqual({ error: 'handoff_transfer_refused', reason: 'unknown' });
     vi.mocked(annexPeers.listPeers).mockReturnValue([{ ...member, kind: 'phone' }]);
     expect((await request(port, 'POST', route, body)).status).toBe(403);
     expect(receiveHandoffTransfer).toHaveBeenCalledTimes(2);
@@ -2562,6 +2572,12 @@ describe('annex-server', () => {
         expect(Number(limited!.headers['retry-after'])).toBeGreaterThan(0);
       } finally { clearChatRuntimes(); }
     }, 15000);
+
+    it('P6 clipboard entry point refuses over the existing cap before decoding or touching a file', () => {
+      const write = vi.spyOn(fs, 'writeFileSync');
+      expect(annexServer.handleClipboardImage('pty-1', 'a'.repeat(10 * 1024 * 1024 + 1), 'image/png')).toEqual({ code: 'too_large', message: 'clipboard:image data exceeds 10MB limit' });
+      expect(write).not.toHaveBeenCalled(); write.mockRestore();
+    });
 
     it('refuses clipboard:image for chat agents and sniffs the bytes for terminal agents (#2453)', () => {
       vi.mocked(ptyManagerModule.write).mockClear();
@@ -8776,6 +8792,85 @@ describe('annex-server', () => {
       };
       return { ws, ask, send, cancel };
     }
+
+    /** Both ends of the real control transport, using the server's actual route dispatcher. */
+    async function bulkLink() {
+      const make = () => Object.assign(new EventEmitter(), {
+        readyState: 1, bufferedAmount: 0, sent: [] as any[], peer: undefined as any,
+        send(data: string | Buffer, cb?: () => void) {
+          this.sent.push(Buffer.isBuffer(data) ? { binary: data.length } : JSON.parse(data));
+          queueMicrotask(() => { cb?.(); if (this.peer.readyState === 1) this.peer.emit('message', Buffer.from(data), Buffer.isBuffer(data)); });
+        },
+        ping() {}, terminate() {}, close(code: number) { if (this.readyState !== 1) return; this.readyState = 3; this.emit('close', code); if (this.peer.readyState === 1) { this.peer.readyState = 3; this.peer.emit('close', code); } },
+      });
+      const incoming = make(); const outgoing = make(); incoming.peer = outgoing; outgoing.peer = incoming;
+      annexControl._attachForTesting(incoming as never, MEMBER.fingerprint, MEMBER.tlsCertificateFingerprint, 'in');
+      annexControl._attachForTesting(outgoing as never, MEMBER.fingerprint, MEMBER.tlsCertificateFingerprint, 'out');
+      annexControl._sendHelloForTesting(MEMBER.fingerprint);
+      await vi.waitFor(() => expect(annexControl.hasReverseLink(MEMBER.fingerprint, 'bulk')).toBe(true));
+      return { incoming, outgoing };
+    }
+
+    it('P6 bulk reaches real attachment staging and retains the uploader identity for chat.send', async () => {
+      await startAndPair(); await bulkLink();
+      vi.mocked(projectStore.list).mockReturnValue([PROJECT] as any);
+      vi.mocked(agentConfigModule.listDurable).mockReturnValue([{ id: 'a', name: 'agent', color: 'blue', createdAt: '2026-01-01' }] as any);
+      const sendMessage = vi.fn().mockResolvedValue({ delivery: 'prompt', messageId: 'm1' });
+      registerChatRuntime({ kind: 'chat', agentId: 'a', isRunning: () => true, getState: () => 'idle', getSessionId: () => 's', getCapabilities: () => ({ images: true }), sendMessage, readTranscript: async () => ({ events: [] }) } as any);
+      try {
+        const png = Buffer.concat([Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]), Buffer.alloc(65536)]);
+        const uploaded = await annexControl.request(MEMBER.fingerprint, { method: 'POST', path: '/api/v1/mobile/agents/a/attachments', headers: { 'content-type': 'image/png' }, body: png });
+        expect(uploaded.status).toBe(200);
+        const image = JSON.parse(uploaded.body.toString());
+        expect(image).toMatchObject({ version: 1, bytes: png.length, mimeType: 'image/png' });
+        const caps = await annexControl.request(MEMBER.fingerprint, { method: 'GET', path: '/api/v1/mobile/capabilities' });
+        const sent = await annexControl.request(MEMBER.fingerprint, { method: 'POST', path: '/api/v1/mobile/commands', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ version: 1, epoch: JSON.parse(caps.body.toString()).epoch, commandId: 'p6-photo', type: 'chat.send', agentId: 'a', sessionId: 's', text: '', attachmentIds: [image.attachmentId] }) });
+        expect(JSON.parse(sent.body.toString())).toMatchObject({ status: 'completed' });
+        expect(sendMessage).toHaveBeenCalledWith([{ type: 'image', mimeType: 'image/png', path: expect.stringContaining('chat-attachments'), name: 'phone-image' }], expect.any(Object));
+      } finally { clearChatRuntimes(); }
+    }, 15_000);
+
+    it.each(['stopped', 'replaced', 'disposed', 'removed', 'project-removed'])('P6 attachment %s during real staging readdir refuses before write', async (change) => {
+      await startAndPair(); await bulkLink();
+      vi.mocked(projectStore.list).mockReturnValue([PROJECT] as any);
+      const config = { id: 'a', name: 'agent', color: 'blue', createdAt: '2026-01-01' };
+      vi.mocked(agentConfigModule.listDurable).mockReturnValue([config] as any);
+      let running = true;
+      const runtime = { kind: 'chat', agentId: 'a', isRunning: () => running, getState: () => 'idle', getSessionId: () => 's', getCapabilities: () => ({ images: true }), sendMessage: vi.fn(), readTranscript: async () => ({ events: [] }) };
+      registerChatRuntime(runtime as any);
+      const actual = await vi.importActual<typeof import('fs/promises')>('fs/promises');
+      let release!: () => void; let enter!: () => void;
+      const gate = new Promise<void>((r) => { release = r; });
+      const entered = new Promise<void>((r) => { enter = r; });
+      vi.mocked(fsp.readdir).mockImplementationOnce((async (...args: Parameters<typeof actual.readdir>) => {
+        const result = await actual.readdir(...args); enter(); await gate; return result;
+      }) as typeof fsp.readdir);
+      const writes = vi.mocked(fsp.writeFile).mock.calls.length;
+      const png = Buffer.concat([Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]), Buffer.alloc(32)]);
+      const pending = annexControl.request(MEMBER.fingerprint, { method: 'POST', path: '/api/v1/mobile/agents/a/attachments', headers: { 'content-type': 'image/png' }, body: png });
+      try {
+        await entered;
+        if (change === 'stopped') running = false;
+        else if (change === 'replaced') registerChatRuntime({ ...runtime } as any);
+        else if (change === 'project-removed') vi.mocked(projectStore.projectRegistryMutationState).mockReturnValue({ generation: 1, pending: false });
+        else if (change === 'disposed') vi.mocked(agentConfigModule.listDurable).mockReturnValue([{ ...config, disposedAt: '2026-01-02' }] as any);
+        else vi.mocked(agentConfigModule.listDurable).mockReturnValue([]);
+        release();
+        const result = await pending;
+        expect(result.status).toBe(change === 'stopped' || change === 'replaced' ? 409 : 404);
+        expect(vi.mocked(fsp.writeFile).mock.calls.length).toBe(writes);
+      } finally { release(); clearChatRuntimes(); vi.mocked(projectStore.projectRegistryMutationState).mockReturnValue({ generation: 0, pending: false }); }
+    }, 15_000);
+
+    it('P6 real file route preserves uncapped text beyond the old control-frame cap', async () => {
+      await startAndPair(); const link = await bulkLink();
+      vi.mocked(projectStore.list).mockReturnValue([PROJECT] as any);
+      const text = 'x'.repeat(9 * 1024 * 1024);
+      vi.mocked(fileServiceModule.readFile).mockResolvedValue(text);
+      const result = await annexControl.request(MEMBER.fingerprint, { method: 'GET', path: '/api/v1/projects/proj_r/files/read?path=big.txt' });
+      expect(result.status).toBe(200); expect(result.body.toString() === text).toBe(true);
+      expect(link.outgoing.sent.some((frame) => frame.binary)).toBe(true);
+    }, 15_000);
 
     it('answers a reverse request exactly as the same peer\'s direct request', async () => {
       vi.mocked(projectStore.list).mockReturnValue([PROJECT] as any);
