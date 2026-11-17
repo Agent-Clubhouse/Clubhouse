@@ -58,9 +58,7 @@ vi.mock('./canvas-wire-source', () => ({
     },
   },
 }));
-vi.mock('./group-project-bulletin', () => ({
-  getBulletinBoard: vi.fn(), ensureInboxChannel: vi.fn(), ensureProjectChannels: vi.fn(), destroyBulletinBoard: vi.fn(),
-}));
+import { _resetAllBoardsForTesting, flushAllBulletinBoards } from './group-project-bulletin';
 
 import { bindingManager } from './clubhouse-mcp/binding-manager';
 import { listDurable } from './agent-config';
@@ -145,6 +143,8 @@ beforeEach(async () => {
 });
 
 afterEach(async () => {
+  await flushAllBulletinBoards();
+  _resetAllBoardsForTesting();
   restart();
   groupProjectRegistry._resetForTesting();
   await fsp.rm(fx.home, { recursive: true, force: true });
@@ -158,6 +158,68 @@ describe('auto-join', () => {
     const view = await describeMembership('gp1');
     expect(view.managed).toBe(true);
     expect(view.members.every((m) => m.via === 'auto' && m.kind === 'durable')).toBe(true);
+  });
+
+  it('seeds restored automatic and explicit remote admission once, separating same names', async () => {
+    const remote = 'remote@' + Array(32).fill('bb').join(':');
+    groupProjectRegistry._setForTesting(gp('gp_admit'));
+    fx.configs.set(PROJ_A.path, [agent('local', { name: 'Twin' }), agent('excluded'), agent('disposed', { disposedAt: '2026-01-01' } as Partial<DurableAgentConfig>)]);
+    await updateMembership('gp_admit', d => {
+      d.membershipPolicy = 'project-3546'; d.autoJoin = true;
+      d.excluded.push({ address: 'excluded', excludedAt: new Date().toISOString() });
+      d.explicit.push({ address: remote, kind: 'durable', name: 'Twin', addedAt: new Date().toISOString() });
+    });
+    await start();
+    const first = await groupProjectHost.inboxFor('gp_admit', 'Twin', 'local');
+    const second = await groupProjectHost.inboxFor('gp_admit', 'Twin', remote);
+    expect(first).not.toBe(second);
+    expect(await groupProjectHost.readTopic('gp_admit', first)).toHaveLength(1);
+    expect(await groupProjectHost.readTopic('gp_admit', second)).toHaveLength(1);
+    expect(await groupProjectHost.readTopic('gp_admit', 'system')).toHaveLength(2);
+    const seq = (await groupProjectHost.get('gp_admit'))!.seq;
+    const board = await groupProjectHost.readAll('gp_admit');
+    await reconcileMembership();
+    await reconcileMembership();
+    expect((await groupProjectHost.get('gp_admit'))!.seq).toBe(seq);
+    expect(await groupProjectHost.readAll('gp_admit')).toEqual(board);
+    await updateMembership('gp_admit', d => { d.excluded.push({ address: 'local', excludedAt: new Date().toISOString() }); });
+    await reconcileMembership();
+    await updateMembership('gp_admit', d => { d.excluded = d.excluded.filter(e => e.address !== 'local'); });
+    await reconcileMembership();
+    // Admission is once per address over the board's lifetime, including a re-add.
+    expect(await groupProjectHost.readTopic('gp_admit', 'system')).toHaveLength(2);
+    restart();
+    await start();
+    expect(await groupProjectHost.readTopic('gp_admit', 'system')).toHaveLength(2);
+  });
+
+  it('startup reconciliation repairs managed admissions and stays read-only on a later startup', async () => {
+    groupProjectRegistry._setForTesting(gp('gp_startup'));
+    await updateMembership('gp_startup', d => { d.membershipPolicy = 'project-3546'; d.autoJoin = true; });
+    registerPersistedBindingSource(membershipBindingSource);
+    await rebuildPersistedBindings();
+    // No explicit reconcile: afterRebuild must repair an already-managed group.
+    await vi.waitFor(async () => expect(await groupProjectHost.readTopic('gp_startup', 'system')).toHaveLength(2));
+    await groupProjectHost.flushBoards();
+    restart();
+    // Recreate baseline restored bindings before observing the extra startup reconcile.
+    await membershipBindingSource.collect();
+    for (const agentId of ['dev', 'lead']) bindingManager.bind(agentId, { targetId: 'gp_startup', targetKind: 'group-project', label: 'Startup' });
+    const before = (await groupProjectHost.get('gp_startup'))!.seq;
+    const board = await groupProjectHost.readAll('gp_startup');
+    const bind = vi.spyOn(bindingManager, 'bind');
+    const unbind = vi.spyOn(bindingManager, 'unbind');
+    const admit = vi.spyOn(groupProjectHost, 'ensureMemberAdmission');
+    const commit = vi.spyOn(groupProjectHost as unknown as { commit: (...args: unknown[]) => unknown }, 'commit');
+    membershipBindingSource.afterRebuild!(true);
+    await vi.waitFor(() => expect(admit).toHaveBeenCalledTimes(2));
+    // Wait for the async final read checks, including tidy, to finish.
+    await reconcileMembership();
+    expect(bind).not.toHaveBeenCalled(); expect(unbind).not.toHaveBeenCalled();
+    expect(commit).not.toHaveBeenCalled();
+    expect((await groupProjectHost.get('gp_startup'))!.seq).toBe(before);
+    expect(await groupProjectHost.readAll('gp_startup')).toEqual(board);
+    vi.restoreAllMocks();
   });
 
   it('a new app group starts empty', async () => {

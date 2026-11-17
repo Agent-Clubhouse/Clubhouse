@@ -698,3 +698,15 @@ describe('group project host: #3431 re-review', () => {
     expect((await groupProjectHost.getMembership(legacy.id)).explicit.map((e) => e.address)).toEqual(['agent_b']);
   });
 });
+
+it('persists a host-relative author address through disk and network snapshots', async () => {
+  fixture.fingerprint = FP_A; fixture.network = true;
+  const gp = await groupProjectHost.create('Twins', { scope: { level: 'app', reach: 'network' } });
+  await groupProjectHost.post(gp.id, 'Twin@Twins', 'general', 'hello', { author: { agentId: 'one', label: 'Twin' } });
+  await restart();
+  const messages = await groupProjectHost.readTopic(gp.id, 'general');
+  expect(messages.at(-1)).toMatchObject({ senderAddress: 'one' });
+  const { readSyncResponse } = await import('../../shared/group-project-network');
+  const response = await groupProjectHost.networkSnapshot({ v: 1, known: {} });
+  expect(readSyncResponse(response, FP_A).projects[0].board.messages.find(m => m.body === 'hello')).toMatchObject({ senderAddress: 'one' });
+});

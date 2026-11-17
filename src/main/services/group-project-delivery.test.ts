@@ -34,7 +34,7 @@ vi.mock('./group-project-host', () => ({
     getMembership: async () => structuredClone(fx.membership),
     inboxFor: async (_id: string, name: string) => `inbox-${name}`,
     // Host-relative (#3363): a bare address is an agent here; one qualified with another machine isn't.
-    localAgentId: (_project: unknown, address: string) => (address.includes('@') ? null : address),
+    localAgentId: (_project: unknown, address: string) => address.endsWith('@self') ? address.split('@')[0] : (address.includes('@') ? null : address),
     addressOf: (_project: unknown, reference: string) => reference,
     readAll: async () => fx.messages,
     readDigest: async () => [...new Set(fx.messages.map((m) => m.topic))].map((topic) => ({ topic, messageCount: 1, newMessageCount: 0, latestTimestamp: '' })),
@@ -61,9 +61,9 @@ import {
 let seq = 0;
 
 /** Post as the host does: the message carries the change's sequence number. */
-async function post(sender: string, topic: string, body = 'hello'): Promise<void> {
+async function post(sender: string, topic: string, body = 'hello', senderAddress?: string): Promise<void> {
   seq++;
-  fx.messages.push({ id: `m${seq}`, sender, topic, body, timestamp: new Date().toISOString(), seq });
+  fx.messages.push({ id: `m${seq}`, sender, topic, body, timestamp: new Date().toISOString(), seq, ...(senderAddress && { senderAddress }) });
   for (const fn of fx.changeListeners) fn({ groupProjectId: 'gp1', seq, part: 'board' });
   await vi.advanceTimersByTimeAsync(0);
 }
@@ -333,5 +333,34 @@ describe('review fixes', () => {
     await vi.advanceTimersByTimeAsync(COALESCE_MS);
     expect(dev.sendMessage).not.toHaveBeenCalled();
     expect(twin.sendMessage).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('replica identity regression', () => {
+  it('delivers same-name posts with a durable remote author and suppresses own posts', async () => {
+    fx.members = [{ address: 'dev@self', name: 'Twin' }];
+    const dev = runtime('dev');
+    await post('Twin@Release', 'general', 'hello', 'other@host');
+    await vi.advanceTimersByTimeAsync(COALESCE_MS);
+    expect(dev.sendMessage).toHaveBeenCalledTimes(1);
+    await post('Twin@Release', 'general', 'hello', 'dev@self');
+    await vi.advanceTimersByTimeAsync(COALESCE_MS);
+    expect(dev.sendMessage).toHaveBeenCalledTimes(1);
+  });
+  it('delivers ambiguous same-name legacy network posts rather than dropping them', async () => {
+    fx.gp.network = { role: 'replica' } as GroupProject['network'];
+    fx.members = [{ address: 'dev@self', name: 'Twin' }];
+    const dev = runtime('dev');
+    await post('Twin@Release', 'general');
+    await vi.advanceTimersByTimeAsync(COALESCE_MS);
+    expect(dev.sendMessage).toHaveBeenCalledTimes(1);
+  });
+  it('keeps a replica notice when a record event arrives during coalescing', async () => {
+    fx.members = [{ address: 'dev@self', name: 'dev' }];
+    const dev = runtime('dev');
+    await post('qa@Release', 'general');
+    for (const fn of fx.changeListeners) fn({ groupProjectId: 'gp1', seq, part: 'record' });
+    await vi.advanceTimersByTimeAsync(COALESCE_MS);
+    expect(dev.sendMessage).toHaveBeenCalledTimes(1);
   });
 });
