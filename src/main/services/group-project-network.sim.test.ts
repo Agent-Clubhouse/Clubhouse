@@ -397,6 +397,18 @@ describe('network group projects across two desktops (#3363)', () => {
       expect((await as(B, h => h.groupProjectHost.readTopic(id, 'work')))[0].senderAddress).toBe(`member@${B.fp}`);
     });
 
+    it('refuses a forged other-machine member when the authenticated sending machine has no such member', async () => {
+      const id = await sharedProject();
+      await as(A, h => h.groupProjectHost.updateMembership(id, d => {
+        d.explicit.push({ address: 'host-victim', kind: 'durable', addedAt: 'x' });
+      }));
+      const response = await writeAs(id, { agentId: `host-victim@${A.fp}`, label: 'Victim' }, {
+        op: 'post', sender: 'Victim', topic: 'work', body: 'must refuse',
+      });
+      expect(response.results[0]).toMatchObject({ status: 'refused' });
+      expect(await as(A, h => h.groupProjectHost.readTopic(id, 'work'))).toEqual([]);
+    });
+
     it('refuses an agent that is not a member, and lead or admin changes without a grant (fails closed)', async () => {
       const id = await sharedProject();
       expect((await writeAs(id, { agentId: 'outsider', label: 'o' }, { op: 'post', sender: 'o', topic: 'work', body: 'hi' })).results[0])
