@@ -45,7 +45,8 @@ import { canvasWireBindingSource } from './canvas-wire-source';
 import { setRecordDecidesMembers } from './group-project-lifecycle';
 import { readAllCanvasStores } from './canvas-store-reader';
 import { appLog } from './log-service';
-import { linkedAgents, linkedProjectCopies, watchLinkedAgents, type LinkedAgents } from './group-project-linked-agents';
+import { linkedAgents, previewLinkedAgents, linkedProjectCopies, watchLinkedAgents } from './group-project-linked-agents';
+import { groupProjectLabel } from '../../shared/group-project-labels';
 import { previewCoverage } from './group-project-coverage';
 
 export const GROUP_PROJECT_MEMBERSHIP_SOURCE_ID = 'group-project-membership';
@@ -907,20 +908,23 @@ export async function previewAutoJoin(untrusted: unknown, options?: GroupProject
   const [inventory, projects] = await Promise.all([readInventory(), projectStore.list()]);
   // The same check creation makes: a known shape, a registered project.
   const scope: GroupProjectScope = resolveGroupProjectScope({ scope: untrusted }, new Set(projects.map((p) => p.id)), groupProjectHost.scopeOptions().network);
-  const linked = options?.autoJoin !== false && options?.includeLinkedComputers !== false
-    ? await linkedAgents(scope, groupProjectHost.selfMachine(), (machine) => groupProjectHost.isNetworkMember(machine)) : { agents: [] as LinkedAgents['agents'], unknown: [] as LinkedAgents['unknown'] };
+  const linked: Pick<Awaited<ReturnType<typeof previewLinkedAgents>>, 'agents' | 'unknown' | 'copies' | 'lastSeen'> = options?.autoJoin !== false && options?.includeLinkedComputers !== false
+    ? await previewLinkedAgents(scope, groupProjectHost.selfMachine(), (machine) => groupProjectHost.isNetworkMember(machine))
+    : { agents: [], unknown: [], copies: [], lastSeen: [] };
   const exclusions = new Set(options?.excluded ?? []);
   const gp = { id: 'preview', name: '', description: '', instructions: '', createdAt: '', metadata: {}, scope } as GroupProject;
+  const severalComputers = linked.copies.length > 0;
   return {
     coverage: await previewCoverage(scope),
+    lastSeen: linked.lastSeen,
     wouldJoin: scope.level === 'app' || options?.autoJoin === false ? [] : [
       ...autoCandidates(gp, inventory).map((a): ResolvedGroupProjectMember => ({
-        agentId: a.id, name: a.name, kind: 'durable', via: 'auto', projectId: a.projectId, projectName: a.projectName,
+        agentId: a.id, name: a.name, kind: 'durable', via: 'auto', projectId: a.projectId, projectName: `${groupProjectLabel(undefined, a.projectName, 'This project')}${severalComputers ? ' on this computer' : ''}`,
       })), ...linked.agents,
     ].filter((agent) => !exclusions.has(agent.agentId)),
     unreadableProjects: scope.level === 'app' || options?.autoJoin === false ? [] : [...linked.unknown, ...projects
       .filter((p) => inventory.unreadable.has(p.id) && scope.projectId === p.id)
-      .map((p) => ({ projectId: p.id, name: p.displayName || p.name }))],
+      .map((p) => ({ projectId: p.id, name: `${groupProjectLabel(p.displayName, p.name, 'This project')}${severalComputers ? ' on this computer' : ''}`, reason: 'The project folder could not be read on this computer.' }))],
   };
 }
 

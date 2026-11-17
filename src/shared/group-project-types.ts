@@ -309,7 +309,9 @@ export interface AutoJoinPreview {
   coverage: GroupProjectCoverage;
   wouldJoin: ResolvedGroupProjectMember[];
   /** Projects in scope whose agents couldn't be read: their agents would join too once readable. */
-  unreadableProjects: Array<{ projectId: string; name: string }>;
+  unreadableProjects: Array<{ projectId: string; name: string; reason?: string }>;
+  /** Saved inventory only; excluded from wouldJoin until verified again. */
+  lastSeen?: Array<ResolvedGroupProjectMember & { machineName: string }>;
 }
 
 /** One project copy a group project covers through an explicit project link (or the group's own project). */

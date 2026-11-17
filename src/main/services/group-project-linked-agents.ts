@@ -4,6 +4,7 @@ import type { NetworkProjectRef } from '../../shared/project-links';
 import { projectLinksStore } from './project-links-store';
 import { appLog } from './log-service';
 import { isDisposedAgent } from '../../shared/agent-helpers';
+import { groupProjectLabel } from '../../shared/group-project-labels';
 import type { DurableAgentConfig } from '../../shared/types';
 
 export function linkedProjectCopies(machine: string | null, projectId: string): NetworkProjectRef[] {
@@ -28,11 +29,17 @@ export function verifyCopy(copy: NetworkProjectRef, satellites: readonly Satelli
   const sat = satellites.find((s) => s.fingerprint.toLowerCase() === copy.machine);
   const snapshot = sat?.snapshot;
   const project = snapshot?.projects?.find((raw) => raw && typeof raw === 'object' && (raw as { id?: unknown }).id === copy.projectId) as { name?: string; displayName?: string; repoKey?: string } | undefined;
-  const name = `${project?.displayName || project?.name || copy.projectId} on ${sat?.alias || 'a linked computer'}`;
+  const machineName = sat?.alias || snapshot?.machine?.name || 'a linked computer';
+  const name = `${groupProjectLabel(project?.displayName, project?.name)} on ${machineName}`;
   const verified = !!sat && isMember(copy.machine) && sat.state === 'connected' && !sat.snapshotUnavailable && !!snapshot && !!project
     && !snapshot.snapshotTruncated?.omitted?.some((field) => field === 'agents' || field === 'projects')
     && Array.isArray(snapshot.agents?.[copy.projectId]);
-  return { sat, snapshot, project, name, verified };
+  const reason = !sat || sat.state !== 'connected' ? `${machineName} is offline.`
+    : snapshot?.snapshotTruncated?.omitted?.some((field) => field === 'agents' || field === 'projects')
+      ? 'The project or agent list is too long to sync completely.'
+      : !isMember(copy.machine) ? `${machineName} is not a member of your network.`
+        : 'The project and agent list has not synced yet.';
+  return { sat, snapshot, project, name, machineName, verified, reason };
 }
 
 export interface LinkedAgents {
@@ -40,7 +47,7 @@ export interface LinkedAgents {
   agents: Array<ResolvedGroupProjectMember & { machine: string }>;
   /** Verified durable agents including helpers, for explicit additions only. */
   available: Array<ResolvedGroupProjectMember & { machine: string }>;
-  unknown: Array<{ projectId: string; name: string }>;
+  unknown: Array<{ projectId: string; name: string; reason?: string }>;
 }
 
 /** Only a connected, complete snapshot is evidence for new automatic joins. */
@@ -54,9 +61,9 @@ export async function linkedAgents(
   const satellites = getSatellites();
   const agents: LinkedAgents['agents'] = [], available: LinkedAgents['available'] = [], unknown: LinkedAgents['unknown'] = [];
   for (const copy of copies) {
-    const { snapshot, name, verified } = verifyCopy(copy, satellites, isMember);
+    const { snapshot, name, verified, reason } = verifyCopy(copy, satellites, isMember);
     if (!verified || !snapshot) {
-      unknown.push({ projectId: `${copy.machine}/${copy.projectId}`, name });
+      unknown.push({ projectId: `${copy.machine}/${copy.projectId}`, name, reason });
       continue;
     }
     for (const raw of snapshot.agents![copy.projectId]) {
@@ -87,4 +94,28 @@ export function watchLinkedAgents(changed: () => void): () => void {
     appLog('core:group-project', 'warn', 'Could not watch linked agent inventories', { meta: { error: String(error) } });
   });
   return () => { stopped = true; offLinks(); offSnapshot?.(); };
+}
+
+/** Saved snapshot rows are informative only: they never become automatic members. */
+export async function previewLinkedAgents(scope: GroupProjectScope, self: string | null, isMember: (machine: string) => boolean) {
+  const linked = await linkedAgents(scope, self, isMember);
+  const lastSeen: Array<ResolvedGroupProjectMember & { machineName: string }> = [];
+  if (!linked.copies.length) return { ...linked, lastSeen };
+  const { getSatellites } = await import('./annex-client');
+  const satellites = getSatellites();
+  for (const copy of linked.copies) {
+    const { snapshot, name, machineName, verified } = verifyCopy(copy, satellites, isMember);
+    if (verified || !isMember(copy.machine)) continue;
+    const savedAgents = snapshot?.agents?.[copy.projectId];
+    if (!Array.isArray(savedAgents)) continue;
+    for (const raw of savedAgents) {
+      if (!raw || typeof raw !== 'object') continue;
+      const agent = raw as DurableAgentConfig & { kind?: string };
+      if (typeof agent.id !== 'string' || typeof agent.name !== 'string' || agent.parentAgentId
+        || (agent.kind !== undefined && agent.kind !== 'durable') || isDisposedAgent(agent)) continue;
+      lastSeen.push({ agentId: `${agent.id}@${copy.machine}`, name: agent.name, kind: 'durable', via: 'auto',
+        projectId: copy.projectId, projectName: name, machineName });
+    }
+  }
+  return { ...linked, lastSeen };
 }

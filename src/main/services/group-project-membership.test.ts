@@ -680,6 +680,34 @@ describe('linked automatic membership (#3546)', () => {
     expect((await previewAutoJoin(scope)).unreadableProjects.map((p) => p.projectId)).toContain(`${REMOTE}/remote_project`);
   });
 
+  it('previews verified linked agents, and keeps cached agents separate with an offline reason (#3661)', async () => {
+    await linkedGroup(); linkCopy();
+    const scope = { level: 'project', projectId: PROJ_A.id, reach: 'network' } as const;
+    const online = await previewAutoJoin(scope);
+    expect(online.wouldJoin.find((m) => m.agentId === remoteAddress('remote'))).toMatchObject({ projectName: 'Remote Alpha on Laptop' });
+    expect(online.wouldJoin.find((m) => m.agentId === 'lead')).toMatchObject({ projectName: 'Alpha on this computer' });
+    fx.satellites[0].state = 'disconnected';
+    const offline = await previewAutoJoin(scope);
+    expect(offline.wouldJoin.map((m) => m.agentId)).not.toContain(remoteAddress('remote'));
+    expect(offline.lastSeen).toEqual([expect.objectContaining({ agentId: remoteAddress('remote'), machineName: 'Laptop' })]);
+    expect(offline.unreadableProjects).toEqual([expect.objectContaining({ name: 'Remote Alpha on Laptop', reason: 'Laptop is offline.' })]);
+    fx.satellites[0].state = 'connected';
+    const reconnected = await previewAutoJoin(scope);
+    expect(reconnected.lastSeen).toEqual([]);
+    expect(reconnected.wouldJoin.map((m) => m.agentId)).toContain(remoteAddress('remote'));
+  });
+
+  it('uses plain fallback names and explains unsynced and oversized inventories (#3661)', async () => {
+    await linkedGroup(); linkCopy();
+    const scope = { level: 'project', projectId: PROJ_A.id, reach: 'network' } as const;
+    fx.satellites[0].snapshot = null;
+    expect((await previewAutoJoin(scope)).unreadableProjects).toEqual([expect.objectContaining({ name: 'Linked project on Laptop', reason: 'The project and agent list has not synced yet.' })]);
+    fx.satellites[0].snapshot = { ...remoteSnapshot(), snapshotTruncated: { omitted: ['agents'] } };
+    expect((await previewAutoJoin(scope)).unreadableProjects[0].reason).toBe('The project or agent list is too long to sync completely.');
+    fx.linkGroups = [];
+    expect((await previewAutoJoin(scope)).wouldJoin.find((m) => m.agentId === 'lead')?.projectName).toBe('Alpha');
+  });
+
   it('does not compute coverage when listing members: the hub lists every group', async () => {
     await linkedGroup(); linkCopy();
     const describe = vi.spyOn(coverageService, 'describeCoverage');

@@ -93,7 +93,7 @@ describe('GroupProjectsSettingsView', () => {
     openCreate();
     expect(await screen.findByText('1 agent will join now.')).toBeInTheDocument();
     expect(screen.getByRole('list', { name: 'Agents who will join' })).toHaveTextContent('Ada (Work)');
-    expect(screen.getByText(/Could not check agents in: Offline/)).toBeInTheDocument();
+    expect(screen.getByRole('list', { name: 'Projects with unconfirmed agents' })).toHaveTextContent('Offline: The agent list has not synced yet.');
   });
 
   it('refreshes the creation preview when projects or membership change', async () => {
@@ -107,11 +107,12 @@ describe('GroupProjectsSettingsView', () => {
     openCreate();
     await screen.findByText('0 agents will join now.');
     const initial = preview.mock.calls.length;
+    // Change notifications are coalesced into one preview read per burst (#3661).
     await act(async () => { projectsChanged(); });
-    expect(preview.mock.calls.length).toBeGreaterThan(initial);
+    await waitFor(() => expect(preview.mock.calls.length).toBeGreaterThan(initial));
     const afterProject = preview.mock.calls.length;
     await act(async () => { membershipListeners.forEach((listener) => listener('gp-alpha')); });
-    expect(preview.mock.calls.length).toBeGreaterThan(afterProject);
+    await waitFor(() => expect(preview.mock.calls.length).toBeGreaterThan(afterProject));
   });
 
   it('lists every local registry record without a Canvas, and leaves legacy scope unresolved', async () => {
