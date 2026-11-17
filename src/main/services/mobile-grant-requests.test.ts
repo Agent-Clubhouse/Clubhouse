@@ -1,3 +1,8 @@
+import { createHash } from 'node:crypto';
+import { connectionApprovalInvolves, connectionApprovalView } from '../../shared/approval-routing';
+import { askFirst } from './clubhouse-mcp/ask-first';
+import { agentRegistry } from './agent-registry';
+import * as agentConfig from './agent-config';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
@@ -20,7 +25,7 @@ vi.mock('./grant-telemetry', async () => {
 import { buildMobileGrantRequests, grantOpenedPayload, grantRowVisibleTo, runGrantCommand, type GrantRequestPlaces } from './mobile-grant-requests';
 import { answerGrantRequest } from './grant-request-answers';
 import {
-  _resetGrantRequestsForTesting, callKey, consumeCallApproval, dropGrantRequestsFor, listGrantRequests, onGrantRequestsChanged, recordGrantRequest,
+  _resetGrantRequestsForTesting, callKey, consumeCallApproval, dropGrantRequestsFor, listGrantRequests, onGrantRequestsChanged, peekGrantRequest, recordGrantRequest,
   type GrantRequestChange,
 } from './grant-requests';
 import { MobileCommandService, MobileControlError } from './mobile-control';
@@ -264,6 +269,114 @@ describe('grant.answer: the desktop\'s answer, from a phone', () => {
     const results = await Promise.allSettled([phone(id, 'allow_once'), phone(id, 'decline')]);
     expect(results.map((r) => r.status)).toEqual(['fulfilled', 'rejected']);
     expect(mocks.audit).toEqual([{ agentId: 'a1', kind: 'call', outcome: 'allowed', surface: 'mobile' }]);
+  });
+
+  it.each([true, false])('lead and involved member race over authenticated Annex: first answer wins (lead first: %s)', async (leadFirst) => {
+    const machineA = Array(16).fill('ab').join(':');
+    const machineLead = Array(16).fill('cd').join(':');
+    const args = { from: 'dispatcher-b', to: `agent-a@${machineA}` };
+    const key = callKey('dispatcher-b', 'connect_agents', args);
+    const recorded = recordGrantRequest(key, {
+      kind: 'call', agentId: 'dispatcher-b', agentName: 'Dispatcher B', projectPath: '/p', actions: ['connection.manage'],
+      toolName: 'connect_agents', where: 'agents', argumentsText: JSON.stringify(args),
+    }, NOW);
+    if (!recorded.ok) throw new Error('not recorded');
+    const id = recorded.request.requestId;
+    const reviewedDigest = createHash('sha256').update(connectionApprovalView(buildMobileGrantRequests(places)[0])!.canonical!).digest('hex');
+    const changes: GrantRequestChange[] = [];
+    const off = onGrantRequestsChanged((change) => changes.push(change));
+    const service = new MobileCommandService();
+    const run = (viewer: string, answer: MobileGrantAnswer) => service.execute(viewer,
+      { ...command(id, answer), reviewedDigest, epoch: service.epoch, commandId: viewer },
+      (cmd) => runGrantCommand(cmd as ReturnType<typeof command>, places, { viewer, assertAuthorized: () => {} }), 'annex_desktop');
+    try {
+      const first = leadFirst ? machineLead : machineA;
+      const second = leadFirst ? machineA : machineLead;
+      const results = await Promise.all([run(first, 'allow_once'), run(second, 'decline')]);
+      expect(results[0].body.status).toBe('completed');
+      expect(results[1].body).toMatchObject({ status: 'rejected', error: { code: 'grant_request_not_found' } });
+      expect(consumeCallApproval(key)).toBe(true);
+      expect(consumeCallApproval(key)).toBe(false);
+      expect(mocks.deliver).toHaveBeenCalledTimes(1);
+      expect(mocks.audit).toEqual([{ agentId: 'dispatcher-b', kind: 'call', outcome: 'allowed', surface: 'annex_desktop' }]);
+      expect(buildMobileGrantRequests(places)).toEqual([]); // every next snapshot clears the row
+      expect(changes.filter((change) => change.kind === 'closed' && change.reason === 'answered')).toHaveLength(1);
+    } finally { off(); }
+  });
+
+  it('the real Ask-first padding reproducer remains visible but cannot be approved remotely', async () => {
+    const machine = Array(16).fill('ab').join(':');
+    const args = { padding: 'x'.repeat(4500), from: 'b', to: `sensitive@${machine}`, twoWay: true, allow: ['send_file', 'wake_agent'] };
+    const registration = vi.spyOn(agentRegistry, 'get').mockReturnValue({ projectPath: '/p' } as never);
+    const config = vi.spyOn(agentConfig, 'getDurableConfig').mockResolvedValue({ id: 'b', name: 'B' } as never);
+    try {
+      expect(await askFirst('b', 'connect_agents', args, [{ action: 'connection.manage', where: 'that agent' }])).toMatchObject({ kind: 'asked' });
+      const row = buildMobileGrantRequests(places)[0];
+      expect(row.arguments!.slice(0, 4000)).not.toContain('sensitive@');
+      expect(connectionApprovalInvolves(row, machine)).toBe(true);
+      expect(connectionApprovalView(row)).toMatchObject({ from: 'b', to: args.to, twoWay: true, allow: args.allow });
+      expect(connectionApprovalView(row)!.canonical).toBeUndefined();
+      await expect(withSettingsSurface('annex_desktop', machine, () => runGrantCommand(
+        { ...command(row.requestId, 'allow_once'), reviewedDigest: 'a'.repeat(64) }, places, { viewer: machine, assertAuthorized: () => {} },
+      ))).rejects.toMatchObject({ code: 'grant_request_changed' });
+      expect(consumeCallApproval(callKey('b', 'connect_agents', args))).toBe(false);
+      expect(listGrantRequests()).toHaveLength(1);
+    } finally { registration.mockRestore(); config.mockRestore(); }
+  });
+
+  it('a phone answers a connection call without a reviewed digest, as before', async () => {
+    const args = { from: 'a1', to: 'a2', twoWay: true, allow: ['send_message'] };
+    const key = callKey('a1', 'connect_agents', args);
+    const recorded = recordGrantRequest(key, {
+      kind: 'call', agentId: 'a1', agentName: 'Agent A', projectPath: '/p', actions: ['connection.manage'],
+      toolName: 'connect_agents', where: 'agents', argumentsText: JSON.stringify(args),
+    }, NOW);
+    if (!recorded.ok) throw new Error('not recorded');
+    expect(await phone(recorded.request.requestId, 'allow_once')).toMatchObject({ answer: 'allow_once' });
+    expect(consumeCallApproval(key)).toBe(true);
+    expect(consumeCallApproval(key)).toBe(false);
+    expect(mocks.audit).toEqual([{ agentId: 'a1', kind: 'call', outcome: 'allowed', surface: 'mobile' }]);
+  });
+
+  it('B refuses a missing or stale canonical-argument digest without consuming the request', async () => {
+    const args = { from: 'b', to: `a@${Array(16).fill('ab').join(':')}`, twoWay: true, allow: ['send_file'] };
+    const recorded = recordGrantRequest(callKey('b', 'connect_agents', args), {
+      kind: 'call', agentId: 'b', agentName: 'B', projectPath: '/p', actions: ['connection.manage'], toolName: 'connect_agents', where: 'agents', argumentsText: JSON.stringify(args),
+    }, NOW);
+    if (!recorded.ok) throw new Error('not recorded');
+    const id = recorded.request.requestId;
+    const digest = createHash('sha256').update(connectionApprovalView(buildMobileGrantRequests(places)[0])!.canonical!).digest('hex');
+    const run = (reviewedDigest?: string) => withSettingsSurface('annex_desktop', 'a', () => runGrantCommand(
+      { ...command(id, 'allow_once'), reviewedDigest }, places, { viewer: 'a', assertAuthorized: () => {} },
+    ));
+    await expect(run()).rejects.toMatchObject({ code: 'grant_request_changed' });
+    peekGrantRequest(id)!.argumentsText = JSON.stringify({ ...args, twoWay: false });
+    await expect(run(digest)).rejects.toMatchObject({ code: 'grant_request_changed' });
+    expect(listGrantRequests()).toHaveLength(1);
+    expect(mocks.deliver).not.toHaveBeenCalled();
+    const fresh = createHash('sha256').update(connectionApprovalView(buildMobileGrantRequests(places)[0])!.canonical!).digest('hex');
+    await expect(run(fresh)).resolves.toMatchObject({ requestId: id, answer: 'allow_once' });
+    expect(listGrantRequests()).toHaveLength(0);
+  });
+
+  it.each([
+    { toolName: 'set_app_setting' },
+    { actions: ['settings.app.write'] },
+    { actions: ['connection.manage', 'agent.reset'] },
+  ])('B refuses a supplied digest after tool/actions reclassification: %j', async (change) => {
+    const args = { from: 'b', to: `a@${Array(16).fill('ab').join(':')}` };
+    const recorded = recordGrantRequest(callKey('b', 'connect_agents', args), {
+      kind: 'call', agentId: 'b', agentName: 'B', projectPath: '/p', actions: ['connection.manage'], toolName: 'connect_agents', where: 'agents', argumentsText: JSON.stringify(args),
+    }, NOW);
+    if (!recorded.ok) throw new Error('not recorded');
+    const id = recorded.request.requestId;
+    const reviewedDigest = createHash('sha256').update(connectionApprovalView(buildMobileGrantRequests(places)[0])!.canonical!).digest('hex');
+    Object.assign(peekGrantRequest(id)!, change);
+    await expect(withSettingsSurface('annex_desktop', 'a', () => runGrantCommand(
+      { ...command(id, 'allow_once'), reviewedDigest }, places, { viewer: 'a', assertAuthorized: () => {} },
+    ))).rejects.toMatchObject({ code: 'grant_request_changed' });
+    expect(listGrantRequests()).toHaveLength(1);
+    expect(mocks.deliver).not.toHaveBeenCalled();
   });
 
   it('a lasting grant that fails to save is put back for another try', async () => {

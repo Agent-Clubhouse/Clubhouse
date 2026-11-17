@@ -110,6 +110,7 @@ export interface SatelliteConnection {
 }
 
 export interface SatelliteSnapshot {
+  grantRequests?: import('../../shared/mobile-control').MobileGrantRequest[];
   /** The machine this snapshot is from (#3063). */
   machine?: { fingerprint: string; name: string };
   dispatcher?: unknown;
@@ -2359,12 +2360,12 @@ export function wakeChatAgentWithMessage(fingerprint: string, agentId: string, m
 }
 
 /**
- * A person's answer, from the lead's chat, to a Clubhouse permission request
+ * A person's answer, from this computer's UI, to a Clubhouse permission request
  * waiting on another computer (#3354). That computer checks it again: still
- * pending, still offered. Main only; the IPC behind it is a click in the lead's chat.
+ * pending, still offered. Main only; the IPC behind it is a person's click.
  */
-export function answerRemoteGrantRequest(fingerprint: string, requestId: string, answer: string): Promise<unknown> {
-  return postMobileCommand(fingerprint, { type: 'grant.answer', requestId, answer });
+export function answerRemoteGrantRequest(fingerprint: string, requestId: string, answer: string, reviewedDigest?: string): Promise<unknown> {
+  return postMobileCommand(fingerprint, { type: 'grant.answer', requestId, answer, ...(reviewedDigest && { reviewedDigest }) });
 }
 
 async function postMobileCommand(fingerprint: string, command: Record<string, unknown>, commandId?: string): Promise<unknown> {

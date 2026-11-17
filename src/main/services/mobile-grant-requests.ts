@@ -22,6 +22,9 @@
  */
 
 import * as path from 'path';
+import { createHash } from 'node:crypto';
+import { connectionApprovalView } from '../../shared/approval-routing';
+import { currentSettingsOrigin } from './settings-audit';
 import {
   REMOTE_CREATE_TOOL, describeGrantRequest, grantRequestActionLabels, grantRequestAllowEffect, type GrantRequest,
 } from '../../shared/grant-requests';
@@ -181,6 +184,12 @@ export async function runGrantCommand(command: GrantCommand, places: GrantReques
   }
   if (updateMode !== undefined && (!request.update || answer !== 'allow_once')) {
     throw new MobileControlError('grant_answer_not_offered', 409, 'rejected', 'A restart choice is only for allowing an update request once.');
+  }
+  const connection = connectionApprovalView(row);
+  if (command.reviewedDigest !== undefined || connection && currentSettingsOrigin().surface === 'annex_desktop') {
+    if (!connection?.canonical || createHash('sha256').update(connection.canonical).digest('hex') !== command.reviewedDigest) {
+      throw new MobileControlError('grant_request_changed', 409, 'rejected', 'The connection arguments changed or were not fully reviewed. Answer on this computer.');
+    }
   }
   deps.assertAuthorized();
   const result = await answerGrantRequest(requestId, answer !== 'decline', updateMode, deps.assertAuthorized);

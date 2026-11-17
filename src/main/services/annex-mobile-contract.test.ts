@@ -3745,6 +3745,35 @@ describe('Annex mobile contract fixtures', { timeout: TEST_TIMEOUT_MS }, () => {
     W.updateCheck.mockReset();
   });
 
+  it.each(['connect_agents', 'disconnect_agents', 'set_connection_tools'])('phones list, receive events and answer %s without a digest (#3654)', async (toolName) => {
+    resetWorld();
+    const ws = await connect();
+    ws.send.mockClear();
+    const args = { from: 'durable_chat', to: 'durable_sleepy' };
+    const recorded = recordGrantRequest(callKey('durable_chat', toolName, args), {
+      kind: 'call', agentId: 'durable_chat', agentName: 'planner', projectPath: APP,
+      actions: ['connection.manage'], toolName, where: 'agents', argumentsText: JSON.stringify(args),
+    }, NOW);
+    if (!recorded.ok) throw new Error('grant request not recorded');
+    const requestId = recorded.request.requestId;
+    await eventually(() => expect(frames(ws)).toContainEqual(expect.objectContaining({
+      type: 'grant_request:opened', payload: expect.objectContaining({ requestId }),
+    })));
+    const listed = frames(await connect()).find((f) => f.type === 'snapshot').payload.grantRequests;
+    expect(listed).toContainEqual(expect.objectContaining({ requestId, toolName, actions: ['connection.manage'], answers: ['allow_once', 'decline'] }));
+    // A real authenticated phone request, intentionally without reviewedDigest.
+    const answer = await send('POST', '/api/v1/mobile/commands', {
+      version: 1, epoch, commandId: `cmd_phone_connection_${toolName}`, type: 'grant.answer', requestId, answer: 'allow_once',
+    });
+    expect(answer.status).toBe(200);
+    expect(answer.body).toMatchObject({ status: 'completed', result: { requestId, answer: 'allow_once' } });
+    await eventually(() => expect(frames(ws)).toContainEqual(expect.objectContaining({
+      type: 'grant_request:resolved', payload: expect.objectContaining({ requestIds: [requestId], outcome: 'answered' }),
+    })));
+    expect(frames(await connect()).find((f) => f.type === 'snapshot').payload.grantRequests).toEqual([]);
+    resetWorld();
+  });
+
   it('every command type has an accepted request and receipt', () => {
     for (const type of MOBILE_COMMAND_TYPES) {
       const list = commandFixtures.get(type) ?? [];

@@ -1,8 +1,12 @@
+import { createHash, webcrypto } from 'node:crypto';
+import { connectionApprovalView } from '../../../shared/approval-routing';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import type { Agent } from '../../../shared/types';
 import type { DispatcherLeadState } from '../../../shared/dispatcher-lead';
-import type { FollowedLead } from './leadStore';
+import { _resetLeadStoreForTesting, useLeadStore, type FollowedLead } from './leadStore';
+import { useAnnexClientStore } from '../../stores/annexClientStore';
+import type { MobileGrantRequest } from '../../../shared/mobile-control';
 
 vi.mock('../agents/chat/AgentRuntimePane', () => ({
   AgentRuntimePane: ({ agent }: { agent: Agent }) => <div data-testid="runtime-pane" data-agent-id={agent.id} />,
@@ -31,6 +35,10 @@ const lead = (over: Partial<FollowedLead> = {}, state: Partial<DispatcherLeadSta
 });
 
 beforeEach(() => {
+  vi.stubGlobal('crypto', webcrypto);
+  _resetLeadStoreForTesting();
+  useAnnexClientStore.setState({ satellites: [] });
+  window.clubhouse.dispatcher.getLead = vi.fn(async () => useLeadStore.getState().state!);
   Object.assign(window.clubhouse.dispatcher, {
     takeBack: vi.fn(async () => STATE),
     queueForLead: vi.fn(async () => ({ id: 'q1' })),
@@ -44,6 +52,22 @@ describe('the follower’s Dispatcher pane (#3352, #3353)', () => {
     expect(screen.getByTestId('follower-heading').textContent).toBe('Following Rosie on Laptop');
     expect(screen.getByTestId('runtime-pane').dataset.agentId).toBe(LEAD_AGENT.id);
     expect(screen.queryByTestId('follower-lead-offline')).toBeNull();
+  });
+
+  it('keeps this computer’s involved approvals answerable beside the followed chat (#3654)', async () => {
+    const machine = Array(16).fill('ab').join(':');
+    useLeadStore.setState({ state: { ...STATE, choices: [
+      { machine, name: 'Desk', self: true, online: true, dispatcherOn: true },
+      { machine: 'mini', name: 'Mini', self: false, online: true, dispatcherOn: true },
+    ] } });
+    const request = { requestId: 'gr_connection', kind: 'call', agent: { agentId: 'd', name: 'Dispatcher' }, actions: ['connection.manage'], toolName: 'connect_agents', arguments: JSON.stringify({ from: 'd', to: `a@${machine}` }), summary: 'Wants to connect agents.', requestedAt: '2026-11-17T10:00:00Z', answers: ['allow_once', 'decline'] } as MobileGrantRequest;
+    useAnnexClientStore.setState({ satellites: [{ id: 'mini', fingerprint: 'MINI', state: 'connected', snapshot: { grantRequests: [request] } }] } as never);
+    window.clubhouse.dispatcher.answerRemoteApproval = vi.fn(async () => {});
+    render(<FollowerDispatcherView lead={lead()} localChatId="local-chat" localName="Rex" />);
+    expect(screen.getByTestId('runtime-pane')).toBeTruthy();
+    expect(screen.getByTestId('dispatcher-remote-approval')).toHaveTextContent('Mini: Dispatcher wants to connect agents.');
+    fireEvent.click(screen.getByTestId('dispatcher-remote-approval-allow_once'));
+    await waitFor(() => expect(window.clubhouse.dispatcher.answerRemoteApproval).toHaveBeenCalledWith('mini', 'gr_connection', 'allow_once', createHash('sha256').update(connectionApprovalView(request)!.canonical!).digest('hex')));
   });
 
   it('keeps this computer’s earlier chat one click away, read-only, and comes back', () => {

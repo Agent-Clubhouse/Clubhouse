@@ -6,6 +6,8 @@ import { ipcErrorMessage } from '../../utils/ipc-error';
 import { isFollowerApprovalPending, useFollowerApprovals, type FollowerApproval } from './leadStore';
 import type { GrantRequest } from '../../../shared/grant-requests';
 import { describeGrantRequests } from '../../stores/grantRequestStore';
+import { connectionApprovalView, type ConnectionApprovalView } from '../../../shared/approval-routing';
+import { CONNECTION_SWITCHES, NEW_CONNECTION_DISABLED_TOOLS } from '../../../shared/connection-grants';
 
 /** What each answer is called on its button. */
 const ANSWER_LABELS: Record<MobileGrantAnswer, string> = { allow_once: 'Allow once', allow_lasting: 'Allow', decline: 'Decline' };
@@ -21,7 +23,7 @@ export function approvalLine(item: FollowerApproval): string {
 }
 
 /**
- * The lead's Dispatcher row in Needs you: its own requests and the other
+ * This computer's Dispatcher row in Needs you: its own requests and the other
  * computers', counted together. Null when there are none.
  */
 export function dispatcherNeedsYouLine(local: readonly GrantRequest[], remote: readonly FollowerApproval[]): { message: string; at: number } | null {
@@ -43,12 +45,35 @@ const keyOf = (item: FollowerApproval) => `${item.machine}:${item.request.reques
 
 /** What this computer can answer: an update's restart choice, and anything newer than it knows, is answered where it is. */
 function answersHere(item: FollowerApproval): MobileGrantAnswer[] {
+  const connection = connectionApprovalView(item.request);
+  return connection && !connection.canonical ? [] : offeredAnswers(item);
+}
+
+function offeredAnswers(item: FollowerApproval): MobileGrantAnswer[] {
   return item.request.update ? [] : (item.request.answers ?? []).filter((a): a is MobileGrantAnswer => a in ANSWER_LABELS);
 }
 
+/** All operation-bearing fields stay visible, even when an unsafe row cannot be answered here. */
+function ConnectionDetails({ view }: { view: ConnectionApprovalView }) {
+  const tools = (allow: string[] | undefined) => allow === undefined
+    ? `New direction defaults: ${CONNECTION_SWITCHES.filter((s) => !NEW_CONNECTION_DISABLED_TOOLS.includes(s.tool)).map((s) => s.tool).join(', ')}. Existing direction switches stay as saved.`
+    : `Allowed: ${allow.join(', ') || 'none'}. Disabled: ${CONNECTION_SWITCHES.filter((s) => !allow.includes(s.tool)).map((s) => s.tool).join(', ') || 'none'}.`;
+  return (
+    <dl className="break-words text-ctp-subtext1" data-testid="dispatcher-remote-connection-details">
+      <dt>Tool</dt><dd>{view.tool}</dd>
+      <dt>from</dt><dd>{view.from ?? 'Unreadable'}</dd>
+      <dt>to</dt><dd>{view.to ?? 'Unreadable'}</dd>
+      <dt>Direction (twoWay)</dt><dd>{view.twoWay === undefined ? 'Unreadable' : view.twoWay ? 'true — both directions' : 'false — from → to only'}</dd>
+      <dt>Tools</dt><dd>{view.tool === 'disconnect_agents' ? "Removes this agent's connection source; other sources and saved tool settings stay." : tools(view.allow)}</dd>
+      {view.tool !== 'disconnect_agents' && (view.twoWay || view.allowBack) && <><dt>Reverse tools (when twoWay)</dt><dd>{tools(view.allowBack ?? view.allow)}</dd></>}
+      {view.tool === 'disconnect_agents' && (view.allow || view.allowBack) && <dd>Unexpected tools: {[...(view.allow ?? []), ...(view.allowBack ?? [])].join(', ')}</dd>}
+    </dl>
+  );
+}
+
 /**
- * On the lead (#3354): Ask-first requests from the other computers, in the
- * lead's chat, each with its computer first. A person's click answers one on
+ * Ask-first requests this computer may answer (#3354, #3654), each with
+ * its computer first. A person's click answers one on
  * the computer it came from, which checks it again there; the first answer
  * wins, and the other surface drops it with the next snapshot. Nothing else can
  * answer these: no agent, controller or message reaches the button's path.
@@ -117,17 +142,23 @@ export function RemoteApprovals() {
 function RemoteApproval({ item, onAnswered }: { item: FollowerApproval; onAnswered: () => void }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const answers = answersHere(item);
+  const answers = offeredAnswers(item);
+  const connection = connectionApprovalView(item.request);
+  const unsafeConnection = !!connection && !connection.canonical;
   // Set before the first await, so a second activation in the same tick finds it.
   const inFlight = useRef(false);
   const answer = async (choice: MobileGrantAnswer) => {
     // Answers exactly this request: not one that has left its computer's snapshot, and not twice.
-    if (inFlight.current || !isFollowerApprovalPending(item.machine, item.request.requestId)) return;
+    if (inFlight.current || unsafeConnection || !isFollowerApprovalPending(item.machine, item.request.requestId)) return;
     inFlight.current = true;
     setBusy(true);
     setError(null);
     try {
-      await window.clubhouse.dispatcher.answerRemoteApproval(item.machine, item.request.requestId, choice);
+      if (connection?.canonical) {
+        const bytes = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(connection.canonical));
+        const digest = Array.from(new Uint8Array(bytes), (b) => b.toString(16).padStart(2, '0')).join('');
+        await window.clubhouse.dispatcher.answerRemoteApproval(item.machine, item.request.requestId, choice, digest);
+      } else await window.clubhouse.dispatcher.answerRemoteApproval(item.machine, item.request.requestId, choice);
       // Taken there: the next request takes its place while this one's next snapshot is on the way.
       onAnswered();
     } catch (err) {
@@ -142,6 +173,7 @@ function RemoteApproval({ item, onAnswered }: { item: FollowerApproval; onAnswer
     <div className="flex flex-col gap-1.5 rounded-lg border border-surface-0 px-3 py-2 text-sm" data-testid="dispatcher-remote-approval" data-machine={item.machine}>
       <span className="min-w-0 break-words">{approvalLine(item)}</span>
       <div className="flex max-h-[min(24vh,180px)] min-h-0 flex-col gap-1 overflow-y-auto" data-testid="dispatcher-remote-approval-details">
+        {connection && <ConnectionDetails view={connection} />}
         {item.request.reason && <p className="text-ctp-subtext1">Its reason: {item.request.reason}</p>}
         {item.request.detail && <p className="text-ctp-subtext1">{item.request.detail}</p>}
         {item.request.arguments && (
@@ -153,9 +185,9 @@ function RemoteApproval({ item, onAnswered }: { item: FollowerApproval; onAnswer
       </div>
       {error && <p className="text-xs text-ctp-error" role="alert" data-testid="dispatcher-remote-approval-error">{error}</p>}
       <div className="flex min-h-7 items-center justify-end gap-1.5">
-        {answers.length === 0 && <span className="text-xs text-ctp-overlay1">Answer it on {item.machineName}.</span>}
+        {(answers.length === 0 || unsafeConnection) && <span className="text-xs text-ctp-overlay1">Answer on {item.machineName}.</span>}
         {answers.map((choice) => (
-          <Button key={choice} kind={choice === 'decline' ? 'ghost' : 'primary'} disabled={busy} onKeyDown={swallowHeldKey} onClick={(e) => { if (!isRepeatClick(e)) void answer(choice); }} data-testid={`dispatcher-remote-approval-${choice}`}>
+          <Button key={choice} kind={choice === 'decline' ? 'ghost' : 'primary'} disabled={busy || unsafeConnection} onKeyDown={swallowHeldKey} onClick={(e) => { if (!isRepeatClick(e)) void answer(choice); }} data-testid={`dispatcher-remote-approval-${choice}`}>
             {ANSWER_LABELS[choice]}
           </Button>
         ))}

@@ -18,7 +18,7 @@ export function PendingApprovals({ agentId }: { agentId: string }) {
           <Button onClick={() => review(first.agentId)}>Review</Button>
         </div>
       )}
-      {/* On the lead (#3354): the other computers' requests, each with its computer first. */}
+      {/* Other computers' requests this computer may answer, each attributed to its origin. */}
       {agentId === state?.chatAgentId && <RemoteApprovals />}
     </div>
   );

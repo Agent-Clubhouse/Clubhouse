@@ -303,7 +303,8 @@ Decisions made while building, for the maintainer to revisit. Newest last. D180 
 
 ## Dispatchers across the network
 
-Computer members publish their hidden Dispatcher controllers and derive two-way coordination links. Each receiver triages remote work under its own grants. A person may choose a network lead for a shared conversation; local controllers and memory stay on their own computers. Offline delivery, explicit outcomes, manual Take back and human-only approval routing are described in [Federated Dispatchers](dispatcher.md#federated-dispatchers-2834). See the [controller-link and remote-request terms](glossary.md).
+Computer members publish their hidden Dispatcher controllers and derive two-way coordination links. Each receiver triages remote work under its own grants. A person may choose a network lead for a shared conversation; local controllers and memory stay on their own computers. Offline delivery, explicit outcomes, manual Take back and human-only approval routing (including member approval of connections involving
+its own agents) are described in [Federated Dispatchers](dispatcher.md#federated-dispatchers-2834). See the [controller-link and remote-request terms](glossary.md).
 
 ### Shared project links
 

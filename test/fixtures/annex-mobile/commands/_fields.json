@@ -284,7 +284,8 @@
       "fields": [
         "requestId",
         "answer",
-        "updateMode"
+        "updateMode",
+        "reviewedDigest"
       ],
       "required": [
         "requestId",

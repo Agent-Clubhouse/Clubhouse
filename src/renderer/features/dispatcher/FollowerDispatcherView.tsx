@@ -10,6 +10,7 @@ import { formatWhen } from '../agents/chat/MessageBlocks';
 import { useChatLoading, useChatState, useChatTranscript } from '../agents/chat/useChatSession';
 import { groupChatState } from './group-chat';
 import type { FollowedLead } from './leadStore';
+import { RemoteApprovals } from './RemoteApprovals';
 
 /**
  * The Dispatcher pane on a follower (#3352, #3353): the lead's chat, live,
@@ -73,6 +74,8 @@ export function FollowerDispatcherView({ lead, localChatId, localName, earlier: 
         <LocalNewsNotice news={lead.state.localNews} onShow={() => setEarlier(true)} onError={setError} />
         {error && <p className="text-ctp-error" role="alert" data-testid="follower-error">{error}</p>}
       </div>
+      {/* This computer's approvals stay available while following another's chat (#3654). */}
+      <div className="flex-shrink-0 px-7"><RemoteApprovals /></div>
       <div className="flex-1 min-h-0 flex flex-col">{body}</div>
     </div>
   );
