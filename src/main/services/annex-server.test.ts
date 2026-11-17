@@ -7503,7 +7503,8 @@ describe('annex-server', () => {
       const res = await request(port, 'POST', '/api/v1/group-projects/gp_1/polling', { enabled: true }, authHeaders(token));
       expect(res.status).toBe(200);
       expect(JSON.parse(res.body).pollingEnabled).toBe(true);
-      expect(setProjectPolling).toHaveBeenCalledWith('gp_1', true);
+      // The paired person's toggle is explicitly a person write (#3664).
+      expect(setProjectPolling).toHaveBeenCalledWith('gp_1', true, { author: { label: 'user' } });
     });
 
     it('returns 400 when enabled is not a boolean', async () => {
