@@ -267,6 +267,12 @@ const wsPeerFingerprints = new WeakMap<WebSocket, string>();
 /** The certificate each WebSocket authenticated with; its messages count only while the peer still pins it. */
 const wsPeerPins = new WeakMap<WebSocket, string>();
 /**
+ * Virtual /ws clients serving a reverse subscription (#3613 P4): a member this
+ * machine opened a control connection to, receiving this machine's stream over
+ * it. Authorized as reverse wherever a socket is checked.
+ */
+const reverseSockets = new WeakSet<WebSocket>();
+/**
  * Shells a controller spawned over `pty:spawn-shell`, by session id (#2476).
  * Their output goes to that controller only, and they end when it disconnects.
  */
@@ -4897,11 +4903,73 @@ const controlInboundAuthority: annexControl.InboundAuthority = {
   stillAllowed: (fingerprint, pin) => !!tlsServer && authorizeControlLink({ fingerprint, pin, via: 'direct' }, authorizerDeps).ok,
 };
 
+/**
+ * A reverse subscription served as a /ws client (#3613 P4). It has the surface
+ * the server uses on a /ws socket and sits in `wss.clients`, registered as the
+ * subscriber's own mTLS socket would be (its identity, the certificate the
+ * control connection verified), so the snapshot, held frames, broadcasts,
+ * grant filtering, member no-lock, heartbeat and revocation all apply to it
+ * unchanged. It only receives: nothing it sends reaches the /ws handlers.
+ */
+class ReverseSubscriber extends EventEmitter {
+  readyState: number = WebSocket.OPEN;
+
+  constructor(private readonly sink: annexControl.SubscriptionSink) { super(); }
+
+  send(data: string | Buffer): void {
+    if (this.readyState !== WebSocket.OPEN) return;
+    // Refused (the subscriber lost access, the frame can't fit, or the connection went): it's over.
+    if (!this.sink.send(typeof data === 'string' ? data : data.toString())) this.finish(1000, 'subscription_ended', false);
+  }
+
+  /** The heartbeat's ping: the control connection has its own, so this one answers for it. */
+  ping(): void {
+    if (this.readyState === WebSocket.OPEN) queueMicrotask(() => this.emit('pong'));
+  }
+
+  close(code?: number, reason?: string): void {
+    this.finish(code ?? 1000, reason ?? '', true);
+  }
+
+  terminate(): void {
+    this.finish(1006, '', true);
+  }
+
+  /** `tell`: let the subscriber hear why (it didn't end on its side). */
+  finish(code: number, reason: string, tell: boolean): void {
+    if (this.readyState !== WebSocket.OPEN) return;
+    this.readyState = WebSocket.CLOSED;
+    wss?.clients.delete(this as unknown as WebSocket);
+    if (tell) this.sink.end(code === PEER_REVOKED_CLOSE_CODE ? 'authorization_revoked' : 'closed');
+    this.emit('close', code, Buffer.from(reason));
+  }
+}
+
+/** Starts serving `principal` this machine's /ws stream as a virtual client. Null if there's no stream to serve. */
+function subscribeReverse(principal: AnnexPrincipal, sink: annexControl.SubscriptionSink): annexControl.SubscriptionHandle | null {
+  const server = wss;
+  if (!server || !tlsServer || principal.via !== 'reverse') return null;
+  const subscriber = new ReverseSubscriber(sink);
+  const ws = subscriber as unknown as WebSocket;
+  // As the subscriber's own mTLS socket would be registered on upgrade: never a phone, never a locking client.
+  wsAuthTypes.set(ws, 'mtls');
+  wsClientKinds.set(ws, 'desktop');
+  wsPeerFingerprints.set(ws, principal.fingerprint);
+  wsPeerPins.set(ws, principal.pin);
+  reverseSockets.add(ws);
+  annexPeers.updateLastSeen(principal.fingerprint);
+  server.clients.add(ws);
+  appLog('core:annex', 'info', 'Reverse subscription started', { meta: { peerFingerprint: principal.fingerprint } });
+  server.emit('connection', ws);
+  return { close: () => subscriber.finish(1000, 'unsubscribed', false) };
+}
+
 const controlTarget: annexControl.ControlTarget = {
   // Always as a reverse principal: the direction of the connection never grants anything.
   authorize: (caller) => authorize({ ...caller, via: 'reverse' }, authorizerDeps),
   stillAuthorized: (principal) => principal.via === 'reverse' && stillAuthorized(principal, authorizerDeps),
   dispatch: dispatchReverseRequest,
+  subscribe: subscribeReverse,
 };
 
 // ---------------------------------------------------------------------------
@@ -4954,8 +5022,9 @@ function socketStillPaired(ws: WebSocket): boolean {
   if (ws.readyState !== WebSocket.OPEN) return false;
   if (wsAuthTypes.get(ws) !== 'mtls') return true; // Never mTLS, so control is refused below anyway.
   const fingerprint = wsPeerFingerprints.get(ws);
-  // `/ws` is only ever opened by the caller, so its frames are direct (#3613).
-  return !!fingerprint && authorize({ fingerprint, pin: wsPeerPins.get(ws), via: 'direct' }, authorizerDeps).ok;
+  // `/ws` is only ever opened by the caller, so its frames are direct (#3613). A reverse subscription's
+  // virtual client came over a connection this machine opened, so it is checked as reverse (P4).
+  return !!fingerprint && authorize({ fingerprint, pin: wsPeerPins.get(ws), via: reverseSockets.has(ws) ? 'reverse' : 'direct' }, authorizerDeps).ok;
 }
 
 function handleWsMessage(ws: WebSocket, data: string): void {
@@ -5626,10 +5695,13 @@ function startServer(strict = false): Promise<void> {
       }
     });
 
-    // Listen for client messages (replay requests)
-    ws.on('message', (data) => {
-      handleWsMessage(ws, data.toString());
-    });
+    // Listen for client messages (replay requests). A reverse subscription only receives (#3613 P4):
+    // its virtual client gets no path into the /ws handlers at all.
+    if (!reverseSockets.has(ws)) {
+      ws.on('message', (data) => {
+        handleWsMessage(ws, data.toString());
+      });
+    }
 
     // Send snapshot on connect — async I/O after all event handlers are registered
     sendFirstSnapshot(ws);

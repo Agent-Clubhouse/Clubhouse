@@ -11,9 +11,11 @@
  *   support. Nothing outside that set is ever sent, so an older peer (which
  *   never opens or accepts this path) gets nothing new. Negotiated per
  *   connection, never remembered.
- * - Only the accepting side sends `request` and `cancel`; only the opener sends
- *   `response` and `error`. The opener (the target) authorizes every request
- *   itself, exactly as if the requester had connected to it directly.
+ * - Only the accepting side sends `request`, `cancel`, `subscribe` and
+ *   `unsubscribe`; only the opener sends `response`, `error`, `event` and
+ *   `ended`. The opener (the target) authorizes every request and every
+ *   subscribed frame itself, exactly as if the requester had connected to it
+ *   directly.
  *
  * Every frame is JSON text with `v` (the protocol version) and `type`.
  */
@@ -30,8 +32,19 @@ export const CONTROL_CHANNEL_PATH = '/control';
  */
 export const CONTROL_FRAME_MAX_BYTES = 8 * 1024 * 1024;
 
-/** Features a peer may offer in its hello. Unknown names are ignored, so later slices add to this. */
-export const CONTROL_FEATURES = ['request'] as const;
+/**
+ * Largest `event` frame (a subscription's /ws frame plus its envelope): a /ws
+ * frame, a snapshot included, can be a full 8 MiB. The socket accepts frames up
+ * to this; requests and responses stay within CONTROL_FRAME_MAX_BYTES.
+ */
+export const CONTROL_EVENT_FRAME_MAX_BYTES = CONTROL_FRAME_MAX_BYTES + 64 * 1024;
+
+/**
+ * Features a peer may offer in its hello. Unknown names are ignored, so later slices add to this.
+ * - `request`: reverse request/response (P3).
+ * - `subscribe`: a reverse subscription to the target's /ws event stream (P4).
+ */
+export const CONTROL_FEATURES = ['request', 'subscribe'] as const;
 export type ControlFeature = typeof CONTROL_FEATURES[number];
 
 /** Close code for a frame that breaks the protocol (wrong sender, malformed, unexpected). */
@@ -82,6 +95,17 @@ export type ControlErrorCode =
   /** This computer isn't serving Annex right now. */
   | 'unavailable';
 
+/** Why a subscription ended. */
+export type ControlEndCode =
+  /** The subscriber lost access here (removed, re-pinned, no longer an active desktop member). */
+  | 'authorization_revoked'
+  /** The target stopped serving, or the subscription was closed there. */
+  | 'closed'
+  /** A /ws frame too large for this connection; the subscriber may subscribe again. */
+  | 'frame_too_large';
+
+export const CONTROL_END_CODES: readonly ControlEndCode[] = ['authorization_revoked', 'closed', 'frame_too_large'];
+
 export const CONTROL_WIRE_ERRORS: readonly ControlErrorCode[] = [
   'not_supported', 'timeout', 'cancelled', 'authorization_revoked', 'busy', 'invalid_request', 'duplicate_id',
   'request_too_large', 'response_too_large', 'replay_unavailable', 'unavailable',
@@ -112,8 +136,16 @@ export type ControlMessage =
   | { v: 1; type: 'cancel'; id: string }
   /** Opener → accepter. */
   | ({ v: 1; type: 'response'; id: string } & ControlHttpResponse)
-  /** Opener → accepter: the request has no response. */
-  | { v: 1; type: 'error'; id: string; code: ControlErrorCode };
+  /** Opener → accepter: the request (or subscribe) has no response. */
+  | { v: 1; type: 'error'; id: string; code: ControlErrorCode }
+  /** Accepter → opener: start receiving the opener's /ws stream, beginning with a fresh snapshot. One at a time per connection. */
+  | { v: 1; type: 'subscribe'; id: string }
+  /** Accepter → opener: stop it. A no-op once it has ended. */
+  | { v: 1; type: 'unsubscribe'; id: string }
+  /** Opener → accepter: one /ws frame, exactly as a /ws socket from the accepter would receive it. */
+  | { v: 1; type: 'event'; id: string; frame: Record<string, unknown> }
+  /** Opener → accepter: the subscription is over. */
+  | { v: 1; type: 'ended'; id: string; code: ControlEndCode };
 
 export type ControlParse =
   | { ok: true; message: ControlMessage }
@@ -188,6 +220,18 @@ export function parseControlMessage(text: string): ControlParse {
       if (!validId(raw.id)) return { ok: false, reason: 'shape', detail: 'id' };
       if (!CONTROL_WIRE_ERRORS.includes(raw.code as ControlErrorCode)) return { ok: false, reason: 'shape', detail: 'code' };
       return { ok: true, message: { v: 1, type: 'error', id: raw.id, code: raw.code as ControlErrorCode } };
+    case 'subscribe':
+    case 'unsubscribe':
+      if (!validId(raw.id)) return { ok: false, reason: 'shape', detail: 'id' };
+      return { ok: true, message: { v: 1, type: raw.type, id: raw.id } };
+    case 'event':
+      if (!validId(raw.id)) return { ok: false, reason: 'shape', detail: 'id' };
+      if (!isRecord(raw.frame) || typeof raw.frame.type !== 'string') return { ok: false, reason: 'shape', detail: 'frame' };
+      return { ok: true, message: { v: 1, type: 'event', id: raw.id, frame: raw.frame } };
+    case 'ended':
+      if (!validId(raw.id)) return { ok: false, reason: 'shape', detail: 'id' };
+      if (!CONTROL_END_CODES.includes(raw.code as ControlEndCode)) return { ok: false, reason: 'shape', detail: 'code' };
+      return { ok: true, message: { v: 1, type: 'ended', id: raw.id, code: raw.code as ControlEndCode } };
     default:
       return { ok: false, reason: 'shape', detail: 'type' };
   }
