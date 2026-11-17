@@ -212,6 +212,49 @@ function captureMainAgentWrite(setter: (value: string) => void) {
   });
 }
 
+describe('strict saved execution settings for launch (#3686)', () => {
+  const saved = { id: 'durable_policy', name: 'policy', color: 'indigo', sandbox: 'read-only', approvalPolicy: 'untrusted' };
+  const launch = () => getDurableConfig(PROJECT_PATH, saved.id, { forLaunch: true });
+  it('reads an explicit restriction and keeps a readable legacy record unchanged', async () => {
+    mockAgentsFile([saved]);
+    expect(await launch()).toMatchObject(saved);
+    clearAgentConfigCache(PROJECT_PATH);
+    const legacy = { id: saved.id, name: 'legacy', color: 'indigo' };
+    mockAgentsFile([legacy]);
+    expect(await launch()).toEqual(legacy);
+  });
+  it('refuses a read failure even if the cached record was read-only', async () => {
+    mockAgentsFile([saved]);
+    expect(await launch()).toMatchObject(saved);
+    vi.mocked(fsp.readFile).mockRejectedValue(Object.assign(new Error('permission denied'), { code: 'EACCES' }));
+    await expect(launch()).rejects.toThrow('permission denied');
+  });
+  it('never recovers a legacy backup for a corrupt primary launch read', async () => {
+    mockAgentsFile([saved]);
+    vi.mocked(fsp.readFile).mockImplementation(async (p) => String(p).endsWith('agents.json') ? '{broken' : JSON.stringify([saved]));
+    await expect(launch()).rejects.toThrow();
+    expect(vi.mocked(fsp.readFile).mock.calls.some(([p]) => String(p).endsWith('.bak'))).toBe(false);
+  });
+  it.each(['[null]', '{}', 'not json'])('refuses corrupt primary storage %s rather than treating it as a missing record', async (raw) => {
+    mockAgentsFile([saved]);
+    vi.mocked(fsp.readFile).mockResolvedValue(raw);
+    await expect(launch()).rejects.toThrow();
+  });
+  it.each([{ sandbox: null }, { sandbox: 'unknown' }, { approvalPolicy: null }, { approvalPolicy: {} }])('refuses invalid saved values %j', async (policy) => {
+    mockAgentsFile([{ ...saved, ...policy }]);
+    await expect(launch()).rejects.toThrow();
+  });
+  it('distinguishes a missing record from a stale cache that would omit a new restriction', async () => {
+    mockAgentsFile([{ id: saved.id, name: 'old', color: 'indigo' }]);
+    await getDurableConfig(PROJECT_PATH, saved.id);
+    mockAgentsFile([saved]);
+    await expect(launch()).rejects.toThrow('changed while preparing');
+    clearAgentConfigCache(PROJECT_PATH);
+    mockAgentsFile([]);
+    expect(await launch()).toBeNull();
+  });
+});
+
 describe('readAgents (via listDurable)', () => {
   it('returns [] when no file exists', async () => {
     mockNoAgentsFile();

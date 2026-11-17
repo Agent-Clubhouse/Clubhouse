@@ -3818,7 +3818,7 @@ describe('helper launch ceiling on the normal spawn path', () => {
     freeAgentMode: true,
     ...extra,
   });
-  const lastBuild = () => (mockProvider.buildSpawnCommand.mock.calls.at(-1) as unknown as [{ freeAgentMode?: boolean; permissionMode?: string }])[0];
+  const lastBuild = () => (mockProvider.buildSpawnCommand.mock.calls.at(-1) as unknown as [{ freeAgentMode?: boolean; permissionMode?: string }] | undefined)?.[0];
   const wake = (extra: Record<string, unknown> = {}) =>
     spawnAgent({ agentId: 'helper-1', projectPath, cwd: projectPath, kind: 'durable', ...extra });
 
@@ -3948,17 +3948,45 @@ describe('helper launch ceiling on the normal spawn path', () => {
     expect(lastBuild()).toMatchObject({ freeAgentMode: false, permissionMode: 'auto' });
   });
 
+  it('QA3686 control: refuses unreadable saved config when caller carries the restriction', async () => {
+    mockGetDurableConfig.mockImplementation((async () => { throw new Error('EACCES agents.json'); }) as never);
+    await expect(wake({ orchestrator: 'codex-cli', sandbox: 'read-only' })).rejects.toThrow('Cannot verify the saved execution policy');
+    expect(mockPtySpawn).not.toHaveBeenCalled();
+  });
+
+  it('QA3686 adversarial: must fail closed on unreadable saved policy when normal wake omits it', async () => {
+    mockGetDurableConfig.mockImplementation((async () => { throw new Error('EACCES agents.json'); }) as never);
+    const result = await wake({ orchestrator: 'codex-cli', resume: true }).then(() => 'LAUNCHED', (e) => String(e));
+    expect({ result, spawned: mockPtySpawn.mock.calls.length, launch: lastBuild() }).toMatchObject({
+      result: expect.stringContaining('Cannot verify the saved execution policy'), spawned: 0,
+    });
+  });
+
+
   it('resumes the latest saved policy rather than a broader stale restart snapshot (#3686)', async () => {
     mockGetDurableConfig.mockImplementation((async () => ({ id: 'helper-1', name: 'plain', access: 'full_access', sandbox: 'read-only', approvalPolicy: 'on-request' })) as never);
     await wake({ orchestrator: 'codex-cli', resume: true, sandbox: 'danger-full-access', approvalPolicy: 'never' });
     expect(lastBuild()).toMatchObject({ sandbox: 'read-only', approvalPolicy: 'on-request' });
   });
 
-  it('starts at standard when the agent\'s config can\'t be read, whatever the caller passed', async () => {
-    mockGetDurableConfig.mockImplementation((async () => { throw new Error('agents.json is corrupt'); }) as never);
-    await wake({ freeAgentMode: true, permissionMode: 'skip-all' });
-    expect(lastBuild()).toMatchObject({ freeAgentMode: false, permissionMode: 'auto' });
-    expect(getAgentLaunchAccess('helper-1')).toMatchObject({ freeAgentMode: false, permissionMode: 'auto' });
+  it.each([false, true])('refuses a wake/resume=%s when the saved read-only record becomes unreadable (#3686)', async (resume) => {
+    const saved = { id: 'helper-1', name: 'plain', sandbox: 'read-only', approvalPolicy: 'untrusted' };
+    mockGetDurableConfig.mockImplementationOnce((async () => saved) as never);
+    mockGetDurableConfig.mockImplementation((async () => { throw new Error('agents.json is unreadable'); }) as never);
+    await expect(wake({ orchestrator: 'codex-cli', resume })).rejects.toThrow('Cannot verify the saved execution policy');
+    expect(mockTryStartChatAgent).not.toHaveBeenCalled();
+    expect(mockPtySpawn).not.toHaveBeenCalled();
+    expect(mockHeadlessSpawn).not.toHaveBeenCalled();
+    expect(mockProvider.buildSpawnCommand).not.toHaveBeenCalled();
+    expect(agentRegistry.get('helper-1')).toBeUndefined();
+  });
+
+  it.each([{ sandbox: 'unknown' }, { sandbox: null }, { approvalPolicy: 7 }, { approvalPolicy: null }])('refuses unparseable saved policy %j even when the caller overrides it (#3686)', async (policy) => {
+    mockGetDurableConfig.mockImplementation((async () => ({ id: 'helper-1', name: 'plain', ...policy })) as never);
+    await expect(wake({ orchestrator: 'codex-cli', sandbox: 'read-only', approvalPolicy: 'untrusted' })).rejects.toThrow('Cannot verify the saved execution policy');
+    expect(mockTryStartChatAgent).not.toHaveBeenCalled();
+    expect(mockPtySpawn).not.toHaveBeenCalled();
+    expect(mockHeadlessSpawn).not.toHaveBeenCalled();
   });
 
   it('hands the chat runtime the capped values', async () => {
@@ -4021,7 +4049,7 @@ describe('the MCP call gate is set before anything can call a tool', () => {
   });
 
   it('goes before the chat runtime, which sets its nonce inside', async () => {
-    mockGetDurableConfig.mockImplementation((async () => { throw new Error('unreadable'); }) as never);
+    mockGetDurableConfig.mockImplementation((async () => ({ id, name: 'legacy' })) as never);
     const atChat: string[] = [];
     // Stands in for the runtime, and goes on to the terminal as the real one can.
     mockTryStartChatAgent.mockImplementationOnce(async () => {
@@ -4029,7 +4057,7 @@ describe('the MCP call gate is set before anything can call a tool', () => {
       return 'terminal';
     });
     await start();
-    expect(atChat).toEqual(['closed']);
+    expect(atChat).toEqual(['open']);
   });
 
   it('goes before a headless agent\'s nonce, with no config for a quick agent', async () => {
@@ -4047,19 +4075,20 @@ describe('the MCP call gate is set before anything can call a tool', () => {
     expect(setNonce.mock.invocationCallOrder[0]).toBeGreaterThan(mockSetMcpCaller.mock.invocationCallOrder[0]);
   });
 
-  it('a config it couldn\'t read is closed from the start, and the spawn goes on', async () => {
+  it('refuses an unreadable config before a nonce or any runtime can start', async () => {
     mockGetDurableConfig.mockImplementation((async () => { throw new Error('unreadable'); }) as never);
-    await start();
-    expect(mockSetMcpCaller).toHaveBeenCalledWith('unreadable', id, projectPath);
-    expect(atNonce.length).toBeGreaterThan(0);
-    expect(atNonce.every((access) => access === 'closed')).toBe(true);
-    expect(mockPtySpawn).toHaveBeenCalled();
+    await expect(start()).rejects.toThrow('Cannot verify the saved execution policy');
+    expect(mockSetMcpCaller).not.toHaveBeenCalled();
+    expect(atNonce).toEqual([]);
+    expect(mockTryStartChatAgent).not.toHaveBeenCalled();
+    expect(mockPtySpawn).not.toHaveBeenCalled();
   });
 
-  it('a missing row isn\'t unreadable: no config, and it is open', async () => {
-    mockGetDurableConfig.mockImplementation((async () => null) as never);
+  it('a readable legacy row with no policies keeps the existing open gate', async () => {
+    const config = { id, name: 'legacy' };
+    mockGetDurableConfig.mockImplementation((async () => config) as never);
     await start();
-    expect(mockSetMcpCaller).toHaveBeenCalledWith('config', id, projectPath, null);
+    expect(mockSetMcpCaller).toHaveBeenCalledWith('config', id, projectPath, config);
     expect(atNonce.every((access) => access === 'open')).toBe(true);
   });
 });

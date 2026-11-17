@@ -20,6 +20,11 @@ export function validateExecutionPolicy(policy: { sandbox?: unknown; approvalPol
   if (policy.sandbox != null && !(SANDBOX_MODES as readonly unknown[]).includes(policy.sandbox)) throw new Error('Unknown sandbox policy');
   if (policy.approvalPolicy != null && !(APPROVAL_POLICIES as readonly unknown[]).includes(policy.approvalPolicy)) throw new Error('Unknown approval policy');
 }
+/** Persisted policy fields must be valid values; only update patches may use null to clear them. */
+export function validateStoredExecutionPolicy(policy: { sandbox?: unknown; approvalPolicy?: unknown }): void {
+  validateExecutionPolicy(policy);
+  if (policy.sandbox === null || policy.approvalPolicy === null) throw new Error('Saved execution policies cannot be null');
+}
 /** Unsupported choices fail closed; switching provider or falling back never drops a restriction. */
 export function executionPolicyReason(provider: string | undefined, runtime: 'chat' | 'terminal' | 'headless', policy: ExecutionPolicy, resume = false): string | undefined {
   if (provider !== 'codex-cli') return 'No verified mapping or enforcement of these Codex sandbox and approval policies for this provider/runtime. Its native permissions are unchanged.';

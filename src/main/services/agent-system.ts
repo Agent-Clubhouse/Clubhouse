@@ -1,4 +1,4 @@
-import { assertExecutionPolicy, hasExecutionPolicy, helperExecutionPolicy, type ExecutionPolicy } from '../../shared/execution-policy';
+import { assertExecutionPolicy, validateStoredExecutionPolicy, helperExecutionPolicy, type ExecutionPolicy } from '../../shared/execution-policy';
 import { activateLocalCausalInput, withLocalCausalInput } from './dispatcher-federation-local-work';
 import { captureFederationInputs, prepareFederationInputs } from './dispatcher-federation-context';
 import { redactSpawnArgs } from '../../shared/log-redaction';
@@ -33,7 +33,7 @@ import { agentRegistry, resolveOrchestrator, untrackAgent, readProjectOrchestrat
 import { waitReady as waitMcpBridgeReady } from './clubhouse-mcp/bridge-server';
 import { injectClubhouseMcp } from './clubhouse-mcp/injection';
 import { isTrackedDispatcherChat, syncDispatcherGate } from './clubhouse-mcp/dispatcher-gate';
-import { setMcpCaller, setMcpCallerQuick, setMcpCallerUnreadable } from './clubhouse-mcp/mcp-call-gate';
+import { setMcpCaller, setMcpCallerQuick } from './clubhouse-mcp/mcp-call-gate';
 import { isDispatcherChatPath, isDispatcherPath } from './dispatcher/dispatcher-paths';
 import { loadsAllToolsUpFront, preapprovedClubhouseToolsFor } from './dispatcher/dispatcher-internal-tools';
 import { dispatcherEnablement } from './dispatcher/dispatcher-settings';
@@ -411,10 +411,14 @@ async function spawnAgentInner(inParams: SpawnAgentParams, facts: SpawnFacts, ma
   if (params.kind === 'durable') {
     let creation: DurableAgentConfig['creation'];
     try {
-      firstConfig = await getDurableConfig(params.projectPath, params.agentId);
+      firstConfig = await getDurableConfig(params.projectPath, params.agentId, { forLaunch: true });
+      if (firstConfig) validateStoredExecutionPolicy(firstConfig);
       creation = firstConfig?.creation;
-    } catch {
-      // telemetry-exempt: config not available; the spawn proceeds as before.
+    } catch (err) {
+      appLog('core:agent', 'error', 'Could not verify the saved execution settings; refusing to start the agent', {
+        meta: { agentId: params.agentId, error: err instanceof Error ? err.message : String(err) },
+      });
+      throw tagError(new Error('Cannot verify the saved execution policy. Fix this agent’s configuration before starting it.'), 'preflight_failed');
     }
     if (creation) {
       throw tagError(new Error(creation.state === 'creating'
@@ -528,7 +532,7 @@ async function spawnAgentInner(inParams: SpawnAgentParams, facts: SpawnFacts, ma
     let resolvedMcpIds: string[] = [];
     if (wrapperConfig) {
       if (params.kind === 'durable') {
-        const config = await getDurableConfig(params.projectPath, params.agentId);
+        const config = await getDurableConfig(params.projectPath, params.agentId, { forLaunch: true });
         resolvedMcpIds = config?.mcpIds || await readDefaultMcps(params.projectPath);
       } else {
         resolvedMcpIds = await readDefaultMcps(params.projectPath);
@@ -538,7 +542,7 @@ async function spawnAgentInner(inParams: SpawnAgentParams, facts: SpawnFacts, ma
     let resolvedMcpConfigs: Record<string, Record<string, string>> = {};
     if (wrapperConfig) {
       if (params.kind === 'durable') {
-        const config = await getDurableConfig(params.projectPath, params.agentId);
+        const config = await getDurableConfig(params.projectPath, params.agentId, { forLaunch: true });
         resolvedMcpConfigs = config?.mcpConfigs || await readMcpConfigs(params.projectPath);
       } else {
         resolvedMcpConfigs = await readMcpConfigs(params.projectPath);
@@ -555,11 +559,11 @@ async function spawnAgentInner(inParams: SpawnAgentParams, facts: SpawnFacts, ma
     // fields).  This ensures access, model and the agent file are
     // honoured even when the resume path doesn't explicitly provide them.
     let durableConfig: Awaited<ReturnType<typeof getDurableConfig>> | undefined;
-    let configUnreadable = false;
     if (params.kind === 'durable') {
       try {
-        durableConfig = await getDurableConfig(params.projectPath, params.agentId);
+        durableConfig = await getDurableConfig(params.projectPath, params.agentId, { forLaunch: true });
         if (durableConfig) {
+          validateStoredExecutionPolicy(durableConfig);
           if (params.resume || (params.sandbox === undefined && durableConfig.sandbox !== undefined)) params = { ...params, sandbox: durableConfig.sandbox };
           if (params.resume || (params.approvalPolicy === undefined && durableConfig.approvalPolicy !== undefined)) params = { ...params, approvalPolicy: durableConfig.approvalPolicy };
           if (params.model === undefined && durableConfig.model) params = { ...params, model: durableConfig.model };
@@ -568,28 +572,22 @@ async function spawnAgentInner(inParams: SpawnAgentParams, facts: SpawnFacts, ma
           if (params.agentSource === undefined && durableConfig.agentSource) params = { ...params, agentSource: durableConfig.agentSource };
         }
       } catch (err) {
-        // telemetry-exempt: fails safe to standard and is logged; the spawn goes on.
-        // Unreadable config: we can't tell whether this is a helper (or a
-        // disposed one), so start at standard rather than trust the caller.
-        // A missing row (null) isn't an error and keeps the caller's values.
-        configUnreadable = true;
-        appLog('core:agent', 'warn', 'Could not read the agent\'s config; starting it at standard access', {
+        appLog('core:agent', 'error', 'Could not verify the saved execution settings; refusing to start the agent', {
           meta: { agentId: params.agentId, error: err instanceof Error ? err.message : String(err) },
         });
+        throw tagError(new Error('Cannot verify the saved execution policy. Fix this agent’s configuration before starting it.'), 'preflight_failed');
       }
     }
     assertExecutionPolicy(provider.id, 'chat', params);
-    if (configUnreadable && hasExecutionPolicy(params)) throw tagError(new Error('Cannot verify the saved execution policy'), 'preflight_failed');
-    // Access (#2761): the level this start uses.
-    let access: AccessLevel = configUnreadable ? 'ask' : spawnAccess(params, durableConfig, legacyMode);
+    // A failed read cannot prove that the agent has no saved restriction.
+    let access: AccessLevel = spawnAccess(params, durableConfig, legacyMode);
     // An agent saved before #2761 that nobody has given a level yet starts exactly
     // as before: below Free Agent Mode with the old mode, which Copilot reads,
     // and at any level the CLI took before. Everything else starts at its level:
     // below Free Agent Mode with the mode at auto, and clamped to the levels the
     // CLI has (below, once the runtime is known).
-    const legacyRecord = !configUnreadable && !isAccessLevel(params.access) && !!durableConfig && !isAccessLevel(durableConfig.access);
-    // Unreadable config starts at standard with the mode pinned, as before #2761.
-    let launch = configUnreadable ? launchAccessFor('standard') : legacyLaunchFor(access, legacyRecord ? legacyMode : 'auto');
+    const legacyRecord = !isAccessLevel(params.access) && !!durableConfig && !isAccessLevel(durableConfig.access);
+    let launch = legacyLaunchFor(access, legacyRecord ? legacyMode : 'auto');
     // A disposed helper keeps its row but has no worktree to run in (#2224).
     if (isDisposedAgent(durableConfig)) {
       throw tagError(new Error(`${durableConfig?.name ?? 'This agent'} was disposed and can't be started`), 'preflight_failed');
@@ -637,7 +635,6 @@ async function spawnAgentInner(inParams: SpawnAgentParams, facts: SpawnFacts, ma
     // Before the nonce, which the bridge needs, so no tool call can come first.
     // Its config was read above.
     if (params.kind !== 'durable') setMcpCallerQuick(params.agentId, params.projectPath);
-    else if (configUnreadable) setMcpCallerUnreadable(params.agentId, params.projectPath);
     else setMcpCaller(params.agentId, params.projectPath, durableConfig);
     facts.model = params.model;
     if (params.kind === 'durable' && durableConfig?.contextWindow) {
@@ -908,7 +905,7 @@ async function spawnAgentInner(inParams: SpawnAgentParams, facts: SpawnFacts, ma
     // Fall back to PTY mode
     facts.runtime = 'pty';
     // A terminal agent starts at the nearest level its CLI has a start flag for (#2761).
-    if (!legacyRecord && !configUnreadable && params.access) {
+    if (!legacyRecord && params.access) {
       const startable = startableAccess(params.access, provider.id, 'terminal');
       // A helper never starts above its ceiling (#3000): a CLI with no start mode at or under it
       // (Plan, on Codex or Copilot in a terminal) can't run it, rather than run it at Ask first.
@@ -989,8 +986,13 @@ async function spawnPtyAgent(
   let durableConfig: Awaited<ReturnType<typeof getDurableConfig>> | undefined;
   if (params.kind === 'durable') {
     try {
-      durableConfig = await getDurableConfig(params.projectPath, params.agentId);
-    } catch { /* config not available */ }
+      durableConfig = await getDurableConfig(params.projectPath, params.agentId, { forLaunch: true });
+    } catch (err) {
+      appLog('core:agent', 'error', 'Could not verify saved execution settings during terminal preparation', {
+        meta: { agentId: params.agentId, error: err instanceof Error ? err.message : String(err) },
+      });
+      throw tagError(new Error('Cannot verify the saved execution policy. Fix this agent’s configuration before starting it.'), 'preflight_failed');
+    }
   }
   // A TOML CLI (Codex) takes the bridge only as launch flags (buildMcpArgs),
   // as in chat. Writing it into .codex/config.toml too only made a folder

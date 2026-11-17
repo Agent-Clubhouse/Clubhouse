@@ -71,6 +71,9 @@ vi.mock('../../agent-config', () => ({
     const current = state.agents.get(id)!;
     precondition?.check(current);
     Object.assign(current, updates);
+    for (const key of ['sandbox', 'approvalPolicy'] as const) {
+      if (updates[key] === null) delete current[key];
+    }
   },
   setOrchestrationConfig: async (_p: string, id: string, policy: DurableAgentConfig['orchestration'], precondition?: import('../../agent-config').ManagedSetupCommitPrecondition, updates?: Partial<DurableAgentConfig>) => {
     await state.beforePolicyPrepare?.();
@@ -1765,6 +1768,98 @@ describe('template pushes respect per-consumer configuration approval (#3480)', 
     expect(agent.managed!.blocks).toEqual([]);
     expect(listGrantRequests('dispatcher')).toEqual([]);
   });
+
+  it.each([
+    { before: { access: 'ask', sandbox: 'read-only', approvalPolicy: 'untrusted' }, retained: { access: 'full_access', freeAgentMode: true }, patch: { access: 'ask', approvalPolicy: null }, caller: 'ask' },
+    { before: { access: 'ask', sandbox: 'read-only', approvalPolicy: 'untrusted' }, retained: { sandbox: 'danger-full-access' }, patch: { access: 'ask', approvalPolicy: 'never' }, caller: 'auto' },
+    { before: { access: 'ask', sandbox: 'read-only', approvalPolicy: 'untrusted' }, retained: { approvalPolicy: 'never' }, patch: { access: 'ask', sandbox: 'workspace-write' }, caller: 'auto_edit' },
+  ] as const)('refuses a partial/reset push using the consumer retained settings: $patch (#3686)', async ({ before, retained, patch, caller }) => {
+    const { agent, args } = await fixture({ ...before, orchestrator: 'codex-cli' });
+    Object.assign(agent, retained, { orchestration: { connectToDispatcher: true } });
+    agentRegistry.setUserLaunchAccess('dispatcher', { freeAgentMode: caller !== 'ask', access: caller });
+    const original = structuredClone(agent);
+    const template = await managedAgents().getTemplate(args.id);
+    const input = await confirmed({ ...args, settings: patch });
+    const result = await call('push_agent_template', input);
+    expect(result.isError, result.content[0].text).toBe(true);
+    expect(result.content[0].text).toContain('resulting execution settings');
+    expect(agent).toEqual(original);
+    expect(await managedAgents().getTemplate(args.id)).toEqual(template);
+  });
+
+  it('refuses a partial push with an unverified host default on the other axis (#3686)', async () => {
+    const { agent, args } = await fixture({ access: 'ask', approvalPolicy: 'untrusted', orchestrator: 'codex-cli' });
+    agent.orchestration = { connectToDispatcher: true };
+    agentRegistry.setUserLaunchAccess('dispatcher', { freeAgentMode: true, access: 'auto_edit' });
+    const original = structuredClone(agent);
+    const result = await call('push_agent_template', await confirmed({ ...args, settings: { access: 'ask', approvalPolicy: 'on-request' } }));
+    expect(result.isError).toBe(true);
+    expect(agent).toEqual(original);
+  });
+
+  it('refuses the whole push before writing an earlier safe consumer if a later consumer exceeds the ceiling (#3686)', async () => {
+    const { agent, args } = await fixture({ access: 'ask', sandbox: 'workspace-write', orchestrator: 'codex-cli' });
+    agent.access = 'full_access';
+    agent.orchestration = { connectToDispatcher: true };
+    const safe = managedAgent('aaa-safe', { templateId: args.id, mcps: [CLUBHOUSE_MCP_PART_ID] });
+    Object.assign(safe, { access: 'ask', sandbox: 'workspace-write', orchestration: { connectToDispatcher: true } });
+    agentRegistry.setUserLaunchAccess('dispatcher', { freeAgentMode: false, access: 'ask' });
+    const originals = [structuredClone(safe), structuredClone(agent)];
+    const template = await managedAgents().getTemplate(args.id);
+    const input = await confirmed({ ...args, agents: [safe.id, agent.id], settings: { access: 'ask', sandbox: 'read-only' } });
+    const result = await call('push_agent_template', input);
+    expect(result.isError, result.content[0].text).toBe(true);
+    expect([safe, agent]).toEqual(originals);
+    expect(await managedAgents().getTemplate(args.id)).toEqual(template);
+  });
+
+  it('rechecks retained policy at the actual settings commit (#3686)', async () => {
+    const { agent, args } = await fixture({ access: 'ask', sandbox: 'read-only', approvalPolicy: 'untrusted', orchestrator: 'codex-cli' });
+    agent.orchestration = { connectToDispatcher: true };
+    agentRegistry.setUserLaunchAccess('dispatcher', { freeAgentMode: true, access: 'auto' });
+    state.beforeSettingsPrepare = () => { agent.access = 'full_access'; };
+    const result = await call('push_agent_template', await confirmed({ ...args, settings: { access: 'ask', approvalPolicy: 'never' } }));
+    expect(result.json).toMatchObject({ status: 'pushed', applied: 0, failed: [{ agentId: agent.id, message: expect.stringContaining('resulting execution settings') }] });
+    expect(agent.approvalPolicy).toBe('untrusted');
+    expect(agent.sandbox).toBe('read-only');
+  });
+
+  it('allows a deliberate reset when the caller has Full access (#3686)', async () => {
+    const { agent, args } = await fixture({ access: 'ask', sandbox: 'read-only', approvalPolicy: 'untrusted', orchestrator: 'codex-cli' });
+    agent.access = 'full_access';
+    agent.orchestration = { connectToDispatcher: true };
+    const result = await call('push_agent_template', await confirmed({ ...args, settings: { access: 'ask', sandbox: null, approvalPolicy: null } }));
+    expect(result.json).toMatchObject({ status: 'pushed', applied: 1, failed: [] });
+    expect(agent.access).toBe('full_access');
+    expect(agent).not.toHaveProperty('sandbox');
+    expect(agent).not.toHaveProperty('approvalPolicy');
+  });
+
+  it('QA3686 control: low-access caller cannot push explicit no-sandbox', async () => {
+    const { agent, args } = await fixture({ access: 'ask', sandbox: 'read-only', orchestrator: 'codex-cli' });
+    agent.access = 'full_access';
+    agent.orchestration = { connectToDispatcher: true };
+    agentRegistry.untrack('dispatcher');
+    agentRegistry.register('dispatcher', { projectPath: '/proj', orchestrator: 'codex-cli', runtime: 'chat' });
+    agentRegistry.setLaunchCap('dispatcher', { freeAgentMode: false, access: 'ask' });
+    const result = await call('push_agent_template', { ...args, settings: { access: 'ask', sandbox: 'danger-full-access' } });
+    expect(result.isError).toBe(true);
+    expect(agent.sandbox).toBe('read-only');
+  });
+
+  it('QA3686 adversarial: clearing sandbox must cap the resulting consumer policy, including its saved Access', async () => {
+    const { agent, args } = await fixture({ access: 'ask', sandbox: 'read-only', orchestrator: 'codex-cli' });
+    agent.access = 'full_access';
+    agent.orchestration = { connectToDispatcher: true };
+    agentRegistry.untrack('dispatcher');
+    agentRegistry.register('dispatcher', { projectPath: '/proj', orchestrator: 'codex-cli', runtime: 'chat' });
+    agentRegistry.setLaunchCap('dispatcher', { freeAgentMode: false, access: 'ask' });
+    const input = { ...args, settings: { access: 'ask', sandbox: null } };
+    const preview = await call('push_agent_template', input);
+    const result = preview.json?.confirm ? await call('push_agent_template', { ...input, confirm: preview.json.confirm }) : preview;
+    expect({ result: result.json, sandbox: agent.sandbox, access: agent.access }).toMatchObject({ sandbox: 'read-only' });
+  });
+
 
   it('keeps connected model and setup propagation without a new approval', async () => {
     const { agent, args } = await fixture({ model: 'sonnet' });

@@ -1187,7 +1187,7 @@ export function createManagedAgentsService(deps: ManagedAgentsDeps) {
      * result, with `changed` false when none of the changes applied to it.
      * Agents not made from the template are left out.
      */
-    async pushTemplate(id: string, edited: Pick<ManagedTemplate, 'setup' | 'settings'>, agents: Array<{ projectPath: string; agentId: string }>, opts?: { precondition: (target: { projectPath: string; agentId: string }, settings: ManagedTemplateSettings) => import('../agent-config').ManagedSetupCommitPrecondition; checkTemplateWrite?: () => void }): Promise<TemplatePushResult[]> {
+    async pushTemplate(id: string, edited: Pick<ManagedTemplate, 'setup' | 'settings'>, agents: Array<{ projectPath: string; agentId: string }>, opts?: { precondition: (target: { projectPath: string; agentId: string }, settings: ManagedTemplateSettings) => import('../agent-config').ManagedSetupCommitPrecondition; checkTemplateWrite?: () => void; checkSettingsAccess?: (target: { projectPath: string; agentId: string }, agent: DurableAgentConfig, settings: ManagedTemplateSettings) => void }): Promise<TemplatePushResult[]> {
       // Checked before any agent is written, so a bad setting never leaves agents half-updated.
       const next = { ...withClubhousePartIn(edited), settings: checkTemplateSettings(edited.settings) };
       const current = await api.getTemplate(id);
@@ -1200,6 +1200,16 @@ export function createManagedAgentsService(deps: ManagedAgentsDeps) {
       }
       const label = await templateLabeler();
       const changes = withEffortFollowingModel(diffTemplates(current, next, (pid) => live[pid]?.name ?? pid, label), next.settings, label);
+      // Authorize every resulting consumer policy before any setup or template
+      // mutation. A null reset can expose a consumer's own higher default.
+      if (opts?.checkSettingsAccess) {
+        for (const target of agents) {
+          const agent = await deps.getAgent(target.projectPath, target.agentId);
+          if (!agent?.managed || agent.managed.templateId !== id) continue;
+          if (!changes.some((c) => pushApplies(c, agent, changes, next.settings, label, target.projectPath))) continue;
+          opts.checkSettingsAccess(target, agent, pushSettings(agent, current.settings, next.settings, changes));
+        }
+      }
       const settingsOut: TemplatePushResult[] = [];
       for (const target of agents) {
         const agent = await deps.getAgent(target.projectPath, target.agentId);
@@ -1210,20 +1220,15 @@ export function createManagedAgentsService(deps: ManagedAgentsDeps) {
           continue;
         }
         let setup: ManagedAgentSetup = { ...agent.managed, blocks: [...agent.managed.blocks], skills: [...agent.managed.skills], mcps: [...agent.managed.mcps] };
-        const settings: ManagedTemplateSettings = {};
+        const settings = pushSettings(agent, current.settings, next.settings, changes);
         for (const change of changes) {
           if (change.kind === 'add') {
             const list = listOf(setup, change.part);
             if (!list.includes(change.id)) list.push(change.id);
           } else if (change.kind === 'remove') {
             setup = replaceIn(setup, change.id, null);
-          } else if (change.kind === 'setting' && change.key !== 'effort') {
-            mergeSetting(settings, next.settings, change.key, current.settings);
           }
         }
-        // The effort goes only with the model it is for (D81).
-        const effort = effortOutcome(agent, changes, next.settings);
-        if (effort.send !== undefined) settings.effort = effort.send;
         try {
           // Through saveSetup, so each agent's result is checked (skill folders, missing parts).
           const precondition = opts?.precondition(target, settings);
@@ -1507,6 +1512,17 @@ function mergeSetting(out: ManagedTemplateSettings, from: ManagedTemplateSetting
   else if (key === 'idleSleep') out.idleSleep = from.idleSleep ?? null;
   else if (key === 'helperTemplateId') out.helperTemplateId = from.helperTemplateId ?? null;
   else if (key === 'orchestrator' && from.orchestrator) out.orchestrator = from.orchestrator;
+}
+
+/** The exact settings patch used by bulk authorization and by each consumer write. */
+function pushSettings(agent: DurableAgentConfig, current: ManagedTemplateSettings, next: ManagedTemplateSettings, changes: ManagedTemplateChange[]): ManagedTemplateSettings {
+  const settings: ManagedTemplateSettings = {};
+  for (const change of changes) {
+    if (change.kind === 'setting' && change.key !== 'effort') mergeSetting(settings, next, change.key, current);
+  }
+  const effort = effortOutcome(agent, changes, next);
+  if (effort.send !== undefined) settings.effort = effort.send;
+  return settings;
 }
 
 export function diffTemplates(

@@ -1,4 +1,4 @@
-import { validateExecutionPolicy } from '../../shared/execution-policy';
+import { validateExecutionPolicy, validateStoredExecutionPolicy } from '../../shared/execution-policy';
 import { noteProviderSelection, withAgentActivity } from './agent-transition';
 import { execFile } from 'child_process';
 import { watch, type FSWatcher } from 'fs';
@@ -1410,9 +1410,35 @@ export async function restoreFromBackup(projectPath: string): Promise<{ restored
   return { restoredCount: missing.length, agents: merged };
 }
 
-export async function getDurableConfig(projectPath: string, agentId: string): Promise<DurableAgentConfig | null> {
+export async function getDurableConfig(projectPath: string, agentId: string, options?: { forLaunch: boolean }): Promise<DurableAgentConfig | null> {
+  let verifiedPolicy: DurableAgentConfig | undefined;
+  if (options?.forLaunch) {
+    const pending = configCache.get(projectPath);
+    // Pending local settings are authoritative until flushed. Otherwise verify
+    // the primary file before the ordinary reader can recover an older backup.
+    if (!pending?.dirty && !pending?.pendingFlush) {
+      const parsed: unknown = JSON.parse(await fsp.readFile(agentsConfigPath(projectPath), 'utf-8'));
+      if (!Array.isArray(parsed) || !parsed.every(isAgentRecord)) throw new Error('Cannot read the saved agent records for launch');
+      const matches = parsed.filter((record): record is DurableAgentConfig => isAgentRecord(record) && record.id === agentId);
+      if (matches.length === 0) return null;
+      if (matches.length !== 1) throw new Error('Cannot identify one saved agent record for launch');
+      verifiedPolicy = matches[0];
+      validateStoredExecutionPolicy(verifiedPolicy);
+    }
+  }
   const { agentsById } = await readAgentsEntry(projectPath);
-  return agentsById.get(agentId) ?? null;
+  const agent = agentsById.get(agentId) ?? null;
+  if (options?.forLaunch) {
+    if (!agent) {
+      if (verifiedPolicy) throw new Error('Cannot find the saved agent record for launch');
+      return null;
+    }
+    validateStoredExecutionPolicy(agent);
+    if (verifiedPolicy && (agent.sandbox !== verifiedPolicy.sandbox || agent.approvalPolicy !== verifiedPolicy.approvalPolicy)) {
+      throw new Error('Saved execution settings changed while preparing the launch. Reload the agent before starting it.');
+    }
+  }
+  return agent;
 }
 
 /** A detached, already-loaded snapshot for synchronous lifecycle effect fences. Never loads or writes. */
