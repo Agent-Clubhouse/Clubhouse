@@ -670,6 +670,29 @@ describe('durable receipts and crash boundaries (#3334)', () => {
     } finally { vi.useRealTimers(); }
   });
 
+  it('QA clears an empty-outbox fallback even when terminal failure notice throws', async () => {
+    vi.useFakeTimers();
+    try {
+      const store = useMemoryDeliveryStore(); await vi.advanceTimersByTimeAsync(0); connected = false;
+      let allowed = true; let failNotice = true;
+      stop(); stop = startFixture(store, {
+        authorizeQueuedCall: async () => allowed ? { allowed: true } : { allowed: false, reason: 'revoked' },
+        onDeliveryFailure: async () => { if (failNotice) { failNotice = false; throw new Error('QA notice failure'); } return true; },
+      });
+      await vi.advanceTimersByTimeAsync(0);
+      await forwardAgentCall('here', `there@${OTHER}`, 'Far agent', 'send_message', { message: 'refuse after reconnect' });
+      await flushOutbox(OTHER);
+      allowed = false; connected = true;
+      await expect(flushOutbox(OTHER)).rejects.toThrow('QA notice failure');
+      expect(waitingFor(OTHER)).toHaveLength(0);
+      // Failure notices retain their own retry timer. The machine drain timer is redundant.
+      expect.soft(vi.getTimerCount()).toBe(1);
+      const sent = posts.length;
+      await vi.advanceTimersByTimeAsync(60_000);
+      expect(posts).toHaveLength(sent);
+    } finally { vi.useRealTimers(); }
+  });
+
   it.each([1, 2])('keeps a bounded drain retry after disconnect at connectivity check %s without a new event', async (check) => {
     vi.useFakeTimers();
     try {
