@@ -615,6 +615,15 @@ copy, scope change, delete, clear-all and retention are disabled with a plain
 reason, and a remote Ask first request is still refused. The header names where
 the person came from and Back returns there (`groupWorkspaceSource.ts`).
 
+Post notifications show the saved configuration in the hub, board and Canvas
+card: On, Off (the “Tell members about new posts” permission), or Legacy polling.
+This is not a delivery receipt for members on other computers. Permissions has
+the single “Use post notifications” migration action beside that permission;
+Delivery remains a compatible destination showing the same status and a link to
+Permissions. Migration stops repeated board checks; it never turns an Off grant
+on. On a copy, the saved state stays until the host confirms the change, and the
+existing change history shows waiting, applied or refused outcomes.
+
 ## Local directory
 
 The **Group Projects** entry in the sidebar's app row (beside Canvas and Review),

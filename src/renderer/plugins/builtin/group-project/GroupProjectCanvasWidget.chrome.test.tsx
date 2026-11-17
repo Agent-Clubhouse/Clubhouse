@@ -65,7 +65,6 @@ vi.mock('../../PluginDialog', () => ({
 }));
 
 import { GroupProjectCanvasWidget } from './GroupProjectCanvasWidget';
-import { POLLING_HINT } from '../../../features/group-projects/board/GroupProjectBoardParts';
 import { useAgentStore } from '../../../stores/agentStore';
 import { useGroupProjectStore } from '../../../stores/groupProjectStore';
 import { useAnnexStore } from '../../../stores/annexStore';
@@ -216,13 +215,10 @@ describe('group project card (compact)', () => {
     await waitFor(() => expect(onUpdateMetadata).toHaveBeenCalledWith({ __groupProjectReferenceUnresolved: false }));
   });
 
-  it('switches polling with the shared switch, labelled Polling', async () => {
+  it('shows post notification configuration without a reversible polling control', () => {
     renderWidget();
-    expect(screen.getByText('2 agents')).toBeInTheDocument();
-    const polling = screen.getByRole('switch', { name: 'Polling' });
-    expect(polling).toHaveAttribute('aria-checked', 'false');
-    await userEvent.click(polling);
-    expect(setPolling).toHaveBeenCalledWith('gp1', true);
+    expect(screen.getByRole('status', { name: 'Post notifications' })).toHaveTextContent('Post notifications: On');
+    expect(screen.queryByRole('switch', { name: 'Polling' })).not.toBeInTheDocument();
   });
 
   it('lists members with an avatar row, the lead word and a status dot plus one word', async () => {
@@ -268,17 +264,6 @@ describe('group project card (compact)', () => {
     expect(within(row).getByText(word)).toBeInTheDocument();
   });
 
-  it('toggles polling from its label too, and explains polling in a tooltip', async () => {
-    renderWidget();
-    const label = screen.getByText('Polling');
-    expect(label.tagName).toBe('LABEL');
-    // The tooltip first: the shared Tooltip stays closed after a click until the pointer leaves.
-    await userEvent.hover(label);
-    expect(await screen.findByText(POLLING_HINT, {}, { timeout: 2_000 })).toBeInTheDocument();
-    await userEvent.click(label);
-    expect(setPolling).toHaveBeenCalledWith('gp1', true);
-  });
-
   it('opens the broadcast dialog on the shared Modal', async () => {
     renderWidget();
     await userEvent.click(screen.getByRole('button', { name: 'Broadcast message' }));
@@ -311,9 +296,9 @@ describe('group project card (expanded)', () => {
     expect(protect).toHaveAttribute('aria-pressed', 'false');
   });
 
-  it('keeps the polling switch in the header', () => {
+  it('keeps the post notification state in the header', () => {
     renderWidget();
-    expect(screen.getByRole('switch', { name: 'Polling' })).toBeInTheDocument();
+    expect(screen.getByRole('status', { name: 'Post notifications' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Retention settings' })).toHaveAttribute('aria-pressed', 'false');
   });
 });
@@ -339,14 +324,14 @@ describe('Open group project from the canvas card (#3545)', () => {
   it('is not offered on a card showing another computer\'s group project', async () => {
     remoteProject = true;
     renderWidget({ groupProjectId: 'gp1', projectId: 'remote||sat||p1' });
-    await screen.findByRole('switch', { name: 'Polling' });
+    await screen.findByRole('status', { name: 'Post notifications' });
     expect(screen.queryByRole('button', { name: 'Open group project' })).toBeNull();
   });
 
   it('is not offered in a popout, which has no main-window route to hand off to', async () => {
     const popout = vi.spyOn(window.clubhouse.window, 'isPopout').mockReturnValue(true);
     renderWidget();
-    await screen.findByRole('switch', { name: 'Polling' });
+    await screen.findByRole('status', { name: 'Post notifications' });
     expect(screen.queryByRole('button', { name: 'Open group project' })).toBeNull();
     popout.mockRestore();
   });

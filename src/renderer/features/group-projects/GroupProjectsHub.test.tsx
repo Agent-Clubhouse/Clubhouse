@@ -34,6 +34,17 @@ beforeEach(() => {
 });
 
 describe('GroupProjectsHub states', () => {
+  it.each([
+    [{}, 'Post notifications: On'],
+    [{ pollingEnabled: false }, 'Post notifications: On'],
+    [{ grants: { deliver: 'off' } }, 'Post notifications: Off'],
+    [{ pollingEnabled: true }, 'Checking for new posts: Legacy polling'],
+  ])('exposes the effective state in the row for %j', async (metadata, label) => {
+    vi.mocked(window.clubhouse.groupProject.list).mockResolvedValue([{ ...appGroup, metadata }]);
+    render(<Harness />);
+    expect(await screen.findByRole('button', { name: 'Daily coordination' })).toHaveTextContent(label);
+  });
+
   it('says it is loading, and keeps New group project off until the inventory is known', async () => {
     let resolve!: (v: GroupProject[]) => void;
     vi.mocked(window.clubhouse.groupProject.list).mockReturnValue(new Promise((r) => { resolve = r; }));

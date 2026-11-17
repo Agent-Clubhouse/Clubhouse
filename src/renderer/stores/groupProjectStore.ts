@@ -115,16 +115,13 @@ export const useGroupProjectStore = create<GroupProjectStoreState>((set) => ({
   },
 
   setPolling: async (id, enabled) => {
-    // Delegates the persist + member start/stop side-effect to the main process
-    // (setProjectPolling), the same code path the toggle_polling MCP command uses.
-    // Optimistically reflect the new setting so the Polling switch updates
-    // immediately; the CHANGED broadcast will reconcile shortly after.
+    // A forwarded write may only be queued. Never apply the requested flag here:
+    // reread the confirmed record and let host catch-up broadcasts reconcile it.
     await window.clubhouse.groupProject.setPolling(id, enabled);
-    set((state) => ({
-      projects: state.projects.map((p) =>
-        p.id === id ? { ...p, metadata: { ...p.metadata, pollingEnabled: enabled } } : p,
-      ),
-    }));
+    await Promise.all([
+      useGroupProjectStore.getState().loadProjects(),
+      useGroupProjectStore.getState().loadOperations(id),
+    ]);
   },
 
   scopeOptions: () => window.clubhouse.groupProject.scopeOptions(),

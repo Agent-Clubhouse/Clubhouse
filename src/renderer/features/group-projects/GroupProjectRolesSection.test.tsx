@@ -1,6 +1,7 @@
-import { fireEvent, render, screen } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { GroupProjectRolesView } from '../../../shared/group-project-types';
+import { useGroupProjectStore } from '../../stores/groupProjectStore';
 import { GroupProjectRolesSection } from './GroupProjectRolesSection';
 
 const roles = (extra: Partial<GroupProjectRolesView> = {}): GroupProjectRolesView => ({
@@ -9,6 +10,7 @@ const roles = (extra: Partial<GroupProjectRolesView> = {}): GroupProjectRolesVie
 
 describe('GroupProjectRolesSection', () => {
   beforeEach(() => {
+    useGroupProjectStore.setState({ projects: [{ id: 'gp1', name: 'Group', description: '', instructions: '', createdAt: '', metadata: {} }], operations: {} });
     vi.spyOn(window.clubhouse.groupProject, 'getRoles').mockResolvedValue(roles());
     vi.spyOn(window.clubhouse.groupProject, 'listMembers').mockResolvedValue({
       groupProjectId: 'gp1', managed: true, autoJoin: true, excluded: [],
@@ -23,6 +25,16 @@ describe('GroupProjectRolesSection', () => {
     expect(screen.getByLabelText('Admin for lead')).toHaveValue('off');
     expect(screen.getByLabelText('Tell members about new posts')).toHaveValue('allow');
     expect(screen.getByLabelText('Wake sleeping members')).toHaveValue('off');
+  });
+
+  it('reconciles the permission control and post notification status when the host confirms a grant change', async () => {
+    render(<GroupProjectRolesSection groupProjectId="gp1" />);
+    expect(await screen.findByLabelText('Tell members about new posts')).toHaveValue('allow');
+    expect(screen.getByRole('status', { name: 'Post notifications' })).toHaveTextContent('Post notifications: On');
+    vi.mocked(window.clubhouse.groupProject.getRoles).mockResolvedValue(roles({ own: { deliver: 'off', wake: 'off', actions: 'allow' } }));
+    act(() => useGroupProjectStore.setState((s) => ({ projects: s.projects.map((p) => ({ ...p, metadata: { grants: { deliver: 'off' } } })) })));
+    await waitFor(() => expect(screen.getByLabelText('Tell members about new posts')).toHaveValue('off'));
+    expect(screen.getByRole('status', { name: 'Post notifications' })).toHaveTextContent('Post notifications: Off');
   });
 
   it('gives a role and changes an own grant', async () => {

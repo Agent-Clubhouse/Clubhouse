@@ -1,3 +1,4 @@
+import { postNotificationState, postNotificationsAllowed } from '../../shared/group-project-notifications';
 /**
  * The Group Project as a principal (#3360): lead and admin as explicit grants
  * on one group project, its own grants, and the one-time migration of the old
@@ -46,6 +47,15 @@ import {
   setGroupProjectRole, setOwnGrant, watchGroupProjectRoles,
 } from './group-project-roles';
 import { getAgentGrantChanges } from './agent-grants-store';
+
+describe('delivery configuration shown by every renderer surface', () => {
+  it.each([undefined, null, {}, { deliver: 'allow' }, { deliver: 'off' }, { deliver: 'invalid' }])('agrees with the runtime grant for %j', (grants) => {
+    const project = gp('delivery', { grants });
+    expect(postNotificationsAllowed(project)).toBe(groupProjectMay(project, 'deliver'));
+    expect(postNotificationState(project)).toBe(groupProjectMay(project, 'deliver') ? 'On' : 'Off');
+    expect(postNotificationState({ metadata: { ...project.metadata, pollingEnabled: true } })).toBe('Legacy polling');
+  });
+});
 
 const PLAIN = { dispatcher: false, helper: false, orchestrates: false, crossProject: false };
 

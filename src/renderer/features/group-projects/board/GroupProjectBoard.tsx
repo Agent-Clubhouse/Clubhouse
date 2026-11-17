@@ -5,16 +5,15 @@ import { useWheelContainment } from '../../../hooks/useWheelContainment';
 import type { TopicDigest, BulletinMessage } from '../../../../shared/group-project-types';
 import { useBulletinReadStore } from '../../../stores/bulletinReadStore';
 import { renderMarkdownSafe } from '../../../utils/safe-markdown';
-import { useAgentStore } from '../../../stores/agentStore';
-import { pollingNudgeMsg } from '../../../../shared/polling-messages';
+import { postNotificationLabel } from '../../../../shared/group-project-notifications';
 import { showConfirmDialog } from '../../../plugins/PluginDialog';
 import { Button } from '../../../components/Button';
 import { GroupOperationStatus } from '../GroupOperationStatus';
 import { Tooltip } from '../../../components/Tooltip';
 import { hostLine } from '../../settings/GroupProjectScopeFields';
 import {
-  ALL_TOPICS_KEY, POLL_INTERVAL_MS, BroadcastModal, FIELD, GearIcon, IconButton, MegaphoneIcon, NudgeIcon, PausedPolling,
-  PollingSwitch, ProjectScopeLine, RetentionSettings, ShieldIcon, TrashIcon, clearUnread, formatTime, openChannel, senderShort,
+  ALL_TOPICS_KEY, POLL_INTERVAL_MS, BroadcastModal, FIELD, GearIcon, IconButton, MegaphoneIcon, PausedPolling,
+  ProjectScopeLine, RetentionSettings, ShieldIcon, TrashIcon, clearUnread, formatTime, openChannel, senderShort,
 } from './GroupProjectBoardParts';
 
 /**
@@ -32,7 +31,7 @@ export interface GroupProjectBoardProps {
    * renamed in place. `workspace` leaves the name to the workspace's own header and Details.
    */
   variant: 'card' | 'workspace';
-  /** The canvas card keeps its saved reference in step with the name and polling setting. */
+  /** The canvas card keeps its saved reference in step with the name. */
   onUpdateMetadata?: (updates: Record<string, unknown>) => void;
   /** Extra controls at the end of the header, such as the canvas card's Open. */
   headerActions?: React.ReactNode;
@@ -41,7 +40,7 @@ export interface GroupProjectBoardProps {
 }
 
 export function GroupProjectBoard({ groupProjectId, ctx, variant, onUpdateMetadata, headerActions, settingsBand }: GroupProjectBoardProps) {
-  const { project, members, loaded, loadProjects, update, setPolling, fetchDigest, fetchTopicMessages, fetchAllMessages, postBulletinMessage, injectMessage, deleteMessage, deleteTopic, setTopicProtection, clearAllMessages } = ctx;
+  const { project, members, loaded, loadProjects, update, fetchDigest, fetchTopicMessages, fetchAllMessages, postBulletinMessage, injectMessage, deleteMessage, deleteTopic, setTopicProtection, clearAllMessages } = ctx;
 
   const {
     topicsWidth,
@@ -75,7 +74,7 @@ export function GroupProjectBoard({ groupProjectId, ctx, variant, onUpdateMetada
   }, [loaded, loadProjects]);
 
   const displayName = project?.name || 'Group Project';
-  const pollingEnabled = !!(project?.metadata?.pollingEnabled);
+  const pollingEnabled = project?.metadata?.pollingEnabled === true;
 
   // On a copy of a network group project, the host decides these (#3363).
   const copy = !ctx.isRemote && project?.network?.role === 'replica';
@@ -150,24 +149,6 @@ export function GroupProjectBoard({ groupProjectId, ctx, variant, onUpdateMetada
 
   const handleWheelContainment = useWheelContainment();
 
-  const handleTogglePolling = useCallback(async () => {
-    const newVal = !pollingEnabled;
-    // Delegate persist + member start/stop side-effect to the shared main-process
-    // code path (setProjectPolling), the same one the toggle_polling MCP command
-    // uses, so the setting and the injected instructions can't diverge.
-    await setPolling(groupProjectId, newVal);
-    onUpdateMetadata?.({ pollingEnabled: newVal });
-  }, [pollingEnabled, setPolling, groupProjectId, onUpdateMetadata]);
-
-  const handleNudgePolling = useCallback(() => {
-    const name = project?.name || groupProjectId;
-    const agents = useAgentStore.getState().agents;
-    for (const member of members) {
-      const orchestrator = agents[member.agentId]?.orchestrator;
-      void injectMessage(member.agentId, pollingNudgeMsg(name, orchestrator));
-    }
-  }, [members, project, groupProjectId, injectMessage]);
-
   const handleDeleteMessage = useCallback(async (topic: string, messageId: string) => {
     const { promise } = showConfirmDialog('Delete this message?');
     if (!(await promise)) return;
@@ -236,9 +217,7 @@ export function GroupProjectBoard({ groupProjectId, ctx, variant, onUpdateMetada
         update={update}
         onUpdateMetadata={onUpdateMetadata}
         onShowTapModal={() => setShowTapModal(true)}
-        pollingEnabled={pollingEnabled}
-        onTogglePolling={handleTogglePolling}
-        onNudgePolling={handleNudgePolling}
+        notificationLabel={project ? postNotificationLabel(project) : 'Loading post notifications...'}
         onToggleRetention={() => setShowRetentionSettings((v) => !v)}
         showRetentionSettings={showRetentionSettings}
         onClearAll={() => void handleClearAll()}
@@ -408,7 +387,7 @@ export function GroupProjectBoard({ groupProjectId, ctx, variant, onUpdateMetada
         </div>
       </div>
 
-      {!ctx.isRemote && <PausedPolling groupProjectId={groupProjectId} />}
+      {!ctx.isRemote && pollingEnabled && <PausedPolling groupProjectId={groupProjectId} />}
 
       <ProjectScopeLine ctx={ctx} />
       <div className="h-[30px] flex items-center px-3 border-t border-surface-0 text-xs text-ctp-overlay1 flex-shrink-0">
@@ -477,9 +456,7 @@ function BoardHeader({
   update,
   onUpdateMetadata,
   onShowTapModal,
-  pollingEnabled,
-  onTogglePolling,
-  onNudgePolling,
+  notificationLabel,
   onToggleRetention,
   showRetentionSettings,
   onClearAll,
@@ -492,9 +469,7 @@ function BoardHeader({
   update: GroupProjectContextValue['update'];
   onUpdateMetadata?: (updates: Record<string, unknown>) => void;
   onShowTapModal: () => void;
-  pollingEnabled: boolean;
-  onTogglePolling: () => void;
-  onNudgePolling: () => void;
+  notificationLabel: string;
   onToggleRetention: () => void;
   showRetentionSettings: boolean;
   onClearAll: () => void;
@@ -557,8 +532,9 @@ function BoardHeader({
       </Tooltip>
       <IconButton label="Retention settings" pressed={showRetentionSettings} onClick={onToggleRetention}><GearIcon /></IconButton>
       <IconButton label="Broadcast message" onClick={onShowTapModal}><MegaphoneIcon /></IconButton>
-      <IconButton label="Ask agents to start polling" onClick={onNudgePolling}><NudgeIcon /></IconButton>
-      <PollingSwitch on={pollingEnabled} onToggle={onTogglePolling} />
+      <Tooltip content={`${notificationLabel}. Saved configuration, not confirmation that messages reached members on other computers.`}>
+        <span role="status" aria-label="Post notifications" className="min-w-0 truncate text-xs text-ctp-subtext1">{notificationLabel}</span>
+      </Tooltip>
       {actions}
     </div>
   );

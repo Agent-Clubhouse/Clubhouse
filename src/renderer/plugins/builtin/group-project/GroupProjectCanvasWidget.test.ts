@@ -38,16 +38,6 @@ describe('GroupProjectCanvasWidget — chrome style', () => {
   });
 });
 
-describe('GroupProjectCanvasWidget — polling switch', () => {
-  it('is the shared Toggle, labelled Polling', () => {
-    expect(source).toContain('function PollingSwitch');
-    expect(source).toMatch(/<Toggle id=\{switchId\} checked=\{on\} onChange=\{onToggle\} \/>/);
-    expect(source).toContain('<label htmlFor={switchId}');
-    expect(source).toContain('>Polling</label>');
-    expect(source).not.toContain('Poll: On');
-  });
-});
-
 describe('GroupProjectCanvasWidget — activity summary', () => {
   it('shows topic and message counts in compact card', () => {
     expect(source).toMatch(/topics\.length === 1 \? 'topic' : 'topics'/);
@@ -183,24 +173,6 @@ describe('GroupProjectCanvasWidget — message ordering', () => {
 
 // ── Polling toggle delegates to the shared setting code path ────────
 
-describe('GroupProjectCanvasWidget — polling toggle', () => {
-  it('delegates persist + member side-effects to ctx.setPolling', () => {
-    // handleTogglePolling must call the shared setPolling code path (which the
-    // toggle_polling MCP command also uses) rather than persisting + injecting inline.
-    expect(source).toContain('await setPolling(groupProjectId, newVal)');
-  });
-
-  it('no longer injects polling start/stop messages inline from the toggle', () => {
-    expect(source).not.toContain('pollingStartMsg');
-    expect(source).not.toContain('pollingStopMsg');
-  });
-
-  it('still nudges members directly via injectMessage', () => {
-    // The nudge button remains a per-member PTY injection.
-    expect(source).toContain('injectMessage(member.agentId, pollingNudgeMsg');
-  });
-});
-
 // ── No MCP gate ─────────────────────────────────────────────────────
 
 describe('GroupProjectCanvasWidget — no MCP gate', () => {
@@ -212,32 +184,6 @@ describe('GroupProjectCanvasWidget — no MCP gate', () => {
 });
 
 // ── Orchestrator-aware polling messages ─────────────────────────────
-
-describe('GroupProjectCanvasWidget — orchestrator-aware polling', () => {
-  it('imports the shared nudge message builder', () => {
-    // The setting toggle now delegates start/stop injection to the main process
-    // (setProjectPolling); the widget only builds the per-member nudge itself.
-    expect(source).toContain("from '../../../../shared/polling-messages'");
-    expect(source).toContain('pollingNudgeMsg');
-  });
-
-  it('does not define or inline the start/stop message builders', () => {
-    // start/stop are produced server-side in setProjectPolling now.
-    expect(source).not.toMatch(/^function pollingStartMsg/m);
-    expect(source).not.toMatch(/^function pollingStopMsg/m);
-    expect(source).not.toContain('pollingStartMsg');
-    expect(source).not.toContain('pollingStopMsg');
-  });
-
-  it('imports useAgentStore for nudge orchestrator lookup', () => {
-    expect(source).toContain("from '../../../stores/agentStore'");
-    expect(source).toContain('useAgentStore');
-  });
-
-  it('passes orchestrator to pollingNudgeMsg for the per-member nudge', () => {
-    expect(source).toMatch(/pollingNudgeMsg\(name,\s*orchestrator\)/);
-  });
-});
 
 // ── Inline description & instructions editor ────────────────────────
 

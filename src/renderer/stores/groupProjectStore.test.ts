@@ -4,7 +4,7 @@ import type { GroupProject } from '../../shared/group-project-types';
 
 // Mock window.clubhouse.groupProject IPC
 const mockList = vi.fn();
-const mockOnChanged = vi.fn(() => () => {});
+const mockOnChanged = vi.fn((_callback: (projects: GroupProject[]) => void) => () => {});
 const mockGetOperations = vi.fn();
 const mockOnOperationsChanged = vi.fn((_callback: (id: string) => void) => () => {});
 
@@ -12,6 +12,7 @@ vi.stubGlobal('window', {
   clubhouse: {
     groupProject: {
       list: mockList,
+      setPolling: vi.fn(),
       create: vi.fn(),
       update: vi.fn(),
       delete: vi.fn(),
@@ -34,6 +35,20 @@ describe('groupProjectStore', () => {
   beforeEach(() => {
     useGroupProjectStore.setState({ projects: [], loaded: false, loadError: null });
     vi.clearAllMocks();
+  });
+
+  it('keeps a queued migration in its confirmed state and reconciles from the host broadcast', async () => {
+    useGroupProjectStore.setState({ projects: [project] });
+    vi.mocked(window.clubhouse.groupProject.setPolling).mockResolvedValue(undefined as never);
+    mockList.mockResolvedValue([project]);
+    mockGetOperations.mockResolvedValue({ operations: [], omittedQueued: 0 });
+    await useGroupProjectStore.getState().setPolling(project.id, false);
+    expect(useGroupProjectStore.getState().projects[0].metadata.pollingEnabled).toBe(true);
+    const stop = initGroupProjectListener();
+    const change = mockOnChanged.mock.calls.at(-1)![0] as (projects: GroupProject[]) => void;
+    change([{ ...project, metadata: { ...project.metadata, pollingEnabled: false } }]);
+    expect(useGroupProjectStore.getState().projects[0].metadata.pollingEnabled).toBe(false);
+    stop();
   });
 
   describe('loadProjects', () => {
