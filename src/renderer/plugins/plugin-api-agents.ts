@@ -208,8 +208,7 @@ export function createAgentsAPI(ctx: PluginContext, manifest?: PluginManifest): 
       }
       const project = useProjectStore.getState().projects.find((p) => p.id === agent.projectId);
       if (!project) throw new Error('Project not found for agent');
-      const configs = await window.clubhouse.agent.listDurable(project.path);
-      const config = configs.find((c: { id: string }) => c.id === agentId);
+      const config = await window.clubhouse.agent.getDurableConfig(project.path, agentId, true);
       if (!config) throw new Error('Durable config not found for agent');
       await useAgentStore.getState().spawnDurableAgent(project.id, project.path, config, false, options?.mission);
     },

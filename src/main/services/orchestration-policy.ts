@@ -52,7 +52,7 @@ import {
   isOrchestrationEnabled,
   setOrchestrationEnabled,
 } from './clubhouse-mcp/orchestration-gate';
-import { setMcpCaller } from './clubhouse-mcp/mcp-call-gate';
+import { setMcpCaller, setMcpCallerUnreadable } from './clubhouse-mcp/mcp-call-gate';
 import { appLog } from './log-service';
 import { noteRoutingPolicyChanged } from './helper-routing-changes';
 import { appendSettingsAudit, currentSettingsOrigin, type SettingsAuditRow, type SettingsAuditSurface } from './settings-audit';
@@ -640,8 +640,9 @@ export async function checkHelperLimitFor(
 function refreshMcpCallers(onlyProject?: string): void {
   for (const [agentId, { projectPath }] of agentRegistry.getAllRegistrations()) {
     if (onlyProject !== undefined && !samePath(projectPath, onlyProject)) continue;
-    agentConfig.getDurableConfig(projectPath, agentId).then((config) => setMcpCaller(agentId, projectPath, config)).catch((err) => {
-      // telemetry-exempt: logged; the gate keeps what it had, closed if it never had a config, and the next change retries
+    agentConfig.getDurableConfig(projectPath, agentId, { forLaunch: true }).then((config) => setMcpCaller(agentId, projectPath, config)).catch((err) => {
+      setMcpCallerUnreadable(agentId, projectPath);
+      // telemetry-exempt: logged; unknown saved authority stays closed until a strict refresh succeeds
       appLog('core:orchestration', 'warn', 'Could not update the MCP call gate after a change', {
         meta: { agentId, error: errorText(err) },
       });

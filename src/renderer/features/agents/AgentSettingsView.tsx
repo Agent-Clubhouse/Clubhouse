@@ -1,3 +1,4 @@
+import { AgentConfigRecoveryNotice } from './AgentConfigRecoveryNotice';
 import { ExecutionPolicyFields } from './ExecutionPolicyFields';
 import { hasExecutionPolicy, type ExecutionPolicy } from '../../../shared/execution-policy';
 import { useEffect, useMemo, useState, useRef } from 'react';
@@ -1509,6 +1510,7 @@ export function AgentSettingsView({ agent }: Props) {
 
   return (
     <div data-testid="agent-settings" className="h-full flex flex-col bg-ctp-base overflow-hidden">
+      {projectPath && <AgentConfigRecoveryNotice projectId={agent.projectId} projectPath={projectPath} />}
       {/* The classic shell has no breadcrumb, so it keeps a slim header to name the agent and go back. */}
       {!pageMode && (
         <div className="h-10 flex items-center gap-2.5 px-4 border-b border-surface-0 flex-shrink-0">

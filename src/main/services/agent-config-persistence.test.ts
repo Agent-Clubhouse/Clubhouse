@@ -85,13 +85,22 @@ import {
   flushAllAgentConfigs,
   isSameProject,
   isChatTipAgentReadUncertain,
-  listDurable,
+  listDurable as passiveListDurable,
+  initializeDurableProject,
+  getBackupInfo,
   peekCachedDurableConfig,
   peekDurableConfigsChecked,
   projectKey,
   renameDurable,
   restoreFromBackup,
 } from './agent-config';
+
+// These migration/cache controls now initialize explicitly before the first passive list.
+async function listDurable(projectPath: string) {
+  await initializeDurableProject(projectPath);
+  return passiveListDurable(projectPath);
+}
+
 import { removeAgentChatMedia } from './agent-runtime/chat-media-retention';
 
 const PROJECT_PATH = path.resolve('test-project');
@@ -340,39 +349,43 @@ describe('agent-config read errors', () => {
     expect(agents.map((a) => a.id)).toEqual([AGENT_A.id, AGENT_B.id]);
   });
 
-  it('does not treat a transient backup read error as an empty state', async () => {
+  it('reports uncertain passive storage without restoring when the backup is transiently unreadable', async () => {
     files.set(CONFIG_PATH, '{{corrupt');
     files.set(BACKUP_PATH, JSON.stringify([AGENT_A]));
     readErrors.set(BACKUP_PATH, Object.assign(new Error('EMFILE: too many open files'), { code: 'EMFILE' }));
 
-    await expect(listDurable(PROJECT_PATH)).rejects.toThrow('EMFILE');
+    expect(await passiveListDurable(PROJECT_PATH)).toEqual([]);
+    expect(await getBackupInfo(PROJECT_PATH)).toMatchObject({ recoveryRequired: true });
 
     readErrors.clear();
-    const agents = await listDurable(PROJECT_PATH);
+    const agents = await passiveListDurable(PROJECT_PATH);
     expect(agents.map((a) => a.id)).toEqual([AGENT_A.id]);
   });
 });
 
 describe('agent-config invalid records', () => {
-  it('falls back to a healthy backup when agents.json holds only invalid records', async () => {
+  it('shows a healthy backup without repairing invalid records until explicit restoration', async () => {
     const backup = JSON.stringify([AGENT_A, AGENT_B]);
     files.set(CONFIG_PATH, JSON.stringify([null]));
     files.set(BACKUP_PATH, backup);
 
-    const agents = await listDurable(PROJECT_PATH);
+    const agents = await passiveListDurable(PROJECT_PATH);
     expect(agents.map((a) => a.id)).toEqual([AGENT_A.id, AGENT_B.id]);
+    expect(JSON.parse(files.get(CONFIG_PATH)!)).toEqual([null]);
+    await restoreFromBackup(PROJECT_PATH);
     expect(diskIds()).toEqual([AGENT_A.id, AGENT_B.id]);
     expect(files.get(BACKUP_PATH)).toBe(backup);
   });
 
-  it('drops invalid records without overwriting the backup', async () => {
+  it('keeps invalid primary rows untouched in passive inventory and refuses initialization', async () => {
     const backup = JSON.stringify([AGENT_A, AGENT_B]);
     files.set(CONFIG_PATH, JSON.stringify([AGENT_A, null, 42, { name: 'no-id' }]));
     files.set(BACKUP_PATH, backup);
 
-    const agents = await listDurable(PROJECT_PATH);
+    const agents = await passiveListDurable(PROJECT_PATH);
     expect(agents.map((a) => a.id)).toEqual([AGENT_A.id]);
-    expect(diskIds()).toEqual([AGENT_A.id]);
+    expect(JSON.parse(files.get(CONFIG_PATH)!)).toHaveLength(4);
+    await expect(initializeDurableProject(PROJECT_PATH)).rejects.toThrow();
     expect(files.get(BACKUP_PATH)).toBe(backup);
   });
 
@@ -529,7 +542,7 @@ describe('agent-config cross-project durable ID collisions', () => {
 });
 
 
-it('keeps the winning cache read uncertainty when a concurrent valid disk read finishes later', async () => {
+it('retains passive-read uncertainty when a concurrent healthy snapshot finishes later', async () => {
   const originalRead = vi.mocked(fsp.readFile).getMockImplementation()!;
   let releaseBackup!: () => void;
   let backupEntered!: () => void;
@@ -541,6 +554,7 @@ it('keeps the winning cache read uncertainty when a concurrent valid disk read f
   const validReached = new Promise<void>((resolve) => { validEntered = resolve; });
   const valid = JSON.stringify([AGENT_A]);
   files.set(CONFIG_PATH, '{broken');
+  files.set(BACKUP_PATH, '[]'); // Exists at lookup, disappears during the held read.
   vi.mocked(fsp.readFile).mockImplementation(async (file, ...args) => {
     if (String(file) === BACKUP_PATH) {
       backupEntered();
@@ -555,16 +569,16 @@ it('keeps the winning cache read uncertainty when a concurrent valid disk read f
     return originalRead(file, ...args);
   });
   try {
-    const corrupt = listDurable(PROJECT_PATH);
+    const corrupt = passiveListDurable(PROJECT_PATH);
     await backupReached;
     files.set(CONFIG_PATH, valid);
-    const readable = listDurable(PROJECT_PATH);
+    const readable = passiveListDurable(PROJECT_PATH);
     await validReached;
     releaseBackup();
     expect(await corrupt).toEqual([]);
     expect(isChatTipAgentReadUncertain()).toBe(true);
     releaseValid();
-    expect(await readable).toEqual([]);
+    expect(await readable).toEqual([AGENT_A]);
     expect(isChatTipAgentReadUncertain()).toBe(true);
   } finally {
     releaseBackup();

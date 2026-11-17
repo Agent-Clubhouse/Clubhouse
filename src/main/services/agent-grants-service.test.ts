@@ -1,3 +1,4 @@
+import { getDurableConfig } from './agent-config';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { DurableAgentConfig } from '../../shared/types';
 
@@ -22,7 +23,7 @@ vi.mock('./dispatcher/dispatcher-service', () => ({
   resolveDispatcherIdentity: (projectPath: string, agentId: string) => ({ projectPath, agentId }),
 }));
 
-import { agentHoldsAction, readAgentGrants, setAgentGrant } from './agent-grants-service';
+import { agentHoldsAction, effectiveAgentGrants, readAgentGrants, setAgentGrant } from './agent-grants-service';
 
 const row = (view: Awaited<ReturnType<typeof readAgentGrants>>, action: string, kind: string) =>
   view.rows.find((r) => r.action === action && r.target.kind === kind);
@@ -119,4 +120,13 @@ describe('agentHoldsAction (#3344)', () => {
     await setAgentGrant('/p', 'o1', { action: 'handoff.offer', target: offer!.target, mode: 'allow' });
     expect(agentHoldsAction('o1', config, 'handoff.offer')).toBe(true);
   });
+});
+
+it('refuses grant authority from an unverifiable primary rather than an older backup (#3686)', async () => {
+  vi.mocked(getDurableConfig).mockImplementationOnce(async (_p, _id, options) => {
+    if (options?.forLaunch) throw new Error('Cannot verify the saved execution policy');
+    return mocks.config as DurableAgentConfig;
+  });
+  await expect(effectiveAgentGrants('/p', 'o1')).rejects.toThrow('Cannot verify');
+  expect(getDurableConfig).toHaveBeenCalledWith('/p', 'o1', { forLaunch: true });
 });

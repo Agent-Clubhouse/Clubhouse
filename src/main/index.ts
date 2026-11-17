@@ -1,3 +1,4 @@
+import { initializeDurableProjects } from './services/agent-config';
 import * as path from 'path';
 import * as fs from 'fs';
 import { app, BrowserWindow, ipcMain, powerMonitor, session, net, protocol } from 'electron';
@@ -236,7 +237,9 @@ const createWindow = (): void => {
 
 installClientCertificatePolicy(app);
 
-app.on('ready', () => {
+let durableInitialization = Promise.resolve();
+
+app.on('ready', async () => {
   void cleanupTranscriptStaging();
   void sweepHandoffQuarantines();
   // Chat media is capped across agents (#2828); check once a few minutes after startup.
@@ -431,6 +434,10 @@ app.on('ready', () => {
     }
   });
 
+  durableInitialization = projectStore.list().then(initializeDurableProjects).catch((err) => {
+    appLog('core:agent-config', 'warn', 'Could not initialize project agent settings', { meta: { error: err instanceof Error ? err.message : String(err) } });
+  });
+  await durableInitialization;
   createWindow();
 
   // Framebriar screenshot feedback: restores enrollment and resumes queued reports.
@@ -501,7 +508,8 @@ app.on('window-all-closed', () => {
   }
 });
 
-app.on('activate', () => {
+app.on('activate', async () => {
+  await durableInitialization;
   if (BrowserWindow.getAllWindows().length === 0) {
     createWindow();
   }

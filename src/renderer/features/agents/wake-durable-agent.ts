@@ -17,8 +17,7 @@ export async function wakeDurableAgent(
   agentId: string,
   mode: WakeMode = 'resume',
 ): Promise<void> {
-  const configs = await window.clubhouse.agent.listDurable(projectPath);
-  const config = configs.find((c: { id: string }) => c.id === agentId);
+  const config = await window.clubhouse.agent.getDurableConfig(projectPath, agentId, true);
   // A disposed helper (#2224) has no worktree to run in.
   if (!config || config.disposedAt) return;
   const resume = mode === 'resume' && !!config.lastSessionId;

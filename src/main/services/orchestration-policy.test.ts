@@ -161,7 +161,7 @@ import {
 } from './orchestration-policy';
 import { isCrossProjectEnabled, isOrchestrationEnabled, setOrchestrationEnabled, _resetOrchestrationGateForTesting } from './clubhouse-mcp/orchestration-gate';
 import * as agentConfig from './agent-config';
-import { mcpCallAccess, mcpCallerKind, setMcpCallerUnreadable } from './clubhouse-mcp/mcp-call-gate';
+import { mcpCallAccess, mcpCallerKind, setMcpCaller, setMcpCallerUnreadable } from './clubhouse-mcp/mcp-call-gate';
 import { disposeHelperTool } from './clubhouse-mcp/tools/helper-dispose-tools';
 import { withSettingsSurface } from './settings-audit';
 
@@ -1285,4 +1285,18 @@ describe('an agent whose config couldn\'t be read at start', () => {
       registry.delete(agentId);
     }
   });
+});
+
+it('closes a running MCP caller when its saved authority cannot be strictly verified (#3686)', async () => {
+  const agentId = 'unverified-running';
+  live(agentId);
+  setMcpCaller(agentId, PROJECT, {});
+  expect(mcpCallAccess(agentId, PROJECT)).toBe('open');
+  const stop = watchMcpCallers();
+  try {
+    vi.mocked(agentConfig.getDurableConfig).mockRejectedValueOnce(new Error('Cannot verify the saved execution policy'));
+    for (const listener of configListeners) listener(PROJECT);
+    await vi.waitFor(() => expect(mcpCallAccess(agentId, PROJECT)).toBe('closed'));
+    expect(agentConfig.getDurableConfig).toHaveBeenCalledWith(PROJECT, agentId, { forLaunch: true });
+  } finally { stop(); registry.delete(agentId); }
 });

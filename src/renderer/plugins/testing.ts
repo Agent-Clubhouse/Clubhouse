@@ -29,6 +29,7 @@ export const mockGit = {
 
 export const mockAgent = {
   listDurable: vi.fn(),
+  getDurableConfig: vi.fn(),
   killAgent: vi.fn(),
   getModelOptions: vi.fn(),
   createDurable: vi.fn(),

@@ -20,7 +20,7 @@ import * as headlessSettings from './headless-settings';
 import * as freeAgentSettings from './free-agent-settings';
 import * as orchestratorSettings from './orchestrator-settings';
 import * as configPipeline from './config-pipeline';
-import { getDurableConfig, addSessionEntry, updateDurableConfig } from './agent-config';
+import { getDurableConfig, initializeDurableProject, addSessionEntry, updateDurableConfig } from './agent-config';
 import type { QuickManagedLaunch } from './managed-agents/delivery';
 import { isDisposedAgent, isEffortValue } from '../../shared/agent-helpers';
 import { cleanupStaleJsonInTomlConfigs, stripLegacyClubhouseBridgeToml } from './toml-config-cleanup';
@@ -403,12 +403,24 @@ async function spawnAgentInner(inParams: SpawnAgentParams, facts: SpawnFacts, ma
       appLog('core:agent', 'error', 'Could not verify the saved execution settings; refusing to start the agent', {
         meta: { agentId: params.agentId, error: err instanceof Error ? err.message : String(err) },
       });
-      throw tagError(new Error('Cannot verify the saved execution policy. Fix this agent’s configuration before starting it.'), 'preflight_failed');
+      throw tagError(new Error('Cannot verify the saved execution policy. Open this agent’s Settings and choose Restore saved backup, or repair .clubhouse/agents.json before starting it.'), 'preflight_failed');
     }
     if (creation) {
       throw tagError(new Error(creation.state === 'creating'
         ? 'This agent is still being created. Start it once it is ready.'
         : `This agent could not be created: ${creation.reason ?? 'unknown reason'} Delete it and create it again.`), 'cwd_invalid');
+    }
+  }
+  if (firstConfig) {
+    // A verified lifecycle may initialize healthy records; strict/passive reads never do.
+    try {
+      await initializeDurableProject(params.projectPath);
+      const initialized = await getDurableConfig(params.projectPath, params.agentId, { forLaunch: true });
+      if (!initialized) throw new Error('The saved agent identity changed during initialization. Reload it before starting.');
+      firstConfig = initialized;
+    } catch (err) {
+      appLog('core:agent', 'error', 'Could not initialize verified agent settings', { meta: { agentId: params.agentId, error: err instanceof Error ? err.message : String(err) } });
+      throw tagError(new Error('Cannot verify the saved execution policy. Open this agent’s Settings and choose Restore saved backup, or repair .clubhouse/agents.json before starting it.'), 'preflight_failed');
     }
   }
   if (params.kind === 'durable' && isDispatcherPath(params.projectPath)) {
@@ -575,7 +587,7 @@ async function spawnAgentInner(inParams: SpawnAgentParams, facts: SpawnFacts, ma
         appLog('core:agent', 'error', 'Could not verify the saved execution settings; refusing to start the agent', {
           meta: { agentId: params.agentId, error: err instanceof Error ? err.message : String(err) },
         });
-        throw tagError(new Error('Cannot verify the saved execution policy. Fix this agent’s configuration before starting it.'), 'preflight_failed');
+        throw tagError(new Error('Cannot verify the saved execution policy. Open this agent’s Settings and choose Restore saved backup, or repair .clubhouse/agents.json before starting it.'), 'preflight_failed');
       }
     }
     assertExecutionPolicy(provider.id, 'chat', params);
@@ -991,7 +1003,7 @@ async function spawnPtyAgent(
       appLog('core:agent', 'error', 'Could not verify saved execution settings during terminal preparation', {
         meta: { agentId: params.agentId, error: err instanceof Error ? err.message : String(err) },
       });
-      throw tagError(new Error('Cannot verify the saved execution policy. Fix this agent’s configuration before starting it.'), 'preflight_failed');
+      throw tagError(new Error('Cannot verify the saved execution policy. Open this agent’s Settings and choose Restore saved backup, or repair .clubhouse/agents.json before starting it.'), 'preflight_failed');
     }
   }
   // A TOML CLI (Codex) takes the bridge only as launch flags (buildMcpArgs),
@@ -1582,14 +1594,8 @@ export async function listSessions(
     }
     merged.set(s.sessionId, s);
   }
-  if (missing.length) {
-    const { removeSessionEntries } = await import('./agent-config');
-    await removeSessionEntries(projectPath, agentId, missing).catch((err: unknown) => {
-      appLog('core:agent', 'warn', 'Failed to prune missing sessions from history', {
-        meta: { agentId, error: err instanceof Error ? err.message : String(err) },
-      });
-    });
-  }
+  // Listing a sleeping agent's sessions is passive. Missing provider sessions
+  // are hidden above, without rewriting (or recovering) durable storage.
 
   // Sort by most recently active. A quarantined session (#3240) is listed, marked: choosing it starts fresh.
   const quarantined = new Set(config.quarantinedSessionIds ?? []);

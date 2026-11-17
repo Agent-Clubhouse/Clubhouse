@@ -40,6 +40,7 @@ vi.mock('../agent-system', () => ({
 
 import { deliverForSpawn, forgetDelivery, recordMcpStartProblems, restartManagedAgent, statusFor } from './index';
 import type { OrchestratorProvider } from '../../orchestrators/types';
+import * as agentConfig from '../agent-config';
 import { agentRegistry } from '../agent-registry';
 
 function add(id: string, managed: boolean): void {
@@ -129,6 +130,23 @@ describe('built-in skill status (#3517)', () => {
 });
 
 describe('restartManagedAgent', () => {
+  it('verifies strictly before the first target read or lifecycle effect (#3686)', async () => {
+    add('worker', true);
+    state.running.add('worker');
+    let ordinary = false;
+    const read = vi.spyOn(agentConfig, 'getDurableConfig').mockImplementation(async (_p, id, options) => {
+      if (options?.forLaunch) throw new Error('Cannot verify the saved execution policy');
+      ordinary = true;
+      return state.agents.get(id) ?? null;
+    });
+    try {
+      await expect(restartManagedAgent('/p', 'worker')).rejects.toThrow('Cannot verify');
+      expect(ordinary).toBe(false);
+      expect(killAgent).not.toHaveBeenCalled();
+      expect(spawnAgent).not.toHaveBeenCalled();
+    } finally { read.mockRestore(); }
+  });
+
   it('refuses an agent that isn\'t managed, even when it is running', async () => {
     add('plain', false);
     state.running.add('plain');

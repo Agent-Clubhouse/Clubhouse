@@ -37,6 +37,7 @@ export interface ClearChatDeps {
   clearContext?: (agentId: string) => Promise<void>;
   forgetSession?: (dir: string, agentId: string) => Promise<void>;
   prepareStart?: (dir: string, agentId: string) => Promise<void>;
+  verifyPolicy?: (dir: string, agentId: string) => Promise<unknown>;
 }
 
 /** Bumped by every clear, from any surface, so a confirmation read before it goes stale (#3206). */
@@ -57,6 +58,7 @@ export async function clearDispatcherChat(deps: ClearChatDeps = {}): Promise<Cle
   const chatId = (deps.chatAgentId ?? getDispatcherChatAgentId)();
   if (!chatId) throw new Error('The Dispatcher is not set up yet.');
   const dir = getDispatcherChatPath();
+  await (deps.verifyPolicy ?? ((d, id) => agentConfig.getDurableConfig(d, id, { forLaunch: true })))(dir, chatId);
   // Before the clear, so a second request confirmed for the same conversation can't run it again.
   clearGeneration++;
   if ((deps.isRunning ?? agentSystem.isAgentRunning)(chatId)) {
@@ -106,7 +108,7 @@ const BOTH_NOTICE = 'Dispatcher restarted and started a new chat. Memory, agents
 async function currentWorkSession(dir: string, agentId: string): Promise<string | null> {
   const live = getAgentRuntime(agentId)?.getNativeSessionId();
   if (live) return live;
-  return (await agentConfig.getDurableConfig(dir, agentId))?.lastSessionId ?? null;
+  return (await agentConfig.getDurableConfig(dir, agentId, { forLaunch: true }))?.lastSessionId ?? null;
 }
 
 async function addRunningNotice(agentId: string, notice: ChatEventDataMap['notice']): Promise<void> {
@@ -128,6 +130,7 @@ export async function startDispatcherWorkFresh(reason: StartFreshReason, deps: S
   const workId = (deps.workAgentId ?? getDispatcherAgentId)();
   if (!workId) throw new Error('The Dispatcher is not set up yet.');
   const dir = getDispatcherPath();
+  await (deps.verifyPolicy ?? ((d, id) => agentConfig.getDurableConfig(d, id, { forLaunch: true })))(dir, workId);
   const sessionId = await (deps.workSessionId ?? currentWorkSession)(dir, workId);
   if (sessionId) await (deps.quarantine ?? agentConfig.quarantineSession)(dir, workId, sessionId);
   else await (deps.forgetSession ?? ((d, id) => agentConfig.updateSessionId(d, id, null)))(dir, workId);

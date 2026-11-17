@@ -408,7 +408,7 @@ export async function isAgentWorking(agentId: string): Promise<boolean> {
 export async function restartManagedAgent(projectPath: string, agentId: string, options: { fresh?: boolean; whenTurnEnds?: boolean; authorize?: () => Promise<RestartAuthorization> } = {}): Promise<{ resumed: boolean; noSession?: boolean }> {
   const originalRuntime = restartRuntimeIdentity(agentId);
   const originalProvider = agentRegistry.get(agentId)?.orchestrator;
-  const target = await agentConfig.getDurableConfig(projectPath, agentId);
+  const target = await agentConfig.getDurableConfig(projectPath, agentId, { forLaunch: true });
   if (!target) throw new ManagedError('not_found', 'agent not found');
   if (!target.managed) throw new ManagedError('not_managed', `${target.name} isn't Clubhouse managed, so there is no setup to restart into.`);
   const agentSystem = await import('../agent-system');

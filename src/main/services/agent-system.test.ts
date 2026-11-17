@@ -93,6 +93,7 @@ const mockRemovedProfileStateDirs = vi.fn(async (_providerId: string): Promise<s
 vi.mock('./provider-profiles-removed', () => ({ removedProfileStateDirs: (id: string) => mockRemovedProfileStateDirs(id) }));
 
 vi.mock('./agent-config', () => ({
+  initializeDurableProject: vi.fn(async () => {}),
   getSessionHistory: (...args: unknown[]) => mockGetSessionHistory(...(args as [])),
   removeSessionEntries: (...args: unknown[]) => mockRemoveSessionEntries(...(args as [])),
   getDurableConfig: (...args: unknown[]) => mockGetDurableConfig(...args),
@@ -2645,11 +2646,12 @@ describe('agent-system', () => {
   describe('sleep reason on PTY exit (#2104)', () => {
     it("drops the last sleep's reason when the agent wakes again", async () => {
       const slept = { id: 'agent-1', lastSleep: { reason: 'agent', at: '2026-10-17T00:00:00.000Z', by: 'PM' } };
-      // The first read is the unfinished-creation check (#2226), the second the config the spawn uses.
-      mockGetDurableConfig.mockResolvedValueOnce(slept as never).mockResolvedValueOnce(slept as never);
+      // All wake preflights see the same saved record; the next wake sees the cleared reason.
+      mockGetDurableConfig.mockResolvedValue(slept as never);
       await spawnAgent({ agentId: 'agent-1', projectPath: '/project', cwd: '/project', kind: 'durable' });
       expect(mockUpdateDurableConfig).toHaveBeenCalledWith('/project', 'agent-1', { lastSleep: null });
       mockUpdateDurableConfig.mockClear();
+      mockGetDurableConfig.mockReset();
       await spawnAgent({ agentId: 'agent-1', projectPath: '/project', cwd: '/project', kind: 'durable' });
       expect(mockUpdateDurableConfig).not.toHaveBeenCalled();
     });
@@ -3733,7 +3735,7 @@ describe('listSessions: saved ids the CLI store lacks (#2156)', () => {
     expect(sessions.find((s) => s.sessionId === 'good-1')).not.toHaveProperty('blocked');
   });
 
-  it('hides history entries the store does not have and prunes them; keeps ones it has or can\'t check', async () => {
+  it('hides missing provider history entries without rewriting the saved record', async () => {
     sessionCapable(mockCodexProvider);
     mockGetDurableConfig.mockResolvedValue({ id: 'durable_cp', orchestrator: 'codex-cli', worktreePath: '/wt' });
     mockGetSessionHistory.mockResolvedValue([entry('dead-1'), entry('real-1'), entry('unknown-1')]);
@@ -3742,7 +3744,7 @@ describe('listSessions: saved ids the CLI store lacks (#2156)', () => {
     const sessions = await listSessions('/project', 'durable_cp', 'codex-cli');
 
     expect(sessions.map((s) => s.sessionId).sort()).toEqual(['real-1', 'unknown-1']);
-    expect(mockRemoveSessionEntries).toHaveBeenCalledWith('/project', 'durable_cp', ['dead-1']);
+    expect(mockRemoveSessionEntries).not.toHaveBeenCalled();
   });
 
   it('prunes nothing when the store can\'t tell (no store where it looked)', async () => {
@@ -3769,7 +3771,7 @@ describe('listSessions: saved ids the CLI store lacks (#2156)', () => {
     expect(mockRemoveSessionEntries).not.toHaveBeenCalled();
   });
 
-  it('never prunes an entry a removed provider profile\'s store has; still prunes a truly missing one (#2749)', async () => {
+  it('hides unavailable entries without pruning saved history, including removed provider profiles (#2749)', async () => {
     sessionCapable(mockCodexProvider);
     mockRemoveSessionEntries.mockClear();
     mockGetDurableConfig.mockResolvedValue({ id: 'durable_cp', orchestrator: 'codex-cli' });
@@ -3781,7 +3783,7 @@ describe('listSessions: saved ids the CLI store lacks (#2156)', () => {
     try {
       const sessions = await listSessions('/project', 'durable_cp', 'codex-cli');
       expect(sessions.map((s) => s.sessionId)).toEqual(['real-1']);
-      expect(mockRemoveSessionEntries).toHaveBeenCalledWith('/project', 'durable_cp', ['dead-1']);
+      expect(mockRemoveSessionEntries).not.toHaveBeenCalled();
       expect(mockRemovedProfileStateDirs).toHaveBeenCalledWith('codex-cli');
     } finally {
       mockRemovedProfileStateDirs.mockResolvedValue([]);

@@ -1,3 +1,4 @@
+import { AgentConfigRecoveryNotice } from '../../features/agents/AgentConfigRecoveryNotice';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useAgentStore } from '../../stores/agentStore';
 import { useQuickAgentStore } from '../../stores/quickAgentStore';
@@ -77,8 +78,7 @@ function Composer({ project }: { project: Project }) {
       if (isQuick) {
         await spawnQuickAgent(project.id, project.path, mission, model, undefined, resolvedOrchestrator || undefined);
       } else {
-        const configs = await window.clubhouse.agent.listDurable(project.path);
-        const config = configs.find((c: { id: string }) => c.id === runAs);
+        const config = await window.clubhouse.agent.getDurableConfig(project.path, runAs, true);
         if (!config) throw new Error('Durable agent config not found');
         await spawnDurableAgent(project.id, project.path, config, false, mission);
       }
@@ -212,6 +212,7 @@ export function ProjectStartPage({ project }: { project: Project }) {
 
   return (
     <div className="h-full overflow-y-auto bg-ctp-base" data-testid="start-page">
+      <AgentConfigRecoveryNotice projectId={project.id} projectPath={project.path} />
       <div className="max-w-2xl mx-auto px-6 pt-16 pb-10 flex flex-col gap-8">
         <div className="flex flex-col gap-3">
           <div className="flex items-baseline gap-3">

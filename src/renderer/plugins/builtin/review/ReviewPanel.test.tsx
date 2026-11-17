@@ -390,7 +390,7 @@ describe('MainPanel', () => {
       spawnDurableAgent.mockClear();
       useProjectStore.setState({ projects: [{ id: 'proj-1', name: 'one', path: '/projects/one' }] as never });
       useAgentStore.setState({ agents: { s1: { id: 's1', projectId: 'proj-1', name: 'dozy', kind: 'durable', status: 'sleeping' } } as never, spawnDurableAgent } as never);
-      Object.assign(window.clubhouse.agent, { listDurable: vi.fn(async () => [{ id: 's1', name: 'dozy', lastSessionId: 'older' }]) });
+      Object.assign(window.clubhouse.agent, { getDurableConfig: vi.fn(async () => ({ id: 's1', name: 'dozy', lastSessionId: 'older' })) });
     });
 
     it('shows the session a resume continues, and Wake resumes it with the prompt', async () => {

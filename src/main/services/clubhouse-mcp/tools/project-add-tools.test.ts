@@ -30,7 +30,8 @@ vi.mock('../../log-service', () => ({ appLog: vi.fn() }));
 vi.mock('../../base-dir', () => ({ getBaseDirPath: () => tmp.base }));
 vi.mock('../../badge-settings', () => ({ getSettings: () => ({}), saveSettings: vi.fn() }));
 vi.mock('../../sound-service', () => ({ getSettings: () => ({}), saveSettings: vi.fn() }));
-vi.mock('../../agent-config', () => ({ ensureGitignore: vi.fn(async () => true) }));
+vi.mock('../../agent-config', () => ({ initializeDurableProjects: vi.fn(async () => {}),
+  ensureGitignore: vi.fn(async () => true) }));
 
 import { registerProjectAddTools } from './project-add-tools';
 import * as projectStore from '../../project-store';

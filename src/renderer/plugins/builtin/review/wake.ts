@@ -12,8 +12,7 @@ async function localDurable(agentId: string) {
   if (agent.kind !== 'durable') throw new Error('Only durable agents can be woken.');
   const project = useProjectStore.getState().projects.find((p) => p.id === agent.projectId);
   if (!project) throw new Error('This agent\'s project isn\'t open.');
-  const configs = await window.clubhouse.agent.listDurable(project.path);
-  const config = configs.find((c: { id: string }) => c.id === agentId);
+  const config = await window.clubhouse.agent.getDurableConfig(project.path, agentId, true);
   if (!config) throw new Error('This agent\'s settings couldn\'t be found.');
   return { project, config };
 }
