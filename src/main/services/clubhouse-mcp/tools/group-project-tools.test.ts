@@ -400,6 +400,41 @@ describe('GroupProjectTools', () => {
     expect(parsed.members[0].agentName).toBe('robin');
   });
 
+  it('get_project_info tells a notices group to react to notices, not to poll (#3618)', async () => {
+    groupProjectRegistry._setForTesting({
+      id: 'gp_notices', name: 'Notices', description: '', instructions: '',
+      createdAt: '2020-01-01T00:00:00Z', metadata: {},
+    });
+    const binding = makeBinding({ agentId: 'agent-1', targetId: 'gp_notices', targetName: 'Notices' });
+    bindingManager.bind('agent-1', binding);
+
+    const result = await callTool('agent-1', buildToolName(binding, 'get_project_info'), {});
+    const text: string = JSON.parse(result.content[0].text!).systemInstructions;
+
+    expect(text).toContain('NOTICES:');
+    expect(text).toContain('Do not poll the board in a loop');
+    expect(text).not.toContain('POLLING:');
+    expect(text).not.toContain('each time you poll');
+    expect(text).not.toContain('with one lead');
+  });
+
+  it('get_project_info gives the polling algorithm only to a group that still polls (#3618)', async () => {
+    groupProjectRegistry._setForTesting({
+      id: 'gp_polling', name: 'Polling', description: '', instructions: '',
+      createdAt: '2020-01-01T00:00:00Z', metadata: { pollingEnabled: true },
+    });
+    const binding = makeBinding({ agentId: 'agent-1', targetId: 'gp_polling', targetName: 'Polling' });
+    bindingManager.bind('agent-1', binding);
+
+    const result = await callTool('agent-1', buildToolName(binding, 'get_project_info'), {});
+    const text: string = JSON.parse(result.content[0].text!).systemInstructions;
+
+    expect(text).toContain('POLLING:');
+    expect(text).toContain('since=<latestTimestamp from last read>');
+    expect(text).toContain('no notices are sent');
+    expect(text).not.toContain('NOTICES:');
+  });
+
   it('get_project_info explicitly leaves legacy scope unresolved without changing the saved record', async () => {
     groupProjectRegistry._setForTesting({
       id: 'gp_legacy', name: 'Legacy', description: '', instructions: '',
@@ -1553,6 +1588,23 @@ describe('GroupProjectTools', () => {
 
       expect(result.isError).toBe(true);
       expect(result.content[0].text).toContain('admin');
+    });
+
+    it('describes admin and lead as separate grants (#3618)', () => {
+      groupProjectRegistry._setForTesting({
+        id: 'gp_desc', name: 'D', description: '', instructions: '',
+        createdAt: '2020-01-01T00:00:00Z', metadata: {},
+      });
+      grantLead('agent-1', 'gp_desc');
+      bindingManager.bind('agent-1', {
+        targetId: 'gp_desc', targetKind: 'group-project', label: 'D', agentName: 'admin',
+      });
+      const tool = getScopedToolList('agent-1').find(t => t.name.split('__').pop() === 'set_project_info');
+      expect(tool).toBeDefined();
+      expect(tool!.description).not.toMatch(/project.lead/i);
+      expect(tool!.description).not.toContain('only available to project leads');
+      expect(tool!.description).toContain('granted admin');
+      expect(tool!.description).toContain('Lead is a separate grant');
     });
 
     it('is hidden from a non-admin’s scoped tool list', () => {

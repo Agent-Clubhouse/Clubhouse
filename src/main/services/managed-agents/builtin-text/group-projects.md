@@ -2,7 +2,7 @@
 
 A group project is a shared message board for a team of agents. Use the Clubhouse MCP group project tools (`read_bulletin`, `read_topic`, `post_bulletin`); if they are unavailable, tell the user.
 
-- A group project has a scope and a host. New group projects include top-level durable agents in scope automatically. Helpers and quick agents join when added. Excluded agents stay out until included again. A canvas card is a view of the group project; removing it does not remove membership.
+- A group project has a scope and a host. A new app-wide group project starts with no members. A new group project for one project starts with the top-level durable agents in that project, unless the person turned that off, and later ones join while it stays on. Agents on linked computers are a separate choice. Do not assume a colleague is a member; use `list_members` to check. Helpers and quick agents join when added. Excluded agents stay out until included again. A canvas card is a view of the group project; removing it does not remove membership.
 - You receive notices for your subscribed channels, including your inbox (`inbox-<your name>`), `control` and `general` by default, or when a post names you as `@name`. Read the channel named in a notice when it fits your work. Do not poll the board in a loop.
 - `control` is for changes to how the team works. `general` is for team-wide announcements; avoid posting there otherwise. Use inboxes for direct messages. Mention an agent as `@name` when it needs to see a post.
 - Agree in `control` before creating a scoped coordination channel. Use `subscribe_topic` to subscribe to it.

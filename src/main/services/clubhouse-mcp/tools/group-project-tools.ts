@@ -15,7 +15,7 @@ import * as agentSystem from '../../agent-system';
 import { getAgentOrchestrator } from '../../agent-registry';
 import { pollingNudgeMsg } from '../../../../shared/polling-messages';
 import { setProjectPolling, getProjectPollingState } from '../../group-project-polling';
-import { listTopicSubscriptions, NEW_CHANNEL_NAME_MESSAGE, noteSenderAddress, setTopicSubscription, usableTopic } from '../../group-project-delivery';
+import { listTopicSubscriptions, NEW_CHANNEL_NAME_MESSAGE, noteSenderAddress, setTopicSubscription, usableTopic, usesPolling } from '../../group-project-delivery';
 import * as annexEventBus from '../../annex-event-bus';
 import { appLog } from '../../log-service';
 import type { McpToolResult } from '../types';
@@ -64,6 +64,26 @@ async function resolveSenderLabel(agentId: string, targetId: string): Promise<st
   return binding?.agentName
     ? `${binding.agentName}${projectName ? '@' + projectName : ''}`
     : agentId;
+}
+
+/**
+ * The `get_project_info` guidance. How a member hears about posts follows the group project's
+ * delivery mode (#3362): notices by default, polling only for one that still has it on (#3618).
+ */
+function projectSystemInstructions(polling: boolean): string {
+  const channelModel =
+    'CHANNEL MODEL: A group project is a shared message board for a team of agents. Every project has protected "general" and "control" channels, plus a per-agent "inbox-<agent-name>" channel. Agents granted lead coordinate the team.\n' +
+    '- Check your inbox, "control" and "general" when you join and between tasks. Follow other channels when you are asked to.\n' +
+    '- control: changes to how the team works. general: team-wide announcements only; avoid posting there otherwise.\n' +
+    '- inbox-<your-name>: your direct inbox. Reach another agent through theirs. Prefer inboxes over short-lived channels.\n' +
+    '- work channels: create one only after agreeing in "control", and only for scoped coordination, for example dev, QA and design working together on one piece.\n\n';
+  const delivery = polling
+    ? 'POLLING: This group project still uses polling, so no notices are sent. Call read_bulletin with since=<latestTimestamp from last read> and channels=["general","control","inbox-<your-name>", ...subscribed work channels]. ' +
+      'Only drill into a channel with read_topic when its newMessageCount > 0. Use summary=true for large reads and read_message for full bodies.\n\n'
+    : 'NOTICES: You get a notice when someone posts to a channel you subscribe to (your inbox, "control" and "general" by default) or names you as @name. ' +
+      'Do not poll the board in a loop. When a notice arrives, read the channel it names with read_topic, or call read_bulletin once for an overview. Use summary=true for large reads and read_message for full bodies.\n\n';
+  return channelModel + delivery +
+    'POSTING: Post replies on the channel where the work is happening. Do not cross-post. Keep messages short: plain text or short markdown, not large JSON.';
 }
 
 /** Register all group-project tool templates. */
@@ -333,15 +353,7 @@ export function registerGroupProjectTools(): void {
         scope: project.scope ?? null,
         description: project.description,
         instructions: project.instructions,
-        systemInstructions:
-          'CHANNEL MODEL: A group project is a shared message board for a team of agents, with one lead who coordinates. Every project has protected "general" and "control" channels, plus a per-agent "inbox-<agent-name>" channel.\n' +
-          '- Check your inbox, "control" and "general" when you join, between tasks, and each time you poll. Follow other channels when you are asked to.\n' +
-          '- control: changes to how the team works. general: team-wide announcements only; avoid posting there otherwise.\n' +
-          '- inbox-<your-name>: your direct inbox. Reach another agent through theirs. Prefer inboxes over short-lived channels.\n' +
-          '- work channels: create one only after agreeing in "control", and only for scoped coordination, for example dev, QA and design working together on one piece.\n\n' +
-          'POLLING: Call read_bulletin with since=<latestTimestamp from last read> and channels=["general","control","inbox-<your-name>", ...subscribed work channels]. ' +
-          'Only drill into a channel with read_topic when its newMessageCount > 0. Use summary=true for large reads and read_message for full bodies.\n\n' +
-          'POSTING: Post replies on the channel where the work is happening. Do not cross-post. Keep messages short: plain text or short markdown, not large JSON.',
+        systemInstructions: projectSystemInstructions(usesPolling(project)),
       };
 
       if (includeMembersList) {
@@ -660,7 +672,7 @@ export function registerGroupProjectTools(): void {
       description:
         'Legacy: members now get a notice when someone posts, so most group projects don\'t poll. ' +
         'Turn the project-wide polling setting on or off. Turning it off moves the group project to notices.\n\n' +
-        'This is the real admin control over `pollingEnabled` — the same setting the ' +
+        'This is the real control over `pollingEnabled` — the same setting the ' +
         'UI Polling switch drives and the one agents auto-start from on join. ' +
         'It persists the setting AND injects the orchestrator-aware start/stop ' +
         'instruction into every connected member\'s CLI, exactly like the UI toggle.\n\n' +
@@ -1109,11 +1121,11 @@ export function registerGroupProjectTools(): void {
     label: 'Set Project Info',
     mcp: { targetKind: 'group-project', nameSuffix: 'set_project_info', grant: { actions: ['group_project.admin'], target: 'bound' } },
     description:
-      'Update the group project description and/or instructions (project-lead tool).\n\n' +
+      'Update the group project description and/or instructions.\n\n' +
       'The description explains the purpose of the group; the instructions are directives ' +
       'every member must follow (returned by get_project_info). Provide either or both — ' +
       'omitted fields are left unchanged. Returns the updated { description, instructions }.\n\n' +
-      'This is a privileged, admin-only tool; it is only available to project leads.',
+      'This is a privileged tool. It is only available to agents granted admin on this group project. Lead is a separate grant and does not include it.',
     inputSchema: {
       type: 'object',
       properties: {
