@@ -159,6 +159,18 @@ function gitArgv(): string[][] {
   return vi.mocked(execFile).mock.calls.map((c) => [...(c[1] as unknown as string[])]);
 }
 
+/** Git invocations other than the lookup of the repository's exclude file (#3623), which every creation makes. */
+function gitCallsBesidesExcludeLookup(): string[][] {
+  return gitArgv().filter((args) => !args.includes('--git-common-dir'));
+}
+
+/** Every write the service made to a project's .gitignore, through any fs call. */
+function gitignoreWrites(): unknown[][] {
+  return [fsp.appendFile, fsp.writeFile, fsp.rename, fsp.copyFile]
+    .flatMap((fn) => vi.mocked(fn).mock.calls)
+    .filter((call) => call.some((arg) => String(arg).endsWith('.gitignore')));
+}
+
 // Clear the write-back cache before every test to prevent cross-test contamination.
 // Also set up default mocks for atomic-write helpers (rename, copyFile) so that
 // existing tests work without modification after the atomic write refactor.
@@ -409,8 +421,8 @@ describe('createDurable', () => {
     });
     const config = await createDurable(PROJECT_PATH, 'no-git-agent', 'indigo');
     expect(config.id).toMatch(/^durable_/);
-    // async git commands should not have been called
-    expect(vi.mocked(execFile)).not.toHaveBeenCalled();
+    // async git commands should not have been called (beyond the exclude lookup)
+    expect(gitCallsBesidesExcludeLookup()).toEqual([]);
     // mkdir should have been called for the worktree path
     expect(vi.mocked(fsp.mkdir)).toHaveBeenCalled();
   });
@@ -560,8 +572,8 @@ describe('createDurable', () => {
     expect(config.id).toMatch(/^durable_/);
     expect(config.worktreePath).toBeUndefined();
     expect(config.branch).toBeUndefined();
-    // No git commands should be called (neither sync nor async)
-    expect(vi.mocked(execFile)).not.toHaveBeenCalled();
+    // No git commands should be called (beyond the exclude lookup)
+    expect(gitCallsBesidesExcludeLookup()).toEqual([]);
     // mkdir should have been called for the worktree path
     expect(vi.mocked(fsp.mkdir)).toHaveBeenCalled();
   });
@@ -598,76 +610,19 @@ describe('createDurable', () => {
     expect(config).not.toHaveProperty('structuredMode');
   });
 
-  it('ensureGitignore skips when all patterns already present', async () => {
-    vi.mocked(pathExists).mockImplementation(async (p: any) => {
-      const s = String(p);
-      if (s.endsWith('.gitignore')) return true;
-      if (s.endsWith('.git')) return true;
-      if (s.endsWith('agents.json')) return false;
-      if (s.endsWith('CLAUDE.local.md')) return false;
-      if (s.endsWith('settings.json')) return false;
-      if (s.endsWith('README.md')) return false;
-      return false;
-    });
-    vi.mocked(fsp.readFile).mockImplementation(async (p: any) => {
-      if (String(p).endsWith('.gitignore'))
-        return '# Clubhouse agent manager\n.clubhouse/agents/\n.clubhouse/.local/\n.clubhouse/agents.json\n.clubhouse/agents.json.bak\n.clubhouse/settings.local.json\n.clubhouse/settings.json.bak\n.clubhouse/settings.json.unreadable*\n';
-      return '[]';
-    });
-
-    await createDurable(PROJECT_PATH, 'gitignore-test', 'indigo');
-    // Should NOT append because all patterns already exist
-    expect(vi.mocked(fsp.appendFile)).not.toHaveBeenCalled();
-  });
-
-  it('appends only missing gitignore patterns', async () => {
-    const appendedData: string[] = [];
-    vi.mocked(pathExists).mockImplementation(async (p: any) => {
-      const s = String(p);
-      if (s.endsWith('.gitignore')) return true;
-      if (s.endsWith('.git')) return true;
-      if (s.endsWith('agents.json')) return false;
-      if (s.endsWith('CLAUDE.local.md')) return false;
-      if (s.endsWith('settings.json')) return false;
-      if (s.endsWith('README.md')) return false;
-      return false;
-    });
-    vi.mocked(fsp.readFile).mockImplementation(async (p: any) => {
-      if (String(p).endsWith('.gitignore')) return '# Clubhouse agent manager\n.clubhouse/agents/\n';
-      return '[]';
-    });
-    vi.mocked(fsp.appendFile).mockImplementation(async (_p: any, data: any) => {
-      appendedData.push(String(data));
-    });
-
-    await createDurable(PROJECT_PATH, 'partial-test', 'indigo');
-    expect(vi.mocked(fsp.appendFile)).toHaveBeenCalled();
-    const appended = appendedData.join('');
-    // Should add the missing lines but not duplicate existing ones
-    expect(appended).toContain('.clubhouse/.local/');
-    expect(appended).toContain('.clubhouse/agents.json');
-    expect(appended).toContain('.clubhouse/settings.local.json');
-    expect(appended).toContain('.clubhouse/settings.json.bak');
-    expect(appended).toContain('.clubhouse/settings.json.unreadable*');
-    expect(appended).not.toContain('.clubhouse/agents/');
-    // Header should not be duplicated
-    expect(appended).not.toContain('# Clubhouse agent manager');
-  });
-
-  it('adds only the settings backup lines to a project with the earlier block, keeping its own lines', async () => {
-    const appendedData: string[] = [];
+  // #3623: a tracked .gitignore is edited when a new project is registered, never by creating an
+  // agent. The real-git coverage is in agent-creation-gitignore.git.test.ts.
+  it.each([
+    ['one that lacks the managed lines', 'node_modules/\n'],
+    ['one with the earlier managed block', 'my-own-line\n# Clubhouse agent manager\n.clubhouse/agents/\n.clubhouse/.local/\n.clubhouse/agents.json\n.clubhouse/agents.json.bak\n.clubhouse/settings.local.json\n'],
+    ['one with every managed line', '# Clubhouse agent manager\n.clubhouse/agents/\n.clubhouse/.local/\n.clubhouse/agents.json\n.clubhouse/agents.json.bak\n.clubhouse/settings.local.json\n.clubhouse/settings.json.bak\n.clubhouse/settings.json.unreadable*\n'],
+  ])('does not edit an existing .gitignore: %s', async (_label, gitignore) => {
     vi.mocked(pathExists).mockImplementation(async (p: any) => String(p).endsWith('.gitignore') || String(p).endsWith('.git'));
-    vi.mocked(fsp.readFile).mockImplementation(async (p: any) => {
-      if (String(p).endsWith('.gitignore'))
-        return 'my-own-line\n# Clubhouse agent manager\n.clubhouse/agents/\n.clubhouse/.local/\n.clubhouse/agents.json\n.clubhouse/agents.json.bak\n.clubhouse/settings.local.json\n';
-      return '[]';
-    });
-    vi.mocked(fsp.appendFile).mockImplementation(async (_p: any, data: any) => {
-      appendedData.push(String(data));
-    });
+    vi.mocked(fsp.readFile).mockImplementation(async (p: any) => (String(p).endsWith('.gitignore') ? gitignore : '[]'));
 
-    await createDurable(PROJECT_PATH, 'upgrade-gitignore-test', 'indigo');
-    expect(appendedData.join('')).toBe('\n.clubhouse/settings.json.bak\n.clubhouse/settings.json.unreadable*\n');
+    await createDurable(PROJECT_PATH, 'tracked-gitignore-test', 'indigo');
+    expect(gitignoreWrites()).toEqual([]);
+    expect(gitArgv()).toContainEqual(['rev-parse', '--git-common-dir', '--show-prefix']);
   });
 
   it('uses async exec (non-blocking) for git operations', async () => {
@@ -725,7 +680,7 @@ describe('createDurable', () => {
     const config = await createDurable(PROJECT_PATH, 'My Agent (docs)', 'indigo', 'default', false);
     expect(config.name).toBe('My Agent (docs)');
     expect(config.worktreePath).toBeUndefined();
-    expect(vi.mocked(execFile)).not.toHaveBeenCalled();
+    expect(gitCallsBesidesExcludeLookup()).toEqual([]);
   });
 });
 
@@ -2397,50 +2352,23 @@ describe('ensureGitignore edge cases', () => {
     });
   });
 
-  it('appends selective patterns when .gitignore exists without clubhouse patterns', async () => {
-    vi.mocked(pathExists).mockImplementation(async (p: any) => {
-      const s = String(p);
-      if (s.endsWith('.gitignore')) return true;
-      if (s.endsWith('.git')) return true;
-      if (s.endsWith('agents.json')) return false;
-      if (s.endsWith('settings.json')) return false;
-      if (s.endsWith('README.md')) return false;
-      return false;
-    });
-    vi.mocked(fsp.readFile).mockImplementation(async (p: any) => {
-      if (String(p).endsWith('.gitignore')) return 'node_modules/\n';
-      return '[]';
-    });
+  it('leaves an existing .gitignore alone (#3623)', async () => {
+    vi.mocked(pathExists).mockImplementation(async (p: any) => String(p).endsWith('.gitignore') || String(p).endsWith('.git'));
+    vi.mocked(fsp.readFile).mockImplementation(async (p: any) => (String(p).endsWith('.gitignore') ? 'node_modules/\n' : '[]'));
 
     await createDurable(PROJECT_PATH, 'append-test', 'indigo');
-    expect(vi.mocked(fsp.appendFile)).toHaveBeenCalled();
-    const appendCall = vi.mocked(fsp.appendFile).mock.calls[0];
-    expect(String(appendCall[1])).toContain('.clubhouse/agents/');
-    expect(String(appendCall[1])).toContain('.clubhouse/agents.json');
+    expect(gitignoreWrites()).toEqual([]);
   });
 
-  it('creates .gitignore when none exists', async () => {
-    vi.mocked(pathExists).mockImplementation(async (p: any) => {
-      const s = String(p);
-      if (s.endsWith('.gitignore')) return false;
-      if (s.endsWith('.git')) return true;
-      if (s.endsWith('agents.json')) return false;
-      if (s.endsWith('settings.json')) return false;
-      if (s.endsWith('README.md')) return false;
-      return false;
-    });
+  it('does not create a .gitignore when none exists (#3623)', async () => {
+    vi.mocked(pathExists).mockImplementation(async (p: any) => String(p).endsWith('.git'));
     vi.mocked(fsp.readFile).mockImplementation(async (p: any) => {
       if (String(p).endsWith('.gitignore')) throw new Error('not found');
       return '[]';
     });
 
     await createDurable(PROJECT_PATH, 'create-gitignore-test', 'indigo');
-    const writeCalls = vi.mocked(fsp.writeFile).mock.calls;
-    const gitignoreWrite = writeCalls.find((c) => String(c[0]).endsWith('.gitignore'));
-    expect(gitignoreWrite).toBeDefined();
-    expect(String(gitignoreWrite![1])).toContain('.clubhouse/agents/');
-    expect(String(gitignoreWrite![1])).toContain('.clubhouse/settings.json.bak\n');
-    expect(String(gitignoreWrite![1])).toContain('.clubhouse/settings.json.unreadable*\n');
+    expect(gitignoreWrites()).toEqual([]);
   });
 });
 

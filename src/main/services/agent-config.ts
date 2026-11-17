@@ -19,6 +19,7 @@ import type { HelperContextStatus } from '../../shared/helper-routing';
 import { auditChanged, auditChanges, type AuditKeyFormat } from './settings-audit';
 import { contextWindowCheck } from './context-window';
 import { pathExists } from './fs-utils';
+import { CLUBHOUSE_LOCAL_PATTERNS, ensureLocalExcludes } from './local-excludes';
 import { isInsideGitRepo } from './git-service';
 import { stepUnderFlow } from '../telemetry/workspace';
 import { persist } from '../telemetry/persist';
@@ -146,17 +147,8 @@ function agentsBackupPath(projectPath: string): string {
 
 const GITIGNORE_HEADER = '# Clubhouse agent manager';
 
-// Settings backups (.bak) and recovery copies (.unreadable, .unreadable.N) can hold
-// a project's settings or corrupt bytes, so `git add -A` must not pick them up.
-const GITIGNORE_LINES = [
-  '.clubhouse/agents/',
-  '.clubhouse/.local/',
-  '.clubhouse/agents.json',
-  '.clubhouse/agents.json.bak',
-  '.clubhouse/settings.local.json',
-  '.clubhouse/settings.json.bak',
-  '.clubhouse/settings.json.unreadable*',
-];
+// The same list is the project's local exclude (see local-excludes.ts).
+const GITIGNORE_LINES = CLUBHOUSE_LOCAL_PATTERNS;
 
 const GITIGNORE_BLOCK = [GITIGNORE_HEADER, ...GITIGNORE_LINES].join('\n');
 
@@ -215,7 +207,11 @@ function ensureGuardedGitignore(projectPath: string, assertSafe: () => void): bo
   }
 }
 
-/** Add Clubhouse's lines to the project's .gitignore. True when the file was written. */
+/**
+ * Add Clubhouse's lines to the project's .gitignore. True when the file was written.
+ * Only new-project registration calls this: it edits a tracked file, so agent creation
+ * in an existing project must not (#3623); it uses `ensureLocalExcludes` instead.
+ */
 export async function ensureGitignore(projectPath: string, assertSafe?: () => void): Promise<boolean> {
   if (assertSafe) return ensureGuardedGitignore(projectPath, assertSafe);
   const gitignorePath = path.join(projectPath, '.gitignore');
@@ -2436,16 +2432,11 @@ export async function beginDurableCreation(
 
   await currentCreationGit()?.assertCurrent();
   await ensureCreationDirectory(clubhouseDir(projectPath));
-  // The Dispatcher's folder is no repo, so it gets no .gitignore (#2535).
-  if (!isDispatcherPath(projectPath)) {
-    await currentCreationGit()?.assertCurrent();
-    await ensureGitignore(projectPath, currentCreationGit() ? () => {
-      currentCreationGit()!.assertConsent();
-      currentCreationGit()!.assertFilesystem();
-      const ignore = fs.lstatSync(path.join(projectPath, '.gitignore'), { throwIfNoEntry: false });
-      if (ignore && (!ignore.isFile() || ignore.isSymbolicLink() || ignore.nlink !== 1 || ignore.size > 1024 * 1024)) throw new Error('Imported ignore file changed; inspect the preserved state before agent creation.');
-    } : undefined);
-  }
+  // The Dispatcher's folder is no repo, so it needs no exclude (#2535). An imported checkout
+  // got the managed .gitignore block when it was registered, and its Git runs under the importer's
+  // pin, so it is left alone. Anywhere else the repository's own exclude file protects Clubhouse's
+  // local files; agent creation never edits a tracked .gitignore (#3623).
+  if (!isDispatcherPath(projectPath) && !currentCreationGit()) await ensureLocalExcludes(projectPath);
 
   // Access (#2761): the caller's level, else the app's Default access.
   const access = accessForNewAgent(params, projectPath);
@@ -2624,7 +2615,7 @@ async function runDurableCreation(
         } catch (error) {
           if (currentCreationGit()) throw error;
           // Empty repo with no commits — bootstrap with an initial commit
-          // Include .gitignore which ensureGitignore() has already created/updated
+          // Include a .gitignore that is already there
           appLog('core:agent-config', 'info', 'Empty repository detected, creating initial commit for worktree support', {
             meta: { agentName: initial.name, projectPath },
           });
