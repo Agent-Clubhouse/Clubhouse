@@ -51,8 +51,9 @@ function listRule(match: RegExp, type: NodeType, getAttrs: (m: RegExpMatchArray)
 
 export function promptRules() {
   const { bullet_list, ordered_list } = promptSchema.nodes;
+  // A line break may open the span (start group) but never sits inside it: the match would carry its placeholder char into the text.
   const emphasisRule = (strong: boolean) => new InputRule(
-    strong ? /(^|[\s([{])\*\*([^\s*](?:[^*]*?[^\s*])?)\*\*$/ : /(^|[\s([{])\*([^\s*](?:[^*]*?[^\s*])?)\*$/,
+    strong ? /(^|[\s([{\ufffc])\*\*([^\s*\ufffc](?:[^*\ufffc]*?[^\s*\ufffc])?)\*\*$/ : /(^|[\s([{\ufffc])\*([^\s*\ufffc](?:[^*\ufffc]*?[^\s*\ufffc])?)\*$/,
     (state, match, start, end) => {
       start += match[1].length;
       const mark = strong ? promptSchema.marks.strong : promptSchema.marks.em;

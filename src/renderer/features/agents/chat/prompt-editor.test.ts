@@ -86,6 +86,46 @@ describe('structured prompt editing', () => {
     expect(view.state.doc.firstChild?.child(1).type.name).toBe('hard_break');
   });
 
+  describe('emphasis can start on a new line after text (#3619)', () => {
+    it.each([['*word*', 'em'], ['**word**', 'strong']] as const)('converts %s typed after a soft return, keeping the line break', (text, mark) => {
+      editor('first'); softReturn(view); type(text);
+      const paragraph = view.state.doc.firstChild!;
+      expect(view.state.doc.childCount).toBe(1);
+      expect([...Array(paragraph.childCount).keys()].map((i) => paragraph.child(i).type.name)).toEqual(['text', 'hard_break', 'text']);
+      expect(paragraph.child(2).text).toBe('word');
+      expect(paragraph.child(2).marks.map((m) => m.type.name)).toEqual([mark]);
+      expect(source()).toBe(text.length > 6 ? 'first\n**word**' : 'first\n*word*');
+    });
+
+    it('undoes to the literal asterisks and keeps the soft return', () => {
+      editor('first'); softReturn(view); type('*word*');
+      expect(view.dom.querySelectorAll('em')).toHaveLength(1);
+      key('z', { metaKey: true });
+      expect(view.dom.querySelectorAll('em')).toHaveLength(0);
+      expect(source()).toBe('first\n*word*');
+      expect(view.state.doc.firstChild?.child(1).type.name).toBe('hard_break');
+    });
+
+    it('converts after a second soft return too', () => {
+      editor('first'); softReturn(view); softReturn(view); type('**word**');
+      expect(view.dom.querySelectorAll('strong')).toHaveLength(1);
+      expect(source()).toBe('first\n\n**word**');
+    });
+
+    it.each(['a*b*c', 'x**word**'])('does not convert midword after a soft return: %s', (text) => {
+      editor('first'); softReturn(view); type(text);
+      expect(view.dom.querySelectorAll('em, strong')).toHaveLength(0);
+      expect(source()).toBe(`first\n${text}`);
+    });
+
+    it('leaves emphasis that spans a line break literal rather than putting the break in as a character', () => {
+      editor(''); type('*a'); softReturn(view); type('b*');
+      expect(view.state.doc.toString()).not.toContain('\ufffc');
+      expect(view.dom.querySelectorAll('em')).toHaveLength(0);
+      expect(source()).toBe('*a\nb*');
+    });
+  });
+
   describe('a list can start on a new line after text (#3619)', () => {
     it.each([['- ', 'bullet_list'], ['* ', 'bullet_list'], ['1. ', 'ordered_list'], ['8. ', 'ordered_list']] as const)('%s after a soft return starts a list and keeps the text above as a paragraph', (marker, kind) => {
       editor('intro'); softReturn(view); type(marker); type('item');
@@ -140,6 +180,12 @@ describe('structured prompt editing', () => {
       expect(source()).toBe('intro\nx- ');
     });
 
+    it('starts a list after a soft return inside bold text', () => {
+      editor('intro'); key('b', { metaKey: true }); type('bold'); softReturn(view); type('- item');
+      expect(view.state.doc.child(1).type.name).toBe('bullet_list');
+      expect(view.state.doc.child(1).textContent).toBe('item');
+      expect(view.state.doc.child(0).textContent).toBe('introbold');
+    });
     it('does not convert a marker after a hard break inside a list item', () => {
       editor('- first'); insertPlainText(view, 'a\nb'); type('- ');
       expect(view.state.doc.childCount).toBe(1);
