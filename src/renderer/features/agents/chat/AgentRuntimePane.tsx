@@ -155,12 +155,14 @@ export async function switchAgentRuntime(agent: Agent, mode: AgentRuntimeMode): 
     const project = findLocalProject(agent.projectId);
     if (!project) throw new Error('Project not found');
     const api = window.clubhouse.agent;
+    // A restart must verify policy before a settings write can recover storage.
+    await api.getDurableConfig(project.path, agent.id, true);
     await api.updateDurableConfig(project.path, agent.id, { runtimeMode: mode });
     const store = useAgentStore.getState();
     // Wait for the exit: the old process saves its session id as it exits,
     // and the respawn must resume that session, not the previous one.
     await store.killAgent(agent.id, project.path, { waitForExit: true });
-    const config = await api.getDurableConfig(project.path, agent.id);
+    const config = await api.getDurableConfig(project.path, agent.id, true);
     if (!config) throw new Error('Agent config not found');
     rendererLog(SWITCH_LOG_NS, 'info', 'Runtime switch: respawning', { meta: { ...meta, resumeSessionId: config.lastSessionId ?? null } });
     await store.spawnDurableAgent(project.id, project.path, config, !!config.lastSessionId);

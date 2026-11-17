@@ -2014,7 +2014,7 @@ async function findProjectById(projectId: string) {
 
 async function findAgentAcrossProjects(agentId: string): Promise<{ config: Awaited<ReturnType<typeof agentConfig.listDurable>>[number]; project: Awaited<ReturnType<typeof projectStore.list>>[number] } | null> {
   for (const proj of await projectStore.list()) {
-    const durables = await agentConfig.listDurable(proj.path);
+    const durables = await agentConfig.peekDurableConfigs(proj.path);
     const agent = durables.find((d) => d.id === agentId);
     if (agent) return { config: agent, project: proj };
   }
@@ -4536,7 +4536,7 @@ async function runMobileCommand(input: MobileCommand, assertAuthorized: () => vo
   const starting = { cancelled: false };
   mobileStartingAgents.set(command.agentId, starting);
   try {
-    const config = command.expectedProvider !== undefined ? await agentConfig.getDurableConfig(project.path, command.agentId) : info.config;
+    const config = command.expectedProvider !== undefined ? await agentConfig.getDurableConfig(project.path, command.agentId, { forLaunch: true }) : info.config;
     if (!config || isDisposedAgent(config)) throw new MobileControlError('agent_not_found', 404);
     if (command.expectedProvider !== undefined) {
       if (command.resume && hasSessionCaptureFailure(command.agentId)) throw new MobileControlError('session_capture_failed');

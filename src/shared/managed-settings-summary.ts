@@ -1,3 +1,4 @@
+import { SANDBOX_LABELS, APPROVAL_LABELS, type ExecutionPolicy } from './execution-policy';
 /**
  * Preview's settings summary for a managed agent (#2895): the settings that
  * aren't parts, in words. Main builds it for an agent, for a New agent draft
@@ -13,7 +14,7 @@ const APPROVALS: Readonly<Record<OrchestrationControl, string>> = {
   'ask-everything': 'asks for everything',
 };
 
-export interface ManagedSettingsSummaryInput {
+export interface ManagedSettingsSummaryInput extends ExecutionPolicy {
   /** The CLI's display name. */
   cliName?: string;
   model?: string;
@@ -45,6 +46,8 @@ export function managedSettingsSummary(input: ManagedSettingsSummaryInput): Mana
     { key: 'model', label: 'Model', value: input.model && input.model !== 'default' ? input.model : 'CLI default' },
     { key: 'effort', label: 'Effort', value: input.effort || 'CLI default' },
     { key: 'access', label: 'Access', value: accessValue(input) },
+    ...(input.sandbox ? [{ key: 'sandbox', label: 'Sandbox', value: SANDBOX_LABELS[input.sandbox] }] : []),
+    ...(input.approvalPolicy ? [{ key: 'approvalPolicy', label: 'Approval policy', value: APPROVAL_LABELS[input.approvalPolicy] }] : []),
     { key: 'orchestration', label: 'Orchestration', value: policy.orchestrate ? 'Can start helpers' : 'Off' },
   ];
   if (policy.orchestrate) {

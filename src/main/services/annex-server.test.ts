@@ -170,6 +170,7 @@ vi.mock('./agent-config', () => {
   const listDurable = vi.fn().mockReturnValue([]);
   return {
   listDurable,
+  peekDurableConfigs: async (projectPath: string) => listDurable(projectPath),
   peekCachedDurableConfig: (_projectPath: string, id: string) => listDurable(_projectPath).find((config: { id: string }) => config.id === id) ?? null,
   readAgentIconData: vi.fn().mockReturnValue(null),
   agentIconFilePath: vi.fn(),

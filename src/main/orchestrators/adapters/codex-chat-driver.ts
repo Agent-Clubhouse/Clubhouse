@@ -1,3 +1,4 @@
+import { assertExecutionPolicy, hasExecutionPolicy, supportsIndependentCodexPolicy, type ExecutionPolicy } from '../../../shared/execution-policy';
 import { LogRedactor, redactSpawnArgs } from '../../../shared/log-redaction';
 // Codex chat driver: `codex app-server` (v2 over stdio) behind the shared
 // ChatDriver seam (src/shared/chat/runtime.ts). One CLI process and one
@@ -118,7 +119,12 @@ const PROBE_TIMEOUT_MS = 15_000;
  * Clubhouse's permission ladder on Codex's approval policy and sandbox.
  * Codex has no stable plan mode, so `plan` is a read-only sandbox.
  */
-export function codexLevelSettings(level: PermissionLevel): { approvalPolicy: AskForApproval; sandbox: SandboxMode } {
+export function codexLevelSettings(level: PermissionLevel, overrides: ExecutionPolicy = {}): { approvalPolicy: AskForApproval; sandbox: SandboxMode } {
+  if (hasExecutionPolicy(overrides)) return {
+    ...codexLevelSettings(level),
+    ...(overrides.sandbox !== undefined && { sandbox: overrides.sandbox }),
+    ...(overrides.approvalPolicy !== undefined && { approvalPolicy: overrides.approvalPolicy }),
+  };
   switch (level) {
     case 'plan':
       return { approvalPolicy: 'on-request', sandbox: 'read-only' };
@@ -375,13 +381,17 @@ class CodexChatSession implements ChatDriverSession {
 
   async open(): Promise<void> {
     const { opts } = this;
-    const level = codexLevelSettings(opts.level);
+    assertExecutionPolicy(opts.provider, 'chat', opts);
+    const level = codexLevelSettings(opts.level, opts);
     let result: ThreadStartResponse | ThreadResumeResponse;
     let cliVersion: string | undefined;
     let mcp: ReturnType<typeof toCodexMcpServers> = { servers: {}, skipped: [] };
     try {
       const info = await this.client.start();
       cliVersion = parseCodexVersion(info?.userAgent);
+      if (hasExecutionPolicy(opts) && !supportsIndependentCodexPolicy(cliVersion)) {
+        throw new Error('Independent sandbox and approval settings require verified Codex 0.163.0 or newer.');
+      }
       mcp = toCodexMcpServers(opts.mcpServers, opts.cwd);
       const contextWindow = Number(opts.contextWindow);
       const config: Record<string, JsonValue> | undefined = Object.keys(mcp.servers).length > 0 || contextWindow > 0
@@ -414,6 +424,11 @@ class CodexChatSession implements ChatDriverSession {
       throw err;
     }
 
+    if ((opts.sandbox && result.sandbox.type !== ({ 'read-only': 'readOnly', 'workspace-write': 'workspaceWrite', 'danger-full-access': 'dangerFullAccess' } as const)[opts.sandbox])
+      || (opts.approvalPolicy && result.approvalPolicy !== opts.approvalPolicy)) {
+      this.abortStart();
+      throw new Error('Codex did not apply the requested sandbox and approval policy. Nothing was sent.');
+    }
     this.threadId = result.thread.id;
     this.threadSandbox = result.sandbox;
     if (opts.effort) this.nextTurn.effort = opts.effort as TurnStartParams['effort'];
@@ -555,7 +570,7 @@ class CodexChatSession implements ChatDriverSession {
   }
 
   async setLevel(level: PermissionLevel): Promise<void> {
-    const { approvalPolicy, sandbox } = codexLevelSettings(level);
+    const { approvalPolicy, sandbox } = codexLevelSettings(level, this.opts);
     this.nextTurn.approvalPolicy = approvalPolicy;
     this.nextTurn.sandboxPolicy = codexSandboxPolicy(sandbox, this.opts.cwd, this.threadSandbox);
     this.emit({ type: 'mode_changed', data: { level, nativeMode: `${approvalPolicy}/${sandbox}` } });

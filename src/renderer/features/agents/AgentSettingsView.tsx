@@ -1,3 +1,6 @@
+import { AgentConfigRecoveryNotice } from './AgentConfigRecoveryNotice';
+import { ExecutionPolicyFields } from './ExecutionPolicyFields';
+import { hasExecutionPolicy, type ExecutionPolicy } from '../../../shared/execution-policy';
 import { useEffect, useMemo, useState, useRef } from 'react';
 import { Agent, QuickAgentDefaults, McpCatalogArg, McpCatalogEntry, McpCatalogEntryWithState } from '../../../shared/types';
 import { AGENT_COLORS } from '../../../shared/name-generator';
@@ -482,6 +485,9 @@ export function AgentSettingsView({ agent }: Props) {
   const [permLoaded, setPermLoaded] = useState(false);
 
   // Access (#2761): the level the agent starts at. A record without one reads as Ask first until its config loads.
+  const [executionPolicy, setExecutionPolicy] = useState<ExecutionPolicy>({});
+  const [policySaving, setPolicySaving] = useState(false);
+  const [policyError, setPolicyError] = useState<string | null>(null);
   const [access, setAccess] = useState<AccessLevel>(agent.access ?? 'ask');
 
   // Quick Agent Defaults state
@@ -633,6 +639,7 @@ export function AgentSettingsView({ agent }: Props) {
         // Sync agent model from disk — disk is the source of truth. Classification
         // into known-vs-custom is left to the effect that waits on MODEL_OPTIONS.
         setSavedModel(config?.model || 'default');
+        setExecutionPolicy({ sandbox: config?.sandbox, approvalPolicy: config?.approvalPolicy });
         setAccess(config?.access ?? (config?.freeAgentMode ? 'auto' : 'ask'));
         setQadLoaded(true);
       } catch {
@@ -1072,7 +1079,9 @@ export function AgentSettingsView({ agent }: Props) {
       <Field
         label="Access"
         htmlFor="agent-settings-access"
-        help={permissionsSupported ? `${accessHelp(access)} Where it starts. The chat composer can change it for one session.` : `Set by ${orchestratorName}.`}
+        help={agentOrchestrator === 'codex-cli' && hasExecutionPolicy(executionPolicy)
+          ? 'The independent policy choices below override this level’s defaults. Plan prevents changes through its read-only default; a broader sandbox can allow changes.'
+          : permissionsSupported ? `${accessHelp(access)} Where it starts. The chat composer can change it for one session.` : `Set by ${orchestratorName}.`}
         testId="agent-settings-access"
       >
         <AccessSelect
@@ -1085,6 +1094,18 @@ export function AgentSettingsView({ agent }: Props) {
           className={selectClass}
         />
       </Field>
+      <ExecutionPolicyFields value={executionPolicy} provider={agentOrchestrator} runtime={chatFlagEnabled ? accessRuntime : 'terminal'} version={chatView?.provider === agentOrchestrator ? chatView.cliVersion ?? undefined : undefined}
+        disabled={lockedWhileRunning || policySaving || isRemoteProjectId(agent.projectId)} className={selectClass}
+        onChange={(patch) => {
+          if (!projectPath) return;
+          setPolicySaving(true);
+          setPolicyError(null);
+          void window.clubhouse.agent.updateDurableConfig(projectPath, agent.id, patch).then(() => {
+            setExecutionPolicy((old) => ({ ...old, ...Object.fromEntries(Object.entries(patch).map(([k, v]) => [k, v ?? undefined])) }));
+          }).catch((error: unknown) => setPolicyError(error instanceof Error ? error.message : 'Could not save the execution policy.'))
+            .finally(() => setPolicySaving(false));
+        }} />
+      {policyError && <p role="alert" className="text-ctp-error">{policyError}</p>}
     </>
   );
 
@@ -1489,6 +1510,7 @@ export function AgentSettingsView({ agent }: Props) {
 
   return (
     <div data-testid="agent-settings" className="h-full flex flex-col bg-ctp-base overflow-hidden">
+      {projectPath && <AgentConfigRecoveryNotice projectId={agent.projectId} projectPath={projectPath} />}
       {/* The classic shell has no breadcrumb, so it keeps a slim header to name the agent and go back. */}
       {!pageMode && (
         <div className="h-10 flex items-center gap-2.5 px-4 border-b border-surface-0 flex-shrink-0">

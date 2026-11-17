@@ -60,6 +60,7 @@ beforeEach(() => {
     activeAgentId: 'lead',
   } as never);
   window.clubhouse.agent.listDurable = vi.fn(async (p: string) => (p === OTHER ? otherConfigs : configs)) as never;
+  window.clubhouse.agent.getDurableConfig = vi.fn(async (p: string, id: string) => (p === OTHER ? otherConfigs : configs).find((agent) => agent.id === id) ?? null);
   // Main's LIST_HELPERS: direct helpers in every project, each with its own project.
   window.clubhouse.agent.listHelpers = vi.fn(async (_p: string, id: string, _recursive?: boolean, includeDisposed?: boolean): Promise<HelperInProject[]> => [
     ...configs.map((config) => ({ projectId: 'p1', projectPath: PROJECT, config })),
@@ -167,6 +168,7 @@ describe('Helpers card (#2232)', () => {
     expect(wake).toHaveTextContent('Wake');
     fireEvent.click(wake);
     await waitFor(() => expect(spawn).toHaveBeenCalledWith('p1', PROJECT, expect.objectContaining({ id: 'h2' }), false));
+    expect(window.clubhouse.agent.getDurableConfig).toHaveBeenCalledWith(PROJECT, 'h2', true);
   });
 
   it('disposes through the dispose dialog, not the delete dialog', async () => {
@@ -411,6 +413,7 @@ describe('HelpersCard with a helper in another project (#2514)', () => {
     });
     fireEvent.click(wake);
     await waitFor(() => expect(spawn).toHaveBeenCalledWith('p2', OTHER, expect.objectContaining({ id: 'x1' }), false));
+    expect(window.clubhouse.agent.getDurableConfig).toHaveBeenCalledWith(OTHER, 'x1', true);
 
     fireEvent.click(within(screen.getByTestId('helper-row-x1')).getByTestId('helper-open'));
     expect(useAgentStore.getState().activeAgentId).toBe('x1');

@@ -162,3 +162,19 @@ describe('Start fresh (#3240)', () => {
     await expect(startDispatcherFresh('work', { workAgentId: () => null })).rejects.toThrow(/not set up/);
   });
 });
+
+describe('strict verification before Dispatcher lifecycle writes (#3686)', () => {
+  it.each(['sleeping-chat', 'running-work', 'sleeping-work'] as const)('refuses %s before recovery, session changes or preparation', async (mode) => {
+    const verifyPolicy = vi.fn().mockRejectedValue(new Error('Cannot verify the saved execution policy'));
+    const workSessionId = vi.fn(async () => 'old-native');
+    const quarantine = vi.fn();
+    const forgetSession = vi.fn();
+    const prepareStart = vi.fn();
+    const deps = { verifyPolicy, workSessionId, quarantine, forgetSession, prepareStart, isRunning: () => mode === 'running-work' };
+    await expect(mode === 'sleeping-chat' ? clearDispatcherChat(deps) : startDispatcherWorkFresh('user', deps)).rejects.toThrow('Cannot verify');
+    expect(workSessionId).not.toHaveBeenCalled();
+    expect(quarantine).not.toHaveBeenCalled();
+    expect(forgetSession).not.toHaveBeenCalled();
+    expect(prepareStart).not.toHaveBeenCalled();
+  });
+});

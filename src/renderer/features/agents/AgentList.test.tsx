@@ -107,6 +107,15 @@ function resetStores() {
 }
 
 describe('AgentList dropdown', () => {
+  it('shows available agents and a recovery notice without restoring uncertain storage (#3686)', async () => {
+    window.clubhouse.agent.getBackupInfo = vi.fn().mockResolvedValue({ recoveryRequired: true, backupAgents: [{ id: 'agent-1' }] });
+    window.clubhouse.agent.restoreFromBackup = vi.fn();
+    render(<AgentList />);
+    expect(await screen.findByTestId('agent-config-recovery')).toHaveTextContent('Can’t verify');
+    expect(screen.getByTestId('agent-item-agent-1')).toBeInTheDocument();
+    expect(window.clubhouse.agent.restoreFromBackup).not.toHaveBeenCalled();
+  });
+
   beforeEach(() => {
     vi.clearAllMocks();
     memoizeAgentItems = false;

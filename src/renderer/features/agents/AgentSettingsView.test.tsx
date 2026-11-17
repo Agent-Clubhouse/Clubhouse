@@ -111,6 +111,15 @@ function renderSettings(agentOverrides: Partial<Agent> = {}) {
 }
 
 describe('AgentSettingsView', () => {
+  it('keeps available agents visible and offers deliberate recovery for uncertain storage (#3686)', async () => {
+    window.clubhouse.agent.getBackupInfo = vi.fn().mockResolvedValue({ recoveryRequired: true, backupAgents: [{ id: 'agent-1' }] });
+    window.clubhouse.agent.restoreFromBackup = vi.fn();
+    renderSettings();
+    expect(await screen.findByTestId('agent-config-recovery')).toHaveTextContent('Can’t verify');
+    expect(screen.getByRole('button', { name: 'Restore saved backup' })).toBeInTheDocument();
+    expect(window.clubhouse.agent.restoreFromBackup).not.toHaveBeenCalled();
+  });
+
   beforeEach(() => {
     vi.clearAllMocks();
     resetStores();

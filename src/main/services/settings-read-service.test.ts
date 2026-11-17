@@ -728,7 +728,7 @@ describe('reads change nothing', () => {
     return sections.map((s) => s.section);
   };
 
-  it('writes nothing, for a project not loaded yet included, while loading it does write', async () => {
+  it('writes nothing, for a project not loaded yet included, while explicit verified initialization does write', async () => {
     const cold = coldProject();
     await agentConfig.listDurable(one);
     writeApp('chat-idle-settings.json', { idleTimeoutMinutes: 60 });
@@ -744,7 +744,7 @@ describe('reads change nothing', () => {
     expect(snapshot(root)).toEqual(before);
 
     // The fixture is one the loading read would have changed, so the check above means something.
-    await agentConfig.listDurable(cold);
+    await agentConfig.initializeDurableProject(cold);
     await agentConfig.flushAllAgentConfigs();
     expect(snapshot(root)).not.toEqual(before);
   });

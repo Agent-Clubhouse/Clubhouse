@@ -44,6 +44,7 @@ const beforeEach = ownedRegistration(rawBeforeEach, 0, (promise) => { owner().ob
 const fixture = vi.hoisted(() => ({ agents: [] as DurableAgentConfig[], running: false, starts: [] as ChatDriverStartOptions[], sessions: [] as FakeChatDriverSession[], cacheAvailable: true, configGeneration: 0 }));
 vi.mock('electron', () => ({ ipcMain: { handle: vi.fn() }, app: { getPath: () => '/unused-synthetic-app' } }));
 vi.mock('../agent-config', () => ({
+  initializeDurableProject: vi.fn(async () => {}),
   agentConfigGeneration: () => fixture.configGeneration,
   peekCachedDurableConfig: (_p: string, id: string) => fixture.cacheAvailable ? structuredClone(fixture.agents.find((a) => a.id === id) ?? null) : null,
   peekDurableConfigs: vi.fn(async () => fixture.agents),

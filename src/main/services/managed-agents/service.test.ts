@@ -477,6 +477,19 @@ describe('templates', () => {
     await expectCode(user(() => service.saveTemplate({ id: 'builtin-template-orchestrator', name: 'x', description: '', setup: saved.setup, settings: {} })), 'builtin_read_only');
   });
 
+  it('round-trips explicit policies independently and preserves target grants (#3686)', async () => {
+    const grants = [{ action: 'agent.message' as const, target: { kind: 'connected' as const }, mode: 'ask' as const }];
+    const t = await user(() => service.saveTemplate({ name: 'Sandbox policy', description: '', setup: { blocks: [], skills: [], mcps: [] }, settings: { orchestrator: 'codex-cli', access: 'full_access', sandbox: 'read-only', approvalPolicy: 'never', grants } }));
+    expect(t.settings).toMatchObject({ sandbox: 'read-only', approvalPolicy: 'never', grants });
+    const changed = await user(() => service.saveTemplate({ ...t, settings: { ...t.settings, approvalPolicy: 'on-request' } }));
+    expect(changed.settings).toMatchObject({ sandbox: 'read-only', approvalPolicy: 'on-request', grants });
+    const reset = await user(() => service.saveTemplate({ ...changed, settings: { ...changed.settings, sandbox: null } }));
+    expect(reset.settings).not.toHaveProperty('sandbox');
+    expect(reset.settings).toMatchObject({ approvalPolicy: 'on-request', grants });
+    await expect(user(() => service.saveTemplate({ ...reset, settings: { ...reset.settings, sandbox: 'invalid' as never } }))).rejects.toThrow('Unknown sandbox');
+    expect((await user(() => service.getTemplate(t.id))).settings).toEqual(reset.settings);
+  });
+
   it('pushes a template edit only to ticked agents and counts what already matches', async () => {
     const skill = await user(() => service.createPart({ name: 'Notes', content: { kind: 'skill', skillName: 'notes', files: [{ path: 'SKILL.md', content: '# n' }] } }));
     const t = await user(() => service.saveTemplate({ name: 'Team', description: '', setup: { blocks: [BUILTIN_BLOCK_IDS.identity], skills: [], mcps: [CLUBHOUSE_MCP_PART_ID] }, settings: {} }));

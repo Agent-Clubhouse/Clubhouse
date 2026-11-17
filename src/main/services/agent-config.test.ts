@@ -91,6 +91,7 @@ import { registerProvider } from '../orchestrators/registry';
 import { isInsideGitRepo } from './git-service';
 import {
   listDurable,
+  initializeDurableProject,
   createDurable,
   beginDurableCreation,
   renameDurable,
@@ -196,6 +197,10 @@ function mockAgentsFile(agents: any[]) {
 }
 
 function mockNoAgentsFile() {
+  vi.mocked(fsp.readFile).mockImplementation(async (p) => {
+    if (/agents\.json(?:\.bak)?$/.test(String(p))) throw Object.assign(new Error('ENOENT'), { code: 'ENOENT' });
+    return '';
+  });
   vi.mocked(pathExists).mockImplementation(async (p: any) => {
     if (String(p).endsWith('agents.json')) return false;
     if (String(p).endsWith('.git')) return true;
@@ -212,7 +217,78 @@ function captureMainAgentWrite(setter: (value: string) => void) {
   });
 }
 
-describe('readAgents (via listDurable)', () => {
+describe('QA3686 dispatcher prelude storage evidence', () => {
+  it('an ordinary read leaves the older backup untouched and strict verification still rejects the corrupt primary', async () => {
+    const id = 'durable_policy';
+    const backup = { id, name: 'old full-access backup', color: 'indigo', access: 'full_access', orchestrator: 'codex-cli' };
+    let primary = '{broken';
+    const writes = new Map<string, string>();
+    vi.mocked(pathExists).mockImplementation(async (p) => String(p).endsWith('agents.json') || String(p).endsWith('agents.json.bak'));
+    vi.mocked(fsp.readFile).mockImplementation(async (p) => String(p).endsWith('agents.json') ? primary : String(p).endsWith('.bak') ? JSON.stringify([backup]) : '');
+    vi.mocked(fsp.writeFile).mockImplementation(async (p, data) => { writes.set(String(p), String(data)); });
+    vi.mocked(fsp.rename).mockImplementation(async (from, to) => { if (String(to).endsWith('agents.json')) primary = writes.get(String(from))!; });
+    const ordinary = await getDurableConfig(PROJECT_PATH, id);
+    await expect(getDurableConfig(PROJECT_PATH, id, { forLaunch: true })).rejects.toThrow();
+    expect(ordinary).toMatchObject(backup);
+    expect(primary).toBe('{broken');
+    expect(writes.size).toBe(0);
+    expect(vi.mocked(fsp.readFile).mock.calls.some(([p]) => String(p).endsWith('.bak'))).toBe(true);
+    console.log('QA3686 actual-reader recovery receipt', JSON.stringify({ primaryAfterPrelude: primary, ordinary }));
+  });
+});
+
+
+describe('strict saved execution settings for launch (#3686)', () => {
+  const saved = { id: 'durable_policy', name: 'policy', color: 'indigo', sandbox: 'read-only', approvalPolicy: 'untrusted' };
+  const launch = () => getDurableConfig(PROJECT_PATH, saved.id, { forLaunch: true });
+  it('reads an explicit restriction and keeps a readable legacy record unchanged', async () => {
+    mockAgentsFile([saved]);
+    expect(await launch()).toMatchObject(saved);
+    clearAgentConfigCache(PROJECT_PATH);
+    const legacy = { id: saved.id, name: 'legacy', color: 'indigo' };
+    mockAgentsFile([legacy]);
+    expect(await launch()).toEqual(legacy);
+  });
+  it('refuses a read failure even if the cached record was read-only', async () => {
+    mockAgentsFile([saved]);
+    expect(await launch()).toMatchObject(saved);
+    vi.mocked(fsp.readFile).mockRejectedValue(Object.assign(new Error('permission denied'), { code: 'EACCES' }));
+    await expect(launch()).rejects.toThrow('permission denied');
+  });
+  it.each([
+    { id: saved.id, name: 'old full-access backup', color: 'indigo', access: 'full_access' },
+    saved,
+  ])('never restores a valid backup %j for a corrupt primary launch read', async (backup) => {
+    mockAgentsFile([saved]);
+    vi.mocked(fsp.readFile).mockImplementation(async (p) => String(p).endsWith('agents.json') ? '{broken' : JSON.stringify([backup]));
+    const writesBefore = vi.mocked(fsp.writeFile).mock.calls.length;
+    const renamesBefore = vi.mocked(fsp.rename).mock.calls.length;
+    await expect(launch()).rejects.toThrow();
+    expect(vi.mocked(fsp.readFile).mock.calls.some(([p]) => String(p).endsWith('.bak'))).toBe(false);
+    expect(vi.mocked(fsp.writeFile).mock.calls.length).toBe(writesBefore);
+    expect(vi.mocked(fsp.rename).mock.calls.length).toBe(renamesBefore);
+  });
+  it.each(['[null]', '{}', 'not json'])('refuses corrupt primary storage %s rather than treating it as a missing record', async (raw) => {
+    mockAgentsFile([saved]);
+    vi.mocked(fsp.readFile).mockResolvedValue(raw);
+    await expect(launch()).rejects.toThrow();
+  });
+  it.each([{ sandbox: null }, { sandbox: 'unknown' }, { approvalPolicy: null }, { approvalPolicy: {} }])('refuses invalid saved values %j', async (policy) => {
+    mockAgentsFile([{ ...saved, ...policy }]);
+    await expect(launch()).rejects.toThrow();
+  });
+  it('distinguishes a missing record from a stale cache that would omit a new restriction', async () => {
+    mockAgentsFile([{ id: saved.id, name: 'old', color: 'indigo' }]);
+    await initializeDurableProject(PROJECT_PATH);
+    mockAgentsFile([saved]);
+    await expect(launch()).rejects.toThrow('changed while preparing');
+    clearAgentConfigCache(PROJECT_PATH);
+    mockAgentsFile([]);
+    expect(await launch()).toBeNull();
+  });
+});
+
+describe('passive lists and explicit initialization', () => {
   it('returns [] when no file exists', async () => {
     mockNoAgentsFile();
     expect(await listDurable(PROJECT_PATH)).toEqual([]);
@@ -265,7 +341,7 @@ describe('readAgents (via listDurable)', () => {
       vi.mocked(fsp.writeFile).mockReset();
     });
 
-    it('strips structuredMode from loaded agents and persists the cleaned list', async () => {
+    it('defers legacy structuredMode migration until verified initialization', async () => {
       mockAgentsFile([
         { id: 'durable_a', name: 'a', color: 'indigo', createdAt: '2024-01-01', structuredMode: true },
         { id: 'durable_b', name: 'b', color: 'emerald', createdAt: '2024-01-01', structuredMode: false },
@@ -274,8 +350,11 @@ describe('readAgents (via listDurable)', () => {
       let written = '';
       captureMainAgentWrite((v) => { written = v; });
 
+      const snapshot = await listDurable(PROJECT_PATH);
+      expect(snapshot[0]).toHaveProperty('structuredMode', true);
+      expect(written).toBe('');
+      await initializeDurableProject(PROJECT_PATH);
       const result = await listDurable(PROJECT_PATH);
-
       expect(result).toHaveLength(3);
       for (const agent of result) {
         expect(agent).not.toHaveProperty('structuredMode');
@@ -340,6 +419,7 @@ describe('createDurable', () => {
     vi.mocked(fsp.readFile).mockImplementation(async (p: any) => {
       const s = String(p);
       if (writtenData[s]) return writtenData[s];
+      if (/agents\.json(?:\.bak)?$/.test(s)) throw Object.assign(new Error('ENOENT'), { code: 'ENOENT' });
       return '[]';
     });
     vi.mocked(fsp.writeFile).mockImplementation(async (p: any, data: any) => {
@@ -469,6 +549,7 @@ describe('createDurable', () => {
       const s = String(p);
       if (s.endsWith('.gitignore')) return '';
       if (writtenData[s]) return writtenData[s];
+      if (/agents\.json(?:\.bak)?$/.test(s)) throw Object.assign(new Error('ENOENT'), { code: 'ENOENT' });
       return '[]';
     });
     vi.mocked(fsp.writeFile).mockImplementation(async (p: any, data: any) => {
@@ -618,7 +699,10 @@ describe('createDurable', () => {
     ['one with every managed line', '# Clubhouse agent manager\n.clubhouse/agents/\n.clubhouse/.local/\n.clubhouse/agents.json\n.clubhouse/agents.json.bak\n.clubhouse/settings.local.json\n.clubhouse/settings.json.bak\n.clubhouse/settings.json.unreadable*\n'],
   ])('does not edit an existing .gitignore: %s', async (_label, gitignore) => {
     vi.mocked(pathExists).mockImplementation(async (p: any) => String(p).endsWith('.gitignore') || String(p).endsWith('.git'));
-    vi.mocked(fsp.readFile).mockImplementation(async (p: any) => (String(p).endsWith('.gitignore') ? gitignore : '[]'));
+    vi.mocked(fsp.readFile).mockImplementation(async (p: any) => {
+      if (/agents\.json(?:\.bak)?$/.test(String(p))) throw Object.assign(new Error('ENOENT'), { code: 'ENOENT' });
+      return String(p).endsWith('.gitignore') ? gitignore : '[]';
+    });
 
     await createDurable(PROJECT_PATH, 'tracked-gitignore-test', 'indigo');
     expect(gitignoreWrites()).toEqual([]);
@@ -1338,6 +1422,28 @@ describe('getDurableConfig', () => {
 });
 
 describe('updateDurableConfig', () => {
+  it('keeps unset defaults and unrelated settings, and persists only explicit policy choices (#3686)', async () => {
+    const before = { id: 'policy', name: 'Policy', color: 'indigo', createdAt: '', access: 'auto' as const, freeAgentMode: true, orchestrator: 'codex-cli', model: 'default', mcpIds: ['clubhouse', 'external'], orchestration: { maxHelpers: 2 } };
+    mockAgentsFile([before]);
+    await updateDurableConfig(PROJECT_PATH, 'policy', { idleSleep: 15 });
+    expect(await getDurableConfig(PROJECT_PATH, 'policy')).not.toHaveProperty('sandbox');
+    expect(await getDurableConfig(PROJECT_PATH, 'policy')).not.toHaveProperty('approvalPolicy');
+    await updateDurableConfig(PROJECT_PATH, 'policy', { sandbox: 'read-only', approvalPolicy: 'never' });
+    expect(await getDurableConfig(PROJECT_PATH, 'policy')).toMatchObject({ ...before, sandbox: 'read-only', approvalPolicy: 'never' });
+    await updateDurableConfig(PROJECT_PATH, 'policy', { access: 'full_access' });
+    expect(await getDurableConfig(PROJECT_PATH, 'policy')).toMatchObject({ sandbox: 'read-only', approvalPolicy: 'never', mcpIds: before.mcpIds });
+    await updateDurableConfig(PROJECT_PATH, 'policy', { sandbox: null, approvalPolicy: null });
+    expect(await getDurableConfig(PROJECT_PATH, 'policy')).not.toHaveProperty('sandbox');
+    expect(await getDurableConfig(PROJECT_PATH, 'policy')).not.toHaveProperty('approvalPolicy');
+  });
+
+  it('rejects malformed policies atomically before any settings write (#3686)', async () => {
+    const before = { id: 'policy', name: 'Policy', color: 'indigo', createdAt: '', model: 'old' };
+    mockAgentsFile([before]);
+    await expect(updateDurableConfig(PROJECT_PATH, 'policy', { model: 'new', sandbox: 'full' as never })).rejects.toThrow('Unknown sandbox');
+    expect(await getDurableConfig(PROJECT_PATH, 'policy')).toMatchObject(before);
+  });
+
   it('publishes native template settings and policy as one mutation (#3486)', async () => {
     mockAgentsFile([{ id: 'consumer', name: 'consumer', color: 'indigo', createdAt: '', model: 'old-model', effort: 'low', orchestration: { maxHelpers: 1 } }]);
     await getDurableConfig(PROJECT_PATH, 'consumer');
@@ -2354,7 +2460,10 @@ describe('ensureGitignore edge cases', () => {
 
   it('leaves an existing .gitignore alone (#3623)', async () => {
     vi.mocked(pathExists).mockImplementation(async (p: any) => String(p).endsWith('.gitignore') || String(p).endsWith('.git'));
-    vi.mocked(fsp.readFile).mockImplementation(async (p: any) => (String(p).endsWith('.gitignore') ? 'node_modules/\n' : '[]'));
+    vi.mocked(fsp.readFile).mockImplementation(async (p: any) => {
+      if (/agents\.json(?:\.bak)?$/.test(String(p))) throw Object.assign(new Error('ENOENT'), { code: 'ENOENT' });
+      return String(p).endsWith('.gitignore') ? 'node_modules/\n' : '[]';
+    });
 
     await createDurable(PROJECT_PATH, 'append-test', 'indigo');
     expect(gitignoreWrites()).toEqual([]);
@@ -2364,6 +2473,7 @@ describe('ensureGitignore edge cases', () => {
     vi.mocked(pathExists).mockImplementation(async (p: any) => String(p).endsWith('.git'));
     vi.mocked(fsp.readFile).mockImplementation(async (p: any) => {
       if (String(p).endsWith('.gitignore')) throw new Error('not found');
+      if (/agents\.json(?:\.bak)?$/.test(String(p))) throw Object.assign(new Error('ENOENT'), { code: 'ENOENT' });
       return '[]';
     });
 
@@ -2481,7 +2591,7 @@ describe('write-back cache', () => {
     vi.clearAllMocks();
   });
 
-  it('reads from disk only once for multiple reads', async () => {
+  it('does not populate mutable cache from passive lists', async () => {
     setupCacheTest([
       { id: 'durable_1', name: 'agent-1', color: 'indigo', createdAt: '2024-01-01' },
     ]);
@@ -2494,10 +2604,10 @@ describe('write-back cache', () => {
     const result2 = await getDurableConfig(PROJECT_PATH, 'durable_1');
     expect(result2!.name).toBe('agent-1');
 
-    // readFile should only have been called once (for agents.json)
+    // Passive reads do not populate a mutable cache.
     const readCalls = vi.mocked(fsp.readFile).mock.calls
       .filter((c) => String(c[0]).endsWith('agents.json'));
-    expect(readCalls).toHaveLength(1);
+    expect(readCalls).toHaveLength(2);
   });
 
   it('invalidates a clean read cache when agents.json changes externally', async () => {
@@ -2699,8 +2809,8 @@ describe('backup and recovery', () => {
     vi.mocked(fsp.copyFile).mockResolvedValue(undefined);
   });
 
-  describe('auto-recovery on corrupt agents.json', () => {
-    it('recovers from backup when main file is corrupt', async () => {
+  describe('passive backup visibility for corrupt agents.json', () => {
+    it('shows backup records without repairing a corrupt primary', async () => {
       const backupPath = path.join(PROJECT_PATH, '.clubhouse', 'agents.json.bak');
       let backupContents = JSON.stringify(BACKUP_AGENTS);
 
@@ -2729,14 +2839,13 @@ describe('backup and recovery', () => {
       expect(result[0].name).toBe('agent-one');
 
       const mainWrite = vi.mocked(fsp.writeFile).mock.calls.find(([p]) => String(p).includes('agents.json.tmp.'));
-      expect(mainWrite).toBeDefined();
-      expect(String(mainWrite?.[1])).toBe(JSON.stringify(BACKUP_AGENTS, null, 2));
+      expect(mainWrite).toBeUndefined();
       expect(backupContents).toBe(JSON.stringify(BACKUP_AGENTS));
       expect(vi.mocked(fsp.writeFile).mock.calls.some(([p]) => String(p).includes('agents.json.bak'))).toBe(false);
       expect(vi.mocked(fsp.readFile).mock.calls.some(([p]) => String(p) === backupPath)).toBe(true);
     });
 
-    it('recovers from backup when main file is missing', async () => {
+    it('shows backup records without repairing a missing primary', async () => {
       vi.mocked(pathExists).mockImplementation(async (p: any) => {
         const s = String(p);
         if (s.endsWith('agents.json.bak')) return true;
@@ -2771,7 +2880,10 @@ describe('backup and recovery', () => {
         if (String(p).endsWith('.gitignore')) return false;
         return false;
       });
-      vi.mocked(fsp.readFile).mockResolvedValue('[]');
+      vi.mocked(fsp.readFile).mockImplementation(async (p) => {
+        if (/agents\.json(?:\.bak)?$/.test(String(p))) throw Object.assign(new Error('ENOENT'), { code: 'ENOENT' });
+        return '[]';
+      });
       vi.mocked(isInsideGitRepo).mockResolvedValue(true);
       mockGitCmd((_cmd: any, cb: any) => {
         cb(null, '', '');

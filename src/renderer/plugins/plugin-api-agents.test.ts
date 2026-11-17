@@ -40,3 +40,16 @@ describe('agents API session readers', () => {
     expect(listSessions).not.toHaveBeenCalled();
   });
 });
+
+it('refuses plugin resume before ordinary list recovery or spawn (#3686)', async () => {
+  const spawn = vi.fn();
+  useProjectStore.setState({ projects: [{ id: 'p1', path: '/proj' }] } as never);
+  useAgentStore.setState({ agents: { a1: { id: 'a1', kind: 'durable', projectId: 'p1' } }, spawnDurableAgent: spawn } as never);
+  window.clubhouse.agent.listDurable = vi.fn().mockResolvedValue([{ id: 'a1', access: 'full_access' }]);
+  window.clubhouse.agent.getDurableConfig = vi.fn().mockRejectedValue(new Error('Cannot verify the saved execution policy'));
+  const api = createAgentsAPI(createMockContext());
+  await expect(api.resume('a1')).rejects.toThrow('Cannot verify');
+  expect(window.clubhouse.agent.getDurableConfig).toHaveBeenCalledWith('/proj', 'a1', true);
+  expect(window.clubhouse.agent.listDurable).not.toHaveBeenCalled();
+  expect(spawn).not.toHaveBeenCalled();
+});

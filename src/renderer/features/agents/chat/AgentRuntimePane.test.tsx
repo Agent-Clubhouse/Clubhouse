@@ -344,6 +344,22 @@ describe('AgentRuntimePane', () => {
   });
 });
 
+describe('switchAgentRuntime saved policy verification', () => {
+  it('refuses unreadable storage before a runtime write, stop or restart can recover it', async () => {
+    useProjectStore.setState({ projects: [{ id: 'proj-1', path: '/work/clubhouse' }] } as never);
+    api.agent.getDurableConfig = vi.fn().mockRejectedValue(new Error('Cannot verify saved policy'));
+    api.agent.updateDurableConfig = vi.fn();
+    const killAgent = vi.fn();
+    const spawnDurableAgent = vi.fn();
+    useAgentStore.setState({ killAgent, spawnDurableAgent } as never);
+    await expect(switchAgentRuntime(agent, 'chat')).rejects.toThrow('Cannot verify saved policy');
+    expect(api.agent.getDurableConfig).toHaveBeenCalledWith('/work/clubhouse', agent.id, true);
+    expect(api.agent.updateDurableConfig).not.toHaveBeenCalled();
+    expect(killAgent).not.toHaveBeenCalled();
+    expect(spawnDurableAgent).not.toHaveBeenCalled();
+  });
+});
+
 describe('switchAgentRuntime breadcrumbs (#2098)', () => {
   it('notes the switch and its failure for feedback reports, with the mode only', async () => {
     useProjectStore.setState({ projects: [] } as never);

@@ -1654,7 +1654,7 @@ describe('plugin-api-factory', () => {
         useProjectStore.setState({
           projects: [{ id: 'proj-1', name: 'P1', path: '/projects/p1' }] as any,
         });
-        mockAgent.listDurable.mockResolvedValue([]);
+        mockAgent.getDurableConfig.mockResolvedValue(null);
         const api = createPluginAPI(makeCtx(), undefined, allPermsManifest);
         await expect(api.agents.resume('agent-1')).rejects.toThrow('Durable config not found');
       });
@@ -1665,7 +1665,7 @@ describe('plugin-api-factory', () => {
           projects: [{ id: 'proj-1', name: 'P1', path: '/projects/p1' }] as any,
         });
         const durableConfig = { id: 'agent-1', name: 'Alpha', color: 'emerald' };
-        mockAgent.listDurable.mockResolvedValue([durableConfig]);
+        mockAgent.getDurableConfig.mockResolvedValue(durableConfig);
         const spawnSpy = vi.spyOn(useAgentStore.getState(), 'spawnDurableAgent').mockResolvedValue('agent-1');
         const api = createPluginAPI(makeCtx(), undefined, allPermsManifest);
         await api.agents.resume('agent-1');

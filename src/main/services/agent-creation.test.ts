@@ -78,6 +78,7 @@ import {
   flushAgentConfig,
   isDurableCreationActive,
   listDurable,
+  initializeDurableProject,
   disposeHelper,
   recoverInterruptedCreations,
   resolveHelpersForDelete,
@@ -719,6 +720,7 @@ describe('interrupted creation recovery (#2226)', () => {
     files.set(CONFIG_PATH, JSON.stringify([creatingRecord()]));
     dirs.add(agentPath('crashed'));
 
+    await initializeDurableProject(PROJECT_PATH);
     const [listed] = await listDurable(PROJECT_PATH);
     expect(listed.creation).toMatchObject({ state: 'failed', reason: INTERRUPTED_CREATION_REASON });
     expect(listed.worktreePath).toBeUndefined();
@@ -735,6 +737,7 @@ describe('interrupted creation recovery (#2226)', () => {
 
   it('keeps a branch the interrupted creation did not make', async () => {
     files.set(CONFIG_PATH, JSON.stringify([creatingRecord({ branchOwned: false, branchStartSha: undefined })]));
+    await initializeDurableProject(PROJECT_PATH);
     await listDurable(PROJECT_PATH);
     expect(branchDeletes()).toEqual([]);
   });
@@ -743,6 +746,7 @@ describe('interrupted creation recovery (#2226)', () => {
     const outside = path.join(PROJECT_PATH, 'src');
     dirs.add(outside);
     files.set(CONFIG_PATH, JSON.stringify([creatingRecord({ worktreePath: outside })]));
+    await initializeDurableProject(PROJECT_PATH);
     await listDurable(PROJECT_PATH);
     expect(dirs.has(outside)).toBe(true);
     expect(fsp.rm).not.toHaveBeenCalledWith(outside, expect.anything());
@@ -753,6 +757,7 @@ describe('interrupted creation recovery (#2226)', () => {
       owner: { pid: process.ppid, instanceId: 'other-instance' }, heartbeatAt: new Date().toISOString(),
     })]));
     dirs.add(agentPath('crashed'));
+    await initializeDurableProject(PROJECT_PATH);
     const [listed] = await listDurable(PROJECT_PATH);
     expect(listed.creation?.state).toBe('creating');
     expect(dirs.has(agentPath('crashed'))).toBe(true);
@@ -763,6 +768,7 @@ describe('interrupted creation recovery (#2226)', () => {
     files.set(CONFIG_PATH, JSON.stringify([creatingRecord({}, {
       owner: { pid: process.pid, instanceId: 'earlier-instance' }, heartbeatAt: new Date().toISOString(),
     })]));
+    await initializeDurableProject(PROJECT_PATH);
     const [listed] = await listDurable(PROJECT_PATH);
     expect(listed.creation?.state).toBe('failed');
   });
@@ -770,6 +776,7 @@ describe('interrupted creation recovery (#2226)', () => {
   it('never deletes a folder the interrupted creation had not claimed', async () => {
     files.set(CONFIG_PATH, JSON.stringify([creatingRecord({}, { folderOwned: undefined })]));
     dirs.add(agentPath('crashed'));
+    await initializeDurableProject(PROJECT_PATH);
     const [listed] = await listDurable(PROJECT_PATH);
     expect(listed.creation?.state).toBe('failed');
     expect(dirs.has(agentPath('crashed'))).toBe(true);
@@ -780,16 +787,19 @@ describe('interrupted creation recovery (#2226)', () => {
     files.set(CONFIG_PATH, JSON.stringify([creatingRecord({}, {
       owner: { pid: process.ppid, instanceId: 'other-instance' }, heartbeatAt: new Date(Date.now() - 3 * 60_000).toISOString(),
     })]));
+    await initializeDurableProject(PROJECT_PATH);
     const [listed] = await listDurable(PROJECT_PATH);
     expect(listed.creation?.state).toBe('failed');
   });
 
   it('runs once per project per launch, not on every reload of agents.json (H3)', async () => {
     files.set(CONFIG_PATH, JSON.stringify([]));
+    await initializeDurableProject(PROJECT_PATH);
     await listDurable(PROJECT_PATH);
     // Another instance writes a creating record; the watcher drops our cache.
     files.set(CONFIG_PATH, JSON.stringify([creatingRecord()]));
     clearAgentConfigCache(PROJECT_PATH);
+    await initializeDurableProject(PROJECT_PATH);
     const [listed] = await listDurable(PROJECT_PATH);
     expect(listed.creation?.state).toBe('creating');
     expect(gitArgvBesidesExcludeLookup()).toEqual([]);

@@ -38,7 +38,7 @@ export async function getAgentRuntimeInfo(agentId: string, provider: string | un
 /** Same decision tryStartChatAgent makes before it registers a start. */
 async function willStartInChat(agentId: string, provider: string | undefined, projectPath: string): Promise<boolean> {
   try {
-    const config = await getDurableConfig(projectPath, agentId);
+    const config = await getDurableConfig(projectPath, agentId, { forLaunch: true });
     if (!config) return false;
     const providerId = config.orchestrator || provider || DEFAULT_PROVIDER;
     const resolved = resolveRuntimeMode(providerId, config.runtimeMode);

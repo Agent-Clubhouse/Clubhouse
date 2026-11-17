@@ -61,9 +61,17 @@ import { pathExists } from './fs-utils';
 import {
   validateAgentConfigs,
   auditRecovery,
-  listDurable,
+  listDurable as passiveListDurable,
+  initializeDurableProject,
   clearAgentConfigCache,
 } from './agent-config';
+
+// These migration/cache controls now initialize explicitly before the first passive list.
+async function listDurable(projectPath: string) {
+  await initializeDurableProject(projectPath);
+  return passiveListDurable(projectPath);
+}
+
 
 const PROJECT_PATH = '/test/project';
 
@@ -264,6 +272,6 @@ it('retains uncertainty from the actual corrupt agent read', async () => {
     if (String(p).endsWith('agents.json')) return '{broken';
     throw Object.assign(new Error('missing'), { code: 'ENOENT' });
   });
-  await listDurable(PROJECT_PATH);
+  await passiveListDurable(PROJECT_PATH);
   expect(isChatTipAgentReadUncertain()).toBe(true);
 });

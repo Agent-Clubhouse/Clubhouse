@@ -1,3 +1,4 @@
+import { validateExecutionPolicy, validateStoredExecutionPolicy } from '../../shared/execution-policy';
 import { noteProviderSelection, withAgentActivity } from './agent-transition';
 import { execFile } from 'child_process';
 import { watch, type FSWatcher } from 'fs';
@@ -546,7 +547,7 @@ async function readConfigFileIfPresent(filePath: string, uncertain?: () => void)
 
 // Retain accepted read uncertainty for this process: the tip may still hold
 // that snapshot after a watcher invalidates the cache and a healthy read wins.
-// A later launch can decide from recovered data, as with project-store.
+// A later deliberate recovery does not erase uncertainty in an earlier snapshot.
 const chatTipUncertainProjects = new Set<string>();
 export function isChatTipAgentReadUncertain(): boolean { return chatTipUncertainProjects.size > 0; }
 
@@ -559,13 +560,14 @@ async function readAgentsFromDisk(projectPath: string): Promise<{ agents: Durabl
   });
 
   let agents: DurableAgentConfig[] | null = null;
-  let source: 'main' | 'backup' | 'empty' = 'empty';
+  let source: 'main' | 'empty' = 'empty';
 
   let droppedInvalid = false;
   let uncertain = chatTipUncertainProjects.has(projectPath);
 
   // This status belongs to the snapshot, and is committed only if it wins the cache race.
-  const markUncertain = () => { uncertain = true; };
+  let storageUncertain = false;
+  const markUncertain = () => { uncertain = true; storageUncertain = true; };
   const mainRaw = await readConfigFileIfPresent(configPath, markUncertain);
   if (mainRaw !== null) {
     try {
@@ -592,54 +594,26 @@ async function readAgentsFromDisk(projectPath: string): Promise<{ agents: Durabl
           // Non-empty but every record is invalid (e.g. `[null]`) — this is
           // corruption, not an intentionally empty list. Fall back to backup.
           persist.recovery('agents', 'primary_corrupt');
-          appLog('core:agent-config', 'error', 'agents.json has no valid agent records — attempting recovery from backup', {
+          appLog('core:agent-config', 'error', 'agents.json has no valid agent records — explicit recovery required', {
             meta: { configPath },
           });
         }
       }
     } catch (err) {
       persist.recovery('agents', 'primary_corrupt');
-      appLog('core:agent-config', 'error', 'Failed to parse agents.json — attempting recovery from backup', {
+      appLog('core:agent-config', 'error', 'Failed to parse agents.json — explicit recovery required', {
         meta: { configPath, error: err instanceof Error ? err.message : String(err) },
       });
     }
   }
 
-  // Main file missing or corrupt — fall back to backup
+  // Missing or corrupt primary storage must not trigger automatic recovery
   if (!agents) {
-    if (mainRaw !== null) uncertain = true;
+    // Recovery must be an explicit user action. A mutable load is not consent
+    // to replace a corrupt or unreadable primary with an older policy.
     const backupRaw = await readConfigFileIfPresent(backupPath, markUncertain);
-    if (backupRaw !== null) {
-      try {
-        const parsed: unknown = JSON.parse(backupRaw);
-        const valid = Array.isArray(parsed) ? parsed.filter(isAgentRecord) : [];
-        if (valid.length > 0 || (Array.isArray(parsed) && parsed.length === 0)) {
-          uncertain = !Array.isArray(parsed) || parsed.length !== valid.length;
-        } else {
-          uncertain = true;
-        }
-        if (valid.length > 0) {
-          agents = valid;
-          source = 'backup';
-          persist.recovery('agents', 'restored_from_backup');
-          appLog('core:agent-config', 'warn', `Recovered ${agents.length} agent(s) from backup`, {
-            meta: {
-              backupPath,
-              agents: agents.map((a) => ({ id: a.id, name: a.name })),
-            },
-          });
-          // Restore the main file from the backup without clobbering the backup
-          // itself. The backup is the last known-good snapshot and must survive
-          // the recovery path to preserve future recovery options.
-          await writeAgentsToDiskSkippingBackup(projectPath, agents);
-        }
-      } catch (backupErr) {
-        uncertain = true;
-        persist.recovery('agents', 'backup_corrupt');
-        appLog('core:agent-config', 'error', 'Backup agents.json.bak is also corrupt', {
-          meta: { backupPath, error: backupErr instanceof Error ? backupErr.message : String(backupErr) },
-        });
-      }
+    if (mainRaw !== null || backupRaw !== null || storageUncertain) {
+      throw new Error('Cannot verify the saved execution policy. Open this agent’s Settings and choose Restore saved backup, or repair .clubhouse/agents.json.');
     }
   }
 
@@ -687,7 +661,7 @@ async function readAgentsFromDisk(projectPath: string): Promise<{ agents: Durabl
     // current file had to be recovered from backup first, or when the current
     // file held invalid records (copying it into the backup would replace the
     // last known-good snapshot with a damaged one).
-    if (source === 'backup' || droppedInvalid) {
+    if (droppedInvalid) {
       await writeAgentsToDiskSkippingBackup(projectPath, deduped);
     } else {
       await writeAgentsToDisk(projectPath, deduped);
@@ -1334,46 +1308,123 @@ export function clearAgentConfigCache(projectPath?: string): void {
   }
 }
 
-export async function listDurable(projectPath: string): Promise<DurableAgentConfig[]> {
-  await readAgents(projectPath);
-  // Interrupted creations are settled (cleaned up and marked failed) before the first list (#2226).
-  await creationRecoveries.get(projectPath);
-  return readAgents(projectPath);
+const projectInitializations = new Map<string, Promise<void>>();
+
+/** Healthy-record migrations belong to initialization, never to a passive read. */
+export function initializeDurableProject(projectPath: string): Promise<void> {
+  const existing = projectInitializations.get(projectPath);
+  if (existing) return existing;
+  const initialize = (async () => {
+    const pending = configCache.get(projectPath);
+    // An already active project's local edits are authoritative until flush.
+    // Initialization must not turn a passive waiter into a persistence barrier.
+    if (pending?.dirty || pending?.pendingFlush) return;
+    if (!pending?.dirty && !pending?.pendingFlush) {
+      let raw: string;
+      try { raw = await fsp.readFile(agentsConfigPath(projectPath), 'utf-8'); }
+      catch (err) {
+        if ((err as NodeJS.ErrnoException)?.code !== 'ENOENT') throw err;
+        try { await fsp.readFile(agentsBackupPath(projectPath), 'utf-8'); }
+        catch (backupErr) { if ((backupErr as NodeJS.ErrnoException)?.code === 'ENOENT') return; throw backupErr; }
+        throw new Error('Cannot verify the saved execution policy. Restore saved backup in agent Settings.');
+      }
+      const parsed: unknown = JSON.parse(raw);
+      if (!Array.isArray(parsed) || !parsed.every(isAgentRecord)) throw new Error('Cannot verify saved agent settings for initialization.');
+      const policies = new Map<string, string>();
+      for (const agent of parsed) {
+        validateStoredExecutionPolicy(agent);
+        const policy = JSON.stringify([agent.sandbox, agent.approvalPolicy, agent.access, agent.freeAgentMode]);
+        if (policies.has(agent.id) && policies.get(agent.id) !== policy) throw new Error('Duplicate agent records disagree about access. Repair .clubhouse/agents.json before starting an agent.');
+        policies.set(agent.id, policy);
+      }
+    }
+    await readAgents(projectPath);
+    await creationRecoveries.get(projectPath);
+    await flushAgentConfig(projectPath);
+  })();
+  projectInitializations.set(projectPath, initialize);
+  void initialize.finally(() => { if (projectInitializations.get(projectPath) === initialize) projectInitializations.delete(projectPath); }).catch(() => {});
+  return initialize;
 }
 
-/**
- * Check if a backup exists with more agents than the current config.
- * Returns the backup agent list if recovery is available, or null otherwise.
- */
-export async function getBackupInfo(projectPath: string): Promise<{ backupAgents: DurableAgentConfig[]; currentCount: number } | null> {
-  const backupPath = agentsBackupPath(projectPath);
-  if (!(await pathExists(backupPath))) return null;
-
-  try {
-    const raw = await fsp.readFile(backupPath, 'utf-8');
-    const parsed: unknown = JSON.parse(raw);
-    const backupAgents = Array.isArray(parsed) ? parsed.filter(isAgentRecord) : [];
-    if (backupAgents.length === 0) return null;
-
-    const currentAgents = await readAgents(projectPath);
-    // Recovery is available if the backup has more agents
-    if (backupAgents.length > currentAgents.length) {
-      return { backupAgents, currentCount: currentAgents.length };
+/** App/project initialization stays available when one project's storage needs deliberate recovery. */
+export async function initializeDurableProjects(projects: readonly { path: string }[]): Promise<void> {
+  for (const project of projects) {
+    try { await initializeDurableProject(project.path); }
+    catch (err) {
+      appLog('core:agent-config', 'warn', 'Agent settings need verification before initialization; showing available records without recovery', {
+        meta: { projectPath: project.path, error: err instanceof Error ? err.message : String(err) },
+      });
     }
-    return null;
-  } catch {
-    return null;
   }
 }
 
+export async function listDurable(projectPath: string): Promise<DurableAgentConfig[]> {
+  await projectInitializations.get(projectPath)?.catch(() => {});
+  // Lists feed renderer, Annex and lifecycle discovery. Never recover or
+  // rewrite storage before the launch path can verify its saved policy.
+  const agents = [...await peekDurableConfigs(projectPath)];
+  ensureConfigWatcher(projectPath); // Watching for changes is read-only; loading/repair is not.
+  return agents;
+}
+
 /**
- * Restore agents from the backup file, merging any agents that are in the
- * backup but missing from the current config.
+ * Passive recovery status: report an unverifiable primary, or a backup with
+ * more records. Never load, repair or write. An unusable backup is not offered.
+ */
+export async function getBackupInfo(projectPath: string): Promise<{ backupAgents: DurableAgentConfig[]; currentCount: number; recoveryRequired?: boolean } | null> {
+  const cached = configCache.get(projectPath);
+  if (cached?.dirty || cached?.pendingFlush) return null;
+  let current: DurableAgentConfig[] | undefined;
+  let primaryMissing = false;
+  try {
+    const parsed: unknown = JSON.parse(await fsp.readFile(agentsConfigPath(projectPath), 'utf-8'));
+    if (!Array.isArray(parsed) || !parsed.every(isAgentRecord)) throw new Error('Invalid saved agent records');
+    for (const agent of parsed) validateStoredExecutionPolicy(agent);
+    if (new Set(parsed.map((a) => a.id)).size !== parsed.length) throw new Error('Duplicate saved agent records');
+    current = parsed;
+  } catch (err) {
+    // telemetry-exempt: return uncertainty, never repair it from a passive read.
+    primaryMissing = (err as NodeJS.ErrnoException)?.code === 'ENOENT';
+  }
+  let backupAgents: DurableAgentConfig[] = [];
+  let backupMissing = false;
+  try {
+    const parsed: unknown = JSON.parse(await fsp.readFile(agentsBackupPath(projectPath), 'utf-8'));
+    if (!Array.isArray(parsed) || !parsed.every(isAgentRecord)) throw new Error('Invalid backup agent records');
+    for (const agent of parsed) validateStoredExecutionPolicy(agent);
+    if (new Set(parsed.map((a) => a.id)).size !== parsed.length) throw new Error('Duplicate backup agent records');
+    backupAgents = parsed;
+  } catch (err) {
+    // telemetry-exempt: unusable backup is reported without offering a restore.
+    backupMissing = (err as NodeJS.ErrnoException)?.code === 'ENOENT';
+  }
+  if (!current && !(primaryMissing && backupMissing)) return { backupAgents, currentCount: 0, recoveryRequired: true };
+  if (current && backupAgents.length > current.length) return { backupAgents, currentCount: current.length };
+  return null;
+}
+
+/**
+ * Explicit user recovery: replace an unverifiable primary from a validated
+ * backup, or merge missing backup records into a healthy primary. Keep .bak.
  */
 export async function restoreFromBackup(projectPath: string): Promise<{ restoredCount: number; agents: DurableAgentConfig[] }> {
+  const cached = configCache.get(projectPath);
+  if (cached?.dirty || cached?.pendingFlush) throw new Error('Agent settings have unsaved changes. Wait for them to save before restoring the backup.');
+  const info = await getBackupInfo(projectPath);
+  if (info?.recoveryRequired) {
+    if (!info.backupAgents.length) throw new Error('No valid backup is available. Repair .clubhouse/agents.json before starting an agent.');
+    // This is the explicit, user-confirmed recovery action. Keep the backup
+    // intact; passive reads and lifecycle writes never take this path.
+    await writeAgentsToDiskSkippingBackup(projectPath, info.backupAgents);
+    clearAgentConfigCache(projectPath);
+    await initializeDurableProject(projectPath);
+    notifyAgentConfigChanged(projectPath);
+    return { restoredCount: info.backupAgents.length, agents: [...await peekDurableConfigs(projectPath)] };
+  }
   const backupPath = agentsBackupPath(projectPath);
   if (!(await pathExists(backupPath))) {
-    return { restoredCount: 0, agents: await readAgents(projectPath) };
+    return { restoredCount: 0, agents: [...await peekDurableConfigs(projectPath)] };
   }
 
   const raw = await fsp.readFile(backupPath, 'utf-8');
@@ -1409,9 +1460,34 @@ export async function restoreFromBackup(projectPath: string): Promise<{ restored
   return { restoredCount: missing.length, agents: merged };
 }
 
-export async function getDurableConfig(projectPath: string, agentId: string): Promise<DurableAgentConfig | null> {
-  const { agentsById } = await readAgentsEntry(projectPath);
-  return agentsById.get(agentId) ?? null;
+export async function getDurableConfig(projectPath: string, agentId: string, options?: { forLaunch: boolean }): Promise<DurableAgentConfig | null> {
+  if (!options?.forLaunch) {
+    const cached = configCache.get(projectPath);
+    return cached ? cached.agentsById.get(agentId) ?? null : (await peekDurableConfigs(projectPath)).find((agent) => agent.id === agentId) ?? null;
+  }
+  try {
+    const pending = configCache.get(projectPath);
+    if (pending?.dirty || pending?.pendingFlush) {
+      const agent = pending.agentsById.get(agentId) ?? null;
+      if (agent) validateStoredExecutionPolicy(agent);
+      return agent;
+    }
+    const parsed: unknown = JSON.parse(await fsp.readFile(agentsConfigPath(projectPath), 'utf-8'));
+    if (!Array.isArray(parsed) || !parsed.every(isAgentRecord)) throw new Error('Cannot read the saved agent records for launch');
+    const matches = parsed.filter((record): record is DurableAgentConfig => isAgentRecord(record) && record.id === agentId);
+    if (matches.length === 0) return null;
+    if (matches.length !== 1) throw new Error('Cannot identify one saved agent record for launch');
+    const verified = matches[0];
+    validateStoredExecutionPolicy(verified);
+    const cached = pending?.agentsById.get(agentId);
+    if (cached && (cached.sandbox !== verified.sandbox || cached.approvalPolicy !== verified.approvalPolicy)) {
+      throw new Error('Saved execution settings changed while preparing the launch. Reload the agent before starting it.');
+    }
+    return verified;
+  } catch (err) {
+    const detail = err instanceof SyntaxError ? 'The saved agent file is not valid JSON.' : err instanceof Error ? err.message : String(err);
+    throw new Error(`Cannot verify the saved execution policy. Open this agent’s Settings and choose Restore saved backup, or repair .clubhouse/agents.json before starting it. ${detail}`);
+  }
 }
 
 /** A detached, already-loaded snapshot for synchronous lifecycle effect fences. Never loads or writes. */
@@ -1421,26 +1497,26 @@ export function peekCachedDurableConfig(projectPath: string, agentId: string): R
 }
 
 /**
- * A project's agents, for reads that must change nothing (#2653). getDurableConfig
- * and listDurable load a project on first use, and loading can write: it repairs
- * and restores agents.json, reassigns copied ids, starts a watcher and settles
- * interrupted creations. This returns what is loaded, or parses the file (then
- * its backup) and keeps nothing. So a project not loaded yet shows its records
- * as they are on disk, before any of those repairs.
+ * A project's agents, for passive reads that must change nothing (#2653, #3686).
+ * getDurableConfig and listDurable use this snapshot. Mutable loading is reserved
+ * for verified lifecycle or explicit mutation paths. This returns loaded records,
+ * or parses the primary (then backup) and keeps nothing; no recovery or writes.
  */
 export async function peekDurableConfigs(projectPath: string): Promise<readonly DurableAgentConfig[]> {
   const entry = configCache.get(projectPath);
   if (entry) return entry.agents;
   for (const file of [agentsConfigPath(projectPath), agentsBackupPath(projectPath)]) {
-    const raw = await readConfigFileIfPresent(file);
-    if (raw === null) continue;
     try {
+      const raw = await readConfigFileIfPresent(file);
+      if (raw === null) continue;
       const parsed: unknown = JSON.parse(raw);
-      if (!Array.isArray(parsed)) continue;
+      if (!Array.isArray(parsed)) { chatTipUncertainProjects.add(projectPath); continue; }
       const valid = parsed.filter(isAgentRecord);
+      if (valid.length !== parsed.length || file === agentsBackupPath(projectPath)) chatTipUncertainProjects.add(projectPath);
       if (valid.length > 0 || parsed.length === 0) return valid;
     } catch {
-      // telemetry-exempt: a read that changes nothing; loading the project reports the corruption and recovers
+      // telemetry-exempt: report uncertainty in memory, without repairing files.
+      chatTipUncertainProjects.add(projectPath);
     }
   }
   return [];
@@ -1565,6 +1641,8 @@ const AGENT_AUDIT_KEYS: Record<keyof DurableConfigUpdates, AuditKeyFormat | 'boo
   contextWindow: 'value',
   freeAgentMode: 'value',
   access: 'value',
+  sandbox: 'value',
+  approvalPolicy: 'value',
   runtimeMode: 'value',
   idleSleep: 'value',
   effort: 'value',
@@ -1603,6 +1681,7 @@ async function updateDurableConfigInner(
   orchestration?: { config: OrchestrationPolicyConfig | undefined },
 ): Promise<void> {
   // Checked before anything changes, so a bad value never half-applies.
+  validateExecutionPolicy(updates);
   if (updates.effort !== undefined && updates.effort !== null && !isEffortValue(updates.effort)) {
     throw new Error('effort must be an effort level such as low, medium or high');
   }
@@ -1610,6 +1689,7 @@ async function updateDurableConfigInner(
     && (typeof updates.helperTemplateId !== 'string' || updates.helperTemplateId.length > 128)) {
     throw new Error('helperTemplateId must be a template id');
   }
+  if ('lastSessionId' in updates) await getDurableConfig(projectPath, agentId, { forLaunch: true });
   const preflight = await preflightContextWindow(projectPath, agentId, updates);
   // Guarded template writes prepare before reading the mutable cache snapshot.
   if (precondition) {
@@ -1704,6 +1784,10 @@ async function updateDurableConfigInner(
       if (legacyFreeAgentMode(level)) agent.freeAgentMode = true;
       else delete agent.freeAgentMode;
     }
+  }
+  for (const key of ['sandbox', 'approvalPolicy'] as const) {
+    if (updates[key] === null) delete agent[key];
+    else if (updates[key] !== undefined) Object.assign(agent, { [key]: updates[key] });
   }
   if (updates.lastSleep !== undefined) {
     if (updates.lastSleep) {
@@ -1810,7 +1894,7 @@ async function updateDurableConfigInner(
   if (updates.orchestrator !== undefined) noteProviderSelection(agentId, updates.orchestrator);
   // A managed agent's setup-changed bar compares these with what its session started on.
   // Auto-sleep and the helper template apply at once, but Settings and Preview show them, so they refresh too.
-  if (agent.managed && (updates.orchestrator !== undefined || updates.model !== undefined || updates.freeAgentMode !== undefined || updates.access !== undefined
+  if (agent.managed && (updates.orchestrator !== undefined || updates.model !== undefined || updates.freeAgentMode !== undefined || updates.access !== undefined || updates.sandbox !== undefined || updates.approvalPolicy !== undefined
     || updates.effort !== undefined || updates.idleSleep !== undefined || updates.helperTemplateId !== undefined
     // The Setup card and the composer show what the next start uses (#2790).
     || updates.contextWindow !== undefined)) noteManagedSettingsChanged();
@@ -1821,6 +1905,7 @@ async function updateDurableConfigInner(
 
 /** Persist the last CLI session ID for a durable agent */
 export async function updateSessionId(projectPath: string, agentId: string, sessionId: string | null): Promise<void> {
+  await getDurableConfig(projectPath, agentId, { forLaunch: true });
   await updateDurableConfig(projectPath, agentId, { lastSessionId: sessionId });
 }
 
@@ -1834,6 +1919,7 @@ const MAX_QUARANTINED_SESSIONS = 20;
  * whether the resume id was cleared.
  */
 export async function quarantineSession(projectPath: string, agentId: string, sessionId: string): Promise<boolean> {
+  await getDurableConfig(projectPath, agentId, { forLaunch: true });
   const { agents, agentsById } = await readAgentsEntry(projectPath);
   const agent = agentsById.get(agentId);
   if (!agent) return false;
@@ -1856,6 +1942,7 @@ const MAX_SESSION_HISTORY = 50;
 
 /** Add or update a session entry in the agent's session history */
 export async function addSessionEntry(projectPath: string, agentId: string, entry: SessionInfo): Promise<void> {
+  await getDurableConfig(projectPath, agentId, { forLaunch: true });
   const { agents, agentsById } = await readAgentsEntry(projectPath);
   const agent = agentsById.get(agentId);
   if (!agent) return;
@@ -1903,6 +1990,7 @@ export async function addSessionEntry(projectPath: string, agentId: string, entr
  * ends, so chat sessions reach the Sessions picker the way terminal runs do.
  */
 export async function touchSessionEntry(projectPath: string, agentId: string, sessionId: string, orchestrator: OrchestratorId, at: string = new Date().toISOString()): Promise<void> {
+  await getDurableConfig(projectPath, agentId, { forLaunch: true });
   const { agentsById } = await readAgentsEntry(projectPath);
   const existing = agentsById.get(agentId)?.sessionHistory?.find((s) => s.sessionId === sessionId);
   await addSessionEntry(projectPath, agentId, {
@@ -3095,7 +3183,7 @@ function parseLogLine(line: string): GitLogEntry | null {
 }
 
 export async function getWorktreeStatus(projectPath: string, agentId: string, alsoDeletedBranches: string[] = []): Promise<WorktreeStatus> {
-  const { agentsById } = await readAgentsEntry(projectPath);
+  const agentsById = new Map((await peekDurableConfigs(projectPath)).map((agent) => [agent.id, agent]));
   const agent = agentsById.get(agentId);
   if (!agent) {
     return { isValid: false, branch: '', uncommittedFiles: [], unpushedCommits: [], hasRemote: false };
@@ -3482,7 +3570,7 @@ export async function listHelpers(
   agentId: string,
   options: { includeDisposed?: boolean; recursive?: boolean } = {},
 ): Promise<DurableAgentConfig[]> {
-  const agents = await readAgents(projectPath);
+  const agents = [...await peekDurableConfigs(projectPath)];
   if (options.recursive) return liveDescendants(agents, agentId);
   return agents.filter((a) => isLocalHelperOf(a, agentId) && (options.includeDisposed || !isDisposedAgent(a)));
 }
@@ -3492,7 +3580,7 @@ export async function listHelpers(
  * longer exists. A parent in another project (#2511) is read from there.
  */
 export async function getParentAgent(projectPath: string, agentId: string): Promise<DurableAgentConfig | null> {
-  const { agentsById } = await readAgentsEntry(projectPath);
+  const agentsById = new Map((await peekDurableConfigs(projectPath)).map((agent) => [agent.id, agent]));
   const agent = agentsById.get(agentId);
   const parentId = agent?.parentAgentId;
   if (!parentId) return null;
@@ -3822,7 +3910,7 @@ export async function getDisposeChecks(
   agentId: string,
   options: { alsoDisposed?: string[] } = {},
 ): Promise<HelperDisposeChecks> {
-  const { agentsById } = await readAgentsEntry(projectPath);
+  const agentsById = new Map((await peekDurableConfigs(projectPath)).map((agent) => [agent.id, agent]));
   const agent = agentsById.get(agentId);
   if (!agent) return { dirty: 0, unpushed: 0, unmerged: null, error: 'agent not found' };
   const creating = helperCreationBlock(agent);
@@ -4097,7 +4185,7 @@ export async function resolveHelpersForDelete(
   choice: HelperDeleteChoice,
   options: { force?: boolean; dryRun?: boolean } = {},
 ): Promise<HelperCascadeResult> {
-  const agents = await readAgents(projectPath);
+  const agents = [...await peekDurableConfigs(projectPath)];
   if (!agents.some((a) => a.id === agentId)) return { ok: false, message: 'Agent not found' };
   const { listHelpersEverywhere } = await import('./helper-index');
 
@@ -4107,6 +4195,9 @@ export async function resolveHelpersForDelete(
     if (released.length === 0) return { ok: true, message: 'No helpers', helperIds: [] };
     if (options.dryRun) return { ok: true, message: `Would keep ${released.length} helper(s)`, helperIds: ids };
     const kept: string[] = [];
+    // This is an explicit mutation. Verify first, then load the mutable entry
+    // so its merge baseline still includes the helper links being removed.
+    if (!await getDurableConfig(projectPath, agentId, { forLaunch: true })) throw new Error('Agent not found');
     const current = await readAgents(projectPath);
     noteDeleteReviewEffect();
     await writeAgents(projectPath, releaseHelpersOf(current, agentId, kept));
@@ -4312,7 +4403,7 @@ export async function auditRecovery(
   projectPath: string,
   runningAgentIds: Set<string>,
 ): Promise<RecoveryAuditResult> {
-  const agents = await readAgents(projectPath);
+  const agents = [...await peekDurableConfigs(projectPath)];
 
   const diskAgents = agents.map((a) => ({ id: a.id, name: a.name }));
   const diskIds = new Set(agents.map((a) => a.id));

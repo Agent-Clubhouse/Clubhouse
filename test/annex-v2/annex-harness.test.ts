@@ -76,6 +76,7 @@ vi.mock('../../src/main/services/project-store', () => ({
   },
 }));
 vi.mock('../../src/main/services/agent-config', () => ({
+  peekDurableConfigs: async (projectPath: string) => (await import('../../src/main/services/agent-config')).listDurable(projectPath),
   listDurable: async (projectPath: string) => Array.from({ length: H.agentsPerProject }, (_, a) => ({
     id: `durable_${projectPath.slice(-1)}_${a}`, name: `agent-${a}`, color: 'indigo', createdAt: '2026-01-01T00:00:00.000Z',
   })),

@@ -201,13 +201,16 @@ export async function prepareDispatcherSessionStart(projectPath: string, agentId
     : isDispatcherCoordinatorPath(projectPath) && isDispatcherAgentId(agentId) ? config
       : null;
   if (!agent) return null;
+  // Verify before controller wakes, model preparation or instruction writes can read/recover storage.
+  const verified = await agentConfig.getDurableConfig(projectPath, agentId, { forLaunch: true });
+  if (!verified) return null;
   if (isDispatcherChatPath(projectPath)) await wakeDispatcherController();
   const dir = isDispatcherChatPath(projectPath) ? getDispatcherChatPath() : getDispatcherPath();
   const role: DispatcherRole = isDispatcherChatPath(projectPath) ? 'chat' : 'work';
   return enqueue(async () => {
     // The models first, so the instructions are written for the CLI it will start on.
-    const applied = await applyBehavior([{ agent, dir, role }], { live: false });
-    await writeInstructions(await agentConfig.getDurableConfig(dir, agent.id) ?? agent, dir);
+    const applied = await applyBehavior([{ agent: verified, dir, role, forLaunch: true }], { live: false });
+    await writeInstructions(await agentConfig.getDurableConfig(dir, agent.id, { forLaunch: true }) ?? verified, dir);
     return applied.get(agent.id) ?? null;
   });
 }
@@ -271,6 +274,8 @@ interface BehaviorTarget {
   agent: DurableAgentConfig;
   dir: string;
   role: DispatcherRole;
+  /** Wake preparation must never recover older storage before launch verification. */
+  forLaunch?: boolean;
 }
 
 function behaviorTargets(): BehaviorTarget[] {
@@ -284,7 +289,7 @@ function behaviorTargets(): BehaviorTarget[] {
  * Give each agent the model its role runs on at the current level (#3045).
  * Saved to its record, so the next start uses it. With `live`, a running chat
  * session also switches now where its CLI allows; one that can't picks it up
- * at its next start. Without an Auto mapping nothing is changed. Never throws.
+ * at its next start. Without an Auto mapping nothing is changed. Launch verification errors propagate.
  *
  * With Choose models yourself on (#3191), Behavior's models never apply:
  * each agent gets the user's pick instead (applyChosenModels).
@@ -295,8 +300,10 @@ async function applyBehavior(targets: BehaviorTarget[], { live }: { live: boolea
   if (targets.length === 0) return applied;
   const level = getDispatcherBehavior();
   const before = JSON.stringify(behaviorState());
-  for (const { agent, dir, role } of targets) {
-    const current = await agentConfig.getDurableConfig(dir, agent.id).catch((): null => null) ?? agent;
+  for (const { agent, dir, role, forLaunch } of targets) {
+    const current = forLaunch
+      ? await agentConfig.getDurableConfig(dir, agent.id, { forLaunch: true }) ?? agent
+      : await agentConfig.getDurableConfig(dir, agent.id).catch((): null => null) ?? agent;
     const provider = current.orchestrator ?? defaultDispatcherOrchestrator();
     if (!provider) continue;
     try {
@@ -373,7 +380,7 @@ async function writeChosenModels(targets: BehaviorTarget[], { throwOnError = fal
     let pick = getDispatcherModels()[role];
     if (!pick) continue;
     try {
-      const current = await agentConfig.getDurableConfig(dir, agent.id) ?? agent;
+      const current = await agentConfig.getDurableConfig(dir, agent.id, target.forLaunch ? { forLaunch: true } : undefined) ?? agent;
       const updates = chosenModelUpdates(current, pick, defaultDispatcherOrchestrator());
       if (Object.keys(updates).length > 0) {
         try {
@@ -391,7 +398,7 @@ async function writeChosenModels(targets: BehaviorTarget[], { throwOnError = fal
       }
       written.push({ target, pick, changed: updates.model !== undefined || updates.effort !== undefined, providerChanged: updates.orchestrator !== undefined });
     } catch (err) {
-      if (throwOnError) throw err;
+      if (throwOnError || target.forLaunch) throw err;
       // telemetry-exempt: logged; the agent keeps the model it had, and the next start tries again
       appLog(NS, 'warn', 'Could not give the Dispatcher the model chosen for it', {
         meta: { agentId: agent.id, role, provider: pick.provider, error: err instanceof Error ? err.message : String(err) },
@@ -751,8 +758,13 @@ async function readConfig(dir: string = getDispatcherPath()): Promise<DurableAge
     // telemetry-exempt: no folder means it was never turned on
     return null;
   }
-  const agents = await agentConfig.listDurable(dir);
-  return agents[0] ?? null;
+  // Reconciliation can immediately wake the controller. Discovery must not
+  // repair a corrupt primary from an older backup before launch verification.
+  const agents = await agentConfig.peekDurableConfigs(dir);
+  if (agents[0]) return agentConfig.getDurableConfig(dir, agents[0].id, { forLaunch: true });
+  const snapshot = await agentConfig.peekDurableConfigsChecked(dir, { strict: true });
+  if (!snapshot.readable) throw new Error('Cannot verify the saved execution policy for the Dispatcher.');
+  return null;
 }
 
 /**

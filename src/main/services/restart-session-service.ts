@@ -99,6 +99,7 @@ export async function captureSessionState(
     }
 
     const canResume = resumeStrategyFor(reg.orchestrator) === 'auto';
+    const executionPolicy = config ?? reg.launchCap;
 
     // Capture the permission mode the agent was running with.
     // Prefer per-agent meta (future-proofing), fall back to project-level setting.
@@ -121,6 +122,8 @@ export async function captureSessionState(
       mission: meta?.mission,
       model: meta?.model,
       permissionMode,
+      ...(executionPolicy?.sandbox && { sandbox: executionPolicy.sandbox }),
+      ...(executionPolicy?.approvalPolicy && { approvalPolicy: executionPolicy.approvalPolicy }),
       freeAgentMode: config?.freeAgentMode,
       // Only a level someone saved: an agent from before #2761 resumes from the legacy pair, exactly as before.
       ...(isAccessLevel(config?.access) ? { access: config.access } : {}),

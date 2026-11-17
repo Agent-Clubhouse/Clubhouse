@@ -1,3 +1,4 @@
+import { ExecutionPolicyFields } from '../agents/ExecutionPolicyFields';
 import { useId, useState } from 'react';
 import { TabList, tabPanelProps } from '../../components/TabList';
 import { isListed, type ManagedTemplate, type ManagedTemplateChange, type ManagedTemplatePushTarget } from '../../../shared/managed-agents-types';
@@ -267,6 +268,10 @@ function TemplateEditor({ initial, onDone }: { initial: TemplateDraft; onDone: (
             ))}
           </select>
         </SettingsField>
+        <ExecutionPolicyFields value={settings} provider={cli || undefined} onChange={(patch) => setSetting({
+          ...('sandbox' in patch && { sandbox: patch.sandbox ?? undefined }),
+          ...('approvalPolicy' in patch && { approvalPolicy: patch.approvalPolicy ?? undefined }),
+        })} />
         <SettingsField label="Orchestration" help="Agents made from this template can start helpers.">
           <Toggle checked={orchestrate} onChange={(v) => setOrch({ orchestrate: v })} aria-label="Orchestration" data-testid="managed-template-orchestrate" />
         </SettingsField>

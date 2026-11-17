@@ -189,6 +189,7 @@ import {
   getWorktreeStatus,
   helperCreationBlock,
   listDurable,
+  initializeDurableProject,
   listHelpers,
   normalizeHelperFields,
   onAgentConfigChanged,
@@ -424,7 +425,7 @@ describe('old configs', () => {
     expect(await getParentAgent(PROJECT_PATH, 'durable_1_a')).toBeNull();
   });
 
-  it('repairs self-parenting, cycles, malformed values and live orphans on load', async () => {
+  it('repairs self-parenting, cycles, malformed values and live orphans during verified initialization', async () => {
     seed([
       agent('durable_1_self', { parentAgentId: 'durable_1_self' }),
       agent('durable_2_x', { parentAgentId: 'durable_3_y' }),
@@ -434,6 +435,7 @@ describe('old configs', () => {
       agent('durable_6_bad', { parentAgentId: 42, disposable: 'yes', disposedAt: '' } as unknown as Partial<DurableAgentConfig>),
     ]);
 
+    await initializeDurableProject(PROJECT_PATH);
     const loaded = await listDurable(PROJECT_PATH);
     const byId = new Map(loaded.map((a) => [a.id, a]));
 
@@ -458,9 +460,10 @@ describe('old configs', () => {
 
   it('moves a helper with its parent when the parent ID is reassigned', async () => {
     seed([agent('durable_1_shared')], OTHER_CONFIG_PATH);
-    await listDurable(OTHER_PROJECT_PATH);
+    await initializeDurableProject(OTHER_PROJECT_PATH);
 
     seed([agent('durable_1_shared'), agent('durable_2_help', { parentAgentId: 'durable_1_shared' })]);
+    await initializeDurableProject(PROJECT_PATH);
     const loaded = await listDurable(PROJECT_PATH);
     const parent = loaded.find((a) => a.name === 'durable_1_shared');
     expect(parent?.id).not.toBe('durable_1_shared');
@@ -567,6 +570,7 @@ describe('start_helper fields (#2227)', () => {
   });
 
   it('records a start\'s context outcome on its routing, only when it has one (#2671)', async () => {
+    await initializeDurableProject(PROJECT_PATH);
     const entry = (await listDurable(PROJECT_PATH)).find((a) => a.id === 'durable_2_help')!;
     await setHelperStartFields(PROJECT_PATH, 'durable_2_help', { routingContext: 'reset' });
     expect((await listDurable(PROJECT_PATH)).find((a) => a.id === 'durable_2_help')).not.toHaveProperty('routing');
@@ -576,6 +580,7 @@ describe('start_helper fields (#2227)', () => {
   });
 
   it('a released helper loses its effort and routing too: an ordinary agent has no way to see or clear them (#2671)', async () => {
+    await initializeDurableProject(PROJECT_PATH);
     const entry = (await listDurable(PROJECT_PATH)).find((a) => a.id === 'durable_2_help')!;
     entry.effort = 'high';
     entry.routing = { context: { status: 'none' } } as never;
@@ -920,6 +925,8 @@ describe('delete cascade', () => {
 
   it('keep: releases dirty and unpushed helpers as ordinary agents without touching worktrees', async () => {
     seedFamily({ durable_2_dirty: { dirty: 3 }, durable_3_unpushed: { unpushed: 1, unmerged: 1 } });
+    // A passive inventory must not be required to create the mutation baseline.
+    await listDurable(PROJECT_PATH);
 
     const result = await resolveHelpersForDelete(PROJECT_PATH, 'durable_1_orch', 'keep');
     await deleteDurable(PROJECT_PATH, 'durable_1_orch');
@@ -934,6 +941,17 @@ describe('delete cascade', () => {
       expect(row).not.toHaveProperty('disposable');
       expect(row).not.toHaveProperty('disposedAt');
     }
+  });
+
+  it('keep: refuses corrupt primary storage instead of releasing helpers from a backup', async () => {
+    seedFamily({ durable_2_dirty: { dirty: 3 } });
+    const backup = files.get(CONFIG_PATH)!;
+    files.set(`${CONFIG_PATH}.bak`, backup);
+    files.set(CONFIG_PATH, '{corrupt primary');
+    await expect(resolveHelpersForDelete(PROJECT_PATH, 'durable_1_orch', 'keep')).rejects.toThrow('Cannot verify');
+    expect(files.get(CONFIG_PATH)).toBe('{corrupt primary');
+    expect(files.get(`${CONFIG_PATH}.bak`)).toBe(backup);
+    expect(worktreeRemovals()).toEqual([]);
   });
 
   it('keep: a helper keeps its own helpers attached', async () => {

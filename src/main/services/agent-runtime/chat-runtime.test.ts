@@ -1,3 +1,5 @@
+import { CodexChatEventMapper } from '../../orchestrators/adapters/codex-chat-events';
+import { boundChatEvent } from '../annex-chat-bounds';
 import { federationTurnInputs, startFederationTurnTracking, withFederationInput } from '../dispatcher-federation-context';
 import type { FederatedRequest } from '../../../shared/dispatcher-federation-requests';
 import { describe, it, expect, vi, beforeEach, afterEach, afterAll } from 'vitest';
@@ -2138,4 +2140,48 @@ it.each(['client', 'none', 'native'] as const)('QA holds explicit queued news du
     if (queue === 'native') expect(driver.last.sent.map(s => s.delivery)).toEqual(['queued', 'queued']);
     else expect(driver.last.sent).toEqual([]);
   } finally { await runtime.stop(); }
+});
+
+
+describe('Codex permission scope through the shared desktop/Annex event contract (#3686)', () => {
+  it.each(['grantForTurn', 'grantForSession', 'decline'] as const)('routes %s exactly and keeps the reviewed scope', async (optionId) => {
+    const mapper = new CodexChatEventMapper();
+    const permissions = { network: { enabled: true }, fileSystem: { read: null, write: ['/fixture/git-metadata'] } };
+    const [request] = mapper.mapServerRequest({
+      method: 'item/permissions/requestApproval', id: 3686,
+      params: { threadId: 'fixture-thread', turnId: 'fixture-turn', itemId: 'fixture-item', environmentId: null, startedAtMs: 1, cwd: '/fixture', reason: 'git needs access', permissions },
+    })!;
+    const driver = new FakeChatDriver();
+    const { runtime } = makeRuntime(driver);
+    await runtime.start();
+    const replies: unknown[] = [];
+    driver.last.respondPermission = async (requestId, selected) => {
+      const resolved = mapper.resolvePermission(requestId, selected);
+      if (!resolved) throw new Error('No matching provider request');
+      replies.push(resolved.reply);
+      driver.last.emit(resolved.event);
+    };
+    try {
+      driver.last.emit({ type: 'turn_started', turnId: 'fixture-turn', data: { trigger: 'prompt' } });
+      driver.last.emit(request);
+      await flush();
+      const event = transcript.find((e) => e.type === 'permission_request')!;
+      expect(boundChatEvent(event, Buffer.byteLength(JSON.stringify(event)))).toEqual(event);
+      expect(event).toMatchObject({ data: { rawInput: { ...permissions, cwd: '/fixture' }, options: [
+        { optionId: 'grantForTurn' }, { optionId: 'grantForSession' }, { optionId: 'decline' },
+      ] } });
+      expect(runtime.getPendingPermissionOptions('3686')?.map((o) => o.optionId)).toContain(optionId);
+      await expect(runtime.respondPermission('3686', 'made-up-option')).rejects.toThrow();
+      expect(replies).toHaveLength(0);
+      await runtime.respondPermission('3686', optionId);
+      await flush();
+      expect(replies).toEqual([{ id: 3686, method: 'item/permissions/requestApproval', result: {
+        permissions: optionId === 'decline' ? {} : permissions,
+        scope: optionId === 'grantForSession' ? 'session' : 'turn',
+      } }]);
+      expect(runtime.getPendingPermissionOptions('3686')).toBeUndefined();
+    } finally {
+      await runtime.stop();
+    }
+  });
 });

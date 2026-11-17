@@ -131,8 +131,7 @@ export function SleepingAgent({ agent, details = false }: {
       if (isRemote && remoteParts) {
         await window.clubhouse.annexClient.agentWake(remoteParts.satelliteId, remoteParts.agentId, { resume: mode === 'resume', mission });
       } else if (agentProject) {
-        const configs = await window.clubhouse.agent.listDurable(agentProject.path);
-        const config = Array.isArray(configs) ? configs.find((c: { id: string }) => c.id === agent.id) : undefined;
+        const config = await window.clubhouse.agent.getDurableConfig(agentProject.path, agent.id, true);
         if (!config) {
           setWakeError(`Couldn't find ${agent.name}'s settings in this project. Reopen the project and try again.`);
           return;

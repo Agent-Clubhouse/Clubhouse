@@ -404,6 +404,44 @@ describe('CodexChatDriver', () => {
     expect(server.requests('turn/start')).toHaveLength(0);
   });
 
+  it.each(['read-only', 'workspace-write', 'danger-full-access'] as const)('applies explicit %s on resume and keeps it across level changes', async (sandbox) => {
+    const sandboxPolicy = codexSandboxPolicy(sandbox, 'workspace');
+    useServer({ 'thread/resume': () => ({ result: { ...fx.threadResumeResult, approvalPolicy: 'on-request', sandbox: sandboxPolicy } }) });
+    const { session } = await startSession({ sandbox, approvalPolicy: 'on-request', level: 'full_access', resumeNativeSessionId: fx.THREAD_ID });
+    expect(server.requests('thread/resume')[0].params).toMatchObject({ sandbox, approvalPolicy: 'on-request', threadId: fx.THREAD_ID });
+    for (const level of ['plan', 'ask', 'auto_edit', 'auto', 'full_access'] as const) {
+      await session.setLevel(level);
+      await session.send([{ type: 'text', text: 'fixture only' }], 'prompt');
+    }
+    for (const request of server.requests('turn/start')) expect(request.params).toMatchObject({ approvalPolicy: 'on-request', sandboxPolicy });
+    await session.close();
+  });
+
+  it('keeps a network denial under never as a failed tool result without manufacturing an escalation', async () => {
+    const { session, rest } = await startSession({ level: 'auto' });
+    server.send({ method: 'item/completed', params: {
+      threadId: fx.THREAD_ID, turnId: fx.TURN_ID, completedAtMs: 1,
+      item: { type: 'commandExecution', id: 'network-denied', command: 'git fetch', cwd: 'workspace', processId: null,
+        status: 'failed', commandActions: [], aggregatedOutput: 'Network access denied by sandbox', exitCode: 1, durationMs: 1 },
+    } });
+    await session.close();
+    const events = await rest();
+    expect(events.some((event) => event.type === 'permission_request')).toBe(false);
+    expect(JSON.stringify(events)).toContain('Network access denied by sandbox');
+    expect(server.received.filter((message) => message.result && !message.method)).toHaveLength(0);
+  });
+
+  it('fails closed if the host ignores the selected sandbox', async () => {
+    await expect(startSession({ sandbox: 'read-only' })).rejects.toThrow('did not apply');
+    expect(server.requests('turn/start')).toHaveLength(0);
+  });
+
+  it('refuses unknown or older SDK versions for explicit policies before thread creation', async () => {
+    useServer({ initialize: () => ({ result: { ...fx.initializeResult, userAgent: 'codex_cli_rs/0.153.4' } }) });
+    await expect(startSession({ sandbox: 'workspace-write' })).rejects.toThrow('0.163.0');
+    expect(server.requests('thread/start')).toHaveLength(0);
+  });
+
   it('setLevel keeps the sandbox Codex resolved for the thread', async () => {
     const userSandbox = {
       type: 'workspaceWrite' as const, writableRoots: ['workspace', 'shared-cache'], networkAccess: true,
@@ -1148,6 +1186,16 @@ describe('codex driver helpers', () => {
     ['full_access', 'never', 'danger-full-access'],
   ] as const)('level %s → %s / %s', (level, approvalPolicy, sandbox) => {
     expect(codexLevelSettings(level)).toEqual({ approvalPolicy, sandbox });
+  });
+
+  it('supports every approval × sandbox pair at every level without coupling', () => {
+    for (const level of ['plan', 'ask', 'auto_edit', 'auto', 'full_access'] as const) {
+      for (const approvalPolicy of ['untrusted', 'on-request', 'never'] as const) {
+        for (const sandbox of ['read-only', 'workspace-write', 'danger-full-access'] as const) {
+          expect(codexLevelSettings(level, { approvalPolicy, sandbox })).toEqual({ approvalPolicy, sandbox });
+        }
+      }
+    }
   });
 
   it('parseCodexSlashCommand recognises only whole known commands', () => {

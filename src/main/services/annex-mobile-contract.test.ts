@@ -361,6 +361,7 @@ vi.mock('./agent-config', async () => {
   return {
     flushAgentConfig: async () => {},
     listDurable: async (projectPath: string) => W.durables[projectPath] ?? [],
+    peekDurableConfigs: async (projectPath: string) => W.durables[projectPath] ?? [],
     peekCachedDurableConfig: (projectPath: string, id: string) => find(projectPath, id),
     readAgentIconData: async (icon: string) => (icon ? 'data:image/png;base64,R0lGODlhAQABAAAAACw=' : null),
     agentIconFilePath: async (icon: string) => (icon ? `R0lGODlhAQABAAAAACw=|${icon}` : null),

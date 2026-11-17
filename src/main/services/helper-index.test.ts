@@ -70,6 +70,15 @@ afterEach(async () => {
 });
 
 // On this machine's real filesystem, so Windows CI checks real NTFS IDs and paths (#2628).
+it('helper discovery never restores an older backup over a corrupt primary during wake lookup (#3686)', async () => {
+  const primary = path.join(other, '.clubhouse', 'agents.json');
+  fs.writeFileSync(`${primary}.bak`, fs.readFileSync(primary));
+  fs.writeFileSync(primary, '{corrupt-newer-policy');
+  const found = await listHelpersEverywhere(home, 'durable_1_orch');
+  expect(found.some((entry) => entry.config.id === 'durable_4_far')).toBe(true);
+  expect(fs.readFileSync(primary, 'utf-8')).toBe('{corrupt-newer-policy');
+});
+
 describe('projectKey', () => {
   it('reads the folder\'s exact file ID', async () => {
     const { dev, ino } = fs.statSync(home, { bigint: true });

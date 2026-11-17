@@ -156,6 +156,7 @@ describe('resume-queue', () => {
           model: 'claude-opus-4',
         }),
       );
+      expect(mockGetDurableConfig).toHaveBeenCalledWith('/projects/spawn', 'spawn-agent', true);
       // The resumed session already has its mission; sending it again replays it (#2074)
       expect(mockSpawnAgent.mock.calls[0][0]).not.toHaveProperty('mission');
     });
@@ -591,7 +592,7 @@ describe('resume-queue', () => {
 
       await processResumeQueue(makeState([entry]));
 
-      expect(mockGetDurableConfig).toHaveBeenCalledWith('/projects/test', 'settings-agent');
+      expect(mockGetDurableConfig).toHaveBeenCalledWith('/projects/test', 'settings-agent', true);
 
       // Verify the Agent object written to the store has the correct color
       const setStateCalls = mockSetState.mock.calls;

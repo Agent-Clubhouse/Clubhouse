@@ -1,3 +1,4 @@
+import { assertExecutionPolicy, hasExecutionPolicy } from '../../shared/execution-policy';
 import type { PlanQuotaReading } from '../../shared/helper-routing';
 import { probeCodexQuota } from './quota-probes';
 import * as path from 'path';
@@ -427,7 +428,14 @@ export class CodexCliProvider extends BaseProvider implements HeadlessCapable, H
       args.push('resume', opts.sessionId ? opts.sessionId : '--last');
     }
 
-    if (opts.freeAgentMode) {
+    assertExecutionPolicy(this.id, 'terminal', opts, opts.resume);
+    if (hasExecutionPolicy(opts)) {
+      // Never use bypass when a sandbox was explicitly requested, even at Full access.
+      const sandbox = opts.sandbox ?? (opts.freeAgentMode ? (opts.permissionMode === 'skip-all' ? 'danger-full-access' : 'workspace-write') : undefined);
+      if (sandbox) args.push('--sandbox', sandbox);
+      if (opts.approvalPolicy) args.push('--ask-for-approval', opts.approvalPolicy);
+      else if (opts.freeAgentMode) args.push('--ask-for-approval', 'never');
+    } else if (opts.freeAgentMode) {
       args.push(...codexAutonomyArgs(opts.permissionMode));
     }
 
@@ -876,7 +884,10 @@ export class CodexCliProvider extends BaseProvider implements HeadlessCapable, H
       ? ['exec', 'resume', opts.sessionId ? opts.sessionId : '--last', prompt, '--json']
       : ['exec', prompt, '--json'];
 
-    if (opts.permissionMode === 'skip-all') {
+    assertExecutionPolicy(this.id, 'headless', opts, opts.resume);
+    if (hasExecutionPolicy(opts)) {
+      args.push('--sandbox', opts.sandbox ?? (opts.permissionMode === 'skip-all' ? 'danger-full-access' : 'workspace-write'));
+    } else if (opts.permissionMode === 'skip-all') {
       args.push('--dangerously-bypass-approvals-and-sandbox');
     } else if (!opts.resume) {
       // `exec` already runs non-interactively and never prompts, so the sandbox

@@ -1,3 +1,4 @@
+import type { ExecutionPolicy } from '../execution-policy';
 /**
  * Runtime seam (docs/structured-chat-research.md §7.2).
  *
@@ -203,7 +204,7 @@ export interface McpHttpEndpoint {
   headersFromEnv?: Record<string, string>;
 }
 
-export interface ChatDriverStartOptions {
+export interface ChatDriverStartOptions extends ExecutionPolicy {
   agentId: string;
   /** Orchestrator id, e.g. 'claude-code'. */
   provider: string;

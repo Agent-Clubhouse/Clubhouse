@@ -42,7 +42,11 @@ vi.mock('./headless-settings', () => ({
 
 // Model a missing file for project settings and the Copilot hook preflight.
 vi.mock('fs/promises', () => ({
-  readFile: vi.fn(() => { throw Object.assign(new Error('ENOENT'), { code: 'ENOENT' }); }),
+  readFile: vi.fn(async (file: string) => {
+    // A verified empty primary means the synthetic durable id has no saved policy.
+    if (String(file).endsWith('agents.json')) return '[]';
+    throw Object.assign(new Error('ENOENT'), { code: 'ENOENT' });
+  }),
 }));
 
 // Provider that does NOT have buildHeadlessCommand (like Copilot)

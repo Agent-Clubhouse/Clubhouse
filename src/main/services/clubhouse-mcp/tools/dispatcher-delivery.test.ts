@@ -147,7 +147,7 @@ describe('messages to the Dispatcher (#3037)', () => {
     const req = request();
     await expect(deliverToDispatcher(req)).resolves.toEqual({ delivered: true, woke: true });
     expect(mocks.decideGrant).toHaveBeenCalledWith('sender', 'agent.wake', { kind: 'agent', relations: ['connected'], isDispatcher: true });
-    expect(mocks.getDurableConfig).toHaveBeenCalledWith(DISPATCHER_PATH, 'disp');
+    expect(mocks.getDurableConfig).toHaveBeenCalledWith(DISPATCHER_PATH, 'disp', { forLaunch: true });
     expect(mocks.listProjects).not.toHaveBeenCalled();
     expect(system.spawnAgent).toHaveBeenCalledWith(expect.objectContaining({
       agentId: 'disp', projectPath: DISPATCHER_PATH, cwd: DISPATCHER_PATH, kind: 'durable',

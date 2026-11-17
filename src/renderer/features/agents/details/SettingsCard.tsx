@@ -1,3 +1,4 @@
+import { ExecutionPolicyFields } from '../ExecutionPolicyFields';
 /**
  * The Settings card (#2280): the agent's key settings at the top of Agent
  * details, collapsed to one line ("Chat · Opus 5.5 · Full access · Sleeps
@@ -413,6 +414,13 @@ function AgentSettingsCard({ agent, chat, projectPath, provider, autoSleep }: Se
           onChange={(level) => void save('access', { access: level }, { access: level, freeAgentMode: isLegacyFreeAgent(level) || undefined })}
         />
       ) : undefined,
+    },
+    {
+      id: 'execution-policy', label: 'Sandbox and approvals', editable: 'sleeping',
+      value: [saved?.approvalPolicy, saved?.sandbox].filter(Boolean).join(' · ') || 'Existing level defaults',
+      control: editing ? <ExecutionPolicyFields value={saved ?? {}} provider={orchestrator} runtime={accessRuntime} version={chat?.provider === orchestrator ? chat.cliVersion ?? undefined : undefined}
+        disabled={busy('execution-policy')} className={SELECT_CLASS}
+        onChange={(patch) => void save('execution-policy', patch)} /> : undefined,
     },
     ...(showAutoSleep ? [{
       id: 'auto-sleep', label: 'Auto-sleep', editable: 'always' as const,

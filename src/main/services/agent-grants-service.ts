@@ -71,7 +71,7 @@ function defaultsFor(agentId: string, config: DurableAgentConfig): Grant[] {
 }
 
 async function configOf(projectPath: string, agentId: string): Promise<DurableAgentConfig> {
-  const config = await getDurableConfig(projectPath, agentId);
+  const config = await getDurableConfig(projectPath, agentId, { forLaunch: true });
   if (!config) throw new Error('Agent not found');
   return config;
 }

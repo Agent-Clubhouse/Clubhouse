@@ -80,6 +80,7 @@ function renderComponent(agentOverrides: Partial<Agent> = {}) {
 
 describe('SleepingAgent', () => {
   beforeEach(() => {
+    window.clubhouse.agent.getDurableConfig = vi.fn(async (projectPath, id) => (await window.clubhouse.agent.listDurable(projectPath)).find((c: { id: string }) => c.id === id));
     vi.clearAllMocks();
     mockSpawnDurableAgent.mockResolvedValue(undefined);
     window.clubhouse.agent.listDurable = vi.fn().mockResolvedValue([]);
@@ -301,6 +302,19 @@ describe('SleepingAgent', () => {
   });
 
   describe('wake', () => {
+    it('refuses corrupt storage through a strict read before wake can list or spawn (#3686)', async () => {
+      window.clubhouse.agent.listDurable = vi.fn().mockResolvedValue([{ id: 'agent-1', name: 'older backup' }]);
+      window.clubhouse.agent.getDurableConfig = vi.fn().mockRejectedValue(new Error('Cannot verify the saved execution policy'));
+      renderComponent();
+      await waitForReady();
+      const reads = vi.mocked(window.clubhouse.agent.listDurable).mock.calls.length;
+      fireEvent.click(screen.getByTestId('wake-button'));
+      expect(await screen.findByText(/Couldn’t wake|Couldn't wake/)).toHaveTextContent('Cannot verify');
+      expect(window.clubhouse.agent.getDurableConfig).toHaveBeenCalledWith('/projects/test', 'agent-1', true);
+      expect(window.clubhouse.agent.listDurable).toHaveBeenCalledTimes(reads);
+      expect(mockSpawnDurableAgent).not.toHaveBeenCalled();
+    });
+
     it('does not render the composer for quick agents', () => {
       renderComponent({ kind: 'quick', status: 'sleeping' });
       expect(screen.queryByTestId('wake-button')).toBeNull();

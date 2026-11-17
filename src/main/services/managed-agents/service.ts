@@ -1,3 +1,4 @@
+import { validateExecutionPolicy } from '../../../shared/execution-policy';
 /**
  * Clubhouse-managed agents (#2819): agent parts, templates and per-agent
  * setups. Parts are asset catalog entries used by reference; this service
@@ -1186,7 +1187,7 @@ export function createManagedAgentsService(deps: ManagedAgentsDeps) {
      * result, with `changed` false when none of the changes applied to it.
      * Agents not made from the template are left out.
      */
-    async pushTemplate(id: string, edited: Pick<ManagedTemplate, 'setup' | 'settings'>, agents: Array<{ projectPath: string; agentId: string }>, opts?: { precondition: (target: { projectPath: string; agentId: string }, settings: ManagedTemplateSettings) => import('../agent-config').ManagedSetupCommitPrecondition; checkTemplateWrite?: () => void }): Promise<TemplatePushResult[]> {
+    async pushTemplate(id: string, edited: Pick<ManagedTemplate, 'setup' | 'settings'>, agents: Array<{ projectPath: string; agentId: string }>, opts?: { precondition: (target: { projectPath: string; agentId: string }, settings: ManagedTemplateSettings) => import('../agent-config').ManagedSetupCommitPrecondition; checkTemplateWrite?: () => void; checkSettingsAccess?: (target: { projectPath: string; agentId: string }, agent: DurableAgentConfig, settings: ManagedTemplateSettings) => void }): Promise<TemplatePushResult[]> {
       // Checked before any agent is written, so a bad setting never leaves agents half-updated.
       const next = { ...withClubhousePartIn(edited), settings: checkTemplateSettings(edited.settings) };
       const current = await api.getTemplate(id);
@@ -1199,6 +1200,16 @@ export function createManagedAgentsService(deps: ManagedAgentsDeps) {
       }
       const label = await templateLabeler();
       const changes = withEffortFollowingModel(diffTemplates(current, next, (pid) => live[pid]?.name ?? pid, label), next.settings, label);
+      // Authorize every resulting consumer policy before any setup or template
+      // mutation. A null reset can expose a consumer's own higher default.
+      if (opts?.checkSettingsAccess) {
+        for (const target of agents) {
+          const agent = await deps.getAgent(target.projectPath, target.agentId);
+          if (!agent?.managed || agent.managed.templateId !== id) continue;
+          if (!changes.some((c) => pushApplies(c, agent, changes, next.settings, label, target.projectPath))) continue;
+          opts.checkSettingsAccess(target, agent, pushSettings(agent, current.settings, next.settings, changes));
+        }
+      }
       const settingsOut: TemplatePushResult[] = [];
       for (const target of agents) {
         const agent = await deps.getAgent(target.projectPath, target.agentId);
@@ -1209,20 +1220,15 @@ export function createManagedAgentsService(deps: ManagedAgentsDeps) {
           continue;
         }
         let setup: ManagedAgentSetup = { ...agent.managed, blocks: [...agent.managed.blocks], skills: [...agent.managed.skills], mcps: [...agent.managed.mcps] };
-        const settings: ManagedTemplateSettings = {};
+        const settings = pushSettings(agent, current.settings, next.settings, changes);
         for (const change of changes) {
           if (change.kind === 'add') {
             const list = listOf(setup, change.part);
             if (!list.includes(change.id)) list.push(change.id);
           } else if (change.kind === 'remove') {
             setup = replaceIn(setup, change.id, null);
-          } else if (change.kind === 'setting' && change.key !== 'effort') {
-            mergeSetting(settings, next.settings, change.key, current.settings);
           }
         }
-        // The effort goes only with the model it is for (D81).
-        const effort = effortOutcome(agent, changes, next.settings);
-        if (effort.send !== undefined) settings.effort = effort.send;
         try {
           // Through saveSetup, so each agent's result is checked (skill folders, missing parts).
           const precondition = opts?.precondition(target, settings);
@@ -1400,6 +1406,8 @@ export function settingsOf(agent: DurableAgentConfig, projectPath?: string, gran
     ...(agent.orchestrator && { orchestrator: agent.orchestrator }),
     ...(agent.model && { model: agent.model }),
     ...(agent.effort && { effort: agent.effort }),
+    ...(agent.sandbox && { sandbox: agent.sandbox }),
+    ...(agent.approvalPolicy && { approvalPolicy: agent.approvalPolicy }),
     ...((agent.access !== undefined || agent.freeAgentMode !== undefined) && { access: agentAccess(agent, projectPath) }),
     ...(agent.orchestration && Object.keys(agent.orchestration).length > 0 && { orchestration: { ...agent.orchestration } }),
     ...(agent.idleSleep !== undefined && { idleSleep: agent.idleSleep }),
@@ -1413,8 +1421,11 @@ export function settingsOf(agent: DurableAgentConfig, projectPath?: string, gran
  * template never carries one.
  */
 export function templateSettingsToKeep(settings: ManagedTemplateSettings): ManagedTemplateSettings {
-  const { effort, idleSleep, helperTemplateId, grants, ...rest } = settings;
+  validateExecutionPolicy(settings);
+  const { effort, idleSleep, helperTemplateId, grants, sandbox, approvalPolicy, ...rest } = settings;
   const out: ManagedTemplateSettings = withAccess({ ...rest }, getPermissionMode());
+  if (sandbox != null) out.sandbox = sandbox;
+  if (approvalPolicy != null) out.approvalPolicy = approvalPolicy;
   const kept = normalizeTemplateGrants(grants);
   if (kept?.length) out.grants = kept;
   if (isEffortValue(effort)) out.effort = effort;
@@ -1449,6 +1460,8 @@ function labelerFor(templateName: (id: string) => string | undefined): SettingLa
 
 function flattenSettings(settings: ManagedTemplateSettings): Record<string, unknown> {
   const out: Record<string, unknown> = {};
+  if (settings.sandbox != null) out.sandbox = settings.sandbox;
+  if (settings.approvalPolicy != null) out.approvalPolicy = settings.approvalPolicy;
   if (settings.orchestrator !== undefined) out.orchestrator = settings.orchestrator;
   if (settings.model !== undefined) out.model = settings.model;
   if (settings.effort !== undefined && settings.effort !== null) out.effort = settings.effort;
@@ -1491,12 +1504,25 @@ function mergeSetting(out: ManagedTemplateSettings, from: ManagedTemplateSetting
     out.orchestration = { ...(out.orchestration ?? {}), [k]: value === undefined ? null : value } as ManagedTemplateSettings['orchestration'];
     return;
   }
-  if (key === 'model') out.model = from.model ?? 'default';
+  if (key === 'sandbox') out.sandbox = from.sandbox ?? null;
+  else if (key === 'approvalPolicy') out.approvalPolicy = from.approvalPolicy ?? null;
+  else if (key === 'model') out.model = from.model ?? 'default';
   else if (key === 'effort') out.effort = from.effort ?? null;
   else if (key === 'access') out.access = withAccess(from, getPermissionMode()).access ?? getDefaultAccess();
   else if (key === 'idleSleep') out.idleSleep = from.idleSleep ?? null;
   else if (key === 'helperTemplateId') out.helperTemplateId = from.helperTemplateId ?? null;
   else if (key === 'orchestrator' && from.orchestrator) out.orchestrator = from.orchestrator;
+}
+
+/** The exact settings patch used by bulk authorization and by each consumer write. */
+function pushSettings(agent: DurableAgentConfig, current: ManagedTemplateSettings, next: ManagedTemplateSettings, changes: ManagedTemplateChange[]): ManagedTemplateSettings {
+  const settings: ManagedTemplateSettings = {};
+  for (const change of changes) {
+    if (change.kind === 'setting' && change.key !== 'effort') mergeSetting(settings, next, change.key, current);
+  }
+  const effort = effortOutcome(agent, changes, next);
+  if (effort.send !== undefined) settings.effort = effort.send;
+  return settings;
 }
 
 export function diffTemplates(
@@ -1558,6 +1584,7 @@ export function checkTemplateSettings(raw: unknown): ManagedTemplateSettings {
   if (raw === undefined || raw === null) return {};
   if (typeof raw !== 'object' || Array.isArray(raw)) throw new ManagedError('invalid', 'settings must be an object.');
   const s = raw as Record<string, unknown>;
+  validateExecutionPolicy(s);
   const bad = (what: string): never => { throw new ManagedError('invalid', `The template's ${what}. Nothing was changed.`); };
   if (s.orchestrator !== undefined && (typeof s.orchestrator !== 'string' || !/^[a-z0-9][a-z0-9-]{0,63}$/.test(s.orchestrator))) bad('CLI isn\'t a CLI id');
   if (s.model !== undefined && (typeof s.model !== 'string' || !s.model || s.model.length > 200)) bad('model isn\'t a model id');

@@ -29,6 +29,7 @@ vi.mock('../../../util/ipc-broadcast', () => ({ broadcastToAllWindows: vi.fn() }
 vi.mock('../../project-store', () => ({ list: async () => state.projects }));
 vi.mock('../../agent-config', () => ({
   listDurable: async (p: string) => state.agents.get(p) ?? [],
+  peekDurableConfigs: async (p: string) => state.agents.get(p) ?? [],
   getDurableConfig: async (p: string, id: string) => state.agents.get(p)?.find((a) => a.id === id) ?? null,
   onAgentConfigChanged: () => () => {},
 }));

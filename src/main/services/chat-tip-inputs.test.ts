@@ -61,10 +61,11 @@ it('keeps accepted agent read uncertainty through cache recovery until a new pro
   expect(agents.isChatTipAgentReadUncertain()).toBe(true);
   agents.clearAgentConfigCache();
 
-  vi.resetModules(); // Fresh process: a complete backup can certify this read.
+  vi.resetModules(); // A fresh process still cannot certify the corrupt primary from a backup.
   const recovered = await import('./agent-config');
   expect(await recovered.listDurable(project)).toEqual([]);
-  expect(recovered.isChatTipAgentReadUncertain()).toBe(false);
+  expect(recovered.isChatTipAgentReadUncertain()).toBe(true);
+  expect(fs.readFileSync(path.join(dir, 'agents.json'), 'utf8')).toBe('{bad');
   recovered.clearAgentConfigCache();
 }, 15000);
 

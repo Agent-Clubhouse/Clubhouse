@@ -1,3 +1,4 @@
+import { helperExecutionPolicy, assertExecutionPolicy } from '../../../../shared/execution-policy';
 import { LogRedactor } from '../../../../shared/log-redaction';
 import type { FederatedRequest } from '../../../../shared/dispatcher-federation-requests';
 import { bindLocalCausalInputs, localCallInputs, savedLocalWorkInputs } from '../../dispatcher-federation-local-work';
@@ -164,10 +165,10 @@ interface Caller {
 }
 
 /** The calling agent's project and durable config. */
-async function resolveCaller(agentId: string): Promise<Caller> {
+async function resolveCaller(agentId: string, forLaunch = false): Promise<Caller> {
   const registration = agentRegistry.get(agentId);
   if (!registration) throw new HelperToolError('Your agent is not running in Clubhouse.');
-  const config = await agentConfig.getDurableConfig(registration.projectPath, agentId);
+  const config = await agentConfig.getDurableConfig(registration.projectPath, agentId, forLaunch ? { forLaunch: true } : undefined);
   if (!config) throw new HelperToolError('Only durable agents can use helper tools.');
   return { projectPath: registration.projectPath, config };
 }
@@ -848,11 +849,17 @@ async function runHelperStart(orchestratorId: string, args: HelperStartArgs, app
       // A managed helper's setup is required: if it can't be saved, the creation fails rather than start a helper without it.
       // What start_helper changed from the template is kept for the helper's Details (D91).
       const { settings: templateSettings, helperChanges, ...setup } = managedHelper;
+      const executionPolicy = helperExecutionPolicy({
+        ...(templateSettings?.sandbox && { sandbox: templateSettings.sandbox }),
+        ...(templateSettings?.approvalPolicy && { approvalPolicy: templateSettings.approvalPolicy }),
+      }, agentRegistry.get(orchestratorId)?.launchCap, launch.access);
+      assertExecutionPolicy(helperProvider, 'chat', executionPolicy);
       // The helper template's Clubhouse permissions, capped by what the orchestrator holds (#2971).
       const helperGrants = capToHolder(orchestratorId, templateSettings?.grants ?? [], { elsewhere: target.cross });
       started = await startDurableCreation(target.path, params, {
         inject: async (created) => {
           await managedAgents().saveSetup(target.path, created.id, setup, { helperChanges });
+          if (Object.keys(executionPolicy).length) await agentConfig.updateDurableConfig(target.path, created.id, executionPolicy);
           if (helperGrants.length > 0) await applyTemplateGrants(created.id, helperGrants);
         },
         injectRequired: true,
@@ -1241,16 +1248,19 @@ function stillStopping(helper: DurableAgentConfig, message: string | undefined):
 async function wakeHelper(agentId: string, args: Record<string, unknown>): Promise<McpToolResult> {
   const ref = requireText(args, 'helper');
   const message = optionalText(args, 'message');
-  const caller = await resolveCaller(agentId);
+  const caller = await resolveCaller(agentId, true);
   const found = await resolveOwnHelper(caller, ref);
   const helperPath = found.projectPath;
-  let helper = found.config;
+  let helper = await agentConfig.getDurableConfig(helperPath, found.config.id, { forLaunch: true });
+  if (!helper) throw new HelperToolError('The helper is no longer available.');
   if (agentSystem.isAgentStopping(helper.id)) {
     // Asleep in a moment: wait for the exit, then wake it for real, so the
     // message goes to a new session instead of the one that is exiting.
     if (!(await agentSystem.waitForAgentStopped(helper.id))) return stillStopping(helper, message);
     // Re-read: the exit just saved the session id the wake resumes.
-    helper = (await resolveOwnHelper(caller, helper.id)).config;
+    const latest = await resolveOwnHelper(caller, helper.id);
+    helper = await agentConfig.getDurableConfig(latest.projectPath, latest.config.id, { forLaunch: true });
+    if (!helper) throw new HelperToolError('The helper is no longer available.');
   }
   if (helper.creation) {
     throw new HelperToolError(helper.creation.state === 'creating'

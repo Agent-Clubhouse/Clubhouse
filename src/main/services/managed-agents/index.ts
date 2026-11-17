@@ -254,6 +254,8 @@ export async function statusFor(projectPath: string, agentId: string): Promise<M
     if (was.model !== is.model) changes.push('The model changed');
     if (was.effort !== is.effort) changes.push('The effort changed');
     if (was.access !== is.access || was.freeAgentMode !== is.freeAgentMode) changes.push('Access changed');
+    if (was.sandbox !== is.sandbox) changes.push('Sandbox changed');
+    if (was.approvalPolicy !== is.approvalPolicy) changes.push('Approval policy changed');
   }
   if (changes.length === 0) changes.push('Its settings changed');
   return { managed: true, running, waiting: true, changes, deliveredAt: record.deliveredAt, cliChanged, ...notice };
@@ -337,7 +339,7 @@ export type RestartAuthorization = (() => void) & { refresh?: () => Promise<void
 
 async function restartConfig(projectPath: string, agentId: string) {
   const generation = agentConfig.agentConfigGeneration();
-  const agent = await agentConfig.getDurableConfig(projectPath, agentId);
+  const agent = await agentConfig.getDurableConfig(projectPath, agentId, { forLaunch: true });
   const current = agentConfig.peekCachedDurableConfig(projectPath, agentId);
   if (!agent?.managed || !current?.managed) throw new ManagedError('not_managed', 'The managed agent is no longer available. It was not started.');
   if (generation !== agentConfig.agentConfigGeneration()
@@ -406,7 +408,7 @@ export async function isAgentWorking(agentId: string): Promise<boolean> {
 export async function restartManagedAgent(projectPath: string, agentId: string, options: { fresh?: boolean; whenTurnEnds?: boolean; authorize?: () => Promise<RestartAuthorization> } = {}): Promise<{ resumed: boolean; noSession?: boolean }> {
   const originalRuntime = restartRuntimeIdentity(agentId);
   const originalProvider = agentRegistry.get(agentId)?.orchestrator;
-  const target = await agentConfig.getDurableConfig(projectPath, agentId);
+  const target = await agentConfig.getDurableConfig(projectPath, agentId, { forLaunch: true });
   if (!target) throw new ManagedError('not_found', 'agent not found');
   if (!target.managed) throw new ManagedError('not_managed', `${target.name} isn't Clubhouse managed, so there is no setup to restart into.`);
   const agentSystem = await import('../agent-system');

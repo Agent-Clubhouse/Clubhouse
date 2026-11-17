@@ -8,7 +8,7 @@ import * as fsp from 'fs/promises';
 import * as path from 'path';
 import type { Project } from '../../shared/types';
 import * as projectStore from './project-store';
-import { ensureGitignore } from './agent-config';
+import { ensureGitignore, initializeDurableProjects } from './agent-config';
 import { getDefaultBranch, getOriginUrl, isInsideGitRepo } from './git-service';
 import { getBaseDirPath } from './base-dir';
 import { appLog } from './log-service';
@@ -38,6 +38,9 @@ export interface ImportRegistrationGuard {
 export function registerProjectFolder(dirPath: string, guard?: ImportRegistrationGuard): Promise<RegisterProjectResult> {
   return tel.flow('clubhouse.project.add', {}, async () => {
     const { project, created } = await projectStore.addProject(dirPath);
+    // Guarded repository imports initialize their owned records inside the
+    // import creation boundary, not before that boundary authorizes effects.
+    if (!guard) await initializeDurableProjects([project]);
     if (!created) return { project, created };
     let gitignore: GitignoreOutcome;
     try {

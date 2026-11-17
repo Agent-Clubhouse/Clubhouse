@@ -51,7 +51,7 @@ let enabled = false;
  * Each holds an enum, a level, a whole number, a colour or an opaque id.
  */
 const EVENT_VALUE_KEYS: ReadonlySet<string> = new Set([
-  'orchestrator', 'model', 'contextWindow', 'freeAgentMode', 'access', 'runtimeMode', 'idleSleep', 'effort',
+  'orchestrator', 'model', 'contextWindow', 'freeAgentMode', 'access', 'sandbox', 'approvalPolicy', 'runtimeMode', 'idleSleep', 'effort',
   'helperTemplateId', 'sourceControlProvider', 'color', 'profileId', 'persona', 'helperAuto', 'managed', 'templateId',
   'clubhouseFeatures', 'defaultMode', 'defaultAccess', 'provider', 'globalHelperCap', 'themeId',
   'defaultHelperTemplate', 'helperTemplateChoice',

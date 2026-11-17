@@ -20,6 +20,7 @@ let spawnQuickAgent: ReturnType<typeof vi.fn>;
 let spawnDurableAgent: ReturnType<typeof vi.fn>;
 
 beforeEach(() => {
+    window.clubhouse.agent.getDurableConfig = vi.fn(async (projectPath, id) => (await window.clubhouse.agent.listDurable(projectPath)).find((c: { id: string }) => c.id === id));
   spawnQuickAgent = vi.fn().mockResolvedValue('q-new');
   spawnDurableAgent = vi.fn().mockResolvedValue('a2');
   useAgentStore.setState({
@@ -59,6 +60,19 @@ describe('ProjectStartPage Group projects link (#3544)', () => {
 });
 
 describe('ProjectStartPage', () => {
+  it('refuses a durable start before ordinary list recovery or spawn (#3686)', async () => {
+    window.clubhouse.agent.listDurable = vi.fn().mockResolvedValue([{ id: 'a2', access: 'full_access' }]);
+    window.clubhouse.agent.getDurableConfig = vi.fn().mockRejectedValue(new Error('Cannot verify the saved execution policy'));
+    render(<ProjectStartPage project={project} />);
+    fireEvent.change(screen.getByTestId('start-page-run-as'), { target: { value: 'a2' } });
+    type('task');
+    fireEvent.click(screen.getByTestId('start-page-start'));
+    await waitFor(() => expect(window.clubhouse.agent.getDurableConfig).toHaveBeenCalledWith('/tmp/ch', 'a2', true));
+    await waitFor(() => expect(screen.getByTestId('start-page-start')).not.toBeDisabled());
+    expect(window.clubhouse.agent.listDurable).not.toHaveBeenCalled();
+    expect(spawnDurableAgent).not.toHaveBeenCalled();
+  });
+
   it('starts a quick agent at the project root and makes it the selection', async () => {
     render(<ProjectStartPage project={project} />);
     expect(screen.getByTestId('start-page')).toBeTruthy();

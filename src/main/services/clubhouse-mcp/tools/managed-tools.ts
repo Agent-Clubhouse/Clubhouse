@@ -1,3 +1,4 @@
+import { accessWithExecutionPolicy, accessWithResolvedExecutionPolicy, hasExecutionPolicy, validateStoredExecutionPolicy } from '../../../../shared/execution-policy';
 /**
  * Builder tools (#2900), in the `dispatcher` tool group: every builder
  * action as a Clubhouse MCP tool, so the
@@ -28,8 +29,8 @@ import { prepareManagedAssetImport, type ManagedAssetImportRequest } from '../..
 import { checkTemplateSettings, ManagedError, ManagedPartCreationError } from '../../managed-agents/service';
 import { withAgentActivity } from '../../agent-transition';
 import { resolveOrchestrator } from '../../agent-system';
-import { accessForNewAgent, getDefaultAccess, getPermissionMode } from '../../free-agent-settings';
-import { callerAccess, legacyFreeAgentMode, withAccess, type AccessLevel } from '../../../../shared/agent-access';
+import { accessForNewAgent, agentAccess, getDefaultAccess, getPermissionMode } from '../../free-agent-settings';
+import { callerAccess, isAccessLevel, legacyFreeAgentMode, withAccess, type AccessLevel } from '../../../../shared/agent-access';
 import { resolveOrchestrationPolicy } from '../../../../shared/orchestration-policy';
 import type { ImportedAgentReview } from '../../../../shared/project-import';
 import { projectImportService } from '../../project-import/service';
@@ -117,10 +118,16 @@ function settingsArg(args: Record<string, unknown>, keep?: ManagedTemplateSettin
     throw new ArgError('settings.orchestration must be an object.');
   }
   if (settings?.orchestration && 'connectToDispatcher' in settings.orchestration) {
-    throw new ArgError('settings.orchestration.connectToDispatcher is not accepted. When creating an agent, use the top-level connectToDispatcher option, which has its own permission. Only the user changes existing connections.');
+    throw new ArgError('settings.orchestration.connectToDispatcher is not accepted. An explicit sandbox or approval policy is checked with the resulting other axis; an unverified host default requires authority for its broadest possible policy. When creating an agent, use the top-level connectToDispatcher option, which has its own permission. Only the user changes existing connections.');
   }
   if (!settings) return undefined;
-  return keep?.grants?.length ? { ...settings, grants: keep.grants } : settings;
+  // Older callers replacing other settings must not silently remove a sandbox.
+  // Only an explicit null resets one of these new axes.
+  const keptPolicy = {
+    ...(settings.sandbox === undefined && keep?.sandbox != null && { sandbox: keep.sandbox }),
+    ...(settings.approvalPolicy === undefined && keep?.approvalPolicy != null && { approvalPolicy: keep.approvalPolicy }),
+  };
+  return { ...keptPolicy, ...settings, ...(keep?.grants?.length && { grants: keep.grants }) };
 }
 function contentArg(args: Record<string, unknown>, kind?: ManagedPartKind): ManagedPartContent | undefined {
   const c = objectArg<Record<string, unknown>>(args, 'content');
@@ -265,10 +272,28 @@ const PUSH_LIBRARY_GRANT: ToolGrantDeclaration = { actions: ['template.write'], 
 const PUSH_GRANTS = [PUSH_LIBRARY_GRANT, PUSH_AGENT_GRANT] as const;
 type PinnedWriteTarget = { project: Project; config: DurableAgentConfig };
 
+/** Check the resulting consumer, rather than the template's potentially lower Access. */
+function checkConsumerExecutionPolicy(callerId: string, agent: DurableAgentConfig, settings: ManagedTemplateSettings, projectPath: string): void {
+  if (settings.sandbox === undefined && settings.approvalPolicy === undefined) return;
+  validateStoredExecutionPolicy(agent);
+  const after = { ...agent, ...(settings.access && { access: settings.access }) };
+  for (const key of ['sandbox', 'approvalPolicy'] as const) {
+    if (settings[key] === null) delete after[key];
+    else if (settings[key] !== undefined) Object.assign(after, { [key]: settings[key] });
+  }
+  // Terminal defaults are host configuration, so a reset without a verified
+  // resolved policy requires authority for the broadest possible default.
+  const level = isAccessLevel(after.access) ? after.access : agentAccess(after, projectPath);
+  const required = accessWithResolvedExecutionPolicy(level, after, true);
+  const refused = accessCeilingRefusal(callerId, required, `push resulting execution settings for ${agent.name}`);
+  if (refused) throw new ArgError(refused);
+}
+
 /** Exact per-consumer approval, retained through each service write. A preview token is never approval. */
 async function authorizePushWrites(
   callerId: string, args: Record<string, unknown>, pinned: PinnedWriteTarget[],
   resolveFresh: () => Promise<PinnedWriteTarget[]>,
+  settingsFor: Map<string, ManagedTemplateSettings>,
 ): Promise<{ asked: McpToolResult } | { checkTemplateWrite: () => void; guard: (projectPath: string, agentId: string, settings?: ManagedTemplateSettings) => agentConfig.ManagedSetupCommitPrecondition }> {
   const targetMap = async (rows: PinnedWriteTarget[]): Promise<ArgTargets> => new Map([
     [PUSH_AGENT_GRANT, await Promise.all(rows.map((row) => resolvedAgentGrantTarget(callerId, row.config, row.project.path)))],
@@ -309,6 +334,7 @@ async function authorizePushWrites(
         if (current.length !== pinned.length || current.some((row, i) => row.config.id !== pinned[i].config.id || row.project.path !== pinned[i].project.path)) {
           throw new ArgError('A template consumer changed after authorization. Request approval again.');
         }
+        for (const row of current) checkConsumerExecutionPolicy(callerId, row.config, settingsFor.get(JSON.stringify([row.project.path, row.config.id])) ?? {}, row.project.path);
         prepared = current.find((row) => row.project.path === projectPath && row.config.id === agentId)!;
         targets = await targetMap(current);
         const after = projectStore.projectRegistryMutationState();
@@ -329,6 +355,7 @@ async function authorizePushWrites(
         if (needsConnection && !target.relations?.includes('connected')) {
           throw new ArgError('Template settings, including model and provider, require an existing connection. No settings were applied.');
         }
+        checkConsumerExecutionPolicy(callerId, agent, settings, projectPath);
         const fresh = checkToolGrant(callerId, PUSH_GRANTS, args, undefined, targets);
         if (fresh.ok === false && (fresh.reason !== 'ask_first' || !approval
           || !fresh.asks.every((ask) => approval!.scope.asks.some((allowed) => allowed.action === ask.action && allowed.where === ask.where)))) {
@@ -745,7 +772,7 @@ export function registerManagedTools(): void {
     });
 
   tool('save_agent_template', { actions: ['template.write'], target: 'library' },
-    'Create a custom template (name required), or edit one by id. Editing an id keeps every field you leave out as saved; settings, when given, replaces the template\'s settings as a whole. Editing changes future agents only; use push_agent_template to apply it to agents made from it. settings: orchestrator, model, effort, access (plan, ask, auto_edit, auto or full_access), orchestration {...}, idleSleep (minutes or "never"), helperTemplateId. A legacy freeAgentMode beside access is ignored.',
+    'Create a custom template (name required), or edit one by id. Editing an id keeps every field you leave out as saved; settings, when given, replaces the template\'s settings as a whole. Editing changes future agents only; use push_agent_template to apply it to agents made from it. settings: orchestrator, model, effort, access (plan, ask, auto_edit, auto or full_access), orchestration {...}, idleSleep (minutes or "never"), helperTemplateId, sandbox (read-only, workspace-write, danger-full-access) and approvalPolicy (untrusted, on-request, never) for Codex. These are independent, apply next start and must be supported on the target host; they never grant Clubhouse permissions. Editing while omitting these two axes preserves their saved overrides; explicit null resets an axis. A legacy freeAgentMode beside access is ignored.',
     { id: S, name: S, description: S, blocks: IDS, skills: IDS, mcps: IDS, settings: OBJ }, [],
     async (callerId, args) => {
       const id = optionalString(args, 'id');
@@ -776,7 +803,7 @@ export function registerManagedTools(): void {
     });
 
   tool('push_agent_template', PUSH_GRANTS.map((declaration) => ({ ...declaration, askHandledByTool: true })),
-    'Save a template edit and apply its changes to agents made from it. Call once without confirm, naming in agents the agent ids to apply to: it returns the changes, every agent made from the template with how many changes apply to each, and a confirm token for that choice. Then call again with the same arguments and confirm. Settings left out stay as the template has them. A token is yours only, works once, expires after 10 minutes including time waiting for Needs you, and is refused if the template changed since the preview. If it expires while waiting for approval, request a new preview and approval. The token is not user approval: setup edits to unconnected consumers ask in Needs you; settings (including model/provider) require an existing connection and are otherwise skipped and reported.',
+    'Save a template edit and apply its changes to agents made from it. Call once without confirm, naming in agents the agent ids to apply to: it returns the changes, every agent made from the template with how many changes apply to each, and a confirm token for that choice. Then call again with the same arguments and confirm. Settings left out stay as the template has them. A token is yours only, works once, expires after 10 minutes including time waiting for Needs you, and is refused if the template changed since the preview. If it expires while waiting for approval, request a new preview and approval. The token is not user approval: setup edits to unconnected consumers ask in Needs you; settings (including model/provider) require an existing connection and are otherwise skipped and reported. Sandbox/approval changes and resets check each consumer’s resulting Access and both axes before any write; a host-owned default that cannot be verified requires authority for its broadest possible policy.',
     { id: S, blocks: IDS, skills: IDS, mcps: IDS, settings: OBJ, agents: IDS, confirm: S }, ['id', 'blocks', 'skills', 'mcps'],
     async (callerId, args) => {
       const id = requireString(args, 'id');
@@ -793,6 +820,10 @@ export function registerManagedTools(): void {
       if (sentLevel !== before) {
         const refused = accessCeilingRefusal(callerId, sentLevel ?? getDefaultAccess(), 'push a template that sets agents',
           sentLevel ? {} : { from: 'Leaving the level out means the Default access for new agents, which' });
+        if (refused) throw new ArgError(refused);
+      }
+      if (hasExecutionPolicy(next.settings) || hasExecutionPolicy(current.settings)) {
+        const refused = accessCeilingRefusal(callerId, accessWithExecutionPolicy(sentLevel ?? getDefaultAccess(), next.settings), 'push sandbox and approval settings');
         if (refused) throw new ArgError(refused);
       }
       const preview = await svc().previewTemplatePush(id, next);
@@ -830,13 +861,18 @@ export function registerManagedTools(): void {
       }
       const writing = allowed.filter((target) => target.applicable > 0);
       const pinned = resolved.filter((row) => writing.some((target) => target.agentId === row.config.id && target.projectPath === row.project.path));
-      const authorization = await authorizePushWrites(callerId, args, pinned, () => resolveConsumers(writing));
+      const settingsFor = new Map<string, ManagedTemplateSettings>();
+      const authorization = await authorizePushWrites(callerId, args, pinned, () => resolveConsumers(writing), settingsFor);
       if ('asked' in authorization) return authorization.asked;
       redeemConfirm(callerId, given, digest);
       const targets = allowed.map((target) => ({ projectPath: target.projectPath, agentId: target.agentId }));
       const results = await asDispatcher(callerId, () => svc().pushTemplate(id, next, targets, {
         precondition: (target, settings) => authorization.guard(target.projectPath, target.agentId, settings),
         checkTemplateWrite: authorization.checkTemplateWrite,
+        checkSettingsAccess: (target, agent, settings) => {
+          checkConsumerExecutionPolicy(callerId, agent, settings, target.projectPath);
+          settingsFor.set(JSON.stringify([target.projectPath, agent.id]), settings);
+        },
       }));
       let applied = 0;
       for (const r of results) {
@@ -878,7 +914,7 @@ export function registerManagedTools(): void {
 
   describeCallsForAsk('create_managed_agent', (args) => `Create ${String(args.name)} in ${String(args.project)}.${args.connectToDispatcher === true ? ' Connect only that new agent to the Dispatcher controller in both directions. Each direction can read, message and wake, with clear and compact off. Existing user switches stay as they are.' : ''}`);
   tool('create_managed_agent', CREATE_GRANTS.map((g) => ({ ...g, askHandledByTool: true })),
-    'Create a durable agent, asleep. connectToDispatcher: true asks for the separate connection.bootstrap permission on only this new agent, Ask first by default. Once connected, its generated wake_agent and send_message tools become available. Without it, ask the user to enable Connect to Dispatcher; an unconnected agent cannot be woken or messaged here. Both connection directions start with read, message and wake on, clear and compact off. Retrying the same connected creation in this app session returns its receipt, not another agent. By default it is Clubhouse managed, from a template or a full setup, in its own worktree (or folder). Explicit settings override the template field by field; omitted settings inherit it. The CLI is settings.orchestrator and its model is settings.model, not top-level arguments or settings.provider. With no CLI in either, the project CLI then the app default applies. managed: false makes a plain agent instead, in its own worktree, that reads its own files; it takes settings but no template or parts. settings.orchestration.connectToDispatcher is not accepted.',
+    'Create a durable agent, asleep. connectToDispatcher: true asks for the separate connection.bootstrap permission on only this new agent, Ask first by default. Once connected, its generated wake_agent and send_message tools become available. Without it, ask the user to enable Connect to Dispatcher; an unconnected agent cannot be woken or messaged here. Both connection directions start with read, message and wake on, clear and compact off. Retrying the same connected creation in this app session returns its receipt, not another agent. By default it is Clubhouse managed, from a template or a full setup, in its own worktree (or folder). Explicit settings override the template field by field; omitted settings inherit it. The CLI is settings.orchestrator and its model is settings.model, not top-level arguments or settings.provider. With no CLI in either, the project CLI then the app default applies. managed: false makes a plain agent instead, in its own worktree, that reads its own files; it takes settings but no template or parts. settings.orchestration.connectToDispatcher is not accepted. An explicit sandbox or approval policy is checked with the resulting other axis; an unverified host default requires authority for its broadest possible policy.',
     { project: PROJECT, importId: { type: 'string', description: 'For an imported project, its owned import receipt id. Mandatory exact effective-choice human review; persistent no-duplicate creation/recovery link. Omit for unrelated projects.' }, name: S, color: S, connectToDispatcher: { type: 'boolean', description: 'Connect only the agent created by this call, with separate approval. Default false.' }, managed: { type: 'boolean', description: 'false for a plain (unmanaged) agent. Default true.' }, templateId: S, blocks: IDS, skills: IDS, mcps: IDS, settings: {
       type: 'object',
       description: 'Explicit settings override the template field by field. Confirm the CLI, model, access and orchestration with the user before creation.',
@@ -886,6 +922,8 @@ export function registerManagedTools(): void {
         orchestrator: { type: 'string', description: 'CLI id, for example copilot-cli, codex-cli or claude-code. Overrides the template CLI.' },
         model: { type: 'string', description: 'Model id for the chosen CLI, or "default" for its default model. Overrides the template model.' },
         effort: { type: ['string', 'null'] }, access: { type: 'string', enum: ['plan', 'ask', 'auto_edit', 'auto', 'full_access'] },
+        sandbox: { type: 'string', enum: ['read-only', 'workspace-write', 'danger-full-access'], description: 'Explicit Codex sandbox, independent of approval policy. Omit to keep the existing level default. Never changes Clubhouse grants.' },
+        approvalPolicy: { type: 'string', enum: ['untrusted', 'on-request', 'never'], description: 'Codex approvals, independent of sandbox. Never ask cannot escalate failures. Target runtime/version must support the choice.' },
         freeAgentMode: { type: 'boolean', description: 'Legacy access toggle; prefer access.' },
         orchestration: OBJ, idleSleep: { anyOf: [{ type: 'integer', minimum: 1 }, { type: 'string', enum: ['never'] }, { type: 'null' }] },
         helperTemplateId: { type: ['string', 'null'] },

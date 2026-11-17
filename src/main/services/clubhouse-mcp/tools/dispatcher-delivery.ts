@@ -58,7 +58,7 @@ export function dispatcherInboxId(targetId: string): string {
 /** The Dispatcher's config, in its own folder: it is in no project. */
 async function locateDispatcher(agentId: string): Promise<DurableAgentLocation | null> {
   const projectPath = getDispatcherPath();
-  const config = await agentConfig.getDurableConfig(projectPath, agentId);
+  const config = await agentConfig.getDurableConfig(projectPath, agentId, { forLaunch: true });
   return config ? { agentConfig: config, projectPath } : null;
 }
 

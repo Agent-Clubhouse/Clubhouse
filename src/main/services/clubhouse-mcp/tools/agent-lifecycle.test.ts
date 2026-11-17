@@ -34,7 +34,11 @@ vi.mock('../../agent-runtime/checkpoint-tracker', () => ({
 }));
 vi.mock('./helper-delivery', () => ({ deliverNow: mocks.deliverNow }));
 vi.mock('../../helper-index', () => ({ listHelpersEverywhere: mocks.listHelpersEverywhere }));
-vi.mock('../../agent-config', () => ({ listDurable: mocks.listDurable }));
+vi.mock('../../agent-config', () => ({
+  listDurable: mocks.listDurable,
+  peekDurableConfigs: mocks.listDurable,
+  getDurableConfig: async (project: string, id: string) => (await mocks.listDurable(project)).find((agent: { id: string }) => agent.id === id) ?? null,
+}));
 vi.mock('../../project-store', () => ({ list: mocks.listProjects }));
 vi.mock('../../../util/ipc-broadcast', () => ({ broadcastToAllWindows: mocks.broadcast }));
 vi.mock('../binding-manager', () => ({ bindingManager: { getBindingsForAgent: mocks.getBindingsForAgent } }));
