@@ -260,6 +260,8 @@ export class CopilotSdkChatSession implements ChatDriverSession {
   private models: ModelInfo[] = [];
   private mcpReported = '';
   private skillsReported = '';
+  /** A start that loads every tool has said it went over the ceiling (#3615). */
+  private ceilingReported = false;
   private turn = 0;
   private turnRunning = false;
   private interrupting = false;
@@ -415,6 +417,31 @@ export class CopilotSdkChatSession implements ChatDriverSession {
   }
 
   /** The model menu. It needs a real login, so it's best-effort and never holds a start up. */
+  /**
+   * Once per session, say when a start that loads every tool has more than the
+   * ceiling, so the runtime's search is back and #3615's omission with it.
+   * Counts only: no tool names. Checked after each turn, as a wake adds tools.
+   */
+  private async checkToolCeiling(): Promise<void> {
+    if (!this.opts.loadAllTools || this.ceilingReported || !this.sdk) return;
+    let tools: Awaited<ReturnType<CopilotSession['rpc']['tools']['getCurrentMetadata']>>['tools'];
+    try {
+      ({ tools } = await this.sdk.rpc.tools.getCurrentMetadata());
+    } catch {
+      // telemetry-exempt: a diagnostic only; the next turn checks again.
+      return;
+    }
+    // The list holds tool_search_tool once search is back; the ceiling counts the rest.
+    const total = tools?.filter((t) => t.name !== 'tool_search_tool').length ?? 0;
+    if (total <= COPILOT_EAGER_TOOL_CEILING || this.ceilingReported) return;
+    this.ceilingReported = true;
+    this.log('warn', 'More tools than the ceiling for loading every tool; tool search is back (#3615, #3641)', {
+      agentId: this.opts.agentId,
+      total,
+      ceiling: COPILOT_EAGER_TOOL_CEILING,
+    });
+  }
+
   private async loadModels(): Promise<void> {
     try {
       this.models = await withTimeout(this.client.listModels(), MODEL_LIST_TIMEOUT_MS, 'Listing models');
@@ -947,6 +974,7 @@ export class CopilotSdkChatSession implements ChatDriverSession {
       case 'session.idle':
         if (fromSubagent) return;
         this.endTurn(event.data.aborted || this.interrupting ? 'cancelled' : 'end_turn');
+        void this.checkToolCeiling();
         return;
       case 'abort':
         this.interrupting = true;

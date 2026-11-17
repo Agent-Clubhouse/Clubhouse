@@ -168,6 +168,54 @@ describe('Copilot SDK callback wiring with fake transport', () => {
     await session.close();
   });
 
+  it('warns once when a start that loads every tool goes over the ceiling, with counts and no tool names (#3615)', async () => {
+    let count = COPILOT_EAGER_TOOL_CEILING;
+    const tool = (i: number) => ({ name: `secret_tool_${i}`, description: 'd' });
+    // Search back on adds tool_search_tool to the list; the ceiling doesn't count it.
+    const getCurrentMetadata = vi.fn(async () => ({ tools: [...Array.from({ length: count }, (_, i) => tool(i)), { name: 'tool_search_tool', description: 's' }] }));
+    fake.create.mockImplementationOnce(async (config) => {
+      fake.configs.push(config);
+      const s = sdkSession();
+      return { ...s, rpc: { ...s.rpc, tools: { getCurrentMetadata } } };
+    });
+    const log = vi.fn();
+    const session = await new CopilotSdkChatDriver({ log }).start({ agentId: 'fixture', provider: 'copilot-cli', cwd: '/synthetic', binaryPath: 'fake', level: 'auto_edit', loadAllTools: true });
+    const idle = async () => {
+      fake.configs[0].onEvent({ type: 'session.idle', data: {} });
+      await vi.waitFor(() => expect(getCurrentMetadata).toHaveBeenCalled());
+      await new Promise((r) => setTimeout(r, 0));
+      getCurrentMetadata.mockClear();
+    };
+    const warned = () => log.mock.calls.filter(([level, message]) => level === 'warn' && String(message).includes('ceiling'));
+    await idle();
+    expect(warned()).toEqual([]);
+    count = COPILOT_EAGER_TOOL_CEILING + 1;
+    await idle();
+    expect(warned()).toHaveLength(1);
+    expect(warned()[0][2]).toEqual({ agentId: 'fixture', total: COPILOT_EAGER_TOOL_CEILING + 1, ceiling: COPILOT_EAGER_TOOL_CEILING });
+    expect(JSON.stringify(warned())).not.toContain('secret_tool');
+    expect(String(warned()[0][1])).toContain('#3641');
+    fake.configs[0].onEvent({ type: 'session.idle', data: {} });
+    await new Promise((r) => setTimeout(r, 0));
+    expect(getCurrentMetadata).not.toHaveBeenCalled();
+    expect(warned()).toHaveLength(1);
+    await session.close();
+  });
+
+  it('never reads the tool count for a start that doesn\'t load every tool (#3615)', async () => {
+    const getCurrentMetadata = vi.fn(async () => ({ tools: [] }));
+    fake.create.mockImplementationOnce(async (config) => {
+      fake.configs.push(config);
+      const s = sdkSession();
+      return { ...s, rpc: { ...s.rpc, tools: { getCurrentMetadata } } };
+    });
+    const session = await new CopilotSdkChatDriver().start({ agentId: 'fixture', provider: 'copilot-cli', cwd: '/synthetic', binaryPath: 'fake', level: 'auto_edit' });
+    fake.configs[0].onEvent({ type: 'session.idle', data: {} });
+    await new Promise((r) => setTimeout(r, 0));
+    expect(getCurrentMetadata).not.toHaveBeenCalled();
+    await session.close();
+  });
+
   it('lets an explicit session override of tool search beat loading all tools (#3615)', async () => {
     const session = await new CopilotSdkChatDriver({ sessionOverrides: { toolSearch: { enabled: true } } }).start({ agentId: 'fixture', provider: 'copilot-cli', cwd: '/synthetic', binaryPath: 'fake', level: 'auto_edit', loadAllTools: true });
     expect(fake.configs[0].toolSearch).toEqual({ enabled: true });

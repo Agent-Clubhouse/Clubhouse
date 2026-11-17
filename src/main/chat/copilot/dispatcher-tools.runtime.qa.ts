@@ -287,7 +287,7 @@ describe('the Dispatcher\'s tools on the real runtime (#3615)', () => {
 
   describe('at the ceiling', () => {
     /** A stdio MCP server with `n` tools, and a searching session on it that loads every tool. */
-    const onServer = async (n: number) => {
+    const onServer = async (n: number, driver = hosted()) => {
       const script = path.join(tmp, `server-${n}.js`);
       fs.writeFileSync(script, `
         const send = (o) => process.stdout.write(JSON.stringify(o) + '\\n');
@@ -300,23 +300,29 @@ describe('the Dispatcher\'s tools on the real runtime (#3615)', () => {
           if (m.id !== undefined) reply({});
         });
       `);
-      return open(hosted(), { loadAllTools: true, mcpServers: { many: { command: process.execPath, args: [script] } }, mcpHttpEndpoints: undefined });
+      return open(driver, { loadAllTools: true, mcpServers: { many: { command: process.execPath, args: [script] } }, mcpHttpEndpoints: undefined });
     };
     /** The CLI's own tools, which count toward the ceiling. */
     const ownTools = async () => (await (await open(hosted(), { loadAllTools: true, mcpServers: undefined, mcpHttpEndpoints: undefined })).turn('hi')).offered.length;
 
     it('loads every tool when the total is exactly the ceiling', async () => {
       const n = COPILOT_EAGER_TOOL_CEILING - await ownTools();
-      const offered = (await (await onServer(n)).turn('hi')).offered;
+      const warnings: unknown[] = [];
+      const offered = (await (await onServer(n, new CopilotSdkChatDriver({ sessionDefaults: SEARCH_ON, log: (level, message) => { if (level === 'warn' && message.includes('ceiling')) warnings.push(message); } }))).turn('hi')).offered;
       expect(offered).toHaveLength(COPILOT_EAGER_TOOL_CEILING);
       expect(offered).not.toContain('tool_search_tool');
       expect(offered.filter((t) => t.includes('probe_'))).toHaveLength(n);
+      await new Promise((r) => setTimeout(r, 500));
+      expect(warnings).toEqual([]);
     }, 180_000);
 
     it('falls back to the runtime\'s search one tool over: every MCP tool deferred and searchable, as before the fix', async () => {
       const n = COPILOT_EAGER_TOOL_CEILING + 1 - await ownTools();
-      const s = await onServer(n);
+      const warnings: Array<Record<string, unknown> | undefined> = [];
+      const s = await onServer(n, new CopilotSdkChatDriver({ sessionDefaults: SEARCH_ON, log: (level, message, meta) => { if (level === 'warn' && message.includes('ceiling')) warnings.push(meta); } }));
       const offered = (await s.turn('hi')).offered;
+      await s.until(() => warnings[0]);
+      expect(warnings[0]).toEqual({ agentId: 'dispatcher', total: COPILOT_EAGER_TOOL_CEILING + 1, ceiling: COPILOT_EAGER_TOOL_CEILING });
       expect(offered).toContain('tool_search_tool');
       expect(offered.filter((t) => t.includes('probe_'))).toEqual([]);
       const found = await s.turn('find it', ...search('probe tool number 42'));
