@@ -1,4 +1,5 @@
 import { useAgentStore } from '../../stores/agentStore';
+import { useRemoteProjectStore } from '../../stores/remoteProjectStore';
 import { Agent } from '../../../shared/types';
 import { agentAvatarSpec, initialsTextColor } from '../../../shared/agent-avatar';
 
@@ -22,7 +23,9 @@ const SIZE_CONFIG = {
 
 export function AgentAvatar({ agent, size = 'md', showRing = false, ringColor, iconUrl }: Props) {
   const storeIconUrl = useAgentStore((s) => s.agentIcons[agent.id]);
-  const iconDataUrl = iconUrl ?? storeIconUrl;
+  // A remote agent's image is in the remote store, under its namespaced id (#3649).
+  const remoteIconUrl = useRemoteProjectStore((s) => s.remoteAgentIcons[agent.id]);
+  const iconDataUrl = iconUrl ?? storeIconUrl ?? remoteIconUrl;
 
   const s = SIZE_CONFIG[size];
   const outerSize = s.outer;
