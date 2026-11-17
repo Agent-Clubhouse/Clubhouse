@@ -32,6 +32,8 @@ import { localizeAgentArgs } from './agent-addresses';
 import { forwardAgentCall, remoteMachineOf } from '../annex-agent-calls';
 import { getProvider } from '../../orchestrators';
 import { parseAgentAddress } from '../../../shared/agent-address';
+import { remoteFederationController } from '../dispatcher-federation';
+import { getDispatcherPresence } from '../dispatcher-presence';
 
 /** The refusal a Dispatcher tool returns for any other agent. */
 export const DISPATCHER_ONLY_MESSAGE = 'Only the Dispatcher can use this tool.';
@@ -476,7 +478,27 @@ export function clearTargetToolTemplates(targetKind: BindingTargetKind, targetId
  * tool is listed whatever the target's state, and the handlers answer a target
  * in the wrong state (#2603).
  */
-const SLEEPING_TARGET_TOOLS: ReadonlySet<string> = new Set(['get_status', 'wake_agent', 'preview_provider', 'change_provider']);
+const SLEEPING_TARGET_TOOLS: ReadonlySet<string> = new Set(['send_message', 'get_status', 'wake_agent', 'preview_provider', 'change_provider']);
+
+const REMOTE_DISPATCHER_WIRE_TOOLS: ReadonlySet<string> = new Set(['send_message', 'send_file']);
+
+/** Identify the published controller by address, never by its display label. */
+function isRemoteDispatcherWire(binding: Pick<McpBinding, 'targetKind' | 'targetId'>): boolean {
+  if (binding.targetKind !== 'agent' || !remoteMachineOf(binding.targetId)) return false;
+  const address = parseAgentAddress(binding.targetId);
+  return !!address.machine && remoteFederationController(address.machine)?.agentId === address.agentId;
+}
+
+/** A cached get_status may still arrive. It reads only the same local presence as list_other_dispatchers. */
+function remoteDispatcherWireStatus(targetId: string): McpToolResult {
+  const address = parseAgentAddress(targetId);
+  const presence = getDispatcherPresence().remotes.find((r) => r.machineId === address.machine && r.address === targetId.toLowerCase().replace(address.agentId.toLowerCase(), address.agentId));
+  return { content: [{ type: 'text', text: JSON.stringify({
+    ...(presence ?? { state: 'unknown', link: { state: 'unavailable' } }),
+    source: 'local_presence', stale: true,
+    message: 'Last published presence; it may be stale. This is not a live remote status read.',
+  }) }] };
+}
 
 /**
  * Whether an agent wire offers its sender wake_agent (#3215): the Dispatcher
@@ -815,7 +837,8 @@ export function getConnectionToolCatalog(
     tools: templates.map((template) => ({
       suffix: template.nameSuffix,
       description: template.definition.description,
-      available: templateListable(binding, template, deniedTools, wire),
+      available: (!isRemoteDispatcherWire(binding) || REMOTE_DISPATCHER_WIRE_TOOLS.has(template.nameSuffix))
+        && templateListable(binding, template, deniedTools, wire),
     })),
   };
 }
@@ -830,8 +853,9 @@ export function getScopedToolList(agentId: string): McpToolDefinition[] {
   if (access === 'closed') return [];
   const currentVersion = bindingManager.getVersion();
   const bindings = bindingManager.getBindingsForAgent(agentId);
+  const remoteDispatcherWires = new Set(bindings.filter(isRemoteDispatcherWire).map((b) => b.targetId));
   const allWireTools = keepsFirstToolList(agentId);
-  const currentWakeKey = allWireTools ? 'all' : wakeKey(bindings);
+  const currentWakeKey = (allWireTools ? 'all' : wakeKey(bindings)) + bindings.map((b) => remoteDispatcherWires.has(b.targetId) ? 'd' : '-').join('');
   const currentConditions = conditionsKey(agentId);
   const cached = toolListCache.get(agentId);
   if (cached && cached.bindingVersion === currentVersion && cached.wakeKey === currentWakeKey && cached.conditionsKey === currentConditions) {
@@ -844,12 +868,10 @@ export function getScopedToolList(agentId: string): McpToolDefinition[] {
     const templates = templatesFor(binding);
     if (!templates) continue;
 
-    // When target agent is sleeping (not in registry), only expose status and wake tools.
+    // Sleeping agents keep send_message: its handler gives the existing hint without waking them.
     // An agent on another machine is never in this registry: its machine knows its state and answers for it (#3064).
     const followsTargetState = binding.targetKind === 'agent' && !allWireTools && !remoteMachineOf(binding.targetId);
     const isTargetSleeping = followsTargetState && !agentRegistry.get(binding.targetId);
-    // A sleeping Dispatcher still takes messages: send_message delivers and wakes it (#3069, #3108).
-    const sleepingDispatcher = isTargetSleeping && isDispatcherCoordinatorId(binding.targetId);
 
     // For group projects, the project's admin role governs the privileged
     // toolset (admins get them, non-admins don't), combined with any per-wire
@@ -863,7 +885,8 @@ export function getScopedToolList(agentId: string): McpToolDefinition[] {
       : new Set<string>(binding.disabledTools ?? []);
 
     for (const template of templates) {
-      if (isTargetSleeping && !SLEEPING_TARGET_TOOLS.has(template.nameSuffix) && !(sleepingDispatcher && template.nameSuffix === 'send_message')) {
+      if (remoteDispatcherWires.has(binding.targetId) && !REMOTE_DISPATCHER_WIRE_TOOLS.has(template.nameSuffix)) continue;
+      if (isTargetSleeping && !SLEEPING_TARGET_TOOLS.has(template.nameSuffix)) {
         continue;
       }
       if (followsTargetState && !isTargetSleeping && template.nameSuffix === 'wake_agent') {
@@ -1088,6 +1111,7 @@ export async function callTool(
 
   // A wire to an agent on another machine runs there, which checks it again against its own store (#3064).
   if (binding.targetKind === 'agent' && remoteMachineOf(binding.targetId)) {
+    if (isRemoteDispatcherWire(binding) && parsed.suffix === 'get_status') return remoteDispatcherWireStatus(binding.targetId);
     const address = parseAgentAddress(binding.targetId);
     const controller = address.machine ? (await import('../dispatcher-federation')).remoteFederationController(address.machine) : undefined;
     // Keep targetName for callable tool keys; use the label for display.

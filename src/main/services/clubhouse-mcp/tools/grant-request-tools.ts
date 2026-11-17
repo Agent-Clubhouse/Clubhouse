@@ -21,7 +21,7 @@ import type { McpToolResult } from '../types';
 const text = (t: string, isError = false): McpToolResult => ({ content: [{ type: 'text', text: t }], ...(isError && { isError: true }) });
 
 /** The targets an agent can name, as the tool takes them. */
-export const REQUEST_GRANT_TARGETS = ['self', 'parent', 'my_helpers', 'connected', 'own_project', 'any_project', 'app', 'any', 'action'] as const;
+export const REQUEST_GRANT_TARGETS = ['self', 'parent', 'my_helpers', 'connected', 'remote_dispatcher', 'own_project', 'any_project', 'app', 'any', 'action'] as const;
 type RequestTarget = (typeof REQUEST_GRANT_TARGETS)[number];
 
 function targetOf(name: RequestTarget, actionId: unknown): GrantTarget | string {
@@ -46,7 +46,7 @@ export function registerGrantRequestTools(): void {
         type: 'object',
         properties: {
           action: { type: 'string', enum: [...GRANT_ACTIONS], description: 'The permission, as a refusal names it (for example settings.app.write).' },
-          target: { type: 'string', enum: [...REQUEST_GRANT_TARGETS], description: 'Where: self, parent (your orchestrator), my_helpers, connected (agents you are connected to), own_project, any_project, app, any, or action (with action_id).' },
+          target: { type: 'string', enum: [...REQUEST_GRANT_TARGETS], description: 'Where: self, parent (your orchestrator), my_helpers, connected (agents you are connected to), remote_dispatcher (another computer’s Dispatcher), own_project, any_project, app, any, or action (with action_id).' },
           action_id: { type: 'string', description: 'With target "action": the Action\'s id.' },
           reason: { type: 'string', description: 'Why you need it, in a sentence or two. The user sees this.' },
         },
@@ -71,7 +71,9 @@ export function registerGrantRequestTools(): void {
       const config = projectPath ? await getDurableConfig(projectPath, agentId).catch((): null => null) : null;
       if (!projectPath || !config) return text('Only agents with saved settings have Clubhouse permissions to change. Ask the user directly.', true);
       if (callerGrants(agentId).some((g) => g.mode === 'allow' && grantKey(g) === grantKey(checked))) {
-        return text('You already have that permission. If a call was still refused, the refusal names what is missing.');
+        const remoteHint = checked.action === 'agent.message' && checked.target.kind === 'connected'
+          ? ' message_remote_dispatcher and send_file_to_remote_dispatcher need action="agent.message", target="remote_dispatcher"; connected does not cover that target.' : '';
+        return text(`You already have ${checked.action} on ${grantTargetLabel(checked.target)} (target="${args.target}").${remoteHint} If a call was still refused, request the exact action and target named in its refusal.`);
       }
 
       const action = checked.action as GrantAction;
