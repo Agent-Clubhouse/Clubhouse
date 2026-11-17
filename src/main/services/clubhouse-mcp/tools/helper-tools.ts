@@ -1,4 +1,4 @@
-import { accessWithExecutionPolicy, assertExecutionPolicy, hasExecutionPolicy } from '../../../../shared/execution-policy';
+import { helperExecutionPolicy, assertExecutionPolicy } from '../../../../shared/execution-policy';
 import { LogRedactor } from '../../../../shared/log-redaction';
 import type { FederatedRequest } from '../../../../shared/dispatcher-federation-requests';
 import { bindLocalCausalInputs, localCallInputs, savedLocalWorkInputs } from '../../dispatcher-federation-local-work';
@@ -849,12 +849,11 @@ async function runHelperStart(orchestratorId: string, args: HelperStartArgs, app
       // A managed helper's setup is required: if it can't be saved, the creation fails rather than start a helper without it.
       // What start_helper changed from the template is kept for the helper's Details (D91).
       const { settings: templateSettings, helperChanges, ...setup } = managedHelper;
-      const executionPolicy = {
+      const executionPolicy = helperExecutionPolicy({
         ...(templateSettings?.sandbox && { sandbox: templateSettings.sandbox }),
         ...(templateSettings?.approvalPolicy && { approvalPolicy: templateSettings.approvalPolicy }),
-      };
+      }, agentRegistry.get(orchestratorId)?.launchCap, launch.access);
       assertExecutionPolicy(helperProvider, 'chat', executionPolicy);
-      if (hasExecutionPolicy(executionPolicy) && accessWithExecutionPolicy(launch.access, executionPolicy) !== launch.access) throw new Error('The template’s sandbox or approval policy exceeds this helper’s access ceiling.');
       // The helper template's Clubhouse permissions, capped by what the orchestrator holds (#2971).
       const helperGrants = capToHolder(orchestratorId, templateSettings?.grants ?? [], { elsewhere: target.cross });
       started = await startDurableCreation(target.path, params, {

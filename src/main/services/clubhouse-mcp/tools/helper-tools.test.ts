@@ -622,7 +622,7 @@ describe('start_helper with Clubhouse-managed agents (#2899)', () => {
     const higher = await withSettingsSurface('ui', undefined, () => managedAgents().saveTemplate({ ...t, settings: { sandbox: 'danger-full-access' } }));
     const refused = await callTool('orch', 'start_helper', { name: 'higher', task: 't', template: higher.id, cli: 'codex-cli' });
     expect(refused.isError).toBe(true);
-    expect(refused.content[0].text).toContain('exceeds this helper');
+    expect(refused.content[0].text).toContain('exceeds its orchestrator');
     expect(mockStartDurableCreation).not.toHaveBeenCalled();
   });
 

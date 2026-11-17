@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { APPROVAL_POLICIES, SANDBOX_MODES, assertExecutionPolicy, hasExecutionPolicy, validateExecutionPolicy, accessWithExecutionPolicy } from './execution-policy';
+import { APPROVAL_POLICIES, SANDBOX_MODES, assertExecutionPolicy, hasExecutionPolicy, validateExecutionPolicy, accessWithExecutionPolicy, helperExecutionPolicy } from './execution-policy';
 
 describe('independent execution policies', () => {
   it('preserves absent policies without migrating agents, templates or helper presets', () => {
@@ -25,6 +25,14 @@ describe('independent execution policies', () => {
     expect(() => assertExecutionPolicy('codex-cli', 'headless', { sandbox: 'read-only' }, true)).toThrow('exec resume');
     expect(() => validateExecutionPolicy({ sandbox: 'full' })).toThrow();
     expect(() => validateExecutionPolicy({ approvalPolicy: 'on-failure' })).toThrow();
+  });
+  it('keeps parent restrictions for helpers and never treats a level as permission to remove them', () => {
+    expect(helperExecutionPolicy({}, { sandbox: 'read-only', approvalPolicy: 'never' }, 'ask')).toEqual({ sandbox: 'read-only', approvalPolicy: 'never' });
+    expect(helperExecutionPolicy({ sandbox: 'read-only', approvalPolicy: 'never' }, { sandbox: 'read-only', approvalPolicy: 'never' }, 'ask')).toEqual({ sandbox: 'read-only', approvalPolicy: 'never' });
+    expect(() => helperExecutionPolicy({ sandbox: 'danger-full-access' }, { sandbox: 'read-only' }, 'full_access')).toThrow('sandbox exceeds');
+    expect(() => helperExecutionPolicy({ approvalPolicy: 'never' }, { approvalPolicy: 'untrusted' }, 'full_access')).toThrow('approval policy exceeds');
+    expect(() => helperExecutionPolicy({ sandbox: 'danger-full-access' }, undefined, 'auto')).toThrow('access ceiling');
+    expect(helperExecutionPolicy({}, undefined, 'ask')).toEqual({});
   });
   it('cannot smuggle higher access through an independent axis in tools', () => {
     expect(accessWithExecutionPolicy('plan', { sandbox: 'danger-full-access' })).toBe('full_access');

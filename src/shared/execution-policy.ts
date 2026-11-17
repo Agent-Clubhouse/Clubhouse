@@ -50,3 +50,28 @@ export function supportsIndependentCodexPolicy(version: string | undefined): boo
   const match = /^(\d+)\.(\d+)\.(\d+)$/.exec(version ?? '');
   return !!match && (Number(match[1]) > 0 || Number(match[2]) >= 163);
 }
+
+/** A helper inherits explicit parent boundaries. Access still caps every axis the parent did not override. */
+export function helperExecutionPolicy(asked: ExecutionPolicy, parent: ExecutionPolicy | undefined, ceiling: 'plan' | 'ask' | 'auto_edit' | 'auto' | 'full_access'): ExecutionPolicy {
+  if (!hasExecutionPolicy(asked) && (!parent || !hasExecutionPolicy(parent))) return {};
+  validateExecutionPolicy(asked);
+  if (parent) validateExecutionPolicy(parent);
+  const result: ExecutionPolicy = {
+    ...(asked.sandbox && { sandbox: asked.sandbox }),
+    ...(asked.approvalPolicy && { approvalPolicy: asked.approvalPolicy }),
+  };
+  if (parent?.sandbox) {
+    if (asked.sandbox && SANDBOX_MODES.indexOf(asked.sandbox) > SANDBOX_MODES.indexOf(parent.sandbox)) throw new Error('This helper’s sandbox exceeds its orchestrator’s sandbox.');
+    result.sandbox ??= parent.sandbox;
+  }
+  if (parent?.approvalPolicy) {
+    if (asked.approvalPolicy && APPROVAL_POLICIES.indexOf(asked.approvalPolicy) > APPROVAL_POLICIES.indexOf(parent.approvalPolicy)) throw new Error('This helper’s approval policy exceeds its orchestrator’s policy.');
+    result.approvalPolicy ??= parent.approvalPolicy;
+  }
+  const unbound = {
+    ...(parent?.sandbox ? {} : { sandbox: asked.sandbox }),
+    ...(parent?.approvalPolicy ? {} : { approvalPolicy: asked.approvalPolicy }),
+  };
+  if (accessWithExecutionPolicy(ceiling, unbound) !== ceiling) throw new Error('This helper’s independent policy exceeds its orchestrator’s access ceiling.');
+  return result;
+}

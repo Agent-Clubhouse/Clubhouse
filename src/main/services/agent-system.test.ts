@@ -3948,6 +3948,12 @@ describe('helper launch ceiling on the normal spawn path', () => {
     expect(lastBuild()).toMatchObject({ freeAgentMode: false, permissionMode: 'auto' });
   });
 
+  it('resumes the latest saved policy rather than a broader stale restart snapshot (#3686)', async () => {
+    mockGetDurableConfig.mockImplementation((async () => ({ id: 'helper-1', name: 'plain', access: 'full_access', sandbox: 'read-only', approvalPolicy: 'on-request' })) as never);
+    await wake({ orchestrator: 'codex-cli', resume: true, sandbox: 'danger-full-access', approvalPolicy: 'never' });
+    expect(lastBuild()).toMatchObject({ sandbox: 'read-only', approvalPolicy: 'on-request' });
+  });
+
   it('starts at standard when the agent\'s config can\'t be read, whatever the caller passed', async () => {
     mockGetDurableConfig.mockImplementation((async () => { throw new Error('agents.json is corrupt'); }) as never);
     await wake({ freeAgentMode: true, permissionMode: 'skip-all' });
