@@ -1407,11 +1407,11 @@ Every command below refuses with 409 `dispatcher_off` while it is off. Their res
 
 #### Confirmations
 
-Clear chat and Forget everything each need explicit confirmation, the precondition pattern `agent.providerChange` uses. The phone reads the settings route, asks the person, and sends the `expectedState` it got for that action. Treat it as opaque. It is bound to this phone and this action, and to what the question showed. A token for one never confirms the other. It goes stale when:
+Start new chat (the `clearChat` command) and Forget everything each need explicit confirmation, the precondition pattern `agent.providerChange` uses. The phone reads the settings route, asks the person, and sends the `expectedState` it got for that action. Treat it as opaque. It is bound to this phone and this action, and to what the question showed. A token for one never confirms the other. It goes stale when:
 
 - that action has run since, from the phone, another phone or the desktop (Start new chat in its menu, Settings > Dispatcher's Forget everything);
 - its switch turned the Dispatcher off or on since;
-- for Clear chat, the conversation it would end changed, or the chat woke or went to sleep;
+- for Start new chat, the conversation it would end changed, or the chat woke or went to sleep;
 - for Forget everything, the memory changed since it was read: a file was added, removed or rewritten, which happens as the Dispatcher works. Read the route again right before asking, and expect `stale_state` if the person waits a long time.
 
 A token that doesn't match now is 409 `stale_state` (message: "This changed since you were asked. Check again and confirm.") and nothing happens. Read the route again and ask again. A token works once: after the action, a new command with it is `stale_state`, while an identical retry with the same commandId gets the receipt. Two commands with the same token can't both run. Tokens don't survive a desktop restart.

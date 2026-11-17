@@ -61,7 +61,7 @@ It keeps memory as plain markdown files in `~/.clubhouse/dispatcher/memory/`, so
 
 It searches its memory and your agents' transcripts when it needs something older. Upkeep runs on its own: it rolls up the timeline, fixes links that moved and sets aside stale unconfirmed notes. There's no view or editor for memory in the app.
 
-**Forget everything** is at the bottom of **Settings > Dispatcher**. After you confirm, it clears its memory and any news waiting for the next check-in. Your agents, connections, Actions, settings and its chat stay. To start the chat over too, use **Clear chat**.
+**Forget everything** is at the bottom of **Settings > Dispatcher**. After you confirm, it clears its memory and any news waiting for the next check-in. Your agents, connections, Actions, settings and its chat stay. To start the chat over too, use **Start new chat**.
 
 ## Your agents
 
