@@ -1545,6 +1545,26 @@ describe('ChromeSidebar Dispatcher (#2538)', () => {
     expect(useAgentStore.getState().activeAgentId).toBe('a1');
   });
 
+  it('puts an involved member’s remote request in Needs you, attributed to its origin (#3654)', async () => {
+    turnOn();
+    const machine = Array(16).fill('ab').join(':');
+    const state = { ...leadState('fp1', true) as object, role: 'follower', choices: [
+      { machine, name: 'Desk', self: true, online: true, dispatcherOn: true },
+      { machine: 'fp1', name: 'Mini', self: false, online: true, dispatcherOn: true },
+    ] };
+    useLeadStore.setState({ state: state as never });
+    vi.spyOn(window.clubhouse.dispatcher, 'getLead').mockImplementation(async () => useLeadStore.getState().state!);
+    const request = { requestId: 'gr_connection', kind: 'call', agent: { agentId: 'd', name: 'Dispatcher B' }, actions: ['connection.manage'], toolName: 'connect_agents', arguments: JSON.stringify({ from: 'd', to: `a@${machine}` }), summary: 'Wants to connect agents.', requestedAt: '2026-11-17T10:00:00Z', answers: ['allow_once', 'decline'] };
+    useAnnexClientStore.setState({ satellites: [satelliteFor(null, { snapshot: { grantRequests: [request] } })] });
+    render(<ChromeSidebar />);
+    const row = await screen.findByTestId('needs-you-row-disp');
+    expect(row).toHaveTextContent('Mini: Dispatcher B wants to connect agents.');
+    fireEvent.click(row);
+    expect(useUIStore.getState().dispatcherOpen).toBe(true);
+    act(() => useAnnexClientStore.setState({ satellites: [satelliteFor(null, { snapshot: { grantRequests: [] } })] }));
+    expect(screen.queryByTestId('needs-you-row-disp')).toBeNull();
+  });
+
   it('leaves the Dispatcher out of Needs you once it is off', () => {
     turnOn();
     useAgentStore.setState((s) => ({

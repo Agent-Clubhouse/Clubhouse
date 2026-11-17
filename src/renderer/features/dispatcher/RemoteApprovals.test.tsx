@@ -86,6 +86,44 @@ describe('approvals from other computers in the lead’s chat (#3354)', () => {
     expect(approvalLine({ machine: 'laptop', machineName: 'Laptop', request: REQUEST })).toBe(`Laptop: docs-agent w${SUMMARY.slice(1)}`);
   });
 
+  it.each(['follower', 'peer'] as const)('shows only connections involving this %s, attributed to the requesting computer', async (role) => {
+    const machine = Array(16).fill('ab').join(':');
+    const connection = { ...REQUEST, requestId: 'gr_connection', actions: ['connection.manage'], toolName: 'connect_agents', summary: 'Wants to connect agents.', arguments: JSON.stringify({ from: 'dispatcher', to: `missing@${machine.toUpperCase()}` }) } as MobileGrantRequest;
+    useLeadStore.setState({ state: { ...LEAD, role, choices: LEAD.choices.map((c) => c.self ? { ...c, machine } : c) } });
+    useAnnexClientStore.setState({ satellites: [satellite([REQUEST, connection])] } as never);
+    render(<RemoteApprovals />);
+    await act(async () => {});
+    expect(screen.getAllByTestId('dispatcher-remote-approval')).toHaveLength(1);
+    expect(screen.getByTestId('dispatcher-remote-approval')).toHaveTextContent('Laptop: docs-agent wants to connect agents.');
+    expect(screen.queryByText(/set_app_setting/)).toBeNull();
+    expect(dispatcherNeedsYouLine([], [{ machine: 'laptop', machineName: 'Laptop', request: connection }])?.message).toContain('Laptop: docs-agent');
+    fireEvent.click(screen.getByTestId('dispatcher-remote-approval-allow_once'));
+    await waitFor(() => expect(window.clubhouse.dispatcher.answerRemoteApproval).toHaveBeenCalledWith('laptop', 'gr_connection', 'allow_once'));
+    act(() => useAnnexClientStore.setState({ satellites: [satellite([REQUEST])] } as never));
+    expect(screen.queryByTestId('dispatcher-remote-approvals')).toBeNull();
+  });
+
+  it('hides an involving request when its origin is offline, unpaired or no longer a member', async () => {
+    const machine = Array(16).fill('ab').join(':');
+    const connection = { ...REQUEST, actions: ['connection.manage'], toolName: 'connect_agents', arguments: JSON.stringify({ from: `a@${machine}`, to: 'b' }) } as MobileGrantRequest;
+    const state = { ...LEAD, role: 'follower' as const, choices: LEAD.choices.map((c) => c.self ? { ...c, machine } : c) };
+    useLeadStore.setState({ state });
+    useAnnexClientStore.setState({ satellites: [satellite([connection])] } as never);
+    render(<RemoteApprovals />);
+    await act(async () => {});
+    expect(screen.getByTestId('dispatcher-remote-approval')).toBeTruthy();
+    act(() => useAnnexClientStore.setState({ satellites: [satellite([connection], 'disconnected')] } as never));
+    expect(screen.queryByTestId('dispatcher-remote-approval')).toBeNull();
+    act(() => useAnnexClientStore.setState({ satellites: [{ ...satellite([connection]), needsPairing: true }] } as never));
+    expect(screen.queryByTestId('dispatcher-remote-approval')).toBeNull();
+    act(() => {
+      useAnnexClientStore.setState({ satellites: [satellite([connection])] } as never);
+      useLeadStore.setState({ state: { ...state, choices: state.choices.filter((c) => c.self) } });
+    });
+    expect(screen.queryByTestId('dispatcher-remote-approval')).toBeNull();
+    expect(window.clubhouse.dispatcher.answerRemoteApproval).not.toHaveBeenCalled();
+  });
+
   it('caps long arguments, and the full text stays on the computer it came from', async () => {
     useAnnexClientStore.setState({ satellites: [satellite([{ ...REQUEST, arguments: 'x'.repeat(5_000) }])] } as never);
     render(<RemoteApprovals />);

@@ -21,7 +21,7 @@ export function approvalLine(item: FollowerApproval): string {
 }
 
 /**
- * The lead's Dispatcher row in Needs you: its own requests and the other
+ * This computer's Dispatcher row in Needs you: its own requests and the other
  * computers', counted together. Null when there are none.
  */
 export function dispatcherNeedsYouLine(local: readonly GrantRequest[], remote: readonly FollowerApproval[]): { message: string; at: number } | null {
@@ -47,8 +47,8 @@ function answersHere(item: FollowerApproval): MobileGrantAnswer[] {
 }
 
 /**
- * On the lead (#3354): Ask-first requests from the other computers, in the
- * lead's chat, each with its computer first. A person's click answers one on
+ * Ask-first requests this computer may answer (#3354, #3654), each with
+ * its computer first. A person's click answers one on
  * the computer it came from, which checks it again there; the first answer
  * wins, and the other surface drops it with the next snapshot. Nothing else can
  * answer these: no agent, controller or message reaches the button's path.

@@ -601,7 +601,7 @@ export function ChromeSidebar() {
   const pendingGrants = useGrantRequestStore((s) => s.requests);
   // The Dispatcher asks under the id that holds its grants; it shows on its own row (#3036).
   const dispatcherState = useDispatcherStore((s) => s.state);
-  // On the lead (#3354): other computers' requests show on its Dispatcher's row, the computer first.
+  // Other computers' requests this computer may answer show on its Dispatcher row (#3654).
   const followerApprovals = useFollowerApprovals();
   const grantRequests = useMemo(() => {
     const out: Record<string, { message: string; at: number }> = {};

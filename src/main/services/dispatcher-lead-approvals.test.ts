@@ -1,19 +1,23 @@
-/** Approvals from other computers, answered in the lead's chat (#3354). */
+/** Human-only cross-computer approvals (#3354, #3654). */
 import * as fs from 'fs';
 import * as path from 'path';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const h = vi.hoisted(() => ({
+  self: Array(16).fill('ab').join(':'),
+  rows: [{ requestId: 'gr_1', kind: 'call', actions: ['settings.app.write'], toolName: 'set_app_setting', arguments: '{}', answers: ['allow_once', 'decline'] }] as Array<Record<string, unknown>>,
   role: 'lead' as 'lead' | 'follower' | 'peer', connected: true,
   receipt: { status: 'completed', result: {} } as unknown,
   peers: [{ fingerprint: 'LAPTOP', role: 'member', kind: 'desktop' }, { fingerprint: 'PHONE', role: 'member', kind: 'phone' }],
 }));
+vi.mock('./annex-identity', () => ({ getIdentity: () => ({ fingerprint: h.self }) }));
 vi.mock('./log-service', () => ({ appLog: vi.fn() }));
 vi.mock('./dispatcher-federation-lead', () => ({ leadRole: () => h.role }));
 vi.mock('./annex-peers', () => ({ listPeers: () => h.peers, peerNeedsPairing: (p: { needsPairing?: boolean }) => !!p.needsPairing }));
 vi.mock('./annex-client', () => ({
   satelliteKeyFor: (m: string) => (m === 'laptop' ? 'LAPTOP' : undefined),
   isMachineConnected: () => h.connected,
+  getSatellites: () => [{ fingerprint: 'LAPTOP', snapshot: { grantRequests: h.rows } }],
   answerRemoteGrantRequest: vi.fn(async () => h.receipt),
 }));
 
@@ -21,6 +25,8 @@ import * as annexClient from './annex-client';
 import { answerFollowerApproval } from './dispatcher-lead-approvals';
 
 beforeEach(() => {
+  h.rows = [{ requestId: 'gr_1', kind: 'call', actions: ['settings.app.write'], toolName: 'set_app_setting', arguments: '{}', answers: ['allow_once', 'decline'] }];
+  h.peers = [{ fingerprint: 'LAPTOP', role: 'member', kind: 'desktop' }, { fingerprint: 'PHONE', role: 'member', kind: 'phone' }];
   h.role = 'lead'; h.connected = true; h.receipt = { status: 'completed', result: {} };
   vi.mocked(annexClient.answerRemoteGrantRequest).mockClear();
 });
@@ -36,7 +42,7 @@ describe('answering another computer’s request from the lead (#3354)', () => {
     await expect(answerFollowerApproval('laptop', 'gr_1', 'decline')).rejects.toThrow('It was already answered, or it ended, on that computer.');
   });
 
-  it('refuses off the lead, for a phone or stranger, offline, or an answer no request takes', async () => {
+  it('refuses an unrelated follower, a phone or stranger, offline, or an invalid answer', async () => {
     await expect(answerFollowerApproval('laptop', 'gr_1', 'approve')).rejects.toThrow('isn’t an answer');
     await expect(answerFollowerApproval('phone', 'gr_1', 'decline')).rejects.toThrow('isn’t in this Annex Network');
     await expect(answerFollowerApproval('studio', 'gr_1', 'decline')).rejects.toThrow('isn’t in this Annex Network');
@@ -46,7 +52,28 @@ describe('answering another computer’s request from the lead (#3354)', () => {
     h.connected = false;
     await expect(answerFollowerApproval('laptop', 'gr_1', 'decline')).rejects.toThrow('offline');
     h.connected = true; h.role = 'follower';
-    await expect(answerFollowerApproval('laptop', 'gr_1', 'decline')).rejects.toThrow('Only the lead');
+    await expect(answerFollowerApproval('laptop', 'gr_1', 'decline')).rejects.toThrow('Only the lead or a computer involved');
+    expect(annexClient.answerRemoteGrantRequest).not.toHaveBeenCalled();
+  });
+
+  it.each(['follower', 'peer'] as const)('lets an involved %s answer, but rechecks the latest snapshot arguments', async (role) => {
+    h.role = role;
+    h.rows[0] = { ...h.rows[0], actions: ['connection.manage'], toolName: 'connect_agents', arguments: JSON.stringify({ from: 'dispatcher', to: `missing-agent@${h.self.toUpperCase()}` }) };
+    await answerFollowerApproval('LAPTOP', 'gr_1', 'allow_once');
+    expect(annexClient.answerRemoteGrantRequest).toHaveBeenCalledWith('LAPTOP', 'gr_1', 'allow_once');
+    vi.mocked(annexClient.answerRemoteGrantRequest).mockClear();
+    h.rows[0].arguments = JSON.stringify({ from: 'dispatcher', to: 'unrelated' });
+    await expect(answerFollowerApproval('laptop', 'gr_1', 'decline')).rejects.toThrow('computer involved');
+    h.rows = [];
+    await expect(answerFollowerApproval('laptop', 'gr_1', 'decline')).rejects.toThrow('already answered');
+    expect(annexClient.answerRemoteGrantRequest).not.toHaveBeenCalled();
+  });
+
+  it('keeps grantRowVisibleTo and the offered answers even for the lead', async () => {
+    h.rows[0] = { ...h.rows[0], actions: ['device.manage'], toolName: 'remove_device', arguments: JSON.stringify({ id: h.self.toUpperCase() }) };
+    await expect(answerFollowerApproval('laptop', 'gr_1', 'decline')).rejects.toThrow('computer involved');
+    h.rows[0] = { ...h.rows[0], actions: ['connection.manage'], toolName: 'connect_agents', arguments: JSON.stringify({ from: 'dispatcher', to: `agent@${h.self}` }) };
+    await expect(answerFollowerApproval('laptop', 'gr_1', 'allow_lasting')).rejects.toThrow('isn’t offered');
     expect(annexClient.answerRemoteGrantRequest).not.toHaveBeenCalled();
   });
 

@@ -2,6 +2,7 @@ import { useEffect, useMemo } from 'react';
 import { create } from 'zustand';
 import type { Agent } from '../../../shared/types';
 import type { MobileGrantRequest } from '../../../shared/mobile-control';
+import { connectionApprovalInvolves } from '../../../shared/approval-routing';
 import type { DispatcherLeadState } from '../../../shared/dispatcher-lead';
 import { DISPATCHER_PROJECT_ID } from '../../../shared/dispatcher-types';
 import { useAnnexClientStore } from '../../stores/annexClientStore';
@@ -87,9 +88,9 @@ export interface FollowerApproval {
 const NO_APPROVALS: FollowerApproval[] = [];
 
 /**
- * On the lead (#3354): Ask-first requests waiting on the other computers in
- * this network, from their latest snapshots, oldest first. Answered or expired
- * there, a request leaves with the next snapshot.
+ * Ask-first requests on connected computer members, oldest first (#3354,
+ * #3654). The lead sees every row; other members see only connections involving
+ * their computer. Answered or expired there, a row leaves with the next snapshot.
  */
 export function useFollowerApprovals(): FollowerApproval[] {
   const state = useLeadState();
@@ -98,12 +99,16 @@ export function useFollowerApprovals(): FollowerApproval[] {
 }
 
 function followerApprovalsFrom(state: DispatcherLeadState | null, satellites: ReturnType<typeof useAnnexClientStore.getState>['satellites']): FollowerApproval[] {
-  const members = state?.role === 'lead' ? state.choices.filter((c) => !c.self) : [];
+  const members = state?.choices.filter((c) => !c.self && c.online) ?? [];
+  const self = state?.choices.find((c) => c.self)?.machine;
   if (!members.length) return NO_APPROVALS;
   const out: FollowerApproval[] = [];
   for (const member of members) {
-    const sat = satellites.find((x) => x.fingerprint.toLowerCase() === member.machine && x.state === 'connected');
-    for (const request of sat?.snapshot?.grantRequests ?? []) out.push({ machine: member.machine, machineName: member.name, request });
+    const sat = satellites.find((x) => x.fingerprint.toLowerCase() === member.machine && x.state === 'connected' && !x.needsPairing);
+    for (const request of sat?.snapshot?.grantRequests ?? []) {
+      // Snapshots already apply grantRowVisibleTo at the authenticated sender.
+      if (state?.role === 'lead' || connectionApprovalInvolves(request, self)) out.push({ machine: member.machine, machineName: member.name, request });
+    }
   }
   const at = (item: FollowerApproval) => Date.parse(item.request.requestedAt) || 0;
   return out.length ? out.sort((a, b) => at(a) - at(b)) : NO_APPROVALS;

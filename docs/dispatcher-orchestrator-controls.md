@@ -321,7 +321,7 @@ the person's message.
   Dispatcher chat. A member phone already connects to every computer in the
   network (D212), so it opens the lead's chat on the lead's computer.
 
-### Approvals from other computers (#3354)
+### Approvals from other computers (#3354, #3654)
 
 On the lead, the Dispatcher chat lists the Ask-first requests waiting on the
 other computers in the network, from each one's snapshot (`grantRequests`),
@@ -331,13 +331,32 @@ does. The lead's row in Needs you carries them too, counted with its own. The
 same requests still show on their own computers. A row that was answered shows
 "Answered." until that computer's next snapshot drops it.
 
-They show only while the lead's Dispatcher is on: with it off there's no chat
+Every member computer also shows another member's pending connection call
+when one endpoint names an agent on this computer. These requests appear on
+its Dispatcher row in Needs you, attributed to the requesting computer, and
+can be answered alongside the followed lead's chat without taking back. The
+lead keeps its full view. Unrelated requests stay hidden from other members.
+
+Ownership comes only from stored JSON `from`/`to` arguments of
+`connect_agents`, `disconnect_agents` and `set_connection_tools` calls needing
+`connection.manage`: an explicit `agentId@<this computer's fingerprint>` counts,
+case-insensitively. Bare ids belong to the requesting computer; display text,
+malformed addresses and lasting grant requests confer no ownership. An endpoint
+need not exist to show the request; the requesting computer still validates the
+operation when it runs.
+
+They show while this computer's Dispatcher is on: with it off there's no chat
 or row to show them in, so they're answered on their own computers.
 
 - **Answering.** A person's click sends `grant.answer` to that computer over
   the pinned connection (`answerFollowerApproval`, main only), as Needs you
-  there would. That computer applies it only while the request is still
-  pending and the answer still offered. The first answer wins: answered on its
+  there would. Main rechecks membership, pairing, connectivity, the latest
+  authenticated snapshot, `grantRowVisibleTo`, offered answers and whether this
+  computer is the lead or owns an endpoint. Phones gain no new access. That
+  computer applies it only while the request is still
+  pending and the answer still offered. B atomically consumes the request: a
+  lead/member race applies exactly once and refuses the later answer as already
+  answered. Every other surface clears with the next snapshot. Answered on its
   own computer first, it leaves the lead's chat with that computer's next
   snapshot, and an answer from the lead then is refused with "It was already
   answered, or it ended, on that computer."

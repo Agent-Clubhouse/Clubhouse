@@ -266,6 +266,38 @@ describe('grant.answer: the desktop\'s answer, from a phone', () => {
     expect(mocks.audit).toEqual([{ agentId: 'a1', kind: 'call', outcome: 'allowed', surface: 'mobile' }]);
   });
 
+  it.each([true, false])('lead and involved member race over authenticated Annex: first answer wins (lead first: %s)', async (leadFirst) => {
+    const machineA = Array(16).fill('ab').join(':');
+    const machineLead = Array(16).fill('cd').join(':');
+    const args = { from: 'dispatcher-b', to: `agent-a@${machineA}` };
+    const key = callKey('dispatcher-b', 'connect_agents', args);
+    const recorded = recordGrantRequest(key, {
+      kind: 'call', agentId: 'dispatcher-b', agentName: 'Dispatcher B', projectPath: '/p', actions: ['connection.manage'],
+      toolName: 'connect_agents', where: 'agents', argumentsText: JSON.stringify(args),
+    }, NOW);
+    if (!recorded.ok) throw new Error('not recorded');
+    const id = recorded.request.requestId;
+    const changes: GrantRequestChange[] = [];
+    const off = onGrantRequestsChanged((change) => changes.push(change));
+    const service = new MobileCommandService();
+    const run = (viewer: string, answer: MobileGrantAnswer) => service.execute(viewer,
+      { ...command(id, answer), epoch: service.epoch, commandId: viewer },
+      (cmd) => runGrantCommand(cmd as ReturnType<typeof command>, places, { viewer, assertAuthorized: () => {} }), 'annex_desktop');
+    try {
+      const first = leadFirst ? machineLead : machineA;
+      const second = leadFirst ? machineA : machineLead;
+      const results = await Promise.all([run(first, 'allow_once'), run(second, 'decline')]);
+      expect(results[0].body.status).toBe('completed');
+      expect(results[1].body).toMatchObject({ status: 'rejected', error: { code: 'grant_request_not_found' } });
+      expect(consumeCallApproval(key)).toBe(true);
+      expect(consumeCallApproval(key)).toBe(false);
+      expect(mocks.deliver).toHaveBeenCalledTimes(1);
+      expect(mocks.audit).toEqual([{ agentId: 'dispatcher-b', kind: 'call', outcome: 'allowed', surface: 'annex_desktop' }]);
+      expect(buildMobileGrantRequests(places)).toEqual([]); // every next snapshot clears the row
+      expect(changes.filter((change) => change.kind === 'closed' && change.reason === 'answered')).toHaveLength(1);
+    } finally { off(); }
+  });
+
   it('a lasting grant that fails to save is put back for another try', async () => {
     const id = grantRequest();
     mocks.setAgentGrant.mockRejectedValueOnce(new Error('The permissions file is locked.'));
