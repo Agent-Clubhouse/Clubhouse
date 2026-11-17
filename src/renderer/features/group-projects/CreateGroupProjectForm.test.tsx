@@ -111,7 +111,7 @@ describe('starting membership controls', () => {
     await chooseProject();
     vi.mocked(window.clubhouse.groupProject.previewAutoJoin).mockResolvedValue({ wouldJoin: [], unreadableProjects: [{ projectId: 'remote', name: 'Atlas on Laptop' }] });
     await act(async () => changed('gp'));
-    expect(screen.getByRole('list', { name: 'Projects with unconfirmed agents' })).toHaveTextContent('Atlas on Laptop: The agent list has not synced yet.');
+    expect(await screen.findByRole('list', { name: 'Projects with unconfirmed agents' })).toHaveTextContent('Atlas on Laptop: The agent list has not synced yet.');
   });
 
   it('refreshes remote inventory on snapshots, connection changes and links before a group exists (#3661)', async () => {
@@ -123,10 +123,10 @@ describe('starting membership controls', () => {
     await screen.findByText('2 agents will join now.');
     vi.mocked(window.clubhouse.groupProject.previewAutoJoin).mockResolvedValue({ wouldJoin: [], unreadableProjects: [] });
     await act(async () => computers([]));
-    expect(screen.getByText('0 agents will join now.')).toBeInTheDocument();
+    expect(await screen.findByText('0 agents will join now.')).toBeInTheDocument();
     vi.mocked(window.clubhouse.groupProject.previewAutoJoin).mockResolvedValue(preview);
     await act(async () => snapshot('computer'));
-    expect(screen.getByLabelText('Bea (Atlas on Laptop)')).toBeChecked();
+    expect(await screen.findByLabelText('Bea (Atlas on Laptop)')).toBeChecked();
     vi.mocked(window.clubhouse.groupProject.previewAutoJoin).mockResolvedValue({ wouldJoin: [preview.wouldJoin[0]], unreadableProjects: [] });
     await act(async () => useNetworkSidebarStore.setState({ links: [] }));
     expect(screen.getByText('1 agent will join now.')).toBeInTheDocument();
@@ -353,10 +353,10 @@ describe('coverage preview for another host (#3547, #3568)', () => {
 });
 
 describe('synced sidebar inventory in the create preview (#3661)', () => {
-  const remoteId = 'remote||laptop||proj_hidden';
+  const remoteId = 'remote||laptop||proj_1771095672646_hidden';
   const coverage = { groupProjectId: 'preview', scoped: true, complete: false, localUnknown: false, repositoryMatches: [], copies: [
     { machine: 'self', projectId: 'atlas', name: 'Atlas', thisComputer: true, state: 'verified' as const },
-    { machine: 'laptop', projectId: 'proj_hidden', name: 'proj_hidden on a linked computer', thisComputer: false, state: 'unknown' as const },
+    { machine: 'laptop', projectId: 'proj_1771095672646_hidden', name: 'proj_1771095672646_hidden on a linked computer', thisComputer: false, state: 'unknown' as const },
   ] };
 
   it('resolves project names, labels both computers, and shows cached agents separately without counting or selecting them', async () => {
@@ -371,7 +371,7 @@ describe('synced sidebar inventory in the create preview (#3661)', () => {
     });
     vi.mocked(window.clubhouse.groupProject.previewAutoJoin).mockResolvedValue({
       coverage, wouldJoin: [{ ...preview.wouldJoin[0], projectId: 'atlas' }],
-      unreadableProjects: [{ projectId: 'laptop/proj_hidden', name: 'proj_hidden on a linked computer', reason: 'Laptop is offline.' }],
+      unreadableProjects: [{ projectId: 'laptop/proj_1771095672646_hidden', name: 'proj_1771095672646_hidden on a linked computer', reason: 'Laptop is offline.' }],
     });
     const create = vi.spyOn(window.clubhouse.groupProject, 'create').mockResolvedValue({ id: 'gp-new', name: 'Group' });
     render(<CreateGroupProject defaultScope={scope} />);
@@ -385,7 +385,7 @@ describe('synced sidebar inventory in the create preview (#3661)', () => {
     expect(within(saved).queryByRole('checkbox')).not.toBeInTheDocument();
     expect(screen.getByRole('list', { name: 'Projects with unconfirmed agents' })).toHaveTextContent('Remote Atlas on Laptop: Laptop is offline.');
     expect(screen.getByText('1 agent will join now.')).toBeInTheDocument();
-    expect(screen.queryByText(/proj_hidden/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/proj_1771095672646_hidden/)).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'Exclude all' }));
     expect(ada).not.toBeChecked();
     fireEvent.change(screen.getByLabelText('New group project name'), { target: { value: 'Group' } });
@@ -404,23 +404,23 @@ describe('synced sidebar inventory in the create preview (#3661)', () => {
 
   it('never exposes internal ids even when neither inventory has a name', async () => {
     vi.mocked(window.clubhouse.groupProject.previewAutoJoin).mockResolvedValue({ coverage,
-      wouldJoin: [], unreadableProjects: [{ projectId: 'laptop/proj_hidden', name: 'proj_hidden on a linked computer' }],
+      wouldJoin: [], unreadableProjects: [{ projectId: 'laptop/proj_1771095672646_hidden', name: 'proj_1771095672646_hidden on a linked computer' }],
     });
     render(<CreateGroupProject defaultScope={scope} />);
     const unknown = await screen.findByRole('list', { name: 'Projects with unconfirmed agents' });
     expect(unknown).toHaveTextContent('Linked project: The agent list has not synced yet.');
-    expect(screen.queryByText(/proj_hidden/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/proj_1771095672646_hidden/)).not.toBeInTheDocument();
   });
 });
 
 it('uses a plain project label throughout the form when a local project name is an internal id (#3661)', async () => {
-  useProjectStore.setState({ projects: [{ id: 'atlas', name: 'proj_hidden', path: '/atlas' }] });
+  useProjectStore.setState({ projects: [{ id: 'atlas', name: 'proj_1771095672646_hidden', path: '/atlas' }] });
   vi.mocked(window.clubhouse.groupProject.previewAutoJoin).mockResolvedValue({
-    wouldJoin: [{ ...preview.wouldJoin[0], projectId: 'atlas', projectName: 'proj_hidden' }], unreadableProjects: [],
+    wouldJoin: [{ ...preview.wouldJoin[0], projectId: 'atlas', projectName: 'proj_1771095672646_hidden' }], unreadableProjects: [],
   });
   render(<CreateGroupProject defaultScope={scope} />);
   expect(await screen.findByRole('checkbox', { name: 'Ada (This project)' })).toBeChecked();
   expect(screen.getByRole('option', { name: 'This project' })).toHaveProperty('selected', true);
   expect(screen.getByLabelText('Start with every agent in This project')).toBeChecked();
-  expect(screen.queryByText(/proj_hidden/)).not.toBeInTheDocument();
+  expect(screen.queryByText(/proj_1771095672646_hidden/)).not.toBeInTheDocument();
 });

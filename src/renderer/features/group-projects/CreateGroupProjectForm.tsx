@@ -15,6 +15,9 @@ import { useNetworkSidebarStore } from '../../chrome/sidebar/networkSidebarStore
 import { resolveCreatePreview } from './createPreview';
 import { CoverageSummary } from './CoverageSummary';
 
+/** Notifications within this window share one preview read. */
+const PREVIEW_REFRESH_MS = 100;
+
 export function CreateGroupProjectForm({ defaultScope = { level: 'app', reach: 'local' }, onCreated, onCancel }: {
   /** The scope the form starts on: the project view supplies its project, the hub the whole app. */
   defaultScope?: GroupProjectScope;
@@ -96,12 +99,19 @@ export function CreateGroupProjectForm({ defaultScope = { level: 'app', reach: '
   }, [scope, autoJoin, includeLinkedComputers]);
   useEffect(() => {
     void loadPreview();
-    const offProject = window.clubhouse.project.onChanged(() => { void loadPreview(); });
-    const offAgents = window.clubhouse.agent.onConfigsChanged(() => { void loadPreview(); });
-    const offSnapshot = onSatelliteSnapshot(() => { void loadPreview(); });
-    const offComputers = window.clubhouse.annexClient.onSatellitesChanged(() => { void loadPreview(); });
-    const offMembership = window.clubhouse.groupProject.onMembershipChanged(() => { void loadPreview(); });
-    return () => { previewVersion.current++; offProject(); offAgents(); offMembership(); offSnapshot(); offComputers(); };
+    // One snapshot announces itself several ways (computers, snapshot, and a
+    // membership change per existing group): read the preview once per burst.
+    let refresh: ReturnType<typeof setTimeout> | null = null;
+    const schedule = () => {
+      if (refresh) return;
+      refresh = setTimeout(() => { refresh = null; void loadPreview(); }, PREVIEW_REFRESH_MS);
+    };
+    const offProject = window.clubhouse.project.onChanged(schedule);
+    const offAgents = window.clubhouse.agent.onConfigsChanged(schedule);
+    const offSnapshot = onSatelliteSnapshot(schedule);
+    const offComputers = window.clubhouse.annexClient.onSatellitesChanged(schedule);
+    const offMembership = window.clubhouse.groupProject.onMembershipChanged(schedule);
+    return () => { if (refresh) clearTimeout(refresh); previewVersion.current++; offProject(); offAgents(); offMembership(); offSnapshot(); offComputers(); };
   }, [loadPreview, links]);
 
   /** Send to another computer: a new request, or `retryOf` again exactly as saved. */
