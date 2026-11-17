@@ -32,7 +32,9 @@ vi.mock('./canvas-wire-source', () => ({
   canvasWireBindingSource: { id: 'canvas-wires', collect: async () => [], inspect: async () => [] },
 }));
 vi.mock('./group-project-bulletin', () => ({
-  getBulletinBoard: vi.fn(), ensureInboxChannel: vi.fn(), ensureProjectChannels: vi.fn(), destroyBulletinBoard: vi.fn(),
+  // Host admission (#3666) reads board ownership: an empty board that accepts writes.
+  getBulletinBoard: vi.fn(() => new Proxy({}, { get: (_t, key) => key === "then" ? undefined : vi.fn(async () => (key === "getTopicMessages" || key === "getAllMessages" ? [] : undefined)) })),
+  ensureInboxChannel: vi.fn(async (_id: string, name: string) => `inbox-${name}`), resolveInboxChannel: vi.fn(async (_id: string, name: string) => `inbox-${name}`), inboxChannelName: (name: string) => `inbox-${name}`, ensureProjectChannels: vi.fn(), destroyBulletinBoard: vi.fn(),
 }));
 
 import { bindingManager } from './clubhouse-mcp/binding-manager';
