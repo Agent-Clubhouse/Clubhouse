@@ -191,8 +191,11 @@ export function ChatViewBody({ agent, state, actions, loading, onSwitchToTermina
     setAnswered((previous) => previous.size && [...previous].some((id) => !ids.has(id))
       ? new Set([...previous].filter((id) => ids.has(id))) : previous);
   }, [pending]);
+  // Read at activation: an answer goes to the request the user acted on, and only while it is still waiting.
+  const pendingIds = useRef(new Set<string>());
+  pendingIds.current = new Set(pending.map((p) => p.request.requestId));
   const answer = async (id: string, send: () => Promise<boolean>) => {
-    if (answerLocks.current.has(id)) return false;
+    if (!pendingIds.current.has(id) || answerLocks.current.has(id)) return false;
     answerLocks.current.add(id);
     setAnswered(new Set(answerLocks.current));
     let ok = false;

@@ -5,7 +5,7 @@
  * closes the request, which removes it here.
  */
 
-import { useMemo, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import { describeGrantRequest, grantRequestAllowEffect, type GrantRequest } from '../../../shared/grant-requests';
 import { Button } from '../../components/Button';
 import { reportChromeActionFailed } from '../../chrome/telemetry';
@@ -25,7 +25,12 @@ export function GrantRequestList({ agentId, agentName, onAnswered }: {
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<{ id: string; message: string } | null>(null);
 
+  // Set before the first await, so a second activation in the same tick finds it.
+  const inFlight = useRef(false);
   const answer = async (request: GrantRequest, allow: boolean, updateMode?: import('../../../shared/app-update').AppUpdateMode) => {
+    // Answers exactly the row the user acted on: not one that has left the store, and not twice.
+    if (inFlight.current || !useGrantRequestStore.getState().requests[request.requestId]) return;
+    inFlight.current = true;
     setBusy(request.requestId);
     setError(null);
     try {
@@ -41,6 +46,7 @@ export function GrantRequestList({ agentId, agentName, onAnswered }: {
       reportChromeActionFailed('agent_settings_save', err);
       setError({ id: request.requestId, message: "Couldn't send your answer. Try again." });
     }
+    inFlight.current = false;
     setBusy(null);
   };
 
