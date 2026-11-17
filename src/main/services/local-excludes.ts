@@ -79,7 +79,7 @@ async function installLocalExcludes(projectPath: string): Promise<ExcludeOutcome
     try {
       const stat = await fsp.stat(file);
       if (!stat.isFile() || stat.size > MAX_EXCLUDE_BYTES) {
-        appLog('core:local-excludes', 'warn', 'Exclude file is not a bounded regular file; left unchanged', { meta: { projectPath } });
+        appLog('core:agent-config', 'warn', 'Exclude file is not a bounded regular file; left unchanged', { meta: { projectPath } });
         return 'skipped';
       }
       content = await fsp.readFile(file, 'utf-8');
@@ -96,7 +96,7 @@ async function installLocalExcludes(projectPath: string): Promise<ExcludeOutcome
     return 'written';
   } catch (err) {
     // telemetry-exempt: a non-Git folder or unwritable exclude file leaves the checkout untouched; logged, never thrown.
-    appLog('core:local-excludes', 'info', 'Could not update the repository exclude file; left unchanged', {
+    appLog('core:agent-config', 'info', 'Could not update the repository exclude file; left unchanged', {
       meta: { projectPath, error: err instanceof Error ? err.message : String(err) },
     });
     return 'skipped';
