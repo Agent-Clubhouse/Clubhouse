@@ -2437,6 +2437,47 @@ describe('headless-manager _internal helpers', () => {
   // ── BUG-04: CWD Validation ──────────────────────────────────────────
 
   describe('spawnHeadless CWD validation', () => {
+    it('beforeSpawn: a run revoked while the cwd is checked never spawns, and the run it would replace is left alone (#3613 P5)', async () => {
+      await spawnHeadless('fence-cwd', '/valid/path', '/usr/bin/agent', []);
+      mockCpSpawn.mockClear();
+      vi.mocked(killStructuredChild).mockClear();
+      let allowed = true;
+      let releaseCwd!: () => void;
+      mockValidateSpawnCwd.mockImplementationOnce(() => new Promise((resolve) => { releaseCwd = () => resolve('/valid/path'); }));
+      const spawning = spawnHeadless('fence-cwd', '/valid/path', '/usr/bin/agent', [], undefined, 'stream-json', undefined, undefined, undefined,
+        () => { if (!allowed) throw new Error('authorization_revoked'); });
+      await vi.waitFor(() => expect(releaseCwd).toBeTypeOf('function'));
+      allowed = false;
+      releaseCwd();
+      await expect(spawning).rejects.toThrow('authorization_revoked');
+      expect(mockCpSpawn).not.toHaveBeenCalled();
+      expect(killStructuredChild).not.toHaveBeenCalled();
+    });
+
+    it('beforeSpawn: a run revoked while its logs directory is made (the last await) never spawns (#3613 P5)', async () => {
+      let allowed = true;
+      let releaseLogs!: () => void;
+      // ensureLogsDir is fs.promises.mkdir: held open, as a slow disk would.
+      mockFsPromises.mkdir.mockImplementationOnce(() => new Promise((resolve) => { releaseLogs = () => resolve(undefined); }));
+      const beforeSpawn = vi.fn(() => { if (!allowed) throw new Error('authorization_revoked'); });
+      const spawning = spawnHeadless('fence-last', '/valid/path', '/usr/bin/agent', [], undefined, 'stream-json', undefined, undefined, undefined, beforeSpawn);
+      await vi.waitFor(() => expect(releaseLogs).toBeTypeOf('function'));
+      // The cwd check is behind it, and passed.
+      expect(beforeSpawn).toHaveBeenCalledTimes(1);
+      allowed = false;
+      releaseLogs();
+      await expect(spawning).rejects.toThrow('authorization_revoked');
+      expect(beforeSpawn).toHaveBeenCalledTimes(2);
+      expect(mockCpSpawn).not.toHaveBeenCalled();
+    });
+
+    it('beforeSpawn: still allowed, the run spawns as before (#3613 P5)', async () => {
+      const beforeSpawn = vi.fn();
+      await spawnHeadless('fence-ok', '/valid/path', '/usr/bin/agent', [], undefined, 'stream-json', undefined, undefined, undefined, beforeSpawn);
+      expect(beforeSpawn).toHaveBeenCalledTimes(2);
+      expect(mockCpSpawn).toHaveBeenCalledOnce();
+    });
+
     it('calls validateSpawnCwd before spawning', async () => {
       await spawnHeadless('cwd-test', '/valid/path', '/usr/bin/agent', []);
       expect(mockValidateSpawnCwd).toHaveBeenCalledWith('/valid/path');

@@ -1436,7 +1436,7 @@ describe('annex-server', () => {
       const ws = await connect();
       const reply = await spawn(ws, { sessionId: 's1', projectId: 'p', ...(agentId && { agentId }) });
       expect(reply).toEqual({ type: 'pty:spawn-shell:ack', payload: { sessionId: 's1', cwd } });
-      expect(ptyManagerModule.spawnShell).toHaveBeenCalledWith('s1', cwd);
+      expect(ptyManagerModule.spawnShell).toHaveBeenCalledWith('s1', cwd, { beforeSpawn: expect.any(Function) });
     });
 
     it('rejects unknown agents, agents of another project, and unknown projects', async () => {
@@ -1483,6 +1483,213 @@ describe('annex-server', () => {
       expect(await spawn(ws, { sessionId: 's1', projectId: 'p' }))
         .toEqual({ type: 'error', payload: { message: 'internal_error', op: 'pty:spawn-shell', sessionId: 's1' } });
       expect(appLog).toHaveBeenCalledWith('core:annex', 'error', 'pty:spawn-shell failed', expect.anything());
+    });
+
+    describe('shared handler hardening, direct path (#3613 P5 QA)', () => {
+      describe('shell ownership while a spawn is starting, direct (P5 QA)', () => {
+      /**
+       * spawnShell as the real leaf runs it (pty-manager.test.ts pins that order against the real one):
+       * its cwd check (the first call's held open), then the fence, then it replaces whatever runs under
+       * the id and starts the new shell.
+       */
+      function shellLeaf() {
+        const acted: string[] = [];
+        let release!: () => void;
+        let holdNext = true;
+        vi.mocked(ptyManagerModule.spawnShell).mockImplementation((async (id: string, _cwd: string, opts?: { beforeSpawn?: () => void }) => {
+          if (holdNext) { holdNext = false; await new Promise<void>((resolve) => { release = resolve; }); }
+          opts?.beforeSpawn?.();
+          acted.push(`replace-and-spawn:${id}`);
+        }) as never);
+        return { acted, release: () => release() };
+      }
+
+        it('A disconnects mid-spawn and B starts the same id: A\'s spawn never replaces B\'s shell', async () => {
+          await startAndPair();
+          const a = await connect();
+          const b = await connect();
+          const leaf = shellLeaf();
+          a.emit('message', JSON.stringify({ type: 'pty:spawn-shell', payload: { sessionId: 'X', projectId: 'p' } }));
+          await vi.waitFor(() => expect(ptyManagerModule.spawnShell).toHaveBeenCalledTimes(1));
+          a.readyState = 3;
+          a.emit('close');
+          b.emit('message', JSON.stringify({ type: 'pty:spawn-shell', payload: { sessionId: 'X', projectId: 'p' } }));
+          await vi.waitFor(() => expect(sent(b).some((f) => f.type === 'pty:spawn-shell:ack')).toBe(true));
+          leaf.release();
+          await new Promise((resolve) => setTimeout(resolve, 20));
+          expect(leaf.acted).toEqual(['replace-and-spawn:X']);
+          expect(annexServer._testing.shellOwners.get('X')).toBe(b);
+          const onData = vi.mocked(annexEventBus.onPtyData).mock.calls.at(-1)![0];
+          b.send.mockClear();
+          onData('X', 'only for b', 1);
+          expect(sent(b)).toEqual([{ type: 'pty:data', payload: { agentId: 'X', data: 'only for b', outputSeq: 1 } }]);
+        });
+
+        it('a stale spawn never acts on the same controller\'s newer claim of that id', async () => {
+          await startAndPair();
+          const a = await connect();
+          const leaf = shellLeaf();
+          a.emit('message', JSON.stringify({ type: 'pty:spawn-shell', payload: { sessionId: 'X', projectId: 'p' } }));
+          await vi.waitFor(() => expect(ptyManagerModule.spawnShell).toHaveBeenCalledTimes(1));
+          a.emit('message', JSON.stringify({ type: 'pty:close', payload: { sessionId: 'X' } }));
+          a.emit('message', JSON.stringify({ type: 'pty:spawn-shell', payload: { sessionId: 'X', projectId: 'p' } }));
+          await vi.waitFor(() => expect(sent(a).some((f) => f.type === 'pty:spawn-shell:ack')).toBe(true));
+          leaf.release();
+          await new Promise((resolve) => setTimeout(resolve, 20));
+          expect(leaf.acted).toEqual(['replace-and-spawn:X']);
+          expect(annexServer._testing.shellOwners.get('X')).toBe(a);
+        });
+      });
+
+      describe('revocation inside the services\' own awaits, direct (P5 QA b)', () => {
+        function modelServices() {
+          const acted: string[] = [];
+          let releaseKill!: () => void;
+          let releaseSpawn!: () => void;
+          const killAwait = new Promise<void>((resolve) => { releaseKill = resolve; });
+          const spawnAwait = new Promise<void>((resolve) => { releaseSpawn = resolve; });
+          vi.mocked(agentSystem.killAgent).mockImplementation((async (agentId: string, _p: string, _o: unknown, _t: unknown, opts?: { beforeStop?: () => void }) => {
+            await killAwait;
+            opts?.beforeStop?.();
+            acted.push(`gracefulKill:${agentId}`);
+          }) as never);
+          vi.mocked(agentSystem.spawnAgent).mockImplementation((async (params: { agentId: string; beforeCreate?: () => void }) => {
+            await spawnAwait;
+            params.beforeCreate?.();
+            acted.push(`created:${params.agentId}`);
+          }) as never);
+          return { acted, releaseKill, releaseSpawn };
+        }
+
+        it('a controller removed while the stop awaits its orchestrator: nothing is stopped', async () => {
+          await startAndPair();
+          const ws = await connect();
+          const services = modelServices();
+          vi.mocked(ptyManagerModule.getShellCwd).mockImplementation((id) => (id === 'k1' ? '/project' : undefined));
+          ws.emit('message', JSON.stringify({ type: 'agent:kill', payload: { agentId: 'k1' } }));
+          await vi.waitFor(() => expect(agentSystem.killAgent).toHaveBeenCalled());
+          vi.mocked(annexPeers.getPeer).mockReturnValue(undefined);
+          services.releaseKill();
+          await vi.waitFor(() => expect(sent(ws).at(-1)).toMatchObject({ type: 'error', payload: { message: 'authorization_revoked' } }));
+          expect(services.acted).toEqual([]);
+        });
+
+        it('a controller removed while the spawn checks its provider: nothing is created', async () => {
+          await startAndPair();
+          const ws = await connect();
+          const services = modelServices();
+          vi.mocked(agentIdModule.generateQuickAgentId).mockReturnValue('quick-fenced-direct');
+          ws.emit('message', JSON.stringify({ type: 'agent:spawn', payload: { projectId: 'p', prompt: 'hi' } }));
+          await vi.waitFor(() => expect(agentSystem.spawnAgent).toHaveBeenCalled());
+          vi.mocked(annexPeers.getPeer).mockReturnValue(undefined);
+          services.releaseSpawn();
+          await vi.waitFor(() => expect(sent(ws).at(-1)).toMatchObject({ type: 'error', payload: { message: 'spawn_failed' } }));
+          expect(services.acted).toEqual([]);
+          agentRegistry.untrack('quick-fenced-direct');
+        });
+
+        it('a direct controller that only disconnected: the stop and the spawn still complete, as before', async () => {
+          await startAndPair();
+          const ws = await connect();
+          const services = modelServices();
+          vi.mocked(ptyManagerModule.getShellCwd).mockImplementation((id) => (id === 'k1' ? '/project' : undefined));
+          vi.mocked(agentIdModule.generateQuickAgentId).mockReturnValue('quick-after-disconnect');
+          ws.emit('message', JSON.stringify({ type: 'agent:kill', payload: { agentId: 'k1' } }));
+          ws.emit('message', JSON.stringify({ type: 'agent:spawn', payload: { projectId: 'p', prompt: 'hi' } }));
+          await vi.waitFor(() => expect(agentSystem.killAgent).toHaveBeenCalled());
+          await vi.waitFor(() => expect(agentSystem.spawnAgent).toHaveBeenCalled());
+          ws.readyState = 3;
+          services.releaseKill();
+          services.releaseSpawn();
+          await vi.waitFor(() => expect(services.acted.sort()).toEqual(['created:quick-after-disconnect', 'gracefulKill:k1']));
+          agentRegistry.untrack('quick-after-disconnect');
+        });
+      });
+
+      it('clipboard:image cannot paste into another controller\'s shell', async () => {
+        await startAndPair();
+        const a = await connect();
+        const b = await connect();
+        await spawn(a, { sessionId: 's1', projectId: 'p' });
+        vi.mocked(ptyManagerModule.write).mockClear();
+        const writeFile = vi.spyOn(fs, 'writeFileSync').mockImplementation(() => undefined);
+        try {
+          b.emit('message', JSON.stringify({ type: 'clipboard:image', payload: { agentId: 's1', base64: 'iVBORw0KGgo=', mimeType: 'image/png' } }));
+          expect(ptyManagerModule.write).not.toHaveBeenCalled();
+          expect(writeFile).not.toHaveBeenCalled();
+          expect(sent(b).at(-1)).toMatchObject({ type: 'error', payload: { message: 'session_not_found', op: 'clipboard:image' } });
+        } finally { writeFile.mockRestore(); }
+      });
+
+      it('agent:kill cannot stop another controller\'s shell, and its own still stops', async () => {
+        await startAndPair();
+        const a = await connect();
+        const b = await connect();
+        await spawn(a, { sessionId: 's1', projectId: 'p' });
+        vi.mocked(ptyManagerModule.getShellCwd).mockImplementation((id) => (id === 's1' ? '/project' : undefined));
+        vi.mocked(agentSystem.killAgent).mockClear();
+        b.emit('message', JSON.stringify({ type: 'agent:kill', payload: { agentId: 's1' } }));
+        await vi.waitFor(() => expect(sent(b).at(-1)).toMatchObject({ type: 'error', payload: { message: 'session_not_found' } }));
+        expect(agentSystem.killAgent).not.toHaveBeenCalled();
+        a.emit('message', JSON.stringify({ type: 'agent:kill', payload: { agentId: 's1' } }));
+        await vi.waitFor(() => expect(agentSystem.killAgent).toHaveBeenCalledTimes(1));
+      });
+
+      it('concurrent shell spawns for distinct ids stay within the cap', async () => {
+        await startAndPair();
+        const ws = await connect();
+        vi.mocked(ptyManagerModule.spawnShell).mockClear();
+        for (let i = 0; i < 10; i++) ws.emit('message', JSON.stringify({ type: 'pty:spawn-shell', payload: { sessionId: `burst-${i}`, projectId: 'p' } }));
+        await vi.waitFor(() => expect(sent(ws)).toHaveLength(10));
+        expect(ptyManagerModule.spawnShell).toHaveBeenCalledTimes(8);
+        expect(sent(ws).filter((f) => f.payload?.message === 'too_many_shells')).toHaveLength(2);
+      });
+
+      it('lifecycle bursts are bounded per connection: the rest are answered busy', async () => {
+        await startAndPair();
+        const ws = await connect();
+        let finish!: () => void;
+        const pending = new Promise<void>((resolve) => { finish = resolve; });
+        let serial = 0;
+        vi.mocked(agentIdModule.generateQuickAgentId).mockImplementation(() => `direct-burst-${++serial}`);
+        vi.mocked(agentSystem.spawnAgent).mockClear();
+        vi.mocked(agentSystem.spawnAgent).mockImplementation(() => pending as never);
+        try {
+          for (let i = 0; i < 20; i++) ws.emit('message', JSON.stringify({ type: 'agent:spawn', payload: { projectId: 'p', prompt: 'hi' } }));
+          await vi.waitFor(() => expect(agentSystem.spawnAgent).toHaveBeenCalledTimes(16));
+          expect(sent(ws).filter((f) => f.payload?.message === 'busy')).toHaveLength(4);
+        } finally {
+          finish();
+          for (let i = 1; i <= serial; i++) agentRegistry.untrack(`direct-burst-${i}`);
+        }
+      });
+
+      it('a controller removed while its spawn looks up the project starts nothing', async () => {
+        await startAndPair();
+        const ws = await connect();
+        let finishList!: (projects: unknown) => void;
+        vi.mocked(projectStore.list).mockImplementationOnce(() => new Promise((resolve) => { finishList = resolve; }) as never);
+        vi.mocked(agentSystem.spawnAgent).mockClear();
+        ws.emit('message', JSON.stringify({ type: 'agent:spawn', payload: { projectId: 'p', prompt: 'hi' } }));
+        vi.mocked(annexPeers.getPeer).mockReturnValue(undefined);
+        finishList([project]);
+        await vi.waitFor(() => expect(sent(ws).at(-1)).toMatchObject({ type: 'error', payload: { message: 'authorization_revoked' } }));
+        expect(agentSystem.spawnAgent).not.toHaveBeenCalled();
+      });
+
+      it('a direct controller that only disconnected still gets its spawn, as before', async () => {
+        await startAndPair();
+        const ws = await connect();
+        let finishList!: (projects: unknown) => void;
+        vi.mocked(projectStore.list).mockImplementationOnce(() => new Promise((resolve) => { finishList = resolve; }) as never);
+        vi.mocked(agentIdModule.generateQuickAgentId).mockReturnValue('quick-disconnected');
+        vi.mocked(agentSystem.spawnAgent).mockClear();
+        ws.emit('message', JSON.stringify({ type: 'agent:spawn', payload: { projectId: 'p', prompt: 'hi' } }));
+        ws.readyState = 3;
+        finishList([project]);
+        await vi.waitFor(() => expect(agentSystem.spawnAgent).toHaveBeenCalledTimes(1));
+        agentRegistry.untrack('quick-disconnected');
+      });
     });
 
     it('caps shells per connection', async () => {
@@ -1723,7 +1930,7 @@ describe('annex-server', () => {
       }));
       ws.emit('message', JSON.stringify({ type: 'agent:kill', payload: { agentId: 'remote-agent' } }));
       await vi.waitFor(() => expect(agentSystem.killAgent).toHaveBeenCalledWith(
-        'remote-agent', '/project', 'claude-code', 'user', { waitForExit: true, throwOnFailure: true },
+        'remote-agent', '/project', 'claude-code', 'user', { waitForExit: true, throwOnFailure: true, beforeStop: expect.any(Function) },
       ));
       expect(ws.send).not.toHaveBeenCalledWith(expect.stringContaining('agent:kill:ack'));
       finish();
@@ -1745,7 +1952,7 @@ describe('annex-server', () => {
       ws.emit('message', JSON.stringify({ type: 'agent:kill', payload: { agentId: 'shell-terminal' } }));
       await vi.waitFor(() => expect(agentSystem.killAgent).toHaveBeenCalledWith(
         'shell-terminal', '/shell-cwd', undefined, 'user',
-        { waitForExit: true, throwOnFailure: true, exitCommand: 'exit\r' },
+        { waitForExit: true, throwOnFailure: true, exitCommand: 'exit\r', beforeStop: expect.any(Function) },
       ));
       await vi.waitFor(() => expect(ws.send).toHaveBeenCalledWith(JSON.stringify({ type: 'agent:kill:ack', payload: { agentId: 'shell-terminal' } })));
     });
@@ -8554,7 +8761,7 @@ describe('annex-server', () => {
       });
       annexControl._attachForTesting(ws as never, MEMBER.fingerprint, pin, 'out');
       annexControl._sendHelloForTesting(MEMBER.fingerprint);
-      ws.emit('message', Buffer.from(JSON.stringify({ v: 1, type: 'hello', features: ['request', 'subscribe'] })), false);
+      ws.emit('message', Buffer.from(JSON.stringify({ v: 1, type: 'hello', features: ['request', 'subscribe', 'ws-control'] })), false);
       const send = (method: string, path: string, body: unknown, id: string) =>
         ws.emit('message', Buffer.from(JSON.stringify({ v: 1, type: 'request', id, method, path, ...(body !== undefined && { body: JSON.stringify(body), headers: { 'content-type': 'application/json' } }) })), false);
       const cancel = (id: string) => ws.emit('message', Buffer.from(JSON.stringify({ v: 1, type: 'cancel', id })), false);
@@ -8770,7 +8977,9 @@ describe('annex-server', () => {
         const frames = () => link.ws.sent.filter((m) => m.type === 'event' && m.id === id).map((m) => m.frame);
         const ended = () => link.ws.sent.filter((m) => (m.type === 'ended' || m.type === 'error') && m.id === id);
         const virtual = () => [...annexServer._testing.wss!.clients].filter((c) => annexServer._testing.wsPeerFingerprints.get(c) === MEMBER.fingerprint);
-        return { ...link, id, frames, ended, virtual };
+        /** A /ws control frame from MEMBER over the connection (P5). */
+        const client = (frame: Record<string, unknown>) => link.ws.emit('message', Buffer.from(JSON.stringify({ v: 1, type: 'client', id, frame })), false);
+        return { ...link, id, frames, ended, virtual, client };
       }
 
       it('serves a fresh snapshot first, then live events with their seq, as a /ws socket from it would get them', async () => {
@@ -8857,6 +9066,279 @@ describe('annex-server', () => {
         expect(annexServer._testing.wss!.clients.size).toBe(before);
         expect(sink.send).not.toHaveBeenCalled();
       }, 15_000);
+
+      describe('control frames over the subscription: terminals and lifecycle (P5)', () => {
+        const project = { id: 'p', name: 'Project', path: '/project' };
+        beforeEach(() => {
+          annexServer._testing.shellOwners.clear();
+          vi.mocked(projectStore.list).mockReturnValue([project] as any);
+          vi.mocked(ptyManagerModule.spawnShell).mockResolvedValue(undefined);
+          vi.mocked(ptyManagerModule.killShell).mockReturnValue(true);
+          vi.mocked(ptyManagerModule.getShellCwd).mockReturnValue(undefined);
+          vi.mocked(ptyManagerModule.write).mockClear();
+        });
+
+        async function ready() {
+          await startAndPair();
+          const sub = subscribed();
+          await vi.waitFor(() => expect(sub.frames()[0]).toMatchObject({ type: 'snapshot' }));
+          return sub;
+        }
+
+        it('SECURITY: revoking a client frame closes the virtual subscriber and its shells', async () => {
+          const sub = await ready();
+          sub.client({ type: 'pty:spawn-shell', payload: { sessionId: 'revoke-shell', projectId: 'p' } });
+          await vi.waitFor(() => expect(annexServer._testing.shellOwners.has('revoke-shell')).toBe(true));
+          const virtual = sub.virtual()[0];
+          vi.mocked(ptyManagerModule.killShell).mockClear();
+          current = { ...MEMBER, networkPending: true };
+          sub.client({ type: 'pty:input', payload: { agentId: 'revoke-shell', data: 'x' } });
+          expect(sub.ws.close).toHaveBeenCalledWith(4401, 'authorization_revoked');
+          expect(virtual.readyState).toBe(3);
+          expect(ptyManagerModule.killShell).toHaveBeenCalledWith('revoke-shell');
+          expect(annexServer._testing.shellOwners.has('revoke-shell')).toBe(false);
+        }, 15_000);
+
+        it('SECURITY: clipboard image cannot inject input into another subscription shell', async () => {
+          const sub = await ready();
+          const other = { readyState: 1 };
+          annexServer._testing.shellOwners.set('private-other-shell', other as never);
+          const writeFile = vi.spyOn(fs, 'writeFileSync').mockImplementation(() => undefined);
+          try {
+            sub.client({ type: 'clipboard:image', payload: {
+              agentId: 'private-other-shell', base64: 'iVBORw0KGgo=', mimeType: 'image/png',
+            } });
+            expect(ptyManagerModule.write).not.toHaveBeenCalled();
+          } finally { writeFile.mockRestore(); }
+        }, 15_000);
+
+        it('SECURITY: agent kill cannot stop another subscription shell', async () => {
+          const sub = await ready();
+          annexServer._testing.shellOwners.set('private-other-shell', { readyState: 1 } as never);
+          vi.mocked(ptyManagerModule.getShellCwd).mockImplementation((id) => id === 'private-other-shell' ? '/project' : undefined);
+          vi.mocked(agentSystem.killAgent).mockClear();
+          sub.client({ type: 'agent:kill', payload: { agentId: 'private-other-shell' } });
+          await vi.waitFor(() => expect(sub.frames().some(f => f.type === 'error' || f.type === 'agent:kill:ack')).toBe(true));
+          expect(agentSystem.killAgent).not.toHaveBeenCalled();
+        }, 15_000);
+
+        it('SECURITY: concurrent reverse shell creation stays below the eight shell cap', async () => {
+          const sub = await ready();
+          vi.mocked(ptyManagerModule.spawnShell).mockClear();
+          for (let i = 0; i < 9; i++) sub.client({ type: 'pty:spawn-shell', payload: { sessionId: `burst-${i}`, projectId: 'p' } });
+          await vi.waitFor(() => expect(sub.frames().filter(f => f.type === 'pty:spawn-shell:ack' || f.type === 'error')).toHaveLength(9));
+          expect(ptyManagerModule.spawnShell.mock.calls.length).toBeLessThanOrEqual(8);
+          expect([...annexServer._testing.shellOwners.values()].filter(owner => owner === sub.virtual()[0]).length).toBeLessThanOrEqual(8);
+        }, 15_000);
+
+        it('SECURITY: lifecycle bursts cannot bypass the control in-flight cap', async () => {
+          const sub = await ready();
+          let finish!: () => void;
+          const pending = new Promise<void>(resolve => { finish = resolve; });
+          let serial = 0;
+          vi.mocked(agentIdModule.generateQuickAgentId).mockImplementation(() => `security-burst-${++serial}`);
+          vi.mocked(agentSystem.spawnAgent).mockClear();
+          vi.mocked(agentSystem.spawnAgent).mockImplementation(() => pending);
+          try {
+            for (let i = 0; i < 32; i++) sub.client({ type: 'agent:spawn', payload: { projectId: 'p', prompt: 'hi' } });
+            await new Promise(resolve => setImmediate(resolve));
+            expect(vi.mocked(agentSystem.spawnAgent).mock.calls.length).toBeLessThanOrEqual(annexControl.MAX_IN_FLIGHT);
+          } finally { finish(); }
+        }, 15_000);
+
+        it('SECURITY: revocation during lookup prevents an already queued reverse spawn', async () => {
+          const sub = await ready();
+          let finish!: (projects: any) => void;
+          vi.mocked(projectStore.list).mockImplementationOnce(() => new Promise(resolve => { finish = resolve; }) as any);
+          vi.mocked(agentSystem.spawnAgent).mockClear();
+          sub.client({ type: 'agent:spawn', payload: { projectId: 'p', prompt: 'hi' } });
+          current = undefined;
+          annexServer.revokePeer(MEMBER.fingerprint);
+          expect(sub.ws.close).toHaveBeenCalled();
+          finish([project]);
+          await new Promise(resolve => setImmediate(resolve));
+          expect(agentSystem.spawnAgent).not.toHaveBeenCalled();
+        }, 15_000);
+
+        describe('shell ownership while a spawn is starting, reverse (P5 QA)', () => {
+          /**
+           * spawnShell as the real leaf runs it (pty-manager.test.ts pins that order against the real one):
+           * its cwd check (the first call's held open), then the fence, then it replaces whatever runs under
+           * the id and starts the new shell.
+           */
+          function shellLeaf() {
+            const acted: string[] = [];
+            let release!: () => void;
+            let holdNext = true;
+            vi.mocked(ptyManagerModule.spawnShell).mockImplementation((async (id: string, _cwd: string, opts?: { beforeSpawn?: () => void }) => {
+              if (holdNext) { holdNext = false; await new Promise<void>((resolve) => { release = resolve; }); }
+              opts?.beforeSpawn?.();
+              acted.push(`replace-and-spawn:${id}`);
+            }) as never);
+            return { acted, release: () => release() };
+          }
+
+          it('direct A disconnects mid-spawn and subscription B starts the same id: A never replaces B\'s shell', async () => {
+            const sub = await ready();
+            const a = Object.assign(new EventEmitter(), { readyState: 1, send: vi.fn(), ping: vi.fn() });
+            annexServer._testing.wsAuthTypes.set(a as any, 'mtls');
+            annexServer._testing.registerPeerSocket(a as any, MEMBER.fingerprint, MEMBER.tlsCertificateFingerprint);
+            annexServer._testing.wss!.emit('connection', a);
+            const leaf = shellLeaf();
+            a.emit('message', JSON.stringify({ type: 'pty:spawn-shell', payload: { sessionId: 'X', projectId: 'p' } }));
+            await vi.waitFor(() => expect(ptyManagerModule.spawnShell).toHaveBeenCalledTimes(1));
+            a.readyState = 3;
+            a.emit('close');
+            sub.client({ type: 'pty:spawn-shell', payload: { sessionId: 'X', projectId: 'p' } });
+            await vi.waitFor(() => expect(sub.frames().some((f) => f.type === 'pty:spawn-shell:ack')).toBe(true));
+            leaf.release();
+            await new Promise((resolve) => setTimeout(resolve, 20));
+            expect(leaf.acted).toEqual(['replace-and-spawn:X']);
+            expect(annexServer._testing.shellOwners.get('X')).toBe(sub.virtual()[0]);
+            const onData = vi.mocked(annexEventBus.onPtyData).mock.calls.at(-1)![0];
+            onData('X', 'only for the subscriber', 1);
+            await vi.waitFor(() => expect(sub.frames().some((f) => f.type === 'pty:data')).toBe(true));
+            expect(a.send).not.toHaveBeenCalledWith(expect.stringContaining('only for the subscriber'));
+          }, 15_000);
+        });
+
+        describe('revocation inside the services\' own awaits (P5 QA b)', () => {
+          /**
+           * killAgent and spawnAgent as the services run them: an await of their own (resolveOrchestrator,
+           * the provider check), then the fence (beforeStop / beforeCreate), then the act.
+           */
+          function modelServices() {
+            const acted: string[] = [];
+            let releaseKill!: () => void;
+            let releaseSpawn!: () => void;
+            const killAwait = new Promise<void>((resolve) => { releaseKill = resolve; });
+            const spawnAwait = new Promise<void>((resolve) => { releaseSpawn = resolve; });
+            vi.mocked(agentSystem.killAgent).mockImplementation((async (agentId: string, _p: string, _o: unknown, _t: unknown, opts?: { beforeStop?: () => void }) => {
+              await killAwait;
+              opts?.beforeStop?.();
+              acted.push(`gracefulKill:${agentId}`);
+            }) as never);
+            vi.mocked(agentSystem.spawnAgent).mockImplementation((async (params: { agentId: string; beforeCreate?: () => void }) => {
+              await spawnAwait;
+              params.beforeCreate?.();
+              acted.push(`created:${params.agentId}`);
+            }) as never);
+            return { acted, releaseKill, releaseSpawn };
+          }
+
+          it('a subscriber revoked while the stop awaits its orchestrator: nothing is stopped', async () => {
+            const sub = await ready();
+            const services = modelServices();
+            vi.mocked(ptyManagerModule.getShellCwd).mockImplementation((id) => (id === 'k1' ? '/project' : undefined));
+            sub.client({ type: 'agent:kill', payload: { agentId: 'k1' } });
+            await vi.waitFor(() => expect(agentSystem.killAgent).toHaveBeenCalled());
+            current = { ...MEMBER, networkPending: true };
+            services.releaseKill();
+            await new Promise((resolve) => setTimeout(resolve, 20));
+            expect(services.acted).toEqual([]);
+          }, 15_000);
+
+          it('a subscriber revoked while the spawn checks its provider: nothing is created', async () => {
+            const sub = await ready();
+            const services = modelServices();
+            vi.mocked(agentIdModule.generateQuickAgentId).mockReturnValue('quick-fenced');
+            sub.client({ type: 'agent:spawn', payload: { projectId: 'p', prompt: 'hi' } });
+            await vi.waitFor(() => expect(agentSystem.spawnAgent).toHaveBeenCalled());
+            current = undefined;
+            services.releaseSpawn();
+            await new Promise((resolve) => setTimeout(resolve, 20));
+            expect(services.acted).toEqual([]);
+            agentRegistry.untrack('quick-fenced');
+          }, 15_000);
+        });
+
+        it('runs a shell for the subscriber through the /ws handlers: spawn, input, and output only to it', async () => {
+          const sub = await ready();
+          sub.client({ type: 'pty:spawn-shell', payload: { sessionId: 'rs1', projectId: 'p' } });
+          await vi.waitFor(() => expect(sub.frames().some((f) => f.type === 'pty:spawn-shell:ack')).toBe(true));
+          expect(annexServer._testing.shellOwners.get('rs1')).toBe(sub.virtual()[0]);
+          sub.client({ type: 'pty:input', payload: { agentId: 'rs1', data: 'ls\r' } });
+          expect(ptyManagerModule.write).toHaveBeenCalledWith('rs1', 'ls\r');
+          const onData = vi.mocked(annexEventBus.onPtyData).mock.calls.at(-1)![0];
+          onData('rs1', 'listing', 1);
+          await vi.waitFor(() => expect(sub.frames().some((f) => f.type === 'pty:data')).toBe(true));
+          expect(sub.frames().filter((f) => f.type === 'pty:data')).toEqual([{ type: 'pty:data', payload: { agentId: 'rs1', data: 'listing', outputSeq: 1 } }]);
+        }, 15_000);
+
+        it('a direct controller cannot drive the subscriber\'s shell, and the subscriber cannot drive a direct controller\'s', async () => {
+          const sub = await ready();
+          sub.client({ type: 'pty:spawn-shell', payload: { sessionId: 'rs1', projectId: 'p' } });
+          await vi.waitFor(() => expect(annexServer._testing.shellOwners.has('rs1')).toBe(true));
+          const direct = Object.assign(new EventEmitter(), { readyState: 1, send: vi.fn(), ping: vi.fn() });
+          annexServer._testing.wsAuthTypes.set(direct as any, 'mtls');
+          annexServer._testing.registerPeerSocket(direct as any, MEMBER.fingerprint, MEMBER.tlsCertificateFingerprint);
+          annexServer._testing.wss!.emit('connection', direct);
+          direct.emit('message', JSON.stringify({ type: 'pty:input', payload: { agentId: 'rs1', data: 'x' } }));
+          expect(ptyManagerModule.write).not.toHaveBeenCalled();
+          annexServer._testing.shellOwners.set('direct-shell', direct as never);
+          sub.client({ type: 'pty:input', payload: { agentId: 'direct-shell', data: 'y' } });
+          expect(ptyManagerModule.write).not.toHaveBeenCalled();
+          await vi.waitFor(() => expect(sub.frames().some((f) => f.type === 'error' && (f.payload as { message?: string }).message === 'session_not_found')).toBe(true));
+        }, 15_000);
+
+        it('ending the subscription closes the subscriber\'s shells, as a direct socket closing does', async () => {
+          const sub = await ready();
+          sub.client({ type: 'pty:spawn-shell', payload: { sessionId: 'rs1', projectId: 'p' } });
+          await vi.waitFor(() => expect(annexServer._testing.shellOwners.has('rs1')).toBe(true));
+          vi.mocked(ptyManagerModule.killShell).mockClear();
+          sub.ws.emit('message', Buffer.from(JSON.stringify({ v: 1, type: 'unsubscribe', id: sub.id })), false);
+          expect(ptyManagerModule.killShell).toHaveBeenCalledWith('rs1');
+          expect(annexServer._testing.shellOwners.has('rs1')).toBe(false);
+        }, 15_000);
+
+        it('a subscriber that lost access: its input never reaches the terminal', async () => {
+          const sub = await ready();
+          current = { ...MEMBER, networkPending: true };
+          sub.client({ type: 'pty:input', payload: { agentId: 'agent-1', data: 'rm -rf\r' } });
+          expect(ptyManagerModule.write).not.toHaveBeenCalled();
+          expect(sub.ended()).toEqual([{ v: 1, type: 'ended', id: sub.id, code: 'authorization_revoked' }]);
+          expect(sub.ws.close).toHaveBeenCalledWith(4401, 'authorization_revoked');
+        }, 15_000);
+
+        it('the /ws limits apply: pty:input over 64 KiB is refused', async () => {
+          const sub = await ready();
+          sub.client({ type: 'pty:input', payload: { agentId: 'agent-1', data: 'x'.repeat(64 * 1024 + 1) } });
+          expect(ptyManagerModule.write).not.toHaveBeenCalled();
+          await vi.waitFor(() => expect(sub.frames().some((f) => f.type === 'error')).toBe(true));
+        }, 15_000);
+
+        it('agent lifecycle goes through the same handlers: kill of an unknown agent is answered agent_not_found', async () => {
+          const sub = await ready();
+          sub.client({ type: 'agent:kill', payload: { agentId: 'nobody' } });
+          await vi.waitFor(() => expect(sub.frames().some((f) => f.type === 'error' && (f.payload as { message?: string }).message === 'agent_not_found')).toBe(true));
+        }, 15_000);
+
+        it('agent:spawn over reverse creates nothing a direct controller could not: unknown project refused, known project spawned exactly as direct', async () => {
+          const sub = await ready();
+          vi.mocked(agentSystem.spawnAgent).mockClear();
+          sub.client({ type: 'agent:spawn', payload: { projectId: 'missing', prompt: 'hi' } });
+          await vi.waitFor(() => expect(sub.frames().some((f) => f.type === 'error' && (f.payload as { message?: string }).message === 'project_not_found')).toBe(true));
+          expect(agentSystem.spawnAgent).not.toHaveBeenCalled();
+
+          vi.mocked(agentIdModule.generateQuickAgentId).mockReturnValue('quick_fixed');
+          const payload = { projectId: 'p', prompt: 'hi', freeAgentMode: true, model: 'opus' };
+          const direct = Object.assign(new EventEmitter(), { readyState: 1, send: vi.fn(), ping: vi.fn() });
+          annexServer._testing.wsAuthTypes.set(direct as any, 'mtls');
+          annexServer._testing.registerPeerSocket(direct as any, MEMBER.fingerprint, MEMBER.tlsCertificateFingerprint);
+          annexServer._testing.wss!.emit('connection', direct);
+          direct.emit('message', JSON.stringify({ type: 'agent:spawn', payload }));
+          await vi.waitFor(() => expect(agentSystem.spawnAgent).toHaveBeenCalledTimes(1));
+          const viaDirect = vi.mocked(agentSystem.spawnAgent).mock.calls[0];
+          vi.mocked(agentSystem.spawnAgent).mockClear();
+          agentRegistry.untrack('quick_fixed');
+          sub.client({ type: 'agent:spawn', payload });
+          await vi.waitFor(() => expect(agentSystem.spawnAgent).toHaveBeenCalledTimes(1));
+          // The same arguments, each with its own connection's fence (#3613).
+          const strip = ([params]: unknown[]) => { const { beforeCreate, ...rest } = params as { beforeCreate?: unknown }; expect(beforeCreate).toEqual(expect.any(Function)); return rest; };
+          expect(strip(vi.mocked(agentSystem.spawnAgent).mock.calls[0])).toEqual(strip(viaDirect));
+          agentRegistry.untrack('quick_fixed');
+        }, 15_000);
+      });
 
       it('is refused to a subscriber that is not an active desktop member here, and nothing is registered', async () => {
         await startAndPair();

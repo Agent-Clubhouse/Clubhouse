@@ -732,9 +732,15 @@ export async function spawnHeadless(
   onExit?: (agentId: string, exitCode: number) => void,
   commandPrefix?: string,
   createEventNormalizer?: () => (raw: StreamJsonEvent) => StreamJsonEvent[],
+  /**
+   * Checked after each await (before an existing run is replaced, and just
+   * before the process is spawned); throwing stops it there (#3613).
+   */
+  beforeSpawn?: () => void,
 ): Promise<void> {
   const quickRun = knownQuickAgents().get(agentId);
   await validateSpawnCwd(cwd);
+  beforeSpawn?.();
 
   // Clean up any existing session
   if (sessions.has(agentId)) {
@@ -747,6 +753,7 @@ export async function spawnHeadless(
   }
 
   await ensureLogsDir();
+  beforeSpawn?.();
   const transcriptPath = path.join(getLogsDir(), `${agentId}.jsonl`);
   const env = prepareSpawnEnv(extraEnv);
 

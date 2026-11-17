@@ -11,8 +11,8 @@
  *   support. Nothing outside that set is ever sent, so an older peer (which
  *   never opens or accepts this path) gets nothing new. Negotiated per
  *   connection, never remembered.
- * - Only the accepting side sends `request`, `cancel`, `subscribe` and
- *   `unsubscribe`; only the opener sends `response`, `error`, `event` and
+ * - Only the accepting side sends `request`, `cancel`, `subscribe`,
+ *   `unsubscribe` and `client`; only the opener sends `response`, `error`, `event` and
  *   `ended`. The opener (the target) authorizes every request and every
  *   subscribed frame itself, exactly as if the requester had connected to it
  *   directly.
@@ -43,8 +43,20 @@ export const CONTROL_EVENT_FRAME_MAX_BYTES = CONTROL_FRAME_MAX_BYTES + 64 * 1024
  * Features a peer may offer in its hello. Unknown names are ignored, so later slices add to this.
  * - `request`: reverse request/response (P3).
  * - `subscribe`: a reverse subscription to the target's /ws event stream (P4).
+ * - `ws-control`: with a subscription, the subscriber sends /ws control frames
+ *   (terminals, agent lifecycle, canvas, clipboard image) to it (P5).
  */
-export const CONTROL_FEATURES = ['request', 'subscribe'] as const;
+export const CONTROL_FEATURES = ['request', 'subscribe', 'ws-control'] as const;
+
+/**
+ * The /ws client frames a subscriber may send over `ws-control` (P5): the /ws
+ * control set, nothing else. Each goes to the same /ws handler as on a direct
+ * socket, for the subscription's virtual client.
+ */
+export const CONTROL_WS_CLIENT_TYPES = [
+  'pty:input', 'pty:resize', 'pty:spawn-shell', 'pty:close', 'pty:attach',
+  'agent:spawn', 'agent:wake', 'agent:kill', 'agent:reorder', 'canvas:mutation', 'clipboard:image',
+] as const;
 export type ControlFeature = typeof CONTROL_FEATURES[number];
 
 /** Close code for a frame that breaks the protocol (wrong sender, malformed, unexpected). */
@@ -145,7 +157,9 @@ export type ControlMessage =
   /** Opener → accepter: one /ws frame, exactly as a /ws socket from the accepter would receive it. */
   | { v: 1; type: 'event'; id: string; frame: Record<string, unknown> }
   /** Opener → accepter: the subscription is over. */
-  | { v: 1; type: 'ended'; id: string; code: ControlEndCode };
+  | { v: 1; type: 'ended'; id: string; code: ControlEndCode }
+  /** Accepter → opener: one /ws client frame for the live subscription `id`'s virtual client (`ws-control`). */
+  | { v: 1; type: 'client'; id: string; frame: Record<string, unknown> };
 
 export type ControlParse =
   | { ok: true; message: ControlMessage }
@@ -228,6 +242,10 @@ export function parseControlMessage(text: string): ControlParse {
       if (!validId(raw.id)) return { ok: false, reason: 'shape', detail: 'id' };
       if (!isRecord(raw.frame) || typeof raw.frame.type !== 'string') return { ok: false, reason: 'shape', detail: 'frame' };
       return { ok: true, message: { v: 1, type: 'event', id: raw.id, frame: raw.frame } };
+    case 'client':
+      if (!validId(raw.id)) return { ok: false, reason: 'shape', detail: 'id' };
+      if (!isRecord(raw.frame) || typeof raw.frame.type !== 'string' || raw.frame.type.length > 64) return { ok: false, reason: 'shape', detail: 'frame' };
+      return { ok: true, message: { v: 1, type: 'client', id: raw.id, frame: raw.frame } };
     case 'ended':
       if (!validId(raw.id)) return { ok: false, reason: 'shape', detail: 'id' };
       if (!CONTROL_END_CODES.includes(raw.code as ControlEndCode)) return { ok: false, reason: 'shape', detail: 'code' };

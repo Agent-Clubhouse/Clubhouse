@@ -98,12 +98,13 @@ async function flush(): Promise<void> {
 }
 
 /** The server's side of subscriptions: each one's sink, principal and close. */
-interface Served { principal: AnnexPrincipal; sink: control.SubscriptionSink; close: ReturnType<typeof vi.fn> }
+interface Served { principal: AnnexPrincipal; sink: control.SubscriptionSink; close: ReturnType<typeof vi.fn>; receive: ReturnType<typeof vi.fn> }
 let served: Served[] = [];
 const subscribeOnServer = vi.fn((principal: AnnexPrincipal, sink: control.SubscriptionSink): control.SubscriptionHandle => {
   const close = vi.fn();
-  served.push({ principal, sink, close });
-  return { close };
+  const receive = vi.fn();
+  served.push({ principal, sink, close, receive });
+  return { close, receive };
 });
 
 function installServer(): void {
@@ -982,6 +983,82 @@ describe('inbound frame caps by type (P4 QA)', () => {
     const { targetWs } = await connected();
     targetWs.deliver({ v: 1, type: 'event', id: 'x', frame: { type: 'snapshot', payload: { x: pad(CONTROL_FRAME_MAX_BYTES + 32 * 1024) } } });
     expect(targetWs.closed?.code).toBe(1009);
+  });
+});
+
+describe('reverse /ws control frames over a subscription (P5)', () => {
+  const noop = { onFrame: () => {}, onEnd: () => {} };
+
+  it('hands an allowed control frame to the server for the subscription, as /ws text', async () => {
+    await connected();
+    const sub = control.subscribe(TARGET, noop);
+    await flush();
+    expect(sub.send({ type: 'pty:input', payload: { agentId: 's1', data: 'ls\r' } })).toBe(true);
+    await flush();
+    expect(served[0].receive).toHaveBeenCalledWith(JSON.stringify({ type: 'pty:input', payload: { agentId: 's1', data: 'ls\r' } }));
+  });
+
+  it('sends no control frame unless the other side agreed to ws-control, and a target that did not closes on one', async () => {
+    const { requesterWs } = await connected(['request', 'subscribe']);
+    const sub = control.subscribe(TARGET, noop);
+    await flush();
+    expect(sub.send({ type: 'pty:input', payload: {} })).toBe(false);
+    expect(sentOfType(requesterWs, 'client')).toEqual([]);
+    const other = await connected(['request', 'subscribe']);
+    control.subscribe(TARGET, noop);
+    await flush();
+    other.targetWs.deliver({ v: 1, type: 'client', id: 'x', frame: { type: 'pty:input', payload: {} } });
+    expect(other.targetWs.closed?.code).toBe(CONTROL_CLOSE_PROTOCOL);
+  });
+
+  it('only the /ws control set: anything else is not sent, and a target answers it on the subscription without running it', async () => {
+    const { targetWs } = await connected();
+    const frames: Array<Record<string, unknown>> = [];
+    const sub = control.subscribe(TARGET, { onFrame: (f) => frames.push(f), onEnd: () => {} });
+    await flush();
+    for (const type of ['telemetry:hello', 'replay', 'mobile:replay', 'made:up']) expect(sub.send({ type })).toBe(false);
+    targetWs.deliver({ v: 1, type: 'client', id: sub.id, frame: { type: 'telemetry:hello', payload: {} } });
+    targetWs.deliver({ v: 1, type: 'client', id: sub.id, frame: { type: 'replay', since: 0 } });
+    await flush();
+    expect(served[0].receive).not.toHaveBeenCalled();
+    expect(frames).toEqual([
+      { type: 'error', payload: { message: 'not_allowed_over_reverse', frameType: 'telemetry:hello' } },
+      { type: 'error', payload: { message: 'not_allowed_over_reverse', frameType: 'replay' } },
+    ]);
+    expect(targetWs.closed).toBeNull();
+  });
+
+  it('a subscriber that lost access: its control frame never reaches the server, the subscription ends and the connection closes', async () => {
+    const { targetWs } = await connected();
+    const ends: string[] = [];
+    const sub = control.subscribe(TARGET, { onFrame: () => {}, onEnd: (c) => ends.push(c) });
+    await flush();
+    world.peer = undefined;
+    targetWs.deliver({ v: 1, type: 'client', id: sub.id, frame: { type: 'agent:kill', payload: { agentId: 'a' } } });
+    await flush();
+    expect(served[0].receive).not.toHaveBeenCalled();
+    expect(served[0].close).toHaveBeenCalledTimes(1);
+    expect(ends).toEqual(['authorization_revoked']);
+    expect(targetWs.closed?.code).toBe(CONTROL_CLOSE_REVOKED);
+  });
+
+  it('drops a control frame for a subscription that is not the live one', async () => {
+    const { targetWs } = await connected();
+    control.subscribe(TARGET, noop);
+    await flush();
+    targetWs.deliver({ v: 1, type: 'client', id: 'stale', frame: { type: 'pty:input', payload: {} } });
+    await flush();
+    expect(served[0].receive).not.toHaveBeenCalled();
+    expect(targetWs.closed).toBeNull();
+  });
+
+  it('a control frame over 8 MiB closes the connection 1009 before it is parsed', async () => {
+    const { targetWs } = await connected();
+    const sub = control.subscribe(TARGET, noop);
+    await flush();
+    targetWs.deliver({ v: 1, type: 'client', id: sub.id, frame: { type: 'clipboard:image', payload: { base64: 'a'.repeat(CONTROL_FRAME_MAX_BYTES) } } });
+    expect(targetWs.closed?.code).toBe(1009);
+    expect(served[0].receive).not.toHaveBeenCalled();
   });
 });
 

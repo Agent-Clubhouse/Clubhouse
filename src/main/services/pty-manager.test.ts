@@ -2256,6 +2256,43 @@ describe('pty-manager', () => {
   });
 });
 
+describe('spawnShell beforeSpawn fence (#3613 P5)', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockProcess.kill.mockReset();
+    mockRealpath.mockImplementation((p: string) => Promise.resolve(p));
+    mockStat.mockResolvedValue({ isDirectory: () => true });
+  });
+
+  it('a controller revoked while the cwd is checked: no PTY is spawned and an existing shell is left alone', async () => {
+    const nativePty = await import('node-pty');
+    await spawnShell('fenced-shell', '/project');
+    vi.mocked(nativePty.spawn).mockClear();
+    let allowed = true;
+    let releaseCwd!: () => void;
+    // The real validateSpawnCwd, with its filesystem read held open.
+    mockRealpath.mockImplementationOnce((p: string) => new Promise((resolve) => { releaseCwd = () => resolve(p); }));
+    const spawning = spawnShell('fenced-shell', '/project', { beforeSpawn: () => { if (!allowed) throw new Error('authorization_revoked'); } });
+    await vi.waitFor(() => expect(releaseCwd).toBeTypeOf('function'));
+    allowed = false;
+    releaseCwd();
+    await expect(spawning).rejects.toThrow('authorization_revoked');
+    expect(nativePty.spawn).not.toHaveBeenCalled();
+    expect(mockProcess.kill).not.toHaveBeenCalled();
+    expect(isRunning('fenced-shell')).toBe(true);
+    killShell('fenced-shell');
+  });
+
+  it('still allowed: the shell spawns as before', async () => {
+    const nativePty = await import('node-pty');
+    const beforeSpawn = vi.fn();
+    await spawnShell('fenced-ok', '/project', { beforeSpawn });
+    expect(beforeSpawn).toHaveBeenCalledOnce();
+    expect(nativePty.spawn).toHaveBeenCalledOnce();
+    killShell('fenced-ok');
+  });
+});
+
 describe('managed PTY creation and truthful cleanup', () => {
   beforeEach(() => {
     vi.useFakeTimers(); vi.clearAllMocks();

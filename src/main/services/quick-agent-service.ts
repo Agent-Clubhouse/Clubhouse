@@ -76,6 +76,11 @@ export interface StartQuickAgentParams {
   headless?: boolean;
   quickOwner?: QuickAgentOwner;
   chain?: string[];
+  /**
+   * Checked again just before the agent's runtime is created, after the
+   * spawn's own awaits (provider, config): throwing stops it there (#3613).
+   */
+  beforeCreate?: () => void;
 }
 
 /** Start a quick agent. Resolves once it has spawned; rejects if it couldn't. */
@@ -115,6 +120,7 @@ export async function startQuickAgent(p: StartQuickAgentParams): Promise<QuickAg
       ...(p.access && { access: p.access }),
       ...(p.interactive && { interactive: true }),
       ...(p.headless && { headless: true }),
+      ...(p.beforeCreate && { beforeCreate: p.beforeCreate }),
     });
   } catch (err) {
     entry.status = 'failed';

@@ -37,6 +37,7 @@ import {
   CONTROL_FEATURES,
   CONTROL_FRAME_MAX_BYTES,
   CONTROL_PROTOCOL_VERSION,
+  CONTROL_WS_CLIENT_TYPES,
   decodeControlBody,
   encodeControlBody,
   isReadOnlyMethod,
@@ -183,6 +184,12 @@ export interface SubscriptionSink {
 export interface SubscriptionHandle {
   /** The subscriber left, or the connection went: stop serving it. */
   close(): void;
+  /**
+   * One /ws client frame from the subscriber (P5), already allowed and
+   * authorized here: the server runs it through its /ws handler for the
+   * subscription's virtual client, which checks it again.
+   */
+  receive?(frame: string): void;
 }
 
 /** What a subscriber hears. */
@@ -198,6 +205,13 @@ export interface ControlSubscription {
   readonly id: string;
   /** Stop receiving. `onEnd` isn't called. */
   close(): void;
+  /**
+   * Sends one /ws control frame (`pty:*`, `agent:*`, `canvas:mutation`,
+   * `clipboard:image`) as a /ws socket to that computer would. Its answers
+   * arrive as frames. False if it can't go: the other side didn't agree to
+   * `ws-control`, the type isn't one of those, or the subscription is over.
+   */
+  send(frame: { type: string; payload?: Record<string, unknown>; tc?: string }): boolean;
 }
 
 /** Target: the subscription a connection is being served. */
@@ -205,6 +219,8 @@ interface ServedSubscription {
   id: string;
   handle: SubscriptionHandle | null;
   ended: boolean;
+  principal: AnnexPrincipal;
+  sink: SubscriptionSink;
 }
 
 /** A handler's response. `complete`: it ended its response; anything else is never sent or remembered as an answer. */
@@ -530,6 +546,7 @@ function onFrame(link: Link, data: RawData, isBinary: boolean): void {
     if (message.type === 'cancel') { link.replying.get(message.id)?.abort('cancelled'); return; }
     if (message.type === 'subscribe') { onSubscribe(link, message.id); return; }
     if (message.type === 'unsubscribe') { if (link.subscription?.id === message.id) stopServing(link); return; }
+    if (message.type === 'client') { onClientFrame(link, message); return; }
   } else {
     if (message.type === 'event' || message.type === 'ended' || (message.type === 'error' && link.subscriptions.has(message.id))) {
       onSubscriptionFrame(link, message);
@@ -779,7 +796,7 @@ function onSubscribe(link: Link, id: string): void {
     return;
   }
   const principal = auth.principal;
-  const served: ServedSubscription = { id, handle: null, ended: false };
+  const served = { id, handle: null, ended: false, principal } as ServedSubscription;
   link.subscription = served;
   const end = (code: ControlEndCode) => {
     if (served.ended) return;
@@ -806,6 +823,7 @@ function onSubscribe(link: Link, id: string): void {
     },
     end,
   };
+  served.sink = sink;
   const handle = server.subscribe(principal, sink);
   if (!handle) {
     served.ended = true;
@@ -816,6 +834,36 @@ function onSubscribe(link: Link, id: string): void {
   served.handle = handle;
   // Over before it was handed back (its first frame was refused): close the server's side now.
   if (served.ended) handle.close();
+}
+
+/**
+ * A /ws control frame from the subscriber (P5). Only with `ws-control` agreed,
+ * only for the connection's live subscription, only the /ws control set, and
+ * only while the subscriber is still authorized; then the server's /ws handler
+ * runs it for the subscription's virtual client and checks it again.
+ */
+function onClientFrame(link: Link, message: Extract<ControlMessage, { type: 'client' }>): void {
+  if (!link.features?.has('ws-control')) { refuseLink(link, CONTROL_CLOSE_PROTOCOL, 'protocol', 'client frame without ws-control'); return; }
+  const served = link.subscription;
+  // For a subscription that has already ended here: it raced the end, and is dropped.
+  if (!served || served.ended || served.id !== message.id || !served.handle) return;
+  const server = target;
+  if (!server || !server.stillAuthorized(served.principal)) {
+    // Tell the subscriber, then end the server's side (its virtual client and every shell it owns):
+    // end() lets go of the subscription, so its handle is taken first.
+    const handle = served.handle;
+    served.sink.end('authorization_revoked');
+    handle.close();
+    refuseLink(link, CONTROL_CLOSE_REVOKED, 'authorization_revoked', 'revoked before a client frame');
+    return;
+  }
+  const type = message.frame.type as string;
+  if (!(CONTROL_WS_CLIENT_TYPES as readonly string[]).includes(type)) {
+    // Answered as /ws answers a refusal, on the subscription: it stays open.
+    served.sink.send(JSON.stringify({ type: 'error', payload: { message: 'not_allowed_over_reverse', frameType: type.slice(0, 64) } }));
+    return;
+  }
+  served.handle.receive?.(JSON.stringify(message.frame));
 }
 
 /** Stops serving the connection's subscription, if any, without telling the subscriber (it left, or the connection went). */
@@ -871,6 +919,12 @@ export function subscribe(fingerprint: string, handlers: SubscriptionHandlers): 
     close: () => {
       if (!link.subscriptions.delete(id)) return;
       rawSend(link, { v: 1, type: 'unsubscribe', id });
+    },
+    send: (frame) => {
+      if (!link.subscriptions.has(id) || !link.features?.has('ws-control')) return false;
+      if (!(CONTROL_WS_CLIENT_TYPES as readonly string[]).includes(frame.type)) return false;
+      if (!inboundStillAllowed(link)) return false;
+      return rawSend(link, { v: 1, type: 'client', id, frame: { ...frame } });
     },
   };
 }

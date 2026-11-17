@@ -204,6 +204,7 @@ describe('Headless integration', () => {
         expect.any(Function),
         undefined, // commandPrefix
         undefined, // createEventNormalizer
+        undefined, // beforeSpawn: no fence given
       );
     });
 
@@ -351,6 +352,7 @@ describe('Headless integration', () => {
         expect.any(Function),
         undefined, // commandPrefix
         undefined, // createEventNormalizer
+        undefined, // beforeSpawn: no fence given
       );
     });
 
@@ -377,6 +379,7 @@ describe('Headless integration', () => {
         expect.any(Function),
         undefined, // commandPrefix
         undefined, // createEventNormalizer
+        undefined, // beforeSpawn: no fence given
       );
     });
 
@@ -403,6 +406,7 @@ describe('Headless integration', () => {
         expect.any(Function),
         undefined, // commandPrefix
         undefined, // createEventNormalizer
+        undefined, // beforeSpawn: no fence given
       );
     });
   });

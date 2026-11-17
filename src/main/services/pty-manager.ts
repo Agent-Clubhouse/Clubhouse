@@ -612,8 +612,13 @@ export async function spawn(agentId: string, cwd: string, binary: string, args: 
   });
 }
 
-export async function spawnShell(id: string, projectPath: string): Promise<void> {
+/**
+ * `beforeSpawn`: checked after the cwd check, the last await, just before
+ * anything is replaced or spawned; throwing stops it there (#3613).
+ */
+export async function spawnShell(id: string, projectPath: string, opts: { beforeSpawn?: () => void } = {}): Promise<void> {
   await validateSpawnCwd(projectPath);
+  opts.beforeSpawn?.();
 
   if (sessions.has(id)) {
     const existing = sessions.get(id)!;

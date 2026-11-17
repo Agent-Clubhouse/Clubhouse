@@ -11,8 +11,19 @@ describe('Annex control protocol (#3613 P3)', () => {
     expect(parseControlMessage(JSON.stringify({ v: 1, type: 'error', id: 'a-1', code: 'busy' }))).toMatchObject({ ok: true });
   });
 
-  it('offers request (P3) and subscribe (P4)', () => {
-    expect([...CONTROL_FEATURES]).toEqual(['request', 'subscribe']);
+  it('offers request (P3), subscribe (P4) and ws-control (P5)', () => {
+    expect([...CONTROL_FEATURES]).toEqual(['request', 'subscribe', 'ws-control']);
+  });
+
+  it('parses a client frame exactly', () => {
+    expect(parseControlMessage(JSON.stringify({ v: 1, type: 'client', id: 's1', frame: { type: 'pty:input', payload: { data: 'x' } } })))
+      .toEqual({ ok: true, message: { v: 1, type: 'client', id: 's1', frame: { type: 'pty:input', payload: { data: 'x' } } } });
+    for (const bad of [
+      { v: 1, type: 'client', frame: { type: 'pty:input' } },
+      { v: 1, type: 'client', id: 's1', frame: 'pty:input' },
+      { v: 1, type: 'client', id: 's1', frame: { payload: {} } },
+      { v: 1, type: 'client', id: 's1', frame: { type: 'x'.repeat(65) } },
+    ]) expect(parseControlMessage(JSON.stringify(bad)).ok, JSON.stringify(bad)).toBe(false);
   });
 
   it('parses subscription frames exactly', () => {

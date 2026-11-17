@@ -874,6 +874,8 @@ async function spawnAgentInner(inParams: SpawnAgentParams, facts: SpawnFacts, ma
           },
           commandPrefix,
           headlessResult.createEventNormalizer,
+          // The caller's fence, after the spawn's own awaits and just before the process starts (#3613).
+          params.beforeCreate,
         ));
         facts.noPid = !headlessManager.hasPid(params.agentId);
         announceAwake(params.agentId);
