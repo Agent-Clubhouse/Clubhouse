@@ -900,10 +900,11 @@ describe('ChromeSidebar', () => {
       const { ra2 } = addSecondComputer('studio', 'AA:BB:CC:DD:EE:01:02:03');
       useAnnexClientStore.setState((st) => ({ satellites: st.satellites.map((x) => (x.id === 's1' ? { ...x, fingerprint: '11:22:33:44:55:AA:BB:CC' } : x)) }));
       render(<ChromeSidebar />);
-      expect(nameOf(ra)).toHaveAccessibleName(`${agent(ra, rp).name} on Studio (ID AABBCC)`);
-      expect(nameOf(ra2)).toHaveAccessibleName(`${agent(ra2, rp).name} on studio (ID 010203)`);
-      // The visible labels are as before; the disambiguator is not on the row.
-      expect(within(screen.getByTestId(`agent-item-${ra}`)).getByTestId('agent-row-machine').textContent).toBe('Studio');
+      expect(nameOf(ra)).toHaveAccessibleName(`${agent(ra, rp).name} on Studio (ID BBCC)`);
+      expect(nameOf(ra2)).toHaveAccessibleName(`${agent(ra2, rp).name} on studio (ID 0203)`);
+      // Without hovering, the rows already differ: the label ends in the same ID.
+      expect(within(screen.getByTestId(`agent-item-${ra}`)).getByTestId('agent-row-machine').textContent).toBe('Studio BBCC');
+      expect(within(screen.getByTestId(`agent-item-${ra2}`)).getByTestId('agent-row-machine').textContent).toBe('studio 0203');
     });
 
     it('leaves differing aliases, including same-prefix ones, without a suffix (#3607)', () => {
@@ -953,8 +954,9 @@ describe('ChromeSidebar', () => {
       const { rp2 } = addSecondComputer('studio', 'AA:BB:CC:DD:EE:01:02:03');
       useAnnexClientStore.setState((st) => ({ satellites: st.satellites.map((x) => (x.id === 's1' ? { ...x, fingerprint: '11:22:33:44:55:AA:BB:CC' } : x)) }));
       render(<ChromeSidebar />);
-      expect(headerOf(rp)).toHaveAccessibleName('Site on Studio (ID AABBCC)');
-      expect(headerOf(rp2)).toHaveAccessibleName('Site on studio (ID 010203)');
+      expect(headerOf(rp)).toHaveAccessibleName('Site on Studio (ID BBCC)');
+      expect(headerOf(rp2)).toHaveAccessibleName('Site on studio (ID 0203)');
+      expect(within(screen.getByTestId(`project-${rp}`)).getByTestId('project-machine').textContent).toBe('Studio BBCC');
     });
 
     it('shows the full computer name, with offline, in a remote project header\'s tooltip (#3607)', () => {
@@ -966,6 +968,61 @@ describe('ChromeSidebar', () => {
         act(() => { vi.advanceTimersByTime(TOOLTIP_DELAY_MS); });
         expect(screen.getByRole('tooltip').textContent).toBe('Studio-Mac-Pro-Upstairs-2 (offline)');
       } finally { vi.useRealTimers(); }
+    });
+
+    it('keeps a long colliding alias within the label, ending in its ID, and lengthens the ID only when the short one matches (#3607)', () => {
+      const { ra2 } = addSecondComputer('Studio-Mac-Pro-Upstairs', 'AA:BB:CC:DD:EE:01:02:03');
+      useAnnexClientStore.setState((st) => ({ satellites: st.satellites.map((x) => (x.id === 's1' ? { ...x, alias: 'Studio-Mac-Pro-Upstairs', fingerprint: '11:22:33:44:55:66:02:03' } : x)) }));
+      render(<ChromeSidebar />);
+      // Both end in 0203, so the ID grows to 6 for this pair.
+      const label = (id: string) => within(screen.getByTestId(`agent-item-${id}`)).getByTestId('agent-row-machine').textContent!;
+      expect(label(ra)).toBe('Studio… 660203');
+      expect(label(ra2)).toBe('Studio… 010203');
+      expect(label(ra).length).toBeLessThanOrEqual(15);
+      expect(nameOf(ra)).toHaveAccessibleName(`${agent(ra, rp).name} on Studio-Mac-Pro-Upstairs (ID 660203)`);
+    });
+
+    it('names every computer of a remote-only linked group in its header, each with its own offline state (#3607)', () => {
+      const { rp2 } = addSecondComputer('Zed', 'AA:BB:CC:DD:EE:01:02:03');
+      useAnnexClientStore.setState((st) => ({ satellites: st.satellites.map((x) => (x.id === 's2' ? { ...x, state: 'disconnected' as const } : x)) }));
+      useNetworkSidebarStore.setState({ links: [[rp, rp2]] });
+      render(<ChromeSidebar />);
+      expect(screen.queryByTestId(`project-${rp2}`)).toBeNull();
+      expect(headerOf(rp)).toHaveAccessibleName('Site on Studio and Zed (offline)');
+      expect(within(screen.getByTestId(`project-${rp}`)).getByTestId('project-machine').textContent).toBe('Studio+1');
+      expect(within(headerOf(rp)).getByLabelText('Pin Site on Studio and Zed (offline)')).toBeTruthy();
+    });
+
+    it('lists three computers with commas and "and", and one computer once (#3607)', () => {
+      const { rp2 } = addSecondComputer('Zed', 'AA:BB:CC:DD:EE:01:02:03');
+      const rp3 = namespacedProjectId('s3', 'site');
+      useAnnexClientStore.setState((st) => ({ satellites: [...st.satellites, sat('s3', 'Zulu', 'AA:BB:CC:DD:EE:04:05:06')] }));
+      useRemoteProjectStore.setState((st) => ({ satelliteProjects: { ...st.satelliteProjects, s3: [{ id: rp3, name: 'Site', path: '/srv/site', remote: true, satelliteId: 's3', satelliteName: 'Zulu' }] as never } }));
+      useNetworkSidebarStore.setState({ links: [[rp, rp2, rp3]] });
+      render(<ChromeSidebar />);
+      expect(headerOf(rp)).toHaveAccessibleName('Site on Studio, Zed and Zulu');
+    });
+
+    it('keeps a linked group headed by this computer\'s project plain, whatever it is linked to (#3607)', () => {
+      const { rp2 } = addSecondComputer('Desk', 'AA:BB:CC:DD:EE:01:02:03');
+      useNetworkSidebarStore.setState({ links: [['p3', rp, rp2]] });
+      render(<ChromeSidebar />);
+      expect(headerOf('p3')).toHaveAccessibleName('Site');
+      expect(within(screen.getByTestId('project-p3')).queryByTestId('project-machine')).toBeNull();
+    });
+
+    it('reads Unknown computer, in the label and the name, for a computer with no alias (#3607)', () => {
+      useAnnexClientStore.setState((st) => ({ satellites: st.satellites.map((x) => ({ ...x, alias: '  ' })) }));
+      render(<ChromeSidebar />);
+      expect(within(screen.getByTestId(`agent-item-${ra}`)).getByTestId('agent-row-machine').textContent).toBe('Unknown compu…');
+      expect(nameOf(ra)).toHaveAccessibleName(`${agent(ra, rp).name} on Unknown computer`);
+      expect(headerOf(rp)).toHaveAccessibleName('Site on Unknown computer');
+    });
+
+    it('names the More actions button of a remote row with its computer, and a local one plainly (#3607)', () => {
+      render(<ChromeSidebar />);
+      expect(within(screen.getByTestId(`agent-item-${ra}`)).getByTestId('action-overflow')).toHaveAccessibleName(`More actions for ${agent(ra, rp).name} on Studio`);
+      expect(within(screen.getByTestId('agent-item-a1')).getByTestId('action-overflow')).toHaveAccessibleName('More actions for a1');
     });
 
     it('keeps this computer\'s header plain when its project is merged with another computer\'s (#3607)', () => {

@@ -70,8 +70,8 @@ export interface ProjectTreeProps {
   isLinkedProject?: (projectId: string) => boolean;
   /** For an agent on another machine: a short label for it, and whether that machine is offline. */
   agentMachine?: (agent: Agent) => MachineInfo | undefined;
-  /** For a project on another machine: the same, for its header (#3607). */
-  projectMachine?: (projectId: string) => MachineInfo | undefined;
+  /** For a project on another machine, every computer in its group, for its header (#3607). */
+  projectMachines?: (projectId: string) => MachineInfo[];
   /** More items for a project's menu: Merge with… and Split per machine. */
   projectMenuItems?: (projectId: string) => MenuItem[];
 }
@@ -453,7 +453,7 @@ export function ProjectTree(props: ProjectTreeProps) {
       onCloseProject={remoteOf(project.id) ? undefined : props.onCloseProject}
       onReorderAgents={remoteOf(project.id) ? undefined : onReorderAgents}
       agentMachine={props.agentMachine}
-      machine={props.projectMachine?.(project.id)}
+      machines={props.projectMachines?.(project.id)}
       extraMenuItems={props.projectMenuItems?.(project.id)}
       collapsedAgentIds={collapsedAgentSet}
       onToggleAgentCollapsed={onToggleAgentCollapsed}

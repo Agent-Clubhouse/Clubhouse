@@ -83,6 +83,21 @@ export function onComputer(name: string, machine: string | undefined, offline = 
   return machine ? `${name} on ${machine}${offline ? ', offline' : ''}` : name;
 }
 
+/** Computers in a sentence: "Studio (offline) and Desk". */
+function computerList(machines: readonly MachineInfo[]): string {
+  const names = machines.map((m) => `${m.fullName ?? m.label}${m.offline ? ' (offline)' : ''}`);
+  return names.length > 2 ? `${names.slice(0, -1).join(', ')} and ${names[names.length - 1]}` : names.join(' and ');
+}
+
+/** A project header's accessible name: on one computer as for a row, on several (a linked group) naming each with its own offline state. */
+export function onComputers(name: string, machines: readonly MachineInfo[]): string {
+  if (machines.length === 0) return name;
+  return machines.length === 1 ? onComputer(name, machines[0].fullName ?? machines[0].label, machines[0].offline) : `${name} on ${computerList(machines)}`;
+}
+
+/** The computers a header names, whole, for its tooltip. */
+export const describeComputers = computerList;
+
 /** A small computer, so a remote row reads as remote by shape and text, not by colour. */
 export const MachineGlyph = () => (
   <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" className="flex-shrink-0">
@@ -352,7 +367,7 @@ export const AgentRow = React.memo(function AgentRow({
             type="button"
             tabIndex={-1}
             data-testid="action-overflow"
-            aria-label={`More actions for ${agent.name}`}
+            aria-label={`More actions for ${accessibleName}`}
             onClick={(e) => {
               e.stopPropagation();
               const r = e.currentTarget.getBoundingClientRect();

@@ -1,6 +1,6 @@
 import { useMemo, useRef } from 'react';
 import type { Agent, AgentDetailedStatus, Project } from '../../../shared/types';
-import { AgentRow, MarkedText, onComputer, type MachineInfo } from './AgentRow';
+import { AgentRow, MarkedText, onComputers, type MachineInfo } from './AgentRow';
 import { Button } from '../../components/Button';
 import { ProjectMachineTag, ProjectSquare } from './ProjectGroup';
 import { useTreeKeyboard } from './ProjectTree';
@@ -33,8 +33,8 @@ export interface FilterResultsProps {
   terminalProjectIds?: ReadonlySet<string>;
   /** For an agent on another machine: its short and full names, and whether it is offline (#3607). */
   agentMachine?: (agent: Agent) => MachineInfo | undefined;
-  /** The same for a project on another machine, for its header. */
-  projectMachine?: (projectId: string) => MachineInfo | undefined;
+  /** For a project on another machine, every computer in its group, for its header. */
+  projectMachines?: (projectId: string) => MachineInfo[];
   onSearchEverything: () => void;
 }
 
@@ -88,7 +88,7 @@ export function FilterResults(props: FilterResultsProps) {
       >
         {groups.map(({ project, agents }) => {
           const key = `project:${project.id}`;
-          const projectMachine = props.projectMachine?.(project.id);
+          const machines = props.projectMachines?.(project.id) ?? [];
           return (
             <div key={project.id} role="group" className="flex flex-col gap-px">
               <div
@@ -96,7 +96,7 @@ export function FilterResults(props: FilterResultsProps) {
                 aria-level={1}
                 aria-expanded={agents.length > 0 ? true : undefined}
                 aria-selected={false}
-                aria-label={projectMachine ? onComputer(project.displayName || project.name, projectMachine.fullName ?? projectMachine.label, projectMachine.offline) : undefined}
+                aria-label={machines.length > 0 ? onComputers(project.displayName || project.name, machines) : undefined}
                 data-tree-key={key}
                 data-testid={`filter-project-${project.id}`}
                 onClick={() => props.onSelectProject(project.id)}
@@ -106,7 +106,7 @@ export function FilterResults(props: FilterResultsProps) {
                 <span className="text-ctp-overlay0 flex">{ChevronDown}</span>
                 <ProjectSquare project={project} iconUrl={projectIcons[project.id]} />
                 <span className="font-semibold truncate"><MarkedText text={project.displayName || project.name} query={q} /></span>
-                {projectMachine && <ProjectMachineTag machine={projectMachine} />}
+                {machines.length > 0 && <ProjectMachineTag machines={machines} />}
               </div>
               {agents.length > 0 && <div className="flex flex-col gap-px px-1.5">{agents.map((agent) => {
                 const machine = props.agentMachine?.(agent);
