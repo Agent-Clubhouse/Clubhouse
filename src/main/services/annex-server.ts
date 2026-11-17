@@ -4883,7 +4883,7 @@ async function dispatchReverseRequest(principal: AnnexPrincipal, request: Contro
     true,
   );
   // The answer goes now; the slot is held until the route's own work has settled too, even past a cut-off response.
-  return { ...res.result(), operations: Promise.allSettled(operations).then(() => undefined) };
+  return { ...res.result(), operations: Promise.allSettled(operations).then((): void => undefined) };
 }
 
 /** What the control connection asks of this server while it runs (#3613 P3). */

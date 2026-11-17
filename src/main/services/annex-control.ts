@@ -586,7 +586,7 @@ function startRun(server: ControlTarget, principal: AnnexPrincipal, request: Con
     })
     .finally(() => clearTimeout(timer));
   // The slot frees only when both the response and the route's own work have settled.
-  const settled = dispatched.then((result) => result.operations, () => undefined).then(() => undefined, () => undefined);
+  const settled = dispatched.then((result): Promise<void> | undefined => result.operations, (): undefined => undefined).then((): void => undefined, (): void => undefined);
   void settled.finally(() => {
     const left = (activeRuns.get(budget) ?? 1) - 1;
     if (left > 0) activeRuns.set(budget, left);
