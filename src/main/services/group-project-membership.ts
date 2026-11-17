@@ -484,7 +484,12 @@ export async function reconcileMembership(): Promise<void> {
   const changed = new Set<string>();
   for (const s of snapshots) {
     if (!isReplica(s.gp) && s.resolution.members.length > 0) {
-      await groupProjectHost.ensureMemberAdmissions(s.gp.id, s.resolution.members.map(member => ({ name: member.name, address: member.agentId })));
+      try {
+        await groupProjectHost.ensureMemberAdmissions(s.gp.id, s.resolution.members.map(member => ({ name: member.name, address: member.agentId })));
+      } catch (error) {
+        // telemetry-exempt: admission retries next reconcile; bindings and other groups must still advance
+        appLog('core:group-project', 'warn', 'Group project admission failed', { meta: { groupProjectId: s.gp.id, error: String(error) } });
+      }
     }
     const ids = new Set(localMembers(s).map((m) => m.agentId));
     next.set(s.gp.id, ids);

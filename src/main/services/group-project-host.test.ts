@@ -725,7 +725,10 @@ it('serializes simultaneous admissions with a host post and keeps later admissio
   expect(await groupProjectHost.readTopic(gp.id, 'system')).toHaveLength(1);
   expect(await groupProjectHost.readTopic(gp.id, 'inbox-one')).toHaveLength(1);
   const before = (await groupProjectHost.get(gp.id))!.seq;
+  const commit = vi.spyOn(groupProjectHost as unknown as { commit: (...args: unknown[]) => unknown }, 'commit');
+  const emit = vi.spyOn(groupProjectHost as unknown as { emit: (...args: unknown[]) => unknown }, 'emit');
   await groupProjectHost.ensureMemberAdmission(gp.id, 'One', 'one');
+  expect(commit).not.toHaveBeenCalled(); expect(emit).not.toHaveBeenCalled();
   expect((await groupProjectHost.get(gp.id))!.seq).toBe(before);
 });
 
@@ -767,4 +770,54 @@ it('drains late coalesced members, rechecks exclusions, and counts only fresh el
   expect((await groupProjectHost.readTopic(gp.id, 'system')).map(m => m.body)).toEqual([
     '4 agents joined project "Coalesced"', 'late joined project "Coalesced"',
   ]);
+});
+
+
+it('fails closed for explicit remote admission until its machine is an authenticated network member', async () => {
+  const gp = await groupProjectHost.create('Remote');
+  const address = `remote@${FP_B}`;
+  await groupProjectHost.updateMembership(gp.id, d => { d.explicit.push({ address, name: 'Twin', kind: 'durable', addedAt: 'x' }); });
+  const before = (await groupProjectHost.get(gp.id))!.seq;
+  const emit = vi.spyOn(groupProjectHost as unknown as { emit: (...args: unknown[]) => unknown }, 'emit');
+  await groupProjectHost.ensureMemberAdmission(gp.id, 'Twin', address);
+  expect(await groupProjectHost.readTopic(gp.id, 'system')).toEqual([]);
+  expect((await groupProjectHost.get(gp.id))!.seq).toBe(before);
+  expect(emit).not.toHaveBeenCalled();
+  groupProjectHost.setNetworkLink({ connected: () => false, isMember: machine => machine === FP_B } as Parameters<typeof groupProjectHost.setNetworkLink>[0]);
+  await groupProjectHost.ensureMemberAdmissions(gp.id, [{ address: `remote@${FP_B.toUpperCase()}`, name: 'ignored' }, { address: 'Twin', name: 'Twin' }]);
+  expect(await getBulletinBoard(gp.id).inboxOwner('inbox-twin')).toBe(address);
+  expect(await groupProjectHost.readTopic(gp.id, 'system')).toHaveLength(1);
+  expect(await getBulletinBoard(gp.id).inboxOf('remote')).toBeFalsy();
+});
+
+it('keeps excluded and removed admissions read-only after reopening durable host and board records', async () => {
+  fixture.agents['/projects/a'] = [{ id: 'one' }, { id: 'two' }];
+  const gp = await groupProjectHost.create('Reopen');
+  await groupProjectHost.updateMembership(gp.id, d => { d.explicit = ['one', 'two'].map(address => ({ address, kind: 'durable', addedAt: 'x' })); });
+  await groupProjectHost.ensureMemberAdmissions(gp.id, ['one', 'two'].map(address => ({ address, name: address })));
+  await groupProjectHost.updateMembership(gp.id, d => { d.excluded.push({ address: 'one', excludedAt: 'x' }); d.explicit = d.explicit.filter(e => e.address !== 'two'); });
+  await restart();
+  const before = await groupProjectHost.readAll(gp.id);
+  const commit = vi.spyOn(groupProjectHost as unknown as { commit: (...args: unknown[]) => unknown }, 'commit');
+  const emit = vi.spyOn(groupProjectHost as unknown as { emit: (...args: unknown[]) => unknown }, 'emit');
+  await groupProjectHost.ensureMemberAdmissions(gp.id, ['one', 'two'].map(address => ({ address, name: address })));
+  expect(commit).not.toHaveBeenCalled(); expect(emit).not.toHaveBeenCalled();
+  expect(await groupProjectHost.readAll(gp.id)).toEqual(before);
+  await groupProjectHost.updateMembership(gp.id, d => { d.excluded = []; d.explicit.push({ address: 'two', kind: 'durable', addedAt: 'again' }); });
+  commit.mockClear(); emit.mockClear();
+  await groupProjectHost.ensureMemberAdmissions(gp.id, ['one', 'two'].map(address => ({ address, name: address })));
+  expect(commit).not.toHaveBeenCalled(); expect(emit).not.toHaveBeenCalled();
+  expect(await groupProjectHost.readTopic(gp.id, 'system')).toHaveLength(2);
+});
+
+
+it('skips every ineligible candidate without reserving a sequence or emitting a change', async () => {
+  const gp = await groupProjectHost.create('Skipped');
+  const before = (await groupProjectHost.get(gp.id))!.seq;
+  const reserve = vi.spyOn(groupProjectHost as unknown as { reserveSeq: (...args: unknown[]) => unknown }, 'reserveSeq');
+  const emit = vi.spyOn(groupProjectHost as unknown as { emit: (...args: unknown[]) => unknown }, 'emit');
+  await groupProjectHost.ensureMemberAdmissions(gp.id, [{ address: 'missing', name: 'Name must not be an address' }]);
+  expect(reserve).not.toHaveBeenCalled(); expect(emit).not.toHaveBeenCalled();
+  expect((await groupProjectHost.get(gp.id))!.seq).toBe(before);
+  expect(await groupProjectHost.readTopic(gp.id, 'system')).toEqual([]);
 });

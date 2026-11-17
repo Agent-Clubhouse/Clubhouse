@@ -1188,6 +1188,9 @@ class GroupProjectHostService {
       let channelsEnsured = false;
       const admitted: Array<{ address: string; name: string; messageId: string }> = [];
       for (const candidate of pending) {
+        const machine = parseAgentAddress(candidate.address).machine;
+        // A paired network identity is required; known members may be offline.
+        if (machine && !this.isNetworkMember(machine)) continue;
         const name = current.get(candidate.address);
         if (name === undefined || await alreadyAdmitted(name, candidate.address)) continue;
         const messageId = `join_${createHash('sha256').update(candidate.address).digest('hex')}`;
