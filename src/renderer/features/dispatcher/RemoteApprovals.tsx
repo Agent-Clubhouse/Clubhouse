@@ -64,7 +64,7 @@ function ConnectionDetails({ view }: { view: ConnectionApprovalView }) {
       <dt>from</dt><dd>{view.from ?? 'Unreadable'}</dd>
       <dt>to</dt><dd>{view.to ?? 'Unreadable'}</dd>
       <dt>Direction (twoWay)</dt><dd>{view.twoWay === undefined ? 'Unreadable' : view.twoWay ? 'true — both directions' : 'false — from → to only'}</dd>
-      <dt>Tools</dt><dd>{view.tool === 'disconnect_agents' ? 'Removes the connection; no tools are enabled.' : tools(view.allow)}</dd>
+      <dt>Tools</dt><dd>{view.tool === 'disconnect_agents' ? "Removes this agent's connection source; other sources and saved tool settings stay." : tools(view.allow)}</dd>
       {view.tool !== 'disconnect_agents' && (view.twoWay || view.allowBack) && <><dt>Reverse tools (when twoWay)</dt><dd>{tools(view.allowBack ?? view.allow)}</dd></>}
       {view.tool === 'disconnect_agents' && (view.allow || view.allowBack) && <dd>Unexpected tools: {[...(view.allow ?? []), ...(view.allowBack ?? [])].join(', ')}</dd>}
     </dl>

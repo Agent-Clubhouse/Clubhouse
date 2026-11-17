@@ -52,9 +52,9 @@ export async function answerFollowerApproval(machine: string, requestId: string,
   }
   if (!row.answers.includes(answer as typeof row.answers[number])) throw new Error(REFUSALS.grant_answer_not_offered);
   const connection = connectionApprovalView(row);
-  if (connection && (!connection.canonical || !reviewedDigest
+  if ((connection || reviewedDigest !== undefined) && (!connection?.canonical || !reviewedDigest
     || createHash('sha256').update(connection.canonical).digest('hex') !== reviewedDigest)) throw new Error(REFUSALS.grant_request_changed);
-  const receipt = await (connection ? annexClient.answerRemoteGrantRequest(key, requestId, answer, reviewedDigest)
+  const receipt = await (reviewedDigest !== undefined ? annexClient.answerRemoteGrantRequest(key, requestId, answer, reviewedDigest)
     : annexClient.answerRemoteGrantRequest(key, requestId, answer)) as { status?: string; error?: { code?: string; message?: string } } | null;
   if (receipt?.status === 'completed') {
     appLog('core:dispatcher', 'info', 'Answered another computer’s request from this computer', { meta: { answer } });

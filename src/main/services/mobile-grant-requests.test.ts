@@ -345,6 +345,26 @@ describe('grant.answer: the desktop\'s answer, from a phone', () => {
     expect(listGrantRequests()).toHaveLength(0);
   });
 
+  it.each([
+    { toolName: 'set_app_setting' },
+    { actions: ['settings.app.write'] },
+    { actions: ['connection.manage', 'agent.reset'] },
+  ])('B refuses a supplied digest after tool/actions reclassification: %j', async (change) => {
+    const args = { from: 'b', to: `a@${Array(16).fill('ab').join(':')}` };
+    const recorded = recordGrantRequest(callKey('b', 'connect_agents', args), {
+      kind: 'call', agentId: 'b', agentName: 'B', projectPath: '/p', actions: ['connection.manage'], toolName: 'connect_agents', where: 'agents', argumentsText: JSON.stringify(args),
+    }, NOW);
+    if (!recorded.ok) throw new Error('not recorded');
+    const id = recorded.request.requestId;
+    const reviewedDigest = createHash('sha256').update(connectionApprovalView(buildMobileGrantRequests(places)[0])!.canonical!).digest('hex');
+    Object.assign(peekGrantRequest(id)!, change);
+    await expect(withSettingsSurface('annex_desktop', 'a', () => runGrantCommand(
+      { ...command(id, 'allow_once'), reviewedDigest }, places, { viewer: 'a', assertAuthorized: () => {} },
+    ))).rejects.toMatchObject({ code: 'grant_request_changed' });
+    expect(listGrantRequests()).toHaveLength(1);
+    expect(mocks.deliver).not.toHaveBeenCalled();
+  });
+
   it('a lasting grant that fails to save is put back for another try', async () => {
     const id = grantRequest();
     mocks.setAgentGrant.mockRejectedValueOnce(new Error('The permissions file is locked.'));

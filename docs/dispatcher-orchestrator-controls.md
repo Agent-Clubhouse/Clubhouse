@@ -352,10 +352,10 @@ unreadable JSON or arguments over 4,000 characters disable its answers with
 “Answer on <computer>”; review that request on its originating computer.
 
 For a reviewed connection call, the button computes SHA-256 of the canonical
-operation and exact arguments it rendered. Main checks that digest against the
+operation, required actions and exact arguments it rendered. Main checks that digest against the
 latest snapshot and includes it as `grant.answer.reviewedDigest`. The originating
 computer compares it against the still-pending stored request before consuming
-it. Changed arguments are refused as `grant_request_changed`; no answer is
+it. Changed tools, actions or arguments are refused as `grant_request_changed`; no answer is
 applied. Updated receivers require the digest for desktop connection answers.
 An older receiver may ignore the digest and cannot provide this protection;
 versions with strict command-field validation reject the new field. There is no

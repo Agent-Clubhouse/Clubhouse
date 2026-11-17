@@ -48,7 +48,7 @@ export function connectionApprovalView(row: ApprovalRow): ConnectionApprovalView
       || a.twoWay !== undefined && a.two_way !== undefined && a.twoWay !== a.two_way
       || !validTools(a.allow) || !validTools(a.allow_back) || row.toolName === 'set_connection_tools' && a.allow === undefined) return view;
     // Bind the operation and every exact argument, including aliases and array order.
-    view.canonical = JSON.stringify({ tool: row.toolName, args: Object.fromEntries(Object.keys(a).sort().map((key) => [key, a[key]])) });
+    view.canonical = JSON.stringify({ tool: row.toolName, actions: [...row.actions].sort(), args: Object.fromEntries(Object.keys(a).sort().map((key) => [key, a[key]])) });
     return view;
   } catch {
     // telemetry-exempt: unsafe stored arguments remain visible but cannot be approved here

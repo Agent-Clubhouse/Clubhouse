@@ -94,6 +94,18 @@ describe('answering another computer’s request from the lead (#3354)', () => {
     expect(annexClient.answerRemoteGrantRequest).not.toHaveBeenCalled();
   });
 
+  it.each([
+    { toolName: 'set_app_setting' },
+    { actions: ['settings.app.write'] },
+    { actions: ['connection.manage', 'agent.reset'] },
+  ])('never drops a reviewed digest after tool/actions reclassification: %j', async (change) => {
+    h.rows[0] = { ...h.rows[0], actions: ['connection.manage'], toolName: 'connect_agents', arguments: JSON.stringify({ from: 'b', to: `a@${h.self}` }) };
+    const reviewedDigest = createHash('sha256').update(connectionApprovalView(h.rows[0] as unknown as MobileGrantRequest)!.canonical!).digest('hex');
+    h.rows[0] = { ...h.rows[0], ...change };
+    await expect(answerFollowerApproval('laptop', 'gr_1', 'allow_once', reviewedDigest)).rejects.toThrow('changed or cannot be reviewed');
+    expect(annexClient.answerRemoteGrantRequest).not.toHaveBeenCalled();
+  });
+
   it('only a person’s click reaches it: no tool, controller link or message calls it', () => {
     const root = path.resolve(__dirname, '..');
     const sources: string[] = [];
