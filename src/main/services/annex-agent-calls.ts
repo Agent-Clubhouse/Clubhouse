@@ -62,6 +62,8 @@ export const RATE_LIMIT = { calls: 30, windowMs: 60_000 };
 export const LOOP_LIMIT = { messages: 40, windowMs: 10 * 60_000 };
 const OUTBOX_MAX_PER_MACHINE = 200;
 const RETRY_MS = 60_000;
+/** The receiver explicitly confirmed that a busy target accepted no input. */
+export const READINESS_RETRY_MS = 15_000;
 const RETRY_MAX_MS = 60 * 60_000;
 const OUTBOX_MAX_TOTAL = 2000;
 /** Directions sent per request, and kept with any one other machine. */
@@ -206,6 +208,7 @@ let onDeliveryFailure: ((notice: AnnexDeliveryFailure) => Promise<boolean | void
 
 const payloadHash = (body: AgentCallBody): string => deliveryHash({ from: body.from.agentId, to: body.to, tool: body.tool, args: body.args, ...(body.context && { context: body.context }), ...(body.epoch && { epoch: body.epoch }) });
 const queuedResult = (callId: string, message: string): McpToolResult => text(`${message} delivery_id=${callId}. This confirms a durable queue, not model execution.`);
+const deliveryLane = (body: AgentCallBody) => JSON.stringify([body.from.agentId, body.to]);
 
 function outgoingEpoch(machine: string): AnnexDeliveryEpoch {
   return {
@@ -225,6 +228,11 @@ export function getDelivery(callerId: string, callId: string): AnnexDeliveryStat
   const found = deliveries.get().deliveries.find((r) => r.callId === callId && r.callerId === callerId);
   if (!found) return undefined;
   const { payloadHash: _hash, result: _result, failureNotified: _notified, context: _context, ...status } = found;
+  // Keep historical diagnostics on disk; project them separately from current failure.
+  if (status.state === 'delivered' && status.reason) {
+    const { reason, ...delivered } = status;
+    return { ...delivered, lastReason: reason };
+  }
   return status;
 }
 
@@ -292,7 +300,7 @@ export async function forwardPreparedAgentCall(callerId: string, targetId: strin
     if (previous) {
       if (previous.payloadHash !== payloadHash(body)) return text('idempotency_conflict: this delivery key already names different content. Use a new key for a new message.', true);
       prepared?.(previous.callId);
-      return previous.result ?? queuedResult(body.callId, `Delivery is ${previous.state}${previous.reason ? `: ${previous.reason}` : ''}.`);
+      return previous.result ?? queuedResult(body.callId, `Delivery is ${previous.state}${previous.state !== 'delivered' && previous.reason ? `: ${previous.reason}` : ''}.`);
     }
   }
   if (controllerLink && LOOP_TOOLS.has(tool)) {
@@ -302,9 +310,9 @@ export async function forwardPreparedAgentCall(callerId: string, targetId: strin
   // Counted here too, so the limit holds for messages both ways (D233).
   if (LOOP_TOOLS.has(tool) && !hit(pairKey({ machine: self, agentId: callerId }, { machine, agentId: to }), LOOP_LIMIT.windowMs, LOOP_LIMIT.messages, now)) return text(LOOP_MESSAGE, true);
   if (QUEUED_TOOLS.has(tool)) {
-    // Behind what's already waiting for that machine, so messages keep their order.
+    // Keep FIFO within this sender-to-receiver lane; unrelated targets can proceed.
     const online = transport.connected(machine);
-    const behind = waitingFor(machine).length > 0;
+    const behind = waitingFor(machine).some((item) => deliveryLane(item.body) === deliveryLane(body));
     await queue(machine, body, targetId, direct);
     // A prepared id is useful only after durable admission actually exists.
     prepared?.(body.callId);
@@ -371,14 +379,18 @@ function transient(status: number, body: unknown, queuedAt: string): boolean {
 }
 
 const flushing = new Map<string, { generation: number; promise: Promise<void> }>();
-const retryTimers = new Map<string, ReturnType<typeof setTimeout>>();
+const retryTimers = new Map<string, { timer: ReturnType<typeof setTimeout>; at: number }>();
 
 function retryLater(machine: string, delay = RETRY_MS): void {
-  if (retryTimers.has(machine)) return;
-  retryTimers.set(machine, setTimeout(() => {
+  const at = Date.now() + delay;
+  const pending = retryTimers.get(machine);
+  if (pending && pending.at <= at) return;
+  if (pending) clearTimeout(pending.timer);
+  const timer = setTimeout(() => {
     retryTimers.delete(machine);
     void syncThenFlush(machine);
-  }, delay));
+  }, delay);
+  retryTimers.set(machine, { timer, at });
 }
 
 function logFlushError(err: unknown): void {
@@ -456,8 +468,8 @@ async function syncThenFlush(machine: string): Promise<void> {
 }
 
 /**
- * Sends what waited for `machine`, in order. A transient answer stops the
- * flush, keeping the rest, and tries again a minute later; a refusal is final.
+ * Sends each sender-to-receiver lane in order. A transient answer defers only
+ * that lane to its retry deadline; unrelated lanes continue. A refusal is final.
  * Only a durable receiving-tool receipt completes delivery. A transport ACK
  * alone says nothing about either runtime acceptance or model execution.
  */
@@ -481,10 +493,13 @@ async function flushOutboxPass(machine: string, generation: number): Promise<voi
   if (!transport || generation !== lifecycle) return;
   const session = transport;
   const authorize = authorizeQueuedCall;
+  // One deferred head per lane per pass. An all-busy machine waits for its
+  // earliest retry timer instead of immediately selecting the same item again.
+  const deferred = new Set<string>();
   {
     for (;;) {
       if (generation !== lifecycle) return;
-      const item = waitingFor(machine)[0];
+      const item = waitingFor(machine).find((pending) => !deferred.has(deliveryLane(pending.body)));
       if (!item) return;
       if (Date.now() - Date.parse(item.queuedAt) >= DELIVERY_MAX_AGE_MS) {
         await finishDelivery(item, 'expired', text('Delivery expired after seven days without a receiving receipt.', true), 'expired');
@@ -515,8 +530,12 @@ async function flushOutboxPass(machine: string, generation: number): Promise<voi
       }
       if (!session.connected(machine)) return;
       const status = deliveries.get().deliveries.find((r) => r.callId === item.id)!;
-      const delay = Date.parse(status.nextAttemptAt ?? '') - Date.now();
-      if (delay > 0) { retryLater(machine, delay); return; }
+      const savedDeadline = Date.parse(status.nextAttemptAt ?? '');
+      // Old busy-target records may carry an hour-long transport backoff. Bound
+      // readiness from their last update without rewriting historical metadata.
+      const deadline = status.reason === 'target_not_ready' ? Math.min(savedDeadline, Date.parse(status.updatedAt) + READINESS_RETRY_MS) : savedDeadline;
+      const delay = deadline - Date.now();
+      if (delay > 0) { deferred.add(deliveryLane(item.body)); retryLater(machine, delay); continue; }
       let supported: boolean;
       try { supported = await session.supportsDurableDelivery(machine); }
       catch (err) {
@@ -553,6 +572,7 @@ async function flushOutboxPass(machine: string, generation: number): Promise<voi
       }
       if (!session.connected(machine)) return;
       let reason = 'transport_unavailable';
+      let targetNotReady = false;
       let response: { status: number; body: unknown } | undefined;
       try {
         response = await session.post(machine, '/api/v1/network/agent-call', item.body as unknown as Record<string, unknown>);
@@ -582,15 +602,17 @@ async function flushOutboxPass(machine: string, generation: number): Promise<voi
           continue;
         }
         reason = receipt?.reason ?? (answer?.isError ? 'tool_retry_later' : `http_${response.status}`);
+        targetNotReady = receipt?.state === 'retry_later' && receipt.reason === 'target_not_ready';
       }
-      const retry = Math.min(RETRY_MAX_MS, RETRY_MS * 2 ** Math.min(status.attempts, 6));
+      const retry = targetNotReady ? READINESS_RETRY_MS : Math.min(RETRY_MAX_MS, RETRY_MS * 2 ** Math.min(status.attempts, 6));
       await deliveries.update((file) => {
         const saved = file.deliveries.find((r) => r.callId === item.id)!;
         Object.assign(saved, { state: 'retry_later', reason, nextAttemptAt: new Date(Date.now() + retry).toISOString(), updatedAt: new Date().toISOString() });
       });
       if (generation !== lifecycle) return;
+      deferred.add(deliveryLane(item.body));
       retryLater(machine, retry);
-      return;
+      continue;
     }
 
   }
@@ -1147,7 +1169,7 @@ export function _resetAgentCallsForTesting(): void {
   flushing.clear();
   syncing.clear();
   syncAgain.clear();
-  for (const timer of retryTimers.values()) clearTimeout(timer);
+  for (const pending of retryTimers.values()) clearTimeout(pending.timer);
   retryTimers.clear();
   if (noticeRetryTimer) clearTimeout(noticeRetryTimer);
   noticeRetryTimer = undefined;
