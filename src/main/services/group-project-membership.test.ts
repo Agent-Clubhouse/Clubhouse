@@ -6,6 +6,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import * as fsp from 'fs/promises';
 import * as path from 'path';
+import { createHash } from 'crypto';
 import type { DurableAgentConfig } from '../../shared/types';
 import type { GroupProject } from '../../shared/group-project-types';
 
@@ -151,6 +152,40 @@ afterEach(async () => {
 });
 
 describe('auto-join', () => {
+  it('does not steal an existing inbox when a same-name suffix matches another member name', async () => {
+    groupProjectRegistry._setForTesting(gp('gp_collision'));
+    const suffix = createHash('sha256').update('third').digest('hex').slice(0, 6);
+    fx.configs.set(PROJ_A.path, [agent('first', { name: 'Twin' }), agent('second', { name: `Twin-${suffix}` })]);
+    await updateMembership('gp_collision', d => { d.membershipPolicy = 'project-3546'; d.autoJoin = true; });
+    await start();
+    const existing = await groupProjectHost.inboxFor('gp_collision', `Twin-${suffix}`, 'second');
+    fx.configs.get(PROJ_A.path)!.push(agent('third', { name: 'Twin' }));
+    await reconcileMembership();
+    const added = await groupProjectHost.inboxFor('gp_collision', 'Twin', 'third');
+    const { getBulletinBoard } = await import('./group-project-bulletin');
+    expect(await getBulletinBoard('gp_collision').inboxOwner(existing)).toBe('second');
+    expect(added).not.toBe(existing);
+  });
+
+  it('does not seed a member excluded after the reconcile snapshot but before admission commits', async () => {
+    groupProjectRegistry._setForTesting(gp('gp_exclude_race'));
+    fx.configs.set(PROJ_A.path, []);
+    await updateMembership('gp_exclude_race', d => { d.membershipPolicy = 'project-3546'; d.autoJoin = true; });
+    await start();
+    fx.configs.set(PROJ_A.path, [agent('late')]);
+    const admit = groupProjectHost.ensureMemberAdmission.bind(groupProjectHost);
+    const spy = vi.spyOn(groupProjectHost, 'ensureMemberAdmission').mockImplementationOnce(async (id, name, address) => {
+      await updateMembership(id, d => { d.excluded.push({ address, excludedAt: new Date().toISOString() }); });
+      await admit(id, name, address);
+    });
+    try {
+      await reconcileMembership();
+      expect((await describeMembership('gp_exclude_race')).members).toHaveLength(0);
+      expect(await groupProjectHost.readTopic('gp_exclude_race', 'inbox-late')).toHaveLength(0);
+      expect(await groupProjectHost.readTopic('gp_exclude_race', 'system')).toHaveLength(0);
+    } finally { spy.mockRestore(); }
+  });
+
   it('a new group project includes every top-level durable agent in scope, with no wires', async () => {
     groupProjectRegistry._setForTesting(gp('gp1'));
     await start();

@@ -146,6 +146,41 @@ async function sharedProject(): Promise<string> {
 }
 
 describe('network group projects across two desktops (#3363)', () => {
+  it('delivers a host post to a distinct-name running replica member subscribed to its inbox', async () => {
+    const id = await sharedProject();
+    const address = `builder@${B.fp}`;
+    await as(A, async h => {
+      await h.groupProjectHost.updateMembership(id, d => {
+        d.explicit.push({ address, kind: 'durable', name: 'builder', addedAt: 'x' });
+        d.subscriptions = { [address]: { add: ['inbox-builder'], remove: [] } };
+      });
+      await h.groupProjectHost.ensureInbox(id, 'builder', address);
+    });
+    await as(B, h => h.groupProjectHost.syncFrom(A.fp));
+    const sendMessage = vi.fn(async () => ({ delivery: 'prompt' as const }));
+    await as(B, async () => {
+      const { registerChatRuntime } = await import('./agent-runtime');
+      const { agentRegistry } = await import('./agent-registry');
+      const { isAgentAlive } = await import('./group-project-lifecycle');
+      agentRegistry.register('builder', { projectPath: '/b/app', orchestrator: 'claude-code', runtime: 'chat' });
+      registerChatRuntime({ agentId: 'builder', kind: 'chat', isRunning: () => true, getState: () => 'idle', sendMessage } as unknown as import('../../shared/chat').AgentRuntime);
+      expect(isAgentAlive('builder')).toBe(true);
+      B.membership!.watchGroupProjectMembership();
+      B.delivery!.watchGroupProjectDelivery();
+    });
+    await as(A, h => h.groupProjectHost.post(id, 'lead@Launch', 'inbox-builder', 'hello from the host'));
+    // A changed notice causes syncFrom on the receiving computer; exercise its complete apply/event/delivery path.
+    await as(B, h => h.groupProjectHost.syncFrom(A.fp));
+    await as(B, async h => {
+      const gp = (await h.groupProjectHost.get(id))!;
+      const membership = await h.groupProjectHost.getMembership(id);
+      const inbox = await h.groupProjectHost.inboxFor(id, 'builder', address);
+      expect(B.delivery!.memberSubscriptions(membership, address, inbox).has('inbox-builder')).toBe(true);
+      expect(await h.groupProjectHost.readTopic(id, 'inbox-builder')).toEqual(expect.arrayContaining([expect.objectContaining({ body: 'hello from the host' })]));
+      await vi.waitFor(() => expect(sendMessage).toHaveBeenCalledTimes(1), { timeout: B.delivery!.COALESCE_MS + 1500 });
+    });
+  }, 25_000);
+
   it('a copy appears on the other computer, named by its host, and its posts reach the host and back', async () => {
     const id = await sharedProject();
     const copy = await as(B, (h) => h.groupProjectHost.get(id));
@@ -327,6 +362,20 @@ describe('network group projects across two desktops (#3363)', () => {
   describe('the host decides who may write (#3446 review)', () => {
     const writeAs = (id: string, author: { agentId?: string; label: string }, write: unknown, writeId = `w-${Math.random()}`) =>
       as(A, (h) => h.groupProjectHost.applyRemoteWrites(B.fp, readWriteRequest(wire({ v: 1, writes: [{ id: writeId, groupProjectId: id, queuedAt: '2026-11-13T00:00:00.000Z', author, write }] }))));
+
+    it('discards a forged senderAddress and rebuilds a claimed host author using the authenticated machine', async () => {
+      const id = await sharedProject();
+      await as(A, h => h.groupProjectHost.updateMembership(id, d => {
+        d.explicit.push({ address: `member@${B.fp}`, kind: 'durable', addedAt: 'x' });
+      }));
+      const response = await writeAs(id, { agentId: `member@${A.fp}`, label: 'Victim' }, {
+        op: 'post', sender: 'Victim', senderAddress: 'host-victim', topic: 'work', body: 'forged',
+      });
+      expect(response.results[0].status).toBe('applied');
+      expect((await as(A, h => h.groupProjectHost.readTopic(id, 'work')))[0].senderAddress).toBe(`member@${B.fp}`);
+      await as(B, h => h.groupProjectHost.syncFrom(A.fp));
+      expect((await as(B, h => h.groupProjectHost.readTopic(id, 'work')))[0].senderAddress).toBe(`member@${B.fp}`);
+    });
 
     it('refuses an agent that is not a member, and lead or admin changes without a grant (fails closed)', async () => {
       const id = await sharedProject();
