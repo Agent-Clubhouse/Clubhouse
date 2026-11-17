@@ -92,6 +92,49 @@ describe('HelperPresetsSection (#2671)', () => {
     expect(order()).toEqual(['helper-presets-claude-code', 'helper-presets-codex-cli', 'helper-presets-copilot-cli']);
   });
 
+  it('marks an inactive provider and says its presets are saved for later (#3605)', async () => {
+    const shown = settings();
+    const { 'claude-code': claude, 'copilot-cli': copilot, ...rest } = shown.providers;
+    window.clubhouse.app.getHelperRouting = vi.fn(async () => ({
+      ...shown,
+      providers: { ...rest, 'claude-code': { ...claude, enabled: false, available: true }, 'copilot-cli': { ...copilot, enabled: true, available: true } } as HelperRoutingSettings['providers'],
+    }));
+    render(<HelperPresetsSection />);
+    expect((await screen.findByTestId('helper-presets-claude-code-status')).textContent).toBe('Disabled, Available');
+    expect(screen.getByTestId('helper-presets-copilot-cli-status').textContent).toBe('Enabled, Available');
+    expect(screen.getByTestId('helper-presets-claude-code-inactive').textContent).toBe('Claude Code is turned off in Agents & providers. Its presets are saved for later, and Auto does not pick it until that changes.');
+    expect(screen.queryByTestId('helper-presets-copilot-cli-inactive')).toBeNull();
+    // Presets stay editable.
+    expect(screen.getByTestId('helper-preset-claude-code-hard-model')).toBeTruthy();
+    expect(screen.getByText(/start a helper on Copilot, the only provider turned on and available/)).toBeTruthy();
+  });
+
+  it('leaves Copilot out of the intro when its last-resort switch is off (#3605)', async () => {
+    window.clubhouse.app.getHelperRouting = vi.fn(async () => ({ ...settings(), copilotAuto: false }));
+    render(<HelperPresetsSection />);
+    await screen.findByTestId('helper-presets-claude-code');
+    expect(screen.getByText(/start a helper on Claude Code, the only provider that is turned on and available/)).toBeTruthy();
+    expect(screen.queryByText(/with Copilot as a last resort/)).toBeNull();
+  });
+
+  it('says nothing is eligible when the only provider on is Copilot with its switch off (#3605)', async () => {
+    const shown = settings();
+    window.clubhouse.app.getHelperRouting = vi.fn(async () => ({
+      ...shown, copilotAuto: false,
+      providers: { ...shown.providers, 'claude-code': { ...shown.providers['claude-code'], enabled: false } } as HelperRoutingSettings['providers'],
+    }));
+    render(<HelperPresetsSection />);
+    expect(await screen.findByText(/Auto has nothing to pick right now/)).toBeTruthy();
+  });
+
+  it('shows no inactive note when the desktop does not report state', async () => {
+    render(<HelperPresetsSection />);
+    await screen.findByTestId('helper-presets-claude-code');
+    expect(screen.queryByTestId('helper-presets-claude-code-status')).toBeNull();
+    expect(screen.queryByTestId('helper-presets-claude-code-inactive')).toBeNull();
+    expect(screen.getByText(/start a helper on Claude Code, the only provider besides Copilot.*with Copilot as a last resort/)).toBeTruthy();
+  });
+
   it('orders preset CLIs first, then any other by id', () => {
     expect(orderedProviders({ zed: 1, 'copilot-cli': 2, alpha: 3, 'claude-code': 4, 'codex-cli': 5 }).map(([id]) => id))
       .toEqual(['claude-code', 'codex-cli', 'copilot-cli', 'alpha', 'zed']);

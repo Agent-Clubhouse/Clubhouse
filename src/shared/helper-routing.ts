@@ -350,6 +350,13 @@ export type ProviderRoutingView =
      * (#3279). Older desktops don't send it.
      */
     autoCandidate: boolean;
+    /**
+     * Whether the provider is turned on in Agents & providers. Auto skips a
+     * disabled one (`cli_disabled`). Older desktops don't send it.
+     */
+    enabled?: boolean;
+    /** Whether its CLI is usable on this computer. Auto skips one that isn't (`cli_unavailable`). Older desktops don't send it. */
+    available?: boolean;
     quota: QuotaView;
     choices: { source: 'live' | 'fallback'; asOf: string | null; models: PresetChoice[] };
     /** Every Auto level. A client from before #3044 reads only the difficulties. */

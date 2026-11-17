@@ -200,6 +200,7 @@
           "claude-code": {
             "autoCandidate": true,
             "autoEligible": true,
+            "available": true,
             "cells": {
               "easy": {
                 "builtin": {
@@ -307,6 +308,7 @@
               ],
               "source": "live"
             },
+            "enabled": true,
             "quota": {
               "asOf": null,
               "refreshAfterSeconds": 3,
@@ -318,6 +320,7 @@
           "codex-cli": {
             "autoCandidate": true,
             "autoEligible": true,
+            "available": true,
             "cells": {
               "easy": {
                 "builtin": {
@@ -425,6 +428,7 @@
               ],
               "source": "live"
             },
+            "enabled": true,
             "quota": {
               "asOf": "2027-01-15T08:00:00.000Z",
               "fiveHour": {
@@ -445,6 +449,7 @@
           "copilot-cli": {
             "autoCandidate": true,
             "autoEligible": true,
+            "available": true,
             "cells": {
               "easy": {
                 "builtin": {
@@ -563,6 +568,7 @@
               ],
               "source": "live"
             },
+            "enabled": false,
             "quota": {
               "asOf": null,
               "source": "none",
@@ -596,6 +602,7 @@
           "claude-code": {
             "autoCandidate": true,
             "autoEligible": true,
+            "available": true,
             "cells": {
               "easy": {
                 "builtin": {
@@ -703,6 +710,7 @@
               ],
               "source": "live"
             },
+            "enabled": true,
             "quota": {
               "asOf": "2027-01-15T08:00:00.000Z",
               "fiveHour": {
@@ -723,6 +731,7 @@
           "codex-cli": {
             "autoCandidate": true,
             "autoEligible": true,
+            "available": true,
             "cells": {
               "easy": {
                 "builtin": {
@@ -830,6 +839,7 @@
               ],
               "source": "live"
             },
+            "enabled": true,
             "quota": {
               "asOf": "2027-01-15T08:00:00.000Z",
               "fiveHour": {
@@ -850,6 +860,7 @@
           "copilot-cli": {
             "autoCandidate": true,
             "autoEligible": true,
+            "available": true,
             "cells": {
               "easy": {
                 "builtin": {
@@ -968,6 +979,7 @@
               ],
               "source": "live"
             },
+            "enabled": false,
             "quota": {
               "asOf": null,
               "source": "none",

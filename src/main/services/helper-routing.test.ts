@@ -316,6 +316,27 @@ describe('readHelperRouting', () => {
     expect(Object.keys(settings.labels)).toEqual(['reason', 'fallback', 'skipped', 'quota', 'unknown', 'window', 'autoSource', 'autoOff', 'cell', 'generic']);
   });
 
+  it('reports each provider as enabled and available, and routing is the same with or without the read (#3605)', async () => {
+    const auto = { effective: true, source: 'app' as const, scopes: { app: { value: true, editable: true } } };
+    const choose = () => planHelperStart({ ...base, cli: 'auto', difficulty: 'medium', auto });
+    W.enabled = ['codex-cli', 'copilot-cli'];
+    W.unavailable = new Set(['codex-cli']);
+    const before = await choose();
+    const settings = await readHelperRouting();
+    const state = (id: string) => { const v = settings.providers[id]; return v.autoEligible ? { enabled: v.enabled, available: v.available } : null; };
+    expect(state('claude-code')).toEqual({ enabled: false, available: true });
+    expect(state('codex-cli')).toEqual({ enabled: true, available: false });
+    expect(state('copilot-cli')).toEqual({ enabled: true, available: true });
+    // The read changed nothing Auto uses: same enabled list, same outcome, same skips.
+    expect(W.enabled).toEqual(['codex-cli', 'copilot-cli']);
+    const after = await choose();
+    expect(after).toEqual(before);
+    expect(after).toMatchObject({ ok: true, plan: { pendingAuto: {
+      skipped: { 'claude-code': 'cli_disabled', 'codex-cli': 'cli_unavailable' },
+      options: [expect.objectContaining({ provider: 'copilot-cli' })],
+    } } });
+  });
+
   it('lists the preset providers in a fixed order, not the order their reads finish (#3186)', async () => {
     W.listDelay.set('claude-code', 20);
     W.listDelay.set('codex-cli', 10);
