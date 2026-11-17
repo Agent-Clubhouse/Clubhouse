@@ -324,6 +324,20 @@ describe('grant.answer: the desktop\'s answer, from a phone', () => {
     } finally { registration.mockRestore(); config.mockRestore(); }
   });
 
+  it('a phone answers a connection call without a reviewed digest, as before', async () => {
+    const args = { from: 'a1', to: 'a2', twoWay: true, allow: ['send_message'] };
+    const key = callKey('a1', 'connect_agents', args);
+    const recorded = recordGrantRequest(key, {
+      kind: 'call', agentId: 'a1', agentName: 'Agent A', projectPath: '/p', actions: ['connection.manage'],
+      toolName: 'connect_agents', where: 'agents', argumentsText: JSON.stringify(args),
+    }, NOW);
+    if (!recorded.ok) throw new Error('not recorded');
+    expect(await phone(recorded.request.requestId, 'allow_once')).toMatchObject({ answer: 'allow_once' });
+    expect(consumeCallApproval(key)).toBe(true);
+    expect(consumeCallApproval(key)).toBe(false);
+    expect(mocks.audit).toEqual([{ agentId: 'a1', kind: 'call', outcome: 'allowed', surface: 'mobile' }]);
+  });
+
   it('B refuses a missing or stale canonical-argument digest without consuming the request', async () => {
     const args = { from: 'b', to: `a@${Array(16).fill('ab').join(':')}`, twoWay: true, allow: ['send_file'] };
     const recorded = recordGrantRequest(callKey('b', 'connect_agents', args), {
