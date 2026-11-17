@@ -370,7 +370,7 @@ export function dispatcherIntro({ name, reachable }: IntroFacts): string[] {
     : `I can reach ${reachable === 1 ? 'one of your agents' : `${reachable} of your agents`}.`;
   return [
     `${hello} ${reach}`,
-    'I keep track of what your agents are doing, get work going across your projects, and set up things to happen on a schedule. I remember what we decide, so you don\'t have to repeat yourself.',
+    'I keep track of what your agents are doing, get work going across your projects, and set up things to happen on a schedule. I remember what we decide, so you don\'t have to repeat yourself. Within approved scope and permissions, owners decide and sequence their work without waiting for my go-ahead. I check in when useful and help with concrete conflicts and choices that need you.',
   ];
 }
 
