@@ -2801,7 +2801,7 @@ async function handleGroupProjectPatchRoute(ctx: AnnexRouteContext, match: RegEx
       return;
     }
     try {
-      const updated = await groupProjectHost.update(gpId, fields as any);
+      const updated = await groupProjectHost.update(gpId, fields as any, { author: { label: 'user' } });
       if (!updated) {
         sendJson(ctx.res, 404, { error: 'group_project_not_found' });
         return;
@@ -2825,7 +2825,7 @@ async function handleGroupProjectBulletinProtectionRoute(ctx: AnnexRouteContext,
       return;
     }
     try {
-      await groupProjectHost.setTopicProtected(gpId, topic, isProtected);
+      await groupProjectHost.setTopicProtected(gpId, topic, isProtected, { author: { label: 'user' } });
     } catch (err) {
       sendJson(ctx.res, 400, { error: err instanceof Error ? err.message : 'protection_failed' });
       return;
@@ -3421,7 +3421,7 @@ async function handleGroupProjectPollingRoute(ctx: AnnexRouteContext, match: Reg
       return;
     }
     try {
-      const result = await setProjectPolling(gpId, enabled);
+      const result = await setProjectPolling(gpId, enabled, { author: { label: 'user' } });
       if (!result) {
         sendJson(ctx.res, 404, { error: 'group_project_not_found' });
         return;
@@ -3489,7 +3489,7 @@ async function handleGroupProjectDeleteMessageRoute(ctx: AnnexRouteContext, matc
   const topic = decodeURIComponent(match[2]);
   const msgId = decodeURIComponent(match[3]);
   try {
-    const deleted = await groupProjectHost.deleteMessage(gpId, topic, msgId);
+    const deleted = await groupProjectHost.deleteMessage(gpId, topic, msgId, { author: { label: 'user' } });
     sendJson(ctx.res, 200, { deleted });
   } catch (err) {
     sendJson(ctx.res, 500, { error: err instanceof Error ? err.message : 'delete_failed' });
@@ -3501,7 +3501,7 @@ async function handleGroupProjectDeleteTopicRoute(ctx: AnnexRouteContext, match:
   const gpId = decodeURIComponent(match[1]);
   const topic = decodeURIComponent(match[2]);
   try {
-    const deleted = await groupProjectHost.deleteTopic(gpId, topic);
+    const deleted = await groupProjectHost.deleteTopic(gpId, topic, { author: { label: 'user' } });
     sendJson(ctx.res, 200, { deleted });
   } catch (err) {
     sendJson(ctx.res, 500, { error: err instanceof Error ? err.message : 'delete_failed' });
