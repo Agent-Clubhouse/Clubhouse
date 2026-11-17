@@ -2046,6 +2046,40 @@ function sendPtyError(ws: WebSocket, op: string, message: string, target: { sess
   safeSend(ws, JSON.stringify({ type: 'error', payload: { message, op, ...target } }));
 }
 
+/**
+ * Whether a socket may still act, after an await in one of its control
+ * frames: its peer is still paired as it was (#3613). A reverse subscription
+ * must also still be open; a direct socket that only disconnected keeps the
+ * behaviour it always had (its spawn or wake still completes).
+ */
+function controlStillAllowed(ws: WebSocket): boolean {
+  if (reverseSockets.has(ws)) return socketStillPaired(ws);
+  if (wsAuthTypes.get(ws) !== 'mtls') return false;
+  const fingerprint = wsPeerFingerprints.get(ws);
+  return !!fingerprint && authorize({ fingerprint, pin: wsPeerPins.get(ws), via: 'direct' }, authorizerDeps).ok;
+}
+
+/** Async lifecycle frames (spawn, wake, kill, shell spawn) one socket may have running at once; more are answered `busy`. */
+const MAX_LIFECYCLE_IN_FLIGHT = 16;
+const lifecycleInFlight = new WeakMap<WebSocket, number>();
+
+/** Runs `work` for `ws` if it has a lifecycle slot free, holding it until the work settles. */
+function withLifecycleSlot(ws: WebSocket, op: string, work: () => Promise<unknown>): void {
+  const running = lifecycleInFlight.get(ws) ?? 0;
+  if (running >= MAX_LIFECYCLE_IN_FLIGHT) {
+    safeSend(ws, JSON.stringify({ type: 'error', payload: { message: 'busy', op } }));
+    return;
+  }
+  lifecycleInFlight.set(ws, running + 1);
+  let done: Promise<unknown>;
+  try { done = work(); } catch (err) { done = Promise.reject(err); } // telemetry-exempt: settled and logged by the caller's own catch
+  void done.catch(() => undefined).finally(() => {
+    const left = (lifecycleInFlight.get(ws) ?? 1) - 1;
+    if (left > 0) lifecycleInFlight.set(ws, left);
+    else lifecycleInFlight.delete(ws);
+  });
+}
+
 /** A shell another controller spawned: private to it, like its output. */
 function isOtherControllersShell(ws: WebSocket, id: string): boolean {
   const owner = shellOwners.get(id);
@@ -2097,10 +2131,20 @@ async function handleSpawnShellWs(ws: WebSocket, payload: Record<string, unknown
     sendPtyError(ws, op, 'agent_not_found', { sessionId });
     return;
   }
-  // The checks above awaited: a second spawn for the same id may have taken it.
+  // The checks above awaited: the controller may have lost its access meanwhile (#3613).
+  if (!controlStillAllowed(ws)) {
+    sendPtyError(ws, op, 'authorization_revoked', { sessionId });
+    return;
+  }
+  // ...and a second spawn for the same id may have taken it,
   const current = shellOwners.get(sessionId);
   if (current ? current !== ws : ptyManager.isRunning(sessionId)) {
     sendPtyError(ws, op, 'session_in_use', { sessionId });
+    return;
+  }
+  // ...or others for other ids may have used up its shells: counted again now, just before it's owned.
+  if (!current && shellCountFor(ws) >= MAX_SHELLS_PER_CONNECTION) {
+    sendPtyError(ws, op, 'too_many_shells', { sessionId });
     return;
   }
   // Owned before it starts, so its first output already goes to this controller only.
@@ -5201,18 +5245,23 @@ function handleWsMessage(ws: WebSocket, data: string): void {
         safeSend(ws, JSON.stringify({ type: 'error', payload: { message: 'clipboard:image data exceeds 10MB limit' } }));
         break;
       }
+      // Pasting writes into the PTY: another controller's shell is private, as for pty:input (#3613).
+      if (isOtherControllersShell(ws, agentId)) {
+        sendPtyError(ws, 'clipboard:image', 'session_not_found', { agentId });
+        break;
+      }
       const refused = handleClipboardImage(agentId, base64, mimeType);
       if (refused) safeSend(ws, JSON.stringify({ type: 'error', payload: refused }));
       break;
     }
 
     case 'pty:spawn-shell': {
-      handleSpawnShellWs(ws, payload).catch((err) => {
+      withLifecycleSlot(ws, 'pty:spawn-shell', () => handleSpawnShellWs(ws, payload).catch((err) => {
         appLog('core:annex', 'error', 'pty:spawn-shell failed', {
           meta: { projectId: payload.projectId, error: err instanceof Error ? err.message : String(err) },
         });
         sendPtyError(ws, 'pty:spawn-shell', 'internal_error', typeof payload.sessionId === 'string' ? { sessionId: payload.sessionId } : {});
-      });
+      }));
       break;
     }
 
@@ -5236,9 +5285,14 @@ function handleWsMessage(ws: WebSocket, data: string): void {
       const prompt = payload.prompt as string;
       if (!projectId || !prompt) break;
       // Reuse the quick agent spawn logic
-      findProjectById(projectId).then((project) => {
+      withLifecycleSlot(ws, 'agent:spawn', () => findProjectById(projectId).then((project) => {
         if (!project) {
           safeSend(ws, JSON.stringify({ type: 'error', payload: { message: 'project_not_found' } }));
+          return;
+        }
+        // The lookup awaited: nothing starts for a controller that lost its access meanwhile (#3613).
+        if (!controlStillAllowed(ws)) {
+          safeSend(ws, JSON.stringify({ type: 'error', payload: { message: 'authorization_revoked' } }));
           return;
         }
         return annexCommandFlow(traceparent, () => handleSpawnQuickAgentWs(ws, project, payload));
@@ -5247,25 +5301,25 @@ function handleWsMessage(ws: WebSocket, data: string): void {
           meta: { projectId, error: err instanceof Error ? err.message : String(err) },
         });
         safeSend(ws, JSON.stringify({ type: 'error', payload: { message: 'internal_error' } }));
-      });
+      }));
       break;
     }
 
     case 'agent:wake': {
       const agentId = payload.agentId as string;
       if (!agentId) break;
-      annexCommandFlow(traceparent, () => handleWakeAgentWs(ws, agentId, {
+      withLifecycleSlot(ws, 'agent:wake', () => annexCommandFlow(traceparent, () => handleWakeAgentWs(ws, agentId, {
         resume: !!payload.resume,
         mission: payload.mission as string | undefined,
         model: payload.model as string | undefined,
-      }));
+      })));
       break;
     }
 
     case 'agent:kill': {
       const agentId = payload.agentId as string;
       if (!agentId) break;
-      void annexCommandFlow(traceparent, () => handleKillAgentWs(ws, agentId));
+      withLifecycleSlot(ws, 'agent:kill', () => annexCommandFlow(traceparent, () => handleKillAgentWs(ws, agentId)));
       break;
     }
 
@@ -5358,6 +5412,11 @@ async function stopAgentForAnnex(agentId: string, projectPath: string, orchestra
 }
 
 async function handleKillAgentWs(ws: WebSocket, agentId: string): Promise<void> {
+  // Another controller's shell is private: it can't be stopped from here, as it can't be typed into (#3613).
+  if (isOtherControllersShell(ws, agentId)) {
+    sendPtyError(ws, 'agent:kill', 'session_not_found', { agentId });
+    return;
+  }
   try {
     const info = await findAgentAcrossProjects(agentId);
     // Quick agents have no durable config; their running registration carries
@@ -5367,6 +5426,11 @@ async function handleKillAgentWs(ws: WebSocket, agentId: string): Promise<void> 
     const projectPath = info?.project.path || registration?.projectPath || shellCwd;
     if (!projectPath) {
       safeSend(ws, JSON.stringify({ type: 'error', payload: { message: 'agent_not_found' } }));
+      return;
+    }
+    // The lookup awaited: the controller may have lost its access, or the shell another controller's, meanwhile.
+    if (!controlStillAllowed(ws) || isOtherControllersShell(ws, agentId)) {
+      safeSend(ws, JSON.stringify({ type: 'error', payload: { message: 'authorization_revoked' } }));
       return;
     }
     await stopAgentForAnnex(agentId, projectPath, registration?.orchestrator || info?.config.orchestrator, shellCwd !== undefined);
@@ -5388,6 +5452,11 @@ async function handleWakeAgentWs(
   const agentInfo = await findAgentAcrossProjects(agentId);
   if (!agentInfo) {
     safeSend(ws, JSON.stringify({ type: 'error', payload: { message: 'agent_not_found' } }));
+    return;
+  }
+  // The lookup awaited: nothing wakes for a controller that lost its access meanwhile (#3613).
+  if (!controlStillAllowed(ws)) {
+    safeSend(ws, JSON.stringify({ type: 'error', payload: { message: 'authorization_revoked' } }));
     return;
   }
   if (isAgentRunning(agentId)) {

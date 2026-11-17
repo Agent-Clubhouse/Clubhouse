@@ -849,8 +849,11 @@ function onClientFrame(link: Link, message: Extract<ControlMessage, { type: 'cli
   if (!served || served.ended || served.id !== message.id || !served.handle) return;
   const server = target;
   if (!server || !server.stillAuthorized(served.principal)) {
+    // Tell the subscriber, then end the server's side (its virtual client and every shell it owns):
+    // end() lets go of the subscription, so its handle is taken first.
+    const handle = served.handle;
     served.sink.end('authorization_revoked');
-    stopServing(link);
+    handle.close();
     refuseLink(link, CONTROL_CLOSE_REVOKED, 'authorization_revoked', 'revoked before a client frame');
     return;
   }
