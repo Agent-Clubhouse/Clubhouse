@@ -227,7 +227,7 @@ export function agentDeliveryCapabilities(): { deliveryVersion: 1; receiptBounda
 export function getDelivery(callerId: string, callId: string): AnnexDeliveryStatus | undefined {
   const found = deliveries.get().deliveries.find((r) => r.callId === callId && r.callerId === callerId);
   if (!found) return undefined;
-  const { payloadHash: _hash, result: _result, failureNotified: _notified, context: _context, ...status } = found;
+  const { payloadHash: _hash, result: _result, failureNotified: _notified, context: _context, readinessRetry: _readiness, ...status } = found;
   // Keep historical diagnostics on disk; project them separately from current failure.
   if (status.state === 'delivered' && status.reason) {
     const { reason, ...delivered } = status;
@@ -531,9 +531,9 @@ async function flushOutboxPass(machine: string, generation: number): Promise<voi
       if (!session.connected(machine)) return;
       const status = deliveries.get().deliveries.find((r) => r.callId === item.id)!;
       const savedDeadline = Date.parse(status.nextAttemptAt ?? '');
-      // Old busy-target records may carry an hour-long transport backoff. Bound
-      // readiness from their last update without rewriting historical metadata.
-      const deadline = status.reason === 'target_not_ready' ? Math.min(savedDeadline, Date.parse(status.updatedAt) + READINESS_RETRY_MS) : savedDeadline;
+      // A reason string is diagnostic, not proof of safe readiness retry. Old
+      // unmarked records keep their stored deadline because provenance is unknown.
+      const deadline = status.readinessRetry === true ? Math.min(savedDeadline, Date.parse(status.updatedAt) + READINESS_RETRY_MS) : savedDeadline;
       const delay = deadline - Date.now();
       if (delay > 0) { deferred.add(deliveryLane(item.body)); retryLater(machine, delay); continue; }
       let supported: boolean;
@@ -543,7 +543,7 @@ async function flushOutboxPass(machine: string, generation: number): Promise<voi
         if (generation !== lifecycle) return;
         appLog('core:annex', 'warn', 'Could not negotiate durable agent delivery', { meta: { error: err instanceof Error ? err.message : String(err) } });
         await deliveries.update((file) => {
-          Object.assign(file.deliveries.find((r) => r.callId === item.id)!, { state: 'retry_later', reason: 'capability_check_unavailable', nextAttemptAt: new Date(Date.now() + RETRY_MS).toISOString() });
+          Object.assign(file.deliveries.find((r) => r.callId === item.id)!, { state: 'retry_later', reason: 'capability_check_unavailable', readinessRetry: false, nextAttemptAt: new Date(Date.now() + RETRY_MS).toISOString() });
         });
         retryLater(machine);
         return;
@@ -607,7 +607,7 @@ async function flushOutboxPass(machine: string, generation: number): Promise<voi
       const retry = targetNotReady ? READINESS_RETRY_MS : Math.min(RETRY_MAX_MS, RETRY_MS * 2 ** Math.min(status.attempts, 6));
       await deliveries.update((file) => {
         const saved = file.deliveries.find((r) => r.callId === item.id)!;
-        Object.assign(saved, { state: 'retry_later', reason, nextAttemptAt: new Date(Date.now() + retry).toISOString(), updatedAt: new Date().toISOString() });
+        Object.assign(saved, { state: 'retry_later', reason, readinessRetry: targetNotReady, nextAttemptAt: new Date(Date.now() + retry).toISOString(), updatedAt: new Date().toISOString() });
       });
       if (generation !== lifecycle) return;
       deferred.add(deliveryLane(item.body));

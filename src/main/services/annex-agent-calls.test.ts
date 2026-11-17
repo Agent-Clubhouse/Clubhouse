@@ -726,7 +726,26 @@ describe('durable receipts and crash boundaries (#3334)', () => {
       expect(getDelivery('here', id)?.attempts).toBe(9);
     } finally { vi.useRealTimers(); }
   });
-  it('bounds an old persisted readiness deadline after restart without rewriting historical status', async () => {
+  it.each([429, 503])('keeps transport backoff for HTTP %s with a contradictory delivered receipt reason', async (status) => {
+    vi.useFakeTimers();
+    try {
+      useMemoryDeliveryStore();
+      respond = (urlPath, body) => !urlPath.endsWith('agent-call') ? { status: 200, body: { directions: [] } }
+        : { status, body: { result: ok('Contradictory receipt'), delivery: { callId: body.callId, state: 'delivered', reason: 'target_not_ready', receiptAt: new Date().toISOString() } } };
+      await forwardAgentCall('here', `there@${OTHER}`, 'Far agent', 'send_message', { message: 'wait', idempotency_key: `contradictory-${status}` });
+      const id = waitingFor(OTHER)[0].id;
+      expect(getDelivery('here', id)).toMatchObject({ state: 'retry_later', attempts: 1 });
+      expect(Date.parse(getDelivery('here', id)!.nextAttemptAt!) - Date.now()).toBe(60_000);
+      await vi.advanceTimersByTimeAsync(READINESS_RETRY_MS); await flushOutbox(OTHER);
+      expect(posts.filter((p) => p.path.endsWith('agent-call'))).toHaveLength(1);
+      expect(getDelivery('here', id)?.attempts).toBe(1);
+      await vi.advanceTimersByTimeAsync(60_000 - READINESS_RETRY_MS);
+      await vi.waitFor(() => expect(getDelivery('here', id)).toMatchObject({ state: 'retry_later', attempts: 2 }));
+      const next = getDelivery('here', id)!;
+      expect(Date.parse(next.nextAttemptAt!) - Date.parse(next.updatedAt)).toBe(120_000);
+    } finally { vi.useRealTimers(); }
+  });
+  it('honors an old unproven readiness deadline after restart without rewriting historical status', async () => {
     vi.useFakeTimers();
     try {
       connected = false;
@@ -742,6 +761,9 @@ describe('durable receipts and crash boundaries (#3334)', () => {
       expect(fs.readFileSync(path.join(state.base, 'annex-agent-outbox.json'), 'utf8')).toBe(before);
       expect(posts.filter((p) => p.path.endsWith('agent-call'))).toHaveLength(0);
       await vi.advanceTimersByTimeAsync(READINESS_RETRY_MS);
+      expect(posts.filter((p) => p.path.endsWith('agent-call'))).toHaveLength(0);
+      expect(fs.readFileSync(path.join(state.base, 'annex-agent-outbox.json'), 'utf8')).toBe(before);
+      await vi.advanceTimersByTimeAsync(60 * 60_000 - READINESS_RETRY_MS);
       await vi.waitFor(() => expect(getDelivery('here', id)?.state).toBe('delivered'));
       const stored = createAnnexDeliveryStore().get().deliveries.find((r) => r.callId === id)!;
       const raw = fs.readFileSync(path.join(state.base, 'annex-agent-outbox.json'), 'utf8');

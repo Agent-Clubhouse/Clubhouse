@@ -30,6 +30,8 @@ export interface DeliveryOutboxItem {
 }
 
 export interface SenderDelivery extends AnnexDeliveryStatus {
+  /** Main-only provenance: the receiver explicitly returned safe-to-retry target readiness. */
+  readinessRetry?: boolean;
   payloadHash: string;
   /** Local-only original causal context, retained for keyed retries after delivery. */
   context?: AnnexCallContext;
