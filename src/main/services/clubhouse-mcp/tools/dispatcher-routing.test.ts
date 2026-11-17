@@ -250,7 +250,8 @@ describe('Dispatcher desktop/mobile routing and a concurrent project pivot (#258
     expect(skill).toBe(dispatcherSkills('work').find((s) => s.name === 'delegating-work')!.text);
     expect(instructions).toContain('Being awake, free, an orchestrator or recently busy doesn\'t make an agent the owner');
     expect(instructions).toContain('through that agent\'s `send_message`, or its `wake_agent` with the task as the message when it is asleep');
-    expect(skill).toContain('Start the first piece, and start the next when you hear it finished');
+    expect(skill).toContain('When one piece depends on another, start the dependent piece only after its prerequisite finishes.');
+    expect(skill).toContain('Only independent work runs in parallel.');
     expect(skill).toContain('Send the feature decisions and relevant pointers to the mobile owner');
     expect(skill).toContain('Sequence only real dependencies');
     expect(skill).toContain('don\'t stop or repurpose their agents unless asked');

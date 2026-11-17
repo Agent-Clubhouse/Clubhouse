@@ -71,8 +71,28 @@
         },
         {
           "first": "# Orchestrator",
+          "length": 5361,
+          "sha256": "9d73c65674b55f7f51dff7ae0009d6bcd9ad2fcb28b96bc1e53dd4ea7e0b7f10"
+        },
+        {
+          "first": "# Orchestrator",
           "length": 5390,
           "sha256": "092ba35ca7c5ed5c11295245a1a767453cfd11f4e799c7d945e20dbbd737b7e4"
+        },
+        {
+          "first": "# Orchestrator",
+          "length": 5408,
+          "sha256": "169da409d960477b1329a622d61c2734f6156e1fcb0e17f1534cf4fa8a1bab27"
+        },
+        {
+          "first": "# Orchestrator",
+          "length": 5880,
+          "sha256": "c694de1f903e1bdeb79250fe346b290f38b22d9879bb95a04d8c155db10e46c6"
+        },
+        {
+          "first": "# Orchestrator",
+          "length": 5929,
+          "sha256": "a8a775f462eee8b5a384a76ff0bb14f06c2b00787958baa99f1b1ebab9d7c785"
         },
         {
           "first": "# Orchestrator",
@@ -183,16 +203,6 @@
           "first": "# Group project lead",
           "length": 2208,
           "sha256": "372780b954a88d2951e79bea17a068c4619ff356df1229064c62d57145d1acb6"
-        },
-        {
-          "first": "# Group project lead",
-          "length": 3139,
-          "sha256": "f6a796f422235270b61d5448fb7c188d637a7a2443dd1d9c99ec7cbda0926ab0"
-        },
-        {
-          "first": "# Group project lead",
-          "length": 3163,
-          "sha256": "7516d98221187e0c2fb887944bcdaeb0d50e74e645b666862e2d4719a5321537"
         },
         {
           "first": "# Group project lead",
@@ -465,6 +475,16 @@
           "sha256": "8c68a39e40c9012dd652e0f530863c7ab4f3c4072fc53f884efdeb30f78f681e"
         },
         {
+          "first": "# Helper",
+          "length": 1582,
+          "sha256": "2128956f5a9376e2f7f0a7c0f4bd994111c8a9c0520dae86f17d17118357650b"
+        },
+        {
+          "first": "# Helper",
+          "length": 1591,
+          "sha256": "aab10eb4c8fb8fc1449a578a4f6714f15b84820a9ac11ee064f809848af04bb3"
+        },
+        {
           "first": "# Generalist",
           "length": 2041,
           "sha256": "685330421c4cd5595c186a4bd3bc0e27dd8589dc85d980a698e7376e3babdf34"
@@ -473,6 +493,16 @@
           "first": "# Generalist",
           "length": 2065,
           "sha256": "374793bd6d52d3542d66c56bf058c3c70282572e5e6ce732e626c342a1fe7ccf"
+        },
+        {
+          "first": "# Helper",
+          "length": 2101,
+          "sha256": "82e567e589a73feb385985788f3494e187d3c075e682511dd68fbc8448a9197b"
+        },
+        {
+          "first": "# Helper",
+          "length": 2112,
+          "sha256": "19dadf8505485e754ef68c06d5ef65d85b11213c3bfc463edb494caf0ee187cb"
         }
       ]
     },
