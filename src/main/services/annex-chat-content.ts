@@ -2,8 +2,8 @@ import { isMediaRef } from '../../shared/chat';
 import { readMedia } from './agent-runtime/chat-media';
 import { readChatFilePreview } from './agent-runtime/chat-files';
 
-/** Base64 plus metadata stays below mobile's 16 MiB HTTP response cap. */
-export const MOBILE_CONTENT_MAX_BYTES = 8 * 1024 * 1024;
+import { MOBILE_CONTENT_MAX_BYTES } from '../../shared/annex-binary-limits';
+export { MOBILE_CONTENT_MAX_BYTES } from '../../shared/annex-binary-limits';
 
 /** No URLs or shell actions. The desktop preview policy resolves the path
  * (symlinks included) and performs the regular-file, type and size checks. */

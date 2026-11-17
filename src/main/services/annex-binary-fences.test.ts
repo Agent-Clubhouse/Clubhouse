@@ -1,0 +1,46 @@
+/** Real services and filesystem, with call-through pauses inside their own awaits. */
+import { afterEach, expect, it, vi } from 'vitest';
+import * as fs from 'fs';
+import * as os from 'os';
+import * as path from 'path';
+import type { FileHandle } from 'fs/promises';
+import { createHash, randomUUID } from 'crypto';
+import { canonicalHandoffManifest, HANDOFF_TRANSFER_DEFAULTS, summarizeHandoffManifest, type HandoffWorktreeManifest } from '../../shared/handoff-manifest';
+import type { Handoff } from '../../shared/handoffs';
+import { HandoffTransferSource } from './handoff-transfer-source';
+let root: string | undefined;
+let source: HandoffTransferSource | undefined;
+afterEach(async () => { vi.restoreAllMocks(); await source?.close(); source = undefined; if (root) fs.rmSync(root, { recursive: true, force: true }); root = undefined; });
+it('P6 real handoff descriptor stat await: revocation prevents the next filesystem read and closes its descriptor', async () => {
+  root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'binary-fence-')));
+  fs.mkdirSync(path.join(root, 'files'));
+  const bytes = Buffer.alloc(300000, 0x71);
+  fs.writeFileSync(path.join(root, 'files', 'data.bin'), bytes);
+  const hash = (body: Buffer | string) => createHash('sha256').update(body).digest('hex');
+  const manifest: HandoffWorktreeManifest = { v: 1, repo: { branch: 'main', base: 'a'.repeat(40), remote: null }, include: { tracked_changes: true, untracked: true, ignored: [] }, exclude: [], files: [{ path: 'data.bin', size: bytes.length, mode: '100644', sha256: hash(bytes) }], deletions: [], total_bytes: bytes.length, manifest_sha256: '0'.repeat(64) };
+  manifest.manifest_sha256 = hash(canonicalHandoffManifest(manifest));
+  const machine = 'sender'; const peer = 'receiver'; const receiver = { machine: peer, agentId: 'a' };
+  const record = { schemaVersion: 1, id: randomUUID(), from: { machine, agentId: 'a' }, to: receiver, mode: 'worktree', task: { title: 't', brief: 'b' }, manifest: summarizeHandoffManifest(manifest), state: 'accepted', acceptance: { by: receiver, target: receiver }, history: [], version: 2, createdAt: Date.now(), updatedAt: Date.now() } as Handoff;
+  const handles: FileHandle[] = [];
+  const open = fs.promises.open.bind(fs.promises);
+  vi.spyOn(fs.promises, 'open').mockImplementation(async (...args) => { const handle = await open(...args); handles.push(handle); return handle; });
+  source = new HandoffTransferSource({ machine, record: () => record, authorize: async () => {}, prepared: async () => ({ snapshot: { root: root!, manifest }, source: { bounds: HANDOFF_TRANSFER_DEFAULTS } }) });
+  const request = { op: 'read', id: record.id, file: 0, offset: 0 };
+  await source.receive(peer, request);
+  const pinned = handles.at(-1)!;
+  const stat = pinned.stat.bind(pinned);
+  let release!: () => void; let entered!: () => void;
+  const gate = new Promise<void>((r) => { release = r; });
+  const ready = new Promise<void>((r) => { entered = r; });
+  vi.spyOn(pinned, 'stat').mockImplementationOnce((async (...args: unknown[]) => {
+    const result = await (stat as (...args: unknown[]) => Promise<unknown>)(...args);
+    entered(); await gate; return result;
+  }) as any);
+  const read = vi.spyOn(pinned, 'read');
+  const close = vi.spyOn(pinned, 'close');
+  let allowed = true;
+  const pending = source.receive(peer, request, () => { if (!allowed) throw new Error('authorization_revoked'); }).catch((e) => e);
+  await ready; allowed = false; release();
+  expect(await pending).toBeInstanceOf(Error);
+  expect(read).not.toHaveBeenCalled(); expect(close).toHaveBeenCalledOnce();
+});

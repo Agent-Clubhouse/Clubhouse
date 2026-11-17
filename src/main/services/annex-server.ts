@@ -72,6 +72,7 @@ import { createBonjour } from './annex-mdns';
 import { withReachableAs } from './annex-reach';
 import * as networkChannel from './annex-network-channel';
 import * as annexControl from './annex-control';
+import { CLIPBOARD_IMAGE_MAX_BASE64 } from '../../shared/annex-binary-limits';
 import { CONTROL_FRAME_MAX_BYTES, CONTROL_REQUEST_HEADERS, decodeControlBody, type ControlHttpRequest } from '../../shared/annex-control-protocol';
 import * as membership from './annex-network-membership';
 import * as agentCalls from './annex-agent-calls';
@@ -508,6 +509,8 @@ export function getAgentExecutionMode(agentId: string): AgentExecutionMode {
 // Clipboard image forwarding
 // ---------------------------------------------------------------------------
 
+export { CLIPBOARD_IMAGE_MAX_BASE64 } from '../../shared/annex-binary-limits';
+
 const CLIPBOARD_IMAGE_CLEANUP_MS = 30 * 60 * 1000; // 30 minutes
 
 /**
@@ -516,6 +519,9 @@ const CLIPBOARD_IMAGE_CLEANUP_MS = 30 * 60 * 1000; // 30 minutes
  * written then), else undefined.
  */
 export function handleClipboardImage(agentId: string, base64: string, _mimeType: string): { code: string; message: string } | undefined {
+  if (typeof base64 !== 'string' || base64.length > CLIPBOARD_IMAGE_MAX_BASE64) {
+    return { code: 'too_large', message: 'clipboard:image data exceeds 10MB limit' };
+  }
   // Chat agents have no terminal to paste a path into; they take images through
   // POST /api/v1/mobile/agents/:id/attachments and chat.send (#2453).
   if (isChatAgent(agentId)) {
@@ -2973,7 +2979,9 @@ async function handleProjectFilesReadRoute(ctx: AnnexRouteContext, match: RegExp
     return;
   }
   try {
+    if (ctx.principal?.via === 'reverse' && (!reverseRequestLive(ctx.req) || ctx.requireMtls())) return;
     const content = await fileService.readFile(fullPath);
+    if (ctx.principal?.via === 'reverse' && (!reverseRequestLive(ctx.req) || ctx.requireMtls())) return;
     ctx.res.writeHead(200, {
       'Content-Type': 'text/plain; charset=utf-8',
       'Content-Length': Buffer.byteLength(content),
@@ -3871,7 +3879,10 @@ async function handleNetworkHandoffTransferRoute(ctx: AnnexRouteContext): Promis
   if (body === undefined || ctx.requireMtls()) return;
   if (agentCallPeer(ctx) !== machine) { sendJson(ctx.res, 403, { error: 'not_a_computer' }); return; }
   try {
-    const reply = await receiveHandoffTransfer(machine, body);
+    const beforeRead = () => {
+      if (ctx.principal?.via === 'reverse' && !reverseRequestLive(ctx.req) || !stillAuthorized(ctx.principal, authorizerDeps) || agentCallPeer(ctx) !== machine) throw new Error('authorization_revoked');
+    };
+    const reply = await receiveHandoffTransfer(machine, body, beforeRead);
     if (ctx.requireMtls()) return;
     if (agentCallPeer(ctx) !== machine) { sendJson(ctx.res, 403, { error: 'not_a_computer' }); return; }
     sendJson(ctx.res, 200, reply);
@@ -4638,7 +4649,11 @@ async function handleMobileAttachmentRoute(ctx: AnnexRouteContext, match: RegExp
     bodyRead = true;
     // A peer can be revoked while its body is streaming.
     if (!authorized()) { refuse(403, 'authorization_revoked'); return; }
-    const result = await mobileAttachments.upload(principal, agentId, body);
+    const beforeWrite = () => {
+      if (!authorized() || ctx.principal?.via === 'reverse' && !reverseRequestLive(ctx.req)) throw new MobileUploadError('authorization_revoked', 403);
+    };
+    const result = await mobileAttachments.upload(principal, agentId, body, beforeWrite);
+    try { beforeWrite(); } catch (error) { await mobileAttachments.discard(principal, agentId, result.attachmentId); throw error; }
     sendJson(ctx.res, 200, result);
   } catch (err) {
     // telemetry-exempt: bounded upload errors go to the caller; image bytes are never logged.
@@ -4837,8 +4852,8 @@ const REVERSE_DROPPED_RESPONSE_HEADERS = new Set(['connection', 'content-length'
 /**
  * What a route handler writes its answer to, for a reverse request: the parts
  * of `http.ServerResponse` the handlers use. Keeps at most one byte more than a
- * control frame can carry, so an answer that can't go out is known without
- * holding all of it.
+ * transport budget can carry, so a bounded response is refused without
+ * holding all of it. Bulk file reads retain the existing uncapped body.
  */
 class ReverseResponse extends EventEmitter {
   statusCode = 200;
@@ -4849,6 +4864,8 @@ class ReverseResponse extends EventEmitter {
   private readonly headers = new Map<string, string>();
   private readonly chunks: Buffer[] = [];
   private bytes = 0;
+
+  constructor(private readonly limit = CONTROL_FRAME_MAX_BYTES) { super(); }
 
   setHeader(name: string, value: string | number | readonly string[]): this {
     this.headers.set(name.toLowerCase(), Array.isArray(value) ? value.join(', ') : String(value));
@@ -4870,8 +4887,8 @@ class ReverseResponse extends EventEmitter {
   write(chunk: string | Buffer | Uint8Array, encodingOrCb?: BufferEncoding | (() => void), cb?: () => void): boolean {
     if (this.writableEnded || this.destroyed) return false;
     this.headersSent = true;
-    const buf = typeof chunk === 'string' ? Buffer.from(chunk, typeof encodingOrCb === 'string' ? encodingOrCb : 'utf8') : Buffer.from(chunk);
-    const room = CONTROL_FRAME_MAX_BYTES + 1 - this.bytes;
+    const buf = typeof chunk === 'string' ? Buffer.from(chunk, typeof encodingOrCb === 'string' ? encodingOrCb : 'utf8') : Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
+    const room = this.limit + 1 - this.bytes;
     if (room > 0) this.chunks.push(buf.length > room ? buf.subarray(0, room) : buf);
     this.bytes += Math.min(buf.length, Math.max(room, 0));
     const done = typeof encodingOrCb === 'function' ? encodingOrCb : cb;
@@ -4904,7 +4921,7 @@ class ReverseResponse extends EventEmitter {
   result(): annexControl.DispatchResult {
     const headers: Record<string, string> = {};
     for (const [name, value] of this.headers) if (!REVERSE_DROPPED_RESPONSE_HEADERS.has(name)) headers[name] = value;
-    return { status: this.statusCode, headers, body: Buffer.concat(this.chunks), complete: this.writableEnded };
+    return { status: this.statusCode, headers, body: this.chunks.length === 1 ? this.chunks[0] : Buffer.concat(this.chunks), complete: this.writableEnded };
   }
 }
 
@@ -4913,6 +4930,9 @@ class ReverseResponse extends EventEmitter {
  * the allowed headers and the body, from no TLS socket. Anything that reads the
  * socket for a certificate finds none and refuses.
  */
+const reverseRequestLiveness = new WeakMap<http.IncomingMessage, () => boolean>();
+function reverseRequestLive(req: http.IncomingMessage): boolean { return reverseRequestLiveness.get(req)?.() ?? true; }
+
 function reverseIncomingMessage(request: ControlHttpRequest, body: Buffer, ctx: annexControl.DispatchContext): http.IncomingMessage {
   const headers: http.IncomingHttpHeaders = {};
   for (const name of CONTROL_REQUEST_HEADERS) {
@@ -4930,6 +4950,7 @@ function reverseIncomingMessage(request: ControlHttpRequest, body: Buffer, ctx: 
   const onAbort = () => { req.emit('aborted'); req.destroy(); };
   if (ctx.signal.aborted) onAbort();
   else ctx.signal.addEventListener('abort', onAbort, { once: true });
+  reverseRequestLiveness.set(req as unknown as http.IncomingMessage, () => ctx.linkOpen() && !ctx.signal.aborted && !ctx.deadline.aborted);
   return req as unknown as http.IncomingMessage;
 }
 
@@ -4944,7 +4965,7 @@ function reverseIncomingMessage(request: ControlHttpRequest, body: Buffer, ctx: 
  * sent or remembered as an answer.
  */
 async function dispatchReverseRequest(principal: AnnexPrincipal, request: ControlHttpRequest, ctx: annexControl.DispatchContext): Promise<annexControl.DispatchResult> {
-  const res = new ReverseResponse();
+  const res = new ReverseResponse(ctx.responseLimit);
   const url = request.path;
   const method = request.method;
   if (!tlsServer) {
@@ -5273,9 +5294,9 @@ function handleWsMessage(ws: WebSocket, data: string): void {
       const agentId = payload.agentId as string;
       const base64 = payload.base64 as string;
       const mimeType = payload.mimeType as string;
-      if (!agentId || !base64 || !mimeType) break;
+      if (typeof agentId !== 'string' || !agentId || typeof base64 !== 'string' || !base64 || typeof mimeType !== 'string' || !mimeType) break;
       // Limit to 10MB of base64 data (~7.5MB raw image)
-      if (base64.length > 10 * 1024 * 1024) {
+      if (base64.length > CLIPBOARD_IMAGE_MAX_BASE64) {
         safeSend(ws, JSON.stringify({ type: 'error', payload: { message: 'clipboard:image data exceeds 10MB limit' } }));
         break;
       }

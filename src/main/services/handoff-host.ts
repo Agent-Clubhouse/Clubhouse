@@ -460,9 +460,9 @@ export async function defaultHandoffReceivingAgent(agentId: string, id: string) 
 }
 
 /** Internal same-machine reads use this boundary too; the HTTP route supplies its pinned peer. */
-export async function receiveHandoffTransfer(machine: string, body: unknown) {
+export async function receiveHandoffTransfer(machine: string, body: unknown, beforeRead?: () => void) {
   if (machine !== ownMachine() && !isNetworkComputer(machine)) throw new Error('Handoff transfer unavailable.');
-  return handoffHost().transfer.receive(machine, body);
+  return handoffHost().transfer.receive(machine, body, beforeRead);
 }
 
 const incomingRates = new Map<string, number[]>();

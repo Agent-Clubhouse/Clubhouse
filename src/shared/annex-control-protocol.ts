@@ -17,7 +17,8 @@
  *   subscribed frame itself, exactly as if the requester had connected to it
  *   directly.
  *
- * Every frame is JSON text with `v` (the protocol version) and `type`.
+ * Control frames are JSON text with `v` and `type`. With `bulk` negotiated,
+ * body chunks are binary frames (36 ASCII UUID bytes, uint32 sequence, bytes).
  */
 
 export const CONTROL_PROTOCOL_VERSION = 1;
@@ -28,7 +29,7 @@ export const CONTROL_CHANNEL_PATH = '/control';
 /**
  * Largest frame either side sends or accepts, in bytes: the same as the
  * largest `/ws` frame. A request or response that doesn't fit is refused here;
- * chunked bodies are a later slice (P6).
+ * larger bodies use the negotiated bulk lane (P6).
  */
 export const CONTROL_FRAME_MAX_BYTES = 8 * 1024 * 1024;
 
@@ -45,8 +46,9 @@ export const CONTROL_EVENT_FRAME_MAX_BYTES = CONTROL_FRAME_MAX_BYTES + 64 * 1024
  * - `subscribe`: a reverse subscription to the target's /ws event stream (P4).
  * - `ws-control`: with a subscription, the subscriber sends /ws control frames
  *   (terminals, agent lifecycle, canvas, clipboard image) to it (P5).
+ * - `bulk`: credit-controlled binary bodies with sequence and final digest (P6).
  */
-export const CONTROL_FEATURES = ['request', 'subscribe', 'ws-control'] as const;
+export const CONTROL_FEATURES = ['request', 'subscribe', 'ws-control', 'bulk'] as const;
 
 /**
  * The /ws client frames a subscriber may send over `ws-control` (P5): the /ws
@@ -142,6 +144,7 @@ export interface ControlHttpResponse {
 export type ControlMessage =
   /** First frame each way: the opener's offer, then the accepter's answer (a subset of it). */
   | { v: 1; type: 'hello'; features: string[] }
+  | { v: 1; type: 'bulk'; op: 'start' | 'credit' | 'finish' | 'cancel'; transfer: string; id: string; kind?: 'request' | 'response' | 'client'; size?: number; meta?: Record<string, unknown>; digest?: string }
   /** Accepter → opener. */
   | ({ v: 1; type: 'request'; id: string } & ControlHttpRequest)
   /** Accepter → opener: stop working on a request. A no-op once it has finished. */
@@ -211,6 +214,12 @@ export function parseControlMessage(text: string): ControlParse {
   if (!isRecord(raw)) return { ok: false, reason: 'shape', detail: 'not an object' };
   if (raw.v !== CONTROL_PROTOCOL_VERSION) return { ok: false, reason: 'version', detail: String(raw.v) };
   switch (raw.type) {
+    case 'bulk':
+      if (!validId(raw.id) || typeof raw.transfer !== 'string' || !/^[0-9a-f-]{36}$/.test(raw.transfer)) return { ok: false, reason: 'shape', detail: 'bulk id' };
+      if (!['start', 'credit', 'finish', 'cancel'].includes(raw.op as string)) return { ok: false, reason: 'shape', detail: 'bulk op' };
+      if (raw.op === 'start' && (!['request', 'response', 'client'].includes(raw.kind as string) || !Number.isSafeInteger(raw.size) || (raw.size as number) < 0 || !isRecord(raw.meta))) return { ok: false, reason: 'shape', detail: 'bulk start' };
+      if (raw.op === 'finish' && (typeof raw.digest !== 'string' || !/^[0-9a-f]{64}$/.test(raw.digest))) return { ok: false, reason: 'shape', detail: 'bulk digest' };
+      return { ok: true, message: { v: 1, type: 'bulk', op: raw.op as 'start', transfer: raw.transfer, id: raw.id, kind: raw.kind as 'request', size: raw.size as number, meta: raw.meta as Record<string, unknown>, digest: raw.digest as string } };
     case 'hello':
       if (!Array.isArray(raw.features) || raw.features.length > 64 || !raw.features.every((f) => typeof f === 'string' && f.length <= 64)) {
         return { ok: false, reason: 'shape', detail: 'hello' };

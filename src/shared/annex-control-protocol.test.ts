@@ -11,8 +11,8 @@ describe('Annex control protocol (#3613 P3)', () => {
     expect(parseControlMessage(JSON.stringify({ v: 1, type: 'error', id: 'a-1', code: 'busy' }))).toMatchObject({ ok: true });
   });
 
-  it('offers request (P3), subscribe (P4) and ws-control (P5)', () => {
-    expect([...CONTROL_FEATURES]).toEqual(['request', 'subscribe', 'ws-control']);
+  it('offers request (P3), subscribe (P4), ws-control (P5) and bulk (P6)', () => {
+    expect([...CONTROL_FEATURES]).toEqual(['request', 'subscribe', 'ws-control', 'bulk']);
   });
 
   it('parses a client frame exactly', () => {
@@ -86,5 +86,25 @@ describe('Annex control protocol (#3613 P3)', () => {
     }
     expect(encodeControlBody(Buffer.from('plain')).encoding).toBe('utf8');
     expect(encodeControlBody(Buffer.from([0xff])).encoding).toBe('base64');
+  });
+});
+
+
+describe('P6 bulk message parser', () => {
+  const base = { v: 1, type: 'bulk', transfer: '00000000-0000-4000-8000-000000000001', id: 'r' };
+  it('accepts start, one credit, digest finish and cancellation', () => {
+    for (const fields of [{ op: 'start', kind: 'request', size: 0, meta: { method: 'POST', path: '/x' } }, { op: 'credit' }, { op: 'finish', digest: 'a'.repeat(64) }, { op: 'cancel' }]) expect(parseControlMessage(JSON.stringify({ ...base, ...fields }))).toMatchObject({ ok: true });
+  });
+  it.each([
+    { op: 'start', kind: 'request', size: -1, meta: {} },
+    { op: 'start', kind: 'request', size: Number.MAX_SAFE_INTEGER + 1, meta: {} },
+    { op: 'start', kind: 'request', size: 1.5, meta: {} },
+    { op: 'start', kind: 'request', size: 0, meta: [] },
+    { op: 'start', kind: 'tunnel', size: 0, meta: {} },
+    { op: 'finish', digest: 'a'.repeat(63) },
+    { op: 'credit', transfer: 'wrong' },
+    { op: 'unknown' },
+  ])('refuses invalid bulk shape %j', (fields) => {
+    expect(parseControlMessage(JSON.stringify({ ...base, ...fields }))).toMatchObject({ ok: false });
   });
 });

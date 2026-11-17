@@ -101,25 +101,44 @@ export async function stageAttachmentPath(agentId: string, filePath: string, nam
 }
 
 /** Stage pasted image bytes: they must be a supported image within the cap. Saved to a file now so transcripts hold a path. */
-export async function stageAttachmentData(agentId: string, data: Uint8Array, name?: string): Promise<StagedChatAttachment> {
+export async function stageAttachmentData(agentId: string, data: Uint8Array, name?: string, beforeWrite: () => void = () => {}): Promise<StagedChatAttachment> {
   if (!data.byteLength) throw new Error('The pasted image is empty');
   if (data.byteLength > CHAT_IMAGE_MAX_BYTES) throw new Error('Images must be 3.75 MB or smaller');
   const mimeType = sniffImage(data.subarray(0, 16));
   if (!mimeType) throw new Error('Only PNG, JPEG, GIF or WebP images can be pasted');
   const dir = attachmentsDir(agentId);
+  beforeWrite();
   await fsp.mkdir(dir, { recursive: true });
-  await pruneSaved(dir);
+  beforeWrite();
+  await pruneSaved(dir, beforeWrite);
+  beforeWrite();
   const file = path.join(dir, `${randomUUID()}.${EXTENSIONS[mimeType]}`);
-  await fsp.writeFile(file, data);
-  return remember({ agentId, path: await fsp.realpath(file), name: name || `pasted.${EXTENSIONS[mimeType]}`, kind: 'image', mimeType, size: data.byteLength, pasted: true });
+  try {
+    await fsp.writeFile(file, data);
+    beforeWrite();
+    const real = await fsp.realpath(file);
+    beforeWrite();
+    return remember({ agentId, path: real, name: name || `pasted.${EXTENSIONS[mimeType]}`, kind: 'image', mimeType, size: data.byteLength, pasted: true });
+  } catch (error) {
+    await fsp.rm(file, { force: true });
+    throw error;
+  }
 }
 
-async function pruneSaved(dir: string): Promise<void> {
+/** Roll back a staging operation that lost its caller before ownership was published. */
+export async function discardStagedAttachment(agentId: string, id: string): Promise<void> {
+  const entry = staged.get(id);
+  if (!entry || entry.agentId !== agentId) return;
+  staged.delete(id);
+  if (entry.pasted) await fsp.rm(entry.path, { force: true });
+}
+
+async function pruneSaved(dir: string, beforeWrite: () => void = () => {}): Promise<void> {
   const cutoff = Date.now() - SAVED_ATTACHMENT_TTL_MS;
   for (const name of await fsp.readdir(dir).catch((): string[] => [])) {
     const file = path.join(dir, name);
     const st = await fsp.stat(file).catch((): null => null);
-    if (st?.isFile() && st.mtimeMs < cutoff) await fsp.rm(file, { force: true });
+    if (st?.isFile() && st.mtimeMs < cutoff) { beforeWrite(); await fsp.rm(file, { force: true }); }
   }
 }
 

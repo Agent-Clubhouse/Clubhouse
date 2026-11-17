@@ -48,7 +48,7 @@ export class HandoffTransferSource {
     return entry.closing ?? Promise.resolve();
   }
 
-  private entry(id: string, record: Handoff): Entry {
+  private entry(id: string, record: Handoff, beforeRead: () => void): Entry {
     const now = Date.now();
     for (const [key, item] of this.entries) if (now - item.used > 5 * 60_000) void this.invalidate(key, item);
     let entry = this.entries.get(id);
@@ -57,10 +57,11 @@ export class HandoffTransferSource {
       const current: Entry = { active: true, used: now, source: Promise.resolve(undefined as never) };
       current.source = (async () => {
         const prepared = await this.options.prepared(record);
+        beforeRead();
         const policy = prepared.source.secretPolicy;
         prepared.snapshot = await (this.options.verify ?? verifyHandoffSnapshot)(prepared.snapshot.root, prepared.snapshot.manifest,
           record.manifest as HandoffManifestSummary, prepared.source.bounds,
-          policy ? { policy, handoffId: id, side: 'sender' } : undefined);
+          policy ? { policy, handoffId: id, side: 'sender' } : undefined, beforeRead);
         if (!current.active) throw new Error('Handoff transfer expired.');
         return prepared;
       })();
@@ -72,14 +73,16 @@ export class HandoffTransferSource {
     return entry;
   }
 
-  async receive(peer: string, raw: unknown): Promise<HandoffTransferReply> {
+  async receive(peer: string, raw: unknown, beforeRead: () => void = () => {}): Promise<HandoffTransferReply> {
     const request = parseHandoffTransferRequest(raw);
     if ((this.requests.get(peer) ?? 0) >= 2 || [...this.requests.values()].reduce((a, b) => a + b, 0) >= 8) throw new HandoffTransferBusy();
     this.requests.set(peer, (this.requests.get(peer) ?? 0) + 1);
     let expired = false; let entry: Entry | undefined;
     const assertCurrent = async () => {
+      beforeRead();
       if (expired || entry && !entry.active) throw new Error('Handoff transfer expired.');
       await this.authorized(request.id, peer, request.op === 'read');
+      beforeRead();
       if (expired || entry && !entry.active) throw new Error('Handoff transfer expired.');
     };
     let timer: ReturnType<typeof setTimeout> | undefined;
@@ -90,11 +93,13 @@ export class HandoffTransferSource {
         reject(new Error('Handoff transfer deadline exceeded.'));
       }, this.options.timeoutMs ?? HANDOFF_TRANSFER_TIMEOUT_MS);
     });
+    let work: Promise<HandoffTransferReply> | undefined;
     try {
-      const work = (async (): Promise<HandoffTransferReply> => {
+      work = (async (): Promise<HandoffTransferReply> => {
         const record = await this.authorized(request.id, peer, request.op === 'read');
         if (expired) throw new Error('Handoff transfer expired.');
-        entry = this.entry(request.id, record);
+        beforeRead();
+        entry = this.entry(request.id, record, beforeRead);
         const prepared = await entry.source;
         await assertCurrent();
         if (request.op === 'manifest') return { manifest: prepared.snapshot.manifest };
@@ -105,20 +110,24 @@ export class HandoffTransferSource {
           entry.artifact = (async () => {
             await previous?.then((artifact) => artifact.close());
             captured.opened = undefined;
+            beforeRead();
             const artifact = await (this.options.open ?? openHandoffSnapshotArtifact)({
               snapshot: prepared.snapshot, file: request.file, bounds: prepared.source.bounds,
               policy: prepared.source.secretPolicy, handoffId: request.id,
+              beforeOpen: beforeRead,
               authorize: async () => {
                 if (!captured.active) throw new Error('Handoff transfer expired.');
                 await this.authorized(request.id, peer, true);
               },
             });
-            if (!captured.active) { await artifact.close(); throw new Error('Handoff transfer expired.'); }
+            try { beforeRead(); if (!captured.active) throw new Error('Handoff transfer expired.'); }
+            catch (error) { await artifact.close(); throw error; }
             captured.opened = artifact; return artifact;
           })();
         }
         const artifact = await entry.artifact!;
-        const bytes = await artifact.read(request.offset, HANDOFF_CHUNK_BYTES);
+        beforeRead();
+        const bytes = await artifact.read(request.offset, HANDOFF_CHUNK_BYTES, beforeRead);
         await assertCurrent();
         return { offset: request.offset, totalBytes: artifact.size, data: bytes.toString('base64'),
           sha256: createHash('sha256').update(bytes).digest('hex'), eof: request.offset + bytes.length === artifact.size };
@@ -132,8 +141,13 @@ export class HandoffTransferSource {
       throw error;
     } finally {
       if (timer) clearTimeout(timer);
-      const count = (this.requests.get(peer) ?? 1) - 1;
-      if (count) this.requests.set(peer, count); else this.requests.delete(peer);
+      // A timed-out filesystem operation can still be running. Keep its slot
+      // until it actually settles, even after its caller has stopped waiting.
+      const release = () => {
+        const count = (this.requests.get(peer) ?? 1) - 1;
+        if (count) this.requests.set(peer, count); else this.requests.delete(peer);
+      };
+      if (work) void work.then(release, release); else release();
     }
   }
 
