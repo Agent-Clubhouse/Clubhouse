@@ -18,6 +18,9 @@ interface Machine {
   home: string;
   projects?: Array<{ id: string; name: string; path: string; key: string; agents: Array<{ id: string; name: string }> }>;
   host?: typeof import('./group-project-host');
+  polling?: typeof import('./group-project-polling');
+  roles?: typeof import('./group-project-roles');
+  gate?: typeof import('./group-project-remote-grants');
   registry?: typeof import('./group-project-registry');
   bulletin?: typeof import('./group-project-bulletin');
   membership?: typeof import('./group-project-membership');
@@ -119,6 +122,9 @@ beforeEach(async () => {
     m.delivery = await import('./group-project-delivery');
     m.persisted = await import('./persisted-bindings');
     m.bindings = await import('./clubhouse-mcp/binding-manager');
+    m.polling = await import('./group-project-polling');
+    m.roles = await import('./group-project-roles');
+    m.gate = await import('./group-project-remote-grants');
     m.host.groupProjectHost.setNetworkLink(linkFor(m));
   }
 });
@@ -383,18 +389,36 @@ describe('network group projects across two desktops (#3363)', () => {
     const writeAs = (id: string, author: { agentId?: string; label: string }, write: unknown, writeId = `w-${Math.random()}`) =>
       as(A, (h) => h.groupProjectHost.applyRemoteWrites(B.fp, readWriteRequest(wire({ v: 1, writes: [{ id: writeId, groupProjectId: id, queuedAt: '2026-11-13T00:00:00.000Z', author, write }] }))));
 
-    it('discards a forged senderAddress and rebuilds a claimed host author using the authenticated machine', async () => {
+    // Identity comes from the authenticated sending computer: an agent author may be bare or
+    // qualified with that computer, never with another one (#3664). A forged senderAddress is
+    // always discarded and rebuilt from the authenticated machine (#3666).
+    it.each([['bare', 'member'], ['qualified with the sending computer', 'member@B']])('applies a valid %s author, discarding a forged senderAddress for the authenticated machine', async (_label, claimed) => {
       const id = await sharedProject();
       await as(A, h => h.groupProjectHost.updateMembership(id, d => {
         d.explicit.push({ address: `member@${B.fp}`, kind: 'durable', addedAt: 'x' });
       }));
-      const response = await writeAs(id, { agentId: `member@${A.fp}`, label: 'Victim' }, {
-        op: 'post', sender: 'Victim', senderAddress: 'host-victim', topic: 'work', body: 'forged',
+      const agentId = claimed === 'member@B' ? `member@${B.fp}` : claimed;
+      const response = await writeAs(id, { agentId, label: 'Member' }, {
+        op: 'post', sender: 'Member', senderAddress: 'host-victim', topic: 'work', body: 'legitimate',
       });
       expect(response.results[0].status).toBe('applied');
       expect((await as(A, h => h.groupProjectHost.readTopic(id, 'work')))[0].senderAddress).toBe(`member@${B.fp}`);
       await as(B, h => h.groupProjectHost.syncFrom(A.fp));
       expect((await as(B, h => h.groupProjectHost.readTopic(id, 'work')))[0].senderAddress).toBe(`member@${B.fp}`);
+    });
+
+    it('refuses an author claiming another computer, even when the authenticated computer has a member of that name', async () => {
+      const id = await sharedProject();
+      await as(A, h => h.groupProjectHost.updateMembership(id, d => {
+        d.explicit.push({ address: `member@${B.fp}`, kind: 'durable', addedAt: 'x' });
+      }));
+      // B claims to write as the host's agent. Before #3664 this was silently rebound to member@B;
+      // now a claim that contradicts the authenticated identity fails closed and nothing is written.
+      const response = await writeAs(id, { agentId: `member@${A.fp}`, label: 'Victim' }, {
+        op: 'post', sender: 'Victim', senderAddress: 'host-victim', topic: 'work', body: 'forged',
+      });
+      expect(response.results[0]).toMatchObject({ status: 'refused', reason: expect.stringContaining('authenticated computer') });
+      expect(await as(A, h => h.groupProjectHost.readTopic(id, 'work'))).toEqual([]);
     });
 
     it('refuses a forged other-machine member when the authenticated sending machine has no such member', async () => {
@@ -439,7 +463,7 @@ describe('network group projects across two desktops (#3363)', () => {
       expect(checks).toEqual([{ address: `lead@${B.fp}`, action: 'group_project.admin', isMember: false }]);
     });
 
-    it('binds a claimed agent address to the authenticated sending computer, ignoring a forged machine suffix', async () => {
+    it('rejects a forged author machine before consulting the grant gate', async () => {
       const id = await sharedProject();
       const checks: Array<{ address: string; machine: string }> = [];
       A.host!.groupProjectHost.setRemoteWriteGate((check) => {
@@ -448,7 +472,7 @@ describe('network group projects across two desktops (#3363)', () => {
       });
       const answer = await writeAs(id, { agentId: `lead@${A.fp}`, label: 'user' }, { op: 'update', fields: { name: 'Spoofed host lead' } });
       expect(answer.results[0]).toMatchObject({ status: 'refused', reason: expect.stringContaining('authenticated computer') });
-      expect(checks).toEqual([{ address: `lead@${B.fp}`, machine: B.fp }]);
+      expect(checks).toEqual([]);
       expect((await as(A, (h) => h.groupProjectHost.get(id)))!.name).toBe('Launch');
     });
 
@@ -639,5 +663,184 @@ describe('network group projects across two desktops (#3363)', () => {
       expect((await as(A, (h) => h.groupProjectHost.getMembership(id))).disabledTools).toEqual({ lead: POLICY.lead.tools, [`builder@${B.fp}`]: POLICY.builder.tools });
       expect(refusals).toEqual([expect.objectContaining({ on: 'Studio', refusal: expect.objectContaining({ reason: expect.stringContaining('ghost') }) })]);
     });
+  });
+});
+
+describe('polling author boundary (#3664)', () => {
+  it('keeps per-write outcomes isolated across overlapping updates and never persists them', async () => {
+    const id = await sharedProject();
+    A.host!.groupProjectHost.setRemoteWriteGate(check =>
+      check.write.write.op === 'update' && check.write.write.fields.name === 'Denied' ? 'denied' : undefined);
+    down.add(A.name);
+    const host = B.host!.groupProjectHost;
+    const originalGet = host.get.bind(host);
+    let entered!: () => void;
+    let release!: () => void;
+    const reading = new Promise<void>(resolve => { entered = resolve; });
+    const resume = new Promise<void>(resolve => { release = resolve; });
+    const readback = vi.spyOn(host, 'get').mockImplementationOnce(async projectId => {
+      entered();
+      await resume;
+      return originalGet(projectId);
+    });
+    const first = as(B, h => h.groupProjectHost.update(id, { name: 'Denied' }, { author: { agentId: 'builder', label: 'user' } }));
+    try {
+      await reading;
+      down.delete(A.name);
+      await as(B, h => h.groupProjectHost.flushOutbox(A.fp));
+      const second = await as(B, h => h.groupProjectHost.update(id, { name: 'Applied' }, { author: { agentId: 'builder', label: 'user' } }));
+      release();
+      const queued = await first;
+      expect(queued).toMatchObject({ name: 'Applied', writeOutcome: { status: 'queued' } });
+      expect(second).toMatchObject({ name: 'Applied', writeOutcome: { status: 'applied' } });
+      expect(queued!.writeOutcome).not.toBe(second!.writeOutcome);
+      for (const machine of [A, B]) {
+        expect(await as(machine, h => h.groupProjectHost.get(id))).not.toHaveProperty('writeOutcome');
+        expect(await as(machine, () => machine.registry!.groupProjectRegistry.get(id))).not.toHaveProperty('writeOutcome');
+      }
+    } finally {
+      release();
+      await first;
+      readback.mockRestore();
+    }
+  });
+
+  it.each(['deliver', 'wake', 'actions'] as const)('fails closed when the %s own-grant service omits its replica author', async grant => {
+    const id = await sharedProject();
+    await expect(as(B, () => B.roles!.setOwnGrant(id, grant, 'off'))).rejects.toMatchObject({ code: 'invalid' });
+    expect((await as(A, h => h.groupProjectHost.get(id)))?.metadata?.grants).toBeUndefined();
+  });
+
+  it.each([true, false])('does not send instructions for queued enabled=%s if reconnect refuses it before the update readback', async enabled => {
+    const id = await sharedProject();
+    await as(A, h => h.groupProjectHost.update(id, { metadata: { pollingEnabled: !enabled } }));
+    await as(B, h => h.groupProjectHost.syncFrom(A.fp));
+    A.host!.groupProjectHost.setRemoteWriteGate(() => 'denied on host');
+    down.add(A.name);
+    const host = B.host!.groupProjectHost;
+    B.bindings!.bindingManager.bind('builder', { targetId: id, targetKind: 'group-project', label: 'Launch', agentName: 'Builder' });
+    const lifecycle = await import('./group-project-lifecycle');
+    const alive = vi.spyOn(lifecycle, 'isAgentAlive').mockReturnValue(true);
+    const canPoll = vi.spyOn(lifecycle, 'canPoll').mockReturnValue(true);
+    // Observe instructions without writing to any real terminal.
+    const inject = vi.spyOn(lifecycle, 'injectPtyMessage').mockImplementation(() => {});
+    const originalGet = host.get.bind(host);
+    // update() forwards, then separately awaits get(). Reconnect can drain
+    // the queued write during that read, so waitingWrites is not its outcome.
+    const readback = vi.spyOn(host, 'get').mockImplementationOnce(async projectId => {
+      down.delete(A.name);
+      await host.flushOutbox(A.fp);
+      return originalGet(projectId);
+    });
+    try {
+      const result = await as(B, () => B.polling!.setProjectPolling(id, enabled, {
+        author: { agentId: 'builder', label: 'Builder' },
+      }));
+      expect((await as(A, h => h.groupProjectHost.get(id)))?.metadata?.pollingEnabled).toBe(!enabled);
+      expect(inject).not.toHaveBeenCalled();
+      expect(result?.pollingEnabled).toBe(!enabled);
+    } finally {
+      readback.mockRestore();
+      alive.mockRestore();
+      canPoll.mockRestore();
+      inject.mockRestore();
+    }
+  });
+
+  it.each(['deliver', 'wake', 'actions'] as const)('preserves the person IPC path for the %s own grant on a replica', async grant => {
+    const id = await sharedProject();
+    // The fixed SET_OWN_GRANT IPC boundary passes its explicit person author.
+    // The service itself must not assume that an omitted author means the person.
+    const mode = grant === 'wake' ? 'allow' : 'off';
+    await as(B, () => B.roles!.setOwnGrant(id, grant, mode, { author: { label: 'user' } }));
+    expect((await as(A, h => h.groupProjectHost.get(id)))?.metadata?.grants).toMatchObject({ [grant]: mode });
+  });
+
+  it('accepts this replica\'s qualified author with uppercase fingerprints and still uses agent grants', async () => {
+    const id = await sharedProject();
+    const gate = vi.fn(() => 'agent grant denied');
+    A.host!.groupProjectHost.setRemoteWriteGate(gate);
+    await expect(as(B, () => B.polling!.setProjectPolling(id, true, {
+      author: { agentId: `builder@${B.fp.toUpperCase()}`, label: 'user' },
+    }))).rejects.toMatchObject({ code: 'refused', message: expect.stringContaining('agent grant denied') });
+    expect(gate).toHaveBeenCalledWith(expect.objectContaining({ address: `builder@${B.fp}`, machine: B.fp }));
+  });
+
+  it.each(['', 'builder@bad', `builder@${A.fp}`, `builder@${B.fp}@${B.fp}`])('rejects malformed or foreign author %s through the real network parser', async agentId => {
+    const id = await sharedProject();
+    const gate = vi.fn(() => undefined);
+    A.host!.groupProjectHost.setRemoteWriteGate(gate);
+    const request = readWriteRequest(wire({ v: 1, writes: [{
+      id: 'malformed', groupProjectId: id, queuedAt: new Date().toISOString(),
+      author: { agentId, label: 'user' }, write: { op: 'update', fields: { metadata: { pollingEnabled: true } } },
+    }] }));
+    const result = await as(A, h => h.groupProjectHost.applyRemoteWrites(B.fp.toUpperCase(), request));
+    expect(result.results[0].status).toBe('refused');
+    expect(gate).not.toHaveBeenCalled();
+    expect((await as(A, h => h.groupProjectHost.get(id)))?.metadata?.pollingEnabled).not.toBe(true);
+  });
+
+  it.each(['off', 'ask', 'allow'] as const)('uses the host grant gate for a replica polling toggle with %s grant', async mode => {
+    const id = await sharedProject();
+    const address = `builder@${B.fp}`;
+    await as(A, h => h.groupProjectHost.updateMembership(id, m => { m.explicit.push({ address, kind: 'durable', addedAt: 't' }); }));
+    await as(B, h => h.groupProjectHost.syncFrom(A.fp));
+    await as(A, async h => {
+      h.groupProjectHost.setRemoteWriteGate(A.gate!.remoteGroupProjectGrantGate);
+      await A.roles!.setGroupProjectRole(id, address, 'admin', mode);
+    });
+    const request = as(B, () => B.polling!.setProjectPolling(id, true, { author: { agentId: 'builder', label: 'user' } }));
+    if (mode === 'allow') {
+      expect((await request)?.pollingEnabled).toBe(true);
+    } else {
+      await expect(request).rejects.toMatchObject({ code: 'refused' });
+    }
+    expect(!!(await as(A, h => h.groupProjectHost.get(id)))?.metadata?.pollingEnabled).toBe(mode === 'allow');
+  });
+  it('rejects a missing replica update author before queueing while a person still toggles', async () => {
+    const id = await sharedProject();
+    await expect(as(B, h => h.groupProjectHost.update(id, { metadata: { pollingEnabled: true } }))).rejects.toMatchObject({ code: 'invalid' });
+    expect((await as(B, () => B.polling!.setProjectPolling(id, true, { author: { label: 'user' } })))?.pollingEnabled).toBe(true);
+  });
+  it('rejects a forged author machine and an anonymous legacy envelope', async () => {
+    const id = await sharedProject();
+    const gate = vi.fn(() => undefined);
+    A.host!.groupProjectHost.setRemoteWriteGate(gate);
+    for (const author of [{ agentId: `lead@${A.fp}`, label: 'user' }, { label: 'unknown' }, { agentId: '', label: 'user' }]) {
+      const result = await as(A, h => h.groupProjectHost.applyRemoteWrites(B.fp, { v: 1, writes: [{
+        id: `forge-${author.label}-${author.agentId}`, groupProjectId: id, queuedAt: new Date().toISOString(), author,
+        write: { op: 'update', fields: { metadata: { pollingEnabled: true } } },
+      }] }));
+      expect(result.results[0].status).toBe('refused');
+    }
+    expect(gate).not.toHaveBeenCalled();
+    expect((await as(A, h => h.groupProjectHost.get(id)))?.metadata?.pollingEnabled).not.toBe(true);
+  });
+  it('does not report a queued toggle as applied', async () => {
+    const id = await sharedProject();
+    down.add(A.name);
+    const result = await as(B, () => B.polling!.setProjectPolling(id, true, { author: { agentId: 'builder', label: 'Builder' } }));
+    expect(result).toMatchObject({ pollingEnabled: false, queued: true });
+  });
+});
+
+describe('startup roles migration with a replica (#3664)', () => {
+  it('does not let an unmarked replica prevent later local projects from migrating', async () => {
+    const remoteId = await sharedProject();
+    const local = await as(B, h => h.groupProjectHost.create('Legacy local'));
+    await as(B, h => h.groupProjectHost.update(local.id, { metadata: { admins: ['builder'] } }));
+    // The remote group was created since the host last ran startup migration.
+    // Registry order puts its unmarked replica before the legacy local group.
+    expect((await as(B, h => h.groupProjectHost.list())).map(gp => gp.id)).toEqual([remoteId, local.id]);
+    expect((await as(B, h => h.groupProjectHost.get(remoteId)))!.metadata.rolesMigratedAt).toBeUndefined();
+
+    const replicaBefore = structuredClone(await as(B, () => B.registry!.groupProjectRegistry.get(remoteId)));
+    const hostBefore = structuredClone(await as(A, () => A.registry!.groupProjectRegistry.get(remoteId)));
+    await expect(as(B, () => B.roles!.migrateGroupProjectRoles())).resolves.toBe(1);
+    expect(B.roles!.roleModeOf('builder', local.id, 'lead')).toBe('allow');
+    expect(B.roles!.roleModeOf('builder', local.id, 'admin')).toBe('allow');
+    expect((await as(B, h => h.groupProjectHost.get(local.id)))!.metadata.rolesMigratedAt).toBeTruthy();
+    expect(await as(B, () => B.registry!.groupProjectRegistry.get(remoteId))).toEqual(replicaBefore);
+    expect(await as(A, () => A.registry!.groupProjectRegistry.get(remoteId))).toEqual(hostBefore);
   });
 });

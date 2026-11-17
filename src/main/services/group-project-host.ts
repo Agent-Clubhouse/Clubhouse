@@ -75,6 +75,9 @@ export class GroupProjectHostError extends Error {
   }
 }
 
+/** Transient result of this update, never inferred from other queued writes or persisted in the record. */
+export type GroupProjectUpdateResult = GroupProject & { writeOutcome: GroupWriteOutcome };
+
 /** #3431's review contract, shared by scope changes and linked-copy departures. */
 export function requireExactLeavingReview(leaving: readonly string[], confirmed: readonly string[] | undefined, kind = 'change'): void {
   const addresses = new Set(confirmed ?? []);
@@ -128,7 +131,7 @@ export interface RemoteWriteCheck {
 export type RemoteWriteGate = (check: RemoteWriteCheck) => Promise<string | undefined> | string | undefined;
 
 /** The person, on any of their computers: an author with no agent, labelled as the user. */
-const isPersonAuthor = (author: WriteAuthor): boolean => !author.agentId && author.label === 'user';
+const isPersonAuthor = (author: WriteAuthor): boolean => author.agentId === undefined && author.label === 'user';
 
 /** Membership fields kept per member address; a computer may set only its own agents' entries. */
 const PER_ADDRESS_FIELDS = new Set(['subscriptions', 'disabledTools']);
@@ -513,7 +516,7 @@ class GroupProjectHostService {
 
   async update(
     id: string, fields: { name?: string; description?: string; instructions?: string; metadata?: Record<string, unknown> }, options: { withinExclusive?: boolean; author?: WriteAuthor } = {},
-  ): Promise<GroupProject | null> {
+  ): Promise<GroupProjectUpdateResult | null> {
     // The remote create mark (#3547) is main's own, set only at creation: no update writes or replaces it.
     if (fields.metadata && 'remoteCreate' in fields.metadata) {
       const { remoteCreate: _mark, ...metadata } = fields.metadata;
@@ -521,18 +524,21 @@ class GroupProjectHostService {
     }
     const replica = await this.replicaFor(id).catch((): null => null);
     if (replica) {
-      const current = await this.view(replica);
-      return this.forward(replica, { op: 'update', fields }, options.author ?? { label: 'user' }, () => current, () => current)
-        .then(async () => this.get(id));
+      const writeOutcome = await this.forward<GroupWriteOutcome>(replica, { op: 'update', fields }, this.replicaAuthor(options.author),
+        () => ({ status: 'applied' }),
+        item => ({ status: 'queued', waitingFor: this.hostNameOf(replica), since: item.queuedAt }));
+      // Reconnect may settle this write during readback; preserve the outcome returned by its own forward.
+      const current = await this.get(id);
+      return current && { ...current, writeOutcome };
     }
     try {
       return await this.commit(id, 'record', async ({ project, reserve }) => {
         const unchanged = (['name', 'description', 'instructions'] as const).every((key) => fields[key] === undefined || fields[key] === project[key])
           && (fields.metadata === undefined || sameJson({ ...project.metadata, ...fields.metadata }, project.metadata));
-        if (unchanged) return this.view(project);
+        if (unchanged) return { ...await this.view(project), writeOutcome: { status: 'applied' as const } };
         await reserve();
         const updated = await groupProjectRegistry.update(id, fields);
-        return updated && this.view(updated);
+        return updated && { ...await this.view(updated), writeOutcome: { status: 'applied' as const } };
       }, options.withinExclusive);
     } catch (err) {
       // telemetry-exempt: update of an absent group project answers null, as before; anything else rethrows
@@ -1052,7 +1058,7 @@ class GroupProjectHostService {
   /** False when there's no such message, or no such group project, as before #3356. */
   async deleteMessage(id: string, topic: string, messageId: string, options: { withinExclusive?: boolean; author?: WriteAuthor } = {}): Promise<boolean> {
     const replica = await this.replicaFor(id).catch((): null => null);
-    if (replica) return this.forward(replica, { op: 'deleteMessage', topic, messageId }, options.author ?? { label: 'user' }, Boolean, () => true);
+    if (replica) return this.forward(replica, { op: 'deleteMessage', topic, messageId }, this.replicaAuthor(options.author), Boolean, () => true);
     return this.unlessMissing(false, () => this.commit(id, 'board', async ({ reserve }) => {
       const board = getBulletinBoard(id);
       const message = await board.getMessageById(messageId);
@@ -1064,7 +1070,7 @@ class GroupProjectHostService {
 
   async deleteTopic(id: string, topic: string, options: { withinExclusive?: boolean; author?: WriteAuthor } = {}): Promise<boolean> {
     const replica = await this.replicaFor(id).catch((): null => null);
-    if (replica) return this.forward(replica, { op: 'deleteTopic', topic }, options.author ?? { label: 'user' }, Boolean, () => true);
+    if (replica) return this.forward(replica, { op: 'deleteTopic', topic }, this.replicaAuthor(options.author), Boolean, () => true);
     return this.unlessMissing(false, () => this.commit(id, 'board', async ({ reserve }) => {
       const board = getBulletinBoard(id);
       if (!(await board.hasTopic(topic))) return false;
@@ -1085,7 +1091,7 @@ class GroupProjectHostService {
 
   async setTopicProtected(id: string, topic: string, isProtected: boolean, options: { withinExclusive?: boolean; author?: WriteAuthor } = {}): Promise<void> {
     const replica = await this.replicaFor(id);
-    if (replica) return this.forward(replica, { op: 'setTopicProtected', topic, isProtected }, options.author ?? { label: 'user' }, (): undefined => undefined, (): undefined => undefined);
+    if (replica) return this.forward(replica, { op: 'setTopicProtected', topic, isProtected }, this.replicaAuthor(options.author), (): undefined => undefined, (): undefined => undefined);
     return this.commit(id, 'board', async ({ reserve }) => {
       const board = getBulletinBoard(id);
       await board.hasTopic(topic);
@@ -1430,6 +1436,20 @@ class GroupProjectHostService {
    * nothing waits before it, otherwise into the queue for when it's back. One
    * decision at a time per host, so writes reach it in the order they were made.
    */
+  /** Only a caller that explicitly represents the person may author a person write. */
+  private replicaAuthor(author?: WriteAuthor): WriteAuthor {
+    if (!author || (!author.agentId && author.label !== 'user')) {
+      throw new GroupProjectHostError('invalid', 'A replica change needs an explicit agent or person author.');
+    }
+    if (author.agentId !== undefined) {
+      const parsed = parseAgentAddress(author.agentId);
+      if (!/^[A-Za-z0-9_.:-]{1,200}$/.test(parsed.agentId) || (parsed.machine && parsed.machine !== this.selfMachine())) {
+        throw new GroupProjectHostError('invalid', 'An agent author must belong to this computer.');
+      }
+    }
+    return author;
+  }
+
   private async forward<T>(project: GroupProject, write: WriteOp, author: WriteAuthor, applied: (result: unknown) => T, queued: (item: OutboxItem) => T): Promise<T> {
     const host = project.host!.machine!;
     const item: OutboxItem = {
@@ -1912,8 +1932,11 @@ class GroupProjectHostService {
    */
   private async authorizeRemote(project: GroupProject, machine: string, item: QueuedWrite): Promise<string | undefined> {
     const { author, write } = item;
-    if (author.agentId) {
-      const address = memberAddress(parseAgentAddress(author.agentId).agentId, machine, this.hostMachineOf(project));
+    if (author.agentId !== undefined) {
+      const parsed = parseAgentAddress(author.agentId);
+      if (!/^[A-Za-z0-9_.:-]{1,200}$/.test(parsed.agentId)) return 'Invalid agent author.';
+      if (parsed.machine && parsed.machine !== machine) return 'An agent author must belong to the authenticated computer.';
+      const address = memberAddress(parsed.agentId, machine, this.hostMachineOf(project));
       const [members, membership] = await Promise.all([this.resolveMembers(project.id), this.getMembership(project.id)]);
       const isMember = !membership.excluded.some((entry) => entry.address === address)
         && (members.some((m) => m.address === address) || membership.explicit.some((e) => e.address === address));

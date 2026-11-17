@@ -15,6 +15,7 @@ const optionsAt: Record<string, number> = {
   'membership.recordMemberDisabledTools': 3,
   'groupProjectHost.post': 4,
   'groupProjectHost.update': 2,
+  setProjectPolling: 2,
   'groupProjectHost.deleteMessage': 3,
   'groupProjectHost.deleteTopic': 2,
   'groupProjectHost.setTopicProtected': 3,
@@ -32,7 +33,6 @@ const reads = new Set(['outOfScopeMessage', 'inScope', 'selfMachine', 'list', 's
 const hostOnly = new Set(['setScope', 'exclusive', 'setRetention', 'clearAll', 'dismissRefusals']);
 /** Existing service-level exceptions are explicit mechanics work, not compliant new admin mutations. */
 const serviceExceptions = {
-  setProjectPolling: '#3664: legacy polling omits agent author; Mac Mini mechanics owner',
   setTopicSubscription: 'Legacy caller-only subscription policy uses own-machine per-address housekeeping; no admin mutation',
 };
 function calls(source: ts.SourceFile): ts.CallExpression[] {
@@ -93,7 +93,7 @@ describe('Group Project agent author boundary (#3617)', () => {
   });
   it('keeps UI/system omissions and known legacy exceptions explicitly separate', () => {
     const board = fs.readFileSync(path.join(toolsDir, 'group-project-tools.ts'), 'utf8');
-    expect(Object.keys(serviceExceptions)).toEqual(['setProjectPolling', 'setTopicSubscription']);
+    expect(Object.keys(serviceExceptions)).toEqual(['setTopicSubscription']);
     for (const name of Object.keys(serviceExceptions)) expect(board).toContain(`${name}(`);
     const management = fs.readFileSync(path.join(toolsDir, 'group-project-management-tools.ts'), 'utf8');
     for (const name of Object.keys(serviceExceptions)) expect(management).not.toContain(`${name}(`);
@@ -122,7 +122,7 @@ describe('Group Project agent author boundary (#3617)', () => {
     }
   });
   it('separates existing service exceptions and host-only operations from new forwardable admin mutations', () => {
-    expect(serviceExceptions.setProjectPolling).toContain('#3664');
+    expect(missingAuthors('setProjectPolling(id, enabled)', 'polling.ts')).toHaveLength(1);
     expect(serviceExceptions.setTopicSubscription).toContain('caller-only');
     const source = fs.readFileSync(path.join(toolsDir, 'group-project-management-tools.ts'), 'utf8');
     for (const name of Object.keys(serviceExceptions)) expect(source).not.toContain(`${name}(`);

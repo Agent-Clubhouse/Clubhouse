@@ -389,7 +389,8 @@ describe('creating a group project on another computer (#3547)', () => {
     await as(B, () => B.host!.groupProjectHost.update(existing.id, { metadata: { remoteCreate: forged, other: 1 } }));
     expect((await as(B, () => B.host!.groupProjectHost.get(existing.id)))!.metadata).toEqual({ other: 1 });
     await as(A, () => A.host!.groupProjectHost.syncFrom(B.fp));
-    await as(A, () => A.host!.groupProjectHost.update(existing.id, { metadata: { remoteCreate: forged } }));
+    // A replica write names its author explicitly (#3664); here, the person on the other computer.
+    await as(A, () => A.host!.groupProjectHost.update(existing.id, { metadata: { remoteCreate: forged } }, { author: { label: 'user' } }));
     expect((await as(B, () => B.host!.groupProjectHost.get(existing.id)))!.metadata.remoteCreate).toBeUndefined();
   });
 

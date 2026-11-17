@@ -150,6 +150,10 @@ const MIGRATED_KEY = 'rolesMigratedAt';
 export async function migrateGroupProjectRoles(): Promise<number> {
   let migrated = 0;
   for (const gp of await groupProjectHost.list()) {
+    // Roles are the host's grants (#3364): each host migrates its own record once.
+    // A copy of another computer's group project is left to its host (#3664: no
+    // authorless replica writes), and must not abort the pass for later projects.
+    if (groupProjectHost.isReplica(gp)) continue;
     if (gp.metadata?.[MIGRATED_KEY]) continue;
     for (const agentId of getProjectAdmins(gp.metadata)) {
       for (const role of ['lead', 'admin'] as const) {

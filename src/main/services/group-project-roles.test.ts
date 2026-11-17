@@ -30,6 +30,7 @@ vi.mock('./agent-grants-store', () => ({
 vi.mock('./group-project-host', () => ({
   groupProjectHost: {
     list: async () => [...fx.projects.values()],
+    isReplica: () => false,
     get: async (id: string) => fx.projects.get(id) ?? null,
     resolveMembers: async (id: string) => (fx.members.get(id) ?? []).map((address) => ({ address, name: address })),
     update: async (id: string, fields: { metadata?: Record<string, unknown> }) => {

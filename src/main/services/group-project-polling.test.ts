@@ -481,6 +481,20 @@ describe('group-project-polling', () => {
   });
 
   describe('setProjectPolling', () => {
+    it('does not inject polling instructions for a queued replica toggle', async () => {
+      const project = await groupProjectRegistry.create('Queued');
+      agentRegistry.register('a-live', { projectPath: '/t', orchestrator: 'claude-code', runtime: 'pty' });
+      mockIsRunning.mockReturnValue(true);
+      bindMember(project.id, 'a-live', 'live');
+      const { groupProjectHost } = await import('./group-project-host');
+      vi.mocked(groupProjectHost.update).mockResolvedValueOnce({ ...project, writeOutcome: { status: 'queued', waitingFor: 'Host', since: new Date().toISOString() }, network: { role: 'replica', state: 'cached', waitingWrites: 1, refusals: [] } });
+      mockPtyWrite.mockClear();
+      const result = await setProjectPolling(project.id, true, { author: { agentId: 'a-live', label: 'Live' } });
+      expect(result).toMatchObject({ pollingEnabled: false, queued: true });
+      expect(mockPtyWrite).not.toHaveBeenCalled();
+      agentRegistry.untrack('a-live');
+    });
+
     it('persists pollingEnabled=true', async () => {
       const project = await groupProjectRegistry.create('P1');
       const state = await setProjectPolling(project.id, true);
