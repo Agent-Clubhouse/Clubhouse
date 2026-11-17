@@ -1486,6 +1486,61 @@ describe('annex-server', () => {
     });
 
     describe('shared handler hardening, direct path (#3613 P5 QA)', () => {
+      describe('shell ownership while a spawn is starting, direct (P5 QA)', () => {
+      /**
+       * spawnShell as the real leaf runs it (pty-manager.test.ts pins that order against the real one):
+       * its cwd check (the first call's held open), then the fence, then it replaces whatever runs under
+       * the id and starts the new shell.
+       */
+      function shellLeaf() {
+        const acted: string[] = [];
+        let release!: () => void;
+        let holdNext = true;
+        vi.mocked(ptyManagerModule.spawnShell).mockImplementation((async (id: string, _cwd: string, opts?: { beforeSpawn?: () => void }) => {
+          if (holdNext) { holdNext = false; await new Promise<void>((resolve) => { release = resolve; }); }
+          opts?.beforeSpawn?.();
+          acted.push(`replace-and-spawn:${id}`);
+        }) as never);
+        return { acted, release: () => release() };
+      }
+
+        it('A disconnects mid-spawn and B starts the same id: A\'s spawn never replaces B\'s shell', async () => {
+          await startAndPair();
+          const a = await connect();
+          const b = await connect();
+          const leaf = shellLeaf();
+          a.emit('message', JSON.stringify({ type: 'pty:spawn-shell', payload: { sessionId: 'X', projectId: 'p' } }));
+          await vi.waitFor(() => expect(ptyManagerModule.spawnShell).toHaveBeenCalledTimes(1));
+          a.readyState = 3;
+          a.emit('close');
+          b.emit('message', JSON.stringify({ type: 'pty:spawn-shell', payload: { sessionId: 'X', projectId: 'p' } }));
+          await vi.waitFor(() => expect(sent(b).some((f) => f.type === 'pty:spawn-shell:ack')).toBe(true));
+          leaf.release();
+          await new Promise((resolve) => setTimeout(resolve, 20));
+          expect(leaf.acted).toEqual(['replace-and-spawn:X']);
+          expect(annexServer._testing.shellOwners.get('X')).toBe(b);
+          const onData = vi.mocked(annexEventBus.onPtyData).mock.calls.at(-1)![0];
+          b.send.mockClear();
+          onData('X', 'only for b', 1);
+          expect(sent(b)).toEqual([{ type: 'pty:data', payload: { agentId: 'X', data: 'only for b', outputSeq: 1 } }]);
+        });
+
+        it('a stale spawn never acts on the same controller\'s newer claim of that id', async () => {
+          await startAndPair();
+          const a = await connect();
+          const leaf = shellLeaf();
+          a.emit('message', JSON.stringify({ type: 'pty:spawn-shell', payload: { sessionId: 'X', projectId: 'p' } }));
+          await vi.waitFor(() => expect(ptyManagerModule.spawnShell).toHaveBeenCalledTimes(1));
+          a.emit('message', JSON.stringify({ type: 'pty:close', payload: { sessionId: 'X' } }));
+          a.emit('message', JSON.stringify({ type: 'pty:spawn-shell', payload: { sessionId: 'X', projectId: 'p' } }));
+          await vi.waitFor(() => expect(sent(a).some((f) => f.type === 'pty:spawn-shell:ack')).toBe(true));
+          leaf.release();
+          await new Promise((resolve) => setTimeout(resolve, 20));
+          expect(leaf.acted).toEqual(['replace-and-spawn:X']);
+          expect(annexServer._testing.shellOwners.get('X')).toBe(a);
+        });
+      });
+
       describe('revocation inside the services\' own awaits, direct (P5 QA b)', () => {
         function modelServices() {
           const acted: string[] = [];
@@ -9103,6 +9158,48 @@ describe('annex-server', () => {
           await new Promise(resolve => setImmediate(resolve));
           expect(agentSystem.spawnAgent).not.toHaveBeenCalled();
         }, 15_000);
+
+        describe('shell ownership while a spawn is starting, reverse (P5 QA)', () => {
+          /**
+           * spawnShell as the real leaf runs it (pty-manager.test.ts pins that order against the real one):
+           * its cwd check (the first call's held open), then the fence, then it replaces whatever runs under
+           * the id and starts the new shell.
+           */
+          function shellLeaf() {
+            const acted: string[] = [];
+            let release!: () => void;
+            let holdNext = true;
+            vi.mocked(ptyManagerModule.spawnShell).mockImplementation((async (id: string, _cwd: string, opts?: { beforeSpawn?: () => void }) => {
+              if (holdNext) { holdNext = false; await new Promise<void>((resolve) => { release = resolve; }); }
+              opts?.beforeSpawn?.();
+              acted.push(`replace-and-spawn:${id}`);
+            }) as never);
+            return { acted, release: () => release() };
+          }
+
+          it('direct A disconnects mid-spawn and subscription B starts the same id: A never replaces B\'s shell', async () => {
+            const sub = await ready();
+            const a = Object.assign(new EventEmitter(), { readyState: 1, send: vi.fn(), ping: vi.fn() });
+            annexServer._testing.wsAuthTypes.set(a as any, 'mtls');
+            annexServer._testing.registerPeerSocket(a as any, MEMBER.fingerprint, MEMBER.tlsCertificateFingerprint);
+            annexServer._testing.wss!.emit('connection', a);
+            const leaf = shellLeaf();
+            a.emit('message', JSON.stringify({ type: 'pty:spawn-shell', payload: { sessionId: 'X', projectId: 'p' } }));
+            await vi.waitFor(() => expect(ptyManagerModule.spawnShell).toHaveBeenCalledTimes(1));
+            a.readyState = 3;
+            a.emit('close');
+            sub.client({ type: 'pty:spawn-shell', payload: { sessionId: 'X', projectId: 'p' } });
+            await vi.waitFor(() => expect(sub.frames().some((f) => f.type === 'pty:spawn-shell:ack')).toBe(true));
+            leaf.release();
+            await new Promise((resolve) => setTimeout(resolve, 20));
+            expect(leaf.acted).toEqual(['replace-and-spawn:X']);
+            expect(annexServer._testing.shellOwners.get('X')).toBe(sub.virtual()[0]);
+            const onData = vi.mocked(annexEventBus.onPtyData).mock.calls.at(-1)![0];
+            onData('X', 'only for the subscriber', 1);
+            await vi.waitFor(() => expect(sub.frames().some((f) => f.type === 'pty:data')).toBe(true));
+            expect(a.send).not.toHaveBeenCalledWith(expect.stringContaining('only for the subscriber'));
+          }, 15_000);
+        });
 
         describe('revocation inside the services\' own awaits (P5 QA b)', () => {
           /**

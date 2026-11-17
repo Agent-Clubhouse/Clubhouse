@@ -278,6 +278,12 @@ const reverseSockets = new WeakSet<WebSocket>();
  * Their output goes to that controller only, and they end when it disconnects.
  */
 const shellOwners = new Map<string, WebSocket>();
+/**
+ * The claim each owned shell id was taken with, made anew by every spawn
+ * (#3613): a spawn still starting acts only while its own claim stands, so a
+ * disconnect, a close, or anyone claiming the id again voids it.
+ */
+const shellReservations = new Map<string, object>();
 const MAX_SHELLS_PER_CONNECTION = 8;
 const MAX_SHELL_SESSION_ID_LENGTH = 128;
 
@@ -2107,6 +2113,7 @@ function closeShellsFor(ws: WebSocket): void {
   for (const [sessionId, owner] of [...shellOwners]) {
     if (owner !== ws) continue;
     shellOwners.delete(sessionId);
+    shellReservations.delete(sessionId);
     ptyManager.killShell(sessionId);
   }
 }
@@ -2159,11 +2166,25 @@ async function handleSpawnShellWs(ws: WebSocket, payload: Record<string, unknown
   }
   // Owned before it starts, so its first output already goes to this controller only.
   shellOwners.set(sessionId, ws);
+  const reservation = {};
+  shellReservations.set(sessionId, reservation);
+  const authorized = controlFence(ws);
+  // Checked again inside the spawn, after its cwd check and just before anything under this id is
+  // replaced or started (#3613). A shell is its controller's own: unlike an agent spawn, it doesn't go on
+  // once the controller has left, and never once its claim is gone (closed, or the id claimed again).
+  const beforeSpawn = () => {
+    authorized();
+    if (ws.readyState !== WebSocket.OPEN || shellOwners.get(sessionId) !== ws || shellReservations.get(sessionId) !== reservation) {
+      throw new Error('session_not_owned');
+    }
+  };
   try {
-    // Checked again inside the spawn, after its cwd check and just before the PTY starts (#3613).
-    await ptyManager.spawnShell(sessionId, cwd, { beforeSpawn: controlFence(ws) });
+    await ptyManager.spawnShell(sessionId, cwd, { beforeSpawn });
   } catch (err) {
-    if (shellOwners.get(sessionId) === ws && !ptyManager.isRunning(sessionId)) shellOwners.delete(sessionId);
+    if (shellOwners.get(sessionId) === ws && shellReservations.get(sessionId) === reservation && !ptyManager.isRunning(sessionId)) {
+      shellOwners.delete(sessionId);
+      shellReservations.delete(sessionId);
+    }
     sendPtyError(ws, op, err instanceof Error ? err.message : 'spawn_failed', { sessionId });
     return;
   }
@@ -2172,6 +2193,7 @@ async function handleSpawnShellWs(ws: WebSocket, payload: Record<string, unknown
     const current = shellOwners.get(sessionId);
     if (current === undefined || current === ws) {
       shellOwners.delete(sessionId);
+      shellReservations.delete(sessionId);
       ptyManager.killShell(sessionId);
     }
     return;
@@ -2186,6 +2208,7 @@ function handleCloseShellWs(ws: WebSocket, payload: Record<string, unknown>): vo
     return;
   }
   shellOwners.delete(sessionId);
+  shellReservations.delete(sessionId);
   ptyManager.killShell(sessionId);
   safeSend(ws, JSON.stringify({ type: 'pty:close:ack', payload: { sessionId } }));
 }
@@ -5852,6 +5875,7 @@ function startServer(strict = false): Promise<void> {
     const shellOwner = shellOwners.get(agentId);
     if (shellOwner) {
       shellOwners.delete(agentId);
+      shellReservations.delete(agentId);
       safeSend(shellOwner, JSON.stringify({ type: 'pty:exit', payload: { agentId, exitCode } }));
       return;
     }
@@ -6290,6 +6314,7 @@ export function stop(): void {
   // Controllers' shells end with their connections, which end here.
   for (const sessionId of [...shellOwners.keys()]) {
     shellOwners.delete(sessionId);
+    shellReservations.delete(sessionId);
     ptyManager.killShell(sessionId);
   }
 

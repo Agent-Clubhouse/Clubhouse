@@ -2454,12 +2454,19 @@ describe('headless-manager _internal helpers', () => {
       expect(killStructuredChild).not.toHaveBeenCalled();
     });
 
-    it('beforeSpawn: checked after the last await, just before the process starts (#3613 P5)', async () => {
-      // Allowed after the cwd check, revoked by the time the logs directory is ready.
-      let checks = 0;
-      const beforeSpawn = vi.fn(() => { if (++checks > 1) throw new Error('authorization_revoked'); });
-      await expect(spawnHeadless('fence-last', '/valid/path', '/usr/bin/agent', [], undefined, 'stream-json', undefined, undefined, undefined, beforeSpawn))
-        .rejects.toThrow('authorization_revoked');
+    it('beforeSpawn: a run revoked while its logs directory is made (the last await) never spawns (#3613 P5)', async () => {
+      let allowed = true;
+      let releaseLogs!: () => void;
+      // ensureLogsDir is fs.promises.mkdir: held open, as a slow disk would.
+      mockFsPromises.mkdir.mockImplementationOnce(() => new Promise((resolve) => { releaseLogs = () => resolve(undefined); }));
+      const beforeSpawn = vi.fn(() => { if (!allowed) throw new Error('authorization_revoked'); });
+      const spawning = spawnHeadless('fence-last', '/valid/path', '/usr/bin/agent', [], undefined, 'stream-json', undefined, undefined, undefined, beforeSpawn);
+      await vi.waitFor(() => expect(releaseLogs).toBeTypeOf('function'));
+      // The cwd check is behind it, and passed.
+      expect(beforeSpawn).toHaveBeenCalledTimes(1);
+      allowed = false;
+      releaseLogs();
+      await expect(spawning).rejects.toThrow('authorization_revoked');
       expect(beforeSpawn).toHaveBeenCalledTimes(2);
       expect(mockCpSpawn).not.toHaveBeenCalled();
     });
