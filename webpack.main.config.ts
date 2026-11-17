@@ -39,9 +39,18 @@ export const mainConfig: Configuration = {
       // Native FFI for the Copilot SDK's in-process transport, which we don't use.
       // Left alone, it emits koffi.node into the bundle (docs/copilot-sdk-driver.md).
       koffi: false,
+      // v2 defaults to native hosting. This app explicitly attaches over TCP;
+      // exclude the unused FFI host implementation as well as its dependency.
+      [path.resolve(__dirname, 'node_modules/@microsoft/copilot-sdk/dist/ffiRuntimeHost.js')]: false,
     },
   },
-  externals: {
-    'node-pty': 'commonjs node-pty',
-  },
+  externals: [
+    { 'node-pty': 'commonjs node-pty' },
+    // Runtime artifacts are resolved only by SDK-owned hosts, never by our TCP
+    // attachment. Keep both package generations out of the app's bundle.
+    ({ request }, callback) => {
+      if (request && /^@(?:microsoft|github)\/copilot-sdk-/.test(request)) return callback(null, `commonjs ${request}`);
+      callback();
+    },
+  ],
 };

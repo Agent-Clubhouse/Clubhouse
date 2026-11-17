@@ -10,14 +10,15 @@ import { loadCopilotSdk } from '../sdk-loader';
 async function main(): Promise<void> {
   const { CopilotClient, RuntimeConnection, approveAll } = await loadCopilotSdk();
   const client = new CopilotClient({
-    connection: RuntimeConnection.forStdio({ path: process.argv[2] }),
-    useLoggedInUser: false,
-    logLevel: 'error',
+    runtime: RuntimeConnection.forSpawnedStdio({ path: process.argv[2] }),
+    mode: 'coding-agent',
+    github: { useLoggedInUser: false },
+    observability: { logLevel: 'error' },
   });
   await client.start();
   const status = await client.getStatus();
   const auth = await client.getAuthStatus();
-  const session = await client.createSession({ onPermissionRequest: approveAll });
+  const session = await client.createSession({ permissions: { onRequest: approveAll } });
   const { sessionId } = session;
   await session.disconnect();
   await client.stop();

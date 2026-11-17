@@ -151,7 +151,7 @@ const SPECS: Spec[] = [
   {
     id: 'copilot_sdk',
     provider: 'copilot-cli',
-    sdk: '@github/copilot-sdk',
+    sdk: '@microsoft/copilot-sdk',
     runtimeLifecycle: true,
     make: () => new CopilotSdkChatDriver({ sessionOverrides: { availableTools: [] } }),
     isolate: copilotIsolation,

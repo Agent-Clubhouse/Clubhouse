@@ -6,7 +6,7 @@ Native chat drives two CLI protocols over stdio, and one over TCP:
 |---|---|---|
 | `test/chat-fixtures/claude/` | `claude-stream-json` | `claude -p --input-format stream-json --output-format stream-json` plus the control protocol (what the Agent SDK spawns) |
 | `test/chat-fixtures/codex/` | `codex-app-server` | `codex app-server` v2 JSON-RPC (no `jsonrpc` field) |
-| `test/chat-fixtures/copilot-sdk/` | `copilot-sdk` | `copilot --headless --port 0`, then JSON-RPC in `Content-Length` frames over TCP (what `@github/copilot-sdk` speaks) |
+| `test/chat-fixtures/copilot-sdk/` | `copilot-sdk` | `copilot --headless --port 0`, then JSON-RPC in `Content-Length` frames over TCP (what `@microsoft/copilot-sdk` 2.0.0 speaks, protocol 4) |
 
 The legacy Copilot ACP driver and its `acp` fixtures were removed with #2868; `chatFixturePath('copilot', …)` now reads `copilot-sdk/`.
 
@@ -232,7 +232,7 @@ To use the recorder by hand, pass the launch after `--`. It reads the CLI's port
 
 ```sh
 node scripts/chat-fixtures/record.mjs --protocol copilot-sdk --cli-name copilot \
-  --cli-version 1.0.105 --out /tmp/handshake.jsonl --script steps.jsonl -- copilot --headless --port 0
+  --cli-version 1.0.113 --out /tmp/handshake.jsonl --script steps.jsonl -- copilot --headless --port 0
 ```
 
 The test also passes `--redact` for your real home and the repo path, because skill paths from the runtime contain them and the CLI's throwaway `HOME` hides your real home from the recorder.

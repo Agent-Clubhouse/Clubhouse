@@ -4,11 +4,11 @@
 // lazy chunk that is only evaluated when a chat session uses it.
 //
 // Two things in the SDK's dependency tree never reach the bundle:
-//  - `koffi`, the native FFI library for the experimental in-process transport,
+//  - `koffi`, the native FFI library for the default in-process transport,
 //    which we don't use. webpack.main.config.ts aliases it away.
-//  - the bundled CLI (@github/copilot-sdk-<platform>, optional, ~159 MB), which
-//    the SDK only resolves when it isn't given a path to the user's `copilot`.
+//  - the bundled CLI (@microsoft/copilot-sdk-<platform>, optional, ~159 MB), which
+//    the SDK resolves for SDK-owned transports, never for explicit TCP attachment.
 
 export function loadCopilotSdk() {
-  return import(/* webpackChunkName: "github-copilot-sdk" */ '@github/copilot-sdk');
+  return import(/* webpackChunkName: "microsoft-copilot-sdk" */ '@microsoft/copilot-sdk');
 }

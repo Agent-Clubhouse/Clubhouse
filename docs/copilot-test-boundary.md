@@ -4,6 +4,18 @@ The standard `npm test` main project runs `driver.test.ts` and `fixture-replay.t
 
 The former `driver.test.ts` real-runtime describe and all of its assertions are retained in `driver.runtime.qa.ts`. `dispatcher-tools.runtime.qa.ts` runs the Dispatcher's real bridge and tool registrations against the same runtime (#3615). Their independent discovery config is `vitest.copilot-runtime.config.ts`, invoked with `npm run qa:copilot-runtime`. It fails if the bundled runtime is missing. This is separately authorized QA: use a clean, allowlisted environment and an OS-enforced network sandbox that permits only loopback before invoking it. `--no-auto-login`, invalid tokens and a fake model alone are not an outbound network boundary, including for the probe. The repository currently documents a macOS sandbox profile in `docs/chat-fixtures.md`; Linux and Windows need independently verified sandbox arrangements. Do not run this command on an ordinary workstation or CI runner as a substitute for that boundary.
 
+## Protocol-v4 migration coverage (#3685)
+
+The application embeds exact-pinned `@microsoft/copilot-sdk` 2.0.0 and attaches explicitly over TCP to the installed CLI; the supported paired CLI is 1.0.113. A devDependency alias, `copilot-sdk-v3-fixture` (exact `@github/copilot-sdk` 1.0.29), is used only in replay tests to reproduce the original old-SDK/protocol-4 error. Neither that alias, the optional runtime packages nor FFI can enter production chunks or the packaged node_modules tree: the static production check and Forge afterCopy enforce those exclusions.
+
+`handshake` exercises v4 success with no session or prompt. `protocol-v4` makes the real old SDK reject `3-3` versus `4`; `protocol-v3` makes v2 reject `4-4` versus `3`. Replay covers failed probes and an executable changing from v4 at probe to v3 at start, verifies no child remains, and checks zero inherited credentials. Chat-spawn tests also prepopulate the actual probe cache and verify protocol-specific CLI fallback plus restored prepared config. The synthetic protocol-99 fixture remains.
+
+The existing feature fixtures are **derived**, with headers recording their protocol-3 origin and synthesized protocol-4 negotiation/grouped create/resume options. Their session-event bodies are historical replay evidence, not new recordings from a v4 runtime. Independent real-login, provider, persistence and tool-behavior QA remains outstanding as described below.
+
+`handshake.runtime.qa.ts` is the separately authorized zero-token v4 handshake entry (run it by filename, rather than the full model QA suite). It may use the installed or SDK platform runtime only within a clean allowlisted environment and an OS-enforced loopback-only sandbox. It may call start/status/auth and stop, with no session or send required. Invalid tokens or an empty temporary home alone do not replace the network boundary. A successful real handshake proves negotiation only, not the feature or paid-model behaviors in the table.
+
+**Observed 2026-11-17 on macOS arm64:** the isolated `handshake.runtime.qa.ts` passed against SDK 2.0.0 / CLI 1.0.113, reporting protocol 4 and a missing login. The parent process used an allowlist containing only temporary home/config/cache/state/temp directories and PATH; `sandbox-exec` denied outbound network except loopback, and denied access to the real Copilot/Codex/GitHub credential directories and macOS keychains. No session was created and no prompt was sent. This is zero-token negotiation evidence only; real-login and feature QA below remains outstanding.
+
 ## Behavior mapping
 
 | Former real-runtime coverage | Standard evidence | Real-runtime evidence retained in QA |

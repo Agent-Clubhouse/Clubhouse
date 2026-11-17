@@ -1,5 +1,5 @@
 /**
- * The driver against the real runtime npm installs (@github/copilot-sdk-<platform>)
+ * The driver against the real runtime npm installs (@microsoft/copilot-sdk-<platform>)
  * and a local fake model. This does not itself prevent outbound connections or
  * inherited credentials. Run only inside an authorized loopback-only sandbox
  * with a clean environment (see docs/copilot-test-boundary.md).
@@ -15,7 +15,7 @@ import { COPILOT_SDK_CAPABILITIES, copilotPlanAction, CopilotSdkChatDriver, pars
 import { startFakeModel, type FakeModel } from './__fixtures__/fake-model';
 
 const platform = `${process.platform}-${process.arch}`;
-const runtime = path.resolve(__dirname, '../../../../node_modules/@github', `copilot-sdk-${platform}`, 'prebuilds', platform, process.platform === 'win32' ? 'copilot-runtime.exe' : 'copilot-runtime');
+const runtime = path.resolve(__dirname, '../../../../node_modules/@microsoft', `copilot-sdk-${platform}`, 'prebuilds', platform, process.platform === 'win32' ? 'copilot-runtime.exe' : 'copilot-runtime');
 const BASH = process.platform === 'win32' ? 'powershell' : 'bash';
 
 const tmp = fs.mkdtempSync(path.join(fs.realpathSync(os.tmpdir()), 'copilot-sdk-driver-'));

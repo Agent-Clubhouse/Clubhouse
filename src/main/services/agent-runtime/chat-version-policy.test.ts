@@ -73,11 +73,11 @@ describe('chat CLI version policy', () => {
 
   it('keeps the Copilot SDK driver off CLIs below its floor, which open in the CLI view', () => {
     expect(evaluateCliVersion('copilot_sdk', 'copilot-cli', '1.0.82').status).toBe('below_min');
-    expect(evaluateCliVersion('copilot_sdk', 'copilot-cli', '1.0.83').status).toBe('ok');
-    expect(evaluateCliVersion('copilot_sdk', 'copilot-cli', '1.0.106-2').status).toBe('ok');
-    expect(evaluateCliVersion('copilot_sdk', 'copilot-cli', '1.0.107').status).toBe('ok');
-    expect(evaluateCliVersion('copilot_sdk', 'copilot-cli', '1.0.108-0').status).toBe('untested');
-    expect(evaluateCliVersion('copilot_sdk', 'copilot-cli', '1.0.108').status).toBe('untested');
+    expect(evaluateCliVersion('copilot_sdk', 'copilot-cli', '1.0.83').status).toBe('below_min');
+    expect(evaluateCliVersion('copilot_sdk', 'copilot-cli', '1.0.106-2').status).toBe('below_min');
+    expect(evaluateCliVersion('copilot_sdk', 'copilot-cli', '1.0.113').status).toBe('ok');
+    expect(evaluateCliVersion('copilot_sdk', 'copilot-cli', '1.0.114-0').status).toBe('untested');
+    expect(evaluateCliVersion('copilot_sdk', 'copilot-cli', '1.0.114').status).toBe('untested');
     // The removed ACP driver's own range is gone with it (#2709); only the SDK's is checked.
     expect(TESTED_CLI_VERSIONS).not.toHaveProperty('copilot_acp');
   });

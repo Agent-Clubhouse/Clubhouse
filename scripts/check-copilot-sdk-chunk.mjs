@@ -4,7 +4,7 @@
  * "Packaging"). Builds the main-process bundle with the production webpack
  * config, with the SDK loader made reachable from the main entry, and checks that:
  *
- *  - the SDK is emitted as its own lazy chunk (`github-copilot-sdk`), so the main
+ *  - the SDK is emitted as its own lazy chunk (`microsoft-copilot-sdk`), so the main
  *    entry chunk contains no SDK code, and that chunk stays under 1 MB;
  *  - no CLI or native binary is emitted: not the SDK's per-platform runtime
  *    (~159 MB), and not `koffi` or its prebuilt binaries;
@@ -31,7 +31,7 @@ import { fileURLToPath } from 'node:url';
 const require = createRequire(import.meta.url);
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 export const LIMIT_BYTES = 1024 * 1024;
-const SDK_CHUNK = 'github-copilot-sdk';
+const SDK_CHUNK = 'microsoft-copilot-sdk';
 const SDK_LOADER = './src/main/chat/copilot/sdk-loader.js';
 const SMOKE_ENTRY = './src/main/chat/copilot/__fixtures__/sdk-bundle-smoke.ts';
 const SMOKE_BUNDLE = 'sdk-bundle-smoke.js';
@@ -39,7 +39,7 @@ const SMOKE_BUNDLE = 'sdk-bundle-smoke.js';
 /** Emitted files that mean a CLI or native binary reached the build. */
 const LEAKED_ASSET = /copilot-sdk-|copilot-runtime|koffi|msalruntime|OneAuth|native_modules|\.(node|exe|dll|dylib|so)$/i;
 /** Bundled modules that should never be reachable from the SDK's chunk. */
-const LEAKED_MODULE = /node_modules[\\/](koffi[\\/]|@koromix[\\/]|@github[\\/]copilot-sdk-)/;
+const LEAKED_MODULE = /node_modules[\\/](copilot-sdk-v3-fixture[\\/]|koffi[\\/]|@koromix[\\/]|@(?:github|microsoft)[\\/]copilot-sdk-|@microsoft[\\/]copilot-sdk[\\/]dist[\\/]ffiRuntimeHost\.js)/;
 
 export const findLeakedAssets = (names) => names.filter((n) => LEAKED_ASSET.test(n));
 export const findLeakedModules = (resources) => resources.filter((r) => LEAKED_MODULE.test(r));
@@ -81,7 +81,7 @@ const fmt = (n) => `${(n / 1024 / 1024).toFixed(2)} MB`;
 function findRuntime() {
   const platform = `${process.platform}-${process.arch}`;
   const binary = process.platform === 'win32' ? 'copilot-runtime.exe' : 'copilot-runtime';
-  const runtime = path.join(root, 'node_modules', '@github', `copilot-sdk-${platform}`, 'prebuilds', platform, binary);
+  const runtime = path.join(root, 'node_modules', '@microsoft', `copilot-sdk-${platform}`, 'prebuilds', platform, binary);
   if (!existsSync(runtime)) return undefined;
   // The SDK makes it executable the same way when it picks this file itself.
   if (process.platform !== 'win32') chmodSync(runtime, 0o755);
@@ -181,7 +181,7 @@ export async function checkCopilotSdkChunk({ requireElectron = false, staticOnly
     const { compilation } = stats;
     const { chunkGraph } = compilation;
     const entryChunks = new Set(compilation.entrypoints.get('main').chunks);
-    const sdkModule = /node_modules[\\/]@github[\\/]copilot-sdk[\\/]/;
+    const sdkModule = /node_modules[\\/]@microsoft[\\/]copilot-sdk[\\/]/;
     const resources = [];
     for (const m of compilation.modules) {
       for (const inner of m.modules ?? [m]) {
@@ -198,14 +198,18 @@ export async function checkCopilotSdkChunk({ requireElectron = false, staticOnly
     const leakedModules = findLeakedModules(resources);
     if (leakedModules.length) failures.push(`Bundle contains modules it shouldn't: ${leakedModules.join(', ')}`);
 
-    const report = { limitBytes: LIMIT_BYTES, sdkBytes, mainEntryBytes: mainBytes };
+    // Exercise the same package-node_modules staging and exclusion assertion
+    // as Forge's afterCopy, without making or launching an Electron app.
+    const { prepareNativeModules } = require('./package-native-modules.js');
+    prepareNativeModules(root, path.join(outDir, 'staged-app'));
+    const report = { packagedNodeModules: 'checked: no SDK test alias, native runtime or FFI', limitBytes: LIMIT_BYTES, sdkBytes, mainEntryBytes: mainBytes };
     if (staticOnly) {
       report.runtimeSmoke = 'not run: static-only';
       return { report, failures };
     }
     const runtime = findRuntime();
     if (!runtime) {
-      failures.push(`No @github/copilot-sdk-${process.platform}-${process.arch} in node_modules, so the bundled smoke can't run. Was it installed with optional dependencies?`);
+      failures.push(`No @microsoft/copilot-sdk-${process.platform}-${process.arch} in node_modules, so the bundled smoke can't run. Was it installed with optional dependencies?`);
       return { report, failures };
     }
 

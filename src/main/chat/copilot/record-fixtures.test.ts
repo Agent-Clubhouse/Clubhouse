@@ -22,7 +22,7 @@ const REPO = path.resolve(__dirname, '../../../..');
 const RECORDER = path.join(REPO, 'scripts/chat-fixtures/record.mjs');
 const OUT = process.env.CLUBHOUSE_RECORD_COPILOT_SDK_OUT ?? path.join(REPO, 'test/chat-fixtures/copilot-sdk');
 const platform = `${process.platform}-${process.arch}`;
-const runtime = path.join(REPO, 'node_modules/@github', `copilot-sdk-${platform}`, 'prebuilds', platform, 'copilot-runtime');
+const runtime = path.join(REPO, 'node_modules/@microsoft', `copilot-sdk-${platform}`, 'prebuilds', platform, 'copilot-runtime');
 const enabled = process.env.CLUBHOUSE_RECORD_COPILOT_SDK === '1' && process.platform !== 'win32';
 
 type Entry = { from: string; t?: number; msg?: any; match?: unknown; raw?: string; stderr?: string; exit?: { code: number } };

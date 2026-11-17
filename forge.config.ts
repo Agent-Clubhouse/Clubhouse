@@ -11,6 +11,7 @@ import { FuseV1Options, FuseVersion, getCurrentFuseWire } from '@electron/fuses'
 import path from 'path';
 import fs from 'fs';
 
+import { prepareNativeModules } from './scripts/package-native-modules';
 import { mainConfig } from './webpack.main.config';
 import { rendererConfig } from './webpack.renderer.config';
 import webpack, { type Configuration } from 'webpack';
@@ -39,27 +40,6 @@ function useRpmSpecTemplate(): void {
   };
 }
 useRpmSpecTemplate();
-
-function copyNativeModule(srcRoot: string, destRoot: string, moduleName: string): void {
-  const src = path.join(srcRoot, 'node_modules', moduleName);
-  const dest = path.join(destRoot, 'node_modules', moduleName);
-  if (!fs.existsSync(src)) return;
-  fs.cpSync(src, dest, { recursive: true });
-
-  // Also copy transitive native dependencies listed in the module's package.json
-  const pkgPath = path.join(src, 'package.json');
-  if (fs.existsSync(pkgPath)) {
-    const pkg = JSON.parse(fs.readFileSync(pkgPath, 'utf-8'));
-    const deps = { ...pkg.dependencies, ...pkg.optionalDependencies };
-    for (const dep of Object.keys(deps)) {
-      const depSrc = path.join(srcRoot, 'node_modules', dep);
-      const depDest = path.join(destRoot, 'node_modules', dep);
-      if (fs.existsSync(depSrc) && !fs.existsSync(depDest)) {
-        fs.cpSync(depSrc, depDest, { recursive: true });
-      }
-    }
-  }
-}
 
 // Squirrel does NOT sign anything at build time (see .github/workflows/release.yml,
 // which signs the produced Setup.exe directly with signtool afterward). Every prior
@@ -213,7 +193,7 @@ const config: ForgeConfig = {
       (buildPath: string, _electronVersion: string, _platform: string, _arch: string, callback: (err?: Error) => void) => {
         try {
           const projectRoot = path.resolve(__dirname);
-          copyNativeModule(projectRoot, buildPath, 'node-pty');
+          prepareNativeModules(projectRoot, buildPath);
           callback();
         } catch (err) {
           callback(err as Error);

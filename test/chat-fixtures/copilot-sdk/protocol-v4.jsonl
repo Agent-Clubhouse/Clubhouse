@@ -1,0 +1,3 @@
+{"kind":"header","format":"clubhouse-chat-fixture","version":1,"protocol":"copilot-sdk","cli":{"name":"copilot","version":"1.0.113"},"source":"hand-made","args":["--headless","--port","0"],"description":"Explicit protocol-4 server: SDK 1.0.29 rejects with the user-reported 3-3 versus 4 error."}
+{"from":"client","t":15,"msg":{"jsonrpc":"2.0","id":0,"method":"connect","params":{"token":"REDACTED_CONNECTION_TOKEN","supportedTaskKinds":["agent","client","shell"]}}}
+{"from":"cli","t":35,"msg":{"jsonrpc":"2.0","id":0,"result":{"ok":true,"protocolVersion":4,"version":"1.0.113","taskKinds":["agent","shell","client"]}}}

@@ -647,7 +647,7 @@ require('readline').createInterface({ input: process.stdin }).on('line', line =>
 
       it.each([
         ['a failed handshake', { handshakeOk: false, error: 'protocol mismatch' }, 'handshake failed: protocol mismatch'],
-        ['a CLI below its floor', { handshakeOk: true, cliVersion: '1.0.82' }, 'older than chat supports (1.0.83 or newer)'],
+        ['a CLI below its floor', { handshakeOk: true, cliVersion: '1.0.82' }, 'older than chat supports (1.0.113 or newer)'],
       ])('opens the CLI view on %s, and says how to try chat again', async (_name, probe, why) => {
         const sdk = copilotDriver();
         mode.value = { mode: 'chat', driver: 'copilot_sdk' };
@@ -659,6 +659,37 @@ require('readline').createInterface({ input: process.stdin }).on('line', line =>
         expect(toasts()[0].message).not.toMatch(/ACP/);
         const logged = vi.mocked(appLog).mock.calls.map(([, , msg, opts]) => ({ msg, meta: opts?.meta as Record<string, unknown> }));
         expect(logged.find((l) => l.msg === 'Chat driver check' && l.meta.driver === 'copilot_sdk')?.meta).toMatchObject({ ok: false, reason: expect.stringContaining(why) });
+      });
+
+      it.each(['probe', 'cached-probe-start'] as const)('explains a protocol mismatch at %s and restores prepared config', async (failureAt) => {
+        const sdk = copilotDriver();
+        // An actual file identity is required for the production probe cache.
+        const binaryPath = __filename;
+        const installedCopilot = { ...copilot, getBinaryPath: () => binaryPath };
+        const error = 'SDK protocol version mismatch: SDK supports versions 4-4, but server reports version 3';
+        const probe = vi.spyOn(sdk, 'probe').mockResolvedValue({ handshakeOk: true, cliVersion: '1.0.113', capabilities: sdk.capabilities });
+        if (failureAt === 'probe') probe.mockResolvedValue({ handshakeOk: false, error, errorCode: 'protocol_error', capabilities: sdk.capabilities });
+        else {
+          const { probeDriver } = await import('./chat-driver-health');
+          const { chatLaunchEnvironment } = await import('./chat-spawn');
+          await probeDriver(sdk, binaryPath, chatLaunchEnvironment());
+          vi.spyOn(sdk, 'start').mockRejectedValue(Object.assign(new Error(error), { code: 'protocol_error' }));
+        }
+        expect(await tryStartChatAgent(params, installedCopilot, undefined, null)).toBe('terminal');
+        expect(probe).toHaveBeenCalledTimes(1);
+        expect(sdk.sessions).toHaveLength(0);
+        const message = toasts()[0].message;
+        expect(message).toContain(failureAt === 'probe' ? 'handshake failed' : 'failed to start');
+        expect(message).toContain('@microsoft/copilot-sdk 2.0.0 (protocol 4)');
+        expect(message).toContain('Copilot CLI 1.0.113');
+        expect(message).toContain('Update your installed Copilot CLI');
+        expect(message).toContain('Protocol-3 CLIs require a Clubhouse build with @github/copilot-sdk 1.x');
+        expect(message).toContain('sessions and configuration are preserved');
+        expect(message).not.toContain('restart the agent');
+        if (failureAt === 'cached-probe-start') {
+          const configPipeline = await import('../config-pipeline');
+          expect(configPipeline.restoreForAgent).toHaveBeenCalledWith(params.agentId);
+        }
       });
 
       it('reports an unregistered SDK driver and opens the CLI view', async () => {
