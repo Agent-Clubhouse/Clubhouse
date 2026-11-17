@@ -361,6 +361,8 @@ function PaletteButton({ onOpen }: { onOpen: () => void }) {
 
 /** What the hover card and the row's name say for a computer with no alias (#3607). */
 const UNKNOWN_COMPUTER = 'Unknown computer';
+/** Its short label, which fits a row without being cut. */
+const UNKNOWN_LABEL = 'Unknown';
 
 /**
  * A machine's name, short enough for an agent row (#3065). Where aliases
@@ -368,7 +370,7 @@ const UNKNOWN_COMPUTER = 'Unknown computer';
  * without hovering (#3607).
  */
 function shortMachineLabel(alias: string | undefined, idTail = ''): string {
-  const name = alias?.trim() || UNKNOWN_COMPUTER;
+  const name = alias?.trim() || UNKNOWN_LABEL;
   if (!idTail) return name.length > 14 ? `${name.slice(0, 13)}…` : name;
   const room = 14 - 1 - idTail.length;
   return `${name.length > room ? `${name.slice(0, room - 1)}…` : name} ${idTail}`;

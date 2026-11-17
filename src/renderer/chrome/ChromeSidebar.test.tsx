@@ -1011,10 +1011,10 @@ describe('ChromeSidebar', () => {
       expect(within(screen.getByTestId('project-p3')).queryByTestId('project-machine')).toBeNull();
     });
 
-    it('reads Unknown computer, in the label and the name, for a computer with no alias (#3607)', () => {
+    it('reads Unknown on the row and Unknown computer in the names for a computer with no alias (#3607)', () => {
       useAnnexClientStore.setState((st) => ({ satellites: st.satellites.map((x) => ({ ...x, alias: '  ' })) }));
       render(<ChromeSidebar />);
-      expect(within(screen.getByTestId(`agent-item-${ra}`)).getByTestId('agent-row-machine').textContent).toBe('Unknown compu…');
+      expect(within(screen.getByTestId(`agent-item-${ra}`)).getByTestId('agent-row-machine').textContent).toBe('Unknown');
       expect(nameOf(ra)).toHaveAccessibleName(`${agent(ra, rp).name} on Unknown computer`);
       expect(headerOf(rp)).toHaveAccessibleName('Site on Unknown computer');
     });
