@@ -8,12 +8,15 @@ import { federationStatusChanged } from './dispatcher-federation-policy';
 import { appLog } from './log-service';
 
 export const LEGACY_DEPTH_PAUSE = 'The cross-machine causal depth limit was reached.';
+export const LEGACY_RATE_PAUSE = 'The controller link rate limit was reached.';
+export const LEGACY_QUEUE_PAUSE = 'The controller link queue is full.';
+const retiredLimitPause = (reason: string) => [LEGACY_DEPTH_PAUSE, LEGACY_RATE_PAUSE, LEGACY_QUEUE_PAUSE].includes(reason);
 
-/** Only the removed automatic depth gate is retired. Human and unknown pauses stay. */
-export function liftLegacyDepthPauses(file: FederationRequestFile): boolean {
+/** Only the retired automatic fixed-limit pauses are lifted. Human and unknown pauses stay. */
+export function liftLegacyLimitPauses(file: FederationRequestFile): boolean {
   let changed = false;
   for (const [machine, reason] of Object.entries(file.paused)) {
-    if (reason !== LEGACY_DEPTH_PAUSE) continue;
+    if (!retiredLimitPause(reason)) continue;
     delete file.paused[machine];
     delete file.pauseEpochs?.[machine];
     delete file.pauseNotices?.[machine];
@@ -25,7 +28,7 @@ export function liftLegacyDepthPauses(file: FederationRequestFile): boolean {
 export class FederationInputNotReady extends Error {}
 
 export { FEDERATED_REQUEST_LIMITS } from '../../shared/dispatcher-federation-requests';
-import { FEDERATED_REQUEST_LIMITS } from '../../shared/dispatcher-federation-requests';
+import { FEDERATED_REQUEST_LIMITS, FederationBackpressure } from '../../shared/dispatcher-federation-requests';
 export interface FederationRequestFile {
   version: 1;
   requests: FederatedRequest[];
@@ -75,7 +78,7 @@ export function createFederationRequestStore(filename = 'dispatcher-federation-r
     if (unreadable) throw new Error('Federated request records are unreadable; no work was admitted.');
     if (!committed) {
       committed = structuredClone(value);
-      migrationPending = liftLegacyDepthPauses(committed);
+      migrationPending = liftLegacyLimitPauses(committed);
     }
     return structuredClone(committed);
   };
@@ -89,7 +92,7 @@ export function createFederationRequestStore(filename = 'dispatcher-federation-r
       committed = structuredClone(value);
       if (migrationPending) {
         migrationPending = false;
-        appLog('core:dispatcher', 'info', 'Retired Dispatcher depth pause cleared', { meta: { state: 'legacy_depth_pause_cleared' } });
+        appLog('core:dispatcher', 'info', 'Retired Dispatcher limit pause cleared', { meta: { state: 'legacy_limit_pause_cleared' } });
         federationStatusChanged();
       }
       // A link tripping (or a new pairing clearing it) changes its status everywhere it shows (#3349).
@@ -204,15 +207,15 @@ export function createFederatedRequests(d: FederationRequestDependencies) {
     await finishPause(r.machineId);
   }
   async function admit(r: FederatedRequest) {
-    let reason: string | undefined;
+    let pressure: FederationBackpressure | undefined;
     await d.store.update((file) => {
       if (file.paused[r.machineId] && (!file.pauseEpochs?.[r.machineId] || deliveryHash(file.pauseEpochs[r.machineId]) === deliveryHash(r.epoch))) throw new Error(`Controller link is paused: ${file.paused[r.machineId]}`);
       if (file.requests.some((q) => q.id === r.id || (r.direction === 'outgoing' && q.direction === 'outgoing' && q.callerId === r.callerId && q.machineId === r.machineId && q.targetId === r.targetId && q.originRequestId === r.originRequestId))) throw new Error('This request was already admitted. Retry with the same request id.');
       const now = d.now();
       const recent = (file.crossings[r.machineId] ?? []).filter((at) => now - at < 60_000);
-      if (recent.length >= FEDERATED_REQUEST_LIMITS.perMinute) reason = 'The controller link rate limit was reached.';
-      else if (file.requests.filter((q) => q.machineId === r.machineId && (q.delivery === 'accepted' || (q.direction === 'incoming' && !terminal(q.outcome)))).length >= FEDERATED_REQUEST_LIMITS.queued) reason = 'The controller link queue is full.';
-      if (reason) { file.paused[r.machineId] = reason; (file.pauseEpochs ??= {})[r.machineId] = r.epoch; return; }
+      if (recent.length >= FEDERATED_REQUEST_LIMITS.perMinute) pressure = new FederationBackpressure('rate_limited', LEGACY_RATE_PAUSE, Math.max(1, Math.min(...recent) + 60_000 - d.now()));
+      else if (file.requests.filter((q) => q.machineId === r.machineId && (q.delivery === 'accepted' || (q.direction === 'incoming' && !terminal(q.outcome)))).length >= FEDERATED_REQUEST_LIMITS.queued) pressure = new FederationBackpressure('queue_full', LEGACY_QUEUE_PAUSE, 1000);
+      if (pressure) return;
       file.crossings[r.machineId] = [...recent, now];
       // Retain ids longer than the transport's retry window; never evict live work.
       file.requests = file.requests.filter((q) => now < q.expiresAt + 24 * 60 * 60_000
@@ -222,7 +225,7 @@ export function createFederatedRequests(d: FederationRequestDependencies) {
         || (!terminal(q.outcome) && q.delivery === 'delivered' && current(q)));
       file.requests.push(r);
     }, () => current(r));
-    if (reason) { d.record({ ...r, delivery: 'refused' }, 'crossing'); await pause(r, reason); throw new Error(reason); }
+    if (pressure) { d.record({ ...r, delivery: 'refused' }, 'crossing'); d.recordLimit(); throw pressure; }
     d.record(r, 'crossing');
   }
   async function presentIncoming(request: FederatedRequest) {
@@ -287,16 +290,13 @@ export function createFederatedRequests(d: FederationRequestDependencies) {
       if (!this.allowed(machine, args, tool)) throw new Error('The controller link is paused after a fixed limit was reached.');
       const envelope = tool === 'hand_off_request' ? parseFederationEnvelope(args.envelope) : undefined;
       if (envelope?.kind === 'pause' || envelope?.kind === 'request') return;
-      const file = d.store.get();
-      const parent = [...file.requests, ...Object.values(file.news ?? {})].filter((r) => r.machineId === machine).sort((a, b) => b.createdAt - a.createdAt)[0];
-      let reason: string | undefined;
+      let pressure: FederationBackpressure | undefined;
       await d.store.update((file) => {
         const recent = (file.crossings[machine] ?? []).filter((at) => d.now() - at < 60_000);
-        if (recent.length >= FEDERATED_REQUEST_LIMITS.perMinute) reason = 'The controller link rate limit was reached.';
-        if (reason) { file.paused[machine] = reason; (file.pauseEpochs ??= {})[machine] = d.epoch(machine); }
+        if (recent.length >= FEDERATED_REQUEST_LIMITS.perMinute) pressure = new FederationBackpressure('rate_limited', LEGACY_RATE_PAUSE, Math.max(1, Math.min(...recent) + 60_000 - d.now()));
         else file.crossings[machine] = [...recent, d.now()];
       });
-      if (reason) { if (parent) await pause({ ...parent, reason }, reason); else d.recordLimit(); throw new Error(reason); }
+      if (pressure) { d.recordLimit(); throw pressure; }
     },
     async duplicate(machine: string, agent: string, args: Record<string, unknown>) {
       const envelope = parseFederationEnvelope(args.envelope);
@@ -317,7 +317,7 @@ export function createFederatedRequests(d: FederationRequestDependencies) {
       await this.crossing(machine, cause, args, tool);
       d.record(sample, 'crossing');
     },
-    async news(origin: AuthenticatedAnnexOrigin, targetId: string, cause: AnnexCallContext, args: Record<string, unknown>, tool = 'send_message', deliveryId = cause.rootId) {
+    async news(origin: AuthenticatedAnnexOrigin, targetId: string, cause: AnnexCallContext, _args: Record<string, unknown>, _tool = 'send_message', deliveryId = cause.rootId) {
       const admissionId = deliveryHash([origin.machineId, d.epoch(origin.machineId), deliveryId]);
       const pending = d.store.get().pendingNews?.[admissionId];
       if (pending) {
@@ -330,17 +330,34 @@ export function createFederatedRequests(d: FederationRequestDependencies) {
         localRequestId: '', text: '', cause, epoch: d.epoch(origin.machineId), createdAt: d.now(), expiresAt: d.now() + FEDERATED_REQUEST_LIMITS.ttl,
         delivery: 'delivered', outcome: 'under_way', revision: 0, receivedRevision: 0, duplicates: 0,
       };
+      let pressure: FederationBackpressure | undefined;
+      let admitted = sample;
+      let duplicate = false;
       await d.store.update((file) => {
+        // Claim and count together. Concurrent retries cannot observe an input
+        // marker before resource admission has succeeded.
+        const saved = file.pendingNews?.[admissionId];
+        if (saved) {
+          if (saved.origin.agentId !== origin.agentId || saved.targetId !== targetId || !current(saved)
+            || deliveryHash(saved.cause) !== deliveryHash(cause)) throw new Error('News retry does not match its admitted origin and cause.');
+          admitted = saved; duplicate = true; return;
+        }
+        if (file.paused[origin.machineId] && (!file.pauseEpochs?.[origin.machineId]
+          || deliveryHash(file.pauseEpochs[origin.machineId]) === deliveryHash(sample.epoch))) throw new Error('The controller link is paused.');
+        const recent = (file.crossings[origin.machineId] ?? []).filter((at) => d.now() - at < 60_000);
+        if (recent.length >= FEDERATED_REQUEST_LIMITS.perMinute) {
+          pressure = new FederationBackpressure('rate_limited', LEGACY_RATE_PAUSE, Math.max(1, Math.min(...recent) + 60_000 - d.now()));
+          return;
+        }
+        file.crossings[origin.machineId] = [...recent, d.now()];
         (file.news ??= {})[origin.machineId] = sample;
         // Only unresolved runtime admissions need a second dedup marker.
         for (const [id, saved] of Object.entries(file.pendingNews ?? {})) if (saved.expiresAt <= d.now()) delete file.pendingNews![id];
         (file.pendingNews ??= {})[admissionId] = sample;
       }, () => current(sample));
-      try { await this.crossing(origin.machineId, cause, args, tool); d.record(sample, 'crossing'); return sample; }
-      catch (err) {
-        if (d.store.get().paused[origin.machineId]) await pause(sample, d.store.get().paused[origin.machineId]);
-        throw err;
-      }
+      if (pressure) { d.recordLimit(); throw pressure; }
+      if (!duplicate) d.record(sample, 'crossing');
+      return admitted;
     },
     async finishNews(machine: string, deliveryId: string) {
       const admissionId = deliveryHash([machine, d.epoch(machine), deliveryId]);
@@ -389,8 +406,8 @@ export function createFederatedRequests(d: FederationRequestDependencies) {
       const epoch = d.epoch(origin.machineId);
       if (!d.authorized(origin.machineId, origin.agentId, epoch)) throw new Error('Controller link is no longer authorized.');
       if (envelope.kind === 'pause') {
-        // An offline older peer may still deliver its retired depth notice.
-        if (envelope.reason === LEGACY_DEPTH_PAUSE) return;
+        // An offline older peer may still deliver a retired automatic limit notice.
+        if (retiredLimitPause(envelope.reason)) return;
         await d.store.update((file) => { file.paused[origin.machineId] = envelope.reason; (file.pauseEpochs ??= {})[origin.machineId] = epoch; }, () => d.authorized(origin.machineId, origin.agentId, epoch));
         const file = d.store.get();
         const news = file.news?.[origin.machineId];

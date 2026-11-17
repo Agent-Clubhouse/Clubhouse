@@ -2,6 +2,12 @@ import type { AnnexCallContext, AnnexDeliveryEpoch, AuthenticatedAnnexOrigin } f
 
 export const FEDERATED_REQUEST_LIMITS = Object.freeze({ queued: 30, perMinute: 20, ttl: 7 * 24 * 60 * 60_000, records: 1000 });
 
+/** An excess call was not admitted. The caller decides whether and when to try new work. */
+export class FederationBackpressure extends Error {
+  constructor(readonly code: 'rate_limited' | 'queue_full', message: string, readonly retryAfterMs: number) { super(message); }
+  details() { return { code: this.code, message: this.message, retryAfterMs: this.retryAfterMs }; }
+}
+
 /** Delivery is a transport fact. Only an explicit receiver report changes outcome. */
 export type FederationDelivery = 'accepted' | 'delivered' | 'refused' | 'expired';
 export type FederationOutcome = 'under_way' | 'waiting_user' | 'answered' | 'declined' | 'failed';

@@ -118,6 +118,25 @@ describe('production sleeping-controller delivery (#3345)', () => {
     expect(await receiveAgentCall(PEER, request)).toEqual(received);
     expect(state.spawn).toHaveBeenCalledTimes(1);
   });
+  it('returns durable resource refusals without retry storms and lets fresh work flow after the window', async () => {
+    let now = Date.now(); const clock = vi.spyOn(Date, 'now').mockImplementation(() => now);
+    try {
+      stopRequests = startFederatedRequests(); state.running = true;
+      for (let i = 0; i < 20; i++) await federatedRequests()!.outgoingNews(PEER, 'peer-controller', { rootId: `budget-${i}`, depth: 200 }, { message: 'Existing work' });
+      const request = call('rate-refused');
+      const first = await receiveAgentCall(PEER, request);
+      expect(first).toMatchObject({ delivery: { state: 'refused', reason: 'rate_limited' } });
+      if (!('result' in first)) throw new Error('Expected a receiving result');
+      expect(JSON.parse(first.result.content[0].text!)).toEqual({ error: { code: 'rate_limited', message: 'The controller link rate limit was reached.', retryAfterMs: 60_000 } });
+      for (let i = 0; i < 50; i++) expect(await receiveAgentCall(PEER, request)).toEqual(first);
+      expect(state.send).not.toHaveBeenCalled(); expect(state.spawn).not.toHaveBeenCalled();
+      expect(federatedRequests()!.allowed(PEER, {})).toBe(true);
+      now += 60_001;
+      expect(await receiveAgentCall(PEER, request)).toEqual(first); // A final refusal is never silently retried.
+      expect(await receiveAgentCall(PEER, call('new-after-window'))).toMatchObject({ delivery: { state: 'delivered' } });
+      expect(state.send).toHaveBeenCalledTimes(1);
+    } finally { clock.mockRestore(); }
+  });
   it('never admits a project agent as a controller or a forwarded-news authority', async () => {
     const from = { agentId: 'project-agent', name: 'Project agent' };
     expect(await receiveAgentCall(PEER, { ...call('fake-controller', 'hand_off_request'), from, args: {} })).toMatchObject({ delivery: { state: 'refused' } });

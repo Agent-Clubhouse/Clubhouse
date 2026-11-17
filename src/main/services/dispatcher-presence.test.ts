@@ -145,7 +145,7 @@ describe('remote Dispatcher presence (#3349)', () => {
   });
 
   // Repeated atomic durable-store writes are slower on loaded Windows runners.
-  it('shows a link tripped by a real fixed limit as tripped with the limit, and tells listeners (#3347)', async () => {
+  it('keeps the link active and quiet when a call meets resource backpressure', async () => {
     await learnFederationController('laptop', controller('controller-laptop'));
     const store = createFederationRequestStore(`federation-requests-${Date.now()}.json`);
     const requests = createFederatedRequests({
@@ -166,10 +166,9 @@ describe('remote Dispatcher presence (#3349)', () => {
       const off = onDispatcherPresenceChanged(heard);
       for (let i = 0; i < FEDERATED_REQUEST_LIMITS.perMinute; i++) await requests.offer('controller-here', 'laptop', 'controller-laptop', `r-${i}`, 'Work');
       await expect(requests.offer('controller-here', 'laptop', 'controller-laptop', 'over', 'Work')).rejects.toThrow('rate limit');
-      // The trip itself is the change signal: no device, Dispatcher or publication event happened.
-      expect(heard).toHaveBeenCalled();
+      expect(heard).not.toHaveBeenCalled();
       expect(getDispatcherPresence().remotes.find((r) => r.machineId === 'laptop')).toMatchObject({
-        state: 'online', link: { state: 'tripped', reason: 'The controller link rate limit was reached.' },
+        state: 'online', link: { state: 'active' },
       });
       off();
     } finally { stopRouter(); }

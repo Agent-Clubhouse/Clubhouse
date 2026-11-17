@@ -1,4 +1,5 @@
 import { activeAgentLinks } from '../../shared/connection-grants';
+import { FederationBackpressure } from '../../shared/dispatcher-federation-requests';
 import { federationRequestRouter } from './dispatcher-federation-policy';
 /**
  * Agents across machines (#3064, Annex Network stage 7).
@@ -296,7 +297,7 @@ export async function forwardPreparedAgentCall(callerId: string, targetId: strin
   }
   if (controllerLink && LOOP_TOOLS.has(tool)) {
     try { await federationRequestRouter()?.before(callerId, machine, to, context, args, tool); }
-    catch (err) { return text(err instanceof Error ? err.message : String(err), true); }
+    catch (err) { return text(err instanceof FederationBackpressure ? JSON.stringify({ error: err.details() }) : err instanceof Error ? err.message : String(err), true); }
   }
   // Counted here too, so the limit holds for messages both ways (D233).
   if (LOOP_TOOLS.has(tool) && !hit(pairKey({ machine: self, agentId: callerId }, { machine, agentId: to }), LOOP_LIMIT.windowMs, LOOP_LIMIT.messages, now)) return text(LOOP_MESSAGE, true);

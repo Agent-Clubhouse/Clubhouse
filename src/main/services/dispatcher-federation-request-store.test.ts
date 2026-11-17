@@ -21,9 +21,9 @@ describe('durable federation request records', () => {
     write.mockRestore();
     expect(createFederationRequestStore().get().paused.laptop).toBe('rate limit');
   });
-  it('lifts only an exact legacy depth trip from a pre-fix store fixture and persists it once', async () => {
+  it.each(['legacy-depth-trip.json', 'legacy-resource-trips.json'])('lifts only exact legacy automatic trips from %s and persists them once', async (fixtureName) => {
     const filename = path.join(fixture.dir, 'dispatcher-federation-requests.json');
-    const before = JSON.parse(fs.readFileSync(path.resolve('test/fixtures/dispatcher-federation/legacy-depth-trip.json'), 'utf8'));
+    const before = JSON.parse(fs.readFileSync(path.resolve('test/fixtures/dispatcher-federation', fixtureName), 'utf8'));
     fs.writeFileSync(filename, JSON.stringify(before));
     const store = createFederationRequestStore();
     expect(store.get().paused).toEqual({ human: 'Paused by the person', unknown: 'An unknown pause' });
@@ -31,10 +31,12 @@ describe('durable federation request records', () => {
     const after = createFederationRequestStore().get();
     expect(after.requests).toEqual(before.requests); expect(after.news).toEqual(before.news);
     expect(after.crossings).toEqual(before.crossings);
-    expect(after.pauseNotices?.laptop).toBeUndefined(); expect(after.pauseEpochs?.laptop).toBeUndefined();
+    for (const machine of ['laptop', 'queue-peer']) {
+      expect(after.pauseNotices?.[machine]).toBeUndefined(); expect(after.pauseEpochs?.[machine]).toBeUndefined();
+    }
     expect(after.pauseNotices?.human).toEqual(before.pauseNotices.human);
     expect(JSON.parse(fs.readFileSync(filename, 'utf8'))).toEqual(after);
-    expect(vi.mocked(appLog).mock.calls.filter((call) => call[2] === 'Retired Dispatcher depth pause cleared')).toHaveLength(1);
+    expect(vi.mocked(appLog).mock.calls.filter((call) => call[2] === 'Retired Dispatcher limit pause cleared')).toHaveLength(1);
   });
   it('loads and persists tracing depths beyond eight without changing history', async () => {
     const before = JSON.parse(fs.readFileSync(path.resolve('test/fixtures/dispatcher-federation/legacy-depth-trip.json'), 'utf8'));
