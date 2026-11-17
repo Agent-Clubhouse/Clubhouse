@@ -443,9 +443,9 @@ async function manageRemote(callerId: string, scope: CallerScope, args: Record<s
   if (!machineId) throw new ConnectionScopeError('This computer has no Annex identity.');
   const twoWay = optionalBoolean(args, 'twoWay') ?? optionalBoolean(args, 'two_way') ?? false;
   const pairs = [{ from: ends[0], to: ends[1] }, ...(twoWay ? [{ from: ends[1], to: ends[0] }] : [])];
-  const allow = readAllow(args, 'allow');
+  const allow = action === 'remove' ? undefined : readAllow(args, 'allow');
   if (action === 'tools' && !allow) throw new McpArgError('allow is required');
-  const back = readAllow(args, 'allow_back') ?? allow;
+  const back = action === 'remove' ? undefined : readAllow(args, 'allow_back') ?? allow;
   const allows = [allow, back];
   for (const [i, pair] of pairs.entries()) {
     const tools = allows[i];
@@ -473,7 +473,10 @@ async function manageRemote(callerId: string, scope: CallerScope, args: Record<s
     }
   }
   const disabled = allows.map((tools) => tools ? CONNECTION_SWITCHES.filter((s) => !tools.includes(s.tool)).map((s) => s.tool) : undefined);
-  const result = await updateAgentNetworkLinks(pairs, { agentId: callerId, machineId, name: scope.caller.name }, action, disabled);
+  const owner = { agentId: callerId, machineId, name: scope.caller.name };
+  const result = action === 'remove'
+    ? await updateAgentNetworkLinks(pairs, owner, action)
+    : await updateAgentNetworkLinks(pairs, owner, action, disabled);
   await rebuildPersistedBindings();
   recordDispatcherControl({ tool: action === 'add' ? 'connect_agents' : action === 'remove' ? 'disconnect_agents' : 'set_connection_tools', actorId: callerId, targets: refs, outcome: 'ok' });
   return text(JSON.stringify({ connections: result.map((d) => ({ from: d.from, to: d.to, tools: { allowed: CONNECTION_SWITCHES.filter((s) => !d.disabledTools.includes(s.tool)).map((s) => s.tool), disabled: d.disabledTools }, made_by_agent: callerId })) }));
@@ -514,6 +517,9 @@ async function handleConnectAgents(callerId: string, args: Record<string, unknow
 
 async function handleDisconnectAgents(callerId: string, args: Record<string, unknown>): Promise<McpToolResult> {
   try {
+    if (Object.keys(args).some((key) => !['from', 'to', 'twoWay', 'two_way'].includes(key))) {
+      throw new McpArgError('Unknown disconnect_agents argument. Only from, to, twoWay and two_way are accepted.');
+    }
     const scope = await callerScope(callerId, true);
     if (isRemotePair(args)) return await manageRemote(callerId, scope, args, 'remove');
     const { from, to, twoWay } = readPair(scope, args);
@@ -788,6 +794,7 @@ export function registerConnectionTools(): void {
         from: { type: 'string', description: CONNECTION_AGENT_REF },
         to: { type: 'string', description: CONNECTION_AGENT_REF },
         twoWay: { type: 'boolean', description: 'Also remove `to` → `from`. Default false.' },
+        two_way: { type: 'boolean', description: 'Compatibility spelling of twoWay.' },
       },
       required: ['from', 'to'],
     },

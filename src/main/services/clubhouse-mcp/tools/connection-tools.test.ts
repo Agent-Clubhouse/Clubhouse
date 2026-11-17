@@ -128,7 +128,7 @@ import {
 } from '../../orchestrator-connections';
 import { initGroupProjectLifecycle, _resetLifecycleForTesting } from '../../group-project-lifecycle';
 import { registerConnectionTools, GROUP_PROJECT_CREATOR_KEY } from './connection-tools';
-import { getConnectionDirection, removeConnectionDirections, setConnectionTools } from '../../connection-grants-store';
+import { getConnectionDirection, removeConnectionDirections, setConnectionLink, setConnectionTools } from '../../connection-grants-store';
 import { updateAgentGrantChanges } from '../../agent-grants-store';
 import { dropGrantRequestsFor, listGrantRequests, takeGrantRequest } from '../../grant-requests';
 import { recordDispatcherControl } from '../../../telemetry/dispatcher-telemetry';
@@ -468,6 +468,56 @@ describe('ordinary agents with connection.manage (#3336)', () => {
     expect((await call('connect_agents', { from: `first@${far}`, to: `second@${far}` })).isError).toBe(true);
     expect(getConnectionDirection({ agentId: 'first', machineId: far }, { agentId: 'second', machineId: far })).toBeUndefined();
     vi.restoreAllMocks();
+  });
+
+  it('refuses an approved disconnect with tool arguments and preserves the surviving user link (#3659)', async () => {
+    const self = Array(16).fill('aa').join(':');
+    const far = Array(16).fill('bb').join(':');
+    vi.spyOn(annexIdentity, 'getIdentity').mockReturnValue({ fingerprint: self } as ReturnType<typeof annexIdentity.getIdentity>);
+    vi.spyOn(annexCalls, 'isNetworkComputer').mockReturnValue(true);
+    try {
+      await grantConnections();
+      const ref = `remote@${far}`;
+      const from = { agentId: 'durable_lead' };
+      const to = { agentId: 'remote', machineId: far };
+      expect((await call('connect_agents', { from: 'lead', to: ref, allow: ['send_message'] })).isError).toBe(false);
+      await setConnectionLink(from, to, true);
+      const saved = getConnectionDirection(from, to)!;
+      expect(saved.disabledTools).toContain('send_file');
+      expect((await call('set_connection_tools', { from: 'lead', to: ref, allow: ['send_file'] })).isError).toBe(true);
+
+      await updateAgentGrantChanges('durable_lead', () => ({ changes: [{ action: 'connection.manage', target: { kind: 'any' }, mode: 'ask' }] }));
+      const hostile = { padding: 'x'.repeat(4500), from: 'lead', to: ref, allow: ['send_file'] };
+      expect((await call('disconnect_agents', hostile)).text).toContain('Needs you');
+      const request = listGrantRequests().find((r) => r.agentId === 'durable_lead')!;
+      expect(takeGrantRequest(request.requestId, true)).not.toBeNull();
+      const refused = await call('disconnect_agents', hostile);
+      expect(refused.isError).toBe(true);
+      expect(refused.text).toContain('Unknown disconnect_agents argument');
+      expect(getConnectionDirection(from, to)).toEqual(saved);
+      expect(getConnectionDirection(from, to)?.agentLinks?.[0].removedAt).toBeUndefined();
+
+      await grantConnections();
+      expect((await call('disconnect_agents', { from: 'lead', to: ref })).isError).toBe(false);
+      const remaining = getConnectionDirection(from, to)!;
+      expect(remaining.link).toEqual(saved.link);
+      expect(remaining.agentLinks?.[0].removedAt).toEqual(expect.any(String));
+      expect(remaining.disabledTools).toEqual(saved.disabledTools);
+      expect(remaining.disabledTools).toContain('send_file');
+      expect((await call('set_connection_tools', { from: 'lead', to: ref, allow: ['send_file'] })).isError).toBe(true);
+    } finally {
+      vi.restoreAllMocks();
+    }
+  });
+
+  it.each(['allow', 'allow_back', 'padding'])('refuses undefined local disconnect argument %s', async (key) => {
+    await grantConnections();
+    expect((await call('connect_agents', { from: 'lead', to: 'other' })).isError).toBe(false);
+    const refused = await call('disconnect_agents', { from: 'lead', to: 'other', [key]: ['send_file'] });
+    expect(refused.isError).toBe(true);
+    expect(refused.text).toContain('Unknown disconnect_agents argument');
+    expect(boundPairs()).toEqual(['durable_lead->durable_other']);
+    expect(await readConnections(projectPath)).toHaveLength(1);
   });
 
   it('connects, lists saved switches, changes one owned direction and disconnects without orchestration', async () => {
