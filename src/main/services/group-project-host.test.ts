@@ -23,6 +23,7 @@ vi.mock('./project-store', () => ({
   list: vi.fn(async () => [{ id: 'proj_a', name: 'A', path: '/projects/a' }, { id: 'proj_b', name: 'B', path: '/projects/b' }]),
 }));
 vi.mock('./agent-config', () => ({
+  listDurable: vi.fn(async (projectPath: string) => (fixture.agents[projectPath] ?? []).map(a => ({ ...a, name: a.id }))),
   peekDurableConfigsChecked: vi.fn(async (projectPath: string) => (fixture.unreadable.has(projectPath)
     ? { agents: [], readable: false }
     : { agents: fixture.agents[projectPath] ?? [], readable: true })),
@@ -712,6 +713,7 @@ it('persists a host-relative author address through disk and network snapshots',
 });
 
 it('serializes simultaneous admissions with a host post and keeps later admissions read-only', async () => {
+  fixture.agents['/projects/a'] = [{ id: 'one' }];
   const gp = await groupProjectHost.create('Race', { membership: { autoJoin: false, includeLinkedComputers: false } });
   await groupProjectHost.updateMembership(gp.id, d => {
     d.explicit.push({ address: 'one', kind: 'durable', name: 'One', addedAt: new Date().toISOString() });
