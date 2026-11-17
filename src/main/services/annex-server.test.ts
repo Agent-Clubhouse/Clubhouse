@@ -8752,6 +8752,27 @@ describe('annex-server', () => {
         }, 15_000);
       }
 
+      it('counts as connected only while the subscriber is allowed as reverse, even before its next frame', async () => {
+        await startAndPair();
+        const sub = subscribed();
+        await vi.waitFor(() => expect(sub.frames()[0]).toMatchObject({ type: 'snapshot' }));
+        expect(annexServer.connectedPeerFingerprints().has(MEMBER.fingerprint)).toBe(true);
+        // A one-to-one controller may control this machine directly, but never over a reverse connection.
+        current = { ...TEST_CONTROLLER };
+        expect(annexServer.connectedPeerFingerprints().has(MEMBER.fingerprint)).toBe(false);
+        expect(annexServer._testing.socketStillPaired(sub.virtual()[0])).toBe(false);
+      }, 15_000);
+
+      it('the server serves no subscription for a principal that is not a reverse one', async () => {
+        await startAndPair();
+        const sink = { send: vi.fn(() => true), end: vi.fn() };
+        const before = annexServer._testing.wss!.clients.size;
+        const handle = annexServer._testing.subscribeReverse({ fingerprint: MEMBER.fingerprint, pin: MEMBER.tlsCertificateFingerprint, role: 'member', via: 'direct' }, sink);
+        expect(handle).toBeNull();
+        expect(annexServer._testing.wss!.clients.size).toBe(before);
+        expect(sink.send).not.toHaveBeenCalled();
+      }, 15_000);
+
       it('is refused to a subscriber that is not an active desktop member here, and nothing is registered', async () => {
         await startAndPair();
         current = { ...MEMBER, kind: 'phone' };

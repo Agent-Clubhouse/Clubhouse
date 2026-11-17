@@ -6900,6 +6900,7 @@ export const _testing = {
     wsPeerPins.set(ws, pin);
   },
   socketStillPaired,
+  subscribeReverse,
   shellOwners,
   get wss() { return wss; },
   get heartbeatInterval() { return heartbeatInterval; },
