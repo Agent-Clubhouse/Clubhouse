@@ -171,7 +171,7 @@ describe('a queue of approvals from other computers answers the one acted on (#3
     within(rows()[0]).getByTestId('dispatcher-remote-approval-allow_once').focus();
     await user.keyboard('{Enter}');
     await waitFor(() => expect(document.activeElement).toBe(screen.getByRole('status')));
-    expect(screen.getByRole('status')).toHaveTextContent('Answered.');
+    expect(screen.getByRole('status')).toHaveTextContent('Previous request answered.');
   });
 
   it('clears the Answered notice when the head advances for any other reason', async () => {

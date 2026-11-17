@@ -94,7 +94,7 @@ export function RemoteApprovals() {
     <div className="flex flex-col gap-1" data-testid="dispatcher-remote-approvals">
       {/* Always here, so a screen reader hears the count change; seen only when there is something to say. */}
       <p ref={status} tabIndex={-1} role="status" className={`outline-none ${open.length > 1 || notice || waitingOn ? 'flex flex-wrap gap-x-2 text-xs text-ctp-overlay1' : 'sr-only'}`} data-testid="dispatcher-remote-approval-count">
-        {notice && <span data-testid="dispatcher-remote-approval-answered">Answered.</span>}
+        {notice && <span data-testid="dispatcher-remote-approval-answered">Previous request answered.</span>}
         {count && <span>{count}</span>}
         {waitingOn && <span data-testid="dispatcher-remote-approval-elsewhere">{waitingOn}</span>}
       </p>

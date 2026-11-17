@@ -9,7 +9,7 @@ import type { PendingPermission, PendingQuestion, PlanDocumentItem } from '../..
 import { PlanIcon, QuestionIcon, ShieldIcon } from './icons';
 import { ApprovalDiffPreview } from './ToolBlocks';
 import { shortName } from './view-model';
-import { isRepeatClick, swallowHeldKey } from '../../../utils/repeat-click';
+import { isAnsweringKey, isRepeatClick, swallowHeldKey } from '../../../utils/repeat-click';
 
 const ALLOW_KINDS = new Set<PermissionOption['kind']>(['allow_once', 'allow_session', 'allow_always']);
 const REJECT_KINDS = new Set<PermissionOption['kind']>(['reject_once', 'reject_always', 'cancel_turn']);
@@ -131,7 +131,7 @@ export function PermissionCard({ request, plan, queueSize, agentName, extras, on
   const onKeyDown = (e: KeyboardEvent<HTMLDivElement>) => {
     if (ownsKey(e) || dirty) return;
     // A held key repeats: it answers once, and never the request that takes this card's place.
-    if (e.repeat) { e.preventDefault(); return; }
+    if (e.repeat && isAnsweringKey(e.key)) { e.preventDefault(); return; }
     if (e.key === 'Enter') { e.preventDefault(); choose(primary); return; }
     if (e.key === 'Escape') { e.preventDefault(); choose(reject); return; }
     const i = digitIndex(e.key, request.options.length);
@@ -401,7 +401,7 @@ export function QuestionCard({ request, onAnswer, busy, autoFocus = true }: Ques
   // 1-9 pick an option of the open question; Enter sends once every question is answered.
   const onKeyDown = (e: KeyboardEvent<HTMLDivElement>) => {
     if (sent || ownsKey(e)) return;
-    if (e.repeat) { e.preventDefault(); return; }
+    if (e.repeat && isAnsweringKey(e.key)) { e.preventDefault(); return; }
     if (e.key === 'Enter' && !single) {
       if (complete) { e.preventDefault(); submit(); }
       return;

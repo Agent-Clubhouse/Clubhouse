@@ -106,6 +106,15 @@ describe('PermissionCard', () => {
     expect(respond).toHaveBeenCalledExactlyOnceWith('r1', 'allow_once');
   });
 
+  it('cancels the repeats of the answering keys on a card, and leaves holding Arrow, Page Down or Tab alone', () => {
+    const respond = vi.fn(async () => true);
+    render(<PermissionCard compact request={request()} queueSize={1} agentName="a" onRespond={respond} />);
+    const card = screen.getByTestId('chat-permission');
+    for (const key of ['Enter', 'Escape', '1', '2']) expect(fireEvent.keyDown(card, { key, repeat: true }), key).toBe(false);
+    for (const key of ['ArrowDown', 'ArrowUp', 'PageDown', 'Tab', ' ', 'a', '0']) expect(fireEvent.keyDown(card, { key, repeat: true }), key).toBe(true);
+    expect(respond).not.toHaveBeenCalled();
+  });
+
   it('the inline card keeps its single column, with no footer', () => {
     render(<PermissionCard request={request()} queueSize={1} agentName="a" onRespond={vi.fn(async () => true)} />);
     expect(screen.queryByTestId('chat-permission-body')).toBeNull();
@@ -287,6 +296,14 @@ describe('QuestionCard', () => {
     expect(onAnswer).not.toHaveBeenCalled();
     fireEvent.click(send, { detail: 1 });
     expect(onAnswer).toHaveBeenCalledExactlyOnceWith('qr', { q1: 'a', q2: 'c' });
+  });
+
+  it('a question card cancels the repeats of its answering keys, and leaves holding Arrow, Page Down or Tab alone', () => {
+    const { card, onAnswer } = renderCard(questions(2));
+    for (const key of ['Enter', '1']) expect(fireEvent.keyDown(card, { key, repeat: true }), key).toBe(false);
+    for (const key of ['ArrowDown', 'PageDown', 'Tab']) expect(fireEvent.keyDown(card, { key, repeat: true }), key).toBe(true);
+    expect(onAnswer).not.toHaveBeenCalled();
+    expect(screen.getByTestId('chat-question-step')).toHaveTextContent('1 of 2');
   });
 
   it('keeps keyboard focus on the card after the open question changes', () => {
