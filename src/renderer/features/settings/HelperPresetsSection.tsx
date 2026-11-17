@@ -37,6 +37,39 @@ export function orderedProviders<T>(providers: Readonly<Record<string, T>>): [st
   return Object.entries(providers).sort(([a], [b]) => rank(a) - rank(b) || a.localeCompare(b));
 }
 
+/** Why Auto skips a provider now, or null when it can pick it. A desktop that doesn't report state is taken as active. */
+function inactiveReason(view: Eligible): 'disabled' | 'unavailable' | 'both' | null {
+  const off = view.enabled === false;
+  const missing = view.available === false;
+  return off && missing ? 'both' : off ? 'disabled' : missing ? 'unavailable' : null;
+}
+
+function inactiveNote(name: string, reason: 'disabled' | 'unavailable' | 'both'): string {
+  const why = reason === 'disabled' ? 'turned off in Agents & providers'
+    : reason === 'unavailable' ? 'not available on this computer'
+      : 'turned off in Agents & providers and not available on this computer';
+  return `${name} is ${why}. Its presets are saved for later, and Auto does not pick it until that changes.`;
+}
+
+function statusText(view: Eligible): string | null {
+  if (view.enabled === undefined && view.available === undefined) return null;
+  return [view.enabled === undefined ? null : view.enabled ? 'Enabled' : 'Disabled', view.available === undefined ? null : view.available ? 'Available' : 'Unavailable']
+    .filter(Boolean).join(', ');
+}
+
+/** What Auto can pick from now, in the page's intro. */
+function autoIntro(providers: [string, ProviderRoutingView][]): string {
+  const active = providers.filter((entry): entry is [string, Eligible] => entry[1].autoEligible && entry[1].autoCandidate !== false && inactiveReason(entry[1]) === null);
+  const name = (id: string) => PROVIDER_NAMES[id] ?? id;
+  const main = active.filter(([id]) => id !== 'copilot-cli').map(([id]) => name(id));
+  const lastResort = active.some(([id]) => id === 'copilot-cli');
+  const tail = ' It balances plan use, not cost, and a helper stays on its provider for its whole task. An orchestrator’s own switch wins, and a project can turn it off.';
+  if (main.length === 0 && !lastResort) return `No provider is turned on and available right now, so Auto has nothing to pick until one is.${tail}`;
+  if (main.length === 0) return `Lets an orchestrator ask Clubhouse to start a helper on Copilot, the only provider turned on and available right now.${tail}`;
+  const pick = main.length > 1 ? `pick between ${main.join(' and ')} for a helper, favoring the CLI that has used less of its plan limit` : `start a helper on ${main[0]}, the only provider besides Copilot that is turned on and available right now`;
+  return `Lets an orchestrator ask Clubhouse to ${pick}${lastResort ? ', with Copilot as a last resort' : ''}.${tail}`;
+}
+
 type Eligible = Extract<ProviderRoutingView, { autoEligible: true }>;
 
 function ago(asOf: string, serverTime: string): string {
@@ -237,7 +270,7 @@ export function HelperPresetsSection({ title = 'Presets by difficulty', autoLabe
         )}
         {settings && (
           <p className={settingsHelp}>
-            Lets an orchestrator ask Clubhouse to pick between Claude Code and Codex for a helper, favoring the CLI that has used less of its plan limit, with Copilot as a last resort. It balances plan use, not cost, and a helper stays on its provider for its whole task. An orchestrator’s own switch wins, and a project can turn it off.
+            {autoIntro(providers)}
           </p>
         )}
         <p className={settingsHelp}>
@@ -258,6 +291,7 @@ export function HelperPresetsSection({ title = 'Presets by difficulty', autoLabe
             <div key={provider} className="mt-2" data-testid={`helper-presets-${provider}`}>
               <div className="flex items-center gap-2 text-xs text-ctp-overlay1">
                 <span>{PROVIDER_NAMES[provider] ?? provider}</span>
+                {statusText(view) && <span data-testid={`helper-presets-${provider}-status`}>{statusText(view)}</span>}
                 {view.choices.source === 'fallback' && <span>Model list may be out of date</span>}
                 <Button
                   kind="quiet"
@@ -288,6 +322,11 @@ export function HelperPresetsSection({ title = 'Presets by difficulty', autoLabe
                     Copilot's quota is unknown. Auto picks it only when no other provider is eligible, even if another provider's limit is low or its usage could not be checked.
                   </p>
                 </>
+              )}
+              {inactiveReason(view) && view.autoCandidate !== false && (
+                <p className="mt-0.5 text-xs text-ctp-overlay1" data-testid={`helper-presets-${provider}-inactive`}>
+                  {inactiveNote(PROVIDER_NAMES[provider] ?? provider, inactiveReason(view)!)}
+                </p>
               )}
               {view.autoCandidate === false && (
                 <p className="mt-0.5 text-xs text-ctp-overlay1" data-testid={`helper-presets-${provider}-not-candidate`}>

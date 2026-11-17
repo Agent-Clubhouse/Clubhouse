@@ -926,9 +926,12 @@ async function viewProvider(provider: PresetProvider, refresh: boolean): Promise
       appLog('core:mcp', 'warn', 'Helper presets: could not list models', { meta: { provider, error: errorType(err) } });
     }
   }
-  const [cells, quota] = await Promise.all([
+  // Reported only: the same two checks `prepareAuto` makes, which this read does not change.
+  const enabledList = getOrchestratorSettings().enabled ?? [];
+  const [cells, quota, available] = await Promise.all([
     Promise.all(AUTO_LEVELS.map((level) => viewCell(provider, level))),
     forcedQuota ? forcedQuota.then((forced) => forced.quota) : readProviderQuota(provider),
+    providerUsable(provider),
   ]);
   if (forcedQuota) {
     const quotaOutcome = (await forcedQuota).outcome;
@@ -939,6 +942,8 @@ async function viewProvider(provider: PresetProvider, refresh: boolean): Promise
   return {
     autoEligible: true,
     autoCandidate: isAutoCandidateProvider(provider),
+    enabled: enabledList.length === 0 || enabledList.includes(provider),
+    available,
     quota,
     choices,
     cells: Object.fromEntries(AUTO_LEVELS.map((level, i) => [level, cells[i]])) as Record<AutoLevel, PresetCellView>,
