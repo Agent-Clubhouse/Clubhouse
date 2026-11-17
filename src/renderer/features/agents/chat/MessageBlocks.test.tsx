@@ -42,6 +42,13 @@ describe('UserMessage', () => {
     expect(body.querySelector('ol')).toHaveAttribute('start', '3');
   });
 
+  it('keeps blank paragraphs and list boundaries in the sent bubble (#3619)', () => {
+    render(<UserMessage item={item({ text: 'first\n\nsecond\n- a\n- b\nlast' })} />);
+    const body = screen.getByTestId('chat-you-body');
+    expect([...body.children].map((el) => `${el.tagName}:${el.textContent}`)).toEqual(['DIV:first', 'DIV:', 'DIV:second', 'UL:ab', 'DIV:last']);
+    expect(body.children[1].querySelector('br')).not.toBeNull();
+  });
+
   it('keeps other Markdown and HTML literal and escaped', () => {
     const text = '# heading\n```js\n**literal code**\n```\npath_with_underscores/file.ts\n<tag>hi</tag>\n[link](https://example.com)\n    **indented block**';
     render(<UserMessage item={item({ text })} />);

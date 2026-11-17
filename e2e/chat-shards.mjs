@@ -25,6 +25,7 @@ export const CHAT_SHARDS = {
     'managed-agents.spec.ts',
   ],
   3: [
+    'chat-rich/composer-blocks.spec.ts',
     'chat-rich/queue-merging.spec.ts',
     'chat-rich/reading.spec.ts',
     'dispatcher-settings.spec.ts',

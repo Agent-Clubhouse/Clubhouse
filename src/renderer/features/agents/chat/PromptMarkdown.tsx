@@ -16,7 +16,8 @@ export function PromptMarkdown({ text }: { text: string }) {
     node.forEach((child, offset) => children.push(render(child, offset)));
     switch (node.type.name) {
       case 'hard_break': return <br key={key} />;
-      case 'paragraph': return <span key={key} className="whitespace-pre-wrap">{children}</span>;
+      // A block, so an empty paragraph (a blank line) still takes a line of height.
+      case 'paragraph': return <div key={key} className="whitespace-pre-wrap">{children.length ? children : <br />}</div>;
       case 'list_item': return <li key={key}>{children}</li>;
       case 'ordered_list': return <ol key={key} start={node.attrs.order} className="my-0 pl-5 list-decimal whitespace-pre-wrap">{children}</ol>;
       case 'bullet_list': return <ul key={key} className="my-0 pl-5 list-disc whitespace-pre-wrap">{children}</ul>;
@@ -25,6 +26,7 @@ export function PromptMarkdown({ text }: { text: string }) {
   }
   const blocks: ReactNode[] = [];
   doc.forEach((node, offset, index) => {
+    // Paragraphs are blocks now; the newline only keeps textContent (and copy) equal to the source.
     if (index && node.type.name === 'paragraph') blocks.push('\n');
     blocks.push(render(node, offset));
   });
