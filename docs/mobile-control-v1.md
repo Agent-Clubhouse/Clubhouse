@@ -689,12 +689,12 @@ Desktop and phones apply the same rules to a busy transcript (#2664). They are c
 
 **What groups.** A run of adjacent groupable items with at least 2 counted items becomes one expandable row, for example "Made 6 tool calls". With fewer than 2, the item shows as its normal row.
 
-- Counted: a top-level `tool_call` that hasn't failed, didn't exit non-zero, has no open permission request and shows no images. On desktop a routed message never counts: it stays out of every group and splits the tool calls around it into separate groups (#3614). Phones still count routed messages (`messageDisplay` says it's from others, no `sendState`, not a helper question) until they adopt this.
+- Counted: a top-level `tool_call` that hasn't failed, didn't exit non-zero, has no open permission request and shows no images. A routed message never counts on desktop (#3614): it stays out of every group and splits the tool calls around it into separate groups. Clubhouse-Go already shows routed parts as their own bubbles outside activity runs.
 - Carried: a thought, and a finished, non-streaming `agent_message` with no text. These stay in the group, in order, uncounted, and only when something counted follows. Otherwise they show after it.
 
 A group's identity is its first item's id, so it survives growing. Its rows aren't built until it opens, and each keeps its own open state.
 
-**What breaks a group and always stays visible.** An `agent_message` with text, and one still streaming even with no text yet; the user's own message; a question, plan, error, every notice, a turn end and a subagent card; a failed tool, a command that exited non-zero, a tool awaiting approval and a tool with visible images; a routed message on desktop, a routed message with `sendState` and a helper question on phones; a change of subagent id. A tool that later fails or needs approval leaves its group and splits it. Compaction stays one notice row, in progress and then settled.
+**What breaks a group and always stays visible.** An `agent_message` with text, and one still streaming even with no text yet; the user's own message; a question, plan, error, every notice, a turn end and a subagent card; a failed tool, a command that exited non-zero, a tool awaiting approval and a tool with visible images; a routed message; a change of subagent id. A tool that later fails or needs approval leaves its group and splits it. Compaction stays one notice row, in progress and then settled.
 
 **Failed output.** The row, exit status and error always show. Output of 6 lines or fewer starts open. Longer output starts closed with its last line showing. Blank lines, including lines of only whitespace, are left out of both the length and that last line, on the desktop and in Clubhouse-Go#217. The user's toggle wins.
 
@@ -703,7 +703,7 @@ A group's identity is its first item's id, so it survives growing. Its rows aren
 - an `agent_message` with no `subagentId` and non-empty text once the task marker is stripped (`messageId`), which counts while streaming once it has text, and includes slash command output
 - a `plan_document` (`planId`)
 - a `question` (`requestId`)
-- a routed message, on desktop only for now (`messageId`)
+- a routed message (`messageId`) on desktop. Whether Clubhouse-Go treats routed messages as stops is not yet verified.
 
 Tools, thoughts, the user's messages and subagent work aren't stops, and a stop is never inside a group. Previous goes to the top of a stop partly scrolled past, otherwise the stop before. Next goes to the first stop below the viewport's top.
 
@@ -715,7 +715,7 @@ Tools, thoughts, the user's messages and subagent work aren't stops, and a stop 
 
 | | Desktop | Phones |
 | --- | --- | --- |
-| Routed message | Its own bubble, never in a group and a navigation stop; folded to a preview with Show more when it has a newline or is over 120 characters, shorter ones show in full | Always compact, whatever the length; still counted in groups and not a stop |
+| Routed message | Its own bubble, never in a group and a navigation stop; folded to a preview with Show more when it has a newline or is over 120 characters, shorter ones show in full | Its own bubble with its own Show more (Clubhouse-Go); navigation stops not yet verified |
 | Single routine item | Its normal row | Compact |
 | Routed attachments | Shown on the message | Counted in the summary |
 | Finished thoughts | Carried in a group | Finished system messages stay as boundaries, because the wire has no reliable thought marker |
