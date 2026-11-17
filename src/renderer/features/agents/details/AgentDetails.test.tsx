@@ -4,6 +4,8 @@ import type { ActionView } from '../../../../shared/actions';
 import type { Agent } from '../../../../shared/types';
 import { DISPATCHER_PROJECT_ID } from '../../../../shared/dispatcher-types';
 import { useProjectStore } from '../../../stores/projectStore';
+import { useAnnexClientStore, type SatelliteConnection } from '../../../stores/annexClientStore';
+import { namespacedAgentId, namespacedProjectId } from '../../../stores/remoteProjectStore';
 import { createChatViewState } from '../../../stores/chatStore';
 import { AgentDetails, BRANCH_REFRESH_MS, relativeFolder, useBranchChanges } from './AgentDetails';
 import { DetailsToggle } from './DetailsToggle';
@@ -24,6 +26,7 @@ beforeEach(() => {
   useProjectStore.setState({ projects: [{ id: 'p1', name: 'proj', path: '/work/proj' }] as never });
   useAgentDetailsStore.setState({ open: true, settingsOpen: false, focus: null });
   useMcpBindingStore.setState({ bindings: [] });
+  useAnnexClientStore.setState({ satellites: [] });
   getProjectCanvasStore('p1').setState({ canvases: [], loaded: false });
   useAppCanvasStore.setState({ canvases: [], loaded: true });
   window.clubhouse.canvas.getAgentCanvases = vi.fn(async () => []);
@@ -33,6 +36,7 @@ beforeEach(() => {
 afterEach(() => {
   useProjectStore.setState({ projects: [] });
   useMcpBindingStore.setState({ bindings: [] });
+  useAnnexClientStore.setState({ satellites: [] });
 });
 
 describe('AgentDetails in the terminal', () => {
@@ -241,6 +245,83 @@ describe('AgentDetails for the Dispatcher', () => {
     render(<AgentDetails agent={dispatcher} />);
     await act(async () => useAgentDetailsStore.getState().reveal({ agentId: dispatcher.id, card: 'canvases' }));
     expect(screen.getByTestId('details-card-actions')).toHaveAttribute('data-open', 'true');
+  });
+});
+
+describe('AgentDetails for a remote Dispatcher', () => {
+  const hostAgent: Agent = { ...agent, id: 'remote-chat', projectId: DISPATCHER_PROJECT_ID, name: 'Navi' };
+  const remote: Agent = { ...hostAgent, id: namespacedAgentId('sat', hostAgent.id), projectId: namespacedProjectId('sat', DISPATCHER_PROJECT_ID) };
+  const satellite: SatelliteConnection = {
+    id: 'sat', alias: 'Mini', icon: '', color: 'indigo', fingerprint: 'mini', state: 'connected',
+    host: 'mini', mainPort: 1, pairingPort: 2, lastError: null,
+    snapshot: {
+      projects: [], agents: {}, quickAgents: {}, theme: null, orchestrators: [], pendingPermissions: [], lastSeq: 0,
+      dispatcher: { agent: hostAgent },
+      dispatcherPresence: { remotes: [
+        { machineId: 'remote-peer', machineName: 'Desk', address: 'c@desk', dispatcherName: 'Studio', label: 'Studio on Desk', state: 'working', link: { state: 'active' } },
+      ] },
+    },
+  };
+
+  beforeEach(() => {
+    useAnnexClientStore.setState({ satellites: [satellite] });
+    window.clubhouse.actions.list = vi.fn(async () => []);
+    window.clubhouse.mcpBinding.getConnectionGrants = vi.fn(async () => []);
+    window.clubhouse.dispatcher.getPresence = vi.fn(async () => ({ remotes: [
+      { machineId: 'local-only', machineName: 'Local peer', address: null, dispatcherName: 'Local', label: 'Local on Local peer', state: 'online' as const, link: { state: 'active' as const } },
+    ] }));
+  });
+
+  afterEach(() => {
+    window.clubhouse.dispatcher.getPresence = vi.fn(async () => ({ remotes: [] }));
+  });
+
+  it.each([DISPATCHER_PROJECT_ID, 'ordinary-project'])('uses Dispatcher cards for its snapshot record in %s, without local controls', async (projectId) => {
+    const chat = {
+      ...createChatViewState(remote.id), sessionId: 's1', provider: 'claude-code', driver: 'claude_agent_sdk' as const,
+      capabilities: { usage: 'session', subagents: 'native', limits: false } as never,
+    };
+    render(<AgentDetails agent={{ ...remote, projectId: namespacedProjectId('sat', projectId) }} chat={chat} />);
+    for (const card of ['settings', 'connections', 'other-machines', 'actions']) {
+      expect(screen.getByTestId(`details-card-${card}`)).toBeInTheDocument();
+      fireEvent.click(screen.getByTestId(`details-card-${card}-toggle`));
+    }
+    for (const card of ['changes', 'subagents', 'canvases', 'context', 'skills-mcp', 'session']) {
+      expect(screen.queryByTestId(`details-card-${card}`)).not.toBeInTheDocument();
+    }
+    expect(screen.getByTestId('other-machine-remote-peer')).toHaveTextContent('Studio on Desk');
+    await act(async () => {});
+    expect(screen.queryByTestId('other-machine-local-only')).not.toBeInTheDocument();
+    expect(screen.getByTestId('details-card-connections-summary')).toHaveTextContent('Change on Mini');
+    expect(screen.getByTestId('details-card-connections')).toHaveTextContent('They aren’t shared in this computer’s view.');
+    expect(screen.getByTestId('details-card-actions-summary')).toHaveTextContent('Change on Mini');
+    expect(screen.getByTestId('details-card-actions')).toHaveTextContent('Actions made by this Dispatcher are managed on Mini.');
+    expect(screen.getByTestId('details-settings-remote')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Add connection' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('switch')).not.toBeInTheDocument();
+    expect(window.clubhouse.actions.list).not.toHaveBeenCalled();
+    expect(window.clubhouse.mcpBinding.getConnectionGrants).not.toHaveBeenCalled();
+    expect(window.clubhouse.git.branchChanges).not.toHaveBeenCalled();
+  });
+
+  it('recognizes the namespaced Dispatcher project while its host is offline without a snapshot', () => {
+    useAnnexClientStore.setState({ satellites: [{ ...satellite, state: 'disconnected', snapshot: null }] });
+    render(<AgentDetails agent={remote} />);
+    expect(screen.queryByTestId('details-card-session')).not.toBeInTheDocument();
+    fireEvent.click(screen.getByTestId('details-card-other-machines-toggle'));
+    expect(screen.getByTestId('details-card-other-machines')).toHaveTextContent('Mini hasn’t shared its other machines here.');
+    expect(screen.queryByTestId('other-machine-local-only')).not.toBeInTheDocument();
+    expect(screen.getByTestId('details-card-actions-summary')).toHaveTextContent('Change on Mini');
+  });
+
+  it('keeps ordinary remote agents named Dispatcher on their normal cards', async () => {
+    render(<AgentDetails agent={{ ...agent, id: namespacedAgentId('sat', 'normal'), projectId: namespacedProjectId('sat', 'p1'), name: 'Dispatcher' }} />);
+    for (const card of ['settings', 'changes', 'skills-mcp', 'session', 'actions']) {
+      expect(screen.getByTestId(`details-card-${card}`)).toBeInTheDocument();
+    }
+    expect(screen.queryByTestId('details-card-connections')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('details-card-other-machines')).not.toBeInTheDocument();
+    await waitFor(() => expect(window.clubhouse.actions.list).toHaveBeenCalled());
   });
 });
 
