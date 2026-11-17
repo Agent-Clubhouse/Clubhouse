@@ -181,17 +181,21 @@ describe('GroupProjectBoard without a canvas', () => {
     await waitFor(() => expect(save).toHaveBeenCalledWith(GP, 100, 500));
   });
 
-  it('toggles legacy polling through the shared setting path, and nudges every member', async () => {
-    const setPolling = vi.spyOn(api(), 'setPolling').mockResolvedValue({ pollingEnabled: true, members: [] } as never);
-    const inject = vi.spyOn(api(), 'injectMessage').mockResolvedValue(true as never);
+  it.each([
+    [{}, 'Post notifications: On'],
+    [{ pollingEnabled: false }, 'Post notifications: On'],
+    [{ grants: { deliver: 'off' } }, 'Post notifications: Off'],
+    [{ pollingEnabled: true }, 'Checking for new posts: Legacy polling'],
+  ])('shows the confirmed delivery state without polling controls for %j', async (metadata, label) => {
+    useGroupProjectStore.setState({ projects: [{ ...project, metadata }] });
     await renderBoard();
-    fireEvent.click(screen.getByLabelText('Polling'));
-    await waitFor(() => expect(setPolling).toHaveBeenCalledWith(GP, true));
-    fireEvent.click(screen.getByRole('button', { name: 'Ask agents to start polling' }));
-    await waitFor(() => expect(inject).toHaveBeenCalledTimes(2));
+    expect(screen.getByRole('status', { name: 'Post notifications' })).toHaveTextContent(label);
+    expect(screen.queryByRole('switch', { name: 'Polling' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Ask agents to start polling' })).not.toBeInTheDocument();
   });
 
-  it('offers Resume to a member whose polling paused, with no canvas involved', async () => {
+  it('offers Resume to a member whose legacy polling paused, with no canvas involved', async () => {
+    useGroupProjectStore.setState({ projects: [{ ...project, metadata: { pollingEnabled: true } }] });
     vi.spyOn(api(), 'getPausedPolling').mockResolvedValue([{ agentId: 'a1', agentName: 'Builder' }]);
     await renderBoard();
     expect(await screen.findByText('Builder: polling paused')).toBeInTheDocument();

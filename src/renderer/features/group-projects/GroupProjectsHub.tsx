@@ -1,3 +1,4 @@
+import { postNotificationLabel } from '../../../shared/group-project-notifications';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { GroupProject } from '../../../shared/group-project-types';
 import { Button } from '../../components/Button';
@@ -46,7 +47,7 @@ function GroupRow({ project, projects, coverage, onOpen }: {
       <button
         type="button"
         aria-label={project.name}
-        aria-describedby={`group-project-scope-${project.id} group-project-members-${project.id} group-project-host-${project.id}${line ? ` group-project-coverage-${project.id}` : ''}`}
+        aria-describedby={`group-project-scope-${project.id} group-project-members-${project.id} group-project-host-${project.id} group-project-notifications-${project.id}${line ? ` group-project-coverage-${project.id}` : ''}`}
         data-testid={`group-project-row-${project.id}`}
         onClick={() => onOpen(project.id)}
         className="w-full min-w-0 rounded-md px-2.5 py-2 text-left text-xs focus-ring hover:bg-surface-0 text-ctp-subtext1"
@@ -56,7 +57,7 @@ function GroupRow({ project, projects, coverage, onOpen }: {
         <span id={`group-project-host-${project.id}`} className={`${settingsHelp} block break-words`}>{hostLine(project)}</span>
         {line && <span id={`group-project-coverage-${project.id}`} className={`${settingsHelp} block break-words`}>{line}</span>}
         <MemberCount id={project.id} />
-        <span className={`${settingsHelp} block`}>{project.metadata?.pollingEnabled ? 'Polling on' : 'Polling off'}</span>
+        <span id={`group-project-notifications-${project.id}`} className={`${settingsHelp} block`}>{postNotificationLabel(project)}</span>
       </button>
       <OfferToLink coverage={verified} className="px-2.5" />
     </li>

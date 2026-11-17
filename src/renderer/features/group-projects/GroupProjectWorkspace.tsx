@@ -185,7 +185,7 @@ function WorkspaceFor({ groupId, section, source, onBack, onSectionChange }: Gro
               <div className="h-full overflow-y-auto">
                 <div className="max-w-[720px] px-6 pb-20">
                   <RefusalsBand project={project} />
-                  <SectionBody section={active} project={project} ctx={ctx} />
+                  <SectionBody section={active} project={project} ctx={ctx} onOpenPermissions={() => choose('permissions')} />
                 </div>
               </div>
             )}
@@ -199,7 +199,7 @@ function RefusalsBand({ project }: { project: GroupProject }) {
   return <div className="px-0"><GroupProjectRefusals project={project} /></div>;
 }
 
-function SectionBody({ section, project, ctx }: { section: GroupWorkspaceSection; project: GroupProject; ctx: GroupProjectContextValue }): ReactElement | null {
+function SectionBody({ section, project, ctx, onOpenPermissions }: { section: GroupWorkspaceSection; project: GroupProject; ctx: GroupProjectContextValue; onOpenPermissions: () => void }): ReactElement | null {
   switch (section) {
     case 'members': return <GroupProjectMembersSection groupProjectId={project.id} />;
     case 'permissions': return (
@@ -214,7 +214,7 @@ function SectionBody({ section, project, ctx }: { section: GroupWorkspaceSection
       </>
     );
     case 'actions': return <GroupProjectActionsSection groupProjectId={project.id} />;
-    case 'delivery': return <GroupProjectDeliverySection groupProjectId={project.id} />;
+    case 'delivery': return <GroupProjectDeliverySection groupProjectId={project.id} onOpenPermissions={onOpenPermissions} />;
     case 'canvases': return <GroupProjectLocations id={project.id} />;
     case 'details': return <GroupProjectDetailsSection project={project} />;
     default: return null;

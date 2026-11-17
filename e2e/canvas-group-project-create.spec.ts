@@ -75,9 +75,9 @@ test('creating a group project advances from naming form to initialized card', a
   await expect(nameInput).not.toBeVisible({ timeout: 10_000 });
   await expect(widget.getByRole('alert')).toHaveCount(0);
   await expect(widget.getByText('0 agents', { exact: true })).toBeVisible({ timeout: 10_000 });
-  const polling = widget.getByRole('switch', { name: 'Polling' });
-  await expect(polling).toBeVisible({ timeout: 5_000 });
-  await expect(polling).toHaveAttribute('aria-checked', 'false');
+  // A new group project uses post notifications; there is no reversible polling switch (#3668).
+  await expect(widget.getByRole('status', { name: 'Post notifications' }).first()).toHaveText('Post notifications: On', { timeout: 5_000 });
+  await expect(widget.getByRole('switch', { name: 'Polling' })).toHaveCount(0);
 
   const resizeHandle = widget.locator('[data-testid="canvas-view-resize-e"]').last();
   const resizeBox = await resizeHandle.boundingBox();
@@ -93,12 +93,9 @@ test('creating a group project advances from naming form to initialized card', a
   await widget.getByRole('button', { name: 'Post', exact: true }).click();
   await expect(widget.getByText('E2E bulletin round trip', { exact: true })).toBeVisible({ timeout: 10_000 });
 
-  // The expanded view has its own Polling switch in the header.
-  const headerPolling = widget.getByRole('switch', { name: 'Polling' });
-  await headerPolling.click();
-  await expect(headerPolling).toHaveAttribute('aria-checked', 'true', { timeout: 5_000 });
-  await headerPolling.click();
-  await expect(headerPolling).toHaveAttribute('aria-checked', 'false', { timeout: 5_000 });
+  // The expanded header shows the same notification state, not a polling switch (#3668).
+  await expect(widget.getByRole('status', { name: 'Post notifications' }).first()).toHaveText('Post notifications: On');
+  await expect(widget.getByRole('switch', { name: 'Polling' })).toHaveCount(0);
   // Reuse this record on another canvas and verify removing the second card.
   const tabs = window.getByRole('tablist', { name: 'Canvases' }).getByRole('tab');
   const firstTab = tabs.first();
@@ -113,15 +110,13 @@ test('creating a group project advances from naming form to initialized card', a
   const card = workspace.locator('[data-testid^="canvas-view-cv_"]').first();
   await card.getByLabel('Existing group project').selectOption({ label: 'E2E Group Project' });
   await card.getByRole('button', { name: 'Add existing' }).click();
-  const secondPolling = card.getByRole('switch', { name: 'Polling' });
-  await expect(secondPolling).toHaveAttribute('aria-checked', 'false');
-  await secondPolling.click();
-  await expect(secondPolling).toHaveAttribute('aria-checked', 'true');
+  // The second card shows the same record and state (#3668: no polling switch to flip).
+  await expect(card.getByRole('status', { name: 'Post notifications' }).first()).toHaveText('Post notifications: On', { timeout: 5_000 });
   await card.getByTestId('canvas-view-close').click();
   await expect(workspace.locator('[data-testid^="canvas-view-cv_"]')).toHaveCount(0);
 
   await window.getByTestId(firstId!).click();
   const original = workspace.locator('[data-testid^="canvas-view-cv_"]').first();
-  await expect(original.getByRole('switch', { name: 'Polling' })).toHaveAttribute('aria-checked', 'true');
+  await expect(original.getByRole('status', { name: 'Post notifications' }).first()).toHaveText('Post notifications: On');
   await expect(original.getByText('E2E bulletin round trip', { exact: true })).toBeVisible();
 });

@@ -5,7 +5,7 @@ import { useGroupProjectStore } from '../../../stores/groupProjectStore';
 import { useBulletinReadStore } from '../../../stores/bulletinReadStore';
 import { useRemoteProject } from '../../../hooks/useRemoteProject';
 import { useAgentStore } from '../../../stores/agentStore';
-import { pollingNudgeMsg } from '../../../../shared/polling-messages';
+import { postNotificationLabel } from '../../../../shared/group-project-notifications';
 import { useGroupProjectContext, type GroupProjectContextValue, type GroupProjectMember } from './useGroupProjectContext';
 import { useUIStore } from '../../../stores/uiStore';
 import { Button } from '../../../components/Button';
@@ -16,7 +16,7 @@ import { useAgentStatus } from '../../../features/agents/agent-status-store';
 import { GroupProjectBoard } from '../../../features/group-projects/board/GroupProjectBoard';
 import { GroupProjectDefaultsPanel } from '../../../features/group-projects/board/GroupProjectDefaultsPanel';
 import {
-  BroadcastModal, IconButton, MegaphoneIcon, NudgeIcon, OpenIcon, PausedPolling, PollingSwitch, POLL_INTERVAL_MS,
+  BroadcastModal, IconButton, MegaphoneIcon, OpenIcon, PausedPolling, POLL_INTERVAL_MS,
   ProjectScopeLine, StarIcon,
 } from '../../../features/group-projects/board/GroupProjectBoardParts';
 import { currentViewSource, openGroupWorkspaceFrom } from '../../../features/group-projects/groupWorkspaceSource';
@@ -226,7 +226,7 @@ function ProjectView({
       ) : isExpanded ? (
         <ExpandedProjectView groupProjectId={groupProjectId} onUpdateMetadata={onUpdateMetadata} ctx={ctx} />
       ) : (
-        <ProjectCard groupProjectId={groupProjectId} onUpdateMetadata={onUpdateMetadata} ctx={ctx} />
+        <ProjectCard groupProjectId={groupProjectId} ctx={ctx} />
       )}
     </div>
   );
@@ -237,14 +237,12 @@ function ProjectView({
 
 function ProjectCard({
   groupProjectId,
-  onUpdateMetadata,
   ctx,
 }: {
   groupProjectId: string;
-  onUpdateMetadata: (updates: Record<string, unknown>) => void;
   ctx: GroupProjectContextValue;
 }) {
-  const { project, members, loaded, loadProjects, setPolling, fetchDigest, injectMessage, getRoles, setRole } = ctx;
+  const { project, members, loaded, loadProjects, fetchDigest, injectMessage, getRoles, setRole } = ctx;
 
   const [showTapModal, setShowTapModal] = useState(false);
   const [topics, setTopics] = useState<TopicDigest[]>([]);
@@ -271,7 +269,7 @@ function ProjectCard({
   }, [groupProjectId, fetchDigest, getLastRead]);
 
   const description = project?.description || '';
-  const pollingEnabled = !!(project?.metadata?.pollingEnabled);
+  const pollingEnabled = project?.metadata?.pollingEnabled === true;
 
   const totalMessages = topics.reduce((sum, t) => sum + t.messageCount, 0);
   const totalNew = topics.reduce((sum, t) => sum + t.newMessageCount, 0);
@@ -291,24 +289,6 @@ function ProjectCard({
     setLeads(view.holders.filter((h) => h.lead !== 'off').map((h) => h.agentId));
   }, [groupProjectId, leads, setRole]);
 
-  const handleTogglePolling = useCallback(async () => {
-    const newVal = !pollingEnabled;
-    // Delegate persist + member start/stop side-effect to the shared main-process
-    // code path (setProjectPolling), the same one the toggle_polling MCP command
-    // uses, so the setting and the injected instructions can't diverge.
-    await setPolling(groupProjectId, newVal);
-    onUpdateMetadata({ pollingEnabled: newVal });
-  }, [pollingEnabled, setPolling, groupProjectId, onUpdateMetadata]);
-
-  const handleNudgePolling = useCallback(() => {
-    const name = project?.name || groupProjectId;
-    const agents = useAgentStore.getState().agents;
-    for (const member of members) {
-      const orchestrator = agents[member.agentId]?.orchestrator;
-      void injectMessage(member.agentId, pollingNudgeMsg(name, orchestrator));
-    }
-  }, [members, project, groupProjectId, injectMessage]);
-
   const activity = [
     `${topics.length} ${topics.length === 1 ? 'topic' : 'topics'}`,
     `${totalMessages} ${totalMessages === 1 ? 'message' : 'messages'}`,
@@ -324,8 +304,9 @@ function ProjectCard({
         </span>
         <span className="flex-1" />
         <IconButton label="Broadcast message" onClick={() => setShowTapModal(true)}><MegaphoneIcon /></IconButton>
-        <IconButton label="Ask agents to start polling" onClick={handleNudgePolling}><NudgeIcon /></IconButton>
-        <PollingSwitch on={pollingEnabled} onToggle={handleTogglePolling} />
+        <Tooltip content={`${project ? postNotificationLabel(project) : 'Loading post notifications...'}. Saved configuration, not confirmation that messages reached members on other computers.`}>
+          <span role="status" aria-label="Post notifications" tabIndex={0} className="min-w-0 truncate rounded-sm text-xs text-ctp-subtext1 focus-visible:outline focus-visible:outline-1 focus-visible:outline-ctp-accent">{project ? postNotificationLabel(project) : 'Loading post notifications...'}</span>
+        </Tooltip>
         <OpenGroupProjectButton groupProjectId={groupProjectId} ctx={ctx} />
       </div>
 
@@ -338,7 +319,7 @@ function ProjectCard({
         </Tooltip>
       )}
 
-      {!ctx.isRemote && <PausedPolling groupProjectId={groupProjectId} />}
+      {!ctx.isRemote && pollingEnabled && <PausedPolling groupProjectId={groupProjectId} />}
 
       {/* Members: the star gives an agent the lead grant on this group project (#3360). */}
       {members.length > 0 && (

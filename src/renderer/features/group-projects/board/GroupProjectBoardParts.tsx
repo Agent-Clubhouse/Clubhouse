@@ -1,9 +1,9 @@
+import { Toggle } from '../../../components/Toggle';
 import React, { useState, useCallback, useEffect, useId } from 'react';
 import type { TopicDigest } from '../../../../shared/group-project-types';
 import { useAnnexStore } from '../../../stores/annexStore';
 import { Button } from '../../../components/Button';
 import { Modal } from '../../../components/Modal';
-import { Toggle } from '../../../components/Toggle';
 import { Tooltip } from '../../../components/Tooltip';
 import type { GroupProjectContextValue, GroupProjectMember } from '../../../plugins/builtin/group-project/useGroupProjectContext';
 
@@ -126,21 +126,6 @@ export function IconButton({ label, tooltip, onClick, pressed, testId, children 
         className={pressed ? 'bg-surface-0 text-ctp-text' : ''}
       />
     </Tooltip>
-  );
-}
-
-export const POLLING_HINT = 'When on, member agents check the board for new messages on their own. When off, they only act when someone messages them.';
-
-/** Polling on or off. The word is the switch's label, so clicking it toggles too. */
-export function PollingSwitch({ on, onToggle }: { on: boolean; onToggle: () => void }) {
-  const switchId = useId();
-  return (
-    <span className="flex items-center gap-2 pl-1.5 pr-1.5 h-7 flex-shrink-0" data-testid="group-project-polling">
-      <Tooltip content={POLLING_HINT}>
-        <label htmlFor={switchId} className="text-xs text-ctp-subtext1 cursor-pointer">Polling</label>
-      </Tooltip>
-      <Toggle id={switchId} checked={on} onChange={onToggle} />
-    </span>
   );
 }
 

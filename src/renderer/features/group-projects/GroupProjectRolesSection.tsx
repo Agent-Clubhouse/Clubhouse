@@ -1,9 +1,11 @@
 import { useCallback, useEffect, useState } from 'react';
 import type { GroupProjectMembershipView, GroupProjectRolesView } from '../../../shared/group-project-types';
 import { Button } from '../../components/Button';
+import { useGroupProjectStore } from '../../stores/groupProjectStore';
 import { ipcErrorMessage } from '../../utils/ipc-error';
 import { SettingsBlock, SettingsSection, settingsError, settingsHelp } from '../settings/SettingsLayout';
 import type { GroupProjectRosterView } from '../../../shared/group-project-roster';
+import { GroupProjectDeliverySection } from './GroupProjectDeliverySection';
 import { isCopyRoster, rosterGaps, rosterUnavailableText, rosterVouched, time, useGroupRoster, useIsCopy } from './useGroupRoster';
 
 /**
@@ -36,6 +38,7 @@ export function GroupProjectRolesSection({ groupProjectId }: { groupProjectId: s
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const api = window.clubhouse.groupProject;
+  const savedGrants = useGroupProjectStore((s) => s.projects.find((p) => p.id === groupProjectId)?.metadata?.grants);
   // #3548: the roles the host enforces, for every member on every computer.
   const roster = useGroupRoster(groupProjectId, members);
   const where = useIsCopy(groupProjectId);
@@ -58,7 +61,7 @@ export function GroupProjectRolesSection({ groupProjectId }: { groupProjectId: s
     setRoles(null);
     void load();
     return api.onMembershipChanged((id) => { if (id === groupProjectId) void load(); });
-  }, [api, groupProjectId, load]);
+  }, [api, groupProjectId, load, savedGrants]);
 
   const change = async (run: () => Promise<GroupProjectRolesView>) => {
     setBusy(true);
@@ -86,80 +89,83 @@ export function GroupProjectRolesSection({ groupProjectId }: { groupProjectId: s
   };
 
   return (
-    <SettingsSection title="Permissions">
-      <SettingsBlock>
-        {!roles && !error && <p role="status" className={settingsHelp}>Loading permissions...</p>}
-        {error && (
-          <div className="flex flex-col items-start gap-2">
-            <p role="alert" className={settingsError}>{error}</p>
-            {!roles && <Button onClick={() => void load()}>Retry</Button>}
-          </div>
-        )}
-        {roles && (
-          <div className="flex flex-col gap-3">
-            <div className="flex flex-col gap-1">
-              <p className={settingsHelp}>What the group project does by itself.</p>
-              {([
-                ['deliver', 'Tell members about new posts'],
-                ['wake', 'Wake sleeping members'],
-                ['actions', 'Run group project Actions'],
-              ] as const).map(([grant, label]) => (
-                <label key={grant} className="flex items-center justify-between gap-2 text-sm text-ctp-text">
-                  {label}
-                  <select
-                    aria-label={label}
-                    className="text-xs bg-surface-0 text-ctp-text rounded px-1.5 py-0.5"
-                    value={roles.own[grant]}
-                    disabled={busy}
-                    onChange={(e) => void change(() => api.setOwnGrant(groupProjectId, grant, e.target.value as 'allow' | 'off'))}
-                  >
-                    <option value="allow">Allow</option>
-                    <option value="off">Off</option>
-                  </select>
-                </label>
-              ))}
+    <>
+      <SettingsSection title="Permissions">
+        <SettingsBlock>
+          {!roles && !error && <p role="status" className={settingsHelp}>Loading permissions...</p>}
+          {error && (
+            <div className="flex flex-col items-start gap-2">
+              <p role="alert" className={settingsError}>{error}</p>
+              {!roles && <Button onClick={() => void load()}>Retry</Button>}
             </div>
-            {copy && <HostRoles roster={roster} hostName={hostName} />}
-            <div className="flex flex-col gap-1">
-              {copy && (
-                <p className={settingsHelp} data-testid="roles-this-computer">
-                  On this computer. These grants cover lead tools that agents here run, such as tapping, waking or
-                  broadcasting to members. {hostName} doesn't use them when it applies a change, so the two lists can differ.
+          )}
+          {roles && (
+            <div className="flex flex-col gap-3">
+              <div className="flex flex-col gap-1">
+                <p className={settingsHelp}>What the group project does by itself. {copy && `These permissions belong to ${hostName}; changes wait for the host.`}</p>
+                {([
+                  ['deliver', 'Tell members about new posts'],
+                  ['wake', 'Wake sleeping members'],
+                  ['actions', 'Run group project Actions'],
+                ] as const).map(([grant, label]) => (
+                  <label key={grant} className="flex items-center justify-between gap-2 text-sm text-ctp-text">
+                    {label}
+                    <select
+                      aria-label={label}
+                      className="text-xs bg-surface-0 text-ctp-text rounded px-1.5 py-0.5"
+                      value={roles.own[grant]}
+                      disabled={busy}
+                      onChange={(e) => void change(() => api.setOwnGrant(groupProjectId, grant, e.target.value as 'allow' | 'off'))}
+                    >
+                      <option value="allow">Allow</option>
+                      <option value="off">Off</option>
+                    </select>
+                  </label>
+                ))}
+              </div>
+              {copy && <HostRoles roster={roster} hostName={hostName} />}
+              <div className="flex flex-col gap-1">
+                {copy && (
+                  <p className={settingsHelp} data-testid="roles-this-computer">
+                    On this computer. These grants cover lead tools that agents here run, such as tapping, waking or
+                    broadcasting to members. {hostName} doesn't use them when it applies a change, so the two lists can differ.
+                  </p>
+                )}
+                <p className={settingsHelp}>
+                  A lead can broadcast, tap, wake and put members to sleep, and tidy the board. An admin can change the
+                  group project itself. No agent has either until you give it here or on the permissions page.
                 </p>
-              )}
-              <p className={settingsHelp}>
-                A lead can broadcast, tap, wake and put members to sleep, and tidy the board. An admin can change the
-                group project itself. No agent has either until you give it here or on the permissions page.
-              </p>
-              {members.length === 0 && <p className={settingsHelp}>No members.</p>}
-              {members.length > 0 && (
-                <ul aria-label="Lead and admin" className="flex flex-col gap-1">
-                  {members.map((m) => (
-                    <li key={m.agentId} className="flex items-center justify-between gap-2">
-                      <span className="text-sm text-ctp-text min-w-0 truncate">{nameOf(m)}</span>
-                      <span className="flex items-center gap-2">
-                        <ModeSelect
-                          label={`Lead for ${nameOf(m)}`}
-                          value={holder(m.agentId)?.lead ?? 'off'}
-                          disabled={busy}
-                          onChange={(mode) => void change(() => api.setRole(groupProjectId, m.agentId, 'lead', mode))}
-                        />
-                        <ModeSelect
-                          label={`Admin for ${nameOf(m)}`}
-                          value={holder(m.agentId)?.admin ?? 'off'}
-                          disabled={busy}
-                          onChange={(mode) => void change(() => api.setRole(groupProjectId, m.agentId, 'admin', mode))}
-                        />
-                      </span>
-                    </li>
-                  ))}
-                </ul>
-              )}
+                {members.length === 0 && <p className={settingsHelp}>No members.</p>}
+                {members.length > 0 && (
+                  <ul aria-label="Lead and admin" className="flex flex-col gap-1">
+                    {members.map((m) => (
+                      <li key={m.agentId} className="flex items-center justify-between gap-2">
+                        <span className="text-sm text-ctp-text min-w-0 truncate">{nameOf(m)}</span>
+                        <span className="flex items-center gap-2">
+                          <ModeSelect
+                            label={`Lead for ${nameOf(m)}`}
+                            value={holder(m.agentId)?.lead ?? 'off'}
+                            disabled={busy}
+                            onChange={(mode) => void change(() => api.setRole(groupProjectId, m.agentId, 'lead', mode))}
+                          />
+                          <ModeSelect
+                            label={`Admin for ${nameOf(m)}`}
+                            value={holder(m.agentId)?.admin ?? 'off'}
+                            disabled={busy}
+                            onChange={(mode) => void change(() => api.setRole(groupProjectId, m.agentId, 'admin', mode))}
+                          />
+                        </span>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
             </div>
-          </div>
-        )}
-      </SettingsBlock>
-    </SettingsSection>
+          )}
+        </SettingsBlock>
+      </SettingsSection>
+      <GroupProjectDeliverySection groupProjectId={groupProjectId} migration />
+    </>
   );
 }
 

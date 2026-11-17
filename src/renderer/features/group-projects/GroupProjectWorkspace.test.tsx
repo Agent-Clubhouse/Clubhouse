@@ -117,6 +117,17 @@ describe('GroupProjectWorkspace routing', () => {
     expect(await screen.findByRole('button', { name: 'Back to Group Projects' })).toBeInTheDocument();
   });
 
+  it('opens Permissions from the compatible Delivery route with just one migration action', async () => {
+    useGroupProjectStore.setState({ projects: [{ ...hostGroup, metadata: { pollingEnabled: true, grants: { deliver: 'off' } } }] });
+    const { onSectionChange } = mount({ section: 'delivery' });
+    expect(screen.getByRole('status', { name: 'Post notifications' })).toHaveTextContent('Legacy polling');
+    expect(screen.queryByRole('button', { name: 'Use post notifications' })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Open Permissions' }));
+    expect(onSectionChange).toHaveBeenCalledWith('permissions');
+    expect(await screen.findByLabelText('Tell members about new posts')).toBeInTheDocument();
+    expect(screen.getAllByRole('button', { name: 'Use post notifications' })).toHaveLength(1);
+  });
+
   it('names the group, what it covers, and where its host is', async () => {
     mount();
     expect(await screen.findByRole('heading', { name: 'Release checks' })).toBeInTheDocument();
