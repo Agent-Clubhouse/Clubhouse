@@ -238,8 +238,6 @@ export interface ChatStreamProps {
   emptyState?: ReactNode;
   /** The agent's name. Saved history leaves it out: the agent's record has it, while it exists. */
   agentName?: string;
-  /** The Dispatcher's group chat (#3043): agents' interjections stay separate rows. */
-  groupChat?: boolean;
   /** The Dispatcher debug view (#3188): items the group chat would hide or clean, by id, each block marked. */
   debugMarks?: ReadonlyMap<string, GroupChatDebugMark>;
   /**
@@ -331,7 +329,6 @@ const ChatStreamInner = memo(function ChatStreamInner({
   emptyState,
   onShowEarlier,
   agentName,
-  groupChat = false,
   debugMarks,
   runs,
 }: ChatStreamProps) {
@@ -361,7 +358,7 @@ const ChatStreamInner = memo(function ChatStreamInner({
   // Tool calls whose permission request is still open (only those say "waiting for approval").
   const awaitingKey = state.pendingPermissions.map((p) => p.toolCallId ?? '').join('\n');
   const awaiting = useMemo(() => new Set(awaitingKey.split('\n').filter(Boolean)), [awaitingKey]);
-  const blocks = useMemo(() => buildStreamBlocks({ items, subagents, capabilities }, { mediaVisible: rich, awaitingApproval: awaiting, groupChat }), [items, subagents, capabilities, rich, awaiting, groupChat]);
+  const blocks = useMemo(() => buildStreamBlocks({ items, subagents, capabilities }, { mediaVisible: rich, awaitingApproval: awaiting }), [items, subagents, capabilities, rich, awaiting]);
   const stops = useMemo(() => blocks.flatMap((b, i) => (isNavigationStop(b) ? [i] : [])), [blocks]);
   const commandOutput = useMemo(() => commandOutputIds(items, commands), [items, commands]);
   const storedName = useAgentStore((s) => s.agents[state.agentId]?.name);

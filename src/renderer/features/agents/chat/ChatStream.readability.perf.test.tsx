@@ -53,6 +53,7 @@ describe('ChatStream on a busy transcript', () => {
     expect(diffs).toBe(0);
     expect(screen.queryAllByTestId('chat-command-card')).toHaveLength(0);
     expect(screen.queryAllByTestId('chat-sent-body')).toHaveLength(0);
-    expect(elements / turnsShown).toBeLessThan(25);
+    // Each turn's helper message now shows as its own folded bubble (#3614) instead of inside a tool group.
+    expect(elements / turnsShown).toBeLessThan(35);
   }, 120_000);
 });
