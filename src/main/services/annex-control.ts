@@ -661,7 +661,9 @@ function startRun(server: ControlTarget, principal: AnnexPrincipal, request: Con
   timer.unref?.();
   const ctx: DispatchContext = { remoteAddress: link.remoteAddress, signal: cancel.signal, deadline: deadline.signal, linkOpen: () => !link.closed };
   let dispatched: Promise<DispatchResult>;
-  try { dispatched = server.dispatch(principal, request, ctx); } catch (err) { dispatched = Promise.reject(err); }
+  try { dispatched = server.dispatch(principal, request, ctx); } catch (err) { // telemetry-exempt: passed on as a rejection, logged below
+    dispatched = Promise.reject(err);
+  }
   const done = dispatched
     .then((result): RunOutcome => (result.complete ? { kind: 'complete', response: toWire(result) } : { kind: 'incomplete', timedOut: deadline.signal.reason === 'timeout' }))
     .catch((err): RunOutcome => {
