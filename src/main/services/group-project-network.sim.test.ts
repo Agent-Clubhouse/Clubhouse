@@ -742,3 +742,24 @@ describe('polling author boundary (#3664)', () => {
     expect(result).toMatchObject({ pollingEnabled: false, queued: true });
   });
 });
+
+describe('startup roles migration with a replica (#3664)', () => {
+  it('does not let an unmarked replica prevent later local projects from migrating', async () => {
+    const remoteId = await sharedProject();
+    const local = await as(B, h => h.groupProjectHost.create('Legacy local'));
+    await as(B, h => h.groupProjectHost.update(local.id, { metadata: { admins: ['builder'] } }));
+    // The remote group was created since the host last ran startup migration.
+    // Registry order puts its unmarked replica before the legacy local group.
+    expect((await as(B, h => h.groupProjectHost.list())).map(gp => gp.id)).toEqual([remoteId, local.id]);
+    expect((await as(B, h => h.groupProjectHost.get(remoteId)))!.metadata.rolesMigratedAt).toBeUndefined();
+
+    const replicaBefore = structuredClone(await as(B, () => B.registry!.groupProjectRegistry.get(remoteId)));
+    const hostBefore = structuredClone(await as(A, () => A.registry!.groupProjectRegistry.get(remoteId)));
+    await expect(as(B, () => B.roles!.migrateGroupProjectRoles())).resolves.toBe(1);
+    expect(B.roles!.roleModeOf('builder', local.id, 'lead')).toBe('allow');
+    expect(B.roles!.roleModeOf('builder', local.id, 'admin')).toBe('allow');
+    expect((await as(B, h => h.groupProjectHost.get(local.id)))!.metadata.rolesMigratedAt).toBeTruthy();
+    expect(await as(B, () => B.registry!.groupProjectRegistry.get(remoteId))).toEqual(replicaBefore);
+    expect(await as(A, () => A.registry!.groupProjectRegistry.get(remoteId))).toEqual(hostBefore);
+  });
+});
