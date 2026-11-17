@@ -8641,10 +8641,13 @@ describe('annex-server', () => {
         expect(agentConfigModule.createDurable).toHaveBeenCalledTimes(1);
       }, 15_000);
 
-      it('a handler that never ends gets timeout, and a retry is told there is nothing to replay', async () => {
+      it('a handler that outlives its deadline gets timeout, a retry is told there is nothing to replay, and its slot is held until the operation settles', async () => {
         vi.mocked(projectStore.list).mockReturnValue([PROJECT] as any);
         vi.mocked(agentConfigModule.createDurable).mockClear();
-        vi.mocked(agentConfigModule.createDurable).mockImplementationOnce(() => new Promise(() => {}));
+        let finishCreate!: () => void;
+        vi.mocked(agentConfigModule.createDurable).mockImplementationOnce(() => new Promise((resolve) => {
+          finishCreate = () => resolve({ id: 'durable_slow', name: 'helper', color: 'emerald', createdAt: '2026-01-01' } as any);
+        }));
         await startAndPair();
         annexControl._setTargetTimeoutForTesting(200);
         try {
@@ -8653,6 +8656,11 @@ describe('annex-server', () => {
           expect(await ask('POST', durable, { name: 'helper', color: 'emerald' }, id)).toEqual({ error: 'timeout' });
           expect(await ask('POST', durable, { name: 'helper', color: 'emerald' }, id)).toEqual({ error: 'replay_unavailable' });
           expect(agentConfigModule.createDurable).toHaveBeenCalledTimes(1);
+          // The response was cut off, but createDurable is still running: its slot is still taken.
+          await new Promise((resolve) => setTimeout(resolve, 50));
+          expect(annexControl._activeRunsForTesting(MEMBER.fingerprint, MEMBER.tlsCertificateFingerprint)).toBe(1);
+          finishCreate();
+          await vi.waitFor(() => expect(annexControl._activeRunsForTesting(MEMBER.fingerprint, MEMBER.tlsCertificateFingerprint)).toBe(0));
         } finally {
           annexControl._setTargetTimeoutForTesting(null);
         }
@@ -8693,7 +8701,7 @@ describe('annex-server', () => {
         expect(send).not.toHaveBeenCalled();
         expect(annexControl.hasReverseLink(MEMBER.fingerprint)).toBe(false);
         ws.emit('message', Buffer.from(JSON.stringify({ v: 1, type: 'hello', features: ['request'] })), false);
-        expect(send).toHaveBeenCalledWith(JSON.stringify({ v: 1, type: 'hello', features: ['request'] }));
+        expect(send).toHaveBeenCalledWith(JSON.stringify({ v: 1, type: 'hello', features: ['request'] }), expect.any(Function));
         expect(annexControl.hasReverseLink(MEMBER.fingerprint)).toBe(true);
       }, 15_000);
 

@@ -719,6 +719,18 @@ describe('bounds on lingering work, unfinished answers and unread output (#3613 
     expect(control._activeRunsForTesting(REQUESTER, REQUESTER_PIN)).toBe(0);
   });
 
+  it('holds the slot until the route\'s own work settles, even after its answer went out', async () => {
+    await connected();
+    let finishWork!: () => void;
+    const work = new Promise<void>((resolve) => { finishWork = resolve; });
+    handler = async () => ({ ...ok({ answered: true }), operations: work });
+    expect((await control.request(TARGET, { method: 'POST', path: '/p', body: '{}' })).status).toBe(200);
+    expect(control._activeRunsForTesting(REQUESTER, REQUESTER_PIN)).toBe(1);
+    finishWork();
+    await flush();
+    expect(control._activeRunsForTesting(REQUESTER, REQUESTER_PIN)).toBe(0);
+  });
+
   it('closes the connection when the other side stops reading, failing what waits as transport_unavailable', async () => {
     const { targetWs, requesterWs } = await connected();
     targetWs.bufferedAmount = control.CONTROL_SEND_BUFFER_MAX_BYTES;

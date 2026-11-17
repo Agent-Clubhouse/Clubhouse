@@ -160,6 +160,12 @@ export interface ControlTarget {
 /** A handler's response. `complete`: it ended its response; anything else is never sent or remembered as an answer. */
 export interface DispatchResult extends ControlResult {
   complete: boolean;
+  /**
+   * Settles when the route's own work does, which can be after its response
+   * (one cut off at the deadline while its operation still runs). The
+   * requester's slot is held until then.
+   */
+  operations?: Promise<void>;
 }
 
 interface Pending {
@@ -546,7 +552,7 @@ async function onRequest(link: Link, message: Extract<ControlMessage, { type: 'r
 type RunOutcome = { kind: 'complete'; response: ControlHttpResponse } | { kind: 'incomplete'; timedOut: boolean } | { kind: 'failed' };
 
 interface Run {
-  /** Settles when the handler's run does, and only then is its slot free. */
+  /** Settles with the handler's response. Its slot frees later, once the route's own work has settled too. */
   done: Promise<RunOutcome>;
   deadline: AbortSignal;
   /** The requester stopped waiting: the handler sees its request close. */
@@ -578,12 +584,14 @@ function startRun(server: ControlTarget, principal: AnnexPrincipal, request: Con
       appLog('core:annex', 'error', 'A reverse request failed', { meta: { fingerprint: peer, method: request.method, error: err instanceof Error ? err.message : String(err) } });
       return { kind: 'failed' };
     })
-    .finally(() => {
-      clearTimeout(timer);
-      const left = (activeRuns.get(budget) ?? 1) - 1;
-      if (left > 0) activeRuns.set(budget, left);
-      else activeRuns.delete(budget);
-    });
+    .finally(() => clearTimeout(timer));
+  // The slot frees only when both the response and the route's own work have settled.
+  const settled = dispatched.then((result) => result.operations, () => undefined).then(() => undefined, () => undefined);
+  void settled.finally(() => {
+    const left = (activeRuns.get(budget) ?? 1) - 1;
+    if (left > 0) activeRuns.set(budget, left);
+    else activeRuns.delete(budget);
+  });
   return {
     done, deadline: deadline.signal,
     cancel: () => cancel.abort('cancelled'),

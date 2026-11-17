@@ -875,7 +875,7 @@ function readJsonBody(
   handler: (body: Record<string, unknown>) => void,
 ): void {
   const { req, res } = ctx;
-  readBody(req).then((raw) => {
+  const operation = readBody(req).then((raw) => {
     // The body can arrive long after the headers were checked: act only if the peer is still paired now.
     const recheck = ctx.reauthorize();
     if (isRefusal(recheck)) {
@@ -895,6 +895,8 @@ function readJsonBody(
     res.writeHead(400);
     res.end();
   });
+  // The handler's work can outlast its response (a response cut off at a deadline): a reverse request's slot waits for it.
+  ctx.trackOperation?.(operation);
 }
 
 /** The selected theme, with the renderer's synced colors for plugin and custom themes. */
@@ -2703,6 +2705,11 @@ type AnnexRouteContext = {
   reauthorize: () => PeerAuthResult;
   /** `principal.fingerprint`, the name the routes have always used. */
   mobilePrincipal?: string;
+  /**
+   * Reverse requests only (#3613 P3): work the route goes on doing after it
+   * returns, such as a body callback. The requester's slot is held until it settles.
+   */
+  trackOperation?: (operation: Promise<unknown>) => void;
 };
 
 type AnnexHttpRoute = {
@@ -4866,14 +4873,17 @@ async function dispatchReverseRequest(principal: AnnexPrincipal, request: Contro
     return true;
   };
   const serverRes = res as unknown as http.ServerResponse;
+  const operations: Array<Promise<unknown>> = [];
+  const trackOperation = (operation: Promise<unknown>) => { operations.push(operation); };
   await withRemoteParent(restTraceparent(req.headers.traceparent, true), () =>
     annexRestFlow(method, route.pattern, () => res.statusCode, () =>
       traceHttpResponse(serverRes, () => route.handler({
-        req, res: serverRes, url, method, requireMtls, principal, reauthorize: reauthorizeNow, mobilePrincipal: principal.fingerprint,
+        req, res: serverRes, url, method, requireMtls, principal, reauthorize: reauthorizeNow, mobilePrincipal: principal.fingerprint, trackOperation,
       }, match))),
     true,
   );
-  return res.result();
+  // The answer goes now; the slot is held until the route's own work has settled too, even past a cut-off response.
+  return { ...res.result(), operations: Promise.allSettled(operations).then(() => undefined) };
 }
 
 /** What the control connection asks of this server while it runs (#3613 P3). */
