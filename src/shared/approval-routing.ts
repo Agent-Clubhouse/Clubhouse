@@ -41,7 +41,7 @@ export function connectionApprovalView(row: ApprovalRow): ConnectionApprovalView
     const validTools = (value: unknown) => value === undefined || tools(value)
       && value.length <= CONNECTION_SWITCHES.length && value.every((v) => CONNECTION_SWITCHES.some((s) => s.tool === v));
     const validEnd = (value: unknown) => typeof value === 'string' && !!value.trim() && value.length <= 400
-      && !/[\u0000-\u001f\u007f]/.test(value);
+      && [...value].every((char) => char.charCodeAt(0) >= 32 && char.charCodeAt(0) !== 127);
     if ((row.arguments?.length ?? 0) > CONNECTION_APPROVAL_ARGUMENTS_MAX || Object.keys(a).some((key) => !keys.includes(key))
       || !validEnd(a.from) || !validEnd(a.to) || view.twoWay === undefined
       || a.twoWay !== undefined && typeof a.twoWay !== 'boolean' || a.two_way !== undefined && typeof a.two_way !== 'boolean'

@@ -48,6 +48,7 @@ describe('structured connection approval review', () => {
     { from: 'b', to: `a@${A}`, twoWay: 'true' },
     { from: 'b', to: `a@${A}`, allow: ['unknown'] },
     { from: 'b', to: `a@${A}`, allow: 'send_file' },
+    { from: 'b\u0000', to: `a@${A}` },
   ])('leaves unsafe arguments visible but unapprovable: %j', (args) => {
     expect(connectionApprovalView(row(args))!.canonical).toBeUndefined();
   });
