@@ -487,7 +487,7 @@ describe('group-project-polling', () => {
       mockIsRunning.mockReturnValue(true);
       bindMember(project.id, 'a-live', 'live');
       const { groupProjectHost } = await import('./group-project-host');
-      vi.mocked(groupProjectHost.update).mockResolvedValueOnce({ ...project, network: { role: 'replica', state: 'cached', waitingWrites: 1, refusals: [] } });
+      vi.mocked(groupProjectHost.update).mockResolvedValueOnce({ ...project, writeOutcome: { status: 'queued', waitingFor: 'Host', since: new Date().toISOString() }, network: { role: 'replica', state: 'cached', waitingWrites: 1, refusals: [] } });
       mockPtyWrite.mockClear();
       const result = await setProjectPolling(project.id, true, { author: { agentId: 'a-live', label: 'Live' } });
       expect(result).toMatchObject({ pollingEnabled: false, queued: true });

@@ -1169,7 +1169,7 @@ describe('GroupProjectTools', () => {
     grantLead('agent-1', project.id);
     bindingManager.bind('agent-1', { targetId: project.id, targetKind: 'group-project', label: 'Queued' });
     mockIsRunning.mockReturnValue(true);
-    vi.mocked(groupProjectHost.update).mockResolvedValueOnce({ ...project, network: { role: 'replica', state: 'cached', waitingWrites: 1, refusals: [] } });
+    vi.mocked(groupProjectHost.update).mockResolvedValueOnce({ ...project, writeOutcome: { status: 'queued', waitingFor: 'Host', since: new Date().toISOString() }, network: { role: 'replica', state: 'cached', waitingWrites: 1, refusals: [] } });
     const result = await callTool('agent-1', buildToolName(makeBinding({ agentId: 'agent-1', targetId: project.id, targetName: 'Queued' }), 'toggle_polling'), { enabled: true });
     expect(JSON.parse(result.content[0].text!)).toMatchObject({ queued: true, pollingEnabled: false, notifiedMembers: [] });
     expect(mockPtyWrite).not.toHaveBeenCalled();
