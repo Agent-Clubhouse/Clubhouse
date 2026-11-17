@@ -1,6 +1,6 @@
 import type { AnnexCallContext, AnnexDeliveryEpoch, AuthenticatedAnnexOrigin } from './annex-delivery';
 
-export const FEDERATED_REQUEST_LIMITS = Object.freeze({ depth: 8, queued: 30, perMinute: 20, ttl: 7 * 24 * 60 * 60_000, records: 1000 });
+export const FEDERATED_REQUEST_LIMITS = Object.freeze({ queued: 30, perMinute: 20, ttl: 7 * 24 * 60 * 60_000, records: 1000 });
 
 /** Delivery is a transport fact. Only an explicit receiver report changes outcome. */
 export type FederationDelivery = 'accepted' | 'delivered' | 'refused' | 'expired';

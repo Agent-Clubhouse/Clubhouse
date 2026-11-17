@@ -311,21 +311,21 @@ test('remote requests triage locally, send correlated outcomes and wait once acr
   expect((await remoteRequests(restarted.controller)).filter((r) => r.id === sent.id)).toHaveLength(1);
 });
 
-test('a causal ping-pong pauses both controller links and tells both chats', async () => {
+test('related autonomous work continues beyond eight causal hops', async () => {
   test.setTimeout(300_000);
   const { a, b, here, there } = await requestNetwork();
   let from = a; let to = b;
   let requestId = a.localId;
-  for (let depth = 0; depth <= 8; depth++) {
-    const offered = await offerRemote(from.controller, requestId, `Loop fixture crossing ${depth}`);
-    if (depth === 8) { expect(offered.isError).toBe(true); expect(offered.text).toContain('depth limit'); break; }
+  for (let depth = 0; depth <= 12; depth++) {
+    const offered = await offerRemote(from.controller, requestId, 'Related autonomous work');
     expect(offered.isError).toBe(false);
     const sent = JSON.parse(offered.text).request;
+    expect(sent.cause.depth).toBe(depth);
     await expect.poll(async () => (await remoteRequests(to.controller)).find((r) => r.id === sent.id)?.localRequestId, { timeout: 30_000 }).toBeTruthy();
     requestId = (await remoteRequests(to.controller)).find((r) => r.id === sent.id)!.localRequestId;
     [from, to] = [to, from];
   }
-  // The pause notice itself travels durably over the authenticated controller link.
-  await expect.poll(async () => JSON.stringify(await here.window.evaluate((id) => window.clubhouse.chat.readTranscript(id), a.ids.chat)), { timeout: 30_000 }).toContain('Controller link with Laptop is paused');
-  await expect.poll(async () => JSON.stringify(await there.window.evaluate((id) => window.clubhouse.chat.readTranscript(id), b.ids.chat)), { timeout: 30_000 }).toContain('Controller link with Desk is paused');
+  for (const [desktop, controller] of [[here, a], [there, b]] as const) {
+    expect(JSON.stringify(await desktop.window.evaluate((id) => window.clubhouse.chat.readTranscript(id), controller.ids.chat))).not.toContain('Controller link with');
+  }
 });

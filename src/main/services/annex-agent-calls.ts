@@ -72,7 +72,6 @@ const NAMES_MAX = 2000;
 const CLOCK_SKEW_MS = 5 * 60_000;
 /** How long a queued message refused as "not connected" is tried again, in case the link hasn't arrived there yet. */
 const NOT_CONNECTED_GRACE_MS = 10 * 60_000;
-export const ANNEX_CALL_MAX_DEPTH = 8;
 const DISPATCHER_CALL_TOOLS = FEDERATION_TOOLS;
 
 // ── Who is calling ──────────────────────────────────────────────────────────
@@ -247,7 +246,7 @@ export async function forwardPreparedAgentCall(callerId: string, targetId: strin
   if (!machine || !self || !transport) return text('That agent is on another machine, which this one is not connected to.', true);
   const machineName = transport.machineName(machine) ?? 'the other computer';
   if (!isNetworkComputer(machine)) return text(`${machineName} is not in this computer's Annex Network, so its agents can't be reached from here.`, true);
-  if (context !== undefined && !validContext(context)) return text('The trusted Annex causal context is invalid or exceeds its depth limit.', true);
+  if (context !== undefined && !validContext(context)) return text('The trusted Annex causal context is invalid.', true);
   args = structuredClone(args);
   if (context) context = structuredClone(context);
   const controllerLink = federationDirection({ agentId: callerId }, { agentId: to, machineId: machine })
@@ -629,7 +628,7 @@ function validContext(raw: unknown): raw is AnnexCallContext {
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return false;
   const c = raw as Record<string, unknown>;
   const id = (v: unknown) => typeof v === 'string' && v.length > 0 && v.length <= 200;
-  return id(c.rootId) && Number.isSafeInteger(c.depth) && Number(c.depth) >= 0 && Number(c.depth) <= ANNEX_CALL_MAX_DEPTH
+  return id(c.rootId) && Number.isSafeInteger(c.depth) && Number(c.depth) >= 0
     && (c.parentId === undefined || id(c.parentId)) && Object.keys(c).every((k) => ['rootId', 'depth', 'parentId'].includes(k));
 }
 

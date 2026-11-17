@@ -5,6 +5,22 @@ import type { FederatedRequest, FederationOutcome, FederationRequestEnvelope, Fe
 import { deliveryHash } from './annex-delivery-store';
 import { createSettingsStore } from './settings-store';
 import { federationStatusChanged } from './dispatcher-federation-policy';
+import { appLog } from './log-service';
+
+export const LEGACY_DEPTH_PAUSE = 'The cross-machine causal depth limit was reached.';
+
+/** Only the removed automatic depth gate is retired. Human and unknown pauses stay. */
+export function liftLegacyDepthPauses(file: FederationRequestFile): boolean {
+  let changed = false;
+  for (const [machine, reason] of Object.entries(file.paused)) {
+    if (reason !== LEGACY_DEPTH_PAUSE) continue;
+    delete file.paused[machine];
+    delete file.pauseEpochs?.[machine];
+    delete file.pauseNotices?.[machine];
+    changed = true;
+  }
+  return changed;
+}
 
 export class FederationInputNotReady extends Error {}
 
@@ -24,6 +40,8 @@ export interface FederationRequestFile {
 }
 export interface FederationRequestStore {
   get(): FederationRequestFile;
+  /** Persist any retired automatic pause before reconciliation sends saved work. */
+  ready?(): Promise<void>;
   update(change: (file: FederationRequestFile) => void, current?: () => boolean): Promise<void>;
 }
 const empty = (): FederationRequestFile => ({ version: 1, requests: [], paused: {}, crossings: {} });
@@ -35,7 +53,7 @@ export function createFederationRequestStore(filename = 'dispatcher-federation-r
       && typeof r.callerId === 'string' && typeof r.targetId === 'string' && typeof r.text === 'string' && typeof r.originRequestId === 'string'
       && r.origin && typeof r.origin.agentId === 'string' && typeof r.origin.machineId === 'string'
       && r.epoch && typeof r.epoch.sender === 'string' && typeof r.epoch.receiver === 'string'
-      && r.cause && typeof r.cause.rootId === 'string' && Number.isSafeInteger(r.cause.depth) && r.cause.depth >= 0 && r.cause.depth <= FEDERATED_REQUEST_LIMITS.depth
+      && r.cause && typeof r.cause.rootId === 'string' && Number.isSafeInteger(r.cause.depth) && r.cause.depth >= 0
       && Number.isFinite(r.createdAt) && Number.isFinite(r.expiresAt) && ['incoming', 'outgoing'].includes(r.direction)
       && ['accepted', 'delivered', 'refused', 'expired'].includes(r.delivery) && ['under_way', 'waiting_user', 'answered', 'declined', 'failed'].includes(r.outcome);
     if (!(raw.requests as FederatedRequest[]).every(valid) || (raw.news && !Object.values(raw.news).every((r) => valid(r as FederatedRequest))) || (raw.pendingNews && !Object.values(raw.pendingNews).every((r) => valid(r as FederatedRequest)))) throw new Error('Invalid federated request record');
@@ -50,14 +68,18 @@ export function createFederationRequestStore(filename = 'dispatcher-federation-r
     }
   } });
   let committed: FederationRequestFile | undefined;
+  let migrationPending = false;
   let serial: Promise<void> = Promise.resolve();
   const get = () => {
     const value = committed ?? store.get();
     if (unreadable) throw new Error('Federated request records are unreadable; no work was admitted.');
-    committed ??= structuredClone(value);
+    if (!committed) {
+      committed = structuredClone(value);
+      migrationPending = liftLegacyDepthPauses(committed);
+    }
     return structuredClone(committed);
   };
-  return { get, update(change, current = () => true) {
+  return { get, async ready() { get(); if (migrationPending) await this.update(() => {}); }, update(change, current = () => true) {
     const run = serial.catch(() => {}).then(async () => {
       const value = get();
       change(value);
@@ -65,6 +87,11 @@ export function createFederationRequestStore(filename = 'dispatcher-federation-r
       const pausesBefore = JSON.stringify([committed?.paused, committed?.pauseEpochs]);
       await store.save(value, { prepare: async () => {}, check: () => { if (!current()) throw new Error('Federation authorization changed.'); } });
       committed = structuredClone(value);
+      if (migrationPending) {
+        migrationPending = false;
+        appLog('core:dispatcher', 'info', 'Retired Dispatcher depth pause cleared', { meta: { state: 'legacy_depth_pause_cleared' } });
+        federationStatusChanged();
+      }
       // A link tripping (or a new pairing clearing it) changes its status everywhere it shows (#3349).
       if (JSON.stringify([value.paused, value.pauseEpochs]) !== pausesBefore) federationStatusChanged();
     });
@@ -162,7 +189,7 @@ export function createFederatedRequests(d: FederationRequestDependencies) {
     if (!notice.peerSent) {
       const sent = await d.send(d.self().agentId, machine, r.direction === 'incoming' ? r.origin.agentId : r.targetId,
         { v: 1, kind: 'pause', reason: r.reason ?? 'A fixed controller limit was reached.' },
-        { rootId: r.cause.rootId, depth: Math.min(r.cause.depth, FEDERATED_REQUEST_LIMITS.depth), parentId: r.id }, `pause:${r.cause.rootId}`);
+        { rootId: r.cause.rootId, depth: r.cause.depth, parentId: r.id }, `pause:${r.cause.rootId}`);
       if (sent.deliveryId && !sent.error) await d.store.update((file) => { if (file.pauseNotices?.[machine]) file.pauseNotices[machine].peerSent = true; });
     }
   }
@@ -183,8 +210,7 @@ export function createFederatedRequests(d: FederationRequestDependencies) {
       if (file.requests.some((q) => q.id === r.id || (r.direction === 'outgoing' && q.direction === 'outgoing' && q.callerId === r.callerId && q.machineId === r.machineId && q.targetId === r.targetId && q.originRequestId === r.originRequestId))) throw new Error('This request was already admitted. Retry with the same request id.');
       const now = d.now();
       const recent = (file.crossings[r.machineId] ?? []).filter((at) => now - at < 60_000);
-      if (r.cause.depth >= FEDERATED_REQUEST_LIMITS.depth) reason = 'The cross-machine causal depth limit was reached.';
-      else if (recent.length >= FEDERATED_REQUEST_LIMITS.perMinute) reason = 'The controller link rate limit was reached.';
+      if (recent.length >= FEDERATED_REQUEST_LIMITS.perMinute) reason = 'The controller link rate limit was reached.';
       else if (file.requests.filter((q) => q.machineId === r.machineId && (q.delivery === 'accepted' || (q.direction === 'incoming' && !terminal(q.outcome)))).length >= FEDERATED_REQUEST_LIMITS.queued) reason = 'The controller link queue is full.';
       if (reason) { file.paused[r.machineId] = reason; (file.pauseEpochs ??= {})[r.machineId] = r.epoch; return; }
       file.crossings[r.machineId] = [...recent, now];
@@ -266,8 +292,7 @@ export function createFederatedRequests(d: FederationRequestDependencies) {
       let reason: string | undefined;
       await d.store.update((file) => {
         const recent = (file.crossings[machine] ?? []).filter((at) => d.now() - at < 60_000);
-        if (cause && cause.depth >= FEDERATED_REQUEST_LIMITS.depth) reason = 'The cross-machine causal depth limit was reached.';
-        else if (recent.length >= FEDERATED_REQUEST_LIMITS.perMinute) reason = 'The controller link rate limit was reached.';
+        if (recent.length >= FEDERATED_REQUEST_LIMITS.perMinute) reason = 'The controller link rate limit was reached.';
         if (reason) { file.paused[machine] = reason; (file.pauseEpochs ??= {})[machine] = d.epoch(machine); }
         else file.crossings[machine] = [...recent, d.now()];
       });
@@ -364,6 +389,8 @@ export function createFederatedRequests(d: FederationRequestDependencies) {
       const epoch = d.epoch(origin.machineId);
       if (!d.authorized(origin.machineId, origin.agentId, epoch)) throw new Error('Controller link is no longer authorized.');
       if (envelope.kind === 'pause') {
+        // An offline older peer may still deliver its retired depth notice.
+        if (envelope.reason === LEGACY_DEPTH_PAUSE) return;
         await d.store.update((file) => { file.paused[origin.machineId] = envelope.reason; (file.pauseEpochs ??= {})[origin.machineId] = epoch; }, () => d.authorized(origin.machineId, origin.agentId, epoch));
         const file = d.store.get();
         const news = file.news?.[origin.machineId];
@@ -383,7 +410,6 @@ export function createFederatedRequests(d: FederationRequestDependencies) {
         if (envelope.revision <= original.receivedRevision) {
           const r = await replace(original.id, (r) => { r.duplicates++; }); d.record(r, 'duplicate'); return r;
         }
-        if (cause.depth >= FEDERATED_REQUEST_LIMITS.depth) { await pause(original, 'The cross-machine causal depth limit was reached.'); throw new Error('Causal depth limit reached.'); }
         if (terminal(original.outcome)) throw new Error('The receiver already reported a final outcome.');
         let replay = false;
         const updated = await replace(original.id, (r, file) => {
@@ -422,8 +448,6 @@ export function createFederatedRequests(d: FederationRequestDependencies) {
       if (callerId !== d.self().agentId || !found || found.direction !== 'incoming' || !current(found)) throw new Error('Only this receiving controller can report this request.');
       if (!textValid(text)) throw new Error('Give a short explicit outcome or reason.');
       if (terminal(found.outcome)) throw new Error('This request already has a final outcome.');
-      const cause = nextCause(found);
-      if (cause.depth >= FEDERATED_REQUEST_LIMITS.depth) { await pause(found, 'The cross-machine causal depth limit was reached.'); throw new Error('Causal depth limit reached.'); }
       const updated = await replace(id, (r) => {
         if (terminal(r.outcome)) throw new Error('This request already has a final outcome.');
         if ((r.replies?.length ?? 0) >= 64) throw new Error('This request has reached its report limit.');
@@ -446,6 +470,7 @@ export function createFederatedRequests(d: FederationRequestDependencies) {
       return this.report(callerId, id, choice === 'decline' ? 'declined' : choice === 'needs_user' ? 'waiting_user' : 'under_way', reason);
     },
     async reconcile() {
+      await d.store.ready?.();
       const file = d.store.get();
       for (const machine of Object.keys(file.pauseNotices ?? {})) await finishPause(machine);
       for (const machine of new Set([...file.requests.map((r) => r.machineId), ...Object.keys(file.news ?? {})])) await d.flush?.(machine);

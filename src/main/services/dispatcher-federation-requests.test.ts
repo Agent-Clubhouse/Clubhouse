@@ -63,13 +63,13 @@ function fixture() {
 }
 
 describe('federated request delivery and explicit outcomes (#3347, #3346)', () => {
-  it.each(['depth', 'rate'])('emits an identifier-free limit event when the first crossing trips %s without a parent', async (kind) => {
+  it('emits an identifier-free limit event when the first crossing trips rate without a parent', async () => {
     const f = fixture();
     f.a.deps.recordLimit = recordFederationLimit;
-    if (kind === 'rate') await f.a.deps.store.update((file) => { file.crossings.Laptop = Array(FEDERATED_REQUEST_LIMITS.perMinute).fill(f.a.deps.now()); });
+    await f.a.deps.store.update((file) => { file.crossings.Laptop = Array(FEDERATED_REQUEST_LIMITS.perMinute).fill(f.a.deps.now()); });
     const capture = captureEvents();
     try {
-      await expect(f.a.api.crossing('Laptop', { rootId: 'private-first-root', depth: kind === 'depth' ? FEDERATED_REQUEST_LIMITS.depth : 0 }, { message: 'private news' }, 'send_message')).rejects.toThrow(`${kind === 'depth' ? 'depth' : 'rate'} limit`);
+      await expect(f.a.api.crossing('Laptop', { rootId: 'private-first-root', depth: 0 }, { message: 'private news' }, 'send_message')).rejects.toThrow('rate limit');
       expect(f.a.file().requests).toEqual([]);
       expect(f.a.file().news ?? {}).toEqual({});
       expect(f.a.api.allowed('Laptop', {})).toBe(false);
@@ -164,19 +164,31 @@ describe('federated request delivery and explicit outcomes (#3347, #3346)', () =
     expect(f.a.file().paused).toEqual({});
     expect(f.b.file().paused).toEqual({});
   });
-  it('inherits depth over alternating machines and pauses both ends of a loop', async () => {
-    const f = fixture(); await f.offer(); await f.pump();
-    for (let i = 1; i < FEDERATED_REQUEST_LIMITS.depth; i++) {
-      const from = i % 2 ? f.b : f.a; const to = i % 2 ? f.a : f.b;
-      await from.api.offer(from.self.agentId, to.self.machineId, to.self.agentId, `step-${i}`, `Continue step ${i}`);
+  it('allows 120 related autonomous hops with identical payloads and preserved ancestry', async () => {
+    const f = fixture();
+    let root: string | undefined;
+    for (let depth = 0; depth < 120; depth++) {
+      const from = depth % 2 ? f.b : f.a; const to = depth % 2 ? f.a : f.b;
+      const sent = await from.api.offer(from.self.agentId, to.self.machineId, to.self.agentId, `hop-${depth}`, 'Continue the same work');
+      root ??= sent.cause.rootId;
+      expect(sent.cause).toMatchObject({ rootId: root, depth });
       await f.pump();
+      await to.api.report(to.self.agentId, sent.id, 'answered', 'Continue the same work');
+      await f.pump(); await f.a.api.reconcile(); await f.b.api.reconcile();
+      f.advance(60_001); // Respect unchanged rate and queue resource controls.
     }
-    await expect(f.a.api.offer(f.a.self.agentId, 'Laptop', f.b.self.agentId, 'too-deep', 'Continue')).rejects.toThrow('depth limit');
-    await f.pump();
-    expect(f.a.file().paused.Laptop).toContain('depth limit');
-    expect(f.b.file().paused.Desktop).toContain('depth limit');
-    expect(f.a.deps.present).toHaveBeenCalledWith(expect.anything(), 'pause');
-    expect(f.b.deps.present).toHaveBeenCalledWith(expect.anything(), 'pause');
+    expect(f.a.file().paused).toEqual({}); expect(f.b.file().paused).toEqual({});
+    expect(f.a.deps.recordLimit).not.toHaveBeenCalled(); expect(f.b.deps.recordLimit).not.toHaveBeenCalled();
+    expect(f.a.deps.present).not.toHaveBeenCalledWith(expect.anything(), 'pause');
+  }, 60_000);
+  it('ignores only the retired depth pause envelope, retaining human and unknown reasons', async () => {
+    const f = fixture();
+    await f.a.api.receive(f.b.self, f.a.self.agentId, { rootId: 'old-depth', depth: 800 }, { v: 1, kind: 'pause', reason: 'The cross-machine causal depth limit was reached.' });
+    expect(f.a.file().paused).toEqual({});
+    for (const reason of ['Paused by the person', 'An unknown pause']) {
+      await f.a.api.receive(f.b.self, f.a.self.agentId, { rootId: 'pause', depth: 0 }, { v: 1, kind: 'pause', reason });
+      expect(f.a.file().paused.Laptop).toBe(reason);
+    }
   });
   it('pauses a rate-limited link and refuses work until it is taken back explicitly', async () => {
     const f = fixture();
