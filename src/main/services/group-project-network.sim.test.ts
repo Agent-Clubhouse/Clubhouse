@@ -247,6 +247,26 @@ describe('network group projects across two desktops (#3363)', () => {
     await expect(as(B, async (h) => [h.groupProjectHost.localAgentId(copy, `agent_b@${B.fp}`), h.groupProjectHost.localAgentId(copy, 'lead')])).resolves.toEqual(['agent_b', null]);
   });
 
+  it('an MCP membership edit carries its agent author and cannot use the housekeeping exemption', async () => {
+    const id = await sharedProject();
+    await as(A, (h) => h.groupProjectHost.updateMembership(id, (draft) => {
+      draft.explicit.push({ address: `builder@${B.fp}`, kind: 'durable', addedAt: 'x' });
+    }));
+    await as(B, (h) => h.groupProjectHost.syncFrom(A.fp));
+    const checks: Array<{ address: string; action: string }> = [];
+    A.host!.groupProjectHost.setRemoteWriteGate((check) => {
+      checks.push({ address: check.address, action: check.action });
+      return 'Host admin is off';
+    });
+    await expect(as(B, () => B.membership!.excludeMember(id, 'builder', { author: { agentId: 'builder', label: 'Builder' } })))
+      .rejects.toMatchObject({ code: 'refused', message: expect.stringContaining('Host admin is off') });
+    expect(checks).toEqual([{ address: `builder@${B.fp}`, action: 'group_project.admin' }]);
+    expect((await as(A, (h) => h.groupProjectHost.getMembership(id))).excluded).toEqual([]);
+    A.host!.groupProjectHost.setRemoteWriteGate(() => undefined);
+    await as(B, () => B.membership!.excludeMember(id, 'builder', { author: { agentId: 'builder', label: 'Builder' } }));
+    expect((await as(A, (h) => h.groupProjectHost.getMembership(id))).excluded.map((e) => e.address)).toContain(`builder@${B.fp}`);
+  });
+
   it('removing the host leaves a read-only copy with a message', async () => {
     const id = await sharedProject();
     await as(A, (h) => h.groupProjectHost.post(id, 'a', 'work', 'kept'));
@@ -354,6 +374,19 @@ describe('network group projects across two desktops (#3363)', () => {
       A.host!.groupProjectHost.setRemoteWriteGate((check) => { checks.push({ address: check.address, action: check.action, isMember: check.isMember }); return undefined; });
       expect((await writeAs(id, { agentId: 'lead', label: 'l' }, { op: 'update', fields: { description: 'by a granted lead' } })).results[0].status).toBe('applied');
       expect(checks).toEqual([{ address: `lead@${B.fp}`, action: 'group_project.admin', isMember: false }]);
+    });
+
+    it('binds a claimed agent address to the authenticated sending computer, ignoring a forged machine suffix', async () => {
+      const id = await sharedProject();
+      const checks: Array<{ address: string; machine: string }> = [];
+      A.host!.groupProjectHost.setRemoteWriteGate((check) => {
+        checks.push({ address: check.address, machine: check.machine });
+        return check.address === 'lead' ? undefined : 'No admin grant for this authenticated computer';
+      });
+      const answer = await writeAs(id, { agentId: `lead@${A.fp}`, label: 'user' }, { op: 'update', fields: { name: 'Spoofed host lead' } });
+      expect(answer.results[0]).toMatchObject({ status: 'refused', reason: expect.stringContaining('authenticated computer') });
+      expect(checks).toEqual([{ address: `lead@${B.fp}`, machine: B.fp }]);
+      expect((await as(A, (h) => h.groupProjectHost.get(id)))!.name).toBe('Launch');
     });
 
     it('limits a computer\'s own housekeeping to its own agents', async () => {

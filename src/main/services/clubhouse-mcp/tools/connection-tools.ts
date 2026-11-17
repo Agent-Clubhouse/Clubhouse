@@ -18,6 +18,7 @@
  * or a helper wire also holds the pair: those are never removed here.
  */
 
+import { registerGroupProjectManagementTools } from './group-project-management-tools';
 import { registerGlobalTool } from '../tool-registry';
 import { bindingManager } from '../binding-manager';
 import type { McpToolResult } from '../types';
@@ -29,7 +30,7 @@ import { listHelpersEverywhere } from '../../helper-index';
 import { groupProjectRegistry } from '../../group-project-registry';
 import { GroupProjectHostError, groupProjectHost } from '../../group-project-host';
 import {
-  addMember as addGroupMember, beginAutoJoin, excludeMember as excludeGroupMember, isMember as isGroupMember, isMembershipManaged,
+  addMember as addGroupMember, excludeMember as excludeGroupMember, isMember as isGroupMember, isMembershipManaged,
 } from '../../group-project-membership';
 import {
   claimSourceBinding,
@@ -192,11 +193,11 @@ function membership(agent: DurableAgentConfig, project: GroupProject): Persisted
 type JoinOutcome = 'created' | 'existing' | 'removed' | 'invalid' | 'out_of_scope';
 
 /** Add an agent to a group project's membership record (#3357), the way a drawn wire does. */
-async function joinRecord(agent: DurableAgentConfig, project: GroupProject): Promise<JoinOutcome> {
+async function joinRecord(agent: DurableAgentConfig, project: GroupProject, callerId: string): Promise<JoinOutcome> {
   if (isBindingRemovedByUser(agent.id, project.id)) return 'removed';
   const before = await isGroupMember(project.id, agent.id);
   try {
-    await addGroupMember(project.id, agent.id);
+    await addGroupMember(project.id, agent.id, { author: { agentId: callerId, label: callerId } });
   } catch (err) {
     // telemetry-exempt: answered to the calling agent as an outcome
     if (err instanceof GroupProjectHostError && err.code === 'out_of_scope') return 'out_of_scope';
@@ -339,16 +340,15 @@ async function handleCreateGroupProject(callerId: string, args: Record<string, u
     if (!callerProject) {
       throw new ConnectionScopeError('Your project is not registered. Register it before creating a group project.');
     }
-    const created = await groupProjectHost.create(name, { projectId: callerProject.id });
-    // Everyone in scope joins a new group project (#3357); the members named here are added.
-    await beginAutoJoin(created.id);
-    const project = (await groupProjectHost.update(created.id, { metadata: { [GROUP_PROJECT_CREATOR_KEY]: callerId } })) ?? created;
+    const { createManagedGroupProject } = await import('../../group-project-management');
+    const created = await createManagedGroupProject(name, { projectId: callerProject.id });
+    const project = (await groupProjectHost.update(created.id, { metadata: { [GROUP_PROJECT_CREATOR_KEY]: callerId } }, { author: { agentId: callerId, label: callerId } })) ?? created;
     appLog('core:mcp', 'info', 'Orchestrator created a group project', {
       meta: { agentId: callerId, groupProjectId: project.id, members: members.length },
     });
     const lines = [`Created group project "${project.name}" (id ${project.id}).`];
     // Its members are a record (#3357): agents in scope join by themselves, the rest are added.
-    for (const m of members) lines.push(membershipMessage(m, project, await joinRecord(m, project)));
+    for (const m of members) lines.push(membershipMessage(m, project, await joinRecord(m, project, callerId)));
     return text(lines.join('\n'));
   } catch (err) {
     // telemetry-exempt: errorResult logs unexpected failures and returns them to the calling agent
@@ -376,7 +376,7 @@ async function handleAddToGroupProject(callerId: string, args: Record<string, un
     const [outcome]: JoinOutcome[] = !(await groupProjectHost.inScope(project.id, agent.id).catch(() => false))
       ? ['out_of_scope']
       : await isMembershipManaged(project.id)
-        ? [await joinRecord(agent, project)]
+        ? [await joinRecord(agent, project, callerId)]
         : await connect(callerId, scope, [membership(agent, project)]);
     if (granted) recordDispatcherControl({ tool: 'join_group_project', actorId: callerId, targets: [agent.id, project.id], outcome: outcome === 'created' || outcome === 'existing' ? 'ok' : 'refused' });
     return text(membershipMessage(agent, project, outcome), outcome === 'invalid' || outcome === 'removed' || outcome === 'out_of_scope');
@@ -399,7 +399,7 @@ async function handleRemoveFromGroupProject(callerId: string, args: Record<strin
     }
     if (await isMembershipManaged(project.id)) {
       if (!(await isGroupMember(project.id, agent.id))) return text(`${agent.name} is not in "${project.name}".`);
-      await excludeGroupMember(project.id, agent.id);
+      await excludeGroupMember(project.id, agent.id, { author: { agentId: callerId, label: callerId } });
       return text(`${agent.name} left "${project.name}".`);
     }
     const { stored, outcomes: [outcome] } = await disconnect(callerId, scope, [{ agentId: agent.id, targetId: project.id }]);
@@ -704,20 +704,7 @@ export function registerConnectionTools(): void {
   const options = { group: 'orchestration' as const };
   const connectionOptions = { group: 'connections' as const };
 
-  registerGlobalTool('create_group_project', {
-    description:
-      'Create a group project (a shared bulletin board) and optionally add members to it. ' +
-      'Top-level durable agents in scope join automatically; the optional members must be you or your helpers. ' +
-      'Memberships are saved and come back when Clubhouse restarts.',
-    inputSchema: {
-      type: 'object',
-      properties: {
-        name: { type: 'string', description: 'The group project name.' },
-        members: { type: 'array', items: { type: 'string' }, description: `Agents to add. Each is ${AGENT_REF.toLowerCase()}` },
-      },
-      required: ['name'],
-    },
-  }, handleCreateGroupProject, { ...options, grant: { actions: ['connection.manage'], target: 'agent_arg', from: { args: ['members'], names: 'self_and_helpers' } } });
+  registerGroupProjectManagementTools(handleCreateGroupProject);
 
   registerGlobalTool('add_to_group_project', {
     description: 'Add you or one of your helpers to a group project. Supply group_project, or its legacy alias project. The membership is saved and comes back when Clubhouse restarts.',

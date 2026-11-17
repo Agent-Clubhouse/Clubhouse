@@ -18,7 +18,7 @@ describe('Dispatcher group project directory tools', () => {
     mocks.list.mockResolvedValue([{ id: 'gp', name: 'Release', scope: { level: 'app', reach: 'local' }, host: { machine: null } }]);
     mocks.members.mockResolvedValue([{ address: 'ada' }, { address: 'bob' }]);
     const tool = mocks.tools.get('list_group_projects')!;
-    expect(tool.options).toMatchObject({ group: ['dispatcher', 'dispatcherChat'], grant: { actions: ['settings.app.read'], target: 'app' } });
+    expect(tool.options).toMatchObject({ group: ['groupProjects', 'dispatcherChat'], grant: { actions: ['settings.app.read'], target: 'app' } });
     const result = await tool.handler() as { content: Array<{ text: string }> };
     expect(JSON.parse(result.content[0].text)).toEqual([{ id: 'gp', name: 'Release', scope: { level: 'app', reach: 'local' }, host: { machine: null }, memberCount: 2 }]);
     expect(mocks.members).toHaveBeenCalledWith('gp');
