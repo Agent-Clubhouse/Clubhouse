@@ -2,7 +2,7 @@
 
 The standard `npm test` main project runs `driver.test.ts` and `fixture-replay.test.ts`. It does not launch the bundled Copilot runtime. The replay tests use the real driver and SDK with the repository's Node fake CLI, which binds a loopback server and replays committed protocol fixtures. The fake is source-controlled and has no outbound network client; this is not an OS network sandbox. Test child processes inherit a deliberately constructed environment and temporary home, rather than credentials, proxy settings or provider settings from the caller. Windows shims use `cmd.exe`; macOS and Linux use a shell shim. The fake invokes Node by absolute path.
 
-The former `driver.test.ts` real-runtime describe and all of its assertions are retained in `driver.runtime.qa.ts`. Its independent discovery config is `vitest.copilot-runtime.config.ts`, invoked with `npm run qa:copilot-runtime`. It fails if the bundled runtime is missing. This is separately authorized QA: use a clean, allowlisted environment and an OS-enforced network sandbox that permits only loopback before invoking it. `--no-auto-login`, invalid tokens and a fake model alone are not an outbound network boundary, including for the probe. The repository currently documents a macOS sandbox profile in `docs/chat-fixtures.md`; Linux and Windows need independently verified sandbox arrangements. Do not run this command on an ordinary workstation or CI runner as a substitute for that boundary.
+The former `driver.test.ts` real-runtime describe and all of its assertions are retained in `driver.runtime.qa.ts`. `dispatcher-tools.runtime.qa.ts` runs the Dispatcher's real bridge and tool registrations against the same runtime (#3615). Their independent discovery config is `vitest.copilot-runtime.config.ts`, invoked with `npm run qa:copilot-runtime`. It fails if the bundled runtime is missing. This is separately authorized QA: use a clean, allowlisted environment and an OS-enforced network sandbox that permits only loopback before invoking it. `--no-auto-login`, invalid tokens and a fake model alone are not an outbound network boundary, including for the probe. The repository currently documents a macOS sandbox profile in `docs/chat-fixtures.md`; Linux and Windows need independently verified sandbox arrangements. Do not run this command on an ordinary workstation or CI runner as a substitute for that boundary.
 
 ## Behavior mapping
 
@@ -30,6 +30,7 @@ Each former `driver.test.ts` real-runtime test keeps the same name in `driver.ru
 | refuses to start logged out, in the words the fallback code reads as a login | logged-out session replay |
 | runs a text turn: says which driver runs, streams, reports usage and ends on idle | multi-turn replay; real model and usage QA only |
 | asks before a tool runs, and runs it once allowed | permission-approve-edit replay; tool execution QA only |
+| runs a command that only reads at Ask without asking: the runtime's own rule, not a level | Runtime-only: runtime 1.0.107 runs read-only commands without a permission request, so the asking tests use a command that writes in the test's folder |
 | carries a denial's reason to the model, which continues | permission-deny replay; model continuation QA only |
 | skips the prompt at Full access | Runtime-only full access execution |
 | asks first when given a level it doesn't have yet, and says so | Runtime-only unsupported level fallback |
@@ -68,6 +69,10 @@ Each former `driver.test.ts` real-runtime test keeps the same name in `driver.ru
 | tells the server when the session closes on an open question | Runtime-only close during elicitation |
 | accepts a form with no fields straight from the approval card | Runtime-only empty form elicitation |
 | passes an HTTP MCP server with its header from the environment | driver.test.ts pure MCP conversion case |
+
+## Dispatcher tools (#3615)
+
+`dispatcher-tools.runtime.qa.ts` has no standard counterpart beyond the driver, spawn and gate unit tests for `loadAllTools`. It shows, with search forced on (a BYOK model gets none otherwise), that `tool_search_tool` leaves out a tool the session already loaded, before and after a resume, for the coordinator (`create_managed_agent`) and the chat (`start_work`). With `loadAllTools` it checks every bridge tool is offered at start, after a connected agent wakes and sleeps, after a resume, after a compaction, and when a session that searched before resumes; and that the CLI still asks before a Clubhouse tool that changes things at Ask. Set `COPILOT_QA_MEASURE_OUT` to record request sizes. It cannot show what a hosted model does, as that needs a real login.
 
 ## Other opt-in real CLI tests and CI
 

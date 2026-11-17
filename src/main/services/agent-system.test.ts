@@ -884,6 +884,28 @@ describe('agent-system', () => {
       }
     });
 
+    describe('every tool up front, never behind tool search (#3615)', () => {
+      beforeEach(() => { dispatcherOn.value = true; });
+      afterEach(() => { dispatcherOn.value = false; });
+
+      it.each([
+        ['the Dispatcher\'s coordinator', '/dispatcher-folder', 'dispatcher-id'],
+        ['the Dispatcher\'s chat', '/dispatcher-chat-folder', 'dispatcher-chat-id'],
+      ] as const)('is asked for %s', async (_who, projectPath, agentId) => {
+        await spawnAgent({ agentId, projectPath, cwd: projectPath, kind: 'durable' });
+        expect(mockTryStartChatAgent.mock.calls.at(-1)![0].loadAllTools).toBe(true);
+      });
+
+      it.each([
+        ['an ordinary agent', '/project', 'durable'],
+        ['a quick agent in the coordinator\'s folder', '/dispatcher-folder', 'quick'],
+        ['a quick agent in the chat\'s folder', '/dispatcher-chat-folder', 'quick'],
+      ] as const)('is not asked for %s', async (_who, projectPath, kind) => {
+        await spawnAgent({ agentId: 'a', projectPath, cwd: projectPath, kind });
+        expect(mockTryStartChatAgent.mock.calls.at(-1)![0]).not.toHaveProperty('loadAllTools');
+      });
+    });
+
     describe('the Dispatcher chat\'s own tools (#3578)', () => {
       beforeEach(() => { dispatcherOn.value = true; });
       afterEach(() => { dispatcherOn.value = false; });

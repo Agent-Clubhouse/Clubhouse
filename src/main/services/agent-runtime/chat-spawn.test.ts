@@ -317,6 +317,17 @@ require('readline').createInterface({ input: process.stdin }).on('line', line =>
     expect(start.mock.calls[0][0]).not.toHaveProperty('preapprovedClubhouseTools');
   });
 
+  it('passes every-tool-up-front to the driver only when the start asks for it (#3615)', async () => {
+    const driver = new FakeChatDriver();
+    const start = vi.spyOn(driver, 'start');
+    registerChatDriver(driver);
+    expect(await tryStartChatAgent({ ...params, loadAllTools: true }, provider, undefined, null)).toBe('chat');
+    expect(start.mock.calls[0][0].loadAllTools).toBe(true);
+    start.mockClear();
+    expect(await tryStartChatAgent({ ...params, agentId: 'agent-2' }, provider, undefined, null)).toBe('chat');
+    expect(start.mock.calls[0][0]).not.toHaveProperty('loadAllTools');
+  });
+
   it('closes the chat CLI without an exit broadcast when the mission cannot be sent', async () => {
     const driver = new FakeChatDriver();
     const realStart = driver.start.bind(driver);
