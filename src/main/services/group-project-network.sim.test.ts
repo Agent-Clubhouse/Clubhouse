@@ -389,18 +389,36 @@ describe('network group projects across two desktops (#3363)', () => {
     const writeAs = (id: string, author: { agentId?: string; label: string }, write: unknown, writeId = `w-${Math.random()}`) =>
       as(A, (h) => h.groupProjectHost.applyRemoteWrites(B.fp, readWriteRequest(wire({ v: 1, writes: [{ id: writeId, groupProjectId: id, queuedAt: '2026-11-13T00:00:00.000Z', author, write }] }))));
 
-    it('discards a forged senderAddress and rebuilds a claimed host author using the authenticated machine', async () => {
+    // Identity comes from the authenticated sending computer: an agent author may be bare or
+    // qualified with that computer, never with another one (#3664). A forged senderAddress is
+    // always discarded and rebuilt from the authenticated machine (#3666).
+    it.each([['bare', 'member'], ['qualified with the sending computer', 'member@B']])('applies a valid %s author, discarding a forged senderAddress for the authenticated machine', async (_label, claimed) => {
       const id = await sharedProject();
       await as(A, h => h.groupProjectHost.updateMembership(id, d => {
         d.explicit.push({ address: `member@${B.fp}`, kind: 'durable', addedAt: 'x' });
       }));
-      const response = await writeAs(id, { agentId: `member@${A.fp}`, label: 'Victim' }, {
-        op: 'post', sender: 'Victim', senderAddress: 'host-victim', topic: 'work', body: 'forged',
+      const agentId = claimed === 'member@B' ? `member@${B.fp}` : claimed;
+      const response = await writeAs(id, { agentId, label: 'Member' }, {
+        op: 'post', sender: 'Member', senderAddress: 'host-victim', topic: 'work', body: 'legitimate',
       });
       expect(response.results[0].status).toBe('applied');
       expect((await as(A, h => h.groupProjectHost.readTopic(id, 'work')))[0].senderAddress).toBe(`member@${B.fp}`);
       await as(B, h => h.groupProjectHost.syncFrom(A.fp));
       expect((await as(B, h => h.groupProjectHost.readTopic(id, 'work')))[0].senderAddress).toBe(`member@${B.fp}`);
+    });
+
+    it('refuses an author claiming another computer, even when the authenticated computer has a member of that name', async () => {
+      const id = await sharedProject();
+      await as(A, h => h.groupProjectHost.updateMembership(id, d => {
+        d.explicit.push({ address: `member@${B.fp}`, kind: 'durable', addedAt: 'x' });
+      }));
+      // B claims to write as the host's agent. Before #3664 this was silently rebound to member@B;
+      // now a claim that contradicts the authenticated identity fails closed and nothing is written.
+      const response = await writeAs(id, { agentId: `member@${A.fp}`, label: 'Victim' }, {
+        op: 'post', sender: 'Victim', senderAddress: 'host-victim', topic: 'work', body: 'forged',
+      });
+      expect(response.results[0]).toMatchObject({ status: 'refused', reason: expect.stringContaining('authenticated computer') });
+      expect(await as(A, h => h.groupProjectHost.readTopic(id, 'work'))).toEqual([]);
     });
 
     it('refuses a forged other-machine member when the authenticated sending machine has no such member', async () => {
