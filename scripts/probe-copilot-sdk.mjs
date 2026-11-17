@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * Re-probe @github/copilot-sdk against a Copilot CLI without spending tokens
+ * Re-probe @microsoft/copilot-sdk against a Copilot CLI without spending tokens
  * (docs/copilot-sdk-driver.md). It drives one session per feature against a
  * local fake model and prints what the model requests and SDK events showed.
  *
@@ -9,10 +9,10 @@
  * the real ~/.copilot or ~/.codex, so no paid request is possible.
  *
  * Install both in a scratch directory first, with scripts off:
- *   npm i --ignore-scripts @github/copilot-sdk@<sdk> @github/copilot@<cli>
+ *   npm i --ignore-scripts @microsoft/copilot-sdk@<sdk> @github/copilot@<cli>
  *
  * Usage:
- *   node scripts/probe-copilot-sdk.mjs <scratch>/node_modules/@github/copilot-sdk <path-to-copilot> [cli args...]
+ *   node scripts/probe-copilot-sdk.mjs <scratch>/node_modules/@microsoft/copilot-sdk <path-to-copilot> [cli args...]
  *   (macOS arm64 binary: <scratch>/node_modules/@github/copilot-darwin-arm64/copilot)
  *
  * Exits non-zero if any feature fails. A CLI too old to start is a failed handshake.
@@ -137,12 +137,18 @@ async function main() {
   }
   const { CopilotClient, RuntimeConnection, approveAll } = await import(pathToFileURL(path.join(path.resolve(sdkDir), 'dist/index.js')).href);
   const fake = await startFakeModel();
-  const provider = { type: 'openai', baseUrl: fake.baseUrl, apiKey: 'fake' };
+  const provider = { name: 'probe', type: 'openai', baseUrl: fake.baseUrl, apiKey: 'fake' };
+  const sessionOptions = {
+    model: 'fake-model',
+    github: { capi: { enabled: false } },
+    inference: { defaultProvider: 'probe', providers: [provider], models: [{ id: 'fake-model', provider: 'probe' }] },
+    permissions: { onRequest: approveAll },
+  };
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   const within = (p, ms, what) => Promise.race([p, new Promise((_, rej) => setTimeout(() => rej(new Error(`timeout: ${what}`)), ms))]);
   const until = async (fn, ms = 15000) => { const t = Date.now(); while (Date.now() - t < ms && !fn()) await sleep(50); return fn(); };
   const toolRequests = () => fake.requests.filter((r) => r.tools.length);
-  const newClient = () => new CopilotClient({ connection: RuntimeConnection.forStdio({ path: cli, args: cliArgs, env: { ...process.env } }), useLoggedInUser: false, logLevel: 'error' });
+  const newClient = () => new CopilotClient({ runtime: RuntimeConnection.forSpawnedStdio({ path: cli, args: cliArgs, env: { ...process.env } }), mode: 'coding-agent', github: { useLoggedInUser: false }, observability: { logLevel: 'error' } });
   // Plain send plus session.idle, as a driver would; sendAndWait hangs on CLIs up to 1.0.82.
   const turn = async (session, prompt) => {
     const done = new Promise((res, rej) => { const off = session.on((e) => { if (e.type === 'session.idle') { off(); res(); } else if (e.type === 'session.error') { off(); rej(new Error(e.data.message)); } }); });
@@ -153,7 +159,7 @@ async function main() {
     const client = newClient();
     await within(client.start(), 30000, 'start');
     const events = [];
-    const session = await within(client.createSession({ model: 'fake-model', provider, onPermissionRequest: approveAll, onEvent: (e) => events.push(e), ...config }), 30000, 'createSession');
+    const session = await within(client.createSession({ ...sessionOptions, events: { onEvent: (e) => events.push(e) }, ...config }), 30000, 'createSession');
     try { return await fn(session, events); } finally {
       await within(session.disconnect(), 5000, 'disconnect').catch(() => {});
       await within(client.stop(), 5000, 'stop').catch(() => client.forceStop());
@@ -195,7 +201,7 @@ async function main() {
     }),
     permission: async () => {
       const seen = [];
-      return withSession({ onPermissionRequest: (r) => { seen.push(r.kind); return { kind: 'reject', feedback: 'no' }; } }, async (session) => {
+      return withSession({ permissions: { onRequest: (r) => { seen.push(r.kind); return { kind: 'reject', feedback: 'no' }; } } }, async (session) => {
         // A command that writes: from CLI 1.0.107 a read-only one such as `true` runs without asking.
         fake.script({ tools: [{ name: 'bash', args: { command: 'touch probe-marker', description: 'x', mode: 'sync', initial_wait: 5 } }] }, { text: 'ok' });
         await turn(session, 'PERM');
@@ -204,7 +210,7 @@ async function main() {
     },
     planApproval: async () => {
       const seen = [];
-      return withSession({ onExitPlanModeRequest: (r) => { seen.push(r.actions); return { approved: true, selectedAction: r.recommendedAction }; } }, async (session) => {
+      return withSession({ interaction: { onExitPlanModeRequest: (r) => { seen.push(r.actions); return { approved: true, selectedAction: r.recommendedAction }; } } }, async (session) => {
         await session.rpc.mode.set({ mode: 'plan' });
         fake.script({ tools: [{ name: 'exit_plan_mode', args: { summary: 'Plan', actions: ['interactive'], recommendedAction: 'interactive' } }] }, { text: 'ok' });
         await turn(session, 'PLAN');
@@ -214,7 +220,7 @@ async function main() {
     },
     question: async () => {
       const seen = [];
-      return withSession({ onUserInputRequest: (r) => { seen.push(r.question); return { answer: 'blue', wasFreeform: false }; } }, async (session) => {
+      return withSession({ interaction: { onUserInputRequest: (r) => { seen.push(r.question); return { answer: 'blue', wasFreeform: false }; } } }, async (session) => {
         fake.script({ tools: [{ name: 'ask_user', args: { question: 'Colour?', choices: ['blue'] } }] }, { text: 'ok' });
         await turn(session, 'QUESTION');
         return { pass: seen.length === 1 };
@@ -235,7 +241,7 @@ async function main() {
     resume: async () => {
       const first = newClient();
       await first.start();
-      const before = await first.createSession({ model: 'fake-model', provider, onPermissionRequest: approveAll });
+      const before = await first.createSession(sessionOptions);
       const id = before.sessionId;
       fake.script({ text: 'answer' });
       await turn(before, 'HISTORY');
@@ -245,21 +251,21 @@ async function main() {
       await second.start();
       const live = [];
       const t = Date.now();
-      const after = await within(second.resumeSession(id, { model: 'fake-model', provider, onPermissionRequest: approveAll, onEvent: (e) => live.push(e.type) }), 30000, 'resume');
+      const after = await within(second.resumeSession(id, { ...sessionOptions, events: { onEvent: (e) => live.push(e.type) } }), 30000, 'resume');
       const ms = Date.now() - t;
       await sleep(500);
       const replayed = live.filter((t) => t === 'user.message' || t === 'assistant.message').length;
       const liveEvents = live.length;
       fake.script({ text: 'again' });
       await turn(after, 'NEXT');
-      const missing = await within(second.resumeSession('00000000-0000-4000-8000-000000000000', { provider, model: 'fake-model', onPermissionRequest: approveAll }), 20000, 'missing').then(() => 'resolved').catch((e) => e.message);
+      const missing = await within(second.resumeSession('00000000-0000-4000-8000-000000000000', sessionOptions), 20000, 'missing').then(() => 'resolved').catch((e) => e.message);
       await after.disconnect();
       await second.stop();
       return { pass: toolRequests().at(-1).text.includes('HISTORY') && replayed === 0 && /not found/i.test(missing), ms, liveEvents, replayed };
     },
     mcp: async () => {
       const elicited = [];
-      const config = { onElicitationRequest: (c) => { elicited.push(c.message); return { action: 'accept', content: { c: 'x' } }; }, mcpServers: { fake: { type: 'stdio', command: process.execPath, args: [self, '--fake-mcp'], tools: ['*'] } } };
+      const config = { interaction: { onElicitationRequest: (c) => { elicited.push(c.message); return { action: 'accept', content: { c: 'x' } }; } }, mcp: { servers: { fake: { type: 'stdio', command: process.execPath, args: [self, '--fake-mcp'], tools: ['*'] } } } };
       return withSession(config, async (session) => {
         await sleep(1500);
         fake.script((r) => ({ tools: [{ name: r.tools.find((t) => t.endsWith('flip')) }] }), { text: 'ok' });

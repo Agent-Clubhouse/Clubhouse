@@ -10,6 +10,7 @@ import * as path from 'path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import type { ChatDriverSession, ChatDriverStartOptions } from '../../../shared/chat/runtime';
 import { EventLog, chatFixturePath, createFakeCli, writeFakeCliShims, type FakeCli } from '../../orchestrators/adapters/testing/fake-cli';
+import { launchCopilotServer } from './launch';
 import { CopilotSdkChatDriver } from './driver';
 import { isFailedCopilotWrite } from './failed-writes';
 import { fakeCopilotEnv } from './test-env';
@@ -74,6 +75,15 @@ async function expectComplete(session: ChatDriverSession, fake: FakeCli): Promis
   expect(report.unexpected).toEqual([]);
 }
 
+/** Every handshake-only fixture must be complete, and its child must have exited. */
+async function expectStopped(fake: FakeCli): Promise<void> {
+  const report = await fake.waitForReport();
+  expect(report.mismatch).toBeNull();
+  expect(report.unexpected).toEqual([]);
+  expect(report.credentialKeysPresent).toEqual([]);
+  await expect.poll(() => { try { process.kill(report.pid, 0); return true; } catch { return false; } }, { timeout: 10_000 }).toBe(false);
+}
+
 const say = (session: ChatDriverSession, text: string) => session.send([{ type: 'text', text }], 'prompt');
 
 describe('fake child environment', { timeout: 30_000 }, () => {
@@ -99,7 +109,7 @@ describe('CopilotSdkChatDriver probe against fake Copilot', { timeout: 30_000 },
 
   it('launches --headless --port 0, reads status and login, and opens no session', async () => {
     const { fake, result } = await probe('handshake');
-    expect(result).toMatchObject({ handshakeOk: true, cliVersion: '1.0.105', needsLogin: true });
+    expect(result).toMatchObject({ handshakeOk: true, cliVersion: '1.0.113', needsLogin: true });
     const report = await fake.waitForReport();
     expect(report.mismatch).toBeNull();
     expect(report.argv).toEqual(['--headless', '--port', '0']);
@@ -114,6 +124,40 @@ describe('CopilotSdkChatDriver probe against fake Copilot', { timeout: 30_000 },
   it('does not treat provider settings without a base URL as a login', async () => {
     const { result } = await probe('handshake', { COPILOT_PROVIDER_API_KEY: 'fake-key', COPILOT_MODEL: 'fake-model' });
     expect(result).toMatchObject({ handshakeOk: true, needsLogin: true });
+  });
+
+  it('reproduces SDK 1.0.29 against protocol 4, with the reported error and cleanup', async () => {
+    const { CopilotClient, RuntimeConnection } = await import('copilot-sdk-v3-fixture');
+    const { fake, binary } = await fakeCopilot('protocol-v4');
+    const server = await launchCopilotServer({ binary, timeoutMs: 3_000 });
+    const client = new CopilotClient({ connection: RuntimeConnection.forUri(`http://${server.host}:${server.port}`, { connectionToken: server.connectionToken }) });
+    try {
+      await expect(client.start()).rejects.toThrow('SDK protocol version mismatch: SDK supports versions 3-3, but server reports version 4');
+    } finally {
+      await client.forceStop();
+      await server.kill();
+    }
+    await expectStopped(fake);
+  });
+
+  it('rejects protocol 3 at probe, before any session or prompt, and cleans up', async () => {
+    const { fake, result } = await probe('protocol-v3');
+    expect(result).toMatchObject({ handshakeOk: false, errorCode: 'protocol_error' });
+    expect(result.error).toContain('SDK supports versions 4-4, but server reports version 3');
+    await expectStopped(fake);
+  });
+
+  it('cleans up when a successful v4 probe is followed by a protocol-3 start on the same executable', async () => {
+    const { fake, binary } = await fakeCopilot('handshake');
+    const driver = new CopilotSdkChatDriver();
+    expect((await driver.probe(binary, LOGIN_STAND_IN)).handshakeOk).toBe(true);
+    await expectStopped(fake);
+    const mismatch = await createFakeCli(chatFixturePath('copilot-sdk', 'protocol-v3'));
+    cleanups.push(() => mismatch.dispose());
+    await writeFakeCliShims(path.dirname(binary), { copilot: { fixture: chatFixturePath('copilot-sdk', 'protocol-v3'), report: mismatch.reportPath } });
+    await expect(driver.start({ agentId: 'a1', provider: 'copilot-cli', cwd: os.tmpdir(), binaryPath: binary, level: 'ask', env: LOGIN_STAND_IN }))
+      .rejects.toMatchObject({ code: 'protocol_error', message: expect.stringContaining('SDK supports versions 4-4, but server reports version 3') });
+    await expectStopped(mismatch);
   });
 
   it('falls back on a protocol mismatch', async () => {
@@ -157,7 +201,7 @@ describe('CopilotSdkChatDriver sessions against fake Copilot', { timeout: 30_000
     expect(drafts.items.some((d) => d.type === 'agent_message_chunk')).toBe(true);
     expect(drafts.items.some((d) => d.type === 'usage' && (d.data as { tokens?: { total?: number } }).tokens?.total)).toBe(true);
     const info = drafts.items.find((d) => d.type === 'session_info' && (d.data as { nativeSessionId?: string }).nativeSessionId);
-    expect(info?.data).toMatchObject({ nativeSessionId: session.nativeSessionId, cliVersion: '1.0.105' });
+    expect(info?.data).toMatchObject({ nativeSessionId: session.nativeSessionId, cliVersion: '1.0.113' });
     await expectComplete(session, fake);
   });
 

@@ -114,9 +114,9 @@ describe('fixture format', () => {
     const extra: Record<string, string[]> = {
       claude: ['ask-user-question', 'headless-answer', 'subagent-task'],
       codex: [],
-      'copilot-sdk': ['died-mid-turn', 'elicitation-accept', 'elicitation-decline', 'exit-at-launch', 'handshake', 'hang-at-launch', 'no-answer', 'plan-approval', 'protocol-mismatch', 'slash-command', 'question', 'queue', 'resume', 'resume-not-found', 'steer', 'subagent'],
+      'copilot-sdk': ['died-mid-turn', 'elicitation-accept', 'elicitation-decline', 'exit-at-launch', 'handshake', 'hang-at-launch', 'no-answer', 'plan-approval', 'protocol-mismatch', 'protocol-v3', 'protocol-v4', 'slash-command', 'question', 'queue', 'resume', 'resume-not-found', 'steer', 'subagent'],
     };
-    // copilot-sdk/model-list is hand-made: models.list needs a real login, so a recording waits for phase 4 (docs/copilot-sdk-driver.md).
+    // copilot-sdk/model-list is derived from a hand-made result: models.list needs a real login, so a recording waits for phase 4 (docs/copilot-sdk-driver.md).
     const missing: Record<string, string[]> = {};
     for (const [cli, protocol] of [['claude', 'claude-stream-json'], ['codex', 'codex-app-server'], ['copilot-sdk', 'copilot-sdk']]) {
       const names = (await fs.promises.readdir(path.join(FIXTURES, cli))).map((f) => f.replace(/\.jsonl$/, '')).sort();

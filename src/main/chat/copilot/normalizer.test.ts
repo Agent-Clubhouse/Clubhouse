@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import type { PermissionRequest } from '@github/copilot-sdk';
-import { addTokens, copilotErrorCode, copilotPermissionOptions, copilotPermissionView, copilotProviderFromEnv, copilotTokens, copilotToolContent, copilotToolKind, copilotToolTitle } from './normalizer';
+import type { PermissionRequest } from '@microsoft/copilot-sdk';
+import { addTokens, copilotErrorCode, copilotPermissionOptions, copilotPermissionView, copilotProviderFromEnv, copilotProviderModel, copilotTokens, copilotToolContent, copilotToolKind, copilotToolTitle } from './normalizer';
 
 const shell = { kind: 'shell', canOfferSessionApproval: true, fullCommandText: 'echo hi', intention: 'say hi', commands: [], hasWriteFileRedirection: false, possiblePaths: [], possibleUrls: [] } as unknown as PermissionRequest;
 
@@ -107,6 +107,12 @@ describe('copilot normalizer', () => {
       COPILOT_PROVIDER_HEADERS: 'no colon here',
       COPILOT_PROVIDER_MAX_PROMPT_TOKENS: 'lots',
     })).toEqual({ baseUrl: 'http://x' });
+  });
+
+  it('keeps the v1 wire-model fallback and normalizes its own saved provider-qualified ids', () => {
+    const provider = { baseUrl: 'http://127.0.0.1:0', modelId: 'base-model', maxPromptTokens: 1000, maxOutputTokens: 100 };
+    expect(copilotProviderModel(provider, 'clubhouse-env/saved-model')).toEqual({ id: 'saved-model', provider: 'clubhouse-env', modelId: 'base-model', wireModel: 'base-model', maxPromptTokens: 1000, maxOutputTokens: 100 });
+    expect(copilotProviderModel({ ...provider, wireModel: 'deployment' }, 'saved-model').wireModel).toBe('deployment');
   });
 
   it('adds up tokens across model calls', () => {

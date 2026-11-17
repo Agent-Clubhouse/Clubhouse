@@ -1,4 +1,4 @@
-import type { ElicitationContext, ElicitationResult } from '@github/copilot-sdk';
+import type { ElicitationContext, ElicitationResult } from '@microsoft/copilot-sdk';
 import type { ChatQuestion, ChatQuestionAnswers } from '../../../shared/chat/events';
 
 type Schema = NonNullable<ElicitationContext['requestedSchema']>;

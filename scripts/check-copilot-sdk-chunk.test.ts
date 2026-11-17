@@ -14,9 +14,10 @@ describe('Copilot SDK chunk leak rules', () => {
       'native_modules/index.js',
       'koffi.node',
       'runtime.node',
+      '@microsoft/copilot-sdk-linux-arm64/package.json',
       'prebuilds/win32-x64/copilot-runtime.exe',
       'copilot-runtime',
-      '@github/copilot-sdk-linux-x64/package.json',
+      '@microsoft/copilot-sdk-linux-x64/package.json',
       'libmsalruntime_arm64.dylib',
       'msalruntime.dll',
       'something.so',
@@ -25,12 +26,15 @@ describe('Copilot SDK chunk leak rules', () => {
   });
 
   it('passes the chunks a clean build emits', () => {
-    expect(findLeakedAssets(['main.js', 'github-copilot-sdk.js', 'sdk-bundle-smoke.js', '123.js'])).toEqual([]);
+    expect(findLeakedAssets(['main.js', 'microsoft-copilot-sdk.js', 'sdk-bundle-smoke.js', '123.js'])).toEqual([]);
   });
 
   it('flags koffi and the platform packages among the bundled modules, on either path separator', () => {
     const leaks = [
       '/repo/node_modules/koffi/index.js',
+      '/repo/node_modules/copilot-sdk-v3-fixture/dist/index.js',
+      '/repo/node_modules/@microsoft/copilot-sdk-linux-arm64/prebuilds/copilot-runtime',
+      '/repo/node_modules/@microsoft/copilot-sdk/dist/ffiRuntimeHost.js',
       '/repo/node_modules/@koromix/koffi-linux-x64/index.js',
       'C:\\repo\\node_modules\\koffi\\index.cjs',
       'C:\\repo\\node_modules\\@github\\copilot-sdk-win32-x64\\index.js',
@@ -39,7 +43,7 @@ describe('Copilot SDK chunk leak rules', () => {
   });
 
   it('passes the SDK itself', () => {
-    expect(findLeakedModules(['/repo/node_modules/@github/copilot-sdk/dist/index.js', 'C:\\repo\\node_modules\\zod\\index.js'])).toEqual([]);
+    expect(findLeakedModules(['/repo/node_modules/@microsoft/copilot-sdk/dist/index.js', 'C:\\repo\\node_modules\\zod\\index.js'])).toEqual([]);
   });
 });
 

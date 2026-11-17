@@ -26,8 +26,9 @@ export interface CopilotLaunchOptions {
 }
 
 export interface CopilotServer {
-  /** For RuntimeConnection.forUri. Always loopback: the CLI binds 127.0.0.1. */
-  readonly uri: string;
+  /** Explicit TCP attachment. Always loopback: the CLI binds 127.0.0.1. */
+  readonly host: '127.0.0.1';
+  readonly port: number;
   /** Random per launch. The child gets it through its env, never its command line. */
   readonly connectionToken: string;
   /** Resolves when the process has exited. Never rejects. */
@@ -119,7 +120,7 @@ export function launchCopilotServer(opts: CopilotLaunchOptions): Promise<Copilot
       stdout = (stdout + d.toString()).slice(-STDERR_TAIL_CHARS);
       const port = LISTENING_RE.exec(stdout)?.[1];
       if (!port) return;
-      settle(() => resolve({ uri: `http://127.0.0.1:${port}`, connectionToken, exited, exitCode: () => child.exitCode, stderrTail: tail, stderrTailForLog: () => stderrForLog.trim(), kill }));
+      settle(() => resolve({ host: '127.0.0.1', port: Number(port), connectionToken, exited, exitCode: () => child.exitCode, stderrTail: tail, stderrTailForLog: () => stderrForLog.trim(), kill }));
     });
     child.once('error', (err) => fail(`Could not launch ${opts.binary}: ${err.message}`, 'spawn_failed'));
     child.once('close', (code) => fail(`Copilot exited with code ${code} before it was ready${tail() ? `: ${tail()}` : ''}`, 'process_exited'));

@@ -1,4 +1,36 @@
-# Copilot SDK chat driver: spike results and plan
+# Copilot SDK chat driver
+
+## Current integration: protocol 4 (#3685, 2026-11-17)
+
+Clubhouse pins **`@microsoft/copilot-sdk` exactly to `2.0.0`**, paired with Copilot CLI **`1.0.113`**. Both the minimum and tested maximum in `chat-version-policy.ts`, and the nightly handshake CLI pin, are `1.0.113`. The SDK itself enforces protocol 4; `testedMax` stays advisory for newer CLIs. Fixture coverage proves deterministic protocol negotiation and driver behavior, rather than claiming real CLI feature QA. Isolated zero-token probes separately verified the SDK platform-package runtime 1.0.113 as protocol 4 and this Mac's installed `/opt/homebrew/bin/copilot` 1.0.112 as protocol 3; these are distinct evidence, detailed in [the test boundary](copilot-test-boundary.md). The 1.0.113 minimum is a hard chat-selection floor; the installed 1.0.112 CLI is rejected earlier by protocol negotiation.
+
+The old `@github/copilot-sdk` 1.0.29 (and 1.0.34) speaks only protocol 3. Updating that old package cannot connect it to a protocol-4 CLI. Conversely, SDK v2 rejects protocol 3 before creating or resuming any session. See upstream's [v2 compatibility contract](https://github.com/microsoft/copilot-sdk/blob/v2.0.0/docs/troubleshooting/compatibility.md#version-compatibility).
+
+The launch remains the user's **installed** `copilot --headless --port 0` through `resolveStructuredSpawn`, with a random per-launch token. **Never add `--no-auto-update`**: it selects a shim's built-in runtime instead of the runtime the user normally runs (#2154). The SDK gets `runtime: RuntimeConnection.forTcp('127.0.0.1', port, { connectionToken })`, `mode: 'coding-agent'` and `observability: { logLevel: 'error' }`. No ambient SDK connection setting can select in-process hosting, spawned hosting or the SDK's optional native runtime instead.
+
+Create and resume share v2's `SessionOptionsBase` (accepted by `CreateSessionOptions` and `ResumeSessionOptions`):
+
+| Preserved behavior | v2 options |
+| --- | --- |
+| User configuration, instructions, skills and MCP discovery | `enableConfigDiscovery: true`, `workingDirectory`; `coding-agent` mode |
+| Streaming and early events | `events.streaming`, `events.onEvent` |
+| Permissions | `permissions.onRequest` |
+| Questions, plans and MCP elicitation | `interaction.onUserInputRequest`, `onExitPlanModeRequest`, `onElicitationRequest` |
+| Context tier, models and provider settings | `inference.contextTier`, `providers`, `models`, `defaultProvider`; top-level `model` |
+| HTTP MCP bridge and stdio project servers | `mcp.servers` |
+| Tool search ceiling | `tools.search`, retaining the default enabled state |
+
+`COPILOT_PROVIDER_*` continues to map transport, credentials, headers and Azure options onto a named provider; model identity, wire model and token limits map onto its model definition. `github.capi.enabled: false` plus `inference.defaultProvider` preserves bare saved model IDs and live switching for BYOK. The v1 wire-model fallback (`wireModel`, then provider `modelId`, then the selected model) is preserved. Model-specific provider overrides are registered on live switches too; an existing model row in a resumed session is updated without replacing sibling models or providers. A saved model still wins over `COPILOT_MODEL`, then `COPILOT_PROVIDER_MODEL_ID`. Existing sessions and config remain on disk and are resumed by their original IDs; upstream explicitly preserves persisted sessions across the protocol migration. No session reset or config migration is needed.
+
+A failed probe and a failure after a cached probe both open the CLI view with protocol-specific guidance. A protocol-3 CLI needs an installed CLI update to `1.0.113` or a newer protocol-4 release for this build; older protocol-3 CLIs pair with a Clubhouse build embedding `@github/copilot-sdk` 1.x. A protocol-4 CLI facing an old SDK needs a Clubhouse build embedding `@microsoft/copilot-sdk` 2.0.0. Installing a global SDK does not change Clubhouse's embedded SDK. An unchanged restart or login cannot resolve a protocol mismatch. Failed connections close the SDK client and kill the CLI; prepared chat config is restored before CLI fallback.
+
+`sdk-loader.js` keeps a plain-JS dynamic import and the `microsoft-copilot-sdk` lazy chunk. Webpack excludes `koffi`, the unused FFI host, and both generations of platform-runtime packages. `scripts/check-copilot-sdk-chunk.mjs --static-only` builds the production main bundle, rejects native artifacts and the test-only `copilot-sdk-v3-fixture` alias in any chunk, and executes the same node_modules staging/exclusion assertion as Forge's `afterCopy`. The old SDK alias is an exact-pinned **devDependency only**, used solely to reproduce the reported `3-3` versus `4` error against a deterministic loopback fixture.
+
+Tests and optional real-runtime QA follow [copilot-test-boundary.md](copilot-test-boundary.md). Ordinary tests never launch a native runtime or send a model request. Feature fixtures adapted from the earlier v3 recordings are explicitly marked `derived` and list the synthesized v4 negotiation/grouped options. `protocol-v4` and `protocol-v3` are explicit incompatibility fixtures; `protocol-mismatch` retains the synthetic protocol-99 control.
+
+## Historical v1 spike and rollout
+
+The remainder records observations on SDK 1.x/protocol 3. Its version ranges, flat option names and runtime measurements are historical and do not describe v2 support. Current support and packaging are defined above.
 
 Status: phases 0 to 3 done; the SDK is the only Copilot chat driver since the legacy ACP driver was removed (#2868). Phase 4's real-login QA is still open · Date: 2026-11-01, updated 2026-11-07 · Issue: [#2616](https://github.com/Agent-Clubhouse/Clubhouse/issues/2616) · Context: [docs/structured-chat-research.md](structured-chat-research.md) §7 and §8 (Phase 5)
 

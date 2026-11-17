@@ -1,5 +1,5 @@
 import * as path from 'path';
-import type { PermissionRequest, ProviderConfig } from '@github/copilot-sdk';
+import type { PermissionRequest, NamedProviderConfig, ProviderModelConfig, SessionInferenceOptions } from '@microsoft/copilot-sdk';
 import type { ChatErrorCode, PermissionOption, TokenUsage, ToolCallContent, ToolCallLocation, ToolKind } from '../../../shared/chat/events';
 
 type Obj = Record<string, unknown>;
@@ -171,7 +171,9 @@ function parseProviderHeaders(value: string | undefined): Record<string, string>
  * still wants a GitHub login, so the driver has to pass them on. Only the base
  * URL turns a provider on, as in the CLI.
  */
-export function copilotProviderFromEnv(env: Record<string, string | undefined>): ProviderConfig | undefined {
+export type CopilotEnvProvider = Omit<NamedProviderConfig, 'name'> & Pick<ProviderModelConfig, 'modelId' | 'wireModel' | 'maxPromptTokens' | 'maxOutputTokens'>;
+
+export function copilotProviderFromEnv(env: Record<string, string | undefined>): CopilotEnvProvider | undefined {
   const baseUrl = env.COPILOT_PROVIDER_BASE_URL;
   if (!baseUrl) return undefined;
   const type = oneOf(env.COPILOT_PROVIDER_TYPE, ['openai', 'azure', 'anthropic'] as const);
@@ -194,5 +196,31 @@ export function copilotProviderFromEnv(env: Record<string, string | undefined>):
     ...(env.COPILOT_PROVIDER_WIRE_MODEL && { wireModel: env.COPILOT_PROVIDER_WIRE_MODEL }),
     ...(maxPromptTokens && { maxPromptTokens }),
     ...(maxOutputTokens && { maxOutputTokens }),
+  };
+}
+
+const ENV_PROVIDER = 'clubhouse-env';
+
+/** Preserve v1's model/wire-model fallback, including a saved qualified selection. */
+export function copilotProviderModel(provider: CopilotEnvProvider, model: string): ProviderModelConfig {
+  const id = model.startsWith(`${ENV_PROVIDER}/`) ? model.slice(ENV_PROVIDER.length + 1) : model;
+  const wireModel = provider.wireModel ?? provider.modelId;
+  return {
+    id,
+    provider: ENV_PROVIDER,
+    ...(provider.modelId && { modelId: provider.modelId }),
+    ...(wireModel && { wireModel }),
+    ...(provider.maxPromptTokens && { maxPromptTokens: provider.maxPromptTokens }),
+    ...(provider.maxOutputTokens && { maxOutputTokens: provider.maxOutputTokens }),
+  };
+}
+
+/** Keep saved, bare model ids working while v2 registers transport and model separately. */
+export function copilotProviderInference(provider: CopilotEnvProvider, model: string): SessionInferenceOptions {
+  const { modelId: _modelId, wireModel: _wireModel, maxPromptTokens: _prompt, maxOutputTokens: _output, ...connection } = provider;
+  return {
+    defaultProvider: ENV_PROVIDER,
+    providers: [{ name: ENV_PROVIDER, ...connection }],
+    models: [copilotProviderModel(provider, model)],
   };
 }

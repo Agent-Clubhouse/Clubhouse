@@ -257,7 +257,9 @@ Each CLI was checked with `--help`, schema generators and handshakes. Each got a
   - A stray `Info: <path>` line appeared in assistant text.
   - Pass `--no-auto-update` to pin the version.
 
-**Copilot SDK (`@github/copilot-sdk`)**
+**Copilot SDK (`@microsoft/copilot-sdk` 2.0.0)**
+
+Current integration requires protocol 4 and CLI 1.0.113 or a newer protocol-4 release. It explicitly attaches over TCP to the installed CLI using `runtime: RuntimeConnection.forTcp(...)` and `mode: 'coding-agent'`; no native runtime is selected. The old `@github/copilot-sdk` 1.x line is protocol 3. See [the current integration and historical spike](copilot-sdk-driver.md).
 
 - GA since 2026-06-02, MIT, with SDKs in 6 languages. It talks to a hidden `--server` mode.
 - About 150 event types, including queue vs immediate (steer) sends, fork and rewind, plan-exit approval, subagents and credit usage.
@@ -441,7 +443,7 @@ Three options were compared:
 
 ```
 ClaudeDriver                CodexDriver                    AcpDriver → CopilotSdkDriver
-├ SdkTransport (default)    codex app-server (stdio v2)    copilot --acp → @github/copilot-sdk
+├ SdkTransport (default)    codex app-server (stdio v2)    copilot --acp → @microsoft/copilot-sdk (TCP, protocol 4)
 └ StreamTransport (-p)      generated types, pinned        also Gemini CLI / other ACP agents
   both run the user's claude
         \                          |                              /

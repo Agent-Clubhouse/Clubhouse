@@ -3,7 +3,7 @@ import * as fsp from 'fs/promises';
 import * as os from 'os';
 import * as path from 'path';
 import { fileURLToPath } from 'url';
-import type { CopilotClient, CopilotSession, ElicitationContext, ElicitationResult, ExitPlanModeRequest, ExitPlanModeResult, MCPServerConfig, MessageOptions, ModelInfo, PermissionRequest, PermissionRequestResult, SessionConfig, SessionEvent } from '@github/copilot-sdk';
+import type { CopilotClient, CopilotSession, ElicitationContext, ElicitationResult, ExitPlanModeRequest, ExitPlanModeResult, MCPServerConfig, MessageOptions, PermissionRequest, PermissionRequestResult, SessionOptionsBase, SessionEvent } from '@microsoft/copilot-sdk';
 import { MINIMAL_CHAT_CAPABILITIES, type ChatCapabilities, type PermissionLevel } from '../../../shared/chat/capabilities';
 import { COMPACTION_STARTED, type ChatEventDraft, type ChatMcpServerStatus, type ChatQuestionAnswers, type ContentBlock, type MessageDelivery, type TokenUsage } from '../../../shared/chat/events';
 import type { ChatDriver, ChatDriverProbe, ChatDriverSession, ChatDriverStartOptions, McpHttpEndpoint, PermissionResponseExtras } from '../../../shared/chat/runtime';
@@ -19,22 +19,28 @@ import {
   copilotPermissionOptions,
   copilotPermissionView,
   copilotProviderFromEnv,
+  copilotProviderInference,
+  copilotProviderModel,
+  type CopilotEnvProvider,
   copilotTokens,
   copilotToolContent,
   copilotToolKind,
   copilotToolLocations,
   copilotToolTitle,
 } from './normalizer';
+import { isCopilotProtocolMismatch } from './compatibility';
 import { markFailedCopilotWrites, markFailedCopilotWritesFromStart } from './failed-writes';
 import { loadCopilotSdk } from './sdk-loader';
 import { copilotTierEntry, type CopilotTierEntry } from '../../../shared/context-window';
 import { safeMcpErrorLine } from '../../services/mcp-error-text';
 import { reportedCopilotSkillNames } from '../../../shared/chat/provider-inventory';
 
+type ModelInfo = Awaited<ReturnType<CopilotClient['listModels']>>[number];
+
 type ReasoningEffort = NonNullable<NonNullable<Parameters<CopilotSession['setModel']>[1]>['reasoningEffort']>;
 
 type SlashCommandInfo = Awaited<ReturnType<CopilotSession['rpc']['commands']['list']>>['commands'][number];
-type UserInputHandler = NonNullable<SessionConfig['onUserInputRequest']>;
+type UserInputHandler = NonNullable<NonNullable<SessionOptionsBase['interaction']>['onUserInputRequest']>;
 type UserInputRequest = Parameters<UserInputHandler>[0];
 type UserInputResponse = Awaited<ReturnType<UserInputHandler>>;
 
@@ -111,9 +117,19 @@ const TIER_CATALOG_TIMEOUT_MS = 8_000;
 
 async function connect(server: CopilotServer): Promise<CopilotClient> {
   const { CopilotClient, RuntimeConnection } = await loadCopilotSdk();
-  const client = new CopilotClient({ connection: RuntimeConnection.forUri(server.uri, { connectionToken: server.connectionToken }), logLevel: 'error' });
+  const client = new CopilotClient({
+    runtime: RuntimeConnection.forTcp(server.host, server.port, { connectionToken: server.connectionToken }),
+    mode: 'coding-agent',
+    observability: { logLevel: 'error' },
+  });
   markFailedCopilotWritesFromStart(client);
-  await client.start();
+  try {
+    await client.start();
+  } catch (error) {
+    // connect() has not returned, so the caller cannot yet clean up this client.
+    await client.forceStop().catch(ignore);
+    throw error;
+  }
   // In case a future SDK connects some other way.
   markFailedCopilotWrites(client);
   return client;
@@ -256,6 +272,8 @@ export class CopilotSdkChatSession implements ChatDriverSession {
   /** What approving a plan returns to. */
   private actingLevel: PermissionLevel = 'ask';
   private model: string | undefined;
+  private provider: CopilotEnvProvider | undefined;
+  private readonly providerModels = new Set<string>();
   private effort: string | undefined;
   private models: ModelInfo[] = [];
   private mcpReported = '';
@@ -279,9 +297,9 @@ export class CopilotSdkChatSession implements ChatDriverSession {
     private readonly server: CopilotServer,
     private readonly opts: ChatDriverStartOptions,
     log: Log,
-    private readonly overrides: Partial<SessionConfig> = {},
+    private readonly overrides: Partial<SessionOptionsBase> = {},
     private readonly logRedactor = new LogRedactor(),
-    private readonly defaults: Partial<SessionConfig> = {},
+    private readonly defaults: Partial<SessionOptionsBase> = {},
   ) {
     this.logRedactor.remember(opts);
     this.logRedactor.startRun();
@@ -310,10 +328,12 @@ export class CopilotSdkChatSession implements ChatDriverSession {
     // Saved model first, as `--model` beats COPILOT_MODEL in the CLI.
     const model = saved ?? env.COPILOT_MODEL ?? provider?.modelId;
     if (provider && !model) throw new Error('A Copilot provider (COPILOT_PROVIDER_BASE_URL) needs a model. Set COPILOT_MODEL, or choose a model for the agent.');
-    const config: SessionConfig = {
+    this.provider = provider;
+    if (provider && model) this.providerModels.add(copilotProviderModel(provider, model).id);
+    const config: SessionOptionsBase = {
       ...this.defaults,
       clientName: 'Clubhouse',
-      streaming: true,
+      events: { streaming: true, onEvent: (event) => this.onEvent(event) },
       workingDirectory: this.opts.cwd,
       // Off by default in the SDK. Without it the session ignores the user's own
       // instructions, skills and MCP config, which Terminal loads.
@@ -321,16 +341,21 @@ export class CopilotSdkChatSession implements ChatDriverSession {
       // Tool search leaves out tools the session already loaded (#3615), so a
       // start that loads every tool raises the point where it starts, without
       // turning it on: a BYOK model keeps the runtime's own default.
-      ...(this.opts.loadAllTools && { toolSearch: { ...this.defaults.toolSearch, deferThreshold: COPILOT_EAGER_TOOL_CEILING } }),
+      ...(this.opts.loadAllTools && { tools: { ...this.defaults.tools, search: { ...this.defaults.tools?.search, deferThreshold: COPILOT_EAGER_TOOL_CEILING } } }),
       ...(model && { model }),
-      ...(this.opts.contextWindow && { contextTier: this.opts.contextWindow as SessionConfig['contextTier'] }),
-      ...(provider && { provider }),
-      ...(Object.keys(servers).length && { mcpServers: servers }),
-      onPermissionRequest: (request) => this.onPermission(request),
-      onUserInputRequest: (request) => this.onQuestion(request),
-      onExitPlanModeRequest: (request) => this.onPlan(request),
-      onElicitationRequest: (context) => this.onElicitation(context),
-      onEvent: (event) => this.onEvent(event),
+      inference: {
+        ...this.defaults.inference,
+        ...(this.opts.contextWindow && { contextTier: this.opts.contextWindow as NonNullable<SessionOptionsBase['inference']>['contextTier'] }),
+        ...(provider && model && copilotProviderInference(provider, model)),
+      },
+      ...(provider && { github: { ...this.defaults.github, capi: { enabled: false } } }),
+      ...(Object.keys(servers).length && { mcp: { ...this.defaults.mcp, servers } }),
+      permissions: { onRequest: (request) => this.onPermission(request) },
+      interaction: {
+        onUserInputRequest: (request) => this.onQuestion(request),
+        onExitPlanModeRequest: (request) => this.onPlan(request),
+        onElicitationRequest: (context) => this.onElicitation(context),
+      },
       ...this.overrides,
     };
     const resumeId = this.opts.resumeNativeSessionId;
@@ -560,6 +585,7 @@ export class CopilotSdkChatSession implements ChatDriverSession {
           say(result.entry.text);
           break;
         case 'set-model':
+          await this.ensureProviderModel(result.model);
           await session.setModel(result.model, result.reasoningEffort ? { reasoningEffort: result.reasoningEffort as ReasoningEffort } : undefined);
           if (result.warning) this.push({ type: 'notice', data: { level: 'warn', code: 'command_notice', message: result.warning } }, true);
           break;
@@ -624,9 +650,26 @@ export class CopilotSdkChatSession implements ChatDriverSession {
   async setModel(modelId: string, effort?: string | null): Promise<void> {
     // Copilot has no "unset", so there's no default to return to (no effortDefault).
     if (effort === null) throw new Error("Copilot can't return effort to its default");
+    await this.ensureProviderModel(modelId);
     const wanted = effort ?? this.effort;
     // The session.model_change event reports what the CLI applied.
     await this.requireSession().setModel(modelId, wanted ? { reasoningEffort: wanted as ReasoningEffort } : undefined);
+  }
+
+  /** v2 unregistered aliases do not inherit v1's whole-provider model defaults. */
+  private async ensureProviderModel(model: string): Promise<void> {
+    const provider = this.provider;
+    if (!provider || !(provider.modelId || provider.wireModel || provider.maxPromptTokens || provider.maxOutputTokens)) return;
+    const definition = copilotProviderModel(provider, model);
+    if (this.providerModels.has(definition.id)) return;
+    const session = this.requireSession();
+    // A resumed session can already contain this model. Replace only its row,
+    // keeping all sibling models and discovered providers intact.
+    const { list } = await session.rpc.model.list();
+    const exists = list.some((entry) => entry && typeof entry === 'object' && !Array.isArray(entry) && entry.id === `${definition.provider}/${definition.id}`);
+    if (exists) await session.rpc.provider.updateModel({ model: definition });
+    else await session.rpc.provider.add({ models: [definition] });
+    this.providerModels.add(definition.id);
   }
 
   async compact(): Promise<void> {
@@ -892,6 +935,8 @@ export class CopilotSdkChatSession implements ChatDriverSession {
   private onEvent(event: SessionEvent): void {
     // A subagent's own session events (agentId set) don't speak for the session:
     // its idle isn't the turn's, and its model isn't the one the user chose.
+    // Older persisted events may carry this legacy field; v4 uses agentId.
+    const parentToolCallId = (event.data as { parentToolCallId?: string }).parentToolCallId;
     const fromSubagent = !!(event as { agentId?: string }).agentId;
     const subagentOf = (parentToolCallId: string | undefined) => parentToolCallId ?? this.agents.get((event as { agentId?: string }).agentId ?? '');
     if (TURN_OPENING_EVENTS.has(event.type) && !this.turnRunning) this.beginTurn('system');
@@ -905,13 +950,13 @@ export class CopilotSdkChatSession implements ChatDriverSession {
         }
         return;
       case 'assistant.message_delta': {
-        const { messageId, deltaContent, parentToolCallId } = event.data;
+        const { messageId, deltaContent } = event.data;
         const subagentId = subagentOf(parentToolCallId);
         this.push({ type: 'agent_message_chunk', data: { messageId, text: deltaContent, ...(subagentId && { subagentId }) } }, true);
         return;
       }
       case 'assistant.message': {
-        const { messageId, content, parentToolCallId } = event.data;
+        const { messageId, content } = event.data;
         // A round that only calls tools has an empty message.
         const subagentId = subagentOf(parentToolCallId);
         if (content) this.push({ type: 'agent_message', data: { messageId, text: content, ...(subagentId && { subagentId }) } }, true);
@@ -924,7 +969,7 @@ export class CopilotSdkChatSession implements ChatDriverSession {
         if (event.data.content) this.push({ type: 'agent_thought', data: { messageId: event.data.reasoningId, text: event.data.content } }, true);
         return;
       case 'tool.execution_start': {
-        const { toolCallId, toolName, arguments: args, toolTitle, parentToolCallId } = event.data;
+        const { toolCallId, toolName, arguments: args, toolTitle } = event.data;
         if (HIDDEN_TOOLS.has(toolName)) return;
         const subagentId = subagentOf(parentToolCallId);
         this.tools.set(toolCallId, { name: toolName, args, ...(subagentId && { parent: subagentId }) });
@@ -1093,17 +1138,17 @@ export class CopilotSdkChatSession implements ChatDriverSession {
 export interface CopilotSdkDriverOptions {
   log?: Log;
   /** Session settings tests override, e.g. a fake model's `provider`. */
-  sessionOverrides?: Partial<SessionConfig>;
+  sessionOverrides?: Partial<SessionOptionsBase>;
   /**
    * Session settings tests start from, below the driver's own: a hosted
    * model's tool search, which no BYOK setting turns on (#3615).
    */
-  sessionDefaults?: Partial<SessionConfig>;
+  sessionDefaults?: Partial<SessionOptionsBase>;
   probeTimeoutMs?: number;
 }
 
 /**
- * Copilot chat over `@github/copilot-sdk`, running the user's own `copilot`.
+ * Copilot chat over `@microsoft/copilot-sdk`, running the user's own `copilot`.
  * The only Copilot chat driver since legacy ACP was removed (#2868): a failed
  * probe opens the agent in the CLI view.
  */
@@ -1191,6 +1236,9 @@ export class CopilotSdkChatDriver implements ChatDriver {
         await server.kill();
       } finally {
         logRedactor.endRun();
+      }
+      if (isCopilotProtocolMismatch(err instanceof Error ? err.message : String(err))) {
+        throw Object.assign(err instanceof Error ? err : new Error(String(err)), { code: 'protocol_error' });
       }
       throw err;
     } finally {

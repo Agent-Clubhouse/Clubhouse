@@ -30,7 +30,7 @@ vi.mock('../../services/clubhouse-mcp/mcp-call-gate', async (original) => ({
   mcpCallAccess: () => 'open',
 }));
 
-import type { SessionConfig } from '@github/copilot-sdk';
+import type { SessionOptionsBase } from '@microsoft/copilot-sdk';
 import type { ChatEventDraft } from '../../../shared/chat/events';
 import type { ChatDriverSession, ChatDriverStartOptions } from '../../../shared/chat/runtime';
 import { COPILOT_OPTION_DENY } from './normalizer';
@@ -45,12 +45,12 @@ import { setMcpCaller } from '../../services/clubhouse-mcp/mcp-call-gate';
 import { setDispatcherAgent, setDispatcherChatAgent } from '../../services/clubhouse-mcp/dispatcher-gate';
 
 const platform = `${process.platform}-${process.arch}`;
-const runtime = path.resolve(__dirname, '../../../../node_modules/@github', `copilot-sdk-${platform}`, 'prebuilds', platform, process.platform === 'win32' ? 'copilot-runtime.exe' : 'copilot-runtime');
+const runtime = path.resolve(__dirname, '../../../../node_modules/@microsoft', `copilot-sdk-${platform}`, 'prebuilds', platform, process.platform === 'win32' ? 'copilot-runtime.exe' : 'copilot-runtime');
 const tmp = fs.mkdtempSync(path.join(fs.realpathSync(os.tmpdir()), 'copilot-controller-'));
 const PROJECT = path.join(tmp, 'project');
 fs.mkdirSync(PROJECT, { recursive: true });
 const invalid = 'invalid-test-token';
-const SEARCH_ON: Partial<SessionConfig> = { toolSearch: { enabled: true } };
+const SEARCH_ON: Partial<SessionOptionsBase> = { tools: { search: { enabled: true } } };
 /** A driver whose sessions search by default, as a hosted model's do. */
 const hosted = () => new CopilotSdkChatDriver({ sessionDefaults: SEARCH_ON });
 /** How the runtime names a Clubhouse tool to the model. */

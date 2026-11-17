@@ -17,7 +17,7 @@ function rawMarkdown(): Plugin {
 export default defineConfig({
   plugins: [rawMarkdown()],
   test: {
-    include: ['src/main/chat/copilot/driver.runtime.qa.ts', 'src/main/chat/copilot/dispatcher-tools.runtime.qa.ts'],
+    include: ['src/main/chat/copilot/handshake.runtime.qa.ts', 'src/main/chat/copilot/driver.runtime.qa.ts', 'src/main/chat/copilot/dispatcher-tools.runtime.qa.ts'],
     environment: 'node',
     mockReset: true,
     restoreMocks: true,

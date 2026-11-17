@@ -42,7 +42,7 @@ jobs:
             version: '0.166.0'
           - provider: copilot-cli
             package: '@github/copilot'
-            version: '1.0.105'
+            version: '1.0.113'
     steps:
       - uses: actions/checkout@v7
 

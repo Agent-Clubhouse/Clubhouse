@@ -1,3 +1,4 @@
+import { copilotProtocolRecovery } from '../../chat/copilot/compatibility';
 import { LogRedactor } from '../../../shared/log-redaction';
 /**
  * Starts an agent in the chat runtime when the experimental Chat flag is on,
@@ -119,7 +120,9 @@ function driverLabel(driver: ChatDriver): string {
 }
 
 /** Copilot has one chat driver, so a failed start opens the CLI view (#2868); say what to do next. */
-function copilotRecoveryHint(provider: string, driver?: ChatDriver['id']): string {
+function copilotRecoveryHint(provider: string, driver?: ChatDriver['id'], failures = ''): string {
+  const protocolRecovery = provider === 'copilot-cli' && driver === 'copilot_sdk' ? copilotProtocolRecovery(failures) : undefined;
+  if (protocolRecovery) return `. ${protocolRecovery}`;
   return provider === 'copilot-cli' && driver === 'copilot_sdk'
     ? '. Copilot chat failed to start. Resolve the reported problem, then restart the agent to try chat again.'
     : '';
@@ -542,7 +545,7 @@ async function runChatStart(
         code: 'login_required',
         message: `${cliLabel(provider.id)} needs you to log in. Opening the CLI view so you can log in${login.hint ? ` (${login.hint})` : ''}. Chat starts next time.`,
       }
-    : { level: 'warn', code: 'fallback', message: `Opened in the CLI view: ${skipped.join('; ')}${copilotRecoveryHint(provider.id, candidates[0]?.id)}` }, params);
+    : { level: 'warn', code: 'fallback', message: `Opened in the CLI view: ${skipped.join('; ')}${copilotRecoveryHint(provider.id, candidates[0]?.id, skipped.join('; '))}` }, params);
   return 'terminal';
 
   /** Nonce, Clubhouse MCP bridge + project servers and env: once, before the first start attempt. */
