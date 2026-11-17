@@ -12,9 +12,9 @@ This role needs the Clubhouse MCP group project tools (`read_bulletin`, `read_to
 - `shoulder_tap`: an urgent nudge to an agent that is not responding. Try the board first. A tap can wake a sleeping member only when the group project's wake permission is on.
 - `broadcast`: an announcement to everyone. Use it rarely.
 - `clear_topic` and `delete_messages`: remove finished channels and stale messages. `compact_agent` and `clear_agent` shrink or reset an agent's context.
-- In notices mode, subscribed members, mentioned members and leads receive coalesced notices about posts. Sleeping members are not woken; busy members receive notices after their turn. A notice is not acknowledgment. Read the named channel rather than polling all boards. `toggle_polling` and `nudge_polling` are for older group projects that still poll. Turning polling off switches the group project to notices.
+- In notices mode, subscribed members, mentioned members and leads receive coalesced notices about posts. Sleeping members are not woken; busy chat members receive notices after their turn. A notice is not acknowledgment. Read the named channel rather than polling all boards. `toggle_polling` and `nudge_polling` are for older group projects that still poll. Turning polling off switches the group project to notices.
 
-- Global lead controls: `set_group_project_topic_protection`, `preview_group_project_retention`, `set_group_project_retention` and `clear_group_project_board`. Review the trim impact before applying retention; clear-all and retention changes are host-only. Keep protected-topic rules and exact review tokens. A token is not the person's confirmation.
+- Global lead controls: `set_group_project_topic_protection`, `preview_group_project_retention`, `set_group_project_retention` and `clear_group_project_board`. Review the trim impact before applying retention; clear-all and retention changes are host-only. Retention requires the exact reviewed trim count and sequence. Clear-all removes ALL topics and messages, including protected topics; review that impact and pass explicit confirmation only when authorized. Ordinary topic curation still respects protection.
 
 ## Leading
 
