@@ -1436,7 +1436,7 @@ describe('annex-server', () => {
       const ws = await connect();
       const reply = await spawn(ws, { sessionId: 's1', projectId: 'p', ...(agentId && { agentId }) });
       expect(reply).toEqual({ type: 'pty:spawn-shell:ack', payload: { sessionId: 's1', cwd } });
-      expect(ptyManagerModule.spawnShell).toHaveBeenCalledWith('s1', cwd);
+      expect(ptyManagerModule.spawnShell).toHaveBeenCalledWith('s1', cwd, { beforeSpawn: expect.any(Function) });
     });
 
     it('rejects unknown agents, agents of another project, and unknown projects', async () => {
@@ -1875,7 +1875,7 @@ describe('annex-server', () => {
       }));
       ws.emit('message', JSON.stringify({ type: 'agent:kill', payload: { agentId: 'remote-agent' } }));
       await vi.waitFor(() => expect(agentSystem.killAgent).toHaveBeenCalledWith(
-        'remote-agent', '/project', 'claude-code', 'user', { waitForExit: true, throwOnFailure: true },
+        'remote-agent', '/project', 'claude-code', 'user', { waitForExit: true, throwOnFailure: true, beforeStop: expect.any(Function) },
       ));
       expect(ws.send).not.toHaveBeenCalledWith(expect.stringContaining('agent:kill:ack'));
       finish();
@@ -1897,7 +1897,7 @@ describe('annex-server', () => {
       ws.emit('message', JSON.stringify({ type: 'agent:kill', payload: { agentId: 'shell-terminal' } }));
       await vi.waitFor(() => expect(agentSystem.killAgent).toHaveBeenCalledWith(
         'shell-terminal', '/shell-cwd', undefined, 'user',
-        { waitForExit: true, throwOnFailure: true, exitCommand: 'exit\r' },
+        { waitForExit: true, throwOnFailure: true, exitCommand: 'exit\r', beforeStop: expect.any(Function) },
       ));
       await vi.waitFor(() => expect(ws.send).toHaveBeenCalledWith(JSON.stringify({ type: 'agent:kill:ack', payload: { agentId: 'shell-terminal' } })));
     });

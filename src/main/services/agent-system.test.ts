@@ -3098,7 +3098,21 @@ describe('agent-system', () => {
         expect.any(Function),
         '. ./init.sh',
         undefined, // createEventNormalizer
+        undefined, // beforeSpawn: no fence given
       );
+    });
+
+    it('forwards the caller\'s beforeCreate fence into the headless spawn (#3613 P5)', async () => {
+      const beforeCreate = vi.fn();
+      await spawnAgent({
+        agentId: 'test-headless-fenced',
+        projectPath: '/project',
+        cwd: '/project',
+        kind: 'quick',
+        mission: 'test',
+        beforeCreate,
+      });
+      expect(mockHeadlessSpawn.mock.calls.at(-1)![9]).toBe(beforeCreate);
     });
 
     it('headless onExit calls restoreForAgent and untrackAgent', async () => {

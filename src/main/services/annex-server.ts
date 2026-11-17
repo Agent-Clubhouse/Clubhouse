@@ -2160,7 +2160,8 @@ async function handleSpawnShellWs(ws: WebSocket, payload: Record<string, unknown
   // Owned before it starts, so its first output already goes to this controller only.
   shellOwners.set(sessionId, ws);
   try {
-    await ptyManager.spawnShell(sessionId, cwd);
+    // Checked again inside the spawn, after its cwd check and just before the PTY starts (#3613).
+    await ptyManager.spawnShell(sessionId, cwd, { beforeSpawn: controlFence(ws) });
   } catch (err) {
     if (shellOwners.get(sessionId) === ws && !ptyManager.isRunning(sessionId)) shellOwners.delete(sessionId);
     sendPtyError(ws, op, err instanceof Error ? err.message : 'spawn_failed', { sessionId });
