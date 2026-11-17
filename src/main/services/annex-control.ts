@@ -27,6 +27,7 @@ import * as tls from 'tls';
 import { WebSocket, WebSocketServer, type RawData } from 'ws';
 import {
   CONTROL_CHANNEL_PATH,
+  CONTROL_CLOSE_BACKLOG,
   CONTROL_CLOSE_PROTOCOL,
   CONTROL_CLOSE_REVOKED,
   CONTROL_CLOSE_VERSION,
@@ -58,15 +59,35 @@ export const HELLO_TIMEOUT_MS = 10_000;
 export const HEARTBEAT_MS = 30_000;
 /** How long a requester waits for an answer by default (the same as a direct REST call). */
 export const REQUEST_TIMEOUT_MS = 30_000;
-/** Longest a target lets one request run (the same bound as a direct request on the main port). */
+/**
+ * Longest a target lets one request run (the same bound as a direct request on
+ * the main port). At this point the requester is told `timeout` and the
+ * handler's response is cut off.
+ */
 export const TARGET_TIMEOUT_MS = 60_000;
-/** Requests a target runs at once for one connection; more are answered `busy`. */
+/**
+ * Requests a target runs at once for one requester, across its connections,
+ * counting runs whose requester has stopped waiting but whose handler hasn't
+ * finished. A slot frees only when the handler's run settles. Also the most
+ * answers one connection may have outstanding (not yet written). More are
+ * answered `busy`.
+ */
 export const MAX_IN_FLIGHT = 16;
+/**
+ * Most bytes a connection may have queued to send but not yet written: the
+ * other side isn't reading. Over this the connection closes (4429) rather than
+ * buffer without bound or drop a frame. Two full frames.
+ */
+export const CONTROL_SEND_BUFFER_MAX_BYTES = 16 * 1024 * 1024;
 /** Requests a requester has waiting on one connection. */
 export const MAX_PENDING = 64;
 /** How long a target remembers a finished non-read request, so a retry with its id gets the same answer. */
 export const SEEN_TTL_MS = 10 * 60_000;
-/** Remembered requests per requester. The oldest finished one goes first. */
+/**
+ * Remembered requests per requester, running ones included. The oldest
+ * finished one goes first; a running one is never dropped, so at the bound a
+ * new non-read request is answered `busy`.
+ */
 export const SEEN_MAX_PER_PEER = 512;
 /** Largest answer kept for a retry. A bigger one is remembered as finished, and a retry gets `replay_unavailable`. */
 export const SEEN_RETAIN_MAX_BYTES = 1024 * 1024;
@@ -118,7 +139,10 @@ export interface InboundAuthority {
 /** What a target needs to run one request. */
 export interface DispatchContext {
   remoteAddress: string | undefined;
+  /** The requester stopped waiting (cancelled, or the connection went). The handler sees its request close; its answer is still kept if it finishes. */
   signal: AbortSignal;
+  /** The run's time is up, or a cancelled read: the response is cut off and won't complete. */
+  deadline: AbortSignal;
   /** The connection the request came over is still open. */
   linkOpen: () => boolean;
 }
@@ -130,7 +154,12 @@ export interface ControlTarget {
   /** Whether that principal is still authorized now. */
   stillAuthorized(principal: AnnexPrincipal): boolean;
   /** Runs a request already authorized as `principal` through the route table. */
-  dispatch(principal: AnnexPrincipal, request: ControlHttpRequest, ctx: DispatchContext): Promise<ControlResult>;
+  dispatch(principal: AnnexPrincipal, request: ControlHttpRequest, ctx: DispatchContext): Promise<DispatchResult>;
+}
+
+/** A handler's response. `complete`: it ended its response; anything else is never sent or remembered as an answer. */
+export interface DispatchResult extends ControlResult {
+  complete: boolean;
 }
 
 interface Pending {
@@ -139,10 +168,6 @@ interface Pending {
   resolve: (result: ControlResult) => void;
   reject: (err: ControlRequestError) => void;
   cleanup: () => void;
-}
-
-interface Running {
-  abort: AbortController;
 }
 
 interface Link {
@@ -163,7 +188,8 @@ interface Link {
   heartbeat: ReturnType<typeof setInterval> | null;
   alive: boolean;
   pending: Map<string, Pending>;
-  running: Map<string, Running>;
+  /** Target: requests this connection is owed an answer for, until it is written. Aborted on cancel or close. */
+  replying: Map<string, AbortController>;
 }
 
 // ---------------------------------------------------------------------------
@@ -174,6 +200,17 @@ const links = new Set<Link>();
 let inboundAuthority: InboundAuthority | null = null;
 let target: ControlTarget | null = null;
 let wss: WebSocketServer | null = null;
+/**
+ * Target: runs not yet settled, by requester (identity and certificate). Kept
+ * apart from any connection, so closing or replacing one never frees a slot
+ * whose handler is still running.
+ */
+const activeRuns = new Map<string, number>();
+
+function runKey(principal: { fingerprint: string; pin: string }): string {
+  return `${principal.fingerprint}\n${principal.pin}`;
+}
+let targetTimeoutMs = TARGET_TIMEOUT_MS;
 
 /** The server sets this while it runs; without it nothing is accepted. */
 export function setInboundAuthority(authority: InboundAuthority | null): void {
@@ -203,7 +240,12 @@ export function canServe(): boolean {
 // Seen-cache (target)
 // ---------------------------------------------------------------------------
 
-/** A finished request as the target remembers it. `not_retained`: it finished, but its answer was too large to keep. */
+/**
+ * A finished request as the target remembers it. `not_retained`: it ran, or may
+ * have, but there's no answer to replay: too large to keep, or its handler
+ * never completed a response (timed out, cut off, failed). A retry gets
+ * `replay_unavailable`, never a made-up answer and never a second run.
+ */
 type Stored = { kind: 'response'; response: ControlHttpResponse } | { kind: 'not_retained' } | { kind: 'error'; code: ControlErrorCode };
 
 interface SeenEntry {
@@ -234,16 +276,26 @@ export class SeenCache {
     for (const [key, entry] of this.entries) if (entry.done && entry.at < cutoff) this.entries.delete(key);
   }
 
-  /** `new`: run it and call `finish`. `same`: wait for (or replay) the original. `conflict`: a different request under that id. */
-  begin(key: string, peer: string, digest: string): { kind: 'new'; finish: (stored: Stored) => void } | { kind: 'same'; settled: Promise<Stored> } | { kind: 'conflict' } {
+  /** Without changing anything: `same` (wait for or replay it), `conflict` (another request under that id) or `absent`. */
+  peek(key: string, digest: string): { kind: 'same'; settled: Promise<Stored> } | { kind: 'conflict' } | { kind: 'absent' } {
     this.prune();
     const existing = this.entries.get(key);
-    if (existing) return existing.digest === digest ? { kind: 'same', settled: existing.settled } : { kind: 'conflict' };
+    if (!existing) return { kind: 'absent' };
+    return existing.digest === digest ? { kind: 'same', settled: existing.settled } : { kind: 'conflict' };
+  }
+
+  /**
+   * `new`: run it and call `finish`. `same` / `conflict` as `peek`. `full`: the
+   * requester already has the most remembered requests and none has finished.
+   */
+  begin(key: string, peer: string, digest: string): { kind: 'new'; finish: (stored: Stored) => void } | { kind: 'same'; settled: Promise<Stored> } | { kind: 'conflict' } | { kind: 'full' } {
+    const known = this.peek(key, digest);
+    if (known.kind !== 'absent') return known;
+    if (!this.makeRoom(peer)) return { kind: 'full' };
     let finish!: (stored: Stored) => void;
     const settled = new Promise<Stored>((resolve) => { finish = resolve; });
     const entry: SeenEntry = { peer, digest, at: this.now(), done: null, settled };
     this.entries.set(key, entry);
-    this.evict(peer);
     return {
       kind: 'new',
       finish: (stored) => {
@@ -255,15 +307,14 @@ export class SeenCache {
     };
   }
 
-  private evict(peer: string): void {
+  /** Room for one more of `peer`'s: drops its oldest finished entry if it must. Never a running one. */
+  private makeRoom(peer: string): boolean {
     const mine = [...this.entries].filter(([, e]) => e.peer === peer);
-    let over = mine.length - SEEN_MAX_PER_PEER;
-    for (const [key, entry] of mine) {
-      if (over <= 0) break;
-      if (!entry.done) continue;
-      this.entries.delete(key);
-      over--;
-    }
+    if (mine.length < SEEN_MAX_PER_PEER) return true;
+    const oldest = mine.filter(([, e]) => e.done).sort(([, a], [, b]) => a.at - b.at)[0];
+    if (!oldest) return false;
+    this.entries.delete(oldest[0]);
+    return true;
   }
 
   forgetPeer(fingerprint: string): void {
@@ -294,11 +345,29 @@ function frameFits(message: ControlMessage): string | null {
   return Buffer.byteLength(text) <= CONTROL_FRAME_MAX_BYTES ? text : null;
 }
 
-function rawSend(link: Link, message: ControlMessage): boolean {
-  if (link.closed || link.ws.readyState !== WebSocket.OPEN) return false;
+/**
+ * Sends one frame. `onWritten` runs once it has been written out, or at once if
+ * it can't be sent. A connection whose unwritten bytes would pass
+ * CONTROL_SEND_BUFFER_MAX_BYTES is closed instead: the other side isn't reading.
+ */
+function rawSend(link: Link, message: ControlMessage, onWritten?: () => void): boolean {
+  let called = false;
+  const written = () => { if (!called) { called = true; onWritten?.(); } };
+  if (link.closed || link.ws.readyState !== WebSocket.OPEN) { written(); return false; }
   const text = frameFits(message);
-  if (text === null) return false;
-  try { link.ws.send(text); return true; } catch { return false; /* telemetry-exempt: a closing socket; its close handler cleans up */ }
+  if (text === null) { written(); return false; }
+  if ((link.ws.bufferedAmount ?? 0) + Buffer.byteLength(text) > CONTROL_SEND_BUFFER_MAX_BYTES) {
+    refuseLink(link, CONTROL_CLOSE_BACKLOG, 'backlog', 'the other side is not reading');
+    written();
+    return false;
+  }
+  try {
+    link.ws.send(text, () => written());
+    return true;
+  } catch { // telemetry-exempt: a closing socket; its close handler cleans up
+    written();
+    return false;
+  }
 }
 
 function closeLink(link: Link, code: number, reason: string, failWith: ControlErrorCode = 'transport_unavailable'): void {
@@ -314,8 +383,9 @@ function closeLink(link: Link, code: number, reason: string, failWith: ControlEr
     pending.reject(new ControlRequestError(failWith, !isReadOnlyMethod(pending.method), pending.id));
   }
   link.pending.clear();
-  for (const running of link.running.values()) running.abort.abort();
-  link.running.clear();
+  // Requesters stop waiting; their runs go on to settle (or be cut off) on their own clocks.
+  for (const reply of link.replying.values()) reply.abort('closed');
+  link.replying.clear();
   try { link.ws.close(code, reason); } catch { /* telemetry-exempt: already closing */ }
   const ws = link.ws;
   const timer = setTimeout(() => { try { ws.terminate(); } catch { /* telemetry-exempt: already gone */ } }, 250);
@@ -340,7 +410,7 @@ function inboundStillAllowed(link: Link): boolean {
 function attach(ws: WebSocket, fingerprint: string, pin: string, direction: 'in' | 'out', remoteAddress: string | undefined): Link {
   const link: Link = {
     ws, fingerprint, pin, direction, remoteAddress, features: null, offered: null, closed: false,
-    helloTimer: null, heartbeat: null, alive: true, pending: new Map(), running: new Map(),
+    helloTimer: null, heartbeat: null, alive: true, pending: new Map(), replying: new Map(),
   };
   links.add(link);
   link.helloTimer = setTimeout(() => {
@@ -380,7 +450,7 @@ function onFrame(link: Link, data: RawData, isBinary: boolean): void {
   if (!link.features) { onHello(link, message); return; }
   if (link.direction === 'out') {
     if (message.type === 'request') { void onRequest(link, message); return; }
-    if (message.type === 'cancel') { link.running.get(message.id)?.abort.abort('cancelled'); return; }
+    if (message.type === 'cancel') { link.replying.get(message.id)?.abort('cancelled'); return; }
   } else if (message.type === 'response' || message.type === 'error') {
     onAnswer(link, message);
     return;
@@ -433,8 +503,8 @@ function toWire(result: ControlResult): ControlHttpResponse {
 async function onRequest(link: Link, message: Extract<ControlMessage, { type: 'request' }>): Promise<void> {
   const { id } = message;
   if (!link.features?.has('request')) { sendError(link, id, 'not_supported'); return; }
-  if (link.running.has(id)) { sendError(link, id, 'duplicate_id'); return; }
-  if (link.running.size >= MAX_IN_FLIGHT) { sendError(link, id, 'busy'); return; }
+  if (link.replying.has(id)) { sendError(link, id, 'duplicate_id'); return; }
+  if (link.replying.size >= MAX_IN_FLIGHT) { sendError(link, id, 'busy'); return; }
   const server = target;
   if (!server) { sendError(link, id, 'unavailable'); return; }
 
@@ -450,46 +520,87 @@ async function onRequest(link: Link, message: Extract<ControlMessage, { type: 'r
     method: message.method, path: message.path,
     ...(message.headers && { headers: message.headers }), ...(message.body !== undefined && { body: message.body }), ...(message.encoding && { encoding: message.encoding }),
   };
-  const abort = new AbortController();
-  link.running.set(id, { abort });
-  const timer = setTimeout(() => abort.abort('timeout'), TARGET_TIMEOUT_MS);
-  timer.unref?.();
-  const ctx: DispatchContext = { remoteAddress: link.remoteAddress, signal: abort.signal, linkOpen: () => !link.closed };
-  let outcome: Stored | 'aborted';
-  try {
-    outcome = isReadOnlyMethod(request.method)
-      ? await untilAborted(runHandler(server, principal, request, ctx, link).then(answerFor), abort.signal)
-      : await runOnce(server, principal, request, id, ctx, link);
-  } finally {
-    clearTimeout(timer);
-    link.running.delete(id);
-  }
-  // The connection went: nothing is sent.
-  if (link.closed) return;
-  // Cancelled: the requester stopped waiting. Timed out here: it's told.
-  if (outcome === 'aborted') {
-    if (abort.signal.reason === 'timeout') sendError(link, id, 'timeout');
-    return;
-  }
+  const reply = new AbortController();
+  link.replying.set(id, reply);
+  // The slot is held until the answer has been written out, not just queued.
+  const release = () => { if (link.replying.get(id) === reply) link.replying.delete(id); };
+  const outcome = isReadOnlyMethod(request.method)
+    ? await runRead(server, principal, request, link, reply.signal)
+    : await runOnce(server, principal, request, id, link, reply.signal);
+  // Cancelled, or the connection went: nothing is sent.
+  if (link.closed || reply.signal.aborted || outcome === 'cancelled') { release(); return; }
   // Nothing goes to a requester that lost its access while this ran.
   if (!server.stillAuthorized(principal)) {
+    release();
     sendError(link, id, 'authorization_revoked');
     refuseLink(link, CONTROL_CLOSE_REVOKED, 'authorization_revoked', 'revoked while a request ran');
     return;
   }
-  if (outcome.kind === 'error') { sendError(link, id, outcome.code); return; }
-  if (outcome.kind === 'not_retained') { sendError(link, id, 'replay_unavailable'); return; }
-  if (!rawSend(link, { v: 1, type: 'response', id, ...outcome.response })) sendError(link, id, 'response_too_large');
+  let frame: ControlMessage = outcome.kind === 'response' ? { v: 1, type: 'response', id, ...outcome.response }
+    : { v: 1, type: 'error', id, code: outcome.kind === 'error' ? outcome.code : 'replay_unavailable' };
+  if (frameFits(frame) === null) frame = { v: 1, type: 'error', id, code: 'response_too_large' };
+  rawSend(link, frame, release);
 }
 
-/** The route handler's answer. A handler that throws answers 500, as an uncaught failure would. */
-function runHandler(server: ControlTarget, principal: AnnexPrincipal, request: ControlHttpRequest, ctx: DispatchContext, link: Link): Promise<ControlHttpResponse> {
-  return server.dispatch(principal, request, ctx)
-    .then(toWire)
-    .catch((err) => {
-      appLog('core:annex', 'error', 'A reverse request failed', { meta: { fingerprint: link.fingerprint, method: request.method, error: err instanceof Error ? err.message : String(err) } });
-      return jsonResponse(500, { error: 'internal_error' });
+/** How one run of a handler ended. Only `complete` carries an answer. */
+type RunOutcome = { kind: 'complete'; response: ControlHttpResponse } | { kind: 'incomplete'; timedOut: boolean } | { kind: 'failed' };
+
+interface Run {
+  /** Settles when the handler's run does, and only then is its slot free. */
+  done: Promise<RunOutcome>;
+  deadline: AbortSignal;
+  /** The requester stopped waiting: the handler sees its request close. */
+  cancel(): void;
+  /** Ends it now: cancelled, and the response cut off. */
+  stop(): void;
+}
+
+function canStart(principal: AnnexPrincipal): boolean {
+  return (activeRuns.get(runKey(principal)) ?? 0) < MAX_IN_FLIGHT;
+}
+
+/** Starts the handler for an authorized request, holding one of the requester's slots until it settles. Null when they're all taken. */
+function startRun(server: ControlTarget, principal: AnnexPrincipal, request: ControlHttpRequest, link: Link): Run | null {
+  const peer = principal.fingerprint;
+  const budget = runKey(principal);
+  if (!canStart(principal)) return null;
+  activeRuns.set(budget, (activeRuns.get(budget) ?? 0) + 1);
+  const cancel = new AbortController();
+  const deadline = new AbortController();
+  const timer = setTimeout(() => deadline.abort('timeout'), targetTimeoutMs);
+  timer.unref?.();
+  const ctx: DispatchContext = { remoteAddress: link.remoteAddress, signal: cancel.signal, deadline: deadline.signal, linkOpen: () => !link.closed };
+  let dispatched: Promise<DispatchResult>;
+  try { dispatched = server.dispatch(principal, request, ctx); } catch (err) { dispatched = Promise.reject(err); }
+  const done = dispatched
+    .then((result): RunOutcome => (result.complete ? { kind: 'complete', response: toWire(result) } : { kind: 'incomplete', timedOut: deadline.signal.reason === 'timeout' }))
+    .catch((err): RunOutcome => {
+      appLog('core:annex', 'error', 'A reverse request failed', { meta: { fingerprint: peer, method: request.method, error: err instanceof Error ? err.message : String(err) } });
+      return { kind: 'failed' };
+    })
+    .finally(() => {
+      clearTimeout(timer);
+      const left = (activeRuns.get(budget) ?? 1) - 1;
+      if (left > 0) activeRuns.set(budget, left);
+      else activeRuns.delete(budget);
     });
+  return {
+    done, deadline: deadline.signal,
+    cancel: () => cancel.abort('cancelled'),
+    stop: () => { cancel.abort('cancelled'); deadline.abort('cancelled'); },
+  };
+}
+
+/** What the requester that ran it gets. A handler that threw answers 500, as an uncaught failure would; one cut off answers `timeout`. */
+function answerForRun(outcome: RunOutcome): Stored {
+  if (outcome.kind === 'complete') return answerFor(outcome.response);
+  if (outcome.kind === 'failed') return { kind: 'response', response: jsonResponse(500, { error: 'internal_error' }) };
+  return { kind: 'error', code: outcome.timedOut ? 'timeout' : 'cancelled' };
+}
+
+/** What a retry gets: only a completed answer is ever replayed. */
+function retainedForRun(outcome: RunOutcome): Stored {
+  return outcome.kind === 'complete' ? retainedFor(outcome.response) : { kind: 'not_retained' };
 }
 
 /** What the requester that ran it gets: the answer, unless it can't fit in a frame. */
@@ -504,27 +615,52 @@ function retainedFor(response: ControlHttpResponse): Stored {
   return Buffer.byteLength(response.body) <= SEEN_RETAIN_MAX_BYTES ? answer : { kind: 'not_retained' };
 }
 
-/** Waits for `work`, or until the request is cancelled or times out here. */
-function untilAborted(work: Promise<Stored>, signal: AbortSignal): Promise<Stored | 'aborted'> {
-  if (signal.aborted) return Promise.resolve('aborted');
-  return Promise.race([work, new Promise<'aborted'>((resolve) => signal.addEventListener('abort', () => resolve('aborted'), { once: true }))]);
+function onAbort(signal: AbortSignal, fn: () => void): void {
+  if (signal.aborted) fn();
+  else signal.addEventListener('abort', fn, { once: true });
+}
+
+/** Waits for `work`, until the requester stops waiting (`cancelled`), or until the run's time is up (`timeout`). */
+function untilDone(work: Promise<Stored>, reply: AbortSignal, deadline: AbortSignal | null): Promise<Stored | 'cancelled'> {
+  return new Promise((resolve) => {
+    void work.then(resolve);
+    onAbort(reply, () => resolve('cancelled'));
+    if (deadline) onAbort(deadline, () => resolve({ kind: 'error', code: 'timeout' }));
+  });
+}
+
+/** A read has nothing to finish for anyone else: cancelling it ends it. */
+function runRead(server: ControlTarget, principal: AnnexPrincipal, request: ControlHttpRequest, link: Link, reply: AbortSignal): Promise<Stored | 'cancelled'> {
+  const run = startRun(server, principal, request, link);
+  if (!run) return Promise.resolve({ kind: 'error', code: 'busy' });
+  onAbort(reply, () => run.stop());
+  return untilDone(run.done.then(answerForRun), reply, run.deadline);
 }
 
 /**
  * A non-read request runs at most once per id: a retry (on this connection
  * after a lost answer, or on a new one) gets the original outcome, waiting for
- * it if it's still running. It runs to its end even if this requester stops
- * waiting, so a retry learns what happened.
+ * it if it's still running. If the requester stops waiting the handler still
+ * runs to its end (or its deadline), so a retry learns what happened; only a
+ * response the handler completed is ever replayed.
  */
-async function runOnce(server: ControlTarget, principal: AnnexPrincipal, request: ControlHttpRequest, id: string, ctx: DispatchContext, link: Link): Promise<Stored | 'aborted'> {
-  const slot = seen.begin(SeenCache.key(principal, id), principal.fingerprint, requestDigest(request));
-  if (slot.kind === 'conflict') {
-    return { kind: 'response', response: jsonResponse(409, { error: 'request_conflict', message: 'That request id was already used for a different request.' }) };
+function runOnce(server: ControlTarget, principal: AnnexPrincipal, request: ControlHttpRequest, id: string, link: Link, reply: AbortSignal): Promise<Stored | 'cancelled'> {
+  const key = SeenCache.key(principal, id);
+  const digest = requestDigest(request);
+  const known = seen.peek(key, digest);
+  if (known.kind === 'conflict') {
+    return Promise.resolve({ kind: 'response', response: jsonResponse(409, { error: 'request_conflict', message: 'That request id was already used for a different request.' }) });
   }
-  if (slot.kind === 'same') return untilAborted(slot.settled, ctx.signal);
-  const ran = runHandler(server, principal, request, ctx, link);
-  void ran.then((response) => slot.finish(retainedFor(response)));
-  return untilAborted(ran.then(answerFor), ctx.signal);
+  if (known.kind === 'same') return untilDone(known.settled, reply, null);
+  // A new one needs a free slot and room to be remembered; running entries are never dropped.
+  // Checked and taken in one synchronous step, so two requests can't both take the last slot.
+  if (!canStart(principal)) return Promise.resolve({ kind: 'error', code: 'busy' });
+  const slot = seen.begin(key, principal.fingerprint, digest);
+  if (slot.kind !== 'new') return Promise.resolve({ kind: 'error', code: 'busy' });
+  const run = startRun(server, principal, request, link)!;
+  onAbort(reply, () => run.cancel());
+  void run.done.then((outcome) => slot.finish(retainedForRun(outcome)));
+  return untilDone(run.done.then(answerForRun), reply, run.deadline);
 }
 
 // ---------------------------------------------------------------------------
@@ -716,6 +852,8 @@ export function closeAll(direction: 'in' | 'out' | 'both' = 'both'): void {
 export function resetControlForTests(): void {
   closeAll();
   seen.clear();
+  activeRuns.clear();
+  targetTimeoutMs = TARGET_TIMEOUT_MS;
   inboundAuthority = null;
   target = null;
 }
@@ -739,4 +877,14 @@ export function _seenSizeForTesting(): number {
 /** Test helper: the socket of the connection `fingerprint` opened to this machine, if any. */
 export function _inboundSocketForTesting(fingerprint: string): WebSocket | undefined {
   return linkFor(fingerprint, 'in')?.ws;
+}
+
+/** Test helper: how long a target lets one request run (null restores the default). */
+export function _setTargetTimeoutForTesting(ms: number | null): void {
+  targetTimeoutMs = ms ?? TARGET_TIMEOUT_MS;
+}
+
+/** Test helper: runs not yet settled for a requester. */
+export function _activeRunsForTesting(fingerprint: string, pin: string): number {
+  return activeRuns.get(runKey({ fingerprint, pin })) ?? 0;
 }

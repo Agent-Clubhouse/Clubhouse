@@ -38,6 +38,8 @@ export type ControlFeature = typeof CONTROL_FEATURES[number];
 export const CONTROL_CLOSE_PROTOCOL = 4400;
 /** Close code when the other side is no longer allowed to use this connection (removed, re-pinned, no longer a member). */
 export const CONTROL_CLOSE_REVOKED = 4401;
+/** Close code when the other side leaves too much unread: its answers would pile up here without bound. */
+export const CONTROL_CLOSE_BACKLOG = 4429;
 /** Close code for a protocol version this machine doesn't speak. */
 export const CONTROL_CLOSE_VERSION = 4426;
 

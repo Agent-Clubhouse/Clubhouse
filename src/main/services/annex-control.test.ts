@@ -19,7 +19,7 @@ vi.mock('./annex-tls', () => ({ extractPeerFingerprint: vi.fn(), extractPeerCert
 import * as control from './annex-control';
 import { authorize, stillAuthorized, type AnnexAuthorizerDeps, type AnnexPrincipal } from './annex-authorizer';
 import type { ControlHttpRequest } from '../../shared/annex-control-protocol';
-import { CONTROL_CLOSE_PROTOCOL, CONTROL_CLOSE_REVOKED, CONTROL_CLOSE_VERSION, CONTROL_FRAME_MAX_BYTES } from '../../shared/annex-control-protocol';
+import { CONTROL_CLOSE_BACKLOG, CONTROL_CLOSE_PROTOCOL, CONTROL_CLOSE_REVOKED, CONTROL_CLOSE_VERSION, CONTROL_FRAME_MAX_BYTES } from '../../shared/annex-control-protocol';
 import type { AnnexPeer } from '../../shared/types';
 
 /** B: the computer with no route back. It accepted the connection and sends requests. */
@@ -35,9 +35,16 @@ class FakeSocket extends EventEmitter {
   pings = 0;
   closed: { code: number; reason: string } | null = null;
   peer: FakeSocket | null = null;
+  /** Bytes queued but not written, as ws reports it. */
+  bufferedAmount = 0;
+  /** While set, write callbacks wait for `drain()`: the frame is queued but not yet written. */
+  holdWrites = false;
+  private heldWrites: Array<() => void> = [];
   ping() { this.pings++; }
-  send(data: string) {
+  drain() { const held = this.heldWrites; this.heldWrites = []; for (const cb of held) cb(); }
+  send(data: string, cb?: () => void) {
     this.sent.push(JSON.parse(data));
+    if (cb) { if (this.holdWrites) this.heldWrites.push(cb); else queueMicrotask(cb); }
     const peer = this.peer;
     if (peer) queueMicrotask(() => { if (peer.readyState === 1) peer.emit('message', Buffer.from(data), false); });
   }
@@ -75,9 +82,10 @@ const deps: AnnexAuthorizerDeps = {
   networkEnabled: () => world.networkEnabled !== false,
 };
 
-type Handler = (principal: AnnexPrincipal, request: ControlHttpRequest, ctx: control.DispatchContext) => Promise<control.ControlResult>;
+type Handler = (principal: AnnexPrincipal, request: ControlHttpRequest, ctx: control.DispatchContext) => Promise<control.ControlResult & { complete?: boolean }>;
 let handler: Handler;
-const dispatch = vi.fn((principal: AnnexPrincipal, request: ControlHttpRequest, ctx: control.DispatchContext) => handler(principal, request, ctx));
+/** A handler's answer is complete unless it says otherwise (a response cut off before end()). */
+const dispatch = vi.fn(async (principal: AnnexPrincipal, request: ControlHttpRequest, ctx: control.DispatchContext): Promise<control.DispatchResult> => ({ complete: true, ...(await handler(principal, request, ctx)) }));
 
 function ok(body: unknown, status = 200): control.ControlResult {
   return { status, headers: { 'content-type': 'application/json' }, body: Buffer.from(JSON.stringify(body)) };
@@ -619,3 +627,130 @@ describe('cancellation, timeouts and indeterminate outcomes', () => {
     await expect(control.request(TARGET, { method: 'POST', path: '/p', body: '{}' })).rejects.toMatchObject({ code: 'busy', indeterminate: false });
   });
 });
+
+describe('bounds on lingering work, unfinished answers and unread output (#3613 P3 QA)', () => {
+  /** A handler that ignores every signal and finishes only when released. */
+  function stubborn() {
+    const releases: Array<() => void> = [];
+    handler = async () => { await new Promise<void>((resolve) => releases.push(resolve)); return ok({ finished: true }); };
+    return { releaseAll: () => { for (const r of releases.splice(0)) r(); } };
+  }
+
+  it('a cancelled run that ignores its signal keeps its slot: unique POST and cancel cycles hit busy, then free once handlers finish', async () => {
+    await connected();
+    const { releaseAll } = stubborn();
+    for (let i = 0; i < control.MAX_IN_FLIGHT; i++) {
+      const abort = new AbortController();
+      const pending = control.request(TARGET, { method: 'POST', path: `/p/${i}`, body: '{}' }, { signal: abort.signal });
+      await flush();
+      abort.abort();
+      await expect(pending).rejects.toMatchObject({ code: 'cancelled' });
+    }
+    expect(control._activeRunsForTesting(REQUESTER, REQUESTER_PIN)).toBe(control.MAX_IN_FLIGHT);
+    await expect(control.request(TARGET, { method: 'POST', path: '/p/next', body: '{}' })).rejects.toMatchObject({ code: 'busy', indeterminate: false });
+    await expect(control.request(TARGET, { method: 'GET', path: '/read' })).rejects.toMatchObject({ code: 'busy' });
+    expect(dispatch).toHaveBeenCalledTimes(control.MAX_IN_FLIGHT);
+    releaseAll();
+    await flush();
+    expect(control._activeRunsForTesting(REQUESTER, REQUESTER_PIN)).toBe(0);
+    handler = async () => ok({ ran: true });
+    expect((await control.request(TARGET, { method: 'POST', path: '/p/after', body: '{}' })).status).toBe(200);
+  });
+
+  it('closing or replacing the connection frees no slot while the old work still runs', async () => {
+    const first = await connected();
+    const { releaseAll } = stubborn();
+    for (let i = 0; i < control.MAX_IN_FLIGHT; i++) void control.request(TARGET, { method: 'POST', path: `/old/${i}`, body: '{}' }).catch(() => {});
+    await flush();
+    first.requesterWs.close(1000, 'gone');
+    await flush();
+    await connected();
+    await expect(control.request(TARGET, { method: 'POST', path: '/new', body: '{}' })).rejects.toMatchObject({ code: 'busy' });
+    releaseAll();
+    await flush();
+    handler = async () => ok({ ran: true });
+    expect((await control.request(TARGET, { method: 'POST', path: '/new-again', body: '{}' })).status).toBe(200);
+  });
+
+  it('unfinished entries count toward the remembered bound and are never dropped: at the bound a new non-read is busy', () => {
+    const cache = new control.SeenCache();
+    const key = (i: number) => control.SeenCache.key({ fingerprint: REQUESTER, pin: REQUESTER_PIN }, `run${i}`);
+    const slots = [];
+    for (let i = 0; i < control.SEEN_MAX_PER_PEER; i++) slots.push(cache.begin(key(i), REQUESTER, 'd'));
+    expect(cache.begin(key(-1), REQUESTER, 'd').kind).toBe('full');
+    expect(cache.size).toBe(control.SEEN_MAX_PER_PEER);
+    const one = slots[3];
+    if (one.kind === 'new') one.finish({ kind: 'error', code: 'cancelled' });
+    expect(cache.begin(key(-1), REQUESTER, 'd').kind).toBe('new');
+    // The running ones are all still there.
+    expect(cache.begin(key(0), REQUESTER, 'd').kind).toBe('same');
+  });
+
+  it('a response cut off before end() is never replayed: a retry gets replay_unavailable, indeterminate', async () => {
+    await connected();
+    handler = async (_p, _r, ctx) => {
+      await new Promise<void>((resolve) => ctx.signal.addEventListener('abort', () => resolve(), { once: true }));
+      return { status: 200, headers: {}, body: Buffer.alloc(0), complete: false };
+    };
+    const abort = new AbortController();
+    const pending = control.request(TARGET, { method: 'POST', path: '/patch', body: '{}' }, { signal: abort.signal, requestId: 'cut-off' });
+    await flush();
+    abort.abort();
+    await expect(pending).rejects.toMatchObject({ code: 'cancelled', indeterminate: true });
+    await flush();
+    await expect(control.request(TARGET, { method: 'POST', path: '/patch', body: '{}' }, { requestId: 'cut-off' }))
+      .rejects.toMatchObject({ code: 'replay_unavailable', indeterminate: true });
+    expect(dispatch).toHaveBeenCalledTimes(1);
+  });
+
+  it('a handler that never ends gets timeout at the deadline, and nothing is remembered as an answer', async () => {
+    await connected();
+    control._setTargetTimeoutForTesting(30);
+    handler = async (_p, _r, ctx) => {
+      await new Promise<void>((resolve) => ctx.deadline.addEventListener('abort', () => resolve(), { once: true }));
+      return { status: 200, headers: {}, body: Buffer.alloc(0), complete: false };
+    };
+    await expect(control.request(TARGET, { method: 'POST', path: '/never', body: '{}' }, { requestId: 'never-ends' }))
+      .rejects.toMatchObject({ code: 'timeout', indeterminate: true });
+    await flush();
+    await expect(control.request(TARGET, { method: 'POST', path: '/never', body: '{}' }, { requestId: 'never-ends' }))
+      .rejects.toMatchObject({ code: 'replay_unavailable', indeterminate: true });
+    expect(dispatch).toHaveBeenCalledTimes(1);
+    expect(control._activeRunsForTesting(REQUESTER, REQUESTER_PIN)).toBe(0);
+  });
+
+  it('closes the connection when the other side stops reading, failing what waits as transport_unavailable', async () => {
+    const { targetWs, requesterWs } = await connected();
+    targetWs.bufferedAmount = control.CONTROL_SEND_BUFFER_MAX_BYTES;
+    await expect(control.request(TARGET, { method: 'POST', path: '/p', body: '{}' })).rejects.toMatchObject({ code: 'transport_unavailable', indeterminate: true });
+    expect(targetWs.closed?.code).toBe(CONTROL_CLOSE_BACKLOG);
+    expect(requesterWs.readyState).toBe(3);
+    // Closed, not dropped: no answer frame was queued past the bound.
+    expect(sentOfType(targetWs, 'response')).toEqual([]);
+  });
+
+  it('closes as soon as one answer would take the unwritten bytes past the bound', async () => {
+    const { targetWs } = await connected();
+    targetWs.bufferedAmount = control.CONTROL_SEND_BUFFER_MAX_BYTES - 100;
+    handler = async () => ({ status: 200, headers: {}, body: Buffer.alloc(1000, 0x61) });
+    await expect(control.request(TARGET, { method: 'GET', path: '/a' })).rejects.toMatchObject({ code: 'transport_unavailable' });
+    expect(targetWs.closed?.code).toBe(CONTROL_CLOSE_BACKLOG);
+  });
+
+  it('holds a connection\'s answer slot until the answer is written, not just queued', async () => {
+    const { targetWs } = await connected();
+    targetWs.holdWrites = true;
+    for (let i = 0; i < control.MAX_IN_FLIGHT; i++) targetWs.deliver({ v: 1, type: 'request', id: `w${i}`, method: 'GET', path: '/a' });
+    await flush();
+    expect(sentOfType(targetWs, 'response')).toHaveLength(control.MAX_IN_FLIGHT);
+    expect(control._activeRunsForTesting(REQUESTER, REQUESTER_PIN)).toBe(0);
+    targetWs.deliver({ v: 1, type: 'request', id: 'one-more', method: 'GET', path: '/a' });
+    await flush();
+    expect(sentOfType(targetWs, 'error')).toEqual([{ v: 1, type: 'error', id: 'one-more', code: 'busy' }]);
+    targetWs.drain();
+    targetWs.deliver({ v: 1, type: 'request', id: 'after-drain', method: 'GET', path: '/a' });
+    await flush();
+    expect(sentOfType(targetWs, 'response').map((m) => m.id)).toContain('after-drain');
+  });
+});
+

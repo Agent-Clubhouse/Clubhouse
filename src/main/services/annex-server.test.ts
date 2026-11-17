@@ -8462,24 +8462,27 @@ describe('annex-server', () => {
      */
     function targetLink(pin = MEMBER.tlsCertificateFingerprint) {
       const ws = Object.assign(new EventEmitter(), {
-        readyState: 1, sent: [] as any[],
-        send(data: string) { this.sent.push(JSON.parse(data)); },
+        readyState: 1, sent: [] as any[], bufferedAmount: 0,
+        send(data: string, cb?: () => void) { this.sent.push(JSON.parse(data)); if (cb) queueMicrotask(cb); },
         ping: vi.fn(), terminate: vi.fn(),
         close: vi.fn(function (this: { readyState: number }) { this.readyState = 3; }),
       });
       annexControl._attachForTesting(ws as never, MEMBER.fingerprint, pin, 'out');
       annexControl._sendHelloForTesting(MEMBER.fingerprint);
       ws.emit('message', Buffer.from(JSON.stringify({ v: 1, type: 'hello', features: ['request'] })), false);
+      const send = (method: string, path: string, body: unknown, id: string) =>
+        ws.emit('message', Buffer.from(JSON.stringify({ v: 1, type: 'request', id, method, path, ...(body !== undefined && { body: JSON.stringify(body), headers: { 'content-type': 'application/json' } }) })), false);
+      const cancel = (id: string) => ws.emit('message', Buffer.from(JSON.stringify({ v: 1, type: 'cancel', id })), false);
       const ask = async (method: string, path: string, body?: unknown, id = `t${++nextId}`): Promise<Answer> => {
         const before = ws.sent.filter((m) => m.id === id).length;
-        ws.emit('message', Buffer.from(JSON.stringify({ v: 1, type: 'request', id, method, path, ...(body !== undefined && { body: JSON.stringify(body), headers: { 'content-type': 'application/json' } }) })), false);
+        send(method, path, body, id);
         await vi.waitFor(() => expect(ws.sent.filter((m) => m.id === id).length).toBe(before + 1), { timeout: 5_000 });
         const answer = ws.sent.filter((m) => m.id === id)[before];
         if (answer.type === 'error') return { error: answer.code };
         const text = Buffer.from(answer.body, answer.encoding === 'base64' ? 'base64' : 'utf8').toString();
         return { status: answer.status, headers: answer.headers, body: text ? JSON.parse(text) : undefined };
       };
-      return { ws, ask };
+      return { ws, ask, send, cancel };
     }
 
     it('answers a reverse request exactly as the same peer\'s direct request', async () => {
@@ -8595,6 +8598,66 @@ describe('annex-server', () => {
         .toMatchObject({ status: 409, body: { error: 'request_conflict' } });
       expect(agentConfigModule.createDurable).toHaveBeenCalledTimes(1);
     }, 15_000);
+
+    describe('callback-style routes (readJsonBody): only the handler\'s real, completed answer counts', () => {
+      const durable = `/api/v1/projects/${PROJECT.id}/agents/durable`;
+
+      it('returns the route\'s real failure status and body, after the operation ran', async () => {
+        vi.mocked(projectStore.list).mockReturnValue([PROJECT] as any);
+        const order: string[] = [];
+        vi.mocked(agentConfigModule.createDurable).mockImplementationOnce(async () => {
+          await new Promise((resolve) => setTimeout(resolve, 50));
+          order.push('created');
+          throw new Error('disk full');
+        });
+        await startAndPair();
+        const { ask, ws } = targetLink();
+        const answer = await ask('POST', durable, { name: 'helper', color: 'emerald' });
+        order.push('answered');
+        expect(answer).toMatchObject({ status: 500, body: { error: 'disk full' } });
+        expect(order).toEqual(['created', 'answered']);
+        expect(ws.sent.filter((m) => m.type === 'response' && m.status === 200)).toEqual([]);
+      }, 15_000);
+
+      it('a request cancelled mid-operation leaves its real answer for a retry, never an empty 200', async () => {
+        vi.mocked(projectStore.list).mockReturnValue([PROJECT] as any);
+        vi.mocked(agentConfigModule.createDurable).mockClear();
+        let finish!: () => void;
+        vi.mocked(agentConfigModule.createDurable).mockImplementationOnce(() => new Promise((resolve) => {
+          finish = () => resolve({ id: 'durable_late', name: 'helper', color: 'emerald', createdAt: '2026-01-01' } as any);
+        }));
+        await startAndPair();
+        const { ws, ask, send, cancel } = targetLink();
+        const id = `cancel-mid-${++nextId}`;
+        send('POST', durable, { name: 'helper', color: 'emerald' }, id);
+        await vi.waitFor(() => expect(agentConfigModule.createDurable).toHaveBeenCalledTimes(1));
+        cancel(id);
+        await new Promise((resolve) => setTimeout(resolve, 50));
+        // Cancelled: nothing went back.
+        expect(ws.sent.filter((m) => m.id === id)).toEqual([]);
+        finish();
+        const retry = await ask('POST', durable, { name: 'helper', color: 'emerald' }, id);
+        expect(retry).toMatchObject({ status: 201, body: { id: 'durable_late' } });
+        expect(agentConfigModule.createDurable).toHaveBeenCalledTimes(1);
+      }, 15_000);
+
+      it('a handler that never ends gets timeout, and a retry is told there is nothing to replay', async () => {
+        vi.mocked(projectStore.list).mockReturnValue([PROJECT] as any);
+        vi.mocked(agentConfigModule.createDurable).mockClear();
+        vi.mocked(agentConfigModule.createDurable).mockImplementationOnce(() => new Promise(() => {}));
+        await startAndPair();
+        annexControl._setTargetTimeoutForTesting(200);
+        try {
+          const { ask } = targetLink();
+          const id = `never-${++nextId}`;
+          expect(await ask('POST', durable, { name: 'helper', color: 'emerald' }, id)).toEqual({ error: 'timeout' });
+          expect(await ask('POST', durable, { name: 'helper', color: 'emerald' }, id)).toEqual({ error: 'replay_unavailable' });
+          expect(agentConfigModule.createDurable).toHaveBeenCalledTimes(1);
+        } finally {
+          annexControl._setTargetTimeoutForTesting(null);
+        }
+      }, 15_000);
+    });
 
     describe('accepting the control connection', () => {
       function upgradeControl(): Promise<{ status?: number; body?: any; accepted: boolean }> {

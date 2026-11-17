@@ -4772,7 +4772,8 @@ class ReverseResponse extends EventEmitter {
   }
 
   end(chunk?: string | Buffer | Uint8Array | (() => void), encodingOrCb?: BufferEncoding | (() => void), cb?: () => void): this {
-    if (this.writableEnded) return this;
+    // Cut off (its time ran out): a late end() doesn't make the response complete.
+    if (this.writableEnded || this.destroyed) return this;
     if (typeof chunk === 'function') { cb = chunk; chunk = undefined; }
     if (chunk !== undefined) this.write(chunk as string | Buffer | Uint8Array, encodingOrCb);
     this.headersSent = true;
@@ -4791,10 +4792,11 @@ class ReverseResponse extends EventEmitter {
     return this;
   }
 
-  result(): annexControl.ControlResult {
+  /** The answer, and whether the handler completed it with end(). Only a complete one is sent or remembered. */
+  result(): annexControl.DispatchResult {
     const headers: Record<string, string> = {};
     for (const [name, value] of this.headers) if (!REVERSE_DROPPED_RESPONSE_HEADERS.has(name)) headers[name] = value;
-    return { status: this.statusCode, headers, body: Buffer.concat(this.chunks) };
+    return { status: this.statusCode, headers, body: Buffer.concat(this.chunks), complete: this.writableEnded };
   }
 }
 
@@ -4816,7 +4818,7 @@ function reverseIncomingMessage(request: ControlHttpRequest, body: Buffer, ctx: 
   });
   if (body.length) req.push(body);
   req.push(null);
-  // Cancelled, timed out, or the connection went: the handler sees its request close, as a direct one would.
+  // The requester stopped waiting (cancelled, or the connection went): the handler sees its request close, as a direct one would.
   const onAbort = () => { req.emit('aborted'); req.destroy(); };
   if (ctx.signal.aborted) onAbort();
   else ctx.signal.addEventListener('abort', onAbort, { once: true });
@@ -4829,9 +4831,11 @@ function reverseIncomingMessage(request: ControlHttpRequest, body: Buffer, ctx: 
  * Rechecks mid-request read the pairing as it is now; the connection's
  * identity and certificate were fixed when it opened, so there is nothing to
  * re-read from it, and a dropped connection doesn't turn into a refusal a
- * retry would be answered with.
+ * retry would be answered with. The result is `complete` only when the
+ * handler ended its response; a response cut off at the deadline is never
+ * sent or remembered as an answer.
  */
-async function dispatchReverseRequest(principal: AnnexPrincipal, request: ControlHttpRequest, ctx: annexControl.DispatchContext): Promise<annexControl.ControlResult> {
+async function dispatchReverseRequest(principal: AnnexPrincipal, request: ControlHttpRequest, ctx: annexControl.DispatchContext): Promise<annexControl.DispatchResult> {
   const res = new ReverseResponse();
   const url = request.path;
   const method = request.method;
@@ -4847,8 +4851,10 @@ async function dispatchReverseRequest(principal: AnnexPrincipal, request: Contro
     return res.result();
   }
   const req = reverseIncomingMessage(request, decodeControlBody(request.body, request.encoding), ctx);
-  if (ctx.signal.aborted) res.destroy();
-  else ctx.signal.addEventListener('abort', () => res.destroy(), { once: true });
+  // Only when its time is up is the response cut off. A cancel leaves it be, so a handler that finishes
+  // anyway still leaves its real answer for a retry; until then the run holds its slot.
+  if (ctx.deadline.aborted) res.destroy();
+  else ctx.deadline.addEventListener('abort', () => res.destroy(), { once: true });
   annexPeers.updateLastSeen(principal.fingerprint);
   const reauthorizeNow = (): PeerAuthResult => (tlsServer ? reauthorize(principal, authorizerDeps) : refuse(401, 'unauthorized'));
   const requireMtls = (): boolean => {
