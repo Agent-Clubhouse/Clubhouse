@@ -427,6 +427,7 @@ export function ChromeSidebar() {
   const dispatcherDebug = useDispatcherDebug();
   const dispatcherPresence = useDispatcherPresence();
   const selectedRemoteMachine = useRemoteDispatcherSelection((s) => s.machine);
+  const remoteControllerSelected = useRemoteDispatcherSelection((s) => s.controller);
   const remoteAgentIcons = useRemoteProjectStore((s) => s.remoteAgentIcons);
   const localDispatcherSelected = useRemoteDispatcherSelection((s) => s.local);
   const dispatcherWorkOpen = useDispatcherWorkOpen();
@@ -950,7 +951,7 @@ export function ChromeSidebar() {
       {dispatcherAgentId && dispatcherPresence?.remotes.map((remote) => {
         const target = resolveRemoteDispatcherTarget(remote.machineId, satellites, followedLead?.state.lead?.machine);
         const isLead = target.kind === 'lead';
-        const active = dispatcherShown && !dispatcherWorkOpen && (selectedRemoteMachine === remote.machineId
+        const active = dispatcherShown && !dispatcherWorkOpen && !remoteControllerSelected && (selectedRemoteMachine === remote.machineId
           || isLead && !selectedRemoteMachine && !localDispatcherSelected);
         // Its avatar doesn't depend on where a click goes: the followed lead has one too.
         const chat = remoteDispatcherChat(remote.machineId, satellites) ?? undefined;
@@ -960,7 +961,9 @@ export function ChromeSidebar() {
           chat={chat}
           iconUrl={chat ? remoteAgentIcons[chat.id] : undefined}
           active={active}
-          showController={dispatcherDebug}
+          showController
+          controllerActive={dispatcherShown && remoteControllerSelected && selectedRemoteMachine === remote.machineId}
+          onSelectController={() => openDispatcher({ remoteMachine: remote.machineId, remoteController: true })}
           // The followed lead is the follower view, not an explicit pick: Take back then leaves it for this computer's own.
           onSelect={() => isLead ? openDispatcher() : openDispatcher({ remoteMachine: remote.machineId })}
         />;

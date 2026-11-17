@@ -981,6 +981,8 @@ export const ATTR = {
     'GET /api/v1/mobile/network',
     'POST /api/v1/mobile/network/members',
     'POST /api/v1/network/agent-call',
+    'GET /api/v1/network/dispatcher/controller/chat',
+    'GET /api/v1/network/dispatcher/controller/chat/sessions',
     'POST /api/v1/network/agent-delivery-capabilities',
     'POST /api/v1/network/project-links-capabilities',
     'POST /api/v1/network/project-links',

@@ -283,7 +283,7 @@ export function holdsGrant(agentId: string, action: GrantAction, target: GrantCa
 
 /**
  * As holdsGrant, with the whole decision. authenticatedDispatcherRead is a
- * main-verified federation identity used only by read_agent_config. The host's
+ * main-verified federation identity used for configuration and controller-chat reads. The host's
  * saved grant changes apply over that identity's read ANY default.
  */
 export function decideGrant(agentId: string, action: GrantAction, target: GrantCallTarget, authenticatedDispatcherRead = false): GrantDecision {

@@ -120,6 +120,7 @@ import { AgentStoppingError } from './agent-runtime/agent-stopping';
 import { spawnAgent, killAgent, getAvailableOrchestrators, isHeadlessAgent, resolveOrchestrator } from './agent-system';
 import { appLog } from './log-service';
 import { buildChatPage } from './annex-chat-pages';
+import { readControllerChat, resetControllerChatReads } from './annex-controller-chat';
 import { forgetAppendedNotes, MOBILE_PERSISTENT_APPROVALS, OUTER_TOOL_INPUT_MAX_BYTES, PERMISSION_INPUT_MAX_BYTES, boundChatEvent, boundToolInput, toolInputSizeBucket } from './annex-chat-bounds';
 import { ICON_TEMPORARILY_UNAVAILABLE, TEMPORARY_FAILURE_RETRY_MS as ICON_RETRY_MS, readIconImage, type IconImage } from './icon-images';
 
@@ -3983,6 +3984,20 @@ async function handleMobileAgentStateRoute(ctx: AnnexRouteContext): Promise<void
   }
 }
 
+/** A separate read surface: controller history never enters phone routes or event replay. */
+async function handleControllerChatRoute(ctx: AnnexRouteContext, sessions = false): Promise<void> {
+  if (ctx.requireMtls()) return;
+  const machine = ctx.principal.fingerprint;
+  const authorized = () => {
+    const peer = annexPeers.getPeer(machine);
+    return stillAuthorized(ctx.principal, authorizerDeps) && isDesktopNetworkMember(machine) && !peer?.networkPending;
+  };
+  const result = await readControllerChat(machine, new URL(ctx.url, 'http://localhost').searchParams, sessions, authorized);
+  ctx.res.setHeader('Cache-Control', 'no-store');
+  if (result.status === 429) ctx.res.setHeader('Retry-After', '1');
+  sendJson(ctx.res, result.status, result.body);
+}
+
 async function handleMobileChatRoute(ctx: AnnexRouteContext, match: RegExpMatchArray): Promise<void> {
   try {
     const agentId = decodeURIComponent(match[1]);
@@ -4575,6 +4590,8 @@ const ANNEX_HTTP_ROUTE_TABLE: AnnexHttpRoute[] = [
   { method: 'GET', pattern: /^\/api\/v1\/mobile\/canvas\/([^/]+)$/, handler: handleMobileCanvasRoute },
   { method: 'DELETE', pattern: /^\/api\/v1\/mobile\/pairing$/, handler: handleMobilePairingDeleteRoute },
   { method: 'GET', pattern: /^\/api\/v1\/mobile\/agents\/state$/, handler: handleMobileAgentStateRoute },
+  { method: 'GET', pattern: /^\/api\/v1\/network\/dispatcher\/controller\/chat(\?.*)?$/, handler: (ctx) => handleControllerChatRoute(ctx) },
+  { method: 'GET', pattern: /^\/api\/v1\/network\/dispatcher\/controller\/chat\/sessions$/, handler: (ctx) => handleControllerChatRoute(ctx, true) },
   { method: 'GET', pattern: /^\/api\/v1\/mobile\/agents\/([^/]+)\/chat(\?.*)?$/, handler: handleMobileChatRoute },
   { method: 'GET', pattern: /^\/api\/v1\/mobile\/agents\/([^/]+)\/chat\/sessions$/, handler: handleMobileChatSessionsRoute },
   { method: 'GET', pattern: /^\/api\/v1\/mobile\/agents\/([^/]+)\/chat\/events\/([^/?]+)(\?.*)?$/, handler: handleMobileFullEventRoute },
@@ -6070,6 +6087,7 @@ function rememberBoundPorts(): void {
 }
 
 export function stop(): void {
+  resetControllerChatReads();
   serverGeneration++;
   for (const cancel of pendingListens) cancel();
   // Unsubscribe from event bus

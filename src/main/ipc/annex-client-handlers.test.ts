@@ -17,6 +17,8 @@ vi.mock('../services/annex-peers', () => ({
 vi.mock('../util/ipc-broadcast', () => ({ broadcastToAllWindows: vi.fn() }));
 
 vi.mock('../services/annex-client', () => ({
+  requestControllerChatPage: vi.fn(async () => ({ status: 'offline' })),
+  requestControllerChatSessions: vi.fn(async () => ({ status: 'offline' })),
   requestChatPage: vi.fn(async () => ({ events: [] })),
   requestChatSessions: vi.fn(async () => []),
   sendChatCommand: vi.fn(async () => ({ status: 'completed' })),
@@ -155,6 +157,14 @@ describe('annex-client-handlers', () => {
     const handler = handlers.get(IPC.ANNEX_CLIENT.FORGET_SATELLITE)!;
     handler({}, 'fp:aa:bb');
     expect(annexClient.forgetSatellite).toHaveBeenCalledWith('fp:aa:bb');
+  });
+
+  it('delegates desktop controller reads without a command or arbitrary URL channel', async () => {
+    await handlers.get(IPC.ANNEX_CLIENT.CONTROLLER_CHAT_PAGE)!({}, 'peer', { sessionId: 's', beforeSeq: 20 });
+    expect(annexClient.requestControllerChatPage).toHaveBeenCalledWith('peer', { sessionId: 's', beforeSeq: 20 });
+    await handlers.get(IPC.ANNEX_CLIENT.CONTROLLER_CHAT_SESSIONS)!({}, 'peer');
+    expect(annexClient.requestControllerChatSessions).toHaveBeenCalledWith('peer');
+    expect(annexClient.sendChatCommand).not.toHaveBeenCalled();
   });
 
   it('reads and drives a satellite\'s chat agents (#2390)', async () => {

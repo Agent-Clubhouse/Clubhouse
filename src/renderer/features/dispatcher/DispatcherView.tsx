@@ -20,6 +20,7 @@ import { useRemoteProjectStore } from '../../stores/remoteProjectStore';
 import { useAnnexClientStore } from '../../stores/annexClientStore';
 import { resolveRemoteDispatcherTarget } from './remoteDispatcherTarget';
 import { RemoteDispatcherDetails } from './RemoteDispatcherDetails';
+import { RemoteControllerChatView } from './RemoteControllerChatView';
 
 /**
  * The Dispatcher's own view (#2538): the same agent pane a project agent
@@ -52,6 +53,7 @@ export function DispatcherView() {
   const { findAgentPopout } = usePopouts();
   const followed = useFollowedLead();
   const remoteMachine = useRemoteDispatcherSelection((s) => s.machine);
+  const remoteController = useRemoteDispatcherSelection((s) => s.controller);
   const localSelected = useRemoteDispatcherSelection((s) => s.local);
   const satellites = useAnnexClientStore((s) => s.satellites);
   // Another computer's Dispatcher picked in the sidebar: looked up by its machine, the same from either side.
@@ -63,8 +65,8 @@ export function DispatcherView() {
   // A pick that has become the followed lead is the follower view now, not a pick: otherwise Take back would keep it.
   const pickIsLead = remoteTarget?.kind === 'lead';
   useEffect(() => {
-    if (pickIsLead) useRemoteDispatcherSelection.getState().select(null, false);
-  }, [pickIsLead]);
+    if (pickIsLead && !remoteController) useRemoteDispatcherSelection.getState().select(null, false);
+  }, [pickIsLead, remoteController]);
 
   useEffect(() => {
     if (state?.enabled && !remoteMachine && !followed && !workOpen) {
@@ -81,6 +83,7 @@ export function DispatcherView() {
     return () => cancelAnimationFrame(raf);
   }, [agentId]);
 
+  if (remoteMachine && remoteController) return <RemoteControllerChatView key={remoteMachine} machine={remoteMachine} />;
   if (remoteTarget?.kind === 'details') return <RemoteDispatcherDetails machineId={remoteMachine!} />;
   // The live copy follows run state; the snapshot's copy shows it until that arrives.
   if (remoteChat) return <AgentRuntimePane key={remoteChat.id} agent={{ ...(remoteAgent ?? remoteChat), executionMode: 'chat' }} terminal={null} canSwitch={false} />;

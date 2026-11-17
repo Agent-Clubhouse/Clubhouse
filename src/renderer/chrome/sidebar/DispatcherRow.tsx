@@ -217,10 +217,9 @@ const REMOTE_NOTE: Partial<Record<RemoteDispatcherState, string>> = { offline: '
  * level, status dot and avatar. Its avatar is the one it published with its
  * chat agent when this computer has that, else a plain fallback. It stays a
  * target while this computer has no chat for it, and opens its status then.
- * Its controller, in the debug view, sits one level under it, as a label:
- * its traffic isn't shown here (#3474).
+ * Its controller sits one level under it and opens a desktop-only read-only conversation (#3474).
  */
-export function RemoteDispatcherRow({ remote, chat, iconUrl, active, onSelect, showController }: {
+export function RemoteDispatcherRow({ remote, chat, iconUrl, active, onSelect, showController, controllerActive, onSelectController }: {
   remote: RemoteDispatcherPresence;
   /** Its chat agent under this computer's namespaced id, once its snapshot is here. */
   chat?: Agent;
@@ -229,6 +228,8 @@ export function RemoteDispatcherRow({ remote, chat, iconUrl, active, onSelect, s
   active: boolean;
   onSelect: () => void;
   showController: boolean;
+  controllerActive?: boolean;
+  onSelectController?: () => void;
 }) {
   const name = remote.dispatcherName || DEFAULT_DISPATCHER_NAME;
   const dot = remoteDot(remote.state);
@@ -248,7 +249,7 @@ export function RemoteDispatcherRow({ remote, chat, iconUrl, active, onSelect, s
         active={active}
         onSelect={onSelect}
       />
-      {showController && remote.address && (
+      {showController && (
         <GroupRow
           testId="remote-dispatcher-controller"
           label={`${DISPATCHER_CONTROLLER_NAME} (${remote.state})`}
@@ -258,6 +259,8 @@ export function RemoteDispatcherRow({ remote, chat, iconUrl, active, onSelect, s
           avatar={<FallbackAvatar name={DISPATCHER_CONTROLLER_NAME} />}
           note={remote.state}
           dimmed={remote.state === 'offline'}
+          active={controllerActive}
+          onSelect={onSelectController}
         />
       )}
     </div>
