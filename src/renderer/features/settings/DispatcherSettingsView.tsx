@@ -694,7 +694,7 @@ function ResetSection({ state }: { state: DispatcherState }) {
       <ConfirmDestructiveAction
         open={confirming}
         title="Forget everything?"
-        description={`${name} forgets its notes on your agents and your work, its timeline, and news waiting for the next check-in. This can’t be undone. Your agents, connections, Actions and its chat stay. To start the chat over too, use Clear chat in its menu.`}
+        description={`${name} forgets its notes on your agents and your work, its timeline, and news waiting for the next check-in. This can’t be undone. Your agents, connections, Actions and its chat stay. To start the chat over too, use Start new chat in its menu.`}
         confirmLabel="Forget everything"
         onCancel={() => setConfirming(false)}
         onConfirm={() => void forget()}
