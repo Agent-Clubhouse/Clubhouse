@@ -514,6 +514,14 @@ export function listChatSessions(agentId: string): Promise<ChatSessionSummary[]>
   return serialized(sessionDir(agentId), async () => (await loadState(agentId)).index.sessions
     .map(({ bytes: _bytes, lastStartedAt: _lastStartedAt, ...entry }) => entry).sort((a, b) => b.lastActiveAt - a.lastActiveAt));
 }
+/** Cached index metadata, without reading or parsing transcript lines. */
+export function chatTranscriptHead(agentId: string, sessionId?: string): Promise<{ sessionId: string | null; lastSeq: number }> {
+  return serialized(sessionDir(agentId), async () => {
+    const { index } = await loadState(agentId);
+    const id = sessionId ?? index.currentSessionId;
+    return { sessionId: id, lastSeq: index.sessions.find((s) => s.sessionId === id)?.lastSeq ?? 0 };
+  });
+}
 export async function lastSeqFor(agentId: string, sessionId: string): Promise<number> {
   return serialized(sessionDir(agentId), async () => (await loadState(agentId)).index.sessions.find((s) => s.sessionId === sessionId)?.lastSeq ?? 0);
 }

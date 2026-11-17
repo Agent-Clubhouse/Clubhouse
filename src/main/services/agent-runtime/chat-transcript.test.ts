@@ -14,7 +14,7 @@ vi.mock('fs/promises', async (importActual) => {
   return { ...actual, rename: vi.fn(actual.rename), readFile: vi.fn(actual.readFile), open: vi.fn(actual.open), stat: vi.fn(actual.stat), writeFile: vi.fn(actual.writeFile) };
 });
 
-import { appendChatEvent, flushAllTranscripts, readChatTranscript, lastSeqFor, transcriptPath, listChatSessions, resetTranscriptCache, flushTranscript, transcriptExists, cleanupTranscriptStaging } from './chat-transcript';
+import { appendChatEvent, chatTranscriptHead, flushAllTranscripts, readChatTranscript, lastSeqFor, transcriptPath, listChatSessions, resetTranscriptCache, flushTranscript, transcriptExists, cleanupTranscriptStaging } from './chat-transcript';
 
 function ev(seq: number, sessionId = 's1', agentId = 'agent-1'): ChatEvent {
   return { v: CHAT_CONTRACT_VERSION, agentId, sessionId, seq, ts: seq, type: 'session_state', data: { state: 'idle' } };
@@ -34,6 +34,17 @@ describe('chat transcript', () => {
     await Promise.all([appendChatEvent(ev(1)), appendChatEvent(ev(2)), appendChatEvent(ev(3))]);
     const events = await readChatTranscript('agent-1');
     expect(events.map((e) => e.seq)).toEqual([1, 2, 3]);
+  });
+  it('gets cached head metadata and reads only an appended tail without rereading the whole file (#3474)', async () => {
+    await appendChatEvent(ev(1));
+    expect(await chatTranscriptHead('agent-1')).toEqual({ sessionId: 's1', lastSeq: 1 });
+    vi.mocked(fsp.readFile).mockClear();
+    expect(await chatTranscriptHead('agent-1')).toEqual({ sessionId: 's1', lastSeq: 1 });
+    await appendChatEvent(ev(2));
+    expect(await chatTranscriptHead('agent-1')).toEqual({ sessionId: 's1', lastSeq: 2 });
+    expect(await readChatTranscript('agent-1', { sessionId: 's1', afterSeq: 1, tail: 1 })).toEqual([ev(2)]);
+    expect(fsp.readFile).not.toHaveBeenCalled();
+    expect(fsp.open).toHaveBeenCalledWith(transcriptPath('agent-1', 's1'), 'r');
   });
 
   it('filters by session, afterSeq and tail', async () => {

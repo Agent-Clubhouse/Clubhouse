@@ -116,7 +116,7 @@ import { AgentStoppingError } from './agent-runtime/agent-stopping';
 import { spawnAgent, killAgent, getAvailableOrchestrators, isHeadlessAgent, resolveOrchestrator } from './agent-system';
 import { appLog } from './log-service';
 import { buildChatPage } from './annex-chat-pages';
-import { readControllerChat } from './annex-controller-chat';
+import { readControllerChat, resetControllerChatReads } from './annex-controller-chat';
 import { forgetAppendedNotes, MOBILE_PERSISTENT_APPROVALS, OUTER_TOOL_INPUT_MAX_BYTES, PERMISSION_INPUT_MAX_BYTES, boundChatEvent, boundToolInput, toolInputSizeBucket } from './annex-chat-bounds';
 import { ICON_TEMPORARILY_UNAVAILABLE, TEMPORARY_FAILURE_RETRY_MS as ICON_RETRY_MS, readIconImage, type IconImage } from './icon-images';
 
@@ -3983,6 +3983,7 @@ async function handleControllerChatRoute(ctx: AnnexRouteContext, sessions = fals
   };
   const result = await readControllerChat(machine, new URL(ctx.url, 'http://localhost').searchParams, sessions, authorized);
   ctx.res.setHeader('Cache-Control', 'no-store');
+  if (result.status === 429) ctx.res.setHeader('Retry-After', '1');
   sendJson(ctx.res, result.status, result.body);
 }
 
@@ -5876,6 +5877,7 @@ function rememberBoundPorts(): void {
 }
 
 export function stop(): void {
+  resetControllerChatReads();
   serverGeneration++;
   for (const cancel of pendingListens) cancel();
   // Unsubscribe from event bus

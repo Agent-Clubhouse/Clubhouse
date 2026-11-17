@@ -7,16 +7,21 @@ vi.mock('./dispatcher-federation', () => ({ remoteFederationController: () => mo
 vi.mock('./annex-agent-calls', () => ({ isNetworkComputer: () => mocks.member }));
 vi.mock('./clubhouse-mcp/grant-check', () => ({ decideGrant: (...args: unknown[]) => { mocks.grant(...args); return { outcome: mocks.outcome }; } }));
 vi.mock('./agent-runtime', () => ({ getAgentRuntime: () => mocks.live ? { kind: 'chat', isRunning: () => true, getSessionId: () => 's', readTranscript: async () => ({ events: await mocks.read() }) } : undefined }));
-vi.mock('./agent-runtime/chat-transcript', () => ({ readChatTranscript: () => mocks.read(), listChatSessions: async () => [{ sessionId: 's', title: 'token=private-value' }] }));
-import { readControllerChat, redactControllerChat } from './annex-controller-chat';
+vi.mock('./agent-runtime/chat-transcript', () => ({
+  readChatTranscript: (_agent: string, opts: { afterSeq?: number }) => mocks.read(opts),
+  chatTranscriptHead: async () => ({ sessionId: mocks.events[mocks.events.length - 1]?.sessionId ?? null, lastSeq: mocks.events[mocks.events.length - 1]?.seq ?? 0 }),
+  listChatSessions: async () => [{ sessionId: 's', title: 'token=private-value' }],
+}));
+import { readControllerChat, redactControllerChat, resetControllerChatReads } from './annex-controller-chat';
 
 const event = (seq: number, text = `Message ${seq}`): ChatEvent => ({ agentId: 'controller', sessionId: 's', seq, ts: seq, type: 'agent_message', data: { messageId: `m${seq}`, text } });
 const read = (query = '', authorized = () => true, sessions = false) => readControllerChat('peer', new URLSearchParams(query), sessions, authorized);
 const page = async (query = '') => (await read(query)).body as ControllerChatPage;
 beforeEach(() => {
+  resetControllerChatReads();
   mocks.member = true; mocks.controller = true; mocks.outcome = 'allow'; mocks.live = false;
   mocks.events = [event(1), event(2), event(3), event(4)];
-  mocks.read.mockImplementation(async () => mocks.events);
+  mocks.read.mockImplementation(async (opts?: { afterSeq?: number }) => mocks.events.filter((event) => opts?.afterSeq === undefined || event.seq > opts.afterSeq));
 });
 
 describe('desktop controller chat', () => {
@@ -25,10 +30,26 @@ describe('desktop controller chat', () => {
     expect(await page('limit=2&beforeSeq=3')).toMatchObject({ nextBeforeSeq: null, events: [event(1), event(2)] });
     expect(mocks.grant).toHaveBeenCalledWith('caller@peer', 'agent.read', { kind: 'agent', agentId: 'controller' }, true);
   });
-  it('walks forward across large live bursts without gaps and reads the live runtime', async () => {
+  it('walks forward across large live bursts without gaps and reports the live session', async () => {
     mocks.live = true;
     expect(await page('afterSeq=0&limit=2')).toMatchObject({ currentSessionId: 's', nextAfterSeq: 2, events: [event(1), event(2)] });
     expect(await page('afterSeq=2&limit=2')).toMatchObject({ nextAfterSeq: null, events: [event(3), event(4)] });
+  });
+  it('reads only newly appended lines on a poll, and no transcript lines when unchanged', async () => {
+    await page();
+    expect(mocks.read).toHaveBeenCalledTimes(1);
+    expect((await page('afterSeq=4')).events).toEqual([]);
+    expect(mocks.read).toHaveBeenCalledTimes(1);
+    mocks.events.push(event(5));
+    expect((await page('afterSeq=4')).events).toEqual([event(5)]);
+    expect(mocks.read).toHaveBeenLastCalledWith({ sessionId: 's', afterSeq: 4, tail: 1 });
+  });
+  it('rate limits each peer before transcript IO', async () => {
+    for (let i = 0; i < 20; i++) expect((await read()).status).toBe(200);
+    const calls = mocks.read.mock.calls.length;
+    expect(await read()).toMatchObject({ status: 429, body: { error: 'rate_limited' } });
+    expect(mocks.read).toHaveBeenCalledTimes(calls);
+    expect((await readControllerChat('another-peer', new URLSearchParams(), false, () => true)).status).toBe(200);
   });
   it.each(['refuse', 'ask'])('refuses a host grant of %s before reading', async (outcome) => {
     mocks.outcome = outcome;
@@ -46,6 +67,7 @@ describe('desktop controller chat', () => {
     let allowed = true;
     mocks.read.mockImplementationOnce(async () => { allowed = false; return mocks.events; });
     expect((await read('', () => allowed)).status).toBe(403);
+    resetControllerChatReads();
     mocks.read.mockImplementationOnce(async () => { mocks.outcome = 'refuse'; return mocks.events; });
     expect((await read()).status).toBe(403);
   });
@@ -79,6 +101,7 @@ describe('desktop controller chat', () => {
   it('represents an empty conversation, and bounds failures without exporting content', async () => {
     mocks.events = [];
     expect(await page()).toMatchObject({ events: [], sessionId: null, lastSeq: 0, nextBeforeSeq: null, nextAfterSeq: null });
+    mocks.events = [event(1)];
     mocks.read.mockRejectedValueOnce(new Error('SECRET filesystem details'));
     expect(await read()).toEqual({ status: 500, body: { error: 'controller_chat_failed' } });
   });
@@ -93,6 +116,41 @@ describe('desktop controller chat', () => {
   it('returns explicit failure for an oversized whole event rather than summarizing or skipping it', async () => {
     mocks.events = [event(1, 'x'.repeat(8 * 1024 * 1024))];
     expect(await read()).toEqual({ status: 413, body: { error: 'event_too_large' } });
+  });
+  it('keeps 500 events from a 30 KB reply streamed in 1000 chunks without quadratic body copies (P1)', async () => {
+    mocks.events = Array.from({ length: 1000 }, (_, i) => ({ ...event(i + 1), type: 'agent_message_chunk', data: { messageId: 'reply', text: 'x'.repeat(30) } } as ChatEvent));
+    const result = await page();
+    expect(result.events).toHaveLength(500);
+    expect(Buffer.byteLength(JSON.stringify(result))).toBeLessThan(200_000);
+    const text = result.events.filter((e) => e.type === 'agent_message').map((e) => e.data.text).filter(Boolean);
+    expect(text).toEqual(['x'.repeat(30_000)]);
+  });
+  it('shows a labeled bounded tool preview instead of 413 for 2000 appended 5 KB blocks (P1b)', async () => {
+    mocks.events = [{ ...event(1), type: 'tool_call', data: { toolCallId: 'large', kind: 'other', title: 'Large output', status: 'in_progress', content: [] } } as ChatEvent,
+      ...Array.from({ length: 2000 }, (_, i) => ({ ...event(i + 2), type: 'tool_call_update', data: { toolCallId: 'large', contentMode: 'append', content: [{ type: 'terminal', output: 'x'.repeat(5000) }] } } as ChatEvent))];
+    const result = await read();
+    expect(result.status).toBe(200);
+    const value = result.body as ControllerChatPage;
+    expect(value.events).toHaveLength(500);
+    expect(Buffer.byteLength(JSON.stringify(value))).toBeLessThan(1024 * 1024);
+    expect(JSON.stringify(value.events[value.events.length - 1])).toContain('omitted here');
+  });
+  it('blanks every superseded per-character token prefix (P4)', async () => {
+    const token = 'sk-abcdefghijklmnopqrstuvwxyz';
+    mocks.events = [...token].map((text, i) => ({ ...event(i + 1), type: 'agent_message_chunk', data: { messageId: 'secret', text } } as ChatEvent));
+    const value = await page();
+    expect(value.events.slice(0, -1).every((e) => e.type === 'agent_message' && e.data.text === '')).toBe(true);
+    expect(value.events[value.events.length - 1]).toMatchObject({ data: { text: '<redacted>' } });
+    expect(JSON.stringify(value)).not.toContain('sk-');
+  });
+  it('preserves usage tokens and turn totals as structured numeric values (P5)', async () => {
+    const tokens = { input: 20, output: 10, cachedInput: 3, cacheWrite: 4, total: 30 };
+    mocks.events = [
+      { ...event(1), type: 'usage', data: { scope: 'turn', tokens, costUsd: 0.2 } },
+      { ...event(2), type: 'turn_ended', data: { stopReason: 'end_turn', usage: tokens, costUsd: 0.2 } },
+    ] as ChatEvent[];
+    expect((await page()).events).toEqual(mocks.events);
+    expect(redactControllerChat({ tokens: { password: 'secret', input: 2 }, password: ['secret text'] })).toEqual({ tokens: { password: '<redacted>', input: 2 }, password: ['secret text'] });
   });
   it.each(['limit=0', 'limit=2001', 'beforeSeq=-1', 'afterSeq=-1', 'sessionId=', 'beforeSeq=3&afterSeq=1', 'limit=1&limit=2', 'command=send'])('rejects malformed query %s', async (query) => {
     expect((await read(query)).status).toBe(400);

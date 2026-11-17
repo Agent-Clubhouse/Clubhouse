@@ -569,6 +569,7 @@ describe('annex-server', () => {
       const grants = await import('./clubhouse-mcp/grant-check');
       grant = vi.spyOn(grants, 'decideGrant').mockReturnValue({ outcome: 'allow' });
       const transcripts = await import('./agent-runtime/chat-transcript');
+      vi.spyOn(transcripts, 'chatTranscriptHead').mockResolvedValue({ sessionId: 's', lastSeq: 3 });
       vi.spyOn(transcripts, 'readChatTranscript').mockResolvedValue([1, 2, 3].map((seq) => ({
         agentId: 'controller', sessionId: 's', seq, ts: seq, type: 'agent_message', data: { messageId: `m${seq}`, text: `Full controller context ${seq}` },
       })));
@@ -588,6 +589,11 @@ describe('annex-server', () => {
       grant.mockReturnValue({ outcome: 'refuse', reason: 'no_grant' });
       const { port } = await startAndPair();
       expect((await request(port, 'GET', route)).status).toBe(403);
+    });
+    it('rate limits repeated controller reads per pinned member', async () => {
+      const { port } = await startAndPair();
+      for (let i = 0; i < 20; i++) expect((await request(port, 'GET', route)).status).toBe(200);
+      expect((await request(port, 'GET', route)).status).toBe(429);
     });
     it.each([
       { ...member, kind: 'phone' as const },
@@ -2703,6 +2709,28 @@ describe('annex-server', () => {
     afterEach(() => {
       annexServer._testing.setPinReusable(false);
       vi.restoreAllMocks();
+    });
+
+    it('refuses controller chat and sessions for a session-only phone fingerprint (#3474)', async () => {
+      await startServer();
+      const phone = device();
+      expect((await pair(phone, { pairingMode: 'session' })).status).toBe(200);
+      expect(annexServer.sessionOnlyPeers().some((peer) => peer.fingerprint === phone.fingerprint)).toBe(true);
+      for (const route of ['/api/v1/network/dispatcher/controller/chat', '/api/v1/network/dispatcher/controller/chat/sessions']) {
+        expect((await call('GET', route, phone)).status).toBe(403);
+      }
+    });
+
+    it.each([
+      { role: 'member' as const, networkPending: true },
+      { role: 'controller' as const, networkPending: false },
+    ])('refuses controller chat for a pinned desktop with role=$role pending=$networkPending (#3474)', async (extra) => {
+      const desktop = device();
+      peers.set(desktop.fingerprint, pinned(desktop, { ...extra, kind: 'desktop' }));
+      await startServer();
+      for (const route of ['/api/v1/network/dispatcher/controller/chat', '/api/v1/network/dispatcher/controller/chat/sessions']) {
+        expect((await call('GET', route, desktop)).status).toBe(403);
+      }
     });
 
     it('cuts accepted sockets, including unfinished TLS and upgrades, when switching to loopback only', async () => {

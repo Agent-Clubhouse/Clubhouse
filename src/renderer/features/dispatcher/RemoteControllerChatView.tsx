@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { ChatEvent, ChatSessionSummary } from '../../../shared/chat';
 import type { ControllerChatPage, ControllerChatQuery, ControllerReadResult } from '../../../shared/controller-chat';
+import { compactControllerEvents } from '../../../shared/controller-chat';
 import { DISPATCHER_CONTROLLER_NAME } from '../../../shared/dispatcher-name';
 import { useAnnexClientStore } from '../../stores/annexClientStore';
 import { foldChatEvents } from '../../stores/chatStore';
@@ -38,6 +39,7 @@ export function RemoteControllerChatView({ machine }: { machine: string }) {
     let timer: ReturnType<typeof setTimeout> | undefined;
     let lastSeq = 0;
     let session: string | null = null;
+    let idleDelay = 5000;
     const alive = () => generation.current === token;
     setPage(null); current.current = null; setEvents([]); setFailure(null); setLoading(true); setEarlierLoading(false);
     const load = async (initial: boolean) => {
@@ -61,10 +63,11 @@ export function RemoteControllerChatView({ machine }: { machine: string }) {
         const mergedPage = initial ? next : { ...next, nextBeforeSeq: current.current?.nextBeforeSeq ?? null };
         current.current = mergedPage;
         setPage(mergedPage);
-        setEvents((prev) => mergeEvents(initial ? [] : prev, next.events));
+        setEvents((prev) => mergeControllerEvents(initial ? [] : prev, next.events));
         setFailure(null);
         // Archives stay still. Current conversations catch up one bounded page at a time.
-        if (!selected) timer = setTimeout(() => { void load(false); }, next.nextAfterSeq !== null ? 250 : 2000);
+        idleDelay = !initial && next.events.length === 0 ? Math.min(30_000, idleDelay * 2) : 5000;
+        if (!selected) timer = setTimeout(() => { void load(false); }, next.nextAfterSeq !== null ? 1000 : idleDelay);
       } catch {
         // telemetry-exempt: the view shows a safe error and waits for an explicit retry.
         if (alive()) { setLoading(false); setFailure('error'); }
@@ -87,7 +90,7 @@ export function RemoteControllerChatView({ machine }: { machine: string }) {
       if (result.status !== 'ok') { setFailure(result.status); return; }
       const merged = { ...current.current, nextBeforeSeq: result.value.nextBeforeSeq };
       current.current = merged; setPage(merged);
-      setEvents((prev) => mergeEvents(prev, result.value.events));
+      setEvents((prev) => mergeControllerEvents(prev, result.value.events));
       setFailure(null);
     } catch {
       // telemetry-exempt: displayed in the read-only view.
@@ -112,7 +115,7 @@ export function RemoteControllerChatView({ machine }: { machine: string }) {
     <section className="h-full min-h-0 flex flex-col bg-ctp-base" aria-label="Remote controller conversation" data-testid="remote-controller-chat">
       <div className="flex-shrink-0 px-7 py-2 text-xs text-ctp-overlay1 border-b border-surface-0 flex flex-wrap items-center gap-2">
         <h2 className="font-medium text-ctp-subtext0">{DISPATCHER_CONTROLLER_NAME} on {machineName}</h2>
-        <span>Read only · tools and thoughts included</span>
+        <span>Read only · tools and thoughts included · large tool output previewed</span>
         <button type="button" onClick={() => { void loadSessions(); }} className="text-ctp-accent">Browse history</button>
         {sessions && <select aria-label="Controller conversation" value={selected} onChange={(event) => setSelected(event.target.value)} className="bg-surface-0 text-ctp-text rounded p-1">
           <option value="">Current conversation</option>
@@ -133,8 +136,8 @@ export function RemoteControllerChatView({ machine }: { machine: string }) {
   </RemoteChatContext.Provider>;
 }
 
-function mergeEvents(previous: ChatEvent[], next: ChatEvent[]): ChatEvent[] {
+export function mergeControllerEvents(previous: ChatEvent[], next: ChatEvent[]): ChatEvent[] {
   const bySeq = new Map(previous.map((e) => [`${e.sessionId}:${e.seq}`, e]));
   for (const event of next) bySeq.set(`${event.sessionId}:${event.seq}`, event);
-  return [...bySeq.values()].sort((a, b) => a.seq - b.seq);
+  return compactControllerEvents([...bySeq.values()].sort((a, b) => a.seq - b.seq));
 }

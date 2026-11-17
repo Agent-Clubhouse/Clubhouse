@@ -3,7 +3,7 @@ import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-libra
 import type { ChatEvent } from '../../../shared/chat';
 import type { ControllerChatPage } from '../../../shared/controller-chat';
 import { useAnnexClientStore } from '../../stores/annexClientStore';
-import { RemoteControllerChatView } from './RemoteControllerChatView';
+import { mergeControllerEvents, RemoteControllerChatView } from './RemoteControllerChatView';
 
 const message = (seq: number, text: string, sessionId = 's'): ChatEvent => ({ agentId: 'work', sessionId, seq, ts: seq, type: 'agent_message', data: { messageId: `m${seq}`, text } });
 function page(events: ChatEvent[] = [], rest: Partial<ControllerChatPage> = {}) {
@@ -77,17 +77,39 @@ describe('remote controller desktop chat', () => {
       .mockResolvedValueOnce(page([message(1, 'Fresh conversation', 'new')], { sessionId: 'new', currentSessionId: 'new' }));
     let unmount!: () => void;
     await act(async () => { ({ unmount } = render(<RemoteControllerChatView machine="peer" />)); });
-    await act(async () => { await vi.advanceTimersByTimeAsync(2000); });
+    await act(async () => { await vi.advanceTimersByTimeAsync(5000); });
     expect(read()).toHaveBeenNthCalledWith(2, 'peer', { afterSeq: 1 });
     expect(screen.getByText('Initial reply')).toBeInTheDocument();
     expect(screen.getByText('Live reply')).toBeInTheDocument();
-    await act(async () => { await vi.advanceTimersByTimeAsync(2000); });
+    await act(async () => { await vi.advanceTimersByTimeAsync(5000); });
     expect(read()).toHaveBeenNthCalledWith(4, 'peer');
     expect(screen.getByText('Fresh conversation')).toBeInTheDocument();
     expect(screen.queryByText('Initial reply')).toBeNull();
     unmount();
     await act(async () => { await vi.advanceTimersByTimeAsync(10000); });
     expect(read()).toHaveBeenCalledTimes(4);
+  });
+  it('backs off unchanged polls from 5 seconds to 10, 20 and 30 seconds', async () => {
+    vi.useFakeTimers();
+    await act(async () => { render(<RemoteControllerChatView machine="peer" />); });
+    expect(read()).toHaveBeenCalledTimes(1);
+    for (const [delay, calls] of [[5000, 2], [10000, 3], [20000, 4], [30000, 5]]) {
+      await act(async () => { await vi.advanceTimersByTimeAsync(delay - 1); });
+      expect(read()).toHaveBeenCalledTimes(calls - 1);
+      await act(async () => { await vi.advanceTimersByTimeAsync(1); });
+      expect(read()).toHaveBeenCalledTimes(calls);
+    }
+  });
+  it('discards superseded body copies across polls and backward history pages', () => {
+    const old = { ...message(1, 'old token prefix'), data: { messageId: 'same', text: 'old token prefix' } };
+    const latest = { ...message(2, 'replacement'), data: { messageId: 'same', text: 'replacement' } };
+    const merged = mergeControllerEvents([old], [latest]);
+    expect(merged).toEqual([latest]);
+    expect(mergeControllerEvents(merged, [old])).toEqual([latest]);
+    const tool: ChatEvent = { ...message(3, ''), type: 'tool_call', data: { toolCallId: 't', title: 'Tool metadata', kind: 'other', status: 'in_progress', content: [{ type: 'terminal', output: 'old output' }] } };
+    const update: ChatEvent = { ...message(4, ''), type: 'tool_call_update', data: { toolCallId: 't', contentMode: 'replace', content: [{ type: 'terminal', output: 'latest output' }] } };
+    const newest: ChatEvent = { ...message(5, ''), type: 'tool_call_update', data: { toolCallId: 't', contentMode: 'replace', content: [{ type: 'terminal', output: 'complete output' }] } };
+    expect(mergeControllerEvents([tool, update], [newest])).toEqual([{ ...tool, data: { ...tool.data, content: [] } }, newest]);
   });
   it('ignores late replies from a conversation that is no longer open', async () => {
     let resolve!: (result: ReturnType<typeof page>) => void;
