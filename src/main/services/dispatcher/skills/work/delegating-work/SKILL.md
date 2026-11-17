@@ -84,3 +84,9 @@ retry remains idempotent across app restart and does not restore removed
 connections. Additional agents are explicit app operations, not a retry.
 Partial checkouts and agent worktrees/branches, including user modifications,
 remain for inspection; never reset or delete them as incidental cleanup.
+
+## Shared work on a group project
+
+Use a persistent board for shared assignments, decisions, blockers and results the team needs to find later; use a one-off message for a short question or handoff. Inspect `get_group_project_management` for host, scope, membership, exclusions and completeness before planning; verify the returned roster before assigning work. Connections and canvas cards never establish membership. If creating a group, use `preview_group_project_create` before `create_group_project`, with explicit scope, reach, host and membership choices. Ask about ambiguous choices. Preserve normal grants and destination-host approval for remote creation.
+
+Read delivery mode and team instructions from `get_group_project_management`; board tools belong to member agents and are not assumed available in your catalog. Ask an eligible member to read or post when needed. In notices mode, react to the named channel rather than polling all boards. Legacy polling groups send no notices. Notices do not wake sleeping members or prove acknowledgment. A busy chat member gets its notice after its turn. Report a queued offline-host change as pending until the host accepts it; do not retry blindly or claim task completion from delivery. Bound tools require grants and member tool switches; remote board writes need host Allow. Lead coordinates work and curates the board; admin manages the group. Neither implies the other.

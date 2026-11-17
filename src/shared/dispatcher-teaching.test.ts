@@ -19,9 +19,35 @@ function actionsShown(groups: CapabilityGroup[]): Set<GrantAction> {
 }
 
 /** Not offered to the reader, on purpose (see ABILITIES). */
-const UNSAID: ReadonlySet<GrantAction> = new Set(['agent.grant', 'memory.write', 'models.read', 'grant.request', 'browser.read', 'browser.act', 'group_project.read', 'group_project.post', 'group_project.lead', 'group_project.admin']);
+const UNSAID: ReadonlySet<GrantAction> = new Set(['agent.grant', 'memory.write', 'models.read', 'grant.request', 'browser.read', 'browser.act']);
 
 describe('dispatcherCapabilities: built from the real grants (#3048)', () => {
+  it('teaches board grants without a canvas and keeps membership and roles explicit', () => {
+    const grants: Grant[] = [
+      { action: 'group_project.read', target: { kind: 'group_project', role: 'member' }, mode: 'allow' },
+      { action: 'group_project.post', target: { kind: 'group_project', id: 'gp-1' }, mode: 'ask' },
+      { action: 'group_project.lead', target: { kind: 'group_project', id: 'gp-1' }, mode: 'off' },
+      { action: 'group_project.admin', target: { kind: 'any' }, mode: 'ask' },
+    ];
+    const groups = dispatcherCapabilities(grants);
+    expect(capabilitiesText(groups)).toContain('Read the boards of group projects I belong to');
+    expect(capabilitiesText(groups)).toContain('Post to the boards of the specified group project (board tools require membership), after asking you');
+    expect(actionsShown(groups).has('group_project.lead')).toBe(false);
+    expect(groups.flatMap(g => g.lines).find(l => l.actions.includes('group_project.admin'))?.asks).toBe(true);
+    expect(capabilitiesText(groups)).not.toContain('gp-1');
+  });
+
+  it('distinguishes app creation authority from a single-group admin grant', () => {
+    expect(capabilitiesText(dispatcherCapabilities([
+      { action: 'group_project.admin', target: { kind: 'app' }, mode: 'ask' },
+    ]))).toContain('Create group projects, after asking you');
+    const scoped = capabilitiesText(dispatcherCapabilities([
+      { action: 'group_project.admin', target: { kind: 'group_project', id: 'gp-1' }, mode: 'allow' },
+    ]));
+    expect(scoped).toContain('Manage the specified group project');
+    expect(scoped).not.toContain('Create');
+  });
+
   it('describes unconnected setup edits and connections as asking, without claiming model changes', () => {
     const text = capabilitiesText(dispatcherCapabilities(DISPATCHER));
     expect(text).toMatch(/Edit the setup of any agent, after asking you/);
@@ -41,7 +67,7 @@ describe('dispatcherCapabilities: built from the real grants (#3048)', () => {
     // Grants on itself (other than its own Actions) and on the Dispatcher alone say nothing to the reader.
     const sayable = DISPATCHER.filter((g) => !UNSAID.has(g.action)
       && g.target.kind !== 'self' && !(g.target.kind === 'connected' && g.target.onlyDispatcher)
-      && g.target.kind !== 'group_members' && g.target.kind !== 'group_project');
+      && g.target.kind !== 'group_members');
     expect([...shown].sort()).toEqual([...new Set(sayable.map((g) => g.action))].sort());
   });
 

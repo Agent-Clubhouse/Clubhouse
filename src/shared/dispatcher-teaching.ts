@@ -35,7 +35,7 @@ export const TURNED_OFF_GROUP = { id: 'off', title: 'Turned off in your settings
 export type CapabilityGroupId = (typeof CAPABILITY_GROUPS)[number]['id'] | typeof TURNED_OFF_GROUP.id;
 
 /** What kind of thing an action's target names, which decides how the target is said. */
-type Noun = 'agent' | 'project' | 'action' | 'app' | 'library' | 'parts' | 'templates';
+type Noun = 'agent' | 'project' | 'action' | 'app' | 'library' | 'parts' | 'templates' | 'group_project';
 
 interface Ability {
   group: CapabilityGroupId;
@@ -106,11 +106,11 @@ const ABILITIES: Readonly<Record<GrantAction, Ability | null>> = {
   'grant.request': null,
   'browser.read': null,
   'browser.act': null,
-  // Group projects and canvas browsers are joined on a canvas, and the Dispatcher has none.
-  'group_project.read': null,
-  'group_project.post': null,
-  'group_project.lead': null,
-  'group_project.admin': null,
+  // Board access requires membership and an active binding, independently of canvas presence.
+  'group_project.read': { group: 'projects', verb: 'read the boards of', noun: 'group_project' },
+  'group_project.post': { group: 'projects', verb: 'post to the boards of', noun: 'group_project' },
+  'group_project.lead': { group: 'projects', verb: 'coordinate members and curate the boards of', noun: 'group_project' },
+  'group_project.admin': { group: 'projects', verb: 'manage', noun: 'group_project', line: t => t.kind === 'app' ? 'create group projects' : t.kind === 'any' ? 'create and manage group projects within my grants (board tools require membership)' : undefined },
 };
 
 /** How a target is said for a kind of thing, or null when it says nothing to the reader (the Dispatcher itself, its own folder). */
@@ -138,6 +138,12 @@ function scopeOf(noun: Noun, target: GrantTarget): string | null {
         case 'action': return 'an Action you shared with me';
         default: return null;
       }
+    case 'group_project':
+      if (target.kind === 'any') return 'group projects within my grants (board tools require membership)';
+      if (target.kind !== 'group_project') return null;
+      if ('id' in target) return 'the specified group project (board tools require membership)';
+      return target.role === 'admin' ? 'group projects I administer (board tools require membership)'
+        : 'group projects I belong to';
     case 'library': return everything ? 'shared parts and templates' : null;
     case 'parts': return everything ? 'shared parts' : null;
     case 'templates': return everything ? 'templates' : null;
