@@ -22,7 +22,7 @@ state.base = fs.mkdtempSync(path.join(os.tmpdir(), 'annex-agent-calls-'));
 
 import {
   AGENT_CALL_VERSION, LOOP_LIMIT, RATE_LIMIT, READINESS_RETRY_MS, currentRemoteCaller, captureControllerPublication, forwardAgentCall, forwardPreparedAgentCall, receiveAgentCall, receiveDirections,
-  remoteAgentName, shareForAnswer, startAgentCalls, _clearOutboxForTesting, syncDirectionsWith, federationExtraForShare, waitingFor, flushOutbox, isNetworkComputer, getDelivery, type AgentCallTransport, type RemoteCaller,
+  remoteAgentName, shareForAnswer, startAgentCalls, _clearOutboxForTesting, syncDirectionsWith, federationExtraForShare, waitingFor, flushOutbox, isNetworkComputer, getDelivery, type AgentCallTransport, type RemoteCaller, type StartAgentCallsOptions,
 } from './annex-agent-calls';
 import { createAnnexDeliveryStore, deliveryHash, DELIVERY_MAX_AGE_MS, type AnnexDeliveryStore, type DeliveryFile } from './annex-delivery-store';
 import {
@@ -78,19 +78,20 @@ beforeEach(async () => {
 });
 afterEach(() => { stop(); vi.restoreAllMocks(); });
 
-function startFixture(deliveryStore = createAnnexDeliveryStore()): () => void {
+function startFixture(deliveryStore = createAnnexDeliveryStore(), overrides: Partial<StartAgentCallsOptions> = {}): () => void {
   return startAgentCalls({
     deliveryStore,
     transport,
     authorizeQueuedCall: async () => ({ allowed: true }),
     runTool: async (tool, targetId, callerId, args) => { seen.push({ tool, targetId, callerId, args, caller: currentRemoteCaller() }); return ok('ran here'); },
     describeLocalAgent: async (id) => (id === 'receiver' ? { name: 'Builder' } : id === 'here' ? { name: 'Helper', projectName: 'Atlas' } : undefined),
+    ...overrides,
   });
 }
 
 // Limiter tests exercise call admission, with persistence covered by the
 // durable-receipt cases below. Avoid hundreds of unrelated atomic disk writes.
-function useMemoryDeliveryStore(): void {
+function useMemoryDeliveryStore(): AnnexDeliveryStore {
   let file: DeliveryFile = { version: 1, inbox: [], outbox: [], deliveries: [] };
   const store: AnnexDeliveryStore = {
     get: () => structuredClone(file),
@@ -99,6 +100,7 @@ function useMemoryDeliveryStore(): void {
   };
   stop();
   stop = startFixture(store);
+  return store;
 }
 
 function nextRetry(ms = 3_600_000): void {
@@ -650,6 +652,177 @@ describe('durable receipts and crash boundaries (#3334)', () => {
     expect(waitingFor(OTHER)).toHaveLength(0);
     expect(posts.filter((p) => p.path.endsWith('agent-call')).map((p) => (p.body.args as { message: string }).message)).toEqual(['first', 'first', 'second']);
     expect(executions).toBe(2);
+  });
+
+  it('QA cancels the disconnect fallback when an explicit recovery drains the outbox', async () => {
+    vi.useFakeTimers();
+    try {
+      useMemoryDeliveryStore(); await vi.advanceTimersByTimeAsync(0); connected = false;
+      await forwardAgentCall('here', `there@${OTHER}`, 'Far agent', 'send_message', { message: 'recover before fallback' });
+      await flushOutbox(OTHER);
+      connected = true;
+      await flushOutbox(OTHER);
+      expect(waitingFor(OTHER)).toHaveLength(0);
+      expect.soft(vi.getTimerCount()).toBe(0);
+      const sent = posts.length;
+      await vi.advanceTimersByTimeAsync(60_000);
+      expect(posts).toHaveLength(sent);
+    } finally { vi.useRealTimers(); }
+  });
+
+  it('QA clears an empty-outbox fallback even when terminal failure notice throws', async () => {
+    vi.useFakeTimers();
+    try {
+      const store = useMemoryDeliveryStore(); await vi.advanceTimersByTimeAsync(0); connected = false;
+      let allowed = true; let failNotice = true;
+      stop(); stop = startFixture(store, {
+        authorizeQueuedCall: async () => allowed ? { allowed: true } : { allowed: false, reason: 'revoked' },
+        onDeliveryFailure: async () => { if (failNotice) { failNotice = false; throw new Error('QA notice failure'); } return true; },
+      });
+      await vi.advanceTimersByTimeAsync(0);
+      await forwardAgentCall('here', `there@${OTHER}`, 'Far agent', 'send_message', { message: 'refuse after reconnect' });
+      await flushOutbox(OTHER);
+      allowed = false; connected = true;
+      await expect(flushOutbox(OTHER)).rejects.toThrow('QA notice failure');
+      expect(waitingFor(OTHER)).toHaveLength(0);
+      // Failure notices retain their own retry timer. The machine drain timer is redundant.
+      expect.soft(vi.getTimerCount()).toBe(1);
+      const sent = posts.length;
+      await vi.advanceTimersByTimeAsync(60_000);
+      expect(posts).toHaveLength(sent);
+    } finally { vi.useRealTimers(); }
+  });
+
+  it.each([1, 2])('keeps a bounded drain retry after disconnect at connectivity check %s without a new event', async (check) => {
+    vi.useFakeTimers();
+    try {
+      useMemoryDeliveryStore(); await vi.advanceTimersByTimeAsync(0); connected = false;
+      await forwardAgentCall('here', `there@${OTHER}`, 'Far agent', 'send_message', { message: 'flap' });
+      const id = waitingFor(OTHER)[0].id;
+      const connection = vi.spyOn(transport, 'connected').mockReturnValue(true);
+      let checks = 0;
+      connection.mockImplementation(() => ++checks !== check);
+      await flushOutbox(OTHER);
+      expect(posts.filter((p) => p.path.endsWith('agent-call'))).toHaveLength(0);
+      connection.mockReturnValue(true); // Recovery deliberately emits no onConnected.
+      expect(vi.getTimerCount()).toBe(1);
+      await vi.advanceTimersByTimeAsync(59_999);
+      expect(posts.filter((p) => p.path.endsWith('agent-call'))).toHaveLength(0);
+      await vi.advanceTimersByTimeAsync(1);
+      expect(getDelivery('here', id)?.state).toBe('delivered');
+      expect(vi.getTimerCount()).toBe(0);
+    } finally { vi.useRealTimers(); }
+  });
+
+  it.each(['authorize', 'mark sending', 'finish delivery', 'save retry', 'save negotiation retry'])('recovers with bounded backoff when a drain throws at %s', async (failure) => {
+    vi.useFakeTimers();
+    try {
+      const store = useMemoryDeliveryStore(); await vi.advanceTimersByTimeAsync(0); connected = false;
+      await forwardAgentCall('here', `there@${OTHER}`, 'Far agent', 'send_message', { message: failure });
+      const id = waitingFor(OTHER)[0].id;
+      let fail = true;
+      if (failure === 'authorize') {
+        stop(); stop = startFixture(store, { authorizeQueuedCall: async () => {
+          if (fail) throw new Error('injected sender authorization failure');
+          return { allowed: true };
+        } });
+        // Let startup's offline sync complete before the explicit drain.
+        await Promise.resolve(); await Promise.resolve();
+      } else {
+        const update = store.update.bind(store);
+        vi.spyOn(store, 'update').mockImplementation(async (change, ...rest) => {
+          const next = structuredClone(store.get()); change(next);
+          const row = next.deliveries.find((r) => r.callId === id)!;
+          if (fail && (failure === 'mark sending' && row.state === 'sending'
+            || failure === 'finish delivery' && row.state === 'delivered'
+            || failure === 'save retry' && row.state === 'retry_later'
+            || failure === 'save negotiation retry' && row.reason === 'capability_check_unavailable')) throw new Error('injected sender persistence failure');
+          await update(change, ...rest);
+        });
+      }
+      if (failure === 'save retry') respond = (urlPath, body) => urlPath.endsWith('agent-call') ? { status: 503, body: {} } : delivered(body);
+      if (failure === 'save negotiation retry') vi.spyOn(transport, 'supportsDurableDelivery').mockRejectedValue(new Error('negotiation unavailable'));
+      connected = true;
+      await expect(flushOutbox(OTHER)).rejects.toThrow('injected sender');
+      expect(vi.getTimerCount()).toBe(1);
+      await vi.advanceTimersByTimeAsync(59_999);
+      expect(vi.getTimerCount()).toBe(1); // No tight retry loop while the fault persists.
+      await vi.advanceTimersByTimeAsync(1);
+      expect(vi.getTimerCount()).toBe(1);
+      fail = false;
+      vi.spyOn(transport, 'supportsDurableDelivery').mockResolvedValue(true);
+      respond = (_path, body) => delivered(body);
+      await vi.advanceTimersByTimeAsync(60_000);
+      expect(getDelivery('here', id)?.state).toBe('delivered');
+      expect(posts.filter((p) => p.path.endsWith('agent-call')).every((p) => p.body.callId === id)).toBe(true);
+      expect(vi.getTimerCount()).toBe(0);
+    } finally { vi.useRealTimers(); }
+  });
+
+  it('does not leave a fallback timer after an in-flight drain is stopped', async () => {
+    vi.useFakeTimers();
+    try {
+      const store = useMemoryDeliveryStore(); await vi.advanceTimersByTimeAsync(0); connected = false;
+      await forwardAgentCall('here', `there@${OTHER}`, 'Far agent', 'send_message', { message: 'stop pending drain' });
+      let release!: () => void;
+      const gate = new Promise<void>((resolve) => { release = resolve; });
+      stop(); stop = startFixture(store, { authorizeQueuedCall: async () => { await gate; return { allowed: true }; } });
+      await vi.advanceTimersByTimeAsync(0); connected = true;
+      const drain = flushOutbox(OTHER);
+      await vi.advanceTimersByTimeAsync(0);
+      stop(); release(); await drain;
+      expect(waitingFor(OTHER)).toHaveLength(1);
+      expect(vi.getTimerCount()).toBe(0);
+    } finally { vi.useRealTimers(); }
+  });
+
+  it('clears a previous retry deadline while a new durable attempt is sending', async () => {
+    vi.useFakeTimers();
+    try {
+      useMemoryDeliveryStore(); await vi.advanceTimersByTimeAsync(0);
+      respond = (urlPath, body) => urlPath.endsWith('agent-call') ? { status: 503, body: {} } : delivered(body);
+      await forwardAgentCall('here', `there@${OTHER}`, 'Far agent', 'send_message', { message: 'metadata' });
+      const id = waitingFor(OTHER)[0].id;
+      const post = transport.post.bind(transport);
+      let sending: ReturnType<typeof getDelivery>;
+      vi.spyOn(transport, 'post').mockImplementation(async (...args) => {
+        if (args[1].endsWith('agent-call')) sending = getDelivery('here', id);
+        return post(...args);
+      });
+      await vi.advanceTimersByTimeAsync(60_000);
+      expect(sending).toMatchObject({ state: 'sending', attempts: 2 });
+      expect(sending).not.toHaveProperty('nextAttemptAt');
+    } finally { vi.useRealTimers(); }
+  });
+
+  it('dates a negotiation retry from its current failure without counting an input attempt', async () => {
+    vi.useFakeTimers();
+    try {
+      useMemoryDeliveryStore(); await vi.advanceTimersByTimeAsync(0); connected = false;
+      await forwardAgentCall('here', `there@${OTHER}`, 'Far agent', 'send_message', { message: 'negotiate' });
+      const id = waitingFor(OTHER)[0].id;
+      vi.spyOn(transport, 'supportsDurableDelivery').mockRejectedValue(new Error('unavailable'));
+      vi.setSystemTime(Date.now() + 30_000); connected = true;
+      await flushOutbox(OTHER);
+      const status = getDelivery('here', id)!;
+      expect(status).toMatchObject({ state: 'retry_later', attempts: 0, reason: 'capability_check_unavailable' });
+      expect(Date.parse(status.nextAttemptAt!) - Date.parse(status.updatedAt)).toBe(60_000);
+    } finally { vi.useRealTimers(); }
+  });
+
+  it('tries a newly queued idle lane promptly while another lane has a long timer', async () => {
+    vi.useFakeTimers();
+    try {
+      useMemoryDeliveryStore(); await vi.advanceTimersByTimeAsync(0);
+      respond = (_path, body) => body.to === 'busy' ? { status: 503, body: {} } : delivered(body);
+      await forwardAgentCall('here', `busy@${OTHER}`, 'Busy', 'send_message', { message: 'backoff' });
+      const busy = waitingFor(OTHER)[0].id;
+      expect(vi.getTimerCount()).toBe(1);
+      await forwardAgentCall('here', `idle@${OTHER}`, 'Idle', 'send_message', { message: 'new lane' });
+      expect(posts.filter((p) => p.path.endsWith('agent-call')).map((p) => p.body.to)).toEqual(['busy', 'idle']);
+      expect(getDelivery('here', busy)?.attempts).toBe(1);
+      expect(vi.getTimerCount()).toBe(1);
+    } finally { vi.useRealTimers(); }
   });
 
   it('defers only a busy sender-to-receiver lane, preserving its order while other targets are accepted', async () => {

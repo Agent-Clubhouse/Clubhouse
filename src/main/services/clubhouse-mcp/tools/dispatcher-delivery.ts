@@ -94,6 +94,8 @@ export interface DispatcherDeliveryRequest {
   fromAction?: boolean;
   /** Authenticated membership-owned controller input, admitted under this receiver's own rules. */
   wakeAsReceiver?: true;
+  /** Ordinary remote news can join the structured runtime queue. Handoffs retain their own readiness rules. */
+  queueRemoteNews?: boolean;
   /** Trusted receiver admission, checked after queue waits and before a wake side effect. */
   admission?: () => boolean;
   messageOptions?: Pick<RuntimeSendOptions, 'delivery' | 'actionQueue'>;
@@ -226,13 +228,18 @@ async function deliver(inboxId: string, req: DispatcherDeliveryRequest): Promise
   if (agentRegistry.get(inboxId) && !agentSystem.isAgentStopping(inboxId)) {
     const runtime = getAgentRuntime(inboxId);
     if (!runtime) return { delivered: false, text: `${targetName}'s runtime does not support input.` };
-    if (req.wakeAsReceiver && (federationTurnOpen(inboxId) || (runtime.kind === 'chat' && (runtime.getState() !== 'idle' || runtime.hasPendingWork?.())))) {
+    // Only ordinary structured message news may queue. Handoffs/files retain
+    // their own admission rules, and terminals have no next-turn queue.
+    const notReady = runtime.kind !== 'chat' ? federationTurnOpen(inboxId)
+      : !req.queueRemoteNews && (federationTurnOpen(inboxId) || runtime.getState() !== 'idle' || runtime.hasPendingWork?.());
+    if (req.wakeAsReceiver && notReady) {
       return { delivered: false, text: 'The receiving controller is not ready for remote input.' };
     }
     idleStarts.delete(inboxId);
     const sent = await runtime.sendMessage(req.text, {
       source: req.messageOptions ? 'action' : 'mcp', taskId: req.taskId, submit: req.submit, routed: req.routed,
       ...(req.messageOptions && { delivery: 'queued', ...req.messageOptions }),
+      ...(req.queueRemoteNews && runtime.kind === 'chat' && { delivery: 'queued' }),
     });
     return { delivered: true, woke: false, ...(sent?.delivery && { delivery: sent.delivery }) };
   }

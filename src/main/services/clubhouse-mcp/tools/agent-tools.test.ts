@@ -210,27 +210,62 @@ describe('AgentTools', () => {
         };
       }
 
-      it.each(['starting', 'running', 'waiting_permission'] as const)('leaves %s targets untouched for a safe durable retry', async (state) => {
+      it.each(['starting', 'running', 'waiting_permission'] as const)('leaves %s targets untouched by a remote file for a safe durable retry', async (state) => {
         const target = runtime(state);
         const lookup = vi.spyOn(runtimes, 'getAgentRuntime').mockReturnValue(target);
         remoteCaller.value = { name: 'Scout', machineName: 'Studio' };
         try {
-          for (const [tool, args] of [['send_message', { message: 'hi' }], ['send_file', { content: 'hi' }]] as const) {
-            expect(await runAgentToolForRemoteCaller(tool, 'agent-2', 'sender@peer', args)).toMatchObject({ isError: true, annexDelivery: { state: 'retry_later' } });
-          }
+          expect(await runAgentToolForRemoteCaller('send_file', 'agent-2', 'sender@peer', { content: 'hi' })).toMatchObject({ isError: true, annexDelivery: { state: 'retry_later', reason: 'target_not_ready' } });
           expect(target.sendMessage).not.toHaveBeenCalled();
           expect(mockWriteFile).not.toHaveBeenCalled();
         } finally { lookup.mockRestore(); remoteCaller.value = undefined; }
       });
 
-      it.each(['send_message', 'send_file'])('does not call an already queued %s truly delivered after a readiness race', async (tool) => {
+      it('leaves a starting target untouched by a remote message for a safe durable retry', async () => {
+        const target = runtime('starting');
+        const lookup = vi.spyOn(runtimes, 'getAgentRuntime').mockReturnValue(target);
+        remoteCaller.value = { name: 'Scout', machineName: 'Studio' };
+        try {
+          expect(await runAgentToolForRemoteCaller('send_message', 'agent-2', 'sender@peer', { message: 'hi' })).toMatchObject({ isError: true, annexDelivery: { state: 'retry_later', reason: 'target_not_ready' } });
+          expect(target.sendMessage).not.toHaveBeenCalled();
+        } finally { lookup.mockRestore(); remoteCaller.value = undefined; }
+      });
+
+      it.each(['running', 'waiting_permission'] as const)('queues a remote message for a %s target without steering it', async (state) => {
+        const target = runtime(state, true);
+        const lookup = vi.spyOn(runtimes, 'getAgentRuntime').mockReturnValue(target);
+        remoteCaller.value = { name: 'Scout', machineName: 'Studio' };
+        try {
+          const result = await runAgentToolForRemoteCaller('send_message', 'agent-2', 'sender@peer', { message: 'hi' });
+          expect(result).toMatchObject({ annexDelivery: { state: 'delivered', reason: 'runtime_queued' } });
+          expect(result.isError).toBeFalsy();
+          expect(target.sendMessage).toHaveBeenCalledTimes(1);
+          expect(target.sendMessage).toHaveBeenCalledWith(expect.any(String), expect.objectContaining({ delivery: 'queued' }));
+          expect(target.interrupt).not.toHaveBeenCalled();
+          expect(target.respondPermission).not.toHaveBeenCalled();
+          expect(target.answerQuestion).not.toHaveBeenCalled();
+        } finally { lookup.mockRestore(); remoteCaller.value = undefined; }
+      });
+
+      it('does not call an already queued send_file truly delivered after a readiness race', async () => {
         const target = runtime('idle', true);
         const lookup = vi.spyOn(runtimes, 'getAgentRuntime').mockReturnValue(target);
         remoteCaller.value = { name: 'Scout', machineName: 'Studio' };
         try {
-          const args = tool === 'send_file' ? { content: 'hi' } : { message: 'hi' };
-          expect(await runAgentToolForRemoteCaller(tool, 'agent-2', 'sender@peer', args)).toMatchObject({
+          expect(await runAgentToolForRemoteCaller('send_file', 'agent-2', 'sender@peer', { content: 'hi' })).toMatchObject({
             isError: true, annexDelivery: { state: 'indeterminate', reason: 'runtime_queued' },
+          });
+          expect(target.sendMessage).toHaveBeenCalledTimes(1);
+        } finally { lookup.mockRestore(); remoteCaller.value = undefined; }
+      });
+
+      it('reports a send_message the runtime queued as accepted, not executed', async () => {
+        const target = runtime('idle', true);
+        const lookup = vi.spyOn(runtimes, 'getAgentRuntime').mockReturnValue(target);
+        remoteCaller.value = { name: 'Scout', machineName: 'Studio' };
+        try {
+          expect(await runAgentToolForRemoteCaller('send_message', 'agent-2', 'sender@peer', { message: 'hi' })).toMatchObject({
+            annexDelivery: { state: 'delivered', reason: 'runtime_queued' },
           });
           expect(target.sendMessage).toHaveBeenCalledTimes(1);
         } finally { lookup.mockRestore(); remoteCaller.value = undefined; }

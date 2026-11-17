@@ -40,6 +40,8 @@ export interface SenderDelivery extends AnnexDeliveryStatus {
 }
 
 export interface ReceiverDelivery {
+  /** Volatile queue acceptance belongs only to this receiver lifecycle. */
+  runtimeQueueSession?: string;
   key: string;
   payloadHash: string;
   createdAt: string;
