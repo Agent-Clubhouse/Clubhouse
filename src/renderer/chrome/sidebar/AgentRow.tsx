@@ -75,8 +75,16 @@ interface AgentRowProps {
   offline?: boolean;
 }
 
+/** What the sidebar knows of another computer: its short label, its full name (with an ID where aliases collide), and whether it is offline (#3607). */
+export interface MachineInfo { label?: string; fullName?: string; offline?: boolean }
+
+/** A row's accessible name on another computer: the short label is clipped on screen, so it carries the full name and offline state. */
+export function onComputer(name: string, machine: string | undefined, offline = false): string {
+  return machine ? `${name} on ${machine}${offline ? ', offline' : ''}` : name;
+}
+
 /** A small computer, so a remote row reads as remote by shape and text, not by colour. */
-const MachineGlyph = () => (
+export const MachineGlyph = () => (
   <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" className="flex-shrink-0">
     <rect x="3" y="4" width="18" height="12" rx="2" /><path d="M8 20h8M12 16v4" />
   </svg>
@@ -163,7 +171,7 @@ export const AgentRow = React.memo(function AgentRow({
   const rollupId = useId();
   const orchestrator = useEffectiveOrchestrator(agent);
   // The short label is clipped on screen, so the name carries the whole alias and the offline state.
-  const accessibleName = machine || machineName ? `${agent.name} on ${machineName ?? machine}${offline ? ', offline' : ''}` : agent.name;
+  const accessibleName = onComputer(agent.name, machineName ?? machine, offline);
   const describedBy = [note && noteId, folded && rollupId].filter(Boolean).join(' ') || undefined;
   const spawnedAt = useAgentStore((s) => s.agentSpawnedAt[agent.id]);
   const sleeping = agent.status === 'sleeping';

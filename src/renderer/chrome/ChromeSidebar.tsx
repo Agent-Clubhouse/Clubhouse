@@ -544,10 +544,11 @@ export function ChromeSidebar() {
       return [s.id, { label: shortMachineLabel(s.alias), fullName: collides ? `${aliasOf(s)} (ID ${tail})` : aliasOf(s), offline: s.state !== 'connected' }];
     }));
   }, [satellites]);
-  const agentMachine = useCallback((agent: Agent) => {
-    const host = hostOf(agent.projectId);
+  const projectMachine = useCallback((projectId: string) => {
+    const host = hostOf(projectId);
     return host ? machineInfo.get(host) ?? { label: shortMachineLabel(undefined), fullName: UNKNOWN_COMPUTER, offline: true } : undefined;
   }, [machineInfo]);
+  const agentMachine = useCallback((agent: Agent) => projectMachine(agent.projectId), [projectMachine]);
   // Manual or most-recent order (#2116), shared by the tree and the filter results.
   // A row's Recent activity counts its linked copies and its running agents on any machine (#3542).
   const ordered = useSidebarOrder(treeProjects, agentsByProject, network.members);
@@ -966,6 +967,7 @@ export function ChromeSidebar() {
             onOpenTerminal={openTerminal}
             terminalProjectIds={terminalProjectIds}
             agentMachine={agentMachine}
+            projectMachine={projectMachine}
             onSearchEverything={searchEverything}
           />
         </div>
@@ -1006,6 +1008,7 @@ export function ChromeSidebar() {
           isRemoteProject={isRemoteProject}
           isLinkedProject={isLinkedProject}
           agentMachine={agentMachine}
+          projectMachine={projectMachine}
           projectMenuItems={projectMenuItems}
           onSelectCompleted={selectCompleted}
           onDismissCompleted={dismissCompleted}

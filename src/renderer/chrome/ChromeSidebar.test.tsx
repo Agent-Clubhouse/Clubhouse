@@ -10,6 +10,7 @@ vi.mock('../panels/AccessoryPanel', async (orig) => ({
 vi.mock('./sidebar/ChromeAgentDialogs', () => ({ ChromeAgentDialogs: () => null }));
 
 import { ChromeSidebar } from './ChromeSidebar';
+import { TOOLTIP_DELAY_MS } from '../components/Tooltip';
 import { feedbackStatus, setFeedback } from '../features/feedback/feedback-test-utils';
 import { useUIStore } from '../stores/uiStore';
 import { useProjectStore } from '../stores/projectStore';
@@ -926,6 +927,65 @@ describe('ChromeSidebar', () => {
       fireEvent.click(screen.getByText('Merge with…'));
       fireEvent.click(within(screen.getByTestId('project-merge-menu')).getByText('Site on Studio'));
       expect(nameOf(ra)).toHaveAccessibleName('bold-owl on Studio');
+    });
+
+    const headerOf = (projectId: string) => screen.getByTestId(`project-group-${projectId}`).querySelector('[role="treeitem"]') as HTMLElement;
+
+    it('tells a same-named project on another computer from this computer\'s by its header, and leaves this one\'s alone (#3607)', () => {
+      render(<ChromeSidebar />);
+      // This computer's Site (p3) and Studio's Site share a name.
+      expect(headerOf('p3')).toHaveAccessibleName('Site');
+      expect(within(screen.getByTestId('project-p3')).queryByTestId('project-machine')).toBeNull();
+      expect(headerOf(rp)).toHaveAccessibleName('Site on Studio');
+      expect(within(screen.getByTestId(`project-${rp}`)).getByTestId('project-machine').textContent).toBe('Studio');
+      expect(within(headerOf(rp)).getByLabelText('Pin Site on Studio')).toBeTruthy();
+      expect(within(headerOf(rp)).getByLabelText('Menu for Site on Studio')).toBeTruthy();
+    });
+
+    it('names a remote project\'s header with a long alias whole, offline included (#3607)', () => {
+      useAnnexClientStore.setState((st) => ({ satellites: st.satellites.map((x) => ({ ...x, alias: 'Studio-Mac-Pro-Upstairs-2', state: 'disconnected' as const })) }));
+      render(<ChromeSidebar />);
+      expect(headerOf(rp)).toHaveAccessibleName('Site on Studio-Mac-Pro-Upstairs-2, offline');
+      expect(within(screen.getByTestId(`project-${rp}`)).getByTestId('project-machine').textContent).toBe('Studio-Mac-Pr…');
+    });
+
+    it('adds the ID to the headers of same-named projects on computers that share an alias, and only then (#3607)', () => {
+      const { rp2 } = addSecondComputer('studio', 'AA:BB:CC:DD:EE:01:02:03');
+      useAnnexClientStore.setState((st) => ({ satellites: st.satellites.map((x) => (x.id === 's1' ? { ...x, fingerprint: '11:22:33:44:55:AA:BB:CC' } : x)) }));
+      render(<ChromeSidebar />);
+      expect(headerOf(rp)).toHaveAccessibleName('Site on Studio (ID AABBCC)');
+      expect(headerOf(rp2)).toHaveAccessibleName('Site on studio (ID 010203)');
+    });
+
+    it('shows the full computer name, with offline, in a remote project header\'s tooltip (#3607)', () => {
+      vi.useFakeTimers();
+      try {
+        useAnnexClientStore.setState((st) => ({ satellites: st.satellites.map((x) => ({ ...x, alias: 'Studio-Mac-Pro-Upstairs-2', state: 'disconnected' as const })) }));
+        render(<ChromeSidebar />);
+        fireEvent.mouseEnter(screen.getByTestId(`project-${rp}`).querySelector('[data-testid="project-machine"]')!);
+        act(() => { vi.advanceTimersByTime(TOOLTIP_DELAY_MS); });
+        expect(screen.getByRole('tooltip').textContent).toBe('Studio-Mac-Pro-Upstairs-2 (offline)');
+      } finally { vi.useRealTimers(); }
+    });
+
+    it('keeps this computer\'s header plain when its project is merged with another computer\'s (#3607)', () => {
+      render(<ChromeSidebar />);
+      fireEvent.contextMenu(screen.getByTestId('project-p3'));
+      fireEvent.click(screen.getByText('Merge with…'));
+      fireEvent.click(within(screen.getByTestId('project-merge-menu')).getByText('Site on Studio'));
+      expect(headerOf('p3')).toHaveAccessibleName('Site');
+    });
+
+    it('gives a filtered remote project header the same name and label, and a local one neither (#3607)', () => {
+      render(<ChromeSidebar />);
+      fireEvent.change(screen.getByTestId('chrome-filter'), { target: { value: 'Site' } });
+      const results = screen.getByTestId('filter-results');
+      const remote = within(results).getByTestId(`filter-project-${rp}`);
+      expect(remote).toHaveAccessibleName('Site on Studio');
+      expect(within(remote).getByTestId('project-machine').textContent).toBe('Studio');
+      const local = within(results).getByTestId('filter-project-p3');
+      expect(local).toHaveAccessibleName('Site');
+      expect(within(local).queryByTestId('project-machine')).toBeNull();
     });
 
     it('gives a filtered remote row the same label, name and offline state as the tree (#3607)', () => {

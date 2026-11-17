@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useSta
 import type { Agent, AgentDetailedStatus, CompletedQuickAgent, Project } from '../../../shared/types';
 import { useChromeStore, foldKey, type ProjectFold } from '../chromeStore';
 import { ProjectGroup } from './ProjectGroup';
+import type { MachineInfo } from './AgentRow';
 import { buildProjectTree, holdOrder, isInSleepingFold, localParentId, moveProject } from './treeModel';
 import { sidebarProjectGroups } from './sidebarProjectOrder';
 import { useAgentStore } from '../../stores/agentStore';
@@ -68,7 +69,9 @@ export interface ProjectTreeProps {
   /** A project in a linked group: its Pin and Mark inactive are shared by every copy, so a remote row may mark it too. */
   isLinkedProject?: (projectId: string) => boolean;
   /** For an agent on another machine: a short label for it, and whether that machine is offline. */
-  agentMachine?: (agent: Agent) => { label?: string; fullName?: string; offline?: boolean } | undefined;
+  agentMachine?: (agent: Agent) => MachineInfo | undefined;
+  /** For a project on another machine: the same, for its header (#3607). */
+  projectMachine?: (projectId: string) => MachineInfo | undefined;
   /** More items for a project's menu: Merge with… and Split per machine. */
   projectMenuItems?: (projectId: string) => MenuItem[];
 }
@@ -450,6 +453,7 @@ export function ProjectTree(props: ProjectTreeProps) {
       onCloseProject={remoteOf(project.id) ? undefined : props.onCloseProject}
       onReorderAgents={remoteOf(project.id) ? undefined : onReorderAgents}
       agentMachine={props.agentMachine}
+      machine={props.projectMachine?.(project.id)}
       extraMenuItems={props.projectMenuItems?.(project.id)}
       collapsedAgentIds={collapsedAgentSet}
       onToggleAgentCollapsed={onToggleAgentCollapsed}
