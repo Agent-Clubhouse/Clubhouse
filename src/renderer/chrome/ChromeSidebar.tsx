@@ -366,14 +366,13 @@ const UNKNOWN_LABEL = 'Unknown';
 
 /**
  * A machine's name, short enough for an agent row (#3065). Where aliases
- * collide it ends in the computer's ID tail, so rows read differently
- * without hovering (#3607).
+ * collide the ID tail goes beside it (shown whole, never cut), so the name
+ * gives way to it (#3607).
  */
 function shortMachineLabel(alias: string | undefined, idTail = ''): string {
   const name = alias?.trim() || UNKNOWN_LABEL;
-  if (!idTail) return name.length > 14 ? `${name.slice(0, 13)}…` : name;
-  const room = 14 - 1 - idTail.length;
-  return `${name.length > room ? `${name.slice(0, room - 1)}…` : name} ${idTail}`;
+  const room = idTail ? 14 - 1 - idTail.length : 14;
+  return name.length > room ? `${name.slice(0, room - 1)}…` : name;
 }
 
 export function ChromeSidebar() {
@@ -558,7 +557,7 @@ export function ChromeSidebar() {
     }
     return new Map(satellites.map((s) => {
       const tail = idTails.get(s.id) ?? '';
-      return [s.id, { label: shortMachineLabel(s.alias, tail), fullName: tail ? `${aliasOf(s)} (ID ${tail})` : aliasOf(s), offline: s.state !== 'connected' }];
+      return [s.id, { label: shortMachineLabel(s.alias, tail), idTail: tail || undefined, fullName: tail ? `${aliasOf(s)} (ID ${tail})` : aliasOf(s), offline: s.state !== 'connected' }];
     }));
   }, [satellites]);
   const projectMachine = useCallback((projectId: string) => {

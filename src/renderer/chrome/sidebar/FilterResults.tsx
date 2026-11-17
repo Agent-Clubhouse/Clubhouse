@@ -124,6 +124,7 @@ export function FilterResults(props: FilterResultsProps) {
                     parentKey={key}
                     highlight={q}
                     machine={machine?.label}
+                    machineId={machine?.idTail}
                     machineName={machine?.fullName}
                     offline={machine?.offline}
                   />

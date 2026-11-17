@@ -1,7 +1,7 @@
 import React, { useCallback, useMemo, useRef, useState } from 'react';
 import type { Agent, AgentDetailedStatus, CompletedQuickAgent, Project } from '../../../shared/types';
 import { getAgentColorHex } from '../../../shared/name-generator';
-import { AgentRow, MachineGlyph, describeComputers, onComputers, type MachineInfo } from './AgentRow';
+import { AgentRow, MachineGlyph, MachineLabel, describeComputers, onComputers, type MachineInfo } from './AgentRow';
 import { agentDot, buildProjectTree, countDescendants, helperRollup, isInSleepingFold, localParentId, moveWithinGroup, projectRollup, siblingGroups, type AgentNode } from './treeModel';
 import type { ProjectFold } from '../chromeStore';
 import { PopupMenu, type MenuItem } from '../../components/PopupMenu';
@@ -60,7 +60,7 @@ export function ProjectMachineTag({ machines }: { machines: readonly MachineInfo
     <Tooltip content={describeComputers(machines)}>
       <span data-testid="project-machine" className="ml-auto flex-shrink-0 flex items-center gap-1 text-xs text-ctp-overlay1">
         <MachineGlyph />
-        <span className="truncate max-w-[72px]">{machines[0].label}</span>
+        <MachineLabel label={machines[0].label} idTail={machines[0].idTail} testId="project-machine-label" />
         {machines.length > 1 && <span className="flex-shrink-0">+{machines.length - 1}</span>}
       </span>
     </Tooltip>
@@ -321,6 +321,7 @@ export const ProjectGroup = React.memo(function ProjectGroup(props: ProjectGroup
         // A linked group's agents are in other projects too (#3066): each is active by its own project.
         active={agent.id === activeAgentId && (isActiveProject || agent.projectId === activeProjectId)}
         machine={agentMachine?.(agent)?.label}
+        machineId={agentMachine?.(agent)?.idTail}
         machineName={agentMachine?.(agent)?.fullName}
         offline={agentMachine?.(agent)?.offline}
         indent={indent}

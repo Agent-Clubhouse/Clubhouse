@@ -903,8 +903,18 @@ describe('ChromeSidebar', () => {
       expect(nameOf(ra)).toHaveAccessibleName(`${agent(ra, rp).name} on Studio (ID BBCC)`);
       expect(nameOf(ra2)).toHaveAccessibleName(`${agent(ra2, rp).name} on studio (ID 0203)`);
       // Without hovering, the rows already differ: the label ends in the same ID.
-      expect(within(screen.getByTestId(`agent-item-${ra}`)).getByTestId('agent-row-machine').textContent).toBe('Studio BBCC');
-      expect(within(screen.getByTestId(`agent-item-${ra2}`)).getByTestId('agent-row-machine').textContent).toBe('studio 0203');
+      const row = (id: string) => within(screen.getByTestId(`agent-item-${id}`));
+      expect(row(ra).getByTestId('agent-row-machine').textContent).toBe('Studio');
+      expect(row(ra).getByTestId('agent-row-machine-id').textContent).toBe('BBCC');
+      expect(row(ra2).getByTestId('agent-row-machine').textContent).toBe('studio');
+      expect(row(ra2).getByTestId('agent-row-machine-id').textContent).toBe('0203');
+      // The ID is not in the part that is cut to the width, and is not cut itself.
+      expect(row(ra).getByTestId('agent-row-machine')).toHaveClass('truncate');
+      expect(row(ra).getByTestId('agent-row-machine-id')).toHaveClass('flex-shrink-0');
+      expect(row(ra).getByTestId('agent-row-machine-id')).not.toHaveClass('truncate');
+      expect(row(ra).getByTestId('agent-row-machine-id').closest('.truncate')).toBeNull();
+      // Computers with no collision have no ID.
+      expect(within(screen.getByTestId('agent-item-a1')).queryByTestId('agent-row-machine-id')).toBeNull();
     });
 
     it('leaves differing aliases, including same-prefix ones, without a suffix (#3607)', () => {
@@ -956,7 +966,11 @@ describe('ChromeSidebar', () => {
       render(<ChromeSidebar />);
       expect(headerOf(rp)).toHaveAccessibleName('Site on Studio (ID BBCC)');
       expect(headerOf(rp2)).toHaveAccessibleName('Site on studio (ID 0203)');
-      expect(within(screen.getByTestId(`project-${rp}`)).getByTestId('project-machine').textContent).toBe('Studio BBCC');
+      const tag = within(screen.getByTestId(`project-${rp}`));
+      expect(tag.getByTestId('project-machine-label').textContent).toBe('Studio');
+      expect(tag.getByTestId('project-machine-label-id').textContent).toBe('BBCC');
+      expect(tag.getByTestId('project-machine-label-id')).toHaveClass('flex-shrink-0');
+      expect(tag.getByTestId('project-machine-label-id').closest('.truncate')).toBeNull();
     });
 
     it('shows the full computer name, with offline, in a remote project header\'s tooltip (#3607)', () => {
@@ -975,7 +989,10 @@ describe('ChromeSidebar', () => {
       useAnnexClientStore.setState((st) => ({ satellites: st.satellites.map((x) => (x.id === 's1' ? { ...x, alias: 'Studio-Mac-Pro-Upstairs', fingerprint: '11:22:33:44:55:66:02:03' } : x)) }));
       render(<ChromeSidebar />);
       // Both end in 0203, so the ID grows to 6 for this pair.
-      const label = (id: string) => within(screen.getByTestId(`agent-item-${id}`)).getByTestId('agent-row-machine').textContent!;
+      const label = (id: string) => {
+        const row = within(screen.getByTestId(`agent-item-${id}`));
+        return `${row.getByTestId('agent-row-machine').textContent} ${row.getByTestId('agent-row-machine-id').textContent}`;
+      };
       expect(label(ra)).toBe('Studio… 660203');
       expect(label(ra2)).toBe('Studio… 010203');
       expect(label(ra).length).toBeLessThanOrEqual(15);

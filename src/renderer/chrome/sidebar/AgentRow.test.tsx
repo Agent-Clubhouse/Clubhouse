@@ -490,7 +490,7 @@ describe('AgentRow remote computer identity (#3607)', () => {
     // Not inside anything the row hides on hover, and with a shape of its own besides the text.
     expect(machine.closest('[class*="group-hover/row:hidden"]')).toBeNull();
     expect(screen.getByTestId('agent-row-offline').closest('[class*="group-hover/row:hidden"]')).toBeNull();
-    expect(machine.parentElement!.querySelector('svg[aria-hidden="true"]')).toBeTruthy();
+    expect(machine.parentElement!.parentElement!.querySelector('svg[aria-hidden="true"]')).toBeTruthy();
   });
 
   it('hides the note on hover but not the computer', () => {
@@ -501,8 +501,29 @@ describe('AgentRow remote computer identity (#3607)', () => {
 
   it('keeps the label inside the 72 px cap at a narrow width, with the name truncating before it', () => {
     setup(durable(), { machine: 'Mason-Studio-…', machineName: LONG });
-    expect(screen.getByTestId('agent-row-machine')).toHaveClass('truncate', 'max-w-[72px]');
+    const label = screen.getByTestId('agent-row-machine');
+    expect(label).toHaveClass('truncate');
+    expect(label.parentElement).toHaveClass('max-w-[72px]', 'min-w-0');
     expect(screen.getByText('snazzy-fox')).toHaveClass('truncate');
+  });
+
+  it('shows the ID tail of a colliding computer in its own element that the width never cuts', () => {
+    setup(durable(), { machine: 'Mason-Stu…', machineId: 'BBCC', machineName: 'Mason-Studio (ID BBCC)' });
+    const label = screen.getByTestId('agent-row-machine');
+    const tail = screen.getByTestId('agent-row-machine-id');
+    expect(tail).toHaveTextContent('BBCC');
+    // Beside the label, not inside what truncates, and not shrinking.
+    expect(label).toHaveClass('truncate');
+    expect(label).not.toContainElement(tail);
+    expect(tail.parentElement).toBe(label.parentElement);
+    expect(tail).toHaveClass('flex-shrink-0');
+    expect(tail).not.toHaveClass('truncate');
+    expect(tail.closest('.truncate')).toBeNull();
+  });
+
+  it('has no ID element for a computer whose alias is unique', () => {
+    setup(durable(), { machine: 'Studio', machineName: 'Studio' });
+    expect(screen.queryByTestId('agent-row-machine-id')).toBeNull();
   });
 
   it('names the card from the full alias when only the short label is given', () => {

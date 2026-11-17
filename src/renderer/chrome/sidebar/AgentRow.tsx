@@ -69,6 +69,8 @@ interface AgentRowProps {
   onToggleHelpers?: (agentId: string) => void;
   /** A short label for the machine the agent runs on, when it isn't this one (#3065). */
   machine?: string;
+  /** Its ID tail, where computers share an alias: shown whole beside the label (#3607). */
+  machineId?: string;
   /** The machine's full alias, which the short label may cut: in the row's name and the hover card (#3607). */
   machineName?: string;
   /** Its machine is offline: the row is dimmed and says so instead of a time; its chat stays readable. */
@@ -76,7 +78,7 @@ interface AgentRowProps {
 }
 
 /** What the sidebar knows of another computer: its short label, its full name (with an ID where aliases collide), and whether it is offline (#3607). */
-export interface MachineInfo { label?: string; fullName?: string; offline?: boolean }
+export interface MachineInfo { label?: string; idTail?: string; fullName?: string; offline?: boolean }
 
 /** A row's accessible name on another computer: the short label is clipped on screen, so it carries the full name and offline state. */
 export function onComputer(name: string, machine: string | undefined, offline = false): string {
@@ -97,6 +99,20 @@ export function onComputers(name: string, machines: readonly MachineInfo[]): str
 
 /** The computers a header names, whole, for its tooltip. */
 export const describeComputers = computerList;
+
+/**
+ * A computer's short label with its ID tail (where aliases collide) after it.
+ * Only the label gives way to the width: the tail never does, so it is always
+ * there to tell two same-named computers apart.
+ */
+export function MachineLabel({ label, idTail, testId }: { label?: string; idTail?: string; testId: string }) {
+  return (
+    <span className="flex items-center gap-1 min-w-0 max-w-[72px]">
+      <span data-testid={testId} className="truncate">{label}</span>
+      {idTail && <span data-testid={`${testId}-id`} className="flex-shrink-0">{idTail}</span>}
+    </span>
+  );
+}
 
 /** A small computer, so a remote row reads as remote by shape and text, not by colour. */
 export const MachineGlyph = () => (
@@ -169,7 +185,7 @@ function ActivityTime({ at, label }: { at: number; label: string }) {
 
 export const AgentRow = React.memo(function AgentRow({
   agent, dot, detailed, active, indent, projectPath, onSelect, onOpenTerminal, level = 2, parentKey, extraActions, highlight, drag, dropEdge,
-  helperCount = 0, helpersExpanded = true, helperNeeds = 0, helperWorking = 0, onToggleHelpers, machine, machineName, offline = false,
+  helperCount = 0, helpersExpanded = true, helperNeeds = 0, helperWorking = 0, onToggleHelpers, machine, machineId, machineName, offline = false,
 }: AgentRowProps) {
   // A durable agent being created (#2226) can take up to a minute while its worktree is made.
   const couldntStart = !!agent.creationFailed && agent.status === 'error';
@@ -347,7 +363,7 @@ export const AgentRow = React.memo(function AgentRow({
               {machine && (
                 <span className="flex items-center gap-1 min-w-0 text-ctp-overlay1">
                   <MachineGlyph />
-                  <span data-testid="agent-row-machine" className="truncate max-w-[72px]">{machine}</span>
+                  <MachineLabel label={machine} idTail={machineId} testId="agent-row-machine" />
                 </span>
               )}
               {offline && <span data-testid="agent-row-offline" className="text-ctp-overlay1">offline</span>}
