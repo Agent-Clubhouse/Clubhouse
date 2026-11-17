@@ -4463,8 +4463,10 @@ async function handleMobileCommandRoute(ctx: AnnexRouteContext): Promise<void> {
     const peer = findPairedPeer(ctx.mobilePrincipal);
     const principal = ctx.reauthorize().ok ? ctx.mobilePrincipal : undefined;
     const epoch = mobileCommands.epoch;
+    // Checked against the pairing only, not the socket: a phone dropping mid-command (no peer certificate once
+    // closed) must not leave a cached refusal for its commandId.
     const assertAuthorized = () => {
-      if (mobileCommands.epoch !== epoch || !principal || !ctx.reauthorize().ok) {
+      if (mobileCommands.epoch !== epoch || !principal || !stillAuthorized(ctx.principal, authorizerDeps)) {
         throw new MobileControlError('authorization_revoked', 403);
       }
     };

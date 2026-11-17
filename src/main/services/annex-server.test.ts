@@ -8349,6 +8349,35 @@ describe('annex-server', () => {
       expect(agentSystem.killAgent).not.toHaveBeenCalled();
     });
 
+    it('finishes a mobile command whose connection closes mid-command while the peer stays paired, and stops one whose peer is removed', async () => {
+      const { port } = await startAndPair();
+      const { epoch } = JSON.parse((await request(port, 'GET', '/api/v1/mobile/capabilities')).body);
+      vi.mocked(projectStateStore.isProjectStateReady).mockReturnValue(true);
+      const project = { id: 'p_close', name: 'Close', path: '/close', icon: '' };
+      const pin = (commandId: string) => request(port, 'POST', '/api/v1/mobile/commands', { version: 1, epoch, commandId, type: 'project.setPinned', projectId: project.id, pinned: true });
+      // A closed TLS socket has no peer certificate. The command's later checks read the pairing, not the socket,
+      // so a phone dropping mid-command doesn't turn into a cached refusal for its commandId.
+      vi.mocked(projectStore.list).mockImplementationOnce(async () => {
+        vi.mocked(annexTls.extractPeerCertificateFingerprint).mockReturnValue(undefined);
+        return [project] as any;
+      });
+      const closed = await pin('closed-mid-command');
+      vi.mocked(annexTls.extractPeerCertificateFingerprint).mockReturnValue(TEST_CONTROLLER.tlsCertificateFingerprint);
+      expect(closed.status).toBe(200);
+      expect(JSON.parse(closed.body)).toMatchObject({ status: 'completed', result: { projectId: project.id } });
+      // Removing the pairing mid-command still stops it.
+      vi.mocked(projectStore.list).mockImplementationOnce(async () => {
+        vi.mocked(annexPeers.getPeer).mockReturnValue(undefined);
+        return [project] as any;
+      });
+      const removed = await pin('removed-mid-command');
+      vi.mocked(annexPeers.getPeer).mockImplementation((fp: string) => (fp === TEST_CONTROLLER.fingerprint ? { ...TEST_CONTROLLER } : undefined) as any);
+      expect(removed.status).toBe(403);
+      expect(JSON.parse(removed.body)).toMatchObject({ status: 'rejected', error: { code: 'authorization_revoked' } });
+      vi.mocked(projectStateStore.isProjectStateReady).mockReturnValue(false);
+      vi.mocked(projectStore.list).mockReturnValue([]);
+    });
+
     it('refuses a request whose peer becomes pending or loses its role before the body arrives', async () => {
       vi.mocked(projectStore.list).mockReturnValue([{ id: 'test-proj-id', name: 'Test Project', path: '/test/path', icon: '' } as any]);
       const { port } = await startAndPair();
