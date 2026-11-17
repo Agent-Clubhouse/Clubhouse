@@ -259,3 +259,11 @@ describe('how many actions', () => {
     expect(MAX_ACTIONS).toEqual({ agent: 20, helper: 5, dispatcher: 50 });
   });
 });
+
+it('refuses remote wake/sleep, user ownership and remote event sources explicitly', () => {
+  const agentId = `worker@${'aa:'.repeat(15)}aa`;
+  expect(rights.checkStep(user, { kind: 'message', agentId, text: 'hi' })).toMatch(/agent or Dispatcher/);
+  expect(rights.checkStep(lead, { kind: 'wake', agentId })).toMatch(/message steps/);
+  expect(rights.checkStep(lead, { kind: 'sleep', agentId })).toMatch(/message steps/);
+  expect(rights.checkSource(user, watchAgent(agentId))).toMatch(/Remote event sources/);
+});

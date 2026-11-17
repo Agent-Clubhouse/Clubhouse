@@ -25,6 +25,15 @@ vi.mock('electron', async () => {
   };
 });
 vi.mock('os', () => ({ uptime: () => performance.now() / 1000 + h.sleepSeconds }));
+// Remote message targets are covered by remote-targets.test.ts; keep this local
+// service suite isolated from Annex identity, settings and transport.
+vi.mock('./remote-targets', () => ({
+  canonicalActionReference: (id: string) => id,
+  remoteActionAgent: () => undefined,
+  remoteMessageRefusal: () => null,
+  sendRemoteActionMessage: vi.fn(async () => ({ outcome: 'failed', detail: 'Remote targets are not used in this suite.' })),
+  currentRemoteReceipt: (_owner: unknown, _dispatcher: unknown, receipt: unknown) => receipt,
+}));
 vi.mock('../../util/ipc-broadcast', () => ({ broadcastToAllWindows: vi.fn() }));
 vi.mock('../agent-system', () => ({ isAgentRunning: () => false }));
 vi.mock('../annex-device-presence', () => ({ devicePresenceOnline: () => undefined }));

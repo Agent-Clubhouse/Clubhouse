@@ -408,7 +408,7 @@ function actionHistory(scope: ActionScope, args: Obj): unknown {
 
 const TRIGGER_SCHEMA = {
   type: 'object',
-  description: 'Schedule, once, or event. Timing: none, delaySeconds/delayMinutes (debounce and re-check), or coalesceSeconds (fixed window). Throttle composes. Any watches readable durable and quick agents.',
+  description: 'Local schedule, once, or event; no remote sources. Debounce: delaySeconds/delayMinutes; fixed window: coalesceSeconds. Throttle composes. Any watches readable durable and quick agents.',
   properties: {
     kind: { type: 'string', enum: ['schedule', 'once', 'event'] },
     preset: { type: 'string', enum: [...SCHEDULE_PRESETS], description: 'Schedules: daily, weekdays, weekly, hourly, or cron for Custom (cron).' },
@@ -460,7 +460,7 @@ const STEPS_SCHEMA = {
     type: 'object',
     properties: {
       kind: { type: 'string', enum: [...ACTION_STEP_KINDS] },
-      agentId: { type: 'string', description: 'wake, message, sleep: the agent, by id, or "self".' },
+      agentId: { type: 'string', description: 'Agent id or "self". Message only: id@machine for connected ordinary agents; agent/Dispatcher owner needs agent.message Allow. Unattended Ask first refuses. No remote wake/sleep or Dispatcher target.' },
       prompt: { type: 'string', description: 'wake: optional first message. quick: the quick agent\'s task.' },
       text: { type: 'string', description: 'message: the message. notify: the notice text.' },
       topic: { type: 'string', description: 'group_post: the board topic.' },

@@ -34,6 +34,8 @@ import { isAgentRunning } from '../agent-system';
 import { onAppEvent, publishAppEvent } from '../app-event-bus';
 import { knownAgent, knownAgents } from '../app-event-sources';
 import { bindingManager } from '../clubhouse-mcp/binding-manager';
+import { parseAgentAddress } from '../../../shared/agent-address';
+import { canonicalActionReference, remoteActionAgent, remoteMessageRefusal, sendRemoteActionMessage, currentRemoteReceipt } from './remote-targets';
 import { localConnectionWakeOn } from '../connection-grants-store';
 import { isCrossProjectEnabled, isOrchestrationEnabled, orchestrationControl } from '../clubhouse-mcp/orchestration-gate';
 import { isDispatcherEnabled } from '../dispatcher/dispatcher-settings';
@@ -104,10 +106,13 @@ const facts: EngineFacts & { parentOf(id: string): string | undefined; agentWork
     return times.length ? Math.max(...times) : null;
   },
   deviceOnline: devicePresenceOnline,
+  canonicalAgentReference: canonicalActionReference,
+  remoteMessageTarget: (id) => !!remoteActionAgent(id),
+  remoteDelivery: (owner, receipt) => currentRemoteReceipt(owner, getDispatcherAgentId() ?? undefined, receipt),
   // The Dispatcher counts as an agent here, so its subscriptions can message it (#3042).
   agentExists: (id) => !!knownAgent(id) || isDispatcherAgentId(id),
   isRunning: (id) => isAgentRunning(id),
-  agentName: (id) => isDispatcherAgentId(id) ? dispatcherDisplayName() : knownAgent(id)?.name,
+  agentName: (id) => parseAgentAddress(id).machine ? remoteActionAgent(id)?.name : isDispatcherAgentId(id) ? dispatcherDisplayName() : knownAgent(id)?.name,
   isQuickAgent: (id) => knownAgent(id)?.quick === true,
   agentProjectId: (id) => {
     const a = knownAgent(id);
@@ -315,6 +320,7 @@ function broadcastChanged(): void {
 function createEngine(): ActionsEngine {
   const canStartAgents = (id: string) => isOrchestrationEnabled(id) || knownAgent(id)?.orchestrates === true;
   const rights = createGrantRights({
+    remoteMessageRefusal: (sender, target) => isDispatcherAgentId(sender) && !isDispatcherEnabled() ? 'The owning Dispatcher is off.' : remoteMessageRefusal(sender, target),
     agentName: facts.agentName,
     parentOf: facts.parentOf,
     agentProjectId: facts.agentProjectId,
@@ -334,7 +340,7 @@ function createEngine(): ActionsEngine {
     },
     agentProjectPath: (id) => knownAgent(id)?.projectPath,
     projectPath: (id) => projectById(id)?.path,
-    isConnected: (from, to) => bindingManager.getBindingsForAgent(from).some((b) => b.targetKind === 'agent' && b.targetId === to),
+    isConnected: (from, to) => parseAgentAddress(to).machine ? remoteMessageRefusal(from, to) === null : bindingManager.getBindingsForAgent(from).some((b) => b.targetKind === 'agent' && b.targetId === to),
     wakeOn: localConnectionWakeOn,
     // The Dispatcher's wires exist only while it is on, so an off Dispatcher reaches no one.
     dispatcherAgentId: () => getDispatcherAgentId() ?? undefined,
@@ -354,6 +360,7 @@ function createEngine(): ActionsEngine {
     },
   });
   const steps = createStepRunner({
+    remoteMessage: sendRemoteActionMessage,
     agentExists: facts.agentExists,
     agentName: facts.agentName,
     agentWorktree: facts.agentWorktree,

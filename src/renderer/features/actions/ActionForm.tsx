@@ -125,6 +125,7 @@ function StepEditor({ index, step, onChange, onRemove, agents, projects, canRemo
   const uid = useId();
   const orchestrators = useOrchestratorStore((s) => s.allOrchestrators);
   const set = (patch: Partial<StepDraft>) => onChange({ ...step, ...patch });
+  const remoteTarget = agents.some((a) => a.id === step.agentId && a.remote);
   const worktreeAgents = agents.filter((a) => a.projectId === step.projectId && a.worktreePath);
   return (
     <div className="py-3 border-t border-surface-0" data-testid={`action-step-${index}`}>
@@ -138,7 +139,7 @@ function StepEditor({ index, step, onChange, onRemove, agents, projects, canRemo
       </div>
       {(step.kind === 'wake' || step.kind === 'message' || step.kind === 'sleep' || step.kind === 'group_tap') && (
         <Field label="Agent" htmlFor={`${uid}-agent`}>
-          <AgentSelect id={`${uid}-agent`} value={step.agentId} onChange={(agentId) => set({ agentId })} agents={agents} projects={projects} placeholder="Pick an agent" />
+          <AgentSelect id={`${uid}-agent`} value={step.agentId} onChange={(agentId) => set({ agentId, ...(agents.some((a) => a.id === agentId && a.remote) && { delivery: 'queue', latestOnly: false, maxWaitMinutes: '' }) })} agents={agents.filter((a) => !a.remote || step.kind === 'message')} projects={projects} placeholder="Pick an agent" />
         </Field>
       )}
       {step.kind === 'group_post' && <Field label="Topic" htmlFor={`${uid}-topic`}><input id={`${uid}-topic`} className={`${settingsInput} w-full`} value={step.topic} onChange={(e) => set({ topic: e.target.value })} /></Field>}
@@ -182,13 +183,14 @@ function StepEditor({ index, step, onChange, onRemove, agents, projects, canRemo
           label={step.kind === 'wake' ? 'Prompt (optional)' : step.kind === 'notify' ? 'Notice text' : step.kind === 'message' ? 'Message' : 'Prompt'}
           htmlFor={`${uid}-text`}
           help={step.kind === 'wake' ? 'It resumes its last session. If it’s already awake, it gets this as a message.'
+            : step.kind === 'message' && remoteTarget ? 'Annex queues this durably while the receiving agent is busy or asleep. Receipt confirms runtime acceptance, not model processing.'
             : step.kind === 'message' ? 'If it is asleep, it is woken with the message. Choose how a busy agent receives it below.'
               : step.kind === 'notify' ? 'Shown as a Clubhouse notification, following Settings > Notifications & alerts.' : undefined}
         >
           <textarea id={`${uid}-text`} rows={3} className={settingsTextArea} value={step.text} onChange={(e) => set({ text: e.target.value })} />
         </Field>
       )}
-      {step.kind === 'message' && (
+      {step.kind === 'message' && !remoteTarget && (
         <>
           <Field label="When the agent is busy" htmlFor={`${uid}-delivery`}
             help="Queue waits for its next turn. Steer uses the same mid-turn path as your messages, falling back to queue when unsupported.">
@@ -321,7 +323,7 @@ export function ActionForm({ open, action, initial, initialGroupProjectId, onClo
       {projects.map((p) => <option key={p.id} value={`project:${p.id}`}>{p.name}</option>)}
     </select>
   ) : eventIsApp ? null : (
-    <AgentSelect id={`${uid}-source`} value={draft.source} onChange={(source) => set({ source, ...(source === 'any' && { timing: 'coalesce' }) })} agents={agents} projects={projects}
+    <AgentSelect id={`${uid}-source`} value={draft.source} onChange={(source) => set({ source, ...(source === 'any' && { timing: 'coalesce' }) })} agents={agents.filter((a) => !a.remote)} projects={projects}
       includeProjects includeAny={ANY_AGENT_EVENT_KINDS.includes(draft.event)} placeholder="Pick an agent or project" />
   );
 
@@ -546,9 +548,9 @@ export function ActionForm({ open, action, initial, initialGroupProjectId, onClo
         )}
 
         <h3 className="text-[13px] font-semibold text-ctp-text mt-5">Then</h3>
-        <div className={`${settingsHelp} mb-1`}>Steps run in order and stop at the first one that couldn’t run.</div>
+        <div className={`${settingsHelp} mb-1`}>Steps run in order and stop at the first one that couldn’t run. Remote messages require an agent or Dispatcher owner, an active connection and agent.message set to Allow. Ask first is unavailable for unattended Actions.</div>
         {draft.steps.map((s, i) => (
-          <StepEditor key={i} index={i} step={s} agents={agents.filter((a) => !a.quick)} projects={projects} canRemove={draft.steps.length > 1}
+          <StepEditor key={i} index={i} step={s} agents={agents.filter((a) => !a.quick && (!a.remote || owner.kind === 'agent' || owner.kind === 'dispatcher'))} projects={projects} canRemove={draft.steps.length > 1}
             onChange={(next) => set({ steps: draft.steps.map((x, j) => (j === i ? next : x)) })}
             onRemove={() => set({ steps: draft.steps.filter((_, j) => j !== i) })} />
         ))}

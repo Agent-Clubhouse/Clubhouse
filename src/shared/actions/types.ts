@@ -291,6 +291,8 @@ export interface ActionRunEvent {
 }
 
 export interface ActionStepResult {
+  /** Durable Annex receipt; acceptance is by the runtime, not model completion. */
+  remoteDelivery?: import('../annex-delivery').AnnexDeliveryStatus;
   kind: ActionStepKind;
   outcome: 'done' | 'failed';
   /** A permission was refused at run time, independent of display text. */

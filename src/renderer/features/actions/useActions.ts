@@ -6,6 +6,9 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { create } from 'zustand';
 import type { ActionInput, ActionNames, ActionOwner, ActionView } from '../../../shared/actions';
+import { addressFromNamespacedId, formatAgentAddress } from '../../../shared/agent-address';
+import { useRemoteProjectStore } from '../../stores/remoteProjectStore';
+import { DISPATCHER_PROJECT_ID } from '../../../shared/dispatcher-types';
 import { useAgentStore } from '../../stores/agentStore';
 import { useProjectStore } from '../../stores/projectStore';
 import { useUIStore } from '../../stores/uiStore';
@@ -41,6 +44,7 @@ export interface AgentOption {
   worktreePath?: string;
   parentAgentId?: string;
   quick?: boolean;
+  remote?: boolean;
 }
 
 export interface ProjectOption {
@@ -50,6 +54,7 @@ export interface ProjectOption {
 
 /** Agents and projects for trigger pickers and plain-words lines. */
 export function useActionNames(): { names: ActionNames; agents: AgentOption[]; projects: ProjectOption[] } {
+  const remoteAgents = useRemoteProjectStore((s) => s.remoteAgents);
   const agentMap = useAgentStore((s) => s.agents);
   const projectList = useProjectStore((s) => s.projects);
   const devices = useAnnexStore((s) => s.devices);
@@ -67,6 +72,12 @@ export function useActionNames(): { names: ActionNames; agents: AgentOption[]; p
         ...(a.kind === 'quick' && { quick: true }),
       }))
       .sort((a, b) => a.name.localeCompare(b.name));
+    for (const agent of Object.values(remoteAgents)) {
+      const address = addressFromNamespacedId(agent.id);
+      const device = devices.find((d) => d.fingerprint.toLowerCase() === address?.machine);
+      if (!address || !device || device.role !== 'member' || device.kind === 'phone' || device.state !== 'connected' || agent.kind !== 'durable' || agent.projectId.endsWith(`||${DISPATCHER_PROJECT_ID}`)) continue;
+      agents.push({ id: formatAgentAddress(address), name: `${agent.name} on ${device.alias || address.machine}`, projectId: agent.projectId, remote: true });
+    }
     const projectNames = new Map(projects.map((p) => [p.id, p.name]));
     const agentNames = new Map(agents.map((a) => [a.id, a.name]));
     return {
@@ -78,7 +89,7 @@ export function useActionNames(): { names: ActionNames; agents: AgentOption[]; p
       agents,
       projects,
     };
-  }, [agentMap, projectList, dispatcherName, devices, groupProjects]);
+  }, [agentMap, remoteAgents, projectList, dispatcherName, devices, groupProjects]);
 }
 
 /** "You", the Dispatcher's name, or the agent's name. */
