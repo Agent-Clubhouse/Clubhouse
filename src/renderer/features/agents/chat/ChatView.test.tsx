@@ -1128,6 +1128,8 @@ describe('ChatView review fixes', () => {
     render(<ChatViewBody agent={agent} state={state} actions={actions} providerName="P" />);
     const dock = screen.getByTestId('chat-dock');
     expect(screen.getByTestId('chat-pinned-approval')).toHaveClass('max-h-[min(40vh,320px)]');
+    // A question's card scrolls the region, so the region stays a plain block: a flex column would shrink the card instead.
+    expect(screen.getByTestId('chat-pinned-approval')).not.toHaveClass('flex-col');
     expect(dock).toHaveClass('max-h-[70%]');
     expect(screen.getByTestId('chat-composer').parentElement?.parentElement).toHaveClass('flex-shrink-0');
     // The card shrinks inside the cap.
@@ -1143,6 +1145,7 @@ describe('ChatView review fixes', () => {
     expect(dock).not.toHaveClass('max-h-[70%]');
     // The card's body is capped (and floored at 48px) inside the card; the region isn't capped on top of that.
     expect(screen.getByTestId('chat-pinned-approval')).not.toHaveClass('max-h-[min(40vh,320px)]');
+    expect(screen.getByTestId('chat-pinned-approval')).toHaveClass('flex-col');
     expect(within(screen.getByTestId('chat-pinned-approval')).getByTestId('chat-permission-body').className).toMatch(/min-h-\[48px\].*max-h-\[calc\(min\(40vh,320px\)/);
   });
 

@@ -441,8 +441,8 @@ export function ChatViewBody({ agent, state, actions, loading, onSwitchToTermina
                 // A permission card keeps its answers at the bottom and scrolls its request inside itself, which is capped to the same height
                 // as a question, plus the card's footer; the dock may take more of the column then, so the chat shrinks before the request text does (#3606).
                 // A question scrolls here.
-                <div className={`min-h-0 ${permission ? '' : 'max-h-[min(40vh,320px)]'} overflow-y-auto flex-shrink flex flex-col`} data-testid="chat-pinned-approval">
-                  <div className="flex-shrink-0 flex items-center gap-2 py-1 text-[12px] text-ctp-subtext0">
+                <div className={`min-h-0 overflow-y-auto flex-shrink ${permission ? 'flex flex-col' : 'max-h-[min(40vh,320px)]'}`} data-testid="chat-pinned-approval">
+                  <div className="flex-shrink-0 flex items-center gap-2 py-0.5 text-[12px] text-ctp-subtext0">
                     <span role="status">{pending.length} pending</span>
                     {pending.length > 1 && <>
                       <button type="button" disabled={selectedIndex === 0} onClick={() => selectRequest(pending[selectedIndex - 1].request.requestId)}>Previous request</button>

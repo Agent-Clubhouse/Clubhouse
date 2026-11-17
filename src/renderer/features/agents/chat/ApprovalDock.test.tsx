@@ -59,6 +59,9 @@ describe('PermissionCard', () => {
     const extras = screen.getByTestId('chat-permission-extra-options');
     expect(extras.compareDocumentPosition(last) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect(within(extras).getAllByRole('button').map((b) => b.getAttribute('data-option-kind'))).toEqual(['allow_always', 'allow_session']);
+    // One line however many there are: no wrapping, and a truncated label keeps its full text as the title.
+    expect(extras).not.toHaveClass('flex-wrap');
+    expect(within(extras).getAllByRole('button')[0]).toHaveAttribute('title', 'Always allow Bash(npm test:*)');
     fireEvent.keyDown(screen.getByTestId('chat-permission'), { key: '1' });
     expect(respond).toHaveBeenCalledWith('r1', 'always');
   });
