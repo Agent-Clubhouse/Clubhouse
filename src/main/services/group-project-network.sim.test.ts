@@ -687,10 +687,10 @@ describe('polling author boundary (#3664)', () => {
 
   it.each(['deliver', 'wake', 'actions'] as const)('preserves the person IPC path for the %s own grant on a replica', async grant => {
     const id = await sharedProject();
-    // SET_OWN_GRANT calls this service with exactly these three arguments.
-    // Its person attribution must survive the newly strict update forwarding.
+    // The fixed SET_OWN_GRANT IPC boundary passes its explicit person author.
+    // The service itself must not assume that an omitted author means the person.
     const mode = grant === 'wake' ? 'allow' : 'off';
-    await as(B, () => B.roles!.setOwnGrant(id, grant, mode));
+    await as(B, () => B.roles!.setOwnGrant(id, grant, mode, { author: { label: 'user' } }));
     expect((await as(A, h => h.groupProjectHost.get(id)))?.metadata?.grants).toMatchObject({ [grant]: mode });
   });
 

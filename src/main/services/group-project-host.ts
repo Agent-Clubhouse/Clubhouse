@@ -75,6 +75,9 @@ export class GroupProjectHostError extends Error {
   }
 }
 
+/** Transient result of this update, never inferred from other queued writes or persisted in the record. */
+export type GroupProjectUpdateResult = GroupProject & { writeOutcome: GroupWriteOutcome };
+
 /** #3431's review contract, shared by scope changes and linked-copy departures. */
 export function requireExactLeavingReview(leaving: readonly string[], confirmed: readonly string[] | undefined, kind = 'change'): void {
   const addresses = new Set(confirmed ?? []);
@@ -513,7 +516,7 @@ class GroupProjectHostService {
 
   async update(
     id: string, fields: { name?: string; description?: string; instructions?: string; metadata?: Record<string, unknown> }, options: { withinExclusive?: boolean; author?: WriteAuthor } = {},
-  ): Promise<GroupProject | null> {
+  ): Promise<GroupProjectUpdateResult | null> {
     // The remote create mark (#3547) is main's own, set only at creation: no update writes or replaces it.
     if (fields.metadata && 'remoteCreate' in fields.metadata) {
       const { remoteCreate: _mark, ...metadata } = fields.metadata;
@@ -521,18 +524,21 @@ class GroupProjectHostService {
     }
     const replica = await this.replicaFor(id).catch((): null => null);
     if (replica) {
-      const current = await this.view(replica);
-      return this.forward(replica, { op: 'update', fields }, this.replicaAuthor(options.author), () => current, () => current)
-        .then(async () => this.get(id));
+      const writeOutcome = await this.forward<GroupWriteOutcome>(replica, { op: 'update', fields }, this.replicaAuthor(options.author),
+        () => ({ status: 'applied' }),
+        item => ({ status: 'queued', waitingFor: this.hostNameOf(replica), since: item.queuedAt }));
+      // Reconnect may settle this write during readback; preserve the outcome returned by its own forward.
+      const current = await this.get(id);
+      return current && { ...current, writeOutcome };
     }
     try {
       return await this.commit(id, 'record', async ({ project, reserve }) => {
         const unchanged = (['name', 'description', 'instructions'] as const).every((key) => fields[key] === undefined || fields[key] === project[key])
           && (fields.metadata === undefined || sameJson({ ...project.metadata, ...fields.metadata }, project.metadata));
-        if (unchanged) return this.view(project);
+        if (unchanged) return { ...await this.view(project), writeOutcome: { status: 'applied' as const } };
         await reserve();
         const updated = await groupProjectRegistry.update(id, fields);
-        return updated && this.view(updated);
+        return updated && { ...await this.view(updated), writeOutcome: { status: 'applied' as const } };
       }, options.withinExclusive);
     } catch (err) {
       // telemetry-exempt: update of an absent group project answers null, as before; anything else rethrows

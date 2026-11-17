@@ -136,6 +136,11 @@ function getHandler(channel: string): HandlerFn {
 }
 
 describe('group-project-handlers', () => {
+  it('attributes a person own-grant IPC toggle explicitly at the write boundary', async () => {
+    await getHandler(IPC.GROUP_PROJECT.SET_OWN_GRANT)(fakeEvent, 'gp-1', 'deliver', 'off');
+    expect(groupProjectHost.update).toHaveBeenCalledWith('gp-1', { metadata: { grants: { deliver: 'off', wake: 'off', actions: 'allow' } } }, { author: { label: 'user' } });
+  });
+
   // ── Registration ──────────────────────────────────────────────────────
 
   it('registers all expected IPC handlers', () => {
@@ -267,8 +272,8 @@ describe('group-project-handlers', () => {
       const fields = { name: 'Updated Name' };
       const result = await handler(fakeEvent, 'gp-1', fields);
       expect(groupProjectRegistry.update).toHaveBeenCalledWith('gp-1', fields);
-      expect(annexEventBus.emitGroupProjectChanged).toHaveBeenCalledWith('updated', { id: 'gp-1', name: 'Updated Name' });
-      expect(result).toEqual({ id: 'gp-1', name: 'Updated Name' });
+      expect(annexEventBus.emitGroupProjectChanged).toHaveBeenCalledWith('updated', { id: 'gp-1', name: 'Updated Name', writeOutcome: { status: 'applied' } });
+      expect(result).toEqual({ id: 'gp-1', name: 'Updated Name', writeOutcome: { status: 'applied' } });
     });
 
     it('does not emit event when update returns null', async () => {

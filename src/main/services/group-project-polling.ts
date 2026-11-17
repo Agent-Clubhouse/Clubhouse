@@ -28,7 +28,7 @@
 import type { WriteAuthor } from '../../shared/group-project-network';
 import { bindingManager } from './clubhouse-mcp/binding-manager';
 import { groupProjectRegistry } from './group-project-registry';
-import { groupProjectHost } from './group-project-host';
+import { GroupProjectHostError, groupProjectHost } from './group-project-host';
 import { agentRegistry, getAgentOrchestrator } from './agent-registry';
 import { canPoll, isAgentAlive, injectPtyMessage } from './group-project-lifecycle';
 import { inboxChannelName } from './group-project-bulletin';
@@ -328,7 +328,8 @@ export async function setProjectPolling(projectId: string, enabled: boolean, opt
 
   const updated = await groupProjectHost.update(projectId, { metadata: { pollingEnabled: enabled } }, options);
   if (!updated) return null;
-  if (updated.network?.role === 'replica' && updated.network.waitingWrites > 0) {
+  if (updated.writeOutcome.status === 'refused') throw new GroupProjectHostError('refused', updated.writeOutcome.reason);
+  if (updated.writeOutcome.status === 'queued') {
     // Queued is not applied: neither start nor stop a loop before the host grants it.
     return { ...(await getProjectPollingState(projectId))!, queued: true };
   }
