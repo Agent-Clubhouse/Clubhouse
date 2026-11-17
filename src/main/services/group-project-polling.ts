@@ -25,6 +25,7 @@
  * turned off isn't offered.
  */
 
+import type { WriteAuthor } from '../../shared/group-project-network';
 import { bindingManager } from './clubhouse-mcp/binding-manager';
 import { groupProjectRegistry } from './group-project-registry';
 import { groupProjectHost } from './group-project-host';
@@ -264,6 +265,7 @@ export interface PollingMemberState {
 }
 
 export interface PollingState {
+  queued?: boolean;
   pollingEnabled: boolean;
   members: PollingMemberState[];
 }
@@ -319,13 +321,18 @@ async function memberInbox(projectId: string, agentId: string, agentName: string
   }
 }
 
-export async function setProjectPolling(projectId: string, enabled: boolean): Promise<PollingState | null> {
+export async function setProjectPolling(projectId: string, enabled: boolean, options: { author?: WriteAuthor } = {}): Promise<PollingState | null> {
   const project = await groupProjectRegistry.get(projectId);
   if (!project) return null;
   const projectName = project.name || projectId;
 
-  const updated = await groupProjectHost.update(projectId, { metadata: { pollingEnabled: enabled } });
-  if (updated) annexEventBus.emitGroupProjectChanged('updated', updated);
+  const updated = await groupProjectHost.update(projectId, { metadata: { pollingEnabled: enabled } }, options);
+  if (!updated) return null;
+  if (updated.network?.role === 'replica' && updated.network.waitingWrites > 0) {
+    // Queued is not applied: neither start nor stop a loop before the host grants it.
+    return { ...(await getProjectPollingState(projectId))!, queued: true };
+  }
+  annexEventBus.emitGroupProjectChanged('updated', updated);
   if (!enabled) {
     clearPendingStarts(projectId);
     // The user ended these loops, so nothing may bring them back.

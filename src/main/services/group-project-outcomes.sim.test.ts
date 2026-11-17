@@ -185,8 +185,8 @@ describe('queued, applied and refused outcomes for changes made on a copy (#3550
   it('offline: queued with who it waits for and since when; on reconnect the same id is applied', async () => {
     const id = await sharedProject();
     down.add('Desk');
-    await as(B, (h) => h.groupProjectHost.update(id, { description: 'while away' }));
-    await as(B, (h) => h.groupProjectHost.deleteTopic(id, 'general'));
+    await as(B, (h) => h.groupProjectHost.update(id, { description: 'while away' }, { author: { label: 'user' } }));
+    await as(B, (h) => h.groupProjectHost.deleteTopic(id, 'general', { author: { label: 'user' } }));
     const waiting = await operations(B, id);
     expect(waiting.operations.map((o) => [o.op, o.section, o.outcome.status])).toEqual([['update', 'details', 'queued'], ['deleteTopic', 'cleanup', 'queued']]);
     expect(waiting.operations[0].outcome).toEqual({ status: 'queued', waitingFor: 'Desk', since: waiting.operations[0].since });
@@ -275,7 +275,7 @@ describe('queued, applied and refused outcomes for changes made on a copy (#3550
   it('a crash while refusing expired changes refuses them once, whichever side of the outbox it fell on', async () => {
     const id = await sharedProject();
     down.add('Desk');
-    await as(B, (h) => h.groupProjectHost.update(id, { name: 'Late' }));
+    await as(B, (h) => h.groupProjectHost.update(id, { name: 'Late' }, { author: { label: 'user' } }));
     down.delete('Desk');
     vi.useFakeTimers({ toFake: ['Date'], now: Date.now() + 24 * 60 * 60 * 1000 + 1000 });
     try {
@@ -326,7 +326,7 @@ describe('queued, applied and refused outcomes for changes made on a copy (#3550
   it('expiry: a change waiting more than a day is refused as it always was, and says so', async () => {
     const id = await sharedProject();
     down.add('Desk');
-    await as(B, (h) => h.groupProjectHost.update(id, { name: 'Late' }));
+    await as(B, (h) => h.groupProjectHost.update(id, { name: 'Late' }, { author: { label: 'user' } }));
     down.delete('Desk');
     vi.useFakeTimers({ toFake: ['Date'], now: Date.now() + 24 * 60 * 60 * 1000 + 1000 });
     try {
@@ -355,9 +355,9 @@ describe('queued, applied and refused outcomes for changes made on a copy (#3550
   it('a removed host: waiting changes are refused with its name, and a new change is refused as read-only', async () => {
     const id = await sharedProject();
     down.add('Desk');
-    await as(B, (h) => h.groupProjectHost.update(id, { description: 'waiting' }));
+    await as(B, (h) => h.groupProjectHost.update(id, { description: 'waiting' }, { author: { label: 'user' } }));
     await as(B, (h) => h.groupProjectHost.machineRemoved(A.fp));
-    await expect(as(B, (h) => h.groupProjectHost.update(id, { description: 'after' }))).rejects.toMatchObject({ code: 'read_only' });
+    await expect(as(B, (h) => h.groupProjectHost.update(id, { description: 'after' }, { author: { label: 'user' } }))).rejects.toMatchObject({ code: 'read_only' });
     const list = (await operations(B, id)).operations;
     expect(list.map((o) => o.outcome)).toEqual([
       { status: 'refused', reason: expect.stringContaining('Desk left your network') },
@@ -387,9 +387,9 @@ describe('queued, applied and refused outcomes for changes made on a copy (#3550
 
   it('answers survive a restart, age out after an hour, and clearing refusals keeps the applied ones', async () => {
     const id = await sharedProject();
-    await as(B, (h) => h.groupProjectHost.update(id, { description: 'applied one' }));
+    await as(B, (h) => h.groupProjectHost.update(id, { description: 'applied one' }, { author: { label: 'user' } }));
     down.add('Desk');
-    await as(B, (h) => h.groupProjectHost.update(id, { name: 'refused one' }));
+    await as(B, (h) => h.groupProjectHost.update(id, { name: 'refused one' }, { author: { label: 'user' } }));
     await as(A, (h) => h.groupProjectHost.delete(id));
     down.delete('Desk');
     await as(B, (h) => h.groupProjectHost.flushOutbox(A.fp));
@@ -413,9 +413,9 @@ describe('queued, applied and refused outcomes for changes made on a copy (#3550
 
   it('a corrupt status file is ignored: waiting changes still show, and nothing is shown as applied', async () => {
     const id = await sharedProject();
-    await as(B, (h) => h.groupProjectHost.update(id, { description: 'applied' }));
+    await as(B, (h) => h.groupProjectHost.update(id, { description: 'applied' }, { author: { label: 'user' } }));
     down.add('Desk');
-    await as(B, (h) => h.groupProjectHost.update(id, { name: 'waiting' }));
+    await as(B, (h) => h.groupProjectHost.update(id, { name: 'waiting' }, { author: { label: 'user' } }));
     const file = path.join(B.home, '.clubhouse-dev', 'group-projects', 'network-operations.json');
     fs.writeFileSync(file, '{ not json');
     B.host!.groupProjectHost._resetForTesting();

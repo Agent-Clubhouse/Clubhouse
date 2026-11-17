@@ -110,6 +110,8 @@ import { groupProjectRegistry } from '../../group-project-registry';
 import { agentRegistry } from '../../agent-registry';
 import { clearChatRuntimes, registerChatRuntime } from '../../agent-runtime';
 import { registerGroupProjectTools } from './group-project-tools';
+import { groupProjectHost } from '../../group-project-host';
+import { checkToolGrant } from '../grant-check';
 import { getScopedToolList, callTool, buildToolName, listToolGrants } from '../tool-registry';
 import type { McpBinding } from '../types';
 import type { AgentRuntime, ChatSessionState } from '../../../../shared/chat';
@@ -1165,6 +1167,35 @@ describe('GroupProjectTools', () => {
     const parsed = JSON.parse(result.content[0].text!);
     expect(parsed.status).toBe('already_sleeping');
     expect(mockKillAgent).not.toHaveBeenCalled();
+  });
+
+  it('toggle_polling carries the authenticated caller rather than an argument author', async () => {
+    const project = await groupProjectRegistry.create('Authored');
+    grantLead('agent-1', project.id);
+    bindingManager.bind('agent-1', { targetId: project.id, targetKind: 'group-project', label: 'Authored' });
+    vi.mocked(groupProjectHost.update).mockClear();
+    await callTool('agent-1', buildToolName(makeBinding({ agentId: 'agent-1', targetId: project.id, targetName: 'Authored' }), 'toggle_polling'), { enabled: true, author: { agentId: 'forged', label: 'user' } });
+    expect(groupProjectHost.update).toHaveBeenCalledWith(project.id, { metadata: { pollingEnabled: true } }, { author: { agentId: 'agent-1', label: 'agent-1' } });
+  });
+
+  it('a queued toggle reports no notified members', async () => {
+    const project = await groupProjectRegistry.create('Queued');
+    grantLead('agent-1', project.id);
+    bindingManager.bind('agent-1', { targetId: project.id, targetKind: 'group-project', label: 'Queued' });
+    mockIsRunning.mockReturnValue(true);
+    vi.mocked(groupProjectHost.update).mockResolvedValueOnce({ ...project, network: { role: 'replica', state: 'cached', waitingWrites: 1, refusals: [] } });
+    const result = await callTool('agent-1', buildToolName(makeBinding({ agentId: 'agent-1', targetId: project.id, targetName: 'Queued' }), 'toggle_polling'), { enabled: true });
+    expect(JSON.parse(result.content[0].text!)).toMatchObject({ queued: true, pollingEnabled: false, notifiedMembers: [] });
+    expect(mockPtyWrite).not.toHaveBeenCalled();
+  });
+
+  it.each(['off', 'ask', 'allow'] as const)('local polling retains the %s lead-grant decision', async mode => {
+    const project = await groupProjectRegistry.create('Grant');
+    grantFx.changes.set('agent-1', { changes: [{ action: 'group_project.lead', target: { kind: 'group_project', id: project.id }, mode, by: 'user' }] });
+    const result = checkToolGrant('agent-1', { actions: ['group_project.lead'], target: 'bound' }, {}, { binding: { targetKind: 'group-project', targetId: project.id } });
+    expect(result.ok).toBe(mode === 'allow');
+    if (mode === 'ask') expect(result).toMatchObject({ reason: 'ask_first' });
+    expect((await groupProjectRegistry.get(project.id))?.metadata?.pollingEnabled).not.toBe(true);
   });
 
   it('toggle_polling(enabled=true) persists the setting and injects start to connected members', async () => {
