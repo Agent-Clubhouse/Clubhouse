@@ -1,7 +1,5 @@
 import { createContext, useContext, useMemo, useState, type ReactNode } from 'react';
-import { useAgentStore } from '../../../stores/agentStore';
-import { findChatSenderAgent, useDispatcherStore } from '../../dispatcher/dispatcherStore';
-import { messageDisplay, sentPartName, type ChatMcpServer, type ToolCallContent, type ToolKind } from '../../../../shared/chat';
+import type { ChatMcpServer, ToolCallContent, ToolKind } from '../../../../shared/chat';
 import type { ChatItem, ToolCallItem } from '../../../stores/chatStore';
 import type { GroupBlock, SubagentBlock } from './view-model';
 import {
@@ -160,26 +158,14 @@ export function ExploreGroup({ tools, items = tools, expansionKey }: { tools: To
 }
 
 /**
- * A run of tool calls and messages from others on one row (#2664). Its rows
- * aren't built until it opens, and each then keeps its own open state.
+ * A run of tool calls on one row (#2664). Its rows aren't built until it
+ * opens, and each then keeps its own open state. Messages from others never
+ * fold into it (#3614).
  */
 export function ChatterGroup({ block, expansionKey, renderItem }: { block: GroupBlock; expansionKey?: string; renderItem: (item: ChatItem) => ReactNode }) {
   const [open, toggle] = useOpenState(false, expansionKey);
   const running = useAnyRunning(block.tools);
-  const dispatcher = useDispatcherStore((s) => s.state);
-  // A string, so a change to some other agent doesn't re-render this row.
-  const senders = useAgentStore((s) => {
-    const names = block.messages.flatMap((m) => {
-      const display = messageDisplay(m);
-      return display.from === 'others' ? display.parts.map((p) => sentPartName(p, m.source, findChatSenderAgent(p.sender, s.agents, dispatcher))) : [];
-    });
-    return [...new Set(names)].join('\n');
-  });
-  const partCount = useMemo(() => block.messages.reduce((n, m) => {
-    const display = messageDisplay(m);
-    return n + (display.from === 'others' ? display.parts.length : 0);
-  }, 0), [block.messages]);
-  const label = groupLabel(block.tools.length, partCount, senders ? senders.split('\n') : [], running);
+  const label = groupLabel(block.tools.length, running);
   return (
     <div className="flex flex-col" data-testid="chat-group">
       <div className="flex items-center gap-2 min-w-0">

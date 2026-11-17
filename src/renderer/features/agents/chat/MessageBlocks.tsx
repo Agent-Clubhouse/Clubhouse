@@ -27,7 +27,7 @@ import { ChatMediaContext, ImageLightbox } from './rich/ChatImages';
 import { fileMatcher, hydrateFileChips, markCodePaths, useFileChips } from './rich/FileChips';
 import { useMediaCards } from './rich/MediaCards';
 import { AlertIcon, BrainIcon, ChevronDown, ChevronRight, PlanIcon, QuestionIcon } from './icons';
-import { formatCost, formatDuration, formatTokens, shortName } from './view-model';
+import { formatCost, formatDuration, formatTokens } from './view-model';
 import { rendererLog } from '../../../plugins/renderer-logger';
 import { formatAgo } from '../states/format';
 import { ActionSummaryCard } from '../../actions/ActionSummaryCard';
@@ -116,12 +116,17 @@ const SOURCE_LABELS: Partial<Record<UserMessageItem['source'], string>> = {
   annex: 'From Annex',
 };
 
-/** A message from another agent starts collapsed to one row unless it's a single short line (#2664). */
+/** A message from another agent starts folded to a short preview, under its sender and above "Show more", unless it's a single short line (#2664, #3614). */
 export const LONG_MESSAGE_CHARS = 120;
 
 export function isLongMessage(text: string): boolean {
   const trimmed = text.trim();
   return trimmed.length > LONG_MESSAGE_CHARS || trimmed.includes('\n');
+}
+
+/** The start of a long message, which the folded bubble shows three lines of. */
+function previewOf(text: string): string {
+  return Array.from(text.trim()).slice(0, LONG_MESSAGE_CHARS * 2).join('');
 }
 
 /** How long "Copied" shows after a copy. */
@@ -178,29 +183,29 @@ function SentPart({ part, item, expansionKey }: { part: RoutedMessagePart; item:
     <div className="max-w-full min-w-0 flex items-start gap-2" data-testid="chat-sent-part" data-sender={name}>
       {avatarAgent && <div className="flex-shrink-0 mt-px" data-testid="chat-sent-avatar"><AgentAvatar agent={avatarAgent} size="2xs" /></div>}
       <div className="min-w-0 max-w-full flex flex-col items-start gap-1">
-        {collapsible ? (
-          <button
-            type="button"
-            className="max-w-full flex items-center gap-1.5 min-h-[18px] text-left text-[12px] text-ctp-subtext1 hover:text-ctp-text rounded focus-visible:outline focus-visible:outline-1 focus-visible:outline-ctp-accent"
-            onClick={toggle}
-            aria-expanded={open}
-            data-testid="chat-sent-toggle"
-          >
-            <span className="font-medium flex-shrink-0 max-w-[50%] truncate">{name}</span>
-            {!open && <span className="min-w-0 truncate text-ctp-overlay1" data-testid="chat-sent-preview">{shortName(part.text, LONG_MESSAGE_CHARS)}</span>}
-            {labels.length > 0 && <span className="flex-shrink-0 text-[11px] text-ctp-overlay0">· {labels.join(' · ')}</span>}
-            <span className="flex-shrink-0">{open ? <ChevronDown /> : <ChevronRight />}</span>
-          </button>
-        ) : (
-          <div className="min-h-[18px] flex flex-wrap items-baseline gap-x-1.5 text-[12px]">
-            <span className="font-medium text-ctp-subtext1 wrap-anywhere" data-testid="chat-sent-name">{name}</span>
-            {labels.length > 0 && <span className="text-[11px] text-ctp-overlay0">· {labels.join(' · ')}</span>}
+        <div className="min-h-[18px] flex flex-wrap items-baseline gap-x-1.5 text-[12px]">
+          <span className="font-medium text-ctp-subtext1 wrap-anywhere" data-testid="chat-sent-name">{name}</span>
+          {labels.length > 0 && <span className="text-[11px] text-ctp-overlay0">· {labels.join(' · ')}</span>}
+        </div>
+        {part.text && (
+          <div className="max-w-full min-w-0 border border-surface-1 text-ctp-text rounded-xl rounded-tl px-3 py-2 text-[13px] wrap-anywhere" data-testid={open ? 'chat-sent-body' : 'chat-sent-preview'}>
+            {!open ? <span className="line-clamp-3 whitespace-pre-wrap">{previewOf(part.text)}</span>
+              : sender ? <Markdown text={part.text} /> : <span className="whitespace-pre-wrap">{part.text}</span>}
           </div>
         )}
-        {open && collapsible && <CopyButton text={() => part.text} label={`Copy message from ${name}`} />}
-        {open && part.text && (
-          <div className="max-w-full min-w-0 border border-surface-1 text-ctp-text rounded-xl rounded-tl px-3 py-2 text-[13px] wrap-anywhere" data-testid="chat-sent-body">
-            {sender ? <Markdown text={part.text} /> : <span className="whitespace-pre-wrap">{part.text}</span>}
+        {collapsible && (
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              className="h-6 text-[12px] text-ctp-overlay1 hover:text-ctp-text rounded focus-visible:outline focus-visible:outline-1 focus-visible:outline-ctp-accent"
+              onClick={toggle}
+              aria-expanded={open}
+              aria-label={`${open ? 'Show less' : 'Show more'} of the message from ${name}`}
+              data-testid="chat-sent-toggle"
+            >
+              {open ? 'Show less' : 'Show more'}
+            </button>
+            {open && <CopyButton text={() => part.text} label={`Copy message from ${name}`} />}
           </div>
         )}
       </div>

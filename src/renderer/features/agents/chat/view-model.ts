@@ -6,9 +6,9 @@
  * id (docs/structured-chat-research.md §7, "Capabilities, not provider checks").
  */
 
-import { PERMISSION_LEVEL_LABELS, messageDisplay, messageSummary, stripTaskMarker } from '../../../../shared/chat';
+import { PERMISSION_LEVEL_LABELS, messageDisplay, stripTaskMarker } from '../../../../shared/chat';
 import type { ChatCapabilities, PermissionLevel, ToolCallContent } from '../../../../shared/chat';
-import type { ChatItem, ChatViewState, PendingPermission, PlanDocumentItem, SubagentInfo, ToolCallItem, TurnEndItem, UserMessageItem } from '../../../stores/chatStore';
+import type { ChatItem, ChatViewState, PendingPermission, PlanDocumentItem, SubagentInfo, ToolCallItem, TurnEndItem } from '../../../stores/chatStore';
 
 // ── Stream blocks ───────────────────────────────────────────────────────────
 
@@ -21,8 +21,8 @@ export interface ItemBlock {
 }
 /** A run of read-only tool calls, shown as one "Explored" row. `items` also has the thoughts between them, in order. */
 export interface ExploreBlock { type: 'explore'; key: string; tools: ToolCallItem[]; items: ChatItem[] }
-/** A run of tool calls and messages from others, shown as one "Made 6 tool calls" row (#2664). */
-export interface GroupBlock { type: 'group'; key: string; tools: ToolCallItem[]; messages: UserMessageItem[]; items: ChatItem[] }
+/** A run of tool calls, shown as one "Made 6 tool calls" row (#2664). `items` also has the thoughts between them, in order. */
+export interface GroupBlock { type: 'group'; key: string; tools: ToolCallItem[]; items: ChatItem[] }
 /** A subagent with its own work folded underneath. */
 export interface SubagentBlock { type: 'subagent'; key: string; info: SubagentInfo; tool?: ToolCallItem; children: ChatItem[] }
 export type StreamBlock = ItemBlock | ExploreBlock | GroupBlock | SubagentBlock;
@@ -51,21 +51,17 @@ function exitedNonZero(tool: ToolCallItem): boolean {
   return exit !== undefined && exit !== 0;
 }
 
-/** Sent to the active agent for it to answer, so it stays out of a group. */
-const HELPER_QUESTION = /^\[QUESTION FROM HELPER:/;
-
 export interface StreamBlockOptions {
   mediaVisible?: boolean;
   /** Tool calls with a permission request still open: these stay out of a group. */
   awaitingApproval?: ReadonlySet<string>;
-  /** The Dispatcher's group chat (#3043): each agent's interjection is its own row, never folded. */
-  groupChat?: boolean;
 }
 
 /**
  * How an item takes part in a group (docs/mobile-control-v1.md, "Chat reading
  * rules"): 'counted' can start or extend one, 'carried' is kept in one, in
- * order, only when something counted follows, and null ends one.
+ * order, only when something counted follows, and null ends one. A message,
+ * from anyone, is always null: it stays visible where it arrived (#3614).
  */
 function groupRole(item: ChatItem, opts: StreamBlockOptions): 'counted' | 'carried' | null {
   switch (item.kind) {
@@ -74,9 +70,6 @@ function groupRole(item: ChatItem, opts: StreamBlockOptions): 'counted' | 'carri
       if (opts.awaitingApproval?.has(item.toolCallId)) return null;
       if (opts.mediaVisible && item.media?.length) return null;
       return 'counted';
-    case 'user_message':
-      if (item.sendState || HELPER_QUESTION.test(item.text) || opts.groupChat) return null;
-      return messageDisplay(item).from === 'others' ? 'counted' : null;
     case 'thought':
       return 'carried';
     case 'agent_message':
@@ -92,8 +85,8 @@ function groupRole(item: ChatItem, opts: StreamBlockOptions): 'counted' | 'carri
  * - With `subagents: 'full'`, items tagged with a known subagent move under
  *   that subagent's card, which replaces its parent tool call. With 'ids_only'
  *   or 'none' they stay in the main stream as ordinary rows.
- * - Two or more adjacent tool calls or messages from others fold into one row:
- *   an ExploreBlock when all are read-only tools, else a GroupBlock. Anything
+ * - Two or more adjacent tool calls fold into one row: an ExploreBlock when
+ *   all are read-only tools, else a GroupBlock. Anything
  *   the user should see or act on ends the run and stays in place (groupRole).
  */
 export function buildStreamBlocks(state: Pick<ChatViewState, 'items' | 'subagents' | 'capabilities'>, opts: StreamBlockOptions = {}): StreamBlock[] {
@@ -156,11 +149,10 @@ export function buildStreamBlocks(state: Pick<ChatViewState, 'items' | 'subagent
   const flush = () => {
     if (counted >= 2) {
       const tools = run.filter((i): i is ToolCallItem => i.kind === 'tool_call');
-      const messages = run.filter((i): i is UserMessageItem => i.kind === 'user_message');
       // One key whichever it is, so a row that grows into a group keeps its open state.
       const key = `run:${run[0].id}`;
-      if (messages.length === 0 && tools.every(isReadOnlyTool)) blocks.push({ type: 'explore', key, tools, items: run });
-      else blocks.push({ type: 'group', key, tools, messages, items: run });
+      if (tools.every(isReadOnlyTool)) blocks.push({ type: 'explore', key, tools, items: run });
+      else blocks.push({ type: 'group', key, tools, items: run });
     } else {
       run.forEach(pushItem);
     }
@@ -195,31 +187,16 @@ export function buildStreamBlocks(state: Pick<ChatViewState, 'items' | 'subagent
   return blocks;
 }
 
-/** A tool group's or message's label: "6 tool calls", "1 tool call". */
-function countOf(n: number, noun: string): string {
-  return `${n} ${noun}${n === 1 ? '' : 's'}`;
-}
-
-/** "Made 6 tool calls, 2 messages from Orchestrator and go-helper". */
-export function groupLabel(toolCount: number, messageCount: number, senders: readonly string[], running: boolean): string {
-  const parts: string[] = [];
-  if (toolCount) parts.push(`${running ? 'Making' : 'Made'} ${countOf(toolCount, 'tool call')}`);
-  if (messageCount) {
-    const shown = senders.slice(0, 2);
-    const rest = senders.length - shown.length;
-    const from = rest > 0 ? `${shown.join(', ')} and ${countOf(rest, 'other')}` : shown.join(' and ');
-    const text = countOf(messageCount, 'message');
-    parts.push(from ? `${text} from ${from}` : text);
-  }
-  return parts.join(', ');
+/** "Made 6 tool calls", or "Making 1 tool call" while one runs. */
+export function groupLabel(toolCount: number, running: boolean): string {
+  return `${running ? 'Making' : 'Made'} ${toolCount} ${toolCount === 1 ? 'tool call' : 'tool calls'}`;
 }
 
 /** Everything in a group as plain text, built only when the user copies it. */
 export function groupCopyText(items: ChatItem[]): string {
   const sections: string[] = [];
   for (const item of items) {
-    if (item.kind === 'user_message') sections.push(messageSummary(item));
-    else if (item.kind === 'thought' && item.text) sections.push(item.text);
+    if (item.kind === 'thought' && item.text) sections.push(item.text);
     else if (item.kind === 'tool_call') {
       const diffs = diffContent(item).map((d) => `${d.path}\n${d.unifiedDiff ?? d.newText ?? ''}`);
       const term = terminalContent(item);
@@ -231,14 +208,15 @@ export function groupCopyText(items: ChatItem[]): string {
 }
 
 /**
- * Previous and next land on what the agent wrote for the user, one stop per
- * item (docs/mobile-control-v1.md, "Chat reading rules"): not tools, thoughts,
- * messages from anyone else, or a subagent's work.
+ * Previous and next land on what the agent wrote for the user and on messages
+ * routed from others, one stop per item (docs/mobile-control-v1.md, "Chat
+ * reading rules"): not tools, thoughts, your own messages or a subagent's work.
  */
 export function isNavigationStop(block: StreamBlock): boolean {
   if (block.type !== 'item') return false;
   const { item } = block;
   if (item.kind === 'plan_document' || item.kind === 'question') return true;
+  if (item.kind === 'user_message') return messageDisplay(item).from === 'others';
   return item.kind === 'agent_message' && !item.subagentId && stripTaskMarker(item.text).trim() !== '';
 }
 

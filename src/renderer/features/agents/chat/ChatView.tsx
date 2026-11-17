@@ -63,8 +63,6 @@ export interface ChatViewBodyProps {
   /** Set when earlier history wasn't loaded. */
   onShowEarlier?: () => void;
   onBrowseHistory?: () => void;
-  /** The Dispatcher's group chat (#3043): `state` is already narrowed to what it shows. */
-  groupChat?: boolean;
   /** The Dispatcher debug view (#3188): `state` isn't narrowed, and these mark what the chat would hide or clean. */
   debugMarks?: ReadonlyMap<string, GroupChatDebugMark>;
 }
@@ -160,7 +158,7 @@ function useComposerContext(agent: Agent, state: ChatViewState, view: ChatViewCo
   return { now, next, ...(canOpen && { onOpen: () => openAgentSettingsOn(agent.id, 'settings') }) };
 }
 
-export function ChatViewBody({ agent, state, actions, loading, onSwitchToTerminal, switching, context = 'main', onShowEarlier, onBrowseHistory, groupChat, debugMarks }: ChatViewBodyProps) {
+export function ChatViewBody({ agent, state, actions, loading, onSwitchToTerminal, switching, context = 'main', onShowEarlier, onBrowseHistory, debugMarks }: ChatViewBodyProps) {
   const running = isRunningState(state.state);
   // Only a queue the runtime holds can be edited; a CLI that queues natively (Claude) already has the message.
   const queueEditable = state.capabilities?.queue === 'client';
@@ -411,7 +409,6 @@ export function ChatViewBody({ agent, state, actions, loading, onSwitchToTermina
             latestRequest={latestRequest}
             announce={context !== 'canvas'}
             onShowEarlier={onShowEarlier}
-            groupChat={groupChat}
             debugMarks={debugMarks}
             emptyState={dispatcherIntro}
           />
@@ -494,7 +491,6 @@ export function ChatView({ agent, onSwitchToTerminal, switching, context = 'main
     <ChatViewBody
       agent={agent}
       state={shown}
-      groupChat={!!groupChat}
       debugMarks={debugMarks}
       actions={actions}
       loading={loading && !stored}

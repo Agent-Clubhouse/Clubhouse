@@ -185,18 +185,30 @@ describe('UserMessage', () => {
     expect(screen.getByTestId('chat-sent-body')).toBeTruthy();
   });
 
-  it('collapses a long message, and a click expands and collapses it', () => {
+  it('folds a long message to a preview under its sender, and Show more and Show less toggle it', () => {
     render(<UserMessage item={item({ text: 'x', source: 'mcp', routed: routed(long) })} />);
     const toggle = screen.getByTestId('chat-sent-toggle');
-    expect(toggle.textContent).toContain('typecheck-leak');
+    expect(screen.getByTestId('chat-sent-name').textContent).toBe('typecheck-leak');
     expect(screen.getByTestId('chat-sent-preview').textContent).toContain('xxx');
+    expect(toggle.textContent).toBe('Show more');
     expect(toggle.getAttribute('aria-expanded')).toBe('false');
+    expect(toggle.getAttribute('aria-label')).toBe('Show more of the message from typecheck-leak');
     expect(screen.queryByTestId('chat-sent-body')).toBeNull();
     fireEvent.click(toggle);
+    expect(toggle.textContent).toBe('Show less');
     expect(toggle.getAttribute('aria-expanded')).toBe('true');
     expect(screen.getByTestId('chat-sent-body').textContent).toContain(long);
+    expect(screen.queryByTestId('chat-sent-preview')).toBeNull();
     fireEvent.click(toggle);
     expect(screen.queryByTestId('chat-sent-body')).toBeNull();
+    expect(screen.getByTestId('chat-sent-name').textContent).toBe('typecheck-leak');
+  });
+
+  it('keeps the sender and avatar showing while a long message is folded', () => {
+    render(<UserMessage item={item({ text: 'x', source: 'mcp', routed: routed('first line\nsecond line') })} />);
+    expect(screen.getByTestId('chat-sent-name').textContent).toBe('typecheck-leak');
+    expect(screen.getByTestId('chat-sent-avatar')).toBeTruthy();
+    expect(screen.getByTestId('chat-sent-preview').textContent).toBe('first line\nsecond line');
   });
 
   it('copies the original source from an expanded routed message', async () => {
@@ -209,6 +221,7 @@ describe('UserMessage', () => {
     expect(copy).toHaveBeenCalledWith(text);
     await user.click(screen.getByTestId('chat-sent-toggle'));
     expect(screen.queryByTestId('chat-sent-body')).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Copy message from typecheck-leak' })).toBeNull();
   });
 
   it('keeps your own long formatted message fully expanded', () => {

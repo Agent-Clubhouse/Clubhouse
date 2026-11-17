@@ -680,21 +680,21 @@ These are exactly white and black, not a theme's light and dark, so one of them 
 - **You:** on the right, in a filled bubble, labelled "You".
 - **Others:** on the left, one entry per part: the avatar, then the name above an unfilled bubble with a neutral hairline border. Parts of one message stay together, even with different senders. The active agent's replies aren't in this layout.
 - **Color:** agent color appears only in the avatar. Don't tint bubbles, borders, names or message backgrounds with it. The desktop fills your bubble with a neutral surface and draws the others with no fill and a 1px neutral border, so the fill alone says who wrote it.
-- **Long messages:** see [Chat reading rules](#chat-reading-rules). Desktop collapses a part with a newline or over 120 characters to one row with a first-line preview; phones collapse every routed part.
+- **Long messages:** see [Chat reading rules](#chat-reading-rules). Desktop folds a part with a newline or over 120 characters to a three-line preview in its bubble, with a Show more control under it; phones collapse every routed part.
 - **Text:** a part with a `sender` is Markdown. A Clubhouse notice or a part with no sender is plain text.
 
 ### Chat reading rules
 
 Desktop and phones apply the same rules to a busy transcript (#2664). They are computed on the client from existing events, with no contract change. Chronology is always preserved.
 
-**What groups.** A run of adjacent groupable items with at least 2 counted items becomes one expandable row, for example "Made 6 tool calls, 2 messages from Orchestrator and go-helper". With fewer than 2, the item shows as its normal row.
+**What groups.** A run of adjacent groupable items with at least 2 counted items becomes one expandable row, for example "Made 6 tool calls". With fewer than 2, the item shows as its normal row.
 
-- Counted: a top-level `tool_call` that hasn't failed, didn't exit non-zero, has no open permission request and shows no images; and a routed message (`messageDisplay` says it's from others) with no `sendState` that isn't a helper question (text starting `[QUESTION FROM HELPER:`).
+- Counted: a top-level `tool_call` that hasn't failed, didn't exit non-zero, has no open permission request and shows no images. On desktop a routed message never counts: it stays out of every group and splits the tool calls around it into separate groups (#3614). Phones still count routed messages (`messageDisplay` says it's from others, no `sendState`, not a helper question) until they adopt this.
 - Carried: a thought, and a finished, non-streaming `agent_message` with no text. These stay in the group, in order, uncounted, and only when something counted follows. Otherwise they show after it.
 
 A group's identity is its first item's id, so it survives growing. Its rows aren't built until it opens, and each keeps its own open state.
 
-**What breaks a group and always stays visible.** An `agent_message` with text, and one still streaming even with no text yet; the user's own message; a question, plan, error, every notice, a turn end and a subagent card; a failed tool, a command that exited non-zero, a tool awaiting approval and a tool with visible images; a routed message with `sendState`, and a helper question; a change of subagent id. A tool that later fails or needs approval leaves its group and splits it. Compaction stays one notice row, in progress and then settled.
+**What breaks a group and always stays visible.** An `agent_message` with text, and one still streaming even with no text yet; the user's own message; a question, plan, error, every notice, a turn end and a subagent card; a failed tool, a command that exited non-zero, a tool awaiting approval and a tool with visible images; a routed message on desktop, a routed message with `sendState` and a helper question on phones; a change of subagent id. A tool that later fails or needs approval leaves its group and splits it. Compaction stays one notice row, in progress and then settled.
 
 **Failed output.** The row, exit status and error always show. Output of 6 lines or fewer starts open. Longer output starts closed with its last line showing. Blank lines, including lines of only whitespace, are left out of both the length and that last line, on the desktop and in Clubhouse-Go#217. The user's toggle wins.
 
@@ -703,8 +703,9 @@ A group's identity is its first item's id, so it survives growing. Its rows aren
 - an `agent_message` with no `subagentId` and non-empty text once the task marker is stripped (`messageId`), which counts while streaming once it has text, and includes slash command output
 - a `plan_document` (`planId`)
 - a `question` (`requestId`)
+- a routed message, on desktop only for now (`messageId`)
 
-Tools, thoughts, routed messages, the user's messages and subagent work aren't stops, and a stop is never inside a group. Previous goes to the top of a stop partly scrolled past, otherwise the stop before. Next goes to the first stop below the viewport's top.
+Tools, thoughts, the user's messages and subagent work aren't stops, and a stop is never inside a group. Previous goes to the top of a stop partly scrolled past, otherwise the stop before. Next goes to the first stop below the viewport's top.
 
 **Reading position.** The anchor is the first row reaching into the viewport and its offset, identified by key. It is restored after streaming, expansion, history loading, a window move or a layout change.
 
@@ -714,7 +715,7 @@ Tools, thoughts, routed messages, the user's messages and subagent work aren't s
 
 | | Desktop | Phones |
 | --- | --- | --- |
-| Routed message | Collapsed when it has a newline or is over 120 characters; shorter ones show in full | Always compact, whatever the length |
+| Routed message | Its own bubble, never in a group and a navigation stop; folded to a preview with Show more when it has a newline or is over 120 characters, shorter ones show in full | Always compact, whatever the length; still counted in groups and not a stop |
 | Single routine item | Its normal row | Compact |
 | Routed attachments | Shown on the message | Counted in the summary |
 | Finished thoughts | Carried in a group | Finished system messages stay as boundaries, because the wire has no reliable thought marker |

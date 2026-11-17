@@ -234,13 +234,11 @@ describe('Copilot helper steering through the SDK and fake CLI', () => {
       const state = foldChatEvents(undefined, agent.id, bridge.events);
       const view = render(<ChatViewBody agent={agent} state={state} actions={{ send: vi.fn(), interrupt: vi.fn(), respondPermission: vi.fn(), answerQuestion: vi.fn(), setLevel: vi.fn() }} providerName="Copilot" />);
       expect(view.container.querySelectorAll('[data-testid="chat-user-message"][data-delivery="steer"][data-source="user"]')).toHaveLength(1);
-      expect(view.container.querySelectorAll('[data-testid="chat-user-message"][data-delivery="steer"][data-source="mcp"]')).toHaveLength(waitForTool ? 1 : 0);
-      if (!waitForTool) {
-        expect(screen.getByTestId('chat-group-toggle')).toHaveTextContent('10 messages');
-        fireEvent.click(screen.getByTestId('chat-group-toggle'));
-      }
+      expect(view.container.querySelectorAll('[data-testid="chat-user-message"][data-delivery="steer"][data-source="mcp"]')).toHaveLength(1);
       const helperBubble = view.container.querySelector('[data-testid="chat-user-message"][data-delivery="steer"][data-source="mcp"]');
       expect(helperBubble).not.toBeNull();
+      expect(screen.queryByTestId('chat-group-toggle')).toBeNull();
+      // Each part is short, so every step shows without opening anything.
       for (let i = 1; i <= 10; i++) expect(helperBubble).toHaveTextContent(`Step ${i} done.`);
       expect(helperBubble).not.toHaveTextContent('[FROM HELPER');
       expect(helperBubble).not.toHaveTextContent(userSteer);
