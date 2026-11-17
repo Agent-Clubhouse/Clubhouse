@@ -8287,6 +8287,96 @@ describe('annex-server', () => {
   });
 
   // ── mTLS and brute-force security gates coverage (F-14-3) ──
+  describe('principal and authorizer (#3613)', () => {
+    /** Headers go out as TEST_CONTROLLER; `between` runs before the body is sent. Resolves with the raw answer. */
+    function postWithHeldBody(port: number, route: string, body: string, between: () => void): Promise<string> {
+      return new Promise<string>((resolve, reject) => {
+        let data = '';
+        const socket = tlsLib.connect({ host: '127.0.0.1', port, rejectUnauthorized: false, ...suiteCredentials() }, () => {
+          socket.write([
+            `POST ${route} HTTP/1.1`, 'Host: 127.0.0.1', 'Connection: close',
+            'Content-Type: application/json', `Content-Length: ${Buffer.byteLength(body)}`, '', '',
+          ].join('\r\n'));
+          setTimeout(() => { between(); socket.write(body); }, 200);
+        });
+        socket.on('data', (chunk) => { data += chunk; });
+        socket.on('error', reject);
+        socket.on('close', () => resolve(data));
+      });
+    }
+
+    it('refuses a request whose connection presents another paired identity before the body arrives', async () => {
+      vi.mocked(projectStore.list).mockReturnValue([{ id: 'test-proj-id', name: 'Test Project', path: '/test/path', icon: '' } as any]);
+      const other = { ...TEST_CONTROLLER, fingerprint: 'c1:c1:c1:c1', alias: 'Other Controller' };
+      const { port } = await startAndPair();
+      const answer = await postWithHeldBody(port, '/api/v1/projects/test-proj-id/git/pull', JSON.stringify({ branch: 'main' }), () => {
+        // Both identities are paired and pinned to the certificate shown, so each alone would pass.
+        vi.mocked(annexPeers.getPeer).mockImplementation((fp: string) => (fp === TEST_CONTROLLER.fingerprint ? { ...TEST_CONTROLLER } : fp === other.fingerprint ? { ...other } : undefined) as any);
+        vi.mocked(annexTls.extractPeerFingerprint).mockReturnValue(other.fingerprint);
+      });
+      expect(answer.split('\r\n')[0]).toBe('HTTP/1.1 401 Unauthorized');
+      expect(JSON.parse(answer.split('\r\n\r\n')[1])).toEqual({ error: 'peer_not_paired', message: expect.any(String) });
+      vi.mocked(projectStore.list).mockReturnValue([]);
+    });
+
+    it('refuses a request whose peer becomes pending or loses its role before the body arrives', async () => {
+      vi.mocked(projectStore.list).mockReturnValue([{ id: 'test-proj-id', name: 'Test Project', path: '/test/path', icon: '' } as any]);
+      const { port } = await startAndPair();
+      const pending = await postWithHeldBody(port, '/api/v1/projects/test-proj-id/git/pull', JSON.stringify({ branch: 'main' }), () => {
+        vi.mocked(annexPeers.getPeer).mockReturnValue({ ...TEST_CONTROLLER, role: 'member', kind: 'desktop', networkPending: true } as any);
+      });
+      expect(pending.split('\r\n')[0]).toBe('HTTP/1.1 403 Forbidden');
+      expect(JSON.parse(pending.split('\r\n\r\n')[1])).toMatchObject({ error: 'peer_role_not_allowed' });
+      vi.mocked(annexPeers.getPeer).mockImplementation((fp: string) => (fp === TEST_CONTROLLER.fingerprint ? { ...TEST_CONTROLLER } : undefined) as any);
+      const roleless = await postWithHeldBody(port, '/api/v1/projects/test-proj-id/git/pull', JSON.stringify({ branch: 'main' }), () => {
+        vi.mocked(annexPeers.getPeer).mockReturnValue({ ...TEST_CONTROLLER, role: undefined } as any);
+      });
+      expect(roleless.split('\r\n')[0]).toBe('HTTP/1.1 401 Unauthorized');
+      expect(JSON.parse(roleless.split('\r\n\r\n')[1])).toMatchObject({ error: 'needs_pairing' });
+      vi.mocked(projectStore.list).mockReturnValue([]);
+    });
+
+    it('withholds rich content when the entry loses its role while the content is read', async () => {
+      const { port } = await startAndPair();
+      vi.mocked(projectStore.list).mockReturnValue([{ id: 'test-project', name: 'Test', path: '/test/project' }] as any);
+      vi.mocked(agentConfigModule.listDurable).mockReturnValue([{ id: 'a', name: 'agent', color: 'blue', createdAt: '2026-01-01' }] as any);
+      vi.mocked(readMobileChatContent).mockImplementationOnce(async () => ({ kind: 'text', name: 'a.ts', text: 'visible' }) as any);
+      const allowed = await request(port, 'GET', '/api/v1/mobile/agents/a/content?path=src/a.ts');
+      expect(allowed.status).toBe(200);
+      vi.mocked(readMobileChatContent).mockImplementationOnce(async () => {
+        vi.mocked(annexPeers.getPeer).mockReturnValue({ ...TEST_CONTROLLER, role: undefined } as any);
+        return { kind: 'text', name: 'a.ts', text: 'must never return without a role' } as any;
+      });
+      const revoked = await request(port, 'GET', '/api/v1/mobile/agents/a/content?path=src/a.ts');
+      expect(revoked.status).toBe(403);
+      expect(JSON.parse(revoked.body)).toEqual({ error: 'authorization_revoked' });
+      vi.mocked(projectStore.list).mockReturnValue([]);
+      vi.mocked(agentConfigModule.listDurable).mockReturnValue([]);
+    });
+
+    it('checks every /ws frame against the peer as it is now: removed, pending, re-pinned or one-to-one refused', async () => {
+      await startAndPair();
+      const member = { ...TEST_CONTROLLER, role: 'member' as const, kind: 'desktop' as const };
+      let current: object | undefined = member;
+      vi.mocked(annexPeers.getPeer).mockImplementation(((fp: string) => (fp === member.fingerprint ? current : undefined)) as any);
+      const ws = Object.assign(new EventEmitter(), { readyState: 1, send: vi.fn(), ping: vi.fn(), close: vi.fn(), terminate: vi.fn() });
+      annexServer._testing.registerPeerSocket(ws as never, member.fingerprint, member.tlsCertificateFingerprint);
+      expect(annexServer._testing.socketStillPaired(ws as never)).toBe(true);
+      for (const change of [
+        undefined,
+        { ...member, networkPending: true },
+        { ...member, tlsCertificateFingerprint: 'AB:CD:EF:02' },
+        { ...member, role: 'satellite' },
+        { ...member, role: undefined },
+      ]) {
+        current = change;
+        expect(annexServer._testing.socketStillPaired(ws as never)).toBe(false);
+        current = member;
+        expect(annexServer._testing.socketStillPaired(ws as never)).toBe(true);
+      }
+    });
+  });
+
   describe('security gate coverage: requireMtls and checkBruteForce', () => {
     it('checks the peer again once the body has arrived, so a removal while the body is held back is refused (git operation)', async () => {
       vi.mocked(projectStore.list).mockReturnValue([

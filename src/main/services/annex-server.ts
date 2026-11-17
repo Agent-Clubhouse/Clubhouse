@@ -83,6 +83,7 @@ import { listenPreferringPort, type ListenFn } from './annex-listen';
 import { buildPairingUrl, pairingHosts } from './annex-pairing-url';
 import * as annexIdentity from './annex-identity';
 import * as annexPeers from './annex-peers';
+import { authorize, isRefusal, reauthorize, refuse, stillAuthorized, type AnnexAuthRefusal, type AnnexAuthResult, type AnnexAuthorizerDeps, type AnnexCaller, type AnnexPrincipal } from './annex-authorizer';
 import { devicesChanged } from './annex-device-signal';
 import * as projectStore from './project-store';
 import * as agentConfig from './agent-config';
@@ -666,38 +667,50 @@ function comparePins(providedPin: string, expectedPin: string): boolean {
 // Peer authentication: every main-port request and WebSocket goes through here
 // ---------------------------------------------------------------------------
 
-type PeerAuthRefusal = { ok: false; status: 401 | 403; error: 'unauthorized' | 'peer_not_paired' | 'needs_pairing' | 'peer_role_not_allowed'; message: string; fingerprint?: string };
-type PeerAuthResult = { ok: true; fingerprint: string; peer: AnnexPeer } | PeerAuthRefusal;
-function isRefusal(result: PeerAuthResult): result is PeerAuthRefusal { return !result.ok; }
+type PeerAuthRefusal = AnnexAuthRefusal;
+type PeerAuthResult = AnnexAuthResult;
 
-const AUTH_MESSAGES = {
-  unauthorized: 'Connect with the certificate this device was paired with.',
-  peer_not_paired: 'This device is not paired with this computer. Pair it again.',
-  needs_pairing: 'This pairing is from an older version of Clubhouse. Pair this device again.',
-  peer_role_not_allowed: 'This computer is paired to be controlled from here, not to control it.',
-} as const;
-
-function refuse(status: 401 | 403, error: PeerAuthRefusal['error'], fingerprint?: string): PeerAuthRefusal {
-  return { ok: false, status, error, message: AUTH_MESSAGES[error], ...(fingerprint && { fingerprint }) };
-}
+/** What the authorizer reads: this machine's paired peers, persistent or session-only, and whether its network is on. */
+const authorizerDeps: AnnexAuthorizerDeps = {
+  findPeer: findPairedPeer,
+  isSessionOnly: (fingerprint) => mobileSessionPeers.has(fingerprint),
+  networkEnabled: () => annexSettings.networkEnabled(),
+};
 
 /**
  * The one check for a connection on the main port: the client certificate names
  * a paired controller, and is exactly the certificate pinned when it paired.
  * Entries from before pinning are refused (and kept, so Settings can show them).
+ * The TLS socket supplies only what it verified; the authorizer decides (#3613).
  */
 function authenticatePeer(socket: unknown): PeerAuthResult {
-  if (!tlsServer || !(socket instanceof tls.TLSSocket) || !socket.encrypted) return refuse(401, 'unauthorized');
+  const caller = directCaller(socket);
+  if (!caller) return refuse(401, 'unauthorized');
+  const result = authorize(caller, authorizerDeps);
+  if (result.ok) awaitingFirstConnection.delete(caller.fingerprint);
+  return result;
+}
+
+/** What a TLS socket on the main port verified: its identity and certificate. Null without TLS or an identity. */
+function directCaller(socket: unknown): AnnexCaller | null {
+  if (!tlsServer || !(socket instanceof tls.TLSSocket) || !socket.encrypted) return null;
   const fingerprint = annexTls.extractPeerFingerprint(socket);
-  if (!fingerprint) return refuse(401, 'unauthorized');
-  const peer = findPairedPeer(fingerprint);
-  if (!peer) return refuse(401, 'peer_not_paired', fingerprint);
-  if (!peer.role) return refuse(401, 'needs_pairing', fingerprint);
-  if (!annexPeers.controlsThisMachine(peer)) return refuse(403, 'peer_role_not_allowed', fingerprint);
-  if (!peer.tlsCertificateFingerprint) return refuse(401, 'needs_pairing', fingerprint);
-  if (annexTls.extractPeerCertificateFingerprint(socket) !== peer.tlsCertificateFingerprint) return refuse(401, 'peer_not_paired', fingerprint);
-  awaitingFirstConnection.delete(fingerprint);
-  return { ok: true, fingerprint, peer };
+  if (!fingerprint) return null;
+  return { fingerprint, pin: annexTls.extractPeerCertificateFingerprint(socket), via: 'direct' };
+}
+
+/**
+ * Whether a direct request authorized as `principal` still is: the server is up,
+ * the socket still presents that identity and certificate, and the authorizer
+ * still allows the principal now. Removal, a new pin or a role change while the
+ * request was in flight are refused.
+ */
+function reauthorizeDirect(socket: unknown, principal: AnnexPrincipal): PeerAuthResult {
+  const caller = directCaller(socket);
+  if (!caller) return refuse(401, 'unauthorized');
+  // Identity is fixed for the request: a renegotiated certificate never switches who is asking.
+  if (caller.fingerprint !== principal.fingerprint || caller.pin !== principal.pin) return refuse(401, 'peer_not_paired', principal.fingerprint);
+  return reauthorize(principal, authorizerDeps);
 }
 
 function logRefusedPeer(surface: 'rest' | 'ws', refusal: PeerAuthRefusal, remoteAddress: string | undefined): void {
@@ -854,13 +867,13 @@ function parseJsonBody(raw: string): Record<string, unknown> | null {
 }
 
 function readJsonBody(
-  req: http.IncomingMessage,
-  res: http.ServerResponse,
+  ctx: AnnexRouteContext,
   handler: (body: Record<string, unknown>) => void,
 ): void {
+  const { req, res } = ctx;
   readBody(req).then((raw) => {
     // The body can arrive long after the headers were checked: act only if the peer is still paired now.
-    const recheck = authenticatePeer(req.socket);
+    const recheck = ctx.reauthorize();
     if (isRefusal(recheck)) {
       logRefusedPeer('rest', recheck, req.socket.remoteAddress);
       sendJson(res, recheck.status, { error: recheck.error, message: recheck.message });
@@ -2450,16 +2463,6 @@ const PAIR_MESSAGES = {
   client_certificate_required: 'Pairing needs the device certificate that matches its identity.',
 } as const;
 
-/**
- * Who may use the phone routes: a controller (or an older entry with no role), or
- * an Annex Network member, phone (#3062) or computer (#2390).
- */
-function actsAsPhoneController(peer: AnnexPeer): boolean {
-  // Any device that controls this machine: a phone, a desktop controller, or a network member, which
-  // reads and drives this machine's chat agents through the same routes (#2390).
-  return !peer.role || annexPeers.controlsThisMachine(peer);
-}
-
 /** A phone or tablet's icon, as phones send at pairing. */
 const PHONE_ICON = /phone|pad|tablet|mobile/i;
 
@@ -2690,6 +2693,11 @@ type AnnexRouteContext = {
   url: string;
   method: string;
   requireMtls: () => boolean;
+  /** Who is asking, as authorized when the request arrived (#3613). */
+  principal: AnnexPrincipal;
+  /** The authorizer's answer for `principal` now, on the same connection. */
+  reauthorize: () => PeerAuthResult;
+  /** `principal.fingerprint`, the name the routes have always used. */
   mobilePrincipal?: string;
 };
 
@@ -2764,7 +2772,7 @@ async function handleGroupProjectPatchRoute(ctx: AnnexRouteContext, match: RegEx
     sendJson(ctx.res, 404, { error: 'group_project_not_found' });
     return;
   }
-  readJsonBody(ctx.req, ctx.res, async (body) => {
+  readJsonBody(ctx, async (body) => {
     const fields: Record<string, unknown> = {};
     if (body.name !== undefined) fields.name = body.name;
     if (body.description !== undefined) fields.description = body.description;
@@ -2792,7 +2800,7 @@ async function handleGroupProjectBulletinProtectionRoute(ctx: AnnexRouteContext,
   if (ctx.requireMtls()) return;
   const gpId = decodeURIComponent(match[1]);
   const topic = decodeURIComponent(match[2]);
-  readJsonBody(ctx.req, ctx.res, async (body) => {
+  readJsonBody(ctx, async (body) => {
     const isProtected = body.isProtected as boolean;
     if (typeof isProtected !== 'boolean') {
       sendJson(ctx.res, 400, { error: 'isProtected (boolean) is required' });
@@ -2971,7 +2979,7 @@ async function handleGitOperationRoute(ctx: AnnexRouteContext, match: RegExpMatc
   const operation = match[2];
   const project = await findProjectById(projectId);
   if (!project) { sendJson(ctx.res, 404, { error: 'project_not_found' }); return; }
-  readJsonBody(ctx.req, ctx.res, async (body) => {
+  readJsonBody(ctx, async (body) => {
     try {
       let result;
       switch (operation) {
@@ -3063,7 +3071,7 @@ async function handleSessionSummaryRoute(ctx: AnnexRouteContext, match: RegExpMa
 async function handleQuickProjectAgentRoute(ctx: AnnexRouteContext, match: RegExpMatchArray): Promise<void> {
   if (ctx.requireMtls()) return;
   const projectId = decodeURIComponent(match[1]);
-  readJsonBody(ctx.req, ctx.res, (body) => handleSpawnQuickAgent(ctx.res, projectId, null, body));
+  readJsonBody(ctx, (body) => handleSpawnQuickAgent(ctx.res, projectId, null, body));
 }
 
 async function handleQuickChildAgentRoute(ctx: AnnexRouteContext, match: RegExpMatchArray): Promise<void> {
@@ -3074,25 +3082,25 @@ async function handleQuickChildAgentRoute(ctx: AnnexRouteContext, match: RegExpM
     sendJson(ctx.res, 404, { error: 'agent_not_found' });
     return;
   }
-  readJsonBody(ctx.req, ctx.res, (body) => handleSpawnQuickAgent(ctx.res, parentInfo.project.id, parentAgentId, body));
+  readJsonBody(ctx, (body) => handleSpawnQuickAgent(ctx.res, parentInfo.project.id, parentAgentId, body));
 }
 
 async function handleWakeAgentRoute(ctx: AnnexRouteContext, match: RegExpMatchArray): Promise<void> {
   if (ctx.requireMtls()) return;
   const agentId = decodeURIComponent(match[1]);
-  readJsonBody(ctx.req, ctx.res, (body) => handleWakeAgent(ctx.res, agentId, body));
+  readJsonBody(ctx, (body) => handleWakeAgent(ctx.res, agentId, body));
 }
 
 async function handlePermissionResponseRoute(ctx: AnnexRouteContext, match: RegExpMatchArray): Promise<void> {
   if (ctx.requireMtls()) return;
   const agentId = decodeURIComponent(match[1]);
-  readJsonBody(ctx.req, ctx.res, (body) => handlePermissionResponse(ctx.res, agentId, body));
+  readJsonBody(ctx, (body) => handlePermissionResponse(ctx.res, agentId, body));
 }
 
 async function handleAgentMessageRoute(ctx: AnnexRouteContext, match: RegExpMatchArray): Promise<void> {
   if (ctx.requireMtls()) return;
   const agentId = decodeURIComponent(match[1]);
-  readJsonBody(ctx.req, ctx.res, async (body) => {
+  readJsonBody(ctx, async (body) => {
     const message = body.message as string | undefined;
     if (!message || typeof message !== 'string') {
       sendJson(ctx.res, 400, { error: 'message is required' });
@@ -3132,7 +3140,7 @@ async function handleDurableCreationRoute(ctx: AnnexRouteContext, match: RegExpM
   const projectId = decodeURIComponent(match[1]);
   const project = await findProjectById(projectId);
   if (!project) { sendJson(ctx.res, 404, { error: 'project_not_found' }); return; }
-  readJsonBody(ctx.req, ctx.res, async (body) => {
+  readJsonBody(ctx, async (body) => {
     const name = body.name as string;
     const color = body.color as string;
     if (!name || !color) {
@@ -3172,7 +3180,7 @@ async function handleDurableDeleteRoute(ctx: AnnexRouteContext, match: RegExpMat
   const agentId = decodeURIComponent(match[2]);
   const project = await findProjectById(projectId);
   if (!project) { sendJson(ctx.res, 404, { error: 'project_not_found' }); return; }
-  readJsonBody(ctx.req, ctx.res, async (body) => {
+  readJsonBody(ctx, async (body) => {
     const mode = body.mode ?? 'force';
     if (!isAgentDeleteMode(mode)) { sendJson(ctx.res, 400, { error: 'invalid_mode' }); return; }
     // A patch is written to a file chosen on this machine, which a remote can't do.
@@ -3292,7 +3300,7 @@ async function handleGroupProjectPostMessageRoute(ctx: AnnexRouteContext, match:
     sendJson(ctx.res, 404, { error: 'group_project_not_found' });
     return;
   }
-  readJsonBody(ctx.req, ctx.res, async (body) => {
+  readJsonBody(ctx, async (body) => {
     const sender = body.sender as string;
     const topic = body.topic as string;
     const msgBody = body.body as string;
@@ -3323,7 +3331,7 @@ async function handleGroupProjectShoulderTapRoute(ctx: AnnexRouteContext, match:
     sendJson(ctx.res, 404, { error: 'group_project_not_found' });
     return;
   }
-  readJsonBody(ctx.req, ctx.res, async (body) => {
+  readJsonBody(ctx, async (body) => {
     const sender = (body.sender as string) || 'remote';
     const targetAgentId = (body.targetAgentId as string) || null;
     const message = body.message as string;
@@ -3366,7 +3374,7 @@ async function handleGroupProjectRolesRoute(ctx: AnnexRouteContext, match: RegEx
     }
     return;
   }
-  readJsonBody(ctx.req, ctx.res, async (body) => {
+  readJsonBody(ctx, async (body) => {
     const { agentId, role, mode } = body as { agentId?: unknown; role?: unknown; mode?: unknown };
     if (typeof agentId !== 'string' || !agentId || (role !== 'lead' && role !== 'admin') || (mode !== 'allow' && mode !== 'ask' && mode !== 'off')) {
       sendJson(ctx.res, 400, { error: 'agentId, role (lead|admin) and mode (allow|ask|off) are required' });
@@ -3388,7 +3396,7 @@ async function handleGroupProjectRolesRoute(ctx: AnnexRouteContext, match: RegEx
 async function handleGroupProjectPollingRoute(ctx: AnnexRouteContext, match: RegExpMatchArray): Promise<void> {
   if (ctx.requireMtls()) return;
   const gpId = decodeURIComponent(match[1]);
-  readJsonBody(ctx.req, ctx.res, async (body) => {
+  readJsonBody(ctx, async (body) => {
     const enabled = body.enabled;
     if (typeof enabled !== 'boolean') {
       sendJson(ctx.res, 400, { error: 'enabled (boolean) is required' });
@@ -3409,7 +3417,7 @@ async function handleGroupProjectPollingRoute(ctx: AnnexRouteContext, match: Reg
 
 async function handleGroupProjectInjectRoute(ctx: AnnexRouteContext): Promise<void> {
   if (ctx.requireMtls()) return;
-  readJsonBody(ctx.req, ctx.res, async (body) => {
+  readJsonBody(ctx, async (body) => {
     const agentId = body.agentId as string;
     const message = body.message as string;
     if (!agentId || !message) {
@@ -4037,12 +4045,7 @@ function mobileRichContentRoute(read: (query: URLSearchParams, agentId: string, 
     const principal = ctx.mobilePrincipal;
     if (!principal) { sendJson(ctx.res, 403, { error: 'client_certificate_required' }); return; }
     const epoch = mobileCommands.epoch;
-    const pin = findPairedPeer(principal)?.tlsCertificateFingerprint;
-    const authorized = () => {
-      const peer = findPairedPeer(principal);
-      return mobileCommands.epoch === epoch && !!peer && peer.tlsCertificateFingerprint === pin
-        && actsAsPhoneController(peer);
-    };
+    const authorized = () => mobileCommands.epoch === epoch && stillAuthorized(ctx.principal, authorizerDeps);
     try {
       const agentId = decodeURIComponent(match[1]);
       const info = await findMobileAgent(agentId);
@@ -4073,12 +4076,7 @@ async function handleMobileFullEventRoute(ctx: AnnexRouteContext, match: RegExpM
   const principal = ctx.mobilePrincipal;
   if (!principal) { sendJson(ctx.res, 403, { error: 'client_certificate_required' }); return; }
   const epoch = mobileCommands.epoch;
-  const pin = findPairedPeer(principal)?.tlsCertificateFingerprint;
-  const authorized = () => {
-    const peer = findPairedPeer(principal);
-    return mobileCommands.epoch === epoch && !!peer && peer.tlsCertificateFingerprint === pin
-      && actsAsPhoneController(peer);
-  };
+  const authorized = () => mobileCommands.epoch === epoch && stillAuthorized(ctx.principal, authorizerDeps);
   if (!authorized()) { sendJson(ctx.res, 403, { error: 'authorization_revoked' }); return; }
   try {
     let agentId: string;
@@ -4463,15 +4461,12 @@ async function handleMobileCommandRoute(ctx: AnnexRouteContext): Promise<void> {
     const input: unknown = JSON.parse((await readCappedBody(ctx.req, MAX_BODY_SIZE)).toString());
     // A peer can be revoked while its body is streaming; recheck before execution.
     const peer = findPairedPeer(ctx.mobilePrincipal);
-    const principal = peer && actsAsPhoneController(peer)
-      && peer.tlsCertificateFingerprint === annexTls.extractPeerCertificateFingerprint(ctx.req.socket as tls.TLSSocket)
-      ? ctx.mobilePrincipal : undefined;
+    const principal = stillAuthorized(ctx.principal, authorizerDeps) ? ctx.mobilePrincipal : undefined;
     const epoch = mobileCommands.epoch;
-    const pin = peer?.tlsCertificateFingerprint;
     const assertAuthorized = () => {
-      const current = principal ? findPairedPeer(principal) : undefined;
-      if (mobileCommands.epoch !== epoch || !current || current.tlsCertificateFingerprint !== pin
-        || !actsAsPhoneController(current)) throw new MobileControlError('authorization_revoked', 403);
+      if (mobileCommands.epoch !== epoch || !principal || !stillAuthorized(ctx.principal, authorizerDeps)) {
+        throw new MobileControlError('authorization_revoked', 403);
+      }
     };
     const response = await mobileCommands.execute(principal, input, (command) => runMobileCommand(command, assertAuthorized, principal!),
       peer ? controllerSurface(peer) : 'mobile');
@@ -4505,12 +4500,7 @@ async function handleMobileAttachmentRoute(ctx: AnnexRouteContext, match: RegExp
   const principal = ctx.mobilePrincipal;
   if (!principal) { sendJson(ctx.res, 403, { error: 'client_certificate_required' }); return; }
   const epoch = mobileCommands.epoch;
-  const pin = findPairedPeer(principal)?.tlsCertificateFingerprint;
-  const authorized = () => {
-    const peer = findPairedPeer(principal);
-    return mobileCommands.epoch === epoch && !!peer && peer.tlsCertificateFingerprint === pin
-      && actsAsPhoneController(peer);
-  };
+  const authorized = () => mobileCommands.epoch === epoch && stillAuthorized(ctx.principal, authorizerDeps);
   let bodyRead = false;
   const refuse = (status: number, error: string, retryAfterMs?: number) => {
     if (retryAfterMs !== undefined) ctx.res.setHeader('Retry-After', String(Math.max(1, Math.ceil(retryAfterMs / 1000))));
@@ -4680,15 +4670,17 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
     sendJson(res, auth.status, { error: auth.error, message: auth.message });
     return;
   }
-  const mobilePrincipal = auth.fingerprint;
+  const { principal } = auth;
+  const mobilePrincipal = principal.fingerprint;
   annexPeers.updateLastSeen(auth.fingerprint);
+  const reauthorize = () => reauthorizeDirect(req.socket, principal);
 
   /**
    * Destructive routes check the peer again when they act, so one removed while
    * its request was in flight is refused. Returns true if refused.
    */
   function requireMtls(): boolean {
-    const recheck = authenticatePeer(req.socket);
+    const recheck = reauthorize();
     if (!isRefusal(recheck)) return false;
     appLog('core:annex', 'warn', 'Refused a destructive request from a peer no longer paired', { meta: { method, url, error: recheck.error } });
     recordControlDenied('rest');
@@ -4702,7 +4694,7 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
     if (match) {
       await withRemoteParent(restTraceparent(req.headers.traceparent, true), () =>
         annexRestFlow(method, route.pattern, () => res.statusCode, () =>
-          traceHttpResponse(res, () => route.handler({ req, res, url, method, requireMtls, mobilePrincipal }, match))),
+          traceHttpResponse(res, () => route.handler({ req, res, url, method, requireMtls, principal, reauthorize, mobilePrincipal }, match))),
         true,
       );
       return;
@@ -4762,9 +4754,8 @@ function socketStillPaired(ws: WebSocket): boolean {
   if (ws.readyState !== WebSocket.OPEN) return false;
   if (wsAuthTypes.get(ws) !== 'mtls') return true; // Never mTLS, so control is refused below anyway.
   const fingerprint = wsPeerFingerprints.get(ws);
-  const pin = wsPeerPins.get(ws);
-  const peer = fingerprint ? findPairedPeer(fingerprint) : undefined;
-  return !!peer && !!pin && annexPeers.controlsThisMachine(peer) && peer.tlsCertificateFingerprint === pin;
+  // `/ws` is only ever opened by the caller, so its frames are direct (#3613).
+  return !!fingerprint && authorize({ fingerprint, pin: wsPeerPins.get(ws), via: 'direct' }, authorizerDeps).ok;
 }
 
 function handleWsMessage(ws: WebSocket, data: string): void {
@@ -5354,7 +5345,7 @@ function startServer(strict = false): Promise<void> {
       const clientKind = urlObj.searchParams.get('client');
       if (clientKind === 'mobile' || clientKind === 'desktop') wsClientKinds.set(ws, clientKind);
       wsPeerFingerprints.set(ws, peerFingerprintForWs);
-      wsPeerPins.set(ws, auth.peer.tlsCertificateFingerprint!);
+      wsPeerPins.set(ws, auth.principal.pin);
       websocketServer.emit('connection', ws, req);
     });
   });
