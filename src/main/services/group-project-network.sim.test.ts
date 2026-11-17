@@ -586,6 +586,75 @@ describe('network group projects across two desktops (#3363)', () => {
 });
 
 describe('polling author boundary (#3664)', () => {
+  it.each([true, false])('does not send instructions for queued enabled=%s if reconnect refuses it before the update readback', async enabled => {
+    const id = await sharedProject();
+    await as(A, h => h.groupProjectHost.update(id, { metadata: { pollingEnabled: !enabled } }));
+    await as(B, h => h.groupProjectHost.syncFrom(A.fp));
+    A.host!.groupProjectHost.setRemoteWriteGate(() => 'denied on host');
+    down.add(A.name);
+    const host = B.host!.groupProjectHost;
+    B.bindings!.bindingManager.bind('builder', { targetId: id, targetKind: 'group-project', label: 'Launch', agentName: 'Builder' });
+    const lifecycle = await import('./group-project-lifecycle');
+    const alive = vi.spyOn(lifecycle, 'isAgentAlive').mockReturnValue(true);
+    const canPoll = vi.spyOn(lifecycle, 'canPoll').mockReturnValue(true);
+    // Observe instructions without writing to any real terminal.
+    const inject = vi.spyOn(lifecycle, 'injectPtyMessage').mockImplementation(() => {});
+    const originalGet = host.get.bind(host);
+    // update() forwards, then separately awaits get(). Reconnect can drain
+    // the queued write during that read, so waitingWrites is not its outcome.
+    const readback = vi.spyOn(host, 'get').mockImplementationOnce(async projectId => {
+      down.delete(A.name);
+      await host.flushOutbox(A.fp);
+      return originalGet(projectId);
+    });
+    try {
+      const result = await as(B, () => B.polling!.setProjectPolling(id, enabled, {
+        author: { agentId: 'builder', label: 'Builder' },
+      }));
+      expect((await as(A, h => h.groupProjectHost.get(id)))?.metadata?.pollingEnabled).toBe(!enabled);
+      expect(inject).not.toHaveBeenCalled();
+      expect(result?.pollingEnabled).toBe(!enabled);
+    } finally {
+      readback.mockRestore();
+      alive.mockRestore();
+      canPoll.mockRestore();
+      inject.mockRestore();
+    }
+  });
+
+  it.each(['deliver', 'wake', 'actions'] as const)('preserves the person IPC path for the %s own grant on a replica', async grant => {
+    const id = await sharedProject();
+    // SET_OWN_GRANT calls this service with exactly these three arguments.
+    // Its person attribution must survive the newly strict update forwarding.
+    const mode = grant === 'wake' ? 'allow' : 'off';
+    await as(B, () => B.roles!.setOwnGrant(id, grant, mode));
+    expect((await as(A, h => h.groupProjectHost.get(id)))?.metadata?.grants).toMatchObject({ [grant]: mode });
+  });
+
+  it('accepts this replica\'s qualified author with uppercase fingerprints and still uses agent grants', async () => {
+    const id = await sharedProject();
+    const gate = vi.fn(() => 'agent grant denied');
+    A.host!.groupProjectHost.setRemoteWriteGate(gate);
+    await expect(as(B, () => B.polling!.setProjectPolling(id, true, {
+      author: { agentId: `builder@${B.fp.toUpperCase()}`, label: 'user' },
+    }))).rejects.toMatchObject({ code: 'refused', message: expect.stringContaining('agent grant denied') });
+    expect(gate).toHaveBeenCalledWith(expect.objectContaining({ address: `builder@${B.fp}`, machine: B.fp }));
+  });
+
+  it.each(['', 'builder@bad', `builder@${A.fp}`, `builder@${B.fp}@${B.fp}`])('rejects malformed or foreign author %s through the real network parser', async agentId => {
+    const id = await sharedProject();
+    const gate = vi.fn(() => undefined);
+    A.host!.groupProjectHost.setRemoteWriteGate(gate);
+    const request = readWriteRequest(wire({ v: 1, writes: [{
+      id: 'malformed', groupProjectId: id, queuedAt: new Date().toISOString(),
+      author: { agentId, label: 'user' }, write: { op: 'update', fields: { metadata: { pollingEnabled: true } } },
+    }] }));
+    const result = await as(A, h => h.groupProjectHost.applyRemoteWrites(B.fp.toUpperCase(), request));
+    expect(result.results[0].status).toBe('refused');
+    expect(gate).not.toHaveBeenCalled();
+    expect((await as(A, h => h.groupProjectHost.get(id)))?.metadata?.pollingEnabled).not.toBe(true);
+  });
+
   it.each(['off', 'ask', 'allow'] as const)('uses the host grant gate for a replica polling toggle with %s grant', async mode => {
     const id = await sharedProject();
     const address = `builder@${B.fp}`;
