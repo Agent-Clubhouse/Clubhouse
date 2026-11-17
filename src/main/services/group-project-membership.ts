@@ -230,6 +230,12 @@ export function resolveMembership(
   return { members: [...members.values()], unverified };
 }
 
+/** Re-read inventory at admission commit time; a reconcile snapshot is only a proposal. */
+export async function currentAdmissionMembers(gp: GroupProject, membership: GroupProjectMembership): Promise<Map<string, string>> {
+  const [inventory, quick] = await Promise.all([readInventory(), liveQuickAgents()]);
+  return new Map(resolveMembership(gp, membership, inventory, quick).members.map(m => [groupProjectHost.addressOf(gp, m.agentId), m.name]));
+}
+
 /**
  * The key a member's own entries (tool switches, instructions) have in the
  * record. The record is the host's, so keys are host-relative addresses: on a
@@ -365,15 +371,14 @@ export const membershipBindingSource: PersistedBindingSource = {
 async function migrateLegacyGroupProjects(): Promise<void> {
   const inventory = await readInventory();
   let wires: PersistedBinding[] | null = null;
-  let changed = false;
   for (const gp of await groupProjectHost.list()) {
     // Only the host gives a group project its record (#3363).
     if (isReplica(gp) || await isMembershipManaged(gp.id)) continue;
     if (!isNewGroupProject(gp)) wires ??= await readCanvasWiresStrictly();
     await adopt(gp, inventory, wires ?? []);
-    changed = true;
   }
-  if (changed) await reconcileMembership();
+  // Also repair missing admissions in groups already managed before this launch.
+  await reconcileMembership();
 }
 
 function isNewGroupProject(gp: GroupProject): boolean {
@@ -480,6 +485,14 @@ export async function reconcileMembership(): Promise<void> {
   const next = new Map<string, Set<string>>();
   const changed = new Set<string>();
   for (const s of snapshots) {
+    if (!isReplica(s.gp) && s.resolution.members.length > 0) {
+      try {
+        await groupProjectHost.ensureMemberAdmissions(s.gp.id, s.resolution.members.map(member => ({ name: member.name, address: member.agentId })));
+      } catch (error) {
+        // telemetry-exempt: admission retries next reconcile; bindings and other groups must still advance
+        appLog('core:group-project', 'warn', 'Group project admission failed', { meta: { groupProjectId: s.gp.id, error: String(error) } });
+      }
+    }
     const ids = new Set(localMembers(s).map((m) => m.agentId));
     next.set(s.gp.id, ids);
     const before = listed.get(s.gp.id) ?? new Set<string>();
@@ -590,9 +603,9 @@ export function watchGroupProjectMembership(): () => void {
   ];
   // Who is a member, for the host's own readers (scope preview, #3355).
   groupProjectHost.setMemberResolver(async (gp, membership) => {
-    if (!isManagedMembership(membership)) return (await describeMembership(gp.id)).members.map(toMemberView);
+    if (!isManagedMembership(membership)) return (await describeMembership(gp.id)).members.map(m => toMemberView(gp, m));
     const [inventory, quick] = await Promise.all([readInventory(), liveQuickAgents()]);
-    return resolveMembership(gp, membership, inventory, quick).members.map(toMemberView);
+    return resolveMembership(gp, membership, inventory, quick).members.map(m => toMemberView(gp, m));
   });
   stopWatching = () => {
     groupProjectHost.setMemberResolver(null);
@@ -929,8 +942,8 @@ export async function previewAutoJoin(untrusted: unknown, options?: GroupProject
   };
 }
 
-function toMemberView(m: ResolvedGroupProjectMember): GroupProjectMemberView {
-  return { address: m.agentId, name: m.name, ...(m.projectId && { projectId: m.projectId }) };
+function toMemberView(gp: GroupProject, m: ResolvedGroupProjectMember): GroupProjectMemberView {
+  return { address: groupProjectHost.addressOf(gp, m.agentId), name: m.name, ...(m.projectId && { projectId: m.projectId }) };
 }
 
 /**

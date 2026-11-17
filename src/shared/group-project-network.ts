@@ -170,7 +170,7 @@ export function readSyncRequest(raw: unknown): SyncRequest {
 function readMessage(m: unknown): BulletinMessage {
   if (!isRecord(m) || !isString(m.id) || !isString(m.sender) || !isString(m.topic) || !isString(m.body) || !isString(m.timestamp)
     || (m.seq !== undefined && !Number.isSafeInteger(m.seq))) fail('message');
-  return { id: m.id, sender: m.sender, topic: m.topic, body: m.body, timestamp: m.timestamp, ...(m.seq !== undefined && { seq: m.seq as number }) };
+  return { id: m.id, ...(typeof m.senderAddress === 'string' && { senderAddress: m.senderAddress }), sender: m.sender, topic: m.topic, body: m.body, timestamp: m.timestamp, ...(m.seq !== undefined && { seq: m.seq as number }) };
 }
 
 function readSnapshot(raw: unknown, host: string): ReplicaSnapshot {

@@ -6,6 +6,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import * as fsp from 'fs/promises';
 import * as path from 'path';
+import { AsyncLocalStorage } from 'node:async_hooks';
+import { createHash } from 'crypto';
 import type { DurableAgentConfig } from '../../shared/types';
 import type { GroupProject } from '../../shared/group-project-types';
 
@@ -58,12 +60,12 @@ vi.mock('./canvas-wire-source', () => ({
     },
   },
 }));
-vi.mock('./group-project-bulletin', () => ({
-  getBulletinBoard: vi.fn(), ensureInboxChannel: vi.fn(), ensureProjectChannels: vi.fn(), destroyBulletinBoard: vi.fn(),
-}));
+import { _resetAllBoardsForTesting, flushAllBulletinBoards, getBulletinBoard } from './group-project-bulletin';
 
 import { bindingManager } from './clubhouse-mcp/binding-manager';
 import { listDurable } from './agent-config';
+import * as projectStore from './project-store';
+import { appLog } from './log-service';
 import {
   _resetPersistedBindingSourcesForTesting, keepHeldBinding, markBindingRemovedByUser, rebuildPersistedBindings, registerPersistedBindingSource,
 } from './persisted-bindings';
@@ -145,12 +147,169 @@ beforeEach(async () => {
 });
 
 afterEach(async () => {
+  vi.restoreAllMocks();
+  await flushAllBulletinBoards();
+  _resetAllBoardsForTesting();
   restart();
   groupProjectRegistry._resetForTesting();
   await fsp.rm(fx.home, { recursive: true, force: true });
 });
 
 describe('auto-join', () => {
+  it('bounds admission feedback to one debounced read-only reconcile and then goes quiet', async () => {
+    groupProjectRegistry._setForTesting(gp('gp_feedback'));
+    fx.configs.set(PROJ_A.path, [agent('one')]);
+    await updateMembership('gp_feedback', d => { d.membershipPolicy = 'project-3546'; d.autoJoin = true; });
+    await membershipBindingSource.collect();
+    const internals = groupProjectHost as unknown as { commit: (...args: unknown[]) => unknown; emit: (...args: unknown[]) => unknown };
+    const commit = vi.spyOn(internals, 'commit');
+    const emit = vi.spyOn(internals, 'emit');
+    const notify = vi.fn();
+    const off = onMembershipChanged(notify);
+    const admit = vi.spyOn(groupProjectHost, 'ensureMemberAdmissions');
+    const stop = watchGroupProjectMembership();
+    try {
+      await reconcileMembership();
+      expect(commit).toHaveBeenCalledTimes(1);
+      expect(emit).toHaveBeenCalledTimes(1);
+      expect(emit.mock.calls[0][0]).toMatchObject({ part: 'board' });
+      expect(notify).not.toHaveBeenCalled();
+      expect(await groupProjectHost.readTopic('gp_feedback', 'system')).toHaveLength(1);
+      // The board event schedules one 250ms reconcile; subsequent windows must be quiet.
+      await vi.waitFor(() => expect(admit).toHaveBeenCalledTimes(2), { timeout: 1500 });
+      await new Promise(resolve => setTimeout(resolve, 800));
+      expect(admit).toHaveBeenCalledTimes(2);
+      expect(commit).toHaveBeenCalledTimes(1);
+      expect(emit).toHaveBeenCalledTimes(1);
+      emit.mockClear(); commit.mockClear();
+      await reconcileMembership();
+      expect(commit).not.toHaveBeenCalled();
+      expect(emit).not.toHaveBeenCalled();
+      expect(notify).not.toHaveBeenCalled();
+    } finally { stop(); off(); }
+  });
+
+  it('isolates a failed admission group at startup while continuing bindings, tidy and other groups', async () => {
+    for (const id of ['gp_bad', 'gp_good']) {
+      groupProjectRegistry._setForTesting(gp(id));
+      await updateMembership(id, d => { d.membershipPolicy = 'project-3546'; d.autoJoin = true; });
+    }
+    await membershipBindingSource.collect();
+    fx.configs.get(PROJ_A.path)!.push(agent('late'));
+    await updateMembership('gp_bad', d => { d.explicit.push({ address: 'deleted', kind: 'helper', addedAt: 'x' }); });
+    const original = groupProjectHost.ensureMemberAdmissions.bind(groupProjectHost);
+    const admission = vi.spyOn(groupProjectHost, 'ensureMemberAdmissions').mockImplementation(async (id, members) => {
+      if (id === 'gp_bad') vi.spyOn(projectStore, 'list').mockRejectedValueOnce(new Error('admission IO failure'));
+      return original(id, members);
+    });
+    membershipBindingSource.afterRebuild!(true);
+    await vi.waitFor(async () => expect(await groupProjectHost.readTopic('gp_good', 'system')).toHaveLength(3));
+    expect(membersOf('gp_bad')).toContain('late');
+    expect((await getMembership('gp_bad')).explicit).toEqual([]);
+    expect(await groupProjectHost.readTopic('gp_bad', 'system')).toEqual([]);
+    expect(appLog).toHaveBeenCalledWith('core:group-project', 'warn', expect.stringContaining('admission'), expect.objectContaining({ meta: expect.objectContaining({ groupProjectId: 'gp_bad' }) }));
+    admission.mockRestore();
+    vi.mocked(projectStore.list).mockRestore();
+    await reconcileMembership();
+    expect(await groupProjectHost.readTopic('gp_bad', 'system')).toHaveLength(3);
+  });
+
+  it.each(['membership', 'inventory'])('startup %s read failure is logged without partial admission and a later reconcile repairs it', async failure => {
+    groupProjectRegistry._setForTesting(gp('gp_io'));
+    await updateMembership('gp_io', d => { d.membershipPolicy = 'project-3546'; d.autoJoin = true; });
+    await membershipBindingSource.collect();
+    vi.mocked(appLog).mockClear();
+    const read = failure === 'membership'
+      ? vi.spyOn(groupProjectHost, 'getMembership').mockRejectedValue(new Error('membership IO'))
+      : vi.spyOn(projectStore, 'list').mockRejectedValue(new Error('inventory IO'));
+    expect(() => membershipBindingSource.afterRebuild!(true)).not.toThrow();
+    await vi.waitFor(() => expect(appLog).toHaveBeenCalledWith('core:group-project', 'warn', expect.stringContaining('migration deferred'), expect.anything()));
+    expect(await groupProjectHost.readTopic('gp_io', 'system')).toEqual([]);
+    expect((await groupProjectHost.readDigest('gp_io')).filter(t => t.topic.startsWith('inbox-'))).toEqual([]);
+    read.mockRestore();
+    await reconcileMembership();
+    expect(await groupProjectHost.readTopic('gp_io', 'system')).toHaveLength(2);
+  });
+
+  it('startup admission completes beside a host post with bounded inventory reads and one commit per group', async () => {
+    for (const id of ['gp_cost_a', 'gp_cost_b']) {
+      groupProjectRegistry._setForTesting(gp(id));
+      await updateMembership(id, d => { d.membershipPolicy = 'project-3546'; d.autoJoin = true; });
+    }
+    fx.configs.set(PROJ_A.path, Array.from({ length: 12 }, (_, i) => agent(`member_${i}`)));
+    await membershipBindingSource.collect();
+    const inboxReads = ['gp_cost_a', 'gp_cost_b'].map(id => vi.spyOn(getBulletinBoard(id), 'inboxOf'));
+    const held = new AsyncLocalStorage<boolean>();
+    const internals = groupProjectHost as unknown as {
+      commit: (id: string, part: string, apply: (ctx: unknown) => Promise<unknown>, queued?: boolean) => Promise<unknown>;
+      run: (...args: unknown[]) => unknown;
+    };
+    const commitOriginal = internals.commit.bind(internals);
+    const commit = vi.spyOn(internals, 'commit').mockImplementation((id, part, apply, queued) =>
+      commitOriginal(id, part, ctx => held.run(true, () => apply(ctx)), queued));
+    const runOriginal = internals.run.bind(internals);
+    const admitOriginal = groupProjectHost.ensureMemberAdmissions.bind(groupProjectHost);
+    vi.spyOn(groupProjectHost, 'ensureMemberAdmissions').mockImplementation((id, members) => {
+      expect(held.getStore()).not.toBe(true);
+      return admitOriginal(id, members);
+    });
+    const run = vi.spyOn(internals, 'run').mockImplementation((...args) => {
+      expect(held.getStore()).not.toBe(true);
+      return runOriginal(...args);
+    });
+    // Inventory providers are read-only; the whole flow queues only admission and the post.
+    const read = vi.mocked(listDurable).mockImplementation(async projectPath => {
+      return fx.configs.get(projectPath) ?? [];
+    });
+    read.mockClear();
+    membershipBindingSource.afterRebuild!(true);
+    await groupProjectHost.post('gp_cost_a', 'user', 'general', 'startup post');
+    await vi.waitFor(async () => {
+      for (const id of ['gp_cost_a', 'gp_cost_b']) expect(await groupProjectHost.readTopic(id, 'system')).toHaveLength(1);
+    }, { timeout: 2000 });
+    expect(commit.mock.calls.filter(args => args[1] === 'board')).toHaveLength(3);
+    expect(run).toHaveBeenCalledTimes(3);
+    for (const readInbox of inboxReads) expect(readInbox.mock.calls.length).toBeLessThanOrEqual(4 * 12);
+    expect(read.mock.calls.length).toBeLessThanOrEqual(12); // fixed inventory passes, never one per member
+    for (const id of ['gp_cost_a', 'gp_cost_b']) expect((await groupProjectHost.readDigest(id)).filter(t => t.topic.startsWith('inbox-'))).toHaveLength(12);
+  });
+
+  it('does not steal an existing inbox when a same-name suffix matches another member name', async () => {
+    groupProjectRegistry._setForTesting(gp('gp_collision'));
+    const suffix = createHash('sha256').update('third').digest('hex').slice(0, 6);
+    fx.configs.set(PROJ_A.path, [agent('first', { name: 'Twin' }), agent('second', { name: `Twin-${suffix}` })]);
+    await updateMembership('gp_collision', d => { d.membershipPolicy = 'project-3546'; d.autoJoin = true; });
+    await start();
+    const existing = await groupProjectHost.inboxFor('gp_collision', `Twin-${suffix}`, 'second');
+    fx.configs.get(PROJ_A.path)!.push(agent('third', { name: 'Twin' }));
+    await reconcileMembership();
+    const added = await groupProjectHost.inboxFor('gp_collision', 'Twin', 'third');
+    const { getBulletinBoard } = await import('./group-project-bulletin');
+    expect(await getBulletinBoard('gp_collision').inboxOwner(existing)).toBe('second');
+    expect(added).not.toBe(existing);
+  });
+
+  it.each(['excluded', 'removed', 'disposed'])('does not seed a member %s after the reconcile snapshot but before admission commits', async change => {
+    groupProjectRegistry._setForTesting(gp('gp_exclude_race'));
+    fx.configs.set(PROJ_A.path, []);
+    await updateMembership('gp_exclude_race', d => { d.membershipPolicy = 'project-3546'; d.autoJoin = true; });
+    await start();
+    fx.configs.set(PROJ_A.path, [agent('late')]);
+    const admit = groupProjectHost.ensureMemberAdmissions.bind(groupProjectHost);
+    const spy = vi.spyOn(groupProjectHost, 'ensureMemberAdmissions').mockImplementationOnce(async (id, candidates) => {
+      const address = candidates[0].address;
+      if (change === 'excluded') await updateMembership(id, d => { d.excluded.push({ address, excludedAt: new Date().toISOString() }); });
+      else fx.configs.set(PROJ_A.path, change === 'removed' ? [] : [agent(address, { disposedAt: '2026-01-01' } as Partial<DurableAgentConfig>)]);
+      await admit(id, candidates);
+    });
+    try {
+      await reconcileMembership();
+      expect((await describeMembership('gp_exclude_race')).members).toHaveLength(0);
+      expect(await groupProjectHost.readTopic('gp_exclude_race', 'inbox-late')).toHaveLength(0);
+      expect(await groupProjectHost.readTopic('gp_exclude_race', 'system')).toHaveLength(0);
+    } finally { spy.mockRestore(); }
+  });
+
   it('a new group project includes every top-level durable agent in scope, with no wires', async () => {
     groupProjectRegistry._setForTesting(gp('gp1'));
     await start();
@@ -158,6 +317,89 @@ describe('auto-join', () => {
     const view = await describeMembership('gp1');
     expect(view.managed).toBe(true);
     expect(view.members.every((m) => m.via === 'auto' && m.kind === 'durable')).toBe(true);
+  });
+
+  it('seeds restored automatic and explicit remote admission once, separating same names', async () => {
+    const machine = Array(32).fill('bb').join(':');
+    groupProjectHost.setNetworkLink({ connected: () => true, isMember: fp => fp === machine } as Parameters<typeof groupProjectHost.setNetworkLink>[0]);
+    const remote = 'remote@' + machine;
+    groupProjectRegistry._setForTesting(gp('gp_admit'));
+    fx.configs.set(PROJ_A.path, [agent('local', { name: 'Twin' }), agent('excluded'), agent('disposed', { disposedAt: '2026-01-01' } as Partial<DurableAgentConfig>)]);
+    await updateMembership('gp_admit', d => {
+      d.membershipPolicy = 'project-3546'; d.autoJoin = true;
+      d.excluded.push({ address: 'excluded', excludedAt: new Date().toISOString() });
+      d.explicit.push({ address: remote, kind: 'durable', name: 'Twin', addedAt: new Date().toISOString() });
+    });
+    await start();
+    const first = await groupProjectHost.inboxFor('gp_admit', 'Twin', 'local');
+    const second = await groupProjectHost.inboxFor('gp_admit', 'Twin', remote);
+    expect(first).not.toBe(second);
+    expect(await groupProjectHost.readTopic('gp_admit', first)).toHaveLength(1);
+    expect(await groupProjectHost.readTopic('gp_admit', second)).toHaveLength(1);
+    expect(await groupProjectHost.readTopic('gp_admit', 'system')).toHaveLength(2);
+    const seq = (await groupProjectHost.get('gp_admit'))!.seq;
+    const board = await groupProjectHost.readAll('gp_admit');
+    await reconcileMembership();
+    await reconcileMembership();
+    expect((await groupProjectHost.get('gp_admit'))!.seq).toBe(seq);
+    expect(await groupProjectHost.readAll('gp_admit')).toEqual(board);
+    await updateMembership('gp_admit', d => { d.excluded.push({ address: 'local', excludedAt: new Date().toISOString() }); });
+    await reconcileMembership();
+    await updateMembership('gp_admit', d => { d.excluded = d.excluded.filter(e => e.address !== 'local'); });
+    await reconcileMembership();
+    // Admission is once per address over the board's lifetime, including a re-add.
+    expect(await groupProjectHost.readTopic('gp_admit', 'system')).toHaveLength(2);
+    restart();
+    await start();
+    expect(await groupProjectHost.readTopic('gp_admit', 'system')).toHaveLength(2);
+  });
+
+  it('startup reconciliation repairs managed admissions and stays read-only on a later startup', async () => {
+    groupProjectRegistry._setForTesting(gp('gp_startup'));
+    await updateMembership('gp_startup', d => { d.membershipPolicy = 'project-3546'; d.autoJoin = true; });
+    registerPersistedBindingSource(membershipBindingSource);
+    await rebuildPersistedBindings();
+    // No explicit reconcile: afterRebuild must repair an already-managed group.
+    await vi.waitFor(async () => expect(await groupProjectHost.readTopic('gp_startup', 'system')).toHaveLength(2));
+    await groupProjectHost.flushBoards();
+    restart();
+    // Recreate baseline restored bindings before observing the extra startup reconcile.
+    await membershipBindingSource.collect();
+    for (const agentId of ['dev', 'lead']) bindingManager.bind(agentId, { targetId: 'gp_startup', targetKind: 'group-project', label: 'Startup' });
+    const before = (await groupProjectHost.get('gp_startup'))!.seq;
+    const board = await groupProjectHost.readAll('gp_startup');
+    const bind = vi.spyOn(bindingManager, 'bind');
+    const unbind = vi.spyOn(bindingManager, 'unbind');
+    const admit = vi.spyOn(groupProjectHost, 'ensureMemberAdmissions');
+    const commit = vi.spyOn(groupProjectHost as unknown as { commit: (...args: unknown[]) => unknown }, 'commit');
+    membershipBindingSource.afterRebuild!(true);
+    await vi.waitFor(() => expect(admit).toHaveBeenCalledTimes(1));
+    // Wait for the async final read checks, including tidy, to finish.
+    await reconcileMembership();
+    expect(bind).not.toHaveBeenCalled(); expect(unbind).not.toHaveBeenCalled();
+    expect(commit).not.toHaveBeenCalled();
+    expect((await groupProjectHost.get('gp_startup'))!.seq).toBe(before);
+    expect(await groupProjectHost.readAll('gp_startup')).toEqual(board);
+    vi.restoreAllMocks();
+  });
+
+  it.each([250, 2005])('batches %i automatic admissions into one commit and summary', async count => {
+    groupProjectRegistry._setForTesting(gp('gp_bulk'));
+    fx.configs.set(PROJ_A.path, Array.from({ length: count }, (_, i) => agent(`member_${i}`)));
+    await updateMembership('gp_bulk', d => { d.membershipPolicy = 'project-3546'; d.autoJoin = true; });
+    await membershipBindingSource.collect();
+    const seqBefore = (await groupProjectHost.get('gp_bulk'))!.seq!;
+    const commit = vi.spyOn(groupProjectHost as unknown as { commit: (...args: unknown[]) => unknown }, 'commit');
+    const begin = performance.now();
+    await Promise.all([reconcileMembership(), reconcileMembership()]);
+    const elapsed = performance.now() - begin;
+    const boardCommits = commit.mock.calls.filter(args => args[1] === 'board').length;
+    const joins = await groupProjectHost.readTopic('gp_bulk', 'system', undefined, count + 10);
+    process.stdout.write(JSON.stringify({ admissionCount: count, elapsedMs: Math.round(elapsed), boardCommits, sequenceChanges: (await groupProjectHost.get('gp_bulk'))!.seq! - seqBefore, joinPosts: joins.length }) + '\n');
+    expect(boardCommits).toBe(1);
+    expect(joins).toEqual([expect.objectContaining({ body: `${count} agents joined project "GP gp_bulk"` })]);
+    expect((await groupProjectHost.readDigest('gp_bulk')).filter(t => t.topic.startsWith('inbox-'))).toHaveLength(count);
+    commit.mockRestore();
   });
 
   it('a new app group starts empty', async () => {
@@ -420,7 +662,13 @@ describe('a copy of a group project hosted on another machine (#3363)', () => {
       );
     });
     vi.spyOn(groupProjectHost, 'selfMachine').mockReturnValue(SELF);
+    const admission = vi.spyOn(groupProjectHost, 'ensureMemberAdmissions');
+    const commit = vi.spyOn(groupProjectHost as unknown as { commit: (...args: unknown[]) => unknown }, 'commit');
     await start();
+    await groupProjectHost.ensureMemberAdmission('gp_remote', 'dev', `dev@${SELF}`);
+    expect(admission).toHaveBeenCalledTimes(1); // direct probe only: reconcile never admits a replica
+    expect(commit).not.toHaveBeenCalled();
+    expect(await groupProjectHost.readTopic('gp_remote', 'system')).toEqual([]);
     // 'lead' here is a different agent from the host's 'lead': not bound; this machine's dev is.
     expect(membersOf('gp_remote')).toEqual(['dev']);
     // Nothing removed because this machine doesn't know 'ghost', and no auto-join from local agents.

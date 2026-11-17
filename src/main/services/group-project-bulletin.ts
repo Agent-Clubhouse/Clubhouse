@@ -268,7 +268,7 @@ class BulletinBoard {
   }
 
   /** Post a message to a topic. `seq` is the host's sequence number for the post (#3356). */
-  async postMessage(sender: string, topic: string, body: string, seq?: number, id?: string): Promise<BulletinMessage> {
+  async postMessage(sender: string, topic: string, body: string, seq?: number, id?: string, senderAddress?: string): Promise<BulletinMessage> {
     await this.ensureLoaded();
 
     if (Buffer.byteLength(body, 'utf-8') > MAX_BODY_BYTES) {
@@ -280,6 +280,7 @@ class BulletinBoard {
     const message: BulletinMessage = {
       id: id ?? `msg_${Date.now()}_${randomBytes(6).toString('hex')}`,
       sender,
+      ...(senderAddress && { senderAddress }),
       topic: canonicalTopic,
       body,
       timestamp: new Date().toISOString(),
@@ -518,7 +519,11 @@ class BulletinBoard {
 
   async claimInbox(channel: string, address: string): Promise<void> {
     await this.ensureLoaded();
-    this.inboxOwners.set(normalizeChannelName(channel), address);
+    const canonical = normalizeChannelName(channel);
+    const owner = this.inboxOwners.get(canonical);
+    if (owner && owner !== address) throw new Error('This inbox already belongs to another member.');
+    if (owner === address) return;
+    this.inboxOwners.set(canonical, address);
     this.markDirty();
   }
 
@@ -774,7 +779,12 @@ export async function resolveInboxChannel(projectId: string, agentName: string, 
   if (owned) return owned;
   const owner = await board.inboxOwner(base);
   if (!owner || owner === address) return base;
-  return `${base}-${createHash('sha256').update(address).digest('hex').slice(0, 6)}`;
+  const hash = createHash('sha256').update(address).digest('hex');
+  for (let attempt = 0; ; attempt++) {
+    const candidate = `${base}-${hash.slice(0, 6)}${attempt ? `-${attempt}` : ''}`;
+    const candidateOwner = await board.inboxOwner(candidate);
+    if (!candidateOwner || candidateOwner === address) return candidate;
+  }
 }
 
 /**

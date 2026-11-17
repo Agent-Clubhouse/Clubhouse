@@ -7,6 +7,7 @@ import { bindingManager } from '../binding-manager';
 import { mcpAdapter } from '../mcp-adapter';
 import { groupProjectRegistry } from '../../group-project-registry';
 import { groupProjectHost } from '../../group-project-host';
+import { groupProjectToolMembers } from '../../group-project-tool-members';
 import { canPoll, isAgentAlive, injectPtyMessage } from '../../group-project-lifecycle';
 import { notePollingRead, notePollingStart } from '../../group-project-polling-runs';
 import { getAgentRuntime } from '../../agent-runtime';
@@ -23,11 +24,6 @@ import { requireString, optionalString, optionalNumber, optionalBoolean } from '
 import { findDurableAgentConfig, sleepAgent } from './agent-lifecycle';
 import { broadcastToAllWindows } from '../../../util/ipc-broadcast';
 import { IPC } from '../../../../shared/ipc-channels';
-
-/** Resolve agent status for a member entry. */
-function resolveAgentStatus(agentId: string): 'connected' | 'sleeping' {
-  return isAgentAlive(agentId) ? 'connected' : 'sleeping';
-}
 
 function findProjectMember(targetId: string, targetAgentId: string) {
   const allBindings = bindingManager.getAllBindings();
@@ -107,15 +103,7 @@ export function registerGroupProjectTools(): void {
         properties: {},
       },
     handler: async (targetId: string, _agentId: string, _args: Record<string, unknown>): Promise<McpToolResult> => {
-      // Find all bindings where targetKind is group-project and targetId matches
-      const allBindings = bindingManager.getAllBindings();
-      const members = allBindings
-        .filter(b => b.targetKind === 'group-project' && b.targetId === targetId)
-        .map(b => ({
-          agentId: b.agentId,
-          agentName: b.agentName || b.agentId,
-          status: resolveAgentStatus(b.agentId),
-        }));
+      const members = await groupProjectToolMembers(targetId);
 
       return {
         content: [{ type: 'text', text: JSON.stringify(members) }],
@@ -357,14 +345,7 @@ export function registerGroupProjectTools(): void {
       };
 
       if (includeMembersList) {
-        const allBindings = bindingManager.getAllBindings();
-        result.members = allBindings
-          .filter(b => b.targetKind === 'group-project' && b.targetId === targetId)
-          .map(b => ({
-            agentId: b.agentId,
-            agentName: b.agentName || b.agentId,
-            status: resolveAgentStatus(b.agentId),
-          }));
+        result.members = await groupProjectToolMembers(targetId);
       }
 
       return {
@@ -740,7 +721,7 @@ export function registerGroupProjectTools(): void {
         return { content: [{ type: 'text', text: `Group project ${targetId} not found.` }], isError: true };
       }
       return {
-        content: [{ type: 'text', text: JSON.stringify(state) }],
+        content: [{ type: 'text', text: JSON.stringify({ ...state, members: await groupProjectToolMembers(targetId) }) }],
       };
     },
   });

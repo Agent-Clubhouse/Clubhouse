@@ -27,10 +27,11 @@ export async function passthroughHostModule() {
   // Membership records, kept in memory so membership policy (#3357) can be exercised.
   type Membership = { version: 1; autoJoin: boolean; explicit: unknown[]; excluded: unknown[]; [extra: string]: unknown };
   const memberships = new Map<string, Membership>();
+  const admissions = new Set<string>();
   const membershipOf = (id: string): Membership => structuredClone(memberships.get(id) ?? { version: 1, autoJoin: false, explicit: [], excluded: [] });
   const listeners = new Set<(change: unknown) => void>();
   const groupProjectHost = {
-    _resetForTesting: vi.fn(() => { memberships.clear(); }),
+    _resetForTesting: vi.fn(() => { memberships.clear(); admissions.clear(); }),
     selfMachine: vi.fn(() => null),
     isThisMachine: vi.fn(() => true),
     // Everything is on this machine: addresses are bare agent ids (#3363).
@@ -59,6 +60,18 @@ export async function passthroughHostModule() {
       const next: Membership = fn(draft) || draft;
       memberships.set(id, structuredClone(next));
       return { membership: structuredClone(next), seq: 0 };
+    }),
+    ensureMemberAdmission: vi.fn(async (id: string, name: string, address: string) => {
+      const key = `${id}:${address}`;
+      if (admissions.has(key)) return;
+      admissions.add(key);
+      await optional<(id: string) => Promise<void>>(bulletin, 'ensureProjectChannels')?.(id);
+      await optional<(id: string, name: string, address: string) => Promise<string>>(bulletin, 'ensureInboxChannel')?.(id, name, address);
+      const project = await registry.get(id) as { name: string } | null;
+      await board(id).postMessage('system', 'system', `${name} joined project "${project?.name || id}"`);
+    }),
+    ensureMemberAdmissions: vi.fn(async (id: string, candidates: Array<{ name: string; address: string }>) => {
+      for (const member of candidates) await groupProjectHost.ensureMemberAdmission(id, member.name, member.address);
     }),
     setMemberResolver: vi.fn(),
     resolveMembers: vi.fn(async () => []),

@@ -204,32 +204,34 @@ async function syncMemberships(agentId: string): Promise<void> {
       }
       const projectName = project?.name || projectId;
 
-      try {
-        // Retrofit: projects created before the channel-model redesign won't
-        // have general/control seeded. Safe to call on every join — idempotent.
-        await groupProjectHost.ensureChannels(projectId);
-      } catch (err) {
-        appLog('core:group-project', 'warn', 'Failed to ensure project channels on join', {
-          meta: { agentId, projectId, error: err instanceof Error ? err.message : String(err) },
-        });
-      }
-
       let inboxName: string | null = null;
-      try {
-        // Keyed by the member's address, so a second agent with the same name gets its own inbox (#1646).
-        inboxName = await groupProjectHost.ensureInbox(projectId, agentName, agentId);
-      } catch (err) {
-        appLog('core:group-project', 'warn', 'Failed to create inbox channel', {
-          meta: { agentId, projectId, error: err instanceof Error ? err.message : String(err) },
-        });
-      }
+      if (!recordDecidesMembers(projectId)) {
+        try {
+          // Retrofit: projects created before the channel-model redesign won't
+          // have general/control seeded. Safe to call on every join — idempotent.
+          await groupProjectHost.ensureChannels(projectId);
+        } catch (err) {
+          appLog('core:group-project', 'warn', 'Failed to ensure project channels on join', {
+            meta: { agentId, projectId, error: err instanceof Error ? err.message : String(err) },
+          });
+        }
 
-      try {
-        await groupProjectHost.post(projectId, 'system', 'system', `${agentName} joined project "${projectName}"`);
-      } catch (err) {
-        appLog('core:group-project', 'warn', 'Failed to post join event', {
-          meta: { agentId, projectId, error: err instanceof Error ? err.message : String(err) },
-        });
+        try {
+          // Keyed by the member's address, so a second agent with the same name gets its own inbox (#1646).
+          inboxName = await groupProjectHost.ensureInbox(projectId, agentName, agentId);
+        } catch (err) {
+          appLog('core:group-project', 'warn', 'Failed to create inbox channel', {
+            meta: { agentId, projectId, error: err instanceof Error ? err.message : String(err) },
+          });
+        }
+
+        try {
+          await groupProjectHost.post(projectId, 'system', 'system', `${agentName} joined project "${projectName}"`);
+        } catch (err) {
+          appLog('core:group-project', 'warn', 'Failed to post join event', {
+            meta: { agentId, projectId, error: err instanceof Error ? err.message : String(err) },
+          });
+        }
       }
 
       // Auto-send polling instruction if polling is enabled

@@ -240,6 +240,8 @@ export interface GroupProjectScopeOptions {
 /** A message posted to the bulletin board. */
 export interface BulletinMessage {
   id: string;            // "msg_<timestamp>_<random>"
+  /** Host-relative authenticated agent address; absent on older/user messages. */
+  senderAddress?: string;
   sender: string;        // "agentName@projectName" or "system"
   topic: string;         // freeform; "system" is reserved
   body: string;          // up to ~100KB

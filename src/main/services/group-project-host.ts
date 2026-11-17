@@ -42,6 +42,7 @@ import {
 import { readJsonFile, writeJsonFile } from './group-project-json-file';
 import * as annexIdentity from './annex-identity';
 import { networkEnabled } from './annex-settings';
+import * as annexPeers from './annex-peers';
 import * as projectStore from './project-store';
 import * as agentConfig from './agent-config';
 import { agentRegistry } from './agent-registry';
@@ -55,6 +56,17 @@ export type GroupProjectHostErrorCode =
   | 'not_found' | 'changed' | 'invalid' | 'network_unavailable' | 'out_of_scope'
   /** #3363: only the host can do this; a copy whose host left; the host refused; too much waiting. */
   | 'not_host' | 'read_only' | 'refused' | 'queue_full';
+
+/**
+ * A listed peer not yet trusted for new shared state: a vouched desktop still
+ * pending reciprocal confirmation, or one that must pair again. An unlisted
+ * machine is judged by network membership alone.
+ */
+function peerUnconfirmed(machine: string): boolean {
+  const fp = machine.toLowerCase();
+  const peer = annexPeers.listPeers().find((p) => p.fingerprint.toLowerCase() === fp);
+  return !!peer && (!!peer.networkPending || annexPeers.peerNeedsPairing(peer));
+}
 
 export class GroupProjectHostError extends Error {
   constructor(readonly code: GroupProjectHostErrorCode, message: string) {
@@ -247,6 +259,7 @@ interface CommitContext {
 class GroupProjectHostService {
   private queues = new Map<string, Promise<unknown>>();
   private seqs = new Map<string, number>();
+  private admissionBatches = new Map<string, { accepting: boolean; pending: Map<string, { name: string; address: string }>; promise: Promise<void> }>();
   private tombstones: GroupProjectTombstone[] | null = null;
   private reconciled: Promise<void> | null = null;
   private listeners = new Set<ChangeListener>();
@@ -1028,7 +1041,9 @@ class GroupProjectHostService {
         replayed = true;
         return earlier;
       }
-      return board.postMessage(sender, topic, body, await reserve(), options.messageId);
+      const project = await this.requireProject(id);
+      const address = options.author?.agentId && this.addressOf(project, options.author.agentId);
+      return board.postMessage(sender, topic, body, await reserve(), options.messageId, address || undefined);
     }, options.withinExclusive);
     if (!replayed) publishAppEvent({ type: 'group_project.message_posted', groupProjectId: id, topic: message.topic, ...(options.chain && { chain: options.chain }) });
     return message;
@@ -1133,6 +1148,81 @@ class GroupProjectHostService {
       if (!(await board.hasTopic(name)) || !board.isTopicProtected(name)) return false;
     }
     return true;
+  }
+
+  /** Single joins share the same admission transaction as automatic batches. */
+  async ensureMemberAdmission(id: string, name: string, address: string): Promise<void> {
+    return this.ensureMemberAdmissions(id, [{ name, address }]);
+  }
+
+  /** One sequenced board change per reconcile, with fresh membership checked under its lock. */
+  ensureMemberAdmissions(id: string, candidates: ReadonlyArray<{ name: string; address: string }>): Promise<void> {
+    const running = this.admissionBatches.get(id);
+    if (running?.accepting) {
+      for (const member of candidates) running.pending.set(member.address, member);
+      return running.promise;
+    }
+    const batch = { accepting: true, pending: new Map(candidates.map(m => [m.address, m])), promise: Promise.resolve() };
+    this.admissionBatches.set(id, batch);
+    batch.promise = Promise.resolve().then(async () => {
+      while (batch.pending.size) {
+        const next = [...batch.pending.values()];
+        batch.pending.clear();
+        await this.admitMemberBatch(id, next);
+      }
+      batch.accepting = false;
+    }).finally(() => { if (this.admissionBatches.get(id) === batch) this.admissionBatches.delete(id); });
+    return batch.promise;
+  }
+
+  private async admitMemberBatch(id: string, candidates: ReadonlyArray<{ name: string; address: string }>): Promise<void> {
+    const gp = await this.get(id);
+    if (!gp || this.isReplica(gp)) return;
+    const board = getBulletinBoard(id);
+    const alreadyAdmitted = async (name: string, address: string): Promise<boolean> => {
+      const channel = await resolveInboxChannel(id, name, address);
+      return (await board.inboxOwner(channel)) === address && await board.hasTopic(channel) && board.isTopicProtected(channel);
+    };
+    const pending: Array<{ name: string; address: string }> = [];
+    const seen = new Set<string>();
+    // Already-admitted groups never enter the write queue.
+    for (const candidate of candidates) {
+      const address = this.addressOf(gp, candidate.address);
+      if (seen.has(address)) continue;
+      seen.add(address);
+      if (!(await alreadyAdmitted(candidate.name, address))) pending.push({ ...candidate, address });
+    }
+    if (!pending.length) return;
+    await this.commit(id, 'board', async ({ project, reserve }) => {
+      if (this.isReplica(project)) return;
+      const { currentAdmissionMembers } = await import('./group-project-membership');
+      const current = await currentAdmissionMembers(project, await this.getMembership(id));
+      let channelsEnsured = false;
+      const admitted: Array<{ address: string; name: string; messageId: string }> = [];
+      for (const candidate of pending) {
+        const machine = parseAgentAddress(candidate.address).machine;
+        // A confirmed paired network identity is required; known members may be offline.
+        // A vouched desktop still pending reciprocal confirmation, or one that must pair
+        // again, gets no new inbox or join until it is confirmed (#3666 QA).
+        if (machine && (!this.isNetworkMember(machine) || peerUnconfirmed(machine))) continue;
+        const name = current.get(candidate.address);
+        if (name === undefined || await alreadyAdmitted(name, candidate.address)) continue;
+        const messageId = `join_${createHash('sha256').update(candidate.address).digest('hex')}`;
+        const channel = await resolveInboxChannel(id, name, candidate.address);
+        const legacy = (await board.inboxOwner(channel)) === candidate.address && await board.hasTopic(channel);
+        const joined = legacy || !!(await board.getMessageById(messageId));
+        const seq = await reserve();
+        if (!channelsEnsured) { await ensureProjectChannels(id, seq); channelsEnsured = true; }
+        await ensureInboxChannel(id, name, candidate.address, seq);
+        if (!joined) admitted.push({ address: candidate.address, name, messageId });
+      }
+      if (admitted.length > 3) {
+        const messageId = `joins_${createHash('sha256').update(admitted.map(m => m.address).sort().join('\0')).digest('hex')}`;
+        await board.postMessage('system', 'system', `${admitted.length} agents joined project "${project.name}"`, await reserve(), messageId);
+      } else {
+        for (const member of admitted) await board.postMessage('system', 'system', `${member.name} joined project "${project.name}"`, await reserve(), member.messageId);
+      }
+    });
   }
 
   /** Seed a member's inbox, kept apart from any other member with the same name (#1646). Returns its channel. */
@@ -1867,7 +1957,7 @@ class GroupProjectHostService {
           if (topic === 'system' && !(system && write.sender === 'system')) return refuse('The system channel is reserved.');
           // The same write always makes the same message, so a replay after a crash finds it.
           const messageId = `msg_${Date.parse(item.queuedAt) || 0}_${createHash('sha256').update(`${machine}\u0000${item.id}`).digest('hex').slice(0, 12)}`;
-          result = await this.post(id, write.sender, write.topic, write.body, { messageId });
+          result = await this.post(id, write.sender, write.topic, write.body, { messageId, author: { ...item.author, ...(item.author.agentId && { agentId: this.memberAddress(project, parseAgentAddress(item.author.agentId).agentId, machine) }) } });
           break;
         }
         case 'deleteMessage':
@@ -1942,6 +2032,7 @@ class GroupProjectHostService {
   _resetForTesting(): void {
     this.queues.clear();
     this.seqs.clear();
+    this.admissionBatches.clear();
     this.tombstones = null;
     this.reconciled = null;
     this.listeners.clear();

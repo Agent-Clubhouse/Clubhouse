@@ -23,6 +23,7 @@ vi.mock('./project-store', () => ({
   list: vi.fn(async () => [{ id: 'proj_a', name: 'A', path: '/projects/a' }, { id: 'proj_b', name: 'B', path: '/projects/b' }]),
 }));
 vi.mock('./agent-config', () => ({
+  listDurable: vi.fn(async (projectPath: string) => (fixture.agents[projectPath] ?? []).map(a => ({ ...a, name: a.id }))),
   peekDurableConfigsChecked: vi.fn(async (projectPath: string) => (fixture.unreadable.has(projectPath)
     ? { agents: [], readable: false }
     : { agents: fixture.agents[projectPath] ?? [], readable: true })),
@@ -697,4 +698,177 @@ describe('group project host: #3431 re-review', () => {
     expect((await groupProjectHost.getMembership(off.id)).explicit).toEqual([]);
     expect((await groupProjectHost.getMembership(legacy.id)).explicit.map((e) => e.address)).toEqual(['agent_b']);
   });
+});
+
+it('persists a host-relative author address through disk and network snapshots', async () => {
+  fixture.fingerprint = FP_A; fixture.network = true;
+  const gp = await groupProjectHost.create('Twins', { scope: { level: 'app', reach: 'network' } });
+  await groupProjectHost.post(gp.id, 'Twin@Twins', 'general', 'hello', { author: { agentId: 'one', label: 'Twin' } });
+  await restart();
+  const messages = await groupProjectHost.readTopic(gp.id, 'general');
+  expect(messages.at(-1)).toMatchObject({ senderAddress: 'one' });
+  const { readSyncResponse } = await import('../../shared/group-project-network');
+  const response = await groupProjectHost.networkSnapshot({ v: 1, known: {} });
+  expect(readSyncResponse(response, FP_A).projects[0].board.messages.find(m => m.body === 'hello')).toMatchObject({ senderAddress: 'one' });
+});
+
+it('serializes simultaneous admissions with a host post and keeps later admissions read-only', async () => {
+  fixture.agents['/projects/a'] = [{ id: 'one' }];
+  const gp = await groupProjectHost.create('Race', { membership: { autoJoin: false, includeLinkedComputers: false } });
+  await groupProjectHost.updateMembership(gp.id, d => {
+    d.explicit.push({ address: 'one', kind: 'durable', name: 'One', addedAt: new Date().toISOString() });
+  });
+  await Promise.all([
+    ...Array.from({ length: 10 }, () => groupProjectHost.ensureMemberAdmission(gp.id, 'One', 'one')),
+    groupProjectHost.post(gp.id, 'user', 'general', 'concurrent'),
+  ]);
+  expect(await groupProjectHost.readTopic(gp.id, 'system')).toHaveLength(1);
+  expect(await groupProjectHost.readTopic(gp.id, 'inbox-one')).toHaveLength(1);
+  const before = (await groupProjectHost.get(gp.id))!.seq;
+  const commit = vi.spyOn(groupProjectHost as unknown as { commit: (...args: unknown[]) => unknown }, 'commit');
+  const emit = vi.spyOn(groupProjectHost as unknown as { emit: (...args: unknown[]) => unknown }, 'emit');
+  await groupProjectHost.ensureMemberAdmission(gp.id, 'One', 'one');
+  expect(commit).not.toHaveBeenCalled(); expect(emit).not.toHaveBeenCalled();
+  expect((await groupProjectHost.get(gp.id))!.seq).toBe(before);
+});
+
+it('drains late coalesced members, rechecks exclusions, and counts only fresh eligible admissions', async () => {
+  const ids = ['a', 'b', 'c', 'd', 'excluded', 'late'];
+  fixture.agents['/projects/a'] = ids.map(id => ({ id }));
+  const gp = await groupProjectHost.create('Coalesced');
+  await groupProjectHost.updateMembership(gp.id, d => {
+    d.explicit = ids.filter(id => id !== 'late').map(address => ({ address, kind: 'durable', addedAt: 'x' }));
+  });
+  let entered!: () => void;
+  let release!: () => void;
+  const paused = new Promise<void>(resolve => { entered = resolve; });
+  const gate = new Promise<void>(resolve => { release = resolve; });
+  const get = groupProjectHost.get.bind(groupProjectHost);
+  const spy = vi.spyOn(groupProjectHost, 'get').mockImplementationOnce(async id => {
+    const result = await get(id);
+    entered();
+    await gate;
+    return result;
+  });
+  const first = groupProjectHost.ensureMemberAdmissions(gp.id, [...ids.filter(id => id !== 'late'), 'a', 'nonmember'].map(address => ({ name: 'untrusted candidate name', address })));
+  await paused;
+  await groupProjectHost.updateMembership(gp.id, d => {
+    d.excluded.push({ address: 'excluded', excludedAt: 'x' });
+    d.explicit.push({ address: 'late', kind: 'durable', addedAt: 'x' });
+  });
+  const late = groupProjectHost.ensureMemberAdmissions(gp.id, [{ name: 'wrong name', address: 'late' }, { name: 'wrong name', address: 'a' }]);
+  const post = groupProjectHost.post(gp.id, 'user', 'general', 'racing admission');
+  release();
+  try { await Promise.all([first, late, post]); } finally { spy.mockRestore(); }
+  const board = getBulletinBoard(gp.id);
+  for (const id of ['a', 'b', 'c', 'd', 'late']) {
+    expect(await board.inboxOwner(`inbox-${id}`)).toBe(id);
+    expect(await groupProjectHost.readTopic(gp.id, `inbox-${id}`)).toHaveLength(1);
+  }
+  expect(await board.hasTopic('inbox-excluded')).toBe(false);
+  expect(await board.hasTopic('inbox-nonmember')).toBe(false);
+  expect((await groupProjectHost.readTopic(gp.id, 'system')).map(m => m.body)).toEqual([
+    '4 agents joined project "Coalesced"', 'late joined project "Coalesced"',
+  ]);
+});
+
+
+it('fails closed for explicit remote admission until its machine is an authenticated network member', async () => {
+  const gp = await groupProjectHost.create('Remote');
+  const address = `remote@${FP_B}`;
+  await groupProjectHost.updateMembership(gp.id, d => { d.explicit.push({ address, name: 'Twin', kind: 'durable', addedAt: 'x' }); });
+  const before = (await groupProjectHost.get(gp.id))!.seq;
+  const emit = vi.spyOn(groupProjectHost as unknown as { emit: (...args: unknown[]) => unknown }, 'emit');
+  await groupProjectHost.ensureMemberAdmission(gp.id, 'Twin', address);
+  expect(await groupProjectHost.readTopic(gp.id, 'system')).toEqual([]);
+  expect((await groupProjectHost.get(gp.id))!.seq).toBe(before);
+  expect(emit).not.toHaveBeenCalled();
+  groupProjectHost.setNetworkLink({ connected: () => false, isMember: machine => machine === FP_B } as Parameters<typeof groupProjectHost.setNetworkLink>[0]);
+  await groupProjectHost.ensureMemberAdmissions(gp.id, [{ address: `remote@${FP_B.toUpperCase()}`, name: 'ignored' }, { address: 'Twin', name: 'Twin' }]);
+  expect(await getBulletinBoard(gp.id).inboxOwner('inbox-twin')).toBe(address);
+  expect(await groupProjectHost.readTopic(gp.id, 'system')).toHaveLength(1);
+  expect(await getBulletinBoard(gp.id).inboxOf('remote')).toBeFalsy();
+});
+
+it('keeps excluded and removed admissions read-only after reopening durable host and board records', async () => {
+  fixture.agents['/projects/a'] = [{ id: 'one' }, { id: 'two' }];
+  const gp = await groupProjectHost.create('Reopen');
+  await groupProjectHost.updateMembership(gp.id, d => { d.explicit = ['one', 'two'].map(address => ({ address, kind: 'durable', addedAt: 'x' })); });
+  await groupProjectHost.ensureMemberAdmissions(gp.id, ['one', 'two'].map(address => ({ address, name: address })));
+  await groupProjectHost.updateMembership(gp.id, d => { d.excluded.push({ address: 'one', excludedAt: 'x' }); d.explicit = d.explicit.filter(e => e.address !== 'two'); });
+  await restart();
+  const before = await groupProjectHost.readAll(gp.id);
+  const commit = vi.spyOn(groupProjectHost as unknown as { commit: (...args: unknown[]) => unknown }, 'commit');
+  const emit = vi.spyOn(groupProjectHost as unknown as { emit: (...args: unknown[]) => unknown }, 'emit');
+  await groupProjectHost.ensureMemberAdmissions(gp.id, ['one', 'two'].map(address => ({ address, name: address })));
+  expect(commit).not.toHaveBeenCalled(); expect(emit).not.toHaveBeenCalled();
+  expect(await groupProjectHost.readAll(gp.id)).toEqual(before);
+  await groupProjectHost.updateMembership(gp.id, d => { d.excluded = []; d.explicit.push({ address: 'two', kind: 'durable', addedAt: 'again' }); });
+  commit.mockClear(); emit.mockClear();
+  await groupProjectHost.ensureMemberAdmissions(gp.id, ['one', 'two'].map(address => ({ address, name: address })));
+  expect(commit).not.toHaveBeenCalled(); expect(emit).not.toHaveBeenCalled();
+  expect(await groupProjectHost.readTopic(gp.id, 'system')).toHaveLength(2);
+});
+
+
+it('skips every ineligible candidate without reserving a sequence or emitting a change', async () => {
+  const gp = await groupProjectHost.create('Skipped');
+  const before = (await groupProjectHost.get(gp.id))!.seq;
+  const reserve = vi.spyOn(groupProjectHost as unknown as { reserveSeq: (...args: unknown[]) => unknown }, 'reserveSeq');
+  const emit = vi.spyOn(groupProjectHost as unknown as { emit: (...args: unknown[]) => unknown }, 'emit');
+  await groupProjectHost.ensureMemberAdmissions(gp.id, [{ address: 'missing', name: 'Name must not be an address' }]);
+  expect(reserve).not.toHaveBeenCalled(); expect(emit).not.toHaveBeenCalled();
+  expect((await groupProjectHost.get(gp.id))!.seq).toBe(before);
+  expect(await groupProjectHost.readTopic(gp.id, 'system')).toEqual([]);
+});
+
+it('does not admit a vouched networkPending desktop before reciprocal membership confirmation', async () => {
+  const peers = await import('./annex-peers');
+  const { isNetworkComputer } = await import('./annex-agent-calls');
+  // This is the state addMember creates for a desktop learned through a
+  // network member, before that desktop confirms our certificate/pairing epoch.
+  vi.spyOn(peers, 'listPeers').mockReturnValue([{
+    fingerprint: FP_B, alias: 'Pending', role: 'member', kind: 'desktop',
+    networkPending: true, pairingId: 'unconfirmed-epoch',
+    tlsCertificateFingerprint: 'pinned-by-vouch', tlsCertificatePem: 'vouched-cert',
+    publicKey: 'vouched-key', pairedAt: '2026-11-17T00:00:00Z', lastSeen: '',
+  } as ReturnType<typeof peers.listPeers>[number]]);
+  fixture.fingerprint = FP_A;
+  fixture.network = true;
+  const gp = await groupProjectHost.create('Pending', { scope: { level: 'app', reach: 'network' } });
+  const address = `remote@${FP_B}`;
+  await groupProjectHost.updateMembership(gp.id, d => {
+    d.explicit.push({ address, name: 'Pending', kind: 'durable', addedAt: 'x' });
+  });
+  // Same provider as mcp-binding-handlers.ts supplies in production.
+  groupProjectHost.setNetworkLink({ connected: () => false, isMember: isNetworkComputer } as Parameters<typeof groupProjectHost.setNetworkLink>[0]);
+  const before = (await groupProjectHost.get(gp.id))!.seq;
+  await groupProjectHost.ensureMemberAdmission(gp.id, 'Pending', address);
+  expect.soft(await getBulletinBoard(gp.id).inboxOf(address)).toBeFalsy();
+  expect.soft((await groupProjectHost.get(gp.id))!.seq).toBe(before);
+  expect.soft(await groupProjectHost.readTopic(gp.id, 'system')).toEqual([]);
+});
+
+it.each([
+  ["a confirmed desktop", {}, true],
+  ["a desktop that must pair again (no certificate pin)", { tlsCertificateFingerprint: undefined }, false],
+] as const)("admits by confirmed pairing only: %s", async (_label, change, admitted) => {
+  const peers = await import("./annex-peers");
+  const { isNetworkComputer } = await import("./annex-agent-calls");
+  vi.spyOn(peers, "listPeers").mockReturnValue([{
+    fingerprint: FP_B, alias: "Desk", role: "member", kind: "desktop", pairingId: "epoch",
+    tlsCertificateFingerprint: "pinned", tlsCertificatePem: "cert",
+    publicKey: "key", pairedAt: "2026-11-17T00:00:00Z", lastSeen: "", ...change,
+  } as ReturnType<typeof peers.listPeers>[number]]);
+  fixture.fingerprint = FP_A;
+  fixture.network = true;
+  const gp = await groupProjectHost.create("Confirmed", { scope: { level: "app", reach: "network" } });
+  const address = `desk@${FP_B}`;
+  await groupProjectHost.updateMembership(gp.id, d => {
+    d.explicit.push({ address, name: "Desk", kind: "durable", addedAt: "x" });
+  });
+  groupProjectHost.setNetworkLink({ connected: () => false, isMember: isNetworkComputer } as Parameters<typeof groupProjectHost.setNetworkLink>[0]);
+  await groupProjectHost.ensureMemberAdmission(gp.id, "Desk", address);
+  expect(Boolean(await getBulletinBoard(gp.id).inboxOf(address))).toBe(admitted);
+  expect((await groupProjectHost.readTopic(gp.id, "system")).length).toBe(admitted ? 1 : 0);
 });
