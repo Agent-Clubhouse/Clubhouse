@@ -654,6 +654,22 @@ describe('durable receipts and crash boundaries (#3334)', () => {
     expect(executions).toBe(2);
   });
 
+  it('QA cancels the disconnect fallback when an explicit recovery drains the outbox', async () => {
+    vi.useFakeTimers();
+    try {
+      useMemoryDeliveryStore(); await vi.advanceTimersByTimeAsync(0); connected = false;
+      await forwardAgentCall('here', `there@${OTHER}`, 'Far agent', 'send_message', { message: 'recover before fallback' });
+      await flushOutbox(OTHER);
+      connected = true;
+      await flushOutbox(OTHER);
+      expect(waitingFor(OTHER)).toHaveLength(0);
+      expect.soft(vi.getTimerCount()).toBe(0);
+      const sent = posts.length;
+      await vi.advanceTimersByTimeAsync(60_000);
+      expect(posts).toHaveLength(sent);
+    } finally { vi.useRealTimers(); }
+  });
+
   it.each([1, 2])('keeps a bounded drain retry after disconnect at connectivity check %s without a new event', async (check) => {
     vi.useFakeTimers();
     try {
