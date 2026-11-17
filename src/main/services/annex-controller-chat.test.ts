@@ -44,6 +44,16 @@ describe('desktop controller chat', () => {
     expect((await page('afterSeq=4')).events).toEqual([event(5)]);
     expect(mocks.read).toHaveBeenLastCalledWith({ sessionId: 's', afterSeq: 4, tail: 1 });
   });
+  it.each(['duplicate', 'non-event'])('falls back to a full read when a %s line crowds events out of the incremental tail', async (kind) => {
+    await page();
+    mocks.events.push(event(5), event(6), event(7));
+    mocks.read.mockImplementation(async (opts: { tail?: number }) => opts.tail
+      ? kind === 'duplicate' ? [event(6), event(7), event(7)] : [event(6), event(7)]
+      : mocks.events);
+    expect((await page('afterSeq=4')).events).toEqual([event(5), event(6), event(7)]);
+    expect(mocks.read).toHaveBeenNthCalledWith(2, { sessionId: 's', afterSeq: 4, tail: 3 });
+    expect(mocks.read).toHaveBeenNthCalledWith(3, { sessionId: 's' });
+  });
   it('rate limits each peer before transcript IO', async () => {
     for (let i = 0; i < 20; i++) expect((await read()).status).toBe(200);
     const calls = mocks.read.mock.calls.length;

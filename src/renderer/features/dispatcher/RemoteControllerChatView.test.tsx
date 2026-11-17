@@ -100,6 +100,47 @@ describe('remote controller desktop chat', () => {
       expect(read()).toHaveBeenCalledTimes(calls);
     }
   });
+  it('automatically retries a rate-limited poll after the supplied delay with the same cursor', async () => {
+    vi.useFakeTimers();
+    read().mockResolvedValueOnce(page([message(1, 'Initial reply')]))
+      .mockResolvedValueOnce({ status: 'rate_limited', retryAfterMs: 3000 })
+      .mockResolvedValueOnce(page([message(2, 'After rate limit')]));
+    await act(async () => { render(<RemoteControllerChatView machine="peer" />); });
+    await act(async () => { await vi.advanceTimersByTimeAsync(5000); });
+    expect(screen.getByText('Initial reply')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Retry' })).toBeNull();
+    await act(async () => { await vi.advanceTimersByTimeAsync(2999); });
+    expect(read()).toHaveBeenCalledTimes(2);
+    await act(async () => { await vi.advanceTimersByTimeAsync(1); });
+    expect(read()).toHaveBeenNthCalledWith(3, 'peer', { afterSeq: 1 });
+    expect(screen.getByText('After rate limit')).toBeInTheDocument();
+  });
+  it('automatically retries Show earlier without advancing its history cursor', async () => {
+    vi.useFakeTimers();
+    read().mockResolvedValueOnce(page([message(3, 'Newest reply')], { nextBeforeSeq: 3 }))
+      .mockResolvedValueOnce({ status: 'rate_limited', retryAfterMs: 3000 })
+      .mockResolvedValueOnce(page([message(1, 'Earlier reply')]));
+    await act(async () => { render(<RemoteControllerChatView machine="peer" />); });
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Show earlier' })); });
+    await act(async () => { await vi.advanceTimersByTimeAsync(2999); });
+    expect(read()).toHaveBeenCalledTimes(2);
+    expect(screen.queryByRole('button', { name: 'Retry' })).toBeNull();
+    await act(async () => { await vi.advanceTimersByTimeAsync(1); });
+    expect(read()).toHaveBeenNthCalledWith(3, 'peer', { sessionId: 's', beforeSeq: 3 });
+    expect(screen.getByText('Earlier reply')).toBeInTheDocument();
+    expect(screen.getByText('Newest reply')).toBeInTheDocument();
+  });
+  it('cancels a scheduled history rate-limit retry when unmounted', async () => {
+    vi.useFakeTimers();
+    read().mockResolvedValueOnce(page([message(3, 'Newest reply')], { nextBeforeSeq: 3 }))
+      .mockResolvedValueOnce({ status: 'rate_limited', retryAfterMs: 3000 });
+    let unmount!: () => void;
+    await act(async () => { ({ unmount } = render(<RemoteControllerChatView machine="peer" />)); });
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Show earlier' })); });
+    unmount();
+    await act(async () => { await vi.advanceTimersByTimeAsync(10_000); });
+    expect(read()).toHaveBeenCalledTimes(2);
+  });
   it('discards superseded body copies across polls and backward history pages', () => {
     const old = { ...message(1, 'old token prefix'), data: { messageId: 'same', text: 'old token prefix' } };
     const latest = { ...message(2, 'replacement'), data: { messageId: 'same', text: 'replacement' } };

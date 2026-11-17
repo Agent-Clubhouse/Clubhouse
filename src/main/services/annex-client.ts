@@ -2168,7 +2168,7 @@ export function postToMachine(machine: string, urlPath: string, body: Record<str
 }
 
 /** A JSON request over the pinned connection, answering its status and body whatever the status. */
-function satelliteJson(fingerprint: string, method: 'GET' | 'POST', urlPath: string, body?: Record<string, unknown>, options?: { signal?: AbortSignal; maxResponseBytes?: number }): Promise<{ status: number; body: unknown }> {
+function satelliteJson(fingerprint: string, method: 'GET' | 'POST', urlPath: string, body?: Record<string, unknown>, options?: { signal?: AbortSignal; maxResponseBytes?: number }): Promise<{ status: number; body: unknown; retryAfterMs?: number }> {
   const sat = satellites.get(fingerprint);
   if (!sat || sat.state !== 'connected') return Promise.reject(new Error('Satellite not connected'));
   if (options?.signal?.aborted) return Promise.reject(new Error('Annex request aborted.'));
@@ -2200,7 +2200,12 @@ function satelliteJson(fingerprint: string, method: 'GET' | 'POST', urlPath: str
         noteRestRefusal(sat, res.statusCode, text);
         let parsed: unknown = text;
         try { parsed = JSON.parse(text); } catch { /* telemetry-exempt: the status still says what happened */ }
-        resolve({ status: res.statusCode ?? 0, body: parsed });
+        const retryAfter = res.statusCode === 429 ? res.headers?.['retry-after'] : undefined;
+        const header = Array.isArray(retryAfter) ? retryAfter[0] : retryAfter;
+        const delay = header === undefined ? NaN : /^\d+$/.test(header) ? Number(header) * 1000 : Date.parse(header) - Date.now();
+        resolve({ status: res.statusCode ?? 0, body: parsed,
+          ...(Number.isFinite(delay) && { retryAfterMs: Math.min(2 ** 31 - 1, Math.max(250, delay)) }),
+        });
       });
     });
     req.on('error', reject);
@@ -2235,6 +2240,7 @@ async function controllerChatRead<T>(machine: string, path: string): Promise<Con
     const res = await satelliteJson(sat.fingerprint, 'GET', path, undefined, { maxResponseBytes: CONTROLLER_CHAT_MAX_BYTES });
     if (res.status === 404 || res.status === 405) return { status: 'unavailable' };
     if (res.status === 401 || res.status === 403) return { status: 'forbidden' };
+    if (res.status === 429) return { status: 'rate_limited', retryAfterMs: res.retryAfterMs ?? 1000 };
     if (res.status !== 200 || !res.body || typeof res.body !== 'object') return { status: 'error' };
     return { status: 'ok', value: res.body as T };
   } catch {

@@ -22,6 +22,7 @@ export interface ControllerChatPage {
 }
 export type ControllerReadResult<T> =
   | { status: 'ok'; value: T }
+  | { status: 'rate_limited'; retryAfterMs: number }
   | { status: 'unavailable' | 'offline' | 'forbidden' | 'error' };
 export interface ControllerChatSessions { sessions: ChatSessionSummary[] }
 

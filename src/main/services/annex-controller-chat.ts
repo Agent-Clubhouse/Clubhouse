@@ -49,8 +49,8 @@ function admitRead(machine: string, now = Date.now()): boolean {
   return tokens >= 1;
 }
 
-/** One initial read, then only lines appended since the cached sequence. The tail reader
- * seeks from EOF; seq gaps only overestimate how many lines it needs, never skip them. */
+/** One initial read, then only appended lines. Duplicate/non-event lines can crowd a tail;
+ * unless every sequence through the sampled head is present, use a full read that time. */
 async function controllerTranscript(agentId: string, sessionId?: string): Promise<{ events: ChatEvent[]; sessionId: string | null }> {
   const head = await chatTranscriptHead(agentId, sessionId);
   if (!head.sessionId) return { events: [], sessionId: null };
@@ -60,10 +60,15 @@ async function controllerTranscript(agentId: string, sessionId?: string): Promis
   let cached = transcripts.get(key);
   if (cached && head.lastSeq < cached.lastSeq) cached = undefined;
   if (!cached || head.lastSeq !== cached.lastSeq) {
-    const delta = await readChatTranscript(agentId, {
+    let delta = await readChatTranscript(agentId, {
       sessionId: head.sessionId,
       ...(cached && { afterSeq: cached.lastSeq, tail: Math.max(1, head.lastSeq - cached.lastSeq) }),
     });
+    if (cached) {
+      let expected = cached.lastSeq + 1;
+      const contiguous = delta.every((event) => event.seq === expected++);
+      if (!contiguous || expected <= head.lastSeq) delta = await readChatTranscript(agentId, { sessionId: head.sessionId });
+    }
     const events = cached ? [...cached.events, ...delta.filter((event) => event.seq > cached!.lastSeq)] : delta;
     cached = { events, lastSeq: events[events.length - 1]?.seq ?? 0, at: now };
   }

@@ -14,7 +14,7 @@ const READ_MESSAGES = {
   forbidden: 'That computer does not allow this desktop to read the controller conversation (agent.read).',
   error: 'Could not load the controller conversation.',
 };
-type Failure = Exclude<ControllerReadResult<unknown>['status'], 'ok'>;
+type Failure = Exclude<ControllerReadResult<unknown>['status'], 'ok' | 'rate_limited'>;
 
 /** A normal desktop chat stream, with full events and lazy history, and no command/action surface. */
 export function RemoteControllerChatView({ machine }: { machine: string }) {
@@ -32,6 +32,7 @@ export function RemoteControllerChatView({ machine }: { machine: string }) {
   const [retry, setRetry] = useState(0);
   const generation = useRef(0);
   const current = useRef<ControllerChatPage | null>(null);
+  const historyRetry = useRef<ReturnType<typeof setTimeout> | null>(null);
   const state = useMemo(() => foldChatEvents(undefined, page?.agentId ?? 'remote-controller', events), [page?.agentId, events]);
 
   useEffect(() => {
@@ -54,6 +55,10 @@ export function RemoteControllerChatView({ machine }: { machine: string }) {
           initial = true;
         }
         if (!alive()) return;
+        if (result.status === 'rate_limited') {
+          timer = setTimeout(() => { void load(initial); }, result.retryAfterMs);
+          return;
+        }
         setLoading(false);
         if (result.status !== 'ok') { setFailure(result.status); return; }
         const next = result.value;
@@ -74,7 +79,12 @@ export function RemoteControllerChatView({ machine }: { machine: string }) {
       }
     };
     void load(true);
-    return () => { generation.current++; if (timer) clearTimeout(timer); };
+    return () => {
+      generation.current++;
+      if (timer) clearTimeout(timer);
+      if (historyRetry.current) clearTimeout(historyRetry.current);
+      historyRetry.current = null;
+    };
   }, [machine, selected, retry, connection]);
 
   const earlier = async () => {
@@ -82,20 +92,30 @@ export function RemoteControllerChatView({ machine }: { machine: string }) {
     if (!before?.nextBeforeSeq || earlierLoading) return;
     const token = generation.current;
     setEarlierLoading(true);
-    try {
-      const result = await window.clubhouse.annexClient.controllerChatPage(machine, {
-        ...(before.sessionId && { sessionId: before.sessionId }), beforeSeq: before.nextBeforeSeq,
-      });
-      if (token !== generation.current || current.current?.sessionId !== before.sessionId) return;
-      if (result.status !== 'ok') { setFailure(result.status); return; }
-      const merged = { ...current.current, nextBeforeSeq: result.value.nextBeforeSeq };
-      current.current = merged; setPage(merged);
-      setEvents((prev) => mergeControllerEvents(prev, result.value.events));
-      setFailure(null);
-    } catch {
-      // telemetry-exempt: displayed in the read-only view.
-      if (token === generation.current) setFailure('error');
-    } finally { if (token === generation.current) setEarlierLoading(false); }
+    const readPage = async () => {
+      let retrying = false;
+      try {
+        if (token !== generation.current || current.current?.sessionId !== before.sessionId) return;
+        const result = await window.clubhouse.annexClient.controllerChatPage(machine, {
+          ...(before.sessionId && { sessionId: before.sessionId }), beforeSeq: before.nextBeforeSeq,
+        });
+        if (token !== generation.current || current.current?.sessionId !== before.sessionId) return;
+        if (result.status === 'rate_limited') {
+          retrying = true;
+          historyRetry.current = setTimeout(() => { historyRetry.current = null; void readPage(); }, result.retryAfterMs);
+          return;
+        }
+        if (result.status !== 'ok') { setFailure(result.status); return; }
+        const merged = { ...current.current, nextBeforeSeq: result.value.nextBeforeSeq };
+        current.current = merged; setPage(merged);
+        setEvents((prev) => mergeControllerEvents(prev, result.value.events));
+        setFailure(null);
+      } catch {
+        // telemetry-exempt: displayed in the read-only view.
+        if (token === generation.current) setFailure('error');
+      } finally { if (!retrying && token === generation.current) setEarlierLoading(false); }
+    };
+    await readPage();
   };
   const loadSessions = async () => {
     const token = generation.current;
