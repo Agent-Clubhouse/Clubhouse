@@ -486,7 +486,16 @@ export async function flushOutbox(machine: string): Promise<void> {
   const run = Promise.resolve().then(() => flushOutboxPass(machine, generation));
   const entry = { generation, promise: run };
   flushing.set(machine, entry);
-  try { await run; } finally { if (flushing.get(machine) === entry) flushing.delete(machine); }
+  let failed = false;
+  try { await run; }
+  catch (err) { failed = true; throw err; }
+  finally {
+    if (flushing.get(machine) === entry) flushing.delete(machine);
+    // A disconnected check or an unexpected exception must not strand queued
+    // work. Keep lane deadlines on normal completion; faults get bounded backoff
+    // even if an unrelated lane already has a much later timer.
+    if (generation === lifecycle && waitingFor(machine).length > 0 && (failed || !retryTimers.has(machine))) retryLater(machine);
+  }
 }
 
 async function flushOutboxPass(machine: string, generation: number): Promise<void> {
@@ -543,7 +552,7 @@ async function flushOutboxPass(machine: string, generation: number): Promise<voi
         if (generation !== lifecycle) return;
         appLog('core:annex', 'warn', 'Could not negotiate durable agent delivery', { meta: { error: err instanceof Error ? err.message : String(err) } });
         await deliveries.update((file) => {
-          Object.assign(file.deliveries.find((r) => r.callId === item.id)!, { state: 'retry_later', reason: 'capability_check_unavailable', readinessRetry: false, nextAttemptAt: new Date(Date.now() + RETRY_MS).toISOString() });
+          Object.assign(file.deliveries.find((r) => r.callId === item.id)!, { state: 'retry_later', reason: 'capability_check_unavailable', readinessRetry: false, nextAttemptAt: new Date(Date.now() + RETRY_MS).toISOString(), updatedAt: new Date().toISOString() });
         });
         retryLater(machine);
         return;
@@ -556,6 +565,7 @@ async function flushOutboxPass(machine: string, generation: number): Promise<voi
       await deliveries.update((file) => {
         const saved = file.deliveries.find((r) => r.callId === item.id)!;
         saved.state = 'sending';
+        delete saved.nextAttemptAt;
         saved.attempts++;
         saved.updatedAt = new Date().toISOString();
       });
