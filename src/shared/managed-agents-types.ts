@@ -179,6 +179,8 @@ export interface ManagedPart extends ManagedPartSummary {
  * Saved templates never keep a `null`.
  */
 export interface ManagedTemplateSettings {
+  sandbox?: import('./execution-policy').AgentSandbox | null;
+  approvalPolicy?: import('./execution-policy').AgentApprovalPolicy | null;
   orchestrator?: OrchestratorId;
   model?: string;
   /** The reasoning effort level, for the model these settings run (the agent's `effort`). */

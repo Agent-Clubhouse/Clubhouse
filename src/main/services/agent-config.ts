@@ -1,3 +1,4 @@
+import { validateExecutionPolicy } from '../../shared/execution-policy';
 import { noteProviderSelection, withAgentActivity } from './agent-transition';
 import { execFile } from 'child_process';
 import { watch, type FSWatcher } from 'fs';
@@ -1565,6 +1566,8 @@ const AGENT_AUDIT_KEYS: Record<keyof DurableConfigUpdates, AuditKeyFormat | 'boo
   contextWindow: 'value',
   freeAgentMode: 'value',
   access: 'value',
+  sandbox: 'value',
+  approvalPolicy: 'value',
   runtimeMode: 'value',
   idleSleep: 'value',
   effort: 'value',
@@ -1603,6 +1606,7 @@ async function updateDurableConfigInner(
   orchestration?: { config: OrchestrationPolicyConfig | undefined },
 ): Promise<void> {
   // Checked before anything changes, so a bad value never half-applies.
+  validateExecutionPolicy(updates);
   if (updates.effort !== undefined && updates.effort !== null && !isEffortValue(updates.effort)) {
     throw new Error('effort must be an effort level such as low, medium or high');
   }
@@ -1704,6 +1708,10 @@ async function updateDurableConfigInner(
       if (legacyFreeAgentMode(level)) agent.freeAgentMode = true;
       else delete agent.freeAgentMode;
     }
+  }
+  for (const key of ['sandbox', 'approvalPolicy'] as const) {
+    if (updates[key] === null) delete agent[key];
+    else if (updates[key] !== undefined) Object.assign(agent, { [key]: updates[key] });
   }
   if (updates.lastSleep !== undefined) {
     if (updates.lastSleep) {
@@ -1810,7 +1818,7 @@ async function updateDurableConfigInner(
   if (updates.orchestrator !== undefined) noteProviderSelection(agentId, updates.orchestrator);
   // A managed agent's setup-changed bar compares these with what its session started on.
   // Auto-sleep and the helper template apply at once, but Settings and Preview show them, so they refresh too.
-  if (agent.managed && (updates.orchestrator !== undefined || updates.model !== undefined || updates.freeAgentMode !== undefined || updates.access !== undefined
+  if (agent.managed && (updates.orchestrator !== undefined || updates.model !== undefined || updates.freeAgentMode !== undefined || updates.access !== undefined || updates.sandbox !== undefined || updates.approvalPolicy !== undefined
     || updates.effort !== undefined || updates.idleSleep !== undefined || updates.helperTemplateId !== undefined
     // The Setup card and the composer show what the next start uses (#2790).
     || updates.contextWindow !== undefined)) noteManagedSettingsChanged();

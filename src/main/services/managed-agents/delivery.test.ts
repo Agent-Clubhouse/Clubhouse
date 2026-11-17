@@ -457,6 +457,13 @@ describe('what a running session started with (D9, #2895)', () => {
 describe('quickManagedLaunch (D25)', () => {
   const listing = (dir: string) => (fs.existsSync(dir) ? fs.readdirSync(dir).sort() : []);
 
+  it('refuses explicit execution overrides on parts-only quick templates instead of dropping restrictions (#3686)', async () => {
+    const template = await user(() => service.saveTemplate({ name: 'Restricted quick', description: '', setup: { blocks: [], skills: [], mcps: [] }, settings: { sandbox: 'read-only' } }));
+    const before = listing(project);
+    await expect(user(() => quickManagedLaunch({ service, projectPath: project, cwd: project, agentId: 'quick-restricted', agentName: 'quick-restricted', templateId: template.id }))).rejects.toThrow('Quick templates currently deliver parts only');
+    expect(listing(project)).toEqual(before);
+  });
+
   it('renders the template for the quick agent in its folder and writes nothing', async () => {
     const mcp = await user(() => service.createPart({ name: 'WorkIQ', content: { kind: 'mcp', serverKey: 'workiq', transport: 'stdio', command: 'npx', envVars: ['WORKIQ_TENANT'] } }));
     const skill = await user(() => service.createPart({ name: 'Notes', content: { kind: 'skill', skillName: 'notes', files: [{ path: 'SKILL.md', content: '# Notes' }] } }));

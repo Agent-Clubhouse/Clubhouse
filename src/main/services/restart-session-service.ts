@@ -121,6 +121,8 @@ export async function captureSessionState(
       mission: meta?.mission,
       model: meta?.model,
       permissionMode,
+      ...(config?.sandbox && { sandbox: config.sandbox }),
+      ...(config?.approvalPolicy && { approvalPolicy: config.approvalPolicy }),
       freeAgentMode: config?.freeAgentMode,
       // Only a level someone saved: an agent from before #2761 resumes from the legacy pair, exactly as before.
       ...(isAccessLevel(config?.access) ? { access: config.access } : {}),

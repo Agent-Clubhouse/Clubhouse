@@ -1,3 +1,4 @@
+import type { ExecutionPolicy } from '../../shared/execution-policy';
 import * as path from 'path';
 import { ACCESS_LEVELS as FIVE_LEVELS, type AccessLevel } from '../../shared/agent-access';
 import * as fsp from 'fs/promises';
@@ -34,7 +35,7 @@ export interface AgentRegistration {
   userAccess?: Readonly<LaunchAccess>;
 }
 
-export interface LaunchAccess {
+export interface LaunchAccess extends ExecutionPolicy {
   freeAgentMode: boolean;
   permissionMode?: FreeAgentPermissionMode;
   /** The five-level Access level, when known (#3000). */

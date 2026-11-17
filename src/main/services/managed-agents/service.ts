@@ -1,3 +1,4 @@
+import { validateExecutionPolicy } from '../../../shared/execution-policy';
 /**
  * Clubhouse-managed agents (#2819): agent parts, templates and per-agent
  * setups. Parts are asset catalog entries used by reference; this service
@@ -1400,6 +1401,8 @@ export function settingsOf(agent: DurableAgentConfig, projectPath?: string, gran
     ...(agent.orchestrator && { orchestrator: agent.orchestrator }),
     ...(agent.model && { model: agent.model }),
     ...(agent.effort && { effort: agent.effort }),
+    ...(agent.sandbox && { sandbox: agent.sandbox }),
+    ...(agent.approvalPolicy && { approvalPolicy: agent.approvalPolicy }),
     ...((agent.access !== undefined || agent.freeAgentMode !== undefined) && { access: agentAccess(agent, projectPath) }),
     ...(agent.orchestration && Object.keys(agent.orchestration).length > 0 && { orchestration: { ...agent.orchestration } }),
     ...(agent.idleSleep !== undefined && { idleSleep: agent.idleSleep }),
@@ -1413,8 +1416,11 @@ export function settingsOf(agent: DurableAgentConfig, projectPath?: string, gran
  * template never carries one.
  */
 export function templateSettingsToKeep(settings: ManagedTemplateSettings): ManagedTemplateSettings {
-  const { effort, idleSleep, helperTemplateId, grants, ...rest } = settings;
+  validateExecutionPolicy(settings);
+  const { effort, idleSleep, helperTemplateId, grants, sandbox, approvalPolicy, ...rest } = settings;
   const out: ManagedTemplateSettings = withAccess({ ...rest }, getPermissionMode());
+  if (sandbox != null) out.sandbox = sandbox;
+  if (approvalPolicy != null) out.approvalPolicy = approvalPolicy;
   const kept = normalizeTemplateGrants(grants);
   if (kept?.length) out.grants = kept;
   if (isEffortValue(effort)) out.effort = effort;
@@ -1449,6 +1455,8 @@ function labelerFor(templateName: (id: string) => string | undefined): SettingLa
 
 function flattenSettings(settings: ManagedTemplateSettings): Record<string, unknown> {
   const out: Record<string, unknown> = {};
+  if (settings.sandbox != null) out.sandbox = settings.sandbox;
+  if (settings.approvalPolicy != null) out.approvalPolicy = settings.approvalPolicy;
   if (settings.orchestrator !== undefined) out.orchestrator = settings.orchestrator;
   if (settings.model !== undefined) out.model = settings.model;
   if (settings.effort !== undefined && settings.effort !== null) out.effort = settings.effort;
@@ -1491,7 +1499,9 @@ function mergeSetting(out: ManagedTemplateSettings, from: ManagedTemplateSetting
     out.orchestration = { ...(out.orchestration ?? {}), [k]: value === undefined ? null : value } as ManagedTemplateSettings['orchestration'];
     return;
   }
-  if (key === 'model') out.model = from.model ?? 'default';
+  if (key === 'sandbox') out.sandbox = from.sandbox ?? null;
+  else if (key === 'approvalPolicy') out.approvalPolicy = from.approvalPolicy ?? null;
+  else if (key === 'model') out.model = from.model ?? 'default';
   else if (key === 'effort') out.effort = from.effort ?? null;
   else if (key === 'access') out.access = withAccess(from, getPermissionMode()).access ?? getDefaultAccess();
   else if (key === 'idleSleep') out.idleSleep = from.idleSleep ?? null;
@@ -1558,6 +1568,7 @@ export function checkTemplateSettings(raw: unknown): ManagedTemplateSettings {
   if (raw === undefined || raw === null) return {};
   if (typeof raw !== 'object' || Array.isArray(raw)) throw new ManagedError('invalid', 'settings must be an object.');
   const s = raw as Record<string, unknown>;
+  validateExecutionPolicy(s);
   const bad = (what: string): never => { throw new ManagedError('invalid', `The template's ${what}. Nothing was changed.`); };
   if (s.orchestrator !== undefined && (typeof s.orchestrator !== 'string' || !/^[a-z0-9][a-z0-9-]{0,63}$/.test(s.orchestrator))) bad('CLI isn\'t a CLI id');
   if (s.model !== undefined && (typeof s.model !== 'string' || !s.model || s.model.length > 200)) bad('model isn\'t a model id');

@@ -859,6 +859,18 @@ describe('templates', () => {
     expect(edited.settings).toEqual({ model: 'opus', grants: [{ action: 'agent.message', target: { kind: 'connected' }, mode: 'off' }] });
   });
 
+  it('an older settings replacement cannot silently remove execution overrides or grants (#3686)', async () => {
+    const grants = [{ action: 'agent.message' as const, target: { kind: 'connected' as const }, mode: 'off' as const }];
+    const saved = await managedAgents().saveTemplate({ name: 'Independent settings', description: '', setup: { blocks: [], skills: [], mcps: [CLUBHOUSE_MCP_PART_ID] }, settings: { sandbox: 'read-only', approvalPolicy: 'never', grants } });
+    const edited = await call('save_agent_template', { id: saved.id, settings: { model: 'opus' } });
+    expect(edited.isError).toBeFalsy();
+    expect(edited.json.settings).toMatchObject({ model: 'opus', sandbox: 'read-only', approvalPolicy: 'never', grants });
+    const reset = await call('save_agent_template', { id: saved.id, settings: { sandbox: null } });
+    expect(reset.isError).toBeFalsy();
+    expect(reset.json.settings).not.toHaveProperty('sandbox');
+    expect(reset.json.settings).toMatchObject({ approvalPolicy: 'never', grants });
+  });
+
   it('an agent creating from a template passes its permissions only as far as it holds them (#2971)', async () => {
     const app = { kind: 'app' };
     const t = await managedAgents().saveTemplate({ name: 'Wide', description: '', setup: { blocks: [], skills: [], mcps: [CLUBHOUSE_MCP_PART_ID] }, settings: { grants: [

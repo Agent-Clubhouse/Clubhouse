@@ -1,3 +1,4 @@
+import type { ExecutionPolicy } from '../../shared/execution-policy';
 import type { PermissionLevel } from '../../shared/chat/capabilities';
 import type { StreamJsonEvent } from '../services/jsonl-parser';
 import type { McpServerDef, TurnOutcome } from '../../shared/types';
@@ -7,7 +8,7 @@ export type OrchestratorId = 'claude-code' | (string & {});
 
 export type AgentExecutionMode = 'pty' | 'headless';
 
-export interface SpawnOpts {
+export interface SpawnOpts extends ExecutionPolicy {
   cwd: string;
   model?: string;
   /** Reasoning effort, checked before it gets here (isEffortValue). */

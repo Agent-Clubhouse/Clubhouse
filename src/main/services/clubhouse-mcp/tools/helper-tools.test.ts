@@ -37,6 +37,10 @@ vi.mock('../../../telemetry/helper-usage', () => ({
 
 const mockCheckDurableCreation = vi.fn(async (_projectPath: string, _params: Record<string, unknown>) => {});
 vi.mock('../../agent-config', () => ({
+  updateDurableConfig: vi.fn(async (_project: string, id: string, patch: object) => {
+    const agent = agents.get(id);
+    if (agent) agents.set(id, { ...agent, ...patch });
+  }),
   checkDurableCreation: (projectPath: string, params: Record<string, unknown>) => mockCheckDurableCreation(projectPath, params),
   onAgentConfigChanged: vi.fn((listener: (projectPath: string) => void) => {
     configListeners.add(listener);
@@ -595,6 +599,31 @@ describe('start_helper with Clubhouse-managed agents (#2899)', () => {
     const [, , options] = mockStartDurableCreation.mock.calls[0];
     await options.inject(agents.get('helper_plain'));
     expect(agents.get('helper_plain')!.managed).toMatchObject({ templateId: 'builtin-template-helper' });
+  });
+
+  it('persists an explicit Codex policy from the helper template and refuses unsupported or higher choices (#3686)', async () => {
+    const t = await withSettingsSurface('ui', undefined, () => managedAgents().saveTemplate({
+      name: 'Codex helper policy', description: '', setup: { blocks: [], skills: [], mcps: [] },
+      settings: { sandbox: 'read-only', approvalPolicy: 'never' },
+    }));
+    const creation = controllableCreation();
+    const result = await callTool('orch', 'start_helper', { name: 'policy', task: 'fixture task', template: t.id, cli: 'codex-cli' });
+    expect(result.isError).toBeFalsy();
+    const [, , options] = mockStartDurableCreation.mock.calls[0];
+    await options.inject(agents.get('helper_policy'));
+    expect(agents.get('helper_policy')).toMatchObject({ sandbox: 'read-only', approvalPolicy: 'never' });
+    creation.ready('helper_policy');
+    await _settleHelperStartsForTesting();
+    mockStartDurableCreation.mockClear();
+    const unsupported = await callTool('orch', 'start_helper', { name: 'unsupported', task: 't', template: t.id, cli: 'claude-code' });
+    expect(unsupported.isError).toBe(true);
+    expect(unsupported.content[0].text).toContain('No verified mapping');
+    expect(mockStartDurableCreation).not.toHaveBeenCalled();
+    const higher = await withSettingsSurface('ui', undefined, () => managedAgents().saveTemplate({ ...t, settings: { sandbox: 'danger-full-access' } }));
+    const refused = await callTool('orch', 'start_helper', { name: 'higher', task: 't', template: higher.id, cli: 'codex-cli' });
+    expect(refused.isError).toBe(true);
+    expect(refused.content[0].text).toContain('exceeds this helper');
+    expect(mockStartDurableCreation).not.toHaveBeenCalled();
   });
 
   it('with no template named, uses the orchestrator\'s own helper template, even with the choice off (#2895)', async () => {

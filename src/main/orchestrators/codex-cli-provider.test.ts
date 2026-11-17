@@ -87,6 +87,29 @@ describe('CodexCliProvider', () => {
     vi.mocked(fs.existsSync).mockImplementation((p) => isCodexPath(p as string));
   });
 
+  describe('independent sandbox and approval (#3686)', () => {
+    it.each(['read-only', 'workspace-write', 'danger-full-access'] as const)('keeps explicit %s even at Full access, including resume', async (sandbox) => {
+      for (const resume of [false, true]) {
+        const { args } = await provider.buildSpawnCommand({ cwd: '/p', freeAgentMode: true, permissionMode: 'skip-all', sandbox, approvalPolicy: 'on-request', resume, sessionId: 'chosen-session' });
+        expect(args).toContain('--sandbox');
+        expect(args[args.indexOf('--sandbox') + 1]).toBe(sandbox);
+        expect(args[args.indexOf('--ask-for-approval') + 1]).toBe('on-request');
+        expect(args).not.toContain('--dangerously-bypass-approvals-and-sandbox');
+        if (resume) expect(args.slice(0, 2)).toEqual(['resume', 'chosen-session']);
+      }
+    });
+    it('refuses terminal untrusted instead of substituting on-request', async () => {
+      await expect(provider.buildSpawnCommand({ cwd: '/p', approvalPolicy: 'untrusted' })).rejects.toThrow('requires chat');
+    });
+    it('headless preserves read-only under never and refuses interactive/resume overrides', async () => {
+      const result = await provider.buildHeadlessCommand({ cwd: '/p', mission: 'test', sandbox: 'read-only', approvalPolicy: 'never', permissionMode: 'skip-all' });
+      expect(result?.args).toContain('read-only');
+      expect(result?.args).not.toContain('--dangerously-bypass-approvals-and-sandbox');
+      await expect(provider.buildHeadlessCommand({ cwd: '/p', mission: 'test', approvalPolicy: 'on-request' })).rejects.toThrow('cannot show');
+      await expect(provider.buildHeadlessCommand({ cwd: '/p', mission: 'test', resume: true, sandbox: 'read-only' })).rejects.toThrow('exec resume');
+    });
+  });
+
   describe('identity', () => {
     it('has correct id', () => {
       expect(provider.id).toBe('codex-cli');

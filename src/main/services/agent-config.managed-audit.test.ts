@@ -65,6 +65,19 @@ beforeEach(() => {
 });
 
 describe('managed setup audit (D13)', () => {
+  it('keeps target-host grants and connections intact and refuses revoked policy writes (#3686)', async () => {
+    const grantsPath = path.join(PROJECT_PATH, 'host-user-data', 'agent-grants.json');
+    const grants = JSON.stringify({ agents: { a1: { changes: [{ action: 'agent.message', target: { kind: 'connected' }, mode: 'ask' }] } }, revisions: { a1: 'same-authority' } });
+    files.set(grantsPath, grants);
+    await updateDurableConfig(PROJECT_PATH, 'a1', { sandbox: 'read-only', approvalPolicy: 'never' });
+    expect(files.get(grantsPath)).toBe(grants);
+    expect([...files.keys()].filter((k) => /agent-grants|connections/.test(k))).toEqual([grantsPath]);
+    const guard = { prepare: vi.fn(async () => undefined), check: vi.fn(() => { throw new Error('target-host grant revoked'); }) };
+    await expect(updateDurableConfig(PROJECT_PATH, 'a1', { sandbox: 'danger-full-access' }, undefined, guard)).rejects.toThrow('target-host grant revoked');
+    expect(await getDurableConfig(PROJECT_PATH, 'a1')).toMatchObject({ sandbox: 'read-only', approvalPolicy: 'never' });
+    expect(files.get(grantsPath)).toBe(grants);
+  });
+
   it('checks the authorized record after async preparation and before mutating or auditing it', async () => {
     let allowed = true;
     const check = vi.fn((agent: { id: string }) => {

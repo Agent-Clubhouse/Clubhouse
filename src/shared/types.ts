@@ -1,3 +1,4 @@
+import type { ExecutionPolicy } from './execution-policy';
 import type { AnnexProblem } from './annex-problems';
 
 /** Whether the clubhouse command is installed (#2598). Only a packaged build can install it. */
@@ -91,7 +92,7 @@ export interface AgentSleepInfo {
   exitCode?: number;
 }
 
-export interface Agent {
+export interface Agent extends ExecutionPolicy {
   id: string;
   projectId: string;
   name: string;
@@ -289,7 +290,7 @@ export interface SessionInfo {
   orchestrator?: OrchestratorId;
 }
 
-export interface DurableAgentConfig {
+export interface DurableAgentConfig extends ExecutionPolicy {
   id: string;
   /** Recovery association, not authority: retained after an imported builder finishes. */
   repositoryImportCreation?: {
@@ -779,6 +780,9 @@ export interface WrapperCatalogSnapshot {
 }
 
 export interface DurableConfigUpdates {
+  /** Explicit Codex launch overrides; null returns this axis to its existing level default. */
+  sandbox?: import('./execution-policy').AgentSandbox | null;
+  approvalPolicy?: import('./execution-policy').AgentApprovalPolicy | null;
   quickAgentDefaults?: QuickAgentDefaults;
   orchestrator?: OrchestratorId;
   model?: string;
@@ -1753,7 +1757,7 @@ export interface AgentHookEvent {
   timestamp: number;
 }
 
-export interface SpawnAgentParams {
+export interface SpawnAgentParams extends ExecutionPolicy {
   agentId: string;
   projectPath: string;
   cwd: string;
@@ -1933,7 +1937,7 @@ export interface CanvasStateSnapshot {
 
 export type ResumeStrategy = 'auto' | 'manual';
 
-export interface RestartSessionEntry {
+export interface RestartSessionEntry extends ExecutionPolicy {
   agentId: string;
   agentName: string;
   projectPath: string;

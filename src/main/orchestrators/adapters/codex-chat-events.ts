@@ -274,11 +274,15 @@ export class CodexChatEventMapper {
           type: 'permission_request',
           data: {
             requestId,
-            title: params.command ? `Run ${params.command}` : 'Run a command',
+            title: params.networkApprovalContext
+              ? `Allow ${params.networkApprovalContext.protocol} network access to ${params.networkApprovalContext.host}`
+              : params.command ? `Run ${params.command}` : 'Run a command',
             ...(params.reason && { description: params.reason }),
             toolCallId: params.itemId,
             toolName: 'commandExecution',
-            rawInput: { command: params.command, cwd: params.cwd, commandActions: params.commandActions },
+            // Keep the complete provider scope visible on desktop and Annex.
+            // This does not opt in to experimental permissions or invent an escalation.
+            rawInput: params,
             options,
           },
         }];
@@ -328,6 +332,7 @@ export class CodexChatEventMapper {
           ...(network?.enabled ? ['network access'] : []),
           ...(fileSystem?.write?.length ? [`write access to ${fileSystem.write.join(', ')}`] : []),
           ...(fileSystem?.read?.length ? [`read access to ${fileSystem.read.join(', ')}`] : []),
+          ...(fileSystem?.entries?.length ? ['additional filesystem access'] : []),
         ];
         return [{
           type: 'permission_request',
@@ -337,7 +342,7 @@ export class CodexChatEventMapper {
             ...(params.reason && { description: params.reason }),
             toolCallId: params.itemId,
             toolName: 'permissions',
-            rawInput: params.permissions,
+            rawInput: { ...params.permissions, cwd: params.cwd, environmentId: params.environmentId },
             options: [
               { optionId: 'grantForTurn', kind: 'allow_once', label: 'Allow for this turn' },
               { optionId: 'grantForSession', kind: 'allow_session', label: 'Allow for this session' },

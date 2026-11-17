@@ -1,3 +1,4 @@
+import { accessWithExecutionPolicy, hasExecutionPolicy } from '../../../../shared/execution-policy';
 /**
  * Builder tools (#2900), in the `dispatcher` tool group: every builder
  * action as a Clubhouse MCP tool, so the
@@ -120,7 +121,13 @@ function settingsArg(args: Record<string, unknown>, keep?: ManagedTemplateSettin
     throw new ArgError('settings.orchestration.connectToDispatcher is not accepted. When creating an agent, use the top-level connectToDispatcher option, which has its own permission. Only the user changes existing connections.');
   }
   if (!settings) return undefined;
-  return keep?.grants?.length ? { ...settings, grants: keep.grants } : settings;
+  // Older callers replacing other settings must not silently remove a sandbox.
+  // Only an explicit null resets one of these new axes.
+  const keptPolicy = {
+    ...(settings.sandbox === undefined && keep?.sandbox != null && { sandbox: keep.sandbox }),
+    ...(settings.approvalPolicy === undefined && keep?.approvalPolicy != null && { approvalPolicy: keep.approvalPolicy }),
+  };
+  return { ...keptPolicy, ...settings, ...(keep?.grants?.length && { grants: keep.grants }) };
 }
 function contentArg(args: Record<string, unknown>, kind?: ManagedPartKind): ManagedPartContent | undefined {
   const c = objectArg<Record<string, unknown>>(args, 'content');
@@ -745,7 +752,7 @@ export function registerManagedTools(): void {
     });
 
   tool('save_agent_template', { actions: ['template.write'], target: 'library' },
-    'Create a custom template (name required), or edit one by id. Editing an id keeps every field you leave out as saved; settings, when given, replaces the template\'s settings as a whole. Editing changes future agents only; use push_agent_template to apply it to agents made from it. settings: orchestrator, model, effort, access (plan, ask, auto_edit, auto or full_access), orchestration {...}, idleSleep (minutes or "never"), helperTemplateId. A legacy freeAgentMode beside access is ignored.',
+    'Create a custom template (name required), or edit one by id. Editing an id keeps every field you leave out as saved; settings, when given, replaces the template\'s settings as a whole. Editing changes future agents only; use push_agent_template to apply it to agents made from it. settings: orchestrator, model, effort, access (plan, ask, auto_edit, auto or full_access), orchestration {...}, idleSleep (minutes or "never"), helperTemplateId, sandbox (read-only, workspace-write, danger-full-access) and approvalPolicy (untrusted, on-request, never) for Codex. These are independent, apply next start and must be supported on the target host; they never grant Clubhouse permissions. Editing while omitting these two axes preserves their saved overrides; explicit null resets an axis. A legacy freeAgentMode beside access is ignored.',
     { id: S, name: S, description: S, blocks: IDS, skills: IDS, mcps: IDS, settings: OBJ }, [],
     async (callerId, args) => {
       const id = optionalString(args, 'id');
@@ -793,6 +800,10 @@ export function registerManagedTools(): void {
       if (sentLevel !== before) {
         const refused = accessCeilingRefusal(callerId, sentLevel ?? getDefaultAccess(), 'push a template that sets agents',
           sentLevel ? {} : { from: 'Leaving the level out means the Default access for new agents, which' });
+        if (refused) throw new ArgError(refused);
+      }
+      if (hasExecutionPolicy(next.settings) || hasExecutionPolicy(current.settings)) {
+        const refused = accessCeilingRefusal(callerId, accessWithExecutionPolicy(sentLevel ?? getDefaultAccess(), next.settings), 'push sandbox and approval settings');
         if (refused) throw new ArgError(refused);
       }
       const preview = await svc().previewTemplatePush(id, next);
@@ -886,6 +897,8 @@ export function registerManagedTools(): void {
         orchestrator: { type: 'string', description: 'CLI id, for example copilot-cli, codex-cli or claude-code. Overrides the template CLI.' },
         model: { type: 'string', description: 'Model id for the chosen CLI, or "default" for its default model. Overrides the template model.' },
         effort: { type: ['string', 'null'] }, access: { type: 'string', enum: ['plan', 'ask', 'auto_edit', 'auto', 'full_access'] },
+        sandbox: { type: 'string', enum: ['read-only', 'workspace-write', 'danger-full-access'], description: 'Explicit Codex sandbox, independent of approval policy. Omit to keep the existing level default. Never changes Clubhouse grants.' },
+        approvalPolicy: { type: 'string', enum: ['untrusted', 'on-request', 'never'], description: 'Codex approvals, independent of sandbox. Never ask cannot escalate failures. Target runtime/version must support the choice.' },
         freeAgentMode: { type: 'boolean', description: 'Legacy access toggle; prefer access.' },
         orchestration: OBJ, idleSleep: { anyOf: [{ type: 'integer', minimum: 1 }, { type: 'string', enum: ['never'] }, { type: 'null' }] },
         helperTemplateId: { type: ['string', 'null'] },

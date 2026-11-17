@@ -1338,6 +1338,28 @@ describe('getDurableConfig', () => {
 });
 
 describe('updateDurableConfig', () => {
+  it('keeps unset defaults and unrelated settings, and persists only explicit policy choices (#3686)', async () => {
+    const before = { id: 'policy', name: 'Policy', color: 'indigo', createdAt: '', access: 'auto' as const, freeAgentMode: true, orchestrator: 'codex-cli', model: 'default', mcpIds: ['clubhouse', 'external'], orchestration: { maxHelpers: 2 } };
+    mockAgentsFile([before]);
+    await updateDurableConfig(PROJECT_PATH, 'policy', { idleSleep: 15 });
+    expect(await getDurableConfig(PROJECT_PATH, 'policy')).not.toHaveProperty('sandbox');
+    expect(await getDurableConfig(PROJECT_PATH, 'policy')).not.toHaveProperty('approvalPolicy');
+    await updateDurableConfig(PROJECT_PATH, 'policy', { sandbox: 'read-only', approvalPolicy: 'never' });
+    expect(await getDurableConfig(PROJECT_PATH, 'policy')).toMatchObject({ ...before, sandbox: 'read-only', approvalPolicy: 'never' });
+    await updateDurableConfig(PROJECT_PATH, 'policy', { access: 'full_access' });
+    expect(await getDurableConfig(PROJECT_PATH, 'policy')).toMatchObject({ sandbox: 'read-only', approvalPolicy: 'never', mcpIds: before.mcpIds });
+    await updateDurableConfig(PROJECT_PATH, 'policy', { sandbox: null, approvalPolicy: null });
+    expect(await getDurableConfig(PROJECT_PATH, 'policy')).not.toHaveProperty('sandbox');
+    expect(await getDurableConfig(PROJECT_PATH, 'policy')).not.toHaveProperty('approvalPolicy');
+  });
+
+  it('rejects malformed policies atomically before any settings write (#3686)', async () => {
+    const before = { id: 'policy', name: 'Policy', color: 'indigo', createdAt: '', model: 'old' };
+    mockAgentsFile([before]);
+    await expect(updateDurableConfig(PROJECT_PATH, 'policy', { model: 'new', sandbox: 'full' as never })).rejects.toThrow('Unknown sandbox');
+    expect(await getDurableConfig(PROJECT_PATH, 'policy')).toMatchObject(before);
+  });
+
   it('publishes native template settings and policy as one mutation (#3486)', async () => {
     mockAgentsFile([{ id: 'consumer', name: 'consumer', color: 'indigo', createdAt: '', model: 'old-model', effort: 'low', orchestration: { maxHelpers: 1 } }]);
     await getDurableConfig(PROJECT_PATH, 'consumer');

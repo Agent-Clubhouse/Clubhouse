@@ -254,6 +254,8 @@ export async function statusFor(projectPath: string, agentId: string): Promise<M
     if (was.model !== is.model) changes.push('The model changed');
     if (was.effort !== is.effort) changes.push('The effort changed');
     if (was.access !== is.access || was.freeAgentMode !== is.freeAgentMode) changes.push('Access changed');
+    if (was.sandbox !== is.sandbox) changes.push('Sandbox changed');
+    if (was.approvalPolicy !== is.approvalPolicy) changes.push('Approval policy changed');
   }
   if (changes.length === 0) changes.push('Its settings changed');
   return { managed: true, running, waiting: true, changes, deliveredAt: record.deliveredAt, cliChanged, ...notice };

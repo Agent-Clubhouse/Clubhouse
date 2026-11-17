@@ -452,7 +452,7 @@ describe('CodexChatEventMapper', () => {
             description: 'needs to fetch deps',
             toolCallId: 'item-perm-1',
             toolName: 'permissions',
-            rawInput: request.params.permissions,
+            rawInput: { ...request.params.permissions, cwd: request.params.cwd, environmentId: request.params.environmentId },
             options: [
               { optionId: 'grantForTurn', kind: 'allow_once', label: 'Allow for this turn' },
               { optionId: 'grantForSession', kind: 'allow_session', label: 'Allow for this session' },
@@ -472,6 +472,13 @@ describe('CodexChatEventMapper', () => {
         expect(resolved?.reply).toEqual({ id: 11, method: 'item/permissions/requestApproval', result });
         expect(resolved?.event.data).toMatchObject({ decision: outcome });
       });
+    });
+
+    it('shows managed-network scope and returns denial without granting filesystem access', () => {
+      const request = { ...fx.commandApprovalRequest, params: { ...fx.commandApprovalRequest.params, networkApprovalContext: { host: 'git.example.test', protocol: 'https' } } };
+      const [event] = mapper.mapServerRequest(request)!;
+      expect(event).toMatchObject({ type: 'permission_request', data: { title: 'Allow https network access to git.example.test', rawInput: { networkApprovalContext: request.params.networkApprovalContext } } });
+      expect(mapper.resolvePermission(String(request.id), 'decline')?.reply).toEqual({ id: request.id, method: request.method, result: { decision: 'decline' } });
     });
 
     it('returns null for server requests the contract cannot express', () => {

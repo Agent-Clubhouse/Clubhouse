@@ -723,6 +723,14 @@ describe('applying settings a template or the builder carries (#2895)', () => {
     expect(agentConfig.updateDurableConfig).toHaveBeenLastCalledWith('/p', 'ada', { effort: null, idleSleep: null, helperTemplateId: null });
   });
 
+  it('passes independent overrides through the authorized target write, and reset clears only those fields (#3686)', async () => {
+    const guard = { prepare: vi.fn(async () => undefined), check: vi.fn() };
+    await applyManagedSettings('/target-host-project', 'ada', { sandbox: 'read-only', approvalPolicy: 'never' }, undefined, guard);
+    expect(agentConfig.updateDurableConfig).toHaveBeenLastCalledWith('/target-host-project', 'ada', { sandbox: 'read-only', approvalPolicy: 'never' }, undefined, guard);
+    await applyManagedSettings('/target-host-project', 'ada', { sandbox: null, approvalPolicy: null });
+    expect(agentConfig.updateDurableConfig).toHaveBeenLastCalledWith('/target-host-project', 'ada', { sandbox: null, approvalPolicy: null });
+  });
+
   it('forwards per-consumer authorization to both native settings and orchestration writes', async () => {
     const guard = { prepare: vi.fn(async () => undefined), check: vi.fn() };
     await applyManagedSettings('/p', 'ada', { model: 'opus', orchestration: { maxHelpers: 2 } }, undefined, guard);

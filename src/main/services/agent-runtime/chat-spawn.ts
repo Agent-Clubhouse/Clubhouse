@@ -1,4 +1,5 @@
 import { copilotProtocolRecovery } from '../../chat/copilot/compatibility';
+import { assertExecutionPolicy, type ExecutionPolicy } from '../../../shared/execution-policy';
 import { LogRedactor } from '../../../shared/log-redaction';
 /**
  * Starts an agent in the chat runtime when the experimental Chat flag is on,
@@ -52,7 +53,7 @@ import { routeHelperQuestion } from '../clubhouse-mcp/tools/helper-question-tool
 import { cleanSpawnEnv, getShellEnvironment, summarizeSpawnEnv } from '../../util/shell';
 import { missingEnvNotice, missingMcpEnv } from '../../../shared/mcp-start-problems';
 
-export interface ChatSpawnParams {
+export interface ChatSpawnParams extends ExecutionPolicy {
   agentId: string;
   projectPath: string;
   cwd: string;
@@ -682,6 +683,7 @@ async function runChatStart(
           }
         }
         guardPending = false;
+        assertExecutionPolicy(provider.id, 'chat', params, params.resume);
         const session = await driver.start({
         agentId: params.agentId,
         provider: provider.id,
@@ -693,6 +695,8 @@ async function runChatStart(
         ...(params.contextWindow ? { contextWindow: params.contextWindow } : {}),
         ...(params.effort ? { effort: params.effort } : {}),
         level,
+        ...(params.sandbox && { sandbox: params.sandbox }),
+        ...(params.approvalPolicy && { approvalPolicy: params.approvalPolicy }),
         systemPrompt: params.systemPrompt,
         resumeNativeSessionId: resumeId,
         mcpServers,

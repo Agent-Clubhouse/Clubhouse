@@ -1,3 +1,4 @@
+import { assertExecutionPolicy, hasExecutionPolicy, accessWithExecutionPolicy, type ExecutionPolicy } from '../../shared/execution-policy';
 import { activateLocalCausalInput, withLocalCausalInput } from './dispatcher-federation-local-work';
 import { captureFederationInputs, prepareFederationInputs } from './dispatcher-federation-context';
 import { redactSpawnArgs } from '../../shared/log-redaction';
@@ -91,7 +92,7 @@ export function expandHome(p: string): string {
 // Re-export registry functions for backward compatibility
 export { getAgentProjectPath, getAgentOrchestrator, getAgentNonce, untrackAgent, resolveOrchestrator } from './agent-registry';
 
-export interface SpawnAgentParams {
+export interface SpawnAgentParams extends ExecutionPolicy {
   agentId: string;
   projectPath: string;
   cwd: string;
@@ -559,6 +560,8 @@ async function spawnAgentInner(inParams: SpawnAgentParams, facts: SpawnFacts, ma
       try {
         durableConfig = await getDurableConfig(params.projectPath, params.agentId);
         if (durableConfig) {
+          if (params.sandbox === undefined && durableConfig.sandbox !== undefined) params = { ...params, sandbox: durableConfig.sandbox };
+          if (params.approvalPolicy === undefined && durableConfig.approvalPolicy !== undefined) params = { ...params, approvalPolicy: durableConfig.approvalPolicy };
           if (params.model === undefined && durableConfig.model) params = { ...params, model: durableConfig.model };
           if (isEffortValue(durableConfig.effort)) params = { ...params, effort: durableConfig.effort };
           if (params.agentFile === undefined && durableConfig.agentFile) params = { ...params, agentFile: durableConfig.agentFile };
@@ -575,6 +578,8 @@ async function spawnAgentInner(inParams: SpawnAgentParams, facts: SpawnFacts, ma
         });
       }
     }
+    assertExecutionPolicy(provider.id, 'chat', params);
+    if (configUnreadable && hasExecutionPolicy(params)) throw tagError(new Error('Cannot verify the saved execution policy'), 'preflight_failed');
     // Access (#2761): the level this start uses.
     let access: AccessLevel = configUnreadable ? 'ask' : spawnAccess(params, durableConfig, legacyMode);
     // An agent saved before #2761 that nobody has given a level yet starts exactly
@@ -599,6 +604,29 @@ async function spawnAgentInner(inParams: SpawnAgentParams, facts: SpawnFacts, ma
       }
       // Never above its orchestrator's five-level level, nor what start_helper asked (#3000).
       access = lowerAccess(access, capped.ceilingAccess);
+      const parentPolicy = agentRegistry.get(durableConfig.parentAgentId)?.launchCap;
+      // Independent restrictions follow helpers too; access alone cannot describe this boundary.
+      if (parentPolicy?.sandbox) {
+        const modes = ['read-only', 'workspace-write', 'danger-full-access'];
+        if (params.sandbox && modes.indexOf(params.sandbox) > modes.indexOf(parentPolicy.sandbox)) {
+          throw tagError(new Error('This helper’s sandbox exceeds its orchestrator’s sandbox.'), 'preflight_failed');
+        }
+        params = { ...params, sandbox: params.sandbox ?? parentPolicy.sandbox };
+      }
+      if (parentPolicy?.approvalPolicy) {
+        const policies = ['untrusted', 'on-request', 'never'];
+        if (params.approvalPolicy && policies.indexOf(params.approvalPolicy) > policies.indexOf(parentPolicy.approvalPolicy)) {
+          throw tagError(new Error('This helper’s approval policy exceeds its orchestrator’s policy.'), 'preflight_failed');
+        }
+        params = { ...params, approvalPolicy: params.approvalPolicy ?? parentPolicy.approvalPolicy };
+      }
+      assertExecutionPolicy(provider.id, 'chat', params);
+      if (ACCESS_LEVELS.indexOf(accessWithExecutionPolicy(access, {
+        ...(parentPolicy?.sandbox ? {} : { sandbox: params.sandbox }),
+        ...(parentPolicy?.approvalPolicy ? {} : { approvalPolicy: params.approvalPolicy }),
+      })) > ACCESS_LEVELS.indexOf(capped.ceilingAccess)) {
+        throw tagError(new Error('This helper’s independent policy exceeds its orchestrator’s access ceiling.'), 'preflight_failed');
+      }
     }
     params = { ...params, access, freeAgentMode: launch.freeAgentMode, permissionMode: launch.permissionMode };
     const permissionMode = launch.permissionMode;
@@ -606,7 +634,9 @@ async function spawnAgentInner(inParams: SpawnAgentParams, facts: SpawnFacts, ma
     await prepareMcpBridge(durableConfig);
     // The final launch access, the ceiling for this agent's helpers (#2228).
     // Every runtime below starts with exactly these values.
-    agentRegistry.setLaunchCap(params.agentId, { freeAgentMode: launch.freeAgentMode, permissionMode, access });
+    agentRegistry.setLaunchCap(params.agentId, { freeAgentMode: launch.freeAgentMode, permissionMode, access,
+      ...(params.sandbox && { sandbox: params.sandbox }), ...(params.approvalPolicy && { approvalPolicy: params.approvalPolicy }),
+    });
     // A quick agent's default tools follow its level (#3007): at Plan or Ask first nothing that
     // edits or runs commands is pre-allowed, so the level picked is the level it gets. Copilot
     // runs a terminal quick agent one-shot (-p), where it can't ask: its defaults stay, as
@@ -728,6 +758,8 @@ async function spawnAgentInner(inParams: SpawnAgentParams, facts: SpawnFacts, ma
           freeAgentMode: p.freeAgentMode,
           permissionMode,
           access: p.access,
+          ...(p.sandbox && { sandbox: p.sandbox }),
+          ...(p.approvalPolicy && { approvalPolicy: p.approvalPolicy }),
           resume: p.resume,
           strictResume: p.strictResume,
           sessionId: p.sessionId,
@@ -788,6 +820,8 @@ async function spawnAgentInner(inParams: SpawnAgentParams, facts: SpawnFacts, ma
         // Auto, where a check decides, never skipping every prompt (#2761).
         permissionMode: params.access === 'full_access' ? 'skip-all' : 'auto',
         access: params.access,
+        ...(params.sandbox && { sandbox: params.sandbox }),
+        ...(params.approvalPolicy && { approvalPolicy: params.approvalPolicy }),
       });
 
       if (headlessResult) {
@@ -1025,6 +1059,8 @@ async function spawnPtyAgent(
       freeAgentMode: params.freeAgentMode,
       permissionMode,
       access: params.access,
+      ...(params.sandbox && { sandbox: params.sandbox }),
+      ...(params.approvalPolicy && { approvalPolicy: params.approvalPolicy }),
       resume: params.resume,
       sessionId: params.sessionId,
       agentFile: params.agentFile,

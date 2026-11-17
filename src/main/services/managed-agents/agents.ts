@@ -1,3 +1,4 @@
+import { accessWithExecutionPolicy, validateExecutionPolicy, hasExecutionPolicy } from '../../../shared/execution-policy';
 /**
  * Agent-level managed operations (#2893): create a managed agent, preview
  * and switch an existing one to managed, and apply a template's settings.
@@ -83,7 +84,7 @@ function newAgentLevel(projectPath: string, access: boolean | AccessLevel | unde
   return accessForNewAgent(typeof access === 'boolean' ? { freeAgentMode: access } : { access }, projectPath);
 }
 
-const namesAccess = (s: ManagedTemplateSettings | undefined) => s?.access !== undefined || s?.freeAgentMode !== undefined;
+const namesAccess = (s: ManagedTemplateSettings | undefined) => s?.access !== undefined || s?.freeAgentMode !== undefined || (s !== undefined && hasExecutionPolicy(s));
 
 async function availableOrchestrator(projectPath: string, orchestrator: ManagedTemplateSettings['orchestrator']) {
   const provider = await resolveOrchestrator(projectPath, orchestrator);
@@ -122,6 +123,8 @@ export async function applyManagedSettings(
   if (settings.orchestrator !== undefined) updates.orchestrator = settings.orchestrator;
   if (settings.model !== undefined) updates.model = settings.model;
   if (settings.effort !== undefined) updates.effort = settings.effort;
+  if (settings.sandbox !== undefined) updates.sandbox = settings.sandbox;
+  if (settings.approvalPolicy !== undefined) updates.approvalPolicy = settings.approvalPolicy;
   if (settings.access !== undefined) updates.access = settings.access;
   else if (settings.freeAgentMode !== undefined) updates.freeAgentMode = settings.freeAgentMode;
   if (settings.idleSleep !== undefined) updates.idleSleep = settings.idleSleep;
@@ -173,13 +176,14 @@ export async function prepareManagedAgentCreation(projectPath: string, input: Cr
   const from = (base?.settings ? withAccess(base.settings, getPermissionMode(projectPath)).access : undefined) ?? getDefaultAccess();
   const own = input.settings ? callerAccess(input.settings, from, getPermissionMode(projectPath)) : {};
   const settings: ManagedTemplateSettings = { ...(base?.settings ?? {}), ...own };
+  validateExecutionPolicy(settings);
   if (base?.settings.orchestration || input.settings?.orchestration) {
     settings.orchestration = { ...(base?.settings.orchestration ?? {}), ...(input.settings?.orchestration ?? {}) };
   }
   const setup: Omit<ManagedAgentSetup, 'version'> = input.setup
     ? { ...input.setup, ...(input.templateId && { templateId: input.templateId }) }
     : base?.setup ?? { blocks: [BUILTIN_BLOCK_IDS.identity], skills: [], mcps: [CLUBHOUSE_MCP_PART_ID] };
-  checkAccess?.(newAgentLevel(projectPath, settings.access ?? settings.freeAgentMode), namesAccess(input.settings) ? 'settings' : namesAccess(base?.settings) ? 'template' : 'default');
+  checkAccess?.(accessWithExecutionPolicy(newAgentLevel(projectPath, settings.access ?? settings.freeAgentMode), settings), namesAccess(input.settings) ? 'settings' : namesAccess(base?.settings) ? 'template' : 'default');
   settings.orchestrator = await availableOrchestrator(projectPath, settings.orchestrator);
   return { settings, setup };
 }
@@ -188,7 +192,7 @@ export async function createManagedAgent(projectPath: string, input: CreateManag
   if (input.managed === false) return createPlainAgent(projectPath, input, checkAccess);
   const service = managedAgents();
   const { settings, setup } = prepared ?? await prepareManagedAgentCreation(projectPath, input, checkAccess);
-  if (prepared) checkAccess?.(newAgentLevel(projectPath, settings.access ?? settings.freeAgentMode), 'settings');
+  if (prepared) checkAccess?.(accessWithExecutionPolicy(newAgentLevel(projectPath, settings.access ?? settings.freeAgentMode), settings), 'settings');
   // Managed agents always get their own folder: a worktree in a git project, a plain folder otherwise.
   // Only the setup goes in it, delivered at start: never the project's legacy agent defaults (#3243).
   const config = await createAgentRecord(projectPath, input, settings);
@@ -196,6 +200,8 @@ export async function createManagedAgent(projectPath: string, input: CreateManag
     await service.saveSetup(projectPath, config.id, setup);
     // What createDurable doesn't take: orchestration, effort, auto-sleep, the helper template and permissions.
     const rest: ManagedTemplateSettings = {
+      ...(settings.sandbox && { sandbox: settings.sandbox }),
+      ...(settings.approvalPolicy && { approvalPolicy: settings.approvalPolicy }),
       ...(settings.orchestration && Object.keys(settings.orchestration).length > 0 && { orchestration: settings.orchestration }),
       ...(settings.effort && { effort: settings.effort }),
       ...(settings.idleSleep && { idleSleep: settings.idleSleep }),
@@ -221,14 +227,19 @@ export async function createManagedAgent(projectPath: string, input: CreateManag
 async function createPlainAgent(projectPath: string, input: CreateManagedAgentInput, checkAccess?: NewAgentAccessCheck): Promise<DurableAgentConfig> {
   if (input.templateId || input.setup) throw new ManagedError('invalid', 'A plain agent has no template or parts.');
   const settings = input.settings ?? {};
+  validateExecutionPolicy(settings);
   if (settings.access !== undefined && !isAccessLevel(settings.access)) throw new ManagedError('invalid', 'access must be plan, ask, auto_edit, auto or full_access.');
   if (settings.freeAgentMode !== undefined && typeof settings.freeAgentMode !== 'boolean') throw new ManagedError('invalid', 'freeAgentMode must be true or false.');
-  checkAccess?.(newAgentLevel(projectPath, settings.access ?? settings.freeAgentMode), namesAccess(settings) ? 'settings' : 'default');
+  checkAccess?.(accessWithExecutionPolicy(newAgentLevel(projectPath, settings.access ?? settings.freeAgentMode), settings), namesAccess(settings) ? 'settings' : 'default');
   const orchestrator = await availableOrchestrator(projectPath, settings.orchestrator);
   const config = await createAgentRecord(projectPath, input, { ...settings, orchestrator });
-  if (settings.orchestration && Object.keys(settings.orchestration).length > 0) {
+  if (hasExecutionPolicy(settings) || (settings.orchestration && Object.keys(settings.orchestration).length > 0)) {
     try {
-      await applyManagedSettings(projectPath, config.id, { orchestration: settings.orchestration });
+      await applyManagedSettings(projectPath, config.id, {
+        ...(settings.sandbox && { sandbox: settings.sandbox }),
+        ...(settings.approvalPolicy && { approvalPolicy: settings.approvalPolicy }),
+        ...(settings.orchestration && { orchestration: settings.orchestration }),
+      });
     } catch (err) {
       // Leave no half-made agent: its settings didn't apply, so remove it with the folder and branch it was just given.
       await agentConfig.deleteDurable(projectPath, config.id).catch(() => {});

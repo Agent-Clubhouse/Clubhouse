@@ -1,3 +1,4 @@
+import { hasExecutionPolicy } from '../../../shared/execution-policy';
 /**
  * Delivery for Clubhouse-managed agents (#2896). At each session start the
  * agent gets exactly its setup: its instruction blocks joined in order, its
@@ -161,6 +162,8 @@ export async function managedSettingsRows(service: ManagedAgentsService, agent: 
     model: agent.model,
     effort: agent.effort,
     access,
+    ...(agent.sandbox && { sandbox: agent.sandbox }),
+    ...(agent.approvalPolicy && { approvalPolicy: agent.approvalPolicy }),
     ...(startsAt !== access && { accessStartsAt: { level: startsAt, runtime: runtime! } }),
     orchestration: agent.orchestration,
     helperTemplateName,
@@ -768,6 +771,8 @@ export interface DeliveryRecord {
 
 /** Settings only a start delivers: launch flags, or the chat session's options. */
 interface LaunchSettings {
+  sandbox?: string;
+  approvalPolicy?: string;
   model: string | null;
   effort: string | null;
   access: string | null;
@@ -784,6 +789,8 @@ export function setupFingerprint(agent: DurableAgentConfig, resolved: Resolved):
   for (const p of [...resolved.blocks, ...resolved.skills, ...resolved.mcps]) parts[p.id] = { name: p.name, revision: p.revision };
   const order = [...resolved.blocks.map((b) => b.id), '|', ...resolved.skills.map((s) => s.id), '|', ...resolved.mcps.map((m) => m.id)];
   const launch: LaunchSettings = {
+    ...(agent.sandbox && { sandbox: agent.sandbox }),
+    ...(agent.approvalPolicy && { approvalPolicy: agent.approvalPolicy }),
     model: agent.model ?? null, effort: agent.effort ?? null,
     // Access (#2761). Ask first and unset start the same way.
     access: agent.access !== undefined && agent.access !== 'ask' ? agent.access : null,
@@ -954,6 +961,9 @@ export async function quickManagedLaunch(params: {
   // setupFromTemplate keeps only the parts that still exist, so what it dropped
   // is what's missing: the template's own list minus what came back.
   const template = await params.service.getTemplate(params.templateId);
+  if (hasExecutionPolicy(template.settings)) {
+    throw new Error('Independent execution settings in a template require a durable agent. Quick templates currently deliver parts only.');
+  }
   const { setup: fromTemplate } = await params.service.setupFromTemplate(params.templateId);
   const { setup, changes } = await quickRunSetup(params.service, withWorkingIdentity(fromTemplate), params, { mcpLaunchFlags: params.mcpLaunchFlags });
   const resolved = await resolveSetup(params.service, { version: 1, ...setup });

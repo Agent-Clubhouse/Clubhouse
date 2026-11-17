@@ -66,7 +66,7 @@ interface RepoTemplate {
 }
 
 /** The only settings a template file may hold. Anything else refuses the file. */
-const SETTINGS_FIELDS = new Set(['orchestrator', 'model', 'effort', 'access', 'freeAgentMode', 'orchestration', 'idleSleep', 'helperTemplateId', 'grants']);
+const SETTINGS_FIELDS = new Set(['orchestrator', 'model', 'effort', 'sandbox', 'approvalPolicy', 'access', 'freeAgentMode', 'orchestration', 'idleSleep', 'helperTemplateId', 'grants']);
 /** Settings that carry no authority. Every other setting needs the person's tick. */
 const PLAIN_SETTINGS = new Set(['orchestrator', 'model', 'effort', 'idleSleep']);
 /** Keys that could reach an object's prototype once copied. Refused at any depth. */
