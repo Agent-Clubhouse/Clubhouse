@@ -47,7 +47,7 @@ test('claude: a list starts after text and sent messages keep blank lines and li
   await composer.press('Shift+Enter');
   await composer.pressSequentially('- item');
   await expect(composer.locator('ul > li')).toHaveText(['item']);
-  await expect(composer.locator('p')).toHaveText(['intro']);
+  await expect(composer.locator(':scope > p')).toHaveText(['intro']);
   await composer.press('Shift+Enter');
   await composer.pressSequentially('more');
   await expect(composer.locator('ul > li')).toHaveText(['item', 'more']);
