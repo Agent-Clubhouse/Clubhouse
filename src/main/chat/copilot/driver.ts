@@ -416,7 +416,6 @@ export class CopilotSdkChatSession implements ChatDriverSession {
     });
   }
 
-  /** The model menu. It needs a real login, so it's best-effort and never holds a start up. */
   /**
    * Once per session, say when a start that loads every tool has more than the
    * ceiling, so the runtime's search is back and #3615's omission with it.
@@ -442,6 +441,7 @@ export class CopilotSdkChatSession implements ChatDriverSession {
     });
   }
 
+  /** The model menu. It needs a real login, so it's best-effort and never holds a start up. */
   private async loadModels(): Promise<void> {
     try {
       this.models = await withTimeout(this.client.listModels(), MODEL_LIST_TIMEOUT_MS, 'Listing models');
