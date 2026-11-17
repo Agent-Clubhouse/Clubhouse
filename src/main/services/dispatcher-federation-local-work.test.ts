@@ -155,7 +155,7 @@ describe('durable local delegation through real chat-runtime/ALS input', () => {
     expect((await controller.runtime.sendMessage('Human second', { source: 'user' })).delivery).toBe('queued');
     expect(controller.driver.last.sent).toHaveLength(1);
     await controller.turn();
-    await expect(federation().offer('controller', 'other-desktop', 'remote-controller', 'racing', 'Still handling remote')).rejects.toThrow('depth limit');
+    expect((await federation().offer('controller', 'other-desktop', 'remote-controller', 'racing', 'Still handling remote')).cause.depth).toBe(8);
     await controller.end(); await controller.turn();
     expect(controller.driver.last.sent).toHaveLength(2);
     expect(federationTurnInputs('controller')).toEqual([]);
@@ -166,7 +166,7 @@ describe('durable local delegation through real chat-runtime/ALS input', () => {
     await controller.turn();
     expect(federationTurnInputs('controller')).toHaveLength(30);
     expect(federationTurnInputs('controller').some((r) => r.id === 'deep')).toBe(true);
-    await expect(federation().offer('controller', 'other-desktop', 'remote-controller', 'coalesced', 'Continue results')).rejects.toThrow('depth limit');
+    expect((await federation().offer('controller', 'other-desktop', 'remote-controller', 'coalesced', 'Continue results')).cause.depth).toBe(8);
   });
   it('delivers a delegated task through the real PTY paste/submit boundary and tracks its later result', async () => {
     const controller = desktop('controller'); await controller.start();
@@ -233,7 +233,7 @@ describe('durable local delegation through real chat-runtime/ALS input', () => {
     const sent = await federation().offer('controller', 'other-desktop', 'remote-controller', 'next', 'Follow up');
     expect(sent.cause).toEqual({ rootId: 'root', depth: 4, parentId: 'remote-request' });
   });
-  it('trips a real multi-turn two-desktop loop through local workers at depth eight', async () => {
+  it('continues related two-desktop work through local workers beyond eight hops', async () => {
     const a = desktop('a'); const b = desktop('b'); const aw = desktop('a-worker'); const bw = desktop('b-worker');
     for (const agent of [a, b, aw, bw]) await agent.start();
     const peers = new Map<string, ReturnType<typeof createFederatedRequests>>();
@@ -251,7 +251,7 @@ describe('durable local delegation through real chat-runtime/ALS input', () => {
     };
     const aa = make(a, 'a', 'b'); const bb = make(b, 'b', 'a');
     expect((await aa.offer('a', 'b', 'b', 'initial', 'Start loop')).cause.depth).toBe(0);
-    for (let depth = 1; depth <= 8; depth++) {
+    for (let depth = 1; depth <= 16; depth++) {
       const controller = depth % 2 ? b : a; const worker = depth % 2 ? bw : aw;
       const api = depth % 2 ? bb : aa; const other = depth % 2 ? 'a' : 'b';
       await controller.turn();
@@ -260,8 +260,7 @@ describe('durable local delegation through real chat-runtime/ALS input', () => {
       await worker.turn(); await controller.end(); await worker.end();
       await withLocalCausalCall(worker.runtime.agentId, { task_id: task }, () => controller.runtime.sendMessage('Result', { source: 'mcp', taskId: task })); await controller.turn();
       const offered = api.offer(controller.runtime.agentId, other, other, task, 'Continue the actual result');
-      if (depth === 8) await expect(offered).rejects.toThrow('depth limit');
-      else expect((await offered).cause.depth).toBe(depth);
+      expect((await offered).cause.depth).toBe(depth);
       await controller.end();
     }
   });

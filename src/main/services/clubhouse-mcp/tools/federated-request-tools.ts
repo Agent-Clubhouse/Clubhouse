@@ -1,6 +1,7 @@
 import { mcpAdapter } from '../mcp-adapter';
 import { registerGlobalTool } from '../tool-registry';
 import { federatedRequests } from '../../dispatcher-federation-runtime';
+import { FederationRefusal } from '../../../../shared/dispatcher-federation-requests';
 import type { FederationOutcome, FederationTriage } from '../../../../shared/dispatcher-federation-requests';
 import type { McpToolResult } from '../types';
 const result = (value: unknown, isError = false): McpToolResult => ({ content: [{ type: 'text', text: typeof value === 'string' ? value : JSON.stringify(value) }], ...(isError && { isError }) });
@@ -23,7 +24,7 @@ export function registerFederatedRequestTools(): void {
     const api = federatedRequests();
     if (!api || typeof args.id !== 'string' || typeof args.reason !== 'string') return result('Give id, choice and reason.', true);
     try { return result(await api.triage(agentId, args.id, args.choice as FederationTriage, args.reason)); }
-    catch (err) { return result(err instanceof Error ? err.message : String(err), true); }
+    catch (err) { return result(err instanceof FederationRefusal ? { error: err.details() } : err instanceof Error ? err.message : String(err), true); }
   }, { group: 'dispatcher', grant: { actions: ['agent.message'], target: 'self' } });
   registerGlobalTool('report_remote_request', {
     description: 'Explicitly report under_way, waiting_user, answered, declined or failed for an incoming request. Reports correlate to its origin request and cannot reset causal depth. Use answered only after the work is actually done, never for a receipt or turn end.',
@@ -32,6 +33,6 @@ export function registerFederatedRequestTools(): void {
     const api = federatedRequests();
     if (!api || typeof args.id !== 'string' || typeof args.message !== 'string' || !['under_way', 'waiting_user', 'answered', 'declined', 'failed'].includes(String(args.outcome))) return result('Give id, outcome and message.', true);
     try { return result(await api.report(agentId, args.id, args.outcome as FederationOutcome, args.message)); }
-    catch (err) { return result(err instanceof Error ? err.message : String(err), true); }
+    catch (err) { return result(err instanceof FederationRefusal ? { error: err.details() } : err instanceof Error ? err.message : String(err), true); }
   }, { group: 'dispatcher', grant: { actions: ['agent.message'], target: 'self' } });
 }

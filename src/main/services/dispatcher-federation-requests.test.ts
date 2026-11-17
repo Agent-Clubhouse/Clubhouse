@@ -63,16 +63,16 @@ function fixture() {
 }
 
 describe('federated request delivery and explicit outcomes (#3347, #3346)', () => {
-  it.each(['depth', 'rate'])('emits an identifier-free limit event when the first crossing trips %s without a parent', async (kind) => {
+  it('emits an identifier-free limit event when the first crossing meets rate backpressure without a parent', async () => {
     const f = fixture();
     f.a.deps.recordLimit = recordFederationLimit;
-    if (kind === 'rate') await f.a.deps.store.update((file) => { file.crossings.Laptop = Array(FEDERATED_REQUEST_LIMITS.perMinute).fill(f.a.deps.now()); });
+    await f.a.deps.store.update((file) => { file.crossings.Laptop = Array(FEDERATED_REQUEST_LIMITS.perMinute).fill(f.a.deps.now()); });
     const capture = captureEvents();
     try {
-      await expect(f.a.api.crossing('Laptop', { rootId: 'private-first-root', depth: kind === 'depth' ? FEDERATED_REQUEST_LIMITS.depth : 0 }, { message: 'private news' }, 'send_message')).rejects.toThrow(`${kind === 'depth' ? 'depth' : 'rate'} limit`);
+      await expect(f.a.api.crossing('Laptop', { rootId: 'private-first-root', depth: 0 }, { message: 'private news' }, 'send_message')).rejects.toThrow('rate limit');
       expect(f.a.file().requests).toEqual([]);
       expect(f.a.file().news ?? {}).toEqual({});
-      expect(f.a.api.allowed('Laptop', {})).toBe(false);
+      expect(f.a.api.allowed('Laptop', {})).toBe(true);
       expect(capture.named('clubhouse.dispatcher.federation')).toEqual([expect.objectContaining({ attrs: { 'clubhouse.federation.event': 'limit' } })]);
     } finally { capture.stop(); }
   });
@@ -164,35 +164,96 @@ describe('federated request delivery and explicit outcomes (#3347, #3346)', () =
     expect(f.a.file().paused).toEqual({});
     expect(f.b.file().paused).toEqual({});
   });
-  it('inherits depth over alternating machines and pauses both ends of a loop', async () => {
-    const f = fixture(); await f.offer(); await f.pump();
-    for (let i = 1; i < FEDERATED_REQUEST_LIMITS.depth; i++) {
-      const from = i % 2 ? f.b : f.a; const to = i % 2 ? f.a : f.b;
-      await from.api.offer(from.self.agentId, to.self.machineId, to.self.agentId, `step-${i}`, `Continue step ${i}`);
+  it('allows 120 related autonomous hops with identical payloads and preserved ancestry', async () => {
+    const f = fixture();
+    let root: string | undefined;
+    for (let depth = 0; depth < 120; depth++) {
+      const from = depth % 2 ? f.b : f.a; const to = depth % 2 ? f.a : f.b;
+      const sent = await from.api.offer(from.self.agentId, to.self.machineId, to.self.agentId, `hop-${depth}`, 'Continue the same work');
+      root ??= sent.cause.rootId;
+      expect(sent.cause).toMatchObject({ rootId: root, depth });
       await f.pump();
+      await to.api.report(to.self.agentId, sent.id, 'answered', 'Continue the same work');
+      await f.pump(); await f.a.api.reconcile(); await f.b.api.reconcile();
+      f.advance(60_001); // Respect unchanged rate and queue resource controls.
     }
-    await expect(f.a.api.offer(f.a.self.agentId, 'Laptop', f.b.self.agentId, 'too-deep', 'Continue')).rejects.toThrow('depth limit');
-    await f.pump();
-    expect(f.a.file().paused.Laptop).toContain('depth limit');
-    expect(f.b.file().paused.Desktop).toContain('depth limit');
-    expect(f.a.deps.present).toHaveBeenCalledWith(expect.anything(), 'pause');
-    expect(f.b.deps.present).toHaveBeenCalledWith(expect.anything(), 'pause');
+    expect(f.a.file().paused).toEqual({}); expect(f.b.file().paused).toEqual({});
+    expect(f.a.deps.recordLimit).not.toHaveBeenCalled(); expect(f.b.deps.recordLimit).not.toHaveBeenCalled();
+    expect(f.a.deps.present).not.toHaveBeenCalledWith(expect.anything(), 'pause');
+  }, 60_000);
+  it('ignores only retired automatic limit envelopes, retaining human and unknown reasons', async () => {
+    const f = fixture();
+    for (const reason of ['The cross-machine causal depth limit was reached.', 'The controller link rate limit was reached.', 'The controller link queue is full.']) {
+      await f.a.api.receive(f.b.self, f.a.self.agentId, { rootId: 'old-limit', depth: 800 }, { v: 1, kind: 'pause', reason });
+    }
+    expect(f.a.file().paused).toEqual({});
+    for (const reason of ['Paused by the person', 'An unknown pause']) {
+      await f.a.api.receive(f.b.self, f.a.self.agentId, { rootId: 'pause', depth: 0 }, { v: 1, kind: 'pause', reason });
+      expect(f.a.file().paused.Laptop).toBe(reason);
+    }
   });
-  it('pauses a rate-limited link and refuses work until it is taken back explicitly', async () => {
+  it('refuses sustained rate excess without pausing or retrying, and admits work after the window', async () => {
     const f = fixture();
     for (let i = 0; i < FEDERATED_REQUEST_LIMITS.perMinute; i++) await f.a.api.offer(f.a.self.agentId, 'Laptop', f.b.self.agentId, `r-${i}`, 'Work');
-    await expect(f.a.api.offer(f.a.self.agentId, 'Laptop', f.b.self.agentId, 'over-limit', 'Work')).rejects.toThrow('rate limit');
+    const first = f.a.file().requests[0];
+    for (let i = 0; i < 50; i++) await expect(f.a.api.offer(f.a.self.agentId, 'Laptop', f.b.self.agentId, `over-${i}`, 'Work')).rejects.toMatchObject({ code: 'rate_limited', retryAfterMs: 60_000 });
+    expect(f.a.api.allowed('Laptop', {})).toBe(true); expect(f.a.file().paused).toEqual({});
+    expect(f.a.file().pauseNotices).toBeUndefined(); expect(f.a.deps.present).not.toHaveBeenCalled();
+    expect(f.a.file().requests).toHaveLength(20); expect(f.a.deps.send).toHaveBeenCalledTimes(20);
+    await f.a.api.offer(f.a.self.agentId, 'Laptop', f.b.self.agentId, 'r-0', 'Work'); // Existing id still replays at capacity.
+    expect(f.a.file().requests[0].cause).toEqual(first.cause);
     f.advance(60_001);
-    await expect(f.a.api.offer(f.a.self.agentId, 'Laptop', f.b.self.agentId, 'after-window', 'Work')).rejects.toThrow('paused');
+    expect((await f.a.api.offer(f.a.self.agentId, 'Laptop', f.b.self.agentId, 'after-window', 'Work')).delivery).toBe('accepted');
+    expect(f.a.deps.send).toHaveBeenCalledTimes(21);
   });
-  it('bounds the offline queue independently of the rate window', async () => {
-    const f = fixture();
+  it('refuses queue excess without pausing and recovers as existing work leaves the queue', async () => {
+    const f = fixture(); f.disconnect();
     for (let i = 0; i < FEDERATED_REQUEST_LIMITS.queued; i++) {
       if (i === FEDERATED_REQUEST_LIMITS.perMinute) f.advance(60_001);
       await f.a.api.offer(f.a.self.agentId, 'Laptop', f.b.self.agentId, `queued-${i}`, 'Work');
     }
-    await expect(f.a.api.offer(f.a.self.agentId, 'Laptop', f.b.self.agentId, 'queue-overflow', 'Work')).rejects.toThrow('queue is full');
+    const causes = f.a.file().requests.map((r) => r.cause);
+    for (let i = 0; i < 10; i++) await expect(f.a.api.offer(f.a.self.agentId, 'Laptop', f.b.self.agentId, `queue-overflow-${i}`, 'Work')).rejects.toMatchObject({ code: 'queue_full', retryAfterMs: 1000 });
     expect(f.a.api.list(f.a.self.agentId)).toHaveLength(FEDERATED_REQUEST_LIMITS.queued);
+    expect(f.a.file().paused).toEqual({}); expect(f.a.deps.send).toHaveBeenCalledTimes(30);
+    for (const status of f.statuses.values()) status.state = 'delivered';
+    await f.a.api.reconcile();
+    expect(f.a.file().requests.map((r) => r.cause)).toEqual(causes);
+    expect((await f.a.api.offer(f.a.self.agentId, 'Laptop', f.b.self.agentId, 'queue-recovered', 'Work')).delivery).toBe('accepted');
+    expect(f.a.deps.send).toHaveBeenCalledTimes(31);
+  });
+  it('rejects unsafe direct news causes before writing any state', async () => {
+    const f = fixture(); const before = f.a.file();
+    const cause = { rootId: 'overflow', depth: Number.MAX_SAFE_INTEGER + 1 };
+    await expect(f.a.api.outgoingNews('Laptop', f.b.self.agentId, cause, { message: 'overflow' })).rejects.toMatchObject({ code: 'depth_unrepresentable' });
+    await expect(f.a.api.news(f.b.self, f.a.self.agentId, cause, { message: 'overflow' })).rejects.toMatchObject({ code: 'depth_unrepresentable' });
+    expect(f.a.file()).toEqual(before);
+  });
+  it('rate-admits an unmarked legacy reply only once before its existing retry', async () => {
+    const f = fixture(); const sent = await f.offer(); await f.pump();
+    await f.b.deps.store.update((file) => {
+      const r = file.requests.find((r) => r.id === sent.id)!;
+      r.outcome = 'answered'; r.revision = 1;
+      r.replies = [{ revision: 1, outcome: 'answered', text: 'Legacy accepted report', expiresAt: f.b.deps.now() + 100_000 }];
+      file.crossings.Desktop = Array(20).fill(f.b.deps.now());
+    });
+    await f.b.api.reconcile(); expect(f.b.deps.send).not.toHaveBeenCalled();
+    f.advance(60_001); await f.b.api.reconcile();
+    expect(f.b.deps.send).toHaveBeenCalledTimes(1);
+    expect(f.b.file().requests[0].replies?.[0].rateAdmitted).toBe(true);
+    expect(f.b.file().crossings.Desktop).toHaveLength(1);
+    await f.b.api.reconcile(); expect(f.b.file().crossings.Desktop).toHaveLength(1);
+  });
+  it('never leaves a pending-news marker for rate-refused input, including concurrent attempts', async () => {
+    const f = fixture();
+    await f.b.deps.store.update((file) => { file.crossings.Desktop = Array(20).fill(f.b.deps.now()); });
+    const send = () => f.b.api.news(f.a.self, f.b.self.agentId, { rootId: 'rate-news', depth: 900 }, { message: 'news' }, 'send_message', 'same-delivery');
+    const attempts = await Promise.allSettled([send(), send(), send()]);
+    expect(attempts.every((r) => r.status === 'rejected' && r.reason.code === 'rate_limited')).toBe(true);
+    expect(Object.values(f.b.file().pendingNews ?? {})).toHaveLength(0);
+    expect(f.b.file().paused).toEqual({}); expect(f.b.file().crossings.Desktop).toHaveLength(20);
+    f.advance(60_001); const accepted = await send();
+    expect(await send()).toEqual(accepted); expect(f.b.file().crossings.Desktop).toHaveLength(1);
   });
   it('inherits only news delivered into this turn, and retains the latest sample', async () => {
     const f = fixture();

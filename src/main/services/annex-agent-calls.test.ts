@@ -800,15 +800,18 @@ describe('durable receipts and crash boundaries (#3334)', () => {
     expect(posts.filter((p) => p.path.endsWith('agent-call'))).toHaveLength(0);
   });
 
-  it('persists trusted causal context outside agent arguments and enforces the depth bound', async () => {
+  it('persists trusted causal context outside agent arguments without imposing a hop ceiling', async () => {
     connected = false;
     const context = { rootId: 'root', depth: 3, parentId: 'parent' };
     await forwardAgentCall('here', `there@${OTHER}`, 'Far agent', 'send_message', { message: 'one', idempotency_key: 'context-1' }, now, context);
     restart();
     expect(waitingFor(OTHER)[0].body.context).toEqual(context);
     expect(waitingFor(OTHER)[0].body.args).not.toHaveProperty('context');
-    expect((await forwardAgentCall('here', `there@${OTHER}`, 'Far agent', 'send_message', { message: 'two' }, now, { rootId: 'root', depth: 9 })).isError).toBe(true);
-    expect(waitingFor(OTHER)).toHaveLength(1);
+    expect((await forwardAgentCall('here', `there@${OTHER}`, 'Far agent', 'send_message', { message: 'two' }, now, { rootId: 'root', depth: 1000 })).isError).toBeFalsy();
+    expect(waitingFor(OTHER)).toHaveLength(2);
+    for (const depth of [-1, 1.5, Infinity, Number.MAX_SAFE_INTEGER + 1]) {
+      expect((await forwardAgentCall('here', `there@${OTHER}`, 'Far agent', 'send_message', { message: 'invalid' }, now, { rootId: 'root', depth })).isError).toBe(true);
+    }
   });
 
   it('routes only fixed controller capabilities before editable directions and never falls through when disabled', async () => {
@@ -829,7 +832,7 @@ describe('durable receipts and crash boundaries (#3334)', () => {
     expect(await receiveAgentCall(OTHER, body, now)).toMatchObject({ error: 'dispatcher_unavailable' });
     expect(receive).toHaveBeenCalledTimes(1);
     expect(await receiveAgentCall(OTHER, { ...body, to: 'receiver' }, now)).toMatchObject({ error: 'tool_not_allowed' });
-    expect(await receiveAgentCall(OTHER, { ...body, context: { rootId: 'real', depth: 9 } }, now)).toMatchObject({ error: 'invalid_call' });
+    expect(await receiveAgentCall(OTHER, { ...body, context: { rootId: 'real', depth: -1 } }, now)).toMatchObject({ error: 'invalid_call' });
   });
 
   it('rejects changed content even while the original durable call is still running', async () => {

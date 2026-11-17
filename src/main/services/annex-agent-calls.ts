@@ -1,4 +1,5 @@
 import { activeAgentLinks } from '../../shared/connection-grants';
+import { FederationRefusal } from '../../shared/dispatcher-federation-requests';
 import { federationRequestRouter } from './dispatcher-federation-policy';
 /**
  * Agents across machines (#3064, Annex Network stage 7).
@@ -72,7 +73,6 @@ const NAMES_MAX = 2000;
 const CLOCK_SKEW_MS = 5 * 60_000;
 /** How long a queued message refused as "not connected" is tried again, in case the link hasn't arrived there yet. */
 const NOT_CONNECTED_GRACE_MS = 10 * 60_000;
-export const ANNEX_CALL_MAX_DEPTH = 8;
 const DISPATCHER_CALL_TOOLS = FEDERATION_TOOLS;
 
 // ── Who is calling ──────────────────────────────────────────────────────────
@@ -247,7 +247,7 @@ export async function forwardPreparedAgentCall(callerId: string, targetId: strin
   if (!machine || !self || !transport) return text('That agent is on another machine, which this one is not connected to.', true);
   const machineName = transport.machineName(machine) ?? 'the other computer';
   if (!isNetworkComputer(machine)) return text(`${machineName} is not in this computer's Annex Network, so its agents can't be reached from here.`, true);
-  if (context !== undefined && !validContext(context)) return text('The trusted Annex causal context is invalid or exceeds its depth limit.', true);
+  if (context !== undefined && !validContext(context)) return text('The trusted Annex causal context is invalid.', true);
   args = structuredClone(args);
   if (context) context = structuredClone(context);
   const controllerLink = federationDirection({ agentId: callerId }, { agentId: to, machineId: machine })
@@ -271,7 +271,7 @@ export async function forwardPreparedAgentCall(callerId: string, targetId: strin
     ?? (previous ? { rootId: callId, depth: 0 } : undefined);
   if (!retainedContext && !context) {
     try { context = resolveCause?.(); }
-    catch (err) { return text(err instanceof Error ? err.message : String(err), true); } // telemetry-exempt: invalid ancestry selection is returned to the caller
+    catch (err) { return text(err instanceof FederationRefusal ? JSON.stringify({ error: err.details() }) : err instanceof Error ? err.message : String(err), true); } // telemetry-exempt: invalid ancestry selection is returned to the caller
   }
   context = retainedContext ?? context ?? { rootId: callId, depth: 0 };
   delete args.caused_by; // Local selector is not remote task data or part of idempotent payload identity.
@@ -297,7 +297,7 @@ export async function forwardPreparedAgentCall(callerId: string, targetId: strin
   }
   if (controllerLink && LOOP_TOOLS.has(tool)) {
     try { await federationRequestRouter()?.before(callerId, machine, to, context, args, tool); }
-    catch (err) { return text(err instanceof Error ? err.message : String(err), true); }
+    catch (err) { return text(err instanceof FederationRefusal ? JSON.stringify({ error: err.details() }) : err instanceof Error ? err.message : String(err), true); }
   }
   // Counted here too, so the limit holds for messages both ways (D233).
   if (LOOP_TOOLS.has(tool) && !hit(pairKey({ machine: self, agentId: callerId }, { machine, agentId: to }), LOOP_LIMIT.windowMs, LOOP_LIMIT.messages, now)) return text(LOOP_MESSAGE, true);
@@ -629,7 +629,7 @@ function validContext(raw: unknown): raw is AnnexCallContext {
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return false;
   const c = raw as Record<string, unknown>;
   const id = (v: unknown) => typeof v === 'string' && v.length > 0 && v.length <= 200;
-  return id(c.rootId) && Number.isSafeInteger(c.depth) && Number(c.depth) >= 0 && Number(c.depth) <= ANNEX_CALL_MAX_DEPTH
+  return id(c.rootId) && Number.isSafeInteger(c.depth) && Number(c.depth) >= 0
     && (c.parentId === undefined || id(c.parentId)) && Object.keys(c).every((k) => ['rootId', 'depth', 'parentId'].includes(k));
 }
 

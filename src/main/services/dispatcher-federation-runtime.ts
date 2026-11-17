@@ -19,6 +19,7 @@ import { appendTimeline } from './dispatcher/dispatcher-memory-timeline';
 import { recordFederationHandoff } from './dispatcher-federation-handoffs';
 import { remoteDispatcherLabelFor } from './dispatcher-presence';
 import { appLog } from './log-service';
+import { FederationRefusal, nextFederationDepth } from '../../shared/dispatcher-federation-requests';
 import type { McpToolResult } from './clubhouse-mcp/types';
 
 let requests: FederatedRequests | undefined;
@@ -128,14 +129,14 @@ export function startFederatedRequests(): () => void {
         const request = await instance.offer(callerId, target.machine, target.agentId, args.request_id, args.request, args.caused_by);
         return result({ request, message: `Waiting for ${peer}. Delivery and its explicit work outcome are recorded separately.` });
       }
-      catch (err) { return result(err instanceof Error ? err.message : String(err), true); }
+      catch (err) { return result(err instanceof FederationRefusal ? { error: err.details() } : err instanceof Error ? err.message : String(err), true); }
     },
     allowed: (machine, args, tool) => instance.allowed(machine, args, tool),
     pauseReason: (machine) => instance.pauseReason(machine),
     before: async (caller, machine, target, cause, args, tool) => instance.outgoingNews(machine, target, cause ?? { rootId: '', depth: 0 }, args, tool, caller),
     cause: (caller, args) => {
       const parent = instance.cause(caller, typeof args?.request_id === 'string' ? args.request_id : undefined, args?.caused_by);
-      return parent ? { rootId: parent.cause.rootId, depth: parent.cause.depth + 1, parentId: parent.id } : undefined;
+      return parent ? { rootId: parent.cause.rootId, depth: nextFederationDepth(parent.cause.depth), parentId: parent.id } : undefined;
     },
   });
   const reconcile = (): void => { void instance.reconcile().catch((err) => {
@@ -149,7 +150,7 @@ export function startFederatedRequests(): () => void {
 export async function receiveFederatedRequest(request: Parameters<DispatcherAgentCallReceiver['receive']>[0]) {
   if (!requests) return { ...result('Federated requests are starting. Retry shortly.', true), annexDelivery: { state: 'retry_later' as const, reason: 'starting' } };
   try { return result(await requests.receive(request.origin, request.targetId, request.cause, request.args.envelope) ?? { paused: true }); }
-  catch (err) { return { ...result(err instanceof Error ? err.message : String(err), true), annexDelivery: { state: 'refused' as const, reason: 'request_refused' } }; }
+  catch (err) { return { ...result(err instanceof FederationRefusal ? { error: err.details() } : err instanceof Error ? err.message : String(err), true), annexDelivery: { state: 'refused' as const, reason: err instanceof FederationRefusal ? err.code : 'request_refused' } }; }
 }
 
 export async function receiveFederatedNewsCause(request: Parameters<DispatcherAgentCallReceiver['receive']>[0]) {

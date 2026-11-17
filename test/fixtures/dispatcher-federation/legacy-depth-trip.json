@@ -1,0 +1,165 @@
+{
+  "version": 1,
+  "requests": [
+    {
+      "id": "legacy-request",
+      "direction": "incoming",
+      "machineId": "laptop",
+      "callerId": "controller",
+      "targetId": "controller",
+      "origin": {
+        "machineId": "laptop",
+        "machineName": "Laptop",
+        "agentId": "peer-controller",
+        "agentName": "Dispatcher"
+      },
+      "originRequestId": "old-local",
+      "localRequestId": "remote-old",
+      "text": "Retained work",
+      "cause": {
+        "rootId": "old-root",
+        "depth": 8,
+        "parentId": "old-parent"
+      },
+      "epoch": {
+        "sender": "self-pair",
+        "receiver": "peer-pair"
+      },
+      "createdAt": 1,
+      "expiresAt": 2,
+      "delivery": "delivered",
+      "outcome": "under_way",
+      "revision": 0,
+      "receivedRevision": 0,
+      "duplicates": 3
+    }
+  ],
+  "paused": {
+    "laptop": "The cross-machine causal depth limit was reached.",
+    "human": "Paused by the person",
+    "unknown": "An unknown pause"
+  },
+  "pauseEpochs": {
+    "laptop": {
+      "sender": "self-pair",
+      "receiver": "peer-pair"
+    },
+    "human": {
+      "sender": "self-pair",
+      "receiver": "peer-pair"
+    }
+  },
+  "crossings": {
+    "laptop": [
+      1
+    ]
+  },
+  "news": {
+    "laptop": {
+      "id": "legacy-request",
+      "direction": "incoming",
+      "machineId": "laptop",
+      "callerId": "controller",
+      "targetId": "controller",
+      "origin": {
+        "machineId": "laptop",
+        "machineName": "Laptop",
+        "agentId": "peer-controller",
+        "agentName": "Dispatcher"
+      },
+      "originRequestId": "old-local",
+      "localRequestId": "",
+      "text": "Retained work",
+      "cause": {
+        "rootId": "old-root",
+        "depth": 8,
+        "parentId": "old-parent"
+      },
+      "epoch": {
+        "sender": "self-pair",
+        "receiver": "peer-pair"
+      },
+      "createdAt": 1,
+      "expiresAt": 2,
+      "delivery": "delivered",
+      "outcome": "under_way",
+      "revision": 0,
+      "receivedRevision": 0,
+      "duplicates": 3
+    }
+  },
+  "pauseNotices": {
+    "laptop": {
+      "request": {
+        "id": "legacy-request",
+        "direction": "incoming",
+        "machineId": "laptop",
+        "callerId": "controller",
+        "targetId": "controller",
+        "origin": {
+          "machineId": "laptop",
+          "machineName": "Laptop",
+          "agentId": "peer-controller",
+          "agentName": "Dispatcher"
+        },
+        "originRequestId": "old-local",
+        "localRequestId": "remote-old",
+        "text": "Retained work",
+        "cause": {
+          "rootId": "old-root",
+          "depth": 8,
+          "parentId": "old-parent"
+        },
+        "epoch": {
+          "sender": "self-pair",
+          "receiver": "peer-pair"
+        },
+        "createdAt": 1,
+        "expiresAt": 2,
+        "delivery": "delivered",
+        "outcome": "under_way",
+        "revision": 0,
+        "receivedRevision": 0,
+        "duplicates": 3
+      },
+      "localShown": true,
+      "peerSent": false
+    },
+    "human": {
+      "request": {
+        "id": "legacy-request",
+        "direction": "incoming",
+        "machineId": "human",
+        "callerId": "controller",
+        "targetId": "controller",
+        "origin": {
+          "machineId": "laptop",
+          "machineName": "Laptop",
+          "agentId": "peer-controller",
+          "agentName": "Dispatcher"
+        },
+        "originRequestId": "old-local",
+        "localRequestId": "remote-old",
+        "text": "Retained work",
+        "cause": {
+          "rootId": "old-root",
+          "depth": 8,
+          "parentId": "old-parent"
+        },
+        "epoch": {
+          "sender": "self-pair",
+          "receiver": "peer-pair"
+        },
+        "createdAt": 1,
+        "expiresAt": 2,
+        "delivery": "delivered",
+        "outcome": "under_way",
+        "revision": 0,
+        "receivedRevision": 0,
+        "duplicates": 3
+      },
+      "localShown": true,
+      "peerSent": true
+    }
+  }
+}

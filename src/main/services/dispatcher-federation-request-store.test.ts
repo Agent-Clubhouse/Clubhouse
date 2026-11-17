@@ -6,8 +6,9 @@ const fixture = vi.hoisted(() => ({ dir: '' }));
 vi.mock('electron', () => ({ app: { getPath: () => fixture.dir, isPackaged: false } }));
 vi.mock('./log-service', () => ({ appLog: vi.fn() }));
 import type { FederatedRequest } from '../../shared/dispatcher-federation-requests';
+import { appLog } from './log-service';
 import { createFederationRequestStore } from './dispatcher-federation-requests';
-beforeEach(() => { fixture.dir = fs.mkdtempSync(path.join(os.tmpdir(), 'federation-request-store-')); });
+beforeEach(() => { vi.clearAllMocks(); fixture.dir = fs.mkdtempSync(path.join(os.tmpdir(), 'federation-request-store-')); });
 afterEach(() => { vi.restoreAllMocks(); fs.rmSync(fixture.dir, { recursive: true, force: true }); });
 describe('durable federation request records', () => {
   it('reloads committed pauses and rolls back a failed atomic save', async () => {
@@ -19,6 +20,50 @@ describe('durable federation request records', () => {
     expect(store.get().paused.laptop).toBe('rate limit');
     write.mockRestore();
     expect(createFederationRequestStore().get().paused.laptop).toBe('rate limit');
+  });
+  it.each(['legacy-depth-trip.json', 'legacy-resource-trips.json'])('lifts only exact legacy automatic trips from %s and persists them once', async (fixtureName) => {
+    const filename = path.join(fixture.dir, 'dispatcher-federation-requests.json');
+    const before = JSON.parse(fs.readFileSync(path.resolve('test/fixtures/dispatcher-federation', fixtureName), 'utf8'));
+    fs.writeFileSync(filename, JSON.stringify(before));
+    const store = createFederationRequestStore();
+    expect(store.get().paused).toEqual({ human: 'Paused by the person', unknown: 'An unknown pause' });
+    await store.ready?.(); await store.ready?.();
+    const after = createFederationRequestStore().get();
+    expect(after.requests).toEqual(before.requests); expect(after.news).toEqual(before.news);
+    expect(after.crossings).toEqual(before.crossings);
+    for (const machine of ['laptop', 'queue-peer']) {
+      expect(after.pauseNotices?.[machine]).toBeUndefined(); expect(after.pauseEpochs?.[machine]).toBeUndefined();
+    }
+    expect(after.pauseNotices?.human).toEqual(before.pauseNotices.human);
+    expect(JSON.parse(fs.readFileSync(filename, 'utf8'))).toEqual(after);
+    expect(vi.mocked(appLog).mock.calls.filter((call) => call[2] === 'Retired Dispatcher limit pause cleared')).toHaveLength(1);
+  });
+  it('repairs only legacy positive integer depth overflow and persists one state-only log', async () => {
+    const before = JSON.parse(fs.readFileSync(path.resolve('test/fixtures/dispatcher-federation/legacy-depth-trip.json'), 'utf8'));
+    before.paused = { human: 'Paused by the person' };
+    before.requests[0].cause.depth = Number.MAX_SAFE_INTEGER + 1;
+    before.news.laptop.cause.depth = Number.MAX_SAFE_INTEGER + 1;
+    before.pendingNews = { old: structuredClone(before.news.laptop) };
+    before.requests[0].replyPrompts = [{ revision: 1, outcome: 'under_way', text: 'Old report', state: 'pending', cause: { rootId: 'old-root', depth: Number.MAX_SAFE_INTEGER + 1 } }];
+    fs.writeFileSync(path.join(fixture.dir, 'dispatcher-federation-requests.json'), JSON.stringify(before));
+    const store = createFederationRequestStore();
+    expect(store.get().requests[0].cause.depth).toBe(Number.MAX_SAFE_INTEGER);
+    await store.ready?.(); await store.ready?.();
+    const reloaded = createFederationRequestStore().get();
+    expect(reloaded.requests[0]).toMatchObject({ id: before.requests[0].id, text: before.requests[0].text, cause: { depth: Number.MAX_SAFE_INTEGER }, replyPrompts: [{ cause: { depth: Number.MAX_SAFE_INTEGER } }] });
+    expect(reloaded.news?.laptop.cause.depth).toBe(Number.MAX_SAFE_INTEGER);
+    expect(reloaded.pendingNews?.old.cause.depth).toBe(Number.MAX_SAFE_INTEGER);
+    expect(reloaded.paused).toEqual(before.paused);
+    expect(vi.mocked(appLog).mock.calls.filter((call) => call[2] === 'Dispatcher tracing depth metadata repaired')).toEqual([
+      ['core:dispatcher', 'info', 'Dispatcher tracing depth metadata repaired', { meta: { state: 'federation_depth_metadata_repaired' } }],
+    ]);
+  });
+  it('loads and persists tracing depths beyond eight without changing history', async () => {
+    const before = JSON.parse(fs.readFileSync(path.resolve('test/fixtures/dispatcher-federation/legacy-depth-trip.json'), 'utf8'));
+    before.paused = {}; before.pauseNotices = {}; before.requests[0].cause.depth = 1000;
+    fs.writeFileSync(path.join(fixture.dir, 'dispatcher-federation-requests.json'), JSON.stringify(before));
+    const store = createFederationRequestStore(); expect(store.get().requests[0].cause.depth).toBe(1000);
+    await store.update(() => {}); expect(createFederationRequestStore().get().requests).toEqual(before.requests);
   });
   it('rejects a changed authorization at the atomic commit barrier', async () => {
     const store = createFederationRequestStore();
