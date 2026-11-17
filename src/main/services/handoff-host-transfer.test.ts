@@ -35,7 +35,11 @@ vi.mock('./clubhouse-mcp/binding-manager', async (original) => {
     bind: live.bind.bind(live), unbind: live.unbind.bind(live), setDisabledTools: live.setDisabledTools.bind(live), updateBinding: live.updateBinding.bind(live), _resetForTesting: live._resetForTesting.bind(live),
   } };
 });
-vi.mock('./clubhouse-mcp/grant-check', () => ({ callerGrants: () => [] }));
+vi.mock('./clubhouse-mcp/grant-check', async () => {
+  const { bindingManager } = await import('./clubhouse-mcp/binding-manager');
+  return { callerGrants: (id: string) => bindingManager.getBindingsForAgent(id).some((wire) => wire.targetId === 'structural-dispatcher')
+    ? [{ action: 'agent.read', target: { kind: 'any' }, mode: 'allow' }] : [] };
+});
 vi.mock('./clubhouse-mcp/tool-registry', () => ({ callTool: (...args: unknown[]) => state.create(...args), setHandoffParticipantCheck: (check: (id: string) => boolean) => { state.participant = check; } }));
 vi.mock('./clubhouse-mcp/handoff-permissions', () => ({ handoffAgreementCallApproved: async () => state.allowed }));
 vi.mock('./managed-agents', () => ({ managedAgents: () => ({ defaultHelperTemplateId: async () => 'person-helper-template' }) }));
@@ -270,6 +274,9 @@ it('P6 accepted handoff synchronizes during a real manifest stat, transfers a se
     // This is the real sender-side coordinator path that emits the generic
     // tool-list notification while the initial manifest request is in flight.
     await host.coordinator.receive(state.peer, { op: 'snapshot', record: accepted });
+    // CI's confirmed event: a different agent changes its binding while the
+    // sender is verifying this handoff. The real manager must not revoke it.
+    bindingManager.bind('unrelated', { targetId: 'another', targetKind: 'agent', label: 'Other' });
     release(); await pending;
     const result = store.get(offered.id)!;
     expect(result.state, JSON.stringify({ state: result.state, failure: result.failure, history: result.history.map((event) => event.state) })).toBe('applied');
@@ -283,7 +290,7 @@ it('P6 accepted handoff synchronizes during a real manifest stat, transfers a se
 }, 30_000);
 
 
-it.each(['unchanged', 'metadata', 'unrelated_agent', 'other_target', 'membership', 'permissions'] as const)('P6 binding notification diagnostic %s during a real descriptor stat', async (change) => {
+it.each(['unchanged', 'metadata', 'unrelated_agent', 'other_target', 'membership', 'permissions', 'membership_restored', 'permissions_restored', 'tool_grants', 'tool_grants_restored'] as const)('P6 binding authority %s during a real descriptor stat', async (change) => {
   const prepared = await prepareCallerHandoff('sender', 'worktree');
   const host = handoffHost(); await host.ready;
   const receiver = { machine: state.peer, agentId: 'remote' };
@@ -311,10 +318,28 @@ it.each(['unchanged', 'metadata', 'unrelated_agent', 'other_target', 'membership
     if (change === 'metadata') bindingManager.updateBinding('sender', targetId, { label: 'Renamed receiver' });
     if (change === 'unrelated_agent') bindingManager.bind('unrelated', { targetId: 'another', targetKind: 'agent', label: 'Other' });
     if (change === 'other_target') bindingManager.bind('sender', { targetId: 'unrelated-target', targetKind: 'agent', label: 'Other target' });
-    if (change === 'membership') bindingManager.unbind('sender', targetId);
-    if (change === 'permissions') bindingManager.setDisabledTools('sender', targetId, ['send_message']);
+    if (change.startsWith('membership')) {
+      bindingManager.unbind('sender', targetId);
+      if (change === 'membership_restored') bindingManager.bind('sender', { targetId, targetKind: 'agent', label: 'Receiver' });
+    }
+    if (change.startsWith('permissions')) {
+      bindingManager.setDisabledTools('sender', targetId, ['send_message']);
+      if (change === 'permissions_restored') bindingManager.setDisabledTools('sender', targetId, []);
+    }
+    if (change.startsWith('tool_grants')) {
+      // A Dispatcher wire can change effective tool grants even though its
+      // target is outside this handoff's participant pairs.
+      bindingManager.bind('sender', { targetId: 'structural-dispatcher', targetKind: 'agent', label: 'Dispatcher' });
+      if (change === 'tool_grants_restored') bindingManager.unbind('sender', 'structural-dispatcher');
+    }
     release();
-    expect(handoffTransferDiagnostic(await pending)).toBe(`lease_binding_${change}`);
-    expect(read).not.toHaveBeenCalled();
+    const result = await pending;
+    if (change.startsWith('membership') || change.startsWith('permissions') || change.startsWith('tool_grants')) {
+      expect(handoffTransferDiagnostic(result)).toBe(change.startsWith('tool_grants') ? 'lease_agent_authority' : `lease_binding_${change.split('_')[0]}`);
+      expect(read).not.toHaveBeenCalled();
+    } else {
+      expect(result).not.toBeInstanceOf(Error);
+      expect(read).toHaveBeenCalledOnce();
+    }
   } finally { release(); await pending; openSpy.mockRestore(); vi.restoreAllMocks(); }
 }, 30_000);

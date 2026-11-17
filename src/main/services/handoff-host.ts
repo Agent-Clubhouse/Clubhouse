@@ -200,14 +200,16 @@ function transferAuthority(record: Handoff, peer: string) {
     [...localIds].map((id) => getAgentGrantRevision(id)), getDispatcherState().enabled, getDispatcherState().agentId,
     [...localIds].map((id) => [id, isOrchestrationEnabled(id), isCrossProjectEnabled(id), orchestrationControl(id), callerGrants(id)])]);
   const expected = stamp();
-  // Diagnostic snapshots only: the listener below still invalidates every event.
   const participants = [...agents, ...('agentId' in record.to ? [record.to] : [])];
   const targets = new Set(participants.map(addressText));
-  const bindingStamp = (part: 'membership' | 'permissions' | 'all', relevant = false) => JSON.stringify([...localIds].map((id) =>
-    [id, bindingManager.getBindingsForAgent(id).filter((wire) => !relevant || wire.targetKind === 'agent' && targets.has(wire.targetId)).map((wire) => part === 'all' ? wire : [wire.targetKind, wire.targetId,
-      ...(part === 'permissions' ? [[...(wire.disabledTools ?? [])].sort(), [...(wire.enabledTools ?? [])].sort()] : [])])
+  // Labels/instructions and bindings to other targets do not authorize this
+  // handoff. Effective caller grants are captured separately in stamp().
+  const bindingStamp = (part: 'membership' | 'permissions') => JSON.stringify([...localIds].map((id) =>
+    [id, bindingManager.getBindingsForAgent(id).filter((wire) => wire.targetKind === 'agent' && targets.has(wire.targetId))
+      .map((wire) => [wire.targetKind, wire.targetId, ...(part === 'permissions'
+        ? [[...new Set(wire.disabledTools ?? [])].sort(), [...new Set(wire.enabledTools ?? [])].sort()] : [])])
       .sort((a, b) => JSON.stringify(a).localeCompare(JSON.stringify(b)))]));
-  const bindings = { membership: bindingStamp('membership', true), permissions: bindingStamp('permissions', true), relevant: bindingStamp('all', true), all: bindingStamp('all') };
+  const bindings = { membership: bindingStamp('membership'), permissions: bindingStamp('permissions') };
   let changed = false;
   let changeReason: HandoffTransferDiagnostic = 'lease_notification';
   const authorityDiagnostic = (): HandoffTransferDiagnostic => {
@@ -217,12 +219,15 @@ function transferAuthority(record: Handoff, peer: string) {
   };
   const off = [onConnectionGrantsChanged(() => { changed = true; changeReason = 'lease_connection_notification'; }),
     bindingManager.onChange((id) => {
+      if (!localIds.has(id)) return;
+      const authorityChanged = stamp() !== expected;
+      const membershipChanged = bindingStamp('membership') !== bindings.membership;
+      const permissionsChanged = bindingStamp('permissions') !== bindings.permissions;
+      if (!authorityChanged && !membershipChanged && !permissionsChanged) return;
+      // Sticky even when the binding or its switches are restored before I/O
+      // resumes. Benign refreshes cannot overwrite the real invalidation.
       changed = true;
-      changeReason = stamp() !== expected ? authorityDiagnostic() : !localIds.has(id) ? 'lease_binding_unrelated_agent'
-        : bindingStamp('membership', true) !== bindings.membership ? 'lease_binding_membership'
-        : bindingStamp('permissions', true) !== bindings.permissions ? 'lease_binding_permissions'
-        : bindingStamp('all', true) !== bindings.relevant ? 'lease_binding_metadata'
-        : bindingStamp('all') !== bindings.all ? 'lease_binding_other_target' : 'lease_binding_unchanged';
+      changeReason = authorityChanged ? authorityDiagnostic() : membershipChanged ? 'lease_binding_membership' : 'lease_binding_permissions';
     }),
     // This also announces handoff acceptance/progress and tool-list refreshes.
     // Invalidate only a real authority change, retaining the invalidation even
@@ -230,11 +235,12 @@ function transferAuthority(record: Handoff, peer: string) {
     onOrchestrationGateChange((id) => { if (localIds.has(id) && stamp() !== expected) { changed = true; changeReason = authorityDiagnostic(); } })];
   return {
     check: () => {
-      if (changed || stamp() !== expected || peer !== ownMachine() && !isNetworkComputer(peer)
+      if (changed || stamp() !== expected || bindingStamp('permissions') !== bindings.permissions || peer !== ownMachine() && !isNetworkComputer(peer)
         || record.to.machine !== ownMachine() && !isNetworkComputer(record.to.machine)
         || record.from.machine !== ownMachine() && (!isNetworkComputer(record.from.machine) || !acceptsRemote())
         || 'agentId' in record.to && !(record.to.machine === ownMachine() && isDispatcherAgentId(record.to.agentId))
-          && !hasConnection(record.from, record.to)) throw tagHandoffTransferError(new HandoffAuthorizationChanged(), changed ? changeReason : stamp() !== expected ? authorityDiagnostic() : 'lease_peer');
+          && !hasConnection(record.from, record.to)) throw tagHandoffTransferError(new HandoffAuthorizationChanged(), changed ? changeReason : stamp() !== expected ? authorityDiagnostic() : bindingStamp('permissions') !== bindings.permissions
+            ? bindingStamp('membership') !== bindings.membership ? 'lease_binding_membership' : 'lease_binding_permissions' : 'lease_peer');
     },
     dispose: () => { for (const unsubscribe of off) unsubscribe(); },
   };

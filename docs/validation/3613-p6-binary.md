@@ -312,3 +312,70 @@ were refused (`slot held by lane-3686`, 20:39:58Z and 20:40:59Z), retained in
 `/tmp/annex-p6-binding-diagnostic-final-{original,RETRY1}.log`; retries waited
 at least 60 seconds. No new candidate FAIL. Dependencies and phone fixtures
 remain unchanged. The telemetry flake is untouched.
+
+## Confirmed unrelated-binding refusal and correction (run 44172493203)
+
+Both Annex E2E jobs (`134359661640`, `134359661885`) classify every refusal
+as `lease_binding_unrelated_agent` (four occurrences per OS). Full failed-job
+logs are retained at `/tmp/annex-p6-775-ci-failed.log`. Thus the actual two-app
+failure was the unconditional binding listener rejecting an event for a
+nonparticipant, with no captured authority-field mismatch. The earlier
+orchestration notification fix addressed a separately reproduced contributor.
+
+**Proof before guard changes:** with production still at `775d35add`, the
+real 600 KiB preparation/worker regression injects a real binding-manager event
+for another agent during the actual manifest `lstat`. It fails exactly
+`offered → accepted → failed`, `verification/verification_failed`. Four
+real pinned-stat cases (unchanged tool lists, metadata, unrelated agent, and
+unrelated target) also fail. All **5 original FAILs** are retained at
+`/tmp/annex-p6-binding-fix-negative-original.log`, gated tier 4,
+**21:02:17Z–21:02:26Z**, exit 1 as expected.
+
+**Correction:** binding notifications for nonparticipants return immediately.
+For participant notifications, the lease compares only relevant target
+membership and normalized enabled/disabled switches, plus the preexisting
+captured effective caller grants and policy stamp. Labels, instructions,
+unchanged lists and unrelated-target bindings do not invalidate unchanged
+authority. A structural Dispatcher binding that changes effective grants
+still revokes, even if its target is outside the transfer's participant pairs.
+Actual membership, permission and effective-grant changes invalidate
+permanently; restoring them before the pending real stat resumes cannot
+resurrect the operation. The actual-act check also compares the captured
+relevant binding projection after awaits. Existing domain/acceptance,
+peer/link, policy-generation, saved-grant and secret-policy fences remain.
+Diagnostics, direct `/ws`/phone shapes and all existing limits are retained.
+
+The real-binding-manager/stat cases now require benign changes to read
+successfully, relevant membership/permissions to refuse, and membership,
+permissions or effective tool grants changed-and-restored to remain refused.
+The 600 KiB regression injects the CI-confirmed unrelated event and still
+requires three exact chunks and publication before wake. No local E2E or
+Playwright is run; the unrelated telemetry flake remains unchanged.
+
+Focused fixed-run admissions: original refused `idle=28%<40` at 21:03:06Z;
+RETRY 1 refused `slot held by lane-3686` at 21:04:33Z; RETRY 2 admitted
+**21:05:50Z–21:06:25Z**, tier 4, **17 P6 host tests PASS**. Every refusal and
+RETRY is retained under `/tmp/annex-p6-binding-fix-{original,RETRY1,RETRY2}.log`;
+admission retries waited at least 60 seconds.
+
+Final single tier-4 admission **21:06:43Z–21:10:29Z**, exit 0:
+
+- `node_modules/.bin/tsc --noEmit`: PASS.
+- `node_modules/.bin/eslint . --quiet`: PASS.
+- `node_modules/.bin/vitest run --project main src/main/services/handoff-host-transfer.test.ts --maxWorkers=2`: **44 PASS**.
+- The 7-file main/shared/integration targeted command from the diagnostic round: **51 PASS**, `--maxWorkers=2`.
+- `node_modules/.bin/vitest run --project main src/main/services/annex-server.test.ts -t handoff --maxWorkers=2`: **2 PASS**.
+- `python3 scripts/qa/annex-p6-binary-controls.py --logs /tmp/annex-p6-binding-fix-controls`: **49/49 mutants killed**; original main **55 expected FAILs**, rejected `c35580c5f` **4**, approved CI baseline `0283ecb14` **1**, and binding CI baseline `775d35add` **5**. All production bytes restored after each run.
+- `node scripts/annex-mobile-fixtures.mjs --check`: **66 PASS**, with all 102 fixture blobs unchanged.
+
+The three new mutants remove the binding listener (restore negatives fail),
+remove the relevant binding projection (membership/permission negatives fail),
+and restore unconditional binding invalidation (benign positives and the
+600 KiB transfer fail). All fail on real service awaits. Receipts and exact
+child commands: `/tmp/annex-p6-binding-fix-final-{tsc,host,lint,targeted,server,
+mutants,fixture}.log`; original gate receipt
+`/tmp/annex-p6-binding-fix-final-original.log`. Fresh worktree-local
+`node_modules` remains a directory from the validated branch install; no
+package or lockfile changes. Apart from the intentional pre-fix negative
+control, no candidate test failed in this correction round. Windows and the
+real two-app E2E await CI and independent QA; no merge was performed.
