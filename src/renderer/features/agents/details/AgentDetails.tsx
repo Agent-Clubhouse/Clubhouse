@@ -21,7 +21,9 @@ import type { BranchChanges } from '../../../../shared/git-branch';
 import type { ChatViewState } from '../../../stores/chatStore';
 import { useAgentStore } from '../../../stores/agentStore';
 import { useOrchestratorStore } from '../../../stores/orchestratorStore';
-import { isRemoteProjectId } from '../../../stores/remoteProjectStore';
+import { isRemoteProjectId, parseNamespacedId } from '../../../stores/remoteProjectStore';
+import { useAnnexClientStore } from '../../../stores/annexClientStore';
+import { DISPATCHER_PROJECT_ID } from '../../../../shared/dispatcher-types';
 import { dispatcherWiresAgentId, isDispatcherAgent, useLocalProject } from '../../dispatcher/dispatcherStore';
 import { Tooltip } from '../../../components/Tooltip';
 import { jumpToCanvas, useAgentCanvases } from './agent-canvases';
@@ -194,7 +196,14 @@ export function AgentDetails({ agent, chat, onShowInStream, missedSubagentId, on
   const spawnedAt = useAgentStore((s) => s.agentSpawnedAt[agent.id]);
   const orchestrators = useOrchestratorStore((s) => s.allOrchestrators);
   const agentCli = useEffectiveOrchestrator(agent);
-  const dispatcher = isDispatcherAgent(agent);
+  const remoteAgent = parseNamespacedId(agent.id);
+  const remoteProject = parseNamespacedId(agent.projectId);
+  const satellite = useAnnexClientStore((s) => s.satellites.find((sat) => sat.id === remoteAgent?.satelliteId));
+  // Presentation only: recognizing a remote Dispatcher must not map its cards to this computer's controls.
+  const remoteDispatcher = !!remoteAgent && (satellite?.snapshot?.dispatcher?.agent?.id === remoteAgent.agentId
+    || remoteProject?.satelliteId === remoteAgent.satelliteId && remoteProject.agentId === DISPATCHER_PROJECT_ID);
+  const dispatcher = remoteDispatcher || isDispatcherAgent(agent);
+  const remoteHost = satellite?.alias || satellite?.snapshot?.machine?.name || 'the other machine';
 
   // Chat refreshes when a turn starts or ends, or the agent commits, pushes
   // or rebases mid-turn; the terminal when its hook status moves on.
@@ -227,7 +236,7 @@ export function AgentDetails({ agent, chat, onShowInStream, missedSubagentId, on
   const hasWires = useMcpBindingStore((s) => s.bindings.some((b) => b.agentId === wiresId || (b.targetKind === 'agent' && b.targetId === wiresId)));
   // A person can start a connection even before this agent has any wires.
   const connectionsRequested = focus?.agentId === agent.id && focus.card === 'connections';
-  const showConnections = !isRemoteProjectId(agent.projectId) && (agent.kind === 'durable' || dispatcher || hasWires || connectionsRequested);
+  const showConnections = remoteDispatcher || !isRemoteProjectId(agent.projectId) && (agent.kind === 'durable' || dispatcher || hasWires || connectionsRequested);
   // A tool-made wire removed here is a user removal: the usual unbind, with no cause (#2230).
   const disconnectToolWire = useCallback(async (c: Connection) => {
     const unbind = useMcpBindingStore.getState().unbind;
@@ -271,8 +280,9 @@ export function AgentDetails({ agent, chat, onShowInStream, missedSubagentId, on
   if (showEvidence) available.add('skills-mcp');
   // Its peers on other computers (#3349), compact. Settings › Dispatcher has the full list.
   const presence = useDispatcherPresence();
-  const otherMachines = dispatcher ? presence?.remotes ?? [] : [];
-  if (otherMachines.length > 0) available.add('other-machines');
+  const otherMachines = remoteDispatcher ? satellite?.snapshot?.dispatcherPresence?.remotes ?? [] : dispatcher ? presence?.remotes ?? [] : [];
+  const showOtherMachines = remoteDispatcher || otherMachines.length > 0;
+  if (showOtherMachines) available.add('other-machines');
   const requested = focus?.agentId === agent.id ? containingDetailsCard(focus.card) : null;
   const focusCard = requested && available.has(requested) ? requested : dispatcher ? 'actions' : 'session';
 
@@ -371,7 +381,12 @@ export function AgentDetails({ agent, chat, onShowInStream, missedSubagentId, on
         </DetailsCard>
       )}
 
-      {showConnections && (
+      {remoteDispatcher ? (
+        <DetailsCard id="connections" title="Connections" summary={`Change on ${remoteHost}`} open={open('connections')} onToggle={() => toggleCard('connections')}>
+          <CardNote>This Dispatcher’s connections are managed on {remoteHost}. They aren’t shared in this computer’s view.</CardNote>
+          <CardNote>Change on {remoteHost}.</CardNote>
+        </DetailsCard>
+      ) : showConnections && (
         <ConnectionsCard
           agent={wiresAgent}
           helperIds={helperIds}
@@ -382,13 +397,20 @@ export function AgentDetails({ agent, chat, onShowInStream, missedSubagentId, on
         />
       )}
 
-      {otherMachines.length > 0 && (
-        <DetailsCard id="other-machines" title="Other machines" summary={otherMachinesSummary(otherMachines)} open={open('other-machines')} onToggle={() => toggleCard('other-machines')}>
-          <OtherMachinesList compact remotes={otherMachines} />
+      {showOtherMachines && (
+        <DetailsCard id="other-machines" title="Other machines" summary={remoteDispatcher && !satellite?.snapshot?.dispatcherPresence ? 'not shared here' : otherMachinesSummary(otherMachines)} open={open('other-machines')} onToggle={() => toggleCard('other-machines')}>
+          {remoteDispatcher && !satellite?.snapshot?.dispatcherPresence
+            ? <CardNote>{remoteHost} hasn’t shared its other machines here.</CardNote>
+            : <OtherMachinesList compact remotes={otherMachines} />}
+          {remoteDispatcher && <CardNote>Change on {remoteHost}.</CardNote>}
         </DetailsCard>
       )}
 
-      {dispatcher
+      {remoteDispatcher
+        ? <DetailsCard id="actions" title="Actions" summary={`Change on ${remoteHost}`} open={open('actions')} onToggle={() => toggleCard('actions')}>
+            <CardNote>Actions made by this Dispatcher are managed on {remoteHost}. Change on {remoteHost}.</CardNote>
+          </DetailsCard>
+        : dispatcher
         ? <DispatcherActionsCard open={open('actions')} onToggle={() => toggleCard('actions')} />
         : <AgentActionsCard key={agent.id} agentId={agent.id} agentName={agent.name} projectId={agent.projectId} open={open('actions')} onToggle={() => toggleCard('actions')} />}
 
