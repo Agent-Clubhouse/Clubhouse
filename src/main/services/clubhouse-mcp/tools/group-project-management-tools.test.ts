@@ -177,6 +177,56 @@ describe('creation review and destination approval', () => {
     expect(m.create).toHaveBeenCalledWith('Team', { scope: choices.scope, membership: choices.membership });
     expect((await call('create_group_project', args)).isError).toBe(true);
   });
+  it.each([
+    { host: 'this', scope: { level: 'app', reach: 'local' } },
+    { host: 'remote', scope: { level: 'app', reach: 'network' } },
+  ])('allows exactly one concurrent create to claim a single-use review on $host', async (choices) => {
+    const args = await creationArgs(choices);
+    let releasePreview!: () => void;
+    const revalidation = new Promise<void>((resolve) => { releasePreview = resolve; });
+    const snapshot = { wouldJoin: [], unreadableProjects: [], coverage: [] };
+    m.previewAutoJoin.mockImplementation(async () => { await revalidation; return snapshot; });
+    const first = call('create_group_project', args);
+    // Hold the first caller inside the await that previously allowed a second claim.
+    await vi.waitFor(() => expect(m.previewAutoJoin).toHaveBeenCalledTimes(2));
+    let secondResult: McpToolResult | undefined;
+    const second = call('create_group_project', args).then((result) => { secondResult = result; return result; });
+    let results: McpToolResult[] = [];
+    try {
+      await vi.waitFor(() => expect(secondResult?.isError).toBe(true));
+    } finally {
+      releasePreview();
+      results = await Promise.all([first, second]);
+    }
+    expect(results.filter((result) => !result.isError)).toHaveLength(1);
+    expect(results.filter((result) => result.isError)).toHaveLength(1);
+    expect(json(secondResult!).error.message).toContain('Refresh the creation preview');
+    expect(m.create).toHaveBeenCalledTimes(choices.host === 'this' ? 1 : 0);
+    expect(m.createOn).toHaveBeenCalledTimes(choices.host === 'remote' ? 1 : 0);
+    // One initial preview plus one revalidation; the second create never revalidates.
+    expect(m.previewAutoJoin).toHaveBeenCalledTimes(2);
+  });
+  it('keeps the review consumed after revalidation fails and asks for a new review', async () => {
+    const args = await creationArgs();
+    m.previewAutoJoin.mockRejectedValueOnce(new Error('Inventory unavailable'));
+    const failed = await call('create_group_project', args);
+    expect(failed.isError).toBe(true);
+    expect(json(failed).error.message).toContain('Creation review consumed. Review again');
+    const retry = await call('create_group_project', args);
+    expect(retry.isError).toBe(true);
+    expect(json(retry).error.message).toContain('Refresh the creation preview');
+    expect(m.create).not.toHaveBeenCalled();
+    expect((await call('create_group_project', await creationArgs())).isError).toBeUndefined();
+  });
+  it('keeps the review consumed after a create error and requires checking the result before review', async () => {
+    const args = await creationArgs();
+    m.create.mockRejectedValueOnce(new Error('Create did not complete'));
+    const failed = await call('create_group_project', args);
+    expect(failed.isError).toBe(true);
+    expect(json(failed).error.message).toContain('Check list_group_projects for the result, then review again');
+    expect((await call('create_group_project', args)).isError).toBe(true);
+    expect(m.create).toHaveBeenCalledTimes(1);
+  });
   it('rejects changed choices, inventory and caller identity before create', async () => {
     const args = await creationArgs();
     expect((await call('create_group_project', { ...args, name: 'Different' })).isError).toBe(true);

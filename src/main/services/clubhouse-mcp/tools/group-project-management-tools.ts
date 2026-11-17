@@ -156,18 +156,30 @@ export function registerGroupProjectManagementTools(legacyCreate?: (caller: stri
       return outcome;
     }
     const plan = createPlan(args), token = requireString(args, 'preview_token'), review = reviews.get(token);
-    if (!review || review.caller !== caller || review.expires < Date.now() || hash(review.plan) !== hash(plan)) throw new McpArgError('Refresh the creation preview with the exact choices before creating.');
-    const preview = await previewCreate(plan);
-    if (review.digest !== hash(preview.preview)) throw new McpArgError('Initial membership or coverage changed. Refresh the creation preview.');
+    // Claim once, synchronously: concurrent calls must not both revalidate the same review.
+    // Like deletion, a failed attempt never restores the review token.
     reviews.delete(token);
-    if (plan.host !== 'this') {
-      const outcome = await groupProjectRemoteCreate.createOn(plan.host, plan.name, plan.options);
-      retries.set(outcome.requestId, { caller, host: plan.host });
-      return outcome;
+    if (!review || review.caller !== caller || review.expires < Date.now() || hash(review.plan) !== hash(plan)) throw new McpArgError('Refresh the creation preview with the exact choices before creating.');
+    let preview: Awaited<ReturnType<typeof previewCreate>>;
+    try { preview = await previewCreate(plan); }
+    catch (error) {
+      // telemetry-exempt: the caller receives the failure and the explicit consumed-review outcome.
+      throw new McpArgError(`Creation review consumed. Review again with preview_group_project_create before creating. ${error instanceof Error ? error.message : String(error)}`);
     }
-    const { createManagedGroupProject } = await import('../../group-project-management');
-    const project = await createManagedGroupProject(plan.name, plan.options);
-    return { status: 'created', project, membership: await membership.describeMembership(project.id) };
+    if (review.digest !== hash(preview.preview)) throw new McpArgError('Initial membership or coverage changed. Refresh the creation preview.');
+    try {
+      if (plan.host !== 'this') {
+        const outcome = await groupProjectRemoteCreate.createOn(plan.host, plan.name, plan.options);
+        retries.set(outcome.requestId, { caller, host: plan.host });
+        return outcome;
+      }
+      const { createManagedGroupProject } = await import('../../group-project-management');
+      const project = await createManagedGroupProject(plan.name, plan.options);
+      return { status: 'created', project, membership: await membership.describeMembership(project.id) };
+    } catch (error) {
+      // telemetry-exempt: returned to the caller; a partial create must not invite an unchecked duplicate.
+      throw new McpArgError(`Creation review consumed. Check list_group_projects for the result, then review again with preview_group_project_create. ${error instanceof Error ? error.message : String(error)}`);
+    }
   }, true);
 
   register('get_group_project_management', 'Read management state: details, membership/exclusions/auto-joins, authoritative roster and completeness, coverage, this-computer roles, own grants, notices, default/member tools and instruction revisions, retention, Actions and delivery outcomes. Host roles on a copy are read-only. Actions use the existing list/create/update/delete/run/history tools.', {}, [], async (_caller, _args, id) => {
