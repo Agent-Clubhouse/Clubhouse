@@ -37,6 +37,8 @@ export interface AnnexDeliveryStatus {
   attempts: number;
   nextAttemptAt?: string;
   reason?: string;
+  /** Previous failure diagnostic on an otherwise delivered item, not its current state. */
+  lastReason?: string;
 }
 
 export interface AnnexDeliveryFailure extends AnnexDeliveryStatus {
