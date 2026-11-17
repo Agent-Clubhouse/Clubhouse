@@ -821,3 +821,30 @@ it('skips every ineligible candidate without reserving a sequence or emitting a 
   expect((await groupProjectHost.get(gp.id))!.seq).toBe(before);
   expect(await groupProjectHost.readTopic(gp.id, 'system')).toEqual([]);
 });
+
+it('does not admit a vouched networkPending desktop before reciprocal membership confirmation', async () => {
+  const peers = await import('./annex-peers');
+  const { isNetworkComputer } = await import('./annex-agent-calls');
+  // This is the state addMember creates for a desktop learned through a
+  // network member, before that desktop confirms our certificate/pairing epoch.
+  vi.spyOn(peers, 'listPeers').mockReturnValue([{
+    fingerprint: FP_B, alias: 'Pending', role: 'member', kind: 'desktop',
+    networkPending: true, pairingId: 'unconfirmed-epoch',
+    tlsCertificateFingerprint: 'pinned-by-vouch', tlsCertificatePem: 'vouched-cert',
+    publicKey: 'vouched-key', pairedAt: '2026-11-17T00:00:00Z', lastSeen: '',
+  } as ReturnType<typeof peers.listPeers>[number]]);
+  fixture.fingerprint = FP_A;
+  fixture.network = true;
+  const gp = await groupProjectHost.create('Pending', { scope: { level: 'app', reach: 'network' } });
+  const address = `remote@${FP_B}`;
+  await groupProjectHost.updateMembership(gp.id, d => {
+    d.explicit.push({ address, name: 'Pending', kind: 'durable', addedAt: 'x' });
+  });
+  // Same provider as mcp-binding-handlers.ts supplies in production.
+  groupProjectHost.setNetworkLink({ connected: () => false, isMember: isNetworkComputer } as Parameters<typeof groupProjectHost.setNetworkLink>[0]);
+  const before = (await groupProjectHost.get(gp.id))!.seq;
+  await groupProjectHost.ensureMemberAdmission(gp.id, 'Pending', address);
+  expect.soft(await getBulletinBoard(gp.id).inboxOf(address)).toBeFalsy();
+  expect.soft((await groupProjectHost.get(gp.id))!.seq).toBe(before);
+  expect.soft(await groupProjectHost.readTopic(gp.id, 'system')).toEqual([]);
+});
