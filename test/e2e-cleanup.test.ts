@@ -33,6 +33,15 @@ import {
 // flaking on windows-latest.
 vi.setConfig({ testTimeout: 30_000 });
 
+// The real Windows CIM query takes ~5s cold and ~1.6s warm, but under runner
+// contention it has run past 10s and past 20s. The kill-safety tests assert a
+// complete snapshot, so they get a larger owned deadline on win32 with a test
+// budget that outlasts it. A retry would not fit: one slow window outlasted 20s.
+// The product default (PROCESS_TABLE_DEADLINE_MS) is unchanged.
+const SAFETY_QUERY_DEADLINE_MS = process.platform === 'win32' ? 40_000 : undefined;
+const SAFETY_TEST_TIMEOUT_MS = process.platform === 'win32' ? 60_000 : 30_000;
+const safetyQuery = () => createProcessTableReader({ deadlineMs: SAFETY_QUERY_DEADLINE_MS });
+
 /** Sandbox for state + temp roots, so tests never touch the real ones. */
 let sandbox: string;
 let paths: CleanupPaths;
@@ -231,16 +240,14 @@ describe('kill safety', () => {
     });
     await diagnostic.step('cleanup.record', () => recordElectronApp(victim.pid, undefined, paths));
 
-    // The first real Windows CIM query exceeded 10s under CI
-    // load. Keep a bounded owned query and require a complete real snapshot;
-    // the cleanup default deadline and the 30s test budget remain unchanged.
-    const query = createProcessTableReader({ deadlineMs: process.platform === 'win32' ? 20_000 : undefined });
+    // Keep a bounded owned query and require a complete real snapshot.
+    const query = safetyQuery();
     const result = await diagnostic.step('cleanup.process-table-and-sweep', () => sweepE2EProcesses(paths, query));
     expect(result.processTable).toBe('complete');
 
     expect(result.killed).toBe(0);
     expect(isAlive(victim.pid!)).toBe(true);
-  }));
+  }), SAFETY_TEST_TIMEOUT_MS);
 
   it('does NOT kill a process merely because its command line mentions .webpack', async () => {
     // A developer's installed Clubhouse.app runs from app.asar.unpacked/.webpack.
@@ -248,11 +255,11 @@ describe('kill safety', () => {
     await waitUntilVisible(victim.pid!);
     recordElectronApp(victim.pid, undefined, paths);
 
-    const result = await sweepE2EProcesses(paths);
+    const result = await sweepE2EProcesses(paths, safetyQuery());
     expect(result.processTable).toBe('complete');
 
     expect(isAlive(victim.pid!)).toBe(true);
-  });
+  }, SAFETY_TEST_TIMEOUT_MS);
 
   it('does NOT kill a process carrying a --user-data-dir switch', async () => {
     // On a dev machine the only processes with this switch are real apps.
@@ -260,11 +267,11 @@ describe('kill safety', () => {
     await waitUntilVisible(victim.pid!);
     recordElectronApp(victim.pid, undefined, paths);
 
-    const result = await sweepE2EProcesses(paths);
+    const result = await sweepE2EProcesses(paths, safetyQuery());
     expect(result.processTable).toBe('complete');
 
     expect(isAlive(victim.pid!)).toBe(true);
-  });
+  }, SAFETY_TEST_TIMEOUT_MS);
 
   it('kills a recorded process running from this repo\'s Electron dist', async () => {
     const target = spawnMarked(path.join(ELECTRON_DIST_DIR, 'Electron.app/Contents/MacOS/Electron'));
