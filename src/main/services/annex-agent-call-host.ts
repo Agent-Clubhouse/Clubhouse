@@ -12,7 +12,7 @@ import { effectiveAgentGrants } from './agent-grants-service';
 import { agentRegistry } from './agent-registry';
 import { getDurableConfig, peekDurableConfigs } from './agent-config';
 import { getConnectionDirection } from './connection-grants-store';
-import { getDispatcherState, isDispatcherAgentId, isDispatcherChatAgentId } from './dispatcher/dispatcher-service';
+import { getDispatcherPath, getDispatcherState, isDispatcherAgentId, isDispatcherChatAgentId } from './dispatcher/dispatcher-service';
 import { peekProjects } from './project-store';
 import type { AnnexDeliveryFailure } from '../../shared/annex-delivery';
 import { getAgentRuntime } from './agent-runtime';
@@ -32,6 +32,15 @@ export async function authorizeQueuedAnnexCall(item: DeliveryOutboxItem): Promis
     projectPath = state.path;
   }
 
+  // The controller is outside projectStore. Its in-memory identity can be
+  // absent during startup/reload even though its durable sender still exists.
+  if (!projectPath) {
+    const dispatcherPath = getDispatcherPath();
+    if ((await peekDurableConfigs(dispatcherPath)).some((a) => a.id === callerId && !isDisposedAgent(a))) {
+      if (!getDispatcherState().enabled) return refuse('The sending Dispatcher was turned off.');
+      projectPath = dispatcherPath;
+    }
+  }
   if (!projectPath) {
     for (const project of await peekProjects()) {
       if ((await peekDurableConfigs(project.path)).some((a) => a.id === callerId && !isDisposedAgent(a))) {

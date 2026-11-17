@@ -4,7 +4,7 @@ import type { ActionRun } from '../../shared/actions';
 import type { DeliveryOutboxItem } from './annex-delivery-store';
 
 const mocks = vi.hoisted(() => ({
-  grants: [] as Grant[], link: true, disabled: [] as string[], disposed: false,
+  savedDispatcher: false, dispatcherEnabled: true, grants: [] as Grant[], link: true, disabled: [] as string[], disposed: false,
   runtime: undefined as undefined | {
     kind: 'chat'; isRunning: () => boolean; getState: () => 'idle' | 'running';
     readTranscript: ReturnType<typeof vi.fn>; sendMessage: ReturnType<typeof vi.fn>;
@@ -15,11 +15,11 @@ const mocks = vi.hoisted(() => ({
 vi.mock('./agent-grants-service', () => ({ effectiveAgentGrants: async () => mocks.grants }));
 vi.mock('./agent-registry', () => ({ agentRegistry: { get: () => undefined } }));
 vi.mock('./agent-config', () => ({
-  peekDurableConfigs: async () => [{ id: 'sender' }],
-  getDurableConfig: async () => ({ id: 'sender', ...(mocks.disposed && { status: 'disposed' }) }),
+  peekDurableConfigs: async (dir: string) => dir === '/dispatcher' ? (mocks.savedDispatcher ? [{ id: 'saved-controller' }] : []) : [{ id: 'sender' }],
+  getDurableConfig: async (_dir: string, id: string) => ({ id, ...(mocks.disposed && { disposedAt: '2026-01-01T00:00:00Z' }) }),
 }));
 vi.mock('./connection-grants-store', () => ({ getConnectionDirection: () => ({ link: mocks.link ? {} : undefined, disabledTools: mocks.disabled }) }));
-vi.mock('./dispatcher/dispatcher-service', () => ({ getDispatcherState: () => ({ enabled: true, path: '/dispatcher' }), isDispatcherAgentId: () => false, isDispatcherChatAgentId: () => false }));
+vi.mock('./dispatcher/dispatcher-service', () => ({ getDispatcherPath: () => '/dispatcher', getDispatcherState: () => ({ enabled: mocks.dispatcherEnabled, path: null }), isDispatcherAgentId: () => false, isDispatcherChatAgentId: () => false }));
 vi.mock('./project-store', () => ({ peekProjects: async () => [{ path: '/project' }] }));
 vi.mock('./agent-runtime', () => ({ getAgentRuntime: () => mocks.runtime }));
 vi.mock('./actions', () => ({ actionsReady: () => mocks.ready, recordExternalRun: mocks.record }));
@@ -44,6 +44,7 @@ const notice = {
 
 beforeEach(() => {
   vi.clearAllMocks(); mocks.records.clear(); mocks.runtime = undefined; mocks.ready = true;
+  mocks.savedDispatcher = false; mocks.dispatcherEnabled = true;
   mocks.link = true; mocks.disabled = []; mocks.disposed = false;
   mocks.permissionHash = 'approved'; mocks.member = true; mocks.controller = 'controller'; mocks.hostOff = false;
   mocks.grants = [{ action: 'agent.message', target: { kind: 'connected' }, mode: 'allow' }];
@@ -51,6 +52,23 @@ beforeEach(() => {
 });
 
 describe('durable Annex host integration', () => {
+  it('authorizes a saved sleeping Dispatcher while its identity cache is unloaded', async () => {
+    mocks.savedDispatcher = true;
+    const controller = { ...item, body: { ...item.body, from: { agentId: 'saved-controller', name: 'Controller' } } };
+    expect(await authorizeQueuedAnnexCall(controller)).toEqual({ allowed: true });
+    mocks.grants = [];
+    expect(await authorizeQueuedAnnexCall(controller)).toMatchObject({ allowed: false });
+    mocks.grants = [{ action: 'agent.message', target: { kind: 'connected' }, mode: 'allow' }];
+    mocks.dispatcherEnabled = false;
+    expect(await authorizeQueuedAnnexCall(controller)).toMatchObject({ allowed: false });
+    mocks.dispatcherEnabled = true; mocks.disposed = true;
+    expect(await authorizeQueuedAnnexCall(controller)).toMatchObject({ allowed: false });
+  });
+  it('still refuses an unknown sender without saved identity or a disposed sender', async () => {
+    expect(await authorizeQueuedAnnexCall({ ...item, body: { ...item.body, from: { agentId: 'unknown', name: 'Unknown' } } })).toMatchObject({ allowed: false });
+    mocks.disposed = true;
+    expect(await authorizeQueuedAnnexCall(item)).toMatchObject({ allowed: false });
+  });
   it('retains an admitted Ask-first remote send across recovery, but never an off or changed grant', async () => {
     const direct = { ...item, remoteDispatcherAuthorization: { policyHash: 'approved' } };
     mocks.grants = [{ action: 'agent.message', target: { kind: 'remote_dispatcher' }, mode: 'ask' }];
