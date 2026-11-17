@@ -15,7 +15,9 @@ import * as fs from 'fs';
 import * as path from 'path';
 
 const MAIN = path.join(__dirname, '..');
-const read = (rel: string) => fs.readFileSync(path.join(MAIN, rel), 'utf8');
+// Normalize line endings: Windows checkouts use CRLF.
+const text = (file: string) => fs.readFileSync(file, 'utf8').replace(/\r\n/g, '\n');
+const read = (rel: string) => text(path.join(MAIN, rel));
 
 function productionFiles(dir: string): string[] {
   return fs.readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
@@ -30,7 +32,7 @@ const PERSON_AUTHOR = /label:\s*'user'/;
 describe('person authors only at person entry points (#3664)', () => {
   it('uses a person author only in renderer IPC handlers and paired-person Annex routes', () => {
     const files = productionFiles(MAIN)
-      .filter((file) => PERSON_AUTHOR.test(fs.readFileSync(file, 'utf8')))
+      .filter((file) => PERSON_AUTHOR.test(text(file)))
       .map((file) => path.relative(MAIN, file).split(path.sep).join('/'))
       .sort();
     expect(files).toEqual(['ipc/group-project-handlers.ts', 'services/annex-server.ts']);
@@ -54,8 +56,8 @@ describe('person authors only at person entry points (#3664)', () => {
     const users = productionFiles(MAIN)
       .filter((file) => !file.endsWith(path.join('services', 'annex-client.ts')))
       .filter((file) => {
-        const text = fs.readFileSync(file, 'utf8');
-        return writers.some((name) => new RegExp(`\\b${name}\\b`).test(text));
+        const source = text(file);
+        return writers.some((name) => new RegExp(`\\b${name}\\b`).test(source));
       })
       .map((file) => path.relative(MAIN, file).split(path.sep).join('/'));
     expect(users).toEqual(['ipc/annex-client-handlers.ts']);
