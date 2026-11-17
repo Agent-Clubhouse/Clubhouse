@@ -649,6 +649,50 @@ describe('network group projects across two desktops (#3363)', () => {
 });
 
 describe('polling author boundary (#3664)', () => {
+  it('keeps per-write outcomes isolated across overlapping updates and never persists them', async () => {
+    const id = await sharedProject();
+    A.host!.groupProjectHost.setRemoteWriteGate(check =>
+      check.write.write.op === 'update' && check.write.write.fields.name === 'Denied' ? 'denied' : undefined);
+    down.add(A.name);
+    const host = B.host!.groupProjectHost;
+    const originalGet = host.get.bind(host);
+    let entered!: () => void;
+    let release!: () => void;
+    const reading = new Promise<void>(resolve => { entered = resolve; });
+    const resume = new Promise<void>(resolve => { release = resolve; });
+    const readback = vi.spyOn(host, 'get').mockImplementationOnce(async projectId => {
+      entered();
+      await resume;
+      return originalGet(projectId);
+    });
+    const first = as(B, h => h.groupProjectHost.update(id, { name: 'Denied' }, { author: { agentId: 'builder', label: 'user' } }));
+    try {
+      await reading;
+      down.delete(A.name);
+      await as(B, h => h.groupProjectHost.flushOutbox(A.fp));
+      const second = await as(B, h => h.groupProjectHost.update(id, { name: 'Applied' }, { author: { agentId: 'builder', label: 'user' } }));
+      release();
+      const queued = await first;
+      expect(queued).toMatchObject({ name: 'Applied', writeOutcome: { status: 'queued' } });
+      expect(second).toMatchObject({ name: 'Applied', writeOutcome: { status: 'applied' } });
+      expect(queued!.writeOutcome).not.toBe(second!.writeOutcome);
+      for (const machine of [A, B]) {
+        expect(await as(machine, h => h.groupProjectHost.get(id))).not.toHaveProperty('writeOutcome');
+        expect(await as(machine, () => machine.registry!.groupProjectRegistry.get(id))).not.toHaveProperty('writeOutcome');
+      }
+    } finally {
+      release();
+      await first;
+      readback.mockRestore();
+    }
+  });
+
+  it.each(['deliver', 'wake', 'actions'] as const)('fails closed when the %s own-grant service omits its replica author', async grant => {
+    const id = await sharedProject();
+    await expect(as(B, () => B.roles!.setOwnGrant(id, grant, 'off'))).rejects.toMatchObject({ code: 'invalid' });
+    expect((await as(A, h => h.groupProjectHost.get(id)))?.metadata?.grants).toBeUndefined();
+  });
+
   it.each([true, false])('does not send instructions for queued enabled=%s if reconnect refuses it before the update readback', async enabled => {
     const id = await sharedProject();
     await as(A, h => h.groupProjectHost.update(id, { metadata: { pollingEnabled: !enabled } }));
