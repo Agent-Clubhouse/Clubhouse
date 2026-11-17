@@ -61,6 +61,7 @@ export const BUILTIN_BLOCK_IDS = {
   productOwner: 'builtin-block-product-owner',
   groupLead: 'builtin-block-group-project-lead',
   groupProjects: 'builtin-block-group-projects',
+  groupAdmin: 'builtin-block-group-project-admin',
   qa: 'builtin-block-quality-assurance',
   developer: 'builtin-block-developer',
   pullRequests: 'builtin-block-pull-requests',

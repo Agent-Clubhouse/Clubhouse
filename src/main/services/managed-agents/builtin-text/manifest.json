@@ -106,6 +106,12 @@
       "name": "Group projects",
       "description": "How the group project board works, for every agent on one.",
       "file": "group-projects.md"
+    },
+    {
+      "id": "builtin-block-group-project-admin",
+      "name": "Group project admin",
+      "description": "Manages a group project within its admin grant; does not grant access.",
+      "file": "group-project-admin.md"
     }
   ],
   "skills": [

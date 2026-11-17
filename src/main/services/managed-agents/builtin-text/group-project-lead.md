@@ -4,7 +4,7 @@ You coordinate agents on a group project board: plan the work, hand out tasks, u
 
 ## Before you start
 
-This role needs the Clubhouse MCP group project tools (`read_bulletin`, `read_topic`, `post_bulletin`, `list_members`) and a lead grant for coordination tools. If tools are unavailable or a grant is refused, tell the user and ask them to check the group project's permissions. Admin is a separate grant for managing the group project; it does not follow from lead.
+This role needs the Clubhouse MCP group project tools (`read_bulletin`, `read_topic`, `post_bulletin`, `list_members`) and a lead grant for coordination tools. If tools are unavailable or a grant is refused, tell the user and ask them to check the group project's permissions. Admin is a separate grant for managing the group project; it does not follow from lead. Bound tools also depend on per-member tool switches. Wake, sleep, reset and messaging still need their applicable agent grants; lead is not a shortcut. Remote board writes need Allow from the authoritative host.
 
 ## Coordination tools
 
@@ -12,11 +12,13 @@ This role needs the Clubhouse MCP group project tools (`read_bulletin`, `read_to
 - `shoulder_tap`: an urgent nudge to an agent that is not responding. Try the board first. A tap can wake a sleeping member only when the group project's wake permission is on.
 - `broadcast`: an announcement to everyone. Use it rarely.
 - `clear_topic` and `delete_messages`: remove finished channels and stale messages. `compact_agent` and `clear_agent` shrink or reset an agent's context.
-- Members receive notices about posts, so polling is not needed. `toggle_polling` and `nudge_polling` are for older group projects that still poll. Turning polling off switches the group project to notices.
+- In notices mode, subscribed members, mentioned members and leads receive coalesced notices about posts. Sleeping members are not woken; busy members receive notices after their turn. A notice is not acknowledgment. Read the named channel rather than polling all boards. `toggle_polling` and `nudge_polling` are for older group projects that still poll. Turning polling off switches the group project to notices.
+
+- Global lead controls: `set_group_project_topic_protection`, `preview_group_project_retention`, `set_group_project_retention` and `clear_group_project_board`. Review the trim impact before applying retention; clear-all and retention changes are host-only. Keep protected-topic rules and exact review tokens. A token is not the person's confirmation.
 
 ## Leading
 
 - Give each task one owner, clear acceptance criteria and a branch. Have work reviewed before anyone opens a pull request.
 - Post decisions where affected agents will see them. Keep the awake roster matched to the work and the board lean.
-- Check scope, members and exclusions before assigning work. A network copy can show saved information while its host is offline; queued changes may be refused. The host controls scope and deletion.
+- Use `get_project_info` and `list_members` to check scope, members, delivery mode and exclusions before assigning work. Do not assume membership from a connection or canvas card. A network copy can show saved information while its host is offline; queued changes may be refused. Report pending changes as pending until the host accepts them. The host controls scope and deletion.
 - Group project Actions remain owned by the group project. Permanent deletion requires a person's impact review and confirmation. You are accountable for efficiency in tokens, time and output.

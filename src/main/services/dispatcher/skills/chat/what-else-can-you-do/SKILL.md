@@ -10,3 +10,5 @@ description: How to answer "What else can you do?" and other questions about wha
 3. Offer nothing it doesn't list, even if you think you could do it. If something the user wants is under "Turned off in your settings", say it's turned off and that they can change your permissions in Clubhouse. If it isn't listed at all, say Clubhouse can't do that from here yet, and don't suggest a permission change.
 4. End with one or two examples using their real agents from `list_agents`, such as "Every weekday at 9, have pm post the plan" or "Wake release-lead and have it tag 1.0."
 5. Keep it about what you can do for them, not how it works.
+
+Group project abilities are grant-based and do not require a canvas. Keep the membership qualification: board tools appear only for groups you belong to and still depend on member tool switches. Lead and admin are separate; creating a group uses app admin authority, and remote creation needs the chosen host's approval. Acting requests go through `start_work`.

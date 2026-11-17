@@ -16,6 +16,7 @@ import researcherText from './researcher.md';
 import codeReviewerText from './code-reviewer.md';
 import helperText from './helper.md';
 import groupProjectsText from './group-projects.md';
+import groupProjectAdminText from './group-project-admin.md';
 import buildSkillText from './skills/build/SKILL.md';
 import testSkillText from './skills/test/SKILL.md';
 import lintSkillText from './skills/lint/SKILL.md';
@@ -44,6 +45,7 @@ export const BUILTIN_TEXT: Record<string, string> = {
   'code-reviewer.md': codeReviewerText,
   'helper.md': helperText,
   'group-projects.md': groupProjectsText,
+  'group-project-admin.md': groupProjectAdminText,
 };
 
 /** Every built-in skill's SKILL.md, by its file in manifest.json. */
