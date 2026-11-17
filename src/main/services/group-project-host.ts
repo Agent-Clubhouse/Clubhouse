@@ -636,7 +636,7 @@ class GroupProjectHostService {
 
   /** Change the membership record. `fn` edits a copy; a throw changes nothing. */
   async updateMembership(
-    id: string, fn: (draft: GroupProjectMembership) => GroupProjectMembership | void | Promise<GroupProjectMembership | void>, options: { withinExclusive?: boolean } = {},
+    id: string, fn: (draft: GroupProjectMembership) => GroupProjectMembership | void | Promise<GroupProjectMembership | void>, options: { withinExclusive?: boolean; author?: WriteAuthor } = {},
   ): Promise<{ membership: GroupProjectMembership; seq: number; queued?: boolean }> {
     const replica = await this.replicaFor(id).catch((): null => null);
     if (replica) {
@@ -651,7 +651,7 @@ class GroupProjectHostService {
       }
       const seq = await this.seqOf(id);
       if (isEmptyPatch(patch)) return { membership: current, seq };
-      return this.forward(replica, { op: 'membership', patch }, { label: 'membership' },
+      return this.forward(replica, { op: 'membership', patch }, options.author ?? { label: 'membership' },
         () => ({ membership: next, seq }), () => ({ membership: next, seq, queued: true }));
     }
     return this.commit(id, 'membership', async ({ project, reserve }) => {

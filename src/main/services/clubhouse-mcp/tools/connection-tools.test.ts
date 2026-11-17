@@ -230,7 +230,7 @@ beforeEach(async () => {
     agent('durable_otherhelper', { parentAgentId: 'durable_other' }),
   ]);
   for (const id of ['durable_lead', 'durable_other']) {
-    await updateAgentGrantChanges(id, () => undefined);
+    await updateAgentGrantChanges(id, () => ({ changes: [{ action: 'group_project.admin', target: { kind: 'any' }, mode: 'allow', by: 'user', at: '2026-11-17T00:00:00.000Z' }] }));
     dropGrantRequestsFor(id);
     agentRegistry.register(id, { projectPath, orchestrator: 'claude-code', runtime: 'pty' });
     setOrchestrationEnabled(id, true);
@@ -251,7 +251,7 @@ afterEach(() => {
 });
 
 describe('gating', () => {
-  it('keeps only group-project creation and legacy membership tools orchestration-gated', async () => {
+  it('keeps legacy membership orchestration-gated and creation grant-driven', async () => {
     const names = getScopedToolList('durable_lead').map((t) => t.name);
     expect(names).toEqual(expect.arrayContaining([
       'create_group_project', 'add_to_group_project', 'remove_from_group_project', 'connect_agents', 'disconnect_agents',
@@ -259,7 +259,8 @@ describe('gating', () => {
 
     setOrchestrationEnabled('durable_lead', false);
     expect(getScopedToolList('durable_lead').map((t) => t.name)).toContain('connect_agents');
-    expect(getScopedToolList('durable_lead').map((t) => t.name)).not.toContain('create_group_project');
+    // Creation is grant-driven, independent of orchestration (#3617).
+    expect(getScopedToolList('durable_lead').map((t) => t.name)).toContain('create_group_project');
     const refused = await call('connect_agents', { from: 'h1', to: 'h2' });
     expect(refused.isError).toBe(true);
     expect(boundPairs()).toEqual([]);
@@ -290,6 +291,18 @@ describe('ordinary agents with connection.manage (#3336)', () => {
     expect(boundPairs()).toContain(`durable_other->${project.id}`);
     expect((await call('leave_group_project', { agent: 'other', project: project.id })).isError).toBe(false);
     expect(boundPairs()).not.toContain(`durable_other->${project.id}`);
+  });
+
+  it.each(['join_group_project', 'leave_group_project'])('%s never reinterprets a resolved id as another group name', async (tool) => {
+    const project = await groupProjectRegistry.create('Shared');
+    const replacement = await groupProjectRegistry.create(project.id);
+    await grantConnections();
+    vi.mocked(groupProjectRegistry.list).mockResolvedValueOnce([project, replacement]).mockResolvedValueOnce([replacement]);
+    const result = await call(tool, { agent: 'other', project: 'Shared' });
+    expect(result.isError).toBe(true);
+    expect(result.text).toContain('name the group by id');
+    expect(boundPairs()).toEqual([]);
+    expect(await readConnections(projectPath)).toEqual([]);
   });
 
   it('refuses to join an agent outside the group project scope, saying to widen it, and records nothing (#3355)', async () => {
@@ -338,7 +351,7 @@ describe('ordinary agents with connection.manage (#3336)', () => {
       await rebuildPersistedBindings();
       expect(boundPairs()).toEqual(['durable_lead->durable_other']);
     } finally {
-      await updateAgentGrantChanges(id, () => undefined);
+      await updateAgentGrantChanges(id, () => ({ changes: [{ action: 'group_project.admin', target: { kind: 'any' }, mode: 'allow', by: 'user', at: '2026-11-17T00:00:00.000Z' }] }));
       dropGrantRequestsFor(id);
       forgetMcpCaller(id);
       agentRegistry.untrack(id);

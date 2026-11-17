@@ -102,7 +102,7 @@ describe('tool grant declarations (#2967)', () => {
 
   it('no tool finishes a pairing: none pairs, takes a code or confirms a certificate (#3068)', () => {
     const names = registerAll().map((t) => t.name);
-    expect(names.filter((n) => n !== 'join_group_project' && /pair|pin|certificate|confirm_device|join/i.test(n))).toEqual([]);
+    expect(names.filter((n) => !['join_group_project', 'answer_group_project_auto_join_offer'].includes(n) && /pair|pin|certificate|confirm_device|join/i.test(n))).toEqual([]);
   });
 
   it('the whole map: every tool and its declaration', () => {
@@ -214,7 +214,28 @@ describe('tool grant declarations (#2967)', () => {
       restart_agent: agent.restart on agent_arg; agent.sleep on agent_arg if now is true
       delete_agent: agent.dispose on agent_arg
       answer_helper_question: agent.message on my_helpers
-      create_group_project: connection.manage on agent_arg
+      preview_group_project_create: group_project.admin on app
+      create_group_project: group_project.admin on app
+      get_group_project_management: group_project.admin on group_project_arg
+      update_group_project: group_project.admin on group_project_arg
+      preview_group_project_scope: group_project.admin on group_project_arg
+      set_group_project_scope: group_project.admin on group_project_arg
+      add_group_project_member: group_project.admin on group_project_arg
+      exclude_group_project_member: group_project.admin on group_project_arg
+      set_group_project_automatic_membership: group_project.admin on group_project_arg
+      answer_group_project_auto_join_offer: group_project.admin on group_project_arg
+      confirm_group_project_unlinked_members: group_project.admin on group_project_arg
+      set_group_project_role: group_project.admin on group_project_arg
+      set_group_project_own_grant: group_project.admin on group_project_arg
+      set_group_project_default_tools: group_project.admin on group_project_arg
+      set_group_project_member_settings: group_project.admin on group_project_arg
+      set_group_project_topic_protection: group_project.lead on group_project_arg
+      preview_group_project_retention: group_project.lead on group_project_arg
+      set_group_project_retention: group_project.lead on group_project_arg
+      clear_group_project_board: group_project.lead on group_project_arg
+      dismiss_group_project_refusals: group_project.admin on group_project_arg
+      preview_delete_group_project: group_project.admin on group_project_arg
+      delete_group_project: group_project.admin on group_project_arg
       add_to_group_project: connection.manage on agent_arg
       remove_from_group_project: connection.manage on agent_arg
       join_group_project: connection.manage on agent_arg; connection.manage on group_project_arg

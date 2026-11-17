@@ -9,7 +9,7 @@ import { listPausedPolling, onPollingPauseChanged, resumePausedPolling, setProje
 import { groupProjectHost } from '../services/group-project-host';
 import { initGroupProjectLifecycle } from '../services/group-project-lifecycle';
 import { describeGroupProjectRoles, grantGroupProjectRole, setOwnGrant } from '../services/group-project-roles';
-import { addMember, answerAutoJoinOffer, beginAutoJoin, describeMembership, excludeMember, onMembershipChanged, previewAutoJoin, setAutomaticMembership, confirmUnlinkedMembers, releaseMembershipBindings } from '../services/group-project-membership';
+import { addMember, answerAutoJoinOffer, describeMembership, excludeMember, onMembershipChanged, previewAutoJoin, setAutomaticMembership, confirmUnlinkedMembers } from '../services/group-project-membership';
 import { listCoverage } from '../services/group-project-coverage';
 import { groupProjectRoster } from '../services/group-project-roster';
 import { executeShoulderTap } from '../services/group-project-shoulder-tap';
@@ -24,16 +24,7 @@ import { getAgentRuntime } from '../services/agent-runtime';
 import { injectPtyText } from '../services/agent-runtime/pty-input';
 import { getProvider } from '../orchestrators';
 import type { PasteSubmitTiming } from '../orchestrators';
-import { createLocalGroupProjectDeleteService } from '../services/group-project-delete-service';
-import { flushOpenCanvases } from '../services/canvas-flush';
-import { bindingManager } from '../services/clubhouse-mcp/binding-manager';
-
-const deletion = createLocalGroupProjectDeleteService((id) => {
-  releaseMembershipBindings(id);
-  for (const binding of bindingManager.getAllBindings()) {
-    if (binding.targetKind === 'group-project' && binding.targetId === id) bindingManager.unbind(binding.agentId, id);
-  }
-});
+import { createManagedGroupProject, groupProjectDeletion as deletion, previewGroupProjectDeletion } from '../services/group-project-management';
 
 function broadcastChanged(): void {
   groupProjectHost.list().then((projects) => {
@@ -139,10 +130,7 @@ export function registerGroupProjectHandlers(): void {
   ipcMain.handle(IPC.GROUP_PROJECT.CREATE, withValidatedArgs(
     [stringArg(), objectArg<GroupProjectCreateOptions>({ optional: true })],
     async (_event, name, options) => {
-      const project = await groupProjectHost.create(name as string, options as GroupProjectCreateOptions | undefined);
-      // The host has recorded the chosen initial membership policy and exclusions.
-      await beginAutoJoin(project.id);
-      annexEventBus.emitGroupProjectChanged('created', project);
+      const project = await createManagedGroupProject(name as string, options as GroupProjectCreateOptions | undefined);
       appLog('core:group-project', 'info', 'Group project created', { meta: { id: project.id, name: project.name } });
       return project;
     },
@@ -182,9 +170,7 @@ export function registerGroupProjectHandlers(): void {
   ipcMain.handle(IPC.GROUP_PROJECT.PREVIEW_DELETE, withValidatedArgs(
     [stringArg()],
     async (event, id) => {
-      const flushed = await flushOpenCanvases();
-      const impact = await deletion.preview(id as string, event.sender.id);
-      return { ...impact, incompleteWindows: !flushed.complete };
+      return previewGroupProjectDeletion(id as string, event.sender.id);
     },
   ));
 

@@ -23,7 +23,7 @@ import { CROSS_PROJECT_OFF_MESSAGE, MCP_CALLER_UNKNOWN_MESSAGE, ORCHESTRATION_OF
 import { callerGrants, checkToolGrant, isListable, type GrantCheck, type GrantCheckWire } from './grant-check';
 import { askFirst } from './ask-first';
 import { callKey, type ConsumedCallApproval } from '../grant-requests';
-import { resolveArgTargets, type ArgTargets } from './arg-targets';
+import { resolveArgTargets, resolveGroupProjectArgs, type ArgTargets } from './arg-targets';
 import { recordGrantDecision } from '../grant-telemetry';
 import { recordDispatcherControl } from '../../telemetry/dispatcher-telemetry';
 import { CONNECTION_TOOLS, WAKE_TOOL } from '../../../shared/connection-grants';
@@ -105,7 +105,7 @@ function matchesJsonSchemaType(value: unknown, schemaType: string): boolean {
  *
  * A tool may name several groups; it is available when any of them is on.
  */
-export type ToolGroup = 'orchestration' | 'crossProject' | 'dispatcher' | 'dispatcherChat' | 'fixedToolList' | 'actions' | 'connections' | 'dispatcherConnected' | 'handoffs';
+export type ToolGroup = 'orchestration' | 'crossProject' | 'dispatcher' | 'dispatcherChat' | 'fixedToolList' | 'actions' | 'groupProjects' | 'connections' | 'dispatcherConnected' | 'handoffs';
 
 /**
  * Whether an agent has its wire to the Dispatcher. Set by the agent card tools
@@ -147,6 +147,10 @@ const toolGroupGates: Record<ToolGroup, ToolGroupGate> = {
   handoffs: {
     isEnabled: (agentId) => callerGrants(agentId).some((grant) => grant.action === 'handoff.offer' || grant.action === 'handoff.accept') || handoffParticipantCheck(agentId),
     refusal: 'Handoffs require handoff.offer or handoff.accept permissions, or a retained handoff you participate in.',
+  },
+  groupProjects: {
+    isEnabled: (agentId) => !isTrackedDispatcher(agentId) || isDispatcherAgent(agentId),
+    refusal: 'Group Project management in Dispatcher chat must be handed off to the controller.',
   },
   connections: {
     isEnabled: (agentId) => (!isTrackedDispatcher(agentId) || isDispatcherAgent(agentId) || isDispatcherChatAgent(agentId))
@@ -324,6 +328,28 @@ const TOOL_ANNOTATIONS: Partial<Record<'global' | BindingTargetKind, Readonly<Re
     delete_agents: INTERNAL_DESTRUCTIVE,
     answer_helper_question: INTERNAL_WRITE,
     create_group_project: INTERNAL_WRITE,
+    preview_group_project_create: INTERNAL_READ,
+    get_group_project_management: INTERNAL_READ,
+    update_group_project: INTERNAL_WRITE,
+    preview_group_project_scope: INTERNAL_READ,
+    set_group_project_scope: INTERNAL_WRITE,
+    add_group_project_member: INTERNAL_WRITE,
+    exclude_group_project_member: INTERNAL_DESTRUCTIVE,
+    set_group_project_automatic_membership: INTERNAL_WRITE,
+    answer_group_project_auto_join_offer: INTERNAL_WRITE,
+    confirm_group_project_unlinked_members: INTERNAL_WRITE,
+    set_group_project_role: INTERNAL_WRITE,
+    set_group_project_own_grant: INTERNAL_WRITE,
+    set_group_project_default_tools: INTERNAL_WRITE,
+    set_group_project_member_settings: INTERNAL_WRITE,
+    set_group_project_topic_protection: INTERNAL_WRITE,
+    preview_group_project_retention: INTERNAL_READ,
+    set_group_project_retention: INTERNAL_DESTRUCTIVE,
+    clear_group_project_board: INTERNAL_DESTRUCTIVE,
+    dismiss_group_project_refusals: INTERNAL_WRITE,
+    preview_delete_group_project: INTERNAL_READ,
+    delete_group_project: INTERNAL_DESTRUCTIVE,
+
     add_to_group_project: INTERNAL_WRITE,
     remove_from_group_project: INTERNAL_DESTRUCTIVE,
     connect_agents: INTERNAL_WRITE,
@@ -641,7 +667,7 @@ export function grantToolMap(): GrantToolMap {
 }
 
 /** The groups whose tools the Dispatcher can call, through its controller or its chat, as toolGroupGates opens them. */
-const DISPATCHER_TOOL_GROUPS: ReadonlySet<ToolGroup> = new Set(['dispatcher', 'dispatcherChat', 'actions', 'handoffs']);
+const DISPATCHER_TOOL_GROUPS: ReadonlySet<ToolGroup> = new Set(['dispatcher', 'dispatcherChat', 'actions', 'groupProjects', 'handoffs']);
 
 /**
  * The grant actions a registered tool lets the running Dispatcher use (#3238):
@@ -876,6 +902,14 @@ export function getScopedToolList(agentId: string): McpToolDefinition[] {
   // Append global tools (available regardless of bindings, unless gated by a group)
   for (const [, tool] of globalTools) {
     if (!groupAllows(tool.group, agentId)) continue;
+    // Management tools name their group at call time. Offer them only when
+    // an effective grant covers some group; callTool resolves and checks the
+    // actual id again. Argument-target listing otherwise has no target to check.
+    if (tool.group === 'groupProjects' && tool.grant && !isToolGrantPassThrough(tool.grant)) {
+      const grants = callerGrants(agentId);
+      const groupActions = toolGrantDeclarations(tool.grant).filter((d) => d.target === 'group_project_arg').flatMap((d) => d.actions);
+      if (groupActions.some((action) => !grants.some((g) => g.action === action && (g.target.kind === 'any' || g.target.kind === 'group_project')))) continue;
+    }
     if (!isListable(checkToolGrant(agentId, tool.grant, {}, undefined, undefined, true))) continue;
     tools.push(tool.definition);
   }
@@ -929,7 +963,10 @@ export async function callTool(
     if ('message' in localized) return refuse('other_machine', localized.message);
     args = localized.args;
     // After the argument checks, as for wire tools: the user is never asked about a call that would fail on its arguments.
-    const targets = await resolveArgTargets(agentId, globalTool.grant, args);
+    const groups = await resolveGroupProjectArgs(agentId, globalTool.grant, args);
+    if ('message' in groups) return refuse('invalid_args', groups.message);
+    args = groups.args;
+    const targets = await resolveArgTargets(agentId, globalTool.grant, args, groups.targets);
     const granted = checkToolGrant(agentId, globalTool.grant, args, undefined, targets);
     let approval: ConsumedCallApproval | undefined;
     if (granted.ok === false) {
@@ -1039,7 +1076,10 @@ export async function callTool(
   const localized = localizeAgentArgs(template.grant, args);
   if ('message' in localized) return refuse('other_machine', localized.message);
   args = localized.args;
-  const targets = await resolveArgTargets(agentId, template.grant, args);
+  const groups = await resolveGroupProjectArgs(agentId, template.grant, args);
+  if ('message' in groups) return refuse('invalid_args', groups.message);
+  args = groups.args;
+  const targets = await resolveArgTargets(agentId, template.grant, args, groups.targets);
   const granted = checkToolGrant(agentId, template.grant, args, wireOf(binding), targets);
   if (granted.ok === false) {
     const outcome = await grantRefusal(agentId, toolName, granted, args, grantApprovalContext(agentId, toolName, args, template.grant, targets, wireOf(binding)));

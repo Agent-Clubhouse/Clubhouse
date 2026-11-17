@@ -146,6 +146,7 @@ import { agentRegistry } from '../../agent-registry';
 import { groupProjectRegistry } from '../../group-project-registry';
 import { groupProjectHost } from '../../group-project-host';
 import * as grantCheck from '../grant-check';
+import * as agentGrantsStore from '../../agent-grants-store';
 import { showDispatcherActionSummary } from '../../dispatcher/dispatcher-action-summary';
 import { setMcpCaller, _resetMcpCallGateForTesting } from '../mcp-call-gate';
 import { _resetGrantRequestsForTesting, listGrantRequests } from '../../grant-requests';
@@ -659,7 +660,13 @@ describe('action tools', () => {
     });
     it('requires the host’s explicit Admin grant to create a group-owned Action', async () => {
       const members = vi.spyOn(bindingManager, 'getAllBindings').mockReturnValue([{ agentId: 'agent-a', targetId: 'gp1', targetKind: 'group-project' }] as never);
-      const project = vi.spyOn(groupProjectRegistry, 'getSync').mockReturnValue({ id: 'gp1', name: 'Group', description: '', instructions: '', createdAt: '', metadata: {} });
+      const group = { id: 'gp1', name: 'Group', description: '', instructions: '', createdAt: '', metadata: {} };
+      const project = vi.spyOn(groupProjectRegistry, 'getSync').mockReturnValue(group);
+      const list = vi.spyOn(groupProjectRegistry, 'list').mockResolvedValue([group]);
+      const callerBindings = vi.spyOn(bindingManager, 'getBindingsForAgent').mockReturnValue([{ agentId: 'agent-a', targetId: 'gp1', targetKind: 'group-project' }] as never);
+      // Let the concrete-target call gate pass, then independently exercise the
+      // host's Admin decision below. Both checks must see the same real group.
+      const callGrants = vi.spyOn(agentGrantsStore, 'getAgentGrantChanges').mockReturnValue({ changes: [{ action: 'group_project.admin', target: { kind: 'group_project', id: 'gp1' }, mode: 'allow' }] });
       const host = vi.spyOn(groupProjectHost, 'isThisMachine').mockReturnValue(true);
       const decision = vi.spyOn(grantCheck, 'decideGrant').mockReturnValue({ outcome: 'refuse', reason: 'no_grant' });
       try {
@@ -678,7 +685,7 @@ describe('action tools', () => {
         members.mockReturnValue([{ agentId: 'agent-a', targetId: 'gp1', targetKind: 'group-project' }] as never);
         host.mockReturnValue(false);
         expect((await call('agent-a', 'create_action', args)).isError).toBe(true);
-      } finally { decision.mockRestore(); host.mockRestore(); project.mockRestore(); members.mockRestore(); }
+      } finally { decision.mockRestore(); host.mockRestore(); callGrants.mockRestore(); callerBindings.mockRestore(); list.mockRestore(); project.mockRestore(); members.mockRestore(); }
     });
     it('an agent owns what it creates', async () => {
       const r = await call('agent-a', 'create_action', { trigger: DAILY, steps: [NOTIFY] });

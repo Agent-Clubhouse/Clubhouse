@@ -41,7 +41,7 @@ vi.mock('../dispatcher/dispatcher-settings', async (original) => ({
 
 import { agentRegistry } from '../agent-registry';
 import { updateAgentGrantChanges } from '../agent-grants-store';
-import { resolveArgTargets } from './arg-targets';
+import { resolveArgTargets, resolveGroupProjectArgs } from './arg-targets';
 import { checkToolGrant } from './grant-check';
 import { setDispatcherAgent, _resetDispatcherGateForTesting } from './dispatcher-gate';
 import { setMcpCaller, _resetMcpCallGateForTesting } from './mcp-call-gate';
@@ -313,6 +313,21 @@ describe('what a plugin may do for the agent whose call it answers, with real gr
 
 describe('a group project named in a call (#3360)', () => {
   const join = [{ actions: ['connection.manage' as const], target: 'group_project_arg' as const, from: { args: ['project'] } }];
+
+  it('freezes scalar and list references once, without changing caller arguments', async () => {
+    state.groups.set('gp1', {}); state.groups.set('gp2', {});
+    try {
+      const args = { project: ['Team gp1', 'gp2'] };
+      const resolved = await resolveGroupProjectArgs('plain', join, args);
+      expect('message' in resolved).toBe(false);
+      if ('message' in resolved) throw new Error(resolved.message);
+      expect(resolved.args).toEqual({ project: ['gp1', 'gp2'] });
+      expect(args.project).toEqual(['Team gp1', 'gp2']);
+      state.groups.clear(); // A fresh lookup must not replace the already resolved targets.
+      const targets = await resolveArgTargets('plain', join, resolved.args, resolved.targets);
+      expect([...targets.values()][0]?.map((target) => target.groupProjectId)).toEqual(['gp1', 'gp2']);
+    } finally { state.groups.clear(); }
+  });
 
   it('resolves with its id, so a grant on that one group project covers it and no other', async () => {
     state.groups.set('gp1', {});

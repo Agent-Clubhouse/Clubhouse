@@ -26,13 +26,13 @@ const TOKEN_LIFETIME_MS = 5 * 60_000;
 
 /** A preview token is scoped to one caller, one project and one exact inventory. */
 export function createGroupProjectDeletionService(deps: GroupProjectDeletionDependencies) {
-  const tokens = new Map<string, { caller: number; id: string; digest: string; expires: number }>();
+  const tokens = new Map<string, { caller: number | string; id: string; digest: string; expires: number }>();
   const deleting = new Set<string>();
   const now = deps.now ?? Date.now;
   const digest = (value: GroupProjectDeletionInventory) => createHash('sha256').update(JSON.stringify(value)).digest('hex');
 
   return {
-    async preview(id: string, caller: number) {
+    async preview(id: string, caller: number | string) {
       const inventory = await deps.inventory(id);
       if (inventory.groupProjectId !== id) throw new Error('The impact check returned the wrong group project.');
       const currentTime = now();
@@ -41,7 +41,7 @@ export function createGroupProjectDeletionService(deps: GroupProjectDeletionDepe
       tokens.set(token, { caller, id, digest: digest(inventory), expires: currentTime + TOKEN_LIFETIME_MS });
       return { ...inventory, token };
     },
-    async confirm(id: string, caller: number, token: string) {
+    async confirm(id: string, caller: number | string, token: string) {
       const entry = tokens.get(token);
       tokens.delete(token);
       if (!entry || entry.caller !== caller || entry.id !== id || entry.expires <= now()) {
