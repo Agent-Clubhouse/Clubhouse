@@ -12,9 +12,20 @@ The application embeds exact-pinned `@microsoft/copilot-sdk` 2.0.0 and attaches 
 
 The existing feature fixtures are **derived**, with headers recording their protocol-3 origin and synthesized protocol-4 negotiation/grouped create/resume options. Their session-event bodies are historical replay evidence, not new recordings from a v4 runtime. Independent real-login, provider, persistence and tool-behavior QA remains outstanding as described below.
 
-`handshake.runtime.qa.ts` is the separately authorized zero-token v4 handshake entry (run it by filename, rather than the full model QA suite). It may use the installed or SDK platform runtime only within a clean allowlisted environment and an OS-enforced loopback-only sandbox. It may call start/status/auth and stop, with no session or send required. Invalid tokens or an empty temporary home alone do not replace the network boundary. A successful real handshake proves negotiation only, not the feature or paid-model behaviors in the table.
+`handshake.runtime.qa.ts` is the separately authorized zero-token protocol QA entry (run it by filename, rather than the full model QA suite). It requires `CLUBHOUSE_COPILOT_HANDSHAKE_BINARY` so the selected binary is explicit and included in its report; there is no default to an SDK-bundled runtime. Use the installed CLI for installed-CLI evidence. An SDK platform runtime may be selected explicitly, but must be labeled separately. Optional `CLUBHOUSE_COPILOT_HANDSHAKE_PROTOCOL` and `CLUBHOUSE_COPILOT_HANDSHAKE_VERSION` assert the expected protocol and successful runtime version.
 
-**Observed 2026-11-17 on macOS arm64:** the isolated `handshake.runtime.qa.ts` passed against SDK 2.0.0 / CLI 1.0.113, reporting protocol 4 and a missing login. The parent process used an allowlist containing only temporary home/config/cache/state/temp directories and PATH; `sandbox-exec` denied outbound network except loopback, and denied access to the real Copilot/Codex/GitHub credential directories and macOS keychains. No session was created and no prompt was sent. This is zero-token negotiation evidence only; real-login and feature QA below remains outstanding.
+Run only within a clean allowlisted environment and an OS-enforced loopback-only sandbox. This entry calls only the driver's probe (connect/status/auth and cleanup); it never creates a session or sends a prompt. Invalid tokens or an empty temporary home alone do not replace the network boundary. A successful real handshake proves negotiation only, not feature or paid-model behavior.
+
+**Observed 2026-11-17 on macOS arm64:**
+
+| Selected binary | Version | Result |
+| --- | --- | --- |
+| `node_modules/@microsoft/copilot-sdk-darwin-arm64/prebuilds/darwin-arm64/copilot-runtime` (SDK platform package, **not the user's installed CLI**) | 1.0.113 | Protocol 4, handshake succeeds, missing login |
+| `/opt/homebrew/bin/copilot` (the user's installed CLI) | 1.0.112, confirmed with `--version` inside the sandbox | Protocol 3, SDK v2 rejects with `SDK supports versions 4-4, but server reports version 3` |
+
+The installed-CLI rejection's recovery copy directs the user to update the installed CLI to 1.0.113 or a newer protocol-4 release; existing sessions/configuration remain intact. 1.0.113 is the first verified supported v4 CLI here; 1.0.112 is verified v3. `minVersion: 1.0.113` is a hard chat-selection floor, while `testedMax` is advisory. Protocol validation happens first, so this installed CLI falls back on its protocol mismatch before the semantic version floor is evaluated.
+
+Both observations used temporary home/config/cache/state/temp directories and an allowlisted environment; `sandbox-exec` denied outbound network except loopback and denied access to real Copilot/Codex/GitHub credential directories and macOS keychains. Neither run created a session or sent a prompt. The installed CLI was not upgraded or changed. Real-login and feature QA below remains outstanding.
 
 ## Behavior mapping
 

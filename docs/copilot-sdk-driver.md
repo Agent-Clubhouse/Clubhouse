@@ -2,7 +2,7 @@
 
 ## Current integration: protocol 4 (#3685, 2026-11-17)
 
-Clubhouse pins **`@microsoft/copilot-sdk` exactly to `2.0.0`**, paired with Copilot CLI **`1.0.113`**. Both the minimum and tested maximum in `chat-version-policy.ts`, and the nightly handshake CLI pin, are `1.0.113`. The SDK itself enforces protocol 4; `testedMax` stays advisory for newer CLIs. Fixture coverage proves deterministic protocol negotiation and driver behavior, rather than claiming real CLI feature QA.
+Clubhouse pins **`@microsoft/copilot-sdk` exactly to `2.0.0`**, paired with Copilot CLI **`1.0.113`**. Both the minimum and tested maximum in `chat-version-policy.ts`, and the nightly handshake CLI pin, are `1.0.113`. The SDK itself enforces protocol 4; `testedMax` stays advisory for newer CLIs. Fixture coverage proves deterministic protocol negotiation and driver behavior, rather than claiming real CLI feature QA. Isolated zero-token probes separately verified the SDK platform-package runtime 1.0.113 as protocol 4 and this Mac's installed `/opt/homebrew/bin/copilot` 1.0.112 as protocol 3; these are distinct evidence, detailed in [the test boundary](copilot-test-boundary.md). The 1.0.113 minimum is a hard chat-selection floor; the installed 1.0.112 CLI is rejected earlier by protocol negotiation.
 
 The old `@github/copilot-sdk` 1.0.29 (and 1.0.34) speaks only protocol 3. Updating that old package cannot connect it to a protocol-4 CLI. Conversely, SDK v2 rejects protocol 3 before creating or resuming any session. See upstream's [v2 compatibility contract](https://github.com/microsoft/copilot-sdk/blob/v2.0.0/docs/troubleshooting/compatibility.md#version-compatibility).
 
