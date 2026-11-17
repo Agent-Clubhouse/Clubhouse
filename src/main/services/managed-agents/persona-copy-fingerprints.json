@@ -86,6 +86,16 @@
         },
         {
           "first": "# Orchestrator",
+          "length": 5880,
+          "sha256": "c694de1f903e1bdeb79250fe346b290f38b22d9879bb95a04d8c155db10e46c6"
+        },
+        {
+          "first": "# Orchestrator",
+          "length": 5929,
+          "sha256": "a8a775f462eee8b5a384a76ff0bb14f06c2b00787958baa99f1b1ebab9d7c785"
+        },
+        {
+          "first": "# Orchestrator",
           "length": 6230,
           "sha256": "816fb8b2d769d78d2c8301c607148e971891897e7e2731e9d8aea0dd2576e570"
         },
@@ -493,6 +503,16 @@
           "first": "# Generalist",
           "length": 2065,
           "sha256": "374793bd6d52d3542d66c56bf058c3c70282572e5e6ce732e626c342a1fe7ccf"
+        },
+        {
+          "first": "# Helper",
+          "length": 2101,
+          "sha256": "82e567e589a73feb385985788f3494e187d3c075e682511dd68fbc8448a9197b"
+        },
+        {
+          "first": "# Helper",
+          "length": 2112,
+          "sha256": "19dadf8505485e754ef68c06d5ef65d85b11213c3bfc463edb494caf0ee187cb"
         }
       ]
     },
