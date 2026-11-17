@@ -6,6 +6,8 @@
  * Stores snapshots per satellite and forwards events to the renderer via IPC.
  */
 import * as https from 'https';
+import { applyFetchedIcons, fetchLeftOutIcons, newRemoteIconState, type IconFetchResult, type IconKind, type RemoteIconState } from './remote-icon-fetch';
+import { ICON_SERVED_MAX_BYTES } from '../../shared/icon-limits';
 import { randomUUID } from 'crypto';
 import * as http from 'http';
 import * as net from 'net';
@@ -187,7 +189,12 @@ interface SatelliteConnectionInternal {
   discoveredTried?: boolean;
   /** Addresses that showed another certificate in this round of tries. */
   mismatches?: number;
+  /** Icons its snapshots left out for size and were fetched instead (#3649). */
+  iconState?: RemoteIconState;
 }
+
+/** An icon body past this is refused: the satellite serves at most ICON_SERVED_MAX_BYTES. */
+const REMOTE_ICON_MAX_BYTES = ICON_SERVED_MAX_BYTES * 2;
 
 // Heartbeat constants
 const HEARTBEAT_INTERVAL_MS = 30_000;  // 30s ping
@@ -339,6 +346,50 @@ function headerInt(res: http.IncomingMessage, name: string): number | undefined 
   const raw = res.headers[name];
   const value = typeof raw === 'string' ? Number(raw) : NaN;
   return Number.isInteger(value) && value >= 0 ? value : undefined;
+}
+
+/** An icon through the satellite's authenticated icon route, as a data URL. */
+function fetchSatelliteIcon(sat: SatelliteConnectionInternal, kind: IconKind, id: string): Promise<IconFetchResult> {
+  const tlsOptions = pinnedTlsOptionsFor(sat.fingerprint);
+  return new Promise<IconFetchResult>((resolve) => {
+    let settled = false;
+    const once = (result: IconFetchResult) => { if (!settled) { settled = true; resolve(result); } };
+    const req = https.get(satelliteUrl(sat, `/api/v1/icons/${kind}/${encodeURIComponent(id)}`), { ...tlsOptions, timeout: 10_000 }, (res) => {
+      if (res.statusCode === 404) { res.resume(); once({ status: 'missing' }); return; }
+      if (res.statusCode !== 200) { drainRefusal(sat, res); once({ status: 'failed' }); return; }
+      const type = String(res.headers['content-type'] ?? '');
+      if (!type.startsWith('image/')) { res.resume(); once({ status: 'failed' }); return; }
+      const chunks: Buffer[] = [];
+      let size = 0;
+      res.on('data', (chunk: Buffer) => {
+        size += chunk.length;
+        if (size > REMOTE_ICON_MAX_BYTES) { res.destroy(); once({ status: 'failed' }); return; }
+        chunks.push(chunk);
+      });
+      res.on('end', () => once({ status: 'ok', dataUrl: `data:${type};base64,${Buffer.concat(chunks).toString('base64')}` }));
+      res.on('error', () => once({ status: 'failed' }));
+      res.on('close', () => once({ status: 'failed' }));
+    });
+    req.on('error', () => once({ status: 'failed' }));
+    req.on('timeout', () => { req.destroy(); once({ status: 'failed' }); });
+  });
+}
+
+/** Fetch the icons this satellite's snapshot names and doesn't carry, and show them when they arrive. */
+function fetchSatelliteLeftOutIcons(sat: SatelliteConnectionInternal): void {
+  const ws = sat.ws;
+  const state = (sat.iconState ??= newRemoteIconState());
+  void fetchLeftOutIcons(
+    state,
+    () => (sat.ws === ws ? sat.snapshot : null),
+    (kind, id) => fetchSatelliteIcon(sat, kind, id),
+    () => {
+      if (sat.ws !== ws || !sat.snapshot) return;
+      applyFetchedIcons(state, sat.snapshot);
+      broadcastSatellitesChanged();
+      broadcastSatelliteEvent(sat.id, 'snapshot', sat.snapshot);
+    },
+  );
 }
 
 function fetchSatelliteBuffer(sat: SatelliteConnectionInternal, agentId: string): Promise<SatelliteBuffer | null> {
@@ -990,6 +1041,8 @@ function handleSatelliteMessage(sat: SatelliteConnectionInternal, msg: Record<st
           // It has every canvas, from after any fetch still running began.
           canvasRefetches.get(sat.ws)?.forEach((refetch) => { refetch.superseded = true; });
         }
+        sat.iconState ??= newRemoteIconState();
+        applyFetchedIcons(sat.iconState, incoming);
         sat.snapshot = incoming;
         void import('./connection-card').then((m) => m.rememberConnectionSnapshot(sat.fingerprint, incoming)).catch((error) => {
           appLog('core:annex', 'warn', 'Could not save the network connection directory', { meta: { error: error instanceof Error ? error.message : String(error) } });
@@ -1000,6 +1053,7 @@ function handleSatelliteMessage(sat: SatelliteConnectionInternal, msg: Record<st
           try { listener(sat.fingerprint.toLowerCase()); } catch { /* telemetry-exempt: one listener failing must not stop the others */ }
         }
         if (omitted) void fetchOmittedCanvases(sat);
+        fetchSatelliteLeftOutIcons(sat);
       }
       break;
     }

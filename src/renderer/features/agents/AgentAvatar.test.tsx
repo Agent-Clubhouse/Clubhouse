@@ -1,6 +1,7 @@
 import { render, screen } from '@testing-library/react';
 import { AgentAvatar, AgentAvatarWithRing } from './AgentAvatar';
 import { useAgentStore } from '../../stores/agentStore';
+import { useRemoteProjectStore } from '../../stores/remoteProjectStore';
 import type { Agent } from '../../../shared/types';
 
 function makeAgent(overrides: Partial<Agent> = {}): Agent {
@@ -232,5 +233,25 @@ describe('AgentAvatarWithRing', () => {
     // Waking is Starting in the shared status palette (agent-status.tsx)
     expect(styledEl!.getAttribute('style')).toContain('rgb(var(--ctp-info))');
   });
-});
 
+  describe('remote agents (#3649)', () => {
+    const remoteId = 'remote||sat-1||agent-1';
+    afterEach(() => { useRemoteProjectStore.setState({ remoteAgentIcons: {} }); });
+
+    it('draws the remote icon stored under the namespaced id', () => {
+      useRemoteProjectStore.setState({ remoteAgentIcons: { [remoteId]: 'data:image/png;base64,AAA' } });
+      render(<AgentAvatar agent={makeAgent({ id: remoteId, icon: 'a.png' })} />);
+      expect(screen.getByRole('img')).toHaveAttribute('src', 'data:image/png;base64,AAA');
+    });
+
+    it('draws the emoji of a remote agent', () => {
+      render(<AgentAvatar agent={makeAgent({ id: remoteId, emoji: '🦊' })} />);
+      expect(screen.getByRole('img')).toHaveTextContent('🦊');
+    });
+
+    it('falls back to initials when the icon has not arrived', () => {
+      render(<AgentAvatar agent={makeAgent({ id: remoteId, icon: 'a.png' })} />);
+      expect(screen.getByText('BF')).toBeInTheDocument();
+    });
+  });
+});
