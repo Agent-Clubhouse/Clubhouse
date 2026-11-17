@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import type { GroupProject, GroupProjectMemberView, GroupProjectScope, GroupProjectScopeOptions } from '../../../shared/group-project-types';
 import type { Project } from '../../../shared/types';
+import { groupProjectLabel } from '../../../shared/group-project-labels';
 import { sameGroupProjectScope } from '../../../shared/group-project-scope';
 import { Button } from '../../components/Button';
 import { useGroupProjectStore } from '../../stores/groupProjectStore';
@@ -8,17 +9,17 @@ import { useProjectStore } from '../../stores/projectStore';
 import { ipcErrorMessage } from '../../utils/ipc-error';
 import { SettingsBlock, SettingsSection, settingsError, settingsHelp, settingsInput, settingsLabel } from './SettingsLayout';
 
-const projectLabel = (project: Project) => project.displayName || project.name;
+const projectLabel = (project: Project) => groupProjectLabel(project.displayName, project.name, 'This project');
 
 /** What a scope covers, in the words of #3355's table. */
-export function scopeMeaning(scope: GroupProjectScope, projects: readonly Project[]): string {
+export function scopeMeaning(scope: GroupProjectScope, projects: readonly Project[], labels?: ReadonlyMap<string, string>): string {
   if (scope.level === 'app') {
     return scope.reach === 'local'
       ? 'Agents in every project on this computer.'
       : 'Agents in every project on every computer in your Annex Network.';
   }
   const project = projects.find((p) => p.id === scope.projectId);
-  const name = project ? projectLabel(project) : 'this project';
+  const name = labels?.get(scope.projectId) ?? (project ? projectLabel(project) : 'this project');
   return scope.reach === 'local'
     ? `Agents in ${name} on this computer.`
     : `Agents in ${name} and in projects linked to it on your other computers.`;
@@ -58,10 +59,11 @@ interface ScopeFieldsProps {
   onChange: (scope: GroupProjectScope) => void;
   options: GroupProjectScopeOptions | null;
   disabled?: boolean;
+  projectLabels?: ReadonlyMap<string, string>;
 }
 
 /** Project or app, and this computer or network (#3355). Network is disabled with its reason when unavailable. */
-export function GroupProjectScopeFields({ idPrefix, value, onChange, options, disabled }: ScopeFieldsProps) {
+export function GroupProjectScopeFields({ idPrefix, value, onChange, options, disabled, projectLabels }: ScopeFieldsProps) {
   const projects = useProjectStore((s) => s.projects);
   const networkAvailable = options?.network.available ?? false;
   const reasonId = `${idPrefix}-network-reason`;
@@ -87,7 +89,7 @@ export function GroupProjectScopeFields({ idPrefix, value, onChange, options, di
       >
         <option value="app">The whole app</option>
         {projects.map((project) => (
-          <option key={project.id} value={`project:${project.id}`}>{projectLabel(project)}</option>
+          <option key={project.id} value={`project:${project.id}`}>{projectLabels?.get(project.id) ?? projectLabel(project)}</option>
         ))}
         {!knownProject && <option value={covers}>Unregistered project</option>}
       </select>
@@ -112,7 +114,7 @@ export function GroupProjectScopeFields({ idPrefix, value, onChange, options, di
           <p id={reasonId} className={settingsHelp}>{options?.network.reason ?? 'Checking whether network reach is available...'}</p>
         )}
       </fieldset>
-      <p className={settingsHelp}>{scopeMeaning(value, projects)}</p>
+      <p className={settingsHelp}>{scopeMeaning(value, projects, projectLabels)}</p>
     </div>
   );
 }

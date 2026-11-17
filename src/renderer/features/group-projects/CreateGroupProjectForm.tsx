@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
 import type {
   AutoJoinPreview, GroupProject, GroupProjectCreateHost, GroupProjectCreateOptions, GroupProjectScope, RemoteCreateOutcome,
 } from '../../../shared/group-project-types';
@@ -8,6 +8,11 @@ import { useProjectStore } from '../../stores/projectStore';
 import { ipcErrorMessage } from '../../utils/ipc-error';
 import { SettingsBlock, SettingsSection, settingsError, settingsHelp, settingsInput, settingsLabel } from '../settings/SettingsLayout';
 import { GroupProjectScopeFields, useScopeOptions } from '../settings/GroupProjectScopeFields';
+import { groupProjectLabel } from '../../../shared/group-project-labels';
+import { onSatelliteSnapshot } from '../../stores/annexClientStore';
+import { useRemoteProjectStore } from '../../stores/remoteProjectStore';
+import { useNetworkSidebarStore } from '../../chrome/sidebar/networkSidebarStore';
+import { resolveCreatePreview } from './createPreview';
 import { CoverageSummary } from './CoverageSummary';
 
 export function CreateGroupProjectForm({ defaultScope = { level: 'app', reach: 'local' }, onCreated, onCancel }: {
@@ -19,6 +24,7 @@ export function CreateGroupProjectForm({ defaultScope = { level: 'app', reach: '
   const create = useGroupProjectStore((s) => s.create);
   const createOnHost = useGroupProjectStore((s) => s.createOnHost);
   const projects = useProjectStore((s) => s.projects);
+  const links = useNetworkSidebarStore((s) => s.links);
   const [autoJoin, setAutoJoin] = useState(true);
   const [includeLinkedComputers, setIncludeLinkedComputers] = useState(true);
   const [excluded, setExcluded] = useState<string[]>([]);
@@ -29,7 +35,13 @@ export function CreateGroupProjectForm({ defaultScope = { level: 'app', reach: '
   const [creating, setCreating] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [created, setCreated] = useState(false);
-  const [preview, setPreview] = useState<AutoJoinPreview | null>(null);
+  const [rawPreview, setPreview] = useState<AutoJoinPreview | null>(null);
+  const satelliteProjects = useRemoteProjectStore((s) => s.satelliteProjects);
+  const remoteAgents = useRemoteProjectStore((s) => s.remoteAgents);
+  const resolved = useMemo(() => rawPreview
+    ? resolveCreatePreview(rawPreview, projects, Object.values(satelliteProjects).flat(), remoteAgents)
+    : null, [rawPreview, projects, satelliteProjects, remoteAgents]);
+  const preview = resolved?.preview;
   const [previewError, setPreviewError] = useState<string | null>(null);
   const [previewLoading, setPreviewLoading] = useState(true);
   const pending = useRef(false);
@@ -86,9 +98,11 @@ export function CreateGroupProjectForm({ defaultScope = { level: 'app', reach: '
     void loadPreview();
     const offProject = window.clubhouse.project.onChanged(() => { void loadPreview(); });
     const offAgents = window.clubhouse.agent.onConfigsChanged(() => { void loadPreview(); });
+    const offSnapshot = onSatelliteSnapshot(() => { void loadPreview(); });
+    const offComputers = window.clubhouse.annexClient.onSatellitesChanged(() => { void loadPreview(); });
     const offMembership = window.clubhouse.groupProject.onMembershipChanged(() => { void loadPreview(); });
-    return () => { previewVersion.current++; offProject(); offAgents(); offMembership(); };
-  }, [loadPreview]);
+    return () => { previewVersion.current++; offProject(); offAgents(); offMembership(); offSnapshot(); offComputers(); };
+  }, [loadPreview, links]);
 
   /** Send to another computer: a new request, or `retryOf` again exactly as saved. */
   const sendRemote = useCallback(async (retryOf?: string) => {
@@ -183,12 +197,29 @@ export function CreateGroupProjectForm({ defaultScope = { level: 'app', reach: '
         {preview && <div className={`${settingsHelp} mb-3`}>
           <CoverageSummary coverage={preview.coverage} remoteHost={network && host !== null} />
           <p>{preview.wouldJoin.filter((agent) => !excluded.includes(agent.agentId)).length} {preview.wouldJoin.filter((agent) => !excluded.includes(agent.agentId)).length === 1 ? 'agent will' : 'agents will'} join now.</p>
+          {preview.wouldJoin.length > 0 && <div className="flex gap-2">
+            <Button disabled={locked || preview.wouldJoin.every((agent) => !excluded.includes(agent.agentId))}
+              onClick={() => setExcluded((current) => current.filter((id) => !preview.wouldJoin.some((agent) => agent.agentId === id)))}>Include all</Button>
+            <Button disabled={locked || preview.wouldJoin.every((agent) => excluded.includes(agent.agentId))}
+              onClick={() => setExcluded((current) => [...new Set([...current, ...preview.wouldJoin.map((agent) => agent.agentId)])])}>Exclude all</Button>
+          </div>}
           {preview.wouldJoin.length > 0 && <ul aria-label="Agents who will join" className="list-disc pl-5">
             {preview.wouldJoin.map((agent) => <li key={agent.agentId}><label className="flex items-center gap-2"><input type="checkbox" checked={!excluded.includes(agent.agentId)} disabled={locked}
               onChange={(event) => setExcluded((current) => event.target.checked ? current.filter((id) => id !== agent.agentId) : [...current, agent.agentId])} />
               {agent.name}{agent.projectName ? ` (${agent.projectName})` : ''}</label></li>)}
           </ul>}
-          {preview.unreadableProjects.length > 0 && <p>Could not check agents in: {preview.unreadableProjects.map((project) => project.name).join(', ')}. The preview may be incomplete.</p>}
+          {preview.unreadableProjects.length > 0 && <div>
+            <p>Some agents cannot be confirmed right now. The preview may be incomplete.</p>
+            <ul aria-label="Projects with unconfirmed agents" className="list-disc pl-5">
+              {preview.unreadableProjects.map((project) => <li key={project.projectId}>{project.name}: {project.reason ?? 'The agent list has not synced yet.'}</li>)}
+            </ul>
+          </div>}
+          {preview.lastSeen.length > 0 && <div>
+            <p>Previously synced agents (not counted as joining now)</p>
+            <ul aria-label="Last seen agents" className="list-disc pl-5">
+              {preview.lastSeen.map((agent) => <li key={agent.agentId}>{agent.name}{agent.projectName ? ` (${agent.projectName})` : ''}. Last seen on {agent.machineName}; can't confirm right now.</li>)}
+            </ul>
+          </div>}
         </div>}
         <form onSubmit={submit} className="flex flex-col items-start gap-2">
           <label htmlFor="new-group-project-name" className={settingsLabel}>New group project name</label>
@@ -204,11 +235,12 @@ export function CreateGroupProjectForm({ defaultScope = { level: 'app', reach: '
             value={scope}
             onChange={(next) => { setPreview(null); setPreviewLoading(true); setScope(next); setExcluded([]); draftChanged(); if (next.reach !== 'network') setHost(null); }}
             options={scopeOptions}
+            projectLabels={resolved?.projectLabels}
             disabled={locked}
           />
           {scope.level === 'project' && <fieldset disabled={locked} className="flex flex-col gap-2">
             <label className="flex items-center gap-2 text-xs text-ctp-text"><input type="checkbox" checked={autoJoin} onChange={(event) => setAutoJoin(event.target.checked)} />
-              Start with every agent in {projects.find((p) => p.id === scope.projectId)?.displayName || projects.find((p) => p.id === scope.projectId)?.name || 'this project'}
+              Start with every agent in {resolved?.projectLabels.get(scope.projectId) ?? groupProjectLabel(projects.find((p) => p.id === scope.projectId)?.displayName, projects.find((p) => p.id === scope.projectId)?.name, 'this project')}
             </label>
             <p className={settingsHelp}>Also adds agents that join the project later. Unchecked agents stay excluded.</p>
             {scope.reach === 'network' && <label className="flex items-center gap-2 text-xs text-ctp-text"><input type="checkbox" checked={includeLinkedComputers} disabled={!autoJoin} onChange={(event) => setIncludeLinkedComputers(event.target.checked)} />Include linked computers</label>}
