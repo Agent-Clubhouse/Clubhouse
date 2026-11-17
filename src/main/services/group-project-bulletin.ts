@@ -519,7 +519,11 @@ class BulletinBoard {
 
   async claimInbox(channel: string, address: string): Promise<void> {
     await this.ensureLoaded();
-    this.inboxOwners.set(normalizeChannelName(channel), address);
+    const canonical = normalizeChannelName(channel);
+    const owner = this.inboxOwners.get(canonical);
+    if (owner && owner !== address) throw new Error('This inbox already belongs to another member.');
+    if (owner === address) return;
+    this.inboxOwners.set(canonical, address);
     this.markDirty();
   }
 
@@ -775,7 +779,12 @@ export async function resolveInboxChannel(projectId: string, agentName: string, 
   if (owned) return owned;
   const owner = await board.inboxOwner(base);
   if (!owner || owner === address) return base;
-  return `${base}-${createHash('sha256').update(address).digest('hex').slice(0, 6)}`;
+  const hash = createHash('sha256').update(address).digest('hex');
+  for (let attempt = 0; ; attempt++) {
+    const candidate = `${base}-${hash.slice(0, 6)}${attempt ? `-${attempt}` : ''}`;
+    const candidateOwner = await board.inboxOwner(candidate);
+    if (!candidateOwner || candidateOwner === address) return candidate;
+  }
 }
 
 /**

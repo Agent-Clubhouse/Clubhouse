@@ -247,6 +247,7 @@ interface CommitContext {
 class GroupProjectHostService {
   private queues = new Map<string, Promise<unknown>>();
   private seqs = new Map<string, number>();
+  private admissionBatches = new Map<string, { accepting: boolean; pending: Map<string, { name: string; address: string }>; promise: Promise<void> }>();
   private tombstones: GroupProjectTombstone[] | null = null;
   private reconciled: Promise<void> | null = null;
   private listeners = new Set<ChangeListener>();
@@ -1137,29 +1138,73 @@ class GroupProjectHostService {
     return true;
   }
 
-  /** Host-owned admission: one board transaction, independent of local binding restores. */
+  /** Single joins share the same admission transaction as automatic batches. */
   async ensureMemberAdmission(id: string, name: string, address: string): Promise<void> {
+    return this.ensureMemberAdmissions(id, [{ name, address }]);
+  }
+
+  /** One sequenced board change per reconcile, with fresh membership checked under its lock. */
+  ensureMemberAdmissions(id: string, candidates: ReadonlyArray<{ name: string; address: string }>): Promise<void> {
+    const running = this.admissionBatches.get(id);
+    if (running?.accepting) {
+      for (const member of candidates) running.pending.set(member.address, member);
+      return running.promise;
+    }
+    const batch = { accepting: true, pending: new Map(candidates.map(m => [m.address, m])), promise: Promise.resolve() };
+    this.admissionBatches.set(id, batch);
+    batch.promise = Promise.resolve().then(async () => {
+      while (batch.pending.size) {
+        const next = [...batch.pending.values()];
+        batch.pending.clear();
+        await this.admitMemberBatch(id, next);
+      }
+      batch.accepting = false;
+    }).finally(() => { if (this.admissionBatches.get(id) === batch) this.admissionBatches.delete(id); });
+    return batch.promise;
+  }
+
+  private async admitMemberBatch(id: string, candidates: ReadonlyArray<{ name: string; address: string }>): Promise<void> {
     const gp = await this.get(id);
     if (!gp || this.isReplica(gp)) return;
     const board = getBulletinBoard(id);
-    const addressHere = this.addressOf(gp, address);
-    const inbox = await resolveInboxChannel(id, name, addressHere);
-    // Reconciliation is frequent. Existing admissions do not enter the write queue.
-    if ((await board.inboxOwner(inbox)) === addressHere && await board.hasTopic(inbox) && board.isTopicProtected(inbox)) return;
+    const alreadyAdmitted = async (name: string, address: string): Promise<boolean> => {
+      const channel = await resolveInboxChannel(id, name, address);
+      return (await board.inboxOwner(channel)) === address && await board.hasTopic(channel) && board.isTopicProtected(channel);
+    };
+    const pending: Array<{ name: string; address: string }> = [];
+    const seen = new Set<string>();
+    // Already-admitted groups never enter the write queue.
+    for (const candidate of candidates) {
+      const address = this.addressOf(gp, candidate.address);
+      if (seen.has(address)) continue;
+      seen.add(address);
+      if (!(await alreadyAdmitted(candidate.name, address))) pending.push({ ...candidate, address });
+    }
+    if (!pending.length) return;
     await this.commit(id, 'board', async ({ project, reserve }) => {
       if (this.isReplica(project)) return;
-      const canonical = this.addressOf(project, address);
-      const board = getBulletinBoard(id);
-      const channel = await resolveInboxChannel(id, name, canonical);
-      const messageId = `join_${createHash('sha256').update(canonical).digest('hex')}`;
-      const joined = await board.getMessageById(messageId);
-      // Existing owned inboxes were admitted by the older lifecycle. Restores stay silent.
-      const legacy = (await board.inboxOwner(channel)) === canonical && await board.hasTopic(channel);
-      if (joined && legacy) return;
-      const seq = await reserve();
-      await ensureProjectChannels(id, seq);
-      await ensureInboxChannel(id, name, canonical, seq);
-      if (!joined && !legacy) await board.postMessage('system', 'system', `${name} joined project "${project.name}"`, seq, messageId);
+      const { currentAdmissionMembers } = await import('./group-project-membership');
+      const current = await currentAdmissionMembers(project, await this.getMembership(id));
+      let channelsEnsured = false;
+      const admitted: Array<{ address: string; name: string; messageId: string }> = [];
+      for (const candidate of pending) {
+        const name = current.get(candidate.address);
+        if (name === undefined || await alreadyAdmitted(name, candidate.address)) continue;
+        const messageId = `join_${createHash('sha256').update(candidate.address).digest('hex')}`;
+        const channel = await resolveInboxChannel(id, name, candidate.address);
+        const legacy = (await board.inboxOwner(channel)) === candidate.address && await board.hasTopic(channel);
+        const joined = legacy || !!(await board.getMessageById(messageId));
+        const seq = await reserve();
+        if (!channelsEnsured) { await ensureProjectChannels(id, seq); channelsEnsured = true; }
+        await ensureInboxChannel(id, name, candidate.address, seq);
+        if (!joined) admitted.push({ address: candidate.address, name, messageId });
+      }
+      if (admitted.length > 3) {
+        const messageId = `joins_${createHash('sha256').update(admitted.map(m => m.address).sort().join('\0')).digest('hex')}`;
+        await board.postMessage('system', 'system', `${admitted.length} agents joined project "${project.name}"`, await reserve(), messageId);
+      } else {
+        for (const member of admitted) await board.postMessage('system', 'system', `${member.name} joined project "${project.name}"`, await reserve(), member.messageId);
+      }
     });
   }
 
@@ -1970,6 +2015,7 @@ class GroupProjectHostService {
   _resetForTesting(): void {
     this.queues.clear();
     this.seqs.clear();
+    this.admissionBatches.clear();
     this.tombstones = null;
     this.reconciled = null;
     this.listeners.clear();

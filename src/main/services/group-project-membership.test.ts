@@ -167,16 +167,18 @@ describe('auto-join', () => {
     expect(added).not.toBe(existing);
   });
 
-  it('does not seed a member excluded after the reconcile snapshot but before admission commits', async () => {
+  it.each(['excluded', 'removed', 'disposed'])('does not seed a member %s after the reconcile snapshot but before admission commits', async change => {
     groupProjectRegistry._setForTesting(gp('gp_exclude_race'));
     fx.configs.set(PROJ_A.path, []);
     await updateMembership('gp_exclude_race', d => { d.membershipPolicy = 'project-3546'; d.autoJoin = true; });
     await start();
     fx.configs.set(PROJ_A.path, [agent('late')]);
-    const admit = groupProjectHost.ensureMemberAdmission.bind(groupProjectHost);
-    const spy = vi.spyOn(groupProjectHost, 'ensureMemberAdmission').mockImplementationOnce(async (id, name, address) => {
-      await updateMembership(id, d => { d.excluded.push({ address, excludedAt: new Date().toISOString() }); });
-      await admit(id, name, address);
+    const admit = groupProjectHost.ensureMemberAdmissions.bind(groupProjectHost);
+    const spy = vi.spyOn(groupProjectHost, 'ensureMemberAdmissions').mockImplementationOnce(async (id, candidates) => {
+      const address = candidates[0].address;
+      if (change === 'excluded') await updateMembership(id, d => { d.excluded.push({ address, excludedAt: new Date().toISOString() }); });
+      else fx.configs.set(PROJ_A.path, change === 'removed' ? [] : [agent(address, { disposedAt: '2026-01-01' } as Partial<DurableAgentConfig>)]);
+      await admit(id, candidates);
     });
     try {
       await reconcileMembership();
@@ -244,10 +246,10 @@ describe('auto-join', () => {
     const board = await groupProjectHost.readAll('gp_startup');
     const bind = vi.spyOn(bindingManager, 'bind');
     const unbind = vi.spyOn(bindingManager, 'unbind');
-    const admit = vi.spyOn(groupProjectHost, 'ensureMemberAdmission');
+    const admit = vi.spyOn(groupProjectHost, 'ensureMemberAdmissions');
     const commit = vi.spyOn(groupProjectHost as unknown as { commit: (...args: unknown[]) => unknown }, 'commit');
     membershipBindingSource.afterRebuild!(true);
-    await vi.waitFor(() => expect(admit).toHaveBeenCalledTimes(2));
+    await vi.waitFor(() => expect(admit).toHaveBeenCalledTimes(1));
     // Wait for the async final read checks, including tidy, to finish.
     await reconcileMembership();
     expect(bind).not.toHaveBeenCalled(); expect(unbind).not.toHaveBeenCalled();
@@ -255,6 +257,25 @@ describe('auto-join', () => {
     expect((await groupProjectHost.get('gp_startup'))!.seq).toBe(before);
     expect(await groupProjectHost.readAll('gp_startup')).toEqual(board);
     vi.restoreAllMocks();
+  });
+
+  it.each([250, 2005])('batches %i automatic admissions into one commit and summary', async count => {
+    groupProjectRegistry._setForTesting(gp('gp_bulk'));
+    fx.configs.set(PROJ_A.path, Array.from({ length: count }, (_, i) => agent(`member_${i}`)));
+    await updateMembership('gp_bulk', d => { d.membershipPolicy = 'project-3546'; d.autoJoin = true; });
+    await membershipBindingSource.collect();
+    const seqBefore = (await groupProjectHost.get('gp_bulk'))!.seq!;
+    const commit = vi.spyOn(groupProjectHost as unknown as { commit: (...args: unknown[]) => unknown }, 'commit');
+    const begin = performance.now();
+    await Promise.all([reconcileMembership(), reconcileMembership()]);
+    const elapsed = performance.now() - begin;
+    const boardCommits = commit.mock.calls.filter(args => args[1] === 'board').length;
+    const joins = await groupProjectHost.readTopic('gp_bulk', 'system', undefined, count + 10);
+    process.stdout.write(JSON.stringify({ admissionCount: count, elapsedMs: Math.round(elapsed), boardCommits, sequenceChanges: (await groupProjectHost.get('gp_bulk'))!.seq! - seqBefore, joinPosts: joins.length }) + '\n');
+    expect(boardCommits).toBe(1);
+    expect(joins).toEqual([expect.objectContaining({ body: `${count} agents joined project "GP gp_bulk"` })]);
+    expect((await groupProjectHost.readDigest('gp_bulk')).filter(t => t.topic.startsWith('inbox-'))).toHaveLength(count);
+    commit.mockRestore();
   });
 
   it('a new app group starts empty', async () => {
