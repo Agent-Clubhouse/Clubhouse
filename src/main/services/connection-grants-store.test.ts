@@ -10,7 +10,7 @@ vi.mock('./log-service', () => ({ appLog: vi.fn() }));
 
 import {
   getConnectionDirection, linkCardDirections, linkConnectionDirections, removeCardDirection, onConnectionGrantsChanged,
-  setConnectionTools, _setConnectionGrantsVersionForTesting,
+  setConnectionTools, setConnectionLink, updateAgentNetworkLinks, _setConnectionGrantsVersionForTesting,
 } from './connection-grants-store';
 import { resetAllSettingsStoresForTests } from './settings-store';
 import { appLog } from './log-service';
@@ -28,6 +28,46 @@ beforeEach(() => {
 
 afterEach(() => {
   fs.rmSync(state.base, { recursive: true, force: true });
+});
+
+describe('agent network source removal (#3659)', () => {
+  const owner = { agentId: 'a', machineId: Array(16).fill('aa').join(':') };
+  const remote = { agentId: 'remote', machineId: Array(16).fill('bb').join(':') };
+  const pairs = [{ from: A, to: remote }];
+
+  it('guards user-owned switches even when a remove supplies tool changes', async () => {
+    await updateAgentNetworkLinks(pairs, owner, 'add', [['send_file']]);
+    await setConnectionLink(A, remote, true);
+    const saved = getConnectionDirection(A, remote)!;
+    await expect(updateAgentNetworkLinks(pairs, owner, 'remove', [[]])).rejects.toThrow('owns these switches');
+    expect(getConnectionDirection(A, remote)).toEqual(saved);
+    await updateAgentNetworkLinks(pairs, owner, 'remove');
+    const remaining = getConnectionDirection(A, remote)!;
+    expect(remaining.link).toEqual(saved.link);
+    expect(remaining.disabledTools).toEqual(saved.disabledTools);
+    expect(remaining.disabledTools).toContain('send_file');
+    expect(remaining.agentLinks?.[0].removedAt).toEqual(expect.any(String));
+  });
+
+  it('never changes saved switches on removal even if the caller owns them', async () => {
+    await updateAgentNetworkLinks(pairs, owner, 'add', [['send_file']]);
+    await updateAgentNetworkLinks(pairs, owner, 'remove', [[]]);
+    expect(getConnectionDirection(A, remote)).toMatchObject({
+      disabledTools: ['send_file'], agentLinks: [{ ...owner, removedAt: expect.any(String) }],
+    });
+  });
+
+  it('keeps other agents sources and switches when removing only the caller source', async () => {
+    const other = { agentId: 'other', machineId: owner.machineId };
+    await updateAgentNetworkLinks(pairs, owner, 'add', [['send_file']]);
+    await updateAgentNetworkLinks(pairs, other, 'add');
+    await expect(updateAgentNetworkLinks(pairs, owner, 'remove', [[]])).rejects.toThrow('owns these switches');
+    await updateAgentNetworkLinks(pairs, owner, 'remove');
+    expect(getConnectionDirection(A, remote)).toMatchObject({
+      disabledTools: ['send_file'], agentLinks: [{ ...owner, removedAt: expect.any(String) }, other],
+    });
+    expect(getConnectionDirection(A, remote)?.agentLinks?.[1].removedAt).toBeUndefined();
+  });
 });
 
 describe('atomic explicit user links', () => {

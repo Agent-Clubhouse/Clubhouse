@@ -369,7 +369,7 @@ export async function updateAgentNetworkLinks(
       const active = activeAgentLinks(current);
       const mine = active.some((l) => l.agentId === owner.agentId && l.machineId === owner.machineId);
       if (action !== 'add' && !mine) throw new Error('You did not make that connection source.');
-      if (action === 'tools' && (current?.link || current?.cardLink || active.length !== 1 || current.setByAgent !== owner.agentId || (cHasRemoteSender(pair) && current.agentToolsProtected !== false))) throw new Error('Another source or the user owns these switches.');
+      if ((action === 'tools' || (action === 'remove' && disabled?.[i] !== undefined)) && (current?.link || current?.cardLink || active.length !== 1 || current.setByAgent !== owner.agentId || (cHasRemoteSender(pair) && current.agentToolsProtected !== false))) throw new Error('Another source or the user owns these switches.');
       if (action === 'add' && disabled?.[i] && current && (current.link || current.cardLink || active.length || current.setByAgent !== owner.agentId)) throw new Error('That direction already has saved switches.');
       if (action === 'add' && !mine && links.length >= 50 && !links.some((l) => l.agentId === owner.agentId && l.machineId === owner.machineId)) throw new Error('This direction has too many saved agent sources.');
       if (action === 'add' && links.some((l) => l.removedByUser)) throw new Error('The user removed an agent source. Only the user can reconnect it.');
@@ -377,7 +377,8 @@ export async function updateAgentNetworkLinks(
         : action === 'remove' ? links.map((l) => l.agentId === owner.agentId && l.machineId === owner.machineId ? { ...l, removedAt: new Date(Math.max(Date.parse(now), Date.parse(l.createdAt) + 1)).toISOString() } : l) : links;
       const next: ConnectionDirection = {
         ...current, ...pair,
-        disabledTools: [...(disabled?.[i] ?? current?.disabledTools ?? NEW_CONNECTION_SWITCHES.disabledTools)],
+        // Removing a source never edits the direction's saved permissions.
+        disabledTools: [...((action === 'remove' ? undefined : disabled?.[i]) ?? current?.disabledTools ?? NEW_CONNECTION_SWITCHES.disabledTools)],
         ...(nextLinks.length ? { agentLinks: nextLinks } : { agentLinks: undefined }),
         ...((action === 'tools' || (action === 'add' && (!current || !!disabled?.[i]))) && { setByAgent: owner.agentId }),
         updatedAt: now,
