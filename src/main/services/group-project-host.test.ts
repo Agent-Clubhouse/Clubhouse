@@ -728,3 +728,43 @@ it('serializes simultaneous admissions with a host post and keeps later admissio
   await groupProjectHost.ensureMemberAdmission(gp.id, 'One', 'one');
   expect((await groupProjectHost.get(gp.id))!.seq).toBe(before);
 });
+
+it('drains late coalesced members, rechecks exclusions, and counts only fresh eligible admissions', async () => {
+  const ids = ['a', 'b', 'c', 'd', 'excluded', 'late'];
+  fixture.agents['/projects/a'] = ids.map(id => ({ id }));
+  const gp = await groupProjectHost.create('Coalesced');
+  await groupProjectHost.updateMembership(gp.id, d => {
+    d.explicit = ids.filter(id => id !== 'late').map(address => ({ address, kind: 'durable', addedAt: 'x' }));
+  });
+  let entered!: () => void;
+  let release!: () => void;
+  const paused = new Promise<void>(resolve => { entered = resolve; });
+  const gate = new Promise<void>(resolve => { release = resolve; });
+  const get = groupProjectHost.get.bind(groupProjectHost);
+  const spy = vi.spyOn(groupProjectHost, 'get').mockImplementationOnce(async id => {
+    const result = await get(id);
+    entered();
+    await gate;
+    return result;
+  });
+  const first = groupProjectHost.ensureMemberAdmissions(gp.id, [...ids.filter(id => id !== 'late'), 'a', 'nonmember'].map(address => ({ name: 'untrusted candidate name', address })));
+  await paused;
+  await groupProjectHost.updateMembership(gp.id, d => {
+    d.excluded.push({ address: 'excluded', excludedAt: 'x' });
+    d.explicit.push({ address: 'late', kind: 'durable', addedAt: 'x' });
+  });
+  const late = groupProjectHost.ensureMemberAdmissions(gp.id, [{ name: 'wrong name', address: 'late' }, { name: 'wrong name', address: 'a' }]);
+  const post = groupProjectHost.post(gp.id, 'user', 'general', 'racing admission');
+  release();
+  try { await Promise.all([first, late, post]); } finally { spy.mockRestore(); }
+  const board = getBulletinBoard(gp.id);
+  for (const id of ['a', 'b', 'c', 'd', 'late']) {
+    expect(await board.inboxOwner(`inbox-${id}`)).toBe(id);
+    expect(await groupProjectHost.readTopic(gp.id, `inbox-${id}`)).toHaveLength(1);
+  }
+  expect(await board.hasTopic('inbox-excluded')).toBe(false);
+  expect(await board.hasTopic('inbox-nonmember')).toBe(false);
+  expect((await groupProjectHost.readTopic(gp.id, 'system')).map(m => m.body)).toEqual([
+    '4 agents joined project "Coalesced"', 'late joined project "Coalesced"',
+  ]);
+});
