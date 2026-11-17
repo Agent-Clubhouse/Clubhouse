@@ -494,7 +494,17 @@ export async function flushOutbox(machine: string): Promise<void> {
     // A disconnected check or an unexpected exception must not strand queued
     // work. Keep lane deadlines on normal completion; faults get bounded backoff
     // even if an unrelated lane already has a much later timer.
-    if (generation === lifecycle && waitingFor(machine).length > 0 && (failed || !retryTimers.has(machine))) retryLater(machine);
+    if (generation === lifecycle) {
+      if (waitingFor(machine).length > 0) {
+        if (failed || !retryTimers.has(machine)) retryLater(machine);
+      } else if (!failed) {
+        // Nothing is left: a fallback set by an earlier interrupted pass must
+        // not later run a spurious sync and empty flush.
+        const pending = retryTimers.get(machine);
+        if (pending) clearTimeout(pending.timer);
+        retryTimers.delete(machine);
+      }
+    }
   }
 }
 
