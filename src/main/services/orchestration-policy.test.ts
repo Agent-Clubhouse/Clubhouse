@@ -1287,10 +1287,10 @@ describe('an agent whose config couldn\'t be read at start', () => {
   });
 });
 
-it('closes a running MCP caller when its saved authority cannot be strictly verified (#3686)', async () => {
-  const agentId = 'unverified-running';
+it.each(['durable', 'helper'] as const)('closes a running %s MCP caller when its saved authority cannot be strictly verified (#3686)', async (kind) => {
+  const agentId = `unverified-running-${kind}`;
   live(agentId);
-  setMcpCaller(agentId, PROJECT, {});
+  setMcpCaller(agentId, PROJECT, kind === 'helper' ? { parentAgentId: 'parent' } : {});
   expect(mcpCallAccess(agentId, PROJECT)).toBe('open');
   const stop = watchMcpCallers();
   try {
@@ -1298,5 +1298,68 @@ it('closes a running MCP caller when its saved authority cannot be strictly veri
     for (const listener of configListeners) listener(PROJECT);
     await vi.waitFor(() => expect(mcpCallAccess(agentId, PROJECT)).toBe('closed'));
     expect(agentConfig.getDurableConfig).toHaveBeenCalledWith(PROJECT, agentId, { forLaunch: true });
+  } finally { stop(); registry.delete(agentId); }
+});
+
+
+it('keeps a quick caller’s scope through storage failure and recovery without durable verification (#3686)', async () => {
+  const { mcpCallerParent, setMcpCallerQuick } = await import('./clubhouse-mcp/mcp-call-gate');
+  const agentId = 'quick_refresh_scope';
+  live(agentId);
+  setMcpCallerQuick(agentId, PROJECT);
+  const read = vi.mocked(agentConfig.getDurableConfig);
+  const stop = watchMcpCallers();
+  try {
+    for (const result of [null, new Error('Cannot verify corrupt storage'), agent(agentId, { parentAgentId: 'unrelated-parent' })]) {
+      read.mockReset();
+      if (result instanceof Error) read.mockRejectedValue(result);
+      else read.mockResolvedValue(result);
+      for (const listener of configListeners) listener(PROJECT);
+      await new Promise((resolve) => setTimeout(resolve, 10));
+      expect(read).not.toHaveBeenCalled();
+      expect(mcpCallerKind(agentId)).toBe('quick');
+      expect(mcpCallAccess(agentId, PROJECT)).toBe('open');
+      expect(mcpCallerParent(agentId)).toBeUndefined();
+      expect(mcpCallAccess(agentId, undefined)).toBe('closed');
+    }
+  } finally {
+    read.mockReset().mockImplementation(async (projectPath, id) => agentsOf(projectPath).find((a) => a.id === id) ?? null);
+    stop(); registry.delete(agentId);
+  }
+});
+
+it('QA3686 quick refresh: a known quick caller stays quick when no durable storage exists', async () => {
+  const { setMcpCallerQuick } = await import('./clubhouse-mcp/mcp-call-gate');
+  const agentId = 'quick_no_durable_record';
+  live(agentId);
+  setMcpCallerQuick(agentId, PROJECT);
+  expect(mcpCallerKind(agentId)).toBe('quick');
+  const stop = watchMcpCallers();
+  try {
+    vi.mocked(agentConfig.getDurableConfig).mockRejectedValueOnce(Object.assign(new Error('ENOENT agents.json'), { code: 'ENOENT' }));
+    for (const listener of configListeners) listener(PROJECT);
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    console.log('QA3686 quick refresh receipt', JSON.stringify({ kind: mcpCallerKind(agentId), access: mcpCallAccess(agentId, PROJECT) }));
+    expect(mcpCallerKind(agentId)).toBe('quick');
+    expect(mcpCallAccess(agentId, PROJECT)).toBe('open');
+  } finally { stop(); registry.delete(agentId); }
+});
+
+it('QA3686 quick recovery: refresh never relabels a quick caller as a durable owner', async () => {
+  const { setMcpCallerQuick } = await import('./clubhouse-mcp/mcp-call-gate');
+  const agentId = 'quick_recovered_record';
+  live(agentId);
+  setMcpCallerQuick(agentId, PROJECT);
+  const stop = watchMcpCallers();
+  try {
+    vi.mocked(agentConfig.getDurableConfig).mockRejectedValueOnce(Object.assign(new Error('ENOENT agents.json'), { code: 'ENOENT' }));
+    for (const listener of configListeners) listener(PROJECT);
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    vi.mocked(agentConfig.getDurableConfig).mockResolvedValueOnce(null);
+    for (const listener of configListeners) listener(PROJECT);
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    console.log('QA3686 quick recovery receipt', JSON.stringify({ kind: mcpCallerKind(agentId), access: mcpCallAccess(agentId, PROJECT) }));
+    expect(mcpCallAccess(agentId, PROJECT)).toBe('open');
+    expect(mcpCallerKind(agentId)).toBe('quick');
   } finally { stop(); registry.delete(agentId); }
 });
