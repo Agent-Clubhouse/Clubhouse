@@ -359,10 +359,20 @@ function PaletteButton({ onOpen }: { onOpen: () => void }) {
   );
 }
 
-/** A machine's name, short enough for an agent row (#3065). */
-function shortMachineLabel(alias: string | undefined): string {
-  const name = (alias || 'Other computer').trim();
-  return name.length > 14 ? `${name.slice(0, 13)}…` : name;
+/** What the hover card and the row's name say for a computer with no alias (#3607). */
+const UNKNOWN_COMPUTER = 'Unknown computer';
+/** Its short label, which fits a row without being cut. */
+const UNKNOWN_LABEL = 'Unknown';
+
+/**
+ * A machine's name, short enough for an agent row (#3065). Where aliases
+ * collide the ID tail goes beside it (shown whole, never cut), so the name
+ * gives way to it (#3607).
+ */
+function shortMachineLabel(alias: string | undefined, idTail = ''): string {
+  const name = alias?.trim() || UNKNOWN_LABEL;
+  const room = idTail ? 14 - 1 - idTail.length : 14;
+  return name.length > room ? `${name.slice(0, room - 1)}…` : name;
 }
 
 export function ChromeSidebar() {
@@ -530,14 +540,41 @@ export function ChromeSidebar() {
   const isLinkedProject = useCallback((projectId: string) => !!linkGroupOf(links, projectId), [links]);
   // A short label for an agent on another machine, and whether that machine is offline; none for this machine's.
   // One object per machine, so rows (and the memoized groups) see the same value until that machine changes.
-  const machineInfo = useMemo(
-    () => new Map(satellites.map((s) => [s.id, { label: shortMachineLabel(s.alias), offline: s.state !== 'connected' }])),
-    [satellites],
-  );
-  const agentMachine = useCallback((agent: Agent) => {
-    const host = hostOf(agent.projectId);
-    return host ? machineInfo.get(host) ?? { label: shortMachineLabel(undefined), offline: true } : undefined;
+  const machineInfo = useMemo(() => {
+    // Computers that share an alias (compared without case) are told apart by the tail of each one's identity
+    // fingerprint (the paired computer's, already held here; it doesn't change when the computer is renamed).
+    // It is 4 characters, longer only if those still match. The rest of the computers get nothing added.
+    const aliasOf = (s: { alias?: string }) => s.alias?.trim() || UNKNOWN_COMPUTER;
+    const byAlias = new Map<string, typeof satellites>();
+    for (const s of satellites) byAlias.set(aliasOf(s).toLowerCase(), [...(byAlias.get(aliasOf(s).toLowerCase()) ?? []), s]);
+    const idTails = new Map<string, string>();
+    for (const group of byAlias.values()) {
+      if (group.length < 2) continue;
+      const ids = group.map((s) => s.fingerprint.replace(/:/g, '').toUpperCase());
+      let len = 4;
+      while (len < Math.max(...ids.map((i) => i.length)) && new Set(ids.map((i) => i.slice(-len))).size < ids.length) len += 2;
+      group.forEach((s, i) => idTails.set(s.id, ids[i].slice(-len)));
+    }
+    return new Map(satellites.map((s) => {
+      const tail = idTails.get(s.id) ?? '';
+      return [s.id, { label: shortMachineLabel(s.alias, tail), idTail: tail || undefined, fullName: tail ? `${aliasOf(s)} (ID ${tail})` : aliasOf(s), offline: s.state !== 'connected' }];
+    }));
+  }, [satellites]);
+  const projectMachine = useCallback((projectId: string) => {
+    const host = hostOf(projectId);
+    return host ? machineInfo.get(host) ?? { label: shortMachineLabel(undefined), fullName: UNKNOWN_COMPUTER, offline: true } : undefined;
   }, [machineInfo]);
+  const agentMachine = useCallback((agent: Agent) => projectMachine(agent.projectId), [projectMachine]);
+  // A header on another computer names every computer in its group, not only its first copy's (#3607).
+  // A group headed by this computer's project is this computer's, as before.
+  const projectMachines = useCallback((projectId: string) => {
+    if (!projectMachine(projectId)) return [];
+    const seen = new Set<string>();
+    return (network.members[projectId] ?? [projectId]).flatMap((id) => {
+      const machine = projectMachine(id);
+      return machine && !seen.has(machine.fullName ?? '') && seen.add(machine.fullName ?? '') ? [machine] : [];
+    });
+  }, [projectMachine, network]);
   // Manual or most-recent order (#2116), shared by the tree and the filter results.
   // A row's Recent activity counts its linked copies and its running agents on any machine (#3542).
   const ordered = useSidebarOrder(treeProjects, agentsByProject, network.members);
@@ -955,6 +992,8 @@ export function ChromeSidebar() {
             onSelectAgent={selectAgent}
             onOpenTerminal={openTerminal}
             terminalProjectIds={terminalProjectIds}
+            agentMachine={agentMachine}
+            projectMachines={projectMachines}
             onSearchEverything={searchEverything}
           />
         </div>
@@ -995,6 +1034,7 @@ export function ChromeSidebar() {
           isRemoteProject={isRemoteProject}
           isLinkedProject={isLinkedProject}
           agentMachine={agentMachine}
+          projectMachines={projectMachines}
           projectMenuItems={projectMenuItems}
           onSelectCompleted={selectCompleted}
           onDismissCompleted={dismissCompleted}

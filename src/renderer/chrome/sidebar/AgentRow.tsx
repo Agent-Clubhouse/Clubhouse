@@ -69,9 +69,57 @@ interface AgentRowProps {
   onToggleHelpers?: (agentId: string) => void;
   /** A short label for the machine the agent runs on, when it isn't this one (#3065). */
   machine?: string;
+  /** Its ID tail, where computers share an alias: shown whole beside the label (#3607). */
+  machineId?: string;
+  /** The machine's full alias, which the short label may cut: in the row's name and the hover card (#3607). */
+  machineName?: string;
   /** Its machine is offline: the row is dimmed and says so instead of a time; its chat stays readable. */
   offline?: boolean;
 }
+
+/** What the sidebar knows of another computer: its short label, its full name (with an ID where aliases collide), and whether it is offline (#3607). */
+export interface MachineInfo { label?: string; idTail?: string; fullName?: string; offline?: boolean }
+
+/** A row's accessible name on another computer: the short label is clipped on screen, so it carries the full name and offline state. */
+export function onComputer(name: string, machine: string | undefined, offline = false): string {
+  return machine ? `${name} on ${machine}${offline ? ', offline' : ''}` : name;
+}
+
+/** Computers in a sentence: "Studio (offline) and Desk". */
+function computerList(machines: readonly MachineInfo[]): string {
+  const names = machines.map((m) => `${m.fullName ?? m.label}${m.offline ? ' (offline)' : ''}`);
+  return names.length > 2 ? `${names.slice(0, -1).join(', ')} and ${names[names.length - 1]}` : names.join(' and ');
+}
+
+/** A project header's accessible name: on one computer as for a row, on several (a linked group) naming each with its own offline state. */
+export function onComputers(name: string, machines: readonly MachineInfo[]): string {
+  if (machines.length === 0) return name;
+  return machines.length === 1 ? onComputer(name, machines[0].fullName ?? machines[0].label, machines[0].offline) : `${name} on ${computerList(machines)}`;
+}
+
+/** The computers a header names, whole, for its tooltip. */
+export const describeComputers = computerList;
+
+/**
+ * A computer's short label with its ID tail (where aliases collide) after it.
+ * Only the label gives way to the width: the tail never does, so it is always
+ * there to tell two same-named computers apart.
+ */
+export function MachineLabel({ label, idTail, testId }: { label?: string; idTail?: string; testId: string }) {
+  return (
+    <span className="flex items-center gap-1 min-w-0 max-w-[72px]">
+      <span data-testid={testId} className="truncate">{label}</span>
+      {idTail && <span data-testid={`${testId}-id`} className="flex-shrink-0">{idTail}</span>}
+    </span>
+  );
+}
+
+/** A small computer, so a remote row reads as remote by shape and text, not by colour. */
+export const MachineGlyph = () => (
+  <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" className="flex-shrink-0">
+    <rect x="3" y="4" width="18" height="12" rx="2" /><path d="M8 20h8M12 16v4" />
+  </svg>
+);
 
 const Caret = ({ open }: { open: boolean }) => (
   <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"
@@ -137,7 +185,7 @@ function ActivityTime({ at, label }: { at: number; label: string }) {
 
 export const AgentRow = React.memo(function AgentRow({
   agent, dot, detailed, active, indent, projectPath, onSelect, onOpenTerminal, level = 2, parentKey, extraActions, highlight, drag, dropEdge,
-  helperCount = 0, helpersExpanded = true, helperNeeds = 0, helperWorking = 0, onToggleHelpers, machine, offline = false,
+  helperCount = 0, helpersExpanded = true, helperNeeds = 0, helperWorking = 0, onToggleHelpers, machine, machineId, machineName, offline = false,
 }: AgentRowProps) {
   // A durable agent being created (#2226) can take up to a minute while its worktree is made.
   const couldntStart = !!agent.creationFailed && agent.status === 'error';
@@ -153,6 +201,8 @@ export const AgentRow = React.memo(function AgentRow({
   const noteId = useId();
   const rollupId = useId();
   const orchestrator = useEffectiveOrchestrator(agent);
+  // The short label is clipped on screen, so the name carries the whole alias and the offline state.
+  const accessibleName = onComputer(agent.name, machineName ?? machine, offline);
   const describedBy = [note && noteId, folded && rollupId].filter(Boolean).join(' ') || undefined;
   const spawnedAt = useAgentStore((s) => s.agentSpawnedAt[agent.id]);
   const sleeping = agent.status === 'sleeping';
@@ -257,7 +307,7 @@ export const AgentRow = React.memo(function AgentRow({
           aria-level={level}
           aria-selected={active}
           aria-expanded={hasHelpers ? helpersExpanded : undefined}
-          aria-label={agent.name}
+          aria-label={accessibleName}
           aria-describedby={describedBy}
           data-tree-key={`agent:${agent.id}`}
           aria-keyshortcuts={canMove ? 'Alt+ArrowUp Alt+ArrowDown' : undefined}
@@ -308,12 +358,22 @@ export const AgentRow = React.memo(function AgentRow({
           <span className={`truncate ${dot === 'sleeping' ? '' : 'font-medium'}`}><MarkedText text={agent.name} query={highlight} /></span>
           <OrchestratorGlyph orchestrator={orchestrator} focusable={false} showTooltip={false} variant="row" />
           {(note || hasActivityTime || folded || machine || offline) && (
-            <span className="ml-auto flex-shrink-0 flex items-center gap-2 text-xs group-hover/row:hidden">
-              {machine && <span data-testid="agent-row-machine" className="text-ctp-overlay1 truncate max-w-[72px]">{machine}</span>}
+            <span className="ml-auto flex-shrink-0 flex items-center gap-2 text-xs">
+              {/* Where the agent runs stays through hover and focus; the rest gives way to the row's actions. */}
+              {machine && (
+                <span className="flex items-center gap-1 min-w-0 text-ctp-overlay1">
+                  <MachineGlyph />
+                  <MachineLabel label={machine} idTail={machineId} testId="agent-row-machine" />
+                </span>
+              )}
               {offline && <span data-testid="agent-row-offline" className="text-ctp-overlay1">offline</span>}
-              {note && <span id={noteId} data-testid="agent-row-note" className={dot === 'needs' ? 'text-ctp-warning' : dot === 'error' ? 'text-ctp-error' : 'text-ctp-overlay1'}>{note}</span>}
-              {folded && <HelperRollup id={rollupId} count={helperCount} needs={helperNeeds} working={helperWorking} />}
-              {hasActivityTime && <ActivityTime at={activityAt} label={timeLabel} />}
+              {(note || folded || hasActivityTime) && (
+                <span className="flex-shrink-0 flex items-center gap-2 group-hover/row:hidden">
+                  {note && <span id={noteId} data-testid="agent-row-note" className={dot === 'needs' ? 'text-ctp-warning' : dot === 'error' ? 'text-ctp-error' : 'text-ctp-overlay1'}>{note}</span>}
+                  {folded && <HelperRollup id={rollupId} count={helperCount} needs={helperNeeds} working={helperWorking} />}
+                  {hasActivityTime && <ActivityTime at={activityAt} label={timeLabel} />}
+                </span>
+              )}
             </span>
           )}
         </div>
@@ -323,7 +383,7 @@ export const AgentRow = React.memo(function AgentRow({
             type="button"
             tabIndex={-1}
             data-testid="action-overflow"
-            aria-label={`More actions for ${agent.name}`}
+            aria-label={`More actions for ${accessibleName}`}
             onClick={(e) => {
               e.stopPropagation();
               const r = e.currentTarget.getBoundingClientRect();
@@ -341,6 +401,8 @@ export const AgentRow = React.memo(function AgentRow({
         <AgentHoverCard
           ref={cardRef}
           agent={agent}
+          machineName={machineName ?? machine}
+          offline={offline}
           dot={dot}
           detailed={detailed}
           projectPath={projectPath}

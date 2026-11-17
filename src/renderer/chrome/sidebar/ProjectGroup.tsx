@@ -1,7 +1,7 @@
 import React, { useCallback, useMemo, useRef, useState } from 'react';
 import type { Agent, AgentDetailedStatus, CompletedQuickAgent, Project } from '../../../shared/types';
 import { getAgentColorHex } from '../../../shared/name-generator';
-import { AgentRow } from './AgentRow';
+import { AgentRow, MachineGlyph, MachineLabel, describeComputers, onComputers, type MachineInfo } from './AgentRow';
 import { agentDot, buildProjectTree, countDescendants, helperRollup, isInSleepingFold, localParentId, moveWithinGroup, projectRollup, siblingGroups, type AgentNode } from './treeModel';
 import type { ProjectFold } from '../chromeStore';
 import { PopupMenu, type MenuItem } from '../../components/PopupMenu';
@@ -53,6 +53,19 @@ const MoreIcon = (
 const PlusIcon = (
   <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14" /></svg>
 );
+
+/** The computers a project is on, beside its name: a glyph and the first's short label, "+1" for each more; the whole names are in the tooltip. */
+export function ProjectMachineTag({ machines }: { machines: readonly MachineInfo[] }) {
+  return (
+    <Tooltip content={describeComputers(machines)}>
+      <span data-testid="project-machine" className="ml-auto flex-shrink-0 flex items-center gap-1 text-xs text-ctp-overlay1">
+        <MachineGlyph />
+        <MachineLabel label={machines[0].label} idTail={machines[0].idTail} testId="project-machine-label" />
+        {machines.length > 1 && <span className="flex-shrink-0">+{machines.length - 1}</span>}
+      </span>
+    </Tooltip>
+  );
+}
 
 export function ProjectSquare({ project, iconUrl }: { project: Project; iconUrl?: string }) {
   const label = project.displayName || project.name;
@@ -128,7 +141,9 @@ export interface ProjectGroupProps {
   /** Agents are in Recent order: dragging a row says how to reorder instead (#2116). */
   onAgentReorderHint?: () => void;
   /** For an agent on another machine: a short label for it, and whether that machine is offline (#3065). */
-  agentMachine?: (agent: Agent) => { label?: string; offline?: boolean } | undefined;
+  agentMachine?: (agent: Agent) => MachineInfo | undefined;
+  /** For a project on another machine: every computer it is on, for its header (#3607). */
+  machines?: readonly MachineInfo[];
   /** More project menu items, after the project's own: Merge with… and Split per machine (#3065). */
   extraMenuItems?: MenuItem[];
   /** Tree depth of the header: 1, or 2 inside the idle row. */
@@ -179,7 +194,7 @@ export const ProjectGroup = React.memo(function ProjectGroup(props: ProjectGroup
     onSelectProject, onToggleCollapsed, onTogglePinned, onToggleFold, onCloseFold, onToggleSleepingPinned, onNewAgent,
     onSelectAgent, onOpenTerminal, onSelectCompleted, onDismissCompleted, onClearCompleted, dragHandlers, dropIndicator, draggable = true,
     onMoveProject, canMoveUp, canMoveDown, onOpenSettings, onCloseProject, onReorderAgents, level = 1, parentKey,
-    sortedByRecent, inSection, onSetInactive, onAgentReorderHint, agentMachine, extraMenuItems,
+    sortedByRecent, inSection, onSetInactive, onAgentReorderHint, agentMachine, machines, extraMenuItems,
   } = props;
   const [menu, setMenu] = useState<{ x: number; y: number } | null>(null);
   const armRefocus = useRefocusAfterMove();
@@ -193,6 +208,8 @@ export const ProjectGroup = React.memo(function ProjectGroup(props: ProjectGroup
   /** Everyone in the sleeping fold, helpers included. */
   const sleepingCount = tree.sleeping.reduce((n, node) => n + 1 + countDescendants(node), 0);
   const expanded = !collapsed;
+  // On another computer the header's name, Pin and menu say so: a same-named project there reads differently.
+  const named = onComputers(label, machines ?? []);
   /** The selected agent is in the sleeping fold, so closing it would hide the selection. */
   const selectionInSleeping = isActiveProject && !!activeAgentId && isInSleepingFold(tree, activeAgentId);
   const closeSleepingFold = useCallback(() => onCloseFold?.(project.id, 'sleeping'), [onCloseFold, project.id]);
@@ -304,6 +321,8 @@ export const ProjectGroup = React.memo(function ProjectGroup(props: ProjectGroup
         // A linked group's agents are in other projects too (#3066): each is active by its own project.
         active={agent.id === activeAgentId && (isActiveProject || agent.projectId === activeProjectId)}
         machine={agentMachine?.(agent)?.label}
+        machineId={agentMachine?.(agent)?.idTail}
+        machineName={agentMachine?.(agent)?.fullName}
         offline={agentMachine?.(agent)?.offline}
         indent={indent}
         level={level + depth}
@@ -373,7 +392,7 @@ export const ProjectGroup = React.memo(function ProjectGroup(props: ProjectGroup
         aria-level={level}
         aria-expanded={expanded}
         aria-selected={headerSelected}
-        aria-label={label}
+        aria-label={named}
         data-tree-key={projectKey}
         data-tree-parent={parentKey}
         aria-keyshortcuts={onMoveProject ? 'Alt+ArrowUp Alt+ArrowDown' : undefined}
@@ -423,6 +442,7 @@ export const ProjectGroup = React.memo(function ProjectGroup(props: ProjectGroup
         >
           <ProjectSquare project={project} iconUrl={iconUrl} />
           <TruncatedLabel text={label} className={`text-[13px] font-semibold ${isActiveProject ? 'text-ctp-text' : 'text-ctp-subtext1'}`} />
+          {machines && machines.length > 0 && <ProjectMachineTag machines={machines} />}
         </button>
         {/* Actions show on hover and on keyboard focus anywhere in the header; the roll-up shows otherwise. */}
         <span className="flex-shrink-0 hidden group-hover:flex group-focus-within:flex items-center gap-1 pr-1.5 text-xs text-ctp-subtext0">
@@ -430,7 +450,7 @@ export const ProjectGroup = React.memo(function ProjectGroup(props: ProjectGroup
             <button
               type="button"
               tabIndex={-1}
-              aria-label={pinned ? `Unpin ${label}` : `Pin ${label}`}
+              aria-label={pinned ? `Unpin ${named}` : `Pin ${named}`}
               aria-pressed={pinned}
               onClick={() => onTogglePinned(project.id)}
               className={`w-6 h-6 rounded flex items-center justify-center cursor-pointer hover:bg-surface-1 ${pinned ? 'text-ctp-text' : ''}`}
@@ -455,7 +475,7 @@ export const ProjectGroup = React.memo(function ProjectGroup(props: ProjectGroup
             <button
               type="button"
               tabIndex={-1}
-              aria-label={`Menu for ${label}`}
+              aria-label={`Menu for ${named}`}
               data-testid={`project-menu-button-${project.id}`}
               onClick={(e) => { const r = e.currentTarget.getBoundingClientRect(); openMenu(r.right, r.bottom); }}
               className="w-6 h-6 rounded flex items-center justify-center cursor-pointer hover:bg-surface-1"

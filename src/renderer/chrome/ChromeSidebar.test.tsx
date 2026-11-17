@@ -10,6 +10,7 @@ vi.mock('../panels/AccessoryPanel', async (orig) => ({
 vi.mock('./sidebar/ChromeAgentDialogs', () => ({ ChromeAgentDialogs: () => null }));
 
 import { ChromeSidebar } from './ChromeSidebar';
+import { TOOLTIP_DELAY_MS } from '../components/Tooltip';
 import { feedbackStatus, setFeedback } from '../features/feedback/feedback-test-utils';
 import { useUIStore } from '../stores/uiStore';
 import { useProjectStore } from '../stores/projectStore';
@@ -859,6 +860,225 @@ describe('ChromeSidebar', () => {
       expect(within(screen.getByTestId(`agent-item-${ra}`)).getByTestId('agent-row-machine').textContent).toBe('Studio');
       expect(within(screen.getByTestId('agent-item-a1')).queryByTestId('agent-row-machine')).toBeNull();
       expect(screen.queryByTestId('host-switcher')).toBeNull();
+    });
+
+    it.each([
+      ['Mason-Studio', 'Mason-Studio'], // 12, under the cut
+      ['Studio-Mac-Pro1', 'Studio-Mac-Pro1'], // 15 > 14
+      ['', 'Unknown computer'],
+    ])('names a remote agent\'s row with the computer\'s full alias %j (#3607)', (alias, full) => {
+      useAnnexClientStore.setState((st) => ({ satellites: st.satellites.map((x) => ({ ...x, alias })) }));
+      render(<ChromeSidebar />);
+      const row = screen.getByTestId(`agent-item-${ra}`);
+      expect(row.firstElementChild).toHaveAccessibleName(`${agent(ra, rp).name} on ${full}`);
+    });
+
+    it('keeps a long alias whole in the row\'s name while the visible label is short (#3607)', () => {
+      const alias = 'Studio-Mac-Pro-Upstairs-2';
+      useAnnexClientStore.setState((st) => ({ satellites: st.satellites.map((x) => ({ ...x, alias })) }));
+      render(<ChromeSidebar />);
+      const row = screen.getByTestId(`agent-item-${ra}`);
+      expect(within(row).getByTestId('agent-row-machine').textContent).toBe('Studio-Mac-Pr…');
+      expect(row.firstElementChild).toHaveAccessibleName(`${agent(ra, rp).name} on ${alias}`);
+    });
+
+    const sat = (id: string, alias: string, fingerprint: string, state: 'connected' | 'disconnected' = 'connected') =>
+      ({ id, alias, state, fingerprint, icon: '', color: 'blue', host: 'h', mainPort: 1, pairingPort: 2, snapshot: null, lastError: null }) as never;
+    const addSecondComputer = (alias: string, fingerprint: string) => {
+      const rp2 = namespacedProjectId('s2', 'site');
+      const ra2 = namespacedAgentId('s2', 'bold-owl');
+      useAnnexClientStore.setState((st) => ({ satellites: [...st.satellites, sat('s2', alias, fingerprint)] }));
+      useRemoteProjectStore.setState((st) => ({
+        satelliteProjects: { ...st.satelliteProjects, s2: [{ id: rp2, name: 'Site', path: '/srv/site', remote: true, satelliteId: 's2', satelliteName: alias }] as never },
+        remoteAgents: { ...st.remoteAgents, [ra2]: agent(ra2, rp2) },
+      }));
+      return { rp2, ra2 };
+    };
+    const nameOf = (id: string) => screen.getByTestId(`agent-item-${id}`).firstElementChild as HTMLElement;
+
+    it('adds a fingerprint tail to the names of computers that share an alias, and only to those (#3607)', () => {
+      const { ra2 } = addSecondComputer('studio', 'AA:BB:CC:DD:EE:01:02:03');
+      useAnnexClientStore.setState((st) => ({ satellites: st.satellites.map((x) => (x.id === 's1' ? { ...x, fingerprint: '11:22:33:44:55:AA:BB:CC' } : x)) }));
+      render(<ChromeSidebar />);
+      expect(nameOf(ra)).toHaveAccessibleName(`${agent(ra, rp).name} on Studio (ID BBCC)`);
+      expect(nameOf(ra2)).toHaveAccessibleName(`${agent(ra2, rp).name} on studio (ID 0203)`);
+      // Without hovering, the rows already differ: the label ends in the same ID.
+      const row = (id: string) => within(screen.getByTestId(`agent-item-${id}`));
+      expect(row(ra).getByTestId('agent-row-machine').textContent).toBe('Studio');
+      expect(row(ra).getByTestId('agent-row-machine-id').textContent).toBe('BBCC');
+      expect(row(ra2).getByTestId('agent-row-machine').textContent).toBe('studio');
+      expect(row(ra2).getByTestId('agent-row-machine-id').textContent).toBe('0203');
+      // The ID is not in the part that is cut to the width, and is not cut itself.
+      expect(row(ra).getByTestId('agent-row-machine')).toHaveClass('truncate');
+      expect(row(ra).getByTestId('agent-row-machine-id')).toHaveClass('flex-shrink-0');
+      expect(row(ra).getByTestId('agent-row-machine-id')).not.toHaveClass('truncate');
+      expect(row(ra).getByTestId('agent-row-machine-id').closest('.truncate')).toBeNull();
+      // Computers with no collision have no ID.
+      expect(within(screen.getByTestId('agent-item-a1')).queryByTestId('agent-row-machine-id')).toBeNull();
+    });
+
+    it('leaves differing aliases, including same-prefix ones, without a suffix (#3607)', () => {
+      const { ra2 } = addSecondComputer('Studio-Two-Upstairs', 'AA:BB:CC:DD:EE:01:02:03');
+      useAnnexClientStore.setState((st) => ({ satellites: st.satellites.map((x) => (x.id === 's1' ? { ...x, alias: 'Studio-Two-Downstairs' } : x)) }));
+      render(<ChromeSidebar />);
+      expect(nameOf(ra)).toHaveAccessibleName(`${agent(ra, rp).name} on Studio-Two-Downstairs`);
+      expect(nameOf(ra2)).toHaveAccessibleName(`${agent(ra2, rp).name} on Studio-Two-Upstairs`);
+      // The short labels do collide: that is what the full name is for.
+      expect(within(screen.getByTestId(`agent-item-${ra}`)).getByTestId('agent-row-machine').textContent).toBe('Studio-Two-Do…');
+      expect(within(screen.getByTestId(`agent-item-${ra2}`)).getByTestId('agent-row-machine').textContent).toBe('Studio-Two-Up…');
+    });
+
+    it('tells same-named agents on this computer and another apart, merged or split (#3607)', () => {
+      useAgentStore.setState((st) => ({ agents: { ...st.agents, a1: { ...st.agents.a1, name: 'bold-owl' } } }));
+      useRemoteProjectStore.setState((st) => ({ remoteAgents: { ...st.remoteAgents, [ra]: { ...st.remoteAgents[ra], name: 'bold-owl' } } }));
+      render(<ChromeSidebar />);
+      expect(nameOf('a1')).toHaveAccessibleName('bold-owl');
+      expect(nameOf(ra)).toHaveAccessibleName('bold-owl on Studio');
+      fireEvent.contextMenu(screen.getByTestId('project-p3'));
+      fireEvent.click(screen.getByText('Merge with…'));
+      fireEvent.click(within(screen.getByTestId('project-merge-menu')).getByText('Site on Studio'));
+      expect(nameOf(ra)).toHaveAccessibleName('bold-owl on Studio');
+    });
+
+    const headerOf = (projectId: string) => screen.getByTestId(`project-group-${projectId}`).querySelector('[role="treeitem"]') as HTMLElement;
+
+    it('tells a same-named project on another computer from this computer\'s by its header, and leaves this one\'s alone (#3607)', () => {
+      render(<ChromeSidebar />);
+      // This computer's Site (p3) and Studio's Site share a name.
+      expect(headerOf('p3')).toHaveAccessibleName('Site');
+      expect(within(screen.getByTestId('project-p3')).queryByTestId('project-machine')).toBeNull();
+      expect(headerOf(rp)).toHaveAccessibleName('Site on Studio');
+      expect(within(screen.getByTestId(`project-${rp}`)).getByTestId('project-machine').textContent).toBe('Studio');
+      expect(within(headerOf(rp)).getByLabelText('Pin Site on Studio')).toBeTruthy();
+      expect(within(headerOf(rp)).getByLabelText('Menu for Site on Studio')).toBeTruthy();
+    });
+
+    it('names a remote project\'s header with a long alias whole, offline included (#3607)', () => {
+      useAnnexClientStore.setState((st) => ({ satellites: st.satellites.map((x) => ({ ...x, alias: 'Studio-Mac-Pro-Upstairs-2', state: 'disconnected' as const })) }));
+      render(<ChromeSidebar />);
+      expect(headerOf(rp)).toHaveAccessibleName('Site on Studio-Mac-Pro-Upstairs-2, offline');
+      expect(within(screen.getByTestId(`project-${rp}`)).getByTestId('project-machine').textContent).toBe('Studio-Mac-Pr…');
+    });
+
+    it('adds the ID to the headers of same-named projects on computers that share an alias, and only then (#3607)', () => {
+      const { rp2 } = addSecondComputer('studio', 'AA:BB:CC:DD:EE:01:02:03');
+      useAnnexClientStore.setState((st) => ({ satellites: st.satellites.map((x) => (x.id === 's1' ? { ...x, fingerprint: '11:22:33:44:55:AA:BB:CC' } : x)) }));
+      render(<ChromeSidebar />);
+      expect(headerOf(rp)).toHaveAccessibleName('Site on Studio (ID BBCC)');
+      expect(headerOf(rp2)).toHaveAccessibleName('Site on studio (ID 0203)');
+      const tag = within(screen.getByTestId(`project-${rp}`));
+      expect(tag.getByTestId('project-machine-label').textContent).toBe('Studio');
+      expect(tag.getByTestId('project-machine-label-id').textContent).toBe('BBCC');
+      expect(tag.getByTestId('project-machine-label-id')).toHaveClass('flex-shrink-0');
+      expect(tag.getByTestId('project-machine-label-id').closest('.truncate')).toBeNull();
+    });
+
+    it('shows the full computer name, with offline, in a remote project header\'s tooltip (#3607)', () => {
+      vi.useFakeTimers();
+      try {
+        useAnnexClientStore.setState((st) => ({ satellites: st.satellites.map((x) => ({ ...x, alias: 'Studio-Mac-Pro-Upstairs-2', state: 'disconnected' as const })) }));
+        render(<ChromeSidebar />);
+        fireEvent.mouseEnter(screen.getByTestId(`project-${rp}`).querySelector('[data-testid="project-machine"]')!);
+        act(() => { vi.advanceTimersByTime(TOOLTIP_DELAY_MS); });
+        expect(screen.getByRole('tooltip').textContent).toBe('Studio-Mac-Pro-Upstairs-2 (offline)');
+      } finally { vi.useRealTimers(); }
+    });
+
+    it('keeps a long colliding alias within the label, ending in its ID, and lengthens the ID only when the short one matches (#3607)', () => {
+      const { ra2 } = addSecondComputer('Studio-Mac-Pro-Upstairs', 'AA:BB:CC:DD:EE:01:02:03');
+      useAnnexClientStore.setState((st) => ({ satellites: st.satellites.map((x) => (x.id === 's1' ? { ...x, alias: 'Studio-Mac-Pro-Upstairs', fingerprint: '11:22:33:44:55:66:02:03' } : x)) }));
+      render(<ChromeSidebar />);
+      // Both end in 0203, so the ID grows to 6 for this pair.
+      const label = (id: string) => {
+        const row = within(screen.getByTestId(`agent-item-${id}`));
+        return `${row.getByTestId('agent-row-machine').textContent} ${row.getByTestId('agent-row-machine-id').textContent}`;
+      };
+      expect(label(ra)).toBe('Studio… 660203');
+      expect(label(ra2)).toBe('Studio… 010203');
+      expect(label(ra).length).toBeLessThanOrEqual(15);
+      expect(nameOf(ra)).toHaveAccessibleName(`${agent(ra, rp).name} on Studio-Mac-Pro-Upstairs (ID 660203)`);
+    });
+
+    it('names every computer of a remote-only linked group in its header, each with its own offline state (#3607)', () => {
+      const { rp2 } = addSecondComputer('Zed', 'AA:BB:CC:DD:EE:01:02:03');
+      useAnnexClientStore.setState((st) => ({ satellites: st.satellites.map((x) => (x.id === 's2' ? { ...x, state: 'disconnected' as const } : x)) }));
+      useNetworkSidebarStore.setState({ links: [[rp, rp2]] });
+      render(<ChromeSidebar />);
+      expect(screen.queryByTestId(`project-${rp2}`)).toBeNull();
+      expect(headerOf(rp)).toHaveAccessibleName('Site on Studio and Zed (offline)');
+      expect(within(screen.getByTestId(`project-${rp}`)).getByTestId('project-machine').textContent).toBe('Studio+1');
+      expect(within(headerOf(rp)).getByLabelText('Pin Site on Studio and Zed (offline)')).toBeTruthy();
+    });
+
+    it('lists three computers with commas and "and", and one computer once (#3607)', () => {
+      const { rp2 } = addSecondComputer('Zed', 'AA:BB:CC:DD:EE:01:02:03');
+      const rp3 = namespacedProjectId('s3', 'site');
+      useAnnexClientStore.setState((st) => ({ satellites: [...st.satellites, sat('s3', 'Zulu', 'AA:BB:CC:DD:EE:04:05:06')] }));
+      useRemoteProjectStore.setState((st) => ({ satelliteProjects: { ...st.satelliteProjects, s3: [{ id: rp3, name: 'Site', path: '/srv/site', remote: true, satelliteId: 's3', satelliteName: 'Zulu' }] as never } }));
+      useNetworkSidebarStore.setState({ links: [[rp, rp2, rp3]] });
+      render(<ChromeSidebar />);
+      expect(headerOf(rp)).toHaveAccessibleName('Site on Studio, Zed and Zulu');
+    });
+
+    it('keeps a linked group headed by this computer\'s project plain, whatever it is linked to (#3607)', () => {
+      const { rp2 } = addSecondComputer('Desk', 'AA:BB:CC:DD:EE:01:02:03');
+      useNetworkSidebarStore.setState({ links: [['p3', rp, rp2]] });
+      render(<ChromeSidebar />);
+      expect(headerOf('p3')).toHaveAccessibleName('Site');
+      expect(within(screen.getByTestId('project-p3')).queryByTestId('project-machine')).toBeNull();
+    });
+
+    it('reads Unknown on the row and Unknown computer in the names for a computer with no alias (#3607)', () => {
+      useAnnexClientStore.setState((st) => ({ satellites: st.satellites.map((x) => ({ ...x, alias: '  ' })) }));
+      render(<ChromeSidebar />);
+      expect(within(screen.getByTestId(`agent-item-${ra}`)).getByTestId('agent-row-machine').textContent).toBe('Unknown');
+      expect(nameOf(ra)).toHaveAccessibleName(`${agent(ra, rp).name} on Unknown computer`);
+      expect(headerOf(rp)).toHaveAccessibleName('Site on Unknown computer');
+    });
+
+    it('names the More actions button of a remote row with its computer, and a local one plainly (#3607)', () => {
+      render(<ChromeSidebar />);
+      expect(within(screen.getByTestId(`agent-item-${ra}`)).getByTestId('action-overflow')).toHaveAccessibleName(`More actions for ${agent(ra, rp).name} on Studio`);
+      expect(within(screen.getByTestId('agent-item-a1')).getByTestId('action-overflow')).toHaveAccessibleName('More actions for a1');
+    });
+
+    it('keeps this computer\'s header plain when its project is merged with another computer\'s (#3607)', () => {
+      render(<ChromeSidebar />);
+      fireEvent.contextMenu(screen.getByTestId('project-p3'));
+      fireEvent.click(screen.getByText('Merge with…'));
+      fireEvent.click(within(screen.getByTestId('project-merge-menu')).getByText('Site on Studio'));
+      expect(headerOf('p3')).toHaveAccessibleName('Site');
+    });
+
+    it('gives a filtered remote project header the same name and label, and a local one neither (#3607)', () => {
+      render(<ChromeSidebar />);
+      fireEvent.change(screen.getByTestId('chrome-filter'), { target: { value: 'Site' } });
+      const results = screen.getByTestId('filter-results');
+      const remote = within(results).getByTestId(`filter-project-${rp}`);
+      expect(remote).toHaveAccessibleName('Site on Studio');
+      expect(within(remote).getByTestId('project-machine').textContent).toBe('Studio');
+      const local = within(results).getByTestId('filter-project-p3');
+      expect(local).toHaveAccessibleName('Site');
+      expect(within(local).queryByTestId('project-machine')).toBeNull();
+    });
+
+    it('gives a filtered remote row the same label, name and offline state as the tree (#3607)', () => {
+      useAnnexClientStore.setState((st) => ({ satellites: st.satellites.map((x) => ({ ...x, alias: 'Studio-Mac-Pro-Upstairs-2', state: 'disconnected' as const })) }));
+      render(<ChromeSidebar />);
+      fireEvent.change(screen.getByTestId('chrome-filter'), { target: { value: 'bold' } });
+      const results = screen.getByTestId('filter-results');
+      const row = within(results).getByTestId(`agent-item-${ra}`);
+      expect(within(row).getByTestId('agent-row-machine').textContent).toBe('Studio-Mac-Pr…');
+      expect(within(row).getByTestId('agent-row-offline').textContent).toBe('offline');
+      expect(row.firstElementChild).toHaveAccessibleName(`${agent(ra, rp).name} on Studio-Mac-Pro-Upstairs-2, offline`);
+    });
+
+    it('leaves a filtered local row without a machine (#3607)', () => {
+      render(<ChromeSidebar />);
+      fireEvent.change(screen.getByTestId('chrome-filter'), { target: { value: 'a1' } });
+      const row = within(screen.getByTestId('filter-results')).getByTestId('agent-item-a1');
+      expect(within(row).queryByTestId('agent-row-machine')).toBeNull();
+      expect(row.firstElementChild).toHaveAccessibleName('a1');
     });
 
     it('lists blocked agents from every host, tagged with the host', () => {

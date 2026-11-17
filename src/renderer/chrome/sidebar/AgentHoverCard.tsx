@@ -46,17 +46,20 @@ export function formatDuration(ms: number): string {
   return h < 24 ? `${h}h ${min % 60}m` : `${Math.floor(h / 24)}d ${h % 24}h`;
 }
 
-function Row({ label, children }: { label: string; children: React.ReactNode }) {
+function Row({ label, children, wrap = false }: { label: string; children: React.ReactNode; wrap?: boolean }) {
   return (
     <>
       <dt className="text-ctp-overlay1">{label}</dt>
-      <dd className="min-w-0 truncate text-ctp-subtext1">{children}</dd>
+      <dd className={`min-w-0 text-ctp-subtext1 ${wrap ? '[overflow-wrap:anywhere]' : 'truncate'}`}>{children}</dd>
     </>
   );
 }
 
 export const AgentHoverCard = forwardRef<HTMLDivElement, {
   agent: Agent;
+  /** The full alias of the computer an agent on another machine runs on (#3607). */
+  machineName?: string;
+  offline?: boolean;
   dot: AgentDot;
   detailed: AgentDetailedStatus | undefined;
   projectPath: string | undefined;
@@ -69,7 +72,7 @@ export const AgentHoverCard = forwardRef<HTMLDivElement, {
   onMouseLeave: () => void;
   onFocus: () => void;
   onBlur: (e: React.FocusEvent) => void;
-}>(function AgentHoverCard({ agent, dot, detailed, projectPath, anchor, actions, onOpenTerminal, onAction, onMouseEnter, onMouseLeave, onFocus, onBlur }, ref) {
+}>(function AgentHoverCard({ agent, machineName, offline, dot, detailed, projectPath, anchor, actions, onOpenTerminal, onAction, onMouseEnter, onMouseLeave, onFocus, onBlur }, ref) {
   const spawnedAt = useAgentStore((s) => s.agentSpawnedAt[agent.id]);
   const allOrchestrators = useOrchestratorStore((s) => s.allOrchestrators);
   // Only while chat runs the agent: state left from an earlier chat session doesn't count (#2208).
@@ -139,6 +142,7 @@ export const AgentHoverCard = forwardRef<HTMLDivElement, {
         </Tooltip>
       )}
       <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1">
+        {machineName && <Row label="Computer" wrap>{machineName}{offline ? ' (offline)' : ''}</Row>}
         <Row label="Runs on">
           {getOrchestratorLabel(orchestrator, allOrchestrators)}, {model}
         </Row>
