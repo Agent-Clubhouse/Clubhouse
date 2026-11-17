@@ -290,7 +290,9 @@ test('an agent messages an agent on another computer through the connection the 
   await expect.poll(async () => { sendTool = (await mcp.toolNames()).find((n) => n.endsWith('__send_message')); return !!sendTool; }, { timeout: 20_000 }).toBe(true);
   const sent = await mcp.call(sendTool!, { message: 'hello from the other desk', task_id: 'across1' });
   expect(sent.isError).toBe(false);
-  expect(sent.text).toContain('Message sent');
+  // #3656: remote callers get target-specific reply guidance, never local read_output polling.
+  expect(sent.text).toBe(`Delivered to ${receiverName}. A reply comes back as a message from ${receiverName} if it answers. task_id=across1.`);
+  expect(sent.text).not.toContain('poll read_output');
 
   await expect.poll(async () => {
     const report = await fakesThere!.report('claude').catch((): undefined => undefined);

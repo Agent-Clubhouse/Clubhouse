@@ -787,7 +787,7 @@ export function invalidateToolListCache(): void {
 
 /**
  * The agents wired to the agent `targetId`. That target starting or stopping
- * changes their tool lists (a sleeping target exposes only get_status) without
+ * changes their tool lists (a sleeping local target keeps send_message and get_status) without
  * changing any binding (#2564).
  */
 export function agentsWiredTo(targetId: string): string[] {
