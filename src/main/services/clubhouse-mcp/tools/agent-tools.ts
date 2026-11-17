@@ -107,21 +107,27 @@ function remoteDelivery(result: McpToolResult, state: NonNullable<AgentToolRunRe
   return currentRemoteCaller() ? { ...result, annexDelivery: { state, ...(reason && { reason }) } } : result;
 }
 
-/** Leave remote work in its durable sender queue, not the volatile chat queue. */
-function remoteInputPreflight(targetId: string, receiverWake = false): AgentToolRunResult | undefined {
+/** Messages can queue in structured runtimes; files still need idle input and fresh private files. */
+function remoteInputPreflight(targetId: string, receiverWake = false, queueNews = false): AgentToolRunResult | undefined {
   if (!currentRemoteCaller()) return undefined;
   const runtime = getAgentRuntime(targetId);
   if (receiverWake && !runtime && !agentRegistry.get(targetId)) return undefined;
-  if (!runtime || (runtime.kind === 'chat' && (runtime.getState() !== 'idle' || runtime.hasPendingWork?.()))) {
+  const chatNotReady = runtime?.kind === 'chat' && (queueNews
+    ? !['idle', 'running', 'waiting_permission', 'waiting_input'].includes(runtime.getState())
+    : runtime.getState() !== 'idle' || runtime.hasPendingWork?.());
+  if (!runtime || chatNotReady) {
     return remoteDelivery({ content: [{ type: 'text', text: 'The target is busy, starting or asleep. Input was not accepted; this delivery will retry later.' }], isError: true }, 'retry_later', 'target_not_ready');
   }
   return undefined;
 }
 
-function remoteInputReceipt(result: McpToolResult, sent?: RuntimeSendResult): AgentToolRunResult {
+function remoteInputReceipt(result: McpToolResult, sent?: RuntimeSendResult, queueNews = false): AgentToolRunResult {
   if (!currentRemoteCaller()) return result;
-  if (sent?.delivery === 'queued') {
+  if (sent?.delivery === 'queued' && !queueNews) {
     return remoteDelivery({ content: [{ type: 'text', text: 'Input was queued by the receiving runtime during a readiness race. Delivery is indeterminate; it will not be automatically resent. Inspect the target before sending new work.' }], isError: true }, 'indeterminate', 'runtime_queued');
+  }
+  if (sent?.delivery === 'queued') {
+    return remoteDelivery({ ...result, content: [...result.content, { type: 'text', text: 'Runtime accepted (queued). Processing is unconfirmed; a crash may lose this volatile queue. Retry only with the same call id.' }] }, 'delivered', 'runtime_queued');
   }
   return remoteDelivery(result, 'delivered');
 }
@@ -237,7 +243,7 @@ export function registerAgentTools(): void {
       const receiverWake = isDispatcherTarget(targetId) && !!remote && !!federationMessageDirection(
         { agentId: remote.agentId, machineId: remote.machineId }, { agentId: targetId },
       );
-      const notReady = remoteInputPreflight(targetId, receiverWake);
+      const notReady = remoteInputPreflight(targetId, receiverWake, true);
       if (notReady) return notReady;
 
       // The Dispatcher, asleep or awake: a sleeping one is woken to take the message (#3037).
@@ -249,14 +255,14 @@ export function registerAgentTools(): void {
         try {
           const delivery = await deliverToDispatcher({
             senderId: agentId, targetId, targetName: tagged.targetName, text: tagged.text, routed: tagged.routed,
-            ...(receiverWake && { wakeAsReceiver: true, admission: receiverAdmission }),
+            ...(receiverWake && { wakeAsReceiver: true, queueRemoteNews: true, admission: receiverAdmission }),
             taskId, submit: forceSubmit, toolName, args,
           });
           if (delivery.delivered === false) {
             const failure = { content: [{ type: 'text' as const, text: delivery.text }], isError: true };
             return receiverWake && !receiverAdmission() ? remoteDelivery(failure, 'refused', 'authorization_revoked') : failure;
           }
-          return remoteInputReceipt({ content: [{ type: 'text', text: sentText(tagged.targetName, tagged.isBidirectional, delivery.woke) }] }, delivery.delivery ? { delivery: delivery.delivery } : undefined);
+          return remoteInputReceipt({ content: [{ type: 'text', text: sentText(tagged.targetName, tagged.isBidirectional, delivery.woke) }] }, delivery.delivery ? { delivery: delivery.delivery } : undefined, true);
         } catch (err) {
           // telemetry-exempt: logged, and the error reaches the sender as the tool result
           if (isAgentStoppingError(err)) {
@@ -291,10 +297,10 @@ export function registerAgentTools(): void {
         appLog('core:mcp', 'info', 'send_message: delivering', {
           meta: { targetAgent: targetId, taskId, runtime: runtime.kind, forceSubmit, messageLength: taggedMessage.length },
         });
-        const sent = await runtime.sendMessage(taggedMessage, { source: 'mcp', taskId, submit: forceSubmit, routed });
+        const sent = await runtime.sendMessage(taggedMessage, { source: 'mcp', taskId, submit: forceSubmit, routed, ...(remote && { delivery: 'queued' }) });
         noteDispatcherReached(agentId, targetId);
 
-        return remoteInputReceipt({ content: [{ type: 'text', text: sentText(targetName, isBidirectional) }] }, sent);
+        return remoteInputReceipt({ content: [{ type: 'text', text: sentText(targetName, isBidirectional) }] }, sent, true);
       } catch (err) {
         if (isAgentStoppingError(err)) {
           appLog('core:mcp', 'info', 'send_message: target is shutting down', { meta: { sourceAgent: agentId, targetAgent: targetId, taskId } });
