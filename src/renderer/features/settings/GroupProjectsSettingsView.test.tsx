@@ -64,12 +64,12 @@ describe('GroupProjectsSettingsView', () => {
     expect(useGroupProjectsNavStore.getState().route).toBeNull();
   });
 
-  it('offers the selected polling project a switch to notices', async () => {
+  it('offers the selected legacy polling project one migration to post notifications, beside Permissions (#3668)', async () => {
     const setPolling = vi.spyOn(window.clubhouse.groupProject, 'setPolling').mockResolvedValue(undefined);
     render(<GroupProjectsSettingsView />);
     await screen.findByRole('button', { name: 'Alpha' });
-    select('Beta', 'Delivery');
-    fireEvent.click(screen.getByRole('button', { name: 'Switch to notices' }));
+    select('Beta', 'Permissions');
+    fireEvent.click(await screen.findByRole('button', { name: 'Use post notifications' }));
     await waitFor(() => expect(setPolling).toHaveBeenCalledWith('gp-beta', false));
   });
 
@@ -123,7 +123,7 @@ describe('GroupProjectsSettingsView', () => {
     expect(screen.getByText('Beta')).toBeInTheDocument();
     expect(await screen.findAllByText('0 members')).toHaveLength(2);
     expect(screen.getAllByText('Host: This computer')).toHaveLength(2);
-    expect(screen.getAllByText('Polling on')).toHaveLength(2);
+    expect(screen.getAllByText('Checking for new posts: Legacy polling')).toHaveLength(2);
     // The hub row says a legacy scope is unresolved in its own words.
     expect(screen.getByText('Scope unresolved. Existing members kept.')).toBeInTheDocument();
     expect(screen.getByText(/including network copies/)).toBeInTheDocument();
