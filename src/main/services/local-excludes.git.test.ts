@@ -125,6 +125,49 @@ describe('ensureLocalExcludes (#3623)', () => {
     expect(git(['status', '--porcelain'], top)).toBe('');
   });
 
+  // Folder names that gitignore syntax would read as a comment, a negation or a glob. `*` and `?`
+  // cannot be in a Windows folder name, so those cases run elsewhere only.
+  const FOLDERS: Array<[string, string, boolean]> = [
+    ['a leading #', '#notes', true],
+    ['a leading !', '!bang', true],
+    ['brackets', 'pkg[1]', true],
+    ['a backslash', 'back\\slash', false],
+    ['a star', 'star*', false],
+    ['a question mark', 'what?', false],
+  ];
+  it.each(FOLDERS)('for a project folder with %s, git ignores that folder\'s files and no sibling\'s', async (_label, folder, windows) => {
+    if (process.platform === 'win32' && !windows) return;
+    const top = repo('special');
+    const project = path.join(top, folder);
+    fs.mkdirSync(path.join(project, '.clubhouse'), { recursive: true });
+    const sibling = path.join(top, folder.replace(/[^a-z0-9]/gi, '') + 'x', '.clubhouse');
+    fs.mkdirSync(sibling, { recursive: true });
+    expect(await ensureLocalExcludes(project)).toBe(true);
+    const ignored = (rel: string) => {
+      try { git(['check-ignore', '-q', '--', rel], top); return true; } catch { return false; }
+    };
+    for (const name of ['settings.json.bak', 'settings.json.unreadable.3', 'agents.json']) {
+      expect(ignored(`${folder}/.clubhouse/${name}`)).toBe(true);
+    }
+    expect(ignored(`${path.basename(path.dirname(sibling))}/.clubhouse/settings.json.bak`)).toBe(false);
+    fs.writeFileSync(path.join(project, '.clubhouse', 'settings.json.bak'), 'x');
+    expect(git(['status', '--porcelain', '--', folder], top)).toBe('');
+  });
+
+  it('ignores an inherited GIT_DIR and GIT_WORK_TREE and works on the project\'s own repository', async () => {
+    const project = repo('mine');
+    const other = repo('other');
+    vi.stubEnv('GIT_DIR', path.join(other, '.git'));
+    vi.stubEnv('GIT_WORK_TREE', other);
+    try {
+      expect(await ensureLocalExcludes(project)).toBe(true);
+    } finally {
+      vi.unstubAllEnvs();
+    }
+    expect(linesOf(path.join(project, '.git', 'info', 'exclude'))).toEqual(expect.arrayContaining(CLUBHOUSE_LOCAL_PATTERNS));
+    expect(fs.existsSync(path.join(other, '.git', 'info', 'exclude')) && linesOf(path.join(other, '.git', 'info', 'exclude')).includes('.clubhouse/agents/')).toBe(false);
+  });
+
   it('leaves a folder that is not a Git repository untouched', async () => {
     const plain = path.join(root, 'not-git');
     fs.mkdirSync(plain);
@@ -151,5 +194,36 @@ describe('ensureLocalExcludes (#3623)', () => {
     await ensureLocalExcludesOnce(project);
     expect(fs.readFileSync(exclude, 'utf-8')).toBe('');
     expect(first).toContain('.clubhouse/settings.json.bak');
+  });
+
+  it('concurrent callers wait for the same work: the exclude is in place when any of them returns', async () => {
+    const project = repo('concurrent');
+    const exclude = path.join(project, '.git', 'info', 'exclude');
+    const first = ensureLocalExcludesOnce(project);
+    await ensureLocalExcludesOnce(project);
+    expect(linesOf(exclude)).toEqual(expect.arrayContaining(CLUBHOUSE_LOCAL_PATTERNS));
+    await first;
+    expect(linesOf(exclude).filter((line) => line === '.clubhouse/settings.json.bak')).toHaveLength(1);
+  });
+
+  it('a run that could not install is forgotten, so a later call tries again', async () => {
+    const folder = path.join(root, 'later-a-repo');
+    fs.mkdirSync(folder);
+    await ensureLocalExcludesOnce(folder);
+    expect(fs.existsSync(path.join(folder, '.git'))).toBe(false);
+    git(['init', '-q', '-b', 'main'], folder);
+    await ensureLocalExcludesOnce(folder);
+    expect(linesOf(path.join(folder, '.git', 'info', 'exclude'))).toEqual(expect.arrayContaining(CLUBHOUSE_LOCAL_PATTERNS));
+  });
+
+  it('an unwritable exclude file is retried by the next call once it can be written', async () => {
+    const project = repo('retry');
+    const info = path.join(project, '.git', 'info');
+    fs.rmSync(info, { recursive: true, force: true });
+    fs.writeFileSync(info, 'blocker');
+    await ensureLocalExcludesOnce(project);
+    fs.rmSync(info);
+    await ensureLocalExcludesOnce(project);
+    expect(linesOf(path.join(info, 'exclude'))).toEqual(expect.arrayContaining(CLUBHOUSE_LOCAL_PATTERNS));
   });
 });
