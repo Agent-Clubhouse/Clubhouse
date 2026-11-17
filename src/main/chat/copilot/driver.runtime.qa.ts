@@ -79,11 +79,12 @@ describe('CopilotSdkChatDriver on the real runtime', () => {
     agentId: 'a1', provider: 'copilot-cli', cwd: tmp, binaryPath: runtime, level: 'ask',
     env: byokEnv(), extraArgs: ['--no-auto-login'], ...overrides,
   });
-  const open = async (overrides?: Partial<ChatDriverStartOptions>) => {
-    const session = await driver.start(options(overrides));
+  const openWith = async (drv: CopilotSdkChatDriver, overrides?: Partial<ChatDriverStartOptions>) => {
+    const session = await drv.start(options(overrides));
     sessions.push(session);
     return { session, ...watch(session) };
   };
+  const open = (overrides?: Partial<ChatDriverStartOptions>) => openWith(driver, overrides);
 
   it('probes with no session and no model request, and reports the login', async () => {
     const before = model.requests.length;
@@ -438,6 +439,59 @@ describe('CopilotSdkChatDriver on the real runtime', () => {
     await session.send([{ type: 'text', text: 'next' }], 'prompt');
     await endedTurns(3);
     expect(model.tools.at(-1)?.some((n) => n.endsWith('beta'))).toBe(true);
+  }, 120_000);
+
+  /** Opens, closes and resumes a session on a 40-tool MCP server, past the runtime's search threshold of 30. */
+  const resumeOnManyTools = async (drv: CopilotSdkChatDriver) => {
+    const dir = fs.mkdtempSync(path.join(tmp, 'mcp-many-'));
+    const script = path.join(dir, 'server.js');
+    fs.writeFileSync(script, `
+      const send = (o) => process.stdout.write(JSON.stringify(o) + '\\n');
+      const tools = Array.from({ length: 40 }, (_, i) => ({ name: 'probe_' + String(i).padStart(2, '0'), description: 'probe ' + i, inputSchema: { type: 'object', properties: {} } }));
+      require('readline').createInterface({ input: process.stdin }).on('line', (line) => {
+        const m = JSON.parse(line);
+        const reply = (result) => send({ jsonrpc: '2.0', id: m.id, result });
+        if (m.method === 'initialize') return reply({ protocolVersion: m.params.protocolVersion, capabilities: { tools: {} }, serverInfo: { name: 'many', version: '1' } });
+        if (m.method === 'tools/list') return reply({ tools });
+        if (m.method === 'tools/call') return reply({ content: [{ type: 'text', text: 'called ' + m.params.name }] });
+        if (m.id !== undefined) reply({});
+      });
+    `);
+    const mcpServers = { many: { command: process.execPath, args: [script] } };
+    const first = await openWith(drv, { level: 'full_access', mcpServers });
+    await new Promise((r) => setTimeout(r, 1_500));
+    model.script({ text: 'ready' });
+    await first.session.send([{ type: 'text', text: 'hi' }], 'prompt');
+    await first.endedTurns(1);
+    const id = first.session.nativeSessionId;
+    await first.session.close();
+    sessions.splice(sessions.indexOf(first.session), 1);
+
+    const resumed = await openWith(drv, { level: 'full_access', mcpServers, resumeNativeSessionId: id });
+    expect(resumed.session.resumeFallback).toBeUndefined();
+    await new Promise((r) => setTimeout(r, 1_500));
+    model.script({ text: 'ready again' });
+    await resumed.session.send([{ type: 'text', text: 'hi again' }], 'prompt');
+    await resumed.endedTurns(1);
+    return { resumed, offered: model.tools.at(-1) ?? [] };
+  };
+
+  it('offers and calls an MCP tool on a resumed session, with more tools than the search threshold (#3615)', async () => {
+    const { resumed, offered } = await resumeOnManyTools(driver);
+    // Every MCP tool is in the first request after the resume, and nothing needs a search to be found.
+    expect(offered.filter((n) => /probe_\d\d$/.test(n))).toHaveLength(40);
+    expect(offered).not.toContain('tool_search_tool');
+    const probe = offered.find((n) => n.endsWith('probe_07'));
+    model.script({ tools: [{ name: probe! }] }, { text: 'ok' });
+    await resumed.session.send([{ type: 'text', text: 'call it' }], 'prompt');
+    await resumed.endedTurns(2);
+    expect(resumed.of('tool_call_update').some((u) => JSON.stringify(u.data.content).includes('called probe_07'))).toBe(true);
+  }, 120_000);
+
+  it('shows what the driver avoids: with tool search on, the resumed session\'s first request carries no MCP tools (#3615)', async () => {
+    const { offered } = await resumeOnManyTools(new CopilotSdkChatDriver({ sessionOverrides: { toolSearch: { enabled: true } } }));
+    expect(offered).toContain('tool_search_tool');
+    expect(offered.filter((n) => /probe_\d\d$/.test(n))).toEqual([]);
   }, 120_000);
 
   it('sends an image, inline or from a file', async () => {

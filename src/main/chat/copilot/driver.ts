@@ -304,6 +304,10 @@ export class CopilotSdkChatSession implements ChatDriverSession {
       // Off by default in the SDK. Without it the session ignores the user's own
       // instructions, skills and MCP config, which Terminal loads.
       enableConfigDiscovery: true,
+      // The runtime's tool_search_tool leaves out tools already active in the
+      // session, including ones a resume carries over, so a controller searching
+      // for a tool it holds finds nothing (#3615). Send every tool up front.
+      toolSearch: { enabled: false },
       ...(model && { model }),
       ...(this.opts.contextWindow && { contextTier: this.opts.contextWindow as SessionConfig['contextTier'] }),
       ...(provider && { provider }),

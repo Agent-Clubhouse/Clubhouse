@@ -49,6 +49,7 @@ Each former `driver.test.ts` real-runtime test keeps the same name in `driver.ru
 | applies the agent's saved effort at start | Runtime-only saved effort at start |
 | applies the level again after a resume, as the CLI's own record can be stale | Runtime-only level restoration after resume |
 | loads a stdio MCP server, and sees a tool it adds mid-session | Runtime-only live MCP server |
+| offers and calls an MCP tool on a resumed session, with more tools than the search threshold (#3615) | `driver-mocked.test.ts` asserts the session config turns tool search off; runtime-only offered tools after resume |
 | sends an image, inline or from a file | Runtime-only image input |
 | compacts on request, and says so | Runtime-only compaction |
 | launches through a shim and a command prefix | Runtime-only real executable shim and command prefix |

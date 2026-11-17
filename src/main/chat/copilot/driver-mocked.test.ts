@@ -149,6 +149,18 @@ describe('Copilot SDK callback wiring with fake transport', () => {
     expect(fake.resume).toHaveBeenCalledTimes(resumeNativeSessionId ? 1 : 0);
   });
 
+  it.each([undefined, 'prior-session'])('turns tool search off for create and resume, so no active tool is left out of a search (#3615) (%s)', async (resumeNativeSessionId) => {
+    const session = await new CopilotSdkChatDriver().start({ agentId: 'fixture', provider: 'copilot-cli', cwd: '/synthetic', binaryPath: 'fake', level: 'auto_edit', resumeNativeSessionId });
+    expect(fake.configs[0].toolSearch).toEqual({ enabled: false });
+    await session.close();
+  });
+
+  it('lets a caller\'s session override turn tool search back on', async () => {
+    const session = await new CopilotSdkChatDriver({ sessionOverrides: { toolSearch: { enabled: true } } }).start({ agentId: 'fixture', provider: 'copilot-cli', cwd: '/synthetic', binaryPath: 'fake', level: 'auto_edit' });
+    expect(fake.configs[0].toolSearch).toEqual({ enabled: true });
+    await session.close();
+  });
+
   it('reports enabled loaded skills by name only, once per change, never a subagent\'s list (#2855)', async () => {
     const session = await new CopilotSdkChatDriver().start({ agentId: 'fixture', provider: 'copilot-cli', cwd: path.resolve('synthetic'), binaryPath: 'fake', level: 'auto_edit' });
     const config = fake.configs[0];
