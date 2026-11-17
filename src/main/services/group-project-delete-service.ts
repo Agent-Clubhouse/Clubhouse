@@ -63,7 +63,7 @@ export function createLocalGroupProjectDeleteService(releaseBindings: (id: strin
   return {
     ...service,
     recoverPending,
-    async confirm(id: string, caller: number, token: string) {
+    async confirm(id: string, caller: number | string, token: string) {
       try { await service.confirm(id, caller, token); }
       catch (error) {
         // The journal may already be pending. Retry outside both locks, without

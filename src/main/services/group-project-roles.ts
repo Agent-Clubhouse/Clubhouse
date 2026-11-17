@@ -13,6 +13,7 @@
  *   once per group project; the role is then retired.
  */
 
+import type { WriteAuthor } from '../../shared/group-project-network';
 import type { GrantChangeMode } from '../../shared/agent-grant-changes';
 import { withGrantChange } from '../../shared/agent-grant-changes';
 import type { GrantAction } from '../../shared/agent-grants';
@@ -48,11 +49,11 @@ export function groupProjectMay(gp: Pick<GroupProject, 'metadata'>, grant: Group
 }
 
 /** Change the group project's own grants. */
-export async function setOwnGrant(groupProjectId: string, grant: GroupProjectOwnGrant, mode: 'allow' | 'off'): Promise<GroupProjectOwnGrants> {
+export async function setOwnGrant(groupProjectId: string, grant: GroupProjectOwnGrant, mode: 'allow' | 'off', options: { author?: WriteAuthor } = {}): Promise<GroupProjectOwnGrants> {
   const gp = await groupProjectHost.get(groupProjectId);
   if (!gp) throw new Error(`Group project ${groupProjectId} does not exist.`);
   const next = { ...ownGrantsOf(gp), [grant]: mode };
-  const updated = await groupProjectHost.update(groupProjectId, { metadata: { grants: next } });
+  const updated = await groupProjectHost.update(groupProjectId, { metadata: { grants: next } }, options);
   return ownGrantsOf(updated ?? gp);
 }
 

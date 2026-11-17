@@ -86,6 +86,7 @@ export interface McpToolDefinition {
     type: 'object';
     properties?: Record<string, unknown>;
     required?: string[];
+    additionalProperties?: boolean;
   };
 }
 

@@ -6,11 +6,11 @@ import { registerGlobalTool } from '../tool-registry';
 import type { McpToolResult } from '../types';
 
 const result = (value: string, isError = false): McpToolResult => ({ content: [{ type: 'text', text: value }], ...(isError && { isError: true }) });
-const options = { group: ['dispatcher', 'dispatcherChat'] as const, grant: { actions: ['settings.app.read'], target: 'app' } } as const;
+const options = { group: ['groupProjects', 'dispatcherChat'] as const, grant: { actions: ['settings.app.read'], target: 'app' } } as const;
 
 export function registerGroupProjectDirectoryTools(): void {
   registerGlobalTool('list_group_projects', {
-    description: 'List group projects on this host with their name, scope, host and member count.',
+    description: 'List Group Projects known on this computer, including cached network copies, with name, scope, host and member count. Use preview_group_project_create for explicit creation choices and get_group_project_management for management; grants decide availability.',
     inputSchema: { type: 'object', properties: {} },
   }, async () => {
     try {

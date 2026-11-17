@@ -18,6 +18,19 @@ describe('group project deletion confirmation', () => {
     await expect(service.confirm('gp', 7, second.token)).rejects.toThrow();
   });
 
+  it('keeps MCP tokens separate from renderer callers and other agents', async () => {
+    const cascade = vi.fn(async () => {});
+    const service = createGroupProjectDeletionService({ inventory: async () => inventory(), cascade });
+    const renderer = await service.preview('gp', 7);
+    await expect(service.confirm('gp', '7', renderer.token)).rejects.toThrow('expired');
+    const first = await service.preview('gp', 'mcp:ada');
+    await expect(service.confirm('gp', 'mcp:bob', first.token)).rejects.toThrow('expired');
+    const own = await service.preview('gp', 'mcp:ada');
+    await service.confirm('gp', 'mcp:ada', own.token);
+    await expect(service.confirm('gp', 'mcp:ada', own.token)).rejects.toThrow('expired');
+    expect(cascade).toHaveBeenCalledOnce();
+  });
+
   it('refuses a changed inventory before any cascade', async () => {
     const cascade = vi.fn(async () => {});
     const value = inventory();

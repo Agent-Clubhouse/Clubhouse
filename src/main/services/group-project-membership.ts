@@ -25,6 +25,7 @@
  * wire excludes, and re-binding a stored wire never adds anyone.
  */
 
+import type { WriteAuthor } from '../../shared/group-project-network';
 import type {
   AutoJoinPreview, GroupProject, GroupProjectMembershipOptions, GroupProjectScope, GroupProjectMemberKind, GroupProjectMembership, GroupProjectMembershipView, GroupProjectMemberView, ResolvedGroupProjectMember,
 } from '../../shared/group-project-types';
@@ -724,7 +725,7 @@ export async function beginAutoJoin(groupProjectId: string): Promise<void> {
  * unless auto-join already includes it. A quick agent is added for its
  * current run only. A group project still on wires becomes managed first.
  */
-export async function addMember(groupProjectId: string, agentId: string): Promise<GroupProjectMembershipView> {
+export async function addMember(groupProjectId: string, agentId: string, options: { author?: WriteAuthor } = {}): Promise<GroupProjectMembershipView> {
   const gp = await requireGroupProject(groupProjectId);
   const [inventory, quick] = await Promise.all([readInventory(), liveQuickAgents()]);
   const replica = isReplica(gp);
@@ -739,7 +740,7 @@ export async function addMember(groupProjectId: string, agentId: string): Promis
         projectId: remote.projectId, projectName: remote.projectName, addedAt: new Date().toISOString(),
         ...(remote.kind === 'durable' && draft.autoJoin && draft.includeLinkedComputers && { autoProject: { machine: remote.machine, projectId: remote.projectId! } }),
       });
-    });
+    }, options);
     await runReconcile();
     notify(gp.id);
     return describeMembership(gp.id);
@@ -771,7 +772,7 @@ export async function addMember(groupProjectId: string, agentId: string): Promis
     draft.explicit.push(run
       ? { address, kind: 'quick', addedAt: now, runId: run.runId, name: run.name }
       : { address, kind: agent!.helper ? 'helper' : 'durable', addedAt: now, name: agent!.name });
-  });
+  }, options);
   // A wire the user deleted earlier this session is theirs to bring back: this is that.
   clearBindingRemovedByUser(agentId, gp.id);
   await runReconcile();
@@ -782,7 +783,7 @@ export async function addMember(groupProjectId: string, agentId: string): Promis
  * Take an agent out. A durable agent is excluded, so auto-join never brings
  * it back; a helper or quick agent just loses its explicit entry.
  */
-export async function excludeMember(groupProjectId: string, agentId: string): Promise<GroupProjectMembershipView> {
+export async function excludeMember(groupProjectId: string, agentId: string, options: { author?: WriteAuthor } = {}): Promise<GroupProjectMembershipView> {
   const gp = await requireGroupProject(groupProjectId);
   const inventory = await readInventory();
   if (!isReplica(gp) && !(await isMembershipManaged(gp.id))) await adopt(gp, inventory);
@@ -799,30 +800,30 @@ export async function excludeMember(groupProjectId: string, agentId: string): Pr
     if (!addedOnly && !draft.excluded.some((e) => e.address === address)) {
       draft.excluded.push({ address, excludedAt: now, name: agent?.name ?? entry?.name });
     }
-  });
+  }, options);
   await runReconcile();
   return describeMembership(gp.id);
 }
 
 /** Answer the one-time offer: accepting turns auto-join on, so everyone in scope joins. */
-export async function answerAutoJoinOffer(groupProjectId: string, accept: boolean): Promise<GroupProjectMembershipView> {
+export async function answerAutoJoinOffer(groupProjectId: string, accept: boolean, options: { author?: WriteAuthor } = {}): Promise<GroupProjectMembershipView> {
   await requireGroupProject(groupProjectId);
   await groupProjectHost.updateMembership(groupProjectId, (draft) => {
     if (draft.autoJoinOffer !== 'pending') return;
     draft.autoJoinOffer = accept ? 'accepted' : 'dismissed';
     if (accept) draft.autoJoin = true;
-  });
+  }, options);
   await runReconcile();
   return describeMembership(groupProjectId);
 }
 
 /** Keep a member's own tool switches (#2084), so the binding the record makes after a restart has them. */
-export async function recordMemberDisabledTools(groupProjectId: string, agentId: string, disabledTools: string[]): Promise<void> {
+export async function recordMemberDisabledTools(groupProjectId: string, agentId: string, disabledTools: string[], options: { author?: WriteAuthor } = {}): Promise<void> {
   if (!(await isMembershipManaged(groupProjectId))) return;
   const key = memberPolicyKey(await requireGroupProject(groupProjectId), agentId);
   await groupProjectHost.updateMembership(groupProjectId, (draft) => {
     draft.disabledTools = { ...draft.disabledTools, [key]: [...disabledTools] };
-  });
+  }, options);
 }
 
 /** A member's saved tool switches, or undefined when none were saved. */

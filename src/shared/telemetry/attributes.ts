@@ -575,6 +575,7 @@ export const ATTR = {
     // Dispatcher controls: helper settings and links between agents (#2661, #3248)
     'set_orchestrator_helpers', 'connect_orchestrators', 'disconnect_orchestrators', 'list_orchestrator_controls', 'list_other_dispatchers', 'set_connection_tools',
     // orchestration: connection tools (#2230)
+    'preview_group_project_create', 'get_group_project_management', 'update_group_project', 'preview_group_project_scope', 'set_group_project_scope', 'add_group_project_member', 'exclude_group_project_member', 'set_group_project_automatic_membership', 'answer_group_project_auto_join_offer', 'confirm_group_project_unlinked_members', 'set_group_project_role', 'set_group_project_own_grant', 'set_group_project_default_tools', 'set_group_project_member_settings', 'set_group_project_topic_protection', 'preview_group_project_retention', 'set_group_project_retention', 'clear_group_project_board', 'dismiss_group_project_refusals', 'preview_delete_group_project', 'delete_group_project',
     'create_group_project', 'add_to_group_project', 'remove_from_group_project', 'list_group_projects', 'open_group_project_directory', 'connect_agents', 'disconnect_agents', 'list_connections', 'join_group_project', 'leave_group_project',
     // actions (#2952), the permission model's action.* (#2921)
     'create_action', 'list_actions', 'update_action', 'delete_action', 'run_action', 'action_history', 'subscribe',
