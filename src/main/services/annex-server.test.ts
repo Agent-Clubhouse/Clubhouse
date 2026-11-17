@@ -8668,6 +8668,15 @@ describe('annex-server', () => {
     });
 
     describe('reverse subscription: this machine\'s /ws stream, served to the member over its connection (P4)', () => {
+      beforeEach(async () => {
+        // What a snapshot build reads, as the snapshot tests set it up (mockReset clears it between tests).
+        vi.mocked(pluginManifestRegistry.listAllManifests).mockReturnValue([]);
+        const { groupProjectRegistry } = await import('./group-project-registry');
+        vi.mocked(groupProjectRegistry.list).mockResolvedValue([]);
+        const themeService = await import('./theme-service');
+        vi.mocked(themeService.getSettings).mockReturnValue({ themeId: 'catppuccin-mocha' } as any);
+      });
+
       /** A connection where MEMBER agreed to subscribe; `events()` is what it has received, as /ws frames. */
       function subscribed() {
         const link = targetLink();
