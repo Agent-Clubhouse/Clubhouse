@@ -92,6 +92,20 @@ export function authorize(caller: AnnexCaller, deps: AnnexAuthorizerDeps): Annex
 }
 
 /**
+ * May the peer on a direct connection hold a control connection with this
+ * machine (#3613 P3): it passes the direct decision and is an active desktop
+ * member, the same eligibility a reverse request needs. A control connection
+ * only carries requests between such members; each request is still
+ * authorized on its own.
+ */
+export function authorizeControlLink(caller: AnnexCaller, deps: AnnexAuthorizerDeps): AnnexAuthResult {
+  const result = authorize({ ...caller, via: 'direct' }, deps);
+  if (!result.ok) return result;
+  if (!reverseEligible(result.peer, deps)) return refuse(403, 'peer_role_not_allowed', result.fingerprint);
+  return result;
+}
+
+/**
  * Whether an authorized principal still is, now: catches removal, a new pin, a
  * role change or a member going back to pending since it was authorized.
  */

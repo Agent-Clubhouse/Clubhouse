@@ -14,6 +14,8 @@ import { withAgentTransition } from './agent-transition';
 import * as http from 'http';
 import * as https from 'https';
 import * as tls from 'tls';
+import { EventEmitter } from 'events';
+import { Readable } from 'stream';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
@@ -69,6 +71,8 @@ import type { Service } from 'bonjour-service';
 import { createBonjour } from './annex-mdns';
 import { withReachableAs } from './annex-reach';
 import * as networkChannel from './annex-network-channel';
+import * as annexControl from './annex-control';
+import { CONTROL_FRAME_MAX_BYTES, CONTROL_REQUEST_HEADERS, decodeControlBody, type ControlHttpRequest } from '../../shared/annex-control-protocol';
 import * as membership from './annex-network-membership';
 import * as agentCalls from './annex-agent-calls';
 import { receiveCapacityProbe } from './handoff-capacity-host';
@@ -83,7 +87,7 @@ import { listenPreferringPort, type ListenFn } from './annex-listen';
 import { buildPairingUrl, pairingHosts } from './annex-pairing-url';
 import * as annexIdentity from './annex-identity';
 import * as annexPeers from './annex-peers';
-import { authorize, isRefusal, reauthorize, refuse, stillAuthorized, type AnnexAuthRefusal, type AnnexAuthResult, type AnnexAuthorizerDeps, type AnnexCaller, type AnnexPrincipal } from './annex-authorizer';
+import { authorize, authorizeControlLink, isRefusal, reauthorize, refuse, stillAuthorized, type AnnexAuthRefusal, type AnnexAuthResult, type AnnexAuthorizerDeps, type AnnexCaller, type AnnexPrincipal } from './annex-authorizer';
 import { devicesChanged } from './annex-device-signal';
 import * as projectStore from './project-store';
 import * as agentConfig from './agent-config';
@@ -871,7 +875,7 @@ function readJsonBody(
   handler: (body: Record<string, unknown>) => void,
 ): void {
   const { req, res } = ctx;
-  readBody(req).then((raw) => {
+  const operation = readBody(req).then((raw) => {
     // The body can arrive long after the headers were checked: act only if the peer is still paired now.
     const recheck = ctx.reauthorize();
     if (isRefusal(recheck)) {
@@ -891,6 +895,8 @@ function readJsonBody(
     res.writeHead(400);
     res.end();
   });
+  // The handler's work can outlast its response (a response cut off at a deadline): a reverse request's slot waits for it.
+  ctx.trackOperation?.(operation);
 }
 
 /** The selected theme, with the renderer's synced colors for plugin and custom themes. */
@@ -2699,6 +2705,11 @@ type AnnexRouteContext = {
   reauthorize: () => PeerAuthResult;
   /** `principal.fingerprint`, the name the routes have always used. */
   mobilePrincipal?: string;
+  /**
+   * Reverse requests only (#3613 P3): work the route goes on doing after it
+   * returns, such as a body callback. The requester's slot is held until it settles.
+   */
+  trackOperation?: (operation: Promise<unknown>) => void;
 };
 
 type AnnexHttpRoute = {
@@ -4707,6 +4718,193 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
 }
 
 // ---------------------------------------------------------------------------
+// Reverse requests (#3613 P3): the same route table, for a principal via reverse
+// ---------------------------------------------------------------------------
+
+/**
+ * Never served to a reverse request: removing a pairing stays with the device
+ * that holds it. `/pair` and the plain pairing port aren't in the route table,
+ * so nothing about pairing, PINs or certificates is reachable this way.
+ */
+const REVERSE_EXCLUDED_ROUTES: ReadonlyArray<{ method: string; pattern: RegExp }> = [
+  { method: 'DELETE', pattern: /^\/api\/v1\/mobile\/pairing(\?.*)?$/ },
+];
+
+/** Response headers that describe the HTTP connection, not the answer: not carried. */
+const REVERSE_DROPPED_RESPONSE_HEADERS = new Set(['connection', 'content-length', 'transfer-encoding', 'keep-alive']);
+
+/**
+ * What a route handler writes its answer to, for a reverse request: the parts
+ * of `http.ServerResponse` the handlers use. Keeps at most one byte more than a
+ * control frame can carry, so an answer that can't go out is known without
+ * holding all of it.
+ */
+class ReverseResponse extends EventEmitter {
+  statusCode = 200;
+  headersSent = false;
+  writableEnded = false;
+  writableFinished = false;
+  destroyed = false;
+  private readonly headers = new Map<string, string>();
+  private readonly chunks: Buffer[] = [];
+  private bytes = 0;
+
+  setHeader(name: string, value: string | number | readonly string[]): this {
+    this.headers.set(name.toLowerCase(), Array.isArray(value) ? value.join(', ') : String(value));
+    return this;
+  }
+  getHeader(name: string): string | undefined { return this.headers.get(name.toLowerCase()); }
+  hasHeader(name: string): boolean { return this.headers.has(name.toLowerCase()); }
+  removeHeader(name: string): void { this.headers.delete(name.toLowerCase()); }
+  flushHeaders(): void { this.headersSent = true; }
+
+  writeHead(status: number, reasonOrHeaders?: string | http.OutgoingHttpHeaders, maybeHeaders?: http.OutgoingHttpHeaders): this {
+    this.statusCode = status;
+    const headers = typeof reasonOrHeaders === 'object' ? reasonOrHeaders : maybeHeaders;
+    for (const [name, value] of Object.entries(headers ?? {})) if (value !== undefined) this.setHeader(name, value as string | number | string[]);
+    this.headersSent = true;
+    return this;
+  }
+
+  write(chunk: string | Buffer | Uint8Array, encodingOrCb?: BufferEncoding | (() => void), cb?: () => void): boolean {
+    if (this.writableEnded || this.destroyed) return false;
+    this.headersSent = true;
+    const buf = typeof chunk === 'string' ? Buffer.from(chunk, typeof encodingOrCb === 'string' ? encodingOrCb : 'utf8') : Buffer.from(chunk);
+    const room = CONTROL_FRAME_MAX_BYTES + 1 - this.bytes;
+    if (room > 0) this.chunks.push(buf.length > room ? buf.subarray(0, room) : buf);
+    this.bytes += Math.min(buf.length, Math.max(room, 0));
+    const done = typeof encodingOrCb === 'function' ? encodingOrCb : cb;
+    done?.();
+    return true;
+  }
+
+  end(chunk?: string | Buffer | Uint8Array | (() => void), encodingOrCb?: BufferEncoding | (() => void), cb?: () => void): this {
+    // Cut off (its time ran out): a late end() doesn't make the response complete.
+    if (this.writableEnded || this.destroyed) return this;
+    if (typeof chunk === 'function') { cb = chunk; chunk = undefined; }
+    if (chunk !== undefined) this.write(chunk as string | Buffer | Uint8Array, encodingOrCb);
+    this.headersSent = true;
+    this.writableEnded = true;
+    this.writableFinished = true;
+    (typeof encodingOrCb === 'function' ? encodingOrCb : cb)?.();
+    this.emit('finish');
+    this.emit('close');
+    return this;
+  }
+
+  destroy(): this {
+    if (this.destroyed) return this;
+    this.destroyed = true;
+    this.emit('close');
+    return this;
+  }
+
+  /** The answer, and whether the handler completed it with end(). Only a complete one is sent or remembered. */
+  result(): annexControl.DispatchResult {
+    const headers: Record<string, string> = {};
+    for (const [name, value] of this.headers) if (!REVERSE_DROPPED_RESPONSE_HEADERS.has(name)) headers[name] = value;
+    return { status: this.statusCode, headers, body: Buffer.concat(this.chunks), complete: this.writableEnded };
+  }
+}
+
+/**
+ * The request a route handler reads, for a reverse request: the method, URL,
+ * the allowed headers and the body, from no TLS socket. Anything that reads the
+ * socket for a certificate finds none and refuses.
+ */
+function reverseIncomingMessage(request: ControlHttpRequest, body: Buffer, ctx: annexControl.DispatchContext): http.IncomingMessage {
+  const headers: http.IncomingHttpHeaders = {};
+  for (const name of CONTROL_REQUEST_HEADERS) {
+    const value = request.headers?.[name];
+    if (value !== undefined) headers[name] = value;
+  }
+  if (request.method !== 'GET' || body.length) headers['content-length'] = String(body.length);
+  const socket = { remoteAddress: ctx.remoteAddress, encrypted: false };
+  const req = Object.assign(new Readable({ read() { /* the body is pushed whole */ } }), {
+    method: request.method, url: request.path, headers, httpVersion: '1.1', socket, connection: socket,
+  });
+  if (body.length) req.push(body);
+  req.push(null);
+  // The requester stopped waiting (cancelled, or the connection went): the handler sees its request close, as a direct one would.
+  const onAbort = () => { req.emit('aborted'); req.destroy(); };
+  if (ctx.signal.aborted) onAbort();
+  else ctx.signal.addEventListener('abort', onAbort, { once: true });
+  return req as unknown as http.IncomingMessage;
+}
+
+/**
+ * Runs a reverse request already authorized as `principal` (via reverse)
+ * through the route table, exactly as a direct request from the same peer.
+ * Rechecks mid-request read the pairing as it is now; the connection's
+ * identity and certificate were fixed when it opened, so there is nothing to
+ * re-read from it, and a dropped connection doesn't turn into a refusal a
+ * retry would be answered with. The result is `complete` only when the
+ * handler ended its response; a response cut off at the deadline is never
+ * sent or remembered as an answer.
+ */
+async function dispatchReverseRequest(principal: AnnexPrincipal, request: ControlHttpRequest, ctx: annexControl.DispatchContext): Promise<annexControl.DispatchResult> {
+  const res = new ReverseResponse();
+  const url = request.path;
+  const method = request.method;
+  if (!tlsServer) {
+    sendJson(res as unknown as http.ServerResponse, 503, { error: 'unavailable' });
+    return res.result();
+  }
+  const excluded = REVERSE_EXCLUDED_ROUTES.some((route) => route.method === method && route.pattern.test(url));
+  const route = excluded ? undefined : resolveAnnexHttpRoute(method, url);
+  const match = route ? url.match(route.pattern) : null;
+  if (!route || !match) {
+    sendJson(res as unknown as http.ServerResponse, 404, { error: 'not_found' });
+    return res.result();
+  }
+  const req = reverseIncomingMessage(request, decodeControlBody(request.body, request.encoding), ctx);
+  // Only when its time is up is the response cut off. A cancel leaves it be, so a handler that finishes
+  // anyway still leaves its real answer for a retry; until then the run holds its slot.
+  if (ctx.deadline.aborted) res.destroy();
+  else ctx.deadline.addEventListener('abort', () => res.destroy(), { once: true });
+  annexPeers.updateLastSeen(principal.fingerprint);
+  const reauthorizeNow = (): PeerAuthResult => (tlsServer ? reauthorize(principal, authorizerDeps) : refuse(401, 'unauthorized'));
+  const requireMtls = (): boolean => {
+    const recheck = reauthorizeNow();
+    if (!isRefusal(recheck)) return false;
+    appLog('core:annex', 'warn', 'Refused a destructive reverse request from a peer no longer allowed', { meta: { method, url: url.split('?')[0], error: recheck.error } });
+    recordControlDenied('rest');
+    sendJson(res as unknown as http.ServerResponse, recheck.status, { error: recheck.error, message: recheck.message });
+    return true;
+  };
+  const serverRes = res as unknown as http.ServerResponse;
+  const operations: Array<Promise<unknown>> = [];
+  const trackOperation = (operation: Promise<unknown>) => { operations.push(operation); };
+  await withRemoteParent(restTraceparent(req.headers.traceparent, true), () =>
+    annexRestFlow(method, route.pattern, () => res.statusCode, () =>
+      traceHttpResponse(serverRes, () => route.handler({
+        req, res: serverRes, url, method, requireMtls, principal, reauthorize: reauthorizeNow, mobilePrincipal: principal.fingerprint, trackOperation,
+      }, match))),
+    true,
+  );
+  // The answer goes now; the slot is held until the route's own work has settled too, even past a cut-off response.
+  return { ...res.result(), operations: Promise.allSettled(operations).then((): void => undefined) };
+}
+
+/** What the control connection asks of this server while it runs (#3613 P3). */
+const controlInboundAuthority: annexControl.InboundAuthority = {
+  accept(socket) {
+    const caller = directCaller(socket);
+    const result = caller ? authorizeControlLink(caller, authorizerDeps) : refuse(401, 'unauthorized');
+    if (isRefusal(result)) return { ok: false, status: result.status, error: result.error, message: result.message };
+    return { ok: true, fingerprint: result.fingerprint, pin: result.principal.pin };
+  },
+  stillAllowed: (fingerprint, pin) => !!tlsServer && authorizeControlLink({ fingerprint, pin, via: 'direct' }, authorizerDeps).ok,
+};
+
+const controlTarget: annexControl.ControlTarget = {
+  // Always as a reverse principal: the direction of the connection never grants anything.
+  authorize: (caller) => authorize({ ...caller, via: 'reverse' }, authorizerDeps),
+  stillAuthorized: (principal) => principal.via === 'reverse' && stillAuthorized(principal, authorizerDeps),
+  dispatch: dispatchReverseRequest,
+};
+
+// ---------------------------------------------------------------------------
 // WebSocket message handler (Issue 8 — bidirectional)
 // ---------------------------------------------------------------------------
 
@@ -5302,7 +5500,8 @@ function startServer(strict = false): Promise<void> {
     const urlObj = new URL(req.url || '/', `http://${req.headers.host}`);
 
     const forNetwork = networkChannel.isNetworkUpgrade(urlObj.pathname);
-    if (urlObj.pathname !== '/ws' && !forNetwork) {
+    const forControl = annexControl.isControlUpgrade(urlObj.pathname);
+    if (urlObj.pathname !== '/ws' && !forNetwork && !forControl) {
       socket.destroy();
       return;
     }
@@ -5323,6 +5522,12 @@ function startServer(strict = false): Promise<void> {
     if (forNetwork) {
       // A pairing that connects here first counts as connected, like one on /ws.
       networkChannel.handleNetworkUpgrade(req, socket, head, (fp) => { awaitingFirstConnection.delete(fp); });
+      return;
+    }
+
+    // The desktop control connection (#3613 P3): only an active desktop member, pinned.
+    if (forControl) {
+      annexControl.handleControlUpgrade(req, socket, head);
       return;
     }
 
@@ -5710,6 +5915,11 @@ function startServer(strict = false): Promise<void> {
   unsubMembership = membership.onMembershipChanged(pushNetworkToPhones);
   // Where this machine can be reached, for its Annex Network hello.
   networkChannel.setReachProvider(() => ({ hosts: advertisedHosts(), port: serverPort }));
+  // The control connection (#3613 P3): accepted from members, and opened to them, only while this server serves securely.
+  if (tlsServer) {
+    annexControl.setInboundAuthority(controlInboundAuthority);
+    annexControl.setControlTarget(controlTarget);
+  }
 
   // Reuse last launch's ports so a paired phone can reconnect without re-pairing.
   const lastPorts = annexSettings.getLastPorts();
@@ -5919,6 +6129,9 @@ export function stop(): void {
   unsubMembership = null;
   // Only the channels this server accepted; ones this machine's client opened are its own.
   networkChannel.closeAll('in');
+  // Control connections end with the server, both ways: this machine neither requests nor serves reverse requests without it.
+  annexControl.setInboundAuthority(null);
+  annexControl.setControlTarget(null);
 
   // Un-publish mDNS
   republishBonjour = null;
@@ -6463,6 +6676,8 @@ export function regeneratePin(): void {
 const REVOKED_SOCKET_GRACE_MS = 250;
 
 function closePeerSockets(fingerprint: string, code: number, reason: string, hard = false): void {
+  // Its control connections too: a revoked peer loses both directions, and pending requests fail as revoked.
+  annexControl.closeFor(fingerprint, hard ? 'both' : 'in', hard);
   if (!wss) return;
   for (const client of wss.clients) {
     if (wsPeerFingerprints.get(client) !== fingerprint) continue;

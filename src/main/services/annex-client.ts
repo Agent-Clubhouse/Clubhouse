@@ -15,6 +15,7 @@ import type { Browser, Service as RemoteService } from 'bonjour-service';
 import { createBonjour } from './annex-mdns';
 import { annexNetworkProfile } from './annex-network-profile';
 import * as networkChannel from './annex-network-channel';
+import * as annexControl from './annex-control';
 import * as membership from './annex-network-membership';
 import { formatAddress, parseTypedHost, rankAddresses, reachCandidates, rememberHost, type ReachAddress } from './annex-reach';
 import { WebSocket } from 'ws';
@@ -527,8 +528,9 @@ function setState(
     if (confirmed !== undefined) annexPeers.recordLastSeen(sat.fingerprint, new Date(confirmed));
     disposeRemoteBuffers(sat.id);
     satelliteEpochs.delete(sat.fingerprint);
-    // The membership channel goes with the main connection, and reopens with it.
+    // The membership channel goes with the main connection, and reopens with it. So does the control connection.
     networkChannel.closeFor(sat.fingerprint, 'out');
+    annexControl.closeFor(sat.fingerprint, 'out');
   }
   if (state === 'disconnected') {
     // The reason text stays local; it only picks the registry enum.
@@ -685,6 +687,7 @@ function haltSatellite(sat: SatelliteConnectionInternal, kind: 'pairing' | 'mism
     try { ws.terminate(); } catch { /* telemetry-exempt: closing a socket that may be gone */ }
   }
   if (kind !== 'clock') networkChannel.closeFor(sat.fingerprint, 'out');
+  annexControl.closeFor(sat.fingerprint, 'out');
   appLog('core:annex-client', 'warn', `Stopped reconnecting to ${sat.alias}: ${message}`, { meta: { fingerprint: sat.fingerprint } });
   setState(sat, 'disconnected', message, { code: problem });
 }
@@ -887,6 +890,9 @@ async function connectToSatellite(sat: SatelliteConnectionInternal): Promise<voi
       sat.candidateIndex = 0;
       // The membership channel (#3060), to the same address and certificate.
       networkChannel.connectTo(sat.fingerprint, sat.host, sat.mainPort, pinnedTlsOptionsFor(sat.fingerprint));
+      // The control connection (#3613 P3), so it can send requests back over this route. Only to an
+      // active desktop member, only while this machine serves; an older Clubhouse refuses it and nothing changes.
+      annexControl.connectTo(sat.fingerprint, sat.host, sat.mainPort, pinnedTlsOptionsFor(sat.fingerprint), annexPeers.getPeer(sat.fingerprint)?.tlsCertificateFingerprint);
       confirmConnectivity(sat);
       startHeartbeat(sat);
     });
@@ -1701,6 +1707,7 @@ export function forgetSatellite(fingerprint: string): void {
   disposeRemoteBuffers(fingerprint);
   annexPeers.removePeer(fingerprint);
   networkChannel.closeFor(fingerprint);
+  annexControl.closeFor(fingerprint, 'both', true);
   broadcastSatellitesChanged();
 }
 
@@ -2662,6 +2669,7 @@ async function pairOverTls(target: {
   if (previous) disconnectSatellite(previous);
   // Paired again (perhaps with a new certificate): nothing from the old pairing carries over.
   networkChannel.closeFor(fingerprint);
+  annexControl.closeFor(fingerprint, 'both', true);
 
   const sat: SatelliteConnectionInternal = {
     id: fingerprint,
@@ -2723,6 +2731,7 @@ export function forgetAllSatellites(): void {
   satellites.clear();
   seededBuffers.clear();
   networkChannel.closeAll('out');
+  annexControl.closeAll('out');
   // Only our satellites: devices that control this machine are managed in Annex settings.
   for (const peer of annexPeers.listPeers()) {
     if (peer.role === 'controller') continue;
@@ -2780,6 +2789,7 @@ export function stopClient(): void {
   seededBuffers.clear();
   discoveredServices.clear();
   networkChannel.closeAll('out');
+  annexControl.closeAll('out');
   stopDiscovery();
 }
 
