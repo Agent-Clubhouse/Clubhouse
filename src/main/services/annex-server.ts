@@ -2059,6 +2059,16 @@ function controlStillAllowed(ws: WebSocket): boolean {
   return !!fingerprint && authorize({ fingerprint, pin: wsPeerPins.get(ws), via: 'direct' }, authorizerDeps).ok;
 }
 
+/**
+ * The same check as a fence for the services' own awaits: `killAgent`'s
+ * `beforeStop` and `spawnAgent`'s `beforeCreate` run it after theirs (an
+ * orchestrator lookup, a provider check), just before they act, and throwing
+ * stops them there.
+ */
+function controlFence(ws: WebSocket): () => void {
+  return () => { if (!controlStillAllowed(ws)) throw new Error('authorization_revoked'); };
+}
+
 /** Async lifecycle frames (spawn, wake, kill, shell spawn) one socket may have running at once; more are answered `busy`. */
 const MAX_LIFECYCLE_IN_FLIGHT = 16;
 const lifecycleInFlight = new WeakMap<WebSocket, number>();
@@ -2073,7 +2083,7 @@ function withLifecycleSlot(ws: WebSocket, op: string, work: () => Promise<unknow
   lifecycleInFlight.set(ws, running + 1);
   let done: Promise<unknown>;
   try { done = work(); } catch (err) { done = Promise.reject(err); } // telemetry-exempt: settled and logged by the caller's own catch
-  void done.catch(() => undefined).finally(() => {
+  void done.catch((): undefined => undefined).finally(() => {
     const left = (lifecycleInFlight.get(ws) ?? 1) - 1;
     if (left > 0) lifecycleInFlight.set(ws, left);
     else lifecycleInFlight.delete(ws);
@@ -5396,6 +5406,8 @@ async function handleSpawnQuickAgentWs(
       orchestrator: (payload.orchestrator as string) || project.orchestrator || 'claude-code',
       freeAgentMode: (payload.freeAgentMode as boolean) ?? false,
       parentAgentId,
+      // Checked again inside the spawn, after its own awaits and just before the runtime is created (#3613).
+      beforeCreate: controlFence(ws),
     });
     safeSend(ws, JSON.stringify({ type: 'agent:spawn:ack', payload: { id: entry.id, name: entry.name, status: 'starting' } }));
   } catch {
@@ -5404,9 +5416,9 @@ async function handleSpawnQuickAgentWs(
   }
 }
 
-async function stopAgentForAnnex(agentId: string, projectPath: string, orchestrator?: string, plainShell = false): Promise<void> {
+async function stopAgentForAnnex(agentId: string, projectPath: string, orchestrator?: string, plainShell = false, beforeStop?: () => void): Promise<void> {
   await killAgent(agentId, projectPath, orchestrator, 'user', {
-    waitForExit: true, throwOnFailure: true, ...(plainShell ? { exitCommand: 'exit\r' } : {}),
+    waitForExit: true, throwOnFailure: true, ...(plainShell ? { exitCommand: 'exit\r' } : {}), ...(beforeStop && { beforeStop }),
   });
   if (isAgentRunning(agentId)) throw new Error('agent_still_running');
 }
@@ -5433,7 +5445,8 @@ async function handleKillAgentWs(ws: WebSocket, agentId: string): Promise<void> 
       safeSend(ws, JSON.stringify({ type: 'error', payload: { message: 'authorization_revoked' } }));
       return;
     }
-    await stopAgentForAnnex(agentId, projectPath, registration?.orchestrator || info?.config.orchestrator, shellCwd !== undefined);
+    // Checked again inside the stop, after its own awaits and just before it acts (#3613).
+    await stopAgentForAnnex(agentId, projectPath, registration?.orchestrator || info?.config.orchestrator, shellCwd !== undefined, controlFence(ws));
     safeSend(ws, JSON.stringify({ type: 'agent:kill:ack', payload: { agentId } }));
   } catch (err) {
     appLog('core:annex', 'warn', 'Failed to stop remote agent', {
@@ -5496,6 +5509,8 @@ async function handleWakeAgentWs(
       orchestrator: config.orchestrator, freeAgentMode: config.freeAgentMode,
       resume: !!options.resume && !!config.lastSessionId,
       sessionId: options.resume ? config.lastSessionId : undefined,
+      // Checked again inside the spawn, after its own awaits and just before the runtime is created (#3613).
+      beforeCreate: controlFence(ws),
     });
 
     appLog('core:annex', 'info', 'Agent spawn completed successfully (WS)', {

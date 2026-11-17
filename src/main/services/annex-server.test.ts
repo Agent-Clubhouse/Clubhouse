@@ -1486,6 +1486,71 @@ describe('annex-server', () => {
     });
 
     describe('shared handler hardening, direct path (#3613 P5 QA)', () => {
+      describe('revocation inside the services\' own awaits, direct (P5 QA b)', () => {
+        function modelServices() {
+          const acted: string[] = [];
+          let releaseKill!: () => void;
+          let releaseSpawn!: () => void;
+          const killAwait = new Promise<void>((resolve) => { releaseKill = resolve; });
+          const spawnAwait = new Promise<void>((resolve) => { releaseSpawn = resolve; });
+          vi.mocked(agentSystem.killAgent).mockImplementation((async (agentId: string, _p: string, _o: unknown, _t: unknown, opts?: { beforeStop?: () => void }) => {
+            await killAwait;
+            opts?.beforeStop?.();
+            acted.push(`gracefulKill:${agentId}`);
+          }) as never);
+          vi.mocked(agentSystem.spawnAgent).mockImplementation((async (params: { agentId: string; beforeCreate?: () => void }) => {
+            await spawnAwait;
+            params.beforeCreate?.();
+            acted.push(`created:${params.agentId}`);
+          }) as never);
+          return { acted, releaseKill, releaseSpawn };
+        }
+
+        it('a controller removed while the stop awaits its orchestrator: nothing is stopped', async () => {
+          await startAndPair();
+          const ws = await connect();
+          const services = modelServices();
+          vi.mocked(ptyManagerModule.getShellCwd).mockImplementation((id) => (id === 'k1' ? '/project' : undefined));
+          ws.emit('message', JSON.stringify({ type: 'agent:kill', payload: { agentId: 'k1' } }));
+          await vi.waitFor(() => expect(agentSystem.killAgent).toHaveBeenCalled());
+          vi.mocked(annexPeers.getPeer).mockReturnValue(undefined);
+          services.releaseKill();
+          await vi.waitFor(() => expect(sent(ws).at(-1)).toMatchObject({ type: 'error', payload: { message: 'authorization_revoked' } }));
+          expect(services.acted).toEqual([]);
+        });
+
+        it('a controller removed while the spawn checks its provider: nothing is created', async () => {
+          await startAndPair();
+          const ws = await connect();
+          const services = modelServices();
+          vi.mocked(agentIdModule.generateQuickAgentId).mockReturnValue('quick-fenced-direct');
+          ws.emit('message', JSON.stringify({ type: 'agent:spawn', payload: { projectId: 'p', prompt: 'hi' } }));
+          await vi.waitFor(() => expect(agentSystem.spawnAgent).toHaveBeenCalled());
+          vi.mocked(annexPeers.getPeer).mockReturnValue(undefined);
+          services.releaseSpawn();
+          await vi.waitFor(() => expect(sent(ws).at(-1)).toMatchObject({ type: 'error', payload: { message: 'spawn_failed' } }));
+          expect(services.acted).toEqual([]);
+          agentRegistry.untrack('quick-fenced-direct');
+        });
+
+        it('a direct controller that only disconnected: the stop and the spawn still complete, as before', async () => {
+          await startAndPair();
+          const ws = await connect();
+          const services = modelServices();
+          vi.mocked(ptyManagerModule.getShellCwd).mockImplementation((id) => (id === 'k1' ? '/project' : undefined));
+          vi.mocked(agentIdModule.generateQuickAgentId).mockReturnValue('quick-after-disconnect');
+          ws.emit('message', JSON.stringify({ type: 'agent:kill', payload: { agentId: 'k1' } }));
+          ws.emit('message', JSON.stringify({ type: 'agent:spawn', payload: { projectId: 'p', prompt: 'hi' } }));
+          await vi.waitFor(() => expect(agentSystem.killAgent).toHaveBeenCalled());
+          await vi.waitFor(() => expect(agentSystem.spawnAgent).toHaveBeenCalled());
+          ws.readyState = 3;
+          services.releaseKill();
+          services.releaseSpawn();
+          await vi.waitFor(() => expect(services.acted.sort()).toEqual(['created:quick-after-disconnect', 'gracefulKill:k1']));
+          agentRegistry.untrack('quick-after-disconnect');
+        });
+      });
+
       it('clipboard:image cannot paste into another controller\'s shell', async () => {
         await startAndPair();
         const a = await connect();
@@ -9039,6 +9104,56 @@ describe('annex-server', () => {
           expect(agentSystem.spawnAgent).not.toHaveBeenCalled();
         }, 15_000);
 
+        describe('revocation inside the services\' own awaits (P5 QA b)', () => {
+          /**
+           * killAgent and spawnAgent as the services run them: an await of their own (resolveOrchestrator,
+           * the provider check), then the fence (beforeStop / beforeCreate), then the act.
+           */
+          function modelServices() {
+            const acted: string[] = [];
+            let releaseKill!: () => void;
+            let releaseSpawn!: () => void;
+            const killAwait = new Promise<void>((resolve) => { releaseKill = resolve; });
+            const spawnAwait = new Promise<void>((resolve) => { releaseSpawn = resolve; });
+            vi.mocked(agentSystem.killAgent).mockImplementation((async (agentId: string, _p: string, _o: unknown, _t: unknown, opts?: { beforeStop?: () => void }) => {
+              await killAwait;
+              opts?.beforeStop?.();
+              acted.push(`gracefulKill:${agentId}`);
+            }) as never);
+            vi.mocked(agentSystem.spawnAgent).mockImplementation((async (params: { agentId: string; beforeCreate?: () => void }) => {
+              await spawnAwait;
+              params.beforeCreate?.();
+              acted.push(`created:${params.agentId}`);
+            }) as never);
+            return { acted, releaseKill, releaseSpawn };
+          }
+
+          it('a subscriber revoked while the stop awaits its orchestrator: nothing is stopped', async () => {
+            const sub = await ready();
+            const services = modelServices();
+            vi.mocked(ptyManagerModule.getShellCwd).mockImplementation((id) => (id === 'k1' ? '/project' : undefined));
+            sub.client({ type: 'agent:kill', payload: { agentId: 'k1' } });
+            await vi.waitFor(() => expect(agentSystem.killAgent).toHaveBeenCalled());
+            current = { ...MEMBER, networkPending: true };
+            services.releaseKill();
+            await new Promise((resolve) => setTimeout(resolve, 20));
+            expect(services.acted).toEqual([]);
+          }, 15_000);
+
+          it('a subscriber revoked while the spawn checks its provider: nothing is created', async () => {
+            const sub = await ready();
+            const services = modelServices();
+            vi.mocked(agentIdModule.generateQuickAgentId).mockReturnValue('quick-fenced');
+            sub.client({ type: 'agent:spawn', payload: { projectId: 'p', prompt: 'hi' } });
+            await vi.waitFor(() => expect(agentSystem.spawnAgent).toHaveBeenCalled());
+            current = undefined;
+            services.releaseSpawn();
+            await new Promise((resolve) => setTimeout(resolve, 20));
+            expect(services.acted).toEqual([]);
+            agentRegistry.untrack('quick-fenced');
+          }, 15_000);
+        });
+
         it('runs a shell for the subscriber through the /ws handlers: spawn, input, and output only to it', async () => {
           const sub = await ready();
           sub.client({ type: 'pty:spawn-shell', payload: { sessionId: 'rs1', projectId: 'p' } });
@@ -9120,7 +9235,9 @@ describe('annex-server', () => {
           agentRegistry.untrack('quick_fixed');
           sub.client({ type: 'agent:spawn', payload });
           await vi.waitFor(() => expect(agentSystem.spawnAgent).toHaveBeenCalledTimes(1));
-          expect(vi.mocked(agentSystem.spawnAgent).mock.calls[0]).toEqual(viaDirect);
+          // The same arguments, each with its own connection's fence (#3613).
+          const strip = ([params]: unknown[]) => { const { beforeCreate, ...rest } = params as { beforeCreate?: unknown }; expect(beforeCreate).toEqual(expect.any(Function)); return rest; };
+          expect(strip(vi.mocked(agentSystem.spawnAgent).mock.calls[0])).toEqual(strip(viaDirect));
           agentRegistry.untrack('quick_fixed');
         }, 15_000);
       });
