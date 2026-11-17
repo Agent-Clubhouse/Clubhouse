@@ -193,7 +193,7 @@ A separate tool, such as `update_settings`, and a separate allowlist.
 ## One agent on another computer (#3656)
 
 `list_settings({agent: "agentId@machine"})` lists that target's readable key names.
-`read_settings({agent_ids: ["agentId@machine"], select: ["agent.model"]})` reads one
+`read_settings({agent_ids: ["agentId@machine"], select: ["agent.cli.model"]})` reads one
 remote target; `detail`, `limit` and `cursor` retain their existing meaning.
 Remote calls reject mixed/bulk targets, project selectors and write arguments.
 They use the same authenticated computer-member read transport as

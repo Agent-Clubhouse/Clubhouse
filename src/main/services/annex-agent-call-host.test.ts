@@ -171,7 +171,7 @@ describe('remote configuration host grants', () => {
 
 describe('remote settings host grants (#3656)', () => {
   it.each(['read_settings', 'list_settings'] as const)('lets the host agent.read grant decide %s', async (tool) => {
-    const args = tool === 'read_settings' ? { select: ['agent.model'] } : {};
+    const args = tool === 'read_settings' ? { select: ['agent.cli.model'] } : {};
     expect((await readConfigForRemoteCaller('peer', 'sender', 'receiver', tool, args)).isError).toBeFalsy();
     expect(mocks.settingsRead).toHaveBeenCalledWith('receiver', tool, args);
     mocks.settingsRead.mockClear(); mocks.hostOff = true;
@@ -183,7 +183,7 @@ describe('remote settings host grants (#3656)', () => {
 
   it('rechecks host revocation before returning any settings bytes', async () => {
     mocks.settingsRead.mockImplementationOnce(async () => { mocks.hostOff = true; return { targets: [{ model: 'PRIVATE' }] }; });
-    const result = await readConfigForRemoteCaller('peer', 'sender', 'receiver', 'read_settings', { select: ['agent.model'] });
+    const result = await readConfigForRemoteCaller('peer', 'sender', 'receiver', 'read_settings', { select: ['agent.cli.model'] });
     expect(result.isError).toBe(true);
     expect(JSON.stringify(result)).not.toContain('PRIVATE');
   });

@@ -30,6 +30,7 @@ vi.mock('../../../orchestrators', async (importOriginal) => ({
 
 import { bindingManager } from '../binding-manager';
 import { agentRegistry } from '../../agent-registry';
+import * as grantStore from '../../agent-grants-store';
 import { SettingsReadError } from '../../settings-read-service';
 import { callTool, getScopedToolList, invalidateToolListCache, _resetForTesting } from '../tool-registry';
 import { registerSettingsReadTools } from './settings-read-tools';
@@ -73,6 +74,18 @@ describe('settings read tools', () => {
     });
   });
 
+  it('keeps no-argument local listing under its existing grant, while reads still honor agent.read Off', async () => {
+    const grants = vi.spyOn(grantStore, 'getAgentGrantChanges').mockReturnValue({
+      changes: [{ action: 'agent.read', target: { kind: 'self' }, mode: 'off' }],
+    });
+    try {
+      expect((await callTool('a1', 'list_settings', {})).isError).toBeFalsy();
+      expect(mocks.listSettings).toHaveBeenCalledTimes(1);
+      expect((await callTool('a1', 'read_settings', { select: ['agent.cli.model'] })).isError).toBe(true);
+      expect(mocks.readSettings).not.toHaveBeenCalled();
+    } finally { grants.mockRestore(); }
+  });
+
   it('asks with full scope for the running Dispatcher only', async () => {
     await callTool('dispatcher', 'read_settings', { select: ['app.system'], all_projects: true });
     expect(mocks.readSettings).toHaveBeenLastCalledWith({ scope: 'all', agentId: 'dispatcher' }, expect.objectContaining({ allProjects: true }));
@@ -98,9 +111,9 @@ describe('settings read tools', () => {
     const machine = Array(16).fill('ab').join(':');
     const target = `target@${machine}`;
     bindingManager.bind('a1', { targetId: target, targetKind: 'agent', label: 'Remote agent' });
-    const args = { select: ['agent.model'], agent_ids: [target], detail: true };
+    const args = { select: ['agent.cli.model'], agent_ids: [target], detail: true };
     expect(await callTool('a1', 'read_settings', args)).toEqual({ content: [{ type: 'text', text: 'remote settings' }] });
-    expect(mocks.forward).toHaveBeenCalledWith('a1', target, 'That agent', 'read_settings', { select: ['agent.model'], detail: true });
+    expect(mocks.forward).toHaveBeenCalledWith('a1', target, 'That agent', 'read_settings', { select: ['agent.cli.model'], detail: true });
     await callTool('a1', 'list_settings', { agent: target });
     expect(mocks.forward).toHaveBeenLastCalledWith('a1', target, 'That agent', 'list_settings', {});
     mocks.forward.mockResolvedValueOnce({ isError: true, content: [{ type: 'text', text: 'Host refuses agent.read' }] } as never);
@@ -110,11 +123,11 @@ describe('settings read tools', () => {
 
   it('refuses unconnected remote targets and rejects remote bulk/project/write arguments', async () => {
     const target = `target@${Array(16).fill('ab').join(':')}`;
-    expect((await callTool('a1', 'read_settings', { select: ['agent.model'], agent_ids: [target] })).isError).toBe(true);
+    expect((await callTool('a1', 'read_settings', { select: ['agent.cli.model'], agent_ids: [target] })).isError).toBe(true);
     expect(mocks.forward).not.toHaveBeenCalled();
     bindingManager.bind('a1', { targetId: target, targetKind: 'agent', label: 'Remote' });
     for (const extra of [{ project: '/one' }, { all_agents: true }, { all_projects: true }, { value: 'write' }]) {
-      expect((await callTool('a1', 'read_settings', { select: ['agent.model'], agent_ids: [target], ...extra })).isError).toBe(true);
+      expect((await callTool('a1', 'read_settings', { select: ['agent.cli.model'], agent_ids: [target], ...extra })).isError).toBe(true);
     }
     expect(mocks.forward).not.toHaveBeenCalled();
   });

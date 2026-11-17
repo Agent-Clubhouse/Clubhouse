@@ -59,7 +59,7 @@ export function registerSettingsReadTools(): void {
       const target = optionalString(args, 'agent');
       return target && remoteMachineOf(target) ? forwardAgentCall(agentId, target, 'That agent', 'list_settings', {}) : listSettings(actorFor(agentId));
     }, typeof args.agent === 'string' && !!remoteMachineOf(args.agent)),
-    { grant: [{ actions: ['agent.read'], target: 'agent_arg', allowRemote: true, strictTargets: true, from: { args: ['agent'], missing: 'caller', names: 'registered' } }, { actions: ['settings.app.read'], target: 'app' }] },
+    { grant: [{ actions: ['agent.read'], target: 'agent_arg', ifArgs: ['agent'], allowRemote: true, strictTargets: true, from: { args: ['agent'], missing: 'caller', names: 'registered' } }, { actions: ['settings.app.read'], target: 'app' }] },
   );
 
   registerGlobalTool(

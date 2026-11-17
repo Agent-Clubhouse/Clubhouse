@@ -1542,7 +1542,7 @@ describe('read_agent_config member transport', () => {
     expect(JSON.stringify(result)).not.toContain('private');
   });
   it.each(['read_settings', 'list_settings'])('uses the same unledgered read path for %s, with no write path (#3656)', async (tool) => {
-    const args = tool === 'read_settings' ? { select: ['agent.model'] } : {};
+    const args = tool === 'read_settings' ? { select: ['agent.cli.model'] } : {};
     const result = await receiveAgentCall(OTHER, call({ tool, from: { agentId: 'controller', name: 'Controller' }, args }), now);
     expect(result).toMatchObject({ result: ok('configuration') });
     expect(reader.read).toHaveBeenCalledWith(OTHER, 'controller', 'receiver', tool, args);
@@ -1560,6 +1560,14 @@ describe('read_agent_config member transport', () => {
       expect(await receiveAgentCall(THIRD, call({ tool, from: { agentId: 'controller', name: 'Dispatcher' }, args: {} }), now)).toMatchObject({ error: 'peer_revoked' });
     }
     expect(reader.read).not.toHaveBeenCalled();
+  });
+
+  it('discards settings bytes if membership becomes pending during the read', async () => {
+    state.thirdRole = 'member';
+    reader.read.mockImplementationOnce(async () => { state.thirdPending = true; return ok('private settings'); });
+    const result = await receiveAgentCall(THIRD, call({ tool: 'read_settings', from: { agentId: 'controller', name: 'Dispatcher' }, args: { select: ['agent.cli.model'] } }), now);
+    expect(result).toMatchObject({ error: 'authorization_revoked' });
+    expect(JSON.stringify(result)).not.toContain('private settings');
   });
 
   it('reports an offline target without queueing or sending a read', async () => {

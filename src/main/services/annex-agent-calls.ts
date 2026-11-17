@@ -701,7 +701,8 @@ export async function receiveAgentCall(senderMachine: string, raw: unknown, now 
   // Config reads use the same pinned member transport, but never the input/delivery ledger.
   // Only an authenticated federated controller may read without a stored connection.
   if (SETUP_READ_TOOLS.has(body.tool)) {
-    if (annexPeers.listPeers().find((p) => p.fingerprint.toLowerCase() === machine)?.networkPending) {
+    const memberReady = () => isNetworkComputer(machine) && !annexPeers.listPeers().find((p) => p.fingerprint.toLowerCase() === machine)?.networkPending;
+    if (!memberReady()) {
       return { status: 403, error: 'peer_revoked', message: 'That computer has not completed its Annex Network membership.' };
     }
     if (!configReader) return { status: 404, error: 'unavailable', message: 'Configuration reads are not available on this computer.' };
@@ -712,7 +713,7 @@ export async function receiveAgentCall(senderMachine: string, raw: unknown, now 
     if (direction?.disabledTools.includes(body.tool)) return { status: 403, error: 'tool_denied', message: 'Configuration reads are off on this connection.' };
     if (!hit(`rate:${machine}/${body.from.agentId}>${to.agentId}`, RATE_LIMIT.windowMs, RATE_LIMIT.calls, now)) return { status: 429, error: 'rate_limited', message: 'Too many calls. Try again in a minute.' };
     const result = await configReader.read(machine, body.from.agentId, to.agentId, body.tool as 'read_agent_config' | 'list_settings' | 'read_settings', body.args);
-    if (generation !== lifecycle || !isNetworkComputer(machine) || deliveryHash(currentEpoch) !== deliveryHash(outgoingEpoch(machine))) return { status: 403, error: 'authorization_revoked', message: 'The member connection changed while reading configuration.' };
+    if (generation !== lifecycle || !memberReady() || deliveryHash(currentEpoch) !== deliveryHash(outgoingEpoch(machine))) return { status: 403, error: 'authorization_revoked', message: 'The member connection changed while reading configuration.' };
     return { result };
   }
   const dispatcher = remoteDispatcher?.isTarget(to.agentId) ? remoteDispatcher : undefined;

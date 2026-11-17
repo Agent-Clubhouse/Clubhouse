@@ -725,7 +725,8 @@ describe('ToolRegistry', () => {
       remoteController.id = 'controller';
       const handler = vi.fn();
       for (const suffix of ['send_message', 'send_file', 'get_status', 'read_output', 'check_connectivity', 'clear_agent']) {
-        registerToolTemplate('agent', suffix, { description: suffix, inputSchema: { type: 'object' } }, handler);
+        registerToolTemplate('agent', suffix, { description: suffix, inputSchema: { type: 'object' } }, handler,
+          suffix === 'get_status' ? { grant: { actions: ['agent.read'], target: 'bound' } } : undefined);
       }
       bindingManager.bind('agent-1', { targetId: target, targetKind: 'agent', label: 'Dispatcher on B' });
       const binding = bindingManager.getBindingsForAgent('agent-1')[0];
@@ -738,6 +739,11 @@ describe('ToolRegistry', () => {
       }
       expect(forwarded.calls).toEqual([]);
       expect(handler).not.toHaveBeenCalled();
+      await updateAgentGrantChanges('agent-1', () => ({ changes: [{ action: 'agent.read', target: { kind: 'connected' }, mode: 'off' }] }));
+      try {
+        expect((await callTool('agent-1', buildToolName(binding, 'get_status'), {})).isError).toBe(true);
+        expect(forwarded.calls).toEqual([]);
+      } finally { await updateAgentGrantChanges('agent-1', () => undefined); }
       bindingManager.setDisabledTools('agent-1', target, ['get_status']);
       expect((await callTool('agent-1', buildToolName(binding, 'get_status'), {})).isError).toBe(true);
       expect(forwarded.calls).toEqual([]);
