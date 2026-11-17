@@ -56,7 +56,11 @@ vi.mock('./free-agent-settings', () => ({
 
 // Mock fs/promises for readProjectOrchestrator
 vi.mock('fs/promises', () => ({
-  readFile: vi.fn(() => { throw new Error('ENOENT'); }),
+  readFile: vi.fn(async (file: string) => {
+    // A verified empty primary means the synthetic durable id has no saved policy.
+    if (String(file).endsWith('agents.json')) return '[]';
+    throw Object.assign(new Error('ENOENT'), { code: 'ENOENT' });
+  }),
 }));
 
 // Mock the orchestrator registry with a provider that supports headless

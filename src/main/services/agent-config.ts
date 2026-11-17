@@ -4195,7 +4195,10 @@ export async function resolveHelpersForDelete(
     if (released.length === 0) return { ok: true, message: 'No helpers', helperIds: [] };
     if (options.dryRun) return { ok: true, message: `Would keep ${released.length} helper(s)`, helperIds: ids };
     const kept: string[] = [];
-    const current = [...await peekDurableConfigs(projectPath)];
+    // This is an explicit mutation. Verify first, then load the mutable entry
+    // so its merge baseline still includes the helper links being removed.
+    if (!await getDurableConfig(projectPath, agentId, { forLaunch: true })) throw new Error('Agent not found');
+    const current = await readAgents(projectPath);
     noteDeleteReviewEffect();
     await writeAgents(projectPath, releaseHelpersOf(current, agentId, kept));
     helpersEnded(kept);
