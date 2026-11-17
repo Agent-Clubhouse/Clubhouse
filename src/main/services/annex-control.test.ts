@@ -948,3 +948,40 @@ describe('reverse subscription (P4)', () => {
   });
 });
 
+describe('inbound frame caps by type (P4 QA)', () => {
+  const pad = (bytes: number) => 'a'.repeat(bytes);
+
+  it('the target refuses a request over 8 MiB and closes 1009, running nothing', async () => {
+    const { targetWs } = await connected();
+    targetWs.deliver({ v: 1, type: 'request', id: 'big', method: 'POST', path: '/p', body: pad(CONTROL_FRAME_MAX_BYTES + 1) });
+    expect(targetWs.closed?.code).toBe(1009);
+    await flush();
+    expect(dispatch).not.toHaveBeenCalled();
+  });
+
+  it('the requester refuses a response over 8 MiB and closes 1009; what waited fails as transport_unavailable', async () => {
+    const { requesterWs } = await connected();
+    handler = async () => { await new Promise(() => {}); return ok({}); };
+    const pending = control.request(TARGET, { method: 'GET', path: '/a' }, { requestId: 'r-big' });
+    await flush();
+    requesterWs.deliver({ v: 1, type: 'response', id: 'r-big', status: 200, headers: {}, body: pad(CONTROL_FRAME_MAX_BYTES + 1), encoding: 'utf8' });
+    expect(requesterWs.closed?.code).toBe(1009);
+    await expect(pending).rejects.toMatchObject({ code: 'transport_unavailable' });
+  });
+
+  it('the requester takes a subscription event up to the event cap', async () => {
+    const { requesterWs } = await connected();
+    const frames: unknown[] = [];
+    const sub = control.subscribe(TARGET, { onFrame: (f) => frames.push(f), onEnd: () => {} });
+    requesterWs.deliver({ v: 1, type: 'event', id: sub.id, frame: { type: 'snapshot', payload: { x: pad(CONTROL_FRAME_MAX_BYTES + 32 * 1024) } } });
+    expect(requesterWs.closed).toBeNull();
+    expect(frames).toHaveLength(1);
+  });
+
+  it('the target refuses even an event-shaped frame over 8 MiB: events only go the other way', async () => {
+    const { targetWs } = await connected();
+    targetWs.deliver({ v: 1, type: 'event', id: 'x', frame: { type: 'snapshot', payload: { x: pad(CONTROL_FRAME_MAX_BYTES + 32 * 1024) } } });
+    expect(targetWs.closed?.code).toBe(1009);
+  });
+});
+

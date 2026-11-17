@@ -507,7 +507,15 @@ function onFrame(link: Link, data: RawData, isBinary: boolean): void {
   link.alive = true;
   if (!inboundStillAllowed(link)) return;
   if (isBinary) { refuseLink(link, CONTROL_CLOSE_PROTOCOL, 'protocol', 'binary frame'); return; }
+  // The socket takes frames up to the event cap, but only a subscription's `event`, to the side that
+  // accepted the connection, may be that large. Everything else keeps CONTROL_FRAME_MAX_BYTES.
+  const bytes = rawLength(data);
+  if (bytes > CONTROL_FRAME_MAX_BYTES && link.direction === 'out') { refuseLink(link, CONTROL_CLOSE_TOO_LARGE, 'too_large', `${bytes} byte frame`); return; }
   const parsed = parseControlMessage(data.toString());
+  if (bytes > CONTROL_FRAME_MAX_BYTES && (!('message' in parsed) || parsed.message.type !== 'event')) {
+    refuseLink(link, CONTROL_CLOSE_TOO_LARGE, 'too_large', `${bytes} byte frame`);
+    return;
+  }
   if ('reason' in parsed) {
     if (parsed.reason === 'version') { refuseLink(link, CONTROL_CLOSE_VERSION, 'version', `version ${parsed.detail}`); return; }
     // A request this side would take, but malformed: answered, not fatal.
@@ -530,6 +538,14 @@ function onFrame(link: Link, data: RawData, isBinary: boolean): void {
     if (message.type === 'response' || message.type === 'error') { onAnswer(link, message); return; }
   }
   refuseLink(link, CONTROL_CLOSE_PROTOCOL, 'protocol', `unexpected ${message.type}`);
+}
+
+/** Close code for a frame larger than its type may be (the WebSocket "message too big"). */
+const CONTROL_CLOSE_TOO_LARGE = 1009;
+
+function rawLength(data: RawData): number {
+  if (Array.isArray(data)) return data.reduce((total, chunk) => total + chunk.length, 0);
+  return data instanceof ArrayBuffer ? data.byteLength : data.length;
 }
 
 /** The opener's hello: what it supports. It speaks first. */
