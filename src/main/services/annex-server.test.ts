@@ -8553,7 +8553,7 @@ describe('annex-server', () => {
       });
       annexControl._attachForTesting(ws as never, MEMBER.fingerprint, pin, 'out');
       annexControl._sendHelloForTesting(MEMBER.fingerprint);
-      ws.emit('message', Buffer.from(JSON.stringify({ v: 1, type: 'hello', features: ['request', 'subscribe'] })), false);
+      ws.emit('message', Buffer.from(JSON.stringify({ v: 1, type: 'hello', features: ['request', 'subscribe', 'ws-control'] })), false);
       const send = (method: string, path: string, body: unknown, id: string) =>
         ws.emit('message', Buffer.from(JSON.stringify({ v: 1, type: 'request', id, method, path, ...(body !== undefined && { body: JSON.stringify(body), headers: { 'content-type': 'application/json' } }) })), false);
       const cancel = (id: string) => ws.emit('message', Buffer.from(JSON.stringify({ v: 1, type: 'cancel', id })), false);
@@ -8769,7 +8769,9 @@ describe('annex-server', () => {
         const frames = () => link.ws.sent.filter((m) => m.type === 'event' && m.id === id).map((m) => m.frame);
         const ended = () => link.ws.sent.filter((m) => (m.type === 'ended' || m.type === 'error') && m.id === id);
         const virtual = () => [...annexServer._testing.wss!.clients].filter((c) => annexServer._testing.wsPeerFingerprints.get(c) === MEMBER.fingerprint);
-        return { ...link, id, frames, ended, virtual };
+        /** A /ws control frame from MEMBER over the connection (P5). */
+        const client = (frame: Record<string, unknown>) => link.ws.emit('message', Buffer.from(JSON.stringify({ v: 1, type: 'client', id, frame })), false);
+        return { ...link, id, frames, ended, virtual, client };
       }
 
       it('serves a fresh snapshot first, then live events with their seq, as a /ws socket from it would get them', async () => {
@@ -8856,6 +8858,110 @@ describe('annex-server', () => {
         expect(annexServer._testing.wss!.clients.size).toBe(before);
         expect(sink.send).not.toHaveBeenCalled();
       }, 15_000);
+
+      describe('control frames over the subscription: terminals and lifecycle (P5)', () => {
+        const project = { id: 'p', name: 'Project', path: '/project' };
+        beforeEach(() => {
+          annexServer._testing.shellOwners.clear();
+          vi.mocked(projectStore.list).mockReturnValue([project] as any);
+          vi.mocked(ptyManagerModule.spawnShell).mockResolvedValue(undefined);
+          vi.mocked(ptyManagerModule.killShell).mockReturnValue(true);
+          vi.mocked(ptyManagerModule.getShellCwd).mockReturnValue(undefined);
+          vi.mocked(ptyManagerModule.write).mockClear();
+        });
+
+        async function ready() {
+          await startAndPair();
+          const sub = subscribed();
+          await vi.waitFor(() => expect(sub.frames()[0]).toMatchObject({ type: 'snapshot' }));
+          return sub;
+        }
+
+        it('runs a shell for the subscriber through the /ws handlers: spawn, input, and output only to it', async () => {
+          const sub = await ready();
+          sub.client({ type: 'pty:spawn-shell', payload: { sessionId: 'rs1', projectId: 'p' } });
+          await vi.waitFor(() => expect(sub.frames().some((f) => f.type === 'pty:spawn-shell:ack')).toBe(true));
+          expect(annexServer._testing.shellOwners.get('rs1')).toBe(sub.virtual()[0]);
+          sub.client({ type: 'pty:input', payload: { agentId: 'rs1', data: 'ls\r' } });
+          expect(ptyManagerModule.write).toHaveBeenCalledWith('rs1', 'ls\r');
+          const onData = vi.mocked(annexEventBus.onPtyData).mock.calls.at(-1)![0];
+          onData('rs1', 'listing', 1);
+          await vi.waitFor(() => expect(sub.frames().some((f) => f.type === 'pty:data')).toBe(true));
+          expect(sub.frames().filter((f) => f.type === 'pty:data')).toEqual([{ type: 'pty:data', payload: { agentId: 'rs1', data: 'listing', outputSeq: 1 } }]);
+        }, 15_000);
+
+        it('a direct controller cannot drive the subscriber\'s shell, and the subscriber cannot drive a direct controller\'s', async () => {
+          const sub = await ready();
+          sub.client({ type: 'pty:spawn-shell', payload: { sessionId: 'rs1', projectId: 'p' } });
+          await vi.waitFor(() => expect(annexServer._testing.shellOwners.has('rs1')).toBe(true));
+          const direct = Object.assign(new EventEmitter(), { readyState: 1, send: vi.fn(), ping: vi.fn() });
+          annexServer._testing.wsAuthTypes.set(direct as any, 'mtls');
+          annexServer._testing.registerPeerSocket(direct as any, MEMBER.fingerprint, MEMBER.tlsCertificateFingerprint);
+          annexServer._testing.wss!.emit('connection', direct);
+          direct.emit('message', JSON.stringify({ type: 'pty:input', payload: { agentId: 'rs1', data: 'x' } }));
+          expect(ptyManagerModule.write).not.toHaveBeenCalled();
+          annexServer._testing.shellOwners.set('direct-shell', direct as never);
+          sub.client({ type: 'pty:input', payload: { agentId: 'direct-shell', data: 'y' } });
+          expect(ptyManagerModule.write).not.toHaveBeenCalled();
+          await vi.waitFor(() => expect(sub.frames().some((f) => f.type === 'error' && (f.payload as { message?: string }).message === 'session_not_found')).toBe(true));
+        }, 15_000);
+
+        it('ending the subscription closes the subscriber\'s shells, as a direct socket closing does', async () => {
+          const sub = await ready();
+          sub.client({ type: 'pty:spawn-shell', payload: { sessionId: 'rs1', projectId: 'p' } });
+          await vi.waitFor(() => expect(annexServer._testing.shellOwners.has('rs1')).toBe(true));
+          vi.mocked(ptyManagerModule.killShell).mockClear();
+          sub.ws.emit('message', Buffer.from(JSON.stringify({ v: 1, type: 'unsubscribe', id: sub.id })), false);
+          expect(ptyManagerModule.killShell).toHaveBeenCalledWith('rs1');
+          expect(annexServer._testing.shellOwners.has('rs1')).toBe(false);
+        }, 15_000);
+
+        it('a subscriber that lost access: its input never reaches the terminal', async () => {
+          const sub = await ready();
+          current = { ...MEMBER, networkPending: true };
+          sub.client({ type: 'pty:input', payload: { agentId: 'agent-1', data: 'rm -rf\r' } });
+          expect(ptyManagerModule.write).not.toHaveBeenCalled();
+          expect(sub.ended()).toEqual([{ v: 1, type: 'ended', id: sub.id, code: 'authorization_revoked' }]);
+          expect(sub.ws.close).toHaveBeenCalledWith(4401, 'authorization_revoked');
+        }, 15_000);
+
+        it('the /ws limits apply: pty:input over 64 KiB is refused', async () => {
+          const sub = await ready();
+          sub.client({ type: 'pty:input', payload: { agentId: 'agent-1', data: 'x'.repeat(64 * 1024 + 1) } });
+          expect(ptyManagerModule.write).not.toHaveBeenCalled();
+          await vi.waitFor(() => expect(sub.frames().some((f) => f.type === 'error')).toBe(true));
+        }, 15_000);
+
+        it('agent lifecycle goes through the same handlers: kill of an unknown agent is answered agent_not_found', async () => {
+          const sub = await ready();
+          sub.client({ type: 'agent:kill', payload: { agentId: 'nobody' } });
+          await vi.waitFor(() => expect(sub.frames().some((f) => f.type === 'error' && (f.payload as { message?: string }).message === 'agent_not_found')).toBe(true));
+        }, 15_000);
+
+        it('agent:spawn over reverse creates nothing a direct controller could not: unknown project refused, known project spawned exactly as direct', async () => {
+          const sub = await ready();
+          vi.mocked(agentSystem.spawnAgent).mockClear();
+          sub.client({ type: 'agent:spawn', payload: { projectId: 'missing', prompt: 'hi' } });
+          await vi.waitFor(() => expect(sub.frames().some((f) => f.type === 'error' && (f.payload as { message?: string }).message === 'project_not_found')).toBe(true));
+          expect(agentSystem.spawnAgent).not.toHaveBeenCalled();
+
+          vi.mocked(agentIdModule.generateQuickAgentId).mockReturnValue('quick_fixed');
+          const payload = { projectId: 'p', prompt: 'hi', freeAgentMode: true, model: 'opus' };
+          const direct = Object.assign(new EventEmitter(), { readyState: 1, send: vi.fn(), ping: vi.fn() });
+          annexServer._testing.wsAuthTypes.set(direct as any, 'mtls');
+          annexServer._testing.registerPeerSocket(direct as any, MEMBER.fingerprint, MEMBER.tlsCertificateFingerprint);
+          annexServer._testing.wss!.emit('connection', direct);
+          direct.emit('message', JSON.stringify({ type: 'agent:spawn', payload }));
+          await vi.waitFor(() => expect(agentSystem.spawnAgent).toHaveBeenCalledTimes(1));
+          const viaDirect = vi.mocked(agentSystem.spawnAgent).mock.calls[0];
+          vi.mocked(agentSystem.spawnAgent).mockClear();
+          agentRegistry.untrack('quick_fixed');
+          sub.client({ type: 'agent:spawn', payload });
+          await vi.waitFor(() => expect(agentSystem.spawnAgent).toHaveBeenCalledTimes(1));
+          expect(vi.mocked(agentSystem.spawnAgent).mock.calls[0]).toEqual(viaDirect);
+          agentRegistry.untrack('quick_fixed');
+        }, 15_000);
+      });
 
       it('is refused to a subscriber that is not an active desktop member here, and nothing is registered', async () => {
         await startAndPair();

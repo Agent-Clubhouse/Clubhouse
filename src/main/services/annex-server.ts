@@ -4926,7 +4926,9 @@ const controlInboundAuthority: annexControl.InboundAuthority = {
  * subscriber's own mTLS socket would be (its identity, the certificate the
  * control connection verified), so the snapshot, held frames, broadcasts,
  * grant filtering, member no-lock, heartbeat and revocation all apply to it
- * unchanged. It only receives: nothing it sends reaches the /ws handlers.
+ * unchanged. It has no `message` listener: the only way in is the control
+ * connection's `client` frames (P5), handed to handleWsMessage directly. Its
+ * shells are its own and close with it, as a direct socket's do.
  */
 class ReverseSubscriber extends EventEmitter {
   readyState: number = WebSocket.OPEN;
@@ -4978,7 +4980,12 @@ function subscribeReverse(principal: AnnexPrincipal, sink: annexControl.Subscrip
   server.clients.add(ws);
   appLog('core:annex', 'info', 'Reverse subscription started', { meta: { peerFingerprint: principal.fingerprint } });
   server.emit('connection', ws);
-  return { close: () => subscriber.finish(1000, 'unsubscribed', false) };
+  return {
+    close: () => subscriber.finish(1000, 'unsubscribed', false),
+    // The same /ws handler a direct socket's frames go to, for this virtual client (P5). It checks the
+    // subscriber again (socketStillPaired, as reverse), the mTLS control gate, sizes and shell ownership.
+    receive: (frame) => { if (subscriber.readyState === WebSocket.OPEN) handleWsMessage(ws, frame); },
+  };
 }
 
 const controlTarget: annexControl.ControlTarget = {
