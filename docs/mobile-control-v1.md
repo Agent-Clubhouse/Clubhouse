@@ -680,7 +680,7 @@ These are exactly white and black, not a theme's light and dark, so one of them 
 - **You:** on the right, in a filled bubble, labelled "You".
 - **Others:** on the left, one entry per part: the avatar, then the name above an unfilled bubble with a neutral hairline border. Parts of one message stay together, even with different senders. The active agent's replies aren't in this layout.
 - **Color:** agent color appears only in the avatar. Don't tint bubbles, borders, names or message backgrounds with it. The desktop fills your bubble with a neutral surface and draws the others with no fill and a 1px neutral border, so the fill alone says who wrote it.
-- **Long messages:** see [Chat reading rules](#chat-reading-rules). Desktop folds a part with a newline or over 120 characters to a three-line preview in its bubble, with a Show more control under it; phones collapse every routed part.
+- **Long messages:** see [Chat reading rules](#chat-reading-rules). Desktop folds a part with a newline or over 120 characters to a three-line preview in its bubble, with a Show more control under it; Clubhouse-Go shows routed parts as their own bubbles with their own Show more (per its owner's check of the current app).
 - **Text:** a part with a `sender` is Markdown. A Clubhouse notice or a part with no sender is plain text.
 
 ### Chat reading rules
