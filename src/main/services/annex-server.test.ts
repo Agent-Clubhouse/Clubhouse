@@ -378,6 +378,7 @@ import * as annexSettings from './annex-settings';
 import * as annexIdentity from './annex-identity';
 import * as annexTls from './annex-tls';
 import * as networkChannel from './annex-network-channel';
+import * as annexControl from './annex-control';
 import { annexNetworkProfile } from './annex-network-profile';
 
 /** A positive, minimally encoded certificate serial (first byte 0x01 to 0x7f). See #2992. */
@@ -8433,6 +8434,229 @@ describe('annex-server', () => {
         current = member;
         expect(annexServer._testing.socketStillPaired(ws as never)).toBe(true);
       }
+    });
+  });
+
+  describe('reverse requests over the control connection (#3613 P3)', () => {
+    /** B: the requester. Paired here as an active desktop member, presenting TEST_CONTROLLER's identity and certificate. */
+    const MEMBER = { ...TEST_CONTROLLER, role: 'member' as const, kind: 'desktop' as const };
+    const PROJECT = { id: 'proj_r', name: 'Reverse', path: '/reverse/path', icon: '' };
+    let current: object | undefined;
+    /** Request ids are unique across tests: the target remembers non-read requests by id for a while. */
+    let nextId = 0;
+
+    beforeEach(() => {
+      current = MEMBER;
+      vi.mocked(annexPeers.getPeer).mockImplementation(((fp: string) => (fp === MEMBER.fingerprint ? current : undefined)) as any);
+    });
+
+    afterEach(() => {
+      vi.mocked(projectStore.list).mockReturnValue([]);
+    });
+
+    type Answer = { status?: number; body?: any; headers?: Record<string, string>; error?: string };
+
+    /**
+     * A control connection this machine opened to MEMBER (so this machine is the target), with hellos exchanged.
+     * `ask` sends a request frame as MEMBER would and resolves with the answer frame.
+     */
+    function targetLink(pin = MEMBER.tlsCertificateFingerprint) {
+      const ws = Object.assign(new EventEmitter(), {
+        readyState: 1, sent: [] as any[],
+        send(data: string) { this.sent.push(JSON.parse(data)); },
+        ping: vi.fn(), terminate: vi.fn(),
+        close: vi.fn(function (this: { readyState: number }) { this.readyState = 3; }),
+      });
+      annexControl._attachForTesting(ws as never, MEMBER.fingerprint, pin, 'out');
+      annexControl._sendHelloForTesting(MEMBER.fingerprint);
+      ws.emit('message', Buffer.from(JSON.stringify({ v: 1, type: 'hello', features: ['request'] })), false);
+      const ask = async (method: string, path: string, body?: unknown, id = `t${++nextId}`): Promise<Answer> => {
+        const before = ws.sent.filter((m) => m.id === id).length;
+        ws.emit('message', Buffer.from(JSON.stringify({ v: 1, type: 'request', id, method, path, ...(body !== undefined && { body: JSON.stringify(body), headers: { 'content-type': 'application/json' } }) })), false);
+        await vi.waitFor(() => expect(ws.sent.filter((m) => m.id === id).length).toBe(before + 1), { timeout: 5_000 });
+        const answer = ws.sent.filter((m) => m.id === id)[before];
+        if (answer.type === 'error') return { error: answer.code };
+        const text = Buffer.from(answer.body, answer.encoding === 'base64' ? 'base64' : 'utf8').toString();
+        return { status: answer.status, headers: answer.headers, body: text ? JSON.parse(text) : undefined };
+      };
+      return { ws, ask };
+    }
+
+    it('answers a reverse request exactly as the same peer\'s direct request', async () => {
+      vi.mocked(projectStore.list).mockReturnValue([PROJECT] as any);
+      const { port } = await startAndPair();
+      const { ask } = targetLink();
+      for (const path of ['/api/v1/projects', '/api/v1/identity', '/api/v1/mobile/capabilities']) {
+        const direct = await request(port, 'GET', path);
+        const reverse = await ask('GET', path);
+        expect(reverse.status, path).toBe(direct.status);
+        expect(reverse.body, path).toEqual(JSON.parse(direct.body));
+      }
+    }, 15_000);
+
+    describe('refusal matrix: the same authorizer, as a reverse principal', () => {
+      // Annex Network off and session-only entries are in annex-control.test.ts and annex-authorizer.test.ts: this suite's settings mock can't turn the network off.
+      const ROWS: Array<{ name: string; peer: () => object | undefined; pin?: string; direct: number; reverse: [number, string] | 200 }> = [
+        { name: 'active desktop member', peer: () => MEMBER, direct: 200, reverse: 200 },
+        { name: 'one-to-one controller keeps its direction', peer: () => ({ ...TEST_CONTROLLER }), direct: 200, reverse: [403, 'peer_role_not_allowed'] },
+        { name: 'phone network member', peer: () => ({ ...MEMBER, kind: 'phone' }), direct: 200, reverse: [403, 'peer_role_not_allowed'] },
+        { name: 'pending member', peer: () => ({ ...MEMBER, networkPending: true }), direct: 403, reverse: [403, 'peer_role_not_allowed'] },
+        { name: 'one-to-one satellite', peer: () => ({ ...MEMBER, role: 'satellite' }), direct: 403, reverse: [403, 'peer_role_not_allowed'] },
+        { name: 'removed', peer: () => undefined, direct: 401, reverse: [401, 'peer_not_paired'] },
+        { name: 'connection verified another certificate', peer: () => MEMBER, pin: 'AB:CD:EF:02', direct: 200, reverse: [401, 'peer_not_paired'] },
+      ];
+      for (const row of ROWS) {
+        it(`${row.name}: direct ${row.direct}, reverse ${row.reverse === 200 ? 200 : row.reverse.join(' ')}`, async () => {
+          vi.mocked(projectStore.list).mockReturnValue([PROJECT] as any);
+          const { port } = await startAndPair();
+          current = row.peer();
+          expect((await request(port, 'GET', '/api/v1/projects')).status).toBe(row.direct);
+          vi.mocked(projectStore.list).mockClear();
+          const { ask } = targetLink(row.pin);
+          const answer = await ask('GET', '/api/v1/projects');
+          if (row.reverse === 200) {
+            expect(answer.status).toBe(200);
+            expect(projectStore.list).toHaveBeenCalled();
+          } else {
+            expect(answer).toMatchObject({ status: row.reverse[0], body: { error: row.reverse[1], message: expect.any(String) } });
+            // Refused before any route handler runs.
+            expect(projectStore.list).not.toHaveBeenCalled();
+          }
+        }, 15_000);
+      }
+    });
+
+    it('never reaches pairing: removing a pairing, /pair and unknown paths answer not_found', async () => {
+      const { port } = await startAndPair();
+      // Directly, the same desktop is told it can't remove its lasting pairing this way.
+      expect((await request(port, 'DELETE', '/api/v1/mobile/pairing')).status).toBe(409);
+      const { ask } = targetLink();
+      expect(await ask('DELETE', '/api/v1/mobile/pairing')).toMatchObject({ status: 404, body: { error: 'not_found' } });
+      expect(await ask('POST', '/pair', { pin: '123456' })).toMatchObject({ status: 404, body: { error: 'not_found' } });
+      expect(await ask('GET', '/api/v1/nothing-here')).toMatchObject({ status: 404, body: { error: 'not_found' } });
+      expect(annexPeers.removePeer).not.toHaveBeenCalled();
+    }, 15_000);
+
+    it('acts as the requester, never as this machine: command receipts are keyed by its identity', async () => {
+      const { port } = await startAndPair();
+      vi.mocked(annexPeers.updateLastSeen).mockClear();
+      const { ask } = targetLink();
+      const { epoch } = (await ask('GET', '/api/v1/mobile/capabilities')).body;
+      const reverse = await ask('POST', '/api/v1/mobile/commands', { version: 1, epoch, commandId: 'cd-1', type: 'agent.stop', agentId: 'nobody' });
+      expect(reverse.body).toMatchObject({ commandId: 'cd-1' });
+      // The same peer connecting directly finds the receipt its reverse request left: a different command under that id conflicts.
+      const direct = await request(port, 'POST', '/api/v1/mobile/commands', { version: 1, epoch, commandId: 'cd-1', type: 'agent.stop', agentId: 'someone-else' });
+      expect(JSON.parse(direct.body)).toMatchObject({ status: 'rejected', error: { code: 'command_conflict' } });
+      expect(vi.mocked(annexPeers.updateLastSeen).mock.calls.every(([fp]) => fp === MEMBER.fingerprint)).toBe(true);
+      expect(annexPeers.updateLastSeen).not.toHaveBeenCalledWith('AA:BB:CC:DD');
+    }, 15_000);
+
+    it('withholds the answer when the requester is removed while its request runs, and closes the connection', async () => {
+      await startAndPair();
+      const { ws, ask } = targetLink();
+      vi.mocked(projectStore.list).mockImplementationOnce(async () => { current = undefined; return [PROJECT] as any; });
+      expect(await ask('GET', '/api/v1/projects')).toEqual({ error: 'authorization_revoked' });
+      expect(ws.sent.filter((m) => m.type === 'response')).toEqual([]);
+      expect(ws.close).toHaveBeenCalledWith(4401, 'authorization_revoked');
+    }, 15_000);
+
+    it('refuses a destructive reverse request whose requester went pending before it acted', async () => {
+      vi.mocked(projectStore.list).mockReturnValue([PROJECT] as any);
+      vi.mocked(agentConfigModule.createDurable).mockClear();
+      await startAndPair();
+      const { ask } = targetLink();
+      // Authorized on arrival; the route's own recheck (requireMtls) sees the change.
+      vi.mocked(projectStore.list).mockImplementationOnce(async () => { current = { ...MEMBER, networkPending: true }; return [PROJECT] as any; });
+      const answer = await ask('POST', `/api/v1/projects/${PROJECT.id}/agents/durable`, { name: 'helper', color: 'emerald' });
+      expect(answer).toEqual({ error: 'authorization_revoked' });
+      expect(agentConfigModule.createDurable).not.toHaveBeenCalled();
+    }, 15_000);
+
+    it('removing the requester closes its control connections', async () => {
+      await startAndPair();
+      const { ws } = targetLink();
+      annexServer.revokePeer(MEMBER.fingerprint);
+      expect(ws.close).toHaveBeenCalledWith(4401, 'authorization_revoked');
+    }, 15_000);
+
+    it('runs a retried non-read request once: the same id gets the original answer', async () => {
+      vi.mocked(projectStore.list).mockReturnValue([PROJECT] as any);
+      vi.mocked(agentConfigModule.createDurable).mockClear();
+      vi.mocked(agentConfigModule.createDurable).mockResolvedValue({ id: 'durable_once', name: 'helper', color: 'emerald', createdAt: '2026-01-01' } as any);
+      await startAndPair();
+      const { ask } = targetLink();
+      const body = { name: 'helper', color: 'emerald' };
+      const first = await ask('POST', `/api/v1/projects/${PROJECT.id}/agents/durable`, body, 'create-once');
+      const retry = await ask('POST', `/api/v1/projects/${PROJECT.id}/agents/durable`, body, 'create-once');
+      expect(first.status).toBe(201);
+      expect(retry).toEqual(first);
+      expect(agentConfigModule.createDurable).toHaveBeenCalledTimes(1);
+      expect(await ask('POST', `/api/v1/projects/${PROJECT.id}/agents/durable`, { ...body, name: 'other' }, 'create-once'))
+        .toMatchObject({ status: 409, body: { error: 'request_conflict' } });
+      expect(agentConfigModule.createDurable).toHaveBeenCalledTimes(1);
+    }, 15_000);
+
+    describe('accepting the control connection', () => {
+      function upgradeControl(): Promise<{ status?: number; body?: any; accepted: boolean }> {
+        return new Promise((resolve, reject) => {
+          const port = annexServer.getStatus().port;
+          const socket = tlsLib.connect({ host: '127.0.0.1', port, rejectUnauthorized: false, ...suiteCredentials() });
+          let data = '';
+          socket.once('secureConnect', () => {
+            socket.write([
+              'GET /control HTTP/1.1', 'Host: 127.0.0.1', 'Connection: Upgrade', 'Upgrade: websocket',
+              'Sec-WebSocket-Version: 13', 'Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==', '', '',
+            ].join('\r\n'));
+            // This suite stubs `ws`: an accepted upgrade writes nothing back.
+            setTimeout(() => { if (data) return; socket.destroy(); resolve({ accepted: true }); }, 300);
+          });
+          socket.on('data', (chunk) => { data += chunk; });
+          socket.on('error', reject);
+          socket.on('close', () => {
+            if (!data) return;
+            const [head, body] = data.split('\r\n\r\n');
+            resolve({ accepted: false, status: Number(head.split(' ')[1]), body: JSON.parse(body) });
+          });
+        });
+      }
+
+      it('takes it from an active desktop member, and says nothing until its hello', async () => {
+        await startAndPair();
+        expect(await upgradeControl()).toEqual({ accepted: true });
+        const ws = annexControl._inboundSocketForTesting(MEMBER.fingerprint)!;
+        expect(ws).toBeDefined();
+        const send = vi.spyOn(ws, 'send');
+        await new Promise((resolve) => setTimeout(resolve, 50));
+        expect(send).not.toHaveBeenCalled();
+        expect(annexControl.hasReverseLink(MEMBER.fingerprint)).toBe(false);
+        ws.emit('message', Buffer.from(JSON.stringify({ v: 1, type: 'hello', features: ['request'] })), false);
+        expect(send).toHaveBeenCalledWith(JSON.stringify({ v: 1, type: 'hello', features: ['request'] }));
+        expect(annexControl.hasReverseLink(MEMBER.fingerprint)).toBe(true);
+      }, 15_000);
+
+      for (const [name, peer, status, error] of [
+        ['a one-to-one controller', () => ({ ...TEST_CONTROLLER }), 403, 'peer_role_not_allowed'],
+        ['a phone member', () => ({ ...MEMBER, kind: 'phone' }), 403, 'peer_role_not_allowed'],
+        ['a pending member', () => ({ ...MEMBER, networkPending: true }), 403, 'peer_role_not_allowed'],
+        ['an unknown peer', () => undefined, 401, 'peer_not_paired'],
+      ] as const) {
+        it(`refuses ${name}`, async () => {
+          await startAndPair();
+          current = peer();
+          expect(await upgradeControl()).toMatchObject({ accepted: false, status, body: { error } });
+          expect(annexControl._inboundSocketForTesting(MEMBER.fingerprint)).toBeUndefined();
+        }, 15_000);
+      }
+
+      it('ends with the server: nothing is accepted or served once it stops', async () => {
+        await startAndPair();
+        await upgradeControl();
+        expect(annexControl._inboundSocketForTesting(MEMBER.fingerprint)).toBeDefined();
+        expect(annexControl.canServe()).toBe(true);
+        annexServer.stop();
+        expect(annexControl._inboundSocketForTesting(MEMBER.fingerprint)).toBeUndefined();
+        expect(annexControl.canServe()).toBe(false);
+      }, 15_000);
     });
   });
 

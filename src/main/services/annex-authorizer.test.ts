@@ -11,7 +11,7 @@ import forge from 'node-forge';
 vi.mock('electron', () => ({ app: { getPath: () => '/tmp/annex-authorizer-test' } }));
 vi.mock('./log-service', () => ({ appLog: vi.fn() }));
 
-import { authorize, reauthorize, stillAuthorized, type AnnexAuthorizerDeps, type AnnexVia } from './annex-authorizer';
+import { authorize, authorizeControlLink, reauthorize, stillAuthorized, type AnnexAuthorizerDeps, type AnnexVia } from './annex-authorizer';
 import type { AnnexPeer } from '../../shared/types';
 
 const PIN = 'AB:CD:EF:01';
@@ -121,6 +121,24 @@ describe('annex authorizer refusal matrix', () => {
     expect(authorize({ fingerprint: FP, pin: PIN, via: 'direct' }, deps({ peer: peer({ role: 'satellite' }) }))).toMatchObject({
       message: 'This computer is paired to be controlled from here, not to control it.',
     });
+  });
+});
+
+describe('control connection eligibility (#3613 P3)', () => {
+  it('accepts a control connection exactly where a reverse request would be allowed, with the same refusal otherwise', () => {
+    for (const row of MATRIX) {
+      const link = authorizeControlLink({ fingerprint: row.fingerprint ?? FP, pin: row.pin ?? PIN, via: 'direct' }, deps(row.world));
+      const reverse = run(row, 'reverse');
+      expect(link.ok, row.name).toBe(reverse.ok);
+      if (!reverse.ok) expect(link, row.name).toEqual(reverse);
+      // Whatever the caller claims, the connection is authorized as the direct connection it is.
+      if (link.ok) expect(link.principal.via, row.name).toBe('direct');
+    }
+  });
+
+  it('ignores a caller claiming reverse', () => {
+    const result = authorizeControlLink({ fingerprint: FP, pin: PIN, via: 'reverse' }, deps({ peer: peer() }));
+    expect(result).toMatchObject({ ok: true, principal: { via: 'direct' } });
   });
 });
 
