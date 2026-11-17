@@ -20,10 +20,12 @@ import { AgentAvatar } from '../../features/agents/AgentAvatar';
  * Its status is the chat's, and working while a request the user made is
  * under way (#3220).
  */
-export function DispatcherRow({ agent, detailed, requestsUnderWay = 0, active, projectPath, loadError, onSelect, machine, offline = false }: {
+export function DispatcherRow({ agent, detailed, requestsUnderWay = 0, active, projectPath, loadError, onSelect, machine, machineName, offline = false }: {
   agent?: Agent;
   /** Following a lead on another computer (#3352): that computer's short name. */
   machine?: string;
+  /** That computer's full alias, for the row's name and hover card (#3607). */
+  machineName?: string;
   /** That computer is offline. */
   offline?: boolean;
   detailed?: AgentDetailedStatus;
@@ -65,6 +67,7 @@ export function DispatcherRow({ agent, detailed, requestsUnderWay = 0, active, p
         onSelect={onSelect}
         level={1}
         machine={machine}
+        machineName={machineName}
         offline={offline}
       />
     </div>

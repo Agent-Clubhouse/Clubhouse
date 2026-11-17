@@ -533,10 +533,17 @@ export function ChromeSidebar() {
   const isLinkedProject = useCallback((projectId: string) => !!linkGroupOf(links, projectId), [links]);
   // A short label for an agent on another machine, and whether that machine is offline; none for this machine's.
   // One object per machine, so rows (and the memoized groups) see the same value until that machine changes.
-  const machineInfo = useMemo(
-    () => new Map(satellites.map((s) => [s.id, { label: shortMachineLabel(s.alias), fullName: s.alias?.trim() || UNKNOWN_COMPUTER, offline: s.state !== 'connected' }])),
-    [satellites],
-  );
+  const machineInfo = useMemo(() => {
+    // Computers that share an alias (compared without case) get the tail of the fingerprint the pairing already shows; the rest don't.
+    const aliasOf = (s: { alias?: string }) => s.alias?.trim() || UNKNOWN_COMPUTER;
+    const same = new Map<string, number>();
+    for (const s of satellites) same.set(aliasOf(s).toLowerCase(), (same.get(aliasOf(s).toLowerCase()) ?? 0) + 1);
+    return new Map(satellites.map((s) => {
+      const tail = s.fingerprint.replace(/:/g, '').slice(-6).toUpperCase();
+      const collides = (same.get(aliasOf(s).toLowerCase()) ?? 0) > 1 && tail;
+      return [s.id, { label: shortMachineLabel(s.alias), fullName: collides ? `${aliasOf(s)} (ID ${tail})` : aliasOf(s), offline: s.state !== 'connected' }];
+    }));
+  }, [satellites]);
   const agentMachine = useCallback((agent: Agent) => {
     const host = hostOf(agent.projectId);
     return host ? machineInfo.get(host) ?? { label: shortMachineLabel(undefined), fullName: UNKNOWN_COMPUTER, offline: true } : undefined;
@@ -958,6 +965,7 @@ export function ChromeSidebar() {
             onSelectAgent={selectAgent}
             onOpenTerminal={openTerminal}
             terminalProjectIds={terminalProjectIds}
+            agentMachine={agentMachine}
             onSearchEverything={searchEverything}
           />
         </div>

@@ -483,4 +483,33 @@ describe('AgentRow remote computer identity (#3607)', () => {
     fireEvent.keyDown(focusable, { key: 'Escape' });
     expect(screen.queryByTestId('agent-hover-card')).toBeNull();
   });
+
+  it('keeps the computer label and offline text while the row is hovered; only the time and note give way to the actions', () => {
+    setup(durable({ status: 'running' }), { machine: 'Studio', machineName: 'Studio', offline: true });
+    const machine = screen.getByTestId('agent-row-machine');
+    // Not inside anything the row hides on hover, and with a shape of its own besides the text.
+    expect(machine.closest('[class*="group-hover/row:hidden"]')).toBeNull();
+    expect(screen.getByTestId('agent-row-offline').closest('[class*="group-hover/row:hidden"]')).toBeNull();
+    expect(machine.parentElement!.querySelector('svg[aria-hidden="true"]')).toBeTruthy();
+  });
+
+  it('hides the note on hover but not the computer', () => {
+    setup(durable({ kind: 'quick', status: 'running' }), { machine: 'Studio', machineName: 'Studio' });
+    expect(screen.getByTestId('agent-row-note').closest('[class*="group-hover/row:hidden"]')).not.toBeNull();
+    expect(screen.getByTestId('agent-row-machine').closest('[class*="group-hover/row:hidden"]')).toBeNull();
+  });
+
+  it('keeps the label inside the 72 px cap at a narrow width, with the name truncating before it', () => {
+    setup(durable(), { machine: 'Mason-Studio-…', machineName: LONG });
+    expect(screen.getByTestId('agent-row-machine')).toHaveClass('truncate', 'max-w-[72px]');
+    expect(screen.getByText('snazzy-fox')).toHaveClass('truncate');
+  });
+
+  it('names the card from the full alias when only the short label is given', () => {
+    vi.useFakeTimers();
+    const { row } = setup(durable(), { machine: 'Other computer' });
+    fireEvent.mouseEnter(row);
+    act(() => { vi.advanceTimersByTime(HOVER_OPEN_MS); });
+    expect(screen.getByTestId('agent-hover-card')).toHaveTextContent('ComputerOther computer');
+  });
 });

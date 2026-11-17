@@ -75,6 +75,13 @@ interface AgentRowProps {
   offline?: boolean;
 }
 
+/** A small computer, so a remote row reads as remote by shape and text, not by colour. */
+const MachineGlyph = () => (
+  <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" className="flex-shrink-0">
+    <rect x="3" y="4" width="18" height="12" rx="2" /><path d="M8 20h8M12 16v4" />
+  </svg>
+);
+
 const Caret = ({ open }: { open: boolean }) => (
   <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"
     style={{ transform: open ? 'rotate(90deg)' : undefined, transition: 'transform 120ms' }}>
@@ -312,12 +319,22 @@ export const AgentRow = React.memo(function AgentRow({
           <span className={`truncate ${dot === 'sleeping' ? '' : 'font-medium'}`}><MarkedText text={agent.name} query={highlight} /></span>
           <OrchestratorGlyph orchestrator={orchestrator} focusable={false} showTooltip={false} variant="row" />
           {(note || hasActivityTime || folded || machine || offline) && (
-            <span className="ml-auto flex-shrink-0 flex items-center gap-2 text-xs group-hover/row:hidden">
-              {machine && <span data-testid="agent-row-machine" className="text-ctp-overlay1 truncate max-w-[72px]">{machine}</span>}
+            <span className="ml-auto flex-shrink-0 flex items-center gap-2 text-xs">
+              {/* Where the agent runs stays through hover and focus; the rest gives way to the row's actions. */}
+              {machine && (
+                <span className="flex items-center gap-1 min-w-0 text-ctp-overlay1">
+                  <MachineGlyph />
+                  <span data-testid="agent-row-machine" className="truncate max-w-[72px]">{machine}</span>
+                </span>
+              )}
               {offline && <span data-testid="agent-row-offline" className="text-ctp-overlay1">offline</span>}
-              {note && <span id={noteId} data-testid="agent-row-note" className={dot === 'needs' ? 'text-ctp-warning' : dot === 'error' ? 'text-ctp-error' : 'text-ctp-overlay1'}>{note}</span>}
-              {folded && <HelperRollup id={rollupId} count={helperCount} needs={helperNeeds} working={helperWorking} />}
-              {hasActivityTime && <ActivityTime at={activityAt} label={timeLabel} />}
+              {(note || folded || hasActivityTime) && (
+                <span className="flex-shrink-0 flex items-center gap-2 group-hover/row:hidden">
+                  {note && <span id={noteId} data-testid="agent-row-note" className={dot === 'needs' ? 'text-ctp-warning' : dot === 'error' ? 'text-ctp-error' : 'text-ctp-overlay1'}>{note}</span>}
+                  {folded && <HelperRollup id={rollupId} count={helperCount} needs={helperNeeds} working={helperWorking} />}
+                  {hasActivityTime && <ActivityTime at={activityAt} label={timeLabel} />}
+                </span>
+              )}
             </span>
           )}
         </div>

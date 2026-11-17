@@ -31,6 +31,8 @@ export interface FilterResultsProps {
   onSelectAgent: (agent: Agent) => void;
   onOpenTerminal?: (agent: Agent) => void;
   terminalProjectIds?: ReadonlySet<string>;
+  /** For an agent on another machine: its short and full names, and whether it is offline (#3607). */
+  agentMachine?: (agent: Agent) => { label?: string; fullName?: string; offline?: boolean } | undefined;
   onSearchEverything: () => void;
 }
 
@@ -101,7 +103,9 @@ export function FilterResults(props: FilterResultsProps) {
                 <ProjectSquare project={project} iconUrl={projectIcons[project.id]} />
                 <span className="font-semibold truncate"><MarkedText text={project.displayName || project.name} query={q} /></span>
               </div>
-              {agents.length > 0 && <div className="flex flex-col gap-px px-1.5">{agents.map((agent) => (
+              {agents.length > 0 && <div className="flex flex-col gap-px px-1.5">{agents.map((agent) => {
+                const machine = props.agentMachine?.(agent);
+                return (
                   <AgentRow
                     key={agent.id}
                     agent={agent}
@@ -114,8 +118,12 @@ export function FilterResults(props: FilterResultsProps) {
                     onOpenTerminal={props.terminalProjectIds?.has(project.id) ? props.onOpenTerminal : undefined}
                     parentKey={key}
                     highlight={q}
+                    machine={machine?.label}
+                    machineName={machine?.fullName}
+                    offline={machine?.offline}
                   />
-              ))}</div>}
+                );
+              })}</div>}
             </div>
           );
         })}

@@ -96,3 +96,16 @@ describe('the controller and remote rows\' avatars', () => {
     expect(controller.style.paddingLeft).toBe('28px');
   });
 });
+
+describe('the Dispatcher row on another computer (#3607)', () => {
+  it('is named with the full alias and offline state, though the label is short', () => {
+    render(<DispatcherRow agent={chat()} detailed={between} active={false} onSelect={() => {}} machine="Studio-Mac-Pr…" machineName="Studio-Mac-Pro-Upstairs-2" offline />);
+    expect(screen.getByRole('treeitem', { name: 'Dispatcher on Studio-Mac-Pro-Upstairs-2, offline' })).toBeTruthy();
+    expect(screen.getByTestId('agent-row-machine').textContent).toBe('Studio-Mac-Pr…');
+  });
+
+  it('keeps the plain name on this computer', () => {
+    render(<DispatcherRow agent={chat()} detailed={between} active={false} onSelect={() => {}} />);
+    expect(screen.getByRole('treeitem', { name: 'Dispatcher' })).toBeTruthy();
+  });
+});
