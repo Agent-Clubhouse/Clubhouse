@@ -848,3 +848,27 @@ it('does not admit a vouched networkPending desktop before reciprocal membership
   expect.soft((await groupProjectHost.get(gp.id))!.seq).toBe(before);
   expect.soft(await groupProjectHost.readTopic(gp.id, 'system')).toEqual([]);
 });
+
+it.each([
+  ["a confirmed desktop", {}, true],
+  ["a desktop that must pair again (no certificate pin)", { tlsCertificateFingerprint: undefined }, false],
+] as const)("admits by confirmed pairing only: %s", async (_label, change, admitted) => {
+  const peers = await import("./annex-peers");
+  const { isNetworkComputer } = await import("./annex-agent-calls");
+  vi.spyOn(peers, "listPeers").mockReturnValue([{
+    fingerprint: FP_B, alias: "Desk", role: "member", kind: "desktop", pairingId: "epoch",
+    tlsCertificateFingerprint: "pinned", tlsCertificatePem: "cert",
+    publicKey: "key", pairedAt: "2026-11-17T00:00:00Z", lastSeen: "", ...change,
+  } as ReturnType<typeof peers.listPeers>[number]]);
+  fixture.fingerprint = FP_A;
+  fixture.network = true;
+  const gp = await groupProjectHost.create("Confirmed", { scope: { level: "app", reach: "network" } });
+  const address = `desk@${FP_B}`;
+  await groupProjectHost.updateMembership(gp.id, d => {
+    d.explicit.push({ address, name: "Desk", kind: "durable", addedAt: "x" });
+  });
+  groupProjectHost.setNetworkLink({ connected: () => false, isMember: isNetworkComputer } as Parameters<typeof groupProjectHost.setNetworkLink>[0]);
+  await groupProjectHost.ensureMemberAdmission(gp.id, "Desk", address);
+  expect(Boolean(await getBulletinBoard(gp.id).inboxOf(address))).toBe(admitted);
+  expect((await groupProjectHost.readTopic(gp.id, "system")).length).toBe(admitted ? 1 : 0);
+});

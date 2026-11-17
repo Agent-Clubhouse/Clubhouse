@@ -42,6 +42,7 @@ import {
 import { readJsonFile, writeJsonFile } from './group-project-json-file';
 import * as annexIdentity from './annex-identity';
 import { networkEnabled } from './annex-settings';
+import * as annexPeers from './annex-peers';
 import * as projectStore from './project-store';
 import * as agentConfig from './agent-config';
 import { agentRegistry } from './agent-registry';
@@ -55,6 +56,17 @@ export type GroupProjectHostErrorCode =
   | 'not_found' | 'changed' | 'invalid' | 'network_unavailable' | 'out_of_scope'
   /** #3363: only the host can do this; a copy whose host left; the host refused; too much waiting. */
   | 'not_host' | 'read_only' | 'refused' | 'queue_full';
+
+/**
+ * A listed peer not yet trusted for new shared state: a vouched desktop still
+ * pending reciprocal confirmation, or one that must pair again. An unlisted
+ * machine is judged by network membership alone.
+ */
+function peerUnconfirmed(machine: string): boolean {
+  const fp = machine.toLowerCase();
+  const peer = annexPeers.listPeers().find((p) => p.fingerprint.toLowerCase() === fp);
+  return !!peer && (!!peer.networkPending || annexPeers.peerNeedsPairing(peer));
+}
 
 export class GroupProjectHostError extends Error {
   constructor(readonly code: GroupProjectHostErrorCode, message: string) {
@@ -1189,8 +1201,10 @@ class GroupProjectHostService {
       const admitted: Array<{ address: string; name: string; messageId: string }> = [];
       for (const candidate of pending) {
         const machine = parseAgentAddress(candidate.address).machine;
-        // A paired network identity is required; known members may be offline.
-        if (machine && !this.isNetworkMember(machine)) continue;
+        // A confirmed paired network identity is required; known members may be offline.
+        // A vouched desktop still pending reciprocal confirmation, or one that must pair
+        // again, gets no new inbox or join until it is confirmed (#3666 QA).
+        if (machine && (!this.isNetworkMember(machine) || peerUnconfirmed(machine))) continue;
         const name = current.get(candidate.address);
         if (name === undefined || await alreadyAdmitted(name, candidate.address)) continue;
         const messageId = `join_${createHash('sha256').update(candidate.address).digest('hex')}`;
