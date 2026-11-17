@@ -109,6 +109,24 @@ describe('HelperPresetsSection (#2671)', () => {
     expect(screen.getByText(/start a helper on Copilot, the only provider turned on and available/)).toBeTruthy();
   });
 
+  it('leaves Copilot out of the intro when its last-resort switch is off (#3605)', async () => {
+    window.clubhouse.app.getHelperRouting = vi.fn(async () => ({ ...settings(), copilotAuto: false }));
+    render(<HelperPresetsSection />);
+    await screen.findByTestId('helper-presets-claude-code');
+    expect(screen.getByText(/start a helper on Claude Code, the only provider besides Copilot/)).toBeTruthy();
+    expect(screen.queryByText(/with Copilot as a last resort/)).toBeNull();
+  });
+
+  it('says nothing is eligible when the only provider on is Copilot with its switch off (#3605)', async () => {
+    const shown = settings();
+    window.clubhouse.app.getHelperRouting = vi.fn(async () => ({
+      ...shown, copilotAuto: false,
+      providers: { ...shown.providers, 'claude-code': { ...shown.providers['claude-code'], enabled: false } } as HelperRoutingSettings['providers'],
+    }));
+    render(<HelperPresetsSection />);
+    expect(await screen.findByText(/Auto has nothing to pick right now/)).toBeTruthy();
+  });
+
   it('shows no inactive note when the desktop does not report state', async () => {
     render(<HelperPresetsSection />);
     await screen.findByTestId('helper-presets-claude-code');

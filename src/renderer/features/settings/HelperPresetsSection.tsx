@@ -58,13 +58,13 @@ function statusText(view: Eligible): string | null {
 }
 
 /** What Auto can pick from now, in the page's intro. */
-function autoIntro(providers: [string, ProviderRoutingView][]): string {
+function autoIntro(providers: [string, ProviderRoutingView][], copilotAuto: boolean): string {
   const active = providers.filter((entry): entry is [string, Eligible] => entry[1].autoEligible && entry[1].autoCandidate !== false && inactiveReason(entry[1]) === null);
   const name = (id: string) => PROVIDER_NAMES[id] ?? id;
   const main = active.filter(([id]) => id !== 'copilot-cli').map(([id]) => name(id));
-  const lastResort = active.some(([id]) => id === 'copilot-cli');
+  const lastResort = copilotAuto && active.some(([id]) => id === 'copilot-cli');
   const tail = ' It balances plan use, not cost, and a helper stays on its provider for its whole task. An orchestrator’s own switch wins, and a project can turn it off.';
-  if (main.length === 0 && !lastResort) return `No provider is turned on and available right now, so Auto has nothing to pick until one is.${tail}`;
+  if (main.length === 0 && !lastResort) return `Auto has nothing to pick right now. No provider is turned on and available, and Copilot is not allowed as a last resort.${tail}`;
   if (main.length === 0) return `Lets an orchestrator ask Clubhouse to start a helper on Copilot, the only provider turned on and available right now.${tail}`;
   const pick = main.length > 1 ? `pick between ${main.join(' and ')} for a helper, favoring the CLI that has used less of its plan limit` : `start a helper on ${main[0]}, the only provider besides Copilot that is turned on and available right now`;
   return `Lets an orchestrator ask Clubhouse to ${pick}${lastResort ? ', with Copilot as a last resort' : ''}.${tail}`;
@@ -270,7 +270,7 @@ export function HelperPresetsSection({ title = 'Presets by difficulty', autoLabe
         )}
         {settings && (
           <p className={settingsHelp}>
-            {autoIntro(providers)}
+            {autoIntro(providers, settings.copilotAuto !== false)}
           </p>
         )}
         <p className={settingsHelp}>
