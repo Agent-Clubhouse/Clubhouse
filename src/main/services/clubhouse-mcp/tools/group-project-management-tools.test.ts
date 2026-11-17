@@ -158,6 +158,49 @@ describe('management grants and catalog (#3617)', () => {
   });
 });
 
+describe('one concrete group target before grant approval', () => {
+  it.each(GROUP_PROJECT_MANAGEMENT_TOOLS.filter(([name]) => !['preview_group_project_create', 'create_group_project'].includes(name)))('%s never resolves its granted group name again', async (name) => {
+    setDispatcherAgent(caller, false);
+    await updateAgentGrantChanges(caller, () => ({ changes: (['group_project.admin', 'group_project.lead'] as GrantAction[]).map((action) => ({ action, target: { kind: 'single_group_project' as const, groupProjectId: 'gp_parity' }, mode: 'allow' as const })) }));
+    // The former handler lookup would find the same name on an ungranted id.
+    m.list.mockResolvedValueOnce([m.project]).mockResolvedValue([{ ...m.project, id: 'gp_ungranted' }]);
+    const args = { ...await argsFor(name), group_project: 'Team' };
+    expect((await call(name, args)).isError).toBeUndefined();
+    expect(m.list).toHaveBeenCalledTimes(1);
+    for (const spy of [m.update, m.get, m.previewScope, m.setScope, m.operations, m.addMember, m.excludeMember, m.setAutomaticMembership, m.answerAutoJoinOffer, m.confirmUnlinkedMembers, m.grantRole, m.ownGrant, m.recordMemberDisabledTools, m.setTopicProtected, m.estimateTrim, m.setRetention, m.clearAll, m.dismissRefusals, m.previewDelete, m.confirmDelete]) {
+      expect(spy.mock.calls.some((args) => args[0] === 'gp_ungranted')).toBe(false);
+    }
+    if (name === 'update_group_project') expect(m.update).toHaveBeenCalledWith('gp_parity', { name: 'Renamed' }, { author: { agentId: caller, label: caller } });
+  });
+
+  it('refuses ambiguous names before checking grants or writing', async () => {
+    m.list.mockResolvedValue([m.project, { ...m.project, id: 'gp_ungranted', name: 'TEAM' }]);
+    const result = await call('update_group_project', { group_project: 'Team', name: 'Changed' });
+    expect(refusalReasonOf(result)).toBe('invalid_args');
+    expect(JSON.stringify(result)).toContain('name the group by id');
+    expect(m.update).not.toHaveBeenCalled();
+    expect(listGrantRequests()).toEqual([]);
+  });
+
+  it('prefers an exact id even when another group has that id as its name', async () => {
+    m.list.mockResolvedValue([m.project, { ...m.project, id: 'gp_ungranted', name: 'gp_parity' }]);
+    expect((await call('update_group_project', { group_project: 'gp_parity', description: 'Pinned' })).isError).toBeUndefined();
+    expect(m.update).toHaveBeenCalledWith('gp_parity', { description: 'Pinned' }, { author: { agentId: caller, label: caller } });
+  });
+
+  it('asks for the concrete id and cannot spend approval after the name moves', async () => {
+    await grants('ask');
+    const args = { group_project: 'Team', name: 'Changed' };
+    expect(refusalReasonOf(await call('update_group_project', args))).toBe('ask_first');
+    const request = listGrantRequests()[0];
+    expect(takeGrantRequest(request.requestId, true)).toBeTruthy();
+    m.list.mockResolvedValue([{ ...m.project, id: 'gp_ungranted' }]);
+    expect(refusalReasonOf(await call('update_group_project', args))).toBe('ask_first');
+    expect(m.update).not.toHaveBeenCalled();
+    expect(args.group_project).toBe('Team');
+  });
+});
+
 describe('creation review and destination approval', () => {
   it('returns available choices and refuses guessed Dispatcher defaults', async () => {
     const result = json(await call('preview_group_project_create', {}));

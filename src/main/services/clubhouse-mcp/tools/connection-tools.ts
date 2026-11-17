@@ -166,6 +166,9 @@ async function resolveGroupProject(callerId: string, ref: string, all = false): 
   const projects = all ? await groupProjectRegistry.list() : await groupProjectsInScope(callerId);
   const byId = projects.find((p) => p.id === wanted);
   if (byId) return byId;
+  // Grant-checked join/leave calls already carry a resolved id. Never reinterpret
+  // that id as a name if the group disappeared between the check and this read.
+  if (all) throw new ConnectionScopeError('Group project not found; name the group by id.');
   const byName = projects.filter((p) => p.name === wanted);
   const candidates = byName.length > 0 ? byName : projects.filter((p) => p.name.toLowerCase() === wanted.toLowerCase());
   if (candidates.length > 1) {

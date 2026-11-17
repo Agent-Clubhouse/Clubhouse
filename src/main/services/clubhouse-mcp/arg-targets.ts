@@ -7,8 +7,10 @@
  * Only call time resolves them: a listing passes no arguments. A reference
  * that doesn't resolve (an unknown id, a name it can't place) is left to the
  * tool, which says it wasn't found, so a refusal never says whether a target
- * exists. The one exception is `project.add` (#3050), whose folder isn't a
- * project yet: it is checked by its path instead.
+ * exists. Group project arguments are frozen to unique ids by
+ * resolveGroupProjectArgs before checking and executing; unresolved or ambiguous
+ * groups are refused. `project.add` (#3050), whose folder isn't a project yet,
+ * is checked by its path instead.
  */
 
 import * as path from 'path';
@@ -42,6 +44,44 @@ function refsOf(value: unknown): string[] {
   if (typeof value === 'string' && value.trim()) return [value.trim()];
   if (Array.isArray(value)) return value.filter((v): v is string => typeof v === 'string' && !!v.trim()).map((v) => v.trim());
   return [];
+}
+
+/**
+ * Freeze group references before checking grants. The same concrete ids must
+ * reach the handler: resolving names again after approval could select a
+ * different group. Other argument kinds keep their existing resolution.
+ */
+export async function resolveGroupProjectArgs(callerId: string, grant: ToolGrant | undefined, args: Record<string, unknown>): Promise<{ args: Record<string, unknown>; targets: ArgTargets } | { message: string }> {
+  const targets: ArgTargets = new Map();
+  const declarations = grant ? toolGrantDeclarations(grant).filter((d) => d.target === 'group_project_arg' && d.from) : [];
+  const keys = [...new Set(declarations.flatMap((d) => d.from!.args))];
+  const refs = [...new Set(keys.flatMap((key) => refsOf(args[key])))];
+  if (!refs.length) return { args, targets };
+  let projects: Awaited<ReturnType<typeof groupProjectRegistry.list>>;
+  try { projects = await groupProjectRegistry.list(); }
+  catch {
+    // telemetry-exempt: a failed lookup must refuse rather than re-resolve in the handler.
+    return { message: 'Could not resolve the group project; name the group by id and try again.' };
+  }
+  const ids = new Map<string, string>();
+  for (const ref of refs) {
+    const exact = projects.filter((p) => p.id === ref);
+    const matches = exact.length ? exact : projects.filter((p) => p.name.toLowerCase() === ref.toLowerCase());
+    if (matches.length !== 1) return { message: matches.length ? 'More than one group project has that name; name the group by id.' : 'Group project not found; name the group by id.' };
+    ids.set(ref, matches[0].id);
+  }
+  const normalized = { ...args };
+  for (const key of keys) {
+    const value = args[key];
+    if (typeof value === 'string' && value.trim()) normalized[key] = ids.get(value.trim())!;
+    else if (Array.isArray(value)) normalized[key] = value.map((ref) => typeof ref === 'string' && ref.trim() ? ids.get(ref.trim())! : ref);
+  }
+  const bindings = bindingManager.getBindingsForAgent(callerId);
+  for (const d of declarations) targets.set(d, d.from!.args.flatMap((key) => refsOf(normalized[key])).map((id): GrantCallTarget => ({
+    kind: 'group_project', groupProjectId: id,
+    groupRole: bindings.some((b) => b.targetKind === 'group-project' && b.targetId === id) ? 'member' : null,
+  })));
+  return { args: normalized, targets };
 }
 
 /** Per-call lookups, so a call reads each project's agents once. */
@@ -245,13 +285,14 @@ let handoffTargetResolver: HandoffGrantTargetResolver | undefined;
 export function setHandoffGrantTargetResolver(resolver: HandoffGrantTargetResolver): void { handoffTargetResolver = resolver; }
 
 /** Resolve every argument-target declaration of a call. Empty when the tool has none. */
-export async function resolveArgTargets(callerId: string, grant: ToolGrant | undefined, args: Record<string, unknown>): Promise<ArgTargets> {
-  const out: ArgTargets = new Map();
+export async function resolveArgTargets(callerId: string, grant: ToolGrant | undefined, args: Record<string, unknown>, resolved: ArgTargets = new Map()): Promise<ArgTargets> {
+  const out: ArgTargets = new Map(resolved);
   if (!grant) return out;
   const declarations = toolGrantDeclarations(grant).filter((d) => d.target === 'handoff_peer' || (d.target === 'agent_arg' || d.target === 'project_arg' || d.target === 'group_project_arg') && d.from);
   if (declarations.length === 0) return out;
   const lookup = new Lookup(callerId, agentRegistry.get(callerId)?.projectPath);
   for (const d of declarations) {
+    if (out.has(d)) continue;
     try {
       if (d.target === 'handoff_peer') out.set(d, handoffTargetResolver ? [await handoffTargetResolver(callerId, args)] : null);
       else out.set(d, await resolveDeclaration(lookup, d, args));

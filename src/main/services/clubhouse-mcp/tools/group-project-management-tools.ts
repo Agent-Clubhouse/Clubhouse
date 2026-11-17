@@ -41,14 +41,6 @@ function membershipOptions(value: unknown): GroupProjectMembershipOptions {
   const options = record(value);
   return { autoJoin: requireBoolean(options, 'autoJoin'), includeLinkedComputers: requireBoolean(options, 'includeLinkedComputers'), excluded: [...new Set(stringList(options, 'excluded').map((address) => canonicalMemberAddress(address, groupProjectHost.selfMachine())))] };
 }
-async function projectOf(args: Record<string, unknown>) {
-  const ref = requireString(args, 'group_project').trim();
-  const projects = await groupProjectHost.list();
-  const byId = projects.find((p) => p.id === ref);
-  const matches = byId ? [byId] : projects.filter((p) => p.name.toLowerCase() === ref.toLowerCase());
-  if (matches.length !== 1) throw new McpArgError(matches.length ? 'More than one group project has that name; use its id.' : 'Group project not found.');
-  return matches[0];
-}
 function retention(args: Record<string, unknown>) {
   const maxPerTopic = requireNumber(args, 'max_per_topic'), maxTotal = requireNumber(args, 'max_total');
   if (![maxPerTopic, maxTotal].every((v) => Number.isSafeInteger(v) && v >= 1)) throw new McpArgError('Retention limits must be positive integers.');
@@ -122,7 +114,8 @@ export function registerGroupProjectManagementTools(legacyCreate?: (caller: stri
       inputSchema: { type: 'object', properties: { ...(!creation && { group_project: groupRef }), ...properties }, required: [...(!creation ? ['group_project'] : []), ...required], additionalProperties: false },
     }, async (caller, args) => {
       try {
-        const id = creation ? '' : (await projectOf(args)).id;
+        // The registry resolved this id once, before checking the same id's grant.
+        const id = creation ? '' : requireString(args, 'group_project');
         const value = await handler(caller, args, id);
         return value && typeof value === 'object' && 'content' in value ? value as McpToolResult : reply(value);
       } catch (error) {

@@ -23,7 +23,7 @@ import { CROSS_PROJECT_OFF_MESSAGE, MCP_CALLER_UNKNOWN_MESSAGE, ORCHESTRATION_OF
 import { callerGrants, checkToolGrant, isListable, type GrantCheck, type GrantCheckWire } from './grant-check';
 import { askFirst } from './ask-first';
 import { callKey, type ConsumedCallApproval } from '../grant-requests';
-import { resolveArgTargets, type ArgTargets } from './arg-targets';
+import { resolveArgTargets, resolveGroupProjectArgs, type ArgTargets } from './arg-targets';
 import { recordGrantDecision } from '../grant-telemetry';
 import { recordDispatcherControl } from '../../telemetry/dispatcher-telemetry';
 import { CONNECTION_TOOLS, WAKE_TOOL } from '../../../shared/connection-grants';
@@ -963,7 +963,10 @@ export async function callTool(
     if ('message' in localized) return refuse('other_machine', localized.message);
     args = localized.args;
     // After the argument checks, as for wire tools: the user is never asked about a call that would fail on its arguments.
-    const targets = await resolveArgTargets(agentId, globalTool.grant, args);
+    const groups = await resolveGroupProjectArgs(agentId, globalTool.grant, args);
+    if ('message' in groups) return refuse('invalid_args', groups.message);
+    args = groups.args;
+    const targets = await resolveArgTargets(agentId, globalTool.grant, args, groups.targets);
     const granted = checkToolGrant(agentId, globalTool.grant, args, undefined, targets);
     let approval: ConsumedCallApproval | undefined;
     if (granted.ok === false) {
@@ -1073,7 +1076,10 @@ export async function callTool(
   const localized = localizeAgentArgs(template.grant, args);
   if ('message' in localized) return refuse('other_machine', localized.message);
   args = localized.args;
-  const targets = await resolveArgTargets(agentId, template.grant, args);
+  const groups = await resolveGroupProjectArgs(agentId, template.grant, args);
+  if ('message' in groups) return refuse('invalid_args', groups.message);
+  args = groups.args;
+  const targets = await resolveArgTargets(agentId, template.grant, args, groups.targets);
   const granted = checkToolGrant(agentId, template.grant, args, wireOf(binding), targets);
   if (granted.ok === false) {
     const outcome = await grantRefusal(agentId, toolName, granted, args, grantApprovalContext(agentId, toolName, args, template.grant, targets, wireOf(binding)));

@@ -293,6 +293,18 @@ describe('ordinary agents with connection.manage (#3336)', () => {
     expect(boundPairs()).not.toContain(`durable_other->${project.id}`);
   });
 
+  it.each(['join_group_project', 'leave_group_project'])('%s never reinterprets a resolved id as another group name', async (tool) => {
+    const project = await groupProjectRegistry.create('Shared');
+    const replacement = await groupProjectRegistry.create(project.id);
+    await grantConnections();
+    vi.mocked(groupProjectRegistry.list).mockResolvedValueOnce([project, replacement]).mockResolvedValueOnce([replacement]);
+    const result = await call(tool, { agent: 'other', project: 'Shared' });
+    expect(result.isError).toBe(true);
+    expect(result.text).toContain('name the group by id');
+    expect(boundPairs()).toEqual([]);
+    expect(await readConnections(projectPath)).toEqual([]);
+  });
+
   it('refuses to join an agent outside the group project scope, saying to widen it, and records nothing (#3355)', async () => {
     const project = await groupProjectRegistry.create('Scoped');
     await grantConnections();
