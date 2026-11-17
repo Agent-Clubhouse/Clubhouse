@@ -68,3 +68,37 @@ it('uses the Dispatcher identity and never substitutes it for user/group ownersh
   expect(await sendRemoteActionMessage(target, 'hello', { ...ctx, action: { ...ctx.action, owner: { kind: 'user' } } })).toMatchObject({ outcome: 'failed' });
   expect(mocks.forward).toHaveBeenCalledTimes(1);
 });
+
+it('keeps delivery keys distinct across actions and runs while preserving retry identity', async () => {
+  await sendRemoteActionMessage(target, 'hello', ctx);
+  await sendRemoteActionMessage(target, 'hello', { ...ctx, runId: 'another-run' });
+  await sendRemoteActionMessage(target, 'hello', { ...ctx, action: { ...ctx.action, id: 'another-action' } });
+  const keys = mocks.forward.mock.calls.map((call) => call[4].idempotency_key);
+  expect(new Set(keys).size).toBe(3);
+});
+
+it.each([
+  `worker@bogus`,
+  `worker@${machine}@${machine}`,
+  `missing@${machine}`,
+  `Worker@${machine}`,
+  `remote||${machine}||missing`,
+])('refuses forged or ambiguous inventory reference %s', (reference) => {
+  expect(remoteMessageRefusal('owner', canonicalActionReference(reference))).not.toBeNull();
+});
+
+it('canonicalizes machine case without changing case-sensitive agent identity', () => {
+  expect(canonicalActionReference(`worker@${machine.toUpperCase()}`)).toBe(target);
+  expect(canonicalActionReference(`remote||${machine.toUpperCase()}||worker`)).toBe(target);
+  expect(remoteMessageRefusal('owner', canonicalActionReference(`worker@${machine.toUpperCase()}`))).toBeNull();
+});
+
+it.each([{ kind: 'user' }, { kind: 'app' }, { kind: 'group_project', groupProjectId: 'gp' }] as const)(
+  'never borrows the Dispatcher identity for a $kind owner', async (owner) => {
+    const result = await sendRemoteActionMessage(target, 'hello', {
+      ...ctx, action: { ...ctx.action, owner }, dispatcherAgentId: 'controller',
+    });
+    expect(result.outcome).toBe('failed');
+    expect(mocks.forward).not.toHaveBeenCalled();
+  },
+);
