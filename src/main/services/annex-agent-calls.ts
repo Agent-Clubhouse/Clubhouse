@@ -624,6 +624,7 @@ export type AgentCallRefusal = { status: 400 | 403 | 404 | 429 | 503; error: str
 export type AgentCallOutcome = { result: McpToolResult; delivery?: AnnexDeliveryReceipt } | AgentCallRefusal;
 
 /** Call ids run here lately, running or done, so a sender's retry after a lost answer isn't run twice. */
+let runtimeQueueSession = randomUUID();
 const seenCalls = new Map<string, { hash: string; outcome: Promise<AgentCallOutcome> }>();
 
 function parseBody(raw: unknown): AgentCallBody | null {
@@ -771,7 +772,7 @@ export async function receiveAgentCall(senderMachine: string, raw: unknown, now 
     try {
       await store.update((file) => {
         const record = file.inbox.find((r) => r.key === key)!;
-        Object.assign(record, { state, result: retained, updatedAt: new Date().toISOString(), ...(reason && { reason }) });
+        Object.assign(record, { state, result: retained, ...(state === 'delivered' && reason === 'runtime_queued' && { runtimeQueueSession }), updatedAt: new Date().toISOString(), ...(reason && { reason }) });
       });
     } catch (err) {
       tel.exception(Object.assign(new Error('annex_delivery_receipt_store_failed'), { stack: undefined }), { origin: 'main', handled: true });
@@ -791,9 +792,10 @@ function receiverStoreFailure(err: unknown): AgentCallRefusal {
 }
 
 function replayReceipt(body: AgentCallBody, record: ReceiverDelivery): AgentCallOutcome {
-  const state = record.state === 'claimed' ? 'indeterminate' : record.state;
-  const reason = record.state === 'claimed' ? 'receiver_interrupted' : record.reason;
-  const result = record.result ?? text('The receiver restarted during this call. It will not run it again because input may already have been accepted. Inspect the target before sending new work.', true);
+  const queueLost = record.state === 'delivered' && record.reason === 'runtime_queued' && record.runtimeQueueSession !== runtimeQueueSession;
+  const state = record.state === 'claimed' || queueLost ? 'indeterminate' : record.state;
+  const reason = queueLost ? 'runtime_queue_lost' : record.state === 'claimed' ? 'receiver_interrupted' : record.reason;
+  const result = queueLost ? text('The receiver restarted after accepting input into its volatile runtime queue. Processing is unknown; this call will not be run again. Inspect the target before sending new work.', true) : record.result ?? text('The receiver restarted during this call. It will not run it again because input may already have been accepted. Inspect the target before sending new work.', true);
   return {
     result,
     delivery: { callId: body.callId, state, receiptAt: record.updatedAt, ...(reason && { reason }) },
@@ -1164,6 +1166,7 @@ export async function _clearOutboxForTesting(): Promise<void> {
 
 /** For tests. */
 export function _resetAgentCallsForTesting(): void {
+  runtimeQueueSession = randomUUID();
   limits.clear();
   seenCalls.clear();
   flushing.clear();
