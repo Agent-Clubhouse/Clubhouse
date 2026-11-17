@@ -44,8 +44,13 @@ describe('Group Project guidance against the shipped management catalog (#3618)'
   it('teaches every registered management ability and its actual role', () => {
     expect([...catalog.keys()].sort()).toEqual(GROUP_PROJECT_MANAGEMENT_TOOLS.map(([name]) => name).sort());
     for (const [name, _capability, action] of GROUP_PROJECT_MANAGEMENT_TOOLS) {
-      expect(controller, name).toContain('`' + name + '`');
-      expect(action === 'group_project.lead' ? lead : admin, name).toContain('`' + name + '`');
+      if (action === 'group_project.lead') {
+        expect(lead, name).toContain('`' + name + '`');
+        expect(controller, name).not.toContain('`' + name + '`');
+      } else {
+        expect(controller, name).toContain('`' + name + '`');
+        expect(admin, name).toContain('`' + name + '`');
+      }
       const tool = catalog.get(name)!;
       expect(tool.definition.description, name).toContain(`Requires ${action}`);
       expect(tool.options).toMatchObject({ group: 'groupProjects', grant: { actions: [action] } });
@@ -71,14 +76,14 @@ describe('Group Project guidance against the shipped management catalog (#3618)'
     expect(create.inputSchema.properties).toHaveProperty('preview_token');
     expect(create.inputSchema.properties).toHaveProperty('retry_of');
     for (const guidance of [controller, admin]) {
-      expect(guidance).toContain('`preview_token`');
+      expect(guidance).toContain('preview_token');
       expect(guidance).toContain('exact reviewed choices');
       expect(guidance).toContain('explicit members afterward');
-      expect(guidance).toContain('`replace_across_sources`');
+      expect(guidance).toContain('replace_across_sources');
       expect(guidance).toContain('revision');
       expect(guidance).toContain('custom instructions');
     }
-    expect(controller).toContain('`retry_of`');
+    expect(controller).toContain('retry_of');
     const settings = catalog.get('set_group_project_member_settings')!.definition;
     expect(settings.description).toContain('revision');
     expect(settings.inputSchema.properties).toHaveProperty('replace_across_sources');

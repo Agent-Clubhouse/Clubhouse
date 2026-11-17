@@ -44,7 +44,7 @@ const connectionSource = source('../clubhouse-mcp/tools/connection-tools.ts');
 describe('Group Project guidance parity across delivered surfaces (#3618)', () => {
   it.each([
     ['overview', basics], ['member', text], ['lead', lead], ['admin', admin],
-    ['board result skill', boardSkill], ['controller', controller],
+    ['board result skill', boardSkill],
   ])('%s verifies membership and avoids blanket polling', (_name, guidance) => {
     expect(guidance).toContain('`list_members`');
     expect(guidance).toMatch(/(not assume|never assume|does not establish|do not assume|do not prove)/i);
@@ -77,6 +77,14 @@ describe('Group Project guidance parity across delivered surfaces (#3618)', () =
     expect(controller).toContain('neither grant implies the other');
     expect(admin).toContain('`set_project_info` requires admin');
     expect(lead).toContain('Admin is a separate grant');
+  });
+
+  it('teaches Dispatcher membership checks through its offered management tools', () => {
+    expect(controller).toContain('`get_group_project_management`');
+    expect(controller).toContain('do not assume they are in your catalog');
+    for (const name of ['list_members', 'get_project_info', 'read_topic', 'read_bulletin', 'read_message']) {
+      expect(controller).not.toContain('`' + name + '`');
+    }
   });
 
   it('ships an optional admin part without changing existing template setups', () => {
