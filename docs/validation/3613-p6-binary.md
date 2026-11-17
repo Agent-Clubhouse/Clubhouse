@@ -278,3 +278,37 @@ lint, 51 focused tests, 2 server tests, 46 mutants and 66 phone fixtures: all
 PASS; receipt `/tmp/annex-p6-diagnostic-final-recheck.log`.
 Final tier-4 TypeScript recheck **20:16:37Z–20:16:45Z** PASS; receipt
 `/tmp/annex-p6-diagnostic-tsc-recheck.log`.
+
+## Binding-notification diagnostic follow-up (run 44167686683)
+
+Ubuntu job `134342656809` and Windows identify the exact invalidation listener:
+`lease_binding_notification`. Downloaded the Ubuntu job log into
+`/tmp/annex-p6-d61-linux.log` and its trace artifact into
+`/tmp/annex-p6-d61-artifacts/`. This identifies the unconditional
+`bindingManager.onChange` callback, not a differing captured stamp field. The
+manager also notifies for label/instruction changes and unchanged tool writes.
+The artifact still cannot say whether its event changed authority.
+
+This follow-up retains unconditional invalidation and adds only allowlisted
+sub-reasons: unrelated agent/target, unchanged binding, metadata, membership,
+permissions, or the actual authority-stamp mismatch. Diagnostic snapshots
+normalize tool ordering; private binding data stays local and is never emitted.
+Tests use the real binding manager during the real pinned descriptor-stat await.
+The first diagnostic run passed five cases (20:39:39Z–20:39:48Z), confirming
+that unchanged tools, relabels and unrelated changes currently refuse just as
+actual removal and permission changes do. A sixth unrelated-target case was
+added for the final run. A CI sub-reason is still required before changing the
+production invalidation predicate. No local E2E was run.
+
+Final tier-4 admission **20:42:08Z–20:44:08Z**, RETRY 2, exit 0:
+`tsc --noEmit`, `eslint . --quiet`, **13 host P6 cases** (including six actual
+binding notifications during real descriptor stats), **51 focused tests**,
+**2** selected server cases, **46/46 mutants killed** with all original
+negative controls, and **66** mobile fixture tests PASS. Every command and
+output is under `/tmp/annex-p6-binding-diagnostic-final-{tsc,host,lint,targeted,
+server,mutants,fixture}.log`; controls under
+`/tmp/annex-p6-binding-diagnostic-controls/`. Original and RETRY 1 admissions
+were refused (`slot held by lane-3686`, 20:39:58Z and 20:40:59Z), retained in
+`/tmp/annex-p6-binding-diagnostic-final-{original,RETRY1}.log`; retries waited
+at least 60 seconds. No new candidate FAIL. Dependencies and phone fixtures
+remain unchanged. The telemetry flake is untouched.

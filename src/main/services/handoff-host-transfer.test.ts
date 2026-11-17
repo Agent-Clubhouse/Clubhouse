@@ -27,7 +27,14 @@ vi.mock('./dispatcher/dispatcher-service', () => ({ getDispatcherState: () => ({
 vi.mock('./agent-grants-store', () => ({ getAgentGrantRevision: () => String(state.grantEpoch), getAgentGrantChanges: () => ({ revision: state.policyRevision }) }));
 vi.mock('./agent-grants-service', () => ({ effectiveAgentGrants: async (_project: string, id: string) => { const grants = state.allowed ? [{ action: 'handoff.offer', target: { kind: 'any' }, mode: 'allow' }, ...(id !== 'receiver' || state.targetMode !== 'off' ? [{ action: 'handoff.accept', target: { kind: 'any' }, mode: id === 'receiver' ? state.targetMode : 'allow' }] : []), { action: 'agent.wake', target: { kind: 'any' }, mode: state.wakeMode }, { action: 'agent.message', target: { kind: 'any' }, mode: state.messageMode }] : []; await Promise.resolve(); state.onGrants(id); return grants; } }));
 vi.mock('./connection-grants-store', async () => { const { localWakeOn } = await import('../../shared/connection-grants'); return { onConnectionGrantsChanged: () => () => {}, localConnectionWakeOn: () => state.savedDirection ? localWakeOn({ disabledTools: state.disabledTools, enabledTools: state.enabledTools }) : localWakeOn(undefined, state.bindingEnabled) && !state.bindingDisabled.includes('wake_agent'), getConnectionDirection: (from: { agentId: string }, to: { agentId: string }) => state.connected && !(from.agentId === 'dispatcher' && (!state.savedDirection || to.agentId === 'receiver' && !state.dispatcherConnected)) ? { link: true, disabledTools: from.agentId === 'dispatcher' ? state.disabledTools : [], enabledTools: state.enabledTools } : undefined }; });
-vi.mock('./clubhouse-mcp/binding-manager', () => ({ bindingManager: { onChange: () => () => {}, getAllBindings: () => [], getBindingsForAgent: (id: string) => id === 'dispatcher' && !state.savedDirection ? [{ targetKind: 'agent', targetId: 'receiver', enabledTools: state.bindingEnabled, disabledTools: state.bindingDisabled }] : [] } }));
+vi.mock('./clubhouse-mcp/binding-manager', async (original) => {
+  const { bindingManager: live } = await original<typeof import('./clubhouse-mcp/binding-manager')>();
+  return { bindingManager: {
+    onChange: live.onChange.bind(live), getAllBindings: live.getAllBindings.bind(live),
+    getBindingsForAgent: (id: string) => [...live.getBindingsForAgent(id), ...(id === 'dispatcher' && !state.savedDirection ? [{ targetKind: 'agent', targetId: 'receiver', enabledTools: state.bindingEnabled, disabledTools: state.bindingDisabled }] : [])],
+    bind: live.bind.bind(live), unbind: live.unbind.bind(live), setDisabledTools: live.setDisabledTools.bind(live), updateBinding: live.updateBinding.bind(live), _resetForTesting: live._resetForTesting.bind(live),
+  } };
+});
 vi.mock('./clubhouse-mcp/grant-check', () => ({ callerGrants: () => [] }));
 vi.mock('./clubhouse-mcp/tool-registry', () => ({ callTool: (...args: unknown[]) => state.create(...args), setHandoffParticipantCheck: (check: (id: string) => boolean) => { state.participant = check; } }));
 vi.mock('./clubhouse-mcp/handoff-permissions', () => ({ handoffAgreementCallApproved: async () => state.allowed }));
@@ -35,6 +42,8 @@ vi.mock('./managed-agents', () => ({ managedAgents: () => ({ defaultHelperTempla
 vi.mock('./agent-system', () => ({ isAgentRunning: () => !state.asleep, isAgentStopping: () => false, spawnAgent: (...args: unknown[]) => state.wake(...args) }));
 vi.mock('./helper-index', () => ({ listHelpersEverywhere: async () => [] }));
 vi.mock('./log-service', () => ({ appLog: vi.fn() }));
+import { bindingManager } from './clubhouse-mcp/binding-manager';
+import { handoffTransferDiagnostic } from '../../shared/handoff-transfer-diagnostics';
 import { handoffHost, localHandoffAgent, stopHandoffs, defaultHandoffReceivingAgent } from './handoff-host';
 import { prepareCallerHandoff, _resetHandoffPreparationsForTesting } from './handoff-preparations';
 const git = (cwd: string, ...args: string[]) => promisify(execFile)('git', args, { cwd });
@@ -42,6 +51,7 @@ beforeEach(async () => {
   state.dir = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'handoff-live-host-'))); state.sender = path.join(state.dir, 'source'); state.receiver = path.join(state.dir, 'destination'); state.asleep = true;
   const config = path.join(state.dir, 'empty-config'); fs.writeFileSync(config, ''); vi.stubEnv('GIT_CONFIG_GLOBAL', config); vi.stubEnv('GIT_CONFIG_SYSTEM', config); vi.stubEnv('GIT_CONFIG_NOSYSTEM', '0');
   _resetHandoffPreparationsForTesting(); _resetOrchestrationGateForTesting(); vi.clearAllMocks();
+  bindingManager._resetForTesting();
   state.allowed = true;
   state.targetMode = state.wakeMode = state.messageMode = 'allow'; state.dispatcherConnected = true; state.disabledTools = []; state.enabledTools = ['wake_agent']; state.savedDirection = true; state.bindingEnabled = ['wake_agent']; state.bindingDisabled = []; state.policyRevision = 0; state.configGeneration = 0; state.grantEpoch = 0; state.onGrants = () => {}; state.onLocate = () => {};
   state.wake.mockImplementation(async () => { state.asleep = false; });
@@ -270,4 +280,41 @@ it('P6 accepted handoff synchronizes during a real manifest stat, transfers a se
     });
     expect(reads).toEqual([0, 256 * 1024, 512 * 1024]); expect(wake).toHaveBeenCalledOnce();
   } finally { release(); statSpy.mockRestore(); receive.mockRestore(); await worker.stop(); }
+}, 30_000);
+
+
+it.each(['unchanged', 'metadata', 'unrelated_agent', 'other_target', 'membership', 'permissions'] as const)('P6 binding notification diagnostic %s during a real descriptor stat', async (change) => {
+  const prepared = await prepareCallerHandoff('sender', 'worktree');
+  const host = handoffHost(); await host.ready;
+  const receiver = { machine: state.peer, agentId: 'remote' };
+  const targetId = `remote@${state.peer}`;
+  bindingManager.bind('sender', { targetId, targetKind: 'agent', label: 'Receiver' });
+  const offered = await host.coordinator.offer({ to: receiver, task: { title: 'Continue', brief: 'Finish' }, mode: 'worktree', manifest: prepared.summary }, localHandoffAgent('sender'));
+  await host.store.transact(offered.id, (record) => transitionHandoff(record!, { state: 'accepted', by: { kind: 'agent', address: receiver }, target: receiver, at: Date.now(), operationId: randomUUID() }, record!.version));
+  const handles: import('fs/promises').FileHandle[] = [];
+  const open = fs.promises.open.bind(fs.promises);
+  const openSpy = vi.spyOn(fs.promises, 'open').mockImplementation(async (...args) => { const handle = await open(...args); handles.push(handle); return handle; });
+  const request = { op: 'read', id: offered.id, file: 0, offset: 0 };
+  let release = () => {}; let pending: Promise<unknown> | undefined;
+  try {
+    await host.transfer.receive(state.peer, request);
+    const pinned = handles.at(-1)!; const stat = pinned.stat.bind(pinned);
+    let enter!: () => void; const entered = new Promise<void>((resolve) => { enter = resolve; });
+    const gate = new Promise<void>((resolve) => { release = resolve; });
+    vi.spyOn(pinned, 'stat').mockImplementationOnce((async (...args: unknown[]) => {
+      const result = await (stat as (...args: unknown[]) => Promise<unknown>)(...args); enter(); await gate; return result;
+    }) as any);
+    const read = vi.spyOn(pinned, 'read');
+    pending = host.transfer.receive(state.peer, request).catch((error) => error);
+    await Promise.race([entered, pending.then(() => { throw new Error('service completed before real stat hold'); })]);
+    if (change === 'unchanged') bindingManager.setDisabledTools('sender', targetId, []);
+    if (change === 'metadata') bindingManager.updateBinding('sender', targetId, { label: 'Renamed receiver' });
+    if (change === 'unrelated_agent') bindingManager.bind('unrelated', { targetId: 'another', targetKind: 'agent', label: 'Other' });
+    if (change === 'other_target') bindingManager.bind('sender', { targetId: 'unrelated-target', targetKind: 'agent', label: 'Other target' });
+    if (change === 'membership') bindingManager.unbind('sender', targetId);
+    if (change === 'permissions') bindingManager.setDisabledTools('sender', targetId, ['send_message']);
+    release();
+    expect(handoffTransferDiagnostic(await pending)).toBe(`lease_binding_${change}`);
+    expect(read).not.toHaveBeenCalled();
+  } finally { release(); await pending; openSpy.mockRestore(); vi.restoreAllMocks(); }
 }, 30_000);

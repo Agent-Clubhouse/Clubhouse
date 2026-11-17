@@ -4,6 +4,7 @@ export const HANDOFF_TRANSFER_DIAGNOSTICS = [
   'record_state', 'acceptance', 'agreement_binding', 'entry_binding', 'entry_expired',
   'request_expired', 'prepared_source', 'secret_policy', 'lease_notification', 'lease_authority', 'lease_peer', 'lease_config_generation', 'lease_saved_grants', 'lease_grant_revision', 'lease_dispatcher', 'lease_agent_authority',
   'lease_connection_notification', 'lease_binding_notification',
+  'lease_binding_unrelated_agent', 'lease_binding_other_target', 'lease_binding_membership', 'lease_binding_permissions', 'lease_binding_metadata', 'lease_binding_unchanged',
   'snapshot_not_a_repository', 'snapshot_no_commits', 'snapshot_invalid_repository', 'snapshot_unsupported_repository',
   'snapshot_uncommitted_branch', 'snapshot_git_failed', 'snapshot_unsafe_entry', 'snapshot_source_changed',
   'snapshot_bounds_exceeded', 'snapshot_secret_blocked', 'snapshot_hash_mismatch', 'snapshot_filesystem_failed', 'snapshot_invalid_staging',

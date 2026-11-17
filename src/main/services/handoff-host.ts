@@ -200,6 +200,14 @@ function transferAuthority(record: Handoff, peer: string) {
     [...localIds].map((id) => getAgentGrantRevision(id)), getDispatcherState().enabled, getDispatcherState().agentId,
     [...localIds].map((id) => [id, isOrchestrationEnabled(id), isCrossProjectEnabled(id), orchestrationControl(id), callerGrants(id)])]);
   const expected = stamp();
+  // Diagnostic snapshots only: the listener below still invalidates every event.
+  const participants = [...agents, ...('agentId' in record.to ? [record.to] : [])];
+  const targets = new Set(participants.map(addressText));
+  const bindingStamp = (part: 'membership' | 'permissions' | 'all', relevant = false) => JSON.stringify([...localIds].map((id) =>
+    [id, bindingManager.getBindingsForAgent(id).filter((wire) => !relevant || wire.targetKind === 'agent' && targets.has(wire.targetId)).map((wire) => part === 'all' ? wire : [wire.targetKind, wire.targetId,
+      ...(part === 'permissions' ? [[...(wire.disabledTools ?? [])].sort(), [...(wire.enabledTools ?? [])].sort()] : [])])
+      .sort((a, b) => JSON.stringify(a).localeCompare(JSON.stringify(b)))]));
+  const bindings = { membership: bindingStamp('membership', true), permissions: bindingStamp('permissions', true), relevant: bindingStamp('all', true), all: bindingStamp('all') };
   let changed = false;
   let changeReason: HandoffTransferDiagnostic = 'lease_notification';
   const authorityDiagnostic = (): HandoffTransferDiagnostic => {
@@ -208,7 +216,14 @@ function transferAuthority(record: Handoff, peer: string) {
     return codes.find((_, index) => JSON.stringify(before[index]) !== JSON.stringify(current[index])) ?? 'lease_authority';
   };
   const off = [onConnectionGrantsChanged(() => { changed = true; changeReason = 'lease_connection_notification'; }),
-    bindingManager.onChange(() => { changed = true; changeReason = 'lease_binding_notification'; }),
+    bindingManager.onChange((id) => {
+      changed = true;
+      changeReason = stamp() !== expected ? authorityDiagnostic() : !localIds.has(id) ? 'lease_binding_unrelated_agent'
+        : bindingStamp('membership', true) !== bindings.membership ? 'lease_binding_membership'
+        : bindingStamp('permissions', true) !== bindings.permissions ? 'lease_binding_permissions'
+        : bindingStamp('all', true) !== bindings.relevant ? 'lease_binding_metadata'
+        : bindingStamp('all') !== bindings.all ? 'lease_binding_other_target' : 'lease_binding_unchanged';
+    }),
     // This also announces handoff acceptance/progress and tool-list refreshes.
     // Invalidate only a real authority change, retaining the invalidation even
     // if the setting is restored before the pending filesystem await resolves.
