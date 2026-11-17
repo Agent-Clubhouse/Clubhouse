@@ -203,3 +203,78 @@ describe('a queue of permission requests answers the one acted on (#3606)', () =
     await waitFor(() => expect(window.clubhouse.agent.answerGrantRequest).toHaveBeenCalledExactlyOnceWith('g2', false));
   });
 });
+
+describe('the review dialog keeps its answers in one place (#3606)', () => {
+  const asks = (id: string, createdAt: number, reason: string) => request({ requestId: id, createdAt: new Date(createdAt).toISOString(), reason });
+
+  it('shows the oldest request, with its answers in a footer of a panel of fixed size', async () => {
+    useGrantRequestStore.getState().add(asks('g1', 0, 'Short.'));
+    useGrantRequestStore.getState().add(asks('g2', 5, 'A much longer reason, so the next request is taller than this one.'.repeat(4)));
+    useGrantRequestStore.getState().review('a1');
+    render(<GrantRequestDialog />);
+    const dialog = await screen.findByTestId('grant-request-dialog');
+    expect(dialog.className).toContain('h-[min(520px');
+    expect(within(dialog).getByRole('status')).toHaveTextContent('1 of 2 waiting');
+    expect(within(dialog).getByText('Its reason: Short.')).toBeInTheDocument();
+    expect(within(dialog).queryByText(/much longer reason/)).toBeNull();
+    // Allow and Decline are in the footer after the scrolling body, not inside it.
+    const allow = within(dialog).getByTestId('grant-request-allow');
+    const body = within(dialog).getByTestId('grant-request-list').parentElement!;
+    expect(body).toHaveClass('overflow-auto');
+    expect(body).not.toContainElement(allow);
+    expect(dialog.lastElementChild).toContainElement(allow);
+    fireEvent.click(allow);
+    await waitFor(() => expect(window.clubhouse.agent.answerGrantRequest).toHaveBeenCalledWith('g1', true));
+    // The next request takes the first one's place in the same panel, with its answers in the same footer.
+    await waitFor(() => expect(within(dialog).getByText(/much longer reason/)).toBeInTheDocument());
+    expect(dialog.lastElementChild).toContainElement(within(dialog).getByTestId('grant-request-allow'));
+    expect(within(dialog).getByRole('status')).toHaveTextContent('1 waiting');
+  });
+
+  it('moves focus to the count, not the next Allow, so a repeated key cannot answer it', async () => {
+    useGrantRequestStore.getState().add(asks('g1', 0, 'Short.'));
+    useGrantRequestStore.getState().add(asks('g2', 5, 'Second.'));
+    useGrantRequestStore.getState().review('a1');
+    render(<GrantRequestDialog />);
+    const dialog = await screen.findByTestId('grant-request-dialog');
+    expect(within(dialog).getByRole('status')).toHaveTextContent('1 of 2 waiting');
+    const user = userEvent.setup();
+    within(dialog).getByTestId('grant-request-allow').focus();
+    // Two quick presses, then a held key: only the first request is answered, and the second stays open.
+    await user.keyboard('{Enter}{Enter}');
+    await user.keyboard('{Enter>4}{/Enter}');
+    await waitFor(() => expect(within(dialog).getByText('Its reason: Second.')).toBeInTheDocument());
+    expect(window.clubhouse.agent.answerGrantRequest).toHaveBeenCalledExactlyOnceWith('g1', true);
+    expect(useGrantRequestStore.getState().requests.g2).toBeDefined();
+    expect(document.activeElement).toBe(within(dialog).getByRole('status'));
+    expect(within(dialog).getByRole('status')).toHaveTextContent('1 waiting');
+    // The next request answers when the person presses its button.
+    await user.click(within(dialog).getByTestId('grant-request-allow'));
+    await waitFor(() => expect(screen.queryByTestId('grant-request-dialog')).toBeNull());
+    expect(window.clubhouse.agent.answerGrantRequest).toHaveBeenLastCalledWith('g2', true);
+  });
+
+  it('cancels the repeats of a held Enter or Space on an answer button', () => {
+    useGrantRequestStore.getState().add(asks('g1', 0, 'Short.'));
+    render(<GrantRequestList agentId="a1" agentName="Ada" />);
+    const allow = screen.getByTestId('grant-request-allow');
+    expect(fireEvent.keyDown(allow, { key: 'Enter', repeat: true })).toBe(false);
+    expect(fireEvent.keyDown(allow, { key: ' ', repeat: true })).toBe(false);
+    expect(fireEvent.keyDown(allow, { key: 'Enter', repeat: false })).toBe(true);
+    expect(fireEvent.keyDown(allow, { key: 'a', repeat: true })).toBe(true);
+  });
+
+  it('shows a failed answer above the buttons, on the request it was for', async () => {
+    window.clubhouse.agent.answerGrantRequest = vi.fn(async () => ({ ok: false as const, error: 'Agent not found' }));
+    useGrantRequestStore.getState().add(asks('g1', 0, 'Short.'));
+    useGrantRequestStore.getState().review('a1');
+    render(<GrantRequestDialog />);
+    fireEvent.click(await screen.findByTestId('grant-request-decline'));
+    const alert = await screen.findByRole('alert');
+    expect(alert).toHaveTextContent('Agent not found');
+    const footer = screen.getByTestId('grant-request-dialog').lastElementChild!;
+    expect(footer).toContainElement(alert);
+    expect(footer.querySelector('[role="alert"]')!.compareDocumentPosition(screen.getByTestId('grant-request-decline')) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    await waitFor(() => expect(screen.getByTestId('grant-request-decline')).toBeEnabled());
+  });
+});

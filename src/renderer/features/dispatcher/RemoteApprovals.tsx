@@ -1,7 +1,7 @@
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { MobileGrantAnswer } from '../../../shared/mobile-control';
 import { Button } from '../../components/Button';
-import { isRepeatClick } from '../../utils/repeat-click';
+import { isRepeatClick, swallowHeldKey } from '../../utils/repeat-click';
 import { ipcErrorMessage } from '../../utils/ipc-error';
 import { isFollowerApprovalPending, useFollowerApprovals, type FollowerApproval } from './leadStore';
 import type { GrantRequest } from '../../../shared/grant-requests';
@@ -39,29 +39,85 @@ export function dispatcherNeedsYouLine(local: readonly GrantRequest[], remote: r
 /** The call's arguments as shown, at most this long; the computer it's on has them in full. */
 const ARGUMENTS_SHOWN = 4_000;
 
+const keyOf = (item: FollowerApproval) => `${item.machine}:${item.request.requestId}`;
+
+/** What this computer can answer: an update's restart choice, and anything newer than it knows, is answered where it is. */
+function answersHere(item: FollowerApproval): MobileGrantAnswer[] {
+  return item.request.update ? [] : (item.request.answers ?? []).filter((a): a is MobileGrantAnswer => a in ANSWER_LABELS);
+}
+
 /**
  * On the lead (#3354): Ask-first requests from the other computers, in the
  * lead's chat, each with its computer first. A person's click answers one on
  * the computer it came from, which checks it again there; the first answer
  * wins, and the other surface drops it with the next snapshot. Nothing else can
  * answer these: no agent, controller or message reaches the button's path.
+ *
+ * The oldest request that can be answered here shows, with how many wait. Its
+ * answers sit at the bottom of the block, above the composer, and its details
+ * scroll in a bounded area above them, so the buttons stay where they are as
+ * requests come and go (#3606). Requests that can only be answered on their own
+ * computer don't hold up the ones behind them: they're a line each computer.
  */
 export function RemoteApprovals() {
   const items = useFollowerApprovals();
+  // Answered here, until their computer's next snapshot drops them: no second answer, and they don't hold the head.
+  const [answered, setAnswered] = useState<ReadonlySet<string>>(new Set());
+  const [notice, setNotice] = useState(false);
+  const status = useRef<HTMLParagraphElement>(null);
+  const focusAfterAnswer = useRef(false);
+  const noticeArmed = useRef(false);
+  useEffect(() => {
+    const keys = new Set(items.map(keyOf));
+    setAnswered((previous) => ([...previous].some((k) => !keys.has(k)) ? new Set([...previous].filter((k) => keys.has(k))) : previous));
+    if (items.length === 0) setNotice(false);
+  }, [items]);
+  const open = items.filter((item) => !answered.has(keyOf(item)));
+  const head = open.find((item) => answersHere(item).length > 0) ?? open[0];
+  const headKey = head ? keyOf(head) : '';
+  useEffect(() => {
+    // The notice belongs to the advance the answer caused; any later change of head clears it.
+    if (noticeArmed.current) noticeArmed.current = false;
+    else setNotice(false);
+    if (!focusAfterAnswer.current) return;
+    focusAfterAnswer.current = false;
+    // Not the next Allow: a second press of the key that answered would answer it too (#3606).
+    status.current?.focus();
+  }, [headKey]);
   if (items.length === 0) return null;
+
+  const elsewhere = new Map<string, number>();
+  for (const item of open) if (item !== head && answersHere(item).length === 0) elsewhere.set(item.machineName, (elsewhere.get(item.machineName) ?? 0) + 1);
+  const waitingOn = [...elsewhere].map(([name, n]) => `${n} waiting on ${name}`).join(', ');
+  const count = head ? `${open.indexOf(head) + 1} of ${open.length}` : '';
   return (
-    <div className="flex flex-col gap-1.5" data-testid="dispatcher-remote-approvals">
-      {items.map((item) => <RemoteApproval key={`${item.machine}:${item.request.requestId}`} item={item} />)}
+    <div className="flex flex-col gap-1" data-testid="dispatcher-remote-approvals">
+      {/* Always here, so a screen reader hears the count change; seen only when there is something to say. */}
+      <p ref={status} tabIndex={-1} role="status" className={`outline-none ${open.length > 1 || notice || waitingOn ? 'flex flex-wrap gap-x-2 text-xs text-ctp-overlay1' : 'sr-only'}`} data-testid="dispatcher-remote-approval-count">
+        {notice && <span data-testid="dispatcher-remote-approval-answered">Previous request answered.</span>}
+        {count && <span>{count}</span>}
+        {waitingOn && <span data-testid="dispatcher-remote-approval-elsewhere">{waitingOn}</span>}
+      </p>
+      {head && (
+        <RemoteApproval
+          key={headKey}
+          item={head}
+          onAnswered={() => {
+            focusAfterAnswer.current = true;
+            noticeArmed.current = true;
+            setNotice(true);
+            setAnswered((previous) => new Set(previous).add(headKey));
+          }}
+        />
+      )}
     </div>
   );
 }
 
-function RemoteApproval({ item }: { item: FollowerApproval }) {
+function RemoteApproval({ item, onAnswered }: { item: FollowerApproval; onAnswered: () => void }) {
   const [busy, setBusy] = useState(false);
-  const [answered, setAnswered] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  // An update's restart choice, and anything newer this computer doesn't know, are answered where they are.
-  const answers = item.request.update ? [] : (item.request.answers ?? []).filter((a): a is MobileGrantAnswer => a in ANSWER_LABELS);
+  const answers = answersHere(item);
   // Set before the first await, so a second activation in the same tick finds it.
   const inFlight = useRef(false);
   const answer = async (choice: MobileGrantAnswer) => {
@@ -72,8 +128,8 @@ function RemoteApproval({ item }: { item: FollowerApproval }) {
     setError(null);
     try {
       await window.clubhouse.dispatcher.answerRemoteApproval(item.machine, item.request.requestId, choice);
-      // Taken there: no second answer while its next snapshot is on the way.
-      setAnswered(true);
+      // Taken there: the next request takes its place while this one's next snapshot is on the way.
+      onAnswered();
     } catch (err) {
       // telemetry-exempt: shown on the row; the request stays as it was there.
       setError(ipcErrorMessage(err));
@@ -83,28 +139,27 @@ function RemoteApproval({ item }: { item: FollowerApproval }) {
     }
   };
   return (
-    <div className="rounded-lg border border-surface-0 px-3 py-2 text-sm" data-testid="dispatcher-remote-approval" data-machine={item.machine}>
-      <div className="flex items-center justify-between gap-3">
-        <span className="min-w-0">{approvalLine(item)}</span>
-        <span className="flex flex-shrink-0 gap-1.5">
-          {answered && <span className="text-xs text-ctp-overlay1" role="status" data-testid="dispatcher-remote-approval-answered">Answered.</span>}
-          {!answered && answers.length === 0 && <span className="text-xs text-ctp-overlay1">Answer it on {item.machineName}.</span>}
-          {!answered && answers.map((choice) => (
-            <Button key={choice} kind={choice === 'decline' ? 'ghost' : 'primary'} disabled={busy} onClick={(e) => { if (!isRepeatClick(e)) void answer(choice); }} data-testid={`dispatcher-remote-approval-${choice}`}>
-              {ANSWER_LABELS[choice]}
-            </Button>
-          ))}
-        </span>
+    <div className="flex flex-col gap-1.5 rounded-lg border border-surface-0 px-3 py-2 text-sm" data-testid="dispatcher-remote-approval" data-machine={item.machine}>
+      <span className="min-w-0 break-words">{approvalLine(item)}</span>
+      <div className="flex max-h-[min(24vh,180px)] min-h-0 flex-col gap-1 overflow-y-auto" data-testid="dispatcher-remote-approval-details">
+        {item.request.reason && <p className="text-ctp-subtext1">Its reason: {item.request.reason}</p>}
+        {item.request.detail && <p className="text-ctp-subtext1">{item.request.detail}</p>}
+        {item.request.arguments && (
+          <pre className="rounded bg-ctp-mantle p-2 text-xs text-ctp-subtext1 whitespace-pre-wrap break-words" data-testid="dispatcher-remote-approval-arguments">
+            {item.request.arguments.length > ARGUMENTS_SHOWN ? `${item.request.arguments.slice(0, ARGUMENTS_SHOWN)}\n… (the rest is on ${item.machineName})` : item.request.arguments}
+          </pre>
+        )}
+        {item.request.allowEffect && <p className="text-xs text-ctp-overlay1">{item.request.allowEffect}</p>}
       </div>
-      {item.request.reason && <p className="mt-1 text-ctp-subtext1">Its reason: {item.request.reason}</p>}
-      {item.request.detail && <p className="mt-1 text-ctp-subtext1">{item.request.detail}</p>}
-      {item.request.arguments && (
-        <pre className="mt-1 max-h-40 overflow-auto rounded bg-ctp-mantle p-2 text-xs text-ctp-subtext1 whitespace-pre-wrap break-words" data-testid="dispatcher-remote-approval-arguments">
-          {item.request.arguments.length > ARGUMENTS_SHOWN ? `${item.request.arguments.slice(0, ARGUMENTS_SHOWN)}\n… (the rest is on ${item.machineName})` : item.request.arguments}
-        </pre>
-      )}
-      {item.request.allowEffect && <p className="mt-1 text-xs text-ctp-overlay1">{item.request.allowEffect}</p>}
-      {error && <p className="mt-1 text-xs text-ctp-error" role="alert" data-testid="dispatcher-remote-approval-error">{error}</p>}
+      {error && <p className="text-xs text-ctp-error" role="alert" data-testid="dispatcher-remote-approval-error">{error}</p>}
+      <div className="flex min-h-7 items-center justify-end gap-1.5">
+        {answers.length === 0 && <span className="text-xs text-ctp-overlay1">Answer it on {item.machineName}.</span>}
+        {answers.map((choice) => (
+          <Button key={choice} kind={choice === 'decline' ? 'ghost' : 'primary'} disabled={busy} onKeyDown={swallowHeldKey} onClick={(e) => { if (!isRepeatClick(e)) void answer(choice); }} data-testid={`dispatcher-remote-approval-${choice}`}>
+            {ANSWER_LABELS[choice]}
+          </Button>
+        ))}
+      </div>
     </div>
   );
 }

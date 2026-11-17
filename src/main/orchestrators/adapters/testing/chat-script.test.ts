@@ -267,6 +267,22 @@ describe('buildChatScript', () => {
     expect(report.mismatch).not.toBeNull();
   });
 
+  it('claude and codex: an alwaysAllow rule adds the option the CLI would offer, and allow once still completes the replay', async () => {
+    const approval = { tool: 'Bash', input: { command: 'npm test' }, title: 'Run the tests', alwaysAllow: 'npm test' };
+    const claude = buildChatScript('claude', { description: 'always allow', turns: [{ steps: [{ type: 'approval', approval }] }] });
+    const ask = claude.lines.find((l) => l.from === 'cli' && (l.msg as { type?: string } | undefined)?.type === 'control_request') as { msg: { request_id: string; request: Record<string, unknown> } };
+    expect(permissionRequestFromWire(ask.msg.request_id, ask.msg.request)).toMatchObject({
+      suggestions: [{ type: 'addRules', rules: [{ toolName: 'Bash', ruleContent: 'npm test' }], behavior: 'allow' }],
+    });
+    const plain = buildChatScript('claude', { description: 'none', turns: [{ steps: [{ type: 'approval', approval: { ...approval, alwaysAllow: undefined } }] }] });
+    expect(JSON.stringify(plain.lines)).toContain('"permission_suggestions":[]');
+    const codex = buildChatScript('codex', { description: 'always allow', turns: [{ steps: [{ type: 'approval', approval }] }] });
+    expect(JSON.stringify(codex.lines)).toContain('"proposedExecpolicyAmendment":["npm","test"]');
+    const { fake } = await fakeFor(claude);
+    await playClientSide(claude, fake);
+    await expectComplete(fake);
+  });
+
   for (const cli of ['codex'] as const) {
     it(`${cli}: two command approvals in a script replay to the end with their allows`, async () => {
       const approval = (n: number) => ({ type: 'approval' as const, approval: { tool: 'Bash', input: { command: `echo 'step ${n}'` }, title: `Run step ${n}`, description: `Step ${n} writes to out/.` } });

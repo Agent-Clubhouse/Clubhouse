@@ -419,7 +419,7 @@ export function ChatViewBody({ agent, state, actions, loading, onSwitchToTermina
           </InlineApprovalContext.Provider>
           </ApprovalAgentContext.Provider>
           {/* Only the approval scrolls inside its cap. Composer menus can still open upward. */}
-          <div className={`flex-shrink-0 flex justify-center ${selected ? 'max-h-[70%]' : ''} ${narrow || short ? 'px-2 pb-2' : 'px-7 pb-4'}`} data-testid="chat-dock">
+          <div className={`flex-shrink-0 flex justify-center ${selected ? (permission ? 'max-h-[85%]' : 'max-h-[70%]') : ''} ${narrow || short ? 'px-2 pb-2' : 'px-7 pb-4'}`} data-testid="chat-dock">
             <div className="w-full max-w-[740px] min-h-0 flex flex-col gap-2">
               <ProtocolDriftNote state={state} compact={context === 'canvas' || narrow} />
               <LoginBanner state={state} onSwitchToTerminal={onSwitchToTerminal} />
@@ -438,8 +438,11 @@ export function ChatViewBody({ agent, state, actions, loading, onSwitchToTermina
               {context === 'main' && <SetupChangedBar agent={agent} variant="dock" />}
               {dispatcher && <PendingApprovals agentId={agent.id} />}
               {selected && (
-                <div className="min-h-0 max-h-[min(40vh,320px)] overflow-y-auto flex-shrink" data-testid="chat-pinned-approval">
-                  <div className="flex items-center gap-2 py-1 text-[12px] text-ctp-subtext0">
+                // A permission card keeps its answers at the bottom and scrolls its request inside itself, which is capped to the same height
+                // as a question, plus the card's footer; the dock may take more of the column then, so the chat shrinks before the request text does (#3606).
+                // A question scrolls here.
+                <div className={`min-h-0 overflow-y-auto flex-shrink ${permission ? 'flex flex-col' : 'max-h-[min(40vh,320px)]'}`} data-testid="chat-pinned-approval">
+                  <div className="flex-shrink-0 flex items-center gap-2 py-0.5 text-[12px] text-ctp-subtext0">
                     <span role="status">{pending.length} pending</span>
                     {pending.length > 1 && <>
                       <button type="button" disabled={selectedIndex === 0} onClick={() => selectRequest(pending[selectedIndex - 1].request.requestId)}>Previous request</button>

@@ -16,6 +16,120 @@ const request = (over: Partial<PendingPermission> = {}): PendingPermission => ({
 });
 
 describe('PermissionCard', () => {
+  it('the pinned card scrolls its request above its options, which sit in a footer of their own (#3606)', () => {
+    render(
+      <PermissionCard
+        compact
+        request={request({ description: 'Because it needs to.', content: [{ type: 'text', text: 'npm test' }] })}
+        queueSize={1}
+        agentName="a"
+        extras={{ denyMessage: true }}
+        onRespond={vi.fn(async () => true)}
+      />,
+    );
+    const card = screen.getByTestId('chat-permission');
+    const body = screen.getByTestId('chat-permission-body');
+    const actions = screen.getByTestId('chat-permission-actions');
+    // The request is in the scrolling body; every option, and the message field, in the footer after it.
+    expect(body).toHaveClass('overflow-y-auto');
+    expect(body).toHaveTextContent('Create file');
+    expect(within(body).getByTestId('chat-permission-description')).toBeInTheDocument();
+    expect(within(body).getByTestId('chat-permission-text')).toHaveTextContent('npm test');
+    expect(within(body).queryAllByRole('button')).toHaveLength(0);
+    expect(within(actions).getAllByRole('button').map((b) => b.getAttribute('data-option-kind'))).toEqual(['allow_once', 'reject_once']);
+    expect(within(actions).getByTestId('chat-permission-feedback')).toBeInTheDocument();
+    expect(card.lastElementChild).toBe(actions);
+    expect(actions).not.toHaveClass('overflow-y-auto');
+  });
+
+  it('Allow and Decline are the footer\'s last row, and the other options are in full at the end of the body (#3606)', () => {
+    const options = [
+      { optionId: 'always', kind: 'allow_always' as const, label: 'Always allow commands starting with npm test and everything under it', scope: 'Bash(npm test:*) in every workspace of this project' },
+      { optionId: 'allow_once', kind: 'allow_once' as const, label: 'Allow once' },
+      { optionId: 'session', kind: 'allow_session' as const, label: 'Allow for the session' },
+      { optionId: 'reject_once', kind: 'reject_once' as const, label: 'Deny' },
+    ];
+    const respond = vi.fn(async () => true);
+    render(<PermissionCard compact request={request({ options })} queueSize={1} agentName="a" onRespond={respond} />);
+    const actions = screen.getByTestId('chat-permission-actions');
+    const body = screen.getByTestId('chat-permission-body');
+    // The footer is the bottom row alone: its height doesn't depend on how many options there are.
+    expect(actions.lastElementChild).toHaveAttribute('data-testid', 'chat-permission-primary-actions');
+    expect(within(actions).getAllByRole('button').map((b) => b.getAttribute('data-option-kind'))).toEqual(['allow_once', 'reject_once']);
+    // The rest are the last thing in the scrolling body, directly above it, wrapping and not truncated.
+    const extras = screen.getByTestId('chat-permission-extra-options');
+    expect(body.lastElementChild).toBe(extras);
+    expect(extras).toHaveClass('flex-wrap');
+    expect(within(extras).getAllByRole('button').map((b) => b.getAttribute('data-option-kind'))).toEqual(['allow_always', 'allow_session']);
+    const always = within(extras).getAllByRole('button')[0];
+    expect(always.className).not.toMatch(/(^| )h-\[30px\]/);
+    expect(always.querySelector('.truncate')).toBeNull();
+    expect(always).toHaveTextContent('Always allow commands starting with npm test and everything under it');
+    expect(always).toHaveTextContent('Bash(npm test:*) in every workspace of this project');
+    // Number keys still count the provider's order.
+    fireEvent.keyDown(screen.getByTestId('chat-permission'), { key: '1' });
+    expect(respond).toHaveBeenCalledWith('r1', 'always');
+  });
+
+  it('the notes about an edited or empty plan are in the footer, with the button they are about', () => {
+    const plan = { kind: 'plan_document' as const, id: 'p', planId: 'p', markdown: 'Step one', status: 'ready' as const, ts: 0 };
+    render(
+      <PermissionCard compact request={request()} plan={plan as never} queueSize={1} agentName="a" extras={{ updatedInput: true }} onRespond={vi.fn(async () => true)} />,
+    );
+    fireEvent.click(screen.getByText('Edit plan'));
+    const editor = screen.getByLabelText('Edit the plan');
+    const body = screen.getByTestId('chat-permission-body');
+    const actions = screen.getByTestId('chat-permission-actions');
+    expect(body).toContainElement(editor);
+    fireEvent.change(editor, { target: { value: 'Step one, edited' } });
+    expect(within(actions).getByText('Approving sends your edited plan.')).toBeInTheDocument();
+    expect(within(body).queryByText('Approving sends your edited plan.')).toBeNull();
+    fireEvent.change(editor, { target: { value: '   ' } });
+    expect(within(actions).getByText("The plan is empty, so it can't be approved.")).toBeInTheDocument();
+    expect(within(actions).getByText('Restore original')).toBeInTheDocument();
+    expect(within(body).queryByText('Restore original')).toBeNull();
+    fireEvent.click(within(actions).getByText('Restore original'));
+    expect(within(actions).queryByText('Restore original')).toBeNull();
+  });
+
+  it('says in the footer that shortcuts are paused while feedback is typed', () => {
+    render(<PermissionCard compact request={request()} queueSize={1} agentName="a" extras={{ denyMessage: true }} onRespond={vi.fn(async () => true)} />);
+    fireEvent.change(screen.getByTestId('chat-permission-feedback'), { target: { value: 'not that' } });
+    const paused = screen.getByTestId('chat-permission-shortcuts-paused');
+    expect(screen.getByTestId('chat-permission-actions')).toContainElement(paused);
+    expect(screen.getByTestId('chat-permission-body')).not.toContainElement(paused);
+  });
+
+  it('the request body keeps at least 48px, and a held key answers nothing more (#3606)', () => {
+    const respond = vi.fn(async () => true);
+    render(<PermissionCard compact request={request()} queueSize={1} agentName="a" onRespond={respond} />);
+    expect(screen.getByTestId('chat-permission-body').className).toContain('min-h-[48px]');
+    const allow = screen.getByText('Allow once').closest('button')!;
+    // The repeats of a held Enter or Space are cancelled, on the card and on a button; the first press answers.
+    expect(fireEvent.keyDown(allow, { key: 'Enter', repeat: true })).toBe(false);
+    expect(fireEvent.keyDown(allow, { key: ' ', repeat: true })).toBe(false);
+    expect(fireEvent.keyDown(screen.getByTestId('chat-permission'), { key: 'Enter', repeat: true })).toBe(false);
+    expect(respond).not.toHaveBeenCalled();
+    fireEvent.keyDown(screen.getByTestId('chat-permission'), { key: 'Enter' });
+    expect(respond).toHaveBeenCalledExactlyOnceWith('r1', 'allow_once');
+  });
+
+  it('cancels the repeats of the answering keys on a card, and leaves holding Arrow, Page Down or Tab alone', () => {
+    const respond = vi.fn(async () => true);
+    render(<PermissionCard compact request={request()} queueSize={1} agentName="a" onRespond={respond} />);
+    const card = screen.getByTestId('chat-permission');
+    for (const key of ['Enter', 'Escape', '1', '2']) expect(fireEvent.keyDown(card, { key, repeat: true }), key).toBe(false);
+    for (const key of ['ArrowDown', 'ArrowUp', 'PageDown', 'Tab', ' ', 'a', '0']) expect(fireEvent.keyDown(card, { key, repeat: true }), key).toBe(true);
+    expect(respond).not.toHaveBeenCalled();
+  });
+
+  it('the inline card keeps its single column, with no footer', () => {
+    render(<PermissionCard request={request()} queueSize={1} agentName="a" onRespond={vi.fn(async () => true)} />);
+    expect(screen.queryByTestId('chat-permission-body')).toBeNull();
+    expect(screen.queryByTestId('chat-permission-actions')).toBeNull();
+    expect(within(screen.getByTestId('chat-permission')).getAllByRole('button')).toHaveLength(2);
+  });
+
   it('shows the path and a preview of the change when the request carries them (#2159)', () => {
     render(
       <PermissionCard
@@ -190,6 +304,14 @@ describe('QuestionCard', () => {
     expect(onAnswer).not.toHaveBeenCalled();
     fireEvent.click(send, { detail: 1 });
     expect(onAnswer).toHaveBeenCalledExactlyOnceWith('qr', { q1: 'a', q2: 'c' });
+  });
+
+  it('a question card cancels the repeats of its answering keys, and leaves holding Arrow, Page Down or Tab alone', () => {
+    const { card, onAnswer } = renderCard(questions(2));
+    for (const key of ['Enter', '1']) expect(fireEvent.keyDown(card, { key, repeat: true }), key).toBe(false);
+    for (const key of ['ArrowDown', 'PageDown', 'Tab']) expect(fireEvent.keyDown(card, { key, repeat: true }), key).toBe(true);
+    expect(onAnswer).not.toHaveBeenCalled();
+    expect(screen.getByTestId('chat-question-step')).toHaveTextContent('1 of 2');
   });
 
   it('keeps keyboard focus on the card after the open question changes', () => {

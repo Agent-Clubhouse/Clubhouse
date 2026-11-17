@@ -36,6 +36,9 @@ function makeActions(): ChatActions & { [K in keyof ChatActions]: ReturnType<typ
   };
 }
 
+/** A card's Allow once. The pinned card keeps it and Decline in a row of their own, after any other options. */
+const allowIn = (card: HTMLElement) => card.querySelector<HTMLElement>('[data-option-kind="allow_once"]')!;
+
 function fold(events: ChatEvent[]): ChatViewState {
   return foldChatEvents(undefined, FIXTURE_AGENT_ID, events);
 }
@@ -268,13 +271,16 @@ describe('ChatView approvals', () => {
     const card = screen.getByTestId('chat-permission');
     expect(screen.getByTestId('chat-composer')).toBeInTheDocument();
     expect(card).toHaveTextContent(PROFILES[p].installTitle);
-    const labels = within(card).getAllByRole('button').map((b) => b.textContent);
-    expect(labels).toHaveLength(PROFILES[p].installOptions.length);
-    PROFILES[p].installOptions.forEach((o, i) => expect(labels[i]).toContain(o.label));
+    const buttons = within(card).getAllByRole('button');
+    expect(buttons).toHaveLength(PROFILES[p].installOptions.length);
+    // Each of the provider's options is there, numbered by its place in its list; Allow once and the rejection come last.
+    PROFILES[p].installOptions.forEach((o, i) => expect(buttons.find((b) => b.textContent!.startsWith(String(i + 1)))!.textContent).toContain(o.label));
+    const kinds = buttons.map((b) => b.getAttribute('data-option-kind'));
+    expect(kinds.slice(-2)).toEqual(['allow_once', 'reject_once']);
     expect(screen.getByTestId('pane-status')).toHaveTextContent('Needs you');
     expect(screen.getByTestId('chat-command-card')).toHaveTextContent('waiting for approval');
 
-    fireEvent.click(within(card).getAllByRole('button')[1]);
+    fireEvent.click(buttons.find((b) => b.textContent!.startsWith('2'))!);
     expect(actions.respondPermission).toHaveBeenCalledWith('perm-1', PROFILES[p].installOptions[1].optionId);
   });
 
@@ -318,11 +324,11 @@ describe('ChatView approvals', () => {
     fireEvent.click(within(screen.getByTestId('chat-inline-approval')).getByText('Answer here'));
     const pinned = within(screen.getByTestId('chat-pinned-approval')).getByTestId('chat-permission');
     const inline = within(screen.getByTestId('chat-inline-approval')).getByTestId('chat-permission');
-    fireEvent.click(within(location === 'pinned' ? pinned : inline).getAllByRole('button')[0]);
+    fireEvent.click(allowIn(location === 'pinned' ? pinned : inline));
     await act(async () => { await Promise.resolve(); });
-    expect(within(pinned).getAllByRole('button')[0]).toBeDisabled();
-    expect(within(inline).getAllByRole('button')[0]).toBeDisabled();
-    fireEvent.click(within(location === 'pinned' ? inline : pinned).getAllByRole('button')[0]);
+    expect(allowIn(pinned)).toBeDisabled();
+    expect(allowIn(inline)).toBeDisabled();
+    fireEvent.click(allowIn(location === 'pinned' ? inline : pinned));
     expect(actions.respondPermission).toHaveBeenCalledExactlyOnceWith('perm-1', 'accept');
     rerender(<ChatViewBody agent={agent} state={fold(extend(events, { type: 'permission_resolved', data: { requestId: 'perm-1', decision: 'allow', by: 'user' } }))} actions={actions} />);
     expect(screen.queryByTestId('chat-pinned-approval')).not.toBeInTheDocument();
@@ -1041,7 +1047,7 @@ describe('ChatView (store-bound)', () => {
     render(<><ChatView agent={agent} /><ChatView agent={agent} context="canvas" /></>);
     const cards = await screen.findAllByTestId('chat-permission');
     expect(cards).toHaveLength(2);
-    const [first, second] = cards.map((c) => within(c).getAllByRole('button')[0]);
+    const [first, second] = cards.map((c) => allowIn(c));
     fireEvent.click(first);
     await waitFor(() => expect(second).toBeDisabled());
     fireEvent.click(second);
@@ -1122,12 +1128,25 @@ describe('ChatView review fixes', () => {
     render(<ChatViewBody agent={agent} state={state} actions={actions} providerName="P" />);
     const dock = screen.getByTestId('chat-dock');
     expect(screen.getByTestId('chat-pinned-approval')).toHaveClass('max-h-[min(40vh,320px)]');
+    // A question's card scrolls the region, so the region stays a plain block: a flex column would shrink the card instead.
+    expect(screen.getByTestId('chat-pinned-approval')).not.toHaveClass('flex-col');
     expect(dock).toHaveClass('max-h-[70%]');
     expect(screen.getByTestId('chat-composer').parentElement?.parentElement).toHaveClass('flex-shrink-0');
     // The card shrinks inside the cap.
     expect(screen.getByTestId('chat-question')).toHaveClass('min-h-0');
     expect(dock).toContainElement(screen.getByText('Send answer'));
     expect(screen.getByTestId('chat-question-step')).toHaveTextContent('1 of 6');
+  });
+
+  it('lets a pinned permission take more of the column, so the chat shrinks before its request text does (#3606)', () => {
+    renderFixture('codex', 'approval');
+    const dock = screen.getByTestId('chat-dock');
+    expect(dock).toHaveClass('max-h-[85%]');
+    expect(dock).not.toHaveClass('max-h-[70%]');
+    // The card's body is capped (and floored at 48px) inside the card; the region isn't capped on top of that.
+    expect(screen.getByTestId('chat-pinned-approval')).not.toHaveClass('max-h-[min(40vh,320px)]');
+    expect(screen.getByTestId('chat-pinned-approval')).toHaveClass('flex-col');
+    expect(within(screen.getByTestId('chat-pinned-approval')).getByTestId('chat-permission-body').className).toMatch(/min-h-\[48px\].*max-h-\[calc\(min\(40vh,320px\)/);
   });
 
   it('leaves the composer uncapped so its toolbar and menus are never clipped', () => {
@@ -1141,15 +1160,15 @@ describe('ChatView review fixes', () => {
     renderState(fold(chatFixture('codex', 'approval')), actions);
     const card = screen.getByTestId('chat-permission');
     fireEvent.keyDown(card, { key: 'Enter' });
-    expect(within(card).getAllByRole('button')[0]).toBeDisabled();
-    await waitFor(() => expect(within(card).getAllByRole('button')[0]).not.toBeDisabled());
+    expect(allowIn(card)).toBeDisabled();
+    await waitFor(() => expect(allowIn(card)).not.toBeDisabled());
     fireEvent.keyDown(card, { key: 'Enter' });
     expect(actions.respondPermission).toHaveBeenCalledTimes(2);
   });
 
   it('takes number keys and Esc while an option button has focus', () => {
     const { actions } = renderFixture('codex', 'approval');
-    const button = within(screen.getByTestId('chat-permission')).getAllByRole('button')[0];
+    const button = allowIn(screen.getByTestId('chat-permission'));
     button.focus();
     fireEvent.keyDown(button, { key: '2' });
     expect(actions.respondPermission).toHaveBeenCalledWith('perm-1', 'acceptForSession');
@@ -1542,12 +1561,13 @@ describe('a queue of approvals answers the request the user acted on (#3606)', (
   const queue = () => extend(chatFixture('codex', 'approval'), { type: 'permission_request', data: SECOND });
   const resolved = (events: ChatEvent[], requestId: string) =>
     extend(events, { type: 'permission_resolved', data: { requestId, decision: 'allow', by: 'user' } });
-  const pinnedButtons = () => within(within(screen.getByTestId('chat-pinned-approval')).getByTestId('chat-permission')).getAllByRole('button');
+  const pinnedCard = () => within(screen.getByTestId('chat-pinned-approval')).getByTestId('chat-permission');
+  const pinnedOption = (kind: string) => pinnedCard().querySelector<HTMLElement>(`[data-option-kind="${kind}"]`)!;
 
   it('a click aimed at the head request does not answer the one that takes its place', () => {
     const events = queue();
     const { actions, rerender } = renderState(fold(events));
-    const oldButton = pinnedButtons()[0];
+    const oldButton = pinnedOption('allow_once');
     expect(screen.getByTestId('chat-permission')).toHaveAttribute('data-request-id', 'perm-1');
     fireEvent.click(oldButton);
     expect(actions.respondPermission).toHaveBeenCalledExactlyOnceWith('perm-1', 'accept');
@@ -1557,7 +1577,7 @@ describe('a queue of approvals answers the request the user acted on (#3606)', (
     fireEvent.click(oldButton);
     expect(actions.respondPermission).toHaveBeenCalledTimes(1);
     // An activation of the new card answers the new request, once.
-    fireEvent.click(pinnedButtons()[1]);
+    fireEvent.click(pinnedOption('allow_always'));
     expect(actions.respondPermission).toHaveBeenCalledTimes(2);
     expect(actions.respondPermission).toHaveBeenLastCalledWith('perm-2', 'run-always');
   });
@@ -1565,13 +1585,13 @@ describe('a queue of approvals answers the request the user acted on (#3606)', (
   it('a double click answers at most one request: the second press is not a click on the next card', () => {
     const events = queue();
     const { actions, rerender } = renderState(fold(events));
-    fireEvent.click(pinnedButtons()[0], { detail: 1 });
+    fireEvent.click(pinnedOption('allow_once'), { detail: 1 });
     rerender(<ChatViewBody agent={agent} state={fold(resolved(events, 'perm-1'))} actions={actions} />);
     expect(screen.getByTestId('chat-permission')).toHaveAttribute('data-request-id', 'perm-2');
-    fireEvent.click(pinnedButtons()[0], { detail: 2 });
+    fireEvent.click(pinnedOption('allow_once'), { detail: 2 });
     expect(actions.respondPermission).toHaveBeenCalledExactlyOnceWith('perm-1', 'accept');
     // A fresh click, and keyboard activation (detail 0), still answer it.
-    fireEvent.click(pinnedButtons()[0], { detail: 1 });
+    fireEvent.click(pinnedOption('allow_once'), { detail: 1 });
     expect(actions.respondPermission).toHaveBeenLastCalledWith('perm-2', 'run');
     expect(actions.respondPermission).toHaveBeenCalledTimes(2);
   });
@@ -1585,7 +1605,7 @@ describe('a queue of approvals answers the request the user acted on (#3606)', (
     vi.mocked(window.clubhouse.chat).respondPermission = respond;
     render(<ChatView agent={agent} />);
     await screen.findByTestId('chat-permission');
-    const stale = pinnedButtons()[0];
+    const stale = pinnedOption('allow_once');
     // The request resolved elsewhere; its card is still on screen until React redraws.
     useChatStore.getState().applyEvent({ ...events[events.length - 1], seq: events.length + 1, type: 'permission_resolved', data: { requestId: 'perm-1', decision: 'deny', by: 'user' } } as ChatEvent);
     fireEvent.click(stale);
@@ -1616,8 +1636,8 @@ describe('a queue of approvals answers the request the user acted on (#3606)', (
     renderState(fold(events), actions);
     const card = screen.getByTestId('chat-permission');
     fireEvent.keyDown(card, { key: 'Enter' });
-    await waitFor(() => expect(within(card).getAllByRole('button')[0]).not.toBeDisabled());
-    fireEvent.click(within(card).getAllByRole('button')[0]);
+    await waitFor(() => expect(allowIn(card)).not.toBeDisabled());
+    fireEvent.click(allowIn(card));
     expect(actions.respondPermission.mock.calls).toEqual([['perm-1', 'accept'], ['perm-1', 'accept']]);
     expect(card).toHaveAttribute('data-request-id', 'perm-1');
   });

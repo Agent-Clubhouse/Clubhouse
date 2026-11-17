@@ -9,7 +9,7 @@ import type { PendingPermission, PendingQuestion, PlanDocumentItem } from '../..
 import { PlanIcon, QuestionIcon, ShieldIcon } from './icons';
 import { ApprovalDiffPreview } from './ToolBlocks';
 import { shortName } from './view-model';
-import { isRepeatClick } from '../../../utils/repeat-click';
+import { isAnsweringKey, isRepeatClick, swallowHeldKey } from '../../../utils/repeat-click';
 
 const ALLOW_KINDS = new Set<PermissionOption['kind']>(['allow_once', 'allow_session', 'allow_always']);
 const REJECT_KINDS = new Set<PermissionOption['kind']>(['reject_once', 'reject_always', 'cancel_turn']);
@@ -130,6 +130,8 @@ export function PermissionCard({ request, plan, queueSize, agentName, extras, on
 
   const onKeyDown = (e: KeyboardEvent<HTMLDivElement>) => {
     if (ownsKey(e) || dirty) return;
+    // A held key repeats: it answers once, and never the request that takes this card's place.
+    if (e.repeat && isAnsweringKey(e.key)) { e.preventDefault(); return; }
     if (e.key === 'Enter') { e.preventDefault(); choose(primary); return; }
     if (e.key === 'Escape') { e.preventDefault(); choose(reject); return; }
     const i = digitIndex(e.key, request.options.length);
@@ -140,108 +142,164 @@ export function PermissionCard({ request, plan, queueSize, agentName, extras, on
   };
 
   const Ico = plan ? PlanIcon : ShieldIcon;
-  return (
-    <div
-      ref={ref}
-      tabIndex={0}
-      onKeyDown={onKeyDown}
-      role="group"
-      aria-label="Permission request"
-      className={`rounded-xl border border-surface-1 bg-ctp-mantle px-3.5 py-3 flex flex-col gap-2 focus:outline-none focus-visible:ring-1 focus-visible:ring-ctp-accent/60`}
-      data-testid="chat-permission"
-      data-request-id={request.requestId}
-    >
-      <div className="flex items-center gap-2.5 font-semibold text-[13.5px] text-ctp-text min-w-0">
-        <Ico className={plan ? 'text-ctp-accent' : 'text-ctp-warning'} />
-        <span className="break-words min-w-0">{request.title}</span>
-        {queueSize > 1 && <span className="ml-auto text-[11.5px] font-normal text-ctp-overlay1 whitespace-nowrap">1 of {queueSize}</span>}
-      </div>
-      {/* Paths read best in monospace; the prose reasons Claude and Codex send don't. A request with a preview lists paths. */}
-      {description && <div className={`text-[12.5px] text-ctp-subtext0 pl-6 break-words ${hasContent ? 'font-mono' : ''}`} data-testid="chat-permission-description">{description}</div>}
-      {((!compact && previewDiffs.length > 0) || previewTexts.length > 0) && (
-        <div className="pl-6 flex flex-col gap-1.5" data-testid="chat-permission-preview">
-          {!compact && <ApprovalDiffPreview diffs={previewDiffs} />}
-          {previewTexts.map((text, i) => (
-            <pre key={i} className={`${compact ? 'max-h-16' : 'max-h-40'} overflow-auto rounded-md bg-ctp-crust px-2.5 py-2 font-mono text-[11.5px] text-ctp-subtext1 whitespace-pre-wrap break-words`} data-testid="chat-permission-text">{text}</pre>
-          ))}
-        </div>
+  const heading = (
+    <div className="flex items-center gap-2.5 font-semibold text-[13.5px] text-ctp-text min-w-0">
+      <Ico className={plan ? 'text-ctp-accent' : 'text-ctp-warning'} />
+      <span className="break-words min-w-0">{request.title}</span>
+      {queueSize > 1 && <span className="ml-auto text-[11.5px] font-normal text-ctp-overlay1 whitespace-nowrap">1 of {queueSize}</span>}
+    </div>
+  );
+  // Paths read best in monospace; the prose reasons Claude and Codex send don't. A request with a preview lists paths.
+  const details = description && <div className={`text-[12.5px] text-ctp-subtext0 pl-6 break-words ${hasContent ? 'font-mono' : ''}`} data-testid="chat-permission-description">{description}</div>;
+  const preview = ((!compact && previewDiffs.length > 0) || previewTexts.length > 0) && (
+    <div className="pl-6 flex flex-col gap-1.5" data-testid="chat-permission-preview">
+      {!compact && <ApprovalDiffPreview diffs={previewDiffs} />}
+      {previewTexts.map((text, i) => (
+        <pre key={i} className={`${compact ? 'max-h-16' : 'max-h-40'} overflow-auto rounded-md bg-ctp-crust px-2.5 py-2 font-mono text-[11.5px] text-ctp-subtext1 whitespace-pre-wrap break-words`} data-testid="chat-permission-text">{text}</pre>
+      ))}
+    </div>
+  );
+  // `full` is for the pinned card's extra options: what an always-allow grants must be readable, so its label and scope wrap.
+  const optionButton = (opt: PermissionOption, i: number, full = false) => {
+    const isPrimary = opt === primary;
+    return (
+      <button
+        key={opt.optionId}
+        type="button"
+        disabled={answered || (planEmpty && ALLOW_KINDS.has(opt.kind))}
+        onClick={(e) => { if (!isRepeatClick(e)) choose(opt); }}
+        onKeyDown={swallowHeldKey}
+        className={`flex items-center gap-2.5 ${full ? 'min-h-[30px] py-1' : 'h-[30px]'} px-2 rounded-md text-[12.5px] text-left disabled:opacity-50 min-w-0 ${isPrimary ? 'bg-surface-0 text-ctp-text ring-1 ring-surface-1' : 'text-ctp-subtext1 hover:bg-surface-0/60'}`}
+        data-option-kind={opt.kind}
+      >
+        <span className="w-[18px] h-[18px] rounded bg-ctp-crust grid place-items-center text-[11px] text-ctp-overlay1 flex-shrink-0">{i + 1}</span>
+        <span className={full ? 'break-words' : 'truncate'}>{opt.label}</span>
+        {opt.scope && <span className={`font-mono text-[11px] text-ctp-overlay1 ${full ? 'break-all' : 'truncate'}`}>{opt.scope}</span>}
+        {!dirty && isPrimary && <Key>⏎</Key>}
+        {!dirty && opt === reject && <Key>Esc</Key>}
+      </button>
+    );
+  };
+  const optionButtons = (
+    <div className={compact ? "flex flex-wrap gap-1" : "flex flex-col gap-0.5 pl-5"}>
+      {request.options.map((opt, i) => optionButton(opt, i))}
+    </div>
+  );
+  // The pinned card's two defaults share a row of their own at the bottom; anything else the provider offers is above it.
+  const indexOf = (opt: PermissionOption) => request.options.indexOf(opt);
+  const bottomOptions = [primary, reject].filter((o): o is PermissionOption => !!o);
+  const extraOptions = request.options.filter((o) => !bottomOptions.includes(o));
+  const planNotes = canEditPlan && (planEdited || planEmpty) && (
+    <>
+      {planEdited && <span>Approving sends your edited plan.</span>}
+      {planEmpty && (
+        <>
+          <span className="text-ctp-warning" role="status">The plan is empty, so it can't be approved.</span>
+          <button type="button" onClick={() => setPlanText(plan!.markdown)} className="h-6 px-2 rounded-md bg-surface-0 text-ctp-subtext1">
+            Restore original
+          </button>
+        </>
       )}
-      <div className={compact ? "flex flex-wrap gap-1" : "flex flex-col gap-0.5 pl-5"}>
-        {request.options.map((opt, i) => {
-          const isPrimary = opt === primary;
-          return (
-            <button
-              key={opt.optionId}
-              type="button"
-              disabled={answered || (planEmpty && ALLOW_KINDS.has(opt.kind))}
-              onClick={(e) => { if (!isRepeatClick(e)) choose(opt); }}
-              className={`flex items-center gap-2.5 h-[30px] px-2 rounded-md text-[12.5px] text-left disabled:opacity-50 ${isPrimary ? 'bg-surface-0 text-ctp-text ring-1 ring-surface-1' : 'text-ctp-subtext1 hover:bg-surface-0/60'}`}
-              data-option-kind={opt.kind}
-            >
-              <span className="w-[18px] h-[18px] rounded bg-ctp-crust grid place-items-center text-[11px] text-ctp-overlay1 flex-shrink-0">{i + 1}</span>
-              <span className="truncate">{opt.label}</span>
-              {opt.scope && <span className="font-mono text-[11px] text-ctp-overlay1 truncate">{opt.scope}</span>}
-              {!dirty && isPrimary && <Key>⏎</Key>}
-              {!dirty && opt === reject && <Key>Esc</Key>}
-            </button>
-          );
-        })}
-      </div>
-      {canEditPlan && (
-        <div className="pl-5 flex flex-col gap-1.5">
-          {editing ? (
-            <textarea
-              ref={editor}
-              value={planText}
-              disabled={answered}
-              onChange={(e) => setPlanText(e.target.value)}
-              rows={Math.min(14, Math.max(4, planText.split('\n').length + 1))}
-              aria-label="Edit the plan"
-              className="w-full resize-y rounded-md border border-surface-1 bg-ctp-crust px-2.5 py-2 font-mono text-[12px] text-ctp-text focus:outline-none focus:border-ctp-accent/60"
-            />
-          ) : null}
-          <div className="flex items-center gap-2 text-[12px] text-ctp-overlay1">
-            <button
-              type="button"
-              disabled={answered}
-              onClick={() => setEditing((v) => !v)}
-              aria-expanded={editing}
-              className="h-6 px-2 rounded-md bg-surface-0 text-ctp-subtext1 disabled:opacity-50"
-            >
-              {editing ? 'Hide plan editor' : 'Edit plan'}
-            </button>
-            {planEdited && <span>Approving sends your edited plan.</span>}
-            {planEmpty && (
-              <>
-                <span className="text-ctp-warning" role="status">The plan is empty, so it can't be approved.</span>
-                <button type="button" onClick={() => setPlanText(plan!.markdown)} className="h-6 px-2 rounded-md bg-surface-0 text-ctp-subtext1">
-                  Restore original
-                </button>
-              </>
-            )}
-          </div>
-        </div>
-      )}
-      {canFeedback && (
-        <input
-          type="text"
-          value={feedback}
+    </>
+  );
+  const planEditor = canEditPlan && (
+    <div className="pl-5 flex flex-col gap-1.5">
+      {editing ? (
+        <textarea
+          ref={editor}
+          value={planText}
           disabled={answered}
-          onChange={(e) => setFeedback(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === 'Enter' && feedback.trim()) { e.preventDefault(); choose(reject); }
-          }}
-          placeholder={plan ? `${reject!.label}, and tell ${agentName} what to change…` : `${reject!.label}, and tell ${agentName} what to do instead…`}
-          aria-label={`${reject!.label} with a message`}
-          className="ml-5 h-[30px] rounded-md border border-dashed border-surface-1 bg-transparent px-2.5 text-[12.5px] text-ctp-text placeholder:text-ctp-overlay0 focus:outline-none focus:border-solid focus:border-ctp-accent/60 disabled:opacity-50"
-          data-testid="chat-permission-feedback"
+          onChange={(e) => setPlanText(e.target.value)}
+          rows={Math.min(14, Math.max(4, planText.split('\n').length + 1))}
+          aria-label="Edit the plan"
+          className="w-full resize-y rounded-md border border-surface-1 bg-ctp-crust px-2.5 py-2 font-mono text-[12px] text-ctp-text focus:outline-none focus:border-ctp-accent/60"
         />
-      )}
-      {dirty && (
-        <div className="pl-5 text-[11.5px] text-ctp-overlay1" data-testid="chat-permission-shortcuts-paused">
-          Keyboard shortcuts are paused while you have unsent text. Choose an option to answer.
+      ) : null}
+      <div className="flex items-center gap-2 text-[12px] text-ctp-overlay1">
+        <button
+          type="button"
+          disabled={answered}
+          onClick={() => setEditing((v) => !v)}
+          aria-expanded={editing}
+          className="h-6 px-2 rounded-md bg-surface-0 text-ctp-subtext1 disabled:opacity-50"
+        >
+          {editing ? 'Hide plan editor' : 'Edit plan'}
+        </button>
+        {!compact && planNotes}
+      </div>
+    </div>
+  );
+  const feedbackInput = canFeedback && (
+    <input
+      type="text"
+      value={feedback}
+      disabled={answered}
+      onChange={(e) => setFeedback(e.target.value)}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter' && feedback.trim()) { e.preventDefault(); choose(reject); }
+      }}
+      placeholder={plan ? `${reject!.label}, and tell ${agentName} what to change…` : `${reject!.label}, and tell ${agentName} what to do instead…`}
+      aria-label={`${reject!.label} with a message`}
+      className="ml-5 h-[30px] rounded-md border border-dashed border-surface-1 bg-transparent px-2.5 text-[12.5px] text-ctp-text placeholder:text-ctp-overlay0 focus:outline-none focus:border-solid focus:border-ctp-accent/60 disabled:opacity-50"
+      data-testid="chat-permission-feedback"
+    />
+  );
+  const pausedNote = dirty && (
+    <div className="pl-5 text-[11.5px] text-ctp-overlay1" data-testid="chat-permission-shortcuts-paused">
+      Keyboard shortcuts are paused while you have unsent text. Choose an option to answer.
+    </div>
+  );
+  const rootProps = {
+    ref,
+    tabIndex: 0,
+    onKeyDown,
+    role: 'group',
+    'aria-label': 'Permission request',
+    'data-testid': 'chat-permission',
+    'data-request-id': request.requestId,
+  } as const;
+  const rootClass = 'rounded-xl border border-surface-1 bg-ctp-mantle px-3.5 py-3 flex flex-col gap-2 focus:outline-none focus-visible:ring-1 focus-visible:ring-ctp-accent/60';
+
+  if (!compact) {
+    return (
+      <div {...rootProps} className={rootClass}>
+        {heading}
+        {details}
+        {preview}
+        {optionButtons}
+        {planEditor}
+        {feedbackInput}
+        {pausedNote}
+      </div>
+    );
+  }
+  // The pinned card (#3606): the request scrolls above its answers, which sit at the bottom of the card and so
+  // stay in one place, above the composer, whatever the request's length or the width of the pane. The footer is a
+  // constant height: the message field (when the provider takes one) and the Allow and Decline row, plus notes while
+  // there are any. Every other option the provider offers is in full at the end of the body, directly above the
+  // footer, so what an "always allow" grants is always readable by scrolling, and it never moves Allow.
+  const notes = planNotes && <div className="pl-5 flex flex-wrap items-center gap-2 text-[12px] text-ctp-overlay1" data-testid="chat-permission-notes">{planNotes}</div>;
+  return (
+    <div {...rootProps} className={`${rootClass.replace('gap-2', 'gap-1.5')} min-h-0`}>
+      <div className="min-h-[48px] max-h-[calc(min(40vh,320px)-6rem)] flex flex-col gap-2 overflow-y-auto" data-testid="chat-permission-body">
+        {heading}
+        {details}
+        {preview}
+        {planEditor}
+        {extraOptions.length > 0 && (
+          <div className="flex flex-wrap gap-1" data-testid="chat-permission-extra-options">
+            {extraOptions.map((opt) => optionButton(opt, indexOf(opt), true))}
+          </div>
+        )}
+      </div>
+      <div className="flex-shrink-0 flex flex-col gap-1.5" data-testid="chat-permission-actions">
+        {notes}
+        {pausedNote}
+        {feedbackInput}
+        <div className="flex flex-wrap gap-1" data-testid="chat-permission-primary-actions">
+          {bottomOptions.map((opt) => optionButton(opt, indexOf(opt)))}
         </div>
-      )}
+      </div>
     </div>
   );
 }
@@ -344,6 +402,7 @@ export function QuestionCard({ request, onAnswer, busy, autoFocus = true }: Ques
   // 1-9 pick an option of the open question; Enter sends once every question is answered.
   const onKeyDown = (e: KeyboardEvent<HTMLDivElement>) => {
     if (sent || ownsKey(e)) return;
+    if (e.repeat && isAnsweringKey(e.key)) { e.preventDefault(); return; }
     if (e.key === 'Enter' && !single) {
       if (complete) { e.preventDefault(); submit(); }
       return;
@@ -376,6 +435,7 @@ export function QuestionCard({ request, onAnswer, busy, autoFocus = true }: Ques
                     type="button"
                     disabled={sent}
                     onClick={(e) => { if (!isRepeatClick(e)) toggle(q, o.id); }}
+                    onKeyDown={swallowHeldKey}
                     aria-pressed={on}
                     className={`flex items-center gap-2.5 min-h-[30px] px-2 rounded-md text-[12.5px] text-left disabled:opacity-50 ${on ? 'bg-surface-0 text-ctp-text ring-1 ring-surface-1' : 'text-ctp-subtext1 hover:bg-surface-0/60'}`}
                   >
@@ -488,6 +548,7 @@ export function QuestionCard({ request, onAnswer, busy, autoFocus = true }: Ques
             type="button"
             disabled={!complete || sent}
             onClick={(e) => { if (!isRepeatClick(e)) submit(); }}
+            onKeyDown={swallowHeldKey}
             className="ml-auto h-7 px-3 rounded-md bg-ctp-accent text-ctp-on-accent text-[12px] font-medium disabled:opacity-40"
           >
             Send answer
