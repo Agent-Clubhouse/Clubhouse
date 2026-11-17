@@ -17,10 +17,16 @@ import { startFakeModel, type FakeModel } from './__fixtures__/fake-model';
 const platform = `${process.platform}-${process.arch}`;
 const runtime = path.resolve(__dirname, '../../../../node_modules/@github', `copilot-sdk-${platform}`, 'prebuilds', platform, process.platform === 'win32' ? 'copilot-runtime.exe' : 'copilot-runtime');
 const BASH = process.platform === 'win32' ? 'powershell' : 'bash';
-const hello = process.platform === 'win32' ? 'Write-Output hi' : 'echo hi';
-const RUN_TOOL = { name: BASH, args: { command: hello, description: 'say hi', mode: 'sync', initial_wait: 5 } };
 
 const tmp = fs.mkdtempSync(path.join(fs.realpathSync(os.tmpdir()), 'copilot-sdk-driver-'));
+/** A command that only reads: the runtime runs it at Ask without asking (runtime 1.0.107). */
+const READ_ONLY_TOOL = { name: BASH, args: { command: process.platform === 'win32' ? 'Write-Output hi' : 'echo hi', description: 'say hi', mode: 'sync', initial_wait: 5 } };
+/** A command that writes a file in the test's own folder, so the runtime asks first. */
+const written = path.join(tmp, 'qa-write.txt');
+const RUN_TOOL = {
+  name: BASH,
+  args: { command: process.platform === 'win32' ? `Set-Content -Path '${written}' -Value hi; Write-Output hi` : `printf hi > '${written}' && echo hi`, description: 'say hi', mode: 'sync', initial_wait: 5 },
+};
 const invalid = 'invalid-test-token';
 const baseEnv: Record<string, string> = {
   HOME: tmp, USERPROFILE: tmp, COPILOT_HOME: path.join(tmp, '.copilot'), XDG_CONFIG_HOME: path.join(tmp, 'config'), XDG_STATE_HOME: path.join(tmp, 'state'),
@@ -65,6 +71,7 @@ describe('CopilotSdkChatDriver on the real runtime', () => {
   afterEach(async () => {
     model.reset();
     await Promise.all(sessions.splice(0).map((s) => s.close()));
+    fs.rmSync(written, { force: true });
   });
   afterAll(() => {
     model.close();
@@ -155,6 +162,16 @@ describe('CopilotSdkChatDriver on the real runtime', () => {
     const update = of('tool_call_update').find((u) => u.data.status === 'completed');
     expect(JSON.stringify(update?.data.content)).toContain('hi');
     expect(of('tool_call')[0].data.title).toBe('say hi');
+    expect(fs.existsSync(written)).toBe(true);
+  }, 90_000);
+
+  it('runs a command that only reads at Ask without asking: the runtime\'s own rule, not a level', async () => {
+    const { session, of, endedTurns } = await open();
+    model.script({ tools: [READ_ONLY_TOOL] }, { text: 'done' });
+    await session.send([{ type: 'text', text: 'run it' }], 'prompt');
+    await endedTurns(1);
+    expect(of('permission_request')).toEqual([]);
+    expect(JSON.stringify(of('tool_call_update').find((u) => u.data.status === 'completed')?.data.content)).toContain('hi');
   }, 90_000);
 
   it('carries a denial\'s reason to the model, which continues', async () => {
@@ -165,6 +182,7 @@ describe('CopilotSdkChatDriver on the real runtime', () => {
     await session.respondPermission(request.data.requestId, COPILOT_OPTION_DENY, { message: 'USE-THE-OTHER-ONE' });
     await endedTurns(1);
     expect(of('tool_call_update').some((u) => u.data.status === 'failed')).toBe(true);
+    expect(fs.existsSync(written)).toBe(false);
     expect(model.requests.at(-1)?.text).toContain('USE-THE-OTHER-ONE');
   }, 90_000);
 
