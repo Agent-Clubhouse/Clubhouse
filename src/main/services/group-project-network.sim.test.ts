@@ -172,7 +172,7 @@ describe('network group projects across two desktops (#3363)', () => {
     // A changed notice causes syncFrom on the receiving computer; exercise its complete apply/event/delivery path.
     await as(B, h => h.groupProjectHost.syncFrom(A.fp));
     await as(B, async h => {
-      const gp = (await h.groupProjectHost.get(id))!;
+      expect(await h.groupProjectHost.get(id)).toBeTruthy();
       const membership = await h.groupProjectHost.getMembership(id);
       const inbox = await h.groupProjectHost.inboxFor(id, 'builder', address);
       expect(B.delivery!.memberSubscriptions(membership, address, inbox).has('inbox-builder')).toBe(true);
