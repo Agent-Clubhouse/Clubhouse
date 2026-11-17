@@ -24,11 +24,21 @@ const historyBoundaries = new Plugin({
   appendTransaction: (trs, _old, state) => trs.some((tr) => tr.getMeta(boundaryMeta)) ? closeHistory(state.tr) : null,
 });
 
-/** prosemirror-inputrules' wrappingInputRule, with the conversion as its own history event. */
+/** How prosemirror-inputrules shows a leaf node (the hard_break) in its text-before match. */
+const leafBreak = '\ufffc';
+
+/** prosemirror-inputrules' wrappingInputRule, with the conversion as its own history event.
+ * A marker typed right after a soft return (#3619) first splits the paragraph there, so the
+ * text before it stays a paragraph and only the new line becomes the list. */
 function listRule(match: RegExp, type: NodeType, getAttrs: (m: RegExpMatchArray) => Record<string, unknown>,
   joinPredicate?: (m: RegExpMatchArray, before: ProseNode) => boolean) {
   return new InputRule(match, (state, m, start, end) => {
     const tr = state.tr.delete(start, end);
+    if (m[0].startsWith(leafBreak)) {
+      if (tr.doc.resolve(start).depth !== 1) return null;
+      tr.split(start, 1, [{ type: promptSchema.nodes.paragraph, attrs: { source: null, literal: false } }]);
+      start += 2;
+    }
     const range = tr.doc.resolve(start).blockRange();
     const wrapping = range && findWrapping(range, type, getAttrs(m));
     if (!range || !wrapping) return null;
@@ -50,8 +60,8 @@ export function promptRules() {
     },
   );
   return inputRules({ rules: [
-    listRule(/^([-*]) $/, bullet_list, (m) => ({ bullet: m[1] })),
-    listRule(/^(\d+)\. $/, ordered_list, (m) => ({ order: +m[1] }), (m, node) => node.attrs.order + node.childCount === +m[1]),
+    listRule(/(?:^|\ufffc)([-*]) $/, bullet_list, (m) => ({ bullet: m[1] })),
+    listRule(/(?:^|\ufffc)(\d+)\. $/, ordered_list, (m) => ({ order: +m[1] }), (m, node) => node.attrs.order + node.childCount === +m[1]),
     emphasisRule(true), emphasisRule(false),
   ] });
 }

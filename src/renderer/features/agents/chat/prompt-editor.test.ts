@@ -86,6 +86,67 @@ describe('structured prompt editing', () => {
     expect(view.state.doc.firstChild?.child(1).type.name).toBe('hard_break');
   });
 
+  describe('a list can start on a new line after text (#3619)', () => {
+    it.each([['- ', 'bullet_list'], ['* ', 'bullet_list'], ['1. ', 'ordered_list'], ['8. ', 'ordered_list']] as const)('%s after a soft return starts a list and keeps the text above as a paragraph', (marker, kind) => {
+      editor('intro'); softReturn(view); type(marker); type('item');
+      expect(view.state.doc.childCount).toBe(2);
+      expect(view.state.doc.child(0).type.name).toBe('paragraph');
+      expect(view.state.doc.child(0).textContent).toBe('intro');
+      expect(view.state.doc.child(1).type.name).toBe(kind);
+      expect(source()).toBe(`intro\n${marker}item`);
+      expect(view.state.selection.$from.parent.textContent).toBe('item');
+    });
+
+    it('starts the list from the Space keydown too', () => {
+      editor('intro'); softReturn(view); type('-');
+      expect(key(' ')).toBe(true);
+      expect(view.state.doc.child(1).type.name).toBe('bullet_list');
+    });
+
+    it('continues the new list with Enter and leaves it with a second Enter', () => {
+      editor('intro'); softReturn(view); type('- one'); softReturn(view); type('two');
+      expect(source()).toBe('intro\n- one\n- two');
+      softReturn(view); softReturn(view);
+      expect(source()).toBe('intro\n- one\n- two\n');
+    });
+
+    it('works after a blank line, and a second list after text and a list', () => {
+      editor('intro'); softReturn(view); softReturn(view); type('- a');
+      expect(source()).toBe('intro\n\n- a');
+      expect(view.state.doc.child(0).textContent).toBe('intro');
+      expect(view.state.doc.child(0).childCount).toBe(2);
+    });
+
+    it('is one undo event that restores the marker and the soft return', () => {
+      editor('intro'); softReturn(view); type('- ');
+      expect(view.state.doc.child(1).type.name).toBe('bullet_list');
+      undo(view.state, view.dispatch);
+      expect(view.state.doc.childCount).toBe(1);
+      expect(source()).toBe('intro\n-');
+      redo(view.state, view.dispatch);
+      expect(view.state.doc.child(1).type.name).toBe('bullet_list');
+    });
+
+    it('Mod+Z right after the conversion gives back the literal marker', () => {
+      editor('intro'); softReturn(view); type('- ');
+      key('z', { metaKey: true });
+      expect(view.state.doc.childCount).toBe(1);
+      expect(source()).toBe('intro\n- ');
+    });
+
+    it('does not convert a marker that is not at the start of its line', () => {
+      editor('intro'); softReturn(view); type('x- ');
+      expect(view.state.doc.childCount).toBe(1);
+      expect(source()).toBe('intro\nx- ');
+    });
+
+    it('does not convert a marker after a hard break inside a list item', () => {
+      editor('- first'); insertPlainText(view, 'a\nb'); type('- ');
+      expect(view.state.doc.childCount).toBe(1);
+      expect(view.dom.querySelectorAll('ul ul')).toHaveLength(0);
+    });
+  });
+
   it('indents and outdents every selected item, with semantic nesting', () => {
     editor('1. parent\n2. second\n3. third\n4. last', 13, 27);
     expect(indentItems(view, false)).toBe(true);
