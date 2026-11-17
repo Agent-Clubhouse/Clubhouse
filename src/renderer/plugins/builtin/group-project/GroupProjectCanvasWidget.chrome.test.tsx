@@ -162,6 +162,23 @@ describe('group project creation context', () => {
   });
 });
 
+describe('post notification tooltip keyboard access (#3668)', () => {
+  it.each([300, 600])('makes the full status explanation reachable by Tab at width %i', async (width) => {
+    widgetWidth = width;
+    renderWidget();
+    const status = screen.getByRole('status', { name: 'Post notifications' });
+    const user = userEvent.setup();
+
+    // The label is truncated at narrow widths. A keyboard user must be able
+    // to reach its tooltip, including the saved-configuration limitation.
+    for (let i = 0; i < 30 && document.activeElement !== status; i++) {
+      await user.tab();
+    }
+    expect(status).toHaveFocus();
+    expect(screen.getByRole('tooltip')).toHaveTextContent('Saved configuration, not confirmation that messages reached members on other computers.');
+  });
+});
+
 describe('group project card (compact)', () => {
   it('shows this computer for a matching network host fingerprint', () => {
     projectScope = { level: 'app', reach: 'network' };
