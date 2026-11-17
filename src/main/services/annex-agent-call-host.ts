@@ -127,20 +127,22 @@ export function isConfigDispatcher(machine: string, agentId: string): boolean {
 }
 
 /** Recheck the host's own permission immediately before returning any configuration bytes. */
-export async function readConfigForRemoteCaller(machine: string, agentId: string, targetId: string): Promise<McpToolResult> {
+export async function readConfigForRemoteCaller(machine: string, agentId: string, targetId: string,
+  tool: 'read_agent_config' | 'list_settings' | 'read_settings' = 'read_agent_config', args: Record<string, unknown> = {}): Promise<McpToolResult> {
   const address = formatAgentAddress({ agentId, machine });
   const allowed = () => {
     if (!isNetworkComputer(machine)) return false;
     const direction = getConnectionDirection({ agentId, machineId: machine }, { agentId: targetId });
     const connected = !!(direction?.link || direction?.cardLink || activeAgentLinks(direction).length);
     const dispatcher = isConfigDispatcher(machine, agentId);
-    if ((!connected && !dispatcher) || direction?.disabledTools.includes('read_agent_config')) return false;
+    if ((!connected && !dispatcher) || direction?.disabledTools.includes(tool)) return false;
     return decideGrant(address, 'agent.read', { kind: 'agent', agentId: targetId, relations: connected ? ['connected'] : [] }, dispatcher).outcome === 'allow';
   };
   const refused = (): McpToolResult => ({ content: [{ type: 'text', text: 'The receiving host does not allow agent.read on that target.' }], isError: true });
   if (!allowed()) return refused();
   try {
-    const result = await readAgentConfig(targetId);
+    const result = tool === 'read_agent_config' ? await readAgentConfig(targetId)
+      : await (await import('./remote-settings-reader')).readRemoteSettings(targetId, tool, args);
     return allowed() ? { content: [{ type: 'text', text: JSON.stringify(result) }] } : refused();
   } catch {
     // telemetry-exempt: read failure returned without configuration content or source paths

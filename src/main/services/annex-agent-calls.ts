@@ -54,7 +54,8 @@ export const AGENT_CALL_TOOLS: ReadonlySet<string> = new Set([...CONNECTION_TOOL
 const QUEUED_TOOLS = new Set(['send_message', 'send_file', 'hand_off_request']);
 /** Tools that put something in front of the other agent, counted by the loop limit. */
 const LOOP_TOOLS = new Set(['send_message', 'send_file', 'hand_off_request', WAKE_TOOL]);
-const READ_TOOLS = new Set(['get_status', 'read_output', 'check_connectivity', 'read_agent_config']);
+const SETUP_READ_TOOLS = new Set(['read_agent_config', 'read_settings', 'list_settings']);
+const READ_TOOLS = new Set(['get_status', 'read_output', 'check_connectivity', ...SETUP_READ_TOOLS]);
 
 export const AGENT_CALL_MAX_BYTES = 512 * 1024;
 /** Per direction, on the receiving machine (D233). */
@@ -261,7 +262,7 @@ export async function forwardPreparedAgentCall(callerId: string, targetId: strin
   const controllerLink = federationDirection({ agentId: callerId }, { agentId: to, machineId: machine })
     ?? (direct && ['send_message', 'send_file'].includes(tool) ? federationMessageDirection({ agentId: callerId }, { agentId: to, machineId: machine }) : undefined);
   if (direct && (!controllerLink || !direct.current())) return text('The remote Dispatcher or sender permission changed before delivery.', true);
-  if (controllerLink && !FEDERATION_TOOLS.has(tool) && tool !== 'read_agent_config') return text('That tool is fixed off on controller connections.', true);
+  if (controllerLink && !FEDERATION_TOOLS.has(tool) && !SETUP_READ_TOOLS.has(tool)) return text('That tool is fixed off on controller connections.', true);
   const controllerStatus = controllerLink && federationStatus({ agentId: callerId }, { agentId: to, machineId: machine });
   if (controllerStatus && controllerStatus.state === 'unavailable') return text(controllerStatus.reason, true);
   if (args.idempotency_key !== undefined && (typeof args.idempotency_key !== 'string' || !args.idempotency_key.trim() || args.idempotency_key.length > 200)) {
@@ -699,7 +700,10 @@ export async function receiveAgentCall(senderMachine: string, raw: unknown, now 
   if (!self || !routeOf(to, self).local) return { status: 404, error: 'wrong_machine', message: 'That agent is not on this computer.' };
   // Config reads use the same pinned member transport, but never the input/delivery ledger.
   // Only an authenticated federated controller may read without a stored connection.
-  if (body.tool === 'read_agent_config') {
+  if (SETUP_READ_TOOLS.has(body.tool)) {
+    if (annexPeers.listPeers().find((p) => p.fingerprint.toLowerCase() === machine)?.networkPending) {
+      return { status: 403, error: 'peer_revoked', message: 'That computer has not completed its Annex Network membership.' };
+    }
     if (!configReader) return { status: 404, error: 'unavailable', message: 'Configuration reads are not available on this computer.' };
     const from: ConnectionEnd = { agentId: body.from.agentId, machineId: machine };
     const direction = getConnectionDirection(from, { agentId: to.agentId });
@@ -707,7 +711,7 @@ export async function receiveAgentCall(senderMachine: string, raw: unknown, now 
     if (!connected && !configReader.isDispatcher(machine, body.from.agentId)) return { status: 403, error: 'not_connected', message: 'That agent is not connected to you on its computer.' };
     if (direction?.disabledTools.includes(body.tool)) return { status: 403, error: 'tool_denied', message: 'Configuration reads are off on this connection.' };
     if (!hit(`rate:${machine}/${body.from.agentId}>${to.agentId}`, RATE_LIMIT.windowMs, RATE_LIMIT.calls, now)) return { status: 429, error: 'rate_limited', message: 'Too many calls. Try again in a minute.' };
-    const result = await configReader.read(machine, body.from.agentId, to.agentId);
+    const result = await configReader.read(machine, body.from.agentId, to.agentId, body.tool as 'read_agent_config' | 'list_settings' | 'read_settings', body.args);
     if (generation !== lifecycle || !isNetworkComputer(machine) || deliveryHash(currentEpoch) !== deliveryHash(outgoingEpoch(machine))) return { status: 403, error: 'authorization_revoked', message: 'The member connection changed while reading configuration.' };
     return { result };
   }
@@ -1112,7 +1116,7 @@ export interface StartAgentCallsOptions {
   /** Read-only setup host, separate from runtime input and its persisted delivery receipts. */
   configReader?: {
     isDispatcher(machine: string, agentId: string): boolean;
-    read(machine: string, agentId: string, targetId: string): Promise<McpToolResult>;
+    read(machine: string, agentId: string, targetId: string, tool?: 'read_agent_config' | 'list_settings' | 'read_settings', args?: Record<string, unknown>): Promise<McpToolResult>;
   };
   transport: AgentCallTransport;
   runTool: AgentToolRunner;

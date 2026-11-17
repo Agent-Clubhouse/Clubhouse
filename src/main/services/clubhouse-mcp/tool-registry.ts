@@ -17,7 +17,7 @@ import { groupProjectRegistry } from '../group-project-registry';
 import { deniedGroupProjectTools } from '../../../shared/group-project-admin';
 import { appLog } from '../log-service';
 import { isCrossProjectEnabled, isOrchestrationEnabled, onOrchestrationGateChange } from './orchestration-gate';
-import { dispatcherGateVersion, isDispatcherAgent, isDispatcherChatAgent, isDispatcherCoordinatorId, isTrackedDispatcher } from './dispatcher-gate';
+import { dispatcherGateVersion, isDispatcherAgent, isDispatcherChatAgent, isTrackedDispatcher } from './dispatcher-gate';
 import { mcpCallAccess, mcpCallerKind } from './mcp-call-gate';
 import { CROSS_PROJECT_OFF_MESSAGE, MCP_CALLER_UNKNOWN_MESSAGE, ORCHESTRATION_OFF_MESSAGE } from '../../../shared/orchestration-policy';
 import { callerGrants, checkToolGrant, isListable, type GrantCheck, type GrantCheckWire } from './grant-check';
@@ -31,7 +31,7 @@ import { localConnectionWakeOn } from '../connection-grants-store';
 import { localizeAgentArgs } from './agent-addresses';
 import { forwardAgentCall, remoteMachineOf } from '../annex-agent-calls';
 import { getProvider } from '../../orchestrators';
-import { parseAgentAddress } from '../../../shared/agent-address';
+import { formatAgentAddress, parseAgentAddress } from '../../../shared/agent-address';
 import { remoteFederationController } from '../dispatcher-federation';
 import { getDispatcherPresence } from '../dispatcher-presence';
 
@@ -492,7 +492,7 @@ function isRemoteDispatcherWire(binding: Pick<McpBinding, 'targetKind' | 'target
 /** A cached get_status may still arrive. It reads only the same local presence as list_other_dispatchers. */
 function remoteDispatcherWireStatus(targetId: string): McpToolResult {
   const address = parseAgentAddress(targetId);
-  const presence = getDispatcherPresence().remotes.find((r) => r.machineId === address.machine && r.address === targetId.toLowerCase().replace(address.agentId.toLowerCase(), address.agentId));
+  const presence = getDispatcherPresence().remotes.find((r) => r.machineId === address.machine && r.address === formatAgentAddress(address));
   return { content: [{ type: 'text', text: JSON.stringify({
     ...(presence ?? { state: 'unknown', link: { state: 'unavailable' } }),
     source: 'local_presence', stale: true,

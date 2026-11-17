@@ -5,7 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { tel } from '../telemetry/facade';
 import { setFederationLookup, setFederationMessageLookup, setFederationRequestRouter } from './dispatcher-federation-policy';
 
-const state = vi.hoisted(() => ({ base: '', pairing: 'self-epoch', peerPairing: 'peer-epoch', thirdRole: 'satellite' as 'member' | 'satellite', localMachine: Array(16).fill('aa').join(':') }));
+const state = vi.hoisted(() => ({ base: '', pairing: 'self-epoch', peerPairing: 'peer-epoch', thirdRole: 'satellite' as 'member' | 'satellite', thirdKind: 'desktop' as 'desktop' | 'phone', thirdPending: false, localMachine: Array(16).fill('aa').join(':') }));
 const SELF = Array(16).fill('aa').join(':');
 const OTHER = Array(16).fill('bb').join(':');
 const THIRD = Array(16).fill('cc').join(':');
@@ -16,7 +16,7 @@ vi.mock('./annex-network-membership', () => ({ ownPairing: () => ({ id: state.pa
 vi.mock('./annex-peers', () => ({ listPeers: () => [
   { fingerprint: (state.localMachine === OTHER ? SELF : OTHER).toUpperCase(), alias: 'Studio', role: 'member', kind: 'desktop', pairingId: state.peerPairing },
   // A one-to-one pairing: not in the network.
-  { fingerprint: THIRD.toUpperCase(), alias: 'Old Mac', role: state.thirdRole, kind: 'desktop' },
+  { fingerprint: THIRD.toUpperCase(), alias: 'Old Mac', role: state.thirdRole, kind: state.thirdKind, networkPending: state.thirdPending },
 ] }));
 state.base = fs.mkdtempSync(path.join(os.tmpdir(), 'annex-agent-calls-'));
 
@@ -69,7 +69,7 @@ beforeEach(async () => {
   connected = true;
   state.pairing = 'self-epoch';
   state.peerPairing = 'peer-epoch';
-  state.thirdRole = 'satellite';
+  state.thirdRole = 'satellite'; state.thirdKind = 'desktop'; state.thirdPending = false;
   posts = [];
   seen.length = 0;
   respond = (_path, body) => delivered(body);
@@ -1541,6 +1541,27 @@ describe('read_agent_config member transport', () => {
     expect(result).toMatchObject({ error: 'authorization_revoked' });
     expect(JSON.stringify(result)).not.toContain('private');
   });
+  it.each(['read_settings', 'list_settings'])('uses the same unledgered read path for %s, with no write path (#3656)', async (tool) => {
+    const args = tool === 'read_settings' ? { select: ['agent.model'] } : {};
+    const result = await receiveAgentCall(OTHER, call({ tool, from: { agentId: 'controller', name: 'Controller' }, args }), now);
+    expect(result).toMatchObject({ result: ok('configuration') });
+    expect(reader.read).toHaveBeenCalledWith(OTHER, 'controller', 'receiver', tool, args);
+    expect(JSON.stringify(createAnnexDeliveryStore().get())).not.toContain('configuration');
+    reader.read.mockClear();
+    expect(await receiveAgentCall(OTHER, call({ tool: 'write_settings', args: { value: 'no' } }), now)).toMatchObject({ error: 'tool_not_allowed' });
+    expect(reader.read).not.toHaveBeenCalled();
+  });
+
+  it.each(['phone', 'pending', 'non-member'])('refuses a %s on the remote settings read path', async (kind) => {
+    state.thirdRole = kind === 'non-member' ? 'satellite' : 'member';
+    state.thirdKind = kind === 'phone' ? 'phone' : 'desktop';
+    state.thirdPending = kind === 'pending';
+    for (const tool of ['read_settings', 'list_settings']) {
+      expect(await receiveAgentCall(THIRD, call({ tool, from: { agentId: 'controller', name: 'Dispatcher' }, args: {} }), now)).toMatchObject({ error: 'peer_revoked' });
+    }
+    expect(reader.read).not.toHaveBeenCalled();
+  });
+
   it('reports an offline target without queueing or sending a read', async () => {
     connected = false;
     const result = await forwardAgentCall('here', `there@${OTHER}`, 'Reader', 'read_agent_config', {});

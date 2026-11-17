@@ -60,7 +60,10 @@ export function localizeAgentArgs(grant: ToolGrant | undefined, args: Record<str
       for (const item of value) {
         if (typeof item !== 'string') { list.push(item); continue; }
         const local = localize(item);
-        if (typeof local !== 'string') return refusal(local.machine);
+        if (typeof local !== 'string') {
+          if (remoteNames.has(name)) { list.push(item); continue; }
+          return refusal(local.machine);
+        }
         list.push(local);
       }
       out[name] = list;

@@ -191,7 +191,8 @@ describe('AgentTools', () => {
         await vi.advanceTimersByTimeAsync(1500);
         const result = await pending;
         expect(result.isError).toBeFalsy();
-        expect((result.content[0] as { text: string }).text).toContain('Message sent to Builder');
+        expect((result.content[0] as { text: string }).text).toContain('Delivered to Builder; a reply comes back as remote Dispatcher news');
+        expect(result.content[0].text).not.toContain('poll read_output');
         expect(mockPtyWrite.mock.calls[0][1]).toContain('[FROM:Scout@Atlas on Studio] hello');
       } finally {
         remoteCaller.value = undefined;
@@ -596,11 +597,17 @@ describe('AgentTools', () => {
       expect(firstWrite[1]).toMatch(/^\[TASK:t_[a-z0-9]+\] \[FROM:mega-camel@myapp\] hello$/);
     });
 
-    it('returns error when agent not running', async () => {
+    it('keeps send_message listed for a sleeping local agent, with its hint and no auto-wake (#3656)', async () => {
       mockAgentRegistryGet.mockReturnValue(undefined);
+      expect(getScopedToolList('agent-1').map((t) => t.name)).toContain(sendToolName);
+      lifecycle.wakeWiredAgent.mockClear();
+      dispatcherDelivery.wakeDispatcher.mockClear();
       const result = await callTool('agent-1', sendToolName, { message: 'hello' });
       expect(result.isError).toBe(true);
       expect(result.content[0].text).toContain('is sleeping');
+      expect(lifecycle.wakeWiredAgent).not.toHaveBeenCalled();
+      expect(dispatcherDelivery.wakeDispatcher).not.toHaveBeenCalled();
+      expect(mockPtyWrite).not.toHaveBeenCalled();
     });
 
     it('returns error for headless runtime', async () => {
@@ -918,7 +925,7 @@ describe('AgentTools', () => {
     afterEach(() => { vi.restoreAllMocks(); _resetDispatcherGateForTesting(); });
 
     it('are registered in the dispatcher group: the Dispatcher sees them by target state', () => {
-      expect(suffixes('dispatcher-1')).toEqual(['preview_provider', 'change_provider', 'get_status', 'wake_agent']);
+      expect(suffixes('dispatcher-1')).toEqual(['preview_provider', 'change_provider', 'send_message', 'get_status', 'wake_agent']);
       mockAgentRegistryGet.mockImplementation((id: string) => (id === 'orch-1' ? { runtime: 'chat' } : undefined));
       invalidateToolListCache();
       expect(suffixes('dispatcher-1')).toContain('sleep_agent');

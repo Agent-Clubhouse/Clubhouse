@@ -188,3 +188,21 @@ A separate tool, such as `update_settings`, and a separate allowlist.
 - **Stale writes:** take the `stored` value the caller read as a precondition, and refuse if it has changed.
 - **Audit:** log each change with who asked, the target, the key, and old and new values, and show it to the user in the app, not only in a log file. Refusals should be logged too.
 - **Permission boundary:** the user's own settings stay above any agent. (Superseded: see the note at the top of this section.)
+
+
+## One agent on another computer (#3656)
+
+`list_settings({agent: "agentId@machine"})` lists that target's readable key names.
+`read_settings({agent_ids: ["agentId@machine"], select: ["agent.model"]})` reads one
+remote target; `detail`, `limit` and `cursor` retain their existing meaning.
+Remote calls reject mixed/bulk targets, project selectors and write arguments.
+They use the same authenticated computer-member read transport as
+`read_agent_config`, without entering the durable input-delivery ledger.
+
+The sender checks its grants. The receiving host independently checks its own
+`agent.read` permission, connection (or authenticated federated Dispatcher),
+per-tool switches and current membership, and rechecks authorization before
+returning bytes. Phones, pending members and non-members are refused. The host
+uses the existing settings allowlist/redaction and the selected agent's own
+read scope; a remote Dispatcher never receives the host's unrestricted local
+Dispatcher scope. No settings write is exposed.

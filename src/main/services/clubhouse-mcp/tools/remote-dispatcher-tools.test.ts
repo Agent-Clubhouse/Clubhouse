@@ -21,6 +21,7 @@ vi.mock('../../../util/ipc-broadcast', () => ({ broadcastToAllWindows: vi.fn() }
 import { _resetForTesting, callTool, registerGlobalTool } from '../tool-registry';
 import { setHandoffGrantTargetResolver } from '../arg-targets';
 import { setMcpCaller } from '../mcp-call-gate';
+import { registerGrantRequestTools } from './grant-request-tools';
 import { registerRemoteDispatcherTools } from './remote-dispatcher-tools';
 import { updateAgentGrantChanges, getAgentGrantRevision } from '../../agent-grants-store';
 import { _resetGrantRequestsForTesting, listGrantRequests, takeGrantRequest } from '../../grant-requests';
@@ -36,10 +37,10 @@ afterAll(() => fs.rmSync(fixture.dir, { recursive: true, force: true }));
 const args = { machine: 'Laptop', message: 'News', task_id: 'origin-task' };
 describe('authorized agent to remote Dispatcher (#3348)', () => {
   it('refuses without a grant, and only the exact person-approved Ask call reaches transport', async () => {
-    expect(await callTool('sender', 'message_remote_dispatcher', args)).toMatchObject({ isError: true });
+    expect(await callTool('sender', 'message_remote_dispatcher', args)).toMatchObject({ isError: true, content: [{ text: expect.stringContaining('target="remote_dispatcher"') }] });
     expect(fixture.forward).not.toHaveBeenCalled();
     await updateAgentGrantChanges('sender', () => ({ changes: [{ action: 'agent.message', target: { kind: 'remote_dispatcher' }, mode: 'ask' }] }));
-    expect(await callTool('sender', 'message_remote_dispatcher', args)).toMatchObject({ isError: true });
+    expect(await callTool('sender', 'message_remote_dispatcher', args)).toMatchObject({ isError: true, content: [{ text: expect.stringContaining('target="remote_dispatcher"') }] });
     const request = listGrantRequests()[0];
     expect(request).toMatchObject({ agentId: 'sender', toolName: 'message_remote_dispatcher', where: "another machine's Dispatcher" });
     expect(fixture.forward).not.toHaveBeenCalled();
@@ -48,6 +49,17 @@ describe('authorized agent to remote Dispatcher (#3348)', () => {
     expect(fixture.forward).toHaveBeenCalledWith('sender', `remote-controller@${fixture.machine}`, 'Dispatcher on Laptop', 'send_message', { message: 'News', task_id: 'origin-task' }, expect.any(Number), undefined, undefined, expect.objectContaining({ authorization: { policyHash: expect.any(String) } }), expect.any(Function));
     expect(await callTool('sender', 'message_remote_dispatcher', { ...args, message: 'Different' })).toMatchObject({ isError: true });
     expect(fixture.forward).toHaveBeenCalledTimes(1);
+  });
+  it('requests the exact existing remote Dispatcher grant without granting it by default (#3656)', async () => {
+    registerGrantRequestTools();
+    const already = await callTool('sender', 'request_grant', { action: 'agent.message', target: 'connected', reason: 'Send news remotely.' });
+    expect(already.content[0].text).toContain('agent.message');
+    expect(already.content[0].text).toContain('target="remote_dispatcher"');
+    const asked = await callTool('sender', 'request_grant', { action: 'agent.message', target: 'remote_dispatcher', reason: 'Send news to the other Dispatcher.' });
+    expect(asked.isError).toBeFalsy();
+    expect(listGrantRequests()).toEqual([expect.objectContaining({ kind: 'grant', actions: ['agent.message'], target: { kind: 'remote_dispatcher' } })]);
+    expect((await callTool('sender', 'message_remote_dispatcher', args)).isError).toBe(true);
+    expect(fixture.forward).not.toHaveBeenCalled();
   });
   it('sends file contents with allowlisted arguments, and invalidates admission after revoke then reset', async () => {
     // Saved config defaults can precede runtime bindings at startup. Explicit Allow still works.

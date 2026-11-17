@@ -392,3 +392,24 @@ The sending computer checks the agent's grant before durable admission and check
 `offer_handoff_to_remote_dispatcher` delegates to `offer_handoff` with a machine-qualified Dispatcher target. This is the normal Handoff agreement and its own `handoff.offer` permission, including its normal Ask first approval, rather than a `hand_off_request` subtask. Connected agents default to Ask first on this target; the Dispatcher keeps the Handoff system's normal Ask first default. No agreement is accepted automatically. The receiver responds explicitly through `respond_to_handoff`; the original sending agent reads the same agreement id with `get_handoff` and receives labelled lifecycle notices. The source Dispatcher sees a linked local memory record and timeline entry. That copy grants it no Handoff participant rights and does not settle a Dispatcher work request.
 
 Both Handoff modes transfer code from a registered Git worktree with a committed HEAD (#3342/#3343). Offering automatically prepares that code when no prepared manifest is supplied. A plain folder returns `not_a_repository`; a Git repository without a commit returns `no_commits`, with instructions to initialize Git or create the initial commit. Neither creates an agreement or sends transfer bytes. Use `message_remote_dispatcher` for task context that has no code to transfer.
+
+
+### Cross-computer tool feedback (#3656)
+
+An agent may ask for the existing remote Dispatcher permission with
+`request_grant({action: "agent.message", target: "remote_dispatcher", reason: "…"})`.
+Refusals name that exact target, and asking for `connected` explains that it
+covers a different grant. Requesting a grant never allows the call by itself;
+existing defaults and exact-call Ask first approvals are unchanged.
+
+Remote Dispatcher wires list only `send_message` and `send_file`. Status comes
+from `list_other_dispatchers`, using local published presence. A client's cached
+wire `get_status` also reads that local presence after the normal wire and grant
+checks; it marks the result as potentially stale and includes last seen when
+available. It never forwards a remote runtime status read. Cross-computer send
+receipts point to remote Dispatcher news for replies, rather than inaccessible
+`read_output` polling.
+
+Sleeping local agent wires keep `send_message` discoverable. The existing
+sleeping hint and runtime queue behavior remain; this does not auto-wake a
+sleeping local helper or change any wake grants or connection switches.
