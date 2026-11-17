@@ -305,7 +305,7 @@ function ProjectCard({
         <span className="flex-1" />
         <IconButton label="Broadcast message" onClick={() => setShowTapModal(true)}><MegaphoneIcon /></IconButton>
         <Tooltip content={`${project ? postNotificationLabel(project) : 'Loading post notifications...'}. Saved configuration, not confirmation that messages reached members on other computers.`}>
-          <span role="status" aria-label="Post notifications" className="min-w-0 truncate text-xs text-ctp-subtext1">{project ? postNotificationLabel(project) : 'Loading post notifications...'}</span>
+          <span role="status" aria-label="Post notifications" tabIndex={0} className="min-w-0 truncate rounded-sm text-xs text-ctp-subtext1 focus-visible:outline focus-visible:outline-1 focus-visible:outline-ctp-accent">{project ? postNotificationLabel(project) : 'Loading post notifications...'}</span>
         </Tooltip>
         <OpenGroupProjectButton groupProjectId={groupProjectId} ctx={ctx} />
       </div>
