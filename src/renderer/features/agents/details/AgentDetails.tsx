@@ -384,7 +384,6 @@ export function AgentDetails({ agent, chat, onShowInStream, missedSubagentId, on
       {remoteDispatcher ? (
         <DetailsCard id="connections" title="Connections" summary={`Change on ${remoteHost}`} open={open('connections')} onToggle={() => toggleCard('connections')}>
           <CardNote>This Dispatcher’s connections are managed on {remoteHost}. They aren’t shared in this computer’s view.</CardNote>
-          <CardNote>Change on {remoteHost}.</CardNote>
         </DetailsCard>
       ) : showConnections && (
         <ConnectionsCard
@@ -408,7 +407,7 @@ export function AgentDetails({ agent, chat, onShowInStream, missedSubagentId, on
 
       {remoteDispatcher
         ? <DetailsCard id="actions" title="Actions" summary={`Change on ${remoteHost}`} open={open('actions')} onToggle={() => toggleCard('actions')}>
-            <CardNote>Actions made by this Dispatcher are managed on {remoteHost}. Change on {remoteHost}.</CardNote>
+            <CardNote>Actions made by this Dispatcher are managed on {remoteHost}.</CardNote>
           </DetailsCard>
         : dispatcher
         ? <DispatcherActionsCard open={open('actions')} onToggle={() => toggleCard('actions')} />

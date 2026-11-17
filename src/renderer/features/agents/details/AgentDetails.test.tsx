@@ -292,8 +292,10 @@ describe('AgentDetails for a remote Dispatcher', () => {
     expect(screen.getByTestId('other-machine-remote-peer')).toHaveTextContent('Studio on Desk');
     await act(async () => {});
     expect(screen.queryByTestId('other-machine-local-only')).not.toBeInTheDocument();
-    expect(screen.getByTestId('details-card-connections')).toHaveTextContent('Change on Mini.');
-    expect(screen.getByTestId('details-card-actions')).toHaveTextContent('Change on Mini.');
+    expect(screen.getByTestId('details-card-connections-summary')).toHaveTextContent('Change on Mini');
+    expect(screen.getByTestId('details-card-connections')).toHaveTextContent('They aren’t shared in this computer’s view.');
+    expect(screen.getByTestId('details-card-actions-summary')).toHaveTextContent('Change on Mini');
+    expect(screen.getByTestId('details-card-actions')).toHaveTextContent('Actions made by this Dispatcher are managed on Mini.');
     expect(screen.getByTestId('details-settings-remote')).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Add connection' })).not.toBeInTheDocument();
     expect(screen.queryByRole('switch')).not.toBeInTheDocument();
