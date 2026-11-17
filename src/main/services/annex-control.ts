@@ -181,10 +181,17 @@ export function setInboundAuthority(authority: InboundAuthority | null): void {
   if (!authority) closeAll('in');
 }
 
-/** The server sets this while it runs; without it this machine opens no control connection and runs no request. */
+/**
+ * The server sets this while it runs; without it this machine opens no control
+ * connection and runs no request. Stopping also forgets every remembered
+ * request: a retry after the server restarts is answered afresh.
+ */
 export function setControlTarget(next: ControlTarget | null): void {
   target = next;
-  if (!next) closeAll('out');
+  if (!next) {
+    closeAll('out');
+    seen.clear();
+  }
 }
 
 /** Whether this machine can be a target now (its server is running). */

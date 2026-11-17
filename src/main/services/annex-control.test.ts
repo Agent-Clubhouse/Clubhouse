@@ -498,6 +498,18 @@ describe('request ids, dedup and replay', () => {
     expect(control._seenSizeForTesting()).toBe(0);
   });
 
+  it('forgets every remembered request when the server stops', async () => {
+    await connected();
+    await control.request(TARGET, { method: 'POST', path: '/p', body: '{}' }, { requestId: 'before-stop' });
+    expect(control._seenSizeForTesting()).toBe(1);
+    control.setControlTarget(null);
+    expect(control._seenSizeForTesting()).toBe(0);
+    installServer();
+    await connected();
+    await control.request(TARGET, { method: 'POST', path: '/p', body: '{}' }, { requestId: 'before-stop' });
+    expect(dispatch).toHaveBeenCalledTimes(2);
+  });
+
   it('refuses a second request with an id already in flight on the connection', async () => {
     await connected();
     handler = async () => { await new Promise(() => {}); return ok({}); };
