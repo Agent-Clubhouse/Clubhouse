@@ -46,9 +46,11 @@ export function GrantRequestList({ agentId, agentName, onAnswered }: {
     } catch (err) {
       reportChromeActionFailed('agent_settings_save', err);
       setError({ id: request.requestId, message: "Couldn't send your answer. Try again." });
+    } finally {
+      // Also when onAnswered throws: the lock must not outlive the call.
+      inFlight.current = false;
+      setBusy(null);
     }
-    inFlight.current = false;
-    setBusy(null);
   };
 
   if (requests.length === 0) return null;
