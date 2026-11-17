@@ -2,7 +2,8 @@
 
 Base: `aa193423d` (origin/main). Branch: `feat/3613-p6-binary`.
 This is a PARTIAL slice of #3613; P2/P7 routing and P8 acceptance are separate.
-No local E2E, Playwright, full suite, release or PR creation was run.
+No local E2E, Playwright, full suite or release was run. PR #3688 was opened
+after independent approval, on the orchestrator's instruction.
 
 All npm, TypeScript, eslint and Vitest commands used
 `~/.clubhouse/orch/desktop-test-gate.sh lane-3613-p6 <tier> -- <command>`.
@@ -162,3 +163,73 @@ orchestrator. Subsequent admitted commands above each released their slot.
 Final logs are `/tmp/annex-p6-qa-*.log` and the two control directories named
 above. No follow-up candidate test failed; expected negative/mutant failures
 are labelled and retained. No full suite, local E2E, Playwright or PR creation.
+
+## CI handoff regression at 0283ecb14
+
+PR #3688's Annex E2E Ubuntu shard failed the existing selected-ignored-file
+handoff case on its original run and retry #1. Both retained failures showed
+`offered → accepted → failed`, with `verification/verification_failed`, before
+the first `transferring` transition. The unrelated Windows telemetry failure
+was left unchanged. No local E2E or Playwright was run.
+
+**Root cause:** handoff acceptance/progress calls `notifyToolGateChange`, but
+the sender's lease treated every generic tool-list notification as revocation.
+Acceptance synchronization can overlap real initial-manifest verification.
+That ordinary notification invalidated the unchanged authority, refused the
+manifest, and surfaced as `verification_failed` during receiver resolution.
+It was not a changed immutable binding or a disposed between-chunk lease.
+
+**Proof before production edits:** the real-host regression pauses an actual
+call-through prepared-file `lstat`, synchronizes acceptance through the real
+sender coordinator, then completes the real receiver worker. With production
+sources still at `0283ecb14`, the tier-4 admission **19:38:34Z–19:38:37Z**
+failed exactly with `{state:"failed", failure:{step:"verification",
+code:"verification_failed"}, history:["offered","accepted","failed"]}`.
+The original gate attempt was refused (`slot held by qa-3686`); RETRY 1
+executed after more than 60 seconds. Logs: `/tmp/annex-p6-ci-regression-*`.
+
+**Fix:** every orchestration notification synchronously re-reads the authority
+stamp and invalidates only if its captured values/revisions/generations changed.
+The stamp now explicitly includes orchestration/cross-project enabled values,
+control policy and effective caller grants, alongside the prior saved-grant
+revision, normalized grants, agent config generation and Dispatcher identity.
+Invalidation remains sticky, so off-and-restore cannot resurrect a pending
+operation. Domain/acceptance, peer/link, secret-policy and actual-act fences
+and UUID guards are unchanged.
+
+The regression transfers a selected ignored **600 KiB** file through the real
+preparation, source verification/descriptors, receiver and apply services. It
+observes offsets **0, 262144, 524288**, exact published bytes and exclusion of
+unselected data before the wake callback; the person's original worktree stays
+unchanged. Receiver storage is isolated in memory; actual service/I/O awaits
+are not skipped. Additional real descriptor-stat negatives cover orchestration
+off, off-and-restore, cross-project off-and-restore and saved-grant revocation.
+
+**Original fixed-run harness FAIL retained:** the first executed fixed run
+(19:40:51Z–19:41:07Z) passed all six authority negatives and reached `applied`,
+but its chunk assertion observed the HTTP adapter while production selected
+the local-transfer fast path. The observer was corrected to a call-through
+spy on the real source service. RETRY 2 **19:41:49Z–19:42:03Z** passed all
+**7** selected cases. Before that, the original fixed-run admission was refused
+for `idle=0%<40`; the next admission waited more than 60 seconds. Every FAIL,
+refusal and RETRY is retained under `/tmp/annex-p6-ci-fix-*`.
+
+`python3 scripts/qa/annex-p6-binary-controls.py --logs
+/tmp/annex-p6-ci-controls-original` passed at tier 4,
+**19:42:29Z–19:43:10Z**: **46/46 mutants killed**. This includes the new
+**notification-ignored** mutant (both restored-policy negatives fail) and
+**spurious-notification** mutant (the legitimate accepted transfer fails).
+All previous security controls remain: origin/main **55 expected failures**,
+rejected QA head `c35580c5f` **4 expected failures**, and the new CI baseline
+`0283ecb14` **1 expected verification_failed failure**. Source bytes were
+restored after every control/mutant. Logs: `/tmp/annex-p6-ci-controls-original/`.
+
+Final CI-fix admission **19:43:44Z–19:46:26Z**, tier 4, exit 0:
+`tsc --noEmit` **PASS**, `eslint . --quiet` **PASS**, the same 15-file
+main/shared targeted command listed above **916 PASS** (`--maxWorkers=2`),
+and `node scripts/annex-mobile-fixtures.mjs --check` **66 PASS**. All **102**
+fixture blobs remain byte-identical to `aa193423d`. Worktree-local dependencies
+remain the previously validated fresh install, with no package/lockfile changes.
+Full commands and output are in `/tmp/annex-p6-ci-final-{tsc,lint,targeted,
+phone-fixture}.log`, with gate START/END at `/tmp/annex-p6-ci-final-original.log`.
+No follow-up E2E was run locally; the unchanged E2E spec will rerun in CI.

@@ -58,6 +58,8 @@ mutants = [
  ('handoff-state', source, "!['offered', 'accepted', 'transferring'].includes(record.state)\n      || content && (!record.acceptance || !['accepted', 'transferring'].includes(record.state))", 'content && !record.acceptance', fences, 'real handoff descriptor stat await: cancelled'),
  ('handoff-domain-binding', source, 'this.binding(record, content) !== binding', 'false', fences, 'real handoff descriptor stat await: target-changed|real handoff descriptor stat await: agreement-changed'),
  ('handoff-authority-act', source, 'authority?.check();', '', fences, 'real handoff descriptor stat await: grant-generation|real handoff descriptor stat await: policy-generation'),
+ ('handoff-notification-ignored', 'src/main/services/handoff-host.ts', 'if (localIds.has(id) && stamp() !== expected) changed = true;', 'void id;', 'src/main/services/handoff-host-transfer.test.ts', 'P6 host orchestration-off-restored|P6 host cross-project-off-restored'),
+ ('handoff-spurious-notification', 'src/main/services/handoff-host.ts', 'localIds.has(id) && stamp() !== expected', 'localIds.has(id)', 'src/main/services/handoff-host-transfer.test.ts', 'P6 accepted handoff synchronizes'),
  ('handoff-grant-generation', 'src/main/services/handoff-host.ts', '[...localIds].map((id) => getAgentGrantRevision(id))', '[]', 'src/main/services/handoff-host-transfer.test.ts', 'P6 host grant-generation'),
  ('handoff-policy-generation', 'src/main/services/handoff-host.ts', 'JSON.stringify([agentConfigGeneration(), grantPolicyStamp(agents)', 'JSON.stringify([0, grantPolicyStamp(agents)', 'src/main/services/handoff-host-transfer.test.ts', 'P6 host agent-policy-generation'),
  ('consumed-token', bulk, 'this.used.has(token) || this.used.size >= this.maxUsedTokens', 'this.used.size >= this.maxUsedTokens', transport, 'QA adversarial: a completed'),
@@ -95,6 +97,11 @@ try:
         for p in paths:
             (root / p).write_bytes(subprocess.check_output(['git', 'show', 'c35580c5f:' + p], cwd=root))
         ok = run('negative-qa-c35580c5f', [transport, 'src/main/services/annex-binary-qa-regressions.test.ts'], 'QA adversarial') and ok
+        for p, content in original.items(): (root / p).write_bytes(content)
+    if args.only in (None, 'ci-baseline'):
+        for p in paths:
+            (root / p).write_bytes(subprocess.check_output(['git', 'show', '0283ecb14:' + p], cwd=root))
+        ok = run('negative-ci-0283ecb14', ['src/main/services/handoff-host-transfer.test.ts'], 'P6 accepted handoff synchronizes') and ok
         for p, content in original.items(): (root / p).write_bytes(content)
     for label, p, old, new, test, pattern in mutants:
         if args.only and args.only != label: continue

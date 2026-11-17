@@ -40,6 +40,10 @@ plus a request-scoped saved-grant revision and policy generation lease.
 Connection, binding and orchestration changes invalidate that lease; secret
 policy revisions are checked at every actual open/read too. Async authorization
 runs after descriptor/path stats, followed by the synchronous act fence.
+Tool-list notifications also announce ordinary handoff acceptance/progress.
+Each notification re-reads the captured authority values; unchanged values
+preserve the lease. Real orchestration/cross-project/control or effective-grant
+changes invalidate it, including a change restored before the await resumes.
 
 Limits remain the existing ones: clipboard 10 MiB **base64** (7.5 MiB decoded),
 attachment images 3.75 MiB raw, full events 32 MiB, content's existing 8 MiB

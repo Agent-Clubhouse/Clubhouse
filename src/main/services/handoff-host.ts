@@ -32,7 +32,7 @@ import { getDispatcherState, isDispatcherAgentId } from './dispatcher/dispatcher
 import { effectiveAgentGrants } from './agent-grants-service';
 import { getConnectionDirection, localConnectionWakeOn, onConnectionGrantsChanged } from './connection-grants-store';
 import { bindingManager } from './clubhouse-mcp/binding-manager';
-import { notifyToolGateChange, onOrchestrationGateChange } from './clubhouse-mcp/orchestration-gate';
+import { notifyToolGateChange, onOrchestrationGateChange, isOrchestrationEnabled, isCrossProjectEnabled, orchestrationControl } from './clubhouse-mcp/orchestration-gate';
 import { callerGrants } from './clubhouse-mcp/grant-check';
 import { callTool, setHandoffParticipantCheck } from './clubhouse-mcp/tool-registry';
 import { handoffAgreementCallApproved } from './clubhouse-mcp/handoff-permissions';
@@ -196,12 +196,16 @@ function transferAuthority(record: Handoff, peer: string) {
   const agents = [record.from, ...(record.acceptance ? [record.acceptance.by, record.acceptance.target] : [])];
   const localIds = new Set(agents.filter((a) => a.machine === ownMachine()).map((a) => a.agentId));
   const stamp = () => JSON.stringify([agentConfigGeneration(), grantPolicyStamp(agents),
-    [...localIds].map((id) => getAgentGrantRevision(id)), getDispatcherState().enabled, getDispatcherState().agentId]);
+    [...localIds].map((id) => getAgentGrantRevision(id)), getDispatcherState().enabled, getDispatcherState().agentId,
+    [...localIds].map((id) => [id, isOrchestrationEnabled(id), isCrossProjectEnabled(id), orchestrationControl(id), callerGrants(id)])]);
   const expected = stamp();
   let changed = false;
   const off = [onConnectionGrantsChanged(() => { changed = true; }),
     bindingManager.onChange(() => { changed = true; }),
-    onOrchestrationGateChange((id) => { if (localIds.has(id)) changed = true; })];
+    // This also announces handoff acceptance/progress and tool-list refreshes.
+    // Invalidate only a real authority change, retaining the invalidation even
+    // if the setting is restored before the pending filesystem await resolves.
+    onOrchestrationGateChange((id) => { if (localIds.has(id) && stamp() !== expected) changed = true; })];
   return {
     check: () => {
       if (changed || stamp() !== expected || peer !== ownMachine() && !isNetworkComputer(peer)
