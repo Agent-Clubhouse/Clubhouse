@@ -9,6 +9,7 @@
 export const CHAT_SHARDS = {
   1: [
     'chat-rich/annex.spec.ts',
+    'chat-rich/approval-geometry-grants.spec.ts',
     'chat-rich/file-chips.spec.ts',
     'chat-rich/flag-off.spec.ts',
     'chat-rich/context-menu.spec.ts',
@@ -18,6 +19,7 @@ export const CHAT_SHARDS = {
   ],
   2: [
     'actions.spec.ts',
+    'chat-rich/approval-geometry-claude.spec.ts',
     'chat-rich/media-cards.spec.ts',
     'chat-rich/media-images.spec.ts',
     'chat-rich/providers.spec.ts',
@@ -25,6 +27,7 @@ export const CHAT_SHARDS = {
     'managed-agents.spec.ts',
   ],
   3: [
+    'chat-rich/approval-geometry-codex.spec.ts',
     'chat-rich/queue-merging.spec.ts',
     'chat-rich/reading.spec.ts',
     'dispatcher-settings.spec.ts',

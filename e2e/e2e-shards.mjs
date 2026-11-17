@@ -77,6 +77,7 @@ export const ANNEX_SHARDS = {
     'annex-v2/settings-page.spec.ts',
   ],
   2: [
+    'annex-v2/approval-geometry-remote.spec.ts',
     'annex-v2/chat-across-desktops.spec.ts',
     'annex-v2/dispatcher-federation.spec.ts',
     'annex-v2/dispatcher-lead-approvals.spec.ts',
