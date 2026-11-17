@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { useRemoteProjectStore, namespacedAgentId, parseNamespacedId, isRemoteAgentId, isRemoteProjectId } from './remoteProjectStore';
+import { buildAgentForest } from '../chrome/sidebar/treeModel';
 import type { SatelliteSnapshot } from '../../shared/types';
 
 // Mock plugin store — need to provide a zustand-compatible getState
@@ -905,6 +906,66 @@ describe('remoteProjectStore', () => {
       const agent = useRemoteProjectStore.getState().remoteAgents['remote||sat-1||new-agent'];
       expect(agent).toBeDefined();
       expect(agent.projectId).toBe('remote||sat-1||proj-1');
+    });
+  });
+
+  describe('helper nesting under a remote orchestrator (#3648)', () => {
+    const orch = { id: 'orch', name: 'lead', kind: 'durable', status: 'running', projectId: 'proj-1', color: 'blue' };
+    const forestOf = () => buildAgentForest(Object.values(useRemoteProjectStore.getState().remoteAgents));
+
+    it('nests durable helpers from a snapshot under their orchestrator', () => {
+      useRemoteProjectStore.getState().applySatelliteSnapshot('sat-1', 'Sat', makeSnapshot({
+        agents: { 'proj-1': [orch, { id: 'h1', name: 'h', kind: 'durable', status: 'running', projectId: 'proj-1', color: 'x', parentAgentId: 'orch' }] as any },
+      }));
+      const forest = forestOf();
+      expect(forest).toHaveLength(1);
+      expect(forest[0].agent.id).toBe('remote||sat-1||orch');
+      expect(forest[0].children.map((c) => c.agent.id)).toEqual(['remote||sat-1||h1']);
+      expect(forest[0].children[0].agent.parentAgentId).toBe('remote||sat-1||orch');
+    });
+
+    it('namespaces the parent of a quick agent added by upsert', () => {
+      const store = useRemoteProjectStore.getState();
+      store.applySatelliteSnapshot('sat-1', 'Sat', makeSnapshot({ agents: { 'proj-1': [orch] as any } }));
+      store.upsertRemoteAgent('sat-1', { id: 'q1', name: 'q', kind: 'quick', status: 'running', projectId: 'proj-1', color: '', parentAgentId: 'orch' } as any);
+      const q = useRemoteProjectStore.getState().remoteAgents['remote||sat-1||q1'];
+      expect(q.parentAgentId).toBe('remote||sat-1||orch');
+    });
+
+    it('nests a durable helper added by upsert under its orchestrator', () => {
+      const store = useRemoteProjectStore.getState();
+      store.applySatelliteSnapshot('sat-1', 'Sat', makeSnapshot({ agents: { 'proj-1': [orch] as any } }));
+      store.upsertRemoteAgent('sat-1', { id: 'h2', name: 'h', kind: 'durable', status: 'running', projectId: 'proj-1', color: '', parentAgentId: 'orch' } as any);
+      const forest = forestOf();
+      expect(forest).toHaveLength(1);
+      expect(forest[0].children).toHaveLength(1);
+    });
+
+    it('falls back to root when the parent is missing', () => {
+      useRemoteProjectStore.getState().applySatelliteSnapshot('sat-1', 'Sat', makeSnapshot({
+        agents: { 'proj-1': [{ id: 'h1', name: 'h', kind: 'durable', status: 'running', projectId: 'proj-1', color: 'x', parentAgentId: 'gone' }] as any },
+      }));
+      const forest = forestOf();
+      expect(forest.map((n) => n.agent.id)).toEqual(['remote||sat-1||h1']);
+    });
+
+    it('keeps a cross-project parent at root', () => {
+      useRemoteProjectStore.getState().applySatelliteSnapshot('sat-1', 'Sat', makeSnapshot({
+        agents: { 'proj-1': [orch, { id: 'h1', name: 'h', kind: 'durable', status: 'running', projectId: 'proj-1', color: 'x', parentAgentId: 'orch', parentProjectPath: '/other' }] as any },
+      }));
+      expect(forestOf().map((n) => n.agent.id).sort()).toEqual(['remote||sat-1||h1', 'remote||sat-1||orch']);
+    });
+
+    it('leaves agents without a parent alone, and local nesting unchanged', () => {
+      useRemoteProjectStore.getState().applySatelliteSnapshot('sat-1', 'Sat', makeSnapshot());
+      expect(useRemoteProjectStore.getState().remoteAgents['remote||sat-1||agent-1']).not.toHaveProperty('parentAgentId');
+      const local = [
+        { id: 'a', kind: 'durable', status: 'running' },
+        { id: 'b', kind: 'durable', status: 'running', parentAgentId: 'a' },
+      ] as any;
+      const forest = buildAgentForest(local);
+      expect(forest).toHaveLength(1);
+      expect(forest[0].children[0].agent.id).toBe('b');
     });
   });
 });
