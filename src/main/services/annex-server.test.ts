@@ -12,6 +12,11 @@ import forgeLib from 'node-forge';
 import net from 'net';
 import { PassThrough } from 'stream';
 import fs from 'fs';
+import * as fsp from 'fs/promises';
+vi.mock('fs/promises', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('fs/promises')>();
+  return { ...actual, mkdir: vi.fn(actual.mkdir), readdir: vi.fn(actual.readdir), writeFile: vi.fn(actual.writeFile), realpath: vi.fn(actual.realpath) };
+});
 import os from 'os';
 import path from 'path';
 import * as nodeCrypto from 'crypto';
@@ -153,6 +158,7 @@ vi.mock('./log-service', () => ({
 
 // Mock project-store
 vi.mock('./project-store', () => ({
+  projectRegistryMutationState: vi.fn(() => ({ generation: 0, pending: false })),
   list: vi.fn().mockReturnValue([]),
   readIconData: vi.fn().mockReturnValue(null),
   iconFilePath: vi.fn(),
@@ -160,8 +166,11 @@ vi.mock('./project-store', () => ({
 }));
 
 // Mock agent-config
-vi.mock('./agent-config', () => ({
-  listDurable: vi.fn().mockReturnValue([]),
+vi.mock('./agent-config', () => {
+  const listDurable = vi.fn().mockReturnValue([]);
+  return {
+  listDurable,
+  peekCachedDurableConfig: (_projectPath: string, id: string) => listDurable(_projectPath).find((config: { id: string }) => config.id === id) ?? null,
   readAgentIconData: vi.fn().mockReturnValue(null),
   agentIconFilePath: vi.fn(),
   createDurable: vi.fn().mockResolvedValue({ id: 'durable_new', name: 'test-agent', color: 'indigo', createdAt: '2025-01-01' }),
@@ -170,7 +179,8 @@ vi.mock('./agent-config', () => ({
   deleteCommitAndPush: vi.fn().mockResolvedValue({ ok: true, message: 'Committed and pushed' }),
   deleteWithCleanupBranch: vi.fn().mockResolvedValue({ ok: true, message: 'Cleanup branch created' }),
   getWorktreeStatus: vi.fn().mockResolvedValue({ isValid: true, branch: 'main', uncommittedFiles: [], unpushedCommits: [], hasRemote: true }),
-}));
+};
+});
 
 // The delete service (#3199): its own tests cover settling helpers and stopping the agent.
 vi.mock('./agent-delete', () => ({
@@ -8818,6 +8828,38 @@ describe('annex-server', () => {
         expect(JSON.parse(sent.body.toString())).toMatchObject({ status: 'completed' });
         expect(sendMessage).toHaveBeenCalledWith([{ type: 'image', mimeType: 'image/png', path: expect.stringContaining('chat-attachments'), name: 'phone-image' }], expect.any(Object));
       } finally { clearChatRuntimes(); }
+    }, 15_000);
+
+    it.each(['stopped', 'replaced', 'disposed', 'removed', 'project-removed'])('P6 attachment %s during real staging readdir refuses before write', async (change) => {
+      await startAndPair(); await bulkLink();
+      vi.mocked(projectStore.list).mockReturnValue([PROJECT] as any);
+      const config = { id: 'a', name: 'agent', color: 'blue', createdAt: '2026-01-01' };
+      vi.mocked(agentConfigModule.listDurable).mockReturnValue([config] as any);
+      let running = true;
+      const runtime = { kind: 'chat', agentId: 'a', isRunning: () => running, getState: () => 'idle', getSessionId: () => 's', getCapabilities: () => ({ images: true }), sendMessage: vi.fn(), readTranscript: async () => ({ events: [] }) };
+      registerChatRuntime(runtime as any);
+      const actual = await vi.importActual<typeof import('fs/promises')>('fs/promises');
+      let release!: () => void; let enter!: () => void;
+      const gate = new Promise<void>((r) => { release = r; });
+      const entered = new Promise<void>((r) => { enter = r; });
+      vi.mocked(fsp.readdir).mockImplementationOnce((async (...args: Parameters<typeof actual.readdir>) => {
+        const result = await actual.readdir(...args); enter(); await gate; return result;
+      }) as typeof fsp.readdir);
+      const writes = vi.mocked(fsp.writeFile).mock.calls.length;
+      const png = Buffer.concat([Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]), Buffer.alloc(32)]);
+      const pending = annexControl.request(MEMBER.fingerprint, { method: 'POST', path: '/api/v1/mobile/agents/a/attachments', headers: { 'content-type': 'image/png' }, body: png });
+      try {
+        await entered;
+        if (change === 'stopped') running = false;
+        else if (change === 'replaced') registerChatRuntime({ ...runtime } as any);
+        else if (change === 'project-removed') vi.mocked(projectStore.projectRegistryMutationState).mockReturnValue({ generation: 1, pending: false });
+        else if (change === 'disposed') vi.mocked(agentConfigModule.listDurable).mockReturnValue([{ ...config, disposedAt: '2026-01-02' }] as any);
+        else vi.mocked(agentConfigModule.listDurable).mockReturnValue([]);
+        release();
+        const result = await pending;
+        expect(result.status).toBe(change === 'stopped' || change === 'replaced' ? 409 : 404);
+        expect(vi.mocked(fsp.writeFile).mock.calls.length).toBe(writes);
+      } finally { release(); clearChatRuntimes(); vi.mocked(projectStore.projectRegistryMutationState).mockReturnValue({ generation: 0, pending: false }); }
     }, 15_000);
 
     it('P6 real file route preserves uncapped text beyond the old control-frame cap', async () => {

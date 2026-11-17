@@ -4645,12 +4645,26 @@ async function handleMobileAttachmentRoute(ctx: AnnexRouteContext, match: RegExp
     const runtime = getAgentRuntime(agentId);
     if (!runtime || runtime.kind !== 'chat' || !runtime.isRunning()) { refuse(409, 'not_chat'); return; }
     if (runtime.getCapabilities?.()?.images !== true) { refuse(409, 'images_not_supported'); return; }
+    const quick = trackedQuickAgents.get(agentId);
+    const projectGeneration = projectStore.projectRegistryMutationState().generation;
+    const registration = info && !isDisposedAgent(info.config) ? { project: info.project, createdAt: info.config.createdAt } : undefined;
     const body = await readCappedBody(ctx.req, CHAT_IMAGE_MAX_BYTES);
     bodyRead = true;
     // A peer can be revoked while its body is streaming.
     if (!authorized()) { refuse(403, 'authorization_revoked'); return; }
     const beforeWrite = () => {
       if (!authorized() || ctx.principal?.via === 'reverse' && !reverseRequestLive(ctx.req)) throw new MobileUploadError('authorization_revoked', 403);
+      // The upload belongs to the exact live runtime and registration resolved
+      // before reading its body. Recheck synchronously inside staging's own awaits.
+      if (getAgentRuntime(agentId) !== runtime || !runtime.isRunning()) throw new MobileUploadError('not_chat', 409);
+      if (runtime.getCapabilities?.()?.images !== true) throw new MobileUploadError('images_not_supported', 409);
+      if (registration) {
+        const projects = projectStore.projectRegistryMutationState();
+        if (projects.pending || projects.generation !== projectGeneration) throw new MobileUploadError('agent_not_found', 404);
+        const current = isDispatcherProjectId(registration.project.id) ? activeDispatcher(agentId)?.config
+          : agentConfig.peekCachedDurableConfig(registration.project.path, agentId);
+        if (!current || isDisposedAgent(current) || current.createdAt !== registration.createdAt) throw new MobileUploadError('agent_not_found', 404);
+      } else if (!quick || trackedQuickAgents.get(agentId) !== quick) throw new MobileUploadError('agent_not_found', 404);
     };
     const result = await mobileAttachments.upload(principal, agentId, body, beforeWrite);
     try { beforeWrite(); } catch (error) { await mobileAttachments.discard(principal, agentId, result.attachmentId); throw error; }

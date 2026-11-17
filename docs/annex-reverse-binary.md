@@ -24,10 +24,22 @@ The existing 16 MiB socket backlog policy still applies to control traffic.
 Every start, chunk, credit, finish and actual deferred socket write rechecks the
 pinned connection's authority. Clipboard transfers additionally require the
 same live subscription at delivery. Cancellation, unsubscription, revocation and
-disconnection discard incomplete transfers. A bounded set of cancelled tokens
-absorbs chunks already in flight. No frame supplies a caller identity. Services
+disconnection discard incomplete transfers. A single per-connection ledger
+reserves every transfer UUID in both directions, retaining its operation id for
+the connection's lifetime after completion, cancellation or failure. Late bytes
+cannot bind to a replacement operation. The ledger never evicts: at 262,144
+UUIDs it closes the connection before admitting another transfer. This bounds
+history while accommodating a maximum 16 GiB handoff's request/response pairs;
+a fresh authenticated connection starts with independent history. No frame supplies a caller identity. Services
 also fence their actual filesystem writes/reads after their own awaits, and
 roll back attachment files if staging loses its caller before publication.
+The attachment fence also retains the exact runtime and durable/quick-agent
+registration across body/staging awaits. Handoff acts check the current record,
+immutable agreement, acceptance, descriptor ownership and request lifetime,
+plus a request-scoped saved-grant revision and policy generation lease.
+Connection, binding and orchestration changes invalidate that lease; secret
+policy revisions are checked at every actual open/read too. Async authorization
+runs after descriptor/path stats, followed by the synchronous act fence.
 
 Limits remain the existing ones: clipboard 10 MiB **base64** (7.5 MiB decoded),
 attachment images 3.75 MiB raw, full events 32 MiB, content's existing 8 MiB

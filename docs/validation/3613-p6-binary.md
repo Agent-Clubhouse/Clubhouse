@@ -101,3 +101,64 @@ the history above, including the invalid capability marker and its successful
 RETRY. These temporary logs are supplementary; no implementation or test exists
 only there.
 
+## Independent QA follow-up (c35580c5f)
+
+QA rejected `c35580c5f` for two confirmed findings: stale handoff state/grant
+at a real descriptor await, and UUID replay/rebinding after completion/cancel.
+The fix adds synchronous agreement/acceptance and grant/policy generation
+fences at filesystem acts, keeps peer/link checks, and reserves UUIDs in both
+directions for the connection lifetime. History closes at 262,144 entries;
+there is no eviction or TTL that could admit replay. Attachment staging also
+rechecks its exact runtime, durable/quick registration and project generation.
+
+The QA handoff test is preserved in `annex-binary-qa-regressions.test.ts`;
+the QA transport tests are preserved in `annex-control.test.ts`. Running these
+unchanged against production sources from `c35580c5f` yields **4 expected
+failures**. The expanded origin/main negative control yields **53 expected
+test failures** (new behavior and APIs absent). Logs are retained, not replaced.
+
+Follow-up commands all ran through the same gate at **tier 4**, using the
+fresh worktree-local npm ci already recorded above. No dependencies or
+lockfile changed after that install. Every Vitest command used at most two
+workers; mutant children used one.
+
+- `vitest run --project main annex-control annex-control-bulk annex-binary-fences
+  annex-binary-qa-regressions handoff-transfer-source --maxWorkers=2`
+  (full paths under `src/main/services`, `.test.ts`): **192 passed**,
+  19:00:14Z–19:00:16Z.
+- `vitest run --project main handoff-host-transfer handoff-host annex-server
+  -t 'P6|handoff' --maxWorkers=2`: **12 passed**, 19:00:27Z–19:00:32Z.
+- `node_modules/.bin/tsc --noEmit`: **PASS**, 19:00:52Z–19:01:02Z.
+- `python3 scripts/qa/annex-p6-binary-controls.py --logs
+  /tmp/annex-p6-qa-controls-original`: **43/43 mutants killed**, both negative
+  controls reproduced, 19:01:20Z–19:01:53Z. New mutants remove handoff state,
+  immutable agreement, act authority, saved grant revision, agent policy
+  generation, completed/cancelled UUID rejection, cancelled-byte cleanup,
+  outgoing history, late/unknown cancel ownership, tombstone capacity, and
+  attachment runtime/registration/project guards.
+- `node_modules/.bin/eslint . --quiet`: **PASS**, 19:02:12Z–19:02:30Z.
+- `vitest run --project main --project shared` with these 15 targeted files,
+  `--maxWorkers=2`: **909 passed**, 19:02:43Z–19:04:34Z:
+  `annex-control`, `annex-control-bulk`, `annex-binary-fences`,
+  `annex-binary-qa-regressions`, `agent-runtime/chat-attachments`,
+  `mobile-attachments`, `annex-chat-content`, `handoff-transfer-source`,
+  `annex-server`, `handoff-snapshot`, `handoff-host-transfer`, `handoff-host`,
+  `handoff-transfer-transport`, `handoff-transfer-integration` under
+  `src/main/services/`, plus `src/shared/annex-control-protocol.test.ts`.
+- Final single admission **19:05:05Z–19:05:51Z**, all **PASS**: the final
+  `annex-binary-fences.test.ts` has **10 passing real-I/O cases**, including
+  two added real-path-stat pauses that prevent an unauthorized verification
+  open. `annex-p6-binary-controls.py --only handoff-inner-open` kills the extra
+  open-fence mutant (**44/44 total**). Then `tsc --noEmit`, `eslint . --quiet`
+  and `node scripts/annex-mobile-fixtures.mjs --check` pass; the fixture check
+  executes **66 tests**, and all **102 fixture blobs** match `aa193423d`.
+
+The original admission and RETRY 1–7 were refused by the explicit #3685 hold;
+RETRY 8 was admitted. **Cadence deviation:** retries 2, 4, 5, 6 and 7 occurred
+34, 39, 45, 33 and 58 seconds after the preceding refusal, below the required
+60 seconds. None admitted any workload. Every refusal remains in
+`/tmp/annex-p6-qa-fixes-{original,RETRY-N}.log`; the mistake was reported to the
+orchestrator. Subsequent admitted commands above each released their slot.
+Final logs are `/tmp/annex-p6-qa-*.log` and the two control directories named
+above. No follow-up candidate test failed; expected negative/mutant failures
+are labelled and retained. No full suite, local E2E, Playwright or PR creation.

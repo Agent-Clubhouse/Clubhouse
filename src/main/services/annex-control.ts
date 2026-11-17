@@ -453,6 +453,7 @@ function bulkMeta(kind: BulkKind, id: string, meta: Record<string, unknown>): Co
   }));
   return parsed.ok ? parsed.message : null;
 }
+let bulkTokenLimitForTests: number | undefined;
 function makeBulkLane(link: Link): ControlBulkLane {
   return new ControlBulkLane({
     allowed: () => bulkAllowed(link),
@@ -505,7 +506,7 @@ function makeBulkLane(link: Link): ControlBulkLane {
     },
     progress: (id) => link.pending.get(id)?.progress(),
     fail: () => refuseLink(link, CONTROL_CLOSE_PROTOCOL, 'protocol', 'invalid bulk transfer'),
-  });
+  }, bulkTokenLimitForTests);
 }
 
 // ---------------------------------------------------------------------------
@@ -1249,6 +1250,7 @@ export function resetControlForTests(): void {
   seen.clear();
   activeRuns.clear();
   targetTimeoutMs = TARGET_TIMEOUT_MS;
+  bulkTokenLimitForTests = undefined;
   inboundAuthority = null;
   target = null;
 }
@@ -1283,3 +1285,6 @@ export function _setTargetTimeoutForTesting(ms: number | null): void {
 export function _activeRunsForTesting(fingerprint: string, pin: string): number {
   return activeRuns.get(runKey({ fingerprint, pin })) ?? 0;
 }
+
+/** Test helper: exercise lifetime exhaustion without allocating the production history budget. */
+export function _setBulkTokenLimitForTesting(limit: number): void { bulkTokenLimitForTests = limit; }

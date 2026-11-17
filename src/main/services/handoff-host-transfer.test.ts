@@ -4,8 +4,10 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
+import { randomUUID } from 'crypto';
+import { transitionHandoff } from '../../shared/handoffs';
 const state = vi.hoisted(() => ({
-  dir: '', sender: '', receiver: '', asleep: true, wake: vi.fn(), onLocate: () => {}, targetMode: 'allow', wakeMode: 'allow', messageMode: 'allow', dispatcherConnected: true, disabledTools: [] as string[], enabledTools: ['wake_agent'] as string[] | undefined, savedDirection: true, bindingEnabled: ['wake_agent'] as string[] | undefined, bindingDisabled: [] as string[], policyRevision: 0, onGrants: (_id: string) => {}, machine: Array(16).fill('ab').join(':'), peer: Array(16).fill('cd').join(':'),
+  dir: '', sender: '', receiver: '', asleep: true, wake: vi.fn(), onLocate: () => {}, targetMode: 'allow', wakeMode: 'allow', messageMode: 'allow', dispatcherConnected: true, disabledTools: [] as string[], enabledTools: ['wake_agent'] as string[] | undefined, savedDirection: true, bindingEnabled: ['wake_agent'] as string[] | undefined, bindingDisabled: [] as string[], grantEpoch: 0, configGeneration: 0, policyRevision: 0, onGrants: (_id: string) => {}, machine: Array(16).fill('ab').join(':'), peer: Array(16).fill('cd').join(':'),
   allowed: true, connected: true, online: true, member: true, accepting: true, running: true,
   send: vi.fn(async (_text: string, _options?: unknown) => ({})), create: vi.fn(), extraAgent: undefined as { id: string; name: string } | undefined, participant: (_id: string) => false, post: vi.fn(),
 }));
@@ -18,13 +20,13 @@ vi.mock('./annex-client', () => ({ getSatellite: () => ({ snapshot: { dispatcher
 vi.mock('./annex-agent-calls', () => ({ isNetworkComputer: () => state.member }));
 vi.mock('./agent-registry', () => ({ agentRegistry: { get: () => undefined } }));
 vi.mock('./agent-runtime', () => ({ getAgentRuntime: () => ({ isRunning: () => state.running, sendMessage: state.send }) }));
-vi.mock('./agent-config', () => ({ listDurable: async (project: string) => { state.onLocate(); return project === state.receiver ? [{ id: 'receiver', name: 'Receiver' }] : [{ id: 'sender', name: 'Sender' }]; }, peekDurableConfigs: async (project: string) => project === state.sender ? [{ id: 'sender', name: 'Sender' }] : [{ id: 'receiver', name: 'Receiver' }] }));
+vi.mock('./agent-config', () => ({ agentConfigGeneration: () => state.configGeneration, listDurable: async (project: string) => { state.onLocate(); return project === state.receiver ? [{ id: 'receiver', name: 'Receiver' }] : [{ id: 'sender', name: 'Sender' }]; }, peekDurableConfigs: async (project: string) => project === state.sender ? [{ id: 'sender', name: 'Sender' }] : [{ id: 'receiver', name: 'Receiver' }] }));
 vi.mock('./project-store', () => ({ list: async () => [{ id: 'destination-project', path: state.receiver }], peekProjects: async () => [{ id: 'source-project', name: 'Source', path: state.sender }, { id: 'destination-project', name: 'Destination', path: state.receiver }] }));
 vi.mock('./dispatcher/dispatcher-service', () => ({ getDispatcherState: () => ({ enabled: true, agentId: 'dispatcher', path: state.dir, config: { name: 'Dispatcher' } }), isDispatcherAgentId: (id: string) => id === 'dispatcher' }));
-vi.mock('./agent-grants-store', () => ({ getAgentGrantChanges: () => ({ revision: state.policyRevision }) }));
+vi.mock('./agent-grants-store', () => ({ getAgentGrantRevision: () => String(state.grantEpoch), getAgentGrantChanges: () => ({ revision: state.policyRevision }) }));
 vi.mock('./agent-grants-service', () => ({ effectiveAgentGrants: async (_project: string, id: string) => { const grants = state.allowed ? [{ action: 'handoff.offer', target: { kind: 'any' }, mode: 'allow' }, ...(id !== 'receiver' || state.targetMode !== 'off' ? [{ action: 'handoff.accept', target: { kind: 'any' }, mode: id === 'receiver' ? state.targetMode : 'allow' }] : []), { action: 'agent.wake', target: { kind: 'any' }, mode: state.wakeMode }, { action: 'agent.message', target: { kind: 'any' }, mode: state.messageMode }] : []; await Promise.resolve(); state.onGrants(id); return grants; } }));
-vi.mock('./connection-grants-store', async () => { const { localWakeOn } = await import('../../shared/connection-grants'); return { localConnectionWakeOn: () => state.savedDirection ? localWakeOn({ disabledTools: state.disabledTools, enabledTools: state.enabledTools }) : localWakeOn(undefined, state.bindingEnabled) && !state.bindingDisabled.includes('wake_agent'), getConnectionDirection: (from: { agentId: string }, to: { agentId: string }) => state.connected && !(from.agentId === 'dispatcher' && (!state.savedDirection || to.agentId === 'receiver' && !state.dispatcherConnected)) ? { link: true, disabledTools: from.agentId === 'dispatcher' ? state.disabledTools : [], enabledTools: state.enabledTools } : undefined }; });
-vi.mock('./clubhouse-mcp/binding-manager', () => ({ bindingManager: { getAllBindings: () => [], getBindingsForAgent: (id: string) => id === 'dispatcher' && !state.savedDirection ? [{ targetKind: 'agent', targetId: 'receiver', enabledTools: state.bindingEnabled, disabledTools: state.bindingDisabled }] : [] } }));
+vi.mock('./connection-grants-store', async () => { const { localWakeOn } = await import('../../shared/connection-grants'); return { onConnectionGrantsChanged: () => () => {}, localConnectionWakeOn: () => state.savedDirection ? localWakeOn({ disabledTools: state.disabledTools, enabledTools: state.enabledTools }) : localWakeOn(undefined, state.bindingEnabled) && !state.bindingDisabled.includes('wake_agent'), getConnectionDirection: (from: { agentId: string }, to: { agentId: string }) => state.connected && !(from.agentId === 'dispatcher' && (!state.savedDirection || to.agentId === 'receiver' && !state.dispatcherConnected)) ? { link: true, disabledTools: from.agentId === 'dispatcher' ? state.disabledTools : [], enabledTools: state.enabledTools } : undefined }; });
+vi.mock('./clubhouse-mcp/binding-manager', () => ({ bindingManager: { onChange: () => () => {}, getAllBindings: () => [], getBindingsForAgent: (id: string) => id === 'dispatcher' && !state.savedDirection ? [{ targetKind: 'agent', targetId: 'receiver', enabledTools: state.bindingEnabled, disabledTools: state.bindingDisabled }] : [] } }));
 vi.mock('./clubhouse-mcp/grant-check', () => ({ callerGrants: () => [] }));
 vi.mock('./clubhouse-mcp/tool-registry', () => ({ callTool: (...args: unknown[]) => state.create(...args), setHandoffParticipantCheck: (check: (id: string) => boolean) => { state.participant = check; } }));
 vi.mock('./clubhouse-mcp/handoff-permissions', () => ({ handoffAgreementCallApproved: async () => state.allowed }));
@@ -39,7 +41,7 @@ beforeEach(async () => {
   state.dir = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'handoff-live-host-'))); state.sender = path.join(state.dir, 'source'); state.receiver = path.join(state.dir, 'destination'); state.asleep = true;
   const config = path.join(state.dir, 'empty-config'); fs.writeFileSync(config, ''); vi.stubEnv('GIT_CONFIG_GLOBAL', config); vi.stubEnv('GIT_CONFIG_SYSTEM', config); vi.stubEnv('GIT_CONFIG_NOSYSTEM', '0');
   _resetHandoffPreparationsForTesting(); vi.clearAllMocks();
-  state.targetMode = state.wakeMode = state.messageMode = 'allow'; state.dispatcherConnected = true; state.disabledTools = []; state.enabledTools = ['wake_agent']; state.savedDirection = true; state.bindingEnabled = ['wake_agent']; state.bindingDisabled = []; state.policyRevision = 0; state.onGrants = () => {}; state.onLocate = () => {};
+  state.targetMode = state.wakeMode = state.messageMode = 'allow'; state.dispatcherConnected = true; state.disabledTools = []; state.enabledTools = ['wake_agent']; state.savedDirection = true; state.bindingEnabled = ['wake_agent']; state.bindingDisabled = []; state.policyRevision = 0; state.configGeneration = 0; state.grantEpoch = 0; state.onGrants = () => {}; state.onLocate = () => {};
   state.wake.mockImplementation(async () => { state.asleep = false; });
   fs.mkdirSync(state.sender); await git(state.sender, 'init', '-b', 'main'); await git(state.sender, 'config', 'user.name', 'Fixture'); await git(state.sender, 'config', 'user.email', 'test@example.invalid');
   fs.writeFileSync(path.join(state.sender, 'work.txt'), 'base'); fs.writeFileSync(path.join(state.sender, '.gitignore'), '.clubhouse/\n');
@@ -151,4 +153,37 @@ it.each(['message-switch', 'wake-switch', 'target-grant'])('rejects %s revoked d
   });
   await f.accept(); await vi.waitFor(() => expect(f.host.store.get(f.offered.id)?.state).toBe('failed'), { timeout: 15_000 });
   expect(state.wake).toHaveBeenCalledTimes(1); expect(briefDelivered()).toBe(false);
+}, 30_000);
+
+// Real host + real preparation/snapshot/descriptors; only the saved grant
+// fixture is controlled. Revoke-and-restore must invalidate the old lease.
+it.each(['grant-generation', 'agent-policy-generation'])('P6 host %s changed during a real stat prevents descriptor read', async (reason) => {
+  const prepared = await prepareCallerHandoff('sender', 'worktree');
+  const host = handoffHost(); await host.ready;
+  const offered = await host.coordinator.offer({ to: { machine: state.peer, agentId: 'remote' }, task: { title: 'Continue', brief: 'Finish' }, mode: 'worktree', manifest: prepared.summary }, localHandoffAgent('sender'));
+  const receiver = { machine: state.peer, agentId: 'remote' };
+  await host.store.transact(offered.id, (record) => transitionHandoff(record!, { state: 'accepted', by: { kind: 'agent', address: receiver }, target: receiver, at: Date.now(), operationId: randomUUID() }, record!.version));
+  const handles: import('fs/promises').FileHandle[] = [];
+  const open = fs.promises.open.bind(fs.promises);
+  const openSpy = vi.spyOn(fs.promises, 'open').mockImplementation(async (...args) => { const handle = await open(...args); handles.push(handle); return handle; });
+  const request = { op: 'read', id: offered.id, file: 0, offset: 0 };
+  try {
+    await host.transfer.receive(state.peer, request);
+    const pinned = handles.at(-1)!;
+    const stat = pinned.stat.bind(pinned);
+    let release!: () => void; let enter!: () => void;
+    const gate = new Promise<void>((r) => { release = r; });
+    const entered = new Promise<void>((r) => { enter = r; });
+    const statSpy = vi.spyOn(pinned, 'stat').mockImplementationOnce((async (...args: unknown[]) => {
+      const result = await (stat as (...args: unknown[]) => Promise<unknown>)(...args); enter(); await gate; return result;
+    }) as any);
+    const read = vi.spyOn(pinned, 'read');
+    const pending = host.transfer.receive(state.peer, request).catch((e) => e);
+    await entered;
+    if (reason === 'grant-generation') state.grantEpoch++;
+    else state.configGeneration++;
+    release();
+    expect((await pending) instanceof Error).toBe(true); expect(read).not.toHaveBeenCalled();
+    statSpy.mockRestore(); read.mockRestore();
+  } finally { openSpy.mockRestore(); }
 }, 30_000);

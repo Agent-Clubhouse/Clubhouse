@@ -1267,3 +1267,110 @@ it('P6 bulk progress refreshes request inactivity without extending unrelated re
   await vi.advanceTimersByTimeAsync(20); await flush();
   expect((await result).body.length).toBe(100000);
 });
+
+it('QA adversarial: a completed clipboard transfer UUID cannot be replayed', async () => {
+  const { createHash } = await import('crypto');
+  const { targetWs } = await connected();
+  const sub = control.subscribe(TARGET, { onFrame: () => {}, onEnd: () => {} });
+  await flush();
+  const transfer = '00000000-0000-4000-8000-000000000001';
+  const start = { v: 1, type: 'bulk', op: 'start', transfer, id: sub.id, kind: 'client', size: 4, meta: { frame: { type: 'clipboard:image', payload: { agentId: 'a', mimeType: 'image/png' } } } };
+  const bytes = Buffer.alloc(44); bytes.write(transfer, 0, 36); bytes.writeUInt32BE(0, 36); bytes.write('YQ==', 40);
+  const finish = { v: 1, type: 'bulk', op: 'finish', transfer, id: sub.id, digest: createHash('sha256').update('YQ==').digest('hex') };
+  targetWs.deliver(start); targetWs.emit('message', bytes, true); targetWs.deliver(finish);
+  expect(served[0].receive).toHaveBeenCalledTimes(1);
+  targetWs.deliver(start); targetWs.emit('message', bytes, true); targetWs.deliver(finish);
+  expect(served[0].receive).toHaveBeenCalledTimes(1);
+});
+
+it('QA adversarial: a cancelled UUID cannot rebind old bytes to a new operation', async () => {
+  const { createHash } = await import('crypto');
+  const { targetWs } = await connected();
+  const transfer = '00000000-0000-4000-8000-000000000001';
+  const start = { v: 1, type: 'bulk', op: 'start', transfer, id: 'old-op', kind: 'request', size: 1, meta: { method: 'GET', path: '/x' } };
+  targetWs.deliver(start);
+  targetWs.deliver({ ...start, op: 'cancel' });
+  targetWs.deliver({ ...start, id: 'new-op' });
+  const bytes = Buffer.alloc(41); bytes.write(transfer, 0, 36); bytes.writeUInt32BE(0, 36); bytes.write('a', 40);
+  targetWs.emit('message', bytes, true);
+  targetWs.deliver({ v: 1, type: 'bulk', op: 'finish', transfer, id: 'new-op', digest: createHash('sha256').update('a').digest('hex') });
+  await flush();
+  expect(dispatch).not.toHaveBeenCalled();
+});
+
+function clipboardTransfer(transfer: string, id: string, text = 'YQ==') {
+  const start = { v: 1, type: 'bulk', op: 'start', transfer, id, kind: 'client', size: text.length, meta: { frame: { type: 'clipboard:image', payload: { agentId: 'a', mimeType: 'image/png' } } } };
+  const bytes = Buffer.alloc(40 + text.length); bytes.write(transfer, 0, 36); bytes.writeUInt32BE(0, 36); bytes.write(text, 40);
+  return { start, bytes };
+}
+it.each(['completed', 'cancelled'])('P6 late chunks and cancels for a %s UUID never dispatch or damage a fresh transfer', async (state) => {
+  const { createHash, randomUUID } = await import('crypto');
+  const { targetWs } = await connected();
+  const sub = control.subscribe(TARGET, { onFrame: () => {}, onEnd: () => {} }); await flush();
+  const old = clipboardTransfer(randomUUID(), sub.id);
+  const finish = { v: 1, type: 'bulk', op: 'finish', transfer: old.start.transfer, id: sub.id, digest: createHash('sha256').update('YQ==').digest('hex') };
+  targetWs.deliver(old.start);
+  if (state === 'completed') { targetWs.emit('message', old.bytes, true); targetWs.deliver(finish); }
+  else targetWs.deliver({ ...old.start, op: 'cancel' });
+  targetWs.emit('message', old.bytes, true); targetWs.deliver(finish); targetWs.deliver({ ...old.start, op: 'cancel' });
+  expect(served[0].receive).toHaveBeenCalledTimes(state === 'completed' ? 1 : 0);
+  const fresh = clipboardTransfer(randomUUID(), sub.id);
+  targetWs.deliver(fresh.start); targetWs.emit('message', fresh.bytes, true);
+  targetWs.deliver({ ...finish, transfer: fresh.start.transfer });
+  expect(targetWs.closed).toBeNull();
+  expect(served[0].receive).toHaveBeenCalledTimes(state === 'completed' ? 2 : 1);
+});
+it('P6 used UUIDs from the opposite direction cannot become incoming transfers', async () => {
+  const { targetWs } = await connected();
+  handler = async () => ({ status: 200, headers: {}, body: Buffer.from('a') });
+  await control.request(TARGET, { method: 'GET', path: '/api/v1/icons/agents/a' });
+  const outbound = sentOfType(targetWs, 'bulk').find((f) => f.op === 'start')!;
+  const sub = control.subscribe(TARGET, { onFrame: () => {}, onEnd: () => {} }); await flush();
+  targetWs.deliver(clipboardTransfer(outbound.transfer as string, sub.id).start);
+  expect(targetWs.closed?.code).toBe(CONTROL_CLOSE_PROTOCOL);
+  expect(served[0].receive).not.toHaveBeenCalled();
+});
+it('P6 lifetime tombstone capacity closes without evicting history', async () => {
+  const { createHash, randomUUID } = await import('crypto');
+  control._setBulkTokenLimitForTesting(3);
+  const { targetWs } = await connected();
+  const sub = control.subscribe(TARGET, { onFrame: () => {}, onEnd: () => {} }); await flush();
+  for (let i = 0; i < 3; i++) {
+    const start = clipboardTransfer(randomUUID(), sub.id, '').start;
+    targetWs.deliver(start);
+    targetWs.deliver({ ...start, op: 'finish', digest: createHash('sha256').update('').digest('hex') });
+  }
+  expect(served[0].receive).toHaveBeenCalledTimes(3);
+  targetWs.deliver(clipboardTransfer(randomUUID(), sub.id).start);
+  expect(targetWs.closed?.code).toBe(CONTROL_CLOSE_PROTOCOL);
+  expect(served[0].receive).toHaveBeenCalledTimes(3);
+});
+it('P6 a fresh connection has isolated UUID history and old socket bytes cannot reach it', async () => {
+  const { createHash, randomUUID } = await import('crypto');
+  const old = await connected();
+  const sub = control.subscribe(TARGET, { onFrame: () => {}, onEnd: () => {} }); await flush();
+  const transfer = clipboardTransfer(randomUUID(), sub.id);
+  old.targetWs.deliver(transfer.start); old.targetWs.deliver({ ...transfer.start, op: 'cancel' });
+  old.targetWs.close(1001, 'reconnect'); await flush();
+  const next = await connected();
+  const current = control.subscribe(TARGET, { onFrame: () => {}, onEnd: () => {} }); await flush();
+  old.targetWs.emit('message', transfer.bytes, true);
+  const fresh = clipboardTransfer(transfer.start.transfer, current.id);
+  next.targetWs.deliver(fresh.start); next.targetWs.emit('message', fresh.bytes, true);
+  next.targetWs.deliver({ ...fresh.start, op: 'finish', digest: createHash('sha256').update('YQ==').digest('hex') });
+  expect(served[0].receive).not.toHaveBeenCalled(); expect(served[1].receive).toHaveBeenCalledOnce();
+  expect(next.targetWs.closed).toBeNull();
+});
+
+it.each(['unknown', 'wrong-operation'])('P6 late cancel %s cannot alter UUID ownership', async (reason) => {
+  const { createHash, randomUUID } = await import('crypto');
+  const { targetWs } = await connected();
+  const sub = control.subscribe(TARGET, { onFrame: () => {}, onEnd: () => {} }); await flush();
+  const transfer = clipboardTransfer(randomUUID(), sub.id);
+  if (reason === 'wrong-operation') {
+    targetWs.deliver(transfer.start); targetWs.emit('message', transfer.bytes, true);
+    targetWs.deliver({ ...transfer.start, op: 'finish', digest: createHash('sha256').update('YQ==').digest('hex') });
+  }
+  targetWs.deliver({ ...transfer.start, op: 'cancel', id: 'foreign' });
+  expect(targetWs.closed?.code).toBe(CONTROL_CLOSE_PROTOCOL);
+});

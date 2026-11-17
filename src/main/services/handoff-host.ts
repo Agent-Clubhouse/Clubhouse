@@ -1,4 +1,4 @@
-import { getAgentGrantChanges } from './agent-grants-store';
+import { getAgentGrantChanges, getAgentGrantRevision } from './agent-grants-store';
 import { localDirectionTools } from '../../shared/connection-grants';
 import { deliverNow } from './clubhouse-mcp/tools/helper-delivery';
 import { handoffProjectsLinked } from './handoff-project-links';
@@ -26,13 +26,13 @@ import * as annexClient from './annex-client';
 import { isNetworkComputer } from './annex-agent-calls';
 import { agentRegistry } from './agent-registry';
 import { getAgentRuntime } from './agent-runtime';
-import { peekDurableConfigs } from './agent-config';
+import { agentConfigGeneration, peekDurableConfigs } from './agent-config';
 import { peekProjects } from './project-store';
 import { getDispatcherState, isDispatcherAgentId } from './dispatcher/dispatcher-service';
 import { effectiveAgentGrants } from './agent-grants-service';
-import { getConnectionDirection, localConnectionWakeOn } from './connection-grants-store';
+import { getConnectionDirection, localConnectionWakeOn, onConnectionGrantsChanged } from './connection-grants-store';
 import { bindingManager } from './clubhouse-mcp/binding-manager';
-import { notifyToolGateChange } from './clubhouse-mcp/orchestration-gate';
+import { notifyToolGateChange, onOrchestrationGateChange } from './clubhouse-mcp/orchestration-gate';
 import { callerGrants } from './clubhouse-mcp/grant-check';
 import { callTool, setHandoffParticipantCheck } from './clubhouse-mcp/tool-registry';
 import { handoffAgreementCallApproved } from './clubhouse-mcp/handoff-permissions';
@@ -189,6 +189,31 @@ function grantPolicyStamp(agents: HandoffAgent[]): string {
   return JSON.stringify(agents.filter((agent) => agent.machine === ownMachine()).map((agent) => [agent.agentId, getAgentGrantChanges(agent.agentId)]));
 }
 
+/** Per-operation lease, captured before asynchronous authorization/verification.
+ * Revisions detect revoke-and-restore; notifications invalidate connection and
+ * orchestration policy too. Disposal follows actual work, including timeouts. */
+function transferAuthority(record: Handoff, peer: string) {
+  const agents = [record.from, ...(record.acceptance ? [record.acceptance.by, record.acceptance.target] : [])];
+  const localIds = new Set(agents.filter((a) => a.machine === ownMachine()).map((a) => a.agentId));
+  const stamp = () => JSON.stringify([agentConfigGeneration(), grantPolicyStamp(agents),
+    [...localIds].map((id) => getAgentGrantRevision(id)), getDispatcherState().enabled, getDispatcherState().agentId]);
+  const expected = stamp();
+  let changed = false;
+  const off = [onConnectionGrantsChanged(() => { changed = true; }),
+    bindingManager.onChange(() => { changed = true; }),
+    onOrchestrationGateChange((id) => { if (localIds.has(id)) changed = true; })];
+  return {
+    check: () => {
+      if (changed || stamp() !== expected || peer !== ownMachine() && !isNetworkComputer(peer)
+        || record.to.machine !== ownMachine() && !isNetworkComputer(record.to.machine)
+        || record.from.machine !== ownMachine() && (!isNetworkComputer(record.from.machine) || !acceptsRemote())
+        || 'agentId' in record.to && !(record.to.machine === ownMachine() && isDispatcherAgentId(record.to.agentId))
+          && !hasConnection(record.from, record.to)) throw new HandoffAuthorizationChanged();
+    },
+    dispose: () => { for (const unsubscribe of off) unsubscribe(); },
+  };
+}
+
 async function authorizeSelectedTarget(record: Handoff, by: HandoffAgent, target: HandoffAgent): Promise<() => boolean> {
   if (sameHandoffAgent(by, target)) return () => true; // The receiver consumed its own exact approval.
   const machine = ownMachine();
@@ -297,7 +322,7 @@ export function handoffHost(): Host {
     },
   });
   const transfer = new HandoffTransferSource({
-    machine, record: (id) => store.get(id), prepared: preparedSourceForRecord,
+    machine, record: (id) => store.get(id), prepared: preparedSourceForRecord, authority: transferAuthority,
     authorize: async (record, peer) => {
       if (peer !== machine && !isNetworkComputer(peer)
         || !await authorize({ record, actor: record.from, action: 'handoff.offer', stage: 'transferring' })) throw new Error('Handoff transfer unavailable.');

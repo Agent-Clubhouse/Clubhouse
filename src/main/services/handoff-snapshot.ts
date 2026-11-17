@@ -772,9 +772,9 @@ export async function openHandoffSnapshotArtifact(options: {
     handle = await fs.promises.open(path.join(root.root, name), fs.constants.O_RDONLY | (fs.constants.O_NOFOLLOW ?? 0) | (fs.constants.O_NONBLOCK ?? 0));
     const pinned = handle;
     const check = async () => {
-      await options.authorize(); options.policy?.assertCurrent();
       const current = await sourceStat(root, name);
       if (!current || stamp(current) !== stamp(stat) || stamp(await pinned.stat({ bigint: true })) !== stamp(stat)) throw new HandoffSnapshotError('source_changed', name);
+      await options.authorize(); options.policy?.assertCurrent();
     };
     await check(); await options.policy?.recordUse(options.handoffId, options.side ?? 'sender'); await check();
     return {
@@ -787,7 +787,7 @@ export async function openHandoffSnapshotArtifact(options: {
           const bytes = Buffer.alloc(Math.min(maximum, artifact.size - offset));
           let position = 0;
           while (position < bytes.length) {
-            beforeRead();
+            beforeRead(); options.policy?.assertCurrent();
             const { bytesRead } = await pinned.read(bytes, position, bytes.length - position, offset + position);
             if (!bytesRead) throw new HandoffSnapshotError('source_changed', name);
             position += bytesRead;

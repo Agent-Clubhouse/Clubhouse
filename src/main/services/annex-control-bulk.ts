@@ -10,6 +10,9 @@ import type { ControlMessage } from '../../shared/annex-control-protocol';
 export const BULK_CHUNK_BYTES = 64 * 1024;
 export const BULK_MAX_TRANSFERS = 4;
 export const BULK_IDLE_MS = 30_000;
+// Never evict a used UUID on a live connection. Exhaustion closes the lane,
+// rather than allowing replay. Enough for >16 GiB in 256 KiB handoff reads.
+export const BULK_MAX_USED_TOKENS = 262_144;
 const HEADER_BYTES = 40; // UUID (36 ASCII bytes), sequence (uint32 BE).
 type Frame = Extract<ControlMessage, { type: 'bulk' }>;
 export type BulkKind = 'request' | 'response' | 'client';
@@ -35,8 +38,12 @@ export interface BulkHooks {
 export class ControlBulkLane {
   private readonly incoming = new Map<string, Receiving>();
   private readonly outgoing = new Map<string, Sending>();
-  private readonly cancelled = new Set<string>();
-  constructor(private readonly hooks: BulkHooks) {}
+  private readonly used = new Map<string, string>();
+  constructor(private readonly hooks: BulkHooks, private readonly maxUsedTokens = BULK_MAX_USED_TOKENS) {}
+  private reserve(token: string, id: string): boolean {
+    if (this.used.has(token) || this.used.size >= this.maxUsedTokens) { this.hooks.fail(); return false; }
+    this.used.set(token, id); return true;
+  }
   private frame(t: Transfer, op: Frame['op']): Frame { return { v: 1, type: 'bulk', op, transfer: t.token, id: t.id }; }
   private timer(token: string): ReturnType<typeof setTimeout> {
     const timer = setTimeout(() => { this.cancelToken(token); this.hooks.fail(); }, BULK_IDLE_MS);
@@ -44,10 +51,9 @@ export class ControlBulkLane {
   }
   private touch(t: Transfer): void { clearTimeout(t.timer); t.timer = this.timer(t.token); }
   private cancelToken(token: string): void {
-    this.cancelled.add(token);
-    if (this.cancelled.size > 64) this.cancelled.delete(this.cancelled.values().next().value!);
+    if (!this.used.has(token)) return;
     const incoming = this.incoming.get(token);
-    if (incoming) { clearTimeout(incoming.timer); this.incoming.delete(token); }
+    if (incoming) { clearTimeout(incoming.timer); incoming.chunks.length = 0; this.incoming.delete(token); }
     const outgoing = this.outgoing.get(token);
     if (outgoing) { clearTimeout(outgoing.timer); this.outgoing.delete(token); outgoing.done(); }
   }
@@ -60,6 +66,7 @@ export class ControlBulkLane {
   send(kind: BulkKind, id: string, meta: Record<string, unknown>, body: Buffer, done: () => void = () => {}): boolean {
     if (this.outgoing.size >= BULK_MAX_TRANSFERS || !this.hooks.allowed()) return false;
     const token = randomUUID();
+    if (!this.reserve(token, id)) return false;
     const t: Sending = { token, id, kind, meta, body, size: body.length, offset: 0, seq: 0, hash: createHash('sha256'), timer: this.timer(token), credit: false, pumping: false, writing: false, done };
     this.outgoing.set(token, t);
     if (!this.hooks.send({ ...this.frame(t, 'start'), kind, meta, size: t.size })) { this.cancelToken(token); return false; }
@@ -68,6 +75,7 @@ export class ControlBulkLane {
   receive(frame: Frame): void {
     if (!this.hooks.allowed()) return;
     if (frame.op === 'start') {
+      if (!this.reserve(frame.transfer, frame.id)) return;
       if (Buffer.byteLength(JSON.stringify(frame.meta)) > 16 * 1024) { this.hooks.fail(); return; }
       if (this.incoming.has(frame.transfer) || this.incoming.size >= BULK_MAX_TRANSFERS
         || frame.kind !== 'client' && [...this.incoming.values()].some((t) => t.id === frame.id)) { this.hooks.fail(); return; }
@@ -82,10 +90,12 @@ export class ControlBulkLane {
       this.hooks.send(this.frame(t, 'credit')); return;
     }
     const t = frame.op === 'credit' ? this.outgoing.get(frame.transfer) : this.incoming.get(frame.transfer);
-    // A cancel may refer to either direction. Unknown tokens can race cancellation.
+    // A cancel may refer to either direction; retained owners cover late cancels.
     if (frame.op === 'cancel') {
-      const owned = this.incoming.get(frame.transfer) ?? this.outgoing.get(frame.transfer);
-      if (owned && owned.id !== frame.id) { this.hooks.fail(); return; }
+      const owner = this.used.get(frame.transfer);
+      if (owner !== undefined && owner !== frame.id) { this.hooks.fail(); return; }
+      // Unknown cancels cannot pre-bind a future start or allocate history.
+      if (owner === undefined) { this.hooks.fail(); return; }
       this.cancelToken(frame.transfer); return;
     }
     if (!t) return;
@@ -111,7 +121,7 @@ export class ControlBulkLane {
     if (bytes.length < HEADER_BYTES || bytes.length > HEADER_BYTES + BULK_CHUNK_BYTES) { this.hooks.fail(); return; }
     const token = bytes.toString('ascii', 0, 36);
     const t = this.incoming.get(token);
-    if (!t) { if (!this.cancelled.has(token)) this.hooks.fail(); return; }
+    if (!t) { if (!this.used.has(token)) this.hooks.fail(); return; }
     const body = bytes.subarray(HEADER_BYTES);
     if (!t.credit || !body.length || bytes.readUInt32BE(36) !== t.seq || body.length !== Math.min(BULK_CHUNK_BYTES, t.size - t.offset)
       || !this.hooks.accept(t.kind, t.id, t.meta, t.size)) { this.hooks.fail(); return; }

@@ -31,7 +31,7 @@ mutants = [
  ('admission', bulk, '!this.hooks.accept(frame.kind!, frame.id, frame.meta!, frame.size!)', 'false', unit, 'checks admission'),
  ('sequence', bulk, 'bytes.readUInt32BE(36) !== t.seq', 'false', unit, 'invalid binary sequence'),
  ('size', bulk, 'body.length !== Math.min(BULK_CHUNK_BYTES, t.size - t.offset)', 'false', unit, 'invalid binary size'),
- ('token', bulk, 'if (!this.cancelled.has(token)) this.hooks.fail();', '', unit, 'invalid binary token'),
+ ('token', bulk, 'if (!this.used.has(token)) this.hooks.fail();', '', unit, 'invalid binary token'),
  ('digest', bulk, "receiving.hash.digest('hex') !== frame.digest", 'false', unit, 'final digest'),
  ('final-length', bulk, 'receiving.offset !== receiving.size', 'false', unit, 'final length'),
  ('final-owner', bulk, '!this.hooks.accept(receiving.kind, receiving.id, receiving.meta, receiving.size)', 'false', unit, 'final owner'),
@@ -53,7 +53,23 @@ mutants = [
  ('response-digest-required', control, "message.type === 'response' && message.status >= 200 && message.status < 300 && link.features?.has('bulk') && binaryPath(pending.path)", 'false', transport, 'bypass the digest with a legacy successful JSON answer'),
  ('inactivity-progress', control, 'progress: (id) => link.pending.get(id)?.progress()', 'progress: () => {}', transport, 'bulk progress refreshes request inactivity'),
  ('actual-work-slot', source, 'if (work) void work.then(release, release); else release();', 'release();', 'src/main/services/handoff-transfer-source.test.ts', 'retains a timed-out request slot'),
- ('handoff-inner-read', snapshot, '          beforeRead();', '', fences, 'real handoff descriptor stat await'),
+ ('handoff-inner-open', snapshot, '  beforeRead();\n  const handle = await fs.promises.open', '  const handle = await fs.promises.open', fences, 'real handoff path stat await'),
+ ('handoff-inner-read', snapshot, '          beforeRead();', '', fences, 'real handoff descriptor stat await: peer-revoked'),
+ ('handoff-state', source, "!['offered', 'accepted', 'transferring'].includes(record.state)\n      || content && (!record.acceptance || !['accepted', 'transferring'].includes(record.state))", 'content && !record.acceptance', fences, 'real handoff descriptor stat await: cancelled'),
+ ('handoff-domain-binding', source, 'this.binding(record, content) !== binding', 'false', fences, 'real handoff descriptor stat await: target-changed|real handoff descriptor stat await: agreement-changed'),
+ ('handoff-authority-act', source, 'authority?.check();', '', fences, 'real handoff descriptor stat await: grant-generation|real handoff descriptor stat await: policy-generation'),
+ ('handoff-grant-generation', 'src/main/services/handoff-host.ts', '[...localIds].map((id) => getAgentGrantRevision(id))', '[]', 'src/main/services/handoff-host-transfer.test.ts', 'P6 host grant-generation'),
+ ('handoff-policy-generation', 'src/main/services/handoff-host.ts', 'JSON.stringify([agentConfigGeneration(), grantPolicyStamp(agents)', 'JSON.stringify([0, grantPolicyStamp(agents)', 'src/main/services/handoff-host-transfer.test.ts', 'P6 host agent-policy-generation'),
+ ('consumed-token', bulk, 'this.used.has(token) || this.used.size >= this.maxUsedTokens', 'this.used.size >= this.maxUsedTokens', transport, 'QA adversarial: a completed'),
+ ('cancelled-token', bulk, 'this.used.has(token) || this.used.size >= this.maxUsedTokens', 'this.used.size >= this.maxUsedTokens', transport, 'QA adversarial: a cancelled'),
+ ('cancelled-bytes', bulk, 'if (incoming) { clearTimeout(incoming.timer); incoming.chunks.length = 0; this.incoming.delete(token); }', '', transport, 'late chunks and cancels for a cancelled'),
+ ('outgoing-history', bulk, '    if (!this.reserve(token, id)) return false;', '', transport, 'used UUIDs from the opposite direction'),
+ ('late-cancel-owner', bulk, 'owner !== undefined && owner !== frame.id', 'false', transport, 'P6 late cancel wrong-operation'),
+ ('unknown-cancel', bulk, 'if (owner === undefined) { this.hooks.fail(); return; }', 'if (owner === undefined) return;', transport, 'P6 late cancel unknown'),
+ ('attachment-project', 'src/main/services/annex-server.ts', 'projects.pending || projects.generation !== projectGeneration', 'false', 'src/main/services/annex-server.test.ts', 'P6 attachment project-removed'),
+ ('history-bound', bulk, 'this.used.size >= this.maxUsedTokens', 'false', transport, 'lifetime tombstone capacity'),
+ ('attachment-runtime', 'src/main/services/annex-server.ts', 'getAgentRuntime(agentId) !== runtime || !runtime.isRunning()', 'false', 'src/main/services/annex-server.test.ts', 'P6 attachment stopped|P6 attachment replaced'),
+ ('attachment-registration', 'src/main/services/annex-server.ts', '!current || isDisposedAgent(current) || current.createdAt !== registration.createdAt', 'false', 'src/main/services/annex-server.test.ts', 'P6 attachment disposed|P6 attachment removed'),
 ]
 paths = [bulk, control, stage, snapshot, source, 'src/main/services/annex-server.ts', 'src/main/services/mobile-attachments.ts', 'src/main/services/handoff-host.ts', 'src/main/services/annex-chat-content.ts', 'src/shared/annex-control-protocol.ts']
 original = {p: (root / p).read_bytes() for p in paths}
@@ -74,6 +90,11 @@ try:
             if p == bulk: continue
             (root / p).write_bytes(subprocess.check_output(['git', 'show', 'origin/main:' + p], cwd=root))
         ok = run('negative-main', [transport, fences, staging], 'P6|binary bulk lane') and ok
+        for p, content in original.items(): (root / p).write_bytes(content)
+    if args.only in (None, 'qa-baseline'):
+        for p in paths:
+            (root / p).write_bytes(subprocess.check_output(['git', 'show', 'c35580c5f:' + p], cwd=root))
+        ok = run('negative-qa-c35580c5f', [transport, 'src/main/services/annex-binary-qa-regressions.test.ts'], 'QA adversarial') and ok
         for p, content in original.items(): (root / p).write_bytes(content)
     for label, p, old, new, test, pattern in mutants:
         if args.only and args.only != label: continue

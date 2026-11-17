@@ -31,12 +31,12 @@ vi.mock('./annex-client', () => ({ getSatellite: () => ({ snapshot: { dispatcher
 vi.mock('./annex-agent-calls', () => ({ isNetworkComputer: () => state.member }));
 vi.mock('./agent-registry', () => ({ agentRegistry: { get: () => undefined } }));
 vi.mock('./agent-runtime', () => ({ getAgentRuntime: () => ({ isRunning: () => state.running, sendMessage: state.send }) }));
-vi.mock('./agent-config', () => ({ peekDurableConfigs: async () => [{ id: 'sender', name: 'Sender' }, { id: 'receiver', name: 'Receiver' }, ...(state.extraAgent ? [state.extraAgent] : [])] }));
+vi.mock('./agent-config', () => ({ agentConfigGeneration: () => 0, peekDurableConfigs: async () => [{ id: 'sender', name: 'Sender' }, { id: 'receiver', name: 'Receiver' }, ...(state.extraAgent ? [state.extraAgent] : [])] }));
 vi.mock('./project-store', () => ({ peekProjects: async () => [{ id: 'project', name: 'Project', path: state.dir }] }));
 vi.mock('./dispatcher/dispatcher-service', () => ({ getDispatcherState: () => ({ enabled: true, agentId: 'dispatcher', path: state.dir, config: { name: 'Dispatcher' } }), isDispatcherAgentId: (id: string) => id === 'dispatcher' }));
 vi.mock('./agent-grants-service', () => ({ effectiveAgentGrants: async () => state.allowed ? [{ action: 'handoff.offer', target: { kind: 'any' }, mode: 'allow' }, { action: 'handoff.accept', target: { kind: 'any' }, mode: 'allow' }, { action: 'agent.wake', target: { kind: 'any' }, mode: 'allow' }, { action: 'agent.message', target: { kind: 'any' }, mode: 'allow' }] : [] }));
-vi.mock('./connection-grants-store', () => ({ localConnectionWakeOn: () => true, getConnectionDirection: (from: { agentId: string }) => state.connected || from.agentId === 'dispatcher' ? { link: true, disabledTools: [], enabledTools: ['wake_agent'] } : undefined }));
-vi.mock('./clubhouse-mcp/binding-manager', () => ({ bindingManager: { getAllBindings: () => [], getBindingsForAgent: () => [] } }));
+vi.mock('./connection-grants-store', () => ({ onConnectionGrantsChanged: () => () => {}, localConnectionWakeOn: () => true, getConnectionDirection: (from: { agentId: string }) => state.connected || from.agentId === 'dispatcher' ? { link: true, disabledTools: [], enabledTools: ['wake_agent'] } : undefined }));
+vi.mock('./clubhouse-mcp/binding-manager', () => ({ bindingManager: { onChange: () => () => {}, getAllBindings: () => [], getBindingsForAgent: () => [] } }));
 vi.mock('./clubhouse-mcp/grant-check', () => ({ callerGrants: () => [] }));
 vi.mock('./clubhouse-mcp/tool-registry', () => ({ callTool: (...args: unknown[]) => state.create(...args), setHandoffParticipantCheck: (check: (id: string) => boolean) => { state.participant = check; } }));
 vi.mock('./clubhouse-mcp/handoff-permissions', () => ({ handoffAgreementCallApproved: async () => state.allowed }));
