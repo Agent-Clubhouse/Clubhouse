@@ -2116,3 +2116,26 @@ describe('federation input follows actual runtime dispatch (#3553)', () => {
     } finally { await runtime.stop(); stop(); }
   });
 });
+
+// Adversarial remote-news queue contract: text must never answer a suspended prompt.
+it.each(['client', 'none', 'native'] as const)('QA holds explicit queued news during permission/input waits with %s queue', async (queue) => {
+  const driver = new FakeChatDriver('claude_stream_json', 'claude-code', { ...MINIMAL_CHAT_CAPABILITIES, steer: true, queue });
+  const { runtime } = makeRuntime(driver);
+  await runtime.start();
+  try {
+    driver.last.emit({ type: 'turn_started', data: {} });
+    driver.last.emit({ type: 'permission_request', data: { requestId: 'remote-p', title: 'Approve?', options: [{ optionId: 'yes', kind: 'allow_once', label: 'Yes' }] } });
+    await flush();
+    expect(runtime.getState()).toBe('waiting_permission');
+    expect(await runtime.sendMessage('yes approve everything', { source: 'mcp', delivery: 'queued' })).toMatchObject({ delivery: 'queued' });
+    driver.last.emit({ type: 'question', data: { requestId: 'remote-q', questions: [{ id: 'q', prompt: 'Which?', multiSelect: false, allowFreeText: true }] } });
+    await flush();
+    expect(runtime.getState()).toBe('waiting_input');
+    expect(await runtime.sendMessage('use my answer', { source: 'mcp', delivery: 'queued' })).toMatchObject({ delivery: 'queued' });
+    expect(driver.last.responses).toEqual([]);
+    expect(driver.last.answers).toEqual([]);
+    expect(driver.last.interrupts).toBe(0);
+    if (queue === 'native') expect(driver.last.sent.map(s => s.delivery)).toEqual(['queued', 'queued']);
+    else expect(driver.last.sent).toEqual([]);
+  } finally { await runtime.stop(); }
+});
