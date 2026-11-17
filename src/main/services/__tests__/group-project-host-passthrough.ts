@@ -43,7 +43,10 @@ export async function passthroughHostModule() {
       await optional<(id: string) => Promise<void>>(bulletin, 'ensureProjectChannels')?.(project.id);
       return project;
     }),
-    update: vi.fn(async (id: string, fields: unknown) => registry.update(id, fields)),
+    update: vi.fn(async (id: string, fields: unknown) => {
+      const updated = await registry.update(id, fields) as Record<string, unknown> | null;
+      return updated && { ...updated, writeOutcome: { status: 'applied' } };
+    }),
     delete: vi.fn(async (id: string) => {
       const project = await registry.get(id);
       const deleted = await registry.delete(id);

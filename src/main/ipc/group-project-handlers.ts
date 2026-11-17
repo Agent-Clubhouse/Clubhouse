@@ -89,7 +89,7 @@ export function registerGroupProjectHandlers(): void {
     async (_event, id, grant, mode) => {
       if (grant !== 'deliver' && grant !== 'wake' && grant !== 'actions') throw new Error('Grant must be deliver, wake or actions.');
       if (mode !== 'allow' && mode !== 'off') throw new Error('Mode must be allow or off.');
-      await setOwnGrant(id as string, grant, mode);
+      await setOwnGrant(id as string, grant, mode, { author: { label: 'user' } });
       return describeGroupProjectRoles(id as string);
     },
   ));
