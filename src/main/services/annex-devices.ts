@@ -12,6 +12,7 @@ import type { AnnexDevice, AnnexDeviceReach, AnnexDeviceState, AnnexDirection, A
 import { describeAnnexProblem, isAnnexLoopback, type AnnexProblem } from '../../shared/annex-problems';
 import * as annexPeers from './annex-peers';
 import * as annexClient from './annex-client';
+import * as annexControl from './annex-control';
 import * as annexServer from './annex-server';
 import * as annexSettings from './annex-settings';
 import * as membership from './annex-network-membership';
@@ -36,6 +37,8 @@ interface Sources {
    * against its pinned certificate. With `connected` (pinned control sockets), that's inbound.
    */
   inbound?: ReadonlySet<string>;
+  /** Live, negotiated control links, checked against the request path's current authority. */
+  controlOf?: (fingerprint: string) => annexControl.ControlLinkReadiness;
   /** Whether this machine is listening for other computers. */
   serverOn?: boolean;
   /** This machine's main Annex port, for advice about forwards to it. */
@@ -126,6 +129,7 @@ function readSources(): Sources {
     joinOf: membership.joinConfirmation,
     removals: membership.pendingRemovals(),
     inbound: networkChannel.inboundMembers(),
+    controlOf: annexControl.getLinkReadiness,
     serverOn: annexServer.getStatus().port > 0,
     ownPort: annexServer.getStatus().port || undefined,
     reach: reachTracker,
@@ -159,7 +163,7 @@ function problemFor(peer: AnnexPeer, state: AnnexDeviceState, sat: annexClient.S
  * Each direction with a computer on its own (#3608), and a notice when only one
  * works. Only authenticated connections count as up; membership says nothing.
  */
-function reachFor(peer: AnnexPeer, sat: annexClient.SatelliteConnection | undefined, sources: Sources): AnnexDeviceReach | undefined {
+function reachFor(peer: AnnexPeer, sat: annexClient.SatelliteConnection | undefined, sources: Sources, control?: annexControl.ControlLinkReadiness): AnnexDeviceReach | undefined {
   const tracker = sources.reach;
   if (!tracker || peer.kind === 'phone') return undefined;
   const now = sources.now ?? Date.now();
@@ -168,10 +172,15 @@ function reachFor(peer: AnnexPeer, sat: annexClient.SatelliteConnection | undefi
     if (!on) { tracker.idle(peer.fingerprint, dir); return { state: 'off' }; }
     return tracker.observe(peer.fingerprint, dir, up, failed, now);
   };
+  const outboundDirect = sat?.state === 'connected' || control?.openedHere === true;
+  const inboundDirect = control?.acceptedHere === true
+    || [sources.connected, sources.inbound].some((set) => !!set && (set.has(peer.fingerprint) || set.has(peer.fingerprint.toLowerCase())));
   const outbound = direction('outbound', annexPeers.controlledFromHere(peer), sources.clientOn,
-    sat?.state === 'connected', !!sat && sat.state !== 'connected' && !!sat.problem);
+    outboundDirect || control?.acceptedHere === true, !!sat && sat.state !== 'connected' && !!sat.problem);
   const inbound = direction('inbound', annexPeers.controlsThisMachine(peer), sources.serverOn ?? true,
-    [sources.connected, sources.inbound].some((set) => !!set && (set.has(peer.fingerprint) || set.has(peer.fingerprint.toLowerCase()))), false);
+    inboundDirect || control?.openedHere === true, false);
+  if (outbound.state === 'up' && !outboundDirect) outbound.via = 'reverse';
+  if (inbound.state === 'up' && !inboundDirect) inbound.via = 'reverse';
   const name = peer.alias || 'That computer';
   let notice: AnnexDeviceReach['notice'];
   if (peer.role === 'member' && outbound.state === 'up' && inbound.state === 'down') {
@@ -200,22 +209,25 @@ export function buildDeviceList(sources: Sources): AnnexDevice[] {
     if (seen.has(peer.fingerprint)) return;
     seen.add(peer.fingerprint);
     const sat = annexPeers.controlledFromHere(peer) ? satellites.get(peer.fingerprint) : undefined;
+    const needsPairing = annexPeers.peerNeedsPairing(peer) || sat?.needsPairing;
+    const control = !sessionOnly && !needsPairing && !peer.networkPending && peer.role === 'member' && peer.kind === 'desktop'
+      ? sources.controlOf?.(peer.fingerprint) : undefined;
     let state: AnnexDeviceState;
     let problem: AnnexProblem | null = null;
-    if (annexPeers.peerNeedsPairing(peer) || sat?.needsPairing) state = 'needs-pairing';
+    if (needsPairing) state = 'needs-pairing';
     else if (peer.networkPending) {
       state = 'needs-pairing';
       problem = { code: 'connection-failed', message: `Waiting for ${peer.alias || 'this computer'} to confirm this computer's membership.`, action: 'Keep the phone connected to both computers to finish joining, or pair again.' };
     }
     // A member connected either way is connected (#3061).
-    else if (peer.role === 'member' && sources.connected.has(peer.fingerprint)) state = 'connected';
+    else if (peer.role === 'member' && (sources.connected.has(peer.fingerprint) || control?.acceptedHere || control?.openedHere)) state = 'connected';
     else if (annexPeers.controlledFromHere(peer) && !sources.clientOn) {
       // Not this satellite's doing: this machine isn't connecting to any.
       state = 'offline';
       problem = describeAnnexProblem('client-off', peer.alias);
     } else if (annexPeers.controlledFromHere(peer)) state = satelliteState(sat);
     else state = sources.connected.has(peer.fingerprint) ? 'connected' : 'offline';
-    const reach = !sessionOnly && state !== 'needs-pairing' ? reachFor(peer, sat, sources) : undefined;
+    const reach = !sessionOnly && state !== 'needs-pairing' ? reachFor(peer, sat, sources, control) : undefined;
     // Not observed while it needs pairing: forget what was, so it starts fresh once paired again.
     if (!reach && sources.reach) { sources.reach.idle(peer.fingerprint, 'outbound'); sources.reach.idle(peer.fingerprint, 'inbound'); }
     devices.push({

@@ -157,6 +157,49 @@ describe('AnnexDeviceList (#3067)', () => {
   });
 
   describe('each direction (#3608)', () => {
+    it.each([
+      { outbound: 'direct', inbound: 'direct', text: 'This computer can reach it. It can reach this computer.' },
+      { outbound: 'reverse', inbound: 'direct', text: 'This computer can reach it through its connection to this computer. It can reach this computer.' },
+      { outbound: 'direct', inbound: 'reverse', text: "This computer can reach it. It can reach this computer through this computer's connection to it." },
+    ] as const)('describes $outbound outbound and $inbound inbound reach separately', ({ outbound, inbound, text }) => {
+      render(<AnnexDeviceList devices={[device({
+        reach: { outbound: { state: 'up', via: outbound }, inbound: { state: 'up', via: inbound } },
+      })]} />);
+      expect(screen.getByTestId('annex-device-reach').textContent).toBe(text);
+      expect(screen.queryByTestId('annex-device-reach-notice')).not.toBeInTheDocument();
+      expect(screen.queryByTestId('annex-device-problem')).not.toBeInTheDocument();
+    });
+
+    it.each([
+      { outbound: 'down', inbound: 'down', text: "This computer can't reach it. It can't reach this computer." },
+      { outbound: 'unknown', inbound: 'unknown', text: 'Checking whether this computer can reach it. Checking whether it can reach this computer.' },
+      { outbound: 'not-used', inbound: 'off', text: "This computer isn't accepting connections." },
+    ] as const)('preserves $outbound outbound and $inbound inbound copy without reverse readiness', ({ outbound, inbound, text }) => {
+      render(<AnnexDeviceList devices={[device({ reach: { outbound: { state: outbound }, inbound: { state: inbound } } })]} />);
+      expect(screen.getByTestId('annex-device-reach').textContent).toBe(text);
+    });
+
+    it('returns to the exact old-peer one-way text after reverse readiness is lost, and recovers', () => {
+      const reverse = device({ reach: { outbound: { state: 'up' }, inbound: { state: 'up', via: 'reverse' } } });
+      const oldPeer = device({
+        reach: {
+          outbound: { state: 'up' }, inbound: { state: 'down' },
+          notice: {
+            message: "You can reach Studio, but it can't reach this computer.",
+            action: 'On Studio, open Annex Network in Settings and add an address for this computer.',
+          },
+        },
+      });
+      const { rerender } = render(<AnnexDeviceList devices={[reverse]} />);
+      expect(screen.getByTestId('annex-device-reach')).toHaveTextContent("It can reach this computer through this computer's connection to it.");
+      rerender(<AnnexDeviceList devices={[oldPeer]} />);
+      expect(screen.getByTestId('annex-device-reach').textContent).toBe("This computer can reach it. It can't reach this computer.");
+      expect(screen.getByTestId('annex-device-reach-notice').textContent).toBe("You can reach Studio, but it can't reach this computer. On Studio, open Annex Network in Settings and add an address for this computer.");
+      rerender(<AnnexDeviceList devices={[reverse]} />);
+      expect(screen.getByTestId('annex-device-reach')).toHaveTextContent("It can reach this computer through this computer's connection to it.");
+      expect(screen.queryByTestId('annex-device-reach-notice')).not.toBeInTheDocument();
+    });
+
     it('says each direction in plain sentences, and the next step when only one works', () => {
       render(<AnnexDeviceList devices={[device({
         reach: {

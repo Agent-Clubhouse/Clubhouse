@@ -1316,8 +1316,8 @@ export interface AnnexDevice {
 
 /**
  * One direction between this machine and a computer (#3608), from authenticated
- * observations only: a pinned outbound connection, or an inbound socket that
- * authenticated with the pinned certificate. Membership alone says nothing.
+ * observations only: a pinned direct connection, or a negotiated reverse
+ * control connection with current authority. Membership alone says nothing.
  * - `up`: such a connection is open now.
  * - `down`: none, for longer than the settle window, or attempts are failing.
  * - `unknown`: not observed either way yet.
@@ -1328,6 +1328,8 @@ export type AnnexDirectionState = 'up' | 'down' | 'unknown' | 'off' | 'not-used'
 
 export interface AnnexDirection {
   state: AnnexDirectionState;
+  /** Desktop Settings only. An up direction without this field uses a direct connection. */
+  via?: 'direct' | 'reverse';
   /** ISO time it was last observed up in this session, if it was. */
   lastUp?: string;
 }

@@ -15,8 +15,10 @@ vi.mock('electron', () => ({ app: { getPath: () => '/tmp/annex-control-test' } }
 vi.mock('ws', () => ({ WebSocket: { OPEN: 1, CLOSED: 3 }, WebSocketServer: vi.fn() }));
 vi.mock('./log-service', () => ({ appLog: vi.fn() }));
 vi.mock('./annex-tls', () => ({ extractPeerFingerprint: vi.fn(), extractPeerCertificateFingerprint: vi.fn() }));
+vi.mock('./annex-device-signal', () => ({ devicesChanged: vi.fn() }));
 
 import * as control from './annex-control';
+import { devicesChanged } from './annex-device-signal';
 import { authorize, stillAuthorized, type AnnexAuthorizerDeps, type AnnexPrincipal } from './annex-authorizer';
 import type { ControlHttpRequest } from '../../shared/annex-control-protocol';
 import { CONTROL_CLOSE_BACKLOG, CONTROL_CLOSE_PROTOCOL, CONTROL_CLOSE_REVOKED, CONTROL_CLOSE_VERSION, CONTROL_FRAME_MAX_BYTES } from '../../shared/annex-control-protocol';
@@ -143,6 +145,7 @@ beforeEach(() => {
   dispatch.mockClear();
   served = [];
   subscribeOnServer.mockClear();
+  vi.mocked(devicesChanged).mockClear();
   installServer();
 });
 
@@ -157,6 +160,7 @@ describe('capability hello and mixed versions', () => {
     control._attachForTesting(ws as never, TARGET, TARGET_PIN, 'in');
     await flush();
     expect(ws.sent).toEqual([]);
+    expect(control.getLinkReadiness(TARGET)).toEqual({ acceptedHere: false, openedHere: false });
     expect(control.hasReverseLink(TARGET)).toBe(false);
     await expect(control.request(TARGET, { method: 'GET', path: '/api/v1/status' })).rejects.toMatchObject({ code: 'transport_unavailable', indeterminate: false });
     expect(ws.sent).toEqual([]);
@@ -173,6 +177,8 @@ describe('capability hello and mixed versions', () => {
     await expect(control.request(TARGET, { method: 'POST', path: '/api/v1/network/agent-call', body: '{}' })).rejects.toMatchObject({ code: 'not_supported', indeterminate: false });
     expect(control.hasReverseLink(TARGET)).toBe(false);
     expect(sentOfType(ws, 'request')).toEqual([]);
+    expect(control.getLinkReadiness(TARGET)).toEqual({ acceptedHere: false, openedHere: false });
+    expect(devicesChanged).not.toHaveBeenCalled();
   });
 
   it('a target that agreed to no features answers a request not_supported and never runs it', async () => {
@@ -216,6 +222,69 @@ describe('capability hello and mixed versions', () => {
     control.connectTo(REQUESTER, '127.0.0.1', 9443, {}, REQUESTER_PIN);
     // No server, no target: connectTo returns before creating a socket (the ws mock has no constructor).
     expect(control.hasReverseLink(REQUESTER)).toBe(false);
+  });
+});
+
+describe('read-only direction readiness (#3613 P7)', () => {
+  it('reports the negotiated physical direction without dialing, sending frames or dispatching requests', async () => {
+    const { requesterWs, targetWs } = await connected();
+    const sent = [requesterWs.sent.length, targetWs.sent.length];
+    for (let i = 0; i < 10; i++) {
+      expect(control.getLinkReadiness(TARGET)).toEqual({ acceptedHere: true, openedHere: false });
+      expect(control.getLinkReadiness(REQUESTER)).toEqual({ acceptedHere: false, openedHere: true });
+      expect(control.getLinkReadiness('unknown')).toEqual({ acceptedHere: false, openedHere: false });
+    }
+    expect([requesterWs.sent.length, targetWs.sent.length]).toEqual(sent);
+    expect(dispatch).not.toHaveBeenCalled();
+    expect(requesterWs.closed).toBeNull();
+    expect(targetWs.closed).toBeNull();
+    requesterWs.readyState = 2;
+    expect(control.getLinkReadiness(TARGET).acceptedHere).toBe(false);
+    requesterWs.readyState = 1;
+    control.closeFor(TARGET, 'in');
+    await flush();
+    expect(control.getLinkReadiness(TARGET)).toEqual({ acceptedHere: false, openedHere: false });
+    expect(control.getLinkReadiness(REQUESTER)).toEqual({ acceptedHere: false, openedHere: false });
+  });
+
+  it.each(['revoked', 're-pinned'] as const)('uses the request authority for a %s peer even while both sockets remain OPEN', async (change) => {
+    const { requesterWs, targetWs } = await connected();
+    expect(control.getLinkReadiness(TARGET).acceptedHere).toBe(true);
+    expect(control.getLinkReadiness(REQUESTER).openedHere).toBe(true);
+    inboundAllowed = false;
+    world.peer = change === 'revoked' ? undefined : peer({ tlsCertificateFingerprint: 'NEW:PIN' });
+    expect(control.getLinkReadiness(TARGET).acceptedHere).toBe(false);
+    expect(control.getLinkReadiness(REQUESTER).openedHere).toBe(false);
+    expect(requesterWs.readyState).toBe(1);
+    expect(targetWs.readyState).toBe(1);
+    expect(requesterWs.closed).toBeNull();
+    expect(targetWs.closed).toBeNull();
+  });
+
+  it('notifies once on negotiated readiness and once on close, never for heartbeats or ordinary frames', () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'setInterval', 'clearInterval'] });
+    const ws = new FakeSocket();
+    control._attachForTesting(ws as never, TARGET, TARGET_PIN, 'in');
+    expect(devicesChanged).not.toHaveBeenCalled();
+    ws.deliver({ v: 1, type: 'hello', features: ['request'] });
+    expect(devicesChanged).toHaveBeenCalledTimes(1);
+    for (let i = 0; i < 3; i++) {
+      vi.advanceTimersByTime(control.HEARTBEAT_MS);
+      ws.emit('pong');
+      ws.deliver({ v: 1, type: 'response', id: `unclaimed-${i}`, status: 200, headers: {}, body: '{}', encoding: 'utf8' });
+      expect(control.getLinkReadiness(TARGET).acceptedHere).toBe(true);
+    }
+    expect(ws.pings).toBe(3);
+    expect(devicesChanged).toHaveBeenCalledTimes(1);
+    control.closeFor(TARGET, 'in');
+    control.closeFor(TARGET, 'in');
+    ws.emit('close', 1000);
+    expect(devicesChanged).toHaveBeenCalledTimes(2);
+    const old = new FakeSocket();
+    control._attachForTesting(old as never, TARGET, TARGET_PIN, 'in');
+    old.deliver({ v: 1, type: 'hello', features: [] });
+    control.closeFor(TARGET, 'in');
+    expect(devicesChanged).toHaveBeenCalledTimes(2);
   });
 });
 

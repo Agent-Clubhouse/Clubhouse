@@ -56,3 +56,24 @@ Its direct connection keeps today's behavior.
 There is no relay, multi-hop routing, tunnel/CLI management, new permission,
 listener change, phone wire field or UI in this slice. P5/P6 authorization fences,
 request/subscription ownership and strict HTTP reads are untouched.
+
+## Desktop direction readiness (#3613 P7)
+
+Settings reports each direction separately, preferring a direct connection.
+A control socket counts only while open, after negotiating request capability,
+and while the request path's existing authority still allows its pinned peer.
+An accepted connection lets this computer reach its opener through that
+computer's connection here. An opened connection lets the peer reach this
+computer through this computer's connection to it.
+
+Readiness updates use the existing desktop device-list IPC. Negotiation and
+closure publish transitions; heartbeats and request frames do not. If reverse
+control covers the missing direction, Settings does not suggest adding another
+forward for that direction. Without negotiated capability, the existing
+direction and one-way advice stays unchanged. Phones still use their existing
+routes and copy.
+
+These are transport-readiness observations, not proof of end-to-end reverse
+requests, subscriptions, terminals or transfers. They do not change transport
+selection, connection ownership, reconnect, grants or permissions. P8 acceptance
+remains separate.
