@@ -24,6 +24,10 @@ describe.runIf(process.env.CLUBHOUSE_ANNEX_INVENTORY_PEER === '1')('isolated ful
         case 'hook': return peer.hook();
         case 'theme': return peer.theme();
         case 'canvas': return peer.canvas();
+        case 'send': return peer.send(params as Parameters<typeof peer.send>[0]);
+        case 'emitPty': return peer.emitPty(params as string);
+        case 'ptyState': return peer.ptyState(params as string);
+        case 'ptyBuffer': return peer.ptyBuffer(params as string);
         case 'durable': return peer.durable(params as Parameters<typeof peer.durable>[0]);
         case 'seedLargeText': return peer.seedLargeText();
         case 'largeText': return peer.largeText();

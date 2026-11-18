@@ -32,6 +32,7 @@ describe('full-server audit inventory over one A to B forward', () => {
   const driverOnTarget = (who: 'A' | 'B'): Promise<ReturnType<InventoryPeer['driverState']>> => who === 'A' ? b.call('driverState') : Promise.resolve(a.driverState());
   const chat = (who: 'A' | 'B', command: Record<string, unknown>, commandId?: string) => who === 'A' ? a.chat({ command, commandId }) : b.call('chat', { command, commandId });
   const page = (who: 'A' | 'B', options?: Parameters<InventoryPeer['page']>[0]) => who === 'A' ? a.page(options) : b.call('page', options);
+  const send = (who: 'A' | 'B', type: string, payload: Record<string, unknown>) => who === 'A' ? a.send({ type, payload }) : b.call('send', { type, payload });
   const expectSatelliteEvent = (who: 'A' | 'B', type: string, payload: unknown) => vi.waitFor(async () => {
     const events = (await status(who)).events.filter(({ payload }) => payload !== null && typeof payload === 'object' && 'type' in payload && payload.type === type);
     expect(events).toEqual(expect.arrayContaining([expect.objectContaining({
@@ -247,6 +248,35 @@ describe('full-server audit inventory over one A to B forward', () => {
     expect((await status(who)).snapshot?.canvasState?.[target(who).projectId]).toMatchObject({
       canvases: expect.arrayContaining([expect.objectContaining({ id: 'fixture-canvas', name: 'Renamed remotely' })]),
     });
+  });
+
+  it.each(['A', 'B'] as const)('R10 %s: real PTY buffers, input, resize, sequence stitching and private close', async (who) => {
+    const sessionId = `private-shell-${who}`;
+    const inspect = (): Promise<ReturnType<InventoryPeer['ptyState']>> => who === 'A' ? b.call('ptyState', sessionId) : Promise.resolve(a.ptyState(sessionId));
+    const emit = async (data: string) => { if (who === 'A') await b.call('emitPty', data); else a.emitPty(data); };
+    const buffer = (): Promise<Awaited<ReturnType<InventoryPeer['ptyBuffer']>>> => who === 'A' ? a.ptyBuffer(sessionId) : b.call('ptyBuffer', sessionId);
+    expect(await send(who, 'pty:spawn-shell', { sessionId, projectId: target(who).projectId })).toEqual({ sent: true });
+    await expectSatelliteEvent(who, 'pty:spawn-shell:ack', { sessionId, cwd: expect.any(String) });
+    expect(await send(who, 'pty:input', { agentId: sessionId, data: 'fixture input\r' })).toEqual({ sent: true });
+    expect(await send(who, 'pty:resize', { agentId: sessionId, cols: 91, rows: 27 })).toEqual({ sent: true });
+    await vi.waitFor(async () => { expect(await inspect()).toMatchObject({ running: true, writes: ['fixture input\r'], sizes: [[91, 27]] }); });
+    await emit('first line\r\n');
+    const first = await inspect();
+    await expectSatelliteEvent(who, 'pty:data', { agentId: sessionId, data: 'first line\r\n', seq: first.buffer.seq });
+    expect(await buffer()).toMatchObject({ data: expect.stringContaining('first line'), seq: first.buffer.seq });
+    await emit('after snapshot\r\n');
+    const last = await inspect();
+    expect(last.buffer.seq).toBe(first.buffer.seq + 'after snapshot\r\n'.length);
+    await expectSatelliteEvent(who, 'pty:data', { agentId: sessionId, data: 'after snapshot\r\n', seq: last.buffer.seq });
+    const final = await buffer();
+    expect(final.seq).toBe(last.buffer.seq);
+    expect(final.data.match(/first line/g)).toHaveLength(1);
+    expect(final.data.match(/after snapshot/g)).toHaveLength(1);
+    expect(await send(who, 'pty:close', { sessionId })).toEqual({ sent: true });
+    await expectSatelliteEvent(who, 'pty:close:ack', { sessionId });
+    expect(await inspect()).toMatchObject({ running: false, closed: true });
+    expect(await send(who, 'pty:close', { sessionId })).toEqual({ sent: true });
+    await expectSatelliteEvent(who, 'error', { op: 'pty:close', message: 'session_not_found', sessionId });
   });
 
   it.each(['A', 'B'] as const)('R13 %s: the real theme palette arrives on the existing event path', async (who) => {

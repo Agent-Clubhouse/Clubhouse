@@ -6,20 +6,58 @@ import { createHash } from 'crypto';
 import { execFileSync } from 'child_process';
 import { installDialPolicy, type DialPolicy } from './reverse-parity-fixture';
 import type { ConfigurePeer, PeerInfo } from './reverse-client-peer';
+import type { IPty } from 'node-pty';
+
+interface FixturePty extends IPty {
+  closed: boolean;
+  writes: string[];
+  sizes: Array<[number, number]>;
+  emitData(data: string): void;
+}
 
 const fixture = vi.hoisted(() => {
   const fs = require('fs') as typeof import('fs');
-  const os = require('os') as typeof import('os');
   const path = require('path') as typeof import('path');
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'annex-inventory-'));
+  // Keep the real PTY cwd check: macOS's /private/var temporary directory is restricted.
+  const cache = path.join(process.cwd(), 'node_modules', '.cache');
+  fs.mkdirSync(cache, { recursive: true });
+  const dir = fs.mkdtempSync(path.join(cache, 'annex-inventory-'));
   process.env.HOME = dir;
   process.env.USERPROFILE = dir;
   process.env.CLAUDE_CONFIG_DIR = path.join(dir, '.claude');
   process.env.GIT_CONFIG_NOSYSTEM = '1';
   process.env.GIT_CONFIG_GLOBAL = path.join(dir, '.gitconfig');
-  return { dir, events: [] as Array<{ channel: string; payload: unknown }>, logs: [] as unknown[] };
+  return { dir, events: [] as Array<{ channel: string; payload: unknown }>, logs: [] as unknown[], ptys: [] as FixturePty[] };
 });
 
+vi.mock('node-pty', () => ({
+  spawn(_file: string, _args: string[], options: { cols?: number; rows?: number }) {
+    const dataListeners = new Set<(data: string) => void>();
+    const exitListeners = new Set<(event: { exitCode: number }) => void>();
+    let cols = options.cols ?? 80;
+    let rows = options.rows ?? 24;
+    const native: FixturePty = {
+      pid: process.pid, get cols() { return cols; }, get rows() { return rows; }, process: 'fixture-shell',
+      closed: false, writes: [], sizes: [], handleFlowControl: false,
+      onData: (listener) => { dataListeners.add(listener); return { dispose() { dataListeners.delete(listener); } }; },
+      onExit: (listener) => { exitListeners.add(listener); return { dispose() { exitListeners.delete(listener); } }; },
+      write(data) { native.writes.push(data.toString()); },
+      resize(nextCols, nextRows) { cols = nextCols; rows = nextRows; native.sizes.push([cols, rows]); },
+      clear() {}, pause() {}, resume() {},
+      kill() {
+        if (native.closed) return;
+        native.closed = true;
+        queueMicrotask(() => { for (const listener of exitListeners) listener({ exitCode: 0 }); });
+      },
+      emitData(data) {
+        if (native.closed) throw new Error('The fixture PTY has exited');
+        for (const listener of dataListeners) listener(data);
+      },
+    };
+    fixture.ptys.push(native);
+    return native;
+  },
+}));
 vi.mock('electron', () => ({
   app: { getPath: () => fixture.dir, isPackaged: false, getVersion: () => '0.0.0-parity', getName: () => 'annex-parity', on() {} },
   BrowserWindow: { getAllWindows: (): unknown[] => [] },
@@ -33,6 +71,7 @@ vi.mock('../../src/main/services/log-service', () => ({
 }));
 vi.mock('../../src/main/util/ipc-broadcast', () => ({
   broadcastToAllWindows: (channel: string, payload: unknown) => { fixture.events.push({ channel, payload }); },
+  flushPendingFor() {},
 }));
 vi.mock('../../src/main/services/annex-network-profile', async (original) => ({
   ...await original<typeof import('../../src/main/services/annex-network-profile')>(),
@@ -70,6 +109,7 @@ import type { SessionTranscriptPage } from '../../src/shared/session-types';
 import type { DurableAgentConfig } from '../../src/shared/types';
 import * as eventBus from '../../src/main/services/annex-event-bus';
 import { writeKey } from '../../src/main/services/plugin-storage';
+import * as ptyManager from '../../src/main/services/pty-manager';
 
 export interface InventoryPeerInfo extends PeerInfo {
   projectId: string;
@@ -114,6 +154,11 @@ export async function createInventoryPeer(alias: string) {
   const gitRoot = path.join(fixture.dir, 'git-project');
   const gitRemote = path.join(fixture.dir, 'remote.git');
   const git = (args: string[], cwd = gitRoot) => execFileSync('git', args, { cwd, encoding: 'utf8' }).trim();
+  const nativePty = () => {
+    const native = fixture.ptys[fixture.ptys.length - 1];
+    if (!native) throw new Error('No fixture PTY has been started');
+    return native;
+  };
   const agent = await agentConfig.createDurable(root, `${alias} agent`, 'blue', undefined, false, 'claude-code');
   const driver = new FakeChatDriver('claude_stream_json', 'claude-code', {
     ...MINIMAL_CHAT_CAPABILITIES, steer: true, interrupt: true, images: true, questions: true,
@@ -222,6 +267,19 @@ export async function createInventoryPeer(alias: string) {
           mutation: { type: 'renameCanvas', canvasId: 'fixture-canvas', name: 'Renamed remotely' },
         },
       });
+    },
+    send(frame: { type: string; payload?: Record<string, unknown> }) {
+      if (!remote) throw new Error('Inventory peer is not configured');
+      return client.sendToSatellite(remote.fingerprint, frame);
+    },
+    emitPty(data: string) { nativePty().emitData(data); },
+    ptyState(sessionId: string) {
+      const native = nativePty();
+      return { running: ptyManager.isRunning(sessionId), buffer: ptyManager.getBufferSnapshot(sessionId), closed: native.closed, writes: native.writes, sizes: native.sizes };
+    },
+    async ptyBuffer(sessionId: string) {
+      if (!remote) throw new Error('Inventory peer is not configured');
+      return client.requestPtyBufferSnapshot(remote.fingerprint, sessionId);
     },
     async durable(input?: { projectId: string; useWorktree: boolean }) {
       if (!remote) throw new Error('Inventory peer is not configured');
