@@ -27,7 +27,7 @@ const fixture = vi.hoisted(() => {
   process.env.CLAUDE_CONFIG_DIR = path.join(dir, '.claude');
   process.env.GIT_CONFIG_NOSYSTEM = '1';
   process.env.GIT_CONFIG_GLOBAL = path.join(dir, '.gitconfig');
-  return { dir, events: [] as Array<{ channel: string; payload: unknown }>, logs: [] as unknown[], ptys: [] as FixturePty[] };
+  return { dir, events: [] as Array<{ channel: string; payload: unknown }>, logs: [] as unknown[], ptys: [] as FixturePty[], lifecycleRoot: null as string | null };
 });
 
 vi.mock('node-pty', () => ({
@@ -41,7 +41,11 @@ vi.mock('node-pty', () => ({
       closed: false, writes: [], sizes: [], handleFlowControl: false,
       onData: (listener) => { dataListeners.add(listener); return { dispose() { dataListeners.delete(listener); } }; },
       onExit: (listener) => { exitListeners.add(listener); return { dispose() { exitListeners.delete(listener); } }; },
-      write(data) { native.writes.push(data.toString()); },
+      write(data) {
+        const text = data.toString();
+        native.writes.push(text);
+        if (text === '/exit\r' || text === 'exit\r' || text === '\x04') queueMicrotask(() => native.kill());
+      },
       resize(nextCols, nextRows) { cols = nextCols; rows = nextRows; native.sizes.push([cols, rows]); },
       clear() {}, pause() {}, resume() {},
       kill() {
@@ -81,10 +85,16 @@ vi.mock('../../src/main/services/annex-network-channel', async (original) => ({
   ...await original<typeof import('../../src/main/services/annex-network-channel')>(),
   connectTo() {},
 }));
-vi.mock('../../src/main/services/agent-system', async (original) => ({
-  ...await original<typeof import('../../src/main/services/agent-system')>(),
-  spawnAgent: async () => { throw new Error('Unexpected provider start: P8 uses only the in-memory fake driver'); },
-}));
+vi.mock('../../src/main/services/agent-system', async (original) => {
+  const actual = await original<typeof import('../../src/main/services/agent-system')>();
+  return {
+    ...actual,
+    spawnAgent: async (params: import('../../src/main/services/agent-system').SpawnAgentParams) => {
+      if (!fixture.lifecycleRoot || params.projectPath !== fixture.lifecycleRoot) throw new Error('Unexpected provider start: the fixture backend has not been installed');
+      return actual.spawnAgent(params);
+    },
+  };
+});
 
 import * as server from '../../src/main/services/annex-server';
 import * as client from '../../src/main/services/annex-client';
@@ -133,6 +143,11 @@ import { prepareCallerHandoff } from '../../src/main/services/handoff-preparatio
 import { registerHandoffTools } from '../../src/main/services/clubhouse-mcp/tools/handoff-tools';
 import { withHandoffAgreementCall } from '../../src/main/services/clubhouse-mcp/handoff-permissions';
 import { readHandoffTransferManifest, requestHandoffTransfer } from '../../src/main/services/handoff-transfer-transport';
+import * as agentSystem from '../../src/main/services/agent-system';
+import * as headlessSettings from '../../src/main/services/headless-settings';
+import * as chatRuntimeSettings from '../../src/main/services/chat-runtime-settings';
+import * as hookServer from '../../src/main/services/hook-server';
+import * as mcpBridge from '../../src/main/services/clubhouse-mcp/bridge-server';
 
 export interface InventoryPeerInfo extends PeerInfo {
   projectId: string;
@@ -326,6 +341,32 @@ export async function createInventoryPeer(alias: string) {
       const digest = createHash('sha256');
       for await (const chunk of input) digest.update(chunk);
       return { bytes: input.bytesRead, digest: digest.digest('hex'), mimeType: image.mimeType };
+    },
+    async prepareLifecycle() {
+      const provider = new ClaudeCodeProvider();
+      vi.spyOn(provider, 'checkAvailability').mockResolvedValue({ available: true });
+      vi.spyOn(provider, 'getBinaryPath').mockReturnValue(process.execPath);
+      vi.spyOn(provider, 'buildSpawnCommand').mockResolvedValue({ binary: process.execPath, args: ['-e', 'throw new Error("P8 must use the in-memory PTY backend")'] });
+      vi.spyOn(provider, 'buildHeadlessCommand').mockRejectedValue(new Error('P8 never starts a headless provider'));
+      registerProvider(provider);
+      await headlessSettings.setProjectSpawnMode(root, 'interactive');
+      await chatRuntimeSettings.saveSettings({ 'claude-code': { mode: 'terminal' } });
+      await hookServer.start();
+      await mcpBridge.start();
+      const config = await agentConfig.createDurable(root, 'lifecycle fixture', 'blue', undefined, false, 'claude-code');
+      fixture.lifecycleRoot = root;
+      return config.id;
+    },
+    async lifecycleState(id: string) {
+      return {
+        running: agentSystem.isAgentRunning(id), runtime: agentRegistry.get(id)?.runtime,
+        runningIds: agentSystem.getRunningAgentIds([...agentRegistry.getAllRegistrations().keys()]),
+        order: (await agentConfig.listDurable(root)).map((config) => config.id),
+      };
+    },
+    deleteRemoteAgent(id: string) {
+      if (!remote) throw new Error('Inventory peer is not configured');
+      return client.requestDeleteDurable(remote.fingerprint, remote.projectId, id, 'force');
     },
     async chat(input: { command: Record<string, unknown>; commandId?: string }) {
       if (!remote) throw new Error('Inventory peer is not configured');
@@ -636,6 +677,9 @@ export async function createInventoryPeer(alias: string) {
     },
     async close() {
       await stopHandoffs();
+      hookServer.stop();
+      mcpBridge.stop();
+      fixture.lifecycleRoot = null;
       linkedState.stop();
       stopLinkedNetwork();
       stopLinks();

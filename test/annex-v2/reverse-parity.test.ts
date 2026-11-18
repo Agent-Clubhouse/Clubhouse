@@ -588,6 +588,34 @@ describe('full-server audit inventory over one A to B forward', () => {
     });
   });
 
+  it.each(['A', 'B'] as const)('R07 %s: actual agent lifecycle wakes, stops, reorders and spawns with only a fake native process', async (who) => {
+    const id = who === 'A' ? await b.call<string>('prepareLifecycle') : await a.prepareLifecycle();
+    const inspect = (agentId = id): ReturnType<InventoryPeer['lifecycleState']> => who === 'A' ? b.call('lifecycleState', agentId) : a.lifecycleState(agentId);
+    expect(await send(who, 'agent:wake', { agentId: id })).toEqual({ sent: true });
+    await expectSatelliteEvent(who, 'agent:wake:ack', { agentId: id, status: 'starting' });
+    expect(await inspect()).toMatchObject({ running: true, runtime: 'pty' });
+    expect(await send(who, 'agent:reorder', { projectId: target(who).projectId, orderedIds: [id, target(who).agentId] })).toEqual({ sent: true });
+    await expectSatelliteEvent(who, 'agent:reorder:ack', { projectId: target(who).projectId });
+    expect((await inspect()).order.slice(0, 2)).toEqual([id, target(who).agentId]);
+    expect(await send(who, 'agent:kill', { agentId: id })).toEqual({ sent: true });
+    await expectSatelliteEvent(who, 'agent:kill:ack', { agentId: id });
+    expect((await inspect()).running).toBe(false);
+    expect(await send(who, 'agent:wake', { agentId: id, resume: true })).toEqual({ sent: true });
+    await vi.waitFor(async () => { expect((await inspect()).running).toBe(true); });
+    expect(await send(who, 'agent:kill', { agentId: id })).toEqual({ sent: true });
+    await vi.waitFor(async () => { expect((await inspect()).running).toBe(false); });
+    expect(await send(who, 'agent:spawn', { projectId: target(who).projectId, prompt: 'In-memory lifecycle fixture', orchestrator: 'claude-code' })).toEqual({ sent: true });
+    await vi.waitFor(async () => { expect((await inspect()).runningIds.filter((running) => running !== target(who).agentId)).toHaveLength(1); });
+    const quick = (await inspect()).runningIds.find((running) => running !== target(who).agentId);
+    if (!quick) throw new Error('The quick agent was not created');
+    await expectSatelliteEvent(who, 'agent:spawn:ack', { id: quick });
+    expect(await send(who, 'agent:kill', { agentId: quick })).toEqual({ sent: true });
+    await expectSatelliteEvent(who, 'agent:kill:ack', { agentId: quick });
+    expect((await inspect(quick)).running).toBe(false);
+    if (who === 'A') await a.deleteRemoteAgent(id); else await b.call('deleteRemoteAgent', id);
+    expect((await inspect()).order).not.toContain(id);
+  });
+
   it('audits every app dial independently of the direct-dial sentinel', async () => {
     assertDialAudit((await status('A')).attempts, { host: '127.0.0.1', port: forward.port }, forward.sourcePorts, guard.accepts());
     assertDialAudit((await status('B')).attempts, null, [], guard.accepts());
