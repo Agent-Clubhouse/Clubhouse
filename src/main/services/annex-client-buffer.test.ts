@@ -97,7 +97,7 @@ vi.mock('../util/ipc-broadcast', () => ({
 
 vi.mock('https', async (importOriginal) => {
   const actual = await importOriginal<typeof import('https')>();
-  return { ...actual, get: vi.fn() };
+  return { ...actual, request: vi.fn() };
 });
 
 // A real headless xterm, with the constructor wrapped so tests can read the
@@ -141,8 +141,8 @@ let agentCounter = 0;
  */
 function deferBufferFetch() {
   let reply: ((body: string, headers?: Record<string, string>, statusCode?: number) => void) | null = null;
-  vi.mocked(https.get).mockImplementation(((_url: string, _opts: unknown, cb: (res: unknown) => void) => {
-    const req = Object.assign(new EventEmitter(), { destroy: vi.fn() });
+  vi.mocked(https.request).mockImplementation(((_url: string, _opts: unknown, cb: (res: unknown) => void) => {
+    const req = Object.assign(new EventEmitter(), { destroy: vi.fn(), end: vi.fn() });
     reply = (body, headers = {}, statusCode = 200) => {
       const res = Object.assign(new EventEmitter(), { statusCode, headers, resume: vi.fn() });
       cb(res);
@@ -150,7 +150,7 @@ function deferBufferFetch() {
       res.emit('end');
     };
     return req;
-  }) as unknown as typeof https.get);
+  }) as unknown as typeof https.request);
   return {
     respond(body: string, headers?: Record<string, string>, statusCode = 200) {
       expect(reply).not.toBeNull();
@@ -192,7 +192,7 @@ function forwardedPtyEvents(): Array<{ data: string; seq?: number }> {
 
 describe('annex-client remote PTY buffer cache', () => {
   beforeEach(() => {
-    vi.mocked(https.get).mockReset();
+    vi.mocked(https.request).mockReset();
     vi.mocked(broadcastToAllWindows).mockClear();
     vi.mocked(Terminal).mockClear();
     headlessTerminal.disposeAll();
