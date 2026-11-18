@@ -562,6 +562,7 @@ export const ATTR = {
     'update_project', 'update_agent',
     // adding a project folder (#3239)
     'add_project',
+    'list_project_links', 'link_projects', 'unlink_project', 'keep_projects_separate',
     'preview_repository_import', 'import_repository', 'get_repository_import', 'cancel_repository_import',
     // settings reads (#2653)
     'list_settings', 'read_settings', 'read_helper_presets', 'set_helper_presets', 'request_grant',

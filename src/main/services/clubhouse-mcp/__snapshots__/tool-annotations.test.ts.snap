@@ -149,6 +149,10 @@ global:reconnect_device readOnly=false destructive=false openWorld=false
 global:remove_device readOnly=false destructive=true openWorld=false
 global:start_adding_device readOnly=false destructive=false openWorld=false
 global:add_project readOnly=false destructive=false openWorld=false
+global:list_project_links readOnly=true destructive=false openWorld=false
+global:link_projects readOnly=false destructive=false openWorld=false
+global:unlink_project readOnly=false destructive=true openWorld=false
+global:keep_projects_separate readOnly=false destructive=true openWorld=false
 global:preview_repository_import readOnly=true destructive=false openWorld=true
 global:import_repository readOnly=false destructive=false openWorld=true
 global:get_repository_import readOnly=true destructive=false openWorld=false

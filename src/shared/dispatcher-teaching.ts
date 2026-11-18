@@ -92,6 +92,7 @@ const ABILITIES: Readonly<Record<GrantAction, Ability | null>> = {
   },
   'project.read': { group: 'projects', verb: 'see the settings of', noun: 'project' },
   'project.display': { group: 'projects', verb: 'rename', noun: 'project' },
+  'project.link': { group: 'projects', verb: 'link or separate', noun: 'project' },
   'project.configure': { group: 'projects', verb: 'change the defaults of', noun: 'project' },
   'settings.app.read': { group: 'projects', verb: 'see app settings', noun: 'app' },
   'settings.app.write': { group: 'projects', verb: 'change app settings', noun: 'app' },
