@@ -15,6 +15,8 @@ const fixture = vi.hoisted(() => {
   process.env.HOME = dir;
   process.env.USERPROFILE = dir;
   process.env.CLAUDE_CONFIG_DIR = path.join(dir, '.claude');
+  process.env.GIT_CONFIG_NOSYSTEM = '1';
+  process.env.GIT_CONFIG_GLOBAL = path.join(dir, '.gitconfig');
   return { dir, events: [] as Array<{ channel: string; payload: unknown }>, logs: [] as unknown[] };
 });
 
@@ -102,6 +104,9 @@ export async function createInventoryPeer(alias: string) {
   fs.mkdirSync(root);
   fs.writeFileSync(path.join(root, 'fixture.txt'), `file:${alias}:é\n`);
   const project = await projectStore.add(root);
+  const gitRoot = path.join(fixture.dir, 'git-project');
+  const gitRemote = path.join(fixture.dir, 'remote.git');
+  const git = (args: string[], cwd = gitRoot) => execFileSync('git', args, { cwd, encoding: 'utf8' }).trim();
   const agent = await agentConfig.createDurable(root, `${alias} agent`, 'blue', undefined, false, 'claude-code');
   const driver = new FakeChatDriver('claude_stream_json', 'claude-code', {
     ...MINIMAL_CHAT_CAPABILITIES, steer: true, interrupt: true, images: true, questions: true,
@@ -201,13 +206,14 @@ export async function createInventoryPeer(alias: string) {
     hook() {
       eventBus.emitHookEvent(agent.id, { kind: 'pre_tool', toolName: 'Read', toolInput: { file_path: 'fixture.txt' }, timestamp: 1_700_000_000_000 });
     },
-    async durable() {
+    async durable(input?: { projectId: string; useWorktree: boolean }) {
       if (!remote) throw new Error('Inventory peer is not configured');
-      const created = await client.requestCreateDurable(remote.fingerprint, remote.projectId, {
-        name: 'temporary-member', color: 'blue', useWorktree: false, orchestrator: 'claude-code',
+      const projectId = input?.projectId ?? remote.projectId;
+      const created = await client.requestCreateDurable(remote.fingerprint, projectId, {
+        name: 'temporary-member', color: 'blue', useWorktree: input?.useWorktree ?? false, orchestrator: 'claude-code',
       }) as DurableAgentConfig;
-      const worktree = await client.requestWorktreeStatus(remote.fingerprint, remote.projectId, created.id);
-      const deleted = await client.requestDeleteDurable(remote.fingerprint, remote.projectId, created.id, 'force');
+      const worktree = await client.requestWorktreeStatus(remote.fingerprint, projectId, created.id);
+      const deleted = await client.requestDeleteDurable(remote.fingerprint, projectId, created.id, 'force');
       return { created, worktree, deleted };
     },
     seedLargeText() { fs.writeFileSync(path.join(root, 'large-utf8.txt'), 'é\n'.repeat(LARGE_TEXT_BYTES / 3)); },
@@ -229,6 +235,53 @@ export async function createInventoryPeer(alias: string) {
         originalBytes: Buffer.byteLength(result.original), modifiedBytes: Buffer.byteLength(result.modified),
         digest: createHash('sha256').update(result.modified).digest('hex'),
       };
+    },
+    async seedGitProject() {
+      fs.mkdirSync(gitRoot);
+      git(['init', '--quiet', '--template=', '--initial-branch=main']);
+      git(['config', 'user.name', 'Parity Fixture']);
+      git(['config', 'user.email', 'parity@example.invalid']);
+      git(['config', 'commit.gpgSign', 'false']);
+      git(['config', 'core.autocrlf', 'false']);
+      git(['config', 'core.hooksPath', path.join(fixture.dir, 'no-hooks')]);
+      git(['config', 'pull.ff', 'only']);
+      fs.writeFileSync(path.join(gitRoot, 'tracked.txt'), 'initial\n');
+      git(['add', '--', 'tracked.txt']);
+      git(['commit', '--quiet', '-m', 'baseline']);
+      git(['branch', 'fixture-side']);
+      git(['init', '--quiet', '--bare', '--template=', '--initial-branch=main', gitRemote]);
+      git(['remote', 'add', 'origin', gitRemote]);
+      git(['push', '--quiet', '--set-upstream', 'origin', 'main']);
+      fs.writeFileSync(path.join(gitRoot, 'extra.txt'), 'extra\n');
+      return { projectId: (await projectStore.add(gitRoot)).id, baseline: git(['rev-parse', 'HEAD']) };
+    },
+    async gitOperation(input: { projectId: string; params: client.GitOperationParams }) {
+      if (!remote) throw new Error('Inventory peer is not configured');
+      return client.requestGitOperation(remote.fingerprint, input.projectId, input.params);
+    },
+    editGit(content: string) { fs.writeFileSync(path.join(gitRoot, 'tracked.txt'), content); },
+    gitState() {
+      return {
+        head: git(['rev-parse', 'HEAD']), branch: git(['branch', '--show-current']),
+        staged: git(['diff', '--cached', '--name-only']).split('\n').filter(Boolean),
+        stashes: git(['stash', 'list']).split('\n').filter(Boolean).length,
+        // eslint-disable-next-line no-restricted-syntax -- Read disposable Git output, not repository source.
+        content: fs.readFileSync(path.join(gitRoot, 'tracked.txt'), 'utf8'),
+        remoteHead: git(['--git-dir', gitRemote, 'rev-parse', 'refs/heads/main']),
+      };
+    },
+    advanceGitRemote() {
+      const colleague = path.join(fixture.dir, 'colleague');
+      git(['clone', '--quiet', '--template=', gitRemote, colleague]);
+      git(['config', 'user.name', 'Parity Fixture'], colleague);
+      git(['config', 'user.email', 'parity@example.invalid'], colleague);
+      git(['config', 'commit.gpgSign', 'false'], colleague);
+      git(['config', 'core.autocrlf', 'false'], colleague);
+      fs.writeFileSync(path.join(colleague, 'tracked.txt'), 'external\n');
+      git(['add', '--', 'tracked.txt'], colleague);
+      git(['commit', '--quiet', '-m', 'external fixture commit'], colleague);
+      git(['push', '--quiet', 'origin', 'main'], colleague);
+      return git(['rev-parse', 'HEAD'], colleague);
     },
     async seedLargeBoard() {
       const group = await groupProjectHost.create(`${alias} board`);

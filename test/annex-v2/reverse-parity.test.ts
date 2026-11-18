@@ -11,6 +11,7 @@ import {
 } from './reverse-inventory-peer';
 import { assertDialAudit, closeServer, rpcPeer, sentinel, transparentForward, type RpcPeer } from './reverse-parity-fixture';
 import type { ChatEventDraft } from '../../src/shared/chat';
+import type { GitOperationParams } from '../../src/main/services/annex-client';
 
 type Status = ReturnType<InventoryPeer['status']>;
 
@@ -241,6 +242,67 @@ describe('full-server audit inventory over one A to B forward', () => {
     const answer: WireAnswer = who === 'A' ? await a.wire(request) : await b.call('wire', request);
     expect(answer.status).toBe(200);
     expect(JSON.parse(Buffer.from(answer.body, 'base64').toString())).toMatchObject({ deviceName: target(who).alias });
+  });
+
+  describe('R11: all five Git reads and ten writes use the actual Git service', () => {
+    let aGit: Awaited<ReturnType<InventoryPeer['seedGitProject']>>;
+    let bGit: typeof aGit;
+    beforeAll(async () => { aGit = await a.seedGitProject(); bGit = await b.call('seedGitProject'); });
+
+    it.each(['A', 'B'] as const)('%s performs staged reads, commits, checkout, stash, push and pull', async (who) => {
+      const repo = who === 'A' ? bGit : aGit;
+      const request = (params: GitOperationParams) => who === 'A' ? a.gitOperation({ projectId: repo.projectId, params }) : b.call('gitOperation', { projectId: repo.projectId, params });
+      const inspect = (): Promise<ReturnType<InventoryPeer['gitState']>> => who === 'A' ? b.call('gitState') : Promise.resolve(a.gitState());
+      const edit = async (text: string) => { if (who === 'A') await b.call('editGit', text); else a.editGit(text); };
+
+      expect(await request({ operation: 'info' })).toMatchObject({ hasGit: true, branch: 'main', remote: 'origin' });
+      expect(await request({ operation: 'log', limit: 1, offset: 0 })).toMatchObject([{ hash: repo.baseline, subject: 'baseline' }]);
+      await edit('changed\n');
+      expect(await request({ operation: 'diff', file: 'tracked.txt' })).toEqual({ original: 'initial\n', modified: 'changed\n' });
+      expect(await request({ operation: 'stage', path: 'tracked.txt' })).toMatchObject({ ok: true });
+      expect((await inspect()).staged).toEqual(['tracked.txt']);
+      expect(await request({ operation: 'diff', file: 'tracked.txt', staged: true })).toEqual({ original: 'initial\n', modified: 'changed\n' });
+      expect(await request({ operation: 'unstage', path: 'tracked.txt' })).toMatchObject({ ok: true });
+      expect((await inspect()).staged).toEqual([]);
+      expect(await request({ operation: 'stage-all' })).toMatchObject({ ok: true });
+      expect((await inspect()).staged).toEqual(['extra.txt', 'tracked.txt']);
+      expect(await request({ operation: 'unstage-all' })).toMatchObject({ ok: true });
+      expect((await inspect()).staged).toEqual([]);
+      expect(await request({ operation: 'stage-all' })).toMatchObject({ ok: true });
+      expect(await request({ operation: 'commit', message: 'remote commit' })).toMatchObject({ ok: true });
+      const committed = await inspect();
+      expect(committed.head).not.toBe(repo.baseline);
+      expect(await request({ operation: 'log', limit: 1 })).toMatchObject([{ hash: committed.head, subject: 'remote commit' }]);
+      expect(await request({ operation: 'show-commit', hash: committed.head })).toMatchObject({
+        hash: committed.head, files: expect.arrayContaining([{ status: 'A', path: 'extra.txt' }, { status: 'M', path: 'tracked.txt' }]),
+      });
+      expect(await request({ operation: 'commit-diff', hash: committed.head, file: 'tracked.txt' })).toEqual({ original: 'initial\n', modified: 'changed\n' });
+      expect(await request({ operation: 'checkout', branch: 'fixture-side' })).toMatchObject({ ok: true });
+      expect(await inspect()).toMatchObject({ branch: 'fixture-side', content: 'initial\n' });
+      expect(await request({ operation: 'checkout', branch: 'main' })).toMatchObject({ ok: true });
+      await edit('stashed\n');
+      expect(await request({ operation: 'stash' })).toMatchObject({ ok: true });
+      expect(await inspect()).toMatchObject({ content: 'changed\n', stashes: 1 });
+      expect(await request({ operation: 'stash-pop' })).toMatchObject({ ok: true });
+      expect(await inspect()).toMatchObject({ content: 'stashed\n', stashes: 0 });
+      await edit('changed\n');
+      expect(await request({ operation: 'push' })).toMatchObject({ ok: true });
+      expect((await inspect()).remoteHead).toBe(committed.head);
+      const next = who === 'A' ? await b.call('advanceGitRemote') : a.advanceGitRemote();
+      expect(next).not.toBe(committed.head);
+      expect(await request({ operation: 'pull' })).toMatchObject({ ok: true });
+      expect(await inspect()).toMatchObject({ head: next, remoteHead: next, content: 'external\n' });
+    }, 20_000);
+
+    it.each(['A', 'B'] as const)('R07 %s creates, inspects and removes a real worktree', async (who) => {
+      const input = { projectId: (who === 'A' ? bGit : aGit).projectId, useWorktree: true };
+      const result = who === 'A' ? await a.durable(input) : await b.call('durable', input);
+      expect(result).toMatchObject({
+        created: { id: expect.any(String), worktreePath: expect.any(String) },
+        worktree: { isValid: true, uncommittedFiles: [], unpushedCommits: [] },
+        deleted: { ok: true },
+      });
+    }, 20_000);
   });
 
   describe('R11: uncapped working-tree Git diff', () => {
