@@ -7,7 +7,7 @@ import { bindingManager } from '../binding-manager';
 import { mcpAdapter } from '../mcp-adapter';
 import { groupProjectRegistry } from '../../group-project-registry';
 import { groupProjectHost } from '../../group-project-host';
-import { groupProjectToolMembers } from '../../group-project-tool-members';
+import { groupProjectToolMembers, groupProjectMentionMembers } from '../../group-project-tool-members';
 import { canPoll, isAgentAlive, injectPtyMessage } from '../../group-project-lifecycle';
 import { notePollingRead, notePollingStart } from '../../group-project-polling-runs';
 import { getAgentRuntime } from '../../agent-runtime';
@@ -57,6 +57,14 @@ async function resolveSenderLabel(agentId: string, targetId: string): Promise<st
     }
   }
 
+  const members = await groupProjectMentionMembers(targetId);
+  const gp = await groupProjectHost.get(targetId);
+  const address = gp ? groupProjectHost.addressOf(gp, agentId) : agentId;
+  const own = members.find(m => m.address === address);
+  const name = binding?.agentName || own?.name;
+  if (name && members.filter(m => m.name.toLowerCase() === name.toLowerCase()).length > 1) {
+    return `${name} (${own?.computer || 'This computer'})`;
+  }
   return binding?.agentName
     ? `${binding.agentName}${projectName ? '@' + projectName : ''}`
     : agentId;
@@ -91,12 +99,10 @@ export function registerGroupProjectTools(): void {
     label: 'List Members',
     mcp: { targetKind: 'group-project', nameSuffix: 'list_members', grant: { actions: ['group_project.read'], target: 'bound' } },
     description:
-        'List all agents currently connected to this group project.\n\n' +
-        'Returns a JSON array of { agentId, agentName, status } objects. Use this to discover ' +
-        'who is collaborating with you in this group project.\n\n' +
-        'Status values:\n' +
-        '- "connected": agent has a live process and is actively participating\n' +
-        '- "sleeping": agent is bound but has no live process (exited or sleeping)\n\n' +
+        'List group project members as compact JSON: name, address (identity), computer, inbox, status, lastSeen when known, and roles (lead/admin). ' +
+        'Status is awake (live), busy (a chat turn is running), asleep (no live process), or unknown (no runtime observation). ' +
+        'Remote states report what the host last saw, with lastSeen; they may be older than this call. ' +
+        'Use the exact inbox channel, including any suffix. Mentions accept @name or @name@computer; an ambiguous plain name matches all members with that name. ' +
         'For full project context including instructions, use get_project_info.',
       inputSchema: {
         type: 'object',

@@ -115,6 +115,7 @@ import * as gitService from './git-service';
 import { normalizeSessionEvents, buildSessionSummary, paginateEvents, SUMMARY_TRANSCRIPT_MAX_BYTES } from './session-reader';
 import { isSessionCapable, getProvider } from '../orchestrators';
 import { getAgentRuntime, isChatAgent, onChatEvent } from './agent-runtime';
+import { localMemberObservation } from './group-project-member-status';
 import { chatDetailedStatus } from '../../shared/chat-agent-status';
 import { CHAT_IMAGE_MAX_BYTES, type ChatEvent, type ChatSessionState } from '../../shared/chat';
 import { injectPtyText } from './agent-runtime/pty-input';
@@ -1348,7 +1349,7 @@ function assembleSnapshot(sources: SnapshotSources): BuiltSnapshot {
   }));
 
   // Read group project members from binding manager
-  const groupProjectMembers: Record<string, Array<{ agentId: string; agentName: string; status: string }>> = {};
+  const groupProjectMembers: Record<string, Array<{ agentId: string; agentName: string; status: string; runtimeStatus?: import('../../shared/group-project-roster').RosterStatus; lastSeen?: string }>> = {};
   try {
     const allBindings = bindingManager.getAllBindings();
     for (const gp of groupProjects) {
@@ -1357,6 +1358,8 @@ function assembleSnapshot(sources: SnapshotSources): BuiltSnapshot {
         .map(b => ({
           agentId: b.agentId,
           agentName: b.agentName || b.agentId,
+          runtimeStatus: localMemberObservation(b.agentId).status,
+          lastSeen: new Date().toISOString(),
           status: isAgentRunning(b.agentId) ? 'connected' : 'sleeping',
         }));
       if (members.length > 0) {
