@@ -46,6 +46,8 @@ describe.runIf(process.env.CLUBHOUSE_ANNEX_INVENTORY_PEER === '1')('isolated ful
         case 'handoffAccept': return peer.handoffAccept(params as string);
         case 'handoffPull': return peer.handoffPull(params as string);
         case 'handoffCancel': return peer.handoffCancel(params as string);
+        case 'imageUpload': return peer.imageUpload(params as number);
+        case 'receivedImage': return peer.receivedImage();
         case 'durable': return peer.durable(params as Parameters<typeof peer.durable>[0]);
         case 'seedLargeText': return peer.seedLargeText();
         case 'largeText': return peer.largeText();

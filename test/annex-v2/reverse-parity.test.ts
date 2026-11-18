@@ -9,8 +9,8 @@ import {
   BULLETIN_MESSAGES, BULLETIN_MESSAGE_BYTES, NATIVE_TRANSCRIPT_EVENTS, NATIVE_TRANSCRIPT_EVENT_BYTES, NATIVE_SESSION_ID, SMALL_SESSION_ID,
   createInventoryPeer, LARGE_DIFF_BYTES, LARGE_TEXT_BYTES, type InventoryPeer, type InventoryPeerInfo, type WireAnswer,
 } from './reverse-inventory-peer';
-import { assertDialAudit, closeServer, rpcPeer, sentinel, transparentForward, type RpcPeer } from './reverse-parity-fixture';
-import type { ChatEventDraft } from '../../src/shared/chat';
+import { assertDialAudit, closeServer, rpcPeer, sentinel, sizedPng, transparentForward, type RpcPeer } from './reverse-parity-fixture';
+import { CHAT_IMAGE_MAX_BYTES, type ChatEventDraft } from '../../src/shared/chat';
 import type { GitOperationParams } from '../../src/main/services/annex-client';
 
 type Status = ReturnType<InventoryPeer['status']>;
@@ -553,6 +553,38 @@ describe('full-server audit inventory over one A to B forward', () => {
       const cancelled = who === 'A' ? await a.handoffCancel(offer.id) : await b.call('handoffCancel', offer.id);
       expect(cancelled).toMatchObject({ id: offer.id, state: 'cancelled' });
       await expect(who === 'A' ? b.call('handoffPull', offer.id) : a.handoffPull(offer.id)).rejects.toThrow();
+    });
+  });
+
+  describe.each(['A', 'B'] as const)('R09/B: %s raw image upload, staging and real provider delivery', (who) => {
+    const upload = (size: number): Promise<WireAnswer> => who === 'A' ? a.imageUpload(size) : b.call('imageUpload', size);
+    beforeAll(async () => {
+      await emitOnTarget(who, { type: 'turn_ended', data: { stopReason: 'end_turn' } });
+      await emitOnTarget(who, { type: 'turn_started', data: { trigger: 'system' } });
+    });
+    it.each([0, 1])('rejects invalid %i-byte images with the existing HTTP status', async (size) => {
+      const answer = await upload(size);
+      expect(answer.status).toBe(size === 0 ? 400 : 415);
+      expect(JSON.parse(Buffer.from(answer.body, 'base64').toString('utf8'))).toMatchObject({ version: 1, error: size === 0 ? 'empty_body' : 'unsupported_image' });
+    });
+    it.each([64 * 1024 - 1, 64 * 1024, 64 * 1024 + 1, CHAT_IMAGE_MAX_BYTES - 1, CHAT_IMAGE_MAX_BYTES])('preserves all %i bytes through the real attachment and chat paths', async (size) => {
+      const answer = await upload(size);
+      const { registered, running, cached } = await driverOnTarget(who);
+      expect(answer.status, JSON.stringify({ body: Buffer.from(answer.body, 'base64').toString('utf8'), registered, running, cached })).toBe(200);
+      const receipt: unknown = JSON.parse(Buffer.from(answer.body, 'base64').toString('utf8'));
+      expect(receipt).toMatchObject({ version: 1, bytes: size, mimeType: 'image/png', width: 1, height: 1 });
+      if (!receipt || typeof receipt !== 'object' || !('attachmentId' in receipt) || typeof receipt.attachmentId !== 'string') throw new Error('The upload returned no attachment id');
+      expect(await chat(who, { type: 'chat.send', text: 'Image fixture', attachmentIds: [receipt.attachmentId], delivery: 'steer' })).toMatchObject({ status: 'completed' });
+      const received = who === 'A' ? await b.call('receivedImage') : await a.receivedImage();
+      expect(received).toEqual({ bytes: size, digest: createHash('sha256').update(sizedPng(size)).digest('hex'), mimeType: 'image/png' });
+    });
+    it('refuses one byte over the image cap without retiring the link or executing a send', async () => {
+      const before = (await driverOnTarget(who)).sent.length;
+      const answer = await upload(CHAT_IMAGE_MAX_BYTES + 1);
+      expect(answer.status).toBe(413);
+      expect(JSON.parse(Buffer.from(answer.body, 'base64').toString('utf8'))).toMatchObject({ version: 1, error: 'too_large' });
+      expect((await driverOnTarget(who)).sent).toHaveLength(before);
+      expect(await page(who)).toMatchObject({ agentId: target(who).agentId });
     });
   });
 

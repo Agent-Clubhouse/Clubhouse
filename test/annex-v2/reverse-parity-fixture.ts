@@ -1,6 +1,19 @@
 import { randomUUID } from 'crypto';
 import { createInterface } from 'readline';
 import * as net from 'net';
+import { crc32 } from 'zlib';
+
+export function sizedPng(size: number): Buffer {
+  const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8/5+hHgAHggJ/PchI7wAAAABJRU5ErkJggg==', 'base64');
+  if (!Number.isSafeInteger(size) || size < png.length + 12) throw new Error('PNG fixture size is too small');
+  const body = Buffer.alloc(size - png.length - 8);
+  body.write('raNd', 'ascii');
+  for (let i = 4; i < body.length; i++) body[i] = (i - 4) & 0xff;
+  const length = Buffer.alloc(4), crc = Buffer.alloc(4);
+  length.writeUInt32BE(body.length - 4);
+  crc.writeUInt32BE(crc32(body));
+  return Buffer.concat([png.subarray(0, 33), length, body, crc, png.subarray(33)]);
+}
 
 export interface DialAttempt {
   host: string;

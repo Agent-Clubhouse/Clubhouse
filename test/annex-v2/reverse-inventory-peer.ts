@@ -4,7 +4,7 @@ import * as https from 'https';
 import { afterAll, vi } from 'vitest';
 import { createHash } from 'crypto';
 import { execFileSync } from 'child_process';
-import { installDialPolicy, type DialPolicy } from './reverse-parity-fixture';
+import { installDialPolicy, sizedPng, type DialPolicy } from './reverse-parity-fixture';
 import type { ConfigurePeer, PeerInfo } from './reverse-client-peer';
 import type { IPty } from 'node-pty';
 
@@ -310,6 +310,23 @@ export async function createInventoryPeer(alias: string) {
       if (family === 'tree') return client.requestFileTree(remote.fingerprint, remote.projectId);
       return client.sendChatCommand(remote.fingerprint, { type: 'chat.send', agentId: remote.agentId, sessionId: remote.sessionId, text: `fixture:${alias}` });
     },
+    async imageUpload(size: number): Promise<WireAnswer> {
+      if (!remote) throw new Error('Inventory peer is not configured');
+      const body = size <= 1 ? Buffer.alloc(size, 0xff) : sizedPng(size);
+      return this.wire({
+        method: 'POST', path: `/api/v1/mobile/agents/${remote.agentId}/attachments`,
+        headers: { 'content-type': 'image/png' }, body,
+      });
+    },
+    async receivedImage() {
+      const images = driver.last.sent.flatMap((message) => message.content).filter((part) => part.type === 'image');
+      const image = images[images.length - 1];
+      if (!image || image.type !== 'image') throw new Error('The provider has not received an image');
+      const input = fs.createReadStream(image.path);
+      const digest = createHash('sha256');
+      for await (const chunk of input) digest.update(chunk);
+      return { bytes: input.bytesRead, digest: digest.digest('hex'), mimeType: image.mimeType };
+    },
     async chat(input: { command: Record<string, unknown>; commandId?: string }) {
       if (!remote) throw new Error('Inventory peer is not configured');
       return client.sendChatCommand(remote.fingerprint, { agentId: remote.agentId, sessionId: remote.sessionId, ...input.command }, input.commandId);
@@ -613,7 +630,8 @@ export async function createInventoryPeer(alias: string) {
       return {
         sent: driver.last.sent, permissions: driver.last.responses, answers: driver.last.answers,
         models: driver.last.models, levels: driver.last.levels, interrupts: driver.last.interrupts,
-        queue: runtime.getQueueState(), state: runtime.getState(),
+        queue: runtime.getQueueState(), state: runtime.getState(), registered: !!agentRegistry.get(agent.id),
+        running: runtime.isRunning(), cached: !!agentConfig.peekCachedDurableConfig(root, agent.id),
       };
     },
     async close() {
