@@ -3,6 +3,7 @@
  * Persistence only; the host serializes and sequences writes, and #3357's
  * policy decides what goes in it. Unknown fields are kept.
  */
+import { knownGroupProjectTools } from '../../shared/group-project-permissions';
 import type { GroupProjectMembership } from '../../shared/group-project-types';
 import { canonicalMemberAddress } from '../../shared/group-project-members';
 import { membershipPath } from './group-project-paths';
@@ -42,8 +43,14 @@ export function validateMembership(value: unknown, hostMachine: string | null = 
       throw new Error('Group project membership has an explicit entry with an unknown kind.');
     }
   }
+  // Retired/unknown switches are harmless legacy settings, not a corrupt record.
+  const disabledTools = isRecord(value.disabledTools)
+    ? Object.fromEntries(Object.entries(value.disabledTools).map(([member, tools]) => [
+      member, knownGroupProjectTools(Array.isArray(tools) ? tools.filter((tool): tool is string => typeof tool === 'string') : []),
+    ])) : undefined;
   return {
     ...value,
+    ...(disabledTools ? { disabledTools } : {}),
     version: 1,
     autoJoin: value.autoJoin,
     explicit: explicit as GroupProjectMembership['explicit'],

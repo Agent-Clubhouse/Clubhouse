@@ -18,7 +18,6 @@ interface Machine {
   home: string;
   projects?: Array<{ id: string; name: string; path: string; key: string; agents: Array<{ id: string; name: string }> }>;
   host?: typeof import('./group-project-host');
-  polling?: typeof import('./group-project-polling');
   roles?: typeof import('./group-project-roles');
   gate?: typeof import('./group-project-remote-grants');
   registry?: typeof import('./group-project-registry');
@@ -122,7 +121,6 @@ beforeEach(async () => {
     m.delivery = await import('./group-project-delivery');
     m.persisted = await import('./persisted-bindings');
     m.bindings = await import('./clubhouse-mcp/binding-manager');
-    m.polling = await import('./group-project-polling');
     m.roles = await import('./group-project-roles');
     m.gate = await import('./group-project-remote-grants');
     m.host.groupProjectHost.setNetworkLink(linkFor(m));
@@ -574,8 +572,8 @@ describe('network group projects across two desktops (#3363)', () => {
 
   describe('a member\'s own tool switches and instructions are keyed by address (#3516)', () => {
     const POLICY = {
-      lead: { tools: ['broadcast'], instructions: { reviewer: 'host agent rule' } },
-      builder: { tools: ['shoulder_tap'], instructions: { designer: 'copy agent rule' } },
+      lead: { tools: ['clear_topic'], instructions: { reviewer: 'host agent rule' } },
+      builder: { tools: ['wake_agent'], instructions: { designer: 'copy agent rule' } },
     };
 
     /** The host's record: its own agent bare, the other computer's with its machine; both with switches and instructions. */
@@ -624,10 +622,10 @@ describe('network group projects across two desktops (#3363)', () => {
     it('a switch saved on the copy lands under this computer\'s address on the host', async () => {
       const id = await policyProject();
       await bindingOf(B, 'builder', id);
-      await as(B, () => B.membership!.recordMemberDisabledTools(id, 'builder', ['broadcast']));
+      await as(B, () => B.membership!.recordMemberDisabledTools(id, 'builder', ['clear_topic']));
       const onHost = await as(A, (h) => h.groupProjectHost.getMembership(id));
-      expect(onHost.disabledTools).toEqual({ lead: POLICY.lead.tools, [`builder@${B.fp}`]: ['broadcast'] });
-      await expect(as(B, () => B.membership!.savedMemberDisabledTools(id, 'builder'))).resolves.toEqual(['broadcast']);
+      expect(onHost.disabledTools).toEqual({ lead: POLICY.lead.tools, [`builder@${B.fp}`]: ['clear_topic'] });
+      await expect(as(B, () => B.membership!.savedMemberDisabledTools(id, 'builder'))).resolves.toEqual(['clear_topic']);
     });
     it('a subscription saved on the copy lands under this computer\'s address on the host and reads back', async () => {
       const id = await policyProject();
@@ -644,20 +642,20 @@ describe('network group projects across two desktops (#3363)', () => {
       const id = await policyProject();
       down.add('Desk');
       // What an older build queued: this computer's agent named by its bare id.
-      await as(B, (h) => h.groupProjectHost.updateMembership(id, (m) => { m.disabledTools = { ...m.disabledTools, builder: ['broadcast'] }; }));
+      await as(B, (h) => h.groupProjectHost.updateMembership(id, (m) => { m.disabledTools = { ...m.disabledTools, builder: ['clear_topic'] }; }));
       expect(await as(B, (h) => h.groupProjectHost.get(id))).toMatchObject({ network: { waitingWrites: 1 } });
       down.delete('Desk');
       await as(B, (h) => h.groupProjectHost.flushOutbox(A.fp));
       const onHost = await as(A, (h) => h.groupProjectHost.getMembership(id));
-      // The host held ['shoulder_tap'] for it; the user's saved change wins.
-      expect(onHost.disabledTools).toEqual({ lead: POLICY.lead.tools, [`builder@${B.fp}`]: ['broadcast'] });
+      // The host held ['wake_agent'] for it; the user's saved change wins.
+      expect(onHost.disabledTools).toEqual({ lead: POLICY.lead.tools, [`builder@${B.fp}`]: ['clear_topic'] });
       expect(refusals).toEqual([]);
     });
 
     it('a bare id queued before the fix that is not one of this computer\'s agents is refused visibly, not dropped as applied', async () => {
       const id = await policyProject();
       down.add('Desk');
-      await as(B, (h) => h.groupProjectHost.updateMembership(id, (m) => { m.disabledTools = { ...m.disabledTools, ghost: ['broadcast'] }; }));
+      await as(B, (h) => h.groupProjectHost.updateMembership(id, (m) => { m.disabledTools = { ...m.disabledTools, ghost: ['clear_topic'] }; }));
       down.delete('Desk');
       await as(B, (h) => h.groupProjectHost.flushOutbox(A.fp));
       expect((await as(A, (h) => h.groupProjectHost.getMembership(id))).disabledTools).toEqual({ lead: POLICY.lead.tools, [`builder@${B.fp}`]: POLICY.builder.tools });
@@ -666,7 +664,7 @@ describe('network group projects across two desktops (#3363)', () => {
   });
 });
 
-describe('polling author boundary (#3664)', () => {
+describe('author boundary (#3664)', () => {
   it('keeps per-write outcomes isolated across overlapping updates and never persists them', async () => {
     const id = await sharedProject();
     A.host!.groupProjectHost.setRemoteWriteGate(check =>
@@ -711,41 +709,6 @@ describe('polling author boundary (#3664)', () => {
     expect((await as(A, h => h.groupProjectHost.get(id)))?.metadata?.grants).toBeUndefined();
   });
 
-  it.each([true, false])('does not send instructions for queued enabled=%s if reconnect refuses it before the update readback', async enabled => {
-    const id = await sharedProject();
-    await as(A, h => h.groupProjectHost.update(id, { metadata: { pollingEnabled: !enabled } }));
-    await as(B, h => h.groupProjectHost.syncFrom(A.fp));
-    A.host!.groupProjectHost.setRemoteWriteGate(() => 'denied on host');
-    down.add(A.name);
-    const host = B.host!.groupProjectHost;
-    B.bindings!.bindingManager.bind('builder', { targetId: id, targetKind: 'group-project', label: 'Launch', agentName: 'Builder' });
-    const lifecycle = await import('./group-project-lifecycle');
-    const alive = vi.spyOn(lifecycle, 'isAgentAlive').mockReturnValue(true);
-    const canPoll = vi.spyOn(lifecycle, 'canPoll').mockReturnValue(true);
-    // Observe instructions without writing to any real terminal.
-    const inject = vi.spyOn(lifecycle, 'injectPtyMessage').mockImplementation(() => {});
-    const originalGet = host.get.bind(host);
-    // update() forwards, then separately awaits get(). Reconnect can drain
-    // the queued write during that read, so waitingWrites is not its outcome.
-    const readback = vi.spyOn(host, 'get').mockImplementationOnce(async projectId => {
-      down.delete(A.name);
-      await host.flushOutbox(A.fp);
-      return originalGet(projectId);
-    });
-    try {
-      const result = await as(B, () => B.polling!.setProjectPolling(id, enabled, {
-        author: { agentId: 'builder', label: 'Builder' },
-      }));
-      expect((await as(A, h => h.groupProjectHost.get(id)))?.metadata?.pollingEnabled).toBe(!enabled);
-      expect(inject).not.toHaveBeenCalled();
-      expect(result?.pollingEnabled).toBe(!enabled);
-    } finally {
-      readback.mockRestore();
-      alive.mockRestore();
-      canPoll.mockRestore();
-      inject.mockRestore();
-    }
-  });
 
   it.each(['deliver', 'wake', 'actions'] as const)('preserves the person IPC path for the %s own grant on a replica', async grant => {
     const id = await sharedProject();
@@ -756,15 +719,6 @@ describe('polling author boundary (#3664)', () => {
     expect((await as(A, h => h.groupProjectHost.get(id)))?.metadata?.grants).toMatchObject({ [grant]: mode });
   });
 
-  it('accepts this replica\'s qualified author with uppercase fingerprints and still uses agent grants', async () => {
-    const id = await sharedProject();
-    const gate = vi.fn(() => 'agent grant denied');
-    A.host!.groupProjectHost.setRemoteWriteGate(gate);
-    await expect(as(B, () => B.polling!.setProjectPolling(id, true, {
-      author: { agentId: `builder@${B.fp.toUpperCase()}`, label: 'user' },
-    }))).rejects.toMatchObject({ code: 'refused', message: expect.stringContaining('agent grant denied') });
-    expect(gate).toHaveBeenCalledWith(expect.objectContaining({ address: `builder@${B.fp}`, machine: B.fp }));
-  });
 
   it.each(['', 'builder@bad', `builder@${A.fp}`, `builder@${B.fp}@${B.fp}`])('rejects malformed or foreign author %s through the real network parser', async agentId => {
     const id = await sharedProject();
@@ -772,36 +726,14 @@ describe('polling author boundary (#3664)', () => {
     A.host!.groupProjectHost.setRemoteWriteGate(gate);
     const request = readWriteRequest(wire({ v: 1, writes: [{
       id: 'malformed', groupProjectId: id, queuedAt: new Date().toISOString(),
-      author: { agentId, label: 'user' }, write: { op: 'update', fields: { metadata: { pollingEnabled: true } } },
+      author: { agentId, label: 'user' }, write: { op: 'update', fields: { metadata: { legacyFlag: true } } },
     }] }));
     const result = await as(A, h => h.groupProjectHost.applyRemoteWrites(B.fp.toUpperCase(), request));
     expect(result.results[0].status).toBe('refused');
     expect(gate).not.toHaveBeenCalled();
-    expect((await as(A, h => h.groupProjectHost.get(id)))?.metadata?.pollingEnabled).not.toBe(true);
+    expect((await as(A, h => h.groupProjectHost.get(id)))?.metadata?.legacyFlag).not.toBe(true);
   });
 
-  it.each(['off', 'ask', 'allow'] as const)('uses the host grant gate for a replica polling toggle with %s grant', async mode => {
-    const id = await sharedProject();
-    const address = `builder@${B.fp}`;
-    await as(A, h => h.groupProjectHost.updateMembership(id, m => { m.explicit.push({ address, kind: 'durable', addedAt: 't' }); }));
-    await as(B, h => h.groupProjectHost.syncFrom(A.fp));
-    await as(A, async h => {
-      h.groupProjectHost.setRemoteWriteGate(A.gate!.remoteGroupProjectGrantGate);
-      await A.roles!.setGroupProjectRole(id, address, 'admin', mode);
-    });
-    const request = as(B, () => B.polling!.setProjectPolling(id, true, { author: { agentId: 'builder', label: 'user' } }));
-    if (mode === 'allow') {
-      expect((await request)?.pollingEnabled).toBe(true);
-    } else {
-      await expect(request).rejects.toMatchObject({ code: 'refused' });
-    }
-    expect(!!(await as(A, h => h.groupProjectHost.get(id)))?.metadata?.pollingEnabled).toBe(mode === 'allow');
-  });
-  it('rejects a missing replica update author before queueing while a person still toggles', async () => {
-    const id = await sharedProject();
-    await expect(as(B, h => h.groupProjectHost.update(id, { metadata: { pollingEnabled: true } }))).rejects.toMatchObject({ code: 'invalid' });
-    expect((await as(B, () => B.polling!.setProjectPolling(id, true, { author: { label: 'user' } })))?.pollingEnabled).toBe(true);
-  });
   it('rejects a forged author machine and an anonymous legacy envelope', async () => {
     const id = await sharedProject();
     const gate = vi.fn(() => undefined);
@@ -809,18 +741,12 @@ describe('polling author boundary (#3664)', () => {
     for (const author of [{ agentId: `lead@${A.fp}`, label: 'user' }, { label: 'unknown' }, { agentId: '', label: 'user' }]) {
       const result = await as(A, h => h.groupProjectHost.applyRemoteWrites(B.fp, { v: 1, writes: [{
         id: `forge-${author.label}-${author.agentId}`, groupProjectId: id, queuedAt: new Date().toISOString(), author,
-        write: { op: 'update', fields: { metadata: { pollingEnabled: true } } },
+        write: { op: 'update', fields: { metadata: { legacyFlag: true } } },
       }] }));
       expect(result.results[0].status).toBe('refused');
     }
     expect(gate).not.toHaveBeenCalled();
-    expect((await as(A, h => h.groupProjectHost.get(id)))?.metadata?.pollingEnabled).not.toBe(true);
-  });
-  it('does not report a queued toggle as applied', async () => {
-    const id = await sharedProject();
-    down.add(A.name);
-    const result = await as(B, () => B.polling!.setProjectPolling(id, true, { author: { agentId: 'builder', label: 'Builder' } }));
-    expect(result).toMatchObject({ pollingEnabled: false, queued: true });
+    expect((await as(A, h => h.groupProjectHost.get(id)))?.metadata?.legacyFlag).not.toBe(true);
   });
 });
 
@@ -842,5 +768,45 @@ describe('startup roles migration with a replica (#3664)', () => {
     expect((await as(B, h => h.groupProjectHost.get(local.id)))!.metadata.rolesMigratedAt).toBeTruthy();
     expect(await as(B, () => B.registry!.groupProjectRegistry.get(remoteId))).toEqual(replicaBefore);
     expect(await as(A, () => A.registry!.groupProjectRegistry.get(remoteId))).toEqual(hostBefore);
+  });
+});
+
+describe('legacy polling migration through real storage (#3698)', () => {
+  it.each(['allow', 'off'] as const)('clears the host flag, preserves deliver=%s and custom metadata, leaves replicas alone, and is idempotent', async deliver => {
+    const remoteId = await sharedProject();
+    await as(A, h => h.groupProjectHost.update(remoteId, { metadata: { pollingEnabled: true, custom: 'remote', grants: { deliver } } }));
+    await as(B, h => h.groupProjectHost.syncFrom(A.fp));
+    const local = await as(B, h => h.groupProjectHost.create('Legacy local'));
+    await as(B, h => h.groupProjectHost.update(local.id, { metadata: { pollingEnabled: true, custom: 'local', grants: { deliver } } }));
+    const beforeReplica = structuredClone(await as(B, () => B.registry!.groupProjectRegistry.get(remoteId)));
+    await as(B, h => h.groupProjectHost.flushRegistry());
+    B.registry!.groupProjectRegistry._resetForTesting();
+    const loaded = await as(B, h => h.groupProjectHost.get(local.id));
+    expect(loaded!.metadata).toEqual({ custom: 'local', grants: { deliver } });
+    expect(await as(B, () => B.registry!.groupProjectRegistry.get(remoteId))).toEqual(beforeReplica);
+    expect((await as(A, h => h.groupProjectHost.get(remoteId)))!.metadata.pollingEnabled).toBe(true);
+    const file = path.join(B.home, '.clubhouse-dev', 'group-projects', 'registry.json');
+    const first = await fsp.readFile(file, 'utf-8');
+    expect(JSON.parse(first).find((p: { id: string }) => p.id === local.id).metadata).toEqual(loaded!.metadata);
+    B.registry!.groupProjectRegistry._resetForTesting();
+    expect((await as(B, h => h.groupProjectHost.get(local.id)))!.metadata).toEqual(loaded!.metadata);
+    expect(await fsp.readFile(file, 'utf-8')).toBe(first);
+    // Its authoritative host migrates the other record on its own next load.
+    await as(A, h => h.groupProjectHost.flushRegistry());
+    A.registry!.groupProjectRegistry._resetForTesting();
+    expect((await as(A, h => h.groupProjectHost.get(remoteId)))!.metadata).toEqual({ custom: 'remote', grants: { deliver } });
+    await as(B, h => h.groupProjectHost.syncFrom(A.fp));
+    expect((await as(B, h => h.groupProjectHost.get(remoteId)))!.metadata).toEqual({ custom: 'remote', grants: { deliver } });
+  });
+
+  it('loads saved member switches containing retired or unknown names and keeps only active tools after save and reload', async () => {
+    const id = await sharedProject();
+    const file = path.join(A.home, '.clubhouse-dev', 'group-projects', id, 'membership.json');
+    const record = await as(A, h => h.groupProjectHost.getMembership(id));
+    await fsp.writeFile(file, JSON.stringify({ ...record, disabledTools: { lead: ['shoulder_tap', 'broadcast', 'query_polling', 'toggle_polling', 'nudge_polling', 'unknown', 'wake_agent'] } }));
+    expect((await as(A, h => h.groupProjectHost.getMembership(id))).disabledTools).toEqual({ lead: ['wake_agent'] });
+    await as(A, h => h.groupProjectHost.updateMembership(id, draft => { draft.autoJoin = !draft.autoJoin; }));
+    expect(JSON.parse(await fsp.readFile(file, 'utf-8')).disabledTools).toEqual({ lead: ['wake_agent'] });
+    expect((await as(A, h => h.groupProjectHost.getMembership(id))).disabledTools).toEqual({ lead: ['wake_agent'] });
   });
 });

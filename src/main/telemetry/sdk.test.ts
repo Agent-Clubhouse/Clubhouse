@@ -86,7 +86,7 @@ describe('startSdk', () => {
         // A process callback registered here keeps this context after the flow ends.
         leaked = () => {
           rt.replaySpan({ name: 'clubhouse.agent.run', startMs: Date.now() - 10, endMs: Date.now(), attrs: [], outcome: 'ok' });
-          rt.flow('clubhouse.group.shoulder_tap', {}, () => undefined);
+          rt.flow('clubhouse.agent.kill', {}, () => undefined);
         };
       });
     });
@@ -95,7 +95,7 @@ describe('startSdk', () => {
     const byName = new Map(spans.getFinishedSpans().map((sp) => [sp.name, sp]));
     expect(byName.get('clubhouse.pty.spawn')?.parentSpanContext?.spanId).toBe(byName.get('clubhouse.agent.spawn')?.spanContext().spanId);
     expect(byName.get('clubhouse.agent.run')?.parentSpanContext).toBeUndefined();
-    expect(byName.get('clubhouse.group.shoulder_tap')?.parentSpanContext).toBeUndefined();
+    expect(byName.get('clubhouse.agent.kill')?.parentSpanContext).toBeUndefined();
     expect(byName.get('clubhouse.agent.run')?.spanContext().traceId).not.toBe(byName.get('clubhouse.agent.spawn')?.spanContext().traceId);
   });
 
@@ -109,7 +109,7 @@ describe('startSdk', () => {
         inner = rt.traceparent();
       });
       // A second root flow in the same (leaked) context starts its own trace.
-      rt.flow('clubhouse.group.shoulder_tap', {}, () => undefined);
+      rt.flow('clubhouse.agent.kill', {}, () => undefined);
     });
     await rt.forceFlush(1000);
     const byName = new Map(spans.getFinishedSpans().map((sp) => [sp.name, sp]));
@@ -117,7 +117,7 @@ describe('startSdk', () => {
     expect(spawn.spanContext().traceId).toBe('0123456789abcdef0123456789abcdef');
     expect(spawn.parentSpanContext?.spanId).toBe('0123456789abcdef');
     expect(inner).toBe(`00-${spawn.spanContext().traceId}-${spawn.spanContext().spanId}-01`);
-    expect(byName.get('clubhouse.group.shoulder_tap')?.spanContext().traceId).not.toBe('0123456789abcdef0123456789abcdef');
+    expect(byName.get('clubhouse.agent.kill')?.spanContext().traceId).not.toBe('0123456789abcdef0123456789abcdef');
     expect(rt.traceparent()).toBeUndefined();
   });
 

@@ -1299,6 +1299,7 @@ export interface AnnexAPI {
   /** Post a bulletin message to a satellite group project. */
   gpBulletinPost(satelliteId: string, groupProjectId: string, sender: string, topic: string, body: string): Promise<unknown>;
   /** Send a shoulder tap to agents in a satellite group project. */
+  /** @deprecated Posts to the target inbox, or general when no target is given. Use gpBulletinPost. */
   gpShoulderTap(satelliteId: string, groupProjectId: string, targetAgentId: string | null, message: string, sender?: string): Promise<unknown>;
   /** Delete a bulletin message on a satellite group project. */
   gpDeleteMessage(satelliteId: string, groupProjectId: string, topic: string, messageId: string): Promise<boolean>;
@@ -1308,7 +1309,7 @@ export interface AnnexAPI {
   gpSetTopicProtection(satelliteId: string, groupProjectId: string, topic: string, isProtected: boolean): Promise<boolean>;
   /** Inject a message into an agent's PTY on a satellite. */
   gpInjectMessage(satelliteId: string, agentId: string, message: string): Promise<boolean>;
-  /** Set the project-wide polling setting on a satellite group project. */
+  /** @deprecated Polling is retired. Returns the current notices configuration without changing it. */
   gpSetPolling(satelliteId: string, groupProjectId: string, enabled: boolean): Promise<unknown>;
 
   // ── Events ──────────────────────────────────────────────────────────

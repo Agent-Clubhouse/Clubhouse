@@ -201,13 +201,8 @@ function isLead(gp: GroupProject, agentId: string): boolean {
   return roleModeOf(agentId, gp.id, 'lead') !== 'off';
 }
 
-/** Whether the group project still uses polling, the legacy delivery. */
-export function usesPolling(gp: GroupProject): boolean {
-  return gp.metadata?.pollingEnabled === true;
-}
-
 async function onPost(gp: GroupProject, message: BulletinMessage): Promise<void> {
-  if (message.sender === 'system' || message.topic === 'system' || usesPolling(gp)) return;
+  if (message.sender === 'system' || message.topic === 'system') return;
   // Delivering is the group project's own action, under its own grant (#3360).
   if (!groupProjectMay(gp, 'deliver')) {
     appLog('core:group-project', 'debug', 'Post notices are off for this group project', { meta: { groupProjectId: gp.id } });
@@ -238,7 +233,7 @@ async function onPost(gp: GroupProject, message: BulletinMessage): Promise<void>
 /** Whether a notice may still go: the group project is on notices, and the agent is still a member. */
 async function stillMember(state: MemberState): Promise<GroupProject | null> {
   const gp = await groupProjectHost.get(state.groupProjectId);
-  if (!gp || usesPolling(gp) || !groupProjectMay(gp, 'deliver')) return null;
+  if (!gp || !groupProjectMay(gp, 'deliver')) return null;
   const resolved = await groupProjectHost.resolveMembers(gp.id);
   return resolved.some((m) => groupProjectHost.localAgentId(gp, m.address) === state.agentId) ? gp : null;
 }
@@ -438,7 +433,7 @@ export function watchGroupProjectDelivery(): () => void {
       // Members left, or the group project went back to polling or stopped delivering.
       void (async () => {
         const gp = await groupProjectHost.get(change.groupProjectId);
-        const resolved = gp && !usesPolling(gp) && groupProjectMay(gp, 'deliver') ? await groupProjectHost.resolveMembers(gp.id) : [];
+        const resolved = gp && groupProjectMay(gp, 'deliver') ? await groupProjectHost.resolveMembers(gp.id) : [];
         if (gp) forgetFormerMembers(gp, resolved);
         else for (const state of [...members.values()]) if (state.groupProjectId === change.groupProjectId) forget(state);
       })().catch((err) => {

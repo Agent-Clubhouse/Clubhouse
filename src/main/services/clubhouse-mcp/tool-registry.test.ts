@@ -1113,8 +1113,6 @@ describe('ToolRegistry', () => {
       // Lead tools declare the lead grant on the bound group project (#3360), as the real ones do.
       const lead = { grant: { actions: ['group_project.lead' as const], target: 'bound' as const } };
       registerToolTemplate('group-project', 'list_members', { description: 'List', inputSchema: { type: 'object' } }, vi.fn(), { grant: { actions: ['group_project.read'], target: 'bound' } });
-      registerToolTemplate('group-project', 'shoulder_tap', { description: 'Tap', inputSchema: { type: 'object' } }, vi.fn(), lead);
-      registerToolTemplate('group-project', 'broadcast', { description: 'Broadcast', inputSchema: { type: 'object' } }, vi.fn(), lead);
       registerToolTemplate('group-project', 'wake_agent', { description: 'Wake', inputSchema: { type: 'object' } }, vi.fn(), lead);
       registerToolTemplate('group-project', 'clear_topic', { description: 'Clear', inputSchema: { type: 'object' } }, vi.fn(), lead);
       registerToolTemplate('group-project', 'clear_agent', { description: 'Clear agent', inputSchema: { type: 'object' } }, vi.fn(), lead);
@@ -1137,8 +1135,6 @@ describe('ToolRegistry', () => {
       const tools = getScopedToolList('agent-1');
       const suffixes = tools.map(t => t.name.split('__').pop());
       expect(suffixes).toContain('list_members');
-      expect(suffixes).toContain('shoulder_tap');
-      expect(suffixes).toContain('broadcast');
       expect(suffixes).toContain('wake_agent');
       expect(suffixes).toContain('clear_topic');
       expect(suffixes).toContain('clear_agent');
@@ -1149,12 +1145,10 @@ describe('ToolRegistry', () => {
       bindingManager.bind('agent-1', {
         targetId: 'gp_test_2', targetKind: 'group-project', label: 'GP', targetName: 'TestProj',
       });
-      bindingManager.setDisabledTools('agent-1', 'gp_test_2', ['shoulder_tap', 'broadcast', 'wake_agent', 'clear_topic', 'clear_agent', 'compact_agent']);
+      bindingManager.setDisabledTools('agent-1', 'gp_test_2', ['wake_agent', 'clear_topic', 'clear_agent', 'compact_agent']);
       const tools = getScopedToolList('agent-1');
       const suffixes = tools.map(t => t.name.split('__').pop());
       expect(suffixes).toContain('list_members');
-      expect(suffixes).not.toContain('shoulder_tap');
-      expect(suffixes).not.toContain('broadcast');
       expect(suffixes).not.toContain('wake_agent');
       expect(suffixes).not.toContain('clear_topic');
       expect(suffixes).not.toContain('clear_agent');
@@ -1167,7 +1161,7 @@ describe('ToolRegistry', () => {
       });
       const toolName = buildToolName(makeBinding({
         agentId: 'agent-1', targetId: 'gp_test_4', targetKind: 'group-project', targetName: 'TestProj',
-      }), 'shoulder_tap');
+      }), 'wake_agent');
       const result = await callTool('agent-1', toolName, {});
       expect(result.content[0].text).toContain('group_project.lead');
       expect(refusalReasonOf(result)).toBe('no_grant');
@@ -1204,8 +1198,6 @@ describe('ToolRegistry', () => {
       bindingManager.setDisabledTools('agent-1', 'gp_test_3', ['clear_topic']);
       const tools = getScopedToolList('agent-1');
       const suffixes = tools.map(t => t.name.split('__').pop());
-      expect(suffixes).toContain('shoulder_tap');
-      expect(suffixes).toContain('broadcast');
       expect(suffixes).not.toContain('clear_topic');
     });
   });

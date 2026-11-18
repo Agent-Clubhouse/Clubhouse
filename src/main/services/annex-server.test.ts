@@ -294,19 +294,12 @@ vi.mock('./group-project-bulletin', () => ({
   }),
 }));
 
-vi.mock('./group-project-shoulder-tap', () => ({
-  executeShoulderTap: vi.fn().mockResolvedValue({ taskId: 'tap_1', delivered: [], failed: [] }),
-}));
 
 const rolesView = { groupProjectId: 'gp_1', own: { deliver: 'allow', wake: 'off', actions: 'allow' }, holders: [{ agentId: 'a1', lead: 'allow', admin: 'off' }] };
 vi.mock('./group-project-roles', async (original) => ({
   ...await original<typeof import('./group-project-roles')>(),
   describeGroupProjectRoles: vi.fn(async () => rolesView),
   grantGroupProjectRole: vi.fn(async () => undefined),
-}));
-vi.mock('./group-project-polling', () => ({
-  setProjectPolling: vi.fn().mockResolvedValue({ pollingEnabled: true, members: [] }),
-  getProjectPollingState: vi.fn().mockResolvedValue({ pollingEnabled: false, members: [] }),
 }));
 
 vi.mock('./clubhouse-mcp/binding-manager', () => ({
@@ -7718,17 +7711,33 @@ describe('annex-server', () => {
     });
   });
 
-  describe('group project polling endpoint', () => {
-    it('POST /api/v1/group-projects/:id/polling sets the setting via setProjectPolling', async () => {
+  describe('deprecated group messaging compatibility endpoints', () => {
+    it.each([null, 'dev'])('posts old tap requests to the board for target=%s', async targetAgentId => {
+      const { groupProjectRegistry } = await import('./group-project-registry');
+      const { groupProjectHost } = await import('./group-project-host');
+      vi.mocked(groupProjectRegistry.get).mockResolvedValueOnce({ id: 'gp_1', name: 'Team', metadata: {} } as never);
+      const members = vi.spyOn(groupProjectHost, 'resolveMembers').mockResolvedValue([{ address: 'dev', name: 'Dev' }] as never);
+      const inbox = vi.spyOn(groupProjectHost, 'ensureInbox').mockResolvedValue('inbox-dev');
+      const post = vi.spyOn(groupProjectHost, 'post').mockResolvedValue({ id: 'post1', topic: targetAgentId ? 'inbox-dev' : 'general', body: 'Hello', sender: 'user', timestamp: 'now' });
+      try {
+        const { port, token } = await startAndPair();
+        const res = await request(port, 'POST', '/api/v1/group-projects/gp_1/shoulder-tap', { targetAgentId, sender: 'user', message: 'Hello' }, authHeaders(token));
+        expect(res.status).toBe(200);
+        expect(JSON.parse(res.body)).toMatchObject({ taskId: 'post1', deprecated: true });
+        expect(post).toHaveBeenCalledWith('gp_1', 'user', targetAgentId ? 'inbox-dev' : 'general', 'Hello');
+        if (targetAgentId) expect(inbox).toHaveBeenCalledWith('gp_1', 'Dev', 'dev');
+      } finally { members.mockRestore(); inbox.mockRestore(); post.mockRestore(); }
+    });
+
+    it('POST /api/v1/group-projects/:id/polling returns notices without changing settings', async () => {
+      const { groupProjectRegistry } = await import('./group-project-registry');
+      vi.mocked(groupProjectRegistry.get).mockResolvedValueOnce({ id: 'gp_1', name: 'Team', metadata: {} } as never);
       const { port, token } = await startAndPair();
-      const { setProjectPolling } = await import('./group-project-polling');
-      vi.mocked(setProjectPolling).mockResolvedValueOnce({ pollingEnabled: true, members: [] });
 
       const res = await request(port, 'POST', '/api/v1/group-projects/gp_1/polling', { enabled: true }, authHeaders(token));
       expect(res.status).toBe(200);
-      expect(JSON.parse(res.body).pollingEnabled).toBe(true);
+      expect(JSON.parse(res.body)).toMatchObject({ pollingEnabled: false, mode: 'notices', deprecated: true });
       // The paired person's toggle is explicitly a person write (#3664).
-      expect(setProjectPolling).toHaveBeenCalledWith('gp_1', true, { author: { label: 'user' } });
     });
 
     it('returns 400 when enabled is not a boolean', async () => {
@@ -7740,8 +7749,6 @@ describe('annex-server', () => {
 
     it('returns 404 for an unknown group project', async () => {
       const { port, token } = await startAndPair();
-      const { setProjectPolling } = await import('./group-project-polling');
-      vi.mocked(setProjectPolling).mockResolvedValueOnce(null);
 
       const res = await request(port, 'POST', '/api/v1/group-projects/gp_missing/polling', { enabled: false }, authHeaders(token));
       expect(res.status).toBe(404);

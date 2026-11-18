@@ -79,8 +79,8 @@ export type MessageSource =
   | 'user'           // typed in the composer
   | 'mission'        // the agent's initial mission
   | 'mcp'            // Clubhouse MCP send_message / send_file from another agent
-  | 'shoulder_tap'   // group-project shoulder tap
-  | 'group_project'  // group-project inject / polling nudge
+  | 'shoulder_tap'   // legacy transcript source (no longer emitted)
+  | 'group_project'  // group-project notice / inject
   | 'annex'          // a remote Annex client
   | 'system'         // Clubhouse itself (e.g. "continued from terminal" context)
   | 'action';        // an Action step (#2918)

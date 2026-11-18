@@ -39,7 +39,7 @@ export const GRANT_ACTIONS = [
   'connection.bootstrap',
   'group_project.read',
   'group_project.post',
-  'group_project.lead', // broadcast, shoulder taps, wake/sleep/reset members, board curation, legacy polling (#3360)
+  'group_project.lead', // wake/sleep/reset members and board curation (#3360)
   'group_project.admin', // name, instructions, scope, members, its own grants and Actions (#3360)
   // Projects
   'project.read',

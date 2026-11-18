@@ -48,8 +48,8 @@ describe('deniedGroupProjectTools (role-based gating)', () => {
   });
 
   it('per-wire disabledTools restrict an admin further', () => {
-    const denied = deniedGroupProjectTools(adminMeta, 'lead', ['broadcast', 'post_bulletin']);
-    expect(denied.has('broadcast')).toBe(true);   // privileged removed by the wire
+    const denied = deniedGroupProjectTools(adminMeta, 'lead', ['clear_topic', 'post_bulletin']);
+    expect(denied.has('clear_topic')).toBe(true);   // privileged removed by the wire
     expect(denied.has('post_bulletin')).toBe(true); // core removed by the wire
     expect(denied.has('wake_agent')).toBe(false);   // still granted
   });

@@ -8,7 +8,6 @@ import * as membership from '../../group-project-membership';
 import * as projectStore from '../../project-store';
 import { groupProjectRemoteCreate } from '../../group-project-remote-create';
 import { bindingManager } from '../binding-manager';
-import { listPausedPolling } from '../../group-project-polling';
 import { isTrackedDispatcher } from '../dispatcher-gate';
 import { registerGlobalTool } from '../tool-registry';
 import type { McpToolResult } from '../types';
@@ -180,7 +179,7 @@ export function registerGroupProjectManagementTools(legacyCreate?: (caller: stri
     const project = await groupProjectHost.get(id);
     return {
       project, membership: await membership.describeMembership(id), roster: await roster.groupProjectRoster.describe(id), coverage: await coverage.listCoverage(id), roles: await roles.describeGroupProjectRoles(id),
-      delivery: { mode: project?.metadata.pollingEnabled === true ? 'legacy-polling' : 'notices', pausedPolling: listPausedPolling(id), operations: await groupProjectHost.operations(id) },
+      delivery: { mode: 'notices', operations: await groupProjectHost.operations(id) },
       defaultDisabledTools: getDefaultGroupProjectDisabledToolsFromMetadata(project?.metadata),
       retention: { maxPerTopic: project?.metadata.maxPerTopic ?? 500, maxTotal: project?.metadata.maxTotal ?? 2500 },
       memberSettings: await Promise.all(bindingManager.getAllBindings().filter((b) => b.targetKind === 'group-project' && b.targetId === id).map(async (b) => ({ agentId: b.agentId, disabledTools: b.disabledTools, guidance: await guidance.getConnectionGuidance(b.agentId, id) }))),

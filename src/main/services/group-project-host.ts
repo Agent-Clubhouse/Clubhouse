@@ -359,6 +359,14 @@ class GroupProjectHostService {
     return next;
   }
 
+  /** Registry-load migrations run before records are exposed. Reserve first, as
+   * ordinary commits do, so copies catch up even when no board posts changed.
+   * Do not enter run(): the first reader may already hold that project's queue.
+   */
+  async reserveRegistryMigration(id: string): Promise<void> {
+    await this.reserveSeq(id);
+  }
+
   private emit(change: GroupProjectChange): void {
     for (const listener of this.listeners) {
       try {
@@ -2076,3 +2084,6 @@ class GroupProjectHostService {
 }
 
 export const groupProjectHost = new GroupProjectHostService();
+
+// Bind migration writes to this registry's host (also when several hosts share a process in tests).
+groupProjectRegistry.setMigrationHost?.(groupProjectHost);

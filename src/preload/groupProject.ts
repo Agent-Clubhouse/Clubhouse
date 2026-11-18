@@ -50,8 +50,6 @@ export const groupProject = {
     ipcRenderer.invoke(IPC.GROUP_PROJECT.GET_ALL_MESSAGES, id, since, limit),
   postBulletinMessage: (projectId: string, topic: string, body: string): Promise<unknown> =>
     ipcRenderer.invoke(IPC.GROUP_PROJECT.POST_BULLETIN_MESSAGE, projectId, topic, body),
-  sendShoulderTap: (projectId: string, targetAgentId: string | null, message: string): Promise<unknown> =>
-    ipcRenderer.invoke(IPC.GROUP_PROJECT.SEND_SHOULDER_TAP, projectId, targetAgentId, message),
   deleteMessage: (projectId: string, topic: string, messageId: string): Promise<boolean> =>
     ipcRenderer.invoke(IPC.GROUP_PROJECT.DELETE_MESSAGE, projectId, topic, messageId),
   deleteTopic: (projectId: string, topic: string): Promise<boolean> =>
@@ -70,12 +68,6 @@ export const groupProject = {
     ipcRenderer.invoke(IPC.GROUP_PROJECT.GET_MESSAGE, projectId, messageId),
   injectMessage: (agentId: string, message: string): Promise<boolean> =>
     ipcRenderer.invoke(IPC.GROUP_PROJECT.INJECT_MESSAGE, agentId, message),
-  setPolling: (projectId: string, enabled: boolean): Promise<unknown> =>
-    ipcRenderer.invoke(IPC.GROUP_PROJECT.SET_POLLING, projectId, enabled),
-  getPausedPolling: (projectId: string): Promise<Array<{ agentId: string; agentName: string }>> =>
-    ipcRenderer.invoke(IPC.GROUP_PROJECT.GET_PAUSED_POLLING, projectId),
-  resumePolling: (projectId: string, agentId: string): Promise<boolean> =>
-    ipcRenderer.invoke(IPC.GROUP_PROJECT.RESUME_POLLING, projectId, agentId),
   listMembers: (projectId: string): Promise<GroupProjectMembershipView> =>
     ipcRenderer.invoke(IPC.GROUP_PROJECT.LIST_MEMBERS, projectId),
   addMember: (projectId: string, agentId: string): Promise<GroupProjectMembershipView> =>
@@ -105,11 +97,6 @@ export const groupProject = {
     const listener = (_event: Electron.IpcRendererEvent, projectId: string) => callback(projectId);
     ipcRenderer.on(IPC.GROUP_PROJECT.MEMBERSHIP_CHANGED, listener);
     return () => { ipcRenderer.removeListener(IPC.GROUP_PROJECT.MEMBERSHIP_CHANGED, listener); };
-  },
-  onPausedPollingChanged: (callback: () => void) => {
-    const listener = () => callback();
-    ipcRenderer.on(IPC.GROUP_PROJECT.PAUSED_POLLING_CHANGED, listener);
-    return () => { ipcRenderer.removeListener(IPC.GROUP_PROJECT.PAUSED_POLLING_CHANGED, listener); };
   },
   onChanged: (callback: (projects: unknown[]) => void) => {
     const listener = (_event: Electron.IpcRendererEvent, projects: unknown[]) => callback(projects);

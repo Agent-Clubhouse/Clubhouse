@@ -2047,7 +2047,7 @@ export function requestBulletinPostMessage(
 }
 
 /**
- * Send a shoulder tap / broadcast to a satellite group project via HTTPS REST.
+ * @deprecated Compatibility shim: posts to an inbox or general through HTTPS REST.
  */
 export function requestShoulderTap(
   fingerprint: string,
@@ -2113,9 +2113,7 @@ export function requestSetTopicProtection(
 }
 
 /**
- * Set the project-wide polling setting on a satellite group project via HTTPS REST.
- * Runs setProjectPolling on the satellite so the persisted setting + member
- * side-effect stay identical to a local toggle.
+ * @deprecated Polling is retired. The satellite returns notices mode without a change.
  */
 /** A satellite group project's roles and own grants (#3360). */
 export function requestGroupProjectRoles(fingerprint: string, groupProjectId: string): Promise<unknown> {
