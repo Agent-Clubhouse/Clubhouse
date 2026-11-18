@@ -160,6 +160,25 @@ describe('Annex Network membership (#3061)', () => {
       expectNoNewerMemberWithOlderRemoval();
     });
 
+    it.each([
+      ['same id with a later clock', NEW, '2026-11-12T09:00:00.000Z'],
+      ['different id with an equal clock', 'pairing-conflict', '2026-11-10T09:00:00.000Z'],
+      ['different id with an older clock', OLD, '2026-11-01T09:00:00.000Z'],
+      ['legacy input with a later clock', undefined, '2026-11-12T09:00:00.000Z'],
+    ])('keeps the known epoch across restart and %s, but still applies its actual revocation', (_case, pairingId, joinedAt) => {
+      listener!(A, view([newer()]));
+      membership.resetMembershipForTests();
+      membership.initNetworkMembership(hooks);
+      listener!(B, view([newer({ pairingId, joinedAt })], [oldRemoval]));
+      expect(listed()).toMatchObject({ pairingId: NEW, joinedAt: '2026-11-10T09:00:00.000Z', hosts: [] });
+      expect(removed()).toBeUndefined();
+      expect(hooks.endDevice).not.toHaveBeenCalled();
+      // A stamp alone grants no immunity to a real removal, even one with an earlier wall clock.
+      listener!(A, view([], [{ ...oldRemoval, pairingId: NEW, joinedAt: '2026-11-10T09:00:00.000Z' }]));
+      expect(listed()).toBeUndefined();
+      expect(hooks.endDevice).toHaveBeenCalledWith(N.toLowerCase());
+    });
+
     it('pairing again here drops the old removal', () => {
       listener!(A, view([], [oldRemoval]));
       peers.set(N.toLowerCase(), memberPeer(N, '0e', 'Forwarded Mac', { pairingId: NEW, pairedAt: '2026-11-10T09:00:00.000Z', knownHosts: ['127.0.0.1'], hostPorts: { '127.0.0.1': 7555 }, mainPort: 7555 }));

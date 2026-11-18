@@ -165,6 +165,49 @@ describe('annex-peers', () => {
       expect(getPeer('aa:bb:cc')!.privateHosts).toEqual(['studio.ts.net']);
     });
 
+    it.each(['member', 'satellite'] as const)('migrates an existing %s route without repair, then forgets it durably', (role) => {
+      const legacy = member({
+        role, pairedAt: '2026-11-01T09:00:00.000Z', lastSeen: '2026-11-02T09:00:00.000Z',
+        typedHost: 'Studio.ts.net:7555', knownHosts: ['192.168.1.5'],
+      });
+      const target = path.join(tmpDir, 'annex-peers.json');
+      const original = JSON.stringify([legacy]);
+      fs.writeFileSync(target, original);
+      const loaded = getPeer(legacy.fingerprint)!;
+      expect(trustOf(loaded)).toEqual(trustOf(legacy));
+      expect(peerNeedsPairing(loaded)).toBe(false);
+      expect(loaded.typedHostCert).toBeUndefined(); // Migration does not fabricate verification.
+      expect(loaded.heldRoutes).toBeUndefined();
+      expect(loaded.privateHosts).toEqual(['studio.ts.net']);
+      expect(reachCandidates({ typed: loaded.typedHost, known: loaded.knownHosts, ports: loaded.hostPorts, port: loaded.mainPort }))
+        .toContainEqual({ host: 'studio.ts.net', port: 7555, source: 'typed' });
+      expect(fs.readFileSync(target, 'utf8')).toBe(original); // An offline read writes nothing.
+
+      // An ordinary later save persists provenance without replacing the pairing or the old route.
+      recordLastSeen(legacy.fingerprint, new Date('2026-11-03T09:00:00.000Z'));
+      resetForTests();
+      expect(getPeer(legacy.fingerprint)).toMatchObject({
+        ...legacy, lastSeen: '2026-11-03T09:00:00.000Z', privateHosts: ['studio.ts.net'],
+        hostPorts: { '192.168.1.5': 9443 },
+      });
+      expect(trustOf(getPeer(legacy.fingerprint)!)).toEqual(trustOf(legacy));
+
+      const checkedBeforeForget = trustOf(loaded);
+      expect(removePeer(legacy.fingerprint)).toBe(true);
+      expect(commitVerifiedRoute(legacy.fingerprint, checkedBeforeForget, '127.0.0.1:7555', '127.0.0.1')).toBe(false);
+      resetForTests();
+      expect(listPeers()).toEqual([]);
+      expect(JSON.parse(fs.readFileSync(target, 'utf8'))).toEqual([]);
+    });
+
+    it('does not turn an unpinned legacy route into a trusted pairing during migration', () => {
+      const legacy = member({ tlsCertificateFingerprint: undefined, typedHost: '127.0.0.1:7555' });
+      fs.writeFileSync(path.join(tmpDir, 'annex-peers.json'), JSON.stringify([legacy]));
+      expect(getPeer(legacy.fingerprint)).toMatchObject({ typedHost: legacy.typedHost, pairingId: legacy.pairingId });
+      expect(peerNeedsPairing(getPeer(legacy.fingerprint)!)).toBe(true);
+      expect(commitVerifiedRoute(legacy.fingerprint, trustOf(legacy), 'other.local:9443', 'other.local')).toBe(false);
+    });
+
     it('a host the device itself announced stays shared even if it was also typed', () => {
       addPeer(member({ privateHosts: ['192.168.1.9'] }));
       expect(isPrivateHost(getPeer('aa:bb:cc'), '192.168.1.9')).toBe(true);

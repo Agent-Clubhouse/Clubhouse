@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { NETWORK_MESSAGE_MAX_BYTES, parseNetworkMessage, type NetworkMember } from './annex-network-protocol';
+import phoneNetwork from '../../test/fixtures/annex-mobile/network-list.json';
 
 const FP = Array.from({ length: 16 }, () => 'ab').join(':');
 const CERT = Array.from({ length: 32 }, () => 'cd').join(':');
@@ -20,6 +21,24 @@ const member: NetworkMember = {
 const json = (value: unknown) => JSON.stringify(value);
 
 describe('Annex Network protocol (#3060)', () => {
+  it('replays unchanged phone member fixtures, including legacy stamps and route-less desktop records', () => {
+    const members = phoneNetwork.member.response.body.members.map(({ online: _online, ...m }) => {
+      const { self: _self, ...record } = m as typeof m & { self?: boolean };
+      return record;
+    });
+    const desktop = members[1];
+    const { pairingId: _pairingId, ...legacy } = desktop;
+    for (const input of [members, [legacy], [{ ...desktop, hosts: [], port: undefined }]]) {
+      const message = { v: 1, type: 'members', members: input, removals: [] };
+      expect(parseNetworkMessage(json(message))).toEqual({ ok: true, message: JSON.parse(json(message)) });
+    }
+    // Route usability is not membership validity. Bad stamps/ports and local-only fields still fail.
+    for (const extra of [{ pairingId: 2 }, { joinedAt: 'invalid' }, { port: 0 }, { privateHosts: ['127.0.0.1'] }, { reach: {} }]) {
+      expect(parseNetworkMessage(json({ v: 1, type: 'members', members: [{ ...desktop, ...extra }], removals: [] })))
+        .toEqual({ ok: false, reason: 'malformed' });
+    }
+  });
+
   it.each([
     ['hello', { v: 1, type: 'hello', member }],
     ['members', { v: 1, type: 'members', members: [member], removals: [{ fingerprint: FP, removedAt: '2026-11-08T11:00:00Z' }] }],
