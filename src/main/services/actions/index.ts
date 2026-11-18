@@ -376,7 +376,7 @@ function createEngine(): ActionsEngine {
       const member = (await groupProjectHost.resolveMembers(id)).find((m) => m.address === agentId);
       if (!member) return false;
       const inbox = await groupProjectHost.ensureInbox(id, member.name, member.address);
-      await groupProjectHost.post(id, 'Group project Action', inbox, text);
+      await groupProjectHost.post(id, 'Group project Action', inbox, text, { urgent: true });
       return true;
     },
     // A person set this step up to put the agent to sleep: no mid-turn refusal after the wait.

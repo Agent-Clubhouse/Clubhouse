@@ -14,5 +14,5 @@ export async function postLegacyGroupMessage(
     if (!member) return null;
     topic = await host.ensureInbox(project.id, member.name, member.address);
   }
-  return host.post(project.id, sender, topic, message, { author });
+  return host.post(project.id, sender, topic, message, { author, urgent: true });
 }

@@ -109,6 +109,7 @@ import { bindingManager } from '../binding-manager';
 import { mcpAdapter } from '../mcp-adapter';
 import { _resetAllBoardsForTesting, getBulletinBoard } from '../../group-project-bulletin';
 import { groupProjectRegistry } from '../../group-project-registry';
+import { groupProjectHost } from '../../group-project-host';
 import { agentRegistry } from '../../agent-registry';
 import { clearChatRuntimes, registerChatRuntime } from '../../agent-runtime';
 import { registerGroupProjectTools } from './group-project-tools';
@@ -295,13 +296,14 @@ describe('GroupProjectTools', () => {
 
     const binding = makeBinding({ agentId: 'agent-1', targetId: 'gp_123', targetName: 'GP' });
     const toolName = buildToolName(binding, 'post_bulletin');
-    const result = await callTool('agent-1', toolName, { topic: 'progress', body: 'Done with step 1' });
+    const result = await callTool('agent-1', toolName, { topic: 'progress', body: 'Done with step 1', urgent: true });
 
     expect(result.isError).toBeFalsy();
     const parsed = JSON.parse(result.content[0].text!);
     expect(parsed.posted).toBe(true);
     expect(parsed.topic).toBe('progress');
     expect(parsed.messageId).toMatch(/^msg_/);
+    expect(groupProjectHost.post).toHaveBeenCalledWith('gp_123', expect.any(String), 'progress', 'Done with step 1', expect.objectContaining({ urgent: true }));
   });
 
   it('post_bulletin rejects system topic', async () => {

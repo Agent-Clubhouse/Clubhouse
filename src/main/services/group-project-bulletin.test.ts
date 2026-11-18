@@ -1023,3 +1023,13 @@ describe('channel bootstrap helpers', () => {
     });
   });
 });
+
+it('reads only a bounded sequence page even when timestamps run backwards', async () => {
+  const board = getBulletinBoard('sequence-page');
+  for (let seq = 1; seq <= 60; seq++) {
+    const m = await board.postMessage('qa', seq % 2 ? 'general' : 'work', 'x', seq);
+    m.timestamp = new Date(60 - seq).toISOString();
+  }
+  expect((await board.getRecentMessagesBySeq(3)).map((m) => m.seq)).toEqual([58, 59, 60]);
+  expect(await board.getRecentMessagesBySeq(0)).toEqual([]);
+});

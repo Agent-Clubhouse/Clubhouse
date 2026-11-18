@@ -7724,7 +7724,7 @@ describe('annex-server', () => {
         const res = await request(port, 'POST', '/api/v1/group-projects/gp_1/shoulder-tap', { targetAgentId, sender: 'user', message: 'Hello' }, authHeaders(token));
         expect(res.status).toBe(200);
         expect(JSON.parse(res.body)).toMatchObject({ taskId: 'post1', deprecated: true });
-        expect(post).toHaveBeenCalledWith('gp_1', 'user', targetAgentId ? 'inbox-dev' : 'general', 'Hello', { author: { label: 'user' } });
+        expect(post).toHaveBeenCalledWith('gp_1', 'user', targetAgentId ? 'inbox-dev' : 'general', 'Hello', { author: { label: 'user' }, urgent: true });
         if (targetAgentId) expect(inbox).toHaveBeenCalledWith('gp_1', 'Dev', 'dev');
       } finally { members.mockRestore(); inbox.mockRestore(); post.mockRestore(); }
     });

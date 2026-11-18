@@ -134,7 +134,7 @@ function getHandler(channel: string): HandlerFn {
 describe('group-project-handlers', () => {
   it('attributes a person own-grant IPC toggle explicitly at the write boundary', async () => {
     await getHandler(IPC.GROUP_PROJECT.SET_OWN_GRANT)(fakeEvent, 'gp-1', 'deliver', 'off');
-    expect(groupProjectHost.update).toHaveBeenCalledWith('gp-1', { metadata: { grants: { deliver: 'off', wake: 'off', actions: 'allow' } } }, { author: { label: 'user' } });
+    expect(groupProjectHost.update).toHaveBeenCalledWith('gp-1', { metadata: { grants: { deliver: 'off', wake: 'allow', actions: 'allow' } } }, { author: { label: 'user' } });
   });
 
   // ── Registration ──────────────────────────────────────────────────────

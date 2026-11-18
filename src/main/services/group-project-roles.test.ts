@@ -143,9 +143,11 @@ describe('migration from the admins role', () => {
 });
 
 describe('the group project\'s own grants', () => {
-  it('allows delivery and Actions by default, leaves wake off, and saves changes', async () => {
+  it('allows delivery, waking and Actions by default, and saves changes', async () => {
     fx.projects.set('gp1', gp('gp1'));
-    expect(ownGrantsOf(fx.projects.get('gp1')!)).toEqual({ deliver: 'allow', wake: 'off', actions: 'allow' });
+    expect(ownGrantsOf(fx.projects.get('gp1')!)).toEqual({ deliver: 'allow', wake: 'allow', actions: 'allow' });
+    expect(groupProjectMay(fx.projects.get('gp1')!, 'wake')).toBe(true);
+    await setOwnGrant('gp1', 'wake', 'off');
     expect(groupProjectMay(fx.projects.get('gp1')!, 'wake')).toBe(false);
     await setOwnGrant('gp1', 'wake', 'allow');
     await setOwnGrant('gp1', 'deliver', 'off');

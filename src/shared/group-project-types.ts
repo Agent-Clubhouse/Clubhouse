@@ -221,6 +221,8 @@ export interface GroupProjectChange {
   groupProjectId: string;
   seq: number;
   part: GroupProjectChangePart;
+  /** Confirmed explicit removals/new exclusions, never inferred from a missing roster row. */
+  departed?: string[];
   /** On `deleted`: the group project as it was when its delete began. */
   project?: GroupProject;
 }
@@ -239,6 +241,8 @@ export interface GroupProjectScopeOptions {
 
 /** A message posted to the bulletin board. */
 export interface BulletinMessage {
+  /** Bypass notice batching and notice rate limits; never interrupt a turn. */
+  urgent?: boolean;
   id: string;            // "msg_<timestamp>_<random>"
   /** Host-relative authenticated agent address; absent on older/user messages. */
   senderAddress?: string;
@@ -300,7 +304,7 @@ export interface GroupProjectRoleHolderView {
 /** A group project's own grants and who leads and administers it (#3360). */
 export interface GroupProjectRolesView {
   groupProjectId: string;
-  /** What it does by itself: post notices to members, and wake a member with a lead's shoulder tap. */
+  /** What it does by itself: post notices to members, and resume sleeping members for inbox posts or mentions. */
   own: { deliver: 'allow' | 'off'; wake: 'allow' | 'off'; actions: 'allow' | 'off' };
   holders: GroupProjectRoleHolderView[];
 }

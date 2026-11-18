@@ -3,6 +3,8 @@
  * to coordinate via a shared bulletin board.
  */
 
+import { groupPostWakePreflight } from '../../group-project-wake';
+import { resolveMentions } from '../../../../shared/group-project-mentions';
 import { bindingManager } from '../binding-manager';
 import { mcpAdapter } from '../mcp-adapter';
 import { groupProjectRegistry } from '../../group-project-registry';
@@ -116,7 +118,8 @@ export function registerGroupProjectTools(): void {
     label: 'Post Bulletin',
     mcp: { targetKind: 'group-project', nameSuffix: 'post_bulletin', grant: { actions: ['group_project.post'], target: 'bound' } },
     description:
-        'Post a message to a channel on the group project board.\n\n' +
+        'Post a message to a channel on the group project board. Urgent posts skip notice batching and notice rate limits within a per-sender-to-recipient allowance of 20 per ten minutes; additional urgent posts use normal batching and are never dropped; busy recipients receive them after their current turn, never interrupted. Direct inbox posts and mentions can resume sleeping durable members when waking is allowed; held notices survive restart.\n\n' +
+        'Waking needs the group wake grant and a durable member with a resumable session. At most three wake attempts per recipient per ten minutes; other notices stay unread. A remote-origin wake also needs the receiving computer’s Allow grant for group_project.lead. Offline computers catch up from the board; wakePreflight is not a final delivery receipt.\n\n' +
         'CHANNEL MODEL:\n' +
         '- "general" (protected): team-wide announcements only. Avoid posting here otherwise.\n' +
         '- "control" (protected): changes to how the team works, and agreeing on new channels before anyone creates one.\n' +
@@ -132,6 +135,7 @@ export function registerGroupProjectTools(): void {
             type: 'string',
             description: 'Channel name. "system" is reserved. Use short-kebab-case for new work channels.',
           },
+          urgent: { type: 'boolean', description: 'Send the notice next in line, bypassing batching and notice rate limits.' },
           body: {
             type: 'string',
             description: 'Message body (up to ~100KB).',
@@ -142,6 +146,7 @@ export function registerGroupProjectTools(): void {
     handler: async (targetId: string, agentId: string, args: Record<string, unknown>): Promise<McpToolResult> => {
       const topic = requireString(args, 'topic');
       const body = requireString(args, 'body');
+      const urgent = optionalBoolean(args, 'urgent');
 
       if (!topic || !body) {
         return {
@@ -164,7 +169,7 @@ export function registerGroupProjectTools(): void {
       const sender = await resolveSenderLabel(agentId, targetId);
 
       try {
-        const msg = await groupProjectHost.post(targetId, sender, topic, body, { author: { agentId, label: sender } });
+        const msg = await groupProjectHost.post(targetId, sender, topic, body, { author: { agentId, label: sender }, urgent });
         // Members' notices leave the sender out by address, not by name.
         if (!msg.pending) noteSenderAddress(msg.id, agentId);
         if (msg.pending) {
@@ -179,11 +184,18 @@ export function registerGroupProjectTools(): void {
             }],
           };
         }
+        const { ambiguous, addresses } = resolveMentions(body, await groupProjectMentionMembers(targetId));
+        const wakePreflight = await groupPostWakePreflight(targetId, agentId, msg.topic, addresses).catch((err: unknown) => {
+          // telemetry-exempt: post is already saved; return an honest preflight limitation
+          appLog('core:group-project', 'warn', 'Post saved but wake preflight unavailable', { meta: { groupProjectId: targetId, error: String(err) } });
+          return [{ address: agentId, reason: 'Post saved; wake preflight unavailable. Recipients recheck permission on delivery.' }];
+        });
+        const warnings = ambiguous.map((name) => `@${name} matches more than one member; it notified all of them. Use @${name}@<computer> to reach one.`);
         annexEventBus.emitBulletinMessage(targetId, msg);
         return {
           content: [{
             type: 'text',
-            text: JSON.stringify({ posted: true, messageId: msg.id, topic: msg.topic, timestamp: msg.timestamp }),
+            text: JSON.stringify({ posted: true, messageId: msg.id, topic: msg.topic, timestamp: msg.timestamp, ...(warnings.length && { warnings }), ...(wakePreflight.length && { wakePreflight }) }),
           }],
         };
       } catch (err) {

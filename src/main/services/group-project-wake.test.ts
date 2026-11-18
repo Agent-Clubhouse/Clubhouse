@@ -1,0 +1,75 @@
+import { beforeEach, expect, it, vi } from 'vitest';
+const fx = vi.hoisted(() => ({
+  gp: { id: 'g', metadata: {} as Record<string, unknown>, host: { machine: 'host' } },
+  config: { agentConfig: { lastSessionId: 'last' }, projectPath: '/p' } as unknown,
+  live: false, decision: 'allow', reserve: vi.fn(async () => true), wake: vi.fn(),
+}));
+vi.mock('./agent-runtime', () => ({ getAgentRuntime: () => fx.live ? { isRunning: () => true } : undefined }));
+vi.mock('./group-project-host', () => ({ groupProjectHost: {
+  get: async () => fx.gp, resolveMembers: async () => [{ address: 'dev', name: 'dev' }],
+  localAgentId: (_g: unknown, a: string) => a === 'dev' || a === 'sender' ? a : null,
+} }));
+vi.mock('./group-project-roles', () => ({ groupProjectMay: (_g: unknown, grant: string) => !(fx.gp.metadata[grant] === 'off') }));
+vi.mock('./clubhouse-mcp/grant-check', () => ({ decideGrant: () => ({ outcome: fx.decision }) }));
+vi.mock('./group-project-notification-store', () => ({ reserveWake: fx.reserve }));
+vi.mock('./clubhouse-mcp/tools/agent-lifecycle', () => ({ findDurableAgentConfig: async () => fx.config, wakeWiredAgent: fx.wake }));
+import { noteLocalGroupPost, resetLocalGroupPostsForTesting } from './group-project-local-origin';
+import { wakeForGroupPost } from './group-project-wake';
+beforeEach(() => {
+  resetLocalGroupPostsForTesting(); fx.live = false; fx.gp.metadata = {}; fx.config = { agentConfig: { lastSessionId: 'last' }, projectPath: '/p' };
+  fx.decision = 'allow'; fx.reserve.mockResolvedValue(true);
+  fx.wake.mockResolvedValue({ content: [{ type: 'text', text: '{"messageDelivered":true}' }] });
+});
+const wake = (sender = 'sender') => wakeForGroupPost('g', 'dev', 'dev', 'notice', [], [sender]);
+it('uses the shared resume lifecycle with notice as mission', async () => {
+  expect(await wake()).toBe(true);
+  expect(fx.wake).toHaveBeenCalledWith(expect.objectContaining({ targetId: 'dev', mission: 'notice' }));
+});
+it('holds with explicit wake off', async () => { fx.gp.metadata.wake = 'off'; expect(await wake()).toBe(false); expect(fx.wake).not.toHaveBeenCalled(); });
+it('holds helpers and durables without a resumable session', async () => {
+  fx.config = null; expect(await wake()).toBe(false);
+  fx.config = { agentConfig: {} }; expect(await wake()).toBe(false);
+  expect(fx.wake).not.toHaveBeenCalled();
+});
+it('holds over the wake limit', async () => { fx.reserve.mockResolvedValue(false); expect(await wake()).toBe(false); expect(fx.wake).not.toHaveBeenCalled(); });
+it('allows remote lead Allow, holds Ask and off', async () => {
+  expect(await wake('sender@remote')).toBe(true);
+  fx.wake.mockClear();
+  for (const outcome of ['ask', 'refuse']) { fx.decision = outcome; expect(await wake('sender@remote')).toBe(false); }
+  expect(fx.wake).not.toHaveBeenCalled();
+});
+it('rechecks authorization before spawn', async () => {
+  fx.wake.mockImplementationOnce(async ({ authorize }) => {
+    fx.gp.metadata.wake = 'off'; await expect(authorize()).rejects.toThrow('permission');
+    return { isError: true, content: [] };
+  });
+  expect(await wake()).toBe(false);
+});
+
+it('synchronously refuses the wake path if another start creates a running turn', async () => {
+  fx.wake.mockImplementationOnce(async ({ admission }) => {
+    expect(admission()).toBe(true);
+    fx.live = true;
+    expect(admission()).toBe(false);
+    return { isError: true, content: [] };
+  });
+  expect(await wake()).toBe(false);
+});
+
+it.each(['copy', 'network', 'local'])('unknown sender on %s obeys the origin hold', async (kind) => {
+  const gp = fx.gp as typeof fx.gp & { network?: { role: string }; scope?: { reach: string } };
+  gp.network = kind === 'copy' ? { role: 'replica' } : undefined;
+  gp.scope = kind === 'network' ? { reach: 'network' } : undefined;
+  expect(await wakeForGroupPost('g', 'dev', 'dev', 'notice', [], [undefined])).toBe(kind === 'local');
+  if (kind !== 'local') expect(fx.wake).not.toHaveBeenCalled();
+  gp.network = undefined; gp.scope = undefined;
+});
+
+it('a local person or Action post can wake on a network group while unmarked copies stay held', async () => {
+  const gp = fx.gp as typeof fx.gp & { scope?: { reach: string } };
+  gp.scope = { reach: 'network' };
+  noteLocalGroupPost('g', 'local-person');
+  expect(await wakeForGroupPost('g', 'dev', 'dev', 'notice', [], [undefined], ['local-person'])).toBe(true);
+  expect(await wakeForGroupPost('g', 'dev', 'dev', 'notice', [], [undefined], ['replicated-claim'])).toBe(false);
+  gp.scope = undefined;
+});

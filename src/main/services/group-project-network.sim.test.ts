@@ -18,6 +18,8 @@ interface Machine {
   fp: string;
   home: string;
   projects?: Array<{ id: string; name: string; path: string; key: string; agents: Array<{ id: string; name: string }> }>;
+  receipts?: typeof import('./group-project-notification-store');
+  origins?: typeof import('./group-project-local-origin');
   host?: typeof import('./group-project-host');
   roles?: typeof import('./group-project-roles');
   gate?: typeof import('./group-project-remote-grants');
@@ -116,10 +118,12 @@ beforeEach(async () => {
     m.home = await fsp.mkdtemp(path.join(cache, `gp-net-${m.name}-`));
     vi.resetModules();
     m.host = await import('./group-project-host');
+    m.origins = await import('./group-project-local-origin');
     m.registry = await import('./group-project-registry');
     m.bulletin = await import('./group-project-bulletin');
     m.membership = await import('./group-project-membership');
     m.delivery = await import('./group-project-delivery');
+    m.receipts = await import('./group-project-notification-store');
     m.persisted = await import('./persisted-bindings');
     m.bindings = await import('./clubhouse-mcp/binding-manager');
     m.roles = await import('./group-project-roles');
@@ -196,7 +200,9 @@ describe('network group projects across two desktops (#3363)', () => {
     await as(B, (h) => h.groupProjectHost.updateMembership(id, (m) => {
       m.explicit.push({ address: `agent_b@${B.fp}`, kind: 'durable', addedAt: '2026-11-13T00:00:00.000Z' });
     }));
-    const posted = await as(B, (h) => h.groupProjectHost.post(id, 'builder@Studio', 'work', 'from the studio', { author: { agentId: 'agent_b', label: 'builder@Studio' } }));
+    const posted = await as(B, (h) => h.groupProjectHost.post(id, 'builder@Studio', 'work', 'from the studio', { author: { agentId: 'agent_b', label: 'builder@Studio' }, urgent: true }));
+    expect(posted.urgent).toBe(true);
+    expect((await as(B, (h) => h.groupProjectHost.readTopic(id, 'work')))[0].urgent).toBe(true);
     expect(posted.senderAddress).toBe(`agent_b@${B.fp}`);
     expect(posted.pending).toBeUndefined();
     expect(posted.seq).toBeGreaterThan(1);
@@ -833,9 +839,51 @@ describe('legacy message shim through a copy (#3702 review)', () => {
     const topic = targetAgentId ? 'inbox-builder' : 'general';
     expect(posted!.topic).toBe(topic);
     expect(await as(A, h => h.groupProjectHost.readTopic(id, topic))).toEqual(expect.arrayContaining([
-      expect.objectContaining({ id: posted!.id, body: 'Through the copy', sender: 'Plugin user' }),
+      expect.objectContaining({ id: posted!.id, body: 'Through the copy', sender: 'Plugin user', urgent: true }),
     ]));
     expect(gate).not.toHaveBeenCalled();
     expect(refusals).toEqual([]);
   });
+});
+
+it('local provenance stays on the originating computer and cannot be claimed on the wire', async () => {
+  const id = await sharedProject();
+  const local = await as(B, (h) => h.groupProjectHost.post(id, 'user', 'general', 'from copy', { author: { label: 'user' } }));
+  expect(B.origins!.isLocalGroupPost(id, local.id)).toBe(true);
+  expect(A.origins!.isLocalGroupPost(id, local.id)).toBe(false);
+  const forged = readWriteRequest(wire({ v: 1, writes: [{ id: 'forged-origin', groupProjectId: id, queuedAt: new Date().toISOString(), author: { label: 'user' }, write: { op: 'post', sender: 'user', topic: 'general', body: 'claim', localOrigin: true, remoteOrigin: false } }] }));
+  await as(A, (h) => h.groupProjectHost.applyRemoteWrites(B.fp, forged));
+  const received = (await as(A, (h) => h.groupProjectHost.readTopic(id, 'general'))).find((m) => m.body === 'claim')!;
+  expect(received).toBeTruthy();
+  expect(A.origins!.isLocalGroupPost(id, received.id)).toBe(false);
+  expect(received).not.toHaveProperty('localOrigin');
+});
+
+it('snapshot departure prunes the copy member receipt when its host removes that member', async () => {
+  const id = await sharedProject();
+  const address = `builder@${B.fp}`;
+  await as(A, h => h.groupProjectHost.updateMembership(id, draft => {
+    draft.explicit.push({ address, kind: 'durable', name: 'Builder', addedAt: 'now' });
+  }));
+  await as(B, h => h.groupProjectHost.syncFrom(A.fp));
+  await as(B, async () => {
+    await B.receipts!.markNotified(id, 'builder', 30);
+    expect(await B.receipts!.lastNotified(id, 'builder')).toBe(30);
+    B.delivery!.watchGroupProjectDelivery();
+  });
+  const arrived: import('../../shared/group-project-types').GroupProjectChange[] = [];
+  const off = B.host!.groupProjectHost.onChange(c => arrived.push(c));
+  try {
+    await as(A, h => h.groupProjectHost.updateMembership(id, draft => {
+      draft.explicit = draft.explicit.filter(m => m.address !== address);
+      draft.excluded.push({ address, excludedAt: 'now' });
+    }));
+    await as(B, h => h.groupProjectHost.syncFrom(A.fp));
+    expect(arrived).toEqual(expect.arrayContaining([expect.objectContaining({ groupProjectId: id, part: 'record', departed: [address] })]));
+    await vi.waitFor(async () => {
+      expect(await as(B, async () => B.receipts!.lastNotified(id, 'builder'))).toBeUndefined();
+    });
+    const saved = JSON.parse(await fsp.readFile(path.join(B.home, 'group-project-notification-receipts.json'), 'utf8'));
+    expect(Object.hasOwn(saved.notified, JSON.stringify([id, 'builder']))).toBe(false);
+  } finally { off(); }
 });
