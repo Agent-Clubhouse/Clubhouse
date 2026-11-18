@@ -1801,7 +1801,10 @@ export async function setSatelliteHost(fingerprint: string, input: string): Prom
     appLog('core:annex-client', 'warn', 'Typed host not saved: checking it failed', { meta: { fingerprint, code: (err as { code?: string } | null)?.code } });
     return { ok: false, error: routeCheckError(err, peer.alias, parsed.host) };
   }
-  if (!annexPeers.commitVerifiedRoute(fingerprint, trust, value, parsed.host)) {
+  // Persist the endpoint checked above, including an inferred port: later announcements can change
+  // the default/per-host port while this probe awaits, or after the save, without changing trust.
+  const verifiedAddress = formatAddress({ host: parsed.host, port });
+  if (!annexPeers.commitVerifiedRoute(fingerprint, trust, verifiedAddress, parsed.host)) {
     appLog('core:annex-client', 'warn', 'Typed host not saved: the pairing changed while it was checked', { meta: { fingerprint } });
     return { ok: false, error: `${peer.alias || 'That computer'} changed while its address was checked. Nothing was changed. Try again.` };
   }

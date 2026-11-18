@@ -3696,6 +3696,17 @@ describe('annex-server', () => {
         expect(peers.get(computer.fingerprint)?.heldRoutes).toBeUndefined();
       });
 
+      it('keeps the legacy default needed by a bare typed host when the same certificate pairs again', async () => {
+        await startServer();
+        const computer = device();
+        peers.set(computer.fingerprint, pinned(computer, {
+          typedHost: 'studio.local', knownHosts: [], hostPorts: {}, mainPort: 7555,
+        }));
+        expect((await pair(computer)).status).toBe(200);
+        expect(peers.get(computer.fingerprint)).toMatchObject({ typedHost: 'studio.local', mainPort: 7555 });
+        expect(peers.get(computer.fingerprint)?.heldRoutes).toBeUndefined();
+      });
+
       it('keeps them for a new certificate its identity key signed for', async () => {
         await startServer();
         const computer = device();

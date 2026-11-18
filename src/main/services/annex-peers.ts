@@ -249,6 +249,8 @@ export function withSavedRoutes(previous: AnnexPeer | undefined, next: AnnexPeer
   const routes = { typedHost: previous.typedHost, knownHosts: previous.knownHosts, hostPorts: previous.hostPorts };
   const hasRoutes = !!routes.typedHost || !!routes.knownHosts?.length || !!Object.keys(routes.hostPorts ?? {}).length;
   if (sameIdentity && certContinuity) {
+    // A bare typed host may rely only on this default; the server's pairing record has no port.
+    if (!out.mainPort && previous.mainPort) out.mainPort = previous.mainPort;
     // This machine's own routes first, then what the new pairing says, then the rest it knew.
     const own = (previous.knownHosts ?? []).filter((h) => isPrivateHost(previous, h));
     out.knownHosts = [...new Set([...(next.knownHosts ?? []).slice(0, 1), ...own, ...(next.knownHosts ?? []), ...(previous.knownHosts ?? [])]

@@ -2850,7 +2850,7 @@ describe('annex-client', () => {
       committing();
       expect(await annexClient.setSatelliteHost(FP, 'studio.tail1234.ts.net')).toEqual({ ok: true });
       expect(annexTls.verifyPinnedEndpoint).toHaveBeenCalledWith('studio.tail1234.ts.net', 9443, { pinned: true }, annexClient.ROUTE_CHECK_TIMEOUT_MS);
-      expect(annexPeers.commitVerifiedRoute).toHaveBeenCalledWith(FP, expect.objectContaining({ fingerprint: FP, tlsCertificateFingerprint: 'AB:CD' }), 'studio.tail1234.ts.net', 'studio.tail1234.ts.net');
+      expect(annexPeers.commitVerifiedRoute).toHaveBeenCalledWith(FP, expect.objectContaining({ fingerprint: FP, tlsCertificateFingerprint: 'AB:CD' }), 'studio.tail1234.ts.net:9443', 'studio.tail1234.ts.net');
       expect(sockets.at(-1)!.url).toBe('wss://studio.tail1234.ts.net:9443/ws?client=desktop');
       expect(annexClient.satelliteAddress(FP)).toBe('studio.tail1234.ts.net:9443');
       expect(await annexClient.setSatelliteHost(FP, '')).toEqual({ ok: true });
@@ -2901,6 +2901,27 @@ describe('annex-client', () => {
         expect(result).toEqual({ ok: false, error: expect.stringMatching(/changed while its address was checked/) });
         expect(real.getPeer(FP)).toMatchObject({ typedHost: '127.0.0.1:7443', ...change });
         expect(real.getPeer(FP)?.typedHostCert).toBeUndefined();
+      });
+
+      it.each(['default', 'per-host'] as const)('saves the exact verified endpoint when the %s port changes during and after its probe', async (source) => {
+        if (source === 'per-host') real.addPeer({ ...real.getPeer(FP)!, hostPorts: { 'studio.local': 9443 } });
+        vi.mocked(annexTls.verifyPinnedEndpoint).mockImplementationOnce(async () => {
+          real.addPeer({ ...real.getPeer(FP)!, mainPort: 9555, hostPorts: { 'studio.local': 9555 } });
+        });
+        expect(await annexClient.setSatelliteHost(FP, 'studio.local')).toEqual({ ok: true });
+        expect(annexTls.verifyPinnedEndpoint).toHaveBeenCalledWith('studio.local', 9443, expect.anything(), expect.any(Number));
+        expect(real.getPeer(FP)).toMatchObject({ typedHost: 'studio.local:9443', typedHostCert: 'AB:CD' });
+        // No membership or trust change is needed to move a fallback again after the verified save.
+        real.addPeer({ ...real.getPeer(FP)!, mainPort: 9666, hostPorts: { 'studio.local': 9666 } });
+        const saved = real.getPeer(FP)!;
+        const { reachCandidates } = await import('./annex-reach');
+        expect(reachCandidates({ typed: saved.typedHost, ports: saved.hostPorts, port: saved.mainPort }))
+          .toEqual([{ host: 'studio.local', port: 9443, source: 'typed' }]);
+      });
+
+      it('persists an inferred IPv6 port with brackets so the checked endpoint remains unambiguous', async () => {
+        expect(await annexClient.setSatelliteHost(FP, '2001:db8::5')).toEqual({ ok: true });
+        expect(real.getPeer(FP)?.typedHost).toBe('[2001:db8::5]:9443');
       });
 
       describe.each([3, 5])('a forward-only mesh of %i computers (#3608)', (machines) => {
@@ -3120,7 +3141,7 @@ describe('annex-client', () => {
     it('saves a checked typed host without connecting while Connect to satellites is off', async () => {
       vi.mocked(annexSettings.getSettings).mockReturnValue({ enableServer: true, enableClient: false } as any);
       expect(await annexClient.setSatelliteHost(FP, 'studio.local')).toEqual({ ok: true });
-      expect(annexPeers.commitVerifiedRoute).toHaveBeenCalledWith(FP, expect.anything(), 'studio.local', 'studio.local');
+      expect(annexPeers.commitVerifiedRoute).toHaveBeenCalledWith(FP, expect.anything(), 'studio.local:9443', 'studio.local');
       expect(sockets).toHaveLength(0);
     });
 

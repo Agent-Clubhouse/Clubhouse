@@ -261,6 +261,34 @@ describe('annex-peers', () => {
         expect(out.heldRoutes).toBeUndefined();
       });
 
+      it('keeps a bare typed route dialable after a server-side continuity re-pair and restart without discovery', () => {
+        const previous = member({
+          pairedAt: '2026-11-01T09:00:00.000Z', lastSeen: '2026-11-02T09:00:00.000Z',
+          typedHost: 'studio.local', knownHosts: [], hostPorts: {}, mainPort: 7555,
+        });
+        // The server's pairedPeer contains identity/pairing metadata but no route or port fields.
+        const pairedPeer = next({ tlsCertificatePem: 'PEM-1', knownHosts: undefined, hostPorts: undefined, mainPort: undefined });
+        addPeer(withSavedRoutes(previous, pairedPeer, true));
+        resetForTests();
+        const reloaded = getPeer(previous.fingerprint)!;
+        expect(peerNeedsPairing(reloaded)).toBe(false);
+        expect(reloaded.typedHost).toBe('studio.local');
+        expect(reachCandidates({ typed: reloaded.typedHost, known: reloaded.knownHosts, ports: reloaded.hostPorts, port: reloaded.mainPort }))
+          .toEqual([{ host: 'studio.local', port: 7555, source: 'typed' }]);
+        expect(reloaded.heldRoutes).toBeUndefined();
+      });
+
+      it('keeps a new pairing port authoritative and never activates the legacy port without continuity', () => {
+        const previous = member({ typedHost: 'studio.local', knownHosts: [], hostPorts: {}, mainPort: 7555 });
+        expect(withSavedRoutes(previous, next({ mainPort: 8443 }), true).mainPort).toBe(8443);
+        const changedPin = withSavedRoutes(previous, next({ mainPort: undefined, tlsCertificateFingerprint: 'CERT-2' }), false);
+        expect(changedPin.mainPort).toBeUndefined();
+        expect(changedPin.typedHost).toBeUndefined();
+        const changedIdentity = withSavedRoutes(previous, next({ mainPort: undefined, publicKey: 'someone-else' }), true);
+        expect(changedIdentity.mainPort).toBeUndefined();
+        expect(changedIdentity.typedHost).toBeUndefined();
+      });
+
       it('holds, never drops or retargets, saved routes when the certificate is not shown to be the same', () => {
         const out = withSavedRoutes(previous, next({ tlsCertificateFingerprint: 'CERT-ROGUE' }), false);
         expect(out.typedHost).toBeUndefined();
