@@ -616,6 +616,17 @@ describe('full-server audit inventory over one A to B forward', () => {
     expect((await inspect()).order).not.toContain(id);
   });
 
+  it.each(['A', 'B'] as const)('R09 %s: a legitimate external config edit does not unregister a running upload target', async (who) => {
+    if (who === 'A') await b.call('initializeProject'); else await a.initializeProject();
+    const upload = (): Promise<WireAnswer> => who === 'A' ? a.imageUpload(65_535) : b.call('imageUpload', 65_535);
+    expect((await upload()).status).toBe(200);
+    const config = who === 'A' ? await b.call('externalConfigEdit') : await a.externalConfigEdit();
+    expect(config).toEqual({ cachedBefore: true, unchanged: true, registered: true, running: true });
+    const answer = await upload();
+    const { registered, running, cached } = await driverOnTarget(who);
+    expect(answer.status, JSON.stringify({ body: Buffer.from(answer.body, 'base64').toString('utf8'), registered, running, cached })).toBe(200);
+  });
+
   it('audits every app dial independently of the direct-dial sentinel', async () => {
     assertDialAudit((await status('A')).attempts, { host: '127.0.0.1', port: forward.port }, forward.sourcePorts, guard.accepts());
     assertDialAudit((await status('B')).attempts, null, [], guard.accepts());

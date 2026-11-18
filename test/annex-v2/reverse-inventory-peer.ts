@@ -368,6 +368,21 @@ export async function createInventoryPeer(alias: string) {
       if (!remote) throw new Error('Inventory peer is not configured');
       return client.requestDeleteDurable(remote.fingerprint, remote.projectId, id, 'force');
     },
+    initializeProject() { return agentConfig.initializeDurableProject(root); },
+    async externalConfigEdit() {
+      await agentConfig.flushAgentConfig(root);
+      await agentConfig.settleAgentsFileChecksForTests();
+      const cachedBefore = !!agentConfig.peekCachedDurableConfig(root, agent.id);
+      const file = path.join(root, '.clubhouse', 'agents.json');
+      const before = await fs.promises.readFile(file, 'utf8');
+      await fs.promises.writeFile(file, `${before}\n`);
+      await vi.waitUntil(() => !agentConfig.peekCachedDurableConfig(root, agent.id), { timeout: 5000, interval: 10 });
+      return {
+        cachedBefore,
+        unchanged: JSON.stringify(JSON.parse(before)) === JSON.stringify(JSON.parse(await fs.promises.readFile(file, 'utf8'))),
+        registered: !!agentRegistry.get(agent.id), running: runtime.isRunning(),
+      };
+    },
     async chat(input: { command: Record<string, unknown>; commandId?: string }) {
       if (!remote) throw new Error('Inventory peer is not configured');
       return client.sendChatCommand(remote.fingerprint, { agentId: remote.agentId, sessionId: remote.sessionId, ...input.command }, input.commandId);

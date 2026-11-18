@@ -51,6 +51,8 @@ describe.runIf(process.env.CLUBHOUSE_ANNEX_INVENTORY_PEER === '1')('isolated ful
         case 'prepareLifecycle': return peer.prepareLifecycle();
         case 'lifecycleState': return peer.lifecycleState(params as string);
         case 'deleteRemoteAgent': return peer.deleteRemoteAgent(params as string);
+        case 'externalConfigEdit': return peer.externalConfigEdit();
+        case 'initializeProject': return peer.initializeProject();
         case 'durable': return peer.durable(params as Parameters<typeof peer.durable>[0]);
         case 'seedLargeText': return peer.seedLargeText();
         case 'largeText': return peer.largeText();
