@@ -835,7 +835,7 @@ describe('legacy message shim through a copy (#3702 review)', () => {
     const topic = targetAgentId ? 'inbox-builder' : 'general';
     expect(posted!.topic).toBe(topic);
     expect(await as(A, h => h.groupProjectHost.readTopic(id, topic))).toEqual(expect.arrayContaining([
-      expect.objectContaining({ id: posted!.id, body: 'Through the copy', sender: 'Plugin user' }),
+      expect.objectContaining({ id: posted!.id, body: 'Through the copy', sender: 'Plugin user', urgent: true }),
     ]));
     expect(gate).not.toHaveBeenCalled();
     expect(refusals).toEqual([]);
