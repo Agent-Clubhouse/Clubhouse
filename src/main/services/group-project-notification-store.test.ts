@@ -4,7 +4,7 @@ import * as os from 'os';
 import * as path from 'path';
 const fx = vi.hoisted(() => ({ home: '', agents: ['dev', 'other'], groups: ['gp', 'other'], broken: new Set<string>(), failList: false }));
 vi.mock('./group-project-host', () => ({ groupProjectHost: { list: async () => { if (fx.failList) throw new Error('registry unavailable'); return fx.groups.map((id) => ({id, seq: 40})); }, resolveMembers: async (id: string) => { if (fx.broken.has(id)) throw new Error('invalid membership.json'); return fx.agents.map((address) => ({address})); }, localAgentId: (_g: unknown, a: string) => a } }));
-vi.mock('electron', () => ({ app: { isPackaged: false, getPath: () => fx.home } }));
+vi.mock('electron', () => ({ app: { isPackaged: false, getPath: (key: string) => key === 'userData' ? `${fx.home}/app-data` : fx.home } }));
 vi.mock('./log-service', () => ({ appLog: vi.fn() }));
 beforeEach(async () => { fx.groups = ['gp', 'other']; fx.agents = ['dev', 'other']; fx.broken.clear(); fx.failList = false; fx.home = await fsp.mkdtemp(path.join(os.tmpdir(), 'gp-receipts-')); });
 afterEach(async () => { await fsp.rm(fx.home, { recursive: true, force: true }); });
@@ -24,14 +24,14 @@ it('persists monotonic receipts and per-recipient wake budget across module relo
 });
 
 it.each(['{broken', '{"notified":false,"wakes":{}}'])('quarantines corrupt receipts and baselines every current group: %s', async (raw) => {
-  const dir = path.join(fx.home, '.clubhouse-dev/group-projects');
+  const dir = path.join(fx.home, 'app-data');
   await fsp.mkdir(dir, { recursive: true });
-  await fsp.writeFile(path.join(dir, 'notification-receipts.json'), raw);
+  await fsp.writeFile(path.join(dir, 'group-project-notification-receipts.json'), raw);
   vi.resetModules();
   const store = await import('./group-project-notification-store');
   expect(await store.lastNotified('gp', 'dev')).toBe(40);
   expect(await store.lastNotified('other', 'dev')).toBe(40);
-  const quarantined = (await fsp.readdir(dir)).find((n) => n.startsWith('notification-receipts.json.corrupt-'));
+  const quarantined = (await fsp.readdir(dir)).find((n) => n.startsWith('group-project-notification-receipts.json.corrupt-'));
   expect(quarantined).toBeTruthy();
   expect(await fsp.readFile(path.join(dir, quarantined!), 'utf8')).toBe(raw);
 });
@@ -45,7 +45,7 @@ it('prunes orphaned groups on load but preserves temporarily absent members and 
   vi.resetModules();
   const restarted = await import('./group-project-notification-store');
   expect(await restarted.lastNotified('gp', 'dev')).toBe(7);
-  const raw = JSON.parse(await fsp.readFile(path.join(fx.home, '.clubhouse-dev/group-projects/notification-receipts.json'), 'utf8'));
+  const raw = JSON.parse(await fsp.readFile(path.join(fx.home, 'app-data/group-project-notification-receipts.json'), 'utf8'));
   expect(Object.keys(raw.notified)).toEqual([JSON.stringify(['gp', 'departed']), JSON.stringify(['gp', 'dev'])]);
   expect(raw.wakes.departed).toHaveLength(1);
 });
@@ -76,9 +76,9 @@ it('prunes live departures and deletion without waiting for another process rest
 
 it('a broken group cannot block loading healthy receipts or urgent admission', async () => {
   fx.groups = ['healthy', 'broken']; fx.broken.add('broken');
-  const dir = path.join(fx.home, '.clubhouse-dev/group-projects');
+  const dir = path.join(fx.home, 'app-data');
   await fsp.mkdir(dir, { recursive: true });
-  await fsp.writeFile(path.join(dir, 'notification-receipts.json'), JSON.stringify({ notified: { [JSON.stringify(['healthy', 'dev'])]: 30, [JSON.stringify(['broken', 'missing'])]: 12 }, wakes: {}, urgent: {} }));
+  await fsp.writeFile(path.join(dir, 'group-project-notification-receipts.json'), JSON.stringify({ notified: { [JSON.stringify(['healthy', 'dev'])]: 30, [JSON.stringify(['broken', 'missing'])]: 12 }, wakes: {}, urgent: {} }));
   vi.resetModules();
   const store = await import('./group-project-notification-store');
   expect(await store.lastNotified('healthy', 'dev')).toBe(30);
@@ -98,9 +98,9 @@ it('retains unread cursors when roster absence is temporary, on load and members
 });
 
 it('registry inspection failure preserves existing receipts and never blocks loading', async () => {
-  const dir = path.join(fx.home, '.clubhouse-dev/group-projects');
+  const dir = path.join(fx.home, 'app-data');
   await fsp.mkdir(dir, { recursive: true });
-  await fsp.writeFile(path.join(dir, 'notification-receipts.json'), JSON.stringify({ notified: { [JSON.stringify(['healthy', 'dev'])]: 30 }, wakes: {}, urgent: {} }));
+  await fsp.writeFile(path.join(dir, 'group-project-notification-receipts.json'), JSON.stringify({ notified: { [JSON.stringify(['healthy', 'dev'])]: 30 }, wakes: {}, urgent: {} }));
   fx.failList = true; vi.resetModules();
   const store = await import('./group-project-notification-store');
   expect(await store.lastNotified('healthy', 'dev')).toBe(30);
@@ -113,4 +113,17 @@ it('does not departure-prune a group whose roster is unresolved', async () => {
   fx.broken.add('gp');
   await store.pruneNotificationReceipts({ departed: [{ group: 'gp', agents: ['dev'] }] });
   expect(await store.lastNotified('gp', 'dev')).toBe(30);
+});
+
+it('ignores legacy shared-store receipts and initializes fresh local app-data state', async () => {
+  const oldFile = path.join(fx.home, '.clubhouse-dev/group-projects/notification-receipts.json');
+  await fsp.mkdir(path.dirname(oldFile), { recursive: true });
+  const legacy = JSON.stringify({ notified: { [JSON.stringify(['gp', 'dev'])]: 1 }, wakes: {}, urgent: {} });
+  await fsp.writeFile(oldFile, legacy);
+  vi.resetModules(); const store = await import('./group-project-notification-store');
+  expect(await store.lastNotified('gp', 'dev')).toBeUndefined();
+  expect(await store.initializeNotified('gp', 'dev', 40)).toBe(40);
+  const local = JSON.parse(await fsp.readFile(path.join(fx.home, 'app-data/group-project-notification-receipts.json'), 'utf8'));
+  expect(local.notified[JSON.stringify(['gp', 'dev'])]).toBe(40);
+  expect(await fsp.readFile(oldFile, 'utf8')).toBe(legacy);
 });

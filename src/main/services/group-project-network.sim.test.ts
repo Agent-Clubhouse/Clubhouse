@@ -883,7 +883,7 @@ it('snapshot departure prunes the copy member receipt when its host removes that
     await vi.waitFor(async () => {
       expect(await as(B, async () => B.receipts!.lastNotified(id, 'builder'))).toBeUndefined();
     });
-    const saved = JSON.parse(await fsp.readFile(path.join(B.home, '.clubhouse-dev/group-projects/notification-receipts.json'), 'utf8'));
+    const saved = JSON.parse(await fsp.readFile(path.join(B.home, 'group-project-notification-receipts.json'), 'utf8'));
     expect(Object.hasOwn(saved.notified, JSON.stringify([id, 'builder']))).toBe(false);
   } finally { off(); }
 });

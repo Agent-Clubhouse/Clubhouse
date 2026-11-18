@@ -2,8 +2,8 @@
 import * as path from 'path';
 import * as fsp from 'fs/promises';
 import { randomUUID } from 'crypto';
-import { groupProjectsDir } from './group-project-paths';
-import { writeJsonFile } from './group-project-json-file';
+import { app } from 'electron';
+import { replaceFile } from './settings-store';
 import { groupProjectHost } from './group-project-host';
 import { appLog } from './log-service';
 
@@ -14,7 +14,13 @@ export const URGENT_LIMIT_WINDOW_MS = 10 * 60_000;
 interface Receipts { notified: Record<string, number>; wakes: Record<string, number[]>; urgent: Record<string, number[]> }
 const empty = (): Receipts => ({ notified: {}, wakes: {}, urgent: {} });
 const key = (group: string, agent: string) => JSON.stringify([group, agent]);
-const file = () => path.join(groupProjectsDir(), 'notification-receipts.json');
+// Local derived state belongs to this computer's app data, outside shared board storage.
+// A legacy file in the shared directory is deliberately ignored; missing cursors baseline on connect.
+const file = () => path.join(app.getPath('userData'), 'group-project-notification-receipts.json');
+async function writeReceipts(location: string, receipts: Receipts): Promise<void> {
+  await fsp.mkdir(path.dirname(location), { recursive: true });
+  await replaceFile(location, JSON.stringify(receipts, null, 2), undefined);
+}
 const record = (v: unknown): v is Record<string, unknown> => !!v && typeof v === 'object' && !Array.isArray(v);
 function validate(raw: unknown): Receipts {
   if (!record(raw) || !record(raw.notified) || !record(raw.wakes) || (raw.urgent !== undefined && !record(raw.urgent))) throw new Error('Invalid notification receipts');
@@ -97,7 +103,7 @@ async function load(): Promise<Receipts> {
   prune(r, current);
   // Recovery deliberately starts now, rather than replaying a board's history.
   if (corrupt) for (const g of current.rows) for (const a of g.agents) r.notified[key(g.group, a)] = g.seq;
-  await writeJsonFile(location, r);
+  await writeReceipts(location, r);
   loaded = { file: location, data: r };
   return r;
 }
@@ -111,21 +117,21 @@ export function lastNotified(group: string, agent: string): Promise<number | und
 export function initializeNotified(group: string, agent: string, seq: number): Promise<number> {
   return access(async (r) => {
     const k = key(group, agent);
-    if (r.notified[k] === undefined) { r.notified[k] = seq; await writeJsonFile(file(), r); }
+    if (r.notified[k] === undefined) { r.notified[k] = seq; await writeReceipts(file(), r); }
     return r.notified[k];
   });
 }
 export function markNotified(group: string, agent: string, seq: number): Promise<void> {
-  return access(async (r) => { r.notified[key(group, agent)] = Math.max(r.notified[key(group, agent)] ?? 0, seq); await writeJsonFile(file(), r); });
+  return access(async (r) => { r.notified[key(group, agent)] = Math.max(r.notified[key(group, agent)] ?? 0, seq); await writeReceipts(file(), r); });
 }
 export function pruneNotificationReceipts(confirmed: ReceiptDepartures = {}): Promise<void> {
-  return access(async (r) => { prune(r, await roster(), confirmed); await writeJsonFile(file(), r); });
+  return access(async (r) => { prune(r, await roster(), confirmed); await writeReceipts(file(), r); });
 }
 export function reserveWake(agent: string, now = Date.now()): Promise<boolean> {
   return access(async (r) => {
     const recent = (r.wakes[agent] ?? []).filter((at) => now - at < WAKE_LIMIT_WINDOW_MS);
     if (recent.length >= WAKE_LIMIT_MAX) return false;
-    r.wakes[agent] = [...recent, now]; await writeJsonFile(file(), r); return true;
+    r.wakes[agent] = [...recent, now]; await writeReceipts(file(), r); return true;
   });
 }
 export function wakeBudgetAvailable(agent: string, now = Date.now()): Promise<boolean> {
@@ -136,6 +142,6 @@ export function reserveUrgent(sender: string, agent: string, now = Date.now()): 
     const k = key(sender, agent);
     const recent = (r.urgent[k] ?? []).filter((at) => now - at < URGENT_LIMIT_WINDOW_MS);
     if (recent.length >= URGENT_LIMIT_MAX) return false;
-    r.urgent[k] = [...recent, now]; await writeJsonFile(file(), r); return true;
+    r.urgent[k] = [...recent, now]; await writeReceipts(file(), r); return true;
   });
 }
