@@ -213,7 +213,7 @@ describe('help-content in the new shell', () => {
     useChromeFlagStore.setState({ enabled: true });
     const topics = getHelpSections().flatMap((s) => s.topics);
     for (const topic of GROUP_PROJECT_TOPICS) expect(topics).toContain(topic);
-    expect(GROUP_PROJECT_TOPICS[0].content).toContain('Switch to notices');
+    expect(GROUP_PROJECT_TOPICS[0].content).toContain('Existing groups move to notices automatically');
     expect(GROUP_PROJECT_TOPICS[1].content).toContain('Group project admin');
     for (const topic of GROUP_PROJECT_TOPICS) expect(topic.content).not.toContain('—');
   });
