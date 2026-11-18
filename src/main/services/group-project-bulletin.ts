@@ -800,7 +800,7 @@ export async function ensureInboxChannel(projectId: string, agentName: string, a
     await board.postMessage(
       'system',
       name,
-      `Inbox channel for ${agentName}. Other agents post here for direct, async messages. Poll this on every cycle.`,
+      `Inbox channel for ${agentName}. Other agents post here for direct, async messages. New posts send notices; read this channel when notified.`,
       seq,
     );
   }

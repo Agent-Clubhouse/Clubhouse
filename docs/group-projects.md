@@ -320,9 +320,8 @@ agents with the same name stay distinct. `memberAddress` and `sameMember` are in
 Inbox channels record the address that owns them (`inboxOwners` in
 `bulletin.json`). A member joining with the same name as an existing inbox's
 owner gets `inbox-<name>-<6 hex>`, derived from its address, rather than sharing
-the first member's inbox (#1646). Polling instructions and shoulder-tap reply
-hints name the member's own inbox. Inboxes from before this change have no
-owner, and the next member with that name to join claims them.
+the first member's inbox (#1646). `list_members` returns the member's exact
+inbox channel for direct messages. Inboxes from before this change have no owner, and the next member with that name to join claims them.
 
 ### Ids and deletion
 
@@ -402,66 +401,82 @@ helper an orchestrator added stays a member if it is reparented or released,
 until it is disposed or removed.
 
 **Reading it.** `describeMembership` (IPC `GROUP_PROJECT.LIST_MEMBERS`) returns
-members, exclusions and the offer; `MEMBERSHIP_CHANGED` is broadcast with the
+members, exclusions and the offer; `MEMBERSHIP_CHANGED` is emitted with the
 group project id. The host's `resolveMembers` uses the same resolution. The
 Connections card lists a membership as "Group project member". A deleted group
 project's bindings are released when the host reports the delete.
 
-## Post notices (#3362)
+## Post notices and direct messages (#3698)
 
-Members hear about new posts as notices instead of polling the board.
-`src/main/services/group-project-delivery.ts` follows the host's `board`
-changes; the message a post adds carries that change's sequence number.
+Members receive notices for subscribed channels, @mentions and lead coverage.
+By default members subscribe to `general`, `control` and their inbox. Use
+`subscribe_topic` for work channels. Read the channel named in a notice with
+`read_topic` and `since`; never repeatedly check boards for new work. The sender
+is excluded by address, and system posts do not produce notices.
 
-- **Who.** The members subscribed to the post's topic, members it names as
-  `@name`, and the lead (an agent granted `group_project.lead` on it). Never its sender, and
-  never for `system` posts. By default a member is subscribed to `general`,
-  `control` and its own inbox; `subscribe_topic` adds or removes channels,
-  kept in the membership record (`subscriptions`, by address). Network members use the network delivery path.
-- **Coalescing.** Posts to one member within 15 seconds of the first become
-  one notice: `3 new messages in "general" from "lead", "qa", in group
-  project "Release".` with the `read_topic` tool to use. The sender is left
-  out by address for `post_bulletin` posts.
+- **Ordinary notices.** Posts are combined over 15 seconds. At most six notices
+  per member per ten minutes are sent; excess posts wait for a trailing notice.
+  Busy chat members receive notices after their current turn. A terminal agent's
+  turn cannot be seen, so it receives the notice as it comes.
+- **Urgent posts.** `post_bulletin` accepts `urgent: true` for rare posts that
+  cannot wait. These skip batching and the notice rate limit and arrive next in
+  line after the recipient's current turn, without interrupting it. They remain
+  on the board. Urgency does not bypass wake permissions or wake rate limits.
+- **Direct wake.** An inbox post or @mention resumes a sleeping durable member's
+  last session with the post as the next message, if it has a resumable session,
+  subject to the group's `wake` permission, on by default. A person can turn it
+  off; posts are held. Wakes are limited to three per recipient per ten minutes,
+  persisted across restarts; extra posts are held, not dropped. Ordinary `general`,
+  `control` and work-channel posts do not wake sleeping members.
+- **Durable unread.** Unread work is derived from board message numbers, so a
+  restart does not lose it. A notice is not evidence of reading or completion.
+  Membership and permissions are checked at delivery time.
+- **Network.** Members on linked computers wake through their host. Remote-origin
+  wakes require the receiving computer's Allow for `group_project.lead` for the
+  sender, plus the group's wake grant; Ask first or Off holds the post. A queued
+  post means its host is offline; report it as pending until accepted, rather than retrying blindly.
+- **Migration.** Existing groups move to notices automatically on the host;
+  the saved delivery grant is preserved.
 - **Safe text.** Only the fixed first line is marked as from Clubhouse in
   chat. Channel, sender and group project names are flattened to one line,
   capped and quoted, and `post_bulletin` only takes channel names of
   lowercase letters, digits, `.`, `-` and `_` (up to 64).
-- **Rate limit.** At most 6 notices per member per 10 minutes. Posts over the
-  limit wait, merged, and go as one trailing notice when the window frees.
-- **Sleeping members** aren't woken. Their notices are merged and sent as one
-  summary when the member's MCP connects again. In memory only: a restart
-  drops held summaries, not the board.
-- **Busy members.** A chat member in a turn gets the notice queued for the
-  turn's end (as Action messages are, #3297). A newer notice replaces the
-  queued one with one covering both. A terminal agent's turn can't be seen,
-  so it gets the notice typed in as it comes.
-- **Still a member.** Every notice is checked when it goes: an agent that
-  left, or a group project switched back to polling, gets nothing held.
-- **Polling is legacy.** A group project with `pollingEnabled` keeps polling
-  and gets no notices. `toggle_polling`, `query_polling` and `nudge_polling`
-  say so in their descriptions. `GroupProjectDeliverySection` (for the
-  directory) offers such a group project "Switch to notices", which turns
-  polling off through the existing control.
 - **Telemetry.** `clubhouse.group.notices`, by `clubhouse.notice.result`:
   `sent`, `coalesced` (messages folded into a notice beyond the first),
   `held_asleep` and `rate_limited`.
+
+### Finding and addressing members
+
+`list_members` returns `name`, `address`, `computer`, `inbox`, `status`, optional
+`lastSeen`, and `roles` for each member. Status is `awake`, `busy`, `asleep` or
+`unknown`; roles is an array containing `lead` and/or `admin`. Remote status is
+what the host last saw. Check membership before assigning work. The address is
+the identity, and `inbox` is the exact resolved channel including any suffix;
+do not construct an inbox from a display name.
+
+Mentions accept case-insensitive `@name` and qualified `@name@computer`. A plain
+name matching multiple members notifies all matches, and `post_bulletin` warns
+the sender to qualify it. When names collide, sender labels and member labels
+include the computer, for example `Alex (Mac mini)`; unique labels stay unchanged.
+Use inbox posts for one recipient and @mentions for people who must see a post
+in another channel.
 
 ## The group project as a principal (#3360)
 
 `src/main/services/group-project-roles.ts`.
 
 - **Lead and admin are grants** on one group project, `{ kind: 'group_project', id }`.
-  - `group_project.lead`: `broadcast`, `shoulder_tap`, `wake_agent`, `sleep_agent`, `clear_agent`, `compact_agent`, `delete_messages`, `clear_topic` and the legacy polling controls.
+  - `group_project.lead`: `wake_agent`, `sleep_agent`, `clear_agent`, `compact_agent`, `delete_messages`, `clear_topic` and board curation controls.
   - `group_project.admin`: `set_project_info`, and through the app the record, members, the group project's own grants and its Actions.
 
   No agent holds either by default, the creator included. They're kept in `agent-grants.json` with every other grant, so the Clubhouse permissions page lists them ("Group project <id>"). The Dispatcher may administer any group project, asking first.
 - **Checked at call time** like every grant. Each group-project tool declares its actions: the lead tools declare `group_project.lead` on the bound group project, beside their `agent.*` action on its members. A member without the grant gets the typed refusal `no_grant` naming `group_project.lead`, including when it calls a tool by name. The `admins` role no longer gates any tool, and joining no longer makes the first member lead.
 - **Its own grants** are what it does by itself, kept in its record's `metadata.grants`:
   - `deliver`: post notices to members (#3362). On by default.
-  - `wake`: a lead's `shoulder_tap` wakes a sleeping member, with the tap as its first message. Off by default.
-  - `actions`: run the group project's Actions. On by default. Message and tap steps also need `deliver`; wake steps need `wake`.
+  - `wake`: an inbox post or @mention resumes a sleeping member. On by default; a person can turn it off.
+  - `actions`: run the group project's Actions. On by default. Message steps also need `deliver`; wake steps need `wake`.
 
-  With `wake` off, a tap to a sleeping member reports `not-running` with `refusal: 'group_project_wake_off'`.
+  With `wake` off, direct posts remain on the board but do not wake sleeping members.
 - **Migration.** At startup, each agent in a group project's old `admins` list gets lead and admin (Allow) on it, once: `metadata.rolesMigratedAt` marks it done, so a later change isn't undone.
 - **Delete.** A deleted group project's role grants are removed.
 - **UI.**
@@ -604,8 +619,8 @@ group by its id and may name a section (`groupProjectRoute.ts`); a missing or
 unknown section means Board. The workspace needs no canvas. The Board is one
 component (`features/group-projects/board/GroupProjectBoard.tsx`) that the
 canvas card's expanded view also renders, so topics and unread counts, posting,
-shoulder taps and broadcast, message and topic deletion, clear-all, topic
-protection, retention and its trim review, and legacy polling are the same in
+urgent posts, message and topic deletion, clear-all, topic
+protection, and retention with its trim review are the same in
 both places. Default tool switches and each member's tools and instructions are
 under Permissions. Details holds name, description and instructions with an
 explicit Save, the scope review (#3431) and Delete with its impact, token and
@@ -615,14 +630,12 @@ copy, scope change, delete, clear-all and retention are disabled with a plain
 reason, and a remote Ask first request is still refused. The header names where
 the person came from and Back returns there (`groupWorkspaceSource.ts`).
 
-Post notifications show the saved configuration in the hub, board and Canvas
-card: On, Off (the “Tell members about new posts” permission), or Legacy polling.
-This is not a delivery receipt for members on other computers. Permissions has
-the single “Use post notifications” migration action beside that permission;
-Delivery remains a compatible destination showing the same status and a link to
-Permissions. Migration stops repeated board checks; it never turns an Off grant
-on. On a copy, the saved state stays until the host confirms the change, and the
-existing change history shows waiting, applied or refused outcomes.
+Post notifications show the saved delivery permission in the hub, board and
+Canvas card: On or Off ("Tell members about new posts"). This is not a delivery
+receipt for members on other computers. Existing groups move to notices on the
+host automatically, preserving an Off grant. On a copy, saved state stays until
+the host confirms a change; change history shows waiting, applied or refused
+outcomes.
 
 ## Local directory
 
@@ -654,8 +667,9 @@ group project, and removing a card does not change membership.
 Membership permits board reads and posts. Lead and admin are independent,
 per-group-project grants to an agent, each Allow, Ask first or Off. A new group
 project grants neither role automatically. The group project's own `deliver`
-grant defaults to Allow and `wake` to Off. The latter permits a lead's tap to
-wake a sleeping member. The one-time migration gives each old metadata admin
+and `wake` grants default to Allow. Inbox posts and @mentions can resume
+sleeping members under the wake grant. The one-time migration gives each old
+metadata admin
 both agent grants; `rolesMigratedAt` prevents reapplying a person's later edits.
 
 The host owns authoritative state. Network peers keep copies, synchronize by
@@ -681,8 +695,8 @@ when the source inventory is complete. Existing bindings are adopted into the
 membership record. A one-time offer lets a person add all eligible top-level
 durable agents; existing members are not silently evicted. Project-scoped
 records preserve previously bound members during the scope migration. Legacy
-admin metadata becomes lead and admin grants once. Existing polling stays on
-until switched to notices; new group projects use notices.
+admin metadata becomes lead and admin grants once. Existing groups move to
+notices automatically; the saved delivery permission is preserved.
 
 ## Further implementation map
 
