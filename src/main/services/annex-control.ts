@@ -479,7 +479,7 @@ function requestBodyLimit(path: string): number {
 }
 /** Envelope limits only; route handlers retain their exact existing content limits. */
 export function responseBodyLimit(path: string): number {
-  if (/^\/api\/v1\/projects\/[^/]+\/files\/read(?:\?|$)/.test(path)) return Infinity;
+  if (/^\/api\/v1\/projects\/[^/]+\/(?:files\/read|git\/diff)(?:\?|$)/.test(path)) return Infinity;
   if (/\/chat\/events\/\d+(?:\?|$)/.test(path)) return FULL_EVENT_MAX_BYTES;
   if (/\/icons\//.test(path)) return ICON_SERVED_MAX_BYTES;
   if (/\/handoffs\/transfer$/.test(path)) return HANDOFF_TRANSFER_BODY_BYTES;

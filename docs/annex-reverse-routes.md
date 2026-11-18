@@ -104,6 +104,8 @@ size before accepting or crediting the transfer. Exceeding that local cap fails
 only the request, not unrelated subscriptions. Existing protocol/path caps and
 P6 rejection fences still apply. The limit is local, not a new wire field.
 `files/read` remains uncapped UTF-8 text, not an arbitrary-binary-file API.
+Working-tree `git/diff` also retains its existing uncapped response over bulk;
+requester-local limits still apply, and other Git routes keep their existing limits.
 
 One reverse subscription feeds the existing satellite snapshot and event IPC.
 Public satellite connectivity includes authorized reverse reachability, while

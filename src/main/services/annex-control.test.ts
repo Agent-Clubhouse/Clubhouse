@@ -10,6 +10,7 @@
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { EventEmitter } from 'events';
+import { createHash } from 'crypto';
 
 vi.mock('electron', () => ({ app: { getPath: () => '/tmp/annex-control-test' } }));
 vi.mock('ws', () => ({ WebSocket: { OPEN: 1, CLOSED: 3 }, WebSocketServer: vi.fn() }));
@@ -1338,6 +1339,47 @@ describe('P6 existing binary response families', () => {
     const result = control.request(TARGET, { method: 'GET', path: '/api/v1/icons/agents/a' }, { requestId: 'forged' }).catch((e) => e);
     requesterWs.deliver({ v: 1, type: 'response', id: 'forged', status: 200, headers: {}, body: 'a', encoding: 'utf8' });
     expect(requesterWs.closed?.code).toBe(CONTROL_CLOSE_PROTOCOL); expect(await result).toMatchObject({ code: 'transport_unavailable' });
+  });
+});
+
+describe('uncapped Git diff response parity', () => {
+  const path = '/api/v1/projects/p/git/diff?file=large.txt';
+  const ceiling = CONTROL_FRAME_MAX_BYTES + 64 * 1024;
+  const digest = (body: Buffer) => createHash('sha256').update(body).digest('hex');
+
+  it.each([-1, 0, 1])('preserves bytes at the ordinary response ceiling plus %i', async (offset) => {
+    const { targetWs } = await connected();
+    const body = Buffer.alloc(ceiling + offset, 0xff);
+    handler = async () => ({ status: 200, headers: {}, body });
+    const result = await control.request(TARGET, { method: 'GET', path });
+    expect(result.body.length).toBe(body.length);
+    expect(digest(result.body)).toBe(digest(body));
+    expect(sentOfType(targetWs, 'bulk').some((frame) => frame.op === 'finish')).toBe(true);
+  });
+
+  it.each([-1, 0, 1])('retains the requester-local cap at body length plus %i', async (offset) => {
+    const { requesterWs } = await connected();
+    const body = Buffer.alloc(ceiling + 1, 0xff);
+    handler = async () => ({ status: 200, headers: {}, body });
+    const result = control.request(TARGET, { method: 'GET', path }, { maxResponseBytes: body.length + offset });
+    if (offset < 0) await expect(result).rejects.toMatchObject({ code: 'response_too_large', indeterminate: false });
+    else expect(digest((await result).body)).toBe(digest(body));
+    expect(requesterWs.closed).toBeNull();
+  });
+
+  it('does not exempt another Git route from its response ceiling', async () => {
+    const { targetWs } = await connected();
+    handler = async () => ({ status: 200, headers: {}, body: Buffer.alloc(ceiling + 1) });
+    await expect(control.request(TARGET, { method: 'GET', path: '/api/v1/projects/p/git/commit-diff?hash=abc&file=f' }))
+      .rejects.toMatchObject({ code: 'transport_unavailable', indeterminate: false });
+    expect(sentOfType(targetWs, 'binary')).toHaveLength(0);
+  });
+
+  it('does not send an oversized diff to a peer without bulk capability', async () => {
+    const { targetWs } = await connected(['request']);
+    handler = async () => ({ status: 200, headers: {}, body: Buffer.alloc(ceiling + 1) });
+    await expect(control.request(TARGET, { method: 'GET', path })).rejects.toMatchObject({ code: 'response_too_large', indeterminate: false });
+    expect(sentOfType(targetWs, 'binary')).toHaveLength(0);
   });
 });
 
