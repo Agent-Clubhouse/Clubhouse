@@ -28,25 +28,49 @@ function validate(raw: unknown): Receipts {
   return { notified: raw.notified, wakes: raw.wakes, urgent: raw.urgent ?? {} } as Receipts;
 }
 interface Roster { group: string; seq: number; agents: string[] }
-async function roster(): Promise<Roster[]> {
-  return Promise.all((await groupProjectHost.list()).map(async (gp) => ({
+interface RosterSnapshot { groups?: Set<string>; rows: Roster[]; unresolved: Set<string> }
+/** Only explicit main-process departures/deletions remove a member cursor. */
+export interface ReceiptDepartures { deletedGroups?: string[]; departed?: Array<{ group: string; agents: string[] }> }
+async function roster(): Promise<RosterSnapshot> {
+  let projects: Awaited<ReturnType<typeof groupProjectHost.list>>;
+  try { projects = await groupProjectHost.list(); } catch (err) {
+    // telemetry-exempt: preserve all receipts when the registry cannot be read
+    appLog('core:group-project', 'warn', 'Could not inspect groups for receipt maintenance', { meta: { error: String(err) } });
+    return { rows: [], unresolved: new Set() };
+  }
+  const results = await Promise.allSettled(projects.map(async (gp) => ({
     group: gp.id, seq: gp.seq ?? Math.max(0, ...(await groupProjectHost.readRecentBySeq(gp.id, 50)).map((m) => m.seq ?? 0)),
     agents: (await groupProjectHost.resolveMembers(gp.id)).map((m) => groupProjectHost.localAgentId(gp, m.address)).filter((a): a is string => !!a),
   })));
+  const rows: Roster[] = []; const unresolved = new Set<string>();
+  results.forEach((result, i) => {
+    if (result.status === 'fulfilled') rows.push(result.value);
+    else {
+      unresolved.add(projects[i].id);
+      appLog('core:group-project', 'warn', 'Could not inspect group for receipt maintenance; preserving its receipts', { meta: { groupProjectId: projects[i].id, error: String(result.reason) } });
+    }
+  });
+  return { groups: new Set(projects.map((gp) => gp.id)), rows, unresolved };
 }
-function prune(r: Receipts, rows: Roster[]): void {
-  const valid = new Set(rows.flatMap((g) => g.agents.map((a) => key(g.group, a))));
-  const agents = new Set(rows.flatMap((g) => g.agents));
-  for (const k of Object.keys(r.notified)) if (!valid.has(k)) delete r.notified[k];
+function prune(r: Receipts, snapshot: RosterSnapshot, confirmed: ReceiptDepartures = {}): void {
+  const deleted = new Set(confirmed.deletedGroups);
+  const departed = new Set((confirmed.departed ?? []).filter((g) => !snapshot.unresolved.has(g.group)).flatMap((g) => g.agents.map((a) => key(g.group, a))));
+  for (const k of Object.keys(r.notified)) {
+    const [group] = JSON.parse(k) as string[];
+    if (deleted.has(group) || (snapshot.groups && !snapshot.groups.has(group)) || departed.has(k)) delete r.notified[k];
+  }
+  // A temporarily absent/unresolved member may still own unread receipts and budgets.
+  const agents = new Set([...snapshot.rows.flatMap((g) => g.agents), ...Object.keys(r.notified).map((k) => (JSON.parse(k) as string[])[1])]);
+  const complete = !!snapshot.groups && snapshot.unresolved.size === 0;
   for (const a of Object.keys(r.wakes)) {
     r.wakes[a] = r.wakes[a].filter((at) => Date.now() - at < WAKE_LIMIT_WINDOW_MS);
-    if (!agents.has(a) || !r.wakes[a].length) delete r.wakes[a];
+    if ((complete && !agents.has(a)) || !r.wakes[a].length) delete r.wakes[a];
   }
   for (const k of Object.keys(r.urgent)) {
     let recipient: unknown;
     try { recipient = JSON.parse(k)[1]; } catch { /* telemetry-exempt: invalid budget key is pruned below */ }
     r.urgent[k] = r.urgent[k].filter((at) => Date.now() - at < URGENT_LIMIT_WINDOW_MS);
-    if (!agents.has(recipient as string) || !r.urgent[k].length) delete r.urgent[k];
+    if ((complete && !agents.has(recipient as string)) || !r.urgent[k].length) delete r.urgent[k];
   }
 }
 let pending: Promise<unknown> = Promise.resolve();
@@ -72,7 +96,7 @@ async function load(): Promise<Receipts> {
   const current = await roster();
   prune(r, current);
   // Recovery deliberately starts now, rather than replaying a board's history.
-  if (corrupt) for (const g of current) for (const a of g.agents) r.notified[key(g.group, a)] = g.seq;
+  if (corrupt) for (const g of current.rows) for (const a of g.agents) r.notified[key(g.group, a)] = g.seq;
   await writeJsonFile(location, r);
   loaded = { file: location, data: r };
   return r;
@@ -94,8 +118,8 @@ export function initializeNotified(group: string, agent: string, seq: number): P
 export function markNotified(group: string, agent: string, seq: number): Promise<void> {
   return access(async (r) => { r.notified[key(group, agent)] = Math.max(r.notified[key(group, agent)] ?? 0, seq); await writeJsonFile(file(), r); });
 }
-export function pruneNotificationReceipts(): Promise<void> {
-  return access(async (r) => { prune(r, await roster()); await writeJsonFile(file(), r); });
+export function pruneNotificationReceipts(confirmed: ReceiptDepartures = {}): Promise<void> {
+  return access(async (r) => { prune(r, await roster(), confirmed); await writeJsonFile(file(), r); });
 }
 export function reserveWake(agent: string, now = Date.now()): Promise<boolean> {
   return access(async (r) => {

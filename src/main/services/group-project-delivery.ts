@@ -538,7 +538,7 @@ export function watchGroupProjectDelivery(): () => void {
       changes = changes.catch(logReceiptFailure).then(async () => {
         // Drain earlier post work before pruning, so it cannot recreate a receipt.
         for (const state of [...members.values()]) if (state.groupProjectId === change.groupProjectId) forget(state);
-        await pruneNotificationReceipts();
+        await pruneNotificationReceipts({ deletedGroups: [change.groupProjectId] });
       }).catch(logReceiptFailure);
       return;
     }
@@ -547,7 +547,8 @@ export function watchGroupProjectDelivery(): () => void {
       changes = changes.catch(logReceiptFailure).then(async () => {
         const gp = await groupProjectHost.get(change.groupProjectId);
         const resolved = gp && groupProjectMay(gp, 'deliver') ? await groupProjectHost.resolveMembers(gp.id) : [];
-        await pruneNotificationReceipts();
+        const departed = gp ? (change.departed ?? []).map((a) => groupProjectHost.localAgentId(gp, a)).filter((a): a is string => !!a) : [];
+        await pruneNotificationReceipts({ departed: [{ group: change.groupProjectId, agents: departed }] });
         if (gp) {
           forgetFormerMembers(gp, resolved);
           if (change.part === 'membership') {

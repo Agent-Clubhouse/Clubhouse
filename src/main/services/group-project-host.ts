@@ -254,6 +254,17 @@ function sameJson(a: unknown, b: unknown): boolean {
   return JSON.stringify(a) === JSON.stringify(b);
 }
 
+/** A scope/cache omission is not a departure. Explicit removals and exclusions are. */
+function confirmedDepartures(before: GroupProjectMembership, after: GroupProjectMembership): string[] {
+  const remaining = new Set(after.explicit.map((m) => m.address));
+  const excluded = new Set(before.excluded.map((m) => m.address));
+  const scopeOnly = new Set(after.excluded.filter((m) => m.reason === 'scope').map((m) => m.address));
+  return [...new Set([
+    ...before.explicit.filter((m) => !m.autoProject && !remaining.has(m.address) && !scopeOnly.has(m.address)).map((m) => m.address),
+    ...after.excluded.filter((m) => !excluded.has(m.address) && m.reason !== 'scope').map((m) => m.address),
+  ])];
+}
+
 interface CommitContext {
   project: GroupProject;
   /** Take the next sequence number, saved before the change is made. Call it only when something will change. */
@@ -390,7 +401,7 @@ class GroupProjectHostService {
    * One sequenced change. `apply` calls `reserve()` before it writes; a change
    * that turns out to change nothing doesn't reserve, and nothing is announced.
    */
-  private async commit<T>(id: string, part: GroupProjectChangePart, apply: (ctx: CommitContext) => Promise<T>, inQueue = false): Promise<T> {
+  private async commit<T>(id: string, part: GroupProjectChangePart, apply: (ctx: CommitContext) => Promise<T>, inQueue = false, departed: string[] = []): Promise<T> {
     const body = async () => {
       const project = await this.requireProject(id);
       let seq: number | undefined;
@@ -399,7 +410,7 @@ class GroupProjectHostService {
         return seq;
       };
       const result = await apply({ project, reserve });
-      if (seq !== undefined) this.emit({ groupProjectId: id, seq, part });
+      if (seq !== undefined) this.emit({ groupProjectId: id, seq, part, ...(departed.length && { departed }) });
       return result;
     };
     return inQueue ? body() : this.run(id, body);
@@ -682,6 +693,7 @@ class GroupProjectHostService {
       return this.forward(replica, { op: 'membership', patch }, options.author ?? { label: 'membership' },
         () => ({ membership: next, seq }), () => ({ membership: next, seq, queued: true }));
     }
+    const departed: string[] = [];
     return this.commit(id, 'membership', async ({ project, reserve }) => {
       const hostMachine = this.hostMachineOf(project);
       const current = await readMembershipFile(id, hostMachine);
@@ -690,12 +702,13 @@ class GroupProjectHostService {
       if (sameJson(current, next)) return { membership: current, seq: await this.seqOf(id) };
       const seq = await reserve();
       await writeMembershipFile(id, next);
+      departed.push(...confirmedDepartures(current, next));
       const removed = current.explicit.filter((entry) => parseAgentAddress(entry.address).machine
         && !current.excluded.some((e) => e.address === entry.address)
         && (!next.explicit.some((e) => e.address === entry.address) || next.excluded.some((e) => e.address === entry.address)));
       await this.revokeRemoteRoles(id, removed.map((entry) => entry.address));
       return { membership: next, seq };
-    }, options.withinExclusive);
+    }, options.withinExclusive, departed);
   }
 
   /** Remote members have no binding on the host; mirror the local leave lifecycle for their role grants. */
@@ -1793,14 +1806,21 @@ class GroupProjectHostService {
       // Older than what this copy has: an answer overtaken by a newer one.
       if (previous > 0 && snapshot.seq < previous) return;
       await groupProjectRegistry.putReplica({ ...record, host: { machine: host } });
-      await writeMembershipFile(id, validateMembership(snapshot.membership, host));
+      let previousMembership: GroupProjectMembership | undefined;
+      try { previousMembership = await readMembershipFile(id, host); } catch (err) {
+        // telemetry-exempt: unreadable old membership cannot confirm any departures
+        appLog('core:group-project', 'warn', 'Could not compare replica membership; preserving unread receipts', { meta: { groupProjectId: id, error: String(err) } });
+      }
+      const membership = validateMembership(snapshot.membership, host);
+      const departed = previousMembership ? confirmedDepartures(previousMembership, membership) : [];
+      await writeMembershipFile(id, membership);
       const missing = await getBulletinBoard(id).applyReplica(snapshot.board);
       // A copy missing messages the host still holds asks for everything next time.
       const seq = missing > 0 ? 0 : snapshot.seq;
       await writeJsonFile(hostStatePath(id), { version: 1, seq } satisfies HostState);
       this.seqs.set(id, seq);
       await this.markSynced(id);
-      this.emit({ groupProjectId: id, seq: snapshot.seq, part: 'record' });
+      this.emit({ groupProjectId: id, seq: snapshot.seq, part: 'record', ...(departed.length && { departed }) });
       // Each post that arrived is announced as the host's change, so this computer tells its own
       // members (#3362). Not on a first copy: its history isn't news.
       const arrived = previous > 0

@@ -221,6 +221,8 @@ export interface GroupProjectChange {
   groupProjectId: string;
   seq: number;
   part: GroupProjectChangePart;
+  /** Confirmed explicit removals/new exclusions, never inferred from a missing roster row. */
+  departed?: string[];
   /** On `deleted`: the group project as it was when its delete began. */
   project?: GroupProject;
 }

@@ -895,3 +895,19 @@ it('records provenance for local person and Action posts without putting it on t
     expect(post).not.toHaveProperty('localOrigin');
   }
 });
+
+it('announces only confirmed departures, preserving scope-only omissions', async () => {
+  const gp = await groupProjectHost.create('Departures');
+  await groupProjectHost.updateMembership(gp.id, (m) => { m.explicit.push({ address: 'dev', kind: 'helper', addedAt: 'now' }); });
+  const changes: GroupProjectChange[] = [];
+  const stop = groupProjectHost.onChange((c) => changes.push(c));
+  try {
+    await groupProjectHost.updateMembership(gp.id, (m) => { m.explicit = []; m.excluded.push({ address: 'dev', excludedAt: 'now', reason: 'scope' }); });
+    expect(changes.at(-1)?.departed).toBeUndefined();
+    await groupProjectHost.updateMembership(gp.id, (m) => { m.excluded = []; m.explicit.push({ address: 'dev', kind: 'helper', addedAt: 'again' }); });
+    await groupProjectHost.updateMembership(gp.id, (m) => { m.explicit = []; });
+    expect(changes.at(-1)?.departed).toEqual(['dev']);
+    await groupProjectHost.updateMembership(gp.id, (m) => { m.excluded.push({ address: 'other', excludedAt: 'now' }); });
+    expect(changes.at(-1)?.departed).toEqual(['other']);
+  } finally { stop(); }
+});

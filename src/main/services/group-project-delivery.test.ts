@@ -27,7 +27,10 @@ vi.mock('./group-project-tool-members', () => ({ groupProjectMentionMembers: asy
 vi.mock('./group-project-notification-store', () => ({
   lastNotified: async (g: string, a: string) => receipts.get(g + a),
   initializeNotified: async (g: string, a: string, seq: number) => { if (!receipts.has(g + a)) receipts.set(g + a, seq); return receipts.get(g + a)!; },
-  pruneNotificationReceipts: async () => { for (const k of receipts.keys()) if (!fx.members.some((m) => k === fx.gp.id + m.address)) receipts.delete(k); },
+  pruneNotificationReceipts: async (confirmed: { deletedGroups?: string[]; departed?: Array<{ group: string; agents: string[] }> } = {}) => {
+    for (const g of confirmed.deletedGroups ?? []) for (const k of receipts.keys()) if (k.startsWith(g)) receipts.delete(k);
+    for (const g of confirmed.departed ?? []) for (const a of g.agents) receipts.delete(g.group + a);
+  },
   reserveUrgent: async (s: string, a: string) => { const k = s + a; const n = urgentCounts.get(k) ?? 0; urgentCounts.set(k, n + 1); return n < 20; },
   markNotified: async (g: string, a: string, n: number) => { receipts.set(g + a, n); },
 }));
@@ -494,7 +497,7 @@ it('summary reads only a recent page when the saved cursor is recent', async () 
 
 it('prunes receipts immediately when a member leaves', async () => {
   receipts.set('gp1dev', 10); fx.members = fx.members.filter((m) => m.address !== 'dev');
-  for (const fn of fx.changeListeners) fn({ groupProjectId: 'gp1', seq: 11, part: 'membership' });
+  for (const fn of fx.changeListeners) fn({ groupProjectId: 'gp1', seq: 11, part: 'membership', departed: ['dev'] });
   await vi.advanceTimersByTimeAsync(0);
   expect(receipts.has('gp1dev')).toBe(false);
 });
@@ -513,4 +516,11 @@ it('prunes receipts after a group deletion even with earlier post work in flight
   for (const fn of fx.changeListeners) fn({ groupProjectId: 'gp1', seq: 11, part: 'deleted' });
   await vi.advanceTimersByTimeAsync(0);
   expect(receipts.has('gp1dev')).toBe(false);
+});
+
+it('keeps unread on a membership refresh that only temporarily omits a member', async () => {
+  receipts.set('gp1dev', 10); fx.members = fx.members.filter((m) => m.address !== 'dev');
+  for (const fn of fx.changeListeners) fn({ groupProjectId: 'gp1', seq: 11, part: 'membership' });
+  await vi.advanceTimersByTimeAsync(0);
+  expect(receipts.get('gp1dev')).toBe(10);
 });
