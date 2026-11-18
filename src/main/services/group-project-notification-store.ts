@@ -9,7 +9,8 @@ interface Receipts { notified: Record<string, number>; wakes: Record<string, num
 const empty = (): Receipts => ({ notified: {}, wakes: {} });
 function validate(raw: unknown): Receipts {
   const r = raw as Receipts;
-  if (!r || !r.notified || !r.wakes || Object.values(r.notified).some((n) => !Number.isSafeInteger(n) || n < 0)
+  if (!r || !r.notified || typeof r.notified !== 'object' || Array.isArray(r.notified)
+    || !r.wakes || typeof r.wakes !== 'object' || Array.isArray(r.wakes) || Object.values(r.notified).some((n) => !Number.isSafeInteger(n) || n < 0)
     || Object.values(r.wakes).some((a) => !Array.isArray(a) || a.some((n) => !Number.isFinite(n)))) throw new Error('Invalid notification receipts');
   return r;
 }

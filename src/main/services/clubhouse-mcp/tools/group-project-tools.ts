@@ -184,7 +184,11 @@ export function registerGroupProjectTools(): void {
           };
         }
         const { ambiguous, addresses } = resolveMentions(body, await groupProjectMentionMembers(targetId));
-        const wakePreflight = await groupPostWakePreflight(targetId, agentId, msg.topic, addresses);
+        const wakePreflight = await groupPostWakePreflight(targetId, agentId, msg.topic, addresses).catch((err: unknown) => {
+          // telemetry-exempt: post is already saved; return an honest preflight limitation
+          appLog('core:group-project', 'warn', 'Post saved but wake preflight unavailable', { meta: { groupProjectId: targetId, error: String(err) } });
+          return [{ address: agentId, reason: 'Post saved; wake preflight unavailable. Recipients recheck permission on delivery.' }];
+        });
         const warnings = ambiguous.map((name) => `@${name} matches more than one member; it notified all of them. Use @${name}@<computer> to reach one.`);
         annexEventBus.emitBulletinMessage(targetId, msg);
         return {

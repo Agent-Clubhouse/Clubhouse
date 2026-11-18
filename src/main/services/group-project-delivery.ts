@@ -215,7 +215,8 @@ async function onPost(gp: GroupProject, message: BulletinMessage): Promise<void>
     appLog('core:group-project', 'debug', 'Post notices are off for this group project', { meta: { groupProjectId: gp.id } });
     return;
   }
-  const [resolved, membership] = await Promise.all([groupProjectHost.resolveMembers(gp.id), groupProjectHost.getMembership(gp.id)]);
+  const [resolved, membership, mentionMembers] = await Promise.all([groupProjectHost.resolveMembers(gp.id), groupProjectHost.getMembership(gp.id), groupProjectMentionMembers(gp.id)]);
+  const mentionedAddresses = resolveMentions(message.body, mentionMembers).addresses;
   forgetFormerMembers(gp, resolved);
   for (const member of resolved) {
     // Each computer tells its own agents (#3363): the host's, and on a copy this computer's,
@@ -223,7 +224,7 @@ async function onPost(gp: GroupProject, message: BulletinMessage): Promise<void>
     const agentId = groupProjectHost.localAgentId(gp, member.address);
     if (!agentId) continue;
     const inbox = await groupProjectHost.inboxFor(gp.id, member.name, member.address);
-    const mentioned = resolveMentions(message.body, await groupProjectMentionMembers(gp.id)).addresses.has(member.address);
+    const mentioned = mentionedAddresses.has(member.address);
     const subscribed = memberSubscriptions(membership, member.address, inbox).has(message.topic);
     if (!subscribed && !mentioned && !isLead(gp, member.address)) continue;
     const state = stateOf(gp.id, agentId, member.name);
