@@ -40,3 +40,8 @@ export function reserveWake(agent: string, now = Date.now()): Promise<boolean> {
     return true;
   });
 }
+
+/** Read-only preflight; reserveWake remains the atomic admission check. */
+export function wakeBudgetAvailable(agent: string, now = Date.now()): Promise<boolean> {
+  return access(async (r) => (r.wakes[agent] ?? []).filter((at) => now - at < WAKE_LIMIT_WINDOW_MS).length < WAKE_LIMIT_MAX);
+}

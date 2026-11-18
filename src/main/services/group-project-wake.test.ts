@@ -4,6 +4,7 @@ const fx = vi.hoisted(() => ({
   config: { agentConfig: { lastSessionId: 'last' }, projectPath: '/p' } as unknown,
   decision: 'allow', reserve: vi.fn(async () => true), wake: vi.fn(),
 }));
+vi.mock('./agent-runtime', () => ({ getAgentRuntime: () => undefined }));
 vi.mock('./group-project-host', () => ({ groupProjectHost: {
   get: async () => fx.gp, resolveMembers: async () => [{ address: 'dev', name: 'dev' }],
   localAgentId: (_g: unknown, a: string) => a === 'dev' || a === 'sender' ? a : null,

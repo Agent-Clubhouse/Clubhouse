@@ -3,6 +3,7 @@
  * to coordinate via a shared bulletin board.
  */
 
+import { groupPostWakePreflight } from '../../group-project-wake';
 import { resolveMentions } from '../../../../shared/group-project-mentions';
 import { bindingManager } from '../binding-manager';
 import { mcpAdapter } from '../mcp-adapter';
@@ -182,13 +183,14 @@ export function registerGroupProjectTools(): void {
             }],
           };
         }
-        const { ambiguous } = resolveMentions(body, await groupProjectHost.resolveMembers(targetId));
+        const { ambiguous, addresses } = resolveMentions(body, await groupProjectMentionMembers(targetId));
+        const wakePreflight = await groupPostWakePreflight(targetId, agentId, msg.topic, addresses);
         const warnings = ambiguous.map((name) => `@${name} matches more than one member; it notified all of them. Use @${name}@<computer> to reach one.`);
         annexEventBus.emitBulletinMessage(targetId, msg);
         return {
           content: [{
             type: 'text',
-            text: JSON.stringify({ posted: true, messageId: msg.id, topic: msg.topic, timestamp: msg.timestamp, ...(warnings.length && { warnings }) }),
+            text: JSON.stringify({ posted: true, messageId: msg.id, topic: msg.topic, timestamp: msg.timestamp, ...(warnings.length && { warnings }), ...(wakePreflight.length && { wakePreflight }) }),
           }],
         };
       } catch (err) {

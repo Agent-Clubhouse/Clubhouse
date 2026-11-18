@@ -289,12 +289,16 @@ async function flushNow(state: MemberState): Promise<void> {
   if (!window) return;
   const gp = await stillMember(state);
   if (!gp) { forget(state); return; }
-  const batch: Batch = merge(state.asleep, { messages: window.messages.filter((m) => !isOwnPost(m, state, gp)) });
+  let batch: Batch = merge(state.asleep, { messages: window.messages.filter((m) => !isOwnPost(m, state, gp)) });
   state.asleep = null;
   if (batch.messages.length === 0) return;
   if (!(await stillMember(state))) { forget(state); return; }
   count('coalesced', batch.messages.length - 1);
   if (!isAgentAlive(state.agentId) || !getAgentRuntime(state.agentId)?.isRunning()) {
+    batch = merge(merge(state.queued, state.deferred ?? { messages: [] }), batch);
+    state.queued = state.deferred = null;
+    if (state.deferTimer) clearTimeout(state.deferTimer);
+    state.deferTimer = null;
     state.asleep = merge(state.asleep, batch);
     if (batch.messages.some((m) => m.direct)) {
       const { text, routed } = noticeParts(gp, state, batch);
