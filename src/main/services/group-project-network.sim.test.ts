@@ -10,6 +10,7 @@ import * as fs from 'fs';
 import * as fsp from 'fs/promises';
 import * as path from 'path';
 import { readSyncResponse, readWriteRequest, readWriteResponse, readSyncRequest } from '../../shared/group-project-network';
+import { postLegacyGroupMessage } from './group-project-legacy-message';
 import type { GroupProjectNetworkRefusal } from '../../shared/group-project-types';
 
 interface Machine {
@@ -808,5 +809,33 @@ describe('legacy polling migration through real storage (#3698)', () => {
     await as(A, h => h.groupProjectHost.updateMembership(id, draft => { draft.autoJoin = !draft.autoJoin; }));
     expect(JSON.parse(await fsp.readFile(file, 'utf-8')).disabledTools).toEqual({ lead: ['wake_agent'] });
     expect((await as(A, h => h.groupProjectHost.getMembership(id))).disabledTools).toEqual({ lead: ['wake_agent'] });
+  });
+});
+
+
+describe('legacy message shim through a copy (#3702 review)', () => {
+  it.each([null, 'builder'])('forwards target=%s to its authoritative host as the person', async targetAgentId => {
+    const id = await sharedProject();
+    await as(A, h => h.groupProjectHost.updateMembership(id, draft => {
+      draft.explicit.push({ address: `builder@${B.fp}`, name: 'Builder', kind: 'durable', addedAt: 'now' });
+    }));
+    await as(B, h => h.groupProjectHost.syncFrom(A.fp));
+    B.bindings!.bindingManager.bind('builder', { targetId: id, targetKind: 'group-project', label: 'Launch', agentName: 'Builder' });
+    const gate = vi.fn(() => 'An agent may not post here');
+    A.host!.groupProjectHost.setRemoteWriteGate(gate);
+    const posted = await as(B, async h => {
+      const project = await h.groupProjectHost.get(id);
+      expect(project!.network?.role).toBe('replica');
+      return postLegacyGroupMessage(h.groupProjectHost, project!, 'Plugin user', targetAgentId, 'Through the copy', { label: 'user' });
+    });
+    expect(posted).toBeTruthy();
+    expect(posted!.pending).toBeUndefined();
+    const topic = targetAgentId ? 'inbox-builder' : 'general';
+    expect(posted!.topic).toBe(topic);
+    expect(await as(A, h => h.groupProjectHost.readTopic(id, topic))).toEqual(expect.arrayContaining([
+      expect.objectContaining({ id: posted!.id, body: 'Through the copy', sender: 'Plugin user' }),
+    ]));
+    expect(gate).not.toHaveBeenCalled();
+    expect(refusals).toEqual([]);
   });
 });

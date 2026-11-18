@@ -104,6 +104,7 @@ import * as pluginManifestRegistry from './plugin-manifest-registry';
 import { readKey as readPluginStorageKey, writeKey as writePluginStorageKey } from './plugin-storage';
 import { groupProjectRegistry } from './group-project-registry';
 import { groupProjectHost } from './group-project-host';
+import { postLegacyGroupMessage } from './group-project-legacy-message';
 import * as groupProjectNetwork from './group-project-network';
 import { describeGroupProjectRoles, grantGroupProjectRole, GroupProjectRoleError } from './group-project-roles';
 import { agentRegistry } from './agent-registry';
@@ -7069,16 +7070,12 @@ async function handleGroupProjectShoulderTapRoute(ctx: AnnexRouteContext, match:
     try {
       // Deprecated route retained for older phones and supported plugin APIs.
       // Direct messages are durable inbox posts; announcements live in general.
-      let topic = 'general';
-      if (targetAgentId) {
-        const member = (await groupProjectHost.resolveMembers(gpId)).find((m) => m.address === groupProjectHost.addressOf(project, targetAgentId));
-        if (!member) {
-          sendJson(ctx.res, 404, { error: 'group_project_member_not_found' });
-          return;
-        }
-        topic = await groupProjectHost.ensureInbox(gpId, member.name, member.address);
+      // Same person author as bulletin posts; OTHER_DESKTOP also rejects agent-driven plugin calls.
+      const posted = await postLegacyGroupMessage(groupProjectHost, project, sender, targetAgentId, message, { label: 'user' });
+      if (!posted) {
+        sendJson(ctx.res, 404, { error: 'group_project_member_not_found' });
+        return;
       }
-      const posted = await groupProjectHost.post(gpId, sender, topic, message);
       if (!posted.pending) annexEventBus.emitBulletinMessage(gpId, posted);
       const result = { taskId: posted.id, delivered: [] as string[], failed: [] as string[], message: posted, deprecated: true };
       sendJson(ctx.res, 200, result);
