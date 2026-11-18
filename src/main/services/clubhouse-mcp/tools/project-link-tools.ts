@@ -76,7 +76,7 @@ async function visibleProjects(): Promise<VisibleProject[]> {
   return visible;
 }
 
-function operation(tool: LinkTool, args: Record<string, unknown>): ProjectLinksOp {
+function linkOperation(tool: LinkTool, args: Record<string, unknown>): ProjectLinksOp {
   const fields = tool === 'unlink_project' ? ['project'] : ['a', 'b'];
   if (Object.keys(args).some((key) => !fields.includes(key))) throw new Error('Give only the project ids this tool accepts.');
   const op = parseProjectLinksOp(tool === 'unlink_project'
@@ -104,7 +104,7 @@ async function resolveLinkTargets(args: Record<string, unknown>, from: readonly 
   if (!from.some((key) => args[key] !== undefined)) return [{ kind: 'project' }];
   const tool = from.includes('project') ? 'unlink_project' : 'link_projects';
   // Both pair tools require permission on the whole group: a separation may split it.
-  const ids = affectedIds(operation(tool, args));
+  const ids = affectedIds(linkOperation(tool, args));
   return targetsFor(ids, await visibleProjects());
 }
 
@@ -115,7 +115,7 @@ async function resolveLinkTargets(args: Record<string, unknown>, from: readonly 
 export async function projectLinkMcpAuthorization(actorId: string, raw: unknown): Promise<() => boolean> {
   const call = calls.getStore();
   if (!call || call.agentId !== actorId || !isDispatcherAgent(actorId)) throw new Error('Only the Dispatcher can link projects through MCP.');
-  const op = operation(call.tool, call.args);
+  const op = linkOperation(call.tool, call.args);
   if (JSON.stringify(parseProjectLinksOp(raw)) !== JSON.stringify(op)) throw new Error('The project link call changed.');
   const revision = projectRevision;
   const machine = getIdentity()?.fingerprint;
@@ -182,7 +182,7 @@ export function registerProjectLinkTools(): void {
   };
   for (const tool of Object.keys(descriptions) as LinkTool[]) {
     describeCallsForAsk(tool, (args) => {
-      const op = operation(tool, args);
+      const op = linkOperation(tool, args);
       const ids = affectedIds(op);
       return `${descriptions[tool]} Affected projects: ${ids.map((id) => projectNames.get(id) ?? id).join(', ')}. Only synced link metadata changes; no files, credentials or agents move.`;
     });
@@ -195,7 +195,7 @@ export function registerProjectLinkTools(): void {
     }, async (agentId, args) => {
       const approvalVersion = callApprovalVersion(agentId);
       try {
-        const op = operation(tool, args);
+        const op = linkOperation(tool, args);
         targetsFor(affectedIds(op), await visibleProjects());
         return await calls.run({ agentId, tool, args, approvalVersion }, async () => json(await changeProjectLinks(op)));
       } catch (error) {
