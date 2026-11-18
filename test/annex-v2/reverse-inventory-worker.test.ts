@@ -40,6 +40,12 @@ describe.runIf(process.env.CLUBHOUSE_ANNEX_INVENTORY_PEER === '1')('isolated ful
         case 'networkPost': return peer.networkPost(params as Parameters<typeof peer.networkPost>[0]);
         case 'networkUpdate': return peer.networkUpdate(params as Parameters<typeof peer.networkUpdate>[0]);
         case 'networkRoster': return peer.networkRoster(params as string);
+        case 'prepareHandoffs': return peer.prepareHandoffs();
+        case 'handoffOffer': return peer.handoffOffer();
+        case 'handoffRecord': return peer.handoffRecord(params as string);
+        case 'handoffAccept': return peer.handoffAccept(params as string);
+        case 'handoffPull': return peer.handoffPull(params as string);
+        case 'handoffCancel': return peer.handoffCancel(params as string);
         case 'durable': return peer.durable(params as Parameters<typeof peer.durable>[0]);
         case 'seedLargeText': return peer.seedLargeText();
         case 'largeText': return peer.largeText();

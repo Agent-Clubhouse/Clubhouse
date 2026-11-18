@@ -127,6 +127,12 @@ import { startLinkedProjectStateService } from '../../src/main/services/linked-p
 import { applyProjectStateChange, flushProjectStateForTests, getProjectState, hydrateProjectState } from '../../src/main/services/project-state-store';
 import type { ReplicaNetworkOptions } from '../../src/main/services/replica-network';
 import { withSettingsSurface } from '../../src/main/services/settings-audit';
+import { setAgentGrant } from '../../src/main/services/agent-grants-service';
+import { handoffHost, localHandoffAgent, startHandoffs, stopHandoffs } from '../../src/main/services/handoff-host';
+import { prepareCallerHandoff } from '../../src/main/services/handoff-preparations';
+import { registerHandoffTools } from '../../src/main/services/clubhouse-mcp/tools/handoff-tools';
+import { withHandoffAgreementCall } from '../../src/main/services/clubhouse-mcp/handoff-permissions';
+import { readHandoffTransferManifest, requestHandoffTransfer } from '../../src/main/services/handoff-transfer-transport';
 
 export interface InventoryPeerInfo extends PeerInfo {
   projectId: string;
@@ -388,6 +394,69 @@ export async function createInventoryPeer(alias: string) {
       return groupProjectHost.update(input.id, { description: input.description }, { author: { label: 'user' } });
     },
     networkRoster(id: string) { return groupProjectRoster.describe(id); },
+    async prepareHandoffs() {
+      git(['remote', 'add', 'origin', 'https://example.invalid/fixture.git'], root);
+      fs.appendFileSync(path.join(root, '.git', 'info', 'exclude'), '\n.clubhouse/\nlarge.txt\nlarge-utf8.txt\n');
+      const bytes = Buffer.alloc(600 * 1024);
+      let value = 0x9e3779b9;
+      for (let i = 0; i < bytes.length; i++) {
+        value ^= value << 13; value ^= value >>> 17; value ^= value << 5;
+        bytes[i] = value & 0xff;
+      }
+      fs.writeFileSync(path.join(root, 'handoff.bin'), bytes);
+      git(['add', '--', 'handoff.bin', '.gitignore'], root);
+      git(['-c', 'user.name=Parity Fixture', '-c', 'user.email=parity@example.invalid', '-c', 'commit.gpgSign=false', 'commit', '--quiet', '-m', 'handoff fixture'], root);
+      registerHandoffTools();
+      await withSettingsSurface('ui', undefined, async () => {
+        for (const action of ['handoff.offer', 'handoff.accept'] as const) {
+          await setAgentGrant(root, agent.id, { action, target: { kind: 'connected' }, mode: 'allow' });
+        }
+      });
+      startHandoffs();
+      // Schedule each receiver pull explicitly; automatic apply/wake belongs to the hosted spec.
+      await handoffHost().worker.stop();
+    },
+    async handoffOffer() {
+      if (!remote) throw new Error('Inventory peer is not configured');
+      const dirty = git(['status', '--porcelain=v1', '--untracked-files=normal'], root);
+      if (dirty) throw new Error(`The fixture branch is not clean: ${dirty}`);
+      const prepared = await prepareCallerHandoff(agent.id, 'branch');
+      const args = { to: `${remote.agentId}@${remote.fingerprint}`, task: 'Parity task', brief: 'Verify the transferred fixture.', mode: 'branch', manifest: prepared.summary };
+      return withHandoffAgreementCall({ agentId: agent.id, name: 'offer_handoff', args }, () => handoffHost().coordinator.offer({
+        to: { agentId: remote!.agentId, machine: remote!.fingerprint }, task: { title: args.task, brief: args.brief }, mode: 'branch', manifest: prepared.summary,
+      }, localHandoffAgent(agent.id)));
+    },
+    handoffRecord(id: string) { return handoffHost().coordinator.service.get(id, localHandoffAgent(agent.id)); },
+    async handoffAccept(id: string) {
+      const args = { id, accept: true };
+      return withHandoffAgreementCall({ agentId: agent.id, name: 'respond_to_handoff', args }, () =>
+        handoffHost().coordinator.respond(id, localHandoffAgent(agent.id), true));
+    },
+    async handoffPull(id: string) {
+      const record = handoffHost().coordinator.service.get(id, localHandoffAgent(agent.id));
+      const manifest = await readHandoffTransferManifest(record);
+      if (!manifest.bundle) throw new Error('The prepared branch has no Git bundle');
+      const digest = createHash('sha256');
+      let bytes = 0, chunks = 0;
+      while (bytes < manifest.bundle.size) {
+        const request = { op: 'read' as const, id, file: -1, offset: bytes };
+        const raw = await requestHandoffTransfer(record, request);
+        if (!raw || typeof raw !== 'object' || !('data' in raw) || typeof raw.data !== 'string'
+          || !('sha256' in raw) || typeof raw.sha256 !== 'string' || !('offset' in raw) || raw.offset !== bytes
+          || !('totalBytes' in raw) || raw.totalBytes !== manifest.bundle.size
+          || !('eof' in raw) || typeof raw.eof !== 'boolean') throw new Error('Invalid handoff chunk');
+        const data = Buffer.from(raw.data, 'base64');
+        if (data.length === 0 || data.length > 256 * 1024 || createHash('sha256').update(data).digest('hex') !== raw.sha256
+          || raw.eof !== (bytes + data.length === manifest.bundle.size)) throw new Error('Handoff chunk integrity failed');
+        if (chunks === 0) {
+          const repeated = await requestHandoffTransfer(record, request);
+          if (JSON.stringify(repeated) !== JSON.stringify(raw)) throw new Error('A repeated offset changed the frozen bytes');
+        }
+        digest.update(data); bytes += data.length; chunks++;
+      }
+      return { bytes, chunks, digest: digest.digest('hex'), expected: manifest.bundle };
+    },
+    handoffCancel(id: string) { return handoffHost().coordinator.cancel(id, localHandoffAgent(agent.id)); },
     async durable(input?: { projectId: string; useWorktree: boolean }) {
       if (!remote) throw new Error('Inventory peer is not configured');
       const projectId = input?.projectId ?? remote.projectId;
@@ -548,6 +617,7 @@ export async function createInventoryPeer(alias: string) {
       };
     },
     async close() {
+      await stopHandoffs();
       linkedState.stop();
       stopLinkedNetwork();
       stopLinks();

@@ -536,6 +536,26 @@ describe('full-server audit inventory over one A to B forward', () => {
     });
   });
 
+  describe('R20/R21: real handoff agreements and receiver-driven frozen artifact reads', () => {
+    beforeAll(async () => { await a.prepareHandoffs(); await b.call('prepareHandoffs'); });
+    it.each(['A', 'B'] as const)('%s offers, the receiver accepts and pulls the complete bundle with offset/digest checks', async (who) => {
+      const offer = who === 'A' ? await a.handoffOffer() : await b.call<Awaited<ReturnType<InventoryPeer['handoffOffer']>>>('handoffOffer');
+      expect(offer.state).toBe('offered');
+      const incoming = who === 'A' ? await b.call('handoffRecord', offer.id) : a.handoffRecord(offer.id);
+      expect(incoming).toMatchObject({ id: offer.id, state: 'offered', manifest: offer.manifest });
+      await expect(who === 'A' ? b.call('handoffPull', offer.id) : a.handoffPull(offer.id)).rejects.toThrow();
+      const accepted = who === 'A' ? await b.call('handoffAccept', offer.id) : await a.handoffAccept(offer.id);
+      expect(accepted).toMatchObject({ id: offer.id, state: 'accepted' });
+      const pulled = who === 'A' ? await b.call<Awaited<ReturnType<InventoryPeer['handoffPull']>>>('handoffPull', offer.id) : await a.handoffPull(offer.id);
+      expect(pulled.chunks).toBeGreaterThanOrEqual(3);
+      expect(pulled.bytes).toBe(pulled.expected.size);
+      expect(pulled.digest).toBe(pulled.expected.sha256);
+      const cancelled = who === 'A' ? await a.handoffCancel(offer.id) : await b.call('handoffCancel', offer.id);
+      expect(cancelled).toMatchObject({ id: offer.id, state: 'cancelled' });
+      await expect(who === 'A' ? b.call('handoffPull', offer.id) : a.handoffPull(offer.id)).rejects.toThrow();
+    });
+  });
+
   it('audits every app dial independently of the direct-dial sentinel', async () => {
     assertDialAudit((await status('A')).attempts, { host: '127.0.0.1', port: forward.port }, forward.sourcePorts, guard.accepts());
     assertDialAudit((await status('B')).attempts, null, [], guard.accepts());
