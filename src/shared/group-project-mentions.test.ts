@@ -7,6 +7,29 @@ const members = [
   { address: 'c@one', name: 'Solo' },
 ];
 describe('board mentions', () => {
+  it.each(['Mac mini', 'Mac (work)', 'mAC MINI'])('claims the longest qualified token: %s', computer => {
+    const twins = [
+      { address: 'short', name: 'Twin', computer: 'Mac' },
+      { address: 'long', name: 'Twin', computer },
+    ];
+    expect(resolveMentions(`@tWiN@${computer.toUpperCase()}`, twins)).toEqual({ addresses: new Set(['long']), ambiguous: [] });
+  });
+  it('claims a longer plain name before an ambiguous shorter name', () => {
+    const people = [
+      { address: 'short1', name: 'Team' },
+      { address: 'short2', name: 'TEAM' },
+      { address: 'long', name: 'Team Lead' },
+    ];
+    expect(resolveMentions('@tEaM lEaD!', people)).toEqual({ addresses: new Set(['long']), ambiguous: [] });
+    expect(resolveMentions('@Team Lead, @team', people)).toEqual({ addresses: new Set(['long', 'short1', 'short2']), ambiguous: ['Team'] });
+  });
+  it('claims a qualified mention next to punctuation without its shorter alias', () => {
+    const twins = [
+      { address: 'short', name: 'Twin', computer: 'Mac' },
+      { address: 'long', name: 'Twin', computer: 'Mac (work)' },
+    ];
+    expect(resolveMentions('(@Twin@Mac (work)), please.', twins)).toEqual({ addresses: new Set(['long']), ambiguous: [] });
+  });
   it('resolves ambiguous names to every address and flags the plain name', () => {
     expect(resolveMentions('Hi @tWiN and @Twin!', members)).toEqual({ addresses: new Set(['a@one', 'b@two']), ambiguous: ['Twin'] });
   });

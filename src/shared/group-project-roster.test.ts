@@ -42,7 +42,26 @@ describe('group project roster wire (#3548)', () => {
     expect(answer).toMatchObject({ members: [{ status: 'busy', lastSeen: member.lastSeen, inbox: member.inbox }] });
     expect(() => readRosterAnswer(page({ members: [{ ...member, status: 'connected' }] }), HOST, request)).toThrow();
     expect(() => readRosterAnswer(page({ members: [{ ...member, lastSeen: 'bad' }] }), HOST, request)).toThrow();
-    expect(() => readRosterAnswer(page({ members: [{ ...member, inbox: '../secret' }] }), HOST, request)).toThrow();
+  });
+
+  it.each([
+    ['a'.repeat(256), 'a'.repeat(256), ''],
+    ['a'.repeat(256), 'a'.repeat(256), '-abcdef'],
+    ['a'.repeat(256), 'a'.repeat(256), `-abcdef-${Number.MAX_SAFE_INTEGER}`],
+    // Lowercasing U+0130 expands to i + combining dot, sanitized to i-.
+    ['İ'.repeat(256), `${'i-'.repeat(255)}i`, `-abcdef-${Number.MAX_SAFE_INTEGER}`],
+  ])('round trips a 256-character name inbox including collision suffixes (case %#)', (name, sanitized, suffix) => {
+    const inbox = `inbox-${sanitized}${suffix}`;
+    const member = { ...page().members[0], label: name, inbox };
+    const answer = readRosterAnswer(JSON.parse(JSON.stringify(page({ members: [member] }))), HOST, request);
+    expect(answer).toMatchObject({ status: 'ok', members: [{ inbox }] });
+    expect(readRosterAnswer(JSON.parse(JSON.stringify(answer)), HOST, request)).toEqual(answer);
+  });
+
+  it.each(['../secret', 'inbox-a.b', 'inbox-ABC', `inbox-${'a'.repeat(536)}`, 42, null])('drops malformed optional inbox %s without losing the page', inbox => {
+    const answer = readRosterAnswer(page({ members: [{ ...page().members[0], inbox }] }), HOST, request);
+    expect(answer).toMatchObject({ status: 'ok', members: [{ agentId: 'lead' }] });
+    if (answer.status === 'ok') expect(answer.members[0]).not.toHaveProperty('inbox');
   });
 
   it('keeps the v1 shape usable by readers that discard unknown member fields', () => {
