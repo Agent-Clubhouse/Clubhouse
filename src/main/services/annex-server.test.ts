@@ -393,6 +393,7 @@ function positiveSerial(): string {
 import * as annexPeers from './annex-peers';
 import * as annexEventBus from './annex-event-bus';
 import * as projectStore from './project-store';
+import { _resetRepoKeysForTesting, repoKeysFor } from './project-repo-keys';
 import * as agentConfigModule from './agent-config';
 import { deleteAgent } from './agent-delete';
 import * as ptyManagerModule from './pty-manager';
@@ -6171,6 +6172,76 @@ describe('annex-server', () => {
         expect(first.close).not.toHaveBeenCalled();
         expect(sent(first).map((f) => f.type)).toEqual(['error']);
       });
+    });
+
+    it('sends a later snapshot with the repo key when a newly opened project finishes reading its remote (#3703)', async () => {
+      let finishOrigin!: (url: string) => void;
+      const readOrigin = vi.fn(() => new Promise<string>((resolve) => { finishOrigin = resolve; }));
+      _resetRepoKeysForTesting(readOrigin);
+      const project = { id: 'new-project', name: 'Site', path: '/new-project' };
+      vi.mocked(projectStore.list).mockReturnValue([project]);
+      const live = Object.assign(new EventEmitter(), { readyState: 1, send: vi.fn(), ping: () => {}, close: vi.fn() });
+      annexServer._testing.wsAuthTypes.set(live as never, 'bearer');
+      annexServer._testing.wss!.clients.add(live as never);
+      try {
+        annexServer._testing.wss!.emit('connection', live);
+        await vi.waitFor(() => expect(sent(live).some((f) => f.type === 'snapshot')).toBe(true));
+        expect(sent(live).find((f) => f.type === 'snapshot').payload.projects).toEqual([
+          expect.objectContaining({ id: project.id, name: 'Site' }),
+        ]);
+        expect(sent(live).find((f) => f.type === 'snapshot').payload.projects[0].repoKey).toBeUndefined();
+
+        finishOrigin('git@github.com:Org/Site.git');
+
+        await vi.waitFor(() => expect(sent(live).filter((f) => f.type === 'snapshot')).toHaveLength(2));
+        expect(sent(live).filter((f) => f.type === 'snapshot')[1].payload.projects[0].repoKey).toBe('github.com/org/site');
+        expect(readOrigin).toHaveBeenCalledTimes(1);
+      } finally {
+        _resetRepoKeysForTesting(async () => null);
+      }
+    });
+
+    it('coalesces changed repo keys with a snapshot refresh already pending (#3703)', async () => {
+      const readOrigin = vi.fn(async () => {
+        annexServer.broadcastSnapshotRefresh();
+        return 'git@github.com:org/site.git';
+      });
+      _resetRepoKeysForTesting(readOrigin);
+      vi.mocked(projectStore.list).mockReturnValue([{ id: 'coalesced', name: 'Site', path: '/coalesced' }]);
+      const live = Object.assign(new EventEmitter(), { readyState: 1, send: vi.fn(), ping: () => {}, close: vi.fn() });
+      annexServer._testing.wsAuthTypes.set(live as never, 'bearer');
+      annexServer._testing.wss!.clients.add(live as never);
+      try {
+        annexServer._testing.wss!.emit('connection', live);
+        await vi.waitFor(() => expect(sent(live).filter((f) => f.type === 'snapshot')).toHaveLength(2));
+        expect(sent(live).filter((f) => f.type === 'snapshot')[1].payload.projects[0].repoKey).toBe('github.com/org/site');
+        await new Promise((resolve) => setTimeout(resolve, 100));
+        expect(sent(live).filter((f) => f.type === 'snapshot')).toHaveLength(2);
+        expect(readOrigin).toHaveBeenCalledTimes(1);
+      } finally {
+        _resetRepoKeysForTesting(async () => null);
+      }
+    });
+
+    it('does not send an extra snapshot when a stale repo key refresh is unchanged (#3703)', async () => {
+      const readOrigin = vi.fn(async () => 'https://github.com/org/site.git');
+      _resetRepoKeysForTesting(readOrigin);
+      const project = { id: 'unchanged-project', name: 'Site', path: '/unchanged-project' };
+      await repoKeysFor([project], Date.now() - 61_000);
+      vi.mocked(projectStore.list).mockReturnValue([project]);
+      const live = Object.assign(new EventEmitter(), { readyState: 1, send: vi.fn(), ping: () => {}, close: vi.fn() });
+      annexServer._testing.wsAuthTypes.set(live as never, 'bearer');
+      annexServer._testing.wss!.clients.add(live as never);
+      try {
+        annexServer._testing.wss!.emit('connection', live);
+        await vi.waitFor(() => expect(sent(live).filter((f) => f.type === 'snapshot')).toHaveLength(1));
+        expect(sent(live).find((f) => f.type === 'snapshot').payload.projects[0].repoKey).toBe('github.com/org/site');
+        await new Promise((resolve) => setTimeout(resolve, 100));
+        expect(readOrigin).toHaveBeenCalledTimes(2);
+        expect(sent(live).filter((f) => f.type === 'snapshot')).toHaveLength(1);
+      } finally {
+        _resetRepoKeysForTesting(async () => null);
+      }
     });
 
     it('stamps a refresh with the seq its live state was read at, so nothing newer is overwritten', async () => {

@@ -1245,8 +1245,8 @@ async function readSnapshotSourcesData() {
 
   const iconSet = await buildSnapshotIcons(projects, durablesByProject, dispatcherRecord() ?? undefined);
   // Each project's git remote as a key, so another machine can suggest linking the same project (#3066).
-  // Whatever is known now: the snapshot never waits on git, and the rest arrive with a later one.
-  const repoKeys = cachedRepoKeys(projects);
+  // Never wait on git. Changed keys request a later snapshot through the coalesced refresh path.
+  const repoKeys = cachedRepoKeys(projects, Date.now(), broadcastSnapshotRefresh);
 
   // Read per-project canvas state in parallel (including wires)
   const canvasState: Record<string, CanvasStateWire> = {};
