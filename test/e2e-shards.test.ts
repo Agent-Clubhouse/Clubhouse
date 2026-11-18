@@ -71,6 +71,7 @@ describe('E2E and Annex E2E shard lists (#2843)', () => {
       }
       const matrix = /\n\s+shard: \[([^\]]*)\]/.exec(job)?.[1];
       expect(matrix?.split(',').map((x) => x.trim()), id).toEqual(Object.keys(shards));
+      expect(job, `${id} denominator`).toContain(`\${{ matrix.shard }}/${Object.keys(shards).length})`);
     }
   });
 
@@ -80,6 +81,10 @@ describe('E2E and Annex E2E shard lists (#2843)', () => {
     const annex = await loadConfig({ ...E2E_JOB_ENV, PLAYWRIGHT_IGNORE_ANNEX: undefined, PLAYWRIGHT_IGNORE_CHAT_RICH: undefined, [E2E_SHARD_ENV]: undefined, [ANNEX_SHARD_ENV]: '1' });
     expect(annex.testMatch).toEqual(ANNEX_SHARDS[1].map((spec) => `**/${spec}`));
     expect(annex.testIgnore ?? []).not.toContain('**/annex-v2/**');
+    for (const shard of ['3', '4', '5', '6'] as const) {
+      const reverse = await loadConfig({ ...E2E_JOB_ENV, PLAYWRIGHT_IGNORE_ANNEX: undefined, PLAYWRIGHT_IGNORE_CHAT_RICH: undefined, [E2E_SHARD_ENV]: undefined, [ANNEX_SHARD_ENV]: shard });
+      expect(reverse.testMatch).toEqual(ANNEX_SHARDS[shard].map((spec) => `**/${spec}`));
+    }
   });
 
   it('refuse two shard variables at once, rather than let one win', async () => {
