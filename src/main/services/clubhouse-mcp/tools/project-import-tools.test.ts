@@ -422,7 +422,9 @@ describe('public Dispatcher repository import (#2808)', () => {
     const places = { projects: [{ id: 'dispatcher-project', path: fixture.dispatcher }], dispatcher: null };
     expect(JSON.parse(toMobileGrantRequest(request, places)!.arguments!)).toEqual({ ...startArgs(plan), plan });
     const command = { version: 1 as const, commandId: 'user-answer', epoch: 'fixture', type: 'grant.answer' as const, requestId: request.requestId, answer: 'allow_once' as const };
-    await expect(runGrantCommand(command, places, { viewer: 'controlling-device', assertAuthorized: () => { throw new Error('authority revoked'); } })).rejects.toThrow('authority revoked');
+    await expect(withSettingsSurface('mobile', 'controlling-device', () =>
+      runGrantCommand(command, places, { viewer: 'controlling-device', assertAuthorized: () => { throw new Error('authority revoked'); } })))
+      .rejects.toThrow('authority revoked');
     expect(listGrantRequests()).toHaveLength(1);
     await withSettingsSurface('mobile', 'controlling-device', () => runGrantCommand(command, places, { viewer: 'controlling-device', assertAuthorized: () => {} }));
     expect((await start(plan)).body.status).toBe('started');

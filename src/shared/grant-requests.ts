@@ -49,6 +49,14 @@ export interface GrantRequest {
   expiresAt: string;
 }
 
+/** Desktop network members may see that a host-only request waits, but none of its contents. */
+export interface DesktopPendingGrantRequest {
+  hostLabel: string;
+  requestId: string;
+  kind: GrantRequest['kind'];
+  createdAt: string;
+}
+
 /** The tool name a remote create's approval is recorded under (#3547). Not an MCP tool: no agent can call it. */
 export const REMOTE_CREATE_TOOL = 'remote_create_group_project';
 

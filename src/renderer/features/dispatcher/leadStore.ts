@@ -2,11 +2,13 @@ import { useEffect, useMemo } from 'react';
 import { create } from 'zustand';
 import type { Agent } from '../../../shared/types';
 import type { MobileGrantRequest } from '../../../shared/mobile-control';
-import { connectionApprovalInvolves } from '../../../shared/approval-routing';
+import type { DesktopPendingGrantRequest } from '../../../shared/grant-requests';
+import { connectionApprovalInvolves, connectionApprovalView } from '../../../shared/approval-routing';
 import type { DispatcherLeadState } from '../../../shared/dispatcher-lead';
 import { DISPATCHER_PROJECT_ID } from '../../../shared/dispatcher-types';
 import { useAnnexClientStore } from '../../stores/annexClientStore';
 import { namespacedAgentId, namespacedProjectId, useRemoteProjectStore } from '../../stores/remoteProjectStore';
+import { rendererLog } from '../../plugins/renderer-logger';
 
 /**
  * The network-wide lead as this computer sees it (#3351), for Settings, the
@@ -78,24 +80,51 @@ export function useFollowedLead(): FollowedLead | null {
   return { state, machineName: state.lead?.name ?? satellite?.alias ?? 'another computer', agent, online };
 }
 
-export interface FollowerApproval {
+export type FollowerApproval = {
   /** The computer it waits on (lowercase fingerprint). */
   machine: string;
   machineName: string;
-  request: MobileGrantRequest;
-}
+} & ({ request: MobileGrantRequest; pending?: never } | { request?: never; pending: DesktopPendingGrantRequest });
+
+export const followerApprovalId = (item: FollowerApproval): string => item.request ? item.request.requestId : item.pending.requestId;
+export const followerApprovalTime = (item: FollowerApproval): number => Date.parse(item.request ? item.request.requestedAt : item.pending.createdAt) || 0;
 
 const NO_APPROVALS: FollowerApproval[] = [];
+let visibility = new Map<string, string>();
 
 /**
  * Ask-first requests on connected computer members, oldest first (#3354,
- * #3654). The lead sees every row; other members see only connections involving
- * their computer. Answered or expired there, a row leaves with the next snapshot.
+ * #3654, #3696). Without a lead peers see every host-offered row. With a lead,
+ * the existing routing stands. Host-only notices never offer an answer.
  */
 export function useFollowerApprovals(): FollowerApproval[] {
   const state = useLeadState();
   const satellites = useAnnexClientStore((s) => s.satellites);
-  return useMemo(() => followerApprovalsFrom(state, satellites), [state, satellites]);
+  const approvals = useMemo(() => followerApprovalsFrom(state, satellites), [state, satellites]);
+  useEffect(() => {
+    const shown = new Map(approvals.map((item) => {
+      const request = item.request;
+      const connection = request && connectionApprovalView(request);
+      const reason = !request ? 'host_only' : request.update || request.answers.length === 0 || connection && !connection.canonical ? 'read_only' : 'answerable';
+      return [`${item.machine}:${followerApprovalId(item)}`, reason];
+    }));
+    const next = new Map<string, string>();
+    for (const sat of satellites) {
+      const machine = sat.fingerprint.toLowerCase();
+      const member = state?.choices.find((c) => !c.self && c.machine.toLowerCase() === machine);
+      for (const row of [...(sat.snapshot?.grantRequests ?? []), ...(sat.snapshot?.pendingGrantRequests ?? [])]) {
+        const key = `${machine}:${row.requestId}`;
+        const reason = shown.get(key) ?? (!state ? 'lead_unknown' : !member ? 'not_member' : sat.needsPairing ? 'unpaired'
+          : sat.state !== 'connected' || !member.online ? 'offline' : 'lead_routing');
+        next.set(key, reason);
+        if (visibility.get(key) !== reason) rendererLog('core:dispatcher', 'info', shown.has(key) ? 'Remote approval shown' : 'Remote approval hidden', {
+          meta: { machine, requestId: row.requestId, reason, role: state?.role ?? 'unknown' },
+        });
+      }
+    }
+    visibility = next;
+  }, [state, satellites, approvals]);
+  return approvals;
 }
 
 function followerApprovalsFrom(state: DispatcherLeadState | null, satellites: ReturnType<typeof useAnnexClientStore.getState>['satellites']): FollowerApproval[] {
@@ -103,26 +132,40 @@ function followerApprovalsFrom(state: DispatcherLeadState | null, satellites: Re
   const self = state?.choices.find((c) => c.self)?.machine;
   if (!members.length) return NO_APPROVALS;
   const out: FollowerApproval[] = [];
+  const seen = new Set<string>();
+  const all = state?.role === 'lead' || state?.role === 'peer' && state.lead === null;
   for (const member of members) {
-    const sat = satellites.find((x) => x.fingerprint.toLowerCase() === member.machine && x.state === 'connected' && !x.needsPairing);
+    const machine = member.machine.toLowerCase();
+    const sat = satellites.find((x) => x.fingerprint.toLowerCase() === machine && x.state === 'connected' && !x.needsPairing);
     for (const request of sat?.snapshot?.grantRequests ?? []) {
       // Snapshots already apply grantRowVisibleTo at the authenticated sender.
-      if (state?.role === 'lead' || connectionApprovalInvolves(request, self)) out.push({ machine: member.machine, machineName: member.name, request });
+      const key = `${machine}:${request.requestId}`;
+      if (!seen.has(key) && (all || connectionApprovalInvolves(request, self))) {
+        seen.add(key);
+        out.push({ machine, machineName: member.name, request });
+      }
+    }
+    if (all) for (const pending of sat?.snapshot?.pendingGrantRequests ?? []) {
+      const key = `${machine}:${pending.requestId}`;
+      if (!seen.has(key)) {
+        seen.add(key);
+        out.push({ machine, machineName: pending.hostLabel, pending });
+      }
     }
   }
-  const at = (item: FollowerApproval) => Date.parse(item.request.requestedAt) || 0;
-  return out.length ? out.sort((a, b) => at(a) - at(b)) : NO_APPROVALS;
+  return out.length ? out.sort((a, b) => followerApprovalTime(a) - followerApprovalTime(b)) : NO_APPROVALS;
 }
 
 /** Whether this request is waiting right now, read from the stores and not from what a row last rendered. */
 export function isFollowerApprovalPending(machine: string, requestId: string): boolean {
   return followerApprovalsFrom(useLeadStore.getState().state, useAnnexClientStore.getState().satellites)
-    .some((item) => item.machine === machine && item.request.requestId === requestId);
+    .some((item) => item.machine === machine.toLowerCase() && !!item.request && item.request.requestId === requestId);
 }
 
 /** For tests: as if nothing had read the lead yet. */
 export function _resetLeadStoreForTesting(): void {
   subscribed = false;
   lastKnown.clear();
+  visibility.clear();
   useLeadStore.setState({ state: null });
 }

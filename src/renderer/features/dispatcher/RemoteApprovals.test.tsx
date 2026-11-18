@@ -9,6 +9,9 @@ import { useAnnexClientStore } from '../../stores/annexClientStore';
 import { _resetLeadStoreForTesting, useLeadStore } from './leadStore';
 import { RemoteApprovals, approvalLine, dispatcherNeedsYouLine } from './RemoteApprovals';
 import { describeGrantRequest, type GrantRequest } from '../../../shared/grant-requests';
+import { rendererLog } from '../../plugins/renderer-logger';
+
+vi.mock('../../plugins/renderer-logger', () => ({ rendererLog: vi.fn() }));
 
 const LEAD: DispatcherLeadState = {
   available: true, canChoose: true, role: 'lead', following: false, tookBack: false,
@@ -43,6 +46,57 @@ beforeEach(() => {
 });
 
 describe('approvals from other computers in the lead’s chat (#3354)', () => {
+  it('logs visibility changes and hidden reasons without request content', async () => {
+    useLeadStore.setState({ state: { ...LEAD, role: 'peer', lead: null } });
+    const { rerender } = render(<RemoteApprovals />);
+    await act(async () => {});
+    expect(rendererLog).toHaveBeenCalledWith('core:dispatcher', 'info', 'Remote approval shown', {
+      meta: { machine: 'laptop', requestId: 'gr_1', reason: 'answerable', role: 'peer' },
+    });
+    const count = vi.mocked(rendererLog).mock.calls.length;
+    rerender(<RemoteApprovals />);
+    expect(rendererLog).toHaveBeenCalledTimes(count);
+    act(() => useAnnexClientStore.setState({ satellites: [satellite([REQUEST], 'disconnected')] } as never));
+    expect(rendererLog).toHaveBeenLastCalledWith('core:dispatcher', 'info', 'Remote approval hidden', {
+      meta: { machine: 'laptop', requestId: 'gr_1', reason: 'offline', role: 'peer' },
+    });
+    expect(JSON.stringify(vi.mocked(rendererLog).mock.calls)).not.toContain(REQUEST.reason);
+    expect(JSON.stringify(vi.mocked(rendererLog).mock.calls)).not.toContain(REQUEST.arguments);
+    expect(JSON.stringify(vi.mocked(rendererLog).mock.calls)).not.toContain(REQUEST.agent.name);
+  });
+
+  it('shows an eligible remote request with no elected lead and sends only the clicked answer', async () => {
+    useLeadStore.setState({ state: { ...LEAD, role: 'peer', lead: null } });
+    render(<RemoteApprovals />);
+    await act(async () => {});
+    expect(screen.getByTestId('dispatcher-remote-approval')).toHaveTextContent('Laptop:');
+    expect(window.clubhouse.dispatcher.answerRemoteApproval).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByTestId('dispatcher-remote-approval-allow_once'));
+    await waitFor(() => expect(window.clubhouse.dispatcher.answerRemoteApproval).toHaveBeenCalledWith('laptop', 'gr_1', 'allow_once'));
+  });
+
+  it('shows a minimal host-only pending entry without controls or hidden content', async () => {
+    useLeadStore.setState({ state: { ...LEAD, role: 'peer', lead: null } });
+    useAnnexClientStore.setState({ satellites: [{
+      ...satellite([]),
+      snapshot: { grantRequests: [], pendingGrantRequests: [{ hostLabel: 'Mac Mini', requestId: 'private', kind: 'call', createdAt: REQUEST.requestedAt }] },
+    }] } as never);
+    render(<RemoteApprovals />);
+    await act(async () => {});
+    expect(screen.getByTestId('dispatcher-remote-approval')).toHaveTextContent('Waiting on Mac Mini');
+    expect(screen.queryAllByRole('button')).toHaveLength(0);
+    expect(screen.queryByTestId('dispatcher-remote-approval-arguments')).toBeNull();
+    expect(window.clubhouse.dispatcher.answerRemoteApproval).not.toHaveBeenCalled();
+  });
+
+  it('deduplicates a request per host when members or snapshots repeat', async () => {
+    useLeadStore.setState({ state: { ...LEAD, choices: [...LEAD.choices, LEAD.choices[1]] } });
+    useAnnexClientStore.setState({ satellites: [satellite([REQUEST, REQUEST])] } as never);
+    render(<RemoteApprovals />);
+    await act(async () => {});
+    expect(screen.getByTestId('dispatcher-remote-approval-count')).toHaveTextContent('1 of 1');
+  });
+
   it('lists them with the computer first, and a person’s click answers on that computer', async () => {
     render(<RemoteApprovals />);
     await act(async () => {});

@@ -57,7 +57,7 @@ import { MOBILE_SLASH_COMMANDS_MAX, latestSlashCommands, remoteChatEvent } from 
 import { buildMobileHelperRequests, runHelperCommand } from './mobile-helper-requests';
 import { onStartRequestsChanged } from './helper-start-requests';
 import {
-  GRANT_REQUEST_OPENED_EVENT, GRANT_REQUEST_RESOLVED_EVENT, buildMobileGrantRequests, grantOpenedPayload, grantRowVisibleTo, runGrantCommand, toMobileGrantRequest,
+  GRANT_REQUEST_OPENED_EVENT, GRANT_REQUEST_RESOLVED_EVENT, buildMobileGrantRequests, grantOpenedPayload, grantRowVisibleTo, grantSnapshotForPeer, runGrantCommand, toMobileGrantRequest,
   type GrantRequestPlaces,
 } from './mobile-grant-requests';
 import { onGrantRequestsChanged } from './grant-requests';
@@ -1594,8 +1594,10 @@ const SNAPSHOT_REFS_TRUNCATION_STEPS: typeof SNAPSHOT_TRUNCATION_STEPS = [
  * mean it's gone. The fields left can't be given up, so past that it's reported.
  */
 function snapshotFrame({ payload: built, icons, iconRefs }: BuiltSnapshot, trigger: SnapshotTrigger, form: SnapshotForm = 'inline', viewer?: string): string {
-  // A device's copy leaves out the Manage devices calls that name it (#3205).
-  const payload = viewer ? { ...built, grantRequests: snapshotGrantRows(built).filter((row) => grantRowVisibleTo(row, viewer)) } : built;
+  const payload = viewer ? { ...built, ...grantSnapshotForPeer(snapshotGrantRows(built), {
+    fingerprint: viewer, peer: findPairedPeer(viewer), networkEnabled: annexSettings.networkEnabled(),
+    sessionOnly: mobileSessionPeers.has(viewer), hostLabel: thisMachine().machine?.name ?? 'Clubhouse',
+  }) } : built;
   const items = payload.projects.length + Object.values(payload.agents).reduce((sum, list) => sum + list.length, 0);
   // A phone that fetches images has both legacy maps empty, because it clears its inline icons on seeing either.
   const formPayload: Record<string, unknown> = form === 'refs' ? { ...payload, projectIcons: {}, agentIcons: {}, ...(iconRefs && { iconRefs }) } : payload;
@@ -1630,10 +1632,11 @@ function snapshotGrantRows(payload: BuiltSnapshot['payload']): MobileGrantReques
   return (payload.grantRequests as MobileGrantRequest[] | undefined) ?? [];
 }
 
-/** The device a socket's snapshot is filtered for: itself, when a Manage devices call names it (#3205); else none. */
+/** Desktop members get their own projection; phones retain their existing self-device filtering. */
 function grantViewerOf(built: BuiltSnapshot, ws: WebSocket): string | undefined {
   const fingerprint = wsPeerFingerprints.get(ws)?.toLowerCase();
-  return fingerprint && snapshotGrantRows(built.payload).some((row) => !grantRowVisibleTo(row, fingerprint)) ? fingerprint : undefined;
+  return fingerprint && (isDesktopNetworkMember(fingerprint)
+    || snapshotGrantRows(built.payload).some((row) => !grantRowVisibleTo(row, fingerprint))) ? fingerprint : undefined;
 }
 
 /** Most frames held for one socket: as many as the replay buffer keeps. */
