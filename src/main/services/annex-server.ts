@@ -1,3 +1,4 @@
+import { localMemberObservation } from './group-project-member-status';
 import { handoffTransferDiagnostic, tagHandoffTransferError } from '../../shared/handoff-transfer-diagnostics';
 import { mobileProjectLinks, MOBILE_PROJECT_LINKS_EVENT } from './mobile-project-links';
 import { hydrateProjectLinks, projectLinksStore } from './project-links-store';
@@ -1348,7 +1349,7 @@ function assembleSnapshot(sources: SnapshotSources): BuiltSnapshot {
   }));
 
   // Read group project members from binding manager
-  const groupProjectMembers: Record<string, Array<{ agentId: string; agentName: string; status: string }>> = {};
+  const groupProjectMembers: Record<string, Array<{ agentId: string; agentName: string; status: string; runtimeStatus?: import('../../shared/group-project-roster').RosterStatus; lastSeen?: string }>> = {};
   try {
     const allBindings = bindingManager.getAllBindings();
     for (const gp of groupProjects) {
@@ -1357,6 +1358,8 @@ function assembleSnapshot(sources: SnapshotSources): BuiltSnapshot {
         .map(b => ({
           agentId: b.agentId,
           agentName: b.agentName || b.agentId,
+          runtimeStatus: localMemberObservation(b.agentId).status,
+          lastSeen: new Date().toISOString(),
           status: isAgentRunning(b.agentId) ? 'connected' : 'sleeping',
         }));
       if (members.length > 0) {

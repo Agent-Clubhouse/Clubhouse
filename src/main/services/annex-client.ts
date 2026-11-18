@@ -126,7 +126,7 @@ export interface SatelliteSnapshot {
   groupProjects?: unknown[];
   groupProjectActions?: import('../../shared/actions/view').RemoteGroupAction[];
   bulletinDigests?: Record<string, unknown[]>;
-  groupProjectMembers?: Record<string, Array<{ agentId: string; agentName: string; status: string }>>;
+  groupProjectMembers?: Record<string, Array<{ agentId: string; agentName: string; status: string; runtimeStatus?: import('../../shared/group-project-roster').RosterStatus; lastSeen?: string }>>;
   /** Unvalidated; read through `windowsPtyForHost`. */
   ptyHost?: unknown;
   canvasState?: Record<string, unknown>;

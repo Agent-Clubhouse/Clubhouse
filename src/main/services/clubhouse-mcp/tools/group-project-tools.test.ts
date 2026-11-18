@@ -275,7 +275,7 @@ describe('GroupProjectTools', () => {
     expect(result.isError).toBeFalsy();
     const members = JSON.parse(result.content[0].text!);
     expect(members).toHaveLength(2);
-    expect(members.map((m: any) => m.agentName).sort()).toEqual(['falcon', 'robin']);
+    expect(members.map((m: any) => m.name).sort()).toEqual(['falcon', 'robin']);
   });
 
   it.each(['list_members', 'query_polling', 'get_project_info'])('%s uses the host roster including remote members', async suffix => {
@@ -287,7 +287,7 @@ describe('GroupProjectTools', () => {
     const result = await callTool('agent-1', buildToolName(makeBinding({ agentId: 'agent-1', targetId: 'gp_roster', targetName: 'Roster' }), suffix), {});
     const body = JSON.parse(result.content[0].text!);
     const members = Array.isArray(body) ? body : body.members;
-    expect(members).toEqual([expect.objectContaining({ agentId: 'remote@other', agentName: 'Twin', status: 'unknown', rosterSource: 'live', rosterComplete: false, stale: 'offline' })]);
+    expect(members).toEqual([expect.objectContaining({ address: 'remote@other', name: 'Twin', computer: 'MBP', status: 'unknown' })]);
   });
 
   it('post_bulletin posts and returns confirmation', async () => {
@@ -415,7 +415,7 @@ describe('GroupProjectTools', () => {
     expect(parsed.instructions).toBe('Follow the rules');
     expect(parsed.scope).toEqual({ level: 'project', projectId: 'project-a', reach: 'local' });
     expect(parsed.members).toHaveLength(1);
-    expect(parsed.members[0].agentName).toBe('robin');
+    expect(parsed.members[0].name).toBe('robin');
   });
 
   it('get_project_info tells a notices group to react to notices, not to poll (#3618)', async () => {
@@ -504,7 +504,7 @@ describe('GroupProjectTools', () => {
 
     const members = JSON.parse(result.content[0].text!);
     expect(members).toHaveLength(1);
-    expect(members[0].status).toBe('connected');
+    expect(members[0].status).toBe('awake');
 
     agentRegistry.untrack('agent-1');
   });
@@ -524,7 +524,7 @@ describe('GroupProjectTools', () => {
 
     const members = JSON.parse(result.content[0].text!);
     expect(members).toHaveLength(1);
-    expect(members[0].status).toBe('sleeping');
+    expect(members[0].status).toBe('asleep');
   });
 
   it('list_members shows mixed statuses for multiple agents', async () => {
@@ -555,10 +555,10 @@ describe('GroupProjectTools', () => {
     const members = JSON.parse(result.content[0].text!);
     expect(members).toHaveLength(2);
 
-    const robin = members.find((m: any) => m.agentName === 'robin');
-    const falcon = members.find((m: any) => m.agentName === 'falcon');
-    expect(robin.status).toBe('connected');
-    expect(falcon.status).toBe('sleeping');
+    const robin = members.find((m: any) => m.name === 'robin');
+    const falcon = members.find((m: any) => m.name === 'falcon');
+    expect(robin.status).toBe('awake');
+    expect(falcon.status).toBe('asleep');
 
     agentRegistry.untrack('agent-1');
   });
@@ -588,7 +588,7 @@ describe('GroupProjectTools', () => {
     const parsed = JSON.parse(result.content[0].text!);
     expect(parsed.scope).toEqual({ level: 'app', reach: 'local' });
     expect(parsed.members).toHaveLength(1);
-    expect(parsed.members[0].status).toBe('connected'); // registered = alive
+    expect(parsed.members[0].status).toBe('awake'); // registered = alive
 
     agentRegistry.untrack('agent-1');
   });
@@ -717,6 +717,25 @@ describe('GroupProjectTools', () => {
   });
 
   describe('resolveSenderLabel (via post_bulletin)', () => {
+    it('adds the computer to a colliding sender and leaves existing posts unchanged', async () => {
+      const project = await groupProjectRegistry.create('Board');
+      bindingManager.bind('agent-1', { targetId: project.id, targetKind: 'group-project', label: 'Board', agentName: 'Twin' });
+      const toolName = buildToolName(makeBinding({ agentId: 'agent-1', targetId: project.id, targetName: 'Board' }), 'post_bulletin');
+      await callTool('agent-1', toolName, { topic: 'test', body: 'before' });
+      rosterFx.describe.mockResolvedValueOnce({ status: 'available', members: [
+        { agentId: 'agent-1', key: 'agent-1@one', machine: 'one', label: 'Twin', machineLabel: 'Mac mini', thisComputer: false },
+        { agentId: 'agent-2', key: 'agent-2@two', machine: 'two', label: 'Twin', machineLabel: 'Laptop', thisComputer: false },
+      ] } as never);
+      // The host normalizes its own machine address to a local id; the passthrough keeps it as-is.
+      const { groupProjectHost } = await import('../../group-project-host');
+      vi.mocked(groupProjectHost.addressOf).mockImplementationOnce((_gp, address) => address === 'agent-1@one' ? 'agent-1' : address);
+      await callTool('agent-1', toolName, { topic: 'test', body: 'after' });
+      const board = (await import('../../group-project-bulletin')).getBulletinBoard(project.id);
+      const messages = await board.getTopicMessages('test');
+      expect(messages.find(m => m.body === 'before')?.sender).toBe('Twin@Board');
+      expect(messages.find(m => m.body === 'after')?.sender).toBe('Twin (Mac mini)');
+    });
+
     it('uses live registry name when project has been renamed', async () => {
       const project = await groupProjectRegistry.create('OldName');
       bindingManager.bind('agent-1', {
@@ -1290,9 +1309,9 @@ describe('GroupProjectTools', () => {
     expect(result.isError).toBeFalsy();
     const parsed = JSON.parse(result.content[0].text!);
     expect(parsed.pollingEnabled).toBe(true);
-    const statuses = Object.fromEntries(parsed.members.map((m: { agentId: string; status: string }) => [m.agentId, m.status]));
-    expect(statuses['agent-2']).toBe('connected');
-    expect(statuses['agent-1']).toBe('sleeping');
+    const statuses = Object.fromEntries(parsed.members.map((m: { agentId: string; status: string }) => [m.address, m.status]));
+    expect(statuses['agent-2']).toBe('awake');
+    expect(statuses['agent-1']).toBe('asleep');
 
     agentRegistry.untrack('agent-2');
   });
