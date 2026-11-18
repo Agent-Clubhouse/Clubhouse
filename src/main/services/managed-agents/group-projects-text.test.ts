@@ -18,8 +18,9 @@ describe('group project member guidance (#3698)', () => {
   it('teaches notices, direct messages, urgency and honest delivery outcomes concisely', () => {
     for (const phrase of ['`list_members`', '`read_topic`', '`since`', 'Never poll',
       '`@name@computer`', '`urgent: true`', 'wakes a sleeping member', 'pending until accepted',
-      'Delivered does not mean read or done']) expect(text).toContain(phrase);
-    expect(text.trim().split(/\s+/).length).toBeLessThanOrEqual(140);
+      'Delivered does not mean read or done', 'Use `general` only for team-wide announcements',
+      '`control` for how the team works; agree in `control` before opening a channel']) expect(text).toContain(phrase);
+    expect(text.trim().split(/\s+/).length).toBeLessThanOrEqual(130);
   });
 
   it('keeps membership details in help and documents the new roster and wake rules', () => {
