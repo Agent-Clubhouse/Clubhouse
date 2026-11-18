@@ -117,4 +117,24 @@ describe('reverse direct-dial policy calibration', () => {
   it('detects an unaudited forward connection independently of the sentinel', () => {
     expect(() => assertDialAudit([], { host: '127.0.0.1', port: 1234 }, [4567], 0)).toThrow('unaudited app dial');
   });
+
+  it('keeps the successful-connect audit when a caller aborts that socket later', async () => {
+    const sockets = new Set<net.Socket>();
+    const server = net.createServer((socket) => { sockets.add(socket); socket.once('close', () => sockets.delete(socket)); });
+    const port = await listen(server);
+    cleanup.push(async () => { for (const socket of sockets) socket.destroy(); await closeServer(server); });
+    const forward = await transparentForward(port);
+    cleanup.push(forward.close);
+    const policy = installDialPolicy((host, port) => host === '127.0.0.1' && port === forward.port);
+    cleanup.push(() => policy.restore());
+    const socket = net.connect(forward.port, '127.0.0.1');
+    const error = new Promise((resolve) => socket.once('error', resolve));
+    await new Promise<void>((resolve) => socket.once('connect', resolve));
+    await vi.waitFor(() => expect(forward.sourcePorts).toContain(socket.localPort));
+    socket.destroy(Object.assign(new Error('The caller aborted'), { code: 'ABORT_ERR' }));
+    await error;
+    expect(policy.attempts[0]).toMatchObject({ allowed: true, outcome: 'error', error: 'ABORT_ERR', localPort: forward.sourcePorts[0] });
+    assertDialAudit(policy.attempts, { host: '127.0.0.1', port: forward.port }, forward.sourcePorts, 0);
+    expect(() => assertDialAudit(policy.attempts, { host: '127.0.0.1', port: forward.port }, [...forward.sourcePorts, 1], 0)).toThrow('unaudited app dial');
+  });
 });

@@ -16,6 +16,14 @@ interface FixturePty extends IPty {
   emitData(data: string): void;
 }
 
+function failureOutcome(error: unknown) {
+  if (!(error instanceof Error)) throw error;
+  return {
+    code: 'code' in error ? error.code : undefined,
+    indeterminate: 'indeterminate' in error ? error.indeterminate : undefined,
+  };
+}
+
 const fixture = vi.hoisted(() => {
   const fs = require('fs') as typeof import('fs');
   const path = require('path') as typeof import('path');
@@ -139,7 +147,9 @@ import { startLinkedProjectStateService } from '../../src/main/services/linked-p
 import { applyProjectStateChange, flushProjectStateForTests, getProjectState, hydrateProjectState } from '../../src/main/services/project-state-store';
 import type { ReplicaNetworkOptions } from '../../src/main/services/replica-network';
 import { withSettingsSurface } from '../../src/main/services/settings-audit';
-import { setAgentGrant } from '../../src/main/services/agent-grants-service';
+import { effectiveAgentGrants, setAgentGrant } from '../../src/main/services/agent-grants-service';
+import { dropGrantRequestsFor, listGrantRequests, recordGrantRequest } from '../../src/main/services/grant-requests';
+import { dropStartRequestsFor, listStartRequests, recordStartRequest } from '../../src/main/services/helper-start-requests';
 import { handoffHost, localHandoffAgent, startHandoffs, stopHandoffs } from '../../src/main/services/handoff-host';
 import { prepareCallerHandoff } from '../../src/main/services/handoff-preparations';
 import { registerHandoffTools } from '../../src/main/services/clubhouse-mcp/tools/handoff-tools';
@@ -213,6 +223,13 @@ export async function createInventoryPeer(alias: string) {
   agentRegistry.register(agent.id, { projectPath: root, cwd: root, orchestrator: 'claude-code', runtime: 'chat' });
   registerChatRuntime(runtime);
   await runtime.start();
+  let heldProviderSend: { promise: Promise<void>; release(): void } | undefined;
+  const providerSend = driver.last.send.bind(driver.last);
+  driver.last.send = async (content, delivery) => {
+    const result = await providerSend(content, delivery);
+    if (heldProviderSend) await heldProviderSend.promise;
+    return result;
+  };
   await server.startVerified();
   const self = identity.getOrCreateIdentity();
   const cert = annexTls.getOrCreateCert(self);
@@ -268,6 +285,7 @@ export async function createInventoryPeer(alias: string) {
   let policy: DialPolicy | undefined;
   let routePort = 0;
   let imageFixture: { root: string; agentId: string; driver: FakeChatDriver; runtime: ChatAgentRuntime; config: string } | undefined;
+  let cancellableWrite: AbortController | undefined;
   return {
     info,
     async configure(config: Omit<ConfigurePeer, 'peer'> & { peer: InventoryPeerInfo }) {
@@ -297,6 +315,24 @@ export async function createInventoryPeer(alias: string) {
       if (!remote) throw new Error('Inventory peer is not configured');
       control.closeFor(remote.fingerprint, 'out');
       control.retryConnection(remote.fingerprint);
+    },
+    revokeRemote() {
+      if (!remote) throw new Error('Inventory peer is not configured');
+      return server.revokePeer(remote.fingerprint);
+    },
+    holdProviderSend() {
+      if (heldProviderSend) throw new Error('An in-memory provider send is already held');
+      let release!: () => void;
+      const promise = new Promise<void>((resolve) => { release = resolve; });
+      heldProviderSend = { promise, release };
+    },
+    async releaseProviderSend() {
+      if (!heldProviderSend) return false;
+      const held = heldProviderSend;
+      heldProviderSend = undefined;
+      held.release();
+      await new Promise<void>((resolve) => setImmediate(resolve));
+      return true;
     },
     /** Server-only routes have no desktop wrapper. Test their actual wire endpoint explicitly. */
     async wire(input: ControlRequestInput): Promise<WireAnswer> {
@@ -425,6 +461,25 @@ export async function createInventoryPeer(alias: string) {
       if (!remote) throw new Error('Inventory peer is not configured');
       return client.sendChatCommand(remote.fingerprint, { agentId: remote.agentId, sessionId: remote.sessionId, ...input.command }, input.commandId);
     },
+    async chatOutcome(input: { command: Record<string, unknown>; commandId: string }) {
+      return this.chat(input).then(() => ({ code: 'unexpected_success', indeterminate: false }), failureOutcome);
+    },
+    async cancellableWrite(input: { commandId: string; text: string }) {
+      if (!remote) throw new Error('Inventory peer is not configured');
+      if (cancellableWrite) throw new Error('Another cancellable fixture write is active');
+      const controller = new AbortController();
+      cancellableWrite = controller;
+      try {
+        const state = await client.requestChatPage(remote.fingerprint, remote.agentId) as { epoch: string };
+        return await client.postToMachine(remote.fingerprint, '/api/v1/mobile/commands', {
+          ...input, type: 'chat.send', version: 1, epoch: state.epoch, agentId: remote.agentId, sessionId: remote.sessionId, delivery: 'prompt',
+        }, { signal: controller.signal }).then(() => ({ code: 'unexpected_success', indeterminate: false }), failureOutcome);
+      } finally { cancellableWrite = undefined; }
+    },
+    cancelWrite() {
+      if (!cancellableWrite) throw new Error('There is no cancellable fixture write');
+      cancellableWrite.abort();
+    },
     async page(options?: { beforeSeq?: number; limit?: number }) {
       if (!remote) throw new Error('Inventory peer is not configured');
       return client.requestChatPage(remote.fingerprint, remote.agentId, options);
@@ -432,6 +487,27 @@ export async function createInventoryPeer(alias: string) {
     async chatSessions() {
       if (!remote) throw new Error('Inventory peer is not configured');
       return client.requestChatSessions(remote.fingerprint, remote.agentId);
+    },
+    openRequests() {
+      const grant = recordGrantRequest(`inventory-${agent.id}`, {
+        kind: 'grant', agentId: agent.id, agentName: agent.name, projectPath: root,
+        actions: ['settings.app.write'], target: { kind: 'app' }, where: 'the app', reason: 'Temporary fixture settings only',
+      });
+      const helper = recordStartRequest(root, agent.id, agent.name, { name: 'held-helper', task: 'A waiting helper that will be declined' });
+      if (!grant.ok || !helper.ok) throw new Error('The actual request stores refused the fixture requests');
+      return { grantId: grant.request.requestId, helperId: helper.request.requestId };
+    },
+    async requestsState() {
+      return {
+        grants: listGrantRequests().filter((request) => request.agentId === agent.id),
+        helpers: listStartRequests().filter((request) => request.orchestratorId === agent.id),
+        effective: await effectiveAgentGrants(root, agent.id),
+        idleSleep: (await agentConfig.getDurableConfig(root, agent.id)).idleSleep,
+      };
+    },
+    answerGrant(input: { requestId: string; answer: string }) {
+      if (!remote) throw new Error('Inventory peer is not configured');
+      return client.answerRemoteGrantRequest(remote.fingerprint, input.requestId, input.answer);
     },
     hook() {
       eventBus.emitHookEvent(agent.id, { kind: 'pre_tool', toolName: 'Read', toolInput: { file_path: 'fixture.txt' }, timestamp: 1_700_000_000_000 });
@@ -451,12 +527,20 @@ export async function createInventoryPeer(alias: string) {
       return client.sendToSatellite(remote.fingerprint, frame);
     },
     emitPty(data: string) { nativePty().emitData(data); },
+    async floodPty(input: { chunks: number; bytes: number }) {
+      const pty = nativePty();
+      for (let index = 0; index < input.chunks; index++) {
+        pty.emitData(`${index}:`.padEnd(input.bytes - 2, 'x') + '\r\n');
+        await new Promise<void>((resolve) => setTimeout(resolve, 1));
+      }
+    },
     ptyState(sessionId: string) {
       const native = nativePty();
       return { running: ptyManager.isRunning(sessionId), buffer: ptyManager.getBufferSnapshot(sessionId), closed: native.closed, writes: native.writes, sizes: native.sizes };
     },
     async clipboardReceipt() {
-      const paste = nativePty().writes.find((text) => text.startsWith('\x1b[200~') && text.endsWith('\x1b[201~'));
+      const pastes = nativePty().writes.filter((text) => text.startsWith('\x1b[200~') && text.endsWith('\x1b[201~'));
+      const paste = pastes[pastes.length - 1];
       if (!paste) throw new Error('No clipboard path reached the actual PTY input');
       const file = paste.slice(6, -6);
       if (path.dirname(file) !== os.tmpdir() || !/^clipboard-paste-[a-z0-9-]+\.png$/.test(path.basename(file))) throw new Error('Unexpected clipboard fixture path');
@@ -768,6 +852,8 @@ export async function createInventoryPeer(alias: string) {
       };
     },
     async close() {
+      dropGrantRequestsFor(agent.id);
+      dropStartRequestsFor(agent.id);
       await stopHandoffs();
       stopGroupMembership();
       hookServer.stop();

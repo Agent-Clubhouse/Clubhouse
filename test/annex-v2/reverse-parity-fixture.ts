@@ -88,12 +88,12 @@ export function assertDialAudit(
     const permitted = !!allowed && attempt.host === allowed.host && attempt.port === allowed.port;
     if (attempt.allowed !== permitted) throw new Error(`Dial policy allowed an unapproved endpoint: ${attempt.host}:${attempt.port}`);
     if (!permitted && attempt.outcome !== 'denied') throw new Error('A forbidden direct dial escaped enforcement');
-    if (permitted && attempt.outcome === 'connected' && !forwardSourcePorts.includes(attempt.localPort!)) {
+    if (permitted && attempt.localPort !== undefined && !forwardSourcePorts.includes(attempt.localPort)) {
       throw new Error('Successful app dial is missing from the forward audit');
     }
   }
   for (const port of forwardSourcePorts) {
-    if (!attempts.some((attempt) => attempt.outcome === 'connected' && attempt.localPort === port)) {
+    if (!attempts.some((attempt) => attempt.allowed && attempt.localPort === port)) {
       throw new Error('Forward accepted an unaudited app dial');
     }
   }
@@ -116,11 +116,17 @@ export async function closeServer(server: net.Server): Promise<void> {
 export async function transparentForward(targetPort: number) {
   const fixtureConnect = net.Socket.prototype.connect;
   const sockets = new Set<net.Socket>();
+  const toB = new Set<net.Socket>();
+  const toA = new Set<net.Socket>();
   const sourcePorts: number[] = [];
   const targetPorts: number[] = [];
   const server = net.createServer((incoming) => {
+    toB.add(incoming);
+    incoming.once('close', () => toB.delete(incoming));
     sourcePorts.push(incoming.remotePort!);
     const outgoing = new net.Socket();
+    toA.add(outgoing);
+    outgoing.once('close', () => toA.delete(outgoing));
     Reflect.apply(fixtureConnect, outgoing, [targetPort, '127.0.0.1']);
     outgoing.once('connect', () => { targetPorts.push(outgoing.remotePort!); });
     for (const socket of [incoming, outgoing]) {
@@ -136,6 +142,11 @@ export async function transparentForward(targetPort: number) {
   const port = await listen(server);
   return {
     port, sourcePorts, targetPorts,
+    pause(direction: 'A-to-B' | 'B-to-A') {
+      const paused = [...(direction === 'A-to-B' ? toB : toA)];
+      for (const socket of paused) socket.pause();
+      return () => { for (const socket of paused) socket.resume(); };
+    },
     cut() { for (const socket of sockets) socket.destroy(); },
     async close() {
       for (const socket of sockets) socket.destroy();

@@ -13,7 +13,7 @@ import { assertDialAudit, closeServer, rpcPeer, sentinel, sizedPng, transparentF
 import { CHAT_IMAGE_MAX_BYTES, type ChatEventDraft } from '../../src/shared/chat';
 import type { GitOperationParams } from '../../src/main/services/annex-client';
 import type { BulletinMessage } from '../../src/shared/group-project-types';
-import { MOBILE_CONTENT_MAX_BYTES } from '../../src/shared/annex-binary-limits';
+import { CLIPBOARD_IMAGE_MAX_BASE64, MOBILE_CONTENT_MAX_BYTES } from '../../src/shared/annex-binary-limits';
 
 type Status = ReturnType<InventoryPeer['status']>;
 
@@ -37,6 +37,14 @@ describe('full-server audit inventory over one A to B forward', () => {
   const send = (who: 'A' | 'B', type: string, payload: Record<string, unknown>) => who === 'A' ? a.send({ type, payload }) : b.call('send', { type, payload });
   const wire = (who: 'A' | 'B', input: Parameters<InventoryPeer['wire']>[0]): Promise<WireAnswer> => who === 'A' ? a.wire(input) : b.call('wire', input);
   const json = (answer: WireAnswer): unknown => JSON.parse(Buffer.from(answer.body, 'base64').toString('utf8'));
+  const mobile = async (who: 'A' | 'B', command: Record<string, unknown>, commandId: string) => {
+    const state = json(await wire(who, { method: 'GET', path: '/api/v1/mobile/agents/state' })) as { epoch: string };
+    expect(typeof state.epoch).toBe('string');
+    return wire(who, {
+      method: 'POST', path: '/api/v1/mobile/commands', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ ...command, version: 1, epoch: state.epoch, commandId }),
+    });
+  };
   const expectSatelliteEvent = (who: 'A' | 'B', type: string, payload: unknown) => vi.waitFor(async () => {
     const events = (await status(who)).events.filter(({ payload }) => payload !== null && typeof payload === 'object' && 'type' in payload && payload.type === type);
     expect(events).toEqual(expect.arrayContaining([expect.objectContaining({
@@ -622,20 +630,45 @@ describe('full-server audit inventory over one A to B forward', () => {
       expect(answer.status, url).toBe(error === 'dispatcher_off' ? 404 : 403);
       expect(json(answer)).toMatchObject({ error });
     }
-    const state = json(await wire(who, { method: 'GET', path: '/api/v1/mobile/agents/state' })) as { epoch: string };
-    expect(typeof state.epoch).toBe('string');
     for (const [index, command] of [
       { type: 'helper.approve', requestId: 'missing-helper-request' },
       { type: 'helper.decline', requestId: 'missing-helper-request' },
       { type: 'grant.answer', requestId: 'missing-grant-request', answer: 'decline' },
       { type: 'app.update.cancel', requestId: 'missing-update-request' },
     ].entries()) {
-      const answer = await wire(who, {
-        method: 'POST', path: '/api/v1/mobile/commands', headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ ...command, version: 1, epoch: state.epoch, commandId: `surface-${who}-${index}` }),
-      });
+      const answer = await mobile(who, command, `surface-${who}-${index}`);
       expect(json(answer), command.type).toMatchObject({ status: 'rejected' });
     }
+  });
+
+  it.each(['A', 'B'] as const)('R05/R15/R22 %s: actual settings, grant answers and helper decisions keep receipts and store effects', async (who) => {
+    const opened = who === 'A' ? await b.call<ReturnType<InventoryPeer['openRequests']>>('openRequests') : a.openRequests();
+    const inspect = (): Promise<Awaited<ReturnType<InventoryPeer['requestsState']>>> => who === 'A' ? b.call('requestsState') : a.requestsState();
+    await expectSatelliteEvent(who, 'grant_request:opened', { agentId: target(who).agentId, requestId: opened.grantId });
+    const input = { requestId: opened.grantId, answer: 'allow_lasting' };
+    const answer = who === 'A' ? await a.answerGrant(input) : await b.call('answerGrant', input);
+    expect(answer).toMatchObject({ status: 'completed', result: { requestId: opened.grantId, answer: 'allow_lasting' } });
+    expect((await inspect()).grants).toEqual([]);
+    expect((await inspect()).effective).toEqual(expect.arrayContaining([expect.objectContaining({ action: 'settings.app.write', mode: 'allow', target: { kind: 'app' } })]));
+    await expectSatelliteEvent(who, 'grant_request:resolved', { requestIds: [opened.grantId], outcome: 'answered' });
+    const decline = await mobile(who, { type: 'helper.decline', requestId: opened.helperId }, `decline-helper-${who}`);
+    expect(json(decline)).toMatchObject({ status: 'completed' });
+    expect((await inspect()).helpers).toEqual([]);
+    const stale = await mobile(who, { type: 'helper.approve', requestId: opened.helperId }, `used-helper-${who}`);
+    expect(json(stale)).toMatchObject({ status: 'rejected', error: { code: 'helper_request_not_found' } });
+    const change = { type: 'agent.update', agentId: target(who).agentId, idleSleep: 30 };
+    const updated = await mobile(who, change, `settings-${who}`);
+    expect(json(updated)).toMatchObject({ status: 'completed' });
+    expect((await inspect()).idleSleep).toBe(30);
+    expect(json(await mobile(who, change, `settings-${who}`))).toEqual(json(updated));
+    const conflict = await mobile(who, { ...change, idleSleep: 15 }, `settings-${who}`);
+    expect(conflict.status).toBe(409);
+    expect(json(conflict)).toMatchObject({ status: 'rejected', error: { code: 'command_conflict' } });
+    expect((await inspect()).idleSleep).toBe(30);
+    const routing = json(await wire(who, { method: 'GET', path: '/api/v1/mobile/helper-routing' })) as { revision: string };
+    const routed = await mobile(who, { type: 'helperRouting.update', revision: routing.revision, scope: 'app', auto: false }, `routing-${who}`);
+    expect(json(routed)).toMatchObject({ status: 'completed' });
+    expect(json(await wire(who, { method: 'GET', path: '/api/v1/mobile/helper-routing' }))).toMatchObject({ auto: { scopes: { app: { value: false } } } });
   });
 
   describe.each(['A', 'B'] as const)('R08/B %s: actual rich-content binary limits and digests', (who) => {
@@ -735,6 +768,141 @@ describe('full-server audit inventory over one A to B forward', () => {
       expect(answer.status, JSON.stringify({ body: Buffer.from(answer.body, 'base64').toString('utf8'), registered, running, cached })).toBe(200);
     });
   });
+
+  it.each(['A', 'B'] as const)('R09/B %s: clipboard preserves binary digests at chunk and base64 cap boundaries and refuses cap+1', async (who) => {
+    const sessionId = `clipboard-boundaries-${who}`;
+    const inspect = (): Promise<ReturnType<InventoryPeer['ptyState']>> => who === 'A' ? b.call('ptyState', sessionId) : Promise.resolve(a.ptyState(sessionId));
+    await send(who, 'pty:spawn-shell', { sessionId, projectId: target(who).projectId });
+    await expectSatelliteEvent(who, 'pty:spawn-shell:ack', { sessionId });
+    try {
+      for (const size of [65_535, 65_536, 65_537, CLIPBOARD_IMAGE_MAX_BASE64 / 4 * 3 - 1, CLIPBOARD_IMAGE_MAX_BASE64 / 4 * 3]) {
+        const bytes = sizedPng(size);
+        const base64 = bytes.toString('base64').replace(/=+$/, '');
+        if (size > 65_537) expect(base64.length).toBe(size % 3 === 0 ? CLIPBOARD_IMAGE_MAX_BASE64 : CLIPBOARD_IMAGE_MAX_BASE64 - 1);
+        const before = (await inspect()).writes.length;
+        expect(await send(who, 'clipboard:image', { agentId: sessionId, base64, mimeType: 'image/jpeg' })).toEqual({ sent: true });
+        await vi.waitFor(async () => { expect((await inspect()).writes).toHaveLength(before + 1); });
+        const received = who === 'A' ? await b.call('clipboardReceipt') : await a.clipboardReceipt();
+        expect(received).toEqual({ bytes: size, digest: createHash('sha256').update(bytes).digest('hex') });
+      }
+      const before = (await inspect()).writes.length;
+      await send(who, 'clipboard:image', { agentId: sessionId, base64: 'a'.repeat(CLIPBOARD_IMAGE_MAX_BASE64 + 1), mimeType: 'image/png' });
+      await expectSatelliteEvent(who, 'error', { message: 'clipboard:image data exceeds 10MB limit' });
+      expect((await inspect()).writes).toHaveLength(before);
+      expect(await page(who)).toMatchObject({ agentId: target(who).agentId });
+    } finally {
+      await send(who, 'pty:close', { sessionId });
+      await expectSatelliteEvent(who, 'pty:close:ack', { sessionId });
+    }
+  }, 15_000);
+
+  it.each(['A', 'B'] as const)('B/fault %s: a dropped in-flight write stays indeterminate without alternate execution and explicitly replays once after reconnect', async (who) => {
+    await emitOnTarget(who, { type: 'turn_ended', data: { stopReason: 'end_turn' } });
+    await page(who);
+    const before = (await driverOnTarget(who)).sent.length;
+    const sessionId = `lost-link-${who}`;
+    await send(who, 'pty:spawn-shell', { sessionId, projectId: target(who).projectId });
+    await expectSatelliteEvent(who, 'pty:spawn-shell:ack', { sessionId });
+    if (who === 'A') await b.call('holdProviderSend'); else a.holdProviderSend();
+    const command = { type: 'chat.send', text: `execute once despite a lost reply ${who}`, delivery: 'prompt' };
+    const commandId = `fault-write-${who}`;
+    const pending = who === 'A' ? a.chatOutcome({ command, commandId }) : b.call('chatOutcome', { command, commandId });
+    let resume: (() => void) | undefined;
+    try {
+      await vi.waitFor(async () => { expect((await driverOnTarget(who)).sent).toHaveLength(before + 1); });
+      resume = forward.pause(who === 'A' ? 'B-to-A' : 'A-to-B');
+      if (who === 'A') await b.call('releaseProviderSend'); else await a.releaseProviderSend();
+      forward.cut();
+    } finally {
+      resume?.();
+      if (who === 'A') await b.call('releaseProviderSend'); else await a.releaseProviderSend();
+    }
+    const outcome = await pending;
+    await vi.waitFor(async () => {
+      expect((await status('A')).readiness.openedHere).toBe(true);
+      expect((await status('B')).readiness.acceptedHere).toBe(true);
+      expect((await status('A')).connected).toBe(true);
+      expect((await status('B')).connected).toBe(true);
+    }, { timeout: 15_000 });
+    expect(outcome).toEqual(who === 'A'
+      ? { code: 'ECONNRESET', indeterminate: undefined }
+      : { code: 'transport_unavailable', indeterminate: true });
+    const shell = who === 'A' ? await b.call('ptyState', sessionId) : a.ptyState(sessionId);
+    expect(shell).toMatchObject({ running: false, closed: true });
+    expect((await driverOnTarget(who)).sent).toHaveLength(before + 1);
+    expect(await chat(who, command, commandId)).toMatchObject({ status: 'completed' });
+    expect((await driverOnTarget(who)).sent).toHaveLength(before + 1);
+    expect(await page(who)).toMatchObject({ agentId: target(who).agentId });
+  }, 25_000);
+
+  it.each(['A', 'B'] as const)('B/cancel %s: cancelling an executing write retains uncertainty, one target effect and an explicit same-id receipt', async (who) => {
+    await emitOnTarget(who, { type: 'turn_ended', data: { stopReason: 'end_turn' } });
+    const before = (await driverOnTarget(who)).sent.length;
+    if (who === 'A') await b.call('holdProviderSend'); else a.holdProviderSend();
+    const input = { commandId: `cancelled-write-${who}`, text: `cancel after execution ${who}` };
+    const pending = who === 'A' ? a.cancellableWrite(input) : b.call('cancellableWrite', input);
+    let outcome: unknown;
+    try {
+      await vi.waitFor(async () => { expect((await driverOnTarget(who)).sent).toHaveLength(before + 1); });
+      if (who === 'A') a.cancelWrite(); else await b.call('cancelWrite');
+      outcome = await pending;
+    } finally {
+      if (who === 'A') await b.call('releaseProviderSend'); else await a.releaseProviderSend();
+    }
+    expect(outcome).toEqual(who === 'A'
+      ? { code: 'ABORT_ERR', indeterminate: undefined }
+      : { code: 'cancelled', indeterminate: true });
+    expect(await chat(who, { type: 'chat.send', text: input.text, delivery: 'prompt' }, input.commandId)).toMatchObject({ status: 'completed' });
+    expect((await driverOnTarget(who)).sent).toHaveLength(before + 1);
+    expect(await page(who)).toMatchObject({ agentId: target(who).agentId });
+  });
+
+  it.each(['A', 'B'] as const)('B/pressure %s: a sustained 2 MiB terminal flood cannot starve approval, chat or agent-call requests', async (who) => {
+    await emitOnTarget(who, { type: 'turn_ended', data: { stopReason: 'end_turn' } });
+    await emitOnTarget(who, {
+      type: 'permission_request', data: { requestId: `pressure-${who}`, title: 'Pressure fixture', options: [{ optionId: 'allow', kind: 'allow_once', label: 'Allow once' }] },
+    });
+    const sessionId = `flood-${who}`;
+    await send(who, 'pty:spawn-shell', { sessionId, projectId: target(who).projectId });
+    await expectSatelliteEvent(who, 'pty:spawn-shell:ack', { sessionId });
+    const initial = who === 'A' ? await b.call<ReturnType<InventoryPeer['ptyState']>>('ptyState', sessionId) : a.ptyState(sessionId);
+    const flood = who === 'A' ? b.call('floodPty', { chunks: 512, bytes: 4096 }) : a.floodPty({ chunks: 512, bytes: 4096 });
+    const timed = async <T>(run: Promise<T>) => {
+      const start = performance.now();
+      const result = await run;
+      return { result, ms: performance.now() - start };
+    };
+    const [message, approval, call] = await Promise.all([
+      timed(chat(who, { type: 'chat.send', text: `pressure input ${who}`, delivery: 'prompt' })),
+      timed(chat(who, { type: 'chat.permission', requestId: `pressure-${who}`, optionId: 'allow' })),
+      timed(who === 'A' ? a.agentCall({ tool: 'get_status', args: {} }) : b.call<Awaited<ReturnType<InventoryPeer['agentCall']>>>('agentCall', { tool: 'get_status', args: {} })),
+    ]);
+    expect(message.result).toMatchObject({ status: 'completed' });
+    expect(approval.result).toMatchObject({ status: 'completed', result: { answered: true } });
+    expect(call.result.isError).not.toBe(true);
+    expect(JSON.parse(call.result.content[0].text)).toMatchObject({ runtime: 'chat', running: true });
+    for (const request of [message, approval, call]) expect(request.ms).toBeLessThan(2000);
+    await flood;
+    const shell = who === 'A' ? await b.call<ReturnType<InventoryPeer['ptyState']>>('ptyState', sessionId) : a.ptyState(sessionId);
+    expect(shell.buffer.seq - initial.buffer.seq).toBe(512 * 4096);
+    await send(who, 'pty:close', { sessionId });
+    await expectSatelliteEvent(who, 'pty:close:ack', { sessionId });
+    console.info('P8 terminal-pressure request milliseconds', who, { chat: message.ms, approval: approval.ms, agentCall: call.ms });
+  });
+
+  it('B/revocation: losing accepted authority stops the reverse consumer and its private shell independently of #3711', async () => {
+    const sessionId = 'revoke-B';
+    await send('B', 'pty:spawn-shell', { sessionId, projectId: a.info.projectId });
+    await expectSatelliteEvent('B', 'pty:spawn-shell:ack', { sessionId });
+    expect(a.revokeRemote()).toBe(true);
+    await vi.waitFor(async () => {
+      expect((await status('B')).connected).toBe(false);
+      expect(a.ptyState(sessionId)).toMatchObject({ running: false, closed: true });
+    }, { timeout: 3000 });
+    const before = await driverOnTarget('B');
+    await expect(chat('B', { type: 'chat.send', text: 'must not run after revocation' })).rejects.toThrow();
+    expect((await driverOnTarget('B')).sent).toEqual(before.sent);
+  }, 10_000);
 
   it('audits every app dial independently of the direct-dial sentinel', async () => {
     assertDialAudit((await status('A')).attempts, { host: '127.0.0.1', port: forward.port }, forward.sourcePorts, guard.accepts());
