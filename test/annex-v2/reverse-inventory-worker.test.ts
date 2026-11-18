@@ -28,6 +28,9 @@ describe.runIf(process.env.CLUBHOUSE_ANNEX_INVENTORY_PEER === '1')('isolated ful
         case 'emitPty': return peer.emitPty(params as string);
         case 'ptyState': return peer.ptyState(params as string);
         case 'ptyBuffer': return peer.ptyBuffer(params as string);
+        case 'agentCall': return peer.agentCall(params as Parameters<typeof peer.agentCall>[0]);
+        case 'connections': return peer.connections();
+        case 'connectionTools': return peer.connectionTools(params as string[]);
         case 'durable': return peer.durable(params as Parameters<typeof peer.durable>[0]);
         case 'seedLargeText': return peer.seedLargeText();
         case 'largeText': return peer.largeText();

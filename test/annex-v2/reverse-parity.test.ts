@@ -70,6 +70,8 @@ describe('full-server audit inventory over one A to B forward', () => {
       expect((await status('B')).readiness?.acceptedHere).toBe(true);
       expect((await status('A')).snapshot?.projects[0]).toMatchObject({ id: bInfo.projectId });
       expect((await status('B')).snapshot?.projects[0]).toMatchObject({ id: a.info.projectId });
+      expect(a.connections().incoming?.link).toBeTruthy();
+      expect((await b.call<ReturnType<InventoryPeer['connections']>>('connections')).incoming?.link).toBeTruthy();
     }, { timeout: 15_000, interval: 25 });
   }, 60_000);
 
@@ -286,6 +288,39 @@ describe('full-server audit inventory over one A to B forward', () => {
     else a.theme();
     await expectSatelliteEvent(who, 'theme:changed', colors);
     await expectSatelliteEvent(who, 'theme:changed', { terminalColors: expect.any(Object) });
+  });
+
+  it.each(['A', 'B'] as const)('R14/R15 %s: agent calls run the real receiving tool and deliver duplicate messages once', async (who) => {
+    const call = (tool: string, args: Record<string, unknown>): ReturnType<InventoryPeer['agentCall']> => who === 'A' ? a.agentCall({ tool, args }) : b.call('agentCall', { tool, args });
+    const result = await call('get_status', {});
+    expect(result.isError).not.toBe(true);
+    expect(JSON.parse(result.content[0].text)).toMatchObject({ status: 'running', running: true, runtime: 'chat' });
+    await emitOnTarget(who, { type: 'turn_ended', data: { stopReason: 'end_turn' } });
+    const before = (await driverOnTarget(who)).sent.length;
+    const args = { message: `agent transport ${who}`, task_id: `parity-${who}` };
+    const receipt = await call('send_message', args);
+    expect(receipt.isError).not.toBe(true);
+    expect(receipt.content[0].text).toContain('Delivered to');
+    await vi.waitFor(async () => { expect((await driverOnTarget(who)).sent).toHaveLength(before + 1); });
+    expect((await driverOnTarget(who)).sent[before].content).toEqual(expect.arrayContaining([
+      expect.objectContaining({ type: 'text', text: expect.stringContaining(args.message) }),
+    ]));
+    expect(await call('send_message', args)).toEqual(receipt);
+    expect((await driverOnTarget(who)).sent).toHaveLength(before + 1);
+  });
+
+  it.each(['A', 'B'] as const)('R16 %s: connection switches synchronize and the real receiving gate enforces them', async (who) => {
+    const set = (disabled: string[]) => who === 'A' ? a.connectionTools(disabled) : b.call('connectionTools', disabled);
+    const receiver = (): Promise<ReturnType<InventoryPeer['connections']>> => who === 'A' ? b.call('connections') : Promise.resolve(a.connections());
+    await set(['get_status']);
+    try {
+      await vi.waitFor(async () => { expect((await receiver()).incoming?.disabledTools).toContain('get_status'); });
+      const input = { tool: 'get_status', args: {} };
+      const refused: Awaited<ReturnType<InventoryPeer['agentCall']>> = who === 'A' ? await a.agentCall(input) : await b.call('agentCall', input);
+      expect(refused.isError).toBe(true);
+      expect(refused.content[0].text).toContain('turned off');
+    } finally { await set([]); }
+    await vi.waitFor(async () => { expect((await receiver()).incoming?.disabledTools).toEqual([]); });
   });
 
   it.each(['A', 'B'] as const)('R22 %s: server-only status uses the production route table', async (who) => {

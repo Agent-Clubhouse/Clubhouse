@@ -110,6 +110,12 @@ import type { DurableAgentConfig } from '../../src/shared/types';
 import * as eventBus from '../../src/main/services/annex-event-bus';
 import { writeKey } from '../../src/main/services/plugin-storage';
 import * as ptyManager from '../../src/main/services/pty-manager';
+import * as agentCalls from '../../src/main/services/annex-agent-calls';
+import { authorizeQueuedAnnexCall } from '../../src/main/services/annex-agent-call-host';
+import { getConnectionDirection, setConnectionLink, setConnectionTools } from '../../src/main/services/connection-grants-store';
+import { registerAgentTools } from '../../src/main/services/clubhouse-mcp/tools/agent-tools';
+import { runAgentToolForRemoteCaller } from '../../src/main/services/clubhouse-mcp/tool-registry';
+import { bindingManager } from '../../src/main/services/clubhouse-mcp/binding-manager';
 
 export interface InventoryPeerInfo extends PeerInfo {
   projectId: string;
@@ -181,6 +187,26 @@ export async function createInventoryPeer(alias: string) {
     pin: annexTls.certificateFingerprint(cert.certPem), port: server.getStatus().port!,
     projectId: project.id, agentId: agent.id, sessionId: runtime.getSessionId(),
   };
+  registerAgentTools();
+  const stopAgentCalls = agentCalls.startAgentCalls({
+    transport: {
+      connected: client.isMachineConnected, post: client.postToMachine,
+      machineName: client.machineAlias, onConnected: client.onSatelliteConnected,
+      supportsDurableDelivery: async (machine) => {
+        const reply = await client.postToMachine(machine, '/api/v1/network/agent-delivery-capabilities', {});
+        if (reply.status === 404) return false;
+        if (reply.status !== 200) throw new Error(`Durable delivery negotiation failed (${reply.status})`);
+        return reply.body !== null && typeof reply.body === 'object'
+          && 'deliveryVersion' in reply.body && reply.body.deliveryVersion === 1
+          && 'receiptBoundary' in reply.body && reply.body.receiptBoundary === 'runtime-accepted';
+      },
+    },
+    runTool: runAgentToolForRemoteCaller, authorizeQueuedCall: authorizeQueuedAnnexCall,
+    describeLocalAgent: async (id) => {
+      const config = await agentConfig.getDurableConfig(root, id);
+      return config ? { name: config.name, projectName: project.name } : undefined;
+    },
+  });
   let remote: InventoryPeerInfo | undefined;
   let policy: DialPolicy | undefined;
   let routePort = 0;
@@ -195,6 +221,8 @@ export async function createInventoryPeer(alias: string) {
         tlsCertificateFingerprint: remote.pin, tlsCertificatePem: remote.certPem,
         knownHosts: ['127.0.0.1'], hostPorts: { '127.0.0.1': routePort }, mainPort: routePort,
       });
+      await setConnectionLink({ agentId: agent.id }, { agentId: remote.agentId, machineId: remote.fingerprint }, true);
+      bindingManager.bind(agent.id, { targetId: `${remote.agentId}@${remote.fingerprint}`, targetKind: 'agent', label: remote.alias, agentName: agent.name, targetName: `${remote.alias} agent`, projectName: project.name });
       policy = installDialPolicy((host, port) => config.forwardPort !== null && host === '127.0.0.1' && port === config.forwardPort);
       client.startClient();
     },
@@ -280,6 +308,21 @@ export async function createInventoryPeer(alias: string) {
     async ptyBuffer(sessionId: string) {
       if (!remote) throw new Error('Inventory peer is not configured');
       return client.requestPtyBufferSnapshot(remote.fingerprint, sessionId);
+    },
+    async agentCall(input: { tool: string; args: Record<string, unknown> }) {
+      if (!remote) throw new Error('Inventory peer is not configured');
+      return agentCalls.forwardAgentCall(agent.id, `${remote.agentId}@${remote.fingerprint}`, `${remote.alias} agent`, input.tool, input.args);
+    },
+    connections() {
+      if (!remote) throw new Error('Inventory peer is not configured');
+      return {
+        outgoing: getConnectionDirection({ agentId: agent.id }, { agentId: remote.agentId, machineId: remote.fingerprint }),
+        incoming: getConnectionDirection({ agentId: remote.agentId, machineId: remote.fingerprint }, { agentId: agent.id }),
+      };
+    },
+    async connectionTools(disabled: string[]) {
+      if (!remote) throw new Error('Inventory peer is not configured');
+      return setConnectionTools({ agentId: agent.id }, { agentId: remote.agentId, machineId: remote.fingerprint }, disabled);
     },
     async durable(input?: { projectId: string; useWorktree: boolean }) {
       if (!remote) throw new Error('Inventory peer is not configured');
@@ -441,6 +484,7 @@ export async function createInventoryPeer(alias: string) {
       };
     },
     async close() {
+      stopAgentCalls();
       client.stopClient();
       await runtime.stop();
       clearChatRuntimes();
