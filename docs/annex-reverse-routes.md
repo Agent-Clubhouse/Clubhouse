@@ -106,6 +106,11 @@ P6 rejection fences still apply. The limit is local, not a new wire field.
 `files/read` remains uncapped UTF-8 text, not an arbitrary-binary-file API.
 Working-tree `git/diff` also retains its existing uncapped response over bulk;
 requester-local limits still apply, and other Git routes keep their existing limits.
+The existing bulletin all-message and topic GETs and native session transcript
+GET also retain their uncapped responses. Only those exact endpoints are exempt;
+other routes and methods keep their budgets. Bulletin message transport failures
+reject on both direct and reverse paths instead of appearing as an empty board.
+The board shows the read error, preserves prior messages and keeps its normal polling.
 
 One reverse subscription feeds the existing satellite snapshot and event IPC.
 Public satellite connectivity includes authorized reverse reachability, while

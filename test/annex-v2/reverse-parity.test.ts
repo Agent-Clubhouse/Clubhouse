@@ -108,9 +108,11 @@ describe('full-server audit inventory over one A to B forward', () => {
     });
   });
 
-  describe('known uncapped-read findings, retained as RED acceptance probes', () => {
+  describe('F2/F3: uncapped bulletin and native transcript parity', () => {
     let aGroup: string;
     let bGroup: string;
+    const directBulletins = new Map<string, Awaited<ReturnType<InventoryPeer['bulletin']>>>();
+    let directTranscript: Awaited<ReturnType<InventoryPeer['transcript']>>;
 
     beforeAll(async () => {
       expect(await a.seedLargeTranscript()).toEqual({ rawEvents: NATIVE_TRANSCRIPT_EVENTS });
@@ -128,11 +130,8 @@ describe('full-server audit inventory over one A to B forward', () => {
       }, { timeout: 10_000, interval: 25 });
     }, 12_000);
 
-    function assertBulletin(result: Awaited<ReturnType<InventoryPeer['bulletin']>>, kind: 'messages' | 'topic') {
-      expect(result.count).toBe(BULLETIN_MESSAGES);
-      // The all-message page can also include the host's automatic control notice.
-      expect(result.bytes).toBeGreaterThanOrEqual((BULLETIN_MESSAGES - 1) * BULLETIN_MESSAGE_BYTES);
-      if (kind === 'topic') expect(result).toEqual({
+    function assertBulletin(result: Awaited<ReturnType<InventoryPeer['bulletin']>>) {
+      expect(result).toEqual({
         count: BULLETIN_MESSAGES, bytes: BULLETIN_MESSAGES * BULLETIN_MESSAGE_BYTES,
         digest: createHash('sha256').update(Buffer.alloc(BULLETIN_MESSAGES * BULLETIN_MESSAGE_BYTES, 'b')).digest('hex'),
       });
@@ -140,12 +139,16 @@ describe('full-server audit inventory over one A to B forward', () => {
 
     for (const kind of ['messages', 'topic'] as const) {
       it(`F2 ${kind}: direct reads a board containing 100 legitimate 100 KiB posts`, async () => {
-        assertBulletin(await a.bulletin({ groupId: bGroup, kind }), kind);
+        const result = await a.bulletin({ groupId: bGroup, kind });
+        assertBulletin(result);
+        directBulletins.set(kind, result);
       });
 
       it(`F2 ${kind}: reverse-only reads the same complete board`, async () => {
         expect((await status('B')).direct).toBe(false);
-        assertBulletin(await b.call('bulletin', { groupId: aGroup, kind }), kind);
+        const result = await b.call<Awaited<ReturnType<InventoryPeer['bulletin']>>>('bulletin', { groupId: aGroup, kind });
+        assertBulletin(result);
+        expect(result).toEqual(directBulletins.get(kind));
       });
     }
 
@@ -156,12 +159,13 @@ describe('full-server audit inventory over one A to B forward', () => {
     });
 
     it('F3: the production native session reader and direct adapter return the complete page', async () => {
-      expect(await a.transcript()).toEqual(expectedTranscript());
+      directTranscript = await a.transcript();
+      expect(directTranscript).toEqual(expectedTranscript());
     });
 
     it('F3: reverse-only returns that same legitimate native transcript page', async () => {
       expect((await status('B')).direct).toBe(false);
-      expect(await b.call('transcript')).toEqual(expectedTranscript());
+      expect(await b.call('transcript')).toEqual(directTranscript);
     });
   });
 

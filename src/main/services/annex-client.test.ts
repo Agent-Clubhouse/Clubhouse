@@ -2057,13 +2057,13 @@ describe('annex-client', () => {
       );
     });
 
-    it('requestBulletinTopicMessages logs warn on network error', async () => {
+    it('requestBulletinTopicMessages logs and rejects a network error', async () => {
       await connectSatellite();
       const { appLog } = await import('./log-service');
       vi.mocked(appLog).mockClear();
       mockHttpsGetNetworkError();
 
-      await annexClient.requestBulletinTopicMessages(FINGERPRINT, 'gp-1', 'progress');
+      await expect(annexClient.requestBulletinTopicMessages(FINGERPRINT, 'gp-1', 'progress')).rejects.toThrow('ECONNREFUSED');
 
       expect(appLog).toHaveBeenCalledWith(
         'core:annex-client', 'warn', 'Bulletin topic messages request failed',
@@ -3471,6 +3471,47 @@ describe('annex-client', () => {
         expect(annexClient.getSatellite(FP)?.snapshot?.projectIcons?.p).toBe('data:image/png;base64,AP8B');
         expect(request).not.toHaveBeenCalled();
       });
+    });
+
+    describe('bulletin transport failures', () => {
+      afterEach(() => { vi.mocked(https.request).mockReset(); });
+
+      it.each([
+        ['topic', () => annexClient.requestBulletinTopicMessages(FP, 'g', 't')],
+        ['all', () => annexClient.requestBulletinAllMessages(FP, 'g')],
+      ] as const)('rejects an unavailable %s read instead of returning an empty board', async (_kind, read) => {
+        vi.mocked(annexControl.getLinkReadiness).mockReturnValue({ acceptedHere: false, openedHere: false });
+        await expect(read()).rejects.toThrow('Satellite not connected');
+        expect(request).not.toHaveBeenCalled();
+        expect(https.request).not.toHaveBeenCalled();
+      });
+
+      for (const route of ['direct', 'reverse'] as const) {
+        it.each([
+          ['topic', () => annexClient.requestBulletinTopicMessages(FP, 'g', 't')],
+          ['all', () => annexClient.requestBulletinAllMessages(FP, 'g')],
+        ] as const)(`${route}: rejects a failed %s read instead of returning an empty board`, async (_kind, read) => {
+          const failure = new Error('Bulletin transport unavailable');
+          if (route === 'direct') {
+            annexClient._addConnectedSatelliteForTesting(FP);
+            vi.mocked(https.request).mockImplementation(() => {
+              const req = Object.assign(new EventEmitter(), {
+                end: () => { queueMicrotask(() => req.emit('error', failure)); },
+                destroy: vi.fn(),
+              }) as http.ClientRequest;
+              return req;
+            });
+          } else request.mockRejectedValueOnce(failure);
+          await expect(read()).rejects.toBe(failure);
+          if (route === 'direct') {
+            expect(https.request).toHaveBeenCalledOnce();
+            expect(request).not.toHaveBeenCalled();
+          } else {
+            expect(request).toHaveBeenCalledOnce();
+            expect(https.request).not.toHaveBeenCalled();
+          }
+        });
+      }
     });
 
     it('keeps reverse file-read refusal handling on the completed control reply', async () => {

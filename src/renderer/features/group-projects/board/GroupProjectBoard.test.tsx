@@ -1,5 +1,5 @@
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { BulletinMessage, GroupProject, TopicDigest } from '../../../../shared/group-project-types';
 import { useGroupProjectContext } from '../../../plugins/builtin/group-project/useGroupProjectContext';
 import { useAgentStore } from '../../../stores/agentStore';
@@ -7,6 +7,7 @@ import { useBulletinReadStore } from '../../../stores/bulletinReadStore';
 import { useGroupProjectStore } from '../../../stores/groupProjectStore';
 import { useMcpBindingStore } from '../../../stores/mcpBindingStore';
 import { GroupProjectBoard } from './GroupProjectBoard';
+import { POLL_INTERVAL_MS } from './GroupProjectBoardParts';
 
 /**
  * The shared board on its own: no Canvas plugin, no canvas store and no canvas
@@ -65,6 +66,8 @@ async function renderBoard() {
   await screen.findByText('general');
 }
 
+afterEach(() => { vi.useRealTimers(); });
+
 describe('GroupProjectBoard without a canvas', () => {
   it('shows topics with unread counts and the newest message first', async () => {
     await renderBoard();
@@ -104,6 +107,46 @@ describe('GroupProjectBoard without a canvas', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Post' }));
     expect(await screen.findByRole('alert')).toHaveTextContent('Not posted. Host refused');
     expect(screen.getByLabelText('Bulletin message')).toHaveValue('Hello');
+  });
+
+  it('shows an initial message-read failure and clears it after a successful poll', async () => {
+    vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] });
+    const read = vi.mocked(api().getAllMessages).mockRejectedValueOnce(new Error('Offline'));
+    await renderBoard();
+    expect(await screen.findByRole('alert')).toHaveTextContent("Couldn't load messages.");
+    expect(read).toHaveBeenCalledTimes(1);
+    await act(async () => { await vi.advanceTimersByTimeAsync(POLL_INTERVAL_MS); });
+    expect(screen.queryByRole('alert')).toBeNull();
+    expect(screen.getByText('Checks passed')).toBeInTheDocument();
+    expect(read).toHaveBeenCalledTimes(2);
+  });
+
+  it('keeps prior messages visible on a failed poll and clears the error on recovery', async () => {
+    vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] });
+    await renderBoard();
+    await screen.findByText('Checks passed');
+    const read = vi.mocked(api().getAllMessages).mockRejectedValueOnce(new Error('Offline'));
+    await act(async () => { await vi.advanceTimersByTimeAsync(POLL_INTERVAL_MS); });
+    expect(screen.getByRole('alert')).toHaveTextContent("Couldn't load new messages. Showing what was last loaded.");
+    expect(screen.getByText('Checks passed')).toBeInTheDocument();
+    expect(read).toHaveBeenCalledTimes(2);
+    await act(async () => { await vi.advanceTimersByTimeAsync(POLL_INTERVAL_MS); });
+    expect(screen.queryByRole('alert')).toBeNull();
+    expect(read).toHaveBeenCalledTimes(3);
+  });
+
+  it('shows a topic-read failure and clears it after that topic loads', async () => {
+    vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] });
+    await renderBoard();
+    await screen.findByText('Checks passed');
+    const read = vi.mocked(api().getTopicMessages).mockRejectedValueOnce(new Error('Offline'));
+    fireEvent.click(screen.getByText('general').closest('button')!);
+    expect(await screen.findByRole('alert')).toHaveTextContent("Couldn't load messages.");
+    expect(read).toHaveBeenCalledTimes(1);
+    await act(async () => { await vi.advanceTimersByTimeAsync(POLL_INTERVAL_MS); });
+    expect(screen.queryByRole('alert')).toBeNull();
+    expect(screen.getByText('Checks passed')).toBeInTheDocument();
+    expect(read).toHaveBeenCalledTimes(2);
   });
 
   it('broadcasts and taps through the shared injection path, with the group instructions when asked', async () => {

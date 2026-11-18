@@ -1383,6 +1383,64 @@ describe('uncapped Git diff response parity', () => {
   });
 });
 
+describe('uncapped bulletin and transcript response parity', () => {
+  const ceiling = CONTROL_FRAME_MAX_BYTES + 64 * 1024;
+  const paths = [
+    '/api/v1/group-projects/g/bulletin/messages?limit=100',
+    '/api/v1/group-projects/g/bulletin/topics/general?limit=100',
+    '/api/v1/agents/a/sessions/s/transcript?offset=0&limit=5',
+  ];
+  const digest = (body: Buffer) => createHash('sha256').update(body).digest('hex');
+
+  for (const path of paths) {
+    it.each([-1, 0, 1])(`${path}: preserves bytes at the ordinary ceiling plus %i`, async (offset) => {
+      const { requesterWs, targetWs } = await connected();
+      const body = Buffer.alloc(ceiling + offset, 0xff);
+      handler = async () => ({ status: 200, headers: {}, body });
+      const result = await control.request(TARGET, { method: 'GET', path });
+      expect(result.body.length).toBe(body.length);
+      expect(digest(result.body)).toBe(digest(body));
+      expect(sentOfType(targetWs, 'bulk').some((frame) => frame.op === 'finish')).toBe(true);
+      expect(requesterWs.closed).toBeNull();
+    });
+
+    it(`${path}: retains the requester-local cap without retiring the link`, async () => {
+      const { requesterWs } = await connected();
+      handler = async () => ({ status: 200, headers: {}, body: Buffer.alloc(ceiling + 1) });
+      await expect(control.request(TARGET, { method: 'GET', path }, { maxResponseBytes: ceiling }))
+        .rejects.toMatchObject({ code: 'response_too_large', indeterminate: false });
+      expect(requesterWs.closed).toBeNull();
+    });
+
+    it(`${path}: retains the frame ceiling without negotiated bulk`, async () => {
+      const { targetWs } = await connected(['request']);
+      handler = async () => ({ status: 200, headers: {}, body: Buffer.alloc(ceiling + 1) });
+      await expect(control.request(TARGET, { method: 'GET', path }))
+        .rejects.toMatchObject({ code: 'response_too_large', indeterminate: false });
+      expect(sentOfType(targetWs, 'binary')).toHaveLength(0);
+    });
+  }
+
+  it.each([
+    ['GET', '/api/v1/group-projects/g/bulletin/messages-extra'],
+    ['GET', '/api/v1/group-projects/g/bulletin/messages/extra'],
+    ['GET', '/api/v1/group-projects/g/bulletin/topics'],
+    ['GET', '/api/v1/group-projects/g/bulletin/topics/general/extra'],
+    ['GET', '/api/v1/group-projects/g/bulletin/digest'],
+    ['GET', '/api/v1/agents/a/sessions/s/transcript-extra'],
+    ['GET', '/api/v1/agents/a/sessions/s/transcript/extra'],
+    ['GET', '/api/v1/agents/a/sessions/s/summary'],
+    ['POST', '/api/v1/group-projects/g/bulletin/messages'],
+    ['POST', '/api/v1/group-projects/g/bulletin/topics/general'],
+    ['POST', '/api/v1/agents/a/sessions/s/transcript'],
+  ] as const)('does not exempt %s %s', async (method, path) => {
+    const { targetWs } = await connected();
+    handler = async () => ({ status: 200, headers: {}, body: Buffer.alloc(ceiling + 1) });
+    await expect(control.request(TARGET, { method, path })).rejects.toMatchObject({ code: 'transport_unavailable' });
+    expect(sentOfType(targetWs, 'binary')).toHaveLength(0);
+  });
+});
+
 
 it('P6 concurrent clipboard images retain distinct transfer tokens on the same subscription', async () => {
   await connected();

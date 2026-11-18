@@ -200,6 +200,9 @@ export async function createInventoryPeer(alias: string) {
     async seedLargeBoard() {
       const group = await groupProjectHost.create(`${alias} board`);
       const board = getBulletinBoard(group.id);
+      // Keep bootstrap notices strictly older, so both default pages contain the same 100 posts.
+      const notices = await board.getAllMessages();
+      await vi.waitUntil(() => notices.every((message) => Date.now() > Date.parse(message.timestamp)), { interval: 1, timeout: 1000 });
       for (let i = 0; i < BULLETIN_MESSAGES; i++) {
         await board.postMessage('Fixture', 'general', 'b'.repeat(BULLETIN_MESSAGE_BYTES));
       }

@@ -2029,8 +2029,8 @@ export function requestFileTree(fingerprint: string, projectId: string, options?
   return requestSatelliteArray(fingerprint, `/api/v1/projects/${encodeURIComponent(projectId)}/files/tree${qs}`, 'File tree');
 }
 
-async function requestSatelliteArray(fingerprint: string, path: string, label: string): Promise<unknown[]> {
-  if (!canRequestSatellite(fingerprint)) return [];
+async function requestSatelliteArray(fingerprint: string, path: string, label: string, throwTransportErrors = false): Promise<unknown[]> {
+  if (!throwTransportErrors && !canRequestSatellite(fingerprint)) return [];
   try {
     const res = await requestSatelliteRaw(fingerprint, { method: 'GET', path, timeoutMs: 10000 }, (res) => res.statusCode === 200);
     if (res.status !== 200) return [];
@@ -2041,8 +2041,9 @@ async function requestSatelliteArray(fingerprint: string, path: string, label: s
       return [];
     }
   } catch (err) {
-    // telemetry-exempt: logged; existing read API answers an empty list
+    // telemetry-exempt: logged; bulletin message reads propagate the transport failure
     appLog('core:annex-client', 'warn', `${label} request failed`, { meta: { fingerprint, error: String(err) } });
+    if (throwTransportErrors) throw err;
     return [];
   }
 }
@@ -2091,7 +2092,7 @@ export function requestBulletinTopicMessages(fingerprint: string, groupProjectId
   if (limit !== undefined) params.set('limit', String(limit));
   const qs = params.toString() ? `?${params.toString()}` : '';
 
-  return requestSatelliteArray(fingerprint, `/api/v1/group-projects/${encodeURIComponent(groupProjectId)}/bulletin/topics/${encodeURIComponent(topic)}${qs}`, 'Bulletin topic messages');
+  return requestSatelliteArray(fingerprint, `/api/v1/group-projects/${encodeURIComponent(groupProjectId)}/bulletin/topics/${encodeURIComponent(topic)}${qs}`, 'Bulletin topic messages', true);
 }
 
 /**
@@ -2126,7 +2127,7 @@ export function requestBulletinAllMessages(
   if (limit !== undefined) params.set('limit', String(limit));
   const qs = params.toString() ? `?${params.toString()}` : '';
 
-  return requestSatelliteArray(fingerprint, `/api/v1/group-projects/${encodeURIComponent(groupProjectId)}/bulletin/messages${qs}`, 'Bulletin all-messages');
+  return requestSatelliteArray(fingerprint, `/api/v1/group-projects/${encodeURIComponent(groupProjectId)}/bulletin/messages${qs}`, 'Bulletin all-messages', true);
 }
 
 /**

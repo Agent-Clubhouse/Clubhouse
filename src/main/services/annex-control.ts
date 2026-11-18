@@ -478,8 +478,12 @@ function requestBodyLimit(path: string): number {
   return /^\/api\/v1\/mobile\/agents\/[^/]+\/attachments$/.test(path) ? CHAT_IMAGE_MAX_BYTES : CONTROL_FRAME_MAX_BYTES;
 }
 /** Envelope limits only; route handlers retain their exact existing content limits. */
-export function responseBodyLimit(path: string): number {
+export function responseBodyLimit(path: string, method: ControlMethod): number {
   if (/^\/api\/v1\/projects\/[^/]+\/(?:files\/read|git\/diff)(?:\?|$)/.test(path)) return Infinity;
+  if (method === 'GET' && (
+    /^\/api\/v1\/group-projects\/[^/?]+\/bulletin\/(?:messages|topics\/[^/?]+)(?:\?|$)/.test(path)
+    || /^\/api\/v1\/agents\/[^/?]+\/sessions\/[^/?]+\/transcript(?:\?|$)/.test(path)
+  )) return Infinity;
   if (/\/chat\/events\/\d+(?:\?|$)/.test(path)) return FULL_EVENT_MAX_BYTES;
   if (/\/icons\//.test(path)) return ICON_SERVED_MAX_BYTES;
   if (/\/handoffs\/transfer$/.test(path)) return HANDOFF_TRANSFER_BODY_BYTES;
@@ -511,7 +515,7 @@ function makeBulkLane(link: Link): ControlBulkLane {
         && !link.replying.has(id) && size <= requestBodyLimit(message.path);
       if (kind === 'response') {
         const pending = link.pending.get(id);
-        return link.direction === 'in' && !!pending && link.features!.has('request') && size <= responseBodyLimit(pending.path)
+        return link.direction === 'in' && !!pending && link.features!.has('request') && size <= responseBodyLimit(pending.path, pending.method)
           && (pending.maxResponseBytes === undefined || size <= pending.maxResponseBytes);
       }
       if (kind === 'client' && message.type === 'client') return link.direction === 'out' && !!link.features?.has('ws-control')
@@ -523,7 +527,7 @@ function makeBulkLane(link: Link): ControlBulkLane {
       const message = bulkMeta(kind, id, meta);
       const pending = link.pending.get(id);
       if (kind === 'response' && message?.type === 'response' && link.direction === 'in' && link.features?.has('request')
-        && pending && size <= responseBodyLimit(pending.path) && pending.maxResponseBytes !== undefined && size > pending.maxResponseBytes) {
+        && pending && size <= responseBodyLimit(pending.path, pending.method) && pending.maxResponseBytes !== undefined && size > pending.maxResponseBytes) {
         link.pending.delete(id);
         pending.cleanup();
         pending.reject(new ControlRequestError('response_too_large', !isReadOnlyMethod(pending.method), id));
@@ -850,7 +854,7 @@ function startRun(server: ControlTarget, principal: AnnexPrincipal, request: Con
   const deadline = new AbortController();
   const timer = setTimeout(() => deadline.abort('timeout'), targetTimeoutMs);
   timer.unref?.();
-  const ctx: DispatchContext = { remoteAddress: link.remoteAddress, signal: cancel.signal, deadline: deadline.signal, linkOpen: () => !link.closed && link.ws.readyState === WebSocket.OPEN, responseLimit: link.features?.has('bulk') ? responseBodyLimit(request.path) : CONTROL_FRAME_MAX_BYTES };
+  const ctx: DispatchContext = { remoteAddress: link.remoteAddress, signal: cancel.signal, deadline: deadline.signal, linkOpen: () => !link.closed && link.ws.readyState === WebSocket.OPEN, responseLimit: link.features?.has('bulk') ? responseBodyLimit(request.path, request.method) : CONTROL_FRAME_MAX_BYTES };
   let dispatched: Promise<DispatchResult>;
   try { dispatched = server.dispatch(principal, request, ctx); } catch (err) { // telemetry-exempt: passed on as a rejection, logged below
     dispatched = Promise.reject(err);

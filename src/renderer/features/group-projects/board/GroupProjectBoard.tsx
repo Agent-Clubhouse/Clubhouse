@@ -63,6 +63,7 @@ export function GroupProjectBoard({ groupProjectId, ctx, variant, onUpdateMetada
   const [bulletinBody, setBulletinBody] = useState('');
   const [postingBulletin, setPostingBulletin] = useState(false);
   const [postError, setPostError] = useState<string | null>(null);
+  const [readError, setReadError] = useState(false);
 
   // Read state is pulled at call time rather than subscribed to, so marking a
   // channel read doesn't tear down and restart the polling interval.
@@ -103,13 +104,19 @@ export function GroupProjectBoard({ groupProjectId, ctx, variant, onUpdateMetada
       if (selectedTopic === ALL_TOPICS_KEY) {
         try {
           const allMsgs = await fetchAllMessages(groupProjectId);
-          if (!cancelled) setMessages(allMsgs);
-        } catch { /* telemetry-exempt: the next poll reads again */ }
+          if (!cancelled) { setMessages(allMsgs); setReadError(false); }
+        } catch {
+          // telemetry-exempt: the read error is shown below; the next poll reads again
+          if (!cancelled) setReadError(true);
+        }
       } else if (selectedTopic) {
         try {
           const msgs = await fetchTopicMessages(groupProjectId, selectedTopic);
-          if (!cancelled) setMessages(msgs);
-        } catch { /* telemetry-exempt: the next poll reads again */ }
+          if (!cancelled) { setMessages(msgs); setReadError(false); }
+        } catch {
+          // telemetry-exempt: the read error is shown below; the next poll reads again
+          if (!cancelled) setReadError(true);
+        }
       }
     };
 
@@ -265,6 +272,9 @@ export function GroupProjectBoard({ groupProjectId, ctx, variant, onUpdateMetada
         </Button>
       </div>
       {postError && <div role="alert" className="px-3 py-1 text-xs text-ctp-error border-b border-surface-0">{postError}</div>}
+      {readError && <div role="alert" className="px-3 py-1 text-xs text-ctp-error">
+        {messages.length > 0 ? "Couldn't load new messages. Showing what was last loaded." : "Couldn't load messages."}
+      </div>}
       {project?.network?.role === 'replica' && project.network.state === 'cached' && (
         <div className="px-3 py-1 text-xs text-ctp-overlay1 border-b border-surface-0">
           {hostName} is offline. A post waits for it and is not on the board until it returns.
