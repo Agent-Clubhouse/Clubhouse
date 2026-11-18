@@ -462,7 +462,7 @@ function logReceiptFailure(err: unknown): void {
 function onConnected(agentId: string): void {
   void (async () => {
     for (const gp of await groupProjectHost.list()) {
-      if (!groupProjectMay(gp, 'deliver') || usesPolling(gp)) continue;
+      if (!groupProjectMay(gp, 'deliver')) continue;
       const resolved = await groupProjectHost.resolveMembers(gp.id);
       const member = resolved.find((m) => groupProjectHost.localAgentId(gp, m.address) === agentId);
       if (!member) continue;
@@ -515,7 +515,7 @@ export function watchGroupProjectDelivery(): () => void {
       return;
     }
     if (change.part === 'membership' || change.part === 'record') {
-      // Members left, or the group project went back to polling or stopped delivering.
+      // Members left, or the group project stopped delivering.
       void (async () => {
         const gp = await groupProjectHost.get(change.groupProjectId);
         const resolved = gp && groupProjectMay(gp, 'deliver') ? await groupProjectHost.resolveMembers(gp.id) : [];

@@ -1,6 +1,6 @@
 /**
  * Group project post notices (#3362): subscription, coalescing, the rate
- * limit, sleeping and busy members, and legacy polling.
+ * limit, sleeping and busy members.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { BulletinMessage, GroupProject, GroupProjectChange, GroupProjectMembership } from '../../shared/group-project-types';
