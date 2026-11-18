@@ -1463,6 +1463,7 @@ function scheduleKept(connection: KeptConnection): void {
   connection.attempt = Math.min(connection.attempt + 1, 5);
   connection.timer = setTimeout(() => {
     connection.timer = null;
+    if (!connectionSource?.autoReconnect()) return;
     dialKept(connection);
   }, delay);
   connection.timer.unref?.();

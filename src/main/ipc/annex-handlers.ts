@@ -5,6 +5,7 @@ import type { AnnexSettings } from '../../shared/types';
 import * as annexSettings from '../services/annex-settings';
 import * as annexServer from '../services/annex-server';
 import * as annexClient from '../services/annex-client';
+import * as annexControl from '../services/annex-control';
 import * as annexPeers from '../services/annex-peers';
 import * as annexIdentity from '../services/annex-identity';
 import * as annexTls from '../services/annex-tls';
@@ -50,6 +51,9 @@ function applyNetworkSettings(settings: AnnexSettings, previous: AnnexSettings):
     appLog('core:annex', 'info', 'Annex client stopped via settings');
   } else if (settings.enableClient && bindingChanged) {
     annexClient.scan();
+  }
+  if (settings.autoReconnect !== previous.autoReconnect) {
+    annexControl.refreshConnections();
   }
   broadcastStatusChanged();
 }

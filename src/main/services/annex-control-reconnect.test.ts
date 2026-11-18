@@ -411,6 +411,25 @@ describe('reconnect stop conditions', () => {
     vi.advanceTimersByTime(120_000);
     expect(sockets).toHaveLength(1);
   });
+
+  it('rechecks autoReconnect when the retry timer fires without a manual refresh', () => {
+    maintain();
+    fail();
+    autoReconnect = false;
+    vi.advanceTimersByTime(1000);
+    expect(sockets).toHaveLength(1);
+  });
+
+  it('allows an explicit retry while autoReconnect is off', () => {
+    maintain();
+    fail();
+    autoReconnect = false;
+    control.retryConnection(REMOTE);
+    expect(sockets).toHaveLength(2);
+    fail();
+    vi.advanceTimersByTime(120_000);
+    expect(sockets).toHaveLength(2);
+  });
 });
 
 describe('mixed versions and eligibility', () => {
