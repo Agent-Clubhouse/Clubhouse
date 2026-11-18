@@ -326,6 +326,31 @@ describe('full-server audit inventory over one A to B forward', () => {
     expect((await driverOnTarget(who)).sent).toHaveLength(before + 1);
   });
 
+  it.each(['A', 'B'] as const)('R09/R14 %s: actual send_file preserves UTF-8 bytes and digests around the chunk boundary and duplicate delivery', async (who) => {
+    await emitOnTarget(who, { type: 'turn_started', data: { trigger: 'system' } });
+    await emitOnTarget(who, { type: 'turn_ended', data: { stopReason: 'end_turn' } });
+    for (const size of [65_535, 65_536, 65_537]) {
+      expect(await driverOnTarget(who)).toMatchObject({ state: 'idle', pendingWork: false });
+      const before = (await driverOnTarget(who)).sent.length;
+      const content = 'é\n'.repeat(Math.floor(size / 3)) + 'x'.repeat(size % 3);
+      const input = { tool: 'send_file', args: { content, task_id: `file-${who}-${size}`, filename: 'fixture.txt' } };
+      const call = (): ReturnType<InventoryPeer['agentCall']> => who === 'A' ? a.agentCall(input) : b.call('agentCall', input);
+      const receipt = await call();
+      expect(receipt.isError).not.toBe(true);
+      const file = /path=(.+)$/.exec(receipt.content[0].text)?.[1];
+      if (!file) throw new Error(JSON.stringify({
+        receipt, caller: (await status(who)).logs.slice(-6), target: (await status(who === 'A' ? 'B' : 'A')).logs.slice(-6),
+      }));
+      const received = who === 'A' ? await b.call('deliveredFile', file) : await a.deliveredFile(file);
+      expect(received).toEqual({ bytes: size, digest: createHash('sha256').update(content).digest('hex') });
+      expect((await driverOnTarget(who)).sent).toHaveLength(before + 1);
+      expect(await call()).toEqual(receipt);
+      expect((await driverOnTarget(who)).sent).toHaveLength(before + 1);
+      await emitOnTarget(who, { type: 'turn_started', data: { trigger: 'system' } });
+      await emitOnTarget(who, { type: 'turn_ended', data: { stopReason: 'end_turn' } });
+    }
+  });
+
   it.each(['A', 'B'] as const)('R16 %s: connection switches synchronize and the real receiving gate enforces them', async (who) => {
     const set = (disabled: string[]) => who === 'A' ? a.connectionTools(disabled) : b.call('connectionTools', disabled);
     const receiver = (): Promise<ReturnType<InventoryPeer['connections']>> => who === 'A' ? b.call('connections') : Promise.resolve(a.connections());
@@ -393,6 +418,47 @@ describe('full-server audit inventory over one A to B forward', () => {
     expect((await replica())?.messages.filter(({ id }) => id === message.id)).toHaveLength(1);
     const roster = who === 'A' ? await a.networkRoster(id) : await b.call<Awaited<ReturnType<InventoryPeer['networkRoster']>>>('networkRoster', id);
     expect(roster).toMatchObject({ groupProjectId: id, status: 'available', source: 'live', members: [expect.objectContaining({ agentId: target(who).agentId, machine: target(who).fingerprint })] });
+  });
+
+  it.each(['A', 'B'] as const)('R18/R19 %s: the actual host checks remote-agent membership, lead and admin grants on every replica write', async (who) => {
+    const link = (enabled: boolean) => who === 'A' ? a.projectLink(enabled) : b.call('projectLink', enabled);
+    await link(true);
+    await vi.waitFor(async () => {
+      expect((await a.linkedState()).groups).toHaveLength(1);
+      expect((await b.call<Awaited<ReturnType<InventoryPeer['linkedState']>>>('linkedState')).groups).toHaveLength(1);
+    });
+    const id = who === 'A' ? await b.call<string>('createNetworkGroup', { projectScoped: true }) : await a.createNetworkGroup({ projectScoped: true });
+    const replica = (): ReturnType<InventoryPeer['networkGroup']> => who === 'A' ? a.networkGroup(id) : b.call('networkGroup', id);
+    const host = (): ReturnType<InventoryPeer['networkGroup']> => who === 'A' ? b.call('networkGroup', id) : a.networkGroup(id);
+    const role = (role: 'lead' | 'admin', mode: 'allow' | 'ask' | 'off') => who === 'A'
+      ? b.call('networkRole', { id, role, mode }) : a.networkRole({ id, role, mode });
+    const write = (operation: 'post' | 'update' | 'protect', text?: string) => who === 'A'
+      ? a.networkAgentWrite({ id, operation, text }) : b.call('networkAgentWrite', { id, operation, text });
+    try {
+      await vi.waitFor(async () => { expect((await replica())?.group.network).toMatchObject({ role: 'replica' }); });
+      await role('admin', 'off');
+      expect(await write('post', `member post from ${who}`)).toMatchObject({ body: `member post from ${who}` });
+      await expect(write('update', 'must be refused')).rejects.toThrow();
+      await expect(write('protect')).rejects.toThrow();
+      expect((await host())?.group.description).not.toBe('must be refused');
+      await role('lead', 'ask');
+      await expect(write('protect')).rejects.toThrow("can't ask");
+      await role('lead', 'allow');
+      await expect(write('protect')).resolves.toBeUndefined();
+      await role('admin', 'allow');
+      expect(await write('update', `host-authorized agent ${who}`)).toMatchObject({ writeOutcome: { status: 'applied' } });
+      expect((await host())?.group.description).toBe(`host-authorized agent ${who}`);
+      await role('admin', 'off');
+      await expect(write('update', 'must remain refused')).rejects.toThrow();
+      expect((await host())?.group.description).toBe(`host-authorized agent ${who}`);
+      await role('lead', 'off');
+    } finally {
+      await link(false);
+      await vi.waitFor(async () => {
+        expect((await a.linkedState()).groups).toHaveLength(0);
+        expect((await b.call<Awaited<ReturnType<InventoryPeer['linkedState']>>>('linkedState')).groups).toHaveLength(0);
+      });
+    }
   });
 
   describe('R11: all five Git reads and ten writes use the actual Git service', () => {
@@ -725,7 +791,7 @@ describe('full-server audit inventory over one A to B forward', () => {
     });
   });
 
-  it.each(['A', 'B'] as const)('R07 %s: actual agent lifecycle wakes, stops, reorders and spawns with only a fake native process', async (who) => {
+  it.each(['A', 'B'] as const)('R05/R07 %s: actual lifecycle and guided command receipts keep one native process and the selected provider', async (who) => {
     const id = who === 'A' ? await b.call<string>('prepareLifecycle') : await a.prepareLifecycle();
     const inspect = (agentId = id): ReturnType<InventoryPeer['lifecycleState']> => who === 'A' ? b.call('lifecycleState', agentId) : a.lifecycleState(agentId);
     expect(await send(who, 'agent:wake', { agentId: id })).toEqual({ sent: true });
@@ -741,6 +807,23 @@ describe('full-server audit inventory over one A to B forward', () => {
     await vi.waitFor(async () => { expect((await inspect()).running).toBe(true); });
     expect(await send(who, 'agent:kill', { agentId: id })).toEqual({ sent: true });
     await vi.waitFor(async () => { expect((await inspect()).running).toBe(false); });
+    const start = { type: 'agent.start', agentId: id, message: 'Guided in-memory start' };
+    const processes = (await inspect()).processes;
+    const started = await mobile(who, start, `guided-start-${who}`);
+    expect(json(started)).toMatchObject({ status: 'completed', result: { agentId: id } });
+    expect(await inspect()).toMatchObject({ running: true, processes: processes + 1 });
+    expect(json(await mobile(who, start, `guided-start-${who}`))).toEqual(json(started));
+    expect((await inspect()).processes).toBe(processes + 1);
+    expect(json(await mobile(who, { type: 'agent.stop', agentId: id, waitForStopped: true }, `guided-stop-${who}`)))
+      .toMatchObject({ status: 'completed', result: { stopped: true, state: 'sleeping' } });
+    expect((await inspect()).running).toBe(false);
+    const preview = json(await mobile(who, { type: 'agent.providerPreview', agentId: id, provider: 'claude-code' }, `provider-preview-${who}`));
+    expect(preview).toMatchObject({ status: 'completed', result: { savedProvider: 'claude-code', canSave: true, blocked: null } });
+    if (!preview || typeof preview !== 'object' || !('result' in preview) || !preview.result || typeof preview.result !== 'object'
+      || !('expectedState' in preview.result) || typeof preview.result.expectedState !== 'string') throw new Error('The guided provider preview returned no precondition');
+    expect(json(await mobile(who, {
+      type: 'agent.providerChange', agentId: id, provider: 'claude-code', expectedState: preview.result.expectedState,
+    }, `provider-change-${who}`))).toMatchObject({ status: 'completed', result: { status: 'already_selected', savedProvider: 'claude-code' } });
     const previous = (await inspect()).runningIds;
     expect(await send(who, 'agent:spawn', { projectId: target(who).projectId, prompt: 'In-memory lifecycle fixture', orchestrator: 'claude-code' })).toEqual({ sent: true });
     await vi.waitFor(async () => { expect((await inspect()).runningIds.filter((running) => !previous.includes(running))).toHaveLength(1); });

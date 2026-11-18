@@ -150,6 +150,7 @@ import { withSettingsSurface } from '../../src/main/services/settings-audit';
 import { effectiveAgentGrants, setAgentGrant } from '../../src/main/services/agent-grants-service';
 import { dropGrantRequestsFor, listGrantRequests, recordGrantRequest } from '../../src/main/services/grant-requests';
 import { dropStartRequestsFor, listStartRequests, recordStartRequest } from '../../src/main/services/helper-start-requests';
+import { grantGroupProjectRole } from '../../src/main/services/group-project-roles';
 import { handoffHost, localHandoffAgent, startHandoffs, stopHandoffs } from '../../src/main/services/handoff-host';
 import { prepareCallerHandoff } from '../../src/main/services/handoff-preparations';
 import { registerHandoffTools } from '../../src/main/services/clubhouse-mcp/tools/handoff-tools';
@@ -434,6 +435,7 @@ export async function createInventoryPeer(alias: string) {
     async lifecycleState(id: string) {
       return {
         running: agentSystem.isAgentRunning(id), runtime: agentRegistry.get(id)?.runtime,
+        processes: fixture.ptys.length,
         runningIds: agentSystem.getRunningAgentIds([...agentRegistry.getAllRegistrations().keys()]),
         order: (await agentConfig.listDurable(root)).map((config) => config.id),
       };
@@ -556,6 +558,15 @@ export async function createInventoryPeer(alias: string) {
       if (!remote) throw new Error('Inventory peer is not configured');
       return agentCalls.forwardAgentCall(agent.id, `${remote.agentId}@${remote.fingerprint}`, `${remote.alias} agent`, input.tool, input.args);
     },
+    async deliveredFile(file: string) {
+      const directory = path.dirname(file);
+      if (path.dirname(directory) !== fixture.dir || !path.basename(directory).startsWith('clubhouse-a2a-')
+        || !/^[a-f0-9-]{36}\.md$/.test(path.basename(file))) throw new Error('Unexpected delivered fixture file');
+      const bytes = await fs.promises.readFile(file);
+      await fs.promises.unlink(file);
+      await fs.promises.rmdir(directory);
+      return { bytes: bytes.length, digest: createHash('sha256').update(bytes).digest('hex') };
+    },
     connections() {
       if (!remote) throw new Error('Inventory peer is not configured');
       return {
@@ -580,8 +591,10 @@ export async function createInventoryPeer(alias: string) {
     },
     projectPin(pinned: boolean) { return applyProjectStateChange({ type: 'setPinned', projectId: project.id, pinned }); },
     projectInactive(inactive: boolean) { return applyProjectStateChange({ type: 'setInactive', projectId: project.id, inactive, at: Date.now() }); },
-    async createNetworkGroup() {
-      const group = await groupProjectHost.create(`${alias} shared board`, { scope: { level: 'app', reach: 'network' } });
+    async createNetworkGroup(input?: { projectScoped: boolean }) {
+      const group = await groupProjectHost.create(`${alias} shared board`, {
+        scope: input?.projectScoped ? { level: 'project', projectId: project.id, reach: 'network' } : { level: 'app', reach: 'network' },
+      });
       await beginAutoJoin(group.id);
       await addMember(group.id, agent.id, { author: { label: 'user' } });
       return group.id;
@@ -595,6 +608,20 @@ export async function createInventoryPeer(alias: string) {
     },
     networkUpdate(input: { id: string; description: string }) {
       return groupProjectHost.update(input.id, { description: input.description }, { author: { label: 'user' } });
+    },
+    async networkRole(input: { id: string; role: 'lead' | 'admin'; mode: 'allow' | 'ask' | 'off' }) {
+      if (!remote) throw new Error('Inventory peer is not configured');
+      const address = `${remote.agentId}@${remote.fingerprint}`;
+      await addMember(input.id, address, { author: { label: 'user' } });
+      await grantGroupProjectRole(input.id, address, input.role, input.mode);
+    },
+    networkAgentWrite(input: { id: string; operation: 'post' | 'update' | 'protect'; text?: string }) {
+      const author = { agentId: agent.id, label: agent.name };
+      switch (input.operation) {
+        case 'post': return groupProjectHost.post(input.id, agent.name, 'agent-grants', input.text ?? 'Agent fixture', { author });
+        case 'update': return groupProjectHost.update(input.id, { description: input.text }, { author });
+        case 'protect': return groupProjectHost.setTopicProtected(input.id, 'agent-grants', true, { author });
+      }
     },
     networkRoster(id: string) { return groupProjectRoster.describe(id); },
     async controllerGroup(input: {
@@ -848,7 +875,7 @@ export async function createInventoryPeer(alias: string) {
         sent: driver.last.sent, permissions: driver.last.responses, answers: driver.last.answers,
         models: driver.last.models, levels: driver.last.levels, interrupts: driver.last.interrupts,
         queue: runtime.getQueueState(), state: runtime.getState(), registered: !!agentRegistry.get(agent.id),
-        running: runtime.isRunning(), cached: !!agentConfig.peekCachedDurableConfig(root, agent.id),
+        running: runtime.isRunning(), pendingWork: runtime.hasPendingWork(), cached: !!agentConfig.peekCachedDurableConfig(root, agent.id),
       };
     },
     async close() {

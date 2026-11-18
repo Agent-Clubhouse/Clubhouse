@@ -165,6 +165,7 @@ export const test = base.extend<{ reverse: ReverseDesktops; reverseScenario: 'qu
           userDataFiles: {
             'orchestrator-settings.json': { enabled: ['claude-code'], autoDetected: true },
             'chat-runtime-settings.json': { 'claude-code': { mode: 'chat', driver: 'claude_stream_json' } },
+            'dispatcher-settings.json': { setup: { status: 'done', upgrade: false } },
             'annex-settings.json': { enableServer: false, enableClient: false, loopbackOnly: true, deviceName: label, alias: label, icon: 'computer', color: 'indigo', autoReconnect: true },
           },
           env: { ...cli.env, GIT_CONFIG_GLOBAL: gitConfig, GIT_CONFIG_SYSTEM: gitConfig, GIT_CONFIG_NOSYSTEM: '1' },
