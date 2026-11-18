@@ -1982,7 +1982,7 @@ describe('annex-client', () => {
     }
 
     function mockHttpsGetNetworkError() {
-      vi.mocked(https.get).mockImplementation((_url: any, _opts: any, _cb: any) => {
+      vi.mocked(https.request).mockImplementation((_url: any, _opts: any, _cb: any) => {
         const req = {
           on: vi.fn().mockImplementation((event: string, cb: any) => {
             if (event === 'error') cb(new Error('ECONNREFUSED'));
@@ -1990,13 +1990,14 @@ describe('annex-client', () => {
           }),
           setTimeout: vi.fn(),
           destroy: vi.fn(),
+          end: vi.fn(),
         };
         return req as any;
       });
     }
 
     function mockHttpsGetMalformedJson() {
-      vi.mocked(https.get).mockImplementation((_url: any, _opts: any, cb: any) => {
+      vi.mocked(https.request).mockImplementation((_url: any, _opts: any, cb: any) => {
         const res = {
           statusCode: 200,
           resume: vi.fn(),
@@ -2007,7 +2008,7 @@ describe('annex-client', () => {
           }),
         };
         cb(res);
-        const req = { on: vi.fn().mockReturnThis(), setTimeout: vi.fn(), destroy: vi.fn() };
+        const req = { on: vi.fn().mockReturnThis(), setTimeout: vi.fn(), destroy: vi.fn(), end: vi.fn() };
         return req as any;
       });
     }
@@ -2125,7 +2126,7 @@ describe('annex-client', () => {
     /** Capture the URL the client builds and answer with an empty digest. */
     function captureUrl(): { get: () => string } {
       let captured = '';
-      vi.mocked(https.get).mockImplementation((url: any, _opts: any, cb: any) => {
+      vi.mocked(https.request).mockImplementation((url: any, _opts: any, cb: any) => {
         captured = String(url);
         const res = {
           statusCode: 200,
@@ -2137,7 +2138,7 @@ describe('annex-client', () => {
           }),
         };
         cb(res);
-        return { on: vi.fn().mockReturnThis(), setTimeout: vi.fn(), destroy: vi.fn() } as any;
+        return { on: vi.fn().mockReturnThis(), setTimeout: vi.fn(), destroy: vi.fn(), end: vi.fn() } as any;
       });
       return { get: () => captured };
     }
@@ -2341,7 +2342,7 @@ describe('annex-client', () => {
       let timeoutCb: (() => void) | null = null;
       let errorCb: ((err: Error) => void) | null = null;
 
-      vi.mocked(https.get).mockImplementation((_url: any, _opts: any, _cb: any) => {
+      vi.mocked(https.request).mockImplementation((_url: any, _opts: any, _cb: any) => {
         const req = {
           on: vi.fn().mockImplementation((event: string, cb: any) => {
             if (event === 'timeout') timeoutCb = cb;
@@ -2349,6 +2350,7 @@ describe('annex-client', () => {
             return req;
           }),
           destroy: vi.fn(),
+          end: vi.fn(),
         };
         return req as any;
       });
@@ -2372,7 +2374,7 @@ describe('annex-client', () => {
       let errorCb: ((err: Error) => void) | null = null;
       let timeoutCb: (() => void) | null = null;
 
-      vi.mocked(https.get).mockImplementation((_url: any, _opts: any, _cb: any) => {
+      vi.mocked(https.request).mockImplementation((_url: any, _opts: any, _cb: any) => {
         const req = {
           on: vi.fn().mockImplementation((event: string, cb: any) => {
             if (event === 'error') errorCb = cb;
@@ -2380,6 +2382,7 @@ describe('annex-client', () => {
             return req;
           }),
           destroy: vi.fn(),
+          end: vi.fn(),
         };
         return req as any;
       });
@@ -2723,7 +2726,7 @@ describe('annex-client', () => {
       expect(source).not.toMatch(/createTlsClientOptions/);
       const isComment = (index: number) => /^\s*(\*|\/\/)/.test(source.slice(source.lastIndexOf('\n', index) + 1, index));
       const calls = [...source.matchAll(/(https\.(get|request)|new WebSocket)\(/g)].filter((m) => !isComment(m.index!));
-      expect(calls.length).toBeGreaterThanOrEqual(9);
+      expect(calls.length).toBeGreaterThanOrEqual(3);
       for (const call of calls) {
         expect(source.slice(Math.max(0, call.index! - 700), call.index! + 200)).toContain('...tlsOptions');
       }
@@ -3313,6 +3316,86 @@ describe('annex-client', () => {
     expect(signal?.aborted).toBe(true);
     expect(request.destroy).toHaveBeenCalledTimes(1);
     expect(vi.getTimerCount()).toBe(0);
+  });
+
+  describe('single-selection request transport (#3613 P7w)', () => {
+    const FP = 'ef:07:ef:07';
+    let request: ReturnType<typeof vi.spyOn<typeof annexControl, 'request'>>;
+
+    beforeEach(() => {
+      annexClient.startClient();
+      vi.spyOn(annexControl, 'getLinkReadiness').mockReturnValue({ acceptedHere: true, openedHere: false });
+      request = vi.spyOn(annexControl, 'request').mockResolvedValue({ status: 200, headers: {}, body: Buffer.from('[]') });
+    });
+    afterEach(() => { vi.restoreAllMocks(); });
+
+    it('routes specialized reads through control without an outbound satellite socket', async () => {
+      expect(await annexClient.requestFileTree(FP, 'p /')).toEqual([]);
+      expect(await annexClient.requestBulletinDigest(FP, 'g')).toEqual([]);
+      expect(await annexClient.requestBulletinTopicMessages(FP, 'g', 't /')).toEqual([]);
+      expect(await annexClient.requestBulletinAllMessages(FP, 'g')).toEqual([]);
+      request.mockResolvedValueOnce({ status: 200, headers: { 'content-type': 'text/plain' }, body: Buffer.from('file é') });
+      expect(await annexClient.requestFileRead(FP, 'p', 'f /')).toBe('file é');
+      expect(request.mock.calls.map(([, input]) => input.path)).toEqual([
+        '/api/v1/projects/p%20%2F/files/tree', '/api/v1/group-projects/g/bulletin/digest',
+        '/api/v1/group-projects/g/bulletin/topics/t%20%2F', '/api/v1/group-projects/g/bulletin/messages',
+        '/api/v1/projects/p/files/read?path=f%20%2F',
+      ]);
+      expect(https.request).not.toHaveBeenCalled();
+    });
+
+    it('preserves JSON/status/headers, cancellation and receive bounds above the raw seam', async () => {
+      const abort = new AbortController();
+      request.mockResolvedValueOnce({ status: 429, headers: { 'retry-after': '3' }, body: Buffer.from('{"error":"rate_limited"}') });
+      expect(await annexClient.postToMachine(FP, '/api/v1/network/test', { value: 'é' }, { signal: abort.signal, maxResponseBytes: 16 }))
+        .toEqual({ status: 429, body: { error: 'rate_limited' }, retryAfterMs: 3000 });
+      expect(request).toHaveBeenCalledWith(FP, expect.objectContaining({ method: 'POST', path: '/api/v1/network/test', body: '{"value":"é"}',
+        headers: { 'content-type': 'application/json' } }), expect.objectContaining({ signal: abort.signal, maxResponseBytes: 16, timeoutMs: 30000 }));
+      const error = new annexControl.ControlRequestError('cancelled', true, 'original-id');
+      request.mockRejectedValueOnce(error);
+      await expect(annexClient.postToMachine(FP, '/api/v1/network/test', {})).rejects.toBe(error);
+      expect(request).toHaveBeenCalledTimes(2);
+      expect(https.request).not.toHaveBeenCalled();
+    });
+
+    it('does not send an already aborted request or use an unready/old control link', async () => {
+      const abort = new AbortController(); abort.abort();
+      await expect(annexClient.postToMachine(FP, '/api/v1/network/test', {}, { signal: abort.signal })).rejects.toThrow('aborted');
+      vi.mocked(annexControl.getLinkReadiness).mockReturnValue({ acceptedHere: false, openedHere: true });
+      await expect(annexClient.postToMachine(FP, '/api/v1/network/test', {})).rejects.toThrow('not connected');
+      expect(request).not.toHaveBeenCalled();
+      expect(https.request).not.toHaveBeenCalled();
+    });
+
+    it('keeps the original in-flight write error across a direct to reverse to direct flap, without another send', async () => {
+      annexClient._addConnectedSatelliteForTesting(FP);
+      let executions = 0;
+      const socket = Object.assign(new EventEmitter(), { write: vi.fn(), end: () => { executions++; }, destroy: vi.fn() });
+      vi.mocked(https.request).mockReturnValueOnce(socket as never);
+      const pending = annexClient.postToMachine(FP, '/api/v1/network/test', {});
+      annexClient._receiveSatelliteDisconnectForTesting(FP);
+      annexClient._addConnectedSatelliteForTesting(FP);
+      const error = Object.assign(new Error('reset after execution'), { code: 'ECONNRESET' });
+      socket.emit('error', error);
+      await expect(pending).rejects.toBe(error);
+      expect(executions).toBe(1);
+      expect(https.request).toHaveBeenCalledTimes(1);
+      expect(request).not.toHaveBeenCalled();
+    });
+
+    it('never retries a possibly executed reverse write on a newly available direct route', async () => {
+      let fail!: (error: Error) => void;
+      let executions = 0;
+      request.mockImplementationOnce(() => { executions++; return new Promise((_resolve, reject) => { fail = reject; }); });
+      const pending = annexClient.postToMachine(FP, '/api/v1/network/test', {});
+      annexClient._addConnectedSatelliteForTesting(FP);
+      const error = new annexControl.ControlRequestError('transport_unavailable', true, 'executed-id');
+      fail(error);
+      await expect(pending).rejects.toBe(error);
+      expect(executions).toBe(1);
+      expect(request).toHaveBeenCalledTimes(1);
+      expect(https.request).not.toHaveBeenCalled();
+    });
   });
 
   describe('chat across desktops (#2390)', () => {

@@ -18,7 +18,7 @@ import { createBonjour } from './annex-mdns';
 import { annexNetworkProfile } from './annex-network-profile';
 import * as networkChannel from './annex-network-channel';
 import * as annexControl from './annex-control';
-import { peerRoutes } from './annex-routes';
+import { peerRoutes, selectRequestRoute } from './annex-routes';
 import * as membership from './annex-network-membership';
 import {
   formatAddress, parseTypedHost, rankAddresses, reachCandidates, rememberHost, routeCollision, savedLoopbackRoutes,
@@ -147,6 +147,7 @@ export interface SatelliteSnapshot {
 let bonjourBrowser: Browser | null = null;
 let bonjourInstance: InstanceType<typeof Bonjour> | null = null;
 const satellites = new Map<string, SatelliteConnectionInternal>();
+let clientRunning = false;
 
 /** Discovered but unpaired services visible on the LAN. */
 export interface DiscoveredService {
@@ -351,37 +352,26 @@ interface SatelliteBuffer {
   unavailable?: boolean;
 }
 
-function headerInt(res: http.IncomingMessage, name: string): number | undefined {
+function headerInt(res: { headers: http.IncomingHttpHeaders }, name: string): number | undefined {
   const raw = res.headers[name];
   const value = typeof raw === 'string' ? Number(raw) : NaN;
   return Number.isInteger(value) && value >= 0 ? value : undefined;
 }
 
 /** An icon through the satellite's authenticated icon route, as a data URL. */
-function fetchSatelliteIcon(sat: SatelliteConnectionInternal, kind: IconKind, id: string): Promise<IconFetchResult> {
-  const tlsOptions = pinnedTlsOptionsFor(sat.fingerprint);
-  return new Promise<IconFetchResult>((resolve) => {
-    let settled = false;
-    const once = (result: IconFetchResult) => { if (!settled) { settled = true; resolve(result); } };
-    const req = https.get(satelliteUrl(sat, `/api/v1/icons/${kind}/${encodeURIComponent(id)}`), { ...tlsOptions, timeout: 10_000 }, (res) => {
-      if (res.statusCode === 404) { res.resume(); once({ status: 'missing' }); return; }
-      if (res.statusCode !== 200) { drainRefusal(sat, res); once({ status: 'failed' }); return; }
-      const type = String(res.headers['content-type'] ?? '');
-      if (!type.startsWith('image/')) { res.resume(); once({ status: 'failed' }); return; }
-      const chunks: Buffer[] = [];
-      let size = 0;
-      res.on('data', (chunk: Buffer) => {
-        size += chunk.length;
-        if (size > REMOTE_ICON_MAX_BYTES) { res.destroy(); once({ status: 'failed' }); return; }
-        chunks.push(chunk);
-      });
-      res.on('end', () => once({ status: 'ok', dataUrl: `data:${type};base64,${Buffer.concat(chunks).toString('base64')}` }));
-      res.on('error', () => once({ status: 'failed' }));
-      res.on('close', () => once({ status: 'failed' }));
-    });
-    req.on('error', () => once({ status: 'failed' }));
-    req.on('timeout', () => { req.destroy(); once({ status: 'failed' }); });
-  });
+async function fetchSatelliteIcon(sat: SatelliteConnectionInternal, kind: IconKind, id: string): Promise<IconFetchResult> {
+  try {
+    const res = await requestSatelliteRaw(sat.fingerprint, { method: 'GET', path: `/api/v1/icons/${kind}/${encodeURIComponent(id)}`,
+      timeoutMs: 10_000, maxResponseBytes: REMOTE_ICON_MAX_BYTES });
+    if (res.status === 404) return { status: 'missing' };
+    const type = String(res.headers['content-type'] ?? '');
+    if (res.status !== 200 || !type.startsWith('image/')) return { status: 'failed' };
+    return { status: 'ok', dataUrl: `data:${type};base64,${res.body.toString('base64')}` };
+  } catch (err) {
+    // telemetry-exempt: logged; the icon remains unavailable
+    appLog('core:annex-client', 'warn', 'Satellite icon fetch failed', { meta: { fingerprint: sat.fingerprint, error: String(err) } });
+    return { status: 'failed' };
+  }
 }
 
 /** Fetch the icons this satellite's snapshot names and doesn't carry, and show them when they arrive. */
@@ -401,45 +391,19 @@ function fetchSatelliteLeftOutIcons(sat: SatelliteConnectionInternal): void {
   );
 }
 
-function fetchSatelliteBuffer(sat: SatelliteConnectionInternal, agentId: string): Promise<SatelliteBuffer | null> {
-  const tlsOptions = pinnedTlsOptionsFor(sat.fingerprint);
-  const satelliteId = sat.id;
-
-  return new Promise<SatelliteBuffer | null>((resolve) => {
-    let resolved = false;
-    const once = (val: SatelliteBuffer | null) => { if (!resolved) { resolved = true; resolve(val); } };
-    const url = satelliteUrl(sat, `/api/v1/agents/${encodeURIComponent(agentId)}/buffer`);
-    const req = https.get(url, { ...tlsOptions, timeout: 5000 }, (res) => {
-      if (res.statusCode === 503) {
-        res.resume();
-        once({ data: '', unavailable: true });
-        return;
-      }
-      if (res.statusCode !== 200) {
-        drainRefusal(sat, res);
-        once(null);
-        return;
-      }
-      const cols = headerInt(res, ANNEX_BUFFER_HEADERS.cols);
-      const rows = headerInt(res, ANNEX_BUFFER_HEADERS.rows);
-      const meta = {
-        seq: headerInt(res, ANNEX_BUFFER_HEADERS.seq),
-        ...(cols && rows && { cols, rows }),
-      };
-      const chunks: Buffer[] = [];
-      res.on('data', (chunk: Buffer) => chunks.push(chunk));
-      res.on('end', () => once({ data: Buffer.concat(chunks).toString('utf-8'), ...meta }));
-      // A connection reset mid-body ends with 'close' and no 'end'. Without
-      // this the shared seed would never settle.
-      res.on('error', () => once(null));
-      res.on('close', () => once(null));
-    });
-    req.on('error', (err) => {
-      appLog('core:annex-client', 'warn', 'Agent buffer fetch failed', { meta: { satelliteId, agentId, error: err.message } });
-      once(null);
-    });
-    req.on('timeout', () => { req.destroy(); once(null); });
-  });
+async function fetchSatelliteBuffer(sat: SatelliteConnectionInternal, agentId: string): Promise<SatelliteBuffer | null> {
+  try {
+    const res = await requestSatelliteRaw(sat.fingerprint, { method: 'GET', path: `/api/v1/agents/${encodeURIComponent(agentId)}/buffer`, timeoutMs: 5000 });
+    if (res.status === 503) return { data: '', unavailable: true };
+    if (res.status !== 200) return null;
+    const cols = headerInt(res, ANNEX_BUFFER_HEADERS.cols);
+    const rows = headerInt(res, ANNEX_BUFFER_HEADERS.rows);
+    return { data: res.body.toString('utf8'), seq: headerInt(res, ANNEX_BUFFER_HEADERS.seq), ...(cols && rows && { cols, rows }) };
+  } catch (err) {
+    // telemetry-exempt: logged; callers retain the live buffer
+    appLog('core:annex-client', 'warn', 'Agent buffer fetch failed', { meta: { satelliteId: sat.id, agentId, error: String(err) } });
+    return null;
+  }
 }
 
 /**
@@ -809,12 +773,6 @@ function noteRestRefusal(sat: SatelliteConnectionInternal, status: number | unde
   try { code = (JSON.parse(text) as { error?: unknown }).error; } catch { /* telemetry-exempt: not JSON, so not a pairing refusal */ }
   const refusal = needsPairingRefusalFor(code);
   if (refusal) markNeedsPairing(sat, refusal);
-}
-
-/** Drains a non-200 REST answer, noting a pairing refusal. */
-function drainRefusal(sat: SatelliteConnectionInternal, res: http.IncomingMessage): void {
-  if (res.statusCode !== 401) { res.resume(); return; }
-  void readSmallBody(res).then((text) => noteRestRefusal(sat, res.statusCode, text));
 }
 
 function readSmallBody(res: http.IncomingMessage): Promise<string> {
@@ -1932,70 +1890,51 @@ export function requestPtyBufferSnapshot(fingerprint: string, agentId: string): 
  * Fetch a file tree from a satellite project via HTTPS REST.
  */
 export function requestFileTree(fingerprint: string, projectId: string, options?: { path?: string; depth?: number; includeHidden?: boolean }): Promise<unknown[]> {
-  const sat = satellites.get(fingerprint);
-  if (!sat || sat.state !== 'connected') return Promise.resolve([]);
-
-  const tlsOptions = pinnedTlsOptionsFor(sat.fingerprint);
   const params = new URLSearchParams();
   if (options?.path) params.set('path', options.path);
   if (options?.depth !== undefined) params.set('depth', String(options.depth));
   if (options?.includeHidden) params.set('includeHidden', 'true');
   const qs = params.toString() ? `?${params.toString()}` : '';
 
-  return new Promise<unknown[]>((resolve) => {
-    const url = satelliteUrl(sat, `/api/v1/projects/${encodeURIComponent(projectId)}/files/tree${qs}`);
-    const req = https.get(url, { ...tlsOptions, timeout: 10000 }, (res) => {
-      if (res.statusCode !== 200) { drainRefusal(sat, res); resolve([]); return; }
-      const chunks: Buffer[] = [];
-      res.on('data', (chunk: Buffer) => chunks.push(chunk));
-      res.on('end', () => {
-        try { resolve(JSON.parse(Buffer.concat(chunks).toString('utf-8'))); }
-        catch (err) {
-          appLog('core:annex-client', 'warn', 'File tree response JSON parse failed', { meta: { fingerprint, error: String(err) } });
-          resolve([]);
-        }
-      });
-    });
-    req.on('error', (err) => {
-      appLog('core:annex-client', 'warn', 'File tree request failed', { meta: { fingerprint, error: err.message } });
-      resolve([]);
-    });
-    req.on('timeout', () => { req.destroy(); resolve([]); });
-  });
+  return requestSatelliteArray(fingerprint, `/api/v1/projects/${encodeURIComponent(projectId)}/files/tree${qs}`, 'File tree');
+}
+
+async function requestSatelliteArray(fingerprint: string, path: string, label: string): Promise<unknown[]> {
+  if (!canRequestSatellite(fingerprint)) return [];
+  try {
+    const res = await requestSatelliteRaw(fingerprint, { method: 'GET', path, timeoutMs: 10000 });
+    if (res.status !== 200) return [];
+    try { return JSON.parse(res.body.toString('utf8')); }
+    catch (err) {
+      // telemetry-exempt: logged; existing read API answers an empty list
+      appLog('core:annex-client', 'warn', `${label} response JSON parse failed`, { meta: { fingerprint, error: String(err) } });
+      return [];
+    }
+  } catch (err) {
+    // telemetry-exempt: logged; existing read API answers an empty list
+    appLog('core:annex-client', 'warn', `${label} request failed`, { meta: { fingerprint, error: String(err) } });
+    return [];
+  }
 }
 
 /**
  * Read a file from a satellite project via HTTPS REST.
  */
-export function requestFileRead(fingerprint: string, projectId: string, path: string): Promise<string> {
-  const sat = satellites.get(fingerprint);
-  if (!sat || sat.state !== 'connected') return Promise.resolve('');
-
-  const tlsOptions = pinnedTlsOptionsFor(sat.fingerprint);
+export async function requestFileRead(fingerprint: string, projectId: string, path: string): Promise<string> {
+  if (!canRequestSatellite(fingerprint)) return '';
   const qs = `?path=${encodeURIComponent(path)}`;
-
-  return new Promise<string>((resolve, reject) => {
-    const url = satelliteUrl(sat, `/api/v1/projects/${encodeURIComponent(projectId)}/files/read${qs}`);
-    const req = https.get(url, { ...tlsOptions, timeout: 10000 }, (res) => {
-      if (res.statusCode === 404) { res.resume(); reject(new Error('File not found')); return; }
-      if (res.statusCode !== 200) { drainRefusal(sat, res); reject(new Error(`HTTP ${res.statusCode}`)); return; }
-      const chunks: Buffer[] = [];
-      res.on('data', (chunk: Buffer) => chunks.push(chunk));
-      res.on('end', () => resolve(Buffer.concat(chunks).toString('utf-8')));
-    });
-    req.on('error', (err) => reject(err));
-    req.on('timeout', () => { req.destroy(); reject(new Error('Timeout')); });
-  });
+  const res = await requestSatelliteRaw(fingerprint, { method: 'GET', path: `/api/v1/projects/${encodeURIComponent(projectId)}/files/read${qs}`, timeoutMs: 10000 });
+  if (res.status === 404) throw new Error('File not found');
+  if (res.status !== 200) {
+    throw new Error(`HTTP ${res.status}`);
+  }
+  return res.body.toString('utf8');
 }
 
 /**
  * Fetch group project bulletin digest from a satellite via HTTPS REST.
  */
 export function requestBulletinDigest(fingerprint: string, groupProjectId: string, since?: DigestSince): Promise<unknown[]> {
-  const sat = satellites.get(fingerprint);
-  if (!sat || sat.state !== 'connected') return Promise.resolve([]);
-
-  const tlsOptions = pinnedTlsOptionsFor(sat.fingerprint);
   const params = new URLSearchParams();
   // A satellite predating per-channel read state ignores `sinceChannels` and
   // answers with no cutoff — everything unread, the pre-#1555 behaviour —
@@ -2009,61 +1948,19 @@ export function requestBulletinDigest(fingerprint: string, groupProjectId: strin
   for (const [key, value] of Object.entries(encoded.params)) params.set(key, value);
   const qs = params.toString() ? `?${params.toString()}` : '';
 
-  return new Promise<unknown[]>((resolve) => {
-    const url = satelliteUrl(sat, `/api/v1/group-projects/${encodeURIComponent(groupProjectId)}/bulletin/digest${qs}`);
-    const req = https.get(url, { ...tlsOptions, timeout: 10000 }, (res) => {
-      if (res.statusCode !== 200) { drainRefusal(sat, res); resolve([]); return; }
-      const chunks: Buffer[] = [];
-      res.on('data', (chunk: Buffer) => chunks.push(chunk));
-      res.on('end', () => {
-        try { resolve(JSON.parse(Buffer.concat(chunks).toString('utf-8'))); }
-        catch (err) {
-          appLog('core:annex-client', 'warn', 'Bulletin digest response JSON parse failed', { meta: { fingerprint, error: String(err) } });
-          resolve([]);
-        }
-      });
-    });
-    req.on('error', (err) => {
-      appLog('core:annex-client', 'warn', 'Bulletin digest request failed', { meta: { fingerprint, error: err.message } });
-      resolve([]);
-    });
-    req.on('timeout', () => { req.destroy(); resolve([]); });
-  });
+  return requestSatelliteArray(fingerprint, `/api/v1/group-projects/${encodeURIComponent(groupProjectId)}/bulletin/digest${qs}`, 'Bulletin digest');
 }
 
 /**
  * Fetch group project bulletin topic messages from a satellite via HTTPS REST.
  */
 export function requestBulletinTopicMessages(fingerprint: string, groupProjectId: string, topic: string, since?: string, limit?: number): Promise<unknown[]> {
-  const sat = satellites.get(fingerprint);
-  if (!sat || sat.state !== 'connected') return Promise.resolve([]);
-
-  const tlsOptions = pinnedTlsOptionsFor(sat.fingerprint);
   const params = new URLSearchParams();
   if (since) params.set('since', since);
   if (limit !== undefined) params.set('limit', String(limit));
   const qs = params.toString() ? `?${params.toString()}` : '';
 
-  return new Promise<unknown[]>((resolve) => {
-    const url = satelliteUrl(sat, `/api/v1/group-projects/${encodeURIComponent(groupProjectId)}/bulletin/topics/${encodeURIComponent(topic)}${qs}`);
-    const req = https.get(url, { ...tlsOptions, timeout: 10000 }, (res) => {
-      if (res.statusCode !== 200) { drainRefusal(sat, res); resolve([]); return; }
-      const chunks: Buffer[] = [];
-      res.on('data', (chunk: Buffer) => chunks.push(chunk));
-      res.on('end', () => {
-        try { resolve(JSON.parse(Buffer.concat(chunks).toString('utf-8'))); }
-        catch (err) {
-          appLog('core:annex-client', 'warn', 'Bulletin topic messages response JSON parse failed', { meta: { fingerprint, error: String(err) } });
-          resolve([]);
-        }
-      });
-    });
-    req.on('error', (err) => {
-      appLog('core:annex-client', 'warn', 'Bulletin topic messages request failed', { meta: { fingerprint, error: err.message } });
-      resolve([]);
-    });
-    req.on('timeout', () => { req.destroy(); resolve([]); });
-  });
+  return requestSatelliteArray(fingerprint, `/api/v1/group-projects/${encodeURIComponent(groupProjectId)}/bulletin/topics/${encodeURIComponent(topic)}${qs}`, 'Bulletin topic messages');
 }
 
 /**
@@ -2098,31 +1995,7 @@ export function requestBulletinAllMessages(
   if (limit !== undefined) params.set('limit', String(limit));
   const qs = params.toString() ? `?${params.toString()}` : '';
 
-  const sat = satellites.get(fingerprint);
-  if (!sat || sat.state !== 'connected') return Promise.resolve([]);
-
-  const tlsOptions = pinnedTlsOptionsFor(sat.fingerprint);
-
-  return new Promise<unknown[]>((resolve) => {
-    const url = satelliteUrl(sat, `/api/v1/group-projects/${encodeURIComponent(groupProjectId)}/bulletin/messages${qs}`);
-    const req = https.get(url, { ...tlsOptions, timeout: 10000 }, (res) => {
-      if (res.statusCode !== 200) { drainRefusal(sat, res); resolve([]); return; }
-      const chunks: Buffer[] = [];
-      res.on('data', (chunk: Buffer) => chunks.push(chunk));
-      res.on('end', () => {
-        try { resolve(JSON.parse(Buffer.concat(chunks).toString('utf-8'))); }
-        catch (err) {
-          appLog('core:annex-client', 'warn', 'Bulletin all-messages response JSON parse failed', { meta: { fingerprint, error: String(err) } });
-          resolve([]);
-        }
-      });
-    });
-    req.on('error', (err) => {
-      appLog('core:annex-client', 'warn', 'Bulletin all-messages request failed', { meta: { fingerprint, error: err.message } });
-      resolve([]);
-    });
-    req.on('timeout', () => { req.destroy(); resolve([]); });
-  });
+  return requestSatelliteArray(fingerprint, `/api/v1/group-projects/${encodeURIComponent(groupProjectId)}/bulletin/messages${qs}`, 'Bulletin all-messages');
 }
 
 /**
@@ -2261,51 +2134,85 @@ export function getDiscoveredServices(): DiscoveredService[] {
 // Generic HTTPS request helper for satellite REST APIs
 // ---------------------------------------------------------------------------
 
-function satelliteHttpsRequest(
+function reverseRequestReady(fingerprint: string): boolean {
+  const sat = satelliteFor(fingerprint);
+  return clientRunning && annexSettings.getSettings().enableClient && !sat?.halt && !sat?.needsPairing
+    && annexControl.getLinkReadiness(fingerprint.toLowerCase()).acceptedHere;
+}
+
+function canRequestSatellite(fingerprint: string): boolean {
+  return satelliteFor(fingerprint)?.state === 'connected' || reverseRequestReady(fingerprint);
+}
+
+interface SatelliteResponse { status: number; headers: http.IncomingHttpHeaders; body: Buffer }
+type SatelliteRequest = annexControl.ControlRequestInput & {
+  timeoutMs: number;
+  signal?: AbortSignal;
+  maxResponseBytes?: number;
+};
+
+async function requestSatelliteRaw(fingerprint: string, input: SatelliteRequest): Promise<SatelliteResponse> {
+  const sat = satelliteFor(fingerprint);
+  const fp = sat?.fingerprint ?? fingerprint.toLowerCase();
+  const route = selectRequestRoute(fp, annexIdentity.getIdentity()?.fingerprint ?? '', {
+    direct: sat?.state === 'connected' ? { fingerprint: fp, host: sat.host, port: sat.mainPort, source: 'known' } : null,
+    reverse: reverseRequestReady(fp),
+  });
+  if (!route) throw new Error('Satellite not connected');
+  if (input.signal?.aborted) throw new Error('Annex request aborted.');
+  const response = route.via === 'reverse' ? await annexControl.request(fp, input, input) : await new Promise<SatelliteResponse>((resolve, reject) => {
+    const tlsOptions = pinnedTlsOptionsFor(fp);
+    let settled = false;
+    const fail = (error: Error) => { if (!settled) { settled = true; reject(error); } };
+    const body = input.body;
+    const req = https.request(`https://${bracketHost(route.route.host)}:${route.route.port}${input.path}`, {
+      ...tlsOptions, method: input.method, timeout: input.timeoutMs, signal: input.signal,
+      headers: { ...input.headers, ...(body !== undefined && { 'Content-Length': Buffer.byteLength(body) }) },
+    }, (res) => {
+      const chunks: Buffer[] = [];
+      let bytes = 0;
+      res.on('error', fail);
+      res.on('data', (chunk: Buffer) => {
+        if (settled || input.signal?.aborted) return;
+        bytes += chunk.length;
+        if (input.maxResponseBytes !== undefined && bytes > input.maxResponseBytes) {
+          const error = new Error('Annex response exceeds its byte limit.');
+          fail(error); req.destroy(error); return;
+        }
+        chunks.push(chunk);
+      });
+      res.on('end', () => {
+        if (settled || input.signal?.aborted) return;
+        settled = true;
+        resolve({ status: res.statusCode ?? 0, headers: res.headers ?? {}, body: Buffer.concat(chunks) });
+      });
+      res.on('close', () => { if (!settled) fail(new Error('Annex response closed before completion.')); });
+    });
+    req.on('error', fail);
+    req.on('timeout', () => { fail(new Error('Timeout')); req.destroy(); });
+    if (body !== undefined) req.write(body);
+    req.end();
+  });
+  if (sat && response.status === 401) noteRestRefusal(sat, response.status, response.body.toString('utf8'));
+  return response;
+}
+
+async function satelliteHttpsRequest(
   fingerprint: string,
   method: 'GET' | 'POST' | 'PATCH' | 'DELETE',
   urlPath: string,
   body?: Record<string, unknown>,
 ): Promise<unknown> {
-  const sat = satellites.get(fingerprint);
-  if (!sat || sat.state !== 'connected') return Promise.reject(new Error('Satellite not connected'));
-
-  const tlsOptions = pinnedTlsOptionsFor(sat.fingerprint);
-  const url = satelliteUrl(sat, `${urlPath}`);
-
-  return new Promise<unknown>((resolve, reject) => {
-    const bodyStr = body ? JSON.stringify(body) : undefined;
-    const traceparent = currentTraceparent();
-    const headers: Record<string, string | number> = {
-      ...(bodyStr ? { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(bodyStr) } : {}),
-      ...(traceparent ? { traceparent } : {}),
-    };
-    const options: https.RequestOptions = {
-      ...tlsOptions,
-      method,
-      timeout: 30000,
-      headers: Object.keys(headers).length > 0 ? headers : undefined,
-    };
-
-    const req = https.request(url, options, (res) => {
-      const chunks: Buffer[] = [];
-      res.on('data', (chunk: Buffer) => chunks.push(chunk));
-      res.on('end', () => {
-        const text = Buffer.concat(chunks).toString('utf-8');
-        if (res.statusCode && res.statusCode >= 200 && res.statusCode < 300) {
-          try { resolve(JSON.parse(text)); }
-          catch { resolve(text); }
-        } else {
-          noteRestRefusal(sat, res.statusCode, text);
-          reject(new Error(`HTTP ${res.statusCode}: ${text.slice(0, 200)}`));
-        }
-      });
-    });
-    req.on('error', (err) => reject(err));
-    req.on('timeout', () => { req.destroy(); reject(new Error('Timeout')); });
-    if (bodyStr) req.write(bodyStr);
-    req.end();
-  });
+  const traceparent = currentTraceparent();
+  const res = await requestSatelliteRaw(fingerprint, { method, path: urlPath, timeoutMs: 30000,
+    body: body ? JSON.stringify(body) : undefined,
+    headers: { ...(body && { 'content-type': 'application/json' }), ...(traceparent && { traceparent }) } });
+  const text = res.body.toString('utf8');
+  if (res.status < 200 || res.status >= 300) {
+    throw new Error(`HTTP ${res.status}: ${text.slice(0, 200)}`);
+  }
+  try { return JSON.parse(text); }
+  catch { return text; } // telemetry-exempt: non-JSON success bodies are valid
 }
 
 // ---------------------------------------------------------------------------
@@ -2321,57 +2228,21 @@ export const REMOTE_CHAT_COMMANDS = ['chat.send', 'chat.interrupt', 'chat.queue.
 
 /** A JSON POST to another machine over the pinned connection (#3064, agent calls and connections). */
 export function postToMachine(machine: string, urlPath: string, body: Record<string, unknown>, options?: { signal?: AbortSignal; maxResponseBytes?: number }): Promise<{ status: number; body: unknown }> {
-  const sat = satelliteFor(machine);
-  if (!sat) return Promise.reject(new Error('Satellite not connected'));
-  return satelliteJson(sat.fingerprint, 'POST', urlPath, body, options);
+  return satelliteJson(machine, 'POST', urlPath, body, options);
 }
 
 /** A JSON request over the pinned connection, answering its status and body whatever the status. */
-function satelliteJson(fingerprint: string, method: 'GET' | 'POST', urlPath: string, body?: Record<string, unknown>, options?: { signal?: AbortSignal; maxResponseBytes?: number }): Promise<{ status: number; body: unknown; retryAfterMs?: number }> {
-  const sat = satellites.get(fingerprint);
-  if (!sat || sat.state !== 'connected') return Promise.reject(new Error('Satellite not connected'));
-  if (options?.signal?.aborted) return Promise.reject(new Error('Annex request aborted.'));
-  const tlsOptions = pinnedTlsOptionsFor(sat.fingerprint);
-  return new Promise((resolve, reject) => {
-    const bodyStr = body ? JSON.stringify(body) : undefined;
-    const req = https.request(satelliteUrl(sat, urlPath), {
-      ...tlsOptions,
-      method,
-      signal: options?.signal,
-      timeout: 30000,
-      ...(bodyStr && { headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(bodyStr) } }),
-    }, (res) => {
-      const chunks: Buffer[] = [];
-      let bytes = 0;
-      res.on('error', reject);
-      res.on('data', (chunk: Buffer) => {
-        if (options?.signal?.aborted) return;
-        bytes += chunk.byteLength;
-        if (options?.maxResponseBytes !== undefined && bytes > options.maxResponseBytes) {
-          req.destroy(new Error('Annex response exceeds its byte limit.'));
-          return;
-        }
-        chunks.push(chunk);
-      });
-      res.on('end', () => {
-        if (options?.signal?.aborted) return;
-        const text = Buffer.concat(chunks).toString('utf-8');
-        noteRestRefusal(sat, res.statusCode, text);
-        let parsed: unknown = text;
-        try { parsed = JSON.parse(text); } catch { /* telemetry-exempt: the status still says what happened */ }
-        const retryAfter = res.statusCode === 429 ? res.headers?.['retry-after'] : undefined;
-        const header = Array.isArray(retryAfter) ? retryAfter[0] : retryAfter;
-        const delay = header === undefined ? NaN : /^\d+$/.test(header) ? Number(header) * 1000 : Date.parse(header) - Date.now();
-        resolve({ status: res.statusCode ?? 0, body: parsed,
-          ...(Number.isFinite(delay) && { retryAfterMs: Math.min(2 ** 31 - 1, Math.max(250, delay)) }),
-        });
-      });
-    });
-    req.on('error', reject);
-    req.on('timeout', () => { req.destroy(); reject(new Error('Timeout')); });
-    if (bodyStr) req.write(bodyStr);
-    req.end();
-  });
+async function satelliteJson(fingerprint: string, method: 'GET' | 'POST', urlPath: string, body?: Record<string, unknown>, options?: { signal?: AbortSignal; maxResponseBytes?: number }): Promise<{ status: number; body: unknown; retryAfterMs?: number }> {
+  const res = await requestSatelliteRaw(fingerprint, { method, path: urlPath, timeoutMs: 30000, ...options,
+    body: body ? JSON.stringify(body) : undefined, ...(body && { headers: { 'content-type': 'application/json' } }) });
+  const text = res.body.toString('utf8');
+  let parsed: unknown = text;
+  try { parsed = JSON.parse(text); } catch { /* telemetry-exempt: the status still says what happened */ }
+  const retryAfter = res.status === 429 ? res.headers['retry-after'] : undefined;
+  const header = Array.isArray(retryAfter) ? retryAfter[0] : retryAfter;
+  const delay = header === undefined ? NaN : /^\d+$/.test(header) ? Number(header) * 1000 : Date.parse(header) - Date.now();
+  return { status: res.status, body: parsed,
+    ...(Number.isFinite(delay) && { retryAfterMs: Math.min(2 ** 31 - 1, Math.max(250, delay)) }) };
 }
 
 function rememberEpoch(fingerprint: string, body: unknown): void {
@@ -3010,12 +2881,14 @@ function startControlConnections(): void {
 }
 
 export function startClient(): void {
+  clientRunning = true;
   startControlConnections();
   startDiscovery();
   restorePairedSatellites();
 }
 
 export function stopClient(): void {
+  clientRunning = false;
   stopControlRouteWatch?.();
   stopControlRouteWatch = null;
   annexControl.setConnectionSource(null);
