@@ -116,6 +116,17 @@ import { getConnectionDirection, setConnectionLink, setConnectionTools } from '.
 import { registerAgentTools } from '../../src/main/services/clubhouse-mcp/tools/agent-tools';
 import { runAgentToolForRemoteCaller } from '../../src/main/services/clubhouse-mcp/tool-registry';
 import { bindingManager } from '../../src/main/services/clubhouse-mcp/binding-manager';
+import { onMembershipChanged } from '../../src/main/services/annex-network-membership';
+import { startGroupProjectNetwork } from '../../src/main/services/group-project-network';
+import { remoteGroupProjectGrantGate } from '../../src/main/services/group-project-remote-grants';
+import { groupProjectRoster } from '../../src/main/services/group-project-roster';
+import { startProjectLinksNetwork } from '../../src/main/services/project-links-network';
+import { changeProjectLinks, projectLinksStore } from '../../src/main/services/project-links-store';
+import { startLinkedProjectStateNetwork } from '../../src/main/services/linked-project-state-network';
+import { startLinkedProjectStateService } from '../../src/main/services/linked-project-state-service';
+import { applyProjectStateChange, flushProjectStateForTests, getProjectState, hydrateProjectState } from '../../src/main/services/project-state-store';
+import type { ReplicaNetworkOptions } from '../../src/main/services/replica-network';
+import { withSettingsSurface } from '../../src/main/services/settings-audit';
 
 export interface InventoryPeerInfo extends PeerInfo {
   projectId: string;
@@ -207,6 +218,28 @@ export async function createInventoryPeer(alias: string) {
       return config ? { name: config.name, projectName: project.name } : undefined;
     },
   });
+  const memberOptions = {
+    isMember: agentCalls.isNetworkComputer,
+    members: () => peers.listPeers().map((peer) => peer.fingerprint.toLowerCase()).filter(agentCalls.isNetworkComputer),
+    onMembershipChanged,
+  };
+  const transport = {
+    connected: client.isMachineConnected, post: client.postToMachine,
+    machineName: client.machineAlias, onConnected: client.onSatelliteConnected,
+  };
+  const stopGroups = startGroupProjectNetwork({ ...memberOptions, transport });
+  groupProjectHost.setRemoteWriteGate(remoteGroupProjectGrantGate);
+  const replicas: ReplicaNetworkOptions = {
+    ...memberOptions,
+    isMember: (machine) => settings.networkEnabled() && agentCalls.isNetworkComputer(machine),
+    members: () => settings.networkEnabled() ? memberOptions.members() : [],
+    pairing: (machine) => { const peer = peers.getPeer(machine); return peer && JSON.stringify([peer.tlsCertificateFingerprint, peer.pairingId]); },
+    transport: { ...transport, post: (machine, url, body) => client.postToMachine(machine, url, body, { maxResponseBytes: 1024 * 1024 }) },
+  };
+  const stopLinks = startProjectLinksNetwork(replicas);
+  const stopLinkedNetwork = startLinkedProjectStateNetwork(replicas);
+  hydrateProjectState({});
+  const linkedState = startLinkedProjectStateService();
   let remote: InventoryPeerInfo | undefined;
   let policy: DialPolicy | undefined;
   let routePort = 0;
@@ -324,6 +357,37 @@ export async function createInventoryPeer(alias: string) {
       if (!remote) throw new Error('Inventory peer is not configured');
       return setConnectionTools({ agentId: agent.id }, { agentId: remote.agentId, machineId: remote.fingerprint }, disabled);
     },
+    async projectLink(link: boolean) {
+      if (!remote) throw new Error('Inventory peer is not configured');
+      return withSettingsSurface('ui', undefined, () => changeProjectLinks(link
+        ? { type: 'link', a: project.id, b: `remote||${remote.fingerprint}||${remote.projectId}` }
+        : { type: 'unlink', a: project.id }));
+    },
+    async linkedState() {
+      await linkedState.settled();
+      await flushProjectStateForTests();
+      return { groups: projectLinksStore().groups(), pinned: getProjectState().pinnedProjectIds.includes(project.id), inactive: getProjectState().inactiveProjectIds.includes(project.id) };
+    },
+    projectPin(pinned: boolean) { return applyProjectStateChange({ type: 'setPinned', projectId: project.id, pinned }); },
+    projectInactive(inactive: boolean) { return applyProjectStateChange({ type: 'setInactive', projectId: project.id, inactive, at: Date.now() }); },
+    async createNetworkGroup() {
+      const group = await groupProjectHost.create(`${alias} shared board`, { scope: { level: 'app', reach: 'network' } });
+      await groupProjectHost.updateMembership(group.id, (draft) => {
+        draft.explicit.push({ address: agent.id, name: agent.name, kind: 'durable', addedAt: new Date().toISOString() });
+      });
+      return group.id;
+    },
+    async networkGroup(id: string) {
+      const group = await groupProjectHost.get(id);
+      return group ? { group, messages: await getBulletinBoard(id).getAllMessages() } : null;
+    },
+    networkPost(input: { id: string; body: string }) {
+      return groupProjectHost.post(input.id, 'user', 'general', input.body, { author: { label: 'user' } });
+    },
+    networkUpdate(input: { id: string; description: string }) {
+      return groupProjectHost.update(input.id, { description: input.description }, { author: { label: 'user' } });
+    },
+    networkRoster(id: string) { return groupProjectRoster.describe(id); },
     async durable(input?: { projectId: string; useWorktree: boolean }) {
       if (!remote) throw new Error('Inventory peer is not configured');
       const projectId = input?.projectId ?? remote.projectId;
@@ -484,6 +548,10 @@ export async function createInventoryPeer(alias: string) {
       };
     },
     async close() {
+      linkedState.stop();
+      stopLinkedNetwork();
+      stopLinks();
+      stopGroups();
       stopAgentCalls();
       client.stopClient();
       await runtime.stop();

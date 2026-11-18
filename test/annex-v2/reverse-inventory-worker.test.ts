@@ -31,6 +31,15 @@ describe.runIf(process.env.CLUBHOUSE_ANNEX_INVENTORY_PEER === '1')('isolated ful
         case 'agentCall': return peer.agentCall(params as Parameters<typeof peer.agentCall>[0]);
         case 'connections': return peer.connections();
         case 'connectionTools': return peer.connectionTools(params as string[]);
+        case 'projectLink': return peer.projectLink(params as boolean);
+        case 'linkedState': return peer.linkedState();
+        case 'projectPin': return peer.projectPin(params as boolean);
+        case 'projectInactive': return peer.projectInactive(params as boolean);
+        case 'createNetworkGroup': return peer.createNetworkGroup();
+        case 'networkGroup': return peer.networkGroup(params as string);
+        case 'networkPost': return peer.networkPost(params as Parameters<typeof peer.networkPost>[0]);
+        case 'networkUpdate': return peer.networkUpdate(params as Parameters<typeof peer.networkUpdate>[0]);
+        case 'networkRoster': return peer.networkRoster(params as string);
         case 'durable': return peer.durable(params as Parameters<typeof peer.durable>[0]);
         case 'seedLargeText': return peer.seedLargeText();
         case 'largeText': return peer.largeText();

@@ -330,6 +330,54 @@ describe('full-server audit inventory over one A to B forward', () => {
     expect(JSON.parse(Buffer.from(answer.body, 'base64').toString())).toMatchObject({ deviceName: target(who).alias });
   });
 
+  it.each(['A', 'B'] as const)('R17 %s: links, shared Pin and Mark inactive replicate into the real project state', async (who) => {
+    const link = (enabled: boolean) => who === 'A' ? a.projectLink(enabled) : b.call('projectLink', enabled);
+    await link(true);
+    await vi.waitFor(async () => {
+      expect((await a.linkedState()).groups).toHaveLength(1);
+      expect((await b.call<Awaited<ReturnType<InventoryPeer['linkedState']>>>('linkedState')).groups).toHaveLength(1);
+    });
+    if (who === 'A') a.projectPin(true); else await b.call('projectPin', true);
+    await vi.waitFor(async () => {
+      expect((await a.linkedState()).pinned).toBe(true);
+      expect((await b.call<Awaited<ReturnType<InventoryPeer['linkedState']>>>('linkedState')).pinned).toBe(true);
+    });
+    if (who === 'A') a.projectPin(false); else await b.call('projectPin', false);
+    await vi.waitFor(async () => {
+      expect((await a.linkedState()).pinned).toBe(false);
+      expect((await b.call<Awaited<ReturnType<InventoryPeer['linkedState']>>>('linkedState')).pinned).toBe(false);
+    });
+    const inactive = who === 'A';
+    if (who === 'A') a.projectInactive(inactive); else await b.call('projectInactive', inactive);
+    await vi.waitFor(async () => {
+      expect((await a.linkedState()).inactive).toBe(inactive);
+      expect((await b.call<Awaited<ReturnType<InventoryPeer['linkedState']>>>('linkedState')).inactive).toBe(inactive);
+    });
+    await link(false);
+    await vi.waitFor(async () => {
+      expect((await a.linkedState()).groups).toHaveLength(0);
+      expect((await b.call<Awaited<ReturnType<InventoryPeer['linkedState']>>>('linkedState')).groups).toHaveLength(0);
+    });
+  });
+
+  it.each(['A', 'B'] as const)('R18/R19 %s: host notices trigger reverse pulls, replica writes reach the host and rosters come from it', async (who) => {
+    const id = who === 'A' ? await b.call<string>('createNetworkGroup') : await a.createNetworkGroup();
+    const replica = (): ReturnType<InventoryPeer['networkGroup']> => who === 'A' ? a.networkGroup(id) : b.call('networkGroup', id);
+    const host = (): ReturnType<InventoryPeer['networkGroup']> => who === 'A' ? b.call('networkGroup', id) : a.networkGroup(id);
+    await vi.waitFor(async () => { expect((await replica())?.group.network).toMatchObject({ role: 'replica' }); });
+    const input = { id, description: `host changed for ${who}` };
+    if (who === 'A') await b.call('networkUpdate', input); else await a.networkUpdate(input);
+    await vi.waitFor(async () => { expect((await replica())?.group.description).toBe(input.description); });
+    const post = { id, body: `replica write from ${who}` };
+    const message = who === 'A' ? await a.networkPost(post) : await b.call<Awaited<ReturnType<InventoryPeer['networkPost']>>>('networkPost', post);
+    expect(message.pending).toBeUndefined();
+    expect(message.body).toBe(post.body);
+    expect((await host())?.messages.filter(({ id }) => id === message.id)).toHaveLength(1);
+    expect((await replica())?.messages.filter(({ id }) => id === message.id)).toHaveLength(1);
+    const roster = who === 'A' ? await a.networkRoster(id) : await b.call<Awaited<ReturnType<InventoryPeer['networkRoster']>>>('networkRoster', id);
+    expect(roster).toMatchObject({ groupProjectId: id, status: 'available', source: 'live', members: [expect.objectContaining({ agentId: target(who).agentId, machine: target(who).fingerprint })] });
+  });
+
   describe('R11: all five Git reads and ten writes use the actual Git service', () => {
     let aGit: Awaited<ReturnType<InventoryPeer['seedGitProject']>>;
     let bGit: typeof aGit;
