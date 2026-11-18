@@ -109,6 +109,7 @@ import { bindingManager } from '../binding-manager';
 import { mcpAdapter } from '../mcp-adapter';
 import { _resetAllBoardsForTesting, getBulletinBoard } from '../../group-project-bulletin';
 import { groupProjectRegistry } from '../../group-project-registry';
+import { groupProjectHost } from '../../group-project-host';
 import { agentRegistry } from '../../agent-registry';
 import { clearChatRuntimes, registerChatRuntime } from '../../agent-runtime';
 import { registerGroupProjectTools } from './group-project-tools';
