@@ -193,14 +193,9 @@ export function memberSubscriptions(membership: GroupProjectMembership, address:
   return topics;
 }
 
-function escapeRegExp(text: string): string {
-  return text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-}
-
-/** Whether a post names this member as `@name`. */
+/** Compatibility helper; all parsing is shared with the board tools. */
 export function mentions(body: string, name: string): boolean {
-  if (!name) return false;
-  return new RegExp(`(^|[^\\w@])@${escapeRegExp(name)}(?![\\w-])`, 'i').test(body);
+  return resolveMentions(body, [{ name, address: name }]).addresses.has(name);
 }
 
 /** The lead: an agent granted lead on this group project, Allow or Ask first (#3360). */

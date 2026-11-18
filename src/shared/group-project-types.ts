@@ -302,7 +302,7 @@ export interface GroupProjectRoleHolderView {
 /** A group project's own grants and who leads and administers it (#3360). */
 export interface GroupProjectRolesView {
   groupProjectId: string;
-  /** What it does by itself: post notices to members, and wake a member with a lead's shoulder tap. */
+  /** What it does by itself: post notices to members, and resume sleeping members for inbox posts or mentions. */
   own: { deliver: 'allow' | 'off'; wake: 'allow' | 'off'; actions: 'allow' | 'off' };
   holders: GroupProjectRoleHolderView[];
 }
