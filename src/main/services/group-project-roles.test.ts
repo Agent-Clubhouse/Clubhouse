@@ -54,7 +54,7 @@ describe('delivery configuration shown by every renderer surface', () => {
     const project = gp('delivery', { grants });
     expect(postNotificationsAllowed(project)).toBe(groupProjectMay(project, 'deliver'));
     expect(postNotificationState(project)).toBe(groupProjectMay(project, 'deliver') ? 'On' : 'Off');
-    expect(postNotificationState({ metadata: { ...project.metadata, pollingEnabled: true } })).toBe('Legacy polling');
+    expect(postNotificationState({ metadata: { ...project.metadata, pollingEnabled: true } })).toBe(groupProjectMay(project, 'deliver') ? 'On' : 'Off');
   });
 });
 

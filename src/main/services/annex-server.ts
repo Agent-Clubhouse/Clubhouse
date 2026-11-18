@@ -104,9 +104,8 @@ import * as pluginManifestRegistry from './plugin-manifest-registry';
 import { readKey as readPluginStorageKey, writeKey as writePluginStorageKey } from './plugin-storage';
 import { groupProjectRegistry } from './group-project-registry';
 import { groupProjectHost } from './group-project-host';
+import { postLegacyGroupMessage } from './group-project-legacy-message';
 import * as groupProjectNetwork from './group-project-network';
-import { executeShoulderTap } from './group-project-shoulder-tap';
-import { setProjectPolling } from './group-project-polling';
 import { describeGroupProjectRoles, grantGroupProjectRole, GroupProjectRoleError } from './group-project-roles';
 import { agentRegistry } from './agent-registry';
 import { bindingManager } from './clubhouse-mcp/binding-manager';
@@ -3431,30 +3430,7 @@ async function handleGroupProjectPostMessageRoute(ctx: AnnexRouteContext, match:
   });
 }
 
-async function handleGroupProjectShoulderTapRoute(ctx: AnnexRouteContext, match: RegExpMatchArray): Promise<void> {
-  if (ctx.requireMtls()) return;
-  const gpId = decodeURIComponent(match[1]);
-  const project = await groupProjectRegistry.get(gpId);
-  if (!project) {
-    sendJson(ctx.res, 404, { error: 'group_project_not_found' });
-    return;
-  }
-  readJsonBody(ctx, async (body) => {
-    const sender = (body.sender as string) || 'remote';
-    const targetAgentId = (body.targetAgentId as string) || null;
-    const message = body.message as string;
-    if (!message) {
-      sendJson(ctx.res, 400, { error: 'message is required' });
-      return;
-    }
-    try {
-      const result = await executeShoulderTap({ projectId: gpId, senderLabel: sender, targetAgentId, message });
-      sendJson(ctx.res, 200, result);
-    } catch (err) {
-      sendJson(ctx.res, 500, { error: err instanceof Error ? err.message : 'shoulder_tap_failed' });
-    }
-  });
-}
+
 
 /** A desktop in this machine's Annex Network: not a phone, and not a session-only pairing (#3360). */
 function isDesktopNetworkMember(fingerprint: string | undefined): boolean {
@@ -3501,27 +3477,7 @@ async function handleGroupProjectRolesRoute(ctx: AnnexRouteContext, match: RegEx
   });
 }
 
-async function handleGroupProjectPollingRoute(ctx: AnnexRouteContext, match: RegExpMatchArray): Promise<void> {
-  if (ctx.requireMtls()) return;
-  const gpId = decodeURIComponent(match[1]);
-  readJsonBody(ctx, async (body) => {
-    const enabled = body.enabled;
-    if (typeof enabled !== 'boolean') {
-      sendJson(ctx.res, 400, { error: 'enabled (boolean) is required' });
-      return;
-    }
-    try {
-      const result = await setProjectPolling(gpId, enabled, { author: { label: 'user' } });
-      if (!result) {
-        sendJson(ctx.res, 404, { error: 'group_project_not_found' });
-        return;
-      }
-      sendJson(ctx.res, 200, result);
-    } catch (err) {
-      sendJson(ctx.res, 500, { error: err instanceof Error ? err.message : 'set_polling_failed' });
-    }
-  });
-}
+
 
 async function handleGroupProjectInjectRoute(ctx: AnnexRouteContext): Promise<void> {
   if (ctx.requireMtls()) return;
@@ -4749,9 +4705,9 @@ const ANNEX_HTTP_ROUTE_TABLE: AnnexHttpRoute[] = [
   { method: 'GET', pattern: /^\/api\/v1\/group-projects\/([^/]+)\/bulletin\/topics\/([^/?]+)(\?.*)?$/, handler: handleGroupProjectTopicRoute },
   { method: 'GET', pattern: /^\/api\/v1\/group-projects\/([^/]+)\/bulletin\/messages(\?.*)?$/, handler: handleGroupProjectAllMessagesRoute },
   { method: 'POST', pattern: /^\/api\/v1\/group-projects\/([^/]+)\/bulletin\/messages$/, handler: handleGroupProjectPostMessageRoute },
-  { method: 'POST', pattern: /^\/api\/v1\/group-projects\/([^/]+)\/shoulder-tap$/, handler: handleGroupProjectShoulderTapRoute },
-  { method: 'POST', pattern: /^\/api\/v1\/group-projects\/([^/]+)\/polling$/, handler: handleGroupProjectPollingRoute },
   { method: 'GET', pattern: /^\/api\/v1\/group-projects\/([^/]+)\/roles$/, handler: handleGroupProjectRolesRoute },
+  { method: 'POST', pattern: /^\/api\/v1\/group-projects\/([^/]+)\/polling$/, handler: handleGroupProjectPollingRoute },
+  { method: 'POST', pattern: /^\/api\/v1\/group-projects\/([^/]+)\/shoulder-tap$/, handler: handleGroupProjectShoulderTapRoute },
   { method: 'POST', pattern: /^\/api\/v1\/group-projects\/([^/]+)\/roles$/, handler: handleGroupProjectRolesRoute },
   { method: 'DELETE', pattern: /^\/api\/v1\/group-projects\/([^/]+)\/bulletin\/topics\/([^/]+)\/messages\/([^/]+)$/, handler: handleGroupProjectDeleteMessageRoute },
   { method: 'DELETE', pattern: /^\/api\/v1\/group-projects\/([^/]+)\/bulletin\/topics\/([^/?]+)$/, handler: handleGroupProjectDeleteTopicRoute },
@@ -7094,3 +7050,61 @@ export const _testing = {
   agentLastActivity,
   noteAgentActivity,
 };
+
+async function handleGroupProjectShoulderTapRoute(ctx: AnnexRouteContext, match: RegExpMatchArray): Promise<void> {
+  if (ctx.requireMtls()) return;
+  const gpId = decodeURIComponent(match[1]);
+  const project = await groupProjectRegistry.get(gpId);
+  if (!project) {
+    sendJson(ctx.res, 404, { error: 'group_project_not_found' });
+    return;
+  }
+  readJsonBody(ctx, async (body) => {
+    const sender = (body.sender as string) || 'remote';
+    const targetAgentId = (body.targetAgentId as string) || null;
+    const message = body.message as string;
+    if (!message) {
+      sendJson(ctx.res, 400, { error: 'message is required' });
+      return;
+    }
+    try {
+      // Deprecated route retained for older phones and supported plugin APIs.
+      // Direct messages are durable inbox posts; announcements live in general.
+      // Same person author as bulletin posts; OTHER_DESKTOP also rejects agent-driven plugin calls.
+      const posted = await postLegacyGroupMessage(groupProjectHost, project, sender, targetAgentId, message, { label: 'user' });
+      if (!posted) {
+        sendJson(ctx.res, 404, { error: 'group_project_member_not_found' });
+        return;
+      }
+      if (!posted.pending) annexEventBus.emitBulletinMessage(gpId, posted);
+      const result = { taskId: posted.id, delivered: [] as string[], failed: [] as string[], message: posted, deprecated: true };
+      sendJson(ctx.res, 200, result);
+    } catch (err) {
+      sendJson(ctx.res, 500, { error: err instanceof Error ? err.message : 'shoulder_tap_failed' });
+    }
+  });
+}
+
+async function handleGroupProjectPollingRoute(ctx: AnnexRouteContext, match: RegExpMatchArray): Promise<void> {
+  if (ctx.requireMtls()) return;
+  const gpId = decodeURIComponent(match[1]);
+  readJsonBody(ctx, async (body) => {
+    const enabled = body.enabled;
+    if (typeof enabled !== 'boolean') {
+      sendJson(ctx.res, 400, { error: 'enabled (boolean) is required' });
+      return;
+    }
+    try {
+      // Deprecated compatibility route: no caller can restart a polling loop.
+      const project = await groupProjectHost.get(gpId);
+      const result = project ? { pollingEnabled: false, mode: 'notices', members: await groupProjectHost.resolveMembers(gpId), deprecated: true } : null;
+      if (!result) {
+        sendJson(ctx.res, 404, { error: 'group_project_not_found' });
+        return;
+      }
+      sendJson(ctx.res, 200, result);
+    } catch (err) {
+      sendJson(ctx.res, 500, { error: err instanceof Error ? err.message : 'set_polling_failed' });
+    }
+  });
+}

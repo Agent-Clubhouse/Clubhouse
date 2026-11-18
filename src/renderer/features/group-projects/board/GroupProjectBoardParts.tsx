@@ -1,11 +1,9 @@
-import { Toggle } from '../../../components/Toggle';
-import React, { useState, useCallback, useEffect, useId } from 'react';
+import React, { useState, useCallback, useEffect } from 'react';
 import type { TopicDigest } from '../../../../shared/group-project-types';
 import { useAnnexStore } from '../../../stores/annexStore';
 import { Button } from '../../../components/Button';
-import { Modal } from '../../../components/Modal';
 import { Tooltip } from '../../../components/Tooltip';
-import type { GroupProjectContextValue, GroupProjectMember } from '../../../plugins/builtin/group-project/useGroupProjectContext';
+import type { GroupProjectContextValue } from '../../../plugins/builtin/group-project/useGroupProjectContext';
 
 /**
  * The pieces of a group project's board that the canvas card and the group
@@ -14,56 +12,6 @@ import type { GroupProjectContextValue, GroupProjectMember } from '../../../plug
 
 export const ALL_TOPICS_KEY = '__all__';
 export const POLL_INTERVAL_MS = 5000;
-
-/**
- * Members whose polling stopped because they lost Clubhouse tools, once they have them again.
- * Nothing restarts a loop by itself, since main can't tell it from one someone has
- * since ended, so each gets a Resume. Main decides who is offered it, and checks
- * again on the click. Local group projects only.
- */
-export function PausedPolling({ groupProjectId }: { groupProjectId: string }) {
-  const [paused, setPaused] = useState<Array<{ agentId: string; agentName: string }>>([]);
-  const [failed, setFailed] = useState<string | null>(null);
-
-  const resume = (agentId: string) => {
-    setFailed(null);
-    void window.clubhouse.groupProject.resumePolling(groupProjectId, agentId).catch(() => {
-      // telemetry-exempt: main logs the read that failed; shown here, and the offer stays to try again.
-      setFailed(agentId);
-    }).finally(load);
-  };
-
-  const load = useCallback(() => {
-    window.clubhouse.groupProject.getPausedPolling(groupProjectId).then(setPaused).catch(() => {
-      // telemetry-exempt: no offer shows, and the next change reads again.
-      setPaused([]);
-    });
-  }, [groupProjectId]);
-
-  useEffect(() => {
-    load();
-    return window.clubhouse.groupProject.onPausedPollingChanged(load);
-  }, [load]);
-
-  if (paused.length === 0) return null;
-  return (
-    <div className="flex flex-col gap-1 px-3 py-1.5 border-b border-surface-0 text-xs text-ctp-subtext0 flex-shrink-0" data-testid="polling-paused">
-      {paused.map((member) => (
-        <div key={member.agentId} className="flex items-center gap-2">
-          <span className="flex-1 min-w-0 truncate">{member.agentName}: polling paused</span>
-          <Button
-            kind="ghost"
-            onClick={() => resume(member.agentId)}
-            data-testid={`polling-resume-${member.agentId}`}
-          >
-            Resume
-          </Button>
-          {failed === member.agentId && <span role="alert" className="text-ctp-error" data-testid="polling-resume-error">Couldn’t resume. Try again.</span>}
-        </div>
-      ))}
-    </div>
-  );
-}
 
 /* ---------- Unread / read-state helpers ---------- */
 
@@ -135,119 +83,6 @@ export function FieldLabel({ htmlFor, children }: { htmlFor?: string; children: 
 }
 
 export const FIELD = 'w-full px-2 text-xs bg-ctp-base border border-surface-1 rounded-md text-ctp-text placeholder:text-ctp-overlay1 focus-ring';
-
-/* ---------- Broadcast dialog ---------- */
-
-export function BroadcastModal({
-  open,
-  members,
-  projectInstructions,
-  onClose,
-  injectMessage,
-}: {
-  open: boolean;
-  members: GroupProjectMember[];
-  projectInstructions: string;
-  onClose: () => void;
-  injectMessage: (agentId: string, message: string) => Promise<void>;
-}) {
-  const [target, setTarget] = useState<string>('all');
-  const [message, setMessage] = useState('');
-  const [includeInstructions, setIncludeInstructions] = useState(false);
-  const [sending, setSending] = useState(false);
-  const targetId = useId();
-  const messageId = useId();
-  const instructionsLabelId = useId();
-  const hasInstructions = !!projectInstructions.trim();
-
-  // Start fresh each time it opens.
-  useEffect(() => {
-    if (!open) return;
-    setTarget('all');
-    setMessage('');
-    setIncludeInstructions(false);
-  }, [open]);
-
-  const handleSend = useCallback(async () => {
-    const msg = message.trim();
-    if (!msg && !includeInstructions) return;
-    if (sending) return;
-    setSending(true);
-
-    try {
-      const parts: string[] = [];
-      if (includeInstructions && hasInstructions) {
-        parts.push(`Project Instructions:\n${projectInstructions.trim()}`);
-      }
-      if (msg) parts.push(msg);
-      const fullMessage = parts.join('\n\n');
-
-      const targets = target === 'all'
-        ? members
-        : members.filter((m) => m.agentId === target);
-
-      await Promise.all(targets.map((member) => injectMessage(member.agentId, fullMessage)));
-
-      onClose();
-    } catch (err) {
-      console.error('Broadcast message failed:', err);
-    } finally {
-      setSending(false);
-    }
-  }, [message, includeInstructions, hasInstructions, projectInstructions, sending, target, members, onClose, injectMessage]);
-
-  return (
-    <Modal
-      open={open}
-      onClose={onClose}
-      title="Broadcast message"
-      testId="group-project-broadcast"
-      footer={(
-        <>
-          <Button kind="ghost" onClick={onClose}>Cancel</Button>
-          <Button kind="primary" onClick={() => void handleSend()} disabled={(!message.trim() && !includeInstructions) || sending}>
-            {sending ? 'Sending…' : 'Send'}
-          </Button>
-        </>
-      )}
-    >
-      <div className="flex flex-col gap-3">
-        <div>
-          <FieldLabel htmlFor={targetId}>Send to</FieldLabel>
-          <select id={targetId} value={target} onChange={(e) => setTarget(e.target.value)} className={`${FIELD} h-7`}>
-            <option value="all">Every agent</option>
-            {members.map((m) => (
-              <option key={m.agentId} value={m.agentId}>{m.agentName || m.agentId}</option>
-            ))}
-          </select>
-        </div>
-        <div className="h-7 flex items-center justify-between gap-2">
-          <span id={instructionsLabelId} className={`text-xs ${hasInstructions ? 'text-ctp-subtext1' : 'text-ctp-overlay1'}`}>
-            Include project instructions
-          </span>
-          <Toggle
-            checked={includeInstructions}
-            onChange={() => setIncludeInstructions((v) => !v)}
-            disabled={!hasInstructions}
-            aria-labelledby={instructionsLabelId}
-          />
-        </div>
-        <div>
-          <FieldLabel htmlFor={messageId}>Message</FieldLabel>
-          <textarea
-            id={messageId}
-            value={message}
-            onChange={(e) => setMessage(e.target.value)}
-            placeholder="What should they do?"
-            rows={4}
-            className={`${FIELD} py-1.5 resize-none`}
-            autoFocus
-          />
-        </div>
-      </div>
-    </Modal>
-  );
-}
 
 /* ---------- Retention Settings ---------- */
 
@@ -333,25 +168,6 @@ export function RetentionSettings({ groupProjectId, disabledReason = null }: { g
 }
 
 /* ---------- Icons ---------- */
-
-export function MegaphoneIcon({ size = 14 }: { size?: number }) {
-  return (
-    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M3 11l18-5v12L3 13v-2z" />
-      <path d="M11.6 16.8a3 3 0 1 1-5.8-1.6" />
-    </svg>
-  );
-}
-
-export function NudgeIcon({ size = 14 }: { size?: number }) {
-  return (
-    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9" />
-      <path d="M13.73 21a2 2 0 0 1-3.46 0" />
-      <line x1="12" y1="2" x2="12" y2="4" />
-    </svg>
-  );
-}
 
 export function OpenIcon({ size = 14 }: { size?: number }) {
   return (

@@ -422,7 +422,7 @@ export function registerAnnexClientHandlers(): void {
     },
   ));
 
-  // Group Project proxy: set project-wide polling setting on satellite
+  // Deprecated plugin compatibility: polling is retired on the satellite
   ipcMain.handle(IPC.ANNEX_CLIENT.GP_SET_POLLING, withValidatedArgs(
     [stringArg(), stringArg(), booleanArg()],
     async (_event, satelliteId, groupProjectId, enabled) => {

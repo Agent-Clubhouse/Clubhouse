@@ -474,8 +474,6 @@ vi.mock('./annex-event-bus', () => ({
 }));
 vi.mock('./group-project-registry', () => ({ groupProjectRegistry: { list: async () => [], get: async () => null, update: async () => null, onChange: () => () => {} } }));
 vi.mock('./group-project-bulletin', () => ({ getBulletinBoard: () => ({ getDigest: async () => [], getTopicMessages: async () => [], getAllMessages: async () => [] }) }));
-vi.mock('./group-project-shoulder-tap', () => ({ executeShoulderTap: async () => ({ taskId: 'tap_1', delivered: [], failed: [] }) }));
-vi.mock('./group-project-polling', () => ({ setProjectPolling: async () => ({}), getProjectPollingState: async () => ({ pollingEnabled: false, members: [] }) }));
 vi.mock('./clubhouse-mcp/binding-manager', () => ({ bindingManager: { getAllBindings: () => [] } }));
 vi.mock('./theme-service', () => ({ getActiveThemeId: () => 'catppuccin-mocha', getSettings: () => ({ themeId: 'catppuccin-mocha' }) }));
 vi.mock('./annex-settings', () => ({

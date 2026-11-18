@@ -144,13 +144,6 @@ describe('who hears about a post', () => {
     expect(await listTopicSubscriptions('gp1', 'dev', 'dev')).toEqual(['control', 'inbox-dev']);
   });
 
-  it('a group project with polling on behaves as today: no notices', async () => {
-    fx.gp.metadata = { pollingEnabled: true };
-    const dev = runtime('dev');
-    await post('qa@Release', 'general');
-    await vi.advanceTimersByTimeAsync(COALESCE_MS);
-    expect(dev.sendMessage).not.toHaveBeenCalled();
-  });
 
   it('notices are the group project\'s own action: none when its deliver grant is off (#3360)', async () => {
     fx.gp.metadata = { grants: { deliver: 'off', wake: 'off' } };
@@ -312,15 +305,6 @@ describe('review fixes', () => {
     expect(dev.sendMessage).not.toHaveBeenCalled();
   });
 
-  it('a held summary isn\'t sent once the group project is back on polling', async () => {
-    await post('qa@Release', 'general');
-    await vi.advanceTimersByTimeAsync(COALESCE_MS);
-    fx.gp.metadata = { pollingEnabled: true };
-    const dev = runtime('dev');
-    for (const fn of fx.connected) fn('dev');
-    await vi.advanceTimersByTimeAsync(WAKE_SUMMARY_DELAY_MS);
-    expect(dev.sendMessage).not.toHaveBeenCalled();
-  });
 
   it('leaves the sender out by address, even when another member has its name', async () => {
     fx.members = [{ address: 'dev', name: 'dev' }, { address: 'dev-2', name: 'dev' }];

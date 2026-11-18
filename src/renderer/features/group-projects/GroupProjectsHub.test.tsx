@@ -38,7 +38,7 @@ describe('GroupProjectsHub states', () => {
     [{}, 'Post notifications: On'],
     [{ pollingEnabled: false }, 'Post notifications: On'],
     [{ grants: { deliver: 'off' } }, 'Post notifications: Off'],
-    [{ pollingEnabled: true }, 'Checking for new posts: Legacy polling'],
+    [{ pollingEnabled: true }, 'Post notifications: On'],
   ])('exposes the effective state in the row for %j', async (metadata, label) => {
     vi.mocked(window.clubhouse.groupProject.list).mockResolvedValue([{ ...appGroup, metadata }]);
     render(<Harness />);

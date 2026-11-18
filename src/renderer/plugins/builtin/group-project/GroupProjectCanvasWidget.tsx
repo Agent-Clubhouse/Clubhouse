@@ -16,7 +16,7 @@ import { useAgentStatus } from '../../../features/agents/agent-status-store';
 import { GroupProjectBoard } from '../../../features/group-projects/board/GroupProjectBoard';
 import { GroupProjectDefaultsPanel } from '../../../features/group-projects/board/GroupProjectDefaultsPanel';
 import {
-  BroadcastModal, IconButton, MegaphoneIcon, OpenIcon, PausedPolling, POLL_INTERVAL_MS,
+  IconButton, OpenIcon, POLL_INTERVAL_MS,
   ProjectScopeLine, StarIcon,
 } from '../../../features/group-projects/board/GroupProjectBoardParts';
 import { currentViewSource, openGroupWorkspaceFrom } from '../../../features/group-projects/groupWorkspaceSource';
@@ -242,9 +242,8 @@ function ProjectCard({
   groupProjectId: string;
   ctx: GroupProjectContextValue;
 }) {
-  const { project, members, loaded, loadProjects, fetchDigest, injectMessage, getRoles, setRole } = ctx;
+  const { project, members, loaded, loadProjects, fetchDigest, getRoles, setRole } = ctx;
 
-  const [showTapModal, setShowTapModal] = useState(false);
   const [topics, setTopics] = useState<TopicDigest[]>([]);
   const getLastRead = useBulletinReadStore((s) => s.getLastRead);
 
@@ -269,7 +268,6 @@ function ProjectCard({
   }, [groupProjectId, fetchDigest, getLastRead]);
 
   const description = project?.description || '';
-  const pollingEnabled = project?.metadata?.pollingEnabled === true;
 
   const totalMessages = topics.reduce((sum, t) => sum + t.messageCount, 0);
   const totalNew = topics.reduce((sum, t) => sum + t.newMessageCount, 0);
@@ -303,7 +301,6 @@ function ProjectCard({
           {members.length} {members.length === 1 ? 'agent' : 'agents'}
         </span>
         <span className="flex-1" />
-        <IconButton label="Broadcast message" onClick={() => setShowTapModal(true)}><MegaphoneIcon /></IconButton>
         <Tooltip content={`${project ? postNotificationLabel(project) : 'Loading post notifications...'}. Saved configuration, not confirmation that messages reached members on other computers.`}>
           <span role="status" aria-label="Post notifications" tabIndex={0} className="min-w-0 truncate rounded-sm text-xs text-ctp-subtext1 focus-visible:outline focus-visible:outline-1 focus-visible:outline-ctp-accent">{project ? postNotificationLabel(project) : 'Loading post notifications...'}</span>
         </Tooltip>
@@ -319,7 +316,6 @@ function ProjectCard({
         </Tooltip>
       )}
 
-      {!ctx.isRemote && pollingEnabled && <PausedPolling groupProjectId={groupProjectId} />}
 
       {/* Members: the star gives an agent the lead grant on this group project (#3360). */}
       {members.length > 0 && (
@@ -335,13 +331,6 @@ function ProjectCard({
         </ul>
       )}
 
-      <BroadcastModal
-        open={showTapModal}
-        members={members}
-        projectInstructions={project?.instructions || ''}
-        onClose={() => setShowTapModal(false)}
-        injectMessage={injectMessage}
-      />
     </div>
   );
 }
@@ -367,7 +356,7 @@ function MemberRow({ member, lead, onToggleLead }: { member: GroupProjectMember;
       )}
       <IconButton
         label="Project lead"
-        tooltip="Project lead: can broadcast, tap, wake and manage members' context"
+        tooltip="Project lead: can wake, sleep and manage members' context"
         pressed={lead}
         onClick={(e) => { e.stopPropagation(); onToggleLead(); }}
       >

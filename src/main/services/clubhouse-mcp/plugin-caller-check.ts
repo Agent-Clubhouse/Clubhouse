@@ -47,7 +47,7 @@ export function isPluginFileCheck(value: unknown): value is PluginFileCheck {
 export const CALL_OVER = 'The agent\'s tool call this plugin was answering is over, so this can\'t run for it.';
 
 /** The group project tool that does each action to a member, as the group's tools are turned on or off per wire. */
-const GROUP_TOOL: Partial<Record<GrantAction, string>> = { 'agent.wake': 'wake_agent', 'agent.sleep': 'sleep_agent', 'agent.message': 'shoulder_tap' };
+const GROUP_TOOL: Partial<Record<GrantAction, string>> = { 'agent.wake': 'wake_agent', 'agent.sleep': 'sleep_agent' };
 
 /**
  * Whether `callerId` administers a group project `agentId` is a member of, with that group's tool for

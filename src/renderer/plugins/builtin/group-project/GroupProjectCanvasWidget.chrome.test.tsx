@@ -16,7 +16,6 @@ class SizedResizeObserver {
 }
 Object.defineProperty(globalThis, 'ResizeObserver', { value: SizedResizeObserver, writable: true });
 
-const setPolling = vi.fn(async () => {});
 const update = vi.fn(async () => {});
 const deleteTopic = vi.fn(async () => true);
 let admins: string[] = [];
@@ -37,7 +36,6 @@ vi.mock('./useGroupProjectContext', () => ({
     loaded: true,
     loadProjects: vi.fn(async () => {}),
     update,
-    setPolling,
     // Roles are read and set where the group project lives: here, the local IPC (#3360).
     getRoles: (id: string) => window.clubhouse.groupProject.getRoles(id),
     setRole: (id: string, agentId: string, role: 'lead' | 'admin', mode: 'allow' | 'ask' | 'off') => window.clubhouse.groupProject.setRole(id, agentId, role, mode),
@@ -281,13 +279,6 @@ describe('group project card (compact)', () => {
     expect(within(row).getByText(word)).toBeInTheDocument();
   });
 
-  it('opens the broadcast dialog on the shared Modal', async () => {
-    renderWidget();
-    await userEvent.click(screen.getByRole('button', { name: 'Broadcast message' }));
-    const dialog = await screen.findByRole('dialog');
-    expect(within(dialog).getByText('Broadcast message')).toBeInTheDocument();
-    expect(within(dialog).getByRole('switch', { name: 'Include project instructions' })).toBeInTheDocument();
-  });
 });
 
 describe('group project card (expanded)', () => {

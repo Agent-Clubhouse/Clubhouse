@@ -45,7 +45,6 @@ import { captureBeforePrompt } from './checkpoint-tracker';
 import { noteChatStartFailure, noteNextStartNotice, takeNextStartNotices } from './stale-session';
 import { chatResumeResult, recordResumeOutcome, recordSessionCapture } from '../../telemetry/session-telemetry';
 import { chatSleepInfo, recordSleep, takeKillRequest } from './sleep-reason';
-import { waitsOnPollingGroupProject } from './idle-policy';
 import { sessionOutputDir } from './session-output';
 import { chatIdleTimeoutMs, onAgentIdleSleepChange, setAgentIdleSleep } from '../chat-idle-settings';
 import { codePart, recordBreadcrumb } from '../breadcrumbs';
@@ -671,7 +670,6 @@ async function runChatStart(
       lastSeq: continued?.lastSeq,
       startNotices,
       idleTimeoutMs: () => chatIdleTimeoutMs(params.agentId),
-      shouldIdleSleep: () => !waitsOnPollingGroupProject(params.agentId),
       startSession: async (resumeId, startSignal) => {
         if (guardPending && params.beforeCreate) {
           try {

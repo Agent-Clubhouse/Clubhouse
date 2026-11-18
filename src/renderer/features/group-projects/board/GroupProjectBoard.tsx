@@ -12,13 +12,13 @@ import { GroupOperationStatus } from '../GroupOperationStatus';
 import { Tooltip } from '../../../components/Tooltip';
 import { hostLine } from '../../settings/GroupProjectScopeFields';
 import {
-  ALL_TOPICS_KEY, POLL_INTERVAL_MS, BroadcastModal, FIELD, GearIcon, IconButton, MegaphoneIcon, PausedPolling,
+  ALL_TOPICS_KEY, POLL_INTERVAL_MS, FIELD, GearIcon, IconButton,
   ProjectScopeLine, RetentionSettings, ShieldIcon, TrashIcon, clearUnread, formatTime, openChannel, senderShort,
 } from './GroupProjectBoardParts';
 
 /**
  * A group project's board: topics with unread counts, the messages and the open
- * message, posting, shoulder taps and broadcast, deleting messages and topics,
+ * message, posting, deleting messages and topics,
  * clear-all, topic protection, retention with its trim review, and legacy
  * polling. The canvas card and the group workspace both render this one
  * component; neither needs the other, and the board needs no canvas.
@@ -40,7 +40,7 @@ export interface GroupProjectBoardProps {
 }
 
 export function GroupProjectBoard({ groupProjectId, ctx, variant, onUpdateMetadata, headerActions, settingsBand }: GroupProjectBoardProps) {
-  const { project, members, loaded, loadProjects, update, fetchDigest, fetchTopicMessages, fetchAllMessages, postBulletinMessage, injectMessage, deleteMessage, deleteTopic, setTopicProtection, clearAllMessages } = ctx;
+  const { project, members, loaded, loadProjects, update, fetchDigest, fetchTopicMessages, fetchAllMessages, postBulletinMessage, deleteMessage, deleteTopic, setTopicProtection, clearAllMessages } = ctx;
 
   const {
     topicsWidth,
@@ -57,7 +57,6 @@ export function GroupProjectBoard({ groupProjectId, ctx, variant, onUpdateMetada
   const [selectedMessageId, setSelectedMessageId] = useState<string | null>(null);
   const [topics, setTopics] = useState<TopicDigest[]>([]);
   const [messages, setMessages] = useState<BulletinMessage[]>([]);
-  const [showTapModal, setShowTapModal] = useState(false);
   const [showRetentionSettings, setShowRetentionSettings] = useState(false);
   const [bulletinTopic, setBulletinTopic] = useState('');
   const [bulletinBody, setBulletinBody] = useState('');
@@ -74,7 +73,6 @@ export function GroupProjectBoard({ groupProjectId, ctx, variant, onUpdateMetada
   }, [loaded, loadProjects]);
 
   const displayName = project?.name || 'Group Project';
-  const pollingEnabled = project?.metadata?.pollingEnabled === true;
 
   // On a copy of a network group project, the host decides these (#3363).
   const copy = !ctx.isRemote && project?.network?.role === 'replica';
@@ -216,7 +214,6 @@ export function GroupProjectBoard({ groupProjectId, ctx, variant, onUpdateMetada
         groupProjectId={groupProjectId}
         update={update}
         onUpdateMetadata={onUpdateMetadata}
-        onShowTapModal={() => setShowTapModal(true)}
         notificationLabel={project ? postNotificationLabel(project) : 'Loading post notifications...'}
         onToggleRetention={() => setShowRetentionSettings((v) => !v)}
         showRetentionSettings={showRetentionSettings}
@@ -387,20 +384,12 @@ export function GroupProjectBoard({ groupProjectId, ctx, variant, onUpdateMetada
         </div>
       </div>
 
-      {!ctx.isRemote && pollingEnabled && <PausedPolling groupProjectId={groupProjectId} />}
 
       <ProjectScopeLine ctx={ctx} />
       <div className="h-[30px] flex items-center px-3 border-t border-surface-0 text-xs text-ctp-overlay1 flex-shrink-0">
         {members.length} {members.length === 1 ? 'agent' : 'agents'} connected
       </div>
 
-      <BroadcastModal
-        open={showTapModal}
-        members={members}
-        projectInstructions={project?.instructions || ''}
-        onClose={() => setShowTapModal(false)}
-        injectMessage={injectMessage}
-      />
     </div>
   );
 }
@@ -455,7 +444,6 @@ function BoardHeader({
   groupProjectId,
   update,
   onUpdateMetadata,
-  onShowTapModal,
   notificationLabel,
   onToggleRetention,
   showRetentionSettings,
@@ -468,7 +456,6 @@ function BoardHeader({
   groupProjectId: string;
   update: GroupProjectContextValue['update'];
   onUpdateMetadata?: (updates: Record<string, unknown>) => void;
-  onShowTapModal: () => void;
   notificationLabel: string;
   onToggleRetention: () => void;
   showRetentionSettings: boolean;
@@ -531,7 +518,6 @@ function BoardHeader({
         </Button>
       </Tooltip>
       <IconButton label="Retention settings" pressed={showRetentionSettings} onClick={onToggleRetention}><GearIcon /></IconButton>
-      <IconButton label="Broadcast message" onClick={onShowTapModal}><MegaphoneIcon /></IconButton>
       <Tooltip content={`${notificationLabel}. Saved configuration, not confirmation that messages reached members on other computers.`}>
         <span role="status" aria-label="Post notifications" tabIndex={0} className="min-w-0 truncate rounded-sm text-xs text-ctp-subtext1 focus-visible:outline focus-visible:outline-1 focus-visible:outline-ctp-accent">{notificationLabel}</span>
       </Tooltip>

@@ -26,14 +26,9 @@ group-project:post_bulletin readOnly=false destructive=false openWorld=false
 group-project:read_bulletin readOnly=true destructive=false openWorld=false
 group-project:read_topic readOnly=true destructive=false openWorld=false
 group-project:get_project_info readOnly=true destructive=false openWorld=false
-group-project:shoulder_tap readOnly=false destructive=false openWorld=false
-group-project:broadcast readOnly=false destructive=false openWorld=false
 group-project:wake_agent readOnly=false destructive=false openWorld=false
 group-project:sleep_agent readOnly=false destructive=true openWorld=false
-group-project:toggle_polling readOnly=false destructive=false openWorld=false
-group-project:query_polling readOnly=true destructive=false openWorld=false
 group-project:subscribe_topic readOnly=false destructive=false openWorld=false
-group-project:nudge_polling readOnly=false destructive=false openWorld=false
 group-project:read_message readOnly=true destructive=false openWorld=false
 group-project:clear_topic readOnly=false destructive=true openWorld=false
 group-project:clear_agent readOnly=false destructive=true openWorld=false

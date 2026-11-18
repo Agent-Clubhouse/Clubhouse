@@ -1,3 +1,4 @@
+import { knownGroupProjectTools } from '../../shared/group-project-permissions';
 /**
  * Group project membership (#3357): who is in a group project, as a record
  * on its host rather than canvas wires. MCP bindings are derived from it.
@@ -266,7 +267,7 @@ function memberBinding(gp: GroupProject, m: GroupProjectMembership, member: Reso
     agentName: member.name,
     targetName: gp.name,
     projectName: gp.name,
-    ...(disabledTools && disabledTools.length > 0 && { disabledTools: [...disabledTools] }),
+    ...(disabledTools && disabledTools.length > 0 && { disabledTools: knownGroupProjectTools(disabledTools) }),
     ...(instructions && Object.keys(instructions).length > 0 && { instructions: { ...instructions } }),
   };
 }
@@ -845,7 +846,7 @@ export async function savedMemberDisabledTools(groupProjectId: string, agentId: 
   if (!(await isMembershipManaged(groupProjectId))) return undefined;
   const key = memberPolicyKey(await requireGroupProject(groupProjectId), agentId);
   const saved = (await groupProjectHost.getMembership(groupProjectId)).disabledTools?.[key];
-  return Array.isArray(saved) ? [...saved] : undefined;
+  return Array.isArray(saved) ? knownGroupProjectTools(saved) : undefined;
 }
 
 /** Whether an agent is a member now, by the record. */
