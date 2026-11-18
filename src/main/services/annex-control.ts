@@ -140,6 +140,8 @@ export interface ControlRequestInput {
 export interface ControlRequestOptions {
   signal?: AbortSignal;
   timeoutMs?: number;
+  /** Local receive bound, checked before accepting a response body. Never sent to the target. */
+  maxResponseBytes?: number;
   /** Reuse an earlier request's id to retry it: the target answers with the original outcome instead of running it again. */
   requestId?: string;
 }
@@ -254,6 +256,7 @@ interface Pending {
   id: string;
   method: ControlMethod;
   path: string;
+  maxResponseBytes?: number;
   resolve: (result: ControlResult) => void;
   reject: (err: ControlRequestError) => void;
   cleanup: () => void;
@@ -508,7 +511,8 @@ function makeBulkLane(link: Link): ControlBulkLane {
         && !link.replying.has(id) && size <= requestBodyLimit(message.path);
       if (kind === 'response') {
         const pending = link.pending.get(id);
-        return link.direction === 'in' && !!pending && link.features!.has('request') && size <= responseBodyLimit(pending.path);
+        return link.direction === 'in' && !!pending && link.features!.has('request') && size <= responseBodyLimit(pending.path)
+          && (pending.maxResponseBytes === undefined || size <= pending.maxResponseBytes);
       }
       if (kind === 'client' && message.type === 'client') return link.direction === 'out' && !!link.features?.has('ws-control')
         && link.subscription?.id === id && !link.subscription.ended && message.frame.type === 'clipboard:image'
@@ -517,6 +521,14 @@ function makeBulkLane(link: Link): ControlBulkLane {
     },
     rejectStart: (kind, id, meta, size) => {
       const message = bulkMeta(kind, id, meta);
+      const pending = link.pending.get(id);
+      if (kind === 'response' && message?.type === 'response' && link.direction === 'in' && link.features?.has('request')
+        && pending && size <= responseBodyLimit(pending.path) && pending.maxResponseBytes !== undefined && size > pending.maxResponseBytes) {
+        link.pending.delete(id);
+        pending.cleanup();
+        pending.reject(new ControlRequestError('response_too_large', !isReadOnlyMethod(pending.method), id));
+        return true;
+      }
       if (link.direction !== 'out' || !link.features?.has('request') || link.replying.has(id) || message?.type !== 'request' || size <= requestBodyLimit(message.path) || !/\/attachments$/.test(message.path)) return false;
       return rawSend(link, { v: 1, type: 'response', id, ...toWire(jsonResponse(413, { version: 1, error: 'too_large' })) });
     },
@@ -1119,6 +1131,10 @@ function onAnswer(link: Link, message: Extract<ControlMessage, { type: 'response
     pending.reject(new ControlRequestError(message.code, !neverRan && !isReadOnlyMethod(pending.method), pending.id));
     return;
   }
+  if (pending.maxResponseBytes !== undefined && Buffer.byteLength(message.body ?? '', message.encoding ?? 'utf8') > pending.maxResponseBytes) {
+    pending.reject(new ControlRequestError('response_too_large', !isReadOnlyMethod(pending.method), pending.id));
+    return;
+  }
   pending.resolve({ status: message.status, headers: message.headers, body: decodeControlBody(message.body, message.encoding) });
 }
 
@@ -1167,6 +1183,7 @@ export function hasReverseLink(fingerprint: string, feature: ControlFeature = 'r
 export function request(fingerprint: string, input: ControlRequestInput, options: ControlRequestOptions = {}): Promise<ControlResult> {
   const id = options.requestId ?? randomUUID();
   const fail = (code: ControlErrorCode, indeterminate = false) => Promise.reject(new ControlRequestError(code, indeterminate, id));
+  if (options.maxResponseBytes !== undefined && (!Number.isSafeInteger(options.maxResponseBytes) || options.maxResponseBytes < 0)) return fail('invalid_request');
   const link = linkFor(fingerprint, 'in');
   if (!link || link.ws.readyState !== WebSocket.OPEN || !link.features) return fail('transport_unavailable');
   if (!link.features.has('request')) return fail('not_supported');
@@ -1196,7 +1213,7 @@ export function request(fingerprint: string, input: ControlRequestInput, options
       reject(new ControlRequestError(code, !readOnly, id));
     }
     options.signal?.addEventListener('abort', onAbort, { once: true });
-    link.pending.set(id, { id, method: input.method, path: input.path, resolve, reject, cleanup, progress: () => timer.refresh?.() });
+    link.pending.set(id, { id, method: input.method, path: input.path, maxResponseBytes: options.maxResponseBytes, resolve, reject, cleanup, progress: () => timer.refresh?.() });
     if (link.features?.has('bulk') && bytes && (binaryPath(input.path) || bytes.length > BULK_CHUNK_BYTES)) {
       if (bytes.length > CONTROL_FRAME_MAX_BYTES && !/\/attachments$/.test(input.path)) { link.pending.delete(id); cleanup(); reject(new ControlRequestError('request_too_large', false, id)); return; }
       const meta = { method: input.method, path: input.path, ...(input.headers && { headers: input.headers }) };

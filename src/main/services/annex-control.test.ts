@@ -383,6 +383,61 @@ describe('reverse request and response', () => {
   });
 });
 
+describe('requester response byte limits', () => {
+  it.each(['utf8', 'base64'] as const)('checks inline %s bytes before allocating the decoded body', async (encoding) => {
+    const { requesterWs } = await connected(['request']);
+    handler = async () => new Promise(() => {});
+    const body = encoding === 'utf8' ? 'éé!' : Buffer.from([1, 2, 3, 4, 255]).toString('base64');
+    const result = control.request(TARGET, { method: 'POST', path: '/cap' }, { requestId: 'limited', maxResponseBytes: 4 }).catch((e) => e);
+    const decode = vi.spyOn(Buffer, 'from');
+    try {
+      requesterWs.deliver({ v: 1, type: 'response', id: 'limited', status: 200, headers: {}, body, encoding });
+      expect(await result).toMatchObject({ code: 'response_too_large', indeterminate: true, requestId: 'limited' });
+      expect(decode).not.toHaveBeenCalledWith(body, encoding);
+    } finally { decode.mockRestore(); }
+    expect(requesterWs.closed).toBeNull();
+    expect(sentOfType(requesterWs, 'request')[0]).not.toHaveProperty('maxResponseBytes');
+  });
+
+  it.each([0, 4, 65537])('accepts exactly %i bytes and refuses one more without ending the subscription', async (cap) => {
+    const { requesterWs, targetWs } = await connected();
+    const onFrame = vi.fn();
+    control.subscribe(TARGET, { onFrame, onEnd: () => {} });
+    await flush();
+    handler = async () => ({ status: 200, headers: {}, body: Buffer.alloc(cap) });
+    expect((await control.request(TARGET, { method: 'GET', path: '/cap' }, { maxResponseBytes: cap })).body.length).toBe(cap);
+    const binary = sentOfType(targetWs, 'binary').length;
+    handler = async () => ({ status: 200, headers: {}, body: Buffer.alloc(cap + 1) });
+    await expect(control.request(TARGET, { method: 'GET', path: '/cap' }, { maxResponseBytes: cap }))
+      .rejects.toMatchObject({ code: 'response_too_large', indeterminate: false });
+    expect(sentOfType(targetWs, 'binary')).toHaveLength(binary);
+    expect(requesterWs.closed).toBeNull();
+    served[0].sink.send(JSON.stringify({ type: 'agent:status', payload: { agentId: 'a', status: 'idle' } }));
+    await flush();
+    expect(onFrame).toHaveBeenCalledWith({ type: 'agent:status', payload: { agentId: 'a', status: 'idle' } });
+    handler = async () => ok({ still: 'usable' });
+    expect((await control.request(TARGET, { method: 'GET', path: '/small' })).status).toBe(200);
+  });
+
+  it('does not turn a P6 path-cap violation into an ordinary caller-cap refusal', async () => {
+    const { requesterWs } = await connected();
+    handler = async () => new Promise(() => {});
+    const result = control.request(TARGET, { method: 'GET', path: '/api/v1/icons/agents/a' }, { requestId: 'forged-cap', maxResponseBytes: 1 }).catch((e) => e);
+    requesterWs.deliver({ v: 1, type: 'bulk', op: 'start', transfer: '00000000-0000-4000-8000-000000000001',
+      id: 'forged-cap', kind: 'response', size: 72 * 1024 + 1, meta: { status: 200, headers: {} } });
+    expect(requesterWs.closed?.code).toBe(CONTROL_CLOSE_PROTOCOL);
+    expect(await result).toMatchObject({ code: 'transport_unavailable' });
+    expect(sentOfType(requesterWs, 'bulk').filter((frame) => frame.op === 'credit')).toHaveLength(0);
+  });
+
+  it.each([-1, NaN, Infinity, 1.5])('rejects invalid cap %s before sending', async (maxResponseBytes) => {
+    const { requesterWs } = await connected();
+    await expect(control.request(TARGET, { method: 'POST', path: '/cap' }, { maxResponseBytes }))
+      .rejects.toMatchObject({ code: 'invalid_request', indeterminate: false });
+    expect(sentOfType(requesterWs, 'request')).toHaveLength(0);
+  });
+});
+
 describe('refusal matrix over the control connection', () => {
   // The same classes as the P1 matrix: only an active desktop member reaches a route handler.
   const ROWS: Array<{ name: string; world: World; expect: 'run' | [number, string] }> = [
