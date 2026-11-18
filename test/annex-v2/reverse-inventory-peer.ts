@@ -65,6 +65,8 @@ import { flushAllGroupProjects } from '../../src/main/services/group-project-reg
 import { getBulletinBoard, flushAllBulletinBoards } from '../../src/main/services/group-project-bulletin';
 import type { BulletinMessage } from '../../src/shared/group-project-types';
 import type { SessionTranscriptPage } from '../../src/shared/session-types';
+import type { DurableAgentConfig } from '../../src/shared/types';
+import * as eventBus from '../../src/main/services/annex-event-bus';
 
 export interface InventoryPeerInfo extends PeerInfo {
   projectId: string;
@@ -86,6 +88,7 @@ export const BULLETIN_MESSAGES = 100;
 export const NATIVE_TRANSCRIPT_EVENTS = 5;
 export const NATIVE_TRANSCRIPT_EVENT_BYTES = 2 * 1024 * 1024;
 export const NATIVE_SESSION_ID = '00000000-0000-4000-8000-000000000003';
+export const LARGE_TEXT_BYTES = 9 * 1024 * 1024;
 
 afterAll(() => { fs.rmSync(fixture.dir, { recursive: true, force: true }); });
 
@@ -183,6 +186,36 @@ export async function createInventoryPeer(alias: string) {
       if (family === 'tree') return client.requestFileTree(remote.fingerprint, remote.projectId);
       return client.sendChatCommand(remote.fingerprint, { type: 'chat.send', agentId: remote.agentId, sessionId: remote.sessionId, text: `fixture:${alias}` });
     },
+    async chat(input: { command: Record<string, unknown>; commandId?: string }) {
+      if (!remote) throw new Error('Inventory peer is not configured');
+      return client.sendChatCommand(remote.fingerprint, { agentId: remote.agentId, sessionId: remote.sessionId, ...input.command }, input.commandId);
+    },
+    async page(options?: { beforeSeq?: number; limit?: number }) {
+      if (!remote) throw new Error('Inventory peer is not configured');
+      return client.requestChatPage(remote.fingerprint, remote.agentId, options);
+    },
+    async chatSessions() {
+      if (!remote) throw new Error('Inventory peer is not configured');
+      return client.requestChatSessions(remote.fingerprint, remote.agentId);
+    },
+    hook() {
+      eventBus.emitHookEvent(agent.id, { kind: 'pre_tool', toolName: 'Read', toolInput: { file_path: 'fixture.txt' }, timestamp: 1_700_000_000_000 });
+    },
+    async durable() {
+      if (!remote) throw new Error('Inventory peer is not configured');
+      const created = await client.requestCreateDurable(remote.fingerprint, remote.projectId, {
+        name: 'temporary-member', color: 'blue', useWorktree: false, orchestrator: 'claude-code',
+      }) as DurableAgentConfig;
+      const worktree = await client.requestWorktreeStatus(remote.fingerprint, remote.projectId, created.id);
+      const deleted = await client.requestDeleteDurable(remote.fingerprint, remote.projectId, created.id, 'force');
+      return { created, worktree, deleted };
+    },
+    seedLargeText() { fs.writeFileSync(path.join(root, 'large-utf8.txt'), 'é\n'.repeat(LARGE_TEXT_BYTES / 3)); },
+    async largeText() {
+      if (!remote) throw new Error('Inventory peer is not configured');
+      const text = await client.requestFileRead(remote.fingerprint, remote.projectId, 'large-utf8.txt');
+      return { bytes: Buffer.byteLength(text), digest: createHash('sha256').update(text).digest('hex') };
+    },
     seedLargeDiff() {
       execFileSync('git', ['init', '--quiet'], { cwd: root });
       execFileSync('git', ['add', '--', 'fixture.txt'], { cwd: root });
@@ -243,9 +276,25 @@ export async function createInventoryPeer(alias: string) {
       for (const event of page.events) digest.update(event.text ?? '');
       return { count: page.events.length, totalEvents: page.totalEvents, bytes: page.events.reduce((sum, event) => sum + Buffer.byteLength(event.text ?? ''), 0), digest: digest.digest('hex') };
     },
-    emit(draft: ChatEventDraft) { driver.last.emit(draft); },
+    async emit(draft: ChatEventDraft) {
+      const events = (await runtime.readTranscript()).events ?? [];
+      const before = events[events.length - 1]?.seq ?? 0;
+      const expected = JSON.stringify(draft.data);
+      driver.last.emit(draft);
+      return vi.waitFor(async () => {
+        const event = (await runtime.readTranscript()).events?.find((event) => (
+          event.seq > before && event.type === draft.type && JSON.stringify(event.data) === expected
+        ));
+        if (!event) throw new Error(`The fake provider event was not published: ${draft.type}`);
+        return event.seq;
+      }, { timeout: 3000, interval: 5 });
+    },
     driverState() {
-      return { sent: driver.last.sent, permissions: driver.last.responses, answers: driver.last.answers, models: driver.last.models, levels: driver.last.levels, interrupts: driver.last.interrupts };
+      return {
+        sent: driver.last.sent, permissions: driver.last.responses, answers: driver.last.answers,
+        models: driver.last.models, levels: driver.last.levels, interrupts: driver.last.interrupts,
+        queue: runtime.getQueueState(), state: runtime.getState(),
+      };
     },
     async close() {
       client.stopClient();

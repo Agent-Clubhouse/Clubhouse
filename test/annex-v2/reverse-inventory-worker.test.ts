@@ -18,6 +18,13 @@ describe.runIf(process.env.CLUBHOUSE_ANNEX_INVENTORY_PEER === '1')('isolated ful
         case 'status': return peer.status();
         case 'wire': return peer.wire(params as Parameters<typeof peer.wire>[0]);
         case 'probe': return peer.probe(params as Parameters<typeof peer.probe>[0]);
+        case 'chat': return peer.chat(params as Parameters<typeof peer.chat>[0]);
+        case 'page': return peer.page(params as Parameters<typeof peer.page>[0]);
+        case 'chatSessions': return peer.chatSessions();
+        case 'hook': return peer.hook();
+        case 'durable': return peer.durable();
+        case 'seedLargeText': return peer.seedLargeText();
+        case 'largeText': return peer.largeText();
         case 'emit': return peer.emit(params as Parameters<typeof peer.emit>[0]);
         case 'driverState': return peer.driverState();
         case 'seedLargeDiff': return peer.seedLargeDiff();
