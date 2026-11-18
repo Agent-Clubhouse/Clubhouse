@@ -405,3 +405,16 @@ it('rebuilds a sleeping summary from sequence numbers after delivery restarts', 
   await vi.advanceTimersByTimeAsync(WAKE_SUMMARY_DELAY_MS);
   expect(sentTexts(dev)).toHaveLength(1);
 });
+
+it('a slow wake cannot delay another recipient urgent delivery', async () => {
+  const dev = runtime('dev');
+  let release!: (value: boolean) => void;
+  wake.mockImplementationOnce(() => new Promise<boolean>((resolve) => { release = resolve; }));
+  seq++;
+  fx.messages.push({ id: `m${seq}`, sender: 'qa', topic: 'general', body: '@lead @dev', urgent: true, timestamp: '', seq });
+  for (const fn of fx.changeListeners) fn({ groupProjectId: 'gp1', seq, part: 'board' });
+  await vi.advanceTimersByTimeAsync(0);
+  expect(dev.sendMessage).toHaveBeenCalledTimes(1);
+  release(false);
+  await vi.advanceTimersByTimeAsync(0);
+});

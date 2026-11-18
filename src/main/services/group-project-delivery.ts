@@ -237,7 +237,7 @@ async function onPost(gp: GroupProject, message: BulletinMessage): Promise<void>
     state.window.messages.push({ id: message.id, topic: message.topic, sender: message.sender, senderAddress: message.senderAddress, mentioned, seq: message.seq, urgent: message.urgent, direct: mentioned || message.topic === inbox });
     if (message.urgent) {
       if (state.timer) clearTimeout(state.timer);
-      await flush(state);
+      void flush(state).catch(logReceiptFailure);
     }
   }
 }
