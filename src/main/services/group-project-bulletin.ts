@@ -352,6 +352,22 @@ class BulletinBoard {
     return digests;
   }
 
+  /** Bounded sequence page for notices: never sort or copy the whole board. */
+  async getRecentMessagesBySeq(limit: number): Promise<BulletinMessage[]> {
+    await this.ensureLoaded();
+    if (limit <= 0) return [];
+    const recent: BulletinMessage[] = [];
+    for (const messages of this.topics.values()) for (const message of messages) {
+      if (message.seq === undefined) continue;
+      if (recent.length === limit && message.seq <= recent[0].seq!) continue;
+      let low = 0; let high = recent.length;
+      while (low < high) { const mid = (low + high) >>> 1; if (recent[mid].seq! < message.seq) low = mid + 1; else high = mid; }
+      recent.splice(low, 0, message);
+      if (recent.length > limit) recent.shift();
+    }
+    return recent;
+  }
+
   /** Get all messages across all topics, sorted by timestamp. */
   async getAllMessages(since?: string, limit?: number): Promise<BulletinMessage[]> {
     await this.ensureLoaded();

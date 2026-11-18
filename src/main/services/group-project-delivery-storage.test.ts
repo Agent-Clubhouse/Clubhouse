@@ -18,7 +18,7 @@ import { groupProjectHost } from './group-project-host';
 import { groupProjectRegistry } from './group-project-registry';
 import { _resetAllBoardsForTesting } from './group-project-bulletin';
 import { _resetDeliveryForTesting, watchGroupProjectDelivery } from './group-project-delivery';
-import { lastNotified } from './group-project-notification-store';
+import { lastNotified, initializeNotified } from './group-project-notification-store';
 async function restart() {
   _resetDeliveryForTesting();
   await groupProjectRegistry.flush(); await groupProjectHost.flushBoards();
@@ -28,6 +28,7 @@ afterEach(async () => { await restart(); vi.restoreAllMocks(); await fsp.rm(fx.h
 it('reconnects after loss of all delivery memory with one unread summary, then persists its receipt', async () => {
   fx.home = await fsp.mkdtemp(path.join(os.tmpdir(), 'gp-delivery-'));
   const gp = await groupProjectHost.create('Restart');
+  await initializeNotified(gp.id, 'dev', gp.seq!);
   const first = await groupProjectHost.post(gp.id, 'qa', 'general', 'one');
   const second = await groupProjectHost.post(gp.id, 'qa', 'general', 'two');
   await restart();
@@ -45,3 +46,17 @@ it('reconnects after loss of all delivery memory with one unread summary, then p
   await new Promise((resolve) => setTimeout(resolve, 3200));
   expect(fx.send).toHaveBeenCalledTimes(1);
 }, 12_000);
+
+it('upgrades without replaying history, then notifies a genuinely new post', async () => {
+  fx.home = await fsp.mkdtemp(path.join(os.tmpdir(), 'gp-upgrade-'));
+  const gp = await groupProjectHost.create('Upgrade');
+  const old = await groupProjectHost.post(gp.id, 'qa', 'general', 'history');
+  vi.spyOn(groupProjectHost, 'resolveMembers').mockResolvedValue([{ address: 'dev', name: 'dev' }]);
+  fx.alive = true; watchGroupProjectDelivery(); fx.connected!('dev');
+  await vi.waitFor(async () => expect(await lastNotified(gp.id, 'dev')).toBeGreaterThanOrEqual(old.seq!), { timeout: 5000 });
+  expect(fx.send).not.toHaveBeenCalled();
+  const fresh = await groupProjectHost.post(gp.id, 'qa', 'general', 'new', { urgent: true });
+  await vi.waitFor(() => expect(fx.send).toHaveBeenCalledTimes(1));
+  expect(fx.send.mock.calls[0][0]).toContain('1 new message');
+  await vi.waitFor(async () => expect(await lastNotified(gp.id, 'dev')).toBe(fresh.seq));
+}, 10_000);

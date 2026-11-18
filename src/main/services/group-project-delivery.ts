@@ -19,7 +19,8 @@
  *   queued one with a merged notice, so the turn ends to one notice. A
  *   terminal agent's turn can't be seen from here, so it gets the notice typed
  *   in as it comes.
- * - **Urgent posts** bypass batching and notice limits, using the same turn-end queue.
+ * - **Urgent posts** bypass batching and notice limits within their persisted
+ *   sender/recipient allowance; overflow uses normal delivery, never drops.
  *
  * Every notice is checked again when it goes: the member must still be one,
  * and the group project must still be on notices.
@@ -34,9 +35,11 @@
  */
 
 import type { BulletinMessage, GroupProject, GroupProjectMembership } from '../../shared/group-project-types';
+import { parseAgentAddress, formatAgentAddress } from '../../shared/agent-address';
 import { resolveMentions } from '../../shared/group-project-mentions';
 import { groupProjectMentionMembers } from './group-project-tool-members';
-import { lastNotified, markNotified } from './group-project-notification-store';
+import { isLocalGroupPost } from './group-project-local-origin';
+import { lastNotified, markNotified, initializeNotified, pruneNotificationReceipts, reserveUrgent } from './group-project-notification-store';
 import { wakeForGroupPost } from './group-project-wake';
 import { groupProjectHost } from './group-project-host';
 import { isAgentAlive } from './group-project-lifecycle';
@@ -51,6 +54,7 @@ import { tel } from '../telemetry/facade';
 import { appLog } from './log-service';
 
 export const COALESCE_MS = 15_000;
+export const RECENT_POSTS_LIMIT = 50;
 export const RATE_LIMIT_MAX = 6;
 export const RATE_LIMIT_WINDOW_MS = 10 * 60_000;
 /** After a sleeping member connects, before its summary, so the CLI has started. */
@@ -224,13 +228,19 @@ async function onPost(gp: GroupProject, message: BulletinMessage): Promise<void>
     if (!subscribed && !mentioned && !isLead(gp, member.address)) continue;
     const state = stateOf(gp.id, agentId, member.name);
     if (isOwnPost(message, state, gp)) continue;
-    if ((message.seq ?? 0) <= await lastNotified(gp.id, agentId) && message.seq !== undefined) continue;
+    const cursor = await initializeNotified(gp.id, agentId, Math.max(0, (message.seq ?? 1) - 1));
+    if ((message.seq ?? 0) <= cursor && message.seq !== undefined) continue;
+    const localSender = message.senderAddress && groupProjectHost.localAgentId(gp, message.senderAddress);
+    const parsed = message.senderAddress ? parseAgentAddress(message.senderAddress) : undefined;
+    const sender = localSender ? `local-agent:${localSender}` : parsed ? formatAgentAddress({ agentId: parsed.agentId, machine: parsed.machine ?? gp.host?.machine ?? undefined })
+      : isLocalGroupPost(gp.id, message.id) ? 'local-origin' : 'unknown-origin';
+    const urgent = message.urgent === true && await reserveUrgent(sender, agentId);
     if (!state.window) {
       state.window = { messages: [] };
       state.timer = setTimeout(() => { void flush(state).catch(logReceiptFailure); }, COALESCE_MS);
     }
-    state.window.messages.push({ id: message.id, topic: message.topic, sender: message.sender, senderAddress: message.senderAddress, mentioned, seq: message.seq, urgent: message.urgent, direct: mentioned || message.topic === inbox });
-    if (message.urgent) {
+    state.window.messages.push({ id: message.id, topic: message.topic, sender: message.sender, senderAddress: message.senderAddress, mentioned, seq: message.seq, urgent, direct: mentioned || message.topic === inbox });
+    if (urgent) {
       if (state.timer) clearTimeout(state.timer);
       void flush(state).catch(logReceiptFailure);
     }
@@ -298,7 +308,7 @@ async function flushNow(state: MemberState): Promise<void> {
     state.asleep = merge(state.asleep, batch);
     if (batch.messages.some((m) => m.direct)) {
       const { text, routed } = noticeParts(gp, state, batch);
-      if (await wakeForGroupPost(gp.id, state.agentId, state.name, text, routed, batch.messages.filter((m) => m.direct).map((m) => m.senderAddress))) {
+      if (await wakeForGroupPost(gp.id, state.agentId, state.name, text, routed, batch.messages.filter((m) => m.direct).map((m) => m.senderAddress), batch.messages.filter((m) => m.direct).map((m) => m.id))) {
         state.asleep = null;
         await acknowledge(state, batch);
         return;
@@ -348,6 +358,7 @@ function isBusy(agentId: string): boolean {
 }
 
 async function acknowledge(state: MemberState, batch: Batch): Promise<void> {
+  if (!(await stillMember(state)) || members.get(keyOf(state.groupProjectId, state.agentId)) !== state) return;
   const seq = Math.max(0, ...batch.messages.map((m) => m.seq ?? 0));
   if (seq) await markNotified(state.groupProjectId, state.agentId, seq);
 }
@@ -366,7 +377,7 @@ async function deliver(state: MemberState, batch: Batch): Promise<void> {
   const notice = replacing ? merge(state.queued, batch) : batch;
   if (replacing) count('coalesced');
   const { text, routed } = noticeParts(gp, state, notice);
-  if (!replacing) state.sent.push(Date.now());
+  if (!replacing && !notice.messages.some((m) => m.urgent)) state.sent.push(Date.now());
   try {
     if (busy) {
       state.queued = notice;
@@ -469,13 +480,17 @@ function onConnected(agentId: string): void {
         state.wakeTimer = null;
         void serialize(state, async () => {
           const cursor = await lastNotified(gp.id, agentId);
+          if (cursor === undefined) {
+            await initializeNotified(gp.id, agentId, await currentBoardSeq(gp));
+            return;
+          }
           const [posts, membership, inbox, mentionMembers] = await Promise.all([
-            groupProjectHost.readAll(gp.id, undefined, Number.MAX_SAFE_INTEGER), groupProjectHost.getMembership(gp.id),
+            unreadPosts(gp.id, cursor), groupProjectHost.getMembership(gp.id),
             groupProjectHost.inboxFor(gp.id, member.name, member.address), groupProjectMentionMembers(gp.id),
           ]);
           const subscriptions = memberSubscriptions(membership, member.address, inbox);
           const messages = posts.filter((m) => m.seq !== undefined && m.seq > cursor && m.sender !== 'system' && m.topic !== 'system')
-            .map((m) => ({ ...m, mentioned: resolveMentions(m.body, mentionMembers).addresses.has(member.address) }))
+            .map((m) => ({ ...m, urgent: false, mentioned: resolveMentions(m.body, mentionMembers).addresses.has(member.address) }))
             .filter((m) => !isOwnPost(m, state, gp) && (subscriptions.has(m.topic) || m.mentioned || isLead(gp, member.address)));
           state.asleep = null;
           // Replace unflushed memory with the authoritative unread board snapshot.
@@ -495,9 +510,20 @@ function onConnected(agentId: string): void {
 // ── Wiring ──────────────────────────────────────────────────────────────────
 
 /** The message a board change added: the one carrying the change's sequence number. */
+async function currentBoardSeq(gp: GroupProject): Promise<number> {
+  return gp.seq ?? Math.max(0, ...(await groupProjectHost.readRecentBySeq(gp.id, RECENT_POSTS_LIMIT)).map((m) => m.seq ?? 0));
+}
+async function unreadPosts(group: string, cursor: number): Promise<BulletinMessage[]> {
+  const recent = await groupProjectHost.readRecentBySeq(group, RECENT_POSTS_LIMIT);
+  if (recent.length < RECENT_POSTS_LIMIT || Math.min(...recent.map((m) => m.seq ?? 0)) <= cursor) return recent;
+  return groupProjectHost.readAll(group, undefined, Number.MAX_SAFE_INTEGER);
+}
+
 async function postedMessage(groupProjectId: string, seq: number): Promise<BulletinMessage | undefined> {
-  const recent = await groupProjectHost.readAll(groupProjectId, undefined, Number.MAX_SAFE_INTEGER);
-  return recent.find((m) => m.seq === seq);
+  const recent = await groupProjectHost.readRecentBySeq(groupProjectId, RECENT_POSTS_LIMIT);
+  const found = recent.find((m) => m.seq === seq);
+  if (found || recent.length < RECENT_POSTS_LIMIT) return found;
+  return (await groupProjectHost.readAll(groupProjectId, undefined, Number.MAX_SAFE_INTEGER)).find((m) => m.seq === seq);
 }
 
 let stop: (() => void) | null = null;
@@ -509,16 +535,31 @@ export function watchGroupProjectDelivery(): () => void {
   const offChange = groupProjectHost.onChange((change) => {
     if (change.part === 'deleted') {
       for (const state of [...members.values()]) if (state.groupProjectId === change.groupProjectId) forget(state);
+      changes = changes.catch(logReceiptFailure).then(async () => {
+        // Drain earlier post work before pruning, so it cannot recreate a receipt.
+        for (const state of [...members.values()]) if (state.groupProjectId === change.groupProjectId) forget(state);
+        await pruneNotificationReceipts();
+      }).catch(logReceiptFailure);
       return;
     }
     if (change.part === 'membership' || change.part === 'record') {
       // Members left, or the group project stopped delivering.
-      void (async () => {
+      changes = changes.catch(logReceiptFailure).then(async () => {
         const gp = await groupProjectHost.get(change.groupProjectId);
         const resolved = gp && groupProjectMay(gp, 'deliver') ? await groupProjectHost.resolveMembers(gp.id) : [];
-        if (gp) forgetFormerMembers(gp, resolved);
+        await pruneNotificationReceipts();
+        if (gp) {
+          forgetFormerMembers(gp, resolved);
+          if (change.part === 'membership') {
+            const baseline = Math.min(change.seq, await currentBoardSeq(gp));
+            for (const m of resolved) {
+              const local = groupProjectHost.localAgentId(gp, m.address);
+              if (local) await initializeNotified(gp.id, local, baseline);
+            }
+          }
+        }
         else for (const state of [...members.values()]) if (state.groupProjectId === change.groupProjectId) forget(state);
-      })().catch((err) => {
+      }).catch((err) => {
         // telemetry-exempt: held notices are re-checked when they go anyway; logged
         appLog('core:group-project', 'warn', 'Could not re-check group project notice recipients', { meta: { groupProjectId: change.groupProjectId, error: err instanceof Error ? err.message : String(err) } });
       });

@@ -13,9 +13,10 @@ vi.mock('./group-project-roles', () => ({ groupProjectMay: (_g: unknown, grant: 
 vi.mock('./clubhouse-mcp/grant-check', () => ({ decideGrant: () => ({ outcome: fx.decision }) }));
 vi.mock('./group-project-notification-store', () => ({ reserveWake: fx.reserve }));
 vi.mock('./clubhouse-mcp/tools/agent-lifecycle', () => ({ findDurableAgentConfig: async () => fx.config, wakeWiredAgent: fx.wake }));
+import { noteLocalGroupPost, resetLocalGroupPostsForTesting } from './group-project-local-origin';
 import { wakeForGroupPost } from './group-project-wake';
 beforeEach(() => {
-  fx.live = false; fx.gp.metadata = {}; fx.config = { agentConfig: { lastSessionId: 'last' }, projectPath: '/p' };
+  resetLocalGroupPostsForTesting(); fx.live = false; fx.gp.metadata = {}; fx.config = { agentConfig: { lastSessionId: 'last' }, projectPath: '/p' };
   fx.decision = 'allow'; fx.reserve.mockResolvedValue(true);
   fx.wake.mockResolvedValue({ content: [{ type: 'text', text: '{"messageDelivered":true}' }] });
 });
@@ -53,4 +54,22 @@ it('synchronously refuses the wake path if another start creates a running turn'
     return { isError: true, content: [] };
   });
   expect(await wake()).toBe(false);
+});
+
+it.each(['copy', 'network', 'local'])('unknown sender on %s obeys the origin hold', async (kind) => {
+  const gp = fx.gp as typeof fx.gp & { network?: { role: string }; scope?: { reach: string } };
+  gp.network = kind === 'copy' ? { role: 'replica' } : undefined;
+  gp.scope = kind === 'network' ? { reach: 'network' } : undefined;
+  expect(await wakeForGroupPost('g', 'dev', 'dev', 'notice', [], [undefined])).toBe(kind === 'local');
+  if (kind !== 'local') expect(fx.wake).not.toHaveBeenCalled();
+  gp.network = undefined; gp.scope = undefined;
+});
+
+it('a local person or Action post can wake on a network group while unmarked copies stay held', async () => {
+  const gp = fx.gp as typeof fx.gp & { scope?: { reach: string } };
+  gp.scope = { reach: 'network' };
+  noteLocalGroupPost('g', 'local-person');
+  expect(await wakeForGroupPost('g', 'dev', 'dev', 'notice', [], [undefined], ['local-person'])).toBe(true);
+  expect(await wakeForGroupPost('g', 'dev', 'dev', 'notice', [], [undefined], ['replicated-claim'])).toBe(false);
+  gp.scope = undefined;
 });

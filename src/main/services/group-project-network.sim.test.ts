@@ -18,6 +18,7 @@ interface Machine {
   fp: string;
   home: string;
   projects?: Array<{ id: string; name: string; path: string; key: string; agents: Array<{ id: string; name: string }> }>;
+  origins?: typeof import('./group-project-local-origin');
   host?: typeof import('./group-project-host');
   roles?: typeof import('./group-project-roles');
   gate?: typeof import('./group-project-remote-grants');
@@ -116,6 +117,7 @@ beforeEach(async () => {
     m.home = await fsp.mkdtemp(path.join(cache, `gp-net-${m.name}-`));
     vi.resetModules();
     m.host = await import('./group-project-host');
+    m.origins = await import('./group-project-local-origin');
     m.registry = await import('./group-project-registry');
     m.bulletin = await import('./group-project-bulletin');
     m.membership = await import('./group-project-membership');
@@ -840,4 +842,17 @@ describe('legacy message shim through a copy (#3702 review)', () => {
     expect(gate).not.toHaveBeenCalled();
     expect(refusals).toEqual([]);
   });
+});
+
+it('local provenance stays on the originating computer and cannot be claimed on the wire', async () => {
+  const id = await sharedProject();
+  const local = await as(B, (h) => h.groupProjectHost.post(id, 'user', 'general', 'from copy', { author: { label: 'user' } }));
+  expect(B.origins!.isLocalGroupPost(id, local.id)).toBe(true);
+  expect(A.origins!.isLocalGroupPost(id, local.id)).toBe(false);
+  const forged = readWriteRequest(wire({ v: 1, writes: [{ id: 'forged-origin', groupProjectId: id, queuedAt: new Date().toISOString(), author: { label: 'user' }, write: { op: 'post', sender: 'user', topic: 'general', body: 'claim', localOrigin: true, remoteOrigin: false } }] }));
+  await as(A, (h) => h.groupProjectHost.applyRemoteWrites(B.fp, forged));
+  const received = (await as(A, (h) => h.groupProjectHost.readTopic(id, 'general'))).find((m) => m.body === 'claim')!;
+  expect(received).toBeTruthy();
+  expect(A.origins!.isLocalGroupPost(id, received.id)).toBe(false);
+  expect(received).not.toHaveProperty('localOrigin');
 });

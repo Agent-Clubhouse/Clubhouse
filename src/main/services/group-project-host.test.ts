@@ -885,3 +885,13 @@ it('retains urgent and notification cursor through a real storage restart', asyn
   const recovered = (await groupProjectHost.readAll(gp.id)).filter((m) => (m.seq ?? 0) > cursor);
   expect(recovered).toEqual([expect.objectContaining({ id: unread.id, urgent: true })]);
 });
+
+it('records provenance for local person and Action posts without putting it on the board', async () => {
+  const { isLocalGroupPost } = await import('./group-project-local-origin');
+  const gp = await groupProjectHost.create('Origins');
+  for (const sender of ['user', 'Group project Action']) {
+    const post = await groupProjectHost.post(gp.id, sender, 'general', 'local');
+    expect(isLocalGroupPost(gp.id, post.id)).toBe(true);
+    expect(post).not.toHaveProperty('localOrigin');
+  }
+});

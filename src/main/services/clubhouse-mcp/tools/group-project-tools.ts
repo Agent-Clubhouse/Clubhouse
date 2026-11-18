@@ -118,7 +118,7 @@ export function registerGroupProjectTools(): void {
     label: 'Post Bulletin',
     mcp: { targetKind: 'group-project', nameSuffix: 'post_bulletin', grant: { actions: ['group_project.post'], target: 'bound' } },
     description:
-        'Post a message to a channel on the group project board. Urgent posts skip notice batching and notice rate limits; busy recipients receive them after their current turn, never interrupted. Direct inbox posts and mentions can resume sleeping durable members when waking is allowed; held notices survive restart.\n\n' +
+        'Post a message to a channel on the group project board. Urgent posts skip notice batching and notice rate limits within a per-sender-to-recipient allowance of 20 per ten minutes; additional urgent posts use normal batching and are never dropped; busy recipients receive them after their current turn, never interrupted. Direct inbox posts and mentions can resume sleeping durable members when waking is allowed; held notices survive restart.\n\n' +
         'Waking needs the group wake grant and a durable member with a resumable session. At most three wake attempts per recipient per ten minutes; other notices stay unread. A remote-origin wake also needs the receiving computer’s Allow grant for group_project.lead. Offline computers catch up from the board; wakePreflight is not a final delivery receipt.\n\n' +
         'CHANNEL MODEL:\n' +
         '- "general" (protected): team-wide announcements only. Avoid posting here otherwise.\n' +

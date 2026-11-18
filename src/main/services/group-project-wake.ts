@@ -1,4 +1,5 @@
 /** Resume through the same guarded lifecycle used by wake_agent. */
+import { isLocalGroupPost } from './group-project-local-origin';
 import { parseAgentAddress, formatAgentAddress } from '../../shared/agent-address';
 import { decideGrant } from './clubhouse-mcp/grant-check';
 import { findDurableAgentConfig, wakeWiredAgent } from './clubhouse-mcp/tools/agent-lifecycle';
@@ -9,11 +10,11 @@ import { reserveWake, wakeBudgetAvailable } from './group-project-notification-s
 import type { GroupProject } from '../../shared/group-project-types';
 import type { RoutedMessagePart } from '../../shared/chat';
 
-export async function wakeForGroupPost(group: string, agent: string, name: string, text: string, routed: RoutedMessagePart[], senders: Array<string | undefined>): Promise<boolean> {
+export async function wakeForGroupPost(group: string, agent: string, name: string, text: string, routed: RoutedMessagePart[], senders: Array<string | undefined>, messageIds: string[] = []): Promise<boolean> {
   const allowed = async () => {
     const gp = await groupProjectHost.get(group);
     if (!gp || getAgentRuntime(agent)?.isRunning()) return false;
-    if (wakeHoldReason(gp, senders)) return false;
+    if (wakeHoldReason(gp, senders, messageIds)) return false;
     return groupProjectMay(gp, 'deliver') && groupProjectMay(gp, 'wake')
       && (await groupProjectHost.resolveMembers(group)).some((m) => groupProjectHost.localAgentId(gp, m.address) === agent);
   };
@@ -41,9 +42,10 @@ export async function wakeForGroupPost(group: string, agent: string, name: strin
 }
 
 /** Receiving-computer preflight; Allow is required because remote requests cannot ask. */
-export function wakeHoldReason(gp: GroupProject, senders: Array<string | undefined>): string | undefined {
+export function wakeHoldReason(gp: GroupProject, senders: Array<string | undefined>, messageIds: string[] = []): string | undefined {
   if (!groupProjectMay(gp, 'wake')) return 'The group project wake grant is Off; the notice stays unread.';
-  for (const sender of senders) {
+  for (const [index, sender] of senders.entries()) {
+    if (messageIds[index] && isLocalGroupPost(gp.id, messageIds[index])) continue;
     if (!sender) { if (gp.network?.role === 'replica' || gp.scope?.reach === 'network') return 'The sender computer is unknown; the notice stays unread.'; continue; }
     if (groupProjectHost.localAgentId(gp, sender)) continue;
     const parsed = parseAgentAddress(sender);

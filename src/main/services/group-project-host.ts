@@ -21,6 +21,7 @@ import {
   GroupProjectScopeError, memberInScope, membersLeavingScope, resolveGroupProjectScope, sameGroupProjectScope,
 } from '../../shared/group-project-scope';
 import { canonicalMemberAddress, memberAddress } from '../../shared/group-project-members';
+import { noteLocalGroupPost, noteLocalGroupRequest, noteLocalGroupRequestResult } from './group-project-local-origin';
 import { parseAgentAddress } from '../../shared/agent-address';
 import { groupProjectRegistry } from './group-project-registry';
 import {
@@ -1037,7 +1038,7 @@ class GroupProjectHostService {
 
   async post(
     id: string, sender: string, topic: string, body: string,
-    options: { withinExclusive?: boolean; chain?: string[]; author?: WriteAuthor; messageId?: string; urgent?: boolean } = {},
+    options: { withinExclusive?: boolean; chain?: string[]; author?: WriteAuthor; messageId?: string; urgent?: boolean; remoteOrigin?: boolean } = {},
   ): Promise<BulletinMessage> {
     const replica = await this.replicaFor(id);
     if (replica) {
@@ -1057,7 +1058,9 @@ class GroupProjectHostService {
       }
       const project = await this.requireProject(id);
       const address = options.author?.agentId && this.addressOf(project, options.author.agentId);
-      return board.postMessage(sender, topic, body, await reserve(), options.messageId, address || undefined, options.urgent);
+      const posted = await board.postMessage(sender, topic, body, await reserve(), options.messageId, address || undefined, options.urgent);
+      if (!options.remoteOrigin) noteLocalGroupPost(id, posted.id);
+      return posted;
     }, options.withinExclusive);
     if (!replayed) publishAppEvent({ type: 'group_project.message_posted', groupProjectId: id, topic: message.topic, ...(options.chain && { chain: options.chain }) });
     return message;
@@ -1284,6 +1287,10 @@ class GroupProjectHostService {
     return this.read(id, [], (board) => board.getTopicMessages(topic, since, limit));
   }
 
+  readRecentBySeq(id: string, limit = 50): Promise<BulletinMessage[]> {
+    return this.read(id, [], (board) => board.getRecentMessagesBySeq(limit));
+  }
+
   readAll(id: string, since?: string, limit?: number): Promise<BulletinMessage[]> {
     return this.read(id, [], (board) => board.getAllMessages(since, limit));
   }
@@ -1463,6 +1470,10 @@ class GroupProjectHostService {
     const item: OutboxItem = {
       id: randomUUID(), host, groupProjectId: project.id, author, queuedAt: new Date().toISOString(), write,
     };
+    if (write.op === 'post') {
+      const expected = `msg_${Date.parse(item.queuedAt) || 0}_${createHash('sha256').update(`${this.selfMachine()}\u0000${item.id}`).digest('hex').slice(0, 12)}`;
+      noteLocalGroupRequest(item.id, expected);
+    }
     const replica = await this.replicaState(project.id).catch((): ReplicaState => ({ version: 1 }));
     if (replica.hostRemoved || (this.link && !this.link.isMember(host))) {
       const reason = `${this.hostNameOf(project)} left your network. This group project is read-only here.`;
@@ -1494,6 +1505,7 @@ class GroupProjectHostService {
       throw err;
     }
     if (outcome.result?.status === 'applied') {
+      if (write.op === 'post') noteLocalGroupRequestResult(item.id, project.id, (outcome.result.result as BulletinMessage).id);
       await this.settle(item, { status: 'applied' });
       await this.syncFrom(host).catch((err: unknown) => {
         // telemetry-exempt: the copy catches up on the host's next notice
@@ -1633,6 +1645,7 @@ class GroupProjectHostService {
           if (result.status === 'refused') await this.recordRefusal(item, result.reason);
           const unattributed = replay[batch.indexOf(item)].unattributed;
           if (result.status === 'applied') {
+            if (item.write.op === 'post') noteLocalGroupRequestResult(item.id, item.groupProjectId, (result.result as BulletinMessage).id);
             // Before it leaves the outbox: a crash between the two replays the write, which settles nothing twice.
             await this.settle(item, { status: 'applied' });
             // The host applied what it was sent; the part that couldn't be attributed is kept in the refusal list only.
@@ -1988,7 +2001,7 @@ class GroupProjectHostService {
           if (topic === 'system' && !(system && write.sender === 'system')) return refuse('The system channel is reserved.');
           // The same write always makes the same message, so a replay after a crash finds it.
           const messageId = `msg_${Date.parse(item.queuedAt) || 0}_${createHash('sha256').update(`${machine}\u0000${item.id}`).digest('hex').slice(0, 12)}`;
-          result = await this.post(id, write.sender, write.topic, write.body, { messageId, urgent: write.urgent, author: { ...item.author, ...(item.author.agentId && { agentId: this.memberAddress(project, parseAgentAddress(item.author.agentId).agentId, machine) }) } });
+          result = await this.post(id, write.sender, write.topic, write.body, { messageId, remoteOrigin: true, urgent: write.urgent, author: { ...item.author, ...(item.author.agentId && { agentId: this.memberAddress(project, parseAgentAddress(item.author.agentId).agentId, machine) }) } });
           break;
         }
         case 'deleteMessage':
