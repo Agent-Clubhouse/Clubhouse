@@ -14,6 +14,7 @@ const fixture = vi.hoisted(() => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'annex-inventory-'));
   process.env.HOME = dir;
   process.env.USERPROFILE = dir;
+  process.env.CLAUDE_CONFIG_DIR = path.join(dir, '.claude');
   return { dir, events: [] as Array<{ channel: string; payload: unknown }>, logs: [] as unknown[] };
 });
 
@@ -58,6 +59,12 @@ import { ChatAgentRuntime, clearChatRuntimes, registerChatRuntime } from '../../
 import { FakeChatDriver } from '../../src/main/services/agent-runtime/fake-chat-driver';
 import { MINIMAL_CHAT_CAPABILITIES, type ChatEventDraft } from '../../src/shared/chat';
 import type { ControlRequestInput } from '../../src/main/services/annex-control';
+import { ClaudeCodeProvider, registerProvider } from '../../src/main/orchestrators';
+import { groupProjectHost } from '../../src/main/services/group-project-host';
+import { flushAllGroupProjects } from '../../src/main/services/group-project-registry';
+import { getBulletinBoard, flushAllBulletinBoards } from '../../src/main/services/group-project-bulletin';
+import type { BulletinMessage } from '../../src/shared/group-project-types';
+import type { SessionTranscriptPage } from '../../src/shared/session-types';
 
 export interface InventoryPeerInfo extends PeerInfo {
   projectId: string;
@@ -74,6 +81,11 @@ export interface WireAnswer {
 }
 
 export const LARGE_DIFF_BYTES = 8 * 1024 * 1024 + 128 * 1024;
+export const BULLETIN_MESSAGE_BYTES = 100 * 1024;
+export const BULLETIN_MESSAGES = 100;
+export const NATIVE_TRANSCRIPT_EVENTS = 5;
+export const NATIVE_TRANSCRIPT_EVENT_BYTES = 2 * 1024 * 1024;
+export const NATIVE_SESSION_ID = '00000000-0000-4000-8000-000000000003';
 
 afterAll(() => { fs.rmSync(fixture.dir, { recursive: true, force: true }); });
 
@@ -135,6 +147,11 @@ export async function createInventoryPeer(alias: string) {
         attempts: policy?.attempts ?? [], events: fixture.events, logs: fixture.logs,
       };
     },
+    retryControl() {
+      if (!remote) throw new Error('Inventory peer is not configured');
+      control.closeFor(remote.fingerprint, 'out');
+      control.retryConnection(remote.fingerprint);
+    },
     /** Server-only routes have no desktop wrapper. Test their actual wire endpoint explicitly. */
     async wire(input: ControlRequestInput): Promise<WireAnswer> {
       if (!remote) throw new Error('Inventory peer is not configured');
@@ -180,6 +197,49 @@ export async function createInventoryPeer(alias: string) {
         digest: createHash('sha256').update(result.modified).digest('hex'),
       };
     },
+    async seedLargeBoard() {
+      const group = await groupProjectHost.create(`${alias} board`);
+      const board = getBulletinBoard(group.id);
+      for (let i = 0; i < BULLETIN_MESSAGES; i++) {
+        await board.postMessage('Fixture', 'general', 'b'.repeat(BULLETIN_MESSAGE_BYTES));
+      }
+      await flushAllBulletinBoards();
+      await flushAllGroupProjects();
+      return group.id;
+    },
+    async bulletin(input: { groupId: string; kind: 'messages' | 'topic' }) {
+      if (!remote) throw new Error('Inventory peer is not configured');
+      const messages = (input.kind === 'messages'
+        ? await client.requestBulletinAllMessages(remote.fingerprint, input.groupId)
+        : await client.requestBulletinTopicMessages(remote.fingerprint, input.groupId, 'general', undefined, BULLETIN_MESSAGES)) as BulletinMessage[];
+      const digest = createHash('sha256');
+      for (const message of messages) digest.update(message.body);
+      return { count: messages.length, bytes: messages.reduce((sum, message) => sum + Buffer.byteLength(message.body), 0), digest: digest.digest('hex') };
+    },
+    async seedLargeTranscript() {
+      const provider = new ClaudeCodeProvider();
+      registerProvider(provider);
+      const cwd = agent.worktreePath || project.path;
+      const dir = path.join(process.env.CLAUDE_CONFIG_DIR!, 'projects', path.resolve(cwd).replace(/[/\\]/g, '-'));
+      fs.mkdirSync(dir, { recursive: true });
+      const lines = Array.from({ length: NATIVE_TRANSCRIPT_EVENTS }, (_, i) => JSON.stringify({
+        type: 'assistant', timestamp: 1_700_000_000_000 + i,
+        message: { id: `native-message-${i}`, role: 'assistant', content: [{ type: 'text', text: 't'.repeat(NATIVE_TRANSCRIPT_EVENT_BYTES) }] },
+      }));
+      fs.writeFileSync(path.join(dir, `${NATIVE_SESSION_ID}.jsonl`), `${lines.join('\n')}\n`);
+      const events = await provider.readSessionTranscript(NATIVE_SESSION_ID, cwd);
+      if (!events) throw new Error('The native session reader did not find its fixture');
+      return { rawEvents: events.length };
+    },
+    async transcript() {
+      if (!remote) throw new Error('Inventory peer is not configured');
+      const page = await client.requestSessionTranscript(
+        remote.fingerprint, remote.agentId, NATIVE_SESSION_ID, remote.projectId, 0, NATIVE_TRANSCRIPT_EVENTS, 'claude-code',
+      ) as SessionTranscriptPage;
+      const digest = createHash('sha256');
+      for (const event of page.events) digest.update(event.text ?? '');
+      return { count: page.events.length, totalEvents: page.totalEvents, bytes: page.events.reduce((sum, event) => sum + Buffer.byteLength(event.text ?? ''), 0), digest: digest.digest('hex') };
+    },
     emit(draft: ChatEventDraft) { driver.last.emit(draft); },
     driverState() {
       return { sent: driver.last.sent, permissions: driver.last.responses, answers: driver.last.answers, models: driver.last.models, levels: driver.last.levels, interrupts: driver.last.interrupts };
@@ -191,6 +251,8 @@ export async function createInventoryPeer(alias: string) {
       server.stop();
       control.resetControlForTests();
       await agentConfig.flushAllAgentConfigs();
+      await flushAllBulletinBoards();
+      await flushAllGroupProjects();
       policy?.restore();
     },
   };

@@ -4,8 +4,11 @@ import * as os from 'os';
 import * as path from 'path';
 import * as net from 'net';
 import { createHash } from 'crypto';
-import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
-import { createInventoryPeer, LARGE_DIFF_BYTES, type InventoryPeer, type InventoryPeerInfo, type WireAnswer } from './reverse-inventory-peer';
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
+import {
+  BULLETIN_MESSAGES, BULLETIN_MESSAGE_BYTES, NATIVE_TRANSCRIPT_EVENTS, NATIVE_TRANSCRIPT_EVENT_BYTES,
+  createInventoryPeer, LARGE_DIFF_BYTES, type InventoryPeer, type InventoryPeerInfo, type WireAnswer,
+} from './reverse-inventory-peer';
 import { assertDialAudit, closeServer, rpcPeer, sentinel, transparentForward, type RpcPeer } from './reverse-parity-fixture';
 
 type Status = ReturnType<InventoryPeer['status']>;
@@ -102,6 +105,63 @@ describe('full-server audit inventory over one A to B forward', () => {
       expect((await status('B')).readiness?.acceptedHere).toBe(true);
       expect(direct).toBeDefined();
       expect(await b.call('gitDiff')).toEqual(direct);
+    });
+  });
+
+  describe('known uncapped-read findings, retained as RED acceptance probes', () => {
+    let aGroup: string;
+    let bGroup: string;
+
+    beforeAll(async () => {
+      expect(await a.seedLargeTranscript()).toEqual({ rawEvents: NATIVE_TRANSCRIPT_EVENTS });
+      expect(await b.call('seedLargeTranscript')).toEqual({ rawEvents: NATIVE_TRANSCRIPT_EVENTS });
+      aGroup = await a.seedLargeBoard();
+      bGroup = await b.call('seedLargeBoard');
+    });
+
+    beforeEach(async () => {
+      // An oversized bulk offer retires the link, so each probe starts with an explicit retry.
+      a.retryControl();
+      await vi.waitFor(async () => {
+        expect((await status('A')).readiness?.openedHere).toBe(true);
+        expect((await status('B')).readiness?.acceptedHere).toBe(true);
+      }, { timeout: 10_000, interval: 25 });
+    }, 12_000);
+
+    function assertBulletin(result: Awaited<ReturnType<InventoryPeer['bulletin']>>, kind: 'messages' | 'topic') {
+      expect(result.count).toBe(BULLETIN_MESSAGES);
+      // The all-message page can also include the host's automatic control notice.
+      expect(result.bytes).toBeGreaterThanOrEqual((BULLETIN_MESSAGES - 1) * BULLETIN_MESSAGE_BYTES);
+      if (kind === 'topic') expect(result).toEqual({
+        count: BULLETIN_MESSAGES, bytes: BULLETIN_MESSAGES * BULLETIN_MESSAGE_BYTES,
+        digest: createHash('sha256').update(Buffer.alloc(BULLETIN_MESSAGES * BULLETIN_MESSAGE_BYTES, 'b')).digest('hex'),
+      });
+    }
+
+    for (const kind of ['messages', 'topic'] as const) {
+      it(`F2 ${kind}: direct reads a board containing 100 legitimate 100 KiB posts`, async () => {
+        assertBulletin(await a.bulletin({ groupId: bGroup, kind }), kind);
+      });
+
+      it(`F2 ${kind}: reverse-only reads the same complete board`, async () => {
+        expect((await status('B')).direct).toBe(false);
+        assertBulletin(await b.call('bulletin', { groupId: aGroup, kind }), kind);
+      });
+    }
+
+    const expectedTranscript = () => ({
+      count: NATIVE_TRANSCRIPT_EVENTS, totalEvents: NATIVE_TRANSCRIPT_EVENTS,
+      bytes: NATIVE_TRANSCRIPT_EVENTS * NATIVE_TRANSCRIPT_EVENT_BYTES,
+      digest: createHash('sha256').update(Buffer.alloc(NATIVE_TRANSCRIPT_EVENTS * NATIVE_TRANSCRIPT_EVENT_BYTES, 't')).digest('hex'),
+    });
+
+    it('F3: the production native session reader and direct adapter return the complete page', async () => {
+      expect(await a.transcript()).toEqual(expectedTranscript());
+    });
+
+    it('F3: reverse-only returns that same legitimate native transcript page', async () => {
+      expect((await status('B')).direct).toBe(false);
+      expect(await b.call('transcript')).toEqual(expectedTranscript());
     });
   });
 

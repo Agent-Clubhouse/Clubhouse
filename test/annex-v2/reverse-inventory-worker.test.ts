@@ -22,6 +22,10 @@ describe.runIf(process.env.CLUBHOUSE_ANNEX_INVENTORY_PEER === '1')('isolated ful
         case 'driverState': return peer.driverState();
         case 'seedLargeDiff': return peer.seedLargeDiff();
         case 'gitDiff': return peer.gitDiff();
+        case 'seedLargeBoard': return peer.seedLargeBoard();
+        case 'bulletin': return peer.bulletin(params as Parameters<typeof peer.bulletin>[0]);
+        case 'seedLargeTranscript': return peer.seedLargeTranscript();
+        case 'transcript': return peer.transcript();
         case 'stop':
           await peer.close();
           closed = true;
