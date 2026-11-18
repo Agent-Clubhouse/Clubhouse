@@ -102,10 +102,11 @@ describe('Group Project guidance against the shipped management catalog (#3618)'
   it('keeps host-role and delivery limits in guidance and tool descriptions', () => {
     expect(catalog.get('set_group_project_role')!.definition.description).toContain('does not change the host');
     expect(catalog.get('dismiss_group_project_refusals')!.definition.description).toContain('Does not resend or cancel queued writes');
+    expect(controller).toContain('Allow from the authoritative host');
+    expect(BUILTIN_TEXT['group-projects.md']).toContain("Remote writes require the host's Allow.");
     for (const guidance of [controller, admin]) {
       expect(guidance).toContain('this-computer grants');
       expect(guidance).toMatch(/host.role view is read-only|read-only host.role view/);
-      expect(guidance).toMatch(/host Allow|Allow from the authoritative host|host's Allow/);
       expect(guidance).toMatch(/member.*tool switches/);
     }
   });

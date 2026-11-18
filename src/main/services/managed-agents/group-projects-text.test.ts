@@ -6,6 +6,7 @@ import { BUILTIN_TEXT } from './builtin-text/index';
 
 const text = BUILTIN_TEXT['group-projects.md'];
 const help = readFileSync(join(__dirname, '../../../renderer/features/help/content/group-projects.md'), 'utf8');
+const glossary = readFileSync(join(__dirname, '../../../renderer/features/help/content/group-project-glossary.md'), 'utf8');
 
 describe('group project member guidance (#3698)', () => {
   it('keeps the member block identity stable while renaming its display name', () => {
@@ -20,7 +21,14 @@ describe('group project member guidance (#3698)', () => {
       '`@name@computer`', '`urgent: true`', 'wakes a sleeping member', 'pending until accepted',
       'Delivered does not mean read or done', 'Use `general` only for team-wide announcements',
       '`control` for how the team works; agree in `control` before opening a channel']) expect(text).toContain(phrase);
-    expect(text.trim().split(/\s+/).length).toBeLessThanOrEqual(130);
+    expect(text.trim().split(/\s+/).length).toBeLessThanOrEqual(150);
+  });
+
+  it('distinguishes local wake permission from the additional remote lead-Allow gate', () => {
+    const directWake = glossary.split('\n').find(line => line.startsWith('- **Direct wake:**'))!;
+    expect(directWake).toContain("Local members wake each other under the group's wake permission (on by default) and per-member wake limits.");
+    expect(directWake).toContain("Remote-origin wakes also require the receiving computer's Allow for the sender's lead grant.");
+    expect(directWake).toContain('when one is resumable');
   });
 
   it('keeps membership details in help and documents the new roster and wake rules', () => {
@@ -47,11 +55,14 @@ describe('Group Project guidance parity across delivered surfaces (#3618)', () =
     expect(text).toContain('shared assignments');
     expect(lead).toContain('Lead and admin are separate grants');
     expect(admin).toContain('Lead and admin are separate grants');
+    for (const gate of ['The host controls scope.', "Remote writes require the host's Allow.",
+      "Permanent group project deletion requires a person's impact review and confirmation."]) {
+      expect(text).toContain(gate);
+      expect(lead).not.toContain(gate);
+      expect(admin).not.toContain(gate);
+    }
     for (const guidance of [lead, admin]) {
       expect(guidance.trim().split(/\s+/).length).toBeLessThanOrEqual(230);
-      expect(guidance).toContain('The host controls scope.');
-      expect(guidance).toContain("Remote writes require the host's Allow.");
-      expect(guidance).toContain("deletion requires a person's impact review and confirmation");
     }
   });
 
