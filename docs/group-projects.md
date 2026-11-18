@@ -461,6 +461,15 @@ include the computer, for example `Alex (Mac mini)`; unique labels stay unchange
 Use inbox posts for one recipient and @mentions for people who must see a post
 in another channel.
 
+### Deprecated plugin compatibility
+
+The plugin API methods `annex.gpShoulderTap` and `annex.gpSetPolling`, and their
+Annex REST adapters, remain only for compatibility. The first creates a board
+post in the target member's inbox, or in `general` when no target is named. The
+second is a no-op that reports notices mode without changing configuration.
+New integrations use board posts; these adapters do not restore retired MCP
+controls.
+
 ## The group project as a principal (#3360)
 
 `src/main/services/group-project-roles.ts`.
