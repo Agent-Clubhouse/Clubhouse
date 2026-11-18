@@ -80,6 +80,7 @@ vi.mock('./annex-tls', () => ({
   PIN_MISMATCH_CODE: 'ERR_ANNEX_PIN_MISMATCH',
   createPinnedTlsClientOptions: vi.fn().mockReturnValue({ pinned: true }),
   probePeerCertificate: vi.fn(),
+  verifyPinnedEndpoint: vi.fn(async () => undefined),
   signCertBinding: vi.fn().mockReturnValue('cert-binding'),
   sameCertificateFingerprint: (a?: string, b?: string) => !!a && a.replace(/:/g, '').toLowerCase() === b?.replace(/:/g, '').toLowerCase(),
 }));
@@ -98,6 +99,9 @@ vi.mock('./annex-peers', () => ({
   listPeers: vi.fn().mockReturnValue([]),
   // Peers in these tests are pinned unless a test says otherwise.
   peerNeedsPairing: vi.fn().mockReturnValue(false),
+  trustOf: vi.fn((p: Record<string, unknown>) => ({ fingerprint: p.fingerprint, tlsCertificateFingerprint: p.tlsCertificateFingerprint, pairingId: p.pairingId })),
+  commitVerifiedRoute: vi.fn(() => true),
+  withSavedRoutes: vi.fn((_previous: unknown, next: unknown) => next),
 }));
 
 vi.mock('./annex-settings', () => ({
@@ -111,6 +115,7 @@ vi.mock('./annex-settings', () => ({
     color: 'indigo',
     autoReconnect: true,
   }),
+  getLastPorts: vi.fn(() => ({ mainPort: 0, pairingPort: 0 })),
 }));
 
 vi.mock('./log-service', () => ({
@@ -138,6 +143,7 @@ vi.mock('https', async (importOriginal) => {
 });
 
 import * as annexClient from './annex-client';
+import * as annexControl from './annex-control';
 import { CAPACITY_SAMPLE_TIMEOUT_MS, withCapacityDeadline } from './handoff-capacity';
 import { setProducingRuntime } from '../telemetry/__test-utils__/producing-runtime';
 import type { TelemetryRuntime } from '../telemetry/types';
@@ -189,6 +195,10 @@ function resetAllMocks() {
   vi.mocked(annexPeers.listPeers).mockReturnValue([]);
   vi.mocked(annexTls.createPinnedTlsClientOptions).mockReturnValue({ pinned: true } as any);
   vi.mocked(annexTls.signCertBinding).mockReturnValue('cert-binding');
+  vi.mocked(annexTls.verifyPinnedEndpoint).mockResolvedValue(undefined);
+  vi.mocked(annexPeers.commitVerifiedRoute).mockReturnValue(true);
+  vi.mocked(annexPeers.withSavedRoutes).mockImplementation((_previous, next) => next);
+  annexClient.setOwnListenerPortsProvider(null);
   WebSocketMock.mockImplementation(function (this: any, _url?: string, _opts?: Record<string, any>) {
     this.readyState = WebSocketMock.OPEN;
     this.socket = {
@@ -266,6 +276,48 @@ describe('annex-client', () => {
     annexClient.stopClient();
     vi.useRealTimers();
     vi.unstubAllEnvs();
+  });
+
+  describe('independent control connection lifecycle', () => {
+    it('does not close the independently maintained control connection when /ws drops', () => {
+      const close = vi.spyOn(annexControl, 'closeFor');
+      try {
+        annexClient._addConnectedSatelliteForTesting('control-peer');
+        annexClient._receiveSatelliteDisconnectForTesting('control-peer');
+        expect(close).not.toHaveBeenCalledWith('control-peer', 'out');
+      } finally {
+        close.mockRestore();
+      }
+    });
+
+    it('seeds only eligible pinned desktop members and keeps their private saved route local', () => {
+      const setSource = vi.spyOn(annexControl, 'setConnectionSource');
+      const member = {
+        fingerprint: 'control-peer', publicKey: 'key', alias: 'Studio', icon: 'computer', color: 'indigo',
+        role: 'member' as const, kind: 'desktop' as const, pairedAt: '2026-01-01', lastSeen: '2026-01-01',
+        tlsCertificateFingerprint: 'AB:CD', tlsCertificatePem: 'pem', typedHost: 'localhost:7555', typedHostCert: 'AB:CD',
+      };
+      vi.mocked(annexPeers.listPeers).mockReturnValue([
+        member,
+        { ...member, fingerprint: 'phone', kind: 'phone', typedHost: undefined },
+        { ...member, fingerprint: 'pending', networkPending: true, typedHost: undefined },
+        { ...member, fingerprint: 'one-to-one', role: 'satellite', typedHost: undefined },
+        { ...member, fingerprint: 'old-pairing', tlsCertificateFingerprint: undefined, typedHost: undefined },
+      ]);
+      try {
+        annexClient.startClient();
+        const source = setSource.mock.calls.at(-1)?.[0];
+        expect(source?.plans()).toMatchObject([{
+          fingerprint: 'control-peer', pin: 'AB:CD',
+          routes: [{ host: 'localhost', port: 7555, privateTo: LOCAL_IDENTITY.fingerprint }],
+        }]);
+        expect(source?.plans()).toHaveLength(1);
+        annexClient.stopClient();
+        expect(setSource).toHaveBeenLastCalledWith(null);
+      } finally {
+        setSource.mockRestore();
+      }
+    });
   });
 
   // ---- startClient / stopClient ----
@@ -767,6 +819,7 @@ describe('annex-client', () => {
       annexClient.startClient();
       await bonjourFindCallback!(makeService());
       await vi.waitFor(() => expect(messageHandler).not.toBeNull());
+      await vi.waitFor(() => expect(annexClient.isMachineDirectConnected(FINGERPRINT)).toBe(true));
       const shown = () => (annexClient.getSatellite(FINGERPRINT)!.snapshot!.projects[0] as { id: string }).id;
 
       messageHandler!(snapshot(100, 'first'));
@@ -779,6 +832,7 @@ describe('annex-client', () => {
       annexClient.disconnect(FINGERPRINT);
       annexClient.connect(FINGERPRINT);
       await vi.waitFor(() => expect(messageHandler).not.toBe(before));
+      await vi.waitFor(() => expect(annexClient.isMachineDirectConnected(FINGERPRINT)).toBe(true));
       messageHandler!(snapshot(0, 'after restart'));
       expect(shown()).toBe('after restart');
 
@@ -1947,7 +2001,7 @@ describe('annex-client', () => {
     }
 
     function mockHttpsGetNetworkError() {
-      vi.mocked(https.get).mockImplementation((_url: any, _opts: any, _cb: any) => {
+      vi.mocked(https.request).mockImplementation((_url: any, _opts: any, _cb: any) => {
         const req = {
           on: vi.fn().mockImplementation((event: string, cb: any) => {
             if (event === 'error') cb(new Error('ECONNREFUSED'));
@@ -1955,13 +2009,14 @@ describe('annex-client', () => {
           }),
           setTimeout: vi.fn(),
           destroy: vi.fn(),
+          end: vi.fn(),
         };
         return req as any;
       });
     }
 
     function mockHttpsGetMalformedJson() {
-      vi.mocked(https.get).mockImplementation((_url: any, _opts: any, cb: any) => {
+      vi.mocked(https.request).mockImplementation((_url: any, _opts: any, cb: any) => {
         const res = {
           statusCode: 200,
           resume: vi.fn(),
@@ -1972,7 +2027,7 @@ describe('annex-client', () => {
           }),
         };
         cb(res);
-        const req = { on: vi.fn().mockReturnThis(), setTimeout: vi.fn(), destroy: vi.fn() };
+        const req = { on: vi.fn().mockReturnThis(), setTimeout: vi.fn(), destroy: vi.fn(), end: vi.fn() };
         return req as any;
       });
     }
@@ -2019,13 +2074,13 @@ describe('annex-client', () => {
       );
     });
 
-    it('requestBulletinTopicMessages logs warn on network error', async () => {
+    it('requestBulletinTopicMessages logs and rejects a network error', async () => {
       await connectSatellite();
       const { appLog } = await import('./log-service');
       vi.mocked(appLog).mockClear();
       mockHttpsGetNetworkError();
 
-      await annexClient.requestBulletinTopicMessages(FINGERPRINT, 'gp-1', 'progress');
+      await expect(annexClient.requestBulletinTopicMessages(FINGERPRINT, 'gp-1', 'progress')).rejects.toThrow('ECONNREFUSED');
 
       expect(appLog).toHaveBeenCalledWith(
         'core:annex-client', 'warn', 'Bulletin topic messages request failed',
@@ -2090,7 +2145,7 @@ describe('annex-client', () => {
     /** Capture the URL the client builds and answer with an empty digest. */
     function captureUrl(): { get: () => string } {
       let captured = '';
-      vi.mocked(https.get).mockImplementation((url: any, _opts: any, cb: any) => {
+      vi.mocked(https.request).mockImplementation((url: any, _opts: any, cb: any) => {
         captured = String(url);
         const res = {
           statusCode: 200,
@@ -2102,7 +2157,7 @@ describe('annex-client', () => {
           }),
         };
         cb(res);
-        return { on: vi.fn().mockReturnThis(), setTimeout: vi.fn(), destroy: vi.fn() } as any;
+        return { on: vi.fn().mockReturnThis(), setTimeout: vi.fn(), destroy: vi.fn(), end: vi.fn() } as any;
       });
       return { get: () => captured };
     }
@@ -2306,7 +2361,7 @@ describe('annex-client', () => {
       let timeoutCb: (() => void) | null = null;
       let errorCb: ((err: Error) => void) | null = null;
 
-      vi.mocked(https.get).mockImplementation((_url: any, _opts: any, _cb: any) => {
+      vi.mocked(https.request).mockImplementation((_url: any, _opts: any, _cb: any) => {
         const req = {
           on: vi.fn().mockImplementation((event: string, cb: any) => {
             if (event === 'timeout') timeoutCb = cb;
@@ -2314,6 +2369,7 @@ describe('annex-client', () => {
             return req;
           }),
           destroy: vi.fn(),
+          end: vi.fn(),
         };
         return req as any;
       });
@@ -2337,7 +2393,7 @@ describe('annex-client', () => {
       let errorCb: ((err: Error) => void) | null = null;
       let timeoutCb: (() => void) | null = null;
 
-      vi.mocked(https.get).mockImplementation((_url: any, _opts: any, _cb: any) => {
+      vi.mocked(https.request).mockImplementation((_url: any, _opts: any, _cb: any) => {
         const req = {
           on: vi.fn().mockImplementation((event: string, cb: any) => {
             if (event === 'error') errorCb = cb;
@@ -2345,6 +2401,7 @@ describe('annex-client', () => {
             return req;
           }),
           destroy: vi.fn(),
+          end: vi.fn(),
         };
         return req as any;
       });
@@ -2688,7 +2745,7 @@ describe('annex-client', () => {
       expect(source).not.toMatch(/createTlsClientOptions/);
       const isComment = (index: number) => /^\s*(\*|\/\/)/.test(source.slice(source.lastIndexOf('\n', index) + 1, index));
       const calls = [...source.matchAll(/(https\.(get|request)|new WebSocket)\(/g)].filter((m) => !isComment(m.index!));
-      expect(calls.length).toBeGreaterThanOrEqual(9);
+      expect(calls.length).toBeGreaterThanOrEqual(3);
       for (const call of calls) {
         expect(source.slice(Math.max(0, call.index! - 700), call.index! + 200)).toContain('...tlsOptions');
       }
@@ -2838,23 +2895,272 @@ describe('annex-client', () => {
       expect(sockets.map((x) => x.url)).toEqual(['wss://[2001:db8::5]:9000/ws?client=desktop']);
     });
 
-    it('takes a typed host, refuses one that is not a host, and tries it at once', () => {
+    it('remembers an address the device announced as shared, and a known one without saying so (#3608)', async () => {
+      peer = { ...base };
+      mockHttpGetIdentity({ fingerprint: FP, alias: 'Studio', icon: 'server', color: 'green', publicKey: 'sat-pk' });
+      annexClient.startClient();
+      await bonjourFindCallback!(makeService({ addresses: ['192.168.1.77'], referer: { address: '192.168.1.77' } }));
+      sockets.at(-1)!.handlers.open();
+      expect(annexPeers.noteReached).toHaveBeenLastCalledWith(FP, '192.168.1.77', 9000, 'discovered');
+    });
+
+    /** Saving a checked route updates the peer the way the real store does. */
+    const committing = () => vi.mocked(annexPeers.commitVerifiedRoute).mockImplementation((_fp, _trust, host) => { peer = { ...peer, typedHost: host }; return true; });
+
+    it('takes a typed host, refuses one that is not a host, and tries it at once', async () => {
       peer = { ...base, mainPort: 9443 };
       annexClient.startClient();
-      expect(annexClient.setSatelliteHost(FP, 'https://studio')).toEqual({ ok: false, error: expect.stringMatching(/name or address/) });
-      expect(annexPeers.setTypedHost).not.toHaveBeenCalled();
-      vi.mocked(annexPeers.setTypedHost).mockImplementation((_fp, host) => { peer = { ...peer, typedHost: host }; return true; });
-      expect(annexClient.setSatelliteHost(FP, 'studio.tail1234.ts.net')).toEqual({ ok: true });
-      expect(annexPeers.setTypedHost).toHaveBeenCalledWith(FP, 'studio.tail1234.ts.net');
+      expect(await annexClient.setSatelliteHost(FP, 'https://studio')).toEqual({ ok: false, error: expect.stringMatching(/name or address/) });
+      expect(annexPeers.commitVerifiedRoute).not.toHaveBeenCalled();
+      committing();
+      expect(await annexClient.setSatelliteHost(FP, 'studio.tail1234.ts.net')).toEqual({ ok: true });
+      expect(annexTls.verifyPinnedEndpoint).toHaveBeenCalledWith('studio.tail1234.ts.net', 9443, { pinned: true }, annexClient.ROUTE_CHECK_TIMEOUT_MS);
+      expect(annexPeers.commitVerifiedRoute).toHaveBeenCalledWith(FP, expect.objectContaining({ fingerprint: FP, tlsCertificateFingerprint: 'AB:CD' }), 'studio.tail1234.ts.net:9443', 'studio.tail1234.ts.net');
       expect(sockets.at(-1)!.url).toBe('wss://studio.tail1234.ts.net:9443/ws?client=desktop');
       expect(annexClient.satelliteAddress(FP)).toBe('studio.tail1234.ts.net:9443');
-      expect(annexClient.setSatelliteHost(FP, '')).toEqual({ ok: true });
+      expect(await annexClient.setSatelliteHost(FP, '')).toEqual({ ok: true });
       expect(annexPeers.setTypedHost).toHaveBeenLastCalledWith(FP, undefined);
     });
 
-    it('can reuse a remembered address-specific port when no legacy default is stored', () => {
+    it('can reuse a remembered address-specific port when no legacy default is stored', async () => {
       peer = { ...base, knownHosts: ['127.0.0.1'], hostPorts: { '127.0.0.1': 7443 } };
-      expect(annexClient.setSatelliteHost(FP, '127.0.0.1')).toEqual({ ok: true });
+      expect(await annexClient.setSatelliteHost(FP, '127.0.0.1')).toEqual({ ok: true });
+      expect(annexTls.verifyPinnedEndpoint).toHaveBeenCalledWith('127.0.0.1', 7443, expect.anything(), expect.any(Number));
+    });
+
+    describe('saving a route against the real peer store (#3608)', () => {
+      const PEER_FNS = ['getPeer', 'listPeers', 'trustOf', 'commitVerifiedRoute', 'peerNeedsPairing', 'addPeer', 'setTypedHost'] as const;
+      let real: typeof import('./annex-peers');
+      const savedEnv = { ...process.env };
+
+      beforeEach(async () => {
+        // The store keeps peers in memory only for an isolated session, so no file is touched.
+        Object.assign(process.env, { CLUBHOUSE_ANNEX_EPHEMERAL: '1', CLUBHOUSE_ANNEX_LOOPBACK_ONLY: '1', CLUBHOUSE_USER_DATA: '/tmp/annex-route-cas-test' });
+        real = await vi.importActual<typeof import('./annex-peers')>('./annex-peers');
+        real.resetForTests();
+        for (const fn of PEER_FNS) vi.mocked(annexPeers[fn] as (...a: unknown[]) => unknown).mockImplementation(real[fn] as (...a: unknown[]) => unknown);
+        real.addPeer({ ...base, role: 'member', kind: 'desktop', pairingId: 'pairing-1', typedHost: '127.0.0.1:7443', knownHosts: ['10.0.0.4'], mainPort: 9443 } as never);
+      });
+
+      afterEach(() => {
+        real.resetForTests();
+        process.env = { ...savedEnv };
+        // Back to the defaults the rest of this file expects.
+        for (const fn of PEER_FNS) vi.mocked(annexPeers[fn] as (...a: unknown[]) => unknown).mockReset();
+        vi.mocked(annexPeers.peerNeedsPairing).mockReturnValue(false);
+        vi.mocked(annexPeers.listPeers).mockReturnValue([]);
+        vi.mocked(annexPeers.commitVerifiedRoute).mockReturnValue(true);
+        vi.mocked(annexPeers.setTypedHost).mockReturnValue(true);
+        vi.mocked(annexPeers.trustOf).mockImplementation((p: any) => ({ fingerprint: p.fingerprint, tlsCertificateFingerprint: p.tlsCertificateFingerprint, pairingId: p.pairingId }));
+      });
+
+      it.each([
+        ['its pinned certificate', { tlsCertificateFingerprint: 'EF:EF', tlsCertificatePem: 'OTHER-PEM' }],
+        ['its pairing', { pairingId: 'pairing-2' }],
+        ['its join time', { pairedAt: '2026-02-01' }],
+      ])('rejects the save when %s changes while the address is checked, keeping the old address', async (_what, change) => {
+        vi.mocked(annexTls.verifyPinnedEndpoint).mockImplementationOnce(async () => {
+          real.addPeer({ ...real.getPeer(FP)!, ...change });
+        });
+        const result = await annexClient.setSatelliteHost(FP, '127.0.0.1:7555');
+        expect(result).toEqual({ ok: false, error: expect.stringMatching(/changed while its address was checked/) });
+        expect(real.getPeer(FP)).toMatchObject({ typedHost: '127.0.0.1:7443', ...change });
+        expect(real.getPeer(FP)?.typedHostCert).toBeUndefined();
+      });
+
+      it.each(['default', 'per-host'] as const)('saves the exact verified endpoint when the %s port changes during and after its probe', async (source) => {
+        if (source === 'per-host') real.addPeer({ ...real.getPeer(FP)!, hostPorts: { 'studio.local': 9443 } });
+        vi.mocked(annexTls.verifyPinnedEndpoint).mockImplementationOnce(async () => {
+          real.addPeer({ ...real.getPeer(FP)!, mainPort: 9555, hostPorts: { 'studio.local': 9555 } });
+        });
+        expect(await annexClient.setSatelliteHost(FP, 'studio.local')).toEqual({ ok: true });
+        expect(annexTls.verifyPinnedEndpoint).toHaveBeenCalledWith('studio.local', 9443, expect.anything(), expect.any(Number));
+        expect(real.getPeer(FP)).toMatchObject({ typedHost: 'studio.local:9443', typedHostCert: 'AB:CD' });
+        // No membership or trust change is needed to move a fallback again after the verified save.
+        real.addPeer({ ...real.getPeer(FP)!, mainPort: 9666, hostPorts: { 'studio.local': 9666 } });
+        const saved = real.getPeer(FP)!;
+        const { reachCandidates } = await import('./annex-reach');
+        expect(reachCandidates({ typed: saved.typedHost, ports: saved.hostPorts, port: saved.mainPort }))
+          .toEqual([{ host: 'studio.local', port: 9443, source: 'typed' }]);
+      });
+
+      it('persists an inferred IPv6 port with brackets so the checked endpoint remains unambiguous', async () => {
+        expect(await annexClient.setSatelliteHost(FP, '2001:db8::5')).toEqual({ ok: true });
+        expect(real.getPeer(FP)?.typedHost).toBe('[2001:db8::5]:9443');
+      });
+
+      describe.each([3, 5])('a forward-only mesh of %i computers (#3608)', (machines) => {
+        // This machine plus the others; each other computer is a target with its own Annex port.
+        const targets = Array.from({ length: machines - 1 }, (_, i) => ({
+          fingerprint: Array(16).fill((0x40 + i).toString(16)).join(':'), alias: `Target ${i + 1}`, port: 7501 + i,
+        }));
+        const addTargets = () => {
+          for (const t of targets) {
+            real.addPeer({ ...base, fingerprint: t.fingerprint, alias: t.alias, role: 'member', kind: 'desktop', pairingId: `pairing-${t.alias}`, knownHosts: [], mainPort: t.port } as never);
+          }
+        };
+
+        it('saves one route to each other computer on distinct local ports, none of them its own', async () => {
+          addTargets();
+          annexClient.setOwnListenerPortsProvider(() => ({ mainPort: 7443, pairingPort: 7444 }));
+          for (const t of targets) {
+            expect(await annexClient.setSatelliteHost(t.fingerprint, `127.0.0.1:${t.port}`)).toEqual({ ok: true });
+          }
+          for (const t of targets) {
+            expect(real.getPeer(t.fingerprint)).toMatchObject({ typedHost: `127.0.0.1:${t.port}`, privateHosts: expect.arrayContaining(['127.0.0.1']) });
+          }
+          // N-1 routes from this machine, one per other computer.
+          expect(targets.filter((t) => real.getPeer(t.fingerprint)?.typedHost)).toHaveLength(machines - 1);
+        });
+
+        it("refuses a second computer on a local port already used, naming the first, and one on this computer's own port", async () => {
+          addTargets();
+          annexClient.setOwnListenerPortsProvider(() => ({ mainPort: 7443, pairingPort: 7444 }));
+          const [first, second] = targets;
+          expect((await annexClient.setSatelliteHost(first.fingerprint, `127.0.0.1:${first.port}`)).ok).toBe(true);
+          expect(await annexClient.setSatelliteHost(second.fingerprint, `localhost:${first.port}`)).toEqual({
+            ok: false, error: expect.stringMatching(new RegExp(`Port ${first.port} on this computer is already saved for ${first.alias}`)),
+          });
+          expect(await annexClient.setSatelliteHost(second.fingerprint, '127.0.0.1:7443')).toEqual({
+            ok: false, error: expect.stringMatching(/Port 7443 is this computer's own Annex port/),
+          });
+          expect(real.getPeer(second.fingerprint)?.typedHost).toBeUndefined();
+        });
+      });
+
+      it('saves when nothing changed, recording the certificate it was checked against', async () => {
+        expect(await annexClient.setSatelliteHost(FP, '127.0.0.1:7555')).toEqual({ ok: true });
+        expect(real.getPeer(FP)).toMatchObject({ typedHost: '127.0.0.1:7555', typedHostCert: 'AB:CD', privateHosts: expect.arrayContaining(['127.0.0.1']), pairingId: 'pairing-1' });
+      });
+    });
+
+    describe('saved routes (#3608)', () => {
+      it('checks the pinned certificate before saving, and keeps the old route when it does not match', async () => {
+        peer = { ...base, typedHost: '127.0.0.1:7443', knownHosts: ['10.0.0.4'], mainPort: 9443 };
+        vi.mocked(annexTls.verifyPinnedEndpoint).mockRejectedValueOnce(mismatch());
+        const result = await annexClient.setSatelliteHost(FP, '127.0.0.1:7555');
+        expect(result).toEqual({ ok: false, error: expect.stringMatching(/showed a different certificate\. Nothing was changed/) });
+        expect(annexPeers.commitVerifiedRoute).not.toHaveBeenCalled();
+        expect(annexPeers.setTypedHost).not.toHaveBeenCalled();
+        expect(peer.typedHost).toBe('127.0.0.1:7443');
+      });
+
+      it('keeps the old route when the new address cannot be reached in time', async () => {
+        peer = { ...base, typedHost: '127.0.0.1:7443', mainPort: 9443 };
+        vi.mocked(annexTls.verifyPinnedEndpoint).mockRejectedValueOnce(Object.assign(new Error('Timed out'), { code: 'ETIMEDOUT' }));
+        const result = await annexClient.setSatelliteHost(FP, '127.0.0.1:7555');
+        expect(result.ok).toBe(false);
+        expect(annexPeers.commitVerifiedRoute).not.toHaveBeenCalled();
+      });
+
+      it('saves nothing when the pairing changed while the address was checked', async () => {
+        peer = { ...base, mainPort: 9443 };
+        vi.mocked(annexPeers.commitVerifiedRoute).mockReturnValueOnce(false);
+        const result = await annexClient.setSatelliteHost(FP, '127.0.0.1:7555');
+        expect(result).toEqual({ ok: false, error: expect.stringMatching(/changed while its address was checked/) });
+        expect(sockets).toHaveLength(0);
+      });
+
+      it('adds a route for an existing member with no pairing and no membership change', async () => {
+        peer = { ...base, role: 'member', kind: 'desktop', pairingId: 'pairing-1', mainPort: 9443 };
+        committing();
+        expect(await annexClient.setSatelliteHost(FP, '127.0.0.1:7555')).toEqual({ ok: true });
+        expect(annexTls.probePeerCertificate).not.toHaveBeenCalled();
+        expect(annexPeers.addPeer).not.toHaveBeenCalled();
+        const membershipMod = await import('./annex-network-membership');
+        expect(membershipMod.noteLocalJoin).not.toHaveBeenCalled();
+        expect(peer.pairingId).toBe('pairing-1');
+      });
+
+      it("refuses this computer's own Annex port without touching any listener", async () => {
+        peer = { ...base, mainPort: 9443 };
+        annexClient.setOwnListenerPortsProvider(() => ({ mainPort: 7443, pairingPort: 7444 }));
+        const own = await annexClient.setSatelliteHost(FP, '127.0.0.1:7443');
+        expect(own).toEqual({ ok: false, error: expect.stringMatching(/Port 7443 is this computer's own Annex port/) });
+        expect(await annexClient.setSatelliteHost(FP, 'localhost:7444')).toMatchObject({ ok: false });
+        expect(annexTls.verifyPinnedEndpoint).not.toHaveBeenCalled();
+        // With Annex not listening, nothing of its own is on that port, so only the check decides.
+        annexClient.setOwnListenerPortsProvider(() => ({}));
+        expect((await annexClient.setSatelliteHost(FP, '127.0.0.1:7443')).ok).toBe(true);
+        expect(annexTls.verifyPinnedEndpoint).toHaveBeenCalledWith('127.0.0.1', 7443, expect.anything(), expect.any(Number));
+      });
+
+      it('refuses a local port already saved for another computer, naming it', async () => {
+        peer = { ...base, mainPort: 9443 };
+        vi.mocked(annexPeers.listPeers).mockReturnValue([
+          { ...base, fingerprint: 'other', alias: 'Laptop', typedHost: '127.0.0.1:7555' } as any,
+        ]);
+        const result = await annexClient.setSatelliteHost(FP, '[::1]:7555');
+        expect(result).toEqual({ ok: false, error: expect.stringMatching(/Port 7555 on this computer is already saved for Laptop/) });
+        expect(annexTls.verifyPinnedEndpoint).not.toHaveBeenCalled();
+        // A direct address on that port is a different machine's port: no collision.
+        expect((await annexClient.setSatelliteHost(FP, '10.0.0.9:7555')).ok).toBe(true);
+      });
+
+      it('refuses while the device needs pairing again', async () => {
+        peer = { ...base, mainPort: 9443 };
+        vi.mocked(annexPeers.peerNeedsPairing).mockReturnValue(true);
+        expect(await annexClient.setSatelliteHost(FP, '127.0.0.1:7555')).toEqual({ ok: false, error: expect.stringMatching(/Pair with Studio again first/) });
+        expect(annexTls.verifyPinnedEndpoint).not.toHaveBeenCalled();
+      });
+
+      it('keeps "showed a different certificate" when the pairing changed during the check, even though the address passed', async () => {
+        peer = { ...base, knownHosts: ['10.0.0.4'], mainPort: 9443 };
+        annexClient.startClient();
+        sockets[0].handlers.error(mismatch());
+        expect(annexClient.getSatellite(FP)?.needsPairing).toBe(true);
+        vi.mocked(annexPeers.commitVerifiedRoute).mockReturnValueOnce(false);
+        expect((await annexClient.setSatelliteHost(FP, 'studio.tail1234.ts.net')).ok).toBe(false);
+        expect(annexClient.getSatellite(FP)).toMatchObject({ needsPairing: true, problem: { code: 'cert-mismatch' } });
+        expect(sockets).toHaveLength(1);
+      });
+
+      it('keeps "showed a different certificate" when the new address fails its check', async () => {
+        peer = { ...base, knownHosts: ['10.0.0.4'], mainPort: 9443 };
+        annexClient.startClient();
+        sockets[0].handlers.error(mismatch());
+        expect(annexClient.getSatellite(FP)?.needsPairing).toBe(true);
+        vi.mocked(annexTls.verifyPinnedEndpoint).mockRejectedValueOnce(mismatch());
+        expect((await annexClient.setSatelliteHost(FP, 'studio.tail1234.ts.net')).ok).toBe(false);
+        expect(annexClient.getSatellite(FP)).toMatchObject({ needsPairing: true, problem: { code: 'cert-mismatch' } });
+        expect(sockets).toHaveLength(1);
+      });
+
+      it('after a restart with no discovery, reconnects through the saved forward, and again after it drops and returns', async () => {
+        vi.useFakeTimers();
+        peer = { ...base, role: 'member', kind: 'desktop', typedHost: '127.0.0.1:7555', mainPort: 9443 };
+        annexClient.startClient();
+        expect(sockets[0].url).toBe('wss://127.0.0.1:7555/ws?client=desktop');
+        sockets[0].handlers.open();
+        expect(annexClient.getSatellite(FP)?.state).toBe('connected');
+        // The forward drops: refused, and the advice names the local forward.
+        sockets[0].handlers.close(1006, Buffer.from(''));
+        await vi.advanceTimersByTimeAsync(5_000);
+        sockets.at(-1)!.handlers.error(refused());
+        expect(annexClient.getSatellite(FP)?.problem?.action).toMatch(/local forward is running/);
+        expect(annexClient.getSatellite(FP)?.needsPairing).toBeFalsy();
+        // It comes back: the same saved address is tried again and connects.
+        await vi.advanceTimersByTimeAsync(60_000);
+        expect(sockets.at(-1)!.url).toBe('wss://127.0.0.1:7555/ws?client=desktop');
+        sockets.at(-1)!.handlers.open();
+        expect(annexClient.getSatellite(FP)?.state).toBe('connected');
+      });
+
+      it("says a loopback address on this computer's own port reaches this computer, not that it was reset", async () => {
+        vi.useFakeTimers();
+        annexClient.setOwnListenerPortsProvider(() => ({ mainPort: 7443, pairingPort: 7444 }));
+        peer = { ...base, knownHosts: ['127.0.0.1', '10.0.0.4'], hostPorts: { '127.0.0.1': 7443, '10.0.0.4': 9443 }, mainPort: 9443 };
+        annexClient.startClient();
+        expect(sockets[0].url).toBe('wss://127.0.0.1:7443/ws?client=desktop');
+        sockets[0].handlers.error(mismatch());
+        expect(annexClient.getSatellite(FP)).toMatchObject({ state: 'disconnected', problem: { code: 'own-listener', message: expect.stringMatching(/port 7443.*own Annex port/) } });
+        expect(annexClient.getSatellite(FP)?.needsPairing).toBeFalsy();
+        await vi.advanceTimersByTimeAsync(300);
+        // The other address is still tried; a mismatch there alone does not stop reconnecting.
+        expect(sockets[1].url).toBe('wss://10.0.0.4:9443/ws?client=desktop');
+        sockets[1].handlers.error(mismatch());
+        expect(annexClient.getSatellite(FP)).toMatchObject({ needsPairing: true, problem: { code: 'cert-mismatch' } });
+      });
     });
 
     const mismatch = () => Object.assign(new Error('pin'), { code: 'ERR_ANNEX_PIN_MISMATCH' });
@@ -2881,26 +3187,26 @@ describe('annex-client', () => {
       expect(annexClient.getSatellite(FP)).toMatchObject({ needsPairing: true, problem: { code: 'cert-mismatch' } });
     });
 
-    it('a new address clears "showed a different certificate" and tries again', () => {
+    it('a new address that shows the pinned certificate clears "showed a different certificate" and tries again', async () => {
       peer = { ...base, knownHosts: ['10.0.0.4'], mainPort: 9443 };
       annexClient.startClient();
       sockets[0].handlers.error(mismatch());
       expect(annexClient.getSatellite(FP)?.needsPairing).toBe(true);
-      vi.mocked(annexPeers.setTypedHost).mockImplementation((_fp, host) => { peer = { ...peer, typedHost: host }; return true; });
-      expect(annexClient.setSatelliteHost(FP, 'studio.tail1234.ts.net').ok).toBe(true);
+      committing();
+      expect((await annexClient.setSatelliteHost(FP, 'studio.tail1234.ts.net')).ok).toBe(true);
       expect(sockets.at(-1)!.url).toBe('wss://studio.tail1234.ts.net:9443/ws?client=desktop');
     });
 
-    it('asks for a port when it has never reached the satellite', () => {
+    it('asks for a port when it has never reached the satellite', async () => {
       peer = { ...base };
-      expect(annexClient.setSatelliteHost(FP, 'studio.local')).toEqual({ ok: false, error: expect.stringMatching(/add its port/) });
-      expect(annexClient.setSatelliteHost(FP, 'studio.local:9443')).toEqual({ ok: true });
+      expect(await annexClient.setSatelliteHost(FP, 'studio.local')).toEqual({ ok: false, error: expect.stringMatching(/add its port/) });
+      expect(await annexClient.setSatelliteHost(FP, 'studio.local:9443')).toEqual({ ok: true });
     });
 
-    it('saves a typed host without connecting while Connect to satellites is off', () => {
+    it('saves a checked typed host without connecting while Connect to satellites is off', async () => {
       vi.mocked(annexSettings.getSettings).mockReturnValue({ enableServer: true, enableClient: false } as any);
-      expect(annexClient.setSatelliteHost(FP, 'studio.local')).toEqual({ ok: true });
-      expect(annexPeers.setTypedHost).toHaveBeenCalledWith(FP, 'studio.local');
+      expect(await annexClient.setSatelliteHost(FP, 'studio.local')).toEqual({ ok: true });
+      expect(annexPeers.commitVerifiedRoute).toHaveBeenCalledWith(FP, expect.anything(), 'studio.local:9443', 'studio.local');
       expect(sockets).toHaveLength(0);
     });
 
@@ -2952,9 +3258,9 @@ describe('annex-client', () => {
       expect(membershipMod.noteLocalRemoval).toHaveBeenCalledWith(FP);
     });
 
-    it('never sets a typed host on a device that controls this machine', () => {
+    it('never sets a typed host on a device that controls this machine', async () => {
       peer = { ...base, role: 'controller' };
-      expect(annexClient.setSatelliteHost(FP, 'studio').ok).toBe(false);
+      expect((await annexClient.setSatelliteHost(FP, 'studio')).ok).toBe(false);
     });
 
     it('does nothing on wake while Connect to satellites is off', () => {
@@ -3029,6 +3335,489 @@ describe('annex-client', () => {
     expect(signal?.aborted).toBe(true);
     expect(request.destroy).toHaveBeenCalledTimes(1);
     expect(vi.getTimerCount()).toBe(0);
+  });
+
+  describe('single-selection request transport (#3613 P7w)', () => {
+    const FP = 'ef:07:ef:07';
+    let request: ReturnType<typeof vi.spyOn<typeof annexControl, 'request'>>;
+
+    beforeEach(() => {
+      annexClient.startClient();
+      vi.spyOn(annexControl, 'getLinkReadiness').mockReturnValue({ acceptedHere: true, openedHere: false });
+      request = vi.spyOn(annexControl, 'request').mockResolvedValue({ status: 200, headers: {}, body: Buffer.from('[]') });
+    });
+    afterEach(() => { vi.restoreAllMocks(); });
+
+    describe('direct GET header disposition', () => {
+      beforeEach(() => { annexClient._addConnectedSatelliteForTesting(FP); });
+      afterEach(() => { vi.mocked(https.request).mockReset(); });
+
+      function idleBodies(statusCode: number, headers: http.IncomingHttpHeaders = {}) {
+        const calls: Array<{ res: http.IncomingMessage; req: http.ClientRequest }> = [];
+        vi.mocked(https.request).mockImplementation((_url, _options, callback) => {
+          const res = Object.assign(new EventEmitter(), { statusCode, headers, resume: vi.fn() }) as http.IncomingMessage;
+          const req = Object.assign(new EventEmitter(), {
+            end: () => { queueMicrotask(() => callback?.(res)); },
+            destroy: vi.fn(),
+          }) as http.ClientRequest;
+          calls.push({ res, req });
+          return req;
+        });
+        return calls;
+      }
+
+      const nextTurn = () => new Promise<void>((resolve) => setImmediate(resolve));
+
+      it.each([
+        [404, 'File not found'],
+        [403, 'HTTP 403'],
+      ] as const)('rejects file read at the direct %s headers even when its body never ends', async (status, error) => {
+        const calls = idleBodies(status);
+        const pending = annexClient.requestFileRead(FP, 'p', 'missing');
+        const settled = vi.fn();
+        void pending.then(settled, settled);
+        await nextTurn();
+        const early = settled.mock.calls.length;
+        calls[0].req.emit('timeout');
+        await expect(pending).rejects.toThrow(error);
+        expect(early).toBe(1);
+        expect(calls[0].res.resume).toHaveBeenCalledOnce();
+        expect(request).not.toHaveBeenCalled();
+      });
+
+      it.each([
+        ['file tree', () => annexClient.requestFileTree(FP, 'p')],
+        ['digest', () => annexClient.requestBulletinDigest(FP, 'g')],
+        ['topic messages', () => annexClient.requestBulletinTopicMessages(FP, 'g', 't')],
+        ['all messages', () => annexClient.requestBulletinAllMessages(FP, 'g')],
+      ] as const)('returns an empty %s at the direct 404 headers without waiting for its body', async (_label, read) => {
+        const calls = idleBodies(404);
+        const settled = vi.fn();
+        const pending = read().then(settled);
+        await nextTurn();
+        const early = settled.mock.calls.length;
+        calls[0].req.emit('timeout');
+        await pending;
+        expect(early).toBe(1);
+        expect(settled).toHaveBeenCalledExactlyOnceWith([]);
+        expect(calls[0].res.resume).toHaveBeenCalledOnce();
+        expect(request).not.toHaveBeenCalled();
+      });
+
+      it.each([
+        [404, ''],
+        [503, expect.stringContaining("terminal's earlier output is too large")],
+      ] as const)('drains the PTY buffer at direct %s headers without waiting for its body', async (status, expected) => {
+        const calls = idleBodies(status);
+        const pending = annexClient.requestPtyBuffer(FP, `agent-${status}`);
+        await nextTurn();
+        const early = vi.mocked(calls[0].res.resume).mock.calls.length;
+        calls[0].req.emit('timeout');
+        await expect(pending).resolves.toEqual(expected);
+        expect(early).toBe(1);
+        expect(calls[0].res.resume).toHaveBeenCalledOnce();
+        expect(request).not.toHaveBeenCalled();
+      });
+
+      it.each([
+        [404, 'image/png'],
+        [403, 'image/png'],
+        [200, 'text/plain'],
+      ] as const)('releases icon fetch slots at direct %s / %s headers without waiting for bodies', async (status, type) => {
+        const calls = idleBodies(status, { 'content-type': type });
+        annexClient._receiveSatelliteMessageForTesting(FP, { type: 'snapshot', payload: {
+          protocolVersion: 2, lastSeq: 1, agents: {}, quickAgents: {},
+          projects: Array.from({ length: 5 }, (_, i) => ({ id: `p${i}`, icon: 'icon.png' })),
+        } });
+        await nextTurn();
+        const early = calls.length;
+        for (let i = 0; i < 5; i++) {
+          calls[i]?.req.emit('timeout');
+          await nextTurn();
+        }
+        expect(early).toBe(5);
+        expect(calls).toHaveLength(5);
+        for (const { res } of calls) expect(res.resume).toHaveBeenCalledOnce();
+        expect(request).not.toHaveBeenCalled();
+      });
+
+      it.each(['needs_pairing', 'peer_not_paired'])('handles direct 401 before its body and still notes %s when drained', async (error) => {
+        const calls = idleBodies(401);
+        const pending = annexClient.requestFileRead(FP, 'p', 'f');
+        const settled = vi.fn();
+        void pending.then(settled, settled);
+        await nextTurn();
+        const [{ res, req }] = calls;
+        try {
+          expect(settled).toHaveBeenCalledOnce();
+          await expect(pending).rejects.toThrow('HTTP 401');
+          expect(annexClient.getSatellite(FP)?.needsPairing).not.toBe(true);
+          res.emit('data', Buffer.from(JSON.stringify({ error })));
+          res.emit('end');
+          await nextTurn();
+          expect(annexClient.getSatellite(FP)?.needsPairing).toBe(true);
+        } finally { req.emit('timeout'); }
+      });
+
+      it('does not apply an old drained pairing refusal after the peer is re-pinned', async () => {
+        const peer = { fingerprint: FP, publicKey: 'key', alias: 'Peer', icon: '', color: '', pairedAt: '', lastSeen: '', tlsCertificateFingerprint: 'PIN' };
+        vi.mocked(annexPeers.getPeer).mockReturnValue(peer);
+        const calls = idleBodies(401);
+        await expect(annexClient.requestFileRead(FP, 'p', 'f')).rejects.toThrow('HTTP 401');
+        vi.mocked(annexPeers.getPeer).mockReturnValue({ ...peer, tlsCertificateFingerprint: 'NEW' });
+        calls[0].res.emit('data', Buffer.from('{"error":"needs_pairing"}'));
+        calls[0].res.emit('end');
+        await nextTurn();
+        expect(annexClient.getSatellite(FP)?.needsPairing).not.toBe(true);
+      });
+
+      it('keeps waiting for a valid direct icon body and preserves its bytes', async () => {
+        const calls = idleBodies(200, { 'content-type': 'image/png' });
+        annexClient._receiveSatelliteMessageForTesting(FP, { type: 'snapshot', payload: {
+          protocolVersion: 2, lastSeq: 1, agents: {}, quickAgents: {},
+          projects: [{ id: 'p', icon: 'icon.png' }],
+        } });
+        await nextTurn();
+        const [{ res }] = calls;
+        res.emit('data', Buffer.from([0, 255, 1]));
+        await nextTurn();
+        expect(annexClient.getSatellite(FP)?.snapshot?.projectIcons?.p).toBeUndefined();
+        expect(res.resume).not.toHaveBeenCalled();
+        res.emit('end');
+        await nextTurn();
+        expect(annexClient.getSatellite(FP)?.snapshot?.projectIcons?.p).toBe('data:image/png;base64,AP8B');
+        expect(request).not.toHaveBeenCalled();
+      });
+    });
+
+    describe('bulletin transport failures', () => {
+      afterEach(() => { vi.mocked(https.request).mockReset(); });
+
+      it.each([
+        ['topic', () => annexClient.requestBulletinTopicMessages(FP, 'g', 't')],
+        ['all', () => annexClient.requestBulletinAllMessages(FP, 'g')],
+      ] as const)('rejects an unavailable %s read instead of returning an empty board', async (_kind, read) => {
+        vi.mocked(annexControl.getLinkReadiness).mockReturnValue({ acceptedHere: false, openedHere: false });
+        await expect(read()).rejects.toThrow('Satellite not connected');
+        expect(request).not.toHaveBeenCalled();
+        expect(https.request).not.toHaveBeenCalled();
+      });
+
+      for (const route of ['direct', 'reverse'] as const) {
+        it.each([
+          ['topic', () => annexClient.requestBulletinTopicMessages(FP, 'g', 't')],
+          ['all', () => annexClient.requestBulletinAllMessages(FP, 'g')],
+        ] as const)(`${route}: rejects a failed %s read instead of returning an empty board`, async (_kind, read) => {
+          const failure = new Error('Bulletin transport unavailable');
+          if (route === 'direct') {
+            annexClient._addConnectedSatelliteForTesting(FP);
+            vi.mocked(https.request).mockImplementation(() => {
+              const req = Object.assign(new EventEmitter(), {
+                end: () => { queueMicrotask(() => req.emit('error', failure)); },
+                destroy: vi.fn(),
+              }) as http.ClientRequest;
+              return req;
+            });
+          } else request.mockRejectedValueOnce(failure);
+          await expect(read()).rejects.toBe(failure);
+          if (route === 'direct') {
+            expect(https.request).toHaveBeenCalledOnce();
+            expect(request).not.toHaveBeenCalled();
+          } else {
+            expect(request).toHaveBeenCalledOnce();
+            expect(https.request).not.toHaveBeenCalled();
+          }
+        });
+      }
+    });
+
+    it('keeps reverse file-read refusal handling on the completed control reply', async () => {
+      request.mockResolvedValueOnce({ status: 404, headers: {}, body: Buffer.from('not found') });
+      await expect(annexClient.requestFileRead(FP, 'p', 'f')).rejects.toThrow('File not found');
+      expect(request).toHaveBeenCalledOnce();
+      expect(https.request).not.toHaveBeenCalled();
+    });
+
+    it('routes specialized reads through control without an outbound satellite socket', async () => {
+      expect(await annexClient.requestFileTree(FP, 'p /')).toEqual([]);
+      expect(await annexClient.requestBulletinDigest(FP, 'g')).toEqual([]);
+      expect(await annexClient.requestBulletinTopicMessages(FP, 'g', 't /')).toEqual([]);
+      expect(await annexClient.requestBulletinAllMessages(FP, 'g')).toEqual([]);
+      request.mockResolvedValueOnce({ status: 200, headers: { 'content-type': 'text/plain' }, body: Buffer.from('file é') });
+      expect(await annexClient.requestFileRead(FP, 'p', 'f /')).toBe('file é');
+      expect(request.mock.calls.map(([, input]) => input.path)).toEqual([
+        '/api/v1/projects/p%20%2F/files/tree', '/api/v1/group-projects/g/bulletin/digest',
+        '/api/v1/group-projects/g/bulletin/topics/t%20%2F', '/api/v1/group-projects/g/bulletin/messages',
+        '/api/v1/projects/p/files/read?path=f%20%2F',
+      ]);
+      expect(https.request).not.toHaveBeenCalled();
+    });
+
+    it('preserves JSON/status/headers, cancellation and receive bounds above the raw seam', async () => {
+      const abort = new AbortController();
+      request.mockResolvedValueOnce({ status: 429, headers: { 'retry-after': '3' }, body: Buffer.from('{"error":"rate_limited"}') });
+      expect(await annexClient.postToMachine(FP, '/api/v1/network/test', { value: 'é' }, { signal: abort.signal, maxResponseBytes: 16 }))
+        .toEqual({ status: 429, body: { error: 'rate_limited' }, retryAfterMs: 3000 });
+      expect(request).toHaveBeenCalledWith(FP, expect.objectContaining({ method: 'POST', path: '/api/v1/network/test', body: '{"value":"é"}',
+        headers: { 'content-type': 'application/json' } }), expect.objectContaining({ signal: expect.any(AbortSignal), maxResponseBytes: 16, timeoutMs: 30000 }));
+      const error = new annexControl.ControlRequestError('cancelled', true, 'original-id');
+      request.mockRejectedValueOnce(error);
+      await expect(annexClient.postToMachine(FP, '/api/v1/network/test', {})).rejects.toBe(error);
+      expect(request).toHaveBeenCalledTimes(2);
+      expect(https.request).not.toHaveBeenCalled();
+    });
+
+    it('does not send an already aborted request or use an unready/old control link', async () => {
+      const abort = new AbortController(); abort.abort();
+      await expect(annexClient.postToMachine(FP, '/api/v1/network/test', {}, { signal: abort.signal })).rejects.toThrow('aborted');
+      vi.mocked(annexControl.getLinkReadiness).mockReturnValue({ acceptedHere: false, openedHere: true });
+      await expect(annexClient.postToMachine(FP, '/api/v1/network/test', {})).rejects.toThrow('not connected');
+      expect(request).not.toHaveBeenCalled();
+      expect(https.request).not.toHaveBeenCalled();
+    });
+
+    it('keeps the original in-flight write error across a direct to reverse to direct flap, without another send', async () => {
+      annexClient._addConnectedSatelliteForTesting(FP);
+      let executions = 0;
+      const socket = Object.assign(new EventEmitter(), { write: vi.fn(), end: () => { executions++; }, destroy: vi.fn() });
+      vi.mocked(https.request).mockReturnValueOnce(socket as never);
+      const pending = annexClient.postToMachine(FP, '/api/v1/network/test', {});
+      annexClient._receiveSatelliteDisconnectForTesting(FP);
+      annexClient._addConnectedSatelliteForTesting(FP);
+      const error = Object.assign(new Error('reset after execution'), { code: 'ECONNRESET' });
+      socket.emit('error', error);
+      await expect(pending).rejects.toBe(error);
+      expect(executions).toBe(1);
+      expect(https.request).toHaveBeenCalledTimes(1);
+      expect(request).not.toHaveBeenCalled();
+    });
+
+    it('never retries a possibly executed reverse write on a newly available direct route', async () => {
+      let fail!: (error: Error) => void;
+      let executions = 0;
+      request.mockImplementationOnce(() => { executions++; return new Promise((_resolve, reject) => { fail = reject; }); });
+      const pending = annexClient.postToMachine(FP, '/api/v1/network/test', {});
+      annexClient._addConnectedSatelliteForTesting(FP);
+      const error = new annexControl.ControlRequestError('transport_unavailable', true, 'executed-id');
+      fail(error);
+      await expect(pending).rejects.toBe(error);
+      expect(executions).toBe(1);
+      expect(request).toHaveBeenCalledTimes(1);
+      expect(https.request).not.toHaveBeenCalled();
+    });
+
+    it('projects reverse-only availability, keeping direct observations separate and connected notifications transition-only', async () => {
+      const peer = { fingerprint: FP, publicKey: 'key', alias: 'Reverse peer', icon: '', color: '', role: 'member' as const,
+        kind: 'desktop' as const, pairedAt: '', lastSeen: '', tlsCertificateFingerprint: 'PIN' };
+      vi.mocked(annexPeers.listPeers).mockReturnValue([peer]);
+      vi.mocked(annexPeers.getPeer).mockReturnValue(peer);
+      const connected = vi.fn();
+      const off = annexClient.onSatelliteConnected(connected);
+      try {
+        const { devicesChanged } = await import('./annex-device-signal');
+        devicesChanged();
+        expect(annexClient.isMachineConnected(FP)).toBe(true);
+        expect(annexClient.isMachineDirectConnected(FP)).toBe(false);
+        expect(annexClient.getSatellite(FP)).toMatchObject({ state: 'connected', host: '', mainPort: 0 });
+        expect(annexClient.satelliteKeyFor(FP)).toBe(FP);
+        devicesChanged();
+        expect(connected).toHaveBeenCalledExactlyOnceWith(FP);
+        vi.mocked(annexControl.getLinkReadiness).mockReturnValue({ acceptedHere: false, openedHere: true });
+        devicesChanged();
+        expect(annexClient.isMachineConnected(FP)).toBe(false);
+        expect(annexClient.getSatellite(FP)?.state).toBe('disconnected');
+        expect(connected).toHaveBeenCalledTimes(1);
+      } finally { off(); }
+    });
+
+    it('holds the real agent outbox when an OPEN control socket loses its current authority', async () => {
+      vi.mocked(annexControl.getLinkReadiness).mockRestore();
+      const fingerprint = Array(16).fill('ef').join(':');
+      const peer = { fingerprint, publicKey: 'key', alias: 'Reverse peer', icon: '', color: '', role: 'member' as const,
+        kind: 'desktop' as const, pairedAt: '', lastSeen: '', tlsCertificateFingerprint: 'PIN' };
+      vi.mocked(annexPeers.listPeers).mockReturnValue([peer]);
+      vi.mocked(annexPeers.getPeer).mockReturnValue(peer);
+      let allowed = true;
+      annexControl.setInboundAuthority({ accept: () => ({ ok: false, status: 401, error: 'unused', message: '' }), stillAllowed: () => allowed });
+      const socket = Object.assign(new EventEmitter(), { readyState: 1, send: vi.fn(), close: vi.fn(), ping: vi.fn(), terminate: vi.fn() });
+      annexControl._attachForTesting(socket as never, fingerprint, 'PIN', 'in');
+      socket.emit('message', Buffer.from(JSON.stringify({ v: 1, type: 'hello', features: ['request'] })));
+      expect(annexClient.isMachineConnected(fingerprint)).toBe(true);
+      expect(annexClient.sendToSatellite(fingerprint, { type: 'pty:input', payload: {} })).toEqual({ sent: false, error: 'not_connected' });
+      allowed = false;
+      expect(socket.readyState).toBe(1);
+      expect(annexClient.isMachineConnected(fingerprint)).toBe(false);
+      const calls = await import('./annex-agent-calls');
+      let file: import('./annex-delivery-store').DeliveryFile = { version: 1, inbox: [], outbox: [], deliveries: [] };
+      const stop = calls.startAgentCalls({
+        transport: { connected: annexClient.isMachineConnected, post: annexClient.postToMachine, onConnected: annexClient.onSatelliteConnected,
+          machineName: () => 'Reverse peer', supportsDurableDelivery: async () => true },
+        deliveryStore: { get: () => structuredClone(file), update: async (change) => { change(file); }, clearForTesting: async () => { file = { version: 1, inbox: [], outbox: [], deliveries: [] }; } },
+        authorizeQueuedCall: async () => ({ allowed: true }), listDirections: () => [],
+        runTool: async () => ({ content: [] }), describeLocalAgent: async () => undefined,
+      });
+      try {
+        await calls.forwardAgentCall('sender', `receiver@${fingerprint}`, 'Receiver', 'send_message', { message: 'held' });
+        await calls.flushOutbox(fingerprint);
+        expect(calls.waitingFor(fingerprint)).toHaveLength(1);
+        expect(request).not.toHaveBeenCalled();
+        expect(https.request).not.toHaveBeenCalled();
+        expect(socket.readyState).toBe(1);
+      } finally { stop(); annexControl.resetControlForTests(); }
+    });
+
+    describe('one reverse event stream', () => {
+      const peer = { fingerprint: FP, publicKey: 'key', alias: 'Reverse peer', icon: '', color: '', role: 'member' as const,
+        kind: 'desktop' as const, pairedAt: '', lastSeen: '', tlsCertificateFingerprint: 'PIN', knownHosts: [] as string[], mainPort: 9000 };
+      let handlers: annexControl.SubscriptionHandlers[];
+      let handles: Array<{ id: string; close: ReturnType<typeof vi.fn>; send: ReturnType<typeof vi.fn> }>;
+      let changed: () => void;
+      const snapshot = (lastSeq: number) => ({ type: 'snapshot', payload: { protocolVersion: 2, projects: [], agents: {}, quickAgents: {},
+        theme: null, orchestrators: null, pendingPermissions: [], lastSeq } });
+      beforeEach(async () => {
+        handlers = []; handles = [];
+        vi.mocked(annexPeers.listPeers).mockReturnValue([peer]);
+        vi.mocked(annexPeers.getPeer).mockReturnValue(peer);
+        vi.spyOn(annexControl, 'hasReverseLink').mockReturnValue(true);
+        vi.spyOn(annexControl, 'subscribe').mockImplementation((_fingerprint, callbacks) => {
+          const handle = { id: `stream-${handles.length}`, close: vi.fn(), send: vi.fn(() => true) };
+          handlers.push(callbacks); handles.push(handle); return handle;
+        });
+        ({ devicesChanged: changed } = await import('./annex-device-signal'));
+        changed();
+      });
+
+      it('uses the normal snapshot/event IPC without per-frame readiness notifications', async () => {
+        const { onDevicePresenceChanged } = await import('./annex-device-signal');
+        const notified = vi.fn();
+        const off = onDevicePresenceChanged(notified);
+        try {
+          handlers[0].onFrame(snapshot(10));
+          for (let i = 0; i < 10; i++) handlers[0].onFrame({ type: 'agent:status', payload: { agentId: 'a', status: 'idle' } });
+          expect(annexClient.getSatellite(FP)?.snapshot?.lastSeq).toBe(10);
+          expect(broadcastToAllWindows).toHaveBeenCalledWith(IPC.ANNEX_CLIENT.SATELLITE_EVENT, { satelliteId: FP, type: 'agent:status', payload: { agentId: 'a', status: 'idle' } });
+          expect(notified).not.toHaveBeenCalled();
+          expect(annexControl.subscribe).toHaveBeenCalledTimes(1);
+          vi.mocked(annexControl.getLinkReadiness).mockReturnValue({ acceptedHere: false, openedHere: false });
+          changed();
+          expect(notified).toHaveBeenCalledTimes(1);
+          expect(handles[0].close).toHaveBeenCalledTimes(1);
+        } finally { off(); }
+      });
+
+      it.each(['revoke', 're-pin', 'disable', 'disconnect', 'forget', 'stop'] as const)('retires before late callbacks on %s and never resurrects the old stream', (reason) => {
+        handlers[0].onFrame(snapshot(10));
+        if (reason === 'revoke' || reason === 're-pin') {
+          vi.mocked(annexControl.getLinkReadiness).mockReturnValue({ acceptedHere: false, openedHere: false });
+          if (reason === 're-pin') vi.mocked(annexPeers.getPeer).mockReturnValue({ ...peer, tlsCertificateFingerprint: 'NEW-PIN' });
+          changed();
+        } else if (reason === 'disable') {
+          vi.mocked(annexSettings.getSettings).mockReturnValue({ ...annexSettings.getSettings(), enableClient: false });
+          changed();
+        } else if (reason === 'disconnect') annexClient.disconnect(FP);
+        else if (reason === 'forget') {
+          vi.mocked(annexControl.getLinkReadiness).mockReturnValue({ acceptedHere: false, openedHere: false });
+          annexClient.forgetSatellite(FP);
+        } else annexClient.stopClient();
+        expect(handles[0].close).toHaveBeenCalledTimes(1);
+        const count = vi.mocked(broadcastToAllWindows).mock.calls.length;
+        handlers[0].onFrame(snapshot(999));
+        handlers[0].onFrame({ type: 'agent:status', payload: { status: 'stale' } });
+        handlers[0].onEnd('closed');
+        for (let i = 0; i < 5; i++) changed();
+        expect(annexControl.subscribe).toHaveBeenCalledTimes(1);
+        expect(broadcastToAllWindows).toHaveBeenCalledTimes(count);
+        expect(annexClient.isMachineConnected(FP)).toBe(false);
+      });
+
+      it('does not resubscribe to an ended stream until explicit retry', () => {
+        handlers[0].onEnd('frame_too_large');
+        for (let i = 0; i < 10; i++) changed();
+        expect(annexControl.subscribe).toHaveBeenCalledTimes(1);
+        annexClient.retry(FP);
+        expect(annexControl.subscribe).toHaveBeenCalledTimes(2);
+        handlers[1].onFrame(snapshot(0));
+        expect(annexClient.getSatellite(FP)?.snapshot?.lastSeq).toBe(0);
+        handlers[0].onFrame(snapshot(999));
+        expect(annexClient.getSatellite(FP)?.snapshot?.lastSeq).toBe(0);
+      });
+
+      it('starts exactly one fresh subscription after control readiness drops and recovers', () => {
+        handlers[0].onFrame(snapshot(100));
+        vi.mocked(annexControl.getLinkReadiness).mockReturnValue({ acceptedHere: false, openedHere: false });
+        changed();
+        expect(handles[0].close).toHaveBeenCalledTimes(1);
+        vi.mocked(annexControl.getLinkReadiness).mockReturnValue({ acceptedHere: true, openedHere: false });
+        for (let i = 0; i < 10; i++) changed();
+        expect(annexControl.subscribe).toHaveBeenCalledTimes(2);
+        handlers[1].onFrame(snapshot(0));
+        handlers[0].onFrame(snapshot(999));
+        handlers[0].onEnd('closed');
+        expect(annexClient.getSatellite(FP)?.snapshot?.lastSeq).toBe(0);
+        expect(handles[1].close).not.toHaveBeenCalled();
+      });
+
+      it('sends through only the subscription owner, retaining refusal without an alternate send', () => {
+        expect(annexClient.sendToSatellite(FP, { type: 'pty:input', payload: { data: 'one' } })).toEqual({ sent: true });
+        expect(handles[0].send).toHaveBeenCalledExactlyOnceWith({ type: 'pty:input', payload: { data: 'one' } });
+        handles[0].send.mockReturnValue(false);
+        expect(annexClient.sendToSatellite(FP, { type: 'agent:spawn', payload: {} }).sent).toBe(false);
+        expect(https.request).not.toHaveBeenCalled();
+        expect(request).not.toHaveBeenCalled();
+      });
+
+      it('uses the same reverse seam for byte-preserving icons and header-bearing PTY buffers', async () => {
+        const { ANNEX_BUFFER_HEADERS } = await import('../../shared/annex-pty');
+        request.mockImplementation(async (_fingerprint, input) => {
+          if (input.path.endsWith('/buffer')) return { status: 200, headers: { [ANNEX_BUFFER_HEADERS.seq]: '7' }, body: Buffer.from('seed') };
+          if (input.path.includes('/icons/')) return { status: 200, headers: { 'content-type': 'image/png' }, body: Buffer.from([0, 255, 1]) };
+          throw new Error(`Unexpected fixture request: ${input.path}`);
+        });
+        const frame = snapshot(1);
+        handlers[0].onFrame({ ...frame, payload: { ...frame.payload, projects: [{ id: 'p /', icon: 'icon.png' }] } });
+        await vi.waitFor(() => expect(annexClient.getSatellite(FP)?.snapshot).toMatchObject({ projectIcons: { 'p /': 'data:image/png;base64,AP8B' } }));
+        expect(await annexClient.requestPtyBuffer(FP, 'agent /')).toBe('seed');
+        expect(request).toHaveBeenCalledWith(FP, expect.objectContaining({ path: '/api/v1/agents/agent%20%2F/buffer', timeoutMs: 5000 }), expect.any(Object));
+        expect(request).toHaveBeenCalledWith(FP, expect.objectContaining({ path: '/api/v1/icons/project/p%20%2F', timeoutMs: 10000, maxResponseBytes: expect.any(Number) }), expect.any(Object));
+        expect(https.request).not.toHaveBeenCalled();
+      });
+
+      it('cancels a locally stopped write without sending it again or losing its indeterminate outcome', async () => {
+        let executions = 0;
+        request.mockImplementationOnce((_fingerprint, _input, options) => {
+          executions++;
+          return new Promise((_resolve, reject) => {
+            options?.signal?.addEventListener('abort', () => reject(new annexControl.ControlRequestError('cancelled', true, options.requestId!)), { once: true });
+          });
+        });
+        const pending = annexClient.postToMachine(FP, '/api/v1/network/test', {});
+        const rejected = expect(pending).rejects.toMatchObject({ code: 'cancelled', indeterminate: true, requestId: expect.any(String) });
+        annexClient.stopClient();
+        await rejected;
+        expect(executions).toBe(1);
+        expect(request).toHaveBeenCalledTimes(1);
+        expect(https.request).not.toHaveBeenCalled();
+      });
+
+      it('replaces reverse with direct using a fresh stream identity, then recovers with one new reverse subscription', async () => {
+        handlers[0].onFrame(snapshot(100));
+        vi.mocked(annexPeers.getPeer).mockReturnValue({ ...peer, knownHosts: ['127.0.0.2'] });
+        annexClient.connect(FP);
+        await new Promise((resolve) => setTimeout(resolve, 0));
+        expect(handles[0].close).toHaveBeenCalledTimes(1);
+        expect(annexClient.isMachineDirectConnected(FP)).toBe(true);
+        expect(annexClient.sendToSatellite(FP, { type: 'pty:input', payload: { data: 'direct' } })).toEqual({ sent: true });
+        expect(handles[0].send).not.toHaveBeenCalled();
+        annexClient._receiveSatelliteMessageForTesting(FP, snapshot(0));
+        handlers[0].onFrame(snapshot(999));
+        expect(annexClient.getSatellite(FP)?.snapshot?.lastSeq).toBe(0);
+        annexClient._receiveSatelliteDisconnectForTesting(FP);
+        expect(annexControl.subscribe).toHaveBeenCalledTimes(2);
+        handlers[1].onFrame(snapshot(0));
+        expect(annexClient.sendToSatellite(FP, { type: 'pty:input', payload: { data: 'reverse' } })).toEqual({ sent: true });
+        expect(handles[1].send).toHaveBeenCalledTimes(1);
+      });
+    });
   });
 
   describe('chat across desktops (#2390)', () => {
@@ -3213,6 +4002,53 @@ describe('annex-client', () => {
       expect(annexPeers.addPeer).toHaveBeenCalledWith(expect.objectContaining({
         fingerprint: SAT_FP, knownHosts: ['127.0.0.1'], hostPorts: { '127.0.0.1': 7443 }, mainPort: 7443,
       }));
+    });
+
+    describe('own routes and pairing again (#3608)', () => {
+      const saved = () => vi.mocked(annexPeers.addPeer).mock.calls.at(-1)![0];
+
+      it('a plain link pairing on a LAN address stays shared, with nothing private', async () => {
+        expect(await annexClient.pairWithLink(await link())).toMatchObject({ success: true });
+        expect(saved()).toMatchObject({ knownHosts: ['192.168.1.60'], sharedEndpoints: { '192.168.1.60': 9443 } });
+        expect(saved().privateHosts).toBeUndefined();
+      });
+
+      it('a non-loopback override address is this computer\'s own, while the link hosts stay shared', async () => {
+        expect(await annexClient.pairWithLink(await link(), '10.20.0.5:7443')).toMatchObject({ success: true });
+        expect(saved()).toMatchObject({ privateHosts: ['10.20.0.5'], sharedEndpoints: { '192.168.1.60': 9443 }, hostPorts: { '10.20.0.5': 7443, '192.168.1.60': 9443 } });
+      });
+
+      it('the address used to pair without a link is this computer\'s own', async () => {
+        expect(await annexClient.pairWithEndpoint('10.20.0.5:7443', '123456', CERT)).toMatchObject({ success: true });
+        expect(saved()).toMatchObject({ privateHosts: ['10.20.0.5'] });
+        expect(saved().sharedEndpoints).toBeUndefined();
+      });
+
+      it('pairing again through a private remapped port keeps the old default port for the same certificate', async () => {
+        vi.mocked(annexPeers.getPeer).mockReturnValue({ fingerprint: SAT_FP, publicKey: 'sat-pk', alias: 'Mini', icon: 'server', color: 'teal', pairedAt: '', lastSeen: '',
+          role: 'member', tlsCertificateFingerprint: CERT_COLONS, knownHosts: ['10.20.0.5'], hostPorts: { '10.20.0.5': 9443 }, mainPort: 9443,
+          sharedEndpoints: { '10.20.0.5': 9443 } });
+        expect(await annexClient.pairWithEndpoint('10.20.0.5:7443', '123456', CERT)).toMatchObject({ success: true });
+        expect(saved()).toMatchObject({ privateHosts: ['10.20.0.5'], hostPorts: { '10.20.0.5': 7443 }, mainPort: 9443 });
+        // A different certificate takes nothing over: the address used is the default it has.
+        vi.mocked(annexPeers.getPeer).mockReturnValue({ fingerprint: SAT_FP, publicKey: 'sat-pk', alias: 'Mini', icon: 'server', color: 'teal', pairedAt: '', lastSeen: '',
+          role: 'member', tlsCertificateFingerprint: 'cd'.repeat(32), mainPort: 9443 });
+        await annexClient.pairWithEndpoint('10.20.0.5:7443', '123456', CERT);
+        expect(saved().mainPort).toBe(7443);
+      });
+
+      it('carries saved routes over only for the same pinned certificate', async () => {
+        const stored = { fingerprint: SAT_FP, publicKey: 'sat-pk', alias: 'Mini', icon: 'server', color: 'teal', pairedAt: '', lastSeen: '',
+          role: 'member' as const, tlsCertificateFingerprint: CERT_COLONS, typedHost: '127.0.0.1:7555' };
+        vi.mocked(annexPeers.getPeer).mockReturnValue(stored);
+        await annexClient.pairWithLink(await link());
+        expect(annexPeers.withSavedRoutes).toHaveBeenLastCalledWith(stored, expect.objectContaining({ fingerprint: SAT_FP }), true);
+
+        // The same identity at a new certificate: nothing in the answer proves it's the same machine, so routes are held.
+        vi.mocked(annexPeers.getPeer).mockReturnValue({ ...stored, tlsCertificateFingerprint: 'cd'.repeat(32) });
+        await annexClient.pairWithLink(await link());
+        expect(annexPeers.withSavedRoutes).toHaveBeenLastCalledWith(expect.objectContaining({ typedHost: '127.0.0.1:7555' }), expect.anything(), false);
+      });
     });
 
     it('pairs manually using bracketed IPv6 and remembers the unbracketed host with its port', async () => {

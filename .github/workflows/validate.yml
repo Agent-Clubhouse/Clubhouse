@@ -428,7 +428,7 @@ jobs:
   e2e-annex:
     needs: [changes, build]
     if: ${{ !cancelled() && needs.build.result == 'success' }}
-    name: Annex E2E Tests (${{ matrix.os }}, ${{ matrix.shard }}/2)
+    name: Annex E2E Tests (${{ matrix.os }}, ${{ matrix.shard }}/6)
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
@@ -436,7 +436,7 @@ jobs:
         os: ${{ fromJSON(needs.changes.outputs.complete == 'true' && needs.changes.outputs.macos == 'true' && '["ubuntu-latest","windows-2022","macos-latest"]' || '["ubuntu-latest","windows-2022"]') }}
         # Every Annex spec launches two apps, so one job was the run's long
         # pole. One explicit list per shard, in e2e/e2e-shards.mjs.
-        shard: [1, 2]
+        shard: [1, 2, 3, 4, 5, 6]
     env:
       PLAYWRIGHT_ANNEX_SHARD: ${{ matrix.shard }}
       PLAYWRIGHT_JUNIT_OUTPUT_NAME: test-results/junit.xml

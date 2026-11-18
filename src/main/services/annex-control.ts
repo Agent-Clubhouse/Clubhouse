@@ -59,6 +59,9 @@ import { CHAT_IMAGE_MAX_BYTES } from '../../shared/chat';
 import { FULL_EVENT_MAX_BYTES } from './annex-full-events';
 import { HANDOFF_TRANSFER_BODY_BYTES } from '../../shared/handoff-transfer';
 import { ICON_SERVED_MAX_BYTES } from '../../shared/icon-limits';
+import { routeAllowed, type AnnexRoute } from './annex-routes';
+import { classifyConnectionError } from '../../shared/annex-problems';
+import { devicesChanged } from './annex-device-signal';
 
 // ---------------------------------------------------------------------------
 // Limits
@@ -68,6 +71,11 @@ import { ICON_SERVED_MAX_BYTES } from '../../shared/icon-limits';
 export const HELLO_TIMEOUT_MS = 10_000;
 /** A ping this often; no pong by the next one and the connection is dead. */
 export const HEARTBEAT_MS = 30_000;
+/** Reconnect backoff has a hard final cap, including jitter. */
+export const RECONNECT_MAX_MS = 30_000;
+/** An old server may reset an unknown upgrade path without an HTTP refusal. */
+const UNKNOWN_PEER_PROBE_MS = 10 * 60_000;
+const UNKNOWN_PEER_RESET_LIMIT = 6;
 /** Request timeout, refreshed by progress on its bulk body as with a direct REST call. */
 export const REQUEST_TIMEOUT_MS = 30_000;
 /**
@@ -132,6 +140,8 @@ export interface ControlRequestInput {
 export interface ControlRequestOptions {
   signal?: AbortSignal;
   timeoutMs?: number;
+  /** Local receive bound, checked before accepting a response body. Never sent to the target. */
+  maxResponseBytes?: number;
   /** Reuse an earlier request's id to retry it: the target answers with the original outcome instead of running it again. */
   requestId?: string;
 }
@@ -246,6 +256,7 @@ interface Pending {
   id: string;
   method: ControlMethod;
   path: string;
+  maxResponseBytes?: number;
   resolve: (result: ControlResult) => void;
   reject: (err: ControlRequestError) => void;
   cleanup: () => void;
@@ -267,6 +278,7 @@ interface Link {
   /** What the opener offered in its hello (`out` only). */
   offered: Set<string> | null;
   closed: boolean;
+  announcedReady: boolean;
   helloTimer: ReturnType<typeof setTimeout> | null;
   heartbeat: ReturnType<typeof setInterval> | null;
   alive: boolean;
@@ -277,6 +289,36 @@ interface Link {
   subscription: ServedSubscription | null;
   /** Target: requests this connection is owed an answer for, until it is written. Aborted on cancel or close. */
   replying: Map<string, AbortController>;
+  onReady?: () => void;
+}
+
+export interface ControlConnectionPlan {
+  fingerprint: string;
+  pin: string;
+  /** Opaque identity/pin/pairing snapshot, not route freshness or a wire field. */
+  trust: string;
+  localFingerprint: string;
+  routes: readonly AnnexRoute[];
+  tlsOptions(): tls.ConnectionOptions;
+}
+
+export interface ControlConnectionSource {
+  plans(): readonly ControlConnectionPlan[];
+  autoReconnect(): boolean;
+}
+
+interface KeptConnection {
+  plan: ControlConnectionPlan;
+  routeKey: string;
+  attempt: number;
+  nextRoute: number;
+  started: boolean;
+  blocked?: 'stopped' | 'revoked' | 'pin' | 'unsupported';
+  timer: ReturnType<typeof setTimeout> | null;
+  socket: WebSocket | null;
+  readyAt: number | null;
+  resetFailures: number;
+  everReady: boolean;
 }
 
 // ---------------------------------------------------------------------------
@@ -287,6 +329,9 @@ const links = new Set<Link>();
 let inboundAuthority: InboundAuthority | null = null;
 let target: ControlTarget | null = null;
 let wss: WebSocketServer | null = null;
+let connectionSource: ControlConnectionSource | null = null;
+const keptConnections = new Map<string, KeptConnection>();
+const outgoingSockets = new Map<string, WebSocket>();
 /**
  * Target: runs not yet settled, by requester (identity and certificate). Kept
  * apart from any connection, so closing or replacing one never frees a slot
@@ -315,6 +360,8 @@ export function setControlTarget(next: ControlTarget | null): void {
   if (!next) {
     closeAll('out');
     seen.clear();
+  } else {
+    refreshConnections();
   }
 }
 
@@ -431,8 +478,12 @@ function requestBodyLimit(path: string): number {
   return /^\/api\/v1\/mobile\/agents\/[^/]+\/attachments$/.test(path) ? CHAT_IMAGE_MAX_BYTES : CONTROL_FRAME_MAX_BYTES;
 }
 /** Envelope limits only; route handlers retain their exact existing content limits. */
-export function responseBodyLimit(path: string): number {
-  if (/^\/api\/v1\/projects\/[^/]+\/files\/read(?:\?|$)/.test(path)) return Infinity;
+export function responseBodyLimit(path: string, method: ControlMethod): number {
+  if (/^\/api\/v1\/projects\/[^/]+\/(?:files\/read|git\/diff)(?:\?|$)/.test(path)) return Infinity;
+  if (method === 'GET' && (
+    /^\/api\/v1\/group-projects\/[^/?]+\/bulletin\/(?:messages|topics\/[^/?]+)(?:\?|$)/.test(path)
+    || /^\/api\/v1\/agents\/[^/?]+\/sessions\/[^/?]+\/transcript(?:\?|$)/.test(path)
+  )) return Infinity;
   if (/\/chat\/events\/\d+(?:\?|$)/.test(path)) return FULL_EVENT_MAX_BYTES;
   if (/\/icons\//.test(path)) return ICON_SERVED_MAX_BYTES;
   if (/\/handoffs\/transfer$/.test(path)) return HANDOFF_TRANSFER_BODY_BYTES;
@@ -464,7 +515,8 @@ function makeBulkLane(link: Link): ControlBulkLane {
         && !link.replying.has(id) && size <= requestBodyLimit(message.path);
       if (kind === 'response') {
         const pending = link.pending.get(id);
-        return link.direction === 'in' && !!pending && link.features!.has('request') && size <= responseBodyLimit(pending.path);
+        return link.direction === 'in' && !!pending && link.features!.has('request') && size <= responseBodyLimit(pending.path, pending.method)
+          && (pending.maxResponseBytes === undefined || size <= pending.maxResponseBytes);
       }
       if (kind === 'client' && message.type === 'client') return link.direction === 'out' && !!link.features?.has('ws-control')
         && link.subscription?.id === id && !link.subscription.ended && message.frame.type === 'clipboard:image'
@@ -473,6 +525,14 @@ function makeBulkLane(link: Link): ControlBulkLane {
     },
     rejectStart: (kind, id, meta, size) => {
       const message = bulkMeta(kind, id, meta);
+      const pending = link.pending.get(id);
+      if (kind === 'response' && message?.type === 'response' && link.direction === 'in' && link.features?.has('request')
+        && pending && size <= responseBodyLimit(pending.path, pending.method) && pending.maxResponseBytes !== undefined && size > pending.maxResponseBytes) {
+        link.pending.delete(id);
+        pending.cleanup();
+        pending.reject(new ControlRequestError('response_too_large', !isReadOnlyMethod(pending.method), id));
+        return true;
+      }
       if (link.direction !== 'out' || !link.features?.has('request') || link.replying.has(id) || message?.type !== 'request' || size <= requestBodyLimit(message.path) || !/\/attachments$/.test(message.path)) return false;
       return rawSend(link, { v: 1, type: 'response', id, ...toWire(jsonResponse(413, { version: 1, error: 'too_large' })) });
     },
@@ -553,6 +613,7 @@ function closeLink(link: Link, code: number, reason: string, failWith: ControlEr
   link.closed = true;
   link.bulk.close();
   links.delete(link);
+  if (link.announcedReady) devicesChanged();
   if (link.helloTimer) clearTimeout(link.helloTimer);
   if (link.heartbeat) clearInterval(link.heartbeat);
   link.helloTimer = null;
@@ -592,7 +653,7 @@ function inboundStillAllowed(link: Link): boolean {
 
 function attach(ws: WebSocket, fingerprint: string, pin: string, direction: 'in' | 'out', remoteAddress: string | undefined): Link {
   const link = {
-    ws, fingerprint, pin, direction, remoteAddress, features: null, offered: null, closed: false,
+    ws, fingerprint, pin, direction, remoteAddress, features: null, offered: null, closed: false, announcedReady: false,
     helloTimer: null, heartbeat: null, alive: true, pending: new Map(), replying: new Map(), subscriptions: new Map(), subscription: null,
   } as Link;
   link.bulk = makeBulkLane(link);
@@ -695,6 +756,11 @@ function onHello(link: Link, message: ControlMessage): void {
   appLog('core:annex', 'info', 'Annex control connection ready', {
     meta: { fingerprint: link.fingerprint, direction: link.direction, features: [...link.features] },
   });
+  link.onReady?.();
+  if (requestReady(link)) {
+    link.announcedReady = true;
+    devicesChanged();
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -788,7 +854,7 @@ function startRun(server: ControlTarget, principal: AnnexPrincipal, request: Con
   const deadline = new AbortController();
   const timer = setTimeout(() => deadline.abort('timeout'), targetTimeoutMs);
   timer.unref?.();
-  const ctx: DispatchContext = { remoteAddress: link.remoteAddress, signal: cancel.signal, deadline: deadline.signal, linkOpen: () => !link.closed && link.ws.readyState === WebSocket.OPEN, responseLimit: link.features?.has('bulk') ? responseBodyLimit(request.path) : CONTROL_FRAME_MAX_BYTES };
+  const ctx: DispatchContext = { remoteAddress: link.remoteAddress, signal: cancel.signal, deadline: deadline.signal, linkOpen: () => !link.closed && link.ws.readyState === WebSocket.OPEN, responseLimit: link.features?.has('bulk') ? responseBodyLimit(request.path, request.method) : CONTROL_FRAME_MAX_BYTES };
   let dispatched: Promise<DispatchResult>;
   try { dispatched = server.dispatch(principal, request, ctx); } catch (err) { // telemetry-exempt: passed on as a rejection, logged below
     dispatched = Promise.reject(err);
@@ -1069,6 +1135,10 @@ function onAnswer(link: Link, message: Extract<ControlMessage, { type: 'response
     pending.reject(new ControlRequestError(message.code, !neverRan && !isReadOnlyMethod(pending.method), pending.id));
     return;
   }
+  if (pending.maxResponseBytes !== undefined && Buffer.byteLength(message.body ?? '', message.encoding ?? 'utf8') > pending.maxResponseBytes) {
+    pending.reject(new ControlRequestError('response_too_large', !isReadOnlyMethod(pending.method), pending.id));
+    return;
+  }
   pending.resolve({ status: message.status, headers: message.headers, body: decodeControlBody(message.body, message.encoding) });
 }
 
@@ -1076,6 +1146,26 @@ function linkFor(fingerprint: string, direction: 'in' | 'out'): Link | undefined
   let found: Link | undefined;
   for (const link of links) if (link.fingerprint === fingerprint && link.direction === direction && !link.closed) found = link;
   return found;
+}
+
+function requestReady(link: Link | undefined): boolean {
+  if (!link || link.closed || link.ws.readyState !== WebSocket.OPEN || !link.features?.has('request')) return false;
+  return link.direction === 'in'
+    ? inboundAuthority?.stillAllowed(link.fingerprint, link.pin) === true
+    : target?.authorize({ fingerprint: link.fingerprint, pin: link.pin, via: 'reverse' }).ok === true;
+}
+
+export interface ControlLinkReadiness {
+  acceptedHere: boolean;
+  openedHere: boolean;
+}
+
+/** Read-only Settings observation, using the same current authority as request() and onRequest(). */
+export function getLinkReadiness(fingerprint: string): ControlLinkReadiness {
+  return {
+    acceptedHere: requestReady(linkFor(fingerprint, 'in')),
+    openedHere: requestReady(linkFor(fingerprint, 'out')),
+  };
 }
 
 /** Whether `request()` can reach that computer now: it opened a control connection here that agreed to `feature`. */
@@ -1097,6 +1187,7 @@ export function hasReverseLink(fingerprint: string, feature: ControlFeature = 'r
 export function request(fingerprint: string, input: ControlRequestInput, options: ControlRequestOptions = {}): Promise<ControlResult> {
   const id = options.requestId ?? randomUUID();
   const fail = (code: ControlErrorCode, indeterminate = false) => Promise.reject(new ControlRequestError(code, indeterminate, id));
+  if (options.maxResponseBytes !== undefined && (!Number.isSafeInteger(options.maxResponseBytes) || options.maxResponseBytes < 0)) return fail('invalid_request');
   const link = linkFor(fingerprint, 'in');
   if (!link || link.ws.readyState !== WebSocket.OPEN || !link.features) return fail('transport_unavailable');
   if (!link.features.has('request')) return fail('not_supported');
@@ -1126,7 +1217,7 @@ export function request(fingerprint: string, input: ControlRequestInput, options
       reject(new ControlRequestError(code, !readOnly, id));
     }
     options.signal?.addEventListener('abort', onAbort, { once: true });
-    link.pending.set(id, { id, method: input.method, path: input.path, resolve, reject, cleanup, progress: () => timer.refresh?.() });
+    link.pending.set(id, { id, method: input.method, path: input.path, maxResponseBytes: options.maxResponseBytes, resolve, reject, cleanup, progress: () => timer.refresh?.() });
     if (link.features?.has('bulk') && bytes && (binaryPath(input.path) || bytes.length > BULK_CHUNK_BYTES)) {
       if (bytes.length > CONTROL_FRAME_MAX_BYTES && !/\/attachments$/.test(input.path)) { link.pending.delete(id); cleanup(); reject(new ControlRequestError('request_too_large', false, id)); return; }
       const meta = { method: input.method, path: input.path, ...(input.headers && { headers: input.headers }) };
@@ -1186,40 +1277,258 @@ export function handleControlUpgrade(req: IncomingMessage, socket: Duplex, head:
 /**
  * Opens the control connection to `fingerprint` at `host:port`, pinned to its
  * certificate (`pinned`), if this machine is serving and would take reverse
- * requests from that computer. A refused or unknown path (an older
- * Clubhouse) just leaves it closed until the next main connection.
+ * requests from that computer. With a connection source, refreshes the
+ * independently maintained connection instead of replacing its socket.
  */
 export function connectTo(fingerprint: string, host: string, port: number, tlsOptions: tls.ConnectionOptions, pinned: string | undefined): void {
+  if (connectionSource) {
+    const connection = keptConnections.get(fingerprint);
+    if (connection?.blocked === 'stopped') { connection.blocked = undefined; connection.started = false; }
+    // A fresh authenticated /ws connection may be a peer that just restarted/upgraded.
+    // Ordinary /ws pongs and membership/presence notifications never reset this.
+    if (connection && connection.resetFailures > 0) {
+      connection.resetFailures = 0;
+      connection.attempt = 0;
+      if (connection.timer) { clearTimeout(connection.timer); connection.timer = null; }
+      if (!connection.socket) connection.started = false;
+    }
+    refreshConnections();
+    return;
+  }
   closeFor(fingerprint, 'out');
+  openOutgoing(fingerprint, host, port, tlsOptions, pinned);
+}
+
+interface OutgoingHooks {
+  current(): boolean;
+  ready(): void;
+  block(reason: 'revoked' | 'pin' | 'unsupported'): void;
+  resetBeforeUpgrade(): void;
+  closed(code: number): void;
+}
+
+function terminalTlsError(err: unknown): boolean {
+  return ['cert-mismatch', 'cert-expired', 'cert-not-yet-valid'].includes(classifyConnectionError(err))
+    || typeof err === 'object' && err !== null && 'code' in err && err.code === 'ERR_ANNEX_NEEDS_PAIRING';
+}
+
+function openOutgoing(fingerprint: string, host: string, port: number, tlsOptions: tls.ConnectionOptions, pinned: string | undefined, hooks?: OutgoingHooks): WebSocket | null {
   // Only to a computer this machine would take reverse requests from, and only while it serves.
   const eligible = (pin: string | undefined) => !!target && !!pin && target.authorize({ fingerprint, pin, via: 'reverse' }).ok;
-  if (!host || !port || !eligible(pinned)) return;
+  if (!host || !port || !eligible(pinned)) return null;
   const authority = net.isIPv6(host) ? `[${host}]` : host;
   const ws = new WebSocket(`wss://${authority}:${port}${CONTROL_CHANNEL_PATH}`, { ...tlsOptions, handshakeTimeout: 10_000, maxPayload: CONTROL_EVENT_FRAME_MAX_BYTES });
+  outgoingSockets.set(fingerprint, ws);
   let link: Link | null = null;
   ws.on('upgrade', (res) => {
     const socket = res.socket;
     // The identity and certificate this handshake verified (against the pin) are who later requests come from.
     const shown = socket instanceof tls.TLSSocket ? annexTls.extractPeerFingerprint(socket) : null;
     const pin = socket instanceof tls.TLSSocket ? annexTls.extractPeerCertificateFingerprint(socket) : undefined;
-    if (shown !== fingerprint || !eligible(pin)) {
+    if (outgoingSockets.get(fingerprint) !== ws || hooks && !hooks.current()) {
+      try { ws.terminate(); } catch { /* telemetry-exempt: superseded handshake */ }
+      return;
+    }
+    if (shown !== fingerprint || pin !== pinned || !eligible(pin)) {
       appLog('core:annex', 'warn', 'Closed an Annex control connection to a computer that is not an eligible member', { meta: { fingerprint } });
+      hooks?.block(shown !== fingerprint || pin !== pinned ? 'pin' : 'revoked');
       try { ws.terminate(); } catch { /* telemetry-exempt: refused */ }
       return;
     }
     link = attach(ws, fingerprint, pin!, 'out', host);
+    link.onReady = () => {
+      if (!hooks) return;
+      if (!hooks.current()) { closeLink(link!, 1000, 'route_changed'); return; }
+      if (!link!.features?.has('request')) { hooks.block('unsupported'); closeLink(link!, 1000, 'not_supported'); return; }
+      hooks.ready();
+    };
   });
   ws.on('open', () => {
     if (link && !link.closed) sendOffer(link, [...CONTROL_FEATURES]);
   });
   ws.on('unexpected-response', (_req, res) => {
     appLog('core:annex', 'info', 'A paired computer did not open the Annex control connection', { meta: { fingerprint, status: res.statusCode } });
+    if (res.statusCode === 401 || res.statusCode === 403) hooks?.block('revoked');
+    else if (res.statusCode === 404 || res.statusCode === 405 || res.statusCode === 426) hooks?.block('unsupported');
+    res.resume();
     try { ws.terminate(); } catch { /* telemetry-exempt: refused upgrade */ }
   });
   ws.on('error', (err) => {
+    const code = (err as NodeJS.ErrnoException).code;
+    if (terminalTlsError(err)) hooks?.block('pin');
+    if (!link && code === 'ECONNRESET') hooks?.resetBeforeUpgrade();
     if (link) return;
     appLog('core:annex', 'info', 'Annex control connection not opened', { meta: { fingerprint, error: err.message } });
   });
+  ws.on('close', (code) => {
+    if (outgoingSockets.get(fingerprint) === ws) outgoingSockets.delete(fingerprint);
+    hooks?.closed(code);
+  });
+  return ws;
+}
+
+/** The client supplies only locally known routes; the server's authorizer remains authoritative. */
+export function setConnectionSource(source: ControlConnectionSource | null): void {
+  closeAll('out');
+  connectionSource = source;
+  refreshConnections();
+}
+
+function allowedRoutes(plan: ControlConnectionPlan): AnnexRoute[] {
+  return plan.routes.filter((route) => routeAllowed(route, plan.fingerprint, plan.localFingerprint));
+}
+
+function routesKey(plan: ControlConnectionPlan): string {
+  return JSON.stringify(allowedRoutes(plan).map(({ host, port, privateTo }) => [host, port, privateTo]));
+}
+
+function cancelKept(connection: KeptConnection, revoked = false): void {
+  if (connection.timer) clearTimeout(connection.timer);
+  connection.timer = null;
+  const ws = connection.socket;
+  connection.socket = null;
+  let attached = false;
+  for (const link of [...links]) {
+    if (link.direction === 'out' && link.fingerprint === connection.plan.fingerprint) {
+      attached = true;
+      closeLink(link, revoked ? CONTROL_CLOSE_REVOKED : 1000, revoked ? 'authorization_revoked' : 'closed',
+        revoked ? 'authorization_revoked' : 'transport_unavailable');
+    }
+  }
+  if (ws) {
+    if (outgoingSockets.get(connection.plan.fingerprint) === ws) outgoingSockets.delete(connection.plan.fingerprint);
+    if (!attached) { try { ws.terminate(); } catch { /* telemetry-exempt: already closed */ } }
+  }
+}
+
+/** Reconcile membership/route changes without resetting a live connection or its backoff. */
+export function refreshConnections(): void {
+  const plans = target && connectionSource ? connectionSource.plans() : [];
+  const wanted = new Map(plans.filter((plan) => target?.authorize({ fingerprint: plan.fingerprint, pin: plan.pin, via: 'reverse' }).ok)
+    .map((plan) => [plan.fingerprint, plan]));
+  for (const [fingerprint, connection] of keptConnections) {
+    const plan = wanted.get(fingerprint);
+    if (!plan || plan.trust !== connection.plan.trust || plan.pin !== connection.plan.pin) {
+      keptConnections.delete(fingerprint);
+      cancelKept(connection, true);
+    }
+  }
+  for (const plan of wanted.values()) {
+    let connection = keptConnections.get(plan.fingerprint);
+    if (!connection) {
+      connection = {
+        plan, routeKey: routesKey(plan), attempt: 0, nextRoute: 0, started: false,
+        timer: null, socket: null, readyAt: null, resetFailures: 0, everReady: false,
+      };
+      keptConnections.set(plan.fingerprint, connection);
+    } else {
+      const key = routesKey(plan);
+      if (key !== connection.routeKey) {
+        connection.resetFailures = 0;
+        connection.everReady = false;
+        connection.attempt = 0;
+        connection.nextRoute = 0;
+        if (connection.timer) { clearTimeout(connection.timer); connection.timer = null; }
+        if (connection.blocked === 'unsupported') connection.blocked = undefined;
+        if (!connection.socket) connection.started = false;
+      }
+      connection.routeKey = key;
+      connection.plan = plan;
+    }
+    if (!connectionSource?.autoReconnect() && connection.timer) {
+      clearTimeout(connection.timer);
+      connection.timer = null;
+    }
+    if (!connection.started && !connection.blocked && allowedRoutes(plan).length) dialKept(connection);
+    else if (!connection.socket && !connection.timer) scheduleKept(connection);
+  }
+}
+
+function currentPlan(connection: KeptConnection): ControlConnectionPlan | undefined {
+  if (keptConnections.get(connection.plan.fingerprint) !== connection || connection.blocked || !target) return undefined;
+  const plan = connectionSource?.plans().find((candidate) => candidate.fingerprint === connection.plan.fingerprint
+    && candidate.trust === connection.plan.trust && candidate.pin === connection.plan.pin);
+  return plan && target.authorize({ fingerprint: plan.fingerprint, pin: plan.pin, via: 'reverse' }).ok ? plan : undefined;
+}
+
+function dialKept(connection: KeptConnection): void {
+  const plan = currentPlan(connection);
+  if (!plan || connection.socket || connection.timer) return;
+  const routes = allowedRoutes(plan);
+  if (!routes.length) return;
+  const route = routes[connection.nextRoute % routes.length];
+  connection.started = true;
+  connection.readyAt = null;
+  let resetBeforeUpgrade = false;
+  const current = () => {
+    if (connection.socket !== ws) return false;
+    const fresh = currentPlan(connection);
+    return !!fresh && allowedRoutes(fresh).some((candidate) => candidate.host === route.host && candidate.port === route.port);
+  };
+  const closed = (code: number) => {
+    if (keptConnections.get(plan.fingerprint) !== connection || connection.socket !== ws) return;
+    connection.socket = null;
+    connection.resetFailures = resetBeforeUpgrade && !connection.everReady
+      ? Math.min(connection.resetFailures + 1, UNKNOWN_PEER_RESET_LIMIT) : 0;
+    if (code === CONTROL_CLOSE_REVOKED) connection.blocked = 'revoked';
+    else if (code === CONTROL_CLOSE_VERSION || code === CONTROL_CLOSE_PROTOCOL) connection.blocked = 'unsupported';
+    if (connection.readyAt !== null && Date.now() - connection.readyAt >= HEARTBEAT_MS) {
+      connection.attempt = 0;
+    } else {
+      connection.nextRoute++;
+    }
+    scheduleKept(connection);
+  };
+  let ws: WebSocket | null = null;
+  try {
+    ws = openOutgoing(plan.fingerprint, route.host, route.port, plan.tlsOptions(), plan.pin, {
+      current, closed,
+      ready: () => {
+        if (current()) { connection.readyAt = Date.now(); connection.everReady = true; connection.resetFailures = 0; }
+      },
+      resetBeforeUpgrade: () => { resetBeforeUpgrade = true; },
+      block: (reason) => {
+        if (keptConnections.get(plan.fingerprint) === connection && connection.socket === ws) connection.blocked = reason;
+      },
+    });
+    connection.socket = ws;
+  } catch (err) { // telemetry-exempt: setup failure is logged below and enters bounded backoff
+    appLog('core:annex', 'warn', 'Could not open an Annex control route', {
+      meta: { fingerprint: plan.fingerprint, error: err instanceof Error ? err.message : String(err) },
+    });
+    if (terminalTlsError(err)) connection.blocked = 'pin';
+    scheduleKept(connection);
+  }
+}
+
+function scheduleKept(connection: KeptConnection): void {
+  const plan = currentPlan(connection);
+  if (!plan || !allowedRoutes(plan).length || connection.timer || connection.socket || !connectionSource?.autoReconnect()) return;
+  const base = Math.min(1_000 * 2 ** connection.attempt, RECONNECT_MAX_MS);
+  const delay = connection.resetFailures >= UNKNOWN_PEER_RESET_LIMIT && !connection.everReady
+    ? Math.round(UNKNOWN_PEER_PROBE_MS * (0.5 + Math.random()))
+    : Math.min(RECONNECT_MAX_MS, Math.round(base * (0.5 + Math.random())));
+  connection.attempt = Math.min(connection.attempt + 1, 5);
+  connection.timer = setTimeout(() => {
+    connection.timer = null;
+    if (!connectionSource?.autoReconnect()) return;
+    dialKept(connection);
+  }, delay);
+  connection.timer.unref?.();
+}
+
+/** An existing explicit Retry action may re-probe, never a background membership/presence burst. */
+export function retryConnection(fingerprint: string): void {
+  const connection = keptConnections.get(fingerprint);
+  if (connection && !connection.socket) {
+    connection.blocked = undefined;
+    connection.started = false;
+    connection.attempt = 0;
+    connection.resetFailures = 0;
+    connection.nextRoute = 0;
+    if (connection.timer) { clearTimeout(connection.timer); connection.timer = null; }
+  }
+  refreshConnections();
 }
 
 /**
@@ -1228,6 +1537,18 @@ export function connectTo(fingerprint: string, host: string, port: number, tlsOp
  * `authorization_revoked`, and what the target remembered for it is forgotten.
  */
 export function closeFor(fingerprint: string, direction: 'in' | 'out' | 'both' = 'both', revoked = false): void {
+  if (direction !== 'in') {
+    const connection = keptConnections.get(fingerprint);
+    if (connection) {
+      connection.blocked = revoked ? 'revoked' : 'stopped';
+      cancelKept(connection, revoked);
+    }
+    const ws = outgoingSockets.get(fingerprint);
+    outgoingSockets.delete(fingerprint);
+    if (ws && ![...links].some((link) => link.ws === ws)) {
+      try { ws.terminate(); } catch { /* telemetry-exempt: already closed */ }
+    }
+  }
   for (const link of [...links]) {
     if (link.fingerprint !== fingerprint || (direction !== 'both' && link.direction !== direction)) continue;
     closeLink(link, revoked ? CONTROL_CLOSE_REVOKED : 1000, revoked ? 'authorization_revoked' : 'closed', revoked ? 'authorization_revoked' : 'transport_unavailable');
@@ -1237,6 +1558,17 @@ export function closeFor(fingerprint: string, direction: 'in' | 'out' | 'both' =
 
 /** Closes every control connection in one direction. */
 export function closeAll(direction: 'in' | 'out' | 'both' = 'both'): void {
+  if (direction !== 'in') {
+    const outgoing = [...keptConnections.values()];
+    keptConnections.clear();
+    for (const connection of outgoing) cancelKept(connection);
+    for (const ws of outgoingSockets.values()) {
+      if (![...links].some((link) => link.ws === ws)) {
+        try { ws.terminate(); } catch { /* telemetry-exempt: already closed */ }
+      }
+    }
+    outgoingSockets.clear();
+  }
   for (const link of [...links]) if (direction === 'both' || link.direction === direction) closeLink(link, 1001, 'stopping');
   if (direction !== 'out') {
     wss?.close();
@@ -1246,6 +1578,7 @@ export function closeAll(direction: 'in' | 'out' | 'both' = 'both'): void {
 
 /** Test helper. */
 export function resetControlForTests(): void {
+  connectionSource = null;
   closeAll();
   seen.clear();
   activeRuns.clear();

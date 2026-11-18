@@ -1,7 +1,8 @@
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor, act } from '@testing-library/react';
 import { AnnexNetworkSettingsView } from './AnnexNetworkSettingsView';
 import { useAnnexStore } from '../../stores/annexStore';
 import { useAnnexClientStore } from '../../stores/annexClientStore';
+import type { AnnexDevice } from '../../../shared/types';
 
 const saveSettings = vi.fn();
 const regeneratePin = vi.fn();
@@ -28,6 +29,7 @@ describe('AnnexNetworkSettingsView (#3067)', () => {
     vi.clearAllMocks();
     window.clubhouse.annex.getSettings = vi.fn().mockResolvedValue(OFF);
   });
+  afterEach(() => vi.restoreAllMocks());
 
   it('is one page with a switch at the top, and only devices and reset while off', () => {
     setup(OFF);
@@ -59,6 +61,27 @@ describe('AnnexNetworkSettingsView (#3067)', () => {
     expect(screen.getByText(/Other computers on your network and your phone can reach this computer only through a forward you set up/)).toBeInTheDocument();
     fireEvent.click(toggle);
     await waitFor(() => expect(saveSettings).toHaveBeenCalledWith({ ...ON, loopbackOnly: !loopbackOnly }));
+  });
+
+  it('updates forward help through the existing device subscription only while inbound reverse reach is available', async () => {
+    const subscription = vi.spyOn(window.clubhouse.annex, 'onDevicesChanged');
+    setup({ ...ON, loopbackOnly: true });
+    render(<AnnexNetworkSettingsView />);
+    const changed = subscription.mock.calls.at(-1)![0];
+    const reverse: AnnexDevice = {
+      fingerprint: 'm', alias: 'Laptop', icon: 'computer', color: 'indigo', role: 'member', kind: 'desktop',
+      state: 'connected', pairedAt: '', lastSeen: '', problem: null,
+      reach: { outbound: { state: 'up' }, inbound: { state: 'up', via: 'reverse' } },
+    };
+    await act(async () => changed([reverse]));
+    expect(screen.getByText("Listen only on this computer and turn off local discovery. Computers shown as reachable through this computer's connection don't need a forward here. Other computers and your phone still need a forward you set up.")).toBeInTheDocument();
+    expect(screen.getByTestId('annex-listener-port')).toHaveTextContent('If you use a forward to this computer, it must reach this port.');
+    await act(async () => changed([{ ...reverse, reach: { outbound: { state: 'up' }, inbound: { state: 'down' } } }]));
+    expect(screen.getByText('Listen only on this computer and turn off local discovery. Other computers on your network and your phone can reach this computer only through a forward you set up.')).toBeInTheDocument();
+    expect(screen.getByTestId('annex-listener-port')).toHaveTextContent('A forward from another computer to this one must reach this port.');
+    await act(async () => changed([{ ...reverse, reach: { outbound: { state: 'up', via: 'reverse' }, inbound: { state: 'up' } } }]));
+    expect(screen.getByText('Listen only on this computer and turn off local discovery. Other computers on your network and your phone can reach this computer only through a forward you set up.')).toBeInTheDocument();
+    expect(screen.getByTestId('annex-listener-port')).toHaveTextContent('A forward from another computer to this one must reach this port.');
   });
 
   it('lets the person turn incoming handoffs off without changing connectivity', async () => {
@@ -133,6 +156,27 @@ describe('AnnexNetworkSettingsView (#3067)', () => {
     expect(regeneratePin).toHaveBeenCalled();
     fireEvent.click(screen.getByRole('button', { name: 'Pair with another computer' }));
     expect(screen.getByTestId('pairing-wizard')).toBeInTheDocument();
+  });
+
+  it('shows the Annex port, and says when either listener had to move, leaving the other program alone (#3608)', () => {
+    setup(ON);
+    const { unmount } = render(<AnnexNetworkSettingsView />);
+    expect(screen.getByTestId('annex-listener-port')).toHaveTextContent('7432');
+    expect(screen.getByTestId('annex-listener-port')).toHaveTextContent('A forward from another computer to this one must reach this port.');
+    unmount();
+    setup(ON, { status: { ...STATUS, listenerPortsMoved: { main: { preferred: 7400, bound: 7432 }, pairing: { preferred: 7401, bound: 7433 } } } });
+    render(<AnnexNetworkSettingsView />);
+    expect(screen.getByTestId('annex-listener-port')).toHaveTextContent('Port 7400 was in use by another program when Annex started, so Annex listens on 7432 instead.');
+    expect(screen.getByTestId('annex-listener-port')).toHaveTextContent('The other program was left alone.');
+    expect(screen.getByTestId('annex-pairing-port-moved')).toHaveTextContent('The identity-hint port 7401 was also in use, so it listens on 7433.');
+  });
+
+  it('says the identity-hint port moved on its own without "also" when the main port did not (#3608)', () => {
+    setup(ON, { status: { ...STATUS, listenerPortsMoved: { pairing: { preferred: 7401, bound: 7433 } } } });
+    render(<AnnexNetworkSettingsView />);
+    expect(screen.getByTestId('annex-listener-port')).toHaveTextContent('A forward from another computer to this one must reach this port.');
+    expect(screen.getByTestId('annex-pairing-port-moved')).toHaveTextContent('The identity-hint port 7401 was in use by another program when Annex started, so it listens on 7433.');
+    expect(screen.getByTestId('annex-pairing-port-moved')).not.toHaveTextContent('also');
   });
 
   it('offers to allow pairing again only while it is paused', () => {
