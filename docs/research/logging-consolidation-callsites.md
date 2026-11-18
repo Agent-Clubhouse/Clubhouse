@@ -467,13 +467,9 @@ Columns: location, level, message, `meta` keys, and whether the call already pas
 | `main/services/group-project-lifecycle.ts:181` | warn | Failed to ensure project channels on join | agentId, projectId, error |  |
 | `main/services/group-project-lifecycle.ts:190` | warn | Failed to create inbox channel | agentId, projectId, error |  |
 | `main/services/group-project-lifecycle.ts:199` | warn | Failed to post join event | agentId, projectId, error |  |
-| `main/services/group-project-polling.ts:74` | info | Sending polling start to member that was asleep when polling was turned on | agentId, projectId |  |
-| `main/services/group-project-polling.ts:157` | info | Project polling setting changed | projectId, pollingEnabled, notified |  |
 | `main/services/group-project-registry.ts:62` | error | Failed to parse group-projects registry | error |  |
 | `main/services/group-project-registry.ts:90` | error | Failed to write group-projects registry | error |  |
 | `main/services/group-project-registry.ts:129` | warn | Failed to seed project channels | projectId, error |  |
-| `main/services/group-project-shoulder-tap.ts:166` | `stopping ? 'info' : 'error'` | `stopping ? 'Shoulder tap not delivered: the agent is shutting down' : 'Shoulder tap delivery failed'` | agentId, taskId, error |  |
-| `main/services/group-project-shoulder-tap.ts:174` | info | Shoulder tap executed | projectId, taskId, senderLabel, deliveredCount, failedCount |  |
 
 ## core:headless (13)
 

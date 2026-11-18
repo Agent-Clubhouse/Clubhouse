@@ -510,8 +510,7 @@ The fix is a main-process **`AgentRuntime` interface** with two implementations,
 | Feature (today, PTY) | Where | Runtime method chat needs |
 |---|---|---|
 | Typing, paste, file drop | `AgentTerminal.tsx:247,484,550`, `useFileDrop.ts:44` | `sendMessage(text, attachments)` |
-| MCP `send_message` / `send_file`, shoulder taps, group-project inject | `agent-tools.ts:45-155,270-310,553-570`, `group-project-shoulder-tap.ts`, `group-project-handlers.ts:243-268` | `sendMessage` with steer or queue priority. Chat doesn't need the timed bracketed-paste-then-Enter workaround. |
-| Group PM polling nudges | `group-project-lifecycle.ts:34-38` (`injectPtyMessage`, no runtime check) and callers | `sendMessage` |
+| MCP `send_message` / `send_file`, group-project inject | `agent-tools.ts:45-155,270-310,553-570`, `group-project-handlers.ts:243-268` | `sendMessage` with steer or queue priority. Chat doesn't need the timed bracketed-paste-then-Enter workaround. |
 | MCP `clear_agent` / `compact_agent` | `agent-tools.ts:611-612,648-649` (already checks `runtime === 'pty'` and errors otherwise) | `clearContext()` (new session or thread) and `compact()` (Claude `/compact` prompt, Codex `thread/compact/start`, Copilot `/compact` prompt) |
 | Group PM `/clear` `/compact` | `group-project-tools.ts:955,1018` (**no runtime check**: writes to a PTY even when there isn't one) | Same `clearContext()` / `compact()` |
 | Update-restart interrupt (`\x03`) and graceful `/exit` | `app-handlers.ts:479`, `pty-manager.ts:498-570` | `interrupt()` and `stop()` |
@@ -619,7 +618,7 @@ These were settled with the maintainer on 2026-10-16, along with the spikes to r
   - the structured IPC channels and handlers, and the preload methods (`startStructured`, `cancelStructured`, `sendStructuredMessage`, `respondPermission`, `onStructuredEvent`);
   - the `structuredMode` / `structuredProtocol` provider capabilities, `StructuredCapable`, the experimental flag, and the per-agent toggles (`AddAgentDialog`, `TemplateConfigDialog`, `AgentSettingsView`);
   - the quick-agent `structured` spawn mode;
-  - the `runtime === 'structured'` branches in shoulder taps, group-project inject, MCP `send_message` / `send_file` and the Annex message routes;
+  - the `runtime === 'structured'` branches in group-project inject, MCP `send_message` / `send_file` and the Annex message routes;
   - Annex's `/structured-permission` route and its `structured:event` forwarding.
 - **Kept in place** in `src/main/orchestrators/adapters/` as plumbing for the chat drivers: `acp-client.ts`, `codex-app-server-client.ts`, `async-queue.ts`, `ndjson-rpc-base.ts` and `structured-spawn.ts`. These carry #1911's protocol and Windows fixes.
 - **Safe migration to the terminal** (idempotent, no user action):
