@@ -1,8 +1,8 @@
 /**
  * Human approvals from other computers (#3354, #3654).
  *
- * The lead sees every member's requests; other computers see connections
- * involving their own endpoints, each with its computer first. A
+ * The lead, or peers when no lead is elected, see every member's requests;
+ * otherwise other computers see connections involving their own endpoints. A
  * person's click here sends `grant.answer` to that computer over the pinned
  * connection, as Needs you there would, and that computer checks it again: it
  * applies only while the request is still pending and the answer still
@@ -47,7 +47,7 @@ export async function answerFollowerApproval(machine: string, requestId: string,
   if (!row) throw new Error(REFUSALS.grant_request_not_found);
   const self = getIdentity()?.fingerprint;
   if (!self || !grantRowVisibleTo(row, self)
-    || (leadRole() !== 'lead' && !connectionApprovalInvolves(row, self))) {
+    || (leadRole() !== 'lead' && leadRole() !== 'peer' && !connectionApprovalInvolves(row, self))) {
     throw new Error('Only the lead or a computer involved in this request can answer it.');
   }
   if (!row.answers.includes(answer as typeof row.answers[number])) throw new Error(REFUSALS.grant_answer_not_offered);

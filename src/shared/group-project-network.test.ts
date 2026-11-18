@@ -115,3 +115,16 @@ describe('remote create on the wire (#3547)', () => {
     expect(supportsRemoteCreate(null)).toBe(false);
   });
 });
+
+
+it('keeps urgent on network posts and ignores unknown fields from newer peers', () => {
+  const post = { op: 'post', sender: 's', topic: 'work', body: 'b', urgent: true, futureField: true };
+  const write = (w: unknown) => ({ v: 1, writes: [{ id: 'w1', groupProjectId: 'gp_1', queuedAt: 't', author: { label: 'a' }, write: w }] });
+  expect(readWriteRequest(write(post)).writes[0].write).toEqual({ op: 'post', sender: 's', topic: 'work', body: 'b', urgent: true });
+});
+
+it('retains urgent through snapshot parsing while tolerating newer message fields', () => {
+  const board = snapshot(HOST);
+  Object.assign(board.board.messages[0], { urgent: true, futureField: 'ignored' });
+  expect(readSyncResponse({ v: 1, projects: [board], unchanged: [], tombstones: [] }, HOST).projects[0].board.messages[0]).toMatchObject({ urgent: true });
+});

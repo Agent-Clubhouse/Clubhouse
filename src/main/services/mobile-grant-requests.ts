@@ -29,6 +29,9 @@ import {
   REMOTE_CREATE_TOOL, describeGrantRequest, grantRequestActionLabels, grantRequestAllowEffect, type GrantRequest,
 } from '../../shared/grant-requests';
 import type { MobileCommand, MobileGrantAnswer, MobileGrantRequest } from '../../shared/mobile-control';
+import type { DesktopPendingGrantRequest } from '../../shared/grant-requests';
+import type { AnnexPeer } from '../../shared/types';
+import { peerNeedsPairing } from './annex-peers';
 import { answerGrantRequest } from './grant-request-answers';
 import { listGrantRequests, peekGrantRequest } from './grant-requests';
 import { MobileControlError } from './mobile-control';
@@ -145,6 +148,29 @@ export function buildMobileGrantRequests(places: GrantRequestPlaces): MobileGran
 }
 
 /**
+ * Phones keep their existing projection. Only a pinned, active desktop network
+ * member receives content-free notices for requests it must not answer.
+ */
+export function grantSnapshotForPeer(rows: MobileGrantRequest[], viewer: {
+  fingerprint: string; peer?: AnnexPeer; networkEnabled: boolean; sessionOnly: boolean; hostLabel: string;
+}): { grantRequests: MobileGrantRequest[]; pendingGrantRequests?: DesktopPendingGrantRequest[] } {
+  const { fingerprint, peer } = viewer;
+  const desktop = viewer.networkEnabled && !viewer.sessionOnly && peer?.fingerprint.toLowerCase() === fingerprint.toLowerCase()
+    && peer.role === 'member' && peer.kind === 'desktop' && !peer.networkPending && !peerNeedsPairing(peer);
+  if (!desktop) return { grantRequests: rows.filter((row) => grantRowVisibleTo(row, fingerprint)) };
+  const grantRequests: MobileGrantRequest[] = [];
+  const pendingGrantRequests: DesktopPendingGrantRequest[] = [];
+  for (const row of rows) {
+    const request = peekGrantRequest(row.requestId);
+    if (!request) continue;
+    if (!grantRowVisibleTo(row, fingerprint) || request.deleteReview || request.remoteCreateReview) {
+      pendingGrantRequests.push({ hostLabel: viewer.hostLabel, requestId: row.requestId, kind: row.kind, createdAt: row.requestedAt });
+    } else grantRequests.push(row);
+  }
+  return { grantRequests, pendingGrantRequests };
+}
+
+/**
  * `grant_request:opened`: who asked and the id, for the row in the snapshot
  * that follows. Never the arguments, so the replay buffer holds none, and
  * `agentId` is at the top so dropping an agent's events drops it.
@@ -170,6 +196,10 @@ export interface GrantCommandResult {
 
 /** Run `grant.answer`. Errors are MobileControlErrors for the receipt. */
 export async function runGrantCommand(command: GrantCommand, places: GrantRequestPlaces, deps: GrantCommandDeps): Promise<GrantCommandResult> {
+  const origin = currentSettingsOrigin();
+  if (!['mobile', 'annex_desktop'].includes(origin.surface) || origin.actorId !== deps.viewer) {
+    throw new MobileControlError('grant_answer_not_offered', 403, 'rejected', 'Only the authenticated device’s human approval UI can answer this request.');
+  }
   const { requestId, answer, updateMode } = command;
   // The answer rechecks the row and authorization if loading the update service yields.
   const request = peekGrantRequest(requestId);

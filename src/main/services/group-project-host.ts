@@ -21,6 +21,7 @@ import {
   GroupProjectScopeError, memberInScope, membersLeavingScope, resolveGroupProjectScope, sameGroupProjectScope,
 } from '../../shared/group-project-scope';
 import { canonicalMemberAddress, memberAddress } from '../../shared/group-project-members';
+import { noteLocalGroupPost, noteLocalGroupRequest, noteLocalGroupRequestResult } from './group-project-local-origin';
 import { parseAgentAddress } from '../../shared/agent-address';
 import { groupProjectRegistry } from './group-project-registry';
 import {
@@ -253,6 +254,17 @@ function sameJson(a: unknown, b: unknown): boolean {
   return JSON.stringify(a) === JSON.stringify(b);
 }
 
+/** A scope/cache omission is not a departure. Explicit removals and exclusions are. */
+function confirmedDepartures(before: GroupProjectMembership, after: GroupProjectMembership): string[] {
+  const remaining = new Set(after.explicit.map((m) => m.address));
+  const excluded = new Set(before.excluded.map((m) => m.address));
+  const scopeOnly = new Set(after.excluded.filter((m) => m.reason === 'scope').map((m) => m.address));
+  return [...new Set([
+    ...before.explicit.filter((m) => !m.autoProject && !remaining.has(m.address) && !scopeOnly.has(m.address)).map((m) => m.address),
+    ...after.excluded.filter((m) => !excluded.has(m.address) && m.reason !== 'scope').map((m) => m.address),
+  ])];
+}
+
 interface CommitContext {
   project: GroupProject;
   /** Take the next sequence number, saved before the change is made. Call it only when something will change. */
@@ -359,6 +371,14 @@ class GroupProjectHostService {
     return next;
   }
 
+  /** Registry-load migrations run before records are exposed. Reserve first, as
+   * ordinary commits do, so copies catch up even when no board posts changed.
+   * Do not enter run(): the first reader may already hold that project's queue.
+   */
+  async reserveRegistryMigration(id: string): Promise<void> {
+    await this.reserveSeq(id);
+  }
+
   private emit(change: GroupProjectChange): void {
     for (const listener of this.listeners) {
       try {
@@ -381,7 +401,7 @@ class GroupProjectHostService {
    * One sequenced change. `apply` calls `reserve()` before it writes; a change
    * that turns out to change nothing doesn't reserve, and nothing is announced.
    */
-  private async commit<T>(id: string, part: GroupProjectChangePart, apply: (ctx: CommitContext) => Promise<T>, inQueue = false): Promise<T> {
+  private async commit<T>(id: string, part: GroupProjectChangePart, apply: (ctx: CommitContext) => Promise<T>, inQueue = false, departed: string[] = []): Promise<T> {
     const body = async () => {
       const project = await this.requireProject(id);
       let seq: number | undefined;
@@ -390,7 +410,7 @@ class GroupProjectHostService {
         return seq;
       };
       const result = await apply({ project, reserve });
-      if (seq !== undefined) this.emit({ groupProjectId: id, seq, part });
+      if (seq !== undefined) this.emit({ groupProjectId: id, seq, part, ...(departed.length && { departed }) });
       return result;
     };
     return inQueue ? body() : this.run(id, body);
@@ -673,6 +693,7 @@ class GroupProjectHostService {
       return this.forward(replica, { op: 'membership', patch }, options.author ?? { label: 'membership' },
         () => ({ membership: next, seq }), () => ({ membership: next, seq, queued: true }));
     }
+    const departed: string[] = [];
     return this.commit(id, 'membership', async ({ project, reserve }) => {
       const hostMachine = this.hostMachineOf(project);
       const current = await readMembershipFile(id, hostMachine);
@@ -681,12 +702,13 @@ class GroupProjectHostService {
       if (sameJson(current, next)) return { membership: current, seq: await this.seqOf(id) };
       const seq = await reserve();
       await writeMembershipFile(id, next);
+      departed.push(...confirmedDepartures(current, next));
       const removed = current.explicit.filter((entry) => parseAgentAddress(entry.address).machine
         && !current.excluded.some((e) => e.address === entry.address)
         && (!next.explicit.some((e) => e.address === entry.address) || next.excluded.some((e) => e.address === entry.address)));
       await this.revokeRemoteRoles(id, removed.map((entry) => entry.address));
       return { membership: next, seq };
-    }, options.withinExclusive);
+    }, options.withinExclusive, departed);
   }
 
   /** Remote members have no binding on the host; mirror the local leave lifecycle for their role grants. */
@@ -1029,12 +1051,12 @@ class GroupProjectHostService {
 
   async post(
     id: string, sender: string, topic: string, body: string,
-    options: { withinExclusive?: boolean; chain?: string[]; author?: WriteAuthor; messageId?: string } = {},
+    options: { withinExclusive?: boolean; chain?: string[]; author?: WriteAuthor; messageId?: string; urgent?: boolean; remoteOrigin?: boolean } = {},
   ): Promise<BulletinMessage> {
     const replica = await this.replicaFor(id);
     if (replica) {
       // A copy forwards to its host, which publishes the post's event where it lands (#3363).
-      return this.forward<BulletinMessage>(replica, { op: 'post', sender, topic, body }, options.author ?? { label: sender }, (result) => result as BulletinMessage, (item) => ({
+      return this.forward<BulletinMessage>(replica, { op: 'post', sender, topic, body, ...(options.urgent && { urgent: true }) }, options.author ?? { label: sender }, (result) => result as BulletinMessage, (item) => ({
         id: `queued_${item.id}`, sender, topic: normalizeChannelName(topic), body, timestamp: item.queuedAt, pending: { waitingFor: this.hostNameOf(replica) },
       }));
     }
@@ -1049,7 +1071,9 @@ class GroupProjectHostService {
       }
       const project = await this.requireProject(id);
       const address = options.author?.agentId && this.addressOf(project, options.author.agentId);
-      return board.postMessage(sender, topic, body, await reserve(), options.messageId, address || undefined);
+      const posted = await board.postMessage(sender, topic, body, await reserve(), options.messageId, address || undefined, options.urgent);
+      if (!options.remoteOrigin) noteLocalGroupPost(id, posted.id);
+      return posted;
     }, options.withinExclusive);
     if (!replayed) publishAppEvent({ type: 'group_project.message_posted', groupProjectId: id, topic: message.topic, ...(options.chain && { chain: options.chain }) });
     return message;
@@ -1276,6 +1300,10 @@ class GroupProjectHostService {
     return this.read(id, [], (board) => board.getTopicMessages(topic, since, limit));
   }
 
+  readRecentBySeq(id: string, limit = 50): Promise<BulletinMessage[]> {
+    return this.read(id, [], (board) => board.getRecentMessagesBySeq(limit));
+  }
+
   readAll(id: string, since?: string, limit?: number): Promise<BulletinMessage[]> {
     return this.read(id, [], (board) => board.getAllMessages(since, limit));
   }
@@ -1455,6 +1483,10 @@ class GroupProjectHostService {
     const item: OutboxItem = {
       id: randomUUID(), host, groupProjectId: project.id, author, queuedAt: new Date().toISOString(), write,
     };
+    if (write.op === 'post') {
+      const expected = `msg_${Date.parse(item.queuedAt) || 0}_${createHash('sha256').update(`${this.selfMachine()}\u0000${item.id}`).digest('hex').slice(0, 12)}`;
+      noteLocalGroupRequest(item.id, expected);
+    }
     const replica = await this.replicaState(project.id).catch((): ReplicaState => ({ version: 1 }));
     if (replica.hostRemoved || (this.link && !this.link.isMember(host))) {
       const reason = `${this.hostNameOf(project)} left your network. This group project is read-only here.`;
@@ -1486,6 +1518,7 @@ class GroupProjectHostService {
       throw err;
     }
     if (outcome.result?.status === 'applied') {
+      if (write.op === 'post') noteLocalGroupRequestResult(item.id, project.id, (outcome.result.result as BulletinMessage).id);
       await this.settle(item, { status: 'applied' });
       await this.syncFrom(host).catch((err: unknown) => {
         // telemetry-exempt: the copy catches up on the host's next notice
@@ -1625,6 +1658,7 @@ class GroupProjectHostService {
           if (result.status === 'refused') await this.recordRefusal(item, result.reason);
           const unattributed = replay[batch.indexOf(item)].unattributed;
           if (result.status === 'applied') {
+            if (item.write.op === 'post') noteLocalGroupRequestResult(item.id, item.groupProjectId, (result.result as BulletinMessage).id);
             // Before it leaves the outbox: a crash between the two replays the write, which settles nothing twice.
             await this.settle(item, { status: 'applied' });
             // The host applied what it was sent; the part that couldn't be attributed is kept in the refusal list only.
@@ -1772,14 +1806,21 @@ class GroupProjectHostService {
       // Older than what this copy has: an answer overtaken by a newer one.
       if (previous > 0 && snapshot.seq < previous) return;
       await groupProjectRegistry.putReplica({ ...record, host: { machine: host } });
-      await writeMembershipFile(id, validateMembership(snapshot.membership, host));
+      let previousMembership: GroupProjectMembership | undefined;
+      try { previousMembership = await readMembershipFile(id, host); } catch (err) {
+        // telemetry-exempt: unreadable old membership cannot confirm any departures
+        appLog('core:group-project', 'warn', 'Could not compare replica membership; preserving unread receipts', { meta: { groupProjectId: id, error: String(err) } });
+      }
+      const membership = validateMembership(snapshot.membership, host);
+      const departed = previousMembership ? confirmedDepartures(previousMembership, membership) : [];
+      await writeMembershipFile(id, membership);
       const missing = await getBulletinBoard(id).applyReplica(snapshot.board);
       // A copy missing messages the host still holds asks for everything next time.
       const seq = missing > 0 ? 0 : snapshot.seq;
       await writeJsonFile(hostStatePath(id), { version: 1, seq } satisfies HostState);
       this.seqs.set(id, seq);
       await this.markSynced(id);
-      this.emit({ groupProjectId: id, seq: snapshot.seq, part: 'record' });
+      this.emit({ groupProjectId: id, seq: snapshot.seq, part: 'record', ...(departed.length && { departed }) });
       // Each post that arrived is announced as the host's change, so this computer tells its own
       // members (#3362). Not on a first copy: its history isn't news.
       const arrived = previous > 0
@@ -1980,7 +2021,7 @@ class GroupProjectHostService {
           if (topic === 'system' && !(system && write.sender === 'system')) return refuse('The system channel is reserved.');
           // The same write always makes the same message, so a replay after a crash finds it.
           const messageId = `msg_${Date.parse(item.queuedAt) || 0}_${createHash('sha256').update(`${machine}\u0000${item.id}`).digest('hex').slice(0, 12)}`;
-          result = await this.post(id, write.sender, write.topic, write.body, { messageId, author: { ...item.author, ...(item.author.agentId && { agentId: this.memberAddress(project, parseAgentAddress(item.author.agentId).agentId, machine) }) } });
+          result = await this.post(id, write.sender, write.topic, write.body, { messageId, remoteOrigin: true, urgent: write.urgent, author: { ...item.author, ...(item.author.agentId && { agentId: this.memberAddress(project, parseAgentAddress(item.author.agentId).agentId, machine) }) } });
           break;
         }
         case 'deleteMessage':
@@ -2076,3 +2117,6 @@ class GroupProjectHostService {
 }
 
 export const groupProjectHost = new GroupProjectHostService();
+
+// Bind migration writes to this registry's host (also when several hosts share a process in tests).
+groupProjectRegistry.setMigrationHost?.(groupProjectHost);

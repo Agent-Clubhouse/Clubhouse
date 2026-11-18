@@ -58,7 +58,6 @@ import { devicePresenceOnline } from '../annex-device-presence';
 import { listDevices } from '../annex-devices';
 import { groupProjectRegistry } from '../group-project-registry';
 import { groupProjectHost } from '../group-project-host';
-import { executeShoulderTap } from '../group-project-shoulder-tap';
 import { groupProjectMay } from '../group-project-roles';
 
 export { ActionError };
@@ -372,7 +371,14 @@ function createEngine(): ActionsEngine {
     wake: async (req) => parseToolResult(await wakeWiredAgent(req)),
     wakeRefusal: (owner, agentId) => rights.checkStep(owner, { kind: 'wake', agentId }),
     groupPost: async (id, topic, text, chain) => { await groupProjectHost.post(id, 'Group project action', topic, text, { chain }); },
-    groupTap: async (id, agentId, text) => (await executeShoulderTap({ projectId: id, senderLabel: 'Group project Action', senderKind: 'group_project_action', targetAgentId: agentId, message: text })).delivered.length > 0,
+    // Compatibility for saved Actions: direct group messages now live on the board.
+    groupTap: async (id, agentId, text) => {
+      const member = (await groupProjectHost.resolveMembers(id)).find((m) => m.address === agentId);
+      if (!member) return false;
+      const inbox = await groupProjectHost.ensureInbox(id, member.name, member.address);
+      await groupProjectHost.post(id, 'Group project Action', inbox, text, { urgent: true });
+      return true;
+    },
     // A person set this step up to put the agent to sleep: no mid-turn refusal after the wait.
     sleep: async (req) => parseToolResult(await sleepAgent({ ...req, force: true })),
     startQuick: (req) => startActionQuickAgent(req),

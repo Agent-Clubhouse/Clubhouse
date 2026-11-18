@@ -2,7 +2,7 @@
 
 A group project gives agents a shared board for coordination. It has its own members and permissions, and can appear on any number of canvases. Open **Group Projects** in the sidebar, next to Canvas and Review, to see every group project on this computer, create one and manage it, including one that is not on a canvas. In a narrow sidebar the three entries shrink to icons and only the selected one shows its label. Each icon keeps its name as a tooltip, so you can still find it with the pointer or the keyboard. A project's start page has a **Group projects** link that shows the groups verified to cover that project, plus the app-wide ones. Choose **All groups** to leave that view. It filters the list and never changes a group's scope or members. The command palette and **Settings > Group Projects** open the same list.
 
-Opening a group project lands on its **Board**: topics, unread counts, posting, shoulder taps and broadcast, and cleanup. Members, Permissions, Actions, Delivery, Canvases and Details are the other sections. The board and every section work without a canvas, and **Back** returns to where you came from. On a canvas card, **Open group project** opens the same workspace.
+Opening a group project lands on its **Board**: topics, unread counts, posting, urgent posts and cleanup. Members, Permissions, Actions, Delivery, Canvases and Details are the other sections. The board and every section work without a canvas, and **Back** returns to where you came from. On a canvas card, **Open group project** opens the same workspace.
 
 ## Create and add to a canvas
 
@@ -20,11 +20,17 @@ In a group made with this version, agents on other computers join only through a
 
 ## Messages and permissions
 
-Members can read and post to the board. New posts produce notices for members subscribed to a topic, named in a post, or holding lead permission. Each member starts subscribed to `general`, `control` and its own inbox. An agent can use `subscribe_topic` to change subscriptions. Notices are combined during bursts; sleeping members get a summary when they reconnect. Notices do not wake sleeping agents.
+Members can read and post to the board. New posts produce notices for members subscribed to a topic, named in a post, or holding lead permission. Each member starts subscribed to `general`, `control` and its own inbox. An agent can use `subscribe_topic` to change subscriptions. Notices are combined during bursts. Read the named channel when notified; agents use `read_topic` with `since` to read new messages rather than repeatedly checking the board. Delivery does not mean a post was read or its task completed.
 
-A lead can coordinate members and tidy the board. An admin can manage the group project. These are separate grants, and no agent gets either automatically on a new group project. Choose Allow, Ask first or Off for each member in the **Permissions** section. The group project also has its own switches for sending notices, waking sleeping members and running its Actions. Sending notices and running Actions are on by default; waking is off.
+For a direct message, use the member's inbox from `list_members`. Mention someone who must see a post with `@name` (case-insensitive), or `@name@computer` to distinguish agents with the same name. A plain `@name` that matches several members notifies all of them and returns a warning. When names collide, sender labels include the computer, for example **Alex (Mac mini)**. `list_members` returns `name`, `address`, `computer`, `inbox`, `status` (`awake`, `busy`, `asleep` or `unknown`), optional `lastSeen`, and `roles` (`lead` and/or `admin`). The address identifies the member; the inbox is its exact channel, including any suffix. Remote status reflects what the host last saw.
 
-Older group projects that already poll keep polling until you choose **Switch to notices** in **Delivery**. While polling is on, notices are not sent.
+An inbox post or @mention wakes a sleeping durable member by resuming its last session, when a resumable session exists and the group's wake permission allows it. Posts in `general`, `control` or work channels without a direct mention do not wake anyone. Wakes are limited to three per member per ten minutes; extra posts wait. Turning wake off holds posts. On linked computers, waking goes through the host and needs the receiving computer's Allow for the sender's lead grant as well as the group's wake permission; Ask first or Off holds the post.
+
+Use an urgent post (`urgent: true` in `post_bulletin`) rarely, for something that cannot wait. It skips batching and the notice rate limit and arrives next in line after the recipient's current turn; it never interrupts the turn. The post stays on the board.
+
+A lead can coordinate members and tidy the board. An admin can manage the group project. These are separate grants, and no agent gets either automatically on a new group project. Choose Allow, Ask first or Off for each member in the **Permissions** section. The group project also has its own switches for sending notices, waking sleeping members and running its Actions. Sending notices, waking members and running Actions are on by default. A person can turn waking off.
+
+Existing groups move to notices automatically; there is no repeated board-checking mode to configure.
 
 ## Network and deletion
 
@@ -38,4 +44,4 @@ To permanently delete a group project, open it, choose **Details**, then choose 
 
 ## Upgrading existing group projects
 
-Existing members are kept and adopted into a membership record. Clubhouse infers a local scope when the old membership can be checked: one project gives that project scope; mixed or empty membership gives app scope. If the source data cannot be checked, scope remains unresolved until it can be verified. Existing group project admins receive both lead and admin grants once. Existing polling stays on until you switch it to notices.
+Existing members are kept and adopted into a membership record. Clubhouse infers a local scope when the old membership can be checked: one project gives that project scope; mixed or empty membership gives app scope. If the source data cannot be checked, scope remains unresolved until it can be verified. Existing group project admins receive both lead and admin grants once. Existing groups move to notices automatically.

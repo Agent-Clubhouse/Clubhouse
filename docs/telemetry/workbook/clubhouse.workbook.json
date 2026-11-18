@@ -1119,19 +1119,6 @@
             "type": 3,
             "content": {
               "version": "KqlItem/1.0",
-              "query": "customMetrics\n| where timestamp {TimeRange} | where \"{Version:label}\" == \"All\" or application_Version in ({Version})\n| where name == \"clubhouse.group.shoulder_tap.deliveries\"\n| summarize deliveries = sum(value) by result = tostring(customDimensions[\"clubhouse.delivery.result\"]), runtime = tostring(customDimensions[\"clubhouse.agent.runtime\"])",
-              "size": 0,
-              "title": "Shoulder tap deliveries",
-              "queryType": 0,
-              "resourceType": "microsoft.insights/components",
-              "visualization": "table"
-            },
-            "name": "Shoulder tap deliveries"
-          },
-          {
-            "type": 3,
-            "content": {
-              "version": "KqlItem/1.0",
               "query": "requests\n| where timestamp {TimeRange} | where \"{Version:label}\" == \"All\" or application_Version in ({Version})\n| where name in (\"clubhouse.agent.create\", \"clubhouse.agent.delete\")\n| extend mode = tostring(customDimensions[\"clubhouse.agent.delete.mode\"]), outcome = tostring(customDimensions[\"clubhouse.outcome\"]), error = tostring(customDimensions[\"error.type\"])\n| summarize count = sum(itemCount), p95_s = round(percentile(duration, 95) / 1000, 1) by name, mode, outcome, error\n| order by name asc, count desc",
               "size": 0,
               "title": "Durable create and delete",

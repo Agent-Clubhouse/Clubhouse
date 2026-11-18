@@ -178,7 +178,6 @@ export const ERROR_TYPES = [
   'materialize_failed',
   'worktree_failed',
   'delete_failed',
-  'tap_undelivered',
   // Workspace (§4.7–4.10, Phase 5)
   'not_a_repo',
   'validation',
@@ -535,8 +534,8 @@ export const ATTR = {
     'navigate', 'screenshot', 'get_console', 'click', 'type', 'evaluate', 'get_page_content', 'get_accessibility_tree',
     // group project
     'list_members', 'post_bulletin', 'read_bulletin', 'read_topic', 'read_message', 'get_project_info',
-    'set_project_info', 'shoulder_tap', 'broadcast', 'wake_agent', 'sleep_agent', 'toggle_polling', 'query_polling',
-    'subscribe_topic', 'nudge_polling', 'clear_topic', 'delete_messages',
+    'set_project_info', 'wake_agent', 'sleep_agent',
+    'subscribe_topic', 'clear_topic', 'delete_messages',
     // global
     'notify_user',
     // orchestration: hand off and dispose (#2229)
@@ -563,6 +562,7 @@ export const ATTR = {
     'update_project', 'update_agent',
     // adding a project folder (#3239)
     'add_project',
+    'list_project_links', 'link_projects', 'unlink_project', 'keep_projects_separate',
     'preview_repository_import', 'import_repository', 'get_repository_import', 'cancel_repository_import',
     // settings reads (#2653)
     'list_settings', 'read_settings', 'read_helper_presets', 'set_helper_presets', 'request_grant',
@@ -791,7 +791,6 @@ export const ATTR = {
   deleteMode: enumAttr('clubhouse.agent.delete.mode', [
     'standard', 'commit_push', 'cleanup_branch', 'save_patch', 'force', 'unregister',
   ]),
-  tapBroadcast: boolAttr('clubhouse.tap.broadcast'),
   // Session-id capture and resume (#2305). Never the session id itself.
   /** What a run's end did with the agent's resume id. */
   sessionCaptureResult: enumAttr('clubhouse.session.capture.result', [
@@ -1257,8 +1256,6 @@ export const SPANS = {
   'clubhouse.annex.rest': { level: 'standard', root: true },
   /** killAgent → exit. Replayed at exit; carries the trigger and the stage reached. */
   'clubhouse.agent.kill': { level: 'standard', root: true },
-  /** One shoulder tap (direct or broadcast) to group-project members. */
-  'clubhouse.group.shoulder_tap': { level: 'standard', root: true },
   // Workspace (§4.7–4.10, Phase 5)
   'clubhouse.project.add': { level: 'standard', root: true },
   'clubhouse.project.add.ensure_gitignore': { level: 'standard', root: false },
@@ -1543,11 +1540,6 @@ export const METRICS = {
     kind: 'histogram', unit: 's', level: 'standard',
     description: 'spawnAgent entry to process launched',
     attributes: ['clubhouse.agent.kind', 'clubhouse.orchestrator', 'clubhouse.agent.runtime'],
-  },
-  'clubhouse.group.shoulder_tap.deliveries': {
-    kind: 'counter', unit: '{delivery}', level: 'standard',
-    description: 'Shoulder tap deliveries by result and target runtime',
-    attributes: ['clubhouse.delivery.result', 'clubhouse.agent.runtime'],
   },
   // Annex (§4.12, Phase 6)
   'clubhouse.annex.reconnects': {

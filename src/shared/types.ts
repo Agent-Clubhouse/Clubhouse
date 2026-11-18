@@ -1428,6 +1428,8 @@ export interface SatelliteSnapshot {
   dispatcherPresence?: import('./dispatcher-presence').DispatcherPresenceSnapshot;
   /** Clubhouse permission requests waiting on a person there (#3205); a lead's chat lists a follower's (#3354). */
   grantRequests?: import('./mobile-control').MobileGrantRequest[];
+  /** Minimal host-only notices, sent only to authenticated desktop network members. Never sent to phones. */
+  pendingGrantRequests?: import('./grant-requests').DesktopPendingGrantRequest[];
 }
 
 // --- Auto-update types ---

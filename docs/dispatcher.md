@@ -10,6 +10,18 @@ The **chat** uses the user's chosen name, or **Dispatcher** by default. **Dispat
 
 These are display labels, not saved identities. Existing agent IDs, connections, permissions and wire tool names are unchanged; wire `targetName` retains the base name used in those tool addresses. Conversation histories project the fixed controller title without rewriting provider titles or saved records. Restart controls retain their in-flight interruption warning and next-needed resume behavior.
 
+## Approvals across computers (#3696)
+
+With no lead elected, a paired desktop network member shows the remote permission requests the host already authorizes it to answer. No lead is elected automatically. When a lead is elected, existing routing remains: the lead sees all remote requests, and other computers see connection requests involving themselves. Local approvals are unchanged.
+
+The host remains authoritative: it checks the authenticated machine, current pairing, request visibility, expiry and offered answer again before consuming a request. The stored request binds the answer to its requesting agent and exact call; the answer cannot supply a different requester. The first answer wins. An exact transport retry returns its cached receipt without applying anything again; a new command answering a consumed request is rejected.
+
+An authenticated, paired machine is trusted for its own local human UI. Only that UI's approval IPC sends answers; no agent, MCP tool, message or Dispatcher action can answer. The host checks the device surface and actor against its authenticated principal. This is the app's trust boundary, not cryptographic proof of a physical click against arbitrary code holding that machine's credentials.
+
+Host-only requests show as **Waiting on &lt;computer&gt;** without answer controls. Previously hidden requests expose only the host label, request id, kind and creation time, exclusively to active paired desktop network members; their details remain on the host. Deletion batches and remote-create reviews retain their origin-computer restrictions. Updates and connection arguments that cannot be safely reviewed here also remain read-only. Phone projections and fixtures are unchanged.
+
+Local diagnostics record remote approval receipt, visibility (including read-only or a bounded hidden reason), and resolution without arguments, reasons, agent names or other request contents.
+
 ## Controller wake and launch cost (#3465)
 
 When enabled, launch opens the controller session idle, resuming its conversation if available, with no prompt. Opening the chat or waking its session also wakes the controller. Dispatcher Off prevents these starts. The controller keeps its existing identity and stays out of the regular agent list.

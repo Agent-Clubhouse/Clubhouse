@@ -530,20 +530,20 @@ describe('migration', () => {
     // A canvas wire with its own switches and instructions, bound at startup.
     fx.canvasWires = [{
       agentId: 'lead', targetId: 'gp_old', targetKind: 'group-project', label: 'GP gp_old', agentName: 'lead',
-      disabledTools: ['broadcast', 'shoulder_tap'], instructions: { post_bulletin: 'Post in #release only' },
+      disabledTools: ['clear_topic', 'wake_agent'], instructions: { post_bulletin: 'Post in #release only' },
     }];
     bindingManager.bind('lead', { targetId: 'gp_old', targetKind: 'group-project', label: 'GP gp_old', agentName: 'lead' });
-    bindingManager.setDisabledTools('lead', 'gp_old', ['broadcast', 'shoulder_tap']);
+    bindingManager.setDisabledTools('lead', 'gp_old', ['clear_topic', 'wake_agent']);
     await start();
     const record = await getMembership('gp_old');
-    expect(record.disabledTools?.lead).toEqual(['broadcast', 'shoulder_tap']);
+    expect(record.disabledTools?.lead).toEqual(['clear_topic', 'wake_agent']);
     expect(record.instructions?.lead).toEqual({ post_bulletin: 'Post in #release only' });
 
     // Second restart: the canvas no longer holds the wire; the record does.
     restart();
     await start();
     const binding = bindingManager.getBindingsForAgent('lead').find((b) => b.targetId === 'gp_old');
-    expect(binding?.disabledTools).toEqual(['broadcast', 'shoulder_tap']);
+    expect(binding?.disabledTools).toEqual(['clear_topic', 'wake_agent']);
     expect(binding?.instructions).toEqual({ post_bulletin: 'Post in #release only' });
   });
 
@@ -730,17 +730,17 @@ describe('bindings follow the record', () => {
   });
 
   it('a member\'s tool switches survive a restart (#2084)', async () => {
-    groupProjectRegistry._setForTesting(gp('gp1', { metadata: { defaultDisabledTools: ['broadcast'] } }));
+    groupProjectRegistry._setForTesting(gp('gp1', { metadata: { defaultDisabledTools: ['clear_topic'] } }));
     await start();
-    expect(bindingManager.getBindingsForAgent('dev').find((b) => b.targetId === 'gp1')?.disabledTools).toEqual(['broadcast']);
+    expect(bindingManager.getBindingsForAgent('dev').find((b) => b.targetId === 'gp1')?.disabledTools).toEqual(['clear_topic']);
 
     // "Apply to all" saves each member's list.
-    await recordMemberDisabledTools('gp1', 'dev', ['shoulder_tap']);
-    await recordMemberDisabledTools('gp1', 'lead', ['shoulder_tap']);
+    await recordMemberDisabledTools('gp1', 'dev', ['wake_agent']);
+    await recordMemberDisabledTools('gp1', 'lead', ['wake_agent']);
     restart();
     await start();
-    expect(bindingManager.getBindingsForAgent('dev').find((b) => b.targetId === 'gp1')?.disabledTools).toEqual(['shoulder_tap']);
-    expect(await savedMemberDisabledTools('gp1', 'lead')).toEqual(['shoulder_tap']);
+    expect(bindingManager.getBindingsForAgent('dev').find((b) => b.targetId === 'gp1')?.disabledTools).toEqual(['wake_agent']);
+    expect(await savedMemberDisabledTools('gp1', 'lead')).toEqual(['wake_agent']);
   });
 
   it('a user-removed pair comes back only when added again', async () => {

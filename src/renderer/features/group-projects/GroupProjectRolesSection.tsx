@@ -127,12 +127,12 @@ export function GroupProjectRolesSection({ groupProjectId }: { groupProjectId: s
               <div className="flex flex-col gap-1">
                 {copy && (
                   <p className={settingsHelp} data-testid="roles-this-computer">
-                    On this computer. These grants cover lead tools that agents here run, such as tapping, waking or
-                    broadcasting to members. {hostName} doesn't use them when it applies a change, so the two lists can differ.
+                    On this computer. These grants cover lead tools that agents here run, such as waking members or
+                    managing their context. {hostName} doesn't use them when it applies a change, so the two lists can differ.
                   </p>
                 )}
                 <p className={settingsHelp}>
-                  A lead can broadcast, tap, wake and put members to sleep, and tidy the board. An admin can change the
+                  A lead can wake and put members to sleep, and tidy the board. An admin can change the
                   group project itself. No agent has either until you give it here or on the permissions page.
                 </p>
                 {members.length === 0 && <p className={settingsHelp}>No members.</p>}
@@ -164,7 +164,7 @@ export function GroupProjectRolesSection({ groupProjectId }: { groupProjectId: s
           )}
         </SettingsBlock>
       </SettingsSection>
-      <GroupProjectDeliverySection groupProjectId={groupProjectId} migration />
+      <GroupProjectDeliverySection groupProjectId={groupProjectId} />
     </>
   );
 }

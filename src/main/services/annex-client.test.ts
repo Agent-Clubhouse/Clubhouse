@@ -796,8 +796,8 @@ describe('annex-client', () => {
 
   describe('snapshot order', () => {
     const FINGERPRINT = 'SNAP:ORDER';
-    const snapshot = (lastSeq: number, name: string) => Buffer.from(JSON.stringify({ type: 'snapshot', payload: {
-      protocolVersion: 2, projects: [{ id: name }], agents: {}, quickAgents: {}, theme: null, orchestrators: null, pendingPermissions: [], lastSeq,
+    const snapshot = (lastSeq: number, name: string, extra: Record<string, unknown> = {}) => Buffer.from(JSON.stringify({ type: 'snapshot', payload: {
+      protocolVersion: 2, projects: [{ id: name }], agents: {}, quickAgents: {}, theme: null, orchestrators: null, pendingPermissions: [], lastSeq, ...extra,
     } }));
 
     it('drops an older snapshot on one connection, but always takes a new connection\'s first', async () => {
@@ -835,6 +835,23 @@ describe('annex-client', () => {
       await vi.waitFor(() => expect(annexClient.isMachineDirectConnected(FINGERPRINT)).toBe(true));
       messageHandler!(snapshot(0, 'after restart'));
       expect(shown()).toBe('after restart');
+
+      const { appLog } = await import('./log-service');
+      vi.mocked(appLog).mockClear();
+      const grantRequests = [{ requestId: 'grant-receipt', arguments: 'PRIVATE arguments', reason: 'PRIVATE reason' }];
+      messageHandler!(snapshot(1, 'with approval', { grantRequests }));
+      messageHandler!(snapshot(2, 'same approval', { grantRequests }));
+      messageHandler!(snapshot(3, 'resolved approval'));
+      const diagnostics = vi.mocked(appLog).mock.calls.filter((call) => call[2].startsWith('Remote approval'));
+      expect(diagnostics).toEqual([
+        ['core:annex', 'info', 'Remote approval received', { meta: { machine: FINGERPRINT, requestId: 'grant-receipt', source: 'snapshot' } }],
+        ['core:annex', 'info', 'Remote approval resolved', { meta: { machine: FINGERPRINT, requestId: 'grant-receipt', source: 'snapshot' } }],
+      ]);
+      expect(JSON.stringify(diagnostics)).not.toContain('PRIVATE');
+      messageHandler!(Buffer.from(JSON.stringify({ type: 'grant_request:resolved', payload: { requestIds: ['grant-receipt'], reason: 'PRIVATE reason' } })));
+      expect(appLog).toHaveBeenLastCalledWith('core:annex', 'info', 'Remote approval resolved', {
+        meta: { machine: FINGERPRINT, source: 'event', count: 1 },
+      });
     });
   });
 

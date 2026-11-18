@@ -57,7 +57,7 @@ import { MOBILE_SLASH_COMMANDS_MAX, latestSlashCommands, remoteChatEvent } from 
 import { buildMobileHelperRequests, runHelperCommand } from './mobile-helper-requests';
 import { onStartRequestsChanged } from './helper-start-requests';
 import {
-  GRANT_REQUEST_OPENED_EVENT, GRANT_REQUEST_RESOLVED_EVENT, buildMobileGrantRequests, grantOpenedPayload, grantRowVisibleTo, runGrantCommand, toMobileGrantRequest,
+  GRANT_REQUEST_OPENED_EVENT, GRANT_REQUEST_RESOLVED_EVENT, buildMobileGrantRequests, grantOpenedPayload, grantRowVisibleTo, grantSnapshotForPeer, runGrantCommand, toMobileGrantRequest,
   type GrantRequestPlaces,
 } from './mobile-grant-requests';
 import { onGrantRequestsChanged } from './grant-requests';
@@ -104,9 +104,8 @@ import * as pluginManifestRegistry from './plugin-manifest-registry';
 import { readKey as readPluginStorageKey, writeKey as writePluginStorageKey } from './plugin-storage';
 import { groupProjectRegistry } from './group-project-registry';
 import { groupProjectHost } from './group-project-host';
+import { postLegacyGroupMessage } from './group-project-legacy-message';
 import * as groupProjectNetwork from './group-project-network';
-import { executeShoulderTap } from './group-project-shoulder-tap';
-import { setProjectPolling } from './group-project-polling';
 import { describeGroupProjectRoles, grantGroupProjectRole, GroupProjectRoleError } from './group-project-roles';
 import { agentRegistry } from './agent-registry';
 import { bindingManager } from './clubhouse-mcp/binding-manager';
@@ -115,6 +114,7 @@ import * as gitService from './git-service';
 import { normalizeSessionEvents, buildSessionSummary, paginateEvents, SUMMARY_TRANSCRIPT_MAX_BYTES } from './session-reader';
 import { isSessionCapable, getProvider } from '../orchestrators';
 import { getAgentRuntime, isChatAgent, onChatEvent } from './agent-runtime';
+import { localMemberObservation } from './group-project-member-status';
 import { chatDetailedStatus } from '../../shared/chat-agent-status';
 import { CHAT_IMAGE_MAX_BYTES, type ChatEvent, type ChatSessionState } from '../../shared/chat';
 import { injectPtyText } from './agent-runtime/pty-input';
@@ -1247,8 +1247,8 @@ async function readSnapshotSourcesData() {
 
   const iconSet = await buildSnapshotIcons(projects, durablesByProject, dispatcherRecord() ?? undefined);
   // Each project's git remote as a key, so another machine can suggest linking the same project (#3066).
-  // Whatever is known now: the snapshot never waits on git, and the rest arrive with a later one.
-  const repoKeys = cachedRepoKeys(projects);
+  // Never wait on git. Changed keys request a later snapshot through the coalesced refresh path.
+  const repoKeys = cachedRepoKeys(projects, Date.now(), broadcastSnapshotRefresh);
 
   // Read per-project canvas state in parallel (including wires)
   const canvasState: Record<string, CanvasStateWire> = {};
@@ -1350,7 +1350,7 @@ function assembleSnapshot(sources: SnapshotSources): BuiltSnapshot {
   }));
 
   // Read group project members from binding manager
-  const groupProjectMembers: Record<string, Array<{ agentId: string; agentName: string; status: string }>> = {};
+  const groupProjectMembers: Record<string, Array<{ agentId: string; agentName: string; status: string; runtimeStatus?: import('../../shared/group-project-roster').RosterStatus; lastSeen?: string }>> = {};
   try {
     const allBindings = bindingManager.getAllBindings();
     for (const gp of groupProjects) {
@@ -1359,6 +1359,8 @@ function assembleSnapshot(sources: SnapshotSources): BuiltSnapshot {
         .map(b => ({
           agentId: b.agentId,
           agentName: b.agentName || b.agentId,
+          runtimeStatus: localMemberObservation(b.agentId).status,
+          lastSeen: new Date().toISOString(),
           status: isAgentRunning(b.agentId) ? 'connected' : 'sleeping',
         }));
       if (members.length > 0) {
@@ -1594,8 +1596,10 @@ const SNAPSHOT_REFS_TRUNCATION_STEPS: typeof SNAPSHOT_TRUNCATION_STEPS = [
  * mean it's gone. The fields left can't be given up, so past that it's reported.
  */
 function snapshotFrame({ payload: built, icons, iconRefs }: BuiltSnapshot, trigger: SnapshotTrigger, form: SnapshotForm = 'inline', viewer?: string): string {
-  // A device's copy leaves out the Manage devices calls that name it (#3205).
-  const payload = viewer ? { ...built, grantRequests: snapshotGrantRows(built).filter((row) => grantRowVisibleTo(row, viewer)) } : built;
+  const payload = viewer ? { ...built, ...grantSnapshotForPeer(snapshotGrantRows(built), {
+    fingerprint: viewer, peer: findPairedPeer(viewer), networkEnabled: annexSettings.networkEnabled(),
+    sessionOnly: mobileSessionPeers.has(viewer), hostLabel: thisMachine().machine?.name ?? 'Clubhouse',
+  }) } : built;
   const items = payload.projects.length + Object.values(payload.agents).reduce((sum, list) => sum + list.length, 0);
   // A phone that fetches images has both legacy maps empty, because it clears its inline icons on seeing either.
   const formPayload: Record<string, unknown> = form === 'refs' ? { ...payload, projectIcons: {}, agentIcons: {}, ...(iconRefs && { iconRefs }) } : payload;
@@ -1630,10 +1634,11 @@ function snapshotGrantRows(payload: BuiltSnapshot['payload']): MobileGrantReques
   return (payload.grantRequests as MobileGrantRequest[] | undefined) ?? [];
 }
 
-/** The device a socket's snapshot is filtered for: itself, when a Manage devices call names it (#3205); else none. */
+/** Desktop members get their own projection; phones retain their existing self-device filtering. */
 function grantViewerOf(built: BuiltSnapshot, ws: WebSocket): string | undefined {
   const fingerprint = wsPeerFingerprints.get(ws)?.toLowerCase();
-  return fingerprint && snapshotGrantRows(built.payload).some((row) => !grantRowVisibleTo(row, fingerprint)) ? fingerprint : undefined;
+  return fingerprint && (isDesktopNetworkMember(fingerprint)
+    || snapshotGrantRows(built.payload).some((row) => !grantRowVisibleTo(row, fingerprint))) ? fingerprint : undefined;
 }
 
 /** Most frames held for one socket: as many as the replay buffer keeps. */
@@ -3438,30 +3443,7 @@ async function handleGroupProjectPostMessageRoute(ctx: AnnexRouteContext, match:
   });
 }
 
-async function handleGroupProjectShoulderTapRoute(ctx: AnnexRouteContext, match: RegExpMatchArray): Promise<void> {
-  if (ctx.requireMtls()) return;
-  const gpId = decodeURIComponent(match[1]);
-  const project = await groupProjectRegistry.get(gpId);
-  if (!project) {
-    sendJson(ctx.res, 404, { error: 'group_project_not_found' });
-    return;
-  }
-  readJsonBody(ctx, async (body) => {
-    const sender = (body.sender as string) || 'remote';
-    const targetAgentId = (body.targetAgentId as string) || null;
-    const message = body.message as string;
-    if (!message) {
-      sendJson(ctx.res, 400, { error: 'message is required' });
-      return;
-    }
-    try {
-      const result = await executeShoulderTap({ projectId: gpId, senderLabel: sender, targetAgentId, message });
-      sendJson(ctx.res, 200, result);
-    } catch (err) {
-      sendJson(ctx.res, 500, { error: err instanceof Error ? err.message : 'shoulder_tap_failed' });
-    }
-  });
-}
+
 
 /** A desktop in this machine's Annex Network: not a phone, and not a session-only pairing (#3360). */
 function isDesktopNetworkMember(fingerprint: string | undefined): boolean {
@@ -3508,27 +3490,7 @@ async function handleGroupProjectRolesRoute(ctx: AnnexRouteContext, match: RegEx
   });
 }
 
-async function handleGroupProjectPollingRoute(ctx: AnnexRouteContext, match: RegExpMatchArray): Promise<void> {
-  if (ctx.requireMtls()) return;
-  const gpId = decodeURIComponent(match[1]);
-  readJsonBody(ctx, async (body) => {
-    const enabled = body.enabled;
-    if (typeof enabled !== 'boolean') {
-      sendJson(ctx.res, 400, { error: 'enabled (boolean) is required' });
-      return;
-    }
-    try {
-      const result = await setProjectPolling(gpId, enabled, { author: { label: 'user' } });
-      if (!result) {
-        sendJson(ctx.res, 404, { error: 'group_project_not_found' });
-        return;
-      }
-      sendJson(ctx.res, 200, result);
-    } catch (err) {
-      sendJson(ctx.res, 500, { error: err instanceof Error ? err.message : 'set_polling_failed' });
-    }
-  });
-}
+
 
 async function handleGroupProjectInjectRoute(ctx: AnnexRouteContext): Promise<void> {
   if (ctx.requireMtls()) return;
@@ -4756,9 +4718,9 @@ const ANNEX_HTTP_ROUTE_TABLE: AnnexHttpRoute[] = [
   { method: 'GET', pattern: /^\/api\/v1\/group-projects\/([^/]+)\/bulletin\/topics\/([^/?]+)(\?.*)?$/, handler: handleGroupProjectTopicRoute },
   { method: 'GET', pattern: /^\/api\/v1\/group-projects\/([^/]+)\/bulletin\/messages(\?.*)?$/, handler: handleGroupProjectAllMessagesRoute },
   { method: 'POST', pattern: /^\/api\/v1\/group-projects\/([^/]+)\/bulletin\/messages$/, handler: handleGroupProjectPostMessageRoute },
-  { method: 'POST', pattern: /^\/api\/v1\/group-projects\/([^/]+)\/shoulder-tap$/, handler: handleGroupProjectShoulderTapRoute },
-  { method: 'POST', pattern: /^\/api\/v1\/group-projects\/([^/]+)\/polling$/, handler: handleGroupProjectPollingRoute },
   { method: 'GET', pattern: /^\/api\/v1\/group-projects\/([^/]+)\/roles$/, handler: handleGroupProjectRolesRoute },
+  { method: 'POST', pattern: /^\/api\/v1\/group-projects\/([^/]+)\/polling$/, handler: handleGroupProjectPollingRoute },
+  { method: 'POST', pattern: /^\/api\/v1\/group-projects\/([^/]+)\/shoulder-tap$/, handler: handleGroupProjectShoulderTapRoute },
   { method: 'POST', pattern: /^\/api\/v1\/group-projects\/([^/]+)\/roles$/, handler: handleGroupProjectRolesRoute },
   { method: 'DELETE', pattern: /^\/api\/v1\/group-projects\/([^/]+)\/bulletin\/topics\/([^/]+)\/messages\/([^/]+)$/, handler: handleGroupProjectDeleteMessageRoute },
   { method: 'DELETE', pattern: /^\/api\/v1\/group-projects\/([^/]+)\/bulletin\/topics\/([^/?]+)$/, handler: handleGroupProjectDeleteTopicRoute },
@@ -7114,3 +7076,61 @@ export const _testing = {
   agentLastActivity,
   noteAgentActivity,
 };
+
+async function handleGroupProjectShoulderTapRoute(ctx: AnnexRouteContext, match: RegExpMatchArray): Promise<void> {
+  if (ctx.requireMtls()) return;
+  const gpId = decodeURIComponent(match[1]);
+  const project = await groupProjectRegistry.get(gpId);
+  if (!project) {
+    sendJson(ctx.res, 404, { error: 'group_project_not_found' });
+    return;
+  }
+  readJsonBody(ctx, async (body) => {
+    const sender = (body.sender as string) || 'remote';
+    const targetAgentId = (body.targetAgentId as string) || null;
+    const message = body.message as string;
+    if (!message) {
+      sendJson(ctx.res, 400, { error: 'message is required' });
+      return;
+    }
+    try {
+      // Deprecated route retained for older phones and supported plugin APIs.
+      // Direct messages are durable inbox posts; announcements live in general.
+      // Same person author as bulletin posts; OTHER_DESKTOP also rejects agent-driven plugin calls.
+      const posted = await postLegacyGroupMessage(groupProjectHost, project, sender, targetAgentId, message, { label: 'user' });
+      if (!posted) {
+        sendJson(ctx.res, 404, { error: 'group_project_member_not_found' });
+        return;
+      }
+      if (!posted.pending) annexEventBus.emitBulletinMessage(gpId, posted);
+      const result = { taskId: posted.id, delivered: [] as string[], failed: [] as string[], message: posted, deprecated: true };
+      sendJson(ctx.res, 200, result);
+    } catch (err) {
+      sendJson(ctx.res, 500, { error: err instanceof Error ? err.message : 'shoulder_tap_failed' });
+    }
+  });
+}
+
+async function handleGroupProjectPollingRoute(ctx: AnnexRouteContext, match: RegExpMatchArray): Promise<void> {
+  if (ctx.requireMtls()) return;
+  const gpId = decodeURIComponent(match[1]);
+  readJsonBody(ctx, async (body) => {
+    const enabled = body.enabled;
+    if (typeof enabled !== 'boolean') {
+      sendJson(ctx.res, 400, { error: 'enabled (boolean) is required' });
+      return;
+    }
+    try {
+      // Deprecated compatibility route: no caller can restart a polling loop.
+      const project = await groupProjectHost.get(gpId);
+      const result = project ? { pollingEnabled: false, mode: 'notices', members: await groupProjectHost.resolveMembers(gpId), deprecated: true } : null;
+      if (!result) {
+        sendJson(ctx.res, 404, { error: 'group_project_not_found' });
+        return;
+      }
+      sendJson(ctx.res, 200, result);
+    } catch (err) {
+      sendJson(ctx.res, 500, { error: err instanceof Error ? err.message : 'set_polling_failed' });
+    }
+  });
+}

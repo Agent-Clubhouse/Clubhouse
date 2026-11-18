@@ -3,7 +3,6 @@
  * join/leave events to the system topic on the bulletin board.
  */
 
-import { holdsGrant } from './clubhouse-mcp/grant-check';
 import { bindingManager } from './clubhouse-mcp/binding-manager';
 import { consumeRestoredBinding } from './persisted-bindings';
 import { groupProjectRegistry } from './group-project-registry';
@@ -15,9 +14,6 @@ import { appLog } from './log-service';
 import { getAgentRuntime } from './agent-runtime';
 import { getAgentOrchestrator } from './agent-registry';
 import { getProvider } from '../orchestrators/registry';
-import { pollingStartMsg } from '../../shared/polling-messages';
-import { mcpCallAccess } from './clubhouse-mcp/mcp-call-gate';
-import { notePollingStart } from './group-project-polling-runs';
 
 /** Debounce window (ms) — suppress rejoins within this period after a leave unless agent is verified running. */
 const REJOIN_DEBOUNCE_MS = 30_000;
@@ -36,9 +32,9 @@ function getPasteDelayMs(agentId: string): number {
 }
 
 /**
- * Inject a group-project message (polling nudges, join notices). Chat agents
+ * Inject a group-project message (join notices). Chat agents
  * get it through their runtime; terminal agents keep the bracketed paste +
- * delayed Enter that polling has always used.
+ * delayed Enter.
  */
 export function injectPtyMessage(agentId: string, message: string): void {
   const runtime = getAgentRuntime(agentId);
@@ -99,17 +95,6 @@ export function isAgentAlive(agentId: string): boolean {
   if (ptyManager.isRunning(agentId)) return true;
   // Agent may be running in headless mode — check registry
   return agentRegistry.get(agentId) !== undefined;
-}
-
-/**
- * Whether a member can use group project tools now. A polling instruction is
- * no use to one that can't, and would spend its tokens for nothing. Ordinary
- * messages, shoulder taps included, don't ask this.
- */
-export function canPoll(agentId: string): boolean {
-  return mcpCallAccess(agentId, agentRegistry.get(agentId)?.projectPath) === 'open'
-    // Polling reads the board for it: not when reading the board is turned off (#2971).
-    && holdsGrant(agentId, 'group_project.read', { kind: 'group_project', groupRole: 'member' });
 }
 
 async function syncMemberships(agentId: string): Promise<void> {
@@ -183,7 +168,7 @@ async function syncMemberships(agentId: string): Promise<void> {
       // Claim membership BEFORE the first await so that concurrent
       // syncMemberships calls (e.g. from rapid wire restoration or a
       // simultaneous binding update) cannot both pass the !members.has()
-      // check and inject duplicate loop-start messages.
+      // check and post duplicate join messages.
       members.add(agentId);
 
       const agentName = resolveAgentName(agentId);
@@ -191,7 +176,7 @@ async function syncMemberships(agentId: string): Promise<void> {
 
       // A membership restored at startup existed before this launch, so its
       // channels and inbox already exist. Track it, but post no join bulletin
-      // and send no polling start (#1544). Channel seeding is skipped
+      // (#1544). Channel seeding is skipped
       // too: it rewrites the board on every call.
       if (consumeRestoredBinding(agentId, projectId)) continue;
 
@@ -204,7 +189,6 @@ async function syncMemberships(agentId: string): Promise<void> {
       }
       const projectName = project?.name || projectId;
 
-      let inboxName: string | null = null;
       if (!recordDecidesMembers(projectId)) {
         try {
           // Retrofit: projects created before the channel-model redesign won't
@@ -218,7 +202,7 @@ async function syncMemberships(agentId: string): Promise<void> {
 
         try {
           // Keyed by the member's address, so a second agent with the same name gets its own inbox (#1646).
-          inboxName = await groupProjectHost.ensureInbox(projectId, agentName, agentId);
+          await groupProjectHost.ensureInbox(projectId, agentName, agentId);
         } catch (err) {
           appLog('core:group-project', 'warn', 'Failed to create inbox channel', {
             meta: { agentId, projectId, error: err instanceof Error ? err.message : String(err) },
@@ -234,20 +218,6 @@ async function syncMemberships(agentId: string): Promise<void> {
         }
       }
 
-      // Auto-send polling instruction if polling is enabled
-      if (project?.metadata?.pollingEnabled) {
-        if (!canPoll(agentId)) {
-          // Loaded here: group-project-polling imports this file.
-          void import('./group-project-polling').then(({ holdPollingStart }) => holdPollingStart(agentId, projectId));
-          continue;
-        }
-        const orchestrator = getAgentOrchestrator(agentId);
-        // Small delay so the welcome message is processed first
-        setTimeout(() => {
-          injectPtyMessage(agentId, pollingStartMsg(projectName, orchestrator, inboxName));
-          notePollingStart(agentId, projectId);
-        }, 500);
-      }
     }
   }
 }

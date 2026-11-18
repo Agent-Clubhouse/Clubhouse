@@ -32,6 +32,7 @@ import { registerGrantRequestTools } from './grant-request-tools';
 import { registerAgentCardTools } from './agent-card-tools';
 import { registerDeviceTools } from './device-tools';
 import { registerProjectAddTools } from './project-add-tools';
+import { registerProjectLinkTools } from './project-link-tools';
 import { registerProjectImportTools } from './project-import-tools';
 import { registerAppUpdateTools } from './app-update-tools';
 import { registerAnnexDeliveryTools } from './annex-delivery-tools';
@@ -68,6 +69,7 @@ export function registerClubhouseMcpTools(): void {
   registerAgentCardTools();
   registerDeviceTools();
   registerProjectAddTools();
+  registerProjectLinkTools();
   registerProjectImportTools();
   registerAppUpdateTools();
   registerAnnexDeliveryTools();

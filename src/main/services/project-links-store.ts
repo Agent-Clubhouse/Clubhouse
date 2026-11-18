@@ -94,14 +94,14 @@ export class ProjectLinksStore {
       return migrated.length === state.migrated.length ? state : { ...state, records, migrated };
     });
   }
-  apply(raw: unknown): Promise<ProjectLinksView> {
+  apply(raw: unknown, current?: () => boolean): Promise<ProjectLinksView> {
     const op = parseProjectLinksOp(raw);
     return this.update((state) => {
       const self = this.options.self();
       if (!self) throw new Error('Annex identity is not ready for project links.');
       const records = applyProjectLinksOp(state.records, op, self, (this.options.now ?? Date.now)());
       return records === state.records ? state : { ...state, records };
-    });
+    }, undefined, current);
   }
   merge(raw: unknown, source: string, current?: () => boolean): Promise<ProjectLinksView> {
     const incoming = parseIncomingProjectLinkRecords(raw, PROJECT_LINKS_MAX_RECORDS, (this.options.now ?? Date.now)());
@@ -144,8 +144,12 @@ export function projectLinksStore(): ProjectLinksStore {
 export function hydrateProjectLinks(legacy?: unknown): Promise<ProjectLinksView> { return projectLinksStore().migrate(legacy); }
 export async function changeProjectLinks(raw: unknown): Promise<ProjectLinksView> {
   const origin = currentSettingsOrigin();
-  if (origin.surface !== 'ui' || origin.actorId) throw new Error('Only the person can link projects.');
-  const view = await projectLinksStore().apply(raw);
+  let current: (() => boolean) | undefined;
+  if (origin.surface === 'mcp' && origin.actorId) {
+    const { projectLinkMcpAuthorization } = await import('./clubhouse-mcp/tools/project-link-tools');
+    current = await projectLinkMcpAuthorization(origin.actorId, raw);
+  } else if (origin.surface !== 'ui' || origin.actorId) throw new Error('Only the person can link projects.');
+  const view = await projectLinksStore().apply(raw, current);
   await auditChanged('app', 'annex.project_links');
   return view;
 }
