@@ -1037,12 +1037,12 @@ class GroupProjectHostService {
 
   async post(
     id: string, sender: string, topic: string, body: string,
-    options: { withinExclusive?: boolean; chain?: string[]; author?: WriteAuthor; messageId?: string } = {},
+    options: { withinExclusive?: boolean; chain?: string[]; author?: WriteAuthor; messageId?: string; urgent?: boolean } = {},
   ): Promise<BulletinMessage> {
     const replica = await this.replicaFor(id);
     if (replica) {
       // A copy forwards to its host, which publishes the post's event where it lands (#3363).
-      return this.forward<BulletinMessage>(replica, { op: 'post', sender, topic, body }, options.author ?? { label: sender }, (result) => result as BulletinMessage, (item) => ({
+      return this.forward<BulletinMessage>(replica, { op: 'post', sender, topic, body, ...(options.urgent && { urgent: true }) }, options.author ?? { label: sender }, (result) => result as BulletinMessage, (item) => ({
         id: `queued_${item.id}`, sender, topic: normalizeChannelName(topic), body, timestamp: item.queuedAt, pending: { waitingFor: this.hostNameOf(replica) },
       }));
     }
@@ -1057,7 +1057,7 @@ class GroupProjectHostService {
       }
       const project = await this.requireProject(id);
       const address = options.author?.agentId && this.addressOf(project, options.author.agentId);
-      return board.postMessage(sender, topic, body, await reserve(), options.messageId, address || undefined);
+      return board.postMessage(sender, topic, body, await reserve(), options.messageId, address || undefined, options.urgent);
     }, options.withinExclusive);
     if (!replayed) publishAppEvent({ type: 'group_project.message_posted', groupProjectId: id, topic: message.topic, ...(options.chain && { chain: options.chain }) });
     return message;
@@ -1988,7 +1988,7 @@ class GroupProjectHostService {
           if (topic === 'system' && !(system && write.sender === 'system')) return refuse('The system channel is reserved.');
           // The same write always makes the same message, so a replay after a crash finds it.
           const messageId = `msg_${Date.parse(item.queuedAt) || 0}_${createHash('sha256').update(`${machine}\u0000${item.id}`).digest('hex').slice(0, 12)}`;
-          result = await this.post(id, write.sender, write.topic, write.body, { messageId, author: { ...item.author, ...(item.author.agentId && { agentId: this.memberAddress(project, parseAgentAddress(item.author.agentId).agentId, machine) }) } });
+          result = await this.post(id, write.sender, write.topic, write.body, { messageId, urgent: write.urgent, author: { ...item.author, ...(item.author.agentId && { agentId: this.memberAddress(project, parseAgentAddress(item.author.agentId).agentId, machine) }) } });
           break;
         }
         case 'deleteMessage':

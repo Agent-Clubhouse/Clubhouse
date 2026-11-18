@@ -12,15 +12,14 @@
  * - **Rate limit.** At most {@link RATE_LIMIT_MAX} notices per member per
  *   {@link RATE_LIMIT_WINDOW_MS}. Posts over the limit wait, merged, and go as
  *   one trailing notice when the window frees: nothing is dropped.
- * - **Sleeping members** aren't woken. Their notices are held and merged into
- *   one summary, sent when they next connect.
+ * - **Sleeping members** resume for direct inbox posts and mentions when
+ *   permitted. Unread notices are recovered from persisted board sequence receipts.
  * - **Busy members** (a chat turn running) get the notice queued for the end
  *   of the turn, like an Action message (#3297). A newer notice replaces the
  *   queued one with a merged notice, so the turn ends to one notice. A
  *   terminal agent's turn can't be seen from here, so it gets the notice typed
  *   in as it comes.
- * - **Polling is legacy.** A group project with `pollingEnabled` keeps polling
- *   and gets no notices.
+ * - **Urgent posts** bypass batching and notice limits, using the same turn-end queue.
  *
  * Every notice is checked again when it goes: the member must still be one,
  * and the group project must still be on notices.
@@ -35,6 +34,10 @@
  */
 
 import type { BulletinMessage, GroupProject, GroupProjectMembership } from '../../shared/group-project-types';
+import { resolveMentions } from '../../shared/group-project-mentions';
+import { groupProjectMentionMembers } from './group-project-tool-members';
+import { lastNotified, markNotified } from './group-project-notification-store';
+import { wakeForGroupPost } from './group-project-wake';
 import { groupProjectHost } from './group-project-host';
 import { isAgentAlive } from './group-project-lifecycle';
 import { getAgentRuntime } from './agent-runtime';
@@ -70,6 +73,9 @@ interface NoticeMessage {
   sender: string;
   senderAddress?: string;
   mentioned: boolean;
+  seq?: number;
+  urgent?: boolean;
+  direct?: boolean;
 }
 
 interface Batch {
@@ -93,6 +99,7 @@ interface MemberState {
   wakeTimer: ReturnType<typeof setTimeout> | null;
   /** When notices were sent, for the rate limit. */
   sent: number[];
+  work: Promise<void>;
 }
 
 const members = new Map<string, MemberState>();
@@ -102,7 +109,7 @@ function stateOf(groupProjectId: string, agentId: string, name: string): MemberS
   const key = keyOf(groupProjectId, agentId);
   let state = members.get(key);
   if (!state) {
-    state = { groupProjectId, agentId, name, window: null, timer: null, queued: null, asleep: null, deferred: null, deferTimer: null, wakeTimer: null, sent: [] };
+    state = { groupProjectId, agentId, name, window: null, timer: null, queued: null, asleep: null, deferred: null, deferTimer: null, wakeTimer: null, sent: [], work: Promise.resolve() };
     members.set(key, state);
   }
   state.name = name;
@@ -138,7 +145,7 @@ export function noteSenderAddress(messageId: string, address: string): void {
 }
 
 /** Whether a message is this member's own post. */
-function isOwnPost(message: NoticeMessage, state: MemberState, gp: GroupProject): boolean {
+function isOwnPost(message: Pick<NoticeMessage, 'id' | 'sender' | 'senderAddress'>, state: MemberState, gp: GroupProject): boolean {
   if (message.senderAddress) return groupProjectHost.localAgentId(gp, message.senderAddress) === state.agentId;
   const localSender = senderAddresses.get(message.id)?.address;
   if (localSender) return localSender === state.agentId;
@@ -216,15 +223,21 @@ async function onPost(gp: GroupProject, message: BulletinMessage): Promise<void>
     const agentId = groupProjectHost.localAgentId(gp, member.address);
     if (!agentId) continue;
     const inbox = await groupProjectHost.inboxFor(gp.id, member.name, member.address);
-    const mentioned = mentions(message.body, member.name);
+    const mentioned = resolveMentions(message.body, await groupProjectMentionMembers(gp.id)).addresses.has(member.address);
     const subscribed = memberSubscriptions(membership, member.address, inbox).has(message.topic);
     if (!subscribed && !mentioned && !isLead(gp, member.address)) continue;
     const state = stateOf(gp.id, agentId, member.name);
+    if (isOwnPost(message, state, gp)) continue;
+    if ((message.seq ?? 0) <= await lastNotified(gp.id, agentId) && message.seq !== undefined) continue;
     if (!state.window) {
       state.window = { messages: [] };
-      state.timer = setTimeout(() => { void flush(state); }, COALESCE_MS);
+      state.timer = setTimeout(() => { void flush(state).catch(logReceiptFailure); }, COALESCE_MS);
     }
-    state.window.messages.push({ id: message.id, topic: message.topic, sender: message.sender, senderAddress: message.senderAddress, mentioned });
+    state.window.messages.push({ id: message.id, topic: message.topic, sender: message.sender, senderAddress: message.senderAddress, mentioned, seq: message.seq, urgent: message.urgent, direct: mentioned || message.topic === inbox });
+    if (message.urgent) {
+      if (state.timer) clearTimeout(state.timer);
+      await flush(state);
+    }
   }
 }
 
@@ -259,19 +272,38 @@ function forgetFormerMembers(gp: GroupProject, resolved: ReadonlyArray<{ address
   }
 }
 
-async function flush(state: MemberState): Promise<void> {
+function serialize(state: MemberState, task: () => Promise<void>): Promise<void> {
+  const next = state.work.catch(logReceiptFailure).then(task);
+  state.work = next;
+  return next;
+}
+
+function flush(state: MemberState): Promise<void> {
+  return serialize(state, () => flushNow(state));
+}
+
+async function flushNow(state: MemberState): Promise<void> {
   const window = state.window;
   state.window = null;
   state.timer = null;
   if (!window) return;
   const gp = await stillMember(state);
   if (!gp) { forget(state); return; }
-  const batch: Batch = { messages: window.messages.filter((m) => !isOwnPost(m, state, gp)) };
+  const batch: Batch = merge(state.asleep, { messages: window.messages.filter((m) => !isOwnPost(m, state, gp)) });
+  state.asleep = null;
   if (batch.messages.length === 0) return;
   if (!(await stillMember(state))) { forget(state); return; }
   count('coalesced', batch.messages.length - 1);
   if (!isAgentAlive(state.agentId) || !getAgentRuntime(state.agentId)?.isRunning()) {
     state.asleep = merge(state.asleep, batch);
+    if (batch.messages.some((m) => m.direct)) {
+      const { text, routed } = noticeParts(gp, state, batch);
+      if (await wakeForGroupPost(gp.id, state.agentId, state.name, text, routed, batch.messages.filter((m) => m.direct).map((m) => m.senderAddress))) {
+        state.asleep = null;
+        await acknowledge(state, batch);
+        return;
+      }
+    }
     count('held_asleep');
     return;
   }
@@ -280,6 +312,15 @@ async function flush(state: MemberState): Promise<void> {
 
 /** Send now, or hold for the rate limit's window to free. */
 async function send(state: MemberState, batch: Batch): Promise<void> {
+  if (batch.messages.some((m) => m.urgent)) {
+    const all = merge(merge(state.deferred, state.window ?? { messages: [] }), batch);
+    state.deferred = state.window = null;
+    if (state.timer) clearTimeout(state.timer);
+    if (state.deferTimer) clearTimeout(state.deferTimer);
+    state.timer = state.deferTimer = null;
+    await deliver(state, all);
+    return;
+  }
   const now = Date.now();
   state.sent = state.sent.filter((at) => now - at < RATE_LIMIT_WINDOW_MS);
   // A notice still queued for the turn's end is replaced, not added: no new notice for the limit.
@@ -293,7 +334,7 @@ async function send(state: MemberState, batch: Batch): Promise<void> {
         state.deferTimer = null;
         const held = state.deferred;
         state.deferred = null;
-        if (held) void deliver(state, held);
+        if (held) void serialize(state, () => deliver(state, held)).catch(logReceiptFailure);
       }, frees);
     }
     return;
@@ -304,6 +345,11 @@ async function send(state: MemberState, batch: Batch): Promise<void> {
 function isBusy(agentId: string): boolean {
   const runtime = getAgentRuntime(agentId);
   return !!runtime && runtime.kind === 'chat' && BUSY.has(runtime.getState());
+}
+
+async function acknowledge(state: MemberState, batch: Batch): Promise<void> {
+  const seq = Math.max(0, ...batch.messages.map((m) => m.seq ?? 0));
+  if (seq) await markNotified(state.groupProjectId, state.agentId, seq);
 }
 
 async function deliver(state: MemberState, batch: Batch): Promise<void> {
@@ -331,15 +377,19 @@ async function deliver(state: MemberState, batch: Batch): Promise<void> {
         actionQueue: {
           actionId: `group-project:${gp.id}`,
           latestOnly: true,
-          onSettled: (settled) => { if (settled !== 'replaced' && state.queued === notice) state.queued = null; },
+          onSettled: (settled) => {
+            if (settled === 'delivered') void acknowledge(state, notice).catch(logReceiptFailure);
+            if (settled !== 'replaced' && state.queued === notice) state.queued = null;
+          },
         },
       });
       // The turn ended first: the runtime sent it now, and no receipt will come.
-      if (result.delivery !== 'queued' && state.queued === notice) state.queued = null;
+      if (result.delivery !== 'queued' && state.queued === notice) { state.queued = null; await acknowledge(state, notice); }
       else if (state.queued === notice) state.queuedMessageId = result.messageId;
     } else {
       state.queued = null;
       await runtime.sendMessage(text, { source: 'group_project', routed });
+      await acknowledge(state, notice);
     }
     if (!replacing) count('sent');
   } catch (err) {
@@ -394,32 +444,62 @@ export function noticeParts(gp: GroupProject, state: Pick<MemberState, 'agentId'
     ...(batch.messages.some((m) => m.mentioned) ? ['You were mentioned.'] : []),
     `Read them with ${readTool} when it fits your work.`,
   ].join('\n');
-  const header = 'Clubhouse group project notice.';
+  const header = batch.messages.some((m) => m.urgent) ? 'Urgent Clubhouse group project notice.' : 'Clubhouse group project notice.';
   return { text: `${header}\n${details}`, routed: [{ fromClubhouse: true, text: header }, { text: details }] };
 }
 
 /** A sleeping member connected: send what it missed as one summary. */
+function logReceiptFailure(err: unknown): void {
+  // telemetry-exempt: the board remains unread and a later connection retries
+  appLog('core:group-project', 'warn', 'Could not save group project notice receipt', { meta: { error: String(err) } });
+}
+
 function onConnected(agentId: string): void {
-  for (const state of members.values()) {
-    if (state.agentId !== agentId || !state.asleep || state.wakeTimer) continue;
-    state.wakeTimer = setTimeout(() => {
-      state.wakeTimer = null;
-      const held = state.asleep;
-      state.asleep = null;
-      if (held) void send(state, held);
-    }, WAKE_SUMMARY_DELAY_MS);
-  }
+  void (async () => {
+    for (const gp of await groupProjectHost.list()) {
+      if (!groupProjectMay(gp, 'deliver') || usesPolling(gp)) continue;
+      const resolved = await groupProjectHost.resolveMembers(gp.id);
+      const member = resolved.find((m) => groupProjectHost.localAgentId(gp, m.address) === agentId);
+      if (!member) continue;
+      const state = stateOf(gp.id, agentId, member.name);
+      if (state.wakeTimer) continue;
+      state.wakeTimer = setTimeout(() => {
+        state.wakeTimer = null;
+        void serialize(state, async () => {
+          const cursor = await lastNotified(gp.id, agentId);
+          const [posts, membership, inbox, mentionMembers] = await Promise.all([
+            groupProjectHost.readAll(gp.id, undefined, Number.MAX_SAFE_INTEGER), groupProjectHost.getMembership(gp.id),
+            groupProjectHost.inboxFor(gp.id, member.name, member.address), groupProjectMentionMembers(gp.id),
+          ]);
+          const subscriptions = memberSubscriptions(membership, member.address, inbox);
+          const messages = posts.filter((m) => m.seq !== undefined && m.seq > cursor && m.sender !== 'system' && m.topic !== 'system')
+            .map((m) => ({ ...m, mentioned: resolveMentions(m.body, mentionMembers).addresses.has(member.address) }))
+            .filter((m) => !isOwnPost(m, state, gp) && (subscriptions.has(m.topic) || m.mentioned || isLead(gp, member.address)));
+          state.asleep = null;
+          // Replace unflushed memory with the authoritative unread board snapshot.
+          if (state.timer) clearTimeout(state.timer);
+          state.timer = null;
+          const through = Math.max(0, ...posts.map((m) => m.seq ?? 0));
+          const newer = state.window?.messages.filter((m) => (m.seq ?? 0) > through) ?? [];
+          state.window = newer.length ? { messages: newer } : null;
+          if (state.window) state.timer = setTimeout(() => { void flush(state).catch(logReceiptFailure); }, COALESCE_MS);
+          if (messages.length) await send(state, { messages });
+        }).catch(logReceiptFailure);
+      }, WAKE_SUMMARY_DELAY_MS);
+    }
+  })().catch(logReceiptFailure);
 }
 
 // ── Wiring ──────────────────────────────────────────────────────────────────
 
 /** The message a board change added: the one carrying the change's sequence number. */
 async function postedMessage(groupProjectId: string, seq: number): Promise<BulletinMessage | undefined> {
-  const recent = await groupProjectHost.readAll(groupProjectId, undefined, 50);
+  const recent = await groupProjectHost.readAll(groupProjectId, undefined, Number.MAX_SAFE_INTEGER);
   return recent.find((m) => m.seq === seq);
 }
 
 let stop: (() => void) | null = null;
+let changes: Promise<void> = Promise.resolve();
 
 /** Start notifying members of posts. Returns the stop. */
 export function watchGroupProjectDelivery(): () => void {
@@ -443,11 +523,11 @@ export function watchGroupProjectDelivery(): () => void {
       return;
     }
     if (change.part !== 'board') return;
-    void (async () => {
+    changes = changes.catch(logReceiptFailure).then(async () => {
       const message = await postedMessage(change.groupProjectId, change.seq);
       const gp = message && await groupProjectHost.get(change.groupProjectId);
       if (message && gp) await onPost(gp, message);
-    })().catch((err) => {
+    }).catch((err) => {
       // telemetry-exempt: a missed notice leaves the post on the board; logged
       appLog('core:group-project', 'warn', 'Group project notice failed', {
         meta: { groupProjectId: change.groupProjectId, error: err instanceof Error ? err.message : String(err) },
@@ -462,6 +542,7 @@ export function watchGroupProjectDelivery(): () => void {
     members.clear();
     senderAddresses.clear();
     stop = null;
+    changes = Promise.resolve();
   };
   return stop;
 }

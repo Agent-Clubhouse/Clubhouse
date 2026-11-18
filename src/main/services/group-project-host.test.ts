@@ -872,3 +872,16 @@ it.each([
   expect(Boolean(await getBulletinBoard(gp.id).inboxOf(address))).toBe(admitted);
   expect((await groupProjectHost.readTopic(gp.id, "system")).length).toBe(admitted ? 1 : 0);
 });
+
+
+it('retains urgent and notification cursor through a real storage restart', async () => {
+  const { lastNotified, markNotified } = await import('./group-project-notification-store');
+  const gp = await groupProjectHost.create('Urgent');
+  const first = await groupProjectHost.post(gp.id, 'sender', 'general', 'seen', { urgent: true });
+  await markNotified(gp.id, 'dev', first.seq!);
+  const unread = await groupProjectHost.post(gp.id, 'sender', 'general', 'unread', { urgent: true });
+  await restart();
+  const cursor = await lastNotified(gp.id, 'dev');
+  const recovered = (await groupProjectHost.readAll(gp.id)).filter((m) => (m.seq ?? 0) > cursor);
+  expect(recovered).toEqual([expect.objectContaining({ id: unread.id, urgent: true })]);
+});

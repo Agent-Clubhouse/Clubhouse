@@ -239,6 +239,8 @@ export interface GroupProjectScopeOptions {
 
 /** A message posted to the bulletin board. */
 export interface BulletinMessage {
+  /** Bypass notice batching and notice rate limits; never interrupt a turn. */
+  urgent?: boolean;
   id: string;            // "msg_<timestamp>_<random>"
   /** Host-relative authenticated agent address; absent on older/user messages. */
   senderAddress?: string;

@@ -70,7 +70,7 @@ export interface MembershipPatch {
 }
 
 export type WriteOp =
-  | { op: 'post'; sender: string; topic: string; body: string }
+  | { op: 'post'; sender: string; topic: string; body: string; urgent?: boolean }
   | { op: 'deleteMessage'; topic: string; messageId: string }
   | { op: 'deleteTopic'; topic: string }
   | { op: 'setTopicProtected'; topic: string; isProtected: boolean }
@@ -253,7 +253,8 @@ function readOp(raw: unknown): WriteOp {
   switch (raw.op) {
     case 'post':
       if (!isString(raw.sender) || !isString(raw.topic) || !isString(raw.body)) fail('write');
-      return { op: 'post', sender: raw.sender, topic: raw.topic, body: raw.body };
+      if (raw.urgent !== undefined && typeof raw.urgent !== 'boolean') fail('write');
+      return { op: 'post', sender: raw.sender, topic: raw.topic, body: raw.body, ...(raw.urgent === true && { urgent: true }) };
     case 'deleteMessage':
       if (!isString(raw.topic) || !isString(raw.messageId)) fail('write');
       return { op: 'deleteMessage', topic: raw.topic, messageId: raw.messageId };

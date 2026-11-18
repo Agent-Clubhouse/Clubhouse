@@ -1,0 +1,22 @@
+import { afterEach, beforeEach, expect, it, vi } from 'vitest';
+import * as fsp from 'fs/promises';
+import * as os from 'os';
+import * as path from 'path';
+const fx = vi.hoisted(() => ({ home: '' }));
+vi.mock('electron', () => ({ app: { isPackaged: false, getPath: () => fx.home } }));
+vi.mock('./log-service', () => ({ appLog: vi.fn() }));
+beforeEach(async () => { fx.home = await fsp.mkdtemp(path.join(os.tmpdir(), 'gp-receipts-')); });
+afterEach(async () => { await fsp.rm(fx.home, { recursive: true, force: true }); });
+it('persists monotonic receipts and per-recipient wake budget across module reload', async () => {
+  let store = await import('./group-project-notification-store');
+  await Promise.all([store.markNotified('gp', 'dev', 4), store.markNotified('gp', 'dev', 2)]);
+  expect(await store.lastNotified('gp', 'dev')).toBe(4);
+  const reservations = await Promise.all(Array.from({ length: 5 }, () => store.reserveWake('dev', 1000)));
+  expect(reservations.filter(Boolean)).toHaveLength(store.WAKE_LIMIT_MAX);
+  vi.resetModules(); store = await import('./group-project-notification-store');
+  expect(await store.lastNotified('gp', 'dev')).toBe(4);
+  expect(await store.lastNotified('other', 'dev')).toBe(0);
+  expect(await store.reserveWake('dev', 1001)).toBe(false);
+  expect(await store.reserveWake('other', 1001)).toBe(true);
+  expect(await store.reserveWake('dev', 1000 + store.WAKE_LIMIT_WINDOW_MS)).toBe(true);
+});
