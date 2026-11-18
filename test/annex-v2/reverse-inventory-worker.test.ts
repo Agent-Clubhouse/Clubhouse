@@ -27,6 +27,7 @@ describe.runIf(process.env.CLUBHOUSE_ANNEX_INVENTORY_PEER === '1')('isolated ful
         case 'send': return peer.send(params as Parameters<typeof peer.send>[0]);
         case 'emitPty': return peer.emitPty(params as string);
         case 'ptyState': return peer.ptyState(params as string);
+        case 'clipboardReceipt': return peer.clipboardReceipt();
         case 'ptyBuffer': return peer.ptyBuffer(params as string);
         case 'agentCall': return peer.agentCall(params as Parameters<typeof peer.agentCall>[0]);
         case 'connections': return peer.connections();
@@ -40,6 +41,7 @@ describe.runIf(process.env.CLUBHOUSE_ANNEX_INVENTORY_PEER === '1')('isolated ful
         case 'networkPost': return peer.networkPost(params as Parameters<typeof peer.networkPost>[0]);
         case 'networkUpdate': return peer.networkUpdate(params as Parameters<typeof peer.networkUpdate>[0]);
         case 'networkRoster': return peer.networkRoster(params as string);
+        case 'controllerGroup': return peer.controllerGroup(params as Parameters<typeof peer.controllerGroup>[0]);
         case 'prepareHandoffs': return peer.prepareHandoffs();
         case 'handoffOffer': return peer.handoffOffer();
         case 'handoffRecord': return peer.handoffRecord(params as string);
@@ -57,6 +59,7 @@ describe.runIf(process.env.CLUBHOUSE_ANNEX_INVENTORY_PEER === '1')('isolated ful
         case 'initializeProject': return peer.initializeProject();
         case 'durable': return peer.durable(params as Parameters<typeof peer.durable>[0]);
         case 'seedLargeText': return peer.seedLargeText();
+        case 'seedContent': return peer.seedContent(params as number);
         case 'largeText': return peer.largeText();
         case 'emit': return peer.emit(params as Parameters<typeof peer.emit>[0]);
         case 'driverState': return peer.driverState();

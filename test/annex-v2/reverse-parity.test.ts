@@ -12,6 +12,8 @@ import {
 import { assertDialAudit, closeServer, rpcPeer, sentinel, sizedPng, transparentForward, type RpcPeer } from './reverse-parity-fixture';
 import { CHAT_IMAGE_MAX_BYTES, type ChatEventDraft } from '../../src/shared/chat';
 import type { GitOperationParams } from '../../src/main/services/annex-client';
+import type { BulletinMessage } from '../../src/shared/group-project-types';
+import { MOBILE_CONTENT_MAX_BYTES } from '../../src/shared/annex-binary-limits';
 
 type Status = ReturnType<InventoryPeer['status']>;
 
@@ -33,6 +35,8 @@ describe('full-server audit inventory over one A to B forward', () => {
   const chat = (who: 'A' | 'B', command: Record<string, unknown>, commandId?: string) => who === 'A' ? a.chat({ command, commandId }) : b.call('chat', { command, commandId });
   const page = (who: 'A' | 'B', options?: Parameters<InventoryPeer['page']>[0]) => who === 'A' ? a.page(options) : b.call('page', options);
   const send = (who: 'A' | 'B', type: string, payload: Record<string, unknown>) => who === 'A' ? a.send({ type, payload }) : b.call('send', { type, payload });
+  const wire = (who: 'A' | 'B', input: Parameters<InventoryPeer['wire']>[0]): Promise<WireAnswer> => who === 'A' ? a.wire(input) : b.call('wire', input);
+  const json = (answer: WireAnswer): unknown => JSON.parse(Buffer.from(answer.body, 'base64').toString('utf8'));
   const expectSatelliteEvent = (who: 'A' | 'B', type: string, payload: unknown) => vi.waitFor(async () => {
     const events = (await status(who)).events.filter(({ payload }) => payload !== null && typeof payload === 'object' && 'type' in payload && payload.type === type);
     expect(events).toEqual(expect.arrayContaining([expect.objectContaining({
@@ -274,6 +278,11 @@ describe('full-server audit inventory over one A to B forward', () => {
     expect(final.seq).toBe(last.buffer.seq);
     expect(final.data.match(/first line/g)).toHaveLength(1);
     expect(final.data.match(/after snapshot/g)).toHaveLength(1);
+    const clipboard = sizedPng(65_537);
+    expect(await send(who, 'clipboard:image', { agentId: sessionId, base64: clipboard.toString('base64'), mimeType: 'image/jpeg' })).toEqual({ sent: true });
+    await vi.waitFor(async () => { expect((await inspect()).writes.some((text) => text.startsWith('\x1b[200~'))).toBe(true); });
+    const pasted = who === 'A' ? await b.call('clipboardReceipt') : await a.clipboardReceipt();
+    expect(pasted).toEqual({ bytes: clipboard.length, digest: createHash('sha256').update(clipboard).digest('hex') });
     expect(await send(who, 'pty:close', { sessionId })).toEqual({ sent: true });
     await expectSatelliteEvent(who, 'pty:close:ack', { sessionId });
     expect(await inspect()).toMatchObject({ running: false, closed: true });
@@ -553,6 +562,98 @@ describe('full-server audit inventory over one A to B forward', () => {
       const cancelled = who === 'A' ? await a.handoffCancel(offer.id) : await b.call('handoffCancel', offer.id);
       expect(cancelled).toMatchObject({ id: offer.id, state: 'cancelled' });
       await expect(who === 'A' ? b.call('handoffPull', offer.id) : a.handoffPull(offer.id)).rejects.toThrow();
+    });
+  });
+
+  it.each(['A', 'B'] as const)('R18/R19 %s: controller group-project REST adapters preserve persisted board and roles', async (who) => {
+      const groupId = who === 'A' ? await b.call<string>('createNetworkGroup') : await a.createNetworkGroup();
+      const call = (operation: Parameters<InventoryPeer['controllerGroup']>[0]['operation'], extra = {}): Promise<unknown> => who === 'A'
+        ? a.controllerGroup({ groupId, operation, ...extra })
+        : b.call('controllerGroup', { groupId, operation, ...extra });
+      expect(await call('get')).toMatchObject({ id: groupId });
+      expect(await call('update')).toMatchObject({ id: groupId, description: 'Updated through the controller adapter' });
+      expect(await call('get')).toMatchObject({ description: 'Updated through the controller adapter' });
+      const post = await call('post') as BulletinMessage;
+      expect(post).toMatchObject({ sender: 'Controller', topic: 'controller-fixture', body: 'Controller fixture post' });
+      for (const operation of ['all', 'topic'] as const) expect(await call(operation)).toEqual(expect.arrayContaining([expect.objectContaining({ id: post.id, body: post.body })]));
+      expect(await call('digest')).toEqual(expect.arrayContaining([expect.objectContaining({ topic: 'controller-fixture' })]));
+      expect(await call('protection', { enabled: true })).toEqual({ ok: true });
+      expect(await call('protection', { enabled: false })).toEqual({ ok: true });
+      expect(await call('set-role', { mode: 'allow' })).toMatchObject({ groupProjectId: groupId });
+      expect(await call('roles')).toMatchObject({ groupProjectId: groupId });
+      expect(await call('set-role', { mode: 'off' })).toMatchObject({ groupProjectId: groupId });
+      expect(await call('polling', { enabled: false })).toBeTruthy();
+      expect(await call('tap')).toBeTruthy();
+      expect(await call('inject')).toBeTruthy();
+      expect(await call('delete-message', { messageId: post.id })).toBeTruthy();
+      expect(await call('topic')).not.toEqual(expect.arrayContaining([expect.objectContaining({ id: post.id })]));
+      await call('post');
+      expect(await call('delete-topic')).toBeTruthy();
+      expect(await call('topic')).toEqual([]);
+  });
+
+  it.each(['A', 'B'] as const)('R08/R22 %s: actual rich previews, links and server-only read surfaces retain their disposition', async (who) => {
+    const peer = target(who);
+    for (const [url, expected] of [
+      ['/api/v1/identity', { fingerprint: peer.fingerprint }],
+      ['/api/v1/status', { version: '1' }],
+      ['/api/v1/mobile/agents/state', { version: 1 }],
+      [`/api/v1/mobile/projects/${peer.projectId}/create-options`, { version: 1 }],
+      [`/api/v1/mobile/agents/${peer.agentId}/settings`, { version: 1 }],
+      ['/api/v1/mobile/helper-routing', { version: 1 }],
+      ['/api/v1/mobile/network', { version: 1 }],
+      [`/api/v1/mobile/agents/${peer.agentId}/content?path=fixture.txt`, { kind: 'text', text: `file:${peer.alias}:é\n` }],
+      [`/api/v1/mobile/agents/${peer.agentId}/link?href=fixture.txt`, { version: 1, type: 'file', name: 'fixture.txt', kind: 'text' }],
+    ] as const) {
+      const answer = await wire(who, { method: 'GET', path: url });
+      expect(answer.status, url).toBe(200);
+      expect(json(answer), url).toMatchObject(expected);
+    }
+    for (const url of ['/api/v1/projects', `/api/v1/projects/${peer.projectId}/agents`, '/api/v1/group-projects']) {
+      const answer = await wire(who, { method: 'GET', path: url });
+      expect(answer.status, url).toBe(200);
+      expect(Array.isArray(json(answer)), url).toBe(true);
+    }
+    for (const [url, error] of [
+      ['/api/v1/mobile/dispatcher/settings', 'dispatcher_off'],
+      [`/api/v1/projects/${peer.projectId}/files/read?path=../../outside`, 'path_traversal'],
+    ] as const) {
+      const answer = await wire(who, { method: 'GET', path: url });
+      expect(answer.status, url).toBe(error === 'dispatcher_off' ? 404 : 403);
+      expect(json(answer)).toMatchObject({ error });
+    }
+    const state = json(await wire(who, { method: 'GET', path: '/api/v1/mobile/agents/state' })) as { epoch: string };
+    expect(typeof state.epoch).toBe('string');
+    for (const [index, command] of [
+      { type: 'helper.approve', requestId: 'missing-helper-request' },
+      { type: 'helper.decline', requestId: 'missing-helper-request' },
+      { type: 'grant.answer', requestId: 'missing-grant-request', answer: 'decline' },
+      { type: 'app.update.cancel', requestId: 'missing-update-request' },
+    ].entries()) {
+      const answer = await wire(who, {
+        method: 'POST', path: '/api/v1/mobile/commands', headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ ...command, version: 1, epoch: state.epoch, commandId: `surface-${who}-${index}` }),
+      });
+      expect(json(answer), command.type).toMatchObject({ status: 'rejected' });
+    }
+  });
+
+  describe.each(['A', 'B'] as const)('R08/B %s: actual rich-content binary limits and digests', (who) => {
+    it.each([65_535, 65_536, 65_537, MOBILE_CONTENT_MAX_BYTES - 1, MOBILE_CONTENT_MAX_BYTES, MOBILE_CONTENT_MAX_BYTES + 1])('preserves or explicitly refuses %i bytes at the content cap', async (size) => {
+      const expected = who === 'A' ? await b.call('seedContent', size) : a.seedContent(size);
+      const answer = await wire(who, { method: 'GET', path: `/api/v1/mobile/agents/${target(who).agentId}/content?path=preview.png` });
+      expect(answer.status).toBe(200);
+      const content = json(answer);
+      expect(content).toMatchObject({ kind: 'image', size, mimeType: 'image/png' });
+      if (size > MOBILE_CONTENT_MAX_BYTES) {
+        expect(content).toMatchObject({ tooLarge: true });
+        expect(content).not.toHaveProperty('base64');
+      } else {
+        if (!content || typeof content !== 'object' || !('base64' in content) || typeof content.base64 !== 'string') throw new Error('The preview returned no binary data');
+        const bytes = Buffer.from(content.base64, 'base64');
+        expect({ bytes: bytes.length, digest: createHash('sha256').update(bytes).digest('hex') }).toEqual(expected);
+      }
+      expect(await page(who)).toMatchObject({ agentId: target(who).agentId });
     });
   });
 

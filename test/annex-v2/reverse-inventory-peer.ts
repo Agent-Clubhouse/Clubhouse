@@ -1,6 +1,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import * as https from 'https';
+import * as os from 'os';
 import { afterAll, expect, vi } from 'vitest';
 import { createHash } from 'crypto';
 import { execFileSync } from 'child_process';
@@ -130,6 +131,7 @@ import { onMembershipChanged } from '../../src/main/services/annex-network-membe
 import { startGroupProjectNetwork } from '../../src/main/services/group-project-network';
 import { remoteGroupProjectGrantGate } from '../../src/main/services/group-project-remote-grants';
 import { groupProjectRoster } from '../../src/main/services/group-project-roster';
+import { addMember, beginAutoJoin, watchGroupProjectMembership } from '../../src/main/services/group-project-membership';
 import { startProjectLinksNetwork } from '../../src/main/services/project-links-network';
 import { changeProjectLinks, projectLinksStore } from '../../src/main/services/project-links-store';
 import { startLinkedProjectStateNetwork } from '../../src/main/services/linked-project-state-network';
@@ -249,6 +251,7 @@ export async function createInventoryPeer(alias: string) {
     machineName: client.machineAlias, onConnected: client.onSatelliteConnected,
   };
   const stopGroups = startGroupProjectNetwork({ ...memberOptions, transport });
+  const stopGroupMembership = watchGroupProjectMembership();
   groupProjectHost.setRemoteWriteGate(remoteGroupProjectGrantGate);
   const replicas: ReplicaNetworkOptions = {
     ...memberOptions,
@@ -452,6 +455,15 @@ export async function createInventoryPeer(alias: string) {
       const native = nativePty();
       return { running: ptyManager.isRunning(sessionId), buffer: ptyManager.getBufferSnapshot(sessionId), closed: native.closed, writes: native.writes, sizes: native.sizes };
     },
+    async clipboardReceipt() {
+      const paste = nativePty().writes.find((text) => text.startsWith('\x1b[200~') && text.endsWith('\x1b[201~'));
+      if (!paste) throw new Error('No clipboard path reached the actual PTY input');
+      const file = paste.slice(6, -6);
+      if (path.dirname(file) !== os.tmpdir() || !/^clipboard-paste-[a-z0-9-]+\.png$/.test(path.basename(file))) throw new Error('Unexpected clipboard fixture path');
+      const bytes = await fs.promises.readFile(file);
+      await fs.promises.unlink(file);
+      return { bytes: bytes.length, digest: createHash('sha256').update(bytes).digest('hex') };
+    },
     async ptyBuffer(sessionId: string) {
       if (!remote) throw new Error('Inventory peer is not configured');
       return client.requestPtyBufferSnapshot(remote.fingerprint, sessionId);
@@ -486,9 +498,8 @@ export async function createInventoryPeer(alias: string) {
     projectInactive(inactive: boolean) { return applyProjectStateChange({ type: 'setInactive', projectId: project.id, inactive, at: Date.now() }); },
     async createNetworkGroup() {
       const group = await groupProjectHost.create(`${alias} shared board`, { scope: { level: 'app', reach: 'network' } });
-      await groupProjectHost.updateMembership(group.id, (draft) => {
-        draft.explicit.push({ address: agent.id, name: agent.name, kind: 'durable', addedAt: new Date().toISOString() });
-      });
+      await beginAutoJoin(group.id);
+      await addMember(group.id, agent.id, { author: { label: 'user' } });
       return group.id;
     },
     async networkGroup(id: string) {
@@ -502,6 +513,32 @@ export async function createInventoryPeer(alias: string) {
       return groupProjectHost.update(input.id, { description: input.description }, { author: { label: 'user' } });
     },
     networkRoster(id: string) { return groupProjectRoster.describe(id); },
+    async controllerGroup(input: {
+      groupId: string;
+      operation: 'get' | 'update' | 'digest' | 'all' | 'topic' | 'post' | 'delete-message' | 'delete-topic' | 'protection' | 'roles' | 'set-role' | 'polling' | 'tap' | 'inject';
+      messageId?: string; enabled?: boolean; mode?: 'allow' | 'off';
+    }): Promise<unknown> {
+      if (!remote) throw new Error('Inventory peer is not configured');
+      const fp = remote.fingerprint, id = input.groupId;
+      switch (input.operation) {
+        case 'get': return client.requestGroupProjectGet(fp, id);
+        case 'update': return client.requestGroupProjectUpdate(fp, id, { description: 'Updated through the controller adapter' });
+        case 'digest': return client.requestBulletinDigest(fp, id);
+        case 'all': return client.requestBulletinAllMessages(fp, id);
+        case 'topic': return client.requestBulletinTopicMessages(fp, id, 'controller-fixture');
+        case 'post': return client.requestBulletinPostMessage(fp, id, 'Controller', 'controller-fixture', 'Controller fixture post');
+        case 'delete-message':
+          if (!input.messageId) throw new Error('A message id is required');
+          return client.requestDeleteMessage(fp, id, 'controller-fixture', input.messageId);
+        case 'delete-topic': return client.requestDeleteTopic(fp, id, 'controller-fixture');
+        case 'protection': return client.requestSetTopicProtection(fp, id, 'controller-fixture', input.enabled === true);
+        case 'roles': return client.requestGroupProjectRoles(fp, id);
+        case 'set-role': return client.requestGroupProjectSetRole(fp, id, remote.agentId, 'lead', input.mode ?? 'off');
+        case 'polling': return client.requestGroupProjectSetPolling(fp, id, input.enabled === true);
+        case 'tap': return client.requestShoulderTap(fp, id, remote.agentId, 'Controller shoulder tap');
+        case 'inject': return client.requestInjectMessage(fp, remote.agentId, 'Controller injected input');
+      }
+    },
     async prepareHandoffs() {
       git(['remote', 'add', 'origin', 'https://example.invalid/fixture.git'], root);
       fs.appendFileSync(path.join(root, '.git', 'info', 'exclude'), '\n.clubhouse/\nlarge.txt\nlarge-utf8.txt\n');
@@ -576,6 +613,11 @@ export async function createInventoryPeer(alias: string) {
       return { created, worktree, deleted };
     },
     seedLargeText() { fs.writeFileSync(path.join(root, 'large-utf8.txt'), 'é\n'.repeat(LARGE_TEXT_BYTES / 3)); },
+    seedContent(size: number) {
+      const bytes = sizedPng(size);
+      fs.writeFileSync(path.join(root, 'preview.png'), bytes);
+      return { bytes: bytes.length, digest: createHash('sha256').update(bytes).digest('hex') };
+    },
     async largeText() {
       if (!remote) throw new Error('Inventory peer is not configured');
       const text = await client.requestFileRead(remote.fingerprint, remote.projectId, 'large-utf8.txt');
@@ -727,6 +769,7 @@ export async function createInventoryPeer(alias: string) {
     },
     async close() {
       await stopHandoffs();
+      stopGroupMembership();
       hookServer.stop();
       mcpBridge.stop();
       fixture.lifecycleRoot = null;
