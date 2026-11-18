@@ -1,4 +1,3 @@
-import { localMemberObservation } from './group-project-member-status';
 import { handoffTransferDiagnostic, tagHandoffTransferError } from '../../shared/handoff-transfer-diagnostics';
 import { mobileProjectLinks, MOBILE_PROJECT_LINKS_EVENT } from './mobile-project-links';
 import { hydrateProjectLinks, projectLinksStore } from './project-links-store';
@@ -116,6 +115,7 @@ import * as gitService from './git-service';
 import { normalizeSessionEvents, buildSessionSummary, paginateEvents, SUMMARY_TRANSCRIPT_MAX_BYTES } from './session-reader';
 import { isSessionCapable, getProvider } from '../orchestrators';
 import { getAgentRuntime, isChatAgent, onChatEvent } from './agent-runtime';
+import { localMemberObservation } from './group-project-member-status';
 import { chatDetailedStatus } from '../../shared/chat-agent-status';
 import { CHAT_IMAGE_MAX_BYTES, type ChatEvent, type ChatSessionState } from '../../shared/chat';
 import { injectPtyText } from './agent-runtime/pty-input';
