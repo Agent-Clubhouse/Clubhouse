@@ -106,3 +106,11 @@ it('registry inspection failure preserves existing receipts and never blocks loa
   expect(await store.lastNotified('healthy', 'dev')).toBe(30);
   expect(await store.reserveWake('dev')).toBe(true);
 });
+
+it('does not departure-prune a group whose roster is unresolved', async () => {
+  const store = await import('./group-project-notification-store');
+  await store.markNotified('gp', 'dev', 30);
+  fx.broken.add('gp');
+  await store.pruneNotificationReceipts({ departed: [{ group: 'gp', agents: ['dev'] }] });
+  expect(await store.lastNotified('gp', 'dev')).toBe(30);
+});

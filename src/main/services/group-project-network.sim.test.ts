@@ -18,6 +18,7 @@ interface Machine {
   fp: string;
   home: string;
   projects?: Array<{ id: string; name: string; path: string; key: string; agents: Array<{ id: string; name: string }> }>;
+  receipts?: typeof import('./group-project-notification-store');
   origins?: typeof import('./group-project-local-origin');
   host?: typeof import('./group-project-host');
   roles?: typeof import('./group-project-roles');
@@ -122,6 +123,7 @@ beforeEach(async () => {
     m.bulletin = await import('./group-project-bulletin');
     m.membership = await import('./group-project-membership');
     m.delivery = await import('./group-project-delivery');
+    m.receipts = await import('./group-project-notification-store');
     m.persisted = await import('./persisted-bindings');
     m.bindings = await import('./clubhouse-mcp/binding-manager');
     m.roles = await import('./group-project-roles');
@@ -855,4 +857,33 @@ it('local provenance stays on the originating computer and cannot be claimed on 
   expect(received).toBeTruthy();
   expect(A.origins!.isLocalGroupPost(id, received.id)).toBe(false);
   expect(received).not.toHaveProperty('localOrigin');
+});
+
+it('snapshot departure prunes the copy member receipt when its host removes that member', async () => {
+  const id = await sharedProject();
+  const address = `builder@${B.fp}`;
+  await as(A, h => h.groupProjectHost.updateMembership(id, draft => {
+    draft.explicit.push({ address, kind: 'durable', name: 'Builder', addedAt: 'now' });
+  }));
+  await as(B, h => h.groupProjectHost.syncFrom(A.fp));
+  await as(B, async () => {
+    await B.receipts!.markNotified(id, 'builder', 30);
+    expect(await B.receipts!.lastNotified(id, 'builder')).toBe(30);
+    B.delivery!.watchGroupProjectDelivery();
+  });
+  const arrived: import('../../shared/group-project-types').GroupProjectChange[] = [];
+  const off = B.host!.groupProjectHost.onChange(c => arrived.push(c));
+  try {
+    await as(A, h => h.groupProjectHost.updateMembership(id, draft => {
+      draft.explicit = draft.explicit.filter(m => m.address !== address);
+      draft.excluded.push({ address, excludedAt: 'now' });
+    }));
+    await as(B, h => h.groupProjectHost.syncFrom(A.fp));
+    expect(arrived).toEqual(expect.arrayContaining([expect.objectContaining({ groupProjectId: id, part: 'record', departed: [address] })]));
+    await vi.waitFor(async () => {
+      expect(await as(B, async () => B.receipts!.lastNotified(id, 'builder'))).toBeUndefined();
+    });
+    const saved = JSON.parse(await fsp.readFile(path.join(B.home, '.clubhouse-dev/group-projects/notification-receipts.json'), 'utf8'));
+    expect(Object.hasOwn(saved.notified, JSON.stringify([id, 'builder']))).toBe(false);
+  } finally { off(); }
 });
