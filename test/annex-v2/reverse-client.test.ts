@@ -97,7 +97,7 @@ describe.each(['A', 'B'] as const)('one forward opened by %s', (opener) => {
     expect(guard.accepts()).toBe(0);
   });
 
-  it('proves the negotiated, authorized reverse request and subscription really work below the consumers', async () => {
+  it('proves the authorized reverse request and the sole consumer-owned subscription reach normal IPC', async () => {
     const result = requester === 'A' ? await a.lowLevel() : await b.call('lowLevel');
     expect(result).toMatchObject({
       status: 200, body: { alias: opener },

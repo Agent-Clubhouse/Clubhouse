@@ -819,6 +819,7 @@ describe('annex-client', () => {
       annexClient.startClient();
       await bonjourFindCallback!(makeService());
       await vi.waitFor(() => expect(messageHandler).not.toBeNull());
+      await vi.waitFor(() => expect(annexClient.isMachineDirectConnected(FINGERPRINT)).toBe(true));
       const shown = () => (annexClient.getSatellite(FINGERPRINT)!.snapshot!.projects[0] as { id: string }).id;
 
       messageHandler!(snapshot(100, 'first'));
@@ -831,6 +832,7 @@ describe('annex-client', () => {
       annexClient.disconnect(FINGERPRINT);
       annexClient.connect(FINGERPRINT);
       await vi.waitFor(() => expect(messageHandler).not.toBe(before));
+      await vi.waitFor(() => expect(annexClient.isMachineDirectConnected(FINGERPRINT)).toBe(true));
       messageHandler!(snapshot(0, 'after restart'));
       expect(shown()).toBe('after restart');
     });
@@ -3350,7 +3352,7 @@ describe('annex-client', () => {
       expect(await annexClient.postToMachine(FP, '/api/v1/network/test', { value: 'é' }, { signal: abort.signal, maxResponseBytes: 16 }))
         .toEqual({ status: 429, body: { error: 'rate_limited' }, retryAfterMs: 3000 });
       expect(request).toHaveBeenCalledWith(FP, expect.objectContaining({ method: 'POST', path: '/api/v1/network/test', body: '{"value":"é"}',
-        headers: { 'content-type': 'application/json' } }), expect.objectContaining({ signal: abort.signal, maxResponseBytes: 16, timeoutMs: 30000 }));
+        headers: { 'content-type': 'application/json' } }), expect.objectContaining({ signal: expect.any(AbortSignal), maxResponseBytes: 16, timeoutMs: 30000 }));
       const error = new annexControl.ControlRequestError('cancelled', true, 'original-id');
       request.mockRejectedValueOnce(error);
       await expect(annexClient.postToMachine(FP, '/api/v1/network/test', {})).rejects.toBe(error);
@@ -3434,6 +3436,7 @@ describe('annex-client', () => {
       annexControl._attachForTesting(socket as never, fingerprint, 'PIN', 'in');
       socket.emit('message', Buffer.from(JSON.stringify({ v: 1, type: 'hello', features: ['request'] })));
       expect(annexClient.isMachineConnected(fingerprint)).toBe(true);
+      expect(annexClient.sendToSatellite(fingerprint, { type: 'pty:input', payload: {} })).toEqual({ sent: false, error: 'not_connected' });
       allowed = false;
       expect(socket.readyState).toBe(1);
       expect(annexClient.isMachineConnected(fingerprint)).toBe(false);
@@ -3454,6 +3457,159 @@ describe('annex-client', () => {
         expect(https.request).not.toHaveBeenCalled();
         expect(socket.readyState).toBe(1);
       } finally { stop(); annexControl.resetControlForTests(); }
+    });
+
+    describe('one reverse event stream', () => {
+      const peer = { fingerprint: FP, publicKey: 'key', alias: 'Reverse peer', icon: '', color: '', role: 'member' as const,
+        kind: 'desktop' as const, pairedAt: '', lastSeen: '', tlsCertificateFingerprint: 'PIN', knownHosts: [] as string[], mainPort: 9000 };
+      let handlers: annexControl.SubscriptionHandlers[];
+      let handles: Array<{ id: string; close: ReturnType<typeof vi.fn>; send: ReturnType<typeof vi.fn> }>;
+      let changed: () => void;
+      const snapshot = (lastSeq: number) => ({ type: 'snapshot', payload: { protocolVersion: 2, projects: [], agents: {}, quickAgents: {},
+        theme: null, orchestrators: null, pendingPermissions: [], lastSeq } });
+      beforeEach(async () => {
+        handlers = []; handles = [];
+        vi.mocked(annexPeers.listPeers).mockReturnValue([peer]);
+        vi.mocked(annexPeers.getPeer).mockReturnValue(peer);
+        vi.spyOn(annexControl, 'hasReverseLink').mockReturnValue(true);
+        vi.spyOn(annexControl, 'subscribe').mockImplementation((_fingerprint, callbacks) => {
+          const handle = { id: `stream-${handles.length}`, close: vi.fn(), send: vi.fn(() => true) };
+          handlers.push(callbacks); handles.push(handle); return handle;
+        });
+        ({ devicesChanged: changed } = await import('./annex-device-signal'));
+        changed();
+      });
+
+      it('uses the normal snapshot/event IPC without per-frame readiness notifications', async () => {
+        const { onDevicePresenceChanged } = await import('./annex-device-signal');
+        const notified = vi.fn();
+        const off = onDevicePresenceChanged(notified);
+        try {
+          handlers[0].onFrame(snapshot(10));
+          for (let i = 0; i < 10; i++) handlers[0].onFrame({ type: 'agent:status', payload: { agentId: 'a', status: 'idle' } });
+          expect(annexClient.getSatellite(FP)?.snapshot?.lastSeq).toBe(10);
+          expect(broadcastToAllWindows).toHaveBeenCalledWith(IPC.ANNEX_CLIENT.SATELLITE_EVENT, { satelliteId: FP, type: 'agent:status', payload: { agentId: 'a', status: 'idle' } });
+          expect(notified).not.toHaveBeenCalled();
+          expect(annexControl.subscribe).toHaveBeenCalledTimes(1);
+          vi.mocked(annexControl.getLinkReadiness).mockReturnValue({ acceptedHere: false, openedHere: false });
+          changed();
+          expect(notified).toHaveBeenCalledTimes(1);
+          expect(handles[0].close).toHaveBeenCalledTimes(1);
+        } finally { off(); }
+      });
+
+      it.each(['revoke', 're-pin', 'disable', 'disconnect', 'forget', 'stop'] as const)('retires before late callbacks on %s and never resurrects the old stream', (reason) => {
+        handlers[0].onFrame(snapshot(10));
+        if (reason === 'revoke' || reason === 're-pin') {
+          vi.mocked(annexControl.getLinkReadiness).mockReturnValue({ acceptedHere: false, openedHere: false });
+          if (reason === 're-pin') vi.mocked(annexPeers.getPeer).mockReturnValue({ ...peer, tlsCertificateFingerprint: 'NEW-PIN' });
+          changed();
+        } else if (reason === 'disable') {
+          vi.mocked(annexSettings.getSettings).mockReturnValue({ ...annexSettings.getSettings(), enableClient: false });
+          changed();
+        } else if (reason === 'disconnect') annexClient.disconnect(FP);
+        else if (reason === 'forget') {
+          vi.mocked(annexControl.getLinkReadiness).mockReturnValue({ acceptedHere: false, openedHere: false });
+          annexClient.forgetSatellite(FP);
+        } else annexClient.stopClient();
+        expect(handles[0].close).toHaveBeenCalledTimes(1);
+        const count = vi.mocked(broadcastToAllWindows).mock.calls.length;
+        handlers[0].onFrame(snapshot(999));
+        handlers[0].onFrame({ type: 'agent:status', payload: { status: 'stale' } });
+        handlers[0].onEnd('closed');
+        for (let i = 0; i < 5; i++) changed();
+        expect(annexControl.subscribe).toHaveBeenCalledTimes(1);
+        expect(broadcastToAllWindows).toHaveBeenCalledTimes(count);
+        expect(annexClient.isMachineConnected(FP)).toBe(false);
+      });
+
+      it('does not resubscribe to an ended stream until explicit retry', () => {
+        handlers[0].onEnd('frame_too_large');
+        for (let i = 0; i < 10; i++) changed();
+        expect(annexControl.subscribe).toHaveBeenCalledTimes(1);
+        annexClient.retry(FP);
+        expect(annexControl.subscribe).toHaveBeenCalledTimes(2);
+        handlers[1].onFrame(snapshot(0));
+        expect(annexClient.getSatellite(FP)?.snapshot?.lastSeq).toBe(0);
+        handlers[0].onFrame(snapshot(999));
+        expect(annexClient.getSatellite(FP)?.snapshot?.lastSeq).toBe(0);
+      });
+
+      it('starts exactly one fresh subscription after control readiness drops and recovers', () => {
+        handlers[0].onFrame(snapshot(100));
+        vi.mocked(annexControl.getLinkReadiness).mockReturnValue({ acceptedHere: false, openedHere: false });
+        changed();
+        expect(handles[0].close).toHaveBeenCalledTimes(1);
+        vi.mocked(annexControl.getLinkReadiness).mockReturnValue({ acceptedHere: true, openedHere: false });
+        for (let i = 0; i < 10; i++) changed();
+        expect(annexControl.subscribe).toHaveBeenCalledTimes(2);
+        handlers[1].onFrame(snapshot(0));
+        handlers[0].onFrame(snapshot(999));
+        handlers[0].onEnd('closed');
+        expect(annexClient.getSatellite(FP)?.snapshot?.lastSeq).toBe(0);
+        expect(handles[1].close).not.toHaveBeenCalled();
+      });
+
+      it('sends through only the subscription owner, retaining refusal without an alternate send', () => {
+        expect(annexClient.sendToSatellite(FP, { type: 'pty:input', payload: { data: 'one' } })).toEqual({ sent: true });
+        expect(handles[0].send).toHaveBeenCalledExactlyOnceWith({ type: 'pty:input', payload: { data: 'one' } });
+        handles[0].send.mockReturnValue(false);
+        expect(annexClient.sendToSatellite(FP, { type: 'agent:spawn', payload: {} }).sent).toBe(false);
+        expect(https.request).not.toHaveBeenCalled();
+        expect(request).not.toHaveBeenCalled();
+      });
+
+      it('uses the same reverse seam for byte-preserving icons and header-bearing PTY buffers', async () => {
+        const { ANNEX_BUFFER_HEADERS } = await import('../../shared/annex-pty');
+        request.mockImplementation(async (_fingerprint, input) => {
+          if (input.path.endsWith('/buffer')) return { status: 200, headers: { [ANNEX_BUFFER_HEADERS.seq]: '7' }, body: Buffer.from('seed') };
+          if (input.path.includes('/icons/')) return { status: 200, headers: { 'content-type': 'image/png' }, body: Buffer.from([0, 255, 1]) };
+          throw new Error(`Unexpected fixture request: ${input.path}`);
+        });
+        const frame = snapshot(1);
+        handlers[0].onFrame({ ...frame, payload: { ...frame.payload, projects: [{ id: 'p /', icon: 'icon.png' }] } });
+        await vi.waitFor(() => expect(annexClient.getSatellite(FP)?.snapshot).toMatchObject({ projectIcons: { 'p /': 'data:image/png;base64,AP8B' } }));
+        expect(await annexClient.requestPtyBuffer(FP, 'agent /')).toBe('seed');
+        expect(request).toHaveBeenCalledWith(FP, expect.objectContaining({ path: '/api/v1/agents/agent%20%2F/buffer', timeoutMs: 5000 }), expect.any(Object));
+        expect(request).toHaveBeenCalledWith(FP, expect.objectContaining({ path: '/api/v1/icons/project/p%20%2F', timeoutMs: 10000, maxResponseBytes: expect.any(Number) }), expect.any(Object));
+        expect(https.request).not.toHaveBeenCalled();
+      });
+
+      it('cancels a locally stopped write without sending it again or losing its indeterminate outcome', async () => {
+        let executions = 0;
+        request.mockImplementationOnce((_fingerprint, _input, options) => {
+          executions++;
+          return new Promise((_resolve, reject) => {
+            options?.signal?.addEventListener('abort', () => reject(new annexControl.ControlRequestError('cancelled', true, options.requestId!)), { once: true });
+          });
+        });
+        const pending = annexClient.postToMachine(FP, '/api/v1/network/test', {});
+        const rejected = expect(pending).rejects.toMatchObject({ code: 'cancelled', indeterminate: true, requestId: expect.any(String) });
+        annexClient.stopClient();
+        await rejected;
+        expect(executions).toBe(1);
+        expect(request).toHaveBeenCalledTimes(1);
+        expect(https.request).not.toHaveBeenCalled();
+      });
+
+      it('replaces reverse with direct using a fresh stream identity, then recovers with one new reverse subscription', async () => {
+        handlers[0].onFrame(snapshot(100));
+        vi.mocked(annexPeers.getPeer).mockReturnValue({ ...peer, knownHosts: ['127.0.0.2'] });
+        annexClient.connect(FP);
+        await new Promise((resolve) => setTimeout(resolve, 0));
+        expect(handles[0].close).toHaveBeenCalledTimes(1);
+        expect(annexClient.isMachineDirectConnected(FP)).toBe(true);
+        expect(annexClient.sendToSatellite(FP, { type: 'pty:input', payload: { data: 'direct' } })).toEqual({ sent: true });
+        expect(handles[0].send).not.toHaveBeenCalled();
+        annexClient._receiveSatelliteMessageForTesting(FP, snapshot(0));
+        handlers[0].onFrame(snapshot(999));
+        expect(annexClient.getSatellite(FP)?.snapshot?.lastSeq).toBe(0);
+        annexClient._receiveSatelliteDisconnectForTesting(FP);
+        expect(annexControl.subscribe).toHaveBeenCalledTimes(2);
+        handlers[1].onFrame(snapshot(0));
+        expect(annexClient.sendToSatellite(FP, { type: 'pty:input', payload: { data: 'reverse' } })).toEqual({ sent: true });
+        expect(handles[1].send).toHaveBeenCalledTimes(1);
+      });
     });
   });
 

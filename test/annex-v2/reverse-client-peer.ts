@@ -224,15 +224,13 @@ export async function createClientPeer(alias: string) {
     },
     async lowLevel() {
       const answer = await control.request(remote!.fingerprint, { method: 'GET', path: '/api/v1/status' });
-      let subscription: control.ControlSubscription | undefined;
-      const frame = await new Promise<Record<string, unknown>>((resolve, reject) => {
-        const timer = setTimeout(() => reject(new Error('Fixture subscription did not deliver')), 5_000);
-        subscription = control.subscribe(remote!.fingerprint, {
-          onFrame: (value) => { clearTimeout(timer); resolve(value); },
-          onEnd: (code) => { clearTimeout(timer); reject(new Error(code)); },
-        });
-      });
-      subscription!.close();
+      const frame = await vi.waitFor(() => {
+        const event = state.events.find(({ channel, payload }) => channel === 'annex-client:satellite-event'
+          && typeof payload === 'object' && payload !== null && 'satelliteId' in payload && payload.satelliteId === remote!.fingerprint
+          && 'type' in payload && payload.type === 'snapshot');
+        if (!event) throw new Error('The consumer-owned subscription did not deliver a snapshot to IPC');
+        return event.payload;
+      }, { timeout: 5_000 });
       return { status: answer.status, body: JSON.parse(answer.body.toString()), frame };
     },
     async calibrate(endpoints: Array<{ host: string; port: number }>) {
