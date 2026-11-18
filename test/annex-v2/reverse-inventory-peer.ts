@@ -69,6 +69,7 @@ import type { BulletinMessage } from '../../src/shared/group-project-types';
 import type { SessionTranscriptPage } from '../../src/shared/session-types';
 import type { DurableAgentConfig } from '../../src/shared/types';
 import * as eventBus from '../../src/main/services/annex-event-bus';
+import { writeKey } from '../../src/main/services/plugin-storage';
 
 export interface InventoryPeerInfo extends PeerInfo {
   projectId: string;
@@ -90,6 +91,7 @@ export const BULLETIN_MESSAGES = 100;
 export const NATIVE_TRANSCRIPT_EVENTS = 5;
 export const NATIVE_TRANSCRIPT_EVENT_BYTES = 2 * 1024 * 1024;
 export const NATIVE_SESSION_ID = '00000000-0000-4000-8000-000000000003';
+export const SMALL_SESSION_ID = '00000000-0000-4000-8000-000000000004';
 export const LARGE_TEXT_BYTES = 9 * 1024 * 1024;
 
 afterAll(() => { fs.rmSync(fixture.dir, { recursive: true, force: true }); });
@@ -104,6 +106,11 @@ export async function createInventoryPeer(alias: string) {
   fs.mkdirSync(root);
   fs.writeFileSync(path.join(root, 'fixture.txt'), `file:${alias}:é\n`);
   const project = await projectStore.add(root);
+  await writeKey({
+    pluginId: 'canvas', scope: 'project-local', projectPath: root, key: 'canvas-instances',
+    value: [{ id: 'fixture-canvas', name: 'Canvas', views: [], viewport: { panX: 0, panY: 0, zoom: 1 }, nextZIndex: 0, zoomedViewId: null }],
+  });
+  await writeKey({ pluginId: 'canvas', scope: 'project-local', projectPath: root, key: 'canvas-active-id', value: 'fixture-canvas' });
   const gitRoot = path.join(fixture.dir, 'git-project');
   const gitRemote = path.join(fixture.dir, 'remote.git');
   const git = (args: string[], cwd = gitRoot) => execFileSync('git', args, { cwd, encoding: 'utf8' }).trim();
@@ -205,6 +212,16 @@ export async function createInventoryPeer(alias: string) {
     },
     hook() {
       eventBus.emitHookEvent(agent.id, { kind: 'pre_tool', toolName: 'Read', toolInput: { file_path: 'fixture.txt' }, timestamp: 1_700_000_000_000 });
+    },
+    theme() { server.broadcastThemeChanged(); },
+    canvas() {
+      if (!remote) throw new Error('Inventory peer is not configured');
+      client.sendToSatellite(remote.fingerprint, {
+        type: 'canvas:mutation', payload: {
+          projectId: remote.projectId, canvasId: 'fixture-canvas',
+          mutation: { type: 'renameCanvas', canvasId: 'fixture-canvas', name: 'Renamed remotely' },
+        },
+      });
     },
     async durable(input?: { projectId: string; useWorktree: boolean }) {
       if (!remote) throw new Error('Inventory peer is not configured');
@@ -316,9 +333,25 @@ export async function createInventoryPeer(alias: string) {
         message: { id: `native-message-${i}`, role: 'assistant', content: [{ type: 'text', text: 't'.repeat(NATIVE_TRANSCRIPT_EVENT_BYTES) }] },
       }));
       fs.writeFileSync(path.join(dir, `${NATIVE_SESSION_ID}.jsonl`), `${lines.join('\n')}\n`);
+      fs.writeFileSync(path.join(dir, `${SMALL_SESSION_ID}.jsonl`), [
+        JSON.stringify({ type: 'user', timestamp: 1_700_000_000_000, message: { role: 'user', content: [{ type: 'text', text: 'Summarize the fixture' }] } }),
+        JSON.stringify({
+          type: 'assistant', timestamp: 1_700_000_001_000,
+          message: { id: 'small-assistant', role: 'assistant', model: 'fixture-model', content: [{ type: 'text', text: 'Fixture summary complete.' }], usage: { input_tokens: 7, output_tokens: 11 } },
+        }),
+        '',
+      ].join('\n'));
       const events = await provider.readSessionTranscript(NATIVE_SESSION_ID, cwd);
       if (!events) throw new Error('The native session reader did not find its fixture');
       return { rawEvents: events.length };
+    },
+    async nativeSessions() {
+      if (!remote) throw new Error('Inventory peer is not configured');
+      return client.requestSessionList(remote.fingerprint, remote.agentId, remote.projectId, 'claude-code');
+    },
+    async nativeSummary() {
+      if (!remote) throw new Error('Inventory peer is not configured');
+      return client.requestSessionSummary(remote.fingerprint, remote.agentId, SMALL_SESSION_ID, remote.projectId, 'claude-code');
     },
     async transcript() {
       if (!remote) throw new Error('Inventory peer is not configured');

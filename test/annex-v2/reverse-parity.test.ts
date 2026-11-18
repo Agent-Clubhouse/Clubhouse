@@ -6,7 +6,7 @@ import * as net from 'net';
 import { createHash } from 'crypto';
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
-  BULLETIN_MESSAGES, BULLETIN_MESSAGE_BYTES, NATIVE_TRANSCRIPT_EVENTS, NATIVE_TRANSCRIPT_EVENT_BYTES,
+  BULLETIN_MESSAGES, BULLETIN_MESSAGE_BYTES, NATIVE_TRANSCRIPT_EVENTS, NATIVE_TRANSCRIPT_EVENT_BYTES, NATIVE_SESSION_ID, SMALL_SESSION_ID,
   createInventoryPeer, LARGE_DIFF_BYTES, LARGE_TEXT_BYTES, type InventoryPeer, type InventoryPeerInfo, type WireAnswer,
 } from './reverse-inventory-peer';
 import { assertDialAudit, closeServer, rpcPeer, sentinel, transparentForward, type RpcPeer } from './reverse-parity-fixture';
@@ -33,7 +33,8 @@ describe('full-server audit inventory over one A to B forward', () => {
   const chat = (who: 'A' | 'B', command: Record<string, unknown>, commandId?: string) => who === 'A' ? a.chat({ command, commandId }) : b.call('chat', { command, commandId });
   const page = (who: 'A' | 'B', options?: Parameters<InventoryPeer['page']>[0]) => who === 'A' ? a.page(options) : b.call('page', options);
   const expectSatelliteEvent = (who: 'A' | 'B', type: string, payload: unknown) => vi.waitFor(async () => {
-    expect((await status(who)).events).toEqual(expect.arrayContaining([expect.objectContaining({
+    const events = (await status(who)).events.filter(({ payload }) => payload !== null && typeof payload === 'object' && 'type' in payload && payload.type === type);
+    expect(events).toEqual(expect.arrayContaining([expect.objectContaining({
       channel: 'annex-client:satellite-event',
       payload: expect.objectContaining({ satelliteId: target(who).fingerprint, type, payload: expect.objectContaining(payload) }),
     })]));
@@ -237,6 +238,26 @@ describe('full-server audit inventory over one A to B forward', () => {
     });
   });
 
+  it.each(['A', 'B'] as const)('R13 %s: canvas mutation persists and returns through the existing satellite handler', async (who) => {
+    if (who === 'A') a.canvas();
+    else await b.call('canvas');
+    await expectSatelliteEvent(who, 'canvas:state', {
+      projectId: target(who).projectId, state: expect.objectContaining({ canvasId: 'fixture-canvas', name: 'Renamed remotely' }),
+    });
+    expect((await status(who)).snapshot?.canvasState?.[target(who).projectId]).toMatchObject({
+      canvases: expect.arrayContaining([expect.objectContaining({ id: 'fixture-canvas', name: 'Renamed remotely' })]),
+    });
+  });
+
+  it.each(['A', 'B'] as const)('R13 %s: the real theme palette arrives on the existing event path', async (who) => {
+    const colors = (await status(who)).snapshot?.theme;
+    expect(colors).toBeTruthy();
+    if (who === 'A') await b.call('theme');
+    else a.theme();
+    await expectSatelliteEvent(who, 'theme:changed', colors);
+    await expectSatelliteEvent(who, 'theme:changed', { terminalColors: expect.any(Object) });
+  });
+
   it.each(['A', 'B'] as const)('R22 %s: server-only status uses the production route table', async (who) => {
     const request = { method: 'GET' as const, path: '/api/v1/status' };
     const answer: WireAnswer = who === 'A' ? await a.wire(request) : await b.call('wire', request);
@@ -386,6 +407,19 @@ describe('full-server audit inventory over one A to B forward', () => {
     it('F3: reverse-only returns that same legitimate native transcript page', async () => {
       expect((await status('B')).direct).toBe(false);
       expect(await b.call('transcript')).toEqual(directTranscript);
+    });
+
+    it.each(['A', 'B'] as const)('R12 %s lists native sessions and summarizes actual provider JSONL', async (who) => {
+      const sessions = who === 'A' ? await a.nativeSessions() : await b.call('nativeSessions');
+      expect(sessions).toEqual(expect.arrayContaining([
+        expect.objectContaining({ sessionId: NATIVE_SESSION_ID }),
+        expect.objectContaining({ sessionId: SMALL_SESSION_ID }),
+      ]));
+      const summary = who === 'A' ? await a.nativeSummary() : await b.call('nativeSummary');
+      expect(summary).toMatchObject({
+        summary: 'Fixture summary complete.', orchestrator: 'claude-code', model: 'fixture-model',
+        eventCount: 2, totalDurationMs: 1000, totalInputTokens: 7, totalOutputTokens: 11,
+      });
     });
   });
 

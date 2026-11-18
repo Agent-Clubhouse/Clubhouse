@@ -22,6 +22,8 @@ describe.runIf(process.env.CLUBHOUSE_ANNEX_INVENTORY_PEER === '1')('isolated ful
         case 'page': return peer.page(params as Parameters<typeof peer.page>[0]);
         case 'chatSessions': return peer.chatSessions();
         case 'hook': return peer.hook();
+        case 'theme': return peer.theme();
+        case 'canvas': return peer.canvas();
         case 'durable': return peer.durable(params as Parameters<typeof peer.durable>[0]);
         case 'seedLargeText': return peer.seedLargeText();
         case 'largeText': return peer.largeText();
@@ -37,6 +39,8 @@ describe.runIf(process.env.CLUBHOUSE_ANNEX_INVENTORY_PEER === '1')('isolated ful
         case 'seedLargeBoard': return peer.seedLargeBoard();
         case 'bulletin': return peer.bulletin(params as Parameters<typeof peer.bulletin>[0]);
         case 'seedLargeTranscript': return peer.seedLargeTranscript();
+        case 'nativeSessions': return peer.nativeSessions();
+        case 'nativeSummary': return peer.nativeSummary();
         case 'transcript': return peer.transcript();
         case 'stop':
           await peer.close();
