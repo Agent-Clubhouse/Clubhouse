@@ -3,7 +3,7 @@ import type { MobileGrantAnswer } from '../../../shared/mobile-control';
 import { Button } from '../../components/Button';
 import { isRepeatClick, swallowHeldKey } from '../../utils/repeat-click';
 import { ipcErrorMessage } from '../../utils/ipc-error';
-import { isFollowerApprovalPending, useFollowerApprovals, type FollowerApproval } from './leadStore';
+import { followerApprovalId, followerApprovalTime, isFollowerApprovalPending, useFollowerApprovals, type FollowerApproval } from './leadStore';
 import type { GrantRequest } from '../../../shared/grant-requests';
 import { describeGrantRequests } from '../../stores/grantRequestStore';
 import { connectionApprovalView, type ConnectionApprovalView } from '../../../shared/approval-routing';
@@ -17,6 +17,7 @@ const ANSWER_LABELS: Record<MobileGrantAnswer, string> = { allow_once: 'Allow on
  * computer first, then the agent, then what it asks (#3354).
  */
 export function approvalLine(item: FollowerApproval): string {
+  if (!item.request) return `Waiting on ${item.pending.hostLabel}.`;
   const summary = item.request.summary;
   const asks = summary ? summary.charAt(0).toLowerCase() + summary.slice(1) : 'asks for a permission.';
   return `${item.machineName}: ${item.request.agent.name} ${asks}`;
@@ -29,7 +30,7 @@ export function approvalLine(item: FollowerApproval): string {
 export function dispatcherNeedsYouLine(local: readonly GrantRequest[], remote: readonly FollowerApproval[]): { message: string; at: number } | null {
   const total = local.length + remote.length;
   if (total === 0) return null;
-  const at = Math.min(...local.map((r) => Date.parse(r.createdAt) || 0), ...remote.map((r) => Date.parse(r.request.requestedAt) || 0));
+  const at = Math.min(...local.map((r) => Date.parse(r.createdAt) || 0), ...remote.map(followerApprovalTime));
   if (local.length === 0) {
     return { message: `${approvalLine(remote[0])}${remote.length > 1 ? ` (and ${remote.length - 1} more)` : ''}`, at };
   }
@@ -41,16 +42,17 @@ export function dispatcherNeedsYouLine(local: readonly GrantRequest[], remote: r
 /** The call's arguments as shown, at most this long; the computer it's on has them in full. */
 const ARGUMENTS_SHOWN = 4_000;
 
-const keyOf = (item: FollowerApproval) => `${item.machine}:${item.request.requestId}`;
+const keyOf = (item: FollowerApproval) => `${item.machine}:${followerApprovalId(item)}`;
 
 /** What this computer can answer: an update's restart choice, and anything newer than it knows, is answered where it is. */
 function answersHere(item: FollowerApproval): MobileGrantAnswer[] {
+  if (!item.request) return [];
   const connection = connectionApprovalView(item.request);
   return connection && !connection.canonical ? [] : offeredAnswers(item);
 }
 
 function offeredAnswers(item: FollowerApproval): MobileGrantAnswer[] {
-  return item.request.update ? [] : (item.request.answers ?? []).filter((a): a is MobileGrantAnswer => a in ANSWER_LABELS);
+  return !item.request || item.request.update ? [] : (item.request.answers ?? []).filter((a): a is MobileGrantAnswer => a in ANSWER_LABELS);
 }
 
 /** All operation-bearing fields stay visible, even when an unsafe row cannot be answered here. */
@@ -123,10 +125,15 @@ export function RemoteApprovals() {
         {count && <span>{count}</span>}
         {waitingOn && <span data-testid="dispatcher-remote-approval-elsewhere">{waitingOn}</span>}
       </p>
-      {head && (
+      {head && !head.request && (
+        <div className="rounded-lg border border-surface-0 px-3 py-2 text-sm" data-testid="dispatcher-remote-approval" data-machine={head.machine}>
+          {approvalLine(head)}
+        </div>
+      )}
+      {head?.request && (
         <RemoteApproval
           key={headKey}
-          item={head}
+          item={{ machine: head.machine, machineName: head.machineName, request: head.request }}
           onAnswered={() => {
             focusAfterAnswer.current = true;
             noticeArmed.current = true;
@@ -139,7 +146,7 @@ export function RemoteApprovals() {
   );
 }
 
-function RemoteApproval({ item, onAnswered }: { item: FollowerApproval; onAnswered: () => void }) {
+function RemoteApproval({ item, onAnswered }: { item: FollowerApproval & { request: NonNullable<FollowerApproval['request']> }; onAnswered: () => void }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const answers = offeredAnswers(item);

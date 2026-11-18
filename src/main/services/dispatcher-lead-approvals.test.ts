@@ -35,6 +35,12 @@ beforeEach(() => {
 });
 
 describe('answering another computer’s request from the lead (#3354)', () => {
+  it('lets a no-lead peer send a host-offered non-connection answer', async () => {
+    h.role = 'peer';
+    await answerFollowerApproval('LAPTOP', 'gr_1', 'allow_once');
+    expect(annexClient.answerRemoteGrantRequest).toHaveBeenCalledWith('LAPTOP', 'gr_1', 'allow_once');
+  });
+
   it('sends the person’s answer to the computer it came from', async () => {
     await answerFollowerApproval('LAPTOP', 'gr_1', 'allow_once');
     expect(annexClient.answerRemoteGrantRequest).toHaveBeenCalledWith('LAPTOP', 'gr_1', 'allow_once');
@@ -67,7 +73,7 @@ describe('answering another computer’s request from the lead (#3354)', () => {
     expect(annexClient.answerRemoteGrantRequest).toHaveBeenCalledWith('LAPTOP', 'gr_1', 'allow_once', digest);
     vi.mocked(annexClient.answerRemoteGrantRequest).mockClear();
     h.rows[0].arguments = JSON.stringify({ from: 'dispatcher', to: 'unrelated' });
-    await expect(answerFollowerApproval('laptop', 'gr_1', 'decline')).rejects.toThrow('computer involved');
+    await expect(answerFollowerApproval('laptop', 'gr_1', 'decline')).rejects.toThrow(role === 'peer' ? 'changed or cannot be reviewed' : 'computer involved');
     h.rows = [];
     await expect(answerFollowerApproval('laptop', 'gr_1', 'decline')).rejects.toThrow('already answered');
     expect(annexClient.answerRemoteGrantRequest).not.toHaveBeenCalled();

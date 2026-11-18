@@ -111,6 +111,7 @@ export interface SatelliteConnection {
 
 export interface SatelliteSnapshot {
   grantRequests?: import('../../shared/mobile-control').MobileGrantRequest[];
+  pendingGrantRequests?: import('../../shared/grant-requests').DesktopPendingGrantRequest[];
   /** The machine this snapshot is from (#3063). */
   machine?: { fingerprint: string; name: string };
   dispatcher?: unknown;
@@ -1045,6 +1046,17 @@ function handleSatelliteMessage(sat: SatelliteConnectionInternal, msg: Record<st
         }
         sat.iconState ??= newRemoteIconState();
         applyFetchedIcons(sat.iconState, incoming);
+        const previousRequests = new Set([
+          ...(sat.snapshot?.grantRequests ?? []), ...(sat.snapshot?.pendingGrantRequests ?? []),
+        ].map((row) => row.requestId));
+        for (const requestId of new Set([...(incoming.grantRequests ?? []), ...(incoming.pendingGrantRequests ?? [])].map((row) => row.requestId))) {
+          if (!previousRequests.delete(requestId)) appLog('core:annex', 'info', 'Remote approval received', {
+            meta: { machine: sat.fingerprint, requestId, source: 'snapshot' },
+          });
+        }
+        for (const requestId of previousRequests) appLog('core:annex', 'info', 'Remote approval resolved', {
+          meta: { machine: sat.fingerprint, requestId, source: 'snapshot' },
+        });
         sat.snapshot = incoming;
         void import('./connection-card').then((m) => m.rememberConnectionSnapshot(sat.fingerprint, incoming)).catch((error) => {
           appLog('core:annex', 'warn', 'Could not save the network connection directory', { meta: { error: error instanceof Error ? error.message : String(error) } });
@@ -1057,6 +1069,17 @@ function handleSatelliteMessage(sat: SatelliteConnectionInternal, msg: Record<st
         if (omitted) void fetchOmittedCanvases(sat);
         fetchSatelliteLeftOutIcons(sat);
       }
+      break;
+    }
+
+    case 'grant_request:opened':
+    case 'grant_request:resolved': {
+      const payload = msg.payload as { requestId?: string; requestIds?: string[] } | undefined;
+      appLog('core:annex', 'info', type === 'grant_request:opened' ? 'Remote approval received' : 'Remote approval resolved', {
+        meta: { machine: sat.fingerprint, source: 'event', ...(type === 'grant_request:opened'
+          ? { requestId: payload?.requestId } : { count: payload?.requestIds?.length ?? 0 }) },
+      });
+      broadcastSatelliteEvent(sat.id, type, msg.payload);
       break;
     }
 

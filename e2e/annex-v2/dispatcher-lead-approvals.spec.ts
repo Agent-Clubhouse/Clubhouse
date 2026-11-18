@@ -60,7 +60,7 @@ async function wakeDispatcherChat(page: Page): Promise<string> {
   return state.chatAgentId!;
 }
 
-test('a follower’s Ask-first request shows in the lead’s chat with its computer, and the first answer wins', async () => {
+for (const electLead of [true, false]) test(`a remote Ask-first request shows ${electLead ? 'on the lead' : 'on a no-lead peer'} with its computer, and the first answer wins`, async () => {
   scratch = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'dispatcher-lead-approvals-e2e-'));
   const fixture = path.join(scratch, 'quiet.jsonl');
   const lines = (await fs.promises.readFile(chatFixturePath('claude', 'session-info'), 'utf8')).split('\n').slice(0, 3);
@@ -82,10 +82,15 @@ test('a follower’s Ask-first request shows in the lead’s chat with its compu
   await expect.poll(startedAs, { timeout: 20_000 }).toBe(controllerId);
   const laptopController = await connectMcp((await fakes!.report('claude')).env);
 
-  // Desk leads, and its chat is open.
+  // Both start as peers; elect a lead only in the existing lead scenario.
   await expect.poll(async () => (await lead(here.window)).canChoose, { timeout: 30_000 }).toBe(true);
-  await here.window.evaluate((id) => window.clubhouse.dispatcher.setLead(id), desk);
-  await expect.poll(async () => (await lead(there.window)).following, { timeout: 30_000 }).toBe(true);
+  if (electLead) {
+    await here.window.evaluate((id) => window.clubhouse.dispatcher.setLead(id), desk);
+    await expect.poll(async () => (await lead(there.window)).following, { timeout: 30_000 }).toBe(true);
+  } else {
+    expect((await lead(here.window)).lead).toBeNull();
+    expect((await lead(there.window)).lead).toBeNull();
+  }
   await wakeDispatcherChat(here.window);
 
   // An Ask-first request on Laptop shows in Desk's chat and Needs you, Laptop first; Decline on Desk applies on Laptop.

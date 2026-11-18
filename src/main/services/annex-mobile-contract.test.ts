@@ -457,6 +457,8 @@ vi.mock('./annex-peers', () => ({
   updateLastSeen: () => {},
   listPeers: () => [...W.peers.values()],
   listPeersForDisplay: () => [...W.peers.values()].map((peer) => ({ ...peer, needsPairing: false })),
+  peerNeedsPairing: (peer: { role?: string; tlsCertificateFingerprint?: string; tlsCertificatePem?: string; kind?: string }) =>
+    !peer.role || !peer.tlsCertificateFingerprint || peer.kind === 'desktop' && !peer.tlsCertificatePem,
   removePeer: (fp: string) => { W.peers.delete(fp); },
   removeAllPeers: () => { W.peers.clear(); },
   unlockPairing: () => {},
@@ -960,11 +962,12 @@ const TEST_TIMEOUT_MS = 30_000;
 const eventually = (check: () => void) => vi.waitFor(check, { timeout: 10_000 });
 
 type FakeWs = EventEmitter & { readyState: number; send: ReturnType<typeof vi.fn>; ping: () => void; close: () => void };
-async function connect(auth: 'mtls' | 'bearer' = 'mtls', opts: { iconRefs?: boolean } = {}): Promise<FakeWs> {
+async function connect(auth: 'mtls' | 'bearer' = 'mtls', opts: { iconRefs?: boolean; fingerprint?: string } = {}): Promise<FakeWs> {
   const ws = Object.assign(new EventEmitter(), { readyState: 1, send: vi.fn(), ping: () => {}, close: () => {} }) as FakeWs;
   if (opts.iconRefs) annexServer._testing.wsIconRefs.add(ws as never);
   annexServer._testing.wsAuthTypes.set(ws as never, auth);
-  if (auth === 'mtls') annexServer._testing.registerPeerSocket(ws as never, 'mobile-fixture-identity', (W.peers.get('mobile-fixture-identity') as { tlsCertificateFingerprint: string }).tlsCertificateFingerprint);
+  const fingerprint = opts.fingerprint ?? 'mobile-fixture-identity';
+  if (auth === 'mtls') annexServer._testing.registerPeerSocket(ws as never, fingerprint, (W.peers.get(fingerprint) as { tlsCertificateFingerprint: string }).tlsCertificateFingerprint);
   annexServer._testing.wss!.clients.add(ws as never);
   annexServer._testing.wss!.emit('connection', ws);
   // Incremental broadcasts can reach a new socket before its asynchronous snapshot.
@@ -1047,6 +1050,7 @@ describe('Annex mobile contract fixtures', { timeout: TEST_TIMEOUT_MS }, () => {
     expect(snapshot.type).toBe('snapshot');
     expect(snapshot.payload).toHaveProperty('projectState');
     expect(snapshot.payload).toHaveProperty('finishedQuickAgents');
+    expect(snapshot.payload).not.toHaveProperty('pendingGrantRequests');
     const durable = (id: string) => snapshot.payload.agents.proj_app.find((a: { id: string }) => a.id === id);
     expect(durable('durable_docs').parentAgentId).toBe('durable_chat');
     expect(durable('durable_chat')).not.toHaveProperty('parentAgentId');
@@ -3509,7 +3513,9 @@ describe('Annex mobile contract fixtures', { timeout: TEST_TIMEOUT_MS }, () => {
       const refreshed = all.slice(openedAt).filter((f) => f.type === 'snapshot').at(-1);
       expect(refreshed?.payload.grantRequests).toEqual([]);
     });
-    const mine = frames(await connect()).find((f) => f.type === 'snapshot').payload.grantRequests;
+    const phoneSnapshot = frames(await connect()).find((f) => f.type === 'snapshot').payload;
+    expect(phoneSnapshot).not.toHaveProperty('pendingGrantRequests');
+    const mine = phoneSnapshot.grantRequests;
     expect(mine).toEqual([]);
     await command('grant_request_not_found (names this device)', { type: 'grant.answer', requestId: aboutMe, answer: 'decline' });
     W.dispatcher.enabled = false;
@@ -3816,5 +3822,34 @@ describe('Annex mobile contract fixtures', { timeout: TEST_TIMEOUT_MS }, () => {
       return [name, { line: line + 1, onDisk: was[line] ?? null, generated: now[line] ?? null }];
     }));
     expect({ stale, extra, firstDifference }, 'Annex mobile fixtures are out of date: run `npm run fixtures:annex-mobile` and commit the result').toEqual({ stale: [], extra: [], firstDifference: {} });
+  });
+
+  it('sends redacted pending snapshots only to paired desktop network members (#3696)', async () => {
+    resetWorld();
+    W.dispatcher.enabled = true;
+    const fingerprint = 'desktop-approval-fixture';
+    const peer = {
+      fingerprint, role: 'member', kind: 'desktop', alias: 'Desk',
+      tlsCertificateFingerprint: 'desktop-pin', tlsCertificatePem: 'desktop-pem',
+    };
+    W.peers.set(fingerprint, peer);
+    try {
+      const requestId = grantCall(NOW - 30_000, fingerprint);
+      const desktop = frames(await connect('mtls', { fingerprint })).find((f) => f.type === 'snapshot').payload;
+      expect(desktop.grantRequests).toEqual([]);
+      expect(desktop.pendingGrantRequests).toEqual([{
+        hostLabel: 'Studio Mac', requestId, kind: 'call', createdAt: new Date(NOW - 30_000).toISOString(),
+      }]);
+      const phone = frames(await connect()).find((f) => f.type === 'snapshot').payload;
+      expect(phone).not.toHaveProperty('pendingGrantRequests');
+      expect(phone.grantRequests).toContainEqual(expect.objectContaining({ requestId }));
+      W.peers.set(fingerprint, { ...peer, role: 'controller' });
+      const nonMember = frames(await connect('mtls', { fingerprint })).find((f) => f.type === 'snapshot').payload;
+      expect(nonMember).not.toHaveProperty('pendingGrantRequests');
+      expect(nonMember.grantRequests).toEqual([]);
+    } finally {
+      W.peers.delete(fingerprint);
+      resetWorld();
+    }
   });
 });
