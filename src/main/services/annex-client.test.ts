@@ -3331,6 +3331,155 @@ describe('annex-client', () => {
     });
     afterEach(() => { vi.restoreAllMocks(); });
 
+    describe('direct GET header disposition', () => {
+      beforeEach(() => { annexClient._addConnectedSatelliteForTesting(FP); });
+      afterEach(() => { vi.mocked(https.request).mockReset(); });
+
+      function idleBodies(statusCode: number, headers: http.IncomingHttpHeaders = {}) {
+        const calls: Array<{ res: http.IncomingMessage; req: http.ClientRequest }> = [];
+        vi.mocked(https.request).mockImplementation((_url, _options, callback) => {
+          const res = Object.assign(new EventEmitter(), { statusCode, headers, resume: vi.fn() }) as http.IncomingMessage;
+          const req = Object.assign(new EventEmitter(), {
+            end: () => { queueMicrotask(() => callback?.(res)); },
+            destroy: vi.fn(),
+          }) as http.ClientRequest;
+          calls.push({ res, req });
+          return req;
+        });
+        return calls;
+      }
+
+      const nextTurn = () => new Promise<void>((resolve) => setImmediate(resolve));
+
+      it.each([
+        [404, 'File not found'],
+        [403, 'HTTP 403'],
+      ] as const)('rejects file read at the direct %s headers even when its body never ends', async (status, error) => {
+        const calls = idleBodies(status);
+        const pending = annexClient.requestFileRead(FP, 'p', 'missing');
+        const settled = vi.fn();
+        void pending.then(settled, settled);
+        await nextTurn();
+        const early = settled.mock.calls.length;
+        calls[0].req.emit('timeout');
+        await expect(pending).rejects.toThrow(error);
+        expect(early).toBe(1);
+        expect(calls[0].res.resume).toHaveBeenCalledOnce();
+        expect(request).not.toHaveBeenCalled();
+      });
+
+      it.each([
+        ['file tree', () => annexClient.requestFileTree(FP, 'p')],
+        ['digest', () => annexClient.requestBulletinDigest(FP, 'g')],
+        ['topic messages', () => annexClient.requestBulletinTopicMessages(FP, 'g', 't')],
+        ['all messages', () => annexClient.requestBulletinAllMessages(FP, 'g')],
+      ] as const)('returns an empty %s at the direct 404 headers without waiting for its body', async (_label, read) => {
+        const calls = idleBodies(404);
+        const settled = vi.fn();
+        const pending = read().then(settled);
+        await nextTurn();
+        const early = settled.mock.calls.length;
+        calls[0].req.emit('timeout');
+        await pending;
+        expect(early).toBe(1);
+        expect(settled).toHaveBeenCalledExactlyOnceWith([]);
+        expect(calls[0].res.resume).toHaveBeenCalledOnce();
+        expect(request).not.toHaveBeenCalled();
+      });
+
+      it.each([
+        [404, ''],
+        [503, expect.stringContaining("terminal's earlier output is too large")],
+      ] as const)('drains the PTY buffer at direct %s headers without waiting for its body', async (status, expected) => {
+        const calls = idleBodies(status);
+        const pending = annexClient.requestPtyBuffer(FP, `agent-${status}`);
+        await nextTurn();
+        const early = vi.mocked(calls[0].res.resume).mock.calls.length;
+        calls[0].req.emit('timeout');
+        await expect(pending).resolves.toEqual(expected);
+        expect(early).toBe(1);
+        expect(calls[0].res.resume).toHaveBeenCalledOnce();
+        expect(request).not.toHaveBeenCalled();
+      });
+
+      it.each([
+        [404, 'image/png'],
+        [403, 'image/png'],
+        [200, 'text/plain'],
+      ] as const)('releases icon fetch slots at direct %s / %s headers without waiting for bodies', async (status, type) => {
+        const calls = idleBodies(status, { 'content-type': type });
+        annexClient._receiveSatelliteMessageForTesting(FP, { type: 'snapshot', payload: {
+          protocolVersion: 2, lastSeq: 1, agents: {}, quickAgents: {},
+          projects: Array.from({ length: 5 }, (_, i) => ({ id: `p${i}`, icon: 'icon.png' })),
+        } });
+        await nextTurn();
+        const early = calls.length;
+        for (let i = 0; i < 5; i++) {
+          calls[i]?.req.emit('timeout');
+          await nextTurn();
+        }
+        expect(early).toBe(5);
+        expect(calls).toHaveLength(5);
+        for (const { res } of calls) expect(res.resume).toHaveBeenCalledOnce();
+        expect(request).not.toHaveBeenCalled();
+      });
+
+      it.each(['needs_pairing', 'peer_not_paired'])('handles direct 401 before its body and still notes %s when drained', async (error) => {
+        const calls = idleBodies(401);
+        const pending = annexClient.requestFileRead(FP, 'p', 'f');
+        const settled = vi.fn();
+        void pending.then(settled, settled);
+        await nextTurn();
+        const [{ res, req }] = calls;
+        try {
+          expect(settled).toHaveBeenCalledOnce();
+          await expect(pending).rejects.toThrow('HTTP 401');
+          expect(annexClient.getSatellite(FP)?.needsPairing).not.toBe(true);
+          res.emit('data', Buffer.from(JSON.stringify({ error })));
+          res.emit('end');
+          await nextTurn();
+          expect(annexClient.getSatellite(FP)?.needsPairing).toBe(true);
+        } finally { req.emit('timeout'); }
+      });
+
+      it('does not apply an old drained pairing refusal after the peer is re-pinned', async () => {
+        const peer = { fingerprint: FP, publicKey: 'key', alias: 'Peer', icon: '', color: '', pairedAt: '', lastSeen: '', tlsCertificateFingerprint: 'PIN' };
+        vi.mocked(annexPeers.getPeer).mockReturnValue(peer);
+        const calls = idleBodies(401);
+        await expect(annexClient.requestFileRead(FP, 'p', 'f')).rejects.toThrow('HTTP 401');
+        vi.mocked(annexPeers.getPeer).mockReturnValue({ ...peer, tlsCertificateFingerprint: 'NEW' });
+        calls[0].res.emit('data', Buffer.from('{"error":"needs_pairing"}'));
+        calls[0].res.emit('end');
+        await nextTurn();
+        expect(annexClient.getSatellite(FP)?.needsPairing).not.toBe(true);
+      });
+
+      it('keeps waiting for a valid direct icon body and preserves its bytes', async () => {
+        const calls = idleBodies(200, { 'content-type': 'image/png' });
+        annexClient._receiveSatelliteMessageForTesting(FP, { type: 'snapshot', payload: {
+          protocolVersion: 2, lastSeq: 1, agents: {}, quickAgents: {},
+          projects: [{ id: 'p', icon: 'icon.png' }],
+        } });
+        await nextTurn();
+        const [{ res }] = calls;
+        res.emit('data', Buffer.from([0, 255, 1]));
+        await nextTurn();
+        expect(annexClient.getSatellite(FP)?.snapshot?.projectIcons?.p).toBeUndefined();
+        expect(res.resume).not.toHaveBeenCalled();
+        res.emit('end');
+        await nextTurn();
+        expect(annexClient.getSatellite(FP)?.snapshot?.projectIcons?.p).toBe('data:image/png;base64,AP8B');
+        expect(request).not.toHaveBeenCalled();
+      });
+    });
+
+    it('keeps reverse file-read refusal handling on the completed control reply', async () => {
+      request.mockResolvedValueOnce({ status: 404, headers: {}, body: Buffer.from('not found') });
+      await expect(annexClient.requestFileRead(FP, 'p', 'f')).rejects.toThrow('File not found');
+      expect(request).toHaveBeenCalledOnce();
+      expect(https.request).not.toHaveBeenCalled();
+    });
+
     it('routes specialized reads through control without an outbound satellite socket', async () => {
       expect(await annexClient.requestFileTree(FP, 'p /')).toEqual([]);
       expect(await annexClient.requestBulletinDigest(FP, 'g')).toEqual([]);

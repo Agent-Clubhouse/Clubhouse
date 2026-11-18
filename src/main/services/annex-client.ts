@@ -434,7 +434,8 @@ function headerInt(res: { headers: http.IncomingHttpHeaders }, name: string): nu
 async function fetchSatelliteIcon(sat: SatelliteConnectionInternal, kind: IconKind, id: string): Promise<IconFetchResult> {
   try {
     const res = await requestSatelliteRaw(sat.fingerprint, { method: 'GET', path: `/api/v1/icons/${kind}/${encodeURIComponent(id)}`,
-      timeoutMs: 10_000, maxResponseBytes: REMOTE_ICON_MAX_BYTES });
+      timeoutMs: 10_000, maxResponseBytes: REMOTE_ICON_MAX_BYTES },
+      (res) => res.statusCode === 200 && String(res.headers['content-type'] ?? '').startsWith('image/'));
     if (res.status === 404) return { status: 'missing' };
     const type = String(res.headers['content-type'] ?? '');
     if (res.status !== 200 || !type.startsWith('image/')) return { status: 'failed' };
@@ -465,7 +466,8 @@ function fetchSatelliteLeftOutIcons(sat: SatelliteConnectionInternal): void {
 
 async function fetchSatelliteBuffer(sat: SatelliteConnectionInternal, agentId: string): Promise<SatelliteBuffer | null> {
   try {
-    const res = await requestSatelliteRaw(sat.fingerprint, { method: 'GET', path: `/api/v1/agents/${encodeURIComponent(agentId)}/buffer`, timeoutMs: 5000 });
+    const res = await requestSatelliteRaw(sat.fingerprint, { method: 'GET', path: `/api/v1/agents/${encodeURIComponent(agentId)}/buffer`, timeoutMs: 5000 },
+      (res) => res.statusCode === 200);
     if (res.status === 503) return { data: '', unavailable: true };
     if (res.status !== 200) return null;
     const cols = headerInt(res, ANNEX_BUFFER_HEADERS.cols);
@@ -2030,7 +2032,7 @@ export function requestFileTree(fingerprint: string, projectId: string, options?
 async function requestSatelliteArray(fingerprint: string, path: string, label: string): Promise<unknown[]> {
   if (!canRequestSatellite(fingerprint)) return [];
   try {
-    const res = await requestSatelliteRaw(fingerprint, { method: 'GET', path, timeoutMs: 10000 });
+    const res = await requestSatelliteRaw(fingerprint, { method: 'GET', path, timeoutMs: 10000 }, (res) => res.statusCode === 200);
     if (res.status !== 200) return [];
     try { return JSON.parse(res.body.toString('utf8')); }
     catch (err) {
@@ -2051,7 +2053,8 @@ async function requestSatelliteArray(fingerprint: string, path: string, label: s
 export async function requestFileRead(fingerprint: string, projectId: string, path: string): Promise<string> {
   if (!canRequestSatellite(fingerprint)) return '';
   const qs = `?path=${encodeURIComponent(path)}`;
-  const res = await requestSatelliteRaw(fingerprint, { method: 'GET', path: `/api/v1/projects/${encodeURIComponent(projectId)}/files/read${qs}`, timeoutMs: 10000 });
+  const res = await requestSatelliteRaw(fingerprint, { method: 'GET', path: `/api/v1/projects/${encodeURIComponent(projectId)}/files/read${qs}`, timeoutMs: 10000 },
+    (res) => res.statusCode === 200);
   if (res.status === 404) throw new Error('File not found');
   if (res.status !== 200) {
     throw new Error(`HTTP ${res.status}`);
@@ -2279,7 +2282,11 @@ type SatelliteRequest = annexControl.ControlRequestInput & {
   maxResponseBytes?: number;
 };
 
-async function requestSatelliteRaw(fingerprint: string, input: SatelliteRequest): Promise<SatelliteResponse> {
+async function requestSatelliteRaw(
+  fingerprint: string,
+  input: SatelliteRequest,
+  readDirectBody?: (response: http.IncomingMessage) => boolean,
+): Promise<SatelliteResponse> {
   const sat = satelliteFor(fingerprint);
   const fp = sat?.fingerprint ?? fingerprint.toLowerCase();
   const route = selectRequestRoute(fp, annexIdentity.getIdentity()?.fingerprint ?? '', {
@@ -2305,6 +2312,16 @@ async function requestSatelliteRaw(fingerprint: string, input: SatelliteRequest)
         const chunks: Buffer[] = [];
         let bytes = 0;
         res.on('error', fail);
+        if (readDirectBody && !readDirectBody(res)) {
+          settled = true;
+          resolve({ status: res.statusCode ?? 0, headers: res.headers ?? {}, body: Buffer.alloc(0) });
+          if (sat && res.statusCode === 401) {
+            void readSmallBody(res).then((text) => {
+              if (!signal.aborted && lease.trust === peerTrust(fp) && satelliteFor(fp) === sat) noteRestRefusal(sat, res.statusCode, text);
+            });
+          } else res.resume();
+          return;
+        }
         res.on('data', (chunk: Buffer) => {
           if (settled || signal.aborted) return;
           bytes += chunk.length;

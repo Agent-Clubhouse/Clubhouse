@@ -95,8 +95,11 @@ Existing application-level refusal handling and durable outbox policies are
 unchanged.
 
 The adapters retain their HTTP status, response headers, JSON/text/byte handling,
-timeouts and cancellation. A caller's `maxResponseBytes` also bounds reverse
-receipt: inline decoded size is checked before allocating its body, and bulk
+timeouts and cancellation. Specialized direct GET adapters decide unusable status
+or content type on response headers, draining unused bodies without delaying their
+original result. Reverse replies keep their existing buffered completion semantics.
+A caller's `maxResponseBytes` also bounds reverse receipt: inline decoded size is
+checked before allocating its body, and bulk
 size before accepting or crediting the transfer. Exceeding that local cap fails
 only the request, not unrelated subscriptions. Existing protocol/path caps and
 P6 rejection fences still apply. The limit is local, not a new wire field.
