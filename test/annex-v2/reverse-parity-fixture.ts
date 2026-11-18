@@ -2,6 +2,50 @@ import { randomUUID } from 'crypto';
 import { createInterface } from 'readline';
 import * as net from 'net';
 import { crc32 } from 'zlib';
+import * as path from 'path';
+
+export interface ListenerAccept { localPort: number; remotePort: number }
+
+export function childGuardEnv(allowed: { port: number } | null): NodeJS.ProcessEnv {
+  return {
+    NODE_OPTIONS: `${process.env.NODE_OPTIONS ?? ''} --require="${path.resolve('test/annex-v2/reverse-child-guard.cjs')}"`.trim(),
+    CLUBHOUSE_REVERSE_CHILD_GUARD: JSON.stringify(allowed),
+  };
+}
+
+/** Counts kernel accepts, independently of any connecting process or TCP client patch. */
+export function installListenerAudit() {
+  const accepts: ListenerAccept[] = [];
+  const original = net.Server.prototype.emit;
+  const patched: typeof original = function (this: net.Server, event: string | symbol, ...args: unknown[]) {
+    const socket = args[0];
+    if (event === 'connection' && socket instanceof net.Socket && socket.localPort && socket.remotePort) {
+      accepts.push({ localPort: socket.localPort, remotePort: socket.remotePort });
+    }
+    return Reflect.apply(original, this, [event, ...args]);
+  };
+  net.Server.prototype.emit = patched;
+  return {
+    accepts,
+    restore() {
+      if (net.Server.prototype.emit !== patched) throw new Error('Listener audit was replaced');
+      net.Server.prototype.emit = original;
+    },
+  };
+}
+
+export function assertListenerAudit(accepts: ListenerAccept[], annexPorts: number[], forward?: { targetPort: number; sourcePorts: number[] }): void {
+  for (const accept of accepts.filter((entry) => annexPorts.includes(entry.localPort))) {
+    if (!forward || accept.localPort !== forward.targetPort || !forward.sourcePorts.includes(accept.remotePort)) {
+      throw new Error(`Unexpected direct listener accept on ${accept.localPort} from ${accept.remotePort}`);
+    }
+  }
+  if (forward) {
+    for (const port of forward.sourcePorts) {
+      if (!accepts.some((entry) => entry.localPort === forward.targetPort && entry.remotePort === port)) throw new Error('Forward connection missing from listener audit');
+    }
+  }
+}
 
 export function sizedPng(size: number): Buffer {
   const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8/5+hHgAHggJ/PchI7wAAAABJRU5ErkJggg==', 'base64');
@@ -113,13 +157,17 @@ export async function closeServer(server: net.Server): Promise<void> {
   if (server.listening) await new Promise<void>((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
 }
 
-export async function transparentForward(targetPort: number) {
+export async function transparentForward(initialTargetPort?: number) {
+  let targetPort = initialTargetPort;
   const fixtureConnect = net.Socket.prototype.connect;
   const sockets = new Set<net.Socket>();
   const toB = new Set<net.Socket>();
   const toA = new Set<net.Socket>();
   const sourcePorts: number[] = [];
   const targetPorts: number[] = [];
+  const targetSourcePorts: number[] = [];
+  let held = false;
+  const pending = new Map<net.Socket, () => void>();
   const server = net.createServer((incoming) => {
     toB.add(incoming);
     incoming.once('close', () => toB.delete(incoming));
@@ -127,8 +175,15 @@ export async function transparentForward(targetPort: number) {
     const outgoing = new net.Socket();
     toA.add(outgoing);
     outgoing.once('close', () => toA.delete(outgoing));
-    Reflect.apply(fixtureConnect, outgoing, [targetPort, '127.0.0.1']);
-    outgoing.once('connect', () => { targetPorts.push(outgoing.remotePort!); });
+    if (!targetPort) throw new Error('Forward target has not been configured');
+    const connect = () => {
+      Reflect.apply(fixtureConnect, outgoing, [targetPort, '127.0.0.1']);
+      incoming.pipe(outgoing).pipe(incoming);
+    };
+    if (held) pending.set(outgoing, connect);
+    else connect();
+    outgoing.once('close', () => pending.delete(outgoing));
+    outgoing.once('connect', () => { targetPorts.push(outgoing.remotePort!); targetSourcePorts.push(outgoing.localPort!); });
     for (const socket of [incoming, outgoing]) {
       sockets.add(socket);
       socket.once('close', () => { sockets.delete(socket); });
@@ -137,11 +192,23 @@ export async function transparentForward(targetPort: number) {
     outgoing.on('error', () => incoming.destroy());
     incoming.on('close', () => outgoing.destroy());
     outgoing.on('close', () => incoming.destroy());
-    incoming.pipe(outgoing).pipe(incoming);
   });
   const port = await listen(server);
   return {
-    port, sourcePorts, targetPorts,
+    port, sourcePorts, targetPorts, targetSourcePorts,
+    setTarget(port: number) {
+      if (targetPort) throw new Error('Forward target is already configured');
+      targetPort = port;
+    },
+    holdNewConnections() {
+      if (held) throw new Error('Forward connections are already held');
+      held = true;
+      return () => {
+        held = false;
+        for (const [socket, connect] of pending) if (!socket.destroyed) connect();
+        pending.clear();
+      };
+    },
     pause(direction: 'A-to-B' | 'B-to-A') {
       const paused = [...(direction === 'A-to-B' ? toB : toA)];
       for (const socket of paused) socket.pause();
@@ -177,18 +244,22 @@ export function rpcPeer(socket: net.Socket, handle: (method: string, params: unk
   socket.on('error', failPending);
   socket.on('close', failPending);
   lines.on('line', (line) => {
-    const message = JSON.parse(line) as { id: string; method?: string; params?: unknown; result?: unknown; error?: string };
+    const message = JSON.parse(line) as { id: string; method?: string; params?: unknown; result?: unknown; error?: { message: string; code?: unknown; diagnostic?: unknown } };
     if (message.method) {
       void handle(message.method, message.params).then(
         (result) => socket.write(`${JSON.stringify({ id: message.id, result })}\n`),
-        (error: unknown) => socket.write(`${JSON.stringify({ id: message.id, error: error instanceof Error ? error.message : String(error) })}\n`),
+        (error: unknown) => socket.write(`${JSON.stringify({ id: message.id, error: {
+          message: error instanceof Error ? error.message : String(error),
+          code: error && typeof error === 'object' && 'code' in error ? error.code : undefined,
+          diagnostic: error && typeof error === 'object' && 'diagnostic' in error ? error.diagnostic : undefined,
+        } })}\n`),
       );
     } else {
       const pending = waiting.get(message.id);
       if (!pending) return;
       waiting.delete(message.id);
       clearTimeout(pending.timer);
-      if (message.error) pending.reject(new Error(message.error));
+      if (message.error) pending.reject(Object.assign(new Error(message.error.message), message.error));
       else pending.resolve(message.result);
     }
   });
@@ -201,6 +272,6 @@ export function rpcPeer(socket: net.Socket, handle: (method: string, params: unk
         socket.write(`${JSON.stringify({ id, method, params })}\n`);
       });
     },
-    close() { lines.close(); socket.destroy(); failPending(); },
+    close() { lines.close(); socket.end(); failPending(); },
   };
 }

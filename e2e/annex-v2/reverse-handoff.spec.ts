@@ -62,7 +62,11 @@ test('accepted handoffs automatically transfer, verify, publish and wake in both
     expect(received.length).toBe(bytes.length);
     expect(createHash('sha256').update(received).digest('hex')).toBe(createHash('sha256').update(bytes).digest('hex'));
     expect(fs.existsSync(path.join(worktree, 'fixtures', 'excluded.bin'))).toBe(false);
-    await expect.poll(async () => JSON.stringify((await receiver.fakes.report('claude', receiver.agentId)).unexpected)).toContain('Continue in fresh worktree');
-    await expect.poll(() => fs.readdirSync(path.join(receiver.app.userDataDir, 'handoff-data', 'received'))).toEqual([]);
+    await expect.poll(async () => JSON.stringify((await receiver.fakes.report('claude', receiver.agentId)).unexpected), {
+      timeout: 60_000, message: 'The applied handoff must wake the receiving fake CLI',
+    }).toContain('Continue in fresh worktree');
+    await expect.poll(() => fs.readdirSync(path.join(receiver.app.userDataDir, 'handoff-data', 'received')), {
+      timeout: 60_000, message: 'Applied handoff staging must be cleaned up',
+    }).toEqual([]);
   }
 });

@@ -29,13 +29,15 @@ test('both directions retain real MCP caller gates, dedup, files and private-she
     await caller.app.window.evaluate(({ id, address }) => window.clubhouse.mcpBinding.setToolsAcrossMachines(id, address, true, []), direction);
     expect((await mcp.call(status, {})).isError).toBe(false);
 
-    const shell = { ...remote, shellId: `plugin:terminal:p8-${caller.agentId}`, marker: `P8-SHELL-${caller.agentId}` };
+    const shell = { ...remote, shellId: `plugin:terminal:p8-${caller.agentId}` };
     await caller.app.window.evaluate(({ machine, projectId, shellId }) => window.clubhouse.annexClient.ptySpawnShell(machine, shellId, projectId), shell);
     await expect.poll(async () => caller.app.window.evaluate(({ machine, shellId }) => window.clubhouse.annexClient.ptyGetBuffer(machine, shellId), shell), {
       timeout: 20_000, message: 'The real private shell must be ready before input',
     }).not.toBe('');
-    await caller.app.window.evaluate(({ machine, shellId, marker }) => window.clubhouse.annexClient.ptyInput(machine, shellId, `echo ${marker}\r`), shell);
-    await expect.poll(async () => caller.app.window.evaluate(({ machine, shellId }) => window.clubhouse.annexClient.ptyGetBuffer(machine, shellId), shell)).toContain(shell.marker);
+    await caller.app.window.evaluate(({ machine, shellId }) => window.clubhouse.annexClient.ptyInput(machine, shellId, 'echo $((6*7))\r'), shell);
+    await expect.poll(async () => caller.app.window.evaluate(({ machine, shellId }) => window.clubhouse.annexClient.ptyGetBuffer(machine, shellId), shell), {
+      timeout: 20_000,
+    }).toMatch(/(?:^|\r?\n)42\r?\n/);
     await caller.app.window.evaluate(({ machine, shellId }) => window.clubhouse.annexClient.ptyInput(machine, shellId, 'exit\r'), shell);
   }
 });

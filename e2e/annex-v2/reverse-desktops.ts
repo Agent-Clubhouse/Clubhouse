@@ -12,10 +12,10 @@ import { addProject, assertRunLayout, createDurableAgent } from '../smoke-helper
 import { isNewLayout } from '../layout';
 import { untrackOpenApp } from '../e2e-cleanup';
 import type { McpToolResult } from '../../src/main/services/clubhouse-mcp/types';
-import { assertDialAudit, sentinel, transparentForward, type DialAttempt } from '../../test/annex-v2/reverse-parity-fixture';
+import { assertDialAudit, assertListenerAudit, childGuardEnv, sentinel, transparentForward, type DialAttempt, type ListenerAccept } from '../../test/annex-v2/reverse-parity-fixture';
 
 interface MainGuard {
-  read(): { installed: boolean; attempts: DialAttempt[] };
+  read(): { installed: boolean; attempts: DialAttempt[]; accepts: ListenerAccept[] };
 }
 type GuardGlobal = typeof globalThis & { __reverseP8?: MainGuard };
 
@@ -29,6 +29,16 @@ async function guardMain(app: LaunchedApp, forward: number | null, sentinelPort:
     if (state.__reverseP8) throw new Error('Reverse dial guard already installed');
     const original = net.Socket.prototype.connect;
     const attempts: DialAttempt[] = [];
+    const accepts: ListenerAccept[] = [];
+    const emit = net.Server.prototype.emit;
+    const listenerEmit: typeof emit = function (this: net.Server, event: string | symbol, ...args: unknown[]) {
+      const socket = args[0];
+      if (event === 'connection' && socket instanceof net.Socket && socket.localPort && socket.remotePort) {
+        accepts.push({ localPort: socket.localPort, remotePort: socket.remotePort });
+      }
+      return Reflect.apply(emit, this, [event, ...args]);
+    };
+    net.Server.prototype.emit = listenerEmit;
     const patched: typeof original = function (this: net.Socket, ...args: unknown[]) {
       const first: unknown = Array.isArray(args[0]) ? args[0][0] : args[0];
       let host: string, port: number;
@@ -57,13 +67,14 @@ async function guardMain(app: LaunchedApp, forward: number | null, sentinelPort:
       return Reflect.apply(original, this, args);
     };
     net.Socket.prototype.connect = patched;
-    state.__reverseP8 = { read: () => ({ installed: net.Socket.prototype.connect === patched, attempts }) };
+    state.__reverseP8 = { read: () => ({ installed: net.Socket.prototype.connect === patched && net.Server.prototype.emit === listenerEmit, attempts, accepts }) };
+    Object.assign(process.env, input.childEnv);
     return new Promise<string>((resolve) => {
       const socket = net.connect(input.sentinelPort, '127.0.0.1');
       socket.once('connect', () => { socket.destroy(); resolve('escaped'); });
       socket.once('error', (error: NodeJS.ErrnoException) => resolve(error.code ?? 'unknown'));
     });
-  }, { profile: app.userDataDir, forward, sentinelPort });
+  }, { profile: app.userDataDir, forward, sentinelPort, childEnv: childGuardEnv(forward === null ? null : { port: forward }) });
   expect(calibration).toBe('ERR_REVERSE_DIAL_BLOCKED');
 }
 
@@ -139,7 +150,10 @@ export const test = base.extend<{ reverse: ReverseDesktops; reverseScenario: 'qu
     const gitEnv = { ...process.env, GIT_CONFIG_GLOBAL: gitConfig, GIT_CONFIG_SYSTEM: gitConfig, GIT_CONFIG_NOSYSTEM: '1' };
     const git = (cwd: string, args: string[]) => promisify(execFile)('git', args, { cwd, env: gitEnv });
     const errors: unknown[] = [];
+    const listeners: number[][] = [];
     try {
+      guard = await sentinel();
+      forward = await transparentForward();
       const quiet = path.join(scratch, 'quiet.jsonl');
       const header = (await fs.promises.readFile(chatFixturePath('claude', 'session-info'), 'utf8')).split('\n').slice(0, 3);
       await fs.promises.writeFile(quiet, `${header.join('\n')}\n`);
@@ -171,6 +185,7 @@ export const test = base.extend<{ reverse: ReverseDesktops; reverseScenario: 'qu
           env: { ...cli.env, GIT_CONFIG_GLOBAL: gitConfig, GIT_CONFIG_SYSTEM: gitConfig, GIT_CONFIG_NOSYSTEM: '1' },
         });
         apps.push(app);
+        await guardMain(app, label === 'A' ? forward!.port : null, guard!.port);
         await assertRunLayout(app.window);
         await addProject(app.electronApp, app.window, root);
         const agentId = await createDurableAgent(app.window, { projectName: label, name: `reverse-${label}`, orchestrator: 'claude-code' });
@@ -193,10 +208,12 @@ export const test = base.extend<{ reverse: ReverseDesktops; reverseScenario: 'qu
       }
       for (const desk of [a, b]) desk.fingerprint = (await desk.app.window.evaluate(() => window.clubhouse.annex.getStatus())).fingerprint.toLowerCase();
       const target = await b.app.window.evaluate(() => window.clubhouse.annex.getStatus());
-      guard = await sentinel();
-      forward = await transparentForward(target.port!);
-      await guardMain(a.app, forward.port, guard.port);
-      await guardMain(b.app, null, guard.port);
+      for (const desk of [a, b]) {
+        const status = await desk.app.window.evaluate(() => window.clubhouse.annex.getStatus());
+        if (!status.port || !('pairingPort' in status) || typeof status.pairingPort !== 'number' || status.pairingPort <= 0) throw new Error('Both real Annex listeners must be audited');
+        listeners.push([status.port, status.pairingPort]);
+      }
+      forward.setTarget(target.port!);
       expect(guard.accepts()).toBe(0);
       for (const desk of [a, b]) await desk.app.window.evaluate(async () => {
         const settings = await window.clubhouse.annex.getSettings();
@@ -223,15 +240,24 @@ export const test = base.extend<{ reverse: ReverseDesktops; reverseScenario: 'qu
       if (forward && guard && apps.length === 2) {
         try {
           const audits = [];
-          for (const app of apps) audits.push(await app.electronApp.evaluate(() => {
+          for (const app of apps) {
+            await app.window.evaluate(async () => {
+              const settings = await window.clubhouse.annex.getSettings();
+              await window.clubhouse.annex.saveSettings({ ...settings, enableServer: false, enableClient: false });
+            });
+            audits.push(await app.electronApp.evaluate(() => {
             const guard = (globalThis as GuardGlobal).__reverseP8;
             if (!guard) throw new Error('Reverse dial guard disappeared');
             return guard.read();
-          }));
-          await info.attach('reverse-dial-audit', { body: JSON.stringify({ audits, sentinelAccepts: guard.accepts(), forwardSourcePorts: forward.sourcePorts }), contentType: 'application/json' });
+            }));
+          }
+          await info.attach('reverse-dial-audit', { body: JSON.stringify({ audits, listeners, sentinelAccepts: guard.accepts(), forwardSourcePorts: forward.sourcePorts, forwardTargetSourcePorts: forward.targetSourcePorts }), contentType: 'application/json' });
           for (const audit of audits) expect(audit.installed).toBe(true);
           assertDialAudit(audits[0].attempts, { host: '127.0.0.1', port: forward.port }, forward.sourcePorts, guard.accepts());
           assertDialAudit(audits[1].attempts, null, [], guard.accepts());
+          expect(listeners, 'Annex listener inventory is incomplete').toHaveLength(2);
+          assertListenerAudit(audits[0].accepts, listeners[0]);
+          assertListenerAudit(audits[1].accepts, listeners[1], { targetPort: listeners[1][0], sourcePorts: forward.targetSourcePorts });
           expect(audits[0].attempts.some((attempt) => attempt.outcome === 'connected')).toBe(true);
         } catch (error) { errors.push(error); }
       }

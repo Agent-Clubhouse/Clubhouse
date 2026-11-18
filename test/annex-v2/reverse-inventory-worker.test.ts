@@ -71,6 +71,8 @@ describe.runIf(process.env.CLUBHOUSE_ANNEX_INVENTORY_PEER === '1')('isolated ful
         case 'externalConfigEdit': return peer.externalConfigEdit();
         case 'initializeProject': return peer.initializeProject();
         case 'durable': return peer.durable(params as Parameters<typeof peer.durable>[0]);
+        case 'deleteDurable': return peer.deleteDurable(params as Parameters<typeof peer.deleteDurable>[0]);
+        case 'deletedState': return peer.deletedState(params as Parameters<typeof peer.deletedState>[0]);
         case 'seedLargeText': return peer.seedLargeText();
         case 'seedContent': return peer.seedContent(params as number);
         case 'largeText': return peer.largeText();
@@ -89,11 +91,12 @@ describe.runIf(process.env.CLUBHOUSE_ANNEX_INVENTORY_PEER === '1')('isolated ful
         case 'nativeSessions': return peer.nativeSessions();
         case 'nativeSummary': return peer.nativeSummary();
         case 'transcript': return peer.transcript();
-        case 'stop':
-          await peer.close();
+        case 'stop': {
+          const accepts = await peer.close();
           closed = true;
           setImmediate(stop);
-          return true;
+          return accepts;
+        }
         default: throw new Error(`Unknown inventory fixture method: ${method}`);
       }
     });

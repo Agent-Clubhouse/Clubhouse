@@ -19,13 +19,16 @@ test('one forward carries chat commands, live renderer output and transcript cat
       await expect(pane.locator('[data-testid="chat-message-assistant"]').filter({ hasText: answer })).toHaveCount(1, { timeout: 20_000 });
       await expect(pane).toHaveAttribute('data-state', 'idle');
       if (answer === 'ONE') {
-        reverse.forward.cut();
-        for (const [source, target] of reverse.directions) {
-          await expect.poll(async () => {
+        const connections = reverse.directions.map(([source, target]) => async () => {
             const satellites: Array<{ fingerprint: string; state: string }> = await source.app.window.evaluate(() => window.clubhouse.annexClient.getSatellites());
             return satellites.find((satellite) => satellite.fingerprint === target.fingerprint)?.state;
-          }, { timeout: 45_000 }).toBe('connected');
-        }
+        });
+        const release = reverse.forward.holdNewConnections();
+        try {
+          reverse.forward.cut();
+          await Promise.all(connections.map((connection) => expect.poll(connection, { timeout: 15_000 }).not.toBe('connected')));
+        } finally { release(); }
+        await Promise.all(connections.map((connection) => expect.poll(connection, { timeout: 45_000 }).toBe('connected')));
       }
     }
     const report = await receiver.fakes.report('claude', receiver.agentId);

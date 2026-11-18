@@ -5,7 +5,7 @@ import * as os from 'os';
 import { afterAll, expect, vi } from 'vitest';
 import { createHash } from 'crypto';
 import { execFileSync } from 'child_process';
-import { installDialPolicy, sizedPng, type DialPolicy } from './reverse-parity-fixture';
+import { childGuardEnv, installDialPolicy, installListenerAudit, sizedPng, type DialPolicy } from './reverse-parity-fixture';
 import type { ConfigurePeer, PeerInfo } from './reverse-client-peer';
 import type { IPty } from 'node-pty';
 
@@ -163,6 +163,7 @@ import * as hookServer from '../../src/main/services/hook-server';
 import * as mcpBridge from '../../src/main/services/clubhouse-mcp/bridge-server';
 
 export interface InventoryPeerInfo extends PeerInfo {
+  listenerPorts: number[];
   projectId: string;
   agentId: string;
   sessionId: string;
@@ -189,6 +190,8 @@ afterAll(() => { fs.rmSync(fixture.dir, { recursive: true, force: true }); });
 
 /** Real server route table, stores, client and control; no Electron or provider process. */
 export async function createInventoryPeer(alias: string) {
+  const listenerAudit = installListenerAudit();
+  const oldChildEnv = { NODE_OPTIONS: process.env.NODE_OPTIONS, CLUBHOUSE_REVERSE_CHILD_GUARD: process.env.CLUBHOUSE_REVERSE_CHILD_GUARD };
   await settings.saveSettings({
     ...settings.getSettings(), enableServer: true, enableClient: true, networkEnabled: true,
     loopbackOnly: true, alias, deviceName: alias, autoReconnect: true,
@@ -238,6 +241,7 @@ export async function createInventoryPeer(alias: string) {
     alias, fingerprint: self.fingerprint, publicKey: self.publicKey, certPem: cert.certPem,
     pin: annexTls.certificateFingerprint(cert.certPem), port: server.getStatus().port!,
     projectId: project.id, agentId: agent.id, sessionId: runtime.getSessionId(),
+    listenerPorts: Object.values(server.liveListenerPorts()),
   };
   registerAgentTools();
   const stopAgentCalls = agentCalls.startAgentCalls({
@@ -301,6 +305,7 @@ export async function createInventoryPeer(alias: string) {
       await setConnectionLink({ agentId: agent.id }, { agentId: remote.agentId, machineId: remote.fingerprint }, true);
       bindingManager.bind(agent.id, { targetId: `${remote.agentId}@${remote.fingerprint}`, targetKind: 'agent', label: remote.alias, agentName: agent.name, targetName: `${remote.alias} agent`, projectName: project.name });
       policy = installDialPolicy((host, port) => config.forwardPort !== null && host === '127.0.0.1' && port === config.forwardPort);
+      Object.assign(process.env, childGuardEnv(config.forwardPort === null ? null : { port: config.forwardPort }));
       client.startClient();
     },
     status() {
@@ -309,7 +314,7 @@ export async function createInventoryPeer(alias: string) {
         connected: remote && client.isMachineConnected(remote.fingerprint),
         direct: remote && client.isMachineDirectConnected(remote.fingerprint),
         snapshot: remote && client.getSatellite(remote.fingerprint)?.snapshot,
-        attempts: policy?.attempts ?? [], events: fixture.events, logs: fixture.logs,
+        attempts: policy?.attempts ?? [], accepts: listenerAudit.accepts, events: fixture.events, logs: fixture.logs,
       };
     },
     retryControl() {
@@ -720,8 +725,21 @@ export async function createInventoryPeer(alias: string) {
         name: 'temporary-member', color: 'blue', useWorktree: input?.useWorktree ?? false, orchestrator: 'claude-code',
       }) as DurableAgentConfig;
       const worktree = await client.requestWorktreeStatus(remote.fingerprint, projectId, created.id);
-      const deleted = await client.requestDeleteDurable(remote.fingerprint, projectId, created.id, 'force');
-      return { created, worktree, deleted };
+      return { created, worktree };
+    },
+    async deleteDurable(input: { projectId: string; id: string }) {
+      if (!remote) throw new Error('Inventory peer is not configured');
+      return client.requestDeleteDurable(remote.fingerprint, input.projectId, input.id, 'force');
+    },
+    deletedState(input: { id: string; worktreePath?: string; useWorktree: boolean }) {
+      const projectRoot = input.useWorktree ? gitRoot : root;
+      // eslint-disable-next-line no-restricted-syntax -- Observe the authoritative disposable config, not its cache.
+      const records = JSON.parse(fs.readFileSync(path.join(projectRoot, '.clubhouse', 'agents.json'), 'utf8')) as DurableAgentConfig[];
+      return {
+        registered: records.some((record) => record.id === input.id),
+        directoryExists: !!input.worktreePath && fs.existsSync(input.worktreePath),
+        gitRegistered: !!input.worktreePath && git(['worktree', 'list', '--porcelain'], projectRoot).split('\n').includes(`worktree ${input.worktreePath}`),
+      };
     },
     seedLargeText() { fs.writeFileSync(path.join(root, 'large-utf8.txt'), 'é\n'.repeat(LARGE_TEXT_BYTES / 3)); },
     seedContent(size: number) {
@@ -901,6 +919,12 @@ export async function createInventoryPeer(alias: string) {
       await flushAllBulletinBoards();
       await flushAllGroupProjects();
       policy?.restore();
+      listenerAudit.restore();
+      for (const [key, value] of Object.entries(oldChildEnv)) {
+        if (value === undefined) delete process.env[key];
+        else process.env[key] = value;
+      }
+      return listenerAudit.accepts;
     },
   };
 }

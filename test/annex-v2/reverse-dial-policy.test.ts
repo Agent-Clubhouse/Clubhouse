@@ -2,11 +2,13 @@ import * as net from 'net';
 import * as https from 'https';
 import * as tls from 'tls';
 import { X509Certificate } from 'crypto';
+import { execFile } from 'child_process';
+import { promisify } from 'util';
 import type { Duplex } from 'stream';
 import { WebSocket, WebSocketServer } from 'ws';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { generateTestIdentity } from '../../e2e/annex-v2/tls-test-utils';
-import { assertDialAudit, closeServer, installDialPolicy, listen, sentinel, transparentForward } from './reverse-parity-fixture';
+import { assertDialAudit, assertListenerAudit, childGuardEnv, closeServer, installDialPolicy, installListenerAudit, listen, sentinel, transparentForward } from './reverse-parity-fixture';
 
 const cleanup: Array<() => Promise<void> | void> = [];
 afterEach(async () => { for (const dispose of cleanup.splice(0).reverse()) await dispose(); });
@@ -20,6 +22,27 @@ function dial(host: string, port: number): Promise<void> {
 }
 
 describe('reverse direct-dial policy calibration', () => {
+  it('catches a child direct dial at the independent listener and propagates the Node guard', async () => {
+    const audit = installListenerAudit();
+    cleanup.push(() => audit.restore());
+    const target = await sentinel();
+    cleanup.push(target.close);
+    const policy = installDialPolicy(() => false);
+    cleanup.push(() => policy.restore());
+    const source = `const s = require('node:net').connect(${target.port}, '127.0.0.1'); s.on('connect', () => { console.log('escaped'); s.destroy(); }); s.on('error', e => console.log(e.code));`;
+    const unguarded = await promisify(execFile)(process.execPath, ['-e', source], {
+      env: { ...process.env, NODE_OPTIONS: '', CLUBHOUSE_REVERSE_CHILD_GUARD: '' },
+    });
+    expect(unguarded.stdout.trim()).toBe('escaped');
+    await vi.waitFor(() => expect(target.accepts()).toBe(1));
+    expect(policy.attempts).toEqual([]);
+    assertDialAudit(policy.attempts, null, [], 0);
+    expect(() => assertListenerAudit(audit.accepts, [target.port])).toThrow('Unexpected direct listener accept');
+    const guarded = await promisify(execFile)(process.execPath, ['-e', source], { env: { ...process.env, ...childGuardEnv(null) } });
+    expect(guarded.stdout.trim()).toBe('ERR_REVERSE_DIAL_BLOCKED');
+    expect(target.accepts()).toBe(1);
+  });
+
   it('denies the actual listener, sentinel, aliases, alternate ports and both IP families before connect', async () => {
     const target = await sentinel();
     const guard = await sentinel();
