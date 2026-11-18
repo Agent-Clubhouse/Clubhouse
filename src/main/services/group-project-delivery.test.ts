@@ -80,7 +80,7 @@ async function post(sender: string, topic: string, body = 'hello', senderAddress
 function runtime(agentId: string, kind: 'chat' | 'pty' = 'chat', state = 'idle') {
   const r = {
     kind, state,
-    sendMessage: vi.fn(async () => ({ delivery: 'prompt' as const })),
+    sendMessage: vi.fn(async () => ({ delivery: 'prompt' as 'prompt' | 'queued' })),
     isRunning: () => true,
     getState: () => r.state,
   };
@@ -417,4 +417,15 @@ it('a slow wake cannot delay another recipient urgent delivery', async () => {
   expect(dev.sendMessage).toHaveBeenCalledTimes(1);
   release(false);
   await vi.advanceTimersByTimeAsync(0);
+});
+
+it('retains dropped turn-end notices when a later post advances the receipt', async () => {
+  const dev = runtime('dev', 'chat', 'running');
+  dev.sendMessage.mockResolvedValueOnce({ delivery: 'queued' });
+  await post('qa', 'general'); await vi.advanceTimersByTimeAsync(COALESCE_MS);
+  const options = dev.sendMessage.mock.calls[0][1] as { actionQueue: { onSettled: (s: string) => void } };
+  options.actionQueue.onSettled('dropped');
+  dev.state = 'idle';
+  await post('qa', 'general'); await vi.advanceTimersByTimeAsync(COALESCE_MS);
+  expect(sentTexts(dev).at(-1)).toContain('2 new messages');
 });

@@ -379,6 +379,7 @@ async function deliver(state: MemberState, batch: Batch): Promise<void> {
           latestOnly: true,
           onSettled: (settled) => {
             if (settled === 'delivered') void acknowledge(state, notice).catch(logReceiptFailure);
+            else if ((settled === 'expired' || settled === 'dropped') && members.get(keyOf(gp.id, state.agentId)) === state) state.asleep = merge(state.asleep, notice);
             if (settled !== 'replaced' && state.queued === notice) state.queued = null;
           },
         },
@@ -393,7 +394,8 @@ async function deliver(state: MemberState, batch: Batch): Promise<void> {
     }
     if (!replacing) count('sent');
   } catch (err) {
-    // telemetry-exempt: the member reads the board at its next turn; logged for diagnosis
+    // telemetry-exempt: held unread for retry and logged for diagnosis
+    state.asleep = merge(state.asleep, notice);
     if (state.queued === notice) state.queued = null;
     appLog('core:group-project', 'warn', 'Group project notice not delivered', {
       meta: { groupProjectId: gp.id, agentId: state.agentId, error: err instanceof Error ? err.message : String(err) },
