@@ -1,7 +1,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import * as https from 'https';
-import { afterAll, vi } from 'vitest';
+import { afterAll, expect, vi } from 'vitest';
 import { createHash } from 'crypto';
 import { execFileSync } from 'child_process';
 import { installDialPolicy, sizedPng, type DialPolicy } from './reverse-parity-fixture';
@@ -264,6 +264,7 @@ export async function createInventoryPeer(alias: string) {
   let remote: InventoryPeerInfo | undefined;
   let policy: DialPolicy | undefined;
   let routePort = 0;
+  let imageFixture: { root: string; agentId: string; driver: FakeChatDriver; runtime: ChatAgentRuntime; config: string } | undefined;
   return {
     info,
     async configure(config: Omit<ConfigurePeer, 'peer'> & { peer: InventoryPeerInfo }) {
@@ -325,16 +326,50 @@ export async function createInventoryPeer(alias: string) {
       if (family === 'tree') return client.requestFileTree(remote.fingerprint, remote.projectId);
       return client.sendChatCommand(remote.fingerprint, { type: 'chat.send', agentId: remote.agentId, sessionId: remote.sessionId, text: `fixture:${alias}` });
     },
-    async imageUpload(size: number): Promise<WireAnswer> {
+    async prepareImages() {
+      const imageRoot = path.join(fixture.dir, 'image-project');
+      fs.mkdirSync(imageRoot);
+      await projectStore.add(imageRoot);
+      const config = await agentConfig.createDurable(imageRoot, 'Unedited image target', 'blue', undefined, false, 'claude-code');
+      await agentConfig.flushAgentConfig(imageRoot);
+      await agentConfig.settleAgentsFileChecksForTests();
+      await agentConfig.initializeDurableProject(imageRoot);
+      const imageDriver = new FakeChatDriver('claude_stream_json', 'claude-code', { ...MINIMAL_CHAT_CAPABILITIES, images: true, steer: true });
+      const imageRuntime = new ChatAgentRuntime({
+        agentId: config.id, provider: imageDriver.provider, driverId: imageDriver.id, cwd: imageRoot, level: 'ask', idleTimeoutMs: 0,
+        startSession: () => imageDriver.start({ agentId: config.id, provider: imageDriver.provider, cwd: imageRoot, binaryPath: 'in-memory-only', level: 'ask' }),
+      });
+      agentRegistry.register(config.id, { projectPath: imageRoot, cwd: imageRoot, orchestrator: 'claude-code', runtime: 'chat' });
+      registerChatRuntime(imageRuntime);
+      await imageRuntime.start();
+      imageDriver.last.emit({ type: 'turn_started', data: { trigger: 'system' } });
+      await vi.waitFor(() => { expect(imageRuntime.getState()).toBe('running'); });
+      imageFixture = {
+        root: imageRoot, agentId: config.id, driver: imageDriver, runtime: imageRuntime,
+        config: await fs.promises.readFile(path.join(imageRoot, '.clubhouse', 'agents.json'), 'utf8'),
+      };
+      return { agentId: config.id, sessionId: imageRuntime.getSessionId() };
+    },
+    async imageState() {
+      if (!imageFixture) throw new Error('The image fixture is not initialized');
+      return {
+        sent: imageFixture.driver.last.sent.length,
+        configUnchanged: imageFixture.config === await fs.promises.readFile(path.join(imageFixture.root, '.clubhouse', 'agents.json'), 'utf8'),
+        cached: !!agentConfig.peekCachedDurableConfig(imageFixture.root, imageFixture.agentId),
+      };
+    },
+    async imageUpload(input: number | { size: number; agentId: string }): Promise<WireAnswer> {
       if (!remote) throw new Error('Inventory peer is not configured');
+      const size = typeof input === 'number' ? input : input.size;
       const body = size <= 1 ? Buffer.alloc(size, 0xff) : sizedPng(size);
       return this.wire({
-        method: 'POST', path: `/api/v1/mobile/agents/${remote.agentId}/attachments`,
+        method: 'POST', path: `/api/v1/mobile/agents/${typeof input === 'number' ? remote.agentId : input.agentId}/attachments`,
         headers: { 'content-type': 'image/png' }, body,
       });
     },
     async receivedImage() {
-      const images = driver.last.sent.flatMap((message) => message.content).filter((part) => part.type === 'image');
+      if (!imageFixture) throw new Error('The image fixture is not initialized');
+      const images = imageFixture.driver.last.sent.flatMap((message) => message.content).filter((part) => part.type === 'image');
       const image = images[images.length - 1];
       if (!image || image.type !== 'image') throw new Error('The provider has not received an image');
       const input = fs.createReadStream(image.path);
@@ -702,6 +737,7 @@ export async function createInventoryPeer(alias: string) {
       stopAgentCalls();
       client.stopClient();
       await runtime.stop();
+      await imageFixture?.runtime.stop();
       clearChatRuntimes();
       server.stop();
       control.resetControlForTests();

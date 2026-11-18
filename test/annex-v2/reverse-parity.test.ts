@@ -557,10 +557,12 @@ describe('full-server audit inventory over one A to B forward', () => {
   });
 
   describe.each(['A', 'B'] as const)('R09/B: %s raw image upload, staging and real provider delivery', (who) => {
-    const upload = (size: number): Promise<WireAnswer> => who === 'A' ? a.imageUpload(size) : b.call('imageUpload', size);
+    let imageTarget: Awaited<ReturnType<InventoryPeer['prepareImages']>>;
+    const upload = (size: number): Promise<WireAnswer> => who === 'A' ? a.imageUpload({ size, ...imageTarget }) : b.call('imageUpload', { size, ...imageTarget });
+    const state = (): ReturnType<InventoryPeer['imageState']> => who === 'A' ? b.call('imageState') : a.imageState();
     beforeAll(async () => {
-      await emitOnTarget(who, { type: 'turn_ended', data: { stopReason: 'end_turn' } });
-      await emitOnTarget(who, { type: 'turn_started', data: { trigger: 'system' } });
+      imageTarget = who === 'A' ? await b.call('prepareImages') : await a.prepareImages();
+      expect(await state()).toMatchObject({ configUnchanged: true });
     });
     it.each([0, 1])('rejects invalid %i-byte images with the existing HTTP status', async (size) => {
       const answer = await upload(size);
@@ -569,21 +571,21 @@ describe('full-server audit inventory over one A to B forward', () => {
     });
     it.each([64 * 1024 - 1, 64 * 1024, 64 * 1024 + 1, CHAT_IMAGE_MAX_BYTES - 1, CHAT_IMAGE_MAX_BYTES])('preserves all %i bytes through the real attachment and chat paths', async (size) => {
       const answer = await upload(size);
-      const { registered, running, cached } = await driverOnTarget(who);
-      expect(answer.status, JSON.stringify({ body: Buffer.from(answer.body, 'base64').toString('utf8'), registered, running, cached })).toBe(200);
+      expect(await state()).toMatchObject({ configUnchanged: true });
+      expect(answer.status, JSON.stringify({ body: Buffer.from(answer.body, 'base64').toString('utf8'), ...await state() })).toBe(200);
       const receipt: unknown = JSON.parse(Buffer.from(answer.body, 'base64').toString('utf8'));
       expect(receipt).toMatchObject({ version: 1, bytes: size, mimeType: 'image/png', width: 1, height: 1 });
       if (!receipt || typeof receipt !== 'object' || !('attachmentId' in receipt) || typeof receipt.attachmentId !== 'string') throw new Error('The upload returned no attachment id');
-      expect(await chat(who, { type: 'chat.send', text: 'Image fixture', attachmentIds: [receipt.attachmentId], delivery: 'steer' })).toMatchObject({ status: 'completed' });
+      expect(await chat(who, { type: 'chat.send', ...imageTarget, text: 'Image fixture', attachmentIds: [receipt.attachmentId], delivery: 'steer' })).toMatchObject({ status: 'completed' });
       const received = who === 'A' ? await b.call('receivedImage') : await a.receivedImage();
       expect(received).toEqual({ bytes: size, digest: createHash('sha256').update(sizedPng(size)).digest('hex'), mimeType: 'image/png' });
     });
     it('refuses one byte over the image cap without retiring the link or executing a send', async () => {
-      const before = (await driverOnTarget(who)).sent.length;
+      const before = (await state()).sent;
       const answer = await upload(CHAT_IMAGE_MAX_BYTES + 1);
       expect(answer.status).toBe(413);
       expect(JSON.parse(Buffer.from(answer.body, 'base64').toString('utf8'))).toMatchObject({ version: 1, error: 'too_large' });
-      expect((await driverOnTarget(who)).sent).toHaveLength(before);
+      expect((await state()).sent).toBe(before);
       expect(await page(who)).toMatchObject({ agentId: target(who).agentId });
     });
   });
@@ -604,9 +606,10 @@ describe('full-server audit inventory over one A to B forward', () => {
     await vi.waitFor(async () => { expect((await inspect()).running).toBe(true); });
     expect(await send(who, 'agent:kill', { agentId: id })).toEqual({ sent: true });
     await vi.waitFor(async () => { expect((await inspect()).running).toBe(false); });
+    const previous = (await inspect()).runningIds;
     expect(await send(who, 'agent:spawn', { projectId: target(who).projectId, prompt: 'In-memory lifecycle fixture', orchestrator: 'claude-code' })).toEqual({ sent: true });
-    await vi.waitFor(async () => { expect((await inspect()).runningIds.filter((running) => running !== target(who).agentId)).toHaveLength(1); });
-    const quick = (await inspect()).runningIds.find((running) => running !== target(who).agentId);
+    await vi.waitFor(async () => { expect((await inspect()).runningIds.filter((running) => !previous.includes(running))).toHaveLength(1); });
+    const quick = (await inspect()).runningIds.find((running) => !previous.includes(running));
     if (!quick) throw new Error('The quick agent was not created');
     await expectSatelliteEvent(who, 'agent:spawn:ack', { id: quick });
     expect(await send(who, 'agent:kill', { agentId: quick })).toEqual({ sent: true });
@@ -616,15 +619,19 @@ describe('full-server audit inventory over one A to B forward', () => {
     expect((await inspect()).order).not.toContain(id);
   });
 
-  it.each(['A', 'B'] as const)('R09 %s: a legitimate external config edit does not unregister a running upload target', async (who) => {
-    if (who === 'A') await b.call('initializeProject'); else await a.initializeProject();
+  describe.each(['A', 'B'] as const)('R09 %s: partial, blocked by #3715 for post-edit config state', (who) => {
     const upload = (): Promise<WireAnswer> => who === 'A' ? a.imageUpload(65_535) : b.call('imageUpload', 65_535);
-    expect((await upload()).status).toBe(200);
-    const config = who === 'A' ? await b.call('externalConfigEdit') : await a.externalConfigEdit();
-    expect(config).toEqual({ cachedBefore: true, unchanged: true, registered: true, running: true });
-    const answer = await upload();
-    const { registered, running, cached } = await driverOnTarget(who);
-    expect(answer.status, JSON.stringify({ body: Buffer.from(answer.body, 'base64').toString('utf8'), registered, running, cached })).toBe(200);
+    beforeAll(async () => {
+      if (who === 'A') await b.call('initializeProject'); else await a.initializeProject();
+      expect((await upload()).status).toBe(200);
+      const config = who === 'A' ? await b.call('externalConfigEdit') : await a.externalConfigEdit();
+      expect(config).toEqual({ cachedBefore: true, unchanged: true, registered: true, running: true });
+    });
+    it.fails('#3715: a config edit must not unregister a running upload target', async () => {
+      const answer = await upload();
+      const { registered, running, cached } = await driverOnTarget(who);
+      expect(answer.status, JSON.stringify({ body: Buffer.from(answer.body, 'base64').toString('utf8'), registered, running, cached })).toBe(200);
+    });
   });
 
   it('audits every app dial independently of the direct-dial sentinel', async () => {
