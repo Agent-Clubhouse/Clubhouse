@@ -143,6 +143,7 @@ vi.mock('https', async (importOriginal) => {
 });
 
 import * as annexClient from './annex-client';
+import * as annexControl from './annex-control';
 import { CAPACITY_SAMPLE_TIMEOUT_MS, withCapacityDeadline } from './handoff-capacity';
 import { setProducingRuntime } from '../telemetry/__test-utils__/producing-runtime';
 import type { TelemetryRuntime } from '../telemetry/types';
@@ -275,6 +276,48 @@ describe('annex-client', () => {
     annexClient.stopClient();
     vi.useRealTimers();
     vi.unstubAllEnvs();
+  });
+
+  describe('independent control connection lifecycle', () => {
+    it('does not close the independently maintained control connection when /ws drops', () => {
+      const close = vi.spyOn(annexControl, 'closeFor');
+      try {
+        annexClient._addConnectedSatelliteForTesting('control-peer');
+        annexClient._receiveSatelliteDisconnectForTesting('control-peer');
+        expect(close).not.toHaveBeenCalledWith('control-peer', 'out');
+      } finally {
+        close.mockRestore();
+      }
+    });
+
+    it('seeds only eligible pinned desktop members and keeps their private saved route local', () => {
+      const setSource = vi.spyOn(annexControl, 'setConnectionSource');
+      const member = {
+        fingerprint: 'control-peer', publicKey: 'key', alias: 'Studio', icon: 'computer', color: 'indigo',
+        role: 'member' as const, kind: 'desktop' as const, pairedAt: '2026-01-01', lastSeen: '2026-01-01',
+        tlsCertificateFingerprint: 'AB:CD', tlsCertificatePem: 'pem', typedHost: 'localhost:7555', typedHostCert: 'AB:CD',
+      };
+      vi.mocked(annexPeers.listPeers).mockReturnValue([
+        member,
+        { ...member, fingerprint: 'phone', kind: 'phone', typedHost: undefined },
+        { ...member, fingerprint: 'pending', networkPending: true, typedHost: undefined },
+        { ...member, fingerprint: 'one-to-one', role: 'satellite', typedHost: undefined },
+        { ...member, fingerprint: 'old-pairing', tlsCertificateFingerprint: undefined, typedHost: undefined },
+      ]);
+      try {
+        annexClient.startClient();
+        const source = setSource.mock.calls.at(-1)?.[0];
+        expect(source?.plans()).toMatchObject([{
+          fingerprint: 'control-peer', pin: 'AB:CD',
+          routes: [{ host: 'localhost', port: 7555, privateTo: LOCAL_IDENTITY.fingerprint }],
+        }]);
+        expect(source?.plans()).toHaveLength(1);
+        annexClient.stopClient();
+        expect(setSource).toHaveBeenLastCalledWith(null);
+      } finally {
+        setSource.mockRestore();
+      }
+    });
   });
 
   // ---- startClient / stopClient ----
