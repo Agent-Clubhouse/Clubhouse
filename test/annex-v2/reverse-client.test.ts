@@ -7,8 +7,6 @@ import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { CONSUMER_FAMILIES, createClientPeer, type ClientPeer, type ConsumerFamily, type PeerInfo } from './reverse-client-peer';
 import { assertDialAudit, closeServer, rpcPeer, sentinel, transparentForward, type RpcPeer } from './reverse-parity-fixture';
 
-// These honest RED probes are opt-in until the separately reviewed wiring slice.
-const probe = it.runIf(process.env.CLUBHOUSE_ANNEX_REVERSE_PROBE === '1');
 type Status = ReturnType<ClientPeer['status']>;
 
 describe.each(['A', 'B'] as const)('one forward opened by %s', (opener) => {
@@ -39,7 +37,7 @@ describe.each(['A', 'B'] as const)('one forward opened by %s', (opener) => {
       path.resolve('node_modules/vitest/vitest.mjs'), 'run', '--project', 'integration',
       'test/annex-v2/reverse-parity-peer.test.ts', '--maxWorkers=1', '--disableConsoleIntercept',
     ], {
-      env: { ...process.env, CLUBHOUSE_ANNEX_REVERSE_PEER: '1', CLUBHOUSE_ANNEX_REVERSE_PROBE: '', CLUBHOUSE_ANNEX_REVERSE_IPC: ipcPath },
+      env: { ...process.env, CLUBHOUSE_ANNEX_REVERSE_PEER: '1', CLUBHOUSE_ANNEX_REVERSE_IPC: ipcPath },
       stdio: ['ignore', 'pipe', 'pipe'],
     });
     child.stdout!.on('data', (data) => { childOutput += data.toString(); });
@@ -154,7 +152,7 @@ describe.each(['A', 'B'] as const)('one forward opened by %s', (opener) => {
     await assertConsumer(opener, family);
   });
 
-  probe.each(CONSUMER_FAMILIES)('reverse-only actual consumer: %s', async (family) => {
+  it.each(CONSUMER_FAMILIES)('reverse-only actual consumer: %s', async (family) => {
     expect((await status(requester)).readiness?.acceptedHere).toBe(true);
     await assertConsumer(requester, family);
   });

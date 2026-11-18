@@ -1,4 +1,4 @@
-# Desktop reverse-control routes (#3613 P2)
+# Desktop reverse-control routes (#3613)
 
 This is a **partial implementation slice**, not full reverse-parity acceptance.
 The phone contract, `/ws`, `/network`, pairing, grants and approvals are unchanged.
@@ -77,3 +77,54 @@ These are transport-readiness observations, not proof of end-to-end reverse
 requests, subscriptions, terminals or transfers. They do not change transport
 selection, connection ownership, reconnect, grants or permissions. P8 acceptance
 remains separate.
+
+## Desktop consumer wiring (#3613 P7w)
+
+Desktop REST consumers now share one request seam, including chat, files, icons,
+PTY buffers, git, agent calls, group-project writes and handoff requests. A live
+direct connection wins. Otherwise the existing request authority must report a
+negotiated, authorized incoming control link (`acceptedHere`), and the desktop
+client must be running and enabled. A socket being open is not enough. Pairing,
+discovery and certificate probes remain direct-only.
+
+The transport is chosen once, before sending. A failed, cancelled or timed-out
+operation never falls through to the other transport. Reverse failures retain
+their request id, error code and indeterminate flag. A write whose answer is
+lost may have executed; making another route available does not send it again.
+Existing application-level refusal handling and durable outbox policies are
+unchanged.
+
+The adapters retain their HTTP status, response headers, JSON/text/byte handling,
+timeouts and cancellation. A caller's `maxResponseBytes` also bounds reverse
+receipt: inline decoded size is checked before allocating its body, and bulk
+size before accepting or crediting the transfer. Exceeding that local cap fails
+only the request, not unrelated subscriptions. Existing protocol/path caps and
+P6 rejection fences still apply. The limit is local, not a new wire field.
+`files/read` remains uncapped UTF-8 text, not an arbitrary-binary-file API.
+
+One reverse subscription feeds the existing satellite snapshot and event IPC.
+Public satellite connectivity includes authorized reverse reachability, while
+Settings keeps a separate direct observation so `via=reverse` stays accurate.
+Request-only peers do not acquire subscription or terminal-control capability.
+Old peers without reverse capability keep their direct/offline behavior.
+
+Snapshot ordering and asynchronous icon/canvas guards use a stream identity,
+not a WebSocket. A new stream gets a fresh snapshot; late callbacks from the old
+one cannot replace it. Direct becoming available replaces the reverse
+subscription. This is a real ownership boundary: D10 closes private shells
+owned by an ended subscription. There is no shell migration or replay of input.
+An ended/refused subscription does not spin; a new control-readiness transition
+or explicit retry can start another.
+
+Disable, stop, disconnect, forget, revocation and changed pairing trust retire
+the owned stream and cancel affected local requests. Client stop does not close
+unrelated incoming control links. Ordinary stream frames add no device-readiness
+notifications. Grants, approvals, reverse eligibility and P5/P6 authority checks
+are unchanged.
+
+The consumer probes are now ordinary tests. They exercise nine families in both
+single-forward orientations, with reverse direct dials blocked, a dial audit
+and an independent sentinel. They use the actual client/control stack and small
+fixture target handlers, not the complete production server or paid models.
+This proves consumer wiring, not full-surface P8 acceptance; the full inventory,
+hosted end-to-end coverage and physical-machine/phone acceptance remain separate.
