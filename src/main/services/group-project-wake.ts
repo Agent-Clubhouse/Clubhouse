@@ -27,6 +27,8 @@ export async function wakeForGroupPost(group: string, agent: string, name: strin
       const latest = await findDurableAgentConfig(agent);
       return latest?.agentConfig.lastSessionId ? latest : null;
     },
+    // Synchronous admission closes the race with an independently started turn.
+    admission: () => !getAgentRuntime(agent)?.isRunning(),
     authorize: async () => { if (!(await allowed())) throw new Error('Group project wake permission or membership changed.'); },
   });
   if (result.isError) return false;

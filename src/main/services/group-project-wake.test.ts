@@ -2,9 +2,9 @@ import { beforeEach, expect, it, vi } from 'vitest';
 const fx = vi.hoisted(() => ({
   gp: { id: 'g', metadata: {} as Record<string, unknown>, host: { machine: 'host' } },
   config: { agentConfig: { lastSessionId: 'last' }, projectPath: '/p' } as unknown,
-  decision: 'allow', reserve: vi.fn(async () => true), wake: vi.fn(),
+  live: false, decision: 'allow', reserve: vi.fn(async () => true), wake: vi.fn(),
 }));
-vi.mock('./agent-runtime', () => ({ getAgentRuntime: () => undefined }));
+vi.mock('./agent-runtime', () => ({ getAgentRuntime: () => fx.live ? { isRunning: () => true } : undefined }));
 vi.mock('./group-project-host', () => ({ groupProjectHost: {
   get: async () => fx.gp, resolveMembers: async () => [{ address: 'dev', name: 'dev' }],
   localAgentId: (_g: unknown, a: string) => a === 'dev' || a === 'sender' ? a : null,
@@ -15,7 +15,7 @@ vi.mock('./group-project-notification-store', () => ({ reserveWake: fx.reserve }
 vi.mock('./clubhouse-mcp/tools/agent-lifecycle', () => ({ findDurableAgentConfig: async () => fx.config, wakeWiredAgent: fx.wake }));
 import { wakeForGroupPost } from './group-project-wake';
 beforeEach(() => {
-  fx.gp.metadata = {}; fx.config = { agentConfig: { lastSessionId: 'last' }, projectPath: '/p' };
+  fx.live = false; fx.gp.metadata = {}; fx.config = { agentConfig: { lastSessionId: 'last' }, projectPath: '/p' };
   fx.decision = 'allow'; fx.reserve.mockResolvedValue(true);
   fx.wake.mockResolvedValue({ content: [{ type: 'text', text: '{"messageDelivered":true}' }] });
 });
@@ -40,6 +40,16 @@ it('allows remote lead Allow, holds Ask and off', async () => {
 it('rechecks authorization before spawn', async () => {
   fx.wake.mockImplementationOnce(async ({ authorize }) => {
     fx.gp.metadata.wake = 'off'; await expect(authorize()).rejects.toThrow('permission');
+    return { isError: true, content: [] };
+  });
+  expect(await wake()).toBe(false);
+});
+
+it('synchronously refuses the wake path if another start creates a running turn', async () => {
+  fx.wake.mockImplementationOnce(async ({ admission }) => {
+    expect(admission()).toBe(true);
+    fx.live = true;
+    expect(admission()).toBe(false);
     return { isError: true, content: [] };
   });
   expect(await wake()).toBe(false);
