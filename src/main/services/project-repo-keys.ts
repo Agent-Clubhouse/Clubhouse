@@ -6,7 +6,8 @@
  * Best effort and off every critical path: `git config` with a short timeout,
  * a few at a time, nothing logged (most folders have no `origin`, and that's
  * fine), each answer kept for a minute. A snapshot takes what's known now and
- * starts a refresh for the rest, so it never waits on git.
+ * starts a refresh for the rest, so it never waits on git. A changed batch
+ * requests a later snapshot once its reads finish.
  */
 import { execFile } from 'child_process';
 import { normalizeGitRemote } from '../../shared/git-remote';
@@ -70,13 +71,22 @@ export async function repoKeysFor(projects: ReadonlyArray<{ id: string; path: st
   return out;
 }
 
-/** The keys known now, without waiting; projects not known (or stale) are read in the background for next time. */
-export function cachedRepoKeys(projects: ReadonlyArray<{ id: string; path: string }>, now = Date.now()): Record<string, string> {
+/** Known keys without waiting; notify once if the background batch changes any key. */
+export function cachedRepoKeys(
+  projects: ReadonlyArray<{ id: string; path: string }>,
+  now = Date.now(),
+  onChanged?: () => void,
+): Record<string, string> {
   const out: Record<string, string> = {};
+  const reads: Array<Promise<boolean>> = [];
   for (const p of projects) {
     const entry = cache.get(p.path);
-    if (!fresh(entry, now)) void refresh(p.path, now);
+    const previousKey = entry?.key ?? null;
+    if (!fresh(entry, now)) reads.push(refresh(p.path, now).then((key) => key !== previousKey));
     if (entry?.key) out[p.id] = entry.key;
+  }
+  if (onChanged && reads.length) {
+    void Promise.all(reads).then((changed) => { if (changed.some(Boolean)) onChanged(); });
   }
   return out;
 }

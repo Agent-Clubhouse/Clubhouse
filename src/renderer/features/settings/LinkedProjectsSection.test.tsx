@@ -1,4 +1,4 @@
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor, act, within } from '@testing-library/react';
 import { LinkedProjectsSection } from './LinkedProjectsSection';
 import { LinkSuggestionLine } from '../../chrome/sidebar/LinkSuggestionLine';
 import { useProjectStore } from '../../stores/projectStore';
@@ -107,5 +107,93 @@ describe('linking the same project on two computers (#3066)', () => {
     useRemoteProjectStore.setState({ satelliteProjects: {} } as never);
     const { container } = render(<LinkedProjectsSection projectId="p1" />);
     expect(container).toBeEmptyDOMElement();
+  });
+
+  it('suggests a newly visible remote when a later snapshot supplies its key in both surfaces (#3703)', async () => {
+    const remote = useRemoteProjectStore.getState().satelliteProjects.bb[0];
+    useRemoteProjectStore.setState({ satelliteProjects: { bb: [{ ...remote, repoKey: undefined }] } });
+    render(<><LinkSuggestionLine /><LinkedProjectsSection projectId="p1" /></>);
+    await waitFor(() => expect(window.clubhouse.project.getRepoKeys).toHaveBeenCalledTimes(2));
+    expect(screen.queryByTestId('link-suggestion')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('linked-project-suggestion')).not.toBeInTheDocument();
+
+    act(() => useRemoteProjectStore.setState({ satelliteProjects: { bb: [remote] } }));
+
+    expect(await screen.findByTestId('link-suggestion')).toHaveTextContent('Site is also on Studio');
+    expect(await screen.findByTestId('linked-project-suggestion')).toHaveTextContent('Site on Studio');
+    expect(window.clubhouse.project.getRepoKeys).toHaveBeenCalledTimes(2);
+  });
+
+  it('distinguishes repeated names by computer and path, previews the choice, then shows the linked result', async () => {
+    useAnnexClientStore.setState({ satellites: [
+      { id: 'bb', alias: 'Studio', fingerprint: 'bb', state: 'connected' },
+      { id: 'cc', alias: 'Laptop', fingerprint: 'cc', state: 'connected' },
+    ] } as never);
+    const other = 'remote||cc||site';
+    useRemoteProjectStore.setState({ satelliteProjects: {
+      ...useRemoteProjectStore.getState().satelliteProjects,
+      cc: [{ id: other, name: 'Site', path: '/work/site', remote: true, satelliteId: 'cc', satelliteName: '' }],
+    } });
+    render(<LinkedProjectsSection projectId="p1" />);
+    expect(screen.getByRole('option', { name: 'Site on Studio (/srv/site)' })).toBeInTheDocument();
+    expect(screen.getByRole('option', { name: 'Site on Laptop (/work/site)' })).toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText('Link with another project'), { target: { value: other } });
+    expect(screen.getByRole('status')).toHaveTextContent('Link Site with Site on Laptop');
+    expect(useNetworkSidebarStore.getState().links).toEqual([]);
+    fireEvent.click(screen.getAllByRole('button', { name: 'Link', exact: true }).at(-1)!);
+    expect(screen.getByTestId('linked-project')).toHaveTextContent('Site on Laptop');
+    expect(screen.getByTestId('linked-project')).toHaveTextContent('/work/site');
+    expect(screen.getByLabelText('Link with another project')).toHaveValue('');
+    expect(screen.queryByRole('status')).not.toBeInTheDocument();
+  });
+
+  it('invalidates a manual choice when the remote disappears or becomes linked elsewhere', () => {
+    render(<LinkedProjectsSection projectId="p1" />);
+    const select = screen.getByLabelText('Link with another project');
+    const remote = useRemoteProjectStore.getState().satelliteProjects.bb;
+    fireEvent.change(select, { target: { value: REMOTE } });
+    act(() => useRemoteProjectStore.setState({ satelliteProjects: { bb: [{ ...remote[0], id: 'remote||bb||other' }] } }));
+    act(() => useRemoteProjectStore.setState({ satelliteProjects: { bb: remote } }));
+    expect(select).toHaveValue('');
+    fireEvent.change(select, { target: { value: REMOTE } });
+    act(() => useNetworkSidebarStore.getState().link('p1', REMOTE));
+    expect(select).toHaveValue('');
+    expect(screen.getAllByRole('button', { name: 'Link', exact: true }).at(-1)).toBeDisabled();
+  });
+
+  it('does not carry a manual choice into another source project', () => {
+    const { rerender } = render(<LinkedProjectsSection projectId="p1" />);
+    fireEvent.change(screen.getByLabelText('Link with another project'), { target: { value: REMOTE } });
+    rerender(<LinkedProjectsSection projectId="p2" />);
+    expect(screen.getByLabelText('Link with another project')).toHaveValue('');
+    expect(screen.getByRole('button', { name: 'Link', exact: true })).toBeDisabled();
+    rerender(<LinkedProjectsSection projectId="p1" />);
+    expect(screen.getByLabelText('Link with another project')).toHaveValue('');
+  });
+
+  it('reverses Keep separate from the sidebar in settings, and can link again after unlinking', async () => {
+    render(<><LinkSuggestionLine /><LinkedProjectsSection projectId="p1" /></>);
+    fireEvent.click(within(await screen.findByTestId('link-suggestion')).getByRole('button', { name: 'Keep separate' }));
+    expect(screen.queryByTestId('linked-project-suggestion')).not.toBeInTheDocument();
+    const separated = screen.getByTestId('kept-separate-project');
+    expect(separated).toHaveTextContent('Site on Studio');
+    fireEvent.click(within(separated).getByRole('button', { name: 'Link instead' }));
+    expect(useNetworkSidebarStore.getState().links).toEqual([['p1', REMOTE]]);
+    expect(useNetworkSidebarStore.getState().keptSeparate).toEqual([]);
+    expect(screen.getByTestId('linked-project')).toHaveTextContent('stop link suggestions');
+    fireEvent.click(screen.getByRole('button', { name: 'Unlink' }));
+    expect(useNetworkSidebarStore.getState().links).toEqual([]);
+    expect(screen.queryByTestId('link-suggestion')).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Link instead' }));
+    expect(useNetworkSidebarStore.getState().links).toEqual([['p1', REMOTE]]);
+    expect(useNetworkSidebarStore.getState().keptSeparate).toEqual([]);
+  });
+
+  it('names both projects in the sidebar when matching repositories have different folder names', async () => {
+    const remote = useRemoteProjectStore.getState().satelliteProjects.bb[0];
+    useRemoteProjectStore.setState({ satelliteProjects: { bb: [{ ...remote, displayName: 'Website' }] } });
+    render(<LinkSuggestionLine />);
+    expect(await screen.findByTestId('link-suggestion')).toHaveTextContent('Site and Website on Studio share the same git remote.');
+    expect(screen.getByTestId('link-suggestion')).toHaveTextContent('project settings under Linked projects');
   });
 });

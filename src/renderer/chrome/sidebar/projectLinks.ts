@@ -57,7 +57,10 @@ export function useVisibleProjectLinks(): string[][] {
 export function usePairedRemoteProjects(): Array<Project & { satelliteId?: string; satelliteName?: string }> {
   const satellites = useAnnexClientStore((s) => s.satellites);
   const satelliteProjects = useRemoteProjectStore((s) => s.satelliteProjects);
-  return useMemo(() => satellites.flatMap((s) => satelliteProjects[s.id] ?? []), [satellites, satelliteProjects]);
+  return useMemo(() => satellites.flatMap((s) => (satelliteProjects[s.id] ?? []).map((p) => ({
+    ...p,
+    satelliteName: p.satelliteName || s.alias || 'another computer',
+  }))), [satellites, satelliteProjects]);
 }
 
 /** This machine's projects' git remotes as keys, read again when its projects change; only while another computer is paired. */
