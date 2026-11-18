@@ -13,6 +13,7 @@ vi.mock('./annex-client', () => ({
   getSatellite: vi.fn(() => null),
   forgetSatellite: vi.fn(),
   satelliteAddress: vi.fn(() => undefined),
+  isMachineDirectConnected: vi.fn(() => false),
 }));
 vi.mock('./annex-settings', () => ({ networkEnabled: (s?: { networkEnabled?: boolean }) => s?.networkEnabled !== false, getSettings: vi.fn(() => ({ enableClient: true })) }));
 vi.mock('./annex-network-membership', () => ({
@@ -66,6 +67,7 @@ describe('annex device list', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     vi.mocked(annexControl.getLinkReadiness).mockReturnValue({ acceptedHere: false, openedHere: false });
+    vi.mocked(annexClient.isMachineDirectConnected).mockReturnValue(false);
   });
 
   it('lists devices both ways in one list, sorted by name', () => {
@@ -271,6 +273,16 @@ describe('annex device list', () => {
       expect(device.reach?.inbound.via).toBeUndefined();
     });
 
+    it('does not mistake effective satellite connectivity for a direct observation', () => {
+      const device = list({
+        satellites: [satellite({ state: 'connected' })],
+        directOf: () => false,
+        controlOf: () => ({ acceptedHere: true, openedHere: false }),
+      });
+      expect(device.reach?.outbound).toMatchObject({ state: 'up', via: 'reverse' });
+      expect(device.reach?.inbound.via).toBeUndefined();
+    });
+
     it.each([
       { role: 'satellite' }, { role: 'controller' }, { kind: 'phone' }, { kind: undefined },
       { networkPending: true }, { tlsCertificateFingerprint: undefined },
@@ -430,6 +442,7 @@ describe('annex device list', () => {
       resetReachForTests();
       vi.mocked(annexPeers.listPeers).mockReturnValue([studio()]);
       vi.mocked(annexClient.getSatellites).mockReturnValue([satellite({ state: 'connected' })]);
+      vi.mocked(annexClient.isMachineDirectConnected).mockReturnValue(true);
       vi.mocked(networkChannel.inboundMembers).mockReturnValue(new Set(['fp-sat']));
       expect(listDevices()[0].reach).toMatchObject({ outbound: { state: 'up' }, inbound: { state: 'up' } });
       resetReachForTests();

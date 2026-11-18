@@ -3396,6 +3396,65 @@ describe('annex-client', () => {
       expect(request).toHaveBeenCalledTimes(1);
       expect(https.request).not.toHaveBeenCalled();
     });
+
+    it('projects reverse-only availability, keeping direct observations separate and connected notifications transition-only', async () => {
+      const peer = { fingerprint: FP, publicKey: 'key', alias: 'Reverse peer', icon: '', color: '', role: 'member' as const,
+        kind: 'desktop' as const, pairedAt: '', lastSeen: '', tlsCertificateFingerprint: 'PIN' };
+      vi.mocked(annexPeers.listPeers).mockReturnValue([peer]);
+      vi.mocked(annexPeers.getPeer).mockReturnValue(peer);
+      const connected = vi.fn();
+      const off = annexClient.onSatelliteConnected(connected);
+      try {
+        const { devicesChanged } = await import('./annex-device-signal');
+        devicesChanged();
+        expect(annexClient.isMachineConnected(FP)).toBe(true);
+        expect(annexClient.isMachineDirectConnected(FP)).toBe(false);
+        expect(annexClient.getSatellite(FP)).toMatchObject({ state: 'connected', host: '', mainPort: 0 });
+        expect(annexClient.satelliteKeyFor(FP)).toBe(FP);
+        devicesChanged();
+        expect(connected).toHaveBeenCalledExactlyOnceWith(FP);
+        vi.mocked(annexControl.getLinkReadiness).mockReturnValue({ acceptedHere: false, openedHere: true });
+        devicesChanged();
+        expect(annexClient.isMachineConnected(FP)).toBe(false);
+        expect(annexClient.getSatellite(FP)?.state).toBe('disconnected');
+        expect(connected).toHaveBeenCalledTimes(1);
+      } finally { off(); }
+    });
+
+    it('holds the real agent outbox when an OPEN control socket loses its current authority', async () => {
+      vi.mocked(annexControl.getLinkReadiness).mockRestore();
+      const fingerprint = Array(16).fill('ef').join(':');
+      const peer = { fingerprint, publicKey: 'key', alias: 'Reverse peer', icon: '', color: '', role: 'member' as const,
+        kind: 'desktop' as const, pairedAt: '', lastSeen: '', tlsCertificateFingerprint: 'PIN' };
+      vi.mocked(annexPeers.listPeers).mockReturnValue([peer]);
+      vi.mocked(annexPeers.getPeer).mockReturnValue(peer);
+      let allowed = true;
+      annexControl.setInboundAuthority({ accept: () => ({ ok: false, status: 401, error: 'unused', message: '' }), stillAllowed: () => allowed });
+      const socket = Object.assign(new EventEmitter(), { readyState: 1, send: vi.fn(), close: vi.fn(), ping: vi.fn(), terminate: vi.fn() });
+      annexControl._attachForTesting(socket as never, fingerprint, 'PIN', 'in');
+      socket.emit('message', Buffer.from(JSON.stringify({ v: 1, type: 'hello', features: ['request'] })));
+      expect(annexClient.isMachineConnected(fingerprint)).toBe(true);
+      allowed = false;
+      expect(socket.readyState).toBe(1);
+      expect(annexClient.isMachineConnected(fingerprint)).toBe(false);
+      const calls = await import('./annex-agent-calls');
+      let file: import('./annex-delivery-store').DeliveryFile = { version: 1, inbox: [], outbox: [], deliveries: [] };
+      const stop = calls.startAgentCalls({
+        transport: { connected: annexClient.isMachineConnected, post: annexClient.postToMachine, onConnected: annexClient.onSatelliteConnected,
+          machineName: () => 'Reverse peer', supportsDurableDelivery: async () => true },
+        deliveryStore: { get: () => structuredClone(file), update: async (change) => { change(file); }, clearForTesting: async () => { file = { version: 1, inbox: [], outbox: [], deliveries: [] }; } },
+        authorizeQueuedCall: async () => ({ allowed: true }), listDirections: () => [],
+        runTool: async () => ({ content: [] }), describeLocalAgent: async () => undefined,
+      });
+      try {
+        await calls.forwardAgentCall('sender', `receiver@${fingerprint}`, 'Receiver', 'send_message', { message: 'held' });
+        await calls.flushOutbox(fingerprint);
+        expect(calls.waitingFor(fingerprint)).toHaveLength(1);
+        expect(request).not.toHaveBeenCalled();
+        expect(https.request).not.toHaveBeenCalled();
+        expect(socket.readyState).toBe(1);
+      } finally { stop(); annexControl.resetControlForTests(); }
+    });
   });
 
   describe('chat across desktops (#2390)', () => {

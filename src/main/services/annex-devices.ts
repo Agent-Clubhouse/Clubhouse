@@ -39,6 +39,8 @@ interface Sources {
   inbound?: ReadonlySet<string>;
   /** Live, negotiated control links, checked against the request path's current authority. */
   controlOf?: (fingerprint: string) => annexControl.ControlLinkReadiness;
+  /** Direct sockets only; public satellite state also includes reverse availability. */
+  directOf?: (fingerprint: string) => boolean;
   /** Whether this machine is listening for other computers. */
   serverOn?: boolean;
   /** This machine's main Annex port, for advice about forwards to it. */
@@ -130,6 +132,7 @@ function readSources(): Sources {
     removals: membership.pendingRemovals(),
     inbound: networkChannel.inboundMembers(),
     controlOf: annexControl.getLinkReadiness,
+    directOf: annexClient.isMachineDirectConnected,
     serverOn: annexServer.getStatus().port > 0,
     ownPort: annexServer.getStatus().port || undefined,
     reach: reachTracker,
@@ -172,7 +175,7 @@ function reachFor(peer: AnnexPeer, sat: annexClient.SatelliteConnection | undefi
     if (!on) { tracker.idle(peer.fingerprint, dir); return { state: 'off' }; }
     return tracker.observe(peer.fingerprint, dir, up, failed, now);
   };
-  const outboundDirect = sat?.state === 'connected' || control?.openedHere === true;
+  const outboundDirect = (sources.directOf ? sources.directOf(peer.fingerprint) : sat?.state === 'connected') || control?.openedHere === true;
   const inboundDirect = control?.acceptedHere === true
     || [sources.connected, sources.inbound].some((set) => !!set && (set.has(peer.fingerprint) || set.has(peer.fingerprint.toLowerCase())));
   const outbound = direction('outbound', annexPeers.controlledFromHere(peer), sources.clientOn,

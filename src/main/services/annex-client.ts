@@ -37,7 +37,7 @@ import { CONTROLLER_CHAT_PATH, CONTROLLER_CHAT_MAX_BYTES, type ControllerChatQue
 import type { DigestSince } from '../../shared/group-project-types';
 import { encodeDigestSince } from '../../shared/digest-since';
 import { normalizeCertFingerprint, parsePairingUrl } from './annex-pairing-url';
-import { devicesChanged, onDevicesChanged } from './annex-device-signal';
+import { devicesChanged, onDevicesChanged, onDevicePresenceChanged } from './annex-device-signal';
 import {
   annexProblemText,
   classifyConnectionError,
@@ -164,6 +164,8 @@ export interface DiscoveredService {
 const discoveredServices = new Map<string, DiscoveredService>();
 
 interface SatelliteConnectionInternal {
+  available?: boolean;
+  paused?: boolean;
   snapshotUnavailable?: boolean;
   id: string;
   alias: string;
@@ -419,7 +421,7 @@ async function seedFromSatellite(satelliteId: string, agentId: string): Promise<
   const sat = satellites.get(satelliteId);
   // Can't reach satellite: serve whatever local cache we have, and seed on
   // a later request once connected.
-  if (!sat || sat.state !== 'connected') return;
+  if (!sat || !canRequestSatellite(satelliteId)) return;
 
   const state = remoteStream(key);
   const epoch = connectionEpochs.get(satelliteId) ?? 0;
@@ -513,21 +515,22 @@ function broadcastSatelliteEvent(satelliteId: string, type: string, payload: unk
 }
 
 function toPublicConnection(s: SatelliteConnectionInternal): SatelliteConnection {
+  const connected = canRequestSatellite(s.fingerprint);
   return {
     id: s.id,
     alias: s.alias,
     icon: s.icon,
     color: s.color,
     fingerprint: s.fingerprint,
-    state: s.state,
+    state: connected ? 'connected' : s.state,
     host: s.host,
     mainPort: s.mainPort,
     pairingPort: s.pairingPort,
     snapshot: s.snapshot,
-    lastError: s.lastError,
+    lastError: connected ? null : s.lastError,
     ...(s.snapshotUnavailable && { snapshotUnavailable: true }),
     ...(s.needsPairing && { needsPairing: true }),
-    ...(s.problem && s.lastError && { problem: describeAnnexProblem(s.problem.code, s.alias, { ...s.problem, host: s.host }) }),
+    ...(!connected && s.problem && s.lastError && { problem: describeAnnexProblem(s.problem.code, s.alias, { ...s.problem, host: s.host }) }),
   };
 }
 
@@ -550,8 +553,10 @@ function setState(
     // Last seen is when it was last confirmed alive, not when it connected.
     const confirmed = lastConfirmed.get(sat.fingerprint.toLowerCase());
     if (confirmed !== undefined) annexPeers.recordLastSeen(sat.fingerprint, new Date(confirmed));
-    disposeRemoteBuffers(sat.id);
-    satelliteEpochs.delete(sat.fingerprint);
+    if (!reverseRequestReady(sat.fingerprint)) {
+      disposeRemoteBuffers(sat.id);
+      satelliteEpochs.delete(sat.fingerprint);
+    }
     // Membership follows /ws; the control connection maintains its own lifetime.
     networkChannel.closeFor(sat.fingerprint, 'out');
   }
@@ -567,19 +572,36 @@ function setState(
   appLog('core:annex-client', error ? 'warn' : 'info', `Satellite state: ${prev} → ${state}`, {
     meta: { fingerprint: sat.fingerprint, alias: sat.alias, ...(error ? { error } : {}) },
   });
+  reconcileAvailability(false);
   broadcastSatellitesChanged();
-  if (prev !== 'connected' && state === 'connected') {
-    for (const listener of [...connectedListeners]) {
-      try {
-        listener(sat.fingerprint.toLowerCase());
-      } catch {
-        // telemetry-exempt: one listener failing must not stop the others
-      }
-    }
-  }
 }
 
 const connectedListeners = new Set<(machine: string) => void>();
+let reconciling = false;
+
+function reconcileAvailability(publish = true): void {
+  if (reconciling) return;
+  reconciling = true;
+  try {
+    if (clientRunning) for (const peer of annexPeers.listPeers()) {
+      if (!satelliteFor(peer.fingerprint) && reverseRequestReady(peer.fingerprint)) satellites.set(peer.fingerprint, newSatellite(peer, 'disconnected'));
+    }
+    let changed = false;
+    for (const sat of satellites.values()) {
+      const available = canRequestSatellite(sat.fingerprint);
+      const previous = sat.available === true;
+      sat.available = available;
+      if (previous === available) continue;
+      changed = true;
+      if (!available) { disposeRemoteBuffers(sat.id); satelliteEpochs.delete(sat.fingerprint); }
+      else for (const listener of [...connectedListeners]) {
+        try { listener(sat.fingerprint.toLowerCase()); }
+        catch { /* telemetry-exempt: one listener failing must not stop the others */ }
+      }
+    }
+    if (changed && publish) broadcastSatellitesChanged();
+  } finally { reconciling = false; }
+}
 
 /** Told each time a connection to a machine opens, with its lowercased fingerprint (#3064). */
 export function onSatelliteConnected(listener: (machine: string) => void): () => void {
@@ -603,6 +625,11 @@ function satelliteFor(machine: string): SatelliteConnectionInternal | undefined 
 
 /** Whether this machine is connected to `machine` now (#3064). */
 export function isMachineConnected(machine: string): boolean {
+  return canRequestSatellite(machine);
+}
+
+/** A direct /ws observation, not the public connection's effective availability. */
+export function isMachineDirectConnected(machine: string): boolean {
   return satelliteFor(machine)?.state === 'connected';
 }
 
@@ -1666,6 +1693,7 @@ export function connect(fingerprint: string): void {
     sat = newSatellite(peer, 'disconnected');
     satellites.set(fingerprint, sat);
   }
+  sat.paused = false;
 
   // Waiting to be found with no address yet: an address learned since (a member's hello) is worth a try.
   const waitingWithoutAddress = sat.state === 'discovering' && !sat.host;
@@ -1798,7 +1826,7 @@ export function satelliteAddress(fingerprint: string): string | undefined {
 
 export function disconnect(fingerprint: string): void {
   const sat = satellites.get(fingerprint);
-  if (sat) disconnectSatellite(sat);
+  if (sat) { sat.paused = true; disconnectSatellite(sat); }
 }
 
 /**
@@ -1811,6 +1839,7 @@ export function forgetSatellite(fingerprint: string): void {
   membership.noteLocalRemoval(fingerprint);
   const sat = satellites.get(fingerprint);
   if (sat) {
+    sat.paused = true;
     disconnectSatellite(sat);
     satellites.delete(fingerprint);
   }
@@ -1825,6 +1854,7 @@ export function retry(fingerprint: string): void {
   const sat = satellites.get(fingerprint);
   // A paired satellite not seen since startup has no connection yet: start one.
   if (!sat) { connect(fingerprint); return; }
+  sat.paused = false;
   if (sat.state === 'disconnected') {
     sat.reconnectAttempt = 0;
     sat.needsPairing = false;
@@ -2136,7 +2166,7 @@ export function getDiscoveredServices(): DiscoveredService[] {
 
 function reverseRequestReady(fingerprint: string): boolean {
   const sat = satelliteFor(fingerprint);
-  return clientRunning && annexSettings.getSettings().enableClient && !sat?.halt && !sat?.needsPairing
+  return clientRunning && annexSettings.getSettings().enableClient && !sat?.paused && !sat?.halt && !sat?.needsPairing
     && annexControl.getLinkReadiness(fingerprint.toLowerCase()).acceptedHere;
 }
 
@@ -2264,10 +2294,9 @@ export async function requestChatPage(fingerprint: string, agentId: string, opts
 
 /** Desktop controller reads use pinned TLS, but never the mobile command endpoint. */
 async function controllerChatRead<T>(machine: string, path: string): Promise<ControllerReadResult<T>> {
-  const sat = satelliteFor(machine);
-  if (!sat || sat.state !== 'connected') return { status: 'offline' };
+  if (!canRequestSatellite(machine)) return { status: 'offline' };
   try {
-    const res = await satelliteJson(sat.fingerprint, 'GET', path, undefined, { maxResponseBytes: CONTROLLER_CHAT_MAX_BYTES });
+    const res = await satelliteJson(machine, 'GET', path, undefined, { maxResponseBytes: CONTROLLER_CHAT_MAX_BYTES });
     if (res.status === 404 || res.status === 405) return { status: 'unavailable' };
     if (res.status === 401 || res.status === 403) return { status: 'forbidden' };
     if (res.status === 429) return { status: 'rate_limited', retryAfterMs: res.retryAfterMs ?? 1000 };
@@ -2275,7 +2304,7 @@ async function controllerChatRead<T>(machine: string, path: string): Promise<Con
     return { status: 'ok', value: res.body as T };
   } catch {
     // telemetry-exempt: a bounded state, never a remote error containing conversation text.
-    return { status: sat.state === 'connected' ? 'error' : 'offline' };
+    return { status: canRequestSatellite(machine) ? 'error' : 'offline' };
   }
 }
 
@@ -2831,6 +2860,7 @@ export function resumeAllConnections(): void {
   // Waking never starts the client: with Connect to satellites off there's nothing to resume.
   if (!annexSettings.getSettings().enableClient) return;
   for (const sat of satellites.values()) {
+    if (sat.paused) continue;
     // An address announced before sleep may be another network's.
     sat.discovered = null;
     if (sat.state === 'disconnected') {
@@ -2846,6 +2876,7 @@ export function resumeAllConnections(): void {
 }
 
 let stopControlRouteWatch: (() => void) | null = null;
+let stopAvailabilityWatch: (() => void) | null = null;
 
 function startControlConnections(): void {
   if (stopControlRouteWatch) { annexControl.refreshConnections(); return; }
@@ -2856,7 +2887,7 @@ function startControlConnections(): void {
       if (!settings.enableClient || !annexSettings.networkEnabled(settings) || !identity) return [];
       const peers = annexPeers.listPeers();
       return peers.filter((peer) => peer.role === 'member' && peer.kind === 'desktop' && !peer.networkPending
-        && !annexPeers.peerNeedsPairing(peer) && !satellites.get(peer.fingerprint)?.halt
+        && !annexPeers.peerNeedsPairing(peer) && !satellites.get(peer.fingerprint)?.paused && !satellites.get(peer.fingerprint)?.halt
         && !satellites.get(peer.fingerprint)?.needsPairing).flatMap((peer) => {
         if (!peer.tlsCertificateFingerprint) return [];
         const discovered = satellites.get(peer.fingerprint)?.discovered;
@@ -2882,13 +2913,17 @@ function startControlConnections(): void {
 
 export function startClient(): void {
   clientRunning = true;
+  stopAvailabilityWatch ??= onDevicePresenceChanged(() => reconcileAvailability());
   startControlConnections();
   startDiscovery();
   restorePairedSatellites();
+  reconcileAvailability();
 }
 
 export function stopClient(): void {
   clientRunning = false;
+  stopAvailabilityWatch?.();
+  stopAvailabilityWatch = null;
   stopControlRouteWatch?.();
   stopControlRouteWatch = null;
   annexControl.setConnectionSource(null);
