@@ -12,6 +12,7 @@ import { appLog } from './log-service';
 import { devicesChanged, type DeviceChange } from './annex-device-signal';
 import { isAnnexLoopback } from '../../shared/annex-problems';
 import { formatAddress, hostPortsWithFallback, isPrivateHost, KNOWN_HOSTS_MAX, parseTypedHost, rememberHost, withPrivateHost } from './annex-reach';
+import type { DisplayReceipt, DisplayValue } from './display-settings';
 import type { AnnexHeldRoutes, AnnexPeer, AnnexPeerListing } from '../../shared/types';
 
 // ---------------------------------------------------------------------------
@@ -98,6 +99,57 @@ export function listPeersForDisplay(): AnnexPeerListing[] {
 export function peekPeerAlias(fingerprint: string): string | undefined {
   const matches = cachedPeers?.filter((peer) => typeof peer.fingerprint === 'string' && peer.fingerprint.toLowerCase() === fingerprint.toLowerCase());
   return matches?.length === 1 && typeof matches[0].alias === 'string' ? matches[0].alias : undefined;
+}
+
+/** Only already established display metadata, never credential/store loading or pairing evidence. */
+export interface PeerDisplayMetadata {
+  alias: DisplayValue<string | null>;
+  lastSeen: DisplayValue<string | null>;
+}
+export const PEER_DISPLAY_SCAN_LIMIT = 1024;
+
+function peerDisplayProjection(fingerprint: string): DisplayValue<PeerDisplayMetadata> {
+  const inputs = [{ field: 'Retained machine metadata', source: 'host-cache' as const, observedAt: Date.now() }];
+  const unknown = <T>(reason?: 'invalid' | 'limit'): DisplayValue<T> => ({ state: 'unavailable', inputs, ...(reason && { reason }) });
+  const known = <T>(value: T): DisplayValue<T> => ({ state: 'ok', value, inputs });
+  if (typeof fingerprint !== 'string' || !fingerprint || fingerprint.length > 256) return unknown('invalid');
+  if (!cachedPeers) return unknown();
+  // Refuse an incomplete uniqueness check; every examined row, including
+  // nonmatches, counts. This does not bound the existing lifecycle cache heap.
+  if (cachedPeers.length > PEER_DISPLAY_SCAN_LIMIT) return unknown('limit');
+  const key = fingerprint.toLowerCase();
+  let selected: AnnexPeer | undefined;
+  for (const peer of cachedPeers) {
+    if (!peer || typeof peer.fingerprint !== 'string' || peer.fingerprint.length > 256 || peer.fingerprint.toLowerCase() !== key) continue;
+    if (selected) return unknown('invalid');
+    selected = peer;
+  }
+  // Absence in memory is not proof that a machine has never been configured.
+  if (!selected) return unknown();
+  const alias = selected.alias === undefined || selected.alias === '' ? known(null)
+    : typeof selected.alias !== 'string' ? unknown<string | null>('invalid')
+    : selected.alias.length > 1024 ? unknown<string | null>('limit') : known(selected.alias.trim() || null);
+  const lastSeen = selected.lastSeen === undefined || selected.lastSeen === '' ? known(null)
+    : typeof selected.lastSeen !== 'string' ? unknown<string | null>('invalid')
+    : selected.lastSeen.length > 128 ? unknown<string | null>('limit')
+    : Number.isFinite(Date.parse(selected.lastSeen)) ? known(selected.lastSeen) : unknown<string | null>('invalid');
+  return known({ alias, lastSeen });
+}
+
+function peerDisplaySignature(value: DisplayValue<PeerDisplayMetadata>): string {
+  const field = <T>(value: DisplayValue<T>) => ({ state: value.state, ...(value.state === 'ok' ? { value: value.value } : { reason: value.reason }) });
+  return JSON.stringify({ ...field(value), ...(value.state === 'ok' && { value: { alias: field(value.value.alias), lastSeen: field(value.value.lastSeen) } }) });
+}
+
+/** Separate closure scope keeps only a selected key and bounded safe signature,
+ * never a peer object, certificates, raw cache or unrelated machine records. */
+function peerDisplayReceipt(fingerprint: string, signature: string): DisplayReceipt {
+  return { current: () => { try { return peerDisplaySignature(peerDisplayProjection(fingerprint)) === signature; } catch { return false; } } };
+}
+export function readPeerMetadataForDisplay(fingerprint: string, options: { receipts?: DisplayReceipt[] } = {}): DisplayValue<PeerDisplayMetadata> {
+  const value = peerDisplayProjection(fingerprint);
+  options.receipts?.push(peerDisplayReceipt(fingerprint, peerDisplaySignature(value)));
+  return value;
 }
 
 export function getPeer(fingerprint: string): AnnexPeer | undefined {
