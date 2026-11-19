@@ -20,7 +20,7 @@ const config = () => ({ id: 'a1', name: 'Host', color: 'teal', model: 'host-mode
 beforeEach(() => {
   mocks.chatEnabled = true; mocks.driver = true;
   mocks.resolve.mockResolvedValue({ agent: config(), project: { id: 'p', path: '/host' } });
-  mocks.provider.mockResolvedValue({ id: 'claude-code', displayName: 'Claude Code', capabilities: { permissions: true } });
+  mocks.provider.mockResolvedValue({ id: 'claude-code', displayName: 'Claude Code', getCapabilities: () => ({ permissions: true }) });
   mocks.entries.mockResolvedValue({ b: { name: 'Block', content: 'private-instruction' }, s: { name: 'Skill' }, m: { name: 'MCP', env: { TOKEN: 'private-token' } } });
   mocks.template.mockResolvedValue({ name: 'Host template', settings: { env: { TOKEN: 'private-template' } } });
   mocks.status.mockResolvedValue({ waiting: true, changes: ['private-error'] });
@@ -80,7 +80,7 @@ describe('host Settings summary', () => {
   it('bounds managed inventory and string lengths', async () => {
     const c = config(); c.managed.skills = Array.from({ length: 101 }, () => 's');
     mocks.resolve.mockResolvedValue({ agent: c, project: { path: '/host' } });
-    mocks.provider.mockResolvedValue({ id: 'claude-code', displayName: 'x'.repeat(5000), capabilities: { permissions: true } });
+    mocks.provider.mockResolvedValue({ id: 'claude-code', displayName: 'x'.repeat(5000), getCapabilities: () => ({ permissions: true }) });
     const result = await readRemoteAgentSettings('a1', () => true);
     expect(result).toMatchObject({ status: 200, body: { provider: 'x'.repeat(240), setup: { state: 'error' } } });
     expect(mocks.entries).not.toHaveBeenCalled();

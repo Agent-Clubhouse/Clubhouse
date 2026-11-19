@@ -38,7 +38,7 @@ export async function readRemoteAgentSettings(agentId: string, authorized: () =>
     const result: RemoteAgentSettings = {
       version: 1, readOnly: true, agentId,
       provider: label(provider.displayName), model: label(agent.model && agent.model !== 'default' ? agent.model : 'Default model'), runtime,
-      access: provider.capabilities.permissions ? accessLabel(startableAccess(agentAccess(agent, project.path), provider.id, runtime)) : 'Set by the CLI',
+      access: provider.getCapabilities().permissions ? accessLabel(startableAccess(agentAccess(agent, project.path), provider.id, runtime)) : 'Set by the CLI',
       executionPolicy: [agent.approvalPolicy, agent.sandbox].filter(Boolean).join(' · ') || 'Existing level defaults',
       autoSleep: runtime === 'chat' ? `${idle.minutes ? `Sleeps after ${idle.minutes} min` : 'Never sleeps'}${idle.source === 'app' ? ' (host default)' : ''}` : null,
       context: agent.contextWindow ? label(agent.contextWindow) : null,

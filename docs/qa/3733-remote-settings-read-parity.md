@@ -30,7 +30,7 @@ This initial RED ran before the parent relayed the inherited resource gate. Ever
 
 ## Verification
 
-Initial executable GREEN: 96/96 passed across five files (existing SettingsCard local tests plus new renderer/service/IPC/contract regressions); focused real-route/client checks: 9 passed, 728 intentionally unselected. Final exact-head results are reported in the parent handoff after commit.
+Initial executable GREEN: 96/96 passed across five files (existing SettingsCard local tests plus new renderer/service/IPC/contract regressions); focused real-route/client checks: 9 passed, 728 intentionally unselected. Final exact-head results are reported in the parent handoff after commit. The first typecheck found a provider API mismatch (`capabilities` vs `getCapabilities()`); the implementation and fixture were corrected before final acceptance.
 
 The first existing SettingsCard attempt could not import `prosemirror-schema-list` from inherited dependencies. A reversible worktree-local node_modules symlink used the already installed approvals worktree; both package-lock blobs matched `7e45389f84ca58c5c7832cab169aa5674320d25d`. No installation, lockfile, provider, network, app configuration, reset or restart occurred.
 
