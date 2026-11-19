@@ -148,7 +148,7 @@ function peerDisplayReceipt(fingerprint: string, signature: string): DisplayRece
 }
 export function readPeerMetadataForDisplay(fingerprint: string, options: { receipts?: DisplayReceipt[] } = {}): DisplayValue<PeerDisplayMetadata> {
   const value = peerDisplayProjection(fingerprint);
-  options.receipts?.push(peerDisplayReceipt(fingerprint, peerDisplaySignature(value)));
+  if (typeof fingerprint === 'string' && fingerprint.length > 0 && fingerprint.length <= 256) options.receipts?.push(peerDisplayReceipt(fingerprint, peerDisplaySignature(value)));
   return value;
 }
 

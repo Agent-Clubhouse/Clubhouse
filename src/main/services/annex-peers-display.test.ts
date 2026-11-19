@@ -74,3 +74,15 @@ it('preserves the host’s custom alias text without normalizing or changing the
   expect(readPeerMetadataForDisplay('selected-machine')).toMatchObject({ state: 'ok', value: { alias: { state: 'ok', value: '  Custom computer  ' } } });
   untouched(); expect(await disk()).toEqual(before);
 });
+
+it.each(['empty', 'over-boundary', 'oversized', 'non-string'] as const)('omits receipts for invalid selected key: %s', (kind) => {
+  const key = kind === 'empty' ? '' : kind === 'over-boundary' ? 'x'.repeat(257) : kind === 'oversized' ? 'x'.repeat(256 * 1024) : null;
+  const receipts: Array<{ current(): boolean }> = [];
+  expect(readPeerMetadataForDisplay(key as string, { receipts })).toMatchObject({ state: 'unavailable', reason: 'invalid' });
+  expect(receipts).toHaveLength(0); untouched();
+});
+it('retains a private receipt for a bounded maximum-length selected key', () => {
+  const receipts: Array<{ current(): boolean }> = [];
+  expect(readPeerMetadataForDisplay('x'.repeat(256), { receipts }).state).toBe('unavailable');
+  expect(receipts).toHaveLength(1); expect(receipts[0].current()).toBe(true); untouched();
+});
