@@ -76,7 +76,7 @@ export type PeekedSettings = Record<string, unknown> | 'missing' | 'unreadable';
 /** Opt-in bound for passive display readers; ordinary startup callers retain their existing read. */
 export interface SettingsPeekOptions { maxBytes: number }
 const MAX_SETTINGS_PEEK_BYTES = 1024 * 1024;
-const validPeekLimit = (limit: number) => Number.isSafeInteger(limit) && limit > 0 && limit <= MAX_SETTINGS_PEEK_BYTES;
+const validPeekLimit = (limit: number, maximum = MAX_SETTINGS_PEEK_BYTES) => Number.isSafeInteger(limit) && limit > 0 && limit <= maximum;
 const samePeekFile = (a: fs.BigIntStats, b: fs.BigIntStats) => a.dev === b.dev && a.ino === b.ino
   && a.size === b.size && a.mtimeNs === b.mtimeNs && a.ctimeNs === b.ctimeNs;
 const decodePeek = (bytes: Buffer): PeekedSettings => parsePeeked(new TextDecoder('utf-8', { fatal: true }).decode(bytes));
@@ -127,17 +127,17 @@ export function peekStoredSettingsSync(filename: string, options?: SettingsPeekO
 
 /** Trusted fixed host metadata path only, never a caller-supplied remote path. Same bounded passive reader. */
 export async function peekMetadataFileForDisplay(admittedPath: string, maxBytes: number): Promise<PeekedSettings> {
-  return boundedSettingsPeek('', maxBytes, admittedPath);
+  return boundedSettingsPeek('', maxBytes, admittedPath, 4 * 1024 * 1024);
 }
 
 /** Synchronous final-assembly check for the same trusted fixed metadata path. */
 export function peekMetadataFileForDisplaySync(admittedPath: string, maxBytes: number): PeekedSettings {
-  return boundedSettingsPeekSync('', maxBytes, admittedPath);
+  return boundedSettingsPeekSync('', maxBytes, admittedPath, 4 * 1024 * 1024);
 }
 
 /** No SettingsStore load, migration, backup, temp sweep, cache warming, or write. */
-async function boundedSettingsPeek(filename: string, maxBytes: number, admittedPath?: string): Promise<PeekedSettings> {
-  if (!validPeekLimit(maxBytes)) return 'unreadable';
+async function boundedSettingsPeek(filename: string, maxBytes: number, admittedPath?: string, maximum = MAX_SETTINGS_PEEK_BYTES): Promise<PeekedSettings> {
+  if (!validPeekLimit(maxBytes, maximum)) return 'unreadable';
   const file = admittedPath ?? path.join(app.getPath('userData'), filename);
   let handle: Awaited<ReturnType<typeof fs.promises.open>>;
   try { handle = await fs.promises.open(file, fs.constants.O_RDONLY | fs.constants.O_NONBLOCK); }
@@ -159,8 +159,8 @@ async function boundedSettingsPeek(filename: string, maxBytes: number, admittedP
   finally { await handle.close(); }
 }
 
-function boundedSettingsPeekSync(filename: string, maxBytes: number, admittedPath?: string): PeekedSettings {
-  if (!validPeekLimit(maxBytes)) return 'unreadable';
+function boundedSettingsPeekSync(filename: string, maxBytes: number, admittedPath?: string, maximum = MAX_SETTINGS_PEEK_BYTES): PeekedSettings {
+  if (!validPeekLimit(maxBytes, maximum)) return 'unreadable';
   const file = admittedPath ?? path.join(app.getPath('userData'), filename);
   let handle: number;
   try { handle = fs.openSync(file, fs.constants.O_RDONLY | fs.constants.O_NONBLOCK); }

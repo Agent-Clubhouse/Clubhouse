@@ -647,6 +647,8 @@ export function createManagedAgentsService(deps: ManagedAgentsDeps) {
   }
 
   const api = {
+    /** Selected committed head metadata, without payload reads or ordinary content/global settings paths. */
+    openSetupMetadataForDisplay: () => catalog.openMetadataForDisplay(),
     async latestRestartReceipt(agentId: string): Promise<ManagedRestartReceipt | null> {
       const mine = (await state.read()).restarts?.filter((r) => r.agentId === agentId);
       return mine?.[mine.length - 1] ?? null;
