@@ -5937,9 +5937,9 @@ function startServer(strict = false): Promise<void> {
       timeout: permission.timeoutMs,
       deadline: permission.createdAt + permission.timeoutMs,
     });
-    const offPermissionChange = permissionQueue.onChange(() => broadcastSnapshotRefresh());
-    unsubPermissionRequest = () => { offPermissionRequest(); offPermissionChange(); };
   });
+  const offPermissionChange = permissionQueue.onChange(() => broadcastSnapshotRefresh());
+  unsubPermissionRequest = () => { offPermissionRequest(); offPermissionChange(); };
 
   unsubGroupProjectChanged = annexEventBus.onGroupProjectChanged((action, project) => {
     broadcastWs({ type: 'group-project:changed', payload: { action, project } });

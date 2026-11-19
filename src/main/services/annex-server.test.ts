@@ -4459,14 +4459,39 @@ describe('annex-server', () => {
   // -------------------------------------------------------------------------
 
   describe('permission response', () => {
-    it('refreshes terminal permission snapshots after a person answers on the host', async () => {
+    it('subscribes to permission changes once at startup and unsubscribes on stop', async () => {
+      const unsubscribe = vi.fn();
+      const subscribe = vi.spyOn(permissionQueue, 'onChange').mockReturnValue(unsubscribe);
+      const requestIds: string[] = [];
+      try {
+        await startAndPair();
+        const atStart = subscribe.mock.calls.length;
+        requestIds.push(permissionQueue.createPermission('durable_1', 'Bash').requestId);
+        requestIds.push(permissionQueue.createPermission('durable_1', 'Bash').requestId);
+        expect({ atStart, afterNewRequests: subscribe.mock.calls.length }).toEqual({
+          atStart: 1,
+          afterNewRequests: 1,
+        });
+        annexServer.stop();
+        expect(unsubscribe).toHaveBeenCalledOnce();
+      } finally {
+        for (const id of requestIds) {
+          permissionQueue.cancelPermission(id, 'test cleanup', 'durable_1');
+        }
+      }
+    });
+
+    it.each(['before', 'after'] as const)('refreshes terminal permission snapshots after a host answer for a request created %s startup', async (timing) => {
       vi.mocked(pluginManifestRegistry.listAllManifests).mockReturnValue([]);
       const { groupProjectRegistry } = await import('./group-project-registry');
       vi.mocked(groupProjectRegistry.list).mockResolvedValue([]);
       const themeService = await import('./theme-service');
       vi.mocked(themeService.getSettings).mockReturnValue({ themeId: 'catppuccin-mocha' });
+      const existing = timing === 'before'
+        ? permissionQueue.createPermission('durable_1', 'Bash', { command: 'git status' })
+        : undefined;
       await startAndPair();
-      const { requestId, decision } = permissionQueue.createPermission('durable_1', 'Bash', { command: 'git status' });
+      const { requestId, decision } = existing ?? permissionQueue.createPermission('durable_1', 'Bash', { command: 'git status' });
       const ws = Object.assign(new EventEmitter(), { readyState: 1, send: vi.fn(), ping: () => {}, close: vi.fn() });
       annexServer._testing.wsAuthTypes.set(ws as never, 'mtls');
       annexServer._testing.registerPeerSocket(ws as never, TEST_CONTROLLER.fingerprint, TEST_CONTROLLER.tlsCertificateFingerprint);
