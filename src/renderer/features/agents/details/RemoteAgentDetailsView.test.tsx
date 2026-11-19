@@ -1,7 +1,7 @@
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Agent } from '../../../../shared/types';
-import { REMOTE_DETAILS_CARD_IDS, type RemoteAgentDetails } from '../../../../shared/remote-agent-details';
+import { isRemoteAgentDetails, REMOTE_DETAILS_CARD_IDS, type RemoteAgentDetails } from '../../../../shared/remote-agent-details';
 import { useAnnexClientStore } from '../../../stores/annexClientStore';
 import { MINIMAL_CHAT_CAPABILITIES } from '../../../../shared/chat';
 import { createChatViewState, useChatStore } from '../../../stores/chatStore';
@@ -42,6 +42,26 @@ describe('remote full Details host evidence', () => {
       subagents: [{ subagentId: 'initial-sub', name: 'Initial reviewer', status: 'completed' as const, toolCount: 4, usage: { total: 42 } }],
       sessionUsage: { costUsd: 0, tokens: { total: 123 } }, context: { used: 100, size: 200_000 },
     }, observedAt: { cliVersion: 2000, model: 2000, effort: 2000, level: 1000, capabilities: 1000, mcpServers: 2000, skills: 2000, subagents: 2500, sessionUsage: 2600, context: 2600 }, omitted: {} });
+  it('keeps admitted current CLI identity when legacy optional provider fields are absent', async () => {
+    const value = fixture(); value.providerLabel = 'Host Current Claude';
+    value.settings = { ...value.settings!, provider: 'Host Next Codex', providerId: 'codex-cli' };
+    delete value.providerLabel; delete value.settings.providerId;
+    expect(isRemoteAgentDetails(value, 'a1')).toBe(true);
+    expect(value.providerId).toBe('claude-code');
+    read.mockResolvedValue({ status: 'ok', value });
+    render(<AgentDetails agent={agent} />);
+    // This must be an admitted matching hydration, not a mismatched-provider refusal.
+    await waitFor(() => expect(screen.getByTestId('details-setting-effort')).toHaveTextContent('High (default)'));
+    expect(useChatStore.getState().agents[agent.id]).toMatchObject({ provider: 'claude-code', sessionId: 's1', nativeSessionId: 'n1', cliVersion: '1.2.3' });
+    expect.soft(screen.getByTestId('details-setting-cli')).toHaveTextContent('claude-code 1.2.3');
+    const toggle = screen.getByTestId('details-card-session-toggle');
+    if (toggle.getAttribute('aria-expanded') !== 'true') fireEvent.click(toggle);
+    expect.soft(screen.getByTestId('details-card-session')).toHaveTextContent('claude-code');
+    expect.soft(screen.getByTestId('details-card-session')).not.toHaveTextContent('Host Next Codex');
+    const next = screen.queryByTestId('details-setting-next-cli');
+    expect.soft(next).not.toBeNull(); if (next) expect.soft(next).toHaveTextContent('Host Next Codex');
+    expect(window.clubhouse.agent.getDurableConfig).not.toHaveBeenCalled();
+  });
   it('shows the actual current CLI separately from a changed inherited next-start provider', async () => {
     const value = fixture(); value.providerLabel = 'Host Current Claude';
     value.settings = { ...value.settings!, provider: 'Host Next Codex', providerId: 'codex-cli' };
