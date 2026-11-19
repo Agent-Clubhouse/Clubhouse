@@ -69,7 +69,7 @@ export async function readRemoteQuickDetails(target: ReadOnlyQuickTarget, author
           c.notes.push(`Template name: ${template.source === 'builtin' ? 'built-in metadata' : 'host primary metadata'} observed ${new Date(template.observedAt).toISOString()}.`);
           if (template.truncated) c.notes.push('Template display metadata was truncated by the host.');
         }
-        catch { if (!authorized()) throw new Error('revoked'); c.notes.push('The selected template is unavailable. Other launch fields are shown independently.'); }
+        catch { if (!authorized()) throw new Error('revoked'); c.state = 'error'; c.notes.push('The selected template is unavailable. Other launch fields are shown independently.'); }
         row(c, 'Template', name);
         if (selected.template.added.length || selected.template.removed.length) {
           const names = new Map<string, string>();
@@ -85,7 +85,7 @@ export async function readRemoteQuickDetails(target: ReadOnlyQuickTarget, author
               names.set(id, part ? display(part.name, 240) : 'No longer in the library');
             }
             c.notes.push('Part names are selected committed library metadata. Revision payload integrity and provider loading are not verified.');
-          } catch { if (!authorized()) throw new Error('revoked'); names.clear(); c.notes.push('The selected launch-part names are unavailable. No empty library or loaded setup is inferred.'); }
+          } catch { if (!authorized()) throw new Error('revoked'); c.state = 'error'; names.clear(); c.notes.push('The selected launch-part names are unavailable. No empty library or loaded setup is inferred.'); }
           const labels = (ids: readonly string[]) => ids.map((id) => names.get(id) ?? 'Unavailable from library metadata').join(', ');
           row(c, 'Added for this run', labels(selected.template.added));
           row(c, 'Left out for this run', labels(selected.template.removed));
