@@ -80,20 +80,31 @@ export function captureReadOnlyAgentInventoryWitness(projectPath: string, expect
   return { current: () => { try { return read() === admitted; } catch { return false; } } };
 }
 
-/** The target was strictly resolved already; bind that exact snapshot, never a subsequent name match. */
-export function captureReadOnlyAgentTargetWitness(target: AgentConfigTarget): { current(): boolean } {
-  const read = () => {
+function registeredProject(project: AgentConfigTarget['project']): string {
     const projects = inventory(getBaseDirPath(), 'projects.json');
     const rows = Array.isArray(projects.value) ? projects.value : record(projects.value) && projects.value.version === 1 ? projects.value.projects : null;
     if (!Array.isArray(rows) || !rows.every((p) => record(p) && typeof p.id === 'string' && typeof p.path === 'string')
       || new Set(rows.map((p) => p.id)).size !== rows.length
-      || rows.filter((p) => p.id === target.project.id && p.path === target.project.path).length !== 1) throw new Error('Admitted project is no longer registered.');
+      || rows.filter((p) => p.id === project.id && p.path === project.path).length !== 1) throw new Error('Admitted project is no longer registered.');
+    return projects.signature;
+}
+
+/** Quick runs have a retained run identity, not a fabricated durable agents.json row. */
+export function captureReadOnlyProjectWitness(project: AgentConfigTarget['project']): { current(): boolean } {
+  const admitted = registeredProject(project);
+  return { current: () => { try { return registeredProject(project) === admitted; } catch { return false; } } };
+}
+
+/** The target was strictly resolved already; bind that exact snapshot, never a subsequent name match. */
+export function captureReadOnlyAgentTargetWitness(target: AgentConfigTarget): { current(): boolean } {
+  const read = () => {
+    const project = registeredProject(target.project);
     const agents = inventory(target.project.path, '.clubhouse/agents.json');
     if (!Array.isArray(agents.value) || !agents.value.every((a) => record(a) && typeof a.id === 'string' && typeof a.name === 'string')
       || new Set(agents.value.map((a) => a.id)).size !== agents.value.length) throw new Error('Agent inventory is unreadable.');
     const selected = agents.value.filter((a) => a.id === target.agent.id);
     if (selected.length !== 1 || selected[0].disposedAt || JSON.stringify(selected[0]) !== JSON.stringify(target.agent)) throw new Error('Admitted agent identity changed.');
-    return projects.signature + '\0' + agents.signature;
+    return project + '\0' + agents.signature;
   };
   const admitted = read();
   return { current: () => { try { return read() === admitted; } catch { return false; } } };

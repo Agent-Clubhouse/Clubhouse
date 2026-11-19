@@ -1,5 +1,5 @@
 import { MAX_DELAY_MINUTES } from '../../shared/actions';
-import type { QuickAgentOwner, TurnOutcome } from '../../shared/types';
+import type { QuickAgentOwner, TurnOutcome, QuickTemplateChoice, SpawnAgentParams } from '../../shared/types';
 import { clearAgentChain, forgetHookTurn, publishAppEvent, setAgentChain } from './app-event-bus';
 
 export interface QuickAgentRun {
@@ -13,11 +13,27 @@ export interface QuickAgentRun {
   outcome?: TurnOutcome;
   stopped?: boolean;
   finishedAt?: number;
+  completion?: 'completed' | 'failed' | 'cancelled';
+  /** Requested launch display metadata, never runtime confirmation, prompt, output or credentials. */
+  display?: Readonly<QuickRunDisplay>;
+}
+
+export interface QuickRunDisplay {
+  cwd: string;
+  orchestrator?: string;
+  model?: string;
+  effort?: string;
+  access?: SpawnAgentParams['access'];
+  freeAgentMode?: boolean;
+  permissionMode?: SpawnAgentParams['permissionMode'];
+  approvalPolicy?: SpawnAgentParams['approvalPolicy'];
+  sandbox?: SpawnAgentParams['sandbox'];
+  template?: { id: string; added: readonly string[]; removed: readonly string[]; omitted: number };
 }
 
 const runs = new Map<string, QuickAgentRun>();
 
-// Keep only identity and scope, not prompt or output, through delayed delivery
+// Keep identity, scope and allowlisted launch display metadata, not prompt or output, through delayed delivery
 // and its final rights check. Nothing is persisted in actions.json.
 const FINISHED_RETENTION_MS = MAX_DELAY_MINUTES * 60_000;
 let expiryTimer: ReturnType<typeof setTimeout> | undefined;
@@ -54,6 +70,16 @@ export function beginQuickAgentRun(input: {
   parentAgentId?: string;
   quickOwner?: QuickAgentOwner;
   chain?: string[];
+  cwd?: string;
+  orchestrator?: string;
+  model?: string;
+  effort?: string;
+  access?: SpawnAgentParams['access'];
+  freeAgentMode?: boolean;
+  permissionMode?: SpawnAgentParams['permissionMode'];
+  approvalPolicy?: SpawnAgentParams['approvalPolicy'];
+  sandbox?: SpawnAgentParams['sandbox'];
+  managedTemplate?: QuickTemplateChoice;
 }): QuickAgentRun {
   const previous = runs.get(input.agentId);
   if (previous) finishQuickAgentRun(previous, 'cancelled');
@@ -67,6 +93,22 @@ export function beginQuickAgentRun(input: {
     owner: input.quickOwner ?? { kind: 'user' },
     startedAt: Date.now(),
     chain: [...(input.chain ?? [])],
+    display: Object.freeze({
+      cwd: input.cwd ?? input.projectPath,
+      ...(input.orchestrator !== undefined && { orchestrator: input.orchestrator }),
+      ...(input.model !== undefined && { model: input.model }),
+      ...(input.effort !== undefined && { effort: input.effort }),
+      ...(input.access !== undefined && { access: input.access }),
+      ...(input.freeAgentMode !== undefined && { freeAgentMode: input.freeAgentMode }),
+      ...(input.permissionMode !== undefined && { permissionMode: input.permissionMode }),
+      ...(input.approvalPolicy !== undefined && { approvalPolicy: input.approvalPolicy }),
+      ...(input.sandbox !== undefined && { sandbox: input.sandbox }),
+      ...(input.managedTemplate && { template: Object.freeze({ id: input.managedTemplate.id,
+        added: Object.freeze([...(input.managedTemplate.addParts ?? [])].slice(0, 50)),
+        removed: Object.freeze([...(input.managedTemplate.removeParts ?? [])].slice(0, 50)),
+        omitted: Math.max(0, (input.managedTemplate.addParts?.length ?? 0) - 50) + Math.max(0, (input.managedTemplate.removeParts?.length ?? 0) - 50),
+      }) }),
+    }),
   };
   runs.set(run.agentId, run);
   if (run.chain.length) setAgentChain(run.agentId, run.chain, run.startedAt, true);
@@ -86,6 +128,7 @@ export function noteQuickAgentStop(agentId: string): void {
 export function finishQuickAgentRun(run: QuickAgentRun, outcome: 'completed' | 'failed' | 'cancelled'): void {
   if (run.finishedAt !== undefined) return;
   run.finishedAt = Date.now();
+  run.completion = outcome;
   publishAppEvent({
     type: 'agent.quick_finished',
     agentId: run.agentId,
