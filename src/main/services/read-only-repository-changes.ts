@@ -71,29 +71,31 @@ async function tree(root: string, ref: string): Promise<Map<string, TreeEntry>> 
 const hash = (bytes: Buffer) => createHash('sha256').update(bytes).digest('hex');
 /** Source/JSON names may include suffixes (awsSecretAccessKey2), and quoted values may span lines. */
 function redactChangeText(text: string): string | null {
-  // Keep file metadata but withhold credential structures this small projector cannot classify safely.
-  const values = /(?<![\p{L}\p{N}_$.-])([\p{L}\p{N}_$.-]+)(["']?\s*[:=]\s*)/gu;
-  let secretValues = 0;
-  for (const value of text.matchAll(values)) {
-    if (!isSecretKey(value[1])) continue;
-    if (++secretValues > 2000) return null;
-    const initializer = text.slice(value.index! + value[0].length, value.index! + value[0].length + 2048).split(/[;\r\n]/, 1)[0];
-    if (/^\s*[\[{]/.test(initializer) || /^\s*[A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*)*\s*\(/.test(initializer)
-      || value[2].includes(':') && /^\s*[^"'`]+\s=/.test(initializer)) return null;
-  }
-  const start = /(?<![\p{L}\p{N}_$.-])([\p{L}\p{N}_$.-]+)(["']?\s*[:=]\s*)(["'`])/gu;
-  let safe = '', copied = 0;
-  for (let match = start.exec(text); match; match = start.exec(text)) {
+  // This is a display projector, not a language parser. Only a complete literal
+  // with an explicit end/delimiter is classified. Every other credential
+  // initializer withholds the patch, including parentheses, comments, operators,
+  // identifiers and typed declarations. Metadata/counts remain available.
+  const values = /(?<![\p{L}\p{N}_$.-])([\p{L}\p{N}_$.-]+)(["']?\s*(?:\?\?=|\|\|=|&&=|\+=|[:=])\s*)/gu;
+  let safe = '', copied = 0, secretValues = 0;
+  for (let match = values.exec(text); match; match = values.exec(text)) {
     if (!isSecretKey(match[1])) continue;
-    const valueStart = start.lastIndex;
-    let end = valueStart, closed = false;
+    if (++secretValues > 2000) return null;
+    if (!/^["']?\s*[:=]\s*$/.test(match[2])) return null;
+    const valueStart = values.lastIndex;
+    const quote = text[valueStart];
+    if (quote !== '"' && quote !== "'" && quote !== '`') return null;
+    let end = valueStart + 1, closed = false;
     while (end < text.length) {
       if (text[end] === '\\') { end = Math.min(text.length, end + 2); continue; }
-      if (text[end++] === match[3]) { closed = true; break; }
+      if (text[end++] === quote) { closed = true; break; }
     }
-    if (!closed || match[3] === '`' && text.slice(valueStart, end).includes('${') || /^\s*(?:\+|\?|\.|\(|\[)/.test(text.slice(end))) return null;
-    safe += text.slice(copied, match.index) + match[1] + match[2] + match[3] + '<redacted>' + match[3];
-    copied = end; start.lastIndex = end;
+    if (!closed || quote === '`' && text.slice(valueStart, end).includes('${')) return null;
+    // Never skip comments: they can hide a continuation operator. A newline
+    // alone also does not terminate an expression in languages such as JS.
+    const next = text.slice(end).match(/^\s*([^\s]|$)/)?.[1];
+    if (next !== '' && ![';', ',', '}', ']'].includes(next ?? '')) return null;
+    safe += text.slice(copied, match.index) + match[1] + match[2] + quote + '<redacted>' + quote;
+    copied = end; values.lastIndex = end;
   }
   return redactSecretValues(safe + text.slice(copied));
 }
