@@ -157,6 +157,14 @@ describe('membership-owned controller links (#3345)', () => {
     }
     expect(await federationBindingSource.collect()).toEqual([]);
   });
+  it('does not replace verified metadata with an enabled startup-null identity, but learns a real off publication', async () => {
+    await learnFederationController('desk', info('controller-desk'));
+    await learnFederationController('desk', { agentId: null, enabled: true, name: 'Starting' });
+    expect(remoteFederationController('desk')).toMatchObject(info('controller-desk'));
+    await learnFederationController('desk', { agentId: null, enabled: false, name: 'Off' });
+    expect(remoteFederationController('desk')).toMatchObject({ agentId: null, enabled: false });
+    expect(controllerDirection(local, remote)).toBeUndefined();
+  });
   it('keeps the fixed-off tools despite any attempted switch or link write', async () => {
     await learnFederationController('desk', info('controller-desk'));
     for (const [from, to] of [[local, remote], [remote, local]]) {

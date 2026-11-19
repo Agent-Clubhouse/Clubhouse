@@ -38,6 +38,15 @@ Agents on any connected host that are waiting on you appear under **Needs you**,
 
 While a controller is connected, the satellite shows a lock screen naming the controller, and its own keyboard input is blocked. From there you can **Disconnect**, **Pause** to type locally for a while, or **Disconnect & disable Annex** to also turn off remote control. **Resume** hands control back after a pause.
 
+## Each direction, and forwards
+
+In **Settings > Annex Network**, each computer in your network says, in two short sentences under its name, whether this computer can reach it and whether it can reach this computer. Phones and one-to-one pairings don't show this. When only one works, the row says so and what to do next, such as "You can reach Studio, but it can't reach this computer."
+
+- To give a computer that's already paired a new address to reach it at, such as a local forward, click **Address** on its row and save it. You don't need to pair again. Clubhouse checks the address shows that computer's certificate before saving it, and keeps the old address if it doesn't.
+- Two computers that can reach each other only through forwards need one forward on each, and each saves its own address for the other.
+- If it was paired again with a new certificate, an address saved before is kept but not used. Save it under **Address** to check it again.
+- **Annex port** under **This computer** is the port a forward to this computer must reach. If another program had that port when Clubhouse started, it says which port Annex uses instead. The other program is left alone.
+
 ## Security
 
 - Everything stays on your local network. There's no cloud service in between.

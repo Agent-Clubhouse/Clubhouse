@@ -236,6 +236,8 @@ let unsubMembership: (() => void) | null = null;
 const MDNS_RESTART_DELAY_MS = 30_000;
 let serverPort = 0; // Main TLS port
 let boundHost = ''; // networkProfile.host while running
+/** Listener ports taken by something else at the last start (#3608), and where Annex listens instead. */
+let listenerPortsMoved: NonNullable<AnnexStatus['listenerPortsMoved']> = {};
 let serverGeneration = 0;
 const pendingListens = new Set<() => void>();
 let currentPin = '';
@@ -2760,7 +2762,15 @@ async function handleTlsPair(req: http.IncomingMessage, res: http.ServerResponse
     networkChannel.closeFor(fingerprint);
   }
   if (sessionOnly) { mobileSessionPeers.set(fingerprint, pairedPeer); devicesChanged(); }
-  else { mobileSessionPeers.delete(fingerprint); annexPeers.addPeer(pairedPeer); }
+  else {
+    mobileSessionPeers.delete(fingerprint);
+    // This machine's saved routes to it carry over for the same verified peer (#3608): its pinned certificate,
+    // or a new one its identity key signed for (checked above). An entry with no pin holds them back instead.
+    const stored = annexPeers.getPeer(fingerprint);
+    const continuity = !!stored?.tlsCertificateFingerprint
+      && (stored.tlsCertificateFingerprint === certFingerprint || (stored === previous && replacesPin));
+    annexPeers.addPeer(annexPeers.withSavedRoutes(stored, pairedPeer, continuity));
+  }
   if (joins && !sessionOnly) membership.noteLocalJoin(fingerprint);
   loggedRefusals.delete(fingerprint);
   broadcastToAllWindows(IPC.ANNEX.PEERS_CHANGED, annexPeers.listPeersForDisplay());
@@ -6158,7 +6168,14 @@ function startServer(strict = false): Promise<void> {
   const lastPorts = annexSettings.getLastPorts();
   const pairing = pairingServer;
 
-  const mainListening = listenPreferringPort(listenServer(mainServer, networkProfile.host), lastPorts.mainPort).then((port) => {
+  listenerPortsMoved = {};
+  const noteMoved = (which: 'main' | 'pairing') => (moved: { preferred: number; bound: number; code: string }) => {
+    // Diagnosed only (#3608): whatever holds the port is left alone.
+    listenerPortsMoved = { ...listenerPortsMoved, [which]: { preferred: moved.preferred, bound: moved.bound } };
+    appLog('core:annex', 'warn', `Annex ${which} port ${moved.preferred} was unavailable; listening on ${moved.bound} instead`, { meta: { code: moved.code } });
+  };
+
+  const mainListening = listenPreferringPort(listenServer(mainServer, networkProfile.host), lastPorts.mainPort, noteMoved('main')).then((port) => {
     if (mainServer !== (tlsServer || httpServer)) {
       if (strict) throw new Error('Annex stopped or changed while its main listener was binding.');
       return;
@@ -6177,7 +6194,7 @@ function startServer(strict = false): Promise<void> {
     if (strict) throw err;
   });
 
-  const pairingListening = listenPreferringPort(listenServer(pairing, networkProfile.host), lastPorts.pairingPort).then((port) => {
+  const pairingListening = listenPreferringPort(listenServer(pairing, networkProfile.host), lastPorts.pairingPort, noteMoved('pairing')).then((port) => {
     if (pairing !== pairingServer) {
       if (strict) throw new Error('Annex stopped or changed while its pairing listener was binding.');
       return;
@@ -6422,6 +6439,11 @@ export function stop(): void {
   appLog('core:annex', 'info', 'Annex server stopped');
 }
 
+/** The ports Annex's listeners are bound to right now (#3608); none while it isn't listening. */
+export function liveListenerPorts(): { mainPort?: number; pairingPort?: number } {
+  return { ...(serverPort > 0 && { mainPort: serverPort }), ...(pairingPort > 0 && { pairingPort }) };
+}
+
 export function getStatus(): AnnexStatus & { pairingPort: number; tlsEnabled: boolean; pairingPaused: boolean } {
   const settings = annexSettings.getSettings();
   const identity = annexIdentity.getPublicIdentity();
@@ -6439,6 +6461,7 @@ export function getStatus(): AnnexStatus & { pairingPort: number; tlsEnabled: bo
     tlsEnabled: !!tlsServer,
     pairingPaused,
     ...(certFingerprint ? { tlsCertificateFingerprint: certFingerprint } : {}),
+    ...((listenerPortsMoved.main || listenerPortsMoved.pairing) && { listenerPortsMoved }),
     ...pairingLink(identity?.fingerprint || '', certFingerprint, settings.alias || settings.deviceName),
   };
 }

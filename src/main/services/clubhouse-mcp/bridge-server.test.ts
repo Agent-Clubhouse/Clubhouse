@@ -69,9 +69,11 @@ vi.mock('../../util/ipc-broadcast', () => ({
 import * as bridgeServer from './bridge-server';
 import { mcpAdapter } from './mcp-adapter';
 import { registerAgentTools } from './tools/agent-tools';
+import { registerGroupProjectTools } from './tools/group-project-tools';
 import { appLog } from '../log-service';
 import { bindingManager } from './binding-manager';
 import { groupProjectRegistry } from '../group-project-registry';
+import { groupProjectHost } from '../group-project-host';
 import { registerBuiltinProviders } from '../../orchestrators';
 import { registerToolTemplate, registerGlobalTool, buildToolName, _resetForTesting as resetTools } from './tool-registry';
 import { setOrchestrationEnabled, _resetOrchestrationGateForTesting } from './orchestration-gate';
@@ -205,6 +207,38 @@ describe('BridgeServer', () => {
     expect(body.result.protocolVersion).toBe('2024-11-05');
     expect(body.result.capabilities.tools.listChanged).toBe(true);
     expect(body.result.serverInfo.name).toBe('clubhouse');
+  });
+
+  it.each(['read_bulletin', 'read_topic'] as const)('%s reports a read failure at the MCP boundary instead of an empty board', async (suffix) => {
+    const registrations = vi.spyOn(mcpAdapter, 'registerMcpCommand');
+    let read: Parameters<typeof mcpAdapter.registerMcpCommand>[0] | undefined;
+    try {
+      registerGroupProjectTools();
+      read = registrations.mock.calls.find(([definition]) => definition.mcp.nameSuffix === suffix)?.[0];
+    } finally { registrations.mockRestore(); }
+    resetTools();
+    if (!read) throw new Error(`Missing production ${suffix} definition`);
+    mcpAdapter.registerMcpCommand(read);
+    const binding = { agentId: 'agent-1', targetId: 'board', targetKind: 'group-project' as const, label: 'Board' };
+    bindingManager.bind('agent-1', binding);
+    const board = vi.spyOn(groupProjectRegistry, 'getSync').mockReturnValue({
+      id: 'board', name: 'Board', description: '', instructions: '', createdAt: '', metadata: {},
+    });
+    const failure = vi.spyOn(groupProjectHost, suffix === 'read_topic' ? 'readTopic' : 'readDigest')
+      .mockRejectedValue(new Error('Bulletin transport unavailable'));
+    try {
+      const { statusCode, body } = await makeRequest(port, 'POST', '/mcp/agent-1', {
+        jsonrpc: '2.0', id: 1, method: 'tools/call',
+        params: { name: buildToolName(binding, suffix), arguments: suffix === 'read_topic' ? { topic: 'general' } : {} },
+      }, 'test-nonce');
+      expect(statusCode).toBe(200);
+      expect(body.error).toEqual({ code: -32000, message: 'Bulletin transport unavailable' });
+      expect(body.result).toBeUndefined();
+      expect(failure).toHaveBeenCalledOnce();
+    } finally {
+      board.mockRestore();
+      failure.mockRestore();
+    }
   });
 
   it('serializes read, write and destructive annotations on global and scoped tools', async () => {

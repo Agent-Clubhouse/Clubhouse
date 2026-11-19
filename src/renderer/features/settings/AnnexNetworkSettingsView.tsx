@@ -35,6 +35,9 @@ export function AnnexNetworkSettingsView() {
   const [settingsLoadFailed, setSettingsLoadFailed] = useState(false);
   // On while either half runs, so an older server-only or client-only setup still shows its tools.
   const on = settings.enableServer || settings.enableClient;
+  const reverseInbound = settings.enableServer && settings.enableClient && devices.some((device) =>
+    device.role === 'member' && device.kind === 'desktop' && device.state === 'connected'
+    && device.reach?.inbound.state === 'up' && device.reach.inbound.via === 'reverse');
   const code = certificateCode(status.tlsCertificateFingerprint);
 
   useEffect(() => {
@@ -107,7 +110,9 @@ export function AnnexNetworkSettingsView() {
         </SettingsField>
         <SettingsField
           label="Only accept connections from this computer"
-          help="Listen only on this computer and turn off local discovery. Other computers on your network and your phone can reach this computer only through a forward you set up."
+          help={reverseInbound
+            ? "Listen only on this computer and turn off local discovery. Computers shown as reachable through this computer's connection don't need a forward here. Other computers and your phone still need a forward you set up."
+            : 'Listen only on this computer and turn off local discovery. Other computers on your network and your phone can reach this computer only through a forward you set up.'}
         >
           <Toggle aria-label="Only accept connections from this computer" checked={settings.loopbackOnly === true}
             onChange={(value) => { void saveCurrentSettings({ loopbackOnly: value }); }} />
@@ -224,6 +229,27 @@ export function AnnexNetworkSettingsView() {
             help={status.pairingHosts && status.pairingHosts.length > 0
               ? <span className="block font-mono text-ctp-text">{status.pairingHosts.join(', ')}</span>
               : 'Found once Annex Network is listening.'}
+          />
+          <SettingsField
+            label="Annex port"
+            testId="annex-listener-port"
+            help={(
+              <>
+                <span className="block font-mono text-ctp-text">{status.port || 'Not listening'}</span>
+                {status.listenerPortsMoved?.main
+                  ? `Port ${status.listenerPortsMoved.main.preferred} was in use by another program when Annex started, so Annex listens on ${status.listenerPortsMoved.main.bound} instead. A forward from another computer to this one needs port ${status.listenerPortsMoved.main.bound}. The other program was left alone.`
+                  : reverseInbound
+                    ? 'If you use a forward to this computer, it must reach this port.'
+                    : 'A forward from another computer to this one must reach this port.'}
+                {status.listenerPortsMoved?.pairing && (
+                  <span className="block" data-testid="annex-pairing-port-moved">
+                    {status.listenerPortsMoved.main
+                      ? `The identity-hint port ${status.listenerPortsMoved.pairing.preferred} was also in use, so it listens on ${status.listenerPortsMoved.pairing.bound}. Pairing and control don't use it.`
+                      : `The identity-hint port ${status.listenerPortsMoved.pairing.preferred} was in use by another program when Annex started, so it listens on ${status.listenerPortsMoved.pairing.bound}. Pairing and control don't use it.`}
+                  </span>
+                )}
+              </>
+            )}
           />
           <SettingsField
             label="Also reachable at"

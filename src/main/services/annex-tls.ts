@@ -283,6 +283,22 @@ export function probePeerCertificate(host: string, port: number, timeoutMs = 500
   });
 }
 
+/**
+ * Checks that `host:port` shows exactly the pinned certificate (#3608): a TLS
+ * handshake with the pinned options, then closed. Nothing is written, so a
+ * wrong endpoint never sees a request. Rejects with the TLS error (a mismatch
+ * has `PIN_MISMATCH_CODE`) or a timeout.
+ */
+export function verifyPinnedEndpoint(host: string, port: number, options: tls.ConnectionOptions, timeoutMs = 5000): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const socket = tls.connect({ ...options, host, port, ...(isIP(host) ? {} : { servername: host }) });
+    const fail = (err: Error) => { socket.destroy(); reject(err); };
+    socket.setTimeout(timeoutMs, () => fail(Object.assign(new Error('Timed out reaching that address'), { code: 'ETIMEDOUT' })));
+    socket.once('error', fail);
+    socket.once('secureConnect', () => { socket.destroy(); resolve(); });
+  });
+}
+
 /** The DER bytes of the certificate the other end of this socket showed. */
 export function extractPeerCertificateDer(socket: tls.TLSSocket): Buffer | undefined {
   const raw = socket.getPeerCertificate()?.raw;

@@ -9,7 +9,7 @@ vi.mock('electron', () => ({
   BrowserWindow: { getAllWindows: vi.fn(() => []) },
 }));
 
-vi.mock('../services/annex-server', () => ({ closeSocketsUnlessController: vi.fn() }));
+vi.mock('../services/annex-server', () => ({ closeSocketsUnlessController: vi.fn(), liveListenerPorts: vi.fn(() => ({})) }));
 vi.mock('../services/annex-peers', () => ({
   listPeersForDisplay: vi.fn(() => []),
   listPeers: vi.fn(() => [{ fingerprint: 'fp:member', role: 'member' }, { fingerprint: 'fp:phone', role: 'controller' }]),
@@ -20,6 +20,7 @@ vi.mock('../services/annex-client', () => ({
   requestAgentSettings: vi.fn(async () => ({ status: 'offline' })),
   requestControllerChatPage: vi.fn(async () => ({ status: 'offline' })),
   requestControllerChatSessions: vi.fn(async () => ({ status: 'offline' })),
+  setOwnListenerPortsProvider: vi.fn(),
   requestChatPage: vi.fn(async () => ({ events: [] })),
   requestChatSessions: vi.fn(async () => []),
   sendChatCommand: vi.fn(async () => ({ status: 'completed' })),
@@ -49,6 +50,8 @@ vi.mock('../services/annex-client', () => ({
   requestDeleteDurable: vi.fn(async () => ({})),
   requestWorktreeStatus: vi.fn(async () => ({})),
   requestBulletinDigest: vi.fn(async () => []),
+  requestBulletinTopicMessages: vi.fn(async () => []),
+  requestBulletinAllMessages: vi.fn(async () => []),
 }));
 
 import { ipcMain } from 'electron';
@@ -67,6 +70,12 @@ describe('annex-client-handlers', () => {
       handlers.set(channel, handler);
     });
     registerAnnexClientHandlers();
+  });
+
+  it("points the client's own-port check at the server's live listener ports (#3608)", async () => {
+    const annexClient = await import('../services/annex-client');
+    const annexServer = await import('../services/annex-server');
+    expect(annexClient.setOwnListenerPortsProvider).toHaveBeenCalledWith(annexServer.liveListenerPorts);
   });
 
   it('registers all expected IPC handlers', () => {
@@ -96,6 +105,16 @@ describe('annex-client-handlers', () => {
     const handler = handlers.get(IPC.ANNEX_CLIENT.GET_DISCOVERED)!;
     handler({});
     expect(annexClient.getDiscoveredServices).toHaveBeenCalled();
+  });
+
+  it.each([
+    [IPC.ANNEX_CLIENT.GP_BULLETIN_TOPIC, 'requestBulletinTopicMessages', ['sat-1', 'gp-1', 'general']],
+    [IPC.ANNEX_CLIENT.GP_BULLETIN_ALL, 'requestBulletinAllMessages', ['sat-1', 'gp-1']],
+  ] as const)('%s rejects an adapter failure rather than answering with an empty board', async (channel, method, args) => {
+    const failure = new Error('Bulletin transport unavailable');
+    vi.mocked(annexClient[method]).mockRejectedValueOnce(failure);
+    await expect(handlers.get(channel)!({}, ...args)).rejects.toBe(failure);
+    expect(annexClient[method]).toHaveBeenCalledOnce();
   });
 
   it('AGENT_DELETE_DURABLE passes the helper choice to the satellite (#3199)', async () => {

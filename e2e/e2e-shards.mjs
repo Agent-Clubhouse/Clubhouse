@@ -88,6 +88,10 @@ export const ANNEX_SHARDS = {
     'annex-v2/remote-control.spec.ts',
     'annex-v2/remote-pty.spec.ts',
   ],
+  3: ['annex-v2/reverse-chat.spec.ts'],
+  4: ['annex-v2/reverse-tools.spec.ts'],
+  5: ['annex-v2/reverse-network.spec.ts'],
+  6: ['annex-v2/reverse-handoff.spec.ts'],
 };
 
 /**
