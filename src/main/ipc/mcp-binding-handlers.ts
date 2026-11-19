@@ -9,7 +9,7 @@ import { federationReceiver } from '../services/dispatcher-federation-receiver';
  */
 
 import { parseAgentAddress } from '../../shared/agent-address';
-import { federationBindingSource, learnFederationController, localFederationController, watchFederation } from '../services/dispatcher-federation';
+import { federationBindingSource, initializedControllerPublication, learnFederationController, localFederationController, watchFederation } from '../services/dispatcher-federation';
 import { learnLeadShare, leadShare, startDispatcherLead } from '../services/dispatcher-federation-lead';
 import { getDispatcherPresence, onDispatcherPresenceChanged, watchDispatcherPresence } from '../services/dispatcher-presence';
 import { watchPeerPages } from '../services/dispatcher/dispatcher-peer-pages';
@@ -85,7 +85,7 @@ import * as projectStore from '../services/project-store';
 import * as agentConfig from '../services/agent-config';
 import { getConnectionGuidance, getConnectionGuidanceCatalog, previewConnectionGuidance, saveConnectionGuidance, startConnectionGuidance } from '../services/connection-guidance';
 import type { SaveConnectionGuidance } from '../../shared/connection-guidance';
-import { dispatcherDisplayName, getDispatcherChatConfig, getDispatcherState, isDispatcherAgentId, isDispatcherChatAgentId, isDispatcherEnabled } from '../services/dispatcher/dispatcher-service';
+import { dispatcherDisplayName, getDispatcherChatConfig, getDispatcherState, isDispatcherAgentId, isDispatcherChatAgentId, isDispatcherEnabled, isDispatcherIdentityInitialized, onDispatcherChanged } from '../services/dispatcher/dispatcher-service';
 
 function federationEnd(id: string) {
   const parsed = parseAgentAddress(id);
@@ -596,6 +596,15 @@ export function restorePersistedBindings(): Promise<void> {
       remoteDispatcher: federationReceiver,
       federation: {
         local: localFederationController, learn: learnFederationController,
+        ready: isDispatcherIdentityInitialized, publication: initializedControllerPublication,
+        onReady: (listener) => {
+          let previous = isDispatcherIdentityInitialized();
+          return onDispatcherChanged(() => {
+            const ready = isDispatcherIdentityInitialized();
+            if (ready && !previous) listener();
+            previous = ready;
+          });
+        },
         // The network-wide lead (#3351) rides the same exchange.
         extra: { local: leadShare, learn: learnLeadShare },
       },

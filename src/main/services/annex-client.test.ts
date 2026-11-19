@@ -3650,8 +3650,11 @@ describe('annex-client', () => {
     });
 
     it.each([
-      ['reverse', false], ['reverse', true], ['direct', false], ['direct', true],
-    ] as const)('diagnoses federation recovery over %s with controller publication ready=%s', async (route, ready) => {
+      ['reverse', false, 'ready'], ['reverse', true, 'ready'], ['direct', false, 'ready'], ['direct', true, 'ready'],
+      ['reverse', false, 'changed'], ['direct', false, 'changed'], ['reverse', false, 'off'], ['direct', false, 'off'],
+      ['reverse', false, 're-pair'], ['direct', false, 're-pair'], ['reverse', false, 'removed'], ['direct', false, 'removed'],
+      ['reverse', false, 'grant-revoked'], ['direct', false, 'grant-revoked'],
+    ] as const)('holds federation recovery over %s until publication is ready (initially %s, then %s)', async (route, ready, recovery) => {
       const { app } = await import('electron');
       const fs = await import('node:fs/promises');
       const os = await import('node:os');
@@ -3662,6 +3665,7 @@ describe('annex-client', () => {
       const grants = await import('./agent-grants-service');
       const federation = await import('./dispatcher-federation');
       const host = await import('./annex-agent-call-host');
+      const authorize = vi.spyOn(host, 'authorizeQueuedAnnexCall');
       const calls = await import('./annex-agent-calls');
       const { devicesChanged } = await import('./annex-device-signal');
       const base = await fs.mkdtemp(path.join(os.tmpdir(), 'reverse-federation-order-'));
@@ -3675,7 +3679,8 @@ describe('annex-client', () => {
       vi.spyOn(grants, 'effectiveAgentGrants').mockResolvedValue([{ action: 'agent.message', target: { kind: 'connected' }, mode: 'allow' }]);
       const fingerprint = Array(16).fill('fa').join(':');
       const peer = { fingerprint, publicKey: 'key', alias: 'Receiver', icon: '', color: '', role: 'member' as const,
-        kind: 'desktop' as const, pairedAt: '', lastSeen: '', tlsCertificateFingerprint: 'PIN', knownHosts: [] as string[], mainPort: 9443 };
+        kind: 'desktop' as const, pairedAt: '', lastSeen: '', tlsCertificateFingerprint: 'PIN', knownHosts: [] as string[], mainPort: 9443,
+        pairingId: undefined as string | undefined };
       vi.mocked(annexPeers.listPeers).mockReturnValue([peer]);
       vi.mocked(annexPeers.getPeer).mockReturnValue(peer);
       vi.mocked(annexControl.getLinkReadiness).mockRestore();
@@ -3724,9 +3729,10 @@ describe('annex-client', () => {
           machineName: () => 'Receiver', supportsDurableDelivery: async () => true },
         deliveryStore: { get: () => structuredClone(file), update: async (change) => { change(file); },
           clearForTesting: async () => { file = { version: 1, inbox: [], outbox: [], deliveries: [] }; } },
-        authorizeQueuedCall: host.authorizeQueuedAnnexCall, listDirections: () => [],
+        authorizeQueuedCall: authorize, listDirections: () => [],
         runTool: async () => ({ content: [] }), describeLocalAgent: async () => undefined,
-        federation: { local: () => ({ ...publication, agentId: local.id }), learn: federation.learnFederationController },
+        federation: { local: () => ({ agentId: local.id, name: 'Controller', enabled: true }), learn: federation.learnFederationController,
+          ready: () => true, publication: federation.initializedControllerPublication },
       });
       try {
         await new Promise<void>((resolve) => setImmediate(resolve));
@@ -3735,6 +3741,7 @@ describe('annex-client', () => {
         expect(file.outbox).toHaveLength(1);
         const queued = file.outbox[0];
         expect(await host.authorizeQueuedAnnexCall(queued)).toEqual({ allowed: true });
+        authorize.mockClear();
         const openDirect = async () => {
           peer.knownHosts = ['10.0.0.4'];
           annexClient.connect(fingerprint);
@@ -3747,22 +3754,35 @@ describe('annex-client', () => {
           socket.emit('message', Buffer.from(JSON.stringify({ v: 1, type: 'hello', features: ['request'] })));
         } else await openDirect();
         await vi.waitFor(() => expect(calls.getDelivery(local.id, queued.id)).toMatchObject(ready
-          ? { state: 'delivered', attempts: 1 } : { state: 'refused', reason: 'authorization_revoked', attempts: 0 }));
+          ? { state: 'delivered', attempts: 1 } : { state: 'queued', reason: 'waiting_for_controller', attempts: 0 }));
         expect(exchanges).toEqual([ready ? 'target-controller' : null]);
         if (!ready) {
           expect(received).toEqual([]);
-          expect(federation.remoteFederationController(fingerprint)?.agentId).toBeNull();
-          expect(await host.authorizeQueuedAnnexCall(queued)).toEqual({ allowed: false, reason: 'The sender connection or its tool permission was removed.' });
+          expect(federation.remoteFederationController(fingerprint)?.agentId).toBe('target-controller');
+          expect(authorize).not.toHaveBeenCalled();
         }
         publication.agentId = 'target-controller';
-        if (route === 'reverse') await openDirect();
+        if (route === 'reverse' && recovery === 'ready') await openDirect();
         expect(connected).toHaveBeenCalledExactlyOnceWith(fingerprint);
-        await calls.syncDirectionsWith(fingerprint);
+        if (recovery === 'changed') publication.agentId = 'replacement-controller';
+        if (recovery === 'off') publication.enabled = false;
+        if (recovery === 're-pair') peer.pairingId = 'new-pairing';
+        if (recovery === 'removed') vi.mocked(annexPeers.listPeers).mockReturnValue([]);
+        if (recovery === 'grant-revoked') vi.mocked(grants.effectiveAgentGrants).mockResolvedValue([]);
+        if (!ready) vi.spyOn(Date, 'now').mockReturnValue(Date.now() + calls.READINESS_RETRY_MS + 1);
+        await calls.flushOutbox(fingerprint);
+        if (recovery !== 'ready') {
+          expect(calls.getDelivery(local.id, queued.id)).toMatchObject({ state: 'refused', attempts: 0,
+            reason: recovery === 're-pair' ? 'pairing_changed' : recovery === 'removed' ? 'peer_revoked' : 'authorization_revoked' });
+          expect(received).toEqual([]);
+          if (recovery === 'changed' || recovery === 'grant-revoked') expect(authorize).toHaveBeenCalledOnce();
+          else expect(authorize).not.toHaveBeenCalled();
+          return;
+        }
         expect(federation.remoteFederationController(fingerprint)?.agentId).toBe('target-controller');
         expect(await host.authorizeQueuedAnnexCall(queued)).toEqual({ allowed: true });
-        await calls.flushOutbox(fingerprint);
-        expect(calls.getDelivery(local.id, queued.id)).toMatchObject({ state: ready ? 'delivered' : 'refused' });
-        expect(received).toEqual(ready ? [queued.id] : []);
+        expect(calls.getDelivery(local.id, queued.id)).toMatchObject({ state: 'delivered', attempts: 1 });
+        expect(received).toEqual([queued.id]);
         devicesChanged();
       } finally {
         stop(); offConnected(); offFederation(); annexClient.stopClient(); annexControl.resetControlForTests();

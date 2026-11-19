@@ -11,7 +11,7 @@ import { listPeers } from './annex-peers';
 import { controllerDirection, remoteFederationController } from './dispatcher-federation';
 import { setFederationHandoffObserver, setFederationRequestRouter } from './dispatcher-federation-policy';
 import { createFederatedRequests, createFederationRequestStore, FederationInputNotReady, type FederatedRequests } from './dispatcher-federation-requests';
-import { dispatcherDisplayName, getDispatcherAgentId, isDispatcherEnabled, onDispatcherChanged } from './dispatcher/dispatcher-service';
+import { dispatcherDisplayName, getDispatcherAgentId, isDispatcherEnabled, isDispatcherIdentityInitialized, onDispatcherChanged } from './dispatcher/dispatcher-service';
 import { beginRemoteRequest, getRequest, noteHandedOff, settleFederatedRequest, workTurnMark } from './dispatcher/dispatcher-requests';
 import { deliverToDispatcher } from './clubhouse-mcp/tools/dispatcher-delivery';
 import { deliverToChat } from './dispatcher/dispatcher-channel';
@@ -139,10 +139,13 @@ export function startFederatedRequests(): () => void {
       return parent ? { rootId: parent.cause.rootId, depth: nextFederationDepth(parent.cause.depth), parentId: parent.id } : undefined;
     },
   });
-  const reconcile = (): void => { void instance.reconcile().catch((err) => {
-    tel.exception(Object.assign(new Error('federated_request_reconcile_failed'), { stack: undefined }), { origin: 'main', handled: true });
-    appLog('core:dispatcher', 'warn', 'Federated requests could not be reconciled', { meta: { error: err instanceof Error ? err.message : String(err) } });
-  }); };
+  const reconcile = (): void => {
+    if (!isDispatcherIdentityInitialized()) return;
+    void instance.reconcile().catch((err) => {
+      tel.exception(Object.assign(new Error('federated_request_reconcile_failed'), { stack: undefined }), { origin: 'main', handled: true });
+      appLog('core:dispatcher', 'warn', 'Federated requests could not be reconciled', { meta: { error: err instanceof Error ? err.message : String(err) } });
+    });
+  };
   const timer = setInterval(reconcile, 5_000); timer.unref(); reconcile();
   return () => { active = false; clearInterval(timer); stopRouter(); stopControllerWatch(); stopContext(); stopHandoffs(); stopTelemetry(); if (requests === instance) requests = undefined; };
 }
