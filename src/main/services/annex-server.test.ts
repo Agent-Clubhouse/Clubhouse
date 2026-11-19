@@ -177,6 +177,7 @@ vi.mock('./agent-config', () => {
   const listDurable = vi.fn().mockReturnValue([]);
   return {
   listDurable,
+  getDurableConfig: vi.fn(),
   peekDurableConfigs: async (projectPath: string) => listDurable(projectPath),
   peekCachedDurableConfig: (_projectPath: string, id: string) => listDurable(_projectPath).find((config: { id: string }) => config.id === id) ?? null,
   readAgentIconData: vi.fn().mockReturnValue(null),
@@ -2498,6 +2499,90 @@ describe('annex-server', () => {
   });
 
   describe('mobile transport contract', () => {
+    it.each(['transcript-native', 'transcript-same-native', 'folders-native', 'folders-same-native', 'stable'] as const)('refuses same-object runtime generation replacement across awaited page work: %s', async (mode) => {
+      vi.mocked(projectStore.list).mockReturnValue([{ id: 'p', name: 'Project', path: '/test/project' }] as never);
+      vi.mocked(agentConfigModule.listDurable).mockReturnValue([{ id: 'a', name: 'A', color: 'blue', createdAt: '2026-01-01' }] as never);
+      let native = 'native-a', generation = 'generation-a';
+      const rotate = () => { generation = 'generation-b'; if (mode.endsWith('-native') && !mode.includes('same-native')) native = 'native-b'; };
+      const events = [{ v: 2, agentId: 'a', sessionId: 'same-app', seq: 2, ts: 2, type: 'agent_message', data: { messageId: 'm', text: 'OLD_GENERATION_BODY' } }];
+      let entered!: () => void, release!: () => void;
+      const admission = new Promise<void>((resolve) => { entered = resolve; });
+      const gate = new Promise<void>((resolve) => { release = resolve; });
+      const runtime = { kind: 'chat', agentId: 'a', isRunning: () => true, getState: () => 'idle', getSessionId: () => 'same-app', getNativeSessionId: () => native, getDisplayRunId: () => generation,
+        readTranscript: async () => { if (mode.startsWith('transcript-')) { entered(); await gate; } return { events }; } };
+      registerChatRuntime(runtime as never);
+      const roots = vi.mocked(agentFolders); const previous = roots.getMockImplementation();
+      roots.mockImplementation(async () => { if (mode.startsWith('folders-')) { entered(); await gate; } return ['/test/project']; });
+      try {
+        const { port, token } = await startAndPair();
+        const pending = request(port, 'GET', '/api/v1/mobile/agents/a/chat', undefined, authHeaders(token));
+        if (mode !== 'stable') { await admission; rotate(); release(); }
+        const response = await pending;
+        expect.soft(response.status).toBe(mode === 'stable' ? 200 : 409);
+        if (mode === 'stable') expect(JSON.parse(response.body).displayRunId).toBe('generation-a');
+        else { expect.soft(response.body).not.toContain('OLD_GENERATION_BODY'); expect.soft(response.body).not.toContain('generation-b'); }
+      } finally { release(); roots.mockImplementation(previous!); clearChatRuntimes(); }
+    });
+
+    it.each(['corrupt-projects', 'backup-only-projects', 'cached-prior-roots'] as const)('never uses recovering or cached generic roots for an attested desktop quick read: %s', async (mode) => {
+      const root = await fsp.mkdtemp(path.join(os.tmpdir(), 'annex-quick-passive-roots-'));
+      const profile = path.join(root, 'profile'), project = path.join(root, 'project'), prior = path.join(root, 'PRIOR_PRIVATE_PROJECT');
+      await fsp.mkdir(profile); await fsp.mkdir(project); await fsp.mkdir(prior); await fsp.mkdir(path.join(project, '.clubhouse'));
+      const inventory = path.join(profile, 'projects.json');
+      const payload = JSON.stringify({ version: 1, projects: [{ id: 'p', name: 'P', path: project }] });
+      await fsp.writeFile(inventory, payload);
+      await fsp.writeFile(path.join(profile, 'projects.json.bak'), payload);
+      await fsp.writeFile(path.join(project, '.clubhouse', 'agents.json.bak'), JSON.stringify([{ id: 'root-race-quick', name: 'Legacy', color: 'blue', createdAt: '2026-01-01' }]));
+      const base = vi.spyOn(baseDir, 'getBaseDirPath').mockReturnValue(profile);
+      const actualFiles = await vi.importActual<typeof import('./agent-runtime/chat-files')>('./agent-runtime/chat-files');
+      const actualProjects = await vi.importActual<typeof import('./project-store')>('./project-store');
+      const actualConfig = await vi.importActual<typeof import('./agent-config')>('./agent-config');
+      actualFiles.clearAgentFoldersCache(); clearQuickAgentRuns();
+      const disk = async (folder: string, prefix = ''): Promise<Record<string, unknown>> => {
+        const out: Record<string, unknown> = {};
+        for (const item of await fsp.readdir(folder, { withFileTypes: true })) {
+          const file = path.join(folder, item.name), rel = prefix + item.name;
+          if (item.isDirectory()) Object.assign(out, await disk(file, rel + '/'));
+          else { const stat = await fsp.lstat(file, { bigint: true }); out[rel] = { bytes: (await fsp.readFile(file)).toString('base64'), ino: String(stat.ino), mode: String(stat.mode), mtime: String(stat.mtimeNs), ctime: String(stat.ctimeNs) }; }
+        }
+        return out;
+      };
+      let expectedDisk: Record<string, unknown> = {};
+      if (mode === 'cached-prior-roots') {
+        agentRegistry.register('root-race-quick', { projectPath: prior, cwd: prior, orchestrator: 'claude-code', runtime: 'chat' });
+        expect(await actualFiles.agentFolders('root-race-quick')).toContain(prior);
+      }
+      const run = beginQuickAgentRun({ agentId: 'root-race-quick', name: 'Quick', projectPath: project, cwd: project });
+      agentRegistry.register('root-race-quick', { projectPath: project, cwd: project, orchestrator: 'claude-code', runtime: 'chat' });
+      const runtime = { kind: 'chat', agentId: 'root-race-quick', isRunning: () => true, getState: () => 'idle', getSessionId: () => 's', getNativeSessionId: () => 'n', getDisplayRunId: () => 'run-a', readTranscript: async () => {
+        if (mode !== 'cached-prior-roots') {
+          agentRegistry.untrack('root-race-quick');
+          if (mode === 'corrupt-projects') { await fsp.writeFile(inventory, '{broken'); await fsp.writeFile(path.join(project, '.clubhouse', 'agents.json'), '{broken'); }
+          else await fsp.unlink(inventory);
+        }
+        expectedDisk = await disk(root);
+        return { events: [{ v: 2, agentId: 'root-race-quick', sessionId: 's', seq: 1, ts: 1, type: 'session_state', data: { state: 'idle' } }] };
+      } };
+      registerChatRuntime(runtime as never); noteQuickAgentRuntime(run, agentRegistry.get('root-race-quick'), () => getAgentRuntime('root-race-quick') === runtime);
+      const roots = vi.mocked(agentFolders), rootsPrevious = roots.getMockImplementation();
+      roots.mockImplementation(async (id) => {
+        const list = vi.mocked(projectStore.list), config = vi.mocked(agentConfigModule.getDurableConfig);
+        const listPrevious = list.getMockImplementation(), configPrevious = config.getMockImplementation();
+        list.mockImplementation(actualProjects.list); config.mockImplementation(actualConfig.getDurableConfig);
+        try { return await actualFiles.agentFolders(id); }
+        finally { list.mockImplementation(listPrevious!); config.mockImplementation(configPrevious!); }
+      });
+      try {
+        const { port } = await startAndPair();
+        vi.mocked(annexPeers.getPeer).mockReturnValue({ ...TEST_CONTROLLER, kind: 'desktop' });
+        const response = await request(port, 'GET', '/api/v1/mobile/agents/root-race-quick/chat');
+        expect.soft(await disk(root)).toEqual(expectedDisk);
+        expect.soft(roots).not.toHaveBeenCalled();
+        expect(response.status).toBe(mode === 'cached-prior-roots' ? 200 : 409);
+        if (mode === 'cached-prior-roots') { const body = JSON.parse(response.body); expect.soft(body.contentRoots).toEqual([]); expect.soft(body.contentAnyPath).toBe(false); expect.soft(response.body).not.toContain('PRIOR_PRIVATE_PROJECT'); }
+      } finally { roots.mockImplementation(rootsPrevious!); actualFiles.clearAgentFoldersCache(); actualConfig.clearAgentConfigCache(project); base.mockRestore(); clearQuickAgentRuns(); clearChatRuntimes(); agentRegistry.untrack('root-race-quick'); await fsp.rm(root, { recursive: true, force: true }); }
+    });
+
     it.each(['same', 'phone', 'unbound', 'reused-registration', 'replaced-during-read', 'removed-during-read', 'unreadable-project', 'revoked-during-read', 'historical-session'] as const)('reads only an attested direct desktop quick current session: %s', async (mode) => {
       const root = await fsp.mkdtemp(path.join(os.tmpdir(), 'annex-direct-quick-'));
       const profile = path.join(root, 'profile'), project = path.join(root, 'project');
