@@ -79,6 +79,17 @@ export function RemoteAgentDetailsView({ agent, chat, onShowInStream, missedSuba
   const result: Result = received.status === 'ok' && received.value.agentId !== agentId ? { status: 'error' } : received;
   const details = result.status === 'ok' ? result.value : null;
   const hydrated = useRemoteDetailsChat(agent.id, details, connected, snapshot, transport.current.generation);
+  const runKey = `${agent.id}:${details?.providerId ?? ''}:${details?.sessionId ?? ''}:${details?.nativeSessionId ?? ''}:${details?.spawnedAt ?? ''}:${transport.current.generation}`;
+  const suspectRun = useRef<string | null>(null);
+  const retriedRun = useRef<string | null>(null);
+  if (hydrated.stopped && details?.running) suspectRun.current = runKey;
+  if (hydrated.chat || details && !details.running) suspectRun.current = null;
+  const runtimeUnconfirmed = !!details?.running && suspectRun.current === runKey;
+  useEffect(() => {
+    if (!hydrated.stopped || !details?.running || retriedRun.current === runKey) return;
+    retriedRun.current = runKey;
+    setRetry((n) => n + 1);
+  }, [hydrated.stopped, details?.running, runKey]);
   const status = details?.status ?? agent.status;
   const asleep = status === 'sleeping' || status === 'error';
   const card = (id: RemoteDetailsCardId) => details?.cards.find((c) => c.id === id);
@@ -138,13 +149,13 @@ export function RemoteAgentDetailsView({ agent, chat, onShowInStream, missedSuba
       {hydrated.partial && <p>Only part of the host transcript is loaded. Earlier provider reports and subagent activity may be missing.</p>}
       {['error', 'rate_limited', 'unavailable'].includes(result.status) && <Button kind="ghost" onClick={() => setRetry((n) => n + 1)}>Refresh</Button>}
     </div>
-    <RemoteSettingsCard agent={{ ...agent, status }} chat={session} result={result.status === 'unavailable' ? undefined : settingsResult} onRetry={() => setRetry((n) => n + 1)}>{card('settings') && <Evidence card={card('settings')!} />}</RemoteSettingsCard>
+    <RemoteSettingsCard agent={{ ...agent, status }} chat={session} runtimeUnconfirmed={runtimeUnconfirmed} result={result.status === 'unavailable' ? undefined : settingsResult} onRetry={() => setRetry((n) => n + 1)}>{card('settings') && <Evidence card={card('settings')!} />}</RemoteSettingsCard>
     {!dispatcher && basic('changes', 'Changes')}
     {!dispatcher && agent.kind === 'durable' && !agent.parentAgentId && basic('dispatcher', 'Dispatcher')}
     {!dispatcher && agent.kind === 'durable' && basic('orchestrate', 'Orchestration')}
-    {showSubagents && chat && map && <DetailsCard id="subagents" title="Subagents" summary={subagentSummary(map)} open={open('subagents')} onToggle={() => toggleCard('subagents')}>
+    {showSubagents && session && map && <DetailsCard id="subagents" title="Subagents" summary={subagentSummary(map)} open={open('subagents')} onToggle={() => toggleCard('subagents')}>
       {(!connected || asleep || snapshotUnavailable) && <CardNote>Last loaded session snapshot. Current subagent status is not confirmed.</CardNote>}
-      <SubagentList agent={agent} state={chat} map={map} selected={selectedSub} onSelect={setSelectedSub} onShowInStream={(id) => onShowInStream?.(id)} missedSubagentId={missedSubagentId} />
+      <SubagentList agent={agent} state={session} map={map} selected={selectedSub} onSelect={setSelectedSub} onShowInStream={(id) => onShowInStream?.(id)} missedSubagentId={missedSubagentId} />
     </DetailsCard>}
     {basic('connections', 'Connections')}
     {dispatcher && <DetailsCard id="other-machines" title="Other machines" summary={otherMachines ? otherMachinesSummary(otherMachines) : 'not shared here'} open={open('other-machines')} onToggle={() => toggleCard('other-machines')}>
@@ -153,7 +164,8 @@ export function RemoteAgentDetailsView({ agent, chat, onShowInStream, missedSuba
     </DetailsCard>}
     {basic('actions', 'Actions')}
     {!dispatcher && <DetailsCard id="skills-mcp" title="Skills and MCP" summary={asleep ? 'last session evidence' : 'connections and session reports'} open={open('skills-mcp')} onToggle={() => toggleCard('skills-mcp')}>
-      {card('skills-mcp') ? <Evidence card={card('skills-mcp')!} /> : <CardNote>{resultMessage(result.status)}</CardNote>}
+      {runtimeUnconfirmed && <CardNote>The session stopped or reported an error after the host read. Current MCP status is unconfirmed.</CardNote>}
+      {card('skills-mcp') ? <Evidence card={runtimeUnconfirmed ? { ...card('skills-mcp')!, rows: card('skills-mcp')!.rows.filter((r) => r.label !== 'Clubhouse MCP') } : card('skills-mcp')!} /> : <CardNote>{resultMessage(result.status)}</CardNote>}
       {liveMcp.rows.map((m) => <CardRow key={m.name} label={m.name}>{m.status}{m.reason ? ` · ${m.reason}` : ''}</CardRow>)}
       {reported && <>
         <CardNote>{asleep || !connected ? 'Last session snapshot.' : 'Session snapshot.'} Provider-reported names do not prove a skill was used or executed. Filesystem scope and origin are not reported.</CardNote>
@@ -164,12 +176,13 @@ export function RemoteAgentDetailsView({ agent, chat, onShowInStream, missedSuba
     </DetailsCard>}
     {!dispatcher && <DetailsCard id="session" title={asleep ? 'Last session' : 'Session'} summary={cost ?? ''} open={open('session')} onToggle={() => toggleCard('session')}>
       <CardRow label="Runs on">{provider}{session?.driver ? ` · ${DRIVER_LABELS[session.driver] ?? session.driver}${session.cliVersion ? ` ${session.cliVersion}` : ''}` : agent.executionMode === 'pty' ? ' · CLI' : ''}</CardRow>
-      {!asleep && <CardRow label="Usage">{cost || tokens ? [cost, tokens ? `${formatTokens(tokens)} tokens` : null].filter(Boolean).join(' · ') : session ? 'Not reported in the loaded session snapshot' : 'Not reported in the CLI view'}</CardRow>}
-      {status === 'running' && details?.spawnedAt && <CardRow label="Running">{formatDuration(Math.max(0, Date.now() - details.spawnedAt))}</CardRow>}
+      {!asleep && <CardRow label="Usage">{cost || tokens ? [cost, tokens ? `${formatTokens(tokens)} tokens` : null].filter(Boolean).join(' · ') : session ? 'Not reported in the loaded session snapshot' : agent.executionMode === 'pty' && details?.settings?.runtime === 'terminal' ? 'Not reported in the CLI view' : 'Current usage is not available from the host'}</CardRow>}
+      {!runtimeUnconfirmed && status === 'running' && details?.spawnedAt && <CardRow label="Running">{formatDuration(Math.max(0, Date.now() - details.spawnedAt))}</CardRow>}
       {ctx && ctxPct !== null && <section aria-label="Context window" data-testid="details-session-context"><CardRow label="Context window" labelWidth="wide">{ctxPct}% of {formatTokens(ctx.size)}{ctx.window === 'input' ? ' input' : ''}</CardRow><div className="pr-3.5 pl-[33px] py-1 text-xs"><UsageBar pct={ctxPct} /><p>{formatTokens(ctx.used)} of {formatTokens(ctx.size)} {ctx.window === 'input' ? 'input ' : ''}tokens</p>{ctx.window === 'input' && <p>{provider} reports the room left for input after its output reserve, so its own total can be larger.</p>}<p>{provider} compacts the conversation on its own near the limit.</p></div></section>}
       {limits.length > 0 && <CardRow label="Plan limits"><span className="flex flex-col gap-1">{limits.map((l) => <span key={l.window}>{limitName(l.window)} {limitLabel(l)}{l.resetsAt ? ` · resets ${new Date(l.resetsAt).toLocaleString()}` : ''}</span>)}</span></CardRow>}
       {asleep && agent.lastSleep && <><CardRow label="Ended">{formatAgo(Date.parse(agent.lastSleep.at))}</CardRow><CardRow label="Why">{describeSleep(agent.lastSleep)}</CardRow></>}
-      {card('session') ? <Evidence card={card('session')!} /> : <CardNote>{resultMessage(result.status)}</CardNote>}
+      {runtimeUnconfirmed && <CardNote>Current run state is not confirmed. Refreshing the host’s lifecycle evidence.</CardNote>}
+      {card('session') ? <Evidence card={runtimeUnconfirmed ? { ...card('session')!, rows: card('session')!.rows.filter((r) => r.label !== 'Status') } : card('session')!} /> : <CardNote>{resultMessage(result.status)}</CardNote>}
     </DetailsCard>}
     {!dispatcher && basic('canvases', 'Canvases')}
   </aside>;

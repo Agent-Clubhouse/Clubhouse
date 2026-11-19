@@ -13,7 +13,7 @@ const read = vi.fn();
 const chatPage = vi.fn();
 const page = (version = '1.2.3', extra = {}) => ({ events: [
   { v: 2, agentId: 'a1', sessionId: 's1', seq: 1, ts: 1, type: 'session_started', data: { provider: 'claude-code', driver: 'claude_agent_sdk', nativeSessionId: 'n1', cliVersion: version, resumed: false, cwd: '/host', capabilities: MINIMAL_CHAT_CAPABILITIES } },
-  { v: 2, agentId: 'a1', sessionId: 's1', seq: 2, ts: 2, type: 'session_info', data: { nativeSessionId: 'n1', providerSkills: { provider: 'claude-code', driver: 'claude_agent_sdk', source: 'system/init', nativeSessionId: 'n1', names: ['host-skill'] } } },
+  { v: 2, agentId: 'a1', sessionId: 's1', seq: 2, ts: 2, type: 'session_info', data: { nativeSessionId: 'n1', mcpServers: [{ name: 'PROVIDER_MCP', status: 'connected' }], providerSkills: { provider: 'claude-code', driver: 'claude_agent_sdk', source: 'system/init', nativeSessionId: 'n1', names: ['host-skill'] } } },
   { v: 2, agentId: 'a1', sessionId: 's1', seq: 3, ts: 3, type: 'model_changed', data: { modelId: 'model', effort: 'high', effortIsDefault: true } },
 ], readOnly: false, ...extra });
 const fixture = (): RemoteAgentDetails => ({ version: 1, agentId: 'a1', readOnly: true, readAt: 1, providerId: 'claude-code', running: true, status: 'running', spawnedAt: null, sessionId: 's1', nativeSessionId: 'n1',
@@ -142,5 +142,58 @@ describe('remote full Details host evidence', () => {
     act(() => satellite());
     await screen.findByText('Host CLI Fresh cut');
     expect(screen.getByTestId('remote-details-freshness')).toHaveTextContent('Only part of the host transcript is loaded');
+  });
+  it.each(['readOnly', 'error', 'session-ended'] as const)('withholds current claims after Details succeeds but delayed hydration is %s', async (mode) => {
+    const value = fixture();
+    value.spawnedAt = 1;
+    value.cards.find((c) => c.id === 'skills-mcp')!.rows.push({ label: 'Clubhouse MCP', value: 'Connected · CURRENT_HANDSHAKE' });
+    value.cards.find((c) => c.id === 'session')!.rows.push({ label: 'Status', value: 'running' });
+    read.mockResolvedValue({ status: 'ok', value });
+    const stopped = page('HISTORICAL_VERSION', mode === 'readOnly' ? { readOnly: true, state: 'sleeping' } : mode === 'error' ? { state: 'error' } : {});
+    if (mode === 'session-ended') stopped.events.push({ v: 2, agentId: 'a1', sessionId: 's1', seq: 4, ts: 4, type: 'session_ended', data: { reason: 'stopped' } } as never);
+    let finish!: (value: unknown) => void;
+    chatPage.mockResolvedValue(stopped).mockImplementationOnce(() => new Promise((resolve) => { finish = resolve; }));
+    render(<AgentDetails agent={agent} />);
+    await waitFor(() => expect(chatPage).toHaveBeenCalledTimes(1));
+    // The independent Details read has already said running; hydration now contradicts it on the same IDs.
+    expect(read).toHaveBeenCalledTimes(1);
+    await act(async () => { finish(stopped); });
+    for (const id of ['skills-mcp', 'session']) {
+      const toggle = screen.getByTestId(`details-card-${id}-toggle`);
+      if (toggle.getAttribute('aria-expanded') !== 'true') fireEvent.click(toggle);
+    }
+    await waitFor(() => expect(read).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(screen.getByTestId('details-card-session')).toHaveTextContent('Current run state is not confirmed'));
+    expect(screen.queryByText(/HISTORICAL_VERSION/)).not.toBeInTheDocument();
+    expect(screen.queryByTestId('details-setting-effort')).not.toBeInTheDocument();
+    expect(screen.queryByText('host-skill')).not.toBeInTheDocument();
+    expect(screen.queryByText('PROVIDER_MCP')).not.toBeInTheDocument();
+    expect(screen.queryByText(/CURRENT_HANDSHAKE/)).not.toBeInTheDocument();
+    expect(screen.getByTestId('details-setting-runs-in')).toHaveTextContent('current run not confirmed');
+    expect(screen.getByTestId('details-card-session')).not.toHaveTextContent('Running');
+    expect(screen.getByTestId('details-card-session')).not.toHaveTextContent('Last session');
+    expect(useChatStore.getState().remoteReadReceipts[agent.id]).toMatchObject({ live: mode !== 'readOnly', state: mode === 'session-ended' ? null : mode === 'readOnly' ? 'sleeping' : 'error' });
+    // The unchanged contradictory read must not form a poll loop.
+    await act(async () => { await new Promise((resolve) => setTimeout(resolve, 220)); });
+    expect(read).toHaveBeenCalledTimes(2);
+  });
+  it('invalidates a successful live receipt after a later same-session stop, including a failed lifecycle reread', async () => {
+    const value = fixture();
+    value.cards.find((c) => c.id === 'skills-mcp')!.rows.push({ label: 'Clubhouse MCP', value: 'Connected · CURRENT_HANDSHAKE' });
+    read.mockResolvedValueOnce({ status: 'ok', value }).mockResolvedValue({ status: 'error' });
+    render(<AgentDetails agent={agent} />);
+    await screen.findByText('Host CLI 1.2.3');
+    fireEvent.click(screen.getByTestId('details-card-skills-mcp-toggle'));
+    expect(screen.getByText('host-skill')).toBeInTheDocument();
+    expect(screen.getByText('PROVIDER_MCP')).toBeInTheDocument();
+    act(() => useChatStore.getState().applyEvent({ v: 2, agentId: agent.id, sessionId: 's1', seq: 4, ts: 4, type: 'session_ended', data: { reason: 'error' } }));
+    expect(screen.queryByText('Host CLI 1.2.3')).not.toBeInTheDocument();
+    expect(screen.queryByText('host-skill')).not.toBeInTheDocument();
+    expect(screen.queryByText('PROVIDER_MCP')).not.toBeInTheDocument();
+    expect(screen.queryByText(/CURRENT_HANDSHAKE/)).not.toBeInTheDocument();
+    await waitFor(() => expect(read).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(screen.getByTestId('remote-details-freshness')).toHaveTextContent('Couldn’t read details'));
+    expect(screen.queryByText(/CURRENT_HANDSHAKE/)).not.toBeInTheDocument();
+    expect(screen.queryByText('Host CLI 1.2.3')).not.toBeInTheDocument();
   });
 });

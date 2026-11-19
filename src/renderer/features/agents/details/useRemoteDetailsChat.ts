@@ -7,16 +7,19 @@ export function useRemoteDetailsChat(agentId: string, details: RemoteAgentDetail
   const receipt = useChatStore((s) => s.remoteReadReceipts[agentId]);
   const chat = useChatStore((s) => s.agents[agentId]);
   const loading = useChatStore((s) => s.loading[agentId]);
-  const key = `${agentId}:${connected}:${generation}:${details?.sessionId ?? ''}:${details?.nativeSessionId ?? ''}:${details?.status ?? ''}`;
+  const live = useChatStore((s) => s.live[agentId]);
+  const key = `${agentId}:${connected}:${generation}:${details?.providerId ?? ''}:${details?.sessionId ?? ''}:${details?.nativeSessionId ?? ''}:${details?.spawnedAt ?? ''}:${details?.status ?? ''}`;
   const expected = useRef({ key: '', snapshot, revision: 0 });
   if (expected.current.key !== key || expected.current.snapshot !== snapshot) expected.current = { key, snapshot, revision: remoteTranscriptRevision(agentId) + 1 };
   useEffect(() => {
     if (!connected || !details?.sessionId) return;
     expected.current.revision = refreshRemoteTranscript(agentId);
   }, [key, snapshot, agentId, connected, details?.sessionId]);
-  const ready = connected && !!details?.sessionId && !loading && !!receipt && receipt.revision >= expected.current.revision
+  const bound = connected && !!details?.sessionId && !loading && !!receipt && receipt.revision >= expected.current.revision
     && receipt.revision === remoteTranscriptRevision(agentId) && receipt.snapshot === snapshot
     && receipt.sessionId === details.sessionId && chat?.sessionId === details.sessionId
     && chat.provider === details.providerId && (!details.nativeSessionId || chat.nativeSessionId === details.nativeSessionId);
-  return { chat: ready ? chat : undefined, loading: !!loading, partial: ready && receipt.truncated, waiting: !!details?.sessionId && !ready };
+  const stopped = !!bound && (receipt.live === false || live === false || receipt.state === 'sleeping' || receipt.state === 'error' || chat.state === 'sleeping' || chat.state === 'error');
+  const ready = bound && receipt.live === true && live === true && !stopped;
+  return { chat: ready ? chat : undefined, stopped, loading: !!loading, partial: ready && receipt.truncated, waiting: !!details?.sessionId && !ready };
 }

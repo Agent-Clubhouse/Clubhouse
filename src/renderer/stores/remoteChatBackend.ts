@@ -52,9 +52,9 @@ export function localizeRemoteEvent(satelliteId: string, event: ChatEvent): Chat
  * The agent's transcript as the satellite has it (newest `tail`, at most 2000),
  * pending prompts included, and whether a chat session is running it now.
  */
-export async function readRemoteTranscript(nsId: string, tail?: number): Promise<{ events: ChatEvent[]; live: boolean | undefined; truncated: boolean; meta: RemoteChatMeta }> {
+export async function readRemoteTranscript(nsId: string, tail?: number): Promise<{ events: ChatEvent[]; live: boolean | undefined; state: string | null; truncated: boolean; meta: RemoteChatMeta }> {
   const target = remoteChatTarget(nsId);
-  if (!target) return { events: [], live: undefined, truncated: false, meta: {} };
+  if (!target) return { events: [], live: undefined, state: null, truncated: false, meta: {} };
   const page = (await window.clubhouse.annexClient.chatPage(target.satelliteId, target.agentId, { limit: Math.min(tail ?? 2000, 2000) })) as ChatPage;
   // A cut page lists what's pending separately; folding them in by seq keeps nothing twice.
   const bySeq = new Map<string, ChatEvent>();
@@ -66,6 +66,7 @@ export async function readRemoteTranscript(nsId: string, tail?: number): Promise
   return {
     events,
     live: page.readOnly === undefined ? undefined : !page.readOnly,
+    state: typeof page.state === 'string' ? page.state : null,
     truncated: page.truncated === true,
     meta: { capabilities: page.capabilities, chatControls: page.chatControls, slashCommands: page.slashCommands },
   };

@@ -1039,7 +1039,7 @@ export function foldChatEvents(state: ChatViewState | undefined, agentId: string
 
 interface ChatStoreState {
   /** A successful remote hydration, tied to the exact requested refresh and host snapshot. */
-  remoteReadReceipts: Record<string, { revision: number; snapshot: unknown; sessionId: string | null; truncated: boolean }>;
+  remoteReadReceipts: Record<string, { revision: number; snapshot: unknown; sessionId: string | null; live: boolean | null; state: string | null; truncated: boolean }>;
   /** View state keyed by agent id. */
   agents: Record<string, ChatViewState>;
   /** Agents whose transcript is being read. */
@@ -1196,6 +1196,7 @@ export const useChatStore = create<ChatStoreState>((set, get) => {
       const remoteSnapshot = remote ? useAnnexClientStore.getState().satellites.find((s) => s.id === remote.satelliteId)?.snapshot : undefined;
       if (remote) remoteTranscriptRevisions.set(agentId, remoteRevision);
       let remoteLive: boolean | undefined;
+      let remoteState: string | null = null;
       let remoteCut = false;
       let remoteMeta: RemoteChatMeta = {};
       // Whether a chat runtime runs this agent now; asked alongside the read.
@@ -1205,6 +1206,7 @@ export const useChatStore = create<ChatStoreState>((set, get) => {
           const read = await readRemoteTranscript(agentId, tail);
           events = read.events;
           remoteLive = read.live;
+          remoteState = read.state;
           remoteCut = read.truncated;
           remoteMeta = read.meta;
         } else {
@@ -1258,7 +1260,7 @@ export const useChatStore = create<ChatStoreState>((set, get) => {
           loading,
           partial: { ...s.partial, [agentId]: cut },
           loaded: { ...s.loaded, [agentId]: true },
-          ...(remote && !refreshPending ? { remoteReadReceipts: { ...s.remoteReadReceipts, [agentId]: { revision: remoteRevision, snapshot: remoteSnapshot, sessionId: next.sessionId, truncated: cut } } } : {}),
+          ...(remote && !refreshPending ? { remoteReadReceipts: { ...s.remoteReadReceipts, [agentId]: { revision: remoteRevision, snapshot: remoteSnapshot, sessionId: next.sessionId, live: remoteLive ?? null, state: remoteState, truncated: cut } } } : {}),
         };
       });
       // A resume that arrived during the read needs that session's earlier

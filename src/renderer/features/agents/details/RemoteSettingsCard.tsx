@@ -27,7 +27,7 @@ const message = (result: Result): string | null => {
 };
 
 /** A separate remote surface keeps every local setup, filesystem and editing hook out of this path. */
-export function RemoteSettingsCard({ agent, chat, result: supplied, onRetry, children }: { agent: Agent; chat?: ChatViewState; result?: Result; onRetry?: () => void; children?: ReactNode }) {
+export function RemoteSettingsCard({ agent, chat, result: supplied, onRetry, runtimeUnconfirmed, children }: { agent: Agent; chat?: ChatViewState; result?: Result; onRetry?: () => void; runtimeUnconfirmed?: boolean; children?: ReactNode }) {
   const open = useAgentDetailsStore((s) => s.settingsOpen);
   const setOpen = useAgentDetailsStore((s) => s.setSettingsOpen);
   const address = parseNamespacedId(agent.id);
@@ -66,7 +66,7 @@ export function RemoteSettingsCard({ agent, chat, result: supplied, onRetry, chi
   const access = liveAccess && value && liveAccess !== value.access ? `${liveAccess} now, starts at ${value.access}` : liveAccess ?? value?.access;
   const liveRuntime = session || agent.executionMode === 'chat' ? 'Chat' : agent.executionMode ? 'CLI' : null;
   const nextRuntime = value?.runtime === 'chat' ? 'Chat' : value ? 'CLI' : null;
-  const runtime = asleep ? nextRuntime : liveRuntime ?? (nextRuntime ? `${nextRuntime} on next wake` : null);
+  const runtime = asleep ? nextRuntime : runtimeUnconfirmed ? `${nextRuntime ?? 'Host setting'} on next wake; current run not confirmed` : liveRuntime ?? (nextRuntime ? `${nextRuntime} on next wake` : null);
   const summary = [value?.setup.managed ? 'Managed' : null, runtime, model, access].filter(Boolean).join(' · ') || message(result);
   const row = (id: string, label: string, text: string | null | undefined) => text == null ? null
     : <CardRow key={id} label={label} labelWidth="wide" testId={`details-setting-${id}`}>{text}</CardRow>;
