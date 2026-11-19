@@ -253,7 +253,7 @@ interface RemoteStreamState {
  * backwards for a renderer holding an older snapshot.
  */
 const remoteStreams = new Map<string, RemoteStreamState>();
-const seedsInFlight = new Map<string, Promise<void>>();
+const seedsInFlight = new Map<string, { epoch: number; promise: Promise<void> }>();
 /** Bumped on every disconnect, so a seed that straddles one is discarded. */
 const connectionEpochs = new Map<string, number>();
 
@@ -507,17 +507,28 @@ async function seedFromSatellite(satelliteId: string, agentId: string): Promise<
  * The cached buffer for a remote agent, seeded from the satellite on first
  * access. Concurrent callers share one seed fetch.
  */
-async function getRemoteBufferSnapshot(satelliteId: string, agentId: string): Promise<RemoteBufferSnapshot> {
+async function getRemoteBufferSnapshot(satelliteId: string, agentId: string, retryStaleSeed = true): Promise<RemoteBufferSnapshot> {
   const key = `${satelliteId}:${agentId}`;
   const bufferKey = remoteBufferKey(satelliteId, agentId);
   // A seeded key whose cache has gone is seeded again.
   if (!seededBuffers.has(key) || !headlessTerminal.getSize(bufferKey)) {
     let seed = seedsInFlight.get(key);
     if (!seed) {
-      seed = seedFromSatellite(satelliteId, agentId).finally(() => seedsInFlight.delete(key));
+      seed = {
+        epoch: connectionEpochs.get(satelliteId) ?? 0,
+        promise: seedFromSatellite(satelliteId, agentId).finally(() => seedsInFlight.delete(key)),
+      };
       seedsInFlight.set(key, seed);
     }
-    await seed;
+    await seed.promise;
+    // A reconnecting view can join a seed from the old connection. That seed
+    // is discarded, so fetch once more, but don't loop if the peer keeps flapping.
+    if (seed.epoch !== (connectionEpochs.get(satelliteId) ?? 0) && satellites.get(satelliteId)?.state === 'connected') {
+      appLog('core:annex-client', retryStaleSeed ? 'info' : 'warn', 'Agent buffer seed crossed a reconnect', {
+        meta: { satelliteId, agentId, retrying: retryStaleSeed },
+      });
+      if (retryStaleSeed) return getRemoteBufferSnapshot(satelliteId, agentId, false);
+    }
   }
   const snap = await headlessTerminal.snapshot(bufferKey);
   return { data: snap?.data ?? '', seq: snap?.seq ?? remoteStream(key).seq };

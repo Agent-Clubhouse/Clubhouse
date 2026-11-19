@@ -92,6 +92,11 @@ export function AgentTerminal({ agentId, focused, zoneThemeId }: Props) {
   const remotePtyHost = useAnnexClientStore((s) => remoteParts
     ? s.satellites.find((sat) => sat.id === remoteParts.satelliteId)?.snapshot?.ptyHost
     : undefined);
+  // An idle PTY sends nothing on reconnect: rebuild its replay without
+  // requiring the user to navigate away and back.
+  const remoteConnected = useAnnexClientStore((s) => remoteParts
+    ? s.satellites.find((sat) => sat.id === remoteParts.satelliteId)?.state === 'connected'
+    : false);
 
   // Refs for Zustand store methods — prevents terminal destruction/recreation
   // if the store ever returns a new function reference during state updates.
@@ -250,7 +255,7 @@ export function AgentTerminal({ agentId, focused, zoneThemeId }: Props) {
       finishReplay();
     };
 
-    requestAnimationFrame(() => {
+    const replayFrame = requestAnimationFrame(() => {
       term.focus();
 
       if (!isRemote) {
@@ -455,6 +460,7 @@ export function AgentTerminal({ agentId, focused, zoneThemeId }: Props) {
     }
 
     return () => {
+      cancelAnimationFrame(replayFrame);
       if (flushScheduled) cancelAnimationFrame(flushId);
       inputDisposable.dispose();
       binaryDisposable.dispose();
@@ -470,7 +476,7 @@ export function AgentTerminal({ agentId, focused, zoneThemeId }: Props) {
       terminalRef.current = null;
       fitAddonRef.current = null;
     };
-  }, [agentId, isRemote, remoteParts]);
+  }, [agentId, isRemote, remoteParts, remoteConnected]);
 
   // The satellite's pty backend can arrive or change (reconnect to an updated
   // satellite) while the terminal stays mounted, so it is applied here rather
@@ -483,7 +489,7 @@ export function AgentTerminal({ agentId, focused, zoneThemeId }: Props) {
       || windowsPty.buildNumber !== term.options.windowsPty?.buildNumber) {
       term.options.windowsPty = windowsPty;
     }
-  }, [isRemote, remotePtyHost, agentId, remoteParts]);
+  }, [isRemote, remotePtyHost, agentId, remoteParts, remoteConnected]);
 
   // Focus-aware resize: ResizeObserver, visibilitychange, window focus, pane focus
   // Pass ptyResize so remote agents route resize through the Annex client, not local IPC
@@ -504,6 +510,8 @@ export function AgentTerminal({ agentId, focused, zoneThemeId }: Props) {
   useEffect(() => {
     const term = terminalRef.current;
     if (!term) return;
+    lastKnownViewportYRef.current = 0;
+    setIsScrolledUp(false);
 
     const logMeta = { agentId, isRemote };
 
@@ -529,7 +537,7 @@ export function AgentTerminal({ agentId, focused, zoneThemeId }: Props) {
       scrollDisposable.dispose();
       bufferDisposable.dispose();
     };
-  }, [agentId, isRemote]);
+  }, [agentId, isRemote, remoteConnected]);
 
   const handleScrollToBottom = useCallback(() => {
     const term = terminalRef.current;
@@ -588,7 +596,7 @@ export function AgentTerminal({ agentId, focused, zoneThemeId }: Props) {
       : undefined;
     const cleanup = attachClipboardHandlers(terminalRef.current, containerRef.current, writeData, handleImagePaste);
     return cleanup;
-  }, [clipboardCompat, agentId, isRemote, remoteParts, sendClipboardImage]);
+  }, [clipboardCompat, agentId, isRemote, remoteParts, sendClipboardImage, remoteConnected]);
 
   // Live-update theme on existing terminal instances.  Mutating xterm
   // options re-renders internals and can drop focus from the helper
@@ -605,7 +613,7 @@ export function AgentTerminal({ agentId, focused, zoneThemeId }: Props) {
     if (!terminalRef.current || !experimentalMonoFont) return;
     terminalRef.current.options.fontFamily = experimentalMonoFont;
     if (focusedRef.current) terminalRef.current.focus();
-  }, [experimentalMonoFont]);
+  }, [experimentalMonoFont, remoteConnected]);
 
   // Keyboard shortcut escape hatch: when the user fires
   // `focus-active-terminal` (default Ctrl/Cmd+Shift+T), the dispatcher in
