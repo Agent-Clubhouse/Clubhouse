@@ -223,6 +223,36 @@ export async function listAgentTemplates(worktreePath: string, conv?: SettingsCo
   }
 }
 
+function assertStrictProjectSettings(value: unknown): asserts value is ProjectSettings {
+  const record = (v: unknown): v is Record<string, unknown> => !!v && typeof v === 'object' && !Array.isArray(v);
+  const text = (v: unknown) => typeof v === 'string' && v.length <= 65_536;
+  const names = (v: unknown) => Array.isArray(v) && v.length <= 1000 && v.every((s) => typeof s === 'string' && s.length > 0 && s.length <= 1024);
+  const invalid = () => { throw new Error('Project settings have an unsupported shape.'); };
+  if (!record(value)) return invalid();
+  for (const key of ['defaults', 'quickOverrides']) if (value[key] !== undefined && !record(value[key])) return invalid();
+  if (value.defaultMcps !== undefined && !names(value.defaultMcps)) return invalid();
+  if (value.launchWrapper !== undefined) {
+    const w = value.launchWrapper;
+    if (!record(w) || !text(w.binary) || !w.binary || !text(w.separator) || !record(w.orchestratorMap)) return invalid();
+    if (Object.keys(w.orchestratorMap).length > 100 || !Object.values(w.orchestratorMap).every((m) => record(m) && text(m.subcommand))) return invalid();
+    if (w.env !== undefined && (!record(w.env) || !Object.values(w.env).every(text))) return invalid();
+    for (const key of ['refreshCommandId', 'contributingPluginId']) if (w[key] !== undefined && !text(w[key])) return invalid();
+  }
+  if (value.agentDefaults !== undefined) {
+    const d = value.agentDefaults;
+    if (!record(d)) return invalid();
+    const strings = new Set(['instructions', 'mcpJson', 'buildCommand', 'testCommand', 'lintCommand', 'profileId', 'commandPrefix', 'mission', 'persona']);
+    for (const [key, v] of Object.entries(d)) {
+      if (strings.has(key) && text(v)) continue;
+      if (key === 'freeAgentMode' && typeof v === 'boolean') continue;
+      if (key === 'helperAuto' && v === 'off') continue;
+      if (key === 'sourceControlProvider' && (v === 'github' || v === 'azure-devops')) continue;
+      if (key === 'permissions' && record(v) && Object.entries(v).every(([k, list]) => ['allow', 'deny'].includes(k) && Array.isArray(list) && list.length <= 1000 && list.every(text))) continue;
+      return invalid();
+    }
+  }
+}
+
 async function readSettings(projectPath: string, strict = false): Promise<ProjectSettings> {
   const settingsFile = path.join(projectPath, '.clubhouse', 'settings.json');
   const backupFile = `${settingsFile}.bak`;
@@ -230,6 +260,7 @@ async function readSettings(projectPath: string, strict = false): Promise<Projec
 
   try {
     const raw = JSON.parse(await fsp.readFile(settingsFile, 'utf-8'));
+    if (strict) assertStrictProjectSettings(raw);
     if (!raw.defaults) raw.defaults = {};
     if (!raw.quickOverrides) raw.quickOverrides = {};
     return raw;
@@ -806,8 +837,8 @@ export async function writePermissions(worktreePath: string, permissions: Permis
 /**
  * Read project-level agent defaults from .clubhouse/settings.json.
  */
-export async function readProjectAgentDefaults(projectPath: string): Promise<ProjectAgentDefaults> {
-  const settings = await readSettings(projectPath);
+export async function readProjectAgentDefaults(projectPath: string, options: { strict?: boolean } = {}): Promise<ProjectAgentDefaults> {
+  const settings = await readSettings(projectPath, options.strict);
   return settings.agentDefaults || {};
 }
 

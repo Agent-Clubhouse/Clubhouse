@@ -66,15 +66,15 @@ export function getCurrentAgentConnection(agentId: string): AgentMcpConnection |
   return nonce && connectionNonces.get(agentId) === nonce ? getAgentConnection(agentId) : null;
 }
 
-function setAgentConnection(agentId: string, connection: AgentMcpConnection): void {
-  const nonce = getAgentNonce(agentId);
-  if (nonce) connectionNonces.set(agentId, nonce);
-  else connectionNonces.delete(agentId);
+function setAgentConnection(agentId: string, connection: AgentMcpConnection, admittedNonce: string): boolean {
+  if (getAgentNonce(agentId) !== admittedNonce) return false;
+  connectionNonces.set(agentId, admittedNonce);
   const previous = agentConnections.get(agentId);
   agentConnections.set(agentId, connection);
   if (previous?.connectedAt !== connection.connectedAt || previous?.toolCount !== connection.toolCount) {
     broadcastToAllWindows(IPC.MCP_BINDING.AGENT_CONNECTION_CHANGED, agentId);
   }
+  return true;
 }
 
 export function getPort(): number {
@@ -143,8 +143,7 @@ function nonceMatches(received: string | undefined, expected: string): boolean {
   return a.length === b.length && timingSafeEqual(a, b);
 }
 
-function validateNonce(agentId: string, req: http.IncomingMessage): boolean {
-  const expectedNonce = getAgentNonce(agentId);
+function validateNonce(agentId: string, req: http.IncomingMessage, expectedNonce: string | undefined): boolean {
   const receivedNonce = req.headers[NONCE_HEADER.toLowerCase()] as string | undefined;
   if (!expectedNonce || !nonceMatches(receivedNonce, expectedNonce)) {
     if (!expectedNonce) {
@@ -189,12 +188,12 @@ function handleInitialize(id: number | string | null): JsonRpcResponse {
 }
 
 /** Handle tools/list request. */
-function handleToolsList(agentId: string, id: number | string | null): JsonRpcResponse {
+function handleToolsList(agentId: string, id: number | string | null, admittedNonce: string): JsonRpcResponse {
   const tools = getScopedToolList(agentId);
   // §12 H8: an empty list here is the "tools missing until canvas renders" bug (#1544).
   recordToolsList(tools.length);
   const conn = getCurrentAgentConnection(agentId);
-  setAgentConnection(agentId, { connectedAt: conn?.connectedAt ?? Date.now(), toolCount: tools.length });
+  if (!setAgentConnection(agentId, { connectedAt: conn?.connectedAt ?? Date.now(), toolCount: tools.length }, admittedNonce)) return jsonRpcError(id, -32000, 'Agent registration changed. Retry from the current run.');
   return jsonRpcSuccess(id, { tools });
 }
 
@@ -328,7 +327,8 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
 
   const { agentId, action } = route;
 
-  if (!validateNonce(agentId, req)) {
+  const admittedNonce = getAgentNonce(agentId);
+  if (!validateNonce(agentId, req, admittedNonce)) {
     res.writeHead(403);
     res.end();
     return;
@@ -355,7 +355,7 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
     res.end();
     return;
   }
-  if (session && session.nonce !== getAgentNonce(agentId)) {
+  if (session && session.nonce !== admittedNonce) {
     // This agent's session, issued under an earlier nonce: the agent restarted.
     endSession(sessionId!);
     res.writeHead(404);
@@ -395,6 +395,11 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
 
   const body = await readBody(req, res);
   if (body === null) return;
+  // Body delivery is asynchronous. A request from a replaced/untracked run
+  // must never acquire the replacement's scope, session or handshake evidence.
+  const stillAdmitted = () => !!admittedNonce && getAgentNonce(agentId) === admittedNonce
+    && (!sessionId || mcpSessions.get(sessionId) === session && session?.nonce === admittedNonce);
+  if (!stillAdmitted()) { res.writeHead(403); res.end(); return; }
 
   let rpcRequest: JsonRpcRequest;
   try {
@@ -415,7 +420,7 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
   if (id === undefined || id === null || typeof method !== 'string') {
     if (method === 'notifications/initialized') {
       appLog('core:mcp', 'info', 'Agent MCP connection initialized', { meta: { agentId } });
-      setAgentConnection(agentId, { connectedAt: Date.now(), toolCount: null });
+      if (!setAgentConnection(agentId, { connectedAt: Date.now(), toolCount: null }, admittedNonce!)) { res.writeHead(403); res.end(); return; }
       emitAgentMcpConnected(agentId);
     }
     res.writeHead(202);
@@ -428,14 +433,14 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
   switch (method) {
     case 'initialize': {
       const newSessionId = randomUUID();
-      mcpSessions.set(newSessionId, { agentId, nonce: getAgentNonce(agentId)!, streams: new Set() });
+      mcpSessions.set(newSessionId, { agentId, nonce: admittedNonce!, streams: new Set() });
       evictOldSessions(agentId);
       res.setHeader('Mcp-Session-Id', newSessionId);
       response = handleInitialize(id);
       break;
     }
     case 'tools/list':
-      response = handleToolsList(agentId, id);
+      response = handleToolsList(agentId, id, admittedNonce!);
       break;
     case 'tools/call':
       response = await handleToolsCall(agentId, id, (params || {}) as Record<string, unknown>);
@@ -444,6 +449,7 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
       response = jsonRpcError(id, -32601, `Method not found: ${method}`);
   }
 
+  if (!stillAdmitted()) { res.writeHead(403); res.end(); return; }
   jsonResponse(res, 200, response);
 }
 

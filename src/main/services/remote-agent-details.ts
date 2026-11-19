@@ -74,6 +74,9 @@ export async function readRemoteAgentDetails(agentId: string, authorized: () => 
     if (!authorized()) return refused();
     const dispatcher = isDispatcherIdentityAgentId(agentId);
     const running = isAgentRunning(agentId);
+    const registration = agentRegistry.get(agentId);
+    const registeredNonce = registration?.nonce;
+    const registeredRuntime = registration?.runtime;
     const runtime = getAgentRuntime(agentId);
     const sessionId = runtime?.kind === 'chat' ? runtime.getSessionId?.() ?? null : null;
     const nativeSessionId = runtime?.kind === 'chat' ? runtime.getNativeSessionId?.() ?? null : null;
@@ -265,7 +268,11 @@ export async function readRemoteAgentDetails(agentId: string, authorized: () => 
       c.notes = c.notes.map((note) => display(note));
       if (c.notes.length > 20) c.notes = [...c.notes.slice(0, 19), `${c.notes.length - 19} more notices omitted by the host’s display limit.`];
     }
-    if (getAgentRuntime(agentId) !== runtime || runtime?.kind === 'chat' && (runtime.getSessionId?.() !== sessionId || (runtime.getNativeSessionId?.() ?? null) !== nativeSessionId)) {
+    const currentRegistration = agentRegistry.get(agentId);
+    if (running && !registration && runtime?.kind !== 'chat'
+      || currentRegistration !== registration || currentRegistration?.nonce !== registeredNonce || currentRegistration?.runtime !== registeredRuntime
+      || isAgentRunning(agentId) !== running
+      || runtime?.kind === 'chat' && (getAgentRuntime(agentId) !== runtime || runtime.getSessionId?.() !== sessionId || (runtime.getNativeSessionId?.() ?? null) !== nativeSessionId)) {
       return { status: 409, body: { error: 'agent_run_changed' } };
     }
     // Enforce the envelope even when every section fits its individual row limit.

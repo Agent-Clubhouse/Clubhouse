@@ -7,6 +7,7 @@ vi.mock('fs/promises', () => ({
   readFile: vi.fn(),
   writeFile: vi.fn(),
   mkdir: vi.fn(),
+  stat: vi.fn(),
   readdir: vi.fn(() => Promise.resolve([])),
   rm: vi.fn(),
   unlink: vi.fn(),
@@ -1045,6 +1046,25 @@ describe('error logging in catch blocks', () => {
     await expect(readDefaultMcps(PROJECT, { strict: true })).rejects.toThrow('unreadable');
     expect(vi.mocked(fsp.readFile).mock.calls.some(([file]) => String(file).endsWith('.bak'))).toBe(false);
     expect(fsp.writeFile).not.toHaveBeenCalled(); expect(fsp.mkdir).not.toHaveBeenCalled();
+  });
+  it.each([[], { launchWrapper: {}, defaultMcps: 'abc' }, { defaultMcps: [123] }, { agentDefaults: [] }, { agentDefaults: { commandPrefix: 42 } }])('strict display readers reject malformed valid JSON %#', async (value) => {
+    vi.mocked(fsp.readFile).mockResolvedValue(JSON.stringify(value));
+    await expect(readLaunchWrapper(PROJECT, { strict: true })).rejects.toThrow('unreadable');
+    await expect(readDefaultMcps(PROJECT, { strict: true })).rejects.toThrow('unreadable');
+    await expect(readProjectAgentDefaults(PROJECT, { strict: true })).rejects.toThrow('unreadable');
+  });
+  it('strict defaults/wrapper distinguish verified empty and missing from recovery-only data', async () => {
+    vi.mocked(fsp.readFile).mockResolvedValue('{}');
+    expect(await readLaunchWrapper(PROJECT, { strict: true })).toBeUndefined();
+    expect(await readDefaultMcps(PROJECT, { strict: true })).toEqual([]);
+    expect(await readProjectAgentDefaults(PROJECT, { strict: true })).toEqual({});
+    vi.mocked(fsp.readFile).mockRejectedValue(makeEnoent());
+    vi.mocked(fsp.stat).mockRejectedValue(makeEnoent());
+    expect(await readLaunchWrapper(PROJECT, { strict: true })).toBeUndefined();
+    expect(await readDefaultMcps(PROJECT, { strict: true })).toEqual([]);
+    expect(await readProjectAgentDefaults(PROJECT, { strict: true })).toEqual({});
+    vi.mocked(fsp.stat).mockResolvedValue({} as never);
+    await expect(readProjectAgentDefaults(PROJECT, { strict: true })).rejects.toThrow('recovery');
   });
 
   it('listSkills logs warning on directory read failure', async () => {

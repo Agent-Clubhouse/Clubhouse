@@ -2,12 +2,17 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { noteAgentStarting, _resetAgentDisplayStateForTesting } from './agent-display-state';
 import { ORCHESTRATION_DEFAULTS } from '../../shared/orchestration-policy';
 import { isRemoteAgentDetails, type RemoteAgentDetails } from '../../shared/remote-agent-details';
-const m = vi.hoisted(() => ({ target: vi.fn(), settings: vi.fn(), provider: vi.fn(), running: vi.fn(), policies: vi.fn(), helpers: vi.fn(), requests: vi.fn(), bindings: vi.fn(), sources: vi.fn(), directions: vi.fn(), dispatcher: vi.fn(), dispatcherOn: vi.fn(), agentCard: vi.fn(), actions: vi.fn(), canvases: vi.fn(), status: vi.fn(), entries: vi.fn(), template: vi.fn(), mcp: vi.fn(), branch: vi.fn(), transcript: vi.fn(), connection: vi.fn() }));
+const m = vi.hoisted(() => ({ target: vi.fn(), settings: vi.fn(), provider: vi.fn(), running: vi.fn(), policies: vi.fn(), helpers: vi.fn(), requests: vi.fn(), bindings: vi.fn(), sources: vi.fn(), directions: vi.fn(), dispatcher: vi.fn(), dispatcherOn: vi.fn(), agentCard: vi.fn(), actions: vi.fn(), canvases: vi.fn(), status: vi.fn(), entries: vi.fn(), template: vi.fn(), mcp: vi.fn(), branch: vi.fn(), transcript: vi.fn(), connection: vi.fn(), registration: vi.fn(), runtime: vi.fn(), useRealRuntime: false }));
 vi.mock('./agent-config-reader', () => ({ resolveAgentConfigTarget: m.target }));
 vi.mock('./remote-agent-settings', () => ({ readRemoteAgentSettings: m.settings }));
 vi.mock('./agent-system', () => ({ resolveOrchestrator: m.provider, isAgentRunning: m.running }));
-vi.mock('./agent-runtime', () => ({ getAgentRuntime: () => undefined }));
-vi.mock('./agent-registry', () => ({ agentRegistry: { get: () => undefined } }));
+vi.mock('./agent-runtime/pty-runtime', () => ({ PtyAgentRuntime: class { kind = 'pty'; constructor(readonly agentId: string) {} } }));
+vi.mock('./pty-manager', () => ({ isRunning: () => m.running() }));
+vi.mock('./agent-runtime', async (original) => {
+  const actual = await original<typeof import('./agent-runtime')>();
+  return { ...actual, getAgentRuntime: (id: string) => m.useRealRuntime ? actual.getAgentRuntime(id) : m.runtime() };
+});
+vi.mock('./agent-registry', () => ({ agentRegistry: { get: m.registration } }));
 vi.mock('./orchestration-policy', () => ({ resolveOrchestrationPolicies: m.policies }));
 vi.mock('./orchestration-settings', () => ({ getGlobalHelperCap: () => 20 }));
 vi.mock('./helper-index', () => ({ listHelpersEverywhere: m.helpers }));
@@ -33,6 +38,7 @@ const project = { id: 'p1', name: 'Project', path: '/host/project' };
 const setting = () => ({ version: 1, agentId: 'a1', readOnly: true, provider: 'Host CLI', model: 'model', runtime: 'terminal', access: 'Ask first', executionPolicy: 'defaults', autoSleep: null, context: null, setup: { state: 'ok', managed: false, template: null, instructions: 'None', skills: null, mcps: null } });
 beforeEach(() => {
   _resetAgentDisplayStateForTesting();
+  m.useRealRuntime = false; m.registration.mockReturnValue(undefined); m.runtime.mockReturnValue(undefined);
   m.target.mockResolvedValue({ agent: agent(), project });
   m.settings.mockResolvedValue({ status: 200, body: setting() });
   m.provider.mockResolvedValue({ id: 'codex-cli', conventions: {}, readSessionTranscript: m.transcript });
@@ -105,6 +111,7 @@ describe('host selected-agent Details projections', () => {
   });
   it('does not claim an earlier run’s retained MCP handshake or tool count is current', async () => {
     m.running.mockReturnValue(true);
+    m.registration.mockReturnValue({ cwd: '/host/selected', runtime: 'pty', nonce: 'run-a' });
     noteAgentStarting('a1');
     m.connection.mockReturnValue({ connectedAt: 1, toolCount: 999 });
     let value = await read();
@@ -139,5 +146,24 @@ describe('host selected-agent Details projections', () => {
     expect(value.settings?.setup.mcps).toBeNull();
     expect(JSON.stringify(value)).not.toContain('0 configured');
     expect(value.cards.find((c) => c.id === 'connections')?.state).toBe('ok');
+  });
+  it('accepts a stable registered PTY using the real resolver despite new facade objects per lookup', async () => {
+    m.useRealRuntime = true; m.running.mockReturnValue(true);
+    m.registration.mockReturnValue({ cwd: '/host/selected', runtime: 'pty', orchestrator: 'codex-cli', nonce: 'run-a' });
+    const resolver = await import('./agent-runtime');
+    expect(resolver.getAgentRuntime('a1')).not.toBe(resolver.getAgentRuntime('a1'));
+    expect((await read()).running).toBe(true);
+  });
+  it.each(['pty', 'headless'] as const)('refuses a %s registration replacement across an awaited section', async (runtime) => {
+    m.useRealRuntime = true; m.running.mockReturnValue(true);
+    m.registration.mockReturnValue({ cwd: '/host/selected', runtime, orchestrator: 'codex-cli', nonce: 'run-a' });
+    m.canvases.mockImplementation(async () => { m.registration.mockReturnValue({ cwd: '/host/selected', runtime, orchestrator: 'codex-cli', nonce: 'run-b' }); return []; });
+    expect(await readRemoteAgentDetails('a1', () => true)).toMatchObject({ status: 409, body: { error: 'agent_run_changed' } });
+  });
+  it('refuses stopped headless/PTY evidence across an awaited section', async () => {
+    m.useRealRuntime = true; m.running.mockReturnValue(true);
+    m.registration.mockReturnValue({ cwd: '/host/selected', runtime: 'headless', nonce: 'run-a' });
+    m.canvases.mockImplementation(async () => { m.running.mockReturnValue(false); m.registration.mockReturnValue(undefined); return []; });
+    expect((await readRemoteAgentDetails('a1', () => true)).status).toBe(409);
   });
 });
