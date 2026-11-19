@@ -390,3 +390,16 @@ describe('remote full Details host evidence', () => {
     expect(screen.queryByText('Host CLI 1.2.3')).not.toBeInTheDocument();
   });
 });
+
+it('shows independently known host Settings fields alongside explicit unavailable next-wake evidence', async () => {
+  const value = fixture(); value.settings = null;
+  const c = value.cards.find((card) => card.id === 'settings')!;
+  c.state = 'error'; c.rows = [{ label: 'Next start model', value: 'HOST_SAVED_MODEL' }, { label: 'Next wake', value: 'Unavailable from host settings' }]; c.notes = ['Unavailable settings are not inferred from this machine.'];
+  read.mockResolvedValue({ status: 'ok', value }); render(<AgentDetails agent={agent} />);
+  await waitFor(() => expect(read).toHaveBeenCalled());
+  const toggle = screen.getByTestId('details-card-settings-toggle'); if (toggle.getAttribute('aria-expanded') !== 'true') fireEvent.click(toggle);
+  const card = screen.getByTestId('details-card-settings');
+  await waitFor(() => expect(card).toHaveTextContent('HOST_SAVED_MODEL'));
+  expect(card).toHaveTextContent('Unavailable from host settings'); expect(card).toHaveTextContent('Unavailable settings are not inferred from this machine.');
+  expect(window.clubhouse.annexClient.agentSettings).not.toHaveBeenCalled(); expect(window.clubhouse.agent.getDurableConfig).not.toHaveBeenCalled();
+});

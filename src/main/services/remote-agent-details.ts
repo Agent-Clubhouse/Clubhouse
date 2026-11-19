@@ -10,7 +10,7 @@ import { GRANT_GATED_SKILL_IDS } from '../../shared/managed-agents-types';
 import { isDisposedAgent } from '../../shared/agent-helpers';
 import { resolveAgentConfigTarget, type AgentConfigTarget } from './agent-config-reader';
 import { readRemoteAgentSettings } from './remote-agent-settings';
-import { resolveOrchestrator, isAgentRunning } from './agent-system';
+import { isAgentRunning } from './agent-system';
 import { agentRegistry } from './agent-registry';
 import { resolveOrchestrationPolicies } from './orchestration-policy';
 import { getGlobalHelperCap } from './orchestration-settings';
@@ -30,6 +30,7 @@ import { getAgentRuntime } from './agent-runtime';
 import { HELPER_TRANSFORM_UNAVAILABLE, readOnlyHelperWork } from './read-only-helper-work';
 import { helpersSummary, workSummary } from '../../shared/helper-work-summary';
 import { captureReadOnlyConfigTargetWitness } from './read-only-config-target';
+import { captureDisplayProvider } from './display-provider';
 
 const yes = (v: boolean) => v ? 'On' : 'Off';
 const control = { 'hands-off': 'Hands off', 'ask-before-start': 'Ask before starting', 'ask-everything': 'Ask every time' };
@@ -52,15 +53,15 @@ export async function readRemoteAgentDetails(agentId: string, authorized: () => 
     const targetWitness = captureReadOnlyConfigTargetWitness(target);
     const helperReceipts: Array<{ current(): boolean }> = [];
     const settingsReceipts: Array<{ current(): boolean }> = [];
-    const provider = await resolveOrchestrator(project.path, agent.orchestrator);
+    const providerRead = captureDisplayProvider(target), provider = providerRead.provider;
     if (!authorized()) return refused();
     const running = isAgentRunning(agentId);
     const registration = agentRegistry.get(agentId);
     const registeredNonce = registration?.nonce;
     const registeredRuntime = registration?.runtime;
     const registeredProvider = registration?.orchestrator, registeredCwd = registration?.cwd;
-    const providerId = running ? registeredProvider || 'unknown' : provider.id;
-    const providerLabel = (id: string) => id === 'unknown' ? 'Not reported by host' : display(id === provider.id ? provider.displayName || id : getProvider(id)?.displayName || id);
+    const providerId = running ? registeredProvider || 'unknown' : provider?.id || 'unknown';
+    const providerLabel = (id: string) => id === 'unknown' ? 'Not reported by host' : display(id === provider?.id ? provider.displayName || id : getProvider(id)?.displayName || id);
     const runtime = getAgentRuntime(agentId);
     const sessionId = runtime?.kind === 'chat' ? runtime.getSessionId?.() ?? null : null;
     const nativeSessionId = runtime?.kind === 'chat' ? runtime.getNativeSessionId?.() ?? null : null;
@@ -71,7 +72,7 @@ export async function readRemoteAgentDetails(agentId: string, authorized: () => 
     if (dispatcher) for (const id of ['dispatcher', 'orchestrate', 'skills-mcp', 'session', 'canvases', 'changes'] as const) byId[id].state = 'not-applicable';
     if (agent.parentAgentId) byId.dispatcher.state = 'not-applicable';
     const result: RemoteAgentDetails = { version: 1, readOnly: true, agentId, readAt: Date.now(), providerId, providerLabel: providerLabel(providerId), running, status: lifecycle.status, spawnedAt: lifecycle.spawnedAt ?? null, sessionId, nativeSessionId, settings: null, cards };
-    const settingsRead = await readRemoteAgentSettings(agentId, authorized, { admittedTarget: target, receipts: settingsReceipts });
+    const settingsRead = await readRemoteAgentSettings(agentId, authorized, { admittedTarget: target, admittedProvider: providerRead, receipts: settingsReceipts });
     if (!authorized()) return refused();
     if (settingsRead.status === 200) result.settings = settingsRead.body as RemoteAgentDetails['settings'];
     else byId.settings.state = 'error';
@@ -93,6 +94,7 @@ export async function readRemoteAgentDetails(agentId: string, authorized: () => 
       row(c, 'Context notice', agent.contextWindowNotice);
       row(c, 'CLI start', lifecycle.error);
       if (!agent.managed) {
+        if (!provider) throw new Error('provider_unavailable');
         const names = new Set((await readMcpConfig(cwd, provider.conventions, { strict: true })).map((s) => s.name));
         if (await readLaunchWrapper(project.path, { strict: true })) for (const id of agent.mcpIds ?? await readDefaultMcps(project.path, { strict: true })) names.add(id);
         if (result.settings) result.settings.setup.mcps = [...names].slice(0, 100).map((name) => display(name, 1024));

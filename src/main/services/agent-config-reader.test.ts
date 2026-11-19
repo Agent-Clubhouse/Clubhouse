@@ -20,7 +20,7 @@ vi.mock('./project-store', () => ({ peekProjects: async () => [{ id: 'p', path: 
 vi.mock('./agent-system', () => ({ resolveOrchestrator: async () => ({ id: state.provider, conventions: { configDir: '.github', legacyInstructionsFile: state.provider === 'copilot-cli' ? 'copilot-instructions.md' : 'CLAUDE.md' } }) }));
 vi.mock('./managed-agents', () => ({ managedAgents: () => ({ headContent: async (id: string) => state.parts.get(id) ?? null }) }));
 import { getDispatcherState } from './dispatcher/dispatcher-service';
-import { CONFIG_MAX_BYTES, CONFIG_TEXT_BYTES, readAgentConfig, resolveAgentConfigTarget } from './agent-config-reader';
+import { CONFIG_MAX_BYTES, CONFIG_TEXT_BYTES, readAgentConfig, readResolvedAgentConfig, resolveAgentConfigTarget } from './agent-config-reader';
 
 let root: string;
 beforeEach(async () => {
@@ -174,5 +174,34 @@ describe('bounded agent config evidence', () => {
     await expect(readAgentConfig('target')).rejects.toThrow('ordinary file');
     state.agents[0].managed = { version: 1, blocks: Array(101).fill('x'), skills: [], mcps: [] };
     await expect(readAgentConfig('target')).rejects.toThrow('read limit');
+  });
+});
+
+
+describe('selected instruction display receipts', () => {
+  const selected = () => ({ agent: state.agents[0], project: { id: 'p', name: 'Project', path: root } });
+  it('uses the admitted provider path and carries actual file evidence through later writes', async () => {
+    const file = path.join(root, 'SELECTED.md'); await fs.writeFile(file, 'Selected instructions\n'); await fs.writeFile(path.join(root, 'CLAUDE.md'), 'PRIVATE_WRONG_PROVIDER');
+    const provider = { id: 'codex-cli', conventions: { legacyInstructionsFile: 'SELECTED.md' } } as import('../orchestrators').OrchestratorProvider;
+    const receipts: Array<{ current(): boolean }> = []; const result = await readResolvedAgentConfig(selected(), { provider, receipts });
+    expect(result.instructions.text).toBe('Selected instructions\n'); expect(receipts).toHaveLength(1); expect(receipts[0].current()).toBe(true);
+    await fs.writeFile(file, 'Changed selected instructions\n'); expect.soft(receipts[0].current()).toBe(false);
+    expect.soft(await fs.readFile(path.join(root, 'CLAUDE.md'), 'utf8')).toBe('PRIVATE_WRONG_PROVIDER');
+  });
+  it('keeps a verified missing instruction file distinct from a missing root, and invalidates late creation', async () => {
+    const provider = { id: 'claude-code', conventions: { legacyInstructionsFile: 'CLAUDE.md' } } as import('../orchestrators').OrchestratorProvider;
+    const receipts: Array<{ current(): boolean }> = []; expect((await readResolvedAgentConfig(selected(), { provider, receipts })).instructions.text).toBe('');
+    expect(receipts).toHaveLength(1); expect(receipts[0].current()).toBe(true);
+    await fs.writeFile(path.join(root, 'CLAUDE.md'), 'Created later'); expect.soft(receipts[0].current()).toBe(false);
+    const missing = selected(); missing.agent = { ...missing.agent, worktreePath: path.join(root, 'missing-root') };
+    await expect(readResolvedAgentConfig(missing, { provider, receipts: [] })).rejects.toThrow();
+  });
+  it('invalidates actual selected-file replacement and refuses a linked instruction path', async () => {
+    const file = path.join(root, 'CLAUDE.md'); await fs.writeFile(file, 'Selected');
+    const provider = { id: 'claude-code', conventions: { legacyInstructionsFile: 'CLAUDE.md' } } as import('../orchestrators').OrchestratorProvider;
+    const receipts: Array<{ current(): boolean }> = []; await readResolvedAgentConfig(selected(), { provider, receipts }); expect(receipts[0].current()).toBe(true);
+    await fs.rename(file, file + '.saved'); await fs.writeFile(file, 'Selected'); expect.soft(receipts[0].current()).toBe(false);
+    await fs.rm(file); await fs.symlink(file + '.saved', file);
+    await expect(readResolvedAgentConfig(selected(), { provider, receipts: [] })).rejects.toThrow('instruction_link');
   });
 });

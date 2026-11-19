@@ -9,6 +9,7 @@ const m = vi.hoisted(() => ({ config: vi.fn(), target: vi.fn(), provider: vi.fn(
 vi.mock('../agent-config', async (original) => ({ ...await original<typeof import('../agent-config')>(), getDurableConfig: m.config }));
 vi.mock('../agent-config-reader', () => ({ resolveAgentConfigTarget: m.target, readResolvedAgentConfig: vi.fn() }));
 vi.mock('../read-only-config-target', () => ({ captureReadOnlyConfigTargetWitness: () => ({ current: () => true }) }));
+vi.mock('../display-provider', () => ({ captureDisplayProvider: () => { const provider = m.provider(); return { provider, selection: { state: 'ok', value: provider.id, inputs: [] }, receipt: { current: () => true } }; } }));
 vi.mock('../agent-system', () => ({ isAgentRunning: () => m.running, resolveOrchestrator: m.provider, spawnAgent: vi.fn(), killAgent: vi.fn() }));
 vi.mock('../log-service', () => ({ appLog: vi.fn() }));
 vi.mock('../../util/ipc-broadcast', () => ({ broadcastToAllWindows: vi.fn() }));
@@ -42,7 +43,7 @@ beforeEach(async () => {
   await service.ensureBuiltins(); _setManagedAgentsForTesting(service); resetAllSettingsStoresForTests();
   setGrantedSkills((selected) => agentHoldsAction(selected.id, selected, 'handoff.offer') ? [PREPARE_HANDOFF_SKILL_ID] : []);
   m.target.mockReset().mockImplementation(async () => ({ agent: structuredClone(agent), project: { id: 'p', name: 'Selected project', path: root } }));
-  m.provider.mockReset().mockResolvedValue({ id: 'claude-code', displayName: 'Host Claude', getCapabilities: () => ({ permissions: true }) });
+  m.provider.mockReset().mockReturnValue({ id: 'claude-code', displayName: 'Host Claude', getCapabilities: () => ({ permissions: true }) });
   m.config.mockReset().mockImplementation(async () => { throw new Error('unadmitted replacement config lookup'); });
 });
 afterEach(async () => { _setManagedAgentsForTesting(null); forgetDelivery('selected'); resetAllSettingsStoresForTests(); vi.restoreAllMocks(); await fs.rm(root, { recursive: true, force: true }); });
@@ -200,7 +201,7 @@ it.each(['revise', 'delete'] as const)('withholds Settings after an earlier sele
 });
 it('exports real managed evidence receipts for later Details awaits without serializing internal snapshots', async () => {
   const { first } = await runningSelectedHeads(); const receipts: Array<{ current(): boolean }> = [];
-  const result = await readRemoteAgentSettings(agent.id, () => true, { receipts }); expect(result.status).toBe(200); expect(receipts.every((receipt) => receipt.current())).toBe(true);
+  const result = await readRemoteAgentSettings(agent.id, () => true, { receipts }); expect(result.status).toBe(200); expect(receipts.length).toBeGreaterThan(0); expect(receipts.every((receipt) => receipt.current())).toBe(true);
   await mutateHead(first.id, 'revise'); expect.soft(receipts.some((receipt) => !receipt.current())).toBe(true);
   expect.soft(JSON.stringify(result.body)).not.toMatch(/setupMetadata|libraryEvidence|receipts|SYNTHETIC/);
 });

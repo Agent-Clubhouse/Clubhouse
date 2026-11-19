@@ -5,16 +5,17 @@ import * as path from 'path';
 import { app } from 'electron';
 import type { DurableAgentConfig } from '../../shared/types';
 import { isRemoteAgentSettings } from '../../shared/remote-agent-settings';
-const m = vi.hoisted(() => ({ target: vi.fn(), instructions: vi.fn(), current: true }));
+const m = vi.hoisted(() => ({ target: vi.fn(), instructions: vi.fn(), current: true, provider: { id: 'claude-code', displayName: 'Host Claude', getCapabilities: () => ({ permissions: true }) } }));
 vi.mock('./agent-config-reader', () => ({ resolveAgentConfigTarget: m.target, readResolvedAgentConfig: m.instructions }));
 vi.mock('./read-only-config-target', () => ({ captureReadOnlyConfigTargetWitness: () => ({ current: () => m.current }) }));
 vi.mock('./log-service', () => ({ appLog: vi.fn() }));
 vi.mock('./agent-system', () => ({ resolveOrchestrator: async () => ({ id: 'claude-code', displayName: 'Host Claude', getCapabilities: () => ({ permissions: true }) }) }));
-vi.mock('../orchestrators', () => ({ getProvider: (id: string) => id === 'claude-code' ? { id, displayName: 'Host Claude', getCapabilities: () => ({ permissions: true }) } : undefined }));
+vi.mock('../orchestrators', () => ({ getProvider: (id: string) => id === 'claude-code' ? m.provider : undefined }));
 vi.mock('./agent-runtime/chat-drivers', () => ({ resolveChatDriver: () => ({}) }));
 vi.mock('./managed-agents', () => ({ managedAgents: () => { throw new Error('unmanaged display must not open the catalog'); }, statusFor: vi.fn() }));
 vi.mock('../telemetry/persist', () => ({ persist: { recovery: vi.fn(), timed: async (_kind: string, work: () => Promise<void>) => work() } }));
 import { resetAllSettingsStoresForTests } from './settings-store';
+import { captureDisplayProvider } from './display-provider';
 import { readRemoteAgentSettings } from './remote-agent-settings';
 let root: string, agent: DurableAgentConfig;
 const files = ['experimental-settings.json', 'chat-runtime-settings.json', 'free-agent-settings.json', 'chat-idle-settings.json'];
@@ -49,4 +50,24 @@ it('prioritizes revocation over changed display evidence after an actual setting
   for (const file of files) write(file, {}); let allowed = true;
   m.instructions.mockImplementation(async () => { write('chat-runtime-settings.json', { 'claude-code': { mode: 'terminal' } }); allowed = false; return { instructions: { text: '', truncated: false } }; });
   expect(await readRemoteAgentSettings(agent.id, () => allowed)).toEqual({ status: 403, body: { error: 'settings_read_refused' } });
+});
+
+it('preserves explicit terminal and access choices independently of unrelated unreadable globals', async () => {
+  for (const file of files) fs.writeFileSync(path.join(root, file), '{broken'); temps(); const before = disk();
+  Object.assign(agent, { runtimeMode: 'terminal', access: 'plan', freeAgentMode: false });
+  const result = await readRemoteAgentSettings(agent.id, () => true);
+  expect.soft(result).toMatchObject({ status: 200, body: { runtime: 'terminal', autoSleep: null } }); expect.soft(isRemoteAgentSettings(result.body, agent.id)).toBe(true); expect.soft(disk()).toEqual(before);
+});
+it('retains known fields beside unknown runtime in the bounded internal Details projection', async () => {
+  fs.writeFileSync(path.join(root, 'chat-runtime-settings.json'), '{broken'); const before = disk();
+  const result = await readRemoteAgentSettings(agent.id, () => true);
+  expect.soft(result.status).toBe(503); expect.soft(result.display).toMatchObject({ state: 'error', rows: expect.arrayContaining([{ label: 'Next start model', value: 'selected-model' }, { label: 'Next wake', value: 'Unavailable from host settings' }]) });
+  expect.soft(JSON.stringify(result.body)).not.toMatch(/selected-model|runtime/); expect.soft(disk()).toEqual(before);
+});
+
+it('refuses a foreign admitted provider observation before setup reads rather than borrowing another selected identity', async () => {
+  const snapshot = captureDisplayProvider({ agent: { ...agent, id: 'unrelated' }, project: { id: 'p', name: 'Project', path: root } });
+  const result = await readRemoteAgentSettings(agent.id, () => true, { admittedProvider: snapshot });
+  expect.soft(result).toEqual({ status: 500, body: { error: 'settings_read_failed' } }); expect.soft(m.instructions).not.toHaveBeenCalled();
+  expect.soft(JSON.stringify(result)).not.toMatch(/unrelated|selected-model|provider/);
 });

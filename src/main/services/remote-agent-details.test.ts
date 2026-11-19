@@ -17,6 +17,7 @@ vi.mock('./read-only-agent-target-witness', async (original) => {
 vi.mock('./read-only-config-target', async (original) => { const actual = await original<typeof import('./read-only-config-target')>(); return { captureReadOnlyConfigTargetWitness: (...args: Parameters<typeof actual.captureReadOnlyConfigTargetWitness>) => m.realWitness ? actual.captureReadOnlyConfigTargetWitness(...args) : { current: () => true } }; });
 vi.mock('./agent-config-reader', () => ({ resolveAgentConfigTarget: m.target }));
 vi.mock('./remote-agent-settings', () => ({ readRemoteAgentSettings: m.settings }));
+vi.mock('./display-provider', () => ({ captureDisplayProvider: () => { const provider = m.provider(); return { provider, selection: { state: 'ok', value: provider.id, inputs: [] }, receipt: { current: () => true } }; } }));
 vi.mock('./agent-system', () => ({ resolveOrchestrator: m.provider, isAgentRunning: m.running }));
 vi.mock('./agent-runtime/pty-runtime', () => ({ PtyAgentRuntime: class { kind = 'pty'; constructor(readonly agentId: string) {} } }));
 vi.mock('./pty-manager', () => ({ isRunning: () => m.running() }));
@@ -48,6 +49,7 @@ vi.mock('./agent-settings-service', () => ({ readMcpConfig: m.mcp, readLaunchWra
 vi.mock('./git-service', () => ({ getBranchChanges: m.branch }));
 vi.mock('../orchestrators', () => ({ isSessionCapable: () => true, getProvider: (id: string) => m.catalog(id) }));
 
+import { captureInstructionDisplayWitness } from './instruction-display-witness';
 import { ChatDetailsRecorder } from './agent-runtime/chat-details-evidence';
 import { MINIMAL_CHAT_CAPABILITIES } from '../../shared/chat';
 import { projectActionDetails } from './actions/details-read';
@@ -60,7 +62,7 @@ beforeEach(() => {
   m.envCached.mockReturnValue(true); m.realWitness = false; m.useRealRuntime = false; m.registration.mockReturnValue(undefined); m.runtime.mockReturnValue(undefined);
   m.target.mockResolvedValue({ agent: agent(), project });
   m.settings.mockResolvedValue({ status: 200, body: setting() });
-  m.provider.mockResolvedValue({ id: 'codex-cli', conventions: {}, readSessionTranscript: m.transcript });
+  m.provider.mockReturnValue({ id: 'codex-cli', conventions: {}, readSessionTranscript: m.transcript });
   m.transcript.mockResolvedValue([]); m.historical.mockResolvedValue([{ type: 'result', duration_ms: 5000, total_cost_usd: 1.25 }]);
   m.catalog.mockImplementation((id: string) => ({ id, displayName: id === 'claude-code' ? 'Host Current Claude' : id, readSessionTranscript: m.historical }));
   m.running.mockReturnValue(false);
@@ -105,7 +107,7 @@ describe('host selected-agent Details projections', () => {
   });
 
   it.each(['same', 'provider-changed', 'folder-changed'] as const)('separates current registered provider from inherited next-start choice and fences late evidence: %s', async (mode) => {
-    m.provider.mockResolvedValue({ id: 'codex-cli', displayName: 'Host Next Codex', conventions: {} });
+    m.provider.mockReturnValue({ id: 'codex-cli', displayName: 'Host Next Codex', conventions: {} });
     m.settings.mockResolvedValue({ status: 200, body: { ...setting(), provider: 'Host Next Codex', providerId: 'codex-cli' } });
     const recorder = new ChatDetailsRecorder('current-claude');
     recorder.observe({ v: 2, agentId: 'a1', sessionId: 's1', seq: 1, ts: 1, type: 'session_started', data: { provider: 'claude-code', driver: 'claude_agent_sdk', resumed: false, nativeSessionId: 'n1', cliVersion: '1.2.3', capabilities: MINIMAL_CHAT_CAPABILITIES, cwd: '/host/selected' } });
@@ -130,7 +132,7 @@ describe('host selected-agent Details projections', () => {
     m.runtime.mockReturnValue(runtime); m.running.mockReturnValue(true);
     const registration = { nonce: 'private-auth-nonce', runtime: 'chat' };
     m.registration.mockReturnValue(registration);
-    m.provider.mockResolvedValue({ id: 'claude-code', conventions: {} });
+    m.provider.mockReturnValue({ id: 'claude-code', conventions: {} });
     let authorized = true;
     m.canvases.mockImplementation(async () => {
       if (mode === 'replacement') m.registration.mockReturnValue({ ...registration, nonce: 'new-private-nonce' });
@@ -494,4 +496,28 @@ describe('host selected-agent Details projections', () => {
     m.canvases.mockImplementation(async () => { m.running.mockReturnValue(false); m.registration.mockReturnValue(undefined); return []; });
     expect((await readRemoteAgentDetails('a1', () => true)).status).toBe(409);
   });
+});
+
+it.each(['same', 'changed', 'created', 'revoked'] as const)('holds a real selected instruction receipt across later Details card work: %s', async (mode) => {
+  const root = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), 'clubhouse-details-settings-final-'))), file = path.join(root, 'CLAUDE.md');
+  if (mode !== 'created') await fs.writeFile(file, 'Selected instructions');
+  let allowed = true; const selected = { agent: agent(), project };
+  m.target.mockResolvedValue(selected);
+  m.settings.mockImplementation(async (_id: string, _authorized: () => boolean, options: { admittedTarget: unknown; receipts: Array<{ current(): boolean }> }) => {
+    expect(options.admittedTarget).toBe(selected);
+    options.receipts.push(captureInstructionDisplayWitness(root, 'CLAUDE.md'));
+    return { status: 200, body: setting() };
+  });
+  m.sources.mockImplementation(async () => { if (mode !== 'same') await fs.writeFile(file, 'Changed instructions'); if (mode === 'revoked') allowed = false; return { pairs: [], unreadable: [] }; });
+  try {
+    const result = await readRemoteAgentDetails('a1', () => allowed);
+    expect.soft(result.status).toBe(mode === 'same' ? 200 : mode === 'revoked' ? 403 : 409);
+    if (mode === 'same') expect.soft(isRemoteAgentDetails(result.body, 'a1')).toBe(true);
+    else expect.soft(JSON.stringify(result.body)).not.toMatch(/cards|Host CLI|Selected|providerId/);
+  } finally { await fs.rm(root, { recursive: true, force: true }); }
+});
+it('keeps independently known Settings rows when the unchanged v1 contract cannot express unknown runtime', async () => {
+  m.settings.mockResolvedValue({ status: 503, body: { error: 'settings_evidence_unavailable' }, display: { id: 'settings', title: 'Settings', state: 'error', summary: 'Some host settings are unavailable', rows: [{ label: 'Next start model', value: 'HOST_SAVED_MODEL' }, { label: 'Next wake', value: 'Unavailable from host settings' }], notes: ['Known host fields remain available independently.'], omitted: 0, observedAt: Date.now() } });
+  const result = await read(); expect(result.settings).toBeNull();
+  expect(result.cards.find((card) => card.id === 'settings')).toMatchObject({ state: 'error', rows: expect.arrayContaining([{ label: 'Next start model', value: 'HOST_SAVED_MODEL' }, { label: 'Next wake', value: 'Unavailable from host settings' }]) });
 });

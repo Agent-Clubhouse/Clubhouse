@@ -651,6 +651,16 @@ describe('annex-server', () => {
       expect(agentSystem.spawnAgent).not.toHaveBeenCalled();
       expect(ptyManagerModule.write).not.toHaveBeenCalled();
     });
+    it.each([200, 503])('serializes only the Settings wire body, excluding internal evidence and display rows, status=%s', async (status) => {
+      const body = status === 200 ? { version: 1, readOnly: true, agentId: 'a1' } : { error: 'settings_evidence_unavailable' };
+      vi.mocked(readRemoteAgentSettings).mockResolvedValue({ status, body,
+        display: { id: 'settings', title: 'Settings', state: 'error', summary: 'PRIVATE_INTERNAL', rows: [{ label: 'Private', value: 'PRIVATE_ROW' }], notes: [], omitted: 0, observedAt: Date.now() },
+        managedEvidence: { setup: {}, status: { private: 'PRIVATE_STATUS' }, names: new Map([['private', 'PRIVATE_NAME']]), receipt: { current: () => true } },
+      } as unknown as Awaited<ReturnType<typeof readRemoteAgentSettings>>);
+      const { port } = await startAndPair(), response = await request(port, 'GET', route);
+      expect.soft(response.status).toBe(status); expect.soft(JSON.parse(response.body)).toEqual(body);
+      expect.soft(response.body).not.toMatch(/PRIVATE_|managedEvidence|display|receipts|current/);
+    });
     it('rejects an unpaired/wrong-pin caller before summary reads', async () => {
       const { port } = await startAndPair();
       vi.mocked(annexTls.extractPeerCertificateFingerprint).mockReturnValueOnce('wrong-pin');

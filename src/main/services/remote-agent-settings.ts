@@ -4,7 +4,7 @@ import { REMOTE_SETTINGS_MAX_BYTES } from '../../shared/remote-agent-settings';
 import { accessLabel, startableAccess } from '../../shared/agent-access';
 import { isDisposedAgent } from '../../shared/agent-helpers';
 import { resolveAgentConfigTarget, readResolvedAgentConfig, type AgentConfigTarget } from './agent-config-reader';
-import { resolveOrchestrator } from './agent-system';
+import { captureDisplayProvider, type DisplayProviderSnapshot } from './display-provider';
 import { readAgentAccessForDisplay } from './free-agent-settings';
 import { readRuntimeModeForDisplay } from './chat-runtime-settings';
 import { resolveChatDriver } from './agent-runtime/chat-drivers';
@@ -19,7 +19,7 @@ const label = (text: string) => Array.from(text, (char) => char.charCodeAt(0) < 
 
 /** Internal host projection only; transport sends body, never private receipt functions. */
 export interface RemoteSettingsRead { status: number; body: unknown; display?: RemoteDetailsCard; managedEvidence?: ManagedSettingsEvidence }
-interface ReadOptions { admittedTarget?: AgentConfigTarget; receipts?: DisplayReceipt[] }
+interface ReadOptions { admittedTarget?: AgentConfigTarget; admittedProvider?: DisplayProviderSnapshot; receipts?: DisplayReceipt[] }
 
 function observe<T>(read: () => DisplayValue<T>, receipts: DisplayReceipt[]): DisplayValue<T> {
   const value = read();
@@ -48,16 +48,17 @@ export async function readRemoteAgentSettings(agentId: string, authorized: () =>
     if (agent.id !== agentId || isDisposedAgent(agent)) return { status: 404, body: { error: 'agent_not_found' } };
     if (!authorized()) return refused();
     const targetWitness = captureReadOnlyConfigTargetWitness(target);
-    const provider = await resolveOrchestrator(project.path, agent.orchestrator);
-    if (!authorized()) return refused();
-    const receipts: DisplayReceipt[] = [];
+    const providerRead = options.admittedProvider ?? captureDisplayProvider(target);
+    if (options.admittedProvider && !providerRead.matchesTarget(target)) throw new Error('provider_target_mismatch');
+    const provider = providerRead.provider;
+    const receipts: DisplayReceipt[] = [providerRead.receipt];
     const runtimeOverride = agent.runtimeMode, accessChoice = { access: agent.access, freeAgentMode: agent.freeAgentMode }, idleOverride = agent.idleSleep;
-    const mode = observe(() => readRuntimeModeForDisplay(provider.id, runtimeOverride), receipts);
-    const runtime = mode.state === 'ok' ? mode.value.mode === 'chat' && resolveChatDriver(provider.id, mode.value.driver) ? 'chat' : 'terminal' : null;
-    const permissions = provider.getCapabilities().permissions;
-    const access = permissions ? observe(() => readAgentAccessForDisplay(accessChoice, project.path), receipts) : null;
+    const mode = provider ? observe(() => readRuntimeModeForDisplay(provider.id, runtimeOverride), receipts) : { state: 'unavailable' as const, inputs: providerRead.selection.inputs };
+    const runtime = mode.state === 'ok' ? mode.value.mode === 'chat' && resolveChatDriver(provider!.id, mode.value.driver) ? 'chat' : 'terminal' : null;
+    const permissions = provider?.getCapabilities?.().permissions;
+    const access = permissions === true ? observe(() => readAgentAccessForDisplay(accessChoice, project.path), receipts) : null;
     const idle = runtime === 'terminal' ? null : observe(() => readIdleSleepForDisplay(idleOverride), receipts);
-    const accessText = !permissions ? 'Set by the CLI' : runtime && access?.state === 'ok' ? accessLabel(startableAccess(access.value, provider.id, runtime)) : null;
+    const accessText = permissions === false ? 'Set by the CLI' : runtime && access?.state === 'ok' ? accessLabel(startableAccess(access.value, provider!.id, runtime)) : null;
     const sleepText = idle?.state === 'ok' ? `${idle.value.minutes ? `Sleeps after ${idle.value.minutes} min` : 'Never sleeps'}${idle.value.source === 'app' ? ' (host default)' : ''}` : null;
     const complete = runtime !== null && accessText !== null && (runtime !== 'chat' || sleepText !== null);
     const shown = card('settings', 'Settings');
@@ -65,7 +66,7 @@ export async function readRemoteAgentSettings(agentId: string, authorized: () =>
     // Details rows retain independently known facts without inventing an enum.
     if (!complete) {
       shown.state = 'error'; shown.summary = 'Some host settings are unavailable';
-      row(shown, 'Next start CLI', provider.displayName); row(shown, 'Next start model', agent.model && agent.model !== 'default' ? agent.model : 'Default model');
+      row(shown, 'Next start CLI', provider?.displayName || (providerRead.selection.state === 'ok' ? `${providerRead.selection.value} (unavailable on host)` : 'Unavailable from host metadata')); row(shown, 'Next start model', agent.model && agent.model !== 'default' ? agent.model : 'Default model');
       row(shown, 'Next wake', runtime === null ? 'Unavailable from host settings' : runtime === 'chat' ? 'Chat' : 'CLI');
       row(shown, 'Next start access', accessText ?? 'Unavailable from host settings');
       if (runtime === null && access?.state === 'ok') row(shown, 'Saved access', accessLabel(access.value));
@@ -76,11 +77,11 @@ export async function readRemoteAgentSettings(agentId: string, authorized: () =>
     }
     row(shown, 'Next start effort', agent.effort);
     shown.notes.push('Saved next-start preferences; current runtime reports are shown separately.');
-    const inputs = [...mode.inputs, ...(access?.inputs ?? []), ...(idle?.inputs ?? [])];
+    const inputs = [...providerRead.selection.inputs, ...mode.inputs, ...(access?.inputs ?? []), ...(idle?.inputs ?? [])];
     for (const input of inputs) shown.notes.push(`${input.field}: ${input.source === 'host-cache' ? 'established host cache' : input.source === 'primary' ? 'host primary metadata' : 'selected agent metadata'} observed ${new Date(input.observedAt).toISOString()}.`);
     const result: RemoteAgentSettings = {
       version: 1, readOnly: true, agentId,
-      provider: label(provider.displayName), providerId: provider.id, model: label(agent.model && agent.model !== 'default' ? agent.model : 'Default model'),
+      provider: label(provider?.displayName ?? ''), ...(provider && { providerId: provider.id }), model: label(agent.model && agent.model !== 'default' ? agent.model : 'Default model'),
       // This object is serialized only when complete. Required unknown fields
       // never cross the v1 boundary with a fabricated fallback value.
       runtime: runtime!, access: accessText!,
@@ -96,7 +97,8 @@ export async function readRemoteAgentSettings(agentId: string, authorized: () =>
         result.setup = managedEvidence.setup;
       } else {
         // Reuse the bounded, no-symlink instruction reader. Only a count leaves this process.
-        const evidence = await readResolvedAgentConfig(target);
+        if (!provider) throw new Error('provider_unavailable');
+        const evidence = await readResolvedAgentConfig(target, { provider, receipts });
         const text = evidence.instructions.text;
         result.setup = { state: 'ok', managed: false, template: null,
           instructions: text.trim() ? `Custom, ${text.trimEnd().split(/\r?\n/).length} lines${evidence.instructions.truncated ? ' (truncated)' : ''}` : 'None',

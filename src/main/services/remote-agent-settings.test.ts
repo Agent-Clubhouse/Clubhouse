@@ -10,6 +10,7 @@ vi.mock('./base-dir', () => ({ getBaseDirPath: () => mocks.base }));
 vi.mock('./dispatcher/dispatcher-service', () => ({ getDispatcherAgentId: () => mocks.role, getDispatcherChatAgentId: () => null }));
 vi.mock('./agent-config-reader', () => ({ resolveAgentConfigTarget: mocks.resolve, readResolvedAgentConfig: mocks.instructions }));
 vi.mock('./read-only-config-target', async (original) => { const actual = await original<typeof import('./read-only-config-target')>(); return { captureReadOnlyConfigTargetWitness: (...args: Parameters<typeof actual.captureReadOnlyConfigTargetWitness>) => mocks.realWitness ? actual.captureReadOnlyConfigTargetWitness(...args) : { current: mocks.current } }; });
+vi.mock('./display-provider', () => ({ captureDisplayProvider: () => { const provider = mocks.provider(); return { provider, selection: { state: 'ok', value: provider.id, inputs: [] }, receipt: { current: () => true } }; } }));
 vi.mock('./agent-system', () => ({ resolveOrchestrator: mocks.provider }));
 vi.mock('./free-agent-settings', () => ({ readAgentAccessForDisplay: () => ({ state: 'ok', value: 'full_access', inputs: [] }) }));
 vi.mock('./chat-runtime-settings', () => ({ readRuntimeModeForDisplay: () => ({ state: 'ok', value: { mode: mocks.chatEnabled ? 'chat' : 'terminal' }, inputs: [] }) }));
@@ -30,7 +31,7 @@ const config = () => ({ id: 'a1', name: 'Host', color: 'teal', model: 'host-mode
 beforeEach(() => {
   mocks.chatEnabled = true; mocks.driver = true; mocks.realWitness = false; mocks.role = null; mocks.current.mockReturnValue(true);
   mocks.resolve.mockResolvedValue({ agent: config(), project: { id: 'p', path: '/host' } });
-  mocks.provider.mockResolvedValue({ id: 'claude-code', displayName: 'Claude Code', getCapabilities: () => ({ permissions: true }) });
+  mocks.provider.mockReturnValue({ id: 'claude-code', displayName: 'Claude Code', getCapabilities: () => ({ permissions: true }) });
   mocks.entries.mockResolvedValue({ b: { name: 'Block', content: 'private-instruction' }, s: { name: 'Skill' }, m: { name: 'MCP', env: { TOKEN: 'private-token' } } });
   mocks.template.mockResolvedValue({ name: 'Host template', settings: { env: { TOKEN: 'private-template' } } });
   mocks.status.mockResolvedValue({ waiting: true, changes: ['private-error'] });
@@ -126,7 +127,7 @@ describe('host Settings summary', () => {
   it('bounds managed inventory and string lengths', async () => {
     const c = config(); c.managed.skills = Array.from({ length: 101 }, () => 's');
     mocks.resolve.mockResolvedValue({ agent: c, project: { path: '/host' } });
-    mocks.provider.mockResolvedValue({ id: 'claude-code', displayName: 'x'.repeat(5000), getCapabilities: () => ({ permissions: true }) });
+    mocks.provider.mockReturnValue({ id: 'claude-code', displayName: 'x'.repeat(5000), getCapabilities: () => ({ permissions: true }) });
     const result = await readRemoteAgentSettings('a1', () => true);
     expect(result).toMatchObject({ status: 200, body: { provider: 'x'.repeat(240), setup: { state: 'error' } } });
     expect(mocks.entries).not.toHaveBeenCalled();

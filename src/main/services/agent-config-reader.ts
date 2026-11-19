@@ -1,5 +1,8 @@
 /** Read-only, bounded setup evidence. Never scans provider/global configuration or materializes parts. */
 import { constants, type BigIntStats } from 'fs';
+import type { OrchestratorProvider } from '../orchestrators';
+import type { DisplayReceipt } from './display-settings';
+import { captureInstructionDisplayWitness } from './instruction-display-witness';
 import type { DurableAgentConfig } from '../../shared/types';
 import * as fs from 'fs/promises';
 import * as path from 'path';
@@ -77,7 +80,7 @@ async function ownInstructions(root: string, relative: string): Promise<{ text: 
 
 export interface AgentConfigTarget {
   agent: DurableAgentConfig;
-  project: { id: string; path: string; name: string; displayName?: string };
+  project: { id: string; path: string; name: string; displayName?: string; orchestrator?: string };
 }
 
 /** Resolve exactly one snapshot. Even an id must not bypass an unknown project. */
@@ -140,7 +143,7 @@ export async function readAgentConfig(reference: string, project?: string) {
 }
 
 /** Read only the same snapshot the caller authorized, without resolving a name or project again. */
-export async function readResolvedAgentConfig({ agent, project: p }: AgentConfigTarget) {
+export async function readResolvedAgentConfig({ agent, project: p }: AgentConfigTarget, options: { provider?: OrchestratorProvider; receipts?: DisplayReceipt[] } = {}) {
   const result = {
     agent: { id: agent.id, name: prefix(agent.name, 200) },
     evidence: agent.managed ? 'desired_setup' : 'instruction_file',
@@ -196,10 +199,16 @@ export async function readResolvedAgentConfig({ agent, project: p }: AgentConfig
     result.omittedMissing = resolved.missing.length - result.missing.length;
     result.truncated ||= result.omittedMissing > 0;
   } else {
-    const provider = await resolveOrchestrator(p.path, agent.orchestrator);
-    try { Object.assign(result.instructions, await ownInstructions(agent.worktreePath || p.path, instructionsFileRel(provider))); }
+    const provider = options.provider ?? await resolveOrchestrator(p.path, agent.orchestrator);
+    const root = agent.worktreePath || p.path, relative = instructionsFileRel(provider);
+    const witness = options.receipts ? captureInstructionDisplayWitness(root, relative) : undefined;
+    try { Object.assign(result.instructions, await ownInstructions(root, relative)); }
     catch (error) {
       if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
+    }
+    if (witness) {
+      if (!witness.current()) throw new Error('Instructions changed while reading.');
+      options.receipts!.push(witness);
     }
   }
   result.truncated ||= result.instructions.truncated;
