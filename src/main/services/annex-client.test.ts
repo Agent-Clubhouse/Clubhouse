@@ -3148,6 +3148,25 @@ describe('annex-client', () => {
       expect(requests[1].body.commandId).toEqual(expect.any(String));
     });
 
+    it('sends a terminal answer to its original agent over the pinned permission endpoint', async () => {
+      vi.mocked(annexPeers.getPeer).mockReturnValue({ fingerprint: FP, tlsCertificatePem: 'B-CERT', tlsCertificateFingerprint: 'B-PIN' } as never);
+      answers.push({ status: 200, body: { ok: true, requestId: 'request', decision: 'deny' } });
+      expect(await annexClient.respondPermission(FP, 'agent/id', 'request', 'deny')).toEqual({ status: 'resolved' });
+      expect(requests).toEqual([{ url: expect.stringMatching(/\/api\/v1\/agents\/agent%2Fid\/permission-response$/), method: 'POST', body: { requestId: 'request', decision: 'deny' } }]);
+      expect(annexTls.createPinnedTlsClientOptions).toHaveBeenCalledWith(LOCAL_IDENTITY, { certPem: 'B-CERT', fingerprint: 'B-PIN' });
+      expect(https.request).toHaveBeenLastCalledWith(expect.any(String), expect.objectContaining({ pinned: true }), expect.any(Function));
+    });
+
+    it('preserves host refusal authority for late, mismatched and incomplete terminal answers', async () => {
+      answers.push({ status: 404, body: { error: 'request_not_found' } });
+      expect(await annexClient.respondPermission(FP, 'agent', 'request', 'allow')).toEqual({ status: 'rejected', reason: 'not_found' });
+      answers.push({ status: 403, body: { error: 'agent_mismatch' } });
+      expect(await annexClient.respondPermission(FP, 'agent', 'request', 'deny')).toEqual({ status: 'rejected', reason: 'agent_mismatch' });
+      answers.push({ status: 409, body: { error: 'incomplete_representation' } });
+      await expect(annexClient.respondPermission(FP, 'agent', 'request', 'allow')).rejects.toThrow('only a preview');
+      await expect(annexClient.respondPermission('missing', 'agent', 'request', 'allow')).rejects.toThrow('Satellite not connected');
+    });
+
     it('reads the epoch from capabilities when it has none, and sends again once after a stale epoch', async () => {
       answers.push({ status: 200, body: { epoch: 'ep_old' } });
       answers.push({ status: 409, body: { status: 'rejected', error: { code: 'epoch_mismatch' } } });

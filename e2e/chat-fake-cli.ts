@@ -26,8 +26,8 @@ export const ORCHESTRATOR_FOR_CLI: Record<ChatFixtureCli, string> = {
  */
 export interface FakeClis {
   env: Record<string, string>;
-  /** Read the replay report for one CLI (complete, mismatch, argv, …). */
-  report(cli: ChatFixtureCli, agentId?: string): Promise<FakeCliReport>;
+  /** Read the latest report, an agent's report, or one-off runs with null. */
+  report(cli: ChatFixtureCli, agentId?: string | null): Promise<FakeCliReport>;
   cleanup(): Promise<void>;
 }
 
@@ -97,7 +97,7 @@ export async function installFakeClis(
     async report(cli, agentId) {
       const file = reports[cli];
       if (!file) throw new Error(`no fake ${cli} installed`);
-      return JSON.parse(await fs.promises.readFile(agentId ? fakeCliAgentReportPath(file, agentId) : file, 'utf8')) as FakeCliReport;
+      return JSON.parse(await fs.promises.readFile(agentId === undefined ? file : fakeCliAgentReportPath(file, agentId), 'utf8')) as FakeCliReport;
     },
     async cleanup() {
       // Windows: a fake that was just killed can hold its files for a moment.

@@ -49,10 +49,18 @@ interface PendingEntry extends PendingPermission {
 }
 
 const pending = new Map<string, PendingEntry>();
+const claimed = new WeakSet<PendingEntry>();
 
 /** Listener called when a new permission request is created. */
 type PermissionRequestListener = (permission: PendingPermission) => void;
 const listeners = new Set<PermissionRequestListener>();
+const changeListeners = new Set<() => void>();
+const changed = () => { for (const listener of changeListeners) listener(); };
+
+export function onChange(listener: () => void): () => void {
+  changeListeners.add(listener);
+  return () => { changeListeners.delete(listener); };
+}
 
 /**
  * Create a pending permission request. Returns a promise that resolves
@@ -75,6 +83,7 @@ export function createPermission(
         meta: { requestId, agentId, toolName, timeoutMs },
       });
       resolve('timeout');
+      changed();
     }, timeoutMs);
 
     const entry: PendingEntry = {
@@ -106,6 +115,7 @@ export function createPermission(
   // Notify listeners
   const info: PendingPermission = { requestId, agentId, toolName, toolInput, message, createdAt, timeoutMs };
   for (const fn of listeners) fn(info);
+  changed();
 
   return { requestId, decision };
 }
@@ -146,7 +156,7 @@ export function resolvePermissionDetailed(
 ): PermissionResolveResult {
   const { expectedAgentId, source } = options;
   const entry = pending.get(requestId);
-  if (!entry) {
+  if (!entry || claimed.has(entry)) {
     appLog(NS, 'warn', 'Permission resolve no-op (unknown or already resolved)', {
       meta: { requestId, decision, source },
     });
@@ -182,7 +192,19 @@ export function resolvePermissionDetailed(
     },
   });
   entry.resolve(decision);
+  changed();
   return { status: 'resolved' };
+}
+
+/** Reserve the mirrored entry while chat submits an answer; releasing never recreates a withdrawn entry. */
+export function claimPermission(requestId: string, expectedAgentId: string): (() => void) | undefined {
+  const entry = pending.get(requestId);
+  if (!entry || claimed.has(entry) || entry.agentId !== expectedAgentId || Date.now() >= entry.createdAt + entry.timeoutMs) {
+    appLog(NS, 'warn', 'Permission claim rejected', { meta: { requestId, expectedAgentId } });
+    return undefined;
+  }
+  claimed.add(entry);
+  return () => { claimed.delete(entry); };
 }
 
 /**
@@ -238,6 +260,7 @@ export function cancelPermission(requestId: string, reason: string, expectedAgen
     meta: { requestId, agentId: entry.agentId, toolName: entry.toolName, reason },
   });
   entry.resolve('timeout');
+  changed();
   return true;
 }
 
@@ -253,6 +276,7 @@ export function clearForAgent(agentId: string): void {
     }
   }
   if (count > 0) {
+    changed();
     appLog(NS, 'info', 'Permissions cleared on agent stop', {
       meta: { agentId, count },
     });
@@ -268,6 +292,8 @@ export function reset(): void {
   }
   pending.clear();
   listeners.clear();
+  if (count > 0) changed();
+  changeListeners.clear();
   if (count > 0) {
     appLog(NS, 'debug', 'Permission queue reset', { meta: { count } });
   }

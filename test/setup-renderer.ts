@@ -462,6 +462,7 @@ vi.stubGlobal('clubhouse', {
     chatPage: async () => ({ events: [] }),
     chatSessions: async () => [],
     chatCommand: async () => ({ status: 'completed' }),
+    respondPermission: async () => ({ status: 'resolved' }),
     forgetAllSatellites: asyncNoop,
     onSatellitesChanged: () => noop,
     onDiscoveredChanged: () => noop,

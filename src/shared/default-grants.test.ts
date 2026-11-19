@@ -6,10 +6,33 @@ import { ORCHESTRATION_CONTROLS } from './orchestration-policy';
 import { applyGrantChanges, grantRows, normalizeGrantChanges } from './agent-grant-changes';
 
 describe('remote Dispatcher grants (#3348)', () => {
-  it.each([[true, false, 'allow'], [false, true, 'ask'], [false, false, 'refuse']] as const)('defaults dispatcher=%s connected=%s to %s', (dispatcher, dispatcherConnected, expected) => {
+  it.each([
+    { name: 'Dispatcher', dispatcher: true, dispatcherConnected: false, relations: ['self'] as const },
+    { name: 'connected agent', dispatcher: false, dispatcherConnected: true, relations: ['connected'] as const },
+    { name: 'unconnected agent', dispatcher: false, dispatcherConnected: false, relations: [] as const },
+  ])('gives $name the same default messaging decision for an eligible paired remote Dispatcher as locally', ({ dispatcher, dispatcherConnected, relations }) => {
+    const grants = defaultGrants({ dispatcher, dispatcherConnected, helper: false, orchestrates: false, crossProject: false });
+    const caller = { kind: 'agent' } as const;
+    const local = evaluateGrant({ caller, action: 'agent.message', target: { kind: 'agent', isDispatcher: true, relations } }, grants);
+    const remote = evaluateGrant({ caller, action: 'agent.message', target: { kind: 'agent', isDispatcher: true, remoteDispatcher: true } }, grants);
+    expect(remote.outcome).toBe(local.outcome);
+  });
+
+  it.each([[true, false, 'allow'], [false, true, 'allow'], [false, false, 'refuse']] as const)('defaults dispatcher=%s connected=%s to %s', (dispatcher, dispatcherConnected, expected) => {
     const grants = defaultGrants({ dispatcher, dispatcherConnected, helper: false, orchestrates: false, crossProject: false });
     expect(evaluateGrant({ caller: { kind: 'agent' }, action: 'agent.message', target: { kind: 'agent', remoteDispatcher: true } }, grants).outcome).toBe(expected);
     expect(evaluateGrant({ caller: { kind: 'agent' }, action: 'agent.message', target: { kind: 'agent' } }, grants).outcome).toBe('refuse');
+  });
+  it.each(['allow', 'ask', 'off'] as const)('preserves a saved remote %s without changing the local default or saved choice', (mode) => {
+    const defaults = defaultGrants({ dispatcher: false, dispatcherConnected: true, helper: false, orchestrates: false, crossProject: false });
+    const saved = { changes: [{ action: 'agent.message' as const, target: { kind: 'remote_dispatcher' as const }, mode, by: 'user' as const }] };
+    const original = JSON.stringify(saved);
+    const grants = applyGrantChanges(defaults, saved);
+    expect(evaluateGrant({ caller: { kind: 'agent' }, action: 'agent.message', target: { kind: 'agent', remoteDispatcher: true } }, grants).outcome)
+      .toBe(mode === 'off' ? 'refuse' : mode);
+    expect(evaluateGrant({ caller: { kind: 'agent' }, action: 'agent.message', target: { kind: 'agent', isDispatcher: true, relations: ['connected'] } }, grants).outcome)
+      .toBe('allow');
+    expect(JSON.stringify(saved)).toBe(original);
   });
   it.each([[true, false, 'ask'], [false, true, 'ask'], [false, false, 'refuse']] as const)('keeps agreements under their own normal approval dispatcher=%s connected=%s', (dispatcher, dispatcherConnected, expected) => {
     const grants = defaultGrants({ dispatcher, dispatcherConnected, helper: false, orchestrates: false, crossProject: false });

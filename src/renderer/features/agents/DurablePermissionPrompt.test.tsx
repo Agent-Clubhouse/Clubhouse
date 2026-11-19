@@ -97,6 +97,23 @@ describe('DurablePermissionPrompt', () => {
     expect(screen.queryByTestId('durable-permission-prompt')).toBeNull();
   });
 
+  it('requires a person to answer a remote prompt and surfaces incomplete-review refusal without a local allow', async () => {
+    const remote = vi.spyOn(window.clubhouse.annexClient, 'respondPermission')
+      .mockRejectedValue(new Error('This request is only a preview. Review it on its host computer.'));
+    const permission = makePermission({ agentId: 'remote||sat||agent', requestId: 'remote||sat||request' });
+    seed(permission);
+    render(<DurablePermissionPrompt agentId={permission.agentId} />);
+    expect(remote).not.toHaveBeenCalled();
+    expect(resolveSpy).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByTestId('durable-permission-approve'));
+
+    await waitFor(() => expect(screen.getByTestId('permission-prompt-error')).toHaveTextContent('only a preview'));
+    expect(remote).toHaveBeenCalledWith('sat', 'agent', 'request', 'allow');
+    expect(resolveSpy).not.toHaveBeenCalled();
+    expect(usePendingPermissionStore.getState().byRequestId[permission.requestId]).toBeDefined();
+  });
+
   it('sends deny when Deny is clicked', async () => {
     seed(makePermission());
     render(<DurablePermissionPrompt agentId="agent-1" />);

@@ -107,6 +107,27 @@ describe('annex-permission-queue', () => {
     expect(listener).toHaveBeenCalledTimes(1); // Not called again
   });
 
+  it.each(['answer', 'cancel', 'expire', 'stop'] as const)('publishes the current queue after %s so connected views can clear it', (action) => {
+    vi.useFakeTimers();
+    try {
+      const listener = vi.fn(() => queue.listPending());
+      queue.onChange(listener);
+      const { requestId } = queue.createPermission('agent1', 'Bash', undefined, undefined, 100);
+      expect(listener).toHaveReturnedWith([expect.objectContaining({ requestId })]);
+      listener.mockClear();
+
+      if (action === 'answer') queue.resolvePermission(requestId, 'deny', { expectedAgentId: 'agent1' });
+      else if (action === 'cancel') queue.cancelPermission(requestId, 'withdrawn', 'agent1');
+      else if (action === 'stop') queue.clearForAgent('agent1');
+      else vi.advanceTimersByTime(100);
+
+      expect(listener).toHaveBeenCalledOnce();
+      expect(listener).toHaveReturnedWith([]);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('reset clears everything', async () => {
     const { decision } = queue.createPermission('agent1', 'Bash');
     queue.reset();
