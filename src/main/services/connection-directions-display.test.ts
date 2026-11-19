@@ -24,8 +24,8 @@ it.each(['missing', 'empty', 'broken', 'array', 'field', 'future', 'backup-only'
 it('returns only selected local-end display fields, preserving useful independent sources and safe maker names', async () => {
   await put([row({ agentLinks: [{ agentId: 'maker', machineId: 'machine', createdAt: '2026-11-19', name: 'Selected maker', PRIVATE_ARGS: 'PRIVATE_PROMPT' }, { agentId: 'old-maker', machineId: 'machine', createdAt: '2026-11-18', removedAt: '2026-11-19', name: 'PRIVATE_REMOVED' }] }), row({ from: { agentId: 'other-a' }, to: { agentId: 'other-b' }, disabledTools: 'PRIVATE_UNRELATED' }), row({ from: { agentId: 'selected', machineId: 'remote' }, to: { agentId: 'elsewhere' }, link: { createdAt: 'PRIVATE_WRONG_MACHINE' } })]);
   const value = readConnectionDirectionsForDisplay('selected'); expect(value.state).toBe('ok');
-  if (value.state === 'ok') { expect(value.value.total).toBe(1); expect.soft(value.value.rows[0]).toMatchObject({ from: { agentId: 'selected' }, disabledTools: { value: ['read_output'] }, enabledTools: { value: ['wake_agent'] }, userLink: { value: true }, cardLink: { value: false }, makers: { value: [{ agentId: 'maker', name: { value: 'Selected maker' } }] } }); }
-  expect.soft(JSON.stringify(value)).not.toMatch(/PRIVATE_|setBy|createdAt|removedAt|updatedAt|agentToolsProtected/);
+  if (value.state === 'ok') { expect.soft(value.value.total).toBe(1); expect.soft(value.value.rows[0]).toMatchObject({ from: { agentId: 'selected' }, disabledTools: { value: ['read_output'] }, enabledTools: { value: ['wake_agent'] }, userLink: { value: true }, cardLink: { value: false }, makers: { value: [{ agentId: 'maker', name: { value: 'Selected maker' } }] } }); }
+  expect.soft(JSON.stringify(value)).not.toMatch(/PRIVATE_|other-a|other-b|elsewhere|setBy|createdAt|removedAt|updatedAt|agentToolsProtected/);
 });
 it('retains known tool fields independently of malformed sources/makers instead of defaulting false or empty', async () => {
   await put([row({ enabledTools: 'abc', cardLink: null, agentLinks: [{ agentId: 'maker', machineId: 'machine', createdAt: 'bad' }] })]);
@@ -52,8 +52,9 @@ it.each(['tool', 'source', 'maker', 'new-selected', 'unrelated'])('retains priva
   await put([changed, { ...other, PRIVATE_CONFIG: 'PRIVATE_UNRELATED_EDIT' }, ...(kind === 'new-selected' ? [row({ to: { agentId: 'new' } })] : [])]);
   expect(receipts[0].current()).toBe(kind === 'unrelated'); expect(JSON.stringify(value)).not.toMatch(/PRIVATE_|receipts|current|signature/);
 });
-it('does not retain invalid selected keys/page objects in private receipt closures', () => {
-  for (const [key, offset] of [['x'.repeat(10000), 0], ['', 0], ['selected', -1], ['selected', 0.5], ['selected', CONNECTION_DISPLAY_SCAN + 1]] as const) {
-    const receipts: Array<{ current(): boolean }> = []; expect(readConnectionDirectionsForDisplay(key, { offset, receipts }).state).toBe('unavailable'); expect(receipts).toHaveLength(0);
-  }
+it.each(['oversized-key', 'empty-key', 'negative-offset', 'fractional-offset', 'over-offset'] as const)('does not retain invalid selected keys/page objects: %s', (kind) => {
+  const key = kind === 'oversized-key' ? 'x'.repeat(10000) : kind === 'empty-key' ? '' : 'selected';
+  const offset = kind === 'negative-offset' ? -1 : kind === 'fractional-offset' ? 0.5 : kind === 'over-offset' ? CONNECTION_DISPLAY_SCAN + 1 : 0;
+  const receipts: Array<{ current(): boolean }> = [];
+  expect(readConnectionDirectionsForDisplay(key, { offset, receipts }).state).toBe('unavailable'); expect(receipts).toHaveLength(0);
 });
