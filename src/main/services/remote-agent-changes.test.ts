@@ -2,7 +2,8 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { isRemoteAgentChanges, type RemoteAgentChanges } from '../../shared/remote-agent-changes';
 import { readRemoteAgentChanges } from './remote-agent-changes';
 import { ReadOnlyGitError } from './read-only-repository-changes';
-const m = vi.hoisted(() => ({ target: vi.fn(), registry: vi.fn(), runtime: vi.fn(), running: vi.fn(), root: vi.fn(), git: vi.fn(), changes: vi.fn(), refs: '', message: '' }));
+const m = vi.hoisted(() => ({ target: vi.fn(), registry: vi.fn(), runtime: vi.fn(), running: vi.fn(), root: vi.fn(), git: vi.fn(), changes: vi.fn(), refs: '', message: '', witnessCurrent: true }));
+vi.mock('./read-only-agent-target-witness', () => ({ captureReadOnlyAgentTargetWitness: () => ({ current: () => m.witnessCurrent }) }));
 vi.mock('./agent-config-reader', () => ({ resolveAgentConfigTarget: m.target }));
 vi.mock('./agent-registry', () => ({ agentRegistry: { get: m.registry } }));
 vi.mock('./agent-runtime', () => ({ getAgentRuntime: m.runtime }));
@@ -18,7 +19,7 @@ beforeEach(() => {
   m.runtime.mockReturnValue({ kind: 'chat', getSessionId: () => 'session-a', getNativeSessionId: () => 'native-a' });
   m.root.mockResolvedValue('/host/selected');
   m.changes.mockResolvedValue({ files: [], totalFiles: 0, offset: 0, nextOffset: null, uncompared: 0 });
-  m.refs = ''; m.message = '';
+  m.refs = ''; m.message = ''; m.witnessCurrent = true;
   m.git.mockImplementation(async (_cwd, args: string[]) => {
     if (args[0] === 'rev-parse') { if (args.includes('HEAD^{commit}')) return Buffer.from(head); if (args.some((a) => a === 'refs/heads/main^{commit}')) return Buffer.from(base); throw new ReadOnlyGitError(1, 'missing ref'); }
     if (args[0] === 'symbolic-ref') { if (args.includes('HEAD')) return Buffer.from('feature'); throw new ReadOnlyGitError(1, 'missing ref'); }
@@ -87,6 +88,31 @@ describe('exact selected-agent passive Changes reader', () => {
       return result;
     });
     expect((await readRemoteAgentChanges('a1', { scope: 'branch' }, () => true)).status).toBe(409);
+  });
+  it('refuses a sleeping selected ID removed during the read even when another agent has that name and identical folders', async () => {
+    m.registry.mockReturnValue(undefined); m.runtime.mockReturnValue(undefined); m.running.mockReturnValue(false);
+    m.changes.mockImplementation(async () => {
+      m.target.mockResolvedValue({ agent: { id: 'b1', name: 'a1', worktreePath: '/host/selected' }, project: { id: 'p1', path: '/host/project' } });
+      return { files: [], totalFiles: 0, offset: 0, nextOffset: null, uncompared: 0 };
+    });
+    const result = await readRemoteAgentChanges('a1', { scope: 'branch' }, () => true);
+    expect(result.status).not.toBe(200);
+    expect(result.body).not.toHaveProperty('files');
+  });
+  it.each(['root', 'HEAD'] as const)('refuses a sleeping target disposed or untracked during the final %s await', async (phase) => {
+    m.registry.mockReturnValue(undefined); m.runtime.mockReturnValue(undefined); m.running.mockReturnValue(false);
+    const original = m.git.getMockImplementation()!;
+    let roots = 0, heads = 0;
+    const dispose = () => { m.witnessCurrent = false; m.target.mockResolvedValue({ agent: { id: 'a1', name: 'Selected', disposedAt: '2026-11-19T00:00:00Z', worktreePath: '/host/selected' }, project: { id: 'p1', path: '/host/project' } }); };
+    m.root.mockImplementation(async () => { if (++roots === 2 && phase === 'root') dispose(); return '/host/selected'; });
+    m.git.mockImplementation(async (...args) => {
+      const value = await original(...args);
+      if (args[1].includes('HEAD^{commit}') && ++heads === 2 && phase === 'HEAD') dispose();
+      return value;
+    });
+    const result = await readRemoteAgentChanges('a1', { scope: 'branch' }, () => true);
+    expect(result.status).not.toBe(200);
+    expect(result.body).not.toHaveProperty('files');
   });
   it('bounds concurrent passive comparisons globally and per target, releasing every slot after completion', async () => {
     m.target.mockImplementation(async (id) => ({ agent: { id, worktreePath: '/host/selected' }, project: { id: 'p1', path: '/host/project' } }));

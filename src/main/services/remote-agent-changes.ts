@@ -9,6 +9,7 @@ import { isAgentRunning } from './agent-system';
 import { isDispatcherIdentityAgentId } from './dispatcher/dispatcher-service';
 import { readOnlyGit, ReadOnlyGitError, readOnlyRepositoryRoot, readOnlyRepositoryChanges, type ReadOnlyComparison } from './read-only-repository-changes';
 import { redactSecretValues } from '../telemetry/diag-redaction';
+import { captureReadOnlyAgentTargetWitness } from './read-only-agent-target-witness';
 
 const safeText = (s: string) => redactSecretValues(s).replace(/[\x00-\x1f\x7f]/g, ' ').slice(0, 2048);
 const inFlight = new Set<string>();
@@ -22,6 +23,7 @@ export async function readRemoteAgentChanges(agentId: string, query: RemoteChang
   try {
     const target = await checked(resolveAgentConfigTarget(agentId, undefined, { strict: true }));
     if (target.agent.id !== agentId || isDisposedAgent(target.agent)) return { status: 404, body: { error: 'agent_not_found' } };
+    const targetWitness = isDispatcherIdentityAgentId(agentId) ? null : captureReadOnlyAgentTargetWitness(target);
     const registration = agentRegistry.get(agentId);
     const nonce = registration?.nonce;
     const runtimeKind = registration?.runtime;
@@ -101,7 +103,7 @@ export async function readRemoteAgentChanges(agentId: string, query: RemoteChang
     }
     if (!authorized()) return refused();
     const finalTarget = await checked(resolveAgentConfigTarget(agentId, undefined, { strict: true }));
-    if (isDisposedAgent(finalTarget.agent) || finalTarget.project.path !== target.project.path || finalTarget.agent.worktreePath !== target.agent.worktreePath
+    if (finalTarget.agent.id !== agentId || isDisposedAgent(finalTarget.agent) || finalTarget.project.path !== target.project.path || finalTarget.agent.worktreePath !== target.agent.worktreePath
       || root && await checked(readOnlyRepositoryRoot(cwd)) !== root) return { status: 409, body: { error: 'agent_target_changed' } };
     if (root && await probe(['rev-parse', '--verify', '--quiet', 'HEAD^{commit}']) !== head) return { status: 409, body: { error: 'agent_run_or_branch_changed' } };
     const current = agentRegistry.get(agentId);
@@ -109,6 +111,8 @@ export async function readRemoteAgentChanges(agentId: string, query: RemoteChang
       || running && !registration && runtime?.kind !== 'chat'
       || runtime?.kind === 'chat' && (getAgentRuntime(agentId) !== runtime || runtime.getSessionId?.() !== sessionId || (runtime.getNativeSessionId?.() ?? null) !== nativeSessionId)) return { status: 409, body: { error: 'agent_run_or_branch_changed' } };
     if (!authorized()) return refused();
+    // No awaits after this witness: sleeping agents have no runtime/nonce to attest continued membership.
+    if (targetWitness && !targetWitness.current()) return { status: 409, body: { error: 'agent_target_changed' } };
     result.observedAt = Date.now();
     while (Buffer.byteLength(JSON.stringify(result)) > REMOTE_CHANGES_MAX_BYTES && (result.skippedLarge.length || result.skippedRepos.length)) {
       (result.skippedLarge.length >= result.skippedRepos.length ? result.skippedLarge : result.skippedRepos).pop(); result.skippedOmitted++;

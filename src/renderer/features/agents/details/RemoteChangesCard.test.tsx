@@ -20,6 +20,15 @@ beforeEach(() => {
 });
 const show = (extra = {}) => render(<RemoteChangesCard agent={agent} details={details} status="ok" freshnessKey="current" open onToggle={() => {}} {...extra} />);
 describe('remote Changes read-only shared file view', () => {
+  it.each(['a1', 'remote||sat||'])('keeps malformed remote identity %s unavailable with no host request or local fallback', async (id) => {
+    show({ agent: { ...agent, id } });
+    expect(screen.getByTestId('details-card-changes')).toHaveTextContent('remote agent identity is unavailable');
+    fireEvent.click(screen.getByText('Refresh changes'));
+    await act(async () => { await Promise.resolve(); });
+    expect(request).not.toHaveBeenCalled();
+    expect(window.clubhouse.git.branchChanges).not.toHaveBeenCalled();
+    expect(window.clubhouse.git.branchFilePatch).not.toHaveBeenCalled();
+  });
   it('loads host branch files and their exact opaque-key diff without local git or revert controls', async () => {
     show();
     await screen.findByText('file.ts');

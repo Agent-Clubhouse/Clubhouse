@@ -1,9 +1,9 @@
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { execFile } from 'child_process';
 import * as fs from 'fs/promises';
 import * as path from 'path';
 import * as os from 'os';
-import { readOnlyRepositoryChanges, readOnlyRepositoryRoot } from './read-only-repository-changes';
+import { readOnlyGit, readOnlyRepositoryChanges, readOnlyRepositoryRoot } from './read-only-repository-changes';
 
 let root: string;
 function git(...args: string[]): Promise<string> {
@@ -19,9 +19,90 @@ async function snapshot(folder: string, prefix = ''): Promise<Record<string, str
   return result;
 }
 beforeEach(async () => { root = await fs.mkdtemp(path.join(os.tmpdir(), 'clubhouse-passive-changes-')); await git('init', '-b', 'main'); });
-afterEach(async () => { await fs.rm(root, { recursive: true, force: true }); });
+afterEach(async () => { vi.unstubAllEnvs(); await fs.rm(root, { recursive: true, force: true }); });
 const tree = () => git('write-tree');
 describe('passive repository comparison', () => {
+  it.each([0, 1, 2, 3, 4, 5])('isolates selected repository reads from inherited Git directory/worktree/index/object/config overrides, variant %s', async (variant) => {
+    await fs.writeFile(path.join(root, 'selected'), 'SELECTED\n');
+    await git('add', '.');
+    const from = await tree();
+    await git('config', 'core.fileMode', 'false');
+    const other = path.join(root, 'other');
+    await fs.mkdir(other);
+    const otherGit = (...args: string[]) => new Promise<string>((resolve, reject) => execFile('git', args, { cwd: other }, (error, out) => error ? reject(error) : resolve(out.trim())));
+    await otherGit('init', '-b', 'main');
+    await fs.writeFile(path.join(other, 'UNRELATED'), 'PRIVATE_OTHER_REPOSITORY');
+    await otherGit('add', '.');
+    await fs.writeFile(path.join(root, 'selected'), 'SELECTED_CHANGED\n');
+    const vars = [
+      { GIT_DIR: path.join(other, '.git'), GIT_WORK_TREE: other },
+      { GIT_WORK_TREE: other }, { GIT_INDEX_FILE: path.join(other, '.git', 'index') },
+      { GIT_COMMON_DIR: path.join(other, '.git') }, { GIT_OBJECT_DIRECTORY: path.join(other, '.git', 'objects') },
+      { GIT_CONFIG_COUNT: '1', GIT_CONFIG_KEY_0: 'core.fileMode', GIT_CONFIG_VALUE_0: 'true' },
+    ][variant];
+    for (const [key, value] of Object.entries(vars)) vi.stubEnv(key, value!);
+    expect(await readOnlyRepositoryRoot(root)).toBe(await fs.realpath(root));
+    expect((await readOnlyGit(root, ['ls-files', '--cached'])).toString().trim()).toBe('selected');
+    expect((await readOnlyGit(root, ['config', '--bool', 'core.fileMode'])).toString().trim()).toBe('false');
+    const result = await readOnlyRepositoryChanges({ root, from, identity: 'run' }, { scope: 'branch' });
+    expect(result.files.find((f) => f.path === 'selected')).toMatchObject({ additions: 1, deletions: 1 });
+    expect(JSON.stringify(result)).not.toContain('PRIVATE_OTHER_REPOSITORY');
+    vi.unstubAllEnvs();
+  });
+  it('does not lazy-fetch missing promisor objects or execute a remote/auth helper or write repository bytes', async () => {
+    await fs.writeFile(path.join(root, 'selected'), 'promised content\n');
+    await git('add', '.');
+    await git('-c', 'user.name=Fixture', '-c', 'user.email=fixture@invalid', 'commit', '-m', 'fixture');
+    const from = await git('rev-parse', 'HEAD');
+    const object = await git('rev-parse', 'HEAD:selected');
+    const marker = path.join(root, '.git', 'lazy-helper-ran');
+    const helper = path.join(root, '.git', 'passive-canary.cjs');
+    await fs.writeFile(helper, `require('fs').writeFileSync(${JSON.stringify(marker)}, 'unexpected helper'); process.exit(1);`);
+    const extArg = (value: string) => value.replace(/%/g, '%%').replace(/ /g, '% ');
+    await git('config', 'remote.origin.url', `ext::${extArg(process.execPath)} ${extArg(helper)}`);
+    await git('config', 'protocol.ext.allow', 'always');
+    await git('config', 'remote.origin.promisor', 'true');
+    await git('config', 'remote.origin.partialclonefilter', 'blob:none');
+    await git('config', 'extensions.partialClone', 'origin');
+    await fs.rm(path.join(root, '.git', 'objects', object.slice(0, 2), object.slice(2)));
+    const before = await snapshot(root);
+    await expect(readOnlyGit(root, ['cat-file', '-p', object])).rejects.toThrow();
+    await expect(readOnlyRepositoryChanges({ root, from, identity: 'run' }, { scope: 'branch' })).rejects.toThrow();
+    await expect(fs.access(marker)).rejects.toThrow();
+    expect(await snapshot(root)).toEqual(before);
+  });
+  it.each(['"', "'", '`'])('redacts complete escaped %s credentials before generic substitutions, including unchanged hunk context', async (quote) => {
+    const before = `const apiKey = ${quote}PREFIX\\${quote} CREDENTIAL_TAIL\\\nCONTINUED_CREDENTIAL${quote};\nconst ordinary = 1;\n`;
+    await fs.writeFile(path.join(root, 'source.txt'), before);
+    await git('add', '.');
+    const from = await tree();
+    await fs.writeFile(path.join(root, 'source.txt'), before.replace('ordinary = 1', 'ordinary = 2'));
+    const comparison = { root, from, identity: 'run' };
+    const result = await readOnlyRepositoryChanges(comparison, { scope: 'branch' });
+    const patch = await readOnlyRepositoryChanges(comparison, { scope: 'branch', fileKey: result.files[0].fileKey });
+    expect(patch.patch?.text).toContain('ordinary = 2');
+    expect(patch.patch?.text).not.toMatch(/CREDENTIAL_TAIL|CONTINUED_CREDENTIAL/);
+  });
+  it.each([
+    'const credentials = ["PRIVATE_ARRAY_VALUE"];',
+    '{"ordinary": 1, "credentials": ["PRIVATE_LATER_FIELD"]}',
+    'const apiKey: string = "PRIVATE_TYPED_VALUE";',
+    'const apiKey = Buffer.from("PRIVATE_FACTORY_VALUE");',
+    'const apiKey = "PRIVATE_PREFIX" + "PRIVATE_TAIL";',
+    'const apiKey = `PRIVATE_TEMPLATE${other}`;',
+    'const apiKey = "PRIVATE_UNFINISHED',
+  ])('withholds ambiguous credential initializer text while preserving file change metadata: %s', async (secret) => {
+    await fs.writeFile(path.join(root, 'source.txt'), secret + '\nconst ordinary = 1;\n');
+    await git('add', '.');
+    const from = await tree();
+    await fs.writeFile(path.join(root, 'source.txt'), secret + '\nconst ordinary = 2;\n');
+    const comparison = { root, from, identity: 'run' };
+    const result = await readOnlyRepositoryChanges(comparison, { scope: 'branch' });
+    expect(result.files[0]).toMatchObject({ status: 'modified', countsKnown: true });
+    const patch = await readOnlyRepositoryChanges(comparison, { scope: 'branch', fileKey: result.files[0].fileKey });
+    expect(patch.patch).toMatchObject({ state: 'unsafe', redacted: true });
+    expect(JSON.stringify(patch)).not.toContain('PRIVATE_');
+  });
   it('compares tracked, checkpoint-untracked and current-untracked files accurately without writing any worktree/index/object bytes', async () => {
     await fs.writeFile(path.join(root, 'tracked'), 'a\nb\nc\n');
     await fs.writeFile(path.join(root, 'checkpoint-untracked'), 'keep\n');

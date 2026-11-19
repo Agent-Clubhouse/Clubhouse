@@ -2,6 +2,8 @@
 import { execFile } from 'child_process';
 import { createHash } from 'crypto';
 import * as fs from 'fs/promises';
+import * as path from 'path';
+import * as os from 'os';
 import { cleanInheritedEnv, cleanSpawnEnv } from '../util/shell';
 import { readOnlyTextDiff } from '../../shared/read-only-diff';
 import type { RemoteChangedFile, RemoteChangesQuery, RemoteAgentChanges } from '../../shared/remote-agent-changes';
@@ -21,8 +23,13 @@ export class ReadOnlyGitError extends Error {
 }
 export function readOnlyGit(cwd: string, args: string[], maxBuffer = MAX_GIT_OUTPUT, input?: string): Promise<Buffer> {
   return new Promise((resolve, reject) => {
-    const child = execFile('git', ['--no-pager', '-c', 'core.fsmonitor=false', ...args], {
-      cwd, env: cleanSpawnEnv({ ...cleanInheritedEnv({ ...process.env }), GIT_OPTIONAL_LOCKS: '0', GIT_TERMINAL_PROMPT: '0', GIT_LITERAL_PATHSPECS: '1', LC_ALL: 'C' }),
+    const env = cleanInheritedEnv({ ...process.env });
+    // A desktop launched from a Git/agent shell must not inherit another repository,
+    // index, object database, config injection or executable/helper override.
+    for (const key of Object.keys(env)) if (/^(GIT_|DYLD_|LD_)/i.test(key) || /^(SSH_ASKPASS|SSH_AUTH_SOCK|ASKPASS)$/i.test(key)) delete env[key];
+    Object.assign(env, { GIT_OPTIONAL_LOCKS: '0', GIT_TERMINAL_PROMPT: '0', GIT_LITERAL_PATHSPECS: '1', GIT_NO_LAZY_FETCH: '1', GIT_ALLOW_PROTOCOL: '', GIT_PROTOCOL_FROM_USER: '0', LC_ALL: 'C' });
+    const child = execFile('git', ['--no-pager', '--no-lazy-fetch', `--work-tree=${path.resolve(cwd)}`, '-c', 'core.fsmonitor=false', '-c', `core.hooksPath=${os.devNull}`, '-c', 'credential.helper=', '-c', 'protocol.allow=never', ...args], {
+      cwd, env: cleanSpawnEnv(env),
       timeout: 10_000, maxBuffer, encoding: 'buffer', windowsHide: true,
     }, (error, stdout, stderr) => error ? reject(new ReadOnlyGitError(error.code ?? null, stderr.toString())) : resolve(stdout));
     child.stdin?.on('error', () => reject(new ReadOnlyGitError('STDIN', 'Repository input was not accepted.')));
@@ -30,11 +37,25 @@ export function readOnlyGit(cwd: string, args: string[], maxBuffer = MAX_GIT_OUT
   });
 }
 export async function readOnlyRepositoryRoot(cwd: string): Promise<string | null> {
-  try { return (await readOnlyGit(cwd, ['rev-parse', '--show-toplevel'])).toString().trim() || null; }
-  catch (error) {
-    if (error instanceof ReadOnlyGitError && /not a git repository/i.test(error.stderr)) return null;
-    throw error;
+  // Discover the enclosing .git marker from the selected folder, independently
+  // of Git environment/config core.worktree overrides. Linked worktrees use a file.
+  let current = await fs.realpath(cwd);
+  const device = (await fs.stat(current)).dev;
+  for (let depth = 0; depth < 128; depth++) {
+    let marker: Awaited<ReturnType<typeof fs.lstat>> | null = null;
+    try { marker = await fs.lstat(path.join(current, '.git')); }
+    catch (error) { if (!['ENOENT', 'ENOTDIR'].includes((error as NodeJS.ErrnoException).code ?? '')) throw error; }
+    if (marker) {
+      if (marker.isSymbolicLink() || !marker.isDirectory() && (!marker.isFile() || marker.size > 16 * 1024)) throw new Error('Repository marker is unsafe.');
+      const actual = (await readOnlyGit(current, ['rev-parse', '--show-toplevel'])).toString().trim();
+      if (await fs.realpath(actual) !== current) throw new Error('Repository context changed.');
+      return current;
+    }
+    const parent = path.dirname(current);
+    if (parent === current || (await fs.stat(parent)).dev !== device) return null;
+    current = parent;
   }
+  throw new Error('Repository discovery exceeds its bound.');
 }
 async function tree(root: string, ref: string): Promise<Map<string, TreeEntry>> {
   if (!/^[a-f0-9]{40,64}$/.test(ref)) throw new Error('Invalid immutable tree.');
@@ -49,9 +70,32 @@ async function tree(root: string, ref: string): Promise<Map<string, TreeEntry>> 
 }
 const hash = (bytes: Buffer) => createHash('sha256').update(bytes).digest('hex');
 /** Source/JSON names may include suffixes (awsSecretAccessKey2), and quoted values may span lines. */
-function redactChangeText(text: string): string {
-  return redactSecretValues(text).replace(/([A-Za-z_$][\w$.-]*)(["']?\s*[:=]\s*)(["'`])(?:\\[\s\S]|(?!\3)[^\\])*?\3/g,
-    (whole, key: string, separator: string, quote: string) => isSecretKey(key) ? `${key}${separator}${quote}<redacted>${quote}` : whole);
+function redactChangeText(text: string): string | null {
+  // Keep file metadata but withhold credential structures this small projector cannot classify safely.
+  const values = /(?<![\p{L}\p{N}_$.-])([\p{L}\p{N}_$.-]+)(["']?\s*[:=]\s*)/gu;
+  let secretValues = 0;
+  for (const value of text.matchAll(values)) {
+    if (!isSecretKey(value[1])) continue;
+    if (++secretValues > 2000) return null;
+    const initializer = text.slice(value.index! + value[0].length, value.index! + value[0].length + 2048).split(/[;\r\n]/, 1)[0];
+    if (/^\s*[\[{]/.test(initializer) || /^\s*[A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*)*\s*\(/.test(initializer)
+      || value[2].includes(':') && /^\s*[^"'`]+\s=/.test(initializer)) return null;
+  }
+  const start = /(?<![\p{L}\p{N}_$.-])([\p{L}\p{N}_$.-]+)(["']?\s*[:=]\s*)(["'`])/gu;
+  let safe = '', copied = 0;
+  for (let match = start.exec(text); match; match = start.exec(text)) {
+    if (!isSecretKey(match[1])) continue;
+    const valueStart = start.lastIndex;
+    let end = valueStart, closed = false;
+    while (end < text.length) {
+      if (text[end] === '\\') { end = Math.min(text.length, end + 2); continue; }
+      if (text[end++] === match[3]) { closed = true; break; }
+    }
+    if (!closed || match[3] === '`' && text.slice(valueStart, end).includes('${') || /^\s*(?:\+|\?|\.|\(|\[)/.test(text.slice(end))) return null;
+    safe += text.slice(copied, match.index) + match[1] + match[2] + match[3] + '<redacted>' + match[3];
+    copied = end; start.lastIndex = end;
+  }
+  return redactSecretValues(safe + text.slice(copied));
 }
 const keyFor = (comparison: ReadOnlyComparison, file: string) => hash(Buffer.from(`${comparison.identity}\0${comparison.root}\0${comparison.from}\0${comparison.to ?? 'worktree'}\0${file}`));
 const privatePath = (p: string) => p.split('/').some((part) => /^(?:\.git|\.clubhouse|\.claude|\.codex|\.aws|\.ssh|\.azure|\.kube|\.netrc|\.npmrc|\.pypirc|\.env(?:\..*)?|credentials(?:\..*)?|id_(?:rsa|ed25519)|.*\.(?:pem|key|p12|pfx))$/i.test(part));
@@ -108,7 +152,11 @@ export async function readOnlyRepositoryChanges(comparison: ReadOnlyComparison, 
   const attributes = new Map<string, Record<string, string>>();
   let autoCrlf = false;
   if (!after && paths.length) {
-    try { autoCrlf = ['true', 'input'].includes((await checked(readOnlyGit(anchor, ['config', '--get', 'core.autocrlf']))).toString().trim()); }
+    try {
+      const value = (await checked(readOnlyGit(anchor, ['config', '--bool-or-str', '--get', 'core.autocrlf']))).toString().trim().toLowerCase();
+      if (!['true', 'false', 'input'].includes(value)) throw new Error('Invalid Git line-ending setting.');
+      autoCrlf = value !== 'false';
+    }
     catch (error) { if (!(error instanceof ReadOnlyGitError) || error.code !== 1) throw error; }
     const values = (await checked(readOnlyGit(anchor, ['check-attr', '-z', '--stdin', 'text', 'eol', 'filter'], MAX_GIT_OUTPUT, paths.join('\0') + '\0'))).toString().split('\0');
     for (let i = 0; i + 2 < values.length; i += 3) attributes.set(values[i], { ...attributes.get(values[i]), [values[i + 1]]: values[i + 2] });
@@ -158,6 +206,7 @@ export async function readOnlyRepositoryChanges(comparison: ReadOnlyComparison, 
     if (query.fileKey) {
       const beforeText = oldBytes?.toString('utf8') ?? '', afterText = newBytes?.toString('utf8') ?? '';
       const safeBefore = redactChangeText(beforeText), safeAfter = redactChangeText(afterText);
+      if (safeBefore === null || safeAfter === null) { patch = { fileKey, state: 'unsafe', redacted: true }; continue; }
       const redacted = safeBefore !== beforeText || safeAfter !== afterText;
       // Redact WHOLE files first: a hunk may begin in the middle of a private key or credential.
       const safeDiff = diff && redacted ? readOnlyTextDiff(safeBefore, safeAfter, p, 2_000_000, 128 * 1024, diffBudget) : diff;

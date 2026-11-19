@@ -30,10 +30,23 @@ beforeEach(() => {
   useAgentDetailsStore.setState({ settingsOpen: true, focus: null });
   read.mockResolvedValue({ status: 'ok', value: fixture() });
   changes.mockImplementation(async (_host, id, query) => ({ status: 'ok', value: { version: 1, readOnly: true, agentId: id, observedAt: 1, scope: query.scope, state: 'ok', branch: 'host-branch', base: 'host-main', sessionId: null, turnId: null, live: true, shared: false, files: [], totalFiles: 0, offset: query.offset ?? 0, nextOffset: null, uncompared: 0, skippedLarge: [], skippedRepos: [], skippedOmitted: 0 } }));
-  Object.assign(window.clubhouse.annexClient, { agentDetails: read, chatPage, agentChanges: changes });
+  Object.assign(window.clubhouse.annexClient, { agentDetails: read, chatPage, agentChanges: changes, agentSettings: vi.fn(async () => ({ status: 'unavailable' })) });
   for (const [object, method] of [[window.clubhouse.actions, 'list'], [window.clubhouse.git, 'branchChanges'], [window.clubhouse.agent, 'getDurableConfig'], [window.clubhouse.managed, 'getSetup'], [window.clubhouse.mcpBinding, 'getAgentConnection'], [window.clubhouse.canvas, 'getAgentCanvases']] as const) Object.assign(object, { [method]: vi.fn() });
 });
 describe('remote full Details host evidence', () => {
+  it.each(['a1', 'remote||sat||'])('withholds malformed selected identity %s before any host or local fallback read', async (id) => {
+    const settings = vi.fn();
+    Object.assign(window.clubhouse.annexClient, { agentSettings: settings });
+    render(<AgentDetails agent={{ ...agent, id }} />);
+    expect(screen.getByTestId('remote-details-freshness')).toHaveTextContent('remote agent identity is unavailable');
+    await act(async () => { await Promise.resolve(); });
+    expect(read).not.toHaveBeenCalled();
+    expect(settings).not.toHaveBeenCalled();
+    expect(changes).not.toHaveBeenCalled();
+    expect(chatPage).not.toHaveBeenCalled();
+    expect(window.clubhouse.git.branchChanges).not.toHaveBeenCalled();
+    expect(window.clubhouse.agent.getDurableConfig).not.toHaveBeenCalled();
+  });
   it.each(['running', 'sleeping', 'waking', 'error'] as const)('renders applicable host cards read-only for a %s agent with no local reads', async (status) => {
     read.mockResolvedValue({ status: 'ok', value: { ...fixture(), status, running: status === 'running' } });
     render(<AgentDetails agent={{ ...agent, status }} />);

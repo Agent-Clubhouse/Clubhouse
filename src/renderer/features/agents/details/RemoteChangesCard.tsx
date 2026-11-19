@@ -3,7 +3,7 @@ import type { Agent } from '../../../../shared/types';
 import type { RemoteAgentDetails } from '../../../../shared/remote-agent-details';
 import type { ControllerReadResult } from '../../../../shared/controller-chat';
 import type { RemoteAgentChanges, RemoteChangesScope } from '../../../../shared/remote-agent-changes';
-import { parseNamespacedId } from '../../../stores/remoteProjectStore';
+import { remoteDetailsAddress } from './remote-details-address';
 import { useAnnexClientStore } from '../../../stores/annexClientStore';
 import { CardNote, CardRow, DetailsCard } from './DetailsCard';
 import { FileList, type DiffResult } from './ChangesCard';
@@ -12,11 +12,12 @@ type Result = ControllerReadResult<RemoteAgentChanges> | { status: 'loading' };
 const message = (status: Result['status']) => status === 'offline' ? 'Host offline. Reconnect to read changes.'
   : status === 'forbidden' ? 'The host does not allow this changes read.' : status === 'unavailable' ? 'This host does not share read-only changes here. It may need an update.'
     : status === 'error' ? 'Couldn’t read changes from the host. Refresh to try again.' : status === 'rate_limited' ? 'The host is busy. Try again shortly.' : 'Loading changes from the host…';
-const patchMessage: Record<string, string> = { filtered: 'This file uses a custom Git filter. Passive Details does not run it; compare it on the host.', binary: 'Binary file; no text diff.', unsafe: 'This path is linked or protected and was not read.', 'too-large': 'This comparison exceeds the host’s bounded diff limit.', unreadable: 'The host could not read this file. No empty diff is inferred.', directory: 'This path is a directory; its contents were not read as a file.', submodule: 'Nested repository; a text diff is not available here.', budget: 'The host’s comparison read limit was reached.', unchanged: 'The file no longer differs from this base.', stale: 'The change selection moved. Refresh changes to select the current file.' };
+const patchMessage: Record<string, string> = { filtered: 'This file uses a custom Git filter. Passive Details does not run it; compare it on the host.', binary: 'Binary file; no text diff.', unsafe: 'This path or its content is protected; no text diff is shared.', 'too-large': 'This comparison exceeds the host’s bounded diff limit.', unreadable: 'The host could not read this file. No empty diff is inferred.', directory: 'This path is a directory; its contents were not read as a file.', submodule: 'Nested repository; a text diff is not available here.', budget: 'The host’s comparison read limit was reached.', unchanged: 'The file no longer differs from this base.', stale: 'The change selection moved. Refresh changes to select the current file.' };
 
 export function RemoteChangesCard({ agent, details, status, freshnessKey, open, onToggle }: { agent: Agent; details: RemoteAgentDetails | null; status: Result['status']; freshnessKey: string; open: boolean; onToggle: () => void }) {
-  const address = parseNamespacedId(agent.id)!;
-  const satellite = useAnnexClientStore((s) => s.satellites.find((h) => h.id === address.satelliteId));
+  const address = remoteDetailsAddress(agent.id);
+  const satelliteId = address?.satelliteId, agentId = address?.agentId;
+  const satellite = useAnnexClientStore((s) => s.satellites.find((h) => h.id === satelliteId));
   const connected = satellite?.state === 'connected';
   const snapshot = satellite?.snapshot;
   const [scope, setScope] = useState<RemoteChangesScope>('branch');
@@ -24,35 +25,36 @@ export function RemoteChangesCard({ agent, details, status, freshnessKey, open, 
   const [retry, setRetry] = useState(0);
   const key = `${agent.id}:${freshnessKey}:${details?.readAt ?? ''}:${scope}:${offset}:${retry}`;
   const [read, setRead] = useState<{ key: string; snapshot: typeof snapshot; result: Result } | null>(null);
-  const eligible = connected && !!details && status === 'ok';
+  const eligible = connected && !!details && details.agentId === agentId && status === 'ok';
   useEffect(() => {
-    if (!eligible) return;
+    if (!eligible || !satelliteId || !agentId) return;
     let active = true;
-    Promise.resolve().then(() => window.clubhouse.annexClient.agentChanges(address.satelliteId, address.agentId, { scope, offset })).then(
+    Promise.resolve().then(() => window.clubhouse.annexClient.agentChanges(satelliteId, agentId, { scope, offset })).then(
       (result) => { if (active) setRead({ key, snapshot, result }); },
       // telemetry-exempt: read status only; host error text never enters the view.
       () => { if (active) setRead({ key, snapshot, result: { status: 'error' } }); },
     );
     return () => { active = false; };
-  }, [eligible, key, snapshot, address.satelliteId, address.agentId, scope, offset]);
-  const result: Result = !connected ? { status: 'offline' } : !eligible ? { status: status === 'ok' ? 'loading' : status } as Result
+  }, [eligible, key, snapshot, satelliteId, agentId, scope, offset]);
+  const result: Result = !address ? { status: 'unavailable' } : !connected ? { status: 'offline' } : details && details.agentId !== agentId ? { status: 'error' } : !eligible ? { status: status === 'ok' ? 'loading' : status } as Result
     : read?.key === key && read.snapshot === snapshot ? read.result : { status: 'loading' };
-  const value = result.status === 'ok' && result.value.agentId === address.agentId && result.value.scope === scope ? result.value : null;
+  const value = result.status === 'ok' && result.value.agentId === agentId && result.value.scope === scope ? result.value : null;
   const loadDiff = useCallback(async (fileKey: string): Promise<DiffResult> => {
-    if (!eligible) return { unavailable: message(connected ? status : 'offline') };
-    const response = await window.clubhouse.annexClient.agentChanges(address.satelliteId, address.agentId, { scope, fileKey });
+    if (!eligible || !satelliteId || !agentId) return { unavailable: message(connected ? status : 'offline') };
+    const response = await window.clubhouse.annexClient.agentChanges(satelliteId, agentId, { scope, fileKey });
     if (response.status !== 'ok') return { unavailable: message(response.status) };
     const patch = response.value.patch;
-    if (response.value.agentId !== address.agentId || response.value.scope !== scope || patch?.fileKey !== fileKey) return { unavailable: 'The host did not return the selected file evidence.' };
+    if (response.value.agentId !== agentId || response.value.scope !== scope || patch?.fileKey !== fileKey) return { unavailable: 'The host did not return the selected file evidence.' };
     return patch.state === 'text' && patch.text ? { type: 'diff', path: value?.files.find((f) => f.fileKey === fileKey)?.path ?? '', unifiedDiff: patch.text, ...(patch.redacted && { notice: 'Sensitive values were redacted; line positions may differ.' }) }
       : { unavailable: patchMessage[patch.state] ?? 'No text diff was reported by the host.' };
-  }, [eligible, connected, status, address.satelliteId, address.agentId, scope, value, key, snapshot]);
-  const summary = value?.state === 'ok' ? `${value.totalFiles} paths${value.uncompared || value.files.some((f) => !f.countsKnown) ? ' · partial' : ''}` : details?.cards.find((c) => c.id === 'changes')?.summary || message(result.status);
+  }, [eligible, connected, status, satelliteId, agentId, scope, value, key, snapshot]);
+  const statusMessage = !address ? 'The remote agent identity is unavailable. Select it again after the host refreshes.' : message(result.status);
+  const summary = value?.state === 'ok' ? `${value.totalFiles} paths${value.uncompared || value.files.some((f) => !f.countsKnown) ? ' · partial' : ''}` : details?.cards.find((c) => c.id === 'changes')?.summary || statusMessage;
   const legacy = eligible && result.status === 'unavailable' ? details?.cards.find((c) => c.id === 'changes') : null;
   return <DetailsCard id="changes" title="Changes" summary={summary} open={open} onToggle={onToggle}>
     <div className="flex gap-2 pl-[33px] pr-3.5 pb-1">{(['branch', 'session', 'turn'] as const).map((s) => <button type="button" key={s} aria-pressed={scope === s} onClick={() => { setScope(s); setOffset(0); }} className="text-xs text-ctp-overlay1 hover:text-ctp-text">{s === 'branch' ? 'Branch' : s === 'session' ? 'Session' : 'Last turn'}</button>)}</div>
     {!value ? <>
-      <CardNote>{message(result.status)}</CardNote>
+      <CardNote>{statusMessage}</CardNote>
       {legacy && <>
         <CardNote>Last authorized host summary at {new Date(details!.readAt).toLocaleTimeString()}. Scoped file diffs and checkpoints are not available through this host.</CardNote>
         {legacy.rows.map((r, i) => <CardRow key={i} label={r.label} labelWidth="wide">{r.value}</CardRow>)}

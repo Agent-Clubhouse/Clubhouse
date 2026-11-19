@@ -21,6 +21,7 @@ import { useRemoteDetailsChat } from './useRemoteDetailsChat';
 import { CanvasMembershipList } from './CanvasMembershipList';
 import { jumpToCanvas, remoteCanvasJumpUnavailable } from './agent-canvases';
 import { RemoteChangesCard } from './RemoteChangesCard';
+import { remoteDetailsAddress } from './remote-details-address';
 
 type Result = ControllerReadResult<RemoteAgentDetails> | { status: 'loading' };
 function resultMessage(status: Result['status']): string {
@@ -45,7 +46,7 @@ function Evidence({ card }: { card: RemoteDetailsCard }) {
 }
 
 export function RemoteAgentDetailsView({ agent, chat, onShowInStream, missedSubagentId }: AgentDetailsProps) {
-  const address = parseNamespacedId(agent.id);
+  const address = remoteDetailsAddress(agent.id);
   const project = parseNamespacedId(agent.projectId);
   const satellite = useAnnexClientStore((s) => s.satellites.find((sat) => sat.id === address?.satelliteId));
   const host = satellite?.alias || satellite?.snapshot?.machine?.name || 'the other machine';
@@ -77,7 +78,7 @@ export function RemoteAgentDetailsView({ agent, chat, onShowInStream, missedSuba
     }, 150);
     return () => { active = false; clearTimeout(timer); };
   }, [connected, snapshotUnavailable, satelliteId, agentId, refreshKey, snapshot]);
-  const received: Result = !connected ? { status: 'offline' }
+  const received: Result = !address ? { status: 'unavailable' } : !connected ? { status: 'offline' }
     : read?.key === refreshKey && read.snapshot === snapshot ? read.result : { status: 'loading' };
   const result: Result = received.status === 'ok' && received.value.agentId !== agentId ? { status: 'error' } : received;
   const details = result.status === 'ok' ? result.value : null;
@@ -150,7 +151,7 @@ export function RemoteAgentDetailsView({ agent, chat, onShowInStream, missedSuba
     onKeyDown={(e) => { if (e.key === 'Escape' && !e.defaultPrevented) { e.preventDefault(); setOpen(false); } }}>
     <div className="flex items-center gap-2 px-1 text-xs text-ctp-overlay1"><span className="font-semibold">Details</span><span className="truncate">{agent.name}</span><button type="button" className="ml-auto" aria-label="Hide details" data-testid="agent-details-close" onClick={() => setOpen(false)}>×</button></div>
     <div className="px-1 text-xs text-ctp-overlay1" role="status" data-testid="remote-details-freshness">
-      {details ? <>Read from {host} at {new Date(details.readAt).toLocaleTimeString()}. Read-only.</> : resultMessage(result.status)}
+      {!address ? 'The remote agent identity is unavailable. Select it again after the host refreshes.' : details ? <>Read from {host} at {new Date(details.readAt).toLocaleTimeString()}. Read-only.</> : resultMessage(result.status)}
       {snapshotUnavailable && ' The host snapshot is unavailable; retained data may be stale.'}
       {hydrated.waiting && <p>{hydrated.loading ? 'Refreshing provider evidence from the host…' : 'Current provider evidence has not been refreshed. Retained session data is withheld.'}</p>}
       {hydrated.partial && <p>Only part of the host transcript is loaded. Earlier provider reports and subagent activity may be missing.</p>}
