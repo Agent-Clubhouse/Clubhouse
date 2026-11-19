@@ -255,6 +255,32 @@ function getHandler(channel: string): HandlerFn {
 // ── Registration ──────────────────────────────────────────────────────
 
 describe('mcp-binding-handlers registration', () => {
+  it('wakes controller delivery once per initialized transition, not on routine Dispatcher changes', async () => {
+    let initialized = false;
+    let changed!: () => void;
+    const unsubscribe = vi.fn();
+    vi.spyOn(dispatcherService, 'isDispatcherIdentityInitialized').mockImplementation(() => initialized);
+    vi.spyOn(dispatcherService, 'onDispatcherChanged').mockImplementation((listener) => { changed = listener; return unsubscribe; });
+    await restorePersistedBindings();
+    const federation = vi.mocked(startAgentCalls).mock.calls[0][0].federation!;
+    const listener = vi.fn();
+    const off = federation.onReady!(listener);
+    try {
+      changed();
+      expect(listener).not.toHaveBeenCalled();
+      initialized = true;
+      changed(); changed();
+      expect(listener).toHaveBeenCalledOnce();
+      initialized = false;
+      changed();
+      initialized = true;
+      changed();
+      expect(listener).toHaveBeenCalledTimes(2);
+      off();
+      expect(unsubscribe).toHaveBeenCalledOnce();
+    } finally { vi.restoreAllMocks(); }
+  });
+
   it.each(['Dispatcher', 'Rosie'])('wires display-only remote sender names for chat named %s without inventing agent availability', async (name) => {
     dispatcherIdentity.name = name;
     vi.spyOn(projectStore, 'peekProjects').mockResolvedValue([{ id: 'p', name: 'Atlas', path: '/atlas' }]);

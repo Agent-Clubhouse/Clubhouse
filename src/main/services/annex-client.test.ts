@@ -3649,6 +3649,148 @@ describe('annex-client', () => {
       } finally { stop(); annexControl.resetControlForTests(); }
     });
 
+    it.each([
+      ['reverse', false, 'ready'], ['reverse', true, 'ready'], ['direct', false, 'ready'], ['direct', true, 'ready'],
+      ['reverse', false, 'changed'], ['direct', false, 'changed'], ['reverse', false, 'off'], ['direct', false, 'off'],
+      ['reverse', false, 're-pair'], ['direct', false, 're-pair'], ['reverse', false, 'removed'], ['direct', false, 'removed'],
+      ['reverse', false, 'grant-revoked'], ['direct', false, 'grant-revoked'],
+    ] as const)('holds federation recovery over %s until publication is ready (initially %s, then %s)', async (route, ready, recovery) => {
+      const { app } = await import('electron');
+      const fs = await import('node:fs/promises');
+      const os = await import('node:os');
+      const path = await import('node:path');
+      const settings = await import('./settings-store');
+      const dispatcher = await import('./dispatcher/dispatcher-service');
+      const configs = await import('./agent-config');
+      const grants = await import('./agent-grants-service');
+      const federation = await import('./dispatcher-federation');
+      const host = await import('./annex-agent-call-host');
+      const authorize = vi.spyOn(host, 'authorizeQueuedAnnexCall');
+      const calls = await import('./annex-agent-calls');
+      const { devicesChanged } = await import('./annex-device-signal');
+      const base = await fs.mkdtemp(path.join(os.tmpdir(), 'reverse-federation-order-'));
+      vi.spyOn(app, 'getPath').mockReturnValue(base);
+      settings.resetAllSettingsStoresForTests();
+      const local = { id: 'source-controller', name: 'Controller', color: 'indigo', createdAt: new Date().toISOString() };
+      vi.spyOn(dispatcher, 'getDispatcherAgentId').mockReturnValue(local.id);
+      vi.spyOn(dispatcher, 'isDispatcherAgentId').mockImplementation((id) => id === local.id);
+      vi.spyOn(dispatcher, 'getDispatcherState').mockReturnValue({ ...dispatcher.getDispatcherState(), enabled: true, path: base, agentId: local.id });
+      vi.spyOn(configs, 'getDurableConfig').mockResolvedValue(local);
+      vi.spyOn(grants, 'effectiveAgentGrants').mockResolvedValue([{ action: 'agent.message', target: { kind: 'connected' }, mode: 'allow' }]);
+      const fingerprint = Array(16).fill('fa').join(':');
+      const peer = { fingerprint, publicKey: 'key', alias: 'Receiver', icon: '', color: '', role: 'member' as const,
+        kind: 'desktop' as const, pairedAt: '', lastSeen: '', tlsCertificateFingerprint: 'PIN', knownHosts: [] as string[], mainPort: 9443,
+        pairingId: undefined as string | undefined };
+      vi.mocked(annexPeers.listPeers).mockReturnValue([peer]);
+      vi.mocked(annexPeers.getPeer).mockReturnValue(peer);
+      vi.mocked(annexControl.getLinkReadiness).mockRestore();
+      request.mockRestore();
+      vi.spyOn(annexControl, 'connectTo').mockImplementation(() => {});
+      const publication = { agentId: 'target-controller' as string | null, name: 'Controller', enabled: true };
+      await federation.learnFederationController(fingerprint, publication);
+      const offFederation = federation.watchFederation(() => {});
+      let file: import('./annex-delivery-store').DeliveryFile = { version: 1, inbox: [], outbox: [], deliveries: [] };
+      const exchanges: Array<string | null> = [];
+      const received: string[] = [];
+      function answer(urlPath: string, body: Record<string, unknown>) {
+        if (urlPath === '/api/v1/network/connections') {
+          exchanges.push(publication.agentId);
+          return { directions: [], controller: { ...publication }, epoch: { sender: 'legacy', receiver: 'legacy' } };
+        }
+        expect(urlPath).toBe('/api/v1/network/agent-call');
+        received.push(String(body.callId));
+        return { result: { content: [] }, delivery: { callId: body.callId, state: 'delivered', receiptAt: new Date().toISOString() } };
+      }
+      vi.mocked(https.request).mockImplementation((url, _options, callback) => {
+        let text = '';
+        const req = Object.assign(new EventEmitter(), { write: (body: string) => { text += body; }, end: () => {
+          const res = Object.assign(new EventEmitter(), { statusCode: 200, headers: {}, resume: vi.fn() });
+          queueMicrotask(() => {
+            callback!(res as http.IncomingMessage);
+            res.emit('data', Buffer.from(JSON.stringify(answer(new URL(String(url)).pathname, JSON.parse(text)))));
+            res.emit('end');
+          });
+        }, destroy: vi.fn() });
+        return req as http.ClientRequest;
+      });
+      const socket = Object.assign(new EventEmitter(), { readyState: 1, bufferedAmount: 0,
+        send: (data: string | Buffer, written?: () => void) => {
+          const frame: import('../../shared/annex-control-protocol').ControlMessage = JSON.parse(data.toString());
+          if (frame.type === 'request') queueMicrotask(() => {
+            socket.emit('message', Buffer.from(JSON.stringify({ v: 1, type: 'response', id: frame.id, status: 200, headers: {},
+              body: JSON.stringify(answer(frame.path, JSON.parse(frame.body ?? '{}'))), encoding: 'utf8' })));
+          });
+          written?.();
+        }, close: vi.fn(), ping: vi.fn(), terminate: vi.fn() });
+      const connected = vi.fn();
+      const offConnected = annexClient.onSatelliteConnected(connected);
+      const stop = calls.startAgentCalls({
+        transport: { connected: annexClient.isMachineConnected, post: annexClient.postToMachine, onConnected: annexClient.onSatelliteConnected,
+          machineName: () => 'Receiver', supportsDurableDelivery: async () => true },
+        deliveryStore: { get: () => structuredClone(file), update: async (change) => { change(file); },
+          clearForTesting: async () => { file = { version: 1, inbox: [], outbox: [], deliveries: [] }; } },
+        authorizeQueuedCall: authorize, listDirections: () => [],
+        runTool: async () => ({ content: [] }), describeLocalAgent: async () => undefined,
+        federation: { local: () => ({ agentId: local.id, name: 'Controller', enabled: true }), learn: federation.learnFederationController,
+          ready: () => true, publication: federation.initializedControllerPublication },
+      });
+      try {
+        await new Promise<void>((resolve) => setImmediate(resolve));
+        await calls.forwardPreparedAgentCall(local.id, `target-controller@${fingerprint}`, 'Receiver', 'hand_off_request',
+          { text: 'queued while offline', idempotency_key: 'federation-order' });
+        expect(file.outbox).toHaveLength(1);
+        const queued = file.outbox[0];
+        expect(await host.authorizeQueuedAnnexCall(queued)).toEqual({ allowed: true });
+        authorize.mockClear();
+        const openDirect = async () => {
+          peer.knownHosts = ['10.0.0.4'];
+          annexClient.connect(fingerprint);
+          await vi.waitFor(() => expect(annexClient.isMachineDirectConnected(fingerprint)).toBe(true));
+        };
+        publication.agentId = ready ? 'target-controller' : null;
+        if (route === 'reverse') {
+          annexControl.setInboundAuthority({ accept: () => ({ ok: false, status: 401, error: 'unused', message: '' }), stillAllowed: () => true });
+          annexControl._attachForTesting(socket as never, fingerprint, 'PIN', 'in');
+          socket.emit('message', Buffer.from(JSON.stringify({ v: 1, type: 'hello', features: ['request'] })));
+        } else await openDirect();
+        await vi.waitFor(() => expect(calls.getDelivery(local.id, queued.id)).toMatchObject(ready
+          ? { state: 'delivered', attempts: 1 } : { state: 'queued', reason: 'waiting_for_controller', attempts: 0 }));
+        expect(exchanges).toEqual([ready ? 'target-controller' : null]);
+        if (!ready) {
+          expect(received).toEqual([]);
+          expect(federation.remoteFederationController(fingerprint)?.agentId).toBe('target-controller');
+          expect(authorize).not.toHaveBeenCalled();
+        }
+        publication.agentId = 'target-controller';
+        if (route === 'reverse' && recovery === 'ready') await openDirect();
+        expect(connected).toHaveBeenCalledExactlyOnceWith(fingerprint);
+        if (recovery === 'changed') publication.agentId = 'replacement-controller';
+        if (recovery === 'off') publication.enabled = false;
+        if (recovery === 're-pair') peer.pairingId = 'new-pairing';
+        if (recovery === 'removed') vi.mocked(annexPeers.listPeers).mockReturnValue([]);
+        if (recovery === 'grant-revoked') vi.mocked(grants.effectiveAgentGrants).mockResolvedValue([]);
+        if (!ready) vi.spyOn(Date, 'now').mockReturnValue(Date.now() + calls.READINESS_RETRY_MS + 1);
+        await calls.flushOutbox(fingerprint);
+        if (recovery !== 'ready') {
+          expect(calls.getDelivery(local.id, queued.id)).toMatchObject({ state: 'refused', attempts: 0,
+            reason: recovery === 're-pair' ? 'pairing_changed' : recovery === 'removed' ? 'peer_revoked' : 'authorization_revoked' });
+          expect(received).toEqual([]);
+          if (recovery === 'changed' || recovery === 'grant-revoked') expect(authorize).toHaveBeenCalledOnce();
+          else expect(authorize).not.toHaveBeenCalled();
+          return;
+        }
+        expect(federation.remoteFederationController(fingerprint)?.agentId).toBe('target-controller');
+        expect(await host.authorizeQueuedAnnexCall(queued)).toEqual({ allowed: true });
+        expect(calls.getDelivery(local.id, queued.id)).toMatchObject({ state: 'delivered', attempts: 1 });
+        expect(received).toEqual([queued.id]);
+        devicesChanged();
+      } finally {
+        stop(); offConnected(); offFederation(); annexClient.stopClient(); annexControl.resetControlForTests();
+        settings.resetAllSettingsStoresForTests();
+        await fs.rm(base, { recursive: true, force: true });
+      }
+    });
+
     describe('one reverse event stream', () => {
       const peer = { fingerprint: FP, publicKey: 'key', alias: 'Reverse peer', icon: '', color: '', role: 'member' as const,
         kind: 'desktop' as const, pairedAt: '', lastSeen: '', tlsCertificateFingerprint: 'PIN', knownHosts: [] as string[], mainPort: 9000 };

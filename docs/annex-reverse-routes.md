@@ -138,3 +138,34 @@ and an independent sentinel. They use the actual client/control stack and small
 fixture target handlers, not the complete production server or paid models.
 This proves consumer wiring, not full-surface P8 acceptance; the full inventory,
 hosted end-to-end coverage and physical-machine/phone acceptance remain separate.
+
+## Controller publication readiness (#3613)
+
+Direct or reverse connectivity can precede Dispatcher initialization. The local
+identity becomes initialized only after authoritative coordinator/chat policy
+reconciliation completes; a failed initialization does not publish readiness.
+Publication has three states: unknown, initialized with an enabled identity, or
+definitively off. An enabled publication with `agentId: null`, an absent
+publication or invalid metadata is unknown, never permission to deliver and
+never by itself evidence of revocation.
+
+Controller-bound outbox flushes require a fresh authenticated publication under
+the current pairing, before invoking the unchanged host authorizer. After the
+last authorization await, the send boundary rechecks the current local identity,
+remote publication state, membership and pairing. A cached exchange cannot
+override a newer unknown/off/changed publication. Unknown restores waiting
+without counting an unsent attempt; definitive revocation refuses. Retained
+verified metadata is not execution authority while the current state is unknown.
+Unknown publications do not replace that metadata. The queued item records
+`waiting_for_controller`, with one readiness-transition log per machine and one
+coalesced 15-second retry timer per machine. Local initialization also wakes the
+queue; reverse followed by direct still emits just one effective-connected event.
+Unrelated ordinary delivery lanes keep their existing behavior.
+
+Waiting consumes no delivery attempts. The existing per-machine/global outbox
+caps and seven-day expiry still apply, including a peer that remains enabled
+without a coordinator forever. Actual federation-off, a removed/changed
+identity or grant, removal from the network and re-pairing still refuse under
+their existing fences. Incoming exchanges/calls during local initialization
+return the existing HTTP error shape with `503 controller_not_ready`. No wire
+fields, grants, receiving-host authorizer rules or phone behavior change.

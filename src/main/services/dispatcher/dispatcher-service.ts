@@ -114,6 +114,8 @@ export { DISPATCHER_INTERNAL_TOOLS };
 /** The coordinator's config as last read from disk; null before the Dispatcher was first created. */
 
 let config: DurableAgentConfig | null = null;
+let identityInitialized = false;
+export function isDispatcherIdentityInitialized(): boolean { return identityInitialized; }
 /** The chat's config as last read from disk; null before it was first created. */
 let chatConfig: DurableAgentConfig | null = null;
 
@@ -928,6 +930,7 @@ async function stopAgent(agent: DurableAgentConfig, dir: string = getDispatcherP
  * Only its saved values going off stop it, never MCP. Starts nothing.
  */
 async function reconcile(): Promise<void> {
+  const initializedIn = generation;
   watchChanges();
   const { enabled, savedOn } = dispatcherEnablement();
   if (enabled) {
@@ -946,6 +949,8 @@ async function reconcile(): Promise<void> {
       if (config) await stopAgent(config);
     }
   }
+  if (initializedIn !== generation) return;
+  identityInitialized = true;
   emitChanged();
 }
 
@@ -1081,6 +1086,7 @@ export async function _whenIdleForTesting(): Promise<void> {
 
 /** For tests. */
 export function _resetDispatcherForTesting(): void {
+  identityInitialized = false;
   config = null;
   noteDispatcherOrigin(null);
   chatConfig = null;

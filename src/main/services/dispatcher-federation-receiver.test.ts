@@ -4,7 +4,7 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-const state = vi.hoisted(() => ({ base: '', running: false, enabled: true, busy: false, inputState: undefined as string | undefined, runtime: 'chat' as 'chat' | 'pty', pendingWork: false, pairing: 'peer-pairing', config: vi.fn(), spawn: vi.fn(), send: vi.fn(), grant: vi.fn() }));
+const state = vi.hoisted(() => ({ base: '', initialized: true, running: false, enabled: true, busy: false, inputState: undefined as string | undefined, runtime: 'chat' as 'chat' | 'pty', pendingWork: false, pairing: 'peer-pairing', config: vi.fn(), spawn: vi.fn(), send: vi.fn(), grant: vi.fn() }));
 const SELF = Array(16).fill('aa').join(':');
 const PEER = Array(16).fill('bb').join(':');
 vi.mock('electron', async () => { const os = await import('os'); return { app: { isPackaged: false, getPath: (name: string) => name === 'temp' ? os.tmpdir() : state.base }, BrowserWindow: { getAllWindows: () => [] } }; });
@@ -16,6 +16,7 @@ vi.mock('./dispatcher/dispatcher-service', () => ({
   getDispatcherAgentId: () => 'controller', getDispatcherPath: () => state.base,
   isDispatcherAgentId: (id: string) => id === 'controller', isDispatcherIdentityAgentId: (id: string) => id === 'controller' || id === 'chat',
   isDispatcherEnabled: () => state.enabled, dispatcherDisplayName: () => 'Dispatcher controller', onDispatcherChanged: () => () => {},
+  isDispatcherIdentityInitialized: () => state.initialized,
 }));
 vi.mock('./dispatcher/dispatcher-settings', () => ({ isDispatcherEnabled: () => state.enabled }));
 vi.mock('./agent-registry', () => ({ agentRegistry: { get: (id: string) => id === 'controller' && state.running ? { runtime: 'chat', projectPath: state.base } : undefined } }));
@@ -78,6 +79,7 @@ beforeEach(async () => {
   fs.rmSync(path.join(state.base, '.clubhouse-dev', 'dispatcher-requests.json'), { force: true });
   forgetHookTurn('controller');
   state.runtime = 'chat';
+  state.initialized = true;
   state.running = false; state.enabled = true; state.busy = false; state.inputState = undefined; state.pendingWork = false; state.pairing = 'peer-pairing';
   state.config.mockResolvedValue({ id: 'controller', name: 'Dispatcher', orchestrator: 'claude-code', model: 'fake' });
   state.spawn.mockImplementation(async () => { const input = prepareFederationInput('controller'); state.running = true; input?.accepted('prompt'); });
@@ -97,6 +99,19 @@ beforeEach(async () => {
 afterEach(() => { stopRequests(); stop(); stopSource(); vi.clearAllMocks(); });
 afterAll(() => { fs.rmSync(state.base, { recursive: true, force: true }); });
 describe('production sleeping-controller delivery (#3345)', () => {
+  it('does not reconcile retained requests as revoked while the local controller identity is initializing', async () => {
+    vi.useFakeTimers();
+    state.initialized = false;
+    stopRequests = startFederatedRequests();
+    const reconcile = vi.spyOn(federatedRequests()!, 'reconcile').mockResolvedValue();
+    try {
+      await vi.advanceTimersByTimeAsync(15_000);
+      expect(reconcile).not.toHaveBeenCalled();
+      state.initialized = true;
+      await vi.advanceTimersByTimeAsync(5_000);
+      expect(reconcile).toHaveBeenCalledOnce();
+    } finally { stopRequests(); vi.useRealTimers(); }
+  });
   it.each(['send_message', 'send_file'])('admits a network member project agent directly through %s with its true origin', async (tool) => {
     stopRequests = startFederatedRequests();
     const request = { ...call(`project-${tool}`, tool), from: { agentId: 'project-agent', name: 'Project agent' },

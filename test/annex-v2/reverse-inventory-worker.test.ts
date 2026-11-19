@@ -20,6 +20,8 @@ describe.runIf(process.env.CLUBHOUSE_ANNEX_INVENTORY_PEER === '1')('isolated ful
         case 'holdProviderSend': return peer.holdProviderSend();
         case 'releaseProviderSend': return peer.releaseProviderSend();
         case 'wire': return peer.wire(params as Parameters<typeof peer.wire>[0]);
+        case 'cancellableRead': return peer.cancellableRead(params as Parameters<typeof peer.cancellableRead>[0]);
+        case 'cancelRead': return peer.cancelRead();
         case 'probe': return peer.probe(params as Parameters<typeof peer.probe>[0]);
         case 'chat': return peer.chat(params as Parameters<typeof peer.chat>[0]);
         case 'chatOutcome': return peer.chatOutcome(params as Parameters<typeof peer.chatOutcome>[0]);

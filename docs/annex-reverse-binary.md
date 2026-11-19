@@ -33,6 +33,16 @@ history while accommodating a maximum 16 GiB handoff's request/response pairs;
 a fresh authenticated connection starts with independent history. No frame supplies a caller identity. Services
 also fence their actual filesystem writes/reads after their own awaits, and
 roll back attachment files if staging loses its caller before publication.
+
+An explicit local request cancellation also remembers that issued request's
+original response bounds for at most 30 seconds, with at most 64 records per
+connection (oldest first). One otherwise valid delayed bulk response offer for
+that id is cancelled without retiring the link or accepting body bytes. The
+record is consumed, invalidated on id reuse, and cleared on disconnect. This
+does not apply to timeouts, never-issued ids, another connection, expired or
+evicted records, invalid/oversized offers, or replayed transfer UUIDs. All other
+bulk protocol and authority refusals retain their existing link-closing behavior.
+
 The attachment fence also retains the exact runtime and durable/quick-agent
 registration across body/staging awaits. Handoff acts check the current record,
 immutable agreement, acceptance, descriptor ownership and request lifetime,

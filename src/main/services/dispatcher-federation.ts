@@ -60,6 +60,17 @@ export function remoteFederationController(machine: string): FederationControlle
   return { ...saved, displayName: typeof saved.displayName === 'string' ? cleanDispatcherName(saved.displayName) || DEFAULT_DISPATCHER_NAME : undefined };
 
 }
+/** A startup-null identity is unknown, not a publication withdrawing authority. */
+export function initializedControllerPublication(raw: unknown): FederationController | undefined {
+  const value = raw as FederationController | null;
+  if (!value || typeof value !== 'object' || typeof value.enabled !== 'boolean'
+    || typeof value.name !== 'string' || !value.name || value.name.length > 200
+    || (value.displayName !== undefined && (typeof value.displayName !== 'string' || value.displayName.length > 200))
+    || (value.agentId !== null && (typeof value.agentId !== 'string' || !value.agentId || value.agentId.length > 200 || value.agentId.includes('@')))
+    || (value.state !== undefined && !isPublishedDispatcherState(value.state))
+    || (value.enabled && value.agentId === null)) return undefined;
+  return value;
+}
 export async function learnFederationController(machine: string, raw: unknown, publication?: FederationPublicationGuard): Promise<void> {
   const peer = listPeers().find((p) => p.fingerprint.toLowerCase() === machine.toLowerCase() && p.role === 'member' && p.kind !== 'phone');
   if (!peer) return;
@@ -68,12 +79,8 @@ export async function learnFederationController(machine: string, raw: unknown, p
   const current = () => (!publication || publication.current()) && (ownPairing()?.id ?? 'legacy') === selfPairing && listPeers().some((p) => p.fingerprint.toLowerCase() === machine.toLowerCase()
     && p.role === 'member' && p.kind !== 'phone' && (p.pairingId ?? 'legacy') === pairing);
   if (!current()) return;
-  const value = raw as FederationController | null;
-  if (!value || typeof value !== 'object' || typeof value.enabled !== 'boolean'
-    || typeof value.name !== 'string' || !value.name || value.name.length > 200
-    || (value.displayName !== undefined && (typeof value.displayName !== 'string' || value.displayName.length > 200))
-    || (value.agentId !== null && (typeof value.agentId !== 'string' || !value.agentId || value.agentId.length > 200 || value.agentId.includes('@')))
-    || (value.state !== undefined && !isPublishedDispatcherState(value.state))) return;
+  const value = initializedControllerPublication(raw);
+  if (!value) return;
   const info = { agentId: value.agentId, name: value.name, ...(value.displayName !== undefined && { displayName: cleanDispatcherName(value.displayName) || DEFAULT_DISPATCHER_NAME }), enabled: value.enabled, ...(value.state && { state: value.state }),
     ownPairingId: selfPairing, ...(peer.pairingId && { pairingId: peer.pairingId }) };
   if (JSON.stringify(remoteFederationController(machine)) === JSON.stringify(info)) return;

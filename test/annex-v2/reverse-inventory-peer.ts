@@ -289,6 +289,7 @@ export async function createInventoryPeer(alias: string) {
   let routePort = 0;
   let imageFixture: { root: string; agentId: string; driver: FakeChatDriver; runtime: ChatAgentRuntime; config: string } | undefined;
   let cancellableWrite: AbortController | undefined;
+  let readAbort: AbortController | undefined;
   return {
     info,
     async configure(config: Omit<ConfigurePeer, 'peer'> & { peer: InventoryPeerInfo }) {
@@ -337,6 +338,19 @@ export async function createInventoryPeer(alias: string) {
       await new Promise<void>((resolve) => setImmediate(resolve));
       return true;
     },
+    seedCancelledRead() { fs.writeFileSync(path.join(root, 'cancel-read.txt'), Buffer.alloc(512 * 1024, 'x')); },
+    async cancellableRead(input: ControlRequestInput) {
+      if (!remote || readAbort) throw new Error('The fixture cannot start another read');
+      readAbort = new AbortController();
+      try {
+        await control.request(remote.fingerprint, input, { signal: readAbort.signal });
+        return { status: 'completed' };
+      } catch (error) {
+        if (!(error instanceof control.ControlRequestError)) throw error;
+        return { code: error.code, indeterminate: error.indeterminate };
+      } finally { readAbort = undefined; }
+    },
+    cancelRead() { readAbort?.abort(); },
     /** Server-only routes have no desktop wrapper. Test their actual wire endpoint explicitly. */
     async wire(input: ControlRequestInput): Promise<WireAnswer> {
       if (!remote) throw new Error('Inventory peer is not configured');
