@@ -200,6 +200,8 @@ export async function changeAgentProvider(projectPath: string, agentId: string, 
     const before = hash(await readCurrent());
     let onRejectedPreparation: (() => Promise<void>) | undefined;
     let mutationAdmitted = false;
+    const commitReceipt: { received: boolean; saved: Readonly<DurableAgentConfig> | null } = { received: false, saved: null };
+    let postCommitIssue = false;
     try {
       const updates: DurableConfigUpdates = { orchestrator: provider,
         ...(intent && selection.model !== undefined && { model: selection.model.kind === 'selected' ? selection.model.id : 'default' }),
@@ -238,33 +240,45 @@ export async function changeAgentProvider(projectPath: string, agentId: string, 
           if (currentCatalog.blocked || hash(currentCatalog.catalog) !== hash(preview.catalog)) return fail('stale_state');
           assertFilesCurrent?.(agent);
           mutationAdmitted = true;
-        } });
+        } }, (committed) => { commitReceipt.received = true; commitReceipt.saved = committed; });
       } else await updateDurableConfig(projectPath, agentId, updates, beforeCommit);
     } catch (err) {
-      let failure = err;
-      try { await onRejectedPreparation?.(); }
-      catch (retained) { failure = retained; }
-      if (intent && (mutationAdmitted || failure instanceof MobileControlError && failure.extra?.transition)) {
-        let savedUnchanged: true | null = mutationAdmitted ? null : true;
-        if (mutationAdmitted) {
-          try {
-            const primary = await peekDurableConfigsChecked(projectPath, { strict: true });
-            const matches = primary.agents.filter((agent) => agent.id === agentId);
-            if (primary.readable && matches.length === 1 && hash(matches[0]) === before) savedUnchanged = true;
-          } catch { /* telemetry-exempt: failed persistence verification stays explicitly unknown. */ }
+      if (intent && commitReceipt.received) {
+        // Flush was acknowledged. A later notification/audit/read failure must
+        // not report that the save failed or attempt native rejection cleanup.
+        postCommitIssue = true;
+      } else {
+        let failure = err;
+        try { await onRejectedPreparation?.(); }
+        catch (retained) { failure = retained; }
+        if (intent && (mutationAdmitted || failure instanceof MobileControlError && failure.extra?.transition)) {
+          let savedUnchanged: true | null = mutationAdmitted ? null : true;
+          if (mutationAdmitted) {
+            try {
+              const primary = await peekDurableConfigsChecked(projectPath, { strict: true });
+              const matches = primary.agents.filter((agent) => agent.id === agentId);
+              if (primary.readable && matches.length === 1 && hash(matches[0]) === before) savedUnchanged = true;
+            } catch { /* telemetry-exempt: failed persistence verification stays explicitly unknown. */ }
+          }
+          const known = failure instanceof MobileControlError ? failure : undefined;
+          throw new MobileControlError(known?.code ?? 'apply_failed', known?.statusCode ?? 409, 'failed',
+            savedUnchanged ? 'The saved provider/settings were not changed. Review any retained native preparation before retrying.' : 'Apply outcome could not be verified. Read the saved target and any native preparation before retrying.',
+            { ...known?.extra, transition: { nativePreparation: 'not_created_by_this_apply', ...(known?.extra?.transition as Record<string, unknown>), status: savedUnchanged ? 'not_applied' : 'outcome_unverified', persisted: savedUnchanged ? false : null, savedUnchanged, historyRetained: savedUnchanged, refusalCode: err instanceof MobileControlError ? err.code : 'apply_failed', nextWake: 'fresh_read_and_review_required' } });
         }
-        const known = failure instanceof MobileControlError ? failure : undefined;
-        throw new MobileControlError(known?.code ?? 'apply_failed', known?.statusCode ?? 409, 'failed',
-          savedUnchanged ? 'The saved provider/settings were not changed. Review any retained native preparation before retrying.' : 'Apply outcome could not be verified. Read the saved target and any native preparation before retrying.',
-          { ...known?.extra, transition: { nativePreparation: 'not_created_by_this_apply', ...(known?.extra?.transition as Record<string, unknown>), status: savedUnchanged ? 'not_applied' : 'outcome_unverified', persisted: savedUnchanged ? false : null, savedUnchanged, historyRetained: savedUnchanged, refusalCode: err instanceof MobileControlError ? err.code : 'apply_failed', nextWake: 'fresh_read_and_review_required' } });
+        throw failure;
       }
-      throw failure;
     }
-    const saved = intent ? await readCurrent() : null;
+    const saved = intent ? commitReceipt.saved : null;
+    if (intent && !saved) throw new MobileControlError('apply_outcome_unverified', 409, 'failed', 'The saved target could not be verified. Read it before retrying.',
+      { transition: { status: 'outcome_unverified', persisted: null, savedUnchanged: null, historyRetained: null, nextWake: 'fresh_read_and_review_required' } });
     let nextWake: { state: 'ready'; expectedState: string } | { state: 'blocked'; code: string } | undefined;
     if (intent) {
       try {
+        if (postCommitIssue) throw new Error('Postcommit observer did not complete');
+        const fresh = await readCurrent();
+        if (!fresh || !isDeepStrictEqual(fresh, saved)) return fail('stale_state');
         const wake = await previewAgentProvider(projectPath, agentId, provider, actor, undefined, { contractVersion: 2 });
+        if (!isDeepStrictEqual(wake.contract?.saved, providerNextWake(saved!, provider))) return fail('stale_state');
         nextWake = wake.blocked ? { state: 'blocked', code: wake.blocked } : !saved?.managed || !saved.providerTransition ? { state: 'blocked', code: 'provider_start_unsupported' } : { state: 'ready', expectedState: wake.expectedState };
       } catch (err) { nextWake = { state: 'blocked', code: err instanceof MobileControlError ? err.code : 'next_wake_unverified' }; }
     }

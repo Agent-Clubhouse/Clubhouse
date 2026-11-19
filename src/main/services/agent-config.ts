@@ -1680,9 +1680,11 @@ async function updateDurableConfigInner(
   beforeCommit?: () => void | Promise<void>,
   precondition?: ManagedSetupCommitPrecondition,
   orchestration?: { config: OrchestrationPolicyConfig | undefined },
+  onPersisted?: (snapshot: Readonly<DurableAgentConfig> | null) => void,
 ): Promise<void> {
   // Checked before anything changes, so a bad value never half-applies.
   validateExecutionPolicy(updates);
+  if (onPersisted && (!beforeCommit || updates.orchestrator === undefined)) throw new Error('A persistence receipt requires a guided durable commit');
   if (updates.providerTransition !== undefined && !beforeCommit) throw new Error('providerTransition requires a guided commit');
   if (updates.effort !== undefined && updates.effort !== null && !isEffortValue(updates.effort)) {
     throw new Error('effort must be an effort level such as low, medium or high');
@@ -1902,6 +1904,18 @@ async function updateDurableConfigInner(
       }
     }
     throw err;
+  }
+  // baselineAgents is the exact last acknowledged disk snapshot, including any
+  // accepted external merge. Never expose the mutable cache or acknowledge
+  // before flush succeeds. Receipt observers cannot undo an acknowledged write.
+  if (onPersisted && rollbackProvider) {
+    let persisted: DurableAgentConfig | null = null;
+    try {
+      const row = configCache.get(projectPath)?.baselineAgents.find((item) => item.id === agentId);
+      if (row) persisted = cloneAgent(row);
+    } catch { /* telemetry-exempt: missing receipt evidence remains explicitly unverified. */ }
+    try { onPersisted(persisted); }
+    catch { /* telemetry-exempt: an observer failure must not turn durable success into a failed save. */ }
   }
   if (updates.orchestrator !== undefined) noteProviderSelection(agentId, updates.orchestrator);
   // A managed agent's setup-changed bar compares these with what its session started on.
@@ -4462,9 +4476,9 @@ export async function auditRecovery(
   return result;
 }
 
-export async function updateDurableConfig(projectPath: string, agentId: string, updates: DurableConfigUpdates, beforeCommit?: () => void | Promise<void>, precondition?: ManagedSetupCommitPrecondition): Promise<void> {
-  if (Object.keys(updates).every((key) => key === 'lastSessionId' || key === 'lastSleep')) return updateDurableConfigInner(projectPath, agentId, updates, beforeCommit, precondition);
-  return withAgentActivity(agentId, () => updateDurableConfigInner(projectPath, agentId, updates, beforeCommit, precondition));
+export async function updateDurableConfig(projectPath: string, agentId: string, updates: DurableConfigUpdates, beforeCommit?: () => void | Promise<void>, precondition?: ManagedSetupCommitPrecondition, onPersisted?: (snapshot: Readonly<DurableAgentConfig> | null) => void): Promise<void> {
+  if (Object.keys(updates).every((key) => key === 'lastSessionId' || key === 'lastSleep')) return updateDurableConfigInner(projectPath, agentId, updates, beforeCommit, precondition, undefined, onPersisted);
+  return withAgentActivity(agentId, () => updateDurableConfigInner(projectPath, agentId, updates, beforeCommit, precondition, undefined, onPersisted));
 }
 
 export async function updateDurable(projectPath: string, agentId: string, updates: { name?: string; color?: string; icon?: string | null; emoji?: string | null }): Promise<void> {

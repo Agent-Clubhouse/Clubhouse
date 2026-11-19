@@ -44,10 +44,12 @@ const W = vi.hoisted(() => ({
   providerV2Wrapper: undefined as undefined | Record<string, unknown>,
   providerV2SettingsUnreadable: false,
   providerV2CommitError: false,
+  providerV2SavedReadFailed: false,
   providerV2RetainPreparation: false,
   providerV2PrimaryReadable: true,
   providerV2Identity: null as string | null,
   providerV2Efforts: ['low', 'high'] as string[],
+  providerV2Catalog: 'current' as 'current' | 'fallback' | 'unavailable' | 'expired',
   stopFails: false,
   iconsUnavailable: false,
   iconDir: null as string | null,
@@ -386,9 +388,9 @@ vi.mock('./agent-config', async () => {
       return config;
     },
     deleteDurable: async () => {},
-    getDurableConfig: async (projectPath: string, id: string) => find(projectPath, id),
+    getDurableConfig: async (projectPath: string, id: string) => { if (W.providerV2SavedReadFailed) throw new Error('Fixture postcommit saved read failed'); return find(projectPath, id); },
     peekCachedDurableConfig: (projectPath: string, id: string) => find(projectPath, id),
-    updateDurableConfig: async (projectPath: string, id: string, updates: Record<string, unknown>, beforeCommit?: () => Promise<void>, precondition?: { prepare(): Promise<void>; check(agent: unknown): void }) => {
+    updateDurableConfig: async (projectPath: string, id: string, updates: Record<string, unknown>, beforeCommit?: () => Promise<void>, precondition?: { prepare(): Promise<void>; check(agent: unknown): void }, onPersisted?: (snapshot: unknown) => void) => {
       await beforeCommit?.();
       const agent = find(projectPath, id) ?? {};
       await precondition?.prepare(); W.providerV2BeforeEffect?.(); precondition?.check(agent);
@@ -405,7 +407,6 @@ vi.mock('./agent-config', async () => {
       Object.assign(agent, rest);
       if (beforeCommit && updates.model === 'default') delete agent.model;
       if (beforeCommit && updates.effort === null) delete agent.effort;
-      if (beforeCommit) W.providerV2AfterCommit?.();
       // agent-config's own rule (its tests cover it): null clears; a choice the new model lacks clears with a notice.
       if (agent.contextWindow === null) { delete agent.contextWindow; delete agent.contextWindowNotice; }
       if (updates.contextWindow) delete agent.contextWindowNotice;
@@ -414,6 +415,7 @@ vi.mock('./agent-config', async () => {
         agent.contextWindowNotice = `${agent.contextWindow} isn't one this model offers.`;
         delete agent.contextWindow;
       }
+      if (beforeCommit) { onPersisted?.(structuredClone(agent)); W.providerV2AfterCommit?.(); }
     },
     updateDurable: async (projectPath: string, id: string, updates: Record<string, unknown>) => { Object.assign(find(projectPath, id) ?? {}, updates); },
     // The orchestration policy service's own writes (#2228).
@@ -530,8 +532,8 @@ vi.mock('./agent-system', () => ({
     checkAvailability: async () => ({ available: true }),
     getCapabilities: () => ({ permissions: true, sessionResume: true }),
     inspectInstructions: async () => 'Fixture shared instructions',
-    peekModels: () => ({ source: 'live', via: 'handshake', fetchedAt: NOW_FOR_MOCKS, models: [{ id: 'fixture-current-model', label: 'Fixture current model', isDefault: true, efforts: W.providerV2Efforts }] }),
-    listModels: async () => ({ source: 'live', via: 'handshake', fetchedAt: NOW_FOR_MOCKS, models: [{ id: 'fixture-current-model', label: 'Fixture current model', isDefault: true, efforts: W.providerV2Efforts }] }),
+    peekModels: () => { if (W.providerV2Catalog === 'unavailable') throw new Error('Fixture catalog unavailable'); return { source: W.providerV2Catalog === 'fallback' ? 'fallback' : 'live', via: W.providerV2Catalog === 'fallback' ? 'static' : 'handshake', fetchedAt: W.providerV2Catalog === 'expired' ? 0 : NOW_FOR_MOCKS, models: [{ id: 'fixture-current-model', label: 'Fixture current model', isDefault: true, efforts: W.providerV2Efforts }] }; },
+    listModels: async () => { if (W.providerV2Catalog === 'unavailable') throw new Error('Fixture catalog unavailable'); return { source: W.providerV2Catalog === 'fallback' ? 'fallback' : 'live', via: W.providerV2Catalog === 'fallback' ? 'static' : 'handshake', fetchedAt: W.providerV2Catalog === 'expired' ? 0 : NOW_FOR_MOCKS, models: [{ id: 'fixture-current-model', label: 'Fixture current model', isDefault: true, efforts: W.providerV2Efforts }] }; },
     getContextWindowOptions: async (model?: string) => W.contextOptions ?? (await import('../../shared/context-window')).claudeContextWindowOptions(model),
     getModelOptions: async () => (id === 'codex-cli'
       ? [{ id: 'default', label: 'Default' }, { id: 'gpt-5', label: 'GPT-5' }]
@@ -725,6 +727,7 @@ import { FakeChatDriver } from './agent-runtime/fake-chat-driver';
 import { findSenderAgent, messageDisplay, MINIMAL_CHAT_CAPABILITIES, sentPartName, type ChatCapabilities } from '../../shared/chat';
 import { agentAvatarSpec, agentInitials, initialsTextColor } from '../../shared/agent-avatar';
 import { AGENT_COLORS } from '../../shared/name-generator';
+import { MobileCommandService as V1HostCommandService } from './provider-control-v1-host.fixture';
 import { MOBILE_COMMAND_FIELDS, MobileCommandService, NULLABLE_ON_UPDATE, isOptionalCommandField } from './mobile-control';
 import { _setConfirmationSaltForTesting } from './mobile-dispatcher-settings';
 import { MOBILE_COMMAND_TYPES } from '../../shared/mobile-control';
@@ -3912,6 +3915,17 @@ describe('Annex mobile contract fixtures', { timeout: TEST_TIMEOUT_MS }, () => {
     W.providerV2Wrapper = { binary: 'fixture-wrapper', separator: '--', orchestratorMap: { 'codex-cli': { subcommand: 'codex' } } };
     unsupported.wrapper = await command('v2: unsupported wrapper', { type: 'agent.providerPreview', agentId: config.id, provider: 'codex-cli', contractVersion: 2 }, { commandId: 'provider-v2-wrapper' });
     expect((unsupported.wrapper as any).body.result.blocked).toBe('managed_delivery_unsupported'); W.providerV2Wrapper = undefined;
+    config.contextWindow = 'fixture-current-context';
+    const contextReview = await command('v2: model change requires context review', selectedRequest, { commandId: 'provider-v2-context-review' });
+    expect(contextReview.body.result.blocked).toBe('context_choice_requires_review'); delete config.contextWindow;
+    const catalogEvidence: Record<string, unknown> = {};
+    for (const state of ['fallback', 'unavailable', 'expired'] as const) {
+      W.providerV2Catalog = state;
+      const sample = await command(`v2: ${state} catalog selection refused`, selectedRequest, { commandId: `provider-v2-catalog-${state}` });
+      expect(sample.body.result.blocked).toBe(`model_catalog_${state === 'expired' ? 'stale' : state}`);
+      catalogEvidence[state] = sample;
+    }
+    W.providerV2Catalog = 'current';
     const malformedV2 = await command('v2: malformed tagged selection', { type: 'agent.providerPreview', agentId: config.id, provider: 'codex-cli', contractVersion: 2, model: 'default' }, { commandId: 'provider-v2-malformed' });
     const unsupportedVersion = await command('v2: unsupported contract version', { type: 'agent.providerPreview', agentId: config.id, provider: 'codex-cli', contractVersion: 3 }, { commandId: 'provider-v2-unsupported-version' });
     expect(malformedV2.body.error.code).toBe('invalid_command'); expect(unsupportedVersion.body.error.code).toBe('unsupported_version');
@@ -3931,6 +3945,17 @@ describe('Annex mobile contract fixtures', { timeout: TEST_TIMEOUT_MS }, () => {
     const persistedSaveUnverified = await command('v2: persisted save unverified next wake', { ...defaultRequest, type: 'agent.providerChange', expectedState: unverifiedSavePreview.body.result.expectedState }, { commandId: 'provider-v2-unverified-save' });
     W.providerV2AfterCommit = undefined; W.providerV2SettingsUnreadable = false;
     expect(persistedSaveUnverified.body.result).toMatchObject({ contract: { result: { persisted: true, started: false } }, nextWake: { state: 'blocked', code: 'next_wake_unverified' } });
+    const savedReadPreview = await command('v2: save before postcommit saved read failure', selectedRequest, { commandId: 'provider-v2-read-failure-preview' });
+    W.providerV2AfterCommit = () => { W.providerV2SavedReadFailed = true; };
+    const postcommitSavedReadFailure = await command('v2: acknowledged save with postcommit read failure', { ...selectedRequest, type: 'agent.providerChange', expectedState: savedReadPreview.body.result.expectedState }, { commandId: 'provider-v2-read-failure' });
+    W.providerV2AfterCommit = undefined; W.providerV2SavedReadFailed = false;
+    expect(postcommitSavedReadFailure.body.result).toMatchObject({ status: 'changed', contract: { saved: { model: { value: 'fixture-current-model', source: 'agent' } }, result: { persisted: true, started: false } }, nextWake: { state: 'blocked', code: 'next_wake_unverified' } });
+    expect(postcommitSavedReadFailure.body.result.nextWake).not.toHaveProperty('expectedState');
+    const observerFailurePreview = await command('v2: save before postcommit observer failure', defaultRequest, { commandId: 'provider-v2-observer-failure-preview' });
+    W.providerV2AfterCommit = () => { throw new Error('Fixture postcommit observer failed'); };
+    const postcommitObserverFailure = await command('v2: acknowledged save with postcommit observer failure', { ...defaultRequest, type: 'agent.providerChange', expectedState: observerFailurePreview.body.result.expectedState }, { commandId: 'provider-v2-observer-failure' });
+    W.providerV2AfterCommit = undefined;
+    expect(postcommitObserverFailure.body.result).toMatchObject({ contract: { result: { persisted: true, started: false } }, nextWake: { state: 'blocked', code: 'next_wake_unverified' } });
     const rejectedSavePreview = await command('v2: fresh preview before rejected save', selectedRequest, { commandId: 'provider-v2-retained-preview' });
     W.providerV2CommitError = true; W.providerV2RetainPreparation = true;
     const retainedPreparation = await command('v2: rejected apply with retained preparation', { ...selectedRequest, type: 'agent.providerChange', expectedState: rejectedSavePreview.body.result.expectedState }, { commandId: 'provider-v2-retained-preparation' });
@@ -3946,9 +3971,28 @@ describe('Annex mobile contract fixtures', { timeout: TEST_TIMEOUT_MS }, () => {
     const legacyApply = await command('v2: complete v1 apply on new host', { type: 'agent.providerChange', agentId: config.id, provider: 'claude-code', expectedState: legacyPreview.body.result.expectedState }, { commandId: 'legacy-on-v2-apply' });
     const legacyStart = await command('v2: complete v1 start on new host', { type: 'agent.start', agentId: config.id, expectedProvider: 'claude-code', resume: false }, { commandId: 'legacy-on-v2-start' });
     expect(legacyApply.body.result.status).toBe('changed'); expect(legacyApply.body.result).not.toHaveProperty('contract'); expect(legacyStart.body.result).not.toHaveProperty('contract');
+    // Execute the actual supplied-base validator/service, rather than the new host's version check.
+    // Synthetic authenticated transport; no old host binary or installed client is exercised.
+    const oldService = new V1HostCommandService(() => NOW);
+    const oldCapabilities = JSON.parse(fs.readFileSync(path.join(FIXTURE_DIR, '..', 'provider-control-v1-capabilities.json'), 'utf8'));
+    expect(oldCapabilities.response.body).not.toHaveProperty('providerControlV2');
+    expect(oldCapabilities.response.body).not.toHaveProperty('providerStartV2');
+    let oldHandlerCalls = 0;
+    const oldRequest = async (request: Record<string, unknown>, commandId: string) => {
+      const envelope = { version: 1, commandId, epoch: oldService.epoch, ...request };
+      const response = await oldService.execute('fixture-authenticated-peer', envelope, async () => { oldHandlerCalls++; return {}; });
+      expect(response.statusCode).toBe(400); expect(response.body.error?.code).toBe('invalid_command');
+      return { request: { ...envelope, epoch: 'supplied-base-host-epoch' }, response: { status: response.statusCode, body: { ...response.body, epoch: 'supplied-base-host-epoch' } } };
+    };
+    const oldHost = { sourceBase: 'cab7f509564c395df1c0fd7869bd04812c91cb97', evidence: 'Frozen actual v1 validator/service and capabilities; synthetic transport, no installed binary',
+      capabilities: { ...oldCapabilities, response: { ...oldCapabilities.response, body: { ...oldCapabilities.response.body, epoch: 'supplied-base-host-epoch' } } },
+      expectedClientState: 'v2_unsupported_do_not_send_or_downgrade',
+      explicitV2Apply: await oldRequest({ ...selectedRequest, type: 'agent.providerChange', expectedState: 'not-authorized-on-old-host' }, 'old-host-v2-apply'),
+      explicitV2Start: await oldRequest({ type: 'agent.start', agentId: config.id, contractVersion: 2, expectedProvider: 'codex-cli', expectedState: 'not-authorized-on-old-host', expectedNextWake: selectedApply.body.result.contract.saved }, 'old-host-v2-start'), handlerCalls: oldHandlerCalls };
+    expect(oldHandlerCalls).toBe(0);
     fixtures.set('provider-control-v2.json', { note: 'Synthetic managed transaction/PTY leaves. Complete opt-in request/receipts. Tokens/epochs are normalized opaque examples; native filesystem and PTY boundary proof are separate unit suites.',
-      oldHost: { capabilities: { providerControl: { version: 1, preview: 'agent.providerPreview', change: 'agent.providerChange', stoppedAcknowledgment: true, strictStart: true } }, expectedClientState: 'v2_unsupported_do_not_send_or_downgrade' },
-      preview, savedDefaultsPreview, staleApplyDefaults, unsupported, malformedV2, unsupportedVersion, authorityDenied, retainedPreparation, unverifiedPersistence, persistedSaveBlocked, persistedSaveUnverified, sameCommandChangedPayload, epochLost, legacyOnNewHost: { preview: legacyPreview, apply: legacyApply, start: legacyStart }, inheritedPreview, inheritedAlready, unsupportedStart, applied, selectedPreview, selectedApply, defaultPreview, defaultApply, alreadySelected: already, catalogStale, stale, startAdmissionDrift, started, lostResponseReplay: replay, alreadyRunning: running, failedAfterCreation: failed, refusedBeforeCreation: refused, immediateExit: exited });
+      oldHost, contextReview, catalogEvidence,
+      preview, savedDefaultsPreview, staleApplyDefaults, unsupported, malformedV2, unsupportedVersion, authorityDenied, retainedPreparation, unverifiedPersistence, persistedSaveBlocked, persistedSaveUnverified, postcommitSavedReadFailure, postcommitObserverFailure, sameCommandChangedPayload, epochLost, legacyOnNewHost: { preview: legacyPreview, apply: legacyApply, start: legacyStart }, inheritedPreview, inheritedAlready, unsupportedStart, applied, selectedPreview, selectedApply, defaultPreview, defaultApply, alreadySelected: already, catalogStale, stale, startAdmissionDrift, started, lostResponseReplay: replay, alreadyRunning: running, failedAfterCreation: failed, refusedBeforeCreation: refused, immediateExit: exited });
     delete config.managed; delete config.providerTransition; W.guidedAvailable = false; W.providerV2Identity = null;
   });
 

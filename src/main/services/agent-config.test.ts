@@ -2060,6 +2060,30 @@ describe('updateDurableConfig: a new CLI (#2593)', () => {
     await updateDurableConfig(PROJECT_PATH, 'durable_cli', { orchestrator: 'claude-code' });
     expect((await getDurableConfig(PROJECT_PATH, 'durable_cli'))!.providerTransition).toBeUndefined();
   });
+  it('acknowledges a detached durable snapshot only after flush and ignores receipt observer exceptions', async () => {
+    setup({ orchestrator: 'claude-code', model: 'opus', sessionHistory: [entry('old', 'claude-code')] });
+    const rename = vi.mocked(fsp.rename).getMockImplementation()!;
+    const receipt = vi.fn((snapshot) => {
+      expect(vi.mocked(fsp.rename)).toHaveBeenCalled();
+      expect(snapshot).toMatchObject({ orchestrator: 'codex-cli', sessionHistory: [entry('old', 'claude-code')] });
+      snapshot.sessionHistory[0].sessionId = 'observer-local';
+      throw new Error('observer failed');
+    });
+    vi.mocked(fsp.rename).mockImplementation(async (...args) => { expect(receipt).not.toHaveBeenCalled(); return rename(...args); });
+    await expect(updateDurableConfig(PROJECT_PATH, 'durable_cli', { orchestrator: 'codex-cli' }, async () => {}, undefined, receipt)).resolves.toBeUndefined();
+    expect(receipt).toHaveBeenCalledTimes(1);
+    expect((await getDurableConfig(PROJECT_PATH, 'durable_cli'))!.sessionHistory![0].sessionId).toBe('old');
+    clearAgentConfigCache(PROJECT_PATH);
+    expect((await getDurableConfig(PROJECT_PATH, 'durable_cli'))!.sessionHistory![0].sessionId).toBe('old');
+  });
+  it('never acknowledges a failed guided flush', async () => {
+    setup({ orchestrator: 'claude-code' });
+    vi.mocked(fsp.rename).mockRejectedValueOnce(new Error('receipt disk failure'));
+    const receipt = vi.fn();
+    await expect(updateDurableConfig(PROJECT_PATH, 'durable_cli', { orchestrator: 'codex-cli' }, async () => {}, undefined, receipt)).rejects.toThrow('receipt disk failure');
+    expect(receipt).not.toHaveBeenCalled();
+  });
+
   it('rolls back marker and provider together when guided persistence fails', async () => {
     setup({ orchestrator: 'claude-code', lastSessionId: 'old', sessionHistory: [entry('old')] });
     const marker = { version: 2 as const, provider: 'codex-cli' as const, agentId: 'durable_cli', delivery: 'read_only_managed' as const, composition: '1'.repeat(64), nativeFingerprint: '2'.repeat(64) };
