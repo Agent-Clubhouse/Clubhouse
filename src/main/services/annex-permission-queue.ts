@@ -49,6 +49,7 @@ interface PendingEntry extends PendingPermission {
 }
 
 const pending = new Map<string, PendingEntry>();
+const claimed = new WeakSet<PendingEntry>();
 
 /** Listener called when a new permission request is created. */
 type PermissionRequestListener = (permission: PendingPermission) => void;
@@ -146,7 +147,7 @@ export function resolvePermissionDetailed(
 ): PermissionResolveResult {
   const { expectedAgentId, source } = options;
   const entry = pending.get(requestId);
-  if (!entry) {
+  if (!entry || claimed.has(entry)) {
     appLog(NS, 'warn', 'Permission resolve no-op (unknown or already resolved)', {
       meta: { requestId, decision, source },
     });
@@ -183,6 +184,17 @@ export function resolvePermissionDetailed(
   });
   entry.resolve(decision);
   return { status: 'resolved' };
+}
+
+/** Reserve the mirrored entry while chat submits an answer; releasing never recreates a withdrawn entry. */
+export function claimPermission(requestId: string, expectedAgentId: string): (() => void) | undefined {
+  const entry = pending.get(requestId);
+  if (!entry || claimed.has(entry) || entry.agentId !== expectedAgentId || Date.now() >= entry.createdAt + entry.timeoutMs) {
+    appLog(NS, 'warn', 'Permission claim rejected', { meta: { requestId, expectedAgentId } });
+    return undefined;
+  }
+  claimed.add(entry);
+  return () => { claimed.delete(entry); };
 }
 
 /**
