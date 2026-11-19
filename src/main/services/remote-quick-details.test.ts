@@ -196,13 +196,29 @@ describe('Quick template passive selected metadata composition', () => {
   it('keeps cold corrupt Access and aged temps unchanged while displaying selected names without ordinary lists or revision reads', async () => {
     const { service } = await quickTemplateFixture(); start();
     const template = vi.spyOn(service, 'getTemplate'), entries = vi.spyOn(service, 'liveEntries'), head = vi.spyOn(service, 'headContent');
+    const ids: string[] = [], open = service.openSetupMetadataForDisplay.bind(service);
+    vi.spyOn(service, 'openSetupMetadataForDisplay').mockImplementation(async () => {
+      const reader = await open(); return { ...reader, head: async (id: string) => { ids.push(id); return reader.head(id); } };
+    });
     const before = await metadataDisk(), result = await read();
     const c = result.cards.find((card) => card.id === 'settings')!;
     expect.soft(c.rows).toEqual(expect.arrayContaining([{ label: 'Template', value: 'Review template' }, { label: 'Added for this run', value: 'Extra' }, { label: 'Left out for this run', value: 'Tone' }]));
     expect.soft(JSON.stringify(result)).not.toMatch(/PRIVATE_|headRevision|contentHash|setupReceipts|payloadsVerified/);
     expect.soft(template).not.toHaveBeenCalled(); expect.soft(entries).not.toHaveBeenCalled(); expect.soft(head).not.toHaveBeenCalled();
+    expect.soft(ids).toEqual(['added', 'removed']);
     expect.soft(await metadataDisk()).toEqual(before);
     expect(m.durable).not.toHaveBeenCalled();
+  });
+  it.each(['template', 'catalog'] as const)('retains independent launch metadata when the actual %s file exceeds its display cap', async (kind) => {
+    const f = await quickTemplateFixture(); start();
+    if (kind === 'template') await fs.writeFile(f.stateFile, JSON.stringify({ ...f.state, PRIVATE_PADDING: 'x'.repeat(512 * 1024) }));
+    else await fs.writeFile(f.catalogFile, JSON.stringify({ ...f.index, PRIVATE_PADDING: 'x'.repeat(4 * 1024 * 1024) }));
+    const before = await metadataDisk(), result = await read(), c = result.cards.find((card) => card.id === 'settings')!;
+    expect.soft(c.state).toBe('error');
+    expect.soft(c.rows).toContainEqual({ label: 'Template', value: kind === 'template' ? 'Template metadata unavailable' : 'Review template' });
+    expect.soft(c.rows).toContainEqual({ label: 'Added for this run', value: kind === 'catalog' ? 'Unavailable from library metadata' : 'Extra' });
+    expect.soft(c.rows).toContainEqual({ label: 'Requested model', value: 'launch-model' });
+    expect.soft(await metadataDisk()).toEqual(before); expect.soft(JSON.stringify(result)).not.toContain('PRIVATE_');
   });
   it.each(['template', 'catalog'] as const)('retains independent launch fields when the selected %s primary is unreadable', async (kind) => {
     const f = await quickTemplateFixture(); start(); await fs.writeFile(kind === 'template' ? f.stateFile : f.catalogFile, '{broken');
