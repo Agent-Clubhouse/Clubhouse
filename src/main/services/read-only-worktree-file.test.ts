@@ -39,8 +39,9 @@ describe('selected worktree passive file evidence', () => {
       return open(...args);
     });
     const result = await readOnlyWorktreeFile(root, 'sub/file', 1024, { prefix });
-    expect(result.state).not.toBe('ok');
-    expect(JSON.stringify(result)).not.toContain('PRIVATE_OUTSIDE_SECRET');
+    expect.soft(result.state).not.toBe('ok');
+    expect.soft(JSON.stringify(result)).not.toContain('PRIVATE_OUTSIDE_SECRET');
+    expect.soft(result.state === 'ok' ? result.bytes.toString('utf8') : '').not.toContain('PRIVATE_OUTSIDE_SECRET');
   });
   it('admits an explicitly requested bounded prefix without changing full-file comparison limits', async () => {
     const file = path.join(folder, 'large'); await fs.writeFile(file, 'visible-prefix-' + 'PRIVATE_NOTES'.repeat(10000));
@@ -72,7 +73,8 @@ describe('selected worktree passive file evidence', () => {
       return open(...args);
     });
     const result = await readOnlyWorktreeFile(root, 'sub/file', 1024, { prefix });
-    expect(result.state).not.toBe('ok');
-    expect(JSON.stringify(result)).not.toContain('PRIVATE_HARDLINK_SECRET');
+    expect.soft(result.state).not.toBe('ok');
+    expect.soft(JSON.stringify(result)).not.toContain('PRIVATE_HARDLINK_SECRET');
+    expect.soft(result.state === 'ok' ? result.bytes.toString('utf8') : '').not.toContain('PRIVATE_HARDLINK_SECRET');
   });
 });
