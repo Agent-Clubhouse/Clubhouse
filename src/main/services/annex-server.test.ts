@@ -2301,6 +2301,32 @@ describe('annex-server', () => {
     expect((await request(port, 'GET', '/api/v1/mobile/agents/missing/chat', undefined, authHeaders(token))).status).toBe(404);
   });
 
+  it('withholds pending chat approvals when the paired device is revoked during the transcript read', async () => {
+    vi.mocked(projectStore.list).mockReturnValue([{ id: 'p', name: 'Project', path: '/test/project' }] as never);
+    vi.mocked(agentConfigModule.listDurable).mockReturnValue([
+      { id: 'a', name: 'agent', color: 'indigo', createdAt: '2026-01-01' },
+    ] as never);
+    const pending = {
+      v: 1, type: 'permission_request', agentId: 'a', sessionId: 's', seq: 1, ts: Date.now(),
+      data: { requestId: 'pending-private-approval', title: 'Review private operation', options: [] },
+    };
+    registerChatRuntime({
+      kind: 'chat', agentId: 'a', isRunning: () => true, getState: () => 'waiting_permission',
+      getSessionId: () => 's', readTranscript: async () => {
+        vi.mocked(annexPeers.getPeer).mockReturnValue(undefined);
+        return { events: [pending] };
+      },
+    } as never);
+    try {
+      const { port, token } = await startAndPair();
+      const response = await request(port, 'GET', '/api/v1/mobile/agents/a/chat', undefined, authHeaders(token));
+      expect(response.status).toBe(403);
+      expect(response.body).not.toContain('pending-private-approval');
+    } finally {
+      clearChatRuntimes();
+    }
+  });
+
   it('audits a controlling device\'s commands by its kind: a phone, or another computer (#3205)', () => {
     const peer = (extra: Partial<import('../../shared/types').AnnexPeer>) => ({
       fingerprint: 'aa:bb', publicKey: 'k', alias: 'x', icon: 'computer', color: 'indigo', pairedAt: '', lastSeen: '', ...extra,

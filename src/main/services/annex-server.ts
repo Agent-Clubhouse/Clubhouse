@@ -4059,6 +4059,7 @@ async function handleControllerChatRoute(ctx: AnnexRouteContext, sessions = fals
 }
 
 async function handleMobileChatRoute(ctx: AnnexRouteContext, match: RegExpMatchArray): Promise<void> {
+  const epoch = mobileCommands.epoch;
   try {
     const agentId = decodeURIComponent(match[1]);
     const durable = await findMobileAgent(agentId);
@@ -4088,6 +4089,9 @@ async function handleMobileChatRoute(ctx: AnnexRouteContext, match: RegExpMatchA
     // link only absolute paths under them; `contentAnyPath` says any readable path is served (#2478).
     const richContent = isGraduatedFeatureOn(RICH_CHAT_CONTENT_FLAG);
     const contentRoots = richContent ? await agentFolders(agentId).catch((): string[] => []) : [];
+    if (mobileCommands.epoch !== epoch || !stillAuthorized(ctx.principal, authorizerDeps)) {
+      sendJson(ctx.res, 403, { error: 'authorization_revoked' }); return;
+    }
     const pending = live ? pendingInteractions(current) : { pendingPermissions: [], pendingQuestions: [] };
     const page = buildChatPage({
       eligible,
