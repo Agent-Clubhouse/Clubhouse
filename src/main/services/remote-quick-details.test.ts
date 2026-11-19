@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import * as fs from 'fs/promises';
 import * as path from 'path';
 import * as os from 'os';
+import { app } from 'electron';
 import { execFile } from 'child_process';
 import { beginQuickAgentRun, clearQuickAgentRuns, finishQuickAgentRun, noteQuickAgentRuntime } from './quick-agent-events';
 import type { AgentRegistration } from './agent-registry';
@@ -13,7 +14,13 @@ import { isRemoteAgentDetails, type RemoteAgentDetails } from '../../shared/remo
 import { readRemoteAgentChanges } from './remote-agent-changes';
 import { isRemoteAgentChanges } from '../../shared/remote-agent-changes';
 import * as repository from './read-only-repository-changes';
-const m = vi.hoisted(() => ({ base: '', durable: vi.fn(), registration: vi.fn(), runtime: vi.fn(), running: vi.fn(), bindings: vi.fn(), sources: vi.fn(), satellite: vi.fn(), peer: vi.fn(), directions: vi.fn(), actions: vi.fn(), canvases: vi.fn(), template: vi.fn(), entries: vi.fn(), connection: vi.fn() }));
+import { createAssetCatalogStore } from './asset-catalog/store';
+import { ASSET_CATALOG_VERSION } from '../../shared/asset-catalog-types';
+import { createManagedAgentsService } from './managed-agents/service';
+import { createManagedStateStore } from './managed-agents/state-store';
+import { resetAllSettingsStoresForTests } from './settings-store';
+const m = vi.hoisted(() => ({ base: '', service: undefined as import('./managed-agents/service').ManagedAgentsService | undefined, durable: vi.fn(), registration: vi.fn(), runtime: vi.fn(), running: vi.fn(), bindings: vi.fn(), sources: vi.fn(), satellite: vi.fn(), peer: vi.fn(), directions: vi.fn(), actions: vi.fn(), canvases: vi.fn(), template: vi.fn(), entries: vi.fn(), connection: vi.fn() }));
+vi.mock('./log-service', () => ({ appLog: vi.fn() }));
 vi.mock('./base-dir', () => ({ getBaseDirPath: () => m.base }));
 vi.mock('./agent-registry', () => ({ agentRegistry: { get: m.registration } }));
 vi.mock('./agent-runtime', () => ({ getAgentRuntime: m.runtime }));
@@ -30,7 +37,8 @@ vi.mock('./actions/details-names', () => ({ actionDetailsNames: () => ({ names: 
 vi.mock('./actions', async () => ({ readActionDetailsForAgent: (agentId: string, projectId: string, dispatcher: boolean, names: import('../../shared/actions').ActionNames) => projectActionDetails({ list: m.actions, lastRunForDisplay: (id: string) => m.actions().find((a: { id: string }) => a.id === id)?.lastRun }, agentId, projectId, dispatcher, names), peekActionProjectName: () => 'Project' }));
 vi.mock('./canvas-store-reader', () => ({ getAgentCanvasMemberships: m.canvases }));
 vi.mock('./clubhouse-mcp/bridge-server', () => ({ getAgentConnection: m.connection, getCurrentAgentConnection: () => m.connection()?.current ? m.connection() : null }));
-vi.mock('./managed-agents', () => ({ managedAgents: () => ({ getTemplate: m.template, liveEntries: m.entries }) }));
+vi.mock('./managed-agents', () => ({ managedAgents: () => m.service ?? ({ getTemplateForDisplay: m.template,
+  openSetupMetadataForDisplay: async () => ({ head: async (id: string) => (await m.entries())[id] ?? null, receipt: { current: () => true } }) }) }));
 let root: string, project: string;
 async function snapshot(folder: string, prefix = ''): Promise<Record<string, string>> {
   const out: Record<string, string> = {};
@@ -45,15 +53,16 @@ const start = () => beginQuickAgentRun({ agentId: 'quick', projectPath: project,
 beforeEach(async () => {
   clearQuickAgentRuns(); _resetAgentDisplayStateForTesting();
   root = await fs.mkdtemp(path.join(os.tmpdir(), 'clubhouse-quick-details-')); m.base = path.join(root, 'profile'); project = path.join(root, 'project');
+  m.service = undefined; vi.spyOn(app, 'getPath').mockReturnValue(root); resetAllSettingsStoresForTests();
   await fs.mkdir(m.base); await fs.mkdir(project);
   await fs.writeFile(path.join(m.base, 'projects.json'), JSON.stringify({ version: 1, projects: [{ id: 'p1', name: 'Project', path: project }] }));
   m.registration.mockReturnValue(undefined); m.runtime.mockReturnValue(undefined); m.running.mockReturnValue(false);
   m.bindings.mockReturnValue([]); m.sources.mockResolvedValue({ pairs: [], unreadable: [] }); m.satellite.mockReturnValue(null); m.peer.mockReturnValue(undefined); m.directions.mockReturnValue([]);
   m.actions.mockReturnValue([]); m.canvases.mockResolvedValue([]); m.connection.mockReturnValue(null);
-  m.template.mockResolvedValue({ name: 'Review template' }); m.entries.mockResolvedValue({ added: { name: 'Extra' }, removed: { name: 'Tone' } });
+  m.template.mockResolvedValue({ name: 'Review template', source: 'primary', observedAt: Date.now() }); m.entries.mockResolvedValue({ added: { name: 'Extra' }, removed: { name: 'Tone' } });
   m.durable.mockImplementation(() => { throw new Error('Quick reads must not resolve a durable config.'); });
 });
-afterEach(async () => { vi.restoreAllMocks(); clearQuickAgentRuns(); await fs.rm(root, { recursive: true, force: true }); });
+afterEach(async () => { resetAllSettingsStoresForTests(); vi.restoreAllMocks(); clearQuickAgentRuns(); m.service = undefined; await fs.rm(root, { recursive: true, force: true }); });
 const read = async () => {
   const target = await resolveReadOnlyQuickTarget('quick', () => true);
   expect(target).not.toBeNull();
@@ -155,6 +164,113 @@ describe('read-only quick Details target and cards', () => {
     expect(response.status).toBe(condition === 'revoked' ? 403 : 409);
     expect(response.body).not.toHaveProperty('cards');
     expect(JSON.stringify(response)).not.toContain('PRIVATE_LATE_BOARD');
+  });
+});
+
+async function quickTemplateFixture() {
+  const catalogDir = path.join(root, 'catalog'), stateDir = path.join(root, 'managed');
+  await fs.mkdir(catalogDir); await fs.mkdir(stateDir);
+  const stateFile = path.join(stateDir, 'state.json'), catalogFile = path.join(catalogDir, 'catalog.json');
+  const template = { id: 't1', name: 'Review template', builtin: false, description: 'PRIVATE_TEMPLATE_DESCRIPTION', setup: { blocks: [], skills: [], mcps: [] }, settings: { freeAgentMode: true, PRIVATE_CONFIG: 'PRIVATE_TEMPLATE_SETTINGS' } };
+  const entry = (id: string, name: string) => ({ id, kind: 'block', name, source: { kind: 'user' }, owner: { kind: 'library' }, createdAt: '2026-11-19', headRevision: 1, revisions: [{ revision: 1, savedAt: '2026-11-19', contentHash: 'a'.repeat(64), projection: { kind: 'block', bytes: 10 } }], PRIVATE_CONFIG: 'PRIVATE_PART_SETTINGS' });
+  const state = { version: 1, parts: {}, templates: { t1: template, unrelated: { ...template, id: 'unrelated', name: 'PRIVATE_UNRELATED_TEMPLATE' } } };
+  const index = { version: ASSET_CATALOG_VERSION, assets: { added: entry('added', 'Extra'), removed: entry('removed', 'Tone'), unrelated: entry('unrelated', 'PRIVATE_UNRELATED_PART') }, compositions: {}, runs: {} };
+  await fs.writeFile(stateFile, JSON.stringify(state)); await fs.writeFile(catalogFile, JSON.stringify(index));
+  await fs.writeFile(path.join(root, 'free-agent-settings.json'), '{broken');
+  await fs.writeFile(path.join(root, 'free-agent-settings.json.bak'), '{"defaultMode":"skip-all"}');
+  const aged = path.join(root, `.free-agent-settings.json.tmp-${process.pid + 100000}-1`);
+  await fs.writeFile(aged, 'do not sweep this temp'); const old = new Date(Date.now() - 3 * 86400000); await fs.utimes(aged, old, old);
+  const service = createManagedAgentsService({ catalog: createAssetCatalogStore({ dir: catalogDir }), state: createManagedStateStore(stateDir), listProjects: async () => [], listAgents: async () => [], getAgent: m.durable, setManagedSetup: vi.fn(), isRunning: () => false });
+  m.service = service;
+  return { stateFile, catalogFile, state, index, service };
+}
+async function metadataDisk(folder = root): Promise<Record<string, unknown>> {
+  const result: Record<string, unknown> = {};
+  for (const name of (await fs.readdir(folder)).sort()) {
+    const file = path.join(folder, name), stat = await fs.lstat(file);
+    result[name] = stat.isDirectory() ? { ino: stat.ino, files: await metadataDisk(file) } : { bytes: (await fs.readFile(file)).toString('base64'), ino: stat.ino, mtimeMs: stat.mtimeMs };
+  }
+  return result;
+}
+describe('Quick template passive selected metadata composition', () => {
+  it('keeps cold corrupt Access and aged temps unchanged while displaying selected names without ordinary lists or revision reads', async () => {
+    const { service } = await quickTemplateFixture(); start();
+    const template = vi.spyOn(service, 'getTemplate'), entries = vi.spyOn(service, 'liveEntries'), head = vi.spyOn(service, 'headContent');
+    const ids: string[] = [], open = service.openSetupMetadataForDisplay.bind(service);
+    vi.spyOn(service, 'openSetupMetadataForDisplay').mockImplementation(async () => {
+      const reader = await open(); return { ...reader, head: async (id: string) => { ids.push(id); return reader.head(id); } };
+    });
+    const before = await metadataDisk(), result = await read();
+    const c = result.cards.find((card) => card.id === 'settings')!;
+    expect.soft(c.rows).toEqual(expect.arrayContaining([{ label: 'Template', value: 'Review template' }, { label: 'Added for this run', value: 'Extra' }, { label: 'Left out for this run', value: 'Tone' }]));
+    expect.soft(JSON.stringify(result)).not.toMatch(/PRIVATE_|headRevision|contentHash|setupReceipts|payloadsVerified/);
+    expect.soft(template).not.toHaveBeenCalled(); expect.soft(entries).not.toHaveBeenCalled(); expect.soft(head).not.toHaveBeenCalled();
+    expect.soft(ids).toEqual(['added', 'removed']);
+    expect.soft(await metadataDisk()).toEqual(before);
+    expect(m.durable).not.toHaveBeenCalled();
+  });
+  it.each(['template', 'catalog'] as const)('retains independent launch metadata when the actual %s file exceeds its display cap', async (kind) => {
+    const f = await quickTemplateFixture(); start();
+    if (kind === 'template') await fs.writeFile(f.stateFile, JSON.stringify({ ...f.state, PRIVATE_PADDING: 'x'.repeat(512 * 1024) }));
+    else await fs.writeFile(f.catalogFile, JSON.stringify({ ...f.index, PRIVATE_PADDING: 'x'.repeat(4 * 1024 * 1024) }));
+    const before = await metadataDisk(), result = await read(), c = result.cards.find((card) => card.id === 'settings')!;
+    expect.soft(c.state).toBe('error');
+    expect.soft(c.rows).toContainEqual({ label: 'Template', value: kind === 'template' ? 'Template metadata unavailable' : 'Review template' });
+    expect.soft(c.rows).toContainEqual({ label: 'Added for this run', value: kind === 'catalog' ? 'Unavailable from library metadata' : 'Extra' });
+    expect.soft(c.rows).toContainEqual({ label: 'Requested model', value: 'launch-model' });
+    expect.soft(await metadataDisk()).toEqual(before); expect.soft(JSON.stringify(result)).not.toContain('PRIVATE_');
+  });
+  it.each(['template', 'catalog'] as const)('retains independent launch fields when the selected %s primary is unreadable', async (kind) => {
+    const f = await quickTemplateFixture(); start(); await fs.writeFile(kind === 'template' ? f.stateFile : f.catalogFile, '{broken');
+    const before = await metadataDisk(), result = await read(), c = result.cards.find((card) => card.id === 'settings')!;
+    expect(c.state).toBe('error');
+    expect(c.rows).toContainEqual({ label: 'Requested model', value: 'launch-model' });
+    expect(c.rows).toContainEqual({ label: 'Template', value: kind === 'template' ? 'Template metadata unavailable' : 'Review template' });
+    expect(c.rows).toContainEqual({ label: 'Added for this run', value: kind === 'catalog' ? 'Unavailable from library metadata' : 'Extra' });
+    expect(c.notes.join(' ')).toContain(kind === 'template' ? 'selected template is unavailable' : 'No empty library');
+    expect(await metadataDisk()).toEqual(before); expect(JSON.stringify(result)).not.toContain('PRIVATE_');
+  });
+  it('does not let unrelated malformed template/catalog entries suppress selected names', async () => {
+    const f = await quickTemplateFixture(); start();
+    await fs.writeFile(f.stateFile, JSON.stringify({ ...f.state, templates: { ...f.state.templates, unrelated: null } }));
+    await fs.writeFile(f.catalogFile, JSON.stringify({ ...f.index, assets: { ...f.index.assets, unrelated: null } }));
+    const before = await metadataDisk(), result = await read(), c = result.cards.find((card) => card.id === 'settings')!;
+    expect(c.rows).toContainEqual({ label: 'Template', value: 'Review template' }); expect(c.rows).toContainEqual({ label: 'Added for this run', value: 'Extra' });
+    expect(await metadataDisk()).toEqual(before); expect(JSON.stringify(result)).not.toContain('PRIVATE_');
+  });
+  it.each(['template', 'part', 'during-later-head', 'revoked'] as const)('withholds selected setup after real %s evidence changes across an await', async (change) => {
+    const f = await quickTemplateFixture(); start(); let allowed = true, changed = false;
+    const target = await resolveReadOnlyQuickTarget('quick', () => allowed); expect(target).not.toBeNull();
+    if (change === 'during-later-head' || change === 'revoked') {
+      const open = f.service.openSetupMetadataForDisplay.bind(f.service);
+      vi.spyOn(f.service, 'openSetupMetadataForDisplay').mockImplementation(async () => {
+        const reader = await open(); return { ...reader, head: async (id: string) => {
+          const value = await reader.head(id);
+          if (id === 'removed') {
+            if (change === 'revoked') allowed = false;
+            else { f.index.assets.added.name = 'Changed selected part'; await fs.writeFile(f.catalogFile, JSON.stringify(f.index)); }
+            changed = true;
+          }
+          return value;
+        } };
+      });
+    } else m.canvases.mockImplementation(async () => {
+      if (change === 'template') { f.state.templates.t1.name = 'Changed selected template'; await fs.writeFile(f.stateFile, JSON.stringify(f.state)); }
+      else { delete (f.index.assets as Partial<typeof f.index.assets>).added; await fs.writeFile(f.catalogFile, JSON.stringify(f.index)); }
+      changed = true; return [];
+    });
+    const result = await readRemoteQuickDetails(target!, () => allowed); expect(changed).toBe(true);
+    expect.soft(result.status).toBe(change === 'revoked' ? 403 : 409); expect.soft(result.body).not.toHaveProperty('cards');
+    expect.soft(JSON.stringify(result.body)).not.toMatch(/Review template|Extra|Tone|PRIVATE_/);
+  });
+  it('ignores unrelated template and catalog changes while keeping selected receipts private', async () => {
+    const f = await quickTemplateFixture(); start();
+    m.canvases.mockImplementation(async () => {
+      f.state.templates.unrelated.name = 'PRIVATE_CHANGED_TEMPLATE'; f.index.assets.unrelated.name = 'PRIVATE_CHANGED_PART';
+      await fs.writeFile(f.stateFile, JSON.stringify(f.state)); await fs.writeFile(f.catalogFile, JSON.stringify(f.index)); return [];
+    });
+    const result = await read(); expect(JSON.stringify(result)).not.toMatch(/PRIVATE_|"(?:current|receipts|setupReceipts)"\s*:/);
+    expect(result.cards.find((c) => c.id === 'settings')?.rows).toContainEqual({ label: 'Added for this run', value: 'Extra' });
   });
 });
 

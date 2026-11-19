@@ -12,12 +12,14 @@ import { readActionCard, readCanvasCard, readConnectionCard } from './remote-det
 import { getAgentConnection, getCurrentAgentConnection } from './clubhouse-mcp/bridge-server';
 import { managedAgents } from './managed-agents';
 import { quickRuntimeDisplay, quickRuntimeIsCurrent } from './quick-agent-events';
+import type { DisplayReceipt } from './display-settings';
 
 export async function readRemoteQuickDetails(target: ReadOnlyQuickTarget, authorized: () => boolean): Promise<{ status: number; body: unknown }> {
   const refused = () => ({ status: 403, body: { error: 'details_read_refused' } });
   if (!authorized()) return refused();
   try {
     const { run, project } = target, agentId = run.agentId, selected = run.display;
+    const setupReceipts: DisplayReceipt[] = [];
     const registration = agentRegistry.get(agentId);
     const nonce = registration?.nonce, registeredRuntime = registration?.runtime;
     const registeredProvider = registration?.orchestrator, registeredCwd = registration?.cwd;
@@ -60,15 +62,33 @@ export async function readRemoteQuickDetails(target: ReadOnlyQuickTarget, author
       if (rawRunning && !bound) c.notes.push('A runtime exists for this ID, but it is not confirmed as this quick launch. Only retained launch metadata is shown.');
       if (selected?.template) {
         const service = managedAgents();
-        let name = 'Template no longer available';
-        try { name = (await checked(service.getTemplate(selected.template.id))).name; }
-        catch { if (!authorized()) throw new Error('revoked'); c.notes.push('The selected template is unavailable. Other launch fields are shown independently.'); }
+        let name = 'Template metadata unavailable';
+        try {
+          const template = await checked(service.getTemplateForDisplay(selected.template.id, { receipts: setupReceipts }));
+          name = template.name;
+          c.notes.push(`Template name: ${template.source === 'builtin' ? 'built-in metadata' : 'host primary metadata'} observed ${new Date(template.observedAt).toISOString()}.`);
+          if (template.truncated) c.notes.push('Template display metadata was truncated by the host.');
+        }
+        catch { if (!authorized()) throw new Error('revoked'); c.state = 'error'; c.notes.push('The selected template is unavailable. Other launch fields are shown independently.'); }
         row(c, 'Template', name);
         if (selected.template.added.length || selected.template.removed.length) {
-          const entries = await checked(service.liveEntries());
-          const names = (ids: readonly string[]) => ids.map((id) => entries[id]?.name ?? 'No longer in the library').join(', ');
-          row(c, 'Added for this run', names(selected.template.added));
-          row(c, 'Left out for this run', names(selected.template.removed));
+          const names = new Map<string, string>();
+          try {
+            const ids = [...new Set([...selected.template.added, ...selected.template.removed])];
+            if (ids.length > 100 || ids.some((id) => typeof id !== 'string' || !id || id.length > 2048)) throw new Error('part_limit');
+            const library = await checked(service.openSetupMetadataForDisplay());
+            // Retain the private receipt before further awaits, including a
+            // failed part lookup. No revision payload or global entry list.
+            setupReceipts.push(library.receipt);
+            for (const id of ids) {
+              const part = await checked(library.head(id));
+              names.set(id, part ? display(part.name, 240) : 'No longer in the library');
+            }
+            c.notes.push('Part names are selected committed library metadata. Revision payload integrity and provider loading are not verified.');
+          } catch { if (!authorized()) throw new Error('revoked'); c.state = 'error'; names.clear(); c.notes.push('The selected launch-part names are unavailable. No empty library or loaded setup is inferred.'); }
+          const labels = (ids: readonly string[]) => ids.map((id) => names.get(id) ?? 'Unavailable from library metadata').join(', ');
+          row(c, 'Added for this run', labels(selected.template.added));
+          row(c, 'Left out for this run', labels(selected.template.removed));
         }
         if (selected.template.omitted) { c.omitted += selected.template.omitted; c.notes.push('Further launch part choices were outside the retained display limit.'); }
       }
@@ -96,6 +116,7 @@ export async function readRemoteQuickDetails(target: ReadOnlyQuickTarget, author
     });
     byId.changes.notes.push('Comparisons require a folder confirmed by this quick run’s created runtime. A requested folder alone is not read. Session and last-turn evidence also requires its current chat session identity.');
     if (!authorized()) return refused();
+    if (setupReceipts.some((receipt) => !receipt.current())) return { status: 409, body: { error: 'quick_setup_evidence_changed' } };
     const current = agentRegistry.get(agentId);
     if (current !== registration || current?.nonce !== nonce || current?.runtime !== registeredRuntime || current?.orchestrator !== registeredProvider || current?.cwd !== registeredCwd
       || isAgentRunning(agentId) !== rawRunning || quickRuntimeIsCurrent(run, current) !== bound || running && !registration && runtime?.kind !== 'chat'
