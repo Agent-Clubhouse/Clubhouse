@@ -97,6 +97,7 @@ vi.mock('./agent-config', () => ({
   getSessionHistory: (...args: unknown[]) => mockGetSessionHistory(...(args as [])),
   removeSessionEntries: (...args: unknown[]) => mockRemoveSessionEntries(...(args as [])),
   getDurableConfig: (...args: unknown[]) => mockGetDurableConfig(...args),
+  peekCachedDurableConfig: () => mockGetDurableConfig(),
   addSessionEntry: (...args: unknown[]) => mockAddSessionEntry(...args),
   updateSessionId: (...args: unknown[]) => mockUpdateSessionId(...args),
   updateDurableConfig: (...args: unknown[]) => mockUpdateDurableConfig(...args),
@@ -137,6 +138,8 @@ vi.mock('./agent-runtime/chat-spawn', async (importOriginal) => {
 const mockCleanupStaleJsonInTomlConfigs = vi.fn();
 const mockStripLegacyClubhouseBridgeToml = vi.fn(async () => false);
 const mockDeliverForSpawn = vi.fn(async () => {});
+const mockManagedProviderStartGuard = vi.hoisted(() => vi.fn(async () => () => {}));
+vi.mock('./managed-provider-transition', () => ({ managedProviderStartGuard: mockManagedProviderStartGuard }));
 const mockQuickLaunchFor = vi.fn();
 vi.mock('./managed-agents', () => ({
   deliverForSpawn: (...args: unknown[]) => mockDeliverForSpawn(...(args as [])),
@@ -401,6 +404,7 @@ function notSessionCapable(provider: Record<string, unknown>): void {
 describe('agent-system', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mockManagedProviderStartGuard.mockReset().mockResolvedValue(() => {});
     clearQuickAgentRuns();
     resetAppEventBus();
     mockPeekProjects.mockReset().mockResolvedValue([]);
@@ -3186,6 +3190,31 @@ describe('agent-system', () => {
   });
 
   describe('managed agent delivery (#2896)', () => {
+    it('refuses an invalid durable transition before cleanup, managed delivery or runtime creation', async () => {
+      const config = { id: 'agent-1', name: 'agent-1', worktreePath: '/project/work', orchestrator: 'codex-cli',
+        managed: { version: 1, blocks: [], skills: [], mcps: [] }, providerTransition: { version: 2, provider: 'codex-cli' }, sessionHistory: [{ sessionId: 'keep' }] };
+      mockGetDurableConfig.mockReturnValue(config);
+      mockManagedProviderStartGuard.mockRejectedValueOnce(new Error('managed_transition_stale'));
+      await expect(spawnAgent({ agentId: 'agent-1', projectPath: '/project', cwd: '/project/work', kind: 'durable', orchestrator: 'codex-cli' })).rejects.toThrow('managed_transition_stale');
+      expect(mockCleanupStaleJsonInTomlConfigs).not.toHaveBeenCalled(); expect(mockStripLegacyClubhouseBridgeToml).not.toHaveBeenCalled();
+      expect(mockDeliverForSpawn).not.toHaveBeenCalled(); expect(mockPtySpawn).not.toHaveBeenCalled(); expect(mockTryStartChatAgent).not.toHaveBeenCalled();
+      expect(config.sessionHistory).toEqual([{ sessionId: 'keep' }]);
+    });
+    it('never routes an unprepared strict v2 managed start into legacy delivery', async () => {
+      mockGetDurableConfig.mockReturnValue({ id: 'agent-1', managed: { version: 1, blocks: [], skills: [], mcps: [] } });
+      await expect(spawnAgent({ agentId: 'agent-1', projectPath: '/project', cwd: '/project', kind: 'durable', strictManagedDelivery: true })).rejects.toThrow('managed_delivery_unsupported');
+      expect(mockDeliverForSpawn).not.toHaveBeenCalled(); expect(mockPtySpawn).not.toHaveBeenCalled();
+    });
+    it('uses read-only admission on ordinary wake and reaches the actual creation fence without native delivery writes', async () => {
+      mockGetDurableConfig.mockReturnValue({ id: 'agent-1', name: 'agent-1', worktreePath: '/project/work', orchestrator: 'codex-cli',
+        managed: { version: 1, blocks: [], skills: [], mcps: [] }, providerTransition: { version: 2, provider: 'codex-cli' } });
+      const fence = vi.fn(); const created = vi.fn(); mockManagedProviderStartGuard.mockResolvedValueOnce(fence);
+      mockMcpWaitReady.mockResolvedValueOnce(23456);
+      mockPtySpawn.mockImplementationOnce(async (...args) => { args[7]?.beforeCreate(); args[7]?.onCreated('exact-created-pty'); });
+      await spawnAgent({ agentId: 'agent-1', projectPath: '/project', cwd: '/project/work', kind: 'durable', orchestrator: 'codex-cli', onRuntimeCreated: created });
+      expect(fence).toHaveBeenCalledTimes(2); expect(created).toHaveBeenCalledWith('exact-created-pty');
+      expect(mockCleanupStaleJsonInTomlConfigs).not.toHaveBeenCalled(); expect(mockDeliverForSpawn).not.toHaveBeenCalled(); expect(mockInjectClubhouseMcp).not.toHaveBeenCalled();
+    });
     it('delivers a managed setup before the start', async () => {
       mockDeliverForSpawn.mockClear();
       const config = {

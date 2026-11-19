@@ -33,10 +33,10 @@ export const MOBILE_COMMAND_FIELDS: Readonly<Record<MobileCommand['type'], reado
   'chat.question': ['agentId', 'sessionId', 'requestId', 'answers'],
   'chat.setModel': ['agentId', 'sessionId', 'model', 'effort'],
   'chat.setLevel': ['agentId', 'sessionId', 'level'],
-  'agent.start': ['agentId', 'message', 'resume', 'expectedProvider', 'expectedSessionId'],
+  'agent.start': ['agentId', 'message', 'resume', 'expectedProvider', 'expectedSessionId', 'contractVersion', 'expectedState', 'expectedNextWake'],
   'agent.stop': ['agentId', 'waitForStopped'],
-  'agent.providerPreview': ['agentId', 'provider'],
-  'agent.providerChange': ['agentId', 'provider', 'expectedState'],
+  'agent.providerPreview': ['agentId', 'provider', 'contractVersion', 'model', 'effort'],
+  'agent.providerChange': ['agentId', 'provider', 'expectedState', 'contractVersion', 'model', 'effort'],
   'agent.spawn': ['projectId', 'prompt', 'model', 'orchestrator'],
   'agent.create': ['managed', 'templateId', 'blank', 'projectId', 'name', 'color', 'orchestrator', 'model', 'persona', 'freeAgentMode', 'access', 'useWorktree', 'mcpIds', 'branchName', 'branchFrom', 'folderName', 'orchestration'],
   'agent.update': ['agentId', 'name', 'color', 'emoji', 'orchestrator', 'model', 'runtime', 'persona', 'clubhouseMode', 'freeAgentMode', 'access', 'idleSleep', 'contextWindow', 'orchestration'],
@@ -64,7 +64,7 @@ const CREATE_OPTIONAL = new Set(['managed', 'templateId', 'blank', 'orchestrator
 /** Commands whose fields are all optional, with at least one set: Settings > Dispatcher's (#3206). */
 const ANY_OF = new Set<string>(['dispatcher.update', 'dispatcher.setModels']);
 export const isOptionalCommandField = (type: MobileCommand['type'], key: string): boolean =>
-  ANY_OF.has(type) ? true : type === 'agent.update' ? key !== 'agentId' : type === 'agent.create' ? CREATE_OPTIONAL.has(key)
+  key === 'contractVersion' || (type === 'agent.start' && (key === 'expectedState' || key === 'expectedNextWake')) ? true : ANY_OF.has(type) ? true : type === 'agent.update' ? key !== 'agentId' : type === 'agent.create' ? CREATE_OPTIONAL.has(key)
     : type === 'helperRouting.update' && ROUTING_OPTIONAL.has(key) ? true
       : type === 'chat.setModel' && key === 'model' ? false : OPTIONAL.has(key);
 const BOOLEAN_FIELDS = new Set(['managed', 'blank', 'waitForStopped', 'resume', 'useWorktree', 'clubhouseMode', 'pinned', 'inactive', 'force', 'freeAgentMode', 'enabled', 'byHand', 'copilotAuto']);
@@ -83,6 +83,18 @@ export function parseMobileCommand(value: unknown): MobileCommand {
   for (const key of fields) {
     const v = value[key];
     if (isOptionalCommandField(type, key) && v === undefined) continue;
+    if (key === 'contractVersion') { if (v !== 2) throw new MobileControlError('unsupported_version', 400); continue; }
+    if (type === 'agent.start' && key === 'expectedNextWake') {
+      const setting = (s: unknown) => record(s) && Object.keys(s).length === 2 && (s.value === null || text(s.value, 256))
+        && (s.source === 'agent' ? text(s.value, 256) : s.source === 'provider_default' && s.value === null);
+      if (!record(v) || Object.keys(v).length !== 4 || !text(v.provider) || (v.providerOverride !== null && !text(v.providerOverride)) || !setting(v.model) || !setting(v.effort)) throw new MobileControlError('invalid_command', 400);
+      continue;
+    }
+    if ((type === 'agent.providerPreview' || type === 'agent.providerChange') && key === 'model') {
+      if (!record(v) || (v.kind === 'provider_default' ? Object.keys(v).length !== 1
+        : v.kind !== 'selected' || Object.keys(v).length !== 2 || !text(v.id, 256) || v.id === 'default')) throw new MobileControlError('invalid_command', 400);
+      continue;
+    }
     if ((type === 'agent.update' || ANY_OF.has(type)) && NULLABLE_ON_UPDATE.has(key) && v === null) continue;
     if (BOOLEAN_FIELDS.has(key)) { if (typeof v !== 'boolean') throw new MobileControlError('invalid_command', 400); }
     else if (key === 'attachmentIds') {
@@ -120,6 +132,14 @@ export function parseMobileCommand(value: unknown): MobileCommand {
   if ((type === 'agent.update' || ANY_OF.has(type)) && !fields.some((k) => k !== 'agentId' && value[k] !== undefined)) throw new MobileControlError('invalid_command', 400);
   if (type === 'helperRouting.update' && value.cells === undefined && value.reset === undefined && value.auto === undefined && value.copilotAuto === undefined) throw new MobileControlError('invalid_command', 400);
   if (type === 'agent.start' && value.expectedSessionId !== undefined && (value.resume !== true || !text(value.expectedProvider))) throw new MobileControlError('invalid_command', 400);
+  if ((type === 'agent.providerPreview' || type === 'agent.providerChange') && value.contractVersion !== 2
+    && (value.model !== undefined || value.effort !== undefined)) throw new MobileControlError('unsupported_version', 400);
+  if (type === 'agent.start') {
+    if (value.contractVersion === 2) {
+      if (!text(value.expectedProvider) || !text(value.expectedState) || !record(value.expectedNextWake)
+        || value.expectedNextWake.provider !== value.expectedProvider) throw new MobileControlError('invalid_command', 400);
+    } else if (value.expectedState !== undefined || value.expectedNextWake !== undefined) throw new MobileControlError('unsupported_version', 400);
+  }
   return value as unknown as MobileCommand;
 }
 

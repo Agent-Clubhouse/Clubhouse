@@ -8,6 +8,37 @@ export const MOBILE_PROTOCOL_VERSION = 1;
 export const MOBILE_COMMAND_TYPES = ['chat.send', 'chat.interrupt', 'chat.permission', 'chat.question', 'chat.queue.remove', 'agent.start', 'agent.stop', 'agent.spawn', 'agent.create', 'agent.update', 'project.setPinned', 'project.setInactive', 'helper.approve', 'helper.decline', 'chat.setModel', 'chat.setLevel', 'quick.dismiss', 'quick.clear', 'dispatcher.setEnabled', 'helperRouting.update', 'agent.providerPreview', 'agent.providerChange', 'grant.answer', 'dispatcher.update', 'dispatcher.setModels', 'dispatcher.clearChat', 'dispatcher.forgetEverything', 'app.update.check', 'app.update.request', 'app.update.cancel'] as const;
 interface CommandBase { version: 1; commandId: string; epoch: string }
 interface ChatTarget { agentId: string; sessionId: string }
+/** Provider control v2; the mobile command envelope remains version 1. Omitted
+ * choices preserve same-provider settings; changing provider clears them. */
+export interface ProviderSelection {
+  contractVersion?: 2;
+  model?: { kind: 'selected'; id: string } | { kind: 'provider_default' };
+  effort?: string | null;
+}
+export interface ProviderNextWake {
+  provider: string;
+  providerOverride: string | null;
+  model: { value: string | null; source: 'agent' | 'provider_default' };
+  effort: { value: string | null; source: 'agent' | 'provider_default' };
+}
+export interface ProviderControlReceipt {
+  version: 2;
+  target: { agentId: string };
+  selection: ProviderSelection;
+  current: ProviderNextWake;
+  saved: ProviderNextWake;
+  proposed: ProviderNextWake;
+  running: { provider: string | null; evidence: 'registry_selection' | 'none'; model: null; effort: null };
+  result: { status: 'preview' | 'changed' | 'already_selected'; persisted: boolean; started: false };
+}
+export interface ProviderStartReceipt {
+  version: 2;
+  target: { agentId: string; hostEpoch: string; commandId: string };
+  configured: ProviderNextWake | null;
+  result: { status: 'start_acknowledged' | 'refused_before_creation' | 'failed_after_creation'; configuration: 'verified_at_start' | 'not_verified'; configPersistedByStart: false };
+  start: { creation: 'observed' | 'not_observed'; providerSelection: string | null; evidence: 'pty_created' | 'unknown' };
+  running: { state: 'running' | 'not_running' | 'unknown'; providerSelection: string | null; evidence: 'same_created_runtime' | 'unknown'; appSessionId: string | null; nativeProviderSessionId: string | null; model: null; effort: null };
+}
 export type MobileCommand = CommandBase & (
   // `text` may be empty when `attachmentIds` (from POST /mobile/agents/:id/attachments) carries images.
   | (ChatTarget & { type: 'chat.send'; text: string; delivery?: 'auto' | 'prompt' | 'steer' | 'queued'; attachmentIds?: string[] })
@@ -18,10 +49,10 @@ export type MobileCommand = CommandBase & (
   // `effort` omitted keeps a chosen effort the new model offers; null is the provider's default (capabilities.effortDefault).
   | (ChatTarget & { type: 'chat.setModel'; model: string; effort?: string | null })
   | (ChatTarget & { type: 'chat.setLevel'; level: PermissionLevel })
-  | { type: 'agent.start'; agentId: string; message?: string; resume?: boolean; expectedProvider?: string; expectedSessionId?: string }
+  | { type: 'agent.start'; agentId: string; message?: string; resume?: boolean; expectedProvider?: string; expectedSessionId?: string; contractVersion?: 2; expectedState?: string; expectedNextWake?: ProviderNextWake }
   | { type: 'agent.stop'; agentId: string; waitForStopped?: boolean }
-  | { type: 'agent.providerPreview'; agentId: string; provider: string }
-  | { type: 'agent.providerChange'; agentId: string; provider: string; expectedState: string }
+  | ({ type: 'agent.providerPreview'; agentId: string; provider: string } & ProviderSelection)
+  | ({ type: 'agent.providerChange'; agentId: string; provider: string; expectedState: string } & ProviderSelection)
   | { type: 'agent.spawn'; projectId: string; prompt: string; model?: string; orchestrator?: string }
   | ({ type: 'agent.create' } & MobileAgentCreate)
   | ({ type: 'agent.update' } & MobileAgentUpdate)

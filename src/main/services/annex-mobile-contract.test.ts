@@ -36,6 +36,10 @@ const W = vi.hoisted(() => ({
   sessions: {} as Record<string, unknown[]>,
   projectsThrow: false,
   guidedAvailable: false,
+  providerV2Mode: 'created' as 'created' | 'exit' | 'pre_fail' | 'post_fail',
+  providerV2Calls: 0,
+  providerV2Identity: null as string | null,
+  providerV2Efforts: ['low', 'high'] as string[],
   stopFails: false,
   iconsUnavailable: false,
   iconDir: null as string | null,
@@ -374,8 +378,10 @@ vi.mock('./agent-config', async () => {
     },
     deleteDurable: async () => {},
     getDurableConfig: async (projectPath: string, id: string) => find(projectPath, id),
-    updateDurableConfig: async (projectPath: string, id: string, updates: Record<string, unknown>) => {
+    updateDurableConfig: async (projectPath: string, id: string, updates: Record<string, unknown>, beforeCommit?: () => Promise<void>, precondition?: { prepare(): Promise<void>; check(agent: unknown): void }) => {
+      await beforeCommit?.();
       const agent = find(projectPath, id) ?? {};
+      await precondition?.prepare(); precondition?.check(agent);
       if (updates.orchestrator && updates.orchestrator !== agent.orchestrator) { delete agent.lastSessionId; delete agent.model; delete agent.effort; delete agent.routing; delete agent.contextWindow; }
       // agent-config's Access rule (#2761, its tests cover it): the level is saved with the legacy flag beside it; a legacy on/off moves to the nearest level.
       const { access: level, freeAgentMode, ...rest } = updates;
@@ -386,6 +392,8 @@ vi.mock('./agent-config', async () => {
         else delete agent.freeAgentMode;
       }
       Object.assign(agent, rest);
+      if (beforeCommit && updates.model === 'default') delete agent.model;
+      if (beforeCommit && updates.effort === null) delete agent.effort;
       // agent-config's own rule (its tests cover it): null clears; a choice the new model lacks clears with a notice.
       if (agent.contextWindow === null) { delete agent.contextWindow; delete agent.contextWindowNotice; }
       if (updates.contextWindow) delete agent.contextWindowNotice;
@@ -413,7 +421,15 @@ vi.mock('./helper-index', () => ({
     .filter((d) => d.parentAgentId === id && !d.disposedAt)
     .map((config) => ({ projectPath, config })),
 }));
+vi.mock('./managed-provider-transition', () => ({
+  previewManagedProviderTransition: async () => ({ fingerprint: 'synthetic-managed-plan', blocked: null, root: { real: '/fixture/work', dev: 1, ino: 2 }, source: { text: 'Fixture shared instructions' }, target: { text: 'Fixture shared instructions' }, composition: '1'.repeat(64), instructions: 'Fixture shared instructions' }),
+  prepareManagedProviderTransition: async (_plan: unknown, check: () => Promise<void>) => { await check(); return async () => {}; },
+  managedProviderCommitFence: () => () => {},
+  providerSettingsCommitFence: () => () => {},
+  managedProviderMarker: (agentId: string) => ({ version: 2, agentId, provider: 'codex-cli', delivery: 'read_only_managed', composition: '1'.repeat(64), nativeFingerprint: '2'.repeat(64) }),
+}));
 vi.mock('./pty-manager', () => ({
+  processIdentity: () => W.providerV2Identity,
   getBuffer: () => '',
   getSerializedBufferSnapshot: async () => ({ data: '\u001b[1mready\u001b[0m\r\n$ ', seq: 42, cols: 120, rows: 40 }),
   isRunning: (id: string) => W.running.has(id),
@@ -502,12 +518,23 @@ vi.mock('./agent-system', () => ({
     checkAvailability: async () => ({ available: true }),
     getCapabilities: () => ({ permissions: true, sessionResume: true }),
     inspectInstructions: async () => 'Fixture shared instructions',
+    peekModels: () => ({ source: 'live', via: 'handshake', fetchedAt: NOW_FOR_MOCKS, models: [{ id: 'fixture-current-model', label: 'Fixture current model', isDefault: true, efforts: W.providerV2Efforts }] }),
+    listModels: async () => ({ source: 'live', via: 'handshake', fetchedAt: NOW_FOR_MOCKS, models: [{ id: 'fixture-current-model', label: 'Fixture current model', isDefault: true, efforts: W.providerV2Efforts }] }),
     getContextWindowOptions: async (model?: string) => W.contextOptions ?? (await import('../../shared/context-window')).claudeContextWindowOptions(model),
     getModelOptions: async () => (id === 'codex-cli'
       ? [{ id: 'default', label: 'Default' }, { id: 'gpt-5', label: 'GPT-5' }]
       : [{ id: 'default', label: 'Default' }, { id: 'opus', label: 'Opus' }, { id: 'sonnet', label: 'Sonnet' }]),
   }),
-  spawnAgent: async () => {},
+  spawnAgent: async (params: any) => {
+    if (!params.onRuntimeCreated) return;
+    W.providerV2Calls++;
+    params.beforeCreate?.();
+    if (W.providerV2Mode === 'pre_fail') throw new Error('Fixture pre-create refusal');
+    W.providerV2Identity = `fixture-pty-${W.providerV2Calls}`;
+    params.onRuntimeCreated(W.providerV2Identity);
+    if (W.providerV2Mode !== 'exit') W.running.add(params.agentId);
+    if (W.providerV2Mode === 'post_fail') throw new Error('Fixture post-create failure');
+  },
   killAgent: async (id: string, _p: string, _o: string, _t: string, opts?: { waitForExit?: boolean }) => { if (opts?.waitForExit && !W.stopFails) W.running.delete(id); },
   isAgentRunning: (id: string) => W.running.has(id),
   isAgentStopping: () => false,
@@ -558,6 +585,7 @@ vi.mock('./agent-creation', async (importOriginal) => ({
 }));
 vi.mock('./agent-settings-service', () => ({
   readProjectAgentDefaults: async () => W.projectDefaults,
+  readLaunchWrapper: async () => undefined,
   writeProjectAgentDefaults: async (_path: string, defaults: Record<string, unknown>) => {
     const { noteRoutingPolicyChanged: note } = await import('./helper-routing-changes');
     const changed = W.projectDefaults.helperAuto !== defaults.helperAuto;
@@ -742,8 +770,18 @@ function withoutDispatcherOffFields(value: unknown): unknown {
 function render(): Map<string, string> {
   const ids = new Map<string, string>();
   const out = new Map<string, string>();
+  const providerTokens = new Map<string, string>();
+  const normalizeProviderTokens = (value: unknown, key?: string): unknown => {
+    if (key === 'expectedState' && typeof value === 'string' && /^[a-f0-9]{64}$/.test(value)) {
+      if (!providerTokens.has(value)) providerTokens.set(value, `${'0'.repeat(56)}${(providerTokens.size + 1).toString(16).padStart(8, '0')}`);
+      return providerTokens.get(value);
+    }
+    if (Array.isArray(value)) return value.map((item) => normalizeProviderTokens(item));
+    if (value && typeof value === 'object') return Object.fromEntries(Object.keys(value).sort().map((k) => [k, normalizeProviderTokens((value as Record<string, unknown>)[k], k)]));
+    return value;
+  };
   for (const name of [...fixtures.keys()].sort()) {
-    const value = fixtures.get(name);
+    const value = name === 'provider-control-v2.json' ? normalizeProviderTokens(fixtures.get(name)) : fixtures.get(name);
     const text = `${JSON.stringify(stable(DISPATCHER_OFF_FIXTURES.has(name) ? value : withoutDispatcherOffFields(value)), null, 2)}\n`.replace(UUID, (id) => {
       const key = id.toLowerCase();
       if (!ids.has(key)) ids.set(key, `00000000-0000-4000-8000-${String(ids.size + 1).padStart(12, '0')}`);
@@ -991,6 +1029,7 @@ const commandFixtures = new Map<string, Array<{ name: string; request: object; r
 async function command(name: string, fields: Record<string, unknown>, opts: { epoch?: string; commandId?: string; version?: number } = {}) {
   const request = { version: opts.version ?? 1, epoch: opts.epoch ?? epoch, commandId: opts.commandId ?? `cmd_${String(++nextCommand).padStart(3, '0')}`, ...fields };
   const { status, body } = await send('POST', '/api/v1/mobile/commands', request);
+  if (name.startsWith('v2:')) return { status, body, request };
   const type = String(fields.type);
   const key = (MOBILE_COMMAND_TYPES as readonly string[]).includes(type) && !name.startsWith('common:') ? type : '_common';
   const list = commandFixtures.get(key) ?? [];
@@ -1038,6 +1077,9 @@ describe('Annex mobile contract fixtures', { timeout: TEST_TIMEOUT_MS }, () => {
     expect(res.status).toBe(200);
     expect(res.body.controlAvailable).toBe(true);
     expect(res.body.managedCreate).toEqual({ version: 1 });
+    expect(res.body.providerControl).toEqual({ version: 1, preview: 'agent.providerPreview', change: 'agent.providerChange', stoppedAcknowledgment: true, strictStart: true });
+    expect(res.body.providerControlV2).toMatchObject({ version: 2, requestContractVersion: 2, applyStartsAgent: false });
+    expect(res.body.providerStartV2).toMatchObject({ version: 2, command: 'agent.start' });
     epoch = res.body.epoch;
     // The bound port is the OS's choice.
     if (res.body.routes) res.body.routes.port = 7432;
@@ -3779,6 +3821,62 @@ describe('Annex mobile contract fixtures', { timeout: TEST_TIMEOUT_MS }, () => {
     })));
     expect(frames(await connect()).find((f) => f.type === 'snapshot').payload.grantRequests).toEqual([]);
     resetWorld();
+  });
+
+  it('provider control v2 uses explicit intent, saved wake preconditions and immutable creation receipts', async () => {
+    resetWorld(); W.guidedAvailable = true; W.providerV2Calls = 0; W.providerV2Identity = null; W.providerV2Mode = 'created'; W.providerV2Efforts = ['low', 'high'];
+    W.running.delete('durable_term');
+    const config = Object.values(W.durables).flat().find((a: any) => a.id === 'durable_term')!;
+    delete config.orchestrator; config.model = 'fixture-current-model'; config.effort = 'high';
+    const inheritedPreview = await command('v2: inherited saved choice', { type: 'agent.providerPreview', agentId: config.id, provider: 'claude-code', contractVersion: 2 }, { commandId: 'provider-v2-inherited-preview' });
+    expect(inheritedPreview.body.result.contract.saved).toMatchObject({ providerOverride: null, model: { value: 'fixture-current-model', source: 'agent' } });
+    const inheritedAlready = await command('v2: inherited already selected', { type: 'agent.providerChange', agentId: config.id, provider: 'claude-code', contractVersion: 2, expectedState: inheritedPreview.body.result.expectedState }, { commandId: 'provider-v2-inherited-already' });
+    expect(inheritedAlready.body.result.contract.saved.providerOverride).toBeNull();
+    const unsupportedStart = await command('v2: unsupported start lane', { type: 'agent.start', agentId: config.id, contractVersion: 2, expectedProvider: 'claude-code', expectedState: inheritedAlready.body.result.nextWake.expectedState, expectedNextWake: inheritedAlready.body.result.contract.saved }, { commandId: 'provider-v2-unsupported-start' });
+    expect(unsupportedStart.body.error.code).toBe('provider_start_unsupported');
+    config.orchestrator = 'claude-code'; config.managed = { version: 1, blocks: [], skills: [], mcps: [] }; config.runtimeMode = 'terminal';
+    const preview = await command('v2: preview', { type: 'agent.providerPreview', agentId: config.id, provider: 'codex-cli', contractVersion: 2 }, { commandId: 'provider-v2-preview' });
+    expect(preview.body.result).toMatchObject({ canSave: true, contract: { version: 2, target: { agentId: config.id }, result: { persisted: false, started: false } } });
+    const applied = await command('v2: apply', { type: 'agent.providerChange', agentId: config.id, provider: 'codex-cli', contractVersion: 2, expectedState: preview.body.result.expectedState }, { commandId: 'provider-v2-apply' });
+    expect(applied.body.result).toMatchObject({ status: 'changed', nextWake: { state: 'ready' }, contract: { saved: { provider: 'codex-cli' }, result: { persisted: true, started: false } } });
+    const alreadyPreview = await command('v2: already preview', { type: 'agent.providerPreview', agentId: config.id, provider: 'codex-cli', contractVersion: 2 }, { commandId: 'provider-v2-preview-current' });
+    const already = await command('v2: already selected', { type: 'agent.providerChange', agentId: config.id, provider: 'codex-cli', contractVersion: 2, expectedState: alreadyPreview.body.result.expectedState }, { commandId: 'provider-v2-already' });
+    expect(already.body.result).toMatchObject({ status: 'already_selected', contract: { result: { persisted: true, started: false } } });
+    const selectedRequest = { type: 'agent.providerPreview', agentId: config.id, provider: 'codex-cli', contractVersion: 2, model: { kind: 'selected', id: 'fixture-current-model' }, effort: 'high' };
+    const selectedPreview = await command('v2: selected model preview', selectedRequest, { commandId: 'provider-v2-selected-preview' });
+    const selectedApply = await command('v2: selected model apply', { ...selectedRequest, type: 'agent.providerChange', expectedState: selectedPreview.body.result.expectedState }, { commandId: 'provider-v2-selected-apply' });
+    expect(selectedApply.body.result.contract.saved.model).toEqual({ value: 'fixture-current-model', source: 'agent' });
+    const fields = { type: 'agent.start', agentId: config.id, contractVersion: 2, resume: false, expectedProvider: 'codex-cli', expectedState: selectedApply.body.result.nextWake.expectedState, expectedNextWake: selectedApply.body.result.contract.saved };
+    W.providerV2Efforts = ['low'];
+    const catalogStale = await command('v2: catalog drift', fields, { commandId: 'provider-v2-catalog-stale' });
+    expect(catalogStale.body.error.code).toBe('stale_state'); expect(W.providerV2Calls).toBe(0); W.providerV2Efforts = ['low', 'high'];
+    config.model = 'changed-after-apply';
+    const stale = await command('v2: stale wake', fields, { commandId: 'provider-v2-stale-start' });
+    expect(stale.body.error.code).toBe('stale_state'); expect(W.providerV2Calls).toBe(0); config.model = 'fixture-current-model';
+    const started = await command('v2: observed creation', fields, { commandId: 'provider-v2-start' });
+    expect(started.body.result.contract).toMatchObject({ result: { status: 'start_acknowledged', configuration: 'verified_at_start', configPersistedByStart: false }, start: { creation: 'observed', providerSelection: 'codex-cli', evidence: 'pty_created' }, running: { model: null, effort: null } });
+    const replay = await command('v2: lost-response replay', fields, { commandId: 'provider-v2-start' });
+    expect(replay).toEqual(started); expect(W.providerV2Calls).toBe(1);
+    const running = await command('v2: already running', fields, { commandId: 'provider-v2-already-running' });
+    expect(running.body.error.code).toBe('agent_already_running'); expect(W.providerV2Calls).toBe(1);
+    W.running.delete(config.id); W.providerV2Mode = 'post_fail';
+    const failed = await command('v2: post-create failure', fields, { commandId: 'provider-v2-post-failure' });
+    expect(failed.body.contract).toMatchObject({ result: { status: 'failed_after_creation' }, start: { creation: 'observed' } });
+    expect(await command('v2: failed replay', fields, { commandId: 'provider-v2-post-failure' })).toEqual(failed); expect(W.providerV2Calls).toBe(2);
+    W.running.delete(config.id); W.providerV2Mode = 'pre_fail';
+    const refused = await command('v2: no runtime created', fields, { commandId: 'provider-v2-pre-failure' });
+    expect(refused.body.contract).toMatchObject({ result: { status: 'refused_before_creation' }, start: { creation: 'not_observed', providerSelection: null }, running: { state: 'not_running' } });
+    W.providerV2Mode = 'exit';
+    const exited = await command('v2: immediate exit', fields, { commandId: 'provider-v2-immediate-exit' });
+    expect(exited.body.result.contract).toMatchObject({ start: { creation: 'observed' }, running: { state: 'not_running' } });
+    const defaultRequest = { type: 'agent.providerPreview', agentId: config.id, provider: 'codex-cli', contractVersion: 2, model: { kind: 'provider_default' }, effort: null };
+    const defaultPreview = await command('v2: explicit provider default', defaultRequest, { commandId: 'provider-v2-default-preview' });
+    const defaultApply = await command('v2: apply explicit default', { ...defaultRequest, type: 'agent.providerChange', expectedState: defaultPreview.body.result.expectedState }, { commandId: 'provider-v2-default-apply' });
+    expect(defaultApply.body.result.contract.saved).toMatchObject({ model: { value: null, source: 'provider_default' }, effort: { value: null, source: 'provider_default' } });
+    fixtures.set('provider-control-v2.json', { note: 'Synthetic managed transaction/PTY leaves. Complete opt-in request/receipts. Tokens/epochs are normalized opaque examples; native filesystem and PTY boundary proof are separate unit suites.',
+      oldHost: { capabilities: { providerControl: { version: 1, preview: 'agent.providerPreview', change: 'agent.providerChange', stoppedAcknowledgment: true, strictStart: true } }, expectedClientState: 'v2_unsupported_do_not_send_or_downgrade' },
+      preview, inheritedPreview, inheritedAlready, unsupportedStart, applied, selectedPreview, selectedApply, defaultPreview, defaultApply, alreadySelected: already, catalogStale, stale, started, lostResponseReplay: replay, alreadyRunning: running, failedAfterCreation: failed, refusedBeforeCreation: refused, immediateExit: exited });
+    delete config.managed; delete config.providerTransition; W.guidedAvailable = false; W.providerV2Identity = null;
   });
 
   it('every command type has an accepted request and receipt', () => {

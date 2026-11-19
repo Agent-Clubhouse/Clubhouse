@@ -1637,6 +1637,7 @@ export async function clearContextWindow(projectPath: string, agentId: string, n
  */
 const AGENT_AUDIT_KEYS: Record<keyof DurableConfigUpdates, AuditKeyFormat | 'bookkeeping'> = {
   orchestrator: 'value',
+  providerTransition: 'changed',
   model: 'value',
   contextWindow: 'value',
   freeAgentMode: 'value',
@@ -1682,6 +1683,7 @@ async function updateDurableConfigInner(
 ): Promise<void> {
   // Checked before anything changes, so a bad value never half-applies.
   validateExecutionPolicy(updates);
+  if (updates.providerTransition !== undefined && !beforeCommit) throw new Error('providerTransition requires a guided commit');
   if (updates.effort !== undefined && updates.effort !== null && !isEffortValue(updates.effort)) {
     throw new Error('effort must be an effort level such as low, medium or high');
   }
@@ -1708,6 +1710,12 @@ async function updateDurableConfigInner(
     await currentCreationGit()?.assertCurrent();
   }
   precondition?.check(agent);
+  if (updates.providerTransition !== undefined) {
+    const marker = updates.providerTransition;
+    if (!beforeCommit || marker.version !== 2 || marker.provider !== 'codex-cli' || marker.agentId !== agentId
+      || marker.delivery !== 'read_only_managed' || marker.provider !== (updates.orchestrator ?? agent.orchestrator)
+      || !/^[a-f0-9]{64}$/.test(marker.composition) || !/^[a-f0-9]{64}$/.test(marker.nativeFingerprint)) throw new Error('Invalid provider transition');
+  }
   const importedBefore = currentCreationGit() ? cloneAgent(agent) : undefined;
   const rollbackProvider = beforeCommit && updates.orchestrator !== undefined ? structuredClone(agent) : undefined;
   const auditBefore = pickAudited(agent, AGENT_AUDIT_CATALOG);
@@ -1721,6 +1729,7 @@ async function updateDurableConfigInner(
       // The new CLI can't resume the old one's session or run its model (#2593).
       // Every setting path comes through here: full settings, the card, the phone.
       delete agent.lastSessionId;
+      delete agent.providerTransition;
       if (updates.model === undefined) delete agent.model;
       // A value only means something to the CLI it was chosen for.
       if (agent.contextWindow && updates.contextWindow === undefined) {
@@ -1735,6 +1744,9 @@ async function updateDurableConfigInner(
       }
     }
     agent.orchestrator = updates.orchestrator;
+  }
+  if (updates.providerTransition !== undefined) {
+    agent.providerTransition = structuredClone(updates.providerTransition);
   }
   if (updates.model !== undefined) {
     const modelBefore = agent.model;

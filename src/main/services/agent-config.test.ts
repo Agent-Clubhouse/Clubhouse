@@ -2047,6 +2047,27 @@ describe('updateDurableConfig: a new CLI (#2593)', () => {
     });
     vi.mocked(fsp.mkdir).mockResolvedValue(undefined);
   }
+  it('persists guided transition evidence across reload, keeps it for same-provider choices and clears it on another provider', async () => {
+    const marker = { version: 2 as const, provider: 'codex-cli' as const, agentId: 'durable_cli', delivery: 'read_only_managed' as const, composition: '1'.repeat(64), nativeFingerprint: '2'.repeat(64) };
+    setup({ orchestrator: 'claude-code', lastSessionId: 'old', sessionHistory: [entry('old', 'claude-code')] });
+    await expect(updateDurableConfig(PROJECT_PATH, 'durable_cli', { orchestrator: 'codex-cli', providerTransition: marker })).rejects.toThrow('guided commit');
+    expect((await getDurableConfig(PROJECT_PATH, 'durable_cli'))!.orchestrator).toBe('claude-code');
+    await updateDurableConfig(PROJECT_PATH, 'durable_cli', { orchestrator: 'codex-cli', providerTransition: marker }, async () => {});
+    clearAgentConfigCache(PROJECT_PATH);
+    expect(await getDurableConfig(PROJECT_PATH, 'durable_cli')).toMatchObject({ orchestrator: 'codex-cli', providerTransition: marker, sessionHistory: [entry('old', 'claude-code')] });
+    await updateDurableConfig(PROJECT_PATH, 'durable_cli', { model: 'fixture' });
+    expect((await getDurableConfig(PROJECT_PATH, 'durable_cli'))!.providerTransition).toEqual(marker);
+    await updateDurableConfig(PROJECT_PATH, 'durable_cli', { orchestrator: 'claude-code' });
+    expect((await getDurableConfig(PROJECT_PATH, 'durable_cli'))!.providerTransition).toBeUndefined();
+  });
+  it('rolls back marker and provider together when guided persistence fails', async () => {
+    setup({ orchestrator: 'claude-code', lastSessionId: 'old', sessionHistory: [entry('old')] });
+    const marker = { version: 2 as const, provider: 'codex-cli' as const, agentId: 'durable_cli', delivery: 'read_only_managed' as const, composition: '1'.repeat(64), nativeFingerprint: '2'.repeat(64) };
+    vi.mocked(fsp.rename).mockRejectedValueOnce(new Error('disk failed'));
+    await expect(updateDurableConfig(PROJECT_PATH, 'durable_cli', { orchestrator: 'codex-cli', providerTransition: marker }, async () => {})).rejects.toThrow('disk failed');
+    expect(await getDurableConfig(PROJECT_PATH, 'durable_cli')).toMatchObject({ orchestrator: 'claude-code', lastSessionId: 'old', sessionHistory: [entry('old')] });
+    expect((await getDurableConfig(PROJECT_PATH, 'durable_cli'))!.providerTransition).toBeUndefined();
+  });
 
   it('rolls back a failed guided provider persistence without rejecting the old provider wake', async () => {
     setup({ orchestrator: 'claude-code', lastSessionId: 'claude-native', model: 'opus' });

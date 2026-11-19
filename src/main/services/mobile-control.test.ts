@@ -4,6 +4,38 @@ import { MobileCommandService, MobileControlError, parseMobileCommand, executeCh
 
 const command = (service: MobileCommandService, extra = {}) => ({ version: 1, epoch: service.epoch, commandId: 'cmd-1', type: 'chat.send', agentId: 'agent-1', sessionId: 'session-1', text: 'hello', ...extra });
 const event = (type: string, data: object, seq = 1) => ({ v: 1, type, data, seq, agentId: 'agent-1', sessionId: 'session-1', ts: 1 }) as ChatEvent;
+describe('provider control v2 request intent and replay', () => {
+  const base = { version: 1, commandId: 'apply', epoch: 'e', type: 'agent.providerChange', agentId: 'a', provider: 'codex-cli', expectedState: 'opaque', contractVersion: 2 };
+  it('preserves omitted, explicit-null and tagged default intent without enabling v2 implicitly', () => {
+    expect(parseMobileCommand(base)).not.toHaveProperty('model');
+    expect(parseMobileCommand({ ...base, effort: null, model: { kind: 'provider_default' } })).toMatchObject({ effort: null, model: { kind: 'provider_default' } });
+    expect(parseMobileCommand({ ...base, model: { kind: 'selected', id: 'fixture' } })).toMatchObject({ model: { id: 'fixture' } });
+    for (const model of ['default', null, { kind: 'selected', id: 'default' }, { kind: 'provider_default', id: 'surprise' }]) {
+      expect(() => parseMobileCommand({ ...base, model })).toThrow(MobileControlError);
+    }
+    expect(() => parseMobileCommand({ ...base, contractVersion: undefined, effort: null })).toThrow('unsupported_version');
+    expect(parseMobileCommand({ ...base, contractVersion: undefined })).not.toHaveProperty('model');
+  });
+  it('requires complete consistent saved settings and a host-issued precondition for start v2', () => {
+    const expectedNextWake = { provider: 'codex-cli', providerOverride: null, model: { value: null, source: 'provider_default' }, effort: { value: null, source: 'provider_default' } };
+    const start = { version: 1, epoch: 'e', commandId: 'start', type: 'agent.start', agentId: 'a', contractVersion: 2, expectedProvider: 'codex-cli', expectedState: 'wake-token', expectedNextWake };
+    expect(parseMobileCommand(start)).toMatchObject({ expectedNextWake });
+    for (const extra of [{ expectedState: undefined }, { expectedProvider: 'claude-code' }, { expectedNextWake: { ...expectedNextWake, providerOverride: undefined } }, { expectedNextWake: { ...expectedNextWake, model: { value: null, source: 'agent' } } }]) {
+      expect(() => parseMobileCommand({ ...start, ...extra })).toThrow(MobileControlError);
+    }
+  });
+  it('replays one receipt after a lost response and rejects altered intent under the same commandId', async () => {
+    const service = new MobileCommandService(); const run = vi.fn(async () => ({ status: 'changed' }));
+    const input = { ...base, epoch: service.epoch, effort: null, model: { kind: 'provider_default' } };
+    const first = await service.execute('phone', input, run);
+    expect(await service.execute('phone', { ...input, model: { kind: 'provider_default' } }, run)).toEqual(first);
+    expect((await service.execute('phone', { ...input, effort: 'high' }, run)).body).toMatchObject({ error: { code: 'command_conflict' } });
+    expect(run).toHaveBeenCalledOnce();
+    service.reset();
+    expect((await service.execute('phone', input, run)).body).toMatchObject({ error: { code: 'epoch_mismatch' } });
+    expect(run).toHaveBeenCalledOnce();
+  });
+});
 function runtime(events: ChatEvent[] = []): AgentRuntime {
   return { kind: 'chat', agentId: 'agent-1', isRunning: () => true, getSessionId: () => 'session-1',
     getState: () => 'idle', sendMessage: vi.fn().mockResolvedValue({ delivery: 'queued', messageId: 'message-1' }),

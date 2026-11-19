@@ -5,6 +5,8 @@ import { redactSpawnArgs } from '../../shared/log-redaction';
 import { readCopilotHooksConfig } from '../orchestrators/copilot-hooks-config';
 import { AgentResumeError, assertProviderSelection } from './agent-transition';
 import { withManagedActivationLaunch } from './managed-activation';
+import { managedProviderStartGuard } from './managed-provider-transition';
+import { MobileControlError } from './mobile-control';
 import type { ManagedLaunchLease } from './managed-activation/service';
 import { ManagedActivationError, ProcessStartedReceiptError } from './managed-activation/types';
 import { cleanupManagedReceiptFailure, recordManagedProcessStart } from './managed-activation/runtime-start';
@@ -126,6 +128,10 @@ export interface SpawnAgentParams extends ExecutionPolicy {
   resume?: boolean;
   /** Guided resume must fail rather than substitute a fresh conversation. */
   strictResume?: boolean;
+  /** Opt-in phone v2 never falls through to legacy mutating managed delivery. */
+  strictManagedDelivery?: boolean;
+  /** Main-only immutable observation for an explicit guided start attempt. */
+  onRuntimeCreated?: (identity: string) => void;
   /** Specific session ID to resume (provider-specific format) */
   sessionId?: string;
   /** Plugin ID that owns this companion agent (required when kind === 'companion'). @since 0.9 */
@@ -411,6 +417,19 @@ async function spawnAgentInner(inParams: SpawnAgentParams, facts: SpawnFacts, ma
         : `This agent could not be created: ${creation.reason ?? 'unknown reason'} Delete it and create it again.`), 'cwd_invalid');
     }
   }
+  let assertReadOnlyManaged: (() => void) | undefined;
+  if (firstConfig?.providerTransition || (params.strictManagedDelivery && firstConfig?.managed)) {
+    if (!firstConfig?.providerTransition || managed || params.systemPrompt || params.agentFile || params.agentSource) throw new MobileControlError('managed_delivery_unsupported');
+    if ((params.model !== undefined && params.model !== firstConfig.model)
+      || (params.effort !== undefined && params.effort !== firstConfig.effort)) throw new MobileControlError('managed_transition_stale');
+    const selected = await resolveOrchestrator(params.projectPath, params.orchestrator ?? firstConfig.orchestrator);
+    const { peekCachedDurableConfig } = await import('./agent-config');
+    assertReadOnlyManaged = await managedProviderStartGuard(params.projectPath, firstConfig, selected, params.cwd,
+      () => peekCachedDurableConfig(params.projectPath, params.agentId));
+    const beforeCreate = params.beforeCreate;
+    params = { ...params, strictResume: params.resume === true || params.strictResume, beforeCreate: (runtime) => { assertReadOnlyManaged!(); beforeCreate?.(runtime); } };
+    assertReadOnlyManaged();
+  }
   if (firstConfig) {
     // A verified lifecycle may initialize healthy records; strict/passive reads never do.
     try {
@@ -442,6 +461,7 @@ async function spawnAgentInner(inParams: SpawnAgentParams, facts: SpawnFacts, ma
     withErrorType('orchestrator_unknown', () => resolveOrchestrator(params.projectPath, params.orchestrator)),
   );
   facts.orchestrator = provider.id;
+  if (assertReadOnlyManaged && provider.id !== firstConfig?.providerTransition?.provider) throw new MobileControlError('managed_transition_stale');
   if (!params.orchestrator) {
     // An agent with no CLI of its own runs on its project's "Agents run on" (#2975).
     appLog('core:agent', 'info', 'Agent has no CLI of its own, so it starts on the project default', {
@@ -454,6 +474,7 @@ async function spawnAgentInner(inParams: SpawnAgentParams, facts: SpawnFacts, ma
 
   // Read project-level command prefix for shell environment setup
   const commandPrefix = await resolveCommandPrefix(params.projectPath);
+  if (assertReadOnlyManaged && commandPrefix) throw new MobileControlError('managed_delivery_unsupported');
 
   // Pre-flight: verify the orchestrator CLI is available before spawning.
   // This catches missing binaries and auth issues early with clear errors,
@@ -480,7 +501,7 @@ async function spawnAgentInner(inParams: SpawnAgentParams, facts: SpawnFacts, ma
   try {
     // Clean up stale JSON in TOML config files (e.g. Codex .codex/config.toml)
     // This handles files created before TOML-aware guards were added.
-    if (provider.conventions.settingsFormat === 'toml') {
+    if (provider.conventions.settingsFormat === 'toml' && !assertReadOnlyManaged) {
       try {
         await cleanupStaleJsonInTomlConfigs(params.cwd, provider.conventions);
         await stripLegacyClubhouseBridgeToml(params.cwd, provider.conventions);
@@ -506,7 +527,7 @@ async function spawnAgentInner(inParams: SpawnAgentParams, facts: SpawnFacts, ma
     }
     if (params.kind === 'durable' && !managed) {
       const config = firstConfig;
-      if (config?.managed) {
+      if (config?.managed && !assertReadOnlyManaged) {
         try {
           const { deliverForSpawn } = await import('./managed-agents');
           await tel.step('clubhouse.agent.materialize', () =>
@@ -541,6 +562,7 @@ async function spawnAgentInner(inParams: SpawnAgentParams, facts: SpawnFacts, ma
 
     // Resolve launch wrapper config (if any)
     const wrapperConfig = await readLaunchWrapper(params.projectPath);
+    if (assertReadOnlyManaged && wrapperConfig) throw new MobileControlError('managed_delivery_unsupported');
     let resolvedMcpIds: string[] = [];
     if (wrapperConfig) {
       if (params.kind === 'durable') {
@@ -1083,6 +1105,7 @@ async function spawnPtyAgent(
   // servers: the project's, a managed agent's setup (#2896), or a quick agent's
   // template servers in place of the project's (D25).
   const bridgeOn = mcpPort > 0;
+  if (durableConfig?.providerTransition && !bridgeOn) throw new MobileControlError('managed_mcp_unavailable');
   if (provider.buildMcpArgs) {
     const { buildClubhouseMcpDef } = await import('./clubhouse-mcp/injection');
     const { resolveProjectMcpServers } = await import('./agent-mcp-servers');
@@ -1103,6 +1126,7 @@ async function spawnPtyAgent(
     };
     if (Object.keys(servers).length > 0) {
       args = [...args, ...provider.buildMcpArgs(servers, (message) => {
+        if (durableConfig?.providerTransition) throw new MobileControlError('managed_mcp_unavailable');
         broadcastToAllWindows(IPC.AGENT.AGENT_MATERIALIZATION_FAILED, params.agentId, message);
       })];
     }
@@ -1197,9 +1221,9 @@ async function spawnPtyAgent(
       if (capture) trackSessionCapture(exitAgentId, capture);
     }
   }, commandPrefix];
-  if (managed || params.beforeCreate) spawnArgs.push({
+  if (managed || params.beforeCreate || params.onRuntimeCreated) spawnArgs.push({
     beforeCreate: () => { assertLaunchesOpen(); managed?.assertCanCreate(); params.beforeCreate?.(); },
-    onCreated: (identity: string) => { createdIdentity = identity; },
+    onCreated: (identity: string) => { createdIdentity = identity; params.onRuntimeCreated?.(identity); },
     onObservedExit: () => { managedExitConfirmed = true; },
   });
   let federation: ReturnType<typeof prepareFederationInputs> = [];
