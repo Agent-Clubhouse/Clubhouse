@@ -85,11 +85,17 @@ describe('host selected-agent Details projections', () => {
       await fs.writeFile(homeFile, JSON.stringify(homeRows)); await fs.writeFile(otherFile, JSON.stringify(otherRows));
       await fs.writeFile(path.join(m.base, 'projects.json'), JSON.stringify({ version: 1, projects: [p1, p2] }));
       m.target.mockResolvedValue({ agent: selected, project: p1 });
-      m.helpers.mockImplementation(async (_home, _id, options) => {
-        const api = await vi.importActual<typeof import('./read-only-agent-target-witness')>('./read-only-agent-target-witness');
-        // The real strict-index contract attaches private receipts for exactly the rows read.
-        if (options.receipts) for (const [folder, rows] of [[home, homeRows], [other, otherRows]] as const) options.receipts.push(api.captureReadOnlyAgentInventoryWitness(folder, rows));
-        return cross ? [{ config: a, projectPath: other }] : [{ config: a, projectPath: home }, { config: b, projectPath: home }];
+      const realIndex = await vi.importActual<typeof import('./helper-index')>('./helper-index');
+      let acquired = false;
+      let actualReceipts: Array<{ current(): boolean }> = [];
+      m.helpers.mockImplementation(async (...args: Parameters<typeof realIndex.listHelpersEverywhere>) => {
+        const entries = await realIndex.listHelpersEverywhere(...args);
+        expect(entries.map((entry) => entry.config.id)).toEqual(cross ? ['h1'] : ['h1', 'h2']);
+        actualReceipts = args[2]?.receipts ?? [];
+        expect(actualReceipts).toHaveLength(2);
+        expect(actualReceipts.every((receipt) => receipt.current())).toBe(true);
+        acquired = true;
+        return entries;
       });
       let calls = 0;
       m.work.mockImplementation(async () => {
@@ -104,6 +110,8 @@ describe('host selected-agent Details projections', () => {
       const result = await readRemoteAgentDetails('a1', () => true);
       expect(result.status).toBe(409);
       expect(result.body).not.toHaveProperty('cards');
+      expect(acquired).toBe(true);
+      expect(actualReceipts.some((receipt) => !receipt.current())).toBe(true);
     } finally { await fs.rm(root, { recursive: true, force: true }); }
   });
   it('projects only the selected agent’s verified bounded canvas membership navigation identities', async () => {
