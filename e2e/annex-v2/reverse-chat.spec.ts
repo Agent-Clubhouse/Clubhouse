@@ -16,7 +16,7 @@ test('one forward carries chat commands, live renderer output and transcript cat
         type: 'chat.send', agentId, sessionId, text: prompt,
       }), { machine: receiver.fingerprint, agentId: receiver.agentId, sessionId: page.sessionId, prompt });
       expect(receipt).toMatchObject({ status: 'completed' });
-      await expect(pane.locator('[data-testid="chat-message-assistant"]').filter({ hasText: answer })).toHaveCount(1, { timeout: 20_000 });
+      await expect(pane.locator('[data-testid="chat-agent-message"]').filter({ hasText: answer })).toHaveCount(1, { timeout: 20_000 });
       await expect(pane).toHaveAttribute('data-state', 'idle');
       if (answer === 'one') {
         const connections = reverse.forward.sourcePorts.length;

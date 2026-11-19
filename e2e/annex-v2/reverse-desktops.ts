@@ -1,7 +1,6 @@
 import { test as base, expect } from '@playwright/test';
 import * as fs from 'fs';
 import * as path from 'path';
-import * as net from 'net';
 import { execFile } from 'child_process';
 import { promisify } from 'util';
 import { pathToFileURL } from 'url';
@@ -12,76 +11,16 @@ import { addProject, assertRunLayout, createDurableAgent } from '../smoke-helper
 import { isNewLayout } from '../layout';
 import { untrackOpenApp } from '../e2e-cleanup';
 import type { McpToolResult } from '../../src/main/services/clubhouse-mcp/types';
-import { assertAcceptAudit, assertDialAudit, sentinel, transparentForward, type DialAttempt, type ListenerAccept } from '../../test/annex-v2/reverse-parity-fixture';
+import { assertAcceptAudit, assertDialAudit, captureOwnedReverseAudit, installMainGuard, readMainDialAudit, sentinel, transparentForward, type GuardGlobal, type OwnedAuditPeer } from '../../test/annex-v2/reverse-parity-fixture';
 
-interface MainGuard {
-  read(): { installed: boolean; attempts: DialAttempt[]; accepts: ListenerAccept[] };
-  setForward(port: number): void;
+function auditError(error: unknown): unknown {
+  if (error instanceof AggregateError) return { message: error.message, stack: error.stack, errors: error.errors.map(auditError) };
+  return error instanceof Error ? { message: error.message, stack: error.stack } : String(error);
 }
-type GuardGlobal = typeof globalThis & { __reverseP8?: MainGuard };
 
 /** Evaluated only in a test-owned Electron main process; no shipped switch or production seam. */
-async function guardMain(app: LaunchedApp, sentinelPort: number) {
-  const calibration = await app.electronApp.evaluate(async ({ app: electron }, input) => {
-    const fs = process.getBuiltinModule('fs');
-    const net = process.getBuiltinModule('net');
-    if (fs.realpathSync(electron.getPath('userData')) !== fs.realpathSync(input.profile)) throw new Error('Wrong reverse fixture profile');
-    const state = globalThis as GuardGlobal;
-    if (state.__reverseP8) throw new Error('Reverse dial guard already installed');
-    const original = net.Socket.prototype.connect;
-    const originalEmit = net.Server.prototype.emit;
-    const attempts: DialAttempt[] = [];
-    const accepts: ListenerAccept[] = [];
-    let forward: number | null = null;
-    const audit: typeof originalEmit = function (this: net.Server, event: string | symbol, ...args: unknown[]) {
-      const socket = args[0];
-      if (event === 'connection' && socket instanceof net.Socket && socket.localPort && socket.remotePort) {
-        accepts.push({ port: socket.localPort, sourcePort: socket.remotePort });
-      }
-      return Reflect.apply(originalEmit, this, [event, ...args]);
-    };
-    const patched: typeof original = function (this: net.Socket, ...args: unknown[]) {
-      const first: unknown = Array.isArray(args[0]) ? args[0][0] : args[0];
-      let host: string, port: number;
-      if (first && typeof first === 'object') {
-        if ('path' in first && first.path && !('port' in first)) return Reflect.apply(original, this, args);
-        if (!('port' in first)) throw new Error('Unrecognized reverse fixture dial');
-        port = Number(first.port);
-        host = 'host' in first && typeof first.host === 'string' ? first.host : 'localhost';
-      } else if (typeof first === 'number' || typeof first === 'string' && /^\d+$/.test(first)) {
-        port = Number(first);
-        host = typeof args[1] === 'string' ? args[1] : 'localhost';
-      } else if (typeof first === 'string') {
-        return Reflect.apply(original, this, args);
-      } else {
-        throw new Error('Unrecognized reverse fixture dial');
-      }
-      const allowed = forward !== null && host === '127.0.0.1' && port === forward;
-      const attempt: DialAttempt = { host, port, allowed, outcome: allowed ? 'pending' : 'denied' };
-      attempts.push(attempt);
-      if (!allowed) {
-        process.nextTick(() => this.destroy(Object.assign(new Error('Reverse fixture blocked direct dial'), { code: 'ERR_REVERSE_DIAL_BLOCKED' })));
-        return this;
-      }
-      this.once('connect', () => { attempt.outcome = 'connected'; attempt.localPort = this.localPort; });
-      this.once('error', (error: NodeJS.ErrnoException) => { attempt.outcome = 'error'; attempt.error = error.code; });
-      return Reflect.apply(original, this, args);
-    };
-    net.Socket.prototype.connect = patched;
-    net.Server.prototype.emit = audit;
-    state.__reverseP8 = {
-      read: () => ({ installed: net.Socket.prototype.connect === patched && net.Server.prototype.emit === audit, attempts, accepts }),
-      setForward(port) {
-        if (forward !== null || !Number.isInteger(port) || port <= 0 || port > 65535) throw new Error('Invalid reverse fixture forward');
-        forward = port;
-      },
-    };
-    return new Promise<string>((resolve) => {
-      const socket = net.connect(input.sentinelPort, '127.0.0.1');
-      socket.once('connect', () => { socket.destroy(); resolve('escaped'); });
-      socket.once('error', (error: NodeJS.ErrnoException) => resolve(error.code ?? 'unknown'));
-    });
-  }, { profile: app.userDataDir, sentinelPort });
+async function guardMain(app: LaunchedApp, sentinelPort: number, auditPath: string) {
+  const calibration = await app.electronApp.evaluate(installMainGuard, { profile: app.userDataDir, sentinelPort, auditPath });
   expect(calibration).toBe('ERR_REVERSE_DIAL_BLOCKED');
 }
 
@@ -149,6 +88,8 @@ export const test = base.extend<{ reverse: ReverseDesktops; reverseScenario: 'qu
     await fs.promises.mkdir(cache, { recursive: true });
     const scratch = await fs.promises.mkdtemp(path.join(cache, 'reverse-hosted-'));
     const apps: LaunchedApp[] = [];
+    const auditPaths = new Map<LaunchedApp, string>();
+    const closures = new Map<LaunchedApp, Promise<void>>();
     const fakes: FakeClis[] = [];
     let guard: Awaited<ReturnType<typeof sentinel>> | undefined;
     let forward: Awaited<ReturnType<typeof transparentForward>> | undefined;
@@ -158,6 +99,22 @@ export const test = base.extend<{ reverse: ReverseDesktops; reverseScenario: 'qu
     const gitEnv = { ...process.env, GIT_CONFIG_GLOBAL: gitConfig, GIT_CONFIG_SYSTEM: gitConfig, GIT_CONFIG_NOSYSTEM: '1' };
     const git = (cwd: string, args: string[]) => promisify(execFile)('git', args, { cwd, env: gitEnv });
     const errors: unknown[] = [];
+    const closeApp = (app: LaunchedApp): Promise<void> => {
+      let closing = closures.get(app);
+      if (!closing) {
+        closing = (async () => {
+          const failures: unknown[] = [];
+          try { await app.electronApp.close(); untrackOpenApp(app.electronApp); }
+          catch (error) { failures.push(error); }
+          // The cached launch handles, not Playwright's post-close process(), gate disposal.
+          try { app.profile.dispose(); }
+          catch (error) { failures.push(error); }
+          if (failures.length) throw new AggregateError(failures, 'Reverse desktop did not close cleanly');
+        })();
+        closures.set(app, closing);
+      }
+      return closing;
+    };
     try {
       const quiet = path.join(scratch, 'quiet.jsonl');
       const header = (await fs.promises.readFile(chatFixturePath('claude', 'session-info'), 'utf8')).split('\n').slice(0, 3);
@@ -202,8 +159,11 @@ export const test = base.extend<{ reverse: ReverseDesktops; reverseScenario: 'qu
       };
       const a = await launch('A'), b = await launch('B');
       guard = await sentinel();
-      await guardMain(a.app, guard.port);
-      await guardMain(b.app, guard.port);
+      for (const [label, desk] of [['A', a], ['B', b]] as const) {
+        const auditPath = path.join(scratch, `${label}-exit-audit.json`);
+        auditPaths.set(desk.app, auditPath);
+        await guardMain(desk.app, guard.port, auditPath);
+      }
       for (const desk of [b, a]) {
         await desk.app.window.evaluate(async () => {
           const experimental = await window.clubhouse.app.getExperimentalSettings();
@@ -250,38 +210,51 @@ export const test = base.extend<{ reverse: ReverseDesktops; reverseScenario: 'qu
     } finally {
       if (forward && guard && apps.length === 2) {
         try {
-          const audits = [];
-          for (const app of apps) audits.push(await app.electronApp.evaluate(() => {
-            const guard = (globalThis as GuardGlobal).__reverseP8;
-            if (!guard) throw new Error('Reverse dial guard disappeared');
-            return guard.read();
-          }));
-          await info.attach('reverse-dial-audit', { body: JSON.stringify({ audits, listenerPorts, sentinelAccepts: guard.accepts(), forwardSourcePorts: forward.sourcePorts, forwardTargetSourcePorts: forward.targetSourcePorts }), contentType: 'application/json' });
-          for (const audit of audits) expect(audit.installed).toBe(true);
-          assertDialAudit(audits[0].attempts, { host: '127.0.0.1', port: forward.port }, forward.sourcePorts, guard.accepts());
+          const peer = (app: LaunchedApp, index: number): OwnedAuditPeer => ({
+            quiesce: (sourcePorts) => app.electronApp.evaluate((_electron, { port, sourcePorts }) => {
+              const guard = (globalThis as GuardGlobal).__reverseP8;
+              if (!guard) throw new Error('Reverse dial guard disappeared');
+              return guard.seal(sourcePorts === undefined ? undefined : { port, sourcePorts });
+            }, { port: listenerPorts[index], sourcePorts }),
+            close: () => closeApp(app),
+            readFinal: async () => {
+              const auditPath = auditPaths.get(app);
+              if (!auditPath) throw new Error('Missing reverse desktop audit path');
+              await info.attach(`reverse-exit-audit-${index}`, { path: auditPath, contentType: 'application/json' });
+              return readMainDialAudit(auditPath);
+            },
+          });
+          const captured = await captureOwnedReverseAudit(forward, [peer(apps[0], 0), peer(apps[1], 1)]);
+          await info.attach('reverse-dial-audit', {
+            body: JSON.stringify({
+              audits: captured.audits, listenerPorts, sentinelAccepts: guard.accepts(),
+              forwardSourcePorts: captured.forward.sourcePorts, forwardTargetSourcePorts: captured.forward.targetSourcePorts,
+              capture: { ...captured, errors: captured.status === 'failed' ? captured.errors.map(auditError) : [] },
+            }), contentType: 'application/json',
+          });
+          if (captured.status === 'failed') throw new AggregateError(captured.errors, 'Reverse audit capture failed');
+          const audits = captured.audits;
+          for (const audit of audits) expect(audit).toMatchObject({ installed: true, sealed: true, phase: 'exit', pending: 0 });
+          assertDialAudit(audits[0].attempts, { host: '127.0.0.1', port: forward.port }, captured.forward.sourcePorts, guard.accepts());
           assertDialAudit(audits[1].attempts, null, [], guard.accepts());
           assertAcceptAudit(audits[0].accepts, listenerPorts[0], []);
-          assertAcceptAudit(audits[1].accepts, listenerPorts[1], forward.targetSourcePorts);
+          assertAcceptAudit(audits[1].accepts, listenerPorts[1], captured.forward.targetSourcePorts);
           expect(audits[0].attempts.some((attempt) => attempt.outcome === 'connected')).toBe(true);
         } catch (error) { errors.push(error); }
       }
-      for (const app of [...apps].reverse()) {
-        try { await app.electronApp.close(); untrackOpenApp(app.electronApp); }
+      for (const app of [...apps].reverse()) if (!closures.has(app)) {
+        try { await closeApp(app); }
         catch (error) { errors.push(error); }
       }
-      let profilesDisposed = true;
-      for (const app of apps) {
-        // Profiles retain the launch handles; Playwright's process() getter is invalid after close().
-        try { app.profile.dispose(); }
-        catch (error) { profilesDisposed = false; errors.push(error); }
-      }
-      if (profilesDisposed) {
-        await forward?.close();
-        await guard?.close();
+      try { await forward?.close(); }
+      catch (error) { errors.push(error); }
+      try { await guard?.close(); }
+      catch (error) { errors.push(error); }
+      if (apps.every((app) => app.profile.disposed)) {
         for (const cli of fakes) await cli.cleanup();
         await fs.promises.rm(scratch, { recursive: true, force: true });
       } else {
-        errors.push(new Error('Retaining fixture resources because an owned desktop has not exited'));
+        errors.push(new Error('Retaining profiles, fake CLIs and capture files because an owned desktop has not exited'));
       }
     }
     if (errors.length) throw new AggregateError(errors, 'Reverse desktop fixture failed');

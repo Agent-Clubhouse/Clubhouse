@@ -1,5 +1,6 @@
 import { randomUUID } from 'crypto';
 import { createInterface } from 'readline';
+import * as fs from 'fs';
 import * as net from 'net';
 import { crc32 } from 'zlib';
 
@@ -24,6 +25,7 @@ export interface DialAttempt {
   outcome: 'denied' | 'pending' | 'connected' | 'error';
   localPort?: number;
   error?: string;
+  afterSeal?: boolean;
 }
 
 export interface DialPolicy {
@@ -34,6 +36,191 @@ export interface DialPolicy {
 export interface ListenerAccept {
   port: number;
   sourcePort: number;
+}
+
+export interface MainDialAudit {
+  phase: 'live' | 'exit';
+  installed: boolean;
+  sealed: boolean;
+  pending: number;
+  attempts: DialAttempt[];
+  accepts: ListenerAccept[];
+}
+
+export interface ForwardAudit {
+  sealed: boolean;
+  closed: boolean;
+  pending: number;
+  sockets: number;
+  sourcePorts: number[];
+  targetPorts: number[];
+  targetSourcePorts: number[];
+  lateSourcePorts: number[];
+}
+
+export interface OwnedAuditPeer {
+  quiesce(expectedSourcePorts?: readonly number[]): Promise<MainDialAudit>;
+  close(): Promise<void>;
+  readFinal(): Promise<MainDialAudit>;
+}
+
+export type OwnedAuditCapture =
+  | { status: 'complete'; audits: MainDialAudit[]; forward: ForwardAudit }
+  | { status: 'failed'; audits: Array<MainDialAudit | null>; forward: ForwardAudit; errors: unknown[] };
+
+export interface MainGuard {
+  read(): MainDialAudit;
+  setForward(port: number): void;
+  seal(expected?: { port: number; sourcePorts: readonly number[] }): Promise<MainDialAudit>;
+}
+
+export type GuardGlobal = typeof globalThis & { __reverseP8?: MainGuard };
+
+/** Self-contained so Electron.evaluate and the Node calibration exercise the same guard. */
+export async function installMainGuard(
+  { app }: { app: { getPath(name: 'userData'): string } },
+  input: { profile: string; sentinelPort: number; auditPath: string },
+): Promise<string> {
+  const fs = process.getBuiltinModule('fs');
+  const net = process.getBuiltinModule('net');
+  if (fs.realpathSync(app.getPath('userData')) !== fs.realpathSync(input.profile)) throw new Error('Wrong reverse fixture profile');
+  const state = globalThis as GuardGlobal;
+  if (state.__reverseP8) throw new Error('Reverse dial guard already installed');
+  const original = net.Socket.prototype.connect;
+  const originalEmit = net.Server.prototype.emit;
+  const originalProcessEmit = process.emit;
+  const attempts: DialAttempt[] = [];
+  const accepts: ListenerAccept[] = [];
+  const pending = new Set<Promise<void>>();
+  const acceptProgress = new Set<() => void>();
+  let forward: number | null = null;
+  let sealed = false;
+  const audit: typeof originalEmit = function (this: net.Server, event: string | symbol, ...args: unknown[]) {
+    const socket = args[0];
+    if (event === 'connection' && socket instanceof net.Socket && socket.localPort && socket.remotePort) {
+      accepts.push({ port: socket.localPort, sourcePort: socket.remotePort });
+      for (const notify of acceptProgress) notify();
+    }
+    return Reflect.apply(originalEmit, this, [event, ...args]);
+  };
+  const patched: typeof original = function (this: net.Socket, ...args: unknown[]) {
+    const first: unknown = Array.isArray(args[0]) ? args[0][0] : args[0];
+    let host: string, port: number;
+    if (first && typeof first === 'object') {
+      if ('path' in first && first.path && !('port' in first)) return Reflect.apply(original, this, args);
+      if (!('port' in first)) throw new Error('Unrecognized reverse fixture dial');
+      port = Number(first.port);
+      host = 'host' in first && typeof first.host === 'string' ? first.host : 'localhost';
+    } else if (typeof first === 'number' || typeof first === 'string' && /^\d+$/.test(first)) {
+      port = Number(first);
+      host = typeof args[1] === 'string' ? args[1] : 'localhost';
+    } else if (typeof first === 'string') {
+      return Reflect.apply(original, this, args);
+    } else {
+      throw new Error('Unrecognized reverse fixture dial');
+    }
+    const allowed = forward !== null && host === '127.0.0.1' && port === forward;
+    const attempt: DialAttempt = { host, port, allowed, outcome: allowed ? 'pending' : 'denied', afterSeal: sealed };
+    attempts.push(attempt);
+    if (!allowed || sealed) {
+      const code = allowed ? 'ERR_REVERSE_TRANSPORT_SEALED' : 'ERR_REVERSE_DIAL_BLOCKED';
+      attempt.outcome = allowed ? 'error' : 'denied';
+      attempt.error = code;
+      process.nextTick(() => this.destroy(Object.assign(new Error(code), { code })));
+      return this;
+    }
+    let settle!: () => void;
+    const finished = new Promise<void>((resolve) => { settle = resolve; });
+    pending.add(finished);
+    const finish = () => { pending.delete(finished); settle(); };
+    this.once('connect', () => { attempt.outcome = 'connected'; attempt.localPort = this.localPort; finish(); });
+    this.once('error', (error: NodeJS.ErrnoException) => { attempt.outcome = 'error'; attempt.error = error.code; finish(); });
+    this.once('close', finish);
+    try { return Reflect.apply(original, this, args); }
+    catch (error) {
+      attempt.outcome = 'error';
+      attempt.error = error instanceof Error ? error.message : String(error);
+      finish();
+      throw error;
+    }
+  };
+  const read = (): MainDialAudit => ({
+    phase: 'live', installed: net.Socket.prototype.connect === patched && net.Server.prototype.emit === audit
+      && process.emit === exitEmit && state.__reverseP8 === guard,
+    sealed, pending: pending.size, attempts, accepts,
+  });
+  const guard: MainGuard = {
+    read,
+    setForward(port) {
+      if (forward !== null || !Number.isInteger(port) || port <= 0 || port > 65535) throw new Error('Invalid reverse fixture forward');
+      forward = port;
+    },
+    async seal(expected) {
+      sealed = true;
+      let timeout: NodeJS.Timeout | undefined;
+      let accepted: (() => void) | undefined;
+      try {
+        await Promise.race([
+          Promise.all([
+            ...pending,
+            new Promise<void>((resolve) => {
+              accepted = () => {
+                if (!expected || expected.sourcePorts.every((sourcePort) =>
+                  accepts.some((entry) => entry.port === expected.port && entry.sourcePort === sourcePort))) resolve();
+              };
+              acceptProgress.add(accepted);
+              accepted();
+            }),
+          ]),
+          new Promise<never>((_resolve, reject) => {
+            timeout = setTimeout(() => reject(new Error('Reverse main dials/accepts did not settle before capture')), 5000);
+          }),
+        ]);
+      } finally {
+        clearTimeout(timeout);
+        if (accepted) acceptProgress.delete(accepted);
+      }
+      return read();
+    },
+  };
+  const exitEmit: typeof process.emit = function (this: NodeJS.Process, event: string | symbol, ...args: unknown[]) {
+    if (event !== 'exit') return Reflect.apply(originalProcessEmit, this, [event, ...args]);
+    // Write after every exit listener, including listeners installed after this guard.
+    try { return Reflect.apply(originalProcessEmit, this, [event, ...args]); }
+    finally { fs.writeFileSync(input.auditPath, JSON.stringify({ ...read(), phase: 'exit' }), { flag: 'wx', mode: 0o600 }); }
+  };
+  net.Socket.prototype.connect = patched;
+  net.Server.prototype.emit = audit;
+  process.emit = exitEmit;
+  state.__reverseP8 = guard;
+  return new Promise<string>((resolve) => {
+    const socket = net.connect(input.sentinelPort, '127.0.0.1');
+    socket.once('connect', () => { socket.destroy(); resolve('escaped'); });
+    socket.once('error', (error: NodeJS.ErrnoException) => resolve(error.code ?? 'unknown'));
+  });
+}
+
+export function readMainDialAudit(file: string): MainDialAudit {
+  const value: unknown = JSON.parse(fs.readFileSync(file, 'utf8'));
+  const record = (item: unknown): item is Record<string, unknown> => typeof item === 'object' && item !== null;
+  const attempt = (item: unknown): item is DialAttempt => record(item)
+    && typeof item.host === 'string' && Number.isInteger(item.port) && typeof item.allowed === 'boolean'
+    && typeof item.outcome === 'string' && ['denied', 'pending', 'connected', 'error'].includes(item.outcome)
+    && (item.localPort === undefined || typeof item.localPort === 'number')
+    && (item.error === undefined || typeof item.error === 'string')
+    && (item.afterSeal === undefined || typeof item.afterSeal === 'boolean');
+  const accepted = (item: unknown): item is ListenerAccept => record(item)
+    && typeof item.port === 'number' && typeof item.sourcePort === 'number';
+  if (!record(value) || value.phase !== 'exit' || typeof value.installed !== 'boolean'
+    || typeof value.sealed !== 'boolean' || typeof value.pending !== 'number'
+    || !Array.isArray(value.attempts) || !value.attempts.every(attempt)
+    || !Array.isArray(value.accepts) || !value.accepts.every(accepted)) {
+    throw new Error(`Missing or invalid final reverse audit: ${file}`);
+  }
+  return {
+    phase: value.phase, installed: value.installed, sealed: value.sealed, pending: value.pending,
+    attempts: value.attempts, accepts: value.accepts,
+  };
 }
 
 /** Target-side evidence also sees child/native clients that bypass Socket.connect in this process. */
@@ -158,39 +345,137 @@ export async function transparentForward(targetPort: number) {
   const sourcePorts: number[] = [];
   const targetPorts: number[] = [];
   const targetSourcePorts: number[] = [];
+  const lateSourcePorts: number[] = [];
+  const pending = new Set<net.Socket>();
+  const progress = new Set<() => void>();
+  const changed = () => { for (const notify of progress) notify(); };
+  let sealed = false, closed = false;
+  let sealing: Promise<void> | undefined;
+  let closing: Promise<void> | undefined;
+  const waitUntil = (ready: () => boolean, message: string): Promise<void> => {
+    if (ready()) return Promise.resolve();
+    return new Promise<void>((resolve, reject) => {
+      const notify = () => {
+        if (!ready()) return;
+        clearTimeout(timeout);
+        progress.delete(notify);
+        resolve();
+      };
+      const timeout = setTimeout(() => { progress.delete(notify); reject(new Error(message)); }, 5000);
+      progress.add(notify);
+      notify();
+    });
+  };
   const server = net.createServer((incoming) => {
-    toB.add(incoming);
-    incoming.once('close', () => toB.delete(incoming));
     sourcePorts.push(incoming.remotePort!);
-    const outgoing = new net.Socket();
-    toA.add(outgoing);
-    outgoing.once('close', () => toA.delete(outgoing));
-    Reflect.apply(fixtureConnect, outgoing, [targetPort, '127.0.0.1']);
-    outgoing.once('connect', () => { targetPorts.push(outgoing.remotePort!); targetSourcePorts.push(outgoing.localPort!); });
-    for (const socket of [incoming, outgoing]) {
-      sockets.add(socket);
-      socket.once('close', () => { sockets.delete(socket); });
+    sockets.add(incoming);
+    toB.add(incoming);
+    incoming.once('close', () => { sockets.delete(incoming); toB.delete(incoming); changed(); });
+    incoming.on('error', () => incoming.destroy());
+    if (sealed) {
+      lateSourcePorts.push(incoming.remotePort!);
+      incoming.destroy();
+      changed();
+      return;
     }
+    const outgoing = new net.Socket();
+    sockets.add(outgoing);
+    toA.add(outgoing);
+    pending.add(outgoing);
+    outgoing.once('close', () => { sockets.delete(outgoing); toA.delete(outgoing); pending.delete(outgoing); changed(); });
+    outgoing.once('connect', () => {
+      targetPorts.push(outgoing.remotePort!);
+      targetSourcePorts.push(outgoing.localPort!);
+      pending.delete(outgoing);
+      changed();
+    });
     incoming.on('error', () => outgoing.destroy());
-    outgoing.on('error', () => incoming.destroy());
+    outgoing.on('error', () => { pending.delete(outgoing); incoming.destroy(); changed(); });
     incoming.on('close', () => outgoing.destroy());
     outgoing.on('close', () => incoming.destroy());
+    Reflect.apply(fixtureConnect, outgoing, [targetPort, '127.0.0.1']);
     incoming.pipe(outgoing).pipe(incoming);
+    changed();
   });
+  server.once('close', () => { closed = true; changed(); });
   const port = await listen(server);
   return {
     port, sourcePorts, targetPorts, targetSourcePorts,
+    snapshot(): ForwardAudit {
+      return {
+        sealed, closed, pending: pending.size, sockets: sockets.size,
+        sourcePorts: [...sourcePorts], targetPorts: [...targetPorts], targetSourcePorts: [...targetSourcePorts], lateSourcePorts: [...lateSourcePorts],
+      };
+    },
+    sealAndDrain(expectedSourcePorts: readonly number[]) {
+      sealing ??= (async () => {
+        await waitUntil(() => expectedSourcePorts.every((sourcePort) => sourcePorts.includes(sourcePort)) && pending.size === 0,
+          'Reverse forward did not observe all quiesced dials and target callbacks');
+        sealed = true;
+        for (const socket of sockets) socket.destroy();
+        await waitUntil(() => sockets.size === 0 && pending.size === 0, 'Reverse forward sockets did not drain');
+      })();
+      return sealing;
+    },
     pause(direction: 'A-to-B' | 'B-to-A') {
       const paused = [...(direction === 'A-to-B' ? toB : toA)];
       for (const socket of paused) socket.pause();
       return () => { for (const socket of paused) socket.resume(); };
     },
     cut() { for (const socket of sockets) socket.destroy(); },
-    async close() {
-      for (const socket of sockets) socket.destroy();
-      await closeServer(server);
+    close() {
+      closing ??= (async () => {
+        sealed = true;
+        const stopped = closeServer(server);
+        for (const socket of sockets) socket.destroy();
+        await stopped;
+        await waitUntil(() => sockets.size === 0 && pending.size === 0, 'Reverse forward close did not drain');
+      })();
+      return closing;
     },
   };
+}
+
+/**
+ * Quiesce guarded producers, then settle and seal F without closing its listener:
+ * late native/child accepts are still recorded and fail capture. Drain owned
+ * sockets, wait for the target's accept callbacks, close peers with recorders
+ * installed, and read only their exit receipts.
+ * Close/drain F last; no live array is compared with an earlier IPC snapshot.
+ * Every failure still attempts both peer closes and F close, returning explicit partial evidence.
+ */
+export async function captureOwnedReverseAudit(
+  forward: Awaited<ReturnType<typeof transparentForward>>,
+  peers: readonly [OwnedAuditPeer, OwnedAuditPeer],
+): Promise<OwnedAuditCapture> {
+  const errors: unknown[] = [];
+  const quiesced = await Promise.allSettled(peers.map((peer) => Promise.resolve().then(() => peer.quiesce())));
+  for (const result of quiesced) if (result.status === 'rejected') errors.push(result.reason);
+  if (errors.length === 0 && quiesced[0].status === 'fulfilled') {
+    try {
+      await forward.sealAndDrain(quiesced[0].value.attempts.flatMap((attempt) => attempt.localPort === undefined ? [] : [attempt.localPort]));
+      await peers[1].quiesce(forward.snapshot().targetSourcePorts);
+    } catch (error) { errors.push(error); }
+  }
+  const closed = await Promise.allSettled(peers.map((peer) => Promise.resolve().then(() => peer.close())));
+  for (const result of closed) if (result.status === 'rejected') errors.push(result.reason);
+  try { await forward.close(); }
+  catch (error) { errors.push(error); }
+  const final = await Promise.allSettled(peers.map((peer) => Promise.resolve().then(() => peer.readFinal())));
+  for (const result of final) {
+    if (result.status === 'rejected') errors.push(result.reason);
+    else if (result.value.phase !== 'exit' || !result.value.installed || !result.value.sealed || result.value.pending !== 0) {
+      errors.push(new Error('Reverse desktop exited without an intact, quiesced final audit'));
+    }
+  }
+  const captured = forward.snapshot();
+  if (captured.lateSourcePorts.length) errors.push(new Error('Reverse forward accepted traffic after sealing'));
+  if (!captured.closed || captured.pending || captured.sockets) errors.push(new Error('Reverse forward capture was not fully drained'));
+  if (errors.length) return {
+    status: 'failed', errors, forward: captured,
+    audits: final.map((result) => result.status === 'fulfilled' ? result.value : null),
+  };
+  return { status: 'complete', audits: final.flatMap((result) => result.status === 'fulfilled' ? [result.value] : []), forward: captured };
 }
 
 export async function sentinel() {
