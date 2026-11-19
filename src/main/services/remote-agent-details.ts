@@ -250,7 +250,13 @@ export async function readRemoteAgentDetails(agentId: string, authorized: () => 
     await read('canvases', async (c) => {
       const hits = await getAgentCanvasMemberships(agentId, project.id, { strict: true });
       c.summary = `on ${hits.length} ${hits.length === 1 ? 'board' : 'boards'}`;
-      for (const hit of hits) row(c, hit.name, hit.scope === 'app' ? 'Home' : 'card');
+      for (const hit of hits) {
+        const before = c.rows.length;
+        row(c, hit.name, hit.scope === 'app' ? 'Home' : 'card');
+        if (c.rows.length > before && hit.canvasId && hit.viewId && hit.canvasId.length <= 2048 && hit.viewId.length <= 2048) {
+          c.rows[c.rows.length - 1].canvas = { scope: hit.scope, canvasId: hit.canvasId, viewId: hit.viewId };
+        }
+      }
       if (!hits.length) c.state = 'not-applicable';
     });
     await read('changes', async (c) => {

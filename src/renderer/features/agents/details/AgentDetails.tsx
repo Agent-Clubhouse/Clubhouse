@@ -27,6 +27,7 @@ import { DISPATCHER_PROJECT_ID } from '../../../../shared/dispatcher-types';
 import { dispatcherWiresAgentId, isDispatcherAgent, useLocalProject } from '../../dispatcher/dispatcherStore';
 import { Tooltip } from '../../../components/Tooltip';
 import { jumpToCanvas, useAgentCanvases } from './agent-canvases';
+import { CanvasMembershipList } from './CanvasMembershipList';
 import { getOrchestratorLabel } from '../orchestrator-colors';
 import { DRIVER_LABELS, limitLabel, limitName } from '../chat/ChatHeader';
 import { SubagentList, subagentSummary } from '../chat/AgentMapPanel';
@@ -497,22 +498,7 @@ function LocalAgentDetails({ agent, chat, onShowInStream, missedSubagentId, onRe
         open={open('canvases')}
         onToggle={() => toggleCard('canvases')}
       >
-        <ul className="flex flex-col">
-          {canvases.map((c) => (
-            <li key={`${c.scope}:${c.canvasId}`}>
-              <button
-                type="button"
-                onClick={() => jumpToCanvas(agent, c)}
-                className="w-[calc(100%-28px)] ml-[22px] h-[30px] flex items-center gap-2 pl-3 pr-2.5 rounded-md text-left hover:bg-surface-0"
-                data-testid="details-canvas-row"
-              >
-                <span className="text-[12.5px] text-ctp-text truncate">{c.name}</span>
-                <span className="text-xs text-ctp-overlay1 whitespace-nowrap">{c.scope === 'app' ? 'Home' : 'card'}</span>
-                <span className="ml-auto text-xs text-ctp-accent">Jump</span>
-              </button>
-            </li>
-          ))}
-        </ul>
+        <CanvasMembershipList hits={canvases} onJump={(hit) => jumpToCanvas(agent, hit)} />
       </DetailsCard>}
     </aside>
   );

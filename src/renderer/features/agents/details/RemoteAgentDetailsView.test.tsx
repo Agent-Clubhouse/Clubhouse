@@ -94,6 +94,18 @@ describe('remote full Details host evidence', () => {
     await waitFor(() => expect(screen.getByTestId('details-setting-cli')).toHaveTextContent('Host CLI'));
     expect(read).toHaveBeenCalledTimes(2);
   });
+  it('shows verified host canvas identities with explicit navigation availability for snapshot omissions', async () => {
+    const value = fixture();
+    value.cards.find((c) => c.id === 'canvases')!.rows = [{ label: 'Host-only board', value: 'Home', canvas: { scope: 'app', canvasId: 'board', viewId: 'view' } }];
+    read.mockResolvedValue({ status: 'ok', value });
+    render(<AgentDetails agent={agent} />);
+    await waitFor(() => expect(screen.getByTestId('details-setting-cli')).toHaveTextContent('Host CLI'));
+    fireEvent.click(screen.getByTestId('details-card-canvases-toggle'));
+    expect(screen.getByTestId('details-canvas-row')).toHaveTextContent('Host-only board');
+    expect(screen.getByTestId('details-canvas-row')).toBeDisabled();
+    expect(screen.getByTestId('details-card-canvases')).toHaveTextContent('not in the host’s current shared snapshot');
+    expect(window.clubhouse.canvas.getAgentCanvases).not.toHaveBeenCalled();
+  });
   it.each(['forbidden', 'error', 'unavailable'] as const)('withholds retained provider evidence after a %s host read', async (status) => {
     read.mockResolvedValue({ status });
     const chat = { ...createChatViewState(agent.id), provider: 'claude-code', sessionId: 's1', nativeSessionId: 'n1', cliVersion: 'STALE_VERSION', effort: 'STALE_EFFORT', effortReported: true, mcpServers: [{ name: 'STALE_MCP', status: 'connected' as const }] };

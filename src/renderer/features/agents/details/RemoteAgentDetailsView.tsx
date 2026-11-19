@@ -18,6 +18,8 @@ import { OtherMachinesList, otherMachinesSummary } from '../../dispatcher/OtherM
 import { reportedSkillsFor } from './reported-skills';
 import { mcpRows } from './McpCard';
 import { useRemoteDetailsChat } from './useRemoteDetailsChat';
+import { CanvasMembershipList } from './CanvasMembershipList';
+import { jumpToCanvas, remoteCanvasJumpUnavailable } from './agent-canvases';
 
 type Result = ControllerReadResult<RemoteAgentDetails> | { status: 'loading' };
 function resultMessage(status: Result['status']): string {
@@ -125,7 +127,11 @@ export function RemoteAgentDetailsView({ agent, chat, onShowInStream, missedSuba
     const c = card(id);
     if (c?.state === 'not-applicable') return null;
     return <DetailsCard key={id} id={id} title={c?.title ?? title} summary={c?.summary || resultMessage(result.status)} open={open(id)} onToggle={() => toggleCard(id)}>
-      {c ? <Evidence card={c} /> : <CardNote>{resultMessage(result.status)}</CardNote>}
+      {c ? id === 'canvases' ? <>
+        <CanvasMembershipList hits={c.rows.filter((r) => r.canvas).map((r) => ({ ...r.canvas!, name: r.label }))} onJump={(hit) => jumpToCanvas(agent, hit)} unavailable={(hit) => remoteCanvasJumpUnavailable(agent, hit)} />
+        <Evidence card={{ ...c, rows: c.rows.filter((r) => !r.canvas) }} />
+        {c.rows.some((r) => !r.canvas) && <CardNote>This host shared membership names without navigation identities.</CardNote>}
+      </> : <Evidence card={c} /> : <CardNote>{resultMessage(result.status)}</CardNote>}
     </DetailsCard>;
   };
   const stats = session?.usage.session;

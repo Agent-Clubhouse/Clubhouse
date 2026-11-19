@@ -59,6 +59,11 @@ const read = async () => {
   return response.body as RemoteAgentDetails;
 };
 describe('host selected-agent Details projections', () => {
+  it('projects only the selected agent’s verified bounded canvas membership navigation identities', async () => {
+    m.canvases.mockResolvedValue([{ name: 'Host board', scope: 'app', canvasId: 'board', viewId: 'view' }]);
+    const value = await read();
+    expect(value.cards.find((c) => c.id === 'canvases')?.rows).toEqual([{ label: 'Host board', value: 'Home', canvas: { scope: 'app', canvasId: 'board', viewId: 'view' } }]);
+  });
   it('projects policy and the selected host folder/branch without invented usage or local defaults', async () => {
     const value = await read();
     expect(value.cards.find((c) => c.id === 'orchestrate')?.rows).toContainEqual({ label: 'At once', value: '5' });

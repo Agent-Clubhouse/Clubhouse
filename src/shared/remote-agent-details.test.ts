@@ -26,4 +26,18 @@ describe('remote Details contract', () => {
     (value.cards[0].rows as unknown[]) = Array(101).fill({ label: 'Name', value: 'Value' });
     expect(isRemoteAgentDetails(value, 'a1')).toBe(false);
   });
+  it('accepts selected-agent canvas navigation only on the Canvases card with bounded opaque identities', () => {
+    const value = fixture();
+    const canvas = value.cards.find((c) => c.id === 'canvases')!;
+    const nav = { label: 'Host Home', value: 'Home', canvas: { scope: 'app', canvasId: 'board', viewId: 'view' } };
+    (canvas.rows as unknown[]) = [nav];
+    expect(isRemoteAgentDetails(value, 'a1')).toBe(true);
+    for (const invalid of [null, {}, { ...nav.canvas, scope: 'other' }, { ...nav.canvas, viewId: '' }, { ...nav.canvas, canvasId: 'x'.repeat(2049) }]) {
+      (canvas.rows as unknown[]) = [{ ...nav, canvas: invalid }];
+      expect(isRemoteAgentDetails(value, 'a1')).toBe(false);
+    }
+    (canvas.rows as unknown[]) = [];
+    (value.cards[0].rows as unknown[]) = [nav];
+    expect(isRemoteAgentDetails(value, 'a1')).toBe(false);
+  });
 });

@@ -4,7 +4,10 @@ import type { Agent } from '../../../../shared/types';
 import type { CanvasMembership } from '../../../../shared/canvas-index-types';
 import { getProjectCanvasStore, useAppCanvasStore } from '../../../plugins/builtin/canvas/main';
 import type { CanvasInstance } from '../../../plugins/builtin/canvas/canvas-types';
-import { jumpToCanvas, mergeCanvasHits, useAgentCanvases } from './agent-canvases';
+import { jumpToCanvas, mergeCanvasHits, remoteCanvasJumpUnavailable, useAgentCanvases } from './agent-canvases';
+import { useAnnexClientStore } from '../../../stores/annexClientStore';
+import { useUIStore } from '../../../stores/uiStore';
+import { useProjectStore } from '../../../stores/projectStore';
 
 const agent = { id: 'durable_a', projectId: 'p-index', name: 'robin', kind: 'durable' } as Agent;
 
@@ -83,5 +86,54 @@ describe('jumpToCanvas', () => {
     });
     expect(store.getState().activeCanvasId).toBe('c2');
     expect(store.getState().selectedViewId).toBe('v2');
+  });
+  const remote = { ...agent, id: 'remote||sat||durable_a', projectId: 'remote||sat||p-index' };
+  const homeHit = { scope: 'app' as const, canvasId: 'shared-c', name: 'Host board', viewId: 'shared-v' };
+  function shareBoard() {
+    useAnnexClientStore.setState({ satellites: [{ id: 'sat', state: 'connected', snapshot: { appCanvasState: { canvases: [canvasWith('shared-c', 'Host board', 'durable_a', 'shared-v')], activeCanvasId: 'shared-c' } } }] as never });
+  }
+  it('waits for the right host hydration instead of focusing a colliding local or other-host Home card', () => {
+    shareBoard();
+    const local = canvasWith('shared-c', 'Local board', remote.id, 'shared-v');
+    useAppCanvasStore.setState({ canvases: [local], activeCanvasId: 'shared-c', selectedViewId: null, loaded: true, dataOrigin: 'local' });
+    jumpToCanvas(remote, homeHit);
+    expect(useUIStore.getState().activeHostId).toBe('sat');
+    expect(useProjectStore.getState().activeProjectId).toBeNull();
+    expect(useAppCanvasStore.getState().selectedViewId).toBeNull();
+    useAppCanvasStore.getState().hydrateFromRemote([canvasWith('shared-c', 'Other host', 'remote||other||durable_a', 'shared-v')], 'shared-c');
+    expect(useAppCanvasStore.getState().selectedViewId).toBeNull();
+    useAppCanvasStore.getState().hydrateFromRemote([canvasWith('shared-c', 'Host board', remote.id, 'shared-v')], 'shared-c');
+    expect(useAppCanvasStore.getState().selectedViewId).toBe('shared-v');
+    expect(useAppCanvasStore.getState().dataOrigin).toBe('remote');
+    expect(local.selectedViewId).toBeNull();
+  });
+  it('refuses stale/omitted/malformed snapshots and cancels a pending jump when the host changes', () => {
+    shareBoard();
+    jumpToCanvas(remote, homeHit);
+    useUIStore.getState().setActiveHost('other');
+    useAppCanvasStore.getState().hydrateFromRemote([canvasWith('shared-c', 'Host board', remote.id, 'shared-v')], 'shared-c');
+    expect(useAppCanvasStore.getState().selectedViewId).not.toBe('shared-v');
+    for (const snapshot of [{}, { appCanvasState: { canvases: [null, {}, { id: 'shared-c', views: [null] }] } }]) {
+      useAnnexClientStore.setState({ satellites: [{ id: 'sat', state: 'connected', snapshot }] as never });
+      expect(remoteCanvasJumpUnavailable(remote, homeHit)).toContain('not in the host');
+      jumpToCanvas(remote, homeHit);
+      expect(useUIStore.getState().activeHostId).toBe('other');
+    }
+    shareBoard();
+    useAnnexClientStore.setState((s) => ({ satellites: s.satellites.map((h) => ({ ...h, snapshotUnavailable: true })) }));
+    expect(remoteCanvasJumpUnavailable(remote, homeHit)).toContain('Reconnect');
+  });
+  it('opens a project membership in the namespaced project without changing host board contents', () => {
+    const hit = { ...homeHit, scope: 'project' as const };
+    const board = canvasWith('shared-c', 'Project board', 'durable_a', 'shared-v');
+    useAnnexClientStore.setState({ satellites: [{ id: 'sat', state: 'connected', snapshot: { canvasState: { 'p-index': { canvases: [board], activeCanvasId: 'shared-c' } } } }] as never });
+    const store = getProjectCanvasStore(remote.projectId!);
+    store.setState({ loaded: false, dataOrigin: null, selectedViewId: null });
+    jumpToCanvas(remote, hit);
+    expect(useProjectStore.getState().activeProjectId).toBe(remote.projectId);
+    store.getState().hydrateFromRemote([{ ...board, views: board.views.map((v) => ({ ...v, agentId: remote.id })) }], 'shared-c');
+    expect(store.getState().selectedViewId).toBe('shared-v');
+    expect(board.views[0].agentId).toBe('durable_a');
+    expect(window.clubhouse.canvas.getAgentCanvases).not.toHaveBeenCalled();
   });
 });

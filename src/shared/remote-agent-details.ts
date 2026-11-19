@@ -6,7 +6,12 @@ export const REMOTE_DETAILS_MAX_BYTES = 256 * 1024;
 export const REMOTE_DETAILS_MAX_ROWS = 100;
 export const REMOTE_DETAILS_CARD_IDS = ['settings', 'dispatcher', 'orchestrate', 'connections', 'actions', 'skills-mcp', 'session', 'canvases', 'changes'] as const;
 export type RemoteDetailsCardId = typeof REMOTE_DETAILS_CARD_IDS[number];
-export interface RemoteDetailsRow { label: string; value: string }
+export interface RemoteDetailsRow {
+  label: string;
+  value: string;
+  /** A verified membership of this selected agent, for host-aware navigation only. */
+  canvas?: { scope: 'app' | 'project'; canvasId: string; viewId: string };
+}
 export interface RemoteDetailsCard {
   id: RemoteDetailsCardId;
   title: string;
@@ -52,5 +57,8 @@ export function isRemoteAgentDetails(value: unknown, agentId: string): value is 
       && Number.isFinite(c.observedAt) && c.observedAt > 0
       && Array.isArray(c.notes) && c.notes.length <= 20 && c.notes.every(text)
       && Array.isArray(c.rows) && c.rows.length <= REMOTE_DETAILS_MAX_ROWS
-      && c.rows.every((r) => !!r && typeof r === 'object' && text(r.label) && text(r.value)));
+      && c.rows.every((r) => !!r && typeof r === 'object' && text(r.label) && text(r.value)
+        && (r.canvas === undefined || c.id === 'canvases' && !!r.canvas && typeof r.canvas === 'object'
+          && ['app', 'project'].includes(r.canvas.scope) && text(r.canvas.canvasId) && !!r.canvas.canvasId
+          && text(r.canvas.viewId) && !!r.canvas.viewId)));
 }
