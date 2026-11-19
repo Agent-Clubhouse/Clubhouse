@@ -265,6 +265,32 @@ describe('host selected-agent Details projections', () => {
       if (mode === 'unknown-completeness') expect(c.rows).toContainEqual({ label: 'Duration', value: '5s' });
     }
   });
+  it.each(['small', 'truncated'] as const)('reads historical native provider file with real byte bound and unchanged storage: %s', async (mode) => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), 'clubhouse-history-native-'));
+    try {
+      const file = path.join(root, 'selected-last.jsonl');
+      const result = (duration_ms: number, total_cost_usd: number) => JSON.stringify({ type: 'result', duration_ms, total_cost_usd });
+      const filler = JSON.stringify({ type: 'user', message: 'PRIVATE_HISTORY_TEXT'.repeat(512) });
+      const text = [result(1000, 10), ...(mode === 'truncated' ? Array(400).fill(filler) : []), result(0, 0), ''].join('\n');
+      await fs.writeFile(file, text); const before = await fs.stat(file); const entries = await fs.readdir(root);
+      const { ClaudeCodeProvider } = await vi.importActual<typeof import('../orchestrators/claude-code-provider')>('../orchestrators/claude-code-provider');
+      const provider = new ClaudeCodeProvider();
+      const lookup = vi.spyOn(provider, 'transcriptPath').mockResolvedValue(file); const nativeRead = vi.spyOn(provider, 'readSessionTranscript');
+      m.catalog.mockReturnValue(provider);
+      m.target.mockResolvedValue({ agent: { ...agent(), lastSessionId: 'selected-last', sessionHistory: [{ sessionId: 'selected-last', orchestrator: 'claude-code' }] }, project });
+      const c = (await read()).cards.find((c) => c.id === 'session')!;
+      expect(lookup).toHaveBeenCalledWith('selected-last', '/host/selected'); expect(m.transcript).not.toHaveBeenCalled();
+      expect(nativeRead).toHaveBeenCalledTimes(1); const options = nativeRead.mock.calls[0][2]!;
+      expect(options.maxBytes).toBe(2097152); expect(options.stats?.fileBytes).toBe(Buffer.byteLength(text));
+      expect(options.stats?.bytesRead).toBeLessThanOrEqual(2097152);
+      expect(c.notes.join(' ')).toContain(mode === 'truncated' ? 'truncated' : 'complete file');
+      if (mode === 'truncated') { expect(Buffer.byteLength(text)).toBeGreaterThan(2097152); expect(options.stats?.truncated).toBe(true); }
+      expect(c.rows).toContainEqual({ label: 'Duration', value: '0s' }); expect(c.rows).toContainEqual({ label: 'Cost', value: '$0.00' });
+      expect(c.rows.some((r) => r.label === 'Ended')).toBe(false); expect(JSON.stringify(c)).not.toContain('PRIVATE_HISTORY_TEXT');
+      expect(await fs.readFile(file, 'utf8')).toBe(text); expect(await fs.readdir(root)).toEqual(entries);
+      const after = await fs.stat(file); expect({ size: after.size, mtimeMs: after.mtimeMs, ino: after.ino }).toEqual({ size: before.size, mtimeMs: before.mtimeMs, ino: before.ino });
+    } finally { await fs.rm(root, { recursive: true, force: true }); }
+  });
   it.each(['inventory', 'revocation'] as const)('withholds historical evidence after awaited %s change with real primary witness', async (mode) => {
     const root = await fs.mkdtemp(path.join(os.tmpdir(), 'clubhouse-history-witness-'));
     try {

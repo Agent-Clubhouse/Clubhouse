@@ -37,9 +37,9 @@ export async function readHistoricalSessionCard(c: RemoteDetailsCard, agent: Dur
   else c.notes.push('The provider did not report whether this historical transcript read was complete.');
   if (!raw?.length) { c.notes.push('The recorded provider did not return a readable historical transcript. Usage is unknown.'); return; }
   const events = normalizeSessionEvents(raw);
-  const lastResult = events.filter((event) => event.type === 'result').at(-1);
+  const results = events.filter((event) => event.type === 'result');
+  const lastResult = results[results.length - 1];
   row(c, 'Duration', known(lastResult?.durationMs) ? formatShortDuration(lastResult.durationMs) : 'Not reported');
   row(c, 'Cost', known(lastResult?.costUsd) ? `$${lastResult.costUsd.toFixed(2)}` : 'Not reported');
   c.notes.push('Duration and cost are the last parsed provider result’s reported totals; missing fields are not zero.');
-
 }
