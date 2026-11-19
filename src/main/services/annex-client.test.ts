@@ -3353,6 +3353,26 @@ describe('annex-client', () => {
       answers.push({ status: 200, body: { ...value, version: 2 } });
       expect(await annexClient.requestAgentDetails(FP, 'a?/#')).toEqual({ status: 'error' });
     });
+    it('withholds a schema-valid prior Details snapshot after the same record reconnects', async () => {
+      const { REMOTE_DETAILS_CARD_IDS, isRemoteAgentDetails } = await import('../../shared/remote-agent-details');
+      const value = { version: 1, agentId: 'a1', readOnly: true, readAt: 1, providerId: 'claude-code', running: false, status: 'sleeping', spawnedAt: null, sessionId: null, nativeSessionId: null, settings: null,
+        cards: REMOTE_DETAILS_CARD_IDS.map((id) => ({ id, title: id, state: 'ok', summary: 'PRIVATE_PRIOR_EPOCH', rows: [], notes: [], omitted: 0, observedAt: 1 })) };
+      expect(isRemoteAgentDetails(value, 'a1')).toBe(true);
+      let finish!: () => void;
+      vi.mocked(https.request).mockImplementationOnce(((_url: string, _opts: unknown, callback: (response: unknown) => void) => {
+        const req = Object.assign(new EventEmitter(), { end: () => { finish = () => {
+          const res = Object.assign(new EventEmitter(), { statusCode: 200 }); callback(res); res.emit('data', Buffer.from(JSON.stringify(value))); res.emit('end');
+        }; }, destroy: vi.fn() });
+        return req;
+      }) as any);
+      const admitted = annexClient.getSatellite(FP), pending = annexClient.requestAgentDetails(FP, 'a1');
+      annexClient._receiveSatelliteDisconnectForTesting(FP);
+      vi.mocked(annexPeers.getPeer).mockReturnValue({ fingerprint: FP, role: 'satellite', kind: 'desktop', tlsCertificateFingerprint: 'pin' } as any);
+      annexClient.connect(FP); await vi.waitFor(() => expect(annexClient.getSatellite(FP)?.state).toBe('connected'));
+      expect(annexClient.getSatellite(FP)).toBe(admitted);
+      finish(); const result = await pending;
+      expect.soft(result).toEqual({ status: 'offline' }); expect.soft(JSON.stringify(result)).not.toContain('PRIVATE_PRIOR_EPOCH');
+    });
     it('reads only an exact selected-agent Changes scope/page/key and rejects old/refused/malformed responses', async () => {
       const value = { version: 1, readOnly: true, agentId: 'a?/#', observedAt: 1, scope: 'branch', state: 'ok', branch: 'feature', base: 'main', sessionId: null, turnId: null, live: true, shared: false, files: [], totalFiles: 0, offset: 0, nextOffset: null, uncompared: 0, skippedLarge: [], skippedRepos: [], skippedOmitted: 0 };
       answers.push({ status: 200, body: value });

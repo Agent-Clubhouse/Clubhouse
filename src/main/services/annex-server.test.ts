@@ -750,7 +750,7 @@ describe('annex-server', () => {
       });
       const { port } = await startAndPair();
       const response = await request(port, 'GET', route);
-      expect(response.status).toBe(403); expect(response.body).not.toContain('PRIVATE_LATE_RESULT');
+      expect.soft(response.status).toBe(403); expect.soft(response.body).not.toContain('PRIVATE_LATE_RESULT');
     });
   });
 
