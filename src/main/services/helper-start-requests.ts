@@ -165,8 +165,9 @@ export interface HelperStartRequestDisplay {
   expiresAt: string;
 }
 function safeRequestText(value: unknown, maximum: number): HelperRequestDisplayText {
-  if (typeof value !== 'string' || !value.trim()) return { state: 'withheld', reason: 'unavailable' };
+  if (typeof value !== 'string') return { state: 'withheld', reason: 'unavailable' };
   if (value.length > 64 * 1024) return { state: 'withheld', reason: 'read-limit' };
+  if (!value.trim()) return { state: 'withheld', reason: 'unavailable' };
   // Reuse the reviewed conservative policy before truncation. This is not a
   // general promise that arbitrary prompts can be classified as secret-free.
   const safe = redactChangeText(value);

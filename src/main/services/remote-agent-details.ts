@@ -120,7 +120,8 @@ export async function readRemoteAgentDetails(agentId: string, authorized: () => 
       const requests = readStartRequestsForDisplay(project.path, agentId, { receipts: orchestrationReceipts });
       const waiting = projectPendingHelperStarts(c, requests);
       const live = helpers.filter((h) => !isDisposedAgent(h.config));
-      row(c, 'Helpers', helpersSummary(live.length, enabled ? limit : undefined, live.filter((h) => h.config.creation?.state === 'creating').length, waiting));
+      const summary = helpersSummary(live.length, enabled ? limit : undefined, live.filter((h) => h.config.creation?.state === 'creating').length, waiting);
+      row(c, 'Helpers', waiting === undefined ? `${live.length ? summary : 'No live helpers'} · pending starts unavailable` : summary);
       if (helpers.length > live.length) row(c, 'Disposed helpers', helpers.length - live.length);
       let workReads = 0, workOmitted = 0;
       const workDeadline = Date.now() + 2000;
