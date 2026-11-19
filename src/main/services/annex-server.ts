@@ -1,3 +1,4 @@
+import { assertManagedProviderPlatform, managedProviderPlatformCapability } from './managed-provider-platform';
 import { readRemoteAgentSettings } from './remote-agent-settings';
 import { handoffTransferDiagnostic, tagHandoffTransferError } from '../../shared/handoff-transfer-diagnostics';
 import { mobileProjectLinks, MOBILE_PROJECT_LINKS_EVENT } from './mobile-project-links';
@@ -11,7 +12,8 @@ import { legacyDefaultsNotCopied } from './legacy-defaults';
 import { accessFromLegacy, legacyFreeAgentMode, type AccessLevel } from '../../shared/agent-access';
 import { agentAccess, getPermissionMode, quickAgentAccess } from './free-agent-settings';
 import { waitForAgentStopped } from './agent-system';
-import { previewAgentProvider, changeAgentProvider, persistGuidedSessionCapture } from './agent-provider-control';
+import { previewAgentProvider, changeAgentProvider, persistGuidedSessionCapture, providerNextWake, verifyProviderStartPreview } from './agent-provider-control';
+import { providerStartReceipt } from './provider-start-receipt';
 import { withAgentTransition } from './agent-transition';
 import * as http from 'http';
 import * as https from 'https';
@@ -3913,6 +3915,8 @@ async function handleMobileCapabilitiesRoute(ctx: AnnexRouteContext): Promise<vo
     agentSettings: { version: 1, path: '/api/v1/mobile/agents/{agentId}/settings' },
     contextWindow: { version: 1 },
     providerControl: { version: 1, preview: 'agent.providerPreview', change: 'agent.providerChange', stoppedAcknowledgment: true, strictStart: true },
+    providerControlV2: { version: 2, requestContractVersion: 2, preview: 'agent.providerPreview', change: 'agent.providerChange', selection: 'tagged_model_nullable_effort', applyStartsAgent: false, managedDelivery: 'codex_terminal_no_skills', managedPlatform: managedProviderPlatformCapability() },
+    providerStartV2: { version: 2, requestContractVersion: 2, command: 'agent.start', requiredPreconditions: ['expectedProvider', 'expectedNextWake', 'expectedState'], managedDelivery: 'codex_terminal_no_skills', managedPlatform: managedProviderPlatformCapability(), creationEvidence: 'pty_created_selection' },
     // Every agent's live state in one read, for catching up after a reconnect.
     agentState: { version: 1, path: '/api/v1/mobile/agents/state' },
     // Machine-qualified agent addresses (#3063): a command's agentId may carry the machine.
@@ -4452,10 +4456,11 @@ async function runMobileCommand(input: MobileCommand, assertAuthorized: () => vo
   if (command.type === 'agent.providerPreview' || command.type === 'agent.providerChange') {
     const durable = await findMobileAgent(command.agentId);
     if (!durable || isDisposedAgent(durable.config)) throw new MobileControlError('agent_not_found', 404);
-    const actor = { key: `phone:${principal}`, assertAuthorized };
+    const actor = { key: command.contractVersion === 2 ? `phone:provider-control-v2:${command.epoch}:${principal}` : `phone:${principal}`, assertAuthorized, assertCommitAuthorized: assertAuthorized };
+    const selection = { contractVersion: command.contractVersion, model: command.model, effort: command.effort };
     const result = command.type === 'agent.providerPreview'
-      ? await previewAgentProvider(durable.project.path, command.agentId, command.provider, actor)
-      : await changeAgentProvider(durable.project.path, command.agentId, command.provider, command.expectedState, actor);
+      ? await previewAgentProvider(durable.project.path, command.agentId, command.provider, actor, undefined, selection)
+      : await changeAgentProvider(durable.project.path, command.agentId, command.provider, command.expectedState, actor, selection);
     if (command.type === 'agent.providerChange') {
       broadcastToAllWindows(IPC.WINDOW.REQUEST_DURABLE_RELOAD, durable.project.id);
       broadcastSnapshotRefresh();
@@ -4518,12 +4523,36 @@ async function runMobileCommand(input: MobileCommand, assertAuthorized: () => vo
     return { agentId: command.agentId, stopRequested: true };
   }
   if (!info) throw new MobileControlError('agent_not_found', 404);
+  if (command.type === 'agent.start' && command.contractVersion === 2) assertManagedProviderPlatform();
   if (isAgentRunning(command.agentId) || mobileStartingAgents.has(command.agentId)) throw new MobileControlError('agent_already_running');
   const start = async () => {
   const starting = { cancelled: false };
   mobileStartingAgents.set(command.agentId, starting);
+  let verifiedNextWake: ReturnType<typeof providerNextWake> | null = null;
+  let createdIdentity: string | undefined;
+  let createdAt: string | undefined;
+  let selectedForStart: string | null = null;
+  const startReceipt = (completed: boolean) => {
+    let running: boolean | null = null;
+    let sameCreatedRuntime = false;
+    let appSessionId: string | undefined;
+    let nativeProviderSessionId: string | undefined;
+    try {
+      running = isAgentRunning(command.agentId);
+      sameCreatedRuntime = !!createdIdentity && ptyManager.processIdentity(command.agentId) === createdIdentity;
+      const runtime = sameCreatedRuntime ? getAgentRuntime(command.agentId) : undefined;
+      appSessionId = runtime?.getSessionId?.(); nativeProviderSessionId = runtime?.getNativeSessionId?.();
+    } catch { /* telemetry-exempt: observation failure stays unknown, never erases immutable creation evidence. */ }
+    return providerStartReceipt({ agentId: command.agentId, commandId: command.commandId, hostEpoch: command.epoch,
+      configured: verifiedNextWake, completed, created: !!createdIdentity, selectedProvider: selectedForStart,
+      running, sameCreatedRuntime, appSessionId, nativeProviderSessionId, createdAt, observedAt: new Date(Date.now()).toISOString() });
+  };
   try {
-    const config = command.expectedProvider !== undefined ? await agentConfig.getDurableConfig(project.path, command.agentId, { forLaunch: true }) : info.config;
+    const v2 = command.contractVersion === 2;
+    const admission = v2 ? await verifyProviderStartPreview(project.path, command.agentId, command.expectedProvider!, command.expectedState!, command.expectedNextWake!,
+      { key: `phone:provider-control-v2:${command.epoch}:${principal}`, assertAuthorized, assertCommitAuthorized: assertAuthorized })
+      : null;
+    const config = admission ? admission.config : command.expectedProvider !== undefined ? await agentConfig.getDurableConfig(project.path, command.agentId, { forLaunch: true }) : info.config;
     if (!config || isDisposedAgent(config)) throw new MobileControlError('agent_not_found', 404);
     if (command.expectedProvider !== undefined) {
       if (command.resume && hasSessionCaptureFailure(command.agentId)) throw new MobileControlError('session_capture_failed');
@@ -4535,10 +4564,12 @@ async function runMobileCommand(input: MobileCommand, assertAuthorized: () => vo
       }
       assertAuthorized();
     }
+    if (v2) { verifiedNextWake = providerNextWake(config, command.expectedProvider!); selectedForStart = command.expectedProvider!; }
     const resume = command.resume === true && !!config.lastSessionId;
     await spawnAgent({ agentId: config.id, projectPath: project.path, cwd: config.worktreePath || project.path,
       kind: 'durable', mission: command.message, model: config.model, orchestrator: config.orchestrator,
-      freeAgentMode: config.freeAgentMode, resume, strictResume: command.expectedProvider !== undefined && resume, sessionId: resume ? config.lastSessionId : undefined });
+      freeAgentMode: config.freeAgentMode, resume, strictResume: command.expectedProvider !== undefined && resume, sessionId: resume ? config.lastSessionId : undefined,
+      ...(v2 && { strictManagedDelivery: true, beforeCreate: () => { assertAuthorized(); admission!.assertBeforeCreate(); }, onRuntimeCreated: (identity: string) => { createdIdentity = identity; createdAt = new Date(Date.now()).toISOString(); } }) });
     if (starting.cancelled) {
       await killAgent(command.agentId, project.path, config.orchestrator);
       throw new MobileControlError('start_cancelled', 409, 'failed');
@@ -4546,7 +4577,14 @@ async function runMobileCommand(input: MobileCommand, assertAuthorized: () => vo
     noteAgentActivity(config.id);
     broadcastAndBuffer('agent:woken', { agentId: config.id, source: 'annex-mobile' });
     broadcastSnapshotRefresh();
-    return { agentId: config.id, executionMode: getAgentExecutionMode(config.id) };
+    return { agentId: config.id, executionMode: getAgentExecutionMode(config.id), ...(v2 && { contract: startReceipt(true) }) };
+  } catch (err) {
+    if (!createdIdentity && err instanceof MobileControlError && err.code === 'managed_platform_unsupported') throw err;
+    if (command.contractVersion === 2) {
+      const code = err instanceof MobileControlError ? err.code : createdIdentity ? 'start_post_create_failed' : 'start_failed';
+      throw new MobileControlError(code, err instanceof MobileControlError ? err.statusCode : 409, createdIdentity ? 'failed' : 'rejected', undefined, { contract: startReceipt(false) });
+    }
+    throw err;
   } finally { finishMobileStart(command.agentId, starting); }
   };
   return command.expectedProvider !== undefined ? withAgentTransition(command.agentId, start) : start();

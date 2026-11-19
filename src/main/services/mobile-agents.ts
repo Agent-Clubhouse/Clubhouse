@@ -631,7 +631,10 @@ export async function updateMobileAgent(
     ?? (config.orchestrator || await resolveOrchestrator(project.path).then((p) => p.id).catch(() => DEFAULT_ORCHESTRATOR));
   if (command.orchestrator !== undefined) {
     assertOrchestrator(command.orchestrator);
-    updates.orchestrator = command.orchestrator as DurableConfigUpdates['orchestrator'];
+    const current = await resolveOrchestrator(project.path, config.orchestrator);
+    if (command.orchestrator !== current.id) throw new MobileControlError('provider_change_requires_preview', 409, 'rejected', 'Preview and apply the provider change before waking this agent.');
+    // A redundant legacy field must not pin an inherited provider, or race a
+    // later project default into an unreviewed provider change.
   }
   if (command.model !== undefined) updates.model = command.model;
   if (command.runtime !== undefined) {
@@ -690,11 +693,17 @@ export async function updateMobileDispatcher(
   const current = config.orchestrator
     || await resolveOrchestrator(project.path).then((p) => p.id).catch(() => DEFAULT_ORCHESTRATOR);
   const orchestrator = command.orchestrator ?? current;
+  if (command.orchestrator !== undefined && command.orchestrator !== current) assertOrchestrator(command.orchestrator);
+  if (!modelsChosenByHand() && command.orchestrator !== undefined && command.orchestrator !== current) {
+    throw new MobileControlError('provider_change_requires_preview', 409, 'rejected', 'Preview and apply the provider change before waking this agent.');
+  }
   if (command.orchestrator !== undefined && command.orchestrator !== config.orchestrator) {
     // The current CLI stays listed even when it has since been turned off for new agents.
     if (command.orchestrator !== current) assertOrchestrator(command.orchestrator);
-    updates.orchestrator = command.orchestrator as DurableConfigUpdates['orchestrator'];
-    updates.model = 'default';
+    if (modelsChosenByHand()) {
+      updates.orchestrator = command.orchestrator as DurableConfigUpdates['orchestrator'];
+      updates.model = 'default';
+    }
   }
   if (command.model !== undefined) {
     if (command.model !== 'default' && !(await modelOptions(project.path, orchestrator)).some((o) => o.id === command.model)) {

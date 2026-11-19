@@ -51,7 +51,7 @@
       "request": {
         "commandId": "cmd_165",
         "epoch": "00000000-0000-4000-8000-000000000001",
-        "expectedState": "f41e1dbc27db5d45aafe3397da046d09889992ba0e064abda41ad74b37ad6d9a",
+        "expectedState": "bbd9c201f887cfd0c7c247917e0c787e6a08d386ac4bf2c32edc9fdea06a1bcb",
         "type": "dispatcher.clearChat",
         "version": 1
       },
@@ -73,7 +73,7 @@
       "request": {
         "commandId": "cmd_166",
         "epoch": "00000000-0000-4000-8000-000000000001",
-        "expectedState": "f41e1dbc27db5d45aafe3397da046d09889992ba0e064abda41ad74b37ad6d9a",
+        "expectedState": "bbd9c201f887cfd0c7c247917e0c787e6a08d386ac4bf2c32edc9fdea06a1bcb",
         "type": "dispatcher.clearChat",
         "version": 1
       },

@@ -468,6 +468,8 @@ export interface OrchestratorProvider {
    * never a project's. Cached per `env` for about ten minutes.
    */
   listModels?(opts?: ListModelsOptions): Promise<ModelList>;
+  /** Detached cached evidence only, for synchronous process-creation fences. Never probes. */
+  peekModels?(opts?: ListModelsOptions): ModelList | null;
   /** What the CLI says about its plan limits (#2671). Token-free. Only providers that can report have it. */
   readPlanQuota?(opts?: ListModelsOptions): Promise<import('../../shared/helper-routing').PlanQuotaReading>;
   /**

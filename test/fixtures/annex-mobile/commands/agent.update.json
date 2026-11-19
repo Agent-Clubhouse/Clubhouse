@@ -443,7 +443,6 @@
               }
             },
             "projectId": "proj_app",
-            "sessionReset": true,
             "settings": {
               "access": {
                 "applies": "next_start",
@@ -557,17 +556,17 @@
               },
               "model": {
                 "editable": "sleeping",
-                "value": "default"
+                "value": "sonnet"
               },
               "name": {
                 "editable": "sleeping",
                 "value": "bright-otter"
               },
               "orchestrator": {
-                "changeStartsNewSession": false,
+                "changeStartsNewSession": true,
                 "editable": "sleeping",
                 "resolved": "claude-code",
-                "value": "claude-code"
+                "value": null
               },
               "persona": {
                 "editable": "never",
@@ -917,8 +916,8 @@
           "commandId": "cmd_073",
           "epoch": "00000000-0000-4000-8000-000000000001",
           "error": {
-            "code": "runtime_unavailable",
-            "message": "runtime_unavailable"
+            "code": "provider_change_requires_preview",
+            "message": "Preview and apply the provider change before waking this agent."
           },
           "status": "rejected",
           "version": 1
@@ -942,8 +941,8 @@
           "commandId": "cmd_074",
           "epoch": "00000000-0000-4000-8000-000000000001",
           "error": {
-            "code": "free_agent_mode_unavailable",
-            "message": "free_agent_mode_unavailable"
+            "code": "provider_change_requires_preview",
+            "message": "Preview and apply the provider change before waking this agent."
           },
           "status": "rejected",
           "version": 1
@@ -1113,17 +1112,17 @@
               },
               "model": {
                 "editable": "sleeping",
-                "value": "default"
+                "value": "sonnet"
               },
               "name": {
                 "editable": "sleeping",
                 "value": "bright-otter"
               },
               "orchestrator": {
-                "changeStartsNewSession": false,
+                "changeStartsNewSession": true,
                 "editable": "sleeping",
                 "resolved": "claude-code",
-                "value": "claude-code"
+                "value": null
               },
               "persona": {
                 "editable": "never",
@@ -1306,17 +1305,17 @@
               },
               "model": {
                 "editable": "sleeping",
-                "value": "default"
+                "value": "sonnet"
               },
               "name": {
                 "editable": "sleeping",
                 "value": "bright-otter"
               },
               "orchestrator": {
-                "changeStartsNewSession": false,
+                "changeStartsNewSession": true,
                 "editable": "sleeping",
                 "resolved": "claude-code",
-                "value": "claude-code"
+                "value": null
               },
               "persona": {
                 "editable": "never",
@@ -1353,8 +1352,8 @@
           "commandId": "cmd_077",
           "epoch": "00000000-0000-4000-8000-000000000001",
           "error": {
-            "code": "access_unavailable",
-            "message": "Full access isn't a level Codex can start at."
+            "code": "provider_change_requires_preview",
+            "message": "Preview and apply the provider change before waking this agent."
           },
           "status": "rejected",
           "version": 1
@@ -1619,17 +1618,17 @@
               },
               "model": {
                 "editable": "sleeping",
-                "value": "default"
+                "value": "sonnet"
               },
               "name": {
                 "editable": "sleeping",
                 "value": "bright-otter"
               },
               "orchestrator": {
-                "changeStartsNewSession": false,
+                "changeStartsNewSession": true,
                 "editable": "sleeping",
                 "resolved": "claude-code",
-                "value": "claude-code"
+                "value": null
               },
               "persona": {
                 "editable": "never",
@@ -2273,17 +2272,17 @@
               },
               "model": {
                 "editable": "sleeping",
-                "value": "default"
+                "value": "sonnet"
               },
               "name": {
                 "editable": "sleeping",
                 "value": "bright-otter"
               },
               "orchestrator": {
-                "changeStartsNewSession": false,
+                "changeStartsNewSession": true,
                 "editable": "sleeping",
                 "resolved": "claude-code",
-                "value": "claude-code"
+                "value": null
               },
               "persona": {
                 "editable": "never",
@@ -2682,6 +2681,30 @@
         "body": {
           "commandId": "cmd_135",
           "epoch": "00000000-0000-4000-8000-000000000001",
+          "error": {
+            "code": "provider_change_requires_preview",
+            "message": "Preview and apply the provider change before waking this agent."
+          },
+          "status": "rejected",
+          "version": 1
+        },
+        "status": 409
+      }
+    },
+    {
+      "name": "invalid_model (Dispatcher)",
+      "request": {
+        "agentId": "durable_dispatcher",
+        "commandId": "cmd_136",
+        "epoch": "00000000-0000-4000-8000-000000000001",
+        "model": "opus",
+        "type": "agent.update",
+        "version": 1
+      },
+      "response": {
+        "body": {
+          "commandId": "cmd_136",
+          "epoch": "00000000-0000-4000-8000-000000000001",
           "result": {
             "agentId": "durable_dispatcher",
             "isDispatcher": true,
@@ -2709,19 +2732,38 @@
             ],
             "orchestration": null,
             "projectId": "__dispatcher__",
-            "sessionReset": true,
             "settings": {
               "access": {
                 "applies": "next_start",
                 "choices": [
                   {
+                    "description": "Reads and plans. Makes no changes.",
+                    "id": "plan",
+                    "label": "Plan"
+                  },
+                  {
                     "description": "Asks before edits and commands.",
                     "id": "ask",
                     "label": "Ask first"
+                  },
+                  {
+                    "description": "Makes file edits without asking. Asks before commands.",
+                    "id": "auto_edit",
+                    "label": "Auto-accept edits"
+                  },
+                  {
+                    "description": "A check decides what needs your approval. It can be wrong.",
+                    "id": "auto",
+                    "label": "Auto"
+                  },
+                  {
+                    "description": "Runs everything without asking.",
+                    "id": "full_access",
+                    "label": "Full access"
                   }
                 ],
                 "default": "ask",
-                "editable": "never",
+                "editable": "always",
                 "startsAt": "ask",
                 "value": "ask"
               },
@@ -2790,12 +2832,12 @@
                 "value": null
               },
               "freeAgentMode": {
-                "editable": "never",
+                "editable": "always",
                 "value": false
               },
               "hasImageIcon": false,
               "idleSleep": {
-                "applies": false,
+                "applies": true,
                 "editable": "always",
                 "minutes": 30,
                 "source": "agent",
@@ -2803,25 +2845,25 @@
               },
               "model": {
                 "editable": "always",
-                "value": "default"
+                "value": "opus"
               },
               "name": {
                 "editable": "never",
                 "value": "Dispatcher"
               },
               "orchestrator": {
-                "changeStartsNewSession": false,
+                "changeStartsNewSession": true,
                 "editable": "always",
-                "resolved": "codex-cli",
-                "value": "codex-cli"
+                "resolved": "claude-code",
+                "value": "claude-code"
               },
               "persona": {
                 "editable": "never",
                 "value": null
               },
               "runtime": {
-                "editable": "never",
-                "resolved": "terminal",
+                "editable": "always",
+                "resolved": "chat",
                 "value": "chat"
               }
             },
@@ -2832,30 +2874,6 @@
           "version": 1
         },
         "status": 200
-      }
-    },
-    {
-      "name": "invalid_model (Dispatcher)",
-      "request": {
-        "agentId": "durable_dispatcher",
-        "commandId": "cmd_136",
-        "epoch": "00000000-0000-4000-8000-000000000001",
-        "model": "opus",
-        "type": "agent.update",
-        "version": 1
-      },
-      "response": {
-        "body": {
-          "commandId": "cmd_136",
-          "epoch": "00000000-0000-4000-8000-000000000001",
-          "error": {
-            "code": "invalid_model",
-            "message": "opus isn't a model this CLI lists."
-          },
-          "status": "rejected",
-          "version": 1
-        },
-        "status": 400
       }
     },
     {
