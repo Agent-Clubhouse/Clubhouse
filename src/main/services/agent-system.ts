@@ -323,20 +323,30 @@ export const RESUME_BLOCKED_NOTICE = "That session kept failing every turn, so i
 export async function spawnAgent(params: SpawnAgentParams): Promise<void> {
   // Quit and update close this before stopping runtimes (#2053).
   assertLaunchesOpen();
-  if (params.kind === 'durable' && !managedProviderPlatformCapability().supported) {
-    let config: DurableAgentConfig | null;
-    try { config = await getDurableConfig(params.projectPath, params.agentId, { forLaunch: true }); }
-    catch { // telemetry-exempt: preserve the existing fail-closed launch error before activation effects.
-      throw tagError(new Error('Cannot verify the saved execution policy. Open this agent’s Settings and choose Restore saved backup, or repair .clubhouse/agents.json before starting it.'), 'preflight_failed');
-    }
-    if (config?.providerTransition || (params.strictManagedDelivery && config?.managed)) assertManagedProviderPlatform();
-  }
-  const quickRun = params.kind === 'quick' ? beginQuickAgentRun(params) : undefined;
-  const spawn = withManagedActivationLaunch(params, () => isAgentRunning(params.agentId), (managed) => {
-    assertProviderSelection(params.agentId, params.orchestrator);
-    return withLocalCausalInput(params.agentId, params.causalTaskId, params.mission, () => spawnAgentTracked(params, managed), !params.mission);
-  });
+  let quickRun: ReturnType<typeof beginQuickAgentRun> | undefined;
+  // Register before calling preflight: even its synchronous callbacks may drain.
+  let complete!: () => void; let fail!: (error: unknown) => void;
+  const spawn = new Promise<void>((resolve, reject) => { complete = resolve; fail = reject; });
   inflightSpawns.add(spawn);
+  const launch = async () => {
+    if (params.kind === 'durable' && !managedProviderPlatformCapability().supported) {
+      let config: DurableAgentConfig | null;
+      try { config = await getDurableConfig(params.projectPath, params.agentId, { forLaunch: true }); }
+      catch { // telemetry-exempt: preserve the existing fail-closed launch error before activation effects.
+        throw tagError(new Error('Cannot verify the saved execution policy. Open this agent’s Settings and choose Restore saved backup, or repair .clubhouse/agents.json before starting it.'), 'preflight_failed');
+      }
+      if (config?.providerTransition || (params.strictManagedDelivery && config?.managed)) assertManagedProviderPlatform();
+    }
+    // Shutdown may have closed launches while the platform read was pending.
+    assertLaunchesOpen();
+    quickRun = params.kind === 'quick' ? beginQuickAgentRun(params) : undefined;
+    return withManagedActivationLaunch(params, () => isAgentRunning(params.agentId), (managed) => {
+      assertProviderSelection(params.agentId, params.orchestrator);
+      return withLocalCausalInput(params.agentId, params.causalTaskId, params.mission, () => spawnAgentTracked(params, managed), !params.mission);
+    });
+  };
+  // Invoke synchronously to preserve existing entry timing on supported hosts.
+  void launch().then(complete, fail);
   try {
     await spawn;
   } catch (error) {

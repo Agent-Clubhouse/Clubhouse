@@ -541,7 +541,9 @@ describe('agent-system', () => {
       }
     });
 
-    it('a spawn already past the entry check doesn\'t start its terminal once shutdown closed launches', async () => {
+    it.each(['darwin', 'win32'])('a spawn already past the entry check doesn\'t start its terminal once shutdown closed launches (%s)', async (hostPlatform) => {
+      const platform = Object.getOwnPropertyDescriptor(process, 'platform')!;
+      Object.defineProperty(process, 'platform', { ...platform, value: hostPlatform });
       const { closeLaunches, reopenLaunches, LaunchesClosedError } = await import('./launch-gate');
       const { whenSpawnsSettled } = await import('./agent-system');
       let release!: () => void;
@@ -549,6 +551,7 @@ describe('agent-system', () => {
       // Quit lands while the spawn reads the agent's config.
       mockGetDurableConfig.mockImplementationOnce((async () => { await gate; return null; }) as never);
       const spawn = spawnAgent({ agentId: 'agent-1', projectPath: '/my/project', cwd: '/my/project', kind: 'durable' });
+      void spawn.catch(() => {}); // Attach immediately while the test holds the read.
       let settled = false;
       const drained = whenSpawnsSettled().then(() => { settled = true; });
       try {
@@ -560,7 +563,41 @@ describe('agent-system', () => {
         await drained;
         expect(mockPtySpawn).not.toHaveBeenCalled();
       } finally {
-        reopenLaunches();
+        release(); await spawn.catch(() => {}); await drained;
+        Object.defineProperty(process, 'platform', platform); reopenLaunches();
+      }
+    });
+
+    it('tracks a reentrant Windows platform read and rechecks shutdown before activation', async () => {
+      const { closeLaunches, reopenLaunches, LaunchesClosedError } = await import('./launch-gate');
+      const { whenSpawnsSettled } = await import('./agent-system');
+      const platform = Object.getOwnPropertyDescriptor(process, 'platform')!;
+      Object.defineProperty(process, 'platform', { ...platform, value: 'win32' });
+      const activation = vi.spyOn(managedActivation, 'withManagedActivationLaunch');
+      let release!: () => void; let entered!: () => void; let settled = false;
+      const gate = new Promise<void>((resolve) => { release = resolve; });
+      const readEntered = new Promise<void>((resolve) => { entered = resolve; });
+      let drained = Promise.resolve();
+      mockGetDurableConfig.mockImplementationOnce((async () => {
+        // A synchronous callback during the first read must already see this spawn.
+        drained = whenSpawnsSettled().then(() => { settled = true; });
+        closeLaunches('quitting'); entered();
+        await gate; return null;
+      }) as never);
+      const spawn = spawnAgent({ agentId: 'agent-1', projectPath: '/my/project', cwd: '/my/project', kind: 'durable' });
+      void spawn.catch(() => {});
+      try {
+        await readEntered; await new Promise((resolve) => setTimeout(resolve, 0));
+        expect(settled).toBe(false); expect(activation).not.toHaveBeenCalled();
+        release(); await expect(spawn).rejects.toBeInstanceOf(LaunchesClosedError); await drained;
+        expect(settled).toBe(true); expect(activation).not.toHaveBeenCalled();
+        expect(mockGetDurableConfig).toHaveBeenCalledTimes(1);
+        expect((await import('./agent-config')).initializeDurableProject).not.toHaveBeenCalled();
+        expect(mockCleanupStaleJsonInTomlConfigs).not.toHaveBeenCalled(); expect(mockDeliverForSpawn).not.toHaveBeenCalled();
+        expect(mockPtySpawn).not.toHaveBeenCalled(); expect(mockTryStartChatAgent).not.toHaveBeenCalled();
+      } finally {
+        release(); await spawn.catch(() => {}); await drained; activation.mockRestore();
+        Object.defineProperty(process, 'platform', platform); reopenLaunches();
       }
     });
 
