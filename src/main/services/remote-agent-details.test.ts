@@ -98,7 +98,7 @@ const read = async () => {
   return response.body as RemoteAgentDetails;
 };
 describe('host selected-agent Details projections', () => {
-  it.each(['same', 'missing-source', 'legacy-source', 'broken-index', 'missing-index', 'withheld', 'truncated', 'missing-controller', 'wrong-role', 'name-collision', 'controller-late', 'grants-late', 'description-late', 'source-late', 'switch-late', 'switch-off', 'switch-unknown', 'connected-off', 'revoked'] as const)('composes selected passive Dispatcher metadata and final receipts: %s', async (mode) => {
+  it.each(['same', 'missing-source', 'legacy-source', 'broken-index', 'missing-index', 'withheld', 'truncated', 'missing-controller', 'wrong-role', 'name-collision', 'controller-late', 'grants-late', 'description-late', 'source-late', 'switch-late', 'switch-off', 'switch-unknown', 'connected-off', 'revoked', 'both', 'both-level-late', 'both-controller-late', 'both-revoked'] as const)('composes selected passive Dispatcher metadata and final receipts: %s', async (mode) => {
     const root = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), 'clubhouse-details-dispatcher-')));
     const getPath = vi.spyOn(app, 'getPath').mockReturnValue(root); resetAllSettingsStoresForTests(); m.base = root; m.realWitness = true; m.realDispatcher = true;
     const selectedFolder = path.join(root, 'project'), controllerFolder = path.join(root, 'dispatcher');
@@ -114,7 +114,9 @@ describe('host selected-agent Details projections', () => {
       return { agent: mode === 'name-collision' ? { ...controller, id: 'other', name: 'controller1' } : controller, project: mode === 'wrong-role' ? selectedProject : controllerProject };
     });
     m.dispatcher.mockReturnValue({ agentId: mode === 'missing-controller' ? null : 'controller1', chatAgentId: 'chat1' });
-    m.policies.mockReturnValue(new Map([['a1', { ...ORCHESTRATION_DEFAULTS, connectToDispatcher: mode !== 'connected-off' }]]));
+    m.policies.mockReturnValue(new Map([['a1', { ...ORCHESTRATION_DEFAULTS, orchestrate: mode.startsWith('both'), connectToDispatcher: mode !== 'connected-off' }]]));
+    const liveRegistration = { projectPath: selectedFolder, cwd: selectedFolder, runtime: 'pty', orchestrator: 'claude-code', nonce: 'PRIVATE_CURRENT_NONCE', launchAccess: { freeAgentMode: true, permissionMode: 'auto', access: 'auto' } };
+    if (mode.startsWith('both')) { m.running.mockReturnValue(true); m.registration.mockReturnValue(liveRegistration); }
     await fs.writeFile(path.join(root, 'dispatcher-settings.json'), mode === 'switch-unknown' ? '{broken' : JSON.stringify({ enabled: mode !== 'switch-off' }));
     const grantsFile = path.join(root, 'agent-grants.json'); await fs.writeFile(grantsFile, JSON.stringify({ agents: { controller1: { changes: [{ action: 'agent.restart', target: { kind: 'any' }, mode: 'allow' }] }, PRIVATE_UNRELATED: { changes: 'PRIVATE_GRANT' } } }));
     const index = path.join(root, 'dispatcher-agent-cards.json'), memory = path.join(root, 'memory'); await fs.mkdir(memory);
@@ -134,19 +136,20 @@ describe('host selected-agent Details projections', () => {
     const disk = async (folder = root): Promise<unknown> => Object.fromEntries(await Promise.all((await fs.readdir(folder)).sort().map(async (name) => { const file = path.join(folder, name), stat = await fs.lstat(file); return [name, stat.isDirectory() ? { ino: stat.ino, files: await disk(file) } : { ino: stat.ino, mtimeMs: stat.mtimeMs, bytes: (await fs.readFile(file)).toString('base64') }]; })));
     const before = await disk(); let allowed = true;
     m.canvases.mockImplementation(async () => {
-      if (mode === 'controller-late') await fs.writeFile(controllerFile, JSON.stringify([{ ...controller, disposedAt: '2026-11-19' }]));
+      if (mode === 'controller-late' || mode === 'both-controller-late') await fs.writeFile(controllerFile, JSON.stringify([{ ...controller, disposedAt: '2026-11-19' }]));
       if (mode === 'grants-late') await fs.writeFile(grantsFile, JSON.stringify({ agents: { controller1: { changes: [{ action: 'agent.message', target: { kind: 'connected' }, mode: 'off' }] } } }));
       if (mode === 'description-late') await fs.writeFile(pageFile, renderAgentPage('Title', { card: 'Owns: New selected component', notes: '' }));
       if (mode === 'source-late') setAgentCardSource(null);
       if (mode === 'switch-late') await fs.writeFile(path.join(root, 'dispatcher-settings.json'), '{"enabled":false}');
-      if (mode === 'revoked') allowed = false;
+      if (mode === 'revoked' || mode === 'both-revoked') allowed = false;
+      if (mode === 'both-level-late') liveRegistration.launchAccess = { freeAgentMode: false, permissionMode: 'auto', access: 'plan' };
       return [];
     });
     try {
       const response = await readRemoteAgentDetails('a1', () => allowed);
-      const late = ['controller-late', 'grants-late', 'description-late', 'source-late', 'switch-late'].includes(mode);
-      expect.soft(response.status).toBe(mode === 'revoked' ? 403 : late ? 409 : 200);
-      if (late || mode === 'revoked') expect.soft(JSON.stringify(response.body)).not.toMatch(/cards|providerId|Operations|Selected component/);
+      const late = ['controller-late', 'grants-late', 'description-late', 'source-late', 'switch-late', 'both-level-late', 'both-controller-late'].includes(mode);
+      expect.soft(response.status).toBe((mode === 'revoked' || mode === 'both-revoked') ? 403 : late ? 409 : 200);
+      if (late || mode === 'revoked' || mode === 'both-revoked') expect.soft(JSON.stringify(response.body)).not.toMatch(/cards|providerId|Operations|Selected component/);
       else {
         expect(isRemoteAgentDetails(response.body, 'a1')).toBe(true);
         const card = (response.body as RemoteAgentDetails).cards.find((c) => c.id === 'dispatcher')!;
@@ -162,6 +165,7 @@ describe('host selected-agent Details projections', () => {
           else { expect(card.rows).toContainEqual({ label: 'Owns', value: 'Selected component' }); if (mode === 'withheld') expect(card.notes.join(' ')).toContain('text withheld'); if (mode === 'truncated') expect(card.notes.join(' ')).toContain('fields truncated'); }
           if (!noController) expect(card.rows.some((r) => r.value.includes('Allow · set for every agent'))).toBe(true);
         }
+        if (mode === 'both') expect((response.body as RemoteAgentDetails).cards.find((c) => c.id === 'orchestrate')?.rows).toContainEqual({ label: 'Helper access ceiling', value: 'At most Auto, Selected’s level now.' });
         expect.soft(JSON.stringify(response.body)).not.toMatch(/PRIVATE_|receipts|primarySignature|"current":/);
       }
       expect.soft(ordinary).not.toHaveBeenCalled();
