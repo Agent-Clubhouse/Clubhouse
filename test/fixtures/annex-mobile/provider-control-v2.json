@@ -8966,7 +8966,7 @@
           "hosts": [
             "127.0.0.1"
           ],
-          "port": 53462
+          "port": 7432
         },
         "slashCommands": {
           "event": "commands_available",

@@ -3888,6 +3888,7 @@ describe('Annex mobile contract fixtures', { timeout: TEST_TIMEOUT_MS }, () => {
     const windowsBefore = structuredClone(config); const windowsFlushes = W.providerV2Flushes; const windowsWrites = W.providerV2Writes; const windowsSpawns = W.providerV2Calls;
     W.providerPlatform = 'win32';
     const windowsCapabilities = await send('GET', '/api/v1/mobile/capabilities');
+    if (windowsCapabilities.body.routes) windowsCapabilities.body.routes.port = 7432; // Match the existing capability fixture's OS-port normalization.
     expect(windowsCapabilities.body.providerControl.version).toBe(1);
     expect(windowsCapabilities.body.providerControlV2.managedPlatform).toMatchObject({ current: 'win32', supported: false });
     const windowsHistoricalApplyReplay = await command('v2: historical supported-host Apply replay is not new authority', { type: 'agent.providerChange', agentId: config.id, provider: 'codex-cli', contractVersion: 2, expectedState: preview.body.result.expectedState }, { commandId: 'provider-v2-apply' });
