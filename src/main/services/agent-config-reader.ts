@@ -7,7 +7,8 @@ import { isDisposedAgent } from '../../shared/agent-helpers';
 import { DISPATCHER_PROJECT_ID } from '../../shared/dispatcher-types';
 import type { ManagedPartContent } from '../../shared/managed-agents-types';
 import { peekDurableConfigs, peekDurableConfigsChecked } from './agent-config';
-import { getDispatcherState } from './dispatcher/dispatcher-service';
+import { getDispatcherState, getDispatcherAgentId, getDispatcherChatAgentId } from './dispatcher/dispatcher-service';
+import { getDispatcherPath, getDispatcherChatPath } from './dispatcher/dispatcher-paths';
 import { peekProjects, peekProjectsChecked } from './project-store';
 import { resolveOrchestrator } from './agent-system';
 import { managedAgents } from './managed-agents';
@@ -81,20 +82,31 @@ export interface AgentConfigTarget {
 
 /** Resolve exactly one snapshot. Even an id must not bypass an unknown project. */
 export async function resolveAgentConfigTarget(reference: string, project?: string, options: { strict?: boolean } = {}): Promise<AgentConfigTarget> {
-  const dispatcher = getDispatcherState();
+  // A strict identity read must not initialize global settings, recover files,
+  // or ask for unrelated Dispatcher policy. These ids are already cached; the
+  // selected identity is still verified against its strict primary inventory.
+  const dispatcher = options.strict ? null : getDispatcherState();
   // The chat and controller are distinct registered identities outside the project list.
   // Exact ids resolve only in their authoritative host folder, including while off.
-  const role = [
-    { id: dispatcher.config?.id, path: dispatcher.path },
-    { id: dispatcher.chatAgentId, path: dispatcher.chatPath },
-  ].find((r) => r.id === reference);
+  const roles = options.strict ? [
+    { id: getDispatcherAgentId(), path: getDispatcherPath() },
+    { id: getDispatcherChatAgentId(), path: getDispatcherChatPath() },
+  ] : [
+    { id: dispatcher!.config?.id, path: dispatcher!.path },
+    { id: dispatcher!.chatAgentId, path: dispatcher!.chatPath },
+  ];
+  const role = roles.find((r) => r.id === reference);
+  if (options.strict && role && project !== undefined) throw new Error('No registered agent matches that reference.');
   if (role && project === undefined) {
     if (!role.path) throw new Error('No registered agent matches that reference.');
     const inventory = options.strict ? await peekDurableConfigsChecked(role.path, { strict: true })
       : { agents: await peekDurableConfigs(role.path), readable: true };
     if (!inventory.readable) throw new Error('Dispatcher agent inventory is unreadable without recovery.');
     const agent = inventory.agents.find((a) => a.id === reference && !isDisposedAgent(a));
-    if (!agent) throw new Error('No registered agent matches that reference.');
+    if (!agent || options.strict && ![
+      { id: getDispatcherAgentId(), path: getDispatcherPath() },
+      { id: getDispatcherChatAgentId(), path: getDispatcherChatPath() },
+    ].some((current) => current.id === reference && current.path === role.path)) throw new Error('No registered agent matches that reference.');
     return structuredClone({ agent, project: { id: DISPATCHER_PROJECT_ID, path: role.path, name: 'Dispatcher' } });
   }
   const registered = options.strict ? await peekProjectsChecked({ strict: true }) : null;
@@ -108,13 +120,17 @@ export async function resolveAgentConfigTarget(reference: string, project?: stri
   };
   const agents = (await Promise.all(projects.map(async (p) => (await configs(p.path))
     .filter((agent) => !isDisposedAgent(agent)).map((agent) => ({ agent, project: p }))))).flat();
-  if (dispatcher.config && dispatcher.path && !agents.some(({ agent }) => agent.id === dispatcher.config!.id)) agents.push({ agent: dispatcher.config, project: { id: 'dispatcher', path: dispatcher.path, name: 'Dispatcher' } });
+  if (dispatcher?.config && dispatcher.path && !agents.some(({ agent }) => agent.id === dispatcher.config!.id)) agents.push({ agent: dispatcher.config, project: { id: 'dispatcher', path: dispatcher.path, name: 'Dispatcher' } });
   const projectMatches = project === undefined ? projects : projects.filter((p) => [p.id, p.path, p.name, p.displayName].some((value) => value?.toLowerCase() === project.toLowerCase()));
   if (project !== undefined && projectMatches.length !== 1) throw new Error('No unique registered project matches that reference.');
   const ids = agents.filter(({ agent }) => agent.id === reference);
   const matches = ids.length ? ids : agents.filter(({ agent, project: p }) => agent.name.toLowerCase() === reference.toLowerCase()
     && (project === undefined || projectMatches[0].path === p.path));
   if (matches.length !== 1) throw new Error(matches.length ? 'Agent name is ambiguous; use its id.' : 'No registered agent matches that reference.');
+  // Never reclassify a newly admitted role identity as an ordinary project agent.
+  if (options.strict && [getDispatcherAgentId(), getDispatcherChatAgentId()].includes(matches[0].agent.id)) {
+    throw new Error('The registered role identity changed while reading.');
+  }
   return structuredClone(matches[0]);
 }
 

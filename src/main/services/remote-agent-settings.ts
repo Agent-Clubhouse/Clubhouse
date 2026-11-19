@@ -20,7 +20,7 @@ export async function readRemoteAgentSettings(agentId: string, authorized: () =>
   if (!authorized()) return refused();
   try {
     let target: Awaited<ReturnType<typeof resolveAgentConfigTarget>>;
-    try { target = await resolveAgentConfigTarget(agentId); }
+    try { target = await resolveAgentConfigTarget(agentId, undefined, { strict: true }); }
     catch (error) { // telemetry-exempt: distinguish a missing target from a bounded read error without exposing host details.
       if (!authorized()) return refused();
       return error instanceof Error && error.message === 'No registered agent matches that reference.'

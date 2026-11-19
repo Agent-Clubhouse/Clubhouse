@@ -63,6 +63,14 @@ export function resetAllSettingsStoresForTests(): void {
 
 export type PeekedSettings = Record<string, unknown> | 'missing' | 'unreadable';
 
+/** Opt-in bound for passive display readers; ordinary startup callers retain their existing read. */
+export interface SettingsPeekOptions { maxBytes: number }
+const MAX_SETTINGS_PEEK_BYTES = 1024 * 1024;
+const validPeekLimit = (limit: number) => Number.isSafeInteger(limit) && limit > 0 && limit <= MAX_SETTINGS_PEEK_BYTES;
+const samePeekFile = (a: fs.BigIntStats, b: fs.BigIntStats) => a.dev === b.dev && a.ino === b.ino
+  && a.size === b.size && a.mtimeNs === b.mtimeNs && a.ctimeNs === b.ctimeNs;
+const decodePeek = (bytes: Buffer): PeekedSettings => parsePeeked(new TextDecoder('utf-8', { fatal: true }).decode(bytes));
+
 function readErrorKind(err: unknown): 'missing' | 'unreadable' {
   return (err as NodeJS.ErrnoException)?.code === 'ENOENT' ? 'missing' : 'unreadable';
 }
@@ -82,7 +90,8 @@ function parsePeeked(raw: string): Record<string, unknown> | 'unreadable' {
  * telling a saved value from an absent one (#2653). Reads and nothing else: no
  * cache, no recovery. A save still queued shows on the next read.
  */
-export async function peekStoredSettings(filename: string): Promise<PeekedSettings> {
+export async function peekStoredSettings(filename: string, options?: SettingsPeekOptions): Promise<PeekedSettings> {
+  if (options) return boundedSettingsPeek(filename, options.maxBytes);
   let raw: string;
   try {
     raw = await fs.promises.readFile(path.join(app.getPath('userData'), filename), 'utf-8');
@@ -94,7 +103,8 @@ export async function peekStoredSettings(filename: string): Promise<PeekedSettin
 }
 
 /** `peekStoredSettings` for a decision that can't wait: the startup path, or a telemetry gate. */
-export function peekStoredSettingsSync(filename: string): PeekedSettings {
+export function peekStoredSettingsSync(filename: string, options?: SettingsPeekOptions): PeekedSettings {
+  if (options) return boundedSettingsPeekSync(filename, options.maxBytes);
   let raw: string;
   try {
     raw = fs.readFileSync(path.join(app.getPath('userData'), filename), 'utf-8');
@@ -103,6 +113,53 @@ export function peekStoredSettingsSync(filename: string): PeekedSettings {
     return readErrorKind(err);
   }
   return parsePeeked(raw);
+}
+
+/** No SettingsStore load, migration, backup, temp sweep, cache warming, or write. */
+async function boundedSettingsPeek(filename: string, maxBytes: number): Promise<PeekedSettings> {
+  if (!validPeekLimit(maxBytes)) return 'unreadable';
+  const file = path.join(app.getPath('userData'), filename);
+  let handle: Awaited<ReturnType<typeof fs.promises.open>>;
+  try { handle = await fs.promises.open(file, fs.constants.O_RDONLY | fs.constants.O_NONBLOCK); }
+  catch (error) { return readErrorKind(error); } // telemetry-exempt: caller reports uncertainty
+  try {
+    const before = await handle.stat({ bigint: true });
+    if (!before.isFile() || before.size > BigInt(maxBytes)) return 'unreadable';
+    const bytes = Buffer.alloc(Number(before.size));
+    let read = 0;
+    while (read < bytes.length) {
+      const next = await handle.read(bytes, read, bytes.length - read, read);
+      if (!next.bytesRead) return 'unreadable';
+      read += next.bytesRead;
+    }
+    if (!samePeekFile(before, await handle.stat({ bigint: true }))
+      || !samePeekFile(before, await fs.promises.stat(file, { bigint: true }))) return 'unreadable';
+    return decodePeek(bytes);
+  } catch { return 'unreadable'; } // telemetry-exempt: caller reports uncertainty
+  finally { await handle.close(); }
+}
+
+function boundedSettingsPeekSync(filename: string, maxBytes: number): PeekedSettings {
+  if (!validPeekLimit(maxBytes)) return 'unreadable';
+  const file = path.join(app.getPath('userData'), filename);
+  let handle: number;
+  try { handle = fs.openSync(file, fs.constants.O_RDONLY | fs.constants.O_NONBLOCK); }
+  catch (error) { return readErrorKind(error); } // telemetry-exempt: caller reports uncertainty
+  try {
+    const before = fs.fstatSync(handle, { bigint: true });
+    if (!before.isFile() || before.size > BigInt(maxBytes)) return 'unreadable';
+    const bytes = Buffer.alloc(Number(before.size));
+    let read = 0;
+    while (read < bytes.length) {
+      const next = fs.readSync(handle, bytes, read, bytes.length - read, read);
+      if (!next) return 'unreadable';
+      read += next;
+    }
+    if (!samePeekFile(before, fs.fstatSync(handle, { bigint: true }))
+      || !samePeekFile(before, fs.statSync(file, { bigint: true }))) return 'unreadable';
+    return decodePeek(bytes);
+  } catch { return 'unreadable'; } // telemetry-exempt: caller reports uncertainty
+  finally { fs.closeSync(handle); }
 }
 
 const MAX_RECOVERY_COPIES = 100;

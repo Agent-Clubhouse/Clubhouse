@@ -30,6 +30,7 @@ describe('host Settings summary', () => {
   it('allowlists bounded metadata without instruction content, paths, provider config or grants', async () => {
     const response = await readRemoteAgentSettings('a1', () => true);
     expect(response.status).toBe(200);
+    expect(mocks.resolve).toHaveBeenCalledWith('a1', undefined, { strict: true });
     expect(isRemoteAgentSettings(response.body, 'a1')).toBe(true);
     expect(response.body).toMatchObject({ readOnly: true, providerId: 'claude-code', provider: 'Claude Code', runtime: 'chat', access: 'Full access', executionPolicy: 'on-request · workspace-write',
       setup: { managed: true, template: 'Host template', skills: ['Skill'], mcps: ['MCP'], instructions: '1 block', waiting: true } });
