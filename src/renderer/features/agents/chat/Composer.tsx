@@ -495,6 +495,8 @@ export interface ComposerProps {
   running: boolean;
   disabled?: boolean;
   disabledReason?: string;
+  /** Waiting for send acknowledgement; editing the next draft remains available. */
+  sending?: boolean;
   level: PermissionLevel | null;
   model: string | null;
   /** The session runs the provider's default model and hasn't said which yet (#2293). */
@@ -523,7 +525,7 @@ export interface ComposerProps {
   attachments?: ComposerAttachment[];
   onAttachmentsChange?: (attachments: ComposerAttachment[]) => void;
   /** Staged attachment ids, only passed when there are some. */
-  onSend: (text: string, action: SendAction, attachmentIds?: string[]) => void;
+  onSend: (text: string, action: SendAction, attachmentIds?: string[]) => void | boolean;
   onStop: () => void;
   onLevelChange: (level: PermissionLevel) => void;
   /** Omitted effort keeps the current one; null returns it to the provider's default (capabilities.effortDefault). */
@@ -672,9 +674,11 @@ export function Composer(props: ComposerProps) {
 
   const submit = (action: SendAction) => {
     const trimmed = text.trim();
-    if ((!trimmed && !attachments.length) || disabled) return;
-    if (attachments.length) props.onSend(trimmed, action, attachments.map((a) => a.id));
-    else props.onSend(trimmed, action);
+    if ((!trimmed && !attachments.length) || disabled || props.sending) return;
+    const accepted = attachments.length
+      ? props.onSend(trimmed, action, attachments.map((a) => a.id))
+      : props.onSend(trimmed, action);
+    if (accepted === false) return;
     setText('');
     // A failed send restores this same text from outside; the caret read from it no longer counts.
     setCaretAt(null);
@@ -795,7 +799,7 @@ export function Composer(props: ComposerProps) {
         <>
           <button
             type="button"
-            disabled={empty || disabled}
+            disabled={empty || disabled || props.sending}
             onClick={() => submit(modes.primary)}
             className="h-7 flex items-center gap-1.5 px-2.5 rounded-md bg-ctp-accent text-ctp-on-accent text-[12px] font-medium disabled:opacity-40 whitespace-nowrap"
             data-testid="chat-send-primary"
@@ -805,7 +809,7 @@ export function Composer(props: ComposerProps) {
           {modes.secondary && (
             <button
               type="button"
-              disabled={empty || disabled}
+              disabled={empty || disabled || props.sending}
               onClick={() => submit(modes.secondary!)}
               className="h-7 flex items-center gap-1.5 px-2.5 rounded-md bg-surface-0 text-ctp-subtext1 text-[12px] font-medium disabled:opacity-40 whitespace-nowrap"
               data-testid="chat-send-secondary"
@@ -829,7 +833,7 @@ export function Composer(props: ComposerProps) {
       ) : (
         <button
           type="button"
-          disabled={empty || disabled}
+          disabled={empty || disabled || props.sending}
           onClick={() => submit('send')}
           aria-label="Send"
           className="w-[30px] h-[30px] rounded-lg bg-ctp-accent text-ctp-on-accent grid place-items-center disabled:opacity-40"
