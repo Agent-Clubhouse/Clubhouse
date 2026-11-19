@@ -23,7 +23,7 @@ it('does not initialize the layout or sweep cold settings when no session layout
   flags({}); temp('dispatcher-settings.json'); temp('experimental-settings.json');
   const ordinary = vi.spyOn(experimental, 'getSettings'), before = disk();
   expect(peekNewChromeEnabledForDisplay()).toBeUndefined();
-  expect(readDispatcherEnablementForDisplay()).toMatchObject({ enabled: { state: 'unavailable' }, reason: { state: 'unavailable' } });
+  expect.soft(readDispatcherEnablementForDisplay()).toMatchObject({ enabled: { state: 'unavailable' }, reason: { state: 'unavailable' } });
   expect.soft(ordinary).not.toHaveBeenCalled(); expect.soft(peekNewChromeEnabledForDisplay()).toBeUndefined(); expect.soft(disk()).toEqual(before);
 });
 it.each([false, true])('keeps explicit saved switch=%s independent of unreadable flags and a missing layout cache', (enabled) => {
@@ -38,6 +38,7 @@ it.each(['syntax', 'array', 'null', 'field', 'oversized'])('keeps %s saved switc
   if (kind === 'syntax') fs.writeFileSync(path.join(root, 'dispatcher-settings.json'), '{broken');
   else dispatcher(kind === 'array' ? [] : kind === 'null' ? null : kind === 'field' ? { enabled: 'false' } : { enabled: true, padding: 'x'.repeat(256 * 1024) });
   fs.writeFileSync(path.join(root, 'dispatcher-settings.json.bak'), '{"enabled":true}'); temp('dispatcher-settings.json');
+  if (kind === 'field') { flags({}); expect(newChromeEnabled()).toBe(true); }
   const before = disk(), result = readDispatcherEnablementForDisplay();
   expect.soft(result.enabled.state).toBe('unavailable'); expect.soft(result.reason.state).toBe('unavailable'); expect.soft(disk()).toEqual(before); expect(peekNewChromeEnabledForDisplay()).toBeUndefined();
 });
