@@ -848,13 +848,12 @@ describe('full-server audit inventory over one A to B forward', () => {
   describe.each(['A', 'B'] as const)('R09 %s: partial, blocked by #3715 for post-edit config state', (who) => {
     let answer: WireAnswer;
     const upload = (): Promise<WireAnswer> => who === 'A' ? a.imageUpload(65_535) : b.call('imageUpload', 65_535);
+    // Vitest also inverts beforeEach errors; keep the real probe outside that boundary.
     beforeAll(async () => {
       if (who === 'A') await b.call('initializeProject'); else await a.initializeProject();
       expect((await upload()).status).toBe(200);
       const config = who === 'A' ? await b.call('externalConfigEdit') : await a.externalConfigEdit();
       expect(config).toEqual({ cachedBefore: true, unchanged: true, registered: true, running: true });
-    });
-    beforeEach(async () => {
       expect(await driverOnTarget(who)).toMatchObject({ registered: true, running: true, cached: false });
       answer = await upload();
       if (answer.status !== 200) {
