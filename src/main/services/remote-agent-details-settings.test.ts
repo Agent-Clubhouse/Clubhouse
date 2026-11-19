@@ -8,7 +8,7 @@ import { app } from 'electron';
 import type { AgentConfigTarget } from './agent-config-reader';
 import { ORCHESTRATION_DEFAULTS } from '../../shared/orchestration-policy';
 import { isRemoteAgentDetails, type RemoteAgentDetails } from '../../shared/remote-agent-details';
-const m = vi.hoisted(() => ({ target: vi.fn(), later: vi.fn(), instructionReturned: false, duringInstruction: vi.fn(), duringTemplate: vi.fn(), managed: false, settingsStatus: 0, provider: { id: 'claude-code', displayName: 'Host Claude', conventions: { legacyInstructionsFile: 'CLAUDE.md', configDir: '.claude', mcpConfigFile: '.mcp.json' }, getCapabilities: () => ({ permissions: true }) } }));
+const m = vi.hoisted(() => ({ target: vi.fn(), later: vi.fn(), instructionReturned: false, duringInstruction: vi.fn(), duringTemplate: vi.fn(), managed: false, service: null as { getTemplateForDisplay: (...args: any[]) => Promise<any> } | null, afterSettings: vi.fn(), settingsStatus: 0, provider: { id: 'claude-code', displayName: 'Host Claude', conventions: { legacyInstructionsFile: 'CLAUDE.md', configDir: '.claude', mcpConfigFile: '.mcp.json' }, getCapabilities: () => ({ permissions: true }) } }));
 vi.mock('./agent-config-reader', async (original) => { const actual = await original<typeof import('./agent-config-reader')>(); return { ...actual, resolveAgentConfigTarget: m.target, readResolvedAgentConfig: async (...args: Parameters<typeof actual.readResolvedAgentConfig>) => { const result = await actual.readResolvedAgentConfig(...args); m.instructionReturned = true; await m.duringInstruction(); return result; } }; });
 vi.mock('./read-only-config-target', () => ({ captureReadOnlyConfigTargetWitness: () => ({ current: () => true }) }));
 vi.mock('./read-only-quick-target', () => ({ resolveReadOnlyQuickTarget: async () => null }));
@@ -32,6 +32,7 @@ vi.mock('./clubhouse-mcp/bridge-server', () => ({ getAgentConnection: () => null
 vi.mock('./agent-settings-service', () => ({ readMcpConfig: async () => [], readLaunchWrapper: async () => undefined, readDefaultMcps: async () => [] }));
 vi.mock('./managed-agents', () => ({ managedAgents: () => {
   if (!m.managed) throw new Error('unmanaged must not initialize managed delivery');
+  if (m.service) return m.service;
   return { getTemplateForDisplay: async () => { await m.duringTemplate(); return { name: 'Modeled selected template', source: 'builtin', observedAt: Date.now(), truncated: false }; } };
 }, readManagedStatusForDisplay: async () => {
   if (!m.managed) throw new Error('unmanaged must not initialize managed delivery');
@@ -39,15 +40,18 @@ vi.mock('./managed-agents', () => ({ managedAgents: () => {
 } }));
 vi.mock('./remote-agent-settings', async (original) => {
   const actual = await original<typeof import('./remote-agent-settings')>();
-  return { ...actual, readRemoteAgentSettings: async (...args: Parameters<typeof actual.readRemoteAgentSettings>) => { const result = await actual.readRemoteAgentSettings(...args); m.settingsStatus = result.status; return result; } };
+  return { ...actual, readRemoteAgentSettings: async (...args: Parameters<typeof actual.readRemoteAgentSettings>) => { const result = await actual.readRemoteAgentSettings(...args); m.settingsStatus = result.status; await m.afterSettings(); return result; } };
 });
+import { createManagedAgentsService } from './managed-agents/service';
+import { createManagedStateStore } from './managed-agents/state-store';
+import { createAssetCatalogStore } from './asset-catalog/store';
 import { resetAllSettingsStoresForTests } from './settings-store';
 import { readRemoteAgentDetails } from './remote-agent-details';
 let root: string, target: AgentConfigTarget;
 const put = (name: string, value: unknown) => fs.writeFileSync(path.join(root, name), JSON.stringify(value));
 const disk = () => Object.fromEntries(fs.readdirSync(root).sort().map((name) => { const file = path.join(root, name), stat = fs.statSync(file); return [name, stat.isDirectory() ? fs.readdirSync(file).sort() : { bytes: fs.readFileSync(file).toString('base64'), ino: stat.ino, mtimeMs: stat.mtimeMs }]; }));
 beforeEach(() => {
-  root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'clubhouse-details-settings-composition-'))); vi.spyOn(app, 'getPath').mockReturnValue(root); resetAllSettingsStoresForTests(); m.instructionReturned = false; m.managed = false; m.settingsStatus = 0; m.duringInstruction.mockReset().mockResolvedValue(undefined); m.duringTemplate.mockReset().mockResolvedValue(undefined);
+  root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'clubhouse-details-settings-composition-'))); vi.spyOn(app, 'getPath').mockReturnValue(root); resetAllSettingsStoresForTests(); m.instructionReturned = false; m.managed = false; m.service = null; m.settingsStatus = 0; m.afterSettings.mockReset().mockResolvedValue(undefined); m.duringInstruction.mockReset().mockResolvedValue(undefined); m.duringTemplate.mockReset().mockResolvedValue(undefined);
   target = { agent: { id: 'selected', name: 'Selected', color: '', createdAt: '', orchestrator: 'claude-code', model: 'HOST_SAVED_MODEL', worktreePath: root }, project: { id: 'p', name: 'Project', path: root } };
   m.target.mockReset().mockImplementation(async () => structuredClone(target)); m.later.mockReset().mockResolvedValue(undefined);
   for (const file of ['experimental-settings.json', 'chat-runtime-settings.json', 'free-agent-settings.json', 'chat-idle-settings.json']) {
@@ -76,7 +80,7 @@ it.each(['same', 'instruction', 'runtime', 'legacy-provider', 'revoked'] as cons
 });
 it('shows partial known fields without recovering unreadable settings or inventing a runtime', async () => {
   fs.writeFileSync(path.join(root, 'chat-runtime-settings.json'), '{broken'); const before = disk(), result = await readRemoteAgentDetails('selected', () => true);
-  expect.soft(result.status).toBe(200); expect.soft(isRemoteAgentDetails(result.body, 'selected')).toBe(true);
+  expect(m.settingsStatus).toBe(503); expect.soft(result.status).toBe(200); expect.soft(isRemoteAgentDetails(result.body, 'selected')).toBe(true);
   const value = result.body as RemoteAgentDetails; expect.soft(value.settings).toBeNull();
   expect.soft(value.cards.find((c) => c.id === 'settings')).toMatchObject({ state: 'error', rows: expect.arrayContaining([{ label: 'Next start model', value: 'HOST_SAVED_MODEL' }, { label: 'Next wake', value: 'Unavailable from host settings' }]) });
   expect.soft(disk()).toEqual(before);
@@ -90,7 +94,7 @@ it.each(['instructions', 'template'] as const)('refuses the complete Details res
   else { m.managed = true; target.agent.managed = { version: 1, blocks: [], skills: [], mcps: [], templateId: 'modeled-template' }; m.duringTemplate.mockImplementation(mutate); }
   const result = await readRemoteAgentDetails('selected', () => true);
   expect(m.settingsStatus).toBe(409); expect(fs.readFileSync(settings, 'utf8')).toContain('codex-cli');
-  expect.soft(result.status).toBe(409); expect.soft(JSON.stringify(result.body)).not.toMatch(/providerId|cards|claude-code|Host Claude|HOST_SAVED_MODEL/);
+  expect.soft(result.status).toBe(409); expect.soft(m.later).not.toHaveBeenCalled(); expect.soft(JSON.stringify(result.body)).not.toMatch(/providerId|cards|claude-code|Host Claude|HOST_SAVED_MODEL/);
 });
 it.each(['instructions', 'template'] as const)('keeps revocation dominant when the legacy CLI changes during the Settings %s await', async (during) => {
   delete target.agent.orchestrator; fs.mkdirSync(path.join(root, '.clubhouse'));
@@ -100,4 +104,47 @@ it.each(['instructions', 'template'] as const)('keeps revocation dominant when t
   else { m.managed = true; target.agent.managed = { version: 1, blocks: [], skills: [], mcps: [], templateId: 'modeled-template' }; m.duringTemplate.mockImplementation(mutate); }
   const result = await readRemoteAgentDetails('selected', () => allowed);
   expect(m.settingsStatus).toBe(403); expect.soft(result.status).toBe(403); expect.soft(JSON.stringify(result.body)).not.toMatch(/providerId|cards|claude-code|Host Claude|HOST_SAVED_MODEL/);
+});
+
+it('refuses complete Details after Settings detects a global runtime change during its instruction await', async () => {
+  m.duringInstruction.mockImplementation(async () => { await Promise.resolve(); put('chat-runtime-settings.json', { 'claude-code': { mode: 'terminal' } }); });
+  const result = await readRemoteAgentDetails('selected', () => true);
+  expect(m.settingsStatus).toBe(409); expect.soft(result.status).toBe(409); expect.soft(m.later).not.toHaveBeenCalled(); expect.soft(JSON.stringify(result.body)).not.toMatch(/cards|providerId|HOST_SAVED_MODEL/);
+});
+it('refuses complete Details after Settings detects a real selected template receipt change during its await', async () => {
+  m.managed = true; target.agent.managed = { version: 1, blocks: [], skills: [], mcps: [], templateId: 'chosen-template' };
+  const dir = path.join(root, 'managed'), file = path.join(dir, 'state.json'); fs.mkdirSync(dir);
+  const chosen = { id: 'chosen-template', name: 'Selected template', settings: { privateCredential: 'PRIVATE_TEMPLATE_SETTINGS' } };
+  fs.writeFileSync(file, JSON.stringify({ version: 1, templates: { 'chosen-template': chosen } }));
+  const service = createManagedAgentsService({ catalog: createAssetCatalogStore({ dir: path.join(root, 'catalog') }), state: createManagedStateStore(dir), listProjects: async () => [], listAgents: async () => [], getAgent: async () => null, setManagedSetup: vi.fn(), isRunning: () => false });
+  let observed = false;
+  m.service = { getTemplateForDisplay: async (id, options) => {
+    const prior = options.receipts.length, result = await service.getTemplateForDisplay(id, options), receipts = options.receipts.slice(prior);
+    expect(receipts.length).toBeGreaterThan(0); expect(receipts.every((receipt: { current(): boolean }) => receipt.current())).toBe(true);
+    fs.writeFileSync(file, JSON.stringify({ version: 1, templates: { 'chosen-template': { ...chosen, name: 'Changed template' } } }));
+    expect(receipts.some((receipt: { current(): boolean }) => !receipt.current())).toBe(true); observed = true; return result;
+  } };
+  const result = await readRemoteAgentDetails('selected', () => true);
+  expect(observed).toBe(true); expect(m.settingsStatus).toBe(409); expect.soft(result.status).toBe(409); expect.soft(m.later).not.toHaveBeenCalled(); expect.soft(JSON.stringify(result.body)).not.toMatch(/cards|providerId|HOST_SAVED_MODEL|PRIVATE_TEMPLATE/);
+});
+it('keeps admitted provider evidence guarded when Settings fails unexpectedly before exporting receipts', async () => {
+  delete target.agent.orchestrator; fs.mkdirSync(path.join(root, '.clubhouse'));
+  const file = path.join(root, '.clubhouse', 'settings.json'); fs.writeFileSync(file, '{"orchestrator":"claude-code"}'); let calls = 0;
+  vi.spyOn(m.provider, 'getCapabilities').mockImplementation(() => { if (++calls === 2) { fs.writeFileSync(file, '{"orchestrator":"codex-cli"}'); throw new Error('PRIVATE_CAPABILITY_ERROR'); } return { permissions: true }; });
+  const result = await readRemoteAgentDetails('selected', () => true);
+  expect(m.settingsStatus).toBe(500); expect.soft(result.status).toBe(409); expect.soft(m.later).not.toHaveBeenCalled(); expect.soft(JSON.stringify(result.body)).not.toMatch(/cards|providerId|HOST_SAVED_MODEL|PRIVATE_CAPABILITY/);
+});
+it('honors an actual Settings authority refusal even when the modeled authority is restored before the outer continuation', async () => {
+  let allowed = true; m.duringInstruction.mockImplementation(async () => { allowed = false; }); m.afterSettings.mockImplementation(async () => { allowed = true; });
+  const result = await readRemoteAgentDetails('selected', () => allowed);
+  expect(m.settingsStatus).toBe(403); expect(allowed).toBe(true); expect.soft(result.status).toBe(403); expect.soft(m.later).not.toHaveBeenCalled(); expect.soft(JSON.stringify(result.body)).not.toMatch(/cards|providerId|HOST_SAVED_MODEL/);
+});
+
+it('retains independent provider evidence over a later card await after Settings fails before receipt export', async () => {
+  delete target.agent.orchestrator; fs.mkdirSync(path.join(root, '.clubhouse'));
+  const file = path.join(root, '.clubhouse', 'settings.json'); fs.writeFileSync(file, '{"orchestrator":"claude-code"}'); let calls = 0, changed = false;
+  vi.spyOn(m.provider, 'getCapabilities').mockImplementation(() => { if (++calls === 2) throw new Error('PRIVATE_CAPABILITY_ERROR'); return { permissions: true }; });
+  m.later.mockImplementation(async () => { fs.writeFileSync(file, '{"orchestrator":"codex-cli"}'); changed = true; });
+  const result = await readRemoteAgentDetails('selected', () => true);
+  expect(m.settingsStatus).toBe(500); expect(changed).toBe(true); expect.soft(result.status).toBe(409); expect.soft(JSON.stringify(result.body)).not.toMatch(/cards|providerId|HOST_SAVED_MODEL|PRIVATE_CAPABILITY/);
 });

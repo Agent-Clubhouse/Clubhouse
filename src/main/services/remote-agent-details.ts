@@ -74,6 +74,11 @@ export async function readRemoteAgentDetails(agentId: string, authorized: () => 
     const result: RemoteAgentDetails = { version: 1, readOnly: true, agentId, readAt: Date.now(), providerId, providerLabel: providerLabel(providerId), running, status: lifecycle.status, spawnedAt: lifecycle.spawnedAt ?? null, sessionId, nativeSessionId, settings: null, cards };
     const settingsRead = await readRemoteAgentSettings(agentId, authorized, { admittedTarget: target, admittedProvider: providerRead, receipts: settingsReceipts });
     if (!authorized()) return refused();
+    // A failed freshness/authority check is a refusal of this assembly, not
+    // an independently unavailable field such as the supported partial 503.
+    if (settingsRead.status === 403) return refused();
+    if (settingsRead.status === 409) return { status: 409, body: { error: 'settings_evidence_changed' } };
+    if (!providerRead.receipt.current()) return { status: 409, body: { error: 'settings_evidence_changed' } };
     if (settingsRead.status === 200) result.settings = settingsRead.body as RemoteAgentDetails['settings'];
     else byId.settings.state = 'error';
     if (settingsRead.display) {
@@ -207,7 +212,7 @@ export async function readRemoteAgentDetails(agentId: string, authorized: () => 
     // The complete response has finished awaiting. A stopped parent has no run
     // registration, and an earlier helper work check cannot attest later membership.
     if (targetWitness && !targetWitness.current() || helperReceipts.some((receipt) => !receipt.current())) return { status: 409, body: { error: 'agent_inventory_changed' } };
-    if (settingsReceipts.some((receipt) => !receipt.current())) return { status: 409, body: { error: 'settings_evidence_changed' } };
+    if (!providerRead.receipt.current() || settingsReceipts.some((receipt) => !receipt.current())) return { status: 409, body: { error: 'settings_evidence_changed' } };
     if (running && !registration && runtime?.kind !== 'chat'
       || currentRegistration !== registration || currentRegistration?.nonce !== registeredNonce || currentRegistration?.runtime !== registeredRuntime
       || currentRegistration?.orchestrator !== registeredProvider || currentRegistration?.cwd !== registeredCwd
