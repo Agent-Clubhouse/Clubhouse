@@ -56,13 +56,10 @@ describe('bounded agent config evidence', () => {
     state.rolesReadable = false;
     await expect(resolveAgentConfigTarget('chat', undefined, { strict: true })).rejects.toThrow('unreadable');
   });
-  it('refuses a role cache cleared or replaced while its strict inventory is awaited', async () => {
+  it.each(['replacement', undefined])('refuses a role cache changed to %s while its strict inventory is awaited', async (replacement) => {
     state.dispatcher = { chatAgentId: 'chat', chatPath: '/chat' };
     state.roles = { '/chat': [{ id: 'chat', name: 'Chat', color: '', createdAt: '' }] };
-    state.afterInventory = () => { state.dispatcher.chatAgentId = 'replacement'; };
-    await expect(resolveAgentConfigTarget('chat', undefined, { strict: true })).rejects.toThrow('No registered agent');
-    state.dispatcher.chatAgentId = 'chat';
-    state.afterInventory = () => { delete state.dispatcher.chatAgentId; };
+    state.afterInventory = () => { state.dispatcher.chatAgentId = replacement; };
     await expect(resolveAgentConfigTarget('chat', undefined, { strict: true })).rejects.toThrow('No registered agent');
   });
   it('does not resolve role ids in a caller-supplied project or promote a project collision after an await', async () => {
