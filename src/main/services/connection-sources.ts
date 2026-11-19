@@ -57,7 +57,13 @@ const SUSPENDED_WHY: Readonly<Record<string, string>> = {
 };
 
 /** Every pair touching the agent, in both directions, with the sources holding each. */
+/** Existing IPC shape stays unchanged; display inspection's private links never attach to it. */
 export async function listConnectionSources(agentId: string): Promise<AgentConnectionSources> {
+  return (await inspectConnectionDetails(agentId)).sources;
+}
+
+/** Selected links from the same strict read, for passive host Details composition only. */
+export async function inspectConnectionDetails(agentId: string): Promise<{ sources: AgentConnectionSources; dispatcherLinks: DispatcherLink[] }> {
   const { bySource, failed } = await collectSourcesByPair({ cachedOnly: true });
   const unreadable = new Set(failed);
   const inspectedPairs = new Map<string, Map<string, PersistedBinding>>();
@@ -133,7 +139,7 @@ export async function listConnectionSources(agentId: string): Promise<AgentConne
     out.push({ ...pair, bound, sources, ...(bound && sources.length === 0 && { unresolved: true }),
       ...(!bound && saved?.agentName && saved.targetName && { inspection: { targetKind: 'agent' as const, agentName: saved.agentName, targetName: saved.targetName } }) });
   }
-  return { pairs: out, unreadable: [...unreadable] };
+  return { sources: { pairs: out, unreadable: [...unreadable] }, dispatcherLinks: links.filter((link) => touches(link.agentId, link.targetId)) };
 }
 
 /** The agent at the other end of a Dispatcher wire. */
