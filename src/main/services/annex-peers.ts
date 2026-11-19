@@ -5,6 +5,7 @@
  * Includes brute-force protection for the pairing endpoint.
  */
 import * as fs from 'fs';
+import { createHash } from 'crypto';
 import * as path from 'path';
 import { app } from 'electron';
 import { annexEphemeralSession } from './annex-network-profile';
@@ -12,7 +13,7 @@ import { appLog } from './log-service';
 import { devicesChanged, type DeviceChange } from './annex-device-signal';
 import { isAnnexLoopback } from '../../shared/annex-problems';
 import { formatAddress, hostPortsWithFallback, isPrivateHost, KNOWN_HOSTS_MAX, parseTypedHost, rememberHost, withPrivateHost } from './annex-reach';
-import type { DisplayReceipt, DisplayValue } from './display-settings';
+import type { DisplayInput, DisplayReceipt, DisplayValue } from './display-settings';
 import type { AnnexHeldRoutes, AnnexPeer, AnnexPeerListing } from '../../shared/types';
 
 // ---------------------------------------------------------------------------
@@ -150,6 +151,57 @@ export function readPeerMetadataForDisplay(fingerprint: string, options: { recei
   const value = peerDisplayProjection(fingerprint);
   if (typeof fingerprint === 'string' && fingerprint.length > 0 && fingerprint.length <= 256) options.receipts?.push(peerDisplayReceipt(fingerprint, peerDisplaySignature(value)));
   return value;
+}
+
+/** Selected retained pairing association for display only. This is not a
+ * transport pin check, membership permission, publication or authorization. */
+export interface PeerPairingDisplayEvidence {
+  state: 'ok' | 'unavailable';
+  inputs: DisplayInput[];
+  matches(reference: unknown): boolean | undefined;
+}
+interface PeerPairingDisplayFrame { key: string; applicable?: boolean; pairing?: string }
+function peerPairingDisplayFrame(fingerprint: string): PeerPairingDisplayFrame {
+  if (!cachedPeers) return { key: 'unavailable' };
+  if (cachedPeers.length > PEER_DISPLAY_SCAN_LIMIT) return { key: 'limit' };
+  let selected: AnnexPeer | undefined;
+  for (const peer of cachedPeers) {
+    if (!peer || typeof peer.fingerprint !== 'string' || peer.fingerprint.length > 256 || peer.fingerprint.toLowerCase() !== fingerprint.toLowerCase()) continue;
+    if (selected) return { key: 'ambiguous' };
+    selected = peer;
+  }
+  if (!selected) return { key: 'absent' };
+  // Explicit inapplicable states remain distinguishable from missing/legacy or
+  // malformed evidence. No inference that an unclassified peer is a desktop.
+  if (selected.role === 'controller' || selected.role === 'satellite' || selected.kind === 'phone' || selected.networkPending === true) return { key: 'inapplicable', applicable: false };
+  if (selected.role !== 'member' || selected.kind !== 'desktop' || selected.networkPending !== undefined && selected.networkPending !== false
+    || typeof selected.pairingId !== 'string' || selected.pairingId.length > 64 || !/^[A-Za-z0-9-]{8,64}$/.test(selected.pairingId)
+    || typeof selected.pairedAt !== 'string' || selected.pairedAt.length > 128 || !Number.isFinite(Date.parse(selected.pairedAt))
+    || typeof selected.tlsCertificateFingerprint !== 'string' || !selected.tlsCertificateFingerprint || selected.tlsCertificateFingerprint.length > 256) return { key: 'invalid' };
+  // Hash bounded selected scalars only; do not retain the record, credential
+  // material, root, unrelated entries or caller-provided reference in closures.
+  const key = createHash('sha256').update(JSON.stringify([selected.pairingId, selected.pairedAt, selected.tlsCertificateFingerprint])).digest('hex');
+  return { key, applicable: true, pairing: selected.pairingId };
+}
+function peerPairingDisplayObservation(fingerprint: string, key: string, applicable: boolean | undefined, pairing: string | undefined): { value: PeerPairingDisplayEvidence; receipt: DisplayReceipt } {
+  const receipt: DisplayReceipt = { current: () => { try { return peerPairingDisplayFrame(fingerprint).key === key; } catch { return false; } } };
+  return { receipt, value: {
+    state: applicable === undefined ? 'unavailable' : 'ok',
+    inputs: [{ field: 'Retained selected peer pairing metadata', source: 'host-cache', observedAt: Date.now() }],
+    matches(reference) {
+      if (!receipt.current() || applicable === undefined) return undefined;
+      if (!applicable) return false;
+      return typeof reference === 'string' && reference.length <= 64 && reference === pairing;
+    },
+  } };
+}
+/** Cache only. Consumers must preserve this private receipt and independent
+ * eligible/pinned transport, selected-target and final authorization fences. */
+export function capturePeerPairingForDisplay(fingerprint: string, options: { receipts: DisplayReceipt[] }): PeerPairingDisplayEvidence {
+  if (typeof fingerprint !== 'string' || !fingerprint || fingerprint.length > 256) return { state: 'unavailable', inputs: [{ field: 'Retained selected peer pairing metadata', source: 'host-cache', observedAt: Date.now() }], matches: () => undefined };
+  const frame = peerPairingDisplayFrame(fingerprint), observed = peerPairingDisplayObservation(fingerprint, frame.key, frame.applicable, frame.pairing);
+  options.receipts.push(observed.receipt);
+  return observed.value;
 }
 
 export function getPeer(fingerprint: string): AnnexPeer | undefined {
