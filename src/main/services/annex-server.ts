@@ -4122,9 +4122,23 @@ async function handleMobileChatRoute(ctx: AnnexRouteContext, match: RegExpMatchA
     if (quickRead && (beforeSeq !== undefined || requestedSession !== undefined && requestedSession !== quickRead.sessionId)) { sendJson(ctx.res, 404, { error: 'quick_session_unavailable' }); return; }
     const runtime = quickRead?.runtime ?? getAgentRuntime(agentId);
     const liveSessionId = runtime?.kind === 'chat' ? runtime.getSessionId?.() : undefined;
+    const admittedNativeId = runtime?.kind === 'chat' ? runtime.getNativeSessionId?.() : undefined;
+    const admittedDisplayId = runtime?.getDisplayRunId?.();
+    const admittedRegistration = agentRegistry.get(agentId), admittedNonce = admittedRegistration?.nonce;
+    const sameLiveRead = () => getAgentRuntime(agentId) === runtime && runtime?.kind === 'chat' && runtime.isRunning()
+      && !['sleeping', 'error'].includes(runtime.getState()) && runtime.getSessionId?.() === liveSessionId
+      && runtime.getNativeSessionId?.() === admittedNativeId && runtime.getDisplayRunId?.() === admittedDisplayId
+      && agentRegistry.get(agentId) === admittedRegistration && agentRegistry.get(agentId)?.nonce === admittedNonce;
     let live = runtime?.kind === 'chat' && runtime.isRunning() && (requestedSession === undefined || liveSessionId === requestedSession);
+    const admittedLive = live;
+    const admittedDesktopRead = desktopDetailsAuthorized(ctx);
+    const readAuthorized = () => mobileCommands.epoch === epoch && stillAuthorized(ctx.principal, authorizerDeps)
+      && (!(quickRead || admittedDesktopRead) || desktopDetailsAuthorized(ctx));
     const events = quickRead ? (await runtime!.readTranscript({ passive: true, tail: 2001 })).events ?? []
       : live ? (await runtime.readTranscript()).events ?? [] : await readChatTranscript(agentId, { sessionId: requestedSession });
+    if (!readAuthorized()) { sendJson(ctx.res, 403, { error: 'authorization_revoked' }); return; }
+    // Refuse before any downstream reader can fall back to global discovery.
+    if (admittedLive && !sameLiveRead() || quickRead && !quickRead.current()) { sendJson(ctx.res, 409, { error: 'chat_read_changed' }); return; }
     const sessionId = requestedSession ?? (live ? liveSessionId : events[events.length - 1]?.sessionId);
     live = live && getAgentRuntime(agentId) === runtime && runtime.isRunning() && runtime.getSessionId?.() === sessionId;
     const current = events.filter((e) => e.sessionId === sessionId);
@@ -4134,11 +4148,13 @@ async function handleMobileChatRoute(ctx: AnnexRouteContext, match: RegExpMatchA
     // The agent's folders (#2457): relative paths resolve against the first. Older phones
     // link only absolute paths under them; `contentAnyPath` says any readable path is served (#2478).
     const richContent = isGraduatedFeatureOn(RICH_CHAT_CONTENT_FLAG);
-    const contentRoots = richContent ? await agentFolders(agentId).catch((): string[] => []) : [];
-    if (mobileCommands.epoch !== epoch || !stillAuthorized(ctx.principal, authorizerDeps)) {
+    // The new quick Details admission needs no file/link roots. Generic
+    // agentFolders can recover stores or reuse roots from a prior ID owner.
+    const contentRoots = richContent && !quickRead ? await agentFolders(agentId).catch((): string[] => []) : [];
+    if (!readAuthorized()) {
       sendJson(ctx.res, 403, { error: 'authorization_revoked' }); return;
     }
-    if (quickRead && !quickRead.current()) { sendJson(ctx.res, 409, { error: 'quick_read_changed' }); return; }
+    if (admittedLive && !sameLiveRead() || quickRead && !quickRead.current()) { sendJson(ctx.res, 409, { error: 'chat_read_changed' }); return; }
     const pending = live ? pendingInteractions(current) : { pendingPermissions: [], pendingQuestions: [] };
     const page = buildChatPage({
       eligible,
@@ -4151,11 +4167,11 @@ async function handleMobileChatRoute(ctx: AnnexRouteContext, match: RegExpMatchA
         currentSessionId: runtime?.kind === 'chat' ? runtime.getSessionId?.() ?? null : null, readOnly: !live,
         // Display-only identity, never the launch nonce; only the runtime that
         // supplied this page may attest it after the preceding awaits.
-        displayRunId: live && getAgentRuntime(agentId) === runtime ? runtime.getDisplayRunId?.() ?? null : null,
+        displayRunId: live && admittedDesktopRead ? admittedDisplayId ?? null : null,
         state: live ? runtime.getState() : 'sleeping', capabilities: live ? runtime.getCapabilities?.() ?? null : null,
         lastSeq: current[current.length - 1]?.seq ?? 0,
         contentRoots,
-        contentAnyPath: richContent,
+        contentAnyPath: richContent && !quickRead,
         ...(live ? runtime.getQueueState?.() ?? { queuedMessageIds: [], queueStateSeq: 0, queueRemovalSupported: false }
           : { queuedMessageIds: [], queueStateSeq: 0, queueRemovalSupported: false }),
         // The composer's level, model and effort pills, for chat.setLevel / chat.setModel (#2462).

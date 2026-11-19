@@ -2515,6 +2515,7 @@ describe('annex-server', () => {
       roots.mockImplementation(async () => { if (mode.startsWith('folders-')) { entered(); await gate; } return ['/test/project']; });
       try {
         const { port, token } = await startAndPair();
+        vi.mocked(annexPeers.getPeer).mockReturnValue({ ...TEST_CONTROLLER, kind: 'desktop' });
         const pending = request(port, 'GET', '/api/v1/mobile/agents/a/chat', undefined, authHeaders(token));
         if (mode !== 'stable') { await admission; rotate(); release(); }
         const response = await pending;
@@ -2583,6 +2584,23 @@ describe('annex-server', () => {
       } finally { roots.mockImplementation(rootsPrevious!); actualFiles.clearAgentFoldersCache(); actualConfig.clearAgentConfigCache(project); base.mockRestore(); clearQuickAgentRuns(); clearChatRuntimes(); agentRegistry.untrack('root-race-quick'); await fsp.rm(root, { recursive: true, force: true }); }
     });
 
+    it.each(['phone', 'downgraded-desktop'] as const)('does not confirm desktop Details generation through a %s authority', async (mode) => {
+      vi.mocked(projectStore.list).mockReturnValue([{ id: 'p', name: 'Project', path: '/test/project' }] as never);
+      vi.mocked(agentConfigModule.listDurable).mockReturnValue([{ id: 'a', name: 'A', color: 'blue', createdAt: '2026-01-01' }] as never);
+      registerChatRuntime({ kind: 'chat', agentId: 'a', isRunning: () => true, getState: () => 'idle', getSessionId: () => 's', getNativeSessionId: () => 'n', getDisplayRunId: () => 'desktop-generation', readTranscript: async () => {
+        if (mode === 'downgraded-desktop') vi.mocked(annexPeers.getPeer).mockReturnValue({ ...TEST_CONTROLLER, kind: 'phone' });
+        return { events: [] };
+      } } as never);
+      try {
+        const { port, token } = await startAndPair();
+        vi.mocked(annexPeers.getPeer).mockReturnValue({ ...TEST_CONTROLLER, kind: mode === 'phone' ? 'phone' : 'desktop' });
+        const response = await request(port, 'GET', '/api/v1/mobile/agents/a/chat', undefined, authHeaders(token));
+        expect(response.status).toBe(mode === 'phone' ? 200 : 403);
+        expect(response.body).not.toContain('desktop-generation');
+        if (mode === 'phone') expect(JSON.parse(response.body).displayRunId).toBeNull();
+      } finally { clearChatRuntimes(); }
+    });
+
     it.each(['same', 'phone', 'unbound', 'reused-registration', 'replaced-during-read', 'removed-during-read', 'unreadable-project', 'revoked-during-read', 'historical-session'] as const)('reads only an attested direct desktop quick current session: %s', async (mode) => {
       const root = await fsp.mkdtemp(path.join(os.tmpdir(), 'annex-direct-quick-'));
       const profile = path.join(root, 'profile'), project = path.join(root, 'project');
@@ -2640,9 +2658,11 @@ describe('annex-server', () => {
       registerChatRuntime(original as never);
       try {
         const { port, token } = await startAndPair();
+        vi.mocked(annexPeers.getPeer).mockReturnValue({ ...TEST_CONTROLLER, kind: 'desktop' });
         const response = await request(port, 'GET', '/api/v1/mobile/agents/a/chat?limit=1', undefined, authHeaders(token));
-        expect(response.status).toBe(200);
-        expect(JSON.parse(response.body).displayRunId).toBe(mode === 'same' ? 'display-A' : null);
+        expect(response.status).toBe(mode === 'same' ? 200 : 409);
+        if (mode === 'same') expect(JSON.parse(response.body).displayRunId).toBe('display-A');
+        else expect(response.body).not.toContain('"events"');
         expect(response.body).not.toContain('display-B');
       } finally { clearChatRuntimes(); }
     });
