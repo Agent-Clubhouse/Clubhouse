@@ -89,3 +89,27 @@ it('keeps an earlier detached value snapshot stable when ordinary code changes a
   const previous = store.peekLoaded!()!; store.get().nested.enabled = false;
   expect(previous.value.nested.enabled).toBe(true);
 });
+
+it.each(['value', 'primary', 'raw'] as const)('detaches nested arrays through %s including retained refused-save rollback state', async (through) => {
+  const initial = { rows: [{ enabled: true, names: ['original'] }] };
+  fs.writeFileSync(primary(), JSON.stringify(initial));
+  const store = createSettingsStore(filename, initial, undefined, { displaySnapshot: true, rollBackFailedSaves: true }); store.get();
+  const previous = store.peekLoaded!()!, displayBefore = readDisplaySettings(store, filename);
+  let checks = 0;
+  const saving = store.save({ rows: [{ enabled: false, names: ['pending'] }] }, { prepare: async () => {}, check: () => { if (++checks > 1) throw new Error('refused queued array save'); } });
+  const accepted = store.peekLoaded!()!, displayAccepted = readDisplaySettings(store, filename);
+  const select = (snapshot: typeof previous, displayed: typeof displayBefore) => through === 'value' ? snapshot.value : through === 'primary' ? snapshot.primary : displayed.state === 'ok' ? displayed.raw : {};
+  for (const row of [select(previous, displayBefore), select(accepted, displayAccepted)]) {
+    const data = row as { rows: Array<{ enabled: boolean; names: string[] }> }; data.rows[0].enabled = true; data.rows[0].names.push('caller mutation'); data.rows.push({ enabled: true, names: ['injected row'] });
+  }
+  expect.soft(store.get()).toEqual({ rows: [{ enabled: false, names: ['pending'] }] });
+  await expect(saving).rejects.toThrow('refused queued array save');
+  expect.soft(store.get()).toEqual(initial); expect.soft(readDisplaySettings(store, filename)).toMatchObject({ state: 'ok', raw: initial });
+  expect.soft(fs.readFileSync(primary(), 'utf8')).toBe(JSON.stringify(initial));
+});
+it('never passes the ordinary live cache or nested objects to Object.freeze from a passive peek', () => {
+  fs.writeFileSync(primary(), '{"nested":{"enabled":true}}'); const store = createSettingsStore(filename, { nested: { enabled: true } }, undefined, { displaySnapshot: true }); const live = store.get();
+  const freeze = vi.spyOn(Object, 'freeze'); const result = store.peekLoaded!()!; const argumentsDuringPeek = freeze.mock.calls.map(([arg]) => arg); freeze.mockRestore();
+  expect(argumentsDuringPeek).not.toContain(live); expect(argumentsDuringPeek).not.toContain(live.nested); expect(Object.isFrozen(live.nested)).toBe(false);
+  expect(result.value).not.toBe(live); expect(result.value.nested).not.toBe(live.nested);
+});
