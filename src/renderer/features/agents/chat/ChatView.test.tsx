@@ -53,7 +53,7 @@ function renderFixture(p: FixtureProvider, scenario: Parameters<typeof chatFixtu
 }
 
 beforeEach(() => {
-  useChatDraftStore.setState({ drafts: {}, attachments: {} });
+  useChatDraftStore.setState({ drafts: {}, attachments: {}, pendingSends: {}, failedSends: {} });
 });
 
 /** Append events after a fixture, continuing its seq. */
@@ -85,6 +85,146 @@ describe('sending from the composer', () => {
     expect(actions.send).toHaveBeenCalledWith('One more thing', 'auto');
     expect(top).toBe(1600);
     expect(screen.queryByTestId('chat-window-latest')).not.toBeInTheDocument();
+  });
+});
+
+describe('send acknowledgement and recovery', () => {
+  it('keeps the next draft editable, blocks duplicates, and unlocks after acknowledgement', async () => {
+    const actions = makeActions();
+    let acknowledge!: (value: { delivery: 'prompt' }) => void;
+    actions.send.mockImplementationOnce(() => new Promise((resolve) => { acknowledge = resolve; }));
+    renderFixture('claude', 'conversation', actions);
+    typePrompt(screen.getByLabelText('Message'), 'first');
+    fireEvent.click(screen.getByTestId('chat-send'));
+    expect(screen.getByTestId('chat-send-pending')).toHaveTextContent('Sending');
+    typePrompt(screen.getByLabelText('Message'), 'next draft');
+    fireEvent.keyDown(screen.getByLabelText('Message'), { key: 'Enter' });
+    fireEvent.click(screen.getByTestId('chat-send'));
+    expect(actions.send).toHaveBeenCalledTimes(1);
+    expect(promptSource(screen.getByLabelText('Message'))).toBe('next draft');
+    await act(async () => acknowledge({ delivery: 'prompt' }));
+    expect(screen.queryByTestId('chat-send-pending')).not.toBeInTheDocument();
+    expect(screen.getByTestId('chat-send')).not.toBeDisabled();
+    expect(promptSource(screen.getByLabelText('Message'))).toBe('next draft');
+  });
+
+  it.each(['null', 'reject', 'throw'])('retains failed text and files alongside a newer draft (%s)', async (failure) => {
+    const actions = makeActions();
+    let fail!: () => void;
+    if (failure === 'throw') actions.send.mockImplementationOnce(() => { throw new Error('failed'); });
+    else actions.send.mockImplementationOnce(() => new Promise((resolve, reject) => {
+      fail = () => failure === 'null' ? resolve(null) : reject(new Error('failed'));
+    }));
+    const file = { id: 'staged-file', name: 'notes.txt', kind: 'file' as const };
+    useChatDraftStore.setState({ drafts: { [agent.id]: 'failed text' }, attachments: { [agent.id]: [file] } });
+    renderFixture('claude', 'conversation', actions);
+    fireEvent.click(screen.getByTestId('chat-send'));
+    typePrompt(screen.getByLabelText('Message'), 'new draft');
+    await act(async () => { fail?.(); });
+    expect(promptSource(screen.getByLabelText('Message'))).toBe('new draft');
+    expect(screen.getByTestId('chat-send-recovery')).toHaveTextContent('1 saved message');
+    expect(screen.getByText('Restore unsent message')).toBeDisabled();
+    act(() => useChatDraftStore.getState().setDraft(agent.id, ''));
+    fireEvent.click(screen.getByText('Restore unsent message'));
+    expect(promptSource(screen.getByLabelText('Message'))).toBe('failed text');
+    expect(screen.getByTestId('chat-attachment')).toHaveTextContent('notes.txt');
+    expect(actions.send).toHaveBeenCalledTimes(1);
+    expect(screen.queryByTestId('chat-send-recovery')).not.toBeInTheDocument();
+  });
+
+  it('shares pending state across views and retains recovery after unmount', async () => {
+    const actions = makeActions();
+    let fail!: (value: null) => void;
+    actions.send.mockImplementationOnce(() => new Promise((resolve) => { fail = resolve; }));
+    const state = fold(chatFixture('claude', 'conversation'));
+    const { unmount } = renderState(state, actions);
+    typePrompt(screen.getByLabelText('Message'), 'first');
+    fireEvent.click(screen.getByTestId('chat-send'));
+    unmount();
+    renderState(state, actions);
+    expect(screen.getByTestId('chat-send-pending')).toBeInTheDocument();
+    typePrompt(screen.getByLabelText('Message'), 'new draft');
+    fireEvent.keyDown(screen.getByLabelText('Message'), { key: 'Enter' });
+    expect(actions.send).toHaveBeenCalledTimes(1);
+    await act(async () => fail(null));
+    expect(screen.getByTestId('chat-send-recovery')).toBeInTheDocument();
+    expect(promptSource(screen.getByLabelText('Message'))).toBe('new draft');
+  });
+
+  it('finishes a failed send against its original agent after switching agents', async () => {
+    const actions = makeActions();
+    let fail!: (value: null) => void;
+    actions.send.mockImplementationOnce(() => new Promise((resolve) => { fail = resolve; }));
+    const state = fold(chatFixture('claude', 'conversation'));
+    const { rerender } = renderState(state, actions);
+    typePrompt(screen.getByLabelText('Message'), 'original');
+    fireEvent.click(screen.getByTestId('chat-send'));
+    rerender(<ChatViewBody agent={{ ...agent, id: 'other-agent' }} state={state} actions={actions} />);
+    typePrompt(screen.getByLabelText('Message'), 'other draft');
+    await act(async () => fail(null));
+    expect(promptSource(screen.getByLabelText('Message'))).toBe('other draft');
+    expect(useChatDraftStore.getState().drafts[agent.id]).toBe('original');
+    expect(screen.queryByTestId('chat-send-pending')).not.toBeInTheDocument();
+  });
+
+  it.each([true, false])('unlocks a new session and isolates late old-session completion (success=%s)', async (ok) => {
+    const actions = makeActions();
+    let settle!: (value: { delivery: 'prompt' } | null) => void;
+    actions.send.mockImplementationOnce(() => new Promise((resolve) => { settle = resolve; }));
+    const state = fold(chatFixture('claude', 'conversation'));
+    const { rerender } = renderState(state, actions);
+    typePrompt(screen.getByLabelText('Message'), 'old pending text');
+    fireEvent.click(screen.getByTestId('chat-send'));
+    expect(screen.getByText('old pending text')).toBeInTheDocument();
+    rerender(<ChatViewBody agent={agent} state={{ ...state, sessionId: 'new-session' }} actions={actions} />);
+    expect(screen.queryByTestId('chat-send-pending')).not.toBeInTheDocument();
+    expect(screen.getByTestId('chat-send-recovery')).toHaveTextContent('Delivery unconfirmed');
+    expect(screen.getByText('old pending text')).toHaveClass('select-text');
+    typePrompt(screen.getByLabelText('Message'), 'new session draft');
+    expect(screen.getByTestId('chat-send')).not.toBeDisabled();
+    await act(async () => settle(ok ? { delivery: 'prompt' } : null));
+    expect(promptSource(screen.getByLabelText('Message'))).toBe('new session draft');
+    fireEvent.click(screen.getByTestId('chat-send'));
+    expect(actions.send).toHaveBeenLastCalledWith('new session draft', 'auto');
+  });
+
+  it('holds the send lock while Stop & send awaits interruption', async () => {
+    const actions = makeActions();
+    let stop!: (value: boolean) => void;
+    actions.interrupt.mockImplementationOnce(() => new Promise((resolve) => { stop = resolve; }));
+    renderFixture('copilot', 'steer', actions, FEWER_CAPABILITIES);
+    typePrompt(screen.getByLabelText('Message'), 'first');
+    fireEvent.click(screen.getByTestId('chat-send-primary'));
+    typePrompt(screen.getByLabelText('Message'), 'new draft');
+    fireEvent.keyDown(screen.getByLabelText('Message'), { key: 'Enter' });
+    expect(actions.interrupt).toHaveBeenCalledTimes(1);
+    expect(actions.send).not.toHaveBeenCalled();
+    await act(async () => stop(false));
+    expect(actions.send).not.toHaveBeenCalled();
+    expect(promptSource(screen.getByLabelText('Message'))).toBe('new draft');
+    expect(screen.getByTestId('chat-send-recovery')).toBeInTheDocument();
+  });
+
+  it('shows slow acknowledgement feedback at the threshold without retrying or unlocking', async () => {
+    vi.useFakeTimers();
+    try {
+      const actions = makeActions();
+      actions.send.mockImplementationOnce(() => new Promise(() => {}));
+      const state = fold(chatFixture('claude', 'conversation'));
+      const { unmount } = renderState(state, actions);
+      typePrompt(screen.getByLabelText('Message'), 'first');
+      fireEvent.click(screen.getByTestId('chat-send'));
+      act(() => vi.advanceTimersByTime(9999));
+      expect(screen.getByTestId('chat-send-pending')).toHaveTextContent('Sending');
+      unmount();
+      act(() => vi.advanceTimersByTime(1));
+      renderState(state, actions);
+      expect(screen.getByTestId('chat-send-pending')).toHaveTextContent('may have reached the agent');
+      typePrompt(screen.getByLabelText('Message'), 'next');
+      fireEvent.keyDown(screen.getByLabelText('Message'), { key: 'Enter' });
+      expect(actions.send).toHaveBeenCalledTimes(1);
+      expect(screen.getByTestId('chat-send')).toBeDisabled();
+    } finally { vi.useRealTimers(); }
   });
 });
 
@@ -515,13 +655,14 @@ describe('ChatView composer', () => {
     expect(actions.send).not.toHaveBeenCalled();
   });
 
-  it.each(['claude', 'codex'] as const)('steers with Enter and queues with Cmd/Ctrl+Enter during a turn (%s)', (p) => {
+  it.each(['claude', 'codex'] as const)('steers with Enter and queues with Cmd/Ctrl+Enter during a turn (%s)', async (p) => {
     const { actions } = renderFixture(p, 'steer');
     expect(screen.getByTestId('chat-send-primary')).toHaveTextContent('Steer');
     expect(screen.getByTestId('chat-send-secondary')).toHaveTextContent('Queue');
     type('Keep the hover delay at 300ms');
     fireEvent.keyDown(screen.getByLabelText('Message'), { key: 'Enter' });
     expect(actions.send).toHaveBeenLastCalledWith('Keep the hover delay at 300ms', 'steer');
+    await waitFor(() => expect(screen.queryByTestId('chat-send-pending')).not.toBeInTheDocument());
     type('Then rebase');
     fireEvent.keyDown(screen.getByLabelText('Message'), window.clubhouse.platform === 'darwin' ? { key: 'Enter', metaKey: true } : { key: 'Enter', ctrlKey: true });
     expect(actions.send).toHaveBeenLastCalledWith('Then rebase', 'queued');

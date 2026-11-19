@@ -31,7 +31,22 @@ export interface ChatActions {
  * Unsent composer text per agent. It lives outside the composer so a draft
  * survives the composer being swapped for an approval card, or switching agents.
  */
+export interface PendingChatSend {
+  sessionId: string | null;
+  /** True until the caller settles; retained across a session change without implying failure. */
+  uncertain: boolean;
+  startedAt: number;
+  text: string;
+  attachments: ComposerAttachment[];
+}
+
 interface DraftState {
+  pendingSends: Record<string, PendingChatSend>;
+  failedSends: Record<string, PendingChatSend[]>;
+  retireSend: (agentId: string, sessionId: string | null) => void;
+  beginSend: (agentId: string, send: PendingChatSend) => boolean;
+  finishSend: (agentId: string, send: PendingChatSend, ok: boolean) => void;
+  restoreSend: (agentId: string) => void;
   drafts: Record<string, string>;
   setDraft: (agentId: string, text: string) => void;
   /** Unsent attachments per agent, kept alongside the text for the same reason. */
@@ -39,7 +54,49 @@ interface DraftState {
   setAttachments: (agentId: string, attachments: ComposerAttachment[]) => void;
 }
 
-export const useChatDraftStore = create<DraftState>((set) => ({
+export const useChatDraftStore = create<DraftState>((set, get) => ({
+  pendingSends: {},
+  failedSends: {},
+  retireSend: (agentId, sessionId) => set((s) => {
+    const previous = s.pendingSends[agentId];
+    if (!previous || previous.sessionId === sessionId) return s;
+    const pendingSends = { ...s.pendingSends };
+    delete pendingSends[agentId];
+    return { pendingSends, failedSends: { ...s.failedSends, [agentId]: [...(s.failedSends[agentId] ?? []), previous] } };
+  }),
+  beginSend: (agentId, send) => {
+    get().retireSend(agentId, send.sessionId);
+    if (get().pendingSends[agentId]) return false;
+    set((s) => ({ pendingSends: { ...s.pendingSends, [agentId]: send } }));
+    return true;
+  },
+  finishSend: (agentId, send, ok) => set((s) => {
+    if (s.pendingSends[agentId] !== send) {
+      // A new session retired this send. Its eventual result must never touch the new draft or lock.
+      const saved = s.failedSends[agentId];
+      if (!saved?.includes(send)) return s;
+      return { failedSends: { ...s.failedSends, [agentId]: ok ? saved.filter((item) => item !== send)
+        : saved.map((item) => item === send ? { ...send, uncertain: false } : item) } };
+    }
+    const failed = { ...send, uncertain: false };
+    const pendingSends = { ...s.pendingSends };
+    delete pendingSends[agentId];
+    if (ok) return { pendingSends };
+    // Restore atomically, without overwriting text or files added while awaiting acknowledgement.
+    if (!s.drafts[agentId] && !s.attachments[agentId]?.length) {
+      return { pendingSends, drafts: { ...s.drafts, [agentId]: send.text }, attachments: { ...s.attachments, [agentId]: send.attachments } };
+    }
+    return { pendingSends, failedSends: { ...s.failedSends, [agentId]: [...(s.failedSends[agentId] ?? []), failed] } };
+  }),
+  restoreSend: (agentId) => set((s) => {
+    const [send, ...rest] = s.failedSends[agentId] ?? [];
+    if (!send || s.pendingSends[agentId] || s.drafts[agentId] || s.attachments[agentId]?.length) return s;
+    return {
+      drafts: { ...s.drafts, [agentId]: send.text },
+      attachments: { ...s.attachments, [agentId]: send.attachments },
+      failedSends: { ...s.failedSends, [agentId]: rest },
+    };
+  }),
   drafts: {},
   setDraft: (agentId, text) => set((s) => {
     const drafts = { ...s.drafts };
