@@ -36,8 +36,8 @@ export interface ProviderStartReceipt {
   target: { agentId: string; hostEpoch: string; commandId: string };
   configured: ProviderNextWake | null;
   result: { status: 'start_acknowledged' | 'refused_before_creation' | 'failed_after_creation'; configuration: 'verified_at_start' | 'not_verified'; configPersistedByStart: false };
-  start: { creation: 'observed' | 'not_observed'; providerSelection: string | null; evidence: 'pty_created' | 'unknown' };
-  running: { state: 'running' | 'not_running' | 'unknown'; providerSelection: string | null; evidence: 'same_created_runtime' | 'unknown'; appSessionId: string | null; nativeProviderSessionId: string | null; model: null; effort: null };
+  start: { creation: 'observed' | 'not_observed'; providerSelection: string | null; evidence: 'pty_created' | 'unknown'; observedAt: string | null };
+  running: { state: 'running' | 'not_running' | 'unknown'; providerSelection: string | null; evidence: 'same_created_runtime' | 'unknown'; observedAt: string | null; appSessionId: string | null; nativeProviderSessionId: string | null; model: null; effort: null };
 }
 export type MobileCommand = CommandBase & (
   // `text` may be empty when `attachmentIds` (from POST /mobile/agents/:id/attachments) carries images.

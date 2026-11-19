@@ -4528,6 +4528,7 @@ async function runMobileCommand(input: MobileCommand, assertAuthorized: () => vo
   mobileStartingAgents.set(command.agentId, starting);
   let verifiedNextWake: ReturnType<typeof providerNextWake> | null = null;
   let createdIdentity: string | undefined;
+  let createdAt: string | undefined;
   let selectedForStart: string | null = null;
   const startReceipt = (completed: boolean) => {
     let running: boolean | null = null;
@@ -4542,13 +4543,14 @@ async function runMobileCommand(input: MobileCommand, assertAuthorized: () => vo
     } catch { /* telemetry-exempt: observation failure stays unknown, never erases immutable creation evidence. */ }
     return providerStartReceipt({ agentId: command.agentId, commandId: command.commandId, hostEpoch: command.epoch,
       configured: verifiedNextWake, completed, created: !!createdIdentity, selectedProvider: selectedForStart,
-      running, sameCreatedRuntime, appSessionId, nativeProviderSessionId });
+      running, sameCreatedRuntime, appSessionId, nativeProviderSessionId, createdAt, observedAt: new Date(Date.now()).toISOString() });
   };
   try {
     const v2 = command.contractVersion === 2;
-    const config = v2 ? await verifyProviderStartPreview(project.path, command.agentId, command.expectedProvider!, command.expectedState!, command.expectedNextWake!,
+    const admission = v2 ? await verifyProviderStartPreview(project.path, command.agentId, command.expectedProvider!, command.expectedState!, command.expectedNextWake!,
       { key: `phone:provider-control-v2:${command.epoch}:${principal}`, assertAuthorized, assertCommitAuthorized: assertAuthorized })
-      : command.expectedProvider !== undefined ? await agentConfig.getDurableConfig(project.path, command.agentId, { forLaunch: true }) : info.config;
+      : null;
+    const config = admission ? admission.config : command.expectedProvider !== undefined ? await agentConfig.getDurableConfig(project.path, command.agentId, { forLaunch: true }) : info.config;
     if (!config || isDisposedAgent(config)) throw new MobileControlError('agent_not_found', 404);
     if (command.expectedProvider !== undefined) {
       if (command.resume && hasSessionCaptureFailure(command.agentId)) throw new MobileControlError('session_capture_failed');
@@ -4565,7 +4567,7 @@ async function runMobileCommand(input: MobileCommand, assertAuthorized: () => vo
     await spawnAgent({ agentId: config.id, projectPath: project.path, cwd: config.worktreePath || project.path,
       kind: 'durable', mission: command.message, model: config.model, orchestrator: config.orchestrator,
       freeAgentMode: config.freeAgentMode, resume, strictResume: command.expectedProvider !== undefined && resume, sessionId: resume ? config.lastSessionId : undefined,
-      ...(v2 && { strictManagedDelivery: true, beforeCreate: () => { assertAuthorized(); }, onRuntimeCreated: (identity: string) => { createdIdentity = identity; } }) });
+      ...(v2 && { strictManagedDelivery: true, beforeCreate: () => { assertAuthorized(); admission!.assertBeforeCreate(); }, onRuntimeCreated: (identity: string) => { createdIdentity = identity; createdAt = new Date(Date.now()).toISOString(); } }) });
     if (starting.cancelled) {
       await killAgent(command.agentId, project.path, config.orchestrator);
       throw new MobileControlError('start_cancelled', 409, 'failed');

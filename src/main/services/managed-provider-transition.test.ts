@@ -8,7 +8,7 @@ import type { OrchestratorProvider } from '../orchestrators/types';
 import { managedProviderMarker, managedProviderStartGuard, prepareManagedProviderTransition, previewManagedProviderTransition } from './managed-provider-transition';
 import { setGrantedSkills } from './managed-agents/delivery';
 
-vi.mock('node:fs/promises', async (original) => ({ ...await original<typeof import('node:fs/promises')>(), open: vi.fn() }));
+vi.mock('node:fs/promises', async (original) => ({ ...await original<typeof import('node:fs/promises')>(), open: vi.fn(), lstat: vi.fn() }));
 const state = vi.hoisted(() => ({ catalog: '', revision: 1, text: 'managed instructions', missing: false, runtime: 'terminal' }));
 vi.mock('./asset-catalog/store', async (original) => ({ ...await original<typeof import('./asset-catalog/store')>(), assetCatalogDir: () => state.catalog }));
 vi.mock('./agent-config', () => ({ peekDurableConfigsChecked: async () => ({ readable: true, agents: [] }) }));
@@ -29,6 +29,7 @@ let project: string;
 let agent: DurableAgentConfig;
 const preview = () => previewManagedProviderTransition(project, agent, provider('claude-code'), provider('codex-cli'));
 beforeEach(async () => {
+  vi.mocked(fs.lstat).mockImplementation((await vi.importActual<typeof import('node:fs/promises')>('node:fs/promises')).lstat);
   vi.mocked(fs.open).mockImplementation((await vi.importActual<typeof import('node:fs/promises')>('node:fs/promises')).open);
   root = await fs.mkdtemp(path.join(os.tmpdir(), 'managed-provider-'));
   project = path.join(root, 'project');
@@ -42,7 +43,25 @@ beforeEach(async () => {
 afterEach(async () => { vi.restoreAllMocks(); await fs.rm(root, { recursive: true, force: true }); });
 
 describe('managed native preparation', () => {
-  it('is read-only at preview, creates private target only, and conditionally rolls back', async () => {
+  // Independent QA3731 regression, copied with attribution from qa-provider-apply-v2.
+  it('QA3731 rollback preserves a replacement arriving during root validation', async () => {
+    const plan = await preview();
+    const undo = await prepareManagedProviderTransition(plan, async () => {});
+    const actual = await vi.importActual<typeof import('node:fs/promises')>('node:fs/promises');
+    let replaced = false;
+    vi.mocked(fs.lstat).mockImplementation(async (...args: Parameters<typeof fs.lstat>) => {
+      if (args[0] === plan.root.real && !replaced) {
+        replaced = true;
+        await actual.rename(plan.targetPath, plan.targetPath + '.operation-file');
+        await actual.writeFile(plan.targetPath, 'human replacement');
+      }
+      return actual.lstat(...args);
+    });
+    await expect(undo()).rejects.toMatchObject({ extra: { transition: { nativePreparation: 'may_remain' } } });
+    expect(await actual.readFile(plan.targetPath, 'utf8')).toBe('human replacement');
+  });
+
+  it('is read-only at preview, creates private target only, and reports retention on rejection', async () => {
     const original = structuredClone(agent);
     const plan = await preview(); expect(plan.blocked).toBeNull();
     await expect(fs.stat(plan.targetPath)).rejects.toMatchObject({ code: 'ENOENT' });
@@ -51,7 +70,7 @@ describe('managed native preparation', () => {
     expect((await fs.stat(plan.targetPath)).mode & 0o777).toBe(0o600);
     expect((await fs.stat(plan.sourcePath)).mode & 0o777).toBe(0o640);
     expect(agent).toEqual(original);
-    await undo(); await expect(fs.stat(plan.targetPath)).rejects.toMatchObject({ code: 'ENOENT' });
+    await expect(undo()).rejects.toMatchObject({ code: 'managed_preparation_retained' }); expect(await fs.readFile(plan.targetPath, 'utf8')).toBe(state.text);
   });
   it('keeps custom source and target content, and binds same-byte file replacements', async () => {
     await fs.writeFile(path.join(agent.worktreePath!, 'AGENTS.md'), 'custom');
@@ -72,10 +91,10 @@ describe('managed native preparation', () => {
     await expect(prepareManagedProviderTransition(plan, async () => {})).rejects.toMatchObject({ code: 'stale_state' });
     expect(await fs.readFile(plan.targetPath, 'utf8')).toBe('custom');
     await fs.unlink(plan.targetPath);
-    await expect(prepareManagedProviderTransition(plan, async () => { await fs.writeFile(plan.sourcePath, 'changed'); })).rejects.toMatchObject({ code: 'stale_state' });
-    await expect(fs.stat(plan.targetPath)).rejects.toMatchObject({ code: 'ENOENT' });
+    await expect(prepareManagedProviderTransition(plan, async () => { await fs.writeFile(plan.sourcePath, 'changed'); })).rejects.toMatchObject({ code: 'managed_preparation_retained' });
+    expect(await fs.readFile(plan.targetPath, 'utf8')).toBe(state.text);
   });
-  it('never rolls back a person’s edit or replacement and never overwrites an equivalent target', async () => {
+  it('never removes a person’s edit or replacement and never overwrites an equivalent target', async () => {
     const plan = await preview();
     const undo = await prepareManagedProviderTransition(plan, async () => {});
     await fs.writeFile(plan.targetPath, 'person edit');
@@ -93,7 +112,7 @@ describe('managed native preparation', () => {
     const retry = await preview(); expect(retry.blocked).toBeNull(); expect(retry.target).not.toBeNull();
     expect(agent).toEqual(original); expect(retry.fingerprint).not.toBe(plan.fingerprint);
   });
-  it('undoes a partial target write and refuses a workspace swap before opening output', async () => {
+  it('retains a partial target write and refuses a workspace swap before opening output', async () => {
     const plan = await preview();
     const open = (await vi.importActual<typeof import('node:fs/promises')>('node:fs/promises')).open;
     vi.mocked(fs.open).mockImplementation(async (file, flags, mode) => {
@@ -104,8 +123,8 @@ describe('managed native preparation', () => {
       }
       return handle;
     });
-    await expect(prepareManagedProviderTransition(plan, async () => {})).rejects.toThrow('disk full');
-    await expect(fs.stat(plan.targetPath)).rejects.toMatchObject({ code: 'ENOENT' }); vi.mocked(fs.open).mockImplementation(open);
+    await expect(prepareManagedProviderTransition(plan, async () => {})).rejects.toMatchObject({ code: 'managed_preparation_retained' });
+    expect(await fs.readFile(plan.targetPath, 'utf8')).toBe('partial'); await fs.unlink(plan.targetPath); vi.mocked(fs.open).mockImplementation(open);
     await expect(prepareManagedProviderTransition(plan, async () => {
       await fs.rename(agent.worktreePath!, `${agent.worktreePath}.old`); await fs.mkdir(agent.worktreePath!);
     })).rejects.toMatchObject({ code: 'stale_state' });

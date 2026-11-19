@@ -7,6 +7,7 @@ import { AgentResumeError, assertProviderSelection } from './agent-transition';
 import { withManagedActivationLaunch } from './managed-activation';
 import { managedProviderStartGuard } from './managed-provider-transition';
 import { MobileControlError } from './mobile-control';
+import { resolveRuntimeMode } from './chat-runtime-settings';
 import type { ManagedLaunchLease } from './managed-activation/service';
 import { ManagedActivationError, ProcessStartedReceiptError } from './managed-activation/types';
 import { cleanupManagedReceiptFailure, recordManagedProcessStart } from './managed-activation/runtime-start';
@@ -417,6 +418,19 @@ async function spawnAgentInner(inParams: SpawnAgentParams, facts: SpawnFacts, ma
         : `This agent could not be created: ${creation.reason ?? 'unknown reason'} Delete it and create it again.`), 'cwd_invalid');
     }
   }
+  // Refuse strict resume before initialization, delivery, or any fallback can
+  // discard the native pointer. A marked terminal additionally needs positive
+  // evidence that its provider's native store still has that session.
+  if (params.kind === 'durable' && params.resume && (params.strictResume || firstConfig?.providerTransition)) {
+    const selected = await resolveOrchestrator(params.projectPath, params.orchestrator ?? firstConfig?.orchestrator);
+    if (!params.sessionId || params.sessionId !== firstConfig?.lastSessionId
+      || firstConfig?.quarantinedSessionIds?.includes(params.sessionId)
+      || firstConfig?.sessionHistory?.find((session) => session.sessionId === params.sessionId)?.orchestrator !== selected.id) throw new AgentResumeError('resume_unverified');
+    if (firstConfig.providerTransition) {
+      const exists = isSessionCapable(selected) && selected.hasSession ? await selected.hasSession(params.sessionId).catch((): undefined => undefined) : undefined;
+      if (exists !== true) throw new AgentResumeError('resume_unverified');
+    }
+  }
   let assertReadOnlyManaged: (() => void) | undefined;
   if (firstConfig?.providerTransition || (params.strictManagedDelivery && firstConfig?.managed)) {
     if (!firstConfig?.providerTransition || managed || params.systemPrompt || params.agentFile || params.agentSource) throw new MobileControlError('managed_delivery_unsupported');
@@ -682,6 +696,7 @@ async function spawnAgentInner(inParams: SpawnAgentParams, facts: SpawnFacts, ma
     }
     // A session that kept failing every turn (#3240) is never resumed, whichever wake path asked.
     if (params.kind === 'durable' && params.resume && params.sessionId && durableConfig?.quarantinedSessionIds?.includes(params.sessionId)) {
+      if (params.strictResume) throw new AgentResumeError('resume_unverified');
       appLog('core:agent', 'warn', 'Not resuming a quarantined session; starting fresh', { meta: { agentId: params.agentId, sessionId: params.sessionId } });
       // Said in the new session's chat, or by the terminal's start below.
       noteNextStartNotice(params.agentId, { level: 'warn', code: 'resume_blocked', message: RESUME_BLOCKED_NOTICE });
@@ -800,7 +815,7 @@ async function spawnAgentInner(inParams: SpawnAgentParams, facts: SpawnFacts, ma
     // silently lands it in the terminal.
     if (chatStart !== 'chat' && chatStart !== 'cancelled') {
       const chatFailure = takeChatStartFailure(params.agentId);
-      if (params.strictResume && params.resume) throw new AgentResumeError('resume_failed');
+      if (params.strictResume && params.resume && resolveRuntimeMode(provider.id, durableConfig?.runtimeMode).mode === 'chat') throw new AgentResumeError('resume_failed');
       if (params.kind === 'durable' && params.resume && params.sessionId && isSessionNotFound(chatFailure)) {
         await clearResume(params.projectPath, provider.id, params.agentId, params.sessionId, 'chat_not_found');
         params = { ...params, resume: false, sessionId: undefined };

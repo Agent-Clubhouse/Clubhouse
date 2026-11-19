@@ -1,7 +1,7 @@
 /** Guided provider changes. V2 prepares only a missing managed primary file;
  * neither version implicitly stops, wakes or transfers session context. */
 import { createHash } from 'node:crypto';
-import { getDurableConfig, updateDurableConfig, flushAgentConfig } from './agent-config';
+import { getDurableConfig, updateDurableConfig, flushAgentConfig, peekCachedDurableConfig, peekDurableConfigsChecked } from './agent-config';
 import { agentRegistry } from './agent-registry';
 import { agentTransitionGeneration, withAgentTransition } from './agent-transition';
 import { isAgentRunning, isAgentStopping, checkAvailability, resolveOrchestrator, waitForAgentStopped } from './agent-system';
@@ -19,10 +19,12 @@ import { modelsChosenByHand } from './dispatcher/dispatcher-models';
 import type { DurableAgentConfig, DurableConfigUpdates } from '../../shared/types';
 import type { ProviderControlReceipt, ProviderNextWake, ProviderSelection } from '../../shared/mobile-control';
 import { isDeepStrictEqual } from 'node:util';
-import { previewManagedProviderTransition, prepareManagedProviderTransition, managedProviderMarker, managedProviderCommitFence, providerSettingsCommitFence } from './managed-provider-transition';
+import { previewManagedProviderTransition, prepareManagedProviderTransition, managedProviderMarker, managedProviderCommitFence, providerSettingsCommitFence, type ManagedProviderPlan } from './managed-provider-transition';
 import { readProviderSelectionCatalog, resolveProviderSelectionCatalog } from './provider-selection-catalog';
 
 export interface ProviderControlActor { key: string; assertAuthorized: () => void | Promise<void>; assertCommitAuthorized?: () => void }
+/** Main-only witness, never serialized in a preview receipt. */
+export interface ProviderPreviewWitness { assertCurrent?: (agent: DurableAgentConfig) => void }
 const hash = (value: unknown): string => createHash('sha256').update(JSON.stringify(value)).digest('hex');
 const snapshot = (value: DurableAgentConfig): DurableAgentConfig => JSON.parse(JSON.stringify(value));
 const fail = (code: string): never => { throw new MobileControlError(code, 409); };
@@ -70,7 +72,7 @@ function assertNotChosenByHand(projectPath: string): void {
   if (isDispatcherPath(projectPath) && modelsChosenByHand()) throw new MobileControlError('dispatcher_models_by_hand', 409, 'rejected', DISPATCHER_MODELS_BY_HAND_MESSAGE);
 }
 
-export async function previewAgentProvider(projectPath: string, agentId: string, providerId: string, actor: ProviderControlActor, tokenGeneration?: number, selection: ProviderSelection = {}) {
+export async function previewAgentProvider(projectPath: string, agentId: string, providerId: string, actor: ProviderControlActor, tokenGeneration?: number, selection: ProviderSelection = {}, witness?: ProviderPreviewWitness) {
   const intent = selectionIntent(selection);
   await actor.assertAuthorized();
   assertNotChosenByHand(projectPath);
@@ -91,9 +93,11 @@ export async function previewAgentProvider(projectPath: string, agentId: string,
   let instructionFingerprint: string | null = null;
   let managedBlocked: string | null = null;
   let managedPreparation: 'create' | 'keep' | null = null;
+  let managedPlan: ManagedProviderPlan | undefined;
   try {
     if (intent && config.managed) {
       const plan = await previewManagedProviderTransition(projectPath, config, current, provider);
+      managedPlan = plan;
       instructionFingerprint = plan.fingerprint;
       managedBlocked = plan.blocked;
       managedPreparation = plan.target ? 'keep' : 'create';
@@ -140,6 +144,19 @@ export async function previewAgentProvider(projectPath: string, agentId: string,
     current: providerNextWake(config, current.id), saved: providerNextWake(config, current.id), proposed: providerNextWake(proposed, providerId),
     running: { provider: activeProvider, evidence: activeProvider ? 'registry_selection' : 'none', model: null, effort: null },
     result: { status: 'preview', persisted: false, started: false } } : undefined;
+  if (witness && intent && managedPlan && !blocked) {
+    const assertFiles = managedProviderCommitFence(projectPath, managedPlan);
+    const launchConfig = (value: DurableAgentConfig) => { const copy = { ...value }; delete copy.lastSleep; return hash(copy); };
+    const signedConfig = launchConfig(config);
+    const signedCatalog = hash(catalog?.catalog);
+    witness.assertCurrent = (live) => {
+      actor.assertCommitAuthorized?.();
+      if (!actor.assertCommitAuthorized || launchConfig(live) !== signedConfig || hash(resolveRuntimeMode(providerId, live.runtimeMode)) !== hash(mode)) return fail('stale_state');
+      const currentCatalog = resolveProviderSelectionCatalog(provider.peekModels?.() ?? null, config.model, config.effort, !!config.model);
+      if (currentCatalog.blocked || hash(currentCatalog.catalog) !== signedCatalog) return fail('stale_state');
+      assertFiles(live);
+    };
+  }
   return {
     agentId, savedProvider: current.id, activeProvider, provider: providerId, state, expectedState,
     available: availability.available, availabilityMeaning: 'local_cli_only' as const,
@@ -179,15 +196,16 @@ export async function changeAgentProvider(projectPath: string, agentId: string, 
     const existing = await readCurrent();
     if (intent && hash(existing) !== preview.configuredFingerprint) return fail('stale_state');
     if (preview.savedProvider === provider && (!intent || (selection.model === undefined && selection.effort === undefined && (!existing?.managed || existing.providerTransition)))) return { ...preview, status: 'already_selected' as const,
-      ...(preview.contract && { contract: { ...preview.contract, result: { status: 'already_selected' as const, persisted: true, started: false as const } }, nextWake: { state: 'ready' as const, expectedState: preview.expectedState } }) };
+      ...(preview.contract && { contract: { ...preview.contract, result: { status: 'already_selected' as const, persisted: true, started: false as const } }, nextWake: existing?.managed && existing.providerTransition ? { state: 'ready' as const, expectedState: preview.expectedState } : { state: 'blocked' as const, code: 'provider_start_unsupported' } }) };
     const before = hash(await readCurrent());
-    let undo: (() => Promise<void>) | undefined;
+    let onRejectedPreparation: (() => Promise<void>) | undefined;
+    let mutationAdmitted = false;
     try {
       const updates: DurableConfigUpdates = { orchestrator: provider,
         ...(intent && selection.model !== undefined && { model: selection.model.kind === 'selected' ? selection.model.id : 'default' }),
         ...(intent && selection.effort !== undefined && { effort: selection.effort }),
       };
-      let assertFilesCurrent: (() => void) | undefined;
+      let assertFilesCurrent: ((agent: DurableAgentConfig) => void) | undefined;
       let target = await resolveOrchestrator(projectPath, provider);
       const beforeCommit = async () => {
         const check = async () => {
@@ -201,7 +219,7 @@ export async function changeAgentProvider(projectPath: string, agentId: string, 
           const current = await resolveOrchestrator(projectPath, config.orchestrator);
           target = await resolveOrchestrator(projectPath, provider);
           const plan = await previewManagedProviderTransition(projectPath, config, current, target);
-          undo = await prepareManagedProviderTransition(plan, check);
+          onRejectedPreparation = await prepareManagedProviderTransition(plan, check);
           const prepared = await previewManagedProviderTransition(projectPath, config, current, target);
           if (prepared.blocked || hash([prepared.root, prepared.source, prepared.composition, prepared.launchFingerprint]) !== hash([plan.root, plan.source, plan.composition, plan.launchFingerprint])) return fail('stale_state');
           updates.providerTransition = managedProviderMarker(agentId, prepared);
@@ -218,16 +236,36 @@ export async function changeAgentProvider(projectPath: string, agentId: string, 
           if (!actor.assertCommitAuthorized || hash(agent) !== before || hash(resolveRuntimeMode(provider, agent.runtimeMode)) !== hash(preview.runtime)) return fail('stale_state');
           const currentCatalog = resolveProviderSelectionCatalog(target.peekModels?.() ?? null, preview.contract!.proposed.model.value ?? undefined, preview.contract!.proposed.effort.value, selection.model?.kind === 'selected');
           if (currentCatalog.blocked || hash(currentCatalog.catalog) !== hash(preview.catalog)) return fail('stale_state');
-          assertFilesCurrent?.();
+          assertFilesCurrent?.(agent);
+          mutationAdmitted = true;
         } });
       } else await updateDurableConfig(projectPath, agentId, updates, beforeCommit);
-    } catch (err) { await undo?.(); throw err; }
+    } catch (err) {
+      let failure = err;
+      try { await onRejectedPreparation?.(); }
+      catch (retained) { failure = retained; }
+      if (intent && (mutationAdmitted || failure instanceof MobileControlError && failure.extra?.transition)) {
+        let savedUnchanged: true | null = mutationAdmitted ? null : true;
+        if (mutationAdmitted) {
+          try {
+            const primary = await peekDurableConfigsChecked(projectPath, { strict: true });
+            const matches = primary.agents.filter((agent) => agent.id === agentId);
+            if (primary.readable && matches.length === 1 && hash(matches[0]) === before) savedUnchanged = true;
+          } catch { /* telemetry-exempt: failed persistence verification stays explicitly unknown. */ }
+        }
+        const known = failure instanceof MobileControlError ? failure : undefined;
+        throw new MobileControlError(known?.code ?? 'apply_failed', known?.statusCode ?? 409, 'failed',
+          savedUnchanged ? 'The saved provider/settings were not changed. Review any retained native preparation before retrying.' : 'Apply outcome could not be verified. Read the saved target and any native preparation before retrying.',
+          { ...known?.extra, transition: { nativePreparation: 'not_created_by_this_apply', ...(known?.extra?.transition as Record<string, unknown>), status: savedUnchanged ? 'not_applied' : 'outcome_unverified', persisted: savedUnchanged ? false : null, savedUnchanged, historyRetained: savedUnchanged, refusalCode: err instanceof MobileControlError ? err.code : 'apply_failed', nextWake: 'fresh_read_and_review_required' } });
+      }
+      throw failure;
+    }
     const saved = intent ? await readCurrent() : null;
     let nextWake: { state: 'ready'; expectedState: string } | { state: 'blocked'; code: string } | undefined;
     if (intent) {
       try {
         const wake = await previewAgentProvider(projectPath, agentId, provider, actor, undefined, { contractVersion: 2 });
-        nextWake = wake.blocked ? { state: 'blocked', code: wake.blocked } : { state: 'ready', expectedState: wake.expectedState };
+        nextWake = wake.blocked ? { state: 'blocked', code: wake.blocked } : !saved?.managed || !saved.providerTransition ? { state: 'blocked', code: 'provider_start_unsupported' } : { state: 'ready', expectedState: wake.expectedState };
       } catch (err) { nextWake = { state: 'blocked', code: err instanceof MobileControlError ? err.code : 'next_wake_unverified' }; }
     }
     return { ...preview, expectedState: undefined as string | undefined, savedProvider: provider, activeProvider: null as string | null,
@@ -241,12 +279,19 @@ export async function changeAgentProvider(projectPath: string, agentId: string, 
  * the route still verifies the native pointer and its provider provenance. */
 export async function verifyProviderStartPreview(projectPath: string, agentId: string, provider: string, expectedState: string, expectedNextWake: ProviderNextWake, actor: ProviderControlActor) {
   await actor.assertAuthorized();
-  const preview = await previewAgentProvider(projectPath, agentId, provider, actor, undefined, { contractVersion: 2 });
+  const witness: ProviderPreviewWitness = {};
+  const preview = await previewAgentProvider(projectPath, agentId, provider, actor, undefined, { contractVersion: 2 }, witness);
   if (preview.expectedState !== expectedState || !isDeepStrictEqual(preview.contract?.saved, expectedNextWake)) return fail('stale_state');
   if (preview.blocked) return fail(preview.blocked);
   const config = await getDurableConfig(projectPath, agentId, { forLaunch: true });
   // Start-v2 currently admits only the proven read-only managed terminal lane.
   if (!config?.providerTransition || !config.managed || provider !== 'codex-cli' || preview.targetRuntime !== 'terminal') return fail('provider_start_unsupported');
   if (!isDeepStrictEqual(providerNextWake(config, provider), expectedNextWake)) return fail('stale_state');
-  return config;
+  if (!witness.assertCurrent) return fail('provider_start_unsupported');
+  witness.assertCurrent(config);
+  return { config, assertBeforeCreate: () => {
+    const live = peekCachedDurableConfig(projectPath, agentId);
+    if (!live) return fail('stale_state');
+    witness.assertCurrent!(live);
+  } };
 }

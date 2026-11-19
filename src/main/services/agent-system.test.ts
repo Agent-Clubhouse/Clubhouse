@@ -3190,6 +3190,48 @@ describe('agent-system', () => {
   });
 
   describe('managed agent delivery (#2896)', () => {
+  // Independent QA3731 regression, copied with attribution from qa-provider-apply-v2.
+    it('QA3731 valid marked terminal resume reaches PTY after provenance verification', async () => {
+      mockGetDurableConfig.mockReturnValue({ id: 'agent-1', name: 'agent-1', worktreePath: '/project/work', orchestrator: 'codex-cli', runtimeMode: 'terminal',
+        managed: { version: 1, blocks: [], skills: [], mcps: [] }, providerTransition: { version: 2, provider: 'codex-cli' },
+        lastSessionId: 'valid-native', sessionHistory: [{ sessionId: 'valid-native', orchestrator: 'codex-cli' }] });
+      const { resolveRuntimeMode } = await import('./chat-runtime-settings');
+      expect(resolveRuntimeMode('codex-cli', 'terminal').mode).toBe('terminal');
+      sessionCapable(mockCodexProvider);
+      (mockCodexProvider as Record<string, unknown>).hasSession = vi.fn(async () => true);
+      mockMcpWaitReady.mockResolvedValueOnce(23456);
+      await expect(spawnAgent({ agentId: 'agent-1', projectPath: '/project', cwd: '/project/work', kind: 'durable', orchestrator: 'codex-cli',
+        resume: true, sessionId: 'valid-native' })).resolves.toBeUndefined();
+      expect(mockPtySpawn).toHaveBeenCalled();
+    });
+
+    it('QA3731 marked quarantined strict resume must refuse rather than create fresh', async () => {
+      mockGetDurableConfig.mockReturnValue({ id: 'agent-1', name: 'agent-1', worktreePath: '/project/work', orchestrator: 'codex-cli', runtimeMode: 'terminal',
+        managed: { version: 1, blocks: [], skills: [], mcps: [] }, providerTransition: { version: 2, provider: 'codex-cli' },
+        lastSessionId: 'quarantined-native', quarantinedSessionIds: ['quarantined-native'],
+        sessionHistory: [{ sessionId: 'quarantined-native', orchestrator: 'codex-cli' }] });
+      mockMcpWaitReady.mockResolvedValueOnce(23456);
+      await expect(spawnAgent({ agentId: 'agent-1', projectPath: '/project', cwd: '/project/work', kind: 'durable', orchestrator: 'codex-cli',
+        resume: true, strictResume: true, sessionId: 'quarantined-native' })).rejects.toThrow('resume_unverified');
+      expect(mockPtySpawn).not.toHaveBeenCalled();
+    });
+
+    it('strict chat resume still refuses a terminal fallback without clearing native history', async () => {
+      const config = { id: 'agent-1', name: 'agent-1', orchestrator: 'codex-cli', runtimeMode: 'chat', lastSessionId: 'native',
+        sessionHistory: [{ sessionId: 'native', orchestrator: 'codex-cli' }] };
+      mockGetDurableConfig.mockReturnValue(config); sessionCapable(mockCodexProvider);
+      (mockCodexProvider as Record<string, unknown>).hasSession = vi.fn(async () => true);
+      const { resolveRuntimeMode } = await import('./chat-runtime-settings');
+      const features = await import('./experimental-settings');
+      const enabled = vi.spyOn(features, 'isGraduatedFeatureOn').mockReturnValue(true);
+      try {
+        expect(resolveRuntimeMode('codex-cli', 'chat').mode).toBe('chat');
+        mockTryStartChatAgent.mockResolvedValueOnce('terminal');
+        await expect(spawnAgent({ agentId: 'agent-1', projectPath: '/project', cwd: '/project', kind: 'durable', orchestrator: 'codex-cli', resume: true, strictResume: true, sessionId: 'native' })).rejects.toThrow('resume_failed');
+        expect(mockPtySpawn).not.toHaveBeenCalled(); expect(config.lastSessionId).toBe('native');
+      } finally { enabled.mockRestore(); }
+    });
+
     it('refuses an invalid durable transition before cleanup, managed delivery or runtime creation', async () => {
       const config = { id: 'agent-1', name: 'agent-1', worktreePath: '/project/work', orchestrator: 'codex-cli',
         managed: { version: 1, blocks: [], skills: [], mcps: [] }, providerTransition: { version: 2, provider: 'codex-cli' }, sessionHistory: [{ sessionId: 'keep' }] };

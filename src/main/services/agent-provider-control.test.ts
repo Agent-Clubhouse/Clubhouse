@@ -1,21 +1,23 @@
+import { setGrantedSkills } from './managed-agents/delivery';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import * as fsp from 'node:fs/promises';
 import * as path from 'node:path';
 import * as os from 'node:os';
-import { existsSync } from 'node:fs';
+import { existsSync, writeFileSync } from 'node:fs';
 import { agentRegistry } from './agent-registry';
 import { withAgentActivity, withAgentTransition } from './agent-transition';
-import { changeAgentProvider, previewAgentProvider } from './agent-provider-control';
-const w = vi.hoisted(() => ({ defaults: {} as any, config: {} as any, available: true, instructions: 'same', runtime: 'terminal', running: false, beforeEffect: undefined as undefined | (() => void), commitFailed: false, revision: 1, captureFailed: false, beforeCommit: undefined as undefined | (() => void), beforeAvailability: undefined as undefined | (() => void) }));
+import { changeAgentProvider, previewAgentProvider, verifyProviderStartPreview } from './agent-provider-control';
+const w = vi.hoisted(() => ({ defaults: {} as any, config: {} as any, catalogEfforts: ['high', 'low'] as string[], inventoryReadable: true, available: true, instructions: 'same', runtime: 'terminal', running: false, beforeEffect: undefined as undefined | (() => void), commitFailed: false, revision: 1, captureFailed: false, beforeCommit: undefined as undefined | (() => void), beforeAvailability: undefined as undefined | (() => void) }));
 vi.mock('./managed-agents', () => ({ managedAgents: () => ({ headContent: async (id: string) => ({ entry: { name: id, source: { kind: 'library' }, headRevision: w.revision }, content: id === 'text' ? { kind: 'block', content: 'same' } : { kind: 'mcp', serverKey: 'clubhouse' }, droppedEnvValues: [] }) }) }));
 vi.mock('./agent-config', () => ({
   getDurableConfig: async () => w.config,
-  peekDurableConfigsChecked: async () => ({ readable: true, agents: [w.config] }),
+  peekCachedDurableConfig: () => w.config,
+  peekDurableConfigsChecked: async () => ({ readable: w.inventoryReadable, agents: [w.config] }),
   flushAgentConfig: async () => {},
   updateDurableConfig: vi.fn(async (_p, _id, update, check, precondition) => { w.beforeCommit?.(); await check?.(); await precondition?.prepare(); w.beforeEffect?.(); precondition?.check(w.config); if (w.commitFailed) throw new Error('disk full'); const changed = w.config.orchestrator !== update.orchestrator; if (changed) { delete w.config.lastSessionId; delete w.config.model; delete w.config.effort; delete w.config.routing; delete w.config.contextWindow; } if (update.model !== undefined) { if (update.model !== w.config.model) { delete w.config.effort; delete w.config.routing; } if (update.model === 'default') delete w.config.model; else w.config.model = update.model; } if (update.effort !== undefined) { if (update.effort === null) delete w.config.effort; else w.config.effort = update.effort; } if (update.providerTransition) w.config.providerTransition = update.providerTransition; w.config.orchestrator = update.orchestrator; }),
 }));
 vi.mock('./agent-system', () => ({
-  resolveOrchestrator: async (_p: string, id = 'claude-code') => ({ id, conventions: { settingsFormat: id === 'codex-cli' ? 'toml' : 'json', legacyInstructionsFile: id === 'codex-cli' ? 'AGENTS.md' : 'CLAUDE.md' }, buildMcpArgs: () => [], peekModels: () => ({ source: 'live', via: 'handshake', fetchedAt: Date.now(), models: [{ id: 'fixture-model', label: 'Fixture', isDefault: true, efforts: ['high', 'low'] }] }), listModels: async () => ({ source: 'live', via: 'handshake', fetchedAt: Date.now(), models: [{ id: 'fixture-model', label: 'Fixture', isDefault: true, efforts: ['high', 'low'] }] }), getCapabilities: () => ({ permissions: true }), inspectInstructions: async () => id === 'codex-cli' ? w.instructions : 'same' }),
+  resolveOrchestrator: async (_p: string, id = 'claude-code') => ({ id, conventions: { settingsFormat: id === 'codex-cli' ? 'toml' : 'json', legacyInstructionsFile: id === 'codex-cli' ? 'AGENTS.md' : 'CLAUDE.md' }, buildMcpArgs: () => [], peekModels: () => ({ source: 'live', via: 'handshake', fetchedAt: Date.now(), models: [{ id: 'fixture-model', label: 'Fixture', isDefault: true, efforts: w.catalogEfforts }] }), listModels: async () => ({ source: 'live', via: 'handshake', fetchedAt: Date.now(), models: [{ id: 'fixture-model', label: 'Fixture', isDefault: true, efforts: w.catalogEfforts }] }), getCapabilities: () => ({ permissions: true }), inspectInstructions: async () => id === 'codex-cli' ? w.instructions : 'same' }),
   checkAvailability: async () => { w.beforeAvailability?.(); return { available: w.available }; },
   isAgentRunning: () => w.running, isAgentStopping: () => false,
   waitForAgentStopped: async () => !w.running,
@@ -36,11 +38,32 @@ const actor = { key: 'phone:paired', assertAuthorized: () => {}, assertCommitAut
 const preview = () => previewAgentProvider('/fixture', 'a', 'codex-cli', actor);
 beforeEach(() => {
   w.config = { id: 'a', name: 'Agent', orchestrator: 'claude-code', lastSessionId: 'claude-native', sessionHistory: [{ sessionId: 'claude-native', orchestrator: 'claude-code' }], worktreePath: '/fixture/work', orchestration: { control: 'hands-off' }, mcpIds: ['workiq'] };
-  w.beforeEffect = undefined; w.commitFailed = false; w.revision = 1; w.defaults = {}; w.beforeCommit = undefined; w.runtime = 'terminal'; w.captureFailed = false; w.available = true; w.instructions = 'same'; w.running = false; w.beforeAvailability = undefined;
+  w.catalogEfforts = ['high', 'low']; w.inventoryReadable = true; w.beforeEffect = undefined; w.commitFailed = false; w.revision = 1; w.defaults = {}; w.beforeCommit = undefined; w.runtime = 'terminal'; w.captureFailed = false; w.available = true; w.instructions = 'same'; w.running = false; w.beforeAvailability = undefined;
   vi.mocked(updateDurableConfig).mockClear(); vi.mocked(agentRegistry.get).mockReturnValue(undefined);
   dispatcherModels.byHand = false;
 });
 describe('guided provider control', () => {
+  // Independent QA3731 regression, copied with attribution from qa-provider-apply-v2.
+  it('QA3731 newly granted skill at Apply mutation must refuse and retain native preparation', async () => {
+    const cwd = await fsp.mkdtemp(path.join(os.tmpdir(), 'qa3731-grant-'));
+    let granted = false;
+    const reset = setGrantedSkills(() => granted ? ['builtin-skill-prepare-handoff'] : []);
+    const project = path.join(cwd, '.project');
+    await fsp.mkdir(path.join(project, '.clubhouse'), { recursive: true });
+    try {
+      await fsp.writeFile(path.join(cwd, 'CLAUDE.md'), 'same');
+      w.config.worktreePath = cwd; w.config.managed = { version: 1, blocks: ['text'], skills: [], mcps: [] };
+      await fsp.writeFile(path.join(project, '.clubhouse', 'agents.json'), JSON.stringify([w.config]));
+      const selection = { contractVersion: 2 as const };
+      const p = await previewAgentProvider(project, 'a', 'codex-cli', actor, undefined, selection);
+      expect(p.blocked).toBeNull();
+      w.beforeEffect = () => { granted = true; };
+      await expect(changeAgentProvider(project, 'a', 'codex-cli', p.expectedState, actor, selection)).rejects.toMatchObject({ code: 'managed_preparation_retained', extra: { transition: { savedUnchanged: true, persisted: false, nativePreparation: 'may_remain' } } });
+      expect(w.config.orchestrator).toBe('claude-code');
+      expect(existsSync(path.join(cwd, 'AGENTS.md'))).toBe(true);
+    } finally { reset(); await fsp.rm(cwd, { recursive: true, force: true }); }
+  });
+
   it('preserves identity/history/policy and writes only provider; never starts', async () => {
     const p = await preview();
     expect(p).toMatchObject({ canSave: true, activeProvider: null, contextTransferred: false, nextStart: 'new_session' });
@@ -92,28 +115,79 @@ describe('guided provider control', () => {
     await expect(changeAgentProvider('/fixture', 'a', 'codex-cli', p.expectedState, actor, selection)).rejects.toMatchObject({ code: 'stale_state' });
     expect(updateDurableConfig).not.toHaveBeenCalled();
   });
-  it('commits managed native preparation and marker together, retaining history/settings and rolling back failed/revoked apply', async () => {
+  it('commits managed native preparation and marker together, retaining history/settings and reporting preparation after rejected apply', async () => {
     const cwd = await fsp.mkdtemp(path.join(os.tmpdir(), 'provider-transaction-'));
+    const project = path.join(cwd, '.project');
+    await fsp.mkdir(path.join(project, '.clubhouse'), { recursive: true });
     try {
       await fsp.writeFile(path.join(cwd, 'CLAUDE.md'), 'same');
       w.config.worktreePath = cwd; w.config.managed = { version: 1, blocks: ['text'], skills: [], mcps: [] }; w.instructions = '';
+      await fsp.writeFile(path.join(project, '.clubhouse', 'agents.json'), JSON.stringify([w.config]));
       const selection = { contractVersion: 2 as const };
-      const p = await previewAgentProvider('/fixture', 'a', 'codex-cli', actor, undefined, selection);
+      const p = await previewAgentProvider(project, 'a', 'codex-cli', actor, undefined, selection);
       const original = structuredClone(w.config);
       w.commitFailed = true;
-      await expect(changeAgentProvider('/fixture', 'a', 'codex-cli', p.expectedState, actor, selection)).rejects.toThrow('disk full');
-      expect(w.config).toEqual(original); expect(existsSync(path.join(cwd, 'AGENTS.md'))).toBe(false);
+      await expect(changeAgentProvider(project, 'a', 'codex-cli', p.expectedState, actor, selection)).rejects.toMatchObject({ code: 'managed_preparation_retained', extra: { transition: { persisted: false, savedUnchanged: true } } });
+      expect(w.config).toEqual(original); expect(existsSync(path.join(cwd, 'AGENTS.md'))).toBe(true);
+      await fsp.unlink(path.join(cwd, 'AGENTS.md'));
       w.commitFailed = false;
       // Actor is revoked exactly after the target bytes are prepared.
       const revocable = { key: actor.key, assertAuthorized: () => { if (existsSync(path.join(cwd, 'AGENTS.md'))) throw new Error('revoked'); }, assertCommitAuthorized: () => { if (existsSync(path.join(cwd, 'AGENTS.md'))) throw new Error('revoked'); } };
-      await expect(changeAgentProvider('/fixture', 'a', 'codex-cli', p.expectedState, revocable, selection)).rejects.toThrow('revoked');
-      expect(w.config).toEqual(original); expect(existsSync(path.join(cwd, 'AGENTS.md'))).toBe(false);
-      const done = await changeAgentProvider('/fixture', 'a', 'codex-cli', p.expectedState, actor, selection);
+      await expect(changeAgentProvider(project, 'a', 'codex-cli', p.expectedState, revocable, selection)).rejects.toMatchObject({ code: 'managed_preparation_retained' });
+      expect(w.config).toEqual(original); expect(existsSync(path.join(cwd, 'AGENTS.md'))).toBe(true);
+      await fsp.unlink(path.join(cwd, 'AGENTS.md'));
+      const done = await changeAgentProvider(project, 'a', 'codex-cli', p.expectedState, actor, selection);
       expect(done.contract!.saved).toEqual(done.contract!.proposed);
       expect(done).toMatchObject({ status: 'changed', nextStart: 'new_session' });
       expect(w.config).toMatchObject({ managed: original.managed, sessionHistory: original.sessionHistory, orchestration: original.orchestration,
         providerTransition: { version: 2, agentId: 'a', provider: 'codex-cli', delivery: 'read_only_managed' } });
       expect(await fsp.readFile(path.join(cwd, 'AGENTS.md'), 'utf8')).toBe('same');
+    } finally { await fsp.rm(cwd, { recursive: true, force: true }); }
+  });
+  it('carries original start evidence and excludes only lastSleep bookkeeping', async () => {
+    const cwd = await fsp.mkdtemp(path.join(os.tmpdir(), 'original-provider-witness-'));
+    const project = path.join(cwd, '.project'); await fsp.mkdir(path.join(project, '.clubhouse'), { recursive: true });
+    try {
+      await fsp.writeFile(path.join(cwd, 'CLAUDE.md'), 'same');
+      w.config.worktreePath = cwd; w.config.runtimeMode = 'terminal'; w.config.managed = { version: 1, blocks: ['text'], skills: [], mcps: [] };
+      await fsp.writeFile(path.join(project, '.clubhouse', 'agents.json'), JSON.stringify([w.config]));
+      const p = await previewAgentProvider(project, 'a', 'codex-cli', actor, undefined, { contractVersion: 2 });
+      await changeAgentProvider(project, 'a', 'codex-cli', p.expectedState, actor, { contractVersion: 2 });
+      // Persist the mocked writer's result; agent-config.test covers the real durable writer.
+      await fsp.writeFile(path.join(project, '.clubhouse', 'agents.json'), JSON.stringify([w.config]));
+      const saved = await previewAgentProvider(project, 'a', 'codex-cli', actor, undefined, { contractVersion: 2 });
+      const admission = await verifyProviderStartPreview(project, 'a', 'codex-cli', saved.expectedState, saved.contract!.saved, actor);
+      const original = structuredClone(w.config);
+      for (const patch of [
+        { orchestrator: 'claude-code' }, { model: 'changed' }, { effort: 'low' }, { runtimeMode: 'chat' },
+        { access: 'full_access' }, { sandbox: 'danger-full-access' }, { approvalPolicy: 'never' },
+        { lastSessionId: 'changed-native' }, { sessionHistory: [] }, { quarantinedSessionIds: ['native'] },
+        { managed: { version: 1, blocks: [], skills: [], mcps: [] } },
+        { providerTransition: { ...original.providerTransition, nativeFingerprint: 'f'.repeat(64) } },
+      ]) {
+        w.config = { ...structuredClone(original), ...patch };
+        expect(admission.assertBeforeCreate, JSON.stringify(Object.keys(patch))).toThrow('stale_state');
+      }
+      w.config = structuredClone(original); w.config.lastSleep = { reason: 'user', at: 'changed bookkeeping only' };
+      await fsp.writeFile(path.join(project, '.clubhouse', 'agents.json'), JSON.stringify([w.config]));
+      expect(admission.assertBeforeCreate).not.toThrow();
+      w.catalogEfforts.push('new-valid-offering'); expect(admission.assertBeforeCreate).toThrow('stale_state'); w.catalogEfforts.pop();
+      await fsp.writeFile(path.join(project, '.clubhouse', 'settings.json'), JSON.stringify({ agentDefaults: { testCommand: 'new generation with same nullable model/effort' } }));
+      expect(admission.assertBeforeCreate).toThrow('stale_state');
+    } finally { await fsp.rm(cwd, { recursive: true, force: true }); }
+  });
+  it('refuses a newly shared workspace at the actual Apply mutation boundary', async () => {
+    const cwd = await fsp.mkdtemp(path.join(os.tmpdir(), 'provider-isolation-'));
+    const project = path.join(cwd, '.project'); await fsp.mkdir(path.join(project, '.clubhouse'), { recursive: true });
+    try {
+      await fsp.writeFile(path.join(cwd, 'CLAUDE.md'), 'same');
+      w.config.worktreePath = cwd; w.config.managed = { version: 1, blocks: ['text'], skills: [], mcps: [] };
+      await fsp.writeFile(path.join(project, '.clubhouse', 'agents.json'), JSON.stringify([w.config]));
+      const p = await previewAgentProvider(project, 'a', 'codex-cli', actor, undefined, { contractVersion: 2 });
+      const original = structuredClone(w.config);
+      w.beforeEffect = () => writeFileSync(path.join(project, '.clubhouse', 'agents.json'), JSON.stringify([w.config, { ...w.config, id: 'new-peer' }]));
+      await expect(changeAgentProvider(project, 'a', 'codex-cli', p.expectedState, actor, { contractVersion: 2 })).rejects.toMatchObject({ code: 'managed_preparation_retained', extra: { transition: { savedUnchanged: true, persisted: false, nativePreparation: 'may_remain' } } });
+      expect(w.config).toEqual(original); expect(await fsp.readFile(path.join(cwd, 'AGENTS.md'), 'utf8')).toBe('same');
     } finally { await fsp.rm(cwd, { recursive: true, force: true }); }
   });
   it('rechecks authorization at the synchronous configuration mutation boundary', async () => {

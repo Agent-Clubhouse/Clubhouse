@@ -166,8 +166,17 @@ export function providerSettingsCommitFence(projectPath: string): () => void {
   const witness = launchSettingsEvidence(projectPath);
   return () => { if (launchSettingsEvidence(projectPath) !== witness) return refuse('stale_state'); };
 }
-export function managedProviderCommitFence(projectPath: string, plan: ManagedProviderPlan): () => void {
-  return () => {
+export function managedProviderCommitFence(projectPath: string, plan: ManagedProviderPlan): (agent: DurableAgentConfig) => void {
+  return (agent) => {
+    if (managedGrantedSkillIds(agent).length || agent.managed?.skills.length) return refuse('stale_state');
+    const primary = fileStateSync(path.join(projectPath, '.clubhouse', 'agents.json'));
+    const rows: unknown = primary ? JSON.parse(primary.text) : null;
+    if (!Array.isArray(rows)) return refuse('managed_workspace_unverified');
+    assertIsolated(rows, plan.root, agent.id);
+    const matches = rows.filter((row) => row && typeof row === 'object' && row.id === agent.id);
+    const withoutSleep = (row: DurableAgentConfig) => { const copy = { ...row }; delete copy.lastSleep; return copy; };
+    if (matches.length !== 1 || digest(withoutSleep(matches[0])) !== digest(withoutSleep(agent))) return refuse('stale_state');
+    assertNoAmbientSkills(plan.root.real);
     if (digest(rootStateSync(plan.root.real)) !== digest(plan.root) || digest(fileStateSync(plan.sourcePath)) !== digest(plan.source)
       || digest(fileStateSync(plan.targetPath)) !== digest(plan.target)
       || digest([launchSettingsEvidence(projectPath), nativeSettingsEvidence(plan.root.real)]) !== plan.launchFingerprint
@@ -239,25 +248,33 @@ export async function managedProviderStartGuard(projectPath: string, agent: Dura
   };
 }
 
-/** Prepare the absent file, returning a conditional undo for a failed config
- * commit. A crash before commit leaves an inert, equivalent target file; the
- * saved CLI and history still describe the old provider. Retry is safe. */
+/** Prepare the absent file. The rejection callback reports retained/uncertain
+ * bytes without unlinking a path a person could replace. Retry requires a
+ * fresh preview; partial/custom bytes block it. */
 export async function prepareManagedProviderTransition(plan: ManagedProviderPlan, assertCurrent: () => Promise<void>): Promise<() => Promise<void>> {
   await assertCurrent();
   if (plan.blocked) return refuse(plan.blocked);
   if (plan.target) return async () => {};
   let created: FileState | null = null;
+  let createdByOperation = false;
   let handle: Awaited<ReturnType<typeof fs.open>> | undefined;
-  const undo = async () => {
-    if (!created) return;
-    const now = await readFile(plan.targetPath);
-    // A concurrent edit/replacement belongs to its author. Never remove it.
-    if (digest(now) !== digest(created) || digest(await rootState(plan.root.real)) !== digest(plan.root)) return refuse('managed_rollback_conflict');
-    await fs.unlink(plan.targetPath);
+  const reportRetention = async () => {
+    if (!createdByOperation) return;
+    // Node exposes no atomic identity-conditional unlink. Retain even our own
+    // inert bytes rather than deleting a person's late replacement via path.
+    let unchanged = false;
+    try {
+      const now = await readFile(plan.targetPath);
+      unchanged = !!created && digest(now) === digest(created) && digest(await rootState(plan.root.real)) === digest(plan.root);
+    } catch { /* telemetry-exempt: failed observation cannot authorize cleanup or claim intact bytes. */ }
+    throw new MobileControlError(unchanged ? 'managed_preparation_retained' : 'managed_rollback_conflict', 409, 'failed',
+      'Native preparation may remain. Review the saved configuration and conflicts before retrying.',
+      { transition: { nativePreparation: 'may_remain', completeness: 'unverified' } });
   };
   try {
     if (digest(await rootState(plan.root.real)) !== digest(plan.root)) return refuse('stale_state');
     handle = await fs.open(plan.targetPath, constants.O_CREAT | constants.O_EXCL | constants.O_RDWR | constants.O_NOFOLLOW, 0o600);
+    createdByOperation = true;
     // Capture partial writes too, so failure cannot leave a truncated target.
     try {
       await handle.writeFile(plan.instructions, 'utf8');
@@ -270,10 +287,10 @@ export async function prepareManagedProviderTransition(plan: ManagedProviderPlan
       await handle.close(); handle = undefined;
     }
     if (digest(await readFile(plan.sourcePath)) !== digest(plan.source)) return refuse('stale_state');
-    return undo;
+    return reportRetention;
   } catch (err) {
-    await handle?.close();
-    await undo();
+    try { await handle?.close(); } catch { /* telemetry-exempt: preparation still gets an explicit retention receipt. */ }
+    await reportRetention();
     if ((err as NodeJS.ErrnoException).code === 'EEXIST') return refuse('stale_state');
     throw err;
   }
