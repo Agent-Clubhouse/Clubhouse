@@ -40,6 +40,7 @@ const W = vi.hoisted(() => ({
   providerV2Calls: 0,
   providerV2BeforeSpawn: undefined as undefined | (() => void),
   providerV2BeforeEffect: undefined as undefined | (() => void),
+  providerV2BeforeAck: undefined as undefined | (() => void),
   providerV2AfterCommit: undefined as undefined | (() => void),
   providerV2Wrapper: undefined as undefined | Record<string, unknown>,
   providerV2SettingsUnreadable: false,
@@ -415,7 +416,7 @@ vi.mock('./agent-config', async () => {
         agent.contextWindowNotice = `${agent.contextWindow} isn't one this model offers.`;
         delete agent.contextWindow;
       }
-      if (beforeCommit) { onPersisted?.(structuredClone(agent)); W.providerV2AfterCommit?.(); }
+      if (beforeCommit) { W.providerV2BeforeAck?.(); onPersisted?.(structuredClone(agent)); W.providerV2AfterCommit?.(); }
     },
     updateDurable: async (projectPath: string, id: string, updates: Record<string, unknown>) => { Object.assign(find(projectPath, id) ?? {}, updates); },
     // The orchestration policy service's own writes (#2228).
@@ -3956,6 +3957,17 @@ describe('Annex mobile contract fixtures', { timeout: TEST_TIMEOUT_MS }, () => {
     const postcommitObserverFailure = await command('v2: acknowledged save with postcommit observer failure', { ...defaultRequest, type: 'agent.providerChange', expectedState: observerFailurePreview.body.result.expectedState }, { commandId: 'provider-v2-observer-failure' });
     W.providerV2AfterCommit = undefined;
     expect(postcommitObserverFailure.body.result).toMatchObject({ contract: { result: { persisted: true, started: false } }, nextWake: { state: 'blocked', code: 'next_wake_unverified' } });
+    const conflictPreview = await command('v2: save before acknowledged provider conflict', selectedRequest, { commandId: 'provider-v2-ack-conflict-preview' });
+    W.providerV2BeforeAck = () => { config.orchestrator = 'claude-code'; };
+    const acknowledgedProviderConflict = await command('v2: acknowledged saved provider differs from request', { ...selectedRequest, type: 'agent.providerChange', expectedState: conflictPreview.body.result.expectedState }, { commandId: 'provider-v2-ack-conflict' });
+    W.providerV2BeforeAck = undefined; config.orchestrator = 'codex-cli';
+    expect(acknowledgedProviderConflict.body.transition).toMatchObject({ status: 'committed_state_conflict', persisted: true, requestedSelectionSaved: false, savedProvider: 'claude-code', saved: { provider: 'claude-code', providerOverride: 'claude-code' }, nextWake: 'fresh_read_and_review_required' });
+    expect(acknowledgedProviderConflict.body).not.toHaveProperty('result');
+    const inheritedConflictPreview = await command('v2: save before removed provider override', defaultRequest, { commandId: 'provider-v2-ack-inherited-preview' });
+    W.providerV2BeforeAck = () => { delete config.orchestrator; };
+    const acknowledgedInheritedUnknown = await command('v2: acknowledged inherited provider unverified', { ...defaultRequest, type: 'agent.providerChange', expectedState: inheritedConflictPreview.body.result.expectedState }, { commandId: 'provider-v2-ack-inherited' });
+    W.providerV2BeforeAck = undefined; config.orchestrator = 'codex-cli';
+    expect(acknowledgedInheritedUnknown.body.transition).toMatchObject({ status: 'committed_state_conflict', persisted: true, requestedSelectionSaved: false, savedProvider: null, saved: null, savedOverrides: { provider: null }, nextWake: 'fresh_read_and_review_required' });
     const rejectedSavePreview = await command('v2: fresh preview before rejected save', selectedRequest, { commandId: 'provider-v2-retained-preview' });
     W.providerV2CommitError = true; W.providerV2RetainPreparation = true;
     const retainedPreparation = await command('v2: rejected apply with retained preparation', { ...selectedRequest, type: 'agent.providerChange', expectedState: rejectedSavePreview.body.result.expectedState }, { commandId: 'provider-v2-retained-preparation' });
@@ -3992,7 +4004,7 @@ describe('Annex mobile contract fixtures', { timeout: TEST_TIMEOUT_MS }, () => {
     expect(oldHandlerCalls).toBe(0);
     fixtures.set('provider-control-v2.json', { note: 'Synthetic managed transaction/PTY leaves. Complete opt-in request/receipts. Tokens/epochs are normalized opaque examples; native filesystem and PTY boundary proof are separate unit suites.',
       oldHost, contextReview, catalogEvidence,
-      preview, savedDefaultsPreview, staleApplyDefaults, unsupported, malformedV2, unsupportedVersion, authorityDenied, retainedPreparation, unverifiedPersistence, persistedSaveBlocked, persistedSaveUnverified, postcommitSavedReadFailure, postcommitObserverFailure, sameCommandChangedPayload, epochLost, legacyOnNewHost: { preview: legacyPreview, apply: legacyApply, start: legacyStart }, inheritedPreview, inheritedAlready, unsupportedStart, applied, selectedPreview, selectedApply, defaultPreview, defaultApply, alreadySelected: already, catalogStale, stale, startAdmissionDrift, started, lostResponseReplay: replay, alreadyRunning: running, failedAfterCreation: failed, refusedBeforeCreation: refused, immediateExit: exited });
+      preview, savedDefaultsPreview, staleApplyDefaults, unsupported, malformedV2, unsupportedVersion, authorityDenied, retainedPreparation, unverifiedPersistence, persistedSaveBlocked, persistedSaveUnverified, postcommitSavedReadFailure, postcommitObserverFailure, acknowledgedProviderConflict, acknowledgedInheritedUnknown, sameCommandChangedPayload, epochLost, legacyOnNewHost: { preview: legacyPreview, apply: legacyApply, start: legacyStart }, inheritedPreview, inheritedAlready, unsupportedStart, applied, selectedPreview, selectedApply, defaultPreview, defaultApply, alreadySelected: already, catalogStale, stale, startAdmissionDrift, started, lostResponseReplay: replay, alreadyRunning: running, failedAfterCreation: failed, refusedBeforeCreation: refused, immediateExit: exited });
     delete config.managed; delete config.providerTransition; W.guidedAvailable = false; W.providerV2Identity = null;
   });
 

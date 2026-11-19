@@ -271,6 +271,15 @@ export async function changeAgentProvider(projectPath: string, agentId: string, 
     const saved = intent ? commitReceipt.saved : null;
     if (intent && !saved) throw new MobileControlError('apply_outcome_unverified', 409, 'failed', 'The saved target could not be verified. Read it before retrying.',
       { transition: { status: 'outcome_unverified', persisted: null, savedUnchanged: null, historyRetained: null, nextWake: 'fresh_read_and_review_required' } });
+    // External merges may accept a provider change when our write did not
+    // change that field. Acknowledged storage is not evidence that the requested
+    // selection won. Never relabel that row or resolve inherited defaults here.
+    if (intent && saved!.orchestrator !== provider) throw new MobileControlError('apply_committed_state_conflict', 409, 'failed',
+      'Configuration was durably written, but the acknowledged provider differs from the request. Read and review the saved target before continuing.',
+      { transition: { status: 'committed_state_conflict', persisted: true, requestedSelectionSaved: false,
+        savedProvider: saved!.orchestrator ?? null, saved: saved!.orchestrator ? providerNextWake(saved!, saved!.orchestrator) : null,
+        savedOverrides: { provider: saved!.orchestrator ?? null, model: saved!.model ?? null, effort: saved!.effort ?? null },
+        savedUnchanged: hash(saved) === before, historyRetained: null, nextWake: 'fresh_read_and_review_required' } });
     let nextWake: { state: 'ready'; expectedState: string } | { state: 'blocked'; code: string } | undefined;
     if (intent) {
       try {

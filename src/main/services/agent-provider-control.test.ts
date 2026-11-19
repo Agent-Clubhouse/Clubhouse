@@ -7,14 +7,14 @@ import { existsSync, writeFileSync } from 'node:fs';
 import { agentRegistry } from './agent-registry';
 import { withAgentActivity, withAgentTransition } from './agent-transition';
 import { changeAgentProvider, previewAgentProvider, verifyProviderStartPreview } from './agent-provider-control';
-const w = vi.hoisted(() => ({ defaults: {} as any, config: {} as any, readFailed: false, afterWrite: undefined as undefined | (() => void), catalogEfforts: ['high', 'low'] as string[], inventoryReadable: true, available: true, instructions: 'same', runtime: 'terminal', running: false, beforeEffect: undefined as undefined | (() => void), commitFailed: false, revision: 1, captureFailed: false, beforeCommit: undefined as undefined | (() => void), beforeAvailability: undefined as undefined | (() => void) }));
+const w = vi.hoisted(() => ({ defaults: {} as any, config: {} as any, readFailed: false, beforeAck: undefined as undefined | (() => void), afterWrite: undefined as undefined | (() => void), catalogEfforts: ['high', 'low'] as string[], inventoryReadable: true, available: true, instructions: 'same', runtime: 'terminal', running: false, beforeEffect: undefined as undefined | (() => void), commitFailed: false, revision: 1, captureFailed: false, beforeCommit: undefined as undefined | (() => void), beforeAvailability: undefined as undefined | (() => void) }));
 vi.mock('./managed-agents', () => ({ managedAgents: () => ({ headContent: async (id: string) => ({ entry: { name: id, source: { kind: 'library' }, headRevision: w.revision }, content: id === 'text' ? { kind: 'block', content: 'same' } : { kind: 'mcp', serverKey: 'clubhouse' }, droppedEnvValues: [] }) }) }));
 vi.mock('./agent-config', () => ({
   getDurableConfig: async () => { if (w.readFailed) throw new Error('postcommit saved read failed'); return w.config; },
   peekCachedDurableConfig: () => w.config,
   peekDurableConfigsChecked: async () => ({ readable: w.inventoryReadable, agents: [w.config] }),
   flushAgentConfig: async () => {},
-  updateDurableConfig: vi.fn(async (_p, _id, update, check, precondition, onPersisted) => { w.beforeCommit?.(); await check?.(); await precondition?.prepare(); w.beforeEffect?.(); precondition?.check(w.config); if (w.commitFailed) throw new Error('disk full'); const changed = w.config.orchestrator !== update.orchestrator; if (changed) { delete w.config.lastSessionId; delete w.config.model; delete w.config.effort; delete w.config.routing; delete w.config.contextWindow; } if (update.model !== undefined) { if (update.model !== w.config.model) { delete w.config.effort; delete w.config.routing; } if (update.model === 'default') delete w.config.model; else w.config.model = update.model; } if (update.effort !== undefined) { if (update.effort === null) delete w.config.effort; else w.config.effort = update.effort; } if (update.providerTransition) w.config.providerTransition = update.providerTransition; w.config.orchestrator = update.orchestrator; onPersisted?.(structuredClone(w.config)); w.afterWrite?.(); }),
+  updateDurableConfig: vi.fn(async (_p, _id, update, check, precondition, onPersisted) => { w.beforeCommit?.(); await check?.(); await precondition?.prepare(); w.beforeEffect?.(); precondition?.check(w.config); if (w.commitFailed) throw new Error('disk full'); const changed = w.config.orchestrator !== update.orchestrator; if (changed) { delete w.config.lastSessionId; delete w.config.model; delete w.config.effort; delete w.config.routing; delete w.config.contextWindow; } if (update.model !== undefined) { if (update.model !== w.config.model) { delete w.config.effort; delete w.config.routing; } if (update.model === 'default') delete w.config.model; else w.config.model = update.model; } if (update.effort !== undefined) { if (update.effort === null) delete w.config.effort; else w.config.effort = update.effort; } if (update.providerTransition) w.config.providerTransition = update.providerTransition; w.config.orchestrator = update.orchestrator; w.beforeAck?.(); onPersisted?.(structuredClone(w.config)); w.afterWrite?.(); }),
 }));
 vi.mock('./agent-system', () => ({
   resolveOrchestrator: async (_p: string, id = 'claude-code') => ({ id, conventions: { settingsFormat: id === 'codex-cli' ? 'toml' : 'json', legacyInstructionsFile: id === 'codex-cli' ? 'AGENTS.md' : 'CLAUDE.md' }, buildMcpArgs: () => [], peekModels: () => ({ source: 'live', via: 'handshake', fetchedAt: Date.now(), models: [{ id: 'fixture-model', label: 'Fixture', isDefault: true, efforts: w.catalogEfforts }] }), listModels: async () => ({ source: 'live', via: 'handshake', fetchedAt: Date.now(), models: [{ id: 'fixture-model', label: 'Fixture', isDefault: true, efforts: w.catalogEfforts }] }), getCapabilities: () => ({ permissions: true }), inspectInstructions: async () => id === 'codex-cli' ? w.instructions : 'same' }),
@@ -38,7 +38,7 @@ const actor = { key: 'phone:paired', assertAuthorized: () => {}, assertCommitAut
 const preview = () => previewAgentProvider('/fixture', 'a', 'codex-cli', actor);
 beforeEach(() => {
   w.config = { id: 'a', name: 'Agent', orchestrator: 'claude-code', lastSessionId: 'claude-native', sessionHistory: [{ sessionId: 'claude-native', orchestrator: 'claude-code' }], worktreePath: '/fixture/work', orchestration: { control: 'hands-off' }, mcpIds: ['workiq'] };
-  w.readFailed = false; w.afterWrite = undefined; w.catalogEfforts = ['high', 'low']; w.inventoryReadable = true; w.beforeEffect = undefined; w.commitFailed = false; w.revision = 1; w.defaults = {}; w.beforeCommit = undefined; w.runtime = 'terminal'; w.captureFailed = false; w.available = true; w.instructions = 'same'; w.running = false; w.beforeAvailability = undefined;
+  w.readFailed = false; w.beforeAck = undefined; w.afterWrite = undefined; w.catalogEfforts = ['high', 'low']; w.inventoryReadable = true; w.beforeEffect = undefined; w.commitFailed = false; w.revision = 1; w.defaults = {}; w.beforeCommit = undefined; w.runtime = 'terminal'; w.captureFailed = false; w.available = true; w.instructions = 'same'; w.running = false; w.beforeAvailability = undefined;
   vi.mocked(updateDurableConfig).mockClear(); vi.mocked(agentRegistry.get).mockReturnValue(undefined);
   dispatcherModels.byHand = false;
 });
@@ -198,6 +198,13 @@ describe('guided provider control', () => {
       contract: { saved: { model: { value: 'fixture-model', source: 'agent' }, effort: { value: 'high', source: 'agent' } }, result: { persisted: true, started: false } },
       nextWake: { state: 'blocked', code: 'next_wake_unverified' } });
     expect(w.config.model).toBe('fixture-model');
+  });
+  it.each(['claude-code', undefined])('refuses to label an acknowledged provider %s with the requested provider', async (acknowledgedProvider) => {
+    w.config.orchestrator = 'codex-cli';
+    const selection = { contractVersion: 2 as const, model: { kind: 'selected' as const, id: 'fixture-model' }, effort: 'high' };
+    const p = await previewAgentProvider('/fixture', 'a', 'codex-cli', actor, undefined, selection);
+    w.beforeAck = () => { if (acknowledgedProvider) w.config.orchestrator = acknowledgedProvider; else delete w.config.orchestrator; };
+    await expect(changeAgentProvider('/fixture', 'a', 'codex-cli', p.expectedState, actor, selection)).rejects.toMatchObject({ code: 'apply_committed_state_conflict', extra: { transition: { status: 'committed_state_conflict', persisted: true, requestedSelectionSaved: false, savedProvider: acknowledgedProvider ?? null, nextWake: 'fresh_read_and_review_required' } } });
   });
   it('retains the committed snapshot when settings change after acknowledgment and issues no wake token', async () => {
     const selection = { contractVersion: 2 as const, model: { kind: 'selected' as const, id: 'fixture-model' }, effort: 'high' };

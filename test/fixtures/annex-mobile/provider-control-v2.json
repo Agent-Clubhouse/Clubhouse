@@ -1,4 +1,100 @@
 {
+  "acknowledgedInheritedUnknown": {
+    "body": {
+      "commandId": "provider-v2-ack-inherited",
+      "epoch": "00000000-0000-4000-8000-000000000001",
+      "error": {
+        "code": "apply_committed_state_conflict",
+        "message": "Configuration was durably written, but the acknowledged provider differs from the request. Read and review the saved target before continuing."
+      },
+      "status": "failed",
+      "transition": {
+        "historyRetained": null,
+        "nextWake": "fresh_read_and_review_required",
+        "persisted": true,
+        "requestedSelectionSaved": false,
+        "saved": null,
+        "savedOverrides": {
+          "effort": null,
+          "model": null,
+          "provider": null
+        },
+        "savedProvider": null,
+        "savedUnchanged": false,
+        "status": "committed_state_conflict"
+      },
+      "version": 1
+    },
+    "request": {
+      "agentId": "durable_term",
+      "commandId": "provider-v2-ack-inherited",
+      "contractVersion": 2,
+      "effort": null,
+      "epoch": "00000000-0000-4000-8000-000000000001",
+      "expectedState": "0000000000000000000000000000000000000000000000000000000000000001",
+      "model": {
+        "kind": "provider_default"
+      },
+      "provider": "codex-cli",
+      "type": "agent.providerChange",
+      "version": 1
+    },
+    "status": 409
+  },
+  "acknowledgedProviderConflict": {
+    "body": {
+      "commandId": "provider-v2-ack-conflict",
+      "epoch": "00000000-0000-4000-8000-000000000001",
+      "error": {
+        "code": "apply_committed_state_conflict",
+        "message": "Configuration was durably written, but the acknowledged provider differs from the request. Read and review the saved target before continuing."
+      },
+      "status": "failed",
+      "transition": {
+        "historyRetained": null,
+        "nextWake": "fresh_read_and_review_required",
+        "persisted": true,
+        "requestedSelectionSaved": false,
+        "saved": {
+          "effort": {
+            "source": "agent",
+            "value": "high"
+          },
+          "model": {
+            "source": "agent",
+            "value": "fixture-current-model"
+          },
+          "provider": "claude-code",
+          "providerOverride": "claude-code"
+        },
+        "savedOverrides": {
+          "effort": "high",
+          "model": "fixture-current-model",
+          "provider": "claude-code"
+        },
+        "savedProvider": "claude-code",
+        "savedUnchanged": false,
+        "status": "committed_state_conflict"
+      },
+      "version": 1
+    },
+    "request": {
+      "agentId": "durable_term",
+      "commandId": "provider-v2-ack-conflict",
+      "contractVersion": 2,
+      "effort": "high",
+      "epoch": "00000000-0000-4000-8000-000000000001",
+      "expectedState": "0000000000000000000000000000000000000000000000000000000000000002",
+      "model": {
+        "id": "fixture-current-model",
+        "kind": "selected"
+      },
+      "provider": "codex-cli",
+      "type": "agent.providerChange",
+      "version": 1
+    },
+    "status": 409
+  },
   "alreadyRunning": {
     "body": {
       "commandId": "provider-v2-already-running",
@@ -28,7 +124,7 @@
         "providerOverride": "codex-cli"
       },
       "expectedProvider": "codex-cli",
-      "expectedState": "0000000000000000000000000000000000000000000000000000000000000001",
+      "expectedState": "0000000000000000000000000000000000000000000000000000000000000003",
       "resume": false,
       "type": "agent.start",
       "version": 1
@@ -129,14 +225,14 @@
           "nextWake": "revalidation_required",
           "skills": "none_supported"
         },
-        "expectedState": "0000000000000000000000000000000000000000000000000000000000000002",
+        "expectedState": "0000000000000000000000000000000000000000000000000000000000000004",
         "historyRetained": true,
         "instructionScope": "managed_composition",
         "instructions": "equivalent",
         "managedPreparation": "keep",
         "nextStart": "new_session",
         "nextWake": {
-          "expectedState": "0000000000000000000000000000000000000000000000000000000000000002",
+          "expectedState": "0000000000000000000000000000000000000000000000000000000000000004",
           "state": "ready"
         },
         "provider": "codex-cli",
@@ -157,7 +253,7 @@
       "commandId": "provider-v2-already",
       "contractVersion": 2,
       "epoch": "00000000-0000-4000-8000-000000000001",
-      "expectedState": "0000000000000000000000000000000000000000000000000000000000000002",
+      "expectedState": "0000000000000000000000000000000000000000000000000000000000000004",
       "provider": "codex-cli",
       "type": "agent.providerChange",
       "version": 1
@@ -264,7 +360,7 @@
         "managedPreparation": "keep",
         "nextStart": "new_session",
         "nextWake": {
-          "expectedState": "0000000000000000000000000000000000000000000000000000000000000002",
+          "expectedState": "0000000000000000000000000000000000000000000000000000000000000004",
           "state": "ready"
         },
         "provider": "codex-cli",
@@ -288,7 +384,7 @@
       "commandId": "provider-v2-apply",
       "contractVersion": 2,
       "epoch": "00000000-0000-4000-8000-000000000001",
-      "expectedState": "0000000000000000000000000000000000000000000000000000000000000003",
+      "expectedState": "0000000000000000000000000000000000000000000000000000000000000005",
       "provider": "codex-cli",
       "type": "agent.providerChange",
       "version": 1
@@ -312,7 +408,7 @@
       "contractVersion": 2,
       "effort": "high",
       "epoch": "00000000-0000-4000-8000-000000000001",
-      "expectedState": "0000000000000000000000000000000000000000000000000000000000000004",
+      "expectedState": "0000000000000000000000000000000000000000000000000000000000000002",
       "model": {
         "id": "fixture-current-model",
         "kind": "selected"
@@ -423,7 +519,7 @@
             "nextWake": "blocked",
             "skills": "none_supported"
           },
-          "expectedState": "0000000000000000000000000000000000000000000000000000000000000005",
+          "expectedState": "0000000000000000000000000000000000000000000000000000000000000006",
           "historyRetained": true,
           "instructionScope": "managed_composition",
           "instructions": "equivalent",
@@ -556,7 +652,7 @@
             "nextWake": "blocked",
             "skills": "none_supported"
           },
-          "expectedState": "0000000000000000000000000000000000000000000000000000000000000006",
+          "expectedState": "0000000000000000000000000000000000000000000000000000000000000007",
           "historyRetained": true,
           "instructionScope": "managed_composition",
           "instructions": "equivalent",
@@ -677,7 +773,7 @@
             "nextWake": "blocked",
             "skills": "none_supported"
           },
-          "expectedState": "0000000000000000000000000000000000000000000000000000000000000007",
+          "expectedState": "0000000000000000000000000000000000000000000000000000000000000008",
           "historyRetained": true,
           "instructionScope": "managed_composition",
           "instructions": "equivalent",
@@ -771,7 +867,7 @@
         "providerOverride": "codex-cli"
       },
       "expectedProvider": "codex-cli",
-      "expectedState": "0000000000000000000000000000000000000000000000000000000000000001",
+      "expectedState": "0000000000000000000000000000000000000000000000000000000000000003",
       "resume": false,
       "type": "agent.start",
       "version": 1
@@ -877,7 +973,7 @@
           "nextWake": "blocked",
           "skills": "none_supported"
         },
-        "expectedState": "0000000000000000000000000000000000000000000000000000000000000008",
+        "expectedState": "0000000000000000000000000000000000000000000000000000000000000009",
         "historyRetained": true,
         "instructionScope": "managed_composition",
         "instructions": "equivalent",
@@ -1015,7 +1111,7 @@
         "managedPreparation": "keep",
         "nextStart": "new_session",
         "nextWake": {
-          "expectedState": "0000000000000000000000000000000000000000000000000000000000000002",
+          "expectedState": "0000000000000000000000000000000000000000000000000000000000000004",
           "state": "ready"
         },
         "provider": "codex-cli",
@@ -1040,7 +1136,7 @@
       "contractVersion": 2,
       "effort": null,
       "epoch": "00000000-0000-4000-8000-000000000001",
-      "expectedState": "0000000000000000000000000000000000000000000000000000000000000009",
+      "expectedState": "0000000000000000000000000000000000000000000000000000000000000001",
       "model": {
         "kind": "provider_default"
       },
@@ -1148,7 +1244,7 @@
           "nextWake": "revalidation_required",
           "skills": "none_supported"
         },
-        "expectedState": "0000000000000000000000000000000000000000000000000000000000000009",
+        "expectedState": "0000000000000000000000000000000000000000000000000000000000000001",
         "historyRetained": true,
         "instructionScope": "managed_composition",
         "instructions": "equivalent",
@@ -1213,7 +1309,7 @@
         "providerOverride": "codex-cli"
       },
       "expectedProvider": "codex-cli",
-      "expectedState": "0000000000000000000000000000000000000000000000000000000000000001",
+      "expectedState": "0000000000000000000000000000000000000000000000000000000000000003",
       "resume": false,
       "type": "agent.start",
       "version": 1
@@ -1290,7 +1386,7 @@
         "providerOverride": "codex-cli"
       },
       "expectedProvider": "codex-cli",
-      "expectedState": "0000000000000000000000000000000000000000000000000000000000000001",
+      "expectedState": "0000000000000000000000000000000000000000000000000000000000000003",
       "resume": false,
       "type": "agent.start",
       "version": 1
@@ -1367,7 +1463,7 @@
         "providerOverride": "codex-cli"
       },
       "expectedProvider": "codex-cli",
-      "expectedState": "0000000000000000000000000000000000000000000000000000000000000001",
+      "expectedState": "0000000000000000000000000000000000000000000000000000000000000003",
       "resume": false,
       "type": "agent.start",
       "version": 1
@@ -1793,7 +1889,7 @@
         "providerOverride": "codex-cli"
       },
       "expectedProvider": "codex-cli",
-      "expectedState": "0000000000000000000000000000000000000000000000000000000000000001",
+      "expectedState": "0000000000000000000000000000000000000000000000000000000000000003",
       "resume": false,
       "type": "agent.start",
       "version": 1
@@ -2385,7 +2481,7 @@
       "contractVersion": 2,
       "effort": "high",
       "epoch": "00000000-0000-4000-8000-000000000001",
-      "expectedState": "0000000000000000000000000000000000000000000000000000000000000004",
+      "expectedState": "0000000000000000000000000000000000000000000000000000000000000002",
       "model": {
         "id": "fixture-current-model",
         "kind": "selected"
@@ -2525,7 +2621,7 @@
       "contractVersion": 2,
       "effort": null,
       "epoch": "00000000-0000-4000-8000-000000000001",
-      "expectedState": "0000000000000000000000000000000000000000000000000000000000000009",
+      "expectedState": "0000000000000000000000000000000000000000000000000000000000000001",
       "model": {
         "kind": "provider_default"
       },
@@ -2664,7 +2760,7 @@
       "contractVersion": 2,
       "effort": null,
       "epoch": "00000000-0000-4000-8000-000000000001",
-      "expectedState": "0000000000000000000000000000000000000000000000000000000000000009",
+      "expectedState": "0000000000000000000000000000000000000000000000000000000000000001",
       "model": {
         "kind": "provider_default"
       },
@@ -2801,7 +2897,7 @@
       "contractVersion": 2,
       "effort": "high",
       "epoch": "00000000-0000-4000-8000-000000000001",
-      "expectedState": "0000000000000000000000000000000000000000000000000000000000000004",
+      "expectedState": "0000000000000000000000000000000000000000000000000000000000000002",
       "model": {
         "id": "fixture-current-model",
         "kind": "selected"
@@ -2906,7 +3002,7 @@
           "nextWake": "revalidation_required",
           "skills": "none_supported"
         },
-        "expectedState": "0000000000000000000000000000000000000000000000000000000000000003",
+        "expectedState": "0000000000000000000000000000000000000000000000000000000000000005",
         "historyRetained": true,
         "instructionScope": "managed_composition",
         "instructions": "equivalent",
@@ -3008,7 +3104,7 @@
         "providerOverride": "codex-cli"
       },
       "expectedProvider": "codex-cli",
-      "expectedState": "0000000000000000000000000000000000000000000000000000000000000001",
+      "expectedState": "0000000000000000000000000000000000000000000000000000000000000003",
       "resume": false,
       "type": "agent.start",
       "version": 1
@@ -3042,7 +3138,7 @@
       "contractVersion": 2,
       "effort": "high",
       "epoch": "00000000-0000-4000-8000-000000000001",
-      "expectedState": "0000000000000000000000000000000000000000000000000000000000000004",
+      "expectedState": "000000000000000000000000000000000000000000000000000000000000000c",
       "model": {
         "id": "fixture-current-model",
         "kind": "selected"
@@ -3070,7 +3166,7 @@
       "contractVersion": 2,
       "effort": "low",
       "epoch": "00000000-0000-4000-8000-000000000001",
-      "expectedState": "0000000000000000000000000000000000000000000000000000000000000009",
+      "expectedState": "0000000000000000000000000000000000000000000000000000000000000001",
       "model": {
         "kind": "provider_default"
       },
@@ -3174,7 +3270,7 @@
           "nextWake": "revalidation_required",
           "skills": "none_supported"
         },
-        "expectedState": "0000000000000000000000000000000000000000000000000000000000000002",
+        "expectedState": "0000000000000000000000000000000000000000000000000000000000000004",
         "historyRetained": true,
         "instructionScope": "managed_composition",
         "instructions": "equivalent",
@@ -3308,7 +3404,7 @@
         "managedPreparation": "keep",
         "nextStart": "new_session",
         "nextWake": {
-          "expectedState": "0000000000000000000000000000000000000000000000000000000000000001",
+          "expectedState": "0000000000000000000000000000000000000000000000000000000000000003",
           "state": "ready"
         },
         "provider": "codex-cli",
@@ -3330,7 +3426,7 @@
       "contractVersion": 2,
       "effort": "high",
       "epoch": "00000000-0000-4000-8000-000000000001",
-      "expectedState": "0000000000000000000000000000000000000000000000000000000000000004",
+      "expectedState": "0000000000000000000000000000000000000000000000000000000000000002",
       "model": {
         "id": "fixture-current-model",
         "kind": "selected"
@@ -3440,7 +3536,7 @@
           "nextWake": "revalidation_required",
           "skills": "none_supported"
         },
-        "expectedState": "0000000000000000000000000000000000000000000000000000000000000004",
+        "expectedState": "0000000000000000000000000000000000000000000000000000000000000002",
         "historyRetained": true,
         "instructionScope": "managed_composition",
         "instructions": "equivalent",
@@ -3533,7 +3629,7 @@
         "providerOverride": "codex-cli"
       },
       "expectedProvider": "codex-cli",
-      "expectedState": "0000000000000000000000000000000000000000000000000000000000000001",
+      "expectedState": "0000000000000000000000000000000000000000000000000000000000000003",
       "resume": false,
       "type": "agent.start",
       "version": 1
@@ -3556,7 +3652,7 @@
       "commandId": "provider-v2-stale-default-apply",
       "contractVersion": 2,
       "epoch": "00000000-0000-4000-8000-000000000001",
-      "expectedState": "0000000000000000000000000000000000000000000000000000000000000002",
+      "expectedState": "0000000000000000000000000000000000000000000000000000000000000004",
       "provider": "codex-cli",
       "type": "agent.providerChange",
       "version": 1
@@ -3633,7 +3729,7 @@
         "providerOverride": "codex-cli"
       },
       "expectedProvider": "codex-cli",
-      "expectedState": "0000000000000000000000000000000000000000000000000000000000000001",
+      "expectedState": "0000000000000000000000000000000000000000000000000000000000000003",
       "resume": false,
       "type": "agent.start",
       "version": 1
@@ -3710,7 +3806,7 @@
         "providerOverride": "codex-cli"
       },
       "expectedProvider": "codex-cli",
-      "expectedState": "0000000000000000000000000000000000000000000000000000000000000001",
+      "expectedState": "0000000000000000000000000000000000000000000000000000000000000003",
       "resume": false,
       "type": "agent.start",
       "version": 1
@@ -3812,7 +3908,7 @@
             "nextWake": "blocked",
             "skills": "none_supported"
           },
-          "expectedState": "000000000000000000000000000000000000000000000000000000000000000c",
+          "expectedState": "000000000000000000000000000000000000000000000000000000000000000d",
           "historyRetained": true,
           "instructionScope": "managed_composition",
           "instructions": "unverified",
@@ -3935,7 +4031,7 @@
             "nextWake": "blocked",
             "skills": "none_supported"
           },
-          "expectedState": "000000000000000000000000000000000000000000000000000000000000000d",
+          "expectedState": "000000000000000000000000000000000000000000000000000000000000000e",
           "historyRetained": true,
           "instructionScope": "managed_composition",
           "instructions": "unverified",
@@ -4058,7 +4154,7 @@
             "nextWake": "blocked",
             "skills": "none_supported"
           },
-          "expectedState": "000000000000000000000000000000000000000000000000000000000000000e",
+          "expectedState": "000000000000000000000000000000000000000000000000000000000000000f",
           "historyRetained": true,
           "instructionScope": "managed_composition",
           "instructions": "equivalent",
@@ -4201,7 +4297,7 @@
       "contractVersion": 2,
       "effort": "high",
       "epoch": "00000000-0000-4000-8000-000000000001",
-      "expectedState": "0000000000000000000000000000000000000000000000000000000000000004",
+      "expectedState": "000000000000000000000000000000000000000000000000000000000000000c",
       "model": {
         "id": "fixture-current-model",
         "kind": "selected"
