@@ -13,6 +13,8 @@ export interface LoadedSettingsSnapshot<T> {
 
 export interface SettingsStore<T> {
   get(): T;
+  /** Cache state only: no IO, initialization, value access or extra raw snapshot retention. */
+  hasLoaded?(): boolean;
   /** Inspect an already established, explicitly opted-in metadata cache only. Never load, migrate, recover or write. */
   peekLoaded?(): LoadedSettingsSnapshot<T> | undefined;
   save(settings: T, precondition?: SettingsCommitPrecondition): Promise<void>;
@@ -496,6 +498,7 @@ export function createSettingsStore<T>(
   }
 
   const store: SettingsStore<T> = {
+    hasLoaded() { return cacheLoaded && cachedSettings !== null; },
     peekLoaded() {
       if (!displaySnapshot) return undefined;
       // Detach every exposed level. Freezing a live cache (or returning nested
