@@ -101,6 +101,12 @@ export async function readRemoteQuickDetails(target: ReadOnlyQuickTarget, author
       || isAgentRunning(agentId) !== rawRunning || quickRuntimeIsCurrent(run, current) !== bound || running && !registration && runtime?.kind !== 'chat'
       || runtime?.kind === 'chat' && (getAgentRuntime(agentId) !== runtime || runtime.getSessionId?.() !== sessionId || (runtime.getNativeSessionId?.() ?? null) !== nativeSessionId)
       || !target.current()) return { status: 409, body: { error: 'quick_run_changed' } };
+    result.providerEvidenceState = runtime?.kind === 'chat' && runtime.getDetailsEvidence ? 'unavailable' : 'unsupported';
+    if (running && bound && runtime?.kind === 'chat') {
+      const evidence = runtime.getDetailsEvidence?.();
+      if (evidence && evidence.agentId === agentId && evidence.providerId === providerId
+        && evidence.sessionId === sessionId && evidence.nativeSessionId === nativeSessionId) { result.providerEvidence = evidence; result.providerEvidenceState = 'current'; }
+    }
     for (const c of cards) {
       c.notes = c.notes.map((note) => display(note));
       if (c.notes.length > 20) c.notes = [...c.notes.slice(0, 19), `${c.notes.length - 19} more notices omitted by the host’s display limit.`];

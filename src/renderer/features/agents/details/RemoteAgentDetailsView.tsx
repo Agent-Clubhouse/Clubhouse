@@ -23,6 +23,7 @@ import { jumpToCanvas, remoteCanvasJumpUnavailable } from './agent-canvases';
 import { RemoteChangesCard } from './RemoteChangesCard';
 import { Evidence } from './RemoteDetailsEvidence';
 import { RemoteQuickSettingsCard } from './RemoteQuickSettingsCard';
+import { ProviderEvidenceNotes, ProviderInventory } from './ProviderEvidenceNotes';
 import { remoteDetailsAddress } from './remote-details-address';
 
 type Result = ControllerReadResult<RemoteAgentDetails> | { status: 'loading' };
@@ -76,9 +77,17 @@ export function RemoteAgentDetailsView({ agent, chat, onShowInStream, missedSuba
   const result: Result = received.status === 'ok' && received.value.agentId !== agentId ? { status: 'error' } : received;
   const details = result.status === 'ok' ? result.value : null;
   const hydrated = useRemoteDetailsChat(agent.id, details, connected, snapshot, transport.current.generation);
-  const runKey = `${agent.id}:${details?.providerId ?? ''}:${details?.sessionId ?? ''}:${details?.nativeSessionId ?? ''}:${details?.spawnedAt ?? ''}:${transport.current.generation}`;
+  const runKey = `${agent.id}:${details?.providerId ?? ''}:${details?.sessionId ?? ''}:${details?.nativeSessionId ?? ''}:${details?.spawnedAt ?? ''}:${transport.current.generation}:${details?.providerEvidence?.runId ?? ''}`;
   const suspectRun = useRef<string | null>(null);
   const retriedRun = useRef<string | null>(null);
+  const refreshedProviderReport = useRef<string | null>(null);
+  useEffect(() => {
+    if (!hydrated.providerRefreshSeq || !hydrated.providerRefreshIdentity) return;
+    const report = `${hydrated.providerRefreshIdentity}:${hydrated.providerRefreshSeq}`;
+    if (refreshedProviderReport.current === report) return;
+    refreshedProviderReport.current = report;
+    setRetry((n) => n + 1);
+  }, [hydrated.providerRefreshSeq, hydrated.providerRefreshIdentity]);
   if (hydrated.stopped && details?.running) suspectRun.current = runKey;
   if (hydrated.chat || details && !details.running) suspectRun.current = null;
   const runtimeUnconfirmed = !!details?.running && suspectRun.current === runKey;
@@ -97,7 +106,12 @@ export function RemoteAgentDetailsView({ agent, chat, onShowInStream, missedSuba
   const session = details && connected && !asleep && details.running ? hydrated.chat : undefined;
   const quickProvider = agent.kind === 'quick' && !runtimeUnconfirmed ? details?.cards.find((c) => c.id === 'settings')?.rows.find((r) => r.label === 'CLI' || asleep && r.label === 'Last CLI')?.value : undefined;
   const provider = details?.settings?.provider ?? quickProvider ?? session?.provider ?? 'Not reported by host';
-  const map = useMemo(() => session ? buildAgentMap({ items: session.items, subagents: session.subagents, capabilities: session.capabilities, state: session.state }) : null, [session]);
+  const map = useMemo(() => {
+    if (!session) return null;
+    const value = buildAgentMap({ items: session.items, subagents: session.subagents, capabilities: session.capabilities, state: session.state });
+    if (hydrated.evidence) for (const node of value.nodes) if (!node.items.length && !node.startTs) delete node.durationMs;
+    return value;
+  }, [session, hydrated.evidence]);
   const showSubagents = !dispatcher && !!map && map.mode !== 'none';
   const requested = focus?.agentId === agent.id ? containingDetailsCard(focus.card) : null;
   const available = new Set<CardId>(['settings', 'connections', 'actions']);
@@ -147,8 +161,12 @@ export function RemoteAgentDetailsView({ agent, chat, onShowInStream, missedSuba
     <div className="px-1 text-xs text-ctp-overlay1" role="status" data-testid="remote-details-freshness">
       {!address ? 'The remote agent identity is unavailable. Select it again after the host refreshes.' : details ? <>Read from {host} at {new Date(details.readAt).toLocaleTimeString()}. Read-only.</> : resultMessage(result.status)}
       {snapshotUnavailable && ' The host snapshot is unavailable; retained data may be stale.'}
+      {details?.providerEvidenceState === 'unavailable' && <p>The host has no current runtime display report. Earlier session values are withheld. <Button kind="ghost" onClick={() => setRetry((n) => n + 1)}>Refresh provider reports</Button></p>}
+      {details?.providerEvidenceState === 'unsupported' && details.sessionId && <p>This host runtime does not share current provider display reports.</p>}
       {hydrated.waiting && <p>{hydrated.loading ? 'Refreshing provider evidence from the host…' : 'Current provider evidence has not been refreshed. Retained session data is withheld.'}</p>}
-      {hydrated.partial && <p>Only part of the host transcript is loaded. Earlier provider reports and subagent activity may be missing.</p>}
+      {hydrated.partial && <p>{hydrated.evidence ? 'Only part of the host transcript is loaded. Display reports from this runtime open are read separately; earlier stream activity may be missing.' : 'Only part of the host transcript is loaded. Earlier provider reports and subagent activity may be missing.'}</p>}
+      {hydrated.evidence && <p>Provider facts observed on the host since this runtime opened, read at {new Date(hydrated.evidence.readAt).toLocaleTimeString()}. {hydrated.evidence.completeFromStart ? 'This runtime open was observed from its start; resumed conversation history is separate.' : 'A native session changed; earlier facts were cleared.'}</p>}
+      {hydrated.evidence && <ProviderEvidenceNotes evidence={hydrated.evidence} />}
       {['error', 'rate_limited', 'unavailable'].includes(result.status) && <Button kind="ghost" onClick={() => setRetry((n) => n + 1)}>Refresh</Button>}
     </div>
     {agent.kind === 'quick' ? <RemoteQuickSettingsCard card={card('settings')} session={session} runtimeUnconfirmed={runtimeUnconfirmed} message={resultMessage(result.status)} /> : <RemoteSettingsCard agent={{ ...agent, status }} chat={session} runtimeUnconfirmed={runtimeUnconfirmed} result={result.status === 'unavailable' ? undefined : settingsResult} onRetry={() => setRetry((n) => n + 1)}>{card('settings') && <Evidence card={card('settings')!} />}</RemoteSettingsCard>}
@@ -158,6 +176,8 @@ export function RemoteAgentDetailsView({ agent, chat, onShowInStream, missedSuba
     {!dispatcher && agent.kind === 'durable' && basic('orchestrate', 'Orchestration')}
     {showSubagents && session && map && <DetailsCard id="subagents" title="Subagents" summary={subagentSummary(map)} open={open('subagents')} onToggle={() => toggleCard('subagents')}>
       {(!connected || asleep || snapshotUnavailable) && <CardNote>Last loaded session snapshot. Current subagent status is not confirmed.</CardNote>}
+      {hydrated.evidence && !hydrated.evidence.values.subagents && <CardNote>No subagent report has arrived in this runtime open. Earlier conversation activity is separate.</CardNote>}
+      {hydrated.evidence && hydrated.partial && <CardNote>Provider-reported subagents include this runtime’s earlier reports. Tool activity and timings still depend on the loaded transcript and may be incomplete.</CardNote>}
       <SubagentList agent={agent} state={session} map={map} selected={selectedSub} onSelect={setSelectedSub} onShowInStream={(id) => onShowInStream?.(id)} missedSubagentId={missedSubagentId} />
     </DetailsCard>}
     {basic('connections', 'Connections')}
@@ -169,6 +189,9 @@ export function RemoteAgentDetailsView({ agent, chat, onShowInStream, missedSuba
     {!dispatcher && <DetailsCard id="skills-mcp" title="Skills and MCP" summary={asleep ? 'last session evidence' : 'connections and session reports'} open={open('skills-mcp')} onToggle={() => toggleCard('skills-mcp')}>
       {runtimeUnconfirmed && <CardNote>The session stopped or reported an error after the host read. Current MCP status is unconfirmed.</CardNote>}
       {card('skills-mcp') ? <Evidence card={runtimeUnconfirmed ? { ...card('skills-mcp')!, rows: card('skills-mcp')!.rows.filter((r) => r.label !== 'Clubhouse MCP') } : card('skills-mcp')!} /> : <CardNote>{resultMessage(result.status)}</CardNote>}
+      {hydrated.evidence && hydrated.evidence.values.mcpServers === undefined && <CardNote>The provider has not reported its MCP connections in this runtime open.</CardNote>}
+      {hydrated.evidence?.values.mcpServers?.length === 0 && <CardNote>The provider explicitly reported no MCP connections.</CardNote>}
+      <ProviderInventory evidence={hydrated.evidence} />
       {liveMcp.rows.map((m) => <CardRow key={m.name} label={m.name}>{m.status}{m.reason ? ` · ${m.reason}` : ''}</CardRow>)}
       {reported && <>
         <CardNote>{asleep || !connected ? 'Last session snapshot.' : 'Session snapshot.'} Provider-reported names do not prove a skill was used or executed. Filesystem scope and origin are not reported.</CardNote>
@@ -180,6 +203,7 @@ export function RemoteAgentDetailsView({ agent, chat, onShowInStream, missedSuba
     {!dispatcher && <DetailsCard id="session" title={asleep ? 'Last session' : 'Session'} summary={cost ?? ''} open={open('session')} onToggle={() => toggleCard('session')}>
       <CardRow label="Runs on">{provider}{session?.driver ? ` · ${DRIVER_LABELS[session.driver] ?? session.driver}${session.cliVersion ? ` ${session.cliVersion}` : ''}` : agent.executionMode === 'pty' ? ' · CLI' : ''}</CardRow>
       {!asleep && <CardRow label="Usage">{cost || tokens ? [cost, tokens ? `${formatTokens(tokens)} tokens` : null].filter(Boolean).join(' · ') : session ? 'Not reported in the loaded session snapshot' : agent.executionMode === 'pty' && details?.settings?.runtime === 'terminal' ? 'Not reported in the CLI view' : 'Current usage is not available from the host'}</CardRow>}
+      {hydrated.evidence?.values.turnTotal && !hydrated.evidence.values.sessionUsage?.tokens && <CardNote>Token sums cover completed turns observed since this runtime opened. Earlier resumed conversation usage is separate.</CardNote>}
       {!runtimeUnconfirmed && status === 'running' && details?.spawnedAt && <CardRow label="Running">{formatDuration(Math.max(0, Date.now() - details.spawnedAt))}</CardRow>}
       {ctx && ctxPct !== null && <section aria-label="Context window" data-testid="details-session-context"><CardRow label="Context window" labelWidth="wide">{ctxPct}% of {formatTokens(ctx.size)}{ctx.window === 'input' ? ' input' : ''}</CardRow><div className="pr-3.5 pl-[33px] py-1 text-xs"><UsageBar pct={ctxPct} /><p>{formatTokens(ctx.used)} of {formatTokens(ctx.size)} {ctx.window === 'input' ? 'input ' : ''}tokens</p>{ctx.window === 'input' && <p>{provider} reports the room left for input after its output reserve, so its own total can be larger.</p>}<p>{provider} compacts the conversation on its own near the limit.</p></div></section>}
       {limits.length > 0 && <CardRow label="Plan limits"><span className="flex flex-col gap-1">{limits.map((l) => <span key={l.window}>{limitName(l.window)} {limitLabel(l)}{l.resetsAt ? ` · resets ${new Date(l.resetsAt).toLocaleString()}` : ''}</span>)}</span></CardRow>}

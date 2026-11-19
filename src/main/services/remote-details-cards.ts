@@ -45,7 +45,7 @@ export async function readConnectionCard(c: RemoteDetailsCard, wiresId: string) 
     const name = candidates.length === 1 && record(candidates[0]) && typeof candidates[0].name === 'string' ? candidates[0].name : remotePeer.agentId;
     const peer = getPeer(remotePeer.machine);
     const availability = satellite?.needsPairing ? 'pairing required' : satellite?.state ?? 'connection state not retained';
-    const historical = !satellite || satellite.state !== 'connected' || satellite.snapshotUnavailable || !!snapshot?.snapshotTruncated?.omitted?.length;
+    const historical = !snapshot || !satellite || satellite.state !== 'connected' || satellite.snapshotUnavailable || !!snapshot.snapshotTruncated?.omitted?.length;
     row(c, name, `on ${machineName(remotePeer.machine)} · ${remotePeer.direction === 'two-way' ? 'two-way' : remotePeer.direction === 'to' ? 'sends to it' : 'sends to this agent'} · saved network link · ${availability}${historical ? ' · names from retained metadata' : ' · names from cached snapshot'}`);
     row(c, `${name} address`, remotePeer.address);
     if (historical && peer?.lastSeen) row(c, `${name} last seen`, peer.lastSeen);

@@ -1,4 +1,5 @@
 import { readRemoteAgentSettings } from './remote-agent-settings';
+import { resolveReadOnlyQuickChatTarget } from './read-only-quick-target';
 import { readRemoteAgentDetails } from './remote-agent-details';
 import { readRemoteAgentChanges } from './remote-agent-changes';
 import { isRemoteChangesQuery } from '../../shared/remote-agent-changes';
@@ -4053,15 +4054,17 @@ async function handleMobileAgentStateRoute(ctx: AnnexRouteContext): Promise<void
   }
 }
 
+const desktopDetailsAuthorized = (ctx: AnnexRouteContext) => {
+  const peer = annexPeers.getPeer(ctx.principal.fingerprint);
+  return !isRefusal(ctx.reauthorize()) && !!peer && peer.kind === 'desktop'
+    && !peer.networkPending && !mobileSessionPeers.has(ctx.principal.fingerprint);
+};
+
 /** Desktop display metadata only, under the existing paired-controller read authority. */
 async function handleAgentSettingsDetailsRoute(ctx: AnnexRouteContext, match: RegExpMatchArray): Promise<void> {
   if (ctx.requireMtls()) return;
   // Same paired-controller read authority as existing agent settings; recheck after disk reads.
-  const authorized = () => {
-    const peer = annexPeers.getPeer(ctx.principal.fingerprint);
-    return !isRefusal(ctx.reauthorize()) && !!peer && peer.kind === 'desktop'
-      && !peer.networkPending && !mobileSessionPeers.has(ctx.principal.fingerprint);
-  };
+  const authorized = () => desktopDetailsAuthorized(ctx);
   if (!authorized()) { sendJson(ctx.res, 403, { error: 'desktop_controller_required' }); return; }
   let agentId: string;
   try { agentId = decodeURIComponent(match[1]); }
@@ -4100,8 +4103,11 @@ async function handleMobileChatRoute(ctx: AnnexRouteContext, match: RegExpMatchA
   const epoch = mobileCommands.epoch;
   try {
     const agentId = decodeURIComponent(match[1]);
-    const durable = await findMobileAgent(agentId);
-    if ((!durable || isDisposedAgent(durable.config)) && !trackedQuickAgents.has(agentId)) {
+    // Direct desktop quick launches are not Annex's phone-tracked quick list.
+    // Admit only their exact attested current runtime under desktop read rights.
+    const quickRead = desktopDetailsAuthorized(ctx) ? await resolveReadOnlyQuickChatTarget(agentId, () => desktopDetailsAuthorized(ctx)) : null;
+    const durable = quickRead ? null : await findMobileAgent(agentId);
+    if (!quickRead && (!durable || isDisposedAgent(durable.config)) && !trackedQuickAgents.has(agentId)) {
       sendJson(ctx.res, 404, { error: 'agent_not_found' }); return;
     }
     const query = new URL(ctx.url, 'http://localhost').searchParams;
@@ -4113,10 +4119,12 @@ async function handleMobileChatRoute(ctx: AnnexRouteContext, match: RegExpMatchA
       || (requestedSession !== undefined && (requestedSession.length === 0 || requestedSession.length > 256))) {
       sendJson(ctx.res, 400, { error: 'invalid_query' }); return;
     }
-    const runtime = getAgentRuntime(agentId);
+    if (quickRead && (beforeSeq !== undefined || requestedSession !== undefined && requestedSession !== quickRead.sessionId)) { sendJson(ctx.res, 404, { error: 'quick_session_unavailable' }); return; }
+    const runtime = quickRead?.runtime ?? getAgentRuntime(agentId);
     const liveSessionId = runtime?.kind === 'chat' ? runtime.getSessionId?.() : undefined;
     let live = runtime?.kind === 'chat' && runtime.isRunning() && (requestedSession === undefined || liveSessionId === requestedSession);
-    const events = live ? (await runtime.readTranscript()).events ?? [] : await readChatTranscript(agentId, { sessionId: requestedSession });
+    const events = quickRead ? (await runtime!.readTranscript({ passive: true, tail: 2001 })).events ?? []
+      : live ? (await runtime.readTranscript()).events ?? [] : await readChatTranscript(agentId, { sessionId: requestedSession });
     const sessionId = requestedSession ?? (live ? liveSessionId : events[events.length - 1]?.sessionId);
     live = live && getAgentRuntime(agentId) === runtime && runtime.isRunning() && runtime.getSessionId?.() === sessionId;
     const current = events.filter((e) => e.sessionId === sessionId);
@@ -4130,6 +4138,7 @@ async function handleMobileChatRoute(ctx: AnnexRouteContext, match: RegExpMatchA
     if (mobileCommands.epoch !== epoch || !stillAuthorized(ctx.principal, authorizerDeps)) {
       sendJson(ctx.res, 403, { error: 'authorization_revoked' }); return;
     }
+    if (quickRead && !quickRead.current()) { sendJson(ctx.res, 409, { error: 'quick_read_changed' }); return; }
     const pending = live ? pendingInteractions(current) : { pendingPermissions: [], pendingQuestions: [] };
     const page = buildChatPage({
       eligible,
@@ -4140,6 +4149,9 @@ async function handleMobileChatRoute(ctx: AnnexRouteContext, match: RegExpMatchA
         version: 1, epoch: mobileCommands.epoch, agentId, sessionId: sessionId ?? null,
         canStart: !!durable && !isAgentRunning(agentId) && !mobileStartingAgents.has(agentId) && !(isDispatcherOffForStart(agentId)),
         currentSessionId: runtime?.kind === 'chat' ? runtime.getSessionId?.() ?? null : null, readOnly: !live,
+        // Display-only identity, never the launch nonce; only the runtime that
+        // supplied this page may attest it after the preceding awaits.
+        displayRunId: live && getAgentRuntime(agentId) === runtime ? runtime.getDisplayRunId?.() ?? null : null,
         state: live ? runtime.getState() : 'sleeping', capabilities: live ? runtime.getCapabilities?.() ?? null : null,
         lastSeq: current[current.length - 1]?.seq ?? 0,
         contentRoots,

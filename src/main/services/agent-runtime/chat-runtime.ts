@@ -55,6 +55,8 @@ import {
   type SessionEndReason,
 } from '../../../shared/chat';
 import { appendChatEvent, readChatTranscript } from './chat-transcript';
+import { readPassiveChatTranscript } from './passive-chat-transcript';
+import { ChatDetailsRecorder } from './chat-details-evidence';
 import { currentRequestTraceparent } from '../../telemetry/facade';
 import { captureChatTrace, stampChatTrace, type ChatTraceContext } from '../../telemetry/chat-trace-context';
 import { publishChatEvent } from './chat-event-bus';
@@ -211,6 +213,8 @@ export class ChatAgentRuntime implements AgentRuntime {
   /** What the provider itself reported this session offers the model (#2855), and its MCP handshakes. */
   private providerInventory: ChatProviderInventory | undefined;
   private mcpHandshakes: ChatMcpServer[] | undefined;
+  private displayRunId: string | undefined;
+  private detailsRecorder: ChatDetailsRecorder | undefined;
   private pendingTrace?: ChatTraceContext;
   private pendingTraceAssigned = false;
   private turnTrace?: ChatTraceContext;
@@ -299,6 +303,8 @@ export class ChatAgentRuntime implements AgentRuntime {
     // The old session's report never speaks for the new one. Cleared before the start: a provider can report during it.
     this.providerInventory = undefined;
     this.mcpHandshakes = undefined;
+    this.displayRunId = randomUUID();
+    this.detailsRecorder = new ChatDetailsRecorder(this.displayRunId);
     const session = await this.startDriverSession(resumeNativeSessionId);
     this.session = session;
     agentRegistry.setUserLaunchAccess(this.agentId, undefined);
@@ -550,6 +556,8 @@ export class ChatAgentRuntime implements AgentRuntime {
   private async end(reason: SessionEndReason, exitCode: number, message?: string): Promise<void> {
     if (this.ended) return;
     this.ended = true;
+    this.detailsRecorder = undefined;
+    this.displayRunId = undefined;
     this.discardQueue('session_close', reason);
     this.inFlightTools.clear();
     this.clearIdleTimer();
@@ -610,6 +618,17 @@ export class ChatAgentRuntime implements AgentRuntime {
       ...(inventory && inventory.nativeSessionId === this.nativeSessionId && { inventory }),
       ...(this.mcpHandshakes && { mcpHandshakes: this.mcpHandshakes }),
     };
+  }
+
+  getDisplayRunId(): string | undefined {
+    return !this.stopRequested && this.isRunning() && this.state !== 'error' && this.state !== 'sleeping' ? this.displayRunId : undefined;
+  }
+
+  getDetailsEvidence() {
+    if (!this.getDisplayRunId()) return undefined;
+    const evidence = this.detailsRecorder?.read(this.now());
+    return evidence && evidence.runId === this.displayRunId && evidence.sessionId === this.sessionId && evidence.nativeSessionId === (this.nativeSessionId ?? null)
+      && evidence.providerId === this.opts.provider && evidence.driver === this.opts.driverId ? evidence : undefined;
   }
 
   /** A report covers what it names: a skills-only report keeps the same session's tool list. */
@@ -1038,6 +1057,8 @@ export class ChatAgentRuntime implements AgentRuntime {
     if (this.ended) return;
     appLog('core:chat', 'info', 'Abandoning chat start', { meta: { agentId: this.agentId, driver: this.opts.driverId, sessionOpen: !!this.session } });
     this.ended = true;
+    this.detailsRecorder = undefined;
+    this.displayRunId = undefined;
     this.discardQueue('session_close', 'fallback');
     this.inFlightTools.clear();
     this.clearIdleTimer();
@@ -1070,6 +1091,7 @@ export class ChatAgentRuntime implements AgentRuntime {
       meta: { agentId: this.agentId, driver: this.opts.driverId, nativeSessionId: this.nativeSessionId ?? null, sessionOpen: !!session },
     });
     this.stopRequested = true;
+    this.detailsRecorder = undefined; this.displayRunId = undefined;
     this.session = undefined;
     // Stopped mid-start: cancel the driver start so it can't open a session
     // (or time out and fall back) after this runtime has ended.
@@ -1243,9 +1265,9 @@ export class ChatAgentRuntime implements AgentRuntime {
     await this.requireSession().setModel(modelId, effort);
   }
 
-  async readTranscript(opts?: { tail?: number; afterSeq?: number }): Promise<RuntimeTranscriptSlice> {
+  async readTranscript(opts?: { tail?: number; afterSeq?: number; passive?: boolean }): Promise<RuntimeTranscriptSlice> {
     await this.emitChain;
-    const events = await readChatTranscript(this.agentId, {
+    const events = opts?.passive ? await readPassiveChatTranscript(this.agentId, this.sessionId, opts.tail ?? 2001) : await readChatTranscript(this.agentId, {
       sessionId: this.sessionId,
       afterSeq: opts?.afterSeq,
       tail: opts?.tail,
@@ -1262,6 +1284,8 @@ export class ChatAgentRuntime implements AgentRuntime {
 
   private noteNativeSessionId(id: string | undefined): void {
     if (!id || id === this.nativeSessionId) return;
+    this.displayRunId = randomUUID();
+    this.detailsRecorder?.replaceNativeSession(id, this.displayRunId);
     this.nativeSessionId = id;
     this.opts.onNativeSessionId?.(id);
   }
@@ -1280,6 +1304,7 @@ export class ChatAgentRuntime implements AgentRuntime {
       return this.emitChain;
     }
     if (draft.type === 'tool_call_update' && this.concealedToolCalls.has(draft.data.toolCallId)) return this.emitChain;
+    const displayRecorder = this.detailsRecorder, displayRunId = this.displayRunId;
     const traceContext = draft.type === 'user_message'
       ? captureChatTrace(currentRequestTraceparent()) : this.turnTrace;
     const next = this.emitChain.then(async () => {
@@ -1309,6 +1334,12 @@ export class ChatAgentRuntime implements AgentRuntime {
         });
       }
       stampChatTrace(event, traceContext);
+      // A separate bounded allowlist observes committed normalized events; no
+      // transcript load, prompts, tool arguments or provider/config probes.
+      try {
+        if (event.type === 'session_state' && event.data.state === 'error' || event.type === 'error' && event.data.fatal) this.detailsRecorder = undefined;
+        if (this.detailsRecorder === displayRecorder && this.displayRunId === displayRunId) displayRecorder?.observe(event);
+      } catch { /* Passive display must never change event delivery or runtime behavior. */ this.detailsRecorder = undefined; }
       publishChatEvent(event);
       for (const listener of this.eventListeners) {
         try { listener(event); } catch { /* consumers must not break the runtime */ }

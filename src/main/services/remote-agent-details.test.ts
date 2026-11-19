@@ -43,6 +43,8 @@ vi.mock('./agent-settings-service', () => ({ readMcpConfig: m.mcp, readLaunchWra
 vi.mock('./git-service', () => ({ getBranchChanges: m.branch }));
 vi.mock('../orchestrators', () => ({ isSessionCapable: () => true }));
 vi.mock('./session-reader', () => ({ normalizeSessionEvents: (x: unknown) => x, buildSessionSummary: () => ({ totalDurationMs: 5000, totalCostUsd: 1.25, lastActiveAt: '2026-11-19T00:00:00Z' }), SUMMARY_TRANSCRIPT_MAX_BYTES: 2097152 }));
+import { ChatDetailsRecorder } from './agent-runtime/chat-details-evidence';
+import { MINIMAL_CHAT_CAPABILITIES } from '../../shared/chat';
 import { readRemoteAgentDetails } from './remote-agent-details';
 const agent = () => ({ id: 'a1', name: 'Selected', color: 'blue', createdAt: '2026-11-18', worktreePath: '/host/selected', branch: 'feature' });
 const project = { id: 'p1', name: 'Project', path: '/host/project' };
@@ -70,6 +72,37 @@ const read = async () => {
   return response.body as RemoteAgentDetails;
 };
 describe('host selected-agent Details projections', () => {
+  it.each(['same', 'replacement', 'revoked'] as const)('projects current provider facts only after the complete Details assembly fence: %s', async (mode) => {
+    const recorder = new ChatDetailsRecorder('display-a');
+    recorder.observe({ v: 2, agentId: 'a1', sessionId: 's1', seq: 1, ts: 1, type: 'session_started', data: { driver: 'claude_agent_sdk', provider: 'claude-code', resumed: false, nativeSessionId: 'n1', cwd: '/host/selected', cliVersion: 'INITIAL_VERSION', capabilities: MINIMAL_CHAT_CAPABILITIES } });
+    const getDetailsEvidence = vi.fn(() => recorder.read(2));
+    const runtime = { kind: 'chat', getSessionId: () => 's1', getNativeSessionId: () => 'n1', getDetailsEvidence };
+    m.runtime.mockReturnValue(runtime); m.running.mockReturnValue(true);
+    const registration = { nonce: 'private-auth-nonce', runtime: 'chat' };
+    m.registration.mockReturnValue(registration);
+    m.provider.mockResolvedValue({ id: 'claude-code', conventions: {} });
+    let authorized = true;
+    m.canvases.mockImplementation(async () => {
+      if (mode === 'replacement') m.registration.mockReturnValue({ ...registration, nonce: 'new-private-nonce' });
+      if (mode === 'revoked') authorized = false;
+      return [];
+    });
+    const response = await readRemoteAgentDetails('a1', () => authorized);
+    expect(response.status).toBe(mode === 'same' ? 200 : mode === 'replacement' ? 409 : 403);
+    if (mode === 'same') {
+      expect(isRemoteAgentDetails(response.body, 'a1')).toBe(true);
+      expect((response.body as RemoteAgentDetails).providerEvidence).toMatchObject({ runId: 'display-a', values: { cliVersion: 'INITIAL_VERSION' } });
+      expect(JSON.stringify(response.body)).not.toContain('private-auth-nonce');
+    } else { expect(getDetailsEvidence).not.toHaveBeenCalled(); expect(JSON.stringify(response.body)).not.toContain('INITIAL_VERSION'); }
+  });
+  it('does not describe a connected peer without a snapshot as cached name evidence', async () => {
+    m.directions.mockReturnValue([{ from: { agentId: 'a1' }, to: { agentId: 'b', machineId: 'm1' }, disabledTools: [], link: { createdAt: '2026-11-19' }, updatedAt: '2026-11-19' }]);
+    m.satellite.mockReturnValue({ alias: 'Studio', state: 'connected' });
+    const connections = (await read()).cards.find((c) => c.id === 'connections')!;
+    expect(connections.rows.find((r) => r.label === 'b')?.value).toContain('names from retained metadata');
+    expect(JSON.stringify(connections)).not.toContain('names from cached snapshot');
+    expect(connections.notes.join(' ')).toContain('unavailable or ambiguous');
+  });
   it('folds only the selected local agent’s network directions and projects cached peer fields without raw trust records or unrelated agents', async () => {
     const base = { disabledTools: ['send_message'], link: { createdAt: '2026-11-19' }, updatedAt: '2026-11-19' };
     m.directions.mockReturnValue([

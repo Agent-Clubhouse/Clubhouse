@@ -34,6 +34,70 @@ beforeEach(() => {
   for (const [object, method] of [[window.clubhouse.actions, 'list'], [window.clubhouse.git, 'branchChanges'], [window.clubhouse.agent, 'getDurableConfig'], [window.clubhouse.managed, 'getSetup'], [window.clubhouse.mcpBinding, 'getAgentConnection'], [window.clubhouse.canvas, 'getAgentCanvases']] as const) Object.assign(object, { [method]: vi.fn() });
 });
 describe('remote full Details host evidence', () => {
+  const evidence = (runId = 'runtime-a') => ({ version: 1 as const, runId, agentId: 'a1', sessionId: 's1', nativeSessionId: 'n1', providerId: 'claude-code', driver: 'claude_agent_sdk' as const,
+    startedAt: 1000, startSeq: 1, readAt: 9999, lastSeq: 3000, completeFromStart: true, values: {
+      cliVersion: 'INITIAL_VERSION', model: 'initial-model', effort: { value: 'high', isDefault: true }, level: 'ask' as const,
+      capabilities: { subagents: 'full' as const, usage: 'cost' as const, limits: true }, mcpServers: [{ name: 'INITIAL_MCP', status: 'connected' as const }],
+      skills: { provider: 'claude-code' as const, driver: 'claude_agent_sdk' as const, source: 'system/init' as const, nativeSessionId: 'n1', names: ['initial-skill'], reportedAt: 2000 },
+      subagents: [{ subagentId: 'initial-sub', name: 'Initial reviewer', status: 'completed' as const, toolCount: 4, usage: { total: 42 } }],
+      sessionUsage: { costUsd: 0, tokens: { total: 123 } }, context: { used: 100, size: 200_000 },
+    }, observedAt: { cliVersion: 2000, model: 2000, effort: 2000, level: 1000, capabilities: 1000, mcpServers: 2000, skills: 2000, subagents: 2500, sessionUsage: 2600, context: 2600 }, omitted: {} });
+  it('uses independently read initial provider facts outside a cut transcript only after matching runtime hydration', async () => {
+    read.mockResolvedValue({ status: 'ok', value: { ...fixture(), providerEvidence: evidence() } });
+    chatPage.mockResolvedValue({ events: [{ v: 2, agentId: 'a1', sessionId: 's1', seq: 3000, ts: 3000, type: 'agent_message', data: { messageId: 'tail', text: 'Tail only' } }], readOnly: false, state: 'idle', truncated: true, displayRunId: 'runtime-a' });
+    const localRead = vi.spyOn(window.clubhouse.chat, 'readTranscript');
+    render(<AgentDetails agent={agent} />);
+    await screen.findByText('Host CLI INITIAL_VERSION');
+    expect(screen.getByTestId('details-setting-effort')).toHaveTextContent('High (default)');
+    for (const id of ['subagents', 'session', 'skills-mcp']) {
+      const toggle = await screen.findByTestId(`details-card-${id}-toggle`);
+      if (toggle.getAttribute('aria-expanded') !== 'true') fireEvent.click(toggle);
+    }
+    expect(screen.getByText('Initial reviewer')).toBeInTheDocument();
+    expect(screen.getByText('initial-skill')).toBeInTheDocument();
+    expect(screen.getByText('INITIAL_MCP')).toBeInTheDocument();
+    expect(screen.getByTestId('details-card-session')).toHaveTextContent('123 tokens');
+    expect(screen.getByTestId('remote-details-freshness')).toHaveTextContent('Display reports from this runtime open are read separately');
+    expect(localRead).not.toHaveBeenCalled(); localRead.mockRestore();
+  });
+  it.each(['unavailable', 'unsupported'] as const)('does not fall back to retained provider reports when a new host explicitly says %s', async (state) => {
+    read.mockResolvedValue({ status: 'ok', value: { ...fixture(), providerEvidenceState: state } });
+    chatPage.mockResolvedValue(page('RETAINED_VERSION', { displayRunId: 'runtime-a' }));
+    render(<AgentDetails agent={agent} />);
+    await waitFor(() => expect(useChatStore.getState().remoteReadReceipts[agent.id]?.displayRunId).toBe('runtime-a'));
+    await waitFor(() => expect(read).toHaveBeenCalledTimes(state === 'unavailable' ? 2 : 1));
+    await act(async () => { await new Promise((resolve) => setTimeout(resolve, 200)); });
+    expect(screen.queryByText('Host CLI RETAINED_VERSION')).not.toBeInTheDocument();
+    expect(screen.queryByText('host-skill')).not.toBeInTheDocument();
+    expect(screen.queryByText('High (default)')).not.toBeInTheDocument();
+    expect(read).toHaveBeenCalledTimes(state === 'unavailable' ? 2 : 1);
+    if (state === 'unavailable') expect(screen.getByRole('button', { name: 'Refresh provider reports' })).toBeInTheDocument();
+  });
+  it('does not promote an earlier display report after newer provider metadata arrives during hydration', async () => {
+    const first = { ...fixture(), providerEvidence: evidence() };
+    const nextEvidence = evidence(); nextEvidence.lastSeq = 4000; nextEvidence.values.cliVersion = 'NEW_VERSION'; nextEvidence.observedAt.cliVersion = 4000;
+    read.mockResolvedValueOnce({ status: 'ok', value: first }).mockResolvedValue({ status: 'ok', value: { ...fixture(), providerEvidence: nextEvidence } });
+    chatPage.mockResolvedValue(page('NEW_VERSION', { displayRunId: 'runtime-a', events: [{ v: 2, agentId: 'a1', sessionId: 's1', seq: 4000, ts: 4000, type: 'session_info', data: { cliVersion: 'NEW_VERSION' } }], readOnly: false }));
+    render(<AgentDetails agent={agent} />);
+    await screen.findByText('Host CLI NEW_VERSION');
+    expect(screen.queryByText('Host CLI INITIAL_VERSION')).not.toBeInTheDocument();
+    expect(read).toHaveBeenCalledTimes(2);
+    await act(async () => { await new Promise((resolve) => setTimeout(resolve, 200)); });
+    expect(read).toHaveBeenCalledTimes(2);
+  });
+  it.each(['replacement', 'missing-run-id', 'offline', 'error'] as const)('withholds initial provider reports across same-session %s hydration', async (mode) => {
+    const first = { ...fixture(), providerEvidence: evidence() };
+    read.mockResolvedValueOnce({ status: 'ok', value: first }).mockResolvedValue({ status: 'error' });
+    chatPage.mockResolvedValue(page('TAIL_VERSION', { displayRunId: mode === 'missing-run-id' ? undefined : mode === 'replacement' ? 'runtime-b' : 'runtime-a', ...(mode === 'offline' ? { readOnly: true, state: 'sleeping' } : mode === 'error' ? { state: 'error' } : {}) }));
+    render(<AgentDetails agent={agent} />);
+    await waitFor(() => expect(read).toHaveBeenCalledTimes(2));
+    expect(screen.queryByText('Host CLI INITIAL_VERSION')).not.toBeInTheDocument();
+    expect(screen.queryByText('initial-skill')).not.toBeInTheDocument();
+    expect(screen.queryByText('INITIAL_MCP')).not.toBeInTheDocument();
+    await act(async () => { await new Promise((resolve) => setTimeout(resolve, 200)); });
+    expect(read).toHaveBeenCalledTimes(2);
+  });
+
   it('shows quick launch and current report fields without durable setup, next-wake settings or local reads', async () => {
     const value = fixture(); value.settings = null;
     for (const id of ['dispatcher', 'orchestrate'] as const) value.cards.find((c) => c.id === id)!.state = 'not-applicable';

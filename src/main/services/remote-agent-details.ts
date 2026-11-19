@@ -229,6 +229,12 @@ export async function readRemoteAgentDetails(agentId: string, authorized: () => 
       || runtime?.kind === 'chat' && (getAgentRuntime(agentId) !== runtime || runtime.getSessionId?.() !== sessionId || (runtime.getNativeSessionId?.() ?? null) !== nativeSessionId)) {
       return { status: 409, body: { error: 'agent_run_changed' } };
     }
+    result.providerEvidenceState = runtime?.kind === 'chat' && runtime.getDetailsEvidence ? 'unavailable' : 'unsupported';
+    if (running && runtime?.kind === 'chat') {
+      const evidence = runtime.getDetailsEvidence?.();
+      if (evidence && evidence.agentId === agentId && evidence.providerId === provider.id
+        && evidence.sessionId === sessionId && evidence.nativeSessionId === nativeSessionId) { result.providerEvidence = evidence; result.providerEvidenceState = 'current'; }
+    }
     // Enforce the envelope even when every section fits its individual row limit.
     while (Buffer.byteLength(JSON.stringify(result)) > REMOTE_DETAILS_MAX_BYTES) {
       const largest = cards.filter((c) => c.rows.length).sort((a, b) => JSON.stringify(b.rows).length - JSON.stringify(a.rows).length)[0];

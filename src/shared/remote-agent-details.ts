@@ -1,5 +1,6 @@
 import { isRemoteAgentSettings, type RemoteAgentSettings } from './remote-agent-settings';
 import type { AgentStatus } from './types';
+import { isChatDetailsEvidence, type ChatDetailsEvidence } from './chat/details-evidence';
 
 /** Display evidence for one selected agent, never configuration objects or authority. */
 export const REMOTE_DETAILS_MAX_BYTES = 256 * 1024;
@@ -36,6 +37,9 @@ export interface RemoteAgentDetails {
   nativeSessionId: string | null;
   settings: RemoteAgentSettings | null;
   cards: RemoteDetailsCard[];
+  /** Optional on older hosts; one exact live runtime's passive provider facts. */
+  providerEvidence?: ChatDetailsEvidence;
+  providerEvidenceState?: 'current' | 'unavailable' | 'unsupported';
 }
 
 export function isRemoteAgentDetails(value: unknown, agentId: string): value is RemoteAgentDetails {
@@ -48,6 +52,11 @@ export function isRemoteAgentDetails(value: unknown, agentId: string): value is 
     && (v.spawnedAt === null || Number.isFinite(v.spawnedAt) && v.spawnedAt > 0)
     && (v.sessionId === null || text(v.sessionId)) && (v.nativeSessionId === null || text(v.nativeSessionId))
     && (v.settings === null || isRemoteAgentSettings(v.settings, agentId))
+    && (v.providerEvidenceState === undefined || ['current', 'unavailable', 'unsupported'].includes(v.providerEvidenceState))
+    && (v.providerEvidenceState !== 'current' || v.providerEvidence !== undefined)
+    && (v.providerEvidence === undefined || (v.providerEvidenceState === undefined || v.providerEvidenceState === 'current') && isChatDetailsEvidence(v.providerEvidence)
+      && v.running && v.providerEvidence.agentId === agentId && v.providerEvidence.providerId === v.providerId
+      && v.providerEvidence.sessionId === v.sessionId && v.providerEvidence.nativeSessionId === v.nativeSessionId)
     && Array.isArray(v.cards) && v.cards.length === REMOTE_DETAILS_CARD_IDS.length
     && v.cards.every((c) => !!c && typeof c === 'object')
     && new Set(v.cards.map((c) => c.id)).size === REMOTE_DETAILS_CARD_IDS.length

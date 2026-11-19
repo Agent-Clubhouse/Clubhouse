@@ -163,7 +163,8 @@ vi.mock('./log-service', () => ({
 }));
 
 // Mock project-store
-vi.mock('./project-store', () => ({
+vi.mock('./project-store', async (original) => ({
+  peekProjectsChecked: (await original<typeof import('./project-store')>()).peekProjectsChecked,
   projectRegistryMutationState: vi.fn(() => ({ generation: 0, pending: false })),
   list: vi.fn().mockReturnValue([]),
   readIconData: vi.fn().mockReturnValue(null),
@@ -399,6 +400,8 @@ function positiveSerial(): string {
 import * as annexPeers from './annex-peers';
 import * as annexEventBus from './annex-event-bus';
 import * as projectStore from './project-store';
+import * as baseDir from './base-dir';
+import { beginQuickAgentRun, clearQuickAgentRuns, noteQuickAgentRuntime } from './quick-agent-events';
 import { _resetRepoKeysForTesting, repoKeysFor } from './project-repo-keys';
 import * as agentConfigModule from './agent-config';
 import { deleteAgent } from './agent-delete';
@@ -416,7 +419,7 @@ import { appLog } from './log-service';
 import { nativeImage } from 'electron';
 import { ANNEX_FRAME_MAX_BYTES, MOBILE_WS_FRAME_MAX_BYTES, SNAPSHOT_FRAME_MAX_BYTES, SNAPSHOT_ICONS_MAX_BYTES } from '../../shared/icon-limits';
 import Bonjour from 'bonjour-service';
-import { registerChatRuntime, clearChatRuntimes, publishChatEvent } from './agent-runtime';
+import { getAgentRuntime, registerChatRuntime, clearChatRuntimes, publishChatEvent } from './agent-runtime';
 
 /** Throwaway TLS credentials for the suite's server and clients (loopback only). */
 let testCredentials: { cert: string; key: string } | null = null;
@@ -2495,6 +2498,70 @@ describe('annex-server', () => {
   });
 
   describe('mobile transport contract', () => {
+    it.each(['same', 'phone', 'unbound', 'reused-registration', 'replaced-during-read', 'removed-during-read', 'unreadable-project', 'revoked-during-read', 'historical-session'] as const)('reads only an attested direct desktop quick current session: %s', async (mode) => {
+      const root = await fsp.mkdtemp(path.join(os.tmpdir(), 'annex-direct-quick-'));
+      const profile = path.join(root, 'profile'), project = path.join(root, 'project');
+      await fsp.mkdir(profile); await fsp.mkdir(project);
+      const inventory = path.join(profile, 'projects.json');
+      await fsp.writeFile(inventory, JSON.stringify({ version: 1, projects: [{ id: 'p', name: 'Project', path: project }] }));
+      const base = vi.spyOn(baseDir, 'getBaseDirPath').mockReturnValue(profile);
+      clearQuickAgentRuns();
+      const run = beginQuickAgentRun({ agentId: 'direct-quick', name: 'Direct desktop', projectPath: project, cwd: project });
+      agentRegistry.register('direct-quick', { projectPath: project, cwd: project, orchestrator: 'claude-code', runtime: 'chat' });
+      const runtime = { kind: 'chat' as const, agentId: 'direct-quick', isRunning: () => true, getState: () => 'idle' as const, getSessionId: () => 's', getNativeSessionId: () => 'n', getDisplayRunId: () => 'direct-display', sendMessage: vi.fn(),
+        readTranscript: vi.fn(async (opts: unknown) => {
+          expect(opts).toEqual({ passive: true, tail: 2001 });
+          if (mode === 'replaced-during-read') registerChatRuntime({ ...runtime, getDisplayRunId: () => 'replacement-display' } as never);
+          if (mode === 'removed-during-read') await fsp.writeFile(inventory, JSON.stringify({ version: 1, projects: [] }));
+          if (mode === 'revoked-during-read') vi.mocked(annexPeers.getPeer).mockReturnValue(undefined);
+          return { events: [{ v: 2, type: 'session_state', agentId: 'direct-quick', sessionId: 's', seq: 1, ts: 1, data: { state: 'idle' } }] };
+        }) };
+      registerChatRuntime(runtime as never);
+      if (mode !== 'unbound') noteQuickAgentRuntime(run, agentRegistry.get('direct-quick'), () => getAgentRuntime('direct-quick') === runtime);
+      if (mode === 'reused-registration') agentRegistry.register('direct-quick', { projectPath: project, cwd: project, orchestrator: 'claude-code', runtime: 'chat' });
+      if (mode === 'unreadable-project') await fsp.writeFile(inventory, '[]broken');
+      try {
+        const { port } = await startAndPair();
+        vi.mocked(annexPeers.getPeer).mockReturnValue({ ...TEST_CONTROLLER, kind: mode === 'phone' ? 'phone' : 'desktop' });
+        const before = await fsp.readFile(inventory);
+        const route = '/api/v1/mobile/agents/direct-quick/chat' + (mode === 'historical-session' ? '?sessionId=unrelated-session' : '');
+        const response = await request(port, 'GET', route);
+        expect(response.status).toBe(mode === 'same' ? 200 : mode === 'phone' || mode === 'historical-session' ? 404 : mode === 'revoked-during-read' ? 403 : mode === 'replaced-during-read' || mode === 'removed-during-read' ? 409 : 500);
+        if (mode === 'same') {
+          expect(JSON.parse(response.body)).toMatchObject({ sessionId: 's', displayRunId: 'direct-display', readOnly: false });
+          expect(annexServer._testing.trackedQuickAgents.has('direct-quick')).toBe(false);
+          const caps = await request(port, 'GET', '/api/v1/mobile/capabilities');
+          const command = await request(port, 'POST', '/api/v1/mobile/commands', { version: 1, epoch: JSON.parse(caps.body).epoch, commandId: 'direct-read-is-not-write', type: 'chat.send', agentId: 'direct-quick', sessionId: 's', text: 'must not send' });
+          expect(command.body).toContain('agent_not_found');
+          for (const method of ['POST', 'PUT', 'PATCH', 'DELETE']) expect((await request(port, method, route)).status).toBe(404);
+        } else expect(response.body).not.toContain('direct-display');
+        if (['phone', 'unbound', 'reused-registration', 'unreadable-project', 'historical-session'].includes(mode)) expect(runtime.readTranscript).not.toHaveBeenCalled();
+        expect(runtime.sendMessage).not.toHaveBeenCalled();
+        expect(agentSystem.spawnAgent).not.toHaveBeenCalled();
+        if (mode !== 'removed-during-read') expect(await fsp.readFile(inventory)).toEqual(before);
+      } finally { base.mockRestore(); clearQuickAgentRuns(); clearChatRuntimes(); agentRegistry.untrack('direct-quick'); await fsp.rm(root, { recursive: true, force: true }); }
+    });
+
+    it.each(['same', 'replacement', 'stopped'] as const)('binds chat-page display generation to the admitted runtime after awaited read: %s', async (mode) => {
+      vi.mocked(projectStore.list).mockReturnValue([{ id: 'p', name: 'Project', path: '/test/project' }] as any);
+      vi.mocked(agentConfigModule.listDurable).mockReturnValue([{ id: 'a', name: 'agent', color: 'blue', createdAt: '2026-01-01' }] as any);
+      let running = true;
+      const original = { kind: 'chat', agentId: 'a', isRunning: () => running, getState: () => running ? 'idle' : 'sleeping', getSessionId: () => 's', getDisplayRunId: () => running ? 'display-A' : undefined,
+        readTranscript: async () => {
+          if (mode === 'replacement') registerChatRuntime({ ...original, getDisplayRunId: () => 'display-B' } as never);
+          if (mode === 'stopped') running = false;
+          return { events: [{ type: 'agent_message', agentId: 'a', sessionId: 's', seq: 3000, ts: 3000, data: { messageId: 'tail', text: 'tail' } }] };
+        } };
+      registerChatRuntime(original as never);
+      try {
+        const { port, token } = await startAndPair();
+        const response = await request(port, 'GET', '/api/v1/mobile/agents/a/chat?limit=1', undefined, authHeaders(token));
+        expect(response.status).toBe(200);
+        expect(JSON.parse(response.body).displayRunId).toBe(mode === 'same' ? 'display-A' : null);
+        expect(response.body).not.toContain('display-B');
+      } finally { clearChatRuntimes(); }
+    });
+
     it('paginates rich chat while preserving pending interactions outside the visible page', async () => {
       vi.mocked(projectStore.list).mockReturnValue([{ id: 'p', name: 'Project', path: '/test/project' }] as any);
       vi.mocked(agentConfigModule.listDurable).mockReturnValue([{ id: 'a', name: 'agent', color: 'blue', createdAt: '2026-01-01' }] as any);

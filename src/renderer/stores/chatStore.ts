@@ -290,6 +290,8 @@ export interface ChatViewState {
   protocolUnknown: Record<string, number>;
   /** Bumped when the agent changes the workspace's git state (commit, push, …): views of its changes re-read. */
   workspaceRevision: number;
+  /** Latest metadata/usage/subagent report, for passive Details freshness. */
+  providerReportSeq?: number;
   /** Item id of the running "Compacting context…" notice, while a compaction runs. */
   compactionItemId: string | null;
   /**
@@ -597,6 +599,7 @@ export function reduceChatEvent(prev: ChatViewState | undefined, event: ChatEven
   }
 
   const sid = event.sessionId;
+  if (['session_started', 'session_info', 'model_changed', 'mode_changed', 'usage', 'turn_ended', 'subagent'].includes(event.type)) state = { ...state, providerReportSeq: event.seq };
 
   switch (event.type) {
     case 'session_started': {
@@ -1039,7 +1042,7 @@ export function foldChatEvents(state: ChatViewState | undefined, agentId: string
 
 interface ChatStoreState {
   /** A successful remote hydration, tied to the exact requested refresh and host snapshot. */
-  remoteReadReceipts: Record<string, { revision: number; snapshot: unknown; sessionId: string | null; live: boolean | null; state: string | null; truncated: boolean }>;
+  remoteReadReceipts: Record<string, { revision: number; snapshot: unknown; sessionId: string | null; live: boolean | null; state: string | null; truncated: boolean; displayRunId?: string | null }>;
   /** View state keyed by agent id. */
   agents: Record<string, ChatViewState>;
   /** Agents whose transcript is being read. */
@@ -1124,6 +1127,7 @@ export function chatEventCount(agentId: string): number {
 function withRemoteMeta(state: ChatViewState, meta: RemoteChatMeta): ChatViewState {
   const controls = meta.chatControls ?? {};
   const next = { ...state };
+  if (!state.sessionId && meta.sessionId) next.sessionId = meta.sessionId;
   if (meta.capabilities && (!state.capabilities || state.capabilities === MINIMAL_CHAT_CAPABILITIES)) next.capabilities = meta.capabilities as unknown as ChatViewState['capabilities'];
   if (Array.isArray(meta.slashCommands) && (!state.commands || state.commands.length === 0)) next.commands = meta.slashCommands as ChatViewState['commands'];
   if (state.models.length === 0 && Array.isArray(controls.models)) next.models = controls.models as ChatViewState['models'];
@@ -1198,6 +1202,7 @@ export const useChatStore = create<ChatStoreState>((set, get) => {
       let remoteLive: boolean | undefined;
       let remoteState: string | null = null;
       let remoteCut = false;
+      let displayRunId: string | null = null;
       let remoteMeta: RemoteChatMeta = {};
       // Whether a chat runtime runs this agent now; asked alongside the read.
       const live = remote ? Promise.resolve(undefined) : runtimeIsLive(agentId);
@@ -1208,6 +1213,7 @@ export const useChatStore = create<ChatStoreState>((set, get) => {
           remoteLive = read.live;
           remoteState = read.state;
           remoteCut = read.truncated;
+          displayRunId = read.displayRunId;
           remoteMeta = read.meta;
         } else {
           events = (await window.clubhouse.chat.readTranscript(agentId, tail)) ?? [];
@@ -1260,7 +1266,7 @@ export const useChatStore = create<ChatStoreState>((set, get) => {
           loading,
           partial: { ...s.partial, [agentId]: cut },
           loaded: { ...s.loaded, [agentId]: true },
-          ...(remote && !refreshPending ? { remoteReadReceipts: { ...s.remoteReadReceipts, [agentId]: { revision: remoteRevision, snapshot: remoteSnapshot, sessionId: next.sessionId, live: remoteLive ?? null, state: remoteState, truncated: cut } } } : {}),
+          ...(remote && !refreshPending ? { remoteReadReceipts: { ...s.remoteReadReceipts, [agentId]: { revision: remoteRevision, snapshot: remoteSnapshot, sessionId: next.sessionId, live: remoteLive ?? null, state: remoteState, truncated: cut, displayRunId } } } : {}),
         };
       });
       // A resume that arrived during the read needs that session's earlier
@@ -1284,6 +1290,7 @@ export const useChatStore = create<ChatStoreState>((set, get) => {
       const changedSession = prev?.sessionId !== next.sessionId;
       set((s) => ({
         agents: { ...s.agents, [event.agentId]: next },
+        ...(remoteChatTarget(event.agentId) && event.type === 'session_started' ? { remoteReadReceipts: Object.fromEntries(Object.entries(s.remoteReadReceipts).filter(([id]) => id !== event.agentId)) } : {}),
         ...(changedSession && prev ? {
           partial: { ...s.partial, [event.agentId]: false },
           loaded: { ...s.loaded, [event.agentId]: event.seq === 1 },
