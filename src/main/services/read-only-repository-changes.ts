@@ -109,6 +109,10 @@ function redactChangeText(text: string): string | null {
   let unclassified = '', boundary = 0;
   for (const [start, end] of classified) { unclassified += text.slice(boundary, start) + ' '; boundary = end; }
   unclassified += text.slice(boundary);
+  // An escape can encode all or part of a key/identifier in another language.
+  // Without a language parser its role is unknown, including otherwise benign
+  // source strings. Only escapes inside an already redacted value are covered.
+  if (unclassified.includes('\\')) return null;
   for (const candidate of unclassified.matchAll(/[\p{L}\p{N}_$.-]+/gu)) if (isSecretKey(candidate[0])) return null;
   // Quoted keys may have whitespace or punctuation which normalization removes.
   for (const candidate of unclassified.matchAll(/"((?:\\[\s\S]|[^"\\])*)"|'((?:\\[\s\S]|[^'\\])*)'|`((?:\\[\s\S]|[^`\\])*)`/g)) {

@@ -120,6 +120,28 @@ describe('passive repository comparison', () => {
     expect(patch.patch).toMatchObject({ state: 'unsafe', redacted: true });
     expect(JSON.stringify(patch)).not.toContain('PRIVATE_');
   });
+  it.each([
+    String.raw`{"api\u004bey": "PRIVATE_JSON_VALUE"}`,
+    String.raw`config["api\x4bey"] = "PRIVATE_HEX_VALUE";`,
+    String.raw`config["api\u{4b}ey"] = "PRIVATE_CODEPOINT_VALUE";`,
+    String.raw`config["api\U0000004bey"] = "PRIVATE_LONG_UNICODE_VALUE"`,
+    String.raw`config["api\N{LATIN CAPITAL LETTER K}ey"] = "PRIVATE_NAMED_VALUE"`,
+    String.raw`config["\141piKey"] = "PRIVATE_OCTAL_VALUE";`,
+    String.raw`const api\u004bey = "PRIVATE_IDENTIFIER_VALUE";`,
+    String.raw`config["\u0061\u0070\u0069\u004b\u0065\u0079"] = "PRIVATE_FULLY_ENCODED_VALUE";`,
+    'const api\\\nKey = "PRIVATE_CONTINUED_IDENTIFIER_VALUE";',
+  ])('withholds unclassified escaped key or identifier syntax: %s', async (secret) => {
+    await fs.writeFile(path.join(root, 'source.txt'), secret + '\nconst ordinary = 1;\n');
+    await git('add', '.');
+    const from = await tree();
+    await fs.writeFile(path.join(root, 'source.txt'), secret + '\nconst ordinary = 2;\n');
+    const comparison = { root, from, identity: 'run' };
+    const result = await readOnlyRepositoryChanges(comparison, { scope: 'branch' });
+    expect(result.files[0]).toMatchObject({ status: 'modified', countsKnown: true });
+    const patch = await readOnlyRepositoryChanges(comparison, { scope: 'branch', fileKey: result.files[0].fileKey });
+    expect.soft(JSON.stringify(patch)).not.toContain('PRIVATE_');
+    expect.soft(patch.patch).toMatchObject({ state: 'unsafe', redacted: true });
+  });
   it('compares tracked, checkpoint-untracked and current-untracked files accurately without writing any worktree/index/object bytes', async () => {
     await fs.writeFile(path.join(root, 'tracked'), 'a\nb\nc\n');
     await fs.writeFile(path.join(root, 'checkpoint-untracked'), 'keep\n');
