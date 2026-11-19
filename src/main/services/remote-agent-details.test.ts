@@ -1,8 +1,16 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import * as fs from 'fs/promises';
+import * as os from 'os';
+import * as path from 'path';
 import { noteAgentStarting, _resetAgentDisplayStateForTesting } from './agent-display-state';
 import { ORCHESTRATION_DEFAULTS } from '../../shared/orchestration-policy';
 import { isRemoteAgentDetails, type RemoteAgentDetails } from '../../shared/remote-agent-details';
-const m = vi.hoisted(() => ({ target: vi.fn(), settings: vi.fn(), provider: vi.fn(), running: vi.fn(), policies: vi.fn(), helpers: vi.fn(), requests: vi.fn(), bindings: vi.fn(), sources: vi.fn(), directions: vi.fn(), dispatcher: vi.fn(), dispatcherOn: vi.fn(), agentCard: vi.fn(), actions: vi.fn(), canvases: vi.fn(), status: vi.fn(), entries: vi.fn(), template: vi.fn(), mcp: vi.fn(), branch: vi.fn(), transcript: vi.fn(), connection: vi.fn(), work: vi.fn(), registration: vi.fn(), runtime: vi.fn(), useRealRuntime: false }));
+const m = vi.hoisted(() => ({ target: vi.fn(), settings: vi.fn(), provider: vi.fn(), running: vi.fn(), policies: vi.fn(), helpers: vi.fn(), requests: vi.fn(), bindings: vi.fn(), sources: vi.fn(), directions: vi.fn(), dispatcher: vi.fn(), dispatcherOn: vi.fn(), agentCard: vi.fn(), actions: vi.fn(), canvases: vi.fn(), status: vi.fn(), entries: vi.fn(), template: vi.fn(), mcp: vi.fn(), branch: vi.fn(), transcript: vi.fn(), connection: vi.fn(), work: vi.fn(), realWitness: false, base: '', registration: vi.fn(), runtime: vi.fn(), useRealRuntime: false }));
+vi.mock('./base-dir', () => ({ getBaseDirPath: () => m.base }));
+vi.mock('./read-only-agent-target-witness', async (original) => {
+  const actual = await original<typeof import('./read-only-agent-target-witness')>();
+  return { ...actual, captureReadOnlyAgentTargetWitness: (...args: Parameters<typeof actual.captureReadOnlyAgentTargetWitness>) => m.realWitness ? actual.captureReadOnlyAgentTargetWitness(...args) : { current: () => true } };
+});
 vi.mock('./agent-config-reader', () => ({ resolveAgentConfigTarget: m.target }));
 vi.mock('./remote-agent-settings', () => ({ readRemoteAgentSettings: m.settings }));
 vi.mock('./agent-system', () => ({ resolveOrchestrator: m.provider, isAgentRunning: m.running }));
@@ -16,7 +24,7 @@ vi.mock('./agent-registry', () => ({ agentRegistry: { get: m.registration } }));
 vi.mock('./orchestration-policy', () => ({ resolveOrchestrationPolicies: m.policies }));
 vi.mock('./orchestration-settings', () => ({ getGlobalHelperCap: () => 20 }));
 vi.mock('./helper-index', () => ({ listHelpersEverywhere: m.helpers }));
-vi.mock('./read-only-helper-work', () => ({ readOnlyHelperWork: m.work }));
+vi.mock('./read-only-helper-work', () => ({ readOnlyHelperWork: m.work, HELPER_TRANSFORM_UNAVAILABLE: 'Custom Git filters or text transforms are not run for helper work.' }));
 vi.mock('./helper-start-requests', () => ({ listStartRequests: m.requests }));
 vi.mock('./clubhouse-mcp/binding-manager', () => ({ bindingManager: { getAllBindings: m.bindings } }));
 vi.mock('./clubhouse-mcp/bridge-server', () => ({ getAgentConnection: m.connection, getCurrentAgentConnection: () => m.connection()?.current ? m.connection() : null }));
@@ -39,7 +47,7 @@ const project = { id: 'p1', name: 'Project', path: '/host/project' };
 const setting = () => ({ version: 1, agentId: 'a1', readOnly: true, provider: 'Host CLI', model: 'model', runtime: 'terminal', access: 'Ask first', executionPolicy: 'defaults', autoSleep: null, context: null, setup: { state: 'ok', managed: false, template: null, instructions: 'None', skills: null, mcps: null } });
 beforeEach(() => {
   _resetAgentDisplayStateForTesting();
-  m.useRealRuntime = false; m.registration.mockReturnValue(undefined); m.runtime.mockReturnValue(undefined);
+  m.realWitness = false; m.useRealRuntime = false; m.registration.mockReturnValue(undefined); m.runtime.mockReturnValue(undefined);
   m.target.mockResolvedValue({ agent: agent(), project });
   m.settings.mockResolvedValue({ status: 200, body: setting() });
   m.provider.mockResolvedValue({ id: 'codex-cli', conventions: {}, readSessionTranscript: m.transcript });
@@ -60,6 +68,44 @@ const read = async () => {
   return response.body as RemoteAgentDetails;
 };
 describe('host selected-agent Details projections', () => {
+  it.each(['parent-removal', 'earlier-helper-release', 'cross-project-reparent', 'disposed-reparent'] as const)('withholds complete Details when real primary membership changes after helper work: %s', async (condition) => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), 'clubhouse-details-final-inventory-'));
+    try {
+      m.realWitness = true; m.base = path.join(root, 'profile');
+      const home = path.join(root, 'home'), other = path.join(root, 'other');
+      await fs.mkdir(m.base); await fs.mkdir(path.join(home, '.clubhouse'), { recursive: true }); await fs.mkdir(path.join(other, '.clubhouse'), { recursive: true });
+      const selected = { ...agent(), worktreePath: home };
+      const p1 = { id: 'p1', name: 'Home', path: home }, p2 = { id: 'p2', name: 'Other', path: other };
+      const a = { ...selected, id: 'h1', name: 'First helper', parentAgentId: 'a1', ...(condition === 'disposed-reparent' && { disposedAt: '2026-11-19' }) };
+      const b = { ...selected, id: 'h2', name: 'Second helper', parentAgentId: 'a1' };
+      const cross = condition === 'cross-project-reparent' || condition === 'disposed-reparent';
+      if (cross) Object.assign(a, { parentProjectPath: home, worktreePath: other });
+      const homeRows = cross ? [selected] : [selected, a, b], otherRows = cross ? [a] : [];
+      const homeFile = path.join(home, '.clubhouse', 'agents.json'), otherFile = path.join(other, '.clubhouse', 'agents.json');
+      await fs.writeFile(homeFile, JSON.stringify(homeRows)); await fs.writeFile(otherFile, JSON.stringify(otherRows));
+      await fs.writeFile(path.join(m.base, 'projects.json'), JSON.stringify({ version: 1, projects: [p1, p2] }));
+      m.target.mockResolvedValue({ agent: selected, project: p1 });
+      m.helpers.mockImplementation(async (_home, _id, options) => {
+        const api = await vi.importActual<typeof import('./read-only-agent-target-witness')>('./read-only-agent-target-witness');
+        // The real strict-index contract attaches private receipts for exactly the rows read.
+        if (options.receipts) for (const [folder, rows] of [[home, homeRows], [other, otherRows]] as const) options.receipts.push(api.captureReadOnlyAgentInventoryWitness(folder, rows));
+        return cross ? [{ config: a, projectPath: other }] : [{ config: a, projectPath: home }, { config: b, projectPath: home }];
+      });
+      let calls = 0;
+      m.work.mockImplementation(async () => {
+        if (++calls === 2 && condition === 'earlier-helper-release') await fs.writeFile(homeFile, JSON.stringify([selected, { ...a, parentAgentId: 'other' }, b]));
+        return { dirty: 1, unpushed: 2, unmerged: null };
+      });
+      m.canvases.mockImplementation(async () => {
+        if (condition === 'parent-removal') await fs.writeFile(homeFile, JSON.stringify([a, b]));
+        if (cross) await fs.writeFile(otherFile, JSON.stringify([{ ...a, parentAgentId: 'other' }]));
+        return [];
+      });
+      const result = await readRemoteAgentDetails('a1', () => true);
+      expect(result.status).toBe(409);
+      expect(result.body).not.toHaveProperty('cards');
+    } finally { await fs.rm(root, { recursive: true, force: true }); }
+  });
   it('projects only the selected agent’s verified bounded canvas membership navigation identities', async () => {
     m.canvases.mockResolvedValue([{ name: 'Host board', scope: 'app', canvasId: 'board', viewId: 'view' }]);
     const value = await read();
@@ -70,7 +116,7 @@ describe('host selected-agent Details projections', () => {
     expect(value.cards.find((c) => c.id === 'orchestrate')?.rows).toContainEqual({ label: 'At once', value: '5' });
     expect(value.cards.find((c) => c.id === 'session')?.rows).toContainEqual({ label: 'Folder', value: '/host/selected' });
     expect(m.branch).not.toHaveBeenCalled(); // strict paged Changes uses its own selected-target read, never this swallowing legacy reader.
-    expect(m.helpers).toHaveBeenCalledWith('/host/project', 'a1', { includeDisposed: true, readOnly: true });
+    expect(m.helpers).toHaveBeenCalledWith('/host/project', 'a1', { includeDisposed: true, readOnly: true, receipts: expect.any(Array) });
     expect(m.canvases).toHaveBeenCalledWith('a1', 'p1', { strict: true });
     expect(value.cards.find((c) => c.id === 'dispatcher')?.state).toBe('not-applicable');
     expect(m.transcript).not.toHaveBeenCalled();

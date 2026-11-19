@@ -3,6 +3,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { createHash } from 'crypto';
 import type { AgentConfigTarget } from './agent-config-reader';
+import type { DurableAgentConfig } from '../../shared/types';
 import { getBaseDirPath } from './base-dir';
 
 const MAX_INVENTORY_BYTES = 4 * 1024 * 1024;
@@ -45,6 +46,38 @@ function inventory(root: string, relative: string): { value: unknown; signature:
     const identity = [...chain.values()].map((stat) => `${stat.dev}:${stat.ino}`).join('/');
     return { value: JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(bytes.subarray(0, size))), signature: `${identity}:${after.size}:${after.mtimeNs}:${after.ctimeNs}:${digest}` };
   } finally { fs.closeSync(fd); }
+}
+
+/** Bind the complete primary list actually read, including disposed/empty membership. */
+export function captureReadOnlyAgentInventoryWitness(projectPath: string, expected: readonly DurableAgentConfig[]): { current(): boolean } {
+  const read = () => {
+    try {
+      const agents = inventory(projectPath, '.clubhouse/agents.json');
+      if (!Array.isArray(agents.value) || JSON.stringify(agents.value) !== JSON.stringify(expected)) throw new Error('Helper inventory changed.');
+      return agents.signature;
+    } catch (error) {
+      if (expected.length || (error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
+      // Strict peeks treat a readable project with neither primary nor backup as
+      // verified empty. Pin that absence; later creation must invalidate it.
+      const root = fs.realpathSync(projectPath);
+      const project = fs.lstatSync(root, { bigint: true });
+      if (!project.isDirectory()) throw new Error('Project unavailable.');
+      const folder = path.join(root, '.clubhouse');
+      let identity = `${project.dev}:${project.ino}:no-config-folder`;
+      try {
+        const config = fs.lstatSync(folder, { bigint: true });
+        if (!config.isDirectory() || config.isSymbolicLink()) throw new Error('Unsafe config folder.');
+        identity = `${project.dev}:${project.ino}:${config.dev}:${config.ino}`;
+      } catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error; }
+      for (const name of ['agents.json', 'agents.json.bak']) {
+        try { fs.lstatSync(path.join(folder, name)); throw new Error('Agent inventory is present.'); }
+        catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error; }
+      }
+      return `${identity}:empty`;
+    }
+  };
+  const admitted = read();
+  return { current: () => { try { return read() === admitted; } catch { return false; } } };
 }
 
 /** The target was strictly resolved already; bind that exact snapshot, never a subsequent name match. */

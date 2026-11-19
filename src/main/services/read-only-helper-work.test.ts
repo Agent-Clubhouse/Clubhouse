@@ -4,7 +4,7 @@ import * as fs from 'fs/promises';
 import * as path from 'path';
 import * as os from 'os';
 import type { AgentConfigTarget } from './agent-config-reader';
-import { readOnlyHelperWork } from './read-only-helper-work';
+import { HELPER_TRANSFORM_UNAVAILABLE, readOnlyHelperWork } from './read-only-helper-work';
 import * as repository from './read-only-repository-changes';
 const m = vi.hoisted(() => ({ base: '', target: vi.fn() }));
 vi.mock('./base-dir', () => ({ getBaseDirPath: () => m.base }));
@@ -64,6 +64,63 @@ describe('passive direct helper work', () => {
     expect(await readOnlyHelperWork(parent, entry, () => true)).toHaveProperty('error');
     expect(await snapshot(root)).toEqual(before);
   });
+  it.each(['clean', 'process'])('does not execute a configured %s filter or change disk bytes for dirty counts', async (kind) => {
+    await fs.writeFile(path.join(project, 'filtered.data'), 'before\n');
+    await fs.writeFile(path.join(project, '.gitattributes'), '*.data filter=passivecanary\n');
+    await git('add', '.'); await git('commit', '-m', 'filtered fixture');
+    const marker = path.join(project, '.git', 'filter-ran');
+    const program = path.join(project, '.git', 'filter-canary.cjs');
+    await fs.writeFile(program, `require('fs').writeFileSync(${JSON.stringify(marker)}, 'unexpected filter execution'); ${kind === 'process' ? 'process.exit(1);' : 'process.stdin.pipe(process.stdout);'}`);
+    const quote = (value: string) => "'" + value.replace(/'/g, "'\\''") + "'";
+    await git('config', `filter.passivecanary.${kind}`, `${quote(process.execPath)} ${quote(program)}`);
+    // Same length forces status to hash rather than conclude dirty from size alone.
+    await fs.writeFile(path.join(project, 'filtered.data'), 'AFTER!\n');
+    await fs.utimes(path.join(project, 'filtered.data'), new Date(0), new Date(0));
+    const before = await snapshot(root);
+    const result = await readOnlyHelperWork(parent, entry, () => true);
+    expect.soft(result).toHaveProperty('error', HELPER_TRANSFORM_UNAVAILABLE);
+    expect.soft(await fs.access(marker).then(() => true, () => false)).toBe(false);
+    expect.soft(await snapshot(root)).toEqual(before);
+  });
+  it.each(['clean', 'process'])('cannot run a %s filter introduced after attributes were read', async (kind) => {
+    await fs.writeFile(path.join(project, 'filtered.data'), 'before\n');
+    await fs.writeFile(path.join(project, '.gitattributes'), '');
+    await git('add', '.'); await git('commit', '-m', 'late filter fixture');
+    const marker = path.join(project, '.git', 'late-filter-ran');
+    const program = path.join(project, '.git', 'late-filter.cjs');
+    await fs.writeFile(program, `require('fs').writeFileSync(${JSON.stringify(marker)}, 'unexpected filter execution'); ${kind === 'process' ? 'process.exit(1);' : 'process.stdin.pipe(process.stdout);'}`);
+    await fs.writeFile(path.join(project, 'filtered.data'), 'AFTER!\n');
+    await fs.utimes(path.join(project, 'filtered.data'), new Date(0), new Date(0));
+    const quote = (value: string) => "'" + value.replace(/'/g, "'\\''") + "'";
+    const actual = repository.readOnlyGit;
+    let fixtureAfter: Record<string, string> | undefined;
+    vi.spyOn(repository, 'readOnlyGit').mockImplementation(async (...args) => {
+      const bytes = await actual(...args);
+      if (args[1][0] === 'check-attr') {
+        await git('config', `filter.late.${kind}`, `${quote(process.execPath)} ${quote(program)}`);
+        await fs.writeFile(path.join(project, '.gitattributes'), '*.data filter=late\n');
+        fixtureAfter = await snapshot(root);
+      }
+      return bytes;
+    });
+    await readOnlyHelperWork(parent, entry, () => true);
+    expect(fixtureAfter).toBeDefined();
+    expect.soft(await fs.access(marker).then(() => true, () => false)).toBe(false);
+    expect.soft(await snapshot(root)).toEqual(fixtureAfter);
+  });
+  it('counts staged work even when the worktree matches HEAD and preserves staged rename grouping', async () => {
+    await fs.writeFile(path.join(project, 'ordinary'), 'two\n'); await git('add', 'ordinary');
+    await fs.writeFile(path.join(project, 'ordinary'), 'one\n');
+    expect(await readOnlyHelperWork(parent, entry, () => true)).toMatchObject({ dirty: 1 });
+    await git('restore', '--staged', 'ordinary');
+    await git('mv', 'ordinary', 'renamed');
+    expect(await readOnlyHelperWork(parent, entry, () => true)).toMatchObject({ dirty: 1 });
+  });
+  it('compares CRLF content using the host’s normalization without executing filters', async () => {
+    await git('config', 'core.autocrlf', 'true');
+    await fs.writeFile(path.join(project, 'ordinary'), 'one\r\n');
+    expect(await readOnlyHelperWork(parent, entry, () => true)).toMatchObject({ dirty: 0 });
+  });
   it('refuses an unrelated helper before Git or file-content reads', async () => {
     entry.config.parentAgentId = 'other';
     await fs.writeFile(inventory, JSON.stringify([parent.agent, entry.config]));
@@ -75,7 +132,7 @@ describe('passive direct helper work', () => {
     const actual = repository.readOnlyGit;
     vi.spyOn(repository, 'readOnlyGit').mockImplementation(async (...args) => {
       const bytes = await actual(...args);
-      if (args[1][0] === 'status') await fs.writeFile(inventory, JSON.stringify([parent.agent, { ...entry.config, parentAgentId: undefined }]));
+      if (args[1][0] === 'ls-files') await fs.writeFile(inventory, JSON.stringify([parent.agent, { ...entry.config, parentAgentId: undefined }]));
       return bytes;
     });
     expect(await readOnlyHelperWork(parent, entry, () => true)).toHaveProperty('error');

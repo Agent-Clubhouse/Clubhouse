@@ -33,8 +33,9 @@ import { reachRows, reachSummary } from '../../shared/dispatcher-card-model';
 import { viewOf as agentGrantsView } from './agent-grants-service';
 import { agentDisplayState } from './agent-display-state';
 import { getAgentRuntime } from './agent-runtime';
-import { readOnlyHelperWork } from './read-only-helper-work';
+import { HELPER_TRANSFORM_UNAVAILABLE, readOnlyHelperWork } from './read-only-helper-work';
 import { helpersSummary, workSummary } from '../../shared/helper-work-summary';
+import { captureReadOnlyAgentTargetWitness } from './read-only-agent-target-witness';
 
 /** Redact before cutting so a partial credential cannot evade the existing secret patterns. */
 const display = (value: unknown, max = 2048) => {
@@ -71,9 +72,11 @@ export async function readRemoteAgentDetails(agentId: string, authorized: () => 
     if (!authorized()) return refused();
     const { agent, project } = target;
     if (agent.id !== agentId || isDisposedAgent(agent)) return { status: 404, body: { error: 'agent_not_found' } };
+    const dispatcher = isDispatcherIdentityAgentId(agentId);
+    const targetWitness = dispatcher ? null : captureReadOnlyAgentTargetWitness(target);
+    const helperReceipts: Array<{ current(): boolean }> = [];
     const provider = await resolveOrchestrator(project.path, agent.orchestrator);
     if (!authorized()) return refused();
-    const dispatcher = isDispatcherIdentityAgentId(agentId);
     const running = isAgentRunning(agentId);
     const registration = agentRegistry.get(agentId);
     const registeredNonce = registration?.nonce;
@@ -144,7 +147,7 @@ export async function readRemoteAgentDetails(agentId: string, authorized: () => 
       row(c, 'Cross-project helpers', yes(policy.crossProjectHelpers));
       row(c, 'Auto provider', `${yes(policy.autoHelpers)}${policy.autoEffective ? ` · ${policy.autoEffective.effective ? 'available' : policy.autoEffective.reason ?? 'unavailable'} (${policy.autoEffective.source})` : ''}`);
       }
-      const helpers = await listHelpersEverywhere(project.path, agentId, { includeDisposed: true, readOnly: true });
+      const helpers = await listHelpersEverywhere(project.path, agentId, { includeDisposed: true, readOnly: true, receipts: helperReceipts });
       const requests = listStartRequests().filter((r) => r.orchestratorId === agentId && r.projectPath === project.path);
       const live = helpers.filter((h) => !isDisposedAgent(h.config));
       row(c, 'Helpers', helpersSummary(live.length, policy.orchestrate ? policy.maxHelpers : undefined, live.filter((h) => h.config.creation?.state === 'creating').length, requests.length));
@@ -158,7 +161,9 @@ export async function readRemoteAgentDetails(agentId: string, authorized: () => 
         if (!isDisposedAgent(h) && !h.creation) {
           if (workReads < 8 && Date.now() < workDeadline) {
             workReads++;
-            work = workSummary(await readOnlyHelperWork(target, entry, authorized));
+            const checks = await readOnlyHelperWork(target, entry, authorized);
+            work = workSummary(checks);
+            if (checks.error === HELPER_TRANSFORM_UNAVAILABLE) work += ' (custom Git transform)';
           } else { work = 'Work not checked (host read limit)'; workOmitted++; }
         }
         row(c, h.name, [state, h.branch, work, isDisposedAgent(h) ? h.disposedAt : '', projectPath !== project.path ? path.basename(projectPath) : '', h.creation?.state === 'failed' ? safeMcpErrorLine(h.creation.reason) : ''].filter(Boolean).join(' · '));
@@ -285,6 +290,9 @@ export async function readRemoteAgentDetails(agentId: string, authorized: () => 
       if (c.notes.length > 20) c.notes = [...c.notes.slice(0, 19), `${c.notes.length - 19} more notices omitted by the host’s display limit.`];
     }
     const currentRegistration = agentRegistry.get(agentId);
+    // The complete response has finished awaiting. A stopped parent has no run
+    // registration, and an earlier helper work check cannot attest later membership.
+    if (targetWitness && !targetWitness.current() || helperReceipts.some((receipt) => !receipt.current())) return { status: 409, body: { error: 'agent_inventory_changed' } };
     if (running && !registration && runtime?.kind !== 'chat'
       || currentRegistration !== registration || currentRegistration?.nonce !== registeredNonce || currentRegistration?.runtime !== registeredRuntime
       || isAgentRunning(agentId) !== running

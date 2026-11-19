@@ -16,6 +16,7 @@ vi.mock('./chat-idle-settings', () => ({ setAgentIdleSleep: vi.fn() }));
 const registered: string[] = [];
 vi.mock('./project-store', () => ({
   list: vi.fn(async () => registered.map((p, i) => ({ id: `proj_${i}`, name: path.basename(p), path: p }))),
+  peekProjectsChecked: vi.fn(async () => ({ readable: true, projects: registered.map((p, i) => ({ id: `proj_${i}`, name: path.basename(p), path: p })) })),
 }));
 
 import { clearAgentConfigCache, flushAllAgentConfigs, listDurable, projectKey, setParentAgent } from './agent-config';
@@ -77,6 +78,17 @@ it('helper discovery never restores an older backup over a corrupt primary durin
   const found = await listHelpersEverywhere(home, 'durable_1_orch');
   expect(found.some((entry) => entry.config.id === 'durable_4_far')).toBe(true);
   expect(fs.readFileSync(primary, 'utf-8')).toBe('{corrupt-newer-policy');
+});
+
+it('retains private strict inventory receipts for actual rows, including cross-project and disposed membership', async () => {
+  const receipts: Array<{ current(): boolean }> = [];
+  const found = await listHelpersEverywhere(home, 'durable_1_orch', { includeDisposed: true, readOnly: true, receipts });
+  expect(ids(found)).toEqual(['durable_2_local', 'durable_3_gone', 'durable_4_far']);
+  expect(receipts).toHaveLength(2);
+  expect(receipts.every((receipt) => receipt.current())).toBe(true);
+  seed(other, readDisk(other).map((row) => row.id === 'durable_4_far' ? { ...row, parentAgentId: 'durable_6_own', parentProjectPath: undefined } : row));
+  expect(receipts[0].current()).toBe(true);
+  expect(receipts[1].current()).toBe(false);
 });
 
 describe('projectKey', () => {

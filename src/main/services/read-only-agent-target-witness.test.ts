@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import * as fs from 'fs/promises';
 import * as os from 'os';
 import * as path from 'path';
-import { captureReadOnlyAgentTargetWitness } from './read-only-agent-target-witness';
+import { captureReadOnlyAgentInventoryWitness, captureReadOnlyAgentTargetWitness } from './read-only-agent-target-witness';
 import type { AgentConfigTarget } from './agent-config-reader';
 const m = vi.hoisted(() => ({ base: '' }));
 vi.mock('./base-dir', () => ({ getBaseDirPath: () => m.base }));
@@ -18,6 +18,27 @@ beforeEach(async () => {
 });
 afterEach(async () => { await fs.rm(root, { recursive: true, force: true }); });
 describe('synchronous admitted target inventory witness', () => {
+  it('refuses to mint a fresh list receipt for stale or incomplete rows', async () => {
+    expect(() => captureReadOnlyAgentInventoryWitness(project, [])).toThrow();
+    expect(() => captureReadOnlyAgentInventoryWitness(project, [{ ...target.agent, name: 'Stale name' }])).toThrow();
+  });
+  it('binds a complete list including disposed membership and verified primary/backup absence', async () => {
+    await fs.writeFile(agents, JSON.stringify([{ ...target.agent, disposedAt: '2026-11-19' }]));
+    const rows = JSON.parse(await fs.readFile(agents, 'utf8'));
+    const full = captureReadOnlyAgentInventoryWitness(project, rows);
+    expect(full.current()).toBe(true);
+    await fs.writeFile(agents, JSON.stringify([{ ...rows[0], parentAgentId: 'different' }]));
+    expect(full.current()).toBe(false);
+    await fs.rm(agents);
+    const empty = captureReadOnlyAgentInventoryWitness(project, []);
+    expect(empty.current()).toBe(true);
+    await fs.writeFile(agents + '.bak', '[]');
+    expect(empty.current()).toBe(false);
+    await fs.rm(agents + '.bak');
+    const absent = captureReadOnlyAgentInventoryWitness(project, []);
+    await fs.writeFile(agents, '[]');
+    expect(absent.current()).toBe(false);
+  });
   it('attests the exact real primary inventories without writing or recovering them', async () => {
     const before = await Promise.all([fs.readFile(agents), fs.readFile(projects), fs.readdir(path.dirname(agents)), fs.readdir(m.base)]);
     const witness = captureReadOnlyAgentTargetWitness(target);
