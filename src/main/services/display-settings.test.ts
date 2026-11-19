@@ -33,6 +33,23 @@ it('preserves established host-cache provenance, explicit false and known zero w
   expect(result).toMatchObject({ state: 'ok', source: 'host-cache', missing: false, raw: { enabled: false, limit: 0 } });
   expect(result.observedAt).toBeLessThanOrEqual(Date.now()); expect(migrate).toHaveBeenCalledTimes(1); expect(onLoad).toHaveBeenCalledTimes(1); expect(disk()).toEqual(before);
 });
+it('combines skipped identical updates with detached display provenance without overwriting a newer primary', async () => {
+  fs.writeFileSync(primary(), '{"nested":{"enabled":false,"limit":0}}');
+  const store = createSettingsStore(filename, { nested: { enabled: true, limit: 10 } }, undefined, { displaySnapshot: true, skipUnchangedUpdates: true });
+  const live = store.get(), previous = store.peekLoaded!()!;
+  // An external fixture edit is deliberately newer than the established host
+  // cache. A no-op update must not re-persist its older values over that file.
+  fs.writeFileSync(primary(), '{"nested":{"enabled":true,"limit":20}}'); oldTemp();
+  const before = disk(), open = vi.spyOn(fs.promises, 'open'), prepare = vi.fn(async () => {}), check = vi.fn();
+  const returned = await store.update((current) => current, { prepare, check });
+  expect.soft(returned).toEqual(live); expect.soft(returned).not.toBe(live);
+  returned.nested.enabled = true; returned.nested.limit = 999;
+  expect.soft(store.get()).toEqual({ nested: { enabled: false, limit: 0 } });
+  expect.soft(store.peekLoaded?.()).toEqual(previous);
+  expect.soft(readDisplaySettings(store, filename)).toMatchObject({ state: 'ok', source: 'host-cache', raw: { nested: { enabled: false, limit: 0 } } });
+  expect.soft(prepare).toHaveBeenCalledTimes(1); expect.soft(check).toHaveBeenCalledTimes(1);
+  expect.soft(open).not.toHaveBeenCalled(); expect.soft(disk()).toEqual(before);
+});
 it.each(['corrupt', 'array'])('does not promote recovered/merged defaults from an already loaded %s primary into verified evidence', (kind) => {
   fs.writeFileSync(primary(), kind === 'array' ? '[]' : '{broken');
   const store = createSettingsStore(filename, { enabled: true }, undefined, { displaySnapshot: true }); expect(store.get()).toEqual({ enabled: true });
