@@ -277,6 +277,8 @@ async function statusForSnapshot(agent: DurableAgentConfig | null, agentId: stri
 /** Consumers must preserve this limitation when presenting recorded managed-library status. */
 export type ManagedDisplayStatus = DisplayValue<ManagedAgentStatus> & {
   libraryEvidence?: { source: 'committed-index'; revisionPayloadsVerified: false };
+  /** Internal selected metadata for sibling display fields; never a wholesale DTO. */
+  setupMetadata?: ResolvedSetupMetadata;
 };
 
 /** Reuse the strictly admitted agent snapshot; no config lookup or ordinary grant callback. */
@@ -291,11 +293,16 @@ export async function readManagedStatusForDisplay(agent: DurableAgentConfig, opt
     grantedIds = grant.value ? [PREPARE_HANDOFF_SKILL_ID] : [];
   }
   try {
-    const status = await statusForSnapshot(agent, agent.id, (selected) => resolveManagedSetupForDisplay(managedAgents(), selected, grantedIds, { receipts: evidenceReceipts, inputs }), evidenceReceipts);
+    let setupMetadata: ResolvedSetupMetadata | undefined;
+    const status = await statusForSnapshot(agent, agent.id, async (selected) => {
+      setupMetadata = await resolveManagedSetupForDisplay(managedAgents(), selected, grantedIds, { receipts: evidenceReceipts, inputs });
+      return setupMetadata;
+    }, evidenceReceipts);
     if (evidenceReceipts.some((receipt) => !receipt.current())) return { state: 'unavailable', reason: 'changed', inputs };
     options.receipts?.push(...evidenceReceipts);
     inputs.push({ field: agent.managed ? 'Clubhouse delivery record' : 'Host run status', source: 'host-cache', observedAt: Date.now() });
     return { state: 'ok', value: structuredClone(status), inputs,
+      ...(setupMetadata && { setupMetadata: structuredClone(setupMetadata) }),
       ...(agent.managed && { libraryEvidence: { source: 'committed-index' as const, revisionPayloadsVerified: false as const } }) };
   } catch (error) {
     return { state: 'unavailable', reason: error instanceof Error && error.message === 'Managed display library metadata changed while reading.' ? 'changed' : error instanceof Error && [ 'Managed display setup exceeds the part limit.', 'Managed display delivery metadata exceeds the read limit.' ].includes(error.message) ? 'limit' : 'unreadable', inputs };

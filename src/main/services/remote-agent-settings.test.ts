@@ -11,12 +11,15 @@ vi.mock('./dispatcher/dispatcher-service', () => ({ getDispatcherAgentId: () => 
 vi.mock('./agent-config-reader', () => ({ resolveAgentConfigTarget: mocks.resolve, readResolvedAgentConfig: mocks.instructions }));
 vi.mock('./read-only-config-target', async (original) => { const actual = await original<typeof import('./read-only-config-target')>(); return { captureReadOnlyConfigTargetWitness: (...args: Parameters<typeof actual.captureReadOnlyConfigTargetWitness>) => mocks.realWitness ? actual.captureReadOnlyConfigTargetWitness(...args) : { current: mocks.current } }; });
 vi.mock('./agent-system', () => ({ resolveOrchestrator: mocks.provider }));
-vi.mock('./free-agent-settings', () => ({ agentAccess: () => 'full_access' }));
-vi.mock('./experimental-settings', () => ({ isGraduatedFeatureOn: () => mocks.chatEnabled }));
+vi.mock('./free-agent-settings', () => ({ readAgentAccessForDisplay: () => ({ state: 'ok', value: 'full_access', inputs: [] }) }));
+vi.mock('./chat-runtime-settings', () => ({ readRuntimeModeForDisplay: () => ({ state: 'ok', value: { mode: mocks.chatEnabled ? 'chat' : 'terminal' }, inputs: [] }) }));
 vi.mock('./settings-store', () => ({ createSettingsStore: () => ({ get: () => ({}) }) }));
 vi.mock('./agent-runtime/chat-drivers', () => ({ resolveChatDriver: () => mocks.driver ? {} : undefined }));
-vi.mock('./chat-idle-settings', () => ({ chatIdleSettings: { getSettings: () => ({ idleTimeoutMinutes: 60 }) } }));
-vi.mock('./managed-agents', () => ({ managedAgents: () => ({ liveEntries: mocks.entries, getTemplate: mocks.template }), statusFor: mocks.status }));
+vi.mock('./chat-idle-settings', () => ({ readIdleSleepForDisplay: () => ({ state: 'ok', value: { minutes: 60, source: 'app' }, inputs: [] }) }));
+vi.mock('./managed-agents', () => ({ managedAgents: () => ({
+  openSetupMetadataForDisplay: async () => { const entries = await mocks.entries(); return { head: async (id: string) => entries[id] ?? null, receipt: { current: () => true } }; },
+  getTemplateForDisplay: mocks.template,
+}), readManagedStatusForDisplay: async () => ({ state: 'ok', value: await mocks.status(), inputs: [], libraryEvidence: { source: 'committed-index', revisionPayloadsVerified: false } }) }));
 import { readRemoteAgentSettings } from './remote-agent-settings';
 import { isRemoteAgentSettings } from '../../shared/remote-agent-settings';
 const config = () => ({ id: 'a1', name: 'Host', color: 'teal', model: 'host-model', idleSleep: 15,
@@ -70,7 +73,7 @@ describe('host Settings summary', () => {
     expect(JSON.stringify(response.body)).not.toMatch(/private-|\/host/);
     expect(mocks.instructions).not.toHaveBeenCalled();
   });
-  it('honors the actual host Chat flag and unavailable driver regardless of the controller', async () => {
+  it('projects host Chat preference and unavailable driver independently of the controller', async () => {
     mocks.chatEnabled = false;
     expect(await readRemoteAgentSettings('a1', () => true)).toMatchObject({ status: 200, body: { runtime: 'terminal', autoSleep: null } });
     mocks.chatEnabled = true; mocks.driver = false;

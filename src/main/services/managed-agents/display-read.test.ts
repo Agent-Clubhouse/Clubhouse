@@ -5,9 +5,11 @@ import * as path from 'path';
 import { app } from 'electron';
 import type { DurableAgentConfig } from '../../../shared/types';
 import { PREPARE_HANDOFF_SKILL_ID } from '../../../shared/managed-agents-types';
-const m = vi.hoisted(() => ({ config: vi.fn(), running: false }));
+const m = vi.hoisted(() => ({ config: vi.fn(), target: vi.fn(), provider: vi.fn(), running: false }));
 vi.mock('../agent-config', async (original) => ({ ...await original<typeof import('../agent-config')>(), getDurableConfig: m.config }));
-vi.mock('../agent-system', () => ({ isAgentRunning: () => m.running, resolveOrchestrator: vi.fn(), spawnAgent: vi.fn(), killAgent: vi.fn() }));
+vi.mock('../agent-config-reader', () => ({ resolveAgentConfigTarget: m.target, readResolvedAgentConfig: vi.fn() }));
+vi.mock('../read-only-config-target', () => ({ captureReadOnlyConfigTargetWitness: () => ({ current: () => true }) }));
+vi.mock('../agent-system', () => ({ isAgentRunning: () => m.running, resolveOrchestrator: m.provider, spawnAgent: vi.fn(), killAgent: vi.fn() }));
 vi.mock('../log-service', () => ({ appLog: vi.fn() }));
 vi.mock('../../util/ipc-broadcast', () => ({ broadcastToAllWindows: vi.fn() }));
 vi.mock('../../telemetry/persist', () => ({ persist: { recovery: vi.fn(), timed: async (_kind: string, work: () => Promise<void>) => work() } }));
@@ -19,6 +21,8 @@ import { withSettingsSurface, _resetSettingsAuditForTesting } from '../settings-
 import { createManagedAgentsService, type ManagedAgentsService } from './service';
 import { createManagedStateStore } from './state-store';
 import { readManagedStatusForDisplay, statusFor, _setManagedAgentsForTesting } from './index';
+import { readRemoteAgentSettings } from '../remote-agent-settings';
+import { DEFAULT_HELPER_TEMPLATE_ID } from './builtins';
 import { resolveManagedSetupForDisplay, setupFingerprint, setGrantedSkills } from './delivery';
 let root: string, service: ManagedAgentsService, agent: DurableAgentConfig;
 async function disk(folder = root): Promise<Record<string, unknown>> {
@@ -37,6 +41,8 @@ beforeEach(async () => {
   // Ordinary library creation is fixture setup, before the passive capture.
   await service.ensureBuiltins(); _setManagedAgentsForTesting(service); resetAllSettingsStoresForTests();
   setGrantedSkills((selected) => agentHoldsAction(selected.id, selected, 'handoff.offer') ? [PREPARE_HANDOFF_SKILL_ID] : []);
+  m.target.mockReset().mockImplementation(async () => ({ agent: structuredClone(agent), project: { id: 'p', name: 'Selected project', path: root } }));
+  m.provider.mockReset().mockResolvedValue({ id: 'claude-code', displayName: 'Host Claude', getCapabilities: () => ({ permissions: true }) });
   m.config.mockReset().mockImplementation(async () => { throw new Error('unadmitted replacement config lookup'); });
 });
 afterEach(async () => { _setManagedAgentsForTesting(null); forgetDelivery('selected'); resetAllSettingsStoresForTests(); vi.restoreAllMocks(); await fs.rm(root, { recursive: true, force: true }); });
@@ -172,4 +178,29 @@ it('detaches selected MCP status arrays from the retained live delivery cache', 
   const result = await readManagedStatusForDisplay(agent); expect(result.state).toBe('ok');
   if (result.state === 'ok') result.value.mcpProblems![0].missingEnv.push('SYNTHETIC_CALLER_MUTATION');
   expect.soft(mcpProblems.get(agent.id)).toEqual([{ server: 'SYNTHETIC_MCP', missingEnv: ['TEST_KEY'] }]);
+});
+
+it('projects the admitted managed setup through Settings without ordinary config, template Access, or global recovery', async () => {
+  await runningSelectedHeads(); agent.managed!.templateId = DEFAULT_HELPER_TEMPLATE_ID;
+  await fs.writeFile(path.join(root, 'free-agent-settings.json'), '{broken'); await temp('free-agent-settings.json');
+  const ordinary = vi.spyOn(service, 'getTemplate').mockRejectedValue(new Error('ordinary template normalization forbidden'));
+  const all = vi.spyOn(service, 'liveEntries').mockRejectedValue(new Error('global library listing forbidden'));
+  const before = await disk(), result = await readRemoteAgentSettings(agent.id, () => true);
+  expect.soft(result.status).toBe(200); expect.soft(result.body).toMatchObject({ setup: { state: 'ok', instructions: '2 blocks', waiting: false } });
+  expect.soft(result.display?.notes.join(' ')).toMatch(/recorded library metadata.*not verified/);
+  expect.soft(JSON.stringify(result.body)).not.toMatch(/SYNTHETIC_|PRIVATE_|receipts|snapshot|contentHash/);
+  expect.soft(m.config).not.toHaveBeenCalled(); expect.soft(ordinary).not.toHaveBeenCalled(); expect.soft(all).not.toHaveBeenCalled(); expect.soft(await disk()).toEqual(before);
+});
+it.each(['revise', 'delete'] as const)('withholds Settings after an earlier selected library head %s during a later template await', async (change) => {
+  const { first } = await runningSelectedHeads(); agent.managed!.templateId = DEFAULT_HELPER_TEMPLATE_ID;
+  const template = service.getTemplateForDisplay.bind(service); let changed = false;
+  vi.spyOn(service, 'getTemplateForDisplay').mockImplementation(async (...args) => { const result = await template(...args); await mutateHead(first.id, change); changed = true; return result; });
+  const result = await readRemoteAgentSettings(agent.id, () => true); expect(changed).toBe(true);
+  expect.soft(result).toEqual({ status: 409, body: { error: 'settings_evidence_changed' } }); expect.soft(JSON.stringify(result)).not.toMatch(/First selected|waiting|setupMetadata|SYNTHETIC/);
+});
+it('exports real managed evidence receipts for later Details awaits without serializing internal snapshots', async () => {
+  const { first } = await runningSelectedHeads(); const receipts: Array<{ current(): boolean }> = [];
+  const result = await readRemoteAgentSettings(agent.id, () => true, { receipts }); expect(result.status).toBe(200); expect(receipts.every((receipt) => receipt.current())).toBe(true);
+  await mutateHead(first.id, 'revise'); expect.soft(receipts.some((receipt) => !receipt.current())).toBe(true);
+  expect.soft(JSON.stringify(result.body)).not.toMatch(/setupMetadata|libraryEvidence|receipts|SYNTHETIC/);
 });

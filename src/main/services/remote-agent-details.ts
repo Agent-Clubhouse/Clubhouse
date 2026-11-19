@@ -20,7 +20,6 @@ import { getAgentConnection, getCurrentAgentConnection } from './clubhouse-mcp/b
 import { getDispatcherState, isDispatcherIdentityAgentId } from './dispatcher/dispatcher-service';
 import { isDispatcherEnabled } from './dispatcher/dispatcher-settings';
 import { readAgentCardView } from './dispatcher/dispatcher-agent-card-source';
-import { managedAgents, statusFor } from './managed-agents';
 import { readMcpConfig, readLaunchWrapper, readDefaultMcps } from './agent-settings-service';
 import { getProvider } from '../orchestrators';
 import { safeMcpErrorLine } from './mcp-error-text';
@@ -52,6 +51,7 @@ export async function readRemoteAgentDetails(agentId: string, authorized: () => 
     const dispatcher = isDispatcherIdentityAgentId(agentId);
     const targetWitness = captureReadOnlyConfigTargetWitness(target);
     const helperReceipts: Array<{ current(): boolean }> = [];
+    const settingsReceipts: Array<{ current(): boolean }> = [];
     const provider = await resolveOrchestrator(project.path, agent.orchestrator);
     if (!authorized()) return refused();
     const running = isAgentRunning(agentId);
@@ -71,10 +71,15 @@ export async function readRemoteAgentDetails(agentId: string, authorized: () => 
     if (dispatcher) for (const id of ['dispatcher', 'orchestrate', 'skills-mcp', 'session', 'canvases', 'changes'] as const) byId[id].state = 'not-applicable';
     if (agent.parentAgentId) byId.dispatcher.state = 'not-applicable';
     const result: RemoteAgentDetails = { version: 1, readOnly: true, agentId, readAt: Date.now(), providerId, providerLabel: providerLabel(providerId), running, status: lifecycle.status, spawnedAt: lifecycle.spawnedAt ?? null, sessionId, nativeSessionId, settings: null, cards };
-    const settingsRead = await readRemoteAgentSettings(agentId, authorized);
+    const settingsRead = await readRemoteAgentSettings(agentId, authorized, { admittedTarget: target, receipts: settingsReceipts });
     if (!authorized()) return refused();
     if (settingsRead.status === 200) result.settings = settingsRead.body as RemoteAgentDetails['settings'];
     else byId.settings.state = 'error';
+    if (settingsRead.display) {
+      byId.settings.rows.push(...settingsRead.display.rows); byId.settings.notes.push(...settingsRead.display.notes);
+      byId.settings.omitted += settingsRead.display.omitted;
+      if (settingsRead.display.state !== 'ok') { byId.settings.state = settingsRead.display.state; byId.settings.summary = settingsRead.display.summary; }
+    }
 
     // Sequential sections keep disk/git pressure bounded. Check authority around every section.
     const read = async (id: RemoteDetailsCardId, run: (c: RemoteDetailsCard) => Promise<void> | void) => {
@@ -93,26 +98,10 @@ export async function readRemoteAgentDetails(agentId: string, authorized: () => 
         if (result.settings) result.settings.setup.mcps = [...names].slice(0, 100).map((name) => display(name, 1024));
         if (names.size > 100) c.omitted += names.size - 100;
         row(c, 'MCP servers', `${names.size} configured`);
+        if (!result.settings) for (const name of [...names].slice(0, 100)) row(c, 'MCP configured', display(name, 1024));
         return;
       }
-      const setup = agent.managed;
-      const service = managedAgents();
-      const entries = await service.liveEntries();
-      let template: Awaited<ReturnType<typeof service.getTemplate>> | null = null;
-      if (setup.templateId) {
-        try { template = await service.getTemplate(setup.templateId); }
-        catch { c.notes.push('The template is no longer available. Other setup fields are shown independently.'); }
-      }
-      const status = await statusFor(project.path, agentId);
-      const names = (ids: string[]) => ids.map((id) => entries[id]?.name ?? 'No longer in the library').join(', ');
-      if (setup.helperChanges && (setup.helperChanges.added.length || setup.helperChanges.removed.length)) {
-        row(c, 'Built from', [template?.name ?? 'No longer in the library', setup.helperChanges.added.length ? `plus ${names(setup.helperChanges.added)}` : '', setup.helperChanges.removed.length ? `minus ${names(setup.helperChanges.removed)}` : ''].filter(Boolean).join(', '));
-      }
-      if (template?.updatedBy) row(c, 'Template changed', `${template.updatedBy}${template.updatedAt ? ` · ${template.updatedAt}` : ''}`);
-      if (status.running && status.waiting) for (const change of status.changes.length ? status.changes : ['Setup changed']) row(c, 'Waiting', change);
-      if (status.migrated) row(c, 'Switched to managed', `${status.migrated.from} · backup: ${status.migrated.backup}`);
-      if (status.migrationFailed) row(c, 'Migration failed', status.migrationFailed);
-      if (status.deliveryFailed) row(c, 'Setup delivery', safeMcpErrorLine(status.deliveryFailed));
+      // Managed Settings fields were projected once from the admitted target.
     });
     await read('orchestrate', async (c) => {
       const policy = (await resolveOrchestrationPolicies(project.path, [agent])).get(agentId);
@@ -177,21 +166,23 @@ export async function readRemoteAgentDetails(agentId: string, authorized: () => 
     await read('connections', (c) => readConnectionCard(c, dispatcher ? getDispatcherState().agentId || agentId : agentId));
     await read('actions', (c) => readActionCard(c, agentId, project.id, dispatcher, { agentName: agent.name, projectName: project.displayName || project.name }));
     await read('skills-mcp', async (c) => {
-      const status = await statusFor(project.path, agentId);
-      const entries = agent.managed ? await managedAgents().liveEntries() : {};
+      const evidence = settingsRead.managedEvidence;
+      const status = evidence?.status.state === 'ok' ? evidence.status.value : undefined;
+      if (agent.managed && !evidence) { c.state = 'error'; c.notes.push('The selected managed library evidence is unavailable.'); }
+      else if (agent.managed && !status) c.notes.push('Recorded managed delivery status is unavailable. No installation or loading is inferred.');
       for (const id of agent.managed?.skills ?? []) {
         if (GRANT_GATED_SKILL_IDS.includes(id)) continue;
-        row(c, 'Skill', `${entries[id]?.name ?? 'No longer in the library'} · ${running && status.deliveredAt && !status.waiting && !status.deliveryFailed && status.deliveredSkillIds?.includes(id) ? 'Installed by Clubhouse' : 'Set up by Clubhouse'}`);
+        row(c, 'Skill', `${evidence?.names.get(id) ?? 'Library name unavailable'} · ${running && status?.deliveredAt && !status.waiting && !status.deliveryFailed && status.deliveredSkillIds?.includes(id) ? 'Installation recorded by Clubhouse' : 'Configured in Clubhouse'}`);
       }
-      for (const skill of status.builtinSkills ?? []) row(c, 'Skill', `${skill.name} · ${running && skill.deliveredAt ? 'Installed by Clubhouse' : 'Set up by Clubhouse'}`);
+      for (const skill of status?.builtinSkills ?? []) row(c, 'Skill', `${skill.name} · ${running && skill.deliveredAt ? 'Installation recorded by Clubhouse' : 'Configured in Clubhouse'}`);
       if (running) {
         const connection = getAgentConnection(agentId);
         const current = getCurrentAgentConnection(agentId);
         row(c, 'Clubhouse MCP', current ? `Connected${current.toolCount == null ? '' : ` · ${current.toolCount} tools`} · ${new Date(current.connectedAt).toISOString()}` : connection ? 'An earlier handshake is retained; connection for this run is not confirmed' : 'No handshake reported for this run');
-        for (const name of result.settings?.setup.mcps ?? []) row(c, 'MCP configured', name);
-        for (const problem of status.mcpProblems ?? []) row(c, problem.server, `Missing environment variables: ${problem.missingEnv.join(', ')}`);
+        for (const name of result.settings?.setup.mcps ?? settingsRead.managedEvidence?.setup.mcps ?? []) row(c, 'MCP configured', name);
+        for (const problem of status?.mcpProblems ?? []) row(c, problem.server, `Missing environment variables: ${problem.missingEnv.join(', ')}`);
       } else c.notes.push('Last session evidence only. No live MCP connection is claimed while the agent is stopped.');
-      c.notes.push('Configured and installed skills do not confirm provider loading or use. Provider reports are shown separately.');
+      c.notes.push('Configured names and revisions are recorded library metadata; revision payloads are not verified. Recorded installation does not confirm provider loading or use. Provider reports are shown separately.');
     });
     await read('session', async (c) => {
       c.title = running ? 'Session' : 'Last session';
@@ -214,6 +205,7 @@ export async function readRemoteAgentDetails(agentId: string, authorized: () => 
     // The complete response has finished awaiting. A stopped parent has no run
     // registration, and an earlier helper work check cannot attest later membership.
     if (targetWitness && !targetWitness.current() || helperReceipts.some((receipt) => !receipt.current())) return { status: 409, body: { error: 'agent_inventory_changed' } };
+    if (settingsReceipts.some((receipt) => !receipt.current())) return { status: 409, body: { error: 'settings_evidence_changed' } };
     if (running && !registration && runtime?.kind !== 'chat'
       || currentRegistration !== registration || currentRegistration?.nonce !== registeredNonce || currentRegistration?.runtime !== registeredRuntime
       || currentRegistration?.orchestrator !== registeredProvider || currentRegistration?.cwd !== registeredCwd
