@@ -12,6 +12,7 @@ import { resolveAgentConfigTarget, type AgentConfigTarget } from './agent-config
 import { readRemoteAgentSettings } from './remote-agent-settings';
 import { isAgentRunning } from './agent-system';
 import { agentRegistry } from './agent-registry';
+import { readHelperAccessNoteForDisplay } from './helper-access-display';
 import { readOrchestrationForDisplay } from './orchestration-display';
 import { projectOrchestrationFields, projectPendingHelperStarts } from './remote-orchestration-card';
 import { listHelpersEverywhere } from './helper-index';
@@ -112,6 +113,12 @@ export async function readRemoteAgentDetails(agentId: string, authorized: () => 
     await read('orchestrate', async (c) => {
       const model = readPolicy();
       const { enabled, limit } = projectOrchestrationFields(c, model, agent.name, !!agent.parentAgentId);
+      if (!agent.parentAgentId && enabled === true) {
+        const access = readHelperAccessNoteForDisplay(agentId, project.path, agent.name, model.fields.access, { receipts: orchestrationReceipts });
+        row(c, 'Helper access ceiling', access.state === 'ok' ? access.value : 'Unavailable from current host run metadata');
+        if (access.state !== 'ok') c.state = 'error';
+        else if (running) c.notes.push('The helper ceiling is recorded by Clubhouse for this run. Helper start settings are ranked for the chosen CLI when it starts; provider enforcement is not independently verified.');
+      }
       const helpers = await listHelpersEverywhere(project.path, agentId, { includeDisposed: true, readOnly: true, receipts: helperReceipts });
       if (!authorized()) throw new Error('revoked');
       const requests = readStartRequestsForDisplay(project.path, agentId, { receipts: orchestrationReceipts });
