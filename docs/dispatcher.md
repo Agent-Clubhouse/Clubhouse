@@ -24,7 +24,7 @@ Local diagnostics record remote approval receipt, visibility (including read-onl
 
 ## Controller wake and launch cost (#3465)
 
-When enabled, launch opens the controller session idle, resuming its conversation if available, with no prompt. Opening the chat or waking its session also wakes the controller. Dispatcher Off prevents these starts. The controller keeps its existing identity and stays out of the regular agent list.
+When enabled, launch opens the controller session idle, resuming its conversation if available, with no prompt. Opening the chat or waking its session also wakes the controller. Opening **Needs you** to answer approvals does not wake or start either session, and remote grant controls remain available while the local chat sleeps. Dispatcher Off prevents these starts. The controller keeps its existing identity and stays out of the regular agent list.
 
 An agent's `wake_agent` uses the same serialized controller wake and Dispatcher config folder as `send_message`. The wire's `agent.wake` declaration checks the grant, including Ask first, before explicit wake; `send_message` checks that grant when it needs to wake the controller. Messages arriving during an idle wake wait, then enter the opened session.
 

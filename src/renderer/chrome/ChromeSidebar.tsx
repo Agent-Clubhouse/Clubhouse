@@ -740,7 +740,7 @@ export function ChromeSidebar() {
     const disposing = !!useHelperDisposeRequestStore.getState().requests[agent.id];
     if (asking && !disposing) useGrantRequestStore.getState().review(asking.agentId);
     if (isDispatcherAgent(agent)) {
-      openDispatcher();
+      openDispatcher({ approvalsOnly: true });
       reportChromeFeature('needs_you_select');
       return;
     }

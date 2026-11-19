@@ -21,6 +21,7 @@ import { useAnnexClientStore } from '../../stores/annexClientStore';
 import { resolveRemoteDispatcherTarget } from './remoteDispatcherTarget';
 import { RemoteDispatcherDetails } from './RemoteDispatcherDetails';
 import { RemoteControllerChatView } from './RemoteControllerChatView';
+import { RemoteApprovals } from './RemoteApprovals';
 
 /**
  * The Dispatcher's own view (#2538): the same agent pane a project agent
@@ -55,6 +56,7 @@ export function DispatcherView() {
   const remoteMachine = useRemoteDispatcherSelection((s) => s.machine);
   const remoteController = useRemoteDispatcherSelection((s) => s.controller);
   const localSelected = useRemoteDispatcherSelection((s) => s.local);
+  const approvalsOnly = useRemoteDispatcherSelection((s) => s.approvalsOnly);
   const satellites = useAnnexClientStore((s) => s.satellites);
   // Another computer's Dispatcher picked in the sidebar: looked up by its machine, the same from either side.
   const remoteTarget = remoteMachine ? resolveRemoteDispatcherTarget(remoteMachine, satellites, followed?.state.lead?.machine) : null;
@@ -69,12 +71,12 @@ export function DispatcherView() {
   }, [pickIsLead, remoteController]);
 
   useEffect(() => {
-    if (state?.enabled && !remoteMachine && !followed && !workOpen) {
+    if (state?.enabled && !remoteMachine && !followed && !workOpen && !approvalsOnly) {
       void window.clubhouse.dispatcher.wake().catch((err) => {
         rendererLog('core:dispatcher', 'warn', 'Could not wake the controller when opening its chat', { meta: { error: String(err) } });
       });
     }
-  }, [state?.enabled, state?.agentId, remoteMachine, followed, workOpen]);
+  }, [state?.enabled, state?.agentId, remoteMachine, followed, workOpen, approvalsOnly]);
 
   // A false→true change is what moves focus into the terminal (AgentTerminal).
   const [focused, setFocused] = useState(false);
@@ -134,6 +136,10 @@ export function DispatcherView() {
   if (agent.status === 'sleeping' || agent.status === 'error') pane = <SleepingAgent agent={agent} details />;
   else if (agent.headless) pane = <HeadlessAgentView agent={agent} />;
   else pane = <AgentRuntimePane key={agent.id} agent={agent} terminal={<AgentTerminal agentId={agent.id} focused={focused} />} />;
+
+  if (agent.status === 'sleeping' || agent.status === 'error' || agent.headless) {
+    pane = <div className="h-full flex flex-col"><div className="flex-shrink-0 px-7"><RemoteApprovals /></div><div className="flex-1 min-h-0">{pane}</div></div>;
+  }
 
   if (setupStatus === 'later') {
     return (
