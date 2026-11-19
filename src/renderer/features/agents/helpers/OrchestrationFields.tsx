@@ -10,11 +10,11 @@ import {
   ACCESS_LEVELS,
   ORCHESTRATION_CONTROLS,
   type HelperAccessResolution,
-  type HelperAutoOffReason,
   type ResolvedOrchestrationPolicy,
   type OrchestrationAccess,
   type OrchestrationControl,
 } from '../../../../shared/orchestration-policy';
+import { AUTO_LOCKED_NOTES } from '../../../../shared/helper-policy-display';
 import { Toggle } from '../../../components/Toggle';
 import { PERMISSION_LEVEL_LABELS } from '../../../../shared/chat/capabilities';
 import { ACCESS_LEVEL_LABELS, CONTROL_LABELS, aboveCeiling, accessLabel } from './helper-model';
@@ -130,9 +130,7 @@ export function HelperCountInput({ id, value, ceiling, disabled, className, onCo
 
 /** "Cross-project helpers" (#2512): may this agent start helpers in other registered projects. */
 /** Why Auto is off where this agent's own switch can't change that. */
-const AUTO_LOCKED_NOTES: Partial<Record<HelperAutoOffReason, string>> = {
-  project_off: 'This project turned it off.',
-};
+
 
 /**
  * Whether Auto works for this agent, not only its own switch: the app and the

@@ -5,28 +5,12 @@
  */
 
 import type { Agent, DurableAgentConfig, HelperDisposeChecks } from '../../../../shared/types';
-import type { AgentAccessLevel, OrchestrationAccess, OrchestrationControl } from '../../../../shared/orchestration-policy';
+import type { AgentAccessLevel, OrchestrationControl } from '../../../../shared/orchestration-policy';
 import { ACCESS_LEVELS } from '../../../../shared/orchestration-policy';
 import { isDisposedAgent } from '../../../../shared/agent-helpers';
-import { PERMISSION_LEVEL_LABELS } from '../../../../shared/chat/capabilities';
 import type { AgentDot } from '../agent-status';
 
-/** Access levels in the words the chat level menu uses. */
-export const ACCESS_LEVEL_LABELS: Readonly<Record<AgentAccessLevel, string>> = {
-  standard: PERMISSION_LEVEL_LABELS.ask,
-  auto: PERMISSION_LEVEL_LABELS.auto,
-  bypass: PERMISSION_LEVEL_LABELS.full_access,
-};
-
-export function accessLabel(access: OrchestrationAccess, orchestratorName: string): string {
-  return access === 'same' ? `Same as ${orchestratorName}` : ACCESS_LEVEL_LABELS[access];
-}
-
-export const CONTROL_LABELS: Readonly<Record<OrchestrationControl, string>> = {
-  'hands-off': 'Hands-off',
-  'ask-before-start': 'Ask before starting',
-  'ask-everything': 'Ask for everything',
-};
+export { ACCESS_LEVEL_LABELS, CONTROL_LABELS, accessLabel } from '../../../../shared/helper-policy-display';
 
 export function controlHelp(control: OrchestrationControl, orchestratorName: string): string {
   switch (control) {

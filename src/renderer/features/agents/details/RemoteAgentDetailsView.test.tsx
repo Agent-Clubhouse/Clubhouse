@@ -6,6 +6,7 @@ import { useAnnexClientStore } from '../../../stores/annexClientStore';
 import { MINIMAL_CHAT_CAPABILITIES } from '../../../../shared/chat';
 import { createChatViewState, useChatStore } from '../../../stores/chatStore';
 import { AgentDetails } from './AgentDetails';
+import { useHelperStartRequestStore } from '../../../stores/helperStartRequestStore';
 import { useAgentDetailsStore } from './detailsStore';
 
 const agent: Agent = { id: 'remote||sat||a1', projectId: 'remote||sat||p1', name: 'Remote', kind: 'durable', status: 'running', color: 'blue' };
@@ -24,6 +25,7 @@ function satellite(extra: Record<string, unknown> = {}) {
   useAnnexClientStore.setState({ satellites: [{ id: 'sat', alias: 'Studio', state: 'connected', snapshot: {}, ...extra }] as never });
 }
 beforeEach(() => {
+  useHelperStartRequestStore.setState({ requests: {} });
   satellite();
   useChatStore.getState().reset(agent.id);
   chatPage.mockResolvedValue(page());
@@ -402,4 +404,16 @@ it('shows independently known host Settings fields alongside explicit unavailabl
   await waitFor(() => expect(card).toHaveTextContent('HOST_SAVED_MODEL'));
   expect(card).toHaveTextContent('Unavailable from host settings'); expect(card).toHaveTextContent('Unavailable settings are not inferred from this machine.');
   expect(window.clubhouse.annexClient.agentSettings).not.toHaveBeenCalled(); expect(window.clubhouse.agent.getDurableConfig).not.toHaveBeenCalled();
+});
+
+it('keeps withheld request text out of visible, title and accessibility paths and never falls back to cached raw tasks', async () => {
+  useHelperStartRequestStore.setState({ requests: { cached: { requestId: 'cached', projectPath: 'PRIVATE_LOCAL_PROJECT', orchestratorId: agent.id, orchestratorName: 'Remote', args: { name: 'PRIVATE_CACHED_HELPER', task: 'PRIVATE_CACHED_TASK' }, createdAt: '2026-11-19T00:00:00Z', expiresAt: '2026-11-20T00:00:00Z' } } });
+  const value = fixture(), c = value.cards.find((card) => card.id === 'orchestrate')!;
+  c.rows = [{ label: 'Waiting to start', value: 'Selected helper · awaiting approval' }, { label: 'Task', value: 'Task withheld (conservative display policy)' }, { label: 'Requested / expires', value: 'HOST_CREATED · HOST_EXPIRES' }, { label: 'Task', value: 'Review visible changes' }];
+  c.notes = ['Other request fields remain independent.']; read.mockResolvedValue({ status: 'ok', value });
+  const { container } = render(<AgentDetails agent={agent} />); await waitFor(() => expect(read).toHaveBeenCalled());
+  const toggle = screen.getByTestId('details-card-orchestrate-toggle'); if (toggle.getAttribute('aria-expanded') !== 'true') fireEvent.click(toggle);
+  const card = screen.getByTestId('details-card-orchestrate'); await waitFor(() => expect(card).toHaveTextContent('Selected helper'));
+  expect(card).toHaveTextContent('Task withheld (conservative display policy)'); expect(card).toHaveTextContent('HOST_CREATED · HOST_EXPIRES'); expect(card).toHaveTextContent('Review visible changes');
+  expect(container.innerHTML).not.toMatch(/PRIVATE_CACHED|PRIVATE_LOCAL/); expect(screen.queryByTestId('helper-request-task')).not.toBeInTheDocument(); expect(window.clubhouse.agent.getDurableConfig).not.toHaveBeenCalled();
 });

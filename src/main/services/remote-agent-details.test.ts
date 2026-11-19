@@ -26,11 +26,14 @@ vi.mock('./agent-runtime', async (original) => {
   return { ...actual, getAgentRuntime: (id: string) => m.useRealRuntime ? actual.getAgentRuntime(id) : m.runtime() };
 });
 vi.mock('./agent-registry', () => ({ agentRegistry: { get: m.registration } }));
-vi.mock('./orchestration-policy', () => ({ resolveOrchestrationPolicies: m.policies }));
+vi.mock('./orchestration-display', () => ({ readOrchestrationForDisplay: (target: { agent: { id: string } }) => {
+  const policy = m.policies().get(target.agent.id) ?? ORCHESTRATION_DEFAULTS;
+  return { fields: Object.fromEntries(Object.entries(ORCHESTRATION_DEFAULTS).map(([key]) => [key, { state: 'ok', value: policy[key], inputs: [] }])), sources: policy.sources ?? {}, globalCap: { state: 'ok', value: 20, inputs: [] }, autoEffective: { state: 'ok', value: policy.autoEffective ?? { effective: false, source: 'default' }, inputs: [] } };
+} }));
 vi.mock('./orchestration-settings', () => ({ getGlobalHelperCap: () => 20 }));
 vi.mock('./helper-index', () => ({ listHelpersEverywhere: m.helpers }));
 vi.mock('./read-only-helper-work', () => ({ readOnlyHelperWork: m.work, HELPER_TRANSFORM_UNAVAILABLE: 'Custom Git filters or text transforms are not run for helper work.' }));
-vi.mock('./helper-start-requests', () => ({ listStartRequests: m.requests }));
+vi.mock('./helper-start-requests', () => ({ readStartRequestsForDisplay: () => ({ state: 'ok', value: m.requests(), inputs: [] }) }));
 vi.mock('./clubhouse-mcp/binding-manager', () => ({ bindingManager: { getAllBindings: m.bindings } }));
 vi.mock('./clubhouse-mcp/bridge-server', () => ({ getAgentConnection: m.connection, getCurrentAgentConnection: () => m.connection()?.current ? m.connection() : null }));
 vi.mock('./annex-client', () => ({ getSatellite: m.satellite }));
@@ -66,7 +69,7 @@ beforeEach(() => {
   m.transcript.mockResolvedValue([]); m.historical.mockResolvedValue([{ type: 'result', duration_ms: 5000, total_cost_usd: 1.25 }]);
   m.catalog.mockImplementation((id: string) => ({ id, displayName: id === 'claude-code' ? 'Host Current Claude' : id, readSessionTranscript: m.historical }));
   m.running.mockReturnValue(false);
-  m.policies.mockResolvedValue(new Map([['a1', ORCHESTRATION_DEFAULTS]]));
+  m.policies.mockReturnValue(new Map([['a1', ORCHESTRATION_DEFAULTS]]));
   m.helpers.mockResolvedValue([]); m.requests.mockReturnValue([]); m.work.mockResolvedValue({ dirty: 0, unpushed: 0, unmerged: null });
   m.bindings.mockReturnValue([]); m.sources.mockResolvedValue({ pairs: [], unreadable: [] }); m.satellite.mockReturnValue(null); m.peer.mockReturnValue(undefined); m.directions.mockReturnValue([]);
   m.dispatcher.mockReturnValue({ agentId: 'disp', config: { name: 'Host Dispatcher' } }); m.dispatcherOn.mockReturnValue(false);

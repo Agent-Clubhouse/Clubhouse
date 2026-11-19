@@ -6,7 +6,6 @@ import * as os from 'os';
 import * as path from 'path';
 import { app } from 'electron';
 import type { AgentConfigTarget } from './agent-config-reader';
-import { ORCHESTRATION_DEFAULTS } from '../../shared/orchestration-policy';
 import { isRemoteAgentDetails, type RemoteAgentDetails } from '../../shared/remote-agent-details';
 const m = vi.hoisted(() => ({ target: vi.fn(), later: vi.fn(), instructionReturned: false, duringInstruction: vi.fn(), duringTemplate: vi.fn(), managed: false, service: null as { getTemplateForDisplay: (...args: any[]) => Promise<any> } | null, afterSettings: vi.fn(), settingsStatus: 0, provider: { id: 'claude-code', displayName: 'Host Claude', conventions: { legacyInstructionsFile: 'CLAUDE.md', configDir: '.claude', mcpConfigFile: '.mcp.json' }, getCapabilities: () => ({ permissions: true }) } }));
 vi.mock('./agent-config-reader', async (original) => { const actual = await original<typeof import('./agent-config-reader')>(); return { ...actual, resolveAgentConfigTarget: m.target, readResolvedAgentConfig: async (...args: Parameters<typeof actual.readResolvedAgentConfig>) => { const result = await actual.readResolvedAgentConfig(...args); m.instructionReturned = true; await m.duringInstruction(); return result; } }; });
@@ -18,10 +17,7 @@ vi.mock('./agent-runtime', () => ({ getAgentRuntime: () => undefined }));
 vi.mock('./agent-runtime/chat-drivers', () => ({ resolveChatDriver: () => ({}) }));
 vi.mock('../orchestrators', () => ({ getProvider: (id: string) => id === m.provider.id ? m.provider : undefined }));
 vi.mock('./log-service', () => ({ appLog: vi.fn() }));
-vi.mock('./orchestration-policy', () => ({ resolveOrchestrationPolicies: async () => new Map([['selected', ORCHESTRATION_DEFAULTS]]) }));
-vi.mock('./orchestration-settings', () => ({ getGlobalHelperCap: () => 20 }));
 vi.mock('./helper-index', () => ({ listHelpersEverywhere: async () => [] }));
-vi.mock('./helper-start-requests', () => ({ listStartRequests: () => [] }));
 vi.mock('./dispatcher/dispatcher-service', () => ({ getDispatcherState: () => ({}), getDispatcherAgentId: () => null, getDispatcherChatAgentId: () => null, isDispatcherIdentityAgentId: () => false }));
 vi.mock('./dispatcher/dispatcher-settings', () => ({ isDispatcherEnabled: () => false }));
 vi.mock('./dispatcher/dispatcher-agent-card-source', () => ({ readAgentCardView: async () => null }));
@@ -45,21 +41,22 @@ vi.mock('./remote-agent-settings', async (original) => {
 import { createManagedAgentsService } from './managed-agents/service';
 import { createManagedStateStore } from './managed-agents/state-store';
 import { createAssetCatalogStore } from './asset-catalog/store';
+import { recordStartRequest, takeStartRequest, _resetStartRequestsForTesting } from './helper-start-requests';
 import { resetAllSettingsStoresForTests } from './settings-store';
 import { readRemoteAgentDetails } from './remote-agent-details';
 let root: string, target: AgentConfigTarget;
 const put = (name: string, value: unknown) => fs.writeFileSync(path.join(root, name), JSON.stringify(value));
 const disk = () => Object.fromEntries(fs.readdirSync(root).sort().map((name) => { const file = path.join(root, name), stat = fs.statSync(file); return [name, stat.isDirectory() ? fs.readdirSync(file).sort() : { bytes: fs.readFileSync(file).toString('base64'), ino: stat.ino, mtimeMs: stat.mtimeMs }]; }));
 beforeEach(() => {
-  root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'clubhouse-details-settings-composition-'))); vi.spyOn(app, 'getPath').mockReturnValue(root); resetAllSettingsStoresForTests(); m.instructionReturned = false; m.managed = false; m.service = null; m.settingsStatus = 0; m.afterSettings.mockReset().mockResolvedValue(undefined); m.duringInstruction.mockReset().mockResolvedValue(undefined); m.duringTemplate.mockReset().mockResolvedValue(undefined);
+  root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'clubhouse-details-settings-composition-'))); vi.spyOn(app, 'getPath').mockReturnValue(root); resetAllSettingsStoresForTests(); _resetStartRequestsForTesting(); m.instructionReturned = false; m.managed = false; m.service = null; m.settingsStatus = 0; m.afterSettings.mockReset().mockResolvedValue(undefined); m.duringInstruction.mockReset().mockResolvedValue(undefined); m.duringTemplate.mockReset().mockResolvedValue(undefined);
   target = { agent: { id: 'selected', name: 'Selected', color: '', createdAt: '', orchestrator: 'claude-code', model: 'HOST_SAVED_MODEL', worktreePath: root }, project: { id: 'p', name: 'Project', path: root } };
   m.target.mockReset().mockImplementation(async () => structuredClone(target)); m.later.mockReset().mockResolvedValue(undefined);
-  for (const file of ['experimental-settings.json', 'chat-runtime-settings.json', 'free-agent-settings.json', 'chat-idle-settings.json']) {
+  for (const file of ['experimental-settings.json', 'chat-runtime-settings.json', 'free-agent-settings.json', 'chat-idle-settings.json', 'orchestration-settings.json']) {
     put(file, {}); const temp = path.join(root, `.${file}.tmp-${process.pid + 100000}-1`); fs.writeFileSync(temp, 'keep aged temp'); const old = new Date(Date.now() - 3 * 86400000); fs.utimesSync(temp, old, old);
   }
   fs.writeFileSync(path.join(root, 'CLAUDE.md'), 'PRIVATE_INSTRUCTION_BODY\n');
 });
-afterEach(() => { resetAllSettingsStoresForTests(); vi.restoreAllMocks(); fs.rmSync(root, { recursive: true, force: true }); });
+afterEach(() => { _resetStartRequestsForTesting(); resetAllSettingsStoresForTests(); vi.restoreAllMocks(); fs.rmSync(root, { recursive: true, force: true }); });
 it.each(['same', 'instruction', 'runtime', 'legacy-provider', 'revoked'] as const)('holds actual Settings evidence through final Details assembly: %s', async (mode) => {
   if (mode === 'legacy-provider') { delete target.agent.orchestrator; fs.mkdirSync(path.join(root, '.clubhouse')); fs.writeFileSync(path.join(root, '.clubhouse', 'settings.json'), '{"orchestrator":"claude-code"}'); }
   let allowed = true;
@@ -147,4 +144,37 @@ it('retains independent provider evidence over a later card await after Settings
   m.later.mockImplementation(async () => { fs.writeFileSync(file, '{"orchestrator":"codex-cli"}'); changed = true; });
   const result = await readRemoteAgentDetails('selected', () => true);
   expect(m.settingsStatus).toBe(500); expect(changed).toBe(true); expect.soft(result.status).toBe(409); expect.soft(JSON.stringify(result.body)).not.toMatch(/cards|providerId|HOST_SAVED_MODEL|PRIVATE_CAPABILITY/);
+});
+
+it('retains known orchestration fields while corrupt host defaults stay unknown without recovery or sweeping', async () => {
+  target.agent.orchestration = { orchestrate: true, control: 'ask-before-start' };
+  fs.writeFileSync(path.join(root, 'orchestration-settings.json'), '{broken'); fs.writeFileSync(path.join(root, 'orchestration-settings.json.bak'), '{"globalHelperCap":99,"autoHelpers":true}');
+  const before = disk(), result = await readRemoteAgentDetails('selected', () => true);
+  expect(result.status).toBe(200); const value = result.body as RemoteAgentDetails; expect(isRemoteAgentDetails(value, 'selected')).toBe(true);
+  expect(value.cards.find((c) => c.id === 'orchestrate')).toMatchObject({ state: 'error', rows: expect.arrayContaining([{ label: 'Orchestration', value: 'On' }, { label: 'Control', value: 'Ask before starting' }, { label: 'App-wide limit', value: 'Unavailable from host metadata' }, { label: 'Auto provider', value: 'Unavailable from host metadata' }]) });
+  expect(disk()).toEqual(before);
+});
+it('shows selected safe pending tasks and independently retained metadata for withheld text without raw args', async () => {
+  recordStartRequest(root, 'selected', 'Owner', { name: 'Visible helper', task: 'Review visible changes' });
+  recordStartRequest(root, 'selected', 'Owner', { name: 'Withheld helper', task: 'config["apiKey"]="PRIVATE_TASK";' });
+  recordStartRequest(root, 'unrelated', 'PRIVATE_OWNER', { name: 'PRIVATE_HELPER', task: 'PRIVATE_UNRELATED' });
+  const result = await readRemoteAgentDetails('selected', () => true); expect(result.status).toBe(200);
+  const c = (result.body as RemoteAgentDetails).cards.find((card) => card.id === 'orchestrate')!;
+  expect(c.rows).toEqual(expect.arrayContaining([{ label: 'Task', value: 'Review visible changes' }, { label: 'Task', value: 'Task withheld (conservative display policy)' }, { label: 'Waiting to start', value: 'Withheld helper · awaiting approval' }]));
+  expect(c.rows.some((row) => row.label === 'Requested / expires')).toBe(true); expect(JSON.stringify(result.body)).not.toMatch(/PRIVATE_|args|apiKey/);
+});
+it('holds selected pending-request receipts through cancellation during a later Details card await', async () => {
+  const request = recordStartRequest(root, 'selected', 'Owner', { name: 'Selected helper', task: 'Review visible changes' }); if (!request.ok) throw new Error('fixture refused');
+  m.later.mockImplementation(async () => { takeStartRequest(root, request.request.requestId); });
+  const result = await readRemoteAgentDetails('selected', () => true);
+  expect(m.settingsStatus).toBe(200); expect.soft(result).toEqual({ status: 409, body: { error: 'orchestration_evidence_changed' } }); expect.soft(JSON.stringify(result.body)).not.toMatch(/cards|providerId|Selected helper/);
+});
+
+it.each(['app-cap', 'project-auto'] as const)('retains selected orchestration evidence through a later %s change', async (change) => {
+  m.later.mockImplementation(async () => {
+    if (change === 'app-cap') put('orchestration-settings.json', { globalHelperCap: 5 });
+    else { fs.mkdirSync(path.join(root, '.clubhouse')); fs.writeFileSync(path.join(root, '.clubhouse', 'settings.json'), '{"agentDefaults":{"helperAuto":"off"}}'); }
+  });
+  const result = await readRemoteAgentDetails('selected', () => true);
+  expect(m.settingsStatus).toBe(200); expect.soft(result).toEqual({ status: 409, body: { error: 'orchestration_evidence_changed' } }); expect.soft(JSON.stringify(result.body)).not.toMatch(/cards|providerId|HOST_SAVED_MODEL/);
 });

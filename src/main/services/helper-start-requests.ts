@@ -12,8 +12,11 @@
  */
 
 import * as path from 'path';
-import { randomUUID } from 'crypto';
+import { randomUUID, createHash } from 'crypto';
 import type { HelperStartArgs, HelperStartRequest } from '../../shared/types';
+import type { DisplayReceipt, DisplayValue } from './display-settings';
+import { redactChangeText } from './read-only-display-text';
+import { display } from './remote-details-presentation';
 
 export const START_REQUEST_TTL_MS = 24 * 60 * 60 * 1000;
 export const MAX_PENDING_STARTS_PER_ORCHESTRATOR = 3;
@@ -26,6 +29,10 @@ export type StartRequestChange =
 type Listener = (change: StartRequestChange) => void;
 
 const pending = new Map<string, HelperStartRequest>();
+// Maintained only by existing mutation paths. Display never materializes an
+// index, scans unrelated requests, sweeps expiry, or touches timers/listeners.
+const pendingByOwner = new Map<string, Set<string>>();
+const ownerByRequest = new Map<string, string>();
 const timers = new Map<string, ReturnType<typeof setTimeout>>();
 const listeners = new Set<Listener>();
 
@@ -33,6 +40,7 @@ function norm(p: string): string {
   const resolved = path.resolve(p);
   return process.platform === 'win32' ? resolved.toLowerCase() : resolved;
 }
+const ownerKey = (projectPath: string, orchestratorId: string) => JSON.stringify([norm(projectPath), orchestratorId]);
 
 function emit(change: StartRequestChange): void {
   if (change.kind === 'closed' && change.requestIds.length === 0) return;
@@ -60,6 +68,12 @@ function remove(requestId: string): boolean {
   const timer = timers.get(requestId);
   if (timer) clearTimeout(timer);
   timers.delete(requestId);
+  const owner = ownerByRequest.get(requestId);
+  if (owner !== undefined) {
+    const ids = pendingByOwner.get(owner); ids?.delete(requestId);
+    if (ids?.size === 0) pendingByOwner.delete(owner);
+    ownerByRequest.delete(requestId);
+  }
   return pending.delete(requestId);
 }
 
@@ -104,6 +118,8 @@ export function recordStartRequest(
     ...(warning && { warning }),
   };
   pending.set(request.requestId, request);
+  const owner = ownerKey(projectPath, orchestratorId), ids = pendingByOwner.get(owner) ?? new Set<string>();
+  ids.add(request.requestId); pendingByOwner.set(owner, ids); ownerByRequest.set(request.requestId, owner);
   const timer = setTimeout(() => sweep(Date.now()), START_REQUEST_TTL_MS + 1);
   timer.unref?.();
   timers.set(request.requestId, timer);
@@ -137,6 +153,61 @@ export function listStartRequests(now = Date.now()): HelperStartRequest[] {
   return [...pending.values()].sort((a, b) => Date.parse(a.createdAt) - Date.parse(b.createdAt));
 }
 
+export type HelperRequestDisplayText = { state: 'ok'; text: string; truncated: boolean }
+  | { state: 'withheld'; reason: 'safety' | 'read-limit' | 'unavailable' };
+export interface HelperStartRequestDisplay {
+  requestId: string;
+  status: 'awaiting-approval';
+  name: HelperRequestDisplayText;
+  task: HelperRequestDisplayText;
+  warning?: HelperRequestDisplayText;
+  createdAt: string;
+  expiresAt: string;
+}
+function safeRequestText(value: unknown, maximum: number): HelperRequestDisplayText {
+  if (typeof value !== 'string' || !value.trim()) return { state: 'withheld', reason: 'unavailable' };
+  if (value.length > 64 * 1024) return { state: 'withheld', reason: 'read-limit' };
+  // Reuse the reviewed conservative policy before truncation. This is not a
+  // general promise that arbitrary prompts can be classified as secret-free.
+  const safe = redactChangeText(value);
+  return safe === null ? { state: 'withheld', reason: 'safety' }
+    : { state: 'ok', text: display(safe, maximum), truncated: safe.length > maximum };
+}
+
+/** At most three selected active requests. No sweeping getters or raw args. */
+export function readStartRequestsForDisplay(projectPath: string, orchestratorId: string, options: { receipts?: DisplayReceipt[] } = {}): DisplayValue<HelperStartRequestDisplay[]> {
+  if (typeof projectPath !== 'string' || projectPath.length > 4096 || typeof orchestratorId !== 'string' || !orchestratorId || orchestratorId.length > 240) return { state: 'unavailable', reason: 'invalid', inputs: [] };
+  const owner = ownerKey(projectPath, orchestratorId);
+  const read = (): { result: DisplayValue<HelperStartRequestDisplay[]>; stamp: string } => {
+    const source = createHash('sha256');
+    const stampText = (value: unknown) => typeof value === 'string' ? value.length <= 64 * 1024 ? value : { length: value.length, withheld: 'read-limit' } : { type: typeof value };
+    const now = Date.now(), inputs = [{ field: 'Selected pending helper starts', source: 'host-cache' as const, observedAt: now }];
+    const ids = pendingByOwner.get(owner);
+    if ((ids?.size ?? 0) > MAX_PENDING_STARTS_PER_ORCHESTRATOR) return { result: { state: 'unavailable', reason: 'limit', inputs }, stamp: 'limit' };
+    const value: HelperStartRequestDisplay[] = [];
+    for (const id of ids ?? []) {
+      const request = pending.get(id);
+      if (!request || request.requestId !== id || ownerByRequest.get(id) !== owner || request.orchestratorId !== orchestratorId
+        || typeof request.projectPath !== 'string' || request.projectPath.length > 4096 || norm(request.projectPath) !== norm(projectPath)
+        || !request.args || typeof request.args !== 'object' || Array.isArray(request.args)
+        || typeof request.createdAt !== 'string' || request.createdAt.length > 64 || !Number.isFinite(Date.parse(request.createdAt))
+        || typeof request.expiresAt !== 'string' || request.expiresAt.length > 64 || !Number.isFinite(Date.parse(request.expiresAt))
+        || Date.parse(request.expiresAt) <= Date.parse(request.createdAt)) return { result: { state: 'unavailable', reason: 'changed', inputs }, stamp: 'changed' };
+      if (Date.parse(request.expiresAt) <= now) continue;
+      source.update(JSON.stringify([id, stampText(request.args.name), stampText(request.args.task), stampText(request.warning?.message)]));
+      value.push({ requestId: id, status: 'awaiting-approval', name: safeRequestText(request.args.name, 240), task: safeRequestText(request.args.task, 2048), ...(request.warning !== undefined && { warning: safeRequestText(request.warning?.message, 1024) }), createdAt: request.createdAt, expiresAt: request.expiresAt });
+    }
+    value.sort((a, b) => Date.parse(a.createdAt) - Date.parse(b.createdAt));
+    return { result: { state: 'ok', value, inputs }, stamp: source.digest('hex') };
+  };
+  const observed = read(), result = observed.result;
+  if (options.receipts) {
+    const signature = JSON.stringify({ state: result.state, value: result.state === 'ok' ? result.value : undefined, stamp: observed.stamp });
+    options.receipts.push({ current: () => { try { const next = read(), now = next.result; return JSON.stringify({ state: now.state, value: now.state === 'ok' ? now.value : undefined, stamp: next.stamp }) === signature; } catch { return false; } } });
+  }
+  return result;
+}
+
 /** The orchestrators with waiting requests, with their projects. */
 export function orchestratorsWithRequests(): Array<{ projectPath: string; orchestratorId: string }> {
   const seen = new Map<string, { projectPath: string; orchestratorId: string }>();
@@ -164,5 +235,6 @@ export function _resetStartRequestsForTesting(options: { keepListeners?: boolean
   for (const timer of timers.values()) clearTimeout(timer);
   timers.clear();
   pending.clear();
+  pendingByOwner.clear(); ownerByRequest.clear();
   if (!options.keepListeners) listeners.clear();
 }

@@ -12,10 +12,10 @@ import { resolveAgentConfigTarget, type AgentConfigTarget } from './agent-config
 import { readRemoteAgentSettings } from './remote-agent-settings';
 import { isAgentRunning } from './agent-system';
 import { agentRegistry } from './agent-registry';
-import { resolveOrchestrationPolicies } from './orchestration-policy';
-import { getGlobalHelperCap } from './orchestration-settings';
+import { readOrchestrationForDisplay } from './orchestration-display';
+import { projectOrchestrationFields, projectPendingHelperStarts } from './remote-orchestration-card';
 import { listHelpersEverywhere } from './helper-index';
-import { listStartRequests } from './helper-start-requests';
+import { readStartRequestsForDisplay } from './helper-start-requests';
 import { getAgentConnection, getCurrentAgentConnection } from './clubhouse-mcp/bridge-server';
 import { getDispatcherState, isDispatcherIdentityAgentId } from './dispatcher/dispatcher-service';
 import { isDispatcherEnabled } from './dispatcher/dispatcher-settings';
@@ -33,7 +33,6 @@ import { captureReadOnlyConfigTargetWitness } from './read-only-config-target';
 import { captureDisplayProvider } from './display-provider';
 
 const yes = (v: boolean) => v ? 'On' : 'Off';
-const control = { 'hands-off': 'Hands off', 'ask-before-start': 'Ask before starting', 'ask-everything': 'Ask every time' };
 
 /** No caller-supplied paths, store objects, instructions, action prompts or MCP definitions leave here. */
 export async function readRemoteAgentDetails(agentId: string, authorized: () => boolean): Promise<{ status: number; body: unknown }> {
@@ -53,6 +52,9 @@ export async function readRemoteAgentDetails(agentId: string, authorized: () => 
     const targetWitness = captureReadOnlyConfigTargetWitness(target);
     const helperReceipts: Array<{ current(): boolean }> = [];
     const settingsReceipts: Array<{ current(): boolean }> = [];
+    const orchestrationReceipts: Array<{ current(): boolean }> = [];
+    let orchestration: ReturnType<typeof readOrchestrationForDisplay> | undefined;
+    const readPolicy = () => orchestration ??= readOrchestrationForDisplay(target, { receipts: orchestrationReceipts });
     const providerRead = captureDisplayProvider(target), provider = providerRead.provider;
     if (!authorized()) return refused();
     const running = isAgentRunning(agentId);
@@ -111,22 +113,14 @@ export async function readRemoteAgentDetails(agentId: string, authorized: () => 
       // Managed Settings fields were projected once from the admitted target.
     });
     await read('orchestrate', async (c) => {
-      const policy = (await resolveOrchestrationPolicies(project.path, [agent])).get(agentId);
-      if (!policy) throw new Error('missing_policy');
-      c.summary = policy.orchestrate ? `${control[policy.control]} · up to ${policy.maxHelpers}` : 'off';
-      if (!agent.parentAgentId) {
-      row(c, 'Orchestration', yes(policy.orchestrate));
-      row(c, 'Helpers get', policy.access === 'same' ? 'Same as this agent' : policy.access);
-      row(c, 'Control', control[policy.control]);
-      row(c, 'At once', policy.maxHelpers);
-      row(c, 'App-wide limit', getGlobalHelperCap());
-      row(c, 'Cross-project helpers', yes(policy.crossProjectHelpers));
-      row(c, 'Auto provider', `${yes(policy.autoHelpers)}${policy.autoEffective ? ` · ${policy.autoEffective.effective ? 'available' : policy.autoEffective.reason ?? 'unavailable'} (${policy.autoEffective.source})` : ''}`);
-      }
+      const model = readPolicy();
+      const { enabled, limit } = projectOrchestrationFields(c, model, agent.name, !!agent.parentAgentId);
       const helpers = await listHelpersEverywhere(project.path, agentId, { includeDisposed: true, readOnly: true, receipts: helperReceipts });
-      const requests = listStartRequests().filter((r) => r.orchestratorId === agentId && r.projectPath === project.path);
+      if (!authorized()) throw new Error('revoked');
+      const requests = readStartRequestsForDisplay(project.path, agentId, { receipts: orchestrationReceipts });
+      const waiting = projectPendingHelperStarts(c, requests);
       const live = helpers.filter((h) => !isDisposedAgent(h.config));
-      row(c, 'Helpers', helpersSummary(live.length, policy.orchestrate ? policy.maxHelpers : undefined, live.filter((h) => h.config.creation?.state === 'creating').length, requests.length));
+      row(c, 'Helpers', helpersSummary(live.length, enabled ? limit : undefined, live.filter((h) => h.config.creation?.state === 'creating').length, waiting));
       if (helpers.length > live.length) row(c, 'Disposed helpers', helpers.length - live.length);
       let workReads = 0, workOmitted = 0;
       const workDeadline = Date.now() + 2000;
@@ -138,6 +132,7 @@ export async function readRemoteAgentDetails(agentId: string, authorized: () => 
           if (workReads < 8 && Date.now() < workDeadline) {
             workReads++;
             const checks = await readOnlyHelperWork(target, entry, authorized);
+            if (!authorized()) throw new Error('revoked');
             work = workSummary(checks);
             if (checks.error === HELPER_TRANSFORM_UNAVAILABLE) work += ' (custom Git transform)';
           } else { work = 'Work not checked (host read limit)'; workOmitted++; }
@@ -145,20 +140,18 @@ export async function readRemoteAgentDetails(agentId: string, authorized: () => 
         row(c, h.name, [state, h.branch, work, isDisposedAgent(h) ? h.disposedAt : '', projectPath !== project.path ? path.basename(projectPath) : '', h.creation?.state === 'failed' ? safeMcpErrorLine(h.creation.reason) : ''].filter(Boolean).join(' · '));
       }
       if (workOmitted) c.notes.push(`${workOmitted} helper work checks omitted by this read’s limit (at most 8 checks, 2 seconds to start checks). Other helper fields are shown.`);
-      for (const request of requests) {
-        row(c, 'Waiting to start', `${request.args.name} · ${request.args.task} · expires ${request.expiresAt}`);
-      }
-      if (agent.parentAgentId && !helpers.length) c.state = 'not-applicable';
-      if (!running && policy.orchestrate) c.notes.push('The helper tools appear the next time this agent starts.');
+      if (agent.parentAgentId && !helpers.length && requests.state === 'ok' && !requests.value.length) c.state = 'not-applicable';
+      if (!running && enabled) c.notes.push('The helper tools appear the next time this agent starts.');
     });
     await read('dispatcher', async (c) => {
       if (!isDispatcherEnabled()) { c.state = 'not-applicable'; return; }
-      const policy = (await resolveOrchestrationPolicies(project.path, [agent])).get(agentId);
+      const connected = readPolicy().fields.connectToDispatcher;
       const state = getDispatcherState();
       c.title = display(state.config?.name || 'Dispatcher');
-      c.summary = policy?.connectToDispatcher ? 'connected' : 'not connected';
-      row(c, 'Connected', yes(!!policy?.connectToDispatcher));
-      if (policy?.connectToDispatcher) {
+      c.summary = connected.state === 'ok' ? connected.value ? 'connected' : 'not connected' : 'Connection policy unavailable';
+      if (connected.state !== 'ok') c.state = 'error';
+      row(c, 'Connected', connected.state === 'ok' ? yes(connected.value) : 'Unavailable from host metadata');
+      if (connected.state === 'ok' && connected.value) {
         const view = await readAgentCardView(agentId);
         row(c, 'Description', view?.state === 'asking' ? 'Asking what it does…' : view?.state === 'ready' ? 'Ready' : 'No description yet');
         row(c, 'When to reach it', view?.card?.contactWhen || 'Not given');
@@ -213,6 +206,7 @@ export async function readRemoteAgentDetails(agentId: string, authorized: () => 
     // registration, and an earlier helper work check cannot attest later membership.
     if (targetWitness && !targetWitness.current() || helperReceipts.some((receipt) => !receipt.current())) return { status: 409, body: { error: 'agent_inventory_changed' } };
     if (!providerRead.receipt.current() || settingsReceipts.some((receipt) => !receipt.current())) return { status: 409, body: { error: 'settings_evidence_changed' } };
+    if (orchestrationReceipts.some((receipt) => !receipt.current())) return { status: 409, body: { error: 'orchestration_evidence_changed' } };
     if (running && !registration && runtime?.kind !== 'chat'
       || currentRegistration !== registration || currentRegistration?.nonce !== registeredNonce || currentRegistration?.runtime !== registeredRuntime
       || currentRegistration?.orchestrator !== registeredProvider || currentRegistration?.cwd !== registeredCwd
