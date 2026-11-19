@@ -273,7 +273,7 @@
               },
               "orchestrator": null,
               "projectId": "proj_app",
-              "status": "sleeping"
+              "status": "creating"
             },
             {
               "access": "ask",
