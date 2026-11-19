@@ -250,6 +250,21 @@ describe('host selected-agent Details projections', () => {
     expect.soft(c.rows).toContainEqual({ label: 'Why', value: 'CLI exited' });
     expect.soft(c.notes.join(' ')).toContain(mode === 'truncated' ? 'truncated' : 'complete file');
   });
+  it.each(['uninstalled', 'no-transcript', 'no-results', 'unknown-completeness', 'invalid-totals', 'unsafe-id'] as const)('keeps historical availability explicit: %s', async (mode) => {
+    const lastSessionId = mode === 'unsafe-id' ? '../other' : 'selected-last';
+    m.target.mockResolvedValue({ agent: { ...agent(), lastSessionId, sessionHistory: [{ sessionId: lastSessionId, orchestrator: 'claude-code' }] }, project });
+    if (mode === 'uninstalled') m.catalog.mockReturnValue(undefined);
+    else m.historical.mockResolvedValue(mode === 'no-transcript' ? null : mode === 'no-results' ? [{ type: 'user', message: 'PRIVATE_TEXT' }] : [{ type: 'result', duration_ms: mode === 'invalid-totals' ? -1 : 5000, total_cost_usd: mode === 'invalid-totals' ? Infinity : 1.25 }]);
+    const c = (await read()).cards.find((c) => c.id === 'session')!;
+    expect(m.transcript).not.toHaveBeenCalled(); expect(JSON.stringify(c)).not.toContain('PRIVATE_TEXT');
+    if (mode === 'uninstalled' || mode === 'unsafe-id') { expect(m.historical).not.toHaveBeenCalled(); expect(c.notes.join(' ')).toMatch(/does not support|cannot be read safely/); }
+    else {
+      expect(m.historical).toHaveBeenCalledTimes(1); expect(c.notes.join(' ')).toContain('did not report whether');
+      if (mode === 'no-transcript') expect(c.notes.join(' ')).toContain('Usage is unknown');
+      if (mode === 'no-results' || mode === 'invalid-totals') for (const label of ['Duration', 'Cost']) expect(c.rows).toContainEqual({ label, value: 'Not reported' });
+      if (mode === 'unknown-completeness') expect(c.rows).toContainEqual({ label: 'Duration', value: '5s' });
+    }
+  });
   it.each(['inventory', 'revocation'] as const)('withholds historical evidence after awaited %s change with real primary witness', async (mode) => {
     const root = await fs.mkdtemp(path.join(os.tmpdir(), 'clubhouse-history-witness-'));
     try {

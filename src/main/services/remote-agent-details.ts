@@ -1,4 +1,5 @@
 /** Read-only host projections for the selected agent's Details cards (#3733). */
+import { readHistoricalSessionCard } from './remote-session-history';
 import { card, row, section, display } from './remote-details-presentation';
 import { readConnectionCard, readActionCard, readCanvasCard } from './remote-details-cards';
 import { resolveReadOnlyQuickTarget } from './read-only-quick-target';
@@ -21,8 +22,7 @@ import { isDispatcherEnabled } from './dispatcher/dispatcher-settings';
 import { readAgentCardView } from './dispatcher/dispatcher-agent-card-source';
 import { managedAgents, statusFor } from './managed-agents';
 import { readMcpConfig, readLaunchWrapper, readDefaultMcps } from './agent-settings-service';
-import { getProvider, isSessionCapable } from '../orchestrators';
-import { buildSessionSummary, normalizeSessionEvents, SUMMARY_TRANSCRIPT_MAX_BYTES } from './session-reader';
+import { getProvider } from '../orchestrators';
 import { safeMcpErrorLine } from './mcp-error-text';
 import { reachRows, reachSummary } from '../../shared/dispatcher-card-model';
 import { viewOf as agentGrantsView } from './agent-grants-service';
@@ -198,19 +198,7 @@ export async function readRemoteAgentDetails(agentId: string, authorized: () => 
       row(c, 'Status', lifecycle.status);
       row(c, 'Folder', cwd);
       row(c, 'Branch', agent.branch);
-      if (!running && agent.lastSleep) {
-        row(c, 'Ended', agent.lastSleep.at);
-        row(c, 'Why', `${agent.lastSleep.reason}${agent.lastSleep.by ? ` · ${agent.lastSleep.by}` : ''}${agent.lastSleep.idleMinutes == null ? '' : ` · ${agent.lastSleep.idleMinutes} min idle`}${agent.lastSleep.exitCode == null ? '' : ` · exit code ${agent.lastSleep.exitCode}`}`);
-      }
-      if ((lifecycle.status === 'sleeping' || lifecycle.status === 'error') && agent.lastSessionId) {
-        if (!isSessionCapable(provider)) { c.notes.push('This provider does not support reading last session usage.'); return; }
-        const raw = await provider.readSessionTranscript(agent.lastSessionId, cwd, { maxBytes: SUMMARY_TRANSCRIPT_MAX_BYTES });
-        if (!raw) { c.notes.push('No earlier session usage reported by the provider.'); return; }
-        const summary = buildSessionSummary(normalizeSessionEvents(raw), provider.id);
-        row(c, 'Duration', summary.totalDurationMs ? `${summary.totalDurationMs} ms` : null);
-        row(c, 'Cost', summary.totalCostUsd ? `$${summary.totalCostUsd.toFixed(2)}` : null);
-        row(c, 'Ended', summary.lastActiveAt);
-      } else if (!running) c.notes.push('No earlier session recorded.');
+      if (!running) await readHistoricalSessionCard(c, agent, cwd);
     });
     await read('canvases', (c) => readCanvasCard(c, agentId, project.id));
     await read('changes', (c) => {

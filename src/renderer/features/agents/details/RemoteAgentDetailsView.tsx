@@ -109,7 +109,8 @@ export function RemoteAgentDetailsView({ agent, chat, onShowInStream, missedSuba
   const reportedProvider = admittedProviderLabel(session?.provider,
     details?.providerLabel ? { id: details.providerId, label: details.providerLabel } : agent.kind === 'quick' && quickProvider ? { id: details?.providerId, label: quickProvider } : undefined,
     details?.settings ? { id: details.settings.providerId, label: details.settings.provider } : undefined);
-  const provider = runtimeUnconfirmed ? 'Current provider not confirmed' : details?.sessionId && !session && !asleep ? 'Current provider evidence unavailable' : reportedProvider ?? details?.providerLabel ?? quickProvider ?? details?.settings?.provider ?? 'Not reported by host';
+  const lastProvider = card('session')?.rows.find((r) => r.label === 'Last CLI')?.value ?? (agent.kind === 'quick' ? quickProvider : undefined) ?? 'Not recorded for the last session';
+  const provider = asleep ? lastProvider : runtimeUnconfirmed ? 'Current provider not confirmed' : details?.sessionId && !session && !asleep ? 'Current provider evidence unavailable' : reportedProvider ?? details?.providerLabel ?? quickProvider ?? details?.settings?.provider ?? 'Not reported by host';
   const map = useMemo(() => {
     if (!session) return null;
     const value = buildAgentMap({ items: session.items, subagents: session.subagents, capabilities: session.capabilities, state: session.state });
@@ -148,6 +149,9 @@ export function RemoteAgentDetailsView({ agent, chat, onShowInStream, missedSuba
       </> : <Evidence card={c} /> : <CardNote>{resultMessage(result.status)}</CardNote>}
     </DetailsCard>;
   };
+  const sessionCard = card('session');
+  const sessionRows = sessionCard?.rows.map((r) => r.label === 'Ended' && /^\d{4}-\d{2}-\d{2}T/.test(r.value) && Number.isFinite(Date.parse(r.value)) ? { ...r, value: formatAgo(Date.parse(r.value)) } : r);
+  const lastSummary = ['Ended', 'Duration', 'Cost'].map((label) => sessionRows?.find((r) => r.label === label)?.value).filter((value) => value && value !== 'Not reported').join(' · ');
   const stats = session?.usage.session;
   const cost = stats?.costUsd !== undefined ? formatCost(stats.costUsd, stats.costIsEstimate) : null;
   const tokenStats = stats?.tokens ?? session?.usage.turnTotal;
@@ -204,16 +208,16 @@ export function RemoteAgentDetailsView({ agent, chat, onShowInStream, missedSuba
       </>}
       {!reported && <CardNote>{!details || !session ? 'Provider evidence is unavailable until a current authorized session read succeeds.' : skillReport.supported ? 'No valid skills report for this session has arrived.' : 'This provider does not report loaded skill names here.'}</CardNote>}
     </DetailsCard>}
-    {!dispatcher && <DetailsCard id="session" title={asleep ? 'Last session' : 'Session'} summary={cost ?? ''} open={open('session')} onToggle={() => toggleCard('session')}>
+    {!dispatcher && <DetailsCard id="session" title={asleep ? 'Last session' : 'Session'} summary={asleep ? lastSummary : cost ?? ''} open={open('session')} onToggle={() => toggleCard('session')}>
       <CardRow label="Runs on">{provider}{session?.driver ? ` · ${DRIVER_LABELS[session.driver] ?? session.driver}${session.cliVersion ? ` ${session.cliVersion}` : ''}` : agent.executionMode === 'pty' ? ' · CLI' : ''}</CardRow>
       {!asleep && <CardRow label="Usage">{cost || tokens ? [cost, tokens ? `${formatTokens(tokens)} tokens` : null].filter(Boolean).join(' · ') : session ? 'Not reported in the loaded session snapshot' : agent.executionMode === 'pty' && details?.settings?.runtime === 'terminal' ? 'Not reported in the CLI view' : 'Current usage is not available from the host'}</CardRow>}
       {hydrated.evidence?.values.turnTotal && !hydrated.evidence.values.sessionUsage?.tokens && <CardNote>Token sums cover completed turns observed since this runtime opened. Earlier resumed conversation usage is separate.</CardNote>}
       {!runtimeUnconfirmed && status === 'running' && details?.spawnedAt && <CardRow label="Running">{formatDuration(Math.max(0, Date.now() - details.spawnedAt))}</CardRow>}
       {ctx && ctxPct !== null && <section aria-label="Context window" data-testid="details-session-context"><CardRow label="Context window" labelWidth="wide">{ctxPct}% of {formatTokens(ctx.size)}{ctx.window === 'input' ? ' input' : ''}</CardRow><div className="pr-3.5 pl-[33px] py-1 text-xs"><UsageBar pct={ctxPct} /><p>{formatTokens(ctx.used)} of {formatTokens(ctx.size)} {ctx.window === 'input' ? 'input ' : ''}tokens</p>{ctx.window === 'input' && <p>{provider} reports the room left for input after its output reserve, so its own total can be larger.</p>}<p>{provider} compacts the conversation on its own near the limit.</p></div></section>}
       {limits.length > 0 && <CardRow label="Plan limits"><span className="flex flex-col gap-1">{limits.map((l) => <span key={l.window}>{limitName(l.window)} {limitLabel(l)}{l.resetsAt ? ` · resets ${new Date(l.resetsAt).toLocaleString()}` : ''}</span>)}</span></CardRow>}
-      {asleep && agent.lastSleep && <><CardRow label="Ended">{formatAgo(Date.parse(agent.lastSleep.at))}</CardRow><CardRow label="Why">{describeSleep(agent.lastSleep)}</CardRow></>}
+      {asleep && !details && agent.lastSleep && <><CardNote>Last loaded host snapshot; these sleep fields may be stale.</CardNote><CardRow label="Ended">{formatAgo(Date.parse(agent.lastSleep.at))}</CardRow><CardRow label="Why">{describeSleep(agent.lastSleep)}</CardRow></>}
       {runtimeUnconfirmed && <CardNote>Current run state is not confirmed. Refreshing the host’s lifecycle evidence.</CardNote>}
-      {card('session') ? <Evidence card={runtimeUnconfirmed ? { ...card('session')!, rows: card('session')!.rows.filter((r) => r.label !== 'Status') } : card('session')!} /> : <CardNote>{resultMessage(result.status)}</CardNote>}
+      {sessionCard ? <Evidence card={{ ...sessionCard, rows: (sessionRows ?? []).filter((r) => !runtimeUnconfirmed || r.label !== 'Status') }} /> : <CardNote>{resultMessage(result.status)}</CardNote>}
     </DetailsCard>}
     {!dispatcher && basic('canvases', 'Canvases')}
   </aside>;
