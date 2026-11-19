@@ -59,7 +59,9 @@ export function projectRequestPauseForDisplay(rawReason: unknown, rawEpoch: unkn
 
 /** Separate factory scope retains only selected bounded metadata and a current
  * weak owner accessor. No admitted raw store, request array, caller/options or epoch object; the observation does not keep a retired owner alive. */
-function pauseObservation(machine: string, source: WeakRef<(machine: string) => RequestPauseDisplayFrame | undefined>,
+type PauseAccessor = (machine: string) => RequestPauseDisplayFrame | undefined;
+interface WeakPauseAccessor { deref(): PauseAccessor | undefined }
+function pauseObservation(machine: string, source: WeakPauseAccessor,
   frame: RequestPauseDisplayFrame | undefined): { value: DisplayValue<RequestPauseDisplay>; receipt: DisplayReceipt } {
   const key = frame?.key, recorded = frame?.recorded, scope = frame?.scope, sender = frame?.sender, receiver = frame?.receiver;
   const receipt = { current: () => { try { const read = source.deref(); return !!read && read(machine)?.key === key; } catch { return false; } } };
@@ -79,9 +81,16 @@ function pauseObservation(machine: string, source: WeakRef<(machine: string) => 
   } } };
 }
 export function createRequestPauseDisplayReader(read: (machine: string) => RequestPauseDisplayFrame | undefined): RequestPauseDisplayReader {
-  const source = new WeakRef(read);
+  // The project targets ES2020; keep native support feature-detected without
+  // widening its lib/target or retaining a strong owner fallback.
+  let source: WeakPauseAccessor | undefined;
+  try {
+    const Constructor = (globalThis as unknown as { WeakRef?: new (target: PauseAccessor) => WeakPauseAccessor }).WeakRef;
+    if (typeof Constructor === 'function') source = new Constructor(read);
+  } catch { /* telemetry-exempt: optional display support cannot break ordinary store construction. */ }
   return (machine, options) => {
     if (typeof machine !== 'string' || !machine || machine.length > 200) return { state: 'unavailable', reason: 'invalid', inputs: [{ field: 'Selected request-service pause metadata', source: 'host-cache', observedAt: Date.now() }] };
+    if (!source) return { state: 'unavailable', inputs: [{ field: 'Request pause observation support', source: 'host-cache', observedAt: Date.now() }] };
     const observed = pauseObservation(machine, source, read(machine)); options.receipts.push(observed.receipt); return observed.value;
   };
 }

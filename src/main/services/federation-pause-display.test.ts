@@ -22,7 +22,7 @@ const selected = (store: ReturnType<typeof createFederationRequestStore>, key = 
 const match = (expected: string) => ({ matches: (value: unknown) => value === expected });
 const unknown = { matches: () => undefined };
 beforeEach(async () => { root = await fs.promises.realpath(await fs.promises.mkdtemp(path.join(os.tmpdir(), 'clubhouse-pause-display-'))); vi.spyOn(app, 'getPath').mockReturnValue(root); resetAllSettingsStoresForTests(); vi.mocked(fs.readFileSync).mockClear(); vi.mocked(appLog).mockClear(); vi.mocked(federationStatusChanged).mockClear(); });
-afterEach(async () => { liveOwners.clear(); resetAllSettingsStoresForTests(); vi.restoreAllMocks(); await fs.promises.rm(root, { recursive: true, force: true }); });
+afterEach(async () => { liveOwners.clear(); vi.unstubAllGlobals(); resetAllSettingsStoresForTests(); vi.restoreAllMocks(); await fs.promises.rm(root, { recursive: true, force: true }); });
 it.each(['valid', 'corrupt', 'missing', 'backup-only'])('does not initialize/repair/clone requests or touch cold %s files for selected pause display', async (kind) => {
   if (kind === 'valid') await put(); if (kind === 'corrupt') await fs.promises.writeFile(path.join(root, filename), '{broken');
   if (kind === 'backup-only') await fs.promises.writeFile(path.join(root, filename + '.bak'), '{"version":1,"requests":[],"paused":{},"crossings":{}}');
@@ -88,4 +88,19 @@ it('detaches returned display fields while preserving private epoch matching and
     expect(result.value.value.appliesToEpoch(unknown, unknown)).toBeUndefined();
   }
   expect(selected(store).value).toMatchObject({ state: 'ok', value: { recorded: true, scope: 'pairing', reason: { state: 'ok', text: 'Wait for the operator' } } });
+});
+
+it.each(['absent', 'throws'] as const)('leaves ordinary store behavior intact when optional weak observation support is %s', async (kind) => {
+  vi.stubGlobal('WeakRef', kind === 'absent' ? undefined : class { constructor() { throw new Error('PRIVATE_CONSTRUCTOR_ERROR'); } });
+  await put(); const store = createStore(); expect(store.get().paused[machine]).toBe('Wait for the operator');
+  vi.mocked(fs.readFileSync).mockClear(); const clone = vi.spyOn(globalThis, 'structuredClone'), before = await disk();
+  const result = selected(store); expect(result.value.state).toBe('unavailable'); expect(result.receipts).toHaveLength(0);
+  expect.soft(JSON.stringify(result.value)).not.toContain('PRIVATE_'); expect.soft(clone).not.toHaveBeenCalled(); expect.soft(fs.readFileSync).not.toHaveBeenCalled(); expect.soft(await disk()).toEqual(before);
+});
+it('withholds a previously observed pause when its modeled weak owner accessor is gone', async () => {
+  let present = true;
+  vi.stubGlobal('WeakRef', class { constructor(readonly target: (...args: unknown[]) => unknown) {} deref() { return present ? this.target : undefined; } });
+  await put(); const store = createStore(); store.get(); const result = selected(store); expect(result.value.state).toBe('ok'); expect(result.receipts[0].current()).toBe(true);
+  present = false; expect.soft(result.receipts[0].current()).toBe(false);
+  if (result.value.state === 'ok') expect.soft(result.value.value.appliesToEpoch(match(epoch.sender), match(epoch.receiver))).toBeUndefined();
 });
