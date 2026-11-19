@@ -124,6 +124,7 @@ import { injectPtyText } from './agent-runtime/pty-input';
 import { AgentStoppingError } from './agent-runtime/agent-stopping';
 import { spawnAgent, killAgent, getAvailableOrchestrators, isHeadlessAgent, resolveOrchestrator } from './agent-system';
 import { appLog } from './log-service';
+import { trackOperation } from './main-stall-monitor';
 import { buildChatPage } from './annex-chat-pages';
 import { readControllerChat, resetControllerChatReads } from './annex-controller-chat';
 import { forgetAppendedNotes, MOBILE_PERSISTENT_APPROVALS, OUTER_TOOL_INPUT_MAX_BYTES, PERMISSION_INPUT_MAX_BYTES, boundChatEvent, boundToolInput, toolInputSizeBucket } from './annex-chat-bounds';
@@ -3876,7 +3877,8 @@ async function handleNetworkConnectionsRoute(ctx: AnnexRouteContext): Promise<vo
   const body = await readAgentCallBody(ctx);
   if (body === undefined) return;
   if (ctx.requireMtls()) return;
-  const outcome = await agentCalls.receiveDirections(machine, body, Date.now(), publication);
+  const outcome = await trackOperation('Annex apply shared connections', () =>
+    agentCalls.receiveDirections(machine, body, Date.now(), publication));
   // Answered with this machine's own share, so the sender has it even if this one can't reach it.
   if ('applied' in outcome) {
     const directions = await agentCalls.shareForAnswer(machine);
