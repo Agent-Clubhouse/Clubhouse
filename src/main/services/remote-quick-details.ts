@@ -74,7 +74,7 @@ export async function readRemoteQuickDetails(target: ReadOnlyQuickTarget, author
       }
     });
     await read('connections', (c) => readConnectionCard(c, agentId));
-    await read('actions', (c) => readActionCard(c, agentId, project.id));
+    await read('actions', (c) => readActionCard(c, agentId, project.id, false, { agentName: run.name, projectName: project.displayName || project.name }));
     await read('canvases', (c) => readCanvasCard(c, agentId, project.id));
     await read('skills-mcp', (c) => {
       if (!running) { c.notes.push('This quick run has stopped. No live MCP connection is claimed.'); return; }
