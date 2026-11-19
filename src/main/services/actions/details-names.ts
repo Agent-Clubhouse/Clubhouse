@@ -14,7 +14,7 @@ export function actionDetailsNames(projectName: (id: string) => string | undefin
   let entries = 0, groups = 0;
   const machines = new Map<string, { host: string; labels: Map<string, string | null> } | undefined>();
   const record = (value: unknown): value is Record<string, unknown> => !!value && typeof value === 'object' && !Array.isArray(value);
-  const missing = (kind: string) => { notes.add(`A referenced ${kind} name is unavailable in retained host metadata.`); return undefined; };
+  const missing = (kind: string): undefined => { notes.add(`A referenced ${kind} name is unavailable in retained host metadata.`); return undefined; };
   const once = (key: string, read: () => string | undefined) => {
     if (!cached.has(key)) {
       const value = read(); cached.set(key, typeof value === 'string' && value ? value : undefined);
