@@ -30,7 +30,8 @@ vi.mock('./actions/details-names', () => ({ actionDetailsNames: () => ({ names: 
 vi.mock('./actions', async () => ({ readActionDetailsForAgent: (agentId: string, projectId: string, dispatcher: boolean, names: import('../../shared/actions').ActionNames) => projectActionDetails({ list: m.actions, lastRunForDisplay: (id: string) => m.actions().find((a: { id: string }) => a.id === id)?.lastRun }, agentId, projectId, dispatcher, names), peekActionProjectName: () => 'Project' }));
 vi.mock('./canvas-store-reader', () => ({ getAgentCanvasMemberships: m.canvases }));
 vi.mock('./clubhouse-mcp/bridge-server', () => ({ getAgentConnection: m.connection, getCurrentAgentConnection: () => m.connection()?.current ? m.connection() : null }));
-vi.mock('./managed-agents', () => ({ managedAgents: () => ({ getTemplate: m.template, liveEntries: m.entries }) }));
+vi.mock('./managed-agents', () => ({ managedAgents: () => ({ getTemplateForDisplay: m.template,
+  openSetupMetadataForDisplay: async () => ({ head: async (id: string) => (await m.entries())[id] ?? null, receipt: { current: () => true } }) }) }));
 let root: string, project: string;
 async function snapshot(folder: string, prefix = ''): Promise<Record<string, string>> {
   const out: Record<string, string> = {};
@@ -50,7 +51,7 @@ beforeEach(async () => {
   m.registration.mockReturnValue(undefined); m.runtime.mockReturnValue(undefined); m.running.mockReturnValue(false);
   m.bindings.mockReturnValue([]); m.sources.mockResolvedValue({ pairs: [], unreadable: [] }); m.satellite.mockReturnValue(null); m.peer.mockReturnValue(undefined); m.directions.mockReturnValue([]);
   m.actions.mockReturnValue([]); m.canvases.mockResolvedValue([]); m.connection.mockReturnValue(null);
-  m.template.mockResolvedValue({ name: 'Review template' }); m.entries.mockResolvedValue({ added: { name: 'Extra' }, removed: { name: 'Tone' } });
+  m.template.mockResolvedValue({ name: 'Review template', source: 'primary', observedAt: Date.now() }); m.entries.mockResolvedValue({ added: { name: 'Extra' }, removed: { name: 'Tone' } });
   m.durable.mockImplementation(() => { throw new Error('Quick reads must not resolve a durable config.'); });
 });
 afterEach(async () => { vi.restoreAllMocks(); clearQuickAgentRuns(); await fs.rm(root, { recursive: true, force: true }); });
