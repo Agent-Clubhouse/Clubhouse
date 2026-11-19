@@ -4,6 +4,7 @@ import type { DurableAgentConfig } from '../../shared/types';
 import * as fs from 'fs/promises';
 import * as path from 'path';
 import { isDisposedAgent } from '../../shared/agent-helpers';
+import { DISPATCHER_PROJECT_ID } from '../../shared/dispatcher-types';
 import type { ManagedPartContent } from '../../shared/managed-agents-types';
 import { peekDurableConfigs, peekDurableConfigsChecked } from './agent-config';
 import { getDispatcherState } from './dispatcher/dispatcher-service';
@@ -80,6 +81,22 @@ export interface AgentConfigTarget {
 
 /** Resolve exactly one snapshot. Even an id must not bypass an unknown project. */
 export async function resolveAgentConfigTarget(reference: string, project?: string, options: { strict?: boolean } = {}): Promise<AgentConfigTarget> {
+  const dispatcher = getDispatcherState();
+  // The chat and controller are distinct registered identities outside the project list.
+  // Exact ids resolve only in their authoritative host folder, including while off.
+  const role = [
+    { id: dispatcher.config?.id, path: dispatcher.path },
+    { id: dispatcher.chatAgentId, path: dispatcher.chatPath },
+  ].find((r) => r.id === reference);
+  if (role && project === undefined) {
+    if (!role.path) throw new Error('No registered agent matches that reference.');
+    const inventory = options.strict ? await peekDurableConfigsChecked(role.path, { strict: true })
+      : { agents: await peekDurableConfigs(role.path), readable: true };
+    if (!inventory.readable) throw new Error('Dispatcher agent inventory is unreadable without recovery.');
+    const agent = inventory.agents.find((a) => a.id === reference && !isDisposedAgent(a));
+    if (!agent) throw new Error('No registered agent matches that reference.');
+    return structuredClone({ agent, project: { id: DISPATCHER_PROJECT_ID, path: role.path, name: 'Dispatcher' } });
+  }
   const registered = options.strict ? await peekProjectsChecked({ strict: true }) : null;
   if (registered && !registered.readable) throw new Error('Registered projects are unreadable without recovery.');
   const projects = registered?.projects ?? await peekProjects();
@@ -91,7 +108,6 @@ export async function resolveAgentConfigTarget(reference: string, project?: stri
   };
   const agents = (await Promise.all(projects.map(async (p) => (await configs(p.path))
     .filter((agent) => !isDisposedAgent(agent)).map((agent) => ({ agent, project: p }))))).flat();
-  const dispatcher = getDispatcherState();
   if (dispatcher.config && dispatcher.path && !agents.some(({ agent }) => agent.id === dispatcher.config!.id)) agents.push({ agent: dispatcher.config, project: { id: 'dispatcher', path: dispatcher.path, name: 'Dispatcher' } });
   const projectMatches = project === undefined ? projects : projects.filter((p) => [p.id, p.path, p.name, p.displayName].some((value) => value?.toLowerCase() === project.toLowerCase()));
   if (project !== undefined && projectMatches.length !== 1) throw new Error('No unique registered project matches that reference.');

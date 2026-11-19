@@ -11,24 +11,43 @@ vi.mock('fs/promises', async (original) => {
   return { ...real, open: vi.fn(real.open) };
 });
 
-const state = vi.hoisted(() => ({ provider: 'claude-code', agents: [] as DurableAgentConfig[], parts: new Map<string, { entry: { name: string; owner?: AssetOwner; source: { kind: string; projectId?: string }; headRevision: number }; content: ManagedPartContent; droppedEnvValues: string[] }>() }));
-vi.mock('./dispatcher/dispatcher-service', () => ({ getDispatcherState: () => ({}) }));
-vi.mock('./agent-config', () => ({ peekDurableConfigs: async () => state.agents }));
-vi.mock('./project-store', () => ({ peekProjects: async () => [{ id: 'p', path: '/project', name: 'Project' }] }));
+const state = vi.hoisted(() => ({ provider: 'claude-code', agents: [] as DurableAgentConfig[], dispatcher: {} as { enabled?: boolean; config?: DurableAgentConfig; path?: string; chatAgentId?: string; chatPath?: string }, roles: {} as Record<string, DurableAgentConfig[]>, rolesReadable: true, parts: new Map<string, { entry: { name: string; owner?: AssetOwner; source: { kind: string; projectId?: string }; headRevision: number }; content: ManagedPartContent; droppedEnvValues: string[] }>() }));
+vi.mock('./dispatcher/dispatcher-service', () => ({ getDispatcherState: () => state.dispatcher }));
+vi.mock('./agent-config', () => ({ peekDurableConfigs: async (p: string) => state.roles[p] ?? state.agents,
+  peekDurableConfigsChecked: async (p: string) => ({ agents: state.roles[p] ?? state.agents, readable: state.rolesReadable }) }));
+vi.mock('./project-store', () => ({ peekProjects: async () => [{ id: 'p', path: '/project', name: 'Project' }], peekProjectsChecked: async () => ({ projects: [{ id: 'p', path: '/project', name: 'Project' }], readable: true }) }));
 vi.mock('./agent-system', () => ({ resolveOrchestrator: async () => ({ id: state.provider, conventions: { configDir: '.github', legacyInstructionsFile: state.provider === 'copilot-cli' ? 'copilot-instructions.md' : 'CLAUDE.md' } }) }));
 vi.mock('./managed-agents', () => ({ managedAgents: () => ({ headContent: async (id: string) => state.parts.get(id) ?? null }) }));
-import { CONFIG_MAX_BYTES, CONFIG_TEXT_BYTES, readAgentConfig } from './agent-config-reader';
+import { CONFIG_MAX_BYTES, CONFIG_TEXT_BYTES, readAgentConfig, resolveAgentConfigTarget } from './agent-config-reader';
 
 let root: string;
 beforeEach(async () => {
   root = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), 'config-read-')));
   state.parts.clear(); state.provider = 'claude-code';
+  state.dispatcher = {}; state.roles = {}; state.rolesReadable = true;
   state.agents = [{ id: 'target', name: 'Reader', color: '', createdAt: '', worktreePath: root }];
 });
 afterEach(async () => { vi.restoreAllMocks(); await fs.rm(root, { recursive: true, force: true }); });
 const part = (id: string, content: ManagedPartContent, kind = 'user') => state.parts.set(id, { entry: { name: id, source: { kind }, headRevision: 2 }, content, droppedEnvValues: [] });
 
 describe('bounded agent config evidence', () => {
+  it.each([true, false])('resolves exact Dispatcher controller and chat in separate host folders while enabled=%s', async (enabled) => {
+    const config = (id: string) => ({ id, name: 'Dispatcher', color: '', createdAt: '' });
+    state.dispatcher = { enabled, config: config('controller'), path: '/work', chatAgentId: 'chat', chatPath: '/chat' };
+    state.roles = { '/work': [config('controller')], '/chat': [config('chat')] };
+    expect(await resolveAgentConfigTarget('chat', undefined, { strict: true })).toMatchObject({ agent: { id: 'chat' }, project: { path: '/chat' } });
+    expect(await resolveAgentConfigTarget('controller', undefined, { strict: true })).toMatchObject({ agent: { id: 'controller' }, project: { path: '/work' } });
+  });
+  it('never resolves a removed or disposed canonical Dispatcher id to an unrelated project record', async () => {
+    state.dispatcher = { chatAgentId: 'chat', chatPath: '/chat' };
+    state.roles = { '/chat': [] };
+    state.agents.push({ id: 'chat', name: 'Unrelated collision', color: '', createdAt: '' });
+    await expect(resolveAgentConfigTarget('chat', undefined, { strict: true })).rejects.toThrow('No registered agent');
+    state.roles['/chat'] = [{ id: 'chat', name: 'Removed chat', color: '', createdAt: '', disposedAt: '2026-11-19' }];
+    await expect(resolveAgentConfigTarget('chat', undefined, { strict: true })).rejects.toThrow('No registered agent');
+    state.rolesReadable = false;
+    await expect(resolveAgentConfigTarget('chat', undefined, { strict: true })).rejects.toThrow('unreadable');
+  });
   it('reads custom instructions without changing files', async () => {
     await fs.writeFile(path.join(root, 'CLAUDE.md'), 'Own instructions');
     expect(await readAgentConfig('target')).toMatchObject({ instructions: { text: 'Own instructions', provenance: 'custom' }, parts: [], evidence: 'instruction_file', providerLoaded: 'not_confirmed' });
