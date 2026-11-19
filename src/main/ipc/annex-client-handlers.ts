@@ -174,6 +174,10 @@ export function registerAnnexClientHandlers(): void {
   ));
 
   // Chat across desktops (#2390): a satellite's chat agents through its phone routes and commands
+  ipcMain.handle(IPC.ANNEX_CLIENT.AGENT_SETTINGS, withValidatedArgs(
+    [stringArg(), stringArg({ maxLength: 240 })],
+    (_event, machine, agentId) => annexClient.requestAgentSettings(machine, agentId),
+  ));
   ipcMain.handle(IPC.ANNEX_CLIENT.CONTROLLER_CHAT_PAGE, withValidatedArgs(
     [stringArg(), objectArg({ optional: true })],
     (_event, machine, opts) => annexClient.requestControllerChatPage(machine, opts as import('../../shared/controller-chat').ControllerChatQuery),

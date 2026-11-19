@@ -1,3 +1,4 @@
+import { isRemoteAgentSettings, REMOTE_SETTINGS_MAX_BYTES, type RemoteAgentSettings } from '../../shared/remote-agent-settings';
 /**
  * Annex V2 Client — Service Discovery & Connection (#862)
  *
@@ -2340,6 +2341,26 @@ async function controllerChatRead<T>(machine: string, path: string): Promise<Con
   } catch {
     // telemetry-exempt: a bounded state, never a remote error containing conversation text.
     return { status: sat.state === 'connected' ? 'error' : 'offline' };
+  }
+}
+
+/** A read-only host summary. Older hosts have no route; never fall back to local files or a write. */
+export async function requestAgentSettings(machine: string, agentId: string): Promise<ControllerReadResult<RemoteAgentSettings>> {
+  const sat = satelliteFor(machine);
+  if (!sat || sat.state !== 'connected') return { status: 'offline' };
+  const epoch = connectionEpochs.get(sat.id) ?? 0;
+  const current = () => satelliteFor(machine) === sat && sat.state === 'connected' && (connectionEpochs.get(sat.id) ?? 0) === epoch;
+  try {
+    const res = await satelliteJson(sat.fingerprint, 'GET', `/api/v1/agents/${encodeURIComponent(agentId)}/settings-details`, undefined, { maxResponseBytes: REMOTE_SETTINGS_MAX_BYTES });
+    if (!current()) return { status: 'offline' };
+    if (res.status === 404 || res.status === 405) return { status: 'unavailable' };
+    if (res.status === 401 || res.status === 403) return { status: 'forbidden' };
+    if (res.status === 429) return { status: 'rate_limited', retryAfterMs: res.retryAfterMs ?? 1000 };
+    if (res.status !== 200 || !isRemoteAgentSettings(res.body, agentId)) return { status: 'error' };
+    return { status: 'ok', value: res.body };
+  } catch {
+    // telemetry-exempt: the Settings card shows a safe state without host error content.
+    return { status: current() ? 'error' : 'offline' };
   }
 }
 

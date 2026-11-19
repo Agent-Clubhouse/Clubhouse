@@ -1,3 +1,5 @@
+import { readRemoteAgentSettings } from './remote-agent-settings';
+vi.mock('./remote-agent-settings', () => ({ readRemoteAgentSettings: vi.fn() }));
 const snapshotLinks = vi.hoisted(() => ({ groups: vi.fn(() => []), onChange: () => () => {} }));
 vi.mock('./project-links-store', () => ({ hydrateProjectLinks: vi.fn(async () => ({})), projectLinksStore: () => snapshotLinks }));
 import { hydrateProjectLinks } from './project-links-store';
@@ -620,6 +622,71 @@ describe('annex-server', () => {
       expect((await request(port, 'GET', '/api/v1/mobile/agents/controller/chat')).status).toBe(404);
       expect(agentSystem.spawnAgent).not.toHaveBeenCalled();
       expect(ptyManagerModule.write).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('remote Settings details (#3733)', () => {
+    const route = '/api/v1/agents/a1/settings-details';
+    beforeEach(() => {
+      vi.mocked(annexPeers.getPeer).mockReturnValue({ ...TEST_CONTROLLER, kind: 'desktop' });
+    });
+    it('serves only GET through the pinned controller policy, without mutation', async () => {
+      vi.mocked(readRemoteAgentSettings).mockImplementation(async (id, authorized) => {
+        expect(id).toBe('a1'); expect(authorized()).toBe(true);
+        return { status: 200, body: { version: 1, readOnly: true, agentId: id } };
+      });
+      const { port } = await startAndPair();
+      const response = await request(port, 'GET', route);
+      expect(response.status).toBe(200);
+      expect(JSON.parse(response.body)).toMatchObject({ readOnly: true, agentId: 'a1' });
+      for (const method of ['POST', 'PUT', 'PATCH', 'DELETE']) expect((await request(port, method, route)).status).toBe(404);
+      expect(agentSystem.spawnAgent).not.toHaveBeenCalled();
+      expect(ptyManagerModule.write).not.toHaveBeenCalled();
+    });
+    it('rejects an unpaired/wrong-pin caller before summary reads', async () => {
+      const { port } = await startAndPair();
+      vi.mocked(annexTls.extractPeerCertificateFingerprint).mockReturnValueOnce('wrong-pin');
+      expect((await request(port, 'GET', route)).status).toBe(401);
+      expect(readRemoteAgentSettings).not.toHaveBeenCalled();
+    });
+    it.each([undefined, 'unknown'])('QA negative: rejects unclassified Settings controller %s', async (kind) => {
+      const { port } = await startAndPair();
+      vi.mocked(readRemoteAgentSettings).mockResolvedValue({ status: 200, body: { readOnly: true } });
+      vi.mocked(annexPeers.getPeer).mockReturnValue({ ...TEST_CONTROLLER, kind } as any);
+      expect((await request(port, 'GET', route)).status).toBe(403);
+      expect(readRemoteAgentSettings).not.toHaveBeenCalled();
+    });
+    it('rejects a phone or pending pairing before summary reads', async () => {
+      const { port } = await startAndPair();
+      for (const extra of [{ kind: 'phone' as const }, { kind: 'desktop' as const, networkPending: true }]) {
+        vi.mocked(annexPeers.getPeer).mockReturnValue({ ...TEST_CONTROLLER, ...extra });
+        expect((await request(port, 'GET', route)).status).toBe(403);
+      }
+      expect(readRemoteAgentSettings).not.toHaveBeenCalled();
+    });
+    it.each([undefined, 'unknown', 'phone'])('rejects a device kind changing to %s after the async read', async (kind) => {
+      vi.mocked(readRemoteAgentSettings).mockImplementation(async (_id, authorized) => {
+        expect(authorized()).toBe(true);
+        await Promise.resolve();
+        vi.mocked(annexPeers.getPeer).mockReturnValue({ ...TEST_CONTROLLER, kind } as any);
+        expect(authorized()).toBe(false);
+        // Even if a reader returns data, the adapter must recheck before sending it.
+        return { status: 200, body: { private: 'must-not-be-returned' } };
+      });
+      const { port } = await startAndPair();
+      const response = await request(port, 'GET', route);
+      expect(response.status).toBe(403);
+      expect(response.body).not.toContain('must-not-be-returned');
+    });
+    it('passes current host authorization to the summary for its final async recheck', async () => {
+      vi.mocked(readRemoteAgentSettings).mockImplementation(async (_id, authorized) => {
+        expect(authorized()).toBe(true);
+        vi.mocked(annexPeers.getPeer).mockReturnValue(undefined);
+        expect(authorized()).toBe(false);
+        return { status: 403, body: { error: 'settings_read_refused' } };
+      });
+      const { port } = await startAndPair();
+      expect((await request(port, 'GET', route)).status).toBe(403);
     });
   });
 

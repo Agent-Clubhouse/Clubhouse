@@ -1015,6 +1015,7 @@ export const ATTR = {
     'GET /api/v1/projects',
     'GET /api/v1/projects/:id/agents',
     'GET /api/v1/agents/:id/buffer',
+    'GET /api/v1/agents/:id/settings-details',
     'GET /api/v1/projects/:id/files/tree',
     'GET /api/v1/projects/:id/files/read',
     'GET /api/v1/projects/:id/git/info',

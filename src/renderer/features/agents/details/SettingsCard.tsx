@@ -1,3 +1,4 @@
+import { RemoteSettingsCard } from './RemoteSettingsCard';
 import { ExecutionPolicyFields } from '../ExecutionPolicyFields';
 /**
  * The Settings card (#2280): the agent's key settings at the top of Agent
@@ -205,6 +206,10 @@ function QuickTemplateLine({ templateId, changes }: { templateId: string; change
 
 /** One Settings card for managed, plain and remote agents. */
 export function SettingsCard(props: SettingsCardProps) {
+  return isRemoteProjectId(props.agent.projectId) ? <RemoteSettingsCard {...props} /> : <LocalSettingsCard {...props} />;
+}
+
+function LocalSettingsCard(props: SettingsCardProps) {
   const { agent, chat, projectPath, provider } = props;
   const local = agent.kind === 'durable' && !isRemoteProjectId(agent.projectId) && !!projectPath;
   const { value: setup } = useManagedSetup(local ? projectPath : undefined, local ? agent.id : undefined);
