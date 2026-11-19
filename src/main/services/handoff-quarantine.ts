@@ -41,19 +41,20 @@ export function handoffQuarantineFits(directory: string, windows = process.platf
   return !windows || path.join(directory, 'repo').length + 2 <= 260;
 }
 
-function privateDirectory(stat: fs.Stats): boolean {
+function privateDirectory(stat: fs.BigIntStats): boolean {
   return stat.isDirectory() && !stat.isSymbolicLink()
-    && (typeof process.getuid !== 'function' || stat.uid === process.getuid() && (stat.mode & 0o077) === 0);
+    && (typeof process.getuid !== 'function' || stat.uid === BigInt(process.getuid()) && (stat.mode & 0o077n) === 0n);
 }
 
-async function identity(directory: string): Promise<fs.Stats> {
-  const stat = await fs.promises.lstat(directory);
+async function identity(directory: string): Promise<fs.BigIntStats> {
+  // Device/inode identity must remain lossless, including values above Number's safe range.
+  const stat = await fs.promises.lstat(directory, { bigint: true });
   if (!privateDirectory(stat)) throw new Error('Unsafe handoff quarantine directory.');
   return stat;
 }
 
-async function assertIdentity(directory: string, before: fs.Stats, requirePrivate = true): Promise<void> {
-  const current = requirePrivate ? await identity(directory) : await fs.promises.lstat(directory);
+async function assertIdentity(directory: string, before: fs.BigIntStats, requirePrivate = true): Promise<void> {
+  const current = requirePrivate ? await identity(directory) : await fs.promises.lstat(directory, { bigint: true });
   if (!current.isDirectory() || current.isSymbolicLink()) throw new Error('Unsafe handoff quarantine directory.');
   if (current.dev !== before.dev || current.ino !== before.ino) throw new Error('Handoff quarantine directory changed.');
 }
@@ -63,7 +64,7 @@ async function canonicalRoot(root: string): Promise<string> {
   if (WINDOWS) {
     let ancestor = path.dirname(root);
     for (;;) {
-      const stat = await fs.promises.lstat(ancestor);
+      const stat = await fs.promises.lstat(ancestor, { bigint: true });
       if (!stat.isDirectory() || stat.isSymbolicLink()) throw new Error('Unsafe quarantine ancestor.');
       const parent = path.dirname(ancestor);
       if (parent === ancestor) break;
@@ -73,7 +74,7 @@ async function canonicalRoot(root: string): Promise<string> {
   return path.join(await fs.promises.realpath(path.dirname(root)), path.basename(root));
 }
 
-async function assertRoot(root: string, owner: fs.Stats): Promise<void> {
+async function assertRoot(root: string, owner: fs.BigIntStats): Promise<void> {
   await assertIdentity(root, owner);
   if (await fs.promises.realpath(root) !== root) throw new Error('Handoff quarantine root changed.');
 }
@@ -83,18 +84,18 @@ async function assertRoot(root: string, owner: fs.Stats): Promise<void> {
  * Windows additionally relies on the verified owner-only profile-root DACL.
  * Node has no handle-relative unlink/rmdir: a final-syscall race remains for
  * same-user/admin actors with rights to rename those protected ancestors. */
-async function removeTree(directory: string, before: fs.Stats, guard: () => Promise<void>): Promise<void> {
+async function removeTree(directory: string, before: fs.BigIntStats, guard: () => Promise<void>): Promise<void> {
   const check = async () => { await guard(); await assertIdentity(directory, before, false); };
   await check();
   for (const name of await fs.promises.readdir(directory)) {
     await check();
     const entry = path.join(directory, name);
-    const stat = await fs.promises.lstat(entry);
+    const stat = await fs.promises.lstat(entry, { bigint: true });
     if (stat.isDirectory() && !stat.isSymbolicLink()) {
       await removeTree(entry, stat, check);
     } else {
       await check();
-      const current = await fs.promises.lstat(entry);
+      const current = await fs.promises.lstat(entry, { bigint: true });
       if (current.dev !== stat.dev || current.ino !== stat.ino || current.isSymbolicLink() !== stat.isSymbolicLink()) throw new Error('Handoff quarantine entry changed.');
       await check();
       await fs.promises.unlink(entry);
@@ -116,7 +117,10 @@ export async function sweepHandoffQuarantines(options: { roots?: string[]; now?:
         if (active.has(directory)) continue;
         try {
           const stat = await identity(directory);
-          if ((options.now ?? Date.now()) - stat.mtimeMs <= HANDOFF_QUARANTINE_MAX_AGE) continue;
+          // Age is time metadata; keep exact file identities out of Number conversions.
+          // Floor an injected fractional millisecond conservatively, never making an entry older.
+          const nowNs = BigInt(Math.floor(options.now ?? Date.now())) * 1_000_000n;
+          if (nowNs - stat.mtimeNs <= BigInt(HANDOFF_QUARANTINE_MAX_AGE) * 1_000_000n) continue;
           await removeTree(directory, stat, () => assertRoot(root, owner));
         } catch { /* telemetry-exempt: never follow links or delete entries whose identity/ownership cannot be verified */ }
       }
@@ -152,7 +156,7 @@ function rootFailureClass(failure: RootFailure): string {
 /** Remove a root this call created but could not verify, so the next attempt
  * re-initializes it instead of failing on an uninitialized inherited DACL forever.
  * Non-recursive: fails (and leaves it) if anything is inside or identity changed. */
-async function removeEmptyRoot(root: string, before: fs.Stats): Promise<boolean> {
+async function removeEmptyRoot(root: string, before: fs.BigIntStats): Promise<boolean> {
   try {
     await assertIdentity(root, before, false);
     if ((await fs.promises.readdir(root)).length) return false;
@@ -161,25 +165,25 @@ async function removeEmptyRoot(root: string, before: fs.Stats): Promise<boolean>
   } catch { return false; /* telemetry-exempt: an unremovable root stays and fails closed */ }
 }
 
-async function prepareRoot(candidate: string, created: boolean, verify: QuarantineRootOptions['verify']): Promise<{ owner: fs.Stats; created: boolean }> {
-  let owner: fs.Stats;
+async function prepareRoot(candidate: string, created: boolean, verify: QuarantineRootOptions['verify']): Promise<{ owner: fs.BigIntStats; created: boolean }> {
+  let owner: fs.BigIntStats;
   try { owner = await identity(candidate); } catch (error) { throw new RootFailure('identity', error); }
   try { if (verify) await verify(candidate, created); await assertRoot(candidate, owner); }
   catch (error) { throw new RootFailure('verify', error); }
   return { owner, created };
 }
 
-async function createRoot(candidate: string): Promise<fs.Stats | undefined> {
-  try { await fs.promises.mkdir(candidate, { mode: 0o700 }); return await fs.promises.lstat(candidate); }
+async function createRoot(candidate: string): Promise<fs.BigIntStats | undefined> {
+  try { await fs.promises.mkdir(candidate, { mode: 0o700 }); return await fs.promises.lstat(candidate, { bigint: true }); }
   catch (error) { if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw new RootFailure('mkdir', error); return undefined; }
 }
 
 /** Open (creating if needed) one verified private root, then an exclusive child. */
-async function openRoot(candidate: string, options: QuarantineRootOptions): Promise<{ owner: fs.Stats; directory: string }> {
+async function openRoot(candidate: string, options: QuarantineRootOptions): Promise<{ owner: fs.BigIntStats; directory: string }> {
   const verify = options.verify ?? (WINDOWS ? verifyWindowsQuarantineRoot : undefined);
   const inspect = options.inspect ?? (WINDOWS ? inspectWindowsQuarantineRoot : undefined);
   const delay = options.retryDelay ?? 250;
-  let prepared: { owner: fs.Stats; created: boolean } | undefined;
+  let prepared: { owner: fs.BigIntStats; created: boolean } | undefined;
   let last: RootFailure | undefined; let lastCreated = false;
   for (let attempt = 1; attempt <= VERIFY_ATTEMPTS && !prepared; attempt++) {
     const fresh = await createRoot(candidate);
@@ -202,7 +206,7 @@ async function openRoot(candidate: string, options: QuarantineRootOptions): Prom
     // Recovery for a root left uninitialized by an earlier timed-out create: only
     // when it is provably ours and empty. Removal is non-recursive.
     try {
-      const stat = await fs.promises.lstat(candidate);
+      const stat = await fs.promises.lstat(candidate, { bigint: true });
       if (!stat.isDirectory() || stat.isSymbolicLink() || !privateDirectory(stat) || (await inspect?.(candidate)) !== true) throw new Error('not recoverable');
       if (!await removeEmptyRoot(candidate, stat)) throw new Error('not removable');
       const fresh = await createRoot(candidate);
@@ -236,7 +240,7 @@ export async function createHandoffQuarantine(staging: string, options: Quaranti
 }> {
   const nested = path.join(staging, `quarantine-${randomUUID()}`);
   let directory = nested;
-  let owner: fs.Stats | undefined;
+  let owner: fs.BigIntStats | undefined;
   let root: string | undefined;
   if (!handoffQuarantineFits(nested, options.windows)) {
     const roots: string[] = [];

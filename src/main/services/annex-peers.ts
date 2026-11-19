@@ -10,9 +10,9 @@ import { app } from 'electron';
 import { annexEphemeralSession } from './annex-network-profile';
 import { appLog } from './log-service';
 import { devicesChanged, type DeviceChange } from './annex-device-signal';
-import { hostPortsWithFallback, rememberHost } from './annex-reach';
 import { isAnnexLoopback } from '../../shared/annex-problems';
-import type { AnnexPeer, AnnexPeerListing } from '../../shared/types';
+import { formatAddress, hostPortsWithFallback, isPrivateHost, KNOWN_HOSTS_MAX, parseTypedHost, rememberHost, withPrivateHost } from './annex-reach';
+import type { AnnexHeldRoutes, AnnexPeer, AnnexPeerListing } from '../../shared/types';
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -74,6 +74,9 @@ function savePeers(peers: AnnexPeer[], change: DeviceChange = 'topology'): void 
 }
 
 function withHostPorts(peer: AnnexPeer): AnnexPeer {
+  // A typed address saved by an older build is this machine's own too (#3608).
+  const typed = peer.typedHost ? parseTypedHost(peer.typedHost) : null;
+  if (typed && !isPrivateHost(peer, typed.host)) peer = { ...peer, privateHosts: withPrivateHost(peer.privateHosts, typed.host) };
   if (!peer.knownHosts?.length) return peer;
   return { ...peer, hostPorts: hostPortsWithFallback(peer.knownHosts, peer.mainPort, peer.hostPorts) };
 }
@@ -154,13 +157,16 @@ export function removeAllPeers(): void {
  * Remembers where a satellite was just reached (#3058): the host goes first in
  * its known hosts, and the port is kept, so it can be found after a restart.
  */
-export function noteReached(fingerprint: string, host: string, port: number): void {
+export function noteReached(fingerprint: string, host: string, port: number, from?: 'discovered'): void {
   const peers = loadPeers();
   const peer = peers.find((p) => p.fingerprint === fingerprint);
   if (!peer || !host || !(port > 0)) return;
+  // Announced on the network by the device itself: shared at that port, even if the host was also typed (#3608).
+  if (from === 'discovered' && !isAnnexLoopback(host)) peer.sharedEndpoints = { ...peer.sharedEndpoints, [host.toLowerCase()]: port };
   peer.hostPorts = { ...hostPortsWithFallback(peer.knownHosts, peer.mainPort, peer.hostPorts), [host.toLowerCase()]: port };
   peer.knownHosts = rememberHost(peer.knownHosts, host);
-  if (!peer.mainPort || !isAnnexLoopback(host)) peer.mainPort = port;
+  // A route this machine saved for itself never becomes the shared default port (#3608).
+  if (!peer.mainPort || !isPrivateHost(peer, host, port)) peer.mainPort = port;
   peer.lastSeen = new Date().toISOString();
   savePeers(peers);
 }
@@ -170,10 +176,118 @@ export function setTypedHost(fingerprint: string, typedHost: string | undefined)
   const peers = loadPeers();
   const peer = peers.find((p) => p.fingerprint === fingerprint);
   if (!peer) return false;
-  if (typedHost) peer.typedHost = typedHost;
-  else delete peer.typedHost;
+  if (typedHost) {
+    peer.typedHost = typedHost;
+    const parsed = parseTypedHost(typedHost);
+    if (parsed) peer.privateHosts = withPrivateHost(peer.privateHosts, parsed.host);
+  } else {
+    // Clearing forgets the address, but it stays private: it was this machine's own.
+    delete peer.typedHost;
+    delete peer.typedHostCert;
+  }
   savePeers(peers);
   return true;
+}
+
+/** What a saved route is checked against (#3608): the peer's identity, pin and pairing. */
+export interface PeerTrust {
+  fingerprint: string;
+  publicKey: string;
+  role?: AnnexPeer['role'];
+  tlsCertificateFingerprint?: string;
+  tlsCertificatePem?: string;
+  pairingId?: string;
+  pairedAt: string;
+  networkPending?: boolean;
+}
+
+export function trustOf(peer: AnnexPeer): PeerTrust {
+  return {
+    fingerprint: peer.fingerprint, publicKey: peer.publicKey, role: peer.role,
+    tlsCertificateFingerprint: peer.tlsCertificateFingerprint, tlsCertificatePem: peer.tlsCertificatePem,
+    pairingId: peer.pairingId, pairedAt: peer.pairedAt, networkPending: peer.networkPending,
+  };
+}
+
+function sameTrust(a: PeerTrust, b: PeerTrust): boolean {
+  return a.fingerprint === b.fingerprint && a.publicKey === b.publicKey && a.role === b.role
+    && a.tlsCertificateFingerprint === b.tlsCertificateFingerprint && a.tlsCertificatePem === b.tlsCertificatePem
+    && a.pairingId === b.pairingId && a.pairedAt === b.pairedAt && !!a.networkPending === !!b.networkPending;
+}
+
+/**
+ * Saves a typed route checked against `expected` (#3608), only if the peer still
+ * has exactly that identity, pin and pairing: compare and set, with nothing in
+ * between. Returns false, changing nothing, when anything moved meanwhile.
+ */
+export function commitVerifiedRoute(fingerprint: string, expected: PeerTrust, typedHost: string, host: string): boolean {
+  const peers = loadPeers();
+  const peer = peers.find((p) => p.fingerprint === fingerprint);
+  if (!peer || !sameTrust(trustOf(peer), expected) || !peer.tlsCertificateFingerprint) return false;
+  peer.typedHost = typedHost;
+  peer.typedHostCert = peer.tlsCertificateFingerprint;
+  peer.privateHosts = withPrivateHost(peer.privateHosts, host);
+  savePeers(peers);
+  return true;
+}
+
+/**
+ * The record pairing again writes (#3608), with this machine's saved routes from
+ * `previous` carried over or held back, never dropped. They carry over only for
+ * the same verified peer: the same identity, with certificate continuity shown
+ * (the same pinned certificate, or a new one the identity key signed for). For
+ * anything else they're held in `heldRoutes`, unused, until checked again, so a
+ * saved forward is never pointed at a different peer.
+ */
+export function withSavedRoutes(previous: AnnexPeer | undefined, next: AnnexPeer, certContinuity: boolean): AnnexPeer {
+  if (!previous) return next;
+  // The privacy marker only ever narrows what's shared, so it always stays.
+  const privateHosts = [...(next.privateHosts ?? [])];
+  for (const host of previous.privateHosts ?? []) if (!privateHosts.includes(host)) privateHosts.push(host);
+  const out: AnnexPeer = { ...next, ...(privateHosts.length && { privateHosts }) };
+  const sameIdentity = previous.fingerprint === next.fingerprint && previous.publicKey === next.publicKey;
+  const routes = { typedHost: previous.typedHost, knownHosts: previous.knownHosts, hostPorts: previous.hostPorts };
+  const hasRoutes = !!routes.typedHost || !!routes.knownHosts?.length || !!Object.keys(routes.hostPorts ?? {}).length;
+  if (sameIdentity && certContinuity) {
+    // A bare typed host may rely only on this default; the server's pairing record has no port.
+    if (!out.mainPort && previous.mainPort) out.mainPort = previous.mainPort;
+    // This machine's own routes first, then what the new pairing says, then the rest it knew.
+    const own = (previous.knownHosts ?? []).filter((h) => isPrivateHost(previous, h));
+    out.knownHosts = [...new Set([...(next.knownHosts ?? []).slice(0, 1), ...own, ...(next.knownHosts ?? []), ...(previous.knownHosts ?? [])]
+      .map((h) => h.toLowerCase()))].slice(0, KNOWN_HOSTS_MAX);
+    // Ports are kept for every host, including any no longer listed; what the new pairing found wins.
+    out.hostPorts = { ...hostPortsWithFallback(previous.knownHosts, previous.mainPort, previous.hostPorts), ...(next.hostPorts ?? {}) };
+    if (!out.typedHost && previous.typedHost) {
+      out.typedHost = previous.typedHost;
+      if (previous.typedHostCert) out.typedHostCert = previous.typedHostCert;
+    }
+    if (!out.announcedReach && previous.announcedReach) out.announcedReach = previous.announcedReach;
+    // Endpoints the device gave, host and port together: the new pairing's win for a host it also lists.
+    const shared = { ...(previous.sharedEndpoints ?? {}), ...(next.sharedEndpoints ?? {}) };
+    if (Object.keys(shared).length) out.sharedEndpoints = shared;
+    if (previous.heldRoutes && !out.heldRoutes) out.heldRoutes = previous.heldRoutes;
+    return out;
+  }
+  if (!hasRoutes) return previous.heldRoutes && !out.heldRoutes ? { ...out, heldRoutes: previous.heldRoutes } : out;
+  // Held, not used. An older hold stays merged in, so nothing saved is lost.
+  const older = previous.heldRoutes;
+  // A bare typed host can depend on the old default even when it is not in knownHosts.
+  // Keep that endpoint explicit in held evidence only; it has not been verified for the new pin.
+  const typed = routes.typedHost ? parseTypedHost(routes.typedHost) : null;
+  const typedPort = typed && routes.hostPorts && Object.prototype.hasOwnProperty.call(routes.hostPorts, typed.host)
+    ? routes.hostPorts[typed.host] : previous.mainPort;
+  const heldTypedHost = typed && typed.port === undefined && Number.isInteger(typedPort) && typedPort > 0 && typedPort <= 65535
+    ? formatAddress({ host: typed.host, port: typedPort }) : routes.typedHost;
+  const held: AnnexHeldRoutes = {
+    certFingerprint: previous.tlsCertificateFingerprint ?? older?.certFingerprint,
+    heldAt: new Date().toISOString(),
+    ...((heldTypedHost ?? older?.typedHost) && { typedHost: heldTypedHost ?? older?.typedHost }),
+    knownHosts: [...new Set([...(routes.knownHosts ?? []), ...(older?.knownHosts ?? [])])],
+    hostPorts: { ...(older?.hostPorts ?? {}), ...hostPortsWithFallback(routes.knownHosts, previous.mainPort, routes.hostPorts) },
+  };
+  delete out.typedHost;
+  delete out.typedHostCert;
+  return { ...out, heldRoutes: held };
 }
 
 /**

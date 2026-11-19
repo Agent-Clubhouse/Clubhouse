@@ -190,6 +190,8 @@ vi.mock('../services/annex-server', () => ({
   start: vi.fn(async () => {}),
   stop: vi.fn(),
   getStatus: vi.fn(() => ({ running: false })),
+  // The ports Annex is bound to now, as the real server reports them (#3608).
+  liveListenerPorts: vi.fn(() => ({ mainPort: 7443, pairingPort: 7444 })),
 }));
 
 // ── Service mocks (project-handlers deps) ──────────────────────────────
@@ -417,6 +419,18 @@ describe('registerAllHandlers — integration', () => {
     handleHandlers.clear();
     onHandlers.clear();
     registerAllHandlers();
+  });
+
+  it("points the Annex client's own-port check at the server's live listener ports (#3608)", async () => {
+    const annexClient = await import('../services/annex-client');
+    const annexServer = await import('../services/annex-server');
+    const register = vi.spyOn(annexClient, 'setOwnListenerPortsProvider');
+    handleHandlers.clear();
+    onHandlers.clear();
+    registerAllHandlers();
+    expect(register).toHaveBeenCalledWith(annexServer.liveListenerPorts);
+    expect(annexServer.liveListenerPorts()).toEqual({ mainPort: 7443, pairingPort: 7444 });
+    register.mockRestore();
   });
 
   it('lets a starting agent bring up the MCP bridge (#2610)', () => {

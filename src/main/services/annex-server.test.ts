@@ -243,7 +243,9 @@ vi.mock('./annex-tls', () => ({
 }));
 
 // Mock annex-peers
-vi.mock('./annex-peers', () => ({
+vi.mock('./annex-peers', async (importOriginal) => ({
+  // The real rule for keeping saved routes when a device pairs again (#3608).
+  withSavedRoutes: (await importOriginal<typeof import('./annex-peers')>()).withSavedRoutes,
   controlsThisMachine: (p?: { role?: string; networkPending?: boolean } | null) => !p?.networkPending && (p?.role === 'controller' || p?.role === 'member'),
   controlledFromHere: (p?: { role?: string; kind?: string } | null) => p?.role === 'satellite' || (p?.role === 'member' && p.kind !== 'phone'),
   checkBruteForce: vi.fn().mockReturnValue({ allowed: true, delayMs: 0, locked: false, attemptsRemaining: 3 }),
@@ -1069,6 +1071,37 @@ describe('annex-server', () => {
         expect(status.port).toBeGreaterThan(0);
         expect(status.port).not.toBe(taken);
         expect(annexSettings.saveLastPorts).toHaveBeenCalledWith({ mainPort: status.port, pairingPort: status.pairingPort });
+        // Said in Settings (#3608), and whatever held the port is left alone.
+        expect(status.listenerPortsMoved).toEqual({ main: { preferred: taken, bound: status.port } });
+        // The own-port check uses the port bound now, not the remembered one another program holds.
+        expect(annexServer.liveListenerPorts()).toEqual({ mainPort: status.port, pairingPort: status.pairingPort });
+        expect(annexServer.liveListenerPorts().mainPort).not.toBe(taken);
+        expect(blocker.listening).toBe(true);
+        expect((blocker.address() as net.AddressInfo).port).toBe(taken);
+      } finally {
+        blocker.close();
+      }
+    });
+
+    it('says nothing about a moved port when the remembered one was free (#3608)', async () => {
+      annexServer.start();
+      await vi.waitFor(() => expect(annexServer.getStatus().port).toBeGreaterThan(0));
+      expect(annexServer.getStatus().listenerPortsMoved).toBeUndefined();
+    });
+
+    it('reports the pairing port moving too, and no live ports once stopped (#3608)', async () => {
+      const blocker = net.createServer();
+      await new Promise<void>((r) => blocker.listen(0, '127.0.0.1', () => r()));
+      const taken = (blocker.address() as net.AddressInfo).port;
+      try {
+        vi.mocked(annexSettings.getLastPorts).mockReturnValue({ mainPort: 0, pairingPort: taken });
+        annexServer.start();
+        await vi.waitFor(() => expect(annexServer.getStatus().pairingPort).toBeGreaterThan(0));
+        const status = annexServer.getStatus();
+        expect(status.listenerPortsMoved).toEqual({ pairing: { preferred: taken, bound: status.pairingPort } });
+        expect(blocker.listening).toBe(true);
+        annexServer.stop();
+        expect(annexServer.liveListenerPorts()).toEqual({});
       } finally {
         blocker.close();
       }
@@ -3381,6 +3414,22 @@ describe('annex-server', () => {
         expect((await call('GET', '/api/v1/mobile/network', null)).status).toBe(403);
       });
 
+      it('lists a desktop reached only through a private forward with no hosts and no port, in the same shape (#3608)', async () => {
+        await startServer();
+        const membershipMod = await import('./annex-network-membership');
+        const { port: _unused, ...noPort } = memberRecord(AA_FP);
+        vi.mocked(membershipMod.currentView).mockReturnValue({ members: [{ ...noPort, hosts: [] } as never], removals: [] });
+        const member = device();
+        await pair(member, { network: 1, pairingMode: 'persistent' });
+        const listed = await call('GET', '/api/v1/mobile/network', member);
+        expect(listed).toMatchObject({ status: 200, body: { version: 1, joined: true, removals: [] } });
+        const desktop = listed.body.members[0];
+        expect(desktop).toMatchObject({ fingerprint: AA_FP, kind: 'desktop', hosts: [], certFingerprint: expect.any(String), certPem: expect.stringContaining('BEGIN'), online: false });
+        expect(desktop).not.toHaveProperty('port');
+        // Every required field is still there; only the optional port is absent.
+        expect(Object.keys(desktop).sort()).toEqual(['certFingerprint', 'certPem', 'color', 'fingerprint', 'hosts', 'icon', 'joinedAt', 'kind', 'name', 'online', 'publicKey']);
+      });
+
       it('tells a removed phone on its open connections, before they are cut', async () => {
         await startServer();
         const phone = device();
@@ -3740,6 +3789,50 @@ describe('annex-server', () => {
       const close = vi.spyOn(accepted!, 'close');
       annexServer.regeneratePin();
       expect(close).not.toHaveBeenCalled();
+    });
+
+    describe("this computer's saved routes when a device pairs again (#3608)", () => {
+      const routes = { typedHost: '127.0.0.1:7555', knownHosts: ['127.0.0.1'], hostPorts: { '127.0.0.1': 7555 }, privateHosts: ['10.20.0.5'] };
+
+      it('keeps them when it pairs again with the same certificate', async () => {
+        await startServer();
+        const computer = device();
+        peers.set(computer.fingerprint, pinned(computer, routes));
+        expect((await pair(computer)).status).toBe(200);
+        expect(peers.get(computer.fingerprint)).toMatchObject({ ...routes, tlsCertificateFingerprint: computer.certFingerprint });
+        expect(peers.get(computer.fingerprint)?.heldRoutes).toBeUndefined();
+      });
+
+      it('keeps the legacy default needed by a bare typed host when the same certificate pairs again', async () => {
+        await startServer();
+        const computer = device();
+        peers.set(computer.fingerprint, pinned(computer, {
+          typedHost: 'studio.local', knownHosts: [], hostPorts: {}, mainPort: 7555,
+        }));
+        expect((await pair(computer)).status).toBe(200);
+        expect(peers.get(computer.fingerprint)).toMatchObject({ typedHost: 'studio.local', mainPort: 7555 });
+        expect(peers.get(computer.fingerprint)?.heldRoutes).toBeUndefined();
+      });
+
+      it('keeps them for a new certificate its identity key signed for', async () => {
+        await startServer();
+        const computer = device();
+        peers.set(computer.fingerprint, pinned(computer, routes));
+        const renewed = device(undefined, computer);
+        expect((await pair(renewed, { certBinding: binding(computer, renewed.der) })).status).toBe(200);
+        expect(peers.get(computer.fingerprint)).toMatchObject({ ...routes, tlsCertificateFingerprint: renewed.certFingerprint });
+      });
+
+      it('holds them, without using or dropping them, for an entry it cannot show is the same', async () => {
+        await startServer();
+        const computer = device();
+        peers.set(computer.fingerprint, pinned(computer, { ...routes, role: undefined, tlsCertificateFingerprint: undefined }));
+        expect((await pair(computer)).status).toBe(200);
+        const saved = peers.get(computer.fingerprint)!;
+        expect(saved.typedHost).toBeUndefined();
+        expect(saved.heldRoutes).toMatchObject({ typedHost: '127.0.0.1:7555', hostPorts: { '127.0.0.1': 7555 } });
+        expect(saved.privateHosts).toEqual(['10.20.0.5']);
+      });
     });
 
     it('an entry from before pinning pairs again over TLS and is pinned', async () => {

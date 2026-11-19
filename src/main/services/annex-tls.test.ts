@@ -32,8 +32,9 @@ import forge from 'node-forge';
 import {
   getOrCreateCert, createTlsServerOptions, createPinnedTlsClientOptions, resetForTests, signCertBinding, verifyCertBinding,
   certificateFingerprint, sameCertificateFingerprint, probePeerCertificate, PIN_MISMATCH_CODE,
-  randomCertificateSerial,
+  randomCertificateSerial, verifyPinnedEndpoint,
 } from './annex-tls';
+import * as net from 'net';
 import type { AnnexIdentity } from './annex-identity';
 import { app } from 'electron';
 
@@ -272,6 +273,90 @@ describe('annex-tls', () => {
         expect(server.requests).toEqual([]);
       } finally { await server.close(); }
     }, 30_000);
+
+    describe('checking a saved route (#3608)', () => {
+      /** A TLS server that records every byte of application data it receives after the handshake. */
+      async function tlsServer(credentials: { cert: string; key: string }) {
+        const received: Buffer[] = [];
+        const server = tls.createServer({ ...credentials, requestCert: true, rejectUnauthorized: false }, (socket) => {
+          socket.on('data', (chunk) => received.push(chunk));
+          socket.on('error', () => { /* the client closes at once */ });
+        });
+        await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', () => resolve()));
+        return { port: (server.address() as net.AddressInfo).port, received, close: () => new Promise<void>((r) => server.close(() => r())) };
+      }
+
+      /** A byte-transparent TCP forward on loopback, like one a person runs themselves. */
+      async function forward(targetPort: number, listenPort = 0) {
+        const sockets = new Set<net.Socket>();
+        const server = net.createServer((client) => {
+          const upstream = net.connect(targetPort, '127.0.0.1');
+          sockets.add(client); sockets.add(upstream);
+          client.pipe(upstream); upstream.pipe(client);
+          const end = () => { client.destroy(); upstream.destroy(); };
+          client.on('error', end); upstream.on('error', end);
+        });
+        await new Promise<void>((resolve) => server.listen(listenPort, '127.0.0.1', () => resolve()));
+        return {
+          port: (server.address() as net.AddressInfo).port,
+          close: () => new Promise<void>((r) => { for (const s of sockets) s.destroy(); server.close(() => r()); }),
+        };
+      }
+
+      const pinnedFor = (certPem: string) => createPinnedTlsClientOptions(identity, { certPem, fingerprint: certificateFingerprint(certPem) });
+
+      it('completes a pinned TLS handshake only: no application request, nothing written after it', async () => {
+        const satellite = getOrCreateCert(makeTestIdentity());
+        resetForTests();
+        const server = await tlsServer({ cert: satellite.certPem, key: satellite.keyPem });
+        try {
+          await expect(verifyPinnedEndpoint('127.0.0.1', server.port, pinnedFor(satellite.certPem), 5_000)).resolves.toBeUndefined();
+          await new Promise((r) => setTimeout(r, 50));
+          expect(Buffer.concat(server.received).length).toBe(0);
+        } finally { await server.close(); }
+      }, 30_000);
+
+      it('rejects another certificate during the handshake, before any application data', async () => {
+        const pinned = getOrCreateCert(makeTestIdentity());
+        resetForTests();
+        const server = await tlsServer(certificateFor('another computer'));
+        try {
+          await expect(verifyPinnedEndpoint('127.0.0.1', server.port, pinnedFor(pinned.certPem), 5_000)).rejects.toMatchObject({ code: expect.any(String) });
+          await new Promise((r) => setTimeout(r, 50));
+          expect(Buffer.concat(server.received).length).toBe(0);
+        } finally { await server.close(); }
+      }, 30_000);
+
+      it('gives up after its time limit on an address that never completes a handshake', async () => {
+        const held: net.Socket[] = [];
+        const silent = net.createServer((socket) => { held.push(socket); socket.on('error', () => {}); });
+        await new Promise<void>((resolve) => silent.listen(0, '127.0.0.1', () => resolve()));
+        const satellite = getOrCreateCert(makeTestIdentity());
+        resetForTests();
+        try {
+          const started = Date.now();
+          await expect(verifyPinnedEndpoint('127.0.0.1', (silent.address() as net.AddressInfo).port, pinnedFor(satellite.certPem), 200))
+            .rejects.toMatchObject({ code: 'ETIMEDOUT' });
+          expect(Date.now() - started).toBeLessThan(5_000);
+        } finally { held.forEach((socket) => socket.destroy()); await new Promise<void>((r) => silent.close(() => r())); }
+      }, 30_000);
+
+      it('works through a byte-transparent forward, fails while it is down, and works again when it is back', async () => {
+        const satellite = getOrCreateCert(makeTestIdentity());
+        resetForTests();
+        const server = await tlsServer({ cert: satellite.certPem, key: satellite.keyPem });
+        let fwd = await forward(server.port);
+        const port = fwd.port;
+        try {
+          await expect(verifyPinnedEndpoint('127.0.0.1', port, pinnedFor(satellite.certPem), 5_000)).resolves.toBeUndefined();
+          await fwd.close();
+          await expect(verifyPinnedEndpoint('127.0.0.1', port, pinnedFor(satellite.certPem), 5_000)).rejects.toMatchObject({ code: 'ECONNREFUSED' });
+          fwd = await forward(server.port, port);
+          await expect(verifyPinnedEndpoint('127.0.0.1', port, pinnedFor(satellite.certPem), 5_000)).resolves.toBeUndefined();
+          expect(Buffer.concat(server.received).length).toBe(0);
+        } finally { await fwd.close(); await server.close(); }
+      }, 30_000);
+    });
 
     it('reads a server certificate for comparison without sending a request', async () => {
       const shown = certificateFor('satellite');
