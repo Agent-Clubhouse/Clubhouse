@@ -1,3 +1,4 @@
+import { managedProviderPlatformCapability } from './managed-provider-platform';
 import { ClaudeCodeProvider } from '../orchestrators/claude-code-provider';
 import { CodexCliProvider } from '../orchestrators/codex-cli-provider';
 import { setGrantedSkills } from './managed-agents/delivery';
@@ -15,7 +16,7 @@ vi.mock('./agent-config', () => ({
   getDurableConfig: async () => { if (w.readFailed) throw new Error('postcommit saved read failed'); return w.config; },
   peekCachedDurableConfig: () => w.config,
   peekDurableConfigsChecked: async () => ({ readable: w.inventoryReadable, agents: [w.config] }),
-  flushAgentConfig: async () => {},
+  flushAgentConfig: vi.fn(async () => {}),
   updateDurableConfig: vi.fn(async (_p, _id, update, check, precondition, onPersisted) => { w.beforeCommit?.(); await check?.(); await precondition?.prepare(); w.beforeEffect?.(); precondition?.check(w.config); if (w.commitFailed) throw new Error('disk full'); const changed = (w.config.orchestrator || w.defaults.orchestrator || 'claude-code') !== update.orchestrator; if (changed) { for (const session of w.config.sessionHistory ?? []) session.orchestrator ??= w.config.orchestrator || 'claude-code'; delete w.config.lastSessionId; delete w.config.model; delete w.config.effort; delete w.config.routing; delete w.config.contextWindow; } if (update.model !== undefined) { if ((update.model === 'default' ? undefined : update.model) !== w.config.model) { delete w.config.effort; delete w.config.routing; } if (update.model === 'default') delete w.config.model; else w.config.model = update.model; } if (update.effort !== undefined) { if (update.effort === null) delete w.config.effort; else w.config.effort = update.effort; } if (update.providerTransition) w.config.providerTransition = update.providerTransition; w.config.orchestrator = update.orchestrator; w.beforeAck?.(); onPersisted?.(structuredClone(w.config)); w.afterWrite?.(); }),
 }));
 vi.mock('./agent-system', () => ({
@@ -35,7 +36,7 @@ vi.mock('./session-capture-barrier', () => ({ sessionCaptureFor: () => undefined
 const dispatcherModels = vi.hoisted(() => ({ byHand: false }));
 vi.mock('./dispatcher/dispatcher-paths', () => ({ isDispatcherPath: (p: string) => p === '/dispatcher' }));
 vi.mock('./dispatcher/dispatcher-models', () => ({ modelsChosenByHand: () => dispatcherModels.byHand }));
-import { updateDurableConfig } from './agent-config';
+import { flushAgentConfig, updateDurableConfig } from './agent-config';
 const actor = { key: 'phone:paired', assertAuthorized: () => {}, assertCommitAuthorized: () => {} };
 const preview = () => previewAgentProvider('/fixture', 'a', 'codex-cli', actor);
 beforeEach(() => {
@@ -46,7 +47,7 @@ beforeEach(() => {
 });
 describe('guided provider control', () => {
   // Independent QA3731 regression, copied with attribution from qa-provider-apply-v2.
-  it('QA3731 newly granted skill at Apply mutation must refuse and retain native preparation', async () => {
+  it.skipIf(!managedProviderPlatformCapability().supported)('QA3731 newly granted skill at Apply mutation must refuse and retain native preparation', async () => {
     const cwd = await fsp.mkdtemp(path.join(os.tmpdir(), 'qa3731-grant-'));
     let granted = false;
     const reset = setGrantedSkills(() => granted ? ['builtin-skill-prepare-handoff'] : []);
@@ -74,7 +75,7 @@ describe('guided provider control', () => {
     expect(updateDurableConfig).toHaveBeenCalledWith('/fixture', 'a', { orchestrator: 'codex-cli' }, expect.any(Function));
     expect(w.config).toEqual({ ...original, orchestrator: 'codex-cli', lastSessionId: undefined });
   });
-  it('previews equivalent managed instructions before generating an absent target (#3731)', async () => {
+  it.skipIf(!managedProviderPlatformCapability().supported)('previews equivalent managed instructions before generating an absent target (#3731)', async () => {
     const cwd = await fsp.mkdtemp(path.join(os.tmpdir(), 'provider-apply-'));
     try {
       await fsp.writeFile(path.join(cwd, 'CLAUDE.md'), 'same');
@@ -117,7 +118,7 @@ describe('guided provider control', () => {
     await expect(changeAgentProvider('/fixture', 'a', 'codex-cli', p.expectedState, actor, selection)).rejects.toMatchObject({ code: 'stale_state' });
     expect(updateDurableConfig).not.toHaveBeenCalled();
   });
-  it('commits managed native preparation and marker together, retaining history/settings and reporting preparation after rejected apply', async () => {
+  it.skipIf(!managedProviderPlatformCapability().supported)('commits managed native preparation and marker together, retaining history/settings and reporting preparation after rejected apply', async () => {
     const cwd = await fsp.mkdtemp(path.join(os.tmpdir(), 'provider-transaction-'));
     const project = path.join(cwd, '.project');
     await fsp.mkdir(path.join(project, '.clubhouse'), { recursive: true });
@@ -146,7 +147,7 @@ describe('guided provider control', () => {
       expect(await fsp.readFile(path.join(cwd, 'AGENTS.md'), 'utf8')).toBe('same');
     } finally { await fsp.rm(cwd, { recursive: true, force: true }); }
   });
-  it('carries original start evidence and excludes only lastSleep bookkeeping', async () => {
+  it.skipIf(!managedProviderPlatformCapability().supported)('carries original start evidence and excludes only lastSleep bookkeeping', async () => {
     const cwd = await fsp.mkdtemp(path.join(os.tmpdir(), 'original-provider-witness-'));
     const project = path.join(cwd, '.project'); await fsp.mkdir(path.join(project, '.clubhouse'), { recursive: true });
     try {
@@ -178,7 +179,7 @@ describe('guided provider control', () => {
       expect(admission.assertBeforeCreate).toThrow('stale_state');
     } finally { await fsp.rm(cwd, { recursive: true, force: true }); }
   });
-  it('refuses a newly shared workspace at the actual Apply mutation boundary', async () => {
+  it.skipIf(!managedProviderPlatformCapability().supported)('refuses a newly shared workspace at the actual Apply mutation boundary', async () => {
     const cwd = await fsp.mkdtemp(path.join(os.tmpdir(), 'provider-isolation-'));
     const project = path.join(cwd, '.project'); await fsp.mkdir(path.join(project, '.clubhouse'), { recursive: true });
     try {
@@ -267,7 +268,7 @@ describe('guided provider control', () => {
     const result = await changeAgentProvider('/fixture', 'a', 'codex-cli', p.expectedState, actor, chosen);
     expect(result.contract).toMatchObject({ saved: p.contract!.proposed, result: { persisted: true } });
   });
-  it.each([
+  it.skipIf(!managedProviderPlatformCapability().supported).each([
     ['lastSessionId', 'external-native', 'resumePointer'], ['contextWindow', 'external-context', 'contextWindow'],
     ['routing', { reason: 'external' }, 'routing'], ['sessionHistory', [], 'history'],
     ['providerTransition', undefined, 'managedTransition'],
@@ -298,6 +299,7 @@ describe('guided provider control', () => {
       if (managed) w.config.managed = { version: 1, blocks: ['text'], skills: [], mcps: [] };
       await fsp.writeFile(path.join(project, '.clubhouse', 'agents.json'), JSON.stringify([w.config]));
       const chosen = { contractVersion: 2 as const };
+      if (managed && !managedProviderPlatformCapability().supported) { await expect(previewAgentProvider(project, 'a', 'codex-cli', actor, undefined, chosen)).rejects.toMatchObject({ code: 'managed_platform_unsupported' }); return; }
       const p = await previewAgentProvider(project, 'a', 'codex-cli', actor, undefined, chosen);
       expect(p.contract).toMatchObject({ current: { provider: 'codex-cli', providerOverride: null }, proposed: { providerOverride: managed ? 'codex-cli' : null } });
       const result = await changeAgentProvider(project, 'a', 'codex-cli', p.expectedState, actor, chosen);
@@ -338,6 +340,37 @@ describe('guided provider control', () => {
     expect(p.blocked).toBe('model_not_offered');
     await expect(changeAgentProvider('/fixture', 'a', 'codex-cli', p.expectedState, actor, chosen)).rejects.toMatchObject({ code: 'model_not_offered' });
     expect(w.config).toEqual(before); expect(updateDurableConfig).not.toHaveBeenCalled();
+  });
+  it.each(['preview', 'apply', 'start'])('refuses managed Windows %s with stale/forged support before any history flush or write', async (operation) => {
+    w.config.managed = { version: 1, blocks: [], skills: [], mcps: [] };
+    const before = structuredClone(w.config); const platform = Object.getOwnPropertyDescriptor(process, 'platform')!;
+    vi.mocked(flushAgentConfig).mockClear();
+    Object.defineProperty(process, 'platform', { ...platform, value: 'win32' });
+    try {
+      const request = operation === 'preview' ? previewAgentProvider('/fixture', 'a', 'codex-cli', actor, undefined, { contractVersion: 2 })
+        : operation === 'apply' ? changeAgentProvider('/fixture', 'a', 'codex-cli', 'previous-posix-token', actor, { contractVersion: 2 })
+          : verifyProviderStartPreview('/fixture', 'a', 'codex-cli', 'previous-posix-token', { provider: 'codex-cli', providerOverride: 'codex-cli', model: { value: null, source: 'provider_default' }, effort: { value: null, source: 'provider_default' } }, actor);
+      await expect(request).rejects.toMatchObject({ code: 'managed_platform_unsupported', statusCode: 409, outcome: 'rejected' });
+      expect(flushAgentConfig).not.toHaveBeenCalled(); expect(updateDurableConfig).not.toHaveBeenCalled(); expect(w.config).toEqual(before);
+    } finally { Object.defineProperty(process, 'platform', platform); }
+  });
+  it('preserves unmanaged same-provider editing and exact v1 preview on Windows', async () => {
+    const platform = Object.getOwnPropertyDescriptor(process, 'platform')!;
+    Object.defineProperty(process, 'platform', { ...platform, value: 'win32' });
+    try {
+      const choice = { contractVersion: 2 as const, model: { kind: 'selected' as const, id: 'fixture-model' }, effort: 'high' };
+      const p = await previewAgentProvider('/fixture', 'a', 'claude-code', actor, undefined, choice);
+      const saved = await changeAgentProvider('/fixture', 'a', 'claude-code', p.expectedState, actor, choice);
+      expect(saved.contract!.saved.model.value).toBe('fixture-model'); expect(w.config.effort).toBe('high');
+      const mutation = vi.mocked(updateDurableConfig).mock.calls.at(-1)![4]!;
+      const authority = vi.spyOn(actor, 'assertCommitAuthorized');
+      try {
+        expect(() => mutation.check({ ...w.config, managed: { version: 1, blocks: [], skills: [], mcps: [] } })).toThrow('managed_platform_unsupported');
+        expect(authority).not.toHaveBeenCalled();
+      } finally { authority.mockRestore(); }
+      w.config.managed = { version: 1, blocks: [], skills: [], mcps: [] };
+      expect((await preview()).contract).toBeUndefined();
+    } finally { Object.defineProperty(process, 'platform', platform); }
   });
   it('rechecks authorization at the synchronous configuration mutation boundary', async () => {
     let revoked = false;

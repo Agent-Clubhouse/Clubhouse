@@ -1,3 +1,4 @@
+import { assertManagedProviderPlatform, managedProviderPlatformCapability } from './managed-provider-platform';
 import { readRemoteAgentSettings } from './remote-agent-settings';
 import { handoffTransferDiagnostic, tagHandoffTransferError } from '../../shared/handoff-transfer-diagnostics';
 import { mobileProjectLinks, MOBILE_PROJECT_LINKS_EVENT } from './mobile-project-links';
@@ -3914,8 +3915,8 @@ async function handleMobileCapabilitiesRoute(ctx: AnnexRouteContext): Promise<vo
     agentSettings: { version: 1, path: '/api/v1/mobile/agents/{agentId}/settings' },
     contextWindow: { version: 1 },
     providerControl: { version: 1, preview: 'agent.providerPreview', change: 'agent.providerChange', stoppedAcknowledgment: true, strictStart: true },
-    providerControlV2: { version: 2, requestContractVersion: 2, preview: 'agent.providerPreview', change: 'agent.providerChange', selection: 'tagged_model_nullable_effort', applyStartsAgent: false, managedDelivery: 'codex_terminal_no_skills' },
-    providerStartV2: { version: 2, requestContractVersion: 2, command: 'agent.start', requiredPreconditions: ['expectedProvider', 'expectedNextWake', 'expectedState'], managedDelivery: 'codex_terminal_no_skills', creationEvidence: 'pty_created_selection' },
+    providerControlV2: { version: 2, requestContractVersion: 2, preview: 'agent.providerPreview', change: 'agent.providerChange', selection: 'tagged_model_nullable_effort', applyStartsAgent: false, managedDelivery: 'codex_terminal_no_skills', managedPlatform: managedProviderPlatformCapability() },
+    providerStartV2: { version: 2, requestContractVersion: 2, command: 'agent.start', requiredPreconditions: ['expectedProvider', 'expectedNextWake', 'expectedState'], managedDelivery: 'codex_terminal_no_skills', managedPlatform: managedProviderPlatformCapability(), creationEvidence: 'pty_created_selection' },
     // Every agent's live state in one read, for catching up after a reconnect.
     agentState: { version: 1, path: '/api/v1/mobile/agents/state' },
     // Machine-qualified agent addresses (#3063): a command's agentId may carry the machine.
@@ -4522,6 +4523,7 @@ async function runMobileCommand(input: MobileCommand, assertAuthorized: () => vo
     return { agentId: command.agentId, stopRequested: true };
   }
   if (!info) throw new MobileControlError('agent_not_found', 404);
+  if (command.type === 'agent.start' && command.contractVersion === 2) assertManagedProviderPlatform();
   if (isAgentRunning(command.agentId) || mobileStartingAgents.has(command.agentId)) throw new MobileControlError('agent_already_running');
   const start = async () => {
   const starting = { cancelled: false };
@@ -4577,6 +4579,7 @@ async function runMobileCommand(input: MobileCommand, assertAuthorized: () => vo
     broadcastSnapshotRefresh();
     return { agentId: config.id, executionMode: getAgentExecutionMode(config.id), ...(v2 && { contract: startReceipt(true) }) };
   } catch (err) {
+    if (!createdIdentity && err instanceof MobileControlError && err.code === 'managed_platform_unsupported') throw err;
     if (command.contractVersion === 2) {
       const code = err instanceof MobileControlError ? err.code : createdIdentity ? 'start_post_create_failed' : 'start_failed';
       throw new MobileControlError(code, err instanceof MobileControlError ? err.statusCode : 409, createdIdentity ? 'failed' : 'rejected', undefined, { contract: startReceipt(false) });

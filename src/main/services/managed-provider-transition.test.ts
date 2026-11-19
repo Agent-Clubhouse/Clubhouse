@@ -3,10 +3,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
 import * as os from 'node:os';
-import { constants } from 'node:fs';
+import { constants, realpathSync, lstatSync } from 'node:fs';
+import { assertManagedProviderPlatform, managedProviderPlatformCapability } from './managed-provider-platform';
 import type { DurableAgentConfig } from '../../shared/types';
 import type { OrchestratorProvider } from '../orchestrators/types';
-import { managedProviderMarker, managedProviderStartGuard, prepareManagedProviderTransition, previewManagedProviderTransition } from './managed-provider-transition';
+import { providerSettingsCommitFence, managedProviderCommitFence, managedProviderMarker, managedProviderStartGuard, prepareManagedProviderTransition, previewManagedProviderTransition, type ManagedProviderPlan } from './managed-provider-transition';
 import { setGrantedSkills } from './managed-agents/delivery';
 
 vi.mock('node:fs/promises', async (original) => ({ ...await original<typeof import('node:fs/promises')>(), open: vi.fn(), lstat: vi.fn() }));
@@ -43,7 +44,7 @@ beforeEach(async () => {
 });
 afterEach(async () => { vi.restoreAllMocks(); await fs.rm(root, { recursive: true, force: true }); });
 
-describe('managed native preparation', () => {
+describe.skipIf(!managedProviderPlatformCapability().supported)('managed native preparation', () => {
   // Independent QA3731 regression, copied with attribution from qa-provider-apply-v2.
   it('QA3731 rollback preserves a replacement arriving during root validation', async () => {
     const plan = await preview();
@@ -146,7 +147,7 @@ describe('managed native preparation', () => {
   });
 });
 
-describe('persisted read-only managed start contract', () => {
+describe.skipIf(!managedProviderPlatformCapability().supported)('persisted read-only managed start contract', () => {
   async function ready() {
     await prepareManagedProviderTransition(await preview(), async () => {});
     agent.providerTransition = managedProviderMarker(agent.id, await preview()); agent.orchestrator = 'codex-cli';
@@ -221,5 +222,58 @@ describe('persisted read-only managed start contract', () => {
     state.revision++;
     await expect(managedProviderStartGuard(project, agent, provider('codex-cli'), agent.worktreePath!, () => agent)).rejects.toMatchObject({ code: 'managed_transition_stale' });
     expect(agent.sessionHistory).toEqual(history);
+  });
+});
+
+// These refusal controls run on Windows too; POSIX positive suites above keep their applicability.
+describe('unsupported managed platform boundary', () => {
+  it('rejects preview/prepare/marker/commit/start before callbacks or native IO and keeps history', async () => {
+    const platform = Object.getOwnPropertyDescriptor(process, 'platform')!;
+    const before = structuredClone(agent);
+    const plan = {} as ManagedProviderPlan;
+    const callback = vi.fn(async () => {});
+    let commit: ReturnType<typeof managedProviderCommitFence>;
+    Object.defineProperty(process, 'platform', { ...platform, value: 'darwin' });
+    try { commit = managedProviderCommitFence(project, plan); }
+    finally { Object.defineProperty(process, 'platform', platform); }
+    vi.mocked(fs.open).mockClear(); vi.mocked(fs.lstat).mockClear();
+    Object.defineProperty(process, 'platform', { ...platform, value: 'win32' });
+    try {
+      await expect(preview()).rejects.toMatchObject({ code: 'managed_platform_unsupported' });
+      await expect(prepareManagedProviderTransition(plan, callback)).rejects.toMatchObject({ code: 'managed_platform_unsupported' });
+      expect(() => managedProviderMarker(agent.id, plan)).toThrow('managed_platform_unsupported');
+      expect(() => managedProviderCommitFence(project, plan)).toThrow('managed_platform_unsupported');
+      expect(() => commit!(agent)).toThrow('managed_platform_unsupported');
+      await expect(managedProviderStartGuard(project, agent, provider('codex-cli'), agent.worktreePath!, () => agent)).rejects.toMatchObject({ code: 'managed_platform_unsupported' });
+      expect(callback).not.toHaveBeenCalled(); expect(fs.open).not.toHaveBeenCalled(); expect(fs.lstat).not.toHaveBeenCalled();
+      expect(agent).toEqual(before);
+    } finally { Object.defineProperty(process, 'platform', platform); }
+    expect(await fs.readFile(path.join(agent.worktreePath!, 'CLAUDE.md'), 'utf8')).toBe(state.text);
+    await expect(fs.stat(path.join(agent.worktreePath!, 'AGENTS.md'))).rejects.toMatchObject({ code: 'ENOENT' });
+  });
+  it('keeps support advisory, closes unknown platforms, and leaves the generic settings fence usable', async () => {
+    expect(managedProviderPlatformCapability('win32')).toMatchObject({ supported: false });
+    expect(managedProviderPlatformCapability('unknown')).toMatchObject({ supported: false });
+    const platform = Object.getOwnPropertyDescriptor(process, 'platform')!;
+    Object.defineProperty(process, 'platform', { ...platform, value: 'unknown' });
+    try { expect(() => assertManagedProviderPlatform()).toThrow('managed_platform_unsupported'); }
+    finally { Object.defineProperty(process, 'platform', platform); }
+    const advisory = managedProviderPlatformCapability('win32'); Object.assign(advisory, { current: 'darwin', supported: true, supportedPlatforms: ['win32'] });
+    expect(managedProviderPlatformCapability('win32').supported).toBe(false);
+    expect(managedProviderPlatformCapability('darwin').supported).toBe(true);
+    expect(managedProviderPlatformCapability('linux').supported).toBe(true);
+    const generic = providerSettingsCommitFence(project);
+    Object.defineProperty(process, 'platform', { ...platform, value: 'win32' });
+    try { expect(() => assertManagedProviderPlatform()).toThrow('managed_platform_unsupported'); expect(generic).not.toThrow(); } finally { Object.defineProperty(process, 'platform', platform); }
+  });
+  it.runIf(process.platform === 'win32')('records test-owned Windows metadata for bounded stale-positive triage without admitting the lane', async () => {
+    const cwd = agent.worktreePath!; const source = path.join(cwd, 'CLAUDE.md');
+    const fields = (s: Awaited<ReturnType<typeof fs.stat>>) => ({ dev: s.dev, ino: s.ino, mode: s.mode, size: s.size, mtime: s.mtimeMs, ctime: s.ctimeMs });
+    const asyncRoot = await fs.lstat(cwd); const syncRoot = lstatSync(cwd);
+    const handle = await fs.open(source, 'r'); let asyncFile;
+    try { asyncFile = fields(await handle.stat()); } finally { await handle.close(); }
+    console.log('managed-windows-metadata-diagnostic', JSON.stringify({ scope: 'new test-owned read-only fixture, not original failure capture or equivalence acceptance', cwd,
+      asyncReal: await fs.realpath(cwd), syncReal: realpathSync(cwd), asyncRoot: fields(asyncRoot), syncRoot: fields(syncRoot), asyncFile, syncFile: fields(lstatSync(source)) }));
+    expect(() => assertManagedProviderPlatform()).toThrow('managed_platform_unsupported');
   });
 });

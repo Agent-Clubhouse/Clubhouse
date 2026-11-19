@@ -38,6 +38,9 @@ const W = vi.hoisted(() => ({
   sessions: {} as Record<string, unknown[]>,
   projectsThrow: false,
   guidedAvailable: false,
+  providerPlatform: 'darwin' as string,
+  providerV2Flushes: 0,
+  providerV2Writes: 0,
   providerV2Mode: 'created' as 'created' | 'exit' | 'pre_fail' | 'post_fail',
   providerV2Calls: 0,
   providerV2BeforeSpawn: undefined as undefined | (() => void),
@@ -376,7 +379,7 @@ vi.mock('./agent-config', async () => {
   const find = (projectPath: string, id: string) => (W.durables[projectPath] ?? []).find((d) => d.id === id) ?? null;
   const access = await import('../../shared/agent-access');
   return {
-    flushAgentConfig: async () => {},
+    flushAgentConfig: async () => { W.providerV2Flushes++; },
     listDurable: async (projectPath: string) => W.durables[projectPath] ?? [],
     peekDurableConfigs: async (projectPath: string) => W.durables[projectPath] ?? [],
     peekDurableConfigsChecked: async (projectPath: string) => ({ readable: W.providerV2PrimaryReadable, agents: W.durables[projectPath] ?? [] }),
@@ -394,6 +397,7 @@ vi.mock('./agent-config', async () => {
     getDurableConfig: async (projectPath: string, id: string) => { if (W.providerV2SavedReadFailed) throw new Error('Fixture postcommit saved read failed'); return find(projectPath, id); },
     peekCachedDurableConfig: (projectPath: string, id: string) => find(projectPath, id),
     updateDurableConfig: async (projectPath: string, id: string, updates: Record<string, unknown>, beforeCommit?: () => Promise<void>, precondition?: { prepare(): Promise<void>; check(agent: unknown): void }, onPersisted?: (snapshot: unknown) => void) => {
+      W.providerV2Writes++;
       await beforeCommit?.();
       const agent = find(projectPath, id) ?? {};
       await precondition?.prepare(); W.providerV2BeforeEffect?.(); precondition?.check(agent);
@@ -528,6 +532,14 @@ const ORCHESTRATORS = vi.hoisted(() => [
   { id: 'claude-code', displayName: 'Claude Code', shortName: 'CC', badge: 'Beta', capabilities: { permissions: true, headless: true, structuredOutput: true, hooks: true, sessionResume: true } },
   { id: 'codex-cli', displayName: 'Codex', shortName: 'CX', capabilities: { permissions: false, headless: true, structuredOutput: false, hooks: false, sessionResume: true } },
 ]);
+vi.mock('./managed-provider-platform', async (original) => {
+  const actual = await original<typeof import('./managed-provider-platform')>();
+  return { ...actual, managedProviderPlatformCapability: () => actual.managedProviderPlatformCapability(W.providerPlatform), assertManagedProviderPlatform: () => {
+    const platform = Object.getOwnPropertyDescriptor(process, 'platform')!;
+    Object.defineProperty(process, 'platform', { ...platform, value: W.providerPlatform });
+    try { actual.assertManagedProviderPlatform(); } finally { Object.defineProperty(process, 'platform', platform); }
+  } };
+});
 vi.mock('./agent-system', () => ({
   getAvailableOrchestrators: () => ORCHESTRATORS,
   checkAvailability: async (_path: string, id: string) => (id === 'codex-cli' && !W.guidedAvailable ? { available: false, error: 'Codex CLI not found' } : { available: true }),
@@ -3873,6 +3885,34 @@ describe('Annex mobile contract fixtures', { timeout: TEST_TIMEOUT_MS }, () => {
     const alreadyPreview = await command('v2: already preview', { type: 'agent.providerPreview', agentId: config.id, provider: 'codex-cli', contractVersion: 2 }, { commandId: 'provider-v2-preview-current' });
     const already = await command('v2: already selected', { type: 'agent.providerChange', agentId: config.id, provider: 'codex-cli', contractVersion: 2, expectedState: alreadyPreview.body.result.expectedState }, { commandId: 'provider-v2-already' });
     expect(already.body.result).toMatchObject({ status: 'already_selected', contract: { result: { persisted: true, started: false } } });
+    const windowsBefore = structuredClone(config); const windowsFlushes = W.providerV2Flushes; const windowsWrites = W.providerV2Writes; const windowsSpawns = W.providerV2Calls;
+    W.providerPlatform = 'win32';
+    const windowsCapabilities = await send('GET', '/api/v1/mobile/capabilities');
+    expect(windowsCapabilities.body.providerControl.version).toBe(1);
+    expect(windowsCapabilities.body.providerControlV2.managedPlatform).toMatchObject({ current: 'win32', supported: false });
+    const windowsHistoricalApplyReplay = await command('v2: historical supported-host Apply replay is not new authority', { type: 'agent.providerChange', agentId: config.id, provider: 'codex-cli', contractVersion: 2, expectedState: preview.body.result.expectedState }, { commandId: 'provider-v2-apply' });
+    expect(windowsHistoricalApplyReplay).toEqual(applied);
+    const windowsPreview = await command('v2: Windows managed preview refused', { type: 'agent.providerPreview', agentId: config.id, provider: 'codex-cli', contractVersion: 2 }, { commandId: 'provider-v2-windows-preview' });
+    const windowsApply = await command('v2: Windows Apply refuses a valid previous supported-host token', { type: 'agent.providerChange', agentId: config.id, provider: 'codex-cli', contractVersion: 2, expectedState: alreadyPreview.body.result.expectedState }, { commandId: 'provider-v2-windows-apply' });
+    const windowsStart = await command('v2: Windows Start refuses a previous supported-host token', { type: 'agent.start', agentId: config.id, contractVersion: 2, expectedProvider: 'codex-cli', expectedState: applied.body.result.nextWake.expectedState, expectedNextWake: applied.body.result.contract.saved, resume: false }, { commandId: 'provider-v2-windows-start' });
+    for (const receipt of [windowsPreview, windowsApply, windowsStart]) {
+      expect(receipt.status).toBe(409); expect(receipt.body).toMatchObject({ status: 'rejected', error: { code: 'managed_platform_unsupported' }, managedPlatform: { current: 'win32', supported: false } });
+      expect(receipt.body).not.toHaveProperty('result'); expect(receipt.body).not.toHaveProperty('transition'); expect(receipt.body).not.toHaveProperty('contract');
+    }
+    expect(config).toEqual(windowsBefore); expect(W.providerV2Flushes).toBe(windowsFlushes); expect(W.providerV2Writes).toBe(windowsWrites); expect(W.providerV2Calls).toBe(windowsSpawns);
+    const windowsForgedPlatform = await command('v2: caller cannot forge host platform support', { type: 'agent.providerPreview', agentId: config.id, provider: 'codex-cli', contractVersion: 2, platform: 'darwin' }, { commandId: 'provider-v2-windows-forged-platform' });
+    expect(windowsForgedPlatform.body.error.code).toBe('invalid_command');
+    const windowsV1Preview = await command('v2: independent v1 preview remains available on Windows', { type: 'agent.providerPreview', agentId: config.id, provider: 'codex-cli' }, { commandId: 'provider-v2-windows-independent-v1' });
+    expect(windowsV1Preview.body.result).not.toHaveProperty('contract'); expect(config).toEqual(windowsBefore);
+    delete config.managed; delete config.providerTransition;
+    const windowsUnmanagedChoice = { type: 'agent.providerPreview', agentId: config.id, provider: 'codex-cli', contractVersion: 2, model: { kind: 'selected', id: 'fixture-current-model' }, effort: 'high' };
+    const windowsUnmanagedPreview = await command('v2: independent Windows unmanaged model preview', windowsUnmanagedChoice, { commandId: 'provider-v2-windows-unmanaged-preview' });
+    const windowsUnmanagedApply = await command('v2: independent Windows unmanaged same-provider Apply', { ...windowsUnmanagedChoice, type: 'agent.providerChange', expectedState: windowsUnmanagedPreview.body.result.expectedState }, { commandId: 'provider-v2-windows-unmanaged-apply' });
+    expect(windowsUnmanagedApply.body.result).toMatchObject({ status: 'changed', contract: { result: { persisted: true, started: false } }, nextWake: { state: 'blocked', code: 'provider_start_unsupported' } });
+    expect(config.model).toBe('fixture-current-model'); expect(config.effort).toBe('high');
+    for (const key of Object.keys(config)) delete config[key]; Object.assign(config, windowsBefore);
+    W.providerPlatform = 'darwin';
+    const windowsRefusals = { note: 'Synthetic Windows platform adapter; zero backend flush/write/spawn counters. Historical supported-host token/capability is not authority. Independent v1/unmanaged controls are separate authorizations, never automatic downgrade/retry.', independentV1Preview: windowsV1Preview, unmanaged: { preview: windowsUnmanagedPreview, apply: windowsUnmanagedApply }, capabilities: { status: windowsCapabilities.status, body: windowsCapabilities.body }, historicalApplyReplay: windowsHistoricalApplyReplay, preview: windowsPreview, apply: windowsApply, start: windowsStart, forgedPlatform: windowsForgedPlatform };
     const selectedRequest = { type: 'agent.providerPreview', agentId: config.id, provider: 'codex-cli', contractVersion: 2, model: { kind: 'selected', id: 'fixture-current-model' }, effort: 'high' };
     const configBeforeCodexSuffix = structuredClone(config);
     const codexSuffixPreview = await command('v2: unreported Codex suffix is not authorized', { ...selectedRequest, model: { kind: 'selected', id: 'fixture-current-model[1m]' } }, { commandId: 'provider-v2-codex-unreported-suffix' });
@@ -4083,7 +4123,7 @@ describe('Annex mobile contract fixtures', { timeout: TEST_TIMEOUT_MS }, () => {
     expect(oldHandlerCalls).toBe(0);
     fixtures.set('provider-control-v2.json', { note: 'Synthetic managed transaction/PTY leaves. Complete opt-in request/receipts. Tokens/epochs are normalized opaque examples; native filesystem and PTY boundary proof are separate unit suites.',
       oldHost, contextReview, catalogEvidence,
-      preview, claudeAlias: { preview: claudeAliasPreview, apply: claudeAliasApply }, codexSuffixPreview, codexSuffixApply, savedDefaultsPreview, staleApplyDefaults, unsupported, malformedV2, unsupportedVersion, authorityDenied, retainedPreparation, unverifiedPersistence, persistedSaveBlocked, persistedSaveUnverified, postcommitSavedReadFailure, postcommitObserverFailure, acknowledgedProviderConflict, acknowledgedInheritedUnknown, acknowledgedIntentConflicts, legacyDefaultStored, sameCommandChangedPayload, epochLost, legacyOnNewHost: { preview: legacyPreview, apply: legacyApply, start: legacyStart }, inheritedPreview, inheritedAlready, unsupportedStart, applied, selectedPreview, selectedApply, defaultPreview, defaultApply, alreadySelected: already, catalogStale, stale, startAdmissionDrift, started, lostResponseReplay: replay, alreadyRunning: running, failedAfterCreation: failed, refusedBeforeCreation: refused, immediateExit: exited });
+      preview, windowsRefusals, claudeAlias: { preview: claudeAliasPreview, apply: claudeAliasApply }, codexSuffixPreview, codexSuffixApply, savedDefaultsPreview, staleApplyDefaults, unsupported, malformedV2, unsupportedVersion, authorityDenied, retainedPreparation, unverifiedPersistence, persistedSaveBlocked, persistedSaveUnverified, postcommitSavedReadFailure, postcommitObserverFailure, acknowledgedProviderConflict, acknowledgedInheritedUnknown, acknowledgedIntentConflicts, legacyDefaultStored, sameCommandChangedPayload, epochLost, legacyOnNewHost: { preview: legacyPreview, apply: legacyApply, start: legacyStart }, inheritedPreview, inheritedAlready, unsupportedStart, applied, selectedPreview, selectedApply, defaultPreview, defaultApply, alreadySelected: already, catalogStale, stale, startAdmissionDrift, started, lostResponseReplay: replay, alreadyRunning: running, failedAfterCreation: failed, refusedBeforeCreation: refused, immediateExit: exited });
     delete config.managed; delete config.providerTransition; W.guidedAvailable = false; W.providerV2Identity = null;
   });
 

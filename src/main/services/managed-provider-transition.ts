@@ -1,3 +1,4 @@
+import { assertManagedProviderPlatform } from './managed-provider-platform';
 /** Managed native-instruction preparation for guided provider changes (#3731).
  * This is not a running-delivery receipt. The supported lane has no skills;
  * MCPs arrive through the existing Codex launch-argument path at start.
@@ -132,6 +133,7 @@ async function readFile(file: string): Promise<FileState | null> {
   } finally { await handle?.close(); }
 }
 export async function previewManagedProviderTransition(projectPath: string, agent: DurableAgentConfig, current: OrchestratorProvider, provider: OrchestratorProvider): Promise<ManagedProviderPlan> {
+  assertManagedProviderPlatform();
   if (!agent.managed || !agent.worktreePath || path.resolve(agent.worktreePath) === path.resolve(projectPath)) return refuse('managed_workspace_unsupported');
   const sourceRel = instructionsFileRel(current);
   const targetRel = instructionsFileRel(provider);
@@ -167,7 +169,9 @@ export function providerSettingsCommitFence(projectPath: string): () => void {
   return () => { if (launchSettingsEvidence(projectPath) !== witness) return refuse('stale_state'); };
 }
 export function managedProviderCommitFence(projectPath: string, plan: ManagedProviderPlan): (agent: DurableAgentConfig) => void {
+  assertManagedProviderPlatform();
   return (agent) => {
+    assertManagedProviderPlatform();
     if (managedGrantedSkillIds(agent).length || agent.managed?.skills.length) return refuse('stale_state');
     const primary = fileStateSync(path.join(projectPath, '.clubhouse', 'agents.json'));
     const rows: unknown = primary ? JSON.parse(primary.text) : null;
@@ -185,6 +189,7 @@ export function managedProviderCommitFence(projectPath: string, plan: ManagedPro
 }
 
 export function managedProviderMarker(agentId: string, plan: ManagedProviderPlan): ManagedProviderTransition {
+  assertManagedProviderPlatform();
   if (!plan.target || plan.target.text !== plan.instructions || plan.blocked) return refuse('managed_instructions_unprepared');
   return { version: 2, agentId, provider: 'codex-cli', delivery: 'read_only_managed', composition: plan.composition, nativeFingerprint: nativeFingerprint(plan.root, plan.target) };
 }
@@ -193,6 +198,7 @@ export function managedProviderMarker(agentId: string, plan: ManagedProviderPlan
  * managed output is written. A synchronous closure rechecks evidence at the
  * actual PTY creation boundary, after cwd and command preparation awaits. */
 export async function managedProviderStartGuard(projectPath: string, agent: DurableAgentConfig, provider: OrchestratorProvider, cwd: string, current: () => Readonly<DurableAgentConfig> | null): Promise<() => void> {
+  assertManagedProviderPlatform();
   const marker = agent.providerTransition;
   if (!marker || marker.version !== 2 || marker.agentId !== agent.id || marker.provider !== provider.id || marker.delivery !== 'read_only_managed'
     || agent.orchestrator !== provider.id || !agent.managed || !agent.worktreePath || path.resolve(cwd) !== path.resolve(agent.worktreePath)) return refuse('managed_transition_stale');
@@ -236,6 +242,7 @@ export async function managedProviderStartGuard(projectPath: string, agent: Dura
   };
   if (configFingerprint(savedConfig()) !== config) return refuse('managed_transition_stale');
   return () => {
+    assertManagedProviderPlatform();
     const currentSelection = resolveProviderSelectionCatalog(provider.peekModels?.() ?? null, agent.model, agent.effort, !!agent.model && agent.model !== 'default', undefined, provider);
     if (currentSelection.blocked || (provider.peekModels && currentSelection.fingerprint !== selection.fingerprint)) return refuse('managed_transition_stale');
     if (configFingerprint(current() ?? savedConfig()) !== config || configFingerprint(savedConfig()) !== config || digest(rootStateSync(cwd)) !== digest(root)
@@ -252,6 +259,7 @@ export async function managedProviderStartGuard(projectPath: string, agent: Dura
  * bytes without unlinking a path a person could replace. Retry requires a
  * fresh preview; partial/custom bytes block it. */
 export async function prepareManagedProviderTransition(plan: ManagedProviderPlan, assertCurrent: () => Promise<void>): Promise<() => Promise<void>> {
+  assertManagedProviderPlatform();
   await assertCurrent();
   if (plan.blocked) return refuse(plan.blocked);
   if (plan.target) return async () => {};

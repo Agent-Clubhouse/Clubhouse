@@ -329,6 +329,15 @@
         "applyStartsAgent": false,
         "change": "agent.providerChange",
         "managedDelivery": "codex_terminal_no_skills",
+        "managedPlatform": {
+          "current": "darwin",
+          "refusalCode": "managed_platform_unsupported",
+          "supported": true,
+          "supportedPlatforms": [
+            "darwin",
+            "linux"
+          ]
+        },
         "preview": "agent.providerPreview",
         "requestContractVersion": 2,
         "selection": "tagged_model_nullable_effort",
@@ -338,6 +347,15 @@
         "command": "agent.start",
         "creationEvidence": "pty_created_selection",
         "managedDelivery": "codex_terminal_no_skills",
+        "managedPlatform": {
+          "current": "darwin",
+          "refusalCode": "managed_platform_unsupported",
+          "supported": true,
+          "supportedPlatforms": [
+            "darwin",
+            "linux"
+          ]
+        },
         "requestContractVersion": 2,
         "requiredPreconditions": [
           "expectedProvider",

@@ -1,3 +1,4 @@
+import { assertManagedProviderPlatform, managedProviderPlatformCapability } from './managed-provider-platform';
 import { assertExecutionPolicy, validateStoredExecutionPolicy, helperExecutionPolicy, type ExecutionPolicy } from '../../shared/execution-policy';
 import { activateLocalCausalInput, withLocalCausalInput } from './dispatcher-federation-local-work';
 import { captureFederationInputs, prepareFederationInputs } from './dispatcher-federation-context';
@@ -322,6 +323,14 @@ export const RESUME_BLOCKED_NOTICE = "That session kept failing every turn, so i
 export async function spawnAgent(params: SpawnAgentParams): Promise<void> {
   // Quit and update close this before stopping runtimes (#2053).
   assertLaunchesOpen();
+  if (params.kind === 'durable' && !managedProviderPlatformCapability().supported) {
+    let config: DurableAgentConfig | null;
+    try { config = await getDurableConfig(params.projectPath, params.agentId, { forLaunch: true }); }
+    catch { // telemetry-exempt: preserve the existing fail-closed launch error before activation effects.
+      throw tagError(new Error('Cannot verify the saved execution policy. Open this agent’s Settings and choose Restore saved backup, or repair .clubhouse/agents.json before starting it.'), 'preflight_failed');
+    }
+    if (config?.providerTransition || (params.strictManagedDelivery && config?.managed)) assertManagedProviderPlatform();
+  }
   const quickRun = params.kind === 'quick' ? beginQuickAgentRun(params) : undefined;
   const spawn = withManagedActivationLaunch(params, () => isAgentRunning(params.agentId), (managed) => {
     assertProviderSelection(params.agentId, params.orchestrator);
@@ -418,6 +427,7 @@ async function spawnAgentInner(inParams: SpawnAgentParams, facts: SpawnFacts, ma
         : `This agent could not be created: ${creation.reason ?? 'unknown reason'} Delete it and create it again.`), 'cwd_invalid');
     }
   }
+  if (firstConfig?.providerTransition || (params.strictManagedDelivery && firstConfig?.managed)) assertManagedProviderPlatform();
   // Refuse strict resume before initialization, delivery, or any fallback can
   // discard the native pointer. A marked terminal additionally needs positive
   // evidence that its provider's native store still has that session.

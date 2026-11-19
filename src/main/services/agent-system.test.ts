@@ -1,3 +1,4 @@
+import { managedProviderPlatformCapability } from './managed-provider-platform';
 import { federationTurnInputs, startFederationTurnTracking, withFederationInput } from './dispatcher-federation-context';
 import type { FederatedRequest } from '../../shared/dispatcher-federation-requests';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
@@ -3191,7 +3192,7 @@ describe('agent-system', () => {
 
   describe('managed agent delivery (#2896)', () => {
   // Independent QA3731 regression, copied with attribution from qa-provider-apply-v2.
-    it('QA3731 valid marked terminal resume reaches PTY after provenance verification', async () => {
+    it.skipIf(!managedProviderPlatformCapability().supported)('QA3731 valid marked terminal resume reaches PTY after provenance verification', async () => {
       mockGetDurableConfig.mockReturnValue({ id: 'agent-1', name: 'agent-1', worktreePath: '/project/work', orchestrator: 'codex-cli', runtimeMode: 'terminal',
         managed: { version: 1, blocks: [], skills: [], mcps: [] }, providerTransition: { version: 2, provider: 'codex-cli' },
         lastSessionId: 'valid-native', sessionHistory: [{ sessionId: 'valid-native', orchestrator: 'codex-cli' }] });
@@ -3212,7 +3213,7 @@ describe('agent-system', () => {
         sessionHistory: [{ sessionId: 'quarantined-native', orchestrator: 'codex-cli' }] });
       mockMcpWaitReady.mockResolvedValueOnce(23456);
       await expect(spawnAgent({ agentId: 'agent-1', projectPath: '/project', cwd: '/project/work', kind: 'durable', orchestrator: 'codex-cli',
-        resume: true, strictResume: true, sessionId: 'quarantined-native' })).rejects.toThrow('resume_unverified');
+        resume: true, strictResume: true, sessionId: 'quarantined-native' })).rejects.toThrow(managedProviderPlatformCapability().supported ? 'resume_unverified' : 'managed_platform_unsupported');
       expect(mockPtySpawn).not.toHaveBeenCalled();
     });
 
@@ -3237,17 +3238,17 @@ describe('agent-system', () => {
         managed: { version: 1, blocks: [], skills: [], mcps: [] }, providerTransition: { version: 2, provider: 'codex-cli' }, sessionHistory: [{ sessionId: 'keep' }] };
       mockGetDurableConfig.mockReturnValue(config);
       mockManagedProviderStartGuard.mockRejectedValueOnce(new Error('managed_transition_stale'));
-      await expect(spawnAgent({ agentId: 'agent-1', projectPath: '/project', cwd: '/project/work', kind: 'durable', orchestrator: 'codex-cli' })).rejects.toThrow('managed_transition_stale');
+      await expect(spawnAgent({ agentId: 'agent-1', projectPath: '/project', cwd: '/project/work', kind: 'durable', orchestrator: 'codex-cli' })).rejects.toThrow(managedProviderPlatformCapability().supported ? 'managed_transition_stale' : 'managed_platform_unsupported');
       expect(mockCleanupStaleJsonInTomlConfigs).not.toHaveBeenCalled(); expect(mockStripLegacyClubhouseBridgeToml).not.toHaveBeenCalled();
       expect(mockDeliverForSpawn).not.toHaveBeenCalled(); expect(mockPtySpawn).not.toHaveBeenCalled(); expect(mockTryStartChatAgent).not.toHaveBeenCalled();
       expect(config.sessionHistory).toEqual([{ sessionId: 'keep' }]);
     });
     it('never routes an unprepared strict v2 managed start into legacy delivery', async () => {
       mockGetDurableConfig.mockReturnValue({ id: 'agent-1', managed: { version: 1, blocks: [], skills: [], mcps: [] } });
-      await expect(spawnAgent({ agentId: 'agent-1', projectPath: '/project', cwd: '/project', kind: 'durable', strictManagedDelivery: true })).rejects.toThrow('managed_delivery_unsupported');
+      await expect(spawnAgent({ agentId: 'agent-1', projectPath: '/project', cwd: '/project', kind: 'durable', strictManagedDelivery: true })).rejects.toThrow(managedProviderPlatformCapability().supported ? 'managed_delivery_unsupported' : 'managed_platform_unsupported');
       expect(mockDeliverForSpawn).not.toHaveBeenCalled(); expect(mockPtySpawn).not.toHaveBeenCalled();
     });
-    it('uses read-only admission on ordinary wake and reaches the actual creation fence without native delivery writes', async () => {
+    it.skipIf(!managedProviderPlatformCapability().supported)('uses read-only admission on ordinary wake and reaches the actual creation fence without native delivery writes', async () => {
       mockGetDurableConfig.mockReturnValue({ id: 'agent-1', name: 'agent-1', worktreePath: '/project/work', orchestrator: 'codex-cli',
         managed: { version: 1, blocks: [], skills: [], mcps: [] }, providerTransition: { version: 2, provider: 'codex-cli' } });
       const fence = vi.fn(); const created = vi.fn(); mockManagedProviderStartGuard.mockResolvedValueOnce(fence);
@@ -3256,6 +3257,26 @@ describe('agent-system', () => {
       await spawnAgent({ agentId: 'agent-1', projectPath: '/project', cwd: '/project/work', kind: 'durable', orchestrator: 'codex-cli', onRuntimeCreated: created });
       expect(fence).toHaveBeenCalledTimes(2); expect(created).toHaveBeenCalledWith('exact-created-pty');
       expect(mockCleanupStaleJsonInTomlConfigs).not.toHaveBeenCalled(); expect(mockDeliverForSpawn).not.toHaveBeenCalled(); expect(mockInjectClubhouseMcp).not.toHaveBeenCalled();
+    });
+    it.each([['entry', false], ['entry', true], ['inner', false], ['inner', true], ['entry-unmanaged-marker', false]])('refuses Windows marked %s start resume=%s before probing or any launch effects', async (boundary, resume) => {
+      const platform = Object.getOwnPropertyDescriptor(process, 'platform')!;
+      const config = { id: 'agent-1', name: 'agent-1', worktreePath: '/project/work', orchestrator: 'codex-cli', runtimeMode: 'terminal',
+        managed: { version: 1, blocks: [], skills: [], mcps: [] }, providerTransition: { version: 2, provider: 'codex-cli' },
+        lastSessionId: 'keep-native', sessionHistory: [{ sessionId: 'keep-native', orchestrator: 'codex-cli' }] };
+      if (boundary === 'entry-unmanaged-marker') delete (config as { managed?: unknown }).managed;
+      const before = structuredClone(config); mockGetDurableConfig.mockReturnValue(config);
+      sessionCapable(mockCodexProvider); const hasSession = vi.fn(async () => true);
+      (mockCodexProvider as Record<string, unknown>).hasSession = hasSession;
+      Object.defineProperty(process, 'platform', { ...platform, value: boundary === 'inner' ? 'darwin' : 'win32' });
+      if (boundary === 'inner') mockGetDurableConfig.mockImplementationOnce(() => { Object.defineProperty(process, 'platform', { ...platform, value: 'win32' }); return config; });
+      try {
+        await expect(spawnAgent({ agentId: 'agent-1', projectPath: '/project', cwd: '/project/work', kind: 'durable', orchestrator: 'codex-cli', resume: resume === true, sessionId: 'keep-native' })).rejects.toMatchObject({ code: 'managed_platform_unsupported' });
+        expect(hasSession).not.toHaveBeenCalled(); expect(mockManagedProviderStartGuard).not.toHaveBeenCalled();
+        expect((await import('./agent-config')).initializeDurableProject).not.toHaveBeenCalled();
+        expect(mockCleanupStaleJsonInTomlConfigs).not.toHaveBeenCalled(); expect(mockStripLegacyClubhouseBridgeToml).not.toHaveBeenCalled();
+        expect(mockDeliverForSpawn).not.toHaveBeenCalled(); expect(mockPtySpawn).not.toHaveBeenCalled(); expect(mockTryStartChatAgent).not.toHaveBeenCalled();
+        expect(config).toEqual(before);
+      } finally { Object.defineProperty(process, 'platform', platform); }
     });
     it('delivers a managed setup before the start', async () => {
       mockDeliverForSpawn.mockClear();

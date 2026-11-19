@@ -1,3 +1,4 @@
+import { assertManagedProviderPlatform, managedProviderPlatformCapability } from './managed-provider-platform';
 /** Guided provider changes. V2 prepares only a missing managed primary file;
  * neither version implicitly stops, wakes or transfers session context. */
 import { createHash } from 'node:crypto';
@@ -82,6 +83,7 @@ export async function previewAgentProvider(projectPath: string, agentId: string,
   const found = await getDurableConfig(projectPath, agentId, intent ? { forLaunch: true } : undefined);
   if (!found || isDisposedAgent(found)) return fail('agent_not_found');
   const config = snapshot(found);
+  if (intent && (config.managed || config.providerTransition)) assertManagedProviderPlatform();
   const generation = agentTransitionGeneration(agentId);
   const current = await resolveOrchestrator(projectPath, config.orchestrator);
   const allowed = effectiveOrchestrators();
@@ -186,6 +188,11 @@ export async function changeAgentProvider(projectPath: string, agentId: string, 
   const intent = selectionIntent(selection);
   await actor.assertAuthorized();
   const readCurrent = () => getDurableConfig(projectPath, agentId, intent ? { forLaunch: true } : undefined);
+  // Refuse before even a capture/history flush; a stale POSIX token is not authority.
+  if (intent && !managedProviderPlatformCapability().supported) {
+    const config = await readCurrent();
+    if (config?.managed || config?.providerTransition) assertManagedProviderPlatform();
+  }
   // Capture settles before acquiring the exclusive reservation; an exit must be able to persist history.
   if (isAgentRunning(agentId) || isAgentStopping(agentId)) return fail('agent_running');
   if (!(await waitForAgentStopped(agentId))) return fail('agent_stopping');
@@ -240,6 +247,7 @@ export async function changeAgentProvider(projectPath: string, agentId: string, 
       };
       if (intent) {
         await updateDurableConfig(projectPath, agentId, updates, beforeCommit, { prepare: async () => {}, check: (agent) => {
+          if (agent.managed || agent.providerTransition || updates.providerTransition) assertManagedProviderPlatform();
           actor.assertCommitAuthorized?.();
           if (!actor.assertCommitAuthorized || hash(agent) !== before || hash(resolveRuntimeMode(provider, agent.runtimeMode)) !== hash(preview.runtime)) return fail('stale_state');
           const currentCatalog = resolveProviderSelectionCatalog(target.peekModels?.() ?? null, preview.contract!.proposed.model.value ?? undefined, preview.contract!.proposed.effort.value, !!preview.contract!.proposed.model.value, undefined, target);
@@ -319,6 +327,7 @@ export async function changeAgentProvider(projectPath: string, agentId: string, 
  * the route still verifies the native pointer and its provider provenance. */
 export async function verifyProviderStartPreview(projectPath: string, agentId: string, provider: string, expectedState: string, expectedNextWake: ProviderNextWake, actor: ProviderControlActor) {
   await actor.assertAuthorized();
+  assertManagedProviderPlatform();
   const witness: ProviderPreviewWitness = {};
   const preview = await previewAgentProvider(projectPath, agentId, provider, actor, undefined, { contractVersion: 2 }, witness);
   if (preview.expectedState !== expectedState || !isDeepStrictEqual(preview.contract?.saved, expectedNextWake)) return fail('stale_state');
