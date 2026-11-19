@@ -20,6 +20,7 @@
  */
 import { randomUUID } from 'crypto';
 import { createSettingsStore } from './settings-store';
+import type { DisplayInput, DisplayReceipt } from './display-settings';
 import type { AnnexPeer } from '../../shared/types';
 import {
   NETWORK_PROTOCOL_VERSION,
@@ -286,6 +287,43 @@ export function readPairing(value: unknown): PairingRecord | undefined {
   const v = value as { id?: unknown; joinedAt?: unknown } | null;
   if (!v || typeof v.id !== 'string' || !PAIRING_ID.test(v.id) || typeof v.joinedAt !== 'string' || Number.isNaN(Date.parse(v.joinedAt))) return undefined;
   return { id: v.id, joinedAt: v.joinedAt };
+}
+
+/** Private association evidence for display consumers only; not a pairing/permission decision or wire DTO. */
+export interface OwnPairingDisplayEvidence {
+  state: 'ok' | 'unavailable';
+  inputs: DisplayInput[];
+  /** undefined when current association cannot be proven; false for a mismatching publication. */
+  matches(reference: unknown): boolean | undefined;
+}
+function loadedOwnPairingForDisplay(): PairingRecord | undefined {
+  // No yield or callback between guard/get. Check this on EVERY read, including
+  // receipt rechecks after awaits/resets. Never initialize a store for display.
+  if (!store.hasLoaded?.()) return undefined;
+  const value = store.get()?.selfPairing;
+  if (!value || typeof value !== 'object' || Array.isArray(value) || typeof value.id !== 'string' || value.id.length > 64
+    || typeof value.joinedAt !== 'string' || value.joinedAt.length > 128) return undefined;
+  return readPairing({ id: value.id, joinedAt: value.joinedAt });
+}
+/** Separate scope retains only two bounded selected scalars, no cache/record/config/caller objects. */
+function pairingDisplayObservation(id: string | undefined, joinedAt: string | undefined): { value: OwnPairingDisplayEvidence; receipt: DisplayReceipt } {
+  const receipt: DisplayReceipt = { current: () => { try { const now = loadedOwnPairingForDisplay(); return now?.id === id && now?.joinedAt === joinedAt; } catch { return false; } } };
+  return { receipt, value: {
+    state: id !== undefined && joinedAt !== undefined ? 'ok' : 'unavailable',
+    inputs: [{ field: 'Existing host network pairing metadata', source: 'host-cache', observedAt: Date.now() }],
+    matches(reference) {
+      if (id === undefined || !receipt.current()) return undefined;
+      return typeof reference === 'string' && reference.length <= 64 && reference === id;
+    },
+  } };
+}
+/** The owner projects its existing cache only. No raw identity/state is exposed,
+ * no ordinary ownPairing/state/default/legacy inference, and no credential store read.
+ * Consumers must retain the private receipt through final authorized serialization. */
+export function captureOwnPairingForDisplay(options: { receipts: DisplayReceipt[] }): OwnPairingDisplayEvidence {
+  const pairing = loadedOwnPairingForDisplay(), observed = pairingDisplayObservation(pairing?.id, pairing?.joinedAt);
+  options.receipts.push(observed.receipt);
+  return observed.value;
 }
 
 /** This machine's own pairing into its network, if it has one. */

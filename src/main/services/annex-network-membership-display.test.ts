@@ -1,0 +1,63 @@
+import { afterEach, beforeEach, expect, it, vi } from 'vitest';
+import * as fs from 'fs';
+import * as os from 'os';
+import * as path from 'path';
+import { app } from 'electron';
+import type { SettingsStore } from './settings-store';
+const m = vi.hoisted(() => ({ store: undefined as SettingsStore<unknown> | undefined, effect: vi.fn() }));
+vi.mock('fs', async (original) => { const real = await original<typeof import('fs')>(); return { ...real, readFileSync: vi.fn(real.readFileSync) }; });
+vi.mock('./settings-store', async (original) => { const real = await original<typeof import('./settings-store')>(); return { ...real, createSettingsStore: (...args: Parameters<typeof real.createSettingsStore>) => { const store = real.createSettingsStore(...args); if (args[0] === 'annex-network.json') m.store = store; return store; } }; });
+vi.mock('./annex-peers', () => ({ listPeers: m.effect, getPeer: m.effect, addPeer: m.effect }));
+vi.mock('./annex-settings', () => ({ getSettings: m.effect, networkEnabled: m.effect }));
+vi.mock('./annex-identity', () => ({ getIdentity: m.effect, computeFingerprint: m.effect }));
+vi.mock('./annex-tls', () => ({ certificateFingerprint: m.effect, sameCertificateFingerprint: m.effect }));
+vi.mock('./annex-device-signal', () => ({ devicesChanged: m.effect }));
+vi.mock('./annex-network-channel', () => ({ broadcast: m.effect, localMember: m.effect, setMembersProvider: m.effect, setSelfPairingProvider: m.effect, setUnknownPeerReasonProvider: m.effect, onNetworkMessage: m.effect }));
+vi.mock('./log-service', () => ({ appLog: m.effect }));
+import { captureOwnPairingForDisplay, ownPairing } from './annex-network-membership';
+import { resetAllSettingsStoresForTests } from './settings-store';
+let root: string;
+const id = 'own-pairing-1111', otherId = 'own-pairing-2222', joinedAt = '2026-11-19T21:00:00Z';
+const put = (selfPairing: unknown = { id, joinedAt }) => fs.promises.writeFile(path.join(root, 'annex-network.json'), JSON.stringify({ removals: [], confirmations: {}, renamedAt: {}, removedNames: { unrelated: 'PRIVATE_OTHER_NAME' }, selfPairing, PRIVATE_CONFIG: 'PRIVATE_CREDENTIAL' }));
+const disk = async () => Object.fromEntries(await Promise.all((await fs.promises.readdir(root)).sort().map(async (name) => { const file = path.join(root, name), s = await fs.promises.stat(file); return [name, { bytes: (await fs.promises.readFile(file)).toString('base64'), ino: s.ino, mtimeMs: s.mtimeMs }]; })));
+const capture = () => { const receipts: Array<{ current(): boolean }> = []; return { value: captureOwnPairingForDisplay({ receipts }), receipts }; };
+beforeEach(async () => { root = await fs.promises.realpath(await fs.promises.mkdtemp(path.join(os.tmpdir(), 'clubhouse-pairing-display-'))); vi.spyOn(app, 'getPath').mockReturnValue(root); resetAllSettingsStoresForTests(); vi.mocked(fs.readFileSync).mockClear(); m.effect.mockClear(); });
+afterEach(async () => { resetAllSettingsStoresForTests(); vi.restoreAllMocks(); await fs.promises.rm(root, { recursive: true, force: true }); });
+it.each(['valid', 'corrupt', 'missing', 'backup-only'])('does not initialize cold %s membership state or read credentials, sweep, recover or notify', async (kind) => {
+  if (kind === 'valid') await put(); if (kind === 'corrupt') await fs.promises.writeFile(path.join(root, 'annex-network.json'), '{broken');
+  if (kind === 'backup-only') await fs.promises.writeFile(path.join(root, 'annex-network.json.bak'), JSON.stringify({ selfPairing: { id, joinedAt } }));
+  const temp = path.join(root, `.annex-network.json.tmp-${process.pid + 100000}-1`); await fs.promises.writeFile(temp, 'retain'); const old = new Date(Date.now() - 3 * 86400000); await fs.promises.utimes(temp, old, old);
+  const before = await disk(), get = vi.spyOn(m.store!, 'get'), result = capture();
+  expect.soft(result.value.state).toBe('unavailable'); expect.soft(result.value.matches(id)).toBeUndefined(); expect.soft(result.receipts[0].current()).toBe(true);
+  expect.soft(get).not.toHaveBeenCalled(); expect.soft(fs.readFileSync).not.toHaveBeenCalled(); expect.soft(m.effect).not.toHaveBeenCalled(); expect.soft(await disk()).toEqual(before);
+  expect.soft(JSON.stringify(result.value)).not.toMatch(/own-pairing|PRIVATE_|selfPairing|receipts|current/);
+});
+it('compares a current deliberately warmed tuple without exposing IDs, raw state or extra snapshots', async () => {
+  await put({ id, joinedAt, PRIVATE_RAW: 'PRIVATE_RECORD' }); ownPairing(); vi.mocked(fs.readFileSync).mockClear(); m.effect.mockClear(); const before = await disk();
+  const result = capture();
+  expect(result.value.state).toBe('ok'); expect(result.value.matches(id)).toBe(true); expect(result.value.matches(otherId)).toBe(false); expect(result.value.matches(undefined)).toBe(false); expect(result.value.matches('x'.repeat(256 * 1024))).toBe(false);
+  expect(result.receipts[0].current()).toBe(true); expect(m.store!.peekLoaded?.()).toBeUndefined();
+  expect.soft(JSON.stringify(result.value)).not.toMatch(/own-pairing|PRIVATE_|id|joinedAt|selfPairing|receipts|current/);
+  expect.soft(fs.readFileSync).not.toHaveBeenCalled(); expect.soft(m.effect).not.toHaveBeenCalled(); expect.soft(await disk()).toEqual(before);
+});
+it.each(['missing-record', 'array', 'bad-id', 'long-id', 'bad-time', 'long-time', 'recovered'])('keeps warmed %s evidence unknown instead of adopting a legacy/default association', async (kind) => {
+  if (kind === 'recovered') await fs.promises.writeFile(path.join(root, 'annex-network.json'), '{broken');
+  else await put(kind === 'missing-record' ? undefined : kind === 'array' ? [] : { id: kind === 'bad-id' ? 'short' : kind === 'long-id' ? 'x'.repeat(65) : id, joinedAt: kind === 'bad-time' ? 'invalid' : kind === 'long-time' ? 'x'.repeat(129) : joinedAt });
+  if (kind === 'missing-record') await fs.promises.writeFile(path.join(root, 'annex-network.json'), '{}');
+  ownPairing(); vi.mocked(fs.readFileSync).mockClear(); m.effect.mockClear(); const before = await disk(), parse = vi.spyOn(Date, 'parse'), result = capture();
+  expect.soft(result.value.state).toBe('unavailable'); expect.soft(result.value.matches(undefined)).toBeUndefined(); expect.soft(result.value.matches(id)).toBeUndefined();
+  expect.soft(result.receipts[0].current()).toBe(true); if (kind === 'long-time' || kind === 'long-id') expect.soft(parse).not.toHaveBeenCalled();
+  expect.soft(JSON.stringify(result.value)).not.toMatch(/own-pairing|PRIVATE_|selfPairing/); expect.soft(fs.readFileSync).not.toHaveBeenCalled(); expect.soft(m.effect).not.toHaveBeenCalled(); expect.soft(await disk()).toEqual(before);
+});
+it.each(['id', 'time', 'reset', 'primary-only', 'unrelated'])('rechecks actual selected cache through late %s changes without a cold post-await get', async (kind) => {
+  await put(); const held = ownPairing()!; const result = capture(); expect(result.value.matches(id)).toBe(true); expect(result.receipts[0].current()).toBe(true);
+  if (kind === 'id') held.id = otherId; if (kind === 'time') held.joinedAt = '2026-11-20T21:00:00Z';
+  if (kind === 'reset') { resetAllSettingsStoresForTests(); await fs.promises.writeFile(path.join(root, 'annex-network.json'), '{broken'); }
+  if (kind === 'primary-only') await put({ id: otherId, joinedAt });
+  if (kind === 'unrelated') (m.store!.get() as { removedNames: Record<string, string> }).removedNames.other = 'PRIVATE_NEW_NAME';
+  const before = await disk(); vi.mocked(fs.readFileSync).mockClear(); m.effect.mockClear(); const get = vi.spyOn(m.store!, 'get');
+  const same = kind === 'primary-only' || kind === 'unrelated';
+  expect.soft(result.receipts[0].current()).toBe(same); expect.soft(result.value.matches(id)).toBe(same ? true : undefined);
+  if (kind === 'reset') expect.soft(get).not.toHaveBeenCalled();
+  expect.soft(fs.readFileSync).not.toHaveBeenCalled(); expect.soft(m.effect).not.toHaveBeenCalled(); expect.soft(await disk()).toEqual(before);
+});
