@@ -129,7 +129,7 @@ it('keeps an absent/legacy source unavailable without calling the ordinary statu
   const legacy: AgentCardSource = { status: vi.fn(async () => ({ state: 'ready', card: { owns: 'PRIVATE_CACHED_FIELDS' } })), saveUserCard: vi.fn() };
   setAgentCardSource(legacy); expect(receipts[0].current()).toBe(false);
   const result = await readAgentCardViewForDisplay('selected', project);
-  expect(result.state).toBe('unavailable'); expect(legacy.status).not.toHaveBeenCalled(); expect(JSON.stringify(result)).not.toContain('PRIVATE_');
+  expect.soft(result.state).toBe('unavailable'); expect.soft(legacy.status).not.toHaveBeenCalled(); expect.soft(JSON.stringify(result)).not.toContain('PRIVATE_');
 });
 it('carries both source identity and actual selected file receipts through the passive source wrapper', async () => {
   put(); page(); const source: AgentCardSource = { status: vi.fn(), saveUserCard: vi.fn(), display: cards.viewForDisplay.bind(cards) };
