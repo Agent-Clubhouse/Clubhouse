@@ -64,6 +64,17 @@ it('marks truncated and over-budget task content explicitly while retaining inde
   const result = readStartRequestsForDisplay(home, 'selected'); expect(result.state).toBe('ok');
   if (result.state === 'ok') { expect(result.value[0].task).toMatchObject({ state: 'ok', truncated: true, text: expect.stringContaining('[text truncated]') }); if (result.value[0].task.state === 'ok') expect(result.value[0].task.text.length).toBeLessThanOrEqual(2048); expect(result.value[1]).toMatchObject({ name: { text: 'Large task helper' }, task: { state: 'withheld', reason: 'read-limit' } }); }
 });
+it('rejects oversized whitespace before any trim scan, without treating it as an empty task', () => {
+  add(' '.repeat(64 * 1024 + 1));
+  const trim = String.prototype.trim, oversizedTrim = vi.fn();
+  vi.spyOn(String.prototype, 'trim').mockImplementation(function (this: string) {
+    if (String(this).length > 64 * 1024) oversizedTrim();
+    return trim.call(this);
+  });
+  const result = readStartRequestsForDisplay(home, 'selected');
+  expect.soft(oversizedTrim).not.toHaveBeenCalled();
+  expect.soft(result).toMatchObject({ value: [{ name: { text: 'Selected helper' }, task: { state: 'withheld', reason: 'read-limit' } }] });
+});
 it('classifies the complete bounded task before display truncation and fences changes hidden by redaction', () => {
   const first = add('Review ' + 'x'.repeat(3000) + '\nconfig["apiKey"]="PRIVATE_AFTER_TRUNCATION";');
   expect(first.ok).toBe(true);

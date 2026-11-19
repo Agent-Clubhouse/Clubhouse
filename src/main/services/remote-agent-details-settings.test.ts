@@ -169,6 +169,17 @@ it('holds selected pending-request receipts through cancellation during a later 
   const result = await readRemoteAgentDetails('selected', () => true);
   expect(m.settingsStatus).toBe(200); expect.soft(result).toEqual({ status: 409, body: { error: 'orchestration_evidence_changed' } }); expect.soft(JSON.stringify(result.body)).not.toMatch(/cards|providerId|Selected helper/);
 });
+it('keeps unavailable selected pending starts unknown in the Helpers summary', async () => {
+  const request = recordStartRequest(root, 'selected', 'Owner', { name: 'Selected helper', task: 'Review visible changes' });
+  if (!request.ok) throw new Error('fixture refused');
+  request.request.expiresAt = 'invalid recorded expiry';
+  const result = await readRemoteAgentDetails('selected', () => true);
+  expect(result.status).toBe(200);
+  const c = (result.body as RemoteAgentDetails).cards.find((card) => card.id === 'orchestrate')!;
+  expect(c.state).toBe('error'); expect(c.notes.join(' ')).toContain('no empty queue is inferred');
+  expect.soft(c.rows).toContainEqual({ label: 'Helpers', value: 'No live helpers · pending starts unavailable' });
+  expect.soft(c.rows).not.toContainEqual({ label: 'Helpers', value: 'none' });
+});
 
 it.each(['app-cap', 'project-auto'] as const)('retains selected orchestration evidence through a later %s change', async (change) => {
   m.later.mockImplementation(async () => {
