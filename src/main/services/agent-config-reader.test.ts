@@ -12,17 +12,20 @@ vi.mock('fs/promises', async (original) => {
 });
 
 const state = vi.hoisted(() => ({ provider: 'claude-code', agents: [] as DurableAgentConfig[], dispatcher: {} as { enabled?: boolean; config?: DurableAgentConfig; path?: string; chatAgentId?: string; chatPath?: string }, roles: {} as Record<string, DurableAgentConfig[]>, rolesReadable: true, parts: new Map<string, { entry: { name: string; owner?: AssetOwner; source: { kind: string; projectId?: string }; headRevision: number }; content: ManagedPartContent; droppedEnvValues: string[] }>() }));
-vi.mock('./dispatcher/dispatcher-service', () => ({ getDispatcherState: () => state.dispatcher }));
+vi.mock('./dispatcher/dispatcher-service', () => ({ getDispatcherState: vi.fn(() => state.dispatcher), getDispatcherAgentId: () => state.dispatcher.config?.id ?? null, getDispatcherChatAgentId: () => state.dispatcher.chatAgentId ?? null }));
+vi.mock('./dispatcher/dispatcher-paths', () => ({ getDispatcherPath: () => state.dispatcher.path, getDispatcherChatPath: () => state.dispatcher.chatPath }));
 vi.mock('./agent-config', () => ({ peekDurableConfigs: async (p: string) => state.roles[p] ?? state.agents,
   peekDurableConfigsChecked: async (p: string) => ({ agents: state.roles[p] ?? state.agents, readable: state.rolesReadable }) }));
 vi.mock('./project-store', () => ({ peekProjects: async () => [{ id: 'p', path: '/project', name: 'Project' }], peekProjectsChecked: async () => ({ projects: [{ id: 'p', path: '/project', name: 'Project' }], readable: true }) }));
 vi.mock('./agent-system', () => ({ resolveOrchestrator: async () => ({ id: state.provider, conventions: { configDir: '.github', legacyInstructionsFile: state.provider === 'copilot-cli' ? 'copilot-instructions.md' : 'CLAUDE.md' } }) }));
 vi.mock('./managed-agents', () => ({ managedAgents: () => ({ headContent: async (id: string) => state.parts.get(id) ?? null }) }));
+import { getDispatcherState } from './dispatcher/dispatcher-service';
 import { CONFIG_MAX_BYTES, CONFIG_TEXT_BYTES, readAgentConfig, resolveAgentConfigTarget } from './agent-config-reader';
 
 let root: string;
 beforeEach(async () => {
   root = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), 'config-read-')));
+  vi.mocked(getDispatcherState).mockReset().mockImplementation(() => state.dispatcher as ReturnType<typeof getDispatcherState>);
   state.parts.clear(); state.provider = 'claude-code';
   state.dispatcher = {}; state.roles = {}; state.rolesReadable = true;
   state.agents = [{ id: 'target', name: 'Reader', color: '', createdAt: '', worktreePath: root }];
@@ -31,6 +34,11 @@ afterEach(async () => { vi.restoreAllMocks(); await fs.rm(root, { recursive: tru
 const part = (id: string, content: ManagedPartContent, kind = 'user') => state.parts.set(id, { entry: { name: id, source: { kind }, headRevision: 2 }, content, droppedEnvValues: [] });
 
 describe('bounded agent config evidence', () => {
+  it('strict identity resolution avoids full Dispatcher state even when that reader fails', async () => {
+    vi.mocked(getDispatcherState).mockImplementationOnce(() => { throw new Error('recovering full state'); });
+    expect(await resolveAgentConfigTarget('target', undefined, { strict: true })).toMatchObject({ agent: { id: 'target' } });
+    expect(getDispatcherState).not.toHaveBeenCalled();
+  });
   it.each([true, false])('resolves exact Dispatcher controller and chat in separate host folders while enabled=%s', async (enabled) => {
     const config = (id: string) => ({ id, name: 'Dispatcher', color: '', createdAt: '' });
     state.dispatcher = { enabled, config: config('controller'), path: '/work', chatAgentId: 'chat', chatPath: '/chat' };
