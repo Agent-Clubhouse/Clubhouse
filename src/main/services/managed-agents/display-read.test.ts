@@ -56,7 +56,7 @@ it('takes explicit empty granted skills without invoking the registered ordinary
 });
 it('counts the implicit Clubhouse MCP and granted skill reads in the part budget', async () => {
   agent.managed!.blocks = Array.from({ length: 100 }, (_, index) => `missing-${index}`); const head = vi.spyOn(service, 'headContent');
-  expect(await readManagedStatusForDisplay(agent)).toMatchObject({ state: 'unavailable', reason: 'limit' }); expect(head).not.toHaveBeenCalled();
+  expect.soft(await readManagedStatusForDisplay(agent)).toMatchObject({ state: 'unavailable', reason: 'limit' }); expect.soft(head).not.toHaveBeenCalled();
 });
 it('reads selected template metadata without global Access normalization, unrelated templates, setup content or recovery', async () => {
   const state = path.join(root, 'managed', 'state.json'); await fs.mkdir(path.dirname(state), { recursive: true });
@@ -67,9 +67,10 @@ it('reads selected template metadata without global Access normalization, unrela
 });
 it.each(['array', 'null', 'large', 'mismatched-id'])('does not flatten %s template metadata into verified absence or adopt an unrelated identity', async (kind) => {
   const state = path.join(root, 'managed', 'state.json'); await fs.mkdir(path.dirname(state), { recursive: true });
-  await fs.writeFile(state, JSON.stringify({ version: 1, templates: kind === 'array' ? [] : kind === 'null' ? null : kind === 'large' ? { chosen: { content: 'x'.repeat(512 * 1024) } } : { chosen: { id: 'unrelated', name: 'PRIVATE_WRONG_TEMPLATE' } } }));
-  const before = await disk(); let error: unknown; try { await service.getTemplateForDisplay('chosen'); } catch (caught) { error = caught; }
-  expect(error).toBeDefined(); expect(error).not.toMatchObject({ code: 'not_found' }); expect(await disk()).toEqual(before);
+  await fs.writeFile(state, JSON.stringify({ version: 1, templates: kind === 'array' ? [] : kind === 'null' ? null : kind === 'large' ? { chosen: { id: 'chosen', name: 'Large selected template', settings: { content: 'x'.repeat(512 * 1024) } } } : { chosen: { id: 'unrelated', name: 'PRIVATE_WRONG_TEMPLATE' } } }));
+  const before = await disk(); let error: unknown, value: unknown; try { value = await service.getTemplateForDisplay('chosen'); } catch (caught) { error = caught; }
+  expect.soft(error).toBeDefined(); if (error) expect.soft(error).not.toMatchObject({ code: 'not_found' });
+  expect.soft(JSON.stringify(value ?? {})).not.toContain('PRIVATE_WRONG_TEMPLATE'); expect.soft(await disk()).toEqual(before);
 });
 
 it('keeps a missing custom-template inventory verified absent without creating its folder', async () => {
@@ -81,13 +82,13 @@ it('withholds grant-derived status changed during an actual awaited part read', 
   const grants = path.join(root, 'agent-grants.json'); await fs.writeFile(grants, JSON.stringify({ agents: { selected: { changes: [{ action: 'handoff.offer', target: { kind: 'remote_dispatcher' }, mode: 'ask' }] } } }));
   const head = service.headContent.bind(service); let changed = false;
   vi.spyOn(service, 'headContent').mockImplementationOnce(async (...args) => { const result = await head(...args); await fs.writeFile(grants, JSON.stringify({ agents: { selected: { changes: [] } } })); changed = true; return result; });
-  const result = await readManagedStatusForDisplay(agent); expect(changed).toBe(true); expect(result).toMatchObject({ state: 'unavailable', reason: 'changed' }); expect(JSON.stringify(result)).not.toMatch(/builtinSkills|Prepare handoff|deliveryFailed/);
+  const result = await readManagedStatusForDisplay(agent); expect(changed).toBe(true); expect.soft(result).toMatchObject({ state: 'unavailable', reason: 'changed' }); expect.soft(JSON.stringify(result)).not.toMatch(/builtinSkills|Prepare handoff|deliveryFailed/);
 });
 it('keeps real selected permission receipts private for the eventual final endpoint boundary after status returns', async () => {
   const grants = path.join(root, 'agent-grants.json'); await fs.writeFile(grants, JSON.stringify({ agents: { selected: { changes: [{ action: 'handoff.offer', target: { kind: 'remote_dispatcher' }, mode: 'ask' }] } } }));
   const receipts: Array<{ current(): boolean }> = []; const result = await readManagedStatusForDisplay(agent, { receipts });
-  expect(result.state).toBe('ok'); expect(receipts).toHaveLength(1); expect(receipts[0].current()).toBe(true); expect(JSON.stringify(result)).not.toMatch(/current|receipts|changes.*handoff.offer/);
-  await fs.writeFile(grants, JSON.stringify({ agents: { selected: { changes: [] } } })); const before = await disk(); expect(receipts[0].current()).toBe(false); expect(await disk()).toEqual(before);
+  expect(result.state).toBe('ok'); expect.soft(receipts).toHaveLength(1); expect.soft(receipts[0]?.current()).toBe(true); expect(JSON.stringify(result)).not.toMatch(/current|receipts|changes.*handoff.offer/);
+  await fs.writeFile(grants, JSON.stringify({ agents: { selected: { changes: [] } } })); const before = await disk(); expect.soft(receipts[0]?.current()).toBe(false); expect.soft(await disk()).toEqual(before);
 });
 
 it('carries selected template metadata receipts privately through later real state-file changes', async () => {
@@ -97,7 +98,7 @@ it('carries selected template metadata receipts privately through later real sta
   const receipts: Array<{ current(): boolean }> = []; const result = await service.getTemplateForDisplay('chosen', { receipts });
   expect(receipts).toHaveLength(1); expect(receipts[0].current()).toBe(true); expect(JSON.stringify(result)).not.toMatch(/PRIVATE_|receipts|current|settings|setup/);
   await fs.writeFile(file, JSON.stringify({ version: 1, templates: { chosen, other: { name: 'PRIVATE_UNRELATED_CHANGED' } } })); expect(receipts[0].current()).toBe(true);
-  await fs.writeFile(file, JSON.stringify({ version: 1, templates: { chosen: { ...chosen, name: 'Changed template' } } })); const before = await disk(); expect(receipts[0].current()).toBe(false); expect(await disk()).toEqual(before);
+  await fs.writeFile(file, JSON.stringify({ version: 1, templates: { chosen: { ...chosen, name: 'Changed template' } } })); const before = await disk(); expect.soft(receipts[0]?.current()).toBe(false); expect.soft(await disk()).toEqual(before);
 });
 
 it('keeps unmanaged selected status available independently of unreadable grant settings', async () => {
