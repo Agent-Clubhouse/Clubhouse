@@ -53,7 +53,7 @@ const store = createSettingsStore<ConnectionGrantsFile>(
   'connection-grants.json',
   { version: CONNECTION_GRANTS_VERSION, directions: [] },
   undefined,
-  { atomic: true, rollBackFailedSaves: true, audit: { key: 'connection_grants' } },
+  { atomic: true, rollBackFailedSaves: true, skipUnchangedUpdates: true, audit: { key: 'connection_grants' } },
 );
 
 type Listener = (from: AgentAddress, to: AgentAddress) => void;

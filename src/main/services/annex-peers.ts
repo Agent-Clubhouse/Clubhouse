@@ -9,7 +9,7 @@ import * as path from 'path';
 import { app } from 'electron';
 import { annexEphemeralSession } from './annex-network-profile';
 import { appLog } from './log-service';
-import { devicesChanged } from './annex-device-signal';
+import { devicesChanged, type DeviceChange } from './annex-device-signal';
 import { hostPortsWithFallback, rememberHost } from './annex-reach';
 import { isAnnexLoopback } from '../../shared/annex-problems';
 import type { AnnexPeer, AnnexPeerListing } from '../../shared/types';
@@ -62,10 +62,10 @@ function loadPeers(): AnnexPeer[] {
   }
 }
 
-function savePeers(peers: AnnexPeer[]): void {
+function savePeers(peers: AnnexPeer[], change: DeviceChange = 'topology'): void {
   const ephemeral = annexEphemeralSession();
   cachedPeers = peers;
-  devicesChanged();
+  devicesChanged(change);
   if (ephemeral) return;
   // Readable by this user only: the file holds the certificates paired devices are trusted by.
   const target = getPeersPath();
@@ -187,7 +187,7 @@ export function recordLastSeen(fingerprint: string, at: Date): void {
   const known = Date.parse(peer.lastSeen);
   if (Number.isFinite(known) && known >= at.getTime()) return;
   peer.lastSeen = at.toISOString();
-  savePeers(peers);
+  savePeers(peers, 'last-seen');
 }
 
 export function updateLastSeen(fingerprint: string): void {
@@ -195,7 +195,7 @@ export function updateLastSeen(fingerprint: string): void {
   const peer = peers.find((p) => p.fingerprint === fingerprint);
   if (peer) {
     peer.lastSeen = new Date().toISOString();
-    savePeers(peers);
+    savePeers(peers, 'last-seen');
   }
 }
 

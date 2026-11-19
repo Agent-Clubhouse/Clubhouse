@@ -9,10 +9,10 @@ vi.mock('./clubhouse-mcp/binding-manager', () => ({ bindingManager: { getBinding
 vi.mock('./log-service', () => ({ appLog: vi.fn() }));
 
 import {
-  getConnectionDirection, linkCardDirections, linkConnectionDirections, removeCardDirection, onConnectionGrantsChanged,
+  putConnectionDirection, fillConnectionTools, getConnectionDirection, linkCardDirections, linkConnectionDirections, removeCardDirection, onConnectionGrantsChanged,
   setConnectionTools, setConnectionLink, updateAgentNetworkLinks, _setConnectionGrantsVersionForTesting,
 } from './connection-grants-store';
-import { resetAllSettingsStoresForTests } from './settings-store';
+import { resetAllSettingsStoresForTests, setSettingsStoreAuditor } from './settings-store';
 import { appLog } from './log-service';
 
 const A = { agentId: 'a' };
@@ -27,6 +27,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  setSettingsStoreAuditor(null);
   fs.rmSync(state.base, { recursive: true, force: true });
 });
 
@@ -181,5 +182,116 @@ describe('Connections card sources', () => {
     ])).rejects.toThrow('already connected');
     expect(getConnectionDirection(A, B)).toBeUndefined();
     expect(getConnectionDirection(B, A)?.link).toBeDefined();
+  });
+});
+
+
+describe('unchanged grant persistence', () => {
+  const direction = {
+    from: A, to: B, disabledTools: ['send_file'], updatedAt: '2026-01-02T00:00:00.000Z',
+  };
+
+  it('does not write, audit, notify or change bytes for repeated or older incoming directions', async () => {
+    // Preserve even unknown raw metadata when the normalized direction is unchanged.
+    const raw = JSON.stringify({ version: 1, directions: [{ ...direction, future: true }] });
+    fs.writeFileSync(grantsPath(), raw);
+    const open = vi.spyOn(fs.promises, 'open');
+    const rename = vi.spyOn(fs.promises, 'rename');
+    const audit = vi.fn();
+    setSettingsStoreAuditor(audit);
+    const changed = vi.fn();
+    const unsubscribe = onConnectionGrantsChanged(changed);
+    try {
+      expect(await putConnectionDirection(direction)).toBe(false);
+      expect(await putConnectionDirection({ ...direction, disabledTools: [], updatedAt: '2026-01-01T00:00:00.000Z' })).toBe(false);
+      expect(open).not.toHaveBeenCalled();
+      expect(rename).not.toHaveBeenCalled();
+      expect(audit).not.toHaveBeenCalled();
+      expect(changed).not.toHaveBeenCalled();
+      expect(fs.readFileSync(grantsPath(), 'utf-8')).toBe(raw);
+      expect(fs.readdirSync(state.base)).toEqual(['connection-grants.json']);
+    } finally {
+      unsubscribe();
+    }
+  });
+
+  it('persists a newer incoming direction and notifies only after it commits', async () => {
+    await putConnectionDirection(direction);
+    const rename = vi.spyOn(fs.promises, 'rename');
+    const audit = vi.fn();
+    setSettingsStoreAuditor(audit);
+    const newer = { ...direction, disabledTools: [], updatedAt: '2026-01-03T00:00:00.000Z' };
+    const changed = vi.fn(() => expect(readGrants().directions).toEqual([newer]));
+    const unsubscribe = onConnectionGrantsChanged(changed);
+    try {
+      expect(await putConnectionDirection(newer)).toBe(true);
+      expect(rename).toHaveBeenCalledTimes(1);
+      expect(audit).toHaveBeenCalledTimes(1);
+      expect(changed).toHaveBeenCalledExactlyOnceWith(A, B);
+      resetAllSettingsStoresForTests();
+      expect(getConnectionDirection(A, B)).toEqual(newer);
+    } finally {
+      unsubscribe();
+    }
+  });
+
+  it('persists source and protection merges even when the incoming timestamp is older', async () => {
+    await putConnectionDirection(direction);
+    const rename = vi.spyOn(fs.promises, 'rename');
+    const incoming = {
+      ...direction, updatedAt: '2026-01-01T00:00:00.000Z', agentToolsProtected: true,
+      agentLinks: [{ agentId: 'owner', machineId: 'remote', createdAt: '2026-01-01T00:00:00.000Z' }],
+    };
+    expect(await putConnectionDirection(incoming)).toBe(true);
+    expect(await putConnectionDirection(incoming)).toBe(false);
+    expect(rename).toHaveBeenCalledTimes(1);
+    resetAllSettingsStoresForTests();
+    expect(getConnectionDirection(A, B)).toMatchObject({ ...incoming, updatedAt: direction.updatedAt });
+  });
+
+  it('rolls back failed real changes so a retry still persists', async () => {
+    await putConnectionDirection(direction);
+    const newer = { ...direction, disabledTools: [], updatedAt: '2026-01-03T00:00:00.000Z' };
+    const rename = vi.spyOn(fs.promises, 'rename').mockRejectedValueOnce(new Error('disk failure'));
+    const audit = vi.fn();
+    setSettingsStoreAuditor(audit);
+    const changed = vi.fn();
+    const unsubscribe = onConnectionGrantsChanged(changed);
+    const error = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      await expect(putConnectionDirection(newer)).rejects.toThrow('disk failure');
+      expect(getConnectionDirection(A, B)).toEqual(direction);
+      expect(readGrants().directions).toEqual([direction]);
+      expect(audit).not.toHaveBeenCalled();
+      expect(changed).not.toHaveBeenCalled();
+      expect(await putConnectionDirection(newer)).toBe(true);
+      expect(rename).toHaveBeenCalledTimes(2);
+      expect(audit).toHaveBeenCalledTimes(1);
+      expect(changed).toHaveBeenCalledTimes(1);
+      resetAllSettingsStoresForTests();
+      expect(getConnectionDirection(A, B)).toEqual(newer);
+    } finally {
+      unsubscribe();
+      error.mockRestore();
+      warn.mockRestore();
+    }
+  });
+
+  it('decides no-ops under the lock while preserving queued real changes', async () => {
+    const rename = vi.spyOn(fs.promises, 'rename');
+    const newer = { ...direction, updatedAt: '2026-01-03T00:00:00.000Z', disabledTools: ['wake_agent'] };
+    expect(await Promise.all([
+      putConnectionDirection(newer),
+      putConnectionDirection(direction),
+      putConnectionDirection(newer),
+      fillConnectionTools(A, B, []),
+      setConnectionTools(Z, B, ['send_file']),
+    ])).toEqual([true, false, false, false, expect.anything()]);
+    expect(rename).toHaveBeenCalledTimes(2);
+    resetAllSettingsStoresForTests();
+    expect(getConnectionDirection(A, B)).toEqual(newer);
+    expect(getConnectionDirection(Z, B)?.disabledTools).toEqual(['send_file']);
+    expect(readGrants().directions).toHaveLength(2);
   });
 });
