@@ -6,7 +6,7 @@ import { app } from 'electron';
 import * as experimental from '../experimental-settings';
 import { resetAllSettingsStoresForTests } from '../settings-store';
 import { newChromeEnabled, peekNewChromeEnabledForDisplay, resetNewChromeCacheForTests } from '../../window-chrome';
-import { getSettings, readDispatcherEnablementForDisplay } from './dispatcher-settings';
+import { dispatcherEnablement, getSettings, readDispatcherEnablementForDisplay } from './dispatcher-settings';
 vi.mock('../log-service', () => ({ appLog: vi.fn() }));
 let root: string;
 const put = (name: string, raw: unknown) => fs.writeFileSync(path.join(root, name), JSON.stringify(raw));
@@ -74,4 +74,13 @@ it('invalidates a missing-layout observation once the ordinary lifecycle establi
 it('labels warm host preferences as cache evidence without adopting later disk values', () => {
   dispatcher({ enabled: false }); getSettings(); dispatcher({ enabled: true }); const before = disk();
   expect(readDispatcherEnablementForDisplay()).toMatchObject({ enabled: { state: 'ok', value: false, inputs: [{ source: 'host-cache' }] } }); expect(disk()).toEqual(before);
+});
+it.each([
+  [undefined, true, true], [undefined, false, true], [false, true, true], [true, false, false], [undefined, true, false],
+] as const)('matches established local enablement for saved=%s retiredFlag=%s sessionLayout=%s', (saved, flag, layout) => {
+  dispatcher(saved === undefined ? {} : { enabled: saved }); flags({ dispatcher: flag, newChrome: layout });
+  expect(newChromeEnabled()).toBe(layout);
+  const ordinary = dispatcherEnablement(), before = disk(), result = readDispatcherEnablementForDisplay();
+  expect(result).toMatchObject({ enabled: { state: 'ok', value: ordinary.enabled }, reason: { state: 'ok', value: ordinary.reason } });
+  expect(disk()).toEqual(before);
 });
