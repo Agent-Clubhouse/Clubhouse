@@ -3,6 +3,7 @@ import * as os from 'os';
 import * as path from 'path';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { createHandoffQuarantine, handoffQuarantineFits, handoffQuarantineRoots, HANDOFF_QUARANTINE_MAX_AGE, sweepHandoffQuarantines, windowsHandoffQuarantineRoots } from './handoff-quarantine';
+import * as windowsQuarantine from './handoff-quarantine-windows';
 
 let fixture: string;
 let staging: string;
@@ -265,16 +266,125 @@ it('removes its child and fails closed if the verified root is replaced while th
   const verify = vi.fn().mockResolvedValue(undefined);
   const mkdir = fs.promises.mkdir;
   let swapped = false;
+  let mkdirCalls = 0;
+  const rootIdentity = (directory = short) => {
+    const numeric = fs.lstatSync(directory);
+    const exact = fs.lstatSync(directory, { bigint: true });
+    return {
+      dev: numeric.dev, ino: numeric.ino, safeDev: Number.isSafeInteger(numeric.dev), safeIno: Number.isSafeInteger(numeric.ino),
+      exactDev: exact.dev.toString(), exactIno: exact.ino.toString(),
+    };
+  };
+  let before: ReturnType<typeof rootIdentity> | undefined;
+  let after: ReturnType<typeof rootIdentity> | undefined;
+  let moved: ReturnType<typeof rootIdentity> | undefined;
+  let afterChild: ReturnType<typeof rootIdentity> | undefined;
   vi.spyOn(fs.promises, 'mkdir').mockImplementation(async (...args: Parameters<typeof mkdir>) => {
+    mkdirCalls++;
     if (!swapped && /^q-[a-f0-9]{32}$/.test(path.basename(args[0].toString()))) {
       // A racing recovery removes the verified root and re-creates an uninitialized one.
+      before = rootIdentity();
       swapped = true;
       // Keep the original alive so the replacement cannot reuse its inode.
       fs.renameSync(short, `${short}-moved`); fs.mkdirSync(short, { mode: 0o700 });
+      moved = rootIdentity(`${short}-moved`);
+      after = rootIdentity();
     }
-    return mkdir(...args);
+    const result = await mkdir(...args);
+    if (swapped) afterChild = rootIdentity();
+    return result;
   });
-  await expect(createHandoffQuarantine(staging, options(verify))).rejects.toMatchObject(failClosed);
+  const diagnostic = (outcome: string) => process.stdout.write(`QUARANTINE_ROOT_SWAP ${JSON.stringify({
+    platform: process.platform, node: process.version, mkdirCalls, swapped, before, moved, after, afterChild,
+    verifyCalls: verify.mock.calls.length, outcome,
+  })}\n`);
+  const allocation = createHandoffQuarantine(staging, options(verify)).then(
+    (handle) => { diagnostic('resolved'); return handle; },
+    (error) => { diagnostic('rejected'); throw error; },
+  );
+  await expect(allocation).rejects.toMatchObject(failClosed);
   expect(swapped).toBe(true);
+  expect(before).toBeDefined();
+  expect(after).toBeDefined();
+  expect(moved).toEqual(before);
+  expect(afterChild).toEqual(after);
+  expect([after?.exactDev, after?.exactIno]).not.toEqual([before?.exactDev, before?.exactIno]);
   expect(fs.readdirSync(short)).toEqual([]);
+});
+
+/** Controlled identity precision case, not evidence of the original Windows run's IDs. */
+function collidingRootIdentity(field: 'dev' | 'ino', replace: boolean): () => boolean {
+  const first = 2n ** 60n;
+  const second = first + 1n;
+  expect(first).not.toBe(second);
+  expect(Number(first)).toBe(Number(second));
+  const lstat = fs.promises.lstat;
+  const mkdir = fs.promises.mkdir;
+  let childCreated = false;
+  vi.spyOn(fs.promises, 'lstat').mockImplementation((async (file: fs.PathLike, options?: fs.StatOptions) => {
+    const stat = await lstat(file, options);
+    if (file.toString() === short) {
+      const value = replace && childCreated ? second : first;
+      Object.assign(stat, { [field]: options?.bigint ? value : Number(value) });
+    }
+    return stat;
+  }) as typeof fs.promises.lstat);
+  vi.spyOn(fs.promises, 'mkdir').mockImplementation(async (...args: Parameters<typeof mkdir>) => {
+    const result = await mkdir(...args);
+    if (/^q-[a-f0-9]{32}$/.test(path.basename(args[0].toString()))) childCreated = true;
+    return result;
+  });
+  return () => childCreated;
+}
+
+it.each(['dev', 'ino'] as const)('rejects a replaced root when distinct exact %s identities collide as numbers', async (field) => {
+  const childCreated = collidingRootIdentity(field, true);
+  await expect(createHandoffQuarantine(staging, options(vi.fn().mockResolvedValue(undefined)))).rejects.toMatchObject(failClosed);
+  expect(childCreated()).toBe(true);
+  expect(fs.readdirSync(short)).toEqual([]);
+});
+
+it.each(['dev', 'ino'] as const)('accepts and cleans an unchanged exact %s identity above the safe-number range', async (field) => {
+  const childCreated = collidingRootIdentity(field, false);
+  const owned = await createHandoffQuarantine(staging, options(vi.fn().mockResolvedValue(undefined)));
+  expect(childCreated()).toBe(true);
+  await owned.assertCurrent();
+  await owned.cleanup();
+  expect(fs.readdirSync(short)).toEqual([]);
+});
+
+it.each(['dev', 'ino'] as const)('refuses cleanup when an entry exact %s changes despite a numeric identity collision', async (field) => {
+  const owned = await create();
+  const entry = path.join(owned.directory, 'keep');
+  fs.writeFileSync(entry, 'keep');
+  const lstat = fs.promises.lstat;
+  let observations = 0;
+  vi.spyOn(fs.promises, 'lstat').mockImplementation((async (file: fs.PathLike, options?: fs.StatOptions) => {
+    const stat = await lstat(file, options);
+    if (file.toString() === entry) {
+      const value = 2n ** 60n + (observations++ === 0 ? 0n : 1n);
+      Object.assign(stat, { [field]: options?.bigint ? value : Number(value) });
+    }
+    return stat;
+  }) as typeof fs.promises.lstat);
+  await expect(owned.cleanup()).rejects.toThrow('Handoff quarantine entry changed.');
+  expect(observations).toBeGreaterThanOrEqual(2);
+  expect(fs.readFileSync(entry, 'utf8')).toBe('keep');
+});
+
+it.each([
+  ['exact age limit', 0, false],
+  ['older than the age limit', 1, true],
+  ['future modification time', -HANDOFF_QUARANTINE_MAX_AGE - 1, false],
+  ['fractional injected millisecond', 0.75, false],
+] as const)('preserves sweep cutoff for %s', async (_case, offset, removed) => {
+  // Time-policy test: isolate ACL verification, leaving directory/no-follow identity guards real.
+  vi.spyOn(windowsQuarantine, 'verifyWindowsQuarantineRoot').mockResolvedValue(undefined);
+  fs.mkdirSync(short, { mode: 0o700 });
+  const entry = path.join(short, `q-${'1'.repeat(32)}`);
+  fs.mkdirSync(entry, { mode: 0o700 });
+  const modified = 1_000_000_000_000;
+  fs.utimesSync(entry, modified / 1000, modified / 1000);
+  await sweepHandoffQuarantines({ roots: [short], now: modified + HANDOFF_QUARANTINE_MAX_AGE + offset });
+  expect(fs.existsSync(entry)).toBe(!removed);
 });
