@@ -81,7 +81,8 @@ export function readRuntimeModeForDisplay(provider: string, agentOverride?: unkn
   const raw = ownDisplayValue(evidence.raw, provider);
   if (raw !== undefined && (!raw || typeof raw !== 'object' || Array.isArray(raw))) return { state: 'unavailable', inputs };
   const setting = (raw ?? {}) as Record<string, unknown>;
-  const mode = agentOverride ?? ownDisplayValue(setting, 'mode') ?? DEFAULT_CHAT_PROVIDER_MODE;
+  const configuredMode = ownDisplayValue(setting, 'mode');
+  const mode = agentOverride !== undefined ? agentOverride : configuredMode !== undefined ? configuredMode : DEFAULT_CHAT_PROVIDER_MODE;
   if (mode !== 'chat' && mode !== 'terminal') return { state: 'unavailable', inputs };
   if (mode === 'terminal') return { state: 'ok', value: { mode }, inputs };
   const configuredDriver = ownDisplayValue(setting, 'driver');

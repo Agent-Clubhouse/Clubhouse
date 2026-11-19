@@ -107,7 +107,8 @@ export function readAgentAccessForDisplay(record: { access?: unknown; freeAgentM
   const overrides = ownDisplayValue(evidence.raw, 'projectOverrides');
   if (overrides !== undefined && (!overrides || typeof overrides !== 'object' || Array.isArray(overrides))) return { state: 'unavailable', inputs };
   const override = overrides ? ownDisplayValue(overrides as Record<string, unknown>, projectPath) : undefined;
-  const mode = override ?? ownDisplayValue(evidence.raw, 'defaultMode') ?? 'skip-all';
+  const configured = ownDisplayValue(evidence.raw, 'defaultMode');
+  const mode = override !== undefined ? override : configured !== undefined ? configured : 'skip-all';
   if (mode !== 'auto' && mode !== 'skip-all') return { state: 'unavailable', inputs };
   return { state: 'ok', value: savedAccess(selected, mode), inputs };
 }

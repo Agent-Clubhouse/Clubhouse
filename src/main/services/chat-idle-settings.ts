@@ -60,7 +60,8 @@ export function readIdleSleepForDisplay(value: unknown): DisplayValue<ResolvedId
   if (value !== undefined && value !== 'inherit') return { state: 'unavailable', inputs: [agentDisplayInput('Auto-sleep override')] };
   const evidence = readDisplaySettings(chatIdleSettings.store, CHAT_IDLE_SETTINGS.filename), inputs = [displayInput('Host auto-sleep default', evidence)];
   if (evidence.state !== 'ok') return { state: 'unavailable', inputs };
-  const minutes = ownDisplayValue(evidence.raw, 'idleTimeoutMinutes') ?? CHAT_IDLE_SETTINGS.defaults.idleTimeoutMinutes;
+  const configured = ownDisplayValue(evidence.raw, 'idleTimeoutMinutes');
+  const minutes = configured === undefined ? CHAT_IDLE_SETTINGS.defaults.idleTimeoutMinutes : configured;
   if (typeof minutes !== 'number' || !Number.isFinite(minutes) || minutes < 0) return { state: 'unavailable', inputs };
   return { state: 'ok', value: resolveIdleSleep('inherit', minutes), inputs };
 }
