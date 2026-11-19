@@ -5,7 +5,7 @@ import type { ControllerReadResult } from '../../../../shared/controller-chat';
 import { accessLabel } from '../../../../shared/agent-access';
 import type { ChatViewState } from '../../../stores/chatStore';
 import { useAnnexClientStore } from '../../../stores/annexClientStore';
-import { parseNamespacedId } from '../../../stores/remoteProjectStore';
+import { parseNamespacedId, useRemoteProjectStore } from '../../../stores/remoteProjectStore';
 import { contextSummary } from '../ContextWindowField';
 import { changedLine } from '../../managed/attribution';
 import { Button } from '../../../components/Button';
@@ -31,7 +31,8 @@ export function RemoteSettingsCard({ agent, chat }: { agent: Agent; chat?: ChatV
   const setOpen = useAgentDetailsStore((s) => s.setSettingsOpen);
   const address = parseNamespacedId(agent.id);
   const satellite = useAnnexClientStore((s) => s.satellites.find((sat) => sat.id === address?.satelliteId));
-  const host = satellite?.alias || satellite?.snapshot?.machine?.name || 'the other machine';
+  const projectHost = useRemoteProjectStore((s) => Object.values(s.satelliteProjects).flat().find((p) => p.id === agent.projectId)?.satelliteName);
+  const host = satellite?.alias || satellite?.snapshot?.machine?.name || projectHost || 'the other machine';
   const connected = satellite?.state === 'connected';
   const snapshot = satellite?.snapshot;
   const [retry, setRetry] = useState(0);
