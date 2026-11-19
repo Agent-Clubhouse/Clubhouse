@@ -2109,6 +2109,13 @@ describe('updateDurableConfig: a new CLI (#2593)', () => {
     expect(receipt).toHaveBeenCalledWith(expect.objectContaining({ orchestrator: 'codex-cli', [field as string]: value }));
     expect(JSON.parse(written[file])[0][field as string]).toEqual(value);
   });
+  it('clears legacy stored default effort and routing at the acknowledged writer boundary', async () => {
+    setup({ orchestrator: 'claude-code', model: 'default', effort: 'high', routing: { reason: 'legacy-default' } });
+    const receipt = vi.fn();
+    await updateDurableConfig(PROJECT_PATH, 'durable_cli', { orchestrator: 'claude-code', model: 'default' }, () => {}, undefined, receipt);
+    const saved = receipt.mock.calls[0][0];
+    expect(saved.model).toBeUndefined(); expect(saved.effort).toBeUndefined(); expect(saved.routing).toBeUndefined();
+  });
   it('never acknowledges a failed guided flush', async () => {
     setup({ orchestrator: 'claude-code' });
     vi.mocked(fsp.rename).mockRejectedValueOnce(new Error('receipt disk failure'));

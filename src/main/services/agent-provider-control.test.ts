@@ -14,7 +14,7 @@ vi.mock('./agent-config', () => ({
   peekCachedDurableConfig: () => w.config,
   peekDurableConfigsChecked: async () => ({ readable: w.inventoryReadable, agents: [w.config] }),
   flushAgentConfig: async () => {},
-  updateDurableConfig: vi.fn(async (_p, _id, update, check, precondition, onPersisted) => { w.beforeCommit?.(); await check?.(); await precondition?.prepare(); w.beforeEffect?.(); precondition?.check(w.config); if (w.commitFailed) throw new Error('disk full'); const changed = (w.config.orchestrator || w.defaults.orchestrator || 'claude-code') !== update.orchestrator; if (changed) { for (const session of w.config.sessionHistory ?? []) session.orchestrator ??= w.config.orchestrator || 'claude-code'; delete w.config.lastSessionId; delete w.config.model; delete w.config.effort; delete w.config.routing; delete w.config.contextWindow; } if (update.model !== undefined) { if (update.model !== w.config.model) { delete w.config.effort; delete w.config.routing; } if (update.model === 'default') delete w.config.model; else w.config.model = update.model; } if (update.effort !== undefined) { if (update.effort === null) delete w.config.effort; else w.config.effort = update.effort; } if (update.providerTransition) w.config.providerTransition = update.providerTransition; w.config.orchestrator = update.orchestrator; w.beforeAck?.(); onPersisted?.(structuredClone(w.config)); w.afterWrite?.(); }),
+  updateDurableConfig: vi.fn(async (_p, _id, update, check, precondition, onPersisted) => { w.beforeCommit?.(); await check?.(); await precondition?.prepare(); w.beforeEffect?.(); precondition?.check(w.config); if (w.commitFailed) throw new Error('disk full'); const changed = (w.config.orchestrator || w.defaults.orchestrator || 'claude-code') !== update.orchestrator; if (changed) { for (const session of w.config.sessionHistory ?? []) session.orchestrator ??= w.config.orchestrator || 'claude-code'; delete w.config.lastSessionId; delete w.config.model; delete w.config.effort; delete w.config.routing; delete w.config.contextWindow; } if (update.model !== undefined) { if ((update.model === 'default' ? undefined : update.model) !== w.config.model) { delete w.config.effort; delete w.config.routing; } if (update.model === 'default') delete w.config.model; else w.config.model = update.model; } if (update.effort !== undefined) { if (update.effort === null) delete w.config.effort; else w.config.effort = update.effort; } if (update.providerTransition) w.config.providerTransition = update.providerTransition; w.config.orchestrator = update.orchestrator; w.beforeAck?.(); onPersisted?.(structuredClone(w.config)); w.afterWrite?.(); }),
 }));
 vi.mock('./agent-system', () => ({
   resolveOrchestrator: async (_p: string, id = w.defaults.orchestrator || 'claude-code') => ({ id, conventions: { settingsFormat: id === 'codex-cli' ? 'toml' : 'json', legacyInstructionsFile: id === 'codex-cli' ? 'AGENTS.md' : 'CLAUDE.md' }, buildMcpArgs: () => [], peekModels: () => ({ source: 'live', via: 'handshake', fetchedAt: Date.now(), models: [{ id: 'fixture-model', label: 'Fixture', isDefault: true, efforts: w.catalogEfforts }, { id: 'externally-selected-model', label: 'Another valid model', efforts: w.catalogEfforts }] }), listModels: async () => ({ source: 'live', via: 'handshake', fetchedAt: Date.now(), models: [{ id: 'fixture-model', label: 'Fixture', isDefault: true, efforts: w.catalogEfforts }, { id: 'externally-selected-model', label: 'Another valid model', efforts: w.catalogEfforts }] }), getCapabilities: () => ({ permissions: true }), inspectInstructions: async () => id === 'codex-cli' ? w.instructions : 'same' }),
@@ -222,6 +222,40 @@ describe('guided provider control', () => {
     const p = await previewAgentProvider('/fixture', 'a', 'codex-cli', actor, undefined, chosen);
     w.beforeAck = () => { for (const [key, value] of Object.entries(ack)) { if (value === undefined) delete w.config[key]; else w.config[key] = value; } };
     await expect(changeAgentProvider('/fixture', 'a', 'codex-cli', p.expectedState, actor, chosen)).rejects.toMatchObject({ code: 'apply_committed_state_conflict', extra: { transition: { persisted: true, requestedSelectionSaved: false, nextWake: 'fresh_read_and_review_required' } } });
+  });
+  it('previews the actual reset of legacy stored default model effort and routing', async () => {
+    w.config.model = 'default'; w.config.effort = 'high'; w.config.routing = { reason: 'legacy-default' };
+    const chosen = { contractVersion: 2 as const, model: { kind: 'provider_default' as const } };
+    const p = await previewAgentProvider('/fixture', 'a', 'claude-code', actor, undefined, chosen);
+    expect(p.contract!.proposed.effort).toEqual({ value: null, source: 'provider_default' });
+    expect(p.settingsReset).toEqual(expect.arrayContaining(['model', 'effort', 'routing']));
+    const result = await changeAgentProvider('/fixture', 'a', 'claude-code', p.expectedState, actor, chosen);
+    expect(result.contract!.saved).toEqual(p.contract!.proposed);
+  });
+  it('preserves legacy stored default when selection is omitted', async () => {
+    w.config.model = 'default'; w.config.effort = 'high'; w.config.routing = { reason: 'legacy-default' };
+    const before = structuredClone(w.config); const chosen = { contractVersion: 2 as const };
+    const p = await previewAgentProvider('/fixture', 'a', 'claude-code', actor, undefined, chosen);
+    expect(p.blocked).toBeNull(); expect(p.settingsReset).toEqual([]);
+    expect(p.contract!.proposed).toEqual(p.contract!.saved);
+    expect(await changeAgentProvider('/fixture', 'a', 'claude-code', p.expectedState, actor, chosen)).toMatchObject({ status: 'already_selected' });
+    expect(w.config).toEqual(before); expect(updateDurableConfig).not.toHaveBeenCalled();
+  });
+  it('does not grandfather an unsupported concrete model, new effort or explicit selected default', async () => {
+    w.config.model = 'not-in-current-catalog';
+    expect((await previewAgentProvider('/fixture', 'a', 'claude-code', actor, undefined, { contractVersion: 2 })).blocked).toBe('model_not_offered');
+    w.config.model = 'default'; w.catalogEfforts = ['low'];
+    expect((await previewAgentProvider('/fixture', 'a', 'claude-code', actor, undefined, { contractVersion: 2, effort: 'high' })).blocked).toBe('effort_not_offered');
+    await expect(previewAgentProvider('/fixture', 'a', 'claude-code', actor, undefined, { contractVersion: 2, model: { kind: 'selected', id: 'default' } })).rejects.toMatchObject({ code: 'invalid_selection' });
+    expect(w.config.model).toBe('default'); expect(updateDurableConfig).not.toHaveBeenCalled();
+  });
+  it('keeps an explicitly selected effort after the legacy default-model reset', async () => {
+    w.config.model = 'default'; w.config.effort = 'high'; w.config.routing = { reason: 'legacy-default' };
+    const chosen = { contractVersion: 2 as const, model: { kind: 'provider_default' as const }, effort: 'high' };
+    const p = await previewAgentProvider('/fixture', 'a', 'claude-code', actor, undefined, chosen);
+    expect(p.contract!.proposed.effort).toEqual({ value: 'high', source: 'agent' }); expect(p.settingsReset).toContain('routing');
+    const result = await changeAgentProvider('/fixture', 'a', 'claude-code', p.expectedState, actor, chosen);
+    expect(result.contract!.saved).toEqual(p.contract!.proposed); expect(w.config.model).toBeUndefined(); expect(w.config.effort).toBe('high');
   });
   it('accepts equal normalized provider-default semantics in an acknowledged snapshot', async () => {
     w.config.orchestrator = 'codex-cli'; w.config.model = 'fixture-model';

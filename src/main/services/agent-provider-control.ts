@@ -59,7 +59,7 @@ function proposedConfig(config: DurableAgentConfig, current: string, provider: s
   }
   if (selection.model !== undefined) {
     const model = selection.model.kind === 'selected' ? selection.model.id : undefined;
-    if (model !== (next.model === 'default' ? undefined : next.model)) { delete next.effort; delete next.routing; }
+    if (model !== next.model) { delete next.effort; delete next.routing; }
     if (model) next.model = model; else delete next.model;
   }
   if (selection.effort !== undefined) {
@@ -122,7 +122,7 @@ export async function previewAgentProvider(projectPath: string, agentId: string,
   // The project's legacy permission rules can't be carried to another CLI, but they never reach a managed agent (#3243, #3245).
   const legacyRules = !config.managed && ((defaults?.permissions?.deny?.length ?? 0) > 0 || (defaults?.permissions?.allow?.length ?? 0) > 0);
   const proposed = proposedConfig(config, current.id, providerId, selection);
-  const catalog = intent ? await readProviderSelectionCatalog(provider, proposed.model, proposed.effort, selection.model?.kind === 'selected') : null;
+  const catalog = intent ? await readProviderSelectionCatalog(provider, proposed.model, proposed.effort, !!proposed.model && proposed.model !== 'default') : null;
   const blocked = state !== 'sleeping' ? `agent_${state}`
     : hasSessionCaptureFailure(agentId) ? 'session_capture_failed'
     : !availability.available ? 'orchestrator_unavailable'
@@ -154,7 +154,7 @@ export async function previewAgentProvider(projectPath: string, agentId: string,
     witness.assertCurrent = (live) => {
       actor.assertCommitAuthorized?.();
       if (!actor.assertCommitAuthorized || launchConfig(live) !== signedConfig || hash(resolveRuntimeMode(providerId, live.runtimeMode)) !== hash(mode)) return fail('stale_state');
-      const currentCatalog = resolveProviderSelectionCatalog(provider.peekModels?.() ?? null, config.model, config.effort, !!config.model);
+      const currentCatalog = resolveProviderSelectionCatalog(provider.peekModels?.() ?? null, config.model, config.effort, !!config.model && config.model !== 'default');
       if (currentCatalog.blocked || hash(currentCatalog.catalog) !== signedCatalog) return fail('stale_state');
       assertFiles(live);
     };
@@ -240,7 +240,7 @@ export async function changeAgentProvider(projectPath: string, agentId: string, 
         await updateDurableConfig(projectPath, agentId, updates, beforeCommit, { prepare: async () => {}, check: (agent) => {
           actor.assertCommitAuthorized?.();
           if (!actor.assertCommitAuthorized || hash(agent) !== before || hash(resolveRuntimeMode(provider, agent.runtimeMode)) !== hash(preview.runtime)) return fail('stale_state');
-          const currentCatalog = resolveProviderSelectionCatalog(target.peekModels?.() ?? null, preview.contract!.proposed.model.value ?? undefined, preview.contract!.proposed.effort.value, selection.model?.kind === 'selected');
+          const currentCatalog = resolveProviderSelectionCatalog(target.peekModels?.() ?? null, preview.contract!.proposed.model.value ?? undefined, preview.contract!.proposed.effort.value, !!preview.contract!.proposed.model.value);
           if (currentCatalog.blocked || hash(currentCatalog.catalog) !== hash(preview.catalog)) return fail('stale_state');
           assertFilesCurrent?.(agent);
           mutationAdmitted = true;

@@ -14,6 +14,12 @@ describe('current per-agent catalog contract', () => {
     expect(resolveProviderSelectionCatalog(catalog(), 'no-effort', 'high', true, now).blocked).toBe('effort_not_offered');
     expect(resolveProviderSelectionCatalog(catalog(), 'fixture', 'arbitrary', true, now).blocked).toBe('effort_not_offered');
   });
+  it('normalizes a stored default alias without admitting an explicit model or unsupported new effort', () => {
+    expect(resolveProviderSelectionCatalog(catalog(), 'default', 'high', false, now).blocked).toBeNull();
+    expect(resolveProviderSelectionCatalog(catalog(), 'default', null, true, now).blocked).toBe('model_not_offered');
+    expect(resolveProviderSelectionCatalog(catalog(), 'default', 'unsupported', false, now).blocked).toBe('effort_not_offered');
+    expect(resolveProviderSelectionCatalog(catalog({ source: 'fallback' }), 'default', 'high', false, now).blocked).toBe('model_catalog_fallback');
+  });
   it('refuses stale, future, fallback and missing evidence for concrete selections', () => {
     for (const list of [catalog({ fetchedAt: now - MODEL_LIST_TTL_MS - 1 }), catalog({ fetchedAt: now + 1 }), catalog({ fetchedAt: NaN })]) {
       expect(resolveProviderSelectionCatalog(list, 'fixture', null, true, now).blocked).toBe('model_catalog_stale');

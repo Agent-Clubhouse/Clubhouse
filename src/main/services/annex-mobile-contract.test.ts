@@ -405,6 +405,7 @@ vi.mock('./agent-config', async () => {
         if (access.legacyFreeAgentMode(agent.access)) agent.freeAgentMode = true;
         else delete agent.freeAgentMode;
       }
+      if (beforeCommit && updates.model !== undefined && (updates.model === 'default' ? undefined : updates.model) !== agent.model) { delete agent.effort; delete agent.routing; }
       Object.assign(agent, rest);
       if (beforeCommit && updates.model === 'default') delete agent.model;
       if (beforeCommit && updates.effort === null) delete agent.effort;
@@ -3993,6 +3994,8 @@ describe('Annex mobile contract fixtures', { timeout: TEST_TIMEOUT_MS }, () => {
       W.providerV2BeforeAck = undefined;
       if (control.name === 'model_value') console.log('provider-v2 reviewed intent control', JSON.stringify({ status: apply.status, nextWake: apply.body.result?.nextWake?.state ?? null, savedModel: apply.body.result?.contract?.saved?.model?.value ?? apply.body.transition?.saved?.model?.value ?? null, requestedModel: selectedRequest.model.id }));
       expect(apply.status).toBe(409);
+      if (['context_reset', 'routing_reset', 'resume_reset', 'history_retention', 'marker_retention'].includes(control.name)) expect(apply.body.transition.saved).toEqual(apply.body.transition.proposed);
+      else expect(apply.body.transition.saved).not.toEqual(apply.body.transition.proposed);
       expect(apply.body.transition).toMatchObject({ status: 'committed_state_conflict', persisted: true, requestedSelectionSaved: false, conflicts: expect.arrayContaining([control.conflict]), nextWake: 'fresh_read_and_review_required' });
       expect(apply.body).not.toHaveProperty('result');
       expect(apply.body.transition).not.toHaveProperty('expectedState');
@@ -4000,6 +4003,34 @@ describe('Annex mobile contract fixtures', { timeout: TEST_TIMEOUT_MS }, () => {
       acknowledgedIntentConflicts[control.name] = { preview, apply };
     }
     restoreIntentConfig();
+    const beforeLegacyDefault = structuredClone(config);
+    config.model = 'default'; config.effort = 'high'; config.routing = { reason: 'legacy-default' };
+    const untouchedLegacyDefault = structuredClone(config);
+    const omittedLegacyRequest = { type: 'agent.providerPreview', agentId: config.id, provider: 'codex-cli', contractVersion: 2 };
+    const omittedLegacyPreview = await command('v2: omitted legacy stored default', omittedLegacyRequest, { commandId: 'provider-v2-legacy-default-omitted-preview' });
+    const omittedLegacyAlready = await command('v2: no-op keeps raw legacy default and effort', { ...omittedLegacyRequest, type: 'agent.providerChange', expectedState: omittedLegacyPreview.body.result.expectedState }, { commandId: 'provider-v2-legacy-default-omitted-apply' });
+    expect(omittedLegacyAlready.body.result.status).toBe('already_selected'); expect(config).toEqual(untouchedLegacyDefault);
+    const legacyDefaultRequest = { ...omittedLegacyRequest, model: { kind: 'provider_default' } };
+    const legacyClearPreview = await command('v2: explicit legacy stored default clear preview', legacyDefaultRequest, { commandId: 'provider-v2-legacy-default-clear-preview' });
+    expect(legacyClearPreview.body.result.settingsReset).toEqual(expect.arrayContaining(['model', 'effort', 'routing']));
+    const legacyClearApply = await command('v2: explicit legacy stored default clear apply', { ...legacyDefaultRequest, type: 'agent.providerChange', expectedState: legacyClearPreview.body.result.expectedState }, { commandId: 'provider-v2-legacy-default-clear-apply' });
+    expect(legacyClearApply.body.result.contract.saved).toEqual(legacyClearPreview.body.result.contract.proposed);
+    expect(config.effort).toBeUndefined(); expect(config.routing).toBeUndefined(); expect(config.model).toBeUndefined();
+    config.model = 'default'; config.effort = 'high'; config.routing = { reason: 'legacy-default' };
+    const retainedLegacyRequest = { ...legacyDefaultRequest, effort: 'high' };
+    const retainedLegacyPreview = await command('v2: explicit effort after legacy model clear preview', retainedLegacyRequest, { commandId: 'provider-v2-legacy-default-effort-preview' });
+    const retainedLegacyApply = await command('v2: explicit effort after legacy model clear apply', { ...retainedLegacyRequest, type: 'agent.providerChange', expectedState: retainedLegacyPreview.body.result.expectedState }, { commandId: 'provider-v2-legacy-default-effort-apply' });
+    expect(retainedLegacyApply.body.result.contract.saved).toEqual(retainedLegacyPreview.body.result.contract.proposed); expect(config.effort).toBe('high'); expect(config.model).toBeUndefined();
+    config.model = 'default'; W.providerV2Efforts = ['high'];
+    const unsupportedLegacyEffort = await command('v2: legacy alias does not admit unsupported new effort', { ...omittedLegacyRequest, effort: 'low' }, { commandId: 'provider-v2-legacy-default-unsupported-effort' });
+    expect(unsupportedLegacyEffort.body.result.blocked).toBe('effort_not_offered'); W.providerV2Efforts = ['low', 'high'];
+    const invalidSelectedDefault = await command('v2: selected legacy sentinel invalid on wire', { ...omittedLegacyRequest, model: { kind: 'selected', id: 'default' } }, { commandId: 'provider-v2-legacy-default-invalid-selection' });
+    expect(invalidSelectedDefault.body.error.code).toBe('invalid_command');
+    config.model = 'not-in-current-catalog'; delete config.effort;
+    const unsupportedStoredConcrete = await command('v2: preserved concrete selection still needs current catalog', omittedLegacyRequest, { commandId: 'provider-v2-legacy-concrete-unsupported' });
+    expect(unsupportedStoredConcrete.body.result.blocked).toBe('model_not_offered');
+    const legacyDefaultStored = { omittedPreview: omittedLegacyPreview, omittedAlready: omittedLegacyAlready, clearPreview: legacyClearPreview, clearApply: legacyClearApply, retainedEffortPreview: retainedLegacyPreview, retainedEffortApply: retainedLegacyApply, unsupportedEffort: unsupportedLegacyEffort, invalidSelectedDefault, unsupportedStoredConcrete };
+    for (const key of Object.keys(config)) delete config[key]; Object.assign(config, beforeLegacyDefault);
     const rejectedSavePreview = await command('v2: fresh preview before rejected save', selectedRequest, { commandId: 'provider-v2-retained-preview' });
     W.providerV2CommitError = true; W.providerV2RetainPreparation = true;
     const retainedPreparation = await command('v2: rejected apply with retained preparation', { ...selectedRequest, type: 'agent.providerChange', expectedState: rejectedSavePreview.body.result.expectedState }, { commandId: 'provider-v2-retained-preparation' });
@@ -4036,7 +4067,7 @@ describe('Annex mobile contract fixtures', { timeout: TEST_TIMEOUT_MS }, () => {
     expect(oldHandlerCalls).toBe(0);
     fixtures.set('provider-control-v2.json', { note: 'Synthetic managed transaction/PTY leaves. Complete opt-in request/receipts. Tokens/epochs are normalized opaque examples; native filesystem and PTY boundary proof are separate unit suites.',
       oldHost, contextReview, catalogEvidence,
-      preview, savedDefaultsPreview, staleApplyDefaults, unsupported, malformedV2, unsupportedVersion, authorityDenied, retainedPreparation, unverifiedPersistence, persistedSaveBlocked, persistedSaveUnverified, postcommitSavedReadFailure, postcommitObserverFailure, acknowledgedProviderConflict, acknowledgedInheritedUnknown, acknowledgedIntentConflicts, sameCommandChangedPayload, epochLost, legacyOnNewHost: { preview: legacyPreview, apply: legacyApply, start: legacyStart }, inheritedPreview, inheritedAlready, unsupportedStart, applied, selectedPreview, selectedApply, defaultPreview, defaultApply, alreadySelected: already, catalogStale, stale, startAdmissionDrift, started, lostResponseReplay: replay, alreadyRunning: running, failedAfterCreation: failed, refusedBeforeCreation: refused, immediateExit: exited });
+      preview, savedDefaultsPreview, staleApplyDefaults, unsupported, malformedV2, unsupportedVersion, authorityDenied, retainedPreparation, unverifiedPersistence, persistedSaveBlocked, persistedSaveUnverified, postcommitSavedReadFailure, postcommitObserverFailure, acknowledgedProviderConflict, acknowledgedInheritedUnknown, acknowledgedIntentConflicts, legacyDefaultStored, sameCommandChangedPayload, epochLost, legacyOnNewHost: { preview: legacyPreview, apply: legacyApply, start: legacyStart }, inheritedPreview, inheritedAlready, unsupportedStart, applied, selectedPreview, selectedApply, defaultPreview, defaultApply, alreadySelected: already, catalogStale, stale, startAdmissionDrift, started, lostResponseReplay: replay, alreadyRunning: running, failedAfterCreation: failed, refusedBeforeCreation: refused, immediateExit: exited });
     delete config.managed; delete config.providerTransition; W.guidedAvailable = false; W.providerV2Identity = null;
   });
 

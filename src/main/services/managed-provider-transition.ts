@@ -217,7 +217,7 @@ export async function managedProviderStartGuard(projectPath: string, agent: Dura
   if (digest(fileStateSync(catalogPath)) !== catalogBefore) return refuse('managed_transition_stale');
   const resolvedAgain = await resolveManagedSetup(managedAgents(), agent.managed, agent);
   if (digest(resolvedAgain) !== marker.composition || catalogFiles.some((file, i) => digest(fileStateSync(file)) !== catalogEvidence[i])) return refuse('managed_transition_stale');
-  const selection = await readProviderSelectionCatalog(provider, agent.model, agent.effort, !!agent.model);
+  const selection = await readProviderSelectionCatalog(provider, agent.model, agent.effort, !!agent.model && agent.model !== 'default');
   if (selection.blocked) return refuse(selection.blocked);
   const configFingerprint = (value: Readonly<DurableAgentConfig> | null) => {
     if (!value) return '';
@@ -236,7 +236,7 @@ export async function managedProviderStartGuard(projectPath: string, agent: Dura
   };
   if (configFingerprint(savedConfig()) !== config) return refuse('managed_transition_stale');
   return () => {
-    const currentSelection = resolveProviderSelectionCatalog(provider.peekModels?.() ?? null, agent.model, agent.effort, !!agent.model);
+    const currentSelection = resolveProviderSelectionCatalog(provider.peekModels?.() ?? null, agent.model, agent.effort, !!agent.model && agent.model !== 'default');
     if (currentSelection.blocked || (provider.peekModels && currentSelection.fingerprint !== selection.fingerprint)) return refuse('managed_transition_stale');
     if (configFingerprint(current() ?? savedConfig()) !== config || configFingerprint(savedConfig()) !== config || digest(rootStateSync(cwd)) !== digest(root)
       || nativeFingerprint(rootStateSync(cwd), fileStateSync(targetPath)) !== marker.nativeFingerprint

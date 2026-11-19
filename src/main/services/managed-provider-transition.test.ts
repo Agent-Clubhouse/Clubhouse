@@ -161,6 +161,20 @@ describe('persisted read-only managed start contract', () => {
     expect(agent.sessionHistory![0].sessionId).toBe('old');
     await expect(fs.stat(path.join(agent.worktreePath!, '.agents'))).rejects.toMatchObject({ code: 'ENOENT' });
   });
+  it('validates legacy default effort against the live default entry without rewriting stored fields', async () => {
+    await ready(); agent.model = 'default'; agent.effort = 'high';
+    const file = path.join(project, '.clubhouse', 'agents.json'); await fs.writeFile(file, JSON.stringify([agent]));
+    let efforts = ['low', 'high'];
+    const list = () => ({ source: 'live' as const, via: 'handshake' as const, fetchedAt: Date.now(), models: [{ id: 'offered-model', label: 'Offered', isDefault: true, efforts }] });
+    const codex = { ...provider('codex-cli'), listModels: async () => list(), peekModels: list };
+    const before = structuredClone(agent);
+    const guard = await managedProviderStartGuard(project, agent, codex, agent.worktreePath!, () => agent);
+    expect(guard).not.toThrow(); expect(agent).toEqual(before);
+    efforts = ['low']; expect(guard).toThrow('managed_transition_stale');
+    await expect(managedProviderStartGuard(project, agent, codex, agent.worktreePath!, () => agent)).rejects.toMatchObject({ code: 'effort_not_offered' });
+    agent.model = 'not-offered'; delete agent.effort; await fs.writeFile(file, JSON.stringify([agent]));
+    await expect(managedProviderStartGuard(project, agent, codex, agent.worktreePath!, () => agent)).rejects.toMatchObject({ code: 'model_not_offered' });
+  });
   it('refuses native edits, workspace swaps and setup changes after preparation', async () => {
     const guard = await ready();
     await fs.writeFile(path.join(agent.worktreePath!, 'AGENTS.md'), 'custom');

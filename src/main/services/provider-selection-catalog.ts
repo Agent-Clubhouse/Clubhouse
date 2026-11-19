@@ -9,9 +9,12 @@ export function resolveProviderSelectionCatalog(list: ModelList | null, model: s
   const state = !list ? 'unavailable' : list.source !== 'live' || list.via !== 'handshake' || list.liveError ? 'fallback'
     : !Number.isFinite(list.fetchedAt) || list.fetchedAt < 0 || list.fetchedAt > now || now - list.fetchedAt > MODEL_LIST_TTL_MS ? 'stale' : 'current';
   const models = list?.models.map((m) => ({ id: m.id, label: m.label, isDefault: m.isDefault ?? false, resolvedId: m.resolvedId ?? null, efforts: [...(m.efforts ?? [])], hidden: m.hidden ?? false })) ?? [];
-  const base = model?.replace(/\[1m\]$/i, '');
-  const entry = !model ? models.find((m) => m.isDefault)
-    : models.find((m) => m.id === model || m.id === base || m.resolvedId === base);
+  // Only a legacy stored alias with no concrete-model requirement means provider default.
+  // Explicit wire selections are validated separately; effort still needs current catalog evidence.
+  const selected = model === 'default' && !requireModel ? undefined : model;
+  const base = selected?.replace(/\[1m\]$/i, '');
+  const entry = !selected ? models.find((m) => m.isDefault)
+    : models.find((m) => m.id === selected || m.id === base || m.resolvedId === base);
   const concrete = requireModel || typeof effort === 'string';
   const blocked = concrete && state !== 'current' ? `model_catalog_${state}`
     : requireModel && !entry ? 'model_not_offered'
