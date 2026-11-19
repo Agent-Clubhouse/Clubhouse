@@ -18,7 +18,7 @@ const page = (version = '1.2.3', extra = {}) => ({ events: [
   { v: 2, agentId: 'a1', sessionId: 's1', seq: 3, ts: 3, type: 'model_changed', data: { modelId: 'model', effort: 'high', effortIsDefault: true } },
 ], readOnly: false, ...extra });
 const fixture = (): RemoteAgentDetails => ({ version: 1, agentId: 'a1', readOnly: true, readAt: 1, providerId: 'claude-code', running: true, status: 'running', spawnedAt: null, sessionId: 's1', nativeSessionId: 'n1',
-  settings: { version: 1, agentId: 'a1', readOnly: true, provider: 'Host CLI', model: 'host-model', runtime: 'chat', access: 'Ask first', executionPolicy: 'defaults', autoSleep: null, context: null, setup: { state: 'ok', managed: false, template: null, instructions: 'None', skills: null, mcps: [] } },
+  settings: { version: 1, agentId: 'a1', readOnly: true, provider: 'Host CLI', providerId: 'claude-code', model: 'host-model', runtime: 'chat', access: 'Ask first', executionPolicy: 'defaults', autoSleep: null, context: null, setup: { state: 'ok', managed: false, template: null, instructions: 'None', skills: null, mcps: [] } },
   cards: REMOTE_DETAILS_CARD_IDS.map((id) => ({ id, title: id === 'orchestrate' ? 'Orchestration' : id, state: 'ok', summary: `Host ${id}`, rows: [{ label: `${id} field`, value: `${id} evidence` }], notes: [], omitted: 0, observedAt: 1 })) });
 function satellite(extra: Record<string, unknown> = {}) {
   useAnnexClientStore.setState({ satellites: [{ id: 'sat', alias: 'Studio', state: 'connected', snapshot: {}, ...extra }] as never });
