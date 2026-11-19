@@ -7,6 +7,7 @@
  */
 import { render, act } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { Terminal as HeadlessTerminal } from '@xterm/headless';
 import { useThemeStore } from '../../stores/themeStore';
 import { useAgentStore } from '../../stores/agentStore';
 import { useClipboardSettingsStore } from '../../stores/clipboardSettingsStore';
@@ -307,6 +308,65 @@ describe('AgentTerminal write batching', () => {
   });
 
   describe('satellite/remote PTY path', () => {
+    it('replays a populated terminal on reconnect without duplicating its visible lines', async () => {
+      const request = g.__annexMockState.requestPtyBufferSnapshot;
+      request.mockResolvedValue({ data: 'first line\r\nsecond line', seq: 23 });
+      g.__annexMockState.satellites = [{ id: 'sat-1', state: 'connected' }];
+      const { rerender } = render(<AgentTerminal agentId="remote||sat-1||agent-1" />);
+      await act(async () => { flushRAF(); });
+      const original = term();
+
+      const visibleLines = async () => {
+        const headless = new HeadlessTerminal({ cols: 80, rows: 24, allowProposedApi: true });
+        try {
+          for (const [data] of term().write.mock.calls) {
+            await new Promise<void>((resolve) => headless.write(data, resolve));
+          }
+          const lines: string[] = [];
+          for (let i = 0; i < headless.buffer.active.length; i++) {
+            const text = headless.buffer.active.getLine(i)?.translateToString(true);
+            if (text) lines.push(text);
+          }
+          return lines;
+        } finally {
+          headless.dispose();
+        }
+      };
+      expect(await visibleLines()).toEqual(['first line', 'second line']);
+
+      g.__annexMockState.satellites = [{ id: 'sat-1', state: 'disconnected' }];
+      rerender(<AgentTerminal agentId="remote||sat-1||agent-1" />);
+      await act(async () => { flushRAF(); });
+      g.__annexMockState.satellites = [{ id: 'sat-1', state: 'connected' }];
+      rerender(<AgentTerminal agentId="remote||sat-1||agent-1" />);
+      await act(async () => { flushRAF(); });
+      act(() => {
+        g.__satelliteBusListener!('sat-1', 'agent-1', 'second line', 23);
+        flushRAF();
+      });
+
+      expect(original.dispose).toHaveBeenCalledOnce();
+      expect(term()).not.toBe(original);
+      expect(await visibleLines()).toEqual(['first line', 'second line']);
+    });
+
+    it('replays an idle remote agent when its satellite reconnects without navigating away', async () => {
+      g.__annexMockState.satellites = [{ id: 'sat-1', state: 'disconnected' }];
+      const request = g.__annexMockState.requestPtyBufferSnapshot;
+      request.mockResolvedValueOnce({ data: '', seq: 0 });
+      const { rerender } = render(<AgentTerminal agentId="remote||sat-1||agent-1" />);
+      await act(async () => { flushRAF(); });
+      expect(term().write).not.toHaveBeenCalled();
+
+      request.mockResolvedValue({ data: 'remote screen after wake', seq: 40 });
+      g.__annexMockState.satellites = [{ id: 'sat-1', state: 'connected' }];
+      rerender(<AgentTerminal agentId="remote||sat-1||agent-1" />);
+      await act(async () => { flushRAF(); });
+
+      expect(term().write).toHaveBeenCalledWith('remote screen after wake', expect.any(Function));
+      expect(request).toHaveBeenCalledTimes(2);
+    });
+
     async function mountRemoteAndInit() {
       g.__annexMockState.requestPtyBufferSnapshot = vi.fn().mockResolvedValue({ data: '', seq: 0 });
       render(<AgentTerminal agentId="remote||sat-1||agent-1" />);
