@@ -178,14 +178,7 @@ export function checkFailureReason(error: string): { text: string; detail?: stri
 }
 
 /** A short line for a helper row: what its folder holds that isn't saved. */
-export function workSummary(checks: HelperDisposeChecks | undefined): string | null {
-  if (!checks) return null;
-  if (checks.error) return 'couldn’t check';
-  const parts: string[] = [];
-  if (checks.dirty > 0) parts.push(`${checks.dirty} uncommitted`);
-  if (checks.unpushed > 0) parts.push(`${checks.unpushed > MAX_LISTED_COMMITS ? `${MAX_LISTED_COMMITS}+` : checks.unpushed} unpushed`);
-  return parts.length > 0 ? parts.join(', ') : 'clean';
-}
+export { workSummary } from '../../../../shared/helper-work-summary';
 
 export interface CheckLine {
   /** `ok`, `risk` (work would be lost), `info` (doesn't block) or `failed` (couldn't run). */

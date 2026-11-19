@@ -1,0 +1,87 @@
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { execFile } from 'child_process';
+import * as fs from 'fs/promises';
+import * as path from 'path';
+import * as os from 'os';
+import type { AgentConfigTarget } from './agent-config-reader';
+import { readOnlyHelperWork } from './read-only-helper-work';
+import * as repository from './read-only-repository-changes';
+const m = vi.hoisted(() => ({ base: '', target: vi.fn() }));
+vi.mock('./base-dir', () => ({ getBaseDirPath: () => m.base }));
+vi.mock('./agent-config-reader', () => ({ resolveAgentConfigTarget: m.target }));
+let root: string, project: string, parent: AgentConfigTarget, entry: Parameters<typeof readOnlyHelperWork>[1], inventory: string;
+function git(...args: string[]): Promise<string> {
+  return new Promise((resolve, reject) => execFile('git', args, { cwd: project, env: { ...process.env, GIT_CONFIG_GLOBAL: os.devNull, GIT_CONFIG_NOSYSTEM: '1' } }, (error, out) => error ? reject(error) : resolve(out.trim())));
+}
+async function snapshot(folder: string, prefix = ''): Promise<Record<string, string>> {
+  const result: Record<string, string> = {};
+  for (const item of await fs.readdir(folder, { withFileTypes: true })) {
+    const relative = prefix + item.name;
+    if (item.isDirectory()) Object.assign(result, await snapshot(path.join(folder, item.name), relative + '/'));
+    else result[relative] = item.isSymbolicLink() ? `link:${await fs.readlink(path.join(folder, item.name))}` : (await fs.readFile(path.join(folder, item.name))).toString('base64');
+  }
+  return result;
+}
+beforeEach(async () => {
+  root = await fs.mkdtemp(path.join(os.tmpdir(), 'clubhouse-passive-helper-'));
+  m.base = path.join(root, 'profile'); project = path.join(root, 'project');
+  await fs.mkdir(m.base); await fs.mkdir(path.join(project, '.clubhouse'), { recursive: true });
+  await git('init', '-b', 'main'); await git('config', 'user.name', 'Fixture'); await git('config', 'user.email', 'fixture@invalid');
+  await fs.writeFile(path.join(project, '.git', 'info', 'exclude'), '.clubhouse/\n');
+  await fs.writeFile(path.join(project, 'ordinary'), 'one\n'); await git('add', '.'); await git('commit', '-m', 'base'); await git('switch', '-c', 'helper');
+  const p = { id: 'p1', path: project, name: 'Project' };
+  parent = { project: p, agent: { id: 'parent', name: 'Selected', color: 'blue', createdAt: '2026-11-19' } };
+  entry = { projectPath: project, config: { id: 'helper', name: 'Helper', parentAgentId: 'parent', branch: 'helper', worktreePath: project, color: 'blue', createdAt: '2026-11-19' } };
+  inventory = path.join(project, '.clubhouse', 'agents.json');
+  await fs.writeFile(inventory, JSON.stringify([parent.agent, entry.config]));
+  await fs.writeFile(path.join(m.base, 'projects.json'), JSON.stringify({ version: 1, projects: [p] }));
+  m.target.mockImplementation(async () => ({ project: p, agent: JSON.parse(await fs.readFile(inventory, 'utf8')).find((a: { id: string }) => a.id === 'helper') }));
+});
+afterEach(async () => { vi.restoreAllMocks(); await fs.rm(root, { recursive: true, force: true }); });
+describe('passive direct helper work', () => {
+  it('matches clean/dirty/unpushed counts without writing repository/index/config/object bytes', async () => {
+    expect(await readOnlyHelperWork(parent, entry, () => true)).toMatchObject({ dirty: 0, unpushed: 0 });
+    await fs.writeFile(path.join(project, 'ordinary'), 'two\n'); await git('add', '.'); await git('commit', '-m', 'helper work');
+    await fs.writeFile(path.join(project, 'untracked'), 'PRIVATE_CONTENT_NOT_SERIALIZED');
+    const before = await snapshot(root);
+    const result = await readOnlyHelperWork(parent, entry, () => true);
+    expect(result).toEqual({ dirty: 1, unpushed: 1, unmerged: null });
+    expect(JSON.stringify(result)).not.toContain('PRIVATE_CONTENT');
+    expect(await snapshot(root)).toEqual(before);
+    expect(m.target).toHaveBeenCalledWith('helper', undefined, { strict: true });
+  });
+  it('shares the local classification of generated bridge configuration and real user changes', async () => {
+    await fs.writeFile(path.join(project, '.mcp.json'), JSON.stringify({ mcpServers: { clubhouse: { command: 'node', args: ['/app/clubhouse-mcp-bridge.js'] } } }));
+    expect(await readOnlyHelperWork(parent, entry, () => true)).toMatchObject({ dirty: 0 });
+    await fs.writeFile(path.join(project, '.mcp.json'), JSON.stringify({ mcpServers: { user: { command: 'PRIVATE_COMMAND', env: { PRIVATE: 'VALUE' } } } }));
+    expect(await readOnlyHelperWork(parent, entry, () => true)).toMatchObject({ dirty: 1 });
+  });
+  it('reports unknown when a remote has not been fetched; never contacts it', async () => {
+    await git('remote', 'add', 'origin', 'https://not-contacted.invalid/repository');
+    const before = await snapshot(root);
+    expect(await readOnlyHelperWork(parent, entry, () => true)).toHaveProperty('error');
+    expect(await snapshot(root)).toEqual(before);
+  });
+  it('refuses an unrelated helper before Git or file-content reads', async () => {
+    entry.config.parentAgentId = 'other';
+    await fs.writeFile(inventory, JSON.stringify([parent.agent, entry.config]));
+    const spy = vi.spyOn(repository, 'readOnlyGit');
+    expect(await readOnlyHelperWork(parent, entry, () => true)).toHaveProperty('error');
+    expect(spy).not.toHaveBeenCalled();
+  });
+  it('withholds work after the actual helper inventory is released during an actual Git await', async () => {
+    const actual = repository.readOnlyGit;
+    vi.spyOn(repository, 'readOnlyGit').mockImplementation(async (...args) => {
+      const bytes = await actual(...args);
+      if (args[1][0] === 'status') await fs.writeFile(inventory, JSON.stringify([parent.agent, { ...entry.config, parentAgentId: undefined }]));
+      return bytes;
+    });
+    expect(await readOnlyHelperWork(parent, entry, () => true)).toHaveProperty('error');
+  });
+  it('withholds evidence when authority is revoked during an actual Git await', async () => {
+    let allowed = true;
+    const actual = repository.readOnlyGit;
+    vi.spyOn(repository, 'readOnlyGit').mockImplementation(async (...args) => { const bytes = await actual(...args); allowed = false; return bytes; });
+    expect(await readOnlyHelperWork(parent, entry, () => allowed)).toHaveProperty('error');
+  });
+});

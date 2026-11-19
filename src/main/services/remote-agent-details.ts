@@ -33,6 +33,8 @@ import { reachRows, reachSummary } from '../../shared/dispatcher-card-model';
 import { viewOf as agentGrantsView } from './agent-grants-service';
 import { agentDisplayState } from './agent-display-state';
 import { getAgentRuntime } from './agent-runtime';
+import { readOnlyHelperWork } from './read-only-helper-work';
+import { helpersSummary, workSummary } from '../../shared/helper-work-summary';
 
 /** Redact before cutting so a partial credential cannot evade the existing secret patterns. */
 const display = (value: unknown, max = 2048) => {
@@ -143,11 +145,26 @@ export async function readRemoteAgentDetails(agentId: string, authorized: () => 
       row(c, 'Auto provider', `${yes(policy.autoHelpers)}${policy.autoEffective ? ` · ${policy.autoEffective.effective ? 'available' : policy.autoEffective.reason ?? 'unavailable'} (${policy.autoEffective.source})` : ''}`);
       }
       const helpers = await listHelpersEverywhere(project.path, agentId, { includeDisposed: true, readOnly: true });
-      for (const { config: h, projectPath } of helpers) {
+      const requests = listStartRequests().filter((r) => r.orchestratorId === agentId && r.projectPath === project.path);
+      const live = helpers.filter((h) => !isDisposedAgent(h.config));
+      row(c, 'Helpers', helpersSummary(live.length, policy.orchestrate ? policy.maxHelpers : undefined, live.filter((h) => h.config.creation?.state === 'creating').length, requests.length));
+      if (helpers.length > live.length) row(c, 'Disposed helpers', helpers.length - live.length);
+      let workReads = 0, workOmitted = 0;
+      const workDeadline = Date.now() + 2000;
+      for (const entry of helpers) {
+        const { config: h, projectPath } = entry;
         const state = isDisposedAgent(h) ? 'Disposed' : h.handoff ? 'Handed off' : h.creation?.state === 'failed' ? 'Failed' : h.creation?.state === 'creating' ? 'Starting' : isAgentRunning(h.id) ? 'Running' : 'Sleeping';
-        row(c, h.name, [state, h.branch, isDisposedAgent(h) ? h.disposedAt : '', projectPath !== project.path ? path.basename(projectPath) : '', h.creation?.state === 'failed' ? safeMcpErrorLine(h.creation.reason) : ''].filter(Boolean).join(' · '));
+        let work: string | null = null;
+        if (!isDisposedAgent(h) && !h.creation) {
+          if (workReads < 8 && Date.now() < workDeadline) {
+            workReads++;
+            work = workSummary(await readOnlyHelperWork(target, entry, authorized));
+          } else { work = 'Work not checked (host read limit)'; workOmitted++; }
+        }
+        row(c, h.name, [state, h.branch, work, isDisposedAgent(h) ? h.disposedAt : '', projectPath !== project.path ? path.basename(projectPath) : '', h.creation?.state === 'failed' ? safeMcpErrorLine(h.creation.reason) : ''].filter(Boolean).join(' · '));
       }
-      for (const request of listStartRequests().filter((r) => r.orchestratorId === agentId && r.projectPath === project.path)) {
+      if (workOmitted) c.notes.push(`${workOmitted} helper work checks omitted by this read’s limit (at most 8 checks, 2 seconds to start checks). Other helper fields are shown.`);
+      for (const request of requests) {
         row(c, 'Waiting to start', `${request.args.name} · ${request.args.task} · expires ${request.expiresAt}`);
       }
       if (agent.parentAgentId && !helpers.length) c.state = 'not-applicable';
