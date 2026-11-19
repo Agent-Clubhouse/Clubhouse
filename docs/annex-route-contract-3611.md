@@ -1,5 +1,13 @@
 # Desktop / Clubhouse Go route contract for #3611
 
+## Current direction — 2026-11-19
+
+The user's “No gate merge 3611” direction, relayed by Navi task `3611-user-no-gate-merge-req_mwjpb47202bb` / request `req_mwjpb47202bb`, supersedes all historical phone hand-test, Go-phone-release and TestFlight **merge holds** recorded below. Those statements remain as provenance, not current merge conditions. Proceed after independent exact-successor security review, current-main compatibility checks and normal CI. See the [canonical direction receipt](https://github.com/Agent-Clubhouse/Clubhouse/issues/3608#issuecomment-7013701506).
+
+The separate [#3706 containing-desktop public release hold](https://github.com/Agent-Clubhouse/Clubhouse/issues/3706) remains in force. This merge direction authorizes no publication, installation, app restart, reset, re-pair, permission expansion or bypass of the separate federation reviewer HTTP422 boundary. Existing receiver risks and the wire/preservation contract below remain unchanged.
+
+Current-main integration: original approved source `0c07f8611e3bbcc6d12f4af222d5c98dea878ead` is composed with main `c4cdbacc052b1a714d6db8f9ae2b25a0df0384c8`. The source merge is conflict-free and its tree before this direction-only documentation update is `b2c4f0720d5d1c3bde35473b3ca9daad697c7e18`, identical to GitHub's synthetic merge `acdcd206e223af13b05ffb586252a2773413fefa` (parents: current main, then original source). Historical approval and CI are not approval of this successor; validation and independent review must name the exact new head.
+
 Source snapshot: historical reviewed desktop head `fd8c826596422ed45919909c4deb6b759ba5b850`. Source line references below refer to that head, not moving main. This document separates the existing wire contract from local desktop storage. #3611 adds no phone wire fields, protocol version, control frame, or route endpoint. The Go receiver change is receiver-only. No repair, reset, re-pair, credential replacement or grant change is part of migration.
 
 ## Pairing exchange (existing contract)
