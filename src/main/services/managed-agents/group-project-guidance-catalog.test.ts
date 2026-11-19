@@ -41,15 +41,13 @@ beforeEach(() => {
 });
 
 describe('Group Project guidance against the shipped management catalog (#3618)', () => {
-  it('teaches every registered management ability and its actual role', () => {
+  it('keeps the full management reference in the Dispatcher and actual roles in the catalog', () => {
     expect([...catalog.keys()].sort()).toEqual(GROUP_PROJECT_MANAGEMENT_TOOLS.map(([name]) => name).sort());
     for (const [name, _capability, action] of GROUP_PROJECT_MANAGEMENT_TOOLS) {
       if (action === 'group_project.lead') {
-        expect(lead, name).toContain('`' + name + '`');
         expect(controller, name).not.toContain('`' + name + '`');
       } else {
         expect(controller, name).toContain('`' + name + '`');
-        expect(admin, name).toContain('`' + name + '`');
       }
       const tool = catalog.get(name)!;
       expect(tool.definition.description, name).toContain(`Requires ${action}`);
@@ -75,7 +73,7 @@ describe('Group Project guidance against the shipped management catalog (#3618)'
     expect(create.description).toContain('exact reviewed choices');
     expect(create.inputSchema.properties).toHaveProperty('preview_token');
     expect(create.inputSchema.properties).toHaveProperty('retry_of');
-    for (const guidance of [controller, admin]) {
+    for (const guidance of [controller]) {
       expect(guidance).toContain('preview_token');
       expect(guidance).toContain('exact reviewed choices');
       expect(guidance).toContain('explicit members afterward');
@@ -83,6 +81,9 @@ describe('Group Project guidance against the shipped management catalog (#3618)'
       expect(guidance).toContain('revision');
       expect(guidance).toContain('custom instructions');
     }
+    expect(admin).toContain('Preserve custom instructions');
+    expect(admin).toContain('current revision');
+    expect(admin).toContain('exact reviewed choices');
     expect(controller).toContain('retry_of');
     const settings = catalog.get('set_group_project_member_settings')!.definition;
     expect(settings.description).toContain('revision');
@@ -91,7 +92,7 @@ describe('Group Project guidance against the shipped management catalog (#3618)'
 
   it('warns that clearing a board includes protected topics, unlike ordinary topic curation', () => {
     expect(catalog.get('clear_group_project_board')!.definition.description).toContain('including protected topics');
-    for (const guidance of [controller, lead]) {
+    for (const guidance of [controller]) {
       expect(guidance).toContain('including protected topics');
       expect(guidance).toMatch(/explicit confirmation/);
       expect(guidance).toContain('trim count and sequence');
@@ -101,10 +102,11 @@ describe('Group Project guidance against the shipped management catalog (#3618)'
   it('keeps host-role and delivery limits in guidance and tool descriptions', () => {
     expect(catalog.get('set_group_project_role')!.definition.description).toContain('does not change the host');
     expect(catalog.get('dismiss_group_project_refusals')!.definition.description).toContain('Does not resend or cancel queued writes');
+    expect(controller).toContain('Allow from the authoritative host');
+    expect(BUILTIN_TEXT['group-projects.md']).toContain("Remote writes require the host's Allow.");
     for (const guidance of [controller, admin]) {
       expect(guidance).toContain('this-computer grants');
       expect(guidance).toMatch(/host.role view is read-only|read-only host.role view/);
-      expect(guidance).toMatch(/host Allow|Allow from the authoritative host/);
       expect(guidance).toMatch(/member.*tool switches/);
     }
   });

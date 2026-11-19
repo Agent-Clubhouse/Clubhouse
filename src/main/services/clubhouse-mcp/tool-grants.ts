@@ -25,7 +25,7 @@ export const TOOL_GRANT_TARGETS = [
   'bound',
   /**
    * Agents in the bound group project: the one named in the arguments
-   * (target_agent_id), or every member when the tool reaches them all (broadcast).
+   * (target_agent_id), or every member when the tool reaches them all.
    */
   'group_members',
   /** The caller itself. */

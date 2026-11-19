@@ -146,6 +146,7 @@ export function defaultGrants(facts: GrantCallerFacts): Grant[] {
     out.push(
       structural('agent.create', ANY_PROJECT), structural('project.read', ANY_PROJECT), structural('project.display', ANY_PROJECT),
       structural('project.add', ANY_PROJECT, 'ask'),
+      structural('project.link', ANY_PROJECT, 'ask'),
       structural('project.configure', ANY_PROJECT, 'ask'), structural('settings.app.write', APP, 'ask'),
       // Deleting an agent (delete_agent, #3182) asks first: each call waits in Needs you.
       structural('agent.dispose', ANY, 'ask'),

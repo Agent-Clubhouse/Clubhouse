@@ -116,6 +116,7 @@ export interface SatelliteConnection {
 
 export interface SatelliteSnapshot {
   grantRequests?: import('../../shared/mobile-control').MobileGrantRequest[];
+  pendingGrantRequests?: import('../../shared/grant-requests').DesktopPendingGrantRequest[];
   /** The machine this snapshot is from (#3063). */
   machine?: { fingerprint: string; name: string };
   dispatcher?: unknown;
@@ -131,7 +132,7 @@ export interface SatelliteSnapshot {
   groupProjects?: unknown[];
   groupProjectActions?: import('../../shared/actions/view').RemoteGroupAction[];
   bulletinDigests?: Record<string, unknown[]>;
-  groupProjectMembers?: Record<string, Array<{ agentId: string; agentName: string; status: string }>>;
+  groupProjectMembers?: Record<string, Array<{ agentId: string; agentName: string; status: string; runtimeStatus?: import('../../shared/group-project-roster').RosterStatus; lastSeen?: string }>>;
   /** Unvalidated; read through `windowsPtyForHost`. */
   ptyHost?: unknown;
   canvasState?: Record<string, unknown>;
@@ -331,7 +332,7 @@ interface RemoteStreamState {
  * backwards for a renderer holding an older snapshot.
  */
 const remoteStreams = new Map<string, RemoteStreamState>();
-const seedsInFlight = new Map<string, Promise<void>>();
+const seedsInFlight = new Map<string, { epoch: number; promise: Promise<void> }>();
 /** Bumped on every disconnect, so a seed that straddles one is discarded. */
 const connectionEpochs = new Map<string, number>();
 
@@ -550,17 +551,28 @@ async function seedFromSatellite(satelliteId: string, agentId: string): Promise<
  * The cached buffer for a remote agent, seeded from the satellite on first
  * access. Concurrent callers share one seed fetch.
  */
-async function getRemoteBufferSnapshot(satelliteId: string, agentId: string): Promise<RemoteBufferSnapshot> {
+async function getRemoteBufferSnapshot(satelliteId: string, agentId: string, retryStaleSeed = true): Promise<RemoteBufferSnapshot> {
   const key = `${satelliteId}:${agentId}`;
   const bufferKey = remoteBufferKey(satelliteId, agentId);
   // A seeded key whose cache has gone is seeded again.
   if (!seededBuffers.has(key) || !headlessTerminal.getSize(bufferKey)) {
     let seed = seedsInFlight.get(key);
     if (!seed) {
-      seed = seedFromSatellite(satelliteId, agentId).finally(() => seedsInFlight.delete(key));
+      seed = {
+        epoch: connectionEpochs.get(satelliteId) ?? 0,
+        promise: seedFromSatellite(satelliteId, agentId).finally(() => seedsInFlight.delete(key)),
+      };
       seedsInFlight.set(key, seed);
     }
-    await seed;
+    await seed.promise;
+    // A reconnecting view can join a seed from the old connection. That seed
+    // is discarded, so fetch once more, but don't loop if the peer keeps flapping.
+    if (seed.epoch !== (connectionEpochs.get(satelliteId) ?? 0) && satellites.get(satelliteId)?.state === 'connected') {
+      appLog('core:annex-client', retryStaleSeed ? 'info' : 'warn', 'Agent buffer seed crossed a reconnect', {
+        meta: { satelliteId, agentId, retrying: retryStaleSeed },
+      });
+      if (retryStaleSeed) return getRemoteBufferSnapshot(satelliteId, agentId, false);
+    }
   }
   const snap = await headlessTerminal.snapshot(bufferKey);
   return { data: snap?.data ?? '', seq: snap?.seq ?? remoteStream(key).seq };
@@ -1138,6 +1150,17 @@ function handleSatelliteMessage(sat: SatelliteConnectionInternal, msg: Record<st
         }
         sat.iconState ??= newRemoteIconState();
         applyFetchedIcons(sat.iconState, incoming);
+        const previousRequests = new Set([
+          ...(sat.snapshot?.grantRequests ?? []), ...(sat.snapshot?.pendingGrantRequests ?? []),
+        ].map((row) => row.requestId));
+        for (const requestId of new Set([...(incoming.grantRequests ?? []), ...(incoming.pendingGrantRequests ?? [])].map((row) => row.requestId))) {
+          if (!previousRequests.delete(requestId)) appLog('core:annex', 'info', 'Remote approval received', {
+            meta: { machine: sat.fingerprint, requestId, source: 'snapshot' },
+          });
+        }
+        for (const requestId of previousRequests) appLog('core:annex', 'info', 'Remote approval resolved', {
+          meta: { machine: sat.fingerprint, requestId, source: 'snapshot' },
+        });
         sat.snapshot = incoming;
         void import('./connection-card').then((m) => m.rememberConnectionSnapshot(sat.fingerprint, incoming)).catch((error) => {
           appLog('core:annex', 'warn', 'Could not save the network connection directory', { meta: { error: error instanceof Error ? error.message : String(error) } });
@@ -1150,6 +1173,17 @@ function handleSatelliteMessage(sat: SatelliteConnectionInternal, msg: Record<st
         if (omitted) void fetchOmittedCanvases(sat);
         fetchSatelliteLeftOutIcons(sat);
       }
+      break;
+    }
+
+    case 'grant_request:opened':
+    case 'grant_request:resolved': {
+      const payload = msg.payload as { requestId?: string; requestIds?: string[] } | undefined;
+      appLog('core:annex', 'info', type === 'grant_request:opened' ? 'Remote approval received' : 'Remote approval resolved', {
+        meta: { machine: sat.fingerprint, source: 'event', ...(type === 'grant_request:opened'
+          ? { requestId: payload?.requestId } : { count: payload?.requestIds?.length ?? 0 }) },
+      });
+      broadcastSatelliteEvent(sat.id, type, msg.payload);
       break;
     }
 
@@ -2149,7 +2183,7 @@ export function requestBulletinPostMessage(
 }
 
 /**
- * Send a shoulder tap / broadcast to a satellite group project via HTTPS REST.
+ * @deprecated Compatibility shim: posts to an inbox or general through HTTPS REST.
  */
 export function requestShoulderTap(
   fingerprint: string,
@@ -2215,9 +2249,7 @@ export function requestSetTopicProtection(
 }
 
 /**
- * Set the project-wide polling setting on a satellite group project via HTTPS REST.
- * Runs setProjectPolling on the satellite so the persisted setting + member
- * side-effect stay identical to a local toggle.
+ * @deprecated Polling is retired. The satellite returns notices mode without a change.
  */
 /** A satellite group project's roles and own grants (#3360). */
 export function requestGroupProjectRoles(fingerprint: string, groupProjectId: string): Promise<unknown> {

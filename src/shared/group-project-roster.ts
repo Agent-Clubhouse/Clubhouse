@@ -34,7 +34,13 @@ export type RosterProvenance = 'auto' | 'explicit' | 'linked';
 /** What the host could check of a computer's inventory. */
 export type RosterCopyState = 'verified' | 'unknown' | 'offline' | 'truncated';
 
+export type RosterStatus = 'awake' | 'busy' | 'asleep' | 'unknown';
+
 export interface RosterMember {
+  /** Additive observations; absent on older hosts. */
+  status?: RosterStatus;
+  lastSeen?: string;
+  inbox?: string;
   agentId: string;
   /** The computer the agent is on: its identity fingerprint. */
   machine: string;
@@ -136,6 +142,10 @@ const isRecord = (v: unknown): v is Record<string, unknown> => !!v && typeof v =
 const SAFE_ID = /^[A-Za-z0-9_-]{1,128}$/;
 const ETAG = /^[0-9a-f]{64}$/;
 const AGENT_ID = /^[A-Za-z0-9_.:-]{1,200}$/;
+// inboxChannelName can expand a 256-character name to 511 sanitized characters
+// (U+0130 lowercases to i + combining dot). Allow the six-digit collision hash
+// and an optional numeric attempt up to Number.MAX_SAFE_INTEGER: 511 + 7 + 17.
+const INBOX = /^inbox-[a-z0-9-]{1,535}$/;
 const MODES = new Set<RosterRoleMode>(['allow', 'ask', 'off']);
 const KINDS = new Set(['durable', 'helper', 'quick']);
 const PROVENANCE = new Set<RosterProvenance>(['auto', 'explicit', 'linked']);
@@ -175,7 +185,12 @@ function readMember(raw: unknown): RosterMember {
   if (!KINDS.has(raw.kind as string) || !PROVENANCE.has(raw.provenance as RosterProvenance)) fail('member');
   if (!MODES.has(raw.lead as RosterRoleMode) || !MODES.has(raw.admin as RosterRoleMode)) fail('member');
   if (raw.inventory !== 'verified' && raw.inventory !== 'unknown') fail('member');
+  if (raw.status !== undefined && !['awake', 'busy', 'asleep', 'unknown'].includes(raw.status as string)) fail('member status');
+  if (raw.lastSeen !== undefined && (typeof raw.lastSeen !== 'string' || raw.lastSeen.length > 40 || Number.isNaN(Date.parse(raw.lastSeen)))) fail('member last seen');
   return {
+    ...(raw.status !== undefined && { status: raw.status as RosterStatus }),
+    ...(typeof raw.lastSeen === 'string' && { lastSeen: raw.lastSeen }),
+    ...(typeof raw.inbox === 'string' && INBOX.test(raw.inbox) && { inbox: raw.inbox }),
     agentId: raw.agentId,
     machine: machineOf(raw.machine, 'member'),
     label: label(raw.label, 'member') || raw.agentId,

@@ -238,6 +238,9 @@ async function resolveDeclaration(lookup: Lookup, d: ToolGrantDeclaration, args:
     });
   }
   if (d.target === 'project_arg') {
+    if (d.actions.includes('project.link')) {
+      return projectLinkTargetResolver ? projectLinkTargetResolver(args, from.args) : [{ kind: 'project' }];
+    }
     // Adding or opening a project (#3050): the folder usually isn't a project yet, so it can't be left
     // to the tool like an unknown project. A path is checked as that folder; anything else (or nothing)
     // as a project no single-path grant covers, so only a grant on every project does.
@@ -284,6 +287,10 @@ export type HandoffGrantTargetResolver = (callerId: string, args: Record<string,
 let handoffTargetResolver: HandoffGrantTargetResolver | undefined;
 export function setHandoffGrantTargetResolver(resolver: HandoffGrantTargetResolver): void { handoffTargetResolver = resolver; }
 
+type ProjectLinkTargetResolver = (args: Record<string, unknown>, from: readonly string[]) => Promise<GrantCallTarget[]>;
+let projectLinkTargetResolver: ProjectLinkTargetResolver | undefined;
+export function setProjectLinkTargetResolver(resolver: ProjectLinkTargetResolver): void { projectLinkTargetResolver = resolver; }
+
 /** Resolve every argument-target declaration of a call. Empty when the tool has none. */
 export async function resolveArgTargets(callerId: string, grant: ToolGrant | undefined, args: Record<string, unknown>, resolved: ArgTargets = new Map()): Promise<ArgTargets> {
   const out: ArgTargets = new Map(resolved);
@@ -298,7 +305,7 @@ export async function resolveArgTargets(callerId: string, grant: ToolGrant | und
       else out.set(d, await resolveDeclaration(lookup, d, args));
     } catch {
       // telemetry-exempt: unresolved, so not checked here; the tool's own checks still run.
-      out.set(d, d.target === 'group_project_arg' ? [{ kind: 'group_project', groupRole: null }] : d.strictTargets || d.allowRemote ? [{ kind: 'agent', relations: [] }] : null);
+      out.set(d, d.actions.includes('project.link') ? [{ kind: 'project' }] : d.target === 'group_project_arg' ? [{ kind: 'group_project', groupRole: null }] : d.strictTargets || d.allowRemote ? [{ kind: 'agent', relations: [] }] : null);
     }
   }
   return out;

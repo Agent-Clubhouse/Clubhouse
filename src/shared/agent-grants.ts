@@ -39,12 +39,13 @@ export const GRANT_ACTIONS = [
   'connection.bootstrap',
   'group_project.read',
   'group_project.post',
-  'group_project.lead', // broadcast, shoulder taps, wake/sleep/reset members, board curation, legacy polling (#3360)
+  'group_project.lead', // wake/sleep/reset members and board curation (#3360)
   'group_project.admin', // name, instructions, scope, members, its own grants and Actions (#3360)
   // Projects
   'project.read',
   'project.add', // add or open a project (#3050): the target is the folder, which may not be a project yet
   'project.display',
+  'project.link', // shared project link and keep-separate metadata; never moves files or agents
   'project.configure', // how agents in it run: defaults
   // The managed agents library (#2819): shared parts and templates. Edits reach every agent using them.
   'library.read',

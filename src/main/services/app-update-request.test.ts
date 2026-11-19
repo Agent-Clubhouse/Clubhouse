@@ -43,8 +43,11 @@ import { answerGrantRequest } from './grant-request-answers';
 import { _resetGrantRequestsForTesting, consumeCallApproval, callKey, listGrantRequests, peekGrantRequest } from './grant-requests';
 import { runGrantCommand, type GrantRequestPlaces } from './mobile-grant-requests';
 import { appLog } from './log-service';
+import { withSettingsSurface } from './settings-audit';
 
 const places: GrantRequestPlaces = { projects: [], dispatcher: { projectId: '__dispatcher__', paths: ['/dispatcher'], agentId: 'dispatcher-chat', askingIds: ['dispatcher'] } };
+const answerFromPhone = (command: Parameters<typeof runGrantCommand>[0], deps: Parameters<typeof runGrantCommand>[2]) =>
+  withSettingsSurface('mobile', deps.viewer, () => runGrantCommand(command, places, deps));
 const working = (id = 'builder'): LiveAgentInfo => ({ agentId: id, projectPath: '/project', orchestrator: 'claude-code', runtime: 'chat', isWorking: true, lastActivity: null, resumeStrategy: 'auto' });
 
 beforeEach(() => {
@@ -144,11 +147,11 @@ describe('human-approved Clubhouse updates', () => {
     const pending = await requestAppUpdate();
     const command = { version: 1 as const, epoch: 'e', commandId: 'c', type: 'grant.answer' as const, requestId: pending.requestId, answer: 'allow_once' as const };
     const deps = { viewer: 'phone', assertAuthorized: vi.fn() };
-    await expect(runGrantCommand(command, places, deps)).rejects.toMatchObject({ code: 'grant_answer_failed' });
-    await runGrantCommand({ ...command, updateMode: 'when_idle' }, places, deps);
+    await expect(answerFromPhone(command, deps)).rejects.toMatchObject({ code: 'grant_answer_failed' });
+    await answerFromPhone({ ...command, updateMode: 'when_idle' }, deps);
     expect(getAppUpdateStatus().request?.state).toBe('waiting_for_idle');
     expect(consumeCallApproval(callKey('dispatcher', 'request_app_update', { version: '1.1.0' }))).toBe(false);
-    await expect(runGrantCommand({ ...command, updateMode: 'now' }, places, deps)).rejects.toMatchObject({ code: 'grant_request_not_found' });
+    await expect(answerFromPhone({ ...command, updateMode: 'now' }, deps)).rejects.toMatchObject({ code: 'grant_request_not_found' });
     expect(fake.apply).not.toHaveBeenCalled();
   });
 
@@ -173,8 +176,8 @@ describe('human-approved Clubhouse updates', () => {
     };
     const deps = { viewer: 'phone', assertAuthorized: vi.fn() };
     const results = await Promise.allSettled([
-      runGrantCommand(command, places, deps),
-      runGrantCommand({ ...command, commandId: 'other' }, places, deps),
+      answerFromPhone(command, deps),
+      answerFromPhone({ ...command, commandId: 'other' }, deps),
     ]);
     expect(results.filter((result) => result.status === 'fulfilled')).toHaveLength(1);
     expect(results.find((result) => result.status === 'rejected')).toMatchObject({
@@ -187,9 +190,9 @@ describe('human-approved Clubhouse updates', () => {
   it('does not consume an update approval if phone authorization is revoked while loading its answer', async () => {
     const pending = await requestAppUpdate();
     const assertAuthorized = vi.fn().mockImplementationOnce(() => {}).mockImplementationOnce(() => { throw new Error('revoked'); });
-    await expect(runGrantCommand({
+    await expect(answerFromPhone({
       version: 1, epoch: 'e', commandId: 'c', type: 'grant.answer', requestId: pending.requestId, answer: 'allow_once', updateMode: 'now',
-    }, places, { viewer: 'phone', assertAuthorized })).rejects.toThrow('revoked');
+    }, { viewer: 'phone', assertAuthorized })).rejects.toThrow('revoked');
     expect(peekGrantRequest(pending.requestId)).not.toBeNull();
     expect(getAppUpdateStatus().request?.state).toBe('pending_approval');
     expect(fake.apply).not.toHaveBeenCalled();
@@ -293,9 +296,9 @@ describe('human-approved Clubhouse updates', () => {
     const pending = await requestAppUpdate();
     fake.readyProblem = '/Users/private-update-user/update.zip https://updates.example.invalid/private-updater-token';
     expect(JSON.stringify(listGrantRequests())).not.toContain('private-update-user');
-    await expect(runGrantCommand({
+    await expect(answerFromPhone({
       version: 1, epoch: 'e', commandId: 'c', type: 'grant.answer', requestId: pending.requestId, answer: 'allow_once', updateMode: 'now',
-    }, places, { viewer: 'phone', assertAuthorized: vi.fn() })).rejects.toMatchObject({
+    }, { viewer: 'phone', assertAuthorized: vi.fn() })).rejects.toMatchObject({
       code: 'grant_answer_failed', detail: APP_UPDATE_FAILURE_MESSAGES.missing,
     });
     expect(getAppUpdateStatus()).toMatchObject({

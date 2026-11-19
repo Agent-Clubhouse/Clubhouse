@@ -12,12 +12,10 @@ vi.stubGlobal('window', {
   clubhouse: {
     groupProject: {
       list: mockList,
-      setPolling: vi.fn(),
       create: vi.fn(),
       update: vi.fn(),
       delete: vi.fn(),
       postBulletinMessage: vi.fn(),
-      sendShoulderTap: vi.fn(),
       onChanged: mockOnChanged,
       getOperations: mockGetOperations,
       onOperationsChanged: mockOnOperationsChanged,
@@ -37,19 +35,6 @@ describe('groupProjectStore', () => {
     vi.clearAllMocks();
   });
 
-  it('keeps a queued migration in its confirmed state and reconciles from the host broadcast', async () => {
-    useGroupProjectStore.setState({ projects: [project] });
-    vi.mocked(window.clubhouse.groupProject.setPolling).mockResolvedValue(undefined as never);
-    mockList.mockResolvedValue([project]);
-    mockGetOperations.mockResolvedValue({ operations: [], omittedQueued: 0 });
-    await useGroupProjectStore.getState().setPolling(project.id, false);
-    expect(useGroupProjectStore.getState().projects[0].metadata.pollingEnabled).toBe(true);
-    const stop = initGroupProjectListener();
-    const change = mockOnChanged.mock.calls.at(-1)![0] as (projects: GroupProject[]) => void;
-    change([{ ...project, metadata: { ...project.metadata, pollingEnabled: false } }]);
-    expect(useGroupProjectStore.getState().projects[0].metadata.pollingEnabled).toBe(false);
-    stop();
-  });
 
   describe('loadProjects', () => {
     it('sets projects and loaded on success', async () => {

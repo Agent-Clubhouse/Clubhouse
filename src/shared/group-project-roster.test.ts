@@ -33,6 +33,47 @@ describe('group project roster wire (#3548)', () => {
     expect(JSON.stringify(read)).not.toContain('secret');
   });
 
+
+  it('accepts old hosts without observations and round trips new optional observations', () => {
+    const old = readRosterAnswer(page(), HOST, request);
+    expect(old.status === 'ok' && old.members[0].status).toBeUndefined();
+    const member = { ...page().members[0], status: 'busy', lastSeen: '2026-11-18T01:00:00Z', inbox: 'inbox-twin-abcdef' };
+    const answer = readRosterAnswer(page({ members: [member] }), HOST, request);
+    expect(answer).toMatchObject({ members: [{ status: 'busy', lastSeen: member.lastSeen, inbox: member.inbox }] });
+    expect(() => readRosterAnswer(page({ members: [{ ...member, status: 'connected' }] }), HOST, request)).toThrow();
+    expect(() => readRosterAnswer(page({ members: [{ ...member, lastSeen: 'bad' }] }), HOST, request)).toThrow();
+  });
+
+  it.each([
+    ['a'.repeat(256), 'a'.repeat(256), ''],
+    ['a'.repeat(256), 'a'.repeat(256), '-abcdef'],
+    ['a'.repeat(256), 'a'.repeat(256), `-abcdef-${Number.MAX_SAFE_INTEGER}`],
+    // Lowercasing U+0130 expands to i + combining dot, sanitized to i-.
+    ['İ'.repeat(256), `${'i-'.repeat(255)}i`, `-abcdef-${Number.MAX_SAFE_INTEGER}`],
+  ])('round trips a 256-character name inbox including collision suffixes (case %#)', (name, sanitized, suffix) => {
+    const inbox = `inbox-${sanitized}${suffix}`;
+    const member = { ...page().members[0], label: name, inbox };
+    const answer = readRosterAnswer(JSON.parse(JSON.stringify(page({ members: [member] }))), HOST, request);
+    expect(answer).toMatchObject({ status: 'ok', members: [{ inbox }] });
+    expect(readRosterAnswer(JSON.parse(JSON.stringify(answer)), HOST, request)).toEqual(answer);
+  });
+
+  it.each(['../secret', 'inbox-a.b', 'inbox-ABC', `inbox-${'a'.repeat(536)}`, 42, null])('drops malformed optional inbox %s without losing the page', inbox => {
+    const answer = readRosterAnswer(page({ members: [{ ...page().members[0], inbox }] }), HOST, request);
+    expect(answer).toMatchObject({ status: 'ok', members: [{ agentId: 'lead' }] });
+    if (answer.status === 'ok') expect(answer.members[0]).not.toHaveProperty('inbox');
+  });
+
+  it('keeps the v1 shape usable by readers that discard unknown member fields', () => {
+    // v1 readers select known fields, rather than rejecting unknown keys. Projecting a
+    // new member onto that exact old field set gives the unchanged v1 answer.
+    const legacyFields = Object.keys(page().members[0]);
+    const newer = { ...page().members[0], status: 'awake', lastSeen: '2026-11-18T01:00:00Z', inbox: 'inbox-lead' };
+    const projected = Object.fromEntries(Object.entries(newer).filter(([key]) => legacyFields.includes(key)));
+    expect(readRosterAnswer(page({ members: [projected] }), HOST, request)).toEqual(readRosterAnswer(page(), HOST, request));
+    expect(readRosterAnswer(page({ members: [{ ...newer, futureField: true }] }), HOST, request)).toMatchObject({ status: 'ok' });
+  });
+
   it('clips labels and drops control characters', () => {
     expect(clipLabel('Lead\u0000\nbot x')).toBe('Lead bot x');
     expect(clipLabel('x'.repeat(500))).toHaveLength(ROSTER_LABEL_MAX);

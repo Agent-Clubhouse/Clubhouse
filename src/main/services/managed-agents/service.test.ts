@@ -109,7 +109,7 @@ describe('built-ins', () => {
   it('ships the built-ins from the maintainer\'s builder review (#2902), without the cut ones (D71, D99)', async () => {
     const blocks = (await user(() => service.listParts('block'))).filter((b) => b.builtin);
     expect(blocks.filter(isListed).map((b) => b.name)).toEqual([
-      'Clubhouse basics', 'Developer', 'Group project admin', 'Group project lead', 'Group projects', 'Helper', 'Identity', 'Identity (working)',
+      'Clubhouse basics', 'Developer', 'Group project admin', 'Group project lead', 'Group project member', 'Helper', 'Identity', 'Identity (working)',
       'Merging', 'Orchestrator', 'Product owner', 'Pull requests', 'Quality assurance', 'Researcher',
     ]);
     expect(blocks.filter((b) => b.retired)).toEqual([]);

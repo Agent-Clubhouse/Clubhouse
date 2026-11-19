@@ -321,6 +321,7 @@ export const GRANT_ACTION_LABELS: Readonly<Record<GrantAction, string>> = {
   'project.add': 'Add or open projects',
   'project.display': 'Change project name, color and icon',
   'project.configure': 'Change project defaults',
+  'project.link': 'Link or separate projects',
   'library.read': 'See parts and templates',
   'library.write': 'Edit shared parts',
   'template.write': 'Edit templates',

@@ -29,7 +29,7 @@ const optionsAt: Record<string, number> = {
   // The management module's add/exclude pair is invoked through this local function variable.
   operation: 2,
 };
-const reads = new Set(['outOfScopeMessage', 'inScope', 'selfMachine', 'list', 'scopeOptions', 'get', 'operations', 'previewScope', 'isReplica', 'estimateTrim', 'readDigest', 'readTopic', 'getMessage', 'isThisMachine', 'resolveMembers']);
+const reads = new Set(['outOfScopeMessage', 'inScope', 'selfMachine', 'list', 'scopeOptions', 'get', 'operations', 'previewScope', 'isReplica', 'estimateTrim', 'readDigest', 'readTopic', 'getMessage', 'isThisMachine', 'resolveMembers', 'addressOf']);
 const hostOnly = new Set(['setScope', 'exclusive', 'setRetention', 'clearAll', 'dismissRefusals']);
 /** Existing service-level exceptions are explicit mechanics work, not compliant new admin mutations. */
 const serviceExceptions = {

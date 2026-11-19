@@ -5,13 +5,8 @@ vi.mock('../agent-config', () => ({ updateDurableConfig: (...a: unknown[]) => mo
 vi.mock('../log-service', () => ({ appLog: vi.fn() }));
 const mockBroadcast = vi.fn();
 vi.mock('../../util/ipc-broadcast', () => ({ broadcastToAllWindows: (...a: unknown[]) => mockBroadcast(...a) }));
-vi.mock('../clubhouse-mcp/binding-manager', () => ({ bindingManager: { getBindingsForAgent: (id: string) => mockBindings(id) } }));
-vi.mock('../group-project-registry', () => ({ groupProjectRegistry: { getSync: (id: string) => mockProjects[id] ?? null } }));
-const mockBindings = vi.fn((_id: string): Array<{ targetKind: string; targetId: string }> => []);
-const mockProjects: Record<string, { metadata: Record<string, unknown> }> = {};
 
 import { chatSleepInfo, noteKillRequest, recordSleep, sleepInfoForExit, takeKillRequest } from './sleep-reason';
-import { waitsOnPollingGroupProject } from './idle-policy';
 import { IPC } from '../../../shared/ipc-channels';
 
 const AT = new Date('2026-10-18T03:01:06.000Z');
@@ -52,19 +47,5 @@ describe('sleep reasons (#2104)', () => {
   it('does not throw when saving fails', async () => {
     mockUpdateDurableConfig.mockRejectedValueOnce(new Error('disk full'));
     await expect(recordSleep('/p', 'a1', { reason: 'user', at: AT.toISOString() })).resolves.toBeUndefined();
-  });
-});
-
-describe('waitsOnPollingGroupProject (#2104)', () => {
-  it('is true only for an agent bound to a group project with polling on', () => {
-    mockProjects.gp1 = { metadata: { pollingEnabled: true } };
-    mockProjects.gp2 = { metadata: { pollingEnabled: false } };
-    mockBindings.mockReturnValueOnce([{ targetKind: 'group-project', targetId: 'gp1' }]);
-    expect(waitsOnPollingGroupProject('a1')).toBe(true);
-    mockBindings.mockReturnValueOnce([{ targetKind: 'group-project', targetId: 'gp2' }, { targetKind: 'agent', targetId: 'gp1' }]);
-    expect(waitsOnPollingGroupProject('a1')).toBe(false);
-    mockBindings.mockReturnValueOnce([{ targetKind: 'group-project', targetId: 'unknown' }]);
-    expect(waitsOnPollingGroupProject('a1')).toBe(false);
-    expect(waitsOnPollingGroupProject('a1')).toBe(false);
   });
 });

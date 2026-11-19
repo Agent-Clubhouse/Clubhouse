@@ -3,20 +3,17 @@
  * to coordinate via a shared bulletin board.
  */
 
+import { groupPostWakePreflight } from '../../group-project-wake';
+import { resolveMentions } from '../../../../shared/group-project-mentions';
 import { bindingManager } from '../binding-manager';
 import { mcpAdapter } from '../mcp-adapter';
 import { groupProjectRegistry } from '../../group-project-registry';
 import { groupProjectHost } from '../../group-project-host';
-import { groupProjectToolMembers } from '../../group-project-tool-members';
-import { canPoll, isAgentAlive, injectPtyMessage } from '../../group-project-lifecycle';
-import { notePollingRead, notePollingStart } from '../../group-project-polling-runs';
+import { groupProjectToolMembers, groupProjectMentionMembers } from '../../group-project-tool-members';
+import { isAgentAlive } from '../../group-project-lifecycle';
 import { getAgentRuntime } from '../../agent-runtime';
-import { executeShoulderTap } from '../../group-project-shoulder-tap';
 import * as agentSystem from '../../agent-system';
-import { getAgentOrchestrator } from '../../agent-registry';
-import { pollingNudgeMsg } from '../../../../shared/polling-messages';
-import { setProjectPolling, getProjectPollingState } from '../../group-project-polling';
-import { listTopicSubscriptions, NEW_CHANNEL_NAME_MESSAGE, noteSenderAddress, setTopicSubscription, usableTopic, usesPolling } from '../../group-project-delivery';
+import { listTopicSubscriptions, NEW_CHANNEL_NAME_MESSAGE, noteSenderAddress, setTopicSubscription, usableTopic } from '../../group-project-delivery';
 import * as annexEventBus from '../../annex-event-bus';
 import { appLog } from '../../log-service';
 import type { McpToolResult } from '../types';
@@ -57,6 +54,14 @@ async function resolveSenderLabel(agentId: string, targetId: string): Promise<st
     }
   }
 
+  const members = await groupProjectMentionMembers(targetId);
+  const gp = await groupProjectHost.get(targetId);
+  const address = gp ? groupProjectHost.addressOf(gp, agentId) : agentId;
+  const own = members.find(m => m.address === address);
+  const name = binding?.agentName || own?.name;
+  if (name && members.filter(m => m.name.toLowerCase() === name.toLowerCase()).length > 1) {
+    return `${name} (${own?.computer || 'This computer'})`;
+  }
   return binding?.agentName
     ? `${binding.agentName}${projectName ? '@' + projectName : ''}`
     : agentId;
@@ -64,19 +69,16 @@ async function resolveSenderLabel(agentId: string, targetId: string): Promise<st
 
 /**
  * The `get_project_info` guidance. How a member hears about posts follows the group project's
- * delivery mode (#3362): notices by default, polling only for one that still has it on (#3618).
+ * post notices (#3362).
  */
-function projectSystemInstructions(polling: boolean): string {
+function projectSystemInstructions(): string {
   const channelModel =
     'CHANNEL MODEL: A group project is a shared message board for a team of agents. Every project has protected "general" and "control" channels, plus a per-agent "inbox-<agent-name>" channel. Agents granted lead coordinate the team.\n' +
     '- Check your inbox, "control" and "general" when you join and between tasks. Follow other channels when you are asked to.\n' +
     '- control: changes to how the team works. general: team-wide announcements only; avoid posting there otherwise.\n' +
     '- inbox-<your-name>: your direct inbox. Reach another agent through theirs. Prefer inboxes over short-lived channels.\n' +
     '- work channels: create one only after agreeing in "control", and only for scoped coordination, for example dev, QA and design working together on one piece.\n\n';
-  const delivery = polling
-    ? 'POLLING: This group project still uses polling, so no notices are sent. Call read_bulletin with since=<latestTimestamp from last read> and channels=["general","control","inbox-<your-name>", ...subscribed work channels]. ' +
-      'Only drill into a channel with read_topic when its newMessageCount > 0. Use summary=true for large reads and read_message for full bodies.\n\n'
-    : 'NOTICES: You get a notice when someone posts to a channel you subscribe to (your inbox, "control" and "general" by default) or names you as @name. ' +
+  const delivery = 'NOTICES: You get a notice when someone posts to a channel you subscribe to (your inbox, "control" and "general" by default) or names you as @name. ' +
       'Do not poll the board in a loop. When a notice arrives, read the channel it names with read_topic, or call read_bulletin once for an overview. Use summary=true for large reads and read_message for full bodies.\n\n';
   return channelModel + delivery +
     'POSTING: Post replies on the channel where the work is happening. Do not cross-post. Keep messages short: plain text or short markdown, not large JSON.';
@@ -91,12 +93,10 @@ export function registerGroupProjectTools(): void {
     label: 'List Members',
     mcp: { targetKind: 'group-project', nameSuffix: 'list_members', grant: { actions: ['group_project.read'], target: 'bound' } },
     description:
-        'List all agents currently connected to this group project.\n\n' +
-        'Returns a JSON array of { agentId, agentName, status } objects. Use this to discover ' +
-        'who is collaborating with you in this group project.\n\n' +
-        'Status values:\n' +
-        '- "connected": agent has a live process and is actively participating\n' +
-        '- "sleeping": agent is bound but has no live process (exited or sleeping)\n\n' +
+        'List group project members as compact JSON: name, address (identity), computer, inbox, status, lastSeen when known, and roles (lead/admin). ' +
+        'Status is awake (live), busy (a chat turn is running), asleep (no live process), or unknown (no runtime observation). ' +
+        'Remote states report what the host last saw, with lastSeen; they may be older than this call. ' +
+        'Use the exact inbox channel, including any suffix. Mentions accept @name or @name@computer; an ambiguous plain name matches all members with that name. ' +
         'For full project context including instructions, use get_project_info.',
       inputSchema: {
         type: 'object',
@@ -118,7 +118,8 @@ export function registerGroupProjectTools(): void {
     label: 'Post Bulletin',
     mcp: { targetKind: 'group-project', nameSuffix: 'post_bulletin', grant: { actions: ['group_project.post'], target: 'bound' } },
     description:
-        'Post a message to a channel on the group project board.\n\n' +
+        'Post a message to a channel on the group project board. Urgent posts skip notice batching and notice rate limits within a per-sender-to-recipient allowance of 20 per ten minutes; additional urgent posts use normal batching and are never dropped; busy recipients receive them after their current turn, never interrupted. Direct inbox posts and mentions can resume sleeping durable members when waking is allowed; held notices survive restart.\n\n' +
+        'Waking needs the group wake grant and a durable member with a resumable session. At most three wake attempts per recipient per ten minutes; other notices stay unread. A remote-origin wake also needs the receiving computer’s Allow grant for group_project.lead. Offline computers catch up from the board; wakePreflight is not a final delivery receipt.\n\n' +
         'CHANNEL MODEL:\n' +
         '- "general" (protected): team-wide announcements only. Avoid posting here otherwise.\n' +
         '- "control" (protected): changes to how the team works, and agreeing on new channels before anyone creates one.\n' +
@@ -134,6 +135,7 @@ export function registerGroupProjectTools(): void {
             type: 'string',
             description: 'Channel name. "system" is reserved. Use short-kebab-case for new work channels.',
           },
+          urgent: { type: 'boolean', description: 'Send the notice next in line, bypassing batching and notice rate limits.' },
           body: {
             type: 'string',
             description: 'Message body (up to ~100KB).',
@@ -144,6 +146,7 @@ export function registerGroupProjectTools(): void {
     handler: async (targetId: string, agentId: string, args: Record<string, unknown>): Promise<McpToolResult> => {
       const topic = requireString(args, 'topic');
       const body = requireString(args, 'body');
+      const urgent = optionalBoolean(args, 'urgent');
 
       if (!topic || !body) {
         return {
@@ -166,7 +169,7 @@ export function registerGroupProjectTools(): void {
       const sender = await resolveSenderLabel(agentId, targetId);
 
       try {
-        const msg = await groupProjectHost.post(targetId, sender, topic, body, { author: { agentId, label: sender } });
+        const msg = await groupProjectHost.post(targetId, sender, topic, body, { author: { agentId, label: sender }, urgent });
         // Members' notices leave the sender out by address, not by name.
         if (!msg.pending) noteSenderAddress(msg.id, agentId);
         if (msg.pending) {
@@ -181,11 +184,18 @@ export function registerGroupProjectTools(): void {
             }],
           };
         }
+        const { ambiguous, addresses } = resolveMentions(body, await groupProjectMentionMembers(targetId));
+        const wakePreflight = await groupPostWakePreflight(targetId, agentId, msg.topic, addresses).catch((err: unknown) => {
+          // telemetry-exempt: post is already saved; return an honest preflight limitation
+          appLog('core:group-project', 'warn', 'Post saved but wake preflight unavailable', { meta: { groupProjectId: targetId, error: String(err) } });
+          return [{ address: agentId, reason: 'Post saved; wake preflight unavailable. Recipients recheck permission on delivery.' }];
+        });
+        const warnings = ambiguous.map((name) => `@${name} matches more than one member; it notified all of them. Use @${name}@<computer> to reach one.`);
         annexEventBus.emitBulletinMessage(targetId, msg);
         return {
           content: [{
             type: 'text',
-            text: JSON.stringify({ posted: true, messageId: msg.id, topic: msg.topic, timestamp: msg.timestamp }),
+            text: JSON.stringify({ posted: true, messageId: msg.id, topic: msg.topic, timestamp: msg.timestamp, ...(warnings.length && { warnings }), ...(wakePreflight.length && { wakePreflight }) }),
           }],
         };
       } catch (err) {
@@ -224,9 +234,7 @@ export function registerGroupProjectTools(): void {
           },
         },
       },
-    handler: async (targetId: string, agentId: string, args: Record<string, unknown>): Promise<McpToolResult> => {
-      // A loop reads here, which is how a session is known to be polling.
-      notePollingRead(agentId, targetId);
+    handler: async (targetId: string, _agentId: string, args: Record<string, unknown>): Promise<McpToolResult> => {
       const since = optionalString(args, 'since');
       const channels = Array.isArray(args.channels)
         ? (args.channels as unknown[]).filter((c): c is string => typeof c === 'string')
@@ -341,7 +349,7 @@ export function registerGroupProjectTools(): void {
         scope: project.scope ?? null,
         description: project.description,
         instructions: project.instructions,
-        systemInstructions: projectSystemInstructions(usesPolling(project)),
+        systemInstructions: projectSystemInstructions(),
       };
 
       if (includeMembersList) {
@@ -354,126 +362,7 @@ export function registerGroupProjectTools(): void {
     },
   });
 
-  // group__<name>_<hash>__shoulder_tap
-  mcpAdapter.registerMcpCommand({
-    id: 'group-project.shoulder_tap',
-    category: 'group-project',
-    label: 'Shoulder Tap',
-    mcp: { targetKind: 'group-project', nameSuffix: 'shoulder_tap', grant: [{ actions: ['group_project.lead'], target: 'bound' }, { actions: ['agent.message'], target: 'group_members' }] },
-      description:
-        'Send an urgent, ephemeral message directly into a specific agent\'s CLI.\n\n' +
-        'NOT for routine coordination — post to a channel instead. Use shoulder_tap only when a channel post is insufficient: ' +
-        'the target is unresponsive, or there is a time-critical blocker.\n\n' +
-        'The message is injected as input to the agent. No bulletin record is created — if a reply is expected, ask the target to post it on your inbox channel ("inbox-<your-name>").\n\n' +
-        'The target_agent_id must match an agentId returned by list_members.',
-      inputSchema: {
-        type: 'object',
-        properties: {
-          target_agent_id: {
-            type: 'string',
-            description: 'The agentId of the target agent (from list_members).',
-          },
-          message: {
-            type: 'string',
-            description: 'The urgent message to deliver.',
-          },
-        },
-        required: ['target_agent_id', 'message'],
-      },
-    handler: async (targetId: string, agentId: string, args: Record<string, unknown>): Promise<McpToolResult> => {
-      const targetAgentId = requireString(args, 'target_agent_id');
-      const message = requireString(args, 'message');
-      if (!targetAgentId || !message) {
-        return { content: [{ type: 'text', text: 'Both target_agent_id and message are required.' }], isError: true };
-      }
 
-      const senderLabel = await resolveSenderLabel(agentId, targetId);
-
-      try {
-        const result = await executeShoulderTap({
-          projectId: targetId,
-          senderLabel,
-          senderAgentId: agentId,
-          targetAgentId,
-          message,
-        });
-
-        return {
-          content: [{
-            type: 'text',
-            text: JSON.stringify({
-              taskId: result.taskId,
-              delivered: result.delivered.length,
-              failed: result.failed.length,
-              details: [...result.delivered, ...result.failed],
-            }),
-          }],
-        };
-      } catch (err) {
-        return {
-          content: [{ type: 'text', text: `Shoulder tap failed: ${err instanceof Error ? err.message : String(err)}` }],
-          isError: true,
-        };
-      }
-    },
-  });
-
-  // group__<name>_<hash>__broadcast
-  mcpAdapter.registerMcpCommand({
-    id: 'group-project.broadcast',
-    category: 'group-project',
-    label: 'Broadcast',
-    mcp: { targetKind: 'group-project', nameSuffix: 'broadcast', grant: [{ actions: ['group_project.lead'], target: 'bound' }, { actions: ['agent.message'], target: 'group_members' }] },
-      description:
-        'Broadcast an urgent, ephemeral message to every agent in this project (injected as input to each one; no bulletin record).\n\n' +
-        'NOT for routine coordination — post to "general" for that. Use broadcast only for critical, all-hands announcements ' +
-        '("stop all work, critical issue found", "project goals changed"). You (the sender) are excluded.',
-      inputSchema: {
-        type: 'object',
-        properties: {
-          message: {
-            type: 'string',
-            description: 'The urgent message to broadcast to all agents.',
-          },
-        },
-        required: ['message'],
-      },
-    handler: async (targetId: string, agentId: string, args: Record<string, unknown>): Promise<McpToolResult> => {
-      const message = requireString(args, 'message');
-      if (!message) {
-        return { content: [{ type: 'text', text: 'message is required.' }], isError: true };
-      }
-
-      const senderLabel = await resolveSenderLabel(agentId, targetId);
-
-      try {
-        const result = await executeShoulderTap({
-          projectId: targetId,
-          senderLabel,
-          senderAgentId: agentId,
-          targetAgentId: null, // broadcast to all
-          message,
-        });
-
-        return {
-          content: [{
-            type: 'text',
-            text: JSON.stringify({
-              taskId: result.taskId,
-              delivered: result.delivered.length,
-              failed: result.failed.length,
-              details: [...result.delivered, ...result.failed],
-            }),
-          }],
-        };
-      } catch (err) {
-        return {
-          content: [{ type: 'text', text: `Broadcast failed: ${err instanceof Error ? err.message : String(err)}` }],
-          isError: true,
-        };
-      }
-    },
-  });
 
   // group__<name>_<hash>__wake_agent
   mcpAdapter.registerMcpCommand({
@@ -644,88 +533,7 @@ export function registerGroupProjectTools(): void {
     },
   });
 
-  // group__<name>_<hash>__toggle_polling
-  mcpAdapter.registerMcpCommand({
-    id: 'group-project.toggle_polling',
-    category: 'group-project',
-    label: 'Toggle Polling',
-    mcp: { targetKind: 'group-project', nameSuffix: 'toggle_polling', grant: { actions: ['group_project.lead'], target: 'bound' } },
-      description:
-        'Legacy: members now get a notice when someone posts, so most group projects don\'t poll. ' +
-        'Turn the project-wide polling setting on or off. Turning it off moves the group project to notices.\n\n' +
-        'This is the real control over `pollingEnabled` — the same setting the ' +
-        'UI Polling switch drives and the one agents auto-start from on join. ' +
-        'It persists the setting AND injects the orchestrator-aware start/stop ' +
-        'instruction into every connected member\'s CLI, exactly like the UI toggle.\n\n' +
-        'Pass `enabled` to set an explicit state; omit it to flip the current value. ' +
-        'Use query_polling first if you want to check the current state.',
-      inputSchema: {
-        type: 'object',
-        properties: {
-          enabled: {
-            type: 'boolean',
-            description: 'Desired polling state. Omit to flip the current value.',
-          },
-        },
-      },
-    handler: async (targetId: string, agentId: string, args: Record<string, unknown>): Promise<McpToolResult> => {
-      const current = await getProjectPollingState(targetId);
-      if (!current) {
-        return { content: [{ type: 'text', text: `Group project ${targetId} not found.` }], isError: true };
-      }
 
-      const requested = optionalBoolean(args, 'enabled');
-      const nextEnabled = requested === undefined ? !current.pollingEnabled : requested;
-
-      const result = await setProjectPolling(targetId, nextEnabled, { author: { agentId, label: agentId } });
-      if (!result) {
-        return { content: [{ type: 'text', text: `Group project ${targetId} not found.` }], isError: true };
-      }
-
-      const notified = result.queued ? [] : result.members.filter(m => m.status === 'connected');
-      return {
-        content: [{
-          type: 'text',
-          text: JSON.stringify({
-            action: 'toggle_polling',
-            ...(result.queued && { queued: true }),
-            pollingEnabled: result.pollingEnabled,
-            notifiedMembers: notified.map(m => ({ agentId: m.agentId, agentName: m.agentName })),
-            members: result.members,
-          }),
-        }],
-      };
-    },
-  });
-
-  // group__<name>_<hash>__query_polling
-  mcpAdapter.registerMcpCommand({
-    id: 'group-project.query_polling',
-    category: 'group-project',
-    label: 'Query Polling',
-    mcp: { targetKind: 'group-project', nameSuffix: 'query_polling', grant: { actions: ['group_project.read'], target: 'bound' } },
-      description:
-        'Legacy: read the project-wide polling setting. With it off, members get post notices instead.\n\n' +
-        'Returns `{ pollingEnabled, members }` where `pollingEnabled` is the persisted ' +
-        'setting (same one the UI toggle and on-join auto-start read) and `members` lists ' +
-        'each bound agent with its connection status (connected/sleeping).\n\n' +
-        'Note: there is no per-agent "actively polling" signal — polling is a fire-and-forget ' +
-        'instruction — so member status reflects connectivity, not live polling activity. ' +
-        'Non-privileged: any member may call this to check before acting.',
-      inputSchema: {
-        type: 'object',
-        properties: {},
-      },
-    handler: async (targetId: string, _agentId: string, _args: Record<string, unknown>): Promise<McpToolResult> => {
-      const state = await getProjectPollingState(targetId);
-      if (!state) {
-        return { content: [{ type: 'text', text: `Group project ${targetId} not found.` }], isError: true };
-      }
-      return {
-        content: [{ type: 'text', text: JSON.stringify({ ...state, members: await groupProjectToolMembers(targetId) }) }],
-      };
-    },
-  });
 
   // group__<name>_<hash>__subscribe_topic
   mcpAdapter.registerMcpCommand({
@@ -762,81 +570,6 @@ export function registerGroupProjectTools(): void {
     },
   });
 
-  // group__<name>_<hash>__nudge_polling
-  mcpAdapter.registerMcpCommand({
-    id: 'group-project.nudge_polling',
-    category: 'group-project',
-    label: 'Nudge Polling',
-    mcp: { targetKind: 'group-project', nameSuffix: 'nudge_polling', grant: { actions: ['group_project.lead'], target: 'bound' } },
-      description:
-        'Legacy, for a group project that still polls: nudge a single connected agent to start polling if it isn\'t already.\n\n' +
-        'This is a one-off PTY nudge to a specific peer — it does NOT change the ' +
-        'project `pollingEnabled` setting. Use toggle_polling to actually turn the ' +
-        'setting on or off; use this only to remind a peer that has drifted.\n\n' +
-        'The agent must be connected (not sleeping) for this to work.',
-      inputSchema: {
-        type: 'object',
-        properties: {
-          target_agent_id: {
-            type: 'string',
-            description: 'The agentId of the connected agent (from list_members).',
-          },
-        },
-        required: ['target_agent_id'],
-      },
-    handler: async (targetId: string, _agentId: string, args: Record<string, unknown>): Promise<McpToolResult> => {
-      const targetAgentId = requireString(args, 'target_agent_id');
-      if (!targetAgentId) {
-        return { content: [{ type: 'text', text: 'target_agent_id is required.' }], isError: true };
-      }
-
-      // Verify target is a member
-      const allBindings = bindingManager.getAllBindings();
-      const memberBinding = allBindings.find(
-        b => b.targetKind === 'group-project' && b.targetId === targetId && b.agentId === targetAgentId,
-      );
-      if (!memberBinding) {
-        return {
-          content: [{ type: 'text', text: `Agent ${targetAgentId} is not a member of this group project.` }],
-          isError: true,
-        };
-      }
-
-      if (!isAgentAlive(targetAgentId)) {
-        return {
-          content: [{ type: 'text', text: `Agent ${targetAgentId} is sleeping — wake it first.` }],
-          isError: true,
-        };
-      }
-
-      if (!canPoll(targetAgentId)) {
-        return {
-          content: [{ type: 'text', text: `Agent ${targetAgentId} can't use Clubhouse tools right now, so it can't poll and wasn't nudged.` }],
-          isError: true,
-        };
-      }
-
-      const project = await groupProjectRegistry.get(targetId);
-      const projectName = project?.name || targetId;
-      const orchestrator = getAgentOrchestrator(targetAgentId);
-      const msg = pollingNudgeMsg(projectName, orchestrator);
-
-      injectPtyMessage(targetAgentId, msg);
-      notePollingStart(targetAgentId, targetId);
-
-      return {
-        content: [{
-          type: 'text',
-          text: JSON.stringify({
-            agentId: targetAgentId,
-            agentName: memberBinding.agentName || targetAgentId,
-            action: 'nudge_polling',
-            delivered: true,
-          }),
-        }],
-      };
-    },
-  });
 
   // ── Read single message (always available) ──────────────────────────
 

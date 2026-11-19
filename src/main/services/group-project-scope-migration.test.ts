@@ -83,7 +83,7 @@ beforeEach(async () => {
   await write(registryFile(), [{
     id: 'gp_legacy', name: 'Legacy', description: 'Existing purpose', instructions: 'Keep history',
     createdAt: '2020-01-01T00:00:00Z',
-    metadata: { admins: ['a'], subscriptions: { a: ['work'] }, pollingEnabled: true },
+    metadata: { admins: ['a'], subscriptions: { a: ['work'] }, customFlag: true },
   }]);
 });
 
@@ -104,7 +104,7 @@ describe('one-shot legacy group project scope migration', () => {
     const project = await groupProjectRegistry.get('gp_legacy');
 
     expect(project?.scope).toEqual({ level: 'project', projectId: 'p_a', reach: 'local' });
-    expect(project?.metadata).toEqual({ admins: ['a'], subscriptions: { a: ['work'] }, pollingEnabled: true });
+    expect(project?.metadata).toEqual({ admins: ['a'], subscriptions: { a: ['work'] }, customFlag: true });
     expect(await fsp.readFile(canvasFile, 'utf-8')).toBe(before);
     expect(bindingManager.getAllBindings()).toEqual([]);
     expect(peekDurableConfigsChecked).toHaveBeenCalledWith(fixture.projects[0].path, { strict: true });
@@ -333,7 +333,7 @@ describe('one-shot legacy group project scope migration', () => {
       const project = await groupProjectRegistry.get('gp_legacy');
 
       expect(project).not.toHaveProperty('_scopeInference');
-      expect(project?.metadata).toEqual({ admins: ['a'], subscriptions: { a: ['work'] }, pollingEnabled: true });
+      expect(project?.metadata).toEqual({ admins: ['a'], subscriptions: { a: ['work'] }, customFlag: true });
       if (source === 'unchanged') {
         expect(project?.scope).toEqual({ level: 'project', projectId: 'p_a', reach: 'local' });
         await groupProjectRegistry.update('gp_legacy', { description: 'Updated purpose' });

@@ -24,6 +24,8 @@ import {
   type RosterProvenance, type RosterRequest, type RosterRoleMode,
 } from '../../shared/group-project-roster';
 import { parseAgentAddress } from '../../shared/agent-address';
+import { localMemberObservation, remoteMemberObservation } from './group-project-member-status';
+import { getSettings } from './annex-settings';
 import { groupProjectHost } from './group-project-host';
 import { describeMembership, hostInventoryPartial } from './group-project-membership';
 import { linkedAgents, linkedProjectCopies, verifyCopy } from './group-project-linked-agents';
@@ -130,9 +132,15 @@ class GroupProjectRosterService {
       // With no lasting identity this computer's agents have no fingerprint; such a roster never leaves it.
       const machine = parsed.machine ?? self ?? '';
       const remote = !!parsed.machine && parsed.machine !== self;
+      const sat = satellites.find(s => s.fingerprint.toLowerCase() === machine);
+      const seen = sat?.snapshot?.groupProjectMembers?.[gp.id]?.find(m => m.agentId === parsed.agentId);
+      const observation = !remote ? localMemberObservation(parsed.agentId)
+        : remoteMemberObservation(seen);
       const holder = roles.get(member.agentId);
       all.push({
         agentId: parsed.agentId,
+        ...observation,
+        inbox: await groupProjectHost.inboxFor(gp.id, member.name, member.agentId),
         machine,
         label: clipLabel(member.name) || parsed.agentId,
         kind: member.kind,
@@ -147,12 +155,12 @@ class GroupProjectRosterService {
     const used = new Set([...all.map((m) => m.machine), ...copies.map((c) => c.machine)]);
     const hostInventory = partial ? 'partial' as const : 'complete' as const;
     // Every page of one roster carries this; a copy that sees two starts again.
-    const etag = createHash('sha256').update(JSON.stringify({ all, copies, copiesCut, hostInventory })).digest('hex');
+    const etag = createHash('sha256').update(JSON.stringify({ all: all.map(({ lastSeen: _lastSeen, ...m }) => m), copies, copiesCut, hostInventory })).digest('hex');
     return {
       v: 1, roster: GROUP_PROJECT_ROSTER_VERSION, status: 'ok', groupProjectId: gp.id,
       host: { machine: self ?? '' }, seq: gp.seq ?? 0, generatedAt: new Date().toISOString(),
       copies, ...(copiesCut && { copiesCut: true }), etag, hostInventory,
-      machines: [...machines].filter(([m]) => used.has(m) && m !== self).slice(0, ROSTER_COPIES_MAX).map(([machine, label]) => ({ machine, label })),
+      machines: [...machines, ...(self ? [[self, clipLabel(getSettings().alias || getSettings().deviceName)] as [string, string]] : [])].filter(([m]) => used.has(m)).slice(0, ROSTER_COPIES_MAX).map(([machine, label]) => ({ machine, label })),
       all,
     };
   }

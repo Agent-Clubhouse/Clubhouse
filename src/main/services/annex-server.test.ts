@@ -296,19 +296,12 @@ vi.mock('./group-project-bulletin', () => ({
   }),
 }));
 
-vi.mock('./group-project-shoulder-tap', () => ({
-  executeShoulderTap: vi.fn().mockResolvedValue({ taskId: 'tap_1', delivered: [], failed: [] }),
-}));
 
 const rolesView = { groupProjectId: 'gp_1', own: { deliver: 'allow', wake: 'off', actions: 'allow' }, holders: [{ agentId: 'a1', lead: 'allow', admin: 'off' }] };
 vi.mock('./group-project-roles', async (original) => ({
   ...await original<typeof import('./group-project-roles')>(),
   describeGroupProjectRoles: vi.fn(async () => rolesView),
   grantGroupProjectRole: vi.fn(async () => undefined),
-}));
-vi.mock('./group-project-polling', () => ({
-  setProjectPolling: vi.fn().mockResolvedValue({ pollingEnabled: true, members: [] }),
-  getProjectPollingState: vi.fn().mockResolvedValue({ pollingEnabled: false, members: [] }),
 }));
 
 vi.mock('./clubhouse-mcp/binding-manager', () => ({
@@ -402,6 +395,7 @@ function positiveSerial(): string {
 import * as annexPeers from './annex-peers';
 import * as annexEventBus from './annex-event-bus';
 import * as projectStore from './project-store';
+import { _resetRepoKeysForTesting, repoKeysFor } from './project-repo-keys';
 import * as agentConfigModule from './agent-config';
 import { deleteAgent } from './agent-delete';
 import * as ptyManagerModule from './pty-manager';
@@ -6273,6 +6267,76 @@ describe('annex-server', () => {
       });
     });
 
+    it('sends a later snapshot with the repo key when a newly opened project finishes reading its remote (#3703)', async () => {
+      let finishOrigin!: (url: string) => void;
+      const readOrigin = vi.fn(() => new Promise<string>((resolve) => { finishOrigin = resolve; }));
+      _resetRepoKeysForTesting(readOrigin);
+      const project = { id: 'new-project', name: 'Site', path: '/new-project' };
+      vi.mocked(projectStore.list).mockReturnValue([project]);
+      const live = Object.assign(new EventEmitter(), { readyState: 1, send: vi.fn(), ping: () => {}, close: vi.fn() });
+      annexServer._testing.wsAuthTypes.set(live as never, 'bearer');
+      annexServer._testing.wss!.clients.add(live as never);
+      try {
+        annexServer._testing.wss!.emit('connection', live);
+        await vi.waitFor(() => expect(sent(live).some((f) => f.type === 'snapshot')).toBe(true));
+        expect(sent(live).find((f) => f.type === 'snapshot').payload.projects).toEqual([
+          expect.objectContaining({ id: project.id, name: 'Site' }),
+        ]);
+        expect(sent(live).find((f) => f.type === 'snapshot').payload.projects[0].repoKey).toBeUndefined();
+
+        finishOrigin('git@github.com:Org/Site.git');
+
+        await vi.waitFor(() => expect(sent(live).filter((f) => f.type === 'snapshot')).toHaveLength(2));
+        expect(sent(live).filter((f) => f.type === 'snapshot')[1].payload.projects[0].repoKey).toBe('github.com/org/site');
+        expect(readOrigin).toHaveBeenCalledTimes(1);
+      } finally {
+        _resetRepoKeysForTesting(async () => null);
+      }
+    });
+
+    it('coalesces changed repo keys with a snapshot refresh already pending (#3703)', async () => {
+      const readOrigin = vi.fn(async () => {
+        annexServer.broadcastSnapshotRefresh();
+        return 'git@github.com:org/site.git';
+      });
+      _resetRepoKeysForTesting(readOrigin);
+      vi.mocked(projectStore.list).mockReturnValue([{ id: 'coalesced', name: 'Site', path: '/coalesced' }]);
+      const live = Object.assign(new EventEmitter(), { readyState: 1, send: vi.fn(), ping: () => {}, close: vi.fn() });
+      annexServer._testing.wsAuthTypes.set(live as never, 'bearer');
+      annexServer._testing.wss!.clients.add(live as never);
+      try {
+        annexServer._testing.wss!.emit('connection', live);
+        await vi.waitFor(() => expect(sent(live).filter((f) => f.type === 'snapshot')).toHaveLength(2));
+        expect(sent(live).filter((f) => f.type === 'snapshot')[1].payload.projects[0].repoKey).toBe('github.com/org/site');
+        await new Promise((resolve) => setTimeout(resolve, 100));
+        expect(sent(live).filter((f) => f.type === 'snapshot')).toHaveLength(2);
+        expect(readOrigin).toHaveBeenCalledTimes(1);
+      } finally {
+        _resetRepoKeysForTesting(async () => null);
+      }
+    });
+
+    it('does not send an extra snapshot when a stale repo key refresh is unchanged (#3703)', async () => {
+      const readOrigin = vi.fn(async () => 'https://github.com/org/site.git');
+      _resetRepoKeysForTesting(readOrigin);
+      const project = { id: 'unchanged-project', name: 'Site', path: '/unchanged-project' };
+      await repoKeysFor([project], Date.now() - 61_000);
+      vi.mocked(projectStore.list).mockReturnValue([project]);
+      const live = Object.assign(new EventEmitter(), { readyState: 1, send: vi.fn(), ping: () => {}, close: vi.fn() });
+      annexServer._testing.wsAuthTypes.set(live as never, 'bearer');
+      annexServer._testing.wss!.clients.add(live as never);
+      try {
+        annexServer._testing.wss!.emit('connection', live);
+        await vi.waitFor(() => expect(sent(live).filter((f) => f.type === 'snapshot')).toHaveLength(1));
+        expect(sent(live).find((f) => f.type === 'snapshot').payload.projects[0].repoKey).toBe('github.com/org/site');
+        await new Promise((resolve) => setTimeout(resolve, 100));
+        expect(readOrigin).toHaveBeenCalledTimes(2);
+        expect(sent(live).filter((f) => f.type === 'snapshot')).toHaveLength(1);
+      } finally {
+        _resetRepoKeysForTesting(async () => null);
+      }
+    });
+
     it('stamps a refresh with the seq its live state was read at, so nothing newer is overwritten', async () => {
       vi.mocked(projectStore.list).mockReturnValue([{ id: 'p', name: 'P', path: '/p' } as any]);
       vi.mocked(agentConfigModule.listDurable).mockReturnValue([{ id: 'a', name: 'a', color: 'indigo', createdAt: '2025-01-01' }] as any);
@@ -7811,17 +7875,33 @@ describe('annex-server', () => {
     });
   });
 
-  describe('group project polling endpoint', () => {
-    it('POST /api/v1/group-projects/:id/polling sets the setting via setProjectPolling', async () => {
+  describe('deprecated group messaging compatibility endpoints', () => {
+    it.each([null, 'dev'])('posts old tap requests to the board for target=%s', async targetAgentId => {
+      const { groupProjectRegistry } = await import('./group-project-registry');
+      const { groupProjectHost } = await import('./group-project-host');
+      vi.mocked(groupProjectRegistry.get).mockResolvedValueOnce({ id: 'gp_1', name: 'Team', metadata: {} } as never);
+      const members = vi.spyOn(groupProjectHost, 'resolveMembers').mockResolvedValue([{ address: 'dev', name: 'Dev' }] as never);
+      const inbox = vi.spyOn(groupProjectHost, 'ensureInbox').mockResolvedValue('inbox-dev');
+      const post = vi.spyOn(groupProjectHost, 'post').mockResolvedValue({ id: 'post1', topic: targetAgentId ? 'inbox-dev' : 'general', body: 'Hello', sender: 'user', timestamp: 'now' });
+      try {
+        const { port, token } = await startAndPair();
+        const res = await request(port, 'POST', '/api/v1/group-projects/gp_1/shoulder-tap', { targetAgentId, sender: 'user', message: 'Hello' }, authHeaders(token));
+        expect(res.status).toBe(200);
+        expect(JSON.parse(res.body)).toMatchObject({ taskId: 'post1', deprecated: true });
+        expect(post).toHaveBeenCalledWith('gp_1', 'user', targetAgentId ? 'inbox-dev' : 'general', 'Hello', { author: { label: 'user' }, urgent: true });
+        if (targetAgentId) expect(inbox).toHaveBeenCalledWith('gp_1', 'Dev', 'dev');
+      } finally { members.mockRestore(); inbox.mockRestore(); post.mockRestore(); }
+    });
+
+    it('POST /api/v1/group-projects/:id/polling returns notices without changing settings', async () => {
+      const { groupProjectRegistry } = await import('./group-project-registry');
+      vi.mocked(groupProjectRegistry.get).mockResolvedValueOnce({ id: 'gp_1', name: 'Team', metadata: {} } as never);
       const { port, token } = await startAndPair();
-      const { setProjectPolling } = await import('./group-project-polling');
-      vi.mocked(setProjectPolling).mockResolvedValueOnce({ pollingEnabled: true, members: [] });
 
       const res = await request(port, 'POST', '/api/v1/group-projects/gp_1/polling', { enabled: true }, authHeaders(token));
       expect(res.status).toBe(200);
-      expect(JSON.parse(res.body).pollingEnabled).toBe(true);
+      expect(JSON.parse(res.body)).toMatchObject({ pollingEnabled: false, mode: 'notices', deprecated: true });
       // The paired person's toggle is explicitly a person write (#3664).
-      expect(setProjectPolling).toHaveBeenCalledWith('gp_1', true, { author: { label: 'user' } });
     });
 
     it('returns 400 when enabled is not a boolean', async () => {
@@ -7833,8 +7913,6 @@ describe('annex-server', () => {
 
     it('returns 404 for an unknown group project', async () => {
       const { port, token } = await startAndPair();
-      const { setProjectPolling } = await import('./group-project-polling');
-      vi.mocked(setProjectPolling).mockResolvedValueOnce(null);
 
       const res = await request(port, 'POST', '/api/v1/group-projects/gp_missing/polling', { enabled: false }, authHeaders(token));
       expect(res.status).toBe(404);

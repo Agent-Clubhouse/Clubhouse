@@ -7,8 +7,8 @@
  *   creator included. They live with every other grant, in the agent grants
  *   store, so the Clubhouse permissions page shows them.
  * - **Its own grants** are what the group project does by itself: `deliver`
- *   (post notices to members, #3362) on by default, `wake` (a lead's shoulder
- *   tap wakes a sleeping member) off. They're kept in its record's metadata.
+ *   (post notices to members, #3362) on by default, `wake` (direct inbox posts and mentions
+ *   resume sleeping members) on by default. They're kept in its record's metadata.
  * - **Migration.** An agent with the old `admins` role gets lead and admin,
  *   once per group project; the role is then retired.
  */
@@ -34,7 +34,7 @@ export const ROLE_ACTION: Readonly<Record<GroupProjectRole, GrantAction>> = {
 export type GroupProjectOwnGrant = 'deliver' | 'wake' | 'actions';
 export type GroupProjectOwnGrants = Record<GroupProjectOwnGrant, 'allow' | 'off'>;
 
-export const DEFAULT_OWN_GRANTS: Readonly<GroupProjectOwnGrants> = { deliver: 'allow', wake: 'off', actions: 'allow' };
+export const DEFAULT_OWN_GRANTS: Readonly<GroupProjectOwnGrants> = { deliver: 'allow', wake: 'allow', actions: 'allow' };
 
 /** A group project's own grants: its saved ones over the defaults. */
 export function ownGrantsOf(gp: Pick<GroupProject, 'metadata'>): GroupProjectOwnGrants {

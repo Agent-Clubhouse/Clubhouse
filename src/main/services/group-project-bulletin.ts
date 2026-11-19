@@ -268,7 +268,7 @@ class BulletinBoard {
   }
 
   /** Post a message to a topic. `seq` is the host's sequence number for the post (#3356). */
-  async postMessage(sender: string, topic: string, body: string, seq?: number, id?: string, senderAddress?: string): Promise<BulletinMessage> {
+  async postMessage(sender: string, topic: string, body: string, seq?: number, id?: string, senderAddress?: string, urgent?: boolean): Promise<BulletinMessage> {
     await this.ensureLoaded();
 
     if (Buffer.byteLength(body, 'utf-8') > MAX_BODY_BYTES) {
@@ -281,6 +281,7 @@ class BulletinBoard {
       id: id ?? `msg_${Date.now()}_${randomBytes(6).toString('hex')}`,
       sender,
       ...(senderAddress && { senderAddress }),
+      ...(urgent && { urgent: true }),
       topic: canonicalTopic,
       body,
       timestamp: new Date().toISOString(),
@@ -349,6 +350,22 @@ class BulletinBoard {
     }
 
     return digests;
+  }
+
+  /** Bounded sequence page for notices: never sort or copy the whole board. */
+  async getRecentMessagesBySeq(limit: number): Promise<BulletinMessage[]> {
+    await this.ensureLoaded();
+    if (limit <= 0) return [];
+    const recent: BulletinMessage[] = [];
+    for (const messages of this.topics.values()) for (const message of messages) {
+      if (message.seq === undefined) continue;
+      if (recent.length === limit && message.seq <= recent[0].seq!) continue;
+      let low = 0; let high = recent.length;
+      while (low < high) { const mid = (low + high) >>> 1; if (recent[mid].seq! < message.seq) low = mid + 1; else high = mid; }
+      recent.splice(low, 0, message);
+      if (recent.length > limit) recent.shift();
+    }
+    return recent;
   }
 
   /** Get all messages across all topics, sorted by timestamp. */
@@ -800,7 +817,7 @@ export async function ensureInboxChannel(projectId: string, agentName: string, a
     await board.postMessage(
       'system',
       name,
-      `Inbox channel for ${agentName}. Other agents post here for direct, async messages. Poll this on every cycle.`,
+      `Inbox channel for ${agentName}. Other agents post here for direct, async messages. New posts send notices; read this channel when notified.`,
       seq,
     );
   }

@@ -32,6 +32,8 @@ import { MobileCommandService, MobileControlError } from './mobile-control';
 import { withSettingsSurface } from './settings-audit';
 import { GRANT_REQUEST_TTL_MS } from '../../shared/grant-requests';
 import type { MobileGrantAnswer } from '../../shared/mobile-control';
+import type { AnnexPeer } from '../../shared/types';
+import * as mobileGrants from './mobile-grant-requests';
 
 const NOW = Date.parse('2026-11-09T09:00:00Z');
 /** The Dispatcher on: its coordinator (`disp`) asks, and its requests show on the chat agent you talk to (`disp_chat`, #3036). */
@@ -95,6 +97,61 @@ beforeEach(() => {
 });
 
 describe('grantRequests in the snapshot (#3205)', () => {
+  const member: AnnexPeer = {
+    fingerprint: PHONE_ID, alias: 'Desk', icon: 'computer', color: 'indigo', publicKey: 'key',
+    pairedAt: '', lastSeen: '', role: 'member', kind: 'desktop',
+    tlsCertificateFingerprint: 'pin', tlsCertificatePem: 'pem',
+  };
+  const projection = (peer: AnnexPeer | undefined = member, networkEnabled = true, sessionOnly = false) =>
+    mobileGrants.grantSnapshotForPeer(buildMobileGrantRequests(places), {
+      fingerprint: PHONE_ID, peer, networkEnabled, sessionOnly, hostLabel: 'Mac Mini',
+    });
+
+  it('exports only the four permitted stub fields for a desktop member that cannot answer', () => {
+    const id = callRequest();
+    expect(projection()).toEqual({
+      grantRequests: [],
+      pendingGrantRequests: [{ hostLabel: 'Mac Mini', requestId: id, kind: 'call', createdAt: new Date(NOW - 60_000).toISOString() }],
+    });
+  });
+
+  it.each([
+    { ...member, kind: 'phone' as const },
+    { ...member, role: 'controller' as const },
+    { ...member, role: 'satellite' as const },
+    { ...member, networkPending: true },
+    { ...member, tlsCertificatePem: undefined },
+  ])('does not export pending stubs to a phone or inactive/non-member desktop (%j)', (peer) => {
+    callRequest();
+    expect(projection(peer)).toEqual({ grantRequests: [] });
+    expect(projection(peer)).not.toHaveProperty('pendingGrantRequests');
+  });
+
+  it('does not export pending stubs outside the active network or to session pairings', () => {
+    callRequest();
+    expect(projection(member, false)).not.toHaveProperty('pendingGrantRequests');
+    expect(projection(member, true, true)).not.toHaveProperty('pendingGrantRequests');
+  });
+
+  it('marks deletion and remote-create reviews read-only without changing the phone projection', () => {
+    const deletion = recordGrantRequest('delete', {
+      kind: 'call', agentId: 'delete', agentName: 'Private agent', projectPath: '/p', actions: ['agent.dispose'], where: 'batch',
+      deleteReview: { items: [] }, argumentsText: '{"secret":"never export"}', reason: 'Private reason',
+    }, NOW);
+    const create = recordGrantRequest('create', {
+      kind: 'call', agentId: 'create', agentName: 'Private creator', projectPath: '/p', actions: ['group_project.admin'], where: 'app',
+      remoteCreateReview: { machine: 'other', machineName: 'Other', name: 'Private project', scopeLabel: 'app', membershipLabel: 'none', excluded: [] },
+    }, NOW);
+    if (!deletion.ok || !create.ok) throw new Error('not recorded');
+    const before = buildMobileGrantRequests(places);
+    expect(projection()).toEqual({
+      grantRequests: [],
+      pendingGrantRequests: [deletion.request, create.request].map((r) => ({ hostLabel: 'Mac Mini', requestId: r.requestId, kind: r.kind, createdAt: r.createdAt })),
+    });
+    expect(projection({ ...member, kind: 'phone' })).toEqual({ grantRequests: before });
+    expect(buildMobileGrantRequests(places)).toEqual(before);
+  });
+
   it('lists every waiting request a phone can place, oldest first, with what the desktop shows', () => {
     const call = callRequest();
     const grant = grantRequest();
@@ -177,6 +234,23 @@ describe('the store says when a request opens and why it closes', () => {
 });
 
 describe('grant.answer: the desktop\'s answer, from a phone', () => {
+  it.each(['mcp', 'dispatcher', 'cli', 'system'] as const)('refuses an answer from the %s surface at the host', async (surface) => {
+    const id = callRequest();
+    await expect(withSettingsSurface(surface, 'peer-1', () =>
+      runGrantCommand(command(id, 'allow_once'), places, { viewer: 'peer-1', assertAuthorized: () => {} })))
+      .rejects.toMatchObject({ code: 'grant_answer_not_offered' });
+    expect(peekGrantRequest(id)).not.toBeNull();
+    expect(mocks.deliver).not.toHaveBeenCalled();
+  });
+
+  it('refuses a forged answering identity even on a desktop surface', async () => {
+    const id = callRequest();
+    await expect(withSettingsSurface('annex_desktop', 'forged', () =>
+      runGrantCommand(command(id, 'allow_once'), places, { viewer: 'peer-1', assertAuthorized: () => {} })))
+      .rejects.toMatchObject({ code: 'grant_answer_not_offered' });
+    expect(peekGrantRequest(id)).not.toBeNull();
+  });
+
   it.each([
     ['allow_once', 'call', true],
     ['decline', 'call', false],
@@ -457,7 +531,8 @@ describe('grant.answer: the desktop\'s answer, from a phone', () => {
     expect(accepted).toMatchObject({ statusCode: 200, body: { status: 'completed', result: { requestId: id, kind: 'call', answer: 'allow_once' } } });
     // A computer controlling this one is audited as one.
     const fromDesktop = callRequest('a2');
-    await service.execute('desk-1', { ...body, commandId: 'c2', requestId: fromDesktop, answer: 'decline' }, run2, 'annex_desktop');
+    await service.execute('desk-1', { ...body, commandId: 'c2', requestId: fromDesktop, answer: 'decline' },
+      (cmd) => runGrantCommand(cmd as ReturnType<typeof command>, places, { assertAuthorized: () => {}, viewer: 'desk-1' }), 'annex_desktop');
     expect(mocks.audit).toEqual([
       { agentId: 'a1', kind: 'call', outcome: 'allowed', surface: 'mobile' },
       { agentId: 'a2', kind: 'call', outcome: 'declined', surface: 'annex_desktop' },

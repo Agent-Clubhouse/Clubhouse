@@ -36,14 +36,12 @@ interface GroupProjectStoreState {
   /** #3547: create on another computer; a created group's copy joins the list. */
   createOnHost: (host: string, name: string, options?: GroupProjectCreateOptions, retryOf?: string) => Promise<RemoteCreateOutcome>;
   update: (id: string, fields: { name?: string; description?: string; instructions?: string; metadata?: Record<string, unknown> }) => Promise<void>;
-  setPolling: (id: string, enabled: boolean) => Promise<void>;
   scopeOptions: () => Promise<GroupProjectScopeOptions>;
   dismissRefusals: (id: string) => Promise<void>;
   previewScope: (id: string, scope: GroupProjectScope) => Promise<{ leaving: GroupProjectMemberView[]; returning: GroupProjectMemberView[] }>;
   setScope: (id: string, scope: GroupProjectScope, confirmLeaving: string[]) => Promise<GroupProject>;
   remove: (id: string, token: string) => Promise<void>;
   postBulletinMessage: (projectId: string, topic: string, body: string) => Promise<void>;
-  sendShoulderTap: (projectId: string, targetAgentId: string | null, message: string) => Promise<unknown>;
   deleteMessage: (projectId: string, topic: string, messageId: string) => Promise<boolean>;
   deleteTopic: (projectId: string, topic: string) => Promise<boolean>;
   setTopicProtection: (projectId: string, topic: string, isProtected: boolean) => Promise<boolean>;
@@ -114,15 +112,7 @@ export const useGroupProjectStore = create<GroupProjectStoreState>((set) => ({
     }));
   },
 
-  setPolling: async (id, enabled) => {
-    // A forwarded write may only be queued. Never apply the requested flag here:
-    // reread the confirmed record and let host catch-up broadcasts reconcile it.
-    await window.clubhouse.groupProject.setPolling(id, enabled);
-    await Promise.all([
-      useGroupProjectStore.getState().loadProjects(),
-      useGroupProjectStore.getState().loadOperations(id),
-    ]);
-  },
+
 
   scopeOptions: () => window.clubhouse.groupProject.scopeOptions(),
 
@@ -158,9 +148,7 @@ export const useGroupProjectStore = create<GroupProjectStoreState>((set) => ({
     await window.clubhouse.groupProject.postBulletinMessage(projectId, topic, body);
   },
 
-  sendShoulderTap: async (projectId, targetAgentId, message) => {
-    return window.clubhouse.groupProject.sendShoulderTap(projectId, targetAgentId, message);
-  },
+
 
   deleteMessage: async (projectId, topic, messageId) => {
     return window.clubhouse.groupProject.deleteMessage(projectId, topic, messageId);

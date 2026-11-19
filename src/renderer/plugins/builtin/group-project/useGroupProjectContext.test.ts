@@ -43,7 +43,6 @@ beforeEach(() => {
       deleteMessage: vi.fn().mockResolvedValue(true),
       deleteTopic: vi.fn().mockResolvedValue(true),
       setTopicProtection: vi.fn().mockResolvedValue(true),
-      setPolling: vi.fn().mockResolvedValue({ pollingEnabled: true, members: [] }),
     },
   };
 
@@ -71,7 +70,7 @@ describe('useGroupProjectContext — remote optimistic update', () => {
             name: 'Test GP',
             description: 'Original description',
             instructions: 'Original instructions',
-            metadata: { pollingEnabled: false, shoulderTapEnabled: false },
+            metadata: { pollingEnabled: false, customFlag: false },
           },
         ],
       },
@@ -125,7 +124,7 @@ describe('useGroupProjectContext — remote optimistic update', () => {
     const updated = remoteGPs.find((p) => p.id === GP_ID);
     expect(updated.metadata.pollingEnabled).toBe(true);
     // Original metadata keys should be preserved
-    expect(updated.metadata.shoulderTapEnabled).toBe(false);
+    expect(updated.metadata.customFlag).toBe(false);
   });
 
   it('forwards a per-channel read map to the satellite when remote', async () => {
@@ -199,24 +198,6 @@ describe('useGroupProjectContext — remote optimistic update', () => {
     expect(mockGpInjectMessage).toHaveBeenCalledWith(SAT_ID, 'agent-1', 'hello world');
   });
 
-  it('routes setPolling through annex client when remote and optimistically updates the setting', async () => {
-    seedRemoteGP();
-    const { result } = renderHook(() => useGroupProjectContext(GP_ID, true, SAT_ID, mockAnnex));
-
-    await act(async () => {
-      await result.current.setPolling(GP_ID, true);
-    });
-
-    expect(mockGpSetPolling).toHaveBeenCalledWith(SAT_ID, GP_ID, true);
-    // Does NOT fall back to the two-step update+inject path.
-    expect(mockGpUpdate).not.toHaveBeenCalled();
-
-    const remoteGPs = useRemoteProjectStore.getState().remoteGroupProjects[SAT_ID] as any[];
-    const updated = remoteGPs.find((p) => p.id === GP_ID);
-    expect(updated.metadata.pollingEnabled).toBe(true);
-    // Original metadata keys are preserved.
-    expect(updated.metadata.shoulderTapEnabled).toBe(false);
-  });
 
   it('reads and sets lead on the satellite that holds the group project, by its bare id (#3360)', async () => {
     seedRemoteGP();
@@ -268,17 +249,6 @@ describe('useGroupProjectContext — local mode', () => {
     expect(result.current.isRemote).toBe(false);
   });
 
-  it('routes setPolling through the local groupProject IPC (not annex) when local', async () => {
-    useGroupProjectStore.setState({ loaded: true, projects: [] });
-    const { result } = renderHook(() => useGroupProjectContext('gp-1', false, null, mockAnnex));
-
-    await act(async () => {
-      await result.current.setPolling('gp-1', false);
-    });
-
-    expect((window as any).clubhouse.groupProject.setPolling).toHaveBeenCalledWith('gp-1', false);
-    expect(mockGpSetPolling).not.toHaveBeenCalled();
-  });
 });
 
 describe('useGroupProjectContext — remote namespace stripping (Mission 67)', () => {
@@ -403,15 +373,15 @@ describe('useGroupProjectContext — remote namespace stripping (Mission 67)', (
     const topic2Messages = Array.from({ length: 5 }, (_, i) => ({
       id: `msg-t2-${i}`,
       sender: `agent-${i}`,
-      topic: 'shoulder-tap',
-      body: `shoulder-tap message ${i}`,
+      topic: 'work',
+      body: `work message ${i}`,
       timestamp: `2026-04-10T00:00:1${i}.000Z`,
     }));
     const allMessages = [...topic1Messages, ...topic2Messages];
 
     mockGpBulletinDigest.mockResolvedValue([
       { topic: 'general', messageCount: 5, newMessageCount: 0, latestTimestamp: topic1Messages[4].timestamp, isProtected: false },
-      { topic: 'shoulder-tap', messageCount: 5, newMessageCount: 0, latestTimestamp: topic2Messages[4].timestamp, isProtected: false },
+      { topic: 'work', messageCount: 5, newMessageCount: 0, latestTimestamp: topic2Messages[4].timestamp, isProtected: false },
     ]);
     mockGpBulletinAll.mockResolvedValue(allMessages);
 
@@ -432,10 +402,10 @@ describe('useGroupProjectContext — remote namespace stripping (Mission 67)', (
     // Full history is returned to the widget.
     expect(digest).toHaveLength(2);
     expect(digest.find((d: any) => d.topic === 'general').messageCount).toBe(5);
-    expect(digest.find((d: any) => d.topic === 'shoulder-tap').messageCount).toBe(5);
+    expect(digest.find((d: any) => d.topic === 'work').messageCount).toBe(5);
     expect(messages).toHaveLength(10);
     expect(messages.filter((m: any) => m.topic === 'general')).toHaveLength(5);
-    expect(messages.filter((m: any) => m.topic === 'shoulder-tap')).toHaveLength(5);
+    expect(messages.filter((m: any) => m.topic === 'work')).toHaveLength(5);
   });
 
   it('still passes bare gpId through unchanged when used directly without namespacing', async () => {
