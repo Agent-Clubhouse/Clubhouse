@@ -5,7 +5,9 @@ import * as path from 'path';
 import { noteAgentStarting, _resetAgentDisplayStateForTesting } from './agent-display-state';
 import { ORCHESTRATION_DEFAULTS } from '../../shared/orchestration-policy';
 import { isRemoteAgentDetails, type RemoteAgentDetails } from '../../shared/remote-agent-details';
-const m = vi.hoisted(() => ({ target: vi.fn(), settings: vi.fn(), provider: vi.fn(), running: vi.fn(), policies: vi.fn(), helpers: vi.fn(), requests: vi.fn(), bindings: vi.fn(), sources: vi.fn(), satellite: vi.fn(), peer: vi.fn(), directions: vi.fn(), dispatcher: vi.fn(), dispatcherOn: vi.fn(), agentCard: vi.fn(), actions: vi.fn(), canvases: vi.fn(), status: vi.fn(), entries: vi.fn(), template: vi.fn(), mcp: vi.fn(), branch: vi.fn(), transcript: vi.fn(), historical: vi.fn(), catalog: vi.fn(), connection: vi.fn(), work: vi.fn(), realWitness: false, base: '', registration: vi.fn(), runtime: vi.fn(), useRealRuntime: false }));
+const m = vi.hoisted(() => ({ target: vi.fn(), settings: vi.fn(), provider: vi.fn(), running: vi.fn(), policies: vi.fn(), helpers: vi.fn(), requests: vi.fn(), bindings: vi.fn(), sources: vi.fn(), satellite: vi.fn(), peer: vi.fn(), directions: vi.fn(), dispatcher: vi.fn(), dispatcherOn: vi.fn(), agentCard: vi.fn(), actions: vi.fn(), canvases: vi.fn(), status: vi.fn(), entries: vi.fn(), template: vi.fn(), mcp: vi.fn(), branch: vi.fn(), transcript: vi.fn(), historical: vi.fn(), envCached: vi.fn(), catalog: vi.fn(), connection: vi.fn(), work: vi.fn(), realWitness: false, base: '', registration: vi.fn(), runtime: vi.fn(), useRealRuntime: false }));
+vi.mock('child_process', async (original) => ({ ...await original<typeof import('child_process')>(), execSync: vi.fn(() => '') }));
+vi.mock('../util/shell', async (original) => ({ ...await original<typeof import('../util/shell')>(), isShellEnvironmentCached: m.envCached }));
 vi.mock('./base-dir', () => ({ getBaseDirPath: () => m.base }));
 vi.mock('./read-only-agent-target-witness', async (original) => {
   const actual = await original<typeof import('./read-only-agent-target-witness')>();
@@ -51,7 +53,7 @@ const project = { id: 'p1', name: 'Project', path: '/host/project' };
 const setting = () => ({ version: 1, agentId: 'a1', readOnly: true, provider: 'Host CLI', model: 'model', runtime: 'terminal', access: 'Ask first', executionPolicy: 'defaults', autoSleep: null, context: null, setup: { state: 'ok', managed: false, template: null, instructions: 'None', skills: null, mcps: null } });
 beforeEach(() => {
   _resetAgentDisplayStateForTesting();
-  m.realWitness = false; m.useRealRuntime = false; m.registration.mockReturnValue(undefined); m.runtime.mockReturnValue(undefined);
+  m.envCached.mockReturnValue(true); m.realWitness = false; m.useRealRuntime = false; m.registration.mockReturnValue(undefined); m.runtime.mockReturnValue(undefined);
   m.target.mockResolvedValue({ agent: agent(), project });
   m.settings.mockResolvedValue({ status: 200, body: setting() });
   m.provider.mockResolvedValue({ id: 'codex-cli', conventions: {}, readSessionTranscript: m.transcript });
@@ -264,6 +266,21 @@ describe('host selected-agent Details projections', () => {
       if (mode === 'no-results' || mode === 'invalid-totals') for (const label of ['Duration', 'Cost']) expect(c.rows).toContainEqual({ label, value: 'Not reported' });
       if (mode === 'unknown-completeness') expect(c.rows).toContainEqual({ label: 'Duration', value: '5s' });
     }
+  });
+  it.each(['cold', 'warm'] as const)('does not initialize shell environment for historical display: %s', async (mode) => {
+    const shell = await vi.importActual<typeof import('../util/shell')>('../util/shell');
+    const { execSync } = await import('child_process'); const platform = process.platform;
+    try {
+      Object.defineProperty(process, 'platform', { value: 'darwin' }); shell.invalidateShellEnvironmentCache(); vi.mocked(execSync).mockClear();
+      m.envCached.mockImplementation(shell.isShellEnvironmentCached);
+      if (mode === 'warm') { shell.getShellEnvironment(); expect(execSync).toHaveBeenCalledTimes(1); vi.mocked(execSync).mockClear(); }
+      m.historical.mockImplementation(async () => { shell.getShellEnvironment(); return [{ type: 'result', duration_ms: 0, total_cost_usd: 0 }]; });
+      m.target.mockResolvedValue({ agent: { ...agent(), lastSessionId: 'selected-last', sessionHistory: [{ sessionId: 'selected-last', orchestrator: 'claude-code' }] }, project });
+      const c = (await read()).cards.find((c) => c.id === 'session')!;
+      expect.soft(execSync).not.toHaveBeenCalled(); expect.soft(m.transcript).not.toHaveBeenCalled();
+      if (mode === 'cold') { expect.soft(m.historical).not.toHaveBeenCalled(); expect.soft(c.notes.join(' ')).toContain('not cached'); expect.soft(shell.isShellEnvironmentCached()).toBe(false); }
+      else { expect(m.historical).toHaveBeenCalledTimes(1); expect(c.rows).toContainEqual({ label: 'Cost', value: '$0.00' }); }
+    } finally { Object.defineProperty(process, 'platform', { value: platform }); shell.invalidateShellEnvironmentCache(); }
   });
   it.each(['small', 'truncated'] as const)('reads historical native provider file with real byte bound and unchanged storage: %s', async (mode) => {
     const root = await fs.mkdtemp(path.join(os.tmpdir(), 'clubhouse-history-native-'));

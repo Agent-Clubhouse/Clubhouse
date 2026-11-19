@@ -5,6 +5,7 @@ import { describeSleep, formatShortDuration } from '../../shared/agent-session-d
 import { getProvider, isSessionCapable } from '../orchestrators';
 import type { TranscriptReadStats } from '../orchestrators/types';
 import { normalizeSessionEvents, SUMMARY_TRANSCRIPT_MAX_BYTES } from './session-reader';
+import { isShellEnvironmentCached } from '../util/shell';
 import { row } from './remote-details-presentation';
 
 export async function readHistoricalSessionCard(c: RemoteDetailsCard, agent: DurableAgentConfig, cwd: string): Promise<void> {
@@ -29,6 +30,16 @@ export async function readHistoricalSessionCard(c: RemoteDetailsCard, agent: Dur
   const provider = getProvider(recorded);
   row(c, 'Last CLI', provider?.displayName || recorded);
   if (!provider || !isSessionCapable(provider)) { c.notes.push('The recorded provider does not support reading this historical session on this host.'); return; }
+  if (!['claude-code', 'codex-cli', 'copilot-cli'].includes(provider.id)) {
+    c.notes.push('Passive historical lookup has not been established for this provider. Usage is unknown.'); return;
+  }
+  // These built-in readers obtain their root synchronously before their first
+  // await, and do not resolve launch environment again after awaited lookup/IO.
+  // No event-loop turn separates this check from that root resolution. A cold
+  // cache may be pending or unavailable; display must never initialize it.
+  if (!isShellEnvironmentCached()) {
+    c.notes.push('Historical usage is unknown: the host launch environment is not cached (initialization may be pending or unavailable). Details does not initialize it.'); return;
+  }
   const stats: TranscriptReadStats = {};
   const raw = await provider.readSessionTranscript(id, cwd, { maxBytes: SUMMARY_TRANSCRIPT_MAX_BYTES, stats });
   const known = (value: unknown): value is number => typeof value === 'number' && Number.isFinite(value) && value >= 0;

@@ -5,7 +5,7 @@ vi.mock('child_process', () => ({
   execFile: vi.fn(),
 }));
 
-import { getShellEnvironment, getDefaultShell, invalidateShellEnvironmentCache, preWarmShellEnvironment, cleanSpawnEnv, buildCliSpawnEnv, summarizeSpawnEnv, HOST_SESSION_ENV_VARS, isHostSessionEnvVar, cleanInheritedEnv, INHERITED_AGENT_ENV_VARS } from './shell';
+import { isShellEnvironmentCached, getShellEnvironment, getDefaultShell, invalidateShellEnvironmentCache, preWarmShellEnvironment, cleanSpawnEnv, buildCliSpawnEnv, summarizeSpawnEnv, HOST_SESSION_ENV_VARS, isHostSessionEnvVar, cleanInheritedEnv, INHERITED_AGENT_ENV_VARS } from './shell';
 import { HOST_SESSION_ENV_FIXTURE, USER_CLAUDE_CONFIG_FIXTURE } from './__fixtures__/host-session-env';
 import { execSync, execFile } from 'child_process';
 
@@ -65,6 +65,23 @@ describe('invalidateShellEnvironmentCache', () => {
     expect(env2.NEW_KEY).toBe('new_value');
     // Should be a different reference since cache was invalidated
     expect(env1).not.toBe(env2);
+  });
+});
+
+describe('passive shell environment readiness', () => {
+  const platform = process.platform;
+  afterEach(() => { Object.defineProperty(process, 'platform', { value: platform }); invalidateShellEnvironmentCache(); });
+  it('leaves cold POSIX state untouched and observes only already committed warm state', () => {
+    Object.defineProperty(process, 'platform', { value: 'darwin' }); invalidateShellEnvironmentCache(); vi.clearAllMocks();
+    expect(isShellEnvironmentCached()).toBe(false); expect(isShellEnvironmentCached()).toBe(false);
+    expect(execSync).not.toHaveBeenCalled(); expect(execFile).not.toHaveBeenCalled();
+    vi.mocked(execSync).mockReturnValue('PATH=/usr/bin\n'); getShellEnvironment();
+    expect(execSync).toHaveBeenCalledTimes(1); expect(isShellEnvironmentCached()).toBe(true); expect(execSync).toHaveBeenCalledTimes(1);
+    invalidateShellEnvironmentCache(); expect(isShellEnvironmentCached()).toBe(false); expect(execSync).toHaveBeenCalledTimes(1);
+  });
+  it('admits Windows process-environment copy without warming or starting a shell', () => {
+    Object.defineProperty(process, 'platform', { value: 'win32' }); invalidateShellEnvironmentCache(); vi.clearAllMocks();
+    expect(isShellEnvironmentCached()).toBe(true); expect(execSync).not.toHaveBeenCalled(); expect(execFile).not.toHaveBeenCalled();
   });
 });
 
