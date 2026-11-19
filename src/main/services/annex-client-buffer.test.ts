@@ -465,6 +465,46 @@ describe('annex-client remote PTY buffer cache', () => {
       expect(https.get).toHaveBeenCalledTimes(2);
     });
 
+    it('does not reuse a pre-disconnect seed for a view reopening after reconnect', async () => {
+      _addConnectedSatelliteForTesting(SAT);
+      const oldFetch = deferBufferFetch();
+      const oldRequest = requestPtyBufferSnapshot(SAT, AGENT);
+      _receiveSatelliteDisconnectForTesting(SAT);
+      _addConnectedSatelliteForTesting(SAT);
+
+      const newFetch = deferBufferFetch();
+      const reopened = requestPtyBufferSnapshot(SAT, AGENT);
+      oldFetch.respond('stale screen', { [ANNEX_BUFFER_HEADERS.seq]: '12' });
+      await vi.waitFor(() => expect(https.get).toHaveBeenCalledTimes(2));
+      newFetch.respond('screen after wake', { [ANNEX_BUFFER_HEADERS.seq]: '17' });
+
+      expect((await reopened).data).toBe('screen after wake');
+      await oldRequest;
+    });
+
+    it('retries a stale seed only once when the satellite keeps reconnecting', async () => {
+      _addConnectedSatelliteForTesting(SAT);
+      const firstFetch = deferBufferFetch();
+      const pending = requestPtyBufferSnapshot(SAT, AGENT);
+      _receiveSatelliteDisconnectForTesting(SAT);
+      _addConnectedSatelliteForTesting(SAT);
+      const retryFetch = deferBufferFetch();
+      firstFetch.respond('stale screen');
+      await vi.waitFor(() => expect(https.get).toHaveBeenCalledTimes(2));
+
+      _receiveSatelliteDisconnectForTesting(SAT);
+      _addConnectedSatelliteForTesting(SAT);
+      retryFetch.respond('another stale screen');
+      expect((await pending).data).toBe('');
+      expect(https.get).toHaveBeenCalledTimes(2);
+
+      const stableFetch = deferBufferFetch();
+      const stableRequest = requestPtyBufferSnapshot(SAT, AGENT);
+      stableFetch.respond('current screen');
+      expect((await stableRequest).data).toBe('current screen');
+      expect(https.get).toHaveBeenCalledTimes(3);
+    });
+
     it('stops trimming after a disconnect, since a restarted satellite counts from zero', async () => {
       _addConnectedSatelliteForTesting(SAT);
       const fetch = deferBufferFetch();
