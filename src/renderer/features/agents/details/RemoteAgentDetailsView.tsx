@@ -23,6 +23,7 @@ import { jumpToCanvas, remoteCanvasJumpUnavailable } from './agent-canvases';
 import { RemoteChangesCard } from './RemoteChangesCard';
 import { Evidence } from './RemoteDetailsEvidence';
 import { RemoteQuickSettingsCard } from './RemoteQuickSettingsCard';
+import { admittedProviderLabel } from '../../../../shared/provider-display';
 import { ProviderEvidenceNotes, ProviderInventory } from './ProviderEvidenceNotes';
 import { remoteDetailsAddress } from './remote-details-address';
 
@@ -105,7 +106,10 @@ export function RemoteAgentDetailsView({ agent, chat, onShowInStream, missedSuba
   // Retained chat is historical while disconnected and is never presented as a current host read.
   const session = details && connected && !asleep && details.running ? hydrated.chat : undefined;
   const quickProvider = agent.kind === 'quick' && !runtimeUnconfirmed ? details?.cards.find((c) => c.id === 'settings')?.rows.find((r) => r.label === 'CLI' || asleep && r.label === 'Last CLI')?.value : undefined;
-  const provider = runtimeUnconfirmed ? 'Current provider not confirmed' : details?.sessionId && !session && !asleep ? 'Current provider evidence unavailable' : details?.providerLabel ?? quickProvider ?? details?.settings?.provider ?? session?.provider ?? 'Not reported by host';
+  const reportedProvider = admittedProviderLabel(session?.provider,
+    details?.providerLabel ? { id: details.providerId, label: details.providerLabel } : agent.kind === 'quick' && quickProvider ? { id: details?.providerId, label: quickProvider } : undefined,
+    details?.settings ? { id: details.settings.providerId, label: details.settings.provider } : undefined);
+  const provider = runtimeUnconfirmed ? 'Current provider not confirmed' : details?.sessionId && !session && !asleep ? 'Current provider evidence unavailable' : reportedProvider ?? details?.providerLabel ?? quickProvider ?? details?.settings?.provider ?? 'Not reported by host';
   const map = useMemo(() => {
     if (!session) return null;
     const value = buildAgentMap({ items: session.items, subagents: session.subagents, capabilities: session.capabilities, state: session.state });

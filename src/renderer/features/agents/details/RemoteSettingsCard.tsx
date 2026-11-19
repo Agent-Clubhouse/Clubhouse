@@ -2,6 +2,7 @@ import { useEffect, useState, type ReactNode } from 'react';
 import type { Agent } from '../../../../shared/types';
 import type { RemoteAgentSettings } from '../../../../shared/remote-agent-settings';
 import type { ControllerReadResult } from '../../../../shared/controller-chat';
+import { admittedProviderLabel, hasSeparateNextProvider } from '../../../../shared/provider-display';
 import { accessLabel } from '../../../../shared/agent-access';
 import type { ChatViewState } from '../../../stores/chatStore';
 import { useAnnexClientStore } from '../../../stores/annexClientStore';
@@ -61,7 +62,8 @@ export function RemoteSettingsCard({ agent, chat, result: supplied, onRetry, run
   const asleep = agent.status === 'sleeping' || agent.status === 'error';
   const session = asleep ? undefined : chat;
   const providerDiffers = !!value?.providerId && !!currentProvider && value.providerId !== currentProvider.id;
-  const liveCli = session && currentProvider?.id === session.provider ? currentProvider.label : value?.provider ?? session?.provider;
+  const liveCli = admittedProviderLabel(session?.provider, currentProvider, value ? { id: value.providerId, label: value.provider } : undefined);
+  const separateNextCli = !!value && hasSeparateNextProvider(session?.provider, value.providerId);
   const liveModel = session?.model ? session.models.find((m) => m.id === session.model)?.label ?? session.model : null;
   const model = value ? liveModel && session?.model !== value.model ? `${liveModel} now, next start: ${value.model}` : liveModel ?? value.model : liveModel;
   const liveAccess = session?.level ? accessLabel(session.level) : null;
@@ -76,8 +78,8 @@ export function RemoteSettingsCard({ agent, chat, result: supplied, onRetry, run
   const setup = value?.setup;
   return (
     <DetailsCard id="settings" title="Settings" summary={summary} open={open} onToggle={() => setOpen(!open)}>
-      {row('cli', providerDiffers && !session ? 'Next start CLI' : 'CLI', [liveCli, session?.cliVersion].filter(Boolean).join(' ') || null)}
-      {providerDiffers && session && row('next-cli', 'Next start CLI', value?.provider)}
+      {row('cli', providerDiffers && !session ? 'Next start CLI' : 'CLI', [liveCli ?? value?.provider, liveCli ? session?.cliVersion : null].filter(Boolean).join(' ') || null)}
+      {separateNextCli && row('next-cli', 'Next start CLI', value?.provider)}
       {row('runs-in', asleep ? 'Next wake' : 'Runs in', runtime)}
       {!asleep && liveRuntime && nextRuntime && liveRuntime !== nextRuntime && row('next-runtime', 'Next wake', nextRuntime)}
       {row('model', 'Model', model)}
