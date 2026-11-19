@@ -105,7 +105,7 @@ export function RemoteAgentDetailsView({ agent, chat, onShowInStream, missedSuba
   // Retained chat is historical while disconnected and is never presented as a current host read.
   const session = details && connected && !asleep && details.running ? hydrated.chat : undefined;
   const quickProvider = agent.kind === 'quick' && !runtimeUnconfirmed ? details?.cards.find((c) => c.id === 'settings')?.rows.find((r) => r.label === 'CLI' || asleep && r.label === 'Last CLI')?.value : undefined;
-  const provider = details?.settings?.provider ?? quickProvider ?? session?.provider ?? 'Not reported by host';
+  const provider = runtimeUnconfirmed ? 'Current provider not confirmed' : details?.sessionId && !session && !asleep ? 'Current provider evidence unavailable' : details?.providerLabel ?? quickProvider ?? details?.settings?.provider ?? session?.provider ?? 'Not reported by host';
   const map = useMemo(() => {
     if (!session) return null;
     const value = buildAgentMap({ items: session.items, subagents: session.subagents, capabilities: session.capabilities, state: session.state });
@@ -169,7 +169,7 @@ export function RemoteAgentDetailsView({ agent, chat, onShowInStream, missedSuba
       {hydrated.evidence && <ProviderEvidenceNotes evidence={hydrated.evidence} />}
       {['error', 'rate_limited', 'unavailable'].includes(result.status) && <Button kind="ghost" onClick={() => setRetry((n) => n + 1)}>Refresh</Button>}
     </div>
-    {agent.kind === 'quick' ? <RemoteQuickSettingsCard card={card('settings')} session={session} runtimeUnconfirmed={runtimeUnconfirmed} message={resultMessage(result.status)} /> : <RemoteSettingsCard agent={{ ...agent, status }} chat={session} runtimeUnconfirmed={runtimeUnconfirmed} result={result.status === 'unavailable' ? undefined : settingsResult} onRetry={() => setRetry((n) => n + 1)}>{card('settings') && <Evidence card={card('settings')!} />}</RemoteSettingsCard>}
+    {agent.kind === 'quick' ? <RemoteQuickSettingsCard card={card('settings')} session={session} runtimeUnconfirmed={runtimeUnconfirmed} message={resultMessage(result.status)} /> : <RemoteSettingsCard agent={{ ...agent, status }} chat={session} currentProvider={details?.providerLabel ? { id: details.providerId, label: details.providerLabel } : undefined} runtimeUnconfirmed={runtimeUnconfirmed} result={result.status === 'unavailable' ? undefined : settingsResult} onRetry={() => setRetry((n) => n + 1)}>{card('settings') && <Evidence card={card('settings')!} />}</RemoteSettingsCard>}
 
     {!dispatcher && <RemoteChangesCard agent={agent} details={details} status={result.status} freshnessKey={refreshKey} open={open('changes')} onToggle={() => toggleCard('changes')} />}
     {!dispatcher && agent.kind === 'durable' && !agent.parentAgentId && basic('dispatcher', 'Dispatcher')}

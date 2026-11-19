@@ -5,6 +5,8 @@ export interface RemoteAgentSettings {
   agentId: string;
   readOnly: true;
   provider: string;
+  /** Configured next-start provider, absent on older hosts. */
+  providerId?: string;
   model: string;
   /** The host's next-start runtime; live runtime comes from chat/snapshot evidence. */
   runtime: 'chat' | 'terminal';
@@ -34,6 +36,7 @@ export function isRemoteAgentSettings(value: unknown, agentId: string): value is
   const names = (x: unknown) => x === null || Array.isArray(x) && x.length <= 100 && x.every(text);
   return v.version === 1 && v.agentId === agentId && v.readOnly === true
     && [v.provider, v.model, v.access, v.executionPolicy].every(text)
+    && (v.providerId === undefined || text(v.providerId) && !!v.providerId)
     && ['chat', 'terminal'].includes(v.runtime) && nullable(v.autoSleep) && nullable(v.context)
     && !!v.setup && ['ok', 'error'].includes(v.setup.state) && typeof v.setup.managed === 'boolean'
     && nullable(v.setup.template) && text(v.setup.instructions) && names(v.setup.skills) && names(v.setup.mcps)

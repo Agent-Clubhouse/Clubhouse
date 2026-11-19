@@ -31,7 +31,7 @@ describe('host Settings summary', () => {
     const response = await readRemoteAgentSettings('a1', () => true);
     expect(response.status).toBe(200);
     expect(isRemoteAgentSettings(response.body, 'a1')).toBe(true);
-    expect(response.body).toMatchObject({ readOnly: true, provider: 'Claude Code', runtime: 'chat', access: 'Full access', executionPolicy: 'on-request · workspace-write',
+    expect(response.body).toMatchObject({ readOnly: true, providerId: 'claude-code', provider: 'Claude Code', runtime: 'chat', access: 'Full access', executionPolicy: 'on-request · workspace-write',
       setup: { managed: true, template: 'Host template', skills: ['Skill'], mcps: ['MCP'], instructions: '1 block', waiting: true } });
     expect(JSON.stringify(response.body)).not.toMatch(/private-|\/host/);
     expect(mocks.instructions).not.toHaveBeenCalled();

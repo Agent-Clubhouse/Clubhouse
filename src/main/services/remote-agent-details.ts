@@ -21,7 +21,7 @@ import { isDispatcherEnabled } from './dispatcher/dispatcher-settings';
 import { readAgentCardView } from './dispatcher/dispatcher-agent-card-source';
 import { managedAgents, statusFor } from './managed-agents';
 import { readMcpConfig, readLaunchWrapper, readDefaultMcps } from './agent-settings-service';
-import { isSessionCapable } from '../orchestrators';
+import { getProvider, isSessionCapable } from '../orchestrators';
 import { buildSessionSummary, normalizeSessionEvents, SUMMARY_TRANSCRIPT_MAX_BYTES } from './session-reader';
 import { safeMcpErrorLine } from './mcp-error-text';
 import { reachRows, reachSummary } from '../../shared/dispatcher-card-model';
@@ -58,6 +58,9 @@ export async function readRemoteAgentDetails(agentId: string, authorized: () => 
     const registration = agentRegistry.get(agentId);
     const registeredNonce = registration?.nonce;
     const registeredRuntime = registration?.runtime;
+    const registeredProvider = registration?.orchestrator, registeredCwd = registration?.cwd;
+    const providerId = running ? registeredProvider || 'unknown' : provider.id;
+    const providerLabel = (id: string) => id === 'unknown' ? 'Not reported by host' : display(id === provider.id ? provider.displayName || id : getProvider(id)?.displayName || id);
     const runtime = getAgentRuntime(agentId);
     const sessionId = runtime?.kind === 'chat' ? runtime.getSessionId?.() ?? null : null;
     const nativeSessionId = runtime?.kind === 'chat' ? runtime.getNativeSessionId?.() ?? null : null;
@@ -67,7 +70,7 @@ export async function readRemoteAgentDetails(agentId: string, authorized: () => 
     const byId = Object.fromEntries(cards.map((c) => [c.id, c])) as Record<RemoteDetailsCardId, RemoteDetailsCard>;
     if (dispatcher) for (const id of ['dispatcher', 'orchestrate', 'skills-mcp', 'session', 'canvases', 'changes'] as const) byId[id].state = 'not-applicable';
     if (agent.parentAgentId) byId.dispatcher.state = 'not-applicable';
-    const result: RemoteAgentDetails = { version: 1, readOnly: true, agentId, readAt: Date.now(), providerId: provider.id, running, status: lifecycle.status, spawnedAt: lifecycle.spawnedAt ?? null, sessionId, nativeSessionId, settings: null, cards };
+    const result: RemoteAgentDetails = { version: 1, readOnly: true, agentId, readAt: Date.now(), providerId, providerLabel: providerLabel(providerId), running, status: lifecycle.status, spawnedAt: lifecycle.spawnedAt ?? null, sessionId, nativeSessionId, settings: null, cards };
     const settingsRead = await readRemoteAgentSettings(agentId, authorized);
     if (!authorized()) return refused();
     if (settingsRead.status === 200) result.settings = settingsRead.body as RemoteAgentDetails['settings'];
@@ -225,6 +228,7 @@ export async function readRemoteAgentDetails(agentId: string, authorized: () => 
     if (targetWitness && !targetWitness.current() || helperReceipts.some((receipt) => !receipt.current())) return { status: 409, body: { error: 'agent_inventory_changed' } };
     if (running && !registration && runtime?.kind !== 'chat'
       || currentRegistration !== registration || currentRegistration?.nonce !== registeredNonce || currentRegistration?.runtime !== registeredRuntime
+      || currentRegistration?.orchestrator !== registeredProvider || currentRegistration?.cwd !== registeredCwd
       || isAgentRunning(agentId) !== running
       || runtime?.kind === 'chat' && (getAgentRuntime(agentId) !== runtime || runtime.getSessionId?.() !== sessionId || (runtime.getNativeSessionId?.() ?? null) !== nativeSessionId)) {
       return { status: 409, body: { error: 'agent_run_changed' } };
@@ -232,8 +236,11 @@ export async function readRemoteAgentDetails(agentId: string, authorized: () => 
     result.providerEvidenceState = runtime?.kind === 'chat' && runtime.getDetailsEvidence ? 'unavailable' : 'unsupported';
     if (running && runtime?.kind === 'chat') {
       const evidence = runtime.getDetailsEvidence?.();
-      if (evidence && evidence.agentId === agentId && evidence.providerId === provider.id
-        && evidence.sessionId === sessionId && evidence.nativeSessionId === nativeSessionId) { result.providerEvidence = evidence; result.providerEvidenceState = 'current'; }
+      if (evidence && evidence.agentId === agentId && (evidence.providerId === result.providerId || result.providerId === 'unknown')
+        && evidence.sessionId === sessionId && evidence.nativeSessionId === nativeSessionId) {
+        result.providerId = evidence.providerId; result.providerLabel = providerLabel(evidence.providerId);
+        result.providerEvidence = evidence; result.providerEvidenceState = 'current';
+      }
     }
     // Enforce the envelope even when every section fits its individual row limit.
     while (Buffer.byteLength(JSON.stringify(result)) > REMOTE_DETAILS_MAX_BYTES) {

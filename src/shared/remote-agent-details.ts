@@ -30,6 +30,8 @@ export interface RemoteAgentDetails {
   readOnly: true;
   readAt: number;
   providerId: string;
+  /** Current registered/reported CLI label, separately from next-start settings. */
+  providerLabel?: string;
   running: boolean;
   status: AgentStatus;
   spawnedAt: number | null;
@@ -47,7 +49,7 @@ export function isRemoteAgentDetails(value: unknown, agentId: string): value is 
   const v = value as RemoteAgentDetails;
   const text = (s: unknown) => typeof s === 'string' && s.length <= 2048;
   return v.version === 1 && v.agentId === agentId && v.readOnly === true
-    && Number.isFinite(v.readAt) && v.readAt > 0 && text(v.providerId) && typeof v.running === 'boolean'
+    && Number.isFinite(v.readAt) && v.readAt > 0 && text(v.providerId) && !!v.providerId && (v.providerLabel === undefined || text(v.providerLabel) && !!v.providerLabel) && typeof v.running === 'boolean'
     && ['running', 'sleeping', 'waking', 'creating', 'spawning', 'error'].includes(v.status)
     && (v.spawnedAt === null || Number.isFinite(v.spawnedAt) && v.spawnedAt > 0)
     && (v.sessionId === null || text(v.sessionId)) && (v.nativeSessionId === null || text(v.nativeSessionId))

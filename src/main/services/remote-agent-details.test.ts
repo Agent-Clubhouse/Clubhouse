@@ -41,7 +41,7 @@ vi.mock('./canvas-store-reader', () => ({ getAgentCanvasMemberships: m.canvases 
 vi.mock('./managed-agents', () => ({ managedAgents: () => ({ liveEntries: m.entries, getTemplate: m.template }), statusFor: m.status }));
 vi.mock('./agent-settings-service', () => ({ readMcpConfig: m.mcp, readLaunchWrapper: async () => undefined, readDefaultMcps: async () => [] }));
 vi.mock('./git-service', () => ({ getBranchChanges: m.branch }));
-vi.mock('../orchestrators', () => ({ isSessionCapable: () => true }));
+vi.mock('../orchestrators', () => ({ isSessionCapable: () => true, getProvider: (id: string) => ({ displayName: id === 'claude-code' ? 'Host Current Claude' : id }) }));
 vi.mock('./session-reader', () => ({ normalizeSessionEvents: (x: unknown) => x, buildSessionSummary: () => ({ totalDurationMs: 5000, totalCostUsd: 1.25, lastActiveAt: '2026-11-19T00:00:00Z' }), SUMMARY_TRANSCRIPT_MAX_BYTES: 2097152 }));
 import { ChatDetailsRecorder } from './agent-runtime/chat-details-evidence';
 import { MINIMAL_CHAT_CAPABILITIES } from '../../shared/chat';
@@ -72,6 +72,24 @@ const read = async () => {
   return response.body as RemoteAgentDetails;
 };
 describe('host selected-agent Details projections', () => {
+  it.each(['same', 'provider-changed', 'folder-changed'] as const)('separates current registered provider from inherited next-start choice and fences late evidence: %s', async (mode) => {
+    m.provider.mockResolvedValue({ id: 'codex-cli', displayName: 'Host Next Codex', conventions: {} });
+    m.settings.mockResolvedValue({ status: 200, body: { ...setting(), provider: 'Host Next Codex', providerId: 'codex-cli' } });
+    const recorder = new ChatDetailsRecorder('current-claude');
+    recorder.observe({ v: 2, agentId: 'a1', sessionId: 's1', seq: 1, ts: 1, type: 'session_started', data: { provider: 'claude-code', driver: 'claude_agent_sdk', resumed: false, nativeSessionId: 'n1', cliVersion: '1.2.3', capabilities: MINIMAL_CHAT_CAPABILITIES, cwd: '/host/selected' } });
+    const evidence = vi.fn(() => recorder.read(2));
+    m.runtime.mockReturnValue({ kind: 'chat', getSessionId: () => 's1', getNativeSessionId: () => 'n1', getDetailsEvidence: evidence });
+    const registration = { nonce: 'PRIVATE_NONCE', runtime: 'chat', orchestrator: 'claude-code', cwd: '/host/selected' };
+    m.registration.mockReturnValue(registration); m.running.mockReturnValue(true);
+    m.canvases.mockImplementation(async () => { if (mode === 'provider-changed') registration.orchestrator = 'codex-cli'; if (mode === 'folder-changed') registration.cwd = '/host/replacement'; return []; });
+    const response = await readRemoteAgentDetails('a1', () => true);
+    expect(response.status).toBe(mode === 'same' ? 200 : 409);
+    if (mode === 'same') {
+      expect(isRemoteAgentDetails(response.body, 'a1')).toBe(true);
+      expect(response.body).toMatchObject({ providerId: 'claude-code', providerLabel: 'Host Current Claude', settings: { providerId: 'codex-cli', provider: 'Host Next Codex' }, providerEvidence: { providerId: 'claude-code', values: { cliVersion: '1.2.3' } } });
+      expect(JSON.stringify(response.body)).not.toContain('PRIVATE_NONCE');
+    } else { expect(evidence).not.toHaveBeenCalled(); expect(JSON.stringify(response.body)).not.toContain('1.2.3'); }
+  });
   it.each(['same', 'replacement', 'revoked'] as const)('projects current provider facts only after the complete Details assembly fence: %s', async (mode) => {
     const recorder = new ChatDetailsRecorder('display-a');
     recorder.observe({ v: 2, agentId: 'a1', sessionId: 's1', seq: 1, ts: 1, type: 'session_started', data: { driver: 'claude_agent_sdk', provider: 'claude-code', resumed: false, nativeSessionId: 'n1', cwd: '/host/selected', cliVersion: 'INITIAL_VERSION', capabilities: MINIMAL_CHAT_CAPABILITIES } });

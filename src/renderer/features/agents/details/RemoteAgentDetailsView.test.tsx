@@ -42,6 +42,19 @@ describe('remote full Details host evidence', () => {
       subagents: [{ subagentId: 'initial-sub', name: 'Initial reviewer', status: 'completed' as const, toolCount: 4, usage: { total: 42 } }],
       sessionUsage: { costUsd: 0, tokens: { total: 123 } }, context: { used: 100, size: 200_000 },
     }, observedAt: { cliVersion: 2000, model: 2000, effort: 2000, level: 1000, capabilities: 1000, mcpServers: 2000, skills: 2000, subagents: 2500, sessionUsage: 2600, context: 2600 }, omitted: {} });
+  it('shows the actual current CLI separately from a changed inherited next-start provider', async () => {
+    const value = fixture(); value.providerLabel = 'Host Current Claude';
+    value.settings = { ...value.settings!, provider: 'Host Next Codex', providerId: 'codex-cli' };
+    read.mockResolvedValue({ status: 'ok', value });
+    render(<AgentDetails agent={agent} />);
+    await screen.findByText('Host Current Claude 1.2.3');
+    expect(screen.getByTestId('details-setting-next-cli')).toHaveTextContent('Host Next Codex');
+    const toggle = screen.getByTestId('details-card-session-toggle');
+    if (toggle.getAttribute('aria-expanded') !== 'true') fireEvent.click(toggle);
+    expect(screen.getByTestId('details-card-session')).toHaveTextContent('Host Current Claude');
+    expect(screen.getByTestId('details-card-session')).not.toHaveTextContent('Host Next Codex');
+    expect(window.clubhouse.agent.getDurableConfig).not.toHaveBeenCalled();
+  });
   it('uses independently read initial provider facts outside a cut transcript only after matching runtime hydration', async () => {
     read.mockResolvedValue({ status: 'ok', value: { ...fixture(), providerEvidence: evidence() } });
     chatPage.mockResolvedValue({ events: [{ v: 2, agentId: 'a1', sessionId: 's1', seq: 3000, ts: 3000, type: 'agent_message', data: { messageId: 'tail', text: 'Tail only' } }], readOnly: false, state: 'idle', truncated: true, displayRunId: 'runtime-a' });

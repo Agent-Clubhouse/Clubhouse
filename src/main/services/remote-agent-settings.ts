@@ -37,7 +37,7 @@ export async function readRemoteAgentSettings(agentId: string, authorized: () =>
     const idle = resolveIdleSleep(agent.idleSleep, chatIdleSettings.getSettings().idleTimeoutMinutes);
     const result: RemoteAgentSettings = {
       version: 1, readOnly: true, agentId,
-      provider: label(provider.displayName), model: label(agent.model && agent.model !== 'default' ? agent.model : 'Default model'), runtime,
+      provider: label(provider.displayName), providerId: provider.id, model: label(agent.model && agent.model !== 'default' ? agent.model : 'Default model'), runtime,
       access: provider.getCapabilities().permissions ? accessLabel(startableAccess(agentAccess(agent, project.path), provider.id, runtime)) : 'Set by the CLI',
       executionPolicy: [agent.approvalPolicy, agent.sandbox].filter(Boolean).join(' · ') || 'Existing level defaults',
       autoSleep: runtime === 'chat' ? `${idle.minutes ? `Sleeps after ${idle.minutes} min` : 'Never sleeps'}${idle.source === 'app' ? ' (host default)' : ''}` : null,

@@ -7,7 +7,7 @@ describe('remote Details contract', () => {
   it('requires an exact selected agent and complete distinct bounded card states', () => {
     expect(isRemoteAgentDetails(fixture(), 'a1')).toBe(true);
     expect(isRemoteAgentDetails(fixture(), 'other')).toBe(false);
-    for (const patch of [{ version: 2 }, { readOnly: false }, { readAt: NaN }, { cards: [] }, { settings: {} }]) {
+    for (const patch of [{ version: 2 }, { readOnly: false }, { readAt: NaN }, { providerId: '' }, { providerLabel: '' }, { providerLabel: 'x'.repeat(2049) }, { cards: [] }, { settings: {} }]) {
       expect(isRemoteAgentDetails({ ...fixture(), ...patch }, 'a1')).toBe(false);
     }
     const value = fixture();

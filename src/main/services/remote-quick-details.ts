@@ -33,7 +33,7 @@ export async function readRemoteQuickDetails(target: ReadOnlyQuickTarget, author
     const cards = REMOTE_DETAILS_CARD_IDS.map((id) => card(id, ({ settings: 'Settings', dispatcher: 'Dispatcher', orchestrate: 'Orchestration', connections: 'Connections', actions: 'Actions', 'skills-mcp': 'Skills and MCP', session: running ? 'Session' : 'Last session', canvases: 'Canvases', changes: 'Changes' })[id]));
     const byId = Object.fromEntries(cards.map((c) => [c.id, c])) as Record<typeof REMOTE_DETAILS_CARD_IDS[number], RemoteDetailsCard>;
     byId.dispatcher.state = byId.orchestrate.state = 'not-applicable';
-    const result: RemoteAgentDetails = { version: 1, readOnly: true, readAt: Date.now(), agentId, providerId, running, status, spawnedAt: run.startedAt, sessionId, nativeSessionId, settings: null, cards };
+    const result: RemoteAgentDetails = { version: 1, readOnly: true, readAt: Date.now(), agentId, providerId, providerLabel: providerId === 'unknown' ? 'Not reported by host' : display(providerName(providerId)), running, status, spawnedAt: run.startedAt, sessionId, nativeSessionId, settings: null, cards };
     const checked = async <T>(work: Promise<T>) => { const value = await work; if (!authorized()) throw new Error('revoked'); return value; };
     const read = async (id: typeof REMOTE_DETAILS_CARD_IDS[number], fn: (c: RemoteDetailsCard) => Promise<void> | void) => {
       if (!authorized()) throw new Error('revoked');

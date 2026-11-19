@@ -27,7 +27,7 @@ const message = (result: Result): string | null => {
 };
 
 /** A separate remote surface keeps every local setup, filesystem and editing hook out of this path. */
-export function RemoteSettingsCard({ agent, chat, result: supplied, onRetry, runtimeUnconfirmed, children }: { agent: Agent; chat?: ChatViewState; result?: Result; onRetry?: () => void; runtimeUnconfirmed?: boolean; children?: ReactNode }) {
+export function RemoteSettingsCard({ agent, chat, result: supplied, onRetry, runtimeUnconfirmed, currentProvider, children }: { agent: Agent; chat?: ChatViewState; result?: Result; onRetry?: () => void; runtimeUnconfirmed?: boolean; currentProvider?: { id: string; label: string }; children?: ReactNode }) {
   const open = useAgentDetailsStore((s) => s.settingsOpen);
   const setOpen = useAgentDetailsStore((s) => s.setSettingsOpen);
   const address = parseNamespacedId(agent.id);
@@ -60,6 +60,8 @@ export function RemoteSettingsCard({ agent, chat, result: supplied, onRetry, run
   const value = result.status === 'ok' ? result.value : null;
   const asleep = agent.status === 'sleeping' || agent.status === 'error';
   const session = asleep ? undefined : chat;
+  const providerDiffers = !!value?.providerId && !!currentProvider && value.providerId !== currentProvider.id;
+  const liveCli = session && currentProvider?.id === session.provider ? currentProvider.label : value?.provider ?? session?.provider;
   const liveModel = session?.model ? session.models.find((m) => m.id === session.model)?.label ?? session.model : null;
   const model = value ? liveModel && session?.model !== value.model ? `${liveModel} now, next start: ${value.model}` : liveModel ?? value.model : liveModel;
   const liveAccess = session?.level ? accessLabel(session.level) : null;
@@ -74,7 +76,8 @@ export function RemoteSettingsCard({ agent, chat, result: supplied, onRetry, run
   const setup = value?.setup;
   return (
     <DetailsCard id="settings" title="Settings" summary={summary} open={open} onToggle={() => setOpen(!open)}>
-      {row('cli', 'CLI', [value?.provider ?? session?.provider, session?.cliVersion].filter(Boolean).join(' ') || null)}
+      {row('cli', providerDiffers && !session ? 'Next start CLI' : 'CLI', [liveCli, session?.cliVersion].filter(Boolean).join(' ') || null)}
+      {providerDiffers && session && row('next-cli', 'Next start CLI', value?.provider)}
       {row('runs-in', asleep ? 'Next wake' : 'Runs in', runtime)}
       {!asleep && liveRuntime && nextRuntime && liveRuntime !== nextRuntime && row('next-runtime', 'Next wake', nextRuntime)}
       {row('model', 'Model', model)}
