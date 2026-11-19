@@ -58,11 +58,11 @@ export function projectRequestPauseForDisplay(rawReason: unknown, rawEpoch: unkn
 }
 
 /** Separate factory scope retains only selected bounded metadata and a current
- * owner accessor. No admitted raw store, request array, caller/options or epoch object. */
-function pauseObservation(machine: string, read: (machine: string) => RequestPauseDisplayFrame | undefined,
+ * weak owner accessor. No admitted raw store, request array, caller/options or epoch object; the observation does not keep a retired owner alive. */
+function pauseObservation(machine: string, source: WeakRef<(machine: string) => RequestPauseDisplayFrame | undefined>,
   frame: RequestPauseDisplayFrame | undefined): { value: DisplayValue<RequestPauseDisplay>; receipt: DisplayReceipt } {
   const key = frame?.key, recorded = frame?.recorded, scope = frame?.scope, sender = frame?.sender, receiver = frame?.receiver;
-  const receipt = { current: () => { try { return read(machine)?.key === key; } catch { return false; } } };
+  const receipt = { current: () => { try { const read = source.deref(); return !!read && read(machine)?.key === key; } catch { return false; } } };
   const inputs: DisplayInput[] = [{ field: 'Established request-service pause metadata', source: 'host-cache', observedAt: Date.now() }];
   if (!frame) return { value: { state: 'unavailable', inputs }, receipt };
   const reason = frame.reason ? { ...frame.reason } : null;
@@ -79,8 +79,9 @@ function pauseObservation(machine: string, read: (machine: string) => RequestPau
   } } };
 }
 export function createRequestPauseDisplayReader(read: (machine: string) => RequestPauseDisplayFrame | undefined): RequestPauseDisplayReader {
+  const source = new WeakRef(read);
   return (machine, options) => {
     if (typeof machine !== 'string' || !machine || machine.length > 200) return { state: 'unavailable', reason: 'invalid', inputs: [{ field: 'Selected request-service pause metadata', source: 'host-cache', observedAt: Date.now() }] };
-    const observed = pauseObservation(machine, read, read(machine)); options.receipts.push(observed.receipt); return observed.value;
+    const observed = pauseObservation(machine, source, read(machine)); options.receipts.push(observed.receipt); return observed.value;
   };
 }
