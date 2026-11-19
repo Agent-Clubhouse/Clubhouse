@@ -30,7 +30,7 @@ import { agentDisplayState } from './agent-display-state';
 import { getAgentRuntime } from './agent-runtime';
 import { HELPER_TRANSFORM_UNAVAILABLE, readOnlyHelperWork } from './read-only-helper-work';
 import { helpersSummary, workSummary } from '../../shared/helper-work-summary';
-import { captureReadOnlyAgentTargetWitness } from './read-only-agent-target-witness';
+import { captureReadOnlyConfigTargetWitness } from './read-only-config-target';
 
 const yes = (v: boolean) => v ? 'On' : 'Off';
 const control = { 'hands-off': 'Hands off', 'ask-before-start': 'Ask before starting', 'ask-everything': 'Ask every time' };
@@ -50,7 +50,7 @@ export async function readRemoteAgentDetails(agentId: string, authorized: () => 
     const { agent, project } = target;
     if (agent.id !== agentId || isDisposedAgent(agent)) return { status: 404, body: { error: 'agent_not_found' } };
     const dispatcher = isDispatcherIdentityAgentId(agentId);
-    const targetWitness = dispatcher ? null : captureReadOnlyAgentTargetWitness(target);
+    const targetWitness = captureReadOnlyConfigTargetWitness(target);
     const helperReceipts: Array<{ current(): boolean }> = [];
     const provider = await resolveOrchestrator(project.path, agent.orchestrator);
     if (!authorized()) return refused();

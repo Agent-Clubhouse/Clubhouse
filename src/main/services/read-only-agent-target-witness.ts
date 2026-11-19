@@ -95,17 +95,31 @@ export function captureReadOnlyProjectWitness(project: AgentConfigTarget['projec
   return { current: () => { try { return registeredProject(project) === admitted; } catch { return false; } } };
 }
 
+/** Validate the same selected raw record; a same-name replacement is never admitted. */
+function selectedAgentInventory(target: AgentConfigTarget): string {
+  const agents = inventory(target.project.path, '.clubhouse/agents.json');
+  if (!Array.isArray(agents.value) || !agents.value.every((a) => record(a) && typeof a.id === 'string' && typeof a.name === 'string')
+    || new Set(agents.value.map((a) => a.id)).size !== agents.value.length) throw new Error('Agent inventory is unreadable.');
+  const selected = agents.value.filter((a) => a.id === target.agent.id);
+  if (selected.length !== 1 || selected[0].disposedAt || JSON.stringify(selected[0]) !== JSON.stringify(target.agent)) throw new Error('Admitted agent identity changed.');
+  return agents.signature;
+}
+
+/** Fixed role folder plus the actual admitted primary inventory, without a project-list requirement. */
+export function captureReadOnlyRoleTargetWitness(target: AgentConfigTarget, roleCurrent: () => boolean): { current(): boolean } {
+  const read = () => {
+    if (!roleCurrent()) throw new Error('Selected role identity changed.');
+    const signature = selectedAgentInventory(target);
+    if (!roleCurrent()) throw new Error('Selected role identity changed.');
+    return signature;
+  };
+  const admitted = read();
+  return { current: () => { try { return read() === admitted; } catch { return false; } } };
+}
+
 /** The target was strictly resolved already; bind that exact snapshot, never a subsequent name match. */
 export function captureReadOnlyAgentTargetWitness(target: AgentConfigTarget): { current(): boolean } {
-  const read = () => {
-    const project = registeredProject(target.project);
-    const agents = inventory(target.project.path, '.clubhouse/agents.json');
-    if (!Array.isArray(agents.value) || !agents.value.every((a) => record(a) && typeof a.id === 'string' && typeof a.name === 'string')
-      || new Set(agents.value.map((a) => a.id)).size !== agents.value.length) throw new Error('Agent inventory is unreadable.');
-    const selected = agents.value.filter((a) => a.id === target.agent.id);
-    if (selected.length !== 1 || selected[0].disposedAt || JSON.stringify(selected[0]) !== JSON.stringify(target.agent)) throw new Error('Admitted agent identity changed.');
-    return project + '\0' + agents.signature;
-  };
+  const read = () => registeredProject(target.project) + '\0' + selectedAgentInventory(target);
   const admitted = read();
   return { current: () => { try { return read() === admitted; } catch { return false; } } };
 }

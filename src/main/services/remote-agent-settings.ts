@@ -11,6 +11,7 @@ import { resolveRuntimeMode } from './chat-runtime-settings';
 import { resolveChatDriver } from './agent-runtime/chat-drivers';
 import { chatIdleSettings } from './chat-idle-settings';
 import { managedAgents, statusFor } from './managed-agents';
+import { captureReadOnlyConfigTargetWitness } from './read-only-config-target';
 
 const label = (text: string) => Array.from(text, (char) => char.charCodeAt(0) < 32 || char.charCodeAt(0) === 127 ? ' ' : char).join('').slice(0, 240);
 
@@ -31,6 +32,7 @@ export async function readRemoteAgentSettings(agentId: string, authorized: () =>
     // This endpoint accepts ids, never a name resolved on behalf of an untrusted caller.
     if (agent.id !== agentId || isDisposedAgent(agent)) return { status: 404, body: { error: 'agent_not_found' } };
     if (!authorized()) return refused();
+    const targetWitness = captureReadOnlyConfigTargetWitness(target);
     const provider = await resolveOrchestrator(project.path, agent.orchestrator);
     const mode = resolveRuntimeMode(provider.id, agent.runtimeMode);
     const runtime = mode.mode === 'chat' && resolveChatDriver(provider.id, mode.driver) ? 'chat' : 'terminal';
@@ -73,6 +75,7 @@ export async function readRemoteAgentSettings(agentId: string, authorized: () =>
       }
     } catch { /* telemetry-exempt: setup.state shows the bounded partial-read failure, without raw error text. */ }
     if (!authorized()) return refused();
+    if (!targetWitness.current()) return { status: 409, body: { error: 'agent_inventory_changed' } };
     if (Buffer.byteLength(JSON.stringify(result)) > REMOTE_SETTINGS_MAX_BYTES) throw new Error('settings_limit');
     return { status: 200, body: result };
   } catch {

@@ -3,6 +3,7 @@ import * as fs from 'fs/promises';
 import * as os from 'os';
 import * as path from 'path';
 import { noteAgentStarting, _resetAgentDisplayStateForTesting } from './agent-display-state';
+import { DISPATCHER_PROJECT_ID } from '../../shared/dispatcher-types';
 import { ORCHESTRATION_DEFAULTS } from '../../shared/orchestration-policy';
 import { isRemoteAgentDetails, type RemoteAgentDetails } from '../../shared/remote-agent-details';
 const m = vi.hoisted(() => ({ target: vi.fn(), settings: vi.fn(), provider: vi.fn(), running: vi.fn(), policies: vi.fn(), helpers: vi.fn(), requests: vi.fn(), bindings: vi.fn(), sources: vi.fn(), satellite: vi.fn(), peer: vi.fn(), directions: vi.fn(), dispatcher: vi.fn(), dispatcherOn: vi.fn(), agentCard: vi.fn(), actions: vi.fn(), canvases: vi.fn(), status: vi.fn(), entries: vi.fn(), template: vi.fn(), mcp: vi.fn(), branch: vi.fn(), transcript: vi.fn(), historical: vi.fn(), envCached: vi.fn(), catalog: vi.fn(), connection: vi.fn(), work: vi.fn(), realWitness: false, base: '', registration: vi.fn(), runtime: vi.fn(), useRealRuntime: false }));
@@ -13,6 +14,7 @@ vi.mock('./read-only-agent-target-witness', async (original) => {
   const actual = await original<typeof import('./read-only-agent-target-witness')>();
   return { ...actual, captureReadOnlyAgentTargetWitness: (...args: Parameters<typeof actual.captureReadOnlyAgentTargetWitness>) => m.realWitness ? actual.captureReadOnlyAgentTargetWitness(...args) : { current: () => true } };
 });
+vi.mock('./read-only-config-target', async (original) => { const actual = await original<typeof import('./read-only-config-target')>(); return { captureReadOnlyConfigTargetWitness: (...args: Parameters<typeof actual.captureReadOnlyConfigTargetWitness>) => m.realWitness ? actual.captureReadOnlyConfigTargetWitness(...args) : { current: () => true } }; });
 vi.mock('./agent-config-reader', () => ({ resolveAgentConfigTarget: m.target }));
 vi.mock('./remote-agent-settings', () => ({ readRemoteAgentSettings: m.settings }));
 vi.mock('./agent-system', () => ({ resolveOrchestrator: m.provider, isAgentRunning: m.running }));
@@ -34,7 +36,7 @@ vi.mock('./annex-client', () => ({ getSatellite: m.satellite }));
 vi.mock('./annex-peers', () => ({ getPeer: m.peer }));
 vi.mock('./connection-sources', () => ({ listConnectionSources: m.sources }));
 vi.mock('./connection-grants-store', () => ({ listConnectionDirectionsForInspection: m.directions }));
-vi.mock('./dispatcher/dispatcher-service', () => ({ getDispatcherState: m.dispatcher, isDispatcherIdentityAgentId: (id: string) => id === 'disp' }));
+vi.mock('./dispatcher/dispatcher-service', () => ({ getDispatcherState: m.dispatcher, getDispatcherAgentId: () => m.dispatcher()?.agentId ?? null, getDispatcherChatAgentId: () => m.dispatcher()?.chatAgentId ?? null, isDispatcherIdentityAgentId: (id: string) => id === 'disp' }));
 vi.mock('./dispatcher/dispatcher-settings', () => ({ isDispatcherEnabled: m.dispatcherOn }));
 vi.mock('./dispatcher/dispatcher-agent-card-source', () => ({ readAgentCardView: m.agentCard }));
 vi.mock('./agent-grants-service', () => ({ viewOf: () => ({ rows: [] }) }));
@@ -77,6 +79,31 @@ const read = async () => {
   return response.body as RemoteAgentDetails;
 };
 describe('host selected-agent Details projections', () => {
+  it.each(['same', 'disposed', 'removed', 'same-bytes-replaced', 'cache-cleared', 'cache-moved', 'revoked'] as const)('keeps an actual sleeping Dispatcher primary receipt through the final connection await: %s', async (mode) => {
+    const root = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), 'clubhouse-details-role-final-'))); m.base = root; m.realWitness = true;
+    const folder = path.join(root, 'dispatcher'); const configs = path.join(folder, '.clubhouse'); await fs.mkdir(configs, { recursive: true });
+    const selected = { ...agent(), id: 'disp', name: 'Selected Dispatcher', worktreePath: folder };
+    const file = path.join(configs, 'agents.json'); const primary = JSON.stringify([selected]); await fs.writeFile(file, primary);
+    m.target.mockResolvedValue({ agent: selected, project: { id: DISPATCHER_PROJECT_ID, path: folder, name: 'Dispatcher' } });
+    m.settings.mockResolvedValue({ status: 200, body: { ...setting(), agentId: 'disp' } });
+    let allowed = true;
+    m.sources.mockImplementation(async () => {
+      if (mode === 'disposed') await fs.writeFile(file, JSON.stringify([{ ...selected, disposedAt: '2026-11-19' }]));
+      if (mode === 'removed') await fs.writeFile(file, '[]');
+      if (mode === 'same-bytes-replaced') { await fs.rename(file, `${file}.old`); await fs.writeFile(file, primary); }
+      if (mode === 'cache-cleared') m.dispatcher.mockReturnValue({ agentId: null });
+      if (mode === 'cache-moved') m.dispatcher.mockReturnValue({ agentId: null, chatAgentId: 'disp' });
+      if (mode === 'revoked') allowed = false;
+      return { pairs: [], unreadable: [] };
+    });
+    try {
+      const response = await readRemoteAgentDetails('disp', () => allowed);
+      expect.soft(response.status).toBe(mode === 'same' ? 200 : mode === 'revoked' ? 403 : 409);
+      if (mode === 'same') { expect(isRemoteAgentDetails(response.body, 'disp')).toBe(true); expect(await fs.readFile(file, 'utf8')).toBe(primary); }
+      else expect.soft(JSON.stringify(response.body)).not.toMatch(/Selected Dispatcher|cards|providerId|Host CLI/);
+    } finally { await fs.rm(root, { recursive: true, force: true }); }
+  });
+
   it.each(['same', 'provider-changed', 'folder-changed'] as const)('separates current registered provider from inherited next-start choice and fences late evidence: %s', async (mode) => {
     m.provider.mockResolvedValue({ id: 'codex-cli', displayName: 'Host Next Codex', conventions: {} });
     m.settings.mockResolvedValue({ status: 200, body: { ...setting(), provider: 'Host Next Codex', providerId: 'codex-cli' } });
