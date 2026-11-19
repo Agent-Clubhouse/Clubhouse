@@ -47,15 +47,18 @@ it.each(['none', 'unscoped', 'invalid-epoch', 'extra-epoch-field', 'invalid-paus
   if (kind === 'unscoped') await fs.promises.writeFile(path.join(root, filename), JSON.stringify({ version: 1, requests: [], paused: { [machine]: 'Wait' }, crossings: {} }));
   const store = createFederationRequestStore(); store.get(); const result = selected(store);
   expect(result.value.state).toBe(kind === 'invalid-pause' || kind === 'invalid-map' ? 'unavailable' : 'ok');
-  if (result.value.state === 'ok') expect(result.value.value.appliesToEpoch(unknown, unknown)).toBe(kind === 'none' ? false : kind === 'unscoped' ? true : undefined);
+  if (result.value.state === 'ok') {
+    expect.soft(result.value.value.appliesToEpoch(unknown, unknown)).toBe(kind === 'none' ? false : kind === 'unscoped' ? true : undefined);
+    expect.soft(result.value.value.appliesToEpoch(match(epoch.sender), match(epoch.receiver))).toBe(kind === 'none' ? false : kind === 'unscoped' ? true : undefined);
+  }
   expect(JSON.stringify(result.value)).not.toContain('PRIVATE_');
 });
 it.each(['safe', 'withheld', 'truncated', 'oversized'])('reuses the reviewed selected-text policy for %s reason before truncation', async (kind) => {
   const reason = kind === 'safe' ? 'Wait for selected review' : kind === 'withheld' ? 'const apiKey = ("PRIVATE_VALUE");' : kind === 'truncated' ? 'x'.repeat(3000) : ' '.repeat(PAUSE_DISPLAY_SCAN_TEXT + 1);
-  await put({ [machine]: reason }); const store = createFederationRequestStore(); store.get(); const trim = vi.spyOn(String.prototype, 'trim'), result = selected(store);
+  await put({ [machine]: reason }); const store = createFederationRequestStore(); store.get(); const trim = vi.spyOn(String.prototype, 'trim'), result = selected(store); const trimCallsBeforeAssertions = trim.mock.calls.length;
   expect(result.value.state).toBe('ok');
   if (result.value.state === 'ok') expect.soft(result.value.value.reason).toMatchObject(kind === 'safe' ? { state: 'ok', text: reason, truncated: false } : kind === 'truncated' ? { state: 'ok', truncated: true } : { state: 'withheld', reason: kind === 'oversized' ? 'read-limit' : 'safety' });
-  expect.soft(JSON.stringify(result.value)).not.toContain('PRIVATE_'); if (kind === 'oversized') expect.soft(trim).not.toHaveBeenCalled();
+  expect.soft(JSON.stringify(result.value)).not.toContain('PRIVATE_'); if (kind === 'oversized') expect.soft(trimCallsBeforeAssertions).toBe(0);
 });
 it.each(['reason', 'epoch', 'cleared', 'hidden-source', 'unrelated'])('retains private selected logical-cache receipts through explicit %s updates', async (kind) => {
   await put({ [machine]: 'apiKey="PRIVATE_FIRST"' }); const store = createFederationRequestStore(); store.get(); const result = selected(store); expect(result.value.state).toBe('ok'); expect(result.receipts[0].current()).toBe(true);
