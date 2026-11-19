@@ -52,6 +52,11 @@ it('uses passive local/project/group/device callbacks and reports missing or amb
   const other = actionDetailsNames(() => undefined); expect(other.names.agent(`ambiguous@${m.machine}`)).toBeUndefined();
   expect(other.names.project('missing')).toBeUndefined(); expect(other.notices().join(' ')).toContain('unavailable');
 });
+it('reuses already admitted selected agent/project names even before ordinary name caches are warm', () => {
+  m.local.clear();
+  const resolver = actionDetailsNames(() => undefined, { agentId: 'selected', projectId: 'p', agentName: 'Strict Selected', projectName: 'Strict Project' });
+  expect(resolver.names.agent('selected')).toBe('Strict Selected'); expect(resolver.names.project('p')).toBe('Strict Project');
+});
 it('withholds a colliding agent name from a snapshot carrying a different host identity', () => {
   m.satellite = { alias: 'Desk', state: 'connected', snapshot: { machine: { fingerprint: Array(32).fill('bb').join(':') }, agents: { p: [{ id: 'remote-agent', name: 'WRONG_HOST_NAME' }] } } };
   const resolver = actionDetailsNames(() => undefined);

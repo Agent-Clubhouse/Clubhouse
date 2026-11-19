@@ -175,7 +175,7 @@ export async function readRemoteAgentDetails(agentId: string, authorized: () => 
       }
     });
     await read('connections', (c) => readConnectionCard(c, dispatcher ? getDispatcherState().agentId || agentId : agentId));
-    await read('actions', (c) => readActionCard(c, agentId, project.id, dispatcher));
+    await read('actions', (c) => readActionCard(c, agentId, project.id, dispatcher, { agentName: agent.name, projectName: project.displayName || project.name }));
     await read('skills-mcp', async (c) => {
       const status = await statusFor(project.path, agentId);
       const entries = agent.managed ? await managedAgents().liveEntries() : {};

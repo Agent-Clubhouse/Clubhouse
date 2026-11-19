@@ -68,8 +68,8 @@ export async function readConnectionCard(c: RemoteDetailsCard, wiresId: string) 
   } else if (!pairs.size && !remote.length) c.notes.push('No Clubhouse MCP wires.');
 }
 
-export function readActionCard(c: RemoteDetailsCard, agentId: string, projectId: string, dispatcher = false) {
-  const resolver = actionDetailsNames(peekActionProjectName);
+export function readActionCard(c: RemoteDetailsCard, agentId: string, projectId: string, dispatcher = false, selectedNames?: { agentName?: string; projectName?: string }) {
+  const resolver = actionDetailsNames(peekActionProjectName, { agentId, projectId, ...selectedNames });
   const fields = readActionDetailsForAgent(agentId, projectId, dispatcher, resolver.names);
   c.summary = fields.summary; c.rows = fields.rows; c.notes.push(...fields.notes, ...resolver.notices()); c.omitted += fields.omitted;
 }

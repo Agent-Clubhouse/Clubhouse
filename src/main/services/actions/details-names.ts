@@ -7,7 +7,8 @@ import { peekPeerAlias } from '../annex-peers';
 import { dispatcherDisplayName, isDispatcherIdentityAgentId } from '../dispatcher/dispatcher-service';
 import { groupProjectRegistry } from '../group-project-registry';
 
-export function actionDetailsNames(projectName: (id: string) => string | undefined): { names: ActionNames; notices(): string[] } {
+export interface SelectedActionNames { agentId: string; projectId: string; agentName?: string; projectName?: string }
+export function actionDetailsNames(projectName: (id: string) => string | undefined, selected?: SelectedActionNames): { names: ActionNames; notices(): string[] } {
   const notes = new Set<string>();
   const cached = new Map<string, string | undefined>();
   let entries = 0, groups = 0;
@@ -24,7 +25,7 @@ export function actionDetailsNames(projectName: (id: string) => string | undefin
   const names: ActionNames = {
     agent: (id) => once(`agent:${id}`, () => {
       const address = addressFromNamespacedId(id) ?? parseAgentAddress(id);
-      if (!address.machine) return /@|^remote\|\|/.test(id) ? missing('agent') : (isDispatcherIdentityAgentId(id) ? dispatcherDisplayName() : peekKnownAgentName(id)) || missing('agent');
+      if (!address.machine) return /@|^remote\|\|/.test(id) ? missing('agent') : (isDispatcherIdentityAgentId(id) ? dispatcherDisplayName() : id === selected?.agentId && selected.agentName ? selected.agentName : peekKnownAgentName(id)) || missing('agent');
       if (!isMachineFingerprint(address.machine) || !address.agentId || /@|\|\|/.test(address.agentId)) return missing('agent');
       if (!machines.has(address.machine)) {
         const machine = address.machine;
@@ -58,7 +59,7 @@ export function actionDetailsNames(projectName: (id: string) => string | undefin
       notes.add('Remote reference names come from retained host snapshots; their current availability is not checked here.');
       return `${label} on ${cachedMachine.host}`;
     }),
-    project: (id) => once(`project:${id}`, () => projectName(id) || missing('project')),
+    project: (id) => once(`project:${id}`, () => (id === selected?.projectId ? selected.projectName : undefined) || projectName(id) || missing('project')),
     dispatcher: () => dispatcherDisplayName(),
     device: (id) => once(`device:${id}`, () => getSatellite(id)?.alias || peekPeerAlias(id) || missing('device')),
     groupProject: (id) => once(`group:${id}`, () => groupProjectRegistry.getSync(id)?.name || missing('group project')),
