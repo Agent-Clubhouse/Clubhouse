@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import type { AnnexDevice } from '../../../shared/types';
+import type { AnnexDevice, AnnexDirection } from '../../../shared/types';
 import { useAnnexClientStore } from '../../stores/annexClientStore';
 import { useAnnexStore } from '../../stores/annexStore';
 import { getAgentColorHex } from '../../../shared/name-generator';
@@ -66,14 +66,46 @@ function confirmationText(confirmation: NonNullable<AnnexDevice['confirmation']>
   return `${done}${waiting}`;
 }
 
-/** Sets the host name or address a device is reached at, such as its tailnet name (#3058). */
+/** Each direction with a computer as a sentence (#3608). Only connections that proved who they are count. */
+function outboundText(direction: AnnexDirection, now: number): string | null {
+  switch (direction.state) {
+    case 'up': return 'This computer can reach it.';
+    case 'down': return `This computer can't reach it.${lastReached(direction, now)}`;
+    case 'unknown': return 'Checking whether this computer can reach it.';
+    case 'off': return "This computer isn't connecting to other computers.";
+    default: return null;
+  }
+}
+
+function inboundText(direction: AnnexDirection, now: number): string | null {
+  switch (direction.state) {
+    case 'up': return 'It can reach this computer.';
+    case 'down': return `It can't reach this computer.${lastReached(direction, now)}`;
+    case 'unknown': return 'Checking whether it can reach this computer.';
+    case 'off': return "This computer isn't accepting connections.";
+    default: return null;
+  }
+}
+
+function lastReached(direction: AnnexDirection, now: number): string {
+  const at = direction.lastUp ? Date.parse(direction.lastUp) : NaN;
+  return Number.isNaN(at) ? '' : ` It last connected ${formatAgo(at, now)}.`;
+}
+
+/** Sets the host name or address a device is reached at, such as its tailnet name (#3058) or a local forward (#3608). */
 function AddressEditor({ device, onDone }: { device: AnnexDevice; onDone: () => void }) {
-  const [value, setValue] = useState(device.typedHost ?? '');
+  const [value, setValue] = useState(device.typedHost ?? device.heldTypedHost ?? '');
   const [error, setError] = useState<string | null>(null);
+  const [checking, setChecking] = useState(false);
   const save = async (): Promise<void> => {
-    const result = await window.clubhouse.annexClient.setSatelliteHost(device.fingerprint, value);
-    if ('error' in result) setError(result.error);
-    else onDone();
+    setChecking(true);
+    try {
+      const result = await window.clubhouse.annexClient.setSatelliteHost(device.fingerprint, value);
+      if ('error' in result) setError(result.error);
+      else onDone();
+    } finally {
+      setChecking(false);
+    }
   };
   return (
     <div className="flex flex-col gap-1 pb-2" data-testid="annex-address-editor">
@@ -87,11 +119,11 @@ function AddressEditor({ device, onDone }: { device: AnnexDevice; onDone: () => 
           className={`${settingsInput} w-[260px]`}
           placeholder="studio.tailnet.ts.net"
         />
-        <Button onClick={() => void save()} kind="primary">Save</Button>
+        <Button onClick={() => void save()} kind="primary" disabled={checking}>{checking ? 'Checking' : 'Save'}</Button>
         <Button onClick={onDone} kind="ghost">Cancel</Button>
       </div>
       <div className={`text-xs ${error ? 'text-ctp-error' : 'text-ctp-overlay1'}`}>
-        {error ?? 'A name or address it can be reached at, such as its tailnet name. Tried along with addresses found on the network.'}
+        {error ?? 'A name or address this computer reaches it at, such as its tailnet name or a local forward like 127.0.0.1:7443. It is checked before it is saved, and it stays on this computer.'}
       </div>
     </div>
   );
@@ -175,6 +207,21 @@ export function AnnexDeviceList({ devices, canConnect = true, onPairAgain }: Pro
                     {(device.address || device.typedHost) && <span className="truncate" data-testid="annex-device-address">at {device.address || device.typedHost}</span>}
                   </div>
                   <div className="text-xs text-ctp-overlay1">{relation(device)}{device.sessionOnly ? ', this session only' : ''}</div>
+                  {device.role === 'member' && device.reach && (
+                    <div className="text-xs text-ctp-overlay1" data-testid="annex-device-reach">
+                      {[outboundText(device.reach.outbound, now), inboundText(device.reach.inbound, now)].filter(Boolean).join(' ')}
+                    </div>
+                  )}
+                  {device.reach?.notice && (
+                    <div className="text-xs text-ctp-text" data-testid="annex-device-reach-notice">
+                      {device.reach.notice.message} {device.reach.notice.action}
+                    </div>
+                  )}
+                  {device.heldTypedHost && !device.typedHost && (
+                    <div className="text-xs text-ctp-overlay1" data-testid="annex-device-held-address">
+                      The address {device.heldTypedHost} was saved before it paired again with a new certificate, so it isn&apos;t used. Save it under Address to check it again.
+                    </div>
+                  )}
                   {device.problem && device.state !== 'connected' && (
                     <div className="text-xs text-ctp-overlay1" data-testid="annex-device-problem">
                       {device.problem.message} {device.problem.action}

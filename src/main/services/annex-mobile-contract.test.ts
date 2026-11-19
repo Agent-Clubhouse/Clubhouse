@@ -484,6 +484,7 @@ vi.mock('./annex-tls', async (importOriginal) => {
   };
 });
 vi.mock('./annex-peers', () => ({
+  withSavedRoutes: (_previous: unknown, next: unknown) => next,
   controlsThisMachine: (p?: { role?: string } | null) => p?.role === 'controller' || p?.role === 'member',
   controlledFromHere: (p?: { role?: string; kind?: string } | null) => p?.role === 'satellite' || (p?.role === 'member' && p.kind !== 'phone'),
   checkBruteForce: () => ({ allowed: true, delayMs: 0, locked: false, attemptsRemaining: 3 }),

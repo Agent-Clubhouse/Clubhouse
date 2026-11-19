@@ -268,7 +268,9 @@ export function startDispatcherLead(h: LeadHooks): () => void {
   // A removal is saved and its pairing ended in either order, so both signals recheck.
   const recheck = () => { void reconcileMembership().catch(logError).finally(changed); };
   const offMembership = onMembershipChanged(recheck);
-  const offDevices = onDevicesChanged(recheck);
+  const offDevices = onDevicesChanged((change) => {
+    if (change !== 'last-seen') recheck();
+  });
   const offPresence = onDevicePresenceChanged(changed);
   // This computer's switch shows on its own choice.
   const offDispatcher = onDispatcherChanged(changed);

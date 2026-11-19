@@ -63,6 +63,37 @@ describe('settings-store', () => {
     });
   });
 
+  describe('optional unchanged update skipping', () => {
+    it('keeps writing identical references by default', async () => {
+      const store = createSettingsStore('test.json', DEFAULTS);
+      await store.update((current) => current);
+      expect(fs.promises.rename).toHaveBeenCalledTimes(1);
+    });
+
+    it('skips only identical update references and still writes explicit saves', async () => {
+      const store = createSettingsStore('test.json', DEFAULTS, undefined, { skipUnchangedUpdates: true });
+      const current = store.get();
+      const returned = await store.update((value) => value);
+      expect(returned).toEqual(current);
+      expect(returned).not.toBe(current);
+      expect(fs.promises.open).not.toHaveBeenCalled();
+      await store.update((value) => ({ ...value }));
+      await store.save(store.get());
+      expect(fs.promises.rename).toHaveBeenCalledTimes(2);
+    });
+
+    it('still checks commit preconditions for skipped updates', async () => {
+      const store = createSettingsStore('test.json', DEFAULTS, undefined, { skipUnchangedUpdates: true });
+      const prepare = vi.fn(async () => {});
+      const check = vi.fn(() => { throw new Error('revoked'); });
+      const update = vi.fn((current: TestSettings) => current);
+      await expect(store.update(update, { prepare, check })).rejects.toThrow('revoked');
+      expect(prepare).toHaveBeenCalledTimes(1);
+      expect(update).not.toHaveBeenCalled();
+      expect(fs.promises.open).not.toHaveBeenCalled();
+    });
+  });
+
   describe('get', () => {
     it('returns defaults when file does not exist', () => {
       vi.mocked(fs.readFileSync).mockImplementation(() => { throw new Error('ENOENT'); });

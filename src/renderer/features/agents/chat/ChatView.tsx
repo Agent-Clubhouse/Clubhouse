@@ -36,7 +36,7 @@ import { openAgentSettingsOn } from '../agentSettingsPages';
 import { useProjectStore } from '../../../stores/projectStore';
 import { isRemoteProjectId } from '../../../stores/remoteProjectStore';
 import { useNarrow, useShortWindow } from '../pane/useNarrow';
-import { useChatActions, useChatAttachments, useChatDraft, useChatDraftStore, useChatLoading, useChatState, useChatTranscript, useEarlierHistory, type ChatActions } from './useChatSession';
+import { useChatActions, useChatAttachments, useChatDraft, useChatDraftStore, useChatLoading, useChatState, useChatTranscript, useEarlierHistory, type ChatActions, type PendingChatSend } from './useChatSession';
 import { buildAgentMap, commandForRequest, diffsForRequest, implementLevel, isRunningState, isSessionEnded, LEVEL_LABELS, needsManualPlanHandoff, planForRequest, type SendAction } from './view-model';
 import { HelperHeader } from '../helpers/HelperHeader';
 import { SetupChangedBar } from '../../managed/SetupChangedBar';
@@ -158,6 +158,30 @@ function useComposerContext(agent: Agent, state: ChatViewState, view: ChatViewCo
   return { now, next, ...(canOpen && { onOpen: () => openAgentSettingsOn(agent.id, 'settings') }) };
 }
 
+/** Native selection/copy remains available even if IPC never settles. No message content is logged. */
+function SavedSendContent({ send }: { send: PendingChatSend }) {
+  return <details className="mt-1">
+    <summary className="cursor-pointer">View saved message</summary>
+    <pre className="max-h-32 overflow-auto whitespace-pre-wrap select-text" tabIndex={0}>{send.text}</pre>
+    {send.attachments.length > 0 && <div className="select-text">Attachments: {send.attachments.map((a) => a.name).join(', ')}</div>}
+  </details>;
+}
+
+/** No timeout unlock: an unacknowledged send may already have reached the agent. */
+function SendPendingNote({ send }: { send: PendingChatSend }) {
+  const { startedAt } = send;
+  const [slow, setSlow] = useState(() => Date.now() - startedAt >= 10_000);
+  useEffect(() => {
+    const timer = setTimeout(() => setSlow(true), Math.max(0, 10_000 - (Date.now() - startedAt)));
+    return () => clearTimeout(timer);
+  }, [startedAt]);
+  return <div className="text-[12px] text-ctp-subtext0" data-testid="chat-send-pending">
+    <span role="status">
+    {slow ? 'Still waiting for send acknowledgement. Your message may have reached the agent. You can keep drafting.' : 'Sending… You can keep drafting.'}</span>
+    <SavedSendContent send={send} />
+  </div>;
+}
+
 export function ChatViewBody({ agent, state, actions, loading, onSwitchToTerminal, switching, context = 'main', onShowEarlier, onBrowseHistory, debugMarks }: ChatViewBodyProps) {
   const running = isRunningState(state.state);
   // Only a queue the runtime holds can be edited; a CLI that queues natively (Claude) already has the message.
@@ -223,6 +247,12 @@ export function ChatViewBody({ agent, state, actions, loading, onSwitchToTermina
   const composerLayout: ComposerLayout = short ? 'line' : narrow ? 'narrow' : 'wide';
   const [draft, setDraft] = useChatDraft(agent.id);
   const [attachments, setAttachments] = useChatAttachments(agent.id);
+  const currentSession = useRef({ agentId: agent.id, sessionId: state.sessionId });
+  currentSession.current = { agentId: agent.id, sessionId: state.sessionId };
+  const uncertainDraft = useChatDraftStore((s) => s.uncertainDrafts[agent.id]);
+  const pendingSend = useChatDraftStore((s) => s.pendingSends[agent.id]?.sessionId === state.sessionId ? s.pendingSends[agent.id] : undefined);
+  useEffect(() => { useChatDraftStore.getState().retireSend(agent.id, state.sessionId); }, [agent.id, state.sessionId]);
+  const failedSends = useChatDraftStore((s) => s.failedSends[agent.id]);
   const [jump, setJump] = useState<StreamJump | null>(null);
   // Sending from anywhere in the conversation goes back to the bottom to see the reply.
   const [latestRequest, setLatestRequest] = useState(0);
@@ -254,27 +284,42 @@ export function ChatViewBody({ agent, state, actions, loading, onSwitchToTermina
   }, []);
 
   const onSend = (text: string, action: SendAction, blocks?: string[]) => {
+    const drafts = useChatDraftStore.getState();
+    const sent = { sessionId: state.sessionId, uncertain: true, startedAt: Date.now(), text, attachments: blocks ? attachments.filter((a) => blocks.includes(a.id)) : [] };
+    if (!drafts.beginSend(agent.id, sent)) return false;
     returnToLatest();
-    const sentAttachments = attachments;
-    const send = (delivery: 'auto' | 'steer' | 'queued') => (blocks ? actions.send(text, delivery, blocks) : actions.send(text, delivery));
+    let submitted = false;
+    const send = (delivery: 'auto' | 'steer' | 'queued') => {
+      submitted = true;
+      return blocks ? actions.send(text, delivery, blocks) : actions.send(text, delivery);
+    };
     void (async () => {
-      let result;
-      if (action === 'steer') result = await send('steer');
-      else if (action === 'queue') result = await send('queued');
-      else if (action === 'stop_and_send') {
-        // No steering: cancel the turn, then send. 'auto' queues it until the
-        // cancelled turn has ended, so it becomes the next prompt. If the turn
-        // couldn't be stopped, don't send: the draft goes back to the composer.
-        result = (await actions.interrupt()) ? await send('auto') : null;
-      } else result = await send('auto');
-      // Not sent: put the draft back unless the user has started a new one.
-      if (result !== null) return;
-      const drafts = useChatDraftStore.getState();
-      if (!drafts.drafts[agent.id] && !drafts.attachments[agent.id]) {
-        setDraft(text);
-        if (blocks) setAttachments(sentAttachments);
+      let ok = false;
+      try {
+        let result;
+        if (action === 'steer') result = await send('steer');
+        else if (action === 'queue') result = await send('queued');
+        else if (action === 'stop_and_send') {
+          // Keep the runtime's queue-until-stopped semantics.
+          const interrupted = await actions.interrupt();
+          // Interrupt can outlive its session. Revalidate immediately before submission;
+          // an old continuation must never send to the replacement runtime or replace its lock.
+          const current = currentSession.current;
+          const stillCurrent = current.agentId === agent.id && current.sessionId === sent.sessionId
+            && useChatDraftStore.getState().pendingSends[agent.id] === sent
+            && actions.isSessionCurrent?.(sent.sessionId) !== false;
+          result = interrupted && stillCurrent ? await send('auto') : null;
+        } else result = await send('auto');
+        ok = result !== null;
+      } catch {
+        // A custom action can throw before returning a promise; let the composer finish clearing first.
+        await Promise.resolve();
+        // telemetry-exempt: normal actions report their error via a toast. Preserve drafts even if a caller rejects.
+      } finally {
+        useChatDraftStore.getState().finishSend(agent.id, sent, ok, submitted);
       }
     })();
+    return true;
   };
 
   // The Dispatcher opens by introducing itself, with things to ask (#3048). Not while the transcript loads.
@@ -333,6 +378,7 @@ export function ChatViewBody({ agent, state, actions, loading, onSwitchToTermina
           agentName={agent.name}
           capabilities={state.capabilities}
           running={running}
+          sending={!!pendingSend}
           disabled={ended || loading}
           disabledReason={loading ? 'Loading the conversation…' : 'This session has ended. Wake the agent to continue.'}
           level={state.level}
@@ -455,6 +501,18 @@ export function ChatViewBody({ agent, state, actions, loading, onSwitchToTermina
                     }}>Show in conversation</button>
                   </div>
                   {approval}
+                </div>
+              )}
+              {uncertainDraft && <div role="status" className="text-[12px] text-ctp-subtext0" data-testid="chat-draft-unconfirmed">
+                This draft came from a send with unconfirmed delivery. It may already have reached the agent.
+              </div>}
+              {pendingSend && <SendPendingNote key={`${agent.id}:${pendingSend.startedAt}`} send={pendingSend} />}
+              {!!failedSends?.length && (
+                <div role="status" className="text-[12px] text-ctp-subtext0" data-testid="chat-send-recovery">
+                  <span>{failedSends.length} saved {failedSends.length === 1 ? 'message' : 'messages'}. {failedSends[0].uncertain ? 'Delivery unconfirmed; this message may have reached the agent. Restoring does not resend it.' : 'Message not sent.'} Clear the composer to restore a saved message.</span>
+                  <SavedSendContent send={failedSends[0]} />
+                  <button type="button" className="ml-2 underline disabled:opacity-40" disabled={!!pendingSend || !!draft || attachments.length > 0}
+                    onClick={() => useChatDraftStore.getState().restoreSend(agent.id)}>Restore saved message</button>
                 </div>
               )}
               {dock}

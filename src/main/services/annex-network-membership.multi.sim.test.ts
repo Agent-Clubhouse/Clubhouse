@@ -376,3 +376,43 @@ describe('four desktops (#3107)', () => {
     expect(has('C', 'A')).toBe(true);
   });
 });
+
+/**
+ * Documents existing behaviour (#3608); this is not a fix. Two desktops can each send a phone a
+ * view that is right on its own but disagrees with the other's while they can't reach each
+ * other: B lists F's newer pairing with no shareable address yet (as after a server-side join,
+ * before F's hello), while a lagging C still lists F's older removal. They agree once B and C
+ * exchange views. The receiver must take F's newer pairing even when it has no hosts.
+ */
+it('a lagging desktop keeps serving an older removal while another lists the newer pairing with no hosts, until they connect', () => {
+  // A plays B, X plays F.
+  network(['A', 'C', 'X']);
+  removeOn('C', 'X');
+  flush();
+  const removedPairing = PAIRING.X;
+  expect(has('A', 'X')).toBe(false);
+  offline('C');
+
+  // F pairs into B again while C can't hear: B's removal ends F's old pairing, so B makes a new one.
+  pairDesktops('X', 'A');
+  const newer = as('A', () => worlds.A.peers.get(FPS.X)!.pairingId as string);
+  expect(newer).not.toBe(removedPairing);
+  // As after a server-side join, before F's hello: B knows no address for F.
+  as('A', () => worlds.A.peers.set(FPS.X, { ...worlds.A.peers.get(FPS.X)!, knownHosts: [], mainPort: undefined }));
+
+  const viewB = as('A', () => worlds.A.mod!.currentView());
+  const fOnB = viewB.members.find((m) => m.fingerprint === FPS.X)!;
+  expect(fOnB).toMatchObject({ pairingId: newer, hosts: [] });
+  expect(fOnB.port).toBeUndefined();
+  expect(viewB.removals.some((r) => r.fingerprint === FPS.X)).toBe(false);
+
+  const viewC = as('C', () => worlds.C.mod!.currentView());
+  expect(viewC.members.some((m) => m.fingerprint === FPS.X)).toBe(false);
+  expect(viewC.removals).toContainEqual(expect.objectContaining({ fingerprint: FPS.X, pairingId: removedPairing }));
+
+  // B and C connect: C takes the newer pairing and drops the old removal.
+  down.clear();
+  open('A', 'C');
+  expect(as('C', () => worlds.C.peers.get(FPS.X)?.pairingId)).toBe(newer);
+  expect(as('C', () => worlds.C.mod!.currentView().removals.some((r) => r.fingerprint === FPS.X))).toBe(false);
+});
