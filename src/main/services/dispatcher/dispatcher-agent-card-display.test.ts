@@ -75,10 +75,10 @@ it('accepts a complete card when a multibyte character is cut only inside follow
   expect(invalidTail).toBe(true);
   expect(await cards.viewForDisplay('selected', project)).toMatchObject({ state: 'ok', value: { view: { state: 'ready', card: { owns: 'Selected component' } } } });
 });
-it('uses the same first Card / following Notes framing for a complete hand-edited legacy page', async () => {
+it('refuses ambiguous Notes-before-Card framing even when a later same-field overwrite would hide it', async () => {
   put(); const file = page(); fs.writeFileSync(file, '# Title\n## Notes\nOwns: PRIVATE_EARLY_FIELD\n## Card\nOwns: Selected component\n## Notes\nOwns: PRIVATE_LATE_NOTES');
   const result = await cards.viewForDisplay('selected', project);
-  expect(result).toMatchObject({ state: 'ok', value: { view: { state: 'ready', card: { owns: 'Selected component' } } } }); expect(JSON.stringify(result)).not.toContain('PRIVATE_');
+  expect(result).toMatchObject({ state: 'unavailable', reason: 'invalid' }); expect(JSON.stringify(result)).not.toContain('PRIVATE_');
 });
 it('refuses distinct-field Notes before Card rather than adopting them as selected description fields', async () => {
   put(); const file = page();
@@ -86,13 +86,21 @@ it('refuses distinct-field Notes before Card rather than adopting them as select
   const result = await cards.viewForDisplay('selected', project);
   expect.soft(result.state).toBe('unavailable'); expect.soft(JSON.stringify(result)).not.toContain('PRIVATE_');
 });
-it('does not call a partial Notes delimiter at the exact prefix boundary a complete Card', async () => {
-  put(); const file = page(), base = '# Title\n## Card\nOwns: Early component\n', tail = '\n## Notes';
+it.each(['', '  ', '\r'])('does not call a partial Notes delimiter at the exact prefix boundary a complete Card, suffix=%j', async (suffix) => {
+  put(); const file = page(), base = '# Title\n## Card\nOwns: Early component\n', tail = '\n## Notes' + suffix;
   const prefix = base + ' '.repeat(DISPLAY_CARD_PREFIX_BYTES - Buffer.byteLength(base) - Buffer.byteLength(tail)) + tail;
   expect(Buffer.byteLength(prefix)).toBe(DISPLAY_CARD_PREFIX_BYTES);
   fs.writeFileSync(file, prefix + ' continuation\nWhen to reach it: Later Card field\n## Notes\nOwns: PRIVATE_REAL_NOTES');
   const result = await cards.viewForDisplay('selected', project);
   expect.soft(result.state).toBe('unavailable'); expect.soft(JSON.stringify(result)).not.toMatch(/Early component|PRIVATE_/);
+});
+it.each(['observed-newline', 'verified-eof'] as const)('accepts a complete boundary-aligned Notes heading with %s proof', async (kind) => {
+  put(); const file = page(), base = '# Title\n## Card\nOwns: Selected component\n', tail = '\n## Notes' + (kind === 'observed-newline' ? '\n' : '');
+  const prefix = base + ' '.repeat(DISPLAY_CARD_PREFIX_BYTES - Buffer.byteLength(base) - Buffer.byteLength(tail)) + tail;
+  expect(Buffer.byteLength(prefix)).toBe(DISPLAY_CARD_PREFIX_BYTES);
+  fs.writeFileSync(file, prefix + (kind === 'observed-newline' ? 'Owns: PRIVATE_NOTES'.repeat(10000) : ''));
+  const result = await cards.viewForDisplay('selected', project);
+  expect(result).toMatchObject({ state: 'ok', value: { view: { state: 'ready', card: { owns: 'Selected component' } } } }); expect(JSON.stringify(result)).not.toContain('PRIVATE_');
 });
 it('rejects an empty stored project path even when it would normalize to the admitted current directory', async () => {
   put(row({ projectPath: '' })); page('Owns: PRIVATE_CWD_ASSOCIATION');

@@ -29,7 +29,7 @@ function displayRecord(raw: unknown, agentId: string, projectPath: string): Pick
   if (!Object.prototype.hasOwnProperty.call(raw.agents, agentId)) return null;
   const row = raw.agents[agentId];
   const norm = (p: string) => process.platform === 'win32' ? path.resolve(p).toLowerCase() : path.resolve(p);
-  if (!record(row) || typeof row.projectPath !== 'string' || row.projectPath.length > 4096 || norm(row.projectPath) !== norm(projectPath)
+  if (!record(row) || typeof row.projectPath !== 'string' || !row.projectPath || row.projectPath.length > 4096 || norm(row.projectPath) !== norm(projectPath)
     || typeof row.page !== 'string' || row.page.length > 4096 || !row.page.trim() || typeof row.connected !== 'boolean') throw new Error('card_mapping_unavailable');
   const page = memorySlug(row.page);
   // The primary index is already byte-bounded. Inspect only page references
@@ -78,10 +78,32 @@ function displayCardReceipt(deps: Pick<AgentCardDeps, 'storePath' | 'memoryRoot'
   } catch { return false; } } };
 }
 
+/** Fully read unframed legacy text ends at its first Notes section. A Notes-before-Card
+ * layout is ambiguous and refused. A truncated prefix admits only LF-terminated headings. */
+function displayCardSpan(bytes: Buffer, truncated: boolean): Buffer | 'ambiguous' | 'incomplete' {
+  let cursor = 0, cardStart: number | undefined, notesStart: number | undefined;
+  while (cursor < bytes.length) {
+    const newline = bytes.indexOf(0x0a, cursor), end = newline < 0 ? bytes.length : newline;
+    if (newline < 0 && truncated) break;
+    const heading = bytes.subarray(cursor, end).toString('utf8').trimEnd();
+    if (heading === AGENT_CARD_HEADING && cardStart === undefined) {
+      if (notesStart !== undefined) return 'ambiguous';
+      cardStart = cursor;
+    }
+    if (heading === AGENT_NOTES_HEADING) {
+      if (cardStart !== undefined) return bytes.subarray(0, cursor);
+      notesStart ??= cursor;
+    }
+    if (newline < 0) break;
+    cursor = newline + 1;
+  }
+  return truncated ? 'incomplete' : bytes.subarray(0, notesStart ?? bytes.length);
+}
+
 
 export async function readAgentCardForDisplay(deps: Pick<AgentCardDeps, 'storePath' | 'memoryRoot' | 'now'>, agentId: string, projectPath: string, options: { receipts?: DisplayReceipt[]; authorized?: () => boolean } = {}): Promise<DisplayValue<DisplayAgentCard | null>> {
   const inputs = [{ field: 'Recorded selected agent description', source: 'primary' as const, observedAt: Date.now() }];
-  const unknown = (): DisplayValue<DisplayAgentCard | null> => ({ state: 'unavailable', inputs });
+  const unknown = (reason?: 'invalid' | 'limit'): DisplayValue<DisplayAgentCard | null> => ({ state: 'unavailable', inputs, ...(reason && { reason }) });
   if (options.authorized && !options.authorized()) return unknown();
   if (typeof agentId !== 'string' || !agentId || agentId.length > 2048 || typeof projectPath !== 'string' || !projectPath || projectPath.length > 4096) return unknown();
   try {
@@ -100,14 +122,11 @@ export async function readAgentCardForDisplay(deps: Pick<AgentCardDeps, 'storePa
     if (options.authorized && !options.authorized()) return unknown();
     let text: string | null = null;
     if (prefix.state === 'ok') {
-      const decoded = prefix.bytes.toString('utf8');
-      const lines = decoded.split('\n');
-      const cardAt = lines.findIndex((line) => line.trimEnd() === AGENT_CARD_HEADING);
-      const notesAt = lines.findIndex((line, index) => index > cardAt && line.trimEnd() === AGENT_NOTES_HEADING);
-      if (prefix.truncated && (cardAt < 0 || notesAt < 0)) return unknown();
+      const cardBytes = displayCardSpan(prefix.bytes, prefix.truncated === true);
+      if (cardBytes === 'ambiguous') return unknown('invalid');
+      if (cardBytes === 'incomplete') return unknown('limit');
       // Decode only the complete card portion. A cut UTF-8 character in the
       // following Notes section cannot invalidate or leak into its fields.
-      const cardBytes = notesAt >= 0 ? prefix.bytes.subarray(0, Buffer.byteLength(lines.slice(0, notesAt).join('\n'))) : prefix.bytes;
       const page = parseAgentPage(new TextDecoder('utf-8', { fatal: true }).decode(cardBytes));
       text = page.card && page.card !== AGENT_CARD_PLACEHOLDER ? page.card : null;
     } else if (prefix.state !== 'missing') return unknown();
