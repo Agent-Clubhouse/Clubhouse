@@ -304,6 +304,27 @@ describe('annex-peers', () => {
         expect(again.heldRoutes).toMatchObject({ typedHost: '127.0.0.1:7999', knownHosts: expect.arrayContaining(['10.20.0.5', '127.0.0.1']) });
       });
 
+      it.each([
+        ['studio.local', {}, 9443, 'studio.local:9443'],
+        ['studio.local', { 'studio.local': 7555 }, 9443, 'studio.local:7555'],
+        ['2001:db8::5', {}, 9443, '[2001:db8::5]:9443'],
+      ])('preserves the effective endpoint of held %s across restart without activating it', (typedHost, hostPorts, mainPort, expected) => {
+        const old = member({ typedHost, knownHosts: [], hostPorts, mainPort });
+        const replacement = next({
+          tlsCertificateFingerprint: 'CERT-UNPROVED', knownHosts: undefined, hostPorts: undefined, mainPort: undefined,
+        });
+        addPeer(withSavedRoutes(old, replacement, false));
+        resetForTests();
+        const saved = getPeer(old.fingerprint)!;
+        expect(saved.heldRoutes).toMatchObject({ typedHost: expected, certFingerprint: 'CERT-1' });
+        expect(saved.typedHost).toBeUndefined();
+        expect(saved.typedHostCert).toBeUndefined();
+        expect(saved.mainPort).toBeUndefined();
+        expect(reachCandidates({ typed: saved.typedHost, known: saved.knownHosts, ports: saved.hostPorts, port: saved.mainPort })).toEqual([]);
+        // This is retained evidence of the old endpoint, not a verified active route for the new pin.
+        expect(saved.tlsCertificateFingerprint).toBe('CERT-UNPROVED');
+      });
+
       it('never carries routes to a different identity', () => {
         const out = withSavedRoutes(previous, { ...next(), publicKey: 'someone-else' }, true);
         expect(out.typedHost).toBeUndefined();

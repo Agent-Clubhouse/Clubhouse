@@ -11,7 +11,7 @@ import { annexEphemeralSession } from './annex-network-profile';
 import { appLog } from './log-service';
 import { devicesChanged } from './annex-device-signal';
 import { isAnnexLoopback } from '../../shared/annex-problems';
-import { hostPortsWithFallback, isPrivateHost, KNOWN_HOSTS_MAX, parseTypedHost, rememberHost, withPrivateHost } from './annex-reach';
+import { formatAddress, hostPortsWithFallback, isPrivateHost, KNOWN_HOSTS_MAX, parseTypedHost, rememberHost, withPrivateHost } from './annex-reach';
 import type { AnnexHeldRoutes, AnnexPeer, AnnexPeerListing } from '../../shared/types';
 
 // ---------------------------------------------------------------------------
@@ -271,10 +271,17 @@ export function withSavedRoutes(previous: AnnexPeer | undefined, next: AnnexPeer
   if (!hasRoutes) return previous.heldRoutes && !out.heldRoutes ? { ...out, heldRoutes: previous.heldRoutes } : out;
   // Held, not used. An older hold stays merged in, so nothing saved is lost.
   const older = previous.heldRoutes;
+  // A bare typed host can depend on the old default even when it is not in knownHosts.
+  // Keep that endpoint explicit in held evidence only; it has not been verified for the new pin.
+  const typed = routes.typedHost ? parseTypedHost(routes.typedHost) : null;
+  const typedPort = typed && routes.hostPorts && Object.prototype.hasOwnProperty.call(routes.hostPorts, typed.host)
+    ? routes.hostPorts[typed.host] : previous.mainPort;
+  const heldTypedHost = typed && typed.port === undefined && Number.isInteger(typedPort) && typedPort > 0 && typedPort <= 65535
+    ? formatAddress({ host: typed.host, port: typedPort }) : routes.typedHost;
   const held: AnnexHeldRoutes = {
     certFingerprint: previous.tlsCertificateFingerprint ?? older?.certFingerprint,
     heldAt: new Date().toISOString(),
-    ...((routes.typedHost ?? older?.typedHost) && { typedHost: routes.typedHost ?? older?.typedHost }),
+    ...((heldTypedHost ?? older?.typedHost) && { typedHost: heldTypedHost ?? older?.typedHost }),
     knownHosts: [...new Set([...(routes.knownHosts ?? []), ...(older?.knownHosts ?? [])])],
     hostPorts: { ...(older?.hostPorts ?? {}), ...hostPortsWithFallback(routes.knownHosts, previous.mainPort, routes.hostPorts) },
   };

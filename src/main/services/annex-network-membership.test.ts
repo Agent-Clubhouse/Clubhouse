@@ -210,6 +210,17 @@ describe('Annex Network membership (#3061)', () => {
   describe("this computer's own routes are never shared (#3608)", () => {
     const viewOf = () => membership.currentView().members.find((m) => m.fingerprint === A)!;
 
+    it('does not activate or export the resolved endpoint retained in held evidence', () => {
+      peers.set(A.toLowerCase(), memberPeer(A, '0a', 'Studio', {
+        knownHosts: [], hostPorts: {}, mainPort: undefined,
+        heldRoutes: { typedHost: 'old-studio.local:7555', certFingerprint: 'OLD-CERT', heldAt: '2026-11-01T09:00:00.000Z' },
+      }));
+      const wire = viewOf();
+      expect(wire.hosts).toEqual([]);
+      expect(wire.port).toBeUndefined();
+      for (const local of ['old-studio.local', '7555', 'OLD-CERT', 'heldRoutes']) expect(JSON.stringify(wire)).not.toContain(local);
+    });
+
     it('leaves out a non-loopback pairing override address', () => {
       peers.set(A.toLowerCase(), memberPeer(A, '0a', 'Studio', {
         knownHosts: ['10.20.0.5', '192.168.1.5'], hostPorts: { '10.20.0.5': 9443, '192.168.1.5': 9443 }, mainPort: 9443,
