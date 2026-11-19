@@ -1,3 +1,5 @@
+import { readRemoteAgentSettings } from './remote-agent-settings';
+vi.mock('./remote-agent-settings', () => ({ readRemoteAgentSettings: vi.fn() }));
 const snapshotLinks = vi.hoisted(() => ({ groups: vi.fn(() => []), onChange: () => () => {} }));
 vi.mock('./project-links-store', () => ({ hydrateProjectLinks: vi.fn(async () => ({})), projectLinksStore: () => snapshotLinks }));
 import { hydrateProjectLinks } from './project-links-store';
@@ -296,19 +298,12 @@ vi.mock('./group-project-bulletin', () => ({
   }),
 }));
 
-vi.mock('./group-project-shoulder-tap', () => ({
-  executeShoulderTap: vi.fn().mockResolvedValue({ taskId: 'tap_1', delivered: [], failed: [] }),
-}));
 
 const rolesView = { groupProjectId: 'gp_1', own: { deliver: 'allow', wake: 'off', actions: 'allow' }, holders: [{ agentId: 'a1', lead: 'allow', admin: 'off' }] };
 vi.mock('./group-project-roles', async (original) => ({
   ...await original<typeof import('./group-project-roles')>(),
   describeGroupProjectRoles: vi.fn(async () => rolesView),
   grantGroupProjectRole: vi.fn(async () => undefined),
-}));
-vi.mock('./group-project-polling', () => ({
-  setProjectPolling: vi.fn().mockResolvedValue({ pollingEnabled: true, members: [] }),
-  getProjectPollingState: vi.fn().mockResolvedValue({ pollingEnabled: false, members: [] }),
 }));
 
 vi.mock('./clubhouse-mcp/binding-manager', () => ({
@@ -402,6 +397,7 @@ function positiveSerial(): string {
 import * as annexPeers from './annex-peers';
 import * as annexEventBus from './annex-event-bus';
 import * as projectStore from './project-store';
+import { _resetRepoKeysForTesting, repoKeysFor } from './project-repo-keys';
 import * as agentConfigModule from './agent-config';
 import { deleteAgent } from './agent-delete';
 import * as ptyManagerModule from './pty-manager';
@@ -628,6 +624,71 @@ describe('annex-server', () => {
       expect((await request(port, 'GET', '/api/v1/mobile/agents/controller/chat')).status).toBe(404);
       expect(agentSystem.spawnAgent).not.toHaveBeenCalled();
       expect(ptyManagerModule.write).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('remote Settings details (#3733)', () => {
+    const route = '/api/v1/agents/a1/settings-details';
+    beforeEach(() => {
+      vi.mocked(annexPeers.getPeer).mockReturnValue({ ...TEST_CONTROLLER, kind: 'desktop' });
+    });
+    it('serves only GET through the pinned controller policy, without mutation', async () => {
+      vi.mocked(readRemoteAgentSettings).mockImplementation(async (id, authorized) => {
+        expect(id).toBe('a1'); expect(authorized()).toBe(true);
+        return { status: 200, body: { version: 1, readOnly: true, agentId: id } };
+      });
+      const { port } = await startAndPair();
+      const response = await request(port, 'GET', route);
+      expect(response.status).toBe(200);
+      expect(JSON.parse(response.body)).toMatchObject({ readOnly: true, agentId: 'a1' });
+      for (const method of ['POST', 'PUT', 'PATCH', 'DELETE']) expect((await request(port, method, route)).status).toBe(404);
+      expect(agentSystem.spawnAgent).not.toHaveBeenCalled();
+      expect(ptyManagerModule.write).not.toHaveBeenCalled();
+    });
+    it('rejects an unpaired/wrong-pin caller before summary reads', async () => {
+      const { port } = await startAndPair();
+      vi.mocked(annexTls.extractPeerCertificateFingerprint).mockReturnValueOnce('wrong-pin');
+      expect((await request(port, 'GET', route)).status).toBe(401);
+      expect(readRemoteAgentSettings).not.toHaveBeenCalled();
+    });
+    it.each([undefined, 'unknown'])('QA negative: rejects unclassified Settings controller %s', async (kind) => {
+      const { port } = await startAndPair();
+      vi.mocked(readRemoteAgentSettings).mockResolvedValue({ status: 200, body: { readOnly: true } });
+      vi.mocked(annexPeers.getPeer).mockReturnValue({ ...TEST_CONTROLLER, kind } as any);
+      expect((await request(port, 'GET', route)).status).toBe(403);
+      expect(readRemoteAgentSettings).not.toHaveBeenCalled();
+    });
+    it('rejects a phone or pending pairing before summary reads', async () => {
+      const { port } = await startAndPair();
+      for (const extra of [{ kind: 'phone' as const }, { kind: 'desktop' as const, networkPending: true }]) {
+        vi.mocked(annexPeers.getPeer).mockReturnValue({ ...TEST_CONTROLLER, ...extra });
+        expect((await request(port, 'GET', route)).status).toBe(403);
+      }
+      expect(readRemoteAgentSettings).not.toHaveBeenCalled();
+    });
+    it.each([undefined, 'unknown', 'phone'])('rejects a device kind changing to %s after the async read', async (kind) => {
+      vi.mocked(readRemoteAgentSettings).mockImplementation(async (_id, authorized) => {
+        expect(authorized()).toBe(true);
+        await Promise.resolve();
+        vi.mocked(annexPeers.getPeer).mockReturnValue({ ...TEST_CONTROLLER, kind } as any);
+        expect(authorized()).toBe(false);
+        // Even if a reader returns data, the adapter must recheck before sending it.
+        return { status: 200, body: { private: 'must-not-be-returned' } };
+      });
+      const { port } = await startAndPair();
+      const response = await request(port, 'GET', route);
+      expect(response.status).toBe(403);
+      expect(response.body).not.toContain('must-not-be-returned');
+    });
+    it('passes current host authorization to the summary for its final async recheck', async () => {
+      vi.mocked(readRemoteAgentSettings).mockImplementation(async (_id, authorized) => {
+        expect(authorized()).toBe(true);
+        vi.mocked(annexPeers.getPeer).mockReturnValue(undefined);
+        expect(authorized()).toBe(false);
+        return { status: 403, body: { error: 'settings_read_refused' } };
+      });
+      const { port } = await startAndPair();
+      expect((await request(port, 'GET', route)).status).toBe(403);
     });
   });
 
@@ -2340,6 +2401,32 @@ describe('annex-server', () => {
     expect((await request(port, 'GET', '/api/v1/mobile/agents/missing/chat', undefined, authHeaders(token))).status).toBe(404);
   });
 
+  it('withholds pending chat approvals when the paired device is revoked during the transcript read', async () => {
+    vi.mocked(projectStore.list).mockReturnValue([{ id: 'p', name: 'Project', path: '/test/project' }] as never);
+    vi.mocked(agentConfigModule.listDurable).mockReturnValue([
+      { id: 'a', name: 'agent', color: 'indigo', createdAt: '2026-01-01' },
+    ] as never);
+    const pending = {
+      v: 1, type: 'permission_request', agentId: 'a', sessionId: 's', seq: 1, ts: Date.now(),
+      data: { requestId: 'pending-private-approval', title: 'Review private operation', options: [] },
+    };
+    registerChatRuntime({
+      kind: 'chat', agentId: 'a', isRunning: () => true, getState: () => 'waiting_permission',
+      getSessionId: () => 's', readTranscript: async () => {
+        vi.mocked(annexPeers.getPeer).mockReturnValue(undefined);
+        return { events: [pending] };
+      },
+    } as never);
+    try {
+      const { port, token } = await startAndPair();
+      const response = await request(port, 'GET', '/api/v1/mobile/agents/a/chat', undefined, authHeaders(token));
+      expect(response.status).toBe(403);
+      expect(response.body).not.toContain('pending-private-approval');
+    } finally {
+      clearChatRuntimes();
+    }
+  });
+
   it('audits a controlling device\'s commands by its kind: a phone, or another computer (#3205)', () => {
     const peer = (extra: Partial<import('../../shared/types').AnnexPeer>) => ({
       fingerprint: 'aa:bb', publicKey: 'k', alias: 'x', icon: 'computer', color: 'indigo', pairedAt: '', lastSeen: '', ...extra,
@@ -3503,6 +3590,26 @@ describe('annex-server', () => {
       expect(annexPeers.removePeer).not.toHaveBeenCalled();
     }, 30_000);
 
+    it.each(['send_message', 'send_file'])('refuses remote Dispatcher %s from unpaired, pending, one-to-one and revoked machines before delivery', async (tool) => {
+      await startServer();
+      const unknown = device(); const pending = device(); const oneToOne = device(); const revoked = device();
+      peers.set(pending.fingerprint, pinned(pending, { role: 'member', kind: 'desktop', networkPending: true }));
+      peers.set(oneToOne.fingerprint, pinned(oneToOne, { role: 'controller', kind: 'desktop' }));
+      peers.set(revoked.fingerprint, pinned(revoked, { role: 'member', kind: 'desktop' }));
+      annexServer.revokePeer(revoked.fingerprint);
+      for (const [client, error] of [
+        [unknown, 'peer_not_paired'], [pending, 'peer_role_not_allowed'],
+        [oneToOne, 'not_a_computer'], [revoked, 'peer_not_paired'],
+      ] as const) {
+        const response = await call('POST', '/api/v1/network/agent-call', client, {
+          v: 1, callId: 'parity-ineligible', from: { agentId: 'connected-agent', name: 'Connected agent' },
+          to: 'dispatcher-controller', tool, args: tool === 'send_file' ? { content: 'news' } : { message: 'news' },
+        });
+        expect(response.status).toBe(error === 'peer_not_paired' ? 401 : 403);
+        expect(response.body.error).toBe(error);
+      }
+    });
+
     it('a removed peer is closed and then refused on REST and WebSocket', async () => {
       await startServer();
       const phone = device();
@@ -4512,6 +4619,61 @@ describe('annex-server', () => {
   // -------------------------------------------------------------------------
 
   describe('permission response', () => {
+    it('subscribes to permission changes once at startup and unsubscribes on stop', async () => {
+      const unsubscribe = vi.fn();
+      const subscribe = vi.spyOn(permissionQueue, 'onChange').mockReturnValue(unsubscribe);
+      const requestIds: string[] = [];
+      try {
+        await startAndPair();
+        const atStart = subscribe.mock.calls.length;
+        requestIds.push(permissionQueue.createPermission('durable_1', 'Bash').requestId);
+        requestIds.push(permissionQueue.createPermission('durable_1', 'Bash').requestId);
+        expect({ atStart, afterNewRequests: subscribe.mock.calls.length }).toEqual({
+          atStart: 1,
+          afterNewRequests: 1,
+        });
+        annexServer.stop();
+        expect(unsubscribe).toHaveBeenCalledOnce();
+      } finally {
+        for (const id of requestIds) {
+          permissionQueue.cancelPermission(id, 'test cleanup', 'durable_1');
+        }
+      }
+    });
+
+    it.each(['before', 'after'] as const)('refreshes terminal permission snapshots after a host answer for a request created %s startup', async (timing) => {
+      vi.mocked(pluginManifestRegistry.listAllManifests).mockReturnValue([]);
+      const { groupProjectRegistry } = await import('./group-project-registry');
+      vi.mocked(groupProjectRegistry.list).mockResolvedValue([]);
+      const themeService = await import('./theme-service');
+      vi.mocked(themeService.getSettings).mockReturnValue({ themeId: 'catppuccin-mocha' });
+      const existing = timing === 'before'
+        ? permissionQueue.createPermission('durable_1', 'Bash', { command: 'git status' })
+        : undefined;
+      await startAndPair();
+      const { requestId, decision } = existing ?? permissionQueue.createPermission('durable_1', 'Bash', { command: 'git status' });
+      const ws = Object.assign(new EventEmitter(), { readyState: 1, send: vi.fn(), ping: () => {}, close: vi.fn() });
+      annexServer._testing.wsAuthTypes.set(ws as never, 'mtls');
+      annexServer._testing.registerPeerSocket(ws as never, TEST_CONTROLLER.fingerprint, TEST_CONTROLLER.tlsCertificateFingerprint);
+      annexServer._testing.wss!.clients.add(ws as never);
+      annexServer._testing.wss!.emit('connection', ws);
+      const snapshots = () => ws.send.mock.calls.map(([frame]) => JSON.parse(frame as string)).filter((frame) => frame.type === 'snapshot');
+      await vi.waitFor(() => {
+        expect(snapshots().length).toBeGreaterThan(0);
+        expect(snapshots().at(-1).payload.pendingPermissions).toContainEqual(expect.objectContaining({ requestId }));
+      });
+      ws.send.mockClear();
+
+      expect(permissionQueue.resolvePermissionDetailed(requestId, 'deny', { expectedAgentId: 'durable_1', source: 'desktop' }))
+        .toEqual({ status: 'resolved' });
+      await expect(decision).resolves.toBe('deny');
+
+      await vi.waitFor(() => {
+        expect(snapshots().length).toBeGreaterThan(0);
+        expect(snapshots().at(-1).payload.pendingPermissions).not.toContainEqual(expect.objectContaining({ requestId }));
+      });
+    });
+
     it('POST /api/v1/agents/:id/permission-response resolves a pending permission', async () => {
       const { port, token } = await startAndPair();
 
@@ -6273,6 +6435,76 @@ describe('annex-server', () => {
       });
     });
 
+    it('sends a later snapshot with the repo key when a newly opened project finishes reading its remote (#3703)', async () => {
+      let finishOrigin!: (url: string) => void;
+      const readOrigin = vi.fn(() => new Promise<string>((resolve) => { finishOrigin = resolve; }));
+      _resetRepoKeysForTesting(readOrigin);
+      const project = { id: 'new-project', name: 'Site', path: '/new-project' };
+      vi.mocked(projectStore.list).mockReturnValue([project]);
+      const live = Object.assign(new EventEmitter(), { readyState: 1, send: vi.fn(), ping: () => {}, close: vi.fn() });
+      annexServer._testing.wsAuthTypes.set(live as never, 'bearer');
+      annexServer._testing.wss!.clients.add(live as never);
+      try {
+        annexServer._testing.wss!.emit('connection', live);
+        await vi.waitFor(() => expect(sent(live).some((f) => f.type === 'snapshot')).toBe(true));
+        expect(sent(live).find((f) => f.type === 'snapshot').payload.projects).toEqual([
+          expect.objectContaining({ id: project.id, name: 'Site' }),
+        ]);
+        expect(sent(live).find((f) => f.type === 'snapshot').payload.projects[0].repoKey).toBeUndefined();
+
+        finishOrigin('git@github.com:Org/Site.git');
+
+        await vi.waitFor(() => expect(sent(live).filter((f) => f.type === 'snapshot')).toHaveLength(2));
+        expect(sent(live).filter((f) => f.type === 'snapshot')[1].payload.projects[0].repoKey).toBe('github.com/org/site');
+        expect(readOrigin).toHaveBeenCalledTimes(1);
+      } finally {
+        _resetRepoKeysForTesting(async () => null);
+      }
+    });
+
+    it('coalesces changed repo keys with a snapshot refresh already pending (#3703)', async () => {
+      const readOrigin = vi.fn(async () => {
+        annexServer.broadcastSnapshotRefresh();
+        return 'git@github.com:org/site.git';
+      });
+      _resetRepoKeysForTesting(readOrigin);
+      vi.mocked(projectStore.list).mockReturnValue([{ id: 'coalesced', name: 'Site', path: '/coalesced' }]);
+      const live = Object.assign(new EventEmitter(), { readyState: 1, send: vi.fn(), ping: () => {}, close: vi.fn() });
+      annexServer._testing.wsAuthTypes.set(live as never, 'bearer');
+      annexServer._testing.wss!.clients.add(live as never);
+      try {
+        annexServer._testing.wss!.emit('connection', live);
+        await vi.waitFor(() => expect(sent(live).filter((f) => f.type === 'snapshot')).toHaveLength(2));
+        expect(sent(live).filter((f) => f.type === 'snapshot')[1].payload.projects[0].repoKey).toBe('github.com/org/site');
+        await new Promise((resolve) => setTimeout(resolve, 100));
+        expect(sent(live).filter((f) => f.type === 'snapshot')).toHaveLength(2);
+        expect(readOrigin).toHaveBeenCalledTimes(1);
+      } finally {
+        _resetRepoKeysForTesting(async () => null);
+      }
+    });
+
+    it('does not send an extra snapshot when a stale repo key refresh is unchanged (#3703)', async () => {
+      const readOrigin = vi.fn(async () => 'https://github.com/org/site.git');
+      _resetRepoKeysForTesting(readOrigin);
+      const project = { id: 'unchanged-project', name: 'Site', path: '/unchanged-project' };
+      await repoKeysFor([project], Date.now() - 61_000);
+      vi.mocked(projectStore.list).mockReturnValue([project]);
+      const live = Object.assign(new EventEmitter(), { readyState: 1, send: vi.fn(), ping: () => {}, close: vi.fn() });
+      annexServer._testing.wsAuthTypes.set(live as never, 'bearer');
+      annexServer._testing.wss!.clients.add(live as never);
+      try {
+        annexServer._testing.wss!.emit('connection', live);
+        await vi.waitFor(() => expect(sent(live).filter((f) => f.type === 'snapshot')).toHaveLength(1));
+        expect(sent(live).find((f) => f.type === 'snapshot').payload.projects[0].repoKey).toBe('github.com/org/site');
+        await new Promise((resolve) => setTimeout(resolve, 100));
+        expect(readOrigin).toHaveBeenCalledTimes(2);
+        expect(sent(live).filter((f) => f.type === 'snapshot')).toHaveLength(1);
+      } finally {
+        _resetRepoKeysForTesting(async () => null);
+      }
+    });
+
     it('stamps a refresh with the seq its live state was read at, so nothing newer is overwritten', async () => {
       vi.mocked(projectStore.list).mockReturnValue([{ id: 'p', name: 'P', path: '/p' } as any]);
       vi.mocked(agentConfigModule.listDurable).mockReturnValue([{ id: 'a', name: 'a', color: 'indigo', createdAt: '2025-01-01' }] as any);
@@ -7811,17 +8043,33 @@ describe('annex-server', () => {
     });
   });
 
-  describe('group project polling endpoint', () => {
-    it('POST /api/v1/group-projects/:id/polling sets the setting via setProjectPolling', async () => {
+  describe('deprecated group messaging compatibility endpoints', () => {
+    it.each([null, 'dev'])('posts old tap requests to the board for target=%s', async targetAgentId => {
+      const { groupProjectRegistry } = await import('./group-project-registry');
+      const { groupProjectHost } = await import('./group-project-host');
+      vi.mocked(groupProjectRegistry.get).mockResolvedValueOnce({ id: 'gp_1', name: 'Team', metadata: {} } as never);
+      const members = vi.spyOn(groupProjectHost, 'resolveMembers').mockResolvedValue([{ address: 'dev', name: 'Dev' }] as never);
+      const inbox = vi.spyOn(groupProjectHost, 'ensureInbox').mockResolvedValue('inbox-dev');
+      const post = vi.spyOn(groupProjectHost, 'post').mockResolvedValue({ id: 'post1', topic: targetAgentId ? 'inbox-dev' : 'general', body: 'Hello', sender: 'user', timestamp: 'now' });
+      try {
+        const { port, token } = await startAndPair();
+        const res = await request(port, 'POST', '/api/v1/group-projects/gp_1/shoulder-tap', { targetAgentId, sender: 'user', message: 'Hello' }, authHeaders(token));
+        expect(res.status).toBe(200);
+        expect(JSON.parse(res.body)).toMatchObject({ taskId: 'post1', deprecated: true });
+        expect(post).toHaveBeenCalledWith('gp_1', 'user', targetAgentId ? 'inbox-dev' : 'general', 'Hello', { author: { label: 'user' }, urgent: true });
+        if (targetAgentId) expect(inbox).toHaveBeenCalledWith('gp_1', 'Dev', 'dev');
+      } finally { members.mockRestore(); inbox.mockRestore(); post.mockRestore(); }
+    });
+
+    it('POST /api/v1/group-projects/:id/polling returns notices without changing settings', async () => {
+      const { groupProjectRegistry } = await import('./group-project-registry');
+      vi.mocked(groupProjectRegistry.get).mockResolvedValueOnce({ id: 'gp_1', name: 'Team', metadata: {} } as never);
       const { port, token } = await startAndPair();
-      const { setProjectPolling } = await import('./group-project-polling');
-      vi.mocked(setProjectPolling).mockResolvedValueOnce({ pollingEnabled: true, members: [] });
 
       const res = await request(port, 'POST', '/api/v1/group-projects/gp_1/polling', { enabled: true }, authHeaders(token));
       expect(res.status).toBe(200);
-      expect(JSON.parse(res.body).pollingEnabled).toBe(true);
+      expect(JSON.parse(res.body)).toMatchObject({ pollingEnabled: false, mode: 'notices', deprecated: true });
       // The paired person's toggle is explicitly a person write (#3664).
-      expect(setProjectPolling).toHaveBeenCalledWith('gp_1', true, { author: { label: 'user' } });
     });
 
     it('returns 400 when enabled is not a boolean', async () => {
@@ -7833,8 +8081,6 @@ describe('annex-server', () => {
 
     it('returns 404 for an unknown group project', async () => {
       const { port, token } = await startAndPair();
-      const { setProjectPolling } = await import('./group-project-polling');
-      vi.mocked(setProjectPolling).mockResolvedValueOnce(null);
 
       const res = await request(port, 'POST', '/api/v1/group-projects/gp_missing/polling', { enabled: false }, authHeaders(token));
       expect(res.status).toBe(404);

@@ -753,8 +753,8 @@ describe('annex-client', () => {
 
   describe('snapshot order', () => {
     const FINGERPRINT = 'SNAP:ORDER';
-    const snapshot = (lastSeq: number, name: string) => Buffer.from(JSON.stringify({ type: 'snapshot', payload: {
-      protocolVersion: 2, projects: [{ id: name }], agents: {}, quickAgents: {}, theme: null, orchestrators: null, pendingPermissions: [], lastSeq,
+    const snapshot = (lastSeq: number, name: string, extra: Record<string, unknown> = {}) => Buffer.from(JSON.stringify({ type: 'snapshot', payload: {
+      protocolVersion: 2, projects: [{ id: name }], agents: {}, quickAgents: {}, theme: null, orchestrators: null, pendingPermissions: [], lastSeq, ...extra,
     } }));
 
     it('drops an older snapshot on one connection, but always takes a new connection\'s first', async () => {
@@ -790,6 +790,23 @@ describe('annex-client', () => {
       await vi.waitFor(() => expect(messageHandler).not.toBe(before));
       messageHandler!(snapshot(0, 'after restart'));
       expect(shown()).toBe('after restart');
+
+      const { appLog } = await import('./log-service');
+      vi.mocked(appLog).mockClear();
+      const grantRequests = [{ requestId: 'grant-receipt', arguments: 'PRIVATE arguments', reason: 'PRIVATE reason' }];
+      messageHandler!(snapshot(1, 'with approval', { grantRequests }));
+      messageHandler!(snapshot(2, 'same approval', { grantRequests }));
+      messageHandler!(snapshot(3, 'resolved approval'));
+      const diagnostics = vi.mocked(appLog).mock.calls.filter((call) => call[2].startsWith('Remote approval'));
+      expect(diagnostics).toEqual([
+        ['core:annex', 'info', 'Remote approval received', { meta: { machine: FINGERPRINT, requestId: 'grant-receipt', source: 'snapshot' } }],
+        ['core:annex', 'info', 'Remote approval resolved', { meta: { machine: FINGERPRINT, requestId: 'grant-receipt', source: 'snapshot' } }],
+      ]);
+      expect(JSON.stringify(diagnostics)).not.toContain('PRIVATE');
+      messageHandler!(Buffer.from(JSON.stringify({ type: 'grant_request:resolved', payload: { requestIds: ['grant-receipt'], reason: 'PRIVATE reason' } })));
+      expect(appLog).toHaveBeenLastCalledWith('core:annex', 'info', 'Remote approval resolved', {
+        meta: { machine: FINGERPRINT, source: 'event', count: 1 },
+      });
     });
   });
 
@@ -3299,6 +3316,48 @@ describe('annex-client', () => {
       annexClient._addConnectedSatelliteForTesting(FP);
     });
 
+    it('discards Settings responses across an in-place disconnect/reconnect epoch', async () => {
+      let finish!: () => void;
+      vi.mocked(https.request).mockImplementationOnce(((_url: string, _opts: unknown, callback: (response: unknown) => void) => {
+        const req = Object.assign(new EventEmitter(), { end: () => {
+          finish = () => {
+            const res = Object.assign(new EventEmitter(), { statusCode: 200 });
+            callback(res); res.emit('data', Buffer.from('{}')); res.emit('end');
+          };
+        }, destroy: vi.fn() });
+        return req;
+      }) as any);
+      const pending = annexClient.requestAgentSettings(FP, 'a1');
+      annexClient._receiveSatelliteDisconnectForTesting(FP);
+      vi.mocked(annexPeers.getPeer).mockReturnValue({ fingerprint: FP, role: 'satellite', kind: 'desktop', tlsCertificateFingerprint: 'pin' } as any);
+      annexClient.connect(FP);
+      await vi.waitFor(() => expect(annexClient.getSatellite(FP)?.state).toBe('connected'));
+      finish();
+      expect(await pending).toEqual({ status: 'offline' });
+    });
+
+    it.each([404, 405])('represents an older Settings host (%s) without retries or local fallback', async (status) => {
+      answers.push({ status, body: {} });
+      expect(await annexClient.requestAgentSettings(FP, 'a1')).toEqual({ status: 'unavailable' });
+      expect(requests).toHaveLength(1);
+      expect(requests[0]).toMatchObject({ method: 'GET', body: undefined });
+      expect(requests[0].url).toMatch(/\/agents\/a1\/settings-details$/);
+    });
+    it('reads only the fixed Settings route and rejects malformed or wrong-agent data', async () => {
+      const value = { version: 1, readOnly: true, agentId: 'a?/#', provider: 'Host', model: 'Model', runtime: 'terminal', access: 'Ask first', executionPolicy: 'Host defaults', autoSleep: null, context: null,
+        setup: { state: 'ok', managed: false, template: null, instructions: 'None', skills: null, mcps: null } };
+      answers.push({ status: 200, body: value });
+      expect(await annexClient.requestAgentSettings(FP, 'a?/#')).toEqual({ status: 'ok', value });
+      expect(requests[0].url).toContain('/agents/a%3F%2F%23/settings-details');
+      answers.push({ status: 200, body: value });
+      expect(await annexClient.requestAgentSettings(FP, 'other')).toEqual({ status: 'error' });
+      answers.push({ status: 200, body: {} });
+      expect(await annexClient.requestAgentSettings(FP, 'a')).toEqual({ status: 'error' });
+      answers.push({ status: 403, body: { error: 'private-error' } });
+      expect(await annexClient.requestAgentSettings(FP, 'a')).toEqual({ status: 'forbidden' });
+      expect(await annexClient.requestAgentSettings('missing', 'a')).toEqual({ status: 'offline' });
+    });
+
     it.each([404, 405])('represents an old controller-chat server (%s) without retrying', async (status) => {
       answers.push({ status, body: { error: 'not_found' } });
       expect(await annexClient.requestControllerChatPage(FP)).toEqual({ status: 'unavailable' });
@@ -3345,6 +3404,25 @@ describe('annex-client', () => {
       await annexClient.sendChatCommand(FP, { type: 'chat.interrupt', agentId: 'durable_chat', sessionId: 's1' });
       expect(requests[1]).toMatchObject({ method: 'POST', body: { type: 'chat.interrupt', agentId: 'durable_chat', sessionId: 's1', version: 1, epoch: 'ep_1' } });
       expect(requests[1].body.commandId).toEqual(expect.any(String));
+    });
+
+    it('sends a terminal answer to its original agent over the pinned permission endpoint', async () => {
+      vi.mocked(annexPeers.getPeer).mockReturnValue({ fingerprint: FP, tlsCertificatePem: 'B-CERT', tlsCertificateFingerprint: 'B-PIN' } as never);
+      answers.push({ status: 200, body: { ok: true, requestId: 'request', decision: 'deny' } });
+      expect(await annexClient.respondPermission(FP, 'agent/id', 'request', 'deny')).toEqual({ status: 'resolved' });
+      expect(requests).toEqual([{ url: expect.stringMatching(/\/api\/v1\/agents\/agent%2Fid\/permission-response$/), method: 'POST', body: { requestId: 'request', decision: 'deny' } }]);
+      expect(annexTls.createPinnedTlsClientOptions).toHaveBeenCalledWith(LOCAL_IDENTITY, { certPem: 'B-CERT', fingerprint: 'B-PIN' });
+      expect(https.request).toHaveBeenLastCalledWith(expect.any(String), expect.objectContaining({ pinned: true }), expect.any(Function));
+    });
+
+    it('preserves host refusal authority for late, mismatched and incomplete terminal answers', async () => {
+      answers.push({ status: 404, body: { error: 'request_not_found' } });
+      expect(await annexClient.respondPermission(FP, 'agent', 'request', 'allow')).toEqual({ status: 'rejected', reason: 'not_found' });
+      answers.push({ status: 403, body: { error: 'agent_mismatch' } });
+      expect(await annexClient.respondPermission(FP, 'agent', 'request', 'deny')).toEqual({ status: 'rejected', reason: 'agent_mismatch' });
+      answers.push({ status: 409, body: { error: 'incomplete_representation' } });
+      await expect(annexClient.respondPermission(FP, 'agent', 'request', 'allow')).rejects.toThrow('only a preview');
+      await expect(annexClient.respondPermission('missing', 'agent', 'request', 'allow')).rejects.toThrow('Satellite not connected');
     });
 
     it('reads the epoch from capabilities when it has none, and sends again once after a stale epoch', async () => {

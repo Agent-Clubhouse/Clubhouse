@@ -476,6 +476,15 @@ describe('BaseProvider.listModels', () => {
     await provider.listModels({ refresh: true });
     expect(provider.probe).toHaveBeenCalledTimes(3);
   });
+  it('exposes detached synchronous catalog evidence without another probe', async () => {
+    expect(provider.peekModels()).toBeNull(); expect(provider.probe).not.toHaveBeenCalled();
+    const listed = await provider.listModels();
+    const peeked = provider.peekModels()!;
+    peeked.models[0].label = 'changed by caller';
+    expect(provider.peekModels()!.models[0].label).toBe(listed.models[0].label);
+    expect(provider.peekModels({ env: { TEST_CONFIG_DIR: 'other' } })).toBeNull();
+    expect(provider.probe).toHaveBeenCalledOnce();
+  });
 
   it('passes the env override to the probe', async () => {
     await provider.listModels({ env: { TEST_CONFIG_DIR: 'profile-dir' } });

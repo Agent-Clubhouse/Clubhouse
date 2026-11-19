@@ -585,10 +585,12 @@ export const IPC = {
     CLIPBOARD_IMAGE: 'annex-client:clipboard-image',
     GIT_OPERATION: 'annex-client:git-operation',
     CHAT_PAGE: 'annex-client:chat-page',
+    AGENT_SETTINGS: 'annex-client:agent-settings',
     CONTROLLER_CHAT_PAGE: 'annex-client:controller-chat-page',
     CONTROLLER_CHAT_SESSIONS: 'annex-client:controller-chat-sessions',
     CHAT_SESSIONS: 'annex-client:chat-sessions',
     CHAT_COMMAND: 'annex-client:chat-command',
+    RESPOND_PERMISSION: 'annex-client:respond-permission',
     SESSION_LIST: 'annex-client:session-list',
     SESSION_TRANSCRIPT: 'annex-client:session-transcript',
     SESSION_SUMMARY: 'annex-client:session-summary',
@@ -603,12 +605,14 @@ export const IPC = {
     GP_BULLETIN_TOPIC: 'annex-client:gp-bulletin-topic',
     GP_BULLETIN_ALL: 'annex-client:gp-bulletin-all',
     GP_BULLETIN_POST: 'annex-client:gp-bulletin-post',
+    /** @deprecated Compatibility shim: posts to the board. */
     GP_SHOULDER_TAP: 'annex-client:gp-shoulder-tap',
+    /** @deprecated Polling is retired; returns notices mode. */
+    GP_SET_POLLING: 'annex-client:gp-set-polling',
     GP_DELETE_MESSAGE: 'annex-client:gp-delete-message',
     GP_DELETE_TOPIC: 'annex-client:gp-delete-topic',
     GP_SET_TOPIC_PROTECTION: 'annex-client:gp-set-topic-protection',
     GP_INJECT_MESSAGE: 'annex-client:gp-inject-message',
-    GP_SET_POLLING: 'annex-client:gp-set-polling',
     /** A satellite group project's lead and admin holders and its own grants (#3360). */
     GP_GET_ROLES: 'annex-client:gp-get-roles',
     /** Give an agent lead or admin on a satellite group project (#3360). */
@@ -638,7 +642,6 @@ export const IPC = {
     CHANGED: 'group-project:changed',
     DELETED: 'group-project:deleted',
     POST_BULLETIN_MESSAGE: 'group-project:post-bulletin-message',
-    SEND_SHOULDER_TAP: 'group-project:send-shoulder-tap',
     DELETE_MESSAGE: 'group-project:delete-message',
     DELETE_TOPIC: 'group-project:delete-topic',
     SET_TOPIC_PROTECTION: 'group-project:set-topic-protection',
@@ -648,13 +651,6 @@ export const IPC = {
     ESTIMATE_TRIM: 'group-project:estimate-trim',
     GET_MESSAGE: 'group-project:get-message',
     INJECT_MESSAGE: 'group-project:inject-message',
-    SET_POLLING: 'group-project:set-polling',
-    /** Members whose polling Clubhouse MCP going off stopped, now that it is back. */
-    GET_PAUSED_POLLING: 'group-project:get-paused-polling',
-    /** Send one such member its start. */
-    RESUME_POLLING: 'group-project:resume-polling',
-    /** Main → renderer: those members changed. */
-    PAUSED_POLLING_CHANGED: 'group-project:paused-polling-changed',
     /** Members, exclusions and the auto-join offer, from the membership record (#3357). */
     LIST_MEMBERS: 'group-project:list-members',
     /** Add an agent (removes its exclusion). */

@@ -5,14 +5,12 @@
 import { ipcMain } from 'electron';
 import { IPC } from '../../shared/ipc-channels';
 import { groupProjectRegistry } from '../services/group-project-registry';
-import { listPausedPolling, onPollingPauseChanged, resumePausedPolling, setProjectPolling, watchPollingForMcp } from '../services/group-project-polling';
 import { groupProjectHost } from '../services/group-project-host';
 import { initGroupProjectLifecycle } from '../services/group-project-lifecycle';
 import { describeGroupProjectRoles, grantGroupProjectRole, setOwnGrant } from '../services/group-project-roles';
 import { addMember, answerAutoJoinOffer, describeMembership, excludeMember, onMembershipChanged, previewAutoJoin, setAutomaticMembership, confirmUnlinkedMembers } from '../services/group-project-membership';
 import { listCoverage } from '../services/group-project-coverage';
 import { groupProjectRoster } from '../services/group-project-roster';
-import { executeShoulderTap } from '../services/group-project-shoulder-tap';
 import * as annexEventBus from '../services/annex-event-bus';
 import { groupProjectRemoteCreate } from '../services/group-project-remote-create';
 import { appLog } from '../services/log-service';
@@ -55,7 +53,6 @@ export function registerGroupProjectHandlers(): void {
 
   // Tool registration is handled centrally in registerMcpBindingHandlers().
   initGroupProjectLifecycle();
-  watchPollingForMcp();
 
   appLog('core:group-project', 'info', 'Group project handlers registered');
 
@@ -245,18 +242,6 @@ export function registerGroupProjectHandlers(): void {
     },
   ));
 
-  ipcMain.handle(IPC.GROUP_PROJECT.SEND_SHOULDER_TAP, withValidatedArgs(
-    [stringArg(), stringArg({ optional: true }), stringArg()],
-    async (_event, projectId, targetAgentId, message) => {
-      return executeShoulderTap({
-        projectId: projectId as string,
-        senderLabel: 'user',
-        targetAgentId: (targetAgentId as string) || null,
-        message: message as string,
-      });
-    },
-  ));
-
   ipcMain.handle(IPC.GROUP_PROJECT.DELETE_MESSAGE, withValidatedArgs(
     [stringArg(), stringArg(), stringArg()],
     async (_event, projectId, topic, messageId) => {
@@ -343,23 +328,5 @@ export function registerGroupProjectHandlers(): void {
     },
   ));
 
-  // Set the project-wide polling setting (persist + member start/stop side-effect).
-  // Shared with the toggle_polling admin MCP command via setProjectPolling so the
-  // UI toggle and the command can't diverge.
-  ipcMain.handle(IPC.GROUP_PROJECT.SET_POLLING, withValidatedArgs(
-    [stringArg(), booleanArg()],
-    async (_event, projectId, enabled) => {
-      return setProjectPolling(projectId as string, enabled as boolean, { author: { label: 'user' } });
-    },
-  ));
 
-  ipcMain.handle(IPC.GROUP_PROJECT.GET_PAUSED_POLLING, withValidatedArgs(
-    [stringArg()],
-    (_event, projectId) => listPausedPolling(projectId as string),
-  ));
-  ipcMain.handle(IPC.GROUP_PROJECT.RESUME_POLLING, withValidatedArgs(
-    [stringArg(), stringArg()],
-    (_event, projectId, agentId) => resumePausedPolling(projectId as string, agentId as string),
-  ));
-  onPollingPauseChanged(() => broadcastToAllWindows(IPC.GROUP_PROJECT.PAUSED_POLLING_CHANGED));
 }

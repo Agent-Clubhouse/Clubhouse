@@ -1,3 +1,5 @@
+import { assertManagedProviderPlatform, managedProviderPlatformCapability } from './managed-provider-platform';
+import { readRemoteAgentSettings } from './remote-agent-settings';
 import { handoffTransferDiagnostic, tagHandoffTransferError } from '../../shared/handoff-transfer-diagnostics';
 import { mobileProjectLinks, MOBILE_PROJECT_LINKS_EVENT } from './mobile-project-links';
 import { hydrateProjectLinks, projectLinksStore } from './project-links-store';
@@ -10,7 +12,8 @@ import { legacyDefaultsNotCopied } from './legacy-defaults';
 import { accessFromLegacy, legacyFreeAgentMode, type AccessLevel } from '../../shared/agent-access';
 import { agentAccess, getPermissionMode, quickAgentAccess } from './free-agent-settings';
 import { waitForAgentStopped } from './agent-system';
-import { previewAgentProvider, changeAgentProvider, persistGuidedSessionCapture } from './agent-provider-control';
+import { previewAgentProvider, changeAgentProvider, persistGuidedSessionCapture, providerNextWake, verifyProviderStartPreview } from './agent-provider-control';
+import { providerStartReceipt } from './provider-start-receipt';
 import { withAgentTransition } from './agent-transition';
 import * as http from 'http';
 import * as https from 'https';
@@ -57,7 +60,7 @@ import { MOBILE_SLASH_COMMANDS_MAX, latestSlashCommands, remoteChatEvent } from 
 import { buildMobileHelperRequests, runHelperCommand } from './mobile-helper-requests';
 import { onStartRequestsChanged } from './helper-start-requests';
 import {
-  GRANT_REQUEST_OPENED_EVENT, GRANT_REQUEST_RESOLVED_EVENT, buildMobileGrantRequests, grantOpenedPayload, grantRowVisibleTo, runGrantCommand, toMobileGrantRequest,
+  GRANT_REQUEST_OPENED_EVENT, GRANT_REQUEST_RESOLVED_EVENT, buildMobileGrantRequests, grantOpenedPayload, grantRowVisibleTo, grantSnapshotForPeer, runGrantCommand, toMobileGrantRequest,
   type GrantRequestPlaces,
 } from './mobile-grant-requests';
 import { onGrantRequestsChanged } from './grant-requests';
@@ -104,9 +107,8 @@ import * as pluginManifestRegistry from './plugin-manifest-registry';
 import { readKey as readPluginStorageKey, writeKey as writePluginStorageKey } from './plugin-storage';
 import { groupProjectRegistry } from './group-project-registry';
 import { groupProjectHost } from './group-project-host';
+import { postLegacyGroupMessage } from './group-project-legacy-message';
 import * as groupProjectNetwork from './group-project-network';
-import { executeShoulderTap } from './group-project-shoulder-tap';
-import { setProjectPolling } from './group-project-polling';
 import { describeGroupProjectRoles, grantGroupProjectRole, GroupProjectRoleError } from './group-project-roles';
 import { agentRegistry } from './agent-registry';
 import { bindingManager } from './clubhouse-mcp/binding-manager';
@@ -115,6 +117,7 @@ import * as gitService from './git-service';
 import { normalizeSessionEvents, buildSessionSummary, paginateEvents, SUMMARY_TRANSCRIPT_MAX_BYTES } from './session-reader';
 import { isSessionCapable, getProvider } from '../orchestrators';
 import { getAgentRuntime, isChatAgent, onChatEvent } from './agent-runtime';
+import { localMemberObservation } from './group-project-member-status';
 import { chatDetailedStatus } from '../../shared/chat-agent-status';
 import { CHAT_IMAGE_MAX_BYTES, type ChatEvent, type ChatSessionState } from '../../shared/chat';
 import { injectPtyText } from './agent-runtime/pty-input';
@@ -1247,8 +1250,8 @@ async function readSnapshotSourcesData() {
 
   const iconSet = await buildSnapshotIcons(projects, durablesByProject, dispatcherRecord() ?? undefined);
   // Each project's git remote as a key, so another machine can suggest linking the same project (#3066).
-  // Whatever is known now: the snapshot never waits on git, and the rest arrive with a later one.
-  const repoKeys = cachedRepoKeys(projects);
+  // Never wait on git. Changed keys request a later snapshot through the coalesced refresh path.
+  const repoKeys = cachedRepoKeys(projects, Date.now(), broadcastSnapshotRefresh);
 
   // Read per-project canvas state in parallel (including wires)
   const canvasState: Record<string, CanvasStateWire> = {};
@@ -1350,7 +1353,7 @@ function assembleSnapshot(sources: SnapshotSources): BuiltSnapshot {
   }));
 
   // Read group project members from binding manager
-  const groupProjectMembers: Record<string, Array<{ agentId: string; agentName: string; status: string }>> = {};
+  const groupProjectMembers: Record<string, Array<{ agentId: string; agentName: string; status: string; runtimeStatus?: import('../../shared/group-project-roster').RosterStatus; lastSeen?: string }>> = {};
   try {
     const allBindings = bindingManager.getAllBindings();
     for (const gp of groupProjects) {
@@ -1359,6 +1362,8 @@ function assembleSnapshot(sources: SnapshotSources): BuiltSnapshot {
         .map(b => ({
           agentId: b.agentId,
           agentName: b.agentName || b.agentId,
+          runtimeStatus: localMemberObservation(b.agentId).status,
+          lastSeen: new Date().toISOString(),
           status: isAgentRunning(b.agentId) ? 'connected' : 'sleeping',
         }));
       if (members.length > 0) {
@@ -1594,8 +1599,10 @@ const SNAPSHOT_REFS_TRUNCATION_STEPS: typeof SNAPSHOT_TRUNCATION_STEPS = [
  * mean it's gone. The fields left can't be given up, so past that it's reported.
  */
 function snapshotFrame({ payload: built, icons, iconRefs }: BuiltSnapshot, trigger: SnapshotTrigger, form: SnapshotForm = 'inline', viewer?: string): string {
-  // A device's copy leaves out the Manage devices calls that name it (#3205).
-  const payload = viewer ? { ...built, grantRequests: snapshotGrantRows(built).filter((row) => grantRowVisibleTo(row, viewer)) } : built;
+  const payload = viewer ? { ...built, ...grantSnapshotForPeer(snapshotGrantRows(built), {
+    fingerprint: viewer, peer: findPairedPeer(viewer), networkEnabled: annexSettings.networkEnabled(),
+    sessionOnly: mobileSessionPeers.has(viewer), hostLabel: thisMachine().machine?.name ?? 'Clubhouse',
+  }) } : built;
   const items = payload.projects.length + Object.values(payload.agents).reduce((sum, list) => sum + list.length, 0);
   // A phone that fetches images has both legacy maps empty, because it clears its inline icons on seeing either.
   const formPayload: Record<string, unknown> = form === 'refs' ? { ...payload, projectIcons: {}, agentIcons: {}, ...(iconRefs && { iconRefs }) } : payload;
@@ -1630,10 +1637,11 @@ function snapshotGrantRows(payload: BuiltSnapshot['payload']): MobileGrantReques
   return (payload.grantRequests as MobileGrantRequest[] | undefined) ?? [];
 }
 
-/** The device a socket's snapshot is filtered for: itself, when a Manage devices call names it (#3205); else none. */
+/** Desktop members get their own projection; phones retain their existing self-device filtering. */
 function grantViewerOf(built: BuiltSnapshot, ws: WebSocket): string | undefined {
   const fingerprint = wsPeerFingerprints.get(ws)?.toLowerCase();
-  return fingerprint && snapshotGrantRows(built.payload).some((row) => !grantRowVisibleTo(row, fingerprint)) ? fingerprint : undefined;
+  return fingerprint && (isDesktopNetworkMember(fingerprint)
+    || snapshotGrantRows(built.payload).some((row) => !grantRowVisibleTo(row, fingerprint))) ? fingerprint : undefined;
 }
 
 /** Most frames held for one socket: as many as the replay buffer keeps. */
@@ -3438,30 +3446,7 @@ async function handleGroupProjectPostMessageRoute(ctx: AnnexRouteContext, match:
   });
 }
 
-async function handleGroupProjectShoulderTapRoute(ctx: AnnexRouteContext, match: RegExpMatchArray): Promise<void> {
-  if (ctx.requireMtls()) return;
-  const gpId = decodeURIComponent(match[1]);
-  const project = await groupProjectRegistry.get(gpId);
-  if (!project) {
-    sendJson(ctx.res, 404, { error: 'group_project_not_found' });
-    return;
-  }
-  readJsonBody(ctx, async (body) => {
-    const sender = (body.sender as string) || 'remote';
-    const targetAgentId = (body.targetAgentId as string) || null;
-    const message = body.message as string;
-    if (!message) {
-      sendJson(ctx.res, 400, { error: 'message is required' });
-      return;
-    }
-    try {
-      const result = await executeShoulderTap({ projectId: gpId, senderLabel: sender, targetAgentId, message });
-      sendJson(ctx.res, 200, result);
-    } catch (err) {
-      sendJson(ctx.res, 500, { error: err instanceof Error ? err.message : 'shoulder_tap_failed' });
-    }
-  });
-}
+
 
 /** A desktop in this machine's Annex Network: not a phone, and not a session-only pairing (#3360). */
 function isDesktopNetworkMember(fingerprint: string | undefined): boolean {
@@ -3508,27 +3493,7 @@ async function handleGroupProjectRolesRoute(ctx: AnnexRouteContext, match: RegEx
   });
 }
 
-async function handleGroupProjectPollingRoute(ctx: AnnexRouteContext, match: RegExpMatchArray): Promise<void> {
-  if (ctx.requireMtls()) return;
-  const gpId = decodeURIComponent(match[1]);
-  readJsonBody(ctx, async (body) => {
-    const enabled = body.enabled;
-    if (typeof enabled !== 'boolean') {
-      sendJson(ctx.res, 400, { error: 'enabled (boolean) is required' });
-      return;
-    }
-    try {
-      const result = await setProjectPolling(gpId, enabled, { author: { label: 'user' } });
-      if (!result) {
-        sendJson(ctx.res, 404, { error: 'group_project_not_found' });
-        return;
-      }
-      sendJson(ctx.res, 200, result);
-    } catch (err) {
-      sendJson(ctx.res, 500, { error: err instanceof Error ? err.message : 'set_polling_failed' });
-    }
-  });
-}
+
 
 async function handleGroupProjectInjectRoute(ctx: AnnexRouteContext): Promise<void> {
   if (ctx.requireMtls()) return;
@@ -3960,6 +3925,8 @@ async function handleMobileCapabilitiesRoute(ctx: AnnexRouteContext): Promise<vo
     agentSettings: { version: 1, path: '/api/v1/mobile/agents/{agentId}/settings' },
     contextWindow: { version: 1 },
     providerControl: { version: 1, preview: 'agent.providerPreview', change: 'agent.providerChange', stoppedAcknowledgment: true, strictStart: true },
+    providerControlV2: { version: 2, requestContractVersion: 2, preview: 'agent.providerPreview', change: 'agent.providerChange', selection: 'tagged_model_nullable_effort', applyStartsAgent: false, managedDelivery: 'codex_terminal_no_skills', managedPlatform: managedProviderPlatformCapability() },
+    providerStartV2: { version: 2, requestContractVersion: 2, command: 'agent.start', requiredPreconditions: ['expectedProvider', 'expectedNextWake', 'expectedState'], managedDelivery: 'codex_terminal_no_skills', managedPlatform: managedProviderPlatformCapability(), creationEvidence: 'pty_created_selection' },
     // Every agent's live state in one read, for catching up after a reconnect.
     agentState: { version: 1, path: '/api/v1/mobile/agents/state' },
     // Machine-qualified agent addresses (#3063): a command's agentId may carry the machine.
@@ -4092,6 +4059,26 @@ async function handleMobileAgentStateRoute(ctx: AnnexRouteContext): Promise<void
   }
 }
 
+/** Desktop display metadata only, under the existing paired-controller read authority. */
+async function handleAgentSettingsDetailsRoute(ctx: AnnexRouteContext, match: RegExpMatchArray): Promise<void> {
+  if (ctx.requireMtls()) return;
+  // Same paired-controller read authority as existing agent settings; recheck after disk reads.
+  const authorized = () => {
+    const peer = annexPeers.getPeer(ctx.principal.fingerprint);
+    return !isRefusal(ctx.reauthorize()) && !!peer && peer.kind === 'desktop'
+      && !peer.networkPending && !mobileSessionPeers.has(ctx.principal.fingerprint);
+  };
+  if (!authorized()) { sendJson(ctx.res, 403, { error: 'desktop_controller_required' }); return; }
+  let agentId: string;
+  try { agentId = decodeURIComponent(match[1]); }
+  catch { sendJson(ctx.res, 400, { error: 'invalid_agent_id' }); return; }
+  if (!agentId || agentId.length > 240) { sendJson(ctx.res, 400, { error: 'invalid_agent_id' }); return; }
+  const result = await readRemoteAgentSettings(agentId, authorized);
+  if (!authorized()) { sendJson(ctx.res, 403, { error: 'settings_read_refused' }); return; }
+  ctx.res.setHeader('Cache-Control', 'no-store');
+  sendJson(ctx.res, result.status, result.body);
+}
+
 /** A separate read surface: controller history never enters phone routes or event replay. */
 async function handleControllerChatRoute(ctx: AnnexRouteContext, sessions = false): Promise<void> {
   if (ctx.requireMtls()) return;
@@ -4107,6 +4094,7 @@ async function handleControllerChatRoute(ctx: AnnexRouteContext, sessions = fals
 }
 
 async function handleMobileChatRoute(ctx: AnnexRouteContext, match: RegExpMatchArray): Promise<void> {
+  const epoch = mobileCommands.epoch;
   try {
     const agentId = decodeURIComponent(match[1]);
     const durable = await findMobileAgent(agentId);
@@ -4136,6 +4124,9 @@ async function handleMobileChatRoute(ctx: AnnexRouteContext, match: RegExpMatchA
     // link only absolute paths under them; `contentAnyPath` says any readable path is served (#2478).
     const richContent = isGraduatedFeatureOn(RICH_CHAT_CONTENT_FLAG);
     const contentRoots = richContent ? await agentFolders(agentId).catch((): string[] => []) : [];
+    if (mobileCommands.epoch !== epoch || !stillAuthorized(ctx.principal, authorizerDeps)) {
+      sendJson(ctx.res, 403, { error: 'authorization_revoked' }); return;
+    }
     const pending = live ? pendingInteractions(current) : { pendingPermissions: [], pendingQuestions: [] };
     const page = buildChatPage({
       eligible,
@@ -4475,10 +4466,11 @@ async function runMobileCommand(input: MobileCommand, assertAuthorized: () => vo
   if (command.type === 'agent.providerPreview' || command.type === 'agent.providerChange') {
     const durable = await findMobileAgent(command.agentId);
     if (!durable || isDisposedAgent(durable.config)) throw new MobileControlError('agent_not_found', 404);
-    const actor = { key: `phone:${principal}`, assertAuthorized };
+    const actor = { key: command.contractVersion === 2 ? `phone:provider-control-v2:${command.epoch}:${principal}` : `phone:${principal}`, assertAuthorized, assertCommitAuthorized: assertAuthorized };
+    const selection = { contractVersion: command.contractVersion, model: command.model, effort: command.effort };
     const result = command.type === 'agent.providerPreview'
-      ? await previewAgentProvider(durable.project.path, command.agentId, command.provider, actor)
-      : await changeAgentProvider(durable.project.path, command.agentId, command.provider, command.expectedState, actor);
+      ? await previewAgentProvider(durable.project.path, command.agentId, command.provider, actor, undefined, selection)
+      : await changeAgentProvider(durable.project.path, command.agentId, command.provider, command.expectedState, actor, selection);
     if (command.type === 'agent.providerChange') {
       broadcastToAllWindows(IPC.WINDOW.REQUEST_DURABLE_RELOAD, durable.project.id);
       broadcastSnapshotRefresh();
@@ -4541,12 +4533,36 @@ async function runMobileCommand(input: MobileCommand, assertAuthorized: () => vo
     return { agentId: command.agentId, stopRequested: true };
   }
   if (!info) throw new MobileControlError('agent_not_found', 404);
+  if (command.type === 'agent.start' && command.contractVersion === 2) assertManagedProviderPlatform();
   if (isAgentRunning(command.agentId) || mobileStartingAgents.has(command.agentId)) throw new MobileControlError('agent_already_running');
   const start = async () => {
   const starting = { cancelled: false };
   mobileStartingAgents.set(command.agentId, starting);
+  let verifiedNextWake: ReturnType<typeof providerNextWake> | null = null;
+  let createdIdentity: string | undefined;
+  let createdAt: string | undefined;
+  let selectedForStart: string | null = null;
+  const startReceipt = (completed: boolean) => {
+    let running: boolean | null = null;
+    let sameCreatedRuntime = false;
+    let appSessionId: string | undefined;
+    let nativeProviderSessionId: string | undefined;
+    try {
+      running = isAgentRunning(command.agentId);
+      sameCreatedRuntime = !!createdIdentity && ptyManager.processIdentity(command.agentId) === createdIdentity;
+      const runtime = sameCreatedRuntime ? getAgentRuntime(command.agentId) : undefined;
+      appSessionId = runtime?.getSessionId?.(); nativeProviderSessionId = runtime?.getNativeSessionId?.();
+    } catch { /* telemetry-exempt: observation failure stays unknown, never erases immutable creation evidence. */ }
+    return providerStartReceipt({ agentId: command.agentId, commandId: command.commandId, hostEpoch: command.epoch,
+      configured: verifiedNextWake, completed, created: !!createdIdentity, selectedProvider: selectedForStart,
+      running, sameCreatedRuntime, appSessionId, nativeProviderSessionId, createdAt, observedAt: new Date(Date.now()).toISOString() });
+  };
   try {
-    const config = command.expectedProvider !== undefined ? await agentConfig.getDurableConfig(project.path, command.agentId, { forLaunch: true }) : info.config;
+    const v2 = command.contractVersion === 2;
+    const admission = v2 ? await verifyProviderStartPreview(project.path, command.agentId, command.expectedProvider!, command.expectedState!, command.expectedNextWake!,
+      { key: `phone:provider-control-v2:${command.epoch}:${principal}`, assertAuthorized, assertCommitAuthorized: assertAuthorized })
+      : null;
+    const config = admission ? admission.config : command.expectedProvider !== undefined ? await agentConfig.getDurableConfig(project.path, command.agentId, { forLaunch: true }) : info.config;
     if (!config || isDisposedAgent(config)) throw new MobileControlError('agent_not_found', 404);
     if (command.expectedProvider !== undefined) {
       if (command.resume && hasSessionCaptureFailure(command.agentId)) throw new MobileControlError('session_capture_failed');
@@ -4558,10 +4574,12 @@ async function runMobileCommand(input: MobileCommand, assertAuthorized: () => vo
       }
       assertAuthorized();
     }
+    if (v2) { verifiedNextWake = providerNextWake(config, command.expectedProvider!); selectedForStart = command.expectedProvider!; }
     const resume = command.resume === true && !!config.lastSessionId;
     await spawnAgent({ agentId: config.id, projectPath: project.path, cwd: config.worktreePath || project.path,
       kind: 'durable', mission: command.message, model: config.model, orchestrator: config.orchestrator,
-      freeAgentMode: config.freeAgentMode, resume, strictResume: command.expectedProvider !== undefined && resume, sessionId: resume ? config.lastSessionId : undefined });
+      freeAgentMode: config.freeAgentMode, resume, strictResume: command.expectedProvider !== undefined && resume, sessionId: resume ? config.lastSessionId : undefined,
+      ...(v2 && { strictManagedDelivery: true, beforeCreate: () => { assertAuthorized(); admission!.assertBeforeCreate(); }, onRuntimeCreated: (identity: string) => { createdIdentity = identity; createdAt = new Date(Date.now()).toISOString(); } }) });
     if (starting.cancelled) {
       await killAgent(command.agentId, project.path, config.orchestrator);
       throw new MobileControlError('start_cancelled', 409, 'failed');
@@ -4569,7 +4587,14 @@ async function runMobileCommand(input: MobileCommand, assertAuthorized: () => vo
     noteAgentActivity(config.id);
     broadcastAndBuffer('agent:woken', { agentId: config.id, source: 'annex-mobile' });
     broadcastSnapshotRefresh();
-    return { agentId: config.id, executionMode: getAgentExecutionMode(config.id) };
+    return { agentId: config.id, executionMode: getAgentExecutionMode(config.id), ...(v2 && { contract: startReceipt(true) }) };
+  } catch (err) {
+    if (!createdIdentity && err instanceof MobileControlError && err.code === 'managed_platform_unsupported') throw err;
+    if (command.contractVersion === 2) {
+      const code = err instanceof MobileControlError ? err.code : createdIdentity ? 'start_post_create_failed' : 'start_failed';
+      throw new MobileControlError(code, err instanceof MobileControlError ? err.statusCode : 409, createdIdentity ? 'failed' : 'rejected', undefined, { contract: startReceipt(false) });
+    }
+    throw err;
   } finally { finishMobileStart(command.agentId, starting); }
   };
   return command.expectedProvider !== undefined ? withAgentTransition(command.agentId, start) : start();
@@ -4731,6 +4756,7 @@ const ANNEX_HTTP_ROUTE_TABLE: AnnexHttpRoute[] = [
   { method: 'GET', pattern: /^\/api\/v1\/projects$/, handler: handleProjectsRoute },
   { method: 'GET', pattern: /^\/api\/v1\/projects\/([^/]+)\/agents$/, handler: handleProjectAgentsRoute },
   { method: 'GET', pattern: /^\/api\/v1\/agents\/([^/]+)\/buffer$/, handler: handleAgentBufferRoute },
+  { method: 'GET', pattern: /^\/api\/v1\/agents\/([^/]+)\/settings-details$/, handler: handleAgentSettingsDetailsRoute },
   { method: 'GET', pattern: /^\/api\/v1\/projects\/([^/]+)\/files\/tree(\?.*)?$/, handler: handleProjectFilesTreeRoute },
   { method: 'GET', pattern: /^\/api\/v1\/projects\/([^/]+)\/files\/read(\?.*)?$/, handler: handleProjectFilesReadRoute },
   { method: 'GET', pattern: /^\/api\/v1\/projects\/([^/]+)\/git\/info$/, handler: handleGitInfoRoute },
@@ -4756,9 +4782,9 @@ const ANNEX_HTTP_ROUTE_TABLE: AnnexHttpRoute[] = [
   { method: 'GET', pattern: /^\/api\/v1\/group-projects\/([^/]+)\/bulletin\/topics\/([^/?]+)(\?.*)?$/, handler: handleGroupProjectTopicRoute },
   { method: 'GET', pattern: /^\/api\/v1\/group-projects\/([^/]+)\/bulletin\/messages(\?.*)?$/, handler: handleGroupProjectAllMessagesRoute },
   { method: 'POST', pattern: /^\/api\/v1\/group-projects\/([^/]+)\/bulletin\/messages$/, handler: handleGroupProjectPostMessageRoute },
-  { method: 'POST', pattern: /^\/api\/v1\/group-projects\/([^/]+)\/shoulder-tap$/, handler: handleGroupProjectShoulderTapRoute },
-  { method: 'POST', pattern: /^\/api\/v1\/group-projects\/([^/]+)\/polling$/, handler: handleGroupProjectPollingRoute },
   { method: 'GET', pattern: /^\/api\/v1\/group-projects\/([^/]+)\/roles$/, handler: handleGroupProjectRolesRoute },
+  { method: 'POST', pattern: /^\/api\/v1\/group-projects\/([^/]+)\/polling$/, handler: handleGroupProjectPollingRoute },
+  { method: 'POST', pattern: /^\/api\/v1\/group-projects\/([^/]+)\/shoulder-tap$/, handler: handleGroupProjectShoulderTapRoute },
   { method: 'POST', pattern: /^\/api\/v1\/group-projects\/([^/]+)\/roles$/, handler: handleGroupProjectRolesRoute },
   { method: 'DELETE', pattern: /^\/api\/v1\/group-projects\/([^/]+)\/bulletin\/topics\/([^/]+)\/messages\/([^/]+)$/, handler: handleGroupProjectDeleteMessageRoute },
   { method: 'DELETE', pattern: /^\/api\/v1\/group-projects\/([^/]+)\/bulletin\/topics\/([^/?]+)$/, handler: handleGroupProjectDeleteTopicRoute },
@@ -5971,7 +5997,7 @@ function startServer(strict = false): Promise<void> {
     broadcastAndBuffer('agent:spawned', { id: agentId, kind, projectId, ...meta });
   });
 
-  unsubPermissionRequest = permissionQueue.onPermissionRequest((permission) => {
+  const offPermissionRequest = permissionQueue.onPermissionRequest((permission) => {
     broadcastAndBuffer('permission:request', {
       requestId: permission.requestId,
       agentId: permission.agentId,
@@ -5982,6 +6008,8 @@ function startServer(strict = false): Promise<void> {
       deadline: permission.createdAt + permission.timeoutMs,
     });
   });
+  const offPermissionChange = permissionQueue.onChange(() => broadcastSnapshotRefresh());
+  unsubPermissionRequest = () => { offPermissionRequest(); offPermissionChange(); };
 
   unsubGroupProjectChanged = annexEventBus.onGroupProjectChanged((action, project) => {
     broadcastWs({ type: 'group-project:changed', payload: { action, project } });
@@ -7114,3 +7142,61 @@ export const _testing = {
   agentLastActivity,
   noteAgentActivity,
 };
+
+async function handleGroupProjectShoulderTapRoute(ctx: AnnexRouteContext, match: RegExpMatchArray): Promise<void> {
+  if (ctx.requireMtls()) return;
+  const gpId = decodeURIComponent(match[1]);
+  const project = await groupProjectRegistry.get(gpId);
+  if (!project) {
+    sendJson(ctx.res, 404, { error: 'group_project_not_found' });
+    return;
+  }
+  readJsonBody(ctx, async (body) => {
+    const sender = (body.sender as string) || 'remote';
+    const targetAgentId = (body.targetAgentId as string) || null;
+    const message = body.message as string;
+    if (!message) {
+      sendJson(ctx.res, 400, { error: 'message is required' });
+      return;
+    }
+    try {
+      // Deprecated route retained for older phones and supported plugin APIs.
+      // Direct messages are durable inbox posts; announcements live in general.
+      // Same person author as bulletin posts; OTHER_DESKTOP also rejects agent-driven plugin calls.
+      const posted = await postLegacyGroupMessage(groupProjectHost, project, sender, targetAgentId, message, { label: 'user' });
+      if (!posted) {
+        sendJson(ctx.res, 404, { error: 'group_project_member_not_found' });
+        return;
+      }
+      if (!posted.pending) annexEventBus.emitBulletinMessage(gpId, posted);
+      const result = { taskId: posted.id, delivered: [] as string[], failed: [] as string[], message: posted, deprecated: true };
+      sendJson(ctx.res, 200, result);
+    } catch (err) {
+      sendJson(ctx.res, 500, { error: err instanceof Error ? err.message : 'shoulder_tap_failed' });
+    }
+  });
+}
+
+async function handleGroupProjectPollingRoute(ctx: AnnexRouteContext, match: RegExpMatchArray): Promise<void> {
+  if (ctx.requireMtls()) return;
+  const gpId = decodeURIComponent(match[1]);
+  readJsonBody(ctx, async (body) => {
+    const enabled = body.enabled;
+    if (typeof enabled !== 'boolean') {
+      sendJson(ctx.res, 400, { error: 'enabled (boolean) is required' });
+      return;
+    }
+    try {
+      // Deprecated compatibility route: no caller can restart a polling loop.
+      const project = await groupProjectHost.get(gpId);
+      const result = project ? { pollingEnabled: false, mode: 'notices', members: await groupProjectHost.resolveMembers(gpId), deprecated: true } : null;
+      if (!result) {
+        sendJson(ctx.res, 404, { error: 'group_project_not_found' });
+        return;
+      }
+      sendJson(ctx.res, 200, result);
+    } catch (err) {
+      sendJson(ctx.res, 500, { error: err instanceof Error ? err.message : 'set_polling_failed' });
+    }
+  });
+}

@@ -76,6 +76,13 @@ class GroupProjectRegistry {
   private hideAll = false;
   private inferredScopeIds = new Set<string>();
   private inferredScopeCandidates = new Map<string, GroupProjectScope>();
+  private migrationHost: { isReplica(project: GroupProject): boolean; reserveRegistryMigration(id: string): Promise<void> } | null = null;
+
+  /** The host owning this registry also owns migration sequences. */
+  setMigrationHost(host: NonNullable<GroupProjectRegistry['migrationHost']>): void {
+    this.migrationHost = host;
+  }
+
   private loaded = false;
   private loadPromise: Promise<void> | null = null;
   private dirty = false;
@@ -164,6 +171,20 @@ class GroupProjectRegistry {
       }
     }
     const tombstoned = await readTombstonedIds();
+    // Only the authoritative host migrates legacy polling groups. Persist before
+    // exposing the loaded records so the next launch cannot restore polling.
+    if (tombstoned !== 'all' && [...projects.values()].some((project) => project.metadata?.pollingEnabled === true && !tombstoned.has(project.id))) {
+      const host = this.migrationHost ?? (await import('./group-project-host')).groupProjectHost;
+      let migrated = false;
+      for (const project of projects.values()) {
+        if (project.metadata?.pollingEnabled !== true || tombstoned.has(project.id) || host.isReplica(project)) continue;
+        await host.reserveRegistryMigration(project.id);
+        const { pollingEnabled: _retired, ...metadata } = project.metadata;
+        project.metadata = metadata;
+        migrated = true;
+      }
+      if (migrated) await this.writeSnapshot(serializeProjects(projects, inferredIds, priorCandidates));
+    }
     this.hideAll = tombstoned === 'all';
     this.hidden = tombstoned === 'all' ? new Set() : tombstoned;
     this.projects = projects;

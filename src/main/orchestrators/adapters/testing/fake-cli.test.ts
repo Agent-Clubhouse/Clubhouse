@@ -63,6 +63,29 @@ describe('writeFakeCliShims', () => {
     expect(controller.pid).not.toBe(chat.pid);
   });
 
+  it('keeps a headless preview report after the controller rewrites the latest report', async () => {
+    dir = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'fake-cli-preview-'));
+    const report = path.join(dir, 'report.json');
+    const shims = await writeFakeCliShims(path.join(dir, 'bin'), {
+      claude: { fixture: chatFixturePath('claude', 'headless-answer'), report },
+    });
+    const prompt = 'You are Rosie, warm and upbeat.';
+    const controllerArgs = ['--dangerously-skip-permissions', '--model', 'sonnet', '--effort', 'medium'];
+    for (const [agentId, args] of [[undefined, ['-p', prompt]], ['controller', controllerArgs], [undefined, ['--version']]] as const) {
+      const command = resolveStructuredSpawn(shims.claude, [...args]);
+      const peer = NdjsonPeer.start(command.binary, command.args, {
+        windowsVerbatimArguments: command.windowsVerbatimArguments,
+        env: { ...process.env, CLUBHOUSE_AGENT_ID: agentId, CLUBHOUSE_MCP_PORT: undefined },
+      });
+      expect((await peer.exited).code).toBe(0);
+    }
+    const latest = JSON.parse(await fs.promises.readFile(report, 'utf8'));
+    expect(latest.argv).toEqual(controllerArgs);
+    const preview = JSON.parse(await fs.promises.readFile(fakeCliAgentReportPath(report, null), 'utf8'));
+    expect(preview.argv).toEqual(['-p', prompt]);
+    expect(preview.env).toMatchObject({ CLUBHOUSE_AGENT_ID: null, CLUBHOUSE_MCP_PORT: null });
+  });
+
 });
 
 describe('EventLog', () => {

@@ -1,3 +1,4 @@
+import { isRemoteAgentSettings, REMOTE_SETTINGS_MAX_BYTES, type RemoteAgentSettings } from '../../shared/remote-agent-settings';
 /**
  * Annex V2 Client — Service Discovery & Connection (#862)
  *
@@ -6,6 +7,7 @@
  * Stores snapshots per satellite and forwards events to the renderer via IPC.
  */
 import * as https from 'https';
+import type { PermissionResolveOutcome } from '../../shared/permission-types';
 import { applyFetchedIcons, fetchLeftOutIcons, newRemoteIconState, type IconFetchResult, type IconKind, type RemoteIconState } from './remote-icon-fetch';
 import { ICON_SERVED_MAX_BYTES } from '../../shared/icon-limits';
 import { randomUUID } from 'crypto';
@@ -115,6 +117,7 @@ export interface SatelliteConnection {
 
 export interface SatelliteSnapshot {
   grantRequests?: import('../../shared/mobile-control').MobileGrantRequest[];
+  pendingGrantRequests?: import('../../shared/grant-requests').DesktopPendingGrantRequest[];
   /** The machine this snapshot is from (#3063). */
   machine?: { fingerprint: string; name: string };
   dispatcher?: unknown;
@@ -130,7 +133,7 @@ export interface SatelliteSnapshot {
   groupProjects?: unknown[];
   groupProjectActions?: import('../../shared/actions/view').RemoteGroupAction[];
   bulletinDigests?: Record<string, unknown[]>;
-  groupProjectMembers?: Record<string, Array<{ agentId: string; agentName: string; status: string }>>;
+  groupProjectMembers?: Record<string, Array<{ agentId: string; agentName: string; status: string; runtimeStatus?: import('../../shared/group-project-roster').RosterStatus; lastSeen?: string }>>;
   /** Unvalidated; read through `windowsPtyForHost`. */
   ptyHost?: unknown;
   canvasState?: Record<string, unknown>;
@@ -257,7 +260,7 @@ interface RemoteStreamState {
  * backwards for a renderer holding an older snapshot.
  */
 const remoteStreams = new Map<string, RemoteStreamState>();
-const seedsInFlight = new Map<string, Promise<void>>();
+const seedsInFlight = new Map<string, { epoch: number; promise: Promise<void> }>();
 /** Bumped on every disconnect, so a seed that straddles one is discarded. */
 const connectionEpochs = new Map<string, number>();
 
@@ -511,17 +514,28 @@ async function seedFromSatellite(satelliteId: string, agentId: string): Promise<
  * The cached buffer for a remote agent, seeded from the satellite on first
  * access. Concurrent callers share one seed fetch.
  */
-async function getRemoteBufferSnapshot(satelliteId: string, agentId: string): Promise<RemoteBufferSnapshot> {
+async function getRemoteBufferSnapshot(satelliteId: string, agentId: string, retryStaleSeed = true): Promise<RemoteBufferSnapshot> {
   const key = `${satelliteId}:${agentId}`;
   const bufferKey = remoteBufferKey(satelliteId, agentId);
   // A seeded key whose cache has gone is seeded again.
   if (!seededBuffers.has(key) || !headlessTerminal.getSize(bufferKey)) {
     let seed = seedsInFlight.get(key);
     if (!seed) {
-      seed = seedFromSatellite(satelliteId, agentId).finally(() => seedsInFlight.delete(key));
+      seed = {
+        epoch: connectionEpochs.get(satelliteId) ?? 0,
+        promise: seedFromSatellite(satelliteId, agentId).finally(() => seedsInFlight.delete(key)),
+      };
       seedsInFlight.set(key, seed);
     }
-    await seed;
+    await seed.promise;
+    // A reconnecting view can join a seed from the old connection. That seed
+    // is discarded, so fetch once more, but don't loop if the peer keeps flapping.
+    if (seed.epoch !== (connectionEpochs.get(satelliteId) ?? 0) && satellites.get(satelliteId)?.state === 'connected') {
+      appLog('core:annex-client', retryStaleSeed ? 'info' : 'warn', 'Agent buffer seed crossed a reconnect', {
+        meta: { satelliteId, agentId, retrying: retryStaleSeed },
+      });
+      if (retryStaleSeed) return getRemoteBufferSnapshot(satelliteId, agentId, false);
+    }
   }
   const snap = await headlessTerminal.snapshot(bufferKey);
   return { data: snap?.data ?? '', seq: snap?.seq ?? remoteStream(key).seq };
@@ -1073,6 +1087,17 @@ function handleSatelliteMessage(sat: SatelliteConnectionInternal, msg: Record<st
         }
         sat.iconState ??= newRemoteIconState();
         applyFetchedIcons(sat.iconState, incoming);
+        const previousRequests = new Set([
+          ...(sat.snapshot?.grantRequests ?? []), ...(sat.snapshot?.pendingGrantRequests ?? []),
+        ].map((row) => row.requestId));
+        for (const requestId of new Set([...(incoming.grantRequests ?? []), ...(incoming.pendingGrantRequests ?? [])].map((row) => row.requestId))) {
+          if (!previousRequests.delete(requestId)) appLog('core:annex', 'info', 'Remote approval received', {
+            meta: { machine: sat.fingerprint, requestId, source: 'snapshot' },
+          });
+        }
+        for (const requestId of previousRequests) appLog('core:annex', 'info', 'Remote approval resolved', {
+          meta: { machine: sat.fingerprint, requestId, source: 'snapshot' },
+        });
         sat.snapshot = incoming;
         void import('./connection-card').then((m) => m.rememberConnectionSnapshot(sat.fingerprint, incoming)).catch((error) => {
           appLog('core:annex', 'warn', 'Could not save the network connection directory', { meta: { error: error instanceof Error ? error.message : String(error) } });
@@ -1085,6 +1110,17 @@ function handleSatelliteMessage(sat: SatelliteConnectionInternal, msg: Record<st
         if (omitted) void fetchOmittedCanvases(sat);
         fetchSatelliteLeftOutIcons(sat);
       }
+      break;
+    }
+
+    case 'grant_request:opened':
+    case 'grant_request:resolved': {
+      const payload = msg.payload as { requestId?: string; requestIds?: string[] } | undefined;
+      appLog('core:annex', 'info', type === 'grant_request:opened' ? 'Remote approval received' : 'Remote approval resolved', {
+        meta: { machine: sat.fingerprint, source: 'event', ...(type === 'grant_request:opened'
+          ? { requestId: payload?.requestId } : { count: payload?.requestIds?.length ?? 0 }) },
+      });
+      broadcastSatelliteEvent(sat.id, type, msg.payload);
       break;
     }
 
@@ -2141,7 +2177,7 @@ export function requestBulletinPostMessage(
 }
 
 /**
- * Send a shoulder tap / broadcast to a satellite group project via HTTPS REST.
+ * @deprecated Compatibility shim: posts to an inbox or general through HTTPS REST.
  */
 export function requestShoulderTap(
   fingerprint: string,
@@ -2207,9 +2243,7 @@ export function requestSetTopicProtection(
 }
 
 /**
- * Set the project-wide polling setting on a satellite group project via HTTPS REST.
- * Runs setProjectPolling on the satellite so the persisted setting + member
- * side-effect stay identical to a local toggle.
+ * @deprecated Polling is retired. The satellite returns notices mode without a change.
  */
 /** A satellite group project's roles and own grants (#3360). */
 export function requestGroupProjectRoles(fingerprint: string, groupProjectId: string): Promise<unknown> {
@@ -2323,6 +2357,19 @@ export function postToMachine(machine: string, urlPath: string, body: Record<str
   return satelliteJson(sat.fingerprint, 'POST', urlPath, body, options);
 }
 
+/** A person's terminal approval, over the host's existing pinned permission endpoint. */
+export async function respondPermission(satelliteId: string, agentId: string, requestId: string, decision: 'allow' | 'deny'): Promise<PermissionResolveOutcome> {
+  const res = await postToMachine(satelliteId, `/api/v1/agents/${encodeURIComponent(agentId)}/permission-response`, { requestId, decision });
+  const body = res.body && typeof res.body === 'object' ? res.body : {};
+  if (res.status === 200 && 'ok' in body && body.ok === true) return { status: 'resolved' };
+  const error = 'error' in body ? body.error : undefined;
+  if (error === 'request_not_found') return { status: 'rejected', reason: 'not_found' };
+  if (error === 'agent_mismatch') return { status: 'rejected', reason: 'agent_mismatch' };
+  throw new Error(error === 'incomplete_representation'
+    ? 'This request is only a preview. Review and answer the complete request on its host computer.'
+    : `That computer refused the decision${typeof error === 'string' ? ` (${error})` : ''}.`);
+}
+
 /** A JSON request over the pinned connection, answering its status and body whatever the status. */
 function satelliteJson(fingerprint: string, method: 'GET' | 'POST', urlPath: string, body?: Record<string, unknown>, options?: { signal?: AbortSignal; maxResponseBytes?: number }): Promise<{ status: number; body: unknown; retryAfterMs?: number }> {
   const sat = satellites.get(fingerprint);
@@ -2402,6 +2449,26 @@ async function controllerChatRead<T>(machine: string, path: string): Promise<Con
   } catch {
     // telemetry-exempt: a bounded state, never a remote error containing conversation text.
     return { status: sat.state === 'connected' ? 'error' : 'offline' };
+  }
+}
+
+/** A read-only host summary. Older hosts have no route; never fall back to local files or a write. */
+export async function requestAgentSettings(machine: string, agentId: string): Promise<ControllerReadResult<RemoteAgentSettings>> {
+  const sat = satelliteFor(machine);
+  if (!sat || sat.state !== 'connected') return { status: 'offline' };
+  const epoch = connectionEpochs.get(sat.id) ?? 0;
+  const current = () => satelliteFor(machine) === sat && sat.state === 'connected' && (connectionEpochs.get(sat.id) ?? 0) === epoch;
+  try {
+    const res = await satelliteJson(sat.fingerprint, 'GET', `/api/v1/agents/${encodeURIComponent(agentId)}/settings-details`, undefined, { maxResponseBytes: REMOTE_SETTINGS_MAX_BYTES });
+    if (!current()) return { status: 'offline' };
+    if (res.status === 404 || res.status === 405) return { status: 'unavailable' };
+    if (res.status === 401 || res.status === 403) return { status: 'forbidden' };
+    if (res.status === 429) return { status: 'rate_limited', retryAfterMs: res.retryAfterMs ?? 1000 };
+    if (res.status !== 200 || !isRemoteAgentSettings(res.body, agentId)) return { status: 'error' };
+    return { status: 'ok', value: res.body };
+  } catch {
+    // telemetry-exempt: the Settings card shows a safe state without host error content.
+    return { status: current() ? 'error' : 'offline' };
   }
 }
 

@@ -1,3 +1,4 @@
+import { assertManagedProviderPlatform, managedProviderPlatformCapability } from './managed-provider-platform';
 import { assertExecutionPolicy, validateStoredExecutionPolicy, helperExecutionPolicy, type ExecutionPolicy } from '../../shared/execution-policy';
 import { activateLocalCausalInput, withLocalCausalInput } from './dispatcher-federation-local-work';
 import { captureFederationInputs, prepareFederationInputs } from './dispatcher-federation-context';
@@ -5,6 +6,9 @@ import { redactSpawnArgs } from '../../shared/log-redaction';
 import { readCopilotHooksConfig } from '../orchestrators/copilot-hooks-config';
 import { AgentResumeError, assertProviderSelection } from './agent-transition';
 import { withManagedActivationLaunch } from './managed-activation';
+import { managedProviderStartGuard } from './managed-provider-transition';
+import { MobileControlError } from './mobile-control';
+import { resolveRuntimeMode } from './chat-runtime-settings';
 import type { ManagedLaunchLease } from './managed-activation/service';
 import { ManagedActivationError, ProcessStartedReceiptError } from './managed-activation/types';
 import { cleanupManagedReceiptFailure, recordManagedProcessStart } from './managed-activation/runtime-start';
@@ -126,6 +130,10 @@ export interface SpawnAgentParams extends ExecutionPolicy {
   resume?: boolean;
   /** Guided resume must fail rather than substitute a fresh conversation. */
   strictResume?: boolean;
+  /** Opt-in phone v2 never falls through to legacy mutating managed delivery. */
+  strictManagedDelivery?: boolean;
+  /** Main-only immutable observation for an explicit guided start attempt. */
+  onRuntimeCreated?: (identity: string) => void;
   /** Specific session ID to resume (provider-specific format) */
   sessionId?: string;
   /** Plugin ID that owns this companion agent (required when kind === 'companion'). @since 0.9 */
@@ -315,12 +323,30 @@ export const RESUME_BLOCKED_NOTICE = "That session kept failing every turn, so i
 export async function spawnAgent(params: SpawnAgentParams): Promise<void> {
   // Quit and update close this before stopping runtimes (#2053).
   assertLaunchesOpen();
-  const quickRun = params.kind === 'quick' ? beginQuickAgentRun(params) : undefined;
-  const spawn = withManagedActivationLaunch(params, () => isAgentRunning(params.agentId), (managed) => {
-    assertProviderSelection(params.agentId, params.orchestrator);
-    return withLocalCausalInput(params.agentId, params.causalTaskId, params.mission, () => spawnAgentTracked(params, managed), !params.mission);
-  });
+  let quickRun: ReturnType<typeof beginQuickAgentRun> | undefined;
+  // Register before calling preflight: even its synchronous callbacks may drain.
+  let complete!: () => void; let fail!: (error: unknown) => void;
+  const spawn = new Promise<void>((resolve, reject) => { complete = resolve; fail = reject; });
   inflightSpawns.add(spawn);
+  const launch = async () => {
+    if (params.kind === 'durable' && !managedProviderPlatformCapability().supported) {
+      let config: DurableAgentConfig | null;
+      try { config = await getDurableConfig(params.projectPath, params.agentId, { forLaunch: true }); }
+      catch { // telemetry-exempt: preserve the existing fail-closed launch error before activation effects.
+        throw tagError(new Error('Cannot verify the saved execution policy. Open this agent’s Settings and choose Restore saved backup, or repair .clubhouse/agents.json before starting it.'), 'preflight_failed');
+      }
+      if (config?.providerTransition || (params.strictManagedDelivery && config?.managed)) assertManagedProviderPlatform();
+    }
+    // Shutdown may have closed launches while the platform read was pending.
+    assertLaunchesOpen();
+    quickRun = params.kind === 'quick' ? beginQuickAgentRun(params) : undefined;
+    return withManagedActivationLaunch(params, () => isAgentRunning(params.agentId), (managed) => {
+      assertProviderSelection(params.agentId, params.orchestrator);
+      return withLocalCausalInput(params.agentId, params.causalTaskId, params.mission, () => spawnAgentTracked(params, managed), !params.mission);
+    });
+  };
+  // Invoke synchronously to preserve existing entry timing on supported hosts.
+  void launch().then(complete, fail);
   try {
     await spawn;
   } catch (error) {
@@ -411,6 +437,33 @@ async function spawnAgentInner(inParams: SpawnAgentParams, facts: SpawnFacts, ma
         : `This agent could not be created: ${creation.reason ?? 'unknown reason'} Delete it and create it again.`), 'cwd_invalid');
     }
   }
+  if (firstConfig?.providerTransition || (params.strictManagedDelivery && firstConfig?.managed)) assertManagedProviderPlatform();
+  // Refuse strict resume before initialization, delivery, or any fallback can
+  // discard the native pointer. A marked terminal additionally needs positive
+  // evidence that its provider's native store still has that session.
+  if (params.kind === 'durable' && params.resume && (params.strictResume || firstConfig?.providerTransition)) {
+    const selected = await resolveOrchestrator(params.projectPath, params.orchestrator ?? firstConfig?.orchestrator);
+    if (!params.sessionId || params.sessionId !== firstConfig?.lastSessionId
+      || firstConfig?.quarantinedSessionIds?.includes(params.sessionId)
+      || firstConfig?.sessionHistory?.find((session) => session.sessionId === params.sessionId)?.orchestrator !== selected.id) throw new AgentResumeError('resume_unverified');
+    if (firstConfig.providerTransition) {
+      const exists = isSessionCapable(selected) && selected.hasSession ? await selected.hasSession(params.sessionId).catch((): undefined => undefined) : undefined;
+      if (exists !== true) throw new AgentResumeError('resume_unverified');
+    }
+  }
+  let assertReadOnlyManaged: (() => void) | undefined;
+  if (firstConfig?.providerTransition || (params.strictManagedDelivery && firstConfig?.managed)) {
+    if (!firstConfig?.providerTransition || managed || params.systemPrompt || params.agentFile || params.agentSource) throw new MobileControlError('managed_delivery_unsupported');
+    if ((params.model !== undefined && params.model !== firstConfig.model)
+      || (params.effort !== undefined && params.effort !== firstConfig.effort)) throw new MobileControlError('managed_transition_stale');
+    const selected = await resolveOrchestrator(params.projectPath, params.orchestrator ?? firstConfig.orchestrator);
+    const { peekCachedDurableConfig } = await import('./agent-config');
+    assertReadOnlyManaged = await managedProviderStartGuard(params.projectPath, firstConfig, selected, params.cwd,
+      () => peekCachedDurableConfig(params.projectPath, params.agentId));
+    const beforeCreate = params.beforeCreate;
+    params = { ...params, strictResume: params.resume === true || params.strictResume, beforeCreate: (runtime) => { assertReadOnlyManaged!(); beforeCreate?.(runtime); } };
+    assertReadOnlyManaged();
+  }
   if (firstConfig) {
     // A verified lifecycle may initialize healthy records; strict/passive reads never do.
     try {
@@ -442,6 +495,7 @@ async function spawnAgentInner(inParams: SpawnAgentParams, facts: SpawnFacts, ma
     withErrorType('orchestrator_unknown', () => resolveOrchestrator(params.projectPath, params.orchestrator)),
   );
   facts.orchestrator = provider.id;
+  if (assertReadOnlyManaged && provider.id !== firstConfig?.providerTransition?.provider) throw new MobileControlError('managed_transition_stale');
   if (!params.orchestrator) {
     // An agent with no CLI of its own runs on its project's "Agents run on" (#2975).
     appLog('core:agent', 'info', 'Agent has no CLI of its own, so it starts on the project default', {
@@ -454,6 +508,7 @@ async function spawnAgentInner(inParams: SpawnAgentParams, facts: SpawnFacts, ma
 
   // Read project-level command prefix for shell environment setup
   const commandPrefix = await resolveCommandPrefix(params.projectPath);
+  if (assertReadOnlyManaged && commandPrefix) throw new MobileControlError('managed_delivery_unsupported');
 
   // Pre-flight: verify the orchestrator CLI is available before spawning.
   // This catches missing binaries and auth issues early with clear errors,
@@ -480,7 +535,7 @@ async function spawnAgentInner(inParams: SpawnAgentParams, facts: SpawnFacts, ma
   try {
     // Clean up stale JSON in TOML config files (e.g. Codex .codex/config.toml)
     // This handles files created before TOML-aware guards were added.
-    if (provider.conventions.settingsFormat === 'toml') {
+    if (provider.conventions.settingsFormat === 'toml' && !assertReadOnlyManaged) {
       try {
         await cleanupStaleJsonInTomlConfigs(params.cwd, provider.conventions);
         await stripLegacyClubhouseBridgeToml(params.cwd, provider.conventions);
@@ -506,7 +561,7 @@ async function spawnAgentInner(inParams: SpawnAgentParams, facts: SpawnFacts, ma
     }
     if (params.kind === 'durable' && !managed) {
       const config = firstConfig;
-      if (config?.managed) {
+      if (config?.managed && !assertReadOnlyManaged) {
         try {
           const { deliverForSpawn } = await import('./managed-agents');
           await tel.step('clubhouse.agent.materialize', () =>
@@ -541,6 +596,7 @@ async function spawnAgentInner(inParams: SpawnAgentParams, facts: SpawnFacts, ma
 
     // Resolve launch wrapper config (if any)
     const wrapperConfig = await readLaunchWrapper(params.projectPath);
+    if (assertReadOnlyManaged && wrapperConfig) throw new MobileControlError('managed_delivery_unsupported');
     let resolvedMcpIds: string[] = [];
     if (wrapperConfig) {
       if (params.kind === 'durable') {
@@ -660,6 +716,7 @@ async function spawnAgentInner(inParams: SpawnAgentParams, facts: SpawnFacts, ma
     }
     // A session that kept failing every turn (#3240) is never resumed, whichever wake path asked.
     if (params.kind === 'durable' && params.resume && params.sessionId && durableConfig?.quarantinedSessionIds?.includes(params.sessionId)) {
+      if (params.strictResume) throw new AgentResumeError('resume_unverified');
       appLog('core:agent', 'warn', 'Not resuming a quarantined session; starting fresh', { meta: { agentId: params.agentId, sessionId: params.sessionId } });
       // Said in the new session's chat, or by the terminal's start below.
       noteNextStartNotice(params.agentId, { level: 'warn', code: 'resume_blocked', message: RESUME_BLOCKED_NOTICE });
@@ -778,7 +835,7 @@ async function spawnAgentInner(inParams: SpawnAgentParams, facts: SpawnFacts, ma
     // silently lands it in the terminal.
     if (chatStart !== 'chat' && chatStart !== 'cancelled') {
       const chatFailure = takeChatStartFailure(params.agentId);
-      if (params.strictResume && params.resume) throw new AgentResumeError('resume_failed');
+      if (params.strictResume && params.resume && resolveRuntimeMode(provider.id, durableConfig?.runtimeMode).mode === 'chat') throw new AgentResumeError('resume_failed');
       if (params.kind === 'durable' && params.resume && params.sessionId && isSessionNotFound(chatFailure)) {
         await clearResume(params.projectPath, provider.id, params.agentId, params.sessionId, 'chat_not_found');
         params = { ...params, resume: false, sessionId: undefined };
@@ -1083,6 +1140,7 @@ async function spawnPtyAgent(
   // servers: the project's, a managed agent's setup (#2896), or a quick agent's
   // template servers in place of the project's (D25).
   const bridgeOn = mcpPort > 0;
+  if (durableConfig?.providerTransition && !bridgeOn) throw new MobileControlError('managed_mcp_unavailable');
   if (provider.buildMcpArgs) {
     const { buildClubhouseMcpDef } = await import('./clubhouse-mcp/injection');
     const { resolveProjectMcpServers } = await import('./agent-mcp-servers');
@@ -1103,6 +1161,7 @@ async function spawnPtyAgent(
     };
     if (Object.keys(servers).length > 0) {
       args = [...args, ...provider.buildMcpArgs(servers, (message) => {
+        if (durableConfig?.providerTransition) throw new MobileControlError('managed_mcp_unavailable');
         broadcastToAllWindows(IPC.AGENT.AGENT_MATERIALIZATION_FAILED, params.agentId, message);
       })];
     }
@@ -1197,9 +1256,9 @@ async function spawnPtyAgent(
       if (capture) trackSessionCapture(exitAgentId, capture);
     }
   }, commandPrefix];
-  if (managed || params.beforeCreate) spawnArgs.push({
+  if (managed || params.beforeCreate || params.onRuntimeCreated) spawnArgs.push({
     beforeCreate: () => { assertLaunchesOpen(); managed?.assertCanCreate(); params.beforeCreate?.(); },
-    onCreated: (identity: string) => { createdIdentity = identity; },
+    onCreated: (identity: string) => { createdIdentity = identity; params.onRuntimeCreated?.(identity); },
     onObservedExit: () => { managedExitConfirmed = true; },
   });
   let federation: ReturnType<typeof prepareFederationInputs> = [];

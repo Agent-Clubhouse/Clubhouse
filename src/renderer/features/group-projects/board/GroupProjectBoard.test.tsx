@@ -106,26 +106,6 @@ describe('GroupProjectBoard without a canvas', () => {
     expect(screen.getByLabelText('Bulletin message')).toHaveValue('Hello');
   });
 
-  it('broadcasts and taps through the shared injection path, with the group instructions when asked', async () => {
-    const inject = vi.spyOn(api(), 'injectMessage').mockResolvedValue(true as never);
-    await renderBoard();
-    fireEvent.click(screen.getByRole('button', { name: 'Broadcast message' }));
-    const dialog = await screen.findByTestId('group-project-broadcast');
-    fireEvent.change(within(dialog).getByLabelText('Message'), { target: { value: 'Stand up' } });
-    fireEvent.click(within(dialog).getByRole('switch'));
-    fireEvent.click(within(dialog).getByRole('button', { name: 'Send' }));
-    await waitFor(() => expect(inject).toHaveBeenCalledTimes(2));
-    expect(inject).toHaveBeenCalledWith('a1', 'Project Instructions:\nBe kind\n\nStand up');
-    expect(inject).toHaveBeenCalledWith('a2', 'Project Instructions:\nBe kind\n\nStand up');
-
-    inject.mockClear();
-    fireEvent.click(screen.getByRole('button', { name: 'Broadcast message' }));
-    const tap = await screen.findByTestId('group-project-broadcast');
-    fireEvent.change(within(tap).getByLabelText('Send to'), { target: { value: 'a2' } });
-    fireEvent.change(within(tap).getByLabelText('Message'), { target: { value: 'Just you' } });
-    fireEvent.click(within(tap).getByRole('button', { name: 'Send' }));
-    await waitFor(() => expect(inject).toHaveBeenCalledExactlyOnceWith('a2', 'Just you'));
-  });
 
   it('deletes a message only after it is confirmed', async () => {
     const del = vi.spyOn(api(), 'deleteMessage').mockResolvedValue(true);
@@ -185,7 +165,7 @@ describe('GroupProjectBoard without a canvas', () => {
     [{}, 'Post notifications: On'],
     [{ pollingEnabled: false }, 'Post notifications: On'],
     [{ grants: { deliver: 'off' } }, 'Post notifications: Off'],
-    [{ pollingEnabled: true }, 'Checking for new posts: Legacy polling'],
+    [{ pollingEnabled: true }, 'Post notifications: On'],
   ])('shows the confirmed delivery state without polling controls for %j', async (metadata, label) => {
     useGroupProjectStore.setState({ projects: [{ ...project, metadata }] });
     await renderBoard();
@@ -194,12 +174,6 @@ describe('GroupProjectBoard without a canvas', () => {
     expect(screen.queryByRole('button', { name: 'Ask agents to start polling' })).not.toBeInTheDocument();
   });
 
-  it('offers Resume to a member whose legacy polling paused, with no canvas involved', async () => {
-    useGroupProjectStore.setState({ projects: [{ ...project, metadata: { pollingEnabled: true } }] });
-    vi.spyOn(api(), 'getPausedPolling').mockResolvedValue([{ agentId: 'a1', agentName: 'Builder' }]);
-    await renderBoard();
-    expect(await screen.findByText('Builder: polling paused')).toBeInTheDocument();
-  });
 
   it('leaves renaming to the workspace and shows no Open control of its own', async () => {
     await renderBoard();

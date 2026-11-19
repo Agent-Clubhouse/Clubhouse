@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import type { Agent, AgentDetailedStatus } from '../../../shared/types';
+import { DISPATCHER_PROJECT_ID } from '../../../shared/dispatcher-types';
 import { agentDot, buildAgentForest, buildProjectTree, descendants, forestSiblingGroups, filterTree, groupProjectAgents, helperRollup, siblingGroups, moveProject, moveWithinGroup, orderProjects, sortByRecent, holdOrder, sortProjectsByRecent, projectRollup, selectNeedsAttention, selectRemoteNeedsAttention, mergeNeedsAttention } from './treeModel';
 
 const agent = (id: string, over: Partial<Agent> = {}): Agent => ({
@@ -168,6 +169,19 @@ describe('selectRemoteNeedsAttention', () => {
     'r||s2||b': { state: 'needs_permission', message: 'Wants to run', timestamp: 3 },
   } as Record<string, AgentDetailedStatus>;
   const projects = { s1: [{ id: 'r||s1||p' }], s2: [{ id: 'r||s2||p' }] };
+
+  it.each([
+    ['Needs permission', 'permission'],
+    ['Has a question', 'question'],
+  ] as const)('includes a remote Dispatcher with %s even when its host has no projects', (message, reason) => {
+    const id = 'remote||s1||dispatcher-chat';
+    const dispatcher = remoteAgent(id, `remote||s1||${DISPATCHER_PROJECT_ID}`);
+    const items = selectRemoteNeedsAttention(
+      [{ id: 's1', alias: 'Studio', state: 'connected' }],
+      { s1: [] }, { [id]: dispatcher }, { [id]: detail('needs_permission', message, 5) },
+    );
+    expect(items).toEqual([{ agent: dispatcher, reason, message: reason === 'question' ? 'Has a question for you' : message, at: 5, hostId: 's1', hostLabel: 'Studio' }]);
+  });
 
   it('tags items with their host and skips satellites that are not connected', () => {
     const items = selectRemoteNeedsAttention(

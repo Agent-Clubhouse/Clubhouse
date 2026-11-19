@@ -1,7 +1,9 @@
 import { ipcRenderer } from 'electron';
+import type { RemoteAgentSettings } from '../shared/remote-agent-settings';
 import { IPC } from '../shared/ipc-channels';
 import type { GroupProjectRolesView } from '../shared/group-project-types';
 import type { ControllerChatQuery, ControllerChatPage, ControllerChatSessions, ControllerReadResult } from '../shared/controller-chat';
+import type { PermissionResolveOutcome } from '../shared/permission-types';
 
 export const annexClient = {
   annexClient: {
@@ -39,6 +41,8 @@ export const annexClient = {
   clipboardImage: (satelliteId: string, agentId: string, base64: string, mimeType: string): Promise<void> =>
     ipcRenderer.invoke(IPC.ANNEX_CLIENT.CLIPBOARD_IMAGE, satelliteId, agentId, base64, mimeType),
   /** A page of a satellite chat agent's transcript and state (#2390). */
+  agentSettings: (machine: string, agentId: string): Promise<ControllerReadResult<RemoteAgentSettings>> =>
+    ipcRenderer.invoke(IPC.ANNEX_CLIENT.AGENT_SETTINGS, machine, agentId),
   controllerChatPage: (machine: string, opts: ControllerChatQuery = {}): Promise<ControllerReadResult<ControllerChatPage>> =>
     ipcRenderer.invoke(IPC.ANNEX_CLIENT.CONTROLLER_CHAT_PAGE, machine, opts),
   controllerChatSessions: (machine: string): Promise<ControllerReadResult<ControllerChatSessions>> =>
@@ -52,6 +56,8 @@ export const annexClient = {
   /** Sends a chat command (chat.send, chat.permission, …) for a satellite's agent; answers its receipt (#2390). */
   chatCommand: (satelliteId: string, command: Record<string, unknown>): Promise<unknown> =>
     ipcRenderer.invoke(IPC.ANNEX_CLIENT.CHAT_COMMAND, satelliteId, command),
+  respondPermission: (satelliteId: string, agentId: string, requestId: string, decision: 'allow' | 'deny'): Promise<PermissionResolveOutcome> =>
+    ipcRenderer.invoke(IPC.ANNEX_CLIENT.RESPOND_PERMISSION, satelliteId, agentId, requestId, decision),
   gitOperation: (satelliteId: string, projectId: string, params: { operation: string; [key: string]: unknown }): Promise<unknown> =>
     ipcRenderer.invoke(IPC.ANNEX_CLIENT.GIT_OPERATION, satelliteId, projectId, params),
   sessionList: (satelliteId: string, agentId: string, projectId: string, orchestrator?: string): Promise<unknown> =>

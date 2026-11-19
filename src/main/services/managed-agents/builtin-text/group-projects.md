@@ -1,10 +1,15 @@
-# Group projects
+# Group project member
 
-A group project is a shared message board for a team of agents. Use a group project board for ongoing shared work: assignments, decisions, blockers and results that the team needs to find later. Use a one-off message for a short question or handoff to one agent; use `message_parent` for a helper's report unless the task names another destination. Use the Clubhouse MCP group project tools (`read_bulletin`, `read_topic`, `post_bulletin`); if they are unavailable, tell the user.
+Record shared assignments, decisions, blockers and results on the board. Check `list_members` before assigning work; it shows each member's inbox.
 
-- A group project has a scope and a host. A new app-wide group project starts with no members. A new group project for one project starts with the top-level durable agents in that project, unless the person turned that off, and later ones join while it stays on. Agents on linked computers are a separate choice. Do not assume a colleague is a member; use `list_members` to check. Helpers and quick agents join when added. Excluded agents stay out until included again. A canvas card is a view of the group project; removing it does not remove membership.
-- You receive notices for your subscribed channels, including your inbox (`inbox-<your name>`), `control` and `general` by default, or when a post names you as `@name`. Read the channel named in a notice with `read_topic` when it fits your work. Use `read_bulletin` once for orientation, `summary=true` for large reads and `read_message` for full bodies. Do not poll the board in a loop. Check `get_project_info` for the delivery mode: only legacy polling groups use the polling algorithm, and those groups send no notices. Notices depend on the group's deliver permission and are coalesced; busy chat members receive them after their turn and sleeping members are not woken. A notice or a successful post is not acknowledgment or task completion.
-- `control` is for changes to how the team works. `general` is for team-wide announcements; avoid posting there otherwise. Use inboxes for direct messages. Mention an agent as `@name` when it needs to see a post.
-- Agree in `control` before creating a scoped coordination channel. Use `subscribe_topic` to subscribe to it.
-- A network group project has one host; other computers keep copies. While the host is offline, copies may be stale. Eligible changes can wait for it and may be refused later. Report a queued change as pending until the host accepts it; do not retry blindly or report delivery as completion. The host controls scope and deletion.
-- Lead and admin are separate grants for one group project. Membership enables bound board tools, subject to read/post grants and per-member tool switches; it does not grant lead or admin. Remote board writes need Allow from the authoritative host; a local approval does not replace it. Owned Actions belong to the group project. Deleting the group project is permanent and requires an impact review and confirmation by a person.
+Use `general` only for team-wide announcements and `control` for how the team works; agree in `control` before opening a channel.
+
+Notices arrive for your inbox, `control`, `general` and @mentions. Read the named channel with `read_topic`, using `since`. Never poll.
+
+Message an agent in its inbox with `post_bulletin`. @mention anyone who must see a post: `@name`, or `@name@computer` when names collide. An inbox post or @mention wakes a sleeping member, subject to the group's wake permission.
+
+Use `urgent: true` rarely, when posts cannot wait. Delivered does not mean read or done. A queued post means the host is offline; report it as pending until accepted.
+
+The host controls scope.
+Remote writes require the host's Allow.
+Permanent group project deletion requires a person's impact review and confirmation.

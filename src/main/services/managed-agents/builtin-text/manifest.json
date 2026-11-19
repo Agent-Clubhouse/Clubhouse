@@ -103,8 +103,8 @@
     },
     {
       "id": "builtin-block-group-projects",
-      "name": "Group projects",
-      "description": "How the group project board works, for every agent on one.",
+      "name": "Group project member",
+      "description": "How a group project member reads notices and reaches teammates.",
       "file": "group-projects.md"
     },
     {

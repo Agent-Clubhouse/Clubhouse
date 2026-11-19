@@ -28,6 +28,8 @@ interface Machine {
   roles?: typeof import('./group-project-roles');
 }
 
+const observed = new Map<string, Record<string, Array<{ agentId: string; runtimeStatus: string; lastSeen: string }>>>();
+
 const world = vi.hoisted(() => ({
   als: null as unknown as AsyncLocalStorage<{ home: string; fp: string; projects?: Project[] }>,
   fallbackHome: '',
@@ -40,7 +42,7 @@ vi.mock('electron', () => ({ app: { isPackaged: false, getPath: () => world.als?
 vi.mock('./log-service', () => ({ appLog: vi.fn() }));
 vi.mock('./annex-network-profile', () => ({ annexEphemeralSession: () => false }));
 vi.mock('./annex-identity', () => ({ getIdentity: () => (world.als?.getStore() ? { fingerprint: world.als.getStore()!.fp } : null) }));
-vi.mock('./annex-settings', () => ({ networkEnabled: () => true }));
+vi.mock('./annex-settings', () => ({ networkEnabled: () => true, getSettings: () => ({ alias: machines.find(m => m.fp === world.als?.getStore()?.fp)?.name || 'This computer' }) }));
 const projectsHere = () => world.als?.getStore()?.projects ?? [];
 vi.mock('./project-store', () => ({
   list: vi.fn(async () => projectsHere().map(({ id, name, path }) => ({ id, name, path }))),
@@ -54,11 +56,13 @@ vi.mock('./annex-client', () => ({
       projects: m.projects,
       agents: truncated.has(m.name) ? {} : Object.fromEntries((m.projects ?? []).map((p) => [p.id, p.agents])),
       quickAgents: {},
+      groupProjectMembers: observed.get(m.name),
       ...(truncated.has(m.name) && { snapshotTruncated: { omitted: ['agents'] } }),
     },
   })),
   onSatelliteSnapshot: () => () => {},
 }));
+vi.mock('./group-project-member-status', async original => ({ ...await original<typeof import('./group-project-member-status')>(), localMemberObservation: () => ({ status: 'asleep', lastSeen: new Date().toISOString() }) }));
 vi.mock('./quick-agent-events', () => ({ knownQuickAgents: () => new Map() }));
 vi.mock('./canvas-store-reader', () => ({ readAllCanvasStores: async () => [] }));
 vi.mock('./canvas-wire-source', () => ({ canvasWireBindingSource: { id: 'canvas-wires', collect: async () => [], inspect: async () => [] } }));
@@ -170,6 +174,7 @@ async function unload(m: Machine): Promise<void> {
 }
 
 beforeEach(async () => {
+  observed.clear();
   world.als = new AsyncLocalStorage();
   const cache = path.join(process.cwd(), 'node_modules', '.cache');
   await fsp.mkdir(cache, { recursive: true });
@@ -242,6 +247,20 @@ describe('the authoritative roster (#3548)', () => {
     expect(onHost.source).toBe('host');
     expect(keys(onHost)).toEqual(keys(view));
     expect(onHost.members.find((m) => m.agentId === 'lead')).toMatchObject({ machineLabel: 'This computer', thisComputer: true });
+  });
+
+
+  it('carries what the host last saw of remote runtime state and time through saved rosters', async () => {
+    const id = await linkedGroup([B]);
+    const lastSeen = '2026-11-18T00:00:00.000Z';
+    observed.set(B.name, { [id]: [{ agentId: 'builder_b', runtimeStatus: 'busy', lastSeen }] });
+    const view = available(await roster(B, id));
+    expect(view.members.find(m => m.agentId === 'builder_b')).toMatchObject({ status: 'busy', lastSeen });
+    expect(view.members.find(m => m.agentId === 'lead')).toMatchObject({ status: 'asleep', lastSeen: expect.any(String), inbox: 'inbox-lead' });
+    down.add(A.name);
+    const cached = available(await roster(B, id));
+    expect(cached.members.find(m => m.agentId === 'builder_b')).toMatchObject({ status: 'busy', lastSeen });
+    expect(cached.stale).toBe('offline');
   });
 
   it('keeps two agents with one name on two computers apart', async () => {

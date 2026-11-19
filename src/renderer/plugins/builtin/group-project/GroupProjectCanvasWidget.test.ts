@@ -18,15 +18,15 @@ describe('GroupProjectCanvasWidget — chrome style', () => {
     expect(source).not.toMatch(/\buppercase\b|tracking-wide/);
     expect(source).not.toMatch(/text-\[(8|9|10|11)px\]/);
     // Native tooltips; the Modal's title prop is the dialog heading, not a tooltip.
-    expect(source).not.toMatch(/\stitle="(?!Broadcast message")/);
+    expect(source).not.toMatch(/\stitle="/);
     expect(source).not.toMatch(/border-l-2|border-b-2/);
     expect(source).not.toMatch(/shadow-md|animate-pulse/);
     expect(source).not.toMatch(/bg-ctp-[a-z]+\/\d+/);
     expect(source).not.toContain('rounded-full px');
   });
 
-  it('builds controls from the shared Button, Toggle, Modal and Tooltip', () => {
-    for (const c of ['Button', 'Toggle', 'Modal', 'Tooltip']) {
+  it('builds controls from the shared Button and Tooltip', () => {
+    for (const c of ['Button', 'Tooltip']) {
       expect(source).toContain(`from '../../../components/${c}'`);
     }
   });
@@ -95,62 +95,7 @@ describe('GroupProjectCanvasWidget — PTY injection via context', () => {
   });
 });
 
-// ── Broadcast uses PTY injection ────────────────────────────────────
-
-describe('GroupProjectCanvasWidget — broadcast modal', () => {
-  it('does not use sendShoulderTap for broadcast', () => {
-    // The broadcast modal should use injectMessage, not sendShoulderTap
-    expect(source).not.toMatch(/sendShoulderTap\s*\(/);
-  });
-
-  it('calls injectMessage for each target member in broadcast', () => {
-    // ShoulderTapModal handleSend should call injectMessage for targets (async via Promise.all)
-    expect(source).toContain('injectMessage(member.agentId');
-  });
-});
-
 // ── Include project instructions checkbox ───────────────────────────
-
-describe('GroupProjectCanvasWidget — include instructions switch', () => {
-  it('BroadcastModal accepts projectInstructions prop', () => {
-    expect(source).toContain('function BroadcastModal');
-    expect(source).toContain('projectInstructions');
-  });
-
-  it('uses the shared Toggle for including instructions', () => {
-    expect(source).toContain('includeInstructions');
-    expect(source).toContain('checked={includeInstructions}');
-    expect(source).not.toContain('type="checkbox"');
-  });
-
-  it('renders "Include project instructions" label', () => {
-    expect(source).toContain('Include project instructions');
-  });
-
-  it('disables the switch when projectInstructions is empty', () => {
-    expect(source).toContain('const hasInstructions = !!projectInstructions.trim();');
-    expect(source).toContain('disabled={!hasInstructions}');
-  });
-
-  it('prepends instructions to message when the switch is on', () => {
-    expect(source).toContain('Project Instructions:');
-    expect(source).toContain('projectInstructions.trim()');
-  });
-
-  it('allows sending with only instructions checked and no message', () => {
-    expect(source).toContain('!msg && !includeInstructions');
-    expect(source).toContain('(!message.trim() && !includeInstructions) || sending');
-  });
-
-  it('passes projectInstructions from ProjectCard to BroadcastModal', () => {
-    expect(source).toContain("projectInstructions={project?.instructions || ''}");
-  });
-
-  it('is the shared Modal', () => {
-    expect(source).toMatch(/<Modal\s+open=\{open\}/);
-    expect(source).toContain('title="Broadcast message"');
-  });
-});
 
 // ── Message ordering (newest-first feed) ────────────────────────────
 

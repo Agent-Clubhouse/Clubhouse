@@ -221,15 +221,15 @@ describe('everyday flows keep working (#2968)', () => {
       expect(ok('plain', 'group-project', name, {}, 'g', 'group-project', {}), name).toBe(true);
     }
     // The old admins role gives nothing now.
-    for (const name of ['shoulder_tap', 'broadcast', 'wake_agent', 'clear_topic', 'set_project_info']) {
+    for (const name of ['wake_agent', 'clear_topic', 'set_project_info']) {
       expect(ok('plain', 'group-project', name, {}, 'g', 'group-project', { admins: ['plain'] }), name).toBe(false);
     }
     await updateAgentGrantChanges('plain', () => ({ changes: leadAndAdmin('g') }));
-    for (const name of ['shoulder_tap', 'broadcast', 'wake_agent', 'clear_topic', 'set_project_info']) {
+    for (const name of ['wake_agent', 'clear_topic', 'set_project_info']) {
       expect(ok('plain', 'group-project', name, {}, 'g', 'group-project', {}), name).toBe(true);
     }
     // A lead of another group project leads nothing here.
-    expect(ok('plain', 'group-project', 'broadcast', {}, 'other', 'group-project', {})).toBe(false);
+    expect(ok('plain', 'group-project', 'clear_topic', {}, 'other', 'group-project', {})).toBe(false);
     await updateAgentGrantChanges('plain', () => undefined);
   });
 
@@ -559,12 +559,12 @@ describe('handoff agreement grants', () => {
   });
 });
 
-it('keeps the remote Dispatcher Ask default when the locally connected controller is asleep', () => {
+it('keeps remote Dispatcher default parity when the locally connected controller is asleep', () => {
   setMcpCaller('connected-agent', userData.dir, {});
   setDispatcherIdLookup((id) => id === 'sleeping-controller');
   const bindings = vi.spyOn(bindingManager, 'getBindingsForAgent').mockReturnValue([{ targetKind: 'agent', targetId: 'sleeping-controller' }] as ReturnType<typeof bindingManager.getBindingsForAgent>);
   try {
-    expect(checkToolGrant('connected-agent', { actions: ['agent.message'], target: 'remote_dispatcher' }, {})).toMatchObject({ ok: false, reason: 'ask_first' });
+    expect(checkToolGrant('connected-agent', { actions: ['agent.message'], target: 'remote_dispatcher' }, {})).toEqual({ ok: true });
     bindings.mockReturnValue([]);
     expect(checkToolGrant('connected-agent', { actions: ['agent.message'], target: 'remote_dispatcher' }, {})).toMatchObject({ ok: false, reason: 'no_grant' });
   } finally { bindings.mockRestore(); setDispatcherIdLookup(null); }

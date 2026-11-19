@@ -4,7 +4,7 @@ import { useNetworkSidebarStore } from './networkSidebarStore';
 /**
  * A quiet line in the sidebar suggesting a link (#3066): a project here and
  * the same project on another machine, by their shared git remote. One at a
- * time; Link groups them in the sidebar, Keep separate never asks again.
+ * time; Link groups them in the sidebar, Keep separate hides the suggestion.
  */
 export function LinkSuggestionLine() {
   const suggestions = useLinkSuggestions();
@@ -19,10 +19,13 @@ export function LinkSuggestionLine() {
   const first = suggestions[0];
   if (!first) return failure;
   const name = first.local.displayName || first.local.name;
+  const remoteName = first.remote.displayName || first.remote.name;
   const machine = first.remote.satelliteName || 'another computer';
   return (
     <>{failure}<div data-testid="link-suggestion" className="flex-shrink-0 mx-2 mb-1 px-2 py-1.5 text-xs text-ctp-subtext0 border-t border-surface-0">
-      <span>{name} is also on {machine}, with the same git remote.</span>
+      <span>{name === remoteName
+        ? `${name} is also on ${machine}, with the same git remote.`
+        : `${name} and ${remoteName} on ${machine} share the same git remote.`}</span>
       <span className="flex gap-3 pt-1">
         <button
           type="button"
@@ -35,6 +38,7 @@ export function LinkSuggestionLine() {
           Keep separate
         </button>
       </span>
+      <p className="text-ctp-overlay1 pt-1">You can change this later in project settings under Linked projects.</p>
     </div></>
   );
 }

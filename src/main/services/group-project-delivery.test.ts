@@ -1,6 +1,6 @@
 /**
  * Group project post notices (#3362): subscription, coalescing, the rate
- * limit, sleeping and busy members, and legacy polling.
+ * limit, sleeping and busy members.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { BulletinMessage, GroupProject, GroupProjectChange, GroupProjectMembership } from '../../shared/group-project-types';
@@ -19,6 +19,21 @@ const fx = vi.hoisted(() => ({
 
 vi.mock('./log-service', () => ({ appLog: vi.fn() }));
 // Lead is a grant on the group project (#3360).
+const urgentCounts = vi.hoisted(() => new Map<string, number>());
+const receipts = vi.hoisted(() => new Map<string, number>());
+const wake = vi.hoisted(() => vi.fn(async () => false));
+vi.mock('./group-project-wake', () => ({ wakeForGroupPost: wake }));
+vi.mock('./group-project-tool-members', () => ({ groupProjectMentionMembers: async () => fx.members }));
+vi.mock('./group-project-notification-store', () => ({
+  lastNotified: async (g: string, a: string) => receipts.get(g + a),
+  initializeNotified: async (g: string, a: string, seq: number) => { if (!receipts.has(g + a)) receipts.set(g + a, seq); return receipts.get(g + a)!; },
+  pruneNotificationReceipts: async (confirmed: { deletedGroups?: string[]; departed?: Array<{ group: string; agents: string[] }> } = {}) => {
+    for (const g of confirmed.deletedGroups ?? []) for (const k of receipts.keys()) if (k.startsWith(g)) receipts.delete(k);
+    for (const g of confirmed.departed ?? []) for (const a of g.agents) receipts.delete(g.group + a);
+  },
+  reserveUrgent: async (s: string, a: string) => { const k = s + a; const n = urgentCounts.get(k) ?? 0; urgentCounts.set(k, n + 1); return n < 20; },
+  markNotified: async (g: string, a: string, n: number) => { receipts.set(g + a, n); },
+}));
 const grants = vi.hoisted(() => ({ changes: new Map<string, unknown>() }));
 vi.mock('./agent-grants-store', () => ({
   getAgentGrantChanges: (id: string) => grants.changes.get(id),
@@ -30,13 +45,15 @@ vi.mock('./group-project-host', () => ({
   groupProjectHost: {
     onChange: (fn: (c: GroupProjectChange) => void) => { fx.changeListeners.add(fn); return () => fx.changeListeners.delete(fn); },
     get: async () => fx.gp,
+    list: async () => [fx.gp],
     resolveMembers: async () => fx.members,
     getMembership: async () => structuredClone(fx.membership),
     inboxFor: async (_id: string, name: string) => `inbox-${name}`,
     // Host-relative (#3363): a bare address is an agent here; one qualified with another machine isn't.
     localAgentId: (_project: unknown, address: string) => address.endsWith('@self') ? address.split('@')[0] : (address.includes('@') ? null : address),
     addressOf: (_project: unknown, reference: string) => reference,
-    readAll: async () => fx.messages,
+    readRecentBySeq: vi.fn(async (_id: string, limit = 50) => fx.messages.slice(-limit)),
+    readAll: vi.fn(async (_id: string, _since?: string, limit?: number) => fx.messages.slice(-(limit ?? 100))),
     readDigest: async () => [...new Set(fx.messages.map((m) => m.topic))].map((topic) => ({ topic, messageCount: 1, newMessageCount: 0, latestTimestamp: '' })),
     updateMembership: async (_id: string, fn: (d: GroupProjectMembership) => GroupProjectMembership | void) => {
       const draft = structuredClone(fx.membership);
@@ -52,6 +69,7 @@ vi.mock('./clubhouse-mcp/connection-events', () => ({
   onAgentMcpConnected: (fn: (agentId: string) => void) => { fx.connected.add(fn); return () => fx.connected.delete(fn); },
 }));
 
+import { groupProjectHost } from './group-project-host';
 import { bindingManager } from './clubhouse-mcp/binding-manager';
 import {
   COALESCE_MS, RATE_LIMIT_MAX, WAKE_SUMMARY_DELAY_MS, _resetDeliveryForTesting, listTopicSubscriptions, mentions,
@@ -71,7 +89,7 @@ async function post(sender: string, topic: string, body = 'hello', senderAddress
 function runtime(agentId: string, kind: 'chat' | 'pty' = 'chat', state = 'idle') {
   const r = {
     kind, state,
-    sendMessage: vi.fn(async () => ({ delivery: 'prompt' as const })),
+    sendMessage: vi.fn(async () => ({ delivery: 'prompt' as 'prompt' | 'queued' })),
     isRunning: () => true,
     getState: () => r.state,
   };
@@ -88,6 +106,10 @@ const counted = (result: string) => fx.telCount.mock.calls
 beforeEach(() => {
   vi.useFakeTimers();
   seq = 0;
+  receipts.clear();
+  urgentCounts.clear();
+  wake.mockReset();
+  wake.mockResolvedValue(false);
   fx.gp = { id: 'gp1', name: 'Release', description: '', instructions: '', createdAt: '', metadata: {} };
   fx.membership = { version: 1, autoJoin: true, explicit: [], excluded: [] };
   fx.members = [{ address: 'lead', name: 'lead' }, { address: 'dev', name: 'dev' }, { address: 'qa', name: 'qa' }];
@@ -144,13 +166,6 @@ describe('who hears about a post', () => {
     expect(await listTopicSubscriptions('gp1', 'dev', 'dev')).toEqual(['control', 'inbox-dev']);
   });
 
-  it('a group project with polling on behaves as today: no notices', async () => {
-    fx.gp.metadata = { pollingEnabled: true };
-    const dev = runtime('dev');
-    await post('qa@Release', 'general');
-    await vi.advanceTimersByTimeAsync(COALESCE_MS);
-    expect(dev.sendMessage).not.toHaveBeenCalled();
-  });
 
   it('notices are the group project\'s own action: none when its deliver grant is off (#3360)', async () => {
     fx.gp.metadata = { grants: { deliver: 'off', wake: 'off' } };
@@ -312,15 +327,6 @@ describe('review fixes', () => {
     expect(dev.sendMessage).not.toHaveBeenCalled();
   });
 
-  it('a held summary isn\'t sent once the group project is back on polling', async () => {
-    await post('qa@Release', 'general');
-    await vi.advanceTimersByTimeAsync(COALESCE_MS);
-    fx.gp.metadata = { pollingEnabled: true };
-    const dev = runtime('dev');
-    for (const fn of fx.connected) fn('dev');
-    await vi.advanceTimersByTimeAsync(WAKE_SUMMARY_DELAY_MS);
-    expect(dev.sendMessage).not.toHaveBeenCalled();
-  });
 
   it('leaves the sender out by address, even when another member has its name', async () => {
     fx.members = [{ address: 'dev', name: 'dev' }, { address: 'dev-2', name: 'dev' }];
@@ -363,4 +369,158 @@ describe('replica identity regression', () => {
     await vi.advanceTimersByTimeAsync(COALESCE_MS);
     expect(dev.sendMessage).toHaveBeenCalledTimes(1);
   });
+});
+
+it('urgent notices bypass coalescing without interrupting busy members', async () => {
+  const dev = runtime('dev', 'chat', 'running');
+  seq++;
+  fx.messages.push({ id: `m${seq}`, sender: 'qa', topic: 'general', body: 'urgent', urgent: true, timestamp: '', seq });
+  for (const fn of fx.changeListeners) fn({ groupProjectId: 'gp1', seq, part: 'board' });
+  await vi.advanceTimersByTimeAsync(0);
+  expect(dev.sendMessage).toHaveBeenCalledWith(expect.stringContaining('Urgent'), expect.objectContaining({ delivery: 'queued' }));
+});
+
+it('urgent idle notices bypass the notice limit and merge normal pending posts', async () => {
+  const dev = runtime('dev');
+  for (let i = 0; i < RATE_LIMIT_MAX; i++) { await post('qa', 'general'); await vi.advanceTimersByTimeAsync(COALESCE_MS); }
+  await post('qa', 'general', 'normal pending');
+  seq++;
+  fx.messages.push({ id: `m${seq}`, sender: 'qa', topic: 'general', body: 'urgent', urgent: true, timestamp: '', seq });
+  for (const fn of fx.changeListeners) fn({ groupProjectId: 'gp1', seq, part: 'board' });
+  await vi.advanceTimersByTimeAsync(0);
+  expect(dev.sendMessage).toHaveBeenCalledTimes(RATE_LIMIT_MAX + 1);
+  expect(sentTexts(dev).at(-1)).toContain('2 new messages');
+});
+
+it('only inbox and mentions request a wake, never the sender itself', async () => {
+  await post('qa', 'general'); await vi.advanceTimersByTimeAsync(COALESCE_MS);
+  expect(wake).not.toHaveBeenCalled();
+  await post('qa', 'inbox-dev'); await vi.advanceTimersByTimeAsync(COALESCE_MS);
+  expect(wake).toHaveBeenCalledWith('gp1', 'dev', 'dev', expect.any(String), expect.any(Array), expect.any(Array), expect.any(Array));
+  wake.mockClear();
+  await post('dev', 'inbox-dev', '@dev', 'dev'); await vi.advanceTimersByTimeAsync(COALESCE_MS);
+  expect(wake).not.toHaveBeenCalled();
+  await post('qa', 'work', '@dev'); await vi.advanceTimersByTimeAsync(COALESCE_MS);
+  expect(wake).toHaveBeenCalledTimes(1);
+});
+
+it('rebuilds a sleeping summary from sequence numbers after delivery restarts', async () => {
+  await post('qa', 'general'); await vi.advanceTimersByTimeAsync(COALESCE_MS);
+  _resetDeliveryForTesting(); watchGroupProjectDelivery();
+  const dev = runtime('dev');
+  for (const fn of fx.connected) fn('dev');
+  await vi.advanceTimersByTimeAsync(WAKE_SUMMARY_DELAY_MS);
+  expect(sentTexts(dev)).toHaveLength(1);
+  for (const fn of fx.connected) fn('dev');
+  await vi.advanceTimersByTimeAsync(WAKE_SUMMARY_DELAY_MS);
+  expect(sentTexts(dev)).toHaveLength(1);
+});
+
+it('a slow wake cannot delay another recipient urgent delivery', async () => {
+  const dev = runtime('dev');
+  let release!: (value: boolean) => void;
+  wake.mockImplementationOnce(() => new Promise<boolean>((resolve) => { release = resolve; }));
+  seq++;
+  fx.messages.push({ id: `m${seq}`, sender: 'qa', topic: 'general', body: '@lead @dev', urgent: true, timestamp: '', seq });
+  for (const fn of fx.changeListeners) fn({ groupProjectId: 'gp1', seq, part: 'board' });
+  await vi.advanceTimersByTimeAsync(0);
+  expect(dev.sendMessage).toHaveBeenCalledTimes(1);
+  release(false);
+  await vi.advanceTimersByTimeAsync(0);
+});
+
+it('retains dropped turn-end notices when a later post advances the receipt', async () => {
+  const dev = runtime('dev', 'chat', 'running');
+  dev.sendMessage.mockResolvedValueOnce({ delivery: 'queued' });
+  await post('qa', 'general'); await vi.advanceTimersByTimeAsync(COALESCE_MS);
+  const options = dev.sendMessage.mock.calls[0][1] as { actionQueue: { onSettled: (s: string) => void } };
+  options.actionQueue.onSettled('dropped');
+  dev.state = 'idle';
+  await post('qa', 'general'); await vi.advanceTimersByTimeAsync(COALESCE_MS);
+  expect(sentTexts(dev).at(-1)).toContain('2 new messages');
+});
+
+it('retains rejected sends when a later post advances the receipt', async () => {
+  const dev = runtime('dev');
+  dev.sendMessage.mockRejectedValueOnce(new Error('temporarily unavailable'));
+  await post('qa', 'general'); await vi.advanceTimersByTimeAsync(COALESCE_MS);
+  await post('qa', 'general'); await vi.advanceTimersByTimeAsync(COALESCE_MS);
+  expect(sentTexts(dev).at(-1)).toContain('2 new messages');
+});
+
+it('first connection without a receipt baselines existing board history', async () => {
+  fx.messages.push({ id: 'old', seq: 40, sender: 'qa', topic: 'general', body: 'old', timestamp: '' });
+  const dev = runtime('dev');
+  for (const fn of fx.connected) fn('dev');
+  await vi.advanceTimersByTimeAsync(WAKE_SUMMARY_DELAY_MS);
+  expect(dev.sendMessage).not.toHaveBeenCalled();
+  expect(receipts.get('gp1dev')).toBe(40);
+});
+
+it('a newly joined member starts at the current board sequence', async () => {
+  fx.messages.push({ id: 'old', seq: 40, sender: 'qa', topic: 'general', body: 'old', timestamp: '' });
+  fx.members.push({ name: 'new', address: 'new' });
+  for (const fn of fx.changeListeners) fn({ groupProjectId: 'gp1', seq: 41, part: 'membership' });
+  await vi.advanceTimersByTimeAsync(0);
+  expect(receipts.get('gp1new')).toBe(40);
+});
+
+it('urgent allowance falls back to normal batching and keeps the post', async () => {
+  const dev = runtime('dev');
+  for (let i = 0; i < 21; i++) {
+    seq++;
+    fx.messages.push({ id: `m${seq}`, sender: 'qa', senderAddress: 'qa', topic: 'general', body: 'urgent', urgent: true, timestamp: '', seq });
+    for (const fn of fx.changeListeners) fn({ groupProjectId: 'gp1', seq, part: 'board' });
+    await vi.advanceTimersByTimeAsync(0);
+  }
+  expect(dev.sendMessage).toHaveBeenCalledTimes(20);
+  await vi.advanceTimersByTimeAsync(COALESCE_MS);
+  expect(dev.sendMessage).toHaveBeenCalledTimes(21);
+});
+
+it('looks for new posts in a bounded recent page before a full fallback', async () => {
+  vi.mocked(groupProjectHost.readAll).mockClear();
+  vi.mocked(groupProjectHost.readRecentBySeq).mockClear();
+  await post('qa', 'general');
+  expect(vi.mocked(groupProjectHost.readRecentBySeq).mock.calls[0][1]).toBe(50);
+  expect(groupProjectHost.readAll).not.toHaveBeenCalled();
+});
+
+it('summary reads only a recent page when the saved cursor is recent', async () => {
+  receipts.set('gp1dev', 1);
+  fx.messages.push({ id: 'm2', seq: 2, sender: 'qa', topic: 'general', body: 'new', timestamp: '' });
+  runtime('dev'); vi.mocked(groupProjectHost.readAll).mockClear();
+  for (const fn of fx.connected) fn('dev');
+  await vi.advanceTimersByTimeAsync(WAKE_SUMMARY_DELAY_MS);
+  expect(vi.mocked(groupProjectHost.readAll).mock.calls.every((c) => (c[2] ?? 0) < 1000)).toBe(true);
+});
+
+it('prunes receipts immediately when a member leaves', async () => {
+  receipts.set('gp1dev', 10); fx.members = fx.members.filter((m) => m.address !== 'dev');
+  for (const fn of fx.changeListeners) fn({ groupProjectId: 'gp1', seq: 11, part: 'membership', departed: ['dev'] });
+  await vi.advanceTimersByTimeAsync(0);
+  expect(receipts.has('gp1dev')).toBe(false);
+});
+
+it('falls back to the full board only for an older change outside the recent page', async () => {
+  for (let n = 1; n <= 60; n++) fx.messages.push({ id: `m${n}`, seq: n, topic: 'general', sender: 'qa', body: 'x', timestamp: '' });
+  vi.mocked(groupProjectHost.readAll).mockClear();
+  for (const fn of fx.changeListeners) fn({ groupProjectId: 'gp1', seq: 1, part: 'board' });
+  await vi.advanceTimersByTimeAsync(0);
+  expect(groupProjectHost.readAll).toHaveBeenCalledWith('gp1', undefined, Number.MAX_SAFE_INTEGER);
+});
+
+it('prunes receipts after a group deletion even with earlier post work in flight', async () => {
+  receipts.set('gp1dev', 10);
+  fx.members = [];
+  for (const fn of fx.changeListeners) fn({ groupProjectId: 'gp1', seq: 11, part: 'deleted' });
+  await vi.advanceTimersByTimeAsync(0);
+  expect(receipts.has('gp1dev')).toBe(false);
+});
+
+it('keeps unread on a membership refresh that only temporarily omits a member', async () => {
+  receipts.set('gp1dev', 10); fx.members = fx.members.filter((m) => m.address !== 'dev');
+  for (const fn of fx.changeListeners) fn({ groupProjectId: 'gp1', seq: 11, part: 'membership' });
+  await vi.advanceTimersByTimeAsync(0);
+  expect(receipts.get('gp1dev')).toBe(10);
 });

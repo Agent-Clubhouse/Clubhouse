@@ -30,7 +30,6 @@ vi.mock('../../group-project-roles', () => ({ describeGroupProjectRoles: m.roles
 vi.mock('../../group-project-roster', () => ({ groupProjectRoster: { describe: m.roster } }));
 vi.mock('../../group-project-coverage', () => ({ listCoverage: m.coverage }));
 vi.mock('../../connection-guidance', () => ({ getConnectionGuidance: m.guidance, saveConnectionGuidance: m.saveGuidance }));
-vi.mock('../../group-project-polling', () => ({ listPausedPolling: () => [] }));
 vi.mock('../../actions', () => ({ listActions: m.listActions }));
 
 import { registerGroupProjectManagementTools, GROUP_PROJECT_MANAGEMENT_TOOLS, GROUP_PROJECT_MCP_EXCLUSIONS } from './group-project-management-tools';
@@ -344,8 +343,8 @@ it('keeps every Group Project UI IPC capability mapped or explicitly excluded, a
   const counterparts: Record<string, string> = {
     LIST: 'list_group_projects', CREATE: 'create_group_project', CREATE_HOSTS: 'preview_group_project_create', CREATE_ON_HOST: 'create_group_project', GET: management, UPDATE: 'update_group_project', PREVIEW_DELETE: 'preview_delete_group_project', DELETE: 'delete_group_project',
     DISMISS_REFUSALS: 'dismiss_group_project_refusals', GET_OPERATIONS: management, SCOPE_OPTIONS: 'preview_group_project_create', PREVIEW_SCOPE: 'preview_group_project_scope', SET_SCOPE: 'set_group_project_scope',
-    GET_BULLETIN_DIGEST: 'read_bulletin', GET_TOPIC_MESSAGES: 'read_topic', GET_ALL_MESSAGES: 'read_topic', POST_BULLETIN_MESSAGE: 'post_bulletin', SEND_SHOULDER_TAP: 'shoulder_tap', DELETE_MESSAGE: 'delete_messages', DELETE_TOPIC: 'clear_topic', SET_TOPIC_PROTECTION: 'set_group_project_topic_protection',
-    GET_RETENTION_CONFIG: management, SAVE_RETENTION_CONFIG: 'set_group_project_retention', CLEAR_ALL_MESSAGES: 'clear_group_project_board', ESTIMATE_TRIM: 'preview_group_project_retention', GET_MESSAGE: 'read_message', INJECT_MESSAGE: 'shoulder_tap', SET_POLLING: 'toggle_polling', GET_PAUSED_POLLING: 'query_polling', RESUME_POLLING: 'nudge_polling',
+    GET_BULLETIN_DIGEST: 'read_bulletin', GET_TOPIC_MESSAGES: 'read_topic', GET_ALL_MESSAGES: 'read_topic', POST_BULLETIN_MESSAGE: 'post_bulletin', DELETE_MESSAGE: 'delete_messages', DELETE_TOPIC: 'clear_topic', SET_TOPIC_PROTECTION: 'set_group_project_topic_protection',
+    GET_RETENTION_CONFIG: management, SAVE_RETENTION_CONFIG: 'set_group_project_retention', CLEAR_ALL_MESSAGES: 'clear_group_project_board', ESTIMATE_TRIM: 'preview_group_project_retention', GET_MESSAGE: 'read_message', INJECT_MESSAGE: management,
     LIST_MEMBERS: management, ADD_MEMBER: 'add_group_project_member', EXCLUDE_MEMBER: 'exclude_group_project_member', ANSWER_AUTO_JOIN_OFFER: 'answer_group_project_auto_join_offer', GET_ROLES: management, SET_ROLE: 'set_group_project_role', SET_OWN_GRANT: 'set_group_project_own_grant', PREVIEW_AUTO_JOIN: 'preview_group_project_create', SET_AUTOMATIC_MEMBERSHIP: 'set_group_project_automatic_membership', CONFIRM_UNLINKED_MEMBERS: 'confirm_group_project_unlinked_members', GET_ROSTER: management, GET_COVERAGE: management,
   };
   const preload = fs.readFileSync(path.join(process.cwd(), 'src/preload/groupProject.ts'), 'utf8');

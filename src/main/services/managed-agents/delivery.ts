@@ -65,6 +65,8 @@ interface Resolved {
  * the grants; none until then, and none without an agent (a template).
  */
 let grantedSkills: (agent: DurableAgentConfig) => readonly string[] = () => [];
+/** Synchronous final-boundary check; delivery still resolves these normally. */
+export function managedGrantedSkillIds(agent: DurableAgentConfig): readonly string[] { return grantedSkills(agent); }
 export function setGrantedSkills(provider: (agent: DurableAgentConfig) => readonly string[]): () => void {
   grantedSkills = provider;
   return () => { if (grantedSkills === provider) grantedSkills = () => []; };

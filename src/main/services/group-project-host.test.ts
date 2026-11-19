@@ -872,3 +872,42 @@ it.each([
   expect(Boolean(await getBulletinBoard(gp.id).inboxOf(address))).toBe(admitted);
   expect((await groupProjectHost.readTopic(gp.id, "system")).length).toBe(admitted ? 1 : 0);
 });
+
+
+it('retains urgent and notification cursor through a real storage restart', async () => {
+  const { lastNotified, markNotified } = await import('./group-project-notification-store');
+  const gp = await groupProjectHost.create('Urgent');
+  const first = await groupProjectHost.post(gp.id, 'sender', 'general', 'seen', { urgent: true });
+  await markNotified(gp.id, 'dev', first.seq!);
+  const unread = await groupProjectHost.post(gp.id, 'sender', 'general', 'unread', { urgent: true });
+  await restart();
+  const cursor = await lastNotified(gp.id, 'dev');
+  const recovered = (await groupProjectHost.readAll(gp.id)).filter((m) => (m.seq ?? 0) > cursor);
+  expect(recovered).toEqual([expect.objectContaining({ id: unread.id, urgent: true })]);
+});
+
+it('records provenance for local person and Action posts without putting it on the board', async () => {
+  const { isLocalGroupPost } = await import('./group-project-local-origin');
+  const gp = await groupProjectHost.create('Origins');
+  for (const sender of ['user', 'Group project Action']) {
+    const post = await groupProjectHost.post(gp.id, sender, 'general', 'local');
+    expect(isLocalGroupPost(gp.id, post.id)).toBe(true);
+    expect(post).not.toHaveProperty('localOrigin');
+  }
+});
+
+it('announces only confirmed departures, preserving scope-only omissions', async () => {
+  const gp = await groupProjectHost.create('Departures');
+  await groupProjectHost.updateMembership(gp.id, (m) => { m.explicit.push({ address: 'dev', kind: 'helper', addedAt: 'now' }); });
+  const changes: GroupProjectChange[] = [];
+  const stop = groupProjectHost.onChange((c) => changes.push(c));
+  try {
+    await groupProjectHost.updateMembership(gp.id, (m) => { m.explicit = []; m.excluded.push({ address: 'dev', excludedAt: 'now', reason: 'scope' }); });
+    expect(changes.at(-1)?.departed).toBeUndefined();
+    await groupProjectHost.updateMembership(gp.id, (m) => { m.excluded = []; m.explicit.push({ address: 'dev', kind: 'helper', addedAt: 'again' }); });
+    await groupProjectHost.updateMembership(gp.id, (m) => { m.explicit = []; });
+    expect(changes.at(-1)?.departed).toEqual(['dev']);
+    await groupProjectHost.updateMembership(gp.id, (m) => { m.excluded.push({ address: 'other', excludedAt: 'now' }); });
+    expect(changes.at(-1)?.departed).toEqual(['other']);
+  } finally { stop(); }
+});

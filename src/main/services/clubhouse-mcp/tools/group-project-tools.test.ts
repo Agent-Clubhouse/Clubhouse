@@ -109,10 +109,10 @@ import { bindingManager } from '../binding-manager';
 import { mcpAdapter } from '../mcp-adapter';
 import { _resetAllBoardsForTesting, getBulletinBoard } from '../../group-project-bulletin';
 import { groupProjectRegistry } from '../../group-project-registry';
+import { groupProjectHost } from '../../group-project-host';
 import { agentRegistry } from '../../agent-registry';
 import { clearChatRuntimes, registerChatRuntime } from '../../agent-runtime';
 import { registerGroupProjectTools } from './group-project-tools';
-import { groupProjectHost } from '../../group-project-host';
 import { checkToolGrant } from '../grant-check';
 import { getScopedToolList, callTool, buildToolName, listToolGrants } from '../tool-registry';
 import type { McpBinding } from '../types';
@@ -149,10 +149,10 @@ describe('GroupProjectTools', () => {
     const undeclared = listToolGrants().filter((t) => t.kind === 'group-project' && !t.grant).map((t) => t.name);
     expect(undeclared).toEqual([]);
     const lead = listToolGrants().filter((t) => t.kind === 'group-project' && JSON.stringify(t.grant).includes('group_project.lead')).map((t) => t.name).sort();
-    expect(lead).toEqual(['broadcast', 'clear_agent', 'clear_topic', 'compact_agent', 'delete_messages', 'nudge_polling', 'shoulder_tap', 'sleep_agent', 'toggle_polling', 'wake_agent']);
+    expect(lead).toEqual(['clear_agent', 'clear_topic', 'compact_agent', 'delete_messages', 'sleep_agent', 'wake_agent']);
   });
 
-  it('exposes all 19 tools to an admin member', () => {
+  it('exposes all 14 tools to an admin member', () => {
     groupProjectRegistry._setForTesting({
       id: 'gp_123', name: 'My Project', description: '', instructions: '',
       createdAt: '2020-01-01T00:00:00Z', metadata: {},
@@ -167,7 +167,7 @@ describe('GroupProjectTools', () => {
     });
 
     const tools = getScopedToolList('agent-1');
-    expect(tools).toHaveLength(19);
+    expect(tools).toHaveLength(14);
 
     const suffixes = tools.map(t => t.name.split('__').pop());
     expect(suffixes).toContain('list_members');
@@ -176,13 +176,8 @@ describe('GroupProjectTools', () => {
     expect(suffixes).toContain('read_topic');
     expect(suffixes).toContain('get_project_info');
     expect(suffixes).toContain('read_message');
-    expect(suffixes).toContain('shoulder_tap');
-    expect(suffixes).toContain('broadcast');
     expect(suffixes).toContain('wake_agent');
     expect(suffixes).toContain('sleep_agent');
-    expect(suffixes).toContain('toggle_polling');
-    expect(suffixes).toContain('query_polling');
-    expect(suffixes).toContain('nudge_polling');
     expect(suffixes).toContain('subscribe_topic');
     expect(suffixes).not.toContain('start_polling');
     expect(suffixes).not.toContain('stop_polling');
@@ -193,7 +188,7 @@ describe('GroupProjectTools', () => {
     expect(suffixes).toContain('set_project_info');
   });
 
-  it('exposes only the core tools (incl. query_polling) to a non-admin member', () => {
+  it('exposes only the core tools to a non-admin member', () => {
     groupProjectRegistry._setForTesting({
       id: 'gp_core', name: 'Core', description: '', instructions: '',
       createdAt: '2020-01-01T00:00:00Z', metadata: {},
@@ -205,9 +200,9 @@ describe('GroupProjectTools', () => {
 
     const suffixes = getScopedToolList('agent-1').map(t => t.name.split('__').pop());
     expect(suffixes.sort()).toEqual(
-      ['get_project_info', 'list_members', 'post_bulletin', 'query_polling', 'read_bulletin', 'read_message', 'read_topic', 'subscribe_topic'].sort(),
+      ['get_project_info', 'list_members', 'post_bulletin', 'read_bulletin', 'read_message', 'read_topic', 'subscribe_topic'].sort(),
     );
-    for (const priv of ['shoulder_tap', 'broadcast', 'wake_agent', 'sleep_agent', 'toggle_polling', 'nudge_polling', 'delete_messages', 'set_project_info']) {
+    for (const priv of ['wake_agent', 'sleep_agent', 'delete_messages', 'set_project_info']) {
       expect(suffixes).not.toContain(priv);
     }
   });
@@ -220,7 +215,7 @@ describe('GroupProjectTools', () => {
       agentName: 'robin',
       targetName: 'My Project',
     });
-    bindingManager.setDisabledTools('agent-1', 'gp_123', ['shoulder_tap', 'broadcast', 'wake_agent', 'sleep_agent', 'toggle_polling', 'nudge_polling', 'clear_agent', 'compact_agent', 'clear_topic', 'delete_messages']);
+    bindingManager.setDisabledTools('agent-1', 'gp_123', ['wake_agent', 'sleep_agent', 'clear_agent', 'compact_agent', 'clear_topic', 'delete_messages']);
 
     const tools = getScopedToolList('agent-1');
     const suffixes = tools.map(t => t.name.split('__').pop());
@@ -275,10 +270,10 @@ describe('GroupProjectTools', () => {
     expect(result.isError).toBeFalsy();
     const members = JSON.parse(result.content[0].text!);
     expect(members).toHaveLength(2);
-    expect(members.map((m: any) => m.agentName).sort()).toEqual(['falcon', 'robin']);
+    expect(members.map((m: any) => m.name).sort()).toEqual(['falcon', 'robin']);
   });
 
-  it.each(['list_members', 'query_polling', 'get_project_info'])('%s uses the host roster including remote members', async suffix => {
+  it.each(['list_members', 'get_project_info'])('%s uses the host roster including remote members', async suffix => {
     groupProjectRegistry._setForTesting({ id: 'gp_roster', name: 'Roster', description: '', instructions: '', createdAt: '' });
     bindingManager.bind('agent-1', { targetId: 'gp_roster', targetKind: 'group-project', label: 'Roster' });
     rosterFx.describe.mockResolvedValueOnce({ status: 'available', source: 'live', complete: false, stale: 'offline', members: [
@@ -287,7 +282,7 @@ describe('GroupProjectTools', () => {
     const result = await callTool('agent-1', buildToolName(makeBinding({ agentId: 'agent-1', targetId: 'gp_roster', targetName: 'Roster' }), suffix), {});
     const body = JSON.parse(result.content[0].text!);
     const members = Array.isArray(body) ? body : body.members;
-    expect(members).toEqual([expect.objectContaining({ agentId: 'remote@other', agentName: 'Twin', status: 'unknown', rosterSource: 'live', rosterComplete: false, stale: 'offline' })]);
+    expect(members).toEqual([expect.objectContaining({ address: 'remote@other', name: 'Twin', computer: 'MBP', status: 'unknown' })]);
   });
 
   it('post_bulletin posts and returns confirmation', async () => {
@@ -301,13 +296,14 @@ describe('GroupProjectTools', () => {
 
     const binding = makeBinding({ agentId: 'agent-1', targetId: 'gp_123', targetName: 'GP' });
     const toolName = buildToolName(binding, 'post_bulletin');
-    const result = await callTool('agent-1', toolName, { topic: 'progress', body: 'Done with step 1' });
+    const result = await callTool('agent-1', toolName, { topic: 'progress', body: 'Done with step 1', urgent: true });
 
     expect(result.isError).toBeFalsy();
     const parsed = JSON.parse(result.content[0].text!);
     expect(parsed.posted).toBe(true);
     expect(parsed.topic).toBe('progress');
     expect(parsed.messageId).toMatch(/^msg_/);
+    expect(groupProjectHost.post).toHaveBeenCalledWith('gp_123', expect.any(String), 'progress', 'Done with step 1', expect.objectContaining({ urgent: true }));
   });
 
   it('post_bulletin rejects system topic', async () => {
@@ -415,7 +411,7 @@ describe('GroupProjectTools', () => {
     expect(parsed.instructions).toBe('Follow the rules');
     expect(parsed.scope).toEqual({ level: 'project', projectId: 'project-a', reach: 'local' });
     expect(parsed.members).toHaveLength(1);
-    expect(parsed.members[0].agentName).toBe('robin');
+    expect(parsed.members[0].name).toBe('robin');
   });
 
   it('get_project_info tells a notices group to react to notices, not to poll (#3618)', async () => {
@@ -436,22 +432,6 @@ describe('GroupProjectTools', () => {
     expect(text).not.toContain('with one lead');
   });
 
-  it('get_project_info gives the polling algorithm only to a group that still polls (#3618)', async () => {
-    groupProjectRegistry._setForTesting({
-      id: 'gp_polling', name: 'Polling', description: '', instructions: '',
-      createdAt: '2020-01-01T00:00:00Z', metadata: { pollingEnabled: true },
-    });
-    const binding = makeBinding({ agentId: 'agent-1', targetId: 'gp_polling', targetName: 'Polling' });
-    bindingManager.bind('agent-1', binding);
-
-    const result = await callTool('agent-1', buildToolName(binding, 'get_project_info'), {});
-    const text: string = JSON.parse(result.content[0].text!).systemInstructions;
-
-    expect(text).toContain('POLLING:');
-    expect(text).toContain('since=<latestTimestamp from last read>');
-    expect(text).toContain('no notices are sent');
-    expect(text).not.toContain('NOTICES:');
-  });
 
   it('get_project_info explicitly leaves legacy scope unresolved without changing the saved record', async () => {
     groupProjectRegistry._setForTesting({
@@ -504,7 +484,7 @@ describe('GroupProjectTools', () => {
 
     const members = JSON.parse(result.content[0].text!);
     expect(members).toHaveLength(1);
-    expect(members[0].status).toBe('connected');
+    expect(members[0].status).toBe('awake');
 
     agentRegistry.untrack('agent-1');
   });
@@ -524,7 +504,7 @@ describe('GroupProjectTools', () => {
 
     const members = JSON.parse(result.content[0].text!);
     expect(members).toHaveLength(1);
-    expect(members[0].status).toBe('sleeping');
+    expect(members[0].status).toBe('asleep');
   });
 
   it('list_members shows mixed statuses for multiple agents', async () => {
@@ -555,10 +535,10 @@ describe('GroupProjectTools', () => {
     const members = JSON.parse(result.content[0].text!);
     expect(members).toHaveLength(2);
 
-    const robin = members.find((m: any) => m.agentName === 'robin');
-    const falcon = members.find((m: any) => m.agentName === 'falcon');
-    expect(robin.status).toBe('connected');
-    expect(falcon.status).toBe('sleeping');
+    const robin = members.find((m: any) => m.name === 'robin');
+    const falcon = members.find((m: any) => m.name === 'falcon');
+    expect(robin.status).toBe('awake');
+    expect(falcon.status).toBe('asleep');
 
     agentRegistry.untrack('agent-1');
   });
@@ -588,135 +568,34 @@ describe('GroupProjectTools', () => {
     const parsed = JSON.parse(result.content[0].text!);
     expect(parsed.scope).toEqual({ level: 'app', reach: 'local' });
     expect(parsed.members).toHaveLength(1);
-    expect(parsed.members[0].status).toBe('connected'); // registered = alive
+    expect(parsed.members[0].status).toBe('awake'); // registered = alive
 
     agentRegistry.untrack('agent-1');
   });
 
-  it('shoulder_tap and broadcast are available to an admin member', async () => {
-    const project = await groupProjectRegistry.create('TapProj');
-    grantLead('agent-1', project.id);
 
-    bindingManager.bind('agent-1', {
-      targetId: project.id,
-      targetKind: 'group-project',
-      label: 'TapProj',
-      agentName: 'robin',
-      targetName: 'TapProj',
-    });
 
-    const tools = getScopedToolList('agent-1');
-    const suffixes = tools.map(t => t.name.split('__').pop());
-    expect(suffixes).toContain('shoulder_tap');
-    expect(suffixes).toContain('broadcast');
-  });
-
-  it('shoulder_tap delivers message to target agent', async () => {
-    const project = await groupProjectRegistry.create('TapDelivery');
-    grantLead('agent-1', project.id);
-
-    agentRegistry.register('agent-1', { projectPath: '/test', orchestrator: 'claude-code', runtime: 'pty' });
-    agentRegistry.register('agent-2', { projectPath: '/test', orchestrator: 'claude-code', runtime: 'pty' });
-
-    bindingManager.bind('agent-1', {
-      targetId: project.id,
-      targetKind: 'group-project',
-      label: 'TD',
-      agentName: 'robin',
-      targetName: 'TapDelivery',
-    });
-    bindingManager.bind('agent-2', {
-      targetId: project.id,
-      targetKind: 'group-project',
-      label: 'TD',
-      agentName: 'falcon',
-      targetName: 'TapDelivery',
-    });
-
-    const binding = makeBinding({ agentId: 'agent-1', targetId: project.id, targetName: 'TapDelivery' });
-    const toolName = buildToolName(binding, 'shoulder_tap');
-    const result = await callTool('agent-1', toolName, {
-      target_agent_id: 'agent-2',
-      message: 'Check the config file',
-    });
-
-    expect(result.isError).toBeFalsy();
-    const parsed = JSON.parse(result.content[0].text!);
-    expect(parsed.delivered).toBe(1);
-    expect(parsed.taskId).toMatch(/^tap_/);
-
-    agentRegistry.untrack('agent-1');
-    agentRegistry.untrack('agent-2');
-  });
-
-  it('broadcast delivers message to all agents except sender', async () => {
-    const project = await groupProjectRegistry.create('BroadcastProj');
-    grantLead('agent-1', project.id);
-
-    agentRegistry.register('agent-1', { projectPath: '/test', orchestrator: 'claude-code', runtime: 'pty' });
-    agentRegistry.register('agent-2', { projectPath: '/test', orchestrator: 'claude-code', runtime: 'pty' });
-
-    bindingManager.bind('agent-1', {
-      targetId: project.id,
-      targetKind: 'group-project',
-      label: 'BP',
-      agentName: 'robin',
-      targetName: 'BroadcastProj',
-      projectName: 'myapp',
-    });
-    bindingManager.bind('agent-2', {
-      targetId: project.id,
-      targetKind: 'group-project',
-      label: 'BP',
-      agentName: 'falcon',
-      targetName: 'BroadcastProj',
-      projectName: 'myapp',
-    });
-
-    const binding = makeBinding({ agentId: 'agent-1', targetId: project.id, targetName: 'BroadcastProj' });
-    const toolName = buildToolName(binding, 'broadcast');
-    const result = await callTool('agent-1', toolName, {
-      message: 'Stop all work immediately',
-    });
-
-    expect(result.isError).toBeFalsy();
-    const parsed = JSON.parse(result.content[0].text!);
-    expect(parsed.delivered).toBe(1); // Only falcon (sender excluded)
-    expect(parsed.taskId).toMatch(/^tap_/);
-
-    agentRegistry.untrack('agent-1');
-    agentRegistry.untrack('agent-2');
-  });
-
-  it.each([
-    ['shoulder_tap', { target_agent_id: 'agent-2', message: 'Look at this' }],
-    ['broadcast', { message: 'Look at this' }],
-  ])('%s says which agent sent it', async (tool, args) => {
-    const project = await groupProjectRegistry.create(`Sender ${tool}`);
-    grantLead('agent-1', project.id);
-    agentRegistry.register('agent-1', { projectPath: '/test', orchestrator: 'claude-code', runtime: 'pty' });
-    agentRegistry.register('agent-2', { projectPath: '/test', orchestrator: 'claude-code', runtime: 'chat' });
-    const sendMessage = vi.fn(async () => ({ delivery: 'prompt', messageId: 'm' }));
-    registerChatRuntime({ kind: 'chat', agentId: 'agent-2', isRunning: () => true, getState: () => 'idle', sendMessage } as never);
-    for (const [agentId, agentName] of [['agent-1', 'robin'], ['agent-2', 'falcon']]) {
-      bindingManager.bind(agentId, { targetId: project.id, targetKind: 'group-project', label: 'S', agentName, targetName: 'Sender', projectName: 'myapp' });
-    }
-
-    const binding = makeBinding({ agentId: 'agent-1', targetId: project.id, targetName: 'Sender' });
-    const result = await callTool('agent-1', buildToolName(binding, tool), args);
-
-    expect(JSON.parse(result.content[0].text!).delivered).toBe(1);
-    expect(sendMessage).toHaveBeenCalledWith(expect.any(String), expect.objectContaining({
-      source: 'shoulder_tap',
-      routed: [{ sender: { agentId: 'agent-1', name: 'robin' }, text: 'Look at this' }],
-    }));
-
-    clearChatRuntimes();
-    agentRegistry.untrack('agent-1');
-    agentRegistry.untrack('agent-2');
-  });
 
   describe('resolveSenderLabel (via post_bulletin)', () => {
+    it('adds the computer to a colliding sender and leaves existing posts unchanged', async () => {
+      const project = await groupProjectRegistry.create('Board');
+      bindingManager.bind('agent-1', { targetId: project.id, targetKind: 'group-project', label: 'Board', agentName: 'Twin' });
+      const toolName = buildToolName(makeBinding({ agentId: 'agent-1', targetId: project.id, targetName: 'Board' }), 'post_bulletin');
+      await callTool('agent-1', toolName, { topic: 'test', body: 'before' });
+      rosterFx.describe.mockResolvedValueOnce({ status: 'available', members: [
+        { agentId: 'agent-1', key: 'agent-1@one', machine: 'one', label: 'Twin', machineLabel: 'Mac mini', thisComputer: false },
+        { agentId: 'agent-2', key: 'agent-2@two', machine: 'two', label: 'Twin', machineLabel: 'Laptop', thisComputer: false },
+      ] } as never);
+      // The host normalizes its own machine address to a local id; the passthrough keeps it as-is.
+      const { groupProjectHost } = await import('../../group-project-host');
+      vi.mocked(groupProjectHost.addressOf).mockImplementationOnce((_gp, address) => address === 'agent-1@one' ? 'agent-1' : address);
+      await callTool('agent-1', toolName, { topic: 'test', body: 'after' });
+      const board = (await import('../../group-project-bulletin')).getBulletinBoard(project.id);
+      const messages = await board.getTopicMessages('test');
+      expect(messages.find(m => m.body === 'before')?.sender).toBe('Twin@Board');
+      expect(messages.find(m => m.body === 'after')?.sender).toBe('Twin (Mac mini)');
+    });
+
     it('uses live registry name when project has been renamed', async () => {
       const project = await groupProjectRegistry.create('OldName');
       bindingManager.bind('agent-1', {
@@ -788,24 +667,6 @@ describe('GroupProjectTools', () => {
     });
   });
 
-  it('shoulder_tap returns error when target_agent_id is missing', async () => {
-    const project = await groupProjectRegistry.create('ErrProj');
-
-    bindingManager.bind('agent-1', {
-      targetId: project.id,
-      targetKind: 'group-project',
-      label: 'EP',
-      agentName: 'robin',
-      targetName: 'ErrProj',
-    });
-
-    const binding = makeBinding({ agentId: 'agent-1', targetId: project.id, targetName: 'ErrProj' });
-    const toolName = buildToolName(binding, 'shoulder_tap');
-    const result = await callTool('agent-1', toolName, { message: 'hello' });
-
-    expect(result.isError).toBe(true);
-    expect(result.content[0].text).toContain('required');
-  });
 
   it('read_bulletin description describes the channel model', async () => {
     const project = await groupProjectRegistry.create('ChanModel');
@@ -830,7 +691,7 @@ describe('GroupProjectTools', () => {
 
   /* ---------- Agent Control Tools (wake, sleep, polling) ---------- */
 
-  it('wake_agent, sleep_agent, toggle_polling, nudge_polling are available to an admin (query_polling to all)', () => {
+  it('wake_agent and sleep_agent are available to a lead', () => {
     groupProjectRegistry._setForTesting({
       id: 'gp_123', name: 'My Project', description: '', instructions: '',
       createdAt: '2020-01-01T00:00:00Z', metadata: {},
@@ -848,9 +709,6 @@ describe('GroupProjectTools', () => {
     const suffixes = tools.map(t => t.name.split('__').pop());
     expect(suffixes).toContain('wake_agent');
     expect(suffixes).toContain('sleep_agent');
-    expect(suffixes).toContain('toggle_polling');
-    expect(suffixes).toContain('nudge_polling');
-    expect(suffixes).toContain('query_polling');
     expect(suffixes).not.toContain('start_polling');
     expect(suffixes).not.toContain('stop_polling');
   });
@@ -1171,25 +1029,7 @@ describe('GroupProjectTools', () => {
     expect(mockKillAgent).not.toHaveBeenCalled();
   });
 
-  it('toggle_polling carries the authenticated caller rather than an argument author', async () => {
-    const project = await groupProjectRegistry.create('Authored');
-    grantLead('agent-1', project.id);
-    bindingManager.bind('agent-1', { targetId: project.id, targetKind: 'group-project', label: 'Authored' });
-    vi.mocked(groupProjectHost.update).mockClear();
-    await callTool('agent-1', buildToolName(makeBinding({ agentId: 'agent-1', targetId: project.id, targetName: 'Authored' }), 'toggle_polling'), { enabled: true, author: { agentId: 'forged', label: 'user' } });
-    expect(groupProjectHost.update).toHaveBeenCalledWith(project.id, { metadata: { pollingEnabled: true } }, { author: { agentId: 'agent-1', label: 'agent-1' } });
-  });
 
-  it('a queued toggle reports no notified members', async () => {
-    const project = await groupProjectRegistry.create('Queued');
-    grantLead('agent-1', project.id);
-    bindingManager.bind('agent-1', { targetId: project.id, targetKind: 'group-project', label: 'Queued' });
-    mockIsRunning.mockReturnValue(true);
-    vi.mocked(groupProjectHost.update).mockResolvedValueOnce({ ...project, writeOutcome: { status: 'queued', waitingFor: 'Host', since: new Date().toISOString() }, network: { role: 'replica', state: 'cached', waitingWrites: 1, refusals: [] } });
-    const result = await callTool('agent-1', buildToolName(makeBinding({ agentId: 'agent-1', targetId: project.id, targetName: 'Queued' }), 'toggle_polling'), { enabled: true });
-    expect(JSON.parse(result.content[0].text!)).toMatchObject({ queued: true, pollingEnabled: false, notifiedMembers: [] });
-    expect(mockPtyWrite).not.toHaveBeenCalled();
-  });
 
   it.each(['off', 'ask', 'allow'] as const)('local polling retains the %s lead-grant decision', async mode => {
     const project = await groupProjectRegistry.create('Grant');
@@ -1200,171 +1040,11 @@ describe('GroupProjectTools', () => {
     expect((await groupProjectRegistry.get(project.id))?.metadata?.pollingEnabled).not.toBe(true);
   });
 
-  it('toggle_polling(enabled=true) persists the setting and injects start to connected members', async () => {
-    const project = await groupProjectRegistry.create('PollToggle');
-    grantLead('agent-1', project.id);
 
-    agentRegistry.register('agent-2', { projectPath: '/test', orchestrator: 'claude-code', runtime: 'pty' });
-    mockIsRunning.mockImplementation((id: string) => id === 'agent-2');
 
-    bindingManager.bind('agent-1', {
-      targetId: project.id, targetKind: 'group-project', label: 'PT', agentName: 'robin', targetName: 'PollToggle',
-    });
-    bindingManager.bind('agent-2', {
-      targetId: project.id, targetKind: 'group-project', label: 'PT', agentName: 'falcon', targetName: 'PollToggle',
-    });
 
-    const binding = makeBinding({ agentId: 'agent-1', targetId: project.id, targetName: 'PollToggle' });
-    const result = await callTool('agent-1', buildToolName(binding, 'toggle_polling'), { enabled: true });
 
-    expect(result.isError).toBeFalsy();
-    const parsed = JSON.parse(result.content[0].text!);
-    expect(parsed.action).toBe('toggle_polling');
-    expect(parsed.pollingEnabled).toBe(true);
-    expect(parsed.notifiedMembers.map((m: { agentId: string }) => m.agentId)).toEqual(['agent-2']);
 
-    // Setting is actually persisted
-    const persisted = await groupProjectRegistry.get(project.id);
-    expect(persisted?.metadata?.pollingEnabled).toBe(true);
-
-    // Only the connected member (agent-2) receives the start instruction
-    const startWrite = mockPtyWrite.mock.calls.find(
-      (c: unknown[]) => typeof c[1] === 'string' && (c[1] as string).includes('start polling'),
-    );
-    expect(startWrite).toBeDefined();
-    expect(startWrite![0]).toBe('agent-2');
-
-    agentRegistry.untrack('agent-2');
-  });
-
-  it('toggle_polling without enabled flips the current value and injects stop when turning off', async () => {
-    const project = await groupProjectRegistry.create('PollFlip');
-    await groupProjectRegistry.update(project.id, { metadata: { pollingEnabled: true } });
-    grantLead('agent-1', project.id);
-
-    agentRegistry.register('agent-2', { projectPath: '/test', orchestrator: 'claude-code', runtime: 'pty' });
-    mockIsRunning.mockImplementation((id: string) => id === 'agent-2');
-
-    bindingManager.bind('agent-1', {
-      targetId: project.id, targetKind: 'group-project', label: 'PF', agentName: 'robin', targetName: 'PollFlip',
-    });
-    bindingManager.bind('agent-2', {
-      targetId: project.id, targetKind: 'group-project', label: 'PF', agentName: 'falcon', targetName: 'PollFlip',
-    });
-
-    const binding = makeBinding({ agentId: 'agent-1', targetId: project.id, targetName: 'PollFlip' });
-    const result = await callTool('agent-1', buildToolName(binding, 'toggle_polling'), {});
-
-    expect(result.isError).toBeFalsy();
-    const parsed = JSON.parse(result.content[0].text!);
-    expect(parsed.pollingEnabled).toBe(false);
-
-    const persisted = await groupProjectRegistry.get(project.id);
-    expect(persisted?.metadata?.pollingEnabled).toBe(false);
-
-    const stopWrite = mockPtyWrite.mock.calls.find(
-      (c: unknown[]) => typeof c[1] === 'string' && (c[1] as string).includes('stop polling'),
-    );
-    expect(stopWrite).toBeDefined();
-
-    agentRegistry.untrack('agent-2');
-  });
-
-  it('query_polling returns the current setting and member statuses', async () => {
-    const project = await groupProjectRegistry.create('PollQuery');
-    await groupProjectRegistry.update(project.id, { metadata: { pollingEnabled: true } });
-
-    agentRegistry.register('agent-2', { projectPath: '/test', orchestrator: 'claude-code', runtime: 'pty' });
-    mockIsRunning.mockImplementation((id: string) => id === 'agent-2');
-
-    bindingManager.bind('agent-1', {
-      targetId: project.id, targetKind: 'group-project', label: 'PQ', agentName: 'robin', targetName: 'PollQuery',
-    });
-    bindingManager.bind('agent-2', {
-      targetId: project.id, targetKind: 'group-project', label: 'PQ', agentName: 'falcon', targetName: 'PollQuery',
-    });
-
-    const binding = makeBinding({ agentId: 'agent-1', targetId: project.id, targetName: 'PollQuery' });
-    const result = await callTool('agent-1', buildToolName(binding, 'query_polling'), {});
-
-    expect(result.isError).toBeFalsy();
-    const parsed = JSON.parse(result.content[0].text!);
-    expect(parsed.pollingEnabled).toBe(true);
-    const statuses = Object.fromEntries(parsed.members.map((m: { agentId: string; status: string }) => [m.agentId, m.status]));
-    expect(statuses['agent-2']).toBe('connected');
-    expect(statuses['agent-1']).toBe('sleeping');
-
-    agentRegistry.untrack('agent-2');
-  });
-
-  it('nudge_polling refuses a member the call gate keeps closed, which can\'t poll, and injects nothing', async () => {
-    const project = await groupProjectRegistry.create('Nudge off');
-    grantLead('agent-1', project.id);
-    bindingManager.bind('agent-1', { targetId: project.id, targetKind: 'group-project', label: 'Nudge off' });
-    bindingManager.bind('agent-2', { targetId: project.id, targetKind: 'group-project', label: 'Nudge off' });
-    agentRegistry.register('agent-2', { projectPath: '/test', orchestrator: 'claude-code', runtime: 'pty' });
-    mockIsRunning.mockImplementation((id: string) => id === 'agent-2');
-    const binding = bindingManager.getBindingsForAgent('agent-1').find((b) => b.targetId === project.id)!;
-    gateClosed.add('agent-2');
-    const result = await callTool('agent-1', buildToolName(binding, 'nudge_polling'), { target_agent_id: 'agent-2' });
-    gateClosed.delete('agent-2');
-    expect(result.isError).toBe(true);
-    expect(result.content[0]).toMatchObject({ text: expect.stringContaining('can\'t use Clubhouse tools right now, so it can\'t poll and wasn\'t nudged') });
-    expect(mockPtyWrite).not.toHaveBeenCalled();
-  });
-
-  it('nudge_polling injects a nudge into a connected agent without changing the setting', async () => {
-    const project = await groupProjectRegistry.create('PollNudge');
-    grantLead('agent-1', project.id);
-
-    agentRegistry.register('agent-2', { projectPath: '/test', orchestrator: 'claude-code', runtime: 'pty' });
-    mockIsRunning.mockImplementation((id: string) => id === 'agent-2');
-
-    bindingManager.bind('agent-1', {
-      targetId: project.id, targetKind: 'group-project', label: 'PN', agentName: 'robin', targetName: 'PollNudge',
-    });
-    bindingManager.bind('agent-2', {
-      targetId: project.id, targetKind: 'group-project', label: 'PN', agentName: 'falcon', targetName: 'PollNudge',
-    });
-
-    const binding = makeBinding({ agentId: 'agent-1', targetId: project.id, targetName: 'PollNudge' });
-    const result = await callTool('agent-1', buildToolName(binding, 'nudge_polling'), { target_agent_id: 'agent-2' });
-
-    expect(result.isError).toBeFalsy();
-    const parsed = JSON.parse(result.content[0].text!);
-    expect(parsed.action).toBe('nudge_polling');
-    expect(parsed.delivered).toBe(true);
-
-    const nudgeWrite = mockPtyWrite.mock.calls.find(
-      (c: unknown[]) => typeof c[1] === 'string' && (c[1] as string).includes('nudge'),
-    );
-    expect(nudgeWrite).toBeDefined();
-    expect(nudgeWrite![0]).toBe('agent-2');
-
-    // The setting is NOT changed by a nudge
-    const persisted = await groupProjectRegistry.get(project.id);
-    expect(persisted?.metadata?.pollingEnabled).toBeFalsy();
-
-    agentRegistry.untrack('agent-2');
-  });
-
-  it('nudge_polling returns error for sleeping agent', async () => {
-    const project = await groupProjectRegistry.create('NudgeSleep');
-    grantLead('agent-1', project.id);
-
-    bindingManager.bind('agent-1', {
-      targetId: project.id, targetKind: 'group-project', label: 'NS', agentName: 'robin', targetName: 'NudgeSleep',
-    });
-    bindingManager.bind('agent-2', {
-      targetId: project.id, targetKind: 'group-project', label: 'NS', agentName: 'falcon', targetName: 'NudgeSleep',
-    });
-
-    const binding = makeBinding({ agentId: 'agent-1', targetId: project.id, targetName: 'NudgeSleep' });
-    const result = await callTool('agent-1', buildToolName(binding, 'nudge_polling'), { target_agent_id: 'agent-2' });
-
-    expect(result.isError).toBe(true);
-    expect(result.content[0].text).toContain('sleeping');
-  });
 
   /* ---------- read_message tool ---------- */
 
@@ -1684,11 +1364,7 @@ describe('GroupProjectTools', () => {
 
       const toolTests = [
         { suffix: 'wake_agent', args: { target_agent_id: 'agent-2' } },
-        { suffix: 'broadcast', args: { message: 'test' } },
-        { suffix: 'shoulder_tap', args: { target_agent_id: 'agent-2', message: 'test' } },
         { suffix: 'sleep_agent', args: { target_agent_id: 'agent-2' } },
-        { suffix: 'toggle_polling', args: { enabled: true } },
-        { suffix: 'nudge_polling', args: { target_agent_id: 'agent-2' } },
         { suffix: 'clear_topic', args: { topic: 'test' } },
         { suffix: 'clear_agent', args: { target_agent_id: 'agent-2' } },
         { suffix: 'compact_agent', args: { target_agent_id: 'agent-2' } },

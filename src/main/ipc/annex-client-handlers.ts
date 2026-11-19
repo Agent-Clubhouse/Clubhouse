@@ -176,6 +176,10 @@ export function registerAnnexClientHandlers(): void {
   ));
 
   // Chat across desktops (#2390): a satellite's chat agents through its phone routes and commands
+  ipcMain.handle(IPC.ANNEX_CLIENT.AGENT_SETTINGS, withValidatedArgs(
+    [stringArg(), stringArg({ maxLength: 240 })],
+    (_event, machine, agentId) => annexClient.requestAgentSettings(machine, agentId),
+  ));
   ipcMain.handle(IPC.ANNEX_CLIENT.CONTROLLER_CHAT_PAGE, withValidatedArgs(
     [stringArg(), objectArg({ optional: true })],
     (_event, machine, opts) => annexClient.requestControllerChatPage(machine, opts as import('../../shared/controller-chat').ControllerChatQuery),
@@ -198,6 +202,13 @@ export function registerAnnexClientHandlers(): void {
   ipcMain.handle(IPC.ANNEX_CLIENT.CHAT_COMMAND, withValidatedArgs(
     [stringArg(), objectArg()],
     (_event, satelliteId, command) => annexClient.sendChatCommand(satelliteId, command as Record<string, unknown>),
+  ));
+  ipcMain.handle(IPC.ANNEX_CLIENT.RESPOND_PERMISSION, withValidatedArgs(
+    [stringArg(), stringArg(), stringArg(), stringArg()],
+    (_event, satelliteId, agentId, requestId, decision) => {
+      if (decision !== 'allow' && decision !== 'deny') throw new Error('Invalid permission decision');
+      return annexClient.respondPermission(satelliteId, agentId, requestId, decision);
+    },
   ));
 
   // A typed host for a satellite, such as its tailnet name (#3058)
@@ -424,7 +435,7 @@ export function registerAnnexClientHandlers(): void {
     },
   ));
 
-  // Group Project proxy: set project-wide polling setting on satellite
+  // Deprecated plugin compatibility: polling is retired on the satellite
   ipcMain.handle(IPC.ANNEX_CLIENT.GP_SET_POLLING, withValidatedArgs(
     [stringArg(), stringArg(), booleanArg()],
     async (_event, satelliteId, groupProjectId, enabled) => {

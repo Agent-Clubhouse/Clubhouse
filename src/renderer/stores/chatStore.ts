@@ -1085,6 +1085,9 @@ interface ChatStoreState {
  */
 const pendingLive = new Map<string, ChatEvent[]>();
 
+/** Requested remote chats, including failed reads; snapshots invalidate in-flight reads. */
+const remoteTranscriptRevisions = new Map<string, number>();
+
 /**
  * Live chat events seen per agent. Not state: nothing renders from it. A
  * caller that asks main which runtime runs the agent compares it before and
@@ -1172,6 +1175,8 @@ export const useChatStore = create<ChatStoreState>((set, get) => {
       let events: ChatEvent[] | null = null;
       // An agent on another desktop is read from there (#2390), never from this machine's chat runtime.
       const remote = remoteChatTarget(agentId);
+      const remoteRevision = remoteTranscriptRevisions.get(agentId) ?? 0;
+      if (remote) remoteTranscriptRevisions.set(agentId, remoteRevision);
       let remoteLive: boolean | undefined;
       let remoteCut = false;
       let remoteMeta: RemoteChatMeta = {};
@@ -1192,6 +1197,7 @@ export const useChatStore = create<ChatStoreState>((set, get) => {
       }
       const runtimeLive = remote ? remoteLive : await live;
       if (pendingLive.get(agentId) !== pending) return; // Reset/replaced while the read was in flight.
+      const refreshPending = remote !== null && remoteTranscriptRevisions.get(agentId) !== remoteRevision;
       const buffered = pending;
       pendingLive.delete(agentId);
       // Live events that arrived during the read are newer than main's answer.
@@ -1205,6 +1211,7 @@ export const useChatStore = create<ChatStoreState>((set, get) => {
           delete loading[agentId];
           return { agents: { ...s.agents, [agentId]: foldChatEvents(s.agents[agentId], agentId, buffered) }, loading };
         });
+        if (refreshPending) await get().loadTranscript(agentId, tail);
         return;
       }
       // The transcript is authoritative, so rebuild from it rather than merging
@@ -1237,7 +1244,7 @@ export const useChatStore = create<ChatStoreState>((set, get) => {
       });
       // A resume that arrived during the read needs that session's earlier
       // events too, not just the live session_started buffered above.
-      if (changedSession && buffered.some((e) => e.sessionId === next.sessionId && e.type === 'session_started' && e.data.resumed)) {
+      if (refreshPending || (changedSession && buffered.some((e) => e.sessionId === next.sessionId && e.type === 'session_started' && e.data.resumed))) {
         await get().loadTranscript(agentId, tail);
       }
     },
@@ -1265,6 +1272,7 @@ export const useChatStore = create<ChatStoreState>((set, get) => {
     },
 
     reset: (agentId) => {
+      remoteTranscriptRevisions.delete(agentId);
       pendingLive.delete(agentId);
       set((s) => {
         const agents = { ...s.agents };
@@ -1355,12 +1363,15 @@ export function initChatEventListener(): () => void {
     useChatStore.getState().applyEvent(localizeRemoteEvent(satelliteId, event));
   });
   // A satellite's snapshot comes on every (re)connect: events sent while it was away aren't replayed,
-  // so each of its chats already read is read again from its page (authoritative, deduped by seq).
+  // so each requested chat is read again, including failed initial reads.
+  // A read already in flight observes the revision and follows up once it settles.
   const offSnapshot = onSatelliteSnapshot((satelliteId) => {
     const state = useChatStore.getState();
     const prefix = satellitePrefix(satelliteId);
-    for (const id of Object.keys(state.loaded)) {
-      if (id.startsWith(prefix) && state.loaded[id]) void state.loadTranscript(id);
+    for (const [id, revision] of remoteTranscriptRevisions) {
+      if (!id.startsWith(prefix)) continue;
+      remoteTranscriptRevisions.set(id, revision + 1);
+      void state.loadTranscript(id);
     }
   });
   return () => { offLocal(); offRemote(); offSnapshot(); };

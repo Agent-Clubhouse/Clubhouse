@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import type { PendingPermissionInfo, PermissionResolveOutcome } from '../../shared/permission-types';
+import { isRemoteAgentId, parseNamespacedId, satellitePrefix } from './remoteProjectStore';
 
 /**
  * Pending approve/deny requests for durable (PTY) agents.
@@ -16,6 +17,7 @@ interface PendingPermissionState {
 
   /** Seed from the main process (window reload, agent view mount). */
   hydrate: (permissions: PendingPermissionInfo[]) => void;
+  hydrateRemote: (satelliteId: string, permissions: PendingPermissionInfo[]) => void;
   /** A new request arrived. */
   addPending: (permission: PendingPermissionInfo) => void;
   /** A request was settled — by us, by Annex, or by timeout. */
@@ -45,8 +47,20 @@ export const usePendingPermissionStore = create<PendingPermissionState>((set, ge
 
   hydrate: (permissions) => {
     set({
-      byRequestId: Object.fromEntries(permissions.map((p) => [p.requestId, p])),
+      byRequestId: Object.fromEntries([
+        ...Object.entries(get().byRequestId).filter(([, p]) => isRemoteAgentId(p.agentId)),
+        ...permissions.map((p) => [p.requestId, p] as const),
+      ]),
     });
+  },
+
+  hydrateRemote: (satelliteId, permissions) => {
+    set((s) => ({
+      byRequestId: Object.fromEntries([
+        ...Object.entries(s.byRequestId).filter(([, p]) => !p.agentId.startsWith(satellitePrefix(satelliteId))),
+        ...permissions.map((p) => [p.requestId, p] as const),
+      ]),
+    }));
   },
 
   addPending: (permission) => {
@@ -75,7 +89,12 @@ export const usePendingPermissionStore = create<PendingPermissionState>((set, ge
   },
 
   resolve: async (agentId, requestId, decision) => {
-    const outcome = await window.clubhouse.agent.resolvePendingPermission(agentId, requestId, decision);
+    const remote = parseNamespacedId(agentId);
+    const request = parseNamespacedId(requestId);
+    if (remote && request?.satelliteId !== remote.satelliteId) throw new Error('That request belongs to a different computer.');
+    const outcome = remote
+      ? await window.clubhouse.annexClient.respondPermission(remote.satelliteId, remote.agentId, request.agentId, decision)
+      : await window.clubhouse.agent.resolvePendingPermission(agentId, requestId, decision);
     // Clear the prompt whether or not the decision applied: a rejected resolve
     // means the request is gone (expired/already answered) or was never ours,
     // and either way leaving a dead prompt on screen helps nobody. The main

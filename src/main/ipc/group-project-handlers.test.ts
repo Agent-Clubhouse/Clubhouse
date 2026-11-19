@@ -82,9 +82,6 @@ vi.mock('../services/group-project-lifecycle', () => ({
   setRecordDecidesMembers: vi.fn(),
 }));
 
-vi.mock('../services/group-project-shoulder-tap', () => ({
-  executeShoulderTap: vi.fn(async () => ({ delivered: true })),
-}));
 
 vi.mock('../services/annex-event-bus', () => ({
   emitGroupProjectChanged: vi.fn(),
@@ -105,7 +102,6 @@ import { IPC } from '../../shared/ipc-channels';
 import { groupProjectRegistry } from '../services/group-project-registry';
 import { groupProjectHost } from '../services/group-project-host';
 import { getBulletinBoard } from '../services/group-project-bulletin';
-import { executeShoulderTap } from '../services/group-project-shoulder-tap';
 import * as annexEventBus from '../services/annex-event-bus';
 import { broadcastToAllWindows } from '../util/ipc-broadcast';
 import { registerGroupProjectHandlers, _resetHandlersForTesting } from './group-project-handlers';
@@ -138,7 +134,7 @@ function getHandler(channel: string): HandlerFn {
 describe('group-project-handlers', () => {
   it('attributes a person own-grant IPC toggle explicitly at the write boundary', async () => {
     await getHandler(IPC.GROUP_PROJECT.SET_OWN_GRANT)(fakeEvent, 'gp-1', 'deliver', 'off');
-    expect(groupProjectHost.update).toHaveBeenCalledWith('gp-1', { metadata: { grants: { deliver: 'off', wake: 'off', actions: 'allow' } } }, { author: { label: 'user' } });
+    expect(groupProjectHost.update).toHaveBeenCalledWith('gp-1', { metadata: { grants: { deliver: 'off', wake: 'allow', actions: 'allow' } } }, { author: { label: 'user' } });
   });
 
   // ── Registration ──────────────────────────────────────────────────────
@@ -154,16 +150,12 @@ describe('group-project-handlers', () => {
       IPC.GROUP_PROJECT.GET_TOPIC_MESSAGES,
       IPC.GROUP_PROJECT.GET_ALL_MESSAGES,
       IPC.GROUP_PROJECT.POST_BULLETIN_MESSAGE,
-      IPC.GROUP_PROJECT.SEND_SHOULDER_TAP,
       IPC.GROUP_PROJECT.DELETE_MESSAGE,
       IPC.GROUP_PROJECT.DELETE_TOPIC,
       IPC.GROUP_PROJECT.SET_TOPIC_PROTECTION,
       IPC.GROUP_PROJECT.GET_RETENTION_CONFIG,
       IPC.GROUP_PROJECT.SAVE_RETENTION_CONFIG,
       IPC.GROUP_PROJECT.INJECT_MESSAGE,
-      IPC.GROUP_PROJECT.SET_POLLING,
-      IPC.GROUP_PROJECT.GET_PAUSED_POLLING,
-      IPC.GROUP_PROJECT.RESUME_POLLING,
     ];
     for (const channel of expectedChannels) {
       expect(handlers.has(channel), `Missing handler for ${channel}`).toBe(true);
@@ -420,37 +412,6 @@ describe('group-project-handlers', () => {
   });
 
   // ── Shoulder Tap ──────────────────────────────────────────────────────
-
-  describe('SEND_SHOULDER_TAP', () => {
-    it('executes shoulder tap with target agent', async () => {
-      const handler = getHandler(IPC.GROUP_PROJECT.SEND_SHOULDER_TAP);
-      await handler(fakeEvent, 'gp-1', 'agent-2', 'Hey, check this out');
-      expect(executeShoulderTap).toHaveBeenCalledWith({
-        projectId: 'gp-1',
-        senderLabel: 'user',
-        targetAgentId: 'agent-2',
-        message: 'Hey, check this out',
-      });
-    });
-
-    it('sends broadcast tap when targetAgentId is undefined', async () => {
-      const handler = getHandler(IPC.GROUP_PROJECT.SEND_SHOULDER_TAP);
-      await handler(fakeEvent, 'gp-1', undefined, 'Everyone listen');
-      expect(executeShoulderTap).toHaveBeenCalledWith({
-        projectId: 'gp-1',
-        senderLabel: 'user',
-        targetAgentId: null,
-        message: 'Everyone listen',
-      });
-    });
-
-    it('rejects missing message', () => {
-      const handler = getHandler(IPC.GROUP_PROJECT.SEND_SHOULDER_TAP);
-      expect(() => handler(fakeEvent, 'gp-1', 'agent-2')).toThrow();
-    });
-  });
-
-  // ── Delete Message ────────────────────────────────────────────────────
 
   describe('DELETE_MESSAGE', () => {
     it('calls board.deleteMessage and returns result', async () => {

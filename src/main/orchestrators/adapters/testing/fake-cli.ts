@@ -34,8 +34,9 @@ export function chatFixturePath(cli: ChatFixtureCli | 'copilot-sdk', name: strin
   return path.join(CHAT_FIXTURES_DIR, FIXTURE_DIRS[cli], `${name}.jsonl`);
 }
 
-/** Per-agent sidecar, independent of other CLIs sharing the fixture's latest report. */
-export function fakeCliAgentReportPath(reportPath: string, agentId: string): string {
+/** Scoped sidecar; null selects one-off runs outside an agent. */
+export function fakeCliAgentReportPath(reportPath: string, agentId: string | null): string {
+  if (agentId === null) return `${reportPath}.no-agent.json`;
   return `${reportPath}.agent-${createHash('sha256').update(agentId).digest('hex')}.json`;
 }
 

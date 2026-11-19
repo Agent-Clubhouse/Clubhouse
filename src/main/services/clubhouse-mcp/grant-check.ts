@@ -242,6 +242,16 @@ export function checkToolGrant(agentId: string, grant: ToolGrant | undefined, ar
   // A refusal wins over an ask: there's no point asking the user for a call that would fail anyway.
   const asks: AskedAction[] = [];
   for (const d of declarations) {
+    if (listing && d.actions.includes('project.link')) {
+      const matching = grants.filter((g) => g.action === 'project.link');
+      if (!matching.length) return { ok: false, reason: 'no_grant', message: GRANT_REFUSAL_MESSAGES.no_grant, action: 'project.link', targetKind: 'project' };
+      if (!matching.some((g) => g.mode === 'allow')) asks.push({ action: 'project.link', where: 'projects' });
+      continue;
+    }
+    if (d.actions.includes('project.link') && argTargets?.has(d)
+      && !argTargets.get(d)?.every((target) => 'projectLinkId' in target)) {
+      return { ok: false, reason: 'no_grant', message: 'A project is unknown, unavailable or not paired. Use list_project_links for valid ids.', action: 'project.link', targetKind: 'project' };
+    }
     if (d.target === 'handoff_peer' && listing) {
       // Listing: any target covered by this action makes the tool useful. The
       // actual peer is resolved and checked before an execution or an Ask-first request.

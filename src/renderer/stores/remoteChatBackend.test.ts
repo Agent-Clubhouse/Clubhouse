@@ -113,4 +113,54 @@ describe('chat for an agent on another desktop (#2390)', () => {
     offChat();
     offAnnex();
   });
+
+  it('retries a failed first chat read on reconnect without remounting the view', async () => {
+    let fire: ((e: { satelliteId: string; type: string; payload: unknown }) => void) | null = null;
+    Object.assign(window.clubhouse.annexClient, { onSatelliteEvent: (cb: typeof fire) => { fire = cb; return () => { fire = null; }; } });
+    const { initAnnexClientListener } = await import('./annexClientStore');
+    const offAnnex = initAnnexClientListener();
+    const offChat = initChatEventListener();
+    try {
+      chatPage.mockRejectedValueOnce(new Error('Satellite not connected'));
+      await useChatStore.getState().loadTranscript(NS);
+      expect(useChatStore.getState().loaded[NS]).toBeUndefined();
+      fire!({ satelliteId: SAT, type: 'snapshot', payload: { projects: [], agents: {}, quickAgents: {} } });
+
+      await vi.waitFor(() => expect(useChatStore.getState().agents[NS]?.sessionId).toBe('sess_live'));
+      expect(chatPage).toHaveBeenCalledTimes(2);
+    } finally {
+      offChat();
+      offAnnex();
+    }
+  });
+
+  it.each([
+    { alreadyLoaded: false, snapshots: 1 },
+    { alreadyLoaded: true, snapshots: 1 },
+    { alreadyLoaded: false, snapshots: 3 },
+  ])('rereads once after $snapshots wake snapshots cross a read (already loaded: $alreadyLoaded)', async ({ alreadyLoaded, snapshots }) => {
+    let fire: ((e: { satelliteId: string; type: string; payload: unknown }) => void) | null = null;
+    Object.assign(window.clubhouse.annexClient, { onSatelliteEvent: (cb: typeof fire) => { fire = cb; return () => { fire = null; }; } });
+    const { initAnnexClientListener } = await import('./annexClientStore');
+    const offAnnex = initAnnexClientListener();
+    const offChat = initChatEventListener();
+    try {
+      if (alreadyLoaded) await useChatStore.getState().loadTranscript(NS);
+      chatPage.mockClear();
+      let respond!: (page: unknown) => void;
+      chatPage.mockImplementationOnce(() => new Promise((resolve) => { respond = resolve; }));
+      const firstRead = useChatStore.getState().loadTranscript(NS);
+      for (let i = 0; i < snapshots; i++) {
+        fire!({ satelliteId: SAT, type: 'snapshot', payload: { projects: [], agents: {}, quickAgents: {} } });
+      }
+      respond({ events: [], state: 'sleeping', readOnly: true });
+      await firstRead;
+
+      await vi.waitFor(() => expect(useChatStore.getState().agents[NS]?.sessionId).toBe('sess_live'));
+      expect(chatPage).toHaveBeenCalledTimes(2);
+    } finally {
+      offChat();
+      offAnnex();
+    }
+  });
 });

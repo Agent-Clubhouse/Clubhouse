@@ -1147,12 +1147,15 @@ export class ChatAgentRuntime implements AgentRuntime {
     const pending = this.permissions.get(requestId);
     // Already answered (another view, the desktop prompt or Annex got there first): nothing to do.
     if (!pending || pending.settled) return;
+    const release = pending.queueRequestId ? permissionQueue.claimPermission(pending.queueRequestId, this.agentId) : undefined;
+    if (pending.queueRequestId && !release) return;
     pending.settled = true;
     const undo = this.answerHere('p', requestId);
     try {
       await session.respondPermission(requestId, optionId, extras);
     } catch (err) {
       pending.settled = false;
+      release?.();
       undo();
       throw err;
     }

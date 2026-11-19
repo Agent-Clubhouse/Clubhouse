@@ -143,7 +143,6 @@ The Clubhouse MCP always runs, so no setting closes it. `clubhouse-mcp/mcp-call-
 
 **Not gated:** inbound messages, and the `clubhouse` CLI endpoint, which isn't an MCP tool: it changes a project's or agent's appearance and has no route to orchestration or other agents.
 
-**Polling.** A member whose gate closes (it can't use Clubhouse tools) gets no polling start, and `nudge_polling` to it is refused. A running member whose session is polling gets one stop when it loses its tools, and the group project offers Resume once it has them again. With MCP always on this only happens for a caller the gate doesn't know.
 
 ## Reads change nothing
 

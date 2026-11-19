@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { usePendingPermissionStore, selectPendingForAgent } from '../../stores/pendingPermissionStore';
 import type { PendingPermissionInfo, PermissionResolveRejection } from '../../../shared/permission-types';
+import { isRemoteAgentId } from '../../stores/remoteProjectStore';
 
 /** Human-readable explanation for a refused decision. */
 export function explainRejection(reason: PermissionResolveRejection): string {
@@ -81,8 +82,8 @@ export function DurablePermissionPrompt({ agentId }: Props) {
     try {
       const outcome = await resolve(agentId, permission.requestId, decision);
       if (outcome.status === 'rejected') setError(explainRejection(outcome.reason));
-    } catch {
-      setError('Could not reach the agent to send that decision.');
+    } catch (err) {
+      setError(isRemoteAgentId(agentId) && err instanceof Error ? err.message : 'Could not reach the agent to send that decision.');
     } finally {
       setBusy(false);
     }

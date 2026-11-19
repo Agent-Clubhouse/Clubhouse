@@ -39,7 +39,6 @@ vi.mock('./settings-store', async (importOriginal) => ({
 
 const mockPtyWrite = vi.fn();
 const mockIsRunning = vi.fn().mockReturnValue(false);
-// What the gate decides for polling is covered in group-project-polling.test.ts.
 vi.mock('./clubhouse-mcp/mcp-call-gate', async (original) => ({ ...await original<typeof import('./clubhouse-mcp/mcp-call-gate')>(), mcpCallAccess: () => 'open' }));
 
 vi.mock('./pty-manager', () => ({
@@ -94,7 +93,7 @@ describe('GroupProjectLifecycle', () => {
   it('does not write a group-project message into a terminal that is shutting down', () => {
     mockIsStopping.mockReturnValue(true);
     try {
-      injectPtyMessage('agent-1', 'start polling');
+      injectPtyMessage('agent-1', 'Read a new post');
       expect(mockPtyWrite).not.toHaveBeenCalled();
     } finally {
       mockIsStopping.mockReturnValue(false);
@@ -187,37 +186,8 @@ describe('GroupProjectLifecycle', () => {
     expect(welcomeCall).toBeUndefined();
   });
 
-  it('injects polling instruction on join when polling is enabled', async () => {
-    // Set up a project with polling enabled
-    await groupProjectRegistry.create('Test Project');
-    const projects = await groupProjectRegistry.list();
-    const project = projects[0];
-    await groupProjectRegistry.update(project.id, { metadata: { pollingEnabled: true } });
-
-    initGroupProjectLifecycle();
-
-    bindingManager.bind('agent-1', {
-      targetId: project.id,
-      targetKind: 'group-project',
-      label: 'GP',
-      agentName: 'robin',
-    });
-
-    // Wait for polling delay (500ms) + processing
-    await new Promise(r => setTimeout(r, 800));
-
-    const calls = mockPtyWrite.mock.calls;
-    const pollingCall = calls.find(
-      (c: unknown[]) => typeof c[1] === 'string' && (c[1] as string).includes('Group Project notification') && (c[1] as string).includes('start polling'),
-    );
-    expect(pollingCall).toBeDefined();
-    expect(pollingCall![0]).toBe('agent-1');
-  });
 
   it('uses orchestrator-specific paste timing for PTY injection', async () => {
-    // Set up a project with polling enabled
-    const project = await groupProjectRegistry.create('Timing Project');
-    await groupProjectRegistry.update(project.id, { metadata: { pollingEnabled: true } });
 
     // Simulate a Copilot CLI agent with 800ms paste timing
     mockGetAgentOrchestrator.mockReturnValue('copilot-cli');
@@ -225,24 +195,8 @@ describe('GroupProjectLifecycle', () => {
       getPasteSubmitTiming: () => ({ initialDelayMs: 800, retryDelayMs: 600, finalCheckDelayMs: 400 }),
     });
 
-    initGroupProjectLifecycle();
-
-    bindingManager.bind('agent-ghcp', {
-      targetId: project.id,
-      targetKind: 'group-project',
-      label: 'GP',
-      agentName: 'copilot-bot',
-    });
-
-    // Polling message should fire after 500ms delay (bracketed paste)
-    await new Promise(r => setTimeout(r, 700));
-    const pollingCall = mockPtyWrite.mock.calls.find(
-      (c: unknown[]) => typeof c[1] === 'string' && (c[1] as string).includes('bulletin'),
-    );
-    expect(pollingCall).toBeDefined();
-
-    // Enter keystroke should NOT have fired yet at 200ms after polling paste
-    // (would with default 200ms timing) but should fire after 800ms
+    injectPtyMessage('agent-ghcp', 'Read the new board post');
+    expect(mockPtyWrite).toHaveBeenCalledWith('agent-ghcp', expect.stringContaining('Read the new board post'));
     mockPtyWrite.mockClear();
     await new Promise(r => setTimeout(r, 200));
     const earlyEnter = mockPtyWrite.mock.calls.find(
@@ -285,142 +239,10 @@ describe('GroupProjectLifecycle', () => {
     expect(messages[0].body).toContain('Alpha Squad');
   });
 
-  it('includes project name in polling start message', async () => {
-    const project = await groupProjectRegistry.create('Beta Team');
-    await groupProjectRegistry.update(project.id, { metadata: { pollingEnabled: true } });
 
-    initGroupProjectLifecycle();
 
-    bindingManager.bind('agent-1', {
-      targetId: project.id,
-      targetKind: 'group-project',
-      label: 'GP',
-      agentName: 'robin',
-    });
 
-    await new Promise(r => setTimeout(r, 800));
 
-    const calls = mockPtyWrite.mock.calls;
-    const pollingCall = calls.find(
-      (c: unknown[]) => typeof c[1] === 'string' && (c[1] as string).includes('Group Project notification') && (c[1] as string).includes('bulletin'),
-    );
-    expect(pollingCall).toBeDefined();
-    expect(pollingCall![1]).toContain('"Beta Team"');
-  });
-
-  it('sends Claude Code-specific polling instruction with /loop', async () => {
-    const project = await groupProjectRegistry.create('CC Project');
-    await groupProjectRegistry.update(project.id, { metadata: { pollingEnabled: true } });
-
-    // Simulate a Claude Code agent
-    mockGetAgentOrchestrator.mockReturnValue('claude-code');
-
-    initGroupProjectLifecycle();
-
-    bindingManager.bind('agent-cc', {
-      targetId: project.id,
-      targetKind: 'group-project',
-      label: 'GP',
-      agentName: 'claude-bot',
-    });
-
-    await new Promise(r => setTimeout(r, 800));
-
-    const calls = mockPtyWrite.mock.calls;
-    const pollingCall = calls.find(
-      (c: unknown[]) => typeof c[1] === 'string' && (c[1] as string).includes('/loop'),
-    );
-    expect(pollingCall).toBeDefined();
-    expect(pollingCall![1]).toContain('"CC Project"');
-    expect(pollingCall![1]).toContain('read_bulletin');
-  });
-
-  it('does not inject duplicate loop when concurrent notifyChange calls fire before members.add', async () => {
-    // Regression test for the race condition where two concurrent syncMemberships
-    // calls both pass the !members.has() check before either reaches members.add().
-    // This happens when an agent has multiple bindings created in rapid succession
-    // (e.g. during canvas wire restore: agent→groupProject + agent→browser).
-    const project = await groupProjectRegistry.create('Race Test Project');
-    await groupProjectRegistry.update(project.id, { metadata: { pollingEnabled: true } });
-
-    initGroupProjectLifecycle();
-
-    // First bind: agent→groupProject. This triggers syncMemberships(agent-1) which
-    // starts executing asynchronously. Before it can await and add to members, the
-    // second bind fires another notifyChange for the same agent.
-    bindingManager.bind('agent-1', {
-      targetId: project.id,
-      targetKind: 'group-project',
-      label: 'GP',
-      agentName: 'robin',
-    });
-
-    // Second bind for a different target on the same agent. This fires another
-    // notifyChange('agent-1') → another syncMemberships('agent-1'). Without the
-    // fix, both calls would see !members.has('agent-1') == true and both inject
-    // the polling loop. With the fix, members.add happens before the first await
-    // so the second call sees members.has('agent-1') == true and skips.
-    bindingManager.bind('agent-1', {
-      targetId: 'browser-widget',
-      targetKind: 'browser',
-      label: 'Browser',
-    });
-
-    // Wait long enough for all async lifecycle processing + polling delay (500ms)
-    await new Promise(r => setTimeout(r, 800));
-
-    const pollingCalls = mockPtyWrite.mock.calls.filter(
-      (c: unknown[]) => typeof c[1] === 'string' && (c[1] as string).includes('bulletin'),
-    );
-    // The loop start message must be injected exactly once, not twice
-    expect(pollingCalls).toHaveLength(1);
-  });
-
-  it('sends generic polling instruction for non-claude orchestrators', async () => {
-    const project = await groupProjectRegistry.create('Codex Project');
-    await groupProjectRegistry.update(project.id, { metadata: { pollingEnabled: true } });
-
-    // Simulate a Codex CLI agent
-    mockGetAgentOrchestrator.mockReturnValue('codex-cli');
-
-    initGroupProjectLifecycle();
-
-    bindingManager.bind('agent-codex', {
-      targetId: project.id,
-      targetKind: 'group-project',
-      label: 'GP',
-      agentName: 'codex-bot',
-    });
-
-    await new Promise(r => setTimeout(r, 800));
-
-    const calls = mockPtyWrite.mock.calls;
-    const pollingCall = calls.find(
-      (c: unknown[]) => typeof c[1] === 'string' && (c[1] as string).includes('Group Project notification') && (c[1] as string).includes('bulletin'),
-    );
-    expect(pollingCall).toBeDefined();
-    expect(pollingCall![1]).not.toContain('/loop');
-    expect(pollingCall![1]).toContain('read_bulletin');
-  });
-
-  it('does not inject polling instruction when polling is disabled', async () => {
-    initGroupProjectLifecycle();
-
-    bindingManager.bind('agent-1', {
-      targetId: 'gp_123',
-      targetKind: 'group-project',
-      label: 'GP',
-      agentName: 'robin',
-    });
-
-    await new Promise(r => setTimeout(r, 800));
-
-    const calls = mockPtyWrite.mock.calls;
-    const pollingCall = calls.find(
-      (c: unknown[]) => typeof c[1] === 'string' && (c[1] as string).includes('Group Project notification') && (c[1] as string).includes('start polling'),
-    );
-    expect(pollingCall).toBeUndefined();
-  });
 
   it('suppresses spurious rejoin when agent is not running', async () => {
     initGroupProjectLifecycle();
@@ -630,47 +452,11 @@ describe('GroupProjectLifecycle', () => {
     expect(topics).toContain('control');
   });
 
-  it('passes the inbox channel to the polling instruction', async () => {
-    const project = await groupProjectRegistry.create('Inboxer');
-    await groupProjectRegistry.update(project.id, { metadata: { pollingEnabled: true } });
-    mockGetAgentOrchestrator.mockReturnValue('claude-code');
-
-    initGroupProjectLifecycle();
-
-    bindingManager.bind('agent-1', {
-      targetId: project.id,
-      targetKind: 'group-project',
-      label: 'GP',
-      agentName: 'falcon',
-    });
-
-    await new Promise(r => setTimeout(r, 800));
-
-    const calls = mockPtyWrite.mock.calls;
-    const pollingCall = calls.find(
-      (c: unknown[]) => typeof c[1] === 'string' && (c[1] as string).includes('start polling'),
-    );
-    expect(pollingCall).toBeDefined();
-    expect(pollingCall![1]).toContain('"inbox-falcon"');
-  });
 
   describe('bindings restored at startup (#1544)', () => {
     const restore = (agentId: string, projectId: string, agentName: string) =>
       applyPersistedBinding({ agentId, targetId: projectId, targetKind: 'group-project', label: 'GP', agentName });
 
-    it('posts no join bulletin and sends no polling start for a restored member', async () => {
-      const project = await groupProjectRegistry.create('Goobers');
-      await groupProjectRegistry.update(project.id, { metadata: { pollingEnabled: true } });
-      initGroupProjectLifecycle();
-      mockIsRunning.mockReturnValue(true);
-
-      expect(restore('agent-1', project.id, 'robin')).toBe('created');
-      await new Promise(r => setTimeout(r, 800));
-
-      expect(await getBulletinBoard(project.id).getTopicMessages('system')).toHaveLength(0);
-      // Timers from earlier tests may still write a bare Enter; no message text was written.
-      expect(mockPtyWrite.mock.calls.filter((c: unknown[]) => String(c[1]).length > 1)).toHaveLength(0);
-    });
 
     it('still announces a member the user draws afterwards', async () => {
       initGroupProjectLifecycle();
