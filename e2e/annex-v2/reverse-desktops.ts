@@ -225,15 +225,15 @@ export const test = base.extend<{ reverse: ReverseDesktops; reverseScenario: 'qu
             },
           });
           const captured = await captureOwnedReverseAudit(forward, [peer(apps[0], 0), peer(apps[1], 1)]);
-          await info.attach('reverse-dial-audit', {
-            body: JSON.stringify({
-              audits: captured.audits, listenerPorts, sentinelAccepts: guard.accepts(),
-              forwardSourcePorts: captured.forward.sourcePorts, forwardTargetSourcePorts: captured.forward.targetSourcePorts,
-              capture: { ...captured, errors: captured.status === 'failed' ? captured.errors.map(auditError) : [] },
-            }), contentType: 'application/json',
-          });
           if (captured.status === 'failed') errors.push(...captured.errors);
-          else {
+          const capturePath = info.outputPath('reverse-dial-audit.json');
+          await fs.promises.writeFile(capturePath, JSON.stringify({
+            audits: captured.audits, listenerPorts, sentinelAccepts: guard.accepts(),
+            forwardSourcePorts: captured.forward.sourcePorts, forwardTargetSourcePorts: captured.forward.targetSourcePorts,
+            capture: { ...captured, errors: captured.status === 'failed' ? captured.errors.map(auditError) : [] },
+          }));
+          await info.attach('reverse-dial-audit', { path: capturePath, contentType: 'application/json' });
+          if (captured.status === 'complete') {
             const audits = captured.audits;
             for (const audit of audits) expect(audit).toMatchObject({ installed: true, sealed: true, phase: 'exit', pending: 0 });
             assertDialAudit(audits[0].attempts, { host: '127.0.0.1', port: forward.port }, captured.forward.sourcePorts, guard.accepts());
