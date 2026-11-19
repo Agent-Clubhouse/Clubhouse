@@ -1,5 +1,6 @@
 import { isRemoteAgentSettings, REMOTE_SETTINGS_MAX_BYTES, type RemoteAgentSettings } from '../../shared/remote-agent-settings';
 import { isRemoteAgentDetails, REMOTE_DETAILS_MAX_BYTES, type RemoteAgentDetails } from '../../shared/remote-agent-details';
+import { isRemoteAgentChanges, isRemoteChangesQuery, REMOTE_CHANGES_MAX_BYTES, type RemoteAgentChanges } from '../../shared/remote-agent-changes';
 /**
  * Annex V2 Client — Service Discovery & Connection (#862)
  *
@@ -2395,6 +2396,29 @@ export async function requestAgentDetails(machine: string, agentId: string): Pro
     return { status: 'ok', value: res.body };
   } catch {
     // telemetry-exempt: a bounded display status; remote errors are never shown verbatim.
+    return { status: current() ? 'error' : 'offline' };
+  }
+}
+
+export async function requestAgentChanges(machine: string, agentId: string, query: unknown): Promise<ControllerReadResult<RemoteAgentChanges>> {
+  if (!isRemoteChangesQuery(query)) return { status: 'error' };
+  const sat = satelliteFor(machine);
+  if (!sat || sat.state !== 'connected') return { status: 'offline' };
+  const epoch = connectionEpochs.get(sat.id) ?? 0;
+  const current = () => satelliteFor(machine) === sat && sat.state === 'connected' && (connectionEpochs.get(sat.id) ?? 0) === epoch;
+  const params = new URLSearchParams({ scope: query.scope });
+  if (query.offset !== undefined) params.set('offset', String(query.offset));
+  if (query.fileKey) params.set('fileKey', query.fileKey);
+  try {
+    const res = await satelliteJson(sat.fingerprint, 'GET', `/api/v1/agents/${encodeURIComponent(agentId)}/changes?${params}`, undefined, { maxResponseBytes: REMOTE_CHANGES_MAX_BYTES });
+    if (!current()) return { status: 'offline' };
+    if (res.status === 404 || res.status === 405) return { status: 'unavailable' };
+    if (res.status === 401 || res.status === 403) return { status: 'forbidden' };
+    if (res.status === 429) return { status: 'rate_limited', retryAfterMs: res.retryAfterMs ?? 1000 };
+    if (res.status !== 200 || !isRemoteAgentChanges(res.body, agentId, query)) return { status: 'error' };
+    return { status: 'ok', value: res.body };
+  } catch {
+    // telemetry-exempt: a bounded read status, never raw host errors or a local git fallback.
     return { status: current() ? 'error' : 'offline' };
   }
 }

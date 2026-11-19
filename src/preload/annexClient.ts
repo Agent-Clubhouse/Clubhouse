@@ -1,6 +1,7 @@
 import { ipcRenderer } from 'electron';
 import type { RemoteAgentSettings } from '../shared/remote-agent-settings';
 import type { RemoteAgentDetails } from '../shared/remote-agent-details';
+import type { RemoteAgentChanges, RemoteChangesQuery } from '../shared/remote-agent-changes';
 import { IPC } from '../shared/ipc-channels';
 import type { GroupProjectRolesView } from '../shared/group-project-types';
 import type { ControllerChatQuery, ControllerChatPage, ControllerChatSessions, ControllerReadResult } from '../shared/controller-chat';
@@ -46,6 +47,8 @@ export const annexClient = {
     ipcRenderer.invoke(IPC.ANNEX_CLIENT.AGENT_SETTINGS, machine, agentId),
   agentDetails: (machine: string, agentId: string): Promise<ControllerReadResult<RemoteAgentDetails>> =>
     ipcRenderer.invoke(IPC.ANNEX_CLIENT.AGENT_DETAILS, machine, agentId),
+  agentChanges: (machine: string, agentId: string, query: RemoteChangesQuery): Promise<ControllerReadResult<RemoteAgentChanges>> =>
+    ipcRenderer.invoke(IPC.ANNEX_CLIENT.AGENT_CHANGES, machine, agentId, query),
   controllerChatPage: (machine: string, opts: ControllerChatQuery = {}): Promise<ControllerReadResult<ControllerChatPage>> =>
     ipcRenderer.invoke(IPC.ANNEX_CLIENT.CONTROLLER_CHAT_PAGE, machine, opts),
   controllerChatSessions: (machine: string): Promise<ControllerReadResult<ControllerChatSessions>> =>

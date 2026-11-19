@@ -25,7 +25,6 @@ import { listActions, actionNames } from './actions';
 import { getAgentCanvasMemberships } from './canvas-store-reader';
 import { managedAgents, statusFor } from './managed-agents';
 import { readMcpConfig, readLaunchWrapper, readDefaultMcps } from './agent-settings-service';
-import { getBranchChanges } from './git-service';
 import { isSessionCapable } from '../orchestrators';
 import { buildSessionSummary, normalizeSessionEvents, SUMMARY_TRANSCRIPT_MAX_BYTES } from './session-reader';
 import { redactSecretValues } from '../telemetry/diag-redaction';
@@ -259,15 +258,9 @@ export async function readRemoteAgentDetails(agentId: string, authorized: () => 
       }
       if (!hits.length) c.state = 'not-applicable';
     });
-    await read('changes', async (c) => {
-      const changes = await getBranchChanges(cwd);
-      c.summary = changes.available ? `${changes.files.length} files` : 'not a git repository';
-      row(c, 'Branch', changes.branch);
-      row(c, 'Base', changes.base);
-      if (!changes.available) c.notes.push('Changes need the agent to work in a git repository.');
-      else if (changes.noBase) c.notes.push('No main or master branch to compare with.');
-      for (const f of changes.files) row(c, f.path, `${f.status}${f.oldPath ? ` · from ${f.oldPath}` : ''} · ${f.binary ? 'binary' : `+${f.additions} −${f.deletions}`}`);
-      if (changes.available && !changes.files.length) c.notes.push('Nothing changed on this branch yet.');
+    await read('changes', (c) => {
+      c.summary = 'Branch, session and last turn';
+      c.notes.push('File comparisons are read through the host’s bounded read-only Changes service.');
     });
     if (!authorized()) return refused();
     for (const c of cards) {

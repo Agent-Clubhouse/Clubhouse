@@ -20,6 +20,7 @@ import { mcpRows } from './McpCard';
 import { useRemoteDetailsChat } from './useRemoteDetailsChat';
 import { CanvasMembershipList } from './CanvasMembershipList';
 import { jumpToCanvas, remoteCanvasJumpUnavailable } from './agent-canvases';
+import { RemoteChangesCard } from './RemoteChangesCard';
 
 type Result = ControllerReadResult<RemoteAgentDetails> | { status: 'loading' };
 function resultMessage(status: Result['status']): string {
@@ -156,7 +157,7 @@ export function RemoteAgentDetailsView({ agent, chat, onShowInStream, missedSuba
       {['error', 'rate_limited', 'unavailable'].includes(result.status) && <Button kind="ghost" onClick={() => setRetry((n) => n + 1)}>Refresh</Button>}
     </div>
     <RemoteSettingsCard agent={{ ...agent, status }} chat={session} runtimeUnconfirmed={runtimeUnconfirmed} result={result.status === 'unavailable' ? undefined : settingsResult} onRetry={() => setRetry((n) => n + 1)}>{card('settings') && <Evidence card={card('settings')!} />}</RemoteSettingsCard>
-    {!dispatcher && basic('changes', 'Changes')}
+    {!dispatcher && <RemoteChangesCard agent={agent} details={details} status={result.status} freshnessKey={refreshKey} open={open('changes')} onToggle={() => toggleCard('changes')} />}
     {!dispatcher && agent.kind === 'durable' && !agent.parentAgentId && basic('dispatcher', 'Dispatcher')}
     {!dispatcher && agent.kind === 'durable' && basic('orchestrate', 'Orchestration')}
     {showSubagents && session && map && <DetailsCard id="subagents" title="Subagents" summary={subagentSummary(map)} open={open('subagents')} onToggle={() => toggleCard('subagents')}>

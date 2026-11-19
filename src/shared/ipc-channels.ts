@@ -587,6 +587,7 @@ export const IPC = {
     CHAT_PAGE: 'annex-client:chat-page',
     AGENT_SETTINGS: 'annex-client:agent-settings',
     AGENT_DETAILS: 'annex-client:agent-details',
+    AGENT_CHANGES: 'annex-client:agent-changes',
     CONTROLLER_CHAT_PAGE: 'annex-client:controller-chat-page',
     CONTROLLER_CHAT_SESSIONS: 'annex-client:controller-chat-sessions',
     CHAT_SESSIONS: 'annex-client:chat-sessions',

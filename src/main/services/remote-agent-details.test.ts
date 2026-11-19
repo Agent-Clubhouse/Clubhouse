@@ -68,7 +68,7 @@ describe('host selected-agent Details projections', () => {
     const value = await read();
     expect(value.cards.find((c) => c.id === 'orchestrate')?.rows).toContainEqual({ label: 'At once', value: '5' });
     expect(value.cards.find((c) => c.id === 'session')?.rows).toContainEqual({ label: 'Folder', value: '/host/selected' });
-    expect(m.branch).toHaveBeenCalledWith('/host/selected');
+    expect(m.branch).not.toHaveBeenCalled(); // strict paged Changes uses its own selected-target read, never this swallowing legacy reader.
     expect(m.helpers).toHaveBeenCalledWith('/host/project', 'a1', { includeDisposed: true, readOnly: true });
     expect(m.canvases).toHaveBeenCalledWith('a1', 'p1', { strict: true });
     expect(value.cards.find((c) => c.id === 'dispatcher')?.state).toBe('not-applicable');

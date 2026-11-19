@@ -182,6 +182,10 @@ export function registerAnnexClientHandlers(): void {
     [stringArg(), stringArg({ maxLength: 240 })],
     (_event, machine, agentId) => annexClient.requestAgentDetails(machine, agentId),
   ));
+  ipcMain.handle(IPC.ANNEX_CLIENT.AGENT_CHANGES, withValidatedArgs(
+    [stringArg(), stringArg({ maxLength: 240 }), objectArg()],
+    (_event, machine, agentId, query) => annexClient.requestAgentChanges(machine, agentId, query),
+  ));
   ipcMain.handle(IPC.ANNEX_CLIENT.CONTROLLER_CHAT_PAGE, withValidatedArgs(
     [stringArg(), objectArg({ optional: true })],
     (_event, machine, opts) => annexClient.requestControllerChatPage(machine, opts as import('../../shared/controller-chat').ControllerChatQuery),

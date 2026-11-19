@@ -3058,7 +3058,7 @@ describe('annex-client', () => {
       annexClient._addConnectedSatelliteForTesting(FP);
     });
 
-    it.each(['requestAgentSettings', 'requestAgentDetails'] as const)('discards %s responses across an in-place disconnect/reconnect epoch', async (method) => {
+    it.each(['requestAgentSettings', 'requestAgentDetails', 'requestAgentChanges'] as const)('discards %s responses across an in-place disconnect/reconnect epoch', async (method) => {
       let finish!: () => void;
       vi.mocked(https.request).mockImplementationOnce(((_url: string, _opts: unknown, callback: (response: unknown) => void) => {
         const req = Object.assign(new EventEmitter(), { end: () => {
@@ -3069,7 +3069,7 @@ describe('annex-client', () => {
         }, destroy: vi.fn() });
         return req;
       }) as any);
-      const pending = annexClient[method](FP, 'a1');
+      const pending = annexClient[method](FP, 'a1', { scope: 'branch' });
       annexClient._receiveSatelliteDisconnectForTesting(FP);
       vi.mocked(annexPeers.getPeer).mockReturnValue({ fingerprint: FP, role: 'satellite', kind: 'desktop', tlsCertificateFingerprint: 'pin' } as any);
       annexClient.connect(FP);
@@ -3094,6 +3094,24 @@ describe('annex-client', () => {
       expect(await annexClient.requestAgentDetails(FP, 'other')).toEqual({ status: 'error' });
       answers.push({ status: 200, body: { ...value, version: 2 } });
       expect(await annexClient.requestAgentDetails(FP, 'a?/#')).toEqual({ status: 'error' });
+    });
+    it('reads only an exact selected-agent Changes scope/page/key and rejects old/refused/malformed responses', async () => {
+      const value = { version: 1, readOnly: true, agentId: 'a?/#', observedAt: 1, scope: 'branch', state: 'ok', branch: 'feature', base: 'main', sessionId: null, turnId: null, live: true, shared: false, files: [], totalFiles: 0, offset: 0, nextOffset: null, uncompared: 0, skippedLarge: [], skippedRepos: [], skippedOmitted: 0 };
+      answers.push({ status: 200, body: value });
+      expect(await annexClient.requestAgentChanges(FP, 'a?/#', { scope: 'branch' })).toEqual({ status: 'ok', value });
+      expect(requests[0].url).toContain('/agents/a%3F%2F%23/changes?scope=branch');
+      expect(requests[0].method).toBe('GET');
+      for (const status of [404, 405, 401, 403, 429]) {
+        answers.push({ status, body: { private: 'PRIVATE_ERROR' } });
+        expect((await annexClient.requestAgentChanges(FP, 'a1', { scope: 'branch' })).status).toBe(status === 429 ? 'rate_limited' : status === 404 || status === 405 ? 'unavailable' : 'forbidden');
+      }
+      for (const patch of [{ agentId: 'other' }, { scope: 'turn' }, { version: 2 }, { files: [null] }, { nextOffset: -1 }]) {
+        answers.push({ status: 200, body: { ...value, ...patch } });
+        expect(await annexClient.requestAgentChanges(FP, 'a?/#', { scope: 'branch' })).toEqual({ status: 'error' });
+      }
+      const count = requests.length;
+      expect(await annexClient.requestAgentChanges(FP, 'a1', { scope: 'branch', path: '/private' })).toEqual({ status: 'error' });
+      expect(requests).toHaveLength(count);
     });
 
     it.each([404, 405])('represents an older Settings host (%s) without retries or local fallback', async (status) => {

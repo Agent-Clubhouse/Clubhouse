@@ -1,5 +1,7 @@
 import { readRemoteAgentSettings } from './remote-agent-settings';
 import { readRemoteAgentDetails } from './remote-agent-details';
+import { readRemoteAgentChanges } from './remote-agent-changes';
+vi.mock('./remote-agent-changes', () => ({ readRemoteAgentChanges: vi.fn() }));
 vi.mock('./remote-agent-details', () => ({ readRemoteAgentDetails: vi.fn() }));
 vi.mock('./remote-agent-settings', () => ({ readRemoteAgentSettings: vi.fn() }));
 const snapshotLinks = vi.hoisted(() => ({ groups: vi.fn(() => []), onChange: () => () => {} }));
@@ -733,6 +735,46 @@ describe('annex-server', () => {
       const { port } = await startAndPair();
       const response = await request(port, 'GET', route);
       expect(response.status).toBe(403); expect(response.body).not.toContain('PRIVATE_LATE_RESULT');
+    });
+  });
+
+  describe('selected-agent passive Changes authority (#3733)', () => {
+    const route = '/api/v1/agents/a1/changes?scope=turn&offset=50';
+    beforeEach(() => vi.mocked(annexPeers.getPeer).mockReturnValue({ ...TEST_CONTROLLER, kind: 'desktop' }));
+    it('uses the same pinned desktop read boundary with a strictly allowlisted bounded query and GET only', async () => {
+      vi.mocked(readRemoteAgentChanges).mockImplementation(async (id, query, authorized) => {
+        expect(id).toBe('a1'); expect(query).toEqual({ scope: 'turn', offset: 50 }); expect(authorized()).toBe(true);
+        return { status: 200, body: { readOnly: true, agentId: id } };
+      });
+      const { port } = await startAndPair();
+      expect((await request(port, 'GET', route)).status).toBe(200);
+      for (const method of ['POST', 'PATCH', 'DELETE']) expect((await request(port, method, route)).status).toBe(404);
+      vi.mocked(readRemoteAgentChanges).mockClear();
+      for (const query of ['scope=branch&path=/private', 'scope=branch&sessionId=unrelated', 'scope=other', 'scope=branch&offset=-1', 'scope=branch&offset=', 'scope=branch&scope=turn', 'scope=branch&fileKey=../config']) {
+        expect((await request(port, 'GET', `/api/v1/agents/a1/changes?${query}`)).status).toBe(400);
+      }
+      expect(readRemoteAgentChanges).not.toHaveBeenCalled();
+      expect(agentSystem.spawnAgent).not.toHaveBeenCalled();
+      expect(ptyManagerModule.write).not.toHaveBeenCalled();
+    });
+    it.each(['phone', 'pending', 'pin', 'removed'] as const)('rejects %s before Changes disk work', async (condition) => {
+      const { port } = await startAndPair();
+      if (condition === 'pin') vi.mocked(annexTls.extractPeerCertificateFingerprint).mockReturnValueOnce('wrong-pin');
+      else vi.mocked(annexPeers.getPeer).mockReturnValue(condition === 'removed' ? undefined : { ...TEST_CONTROLLER, kind: condition === 'phone' ? 'phone' : 'desktop', networkPending: condition === 'pending' } as never);
+      expect((await request(port, 'GET', route)).status).toBe(condition === 'pin' || condition === 'removed' ? 401 : 403);
+      expect(readRemoteAgentChanges).not.toHaveBeenCalled();
+    });
+    it('discards a completed Changes response after pin revocation during an await', async () => {
+      vi.mocked(readRemoteAgentChanges).mockImplementation(async (_id, _query, authorized) => {
+        expect(authorized()).toBe(true);
+        await Promise.resolve();
+        vi.mocked(annexPeers.getPeer).mockReturnValue({ ...TEST_CONTROLLER, kind: 'desktop', tlsCertificateFingerprint: 'revoked-pin' });
+        expect(authorized()).toBe(false);
+        return { status: 200, body: { patch: 'PRIVATE_LATE_PATCH' } };
+      });
+      const { port } = await startAndPair();
+      const response = await request(port, 'GET', route);
+      expect(response.status).toBe(403); expect(response.body).not.toContain('PRIVATE_LATE_PATCH');
     });
   });
 

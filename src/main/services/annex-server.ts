@@ -1,5 +1,7 @@
 import { readRemoteAgentSettings } from './remote-agent-settings';
 import { readRemoteAgentDetails } from './remote-agent-details';
+import { readRemoteAgentChanges } from './remote-agent-changes';
+import { isRemoteChangesQuery } from '../../shared/remote-agent-changes';
 import { agentDisplayState, onAgentDisplayState } from './agent-display-state';
 import { handoffTransferDiagnostic, tagHandoffTransferError } from '../../shared/handoff-transfer-diagnostics';
 import { mobileProjectLinks, MOBILE_PROJECT_LINKS_EVENT } from './mobile-project-links';
@@ -4065,11 +4067,18 @@ async function handleAgentSettingsDetailsRoute(ctx: AnnexRouteContext, match: Re
   try { agentId = decodeURIComponent(match[1]); }
   catch { sendJson(ctx.res, 400, { error: 'invalid_agent_id' }); return; }
   if (!agentId || agentId.length > 240) { sendJson(ctx.res, 400, { error: 'invalid_agent_id' }); return; }
-  const result = match[2] === 'details'
+  const params = new URL(ctx.url, 'http://localhost').searchParams;
+  const changesQuery = { scope: params.get('scope'), ...(params.has('offset') && { offset: Number(params.get('offset')) }), ...(params.has('fileKey') && { fileKey: params.get('fileKey') }) };
+  if (match[2] === 'changes' && ([...params.keys()].some((key) => !['scope', 'offset', 'fileKey'].includes(key))
+    || [...params.keys()].some((key) => params.getAll(key).length !== 1) || params.has('offset') && !/^(0|[1-9]\d{0,4})$/.test(params.get('offset')!) || !isRemoteChangesQuery(changesQuery))) {
+    sendJson(ctx.res, 400, { error: 'invalid_changes_query' }); return;
+  }
+  const result = match[2] === 'changes' && isRemoteChangesQuery(changesQuery) ? await readRemoteAgentChanges(agentId, changesQuery, authorized) : match[2] === 'details'
     ? await readRemoteAgentDetails(agentId, authorized)
     : await readRemoteAgentSettings(agentId, authorized);
   if (!authorized()) { sendJson(ctx.res, 403, { error: 'settings_read_refused' }); return; }
   ctx.res.setHeader('Cache-Control', 'no-store');
+  if (result.status === 429) ctx.res.setHeader('Retry-After', '1');
   sendJson(ctx.res, result.status, result.body);
 }
 
@@ -4718,6 +4727,7 @@ const ANNEX_HTTP_ROUTE_TABLE: AnnexHttpRoute[] = [
   { method: 'GET', pattern: /^\/api\/v1\/agents\/([^/]+)\/buffer$/, handler: handleAgentBufferRoute },
   { method: 'GET', pattern: /^\/api\/v1\/agents\/([^/]+)\/settings-details$/, handler: handleAgentSettingsDetailsRoute },
   { method: 'GET', pattern: /^\/api\/v1\/agents\/([^/]+)\/(details)$/, handler: handleAgentSettingsDetailsRoute },
+  { method: 'GET', pattern: /^\/api\/v1\/agents\/([^/?]+)\/(changes)(\?.*)?$/, handler: handleAgentSettingsDetailsRoute },
   { method: 'GET', pattern: /^\/api\/v1\/projects\/([^/]+)\/files\/tree(\?.*)?$/, handler: handleProjectFilesTreeRoute },
   { method: 'GET', pattern: /^\/api\/v1\/projects\/([^/]+)\/files\/read(\?.*)?$/, handler: handleProjectFilesReadRoute },
   { method: 'GET', pattern: /^\/api\/v1\/projects\/([^/]+)\/git\/info$/, handler: handleGitInfoRoute },

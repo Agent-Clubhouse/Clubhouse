@@ -11,6 +11,7 @@ import { useAgentDetailsStore } from './detailsStore';
 const agent: Agent = { id: 'remote||sat||a1', projectId: 'remote||sat||p1', name: 'Remote', kind: 'durable', status: 'running', color: 'blue' };
 const read = vi.fn();
 const chatPage = vi.fn();
+const changes = vi.fn();
 const page = (version = '1.2.3', extra = {}) => ({ events: [
   { v: 2, agentId: 'a1', sessionId: 's1', seq: 1, ts: 1, type: 'session_started', data: { provider: 'claude-code', driver: 'claude_agent_sdk', nativeSessionId: 'n1', cliVersion: version, resumed: false, cwd: '/host', capabilities: MINIMAL_CHAT_CAPABILITIES } },
   { v: 2, agentId: 'a1', sessionId: 's1', seq: 2, ts: 2, type: 'session_info', data: { nativeSessionId: 'n1', mcpServers: [{ name: 'PROVIDER_MCP', status: 'connected' }], providerSkills: { provider: 'claude-code', driver: 'claude_agent_sdk', source: 'system/init', nativeSessionId: 'n1', names: ['host-skill'] } } },
@@ -28,7 +29,8 @@ beforeEach(() => {
   chatPage.mockResolvedValue(page());
   useAgentDetailsStore.setState({ settingsOpen: true, focus: null });
   read.mockResolvedValue({ status: 'ok', value: fixture() });
-  Object.assign(window.clubhouse.annexClient, { agentDetails: read, chatPage });
+  changes.mockImplementation(async (_host, id, query) => ({ status: 'ok', value: { version: 1, readOnly: true, agentId: id, observedAt: 1, scope: query.scope, state: 'ok', branch: 'host-branch', base: 'host-main', sessionId: null, turnId: null, live: true, shared: false, files: [], totalFiles: 0, offset: query.offset ?? 0, nextOffset: null, uncompared: 0, skippedLarge: [], skippedRepos: [], skippedOmitted: 0 } }));
+  Object.assign(window.clubhouse.annexClient, { agentDetails: read, chatPage, agentChanges: changes });
   for (const [object, method] of [[window.clubhouse.actions, 'list'], [window.clubhouse.git, 'branchChanges'], [window.clubhouse.agent, 'getDurableConfig'], [window.clubhouse.managed, 'getSetup'], [window.clubhouse.mcpBinding, 'getAgentConnection'], [window.clubhouse.canvas, 'getAgentCanvases']] as const) Object.assign(object, { [method]: vi.fn() });
 });
 describe('remote full Details host evidence', () => {
@@ -40,7 +42,8 @@ describe('remote full Details host evidence', () => {
     for (const id of ['changes', 'dispatcher', 'orchestrate', 'connections', 'actions', 'skills-mcp', 'session', 'canvases']) {
       const toggle = screen.getByTestId(`details-card-${id}-toggle`);
       if (toggle.getAttribute('aria-expanded') !== 'true') fireEvent.click(toggle);
-      expect(within(screen.getByTestId(`details-card-${id}`)).getByText(`${id} evidence`)).toBeInTheDocument();
+      if (id === 'changes') await waitFor(() => expect(screen.getByTestId('details-card-changes')).toHaveTextContent('host-main'));
+      else expect(within(screen.getByTestId(`details-card-${id}`)).getByText(`${id} evidence`)).toBeInTheDocument();
     }
     expect(screen.queryByRole('switch')).not.toBeInTheDocument();
     expect(screen.queryByRole('combobox')).not.toBeInTheDocument();
