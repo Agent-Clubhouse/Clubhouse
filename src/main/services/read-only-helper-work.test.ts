@@ -40,7 +40,9 @@ beforeEach(async () => {
 afterEach(async () => { vi.restoreAllMocks(); await fs.rm(root, { recursive: true, force: true }); });
 describe('passive direct helper work', () => {
   it('matches clean/dirty/unpushed counts without writing repository/index/config/object bytes', async () => {
+    const cleanBefore = await snapshot(root);
     expect(await readOnlyHelperWork(parent, entry, () => true)).toMatchObject({ dirty: 0, unpushed: 0 });
+    expect(await snapshot(root)).toEqual(cleanBefore);
     await fs.writeFile(path.join(project, 'ordinary'), 'two\n'); await git('add', '.'); await git('commit', '-m', 'helper work');
     await fs.writeFile(path.join(project, 'untracked'), 'PRIVATE_CONTENT_NOT_SERIALIZED');
     const before = await snapshot(root);
