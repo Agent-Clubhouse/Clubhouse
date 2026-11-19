@@ -1,5 +1,6 @@
 import { randomUUID } from 'crypto';
 import { createSettingsStore } from './settings-store';
+import { readDisplaySettings, displayInput, type DisplayReceipt, type DisplayValue } from './display-settings';
 import { DEFAULT_GLOBAL_HELPER_CAP, MAX_HELPER_LIMIT } from '../../shared/orchestration-policy';
 import { AUTO_LEVEL_FOLLOWS, AUTO_LEVELS, BUILTIN_PRESETS, PRESET_PROVIDERS, isAutoBoundLevel, normalizeSavedPresets, type AutoLevel, type PresetCell, type PresetProvider, type SavedPresets } from '../../shared/helper-routing';
 
@@ -76,7 +77,7 @@ const store = createSettingsStore<OrchestrationSettings>(
     copilotAuto: raw.copilotAuto !== false,
   }),
   // Presets and Auto have rows of their own, with reasons.
-  { atomic: true, rollBackFailedSaves: true, audit: { key: 'orchestration', keys: ['globalHelperCap'], ignore: ['helperPresets', 'helperPresetsRevision', 'helperPresetCellGenerations', 'autoHelpers', 'copilotAuto'] } },
+  { atomic: true, rollBackFailedSaves: true, displaySnapshot: true, audit: { key: 'orchestration', keys: ['globalHelperCap'], ignore: ['helperPresets', 'helperPresetsRevision', 'helperPresetCellGenerations', 'autoHelpers', 'copilotAuto'] } },
 );
 
 let pendingWrites = 0;
@@ -181,4 +182,45 @@ export async function savePresets(presets: SavedPresets): Promise<void> {
 
 export function getGlobalHelperCap(): number {
   return getSettings().globalHelperCap;
+}
+
+/** Selected scalar policy only. No generic initialization, presets, or writes. */
+function displayField<T>(key: 'globalHelperCap' | 'autoHelpers' | 'copilotAuto', fallback: T, valid: (value: unknown) => value is T, options: { receipts?: DisplayReceipt[] }): DisplayValue<T> {
+  const read = (): DisplayValue<T> => {
+    // A pending save may have updated the store's accepted-memory cache. The
+    // policy getter deliberately uses the published policy plus restrictions.
+    // Display observes that same existing policy without calling store.get().
+    if (pendingWrites > 0 && publishedSettings) {
+      let cap = publishedSettings.globalHelperCap, auto = publishedSettings.autoHelpers === true, copilot = publishedSettings.copilotAuto !== false;
+      for (const restriction of pendingRestrictions) {
+        if (restriction.globalHelperCap !== undefined) cap = Math.min(cap, restriction.globalHelperCap);
+        if (restriction.autoHelpers === false) auto = false;
+        if (restriction.copilotAuto === false) copilot = false;
+      }
+      const value = key === 'globalHelperCap' ? cap : key === 'autoHelpers' ? auto : copilot;
+      const inputs = [{ field: `Published helper policy during pending save: ${key}`, source: 'host-cache' as const, observedAt: Date.now() }];
+      return valid(value) ? { state: 'ok', value, inputs } : { state: 'unavailable', inputs };
+    }
+    const evidence = readDisplaySettings(store, 'orchestration-settings.json'), inputs = [displayInput(`Host helper policy: ${key}`, evidence)];
+    if (evidence.state !== 'ok') return { state: 'unavailable', inputs };
+    const value = Object.prototype.hasOwnProperty.call(evidence.raw, key) ? evidence.raw[key] : fallback;
+    return valid(value) ? { state: 'ok', value, inputs } : { state: 'unavailable', inputs };
+  };
+  const result = read();
+  const signature = (value: DisplayValue<T>) => JSON.stringify({ state: value.state, value: value.state === 'ok' ? value.value : undefined, source: value.inputs.map(({ field, source }) => ({ field, source })) });
+  if (options.receipts) {
+    const admitted = signature(result);
+    options.receipts.push({ current: () => { try { return signature(read()) === admitted; } catch { return false; } } });
+  }
+  return result;
+}
+
+export function readGlobalHelperCapForDisplay(options: { receipts?: DisplayReceipt[] } = {}): DisplayValue<number> {
+  return displayField('globalHelperCap', DEFAULT_GLOBAL_HELPER_CAP, validCap, options);
+}
+export function readAutoHelpersForDisplay(options: { receipts?: DisplayReceipt[] } = {}): DisplayValue<boolean> {
+  return displayField('autoHelpers', false, (value): value is boolean => typeof value === 'boolean', options);
+}
+export function readCopilotAutoForDisplay(options: { receipts?: DisplayReceipt[] } = {}): DisplayValue<boolean> {
+  return displayField('copilotAuto', true, (value): value is boolean => typeof value === 'boolean', options);
 }
