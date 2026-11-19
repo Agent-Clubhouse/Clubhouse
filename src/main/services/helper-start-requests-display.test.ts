@@ -64,6 +64,19 @@ it('marks truncated and over-budget task content explicitly while retaining inde
   const result = readStartRequestsForDisplay(home, 'selected'); expect(result.state).toBe('ok');
   if (result.state === 'ok') { expect(result.value[0].task).toMatchObject({ state: 'ok', truncated: true, text: expect.stringContaining('[text truncated]') }); if (result.value[0].task.state === 'ok') expect(result.value[0].task.text.length).toBeLessThanOrEqual(2048); expect(result.value[1]).toMatchObject({ name: { text: 'Large task helper' }, task: { state: 'withheld', reason: 'read-limit' } }); }
 });
+it('classifies the complete bounded task before display truncation and fences changes hidden by redaction', () => {
+  const first = add('Review ' + 'x'.repeat(3000) + '\nconfig["apiKey"]="PRIVATE_AFTER_TRUNCATION";');
+  expect(first.ok).toBe(true);
+  expect(readStartRequestsForDisplay(home, 'selected')).toMatchObject({ value: [{ task: { state: 'withheld', reason: 'safety' } }] });
+  dropStartRequestsFor('selected', home);
+  const next = add('apiKey="PRIVATE_INITIAL";'); if (!next.ok) throw new Error('fixture refused');
+  const receipts: Array<{ current(): boolean }> = [];
+  const before = readStartRequestsForDisplay(home, 'selected', { receipts }); expect(receipts[0].current()).toBe(true);
+  next.request.args.task = 'apiKey="PRIVATE_REPLACED";';
+  const after = readStartRequestsForDisplay(home, 'selected');
+  expect(after).toEqual(before); // visible redacted values are deliberately identical
+  expect(receipts[0].current()).toBe(false);
+});
 it('detaches the selected projection and keeps index cleanup aligned with ordinary cancellation/reset', () => {
   add(); const value = readStartRequestsForDisplay(home, 'selected'); if (value.state !== 'ok' || value.value[0].task.state !== 'ok') throw new Error('fixture missing');
   value.value[0].task.text = 'Caller mutation'; expect(readStartRequestsForDisplay(home, 'selected')).toMatchObject({ value: [{ task: { text: 'Review visible changes' } }] });
