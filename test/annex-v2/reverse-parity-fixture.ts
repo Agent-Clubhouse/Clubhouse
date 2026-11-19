@@ -201,6 +201,7 @@ export async function installMainGuard(
 }
 
 export function readMainDialAudit(file: string): MainDialAudit {
+  // eslint-disable-next-line no-restricted-syntax -- Read the generated exit receipt, not repository source.
   const value: unknown = JSON.parse(fs.readFileSync(file, 'utf8'));
   const record = (item: unknown): item is Record<string, unknown> => typeof item === 'object' && item !== null;
   const attempt = (item: unknown): item is DialAttempt => record(item)

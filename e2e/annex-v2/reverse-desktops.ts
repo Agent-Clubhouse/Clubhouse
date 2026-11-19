@@ -232,14 +232,16 @@ export const test = base.extend<{ reverse: ReverseDesktops; reverseScenario: 'qu
               capture: { ...captured, errors: captured.status === 'failed' ? captured.errors.map(auditError) : [] },
             }), contentType: 'application/json',
           });
-          if (captured.status === 'failed') throw new AggregateError(captured.errors, 'Reverse audit capture failed');
-          const audits = captured.audits;
-          for (const audit of audits) expect(audit).toMatchObject({ installed: true, sealed: true, phase: 'exit', pending: 0 });
-          assertDialAudit(audits[0].attempts, { host: '127.0.0.1', port: forward.port }, captured.forward.sourcePorts, guard.accepts());
-          assertDialAudit(audits[1].attempts, null, [], guard.accepts());
-          assertAcceptAudit(audits[0].accepts, listenerPorts[0], []);
-          assertAcceptAudit(audits[1].accepts, listenerPorts[1], captured.forward.targetSourcePorts);
-          expect(audits[0].attempts.some((attempt) => attempt.outcome === 'connected')).toBe(true);
+          if (captured.status === 'failed') errors.push(...captured.errors);
+          else {
+            const audits = captured.audits;
+            for (const audit of audits) expect(audit).toMatchObject({ installed: true, sealed: true, phase: 'exit', pending: 0 });
+            assertDialAudit(audits[0].attempts, { host: '127.0.0.1', port: forward.port }, captured.forward.sourcePorts, guard.accepts());
+            assertDialAudit(audits[1].attempts, null, [], guard.accepts());
+            assertAcceptAudit(audits[0].accepts, listenerPorts[0], []);
+            assertAcceptAudit(audits[1].accepts, listenerPorts[1], captured.forward.targetSourcePorts);
+            expect(audits[0].attempts.some((attempt) => attempt.outcome === 'connected')).toBe(true);
+          }
         } catch (error) { errors.push(error); }
       }
       for (const app of [...apps].reverse()) if (!closures.has(app)) {
