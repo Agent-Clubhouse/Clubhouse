@@ -1,11 +1,11 @@
 import { typePrompt, promptSource } from './prompt-editor.testing';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { act, fireEvent, render, renderHook, screen, waitFor, within } from '@testing-library/react';
 import type { Agent } from '../../../../shared/types';
 import type { ChatEvent } from '../../../../shared/chat';
 import { foldChatEvents, useChatStore, type ChatViewState } from '../../../stores/chatStore';
 import { CANVAS_TRANSCRIPT_TAIL, ChatView, ChatViewBody } from './ChatView';
-import { useChatDraftStore, type ChatActions } from './useChatSession';
+import { useChatDraftStore, useChatActions, type ChatActions } from './useChatSession';
 import { chatFixture, FEWER_CAPABILITIES, FIXTURE_AGENT_ID, PROFILES, type FixtureProvider } from './fixtures';
 import { useAgentDetailsStore } from '../details/detailsStore';
 import { useProjectStore } from '../../../stores/projectStore';
@@ -53,7 +53,7 @@ function renderFixture(p: FixtureProvider, scenario: Parameters<typeof chatFixtu
 }
 
 beforeEach(() => {
-  useChatDraftStore.setState({ drafts: {}, attachments: {}, pendingSends: {}, failedSends: {} });
+  useChatDraftStore.setState({ drafts: {}, attachments: {}, pendingSends: {}, failedSends: {}, uncertainDrafts: {} });
 });
 
 /** Append events after a fixture, continuing its seq. */
@@ -108,6 +108,23 @@ describe('send acknowledgement and recovery', () => {
     expect(promptSource(screen.getByLabelText('Message'))).toBe('next draft');
   });
 
+  it('keeps delivery uncertainty visible when the agent received a message but acknowledgement was lost', async () => {
+    const delivered: string[] = [];
+    const actions = makeActions();
+    actions.send.mockImplementationOnce(async (text: string) => {
+      delivered.push(text); // The remote accepted the prompt before the response was lost.
+      throw new Error('Transport acknowledgement timed out');
+    });
+    renderFixture('claude', 'conversation', actions);
+    typePrompt(screen.getByLabelText('Message'), 'may already be delivered');
+    fireEvent.click(screen.getByTestId('chat-send'));
+    await waitFor(() => expect(screen.getByTestId('chat-draft-unconfirmed')).toHaveTextContent('may already have reached the agent'));
+    expect(promptSource(screen.getByLabelText('Message'))).toBe('may already be delivered');
+    expect(delivered).toEqual(['may already be delivered']);
+    expect(actions.send).toHaveBeenCalledTimes(1);
+    expect(screen.queryByText('Message not sent.')).not.toBeInTheDocument();
+  });
+
   it.each(['null', 'reject', 'throw'])('retains failed text and files alongside a newer draft (%s)', async (failure) => {
     const actions = makeActions();
     let fail!: () => void;
@@ -123,10 +140,12 @@ describe('send acknowledgement and recovery', () => {
     await act(async () => { fail?.(); });
     expect(promptSource(screen.getByLabelText('Message'))).toBe('new draft');
     expect(screen.getByTestId('chat-send-recovery')).toHaveTextContent('1 saved message');
-    expect(screen.getByText('Restore unsent message')).toBeDisabled();
+    expect(screen.getByTestId('chat-send-recovery')).toHaveTextContent('Delivery unconfirmed');
+    expect(screen.getByText('Restore saved message')).toBeDisabled();
     act(() => useChatDraftStore.getState().setDraft(agent.id, ''));
-    fireEvent.click(screen.getByText('Restore unsent message'));
+    fireEvent.click(screen.getByText('Restore saved message'));
     expect(promptSource(screen.getByLabelText('Message'))).toBe('failed text');
+    expect(screen.getByTestId('chat-draft-unconfirmed')).toHaveTextContent('may already have reached the agent');
     expect(screen.getByTestId('chat-attachment')).toHaveTextContent('notes.txt');
     expect(actions.send).toHaveBeenCalledTimes(1);
     expect(screen.queryByTestId('chat-send-recovery')).not.toBeInTheDocument();
@@ -186,6 +205,79 @@ describe('send acknowledgement and recovery', () => {
     expect(promptSource(screen.getByLabelText('Message'))).toBe('new session draft');
     fireEvent.click(screen.getByTestId('chat-send'));
     expect(actions.send).toHaveBeenLastCalledWith('new session draft', 'auto');
+  });
+
+  it.each([false, true])('does not send an old Stop & send into a new session (new send=%s)', async (sendInNewSession) => {
+    const actions = makeActions();
+    let interrupted!: (value: boolean) => void;
+    let acknowledged!: (value: { delivery: 'prompt' }) => void;
+    actions.interrupt.mockImplementationOnce(() => new Promise((resolve) => { interrupted = resolve; }));
+    actions.send.mockImplementationOnce(() => new Promise((resolve) => { acknowledged = resolve; }));
+    const oldState = fold(chatFixture('copilot', 'steer', undefined, FEWER_CAPABILITIES));
+    const file = { id: 'old-file', name: 'old-notes.txt', kind: 'file' as const };
+    useChatDraftStore.setState({ drafts: { [agent.id]: 'old stopped-turn prompt' }, attachments: { [agent.id]: [file] } });
+    const { rerender } = renderState(oldState, actions);
+    fireEvent.click(screen.getByTestId('chat-send-primary'));
+    expect(actions.interrupt).toHaveBeenCalledTimes(1);
+    expect(actions.send).not.toHaveBeenCalled();
+
+    rerender(<ChatViewBody agent={agent} state={{ ...oldState, sessionId: 'replacement-session', state: 'idle' }} actions={actions} />);
+    typePrompt(screen.getByLabelText('Message'), 'new session prompt');
+    if (sendInNewSession) fireEvent.click(screen.getByTestId('chat-send'));
+    typePrompt(screen.getByLabelText('Message'), 'new draft');
+    const newPending = useChatDraftStore.getState().pendingSends[agent.id];
+    await act(async () => interrupted(true));
+
+    expect(actions.send).toHaveBeenCalledTimes(sendInNewSession ? 1 : 0);
+    if (sendInNewSession) expect(actions.send).toHaveBeenCalledWith('new session prompt', 'auto');
+    expect(useChatDraftStore.getState().pendingSends[agent.id]).toBe(newPending);
+    expect(promptSource(screen.getByLabelText('Message'))).toBe('new draft');
+    expect(useChatDraftStore.getState().failedSends[agent.id]).toEqual([
+      expect.objectContaining({ text: 'old stopped-turn prompt', attachments: [file], uncertain: false }),
+    ]);
+    expect(screen.getByTestId('chat-send-recovery')).toHaveTextContent('Message not sent');
+    if (sendInNewSession) await act(async () => acknowledged({ delivery: 'prompt' }));
+    act(() => useChatDraftStore.getState().setDraft(agent.id, ''));
+    fireEvent.click(screen.getByText('Restore saved message'));
+    expect(promptSource(screen.getByLabelText('Message'))).toBe('old stopped-turn prompt');
+    expect(screen.getByTestId('chat-attachment')).toHaveTextContent('old-notes.txt');
+  });
+
+  it.each([false, true])('checks authoritative session after unmount (session changed=%s)', async (changed) => {
+    const state = fold(chatFixture('copilot', 'steer', undefined, FEWER_CAPABILITIES));
+    useChatStore.setState({ agents: { [agent.id]: state } });
+    const { result } = renderHook(() => useChatActions(agent.id));
+    const actions = makeActions();
+    actions.isSessionCurrent = result.current.isSessionCurrent;
+    let interrupted!: (value: boolean) => void;
+    actions.interrupt.mockImplementationOnce(() => new Promise((resolve) => { interrupted = resolve; }));
+    const { unmount } = renderState(state, actions);
+    typePrompt(screen.getByLabelText('Message'), 'prompt before unmount');
+    fireEvent.click(screen.getByTestId('chat-send-primary'));
+    unmount();
+    if (changed) useChatStore.setState({ agents: { [agent.id]: { ...state, sessionId: 'replacement-session' } } });
+    await act(async () => interrupted(true));
+    expect(actions.send).toHaveBeenCalledTimes(changed ? 0 : 1);
+    if (changed) {
+      expect(useChatDraftStore.getState().drafts[agent.id]).toBe('prompt before unmount');
+      expect(useChatDraftStore.getState().uncertainDrafts[agent.id]).toBe(false);
+    } else expect(actions.send).toHaveBeenCalledWith('prompt before unmount', 'auto');
+  });
+
+  it('checks the live session after interruption even before the view rerenders', async () => {
+    const actions = makeActions();
+    let interrupted!: (value: boolean) => void;
+    actions.interrupt.mockImplementationOnce(() => new Promise((resolve) => { interrupted = resolve; }));
+    actions.isSessionCurrent = vi.fn(() => false);
+    const state = fold(chatFixture('copilot', 'steer', undefined, FEWER_CAPABILITIES));
+    renderState(state, actions);
+    typePrompt(screen.getByLabelText('Message'), 'old prompt');
+    fireEvent.click(screen.getByTestId('chat-send-primary'));
+    await act(async () => interrupted(true));
+    expect(actions.isSessionCurrent).toHaveBeenCalledWith(state.sessionId);
+    expect(actions.send).not.toHaveBeenCalled();
+    expect(promptSource(screen.getByLabelText('Message'))).toBe('old prompt');
+    expect(screen.queryByTestId('chat-draft-unconfirmed')).not.toBeInTheDocument();
   });
 
   it('holds the send lock while Stop & send awaits interruption', async () => {

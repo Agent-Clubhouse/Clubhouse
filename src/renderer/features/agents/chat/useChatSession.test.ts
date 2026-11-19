@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { renderHook } from '@testing-library/react';
-import { useChatStore } from '../../../stores/chatStore';
+import { createChatViewState, useChatStore } from '../../../stores/chatStore';
 import { useToastStore } from '../../../stores/toastStore';
 import { useChatActions, useEarlierHistory, useChatDraftStore } from './useChatSession';
 
@@ -9,12 +9,28 @@ describe('useChatActions results (#2057)', () => {
     useToastStore.setState({ toasts: [] });
   });
 
+  it('reads current session identity live rather than from action creation', () => {
+    useChatStore.setState({ agents: { 'agent-1': { ...createChatViewState('agent-1'), sessionId: 'old' } } });
+    const { result } = renderHook(() => useChatActions('agent-1'));
+    expect(result.current.isSessionCurrent?.('old')).toBe(true);
+    useChatStore.setState({ agents: { 'agent-1': { ...createChatViewState('agent-1'), sessionId: 'new' } } });
+    expect(result.current.isSessionCurrent?.('old')).toBe(false);
+    expect(result.current.isSessionCurrent?.('new')).toBe(true);
+  });
+
   it('resolves true when interrupt and setLevel succeed', async () => {
     useChatStore.setState({ interrupt: vi.fn(async () => {}), setLevel: vi.fn(async () => {}) });
     const { result } = renderHook(() => useChatActions('agent-1'));
     await expect(result.current.interrupt()).resolves.toBe(true);
     await expect(result.current.setLevel('ask')).resolves.toBe(true);
     expect(useToastStore.getState().toasts).toHaveLength(0);
+  });
+
+  it('reports a lost send acknowledgement without claiming non-delivery', async () => {
+    useChatStore.setState({ send: vi.fn(async () => { throw new Error('Acknowledgement timed out'); }) });
+    const { result } = renderHook(() => useChatActions('agent-1'));
+    await expect(result.current.send('possibly delivered')).resolves.toBeNull();
+    expect(useToastStore.getState().toasts.map((t) => t.message)).toEqual(['Message delivery unconfirmed: Acknowledgement timed out']);
   });
 
   it('resolves false with a toast when interrupt fails', async () => {
@@ -48,7 +64,7 @@ describe('useEarlierHistory (#2150 review)', () => {
 
 
 describe('send recovery races', () => {
-  beforeEach(() => useChatDraftStore.setState({ drafts: {}, attachments: {}, pendingSends: {}, failedSends: {} }));
+  beforeEach(() => useChatDraftStore.setState({ drafts: {}, attachments: {}, pendingSends: {}, failedSends: {}, uncertainDrafts: {} }));
   const file = { id: 'staged-file', name: 'notes.txt', kind: 'file' as const };
   const message = () => ({ sessionId: 'session', uncertain: true, startedAt: Date.now(), text: 'first', attachments: [file] });
 
@@ -74,7 +90,7 @@ describe('send recovery races', () => {
     s.beginSend('a', old);
     expect(s.beginSend('a', current)).toBe(true);
     expect(useChatDraftStore.getState().failedSends.a).toEqual([old]);
-    s.finishSend('a', old, false);
+    s.finishSend('a', old, false, false);
     expect(useChatDraftStore.getState().drafts.a).toBeUndefined();
     expect(useChatDraftStore.getState().pendingSends.a).toBe(current);
     expect(useChatDraftStore.getState().failedSends.a).toEqual([{ ...old, uncertain: false }]);
@@ -86,9 +102,9 @@ describe('send recovery races', () => {
     const second = { ...message(), text: 'second' };
     s.beginSend('a', first);
     s.setAttachments('a', [file]);
-    s.finishSend('a', first, false);
+    s.finishSend('a', first, false, false);
     s.beginSend('a', second);
-    s.finishSend('a', second, false);
+    s.finishSend('a', second, false, false);
     s.restoreSend('a');
     expect(useChatDraftStore.getState().drafts.a).toBeUndefined();
     expect(useChatDraftStore.getState().failedSends.a).toEqual([{ ...first, uncertain: false }, { ...second, uncertain: false }]);

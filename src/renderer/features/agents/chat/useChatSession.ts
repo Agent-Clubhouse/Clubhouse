@@ -12,6 +12,8 @@ import { useToastStore } from '../../../stores/toastStore';
 import type { ComposerAttachment } from './attachments';
 
 export interface ChatActions {
+  /** Read the runtime identity synchronously after an asynchronous interruption. */
+  isSessionCurrent?: (sessionId: string | null) => boolean;
   /** `attachmentIds` are staged attachment ids. */
   send: (text: string, delivery?: 'auto' | MessageDelivery, attachmentIds?: string[]) => Promise<RuntimeSendResult | null>;
   /** Resolves false when the turn couldn't be stopped (a toast says why). */
@@ -33,7 +35,7 @@ export interface ChatActions {
  */
 export interface PendingChatSend {
   sessionId: string | null;
-  /** True until the caller settles; retained across a session change without implying failure. */
+  /** True when delivery is unconfirmed, including a rejected or lost acknowledgement. */
   uncertain: boolean;
   startedAt: number;
   text: string;
@@ -41,11 +43,12 @@ export interface PendingChatSend {
 }
 
 interface DraftState {
+  uncertainDrafts: Record<string, boolean>;
   pendingSends: Record<string, PendingChatSend>;
   failedSends: Record<string, PendingChatSend[]>;
   retireSend: (agentId: string, sessionId: string | null) => void;
   beginSend: (agentId: string, send: PendingChatSend) => boolean;
-  finishSend: (agentId: string, send: PendingChatSend, ok: boolean) => void;
+  finishSend: (agentId: string, send: PendingChatSend, ok: boolean, uncertain?: boolean) => void;
   restoreSend: (agentId: string) => void;
   drafts: Record<string, string>;
   setDraft: (agentId: string, text: string) => void;
@@ -55,6 +58,7 @@ interface DraftState {
 }
 
 export const useChatDraftStore = create<DraftState>((set, get) => ({
+  uncertainDrafts: {},
   pendingSends: {},
   failedSends: {},
   retireSend: (agentId, sessionId) => set((s) => {
@@ -70,21 +74,21 @@ export const useChatDraftStore = create<DraftState>((set, get) => ({
     set((s) => ({ pendingSends: { ...s.pendingSends, [agentId]: send } }));
     return true;
   },
-  finishSend: (agentId, send, ok) => set((s) => {
+  finishSend: (agentId, send, ok, uncertain = true) => set((s) => {
     if (s.pendingSends[agentId] !== send) {
       // A new session retired this send. Its eventual result must never touch the new draft or lock.
       const saved = s.failedSends[agentId];
       if (!saved?.includes(send)) return s;
       return { failedSends: { ...s.failedSends, [agentId]: ok ? saved.filter((item) => item !== send)
-        : saved.map((item) => item === send ? { ...send, uncertain: false } : item) } };
+        : saved.map((item) => item === send ? { ...send, uncertain } : item) } };
     }
-    const failed = { ...send, uncertain: false };
+    const failed = { ...send, uncertain };
     const pendingSends = { ...s.pendingSends };
     delete pendingSends[agentId];
     if (ok) return { pendingSends };
     // Restore atomically, without overwriting text or files added while awaiting acknowledgement.
     if (!s.drafts[agentId] && !s.attachments[agentId]?.length) {
-      return { pendingSends, drafts: { ...s.drafts, [agentId]: send.text }, attachments: { ...s.attachments, [agentId]: send.attachments } };
+      return { pendingSends, uncertainDrafts: { ...s.uncertainDrafts, [agentId]: uncertain }, drafts: { ...s.drafts, [agentId]: send.text }, attachments: { ...s.attachments, [agentId]: send.attachments } };
     }
     return { pendingSends, failedSends: { ...s.failedSends, [agentId]: [...(s.failedSends[agentId] ?? []), failed] } };
   }),
@@ -92,6 +96,7 @@ export const useChatDraftStore = create<DraftState>((set, get) => ({
     const [send, ...rest] = s.failedSends[agentId] ?? [];
     if (!send || s.pendingSends[agentId] || s.drafts[agentId] || s.attachments[agentId]?.length) return s;
     return {
+      uncertainDrafts: { ...s.uncertainDrafts, [agentId]: send.uncertain },
       drafts: { ...s.drafts, [agentId]: send.text },
       attachments: { ...s.attachments, [agentId]: send.attachments },
       failedSends: { ...s.failedSends, [agentId]: rest },
@@ -102,14 +107,14 @@ export const useChatDraftStore = create<DraftState>((set, get) => ({
     const drafts = { ...s.drafts };
     if (text) drafts[agentId] = text;
     else delete drafts[agentId];
-    return { drafts };
+    return { drafts, ...(!text && !s.attachments[agentId]?.length ? { uncertainDrafts: { ...s.uncertainDrafts, [agentId]: false } } : {}) };
   }),
   attachments: {},
   setAttachments: (agentId, list) => set((s) => {
     const attachments = { ...s.attachments };
     if (list.length) attachments[agentId] = list;
     else delete attachments[agentId];
-    return { attachments };
+    return { attachments, ...(!list.length && !s.drafts[agentId] ? { uncertainDrafts: { ...s.uncertainDrafts, [agentId]: false } } : {}) };
   }),
 }));
 
@@ -192,10 +197,11 @@ export function useChatActions(agentId: string): ChatActions {
     }, []);
 
   return useMemo<ChatActions>(() => ({
+    isSessionCurrent: (sessionId) => store.getState().agents[agentId]?.sessionId === sessionId,
     send: async (text, delivery, attachments) => {
       const r = attachments?.length
-        ? await wrap('Message not sent', store.getState().send)(agentId, text, delivery, attachments)
-        : await wrap('Message not sent', store.getState().send)(agentId, text, delivery);
+        ? await wrap('Message delivery unconfirmed', store.getState().send)(agentId, text, delivery, attachments)
+        : await wrap('Message delivery unconfirmed', store.getState().send)(agentId, text, delivery);
       return r.ok ? r.value : null;
     },
     interrupt: async () => (await wrap("Couldn't stop the turn", store.getState().interrupt)(agentId)).ok,
