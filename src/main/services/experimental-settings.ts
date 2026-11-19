@@ -1,4 +1,5 @@
 import { backupUnreadableSettings, createSettingsStore, latestRecoveryCopy, peekStoredSettingsSync } from './settings-store';
+import { readDisplaySettings, ownDisplayValue, displayInput, DISPLAY_SETTINGS_MAX_BYTES, type DisplayValue } from './display-settings';
 import { isPreviewEligible } from './preview-eligible';
 import { COPILOT_ACP_REMOVED_NOTICE_KEY, PREVIEW_ONLY_EXPERIMENTAL_FLAGS, STRUCTURED_MODE_REMOVED_NOTICE_KEY, type ExperimentalSettings } from '../../shared/types';
 import { RICH_CHAT_CONTENT_FLAG } from '../../shared/chat';
@@ -40,6 +41,7 @@ let chatTipCachedLoadUncertain = false;
 export function isChatTipExperimentalReadUncertain(): boolean { return chatTipCachedLoadUncertain; }
 const store = createSettingsStore<ExperimentalSettings>(FILENAME, {}, migrateExperimentalSettings, {
   audit: { key: 'experimental' },
+  displaySnapshot: true,
   rollBackFailedSaves: true,
   onLoad: (result) => {
     if ('error' in result) {
@@ -191,4 +193,20 @@ export async function saveSettings(settings: ExperimentalSettings): Promise<void
       ...(unreadable ? unverifiedFlags() : {}),
     };
   });
+}
+
+/** Only graduated metadata flags used by read-only Details; no migration or cold store load. */
+export function readGraduatedFlagForDisplay(key: 'chat' | 'dispatcher' | typeof NEW_CHROME_FLAG): DisplayValue<boolean> {
+  const field = `Host ${key} flag`;
+  if (savesInFlight > 0 && unreadableBeforeSaves) return { state: 'unavailable', inputs: [{ field, source: 'host-cache', observedAt: Date.now() }] };
+  // The ordinary runtime gate explicitly honors an unreadable current primary,
+  // even with a warm cache. Preserve its queued-save latch without warming it.
+  if (savesInFlight === 0 && peekStoredSettingsSync(FILENAME, { maxBytes: DISPLAY_SETTINGS_MAX_BYTES }) === 'unreadable') {
+    return { state: 'unavailable', inputs: [{ field, source: 'primary', observedAt: Date.now() }] };
+  }
+  const evidence = readDisplaySettings(store, FILENAME), inputs = [displayInput(field, evidence)];
+  if (evidence.state !== 'ok') return { state: 'unavailable', inputs };
+  const value = ownDisplayValue(evidence.raw, key);
+  return value === undefined || typeof value === 'boolean'
+    ? { state: 'ok', value: value !== false, inputs } : { state: 'unavailable', inputs };
 }

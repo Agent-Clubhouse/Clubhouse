@@ -13,3 +13,9 @@ export function readDisplaySettings<T>(store: Pick<SettingsStore<T>, 'peekLoaded
   if (raw === 'unreadable') return { state: 'unavailable', source, observedAt };
   return { state: 'ok', raw: raw === 'missing' ? {} : raw, missing: raw === 'missing', source, observedAt };
 }
+
+export interface DisplayInput { field: string; source: 'agent' | 'host-cache' | 'primary'; observedAt: number }
+export type DisplayValue<T> = { state: 'ok'; value: T; inputs: DisplayInput[] } | { state: 'unavailable'; inputs: DisplayInput[] };
+export const ownDisplayValue = (raw: Readonly<Record<string, unknown>>, key: string): unknown => Object.prototype.hasOwnProperty.call(raw, key) ? raw[key] : undefined;
+export const displayInput = (field: string, evidence: Pick<DisplaySettings, 'source' | 'observedAt'>): DisplayInput => ({ field, source: evidence.source, observedAt: evidence.observedAt });
+export const agentDisplayInput = (field: string): DisplayInput => ({ field, source: 'agent', observedAt: Date.now() });

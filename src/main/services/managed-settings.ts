@@ -43,6 +43,8 @@ export interface ManagedSettings<T> {
 }
 
 export interface ManagedSettingsOptions<T> {
+  /** Metadata-only passive cache provenance; disabled for ordinary stores. */
+  displaySnapshot?: true;
   /** Called after settings are saved. Use for side effects (e.g., starting/stopping services). */
   onSave?: (settings: T, ...extraArgs: unknown[]) => void;
   /** Optional migration function for legacy settings format. */
@@ -77,7 +79,7 @@ export function createManagedSettings<T>(
     ? { ...definition.defaults, ...options.defaultsOverride }
     : definition.defaults;
 
-  const store = options?.store ?? createSettingsStore<T>(definition.filename, defaults, options?.migrate, { ...(options?.mode != null && { mode: options.mode }), audit: { key: definition.key } });
+  const store = options?.store ?? createSettingsStore<T>(definition.filename, defaults, options?.migrate, { ...(options?.mode != null && { mode: options.mode }), ...(options?.displaySnapshot && { displaySnapshot: true }), audit: { key: definition.key } });
 
   let registered = false;
 
