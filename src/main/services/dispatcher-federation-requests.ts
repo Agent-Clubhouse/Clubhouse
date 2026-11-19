@@ -175,6 +175,13 @@ export function parseFederationEnvelope(raw: unknown): FederationRequestEnvelope
 }
 
 export function createFederatedRequests(d: FederationRequestDependencies) {
+  // Capture only an own data-property adapter, without executing accessors or
+  // adopting a later replacement. The ordinary request service already owns d.
+  let displayPause: RequestPauseDisplayReader | undefined;
+  try {
+    const pauseDescriptor = Object.getOwnPropertyDescriptor(d.store, 'readPauseForDisplay');
+    if (pauseDescriptor && 'value' in pauseDescriptor && typeof pauseDescriptor.value === 'function') displayPause = pauseDescriptor.value;
+  } catch { /* telemetry-exempt: optional display support cannot break ordinary service construction. */ }
   const current = (r: FederatedRequest) => !r.localRequestId && d.authorizedNews ? d.authorizedNews(r.machineId, r.epoch)
     : d.authorized(r.machineId, r.direction === 'incoming' ? r.origin.agentId : r.targetId, r.epoch);
   const read = (id: string) => d.store.get().requests.find((r) => r.id === id);
@@ -333,6 +340,9 @@ export function createFederatedRequests(d: FederationRequestDependencies) {
     }
   }
   return {
+    readPauseForDisplay: ((machine, options) => displayPause ? displayPause(machine, options) : {
+      state: 'unavailable', inputs: [{ field: 'Established request-service pause metadata', source: 'host-cache', observedAt: Date.now() }],
+    }) as RequestPauseDisplayReader,
     pauseReason(machine: string): string | undefined {
       return this.allowed(machine, {}) ? undefined : d.store.get().paused[machine];
     },
