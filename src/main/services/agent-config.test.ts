@@ -2046,7 +2046,92 @@ describe('updateDurableConfig: a new CLI (#2593)', () => {
       delete written[String(src)];
     });
     vi.mocked(fsp.mkdir).mockResolvedValue(undefined);
+    return written;
   }
+  it('persists guided transition evidence across reload, keeps it for same-provider choices and clears it on another provider', async () => {
+    const marker = { version: 2 as const, provider: 'codex-cli' as const, agentId: 'durable_cli', delivery: 'read_only_managed' as const, composition: '1'.repeat(64), nativeFingerprint: '2'.repeat(64) };
+    setup({ orchestrator: 'claude-code', lastSessionId: 'old', sessionHistory: [entry('old', 'claude-code')] });
+    await expect(updateDurableConfig(PROJECT_PATH, 'durable_cli', { orchestrator: 'codex-cli', providerTransition: marker })).rejects.toThrow('guided commit');
+    expect((await getDurableConfig(PROJECT_PATH, 'durable_cli'))!.orchestrator).toBe('claude-code');
+    await updateDurableConfig(PROJECT_PATH, 'durable_cli', { orchestrator: 'codex-cli', providerTransition: marker }, async () => {});
+    clearAgentConfigCache(PROJECT_PATH);
+    expect(await getDurableConfig(PROJECT_PATH, 'durable_cli')).toMatchObject({ orchestrator: 'codex-cli', providerTransition: marker, sessionHistory: [entry('old', 'claude-code')] });
+    await updateDurableConfig(PROJECT_PATH, 'durable_cli', { model: 'fixture' });
+    expect((await getDurableConfig(PROJECT_PATH, 'durable_cli'))!.providerTransition).toEqual(marker);
+    await updateDurableConfig(PROJECT_PATH, 'durable_cli', { orchestrator: 'claude-code' });
+    expect((await getDurableConfig(PROJECT_PATH, 'durable_cli'))!.providerTransition).toBeUndefined();
+  });
+  it('acknowledges a detached durable snapshot only after flush and ignores receipt observer exceptions', async () => {
+    setup({ orchestrator: 'claude-code', model: 'opus', sessionHistory: [entry('old', 'claude-code')] });
+    const rename = vi.mocked(fsp.rename).getMockImplementation()!;
+    const receipt = vi.fn((snapshot) => {
+      expect(vi.mocked(fsp.rename)).toHaveBeenCalled();
+      expect(snapshot).toMatchObject({ orchestrator: 'codex-cli', sessionHistory: [entry('old', 'claude-code')] });
+      snapshot.sessionHistory[0].sessionId = 'observer-local';
+      throw new Error('observer failed');
+    });
+    vi.mocked(fsp.rename).mockImplementation(async (...args) => { expect(receipt).not.toHaveBeenCalled(); return rename(...args); });
+    await expect(updateDurableConfig(PROJECT_PATH, 'durable_cli', { orchestrator: 'codex-cli' }, async () => {}, undefined, receipt)).resolves.toBeUndefined();
+    expect(receipt).toHaveBeenCalledTimes(1);
+    expect((await getDurableConfig(PROJECT_PATH, 'durable_cli'))!.sessionHistory![0].sessionId).toBe('old');
+    clearAgentConfigCache(PROJECT_PATH);
+    expect((await getDurableConfig(PROJECT_PATH, 'durable_cli'))!.sessionHistory![0].sessionId).toBe('old');
+  });
+  it('acknowledges the actual external provider merge during same-provider model flush', async () => {
+    const written = setup({ orchestrator: 'codex-cli', model: 'old-model' });
+    const file = path.join(PROJECT_PATH, '.clubhouse', 'agents.json');
+    const receipt = vi.fn();
+    await updateDurableConfig(PROJECT_PATH, 'durable_cli', { orchestrator: 'codex-cli', model: 'new-model' }, () => {
+      const rows = JSON.parse(written[file]); rows[0].orchestrator = 'claude-code'; written[file] = JSON.stringify(rows);
+    }, undefined, receipt);
+    expect(receipt).toHaveBeenCalledWith(expect.objectContaining({ orchestrator: 'claude-code', model: 'new-model' }));
+    expect(JSON.parse(written[file])[0]).toMatchObject({ orchestrator: 'claude-code', model: 'new-model' });
+  });
+  it.each([
+    { field: 'model', initial: { model: 'reviewed-model', effort: 'low' }, updates: { model: 'reviewed-model', effort: 'high' }, external: 'external-model' },
+    { field: 'effort', initial: { model: 'old-model', effort: 'high' }, updates: { model: 'new-model', effort: 'high' }, external: 'low' },
+  ])('acknowledges an external unchanged $field merge without overwriting it', async ({ field, initial, updates, external }) => {
+    const written = setup({ orchestrator: 'codex-cli', ...initial });
+    const file = path.join(PROJECT_PATH, '.clubhouse', 'agents.json');
+    const receipt = vi.fn();
+    await updateDurableConfig(PROJECT_PATH, 'durable_cli', { orchestrator: 'codex-cli', ...updates }, () => {
+      const rows = JSON.parse(written[file]); rows[0][field] = external; written[file] = JSON.stringify(rows);
+    }, undefined, receipt);
+    expect(receipt).toHaveBeenCalledWith(expect.objectContaining({ [field]: external }));
+    expect(JSON.parse(written[file])[0][field]).toBe(external);
+  });
+  it.each([['lastSessionId', 'external-native'], ['contextWindow', 'external-context'], ['routing', { reason: 'external' }]])('preserves an external %s introduced while a provider reset flushes', async (field, value) => {
+    const written = setup({ orchestrator: 'claude-code' });
+    const file = path.join(PROJECT_PATH, '.clubhouse', 'agents.json'); const receipt = vi.fn();
+    await updateDurableConfig(PROJECT_PATH, 'durable_cli', { orchestrator: 'codex-cli' }, () => {
+      const rows = JSON.parse(written[file]); rows[0][field as string] = value; written[file] = JSON.stringify(rows);
+    }, undefined, receipt);
+    expect(receipt).toHaveBeenCalledWith(expect.objectContaining({ orchestrator: 'codex-cli', [field as string]: value }));
+    expect(JSON.parse(written[file])[0][field as string]).toEqual(value);
+  });
+  it('clears legacy stored default effort and routing at the acknowledged writer boundary', async () => {
+    setup({ orchestrator: 'claude-code', model: 'default', effort: 'high', routing: { reason: 'legacy-default' } });
+    const receipt = vi.fn();
+    await updateDurableConfig(PROJECT_PATH, 'durable_cli', { orchestrator: 'claude-code', model: 'default' }, () => {}, undefined, receipt);
+    const saved = receipt.mock.calls[0][0];
+    expect(saved.model).toBeUndefined(); expect(saved.effort).toBeUndefined(); expect(saved.routing).toBeUndefined();
+  });
+  it('never acknowledges a failed guided flush', async () => {
+    setup({ orchestrator: 'claude-code' });
+    vi.mocked(fsp.rename).mockRejectedValueOnce(new Error('receipt disk failure'));
+    const receipt = vi.fn();
+    await expect(updateDurableConfig(PROJECT_PATH, 'durable_cli', { orchestrator: 'codex-cli' }, async () => {}, undefined, receipt)).rejects.toThrow('receipt disk failure');
+    expect(receipt).not.toHaveBeenCalled();
+  });
+
+  it('rolls back marker and provider together when guided persistence fails', async () => {
+    setup({ orchestrator: 'claude-code', lastSessionId: 'old', sessionHistory: [entry('old')] });
+    const marker = { version: 2 as const, provider: 'codex-cli' as const, agentId: 'durable_cli', delivery: 'read_only_managed' as const, composition: '1'.repeat(64), nativeFingerprint: '2'.repeat(64) };
+    vi.mocked(fsp.rename).mockRejectedValueOnce(new Error('disk failed'));
+    await expect(updateDurableConfig(PROJECT_PATH, 'durable_cli', { orchestrator: 'codex-cli', providerTransition: marker }, async () => {})).rejects.toThrow('disk failed');
+    expect(await getDurableConfig(PROJECT_PATH, 'durable_cli')).toMatchObject({ orchestrator: 'claude-code', lastSessionId: 'old', sessionHistory: [entry('old')] });
+    expect((await getDurableConfig(PROJECT_PATH, 'durable_cli'))!.providerTransition).toBeUndefined();
+  });
 
   it('rolls back a failed guided provider persistence without rejecting the old provider wake', async () => {
     setup({ orchestrator: 'claude-code', lastSessionId: 'claude-native', model: 'opus' });

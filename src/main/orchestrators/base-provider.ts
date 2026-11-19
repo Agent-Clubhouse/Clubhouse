@@ -223,6 +223,11 @@ export abstract class BaseProvider implements OrchestratorProvider {
     this.modelCache.set(key, { list, expires: list.fetchedAt + ttl });
     return copyModelList(list);
   }
+  peekModels(opts: ListModelsOptions = {}): ModelList | null {
+    const key = JSON.stringify(Object.entries(opts.env ?? {}).sort());
+    const cached = this.modelCache.get(key);
+    return cached ? copyModelList(cached.list) : null;
+  }
 
   /** No context setting unless the provider has one (#2660). */
   async getContextWindowOptions(_model: string | undefined, _opts?: ListModelsOptions): Promise<ContextWindowOptions> {

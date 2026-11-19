@@ -290,6 +290,16 @@ export interface SessionInfo {
   orchestrator?: OrchestratorId;
 }
 
+/** Main-only guided transition evidence, revalidated on every start. Never a
+ * grant, a loaded-instructions receipt or permission to overwrite files. */
+export interface ManagedProviderTransition {
+  version: 2;
+  provider: 'codex-cli';
+  agentId: string;
+  delivery: 'read_only_managed';
+  composition: string;
+  nativeFingerprint: string;
+}
 export interface DurableAgentConfig extends ExecutionPolicy {
   id: string;
   /** Recovery association, not authority: retained after an imported builder finishes. */
@@ -322,6 +332,7 @@ export interface DurableAgentConfig extends ExecutionPolicy {
   routing?: import('./helper-routing').HelperRouting;
   quickAgentDefaults?: QuickAgentDefaults;
   orchestrator?: OrchestratorId;
+  providerTransition?: ManagedProviderTransition;
   freeAgentMode?: boolean;
   /** Access (#2761): the level its CLI starts at. `freeAgentMode` is still written beside it, derived, for older phones and a rollback. */
   access?: import('./agent-access').AccessLevel;
@@ -780,6 +791,8 @@ export interface WrapperCatalogSnapshot {
 }
 
 export interface DurableConfigUpdates {
+  /** Main-only; rejected without the guided beforeCommit callback. */
+  providerTransition?: ManagedProviderTransition;
   /** Explicit Codex launch overrides; null returns this axis to its existing level default. */
   sandbox?: import('./execution-policy').AgentSandbox | null;
   approvalPolicy?: import('./execution-policy').AgentApprovalPolicy | null;

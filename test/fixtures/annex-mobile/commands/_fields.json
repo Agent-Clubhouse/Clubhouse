@@ -36,7 +36,10 @@
       "fields": [
         "agentId",
         "provider",
-        "expectedState"
+        "expectedState",
+        "contractVersion",
+        "model",
+        "effort"
       ],
       "required": [
         "agentId",
@@ -47,7 +50,10 @@
     "agent.providerPreview": {
       "fields": [
         "agentId",
-        "provider"
+        "provider",
+        "contractVersion",
+        "model",
+        "effort"
       ],
       "required": [
         "agentId",
@@ -72,7 +78,10 @@
         "message",
         "resume",
         "expectedProvider",
-        "expectedSessionId"
+        "expectedSessionId",
+        "contractVersion",
+        "expectedState",
+        "expectedNextWake"
       ],
       "required": [
         "agentId"
