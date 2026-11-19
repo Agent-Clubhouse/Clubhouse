@@ -125,10 +125,20 @@ export function peekStoredSettingsSync(filename: string, options?: SettingsPeekO
   return parsePeeked(raw);
 }
 
+/** Trusted fixed host metadata path only, never a caller-supplied remote path. Same bounded passive reader. */
+export async function peekMetadataFileForDisplay(admittedPath: string, maxBytes: number): Promise<PeekedSettings> {
+  return boundedSettingsPeek('', maxBytes, admittedPath);
+}
+
+/** Synchronous final-assembly check for the same trusted fixed metadata path. */
+export function peekMetadataFileForDisplaySync(admittedPath: string, maxBytes: number): PeekedSettings {
+  return boundedSettingsPeekSync('', maxBytes, admittedPath);
+}
+
 /** No SettingsStore load, migration, backup, temp sweep, cache warming, or write. */
-async function boundedSettingsPeek(filename: string, maxBytes: number): Promise<PeekedSettings> {
+async function boundedSettingsPeek(filename: string, maxBytes: number, admittedPath?: string): Promise<PeekedSettings> {
   if (!validPeekLimit(maxBytes)) return 'unreadable';
-  const file = path.join(app.getPath('userData'), filename);
+  const file = admittedPath ?? path.join(app.getPath('userData'), filename);
   let handle: Awaited<ReturnType<typeof fs.promises.open>>;
   try { handle = await fs.promises.open(file, fs.constants.O_RDONLY | fs.constants.O_NONBLOCK); }
   catch (error) { return readErrorKind(error); } // telemetry-exempt: caller reports uncertainty
@@ -149,9 +159,9 @@ async function boundedSettingsPeek(filename: string, maxBytes: number): Promise<
   finally { await handle.close(); }
 }
 
-function boundedSettingsPeekSync(filename: string, maxBytes: number): PeekedSettings {
+function boundedSettingsPeekSync(filename: string, maxBytes: number, admittedPath?: string): PeekedSettings {
   if (!validPeekLimit(maxBytes)) return 'unreadable';
-  const file = path.join(app.getPath('userData'), filename);
+  const file = admittedPath ?? path.join(app.getPath('userData'), filename);
   let handle: number;
   try { handle = fs.openSync(file, fs.constants.O_RDONLY | fs.constants.O_NONBLOCK); }
   catch (error) { return readErrorKind(error); } // telemetry-exempt: caller reports uncertainty

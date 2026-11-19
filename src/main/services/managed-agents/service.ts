@@ -1,3 +1,4 @@
+import type { DisplayReceipt } from '../display-settings';
 import { validateExecutionPolicy } from '../../../shared/execution-policy';
 /**
  * Clubhouse-managed agents (#2819): agent parts, templates and per-agent
@@ -1059,6 +1060,32 @@ export function createManagedAgentsService(deps: ManagedAgentsDeps) {
         const projectName = t.source && projects.find((p) => p.id === t.source!.projectId)?.name;
         return { ...t, ...(projectName && { projectName }), usedBy: agents.filter(({ agent }) => agent.managed?.templateId === t.id).length };
       });
+    },
+
+    /** Selected display metadata only; never normalize template Access or list unrelated templates. */
+    async getTemplateForDisplay(id: string, options: { receipts?: DisplayReceipt[] } = {}) {
+      const builtin = BUILTIN_TEMPLATES.get(id);
+      const fromBuiltin = !!builtin && isListed(builtin);
+      const stateRow = fromBuiltin ? undefined : await state.readForDisplay?.();
+      if (!fromBuiltin && !stateRow) throw new ManagedError('failed', 'Managed template metadata is unavailable.');
+      const own = (templates: Record<string, ManagedTemplate>) => Object.prototype.hasOwnProperty.call(templates, id) ? templates[id] : undefined;
+      const fields = (template: ManagedTemplate | undefined) => {
+        if (!template) throw new ManagedError('not_found');
+        if (typeof template !== 'object' || Array.isArray(template) || template.id !== id || typeof template.name !== 'string' || !template.name.trim()
+          || template.updatedBy !== undefined && typeof template.updatedBy !== 'string'
+          || template.updatedAt !== undefined && typeof template.updatedAt !== 'string') throw new ManagedError('failed', 'Managed template metadata is unavailable.');
+        const label = (value: string) => value.replace(/[\u0000-\u001f\u007f]/g, ' ').slice(0, 240);
+        return { name: label(template.name), ...(template.updatedBy !== undefined && { updatedBy: label(template.updatedBy) }),
+          ...(template.updatedAt !== undefined && { updatedAt: label(template.updatedAt) }), source: fromBuiltin ? 'builtin' as const : 'primary' as const,
+          truncated: [template.name, template.updatedBy, template.updatedAt].some((text) => text !== undefined && text.length > 240) };
+      };
+      const result = fields(fromBuiltin ? builtin : own(stateRow!.templates));
+      if (options.receipts) {
+        if (!fromBuiltin && !state.peekForDisplay) throw new ManagedError('failed', 'Managed template metadata receipt is unavailable.');
+        const signature = JSON.stringify(result);
+        options.receipts.push({ current: () => { try { return JSON.stringify(fields(fromBuiltin ? BUILTIN_TEMPLATES.get(id) : own(state.peekForDisplay!().templates))) === signature; } catch { return false; } } });
+      }
+      return { ...result, observedAt: Date.now() };
     },
 
     async getTemplate(id: string): Promise<ManagedTemplate> {

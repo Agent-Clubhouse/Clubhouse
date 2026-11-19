@@ -15,7 +15,10 @@ export function readDisplaySettings<T>(store: Pick<SettingsStore<T>, 'peekLoaded
 }
 
 export interface DisplayInput { field: string; source: 'agent' | 'host-cache' | 'primary'; observedAt: number }
-export type DisplayValue<T> = { state: 'ok'; value: T; inputs: DisplayInput[] } | { state: 'unavailable'; inputs: DisplayInput[] };
+export type DisplayValue<T> = { state: 'ok'; value: T; inputs: DisplayInput[] } | { state: 'unavailable'; inputs: DisplayInput[]; reason?: 'unreadable' | 'invalid' | 'limit' | 'changed' };
 export const ownDisplayValue = (raw: Readonly<Record<string, unknown>>, key: string): unknown => Object.prototype.hasOwnProperty.call(raw, key) ? raw[key] : undefined;
 export const displayInput = (field: string, evidence: Pick<DisplaySettings, 'source' | 'observedAt'>): DisplayInput => ({ field, source: evidence.source, observedAt: evidence.observedAt });
 export const agentDisplayInput = (field: string): DisplayInput => ({ field, source: 'agent', observedAt: Date.now() });
+
+/** Private final-assembly check; never a DTO field or new authority. */
+export interface DisplayReceipt { current(): boolean }

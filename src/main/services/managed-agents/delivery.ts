@@ -77,13 +77,13 @@ export function grantedSkippedNote(skipped: { name: string; folder: string; kept
   return `${skipped.keptName} uses ${skipped.folder}/, so the built-in ${skipped.name} skill isn't delivered. Rename one to get both.`;
 }
 
-async function resolveSetup(service: ManagedAgentsService, saved: ManagedAgentSetup, agent?: DurableAgentConfig): Promise<Resolved> {
+async function resolveSetup(service: ManagedAgentsService, saved: ManagedAgentSetup, agent?: DurableAgentConfig, displayGranted?: readonly string[]): Promise<Resolved> {
   // Both sides of the delivery fingerprint (delivered and current) resolve here,
   // so a setup saved before the Clubhouse part was required fingerprints the same.
   const base = withClubhouseSetup(saved);
   // A setup never chooses a grant-gated skill: what the agent may do decides it, after the person's own skills.
   const setup = { ...base, skills: base.skills.filter((id) => !GRANT_GATED_SKILL_IDS.includes(id)) };
-  const granted = agent ? grantedSkills(agent).filter((id) => GRANT_GATED_SKILL_IDS.includes(id)) : [];
+  const granted = agent ? (displayGranted ?? grantedSkills(agent)).filter((id) => GRANT_GATED_SKILL_IDS.includes(id)) : [];
   const out: Resolved = { blocks: [], skills: [], mcps: [], missing: [] };
   for (const id of setup.blocks) {
     const head = await service.headContent(id);
@@ -1084,3 +1084,15 @@ async function outsideTheSetup(projectPath: string, agent: DurableAgentConfig, p
 
 export type { Resolved as ResolvedManagedSetup };
 export { resolveSetup as resolveManagedSetup };
+
+/** Explicit selected-agent grant evidence bypasses the ordinary delivery callback entirely. */
+export async function resolveManagedSetupForDisplay(service: ManagedAgentsService, agent: DurableAgentConfig, grantedIds: readonly string[]): Promise<Resolved> {
+  const setup = agent.managed;
+  if (!setup || setup.version !== 1 || !Array.isArray(grantedIds) || grantedIds.length > GRANT_GATED_SKILL_IDS.length
+    || !grantedIds.every((id) => GRANT_GATED_SKILL_IDS.includes(id))) throw new Error('Managed display evidence is unavailable.');
+  if (![setup.blocks, setup.skills, setup.mcps].every((list) => Array.isArray(list) && list.every((id) => typeof id === 'string' && id.length > 0 && id.length <= 2048))) throw new Error('Managed display setup is unreadable.');
+  const base = withClubhouseSetup(setup);
+  const reads = base.blocks.length + base.skills.filter((id) => !GRANT_GATED_SKILL_IDS.includes(id)).length + base.mcps.length + new Set(grantedIds).size;
+  if (reads > 100) throw new Error('Managed display setup exceeds the part limit.');
+  return resolveSetup(service, setup, agent, [...new Set(grantedIds)]);
+}

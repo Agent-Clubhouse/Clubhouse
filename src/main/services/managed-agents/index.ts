@@ -3,6 +3,8 @@
  * running agents need: which setup each session started with, whether it has
  * changed since, and restarting so it picks the change up.
  */
+import { agentDisplayInput, type DisplayReceipt, type DisplayValue } from '../display-settings';
+import { isDisposedAgent } from '../../../shared/agent-helpers';
 import { assetCatalogDir, createAssetCatalogStore } from '../asset-catalog/store';
 import * as agentConfig from '../agent-config';
 import * as projectStore from '../project-store';
@@ -12,7 +14,7 @@ import { appLog } from '../log-service';
 import type { OrchestratorProvider } from '../../orchestrators/types';
 import type { DurableAgentConfig, McpServerDef, QuickTemplateChoice } from '../../../shared/types';
 import { PREPARE_HANDOFF_SKILL_ID } from '../../../shared/managed-agents-types';
-import { agentHoldsAction } from '../agent-grants-service';
+import { readAgentHoldsActionForDisplay, agentHoldsAction } from '../agent-grants-service';
 import { onOrchestrationGateChange } from '../clubhouse-mcp/orchestration-gate';
 import type { ManagedAgentSetup, ManagedAgentStatus, ManagedMcpProblem, ManagedPlainChoice, ManagedPlainPreview, ManagedRunningSnapshot } from '../../../shared/managed-agents-types';
 import { createManagedAgentsService, ManagedError, type ManagedAgentsService } from './service';
@@ -39,6 +41,7 @@ import {
   quickManagedLaunch,
   removeManagedClaudeExcludes,
   resolveManagedSetup,
+  resolveManagedSetupForDisplay,
   setGrantedSkills,
   setupFingerprint,
   type DeliveryRecord,
@@ -212,13 +215,17 @@ export async function managedMcpServersFor(agent: DurableAgentConfig): Promise<R
 
 export async function statusFor(projectPath: string, agentId: string): Promise<ManagedAgentStatus> {
   const agent = await agentConfig.getDurableConfig(projectPath, agentId);
+  return statusForSnapshot(agent, agentId, (selected) => resolveManagedSetup(managedAgents(), selected.managed!, selected));
+}
+
+async function statusForSnapshot(agent: DurableAgentConfig | null, agentId: string, resolve: (selected: DurableAgentConfig) => ReturnType<typeof resolveManagedSetup>): Promise<ManagedAgentStatus> {
   const running = (await import('../agent-system')).isAgentRunning(agentId);
   if (!agent?.managed) {
     // The switch offer says why an automatic switch didn't happen (D59).
     const migrationFailed = agent?.managedMigrationFailure?.message;
     return { managed: false, running, waiting: false, changes: [], cliChanged: false, ...(migrationFailed && { migrationFailed }) };
   }
-  const resolved = await resolveManagedSetup(managedAgents(), agent.managed, agent);
+  const resolved = await resolve(agent);
   const now = setupFingerprint(agent, resolved);
   const record = delivered.get(agentId);
   const failed = failedDeliveries.get(agentId);
@@ -259,6 +266,28 @@ export async function statusFor(projectPath: string, agentId: string): Promise<M
   }
   if (changes.length === 0) changes.push('Its settings changed');
   return { managed: true, running, waiting: true, changes, deliveredAt: record.deliveredAt, cliChanged, ...notice };
+}
+
+/** Reuse the strictly admitted agent snapshot; no config lookup or ordinary grant callback. */
+export async function readManagedStatusForDisplay(agent: DurableAgentConfig, options: { receipts?: DisplayReceipt[] } = {}): Promise<DisplayValue<ManagedAgentStatus>> {
+  const inputs = [agentDisplayInput('Managed agent setup')];
+  if (!agent.id || isDisposedAgent(agent)) return { state: 'unavailable', reason: 'invalid', inputs };
+  let grantedIds: readonly string[] = [];
+  const grantReceipts: DisplayReceipt[] = [];
+  if (agent.managed) {
+    const grant = readAgentHoldsActionForDisplay(agent.id, agent, 'handoff.offer', { receipts: grantReceipts }); inputs.push(...grant.inputs);
+    if (grant.state !== 'ok') return { state: 'unavailable', reason: grant.reason, inputs };
+    grantedIds = grant.value ? [PREPARE_HANDOFF_SKILL_ID] : [];
+  }
+  try {
+    const status = await statusForSnapshot(agent, agent.id, (selected) => resolveManagedSetupForDisplay(managedAgents(), selected, grantedIds));
+    if (grantReceipts.some((receipt) => !receipt.current())) return { state: 'unavailable', reason: 'changed', inputs };
+    options.receipts?.push(...grantReceipts);
+    inputs.push({ field: 'Clubhouse delivery record', source: 'host-cache', observedAt: Date.now() });
+    return { state: 'ok', value: status, inputs };
+  } catch (error) {
+    return { state: 'unavailable', reason: error instanceof Error && error.message === 'Managed display setup exceeds the part limit.' ? 'limit' : 'unreadable', inputs };
+  }
 }
 
 export async function activationFor(projectPath: string, agentId: string) {
