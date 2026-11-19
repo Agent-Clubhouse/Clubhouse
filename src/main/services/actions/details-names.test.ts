@@ -52,6 +52,11 @@ it('uses passive local/project/group/device callbacks and reports missing or amb
   const other = actionDetailsNames(() => undefined); expect(other.names.agent(`ambiguous@${m.machine}`)).toBeUndefined();
   expect(other.names.project('missing')).toBeUndefined(); expect(other.notices().join(' ')).toContain('unavailable');
 });
+it('withholds a colliding agent name from a snapshot carrying a different host identity', () => {
+  m.satellite = { alias: 'Desk', state: 'connected', snapshot: { machine: { fingerprint: Array(32).fill('bb').join(':') }, agents: { p: [{ id: 'remote-agent', name: 'WRONG_HOST_NAME' }] } } };
+  const resolver = actionDetailsNames(() => undefined);
+  expect(resolver.names.agent(`remote-agent@${m.machine}`)).toBeUndefined(); expect(resolver.notices().join(' ')).toContain('unavailable');
+});
 it('reports reference-name scan limits and malformed snapshots as unknown without throwing', () => {
   m.satellite = { alias: 'Desk', state: 'connected', snapshot: { agents: { p: Array.from({ length: 4100 }, (_, i) => ({ id: `other${i}`, name: 'Other' })) } } };
   const resolver = actionDetailsNames(() => undefined); expect(resolver.names.agent(`remote-agent@${m.machine}`)).toBeUndefined(); expect(resolver.notices().join(' ')).toContain('read limit');
