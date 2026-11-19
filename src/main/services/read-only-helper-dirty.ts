@@ -86,14 +86,28 @@ export async function readOnlyHelperDirty(root: string, head: string | null, aut
     const current = await read(file);
     if (current.state !== 'ok') return false;
     let base: string | null = null;
+    let baseMode = '100644';
     if (head) {
       const items = (await git(['ls-tree', '-z', head, '--', file])).split('\0').filter(Boolean);
       if (items.length) {
         const blob = /^(100644|100755) blob ([a-f0-9]{40,64})\t/.exec(items[0]);
         if (items.length !== 1 || !blob) throw new Error('Committed generated file unavailable.');
-        base = (await checked(readOnlyGit(root, ['cat-file', 'blob', blob[2]], MAX_FILE))).toString();
+        baseMode = blob[1];
+        const bytes = await checked(readOnlyGit(root, ['cat-file', 'blob', blob[2]], MAX_FILE));
+        budget -= bytes.length; base = bytes.toString();
       }
     }
+    // A generated-only classification must cover all three sides. The current
+    // worktree may have been restored while a user's staged edit remains.
+    if (fileMode !== 'false' && current.mode !== baseMode) return false;
+    const staged = index.get(file);
+    if (staged) {
+      if (staged.stage !== '0' || staged.mode !== baseMode) return false;
+      const bytes = await checked(readOnlyGit(root, ['cat-file', 'blob', staged.oid], MAX_FILE));
+      budget -= bytes.length;
+      if (!onlyClubhouseChangesFromTexts(file, bytes.toString(), base)) return false;
+    }
+    if (budget < 0) throw new Error('Helper comparison read limit.');
     return onlyClubhouseChangesFromTexts(file, current.bytes.toString(), base);
   };
   let count = 0;

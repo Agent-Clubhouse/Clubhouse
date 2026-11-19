@@ -58,6 +58,33 @@ describe('passive direct helper work', () => {
     await fs.writeFile(path.join(project, '.mcp.json'), JSON.stringify({ mcpServers: { user: { command: 'PRIVATE_COMMAND', env: { PRIVATE: 'VALUE' } } } }));
     expect(await readOnlyHelperWork(parent, entry, () => true)).toMatchObject({ dirty: 1 });
   });
+  it('retains staged user MCP work when the worktree was restored to HEAD, without changing either side', async () => {
+    const file = path.join(project, '.mcp.json');
+    const beforeText = JSON.stringify({ mcpServers: { user: { command: 'before' } } });
+    await fs.writeFile(file, beforeText); await git('add', '.mcp.json'); await git('commit', '-m', 'user MCP base');
+    await fs.writeFile(file, JSON.stringify({ mcpServers: { user: { command: 'staged-user-change' } } }));
+    await git('add', '.mcp.json'); await fs.writeFile(file, beforeText);
+    const before = await snapshot(root);
+    expect(await readOnlyHelperWork(parent, entry, () => true)).toMatchObject({ dirty: 1 });
+    expect(await snapshot(root)).toEqual(before);
+  });
+  it.runIf(process.platform !== 'win32').each([false, true])('retains config mode-only work (staged=%s) without changing index or worktree', async (staged) => {
+    const file = path.join(project, '.mcp.json');
+    await fs.writeFile(file, JSON.stringify({ mcpServers: { clubhouse: { command: 'node', args: ['/app/clubhouse-mcp-bridge.js'] } } }), { mode: 0o644 });
+    await git('config', 'core.fileMode', 'true'); await git('add', '.mcp.json'); await git('commit', '-m', 'generated MCP base');
+    await fs.chmod(file, 0o755); if (staged) await git('add', '.mcp.json');
+    const before = await snapshot(root);
+    expect(await readOnlyHelperWork(parent, entry, () => true)).toMatchObject({ dirty: 1 });
+    expect(await snapshot(root)).toEqual(before);
+    expect((await fs.stat(file)).mode & 0o777).toBe(0o755);
+  });
+  it('still excludes a staged generated-only MCP addition after classifying all stored sides', async () => {
+    await fs.writeFile(path.join(project, '.mcp.json'), JSON.stringify({ mcpServers: { clubhouse: { command: 'node', args: ['/app/clubhouse-mcp-bridge.js'] } } }));
+    await git('add', '.mcp.json');
+    const before = await snapshot(root);
+    expect(await readOnlyHelperWork(parent, entry, () => true)).toMatchObject({ dirty: 0 });
+    expect(await snapshot(root)).toEqual(before);
+  });
   it('reports unknown when a remote has not been fetched; never contacts it', async () => {
     await git('remote', 'add', 'origin', 'https://not-contacted.invalid/repository');
     const before = await snapshot(root);
