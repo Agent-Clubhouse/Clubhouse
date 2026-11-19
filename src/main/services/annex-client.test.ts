@@ -3369,7 +3369,10 @@ describe('annex-client', () => {
       annexClient._receiveSatelliteDisconnectForTesting(FP);
       vi.mocked(annexPeers.getPeer).mockReturnValue({ fingerprint: FP, role: 'satellite', kind: 'desktop', tlsCertificateFingerprint: 'pin' } as any);
       annexClient.connect(FP); await vi.waitFor(() => expect(annexClient.getSatellite(FP)?.state).toBe('connected'));
-      expect(annexClient.getSatellite(FP)).toBe(admitted);
+      // This accessor returns a fresh public projection. The production guard
+      // retains internal object identity; the epoch negative control keeps
+      // that identity check intact while proving this reconnect boundary.
+      expect(annexClient.getSatellite(FP)).toMatchObject({ id: admitted!.id, fingerprint: admitted!.fingerprint });
       finish(); const result = await pending;
       expect.soft(result).toEqual({ status: 'offline' }); expect.soft(JSON.stringify(result)).not.toContain('PRIVATE_PRIOR_EPOCH');
     });
