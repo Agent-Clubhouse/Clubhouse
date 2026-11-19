@@ -11,7 +11,7 @@ import type { CanvasMembership } from '../../../../shared/canvas-index-types';
 import { findAgentCanvasHits } from '../../../../shared/canvas-persistence';
 import { useProjectStore } from '../../../stores/projectStore';
 import { useUIStore } from '../../../stores/uiStore';
-import { isRemoteProjectId, parseNamespacedId } from '../../../stores/remoteProjectStore';
+import { isRemoteProjectId, parseNamespacedId, useRemoteProjectStore } from '../../../stores/remoteProjectStore';
 import { useAnnexClientStore } from '../../../stores/annexClientStore';
 import { getProjectCanvasStore, useAppCanvasStore } from '../../../plugins/builtin/canvas/main';
 import type { CanvasInstance } from '../../../plugins/builtin/canvas/canvas-types';
@@ -123,6 +123,9 @@ export function remoteCanvasJumpUnavailable(agent: Agent, hit: CanvasHit): strin
   if (!address || project?.satelliteId !== address.satelliteId) return 'The host project identity is unavailable.';
   const host = useAnnexClientStore.getState().satellites.find((s) => s.id === address.satelliteId);
   if (host?.state !== 'connected' || host.snapshotUnavailable) return 'Reconnect to the host to open this board.';
+  if (host.snapshot?.snapshotTruncated?.omitted?.some((section) => section === 'canvasState' || hit.scope === 'app' && section === 'appCanvasState')) {
+    return 'The host omitted canvas data from its current snapshot. Retained board data may be stale; open it on the host.';
+  }
   // Check the CURRENT snapshot, not remoteProjectStore's retained omitted canvas state.
   const state = hit.scope === 'app' ? host.snapshot?.appCanvasState : host.snapshot?.canvasState?.[project.agentId];
   if (!state || !containsCanvasHit(state.canvases, address.agentId, hit)) {
@@ -131,8 +134,8 @@ export function remoteCanvasJumpUnavailable(agent: Agent, hit: CanvasHit): strin
   return null;
 }
 
-function containsCanvasHit(canvases: unknown[], agentId: string, hit: CanvasHit): boolean {
-  return canvases.some((entry) => {
+function containsCanvasHit(canvases: unknown, agentId: string, hit: CanvasHit): boolean {
+  return Array.isArray(canvases) && canvases.some((entry: unknown) => {
     if (!entry || typeof entry !== 'object') return false;
     const c = entry as { id?: unknown; views?: unknown };
     return c.id === hit.canvasId && Array.isArray(c.views) && c.views.some((view: unknown) => !!view && typeof view === 'object'
@@ -156,8 +159,11 @@ function jumpToRemoteCanvas(agent: Agent, hit: CanvasHit): void {
     if (current.activeHostId !== address.satelliteId || useProjectStore.getState().activeProjectId !== projectId
       || remoteCanvasJumpUnavailable(agent, hit)) return false;
     const s = store.getState();
+    const remote = useRemoteProjectStore.getState();
+    const expectedSnapshot = projectId ? remote.remoteCanvasState[projectId] : remote.remoteAppCanvasState[address.satelliteId];
     // Home's store is shared between hosts and local Home. Never focus a colliding raw id there.
-    if (!s.loaded || s.dataOrigin !== 'remote' || !containsCanvasHit(s.canvases, agent.id, hit)) return false;
+    if (!s.loaded || s.dataOrigin !== 'remote' || !expectedSnapshot || s.remoteSource?.hostId !== address.satelliteId
+      || s.remoteSource.snapshot !== expectedSnapshot || !containsCanvasHit(s.canvases, agent.id, hit)) return false;
     beforeFocus?.();
     s.setActiveCanvas(hit.canvasId);
     s.focusView(hit.viewId);

@@ -1035,6 +1035,8 @@ describe('canvas main', () => {
       try {
         panel.rerender(React.createElement(canvasModule.MainPanel, { api: remoteApi }));
         await waitFor(() => expect(remoteStore.getState().dataOrigin).toBe('remote'));
+        expect(remoteStore.getState().remoteSource?.hostId).toBe('sat-project-flush');
+        expect(remoteStore.getState().remoteSource?.snapshot).toBe(useRemoteProjectStore.getState().remoteCanvasState[projectId]);
         await waitFor(() => expect(store.getState().autosaveFailed).toBe(true));
         panel.rerender(React.createElement(canvasModule.MainPanel, { api }));
         expect(await screen.findByText('Canvas changes not saved')).toBeTruthy();
@@ -1389,6 +1391,8 @@ describe('canvas main', () => {
       useUIStore.setState({ activeHostId: 'sat-1' });
     });
     await waitFor(() => expect(store.getState().activeCanvasId).toBe('REMOTE-CANVAS'));
+    expect(store.getState().remoteSource?.hostId).toBe('sat-1');
+    expect(store.getState().remoteSource?.snapshot).toBe(useRemoteProjectStore.getState().remoteAppCanvasState['sat-1']);
     // Past the autosave debounce, then away from the canvas (which flushes).
     await act(async () => { await new Promise((r) => setTimeout(r, 650)); });
     view.unmount();

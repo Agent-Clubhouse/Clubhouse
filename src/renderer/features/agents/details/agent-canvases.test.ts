@@ -8,6 +8,7 @@ import { jumpToCanvas, mergeCanvasHits, remoteCanvasJumpUnavailable, useAgentCan
 import { useAnnexClientStore } from '../../../stores/annexClientStore';
 import { useUIStore } from '../../../stores/uiStore';
 import { useProjectStore } from '../../../stores/projectStore';
+import { useRemoteProjectStore } from '../../../stores/remoteProjectStore';
 
 const agent = { id: 'durable_a', projectId: 'p-index', name: 'robin', kind: 'durable' } as Agent;
 
@@ -91,21 +92,45 @@ describe('jumpToCanvas', () => {
   const homeHit = { scope: 'app' as const, canvasId: 'shared-c', name: 'Host board', viewId: 'shared-v' };
   function shareBoard() {
     useAnnexClientStore.setState({ satellites: [{ id: 'sat', state: 'connected', snapshot: { appCanvasState: { canvases: [canvasWith('shared-c', 'Host board', 'durable_a', 'shared-v')], activeCanvasId: 'shared-c' } } }] as never });
+    const snapshot = { canvases: [canvasWith('shared-c', 'Host board', remote.id, 'shared-v')], activeCanvasId: 'shared-c' };
+    useRemoteProjectStore.setState({ remoteAppCanvasState: { sat: snapshot } });
+    return { hostId: 'sat', snapshot };
   }
   it('waits for the right host hydration instead of focusing a colliding local or other-host Home card', () => {
-    shareBoard();
+    const source = shareBoard();
     const local = canvasWith('shared-c', 'Local board', remote.id, 'shared-v');
     useAppCanvasStore.setState({ canvases: [local], activeCanvasId: 'shared-c', selectedViewId: null, loaded: true, dataOrigin: 'local' });
     jumpToCanvas(remote, homeHit);
     expect(useUIStore.getState().activeHostId).toBe('sat');
     expect(useProjectStore.getState().activeProjectId).toBeNull();
     expect(useAppCanvasStore.getState().selectedViewId).toBeNull();
-    useAppCanvasStore.getState().hydrateFromRemote([canvasWith('shared-c', 'Other host', 'remote||other||durable_a', 'shared-v')], 'shared-c');
+    useAppCanvasStore.getState().hydrateFromRemote([canvasWith('shared-c', 'Other host', remote.id, 'shared-v')], 'shared-c', [], [], { hostId: 'other', snapshot: source.snapshot });
     expect(useAppCanvasStore.getState().selectedViewId).toBeNull();
-    useAppCanvasStore.getState().hydrateFromRemote([canvasWith('shared-c', 'Host board', remote.id, 'shared-v')], 'shared-c');
+    useAppCanvasStore.getState().hydrateFromRemote(source.snapshot.canvases, 'shared-c', [], [], source);
     expect(useAppCanvasStore.getState().selectedViewId).toBe('shared-v');
     expect(useAppCanvasStore.getState().dataOrigin).toBe('remote');
     expect(local.selectedViewId).toBeNull();
+  });
+  it('does not focus an already-loaded different host board containing the identical remote agent/card ids', () => {
+    const source = shareBoard();
+    useAppCanvasStore.getState().hydrateFromRemote([canvasWith('shared-c', 'Other host', remote.id, 'shared-v')], 'shared-c', [], [], { hostId: 'other', snapshot: source.snapshot });
+    jumpToCanvas(remote, homeHit);
+    expect(useAppCanvasStore.getState().selectedViewId).toBeNull();
+    // The host name alone cannot bless a prior snapshot either.
+    useAppCanvasStore.getState().hydrateFromRemote(source.snapshot.canvases, 'shared-c', [], [], { hostId: 'sat', snapshot: { ...source.snapshot } });
+    expect(useAppCanvasStore.getState().selectedViewId).toBeNull();
+    useAppCanvasStore.getState().hydrateFromRemote(source.snapshot.canvases, 'shared-c', [], [], source);
+    expect(useAppCanvasStore.getState().selectedViewId).toBe('shared-v');
+  });
+  it('refuses a copied retained canvas with a matching source identity when the current snapshot says canvas data was omitted', () => {
+    const source = shareBoard();
+    useAppCanvasStore.getState().hydrateFromRemote(source.snapshot.canvases, 'shared-c', [], [], source);
+    useUIStore.getState().setActiveHost('other');
+    useAnnexClientStore.setState((s) => ({ satellites: s.satellites.map((h) => ({ ...h, snapshot: { ...h.snapshot, snapshotTruncated: { omitted: ['canvasState'] } } })) as never }));
+    expect(remoteCanvasJumpUnavailable(remote, homeHit)).toContain('may be stale');
+    jumpToCanvas(remote, homeHit);
+    expect(useUIStore.getState().activeHostId).toBe('other');
+    expect(useAppCanvasStore.getState().selectedViewId).toBeNull();
   });
   it('refuses stale/omitted/malformed snapshots and cancels a pending jump when the host changes', () => {
     shareBoard();
@@ -113,7 +138,7 @@ describe('jumpToCanvas', () => {
     useUIStore.getState().setActiveHost('other');
     useAppCanvasStore.getState().hydrateFromRemote([canvasWith('shared-c', 'Host board', remote.id, 'shared-v')], 'shared-c');
     expect(useAppCanvasStore.getState().selectedViewId).not.toBe('shared-v');
-    for (const snapshot of [{}, { appCanvasState: { canvases: [null, {}, { id: 'shared-c', views: [null] }] } }]) {
+    for (const snapshot of [{}, { appCanvasState: {} }, { appCanvasState: { canvases: null } }, { appCanvasState: { canvases: [null, {}, { id: 'shared-c', views: [null] }] } }]) {
       useAnnexClientStore.setState({ satellites: [{ id: 'sat', state: 'connected', snapshot }] as never });
       expect(remoteCanvasJumpUnavailable(remote, homeHit)).toContain('not in the host');
       jumpToCanvas(remote, homeHit);
@@ -128,10 +153,12 @@ describe('jumpToCanvas', () => {
     const board = canvasWith('shared-c', 'Project board', 'durable_a', 'shared-v');
     useAnnexClientStore.setState({ satellites: [{ id: 'sat', state: 'connected', snapshot: { canvasState: { 'p-index': { canvases: [board], activeCanvasId: 'shared-c' } } } }] as never });
     const store = getProjectCanvasStore(remote.projectId!);
+    const snapshot = { canvases: [{ ...board, views: board.views.map((v) => ({ ...v, agentId: remote.id })) }], activeCanvasId: 'shared-c' };
+    useRemoteProjectStore.setState({ remoteCanvasState: { [remote.projectId!]: snapshot } });
     store.setState({ loaded: false, dataOrigin: null, selectedViewId: null });
     jumpToCanvas(remote, hit);
     expect(useProjectStore.getState().activeProjectId).toBe(remote.projectId);
-    store.getState().hydrateFromRemote([{ ...board, views: board.views.map((v) => ({ ...v, agentId: remote.id })) }], 'shared-c');
+    store.getState().hydrateFromRemote(snapshot.canvases, 'shared-c', [], [], { hostId: 'sat', snapshot });
     expect(store.getState().selectedViewId).toBe('shared-v');
     expect(board.views[0].agentId).toBe('durable_a');
     expect(window.clubhouse.canvas.getAgentCanvases).not.toHaveBeenCalled();

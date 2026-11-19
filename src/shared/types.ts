@@ -1318,6 +1318,8 @@ export interface SnapshotPluginSummary {
 }
 
 export interface SatelliteSnapshot {
+  /** Sections omitted to fit the transport frame; copied retained fields are not fresh evidence. */
+  snapshotTruncated?: { version?: number; reason?: string; omitted?: string[]; bytes?: number };
   /** The machine this snapshot is from (#3063): its agents' addresses are `<agentId>@<fingerprint>`. */
   machine?: { fingerprint: string; name: string };
   projects: Project[];

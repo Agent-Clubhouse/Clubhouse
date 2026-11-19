@@ -13,7 +13,7 @@ import { setCanvasQueryProvider } from '../../plugin-api-canvas';
 import { broadcastCanvasState, sendRemoteCanvasMutation } from './canvas-sync';
 import { PoppedOutPlaceholder } from '../../../features/popout/PoppedOutPlaceholder';
 import { usePopouts } from '../../../hooks/usePopouts';
-import { isRemoteProjectId, useRemoteProjectStore } from '../../../stores/remoteProjectStore';
+import { isRemoteProjectId, parseNamespacedId, useRemoteProjectStore } from '../../../stores/remoteProjectStore';
 import { useUIStore } from '../../../stores/uiStore';
 import { useChromeFlagStore } from '../../../chrome/chromeFlag';
 import { useMcpBindingStore, type McpBindingEntry } from '../../../stores/mcpBindingStore';
@@ -306,7 +306,8 @@ export function MainPanel({ api }: { api: PluginAPI }) {
           ? useRemoteProjectStore.getState().remoteAppCanvasState[activeHostId]
           : projectId ? useRemoteProjectStore.getState().remoteCanvasState[projectId] : undefined;
         if (remoteState) {
-          store.getState().hydrateFromRemote(remoteState.canvases, remoteState.activeCanvasId, remoteState.wireDefinitions, (remoteState as { zoneWireDefinitions?: unknown[] }).zoneWireDefinitions);
+          store.getState().hydrateFromRemote(remoteState.canvases, remoteState.activeCanvasId, remoteState.wireDefinitions, (remoteState as { zoneWireDefinitions?: unknown[] }).zoneWireDefinitions,
+            { hostId: isRemoteApp ? activeHostId! : parseNamespacedId(projectId!)!.satelliteId, snapshot: remoteState });
         }
         setHydrated(true);
       })();
@@ -339,7 +340,8 @@ export function MainPanel({ api }: { api: PluginAPI }) {
       const newState = state.remoteCanvasState[projectId];
       if (newState && newState !== prevState && remoteHydrationReadyRef.current) {
         prevState = newState;
-        store.getState().hydrateFromRemote(newState.canvases, newState.activeCanvasId, newState.wireDefinitions, (newState as { zoneWireDefinitions?: unknown[] }).zoneWireDefinitions);
+        store.getState().hydrateFromRemote(newState.canvases, newState.activeCanvasId, newState.wireDefinitions, (newState as { zoneWireDefinitions?: unknown[] }).zoneWireDefinitions,
+          { hostId: parseNamespacedId(projectId)!.satelliteId, snapshot: newState });
       }
     });
   }, [store, isRemote, projectId]);
@@ -352,7 +354,8 @@ export function MainPanel({ api }: { api: PluginAPI }) {
       const newState = state.remoteAppCanvasState[activeHostId];
       if (newState && newState !== prevState && remoteHydrationReadyRef.current) {
         prevState = newState;
-        store.getState().hydrateFromRemote(newState.canvases, newState.activeCanvasId, newState.wireDefinitions, (newState as { zoneWireDefinitions?: unknown[] }).zoneWireDefinitions);
+        store.getState().hydrateFromRemote(newState.canvases, newState.activeCanvasId, newState.wireDefinitions, (newState as { zoneWireDefinitions?: unknown[] }).zoneWireDefinitions,
+          { hostId: activeHostId, snapshot: newState });
       }
     });
   }, [store, isRemoteApp, activeHostId]);
