@@ -2,10 +2,11 @@ import { constants, type BigIntStats } from 'fs';
 import * as fs from 'fs/promises';
 import * as path from 'path';
 
-export type WorktreeFile = { state: 'ok'; bytes: Buffer; mode: '100644' | '100755' } | { state: 'missing' | 'unsafe' | 'too-large' | 'directory' | 'unreadable' };
+export type WorktreeFile = { state: 'ok'; bytes: Buffer; mode: '100644' | '100755'; truncated?: boolean } | { state: 'missing' | 'unsafe' | 'too-large' | 'directory' | 'unreadable' };
 
-/** The selected registered worktree only. Pin every ancestor and the no-follow descriptor before/after reading. */
-export async function readOnlyWorktreeFile(root: string, relative: string, maxBytes = 1024 * 1024): Promise<WorktreeFile> {
+/** One selected file beneath a trusted root. Pin ancestors and the no-follow descriptor before/after reading.
+ * Prefix mode is explicit; its consumer must verify framing before calling any section complete. */
+export async function readOnlyWorktreeFile(root: string, relative: string, maxBytes = 1024 * 1024, options: { prefix?: boolean } = {}): Promise<WorktreeFile> {
   if (!relative || path.isAbsolute(relative) || relative.includes('\\') || relative.includes('\0') || relative.split('/').some((s) => !s || s === '.' || s === '..' || s === '.git')) return { state: 'unsafe' };
   let handle: Awaited<ReturnType<typeof fs.open>> | undefined;
   try {
@@ -20,7 +21,7 @@ export async function readOnlyWorktreeFile(root: string, relative: string, maxBy
     }
     const leaf = expected.get(file)!;
     if (!leaf.isFile()) return { state: leaf.isDirectory() ? 'directory' : 'unsafe' };
-    if (leaf.size > BigInt(maxBytes)) return { state: 'too-large' };
+    if (!options.prefix && leaf.size > BigInt(maxBytes)) return { state: 'too-large' };
     const same = (a: BigIntStats, b: BigIntStats) => a.dev === b.dev && a.ino === b.ino;
     const verify = async () => {
       for (const [member, prior] of expected) {
@@ -44,7 +45,8 @@ export async function readOnlyWorktreeFile(root: string, relative: string, maxBy
     await verify();
     const after = await handle.stat({ bigint: true });
     if (after.mtimeNs !== opened.mtimeNs || after.size !== opened.size || after.ctimeNs !== opened.ctimeNs) return { state: 'unreadable' };
-    return size > maxBytes ? { state: 'too-large' } : { state: 'ok', bytes: bytes.subarray(0, size), mode: (opened.mode & BigInt(0o111)) !== BigInt(0) ? '100755' : '100644' };
+    return size > maxBytes && !options.prefix ? { state: 'too-large' } : { state: 'ok', bytes: bytes.subarray(0, options.prefix ? Math.min(size, maxBytes) : size), mode: (opened.mode & BigInt(0o111)) !== BigInt(0) ? '100755' : '100644',
+      ...(options.prefix && { truncated: size > maxBytes || opened.size > BigInt(maxBytes) }) };
   } catch (error) {
     return { state: (error as NodeJS.ErrnoException).code === 'ENOENT' && !handle ? 'missing' : 'unreadable' };
   } finally { await handle?.close(); }

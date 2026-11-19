@@ -25,7 +25,7 @@ describe('selected worktree passive file evidence', () => {
     expect(await readOnlyWorktreeFile(folder, 'link')).toEqual({ state: 'unsafe' });
     for (const p of ['../outside', '/outside', '.git/config', 'sub/../sub/file', 'sub\\file', 'sub\0file']) expect(await readOnlyWorktreeFile(folder, p)).toEqual({ state: 'unsafe' });
   });
-  it('rejects a replaced ancestor before any opened descriptor bytes can escape', async () => {
+  it.each([false, true])('rejects a replaced ancestor before any opened descriptor bytes can escape, prefix=%s', async (prefix) => {
     const root = path.join(folder, 'root');
     const outside = path.join(folder, 'outside');
     await fs.mkdir(path.join(root, 'sub'), { recursive: true });
@@ -38,11 +38,28 @@ describe('selected worktree passive file evidence', () => {
       await fs.symlink(outside, path.join(root, 'sub'));
       return open(...args);
     });
-    const result = await readOnlyWorktreeFile(root, 'sub/file');
-    expect(result.state).not.toBe('ok');
-    expect(JSON.stringify(result)).not.toContain('PRIVATE_OUTSIDE_SECRET');
+    const result = await readOnlyWorktreeFile(root, 'sub/file', 1024, { prefix });
+    expect.soft(result.state).not.toBe('ok');
+    expect.soft(JSON.stringify(result)).not.toContain('PRIVATE_OUTSIDE_SECRET');
+    expect.soft(result.state === 'ok' ? result.bytes.toString('utf8') : '').not.toContain('PRIVATE_OUTSIDE_SECRET');
   });
-  it('rejects a replaced ancestor even when its leaf is a hard link to the pinned inode', async () => {
+  it('admits an explicitly requested bounded prefix without changing full-file comparison limits', async () => {
+    const file = path.join(folder, 'large'); await fs.writeFile(file, 'visible-prefix-' + 'PRIVATE_NOTES'.repeat(10000));
+    const before = await fs.stat(file); let bytes = 0;
+    const open = vi.mocked(fs.open).getMockImplementation()!;
+    vi.mocked(fs.open).mockImplementationOnce(async (...args: Parameters<typeof fs.open>) => {
+      const handle = await open(...args), read = handle.read.bind(handle);
+      vi.spyOn(handle, 'read').mockImplementation(async (...args: Parameters<typeof read>) => { const result = await Reflect.apply(read, handle, args); bytes += result.bytesRead; return result; });
+      return handle;
+    });
+    const prefix = await readOnlyWorktreeFile(folder, 'large', 14, { prefix: true });
+    expect(prefix).toEqual({ state: 'ok', bytes: Buffer.from('visible-prefix'), mode: '100644', truncated: true });
+    expect(bytes).toBeGreaterThan(0); expect(bytes).toBeLessThanOrEqual(15);
+    expect(await readOnlyWorktreeFile(folder, 'large', 14)).toEqual({ state: 'too-large' });
+    const after = await fs.stat(file); expect([after.ino, after.mtimeMs, after.size]).toEqual([before.ino, before.mtimeMs, before.size]);
+    await fs.symlink(file, path.join(folder, 'linked')); expect(await readOnlyWorktreeFile(folder, 'linked', 14, { prefix: true })).toEqual({ state: 'unsafe' });
+  });
+  it.each([false, true])('rejects a replaced ancestor even when its leaf is a hard link to the pinned inode, prefix=%s', async (prefix) => {
     const root = path.join(folder, 'root'), outside = path.join(folder, 'outside');
     await fs.mkdir(path.join(root, 'sub'), { recursive: true });
     await fs.mkdir(outside);
@@ -55,8 +72,9 @@ describe('selected worktree passive file evidence', () => {
       await fs.writeFile(path.join(outside, 'file'), 'PRIVATE_HARDLINK_SECRET');
       return open(...args);
     });
-    const result = await readOnlyWorktreeFile(root, 'sub/file');
-    expect(result.state).not.toBe('ok');
-    expect(JSON.stringify(result)).not.toContain('PRIVATE_HARDLINK_SECRET');
+    const result = await readOnlyWorktreeFile(root, 'sub/file', 1024, { prefix });
+    expect.soft(result.state).not.toBe('ok');
+    expect.soft(JSON.stringify(result)).not.toContain('PRIVATE_HARDLINK_SECRET');
+    expect.soft(result.state === 'ok' ? result.bytes.toString('utf8') : '').not.toContain('PRIVATE_HARDLINK_SECRET');
   });
 });
