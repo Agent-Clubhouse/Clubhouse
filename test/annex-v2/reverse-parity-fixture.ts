@@ -103,9 +103,12 @@ export async function closeServer(server: net.Server): Promise<void> {
 export async function transparentForward(targetPort: number) {
   const fixtureConnect = net.Socket.prototype.connect;
   const sockets = new Set<net.Socket>();
+  const fromA = new Set<net.Socket>();
   const sourcePorts: number[] = [];
   const targetPorts: number[] = [];
   const server = net.createServer((incoming) => {
+    fromA.add(incoming);
+    incoming.once('close', () => fromA.delete(incoming));
     sourcePorts.push(incoming.remotePort!);
     const outgoing = new net.Socket();
     Reflect.apply(fixtureConnect, outgoing, [targetPort, '127.0.0.1']);
@@ -123,6 +126,11 @@ export async function transparentForward(targetPort: number) {
   const port = await listen(server);
   return {
     port, sourcePorts, targetPorts,
+    pauseAToB() {
+      const paused = [...fromA];
+      for (const socket of paused) socket.pause();
+      return () => { for (const socket of paused) socket.resume(); };
+    },
     cut() { for (const socket of sockets) socket.destroy(); },
     async close() {
       for (const socket of sockets) socket.destroy();

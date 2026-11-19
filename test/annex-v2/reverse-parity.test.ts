@@ -10,6 +10,7 @@ import {
   createInventoryPeer, LARGE_DIFF_BYTES, type InventoryPeer, type InventoryPeerInfo, type WireAnswer,
 } from './reverse-inventory-peer';
 import { assertDialAudit, closeServer, rpcPeer, sentinel, transparentForward, type RpcPeer } from './reverse-parity-fixture';
+import { ControlBulkLane } from '../../src/main/services/annex-control-bulk';
 
 type Status = ReturnType<InventoryPeer['status']>;
 
@@ -168,6 +169,30 @@ describe('full-server audit inventory over one A to B forward', () => {
       expect(await b.call('transcript')).toEqual(directTranscript);
     });
   });
+
+  it('a locally cancelled read refuses its delayed real bulk offer without retiring the link', async () => {
+    a.seedCancelledRead();
+    expect((await status('B')).direct).toBe(false);
+    const sent = vi.spyOn(ControlBulkLane.prototype, 'send');
+    const resume = forward.pauseAToB();
+    try {
+      const read = b.call('cancellableRead', { method: 'GET', path: `/api/v1/projects/${a.info.projectId}/files/read?path=cancel-read.txt` });
+      await vi.waitFor(() => { expect(sent.mock.calls.some(([kind]) => kind === 'response')).toBe(true); });
+      const lane: unknown = sent.mock.contexts[sent.mock.calls.findIndex(([kind]) => kind === 'response')];
+      if (!(lane instanceof ControlBulkLane)) throw new Error('The real target bulk lane was not observed');
+      const outgoing: unknown = Reflect.get(lane, 'outgoing');
+      if (!(outgoing instanceof Map)) throw new Error('The real target transfer registry is missing');
+      expect(outgoing.size).toBe(1);
+      await b.call('cancelRead');
+      expect(await read).toEqual({ code: 'cancelled', indeterminate: false });
+      await vi.waitFor(() => { expect(outgoing.size).toBe(0); });
+      resume();
+      const next = await b.call<WireAnswer>('wire', { method: 'GET', path: '/api/v1/status' });
+      expect(next.status).toBe(200);
+      expect(JSON.parse(Buffer.from(next.body, 'base64').toString())).toMatchObject({ deviceName: 'A' });
+      expect((await status('B')).readiness?.acceptedHere).toBe(true);
+    } finally { resume(); sent.mockRestore(); }
+  }, 20_000);
 
   it('audits every app dial independently of the direct-dial sentinel', async () => {
     assertDialAudit((await status('A')).attempts, { host: '127.0.0.1', port: forward.port }, forward.sourcePorts, guard.accepts());

@@ -17,6 +17,8 @@ describe.runIf(process.env.CLUBHOUSE_ANNEX_INVENTORY_PEER === '1')('isolated ful
         case 'configure': return peer.configure(params as Parameters<typeof peer.configure>[0]);
         case 'status': return peer.status();
         case 'wire': return peer.wire(params as Parameters<typeof peer.wire>[0]);
+        case 'cancellableRead': return peer.cancellableRead(params as Parameters<typeof peer.cancellableRead>[0]);
+        case 'cancelRead': return peer.cancelRead();
         case 'probe': return peer.probe(params as Parameters<typeof peer.probe>[0]);
         case 'emit': return peer.emit(params as Parameters<typeof peer.emit>[0]);
         case 'driverState': return peer.driverState();
