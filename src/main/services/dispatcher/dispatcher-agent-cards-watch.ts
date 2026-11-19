@@ -99,6 +99,7 @@ export const liveAgentCardDeps: AgentCardDeps = {
 export function agentCardSourceFor(cards: AgentCards): AgentCardSource {
   return {
     status: (agentId) => cards.view(agentId),
+    display: (agentId, projectPath, options) => cards.viewForDisplay(agentId, projectPath, options),
     saveUserCard: async (agentId, fields) => {
       const result = await cards.saveUserCard(agentId, fields);
       if (!result.ok) throw new Error((result as { error: string }).error);
