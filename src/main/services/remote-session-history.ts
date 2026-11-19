@@ -41,8 +41,9 @@ export async function readHistoricalSessionCard(c: RemoteDetailsCard, agent: Dur
     c.notes.push('Historical usage is unknown: the host launch environment is not cached (initialization may be pending or unavailable). Details does not initialize it.'); return;
   }
   const stats: TranscriptReadStats = {};
-  const raw = await provider.readSessionTranscript(id, cwd, { maxBytes: SUMMARY_TRANSCRIPT_MAX_BYTES, stats });
+  const raw = await provider.readSessionTranscript(id, cwd, { maxBytes: SUMMARY_TRANSCRIPT_MAX_BYTES, stats, passiveLookup: true });
   const known = (value: unknown): value is number => typeof value === 'number' && Number.isFinite(value) && value >= 0;
+  if (stats.lookupIncomplete) c.notes.push('Historical lookup reached its bounded limit or an unreadable directory. Session availability is unknown.');
   if (stats.truncated) c.notes.push('The historical transcript was truncated to the host summary byte limit; earlier results may be missing.');
   else if (known(stats.fileBytes) && stats.fileBytes === stats.bytesRead) c.notes.push('The provider read the complete file for this summary.');
   else c.notes.push('The provider did not report whether this historical transcript read was complete.');

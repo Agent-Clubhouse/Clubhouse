@@ -224,7 +224,7 @@ describe('host selected-agent Details projections', () => {
   it('binds last-session usage to the selected saved session and provider, not a broad session list', async () => {
     m.target.mockResolvedValue({ agent: { ...agent(), lastSessionId: 'selected-last', sessionHistory: [{ sessionId: 'selected-last', orchestrator: 'claude-code' }] }, project });
     const value = await read();
-    expect(m.historical).toHaveBeenCalledWith('selected-last', '/host/selected', { maxBytes: 2097152, stats: expect.any(Object) });
+    expect(m.historical).toHaveBeenCalledWith('selected-last', '/host/selected', { maxBytes: 2097152, stats: expect.any(Object), passiveLookup: true });
     expect(m.transcript).not.toHaveBeenCalled();
     expect(value.cards.find((c) => c.id === 'session')?.rows).toContainEqual({ label: 'Last CLI', value: 'Host Current Claude' });
     expect(value.cards.find((c) => c.id === 'session')?.rows).toContainEqual({ label: 'Cost', value: '$1.25' });
@@ -282,6 +282,14 @@ describe('host selected-agent Details projections', () => {
       else { expect(m.historical).toHaveBeenCalledTimes(1); expect(c.rows).toContainEqual({ label: 'Cost', value: '$0.00' }); }
     } finally { Object.defineProperty(process, 'platform', { value: platform }); shell.invalidateShellEnvironmentCache(); }
   });
+  it('keeps a limited historical native lookup unknown rather than verified missing or empty', async () => {
+    m.target.mockResolvedValue({ agent: { ...agent(), lastSessionId: 'selected-last', sessionHistory: [{ sessionId: 'selected-last', orchestrator: 'claude-code' }] }, project });
+    m.historical.mockImplementation(async (_id, _cwd, options) => { options.stats.lookupIncomplete = true; return null; });
+    const c = (await read()).cards.find((c) => c.id === 'session')!;
+    expect(m.historical).toHaveBeenCalledWith('selected-last', '/host/selected', expect.objectContaining({ passiveLookup: true }));
+    expect(c.notes.join(' ')).toContain('bounded limit or an unreadable directory'); expect(c.notes.join(' ')).toContain('availability is unknown');
+    expect(c.rows.some((r) => r.label === 'Cost' || r.label === 'Duration')).toBe(false);
+  });
   it.each(['small', 'truncated'] as const)('reads historical native provider file with real byte bound and unchanged storage: %s', async (mode) => {
     const root = await fs.mkdtemp(path.join(os.tmpdir(), 'clubhouse-history-native-'));
     const platform = process.platform;
@@ -304,7 +312,7 @@ describe('host selected-agent Details projections', () => {
       m.catalog.mockReturnValue(provider);
       m.target.mockResolvedValue({ agent: { ...agent(), lastSessionId: 'selected-last', sessionHistory: [{ sessionId: 'selected-last', orchestrator: 'claude-code' }] }, project });
       const c = (await read()).cards.find((c) => c.id === 'session')!;
-      expect(lookup).toHaveBeenCalledWith('selected-last', '/host/selected'); expect(m.transcript).not.toHaveBeenCalled();
+      expect(lookup).toHaveBeenCalledWith('selected-last', '/host/selected', expect.objectContaining({ passiveLookup: true, maxBytes: 2097152 })); expect(m.transcript).not.toHaveBeenCalled();
       expect(execSync).not.toHaveBeenCalled(); expect(shell.isShellEnvironmentCached()).toBe(false);
       expect(nativeRead).toHaveBeenCalledTimes(1); const options = nativeRead.mock.calls[0][2]!;
       expect(options.maxBytes).toBe(2097152); expect(options.stats?.fileBytes).toBe(Buffer.byteLength(text));
