@@ -11,6 +11,8 @@
  * `npm run fixtures:annex-mobile` rewrites the files; this suite (and
  * `npm run fixtures:annex-mobile -- --check`) fails when they are stale.
  */
+import { ClaudeCodeProvider } from '../orchestrators/claude-code-provider';
+import { CodexCliProvider } from '../orchestrators/codex-cli-provider';
 import { noteSessionCaptureFailure, clearSessionCaptures } from './session-capture-barrier';
 import { _resetProviderQuotaForTesting } from './provider-quota';
 import { noteRoutingPolicyChanged } from './helper-routing-changes';
@@ -533,6 +535,7 @@ vi.mock('./agent-system', () => ({
     id: id ?? 'claude-code',
     checkAvailability: async () => ({ available: true }),
     getCapabilities: () => ({ permissions: true, sessionResume: true }),
+    acceptsModel: (model: string, list: import('../orchestrators/types').ModelList) => id === 'codex-cli' ? CodexCliProvider.prototype.acceptsModel(model, list) : ClaudeCodeProvider.prototype.acceptsModel(model, list),
     inspectInstructions: async () => 'Fixture shared instructions',
     peekModels: () => { if (W.providerV2Catalog === 'unavailable') throw new Error('Fixture catalog unavailable'); return { source: W.providerV2Catalog === 'fallback' ? 'fallback' : 'live', via: W.providerV2Catalog === 'fallback' ? 'static' : 'handshake', fetchedAt: W.providerV2Catalog === 'expired' ? 0 : NOW_FOR_MOCKS, models: [{ id: 'fixture-current-model', label: 'Fixture current model', isDefault: true, efforts: W.providerV2Efforts }, { id: 'fixture-current-other-model', label: 'Another current model', efforts: W.providerV2Efforts }] }; },
     listModels: async () => { if (W.providerV2Catalog === 'unavailable') throw new Error('Fixture catalog unavailable'); return { source: W.providerV2Catalog === 'fallback' ? 'fallback' : 'live', via: W.providerV2Catalog === 'fallback' ? 'static' : 'handshake', fetchedAt: W.providerV2Catalog === 'expired' ? 0 : NOW_FOR_MOCKS, models: [{ id: 'fixture-current-model', label: 'Fixture current model', isDefault: true, efforts: W.providerV2Efforts }, { id: 'fixture-current-other-model', label: 'Another current model', efforts: W.providerV2Efforts }] }; },
@@ -3854,6 +3857,14 @@ describe('Annex mobile contract fixtures', { timeout: TEST_TIMEOUT_MS }, () => {
     const freshUnsupportedPreview = await command('v2: fresh unsupported-start observation', { type: 'agent.providerPreview', agentId: config.id, provider: 'claude-code', contractVersion: 2 }, { commandId: 'provider-v2-unsupported-start-preview' });
     const unsupportedStart = await command('v2: unsupported start lane', { type: 'agent.start', agentId: config.id, contractVersion: 2, expectedProvider: 'claude-code', expectedState: freshUnsupportedPreview.body.result.expectedState, expectedNextWake: inheritedAlready.body.result.contract.saved }, { commandId: 'provider-v2-unsupported-start' });
     expect(unsupportedStart.body.error.code).toBe('provider_start_unsupported');
+    const beforeClaudeAlias = structuredClone(config);
+    const claudeAliasRequest = { type: 'agent.providerPreview', agentId: config.id, provider: 'claude-code', contractVersion: 2, model: { kind: 'selected', id: 'fixture-current-model[1m]' }, effort: 'high' };
+    const claudeAliasPreview = await command('v2: existing Claude suffix policy preview', claudeAliasRequest, { commandId: 'provider-v2-claude-authorized-alias-preview' });
+    expect(claudeAliasPreview.body.result.blocked).toBeNull();
+    const claudeAliasApply = await command('v2: existing Claude policy persists unchanged alias', { ...claudeAliasRequest, type: 'agent.providerChange', expectedState: claudeAliasPreview.body.result.expectedState }, { commandId: 'provider-v2-claude-authorized-alias-apply' });
+    expect(claudeAliasApply.body.result.contract.saved.model.value).toBe('fixture-current-model[1m]'); expect(config.model).toBe('fixture-current-model[1m]');
+    expect(claudeAliasApply.body.result.nextWake.state).toBe('blocked'); // This unmanaged lane cannot use Start v2.
+    for (const key of Object.keys(config)) delete config[key]; Object.assign(config, beforeClaudeAlias);
     config.orchestrator = 'claude-code'; config.managed = { version: 1, blocks: [], skills: [], mcps: [] }; config.runtimeMode = 'terminal';
     const preview = await command('v2: preview', { type: 'agent.providerPreview', agentId: config.id, provider: 'codex-cli', contractVersion: 2 }, { commandId: 'provider-v2-preview' });
     expect(preview.body.result).toMatchObject({ canSave: true, contract: { version: 2, target: { agentId: config.id }, result: { persisted: false, started: false } } });
@@ -3863,6 +3874,11 @@ describe('Annex mobile contract fixtures', { timeout: TEST_TIMEOUT_MS }, () => {
     const already = await command('v2: already selected', { type: 'agent.providerChange', agentId: config.id, provider: 'codex-cli', contractVersion: 2, expectedState: alreadyPreview.body.result.expectedState }, { commandId: 'provider-v2-already' });
     expect(already.body.result).toMatchObject({ status: 'already_selected', contract: { result: { persisted: true, started: false } } });
     const selectedRequest = { type: 'agent.providerPreview', agentId: config.id, provider: 'codex-cli', contractVersion: 2, model: { kind: 'selected', id: 'fixture-current-model' }, effort: 'high' };
+    const configBeforeCodexSuffix = structuredClone(config);
+    const codexSuffixPreview = await command('v2: unreported Codex suffix is not authorized', { ...selectedRequest, model: { kind: 'selected', id: 'fixture-current-model[1m]' } }, { commandId: 'provider-v2-codex-unreported-suffix' });
+    expect(codexSuffixPreview.body.result.blocked).toBe('model_not_offered'); expect(config).toEqual(configBeforeCodexSuffix);
+    const codexSuffixApply = await command('v2: unreported Codex suffix apply refused', { ...selectedRequest, type: 'agent.providerChange', model: { kind: 'selected', id: 'fixture-current-model[1m]' }, expectedState: codexSuffixPreview.body.result.expectedState }, { commandId: 'provider-v2-codex-unreported-suffix-apply' });
+    expect(codexSuffixApply.body.error.code).toBe('model_not_offered'); expect(config).toEqual(configBeforeCodexSuffix); expect(W.providerV2Calls).toBe(0);
     const selectedPreview = await command('v2: selected model preview', selectedRequest, { commandId: 'provider-v2-selected-preview' });
     const selectedApply = await command('v2: selected model apply', { ...selectedRequest, type: 'agent.providerChange', expectedState: selectedPreview.body.result.expectedState }, { commandId: 'provider-v2-selected-apply' });
     expect(selectedApply.body.result.contract.saved.model).toEqual({ value: 'fixture-current-model', source: 'agent' });
@@ -4067,7 +4083,7 @@ describe('Annex mobile contract fixtures', { timeout: TEST_TIMEOUT_MS }, () => {
     expect(oldHandlerCalls).toBe(0);
     fixtures.set('provider-control-v2.json', { note: 'Synthetic managed transaction/PTY leaves. Complete opt-in request/receipts. Tokens/epochs are normalized opaque examples; native filesystem and PTY boundary proof are separate unit suites.',
       oldHost, contextReview, catalogEvidence,
-      preview, savedDefaultsPreview, staleApplyDefaults, unsupported, malformedV2, unsupportedVersion, authorityDenied, retainedPreparation, unverifiedPersistence, persistedSaveBlocked, persistedSaveUnverified, postcommitSavedReadFailure, postcommitObserverFailure, acknowledgedProviderConflict, acknowledgedInheritedUnknown, acknowledgedIntentConflicts, legacyDefaultStored, sameCommandChangedPayload, epochLost, legacyOnNewHost: { preview: legacyPreview, apply: legacyApply, start: legacyStart }, inheritedPreview, inheritedAlready, unsupportedStart, applied, selectedPreview, selectedApply, defaultPreview, defaultApply, alreadySelected: already, catalogStale, stale, startAdmissionDrift, started, lostResponseReplay: replay, alreadyRunning: running, failedAfterCreation: failed, refusedBeforeCreation: refused, immediateExit: exited });
+      preview, claudeAlias: { preview: claudeAliasPreview, apply: claudeAliasApply }, codexSuffixPreview, codexSuffixApply, savedDefaultsPreview, staleApplyDefaults, unsupported, malformedV2, unsupportedVersion, authorityDenied, retainedPreparation, unverifiedPersistence, persistedSaveBlocked, persistedSaveUnverified, postcommitSavedReadFailure, postcommitObserverFailure, acknowledgedProviderConflict, acknowledgedInheritedUnknown, acknowledgedIntentConflicts, legacyDefaultStored, sameCommandChangedPayload, epochLost, legacyOnNewHost: { preview: legacyPreview, apply: legacyApply, start: legacyStart }, inheritedPreview, inheritedAlready, unsupportedStart, applied, selectedPreview, selectedApply, defaultPreview, defaultApply, alreadySelected: already, catalogStale, stale, startAdmissionDrift, started, lostResponseReplay: replay, alreadyRunning: running, failedAfterCreation: failed, refusedBeforeCreation: refused, immediateExit: exited });
     delete config.managed; delete config.providerTransition; W.guidedAvailable = false; W.providerV2Identity = null;
   });
 

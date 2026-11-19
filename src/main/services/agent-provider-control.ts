@@ -24,7 +24,7 @@ import { readProviderSelectionCatalog, resolveProviderSelectionCatalog } from '.
 
 export interface ProviderControlActor { key: string; assertAuthorized: () => void | Promise<void>; assertCommitAuthorized?: () => void }
 /** Main-only witness, never serialized in a preview receipt. */
-export interface ProviderPreviewWitness { assertCurrent?: (agent: DurableAgentConfig) => void }
+export interface ProviderPreviewWitness { catalogFingerprint?: string; assertCurrent?: (agent: DurableAgentConfig) => void }
 const hash = (value: unknown): string => createHash('sha256').update(JSON.stringify(value)).digest('hex');
 const snapshot = (value: DurableAgentConfig): DurableAgentConfig => JSON.parse(JSON.stringify(value));
 const fail = (code: string): never => { throw new MobileControlError(code, 409); };
@@ -123,6 +123,7 @@ export async function previewAgentProvider(projectPath: string, agentId: string,
   const legacyRules = !config.managed && ((defaults?.permissions?.deny?.length ?? 0) > 0 || (defaults?.permissions?.allow?.length ?? 0) > 0);
   const proposed = proposedConfig(config, current.id, providerId, selection);
   const catalog = intent ? await readProviderSelectionCatalog(provider, proposed.model, proposed.effort, !!proposed.model && proposed.model !== 'default') : null;
+  if (witness && catalog) witness.catalogFingerprint = catalog.fingerprint;
   const blocked = state !== 'sleeping' ? `agent_${state}`
     : hasSessionCaptureFailure(agentId) ? 'session_capture_failed'
     : !availability.available ? 'orchestrator_unavailable'
@@ -150,12 +151,12 @@ export async function previewAgentProvider(projectPath: string, agentId: string,
     const assertFiles = managedProviderCommitFence(projectPath, managedPlan);
     const launchConfig = (value: DurableAgentConfig) => { const copy = { ...value }; delete copy.lastSleep; return hash(copy); };
     const signedConfig = launchConfig(config);
-    const signedCatalog = hash(catalog?.catalog);
+    const signedCatalog = catalog!.fingerprint;
     witness.assertCurrent = (live) => {
       actor.assertCommitAuthorized?.();
       if (!actor.assertCommitAuthorized || launchConfig(live) !== signedConfig || hash(resolveRuntimeMode(providerId, live.runtimeMode)) !== hash(mode)) return fail('stale_state');
-      const currentCatalog = resolveProviderSelectionCatalog(provider.peekModels?.() ?? null, config.model, config.effort, !!config.model && config.model !== 'default');
-      if (currentCatalog.blocked || hash(currentCatalog.catalog) !== signedCatalog) return fail('stale_state');
+      const currentCatalog = resolveProviderSelectionCatalog(provider.peekModels?.() ?? null, config.model, config.effort, !!config.model && config.model !== 'default', undefined, provider);
+      if (currentCatalog.blocked || currentCatalog.fingerprint !== signedCatalog) return fail('stale_state');
       assertFiles(live);
     };
   }
@@ -191,7 +192,8 @@ export async function changeAgentProvider(projectPath: string, agentId: string, 
   return withAgentTransition(agentId, async () => {
     await persistGuidedSessionCapture(projectPath, agentId);
     const generation = agentTransitionGeneration(agentId);
-    const preview = await previewAgentProvider(projectPath, agentId, provider, actor, undefined, selection);
+    const previewWitness: ProviderPreviewWitness = {};
+    const preview = await previewAgentProvider(projectPath, agentId, provider, actor, undefined, selection, previewWitness);
     if (preview.expectedState !== expectedState) return fail('stale_state');
     if (preview.blocked) return fail(preview.blocked);
     await actor.assertAuthorized();
@@ -240,8 +242,8 @@ export async function changeAgentProvider(projectPath: string, agentId: string, 
         await updateDurableConfig(projectPath, agentId, updates, beforeCommit, { prepare: async () => {}, check: (agent) => {
           actor.assertCommitAuthorized?.();
           if (!actor.assertCommitAuthorized || hash(agent) !== before || hash(resolveRuntimeMode(provider, agent.runtimeMode)) !== hash(preview.runtime)) return fail('stale_state');
-          const currentCatalog = resolveProviderSelectionCatalog(target.peekModels?.() ?? null, preview.contract!.proposed.model.value ?? undefined, preview.contract!.proposed.effort.value, !!preview.contract!.proposed.model.value);
-          if (currentCatalog.blocked || hash(currentCatalog.catalog) !== hash(preview.catalog)) return fail('stale_state');
+          const currentCatalog = resolveProviderSelectionCatalog(target.peekModels?.() ?? null, preview.contract!.proposed.model.value ?? undefined, preview.contract!.proposed.effort.value, !!preview.contract!.proposed.model.value, undefined, target);
+          if (currentCatalog.blocked || currentCatalog.fingerprint !== previewWitness.catalogFingerprint) return fail('stale_state');
           assertFilesCurrent?.(agent);
           mutationAdmitted = true;
         } }, (committed) => { commitReceipt.received = true; commitReceipt.saved = committed; });

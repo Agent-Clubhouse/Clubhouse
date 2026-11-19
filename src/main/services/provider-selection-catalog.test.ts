@@ -1,3 +1,5 @@
+import { ClaudeCodeProvider } from '../orchestrators/claude-code-provider';
+import { CodexCliProvider } from '../orchestrators/codex-cli-provider';
 import { describe, expect, it } from 'vitest';
 import type { ModelList } from '../orchestrators/types';
 import { MODEL_LIST_TTL_MS } from '../orchestrators/base-provider';
@@ -19,6 +21,35 @@ describe('current per-agent catalog contract', () => {
     expect(resolveProviderSelectionCatalog(catalog(), 'default', null, true, now).blocked).toBe('model_not_offered');
     expect(resolveProviderSelectionCatalog(catalog(), 'default', 'unsupported', false, now).blocked).toBe('effort_not_offered');
     expect(resolveProviderSelectionCatalog(catalog({ source: 'fallback' }), 'default', 'high', false, now).blocked).toBe('model_catalog_fallback');
+  });
+  it.each(['fixture[1m]', 'fixture-resolved[1m]'])('rejects non-reported suffixed model %s without authorized provider policy', (model) => {
+    expect(resolveProviderSelectionCatalog(catalog(), model, 'high', true, now).blocked).toBe('model_not_offered');
+  });
+  it('uses existing provider policy with a unique current effort entry and leaves requested aliases unchanged', () => {
+    const claude = new ClaudeCodeProvider(); const codex = new CodexCliProvider();
+    const list = catalog(); const original = structuredClone(list);
+    for (const model of ['fixture[1m]', 'FIXTURE[1m]', 'fixture-resolved[1m]']) {
+      expect(claude.acceptsModel(model, list)).toBe(true);
+      expect(resolveProviderSelectionCatalog(list, model, 'high', true, now, claude).blocked).toBeNull();
+      expect(resolveProviderSelectionCatalog(list, model, 'high', true, now, codex).blocked).toBe('model_not_offered');
+    }
+    expect(resolveProviderSelectionCatalog(list, 'no-effort[1m]', 'high', true, now, claude).blocked).toBe('effort_not_offered');
+    expect(resolveProviderSelectionCatalog(list, 'fixture[1m]', 'unsupported', true, now, claude).blocked).toBe('effort_not_offered');
+    expect(resolveProviderSelectionCatalog(list, 'sonnet[1m]', 'high', true, now, claude).blocked).toBe('model_not_offered');
+    const ambiguous = catalog(); ambiguous.models.push({ id: 'FIXTURE', label: 'Ambiguous', efforts: ['high'] });
+    expect(resolveProviderSelectionCatalog(ambiguous, 'fixture[1m]', 'high', true, now, claude).blocked).toBe('model_not_offered');
+    const before = resolveProviderSelectionCatalog(list, 'fixture[1m]', 'high', true, now, claude);
+    expect(resolveProviderSelectionCatalog(list, 'fixture[1m]', 'high', true, now, codex).fingerprint).not.toBe(before.fingerprint);
+    expect(resolveProviderSelectionCatalog(list, 'fixture[1m]', 'high', true, now, { id: 'custom-provider', acceptsModel: () => true }).blocked).toBe('model_not_offered');
+    expect(list).toEqual(original);
+  });
+  it('passes the unchanged string to provider policy and refuses uncertain policy evidence', () => {
+    const seen: string[] = []; const claude = new ClaudeCodeProvider();
+    const policy = { id: 'claude-code' as const, acceptsModel: (model: string, list: ModelList) => { seen.push(model); return claude.acceptsModel(model, list); } };
+    expect(resolveProviderSelectionCatalog(catalog(), 'FIXTURE[1m]', 'high', true, now, policy).blocked).toBeNull();
+    expect(seen).toEqual(['FIXTURE[1m]']);
+    policy.acceptsModel = () => { throw new Error('policy unavailable'); };
+    expect(resolveProviderSelectionCatalog(catalog(), 'fixture[1m]', 'high', true, now, policy).blocked).toBe('model_alias_unverified');
   });
   it('refuses stale, future, fallback and missing evidence for concrete selections', () => {
     for (const list of [catalog({ fetchedAt: now - MODEL_LIST_TTL_MS - 1 }), catalog({ fetchedAt: now + 1 }), catalog({ fetchedAt: NaN })]) {

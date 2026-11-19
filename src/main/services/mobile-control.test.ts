@@ -116,6 +116,17 @@ describe('mobile command receipts', () => {
     now += MOBILE_COMMAND_TTL_MS + 1;
     expect((await service.execute('a', command(service, { commandId: 'cmd-2' }), run)).statusCode).toBe(200);
   });
+  it('preserves unknown conflict diagnostics and failed replay disposition even when saved and proposed are equal', async () => {
+    const service = new MobileCommandService();
+    const request = { version: 1, epoch: service.epoch, commandId: 'future-conflict', type: 'agent.providerChange', agentId: 'a', provider: 'codex-cli', contractVersion: 2, expectedState: '1'.repeat(64) };
+    const same = { provider: 'codex-cli', providerOverride: 'codex-cli', model: { value: null, source: 'provider_default' }, effort: { value: null, source: 'provider_default' } };
+    const transition = { status: 'committed_state_conflict', persisted: true, requestedSelectionSaved: false, conflicts: ['future_unknown_dimension'], saved: same, proposed: same, nextWake: 'fresh_read_and_review_required' };
+    const run = vi.fn(async () => { throw new MobileControlError('apply_committed_state_conflict', 409, 'failed', undefined, { transition }); });
+    const response = await service.execute('peer', request, run);
+    expect(response).toMatchObject({ statusCode: 409, body: { status: 'failed', error: { code: 'apply_committed_state_conflict' }, transition } });
+    expect(response.body).not.toHaveProperty('result'); expect(response.body.transition).not.toHaveProperty('expectedState');
+    expect(await service.execute('peer', request, run)).toEqual(response); expect(run).toHaveBeenCalledTimes(1);
+  });
   it('returns structured expected failures', async () => {
     const service = new MobileCommandService();
     expect((await service.execute('a', command(service), async () => { throw new MobileControlError('session_mismatch'); })).body.status).toBe('rejected');

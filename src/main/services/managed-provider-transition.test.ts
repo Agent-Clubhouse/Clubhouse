@@ -1,3 +1,4 @@
+import { ClaudeCodeProvider } from '../orchestrators/claude-code-provider';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
@@ -174,6 +175,15 @@ describe('persisted read-only managed start contract', () => {
     await expect(managedProviderStartGuard(project, agent, codex, agent.worktreePath!, () => agent)).rejects.toMatchObject({ code: 'effort_not_offered' });
     agent.model = 'not-offered'; delete agent.effort; await fs.writeFile(file, JSON.stringify([agent]));
     await expect(managedProviderStartGuard(project, agent, codex, agent.worktreePath!, () => agent)).rejects.toMatchObject({ code: 'model_not_offered' });
+  });
+  it('refuses an unproven Codex alias before creating a marked start guard', async () => {
+    await ready(); agent.model = 'offered-model[1m]'; agent.effort = 'high';
+    await fs.writeFile(path.join(project, '.clubhouse', 'agents.json'), JSON.stringify([agent]));
+    const list = () => ({ source: 'live' as const, via: 'handshake' as const, fetchedAt: Date.now(), models: [{ id: 'offered-model', label: 'Offered', isDefault: true, efforts: ['high'] }] });
+    const codex = { ...provider('codex-cli'), listModels: async () => list(), peekModels: list, acceptsModel: (model: string, models: import('../orchestrators/types').ModelList) => ClaudeCodeProvider.prototype.acceptsModel(model, models) };
+    const before = structuredClone(agent);
+    await expect(managedProviderStartGuard(project, agent, codex, agent.worktreePath!, () => agent)).rejects.toMatchObject({ code: 'model_not_offered' });
+    expect(agent).toEqual(before);
   });
   it('refuses native edits, workspace swaps and setup changes after preparation', async () => {
     const guard = await ready();

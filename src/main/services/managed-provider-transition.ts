@@ -236,7 +236,7 @@ export async function managedProviderStartGuard(projectPath: string, agent: Dura
   };
   if (configFingerprint(savedConfig()) !== config) return refuse('managed_transition_stale');
   return () => {
-    const currentSelection = resolveProviderSelectionCatalog(provider.peekModels?.() ?? null, agent.model, agent.effort, !!agent.model && agent.model !== 'default');
+    const currentSelection = resolveProviderSelectionCatalog(provider.peekModels?.() ?? null, agent.model, agent.effort, !!agent.model && agent.model !== 'default', undefined, provider);
     if (currentSelection.blocked || (provider.peekModels && currentSelection.fingerprint !== selection.fingerprint)) return refuse('managed_transition_stale');
     if (configFingerprint(current() ?? savedConfig()) !== config || configFingerprint(savedConfig()) !== config || digest(rootStateSync(cwd)) !== digest(root)
       || nativeFingerprint(rootStateSync(cwd), fileStateSync(targetPath)) !== marker.nativeFingerprint
