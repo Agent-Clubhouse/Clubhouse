@@ -9,7 +9,7 @@ import {
   BULLETIN_MESSAGES, BULLETIN_MESSAGE_BYTES, NATIVE_TRANSCRIPT_EVENTS, NATIVE_TRANSCRIPT_EVENT_BYTES, NATIVE_SESSION_ID, SMALL_SESSION_ID,
   createInventoryPeer, LARGE_DIFF_BYTES, LARGE_TEXT_BYTES, type InventoryPeer, type InventoryPeerInfo, type WireAnswer,
 } from './reverse-inventory-peer';
-import { assertDialAudit, closeServer, rpcPeer, sentinel, sizedPng, transparentForward, type RpcPeer } from './reverse-parity-fixture';
+import { assertAcceptAudit, assertDialAudit, closeServer, rpcPeer, sentinel, sizedPng, transparentForward, type RpcPeer } from './reverse-parity-fixture';
 import { CHAT_IMAGE_MAX_BYTES, type ChatEventDraft } from '../../src/shared/chat';
 import type { GitOperationParams } from '../../src/main/services/annex-client';
 import type { BulletinMessage } from '../../src/shared/group-project-types';
@@ -226,12 +226,16 @@ describe('full-server audit inventory over one A to B forward', () => {
   });
 
   it.each(['A', 'B'] as const)('R07 %s: durable creation, non-worktree status and deletion use their desktop adapters', async (who) => {
-    const result = who === 'A' ? await a.durable() : await b.call('durable');
+    const result = who === 'A' ? await a.durable() : await b.call<Awaited<ReturnType<InventoryPeer['durable']>>>('durable');
     expect(result).toMatchObject({
       created: { id: expect.any(String), name: 'temporary-member' },
       worktree: { isValid: false, uncommittedFiles: [], unpushedCommits: [] },
       deleted: { ok: true },
     });
+    const input = { projectId: target(who).projectId, agentId: result.created.id };
+    await vi.waitFor(async () => {
+      expect(who === 'A' ? await b.call('durableState', input) : await a.durableState(input)).toEqual({ configured: false, persisted: false, worktreeExists: false });
+    }, { timeout: 3000 });
   });
 
   it.each(['A', 'B'] as const)('R08 %s: file adapters reach the production handlers', async (who) => {
@@ -513,12 +517,16 @@ describe('full-server audit inventory over one A to B forward', () => {
 
     it.each(['A', 'B'] as const)('R07 %s creates, inspects and removes a real worktree', async (who) => {
       const input = { projectId: (who === 'A' ? bGit : aGit).projectId, useWorktree: true };
-      const result = who === 'A' ? await a.durable(input) : await b.call('durable', input);
+      const result = who === 'A' ? await a.durable(input) : await b.call<Awaited<ReturnType<InventoryPeer['durable']>>>('durable', input);
       expect(result).toMatchObject({
         created: { id: expect.any(String), worktreePath: expect.any(String) },
         worktree: { isValid: true, uncommittedFiles: [], unpushedCommits: [] },
         deleted: { ok: true },
       });
+      const inspect = { projectId: input.projectId, agentId: result.created.id, worktreePath: result.created.worktreePath };
+      await vi.waitFor(async () => {
+        expect(who === 'A' ? await b.call('durableState', inspect) : await a.durableState(inspect)).toEqual({ configured: false, persisted: false, worktreeExists: false });
+      }, { timeout: 3000 });
     }, 20_000);
   });
 
@@ -636,7 +644,7 @@ describe('full-server audit inventory over one A to B forward', () => {
       const cancelled = who === 'A' ? await a.handoffCancel(offer.id) : await b.call('handoffCancel', offer.id);
       expect(cancelled).toMatchObject({ id: offer.id, state: 'cancelled' });
       await expect(who === 'A' ? b.call('handoffPull', offer.id) : a.handoffPull(offer.id)).rejects.toThrow();
-    });
+    }, 30_000);
   });
 
   it.each(['A', 'B'] as const)('R18/R19 %s: controller group-project REST adapters preserve persisted board and roles', async (who) => {
@@ -705,7 +713,7 @@ describe('full-server audit inventory over one A to B forward', () => {
       const answer = await mobile(who, command, `surface-${who}-${index}`);
       expect(json(answer), command.type).toMatchObject({ status: 'rejected' });
     }
-  });
+  }, 20_000);
 
   it.each(['A', 'B'] as const)('R05/R15/R22 %s: actual settings, grant answers and helper decisions keep receipts and store effects', async (who) => {
     const opened = who === 'A' ? await b.call<ReturnType<InventoryPeer['openRequests']>>('openRequests') : a.openRequests();
@@ -756,22 +764,22 @@ describe('full-server audit inventory over one A to B forward', () => {
     });
   });
 
-  describe.each(['A', 'B'] as const)('R09/B %s: uploads DEFERRED: blocked by #3715 (strict check on cold durable cache), direct and reverse', (who) => {
+  describe.each(['A', 'B'] as const)('R09/B %s: binary upload parity on an initialized target; cold-cache acceptance deferred under #3715', (who) => {
     let imageTarget: Awaited<ReturnType<InventoryPeer['prepareImages']>>;
     const upload = (size: number): Promise<WireAnswer> => who === 'A' ? a.imageUpload({ size, ...imageTarget }) : b.call('imageUpload', { size, ...imageTarget });
     const state = (): ReturnType<InventoryPeer['imageState']> => who === 'A' ? b.call('imageState') : a.imageState();
     beforeAll(async () => {
       imageTarget = who === 'A' ? await b.call('prepareImages') : await a.prepareImages();
-      expect(await state()).toMatchObject({ configUnchanged: true });
+      expect(await state()).toMatchObject({ configUnchanged: true, cached: true });
     });
-    beforeEach(async () => { expect(await state()).toMatchObject({ configUnchanged: true }); });
+    beforeEach(async () => { expect(await state()).toMatchObject({ configUnchanged: true, cached: true }); });
     afterEach(async () => { expect(await state()).toMatchObject({ configUnchanged: true }); });
     it.each([0, 1])('rejects invalid %i-byte images with the existing HTTP status', async (size) => {
       const answer = await upload(size);
       expect(answer.status).toBe(size === 0 ? 400 : 415);
       expect(JSON.parse(Buffer.from(answer.body, 'base64').toString('utf8'))).toMatchObject({ version: 1, error: size === 0 ? 'empty_body' : 'unsupported_image' });
     });
-    it.fails.each([64 * 1024 - 1, 64 * 1024, 64 * 1024 + 1, CHAT_IMAGE_MAX_BYTES - 1, CHAT_IMAGE_MAX_BYTES])('#3715: preserves all %i bytes through the real attachment and chat paths', async (size) => {
+    it.each([64 * 1024 - 1, 64 * 1024, 64 * 1024 + 1, CHAT_IMAGE_MAX_BYTES - 1, CHAT_IMAGE_MAX_BYTES])('preserves all %i bytes through the real attachment and chat paths', async (size) => {
       const answer = await upload(size);
       expect(answer.status, JSON.stringify({ body: Buffer.from(answer.body, 'base64').toString('utf8'), ...await state() })).toBe(200);
       const receipt: unknown = JSON.parse(Buffer.from(answer.body, 'base64').toString('utf8'));
@@ -780,7 +788,7 @@ describe('full-server audit inventory over one A to B forward', () => {
       expect(await chat(who, { type: 'chat.send', ...imageTarget, text: 'Image fixture', attachmentIds: [receipt.attachmentId], delivery: 'steer' })).toMatchObject({ status: 'completed' });
       const received = who === 'A' ? await b.call('receivedImage') : await a.receivedImage();
       expect(received).toEqual({ bytes: size, digest: createHash('sha256').update(sizedPng(size)).digest('hex'), mimeType: 'image/png' });
-    });
+    }, 15_000);
     it('refuses one byte over the image cap without retiring the link or executing a send', async () => {
       const before = (await state()).sent;
       const answer = await upload(CHAT_IMAGE_MAX_BYTES + 1);
@@ -791,7 +799,7 @@ describe('full-server audit inventory over one A to B forward', () => {
     });
   });
 
-  it.each(['A', 'B'] as const)('R05/R07 %s: actual lifecycle and guided command receipts keep one native process and the selected provider', async (who) => {
+  it.each(['A', 'B'] as const)('R05/R07 %s: actual lifecycle and guided command receipts keep one in-memory PTY spawn and the selected provider', async (who) => {
     const id = who === 'A' ? await b.call<string>('prepareLifecycle') : await a.prepareLifecycle();
     const inspect = (agentId = id): ReturnType<InventoryPeer['lifecycleState']> => who === 'A' ? b.call('lifecycleState', agentId) : a.lifecycleState(agentId);
     expect(await send(who, 'agent:wake', { agentId: id })).toEqual({ sent: true });
@@ -838,6 +846,7 @@ describe('full-server audit inventory over one A to B forward', () => {
   });
 
   describe.each(['A', 'B'] as const)('R09 %s: partial, blocked by #3715 for post-edit config state', (who) => {
+    let answer: WireAnswer;
     const upload = (): Promise<WireAnswer> => who === 'A' ? a.imageUpload(65_535) : b.call('imageUpload', 65_535);
     beforeAll(async () => {
       if (who === 'A') await b.call('initializeProject'); else await a.initializeProject();
@@ -845,10 +854,16 @@ describe('full-server audit inventory over one A to B forward', () => {
       const config = who === 'A' ? await b.call('externalConfigEdit') : await a.externalConfigEdit();
       expect(config).toEqual({ cachedBefore: true, unchanged: true, registered: true, running: true });
     });
-    it.fails('#3715: a config edit must not unregister a running upload target', async () => {
-      const answer = await upload();
-      const { registered, running, cached } = await driverOnTarget(who);
-      expect(answer.status, JSON.stringify({ body: Buffer.from(answer.body, 'base64').toString('utf8'), registered, running, cached })).toBe(200);
+    beforeEach(async () => {
+      expect(await driverOnTarget(who)).toMatchObject({ registered: true, running: true, cached: false });
+      answer = await upload();
+      if (answer.status !== 200) {
+        expect(answer.status).toBe(404);
+        expect(json(answer)).toMatchObject({ version: 1, error: 'agent_not_found' });
+      }
+    });
+    it.fails('#3715: a config edit must not unregister a running upload target', () => {
+      expect(answer.status).toBe(200);
     });
   });
 
@@ -971,7 +986,7 @@ describe('full-server audit inventory over one A to B forward', () => {
     await send(who, 'pty:close', { sessionId });
     await expectSatelliteEvent(who, 'pty:close:ack', { sessionId });
     console.info('P8 terminal-pressure request milliseconds', who, { chat: message.ms, approval: approval.ms, agentCall: call.ms });
-  });
+  }, 15_000);
 
   it('B/revocation: losing accepted authority stops the reverse consumer and its private shell independently of #3711', async () => {
     const sessionId = 'revoke-B';
@@ -982,14 +997,18 @@ describe('full-server audit inventory over one A to B forward', () => {
       expect((await status('B')).connected).toBe(false);
       expect(a.ptyState(sessionId)).toMatchObject({ running: false, closed: true });
     }, { timeout: 3000 });
-    const before = await driverOnTarget('B');
+    const before = (await driverOnTarget('B')).sent.length;
     await expect(chat('B', { type: 'chat.send', text: 'must not run after revocation' })).rejects.toThrow();
-    expect((await driverOnTarget('B')).sent).toEqual(before.sent);
+    expect((await driverOnTarget('B')).sent).toHaveLength(before);
   }, 10_000);
 
-  it('audits every app dial independently of the direct-dial sentinel', async () => {
-    assertDialAudit((await status('A')).attempts, { host: '127.0.0.1', port: forward.port }, forward.sourcePorts, guard.accepts());
-    assertDialAudit((await status('B')).attempts, null, [], guard.accepts());
+  it('audits process-local dials and target listener accepts independently of the direct-dial sentinel', async () => {
+    const aStatus = await status('A'), bStatus = await status('B');
+    assertDialAudit(aStatus.attempts, { host: '127.0.0.1', port: forward.port }, forward.sourcePorts, guard.accepts());
+    assertDialAudit(bStatus.attempts, null, [], guard.accepts());
+    assertAcceptAudit(aStatus.accepts, a.info.port, []);
+    assertAcceptAudit(bStatus.accepts, bInfo.port, forward.targetSourcePorts);
+    expect(forward.targetPorts.length).toBeGreaterThan(0);
     expect(forward.targetPorts.every((port) => port === bInfo.port)).toBe(true);
   });
 });

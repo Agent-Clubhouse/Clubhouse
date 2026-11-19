@@ -27,7 +27,7 @@ test('both directions retain real MCP caller gates, dedup, files and private-she
     await caller.app.window.evaluate(({ id, address }) => window.clubhouse.mcpBinding.setToolsAcrossMachines(id, address, true, ['send_message']), direction);
     expect((await mcp.call(send, { message: 'must not execute', task_id: 'refused' })).isError).toBe(true);
     await caller.app.window.evaluate(({ id, address }) => window.clubhouse.mcpBinding.setToolsAcrossMachines(id, address, true, []), direction);
-    expect((await mcp.call(status, {})).isError).toBe(false);
+    await expect.poll(() => mcp.call(status, {}), { timeout: 20_000, message: 'Restored tool switches must propagate to the receiving host' }).toMatchObject({ isError: false });
 
     const shell = { ...remote, shellId: `plugin:terminal:p8-${caller.agentId}`, marker: `P8-SHELL-${caller.agentId}` };
     await caller.app.window.evaluate(({ machine, projectId, shellId }) => window.clubhouse.annexClient.ptySpawnShell(machine, shellId, projectId), shell);
@@ -35,7 +35,8 @@ test('both directions retain real MCP caller gates, dedup, files and private-she
       timeout: 20_000, message: 'The real private shell must be ready before input',
     }).not.toBe('');
     await caller.app.window.evaluate(({ machine, shellId, marker }) => window.clubhouse.annexClient.ptyInput(machine, shellId, `echo ${marker}\r`), shell);
-    await expect.poll(async () => caller.app.window.evaluate(({ machine, shellId }) => window.clubhouse.annexClient.ptyGetBuffer(machine, shellId), shell)).toContain(shell.marker);
+    await expect.poll(async () => caller.app.window.evaluate(({ machine, shellId }) => window.clubhouse.annexClient.ptyGetBuffer(machine, shellId), shell))
+      .toMatch(new RegExp(`(?:^|[\\r\\n])${shell.marker}(?:\\r?\\n|$)`));
     await caller.app.window.evaluate(({ machine, shellId }) => window.clubhouse.annexClient.ptyInput(machine, shellId, 'exit\r'), shell);
   }
 });

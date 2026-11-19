@@ -11,15 +11,17 @@ test('one forward carries chat commands, live renderer output and transcript cat
       machine: receiver.fingerprint, id: receiver.agentId,
     }) as { agentId: string; sessionId: string };
     expect(page.agentId).toBe(receiver.agentId);
-    for (const [prompt, answer] of [['Reply with the word one.', 'ONE'], ['Now reply with the word two.', 'TWO']] as const) {
+    for (const [prompt, answer] of [['Reply with the word one.', 'one'], ['Now reply with the word two.', 'two']] as const) {
       const receipt = await caller.app.window.evaluate(({ machine, agentId, sessionId, prompt }) => window.clubhouse.annexClient.chatCommand(machine, {
         type: 'chat.send', agentId, sessionId, text: prompt,
       }), { machine: receiver.fingerprint, agentId: receiver.agentId, sessionId: page.sessionId, prompt });
       expect(receipt).toMatchObject({ status: 'completed' });
       await expect(pane.locator('[data-testid="chat-message-assistant"]').filter({ hasText: answer })).toHaveCount(1, { timeout: 20_000 });
       await expect(pane).toHaveAttribute('data-state', 'idle');
-      if (answer === 'ONE') {
+      if (answer === 'one') {
+        const connections = reverse.forward.sourcePorts.length;
         reverse.forward.cut();
+        await expect.poll(() => reverse.forward.sourcePorts.length, { timeout: 45_000 }).toBeGreaterThan(connections);
         for (const [source, target] of reverse.directions) {
           await expect.poll(async () => {
             const satellites: Array<{ fingerprint: string; state: string }> = await source.app.window.evaluate(() => window.clubhouse.annexClient.getSatellites());

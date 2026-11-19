@@ -71,6 +71,7 @@ describe.runIf(process.env.CLUBHOUSE_ANNEX_INVENTORY_PEER === '1')('isolated ful
         case 'externalConfigEdit': return peer.externalConfigEdit();
         case 'initializeProject': return peer.initializeProject();
         case 'durable': return peer.durable(params as Parameters<typeof peer.durable>[0]);
+        case 'durableState': return peer.durableState(params as Parameters<typeof peer.durableState>[0]);
         case 'seedLargeText': return peer.seedLargeText();
         case 'seedContent': return peer.seedContent(params as number);
         case 'largeText': return peer.largeText();

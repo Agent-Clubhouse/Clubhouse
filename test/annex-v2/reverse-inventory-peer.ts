@@ -5,7 +5,7 @@ import * as os from 'os';
 import { afterAll, expect, vi } from 'vitest';
 import { createHash } from 'crypto';
 import { execFileSync } from 'child_process';
-import { installDialPolicy, sizedPng, type DialPolicy } from './reverse-parity-fixture';
+import { installAcceptAudit, installDialPolicy, sizedPng } from './reverse-parity-fixture';
 import type { ConfigurePeer, PeerInfo } from './reverse-client-peer';
 import type { IPty } from 'node-pty';
 
@@ -189,6 +189,9 @@ afterAll(() => { fs.rmSync(fixture.dir, { recursive: true, force: true }); });
 
 /** Real server route table, stores, client and control; no Electron or provider process. */
 export async function createInventoryPeer(alias: string) {
+  const listenerAudit = installAcceptAudit();
+  let forwardPort: number | null = null;
+  const policy = installDialPolicy((host, port) => forwardPort !== null && host === '127.0.0.1' && port === forwardPort);
   await settings.saveSettings({
     ...settings.getSettings(), enableServer: true, enableClient: true, networkEnabled: true,
     loopbackOnly: true, alias, deviceName: alias, autoReconnect: true,
@@ -283,7 +286,6 @@ export async function createInventoryPeer(alias: string) {
   hydrateProjectState({});
   const linkedState = startLinkedProjectStateService();
   let remote: InventoryPeerInfo | undefined;
-  let policy: DialPolicy | undefined;
   let routePort = 0;
   let imageFixture: { root: string; agentId: string; driver: FakeChatDriver; runtime: ChatAgentRuntime; config: string } | undefined;
   let cancellableWrite: AbortController | undefined;
@@ -300,7 +302,7 @@ export async function createInventoryPeer(alias: string) {
       });
       await setConnectionLink({ agentId: agent.id }, { agentId: remote.agentId, machineId: remote.fingerprint }, true);
       bindingManager.bind(agent.id, { targetId: `${remote.agentId}@${remote.fingerprint}`, targetKind: 'agent', label: remote.alias, agentName: agent.name, targetName: `${remote.alias} agent`, projectName: project.name });
-      policy = installDialPolicy((host, port) => config.forwardPort !== null && host === '127.0.0.1' && port === config.forwardPort);
+      forwardPort = config.forwardPort;
       client.startClient();
     },
     status() {
@@ -309,7 +311,7 @@ export async function createInventoryPeer(alias: string) {
         connected: remote && client.isMachineConnected(remote.fingerprint),
         direct: remote && client.isMachineDirectConnected(remote.fingerprint),
         snapshot: remote && client.getSatellite(remote.fingerprint)?.snapshot,
-        attempts: policy?.attempts ?? [], events: fixture.events, logs: fixture.logs,
+        attempts: policy.attempts, accepts: listenerAudit.accepts, events: fixture.events, logs: fixture.logs,
       };
     },
     retryControl() {
@@ -373,7 +375,6 @@ export async function createInventoryPeer(alias: string) {
       const config = await agentConfig.createDurable(imageRoot, 'Unedited image target', 'blue', undefined, false, 'claude-code');
       await agentConfig.flushAgentConfig(imageRoot);
       await agentConfig.settleAgentsFileChecksForTests();
-      await agentConfig.initializeDurableProject(imageRoot);
       const imageDriver = new FakeChatDriver('claude_stream_json', 'claude-code', { ...MINIMAL_CHAT_CAPABILITIES, images: true, steer: true });
       const imageRuntime = new ChatAgentRuntime({
         agentId: config.id, provider: imageDriver.provider, driverId: imageDriver.id, cwd: imageRoot, level: 'ask', idleTimeoutMs: 0,
@@ -388,6 +389,8 @@ export async function createInventoryPeer(alias: string) {
         root: imageRoot, agentId: config.id, driver: imageDriver, runtime: imageRuntime,
         config: await fs.promises.readFile(path.join(imageRoot, '.clubhouse', 'agents.json'), 'utf8'),
       };
+      // The binary-success baseline is initialized once; cold/post-edit authority is tested separately under #3715.
+      await agentConfig.initializeDurableProject(imageRoot);
       return { agentId: config.id, sessionId: imageRuntime.getSessionId() };
     },
     async imageState() {
@@ -723,6 +726,17 @@ export async function createInventoryPeer(alias: string) {
       const deleted = await client.requestDeleteDurable(remote.fingerprint, projectId, created.id, 'force');
       return { created, worktree, deleted };
     },
+    async durableState(input: { projectId: string; agentId: string; worktreePath?: string }) {
+      const targetProject = (await projectStore.list()).find((project) => project.id === input.projectId);
+      if (!targetProject) throw new Error('The durable target project does not exist');
+      const configs: unknown = JSON.parse(await fs.promises.readFile(path.join(targetProject.path, '.clubhouse', 'agents.json'), 'utf8'));
+      if (!Array.isArray(configs)) throw new Error('The durable target config is not an array');
+      return {
+        configured: (await agentConfig.listDurable(targetProject.path)).some((config) => config.id === input.agentId),
+        persisted: configs.some((config) => config && typeof config === 'object' && 'id' in config && config.id === input.agentId),
+        worktreeExists: input.worktreePath !== undefined && fs.existsSync(input.worktreePath),
+      };
+    },
     seedLargeText() { fs.writeFileSync(path.join(root, 'large-utf8.txt'), 'é\n'.repeat(LARGE_TEXT_BYTES / 3)); },
     seedContent(size: number) {
       const bytes = sizedPng(size);
@@ -821,7 +835,7 @@ export async function createInventoryPeer(alias: string) {
       const provider = new ClaudeCodeProvider();
       registerProvider(provider);
       const cwd = agent.worktreePath || project.path;
-      const dir = path.join(process.env.CLAUDE_CONFIG_DIR!, 'projects', path.resolve(cwd).replace(/[/\\]/g, '-'));
+      const dir = path.join(process.env.CLAUDE_CONFIG_DIR!, 'projects', path.resolve(cwd).replace(/[^a-zA-Z0-9]/g, '-'));
       fs.mkdirSync(dir, { recursive: true });
       const lines = Array.from({ length: NATIVE_TRANSCRIPT_EVENTS }, (_, i) => JSON.stringify({
         type: 'assistant', timestamp: 1_700_000_000_000 + i,
@@ -900,7 +914,8 @@ export async function createInventoryPeer(alias: string) {
       await agentConfig.flushAllAgentConfigs();
       await flushAllBulletinBoards();
       await flushAllGroupProjects();
-      policy?.restore();
+      policy.restore();
+      listenerAudit.restore();
     },
   };
 }

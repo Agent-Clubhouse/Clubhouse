@@ -1,12 +1,14 @@
 import * as net from 'net';
 import * as https from 'https';
 import * as tls from 'tls';
+import { execFile } from 'child_process';
+import { promisify } from 'util';
 import { X509Certificate } from 'crypto';
 import type { Duplex } from 'stream';
 import { WebSocket, WebSocketServer } from 'ws';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { generateTestIdentity } from '../../e2e/annex-v2/tls-test-utils';
-import { assertDialAudit, closeServer, installDialPolicy, listen, sentinel, transparentForward } from './reverse-parity-fixture';
+import { assertAcceptAudit, assertDialAudit, closeServer, installAcceptAudit, installDialPolicy, listen, sentinel, transparentForward } from './reverse-parity-fixture';
 
 const cleanup: Array<() => Promise<void> | void> = [];
 afterEach(async () => { for (const dispose of cleanup.splice(0).reverse()) await dispose(); });
@@ -64,6 +66,8 @@ describe('reverse direct-dial policy calibration', () => {
   });
 
   it('carries real pinned mTLS and WebSocket bytes through one transparent forward and audits its ports', async () => {
+    const audit = installAcceptAudit();
+    cleanup.push(() => audit.restore());
     const identity = generateTestIdentity();
     const caller = generateTestIdentity();
     let seenCertificate = '';
@@ -100,6 +104,27 @@ describe('reverse direct-dial policy calibration', () => {
     expect(seenCertificate).toBe(new X509Certificate(caller.certPem).fingerprint256);
     assertDialAudit(policy.attempts, { host: '127.0.0.1', port: forward.port }, forward.sourcePorts, 0);
     expect(forward.targetPorts).toEqual([port]);
+    assertAcceptAudit(audit.accepts, port, forward.targetSourcePorts);
+    expect(() => assertAcceptAudit([], port, forward.targetSourcePorts)).toThrow('missing from the target listener audit');
+  });
+
+  it('detects a child-process direct dial at the target even when the process-local guard and sentinel see nothing', async () => {
+    const audit = installAcceptAudit();
+    cleanup.push(() => audit.restore());
+    const target = await sentinel();
+    const guard = await sentinel();
+    cleanup.push(target.close, guard.close);
+    const policy = installDialPolicy(() => false);
+    cleanup.push(() => policy.restore());
+    await promisify(execFile)(process.execPath, ['-e', `
+      const socket = require('net').connect(Number(process.argv[1]), '127.0.0.1');
+      socket.once('connect', () => socket.end());
+      socket.once('error', () => process.exit(1));
+    `, String(target.port)]);
+    expect(target.accepts()).toBe(1);
+    expect(policy.attempts).toEqual([]);
+    assertDialAudit(policy.attempts, null, [], guard.accepts());
+    expect(() => assertAcceptAudit(audit.accepts, target.port, [])).toThrow('outside the forward');
   });
 
   it('the no-block mutation fails even when a different remembered-route sentinel stays quiet', async () => {

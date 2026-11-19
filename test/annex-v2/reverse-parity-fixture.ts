@@ -3,6 +3,8 @@ import { createInterface } from 'readline';
 import * as net from 'net';
 import { crc32 } from 'zlib';
 
+const fixtureConnect = net.Socket.prototype.connect;
+
 export function sizedPng(size: number): Buffer {
   const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8/5+hHgAHggJ/PchI7wAAAABJRU5ErkJggg==', 'base64');
   if (!Number.isSafeInteger(size) || size < png.length + 12) throw new Error('PNG fixture size is too small');
@@ -27,6 +29,42 @@ export interface DialAttempt {
 export interface DialPolicy {
   attempts: DialAttempt[];
   restore(): void;
+}
+
+export interface ListenerAccept {
+  port: number;
+  sourcePort: number;
+}
+
+/** Target-side evidence also sees child/native clients that bypass Socket.connect in this process. */
+export function installAcceptAudit() {
+  const original = net.Server.prototype.emit;
+  const accepts: ListenerAccept[] = [];
+  const patched: typeof original = function (this: net.Server, event: string | symbol, ...args: unknown[]) {
+    const socket = args[0];
+    if (event === 'connection' && socket instanceof net.Socket && socket.localPort && socket.remotePort) {
+      accepts.push({ port: socket.localPort, sourcePort: socket.remotePort });
+    }
+    return Reflect.apply(original, this, [event, ...args]);
+  };
+  net.Server.prototype.emit = patched;
+  return {
+    accepts,
+    restore() {
+      if (net.Server.prototype.emit !== patched) throw new Error('Reverse listener audit was replaced without being restored');
+      net.Server.prototype.emit = original;
+    },
+  };
+}
+
+export function assertAcceptAudit(accepts: ListenerAccept[], port: number, forwardPorts: number[]): void {
+  const targetAccepts = accepts.filter((accepted) => accepted.port === port);
+  if (targetAccepts.some((accepted) => !forwardPorts.includes(accepted.sourcePort))) {
+    throw new Error('Target listener accepted traffic outside the forward');
+  }
+  if (forwardPorts.some((sourcePort) => !targetAccepts.some((accepted) => accepted.sourcePort === sourcePort))) {
+    throw new Error('Forward connection is missing from the target listener audit');
+  }
 }
 
 function destination(args: unknown[]): { host: string; port: number } | null {
@@ -114,12 +152,12 @@ export async function closeServer(server: net.Server): Promise<void> {
 }
 
 export async function transparentForward(targetPort: number) {
-  const fixtureConnect = net.Socket.prototype.connect;
   const sockets = new Set<net.Socket>();
   const toB = new Set<net.Socket>();
   const toA = new Set<net.Socket>();
   const sourcePorts: number[] = [];
   const targetPorts: number[] = [];
+  const targetSourcePorts: number[] = [];
   const server = net.createServer((incoming) => {
     toB.add(incoming);
     incoming.once('close', () => toB.delete(incoming));
@@ -128,7 +166,7 @@ export async function transparentForward(targetPort: number) {
     toA.add(outgoing);
     outgoing.once('close', () => toA.delete(outgoing));
     Reflect.apply(fixtureConnect, outgoing, [targetPort, '127.0.0.1']);
-    outgoing.once('connect', () => { targetPorts.push(outgoing.remotePort!); });
+    outgoing.once('connect', () => { targetPorts.push(outgoing.remotePort!); targetSourcePorts.push(outgoing.localPort!); });
     for (const socket of [incoming, outgoing]) {
       sockets.add(socket);
       socket.once('close', () => { sockets.delete(socket); });
@@ -141,7 +179,7 @@ export async function transparentForward(targetPort: number) {
   });
   const port = await listen(server);
   return {
-    port, sourcePorts, targetPorts,
+    port, sourcePorts, targetPorts, targetSourcePorts,
     pause(direction: 'A-to-B' | 'B-to-A') {
       const paused = [...(direction === 'A-to-B' ? toB : toA)];
       for (const socket of paused) socket.pause();

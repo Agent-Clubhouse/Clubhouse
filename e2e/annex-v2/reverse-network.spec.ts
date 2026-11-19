@@ -24,8 +24,14 @@ test('both host orientations carry host notices, replica writes and host-approve
       machine: host.fingerprint, id: group.id,
     });
     expect(board).toEqual(expect.arrayContaining([expect.objectContaining({ body: message })]));
-    const roster = await replica.app.window.evaluate((id) => window.clubhouse.groupProject.getRoster(id), group.id);
-    expect(roster).toMatchObject({ status: 'available', complete: true });
+    await expect.poll(async () => {
+      const roster = await replica.app.window.evaluate((id) => window.clubhouse.groupProject.getRoster(id), group.id);
+      if (roster.status !== 'available' || !roster.complete) console.info('P8 incomplete replica roster', JSON.stringify(roster));
+      return roster;
+    }, { timeout: 30_000 }).toMatchObject({
+      status: 'available', complete: true,
+      members: expect.arrayContaining([expect.objectContaining({ agentId: host.agentId, machine: host.fingerprint })]),
+    });
 
     await host.app.window.evaluate(() => window.clubhouse.dispatcher.setEnabled(true));
     const name = `Host-approved create from ${replica.agentId}`;
