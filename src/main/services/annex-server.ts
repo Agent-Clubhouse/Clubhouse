@@ -5927,7 +5927,7 @@ function startServer(strict = false): Promise<void> {
     broadcastAndBuffer('agent:spawned', { id: agentId, kind, projectId, ...meta });
   });
 
-  unsubPermissionRequest = permissionQueue.onPermissionRequest((permission) => {
+  const offPermissionRequest = permissionQueue.onPermissionRequest((permission) => {
     broadcastAndBuffer('permission:request', {
       requestId: permission.requestId,
       agentId: permission.agentId,
@@ -5937,6 +5937,8 @@ function startServer(strict = false): Promise<void> {
       timeout: permission.timeoutMs,
       deadline: permission.createdAt + permission.timeoutMs,
     });
+    const offPermissionChange = permissionQueue.onChange(() => broadcastSnapshotRefresh());
+    unsubPermissionRequest = () => { offPermissionRequest(); offPermissionChange(); };
   });
 
   unsubGroupProjectChanged = annexEventBus.onGroupProjectChanged((action, project) => {

@@ -54,6 +54,13 @@ const claimed = new WeakSet<PendingEntry>();
 /** Listener called when a new permission request is created. */
 type PermissionRequestListener = (permission: PendingPermission) => void;
 const listeners = new Set<PermissionRequestListener>();
+const changeListeners = new Set<() => void>();
+const changed = () => { for (const listener of changeListeners) listener(); };
+
+export function onChange(listener: () => void): () => void {
+  changeListeners.add(listener);
+  return () => { changeListeners.delete(listener); };
+}
 
 /**
  * Create a pending permission request. Returns a promise that resolves
@@ -76,6 +83,7 @@ export function createPermission(
         meta: { requestId, agentId, toolName, timeoutMs },
       });
       resolve('timeout');
+      changed();
     }, timeoutMs);
 
     const entry: PendingEntry = {
@@ -107,6 +115,7 @@ export function createPermission(
   // Notify listeners
   const info: PendingPermission = { requestId, agentId, toolName, toolInput, message, createdAt, timeoutMs };
   for (const fn of listeners) fn(info);
+  changed();
 
   return { requestId, decision };
 }
@@ -183,6 +192,7 @@ export function resolvePermissionDetailed(
     },
   });
   entry.resolve(decision);
+  changed();
   return { status: 'resolved' };
 }
 
@@ -250,6 +260,7 @@ export function cancelPermission(requestId: string, reason: string, expectedAgen
     meta: { requestId, agentId: entry.agentId, toolName: entry.toolName, reason },
   });
   entry.resolve('timeout');
+  changed();
   return true;
 }
 
@@ -265,6 +276,7 @@ export function clearForAgent(agentId: string): void {
     }
   }
   if (count > 0) {
+    changed();
     appLog(NS, 'info', 'Permissions cleared on agent stop', {
       meta: { agentId, count },
     });
@@ -280,6 +292,8 @@ export function reset(): void {
   }
   pending.clear();
   listeners.clear();
+  if (count > 0) changed();
+  changeListeners.clear();
   if (count > 0) {
     appLog(NS, 'debug', 'Permission queue reset', { meta: { count } });
   }

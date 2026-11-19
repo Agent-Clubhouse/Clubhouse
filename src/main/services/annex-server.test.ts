@@ -4439,6 +4439,36 @@ describe('annex-server', () => {
   // -------------------------------------------------------------------------
 
   describe('permission response', () => {
+    it('refreshes terminal permission snapshots after a person answers on the host', async () => {
+      vi.mocked(pluginManifestRegistry.listAllManifests).mockReturnValue([]);
+      const { groupProjectRegistry } = await import('./group-project-registry');
+      vi.mocked(groupProjectRegistry.list).mockResolvedValue([]);
+      const themeService = await import('./theme-service');
+      vi.mocked(themeService.getSettings).mockReturnValue({ themeId: 'catppuccin-mocha' });
+      await startAndPair();
+      const { requestId, decision } = permissionQueue.createPermission('durable_1', 'Bash', { command: 'git status' });
+      const ws = Object.assign(new EventEmitter(), { readyState: 1, send: vi.fn(), ping: () => {}, close: vi.fn() });
+      annexServer._testing.wsAuthTypes.set(ws as never, 'mtls');
+      annexServer._testing.registerPeerSocket(ws as never, TEST_CONTROLLER.fingerprint, TEST_CONTROLLER.tlsCertificateFingerprint);
+      annexServer._testing.wss!.clients.add(ws as never);
+      annexServer._testing.wss!.emit('connection', ws);
+      const snapshots = () => ws.send.mock.calls.map(([frame]) => JSON.parse(frame as string)).filter((frame) => frame.type === 'snapshot');
+      await vi.waitFor(() => {
+        expect(snapshots().length).toBeGreaterThan(0);
+        expect(snapshots().at(-1).payload.pendingPermissions).toContainEqual(expect.objectContaining({ requestId }));
+      });
+      ws.send.mockClear();
+
+      expect(permissionQueue.resolvePermissionDetailed(requestId, 'deny', { expectedAgentId: 'durable_1', source: 'desktop' }))
+        .toEqual({ status: 'resolved' });
+      await expect(decision).resolves.toBe('deny');
+
+      await vi.waitFor(() => {
+        expect(snapshots().length).toBeGreaterThan(0);
+        expect(snapshots().at(-1).payload.pendingPermissions).not.toContainEqual(expect.objectContaining({ requestId }));
+      });
+    });
+
     it('POST /api/v1/agents/:id/permission-response resolves a pending permission', async () => {
       const { port, token } = await startAndPair();
 

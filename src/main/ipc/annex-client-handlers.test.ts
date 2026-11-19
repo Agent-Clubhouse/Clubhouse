@@ -22,6 +22,7 @@ vi.mock('../services/annex-client', () => ({
   requestChatPage: vi.fn(async () => ({ events: [] })),
   requestChatSessions: vi.fn(async () => []),
   sendChatCommand: vi.fn(async () => ({ status: 'completed' })),
+  respondPermission: vi.fn(async () => ({ status: 'resolved' })),
   getSatellites: vi.fn(() => []),
   getDiscoveredServices: vi.fn(() => []),
   pairWithService: vi.fn(async () => ({ success: true })),
@@ -174,6 +175,15 @@ describe('annex-client-handlers', () => {
     expect(annexClient.requestChatSessions).toHaveBeenCalledWith('sat', 'agent');
     await handlers.get(IPC.ANNEX_CLIENT.CHAT_COMMAND)!({}, 'sat', { type: 'chat.send', agentId: 'agent' });
     expect(annexClient.sendChatCommand).toHaveBeenCalledWith('sat', { type: 'chat.send', agentId: 'agent' });
+  });
+
+  it('forwards only a human allow or deny to the remote terminal endpoint', async () => {
+    const answer = handlers.get(IPC.ANNEX_CLIENT.RESPOND_PERMISSION)!;
+    await answer({}, 'sat', 'agent', 'request', 'deny');
+    expect(annexClient.respondPermission).toHaveBeenCalledWith('sat', 'agent', 'request', 'deny');
+    expect(() => answer({}, 'sat', 'agent', 'request', 'allow_session')).toThrow('Invalid permission decision');
+    expect(annexClient.respondPermission).toHaveBeenCalledTimes(1);
+    expect(annexClient.sendChatCommand).not.toHaveBeenCalled();
   });
 
   it('FORGET_ALL_SATELLITES delegates to annexClient.forgetAllSatellites', () => {

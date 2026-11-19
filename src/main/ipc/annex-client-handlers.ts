@@ -197,6 +197,13 @@ export function registerAnnexClientHandlers(): void {
     [stringArg(), objectArg()],
     (_event, satelliteId, command) => annexClient.sendChatCommand(satelliteId, command as Record<string, unknown>),
   ));
+  ipcMain.handle(IPC.ANNEX_CLIENT.RESPOND_PERMISSION, withValidatedArgs(
+    [stringArg(), stringArg(), stringArg(), stringArg()],
+    (_event, satelliteId, agentId, requestId, decision) => {
+      if (decision !== 'allow' && decision !== 'deny') throw new Error('Invalid permission decision');
+      return annexClient.respondPermission(satelliteId, agentId, requestId, decision);
+    },
+  ));
 
   // A typed host for a satellite, such as its tailnet name (#3058)
   ipcMain.handle(IPC.ANNEX_CLIENT.SET_SATELLITE_HOST, withValidatedArgs(
