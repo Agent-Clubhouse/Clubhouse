@@ -9,7 +9,7 @@ vi.mock('electron', () => ({
   BrowserWindow: { getAllWindows: vi.fn(() => []) },
 }));
 
-vi.mock('../services/annex-server', () => ({ closeSocketsUnlessController: vi.fn() }));
+vi.mock('../services/annex-server', () => ({ closeSocketsUnlessController: vi.fn(), liveListenerPorts: vi.fn(() => ({})) }));
 vi.mock('../services/annex-peers', () => ({
   listPeersForDisplay: vi.fn(() => []),
   listPeers: vi.fn(() => [{ fingerprint: 'fp:member', role: 'member' }, { fingerprint: 'fp:phone', role: 'controller' }]),
@@ -20,6 +20,7 @@ vi.mock('../services/annex-client', () => ({
   requestAgentSettings: vi.fn(async () => ({ status: 'offline' })),
   requestControllerChatPage: vi.fn(async () => ({ status: 'offline' })),
   requestControllerChatSessions: vi.fn(async () => ({ status: 'offline' })),
+  setOwnListenerPortsProvider: vi.fn(),
   requestChatPage: vi.fn(async () => ({ events: [] })),
   requestChatSessions: vi.fn(async () => []),
   sendChatCommand: vi.fn(async () => ({ status: 'completed' })),
@@ -67,6 +68,12 @@ describe('annex-client-handlers', () => {
       handlers.set(channel, handler);
     });
     registerAnnexClientHandlers();
+  });
+
+  it("points the client's own-port check at the server's live listener ports (#3608)", async () => {
+    const annexClient = await import('../services/annex-client');
+    const annexServer = await import('../services/annex-server');
+    expect(annexClient.setOwnListenerPortsProvider).toHaveBeenCalledWith(annexServer.liveListenerPorts);
   });
 
   it('registers all expected IPC handlers', () => {

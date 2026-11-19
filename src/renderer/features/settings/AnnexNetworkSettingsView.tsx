@@ -226,6 +226,25 @@ export function AnnexNetworkSettingsView() {
               : 'Found once Annex Network is listening.'}
           />
           <SettingsField
+            label="Annex port"
+            testId="annex-listener-port"
+            help={(
+              <>
+                <span className="block font-mono text-ctp-text">{status.port || 'Not listening'}</span>
+                {status.listenerPortsMoved?.main
+                  ? `Port ${status.listenerPortsMoved.main.preferred} was in use by another program when Annex started, so Annex listens on ${status.listenerPortsMoved.main.bound} instead. A forward from another computer to this one needs port ${status.listenerPortsMoved.main.bound}. The other program was left alone.`
+                  : 'A forward from another computer to this one must reach this port.'}
+                {status.listenerPortsMoved?.pairing && (
+                  <span className="block" data-testid="annex-pairing-port-moved">
+                    {status.listenerPortsMoved.main
+                      ? `The identity-hint port ${status.listenerPortsMoved.pairing.preferred} was also in use, so it listens on ${status.listenerPortsMoved.pairing.bound}. Pairing and control don't use it.`
+                      : `The identity-hint port ${status.listenerPortsMoved.pairing.preferred} was in use by another program when Annex started, so it listens on ${status.listenerPortsMoved.pairing.bound}. Pairing and control don't use it.`}
+                  </span>
+                )}
+              </>
+            )}
+          />
+          <SettingsField
             label="Also reachable at"
             htmlFor="annex-reachable-as"
             help="A name other devices can reach this one by, such as its tailnet name. It's added to the pairing link."

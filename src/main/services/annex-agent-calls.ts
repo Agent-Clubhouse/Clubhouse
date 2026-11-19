@@ -34,6 +34,7 @@ import * as annexIdentity from './annex-identity';
 import * as annexPeers from './annex-peers';
 import { ownPairing } from './annex-network-membership';
 import { appLog } from './log-service';
+import { trackOperation } from './main-stall-monitor';
 import { createSettingsStore } from './settings-store';
 import {
   boundedDeliveryResult, createAnnexDeliveryStore, deliveryFailure, deliveryHash, DELIVERY_MAX_AGE_MS,
@@ -932,7 +933,7 @@ export function syncDirectionsWith(machine: string): Promise<boolean> {
     try {
       do {
         syncAgain.delete(machine);
-        ok = await exchangeShare(machine);
+        ok = await trackOperation('Annex connection exchange', () => exchangeShare(machine));
       } while (syncAgain.has(machine));
       return ok;
     } finally {

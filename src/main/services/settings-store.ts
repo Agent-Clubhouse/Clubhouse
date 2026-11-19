@@ -361,6 +361,12 @@ export function createSettingsStore<T>(
      */
     rollBackFailedSaves?: boolean;
     /**
+     * Skip persistence and audit when update returns its exact current object.
+     * Opt-in only: callbacks must leave that object (including nested values)
+     * untouched to signal a no-op. save() always writes.
+     */
+    skipUnchangedUpdates?: boolean;
+    /**
      * Write a temp file next to the target, flush it, then rename it over the
      * target, so a crash or power loss mid-write leaves the old file whole
      * instead of a torn one that loads as defaults. Temp files left by a crash
@@ -532,6 +538,7 @@ export function createSettingsStore<T>(
         if (precondition) { await precondition.prepare(); precondition.check(); }
         const current = store.get();
         const updated = fn(current);
+        if (options?.skipUnchangedUpdates && updated === current) return cloneSettings(current);
         return store.save(updated, precondition).then(() => cloneSettings(updated));
       });
       updateLock = result;
