@@ -14,6 +14,11 @@ import { isGraduatedFlagOn } from '../shared/graduated-flags';
 
 let cachedNewChrome: boolean | undefined;
 
+/** Passive display evidence only: never initialize a session layout from saved preferences. */
+export function peekNewChromeEnabledForDisplay(): boolean | undefined {
+  return cachedNewChrome;
+}
+
 /**
  * Whether this session uses the new chrome layout: on unless a saved false
  * chooses the classic one (Settings > Display & UI). Read once, so the main
