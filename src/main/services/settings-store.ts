@@ -3,8 +3,18 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { persist } from '../telemetry/persist';
 
+export interface LoadedSettingsSnapshot<T> {
+  readonly value: Readonly<T>;
+  /** The source before default merging/migration; unreadable must not become verified defaults. */
+  readonly primary: PeekedSettings;
+  readonly origin: 'loaded' | 'accepted-save';
+  readonly observedAt: number;
+}
+
 export interface SettingsStore<T> {
   get(): T;
+  /** Inspect an already established, explicitly opted-in metadata cache only. Never load, migrate, recover or write. */
+  peekLoaded?(): LoadedSettingsSnapshot<T> | undefined;
   save(settings: T, precondition?: SettingsCommitPrecondition): Promise<void>;
   /** Sequential read-modify-write: reads the current value, applies `fn`, saves, and returns the updated value. */
   update(fn: (current: T) => T, precondition?: SettingsCommitPrecondition): Promise<T>;
@@ -329,6 +339,8 @@ export function createSettingsStore<T>(
   migrate?: (raw: Record<string, unknown>) => T,
   options?: {
     mode?: number;
+    /** Retain passive display provenance for this metadata-only store. Never opt credentials into display. */
+    displaySnapshot?: true;
     /** Observe the actual initial load, including a fallback to defaults. */
     onLoad?: (result: { raw: string } | { error: unknown }) => void;
     audit?: SettingsStoreAudit;
@@ -357,6 +369,7 @@ export function createSettingsStore<T>(
   const getFilePath = () => path.join(app.getPath('userData'), filename);
   let cachedSettings: T | null = null;
   let cacheLoaded = false;
+  let displaySnapshot: LoadedSettingsSnapshot<T> | undefined;
   let needsRecoveryCopy = false;
   let pendingWrite: Promise<void> = Promise.resolve();
   // Serializes concurrent update() calls so each read sees the prior write's result.
@@ -385,6 +398,7 @@ export function createSettingsStore<T>(
     try {
       const raw = fs.readFileSync(filePath, 'utf-8');
       cachedSettings = parseSettings(raw);
+      displaySnapshot = options?.displaySnapshot ? { value: cachedSettings as Readonly<T>, primary: parsePeeked(raw), origin: 'loaded', observedAt: Date.now() } : undefined;
       cacheLoaded = true;
       notifyLoad({ raw });
     } catch (err) {
@@ -406,6 +420,7 @@ export function createSettingsStore<T>(
         );
       }
       cachedSettings = cloneSettings(defaults);
+      displaySnapshot = options?.displaySnapshot ? { value: cachedSettings as Readonly<T>, primary: readErrorKind(err), origin: 'loaded', observedAt: Date.now() } : undefined;
       cacheLoaded = true;
     }
   }
@@ -465,6 +480,7 @@ export function createSettingsStore<T>(
   }
 
   const store: SettingsStore<T> = {
+    peekLoaded() { return displaySnapshot && Object.freeze({ ...displaySnapshot, primary: typeof displaySnapshot.primary === 'object' ? Object.freeze(displaySnapshot.primary) : displaySnapshot.primary, value: Object.freeze(cachedSettings!) as Readonly<T> }); },
     get() {
       if (!cacheLoaded || cachedSettings === null) {
         loadSettings();
@@ -477,13 +493,15 @@ export function createSettingsStore<T>(
       if (!cacheLoaded) loadSettings();
       const before = auditSnapshot();
       const previous = options?.rollBackFailedSaves || precondition ? store.get() : undefined;
+      const previousDisplaySnapshot = displaySnapshot;
       const attempted = cloneSettings(settings);
       cachedSettings = attempted;
+      displaySnapshot = options?.displaySnapshot ? { value: attempted as Readonly<T>, primary: attempted !== null && typeof attempted === 'object' && !Array.isArray(attempted) ? cloneSettings(attempted) as Record<string, unknown> : 'unreadable', origin: 'accepted-save', observedAt: Date.now() } : undefined;
       cacheLoaded = true;
       const queued = queueWrite(attempted, precondition);
       const written = previous === undefined ? queued : queued.catch((err) => {
         // Unless something newer has replaced it since.
-        if (cachedSettings === attempted) cachedSettings = previous;
+        if (cachedSettings === attempted) { cachedSettings = previous; displaySnapshot = previousDisplaySnapshot; }
         throw err;
       });
       if (before === undefined) return written;
@@ -507,6 +525,7 @@ export function createSettingsStore<T>(
   settingsStoreResetters.add(() => {
     cachedSettings = null;
     cacheLoaded = false;
+    displaySnapshot = undefined;
     needsRecoveryCopy = false;
     pendingWrite = Promise.resolve();
     updateLock = Promise.resolve();
