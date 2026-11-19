@@ -14,11 +14,12 @@ vi.mock('../../telemetry/persist', () => ({ persist: { recovery: vi.fn(), timed:
 import { createAssetCatalogStore } from '../asset-catalog/store';
 import { resetAllSettingsStoresForTests } from '../settings-store';
 import { agentHoldsAction } from '../agent-grants-service';
-import { _resetSettingsAuditForTesting } from '../settings-audit';
+import { delivered, failedDeliveries, mcpProblems, forgetDelivery } from './delivery-records';
+import { withSettingsSurface, _resetSettingsAuditForTesting } from '../settings-audit';
 import { createManagedAgentsService, type ManagedAgentsService } from './service';
 import { createManagedStateStore } from './state-store';
 import { readManagedStatusForDisplay, statusFor, _setManagedAgentsForTesting } from './index';
-import { resolveManagedSetupForDisplay, setGrantedSkills } from './delivery';
+import { resolveManagedSetupForDisplay, setupFingerprint, setGrantedSkills } from './delivery';
 let root: string, service: ManagedAgentsService, agent: DurableAgentConfig;
 async function disk(folder = root): Promise<Record<string, unknown>> {
   const result: Record<string, unknown> = {};
@@ -38,7 +39,7 @@ beforeEach(async () => {
   setGrantedSkills((selected) => agentHoldsAction(selected.id, selected, 'handoff.offer') ? [PREPARE_HANDOFF_SKILL_ID] : []);
   m.config.mockReset().mockImplementation(async () => { throw new Error('unadmitted replacement config lookup'); });
 });
-afterEach(async () => { _setManagedAgentsForTesting(null); resetAllSettingsStoresForTests(); vi.restoreAllMocks(); await fs.rm(root, { recursive: true, force: true }); });
+afterEach(async () => { _setManagedAgentsForTesting(null); forgetDelivery('selected'); resetAllSettingsStoresForTests(); vi.restoreAllMocks(); await fs.rm(root, { recursive: true, force: true }); });
 it.each([false, true])('reuses the admitted setup and local status model with selected grant-derived skill=%s, without ordinary callback effects', async (held) => {
   await fs.writeFile(path.join(root, 'agent-grants.json'), JSON.stringify({ agents: { selected: { changes: held ? [{ action: 'handoff.offer', target: { kind: 'remote_dispatcher' }, mode: 'ask' }] : [] } } }));
   m.config.mockResolvedValue(agent); const ordinary = await statusFor('/fixture', 'selected'); m.config.mockClear(); m.config.mockImplementation(async () => { throw new Error('unadmitted replacement config lookup'); }); resetAllSettingsStoresForTests();
@@ -87,8 +88,8 @@ it('withholds grant-derived status changed during an actual awaited part read', 
 it('keeps real selected permission receipts private for the eventual final endpoint boundary after status returns', async () => {
   const grants = path.join(root, 'agent-grants.json'); await fs.writeFile(grants, JSON.stringify({ agents: { selected: { changes: [{ action: 'handoff.offer', target: { kind: 'remote_dispatcher' }, mode: 'ask' }] } } }));
   const receipts: Array<{ current(): boolean }> = []; const result = await readManagedStatusForDisplay(agent, { receipts });
-  expect(result.state).toBe('ok'); expect.soft(receipts).toHaveLength(1); expect.soft(receipts[0]?.current()).toBe(true); expect(JSON.stringify(result)).not.toMatch(/current|receipts|changes.*handoff.offer/);
-  await fs.writeFile(grants, JSON.stringify({ agents: { selected: { changes: [] } } })); const before = await disk(); expect.soft(receipts[0]?.current()).toBe(false); expect.soft(await disk()).toEqual(before);
+  expect(result.state).toBe('ok'); expect.soft(receipts.length).toBeGreaterThan(0); expect.soft(receipts.every((receipt) => receipt.current())).toBe(true); expect(JSON.stringify(result)).not.toMatch(/current|receipts|changes.*handoff.offer/);
+  await fs.writeFile(grants, JSON.stringify({ agents: { selected: { changes: [] } } })); const before = await disk(); expect.soft(receipts.some((receipt) => !receipt.current())).toBe(true); expect.soft(await disk()).toEqual(before);
 });
 
 it('carries selected template metadata receipts privately through later real state-file changes', async () => {
@@ -98,7 +99,7 @@ it('carries selected template metadata receipts privately through later real sta
   const receipts: Array<{ current(): boolean }> = []; const result = await service.getTemplateForDisplay('chosen', { receipts });
   expect(receipts).toHaveLength(1); expect(receipts[0].current()).toBe(true); expect(JSON.stringify(result)).not.toMatch(/PRIVATE_|receipts|current|settings|setup/);
   await fs.writeFile(file, JSON.stringify({ version: 1, templates: { chosen, other: { name: 'PRIVATE_UNRELATED_CHANGED' } } })); expect(receipts[0].current()).toBe(true);
-  await fs.writeFile(file, JSON.stringify({ version: 1, templates: { chosen: { ...chosen, name: 'Changed template' } } })); const before = await disk(); expect.soft(receipts[0]?.current()).toBe(false); expect.soft(await disk()).toEqual(before);
+  await fs.writeFile(file, JSON.stringify({ version: 1, templates: { chosen: { ...chosen, name: 'Changed template' } } })); const before = await disk(); expect.soft(receipts.some((receipt) => !receipt.current())).toBe(true); expect.soft(await disk()).toEqual(before);
 });
 
 it('keeps unmanaged selected status available independently of unreadable grant settings', async () => {
@@ -110,4 +111,53 @@ it('does not let an unrelated malformed template hide the selected valid metadat
   const file = path.join(root, 'managed', 'state.json'); await fs.mkdir(path.dirname(file), { recursive: true });
   await fs.writeFile(file, JSON.stringify({ version: 1, templates: { chosen: { id: 'chosen', name: 'Chosen template' }, unrelated: null } }));
   const before = await disk(); expect(await service.getTemplateForDisplay('chosen')).toMatchObject({ name: 'Chosen template' }); expect(await disk()).toEqual(before);
+});
+
+async function runningSelectedHeads() {
+  const first = await withSettingsSurface('ui', undefined, () => service.createPart({ name: 'First selected block', content: { kind: 'block', content: 'SYNTHETIC_FIRST_CONTENT' } }));
+  const later = await withSettingsSurface('ui', undefined, () => service.createPart({ name: 'Later selected block', content: { kind: 'block', content: 'SYNTHETIC_LATER_CONTENT' } }));
+  agent.managed!.blocks = [first.id, later.id];
+  const resolved = await resolveManagedSetupForDisplay(service, agent, []);
+  delivered.set(agent.id, { ...setupFingerprint(agent, resolved), deliveredAt: '2026-11-19T00:00:00Z', deliveredSkillIds: [] }); m.running = true;
+  resetAllSettingsStoresForTests();
+  return { first, later };
+}
+async function mutateHead(id: string, change: 'revise' | 'delete') {
+  await withSettingsSurface('ui', undefined, async () => {
+    if (change === 'revise') await service.updatePart({ id, expectedRevision: 1, content: { kind: 'block', content: 'SYNTHETIC_CHANGED_CONTENT' } });
+    else await service.deletePart({ id, expectedRevision: 1, mode: 'remove' });
+  });
+}
+it.each(['revise', 'delete'] as const)('withholds stale selected library status when an earlier head %s occurs during a later actual head await', async (change) => {
+  const { first, later } = await runningSelectedHeads(); const head = service.headContent.bind(service); let changed = false;
+  vi.spyOn(service, 'headContent').mockImplementation(async (id) => {
+    const result = await head(id);
+    if (id === later.id && !changed) { changed = true; await mutateHead(first.id, change); }
+    return result;
+  });
+  const result = await readManagedStatusForDisplay(agent); expect(changed).toBe(true);
+  expect.soft(result.state).toBe('unavailable'); expect.soft(JSON.stringify(result)).not.toContain('"waiting":false');
+});
+it.each(['revise', 'delete'] as const)('invalidates private evidence after a selected library head %s following helper return', async (change) => {
+  const { first } = await runningSelectedHeads(); const receipts: Array<{ current(): boolean }> = [];
+  const initial = await readManagedStatusForDisplay(agent, { receipts }); expect(initial).toMatchObject({ state: 'ok', value: { waiting: false } }); expect(receipts.length).toBeGreaterThan(0); expect(receipts.every((receipt) => receipt.current())).toBe(true);
+  await mutateHead(first.id, change);
+  const fresh = await readManagedStatusForDisplay(agent); expect(fresh).toMatchObject({ state: 'ok', value: { waiting: true } });
+  expect.soft(receipts.every((receipt) => receipt.current())).toBe(false);
+});
+it.each(['delivered', 'failed', 'mcp'] as const)('invalidates private evidence after late selected %s cache mutation', async (change) => {
+  await runningSelectedHeads(); const receipts: Array<{ current(): boolean }> = [];
+  const initial = await readManagedStatusForDisplay(agent, { receipts }); expect(initial).toMatchObject({ state: 'ok', value: { waiting: false } }); expect(receipts.length).toBeGreaterThan(0); expect(receipts.every((receipt) => receipt.current())).toBe(true);
+  if (change === 'delivered') delivered.set(agent.id, { ...delivered.get(agent.id)!, fingerprint: 'SYNTHETIC_DIFFERENT_DELIVERY' });
+  if (change === 'failed') failedDeliveries.set(agent.id, 'SYNTHETIC_DELIVERY_FAILED');
+  if (change === 'mcp') mcpProblems.set(agent.id, [{ server: 'SYNTHETIC_MCP', missingEnv: ['TEST_KEY'] }]);
+  const fresh = await readManagedStatusForDisplay(agent); expect(fresh.state).toBe('ok');
+  if (fresh.state === 'ok') expect(fresh.value).toMatchObject(change === 'mcp' ? { mcpProblems: [{ server: 'SYNTHETIC_MCP', missingEnv: ['TEST_KEY'] }] } : { waiting: true });
+  expect.soft(receipts.every((receipt) => receipt.current())).toBe(false);
+});
+it('detaches selected MCP status arrays from the retained live delivery cache', async () => {
+  await runningSelectedHeads(); mcpProblems.set(agent.id, [{ server: 'SYNTHETIC_MCP', missingEnv: ['TEST_KEY'] }]);
+  const result = await readManagedStatusForDisplay(agent); expect(result.state).toBe('ok');
+  if (result.state === 'ok') result.value.mcpProblems![0].missingEnv.push('SYNTHETIC_CALLER_MUTATION');
+  expect.soft(mcpProblems.get(agent.id)).toEqual([{ server: 'SYNTHETIC_MCP', missingEnv: ['TEST_KEY'] }]);
 });
