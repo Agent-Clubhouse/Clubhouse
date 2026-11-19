@@ -85,6 +85,28 @@ describe('pendingPermissionStore', () => {
     expect(usePendingPermissionStore.getState().byRequestId['req-1']).toBeUndefined();
   });
 
+  it('keeps remote prompts when local hydration finishes later and routes their answer only to their host', async () => {
+    const permission = makePermission({ agentId: 'remote||sat||agent', requestId: 'remote||sat||request' });
+    const remote = vi.spyOn(window.clubhouse.annexClient, 'respondPermission').mockResolvedValue({ status: 'resolved' });
+    usePendingPermissionStore.getState().hydrateRemote('sat', [permission]);
+    usePendingPermissionStore.getState().hydrate([makePermission()]);
+    expect(usePendingPermissionStore.getState().byRequestId[permission.requestId]).toEqual(permission);
+
+    await usePendingPermissionStore.getState().resolve(permission.agentId, permission.requestId, 'deny');
+
+    expect(remote).toHaveBeenCalledWith('sat', 'agent', 'request', 'deny');
+    expect(resolveSpy).not.toHaveBeenCalled();
+    expect(usePendingPermissionStore.getState().byRequestId['req-1']).toBeDefined();
+  });
+
+  it('refuses to send a request from another computer through the selected agent', async () => {
+    const remote = vi.spyOn(window.clubhouse.annexClient, 'respondPermission');
+    await expect(usePendingPermissionStore.getState().resolve('remote||sat||agent', 'remote||other||request', 'allow'))
+      .rejects.toThrow('different computer');
+    expect(remote).not.toHaveBeenCalled();
+    expect(resolveSpy).not.toHaveBeenCalled();
+  });
+
   it('clears the prompt and surfaces the reason when main refuses the decision', async () => {
     resolveSpy.mockResolvedValue({ status: 'rejected', reason: 'expired' });
     usePendingPermissionStore.getState().addPending(makePermission());

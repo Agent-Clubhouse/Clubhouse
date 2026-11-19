@@ -673,7 +673,7 @@ export function AgentTerminal({ agentId, focused, zoneThemeId }: Props) {
       </div>
       {/* Approve/deny for hook-driven permission requests. Remote agents are
           owned by their satellite host, which runs its own queue. */}
-      {!isRemote && <DurablePermissionPrompt agentId={agentId} />}
+      <DurablePermissionPrompt agentId={agentId} />
       {/* Scroll-to-bottom floating button */}
       {isScrolledUp && !resuming && (
         <button

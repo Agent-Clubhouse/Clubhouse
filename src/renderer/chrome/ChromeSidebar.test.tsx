@@ -1271,6 +1271,27 @@ describe('ChromeSidebar Dispatcher (#2538)', () => {
   const leadState = (machine: string, following: boolean) => ({ available: true, following, role: 'follower', lead: { machine, name: 'Mini', self: false, online: true }, choices: [], outbox: { waiting: 0, oldestAt: null, expired: 0, failed: null }, localNews: { count: 0, needsUser: false } } as never);
   const levelOf = (row: HTMLElement) => ({ level: row.getAttribute('aria-level'), pad: row.style.paddingLeft });
 
+  it.each([false, true])('opens the actual remote Dispatcher from Needs you with local enabled=%s', (enabled) => {
+    if (enabled) turnOn();
+    useProjectStore.setState({ projects: [], activeProjectId: null });
+    const chat = agent('remote-chat', DISPATCHER_PROJECT_ID, { name: 'Tael', executionMode: 'chat' });
+    const remoteId = namespacedAgentId('s1', chat.id);
+    useAnnexClientStore.setState({ satellites: [satelliteFor(chat)] });
+    useRemoteProjectStore.setState({
+      satelliteProjects: { s1: [] },
+      remoteAgents: { [remoteId]: { ...chat, id: remoteId, projectId: namespacedProjectId('s1', DISPATCHER_PROJECT_ID) } },
+      remoteAgentDetailedStatus: { [remoteId]: { state: 'needs_permission', message: 'Needs permission', timestamp: 5 } },
+    });
+    render(<ChromeSidebar />);
+
+    fireEvent.click(screen.getByTestId(`needs-you-row-${remoteId}`));
+
+    expect(useRemoteDispatcherSelection.getState().machine).toBe('fp1');
+    expect(useUIStore.getState().dispatcherOpen).toBe(true);
+    expect(useProjectStore.getState().activeProjectId).toBeNull();
+    expect(useDispatcherStore.getState().state?.enabled).toBe(enabled);
+  });
+
   it('shows another computer’s Dispatcher as a peer of this one and opens its chat', async () => {
     turnOn();
     const chat = agent('remote-chat', DISPATCHER_PROJECT_ID, { name: 'Tael', executionMode: 'chat' });
@@ -1580,6 +1601,45 @@ describe('ChromeSidebar Dispatcher (#2538)', () => {
     useDispatcherStore.getState().setState({ ...DISPATCHER_OFF, agentId: 'disp-work', path: 'dispatcher-work-dir', chatAgentId: 'disp', chatPath: 'dispatcher-dir' });
     render(<ChromeSidebar />);
     expect(screen.queryByTestId('needs-you-row-disp')).toBeNull();
+  });
+
+  it('opens answer controls for remote grants even while this computer’s Dispatcher chat is sleeping', async () => {
+    turnOn();
+    useGrantRequestStore.setState({ requests: {}, reviewing: null });
+    const state = {
+      ...leadState('fp1', false) as object, role: 'peer', lead: null,
+      choices: [
+        { machine: 'self', name: 'Desk', self: true, online: true, dispatcherOn: true },
+        { machine: 'fp1', name: 'Mini', self: false, online: true, dispatcherOn: true },
+      ],
+    };
+    useLeadStore.setState({ state: state as never });
+    vi.spyOn(window.clubhouse.dispatcher, 'getLead').mockImplementation(async () => useLeadStore.getState().state!);
+    const request = {
+      requestId: 'sleeping-remote-grant', kind: 'call', projectId: 'remote-project',
+      agent: { agentId: 'remote-requester', name: 'Remote requester' },
+      actions: ['group_project.admin'], actionLabels: ['Manage group projects'],
+      toolName: 'get_group_project_management', arguments: '{}', summary: 'Wants to manage a group project.',
+      requestedAt: '2026-11-18T10:00:00Z', expiresAt: '2026-11-19T10:00:00Z',
+      answers: ['allow_once', 'decline'],
+    };
+    useAnnexClientStore.setState({ satellites: [satelliteFor(null, { snapshot: { grantRequests: [request] } })] });
+    const wake = vi.spyOn(window.clubhouse.dispatcher, 'wake').mockResolvedValue();
+    function ApprovalShell() {
+      const open = useUIStore((s) => s.dispatcherOpen);
+      return <><ChromeSidebar />{open && <DispatcherView />}</>;
+    }
+    render(<ApprovalShell />);
+    fireEvent.click(await screen.findByTestId('needs-you-row-disp'));
+    expect(useUIStore.getState().dispatcherOpen).toBe(true);
+    expect(useAgentStore.getState().agents.disp.status).toBe('sleeping');
+    expect(screen.queryByTestId('dispatcher-remote-approval-allow_once')).toBeInTheDocument();
+    expect(screen.queryByTestId('dispatcher-remote-approval-decline')).toBeInTheDocument();
+    expect(wake).not.toHaveBeenCalled();
+    act(() => useAnnexClientStore.setState({ satellites: [satelliteFor(null, { snapshot: { grantRequests: [] } })] }));
+    expect(wake).not.toHaveBeenCalled();
+    fireEvent.click(within(screen.getByTestId('dispatcher-row')).getByTestId('agent-item-disp'));
+    await waitFor(() => expect(wake).toHaveBeenCalledOnce());
   });
 
   describe('when its agent fails to load (#2572)', () => {

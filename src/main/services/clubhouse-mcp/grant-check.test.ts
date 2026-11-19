@@ -559,12 +559,12 @@ describe('handoff agreement grants', () => {
   });
 });
 
-it('keeps the remote Dispatcher Ask default when the locally connected controller is asleep', () => {
+it('keeps remote Dispatcher default parity when the locally connected controller is asleep', () => {
   setMcpCaller('connected-agent', userData.dir, {});
   setDispatcherIdLookup((id) => id === 'sleeping-controller');
   const bindings = vi.spyOn(bindingManager, 'getBindingsForAgent').mockReturnValue([{ targetKind: 'agent', targetId: 'sleeping-controller' }] as ReturnType<typeof bindingManager.getBindingsForAgent>);
   try {
-    expect(checkToolGrant('connected-agent', { actions: ['agent.message'], target: 'remote_dispatcher' }, {})).toMatchObject({ ok: false, reason: 'ask_first' });
+    expect(checkToolGrant('connected-agent', { actions: ['agent.message'], target: 'remote_dispatcher' }, {})).toEqual({ ok: true });
     bindings.mockReturnValue([]);
     expect(checkToolGrant('connected-agent', { actions: ['agent.message'], target: 'remote_dispatcher' }, {})).toMatchObject({ ok: false, reason: 'no_grant' });
   } finally { bindings.mockRestore(); setDispatcherIdLookup(null); }

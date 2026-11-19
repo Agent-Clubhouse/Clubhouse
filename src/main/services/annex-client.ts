@@ -8,6 +8,7 @@ import { isRemoteAgentDetails, REMOTE_DETAILS_MAX_BYTES, type RemoteAgentDetails
  * Stores snapshots per satellite and forwards events to the renderer via IPC.
  */
 import * as https from 'https';
+import type { PermissionResolveOutcome } from '../../shared/permission-types';
 import { applyFetchedIcons, fetchLeftOutIcons, newRemoteIconState, type IconFetchResult, type IconKind, type RemoteIconState } from './remote-icon-fetch';
 import { ICON_SERVED_MAX_BYTES } from '../../shared/icon-limits';
 import { randomUUID } from 'crypto';
@@ -2261,6 +2262,19 @@ export function postToMachine(machine: string, urlPath: string, body: Record<str
   const sat = satelliteFor(machine);
   if (!sat) return Promise.reject(new Error('Satellite not connected'));
   return satelliteJson(sat.fingerprint, 'POST', urlPath, body, options);
+}
+
+/** A person's terminal approval, over the host's existing pinned permission endpoint. */
+export async function respondPermission(satelliteId: string, agentId: string, requestId: string, decision: 'allow' | 'deny'): Promise<PermissionResolveOutcome> {
+  const res = await postToMachine(satelliteId, `/api/v1/agents/${encodeURIComponent(agentId)}/permission-response`, { requestId, decision });
+  const body = res.body && typeof res.body === 'object' ? res.body : {};
+  if (res.status === 200 && 'ok' in body && body.ok === true) return { status: 'resolved' };
+  const error = 'error' in body ? body.error : undefined;
+  if (error === 'request_not_found') return { status: 'rejected', reason: 'not_found' };
+  if (error === 'agent_mismatch') return { status: 'rejected', reason: 'agent_mismatch' };
+  throw new Error(error === 'incomplete_representation'
+    ? 'This request is only a preview. Review and answer the complete request on its host computer.'
+    : `That computer refused the decision${typeof error === 'string' ? ` (${error})` : ''}.`);
 }
 
 /** A JSON request over the pinned connection, answering its status and body whatever the status. */

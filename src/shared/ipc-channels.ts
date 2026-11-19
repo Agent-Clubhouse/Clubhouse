@@ -591,6 +591,7 @@ export const IPC = {
     CONTROLLER_CHAT_SESSIONS: 'annex-client:controller-chat-sessions',
     CHAT_SESSIONS: 'annex-client:chat-sessions',
     CHAT_COMMAND: 'annex-client:chat-command',
+    RESPOND_PERMISSION: 'annex-client:respond-permission',
     SESSION_LIST: 'annex-client:session-list',
     SESSION_TRANSCRIPT: 'annex-client:session-transcript',
     SESSION_SUMMARY: 'annex-client:session-summary',

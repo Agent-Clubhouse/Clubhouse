@@ -4,6 +4,7 @@ import type { RemoteAgentDetails } from '../shared/remote-agent-details';
 import { IPC } from '../shared/ipc-channels';
 import type { GroupProjectRolesView } from '../shared/group-project-types';
 import type { ControllerChatQuery, ControllerChatPage, ControllerChatSessions, ControllerReadResult } from '../shared/controller-chat';
+import type { PermissionResolveOutcome } from '../shared/permission-types';
 
 export const annexClient = {
   annexClient: {
@@ -58,6 +59,8 @@ export const annexClient = {
   /** Sends a chat command (chat.send, chat.permission, …) for a satellite's agent; answers its receipt (#2390). */
   chatCommand: (satelliteId: string, command: Record<string, unknown>): Promise<unknown> =>
     ipcRenderer.invoke(IPC.ANNEX_CLIENT.CHAT_COMMAND, satelliteId, command),
+  respondPermission: (satelliteId: string, agentId: string, requestId: string, decision: 'allow' | 'deny'): Promise<PermissionResolveOutcome> =>
+    ipcRenderer.invoke(IPC.ANNEX_CLIENT.RESPOND_PERMISSION, satelliteId, agentId, requestId, decision),
   gitOperation: (satelliteId: string, projectId: string, params: { operation: string; [key: string]: unknown }): Promise<unknown> =>
     ipcRenderer.invoke(IPC.ANNEX_CLIENT.GIT_OPERATION, satelliteId, projectId, params),
   sessionList: (satelliteId: string, agentId: string, projectId: string, orchestrator?: string): Promise<unknown> =>

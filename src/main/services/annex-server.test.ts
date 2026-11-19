@@ -2368,6 +2368,32 @@ describe('annex-server', () => {
     expect((await request(port, 'GET', '/api/v1/mobile/agents/missing/chat', undefined, authHeaders(token))).status).toBe(404);
   });
 
+  it('withholds pending chat approvals when the paired device is revoked during the transcript read', async () => {
+    vi.mocked(projectStore.list).mockReturnValue([{ id: 'p', name: 'Project', path: '/test/project' }] as never);
+    vi.mocked(agentConfigModule.listDurable).mockReturnValue([
+      { id: 'a', name: 'agent', color: 'indigo', createdAt: '2026-01-01' },
+    ] as never);
+    const pending = {
+      v: 1, type: 'permission_request', agentId: 'a', sessionId: 's', seq: 1, ts: Date.now(),
+      data: { requestId: 'pending-private-approval', title: 'Review private operation', options: [] },
+    };
+    registerChatRuntime({
+      kind: 'chat', agentId: 'a', isRunning: () => true, getState: () => 'waiting_permission',
+      getSessionId: () => 's', readTranscript: async () => {
+        vi.mocked(annexPeers.getPeer).mockReturnValue(undefined);
+        return { events: [pending] };
+      },
+    } as never);
+    try {
+      const { port, token } = await startAndPair();
+      const response = await request(port, 'GET', '/api/v1/mobile/agents/a/chat', undefined, authHeaders(token));
+      expect(response.status).toBe(403);
+      expect(response.body).not.toContain('pending-private-approval');
+    } finally {
+      clearChatRuntimes();
+    }
+  });
+
   it('audits a controlling device\'s commands by its kind: a phone, or another computer (#3205)', () => {
     const peer = (extra: Partial<import('../../shared/types').AnnexPeer>) => ({
       fingerprint: 'aa:bb', publicKey: 'k', alias: 'x', icon: 'computer', color: 'indigo', pairedAt: '', lastSeen: '', ...extra,
@@ -3515,6 +3541,26 @@ describe('annex-server', () => {
       expect(annexPeers.removePeer).not.toHaveBeenCalled();
     }, 30_000);
 
+    it.each(['send_message', 'send_file'])('refuses remote Dispatcher %s from unpaired, pending, one-to-one and revoked machines before delivery', async (tool) => {
+      await startServer();
+      const unknown = device(); const pending = device(); const oneToOne = device(); const revoked = device();
+      peers.set(pending.fingerprint, pinned(pending, { role: 'member', kind: 'desktop', networkPending: true }));
+      peers.set(oneToOne.fingerprint, pinned(oneToOne, { role: 'controller', kind: 'desktop' }));
+      peers.set(revoked.fingerprint, pinned(revoked, { role: 'member', kind: 'desktop' }));
+      annexServer.revokePeer(revoked.fingerprint);
+      for (const [client, error] of [
+        [unknown, 'peer_not_paired'], [pending, 'peer_role_not_allowed'],
+        [oneToOne, 'not_a_computer'], [revoked, 'peer_not_paired'],
+      ] as const) {
+        const response = await call('POST', '/api/v1/network/agent-call', client, {
+          v: 1, callId: 'parity-ineligible', from: { agentId: 'connected-agent', name: 'Connected agent' },
+          to: 'dispatcher-controller', tool, args: tool === 'send_file' ? { content: 'news' } : { message: 'news' },
+        });
+        expect(response.status).toBe(error === 'peer_not_paired' ? 401 : 403);
+        expect(response.body.error).toBe(error);
+      }
+    });
+
     it('a removed peer is closed and then refused on REST and WebSocket', async () => {
       await startServer();
       const phone = device();
@@ -4480,6 +4526,61 @@ describe('annex-server', () => {
   // -------------------------------------------------------------------------
 
   describe('permission response', () => {
+    it('subscribes to permission changes once at startup and unsubscribes on stop', async () => {
+      const unsubscribe = vi.fn();
+      const subscribe = vi.spyOn(permissionQueue, 'onChange').mockReturnValue(unsubscribe);
+      const requestIds: string[] = [];
+      try {
+        await startAndPair();
+        const atStart = subscribe.mock.calls.length;
+        requestIds.push(permissionQueue.createPermission('durable_1', 'Bash').requestId);
+        requestIds.push(permissionQueue.createPermission('durable_1', 'Bash').requestId);
+        expect({ atStart, afterNewRequests: subscribe.mock.calls.length }).toEqual({
+          atStart: 1,
+          afterNewRequests: 1,
+        });
+        annexServer.stop();
+        expect(unsubscribe).toHaveBeenCalledOnce();
+      } finally {
+        for (const id of requestIds) {
+          permissionQueue.cancelPermission(id, 'test cleanup', 'durable_1');
+        }
+      }
+    });
+
+    it.each(['before', 'after'] as const)('refreshes terminal permission snapshots after a host answer for a request created %s startup', async (timing) => {
+      vi.mocked(pluginManifestRegistry.listAllManifests).mockReturnValue([]);
+      const { groupProjectRegistry } = await import('./group-project-registry');
+      vi.mocked(groupProjectRegistry.list).mockResolvedValue([]);
+      const themeService = await import('./theme-service');
+      vi.mocked(themeService.getSettings).mockReturnValue({ themeId: 'catppuccin-mocha' });
+      const existing = timing === 'before'
+        ? permissionQueue.createPermission('durable_1', 'Bash', { command: 'git status' })
+        : undefined;
+      await startAndPair();
+      const { requestId, decision } = existing ?? permissionQueue.createPermission('durable_1', 'Bash', { command: 'git status' });
+      const ws = Object.assign(new EventEmitter(), { readyState: 1, send: vi.fn(), ping: () => {}, close: vi.fn() });
+      annexServer._testing.wsAuthTypes.set(ws as never, 'mtls');
+      annexServer._testing.registerPeerSocket(ws as never, TEST_CONTROLLER.fingerprint, TEST_CONTROLLER.tlsCertificateFingerprint);
+      annexServer._testing.wss!.clients.add(ws as never);
+      annexServer._testing.wss!.emit('connection', ws);
+      const snapshots = () => ws.send.mock.calls.map(([frame]) => JSON.parse(frame as string)).filter((frame) => frame.type === 'snapshot');
+      await vi.waitFor(() => {
+        expect(snapshots().length).toBeGreaterThan(0);
+        expect(snapshots().at(-1).payload.pendingPermissions).toContainEqual(expect.objectContaining({ requestId }));
+      });
+      ws.send.mockClear();
+
+      expect(permissionQueue.resolvePermissionDetailed(requestId, 'deny', { expectedAgentId: 'durable_1', source: 'desktop' }))
+        .toEqual({ status: 'resolved' });
+      await expect(decision).resolves.toBe('deny');
+
+      await vi.waitFor(() => {
+        expect(snapshots().length).toBeGreaterThan(0);
+        expect(snapshots().at(-1).payload.pendingPermissions).not.toContainEqual(expect.objectContaining({ requestId }));
+      });
+    });
+
     it('POST /api/v1/agents/:id/permission-response resolves a pending permission', async () => {
       const { port, token } = await startAndPair();
 

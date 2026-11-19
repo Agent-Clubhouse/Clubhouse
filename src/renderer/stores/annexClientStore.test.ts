@@ -2,7 +2,7 @@
  * Tests for the Annex V2 Client Zustand store — discovered services, pairing,
  * satellites, and IPC listener wiring.
  */
-import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 
 // ---------- IPC mock ----------
 const mockAnnexClient = {
@@ -59,6 +59,7 @@ import {
   type DiscoveredService,
   type SatelliteConnection,
 } from './annexClientStore';
+import { usePendingPermissionStore } from './pendingPermissionStore';
 
 // ---------- helpers ----------
 function getState() {
@@ -103,9 +104,89 @@ const SATELLITE: SatelliteConnection = {
 describe('annexClientStore', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    usePendingPermissionStore.setState({ byRequestId: {} });
     useAnnexClientStore.setState({
       satellites: [],
       discoveredServices: [],
+    });
+  });
+
+  describe('remote terminal approval catch-up', () => {
+    const permission = {
+      requestId: 'remote-permission', agentId: 'durable_remote', toolName: 'Bash',
+      toolInput: { command: 'git status' }, createdAt: 1000, timeoutMs: 110_000,
+    };
+    const remoteAgentId = `remote||${SATELLITE.id}||${permission.agentId}`;
+    const remoteRequestId = `remote||${SATELLITE.id}||${permission.requestId}`;
+    let receive: (event: { satelliteId: string; type: string; payload: unknown }) => void;
+    let changed: (satellites: SatelliteConnection[]) => void;
+    let off: () => void;
+
+    beforeEach(() => {
+      mockAnnexClient.onSatelliteEvent.mockImplementationOnce((listener) => {
+        receive = listener;
+        return vi.fn();
+      });
+      mockAnnexClient.onSatellitesChanged.mockImplementationOnce((listener) => {
+        changed = listener;
+        return vi.fn();
+      });
+      useAnnexClientStore.setState({ satellites: [SATELLITE] });
+      off = initAnnexClientListener();
+    });
+    afterEach(() => off());
+
+    const snapshot = (pendingPermissions: unknown[]) => receive({ satelliteId: SATELLITE.id, type: 'snapshot', payload: {
+      projects: [], agents: {}, quickAgents: {}, pendingPermissions,
+    } });
+
+    it('hydrates pending terminal permissions from a reconnect snapshot', () => {
+      snapshot([permission]);
+      expect(usePendingPermissionStore.getState().byRequestId[remoteRequestId])
+        .toMatchObject({ ...permission, requestId: remoteRequestId, agentId: remoteAgentId });
+    });
+
+    it('shows a live terminal permission under its originating machine, not a local agent', () => {
+      const { createdAt, timeoutMs, ...live } = permission;
+      receive({ satelliteId: SATELLITE.id, type: 'permission:request', payload: {
+        ...live, timeout: timeoutMs, deadline: createdAt + timeoutMs,
+      } });
+      expect(usePendingPermissionStore.getState().byRequestId[remoteRequestId])
+        .toMatchObject({ ...permission, requestId: remoteRequestId, agentId: remoteAgentId });
+    });
+
+    it('clears only that host on snapshot settlement, even with identical request ids on another host and locally', () => {
+      const store = usePendingPermissionStore.getState();
+      store.addPending(permission);
+      useAnnexClientStore.setState({ satellites: [SATELLITE, { ...SATELLITE, id: 'other', fingerprint: 'other' }] });
+      receive({ satelliteId: 'other', type: 'permission:request', payload: permission });
+      snapshot([permission]);
+      snapshot([]);
+      expect(Object.keys(usePendingPermissionStore.getState().byRequestId).sort())
+        .toEqual([permission.requestId, `remote||other||${permission.requestId}`]);
+    });
+
+    it('clears a live answer only on its originating host', () => {
+      snapshot([permission]);
+      receive({ satelliteId: 'other', type: 'permission:response', payload: { requestId: permission.requestId } });
+      expect(usePendingPermissionStore.getState().byRequestId[remoteRequestId]).toBeDefined();
+      receive({ satelliteId: SATELLITE.id, type: 'permission:response', payload: { requestId: permission.requestId } });
+      expect(usePendingPermissionStore.getState().byRequestId[remoteRequestId]).toBeUndefined();
+    });
+
+    it('clears stale prompts on disconnect and restores a still-pending prompt from the next connection snapshot', () => {
+      snapshot([permission]);
+      changed([{ ...SATELLITE, state: 'disconnected' }]);
+      expect(usePendingPermissionStore.getState().byRequestId[remoteRequestId]).toBeUndefined();
+      changed([{ ...SATELLITE, snapshot: { pendingPermissions: [permission] } as never }]);
+      expect(usePendingPermissionStore.getState().byRequestId[remoteRequestId]).toBeDefined();
+    });
+
+    it('does not resurrect prompts from late frames after disconnect or revocation', () => {
+      changed([]);
+      receive({ satelliteId: SATELLITE.id, type: 'permission:request', payload: permission });
+      snapshot([permission]);
+      expect(usePendingPermissionStore.getState().byRequestId).toEqual({});
     });
   });
 

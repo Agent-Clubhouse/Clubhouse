@@ -5,9 +5,11 @@
  * from the main process.
  */
 import { create } from 'zustand';
-import { useRemoteProjectStore } from './remoteProjectStore';
+import { namespacedAgentId, useRemoteProjectStore } from './remoteProjectStore';
 import type { AgentStatus, HelperDeleteChoice, SatelliteSnapshot } from '../../shared/types';
 import type { ChatEvent } from '../../shared/chat';
+import type { PendingPermissionInfo } from '../../shared/permission-types';
+import { usePendingPermissionStore } from './pendingPermissionStore';
 
 const remoteChatListeners = new Set<(satelliteId: string, event: ChatEvent) => void>();
 
@@ -47,6 +49,31 @@ export interface SatelliteConnection {
   snapshotUnavailable?: boolean;
   /** The pairing can't be used any more; `lastError` says why. Pair again to connect. */
   needsPairing?: boolean;
+}
+
+function remotePermission(satelliteId: string, value: unknown): PendingPermissionInfo | null {
+  const p = value && typeof value === 'object' ? value as Partial<PendingPermissionInfo & { timeout: number; deadline: number }> : {};
+  const timeoutMs = p.timeoutMs ?? p.timeout;
+  const createdAt = p.createdAt ?? p.deadline - timeoutMs;
+  if (typeof p.requestId !== 'string' || typeof p.agentId !== 'string' || typeof p.toolName !== 'string'
+    || !Number.isFinite(createdAt) || !Number.isFinite(timeoutMs) || timeoutMs <= 0) {
+    console.warn('[annex-client] Invalid remote permission projection');
+    return null;
+  }
+  return { ...p, requestId: namespacedAgentId(satelliteId, p.requestId), agentId: namespacedAgentId(satelliteId, p.agentId), toolName: p.toolName, createdAt, timeoutMs };
+}
+
+function syncRemotePermissions(satelliteId: string, permissions: unknown[]): void {
+  usePendingPermissionStore.getState().hydrateRemote(satelliteId, permissions.map((p) => remotePermission(satelliteId, p)).filter((p) => p !== null));
+}
+
+function syncSatellitePermissions(satellites: SatelliteConnection[]): void {
+  for (const sat of useAnnexClientStore.getState().satellites) {
+    if (!satellites.some((next) => next.id === sat.id && next.state === 'connected')) syncRemotePermissions(sat.id, []);
+  }
+  for (const sat of satellites) {
+    if (sat.state === 'connected' && sat.snapshot) syncRemotePermissions(sat.id, sat.snapshot.pendingPermissions ?? []);
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -124,6 +151,7 @@ export const useAnnexClientStore = create<AnnexClientStoreState>((set) => ({
   loadSatellites: async () => {
     try {
       const satellites = await window.clubhouse.annexClient.getSatellites();
+      syncSatellitePermissions(satellites);
       set({ satellites });
     } catch (err) {
       console.warn('[annex-client] loadSatellites failed:', err);
@@ -396,6 +424,7 @@ function throttledHookUpdate(
 /** Listen for satellite updates pushed from main process. */
 export function initAnnexClientListener(): () => void {
   const unsubSatellites = window.clubhouse.annexClient.onSatellitesChanged((satellites: SatelliteConnection[]) => {
+    syncSatellitePermissions(satellites);
     // Clear paused state for satellites that are no longer connected —
     // prevents stale "paused" badges when a satellite dies unexpectedly.
     const currentPaused = useAnnexClientStore.getState().satellitePaused;
@@ -425,6 +454,7 @@ export function initAnnexClientListener(): () => void {
       const satellite = useAnnexClientStore.getState().satellites.find((s) => s.id === satelliteId);
       const satelliteName = satellite?.alias || satelliteId;
       const snap = payload as SatelliteSnapshot;
+      if (satellite?.state === 'connected') syncRemotePermissions(satelliteId, snap.pendingPermissions ?? []);
       useRemoteProjectStore.getState().applySatelliteSnapshot(
         satelliteId,
         satelliteName,
@@ -437,6 +467,13 @@ export function initAnnexClientListener(): () => void {
       for (const listener of [...snapshotListeners]) {
         try { listener(satelliteId); } catch { /* telemetry-exempt: one listener failing must not stop the others */ }
       }
+    } else if (type === 'permission:request') {
+      if (!useAnnexClientStore.getState().satellites.some((sat) => sat.id === satelliteId && sat.state === 'connected')) return;
+      const permission = remotePermission(satelliteId, payload);
+      if (permission) usePendingPermissionStore.getState().addPending(permission);
+    } else if (type === 'permission:response') {
+      const p = payload as { requestId?: string };
+      if (typeof p?.requestId === 'string') usePendingPermissionStore.getState().removePending(namespacedAgentId(satelliteId, p.requestId));
     } else if (type === 'chat:event') {
       // A satellite chat agent's event (#2390): the chat store keys it by the namespaced agent id.
       const p = payload as { agentId?: string; event?: { agentId?: string } };
@@ -508,6 +545,7 @@ export function initAnnexClientListener(): () => void {
       const p = payload as { agentId?: string; id?: string; exitCode?: number };
       const agentId = p.agentId || p.id;
       if (agentId) {
+        usePendingPermissionStore.getState().clearForAgent(namespacedAgentId(satelliteId, agentId));
         useRemoteProjectStore.getState().updateRemoteAgentRunState(satelliteId, agentId, 'sleeping');
         satellitePtyExitBus.emit(satelliteId, agentId, p.exitCode ?? -1);
       }

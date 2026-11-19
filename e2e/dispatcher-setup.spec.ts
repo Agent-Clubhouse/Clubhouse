@@ -100,7 +100,7 @@ test('a new install: three steps, Try it out on the fake CLI with no agent, then
   await expect(w.locator('[data-testid="dispatcher-setup-reply"]')).toHaveText(REPLY, { timeout: 30_000 });
 
   // The one-off run: a headless prompt with the name and personality, outside any agent and its MCP.
-  const report = await fakes.report('claude');
+  const report = await fakes.report('claude', null);
   expect(report.argv).toContain('-p');
   const prompt = report.argv[report.argv.indexOf('-p') + 1];
   expect(prompt).toContain('You are Rosie');

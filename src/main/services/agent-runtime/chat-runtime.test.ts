@@ -1454,6 +1454,83 @@ describe('ChatAgentRuntime', () => {
     expect(driver.last.responses).toEqual([{ requestId: 'p2', optionId: 'ok' }]);
   });
 
+  it('refuses a mirrored queue answer while a chat answer already owns the same permission', async () => {
+    const driver = new FakeChatDriver();
+    const { runtime } = makeRuntime(driver);
+    await runtime.start();
+    driver.last.emit({ type: 'permission_request', data: {
+      requestId: 'two-surfaces', title: 'Run tests', toolName: 'Bash',
+      options: [
+        { optionId: 'ok', kind: 'allow_once', label: 'Allow' },
+        { optionId: 'no', kind: 'reject_once', label: 'Deny' },
+      ],
+    } });
+    await flush();
+    const mirrored = permissionQueue.listPendingForAgent('agent-1')[0];
+    expect(mirrored).toBeDefined();
+    let finish!: () => void;
+    const waiting = new Promise<void>((resolve) => { finish = resolve; });
+    const send = driver.last.respondPermission.bind(driver.last);
+    vi.spyOn(driver.last, 'respondPermission').mockImplementation(async (...args) => {
+      await waiting;
+      await send(...args);
+    });
+    const first = runtime.respondPermission('two-surfaces', 'ok');
+    let second: ReturnType<typeof permissionQueue.resolvePermissionDetailed>;
+    try {
+      second = permissionQueue.resolvePermissionDetailed(mirrored.requestId, 'deny', {
+        expectedAgentId: 'agent-1', source: 'annex',
+      });
+    } finally {
+      finish();
+      await first;
+      await flush();
+      await runtime.stop();
+    }
+    expect(second).toEqual({ status: 'rejected', reason: 'not_found' });
+    expect(driver.last.responses).toEqual([{ requestId: 'two-surfaces', optionId: 'ok' }]);
+  });
+
+  it('lets the first queued decision win even before its promise callback runs', async () => {
+    const driver = new FakeChatDriver();
+    const { runtime } = makeRuntime(driver);
+    await runtime.start();
+    driver.last.emit({ type: 'permission_request', data: {
+      requestId: 'queue-first', title: 'Run tests', toolName: 'Bash',
+      options: [{ optionId: 'ok', kind: 'allow_once', label: 'Allow' }, { optionId: 'no', kind: 'reject_once', label: 'Deny' }],
+    } });
+    await flush();
+    const mirrored = permissionQueue.listPendingForAgent('agent-1')[0];
+
+    expect(permissionQueue.resolvePermissionDetailed(mirrored.requestId, 'deny', { expectedAgentId: 'agent-1', source: 'annex' }))
+      .toEqual({ status: 'resolved' });
+    await runtime.respondPermission('queue-first', 'ok');
+    await flush();
+
+    expect(driver.last.responses).toEqual([{ requestId: 'queue-first', optionId: 'no' }]);
+  });
+
+  it('releases the same mirrored request for another human answer after provider submission fails', async () => {
+    const driver = new FakeChatDriver();
+    const { runtime } = makeRuntime(driver);
+    await runtime.start();
+    driver.last.emit({ type: 'permission_request', data: {
+      requestId: 'retry-queue', title: 'Run tests', toolName: 'Bash',
+      options: [{ optionId: 'ok', kind: 'allow_once', label: 'Allow' }, { optionId: 'no', kind: 'reject_once', label: 'Deny' }],
+    } });
+    await flush();
+    const mirrored = permissionQueue.listPendingForAgent('agent-1')[0];
+    const send = driver.last.respondPermission.bind(driver.last);
+    vi.spyOn(driver.last, 'respondPermission').mockRejectedValueOnce(new Error('stdin closed')).mockImplementation(send);
+
+    await expect(runtime.respondPermission('retry-queue', 'ok')).rejects.toThrow('stdin closed');
+    expect(permissionQueue.resolvePermissionDetailed(mirrored.requestId, 'deny', { expectedAgentId: 'agent-1', source: 'annex' }))
+      .toEqual({ status: 'resolved' });
+    await flush();
+
+    expect(driver.last.responses).toEqual([{ requestId: 'retry-queue', optionId: 'no' }]);
+  });
+
   it('prepends the system prompt once when the driver cannot pass it', async () => {
     const driver = new FakeChatDriver('copilot_sdk', 'copilot-cli', { ...STEERLESS, systemPrompt: false });
     const { runtime } = makeRuntime(driver, { systemPrompt: 'You are the release agent.' });
