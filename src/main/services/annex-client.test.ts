@@ -3990,21 +3990,39 @@ describe('annex-client', () => {
     });
 
     it('discards Settings responses across an in-place disconnect/reconnect epoch', async () => {
+      const snapshot = { projects: [] } as never;
+      annexClient._addConnectedSatelliteForTesting(FP, snapshot);
+      vi.mocked(annexPeers.getPeer).mockReturnValue({ fingerprint: FP, role: 'satellite', kind: 'desktop', tlsCertificateFingerprint: 'old-pin' } as any);
       let finish!: () => void;
-      vi.mocked(https.request).mockImplementationOnce(((_url: string, _opts: unknown, callback: (response: unknown) => void) => {
-        const req = Object.assign(new EventEmitter(), { end: () => {
-          finish = () => {
-            const res = Object.assign(new EventEmitter(), { statusCode: 200 });
-            callback(res); res.emit('data', Buffer.from('{}')); res.emit('end');
-          };
-        }, destroy: vi.fn() });
+      let signal!: AbortSignal;
+      let abortError: (Error & { code?: string; cause?: unknown }) | undefined;
+      const observedAbort = vi.fn();
+      const destroyed = vi.fn((error: Error) => { abortError = error; });
+      vi.mocked(https.request).mockImplementationOnce(((_url: string, options: { signal: AbortSignal }, _callback: unknown) => {
+        signal = options.signal;
+        const req = Object.assign(new EventEmitter(), {
+          // Node delivers an AbortError for a cancelled request. Hold that event
+          // until after reconnect to exercise the late-result epoch fence too.
+          end: () => { finish = () => req.emit('error', abortError); },
+          destroy: destroyed,
+        });
+        signal.addEventListener('abort', () => {
+          observedAbort();
+          req.destroy(Object.assign(new Error('The operation was aborted.'), { name: 'AbortError', code: 'ABORT_ERR', cause: signal.reason }));
+        }, { once: true });
         return req;
       }) as any);
       const pending = annexClient.requestAgentSettings(FP, 'a1');
+      expect(signal.aborted).toBe(false);
       annexClient._receiveSatelliteDisconnectForTesting(FP);
       vi.mocked(annexPeers.getPeer).mockReturnValue({ fingerprint: FP, role: 'satellite', kind: 'desktop', tlsCertificateFingerprint: 'pin' } as any);
       annexClient.connect(FP);
       await vi.waitFor(() => expect(annexClient.getSatellite(FP)?.state).toBe('connected'));
+      expect(annexClient.getSatellite(FP)?.snapshot).toBe(snapshot);
+      expect(signal.aborted).toBe(true);
+      expect(observedAbort).toHaveBeenCalledTimes(1);
+      expect(destroyed).toHaveBeenCalledTimes(1);
+      expect(abortError).toMatchObject({ name: 'AbortError', code: 'ABORT_ERR', cause: signal.reason });
       finish();
       expect(await pending).toEqual({ status: 'offline' });
     });
