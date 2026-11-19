@@ -84,6 +84,32 @@ const read = async () => {
   return response.body as RemoteAgentDetails;
 };
 describe('host selected-agent Details projections', () => {
+  it.each(['same', 'missing-record', 'stopped', 'late-level', 'late-nonce', 'late-replacement', 'late-untrack', 'revoked'] as const)('binds the corresponding helper ceiling note through full Details assembly: %s', async (mode) => {
+    const r = { projectPath: project.path, cwd: '/host/selected', runtime: 'pty', orchestrator: 'claude-code', nonce: 'PRIVATE_RUN_NONCE', launchAccess: mode === 'missing-record' ? undefined : { freeAgentMode: true, permissionMode: 'auto', access: 'auto' } };
+    m.registration.mockReturnValue(mode === 'stopped' ? undefined : r); m.running.mockReturnValue(mode !== 'stopped');
+    m.policies.mockReturnValue(new Map([['a1', { ...ORCHESTRATION_DEFAULTS, orchestrate: true, access: 'bypass' }]]));
+    let allowed = true;
+    m.canvases.mockImplementation(async () => {
+      if (mode === 'late-level') r.launchAccess = { freeAgentMode: false, permissionMode: 'auto', access: 'plan' };
+      if (mode === 'late-nonce') r.nonce = 'PRIVATE_NEW_NONCE';
+      if (mode === 'late-replacement') m.registration.mockReturnValue({ ...r });
+      if (mode === 'late-untrack') m.registration.mockReturnValue(undefined);
+      if (mode === 'revoked') allowed = false;
+      return [];
+    });
+    const response = await readRemoteAgentDetails('a1', () => allowed), late = mode.startsWith('late-');
+    expect.soft(response.status).toBe(mode === 'revoked' ? 403 : late ? 409 : 200);
+    if (late || mode === 'revoked') expect.soft(JSON.stringify(response.body)).not.toMatch(/cards|providerId|Selected runs at/);
+    else {
+      expect(isRemoteAgentDetails(response.body, 'a1')).toBe(true);
+      const card = (response.body as RemoteAgentDetails).cards.find((c) => c.id === 'orchestrate')!;
+      expect(card.rows).toContainEqual({ label: 'Helper access ceiling', value: mode === 'missing-record' ? 'Unavailable from current host run metadata' : mode === 'stopped' ? 'Never more than Selected’s level when a helper starts.' : 'Selected runs at Auto now, so helpers get Auto.' });
+      expect(card.state).toBe(mode === 'missing-record' ? 'error' : 'ok');
+      expect(JSON.stringify(response.body)).not.toMatch(/PRIVATE_RUN|PRIVATE_NEW|launchAccess|permissionMode/);
+      if (mode === 'same') expect(card.notes.join(' ')).toContain('recorded by Clubhouse');
+    }
+  });
+
   it.each(['same', 'disposed', 'removed', 'same-bytes-replaced', 'cache-cleared', 'cache-moved', 'revoked'] as const)('keeps an actual sleeping Dispatcher primary receipt through the final connection await: %s', async (mode) => {
     const root = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), 'clubhouse-details-role-final-'))); m.base = root; m.realWitness = true;
     const folder = path.join(root, 'dispatcher'); const configs = path.join(folder, '.clubhouse'); await fs.mkdir(configs, { recursive: true });
