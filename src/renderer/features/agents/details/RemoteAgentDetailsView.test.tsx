@@ -42,6 +42,31 @@ describe('remote full Details host evidence', () => {
       subagents: [{ subagentId: 'initial-sub', name: 'Initial reviewer', status: 'completed' as const, toolCount: 4, usage: { total: 42 } }],
       sessionUsage: { costUsd: 0, tokens: { total: 123 } }, context: { used: 100, size: 200_000 },
     }, observedAt: { cliVersion: 2000, model: 2000, effort: 2000, level: 1000, capabilities: 1000, mcpServers: 2000, skills: 2000, subagents: 2500, sessionUsage: 2600, context: 2600 }, omitted: {} });
+  it('renders shared read-only action group fields and outcome/time without local action APIs or management buttons', async () => {
+    const value = fixture(); const card = value.cards.find((c) => c.id === 'actions')!;
+    card.summary = '1 related'; card.rows = ['owned', 'targeting', 'triggered-by'].map((group) => ({ label: 'Host reminder', value: 'Legacy Off · Description · done', action: { group, enabled: false, description: 'When Selected sleeps → Message Selected', lastRun: { outcome: 'done', startedAt: 1000 } } })) as typeof card.rows;
+    read.mockResolvedValue({ status: 'ok', value });
+    for (const method of ['history', 'runNow', 'setEnabled', 'update', 'delete'] as const) Object.assign(window.clubhouse.actions, { [method]: vi.fn() });
+    render(<AgentDetails agent={agent} />); await waitFor(() => expect(read).toHaveBeenCalled());
+    const toggle = screen.getByTestId('details-card-actions-toggle'); if (toggle.getAttribute('aria-expanded') !== 'true') fireEvent.click(toggle);
+    const actions = screen.getByTestId('details-card-actions'); await waitFor(() => expect(within(actions).getAllByTestId('remote-action-row')).toHaveLength(3));
+    for (const label of ['Owned by Remote', 'Targets Remote', 'Set off by Remote']) expect(within(actions).getByRole('region', { name: label })).toBeInTheDocument();
+    expect(actions).toHaveTextContent('Their usage counts toward Remote.');
+    for (const row of within(actions).getAllByTestId('remote-action-row')) {
+      expect(row).toHaveTextContent('Host reminder'); expect(row).toHaveTextContent('Off'); expect(row).toHaveTextContent('When Selected sleeps → Message Selected'); expect(row).toHaveTextContent('Done'); expect(row).not.toHaveTextContent('Legacy');
+      expect(within(row).queryByRole('button')).not.toBeInTheDocument(); fireEvent.click(row);
+    }
+    for (const method of ['list', 'history', 'runNow', 'setEnabled', 'update', 'delete'] as const) expect(window.clubhouse.actions[method]).not.toHaveBeenCalled();
+    expect(screen.queryByTestId('action-card')).not.toBeInTheDocument();
+  });
+  it('retains old-host plain action fields and explicitly marks unavailable group fields', async () => {
+    const value = fixture(); const c = value.cards.find((c) => c.id === 'actions')!; c.rows = [{ label: 'Legacy reminder', value: 'Off · Targets this agent · Message Selected · failed' }];
+    read.mockResolvedValue({ status: 'ok', value }); render(<AgentDetails agent={agent} />); await waitFor(() => expect(read).toHaveBeenCalled());
+    const toggle = screen.getByTestId('details-card-actions-toggle'); if (toggle.getAttribute('aria-expanded') !== 'true') fireEvent.click(toggle);
+    const card = screen.getByTestId('details-card-actions'); await waitFor(() => expect(card).toHaveTextContent('Legacy reminder'));
+    expect(card).toHaveTextContent('Off · Targets this agent · Message Selected · failed'); expect(card).toHaveTextContent('without relationship group fields');
+    expect(within(card).queryByTestId('remote-action-row')).not.toBeInTheDocument(); expect(window.clubhouse.actions.list).not.toHaveBeenCalled();
+  });
   it.each(['recorded', 'unknown'] as const)('keeps sleeping historical CLI separate from next-start and cached sleep fields: %s', async (mode) => {
     const value = fixture(); Object.assign(value, { running: false, status: 'sleeping', sessionId: null, nativeSessionId: null, providerLabel: 'Host Next Codex' });
     value.settings = { ...value.settings!, provider: 'Host Next Codex', providerId: 'codex-cli' };

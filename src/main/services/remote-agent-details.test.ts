@@ -38,7 +38,7 @@ vi.mock('./dispatcher/dispatcher-service', () => ({ getDispatcherState: m.dispat
 vi.mock('./dispatcher/dispatcher-settings', () => ({ isDispatcherEnabled: m.dispatcherOn }));
 vi.mock('./dispatcher/dispatcher-agent-card-source', () => ({ readAgentCardView: m.agentCard }));
 vi.mock('./agent-grants-service', () => ({ viewOf: () => ({ rows: [] }) }));
-vi.mock('./actions', () => ({ listActions: m.actions, actionNames: () => ({ agent: () => 'Selected', project: () => 'Project' }) }));
+vi.mock('./actions', async () => ({ readActionDetailsForAgent: (agentId: string, projectId: string, dispatcher: boolean, names: import('../../shared/actions').ActionNames) => projectActionDetails({ list: m.actions, lastRunForDisplay: (id: string) => m.actions().find((a: { id: string }) => a.id === id)?.lastRun }, agentId, projectId, dispatcher, names), actionNames: () => ({ agent: () => 'Selected', project: () => 'Project' }) }));
 vi.mock('./canvas-store-reader', () => ({ getAgentCanvasMemberships: m.canvases }));
 vi.mock('./managed-agents', () => ({ managedAgents: () => ({ liveEntries: m.entries, getTemplate: m.template }), statusFor: m.status }));
 vi.mock('./agent-settings-service', () => ({ readMcpConfig: m.mcp, readLaunchWrapper: async () => undefined, readDefaultMcps: async () => [] }));
@@ -47,6 +47,7 @@ vi.mock('../orchestrators', () => ({ isSessionCapable: () => true, getProvider: 
 
 import { ChatDetailsRecorder } from './agent-runtime/chat-details-evidence';
 import { MINIMAL_CHAT_CAPABILITIES } from '../../shared/chat';
+import { projectActionDetails } from './actions/details-read';
 import { readRemoteAgentDetails } from './remote-agent-details';
 const agent = () => ({ id: 'a1', name: 'Selected', color: 'blue', createdAt: '2026-11-18', worktreePath: '/host/selected', branch: 'feature' });
 const project = { id: 'p1', name: 'Project', path: '/host/project' };
@@ -220,6 +221,28 @@ describe('host selected-agent Details projections', () => {
     const text = JSON.stringify(value);
     expect(text).toContain('related'); expect(text).toContain('Peer');
     for (const privateText of ['PRIVATE_INSTRUCTIONS', 'PRIVATE_ACTION_MESSAGE', 'UNRELATED_ACTION', 'UNRELATED_WIRE']) expect(text).not.toContain(privateText);
+  });
+  it.each(['agent', 'dispatcher'] as const)('projects selected %s Actions relationship groups and safe last-run fields only', async (kind) => {
+    const id = kind === 'dispatcher' ? 'disp' : 'a1'; m.target.mockResolvedValue({ agent: { ...agent(), id }, project });
+    m.settings.mockResolvedValue({ status: 200, body: { ...setting(), agentId: id } });
+    const base = { enabled: false, running: false, trigger: { kind: 'once', at: 1000 }, steps: [{ kind: 'message', agentId: id, text: 'PRIVATE_ACTION_MESSAGE' }], lastRun: { outcome: 'done', startedAt: 1000, reason: 'PRIVATE_RUN_REASON', steps: ['PRIVATE_RUN_STEPS'], chain: ['PRIVATE_CHAIN'] } };
+    const owned = { ...base, id: 'mine', name: 'My reminder', owner: kind === 'dispatcher' ? { kind: 'dispatcher' } : { kind: 'agent', agentId: id }, trigger: { kind: 'event', event: 'agent.slept', source: { kind: 'agent', agentId: id } } };
+    const targeted = { ...base, id: 'targeted', name: 'Targets me', owner: { kind: 'user' } };
+    const unrelated = { ...base, id: 'other', name: 'PRIVATE_UNRELATED_NAME', owner: { kind: 'agent', agentId: 'other' }, steps: [{ kind: 'message', agentId: 'other', text: 'PRIVATE_UNRELATED_TEXT' }] };
+    m.actions.mockReturnValue([owned, targeted, unrelated]);
+    const response = await readRemoteAgentDetails(id, () => true); expect(response.status).toBe(200); expect(isRemoteAgentDetails(response.body, id)).toBe(true);
+    const c = (response.body as RemoteAgentDetails).cards.find((c) => c.id === 'actions')!;
+    expect(c.summary).toBe(kind === 'dispatcher' ? '1 made by the Dispatcher' : '2 related');
+    expect(c.rows.filter((r) => r.label === 'My reminder').map((r) => r.action?.group)).toEqual(kind === 'dispatcher' ? ['dispatcher'] : ['owned', 'targeting', 'triggered-by']);
+    expect(c.rows[0].action).toMatchObject({ enabled: false, lastRun: { outcome: 'done', startedAt: 1000 } });
+    expect(c.rows[0].value).toContain('Off'); expect(c.rows[0].value).toContain('done');
+    expect(JSON.stringify(c)).not.toMatch(/PRIVATE_/); expect(c.rows.every((r) => r.action?.description)).toBe(true);
+  });
+  it('counts bounded action relationship rows and makes omissions explicit without truncating a last-run record', async () => {
+    m.actions.mockReturnValue(Array.from({ length: 55 }, (_, i) => ({ id: `action${i}`, name: `Reminder${i}`, owner: { kind: 'agent', agentId: 'a1' }, enabled: true, steps: [{ kind: 'wake', agentId: 'a1', prompt: 'PRIVATE_PROMPT' }], trigger: { kind: 'once', at: 1000 } })));
+    const c = (await read()).cards.find((c) => c.id === 'actions')!;
+    expect(c.summary).toBe('55 related'); expect(c.rows).toHaveLength(100); expect(c.omitted).toBe(10);
+    expect(c.rows.every((r) => r.action?.group === 'owned' || r.action?.group === 'targeting')).toBe(true); expect(JSON.stringify(c)).not.toContain('PRIVATE_PROMPT');
   });
   it('binds last-session usage to the selected saved session and provider, not a broad session list', async () => {
     m.target.mockResolvedValue({ agent: { ...agent(), lastSessionId: 'selected-last', sessionHistory: [{ sessionId: 'selected-last', orchestrator: 'claude-code' }] }, project });

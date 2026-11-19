@@ -428,6 +428,13 @@ export class ActionsEngine {
     return this.deps.rights.checkSource(reader, { kind: 'event', event: 'device.online', source: { kind: 'device' } }) === null;
   }
 
+  /** Passive recorded fields only. No receipt refresh, mutation, timers or put. */
+  lastRunForDisplay(id: string): Pick<ActionRun, 'outcome' | 'startedAt'> | undefined {
+    let latest: ActionRun | undefined;
+    for (const run of this.deps.history.list(id)) if (!latest || run.startedAt > latest.startedAt) latest = run;
+    return latest ? { outcome: latest.outcome, startedAt: latest.startedAt } : undefined;
+  }
+
   history(id?: string, reader?: ActionOwner): ActionRun[] {
     const runs = this.deps.history.list(id);
     for (const run of runs) {

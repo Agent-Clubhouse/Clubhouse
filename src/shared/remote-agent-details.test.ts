@@ -39,5 +39,15 @@ describe('remote Details contract', () => {
     (canvas.rows as unknown[]) = [];
     (value.cards[0].rows as unknown[]) = [nav];
     expect(isRemoteAgentDetails(value, 'a1')).toBe(false);
+  });  it('accepts only bounded display-safe action fields on Actions, preserving old plain rows', () => {
+    const value = fixture(); const card = value.cards.find((c) => c.id === 'actions')!;
+    const action = { group: 'owned', enabled: false, description: 'Wake Selected', lastRun: { outcome: 'done', startedAt: 1000 } };
+    (card.rows as unknown[]) = [{ label: 'Name', value: 'Off · Wake Selected', action }]; expect(isRemoteAgentDetails(value, 'a1')).toBe(true);
+    for (const invalid of [null, {}, { ...action, group: 'unrelated' }, { ...action, enabled: 'on' }, { ...action, description: 'x'.repeat(2049) }, { ...action, steps: [] }, { ...action, lastRun: null }, { ...action, lastRun: { outcome: 'other' } }, { ...action, lastRun: { outcome: 'done', startedAt: NaN } }, { ...action, lastRun: { outcome: 'done', startedAt: -1 } }, { ...action, lastRun: { outcome: 'done', reason: 'PRIVATE_REASON' } }]) {
+      (card.rows as unknown[]) = [{ label: 'Name', value: 'Value', action: invalid }]; expect(isRemoteAgentDetails(value, 'a1')).toBe(false);
+    }
+    (card.rows as unknown[]) = []; (value.cards[0].rows as unknown[]) = [{ label: 'Name', value: 'Value', action }]; expect(isRemoteAgentDetails(value, 'a1')).toBe(false);
+    (value.cards[0].rows as unknown[]) = []; (card.rows as unknown[]) = [{ label: 'Legacy', value: 'On · description · done' }]; expect(isRemoteAgentDetails(value, 'a1')).toBe(true);
   });
+
 });

@@ -99,6 +99,7 @@ import {
   ensureAppSubscription,
   getAction,
   listActions,
+  readActionDetailsForAgent,
   listAppActions,
   observeActions,
   removeAppAction,
@@ -118,6 +119,11 @@ const nightly = { kind: 'schedule', preset: 'daily', cron: '30 3 * * *', missed:
 const idle = { kind: 'event', event: 'agent.idle', source: { kind: 'agent', agentId: 'disp' }, delayMinutes: 20 } as const;
 const returnEvents = () => vi.mocked(publishAppEvent).mock.calls.flatMap(([event]) => event.type === 'app.returned' ? [event] : []);
 const flush = async () => { for (let i = 0; i < 20; i++) await Promise.resolve(); };
+
+it('leaves an unavailable Actions engine unavailable for Details instead of initializing it', () => {
+  stopActions();
+  expect(() => readActionDetailsForAgent('disp', undefined, true, { agent: () => undefined, project: () => undefined })).toThrow('Actions are still starting');
+});
 
 it('retains one external Annex receipt across engine restart without creating executable work', async () => {
   const at = Date.now();

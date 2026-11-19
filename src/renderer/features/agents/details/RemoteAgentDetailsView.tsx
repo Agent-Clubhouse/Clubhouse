@@ -1,3 +1,4 @@
+import { RemoteActionsEvidence } from './RemoteActionsEvidence';
 /** Remote container: host reads and shared presentation only; no local config, git or action hooks. */
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { RemoteAgentDetails, RemoteDetailsCardId } from '../../../../shared/remote-agent-details';
@@ -146,7 +147,7 @@ export function RemoteAgentDetailsView({ agent, chat, onShowInStream, missedSuba
         <CanvasMembershipList hits={c.rows.filter((r) => r.canvas).map((r) => ({ ...r.canvas!, name: r.label }))} onJump={(hit) => jumpToCanvas(agent, hit)} unavailable={(hit) => remoteCanvasJumpUnavailable(agent, hit)} />
         <Evidence card={{ ...c, rows: c.rows.filter((r) => !r.canvas) }} />
         {c.rows.some((r) => !r.canvas) && <CardNote>This host shared membership names without navigation identities.</CardNote>}
-      </> : <Evidence card={c} /> : <CardNote>{resultMessage(result.status)}</CardNote>}
+      </> : id === 'actions' ? <RemoteActionsEvidence card={c} agentName={agent.name} /> : <Evidence card={c} /> : <CardNote>{resultMessage(result.status)}</CardNote>}
     </DetailsCard>;
   };
   const sessionCard = card('session');

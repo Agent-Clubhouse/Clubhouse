@@ -1,3 +1,4 @@
+import { projectActionDetails } from './details-read';
 import { LogRedactor } from '../../../shared/log-redaction';
 /**
  * Actions service (#2918): the engine wired to the app. Runs in the main
@@ -487,6 +488,11 @@ function view(e: ActionsEngine, a: Action): ActionView {
 export function listActions(): ActionView[] {
   const e = requireEngine();
   return e.list().filter((a) => a.owner.kind !== 'app').map((a) => view(e, a));
+}
+
+/** Details never initializes the engine or refreshes/persists delivery receipts. */
+export function readActionDetailsForAgent(agentId: string, projectId: string | undefined, dispatcher: boolean, names: ActionNames) {
+  return projectActionDetails(requireEngine(), agentId, projectId, dispatcher, names);
 }
 
 /** One visible action, or undefined (also for Clubhouse's own). */

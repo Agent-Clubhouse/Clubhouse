@@ -4,11 +4,10 @@ import { activeAgentLinks, CONNECTION_SWITCHES, localDirectionTools } from '../.
 import { remoteConnections } from '../../shared/remote-connections';
 import { getSatellite } from './annex-client';
 import { getPeer } from './annex-peers';
-import { describeAction } from '../../shared/actions';
 import { bindingManager } from './clubhouse-mcp/binding-manager';
 import { listConnectionSources } from './connection-sources';
 import { listConnectionDirectionsForInspection } from './connection-grants-store';
-import { listActions, actionNames } from './actions';
+import { readActionDetailsForAgent, actionNames } from './actions';
 import { getAgentCanvasMemberships } from './canvas-store-reader';
 import { row, display } from './remote-details-presentation';
 
@@ -69,16 +68,9 @@ export async function readConnectionCard(c: RemoteDetailsCard, wiresId: string) 
 }
 
 export function readActionCard(c: RemoteDetailsCard, agentId: string, projectId: string, dispatcher = false) {
-  const all = listActions();
-  const related = all.filter((a) => dispatcher ? a.owner.kind === 'dispatcher' : a.owner.kind === 'agent' && a.owner.agentId === agentId
-    || a.steps.some((s) => s.kind === 'quick' ? s.worktreeAgentId === agentId : 'agentId' in s && s.agentId === agentId)
-    || a.trigger.kind === 'event' && (a.trigger.source.kind === 'agent' && a.trigger.source.agentId === agentId || a.trigger.source.kind === 'project' && a.trigger.source.projectId === projectId));
-  c.summary = `${related.length} ${dispatcher ? 'made by the Dispatcher' : 'related'}`;
-  for (const a of related) {
-    const groups = dispatcher ? [] : [a.owner.kind === 'agent' && a.owner.agentId === agentId ? 'Owned by this agent' : '', a.steps.some((s) => s.kind === 'quick' ? s.worktreeAgentId === agentId : 'agentId' in s && s.agentId === agentId) ? 'Targets this agent' : '', a.trigger.kind === 'event' && (a.trigger.source.kind === 'agent' && a.trigger.source.agentId === agentId || a.trigger.source.kind === 'project' && a.trigger.source.projectId === projectId) ? 'Set off by this agent' : ''].filter(Boolean);
-    row(c, a.name, [a.enabled ? 'On' : 'Off', ...groups, describeAction(a, actionNames()), a.lastRun?.outcome].filter(Boolean).join(' · '));
-  }
-  if (!related.length) c.notes.push(dispatcher ? 'No actions made by the Dispatcher.' : 'No actions are owned by, target or are set off by this agent.');
+  const names = { ...actionNames(), device: (id: string) => getSatellite(id)?.alias || getPeer(id)?.alias };
+  const fields = readActionDetailsForAgent(agentId, projectId, dispatcher, names);
+  c.summary = fields.summary; c.rows = fields.rows; c.notes.push(...fields.notes); c.omitted += fields.omitted;
 }
 
 export async function readCanvasCard(c: RemoteDetailsCard, agentId: string, projectId: string) {

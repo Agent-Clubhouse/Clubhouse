@@ -1,3 +1,4 @@
+import { ACTION_OUTCOMES, ACTION_RELATIONSHIPS, type RemoteActionRow } from './agent-action-groups';
 import { isRemoteAgentSettings, type RemoteAgentSettings } from './remote-agent-settings';
 import type { AgentStatus } from './types';
 import { isChatDetailsEvidence, type ChatDetailsEvidence } from './chat/details-evidence';
@@ -10,6 +11,8 @@ export type RemoteDetailsCardId = typeof REMOTE_DETAILS_CARD_IDS[number];
 export interface RemoteDetailsRow {
   label: string;
   value: string;
+  /** Safe selected-action display fields only, never definitions, steps or grants. */
+  action?: RemoteActionRow;
   /** A verified membership of this selected agent, for host-aware navigation only. */
   canvas?: { scope: 'app' | 'project'; canvasId: string; viewId: string };
 }
@@ -69,6 +72,13 @@ export function isRemoteAgentDetails(value: unknown, agentId: string): value is 
       && Array.isArray(c.notes) && c.notes.length <= 20 && c.notes.every(text)
       && Array.isArray(c.rows) && c.rows.length <= REMOTE_DETAILS_MAX_ROWS
       && c.rows.every((r) => !!r && typeof r === 'object' && text(r.label) && text(r.value)
+        && (r.action === undefined || c.id === 'actions' && !!r.action && typeof r.action === 'object' && !Array.isArray(r.action)
+          && Object.keys(r.action).every((key) => ['group', 'enabled', 'description', 'lastRun'].includes(key))
+          && ACTION_RELATIONSHIPS.includes(r.action.group) && typeof r.action.enabled === 'boolean' && text(r.action.description)
+          && (r.action.lastRun === undefined || !!r.action.lastRun && typeof r.action.lastRun === 'object' && !Array.isArray(r.action.lastRun)
+            && Object.keys(r.action.lastRun).every((key) => ['outcome', 'startedAt'].includes(key))
+            && ACTION_OUTCOMES.includes(r.action.lastRun.outcome)
+            && (r.action.lastRun.startedAt === undefined || Number.isSafeInteger(r.action.lastRun.startedAt) && r.action.lastRun.startedAt >= 0)))
         && (r.canvas === undefined || c.id === 'canvases' && !!r.canvas && typeof r.canvas === 'object'
           && ['app', 'project'].includes(r.canvas.scope) && text(r.canvas.canvasId) && !!r.canvas.canvasId
           && text(r.canvas.viewId) && !!r.canvas.viewId)));

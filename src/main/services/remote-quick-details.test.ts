@@ -7,6 +7,7 @@ import { beginQuickAgentRun, clearQuickAgentRuns, finishQuickAgentRun, noteQuick
 import type { AgentRegistration } from './agent-registry';
 import { noteAgentStarting, _resetAgentDisplayStateForTesting } from './agent-display-state';
 import { resolveReadOnlyQuickTarget } from './read-only-quick-target';
+import { projectActionDetails } from './actions/details-read';
 import { readRemoteQuickDetails } from './remote-quick-details';
 import { isRemoteAgentDetails, type RemoteAgentDetails } from '../../shared/remote-agent-details';
 import { readRemoteAgentChanges } from './remote-agent-changes';
@@ -25,7 +26,7 @@ vi.mock('./annex-client', () => ({ getSatellite: m.satellite }));
 vi.mock('./annex-peers', () => ({ getPeer: m.peer }));
 vi.mock('./connection-sources', () => ({ listConnectionSources: m.sources }));
 vi.mock('./connection-grants-store', () => ({ listConnectionDirectionsForInspection: m.directions }));
-vi.mock('./actions', () => ({ listActions: m.actions, actionNames: () => ({ agent: () => 'Quick', project: () => 'Project' }) }));
+vi.mock('./actions', async () => ({ readActionDetailsForAgent: (agentId: string, projectId: string, dispatcher: boolean, names: import('../../shared/actions').ActionNames) => projectActionDetails({ list: m.actions, lastRunForDisplay: (id: string) => m.actions().find((a: { id: string }) => a.id === id)?.lastRun }, agentId, projectId, dispatcher, names), actionNames: () => ({ agent: () => 'Quick', project: () => 'Project' }) }));
 vi.mock('./canvas-store-reader', () => ({ getAgentCanvasMemberships: m.canvases }));
 vi.mock('./clubhouse-mcp/bridge-server', () => ({ getAgentConnection: m.connection, getCurrentAgentConnection: () => m.connection()?.current ? m.connection() : null }));
 vi.mock('./managed-agents', () => ({ managedAgents: () => ({ getTemplate: m.template, liveEntries: m.entries }) }));
@@ -60,6 +61,14 @@ const read = async () => {
   return result.body as RemoteAgentDetails;
 };
 describe('read-only quick Details target and cards', () => {
+  it('uses the shared selected quick-agent action groups without exposing action definitions or another run', async () => {
+    start();
+    const related = { id: 'reminder', name: 'Quick reminder', owner: { kind: 'agent', agentId: 'quick' }, enabled: false, trigger: { kind: 'once', at: 1000 }, steps: [{ kind: 'message', agentId: 'quick', text: 'PRIVATE_PROMPT' }], lastRun: { outcome: 'done', startedAt: 1000, reason: 'PRIVATE_RUN_REASON' } };
+    m.actions.mockReturnValue([related, { ...related, id: 'other', name: 'PRIVATE_OTHER_ACTION', owner: { kind: 'agent', agentId: 'other' }, steps: [{ kind: 'wake', agentId: 'other' }] }]);
+    const c = (await read()).cards.find((c) => c.id === 'actions')!;
+    expect(c.summary).toBe('1 related'); expect(c.rows.map((r) => r.action?.group)).toEqual(['owned', 'targeting']);
+    expect(c.rows[0].action).toMatchObject({ enabled: false, lastRun: { outcome: 'done', startedAt: 1000 } }); expect(JSON.stringify(c)).not.toContain('PRIVATE_'); expect(m.durable).not.toHaveBeenCalled();
+  });
   it('shows retained launch choices without creating a durable config or pretending the requested provider is running', async () => {
     start(); noteAgentStarting('quick', true);
     const before = await snapshot(root), result = await read();
