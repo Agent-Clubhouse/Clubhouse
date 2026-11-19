@@ -42,6 +42,22 @@ describe('remote full Details host evidence', () => {
       subagents: [{ subagentId: 'initial-sub', name: 'Initial reviewer', status: 'completed' as const, toolCount: 4, usage: { total: 42 } }],
       sessionUsage: { costUsd: 0, tokens: { total: 123 } }, context: { used: 100, size: 200_000 },
     }, observedAt: { cliVersion: 2000, model: 2000, effort: 2000, level: 1000, capabilities: 1000, mcpServers: 2000, skills: 2000, subagents: 2500, sessionUsage: 2600, context: 2600 }, omitted: {} });
+  it.each(['recorded', 'unknown'] as const)('keeps sleeping historical CLI separate from next-start and cached sleep fields: %s', async (mode) => {
+    const value = fixture(); Object.assign(value, { running: false, status: 'sleeping', sessionId: null, nativeSessionId: null, providerLabel: 'Host Next Codex' });
+    value.settings = { ...value.settings!, provider: 'Host Next Codex', providerId: 'codex-cli' };
+    const c = value.cards.find((c) => c.id === 'session')!;
+    c.title = 'Last session'; c.rows = [{ label: 'Last CLI', value: mode === 'recorded' ? 'Historical Claude' : 'Not recorded unambiguously for this session' }, { label: 'Ended', value: 'HOST_END' }, { label: 'Why', value: 'HOST_EXIT_REASON' }];
+    read.mockResolvedValue({ status: 'ok', value });
+    render(<AgentDetails agent={{ ...agent, status: 'sleeping', lastSleep: { at: '2026-01-01T00:00:00Z', reason: 'user' } }} />);
+    await waitFor(() => expect(read).toHaveBeenCalled());
+    const toggle = screen.getByTestId('details-card-session-toggle'); if (toggle.getAttribute('aria-expanded') !== 'true') fireEvent.click(toggle);
+    await waitFor(() => expect(screen.getByTestId('details-card-session')).toHaveTextContent('HOST_EXIT_REASON'));
+    const session = screen.getByTestId('details-card-session');
+    expect.soft(session).toHaveTextContent(mode === 'recorded' ? 'Historical Claude' : 'Not recorded unambiguously for this session');
+    expect.soft(session).not.toHaveTextContent('Host Next Codex'); expect.soft(session).not.toHaveTextContent('stopped by you');
+    expect.soft(within(session).getAllByText('Ended')).toHaveLength(1); expect.soft(within(session).getAllByText('Why')).toHaveLength(1);
+    expect(chatPage).not.toHaveBeenCalled(); expect(window.clubhouse.agent.getDurableConfig).not.toHaveBeenCalled();
+  });
   it('keeps admitted current CLI identity when legacy optional provider fields are absent', async () => {
     const value = fixture(); value.providerLabel = 'Host Current Claude';
     value.settings = { ...value.settings!, provider: 'Host Next Codex', providerId: 'codex-cli' };

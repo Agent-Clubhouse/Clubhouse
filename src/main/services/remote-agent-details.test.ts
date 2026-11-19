@@ -5,7 +5,7 @@ import * as path from 'path';
 import { noteAgentStarting, _resetAgentDisplayStateForTesting } from './agent-display-state';
 import { ORCHESTRATION_DEFAULTS } from '../../shared/orchestration-policy';
 import { isRemoteAgentDetails, type RemoteAgentDetails } from '../../shared/remote-agent-details';
-const m = vi.hoisted(() => ({ target: vi.fn(), settings: vi.fn(), provider: vi.fn(), running: vi.fn(), policies: vi.fn(), helpers: vi.fn(), requests: vi.fn(), bindings: vi.fn(), sources: vi.fn(), satellite: vi.fn(), peer: vi.fn(), directions: vi.fn(), dispatcher: vi.fn(), dispatcherOn: vi.fn(), agentCard: vi.fn(), actions: vi.fn(), canvases: vi.fn(), status: vi.fn(), entries: vi.fn(), template: vi.fn(), mcp: vi.fn(), branch: vi.fn(), transcript: vi.fn(), connection: vi.fn(), work: vi.fn(), realWitness: false, base: '', registration: vi.fn(), runtime: vi.fn(), useRealRuntime: false }));
+const m = vi.hoisted(() => ({ target: vi.fn(), settings: vi.fn(), provider: vi.fn(), running: vi.fn(), policies: vi.fn(), helpers: vi.fn(), requests: vi.fn(), bindings: vi.fn(), sources: vi.fn(), satellite: vi.fn(), peer: vi.fn(), directions: vi.fn(), dispatcher: vi.fn(), dispatcherOn: vi.fn(), agentCard: vi.fn(), actions: vi.fn(), canvases: vi.fn(), status: vi.fn(), entries: vi.fn(), template: vi.fn(), mcp: vi.fn(), branch: vi.fn(), transcript: vi.fn(), historical: vi.fn(), catalog: vi.fn(), connection: vi.fn(), work: vi.fn(), realWitness: false, base: '', registration: vi.fn(), runtime: vi.fn(), useRealRuntime: false }));
 vi.mock('./base-dir', () => ({ getBaseDirPath: () => m.base }));
 vi.mock('./read-only-agent-target-witness', async (original) => {
   const actual = await original<typeof import('./read-only-agent-target-witness')>();
@@ -41,8 +41,8 @@ vi.mock('./canvas-store-reader', () => ({ getAgentCanvasMemberships: m.canvases 
 vi.mock('./managed-agents', () => ({ managedAgents: () => ({ liveEntries: m.entries, getTemplate: m.template }), statusFor: m.status }));
 vi.mock('./agent-settings-service', () => ({ readMcpConfig: m.mcp, readLaunchWrapper: async () => undefined, readDefaultMcps: async () => [] }));
 vi.mock('./git-service', () => ({ getBranchChanges: m.branch }));
-vi.mock('../orchestrators', () => ({ isSessionCapable: () => true, getProvider: (id: string) => ({ displayName: id === 'claude-code' ? 'Host Current Claude' : id }) }));
-vi.mock('./session-reader', () => ({ normalizeSessionEvents: (x: unknown) => x, buildSessionSummary: () => ({ totalDurationMs: 5000, totalCostUsd: 1.25, lastActiveAt: '2026-11-19T00:00:00Z' }), SUMMARY_TRANSCRIPT_MAX_BYTES: 2097152 }));
+vi.mock('../orchestrators', () => ({ isSessionCapable: () => true, getProvider: (id: string) => m.catalog(id) }));
+
 import { ChatDetailsRecorder } from './agent-runtime/chat-details-evidence';
 import { MINIMAL_CHAT_CAPABILITIES } from '../../shared/chat';
 import { readRemoteAgentDetails } from './remote-agent-details';
@@ -55,7 +55,8 @@ beforeEach(() => {
   m.target.mockResolvedValue({ agent: agent(), project });
   m.settings.mockResolvedValue({ status: 200, body: setting() });
   m.provider.mockResolvedValue({ id: 'codex-cli', conventions: {}, readSessionTranscript: m.transcript });
-  m.transcript.mockResolvedValue([]);
+  m.transcript.mockResolvedValue([]); m.historical.mockResolvedValue([{ type: 'result', duration_ms: 5000, total_cost_usd: 1.25 }]);
+  m.catalog.mockImplementation((id: string) => ({ id, displayName: id === 'claude-code' ? 'Host Current Claude' : id, readSessionTranscript: m.historical }));
   m.running.mockReturnValue(false);
   m.policies.mockResolvedValue(new Map([['a1', ORCHESTRATION_DEFAULTS]]));
   m.helpers.mockResolvedValue([]); m.requests.mockReturnValue([]); m.work.mockResolvedValue({ dirty: 0, unpushed: 0, unmerged: null });
@@ -219,10 +220,54 @@ describe('host selected-agent Details projections', () => {
     for (const privateText of ['PRIVATE_INSTRUCTIONS', 'PRIVATE_ACTION_MESSAGE', 'UNRELATED_ACTION', 'UNRELATED_WIRE']) expect(text).not.toContain(privateText);
   });
   it('binds last-session usage to the selected saved session and provider, not a broad session list', async () => {
-    m.target.mockResolvedValue({ agent: { ...agent(), lastSessionId: 'selected-last' }, project });
+    m.target.mockResolvedValue({ agent: { ...agent(), lastSessionId: 'selected-last', sessionHistory: [{ sessionId: 'selected-last', orchestrator: 'claude-code' }] }, project });
     const value = await read();
-    expect(m.transcript).toHaveBeenCalledWith('selected-last', '/host/selected', { maxBytes: 2097152 });
+    expect(m.historical).toHaveBeenCalledWith('selected-last', '/host/selected', { maxBytes: 2097152, stats: expect.any(Object) });
+    expect(m.transcript).not.toHaveBeenCalled();
+    expect(value.cards.find((c) => c.id === 'session')?.rows).toContainEqual({ label: 'Last CLI', value: 'Host Current Claude' });
     expect(value.cards.find((c) => c.id === 'session')?.rows).toContainEqual({ label: 'Cost', value: '$1.25' });
+  });
+  it.each(['missing', 'unrelated', 'unset', 'conflicting', 'partly-unset'] as const)('keeps historical provider attribution unknown with %s association', async (mode) => {
+    const record = { sessionId: 'selected-last', orchestrator: 'claude-code' };
+    const sessionHistory = mode === 'missing' ? undefined : mode === 'unrelated' ? [{ ...record, sessionId: 'other' }] : mode === 'unset' ? [{ sessionId: 'selected-last' }] : [record, mode === 'conflicting' ? { ...record, orchestrator: 'codex-cli' } : { sessionId: 'selected-last' }];
+    m.target.mockResolvedValue({ agent: { ...agent(), lastSessionId: 'selected-last', sessionHistory }, project });
+    const c = (await read()).cards.find((c) => c.id === 'session')!;
+    expect.soft(m.transcript).not.toHaveBeenCalled(); expect.soft(m.historical).not.toHaveBeenCalled();
+    expect.soft(c.rows).toContainEqual({ label: 'Last CLI', value: 'Not recorded unambiguously for this session' });
+    expect.soft(c.notes.join(' ')).toContain('configured next-start provider is not used');
+  });
+  it.each(['zero', 'missing', 'truncated'] as const)('preserves historical reported values and completeness: %s', async (mode) => {
+    m.target.mockResolvedValue({ agent: { ...agent(), lastSessionId: 'selected-last', sessionHistory: [{ sessionId: 'selected-last', orchestrator: 'claude-code' }], lastSleep: { at: '2026-11-19T01:00:00Z', reason: 'exited' } }, project });
+    const transcript = async (_id: string, _cwd: string, options: { stats?: Record<string, unknown> }) => {
+      if (options.stats) Object.assign(options.stats, { truncated: mode === 'truncated', fileBytes: mode === 'truncated' ? 4000000 : 100, bytesRead: 100 });
+      return [{ type: 'result', ...(mode !== 'missing' && { duration_ms: 0, total_cost_usd: 0 }) }];
+    };
+    m.transcript.mockImplementation(transcript); m.historical.mockImplementation(transcript);
+    const c = (await read()).cards.find((c) => c.id === 'session')!;
+    expect.soft(c.rows).toContainEqual({ label: 'Duration', value: mode === 'missing' ? 'Not reported' : '0s' });
+    expect.soft(c.rows).toContainEqual({ label: 'Cost', value: mode === 'missing' ? 'Not reported' : '$0.00' });
+    expect.soft(c.rows.filter((r) => r.label === 'Ended')).toEqual([{ label: 'Ended', value: '2026-11-19T01:00:00Z' }]);
+    expect.soft(c.rows).toContainEqual({ label: 'Why', value: 'CLI exited' });
+    expect.soft(c.notes.join(' ')).toContain(mode === 'truncated' ? 'truncated' : 'complete file');
+  });
+  it.each(['inventory', 'revocation'] as const)('withholds historical evidence after awaited %s change with real primary witness', async (mode) => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), 'clubhouse-history-witness-'));
+    try {
+      m.realWitness = true; m.base = path.join(root, 'profile'); const home = path.join(root, 'home');
+      await fs.mkdir(m.base); await fs.mkdir(path.join(home, '.clubhouse'), { recursive: true });
+      const selected = { ...agent(), worktreePath: home, lastSessionId: 'selected-last', sessionHistory: [{ sessionId: 'selected-last', orchestrator: 'claude-code' }] };
+      const selectedProject = { ...project, path: home }; const file = path.join(home, '.clubhouse', 'agents.json');
+      await fs.writeFile(path.join(m.base, 'projects.json'), JSON.stringify({ version: 1, projects: [selectedProject] })); await fs.writeFile(file, JSON.stringify([selected]));
+      m.target.mockResolvedValue({ agent: selected, project: selectedProject }); let allowed = true;
+      const transcript = async () => {
+        if (mode === 'inventory') await fs.writeFile(file, JSON.stringify([{ ...selected, sessionHistory: [{ sessionId: 'selected-last', orchestrator: 'codex-cli' }] }])); else allowed = false;
+        return [{ type: 'result', total_cost_usd: 42 }];
+      };
+      m.historical.mockImplementation(transcript); m.transcript.mockImplementation(transcript);
+      const response = await readRemoteAgentDetails('a1', () => allowed);
+      expect(response.status).toBe(mode === 'inventory' ? 409 : 403); expect(response.body).not.toHaveProperty('cards');
+      expect(m.historical).toHaveBeenCalledTimes(1); expect(m.transcript).not.toHaveBeenCalled();
+    } finally { await fs.rm(root, { recursive: true, force: true }); }
   });
   it('distinguishes verified empty, per-section error and explicit bounded omissions', async () => {
     m.actions.mockImplementation(() => { throw new Error('PRIVATE_ERROR'); });
