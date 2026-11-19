@@ -17,22 +17,17 @@ import { projectOrchestrationFields, projectPendingHelperStarts } from './remote
 import { listHelpersEverywhere } from './helper-index';
 import { readStartRequestsForDisplay } from './helper-start-requests';
 import { getAgentConnection, getCurrentAgentConnection } from './clubhouse-mcp/bridge-server';
-import { getDispatcherState, isDispatcherIdentityAgentId } from './dispatcher/dispatcher-service';
-import { isDispatcherEnabled } from './dispatcher/dispatcher-settings';
-import { readAgentCardView } from './dispatcher/dispatcher-agent-card-source';
+import { isDispatcherIdentityAgentId } from './dispatcher/dispatcher-service';
+import { dispatcherControllerForDisplay, readDispatcherCard } from './remote-dispatcher-card';
 import { readMcpConfig, readLaunchWrapper, readDefaultMcps } from './agent-settings-service';
 import { getProvider } from '../orchestrators';
 import { safeMcpErrorLine } from './mcp-error-text';
-import { reachRows, reachSummary } from '../../shared/dispatcher-card-model';
-import { viewOf as agentGrantsView } from './agent-grants-service';
 import { agentDisplayState } from './agent-display-state';
 import { getAgentRuntime } from './agent-runtime';
 import { HELPER_TRANSFORM_UNAVAILABLE, readOnlyHelperWork } from './read-only-helper-work';
 import { helpersSummary, workSummary } from '../../shared/helper-work-summary';
 import { captureReadOnlyConfigTargetWitness } from './read-only-config-target';
 import { captureDisplayProvider } from './display-provider';
-
-const yes = (v: boolean) => v ? 'On' : 'Off';
 
 /** No caller-supplied paths, store objects, instructions, action prompts or MCP definitions leave here. */
 export async function readRemoteAgentDetails(agentId: string, authorized: () => boolean): Promise<{ status: number; body: unknown }> {
@@ -53,6 +48,8 @@ export async function readRemoteAgentDetails(agentId: string, authorized: () => 
     const helperReceipts: Array<{ current(): boolean }> = [];
     const settingsReceipts: Array<{ current(): boolean }> = [];
     const orchestrationReceipts: Array<{ current(): boolean }> = [];
+    const dispatcherReceipts: Array<{ current(): boolean }> = [];
+    const controller = dispatcherControllerForDisplay({ receipts: dispatcherReceipts, authorized });
     let orchestration: ReturnType<typeof readOrchestrationForDisplay> | undefined;
     const readPolicy = () => orchestration ??= readOrchestrationForDisplay(target, { receipts: orchestrationReceipts });
     const providerRead = captureDisplayProvider(target), provider = providerRead.provider;
@@ -144,27 +141,14 @@ export async function readRemoteAgentDetails(agentId: string, authorized: () => 
       if (agent.parentAgentId && !helpers.length && requests.state === 'ok' && !requests.value.length) c.state = 'not-applicable';
       if (!running && enabled) c.notes.push('The helper tools appear the next time this agent starts.');
     });
-    await read('dispatcher', async (c) => {
-      if (!isDispatcherEnabled()) { c.state = 'not-applicable'; return; }
-      const connected = readPolicy().fields.connectToDispatcher;
-      const state = getDispatcherState();
-      c.title = display(state.config?.name || 'Dispatcher');
-      c.summary = connected.state === 'ok' ? connected.value ? 'connected' : 'not connected' : 'Connection policy unavailable';
-      if (connected.state !== 'ok') c.state = 'error';
-      row(c, 'Connected', connected.state === 'ok' ? yes(connected.value) : 'Unavailable from host metadata');
-      if (connected.state === 'ok' && connected.value) {
-        const view = await readAgentCardView(agentId);
-        row(c, 'Description', view?.state === 'asking' ? 'Asking what it does…' : view?.state === 'ready' ? 'Ready' : 'No description yet');
-        row(c, 'When to reach it', view?.card?.contactWhen || 'Not given');
-        row(c, 'Owns', view?.card?.owns || 'Not given');
-        if (state.config && state.agentId) {
-          const reach = reachRows(agentGrantsView(state.agentId, state.config));
-          row(c, `${c.title} can`, reachSummary(reach));
-          for (const r of reach) row(c, r.label, `${r.mode === 'allow' ? 'Allow' : r.mode === 'ask' ? 'Ask first' : 'Off'}${r.everyAgent ? ' · set for every agent' : ''}`);
-        } else c.notes.push('The host Dispatcher’s permissions are not available.');
-      }
+    await read('dispatcher', (c) => readDispatcherCard(c, target, readPolicy().fields.connectToDispatcher, { receipts: dispatcherReceipts, authorized, controller }));
+    await read('connections', async (c) => {
+      if (!dispatcher) return readConnectionCard(c, agentId);
+      const canonical = await controller();
+      if (!authorized()) return;
+      if (!canonical) { c.state = 'error'; c.summary = 'Connection identity unavailable'; c.notes.push('The host Dispatcher’s canonical connection identity is unavailable. Connections cannot be verified until its host identity is available.'); return; }
+      return readConnectionCard(c, canonical.agent.id);
     });
-    await read('connections', (c) => readConnectionCard(c, dispatcher ? getDispatcherState().agentId || agentId : agentId));
     await read('actions', (c) => readActionCard(c, agentId, project.id, dispatcher, { agentName: agent.name, projectName: project.displayName || project.name }));
     await read('skills-mcp', async (c) => {
       const evidence = settingsRead.managedEvidence;
@@ -207,6 +191,7 @@ export async function readRemoteAgentDetails(agentId: string, authorized: () => 
     // registration, and an earlier helper work check cannot attest later membership.
     if (targetWitness && !targetWitness.current() || helperReceipts.some((receipt) => !receipt.current())) return { status: 409, body: { error: 'agent_inventory_changed' } };
     if (!providerRead.receipt.current() || settingsReceipts.some((receipt) => !receipt.current())) return { status: 409, body: { error: 'settings_evidence_changed' } };
+    if (dispatcherReceipts.some((receipt) => !receipt.current())) return { status: 409, body: { error: 'dispatcher_evidence_changed' } };
     if (orchestrationReceipts.some((receipt) => !receipt.current())) return { status: 409, body: { error: 'orchestration_evidence_changed' } };
     if (running && !registration && runtime?.kind !== 'chat'
       || currentRegistration !== registration || currentRegistration?.nonce !== registeredNonce || currentRegistration?.runtime !== registeredRuntime

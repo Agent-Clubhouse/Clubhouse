@@ -2,11 +2,16 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import * as fs from 'fs/promises';
 import * as os from 'os';
 import * as path from 'path';
+import { app } from 'electron';
+import { resetAllSettingsStoresForTests } from './settings-store';
+import { setAgentCardSource } from './dispatcher/dispatcher-agent-card-source';
+import { readAgentCardForDisplay } from './dispatcher/dispatcher-agent-card-display';
+import { agentPagePath, renderAgentPage } from './dispatcher/dispatcher-memory';
 import { noteAgentStarting, _resetAgentDisplayStateForTesting } from './agent-display-state';
 import { DISPATCHER_PROJECT_ID } from '../../shared/dispatcher-types';
 import { ORCHESTRATION_DEFAULTS } from '../../shared/orchestration-policy';
 import { isRemoteAgentDetails, type RemoteAgentDetails } from '../../shared/remote-agent-details';
-const m = vi.hoisted(() => ({ target: vi.fn(), settings: vi.fn(), provider: vi.fn(), running: vi.fn(), policies: vi.fn(), helpers: vi.fn(), requests: vi.fn(), bindings: vi.fn(), sources: vi.fn(), satellite: vi.fn(), peer: vi.fn(), directions: vi.fn(), dispatcher: vi.fn(), dispatcherOn: vi.fn(), agentCard: vi.fn(), actions: vi.fn(), canvases: vi.fn(), status: vi.fn(), entries: vi.fn(), template: vi.fn(), mcp: vi.fn(), branch: vi.fn(), transcript: vi.fn(), historical: vi.fn(), envCached: vi.fn(), catalog: vi.fn(), connection: vi.fn(), work: vi.fn(), realWitness: false, base: '', registration: vi.fn(), runtime: vi.fn(), useRealRuntime: false }));
+const m = vi.hoisted(() => ({ target: vi.fn(), settings: vi.fn(), provider: vi.fn(), running: vi.fn(), policies: vi.fn(), helpers: vi.fn(), requests: vi.fn(), bindings: vi.fn(), sources: vi.fn(), satellite: vi.fn(), peer: vi.fn(), directions: vi.fn(), dispatcher: vi.fn(), dispatcherOn: vi.fn(), agentCard: vi.fn(), actions: vi.fn(), canvases: vi.fn(), status: vi.fn(), entries: vi.fn(), template: vi.fn(), mcp: vi.fn(), branch: vi.fn(), transcript: vi.fn(), historical: vi.fn(), envCached: vi.fn(), catalog: vi.fn(), connection: vi.fn(), work: vi.fn(), realWitness: false, realDispatcher: false, base: '', registration: vi.fn(), runtime: vi.fn(), useRealRuntime: false }));
 vi.mock('child_process', async (original) => ({ ...await original<typeof import('child_process')>(), execSync: vi.fn(() => '') }));
 vi.mock('../util/shell', async (original) => ({ ...await original<typeof import('../util/shell')>(), isShellEnvironmentCached: m.envCached }));
 vi.mock('./base-dir', () => ({ getBaseDirPath: () => m.base }));
@@ -40,10 +45,19 @@ vi.mock('./annex-client', () => ({ getSatellite: m.satellite }));
 vi.mock('./annex-peers', () => ({ getPeer: m.peer }));
 vi.mock('./connection-sources', () => ({ listConnectionSources: m.sources }));
 vi.mock('./connection-grants-store', () => ({ listConnectionDirectionsForInspection: m.directions }));
-vi.mock('./dispatcher/dispatcher-service', () => ({ getDispatcherState: m.dispatcher, getDispatcherAgentId: () => m.dispatcher()?.agentId ?? null, getDispatcherChatAgentId: () => m.dispatcher()?.chatAgentId ?? null, isDispatcherIdentityAgentId: (id: string) => id === 'disp' }));
-vi.mock('./dispatcher/dispatcher-settings', () => ({ isDispatcherEnabled: m.dispatcherOn }));
-vi.mock('./dispatcher/dispatcher-agent-card-source', () => ({ readAgentCardView: m.agentCard }));
-vi.mock('./agent-grants-service', () => ({ viewOf: () => ({ rows: [] }) }));
+vi.mock('./dispatcher/dispatcher-service', () => ({ getDispatcherState: () => { throw new Error('ordinary Dispatcher state must not be read'); }, getDispatcherAgentId: () => m.dispatcher()?.agentId ?? null, getDispatcherChatAgentId: () => m.dispatcher()?.chatAgentId ?? null, isDispatcherAgentId: (id: string) => id === m.dispatcher()?.agentId, isDispatcherIdentityAgentId: (id: string) => [m.dispatcher()?.agentId, m.dispatcher()?.chatAgentId].includes(id) }));
+vi.mock('./dispatcher/dispatcher-settings', async (original) => {
+  const actual = await original<typeof import('./dispatcher/dispatcher-settings')>();
+  return { ...actual, isDispatcherEnabled: () => { throw new Error('ordinary Dispatcher initialization must not be read'); }, readDispatcherEnablementForDisplay: (...args: Parameters<typeof actual.readDispatcherEnablementForDisplay>) => m.realDispatcher ? actual.readDispatcherEnablementForDisplay(...args) : { enabled: { state: 'ok', value: m.dispatcherOn(), inputs: [] }, reason: { state: 'ok', value: null, inputs: [] } } };
+});
+vi.mock('./dispatcher/dispatcher-agent-card-source', async (original) => {
+  const actual = await original<typeof import('./dispatcher/dispatcher-agent-card-source')>();
+  return { ...actual, readAgentCardView: () => { throw new Error('ordinary description reader must not be read'); } };
+});
+vi.mock('./agent-grants-service', async (original) => {
+  const actual = await original<typeof import('./agent-grants-service')>();
+  return { ...actual, viewOf: () => { throw new Error('ordinary grants must not be read'); } };
+});
 vi.mock('./actions/details-names', () => ({ actionDetailsNames: () => ({ names: { agent: () => 'Selected', project: () => 'Project' }, notices: () => [] }) }));
 vi.mock('./actions', async () => ({ readActionDetailsForAgent: (agentId: string, projectId: string, dispatcher: boolean, names: import('../../shared/actions').ActionNames) => projectActionDetails({ list: m.actions, lastRunForDisplay: (id: string) => m.actions().find((a: { id: string }) => a.id === id)?.lastRun }, agentId, projectId, dispatcher, names), peekActionProjectName: () => 'Project' }));
 vi.mock('./canvas-store-reader', () => ({ getAgentCanvasMemberships: m.canvases }));
@@ -62,7 +76,7 @@ const project = { id: 'p1', name: 'Project', path: '/host/project' };
 const setting = () => ({ version: 1, agentId: 'a1', readOnly: true, provider: 'Host CLI', model: 'model', runtime: 'terminal', access: 'Ask first', executionPolicy: 'defaults', autoSleep: null, context: null, setup: { state: 'ok', managed: false, template: null, instructions: 'None', skills: null, mcps: null } });
 beforeEach(() => {
   _resetAgentDisplayStateForTesting();
-  m.envCached.mockReturnValue(true); m.realWitness = false; m.useRealRuntime = false; m.registration.mockReturnValue(undefined); m.runtime.mockReturnValue(undefined);
+  m.envCached.mockReturnValue(true); m.realDispatcher = false; m.realWitness = false; m.useRealRuntime = false; m.registration.mockReturnValue(undefined); m.runtime.mockReturnValue(undefined);
   m.target.mockResolvedValue({ agent: agent(), project });
   m.settings.mockResolvedValue({ status: 200, body: setting() });
   m.provider.mockReturnValue({ id: 'codex-cli', conventions: {}, readSessionTranscript: m.transcript });
@@ -84,6 +98,117 @@ const read = async () => {
   return response.body as RemoteAgentDetails;
 };
 describe('host selected-agent Details projections', () => {
+  it.each(['same', 'missing-source', 'legacy-source', 'broken-index', 'missing-index', 'withheld', 'truncated', 'missing-controller', 'wrong-role', 'name-collision', 'controller-late', 'grants-late', 'description-late', 'source-late', 'switch-late', 'switch-off', 'switch-unknown', 'connected-off', 'revoked'] as const)('composes selected passive Dispatcher metadata and final receipts: %s', async (mode) => {
+    const root = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), 'clubhouse-details-dispatcher-')));
+    const getPath = vi.spyOn(app, 'getPath').mockReturnValue(root); resetAllSettingsStoresForTests(); m.base = root; m.realWitness = true; m.realDispatcher = true;
+    const selectedFolder = path.join(root, 'project'), controllerFolder = path.join(root, 'dispatcher');
+    const selected = { ...agent(), worktreePath: selectedFolder }, controller = { ...agent(), id: 'controller1', name: 'Operations', worktreePath: controllerFolder, PRIVATE_CONFIG: 'PRIVATE_PROVIDER_ENV' };
+    const selectedProject = { ...project, path: selectedFolder }, controllerProject = { id: DISPATCHER_PROJECT_ID, name: 'Dispatcher', path: controllerFolder };
+    for (const folder of [selectedFolder, controllerFolder]) await fs.mkdir(path.join(folder, '.clubhouse'), { recursive: true });
+    await fs.writeFile(path.join(root, 'projects.json'), JSON.stringify([selectedProject]));
+    await fs.writeFile(path.join(selectedFolder, '.clubhouse', 'agents.json'), JSON.stringify([selected]));
+    const controllerFile = path.join(controllerFolder, '.clubhouse', 'agents.json'); await fs.writeFile(controllerFile, JSON.stringify([controller]));
+    m.target.mockImplementation(async (id: string, _path: unknown, options: { strict?: boolean }) => {
+      expect(options).toEqual({ strict: true });
+      if (id !== 'controller1') return { agent: selected, project: selectedProject };
+      return { agent: mode === 'name-collision' ? { ...controller, id: 'other', name: 'controller1' } : controller, project: mode === 'wrong-role' ? selectedProject : controllerProject };
+    });
+    m.dispatcher.mockReturnValue({ agentId: mode === 'missing-controller' ? null : 'controller1', chatAgentId: 'chat1' });
+    m.policies.mockReturnValue(new Map([['a1', { ...ORCHESTRATION_DEFAULTS, connectToDispatcher: mode !== 'connected-off' }]]));
+    await fs.writeFile(path.join(root, 'dispatcher-settings.json'), mode === 'switch-unknown' ? '{broken' : JSON.stringify({ enabled: mode !== 'switch-off' }));
+    const grantsFile = path.join(root, 'agent-grants.json'); await fs.writeFile(grantsFile, JSON.stringify({ agents: { controller1: { changes: [{ action: 'agent.restart', target: { kind: 'any' }, mode: 'allow' }] }, PRIVATE_UNRELATED: { changes: 'PRIVATE_GRANT' } } }));
+    const index = path.join(root, 'dispatcher-agent-cards.json'), memory = path.join(root, 'memory'); await fs.mkdir(memory);
+    if (mode !== 'missing-index') await fs.writeFile(index, mode === 'broken-index' ? '{broken' : JSON.stringify({ version: 1, agents: { a1: { page: 'selected', projectPath: selectedFolder, connected: true, setup: 'PRIVATE_SETUP' }, unrelated: { page: 'other', projectPath: '/other', connected: true, setup: 'PRIVATE_OTHER' } } }));
+    const pageFile = agentPagePath('selected', memory); await fs.mkdir(path.dirname(pageFile), { recursive: true });
+    await fs.writeFile(pageFile, renderAgentPage('PRIVATE_TITLE', { card: mode === 'withheld' ? 'When to reach it: apiKey = ("PRIVATE_SECRET")\nOwns: Selected component' : mode === 'truncated' ? 'When to reach it: ' + 'x'.repeat(900) + '\nOwns: Selected component' : 'When to reach it: Review selected work\nOwns: Selected component', notes: 'When to reach it: PRIVATE_NOTES' }));
+    const ordinary = vi.fn(() => { throw new Error('ordinary source invoked'); });
+    const source = { status: ordinary, saveUserCard: ordinary, ...(mode !== 'legacy-source' && { display: (id: string, folder: string, options: Parameters<typeof readAgentCardForDisplay>[3]) => readAgentCardForDisplay({ storePath: () => index, memoryRoot: memory }, id, folder, options) }) };
+    setAgentCardSource(mode === 'missing-source' ? null : source);
+    // These unrelated corrupt stores and old temporary files must survive a
+    // cold display read; no generic initialization or recovery is authorized.
+    await fs.writeFile(path.join(root, 'dispatcher-federation.json'), '{broken');
+    await fs.writeFile(path.join(root, 'experimental-settings.json'), '{broken');
+    for (const file of ['dispatcher-settings.json', 'agent-grants.json', 'dispatcher-federation.json', 'dispatcher-agent-cards.json']) {
+      const temp = path.join(root, `.${file}.tmp-${process.pid + 100000}-1`); await fs.writeFile(temp, 'retain'); const old = new Date(Date.now() - 3 * 86400000); await fs.utimes(temp, old, old);
+    }
+    const disk = async (folder = root): Promise<unknown> => Object.fromEntries(await Promise.all((await fs.readdir(folder)).sort().map(async (name) => { const file = path.join(folder, name), stat = await fs.lstat(file); return [name, stat.isDirectory() ? { ino: stat.ino, files: await disk(file) } : { ino: stat.ino, mtimeMs: stat.mtimeMs, bytes: (await fs.readFile(file)).toString('base64') }]; })));
+    const before = await disk(); let allowed = true;
+    m.canvases.mockImplementation(async () => {
+      if (mode === 'controller-late') await fs.writeFile(controllerFile, JSON.stringify([{ ...controller, disposedAt: '2026-11-19' }]));
+      if (mode === 'grants-late') await fs.writeFile(grantsFile, JSON.stringify({ agents: { controller1: { changes: [{ action: 'agent.message', target: { kind: 'connected' }, mode: 'off' }] } } }));
+      if (mode === 'description-late') await fs.writeFile(pageFile, renderAgentPage('Title', { card: 'Owns: New selected component', notes: '' }));
+      if (mode === 'source-late') setAgentCardSource(null);
+      if (mode === 'switch-late') await fs.writeFile(path.join(root, 'dispatcher-settings.json'), '{"enabled":false}');
+      if (mode === 'revoked') allowed = false;
+      return [];
+    });
+    try {
+      const response = await readRemoteAgentDetails('a1', () => allowed);
+      const late = ['controller-late', 'grants-late', 'description-late', 'source-late', 'switch-late'].includes(mode);
+      expect.soft(response.status).toBe(mode === 'revoked' ? 403 : late ? 409 : 200);
+      if (late || mode === 'revoked') expect.soft(JSON.stringify(response.body)).not.toMatch(/cards|providerId|Operations|Selected component/);
+      else {
+        expect(isRemoteAgentDetails(response.body, 'a1')).toBe(true);
+        const card = (response.body as RemoteAgentDetails).cards.find((c) => c.id === 'dispatcher')!;
+        const unknown = ['missing-source', 'legacy-source', 'broken-index'].includes(mode), noController = ['missing-controller', 'wrong-role', 'name-collision'].includes(mode);
+        expect(card.state).toBe(mode === 'switch-off' ? 'not-applicable' : unknown || noController || mode === 'switch-unknown' ? 'error' : 'ok');
+        if (mode === 'switch-off') { expect(card.rows).toEqual([]); expect(m.target.mock.calls).toHaveLength(1); }
+        else if (mode === 'connected-off') { expect(card.summary).toBe('not connected'); expect(card.rows).toEqual([{ label: 'Connected', value: 'Off' }]); }
+        else {
+          expect(card.title).toBe(noController ? 'Dispatcher' : 'Operations');
+          expect(card.rows).toContainEqual({ label: 'Connected', value: 'On' });
+          if (unknown) { expect(card.rows).toContainEqual({ label: 'Description', value: 'Unavailable from host metadata' }); expect(card.rows).not.toContainEqual({ label: 'Description', value: 'No description yet' }); }
+          else if (mode === 'missing-index') expect(card.rows).toContainEqual({ label: 'Description', value: 'No description yet' });
+          else { expect(card.rows).toContainEqual({ label: 'Owns', value: 'Selected component' }); if (mode === 'withheld') expect(card.notes.join(' ')).toContain('text withheld'); if (mode === 'truncated') expect(card.notes.join(' ')).toContain('fields truncated'); }
+          if (!noController) expect(card.rows.some((r) => r.value.includes('Allow · set for every agent'))).toBe(true);
+        }
+        expect.soft(JSON.stringify(response.body)).not.toMatch(/PRIVATE_|receipts|primarySignature|"current":/);
+      }
+      expect.soft(ordinary).not.toHaveBeenCalled();
+      if (!late) expect.soft(await disk()).toEqual(before);
+    } finally { setAgentCardSource(null); resetAllSettingsStoresForTests(); getPath.mockRestore(); await fs.rm(root, { recursive: true, force: true }); }
+  });
+
+  it.each(['on', 'off', 'missing-controller', 'mismatched-id', 'wrong-folder', 'unreadable-primary', 'removed-late', 'role-cleared-late', 'revoked'] as const)('uses only a strictly admitted canonical Dispatcher wires identity: %s', async (mode) => {
+    const root = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), 'clubhouse-details-dispatcher-wires-'))); m.base = root; m.realWitness = true; m.realDispatcher = true;
+    const folder = path.join(root, 'dispatcher'), chatFolder = path.join(root, 'dispatcher-chat');
+    const controller = { ...agent(), id: 'controller1', name: 'Operations', worktreePath: folder }, chat = { ...agent(), id: 'chat1', name: 'Dispatcher chat', worktreePath: chatFolder };
+    for (const [dir, config] of [[folder, controller], [chatFolder, chat]] as const) { await fs.mkdir(path.join(dir, '.clubhouse'), { recursive: true }); await fs.writeFile(path.join(dir, '.clubhouse', 'agents.json'), JSON.stringify([config])); }
+    const primary = path.join(folder, '.clubhouse', 'agents.json'); if (mode === 'unreadable-primary') await fs.writeFile(primary, '{broken');
+    m.dispatcher.mockReturnValue({ agentId: mode === 'missing-controller' ? null : 'controller1', chatAgentId: 'chat1' });
+    m.target.mockImplementation(async (id: string, _path: unknown, options: { strict?: boolean }) => {
+      expect(options).toEqual({ strict: true });
+      if (id === 'chat1') return { agent: chat, project: { id: DISPATCHER_PROJECT_ID, name: 'Dispatcher', path: chatFolder } };
+      if (mode === 'unreadable-primary') throw new Error('Unreadable primary');
+      return { agent: mode === 'mismatched-id' ? { ...controller, id: 'other', name: 'controller1' } : controller, project: { id: DISPATCHER_PROJECT_ID, name: 'Dispatcher', path: mode === 'wrong-folder' ? chatFolder : folder } };
+    });
+    m.dispatcherOn.mockReturnValue(mode !== 'off'); m.settings.mockResolvedValue({ status: 200, body: { ...setting(), agentId: 'chat1' } });
+    let allowed = true;
+    m.sources.mockImplementation(async (id: string) => {
+      expect(id).toBe('controller1');
+      if (mode === 'removed-late') await fs.writeFile(primary, '[]');
+      if (mode === 'role-cleared-late') m.dispatcher.mockReturnValue({ agentId: null, chatAgentId: 'chat1' });
+      if (mode === 'revoked') allowed = false;
+      return { pairs: [], unreadable: [] };
+    });
+    try {
+      const response = await readRemoteAgentDetails('chat1', () => allowed);
+      const late = ['removed-late', 'role-cleared-late'].includes(mode), missing = ['missing-controller', 'mismatched-id', 'wrong-folder', 'unreadable-primary'].includes(mode);
+      expect.soft(response.status).toBe(mode === 'revoked' ? 403 : late ? 409 : 200);
+      if (late || mode === 'revoked') expect.soft(JSON.stringify(response.body)).not.toMatch(/cards|providerId|Operations/);
+      else {
+        expect(isRemoteAgentDetails(response.body, 'chat1')).toBe(true);
+        const cards = (response.body as RemoteAgentDetails).cards;
+        const connections = cards.find((c) => c.id === 'connections')!;
+        expect(connections.state).toBe(missing ? 'error' : 'ok');
+        if (missing) { expect(m.sources).not.toHaveBeenCalled(); expect(connections.notes.join(' ')).not.toContain('No Clubhouse MCP wires'); }
+        else expect(m.sources).toHaveBeenCalledWith('controller1');
+        for (const id of ['dispatcher', 'orchestrate', 'skills-mcp', 'session', 'canvases', 'changes']) expect(cards.find((c) => c.id === id)?.state).toBe('not-applicable');
+      }
+      expect(m.target.mock.calls.every(([id]) => ['chat1', 'controller1'].includes(id))).toBe(true);
+    } finally { await fs.rm(root, { recursive: true, force: true }); }
+  });
+
   it.each(['same', 'disposed', 'removed', 'same-bytes-replaced', 'cache-cleared', 'cache-moved', 'revoked'] as const)('keeps an actual sleeping Dispatcher primary receipt through the final connection await: %s', async (mode) => {
     const root = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), 'clubhouse-details-role-final-'))); m.base = root; m.realWitness = true;
     const folder = path.join(root, 'dispatcher'); const configs = path.join(folder, '.clubhouse'); await fs.mkdir(configs, { recursive: true });
