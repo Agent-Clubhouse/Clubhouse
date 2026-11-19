@@ -80,6 +80,31 @@ it('uses the same first Card / following Notes framing for a complete hand-edite
   const result = await cards.viewForDisplay('selected', project);
   expect(result).toMatchObject({ state: 'ok', value: { view: { state: 'ready', card: { owns: 'Selected component' } } } }); expect(JSON.stringify(result)).not.toContain('PRIVATE_');
 });
+it('refuses distinct-field Notes before Card rather than adopting them as selected description fields', async () => {
+  put(); const file = page();
+  fs.writeFileSync(file, '# Title\n## Notes\nWhen to reach it: PRIVATE_EARLY_NOTE\n## Card\nOwns: Selected component\n## Notes\nOwns: PRIVATE_LATE_NOTES');
+  const result = await cards.viewForDisplay('selected', project);
+  expect.soft(result.state).toBe('unavailable'); expect.soft(JSON.stringify(result)).not.toContain('PRIVATE_');
+});
+it('does not call a partial Notes delimiter at the exact prefix boundary a complete Card', async () => {
+  put(); const file = page(), base = '# Title\n## Card\nOwns: Early component\n', tail = '\n## Notes';
+  const prefix = base + ' '.repeat(DISPLAY_CARD_PREFIX_BYTES - Buffer.byteLength(base) - Buffer.byteLength(tail)) + tail;
+  expect(Buffer.byteLength(prefix)).toBe(DISPLAY_CARD_PREFIX_BYTES);
+  fs.writeFileSync(file, prefix + ' continuation\nWhen to reach it: Later Card field\n## Notes\nOwns: PRIVATE_REAL_NOTES');
+  const result = await cards.viewForDisplay('selected', project);
+  expect.soft(result.state).toBe('unavailable'); expect.soft(JSON.stringify(result)).not.toMatch(/Early component|PRIVATE_/);
+});
+it('rejects an empty stored project path even when it would normalize to the admitted current directory', async () => {
+  put(row({ projectPath: '' })); page('Owns: PRIVATE_CWD_ASSOCIATION');
+  const result = await cards.viewForDisplay('selected', process.cwd());
+  expect.soft(result.state).toBe('unavailable'); expect.soft(JSON.stringify(result)).not.toContain('PRIVATE_');
+});
+it.each(['unframed', 'safe-preface'] as const)('retains legitimate complete %s legacy Card text before Notes', async (kind) => {
+  put(); const file = page();
+  fs.writeFileSync(file, '# Title\nWhen to reach it: Safe legacy contact\n' + (kind === 'safe-preface' ? '## Card\n' : '') + 'Owns: Selected component\n## Notes\nWhen to reach it: PRIVATE_NOTES');
+  const result = await cards.viewForDisplay('selected', project);
+  expect(result).toMatchObject({ state: 'ok', value: { view: { state: 'ready', card: { contactWhen: 'Safe legacy contact', owns: 'Selected component' } } } }); expect(JSON.stringify(result)).not.toContain('PRIVATE_');
+});
 it.each(['incomplete', 'invalid-utf8', 'link', 'directory'])('withholds %s page evidence rather than returning an empty card', async (kind) => {
   put(); const file = page();
   if (kind === 'incomplete') fs.writeFileSync(file, '# Title\n## Card\n' + 'x'.repeat(DISPLAY_CARD_PREFIX_BYTES + 1));
