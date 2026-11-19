@@ -150,7 +150,11 @@ publication or invalid metadata is unknown, never permission to deliver and
 never by itself evidence of revocation.
 
 Controller-bound outbox flushes require a fresh authenticated publication under
-the current pairing, before invoking the unchanged host authorizer. Retained
+the current pairing, before invoking the unchanged host authorizer. After the
+last authorization await, the send boundary rechecks the current local identity,
+remote publication state, membership and pairing. A cached exchange cannot
+override a newer unknown/off/changed publication. Unknown restores waiting
+without counting an unsent attempt; definitive revocation refuses. Retained
 verified metadata is not execution authority while the current state is unknown.
 Unknown publications do not replace that metadata. The queued item records
 `waiting_for_controller`, with one readiness-transition log per machine and one

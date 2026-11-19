@@ -1450,6 +1450,7 @@ describe('authenticated controller publication (#3345)', () => {
 describe('controller identity readiness (#3613)', () => {
   let initialized: boolean;
   let localEnabled: boolean;
+  let localId: string;
   let published: unknown;
   let ready: (() => void) | undefined;
   let store: AnnexDeliveryStore;
@@ -1457,7 +1458,7 @@ describe('controller identity readiness (#3613)', () => {
   const learn = vi.fn(async () => {});
 
   beforeEach(async () => {
-    initialized = true; localEnabled = true; published = { agentId: null, enabled: true, name: 'Starting' }; ready = undefined;
+    initialized = true; localEnabled = true; localId = 'sender'; published = { agentId: null, enabled: true, name: 'Starting' }; ready = undefined;
     authorize.mockClear(); learn.mockClear();
     connected = false;
     store = useMemoryDeliveryStore();
@@ -1465,7 +1466,7 @@ describe('controller identity readiness (#3613)', () => {
     stop = startFixture(store, {
       authorizeQueuedCall: authorize,
       federation: {
-        local: () => ({ agentId: 'sender', enabled: localEnabled, name: 'Sender' }),
+        local: () => ({ agentId: localId, enabled: localEnabled, name: 'Sender' }),
         learn, ready: () => initialized, publication: initializedControllerPublication,
         onReady: (listener) => { ready = listener; return () => { ready = undefined; }; },
       },
@@ -1616,6 +1617,146 @@ describe('controller identity readiness (#3613)', () => {
     expect(getDelivery('sender', item.id)).toMatchObject({ state: 'queued', reason: 'waiting_for_controller', attempts: 0 });
     expect(posts.filter((post) => post.path.endsWith('/agent-call'))).toEqual([]);
     expect(authorize).toHaveBeenCalledTimes(during === 'exchange' ? 0 : 1);
+  });
+
+  it('refuses local off during the final authorization without sending', async () => {
+    published = { agentId: 'receiver', enabled: true, name: 'Ready' };
+    const item = await queueControllerCall();
+    authorize.mockResolvedValueOnce({ allowed: true });
+    authorize.mockImplementationOnce(async () => {
+      localEnabled = false;
+      return { allowed: true };
+    });
+    connected = true;
+    await flushOutbox(OTHER);
+    expect(authorize).toHaveBeenCalledTimes(2);
+    expect(posts.filter((post) => post.path.endsWith('/agent-call'))).toEqual([]);
+    expect(getDelivery('sender', item.id)).toMatchObject({ state: 'refused', reason: 'authorization_revoked' });
+  });
+
+  it('preserves attempts when identity becomes unknown during final authorization', async () => {
+    published = { agentId: 'receiver', enabled: true, name: 'Ready' };
+    const item = await queueControllerCall();
+    expect(getDelivery('sender', item.id)?.attempts).toBe(0);
+    authorize.mockResolvedValueOnce({ allowed: true });
+    authorize.mockImplementationOnce(async () => {
+      initialized = false;
+      return { allowed: true };
+    });
+    connected = true;
+    await flushOutbox(OTHER);
+    expect(authorize).toHaveBeenCalledTimes(2);
+    expect(posts.filter((post) => post.path.endsWith('/agent-call'))).toEqual([]);
+    expect(store.get().outbox.find((queued) => queued.id === item.id)).toEqual(item);
+    expect(getDelivery('sender', item.id)).toMatchObject({ state: 'queued', reason: 'waiting_for_controller', attempts: 0 });
+  });
+
+  it('waits when inbound remote publication becomes unknown during final authorization', async () => {
+    published = { agentId: 'receiver', enabled: true, name: 'Ready' };
+    const item = await queueControllerCall();
+    authorize.mockResolvedValueOnce({ allowed: true });
+    authorize.mockImplementationOnce(async () => {
+      const epoch = { sender: state.peerPairing, receiver: state.pairing };
+      expect(await receiveDirections(OTHER, {
+        v: AGENT_CALL_VERSION, directions: [], controller: { agentId: null, enabled: true, name: 'Starting' }, epoch,
+      })).toEqual({ applied: 0 });
+      expect(await receiveAgentCall(OTHER, call({
+        from: { agentId: 'receiver', name: 'Receiver' }, to: 'sender', epoch,
+      }))).toMatchObject({ status: 503, error: 'controller_not_ready' });
+      return { allowed: true };
+    });
+    connected = true;
+    await flushOutbox(OTHER);
+    expect(authorize).toHaveBeenCalledTimes(2);
+    expect(posts.filter((post) => post.path.endsWith('/agent-call'))).toEqual([]);
+    expect(getDelivery('sender', item.id)).toMatchObject({ state: 'queued', reason: 'waiting_for_controller', attempts: 0 });
+    await vi.advanceTimersByTimeAsync(READINESS_RETRY_MS);
+    expect(getDelivery('sender', item.id)).toMatchObject({ state: 'delivered', attempts: 1 });
+    expect(posts.filter((post) => post.path.endsWith('/agent-call'))).toHaveLength(1);
+  });
+
+  it.each(['local identity', 'remote off', 'remote identity', 'member removed', 'epoch'] as const)(
+    'refuses a definitive %s change during final authorization without sending', async (change) => {
+      published = { agentId: 'receiver', enabled: true, name: 'Ready' };
+      const item = await queueControllerCall();
+      authorize.mockResolvedValueOnce({ allowed: true });
+      authorize.mockImplementationOnce(async () => {
+        if (change === 'local identity') localId = 'replacement-sender';
+        if (change === 'epoch') state.peerPairing = 'new-pairing';
+        if (change === 'member removed') vi.spyOn(await import('./annex-peers'), 'listPeers').mockReturnValue([]);
+        if (change === 'remote off' || change === 'remote identity') {
+          expect(await receiveDirections(OTHER, { v: AGENT_CALL_VERSION, directions: [],
+            controller: { agentId: change === 'remote identity' ? 'replacement-receiver' : 'receiver',
+              enabled: change !== 'remote off', name: 'Changed' },
+            epoch: { sender: state.peerPairing, receiver: state.pairing },
+          })).toEqual({ applied: 0 });
+        }
+        return { allowed: true };
+      });
+      connected = true;
+      await flushOutbox(OTHER);
+      expect(authorize).toHaveBeenCalledTimes(2);
+      expect(posts.filter((post) => post.path.endsWith('/agent-call'))).toEqual([]);
+      expect(getDelivery('sender', item.id)).toMatchObject({ state: 'refused',
+        reason: change === 'epoch' || change === 'member removed' ? 'pairing_changed' : 'authorization_revoked' });
+    });
+
+  it('does not reuse the previous identity exchange for a later call to the newly published controller', async () => {
+    published = { agentId: 'receiver', enabled: true, name: 'Ready' };
+    const old = await queueControllerCall();
+    await forwardPreparedAgentCall('sender', `replacement-receiver@${OTHER}`, 'Replacement', 'hand_off_request',
+      { text: 'For the new controller', idempotency_key: 'replacement-controller' });
+    const replacement = store.get().outbox.at(-1)!;
+    authorize.mockResolvedValueOnce({ allowed: true });
+    authorize.mockImplementationOnce(async () => {
+      published = { agentId: 'replacement-receiver', enabled: true, name: 'Replacement' };
+      await receiveDirections(OTHER, { v: AGENT_CALL_VERSION, directions: [], controller: published,
+        epoch: { sender: state.peerPairing, receiver: state.pairing } });
+      return { allowed: true };
+    });
+    connected = true;
+    await flushOutbox(OTHER);
+    expect(getDelivery('sender', old.id)).toMatchObject({ state: 'refused', reason: 'authorization_revoked' });
+    expect(getDelivery('sender', replacement.id)).toMatchObject({ state: 'delivered', attempts: 1 });
+    expect(posts.filter((post) => post.path.endsWith('/agent-call')).map((post) => post.body.to)).toEqual(['replacement-receiver']);
+    expect(exchanges()).toHaveLength(2);
+  });
+
+  it('does not let an in-flight exchange overwrite a newer inbound unknown publication', async () => {
+    published = { agentId: 'receiver', enabled: true, name: 'Ready' };
+    const item = await queueControllerCall();
+    learn.mockImplementationOnce(async () => {
+      await receiveDirections(OTHER, { v: AGENT_CALL_VERSION, directions: [],
+        controller: { agentId: null, enabled: true, name: 'Starting' },
+        epoch: { sender: state.peerPairing, receiver: state.pairing },
+      });
+    });
+    connected = true;
+    await flushOutbox(OTHER);
+    expect(getDelivery('sender', item.id)).toMatchObject({ state: 'queued', reason: 'waiting_for_controller', attempts: 0 });
+    expect(authorize).not.toHaveBeenCalled();
+    expect(posts.filter((post) => post.path.endsWith('/agent-call'))).toEqual([]);
+    await vi.advanceTimersByTimeAsync(READINESS_RETRY_MS);
+    expect(getDelivery('sender', item.id)).toMatchObject({ state: 'delivered', attempts: 1 });
+  });
+
+  it('does not let an older incoming publication finish over a newer unknown state', async () => {
+    await setConnectionLink({ agentId: 'receiver', machineId: OTHER }, { agentId: 'sender' }, true);
+    const epoch = { sender: state.peerPairing, receiver: state.pairing };
+    await receiveDirections(OTHER, { v: AGENT_CALL_VERSION, directions: [],
+      controller: { agentId: null, enabled: true, name: 'Starting' }, epoch });
+    let release!: () => void;
+    learn.mockImplementationOnce(() => new Promise<void>((resolve) => { release = resolve; }));
+    const older = receiveDirections(OTHER, { v: AGENT_CALL_VERSION, directions: [],
+      controller: { agentId: 'receiver', enabled: true, name: 'Old' }, epoch });
+    await receiveDirections(OTHER, { v: AGENT_CALL_VERSION, directions: [],
+      controller: { agentId: null, enabled: true, name: 'Starting' }, epoch });
+    release();
+    expect(await older).toEqual({ applied: 0 });
+    expect(await receiveAgentCall(OTHER, call({
+      from: { agentId: 'receiver', name: 'Receiver' }, to: 'sender', epoch,
+    }))).toMatchObject({ status: 503, error: 'controller_not_ready' });
+    expect(seen).toEqual([]);
   });
 
   it('does not block an unrelated ordinary lane behind an unknown controller publication', async () => {

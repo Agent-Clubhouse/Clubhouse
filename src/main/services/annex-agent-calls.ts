@@ -381,16 +381,21 @@ function transient(status: number, body: unknown, queuedAt: string): boolean {
 
 const flushing = new Map<string, { generation: number; promise: Promise<void> }>();
 const retryTimers = new Map<string, { timer: ReturnType<typeof setTimeout>; at: number }>();
-const controllerStates = new Map<string, { state: 'unknown' | 'ready' | 'off'; epoch: string }>();
+const controllerStates = new Map<string, { state: 'unknown' | 'ready' | 'off'; epoch: string; agentId?: string | null }>();
 
-function controllerState(machine: string, state: 'unknown' | 'ready' | 'off'): void {
+function controllerState(machine: string, state: 'unknown' | 'ready' | 'off', agentId?: string | null): void {
   const members = new Set(annexPeers.listPeers().map((peer) => peer.fingerprint.toLowerCase()));
   for (const id of controllerStates.keys()) if (id !== machine && !members.has(id)) controllerStates.delete(id);
   const epoch = deliveryHash(outgoingEpoch(machine));
   const previous = controllerStates.get(machine);
-  if (previous?.state === state && previous.epoch === epoch) return;
-  controllerStates.set(machine, { state, epoch });
-  appLog('core:annex', 'info', 'Controller delivery readiness changed', { meta: { machine, state } });
+  controllerStates.set(machine, { state, epoch, agentId });
+  if (previous?.state === state && previous.epoch === epoch && previous.agentId === agentId) return;
+  appLog('core:annex', 'info', 'Controller delivery readiness changed', { meta: { machine, state, agentId } });
+}
+
+function captureControllerState(machine: string, publication: FederationPublicationGuard): FederationPublicationGuard {
+  const previous = controllerStates.get(machine);
+  return { epoch: publication.epoch, current: () => publication.current() && controllerStates.get(machine) === previous };
 }
 
 function needsControllerPublication(item: OutboxItem): boolean {
@@ -401,13 +406,14 @@ function needsControllerPublication(item: OutboxItem): boolean {
     || item.body.from.agentId === local.agentId;
 }
 
-async function waitForController(machine: string): Promise<void> {
+async function waitForController(machine: string, unsentCallId?: string): Promise<void> {
   controllerState(machine, 'unknown');
   retryLater(machine, READINESS_RETRY_MS);
   const nextAttemptAt = new Date(retryTimers.get(machine)!.at).toISOString();
   await deliveries.update((file) => {
     for (const item of file.outbox.filter((item) => item.machine === machine && needsControllerPublication(item))) {
       const saved = file.deliveries.find((status) => status.callId === item.id)!;
+      if (item.id === unsentCallId) saved.attempts--;
       Object.assign(saved, { state: 'queued', reason: 'waiting_for_controller', readinessRetry: true, nextAttemptAt,
         updatedAt: new Date().toISOString() });
     }
@@ -552,11 +558,12 @@ async function flushOutboxPass(machine: string, generation: number): Promise<voi
   // earliest retry timer instead of immediately selecting the same item again.
   const deferred = new Set<string>();
   let controllerExchange: ExchangeResult | undefined;
+  let exchangeSender: string | undefined;
   const deferControllers = () => {
     for (const item of waitingFor(machine).filter(needsControllerPublication)) deferred.add(deliveryLane(item.body));
   };
   const controllerUnknown = (item: OutboxItem): boolean => needsControllerPublication(item)
-    && (!federation!.ready() || !federation!.publication(federation!.local()));
+    && (!federation!.ready() || !federation!.publication(federation!.local()) || controllerStates.get(machine)?.state === 'unknown');
   {
     for (;;) {
       if (generation !== lifecycle) return;
@@ -581,6 +588,7 @@ async function flushOutboxPass(machine: string, generation: number): Promise<voi
         await finishDelivery(item, attempted ? 'indeterminate' : 'refused', text('This delivery belongs to an earlier network pairing. No input was sent under the new authorization; any earlier acceptance is unconfirmed.', true), 'pairing_changed');
         continue;
       }
+      let controllerSender: string | undefined;
       if (needsControllerPublication(item)) {
         const owner = federation!;
         const local = owner.ready() ? owner.publication(owner.local()) : undefined;
@@ -589,7 +597,8 @@ async function flushOutboxPass(machine: string, generation: number): Promise<voi
           await finishDelivery(item, 'refused', text('The sending Dispatcher was turned off.', true), 'authorization_revoked');
           continue;
         }
-        if (!local) { await waitForController(machine); deferControllers(); continue; }
+        if (!local?.agentId) { await waitForController(machine); deferControllers(); continue; }
+        controllerSender = local.agentId;
         const previous = controllerStates.get(machine);
         if (previous?.state === 'unknown' && previous.epoch === deliveryHash(outgoingEpoch(machine))
           && (retryTimers.get(machine)?.at ?? 0) > Date.now()) {
@@ -597,13 +606,16 @@ async function flushOutboxPass(machine: string, generation: number): Promise<voi
           deferControllers();
           continue;
         }
+        if (controllerExchange && (exchangeSender !== controllerSender || previous?.agentId !== controllerExchange.controller?.agentId
+          || previous?.state !== (controllerExchange.controller?.enabled ? 'ready' : 'off')
+          || previous?.epoch !== deliveryHash(outgoingEpoch(machine)))) controllerExchange = undefined;
         controllerExchange ??= await syncShareWith(machine);
+        exchangeSender = controllerSender;
         if (generation !== lifecycle) return;
         if (!isNetworkComputer(machine) || deliveryHash(item.body.epoch) !== deliveryHash(outgoingEpoch(machine))) continue;
         if (controllerUnknown(item)) { await waitForController(machine); deferControllers(); continue; }
         const published = controllerExchange.controller;
         if (!controllerExchange.shared || !published) { await waitForController(machine); deferControllers(); continue; }
-        controllerState(machine, published.enabled ? 'ready' : 'off');
         if (!published.enabled && (item.body.tool === 'hand_off_request' || item.remoteDispatcherAuthorization || published.agentId === item.body.to)) {
           await finishDelivery(item, 'refused', text('The receiving Dispatcher was turned off.', true), 'authorization_revoked');
           continue;
@@ -665,13 +677,33 @@ async function flushOutboxPass(machine: string, generation: number): Promise<voi
       if (generation !== lifecycle) return;
       const currentAuthorization = await authorize!(item);
       if (generation !== lifecycle) return;
-      if (controllerUnknown(item)) { await waitForController(machine); deferControllers(); continue; }
-      if (currentAuthorization.allowed === false) {
-        await finishDelivery(item, 'refused', text(currentAuthorization.reason, true), 'authorization_revoked');
-        continue;
-      }
       if (!isNetworkComputer(machine) || deliveryHash(item.body.epoch) !== deliveryHash(outgoingEpoch(machine))) {
         await finishDelivery(item, 'refused', text('The network pairing changed before input was sent.', true), 'pairing_changed');
+        continue;
+      }
+      if (controllerSender !== undefined) {
+        const owner = federation!;
+        const local = owner.ready() ? owner.publication(owner.local()) : undefined;
+        const remote = controllerStates.get(machine);
+        const expected = controllerExchange?.controller;
+        const controllerTarget = item.body.tool === 'hand_off_request' || !!item.remoteDispatcherAuthorization || expected?.agentId === item.body.to;
+        if (local?.enabled === false || (local && local.agentId !== controllerSender)
+          || (controllerTarget && (remote?.state === 'off' || (remote?.state === 'ready' && remote.agentId !== expected?.agentId)))) {
+          await finishDelivery(item, 'refused', text('The controller identity or federation authorization changed before input was sent.', true), 'authorization_revoked');
+          continue;
+        }
+        if (!local || !remote || remote.state === 'unknown' || remote.epoch !== deliveryHash(outgoingEpoch(machine)) || !expected) {
+          await waitForController(machine, item.id);
+          deferControllers();
+          continue;
+        }
+      } else if (controllerUnknown(item)) {
+        await waitForController(machine, item.id);
+        deferControllers();
+        continue;
+      }
+      if (currentAuthorization.allowed === false) {
+        await finishDelivery(item, 'refused', text(currentAuthorization.reason, true), 'authorization_revoked');
         continue;
       }
       if (!session.connected(machine)) return;
@@ -1058,20 +1090,22 @@ async function exchangeShare(machine: string): Promise<ExchangeResult> {
   try {
     const directions = await shareFor(machine, self);
     if (!publication.current()) return { shared: false };
+    const replyPublication = captureControllerState(machine, publication);
     const response = await transport.post(machine, '/api/v1/network/connections', { v: AGENT_CALL_VERSION, directions: directions as unknown as Record<string, unknown>[], ...(owner && { controller: owner.local(), epoch: publication.epoch }), ...(owner?.extra && { extra: owner.extra.local() }) });
     if (response.status !== 200 || !publication.current()) return { shared: false };
     const answer = response.body as { controller?: unknown; epoch?: unknown; extra?: unknown } | null;
     if ((answer?.epoch !== undefined || (owner && answer?.controller !== undefined)) && !publicationEpochMatches(answer?.epoch, publication.epoch)) return { shared: false };
     const controller = owner?.publication(answer?.controller);
     if (owner && controller) {
-      await owner.learn(machine, answer.controller, publication);
+      await owner.learn(machine, answer.controller, replyPublication);
     }
     // The lead (#3351) only under the same authenticated pairing as the controller.
     if (owner?.extra && answer?.extra !== undefined && publicationEpochMatches(answer.epoch, publication.epoch)) {
       await owner.extra.learn(machine, answer.extra, publication);
     }
     if (!publication.current()) return { shared: false };
-    if (owner) controllerState(machine, controller ? controller.enabled ? 'ready' : 'off' : 'unknown');
+    // A newer inbound publication supersedes this in-flight reply.
+    if (owner && replyPublication.current()) controllerState(machine, controller ? controller.enabled ? 'ready' : 'off' : 'unknown', controller?.agentId);
     const theirs = (response.body as { directions?: unknown } | null)?.directions;
     if (Array.isArray(theirs) && theirs.length > 0) await receiveDirections(machine, { v: AGENT_CALL_VERSION, directions: theirs });
     return { shared: true, controller };
@@ -1110,10 +1144,11 @@ export async function receiveDirections(senderMachine: string, raw: unknown, now
   }
   if (federation && metadata.controller !== undefined) {
     if (!publicationEpochMatches(metadata.epoch, publication.epoch)) return { status: 400, error: 'invalid_controller_epoch', message: 'Controller publication requires its authenticated network pairing.' };
-    await federation.learn(machine, metadata.controller, publication);
+    const controllerPublication = captureControllerState(machine, publication);
+    await federation.learn(machine, metadata.controller, controllerPublication);
     if (!publication.current()) return { status: 403, error: 'pairing_changed', message: 'The network pairing changed before controller publication committed.' };
     const controller = federation.publication(metadata.controller);
-    controllerState(machine, controller ? controller.enabled ? 'ready' : 'off' : 'unknown');
+    if (controllerPublication.current()) controllerState(machine, controller ? controller.enabled ? 'ready' : 'off' : 'unknown', controller?.agentId);
   }
   if (federation?.extra && metadata.extra !== undefined && publicationEpochMatches(metadata.epoch, publication.epoch)) {
     await federation.extra.learn(machine, metadata.extra, publication);
