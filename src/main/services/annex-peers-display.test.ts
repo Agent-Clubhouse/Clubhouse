@@ -28,7 +28,7 @@ it.each(['valid', 'corrupt', 'missing', 'backup-only'])('does not load a cold %s
 it('projects only the selected safe name/time from deliberately warmed memory without credential reads or notification', async () => {
   await put([peer(), peer({ fingerprint: 'other-machine', alias: 'PRIVATE_OTHER_ALIAS', lastSeen: 'PRIVATE_OTHER_TIME' })]); listPeers(); clearCalls();
   const before = await disk(), result = readPeerMetadataForDisplay('SELECTED-MACHINE');
-  expect(result).toMatchObject({ state: 'ok', value: { alias: { state: 'ok', value: 'Selected computer' }, lastSeen: { state: 'ok', value: '2026-11-19T21:00:00Z' } }, inputs: [{ source: 'host-cache' }] });
+  expect.soft(result).toMatchObject({ state: 'ok', value: { alias: { state: 'ok', value: 'Selected computer' }, lastSeen: { state: 'ok', value: '2026-11-19T21:00:00Z' } }, inputs: [{ source: 'host-cache' }] });
   expect.soft(JSON.stringify(result)).not.toMatch(/PRIVATE_|fingerprint|tls|role|pem|certificate/i); untouched(); expect.soft(await disk()).toEqual(before);
 });
 it('keeps missing-cache, absent-selected and ambiguous identity unknown rather than verified empty', async () => {
