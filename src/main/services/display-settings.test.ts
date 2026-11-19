@@ -54,3 +54,38 @@ it('does not retain additional raw display snapshots for stores without explicit
   const store = createSettingsStore(filename, {}); store.get(); expect(store.peekLoaded?.()).toBeUndefined();
   await store.save({ privateCredential: 'still-not-display-metadata' }); expect(store.peekLoaded?.()).toBeUndefined();
 });
+
+it.each(['value', 'primary', 'raw'] as const)('detaches nested %s objects from the live cache and every later display read', (through) => {
+  fs.writeFileSync(primary(), '{"nested":{"enabled":true,"limit":0}}');
+  const store = createSettingsStore(filename, { nested: { enabled: true, limit: 10 } }, undefined, { displaySnapshot: true }); store.get(); oldTemp(); const before = disk();
+  const peeked = store.peekLoaded!()!; const displayed = readDisplaySettings(store, filename);
+  expect(displayed.state).toBe('ok');
+  const root = through === 'value' ? peeked.value : through === 'primary' ? peeked.primary : displayed.state === 'ok' ? displayed.raw : {};
+  const nested = (root as { nested: { enabled: boolean; limit: number } }).nested; nested.enabled = false; nested.limit = 999;
+  expect.soft(store.get()).toEqual({ nested: { enabled: true, limit: 0 } });
+  expect.soft(store.peekLoaded?.()?.value).toEqual({ nested: { enabled: true, limit: 0 } });
+  expect.soft(readDisplaySettings(store, filename)).toMatchObject({ state: 'ok', raw: { nested: { enabled: true, limit: 0 } } });
+  expect.soft(disk()).toEqual(before);
+});
+it.each(['value', 'primary', 'raw'] as const)('detaches nested %s snapshots from accepted-save state and retained rollback provenance', async (through) => {
+  fs.writeFileSync(primary(), '{"nested":{"enabled":true,"limit":0}}');
+  const store = createSettingsStore(filename, { nested: { enabled: true, limit: 10 } }, undefined, { displaySnapshot: true, rollBackFailedSaves: true }); store.get();
+  const original = store.peekLoaded!()!, originalRaw = readDisplaySettings(store, filename);
+  let checks = 0;
+  const saving = store.save({ nested: { enabled: false, limit: 1 } }, { prepare: async () => {}, check: () => { if (++checks > 1) throw new Error('deliberate queued refusal'); } });
+  const accepted = store.peekLoaded!()!, acceptedRaw = readDisplaySettings(store, filename);
+  const select = (snapshot: typeof original, displayed: typeof originalRaw) => through === 'value' ? snapshot.value : through === 'primary' ? snapshot.primary : displayed.state === 'ok' ? displayed.raw : {};
+  (select(original, originalRaw) as { nested: { limit: number } }).nested.limit = 888;
+  (select(accepted, acceptedRaw) as { nested: { limit: number } }).nested.limit = 999;
+  expect.soft(store.get()).toEqual({ nested: { enabled: false, limit: 1 } });
+  await expect(saving).rejects.toThrow('deliberate queued refusal');
+  expect.soft(store.get()).toEqual({ nested: { enabled: true, limit: 0 } });
+  expect.soft(readDisplaySettings(store, filename)).toMatchObject({ state: 'ok', raw: { nested: { enabled: true, limit: 0 } } });
+  expect.soft(fs.readFileSync(primary(), 'utf8')).toBe('{"nested":{"enabled":true,"limit":0}}');
+});
+it('keeps an earlier detached value snapshot stable when ordinary code changes a nested live value', () => {
+  fs.writeFileSync(primary(), '{"nested":{"enabled":true}}');
+  const store = createSettingsStore(filename, { nested: { enabled: true } }, undefined, { displaySnapshot: true }); store.get();
+  const previous = store.peekLoaded!()!; store.get().nested.enabled = false;
+  expect(previous.value.nested.enabled).toBe(true);
+});
