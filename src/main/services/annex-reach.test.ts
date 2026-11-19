@@ -1,5 +1,7 @@
 import { describe, it, expect } from 'vitest';
-import { formatAddress, KNOWN_HOSTS_MAX, parseTypedHost, rankAddresses, reachCandidates, rememberHost, withReachableAs } from './annex-reach';
+import {
+  formatAddress, isPrivateHost, KNOWN_HOSTS_MAX, shareableEndpoints, parseTypedHost, rankAddresses, reachCandidates, rememberHost, routeCollision, savedLoopbackRoutes, withReachableAs,
+} from './annex-reach';
 
 describe('annex reach (#3058)', () => {
   describe('a typed host', () => {
@@ -97,5 +99,57 @@ describe('annex reach (#3058)', () => {
     expect(rememberHost(undefined, 'x')).toEqual(['x']);
     const many = Array.from({ length: 10 }, (_, i) => `h${i}`);
     expect(rememberHost(many, 'new')).toHaveLength(KNOWN_HOSTS_MAX);
+  });
+});
+
+describe('saved routes and collisions (#3608)', () => {
+  it('a loopback host is always private; a typed one is unless the device itself also gave it', () => {
+    expect(isPrivateHost(undefined, '127.0.0.1')).toBe(true);
+    expect(isPrivateHost({}, '192.168.1.5')).toBe(false);
+    expect(isPrivateHost({ privateHosts: ['Studio.ts.net'] }, 'studio.ts.net')).toBe(true);
+    // Provenance is the host and port together.
+    const both = { privateHosts: ['192.168.1.5'], sharedEndpoints: { '192.168.1.5': 9443 } };
+    expect(isPrivateHost(both, '192.168.1.5', 9443)).toBe(false);
+    expect(isPrivateHost(both, '192.168.1.5', 7443)).toBe(true);
+    expect(isPrivateHost(both, '192.168.1.5')).toBe(true);
+    expect(isPrivateHost({ sharedEndpoints: { '127.0.0.1': 9443 } }, '127.0.0.1', 9443)).toBe(true);
+  });
+
+  it('shares a host the device gave at the port it gave, never at a private port on the same host', () => {
+    // Same IP: the link gave 10.20.0.5:9443, this machine also reaches it through a forward at 7443.
+    expect(shareableEndpoints({
+      knownHosts: ['10.20.0.5'], hostPorts: { '10.20.0.5': 7443 }, mainPort: 7443,
+      privateHosts: ['10.20.0.5'], sharedEndpoints: { '10.20.0.5': 9443 },
+    })).toEqual([{ host: '10.20.0.5', port: 9443 }]);
+    // Different IPs: the shared one at its port, the private one not at all, loopback never.
+    expect(shareableEndpoints({
+      knownHosts: ['10.30.0.7', '192.168.1.5', '127.0.0.1'], hostPorts: { '10.30.0.7': 7443, '192.168.1.5': 9443, '127.0.0.1': 7555 },
+      mainPort: 9443, privateHosts: ['10.30.0.7'], sharedEndpoints: { '192.168.1.5': 9443 },
+    })).toEqual([{ host: '192.168.1.5', port: 9443 }]);
+    // A typed-only host has no shareable endpoint.
+    expect(shareableEndpoints({ knownHosts: ['10.30.0.7'], hostPorts: { '10.30.0.7': 7443 }, privateHosts: ['10.30.0.7'] })).toEqual([]);
+  });
+
+  it("finds this computer's own Annex ports on any loopback address, and leaves direct addresses alone", () => {
+    const own = { mainPort: 7443, pairingPort: 7444 };
+    expect(routeCollision({ host: '127.0.0.1', port: 7443 }, own, [])).toEqual({ kind: 'own-listener', port: 7443 });
+    expect(routeCollision({ host: '::1', port: 7444 }, own, [])).toEqual({ kind: 'own-listener', port: 7444 });
+    expect(routeCollision({ host: 'localhost', port: 7443 }, own, [])).toEqual({ kind: 'own-listener', port: 7443 });
+    expect(routeCollision({ host: '192.168.1.5', port: 7443 }, own, [])).toBeNull();
+    expect(routeCollision({ host: '127.0.0.1', port: 7555 }, own, [])).toBeNull();
+  });
+
+  it('finds a local port already saved for another device', () => {
+    const others = [{ alias: 'Laptop', routes: savedLoopbackRoutes({ typedHost: '127.0.0.1:7555' }) },
+      { alias: 'Mini', routes: savedLoopbackRoutes({ knownHosts: ['::1', '10.0.0.4'], hostPorts: { '::1': 8443, '10.0.0.4': 7556 } }) }];
+    expect(routeCollision({ host: 'localhost', port: 7555 }, {}, others)).toEqual({ kind: 'other-forward', port: 7555, alias: 'Laptop' });
+    expect(routeCollision({ host: '127.0.0.1', port: 8443 }, {}, others)).toEqual({ kind: 'other-forward', port: 8443, alias: 'Mini' });
+    // A direct address on another device is not a local forward.
+    expect(routeCollision({ host: '127.0.0.1', port: 7556 }, {}, others)).toBeNull();
+  });
+
+  it('reads a typed loopback route without a port from the saved ports', () => {
+    expect(savedLoopbackRoutes({ typedHost: '127.0.0.1', hostPorts: { '127.0.0.1': 7600 } })).toEqual([{ host: '127.0.0.1', port: 7600, source: 'typed' }]);
+    expect(savedLoopbackRoutes({ typedHost: 'studio.ts.net:7000' })).toEqual([]);
   });
 });

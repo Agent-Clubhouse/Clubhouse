@@ -97,7 +97,7 @@ vi.mock('../util/ipc-broadcast', () => ({
 
 vi.mock('https', async (importOriginal) => {
   const actual = await importOriginal<typeof import('https')>();
-  return { ...actual, get: vi.fn() };
+  return { ...actual, request: vi.fn() };
 });
 
 // A real headless xterm, with the constructor wrapped so tests can read the
@@ -141,8 +141,8 @@ let agentCounter = 0;
  */
 function deferBufferFetch() {
   let reply: ((body: string, headers?: Record<string, string>, statusCode?: number) => void) | null = null;
-  vi.mocked(https.get).mockImplementation(((_url: string, _opts: unknown, cb: (res: unknown) => void) => {
-    const req = Object.assign(new EventEmitter(), { destroy: vi.fn() });
+  vi.mocked(https.request).mockImplementation(((_url: string, _opts: unknown, cb: (res: unknown) => void) => {
+    const req = Object.assign(new EventEmitter(), { destroy: vi.fn(), end: vi.fn() });
     reply = (body, headers = {}, statusCode = 200) => {
       const res = Object.assign(new EventEmitter(), { statusCode, headers, resume: vi.fn() });
       cb(res);
@@ -150,7 +150,7 @@ function deferBufferFetch() {
       res.emit('end');
     };
     return req;
-  }) as unknown as typeof https.get);
+  }) as unknown as typeof https.request);
   return {
     respond(body: string, headers?: Record<string, string>, statusCode = 200) {
       expect(reply).not.toBeNull();
@@ -192,7 +192,7 @@ function forwardedPtyEvents(): Array<{ data: string; seq?: number }> {
 
 describe('annex-client remote PTY buffer cache', () => {
   beforeEach(() => {
-    vi.mocked(https.get).mockReset();
+    vi.mocked(https.request).mockReset();
     vi.mocked(broadcastToAllWindows).mockClear();
     vi.mocked(Terminal).mockClear();
     headlessTerminal.disposeAll();
@@ -247,7 +247,7 @@ describe('annex-client remote PTY buffer cache', () => {
       cacheRemotePtyData(SAT, AGENT, 'line 1\r\n');
       cacheRemotePtyData(SAT, AGENT, 'line 2');
       expect(await requestPtyBuffer(SAT, AGENT)).toBe('line 1\r\nline 2');
-      expect(https.get).not.toHaveBeenCalled();
+      expect(https.request).not.toHaveBeenCalled();
     });
 
     it('returns empty string when no data cached and satellite not connected', async () => {
@@ -376,7 +376,7 @@ describe('annex-client remote PTY buffer cache', () => {
       expect(await cachedLines()).toEqual(['history', 'live']);
       // Later requests come from the cache and still have the history.
       expect((await requestPtyBuffer(SAT, AGENT)).includes('history')).toBe(true);
-      expect(https.get).toHaveBeenCalledTimes(1);
+      expect(https.request).toHaveBeenCalledTimes(1);
     });
 
     it('drops chunks received during the fetch from an older satellite that sends no seq', async () => {
@@ -399,7 +399,7 @@ describe('annex-client remote PTY buffer cache', () => {
 
       const [a, b] = await Promise.all([first, second]);
       expect(a).toEqual(b);
-      expect(https.get).toHaveBeenCalledTimes(1);
+      expect(https.request).toHaveBeenCalledTimes(1);
     });
 
     it('seeds again after the Annex server disposed every headless terminal', async () => {
@@ -416,7 +416,7 @@ describe('annex-client remote PTY buffer cache', () => {
       pending = requestPtyBufferSnapshot(SAT, AGENT);
       fetch.respond('history\r\nmore', { [ANNEX_BUFFER_HEADERS.seq]: '13' });
       await pending;
-      expect(https.get).toHaveBeenCalledTimes(2);
+      expect(https.request).toHaveBeenCalledTimes(2);
       expect(await cachedLines()).toEqual(['history', 'more']);
     });
 
@@ -438,13 +438,13 @@ describe('annex-client remote PTY buffer cache', () => {
 
     it('settles when the connection drops mid-body, so later requests are not stuck', async () => {
       _addConnectedSatelliteForTesting(SAT);
-      vi.mocked(https.get).mockImplementationOnce(((_url: string, _opts: unknown, cb: (res: unknown) => void) => {
+      vi.mocked(https.request).mockImplementationOnce(((_url: string, _opts: unknown, cb: (res: unknown) => void) => {
         const res = Object.assign(new EventEmitter(), { statusCode: 200, headers: {}, resume: vi.fn() });
         cb(res);
         res.emit('data', Buffer.from('partial'));
         res.emit('close');
-        return Object.assign(new EventEmitter(), { destroy: vi.fn() });
-      }) as unknown as typeof https.get);
+        return Object.assign(new EventEmitter(), { destroy: vi.fn(), end: vi.fn() });
+      }) as unknown as typeof https.request);
 
       expect(await requestPtyBufferSnapshot(SAT, AGENT)).toEqual({ data: '', seq: 0 });
     });
@@ -462,7 +462,7 @@ describe('annex-client remote PTY buffer cache', () => {
       pending = requestPtyBufferSnapshot(SAT, AGENT);
       fetch.respond('fresh', { [ANNEX_BUFFER_HEADERS.seq]: '5' });
       expect((await pending).data).toBe('fresh');
-      expect(https.get).toHaveBeenCalledTimes(2);
+      expect(https.request).toHaveBeenCalledTimes(2);
     });
 
     it('does not reuse a pre-disconnect seed for a view reopening after reconnect', async () => {
@@ -475,7 +475,7 @@ describe('annex-client remote PTY buffer cache', () => {
       const newFetch = deferBufferFetch();
       const reopened = requestPtyBufferSnapshot(SAT, AGENT);
       oldFetch.respond('stale screen', { [ANNEX_BUFFER_HEADERS.seq]: '12' });
-      await vi.waitFor(() => expect(https.get).toHaveBeenCalledTimes(2));
+      await vi.waitFor(() => expect(https.request).toHaveBeenCalledTimes(2));
       newFetch.respond('screen after wake', { [ANNEX_BUFFER_HEADERS.seq]: '17' });
 
       expect((await reopened).data).toBe('screen after wake');
@@ -490,19 +490,19 @@ describe('annex-client remote PTY buffer cache', () => {
       _addConnectedSatelliteForTesting(SAT);
       const retryFetch = deferBufferFetch();
       firstFetch.respond('stale screen');
-      await vi.waitFor(() => expect(https.get).toHaveBeenCalledTimes(2));
+      await vi.waitFor(() => expect(https.request).toHaveBeenCalledTimes(2));
 
       _receiveSatelliteDisconnectForTesting(SAT);
       _addConnectedSatelliteForTesting(SAT);
       retryFetch.respond('another stale screen');
       expect((await pending).data).toBe('');
-      expect(https.get).toHaveBeenCalledTimes(2);
+      expect(https.request).toHaveBeenCalledTimes(2);
 
       const stableFetch = deferBufferFetch();
       const stableRequest = requestPtyBufferSnapshot(SAT, AGENT);
       stableFetch.respond('current screen');
       expect((await stableRequest).data).toBe('current screen');
-      expect(https.get).toHaveBeenCalledTimes(3);
+      expect(https.request).toHaveBeenCalledTimes(3);
     });
 
     it('stops trimming after a disconnect, since a restarted satellite counts from zero', async () => {

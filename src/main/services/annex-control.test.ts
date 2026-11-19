@@ -10,13 +10,16 @@
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { EventEmitter } from 'events';
+import { createHash, randomUUID } from 'crypto';
 
 vi.mock('electron', () => ({ app: { getPath: () => '/tmp/annex-control-test' } }));
 vi.mock('ws', () => ({ WebSocket: { OPEN: 1, CLOSED: 3 }, WebSocketServer: vi.fn() }));
 vi.mock('./log-service', () => ({ appLog: vi.fn() }));
 vi.mock('./annex-tls', () => ({ extractPeerFingerprint: vi.fn(), extractPeerCertificateFingerprint: vi.fn() }));
+vi.mock('./annex-device-signal', () => ({ devicesChanged: vi.fn() }));
 
 import * as control from './annex-control';
+import { devicesChanged } from './annex-device-signal';
 import { authorize, stillAuthorized, type AnnexAuthorizerDeps, type AnnexPrincipal } from './annex-authorizer';
 import type { ControlHttpRequest } from '../../shared/annex-control-protocol';
 import { CONTROL_CLOSE_BACKLOG, CONTROL_CLOSE_PROTOCOL, CONTROL_CLOSE_REVOKED, CONTROL_CLOSE_VERSION, CONTROL_FRAME_MAX_BYTES } from '../../shared/annex-control-protocol';
@@ -136,6 +139,10 @@ function sentOfType(ws: FakeSocket, type: string) {
   return ws.sent.filter((m) => m.type === type);
 }
 
+function lateResponse(id: string) {
+  return { v: 1, type: 'bulk', op: 'start', transfer: randomUUID(), id, kind: 'response', size: 1, meta: { status: 200, headers: {} } };
+}
+
 beforeEach(() => {
   world = { peer: peer() };
   inboundAllowed = true;
@@ -143,6 +150,7 @@ beforeEach(() => {
   dispatch.mockClear();
   served = [];
   subscribeOnServer.mockClear();
+  vi.mocked(devicesChanged).mockClear();
   installServer();
 });
 
@@ -151,12 +159,179 @@ afterEach(() => {
   control.resetControlForTests();
 });
 
+describe('locally cancelled late bulk response offers', () => {
+  async function cancel(id: string, input: control.ControlRequestInput = { method: 'GET', path: '/api/v1/status' }, maxResponseBytes?: number) {
+    const abort = new AbortController();
+    const result = expect(control.request(TARGET, input, { requestId: id, signal: abort.signal, maxResponseBytes }))
+      .rejects.toMatchObject({ code: 'cancelled', indeterminate: input.method !== 'GET' });
+    abort.abort();
+    await result;
+  }
+
+  it('cancels only the delayed offer and keeps subscriptions and the next request on the same link', async () => {
+    const { requesterWs, targetWs } = await connected();
+    const onEnd = vi.fn();
+    const subscription = control.subscribe(TARGET, { onFrame: vi.fn(), onEnd });
+    await flush();
+    requesterWs.peer = null;
+    await cancel('cancelled');
+    const offer = lateResponse('cancelled');
+    requesterWs.deliver(offer);
+    expect(requesterWs.sent).toContainEqual({ ...offer, op: 'cancel' });
+    expect(sentOfType(requesterWs, 'bulk').filter((frame) => frame.op === 'credit')).toHaveLength(0);
+    expect(requesterWs.closed).toBeNull();
+    expect(onEnd).not.toHaveBeenCalled();
+    expect(served[0].close).not.toHaveBeenCalled();
+    requesterWs.peer = targetWs;
+    expect((await control.request(TARGET, { method: 'GET', path: '/api/v1/status' })).status).toBe(200);
+    expect(requesterWs.closed).toBeNull();
+    subscription.close();
+  });
+
+  it('still closes for a never-issued response id', async () => {
+    const { requesterWs } = await connected();
+    requesterWs.deliver(lateResponse('never-issued'));
+    expect(requesterWs.closed?.code).toBe(CONTROL_CLOSE_PROTOCOL);
+  });
+
+  it.each([control.CANCELLED_REQUEST_TTL_MS - 1, control.CANCELLED_REQUEST_TTL_MS, control.CANCELLED_REQUEST_TTL_MS + 1])('enforces the exact cancellation TTL after %i ms', async (elapsed) => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    const { requesterWs } = await connected();
+    requesterWs.peer = null;
+    await cancel('expired');
+    vi.setSystemTime(Date.now() + elapsed);
+    requesterWs.deliver(lateResponse('expired'));
+    if (elapsed < control.CANCELLED_REQUEST_TTL_MS) expect(requesterWs.closed).toBeNull();
+    else expect(requesterWs.closed?.code).toBe(CONTROL_CLOSE_PROTOCOL);
+  });
+
+  it('retains exactly the newest bounded set through a flood of legitimate cancels', async () => {
+    const { requesterWs } = await connected();
+    requesterWs.peer = null;
+    const count = control.CANCELLED_REQUEST_MAX_PER_LINK * 3 + 1;
+    for (let index = 0; index < count; index++) await cancel(`flood-${index}`);
+    expect(sentOfType(requesterWs, 'request')).toHaveLength(count);
+    for (let index = count - control.CANCELLED_REQUEST_MAX_PER_LINK; index < count; index++) {
+      requesterWs.deliver(lateResponse(`flood-${index}`));
+      expect(requesterWs.closed).toBeNull();
+    }
+    expect(sentOfType(requesterWs, 'bulk').filter((frame) => frame.op === 'cancel')).toHaveLength(control.CANCELLED_REQUEST_MAX_PER_LINK);
+    requesterWs.deliver(lateResponse(`flood-${count - control.CANCELLED_REQUEST_MAX_PER_LINK - 1}`));
+    expect(requesterWs.closed?.code).toBe(CONTROL_CLOSE_PROTOCOL);
+  });
+
+  it.each(['same token', 'new token'])('does not tolerate a second offer using the %s', async (replay) => {
+    const { requesterWs } = await connected();
+    requesterWs.peer = null;
+    await cancel('once');
+    const offer = lateResponse('once');
+    requesterWs.deliver(offer);
+    expect(requesterWs.closed).toBeNull();
+    requesterWs.deliver(replay === 'same token' ? offer : lateResponse('once'));
+    expect(requesterWs.closed?.code).toBe(CONTROL_CLOSE_PROTOCOL);
+  });
+
+  it.each(['metadata', 'request kind', 'client kind', 'route limit', 'local limit'])('does not exempt an offer with invalid %s', async (invalid) => {
+    const { requesterWs } = await connected();
+    requesterWs.peer = null;
+    const path = '/api/v1/icons/agents/a';
+    await cancel('invalid', { method: 'GET', path }, invalid === 'local limit' ? 0 : undefined);
+    const offer = lateResponse('invalid');
+    if (invalid === 'metadata') requesterWs.deliver({ ...offer, meta: { status: '200', headers: {} } });
+    if (invalid === 'request kind') requesterWs.deliver({ ...offer, kind: 'request', meta: { method: 'GET', path } });
+    if (invalid === 'client kind') requesterWs.deliver({ ...offer, kind: 'client', meta: { frame: { type: 'clipboard:image', payload: {} } } });
+    if (invalid === 'route limit') requesterWs.deliver({ ...offer, size: control.responseBodyLimit(path, 'GET') + 1 });
+    if (invalid === 'local limit') requesterWs.deliver(offer);
+    expect(requesterWs.closed?.code).toBe(CONTROL_CLOSE_PROTOCOL);
+  });
+
+  it.each([
+    ['GET', '/api/v1/group-projects/g/bulletin/messages', false],
+    ['POST', '/api/v1/group-projects/g/bulletin/messages', true],
+    ['GET', '/api/v1/group-projects/g/bulletin/messages-extra', true],
+  ] as const)('uses the original %s %s bounds, without path/method exemptions', async (method, path, closes) => {
+    const { requesterWs } = await connected();
+    requesterWs.peer = null;
+    await cancel('bound', { method, path });
+    requesterWs.deliver({ ...lateResponse('bound'), size: CONTROL_FRAME_MAX_BYTES + 64 * 1024 + 1 });
+    if (closes) expect(requesterWs.closed?.code).toBe(CONTROL_CLOSE_PROTOCOL);
+    else expect(requesterWs.closed).toBeNull();
+  });
+
+  it('never applies one connection cancellation to a fresh authenticated connection', async () => {
+    const old = await connected();
+    old.requesterWs.peer = null;
+    await cancel('old-link');
+    control.closeFor(TARGET, 'in');
+    await flush();
+    const fresh = await connected();
+    fresh.requesterWs.deliver(lateResponse('old-link'));
+    expect(fresh.requesterWs.closed?.code).toBe(CONTROL_CLOSE_PROTOCOL);
+  });
+
+  it('invalidates the exception when the local caller reuses the request id', async () => {
+    const { requesterWs, targetWs } = await connected();
+    requesterWs.peer = null;
+    await cancel('reused');
+    requesterWs.peer = targetWs;
+    expect((await control.request(TARGET, { method: 'GET', path: '/different' }, { requestId: 'reused' })).status).toBe(200);
+    requesterWs.deliver(lateResponse('reused'));
+    expect(requesterWs.closed?.code).toBe(CONTROL_CLOSE_PROTOCOL);
+  });
+
+  it('retains the authority-loss fence even for a recently cancelled id', async () => {
+    const { requesterWs } = await connected();
+    requesterWs.peer = null;
+    await cancel('revoked');
+    inboundAllowed = false;
+    requesterWs.deliver(lateResponse('revoked'));
+    expect(requesterWs.closed?.code).toBe(CONTROL_CLOSE_REVOKED);
+  });
+
+  it('never exempts a pre-aborted request that was not issued', async () => {
+    const { requesterWs } = await connected();
+    const abort = new AbortController();
+    abort.abort();
+    await expect(control.request(TARGET, { method: 'GET', path: '/api/v1/status' }, { requestId: 'pre-aborted', signal: abort.signal }))
+      .rejects.toMatchObject({ code: 'cancelled' });
+    expect(sentOfType(requesterWs, 'request')).toHaveLength(0);
+    requesterWs.deliver(lateResponse('pre-aborted'));
+    expect(requesterWs.closed?.code).toBe(CONTROL_CLOSE_PROTOCOL);
+  });
+
+  it('does not remember an abort after a request failed to issue', async () => {
+    const { requesterWs } = await connected();
+    const abort = new AbortController();
+    await expect(control.request(TARGET, {
+      method: 'POST', path: '/api/v1/status', body: Buffer.alloc(CONTROL_FRAME_MAX_BYTES + 1),
+    }, { requestId: 'not-issued', signal: abort.signal })).rejects.toMatchObject({ code: 'request_too_large' });
+    abort.abort();
+    expect(sentOfType(requesterWs, 'request')).toHaveLength(0);
+    expect(sentOfType(requesterWs, 'bulk')).toHaveLength(0);
+    requesterWs.deliver(lateResponse('not-issued'));
+    expect(requesterWs.closed?.code).toBe(CONTROL_CLOSE_PROTOCOL);
+  });
+
+  it('does not broaden the exception to request timeouts', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    const { requesterWs } = await connected();
+    requesterWs.peer = null;
+    const result = expect(control.request(TARGET, { method: 'GET', path: '/api/v1/status' }, { requestId: 'timeout', timeoutMs: 1 }))
+      .rejects.toMatchObject({ code: 'timeout' });
+    await vi.advanceTimersByTimeAsync(1);
+    await result;
+    requesterWs.deliver(lateResponse('timeout'));
+    expect(requesterWs.closed?.code).toBe(CONTROL_CLOSE_PROTOCOL);
+  });
+});
+
 describe('capability hello and mixed versions', () => {
   it('the accepting side sends nothing until the opener says hello, then only what both support', async () => {
     const ws = new FakeSocket();
     control._attachForTesting(ws as never, TARGET, TARGET_PIN, 'in');
     await flush();
     expect(ws.sent).toEqual([]);
+    expect(control.getLinkReadiness(TARGET)).toEqual({ acceptedHere: false, openedHere: false });
     expect(control.hasReverseLink(TARGET)).toBe(false);
     await expect(control.request(TARGET, { method: 'GET', path: '/api/v1/status' })).rejects.toMatchObject({ code: 'transport_unavailable', indeterminate: false });
     expect(ws.sent).toEqual([]);
@@ -173,6 +348,8 @@ describe('capability hello and mixed versions', () => {
     await expect(control.request(TARGET, { method: 'POST', path: '/api/v1/network/agent-call', body: '{}' })).rejects.toMatchObject({ code: 'not_supported', indeterminate: false });
     expect(control.hasReverseLink(TARGET)).toBe(false);
     expect(sentOfType(ws, 'request')).toEqual([]);
+    expect(control.getLinkReadiness(TARGET)).toEqual({ acceptedHere: false, openedHere: false });
+    expect(devicesChanged).not.toHaveBeenCalled();
   });
 
   it('a target that agreed to no features answers a request not_supported and never runs it', async () => {
@@ -216,6 +393,69 @@ describe('capability hello and mixed versions', () => {
     control.connectTo(REQUESTER, '127.0.0.1', 9443, {}, REQUESTER_PIN);
     // No server, no target: connectTo returns before creating a socket (the ws mock has no constructor).
     expect(control.hasReverseLink(REQUESTER)).toBe(false);
+  });
+});
+
+describe('read-only direction readiness (#3613 P7)', () => {
+  it('reports the negotiated physical direction without dialing, sending frames or dispatching requests', async () => {
+    const { requesterWs, targetWs } = await connected();
+    const sent = [requesterWs.sent.length, targetWs.sent.length];
+    for (let i = 0; i < 10; i++) {
+      expect(control.getLinkReadiness(TARGET)).toEqual({ acceptedHere: true, openedHere: false });
+      expect(control.getLinkReadiness(REQUESTER)).toEqual({ acceptedHere: false, openedHere: true });
+      expect(control.getLinkReadiness('unknown')).toEqual({ acceptedHere: false, openedHere: false });
+    }
+    expect([requesterWs.sent.length, targetWs.sent.length]).toEqual(sent);
+    expect(dispatch).not.toHaveBeenCalled();
+    expect(requesterWs.closed).toBeNull();
+    expect(targetWs.closed).toBeNull();
+    requesterWs.readyState = 2;
+    expect(control.getLinkReadiness(TARGET).acceptedHere).toBe(false);
+    requesterWs.readyState = 1;
+    control.closeFor(TARGET, 'in');
+    await flush();
+    expect(control.getLinkReadiness(TARGET)).toEqual({ acceptedHere: false, openedHere: false });
+    expect(control.getLinkReadiness(REQUESTER)).toEqual({ acceptedHere: false, openedHere: false });
+  });
+
+  it.each(['revoked', 're-pinned'] as const)('uses the request authority for a %s peer even while both sockets remain OPEN', async (change) => {
+    const { requesterWs, targetWs } = await connected();
+    expect(control.getLinkReadiness(TARGET).acceptedHere).toBe(true);
+    expect(control.getLinkReadiness(REQUESTER).openedHere).toBe(true);
+    inboundAllowed = false;
+    world.peer = change === 'revoked' ? undefined : peer({ tlsCertificateFingerprint: 'NEW:PIN' });
+    expect(control.getLinkReadiness(TARGET).acceptedHere).toBe(false);
+    expect(control.getLinkReadiness(REQUESTER).openedHere).toBe(false);
+    expect(requesterWs.readyState).toBe(1);
+    expect(targetWs.readyState).toBe(1);
+    expect(requesterWs.closed).toBeNull();
+    expect(targetWs.closed).toBeNull();
+  });
+
+  it('notifies once on negotiated readiness and once on close, never for heartbeats or ordinary frames', () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'setInterval', 'clearInterval'] });
+    const ws = new FakeSocket();
+    control._attachForTesting(ws as never, TARGET, TARGET_PIN, 'in');
+    expect(devicesChanged).not.toHaveBeenCalled();
+    ws.deliver({ v: 1, type: 'hello', features: ['request'] });
+    expect(devicesChanged).toHaveBeenCalledTimes(1);
+    for (let i = 0; i < 3; i++) {
+      vi.advanceTimersByTime(control.HEARTBEAT_MS);
+      ws.emit('pong');
+      ws.deliver({ v: 1, type: 'response', id: `unclaimed-${i}`, status: 200, headers: {}, body: '{}', encoding: 'utf8' });
+      expect(control.getLinkReadiness(TARGET).acceptedHere).toBe(true);
+    }
+    expect(ws.pings).toBe(3);
+    expect(devicesChanged).toHaveBeenCalledTimes(1);
+    control.closeFor(TARGET, 'in');
+    control.closeFor(TARGET, 'in');
+    ws.emit('close', 1000);
+    expect(devicesChanged).toHaveBeenCalledTimes(2);
+    const old = new FakeSocket();
+    control._attachForTesting(old as never, TARGET, TARGET_PIN, 'in');
+    old.deliver({ v: 1, type: 'hello', features: [] });
+    control.closeFor(TARGET, 'in');
+    expect(devicesChanged).toHaveBeenCalledTimes(2);
   });
 });
 
@@ -311,6 +551,61 @@ describe('reverse request and response', () => {
     const result = await control.request(TARGET, { method: 'GET', path: '/x' });
     expect(result.status).toBe(500);
     expect(JSON.parse(result.body.toString())).toEqual({ error: 'internal_error' });
+  });
+});
+
+describe('requester response byte limits', () => {
+  it.each(['utf8', 'base64'] as const)('checks inline %s bytes before allocating the decoded body', async (encoding) => {
+    const { requesterWs } = await connected(['request']);
+    handler = async () => new Promise(() => {});
+    const body = encoding === 'utf8' ? 'éé!' : Buffer.from([1, 2, 3, 4, 255]).toString('base64');
+    const result = control.request(TARGET, { method: 'POST', path: '/cap' }, { requestId: 'limited', maxResponseBytes: 4 }).catch((e) => e);
+    const decode = vi.spyOn(Buffer, 'from');
+    try {
+      requesterWs.deliver({ v: 1, type: 'response', id: 'limited', status: 200, headers: {}, body, encoding });
+      expect(await result).toMatchObject({ code: 'response_too_large', indeterminate: true, requestId: 'limited' });
+      expect(decode).not.toHaveBeenCalledWith(body, encoding);
+    } finally { decode.mockRestore(); }
+    expect(requesterWs.closed).toBeNull();
+    expect(sentOfType(requesterWs, 'request')[0]).not.toHaveProperty('maxResponseBytes');
+  });
+
+  it.each([0, 4, 65537])('accepts exactly %i bytes and refuses one more without ending the subscription', async (cap) => {
+    const { requesterWs, targetWs } = await connected();
+    const onFrame = vi.fn();
+    control.subscribe(TARGET, { onFrame, onEnd: () => {} });
+    await flush();
+    handler = async () => ({ status: 200, headers: {}, body: Buffer.alloc(cap) });
+    expect((await control.request(TARGET, { method: 'GET', path: '/cap' }, { maxResponseBytes: cap })).body.length).toBe(cap);
+    const binary = sentOfType(targetWs, 'binary').length;
+    handler = async () => ({ status: 200, headers: {}, body: Buffer.alloc(cap + 1) });
+    await expect(control.request(TARGET, { method: 'GET', path: '/cap' }, { maxResponseBytes: cap }))
+      .rejects.toMatchObject({ code: 'response_too_large', indeterminate: false });
+    expect(sentOfType(targetWs, 'binary')).toHaveLength(binary);
+    expect(requesterWs.closed).toBeNull();
+    served[0].sink.send(JSON.stringify({ type: 'agent:status', payload: { agentId: 'a', status: 'idle' } }));
+    await flush();
+    expect(onFrame).toHaveBeenCalledWith({ type: 'agent:status', payload: { agentId: 'a', status: 'idle' } });
+    handler = async () => ok({ still: 'usable' });
+    expect((await control.request(TARGET, { method: 'GET', path: '/small' })).status).toBe(200);
+  });
+
+  it('does not turn a P6 path-cap violation into an ordinary caller-cap refusal', async () => {
+    const { requesterWs } = await connected();
+    handler = async () => new Promise(() => {});
+    const result = control.request(TARGET, { method: 'GET', path: '/api/v1/icons/agents/a' }, { requestId: 'forged-cap', maxResponseBytes: 1 }).catch((e) => e);
+    requesterWs.deliver({ v: 1, type: 'bulk', op: 'start', transfer: '00000000-0000-4000-8000-000000000001',
+      id: 'forged-cap', kind: 'response', size: 72 * 1024 + 1, meta: { status: 200, headers: {} } });
+    expect(requesterWs.closed?.code).toBe(CONTROL_CLOSE_PROTOCOL);
+    expect(await result).toMatchObject({ code: 'transport_unavailable' });
+    expect(sentOfType(requesterWs, 'bulk').filter((frame) => frame.op === 'credit')).toHaveLength(0);
+  });
+
+  it.each([-1, NaN, Infinity, 1.5])('rejects invalid cap %s before sending', async (maxResponseBytes) => {
+    const { requesterWs } = await connected();
+    await expect(control.request(TARGET, { method: 'POST', path: '/cap' }, { maxResponseBytes }))
+      .rejects.toMatchObject({ code: 'invalid_request', indeterminate: false });
+    expect(sentOfType(requesterWs, 'request')).toHaveLength(0);
   });
 });
 
@@ -1214,6 +1509,105 @@ describe('P6 existing binary response families', () => {
     const result = control.request(TARGET, { method: 'GET', path: '/api/v1/icons/agents/a' }, { requestId: 'forged' }).catch((e) => e);
     requesterWs.deliver({ v: 1, type: 'response', id: 'forged', status: 200, headers: {}, body: 'a', encoding: 'utf8' });
     expect(requesterWs.closed?.code).toBe(CONTROL_CLOSE_PROTOCOL); expect(await result).toMatchObject({ code: 'transport_unavailable' });
+  });
+});
+
+describe('uncapped Git diff response parity', () => {
+  const path = '/api/v1/projects/p/git/diff?file=large.txt';
+  const ceiling = CONTROL_FRAME_MAX_BYTES + 64 * 1024;
+  const digest = (body: Buffer) => createHash('sha256').update(body).digest('hex');
+
+  it.each([-1, 0, 1])('preserves bytes at the ordinary response ceiling plus %i', async (offset) => {
+    const { targetWs } = await connected();
+    const body = Buffer.alloc(ceiling + offset, 0xff);
+    handler = async () => ({ status: 200, headers: {}, body });
+    const result = await control.request(TARGET, { method: 'GET', path });
+    expect(result.body.length).toBe(body.length);
+    expect(digest(result.body)).toBe(digest(body));
+    expect(sentOfType(targetWs, 'bulk').some((frame) => frame.op === 'finish')).toBe(true);
+  });
+
+  it.each([-1, 0, 1])('retains the requester-local cap at body length plus %i', async (offset) => {
+    const { requesterWs } = await connected();
+    const body = Buffer.alloc(ceiling + 1, 0xff);
+    handler = async () => ({ status: 200, headers: {}, body });
+    const result = control.request(TARGET, { method: 'GET', path }, { maxResponseBytes: body.length + offset });
+    if (offset < 0) await expect(result).rejects.toMatchObject({ code: 'response_too_large', indeterminate: false });
+    else expect(digest((await result).body)).toBe(digest(body));
+    expect(requesterWs.closed).toBeNull();
+  });
+
+  it('does not exempt another Git route from its response ceiling', async () => {
+    const { targetWs } = await connected();
+    handler = async () => ({ status: 200, headers: {}, body: Buffer.alloc(ceiling + 1) });
+    await expect(control.request(TARGET, { method: 'GET', path: '/api/v1/projects/p/git/commit-diff?hash=abc&file=f' }))
+      .rejects.toMatchObject({ code: 'transport_unavailable', indeterminate: false });
+    expect(sentOfType(targetWs, 'binary')).toHaveLength(0);
+  });
+
+  it('does not send an oversized diff to a peer without bulk capability', async () => {
+    const { targetWs } = await connected(['request']);
+    handler = async () => ({ status: 200, headers: {}, body: Buffer.alloc(ceiling + 1) });
+    await expect(control.request(TARGET, { method: 'GET', path })).rejects.toMatchObject({ code: 'response_too_large', indeterminate: false });
+    expect(sentOfType(targetWs, 'binary')).toHaveLength(0);
+  });
+});
+
+describe('uncapped bulletin and transcript response parity', () => {
+  const ceiling = CONTROL_FRAME_MAX_BYTES + 64 * 1024;
+  const paths = [
+    '/api/v1/group-projects/g/bulletin/messages?limit=100',
+    '/api/v1/group-projects/g/bulletin/topics/general?limit=100',
+    '/api/v1/agents/a/sessions/s/transcript?offset=0&limit=5',
+  ];
+  const digest = (body: Buffer) => createHash('sha256').update(body).digest('hex');
+
+  for (const path of paths) {
+    it.each([-1, 0, 1])(`${path}: preserves bytes at the ordinary ceiling plus %i`, async (offset) => {
+      const { requesterWs, targetWs } = await connected();
+      const body = Buffer.alloc(ceiling + offset, 0xff);
+      handler = async () => ({ status: 200, headers: {}, body });
+      const result = await control.request(TARGET, { method: 'GET', path });
+      expect(result.body.length).toBe(body.length);
+      expect(digest(result.body)).toBe(digest(body));
+      expect(sentOfType(targetWs, 'bulk').some((frame) => frame.op === 'finish')).toBe(true);
+      expect(requesterWs.closed).toBeNull();
+    });
+
+    it(`${path}: retains the requester-local cap without retiring the link`, async () => {
+      const { requesterWs } = await connected();
+      handler = async () => ({ status: 200, headers: {}, body: Buffer.alloc(ceiling + 1) });
+      await expect(control.request(TARGET, { method: 'GET', path }, { maxResponseBytes: ceiling }))
+        .rejects.toMatchObject({ code: 'response_too_large', indeterminate: false });
+      expect(requesterWs.closed).toBeNull();
+    });
+
+    it(`${path}: retains the frame ceiling without negotiated bulk`, async () => {
+      const { targetWs } = await connected(['request']);
+      handler = async () => ({ status: 200, headers: {}, body: Buffer.alloc(ceiling + 1) });
+      await expect(control.request(TARGET, { method: 'GET', path }))
+        .rejects.toMatchObject({ code: 'response_too_large', indeterminate: false });
+      expect(sentOfType(targetWs, 'binary')).toHaveLength(0);
+    });
+  }
+
+  it.each([
+    ['GET', '/api/v1/group-projects/g/bulletin/messages-extra'],
+    ['GET', '/api/v1/group-projects/g/bulletin/messages/extra'],
+    ['GET', '/api/v1/group-projects/g/bulletin/topics'],
+    ['GET', '/api/v1/group-projects/g/bulletin/topics/general/extra'],
+    ['GET', '/api/v1/group-projects/g/bulletin/digest'],
+    ['GET', '/api/v1/agents/a/sessions/s/transcript-extra'],
+    ['GET', '/api/v1/agents/a/sessions/s/transcript/extra'],
+    ['GET', '/api/v1/agents/a/sessions/s/summary'],
+    ['POST', '/api/v1/group-projects/g/bulletin/messages'],
+    ['POST', '/api/v1/group-projects/g/bulletin/topics/general'],
+    ['POST', '/api/v1/agents/a/sessions/s/transcript'],
+  ] as const)('does not exempt %s %s', async (method, path) => {
+    const { targetWs } = await connected();
+    handler = async () => ({ status: 200, headers: {}, body: Buffer.alloc(ceiling + 1) });
+    await expect(control.request(TARGET, { method, path })).rejects.toMatchObject({ code: 'transport_unavailable' });
+    expect(sentOfType(targetWs, 'binary')).toHaveLength(0);
   });
 });
 

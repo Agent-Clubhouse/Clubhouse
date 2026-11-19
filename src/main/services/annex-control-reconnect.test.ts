@@ -1,0 +1,562 @@
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { EventEmitter } from 'events';
+import * as tls from 'tls';
+import { WebSocket } from 'ws';
+import type { AnnexPeer } from '../../shared/types';
+import { CONTROL_CLOSE_REVOKED } from '../../shared/annex-control-protocol';
+import * as control from './annex-control';
+import * as annexTls from './annex-tls';
+import { authorize, stillAuthorized, type AnnexAuthorizerDeps } from './annex-authorizer';
+import { peerRoutes, type AnnexRoute } from './annex-routes';
+
+const { WebSocketMock } = vi.hoisted(() => ({ WebSocketMock: Object.assign(vi.fn(), { OPEN: 1, CLOSED: 3 }) }));
+vi.mock('electron', () => ({ app: { getPath: () => '/tmp/annex-control-reconnect-test' } }));
+vi.mock('ws', () => ({ WebSocket: WebSocketMock, WebSocketServer: vi.fn() }));
+vi.mock('./log-service', () => ({ appLog: vi.fn() }));
+vi.mock('./annex-tls', () => ({
+  PIN_MISMATCH_CODE: 'ERR_ANNEX_PIN_MISMATCH',
+  extractPeerFingerprint: vi.fn(),
+  extractPeerCertificateFingerprint: vi.fn(),
+}));
+
+const LOCAL = 'local';
+const REMOTE = 'remote';
+const PIN = 'AA:BB';
+
+class Socket extends EventEmitter {
+  readyState = 0;
+  bufferedAmount = 0;
+  sent: unknown[] = [];
+  constructor(readonly url: string, readonly options: tls.ConnectionOptions, readonly at: number) { super(); }
+  send(text: string, written?: () => void): void { this.sent.push(JSON.parse(text)); written?.(); }
+  ping(): void { this.emit('pong'); }
+  close(code = 1000): void {
+    if (this.readyState === 3) return;
+    this.readyState = 3;
+    this.emit('close', code);
+  }
+  terminate = vi.fn(() => this.close(1006));
+}
+
+let sockets: Socket[];
+let peers: AnnexPeer[];
+let networkEnabled: boolean;
+let autoReconnect: boolean;
+let plans: control.ControlConnectionPlan[];
+
+function peer(overrides: Partial<AnnexPeer> = {}): AnnexPeer {
+  return {
+    fingerprint: REMOTE, publicKey: 'key', alias: 'Studio', icon: 'computer', color: 'indigo',
+    role: 'member', kind: 'desktop', pairedAt: '2026-01-01', lastSeen: '2026-01-01',
+    tlsCertificateFingerprint: PIN, tlsCertificatePem: 'pem', knownHosts: ['studio.local'], mainPort: 9443,
+    ...overrides,
+  };
+}
+
+const deps: AnnexAuthorizerDeps = {
+  findPeer: (fp) => peers.find((entry) => entry.fingerprint === fp),
+  isSessionOnly: () => false,
+  networkEnabled: () => networkEnabled,
+};
+
+function installServer(): void {
+  control.setControlTarget({
+    authorize: (caller) => authorize(caller, deps),
+    stillAuthorized: (principal) => stillAuthorized(principal, deps),
+    dispatch: async () => ({ status: 200, headers: {}, body: Buffer.alloc(0), complete: true }),
+  });
+}
+
+function plan(entry = peers[0], routes = peerRoutes(entry, { localFingerprint: LOCAL })): control.ControlConnectionPlan {
+  return {
+    fingerprint: entry.fingerprint, pin: entry.tlsCertificateFingerprint!, trust: JSON.stringify(entry),
+    localFingerprint: LOCAL, routes, tlsOptions: () => ({ ca: 'pinned-peer', cert: 'local-cert', rejectUnauthorized: true }),
+  };
+}
+
+function maintain(): void {
+  control.setConnectionSource({ plans: () => plans.filter((item) => peers.some((entry) => entry.fingerprint === item.fingerprint)), autoReconnect: () => autoReconnect });
+}
+
+function open(socket = sockets.at(-1)!, features = ['request']): void {
+  const tlsSocket = new tls.TLSSocket();
+  socket.emit('upgrade', { socket: tlsSocket });
+  tlsSocket.destroy();
+  if (socket.readyState === 3) return;
+  socket.readyState = 1;
+  socket.emit('open');
+  socket.emit('message', Buffer.from(JSON.stringify({ v: 1, type: 'hello', features })), false);
+}
+
+function fail(socket = sockets.at(-1)!, code = 'ECONNREFUSED'): void {
+  socket.emit('error', Object.assign(new Error(code), { code }));
+  socket.close(1006);
+}
+
+beforeEach(() => {
+  vi.useFakeTimers();
+  vi.spyOn(Math, 'random').mockReturnValue(0.5);
+  vi.setSystemTime(0);
+  sockets = [];
+  peers = [peer()];
+  plans = [plan()];
+  autoReconnect = true;
+  networkEnabled = true;
+  WebSocketMock.mockImplementation(function (url: string, options: tls.ConnectionOptions) {
+    const socket = new Socket(url, options, Date.now());
+    sockets.push(socket);
+    return socket;
+  });
+  vi.mocked(annexTls.extractPeerFingerprint).mockReturnValue(REMOTE);
+  vi.mocked(annexTls.extractPeerCertificateFingerprint).mockReturnValue(PIN);
+  installServer();
+});
+
+afterEach(() => {
+  control.resetControlForTests();
+  vi.restoreAllMocks();
+  vi.useRealTimers();
+});
+
+describe('proactive control connections', () => {
+  it('starts on an already-known route without opening a desktop view or /ws', () => {
+    maintain();
+    expect(sockets.map((socket) => socket.url)).toEqual(['wss://studio.local:9443/control']);
+    expect(sockets[0].options).toMatchObject({ ca: 'pinned-peer', cert: 'local-cert', rejectUnauthorized: true });
+    open();
+    expect(sockets[0].sent).toMatchObject([{ v: 1, type: 'hello', features: expect.arrayContaining(['request']) }]);
+  });
+
+  it('starts when the server becomes available after the client', () => {
+    control.setControlTarget(null);
+    maintain();
+    expect(sockets).toHaveLength(0);
+    installServer();
+    expect(sockets).toHaveLength(1);
+  });
+
+  it('recovers after a drop independently of /ws and renegotiates capabilities', () => {
+    maintain();
+    open();
+    sockets[0].close(1006);
+    vi.advanceTimersByTime(999);
+    expect(sockets).toHaveLength(1);
+    vi.advanceTimersByTime(1);
+    expect(sockets).toHaveLength(2);
+    expect(sockets[1].sent).toEqual([]);
+    open();
+    expect(sockets[1].sent).toHaveLength(1);
+    expect(sockets.map((socket) => socket.url)).toEqual(Array(2).fill('wss://studio.local:9443/control'));
+  });
+
+  it('backs off exponentially and caps the final jittered delay at 30 seconds', () => {
+    maintain();
+    const delays = [1000, 2000, 4000, 8000, 16000, 30000, 30000];
+    for (const delay of delays) {
+      const count = sockets.length;
+      fail();
+      for (let burst = 0; burst < 20; burst++) control.refreshConnections();
+      vi.advanceTimersByTime(delay - 1);
+      expect(sockets).toHaveLength(count);
+      vi.advanceTimersByTime(1);
+      expect(sockets).toHaveLength(count + 1);
+    }
+    vi.mocked(Math.random).mockReturnValue(0.999);
+    fail();
+    vi.advanceTimersByTime(29_999);
+    expect(sockets).toHaveLength(8);
+    vi.advanceTimersByTime(1);
+    expect(sockets).toHaveLength(9);
+  });
+
+  it.each([[0, 500], [0.999, 1499]])('applies deterministic jitter %s to the first retry', (random, delay) => {
+    vi.mocked(Math.random).mockReturnValue(random);
+    maintain();
+    fail();
+    vi.advanceTimersByTime(delay - 1);
+    expect(sockets).toHaveLength(1);
+    vi.advanceTimersByTime(1);
+    expect(sockets).toHaveLength(2);
+  });
+
+  it('does not reset backoff for a peer that repeatedly says hello then drops', () => {
+    maintain();
+    for (const delay of [1000, 2000, 4000, 8000]) {
+      open();
+      sockets.at(-1)!.close(1006);
+      const count = sockets.length;
+      vi.advanceTimersByTime(delay - 1);
+      expect(sockets).toHaveLength(count);
+      vi.advanceTimersByTime(1);
+      expect(sockets).toHaveLength(count + 1);
+    }
+  });
+
+  it('resets the backoff only after a stable 30-second connection', () => {
+    maintain();
+    fail();
+    vi.advanceTimersByTime(1000);
+    fail();
+    vi.advanceTimersByTime(2000);
+    open();
+    vi.advanceTimersByTime(30_000);
+    sockets.at(-1)!.close(1006);
+    vi.advanceTimersByTime(999);
+    expect(sockets).toHaveLength(3);
+    vi.advanceTimersByTime(1);
+    expect(sockets).toHaveLength(4);
+  });
+
+  it('has only one dial or live socket per peer despite refresh/error/close bursts', () => {
+    maintain();
+    for (let i = 0; i < 50; i++) control.refreshConnections();
+    expect(sockets).toHaveLength(1);
+    const old = sockets[0];
+    fail(old);
+    old.emit('close', 1006);
+    old.emit('error', new Error('late error'));
+    for (let i = 0; i < 50; i++) control.refreshConnections();
+    vi.advanceTimersByTime(1000);
+    expect(sockets).toHaveLength(2);
+    open();
+    old.emit('error', Object.assign(new Error('stale pin error'), { code: 'ERR_ANNEX_PIN_MISMATCH' }));
+    old.emit('close', CONTROL_CLOSE_REVOKED);
+    for (let i = 0; i < 50; i++) control.refreshConnections();
+    vi.advanceTimersByTime(60_000);
+    expect(sockets).toHaveLength(2);
+    expect(sockets[1].readyState).toBe(WebSocket.OPEN);
+  });
+
+  it('tries only existing routes serially, including a locally saved forward', () => {
+    peers = [peer({ typedHost: 'localhost:7555', announcedReach: { hosts: ['other.local'], port: 8443 } })];
+    plans = [plan()];
+    maintain();
+    expect(sockets[0].url).toBe('wss://localhost:7555/control');
+    fail();
+    vi.advanceTimersByTime(1000);
+    expect(sockets[1].url).toBe('wss://other.local:8443/control');
+    fail();
+    vi.advanceTimersByTime(2000);
+    expect(sockets[2].url).toBe('wss://studio.local:9443/control');
+  });
+
+  it('re-reads routes before a retry instead of using a removed endpoint', () => {
+    maintain();
+    fail();
+    plans = [plan(peers[0], [{ fingerprint: REMOTE, host: 'new.local', port: 8443, source: 'announced' }])];
+    vi.advanceTimersByTime(1000);
+    expect(sockets.map((socket) => socket.url)).toEqual(['wss://studio.local:9443/control', 'wss://new.local:8443/control']);
+  });
+
+  it('fences a route removed during a handshake and recovers over the replacement', () => {
+    maintain();
+    plans = [plan(peers[0], [{ fingerprint: REMOTE, host: 'new.local', port: 8443, source: 'announced' }])];
+    open(sockets[0]);
+    expect(sockets[0].sent).toEqual([]);
+    vi.advanceTimersByTime(1000);
+    expect(sockets[1].url).toBe('wss://new.local:8443/control');
+    open();
+    expect(sockets[1].sent).toHaveLength(1);
+  });
+
+  it('never dials held routes, another peers route, or a private route belonging to another observer, including on retry', () => {
+    const heldPeer = peer({
+      fingerprint: 'other-peer', knownHosts: [], mainPort: undefined,
+      heldRoutes: { heldAt: '2026-01-01', typedHost: 'localhost:7888', knownHosts: ['held.local'], hostPorts: { 'held.local': 8443 } },
+    });
+    peers.push(heldPeer);
+    const wrongRoutes: AnnexRoute[] = [
+      { fingerprint: 'other-peer', host: 'localhost', port: 7666, source: 'known', privateTo: LOCAL },
+      { fingerprint: REMOTE, host: 'localhost', port: 7777, source: 'typed', privateTo: 'another-observer' },
+    ];
+    plans = [plan(peers[0], [...wrongRoutes, ...plans[0].routes]), plan(heldPeer)];
+    maintain();
+    fail();
+    vi.advanceTimersByTime(1000);
+    expect(sockets.map((socket) => socket.url)).toEqual(Array(2).fill('wss://studio.local:9443/control'));
+    plans = [plan(peers[0], wrongRoutes), plan(heldPeer)];
+    fail();
+    vi.advanceTimersByTime(120_000);
+    expect(sockets).toHaveLength(2);
+  });
+});
+
+describe('reconnect stop conditions', () => {
+  it.each(['forget', 'revocation', 'network-off', 'server-off', 'client-off'] as const)('closes a live control connection and stops reconnect on %s', (reason) => {
+    maintain();
+    open();
+    const closed = vi.fn();
+    sockets[0].on('close', closed);
+    if (reason === 'forget') { peers = []; control.refreshConnections(); }
+    if (reason === 'revocation') control.closeFor(REMOTE, 'both', true);
+    if (reason === 'network-off') { networkEnabled = false; control.refreshConnections(); }
+    if (reason === 'server-off') control.setControlTarget(null);
+    if (reason === 'client-off') control.setConnectionSource(null);
+    expect(sockets[0].readyState).toBe(3);
+    if (reason === 'forget' || reason === 'revocation' || reason === 'network-off') expect(closed).toHaveBeenCalledWith(CONTROL_CLOSE_REVOKED);
+    vi.advanceTimersByTime(120_000);
+    expect(sockets).toHaveLength(1);
+  });
+
+  it.each(['forget', 'revocation', 'network-off', 'server-off', 'client-off', 'explicit-stop'] as const)('cancels a pending retry on %s', (reason) => {
+    maintain();
+    fail();
+    if (reason === 'forget') { peers = []; control.refreshConnections(); }
+    if (reason === 'revocation') control.closeFor(REMOTE, 'both', true);
+    if (reason === 'network-off') { networkEnabled = false; control.refreshConnections(); }
+    if (reason === 'server-off') control.setControlTarget(null);
+    if (reason === 'client-off') control.setConnectionSource(null);
+    if (reason === 'explicit-stop') control.closeFor(REMOTE, 'out');
+    for (let i = 0; i < 10; i++) control.refreshConnections();
+    vi.advanceTimersByTime(120_000);
+    expect(sockets).toHaveLength(1);
+  });
+
+  it('rechecks forget at the timer even before a lifecycle notification', () => {
+    maintain();
+    fail();
+    peers = [];
+    vi.advanceTimersByTime(120_000);
+    expect(sockets).toHaveLength(1);
+  });
+
+  it('cancels an unupgraded socket on forget and fences its late upgrade', () => {
+    maintain();
+    const old = sockets[0];
+    peers = [];
+    control.refreshConnections();
+    expect(old.terminate).toHaveBeenCalledOnce();
+    open(old);
+    expect(old.sent).toEqual([]);
+    vi.advanceTimersByTime(120_000);
+    expect(sockets).toHaveLength(1);
+  });
+
+  it('closeFor cancels a pending control handshake even without a maintained route source', () => {
+    control.connectTo(REMOTE, 'studio.local', 9443, {}, PIN);
+    expect(sockets).toHaveLength(1);
+    control.closeFor(REMOTE, 'out', true);
+    expect(sockets[0].terminate).toHaveBeenCalledOnce();
+    open(sockets[0]);
+    expect(sockets[0].sent).toEqual([]);
+  });
+
+  it('checks role/pending eligibility again before a handshake completes', () => {
+    maintain();
+    peers[0] = peer({ networkPending: true });
+    open();
+    expect(sockets[0].terminate).toHaveBeenCalled();
+    expect(sockets[0].sent).toEqual([]);
+    vi.advanceTimersByTime(120_000);
+    expect(sockets).toHaveLength(1);
+  });
+
+  it.each(['ERR_ANNEX_PIN_MISMATCH', 'ERR_TLS_CERT_ALTNAME_INVALID', 'CERT_HAS_EXPIRED', 'ERR_ANNEX_NEEDS_PAIRING'])('stops, rather than trying another endpoint, on %s', (code) => {
+    plans = [plan(peers[0], [...plans[0].routes, { fingerprint: REMOTE, host: 'other.local', port: 8443, source: 'announced' }])];
+    maintain();
+    fail(sockets[0], code);
+    for (let i = 0; i < 20; i++) control.refreshConnections();
+    vi.advanceTimersByTime(120_000);
+    expect(sockets).toHaveLength(1);
+  });
+
+  it('stops when pinned TLS setup itself detects a pin mismatch', () => {
+    plans[0].tlsOptions = () => { throw Object.assign(new Error('Stored certificate does not match'), { code: 'ERR_ANNEX_PIN_MISMATCH' }); };
+    maintain();
+    for (let i = 0; i < 20; i++) control.refreshConnections();
+    vi.advanceTimersByTime(120_000);
+    expect(sockets).toHaveLength(0);
+  });
+
+  it.each(['identity', 'pin'])('rejects a mismatched presented %s before hello and stops reconnecting', (field) => {
+    maintain();
+    if (field === 'identity') vi.mocked(annexTls.extractPeerFingerprint).mockReturnValue('another-peer');
+    else vi.mocked(annexTls.extractPeerCertificateFingerprint).mockReturnValue('OTHER-PIN');
+    open();
+    expect(sockets[0].sent).toEqual([]);
+    vi.advanceTimersByTime(120_000);
+    expect(sockets).toHaveLength(1);
+  });
+
+  it('never retries the previous trust after a pin/pairing changes while waiting', () => {
+    maintain();
+    fail();
+    peers[0] = peer({ tlsCertificateFingerprint: 'NEW-PIN', pairingId: 'new-pairing' });
+    plans = [plan()];
+    vi.advanceTimersByTime(120_000);
+    expect(sockets).toHaveLength(1);
+    control.refreshConnections();
+    expect(sockets).toHaveLength(2);
+    expect(sockets[1].sent).toEqual([]);
+  });
+
+  it('honors autoReconnect without allowing presence updates to cause retries', () => {
+    autoReconnect = false;
+    maintain();
+    fail();
+    for (let i = 0; i < 20; i++) control.refreshConnections();
+    vi.advanceTimersByTime(120_000);
+    expect(sockets).toHaveLength(1);
+    autoReconnect = true;
+    control.refreshConnections();
+    vi.advanceTimersByTime(1000);
+    expect(sockets).toHaveLength(2);
+  });
+
+  it('cancels an already-scheduled retry when autoReconnect is switched off', () => {
+    maintain();
+    fail();
+    autoReconnect = false;
+    control.refreshConnections();
+    vi.advanceTimersByTime(120_000);
+    expect(sockets).toHaveLength(1);
+  });
+
+  it('rechecks autoReconnect when the retry timer fires without a manual refresh', () => {
+    maintain();
+    fail();
+    autoReconnect = false;
+    vi.advanceTimersByTime(1000);
+    expect(sockets).toHaveLength(1);
+  });
+
+  it('allows an explicit retry while autoReconnect is off', () => {
+    maintain();
+    fail();
+    autoReconnect = false;
+    control.retryConnection(REMOTE);
+    expect(sockets).toHaveLength(2);
+    fail();
+    vi.advanceTimersByTime(120_000);
+    expect(sockets).toHaveLength(2);
+  });
+});
+
+describe('mixed versions and eligibility', () => {
+  function reachLongTail(): void {
+    maintain();
+    for (const delay of [1000, 2000, 4000, 8000, 16000]) {
+      fail(sockets.at(-1), 'ECONNRESET');
+      vi.advanceTimersByTime(delay);
+    }
+    fail(sockets.at(-1), 'ECONNRESET');
+    expect(sockets).toHaveLength(6);
+  }
+
+  it('probes an old server that resets unknown upgrades about once per ten minutes after six failures', () => {
+    reachLongTail();
+    for (let i = 0; i < 3; i++) {
+      const count = sockets.length;
+      for (let burst = 0; burst < 20; burst++) control.refreshConnections();
+      vi.advanceTimersByTime(599_999);
+      expect(sockets).toHaveLength(count);
+      vi.advanceTimersByTime(1);
+      expect(sockets).toHaveLength(count + 1);
+      fail(sockets.at(-1), 'ECONNRESET');
+    }
+    expect(sockets.every((socket) => socket.url.endsWith('/control') && socket.sent.length === 0)).toBe(true);
+  });
+
+  it.each([[0, 300_000], [0.999, 899_400]])('keeps jitter on long-tail probes (%s)', (random, delay) => {
+    reachLongTail();
+    vi.advanceTimersByTime(600_000);
+    vi.mocked(Math.random).mockReturnValue(random);
+    fail(sockets.at(-1), 'ECONNRESET');
+    vi.advanceTimersByTime(delay - 1);
+    expect(sockets).toHaveLength(7);
+    vi.advanceTimersByTime(1);
+    expect(sockets).toHaveLength(8);
+  });
+
+  it('recovers normally from a transient reset and never applies old-peer backoff after a successful hello', () => {
+    maintain();
+    fail(sockets[0], 'ECONNRESET');
+    vi.advanceTimersByTime(1000);
+    open();
+    for (const delay of [2000, 4000, 8000, 16000, 30000, 30000, 30000]) {
+      fail(sockets.at(-1), 'ECONNRESET');
+      vi.advanceTimersByTime(delay);
+    }
+    expect(sockets).toHaveLength(9);
+    open();
+    expect(sockets.at(-1)!.sent).toHaveLength(1);
+  });
+
+  it.each(['new-route', 'new-trust', 'direct-handshake', 'explicit-retry'] as const)('leaves long-tail backoff on %s', (event) => {
+    reachLongTail();
+    if (event === 'new-route') {
+      plans = [plan(peers[0], [{ fingerprint: REMOTE, host: 'new.local', port: 9443, source: 'announced' }])];
+      control.refreshConnections();
+    }
+    if (event === 'new-trust') {
+      peers[0] = peer({ pairingId: 'new-pairing' });
+      plans = [plan()];
+      control.refreshConnections();
+    }
+    if (event === 'direct-handshake') control.connectTo(REMOTE, 'studio.local', 9443, {}, PIN);
+    if (event === 'explicit-retry') control.retryConnection(REMOTE);
+    expect(sockets).toHaveLength(7);
+    fail(sockets.at(-1), 'ECONNRESET');
+    vi.advanceTimersByTime(999);
+    expect(sockets).toHaveLength(7);
+    vi.advanceTimersByTime(1);
+    expect(sockets).toHaveLength(8);
+  });
+
+  it('counts consecutive pre-upgrade resets, not unrelated failures', () => {
+    maintain();
+    for (const [code, delay] of [
+      ['ECONNRESET', 1000], ['ECONNRESET', 2000], ['ECONNREFUSED', 4000],
+      ['ECONNRESET', 8000], ['ECONNRESET', 16000], ['ECONNRESET', 30000],
+    ] as const) {
+      fail(sockets.at(-1), code);
+      vi.advanceTimersByTime(delay);
+    }
+    expect(sockets).toHaveLength(7);
+  });
+
+  it.each([404, 405, 426])('does not loop when an old peer refuses /control with HTTP %s', (statusCode) => {
+    maintain();
+    const resume = vi.fn();
+    sockets[0].emit('unexpected-response', {}, { statusCode, resume });
+    expect(resume).toHaveBeenCalledOnce();
+    for (let i = 0; i < 20; i++) {
+      control.refreshConnections();
+      control.connectTo(REMOTE, 'studio.local', 9443, {}, PIN);
+    }
+    vi.advanceTimersByTime(300_000);
+    expect(sockets).toHaveLength(1);
+    expect(sockets[0].sent).toEqual([]);
+  });
+
+  it('does not reconnect a peer that negotiates no reverse-request capability', () => {
+    maintain();
+    open(sockets[0], []);
+    expect(sockets[0].readyState).toBe(3);
+    vi.advanceTimersByTime(120_000);
+    control.refreshConnections();
+    expect(sockets).toHaveLength(1);
+    expect(control.hasReverseLink(REMOTE)).toBe(false);
+  });
+
+  it('may re-probe an unsupported peer on an explicit Retry without caching any capability', () => {
+    maintain();
+    sockets[0].emit('unexpected-response', {}, { statusCode: 404, resume: vi.fn() });
+    control.retryConnection(REMOTE);
+    expect(sockets).toHaveLength(2);
+    expect(sockets[1].sent).toEqual([]);
+    open();
+    expect(sockets[1].sent).toHaveLength(1);
+  });
+
+  it.each([
+    { role: 'satellite' as const }, { role: 'controller' as const }, { kind: 'phone' as const },
+    { networkPending: true }, { tlsCertificateFingerprint: undefined },
+  ])('opens no control socket for an ineligible peer: %j', (overrides) => {
+    peers = [peer(overrides)];
+    plans = [{ ...plan(), pin: peers[0].tlsCertificateFingerprint ?? '' }];
+    maintain();
+    vi.advanceTimersByTime(120_000);
+    expect(sockets).toHaveLength(0);
+  });
+});

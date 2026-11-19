@@ -113,7 +113,8 @@ test('the lead’s remote approvals keep Allow and Decline in one place across t
       for (const request of REQUESTS) await raiseAskFirst(there.window, laptopController, request);
       // The oldest request shows, with the others counted behind it.
       await expect(rows).toHaveCount(1, { timeout: 30_000 });
-      await expect(here.window.getByTestId('dispatcher-remote-approval-count')).toHaveText(`1 of ${REQUESTS.length}`, { timeout: 30_000 });
+      await expect(here.window.getByTestId('dispatcher-remote-approval-count').getByText(`1 of ${REQUESTS.length}`, { exact: true }))
+        .toHaveText(`1 of ${REQUESTS.length}`, { timeout: 30_000 });
       const row = rows.first();
       for (const [i, request] of REQUESTS.entries()) {
         await expect(row).toContainText(request.reason.slice(0, 30), { timeout: 30_000 });

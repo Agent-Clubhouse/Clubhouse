@@ -1152,6 +1152,11 @@ export interface AnnexStatus {
   pairingHosts?: string[];
   /** Pairing is paused after too many wrong PINs, until allowed again in Settings. */
   pairingPaused?: boolean;
+  /**
+   * Ports Annex couldn't listen on at its last start because something else had them,
+   * such as a forward, and where it listens instead (#3608). Desktop Settings only.
+   */
+  listenerPortsMoved?: { main?: { preferred: number; bound: number }; pairing?: { preferred: number; bound: number } };
 }
 
 // ── Annex peer types ──────────────────────────────────────────────────
@@ -1202,6 +1207,31 @@ export interface AnnexPeer {
   announcedReach?: { hosts: string[]; port?: number };
   /** For a satellite: a host name or address the person typed, such as a tailnet name. */
   typedHost?: string;
+  /**
+   * Certificate SHA-256 the typed host was checked against when it was saved (#3608).
+   * Absent for one saved by an older build, before saving checked it.
+   */
+  typedHostCert?: string;
+  /**
+   * Lowercase hosts this machine saved for itself (#3608): a typed address, or the
+   * address used to pair without a link or with an address override. Never sent to
+   * other members, even after the typed address is cleared. Local only.
+   */
+  privateHosts?: string[];
+  /**
+   * Endpoints the device itself gave (#3608), lowercase host to the port it gave with it:
+   * its pairing link, or its announcement on discovery. Provenance is the host and port
+   * together: such an endpoint is shared at that port even if the host is also in
+   * `privateHosts`, and a private port on the same host never stands in for it.
+   * Loopback hosts are never recorded here. Local only.
+   */
+  sharedEndpoints?: Record<string, number>;
+  /**
+   * Routes from before pairing again with a different certificate (#3608), kept but
+   * not used: they reached the old certificate, so each needs checking again before
+   * it's trusted. Local only, never removed by pairing.
+   */
+  heldRoutes?: AnnexHeldRoutes;
   /** For a network member: a computer or a phone, as it said when it joined. */
   kind?: 'desktop' | 'phone';
   /** For a network member: the fingerprint of the member that added it (this machine's own when paired here). */
@@ -1214,6 +1244,16 @@ export interface AnnexPeer {
   pairingId?: string;
   /** Introduced desktop: membership channel only until it confirms our current identity and pairing. Local only. */
   networkPending?: boolean;
+}
+
+/** Routes held back after pairing again with a different certificate (#3608). */
+export interface AnnexHeldRoutes {
+  /** The certificate they were saved for. */
+  certFingerprint?: string;
+  heldAt: string;
+  typedHost?: string;
+  knownHosts?: string[];
+  hostPorts?: Record<string, number>;
 }
 
 /** A peer as Settings lists it. */
@@ -1262,12 +1302,45 @@ export interface AnnexDevice {
   typedHost?: string;
   /** Why it isn't connected, and what to do, when that's known. */
   problem: AnnexProblem | null;
+  /** For a computer: each direction on its own (#3608). Desktop Settings only; not sent to phones. */
+  reach?: AnnexDeviceReach;
+  /** A typed address held back after pairing again with a different certificate (#3608). */
+  heldTypedHost?: string;
   /**
    * For a network member: where its join, or its removal, is confirmed (#3061).
    * Names of members whose view shows it, and of those it hasn't reached yet.
    * Absent once every member has it.
    */
   confirmation?: { kind: 'join' | 'removal'; confirmedBy: string[]; waitingOn: string[] };
+}
+
+/**
+ * One direction between this machine and a computer (#3608), from authenticated
+ * observations only: a pinned direct connection, or a negotiated reverse
+ * control connection with current authority. Membership alone says nothing.
+ * - `up`: such a connection is open now.
+ * - `down`: none, for longer than the settle window, or attempts are failing.
+ * - `unknown`: not observed either way yet.
+ * - `off`: this machine isn't connecting out, or isn't listening.
+ * - `not-used`: this pairing doesn't use this direction (a one-way pairing).
+ */
+export type AnnexDirectionState = 'up' | 'down' | 'unknown' | 'off' | 'not-used';
+
+export interface AnnexDirection {
+  state: AnnexDirectionState;
+  /** Desktop Settings only. An up direction without this field uses a direct connection. */
+  via?: 'direct' | 'reverse';
+  /** ISO time it was last observed up in this session, if it was. */
+  lastUp?: string;
+}
+
+export interface AnnexDeviceReach {
+  /** This machine reaching it. */
+  outbound: AnnexDirection;
+  /** It reaching this machine. */
+  inbound: AnnexDirection;
+  /** Set when exactly one direction works: what that means, and the next safe step. */
+  notice?: { message: string; action: string };
 }
 
 /** A device this machine has heard from on the Annex Network channel (#3060). */

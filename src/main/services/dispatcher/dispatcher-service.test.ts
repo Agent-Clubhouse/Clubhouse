@@ -285,16 +285,38 @@ describe('gating', () => {
     const init = svc.initDispatcher();
     await new Promise((resolve) => setTimeout(resolve, 20));
     expect(agentConfig.createDurable).not.toHaveBeenCalled();
+    expect(svc.isDispatcherIdentityInitialized()).toBe(false);
     h.enabledProviders = ['codex-cli'];
     finish();
     await init;
+    expect(svc.isDispatcherIdentityInitialized()).toBe(true);
     expect(svc.getDispatcherState().config?.orchestrator).toBe('codex-cli');
     expect(fs.readFileSync(path.join(dispatcherDir(), 'AGENTS.md'), 'utf-8')).toContain(svc.DISPATCHER_INSTRUCTIONS);
+  });
+
+  it('does not publish readiness after a failed identity read, but recovers after a verified retry', async () => {
+    vi.mocked(agentConfig.getDurableConfig).mockRejectedValueOnce(new Error('Unverified controller policy'));
+    await svc.initDispatcher();
+    expect(svc.isDispatcherIdentityInitialized()).toBe(false);
+    await svc.initDispatcher();
+    expect(svc.isDispatcherIdentityInitialized()).toBe(true);
+  });
+
+  it('does not let an old initialization publish readiness after its generation was reset', async () => {
+    let finish!: () => void;
+    h.detection = new Promise((resolve) => { finish = resolve; });
+    const init = svc.initDispatcher();
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    svc._resetDispatcherForTesting();
+    finish();
+    await init;
+    expect(svc.isDispatcherIdentityInitialized()).toBe(false);
   });
 
   it('is off on the classic layout with nothing saved, and creates nothing at start-up', async () => {
     h.newLayout = false;
     await svc.initDispatcher();
+    expect(svc.isDispatcherIdentityInitialized()).toBe(true);
     expect(svc.isDispatcherEnabled()).toBe(false);
     expect(svc.getDispatcherState()).toMatchObject({ enabled: false, savedOn: false, offReason: 'classic_layout', classic: true, agentId: null, path: null, config: null });
     expect(fs.existsSync(dispatcherDir())).toBe(false);
