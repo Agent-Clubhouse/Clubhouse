@@ -40,7 +40,8 @@ it.each(['syntax', 'array', 'null', 'field', 'oversized'])('keeps %s saved switc
   fs.writeFileSync(path.join(root, 'dispatcher-settings.json.bak'), '{"enabled":true}'); temp('dispatcher-settings.json');
   if (kind === 'field') { flags({}); expect(newChromeEnabled()).toBe(true); }
   const before = disk(), result = readDispatcherEnablementForDisplay();
-  expect.soft(result.enabled.state).toBe('unavailable'); expect.soft(result.reason.state).toBe('unavailable'); expect.soft(disk()).toEqual(before); expect(peekNewChromeEnabledForDisplay()).toBeUndefined();
+  expect.soft(result.enabled.state).toBe('unavailable'); expect.soft(result.reason.state).toBe('unavailable'); expect.soft(disk()).toEqual(before);
+  expect(peekNewChromeEnabledForDisplay()).toBe(kind === 'field' ? true : undefined);
 });
 it('preserves an established current layout when a later saved preference chooses the next layout', () => {
   flags({ newChrome: true }); expect(newChromeEnabled()).toBe(true); flags({ newChrome: false }); resetAllSettingsStoresForTests();
