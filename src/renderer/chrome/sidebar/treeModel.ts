@@ -1,6 +1,7 @@
 import type { Agent, AgentDetailedStatus } from '../../../shared/types';
 import { agentDot } from '../../features/agents/agent-status';
 import { isQuestionStatus } from '../../../shared/chat-agent-status';
+import { DISPATCHER_PROJECT_ID } from '../../../shared/dispatcher-types';
 
 /**
  * Pure helpers behind the sidebar tree (docs/chrome-redesign-spec.md §4.2).
@@ -106,7 +107,7 @@ export function selectRemoteNeedsAttention(
   for (const sat of satellites) {
     if (sat.state !== 'connected') continue;
     const projectIds = new Set((satelliteProjects[sat.id] ?? []).map((p) => p.id));
-    if (projectIds.size === 0) continue;
+    projectIds.add(`remote||${sat.id}||${DISPATCHER_PROJECT_ID}`);
     for (const item of selectNeedsAttention(remoteAgents, remoteDetailed, projectIds)) {
       items.push({ ...item, hostId: sat.id, hostLabel: sat.alias });
     }

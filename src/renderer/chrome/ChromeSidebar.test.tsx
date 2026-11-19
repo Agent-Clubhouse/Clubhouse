@@ -1271,6 +1271,27 @@ describe('ChromeSidebar Dispatcher (#2538)', () => {
   const leadState = (machine: string, following: boolean) => ({ available: true, following, role: 'follower', lead: { machine, name: 'Mini', self: false, online: true }, choices: [], outbox: { waiting: 0, oldestAt: null, expired: 0, failed: null }, localNews: { count: 0, needsUser: false } } as never);
   const levelOf = (row: HTMLElement) => ({ level: row.getAttribute('aria-level'), pad: row.style.paddingLeft });
 
+  it.each([false, true])('opens the actual remote Dispatcher from Needs you with local enabled=%s', (enabled) => {
+    if (enabled) turnOn();
+    useProjectStore.setState({ projects: [], activeProjectId: null });
+    const chat = agent('remote-chat', DISPATCHER_PROJECT_ID, { name: 'Tael', executionMode: 'chat' });
+    const remoteId = namespacedAgentId('s1', chat.id);
+    useAnnexClientStore.setState({ satellites: [satelliteFor(chat)] });
+    useRemoteProjectStore.setState({
+      satelliteProjects: { s1: [] },
+      remoteAgents: { [remoteId]: { ...chat, id: remoteId, projectId: namespacedProjectId('s1', DISPATCHER_PROJECT_ID) } },
+      remoteAgentDetailedStatus: { [remoteId]: { state: 'needs_permission', message: 'Needs permission', timestamp: 5 } },
+    });
+    render(<ChromeSidebar />);
+
+    fireEvent.click(screen.getByTestId(`needs-you-row-${remoteId}`));
+
+    expect(useRemoteDispatcherSelection.getState().machine).toBe('fp1');
+    expect(useUIStore.getState().dispatcherOpen).toBe(true);
+    expect(useProjectStore.getState().activeProjectId).toBeNull();
+    expect(useDispatcherStore.getState().state?.enabled).toBe(enabled);
+  });
+
   it('shows another computer’s Dispatcher as a peer of this one and opens its chat', async () => {
     turnOn();
     const chat = agent('remote-chat', DISPATCHER_PROJECT_ID, { name: 'Tael', executionMode: 'chat' });

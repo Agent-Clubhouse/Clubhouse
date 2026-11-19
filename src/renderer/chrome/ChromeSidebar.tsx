@@ -744,6 +744,12 @@ export function ChromeSidebar() {
       reportChromeFeature('needs_you_select');
       return;
     }
+    const dispatcherHost = satellites.find((sat) => agent.projectId === `${satellitePrefix(sat.id)}${DISPATCHER_PROJECT_ID}`);
+    if (dispatcherHost) {
+      openDispatcher({ remoteMachine: dispatcherHost.fingerprint });
+      reportChromeFeature('needs_you_remote_select');
+      return;
+    }
     // needs_you_remote_select: the agent runs on a satellite, whichever host is shown.
     const remote = hostOf(agent.projectId) !== null;
     // Selecting a helper's dispose request shows the helper and opens the
@@ -757,7 +763,7 @@ export function ChromeSidebar() {
       useAgentDetailsStore.getState().reveal({ agentId: agent.id, card: 'helpers' });
     }
     reportChromeFeature(remote ? 'needs_you_remote_select' : 'needs_you_select');
-  }, [openAgent]);
+  }, [openAgent, satellites]);
 
   const openDispatcherRow = useCallback(() => {
     openDispatcher({ local: true });
