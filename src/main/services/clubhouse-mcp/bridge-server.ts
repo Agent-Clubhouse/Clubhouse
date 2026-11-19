@@ -53,12 +53,23 @@ const SESSION_HEADER = 'mcp-session-id';
  * so an entry from an earlier run doesn't count as connected (#2093).
  */
 const agentConnections = new Map<string, AgentMcpConnection>();
+/** Auth identity stays inside main; no nonce is part of a display result. */
+const connectionNonces = new Map<string, string>();
 
 export function getAgentConnection(agentId: string): AgentMcpConnection | null {
   return agentConnections.get(agentId) ?? null;
 }
 
+/** A handshake belongs to this registered run only while its auth identity still matches. */
+export function getCurrentAgentConnection(agentId: string): AgentMcpConnection | null {
+  const nonce = getAgentNonce(agentId);
+  return nonce && connectionNonces.get(agentId) === nonce ? getAgentConnection(agentId) : null;
+}
+
 function setAgentConnection(agentId: string, connection: AgentMcpConnection): void {
+  const nonce = getAgentNonce(agentId);
+  if (nonce) connectionNonces.set(agentId, nonce);
+  else connectionNonces.delete(agentId);
   const previous = agentConnections.get(agentId);
   agentConnections.set(agentId, connection);
   if (previous?.connectedAt !== connection.connectedAt || previous?.toolCount !== connection.toolCount) {
@@ -182,7 +193,7 @@ function handleToolsList(agentId: string, id: number | string | null): JsonRpcRe
   const tools = getScopedToolList(agentId);
   // §12 H8: an empty list here is the "tools missing until canvas renders" bug (#1544).
   recordToolsList(tools.length);
-  const conn = agentConnections.get(agentId);
+  const conn = getCurrentAgentConnection(agentId);
   setAgentConnection(agentId, { connectedAt: conn?.connectedAt ?? Date.now(), toolCount: tools.length });
   return jsonRpcSuccess(id, { tools });
 }
@@ -542,6 +553,7 @@ export function stop(): void {
   mcpSessions.clear();
   const connectedAgents = [...agentConnections.keys()];
   agentConnections.clear();
+  connectionNonces.clear();
   for (const agentId of connectedAgents) {
     broadcastToAllWindows(IPC.MCP_BINDING.AGENT_CONNECTION_CHANGED, agentId);
   }

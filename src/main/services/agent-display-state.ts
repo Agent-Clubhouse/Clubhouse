@@ -9,10 +9,17 @@ function note(id: string, value: Observation) {
   observations.set(id, value);
   // Bound retained observations; registered agent/config resolution still controls reads.
   if (observations.size > 10_000) observations.delete(observations.keys().next().value!);
-  for (const listener of listeners) listener(id, value.status);
+  for (const listener of listeners) {
+    try { listener(id, value.status); }
+    catch { /* telemetry-exempt: display listeners must never affect the lifecycle they observe. */ }
+  }
 }
-export function noteAgentStarting(id: string, quick = false): void { note(id, { status: quick ? 'spawning' : 'waking', at: Date.now() }); }
-export function noteAgentAwake(id: string): void { note(id, { status: 'running', at: Date.now(), spawnedAt: Date.now() }); }
+export function noteAgentStarting(id: string, quick = false): void { note(id, { status: quick ? 'spawning' : 'waking', at: Date.now(), spawnedAt: Date.now() }); }
+export function noteAgentAwake(id: string): void {
+  const previous = observations.get(id);
+  const started = previous?.status === 'waking' || previous?.status === 'spawning' ? previous.spawnedAt : undefined;
+  note(id, { status: 'running', at: Date.now(), spawnedAt: started ?? Date.now() });
+}
 export function noteAgentWakeFailed(id: string, error: unknown): void { note(id, { status: 'error', at: Date.now(), error: safeMcpErrorLine(error instanceof Error ? error.message : String(error)) }); }
 export function agentDisplayState(agent: Pick<DurableAgentConfig, 'id' | 'creation'>, running: boolean): Observation {
   const observed = observations.get(agent.id);

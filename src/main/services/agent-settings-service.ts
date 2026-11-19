@@ -88,9 +88,16 @@ export async function writeClaudeMd(worktreePath: string, content: string): Prom
   await fsp.writeFile(filePath, content, 'utf-8');
 }
 
-async function parseMcpServers(filePath: string, scope: 'project' | 'global'): Promise<McpServerEntry[]> {
+async function parseMcpServers(filePath: string, scope: 'project' | 'global', strict = false): Promise<McpServerEntry[]> {
   try {
     const raw = await fsp.readFile(filePath, 'utf-8');
+    if (strict) {
+      const global: unknown = JSON.parse(raw);
+      if (!global || typeof global !== 'object' || Array.isArray(global)) throw new Error('Invalid global MCP configuration.');
+      const servers = (global as { mcpServers?: unknown }).mcpServers;
+      if (servers === undefined) return [];
+      return Object.entries(parseMcpJson(JSON.stringify({ mcpServers: servers }))).map(([name, def]) => ({ name, command: def.command || '', args: def.args, env: def.env, scope }));
+    }
     const parsed = JSON.parse(raw);
     const servers = parsed.mcpServers || {};
     return Object.entries(servers).map(([name, config]: [string, Record<string, unknown>]) => ({
@@ -101,6 +108,7 @@ async function parseMcpServers(filePath: string, scope: 'project' | 'global'): P
       scope,
     }));
   } catch (err) {
+    if (strict && !isEnoent(err)) throw new Error('MCP configuration is unreadable.');
     if (!isEnoent(err)) {
       appLog(LOG_NS, 'warn', `Failed to parse MCP config from ${filePath}`, { meta: { error: err instanceof Error ? err.message : String(err) } });
     }
@@ -108,13 +116,13 @@ async function parseMcpServers(filePath: string, scope: 'project' | 'global'): P
   }
 }
 
-export async function readMcpConfig(worktreePath: string, conv?: SettingsConventions): Promise<McpServerEntry[]> {
+export async function readMcpConfig(worktreePath: string, conv?: SettingsConventions, options: { strict?: boolean } = {}): Promise<McpServerEntry[]> {
   const c = conv || CLAUDE_CODE_CONVENTIONS;
   const raw = await readLocalMcpJson(worktreePath, c);
   const projectServers: McpServerEntry[] = raw === null ? [] : Object.entries(parseMcpJson(raw)).map(([name, def]) => ({
     name, command: def.command || '', args: def.args, env: def.env, scope: 'project',
   }));
-  const globalServers = c.configDir === '.claude' ? await parseMcpServers(path.join(os.homedir(), '.claude.json'), 'global') : [];
+  const globalServers = c.configDir === '.claude' ? await parseMcpServers(path.join(os.homedir(), '.claude.json'), 'global', options.strict) : [];
 
   // Dedupe: project-scoped servers take priority over global ones with the same name
   const seen = new Set(projectServers.map((s) => s.name));
@@ -215,7 +223,7 @@ export async function listAgentTemplates(worktreePath: string, conv?: SettingsCo
   }
 }
 
-async function readSettings(projectPath: string): Promise<ProjectSettings> {
+async function readSettings(projectPath: string, strict = false): Promise<ProjectSettings> {
   const settingsFile = path.join(projectPath, '.clubhouse', 'settings.json');
   const backupFile = `${settingsFile}.bak`;
   const emptySettings = { defaults: {}, quickOverrides: {} };
@@ -228,8 +236,15 @@ async function readSettings(projectPath: string): Promise<ProjectSettings> {
   } catch (err) {
     // Missing settings file is a normal condition — most projects won't have one.
     if (isEnoent(err)) {
+      if (strict) {
+        let backupExists = false;
+        try { await fsp.stat(backupFile); backupExists = true; }
+        catch (backupError) { if (!isEnoent(backupError)) throw new Error('Project settings are unreadable.'); }
+        if (backupExists) throw new Error('Project settings need recovery before they can be displayed.');
+      }
       return emptySettings;
     }
+    if (strict) throw new Error('Project settings are unreadable.');
 
     appLog(LOG_NS, 'warn', `Failed to read project settings from ${settingsFile} — failed to parse; attempting recovery from backup`, {
       meta: { error: err instanceof Error ? err.message : String(err) },
@@ -931,8 +946,8 @@ export async function applyAgentDefaults(
  * Read the launch wrapper config from .clubhouse/settings.json.
  * Returns undefined when no wrapper is configured.
  */
-export async function readLaunchWrapper(projectPath: string): Promise<LaunchWrapperConfig | undefined> {
-  const settings = await readSettings(projectPath);
+export async function readLaunchWrapper(projectPath: string, options: { strict?: boolean } = {}): Promise<LaunchWrapperConfig | undefined> {
+  const settings = await readSettings(projectPath, options.strict);
   return settings.launchWrapper;
 }
 
@@ -949,8 +964,8 @@ export async function readMcpCatalog(projectPath: string): Promise<McpCatalogEnt
  * Read the project default MCP IDs from .clubhouse/settings.json.
  * Returns an empty array when no defaults are configured.
  */
-export async function readDefaultMcps(projectPath: string): Promise<string[]> {
-  const settings = await readSettings(projectPath);
+export async function readDefaultMcps(projectPath: string, options: { strict?: boolean } = {}): Promise<string[]> {
+  const settings = await readSettings(projectPath, options.strict);
   return settings.defaultMcps || [];
 }
 

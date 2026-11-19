@@ -3058,7 +3058,7 @@ describe('annex-client', () => {
       annexClient._addConnectedSatelliteForTesting(FP);
     });
 
-    it('discards Settings responses across an in-place disconnect/reconnect epoch', async () => {
+    it.each(['requestAgentSettings', 'requestAgentDetails'] as const)('discards %s responses across an in-place disconnect/reconnect epoch', async (method) => {
       let finish!: () => void;
       vi.mocked(https.request).mockImplementationOnce(((_url: string, _opts: unknown, callback: (response: unknown) => void) => {
         const req = Object.assign(new EventEmitter(), { end: () => {
@@ -3069,13 +3069,31 @@ describe('annex-client', () => {
         }, destroy: vi.fn() });
         return req;
       }) as any);
-      const pending = annexClient.requestAgentSettings(FP, 'a1');
+      const pending = annexClient[method](FP, 'a1');
       annexClient._receiveSatelliteDisconnectForTesting(FP);
       vi.mocked(annexPeers.getPeer).mockReturnValue({ fingerprint: FP, role: 'satellite', kind: 'desktop', tlsCertificateFingerprint: 'pin' } as any);
       annexClient.connect(FP);
       await vi.waitFor(() => expect(annexClient.getSatellite(FP)?.state).toBe('connected'));
       finish();
       expect(await pending).toEqual({ status: 'offline' });
+    });
+
+    it('reads bounded exact-agent Details and treats old/refused/malformed contracts explicitly', async () => {
+      const { REMOTE_DETAILS_CARD_IDS } = await import('../../shared/remote-agent-details');
+      const value = { version: 1, agentId: 'a?/#', readOnly: true, readAt: 1, providerId: 'codex-cli', running: false, status: 'sleeping', spawnedAt: null, sessionId: null, nativeSessionId: null, settings: null,
+        cards: REMOTE_DETAILS_CARD_IDS.map((id) => ({ id, title: id, state: 'ok', summary: '', rows: [], notes: [], omitted: 0, observedAt: 1 })) };
+      answers.push({ status: 200, body: value });
+      expect(await annexClient.requestAgentDetails(FP, 'a?/#')).toEqual({ status: 'ok', value });
+      expect(requests[0]).toMatchObject({ method: 'GET' });
+      expect(requests[0].url).toContain('/agents/a%3F%2F%23/details');
+      for (const status of [404, 405, 401, 403, 429]) {
+        answers.push({ status, body: { private: 'PRIVATE_ERROR' } });
+        expect((await annexClient.requestAgentDetails(FP, 'a1')).status).toBe(status === 429 ? 'rate_limited' : status === 404 || status === 405 ? 'unavailable' : 'forbidden');
+      }
+      answers.push({ status: 200, body: value });
+      expect(await annexClient.requestAgentDetails(FP, 'other')).toEqual({ status: 'error' });
+      answers.push({ status: 200, body: { ...value, version: 2 } });
+      expect(await annexClient.requestAgentDetails(FP, 'a?/#')).toEqual({ status: 'error' });
     });
 
     it.each([404, 405])('represents an older Settings host (%s) without retries or local fallback', async (status) => {

@@ -15,7 +15,7 @@ import { getGlobalHelperCap } from './orchestration-settings';
 import { listHelpersEverywhere } from './helper-index';
 import { listStartRequests } from './helper-start-requests';
 import { bindingManager } from './clubhouse-mcp/binding-manager';
-import { getAgentConnection } from './clubhouse-mcp/bridge-server';
+import { getAgentConnection, getCurrentAgentConnection } from './clubhouse-mcp/bridge-server';
 import { listConnectionSources } from './connection-sources';
 import { listConnectionDirectionsForInspection } from './connection-grants-store';
 import { getDispatcherState, isDispatcherIdentityAgentId } from './dispatcher/dispatcher-service';
@@ -33,11 +33,12 @@ import { safeMcpErrorLine } from './mcp-error-text';
 import { reachRows, reachSummary } from '../../shared/dispatcher-card-model';
 import { viewOf as agentGrantsView } from './agent-grants-service';
 import { agentDisplayState } from './agent-display-state';
+import { getAgentRuntime } from './agent-runtime';
 
 /** Redact before cutting so a partial credential cannot evade the existing secret patterns. */
-const display = (value: unknown) => {
+const display = (value: unknown, max = 2048) => {
   const text = redactSecretValues(String(value)).replace(/[\x00-\x1f\x7f]/g, ' ');
-  return text.length > 2048 ? `${text.slice(0, 2024)}… [text truncated]` : text;
+  return text.length > max ? `${text.slice(0, max - 24)}… [text truncated]` : text;
 };
 const yes = (v: boolean) => v ? 'On' : 'Off';
 const control = { 'hands-off': 'Hands off', 'ask-before-start': 'Ask before starting', 'ask-everything': 'Ask every time' };
@@ -63,8 +64,9 @@ export async function readRemoteAgentDetails(agentId: string, authorized: () => 
   if (!authorized()) return refused();
   try {
     let target: AgentConfigTarget;
-    try { target = await resolveAgentConfigTarget(agentId); }
-    catch { return authorized() ? { status: 404, body: { error: 'agent_not_found' } } : refused(); }
+    try { target = await resolveAgentConfigTarget(agentId, undefined, { strict: true }); }
+    catch (error) { return !authorized() ? refused() : error instanceof Error && error.message === 'No registered agent matches that reference.'
+      ? { status: 404, body: { error: 'agent_not_found' } } : { status: 500, body: { error: 'agent_inventory_unreadable' } }; }
     if (!authorized()) return refused();
     const { agent, project } = target;
     if (agent.id !== agentId || isDisposedAgent(agent)) return { status: 404, body: { error: 'agent_not_found' } };
@@ -72,13 +74,16 @@ export async function readRemoteAgentDetails(agentId: string, authorized: () => 
     if (!authorized()) return refused();
     const dispatcher = isDispatcherIdentityAgentId(agentId);
     const running = isAgentRunning(agentId);
+    const runtime = getAgentRuntime(agentId);
+    const sessionId = runtime?.kind === 'chat' ? runtime.getSessionId?.() ?? null : null;
+    const nativeSessionId = runtime?.kind === 'chat' ? runtime.getNativeSessionId?.() ?? null : null;
     const lifecycle = agentDisplayState(agent, running);
     const cwd = agentRegistry.get(agentId)?.cwd || agent.worktreePath || project.path;
     const cards = [card('settings', 'Settings'), card('dispatcher', 'Dispatcher'), card('orchestrate', 'Orchestration'), card('connections', 'Connections'), card('actions', 'Actions'), card('skills-mcp', 'Skills and MCP'), card('session', 'Session'), card('canvases', 'Canvases'), card('changes', 'Changes')];
     const byId = Object.fromEntries(cards.map((c) => [c.id, c])) as Record<RemoteDetailsCardId, RemoteDetailsCard>;
     if (dispatcher) for (const id of ['dispatcher', 'orchestrate', 'skills-mcp', 'session', 'canvases', 'changes'] as const) byId[id].state = 'not-applicable';
     if (agent.parentAgentId) byId.dispatcher.state = 'not-applicable';
-    const result: RemoteAgentDetails = { version: 1, readOnly: true, agentId, readAt: Date.now(), providerId: provider.id, running, status: lifecycle.status, spawnedAt: lifecycle.spawnedAt ?? null, settings: null, cards };
+    const result: RemoteAgentDetails = { version: 1, readOnly: true, agentId, readAt: Date.now(), providerId: provider.id, running, status: lifecycle.status, spawnedAt: lifecycle.spawnedAt ?? null, sessionId, nativeSessionId, settings: null, cards };
     const settingsRead = await readRemoteAgentSettings(agentId, authorized);
     if (!authorized()) return refused();
     if (settingsRead.status === 200) result.settings = settingsRead.body as RemoteAgentDetails['settings'];
@@ -96,9 +101,9 @@ export async function readRemoteAgentDetails(agentId: string, authorized: () => 
       row(c, 'Context notice', agent.contextWindowNotice);
       row(c, 'CLI start', lifecycle.error);
       if (!agent.managed) {
-        const names = new Set((await readMcpConfig(cwd, provider.conventions)).map((s) => s.name));
-        if (await readLaunchWrapper(project.path)) for (const id of agent.mcpIds ?? await readDefaultMcps(project.path)) names.add(id);
-        if (result.settings) result.settings.setup.mcps = [...names].slice(0, 100).map(display);
+        const names = new Set((await readMcpConfig(cwd, provider.conventions, { strict: true })).map((s) => s.name));
+        if (await readLaunchWrapper(project.path, { strict: true })) for (const id of agent.mcpIds ?? await readDefaultMcps(project.path, { strict: true })) names.add(id);
+        if (result.settings) result.settings.setup.mcps = [...names].slice(0, 100).map((name) => display(name, 1024));
         if (names.size > 100) c.omitted += names.size - 100;
         row(c, 'MCP servers', `${names.size} configured`);
         return;
@@ -135,10 +140,10 @@ export async function readRemoteAgentDetails(agentId: string, authorized: () => 
       row(c, 'Cross-project helpers', yes(policy.crossProjectHelpers));
       row(c, 'Auto provider', `${yes(policy.autoHelpers)}${policy.autoEffective ? ` · ${policy.autoEffective.effective ? 'available' : policy.autoEffective.reason ?? 'unavailable'} (${policy.autoEffective.source})` : ''}`);
       }
-      const helpers = await listHelpersEverywhere(project.path, agentId, { includeDisposed: true });
+      const helpers = await listHelpersEverywhere(project.path, agentId, { includeDisposed: true, readOnly: true });
       for (const { config: h, projectPath } of helpers) {
-        const state = isDisposedAgent(h) || h.handoff ? 'Handed off' : h.creation?.state === 'failed' ? 'Failed' : h.creation?.state === 'creating' ? 'Starting' : isAgentRunning(h.id) ? 'Running' : 'Sleeping';
-        row(c, h.name, [state, h.branch, projectPath !== project.path ? path.basename(projectPath) : '', h.creation?.state === 'failed' ? safeMcpErrorLine(h.creation.reason) : ''].filter(Boolean).join(' · '));
+        const state = isDisposedAgent(h) ? 'Disposed' : h.handoff ? 'Handed off' : h.creation?.state === 'failed' ? 'Failed' : h.creation?.state === 'creating' ? 'Starting' : isAgentRunning(h.id) ? 'Running' : 'Sleeping';
+        row(c, h.name, [state, h.branch, isDisposedAgent(h) ? h.disposedAt : '', projectPath !== project.path ? path.basename(projectPath) : '', h.creation?.state === 'failed' ? safeMcpErrorLine(h.creation.reason) : ''].filter(Boolean).join(' · '));
       }
       for (const request of listStartRequests().filter((r) => r.orchestratorId === agentId && r.projectPath === project.path)) {
         row(c, 'Waiting to start', `${request.args.name} · ${request.args.task} · expires ${request.expiresAt}`);
@@ -213,7 +218,8 @@ export async function readRemoteAgentDetails(agentId: string, authorized: () => 
       for (const skill of status.builtinSkills ?? []) row(c, 'Skill', `${skill.name} · ${running && skill.deliveredAt ? 'Installed by Clubhouse' : 'Set up by Clubhouse'}`);
       if (running) {
         const connection = getAgentConnection(agentId);
-        row(c, 'Clubhouse MCP', connection ? `Connected${connection.toolCount == null ? '' : ` · ${connection.toolCount} tools`} · ${new Date(connection.connectedAt).toISOString()}` : 'No handshake reported for this run');
+        const current = getCurrentAgentConnection(agentId);
+        row(c, 'Clubhouse MCP', current ? `Connected${current.toolCount == null ? '' : ` · ${current.toolCount} tools`} · ${new Date(current.connectedAt).toISOString()}` : connection ? 'An earlier handshake is retained; connection for this run is not confirmed' : 'No handshake reported for this run');
         for (const name of result.settings?.setup.mcps ?? []) row(c, 'MCP configured', name);
         for (const problem of status.mcpProblems ?? []) row(c, problem.server, `Missing environment variables: ${problem.missingEnv.join(', ')}`);
       } else c.notes.push('Last session evidence only. No live MCP connection is claimed while the agent is stopped.');
@@ -239,7 +245,7 @@ export async function readRemoteAgentDetails(agentId: string, authorized: () => 
       } else if (!running) c.notes.push('No earlier session recorded.');
     });
     await read('canvases', async (c) => {
-      const hits = await getAgentCanvasMemberships(agentId, project.id);
+      const hits = await getAgentCanvasMemberships(agentId, project.id, { strict: true });
       c.summary = `on ${hits.length} ${hits.length === 1 ? 'board' : 'boards'}`;
       for (const hit of hits) row(c, hit.name, hit.scope === 'app' ? 'Home' : 'card');
       if (!hits.length) c.state = 'not-applicable';
@@ -256,8 +262,11 @@ export async function readRemoteAgentDetails(agentId: string, authorized: () => 
     });
     if (!authorized()) return refused();
     for (const c of cards) {
-      c.notes = c.notes.map(display);
+      c.notes = c.notes.map((note) => display(note));
       if (c.notes.length > 20) c.notes = [...c.notes.slice(0, 19), `${c.notes.length - 19} more notices omitted by the host’s display limit.`];
+    }
+    if (getAgentRuntime(agentId) !== runtime || runtime?.kind === 'chat' && (runtime.getSessionId?.() !== sessionId || (runtime.getNativeSessionId?.() ?? null) !== nativeSessionId)) {
+      return { status: 409, body: { error: 'agent_run_changed' } };
     }
     // Enforce the envelope even when every section fits its individual row limit.
     while (Buffer.byteLength(JSON.stringify(result)) > REMOTE_DETAILS_MAX_BYTES) {

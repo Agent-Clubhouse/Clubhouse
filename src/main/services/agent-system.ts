@@ -317,7 +317,7 @@ export const RESUME_BLOCKED_NOTICE = "That session kept failing every turn, so i
 export async function spawnAgent(params: SpawnAgentParams): Promise<void> {
   // Quit and update close this before stopping runtimes (#2053).
   assertLaunchesOpen();
-  noteAgentStarting(params.agentId, params.kind === 'quick');
+  if (!isAgentRunning(params.agentId)) noteAgentStarting(params.agentId, params.kind === 'quick');
   const quickRun = params.kind === 'quick' ? beginQuickAgentRun(params) : undefined;
   const spawn = withManagedActivationLaunch(params, () => isAgentRunning(params.agentId), (managed) => {
     assertProviderSelection(params.agentId, params.orchestrator);

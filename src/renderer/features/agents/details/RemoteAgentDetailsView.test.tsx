@@ -9,7 +9,7 @@ import { useAgentDetailsStore } from './detailsStore';
 
 const agent: Agent = { id: 'remote||sat||a1', projectId: 'remote||sat||p1', name: 'Remote', kind: 'durable', status: 'running', color: 'blue' };
 const read = vi.fn();
-const fixture = (): RemoteAgentDetails => ({ version: 1, agentId: 'a1', readOnly: true, readAt: 1, providerId: 'claude-code', running: true, status: 'running', spawnedAt: null,
+const fixture = (): RemoteAgentDetails => ({ version: 1, agentId: 'a1', readOnly: true, readAt: 1, providerId: 'claude-code', running: true, status: 'running', spawnedAt: null, sessionId: 's1', nativeSessionId: 'n1',
   settings: { version: 1, agentId: 'a1', readOnly: true, provider: 'Host CLI', model: 'host-model', runtime: 'chat', access: 'Ask first', executionPolicy: 'defaults', autoSleep: null, context: null, setup: { state: 'ok', managed: false, template: null, instructions: 'None', skills: null, mcps: [] } },
   cards: REMOTE_DETAILS_CARD_IDS.map((id) => ({ id, title: id === 'orchestrate' ? 'Orchestration' : id, state: 'ok', summary: `Host ${id}`, rows: [{ label: `${id} field`, value: `${id} evidence` }], notes: [], omitted: 0, observedAt: 1 })) });
 function satellite(extra: Record<string, unknown> = {}) {
@@ -24,6 +24,7 @@ beforeEach(() => {
 });
 describe('remote full Details host evidence', () => {
   it.each(['running', 'sleeping', 'waking', 'error'] as const)('renders applicable host cards read-only for a %s agent with no local reads', async (status) => {
+    read.mockResolvedValue({ status: 'ok', value: { ...fixture(), status, running: status === 'running' } });
     render(<AgentDetails agent={{ ...agent, status }} />);
     await waitFor(() => expect(read).toHaveBeenCalledWith('sat', 'a1'));
     await screen.findByText('Host CLI');
@@ -74,5 +75,33 @@ describe('remote full Details host evidence', () => {
     expect(screen.getByTestId('details-card-actions')).not.toHaveTextContent('No actions');
     fireEvent.click(screen.getByTestId('details-card-connections-toggle'));
     expect(screen.getByTestId('details-card-connections')).toHaveTextContent('7 more rows omitted');
+  });
+  it('makes supplied Settings retry refetch the parent host Details request', async () => {
+    read.mockResolvedValueOnce({ status: 'error' });
+    render(<AgentDetails agent={agent} />);
+    await screen.findByRole('button', { name: 'Try again' });
+    expect(read).toHaveBeenCalledTimes(1);
+    fireEvent.click(screen.getByRole('button', { name: 'Try again' }));
+    await screen.findByText('Host CLI');
+    expect(read).toHaveBeenCalledTimes(2);
+  });
+  it.each(['forbidden', 'error', 'unavailable'] as const)('withholds retained provider evidence after a %s host read', async (status) => {
+    read.mockResolvedValue({ status });
+    const chat = { ...createChatViewState(agent.id), provider: 'claude-code', sessionId: 's1', nativeSessionId: 'n1', cliVersion: 'STALE_VERSION', effort: 'STALE_EFFORT', effortReported: true, mcpServers: [{ name: 'STALE_MCP', status: 'connected' as const }] };
+    render(<AgentDetails agent={agent} chat={chat} />);
+    await waitFor(() => expect(read).toHaveBeenCalled());
+    fireEvent.click(screen.getByTestId('details-card-skills-mcp-toggle'));
+    expect(screen.queryByText('STALE_MCP')).not.toBeInTheDocument();
+    expect(screen.queryByText(/STALE_VERSION/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/STALE_EFFORT/)).not.toBeInTheDocument();
+  });
+  it('keeps the old host’s supported Settings endpoint while marking new cards unavailable', async () => {
+    read.mockResolvedValue({ status: 'unavailable' });
+    const settings = vi.fn(async () => ({ status: 'ok', value: fixture().settings }));
+    Object.assign(window.clubhouse.annexClient, { agentSettings: settings });
+    render(<AgentDetails agent={agent} />);
+    await screen.findByText('Host CLI');
+    expect(settings).toHaveBeenCalledWith('sat', 'a1');
+    expect(screen.getByTestId('details-card-connections-summary')).toHaveTextContent('does not share these details');
   });
 });

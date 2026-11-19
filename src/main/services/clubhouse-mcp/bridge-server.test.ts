@@ -514,6 +514,19 @@ describe('BridgeServer', () => {
     expect(bridgeServer.getAgentConnection('agent-1')).toEqual({ connectedAt: expect.any(Number), toolCount: 0 });
     expect(mockBroadcast).toHaveBeenCalledWith(IPC.MCP_BINDING.AGENT_CONNECTION_CHANGED, 'agent-1');
   });
+  it('binds current handshake evidence to the registered run nonce, including handshakes before awake', async () => {
+    await makeRequest(port, 'POST', '/mcp/agent-1', { jsonrpc: '2.0', method: 'notifications/initialized' }, 'test-nonce');
+    const historical = bridgeServer.getAgentConnection('agent-1');
+    expect(bridgeServer.getCurrentAgentConnection('agent-1')).toEqual(historical);
+    mockGetAgentNonce.mockReturnValue('new-run-nonce'); emitAuthChange('agent-1');
+    expect(bridgeServer.getAgentConnection('agent-1')).toEqual(historical);
+    expect(bridgeServer.getCurrentAgentConnection('agent-1')).toBeNull();
+    // No awake announcement is needed: an authenticated handshake itself proves this registered run.
+    await makeRequest(port, 'POST', '/mcp/agent-1', { jsonrpc: '2.0', id: 2, method: 'tools/list' }, 'new-run-nonce');
+    expect(bridgeServer.getCurrentAgentConnection('agent-1')).toMatchObject({ toolCount: 0 });
+    mockGetAgentNonce.mockReturnValue(undefined); emitAuthChange('agent-1');
+    expect(bridgeServer.getCurrentAgentConnection('agent-1')).toBeNull();
+  });
 
   it('returns missing tool name error for tools/call without name', async () => {
     const { body } = await makeRequest(port, 'POST', '/mcp/agent-1', {

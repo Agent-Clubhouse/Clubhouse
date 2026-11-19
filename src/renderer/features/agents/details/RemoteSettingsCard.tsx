@@ -27,7 +27,7 @@ const message = (result: Result): string | null => {
 };
 
 /** A separate remote surface keeps every local setup, filesystem and editing hook out of this path. */
-export function RemoteSettingsCard({ agent, chat, result: supplied, children }: { agent: Agent; chat?: ChatViewState; result?: Result; children?: ReactNode }) {
+export function RemoteSettingsCard({ agent, chat, result: supplied, onRetry, children }: { agent: Agent; chat?: ChatViewState; result?: Result; onRetry?: () => void; children?: ReactNode }) {
   const open = useAgentDetailsStore((s) => s.settingsOpen);
   const setOpen = useAgentDetailsStore((s) => s.setSettingsOpen);
   const address = parseNamespacedId(agent.id);
@@ -97,7 +97,7 @@ export function RemoteSettingsCard({ agent, chat, result: supplied, children }: 
       </>}
       {message(result) && <CardNote><span role="status">{message(result)}</span></CardNote>}
       {children}
-      {['error', 'rate_limited'].includes(result.status) && <Button kind="ghost" onClick={() => setRetry((n) => n + 1)}>Try again</Button>}
+      {['error', 'rate_limited'].includes(result.status) && <Button kind="ghost" onClick={() => supplied ? onRetry?.() : setRetry((n) => n + 1)}>Try again</Button>}
       <CardNote><span data-testid="details-settings-remote">Change on {host}</span></CardNote>
     </DetailsCard>
   );

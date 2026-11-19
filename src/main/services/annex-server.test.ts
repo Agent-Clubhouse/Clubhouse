@@ -1,4 +1,6 @@
 import { readRemoteAgentSettings } from './remote-agent-settings';
+import { readRemoteAgentDetails } from './remote-agent-details';
+vi.mock('./remote-agent-details', () => ({ readRemoteAgentDetails: vi.fn() }));
 vi.mock('./remote-agent-settings', () => ({ readRemoteAgentSettings: vi.fn() }));
 const snapshotLinks = vi.hoisted(() => ({ groups: vi.fn(() => []), onChange: () => () => {} }));
 vi.mock('./project-links-store', () => ({ hydrateProjectLinks: vi.fn(async () => ({})), projectLinksStore: () => snapshotLinks }));
@@ -687,6 +689,50 @@ describe('annex-server', () => {
       });
       const { port } = await startAndPair();
       expect((await request(port, 'GET', route)).status).toBe(403);
+    });
+  });
+
+  describe('remote full Details authority (#3733)', () => {
+    const route = '/api/v1/agents/a1/details';
+    beforeEach(() => {
+      vi.mocked(annexPeers.getPeer).mockReturnValue({ ...TEST_CONTROLLER, kind: 'desktop' });
+    });
+    it('allows only GET from an eligible pinned desktop and rechecks the selected target read', async () => {
+      vi.mocked(readRemoteAgentDetails).mockImplementation(async (id, authorized) => {
+        expect(id).toBe('a1'); expect(authorized()).toBe(true);
+        return { status: 200, body: { readOnly: true, agentId: id } };
+      });
+      const { port } = await startAndPair();
+      expect((await request(port, 'GET', route)).status).toBe(200);
+      for (const method of ['POST', 'PUT', 'PATCH', 'DELETE']) expect((await request(port, method, route)).status).toBe(404);
+      expect(agentSystem.spawnAgent).not.toHaveBeenCalled();
+      expect(ptyManagerModule.write).not.toHaveBeenCalled();
+    });
+    it.each([undefined, 'phone', 'unknown'])('rejects ineligible device kind %s before any Details work', async (kind) => {
+      const { port } = await startAndPair();
+      vi.mocked(annexPeers.getPeer).mockReturnValue({ ...TEST_CONTROLLER, kind } as never);
+      expect((await request(port, 'GET', route)).status).toBe(403);
+      expect(readRemoteAgentDetails).not.toHaveBeenCalled();
+    });
+    it('rejects a wrong certificate pin or pending pairing before any read', async () => {
+      const { port } = await startAndPair();
+      vi.mocked(annexTls.extractPeerCertificateFingerprint).mockReturnValueOnce('wrong-pin');
+      expect((await request(port, 'GET', route)).status).toBe(401);
+      vi.mocked(annexPeers.getPeer).mockReturnValue({ ...TEST_CONTROLLER, kind: 'desktop', networkPending: true });
+      expect((await request(port, 'GET', route)).status).toBe(403);
+      expect(readRemoteAgentDetails).not.toHaveBeenCalled();
+    });
+    it.each(['removed', 'pin', 'kind', 'pending'] as const)('discards late host evidence after %s changes during the await', async (change) => {
+      vi.mocked(readRemoteAgentDetails).mockImplementation(async (_id, authorized) => {
+        expect(authorized()).toBe(true);
+        await Promise.resolve();
+        vi.mocked(annexPeers.getPeer).mockReturnValue(change === 'removed' ? undefined : { ...TEST_CONTROLLER, kind: change === 'kind' ? 'phone' : 'desktop', tlsCertificateFingerprint: change === 'pin' ? 'changed-pin' : TEST_CONTROLLER.tlsCertificateFingerprint, networkPending: change === 'pending' } as never);
+        expect(authorized()).toBe(false);
+        return { status: 200, body: { private: 'PRIVATE_LATE_RESULT' } };
+      });
+      const { port } = await startAndPair();
+      const response = await request(port, 'GET', route);
+      expect(response.status).toBe(403); expect(response.body).not.toContain('PRIVATE_LATE_RESULT');
     });
   });
 

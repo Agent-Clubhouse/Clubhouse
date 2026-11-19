@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { isRemoteAgentDetails, REMOTE_DETAILS_CARD_IDS } from './remote-agent-details';
 
-const fixture = () => ({ version: 1, agentId: 'a1', readOnly: true, readAt: 1, providerId: 'codex', running: false, status: 'sleeping', spawnedAt: null, settings: null,
+const fixture = () => ({ version: 1, agentId: 'a1', readOnly: true, readAt: 1, providerId: 'codex', running: false, status: 'sleeping', spawnedAt: null, sessionId: null, nativeSessionId: null, settings: null,
   cards: REMOTE_DETAILS_CARD_IDS.map((id) => ({ id, title: id, state: 'ok', summary: '', rows: [], notes: [], omitted: 0, observedAt: 1 })) });
 describe('remote Details contract', () => {
   it('requires an exact selected agent and complete distinct bounded card states', () => {

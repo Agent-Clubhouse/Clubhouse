@@ -37,6 +37,7 @@ import {
   readAgentTemplateContent, writeAgentTemplateContent, deleteAgentTemplate,
   listAgentTemplateFiles, listSkills, listAgentTemplates,
   readMcpRawJson, writeMcpRawJson, readMcpConfig,
+  readLaunchWrapper, readDefaultMcps,
   readProjectAgentDefaults, writeProjectAgentDefaults, projectSettingsMutationState, applyAgentDefaults,
   readWrapperCatalogSnapshot, writeWrapperCatalogSnapshot,
   readMcpConfigs, writeMcpConfigs,
@@ -1032,6 +1033,18 @@ describe('error logging in catch blocks', () => {
   it('readMcpConfig rejects corrupt local JSON rather than showing no servers', async () => {
     vi.mocked(fsp.readFile).mockResolvedValue('not valid json');
     await expect(readMcpConfig(WORKTREE)).rejects.toThrow('Invalid MCP JSON');
+  });
+  it('strict display reads reject corrupt global MCP configuration instead of reporting zero configured', async () => {
+    vi.mocked(fsp.readFile).mockImplementation(async (file) => String(file).endsWith('.claude.json') ? '{broken' : '{"mcpServers":{}}');
+    await expect(readMcpConfig(WORKTREE, undefined, { strict: true })).rejects.toThrow('unreadable');
+    expect(fsp.writeFile).not.toHaveBeenCalled(); expect(fsp.mkdir).not.toHaveBeenCalled();
+  });
+  it('strict wrapper/default MCP reads refuse recovery copies and never return false empty defaults', async () => {
+    vi.mocked(fsp.readFile).mockImplementation(async (file) => String(file).endsWith('.bak') ? JSON.stringify({ launchWrapper: { command: 'private-command' }, defaultMcps: ['Recovered'] }) : '{broken');
+    await expect(readLaunchWrapper(PROJECT, { strict: true })).rejects.toThrow('unreadable');
+    await expect(readDefaultMcps(PROJECT, { strict: true })).rejects.toThrow('unreadable');
+    expect(vi.mocked(fsp.readFile).mock.calls.some(([file]) => String(file).endsWith('.bak'))).toBe(false);
+    expect(fsp.writeFile).not.toHaveBeenCalled(); expect(fsp.mkdir).not.toHaveBeenCalled();
   });
 
   it('listSkills logs warning on directory read failure', async () => {

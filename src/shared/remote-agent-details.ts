@@ -27,6 +27,8 @@ export interface RemoteAgentDetails {
   running: boolean;
   status: AgentStatus;
   spawnedAt: number | null;
+  sessionId: string | null;
+  nativeSessionId: string | null;
   settings: RemoteAgentSettings | null;
   cards: RemoteDetailsCard[];
 }
@@ -39,6 +41,7 @@ export function isRemoteAgentDetails(value: unknown, agentId: string): value is 
     && Number.isFinite(v.readAt) && v.readAt > 0 && text(v.providerId) && typeof v.running === 'boolean'
     && ['running', 'sleeping', 'waking', 'creating', 'spawning', 'error'].includes(v.status)
     && (v.spawnedAt === null || Number.isFinite(v.spawnedAt) && v.spawnedAt > 0)
+    && (v.sessionId === null || text(v.sessionId)) && (v.nativeSessionId === null || text(v.nativeSessionId))
     && (v.settings === null || isRemoteAgentSettings(v.settings, agentId))
     && Array.isArray(v.cards) && v.cards.length === REMOTE_DETAILS_CARD_IDS.length
     && v.cards.every((c) => !!c && typeof c === 'object')

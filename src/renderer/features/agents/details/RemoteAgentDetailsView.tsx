@@ -54,12 +54,14 @@ export function RemoteAgentDetailsView({ agent, chat, onShowInStream, missedSuba
   const setOpen = useAgentDetailsStore((s) => s.setOpen);
   const focus = useAgentDetailsStore((s) => s.focus);
   const { openCards, setOpenCards, toggleCard } = useDetailsCardState(agent.id, false);
-  const refreshKey = `${agent.id}:${agent.status}:${retry}:${chat?.sessionId ?? ''}:${chat?.turnId ?? ''}:${chat?.workspaceRevision ?? 0}`;
+  const transport = useRef({ connected, snapshotUnavailable, generation: 0 });
+  if (transport.current.connected !== connected || transport.current.snapshotUnavailable !== snapshotUnavailable) transport.current = { connected, snapshotUnavailable, generation: transport.current.generation + 1 };
+  const refreshKey = `${agent.id}:${agent.status}:${retry}:${chat?.sessionId ?? ''}:${chat?.nativeSessionId ?? ''}:${chat?.turnId ?? ''}:${chat?.workspaceRevision ?? 0}:${transport.current.generation}`;
   const [read, setRead] = useState<{ key: string; snapshot: typeof snapshot; result: Result } | null>(null);
   const satelliteId = address?.satelliteId;
   const agentId = address?.agentId;
   useEffect(() => {
-    if (!connected || snapshotUnavailable || !satelliteId || !agentId) return;
+    if (!connected || !satelliteId || !agentId) return;
     let active = true;
     // The view is already behind the user's Details toggle. Coalesce rapid host snapshots/tool events.
     const timer = setTimeout(() => {
@@ -71,8 +73,9 @@ export function RemoteAgentDetailsView({ agent, chat, onShowInStream, missedSuba
     }, 150);
     return () => { active = false; clearTimeout(timer); };
   }, [connected, snapshotUnavailable, satelliteId, agentId, refreshKey, snapshot]);
-  const result: Result = !connected ? { status: 'offline' } : snapshotUnavailable ? { status: 'error' }
+  const received: Result = !connected ? { status: 'offline' }
     : read?.key === refreshKey && read.snapshot === snapshot ? read.result : { status: 'loading' };
+  const result: Result = received.status === 'ok' && received.value.agentId !== agentId ? { status: 'error' } : received;
   const details = result.status === 'ok' ? result.value : null;
   const status = details?.status ?? agent.status;
   const asleep = status === 'sleeping' || status === 'error';
@@ -81,9 +84,9 @@ export function RemoteAgentDetailsView({ agent, chat, onShowInStream, missedSuba
     ? result.value.settings ? { status: 'ok', value: result.value.settings } : { status: 'error' }
     : result;
   // Retained chat is historical while disconnected and is never presented as a current host read.
-  const session = connected && !snapshotUnavailable && !asleep ? chat : undefined;
+  const session = details && connected && !asleep && details.running && !!details.sessionId && chat?.agentId === agent.id && details.sessionId === chat.sessionId && details.providerId === chat.provider && (!details.nativeSessionId || details.nativeSessionId === chat.nativeSessionId) ? chat : undefined;
   const provider = details?.settings?.provider ?? session?.provider ?? 'Not reported by host';
-  const map = useMemo(() => chat ? buildAgentMap({ items: chat.items, subagents: chat.subagents, capabilities: chat.capabilities, state: chat.state }) : null, [chat]);
+  const map = useMemo(() => session ? buildAgentMap({ items: session.items, subagents: session.subagents, capabilities: session.capabilities, state: session.state }) : null, [session]);
   const showSubagents = !dispatcher && !!map && map.mode !== 'none';
   const focusTarget = focus?.agentId === agent.id ? containingDetailsCard(focus.card) : null;
   const handled = useRef<number | null>(null);
@@ -109,7 +112,7 @@ export function RemoteAgentDetailsView({ agent, chat, onShowInStream, missedSuba
   const ctx = session?.capabilities && session.capabilities.usage !== 'none' ? session.usage.context : null;
   const ctxPct = ctx && ctx.size > 0 ? Math.min(100, Math.round(ctx.used / ctx.size * 100)) : null;
   const limits = session?.capabilities?.limits ? session.usage.limits : [];
-  const skillReport = reportedSkillsFor(agent, chat, details ? { orchestrator: details.providerId } : undefined);
+  const skillReport = reportedSkillsFor(agent, session, details ? { orchestrator: details.providerId } : undefined);
   const reported = skillReport.report;
   const liveMcp = mcpRows(session?.mcpServers ?? null, null, []);
   const otherMachines = snapshot?.dispatcherPresence?.remotes;
@@ -121,7 +124,7 @@ export function RemoteAgentDetailsView({ agent, chat, onShowInStream, missedSuba
       {snapshotUnavailable && ' The host snapshot is unavailable; retained data may be stale.'}
       {['error', 'rate_limited', 'unavailable'].includes(result.status) && <Button kind="ghost" onClick={() => setRetry((n) => n + 1)}>Refresh</Button>}
     </div>
-    <RemoteSettingsCard agent={{ ...agent, status }} chat={session} result={settingsResult}>{card('settings') && <Evidence card={card('settings')!} />}</RemoteSettingsCard>
+    <RemoteSettingsCard agent={{ ...agent, status }} chat={session} result={result.status === 'unavailable' ? undefined : settingsResult} onRetry={() => setRetry((n) => n + 1)}>{card('settings') && <Evidence card={card('settings')!} />}</RemoteSettingsCard>
     {!dispatcher && basic('changes', 'Changes')}
     {!dispatcher && agent.kind === 'durable' && !agent.parentAgentId && basic('dispatcher', 'Dispatcher')}
     {!dispatcher && agent.kind === 'durable' && basic('orchestrate', 'Orchestration')}
@@ -143,7 +146,7 @@ export function RemoteAgentDetailsView({ agent, chat, onShowInStream, missedSuba
         <CardRow label="Source">Claude · system/init</CardRow><CardRow label="Session">{reported.sessionId}</CardRow><CardRow label="Native session">{reported.nativeSessionId}</CardRow><CardRow label="Reported">{new Date(reported.reportedAt).toLocaleString()}</CardRow>
         {reported.names?.length ? reported.names.map((name) => <CardRow key={name} label="Reported skill">{name}</CardRow>) : <CardNote>{reported.names ? 'Claude explicitly reported no skills in this snapshot.' : 'Skill names were not reported in this snapshot.'}</CardNote>}
       </>}
-      {!reported && <CardNote>{skillReport.supported ? 'No valid skills report for this session has arrived.' : 'This provider does not report loaded skill names here.'}</CardNote>}
+      {!reported && <CardNote>{!details || !session ? 'Provider evidence is unavailable until a current authorized session read succeeds.' : skillReport.supported ? 'No valid skills report for this session has arrived.' : 'This provider does not report loaded skill names here.'}</CardNote>}
     </DetailsCard>}
     {!dispatcher && <DetailsCard id="session" title={asleep ? 'Last session' : 'Session'} summary={cost ?? ''} open={open('session')} onToggle={() => toggleCard('session')}>
       <CardRow label="Runs on">{provider}{session?.driver ? ` · ${DRIVER_LABELS[session.driver] ?? session.driver}${session.cliVersion ? ` ${session.cliVersion}` : ''}` : agent.executionMode === 'pty' ? ' · CLI' : ''}</CardRow>

@@ -5,9 +5,9 @@ import * as fs from 'fs/promises';
 import * as path from 'path';
 import { isDisposedAgent } from '../../shared/agent-helpers';
 import type { ManagedPartContent } from '../../shared/managed-agents-types';
-import { peekDurableConfigs } from './agent-config';
+import { peekDurableConfigs, peekDurableConfigsChecked } from './agent-config';
 import { getDispatcherState } from './dispatcher/dispatcher-service';
-import { peekProjects } from './project-store';
+import { peekProjects, peekProjectsChecked } from './project-store';
 import { resolveOrchestrator } from './agent-system';
 import { managedAgents } from './managed-agents';
 import { instructionsFileRel, renderManagedInstructions, resolveManagedSetup } from './managed-agents/delivery';
@@ -79,9 +79,17 @@ export interface AgentConfigTarget {
 }
 
 /** Resolve exactly one snapshot. Even an id must not bypass an unknown project. */
-export async function resolveAgentConfigTarget(reference: string, project?: string): Promise<AgentConfigTarget> {
-  const projects = await peekProjects();
-  const agents = (await Promise.all(projects.map(async (p) => (await peekDurableConfigs(p.path))
+export async function resolveAgentConfigTarget(reference: string, project?: string, options: { strict?: boolean } = {}): Promise<AgentConfigTarget> {
+  const registered = options.strict ? await peekProjectsChecked({ strict: true }) : null;
+  if (registered && !registered.readable) throw new Error('Registered projects are unreadable without recovery.');
+  const projects = registered?.projects ?? await peekProjects();
+  const configs = async (projectPath: string) => {
+    if (!options.strict) return peekDurableConfigs(projectPath);
+    const inventory = await peekDurableConfigsChecked(projectPath, { strict: true });
+    if (!inventory.readable) throw new Error('Registered agent inventory is unreadable without recovery.');
+    return inventory.agents;
+  };
+  const agents = (await Promise.all(projects.map(async (p) => (await configs(p.path))
     .filter((agent) => !isDisposedAgent(agent)).map((agent) => ({ agent, project: p }))))).flat();
   const dispatcher = getDispatcherState();
   if (dispatcher.config && dispatcher.path && !agents.some(({ agent }) => agent.id === dispatcher.config!.id)) agents.push({ agent: dispatcher.config, project: { id: 'dispatcher', path: dispatcher.path, name: 'Dispatcher' } });
