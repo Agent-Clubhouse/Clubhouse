@@ -3,12 +3,19 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Agent } from '../../../../shared/types';
 import { REMOTE_DETAILS_CARD_IDS, type RemoteAgentDetails } from '../../../../shared/remote-agent-details';
 import { useAnnexClientStore } from '../../../stores/annexClientStore';
-import { createChatViewState } from '../../../stores/chatStore';
+import { MINIMAL_CHAT_CAPABILITIES } from '../../../../shared/chat';
+import { createChatViewState, useChatStore } from '../../../stores/chatStore';
 import { AgentDetails } from './AgentDetails';
 import { useAgentDetailsStore } from './detailsStore';
 
 const agent: Agent = { id: 'remote||sat||a1', projectId: 'remote||sat||p1', name: 'Remote', kind: 'durable', status: 'running', color: 'blue' };
 const read = vi.fn();
+const chatPage = vi.fn();
+const page = (version = '1.2.3', extra = {}) => ({ events: [
+  { v: 2, agentId: 'a1', sessionId: 's1', seq: 1, ts: 1, type: 'session_started', data: { provider: 'claude-code', driver: 'claude_agent_sdk', nativeSessionId: 'n1', cliVersion: version, resumed: false, cwd: '/host', capabilities: MINIMAL_CHAT_CAPABILITIES } },
+  { v: 2, agentId: 'a1', sessionId: 's1', seq: 2, ts: 2, type: 'session_info', data: { nativeSessionId: 'n1', providerSkills: { provider: 'claude-code', driver: 'claude_agent_sdk', source: 'system/init', nativeSessionId: 'n1', names: ['host-skill'] } } },
+  { v: 2, agentId: 'a1', sessionId: 's1', seq: 3, ts: 3, type: 'model_changed', data: { modelId: 'model', effort: 'high', effortIsDefault: true } },
+], readOnly: false, ...extra });
 const fixture = (): RemoteAgentDetails => ({ version: 1, agentId: 'a1', readOnly: true, readAt: 1, providerId: 'claude-code', running: true, status: 'running', spawnedAt: null, sessionId: 's1', nativeSessionId: 'n1',
   settings: { version: 1, agentId: 'a1', readOnly: true, provider: 'Host CLI', model: 'host-model', runtime: 'chat', access: 'Ask first', executionPolicy: 'defaults', autoSleep: null, context: null, setup: { state: 'ok', managed: false, template: null, instructions: 'None', skills: null, mcps: [] } },
   cards: REMOTE_DETAILS_CARD_IDS.map((id) => ({ id, title: id === 'orchestrate' ? 'Orchestration' : id, state: 'ok', summary: `Host ${id}`, rows: [{ label: `${id} field`, value: `${id} evidence` }], notes: [], omitted: 0, observedAt: 1 })) });
@@ -17,9 +24,11 @@ function satellite(extra: Record<string, unknown> = {}) {
 }
 beforeEach(() => {
   satellite();
+  useChatStore.getState().reset(agent.id);
+  chatPage.mockResolvedValue(page());
   useAgentDetailsStore.setState({ settingsOpen: true, focus: null });
   read.mockResolvedValue({ status: 'ok', value: fixture() });
-  Object.assign(window.clubhouse.annexClient, { agentDetails: read });
+  Object.assign(window.clubhouse.annexClient, { agentDetails: read, chatPage });
   for (const [object, method] of [[window.clubhouse.actions, 'list'], [window.clubhouse.git, 'branchChanges'], [window.clubhouse.agent, 'getDurableConfig'], [window.clubhouse.managed, 'getSetup'], [window.clubhouse.mcpBinding, 'getAgentConnection'], [window.clubhouse.canvas, 'getAgentCanvases']] as const) Object.assign(object, { [method]: vi.fn() });
 });
 describe('remote full Details host evidence', () => {
@@ -27,7 +36,7 @@ describe('remote full Details host evidence', () => {
     read.mockResolvedValue({ status: 'ok', value: { ...fixture(), status, running: status === 'running' } });
     render(<AgentDetails agent={{ ...agent, status }} />);
     await waitFor(() => expect(read).toHaveBeenCalledWith('sat', 'a1'));
-    await screen.findByText('Host CLI');
+    await waitFor(() => expect(screen.getByTestId('details-setting-cli')).toHaveTextContent('Host CLI'));
     for (const id of ['changes', 'dispatcher', 'orchestrate', 'connections', 'actions', 'skills-mcp', 'session', 'canvases']) {
       const toggle = screen.getByTestId(`details-card-${id}-toggle`);
       if (toggle.getAttribute('aria-expanded') !== 'true') fireEvent.click(toggle);
@@ -69,7 +78,7 @@ describe('remote full Details host evidence', () => {
     Object.assign(value.cards.find((c) => c.id === 'connections')!, { omitted: 7 });
     read.mockResolvedValue({ status: 'ok', value });
     render(<AgentDetails agent={agent} />);
-    await screen.findByText('Host CLI');
+    await waitFor(() => expect(screen.getByTestId('details-setting-cli')).toHaveTextContent('Host CLI'));
     fireEvent.click(screen.getByTestId('details-card-actions-toggle'));
     expect(screen.getByTestId('details-card-actions')).toHaveTextContent('Couldn’t read this section');
     expect(screen.getByTestId('details-card-actions')).not.toHaveTextContent('No actions');
@@ -82,7 +91,7 @@ describe('remote full Details host evidence', () => {
     await screen.findByRole('button', { name: 'Try again' });
     expect(read).toHaveBeenCalledTimes(1);
     fireEvent.click(screen.getByRole('button', { name: 'Try again' }));
-    await screen.findByText('Host CLI');
+    await waitFor(() => expect(screen.getByTestId('details-setting-cli')).toHaveTextContent('Host CLI'));
     expect(read).toHaveBeenCalledTimes(2);
   });
   it.each(['forbidden', 'error', 'unavailable'] as const)('withholds retained provider evidence after a %s host read', async (status) => {
@@ -100,8 +109,38 @@ describe('remote full Details host evidence', () => {
     const settings = vi.fn(async () => ({ status: 'ok', value: fixture().settings }));
     Object.assign(window.clubhouse.annexClient, { agentSettings: settings });
     render(<AgentDetails agent={agent} />);
-    await screen.findByText('Host CLI');
+    await waitFor(() => expect(screen.getByTestId('details-setting-cli')).toHaveTextContent('Host CLI'));
     expect(settings).toHaveBeenCalledWith('sat', 'a1');
     expect(screen.getByTestId('details-card-connections-summary')).toHaveTextContent('does not share these details');
+  });
+  it('withholds same-session retained evidence until reconnect hydration succeeds, even with the same snapshot object', async () => {
+    const snapshot = {};
+    satellite({ snapshot });
+    chatPage.mockResolvedValue(page('Fresh A'));
+    render(<AgentDetails agent={agent} />);
+    await screen.findByText('Host CLI Fresh A');
+    let finish!: (value: unknown) => void;
+    chatPage.mockImplementationOnce(() => new Promise((resolve) => { finish = resolve; }));
+    act(() => satellite({ state: 'disconnected', snapshot }));
+    act(() => satellite({ state: 'connected', snapshot }));
+    await waitFor(() => expect(chatPage).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(screen.getByTestId('remote-details-freshness')).toHaveTextContent('Refreshing provider evidence'));
+    expect(screen.queryByText('Host CLI Fresh A')).not.toBeInTheDocument();
+    await act(async () => { finish(page('Fresh B')); });
+    await screen.findByText('Host CLI Fresh B');
+  });
+  it('keeps retained evidence withheld after failed same-session hydration and identifies cut pages', async () => {
+    chatPage.mockResolvedValueOnce(page('Fresh A'));
+    render(<AgentDetails agent={agent} />);
+    await screen.findByText('Host CLI Fresh A');
+    chatPage.mockRejectedValueOnce(new Error('Read failed'));
+    act(() => satellite());
+    await waitFor(() => expect(chatPage).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(screen.getByTestId('remote-details-freshness')).toHaveTextContent('Retained session data is withheld'));
+    expect(screen.queryByText('Host CLI Fresh A')).not.toBeInTheDocument();
+    chatPage.mockResolvedValueOnce(page('Fresh cut', { truncated: true }));
+    act(() => satellite());
+    await screen.findByText('Host CLI Fresh cut');
+    expect(screen.getByTestId('remote-details-freshness')).toHaveTextContent('Only part of the host transcript is loaded');
   });
 });

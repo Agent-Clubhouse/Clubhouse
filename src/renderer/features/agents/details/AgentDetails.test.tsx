@@ -138,11 +138,11 @@ describe('AgentDetails in the terminal', () => {
     await act(async () => {});
   });
 
-  it.each(['helpers', 'subagents', 'dispatcher', 'connections'] as const)('falls back from unavailable %s for a remote agent', async (card) => {
+  it.each(['helpers', 'subagents', 'dispatcher', 'connections'] as const)('opens applicable host cards or falls back for %s on a remote agent', async (card) => {
     const remote = { ...agent, projectId: 'remote||sat||p1' };
     render(<AgentDetails agent={remote} />);
     await act(async () => useAgentDetailsStore.getState().reveal({ agentId: agent.id, card }));
-    expect(screen.getByTestId('details-card-session')).toHaveAttribute('data-open', 'true');
+    expect(screen.getByTestId(`details-card-${card === 'subagents' ? 'session' : card === 'helpers' ? 'orchestrate' : card}`)).toHaveAttribute('data-open', 'true');
   });
 
   it('offers an empty Connections card for a local durable agent before it has wires', () => {
@@ -265,6 +265,7 @@ describe('AgentDetails for a remote Dispatcher', () => {
 
   beforeEach(() => {
     useAnnexClientStore.setState({ satellites: [satellite] });
+    Object.assign(window.clubhouse.annexClient, { agentDetails: vi.fn(async () => ({ status: 'unavailable' })) });
     window.clubhouse.actions.list = vi.fn(async () => []);
     window.clubhouse.mcpBinding.getConnectionGrants = vi.fn(async () => []);
     window.clubhouse.dispatcher.getPresence = vi.fn(async () => ({ remotes: [
@@ -292,10 +293,10 @@ describe('AgentDetails for a remote Dispatcher', () => {
     expect(screen.getByTestId('other-machine-remote-peer')).toHaveTextContent('Studio on Desk');
     await act(async () => {});
     expect(screen.queryByTestId('other-machine-local-only')).not.toBeInTheDocument();
-    expect(screen.getByTestId('details-card-connections-summary')).toHaveTextContent('Change on Mini');
-    expect(screen.getByTestId('details-card-connections')).toHaveTextContent('They aren’t shared in this computer’s view.');
-    expect(screen.getByTestId('details-card-actions-summary')).toHaveTextContent('Change on Mini');
-    expect(screen.getByTestId('details-card-actions')).toHaveTextContent('Actions made by this Dispatcher are managed on Mini.');
+    expect(screen.getByTestId('details-card-connections-summary')).toHaveTextContent('Loading details');
+    expect(screen.getByTestId('details-card-connections')).toHaveTextContent('Loading details');
+    expect(screen.getByTestId('details-card-actions-summary')).toHaveTextContent('Loading details');
+    expect(screen.getByTestId('details-card-actions')).toHaveTextContent('Loading details');
     expect(screen.getByTestId('details-settings-remote')).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Add connection' })).not.toBeInTheDocument();
     expect(screen.queryByRole('switch')).not.toBeInTheDocument();
@@ -311,7 +312,7 @@ describe('AgentDetails for a remote Dispatcher', () => {
     fireEvent.click(screen.getByTestId('details-card-other-machines-toggle'));
     expect(screen.getByTestId('details-card-other-machines')).toHaveTextContent('Mini hasn’t shared its other machines here.');
     expect(screen.queryByTestId('other-machine-local-only')).not.toBeInTheDocument();
-    expect(screen.getByTestId('details-card-actions-summary')).toHaveTextContent('Change on Mini');
+    expect(screen.getByTestId('details-card-actions-summary')).toHaveTextContent('Host offline');
   });
 
   it('keeps ordinary remote agents named Dispatcher on their normal cards', async () => {
@@ -319,9 +320,10 @@ describe('AgentDetails for a remote Dispatcher', () => {
     for (const card of ['settings', 'changes', 'skills-mcp', 'session', 'actions']) {
       expect(screen.getByTestId(`details-card-${card}`)).toBeInTheDocument();
     }
-    expect(screen.queryByTestId('details-card-connections')).not.toBeInTheDocument();
+    expect(screen.getByTestId('details-card-connections')).toBeInTheDocument();
     expect(screen.queryByTestId('details-card-other-machines')).not.toBeInTheDocument();
-    await waitFor(() => expect(window.clubhouse.actions.list).toHaveBeenCalled());
+    await act(async () => {});
+    expect(window.clubhouse.actions.list).not.toHaveBeenCalled();
   });
 });
 

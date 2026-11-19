@@ -17,7 +17,7 @@ import { readProviderSkills, type ChatProviderSkills } from '../../shared/chat/p
 import { useMemo } from 'react';
 import { localizeRemoteEvent, readRemoteTranscript, remoteChat, remoteChatTarget, type RemoteChatMeta } from './remoteChatBackend';
 import { satellitePrefix } from './remoteProjectStore';
-import { onRemoteChatEvent, onSatelliteSnapshot } from './annexClientStore';
+import { onRemoteChatEvent, onSatelliteSnapshot, useAnnexClientStore } from './annexClientStore';
 import { create } from 'zustand';
 import { useShallow } from 'zustand/react/shallow';
 import { COMPACTION_SETTLED, COMPACTION_STARTED, MINIMAL_CHAT_CAPABILITIES, coalesceUpdateContent, parseRoutedText } from '../../shared/chat';
@@ -1038,6 +1038,8 @@ export function foldChatEvents(state: ChatViewState | undefined, agentId: string
 // ── Store ───────────────────────────────────────────────────────────────────
 
 interface ChatStoreState {
+  /** A successful remote hydration, tied to the exact requested refresh and host snapshot. */
+  remoteReadReceipts: Record<string, { revision: number; snapshot: unknown; sessionId: string | null; truncated: boolean }>;
   /** View state keyed by agent id. */
   agents: Record<string, ChatViewState>;
   /** Agents whose transcript is being read. */
@@ -1087,6 +1089,20 @@ const pendingLive = new Map<string, ChatEvent[]>();
 
 /** Requested remote chats, including failed reads; snapshots invalidate in-flight reads. */
 const remoteTranscriptRevisions = new Map<string, number>();
+
+export function remoteTranscriptRevision(agentId: string): number { return remoteTranscriptRevisions.get(agentId) ?? 0; }
+
+/** Invalidate retained evidence before a read; an older in-flight read must follow up. */
+export function refreshRemoteTranscript(agentId: string): number {
+  const revision = remoteTranscriptRevision(agentId) + 1;
+  remoteTranscriptRevisions.set(agentId, revision);
+  useChatStore.setState((state) => {
+    const receipts = { ...state.remoteReadReceipts }; delete receipts[agentId];
+    return { remoteReadReceipts: receipts };
+  });
+  void useChatStore.getState().loadTranscript(agentId);
+  return revision;
+}
 
 /**
  * Live chat events seen per agent. Not state: nothing renders from it. A
@@ -1156,6 +1172,7 @@ export const useChatStore = create<ChatStoreState>((set, get) => {
 
   return {
     agents: {},
+    remoteReadReceipts: {},
     loading: {},
     partial: {},
     loaded: {},
@@ -1176,6 +1193,7 @@ export const useChatStore = create<ChatStoreState>((set, get) => {
       // An agent on another desktop is read from there (#2390), never from this machine's chat runtime.
       const remote = remoteChatTarget(agentId);
       const remoteRevision = remoteTranscriptRevisions.get(agentId) ?? 0;
+      const remoteSnapshot = remote ? useAnnexClientStore.getState().satellites.find((s) => s.id === remote.satelliteId)?.snapshot : undefined;
       if (remote) remoteTranscriptRevisions.set(agentId, remoteRevision);
       let remoteLive: boolean | undefined;
       let remoteCut = false;
@@ -1240,6 +1258,7 @@ export const useChatStore = create<ChatStoreState>((set, get) => {
           loading,
           partial: { ...s.partial, [agentId]: cut },
           loaded: { ...s.loaded, [agentId]: true },
+          ...(remote && !refreshPending ? { remoteReadReceipts: { ...s.remoteReadReceipts, [agentId]: { revision: remoteRevision, snapshot: remoteSnapshot, sessionId: next.sessionId, truncated: cut } } } : {}),
         };
       });
       // A resume that arrived during the read needs that session's earlier
@@ -1284,8 +1303,10 @@ export const useChatStore = create<ChatStoreState>((set, get) => {
         delete partial[agentId];
         delete loaded[agentId];
         const live = { ...s.live };
+        const remoteReadReceipts = { ...s.remoteReadReceipts };
+        delete remoteReadReceipts[agentId];
         delete live[agentId];
-        return { agents, loading, partial, loaded, live };
+        return { agents, loading, partial, loaded, live, remoteReadReceipts };
       });
     },
 
@@ -1371,6 +1392,10 @@ export function initChatEventListener(): () => void {
     for (const [id, revision] of remoteTranscriptRevisions) {
       if (!id.startsWith(prefix)) continue;
       remoteTranscriptRevisions.set(id, revision + 1);
+      useChatStore.setState((s) => {
+        const receipts = { ...s.remoteReadReceipts }; delete receipts[id];
+        return { remoteReadReceipts: receipts };
+      });
       void state.loadTranscript(id);
     }
   });

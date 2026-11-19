@@ -17,6 +17,7 @@ import { describeSleep, formatAgo } from '../states/format';
 import { OtherMachinesList, otherMachinesSummary } from '../../dispatcher/OtherMachinesList';
 import { reportedSkillsFor } from './reported-skills';
 import { mcpRows } from './McpCard';
+import { useRemoteDetailsChat } from './useRemoteDetailsChat';
 
 type Result = ControllerReadResult<RemoteAgentDetails> | { status: 'loading' };
 function resultMessage(status: Result['status']): string {
@@ -77,6 +78,7 @@ export function RemoteAgentDetailsView({ agent, chat, onShowInStream, missedSuba
     : read?.key === refreshKey && read.snapshot === snapshot ? read.result : { status: 'loading' };
   const result: Result = received.status === 'ok' && received.value.agentId !== agentId ? { status: 'error' } : received;
   const details = result.status === 'ok' ? result.value : null;
+  const hydrated = useRemoteDetailsChat(agent.id, details, connected, snapshot, transport.current.generation);
   const status = details?.status ?? agent.status;
   const asleep = status === 'sleeping' || status === 'error';
   const card = (id: RemoteDetailsCardId) => details?.cards.find((c) => c.id === id);
@@ -84,11 +86,21 @@ export function RemoteAgentDetailsView({ agent, chat, onShowInStream, missedSuba
     ? result.value.settings ? { status: 'ok', value: result.value.settings } : { status: 'error' }
     : result;
   // Retained chat is historical while disconnected and is never presented as a current host read.
-  const session = details && connected && !asleep && details.running && !!details.sessionId && chat?.agentId === agent.id && details.sessionId === chat.sessionId && details.providerId === chat.provider && (!details.nativeSessionId || details.nativeSessionId === chat.nativeSessionId) ? chat : undefined;
+  const session = details && connected && !asleep && details.running ? hydrated.chat : undefined;
   const provider = details?.settings?.provider ?? session?.provider ?? 'Not reported by host';
   const map = useMemo(() => session ? buildAgentMap({ items: session.items, subagents: session.subagents, capabilities: session.capabilities, state: session.state }) : null, [session]);
   const showSubagents = !dispatcher && !!map && map.mode !== 'none';
-  const focusTarget = focus?.agentId === agent.id ? containingDetailsCard(focus.card) : null;
+  const requested = focus?.agentId === agent.id ? containingDetailsCard(focus.card) : null;
+  const available = new Set<CardId>(['settings', 'connections', 'actions']);
+  if (dispatcher) available.add('other-machines');
+  else {
+    for (const id of ['changes', 'session', 'skills-mcp', 'canvases'] as const) available.add(id);
+    if (agent.kind === 'durable') available.add('orchestrate');
+    if (agent.kind === 'durable' && !agent.parentAgentId) available.add('dispatcher');
+    if (showSubagents) available.add('subagents');
+  }
+  for (const c of details?.cards ?? []) if (c.state === 'not-applicable') available.delete(c.id);
+  const focusTarget = requested && available.has(requested) ? requested : dispatcher ? 'actions' : 'session';
   const handled = useRef<number | null>(null);
   useEffect(() => {
     if (!focus || focus.agentId !== agent.id || handled.current === focus.nonce) return;
@@ -122,6 +134,8 @@ export function RemoteAgentDetailsView({ agent, chat, onShowInStream, missedSuba
     <div className="px-1 text-xs text-ctp-overlay1" role="status" data-testid="remote-details-freshness">
       {details ? <>Read from {host} at {new Date(details.readAt).toLocaleTimeString()}. Read-only.</> : resultMessage(result.status)}
       {snapshotUnavailable && ' The host snapshot is unavailable; retained data may be stale.'}
+      {hydrated.waiting && <p>{hydrated.loading ? 'Refreshing provider evidence from the host…' : 'Current provider evidence has not been refreshed. Retained session data is withheld.'}</p>}
+      {hydrated.partial && <p>Only part of the host transcript is loaded. Earlier provider reports and subagent activity may be missing.</p>}
       {['error', 'rate_limited', 'unavailable'].includes(result.status) && <Button kind="ghost" onClick={() => setRetry((n) => n + 1)}>Refresh</Button>}
     </div>
     <RemoteSettingsCard agent={{ ...agent, status }} chat={session} result={result.status === 'unavailable' ? undefined : settingsResult} onRetry={() => setRetry((n) => n + 1)}>{card('settings') && <Evidence card={card('settings')!} />}</RemoteSettingsCard>
@@ -134,8 +148,8 @@ export function RemoteAgentDetailsView({ agent, chat, onShowInStream, missedSuba
     </DetailsCard>}
     {basic('connections', 'Connections')}
     {dispatcher && <DetailsCard id="other-machines" title="Other machines" summary={otherMachines ? otherMachinesSummary(otherMachines) : 'not shared here'} open={open('other-machines')} onToggle={() => toggleCard('other-machines')}>
-      {!connected && <CardNote>Last host snapshot; these states may be stale while offline.</CardNote>}
-      {otherMachines ? <OtherMachinesList compact remotes={otherMachines} /> : <CardNote>The host hasn’t shared its other machines here.</CardNote>}
+      {(!connected || snapshotUnavailable) && <CardNote>Last host snapshot; these states may be stale.</CardNote>}
+      {otherMachines ? <OtherMachinesList compact remotes={otherMachines} /> : <CardNote>{host} hasn’t shared its other machines here.</CardNote>}
     </DetailsCard>}
     {basic('actions', 'Actions')}
     {!dispatcher && <DetailsCard id="skills-mcp" title="Skills and MCP" summary={asleep ? 'last session evidence' : 'connections and session reports'} open={open('skills-mcp')} onToggle={() => toggleCard('skills-mcp')}>
