@@ -3474,6 +3474,26 @@ describe('annex-server', () => {
       expect(annexPeers.removePeer).not.toHaveBeenCalled();
     }, 30_000);
 
+    it.each(['send_message', 'send_file'])('refuses remote Dispatcher %s from unpaired, pending, one-to-one and revoked machines before delivery', async (tool) => {
+      await startServer();
+      const unknown = device(); const pending = device(); const oneToOne = device(); const revoked = device();
+      peers.set(pending.fingerprint, pinned(pending, { role: 'member', kind: 'desktop', networkPending: true }));
+      peers.set(oneToOne.fingerprint, pinned(oneToOne, { role: 'controller', kind: 'desktop' }));
+      peers.set(revoked.fingerprint, pinned(revoked, { role: 'member', kind: 'desktop' }));
+      annexServer.revokePeer(revoked.fingerprint);
+      for (const [client, error] of [
+        [unknown, 'peer_not_paired'], [pending, 'peer_role_not_allowed'],
+        [oneToOne, 'not_a_computer'], [revoked, 'peer_not_paired'],
+      ] as const) {
+        const response = await call('POST', '/api/v1/network/agent-call', client, {
+          v: 1, callId: 'parity-ineligible', from: { agentId: 'connected-agent', name: 'Connected agent' },
+          to: 'dispatcher-controller', tool, args: tool === 'send_file' ? { content: 'news' } : { message: 'news' },
+        });
+        expect(response.status).toBe(error === 'peer_not_paired' ? 401 : 403);
+        expect(response.body.error).toBe(error);
+      }
+    });
+
     it('a removed peer is closed and then refused on REST and WebSocket', async () => {
       await startServer();
       const phone = device();

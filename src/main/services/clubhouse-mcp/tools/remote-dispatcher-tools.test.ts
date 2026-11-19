@@ -23,11 +23,14 @@ import { setHandoffGrantTargetResolver } from '../arg-targets';
 import { setMcpCaller } from '../mcp-call-gate';
 import { registerGrantRequestTools } from './grant-request-tools';
 import { registerRemoteDispatcherTools } from './remote-dispatcher-tools';
-import { updateAgentGrantChanges, getAgentGrantRevision } from '../../agent-grants-store';
+import { updateAgentGrantChanges, getAgentGrantRevision, getAgentGrantChanges } from '../../agent-grants-store';
 import { _resetGrantRequestsForTesting, listGrantRequests, takeGrantRequest } from '../../grant-requests';
+import { bindingManager } from '../binding-manager';
+import { _resetDispatcherGateForTesting, setDispatcherAgent } from '../dispatcher-gate';
 fixture.dir = fs.mkdtempSync(path.join(os.tmpdir(), 'remote-dispatcher-sender-'));
 beforeEach(async () => {
   _resetForTesting(); _resetGrantRequestsForTesting(); vi.clearAllMocks(); fixture.current = true; fixture.effectiveExtra = false;
+  bindingManager._resetForTesting(); _resetDispatcherGateForTesting();
   setMcpCaller('sender', fixture.dir, {}); registerRemoteDispatcherTools();
   setHandoffGrantTargetResolver(async () => ({ kind: 'agent', remoteDispatcher: true, agentId: `dispatcher@${fixture.machine}` }));
   await updateAgentGrantChanges('sender', () => undefined);
@@ -36,6 +39,35 @@ beforeEach(async () => {
 afterAll(() => fs.rmSync(fixture.dir, { recursive: true, force: true }));
 const args = { machine: 'Laptop', message: 'News', task_id: 'origin-task' };
 describe('authorized agent to remote Dispatcher (#3348)', () => {
+  const connectSender = () => {
+    setDispatcherAgent('local-controller', true);
+    bindingManager.bind('sender', { targetKind: 'agent', targetId: 'local-controller', label: 'Dispatcher' });
+  };
+  const sends = [
+    ['message_remote_dispatcher', args],
+    ['send_file_to_remote_dispatcher', { machine: 'Laptop', content: 'File data', filename: 'plan.md' }],
+  ] as const;
+
+  it('lets a connected ordinary agent send news and files by default without creating standing grants or approval requests', async () => {
+    connectSender();
+    for (const [tool, input] of sends) expect((await callTool('sender', tool, input)).isError).toBeFalsy();
+    expect(fixture.forward).toHaveBeenCalledTimes(2);
+    expect(listGrantRequests()).toEqual([]);
+    expect(getAgentGrantChanges('sender')).toBeUndefined();
+  });
+
+  it.each(['ask', 'off', 'allow'] as const)('keeps saved %s authoritative for connected ordinary agents sending news and files', async (mode) => {
+    connectSender();
+    await updateAgentGrantChanges('sender', () => ({ changes: [{ action: 'agent.message', target: { kind: 'remote_dispatcher' }, mode, by: 'user' }] }));
+    const saved = getAgentGrantChanges('sender');
+    const revision = getAgentGrantRevision('sender');
+    for (const [tool, input] of sends) expect(!!(await callTool('sender', tool, input)).isError).toBe(mode !== 'allow');
+    expect(fixture.forward).toHaveBeenCalledTimes(mode === 'allow' ? 2 : 0);
+    expect(listGrantRequests()).toHaveLength(mode === 'ask' ? 2 : 0);
+    expect(getAgentGrantChanges('sender')).toEqual(saved);
+    expect(getAgentGrantRevision('sender')).toBe(revision);
+  });
+
   it('refuses without a grant, and only the exact person-approved Ask call reaches transport', async () => {
     expect(await callTool('sender', 'message_remote_dispatcher', args)).toMatchObject({ isError: true, content: [{ text: expect.stringContaining('target="remote_dispatcher"') }] });
     expect(fixture.forward).not.toHaveBeenCalled();

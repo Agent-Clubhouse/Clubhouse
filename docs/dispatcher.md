@@ -24,6 +24,8 @@ Local diagnostics record remote approval receipt, visibility (including read-onl
 
 Remote Dispatcher permission prompts and questions appear in **Needs you** even when their host has no projects. Terminal permission prompts use the host's existing pinned permission-response route: requests and answers stay bound to the originating computer and agent. Queue changes refresh the existing snapshot so answers on the host, expiry and cancellation clear other computers too; reconnect snapshots recover pending requests. Incomplete previews cannot be allowed remotely and must be reviewed on the host. Phone decision payloads and fixtures are unchanged.
 
+Messages and files to an eligible paired remote Dispatcher have local default parity: Allow for the Dispatcher and ordinary agents connected to their local Dispatcher; no remote default for unconnected agents. Saved remote Ask, Off and Allow choices still win, and no standing approval is created. Unpaired, pending, one-to-one and revoked computers gain no access. Handoff agreements retain their separate Ask-first flow.
+
 ## Controller wake and launch cost (#3465)
 
 When enabled, launch opens the controller session idle, resuming its conversation if available, with no prompt. Opening the chat or waking its session also wakes the controller. Opening **Needs you** to answer approvals does not wake or start either session, and remote grant controls remain available while the local chat sleeps. Dispatcher Off prevents these starts. The controller keeps its existing identity and stays out of the regular agent list.
