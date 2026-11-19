@@ -62,7 +62,7 @@ describe('annex-peers', () => {
     fs.readFileSync = reads as typeof fs.readFileSync; syncBuiltinESMExports();
     try {
       expect.soft(peekPeerAlias('aa:bb')).toBeUndefined(); expect.soft(reads).not.toHaveBeenCalled();
-      expect(getPeer('aa:bb')?.alias).toBe('Retained alias'); reads.mockClear();
+      expect(getPeer('aa:bb')?.alias).toBe('Retained alias'); expect(reads).toHaveBeenCalledTimes(1); reads.mockClear();
       fs.writeFileSync(file, 'broken current credentials');
       expect(peekPeerAlias('AA:BB')).toBe('Retained alias'); expect.soft(reads).not.toHaveBeenCalled(); expect(fs.readFileSync(file, 'utf8')).toBe('broken current credentials');
       resetForTests(); reads.mockClear(); expect.soft(peekPeerAlias('aa:bb')).toBeUndefined(); expect.soft(reads).not.toHaveBeenCalled();
