@@ -488,7 +488,7 @@ function cleanupSession(agentId: string): void {
   renderDiag.forget(agentId);
 }
 
-export async function spawn(agentId: string, cwd: string, binary: string, args: string[] = [], extraEnv?: Record<string, string>, onExit?: (agentId: string, exitCode: number, buffer?: string, killed?: boolean) => void, commandPrefix?: string, managed?: { beforeCreate(): void; onCreated(identity: string): void; onObservedExit(): void }): Promise<void> {
+export async function spawn(agentId: string, cwd: string, binary: string, args: string[] = [], extraEnv?: Record<string, string>, onExit?: (agentId: string, exitCode: number, buffer?: string, killed?: boolean) => void, commandPrefix?: string, managed?: { beforeCreate(): void; onCreated(identity: string): void; onObservedExit(): void }, observeCreated?: (identity: string) => void): Promise<void> {
   const logRedactor = new LogRedactor(args);
   await validateSpawnCwd(cwd);
 
@@ -554,6 +554,8 @@ export async function spawn(agentId: string, cwd: string, binary: string, args: 
   sessions.set(agentId, session);
   session.requireObservedExit = !!managed;
   managed?.onCreated(processIdentity(agentId)!);
+  try { observeCreated?.(processIdentity(agentId)!); }
+  catch { /* telemetry-exempt: read-only display observations never affect process lifecycle. */ }
   // A respawn under the same id starts at the spawn size; views still
   // following the previous PTY's size must hear about it.
   broadcastToAllWindows(IPC.PTY.RESIZED, agentId, SPAWN_COLS, SPAWN_ROWS);

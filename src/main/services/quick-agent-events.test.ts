@@ -1,7 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { MAX_DELAY_MINUTES } from '../../shared/actions';
 import { CHAIN_WINDOW_MS, onAppEvent, publishAppEvent, resetAppEventBus, type AppEvent } from './app-event-bus';
-import { beginQuickAgentRun, clearQuickAgentRuns, finishQuickAgentExit, finishQuickAgentRun, knownQuickAgents, noteQuickAgentStop, noteQuickAgentTurn } from './quick-agent-events';
+import { beginQuickAgentRun, clearQuickAgentRuns, finishQuickAgentExit, finishQuickAgentRun, knownQuickAgents, noteQuickAgentStop, noteQuickAgentTurn, noteQuickAgentRuntime, quickRuntimeDisplay, quickRuntimeIsCurrent } from './quick-agent-events';
+import type { AgentRegistration } from './agent-registry';
 
 let events: AppEvent[];
 beforeEach(() => {
@@ -19,6 +20,47 @@ afterEach(() => {
 const start = { agentId: 'quick', name: 'Review', projectPath: '/project' };
 
 describe('quick run completion events', () => {
+  it('keeps actual created-runtime linkage private and invalidates it on replacement/untrack/nonce changes without a timing heuristic', () => {
+    const run = beginQuickAgentRun(start);
+    const registration: AgentRegistration = { projectPath: start.projectPath, cwd: '/actual/work', orchestrator: 'codex-cli', runtime: 'pty', nonce: 'PRIVATE_NONCE' };
+    let current = true;
+    noteQuickAgentRuntime(run, registration, () => current);
+    expect(quickRuntimeIsCurrent(run, registration)).toBe(true);
+    expect(quickRuntimeIsCurrent(run, { ...registration })).toBe(false);
+    expect(quickRuntimeIsCurrent(run, undefined)).toBe(false);
+    expect(JSON.stringify(run)).not.toContain('PRIVATE_NONCE');
+    expect(quickRuntimeDisplay(run)).toEqual({ provider: 'codex-cli', runtime: 'pty', cwd: '/actual/work' });
+    registration.nonce = 'new'; expect(quickRuntimeIsCurrent(run, registration)).toBe(false);
+    current = false; expect(quickRuntimeIsCurrent(run, registration)).toBe(false);
+    const replacement = beginQuickAgentRun(start); // Same fake clock timestamp, distinct real run object.
+    noteQuickAgentRuntime(run, registration, () => true);
+    expect(quickRuntimeDisplay(replacement)).toBeUndefined();
+    expect(quickRuntimeIsCurrent(run, registration)).toBe(false);
+  });
+  it('never adopts a late observation for an already failed or replaced launch or a different project', () => {
+    const run = beginQuickAgentRun(start);
+    const registration: AgentRegistration = { projectPath: '/different', orchestrator: 'codex-cli', runtime: 'headless' };
+    noteQuickAgentRuntime(run, registration, () => true);
+    expect(quickRuntimeDisplay(run)).toBeUndefined();
+    registration.projectPath = start.projectPath;
+    finishQuickAgentRun(run, 'failed');
+    noteQuickAgentRuntime(run, registration, () => true);
+    expect(quickRuntimeDisplay(run)).toBeUndefined();
+  });
+  it('retains only immutable allowlisted launch display choices, separately from execution and events', () => {
+    const input = { ...start, cwd: '/project/work', orchestrator: 'codex-cli', model: 'selected-model', effort: 'high', access: 'ask' as const,
+      managedTemplate: { id: 'template', agentName: 'Template agent', addParts: ['part'], removeParts: ['old'] },
+      mission: 'PRIVATE_PROMPT', systemPrompt: 'PRIVATE_SYSTEM', mcpConfigs: { server: { token: 'PRIVATE_CREDENTIAL' } } };
+    const run = beginQuickAgentRun(input);
+    input.managedTemplate.addParts.push('later');
+    expect(run.display).toEqual({ cwd: '/project/work', orchestrator: 'codex-cli', model: 'selected-model', effort: 'high', access: 'ask', template: { id: 'template', added: ['part'], removed: ['old'], omitted: 0 } });
+    expect(Object.isFrozen(run.display)).toBe(true);
+    expect(Object.isFrozen(run.display?.template?.added)).toBe(true);
+    expect(JSON.stringify(run)).not.toMatch(/PRIVATE_|agentName/);
+    finishQuickAgentRun(run, 'completed');
+    expect(run.completion).toBe('completed');
+    expect(JSON.stringify(events)).not.toMatch(/selected-model|PRIVATE_|template/);
+  });
   it('publishes metadata once with no prompt, output or error content', () => {
     const run = beginQuickAgentRun({ ...start, parentAgentId: 'lead', quickOwner: { kind: 'action', actionId: 'review' }, chain: ['earlier', 'review'] });
     vi.setSystemTime(2400);

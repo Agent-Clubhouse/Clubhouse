@@ -1,6 +1,6 @@
 /** Remote container: host reads and shared presentation only; no local config, git or action hooks. */
 import { useEffect, useMemo, useRef, useState } from 'react';
-import type { RemoteAgentDetails, RemoteDetailsCard, RemoteDetailsCardId } from '../../../../shared/remote-agent-details';
+import type { RemoteAgentDetails, RemoteDetailsCardId } from '../../../../shared/remote-agent-details';
 import type { ControllerReadResult } from '../../../../shared/controller-chat';
 import { DISPATCHER_PROJECT_ID } from '../../../../shared/dispatcher-types';
 import { useAnnexClientStore } from '../../../stores/annexClientStore';
@@ -21,6 +21,8 @@ import { useRemoteDetailsChat } from './useRemoteDetailsChat';
 import { CanvasMembershipList } from './CanvasMembershipList';
 import { jumpToCanvas, remoteCanvasJumpUnavailable } from './agent-canvases';
 import { RemoteChangesCard } from './RemoteChangesCard';
+import { Evidence } from './RemoteDetailsEvidence';
+import { RemoteQuickSettingsCard } from './RemoteQuickSettingsCard';
 import { remoteDetailsAddress } from './remote-details-address';
 
 type Result = ControllerReadResult<RemoteAgentDetails> | { status: 'loading' };
@@ -34,15 +36,6 @@ function resultMessage(status: Result['status']): string {
     case 'rate_limited': return 'The host is busy. Try again shortly.';
     case 'error': return 'Couldn’t read details from the host. Try again.';
   }
-}
-function Evidence({ card }: { card: RemoteDetailsCard }) {
-  return <>
-    {card.rows.map((r, i) => <CardRow key={i} label={r.label} labelWidth="wide"><span className="break-words">{r.value}</span></CardRow>)}
-    {card.notes.map((note, i) => <CardNote key={i}>{note}</CardNote>)}
-    {card.state === 'error' && <CardNote><span role="status">Couldn’t read this section from the host.</span></CardNote>}
-    {card.state === 'unsupported' && <CardNote>This host does not support sharing this section.</CardNote>}
-    {card.omitted > 0 && <CardNote>{card.omitted} more rows omitted by the host’s display limit. View the complete list on the host.</CardNote>}
-  </>;
 }
 
 export function RemoteAgentDetailsView({ agent, chat, onShowInStream, missedSubagentId }: AgentDetailsProps) {
@@ -102,7 +95,8 @@ export function RemoteAgentDetailsView({ agent, chat, onShowInStream, missedSuba
     : result;
   // Retained chat is historical while disconnected and is never presented as a current host read.
   const session = details && connected && !asleep && details.running ? hydrated.chat : undefined;
-  const provider = details?.settings?.provider ?? session?.provider ?? 'Not reported by host';
+  const quickProvider = agent.kind === 'quick' && !runtimeUnconfirmed ? details?.cards.find((c) => c.id === 'settings')?.rows.find((r) => r.label === 'CLI' || asleep && r.label === 'Last CLI')?.value : undefined;
+  const provider = details?.settings?.provider ?? quickProvider ?? session?.provider ?? 'Not reported by host';
   const map = useMemo(() => session ? buildAgentMap({ items: session.items, subagents: session.subagents, capabilities: session.capabilities, state: session.state }) : null, [session]);
   const showSubagents = !dispatcher && !!map && map.mode !== 'none';
   const requested = focus?.agentId === agent.id ? containingDetailsCard(focus.card) : null;
@@ -157,7 +151,8 @@ export function RemoteAgentDetailsView({ agent, chat, onShowInStream, missedSuba
       {hydrated.partial && <p>Only part of the host transcript is loaded. Earlier provider reports and subagent activity may be missing.</p>}
       {['error', 'rate_limited', 'unavailable'].includes(result.status) && <Button kind="ghost" onClick={() => setRetry((n) => n + 1)}>Refresh</Button>}
     </div>
-    <RemoteSettingsCard agent={{ ...agent, status }} chat={session} runtimeUnconfirmed={runtimeUnconfirmed} result={result.status === 'unavailable' ? undefined : settingsResult} onRetry={() => setRetry((n) => n + 1)}>{card('settings') && <Evidence card={card('settings')!} />}</RemoteSettingsCard>
+    {agent.kind === 'quick' ? <RemoteQuickSettingsCard card={card('settings')} session={session} runtimeUnconfirmed={runtimeUnconfirmed} message={resultMessage(result.status)} /> : <RemoteSettingsCard agent={{ ...agent, status }} chat={session} runtimeUnconfirmed={runtimeUnconfirmed} result={result.status === 'unavailable' ? undefined : settingsResult} onRetry={() => setRetry((n) => n + 1)}>{card('settings') && <Evidence card={card('settings')!} />}</RemoteSettingsCard>}
+
     {!dispatcher && <RemoteChangesCard agent={agent} details={details} status={result.status} freshnessKey={refreshKey} open={open('changes')} onToggle={() => toggleCard('changes')} />}
     {!dispatcher && agent.kind === 'durable' && !agent.parentAgentId && basic('dispatcher', 'Dispatcher')}
     {!dispatcher && agent.kind === 'durable' && basic('orchestrate', 'Orchestration')}

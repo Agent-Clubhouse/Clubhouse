@@ -1,9 +1,10 @@
 /** Read-only host projections for the selected agent's Details cards (#3733). */
+import { card, row, section, display } from './remote-details-presentation';
+import { readConnectionCard, readActionCard, readCanvasCard } from './remote-details-cards';
+import { resolveReadOnlyQuickTarget } from './read-only-quick-target';
+import { readRemoteQuickDetails } from './remote-quick-details';
 import * as path from 'path';
-import { REMOTE_DETAILS_CARD_IDS, REMOTE_DETAILS_MAX_BYTES, REMOTE_DETAILS_MAX_ROWS, type RemoteAgentDetails, type RemoteDetailsCard, type RemoteDetailsCardId } from '../../shared/remote-agent-details';
-import { CONNECTION_SOURCE_LABELS } from '../../shared/connection-sources';
-import { localDirectionTools } from '../../shared/connection-grants';
-import { describeAction } from '../../shared/actions';
+import { REMOTE_DETAILS_CARD_IDS, REMOTE_DETAILS_MAX_BYTES, type RemoteAgentDetails, type RemoteDetailsCard, type RemoteDetailsCardId } from '../../shared/remote-agent-details';
 import { GRANT_GATED_SKILL_IDS } from '../../shared/managed-agents-types';
 import { isDisposedAgent } from '../../shared/agent-helpers';
 import { resolveAgentConfigTarget, type AgentConfigTarget } from './agent-config-reader';
@@ -14,20 +15,14 @@ import { resolveOrchestrationPolicies } from './orchestration-policy';
 import { getGlobalHelperCap } from './orchestration-settings';
 import { listHelpersEverywhere } from './helper-index';
 import { listStartRequests } from './helper-start-requests';
-import { bindingManager } from './clubhouse-mcp/binding-manager';
 import { getAgentConnection, getCurrentAgentConnection } from './clubhouse-mcp/bridge-server';
-import { listConnectionSources } from './connection-sources';
-import { listConnectionDirectionsForInspection } from './connection-grants-store';
 import { getDispatcherState, isDispatcherIdentityAgentId } from './dispatcher/dispatcher-service';
 import { isDispatcherEnabled } from './dispatcher/dispatcher-settings';
 import { readAgentCardView } from './dispatcher/dispatcher-agent-card-source';
-import { listActions, actionNames } from './actions';
-import { getAgentCanvasMemberships } from './canvas-store-reader';
 import { managedAgents, statusFor } from './managed-agents';
 import { readMcpConfig, readLaunchWrapper, readDefaultMcps } from './agent-settings-service';
 import { isSessionCapable } from '../orchestrators';
 import { buildSessionSummary, normalizeSessionEvents, SUMMARY_TRANSCRIPT_MAX_BYTES } from './session-reader';
-import { redactSecretValues } from '../telemetry/diag-redaction';
 import { safeMcpErrorLine } from './mcp-error-text';
 import { reachRows, reachSummary } from '../../shared/dispatcher-card-model';
 import { viewOf as agentGrantsView } from './agent-grants-service';
@@ -37,34 +32,16 @@ import { HELPER_TRANSFORM_UNAVAILABLE, readOnlyHelperWork } from './read-only-he
 import { helpersSummary, workSummary } from '../../shared/helper-work-summary';
 import { captureReadOnlyAgentTargetWitness } from './read-only-agent-target-witness';
 
-/** Redact before cutting so a partial credential cannot evade the existing secret patterns. */
-const display = (value: unknown, max = 2048) => {
-  const text = redactSecretValues(String(value)).replace(/[\x00-\x1f\x7f]/g, ' ');
-  return text.length > max ? `${text.slice(0, max - 24)}… [text truncated]` : text;
-};
 const yes = (v: boolean) => v ? 'On' : 'Off';
 const control = { 'hands-off': 'Hands off', 'ask-before-start': 'Ask before starting', 'ask-everything': 'Ask every time' };
-
-function card(id: RemoteDetailsCardId, title: string): RemoteDetailsCard {
-  return { id, title, state: 'ok', summary: '', rows: [], notes: [], omitted: 0, observedAt: Date.now() };
-}
-function row(c: RemoteDetailsCard, label: string, value: unknown) {
-  if (value === undefined || value === null || value === '') return;
-  if (c.rows.length >= REMOTE_DETAILS_MAX_ROWS) { c.omitted++; return; }
-  c.rows.push({ label: display(label), value: display(value) });
-}
-async function section(c: RemoteDetailsCard, run: () => Promise<void> | void) {
-  try { await run(); }
-  catch { // telemetry-exempt: a safe per-card error is the result; no raw host error crosses the wire.
-    c.state = 'error'; c.summary = 'Couldn’t read from host'; c.notes.push('Couldn’t read this section. Refresh to try again.');
-  }
-}
 
 /** No caller-supplied paths, store objects, instructions, action prompts or MCP definitions leave here. */
 export async function readRemoteAgentDetails(agentId: string, authorized: () => boolean): Promise<{ status: number; body: unknown }> {
   const refused = () => ({ status: 403, body: { error: 'details_read_refused' } });
   if (!authorized()) return refused();
   try {
+    const quick = await resolveReadOnlyQuickTarget(agentId, authorized);
+    if (quick) return readRemoteQuickDetails(quick, authorized);
     let target: AgentConfigTarget;
     try { target = await resolveAgentConfigTarget(agentId, undefined, { strict: true }); }
     catch (error) { return !authorized() ? refused() : error instanceof Error && error.message === 'No registered agent matches that reference.'
@@ -194,44 +171,8 @@ export async function readRemoteAgentDetails(agentId: string, authorized: () => 
         } else c.notes.push('The host Dispatcher’s permissions are not available.');
       }
     });
-    await read('connections', async (c) => {
-      // Dispatcher chat and controller share one identity, as the local Connections card does.
-      const wiresId = dispatcher ? getDispatcherState().agentId || agentId : agentId;
-      const bindings = bindingManager.getAllBindings().filter((b) => b.agentId === wiresId || b.targetKind === 'agent' && b.targetId === wiresId);
-      const sources = await listConnectionSources(wiresId);
-      const directions = listConnectionDirectionsForInspection(wiresId);
-      const pairs = new Map<string, { from: string; to: string; name: string; kind: string; bound: boolean; sources: string[]; disabled?: string[]; enabled?: string[] }>();
-      const key = (from: string, to: string) => `${from}\0${to}`;
-      for (const b of bindings) pairs.set(key(b.agentId, b.targetId), { from: b.agentId, to: b.targetId, name: b.agentId === wiresId ? b.targetName || b.projectName || b.label : b.agentName || b.agentId, kind: b.targetKind, bound: true, sources: [], disabled: b.disabledTools, enabled: b.enabledTools });
-      for (const p of sources.pairs) {
-        const k = key(p.agentId, p.targetId);
-        const item = pairs.get(k) ?? { from: p.agentId, to: p.targetId, name: p.agentId === wiresId ? p.inspection?.targetName || p.targetId : p.inspection?.agentName || p.agentId, kind: 'agent', bound: p.bound, sources: [] };
-        item.sources = p.sources.map((s) => `${CONNECTION_SOURCE_LABELS[s.kind]}${s.suspended ? ` (${s.suspended})` : ''}`);
-        if (p.unresolved) item.sources.push('Source unresolved');
-        pairs.set(k, item);
-      }
-      c.summary = `${pairs.size} directions`;
-      for (const p of pairs.values()) {
-        const direction = directions.find((d) => !d.from.machineId && !d.to.machineId && d.from.agentId === p.from && d.to.agentId === p.to);
-        const tools = localDirectionTools(direction, p.disabled, p.enabled);
-        row(c, p.name, `${p.kind} · ${p.from === wiresId ? 'to' : 'from'} · ${p.bound ? 'connected' : 'saved, not connected'}${p.sources.length ? ` · ${p.sources.join(', ')}` : ''}`);
-        if (p.kind === 'agent') row(c, `${p.name} permissions`, `Allowed: ${tools.allowed.join(', ') || 'none'}; Off: ${tools.disabled.join(', ') || 'none'}`);
-      }
-      for (const source of sources.unreadable) c.notes.push(`Couldn’t read connection source: ${display(source)}`);
-      if (!pairs.size) c.notes.push('No Clubhouse MCP wires.');
-    });
-    await read('actions', (c) => {
-      const all = listActions();
-      const related = all.filter((a) => dispatcher ? a.owner.kind === 'dispatcher' : a.owner.kind === 'agent' && a.owner.agentId === agentId
-        || a.steps.some((s) => s.kind === 'quick' ? s.worktreeAgentId === agentId : 'agentId' in s && s.agentId === agentId)
-        || a.trigger.kind === 'event' && (a.trigger.source.kind === 'agent' && a.trigger.source.agentId === agentId || a.trigger.source.kind === 'project' && a.trigger.source.projectId === project.id));
-      c.summary = `${related.length} ${dispatcher ? 'made by the Dispatcher' : 'related'}`;
-      for (const a of related) {
-        const groups = dispatcher ? [] : [a.owner.kind === 'agent' && a.owner.agentId === agentId ? 'Owned by this agent' : '', a.steps.some((s) => s.kind === 'quick' ? s.worktreeAgentId === agentId : 'agentId' in s && s.agentId === agentId) ? 'Targets this agent' : '', a.trigger.kind === 'event' && (a.trigger.source.kind === 'agent' && a.trigger.source.agentId === agentId || a.trigger.source.kind === 'project' && a.trigger.source.projectId === project.id) ? 'Set off by this agent' : ''].filter(Boolean);
-        row(c, a.name, [a.enabled ? 'On' : 'Off', ...groups, describeAction(a, actionNames()), a.lastRun?.outcome].filter(Boolean).join(' · '));
-      }
-      if (!related.length) c.notes.push(dispatcher ? 'No actions made by the Dispatcher.' : 'No actions are owned by, target or are set off by this agent.');
-    });
+    await read('connections', (c) => readConnectionCard(c, dispatcher ? getDispatcherState().agentId || agentId : agentId));
+    await read('actions', (c) => readActionCard(c, agentId, project.id, dispatcher));
     await read('skills-mcp', async (c) => {
       const status = await statusFor(project.path, agentId);
       const entries = agent.managed ? await managedAgents().liveEntries() : {};
@@ -268,18 +209,7 @@ export async function readRemoteAgentDetails(agentId: string, authorized: () => 
         row(c, 'Ended', summary.lastActiveAt);
       } else if (!running) c.notes.push('No earlier session recorded.');
     });
-    await read('canvases', async (c) => {
-      const hits = await getAgentCanvasMemberships(agentId, project.id, { strict: true });
-      c.summary = `on ${hits.length} ${hits.length === 1 ? 'board' : 'boards'}`;
-      for (const hit of hits) {
-        const before = c.rows.length;
-        row(c, hit.name, hit.scope === 'app' ? 'Home' : 'card');
-        if (c.rows.length > before && hit.canvasId && hit.viewId && hit.canvasId.length <= 2048 && hit.viewId.length <= 2048) {
-          c.rows[c.rows.length - 1].canvas = { scope: hit.scope, canvasId: hit.canvasId, viewId: hit.viewId };
-        }
-      }
-      if (!hits.length) c.state = 'not-applicable';
-    });
+    await read('canvases', (c) => readCanvasCard(c, agentId, project.id));
     await read('changes', (c) => {
       c.summary = 'Branch, session and last turn';
       c.notes.push('File comparisons are read through the host’s bounded read-only Changes service.');

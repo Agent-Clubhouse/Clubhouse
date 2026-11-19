@@ -97,6 +97,7 @@ import { getBuffer, getBufferSnapshot, getSerializedBuffer, getSerializedBufferS
 import { broadcastToAllWindows, flushPendingFor } from '../util/ipc-broadcast';
 import * as annexEventBus from './annex-event-bus';
 import { getShellCwd } from './pty-manager';
+import { processIdentity } from './pty-manager';
 import { closeAgentWork, reopenLaunches } from './launch-gate';
 import { onAgentExit } from './agent-exit-broadcast';
 import * as headlessTerminal from './pty-headless-terminal';
@@ -123,6 +124,22 @@ describe('pty-manager', () => {
     mockProcess.kill.mockReset();
     mockRealpath.mockImplementation((p: string) => Promise.resolve(p));
     mockStat.mockResolvedValue({ isDirectory: () => true });
+  });
+  it('observes this specific created PTY without enabling managed exit behavior', async () => {
+    const observed = vi.fn();
+    await spawn('display-observed', '/test', '/usr/local/bin/claude', [], undefined, undefined, undefined, undefined, observed);
+    const first = observed.mock.calls[0][0];
+    expect(first).toBe(processIdentity('display-observed'));
+    await spawn('display-observed', '/test', '/usr/local/bin/claude', [], undefined, undefined, undefined, undefined, observed);
+    expect(observed.mock.calls[1][0]).toBe(processIdentity('display-observed'));
+    expect(observed.mock.calls[1][0]).not.toBe(first);
+    kill('display-observed');
+    expect(isRunning('display-observed')).toBe(false);
+  });
+  it('does not change PTY creation or plain exit behavior when a display observer throws', async () => {
+    await expect(spawn('display-throws', '/test', '/usr/local/bin/claude', [], undefined, undefined, undefined, undefined, () => { throw new Error('display failure'); })).resolves.toBeUndefined();
+    expect(isRunning('display-throws')).toBe(true);
+    kill('display-throws'); expect(isRunning('display-throws')).toBe(false);
   });
 
   describe('getBuffer', () => {

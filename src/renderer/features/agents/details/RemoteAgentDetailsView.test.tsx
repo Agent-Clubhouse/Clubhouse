@@ -34,6 +34,33 @@ beforeEach(() => {
   for (const [object, method] of [[window.clubhouse.actions, 'list'], [window.clubhouse.git, 'branchChanges'], [window.clubhouse.agent, 'getDurableConfig'], [window.clubhouse.managed, 'getSetup'], [window.clubhouse.mcpBinding, 'getAgentConnection'], [window.clubhouse.canvas, 'getAgentCanvases']] as const) Object.assign(object, { [method]: vi.fn() });
 });
 describe('remote full Details host evidence', () => {
+  it('shows quick launch and current report fields without durable setup, next-wake settings or local reads', async () => {
+    const value = fixture(); value.settings = null;
+    for (const id of ['dispatcher', 'orchestrate'] as const) value.cards.find((c) => c.id === id)!.state = 'not-applicable';
+    value.cards.find((c) => c.id === 'settings')!.rows = [{ label: 'CLI', value: 'Host CLI' }, { label: 'Requested model', value: 'launch-model' }, { label: 'Template', value: 'Host quick template' }];
+    read.mockResolvedValue({ status: 'ok', value });
+    render(<AgentDetails agent={{ ...agent, kind: 'quick' }} />);
+    await waitFor(() => expect(screen.getByTestId('details-card-settings')).toHaveTextContent('High (default)'));
+    const settings = within(screen.getByTestId('details-card-settings'));
+    expect(settings.getByText('launch-model')).toBeInTheDocument();
+    expect(settings.getByText('Host quick template')).toBeInTheDocument();
+    expect(settings.getByText('Host CLI 1.2.3')).toBeInTheDocument();
+    expect(settings.queryByText('Next wake')).not.toBeInTheDocument();
+    expect(settings.queryByText('Instructions')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('details-card-orchestrate')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('details-card-dispatcher')).not.toBeInTheDocument();
+    expect(window.clubhouse.annexClient.agentSettings).not.toHaveBeenCalled();
+    expect(window.clubhouse.agent.getDurableConfig).not.toHaveBeenCalled();
+    expect(window.clubhouse.actions.list).not.toHaveBeenCalled();
+  });
+  it('keeps old-host quick unavailability explicit without durable settings or local fallback', async () => {
+    read.mockResolvedValue({ status: 'unavailable' });
+    render(<AgentDetails agent={{ ...agent, kind: 'quick' }} />);
+    await waitFor(() => expect(screen.getByTestId('details-card-settings')).toHaveTextContent('This host does not share these details'));
+    expect(window.clubhouse.annexClient.agentSettings).not.toHaveBeenCalled();
+    expect(window.clubhouse.agent.getDurableConfig).not.toHaveBeenCalled();
+    expect(window.clubhouse.actions.list).not.toHaveBeenCalled();
+  });
   it.each(['a1', 'remote||sat||'])('withholds malformed selected identity %s before any host or local fallback read', async (id) => {
     const settings = vi.fn();
     Object.assign(window.clubhouse.annexClient, { agentSettings: settings });

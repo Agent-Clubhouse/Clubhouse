@@ -1,6 +1,7 @@
 import { MAX_DELAY_MINUTES } from '../../shared/actions';
 import type { QuickAgentOwner, TurnOutcome, QuickTemplateChoice, SpawnAgentParams } from '../../shared/types';
 import { clearAgentChain, forgetHookTurn, publishAppEvent, setAgentChain } from './app-event-bus';
+import type { AgentRegistration } from './agent-registry';
 
 export interface QuickAgentRun {
   agentId: string;
@@ -32,6 +33,34 @@ export interface QuickRunDisplay {
 }
 
 const runs = new Map<string, QuickAgentRun>();
+interface ObservedQuickRuntime {
+  registration: AgentRegistration;
+  nonce: string | undefined;
+  display: Readonly<{ provider: string; runtime: AgentRegistration['runtime']; cwd?: string }>;
+  isCurrent(): boolean;
+}
+let observedRuntimes = new WeakMap<QuickAgentRun, ObservedQuickRuntime>();
+
+/** Called only with a specific created runtime, never a post-await ID lookup. No execution authority. */
+export function noteQuickAgentRuntime(run: QuickAgentRun, registration: AgentRegistration | undefined, isCurrent: () => boolean): void {
+  try {
+    if (!registration || runs.get(run.agentId) !== run || run.finishedAt !== undefined || registration.projectPath !== run.projectPath || !isCurrent()) return;
+    observedRuntimes.set(run, { registration, nonce: registration.nonce,
+      display: Object.freeze({ provider: registration.orchestrator, runtime: registration.runtime, ...(registration.cwd && { cwd: registration.cwd }) }), isCurrent });
+  } catch { /* telemetry-exempt: a display observation must never change the spawn's outcome. */ }
+}
+
+export function quickRuntimeIsCurrent(run: QuickAgentRun, registration: AgentRegistration | undefined): boolean {
+  const observed = observedRuntimes.get(run);
+  try { return !!observed && runs.get(run.agentId) === run && observed.registration === registration
+    && registration?.projectPath === run.projectPath
+    && registration?.nonce === observed.nonce && registration?.runtime === observed.display.runtime
+    && registration?.orchestrator === observed.display.provider && registration?.cwd === observed.display.cwd && observed.isCurrent(); }
+  catch { return false; /* telemetry-exempt: unavailable observation, never an effect. */ }
+}
+
+/** Safe historical metadata only; registration, nonce and runtime identity stay private. */
+export function quickRuntimeDisplay(run: QuickAgentRun): ObservedQuickRuntime['display'] | undefined { return observedRuntimes.get(run)?.display; }
 
 // Keep identity, scope and allowlisted launch display metadata, not prompt or output, through delayed delivery
 // and its final rights check. Nothing is persisted in actions.json.
@@ -161,4 +190,5 @@ export function clearQuickAgentRuns(): void {
     forgetHookTurn(id);
   }
   runs.clear();
+  observedRuntimes = new WeakMap();
 }

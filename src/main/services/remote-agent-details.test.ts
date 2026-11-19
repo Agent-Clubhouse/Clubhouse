@@ -5,7 +5,7 @@ import * as path from 'path';
 import { noteAgentStarting, _resetAgentDisplayStateForTesting } from './agent-display-state';
 import { ORCHESTRATION_DEFAULTS } from '../../shared/orchestration-policy';
 import { isRemoteAgentDetails, type RemoteAgentDetails } from '../../shared/remote-agent-details';
-const m = vi.hoisted(() => ({ target: vi.fn(), settings: vi.fn(), provider: vi.fn(), running: vi.fn(), policies: vi.fn(), helpers: vi.fn(), requests: vi.fn(), bindings: vi.fn(), sources: vi.fn(), directions: vi.fn(), dispatcher: vi.fn(), dispatcherOn: vi.fn(), agentCard: vi.fn(), actions: vi.fn(), canvases: vi.fn(), status: vi.fn(), entries: vi.fn(), template: vi.fn(), mcp: vi.fn(), branch: vi.fn(), transcript: vi.fn(), connection: vi.fn(), work: vi.fn(), realWitness: false, base: '', registration: vi.fn(), runtime: vi.fn(), useRealRuntime: false }));
+const m = vi.hoisted(() => ({ target: vi.fn(), settings: vi.fn(), provider: vi.fn(), running: vi.fn(), policies: vi.fn(), helpers: vi.fn(), requests: vi.fn(), bindings: vi.fn(), sources: vi.fn(), satellite: vi.fn(), peer: vi.fn(), directions: vi.fn(), dispatcher: vi.fn(), dispatcherOn: vi.fn(), agentCard: vi.fn(), actions: vi.fn(), canvases: vi.fn(), status: vi.fn(), entries: vi.fn(), template: vi.fn(), mcp: vi.fn(), branch: vi.fn(), transcript: vi.fn(), connection: vi.fn(), work: vi.fn(), realWitness: false, base: '', registration: vi.fn(), runtime: vi.fn(), useRealRuntime: false }));
 vi.mock('./base-dir', () => ({ getBaseDirPath: () => m.base }));
 vi.mock('./read-only-agent-target-witness', async (original) => {
   const actual = await original<typeof import('./read-only-agent-target-witness')>();
@@ -28,6 +28,8 @@ vi.mock('./read-only-helper-work', () => ({ readOnlyHelperWork: m.work, HELPER_T
 vi.mock('./helper-start-requests', () => ({ listStartRequests: m.requests }));
 vi.mock('./clubhouse-mcp/binding-manager', () => ({ bindingManager: { getAllBindings: m.bindings } }));
 vi.mock('./clubhouse-mcp/bridge-server', () => ({ getAgentConnection: m.connection, getCurrentAgentConnection: () => m.connection()?.current ? m.connection() : null }));
+vi.mock('./annex-client', () => ({ getSatellite: m.satellite }));
+vi.mock('./annex-peers', () => ({ getPeer: m.peer }));
 vi.mock('./connection-sources', () => ({ listConnectionSources: m.sources }));
 vi.mock('./connection-grants-store', () => ({ listConnectionDirectionsForInspection: m.directions }));
 vi.mock('./dispatcher/dispatcher-service', () => ({ getDispatcherState: m.dispatcher, isDispatcherIdentityAgentId: (id: string) => id === 'disp' }));
@@ -55,7 +57,7 @@ beforeEach(() => {
   m.running.mockReturnValue(false);
   m.policies.mockResolvedValue(new Map([['a1', ORCHESTRATION_DEFAULTS]]));
   m.helpers.mockResolvedValue([]); m.requests.mockReturnValue([]); m.work.mockResolvedValue({ dirty: 0, unpushed: 0, unmerged: null });
-  m.bindings.mockReturnValue([]); m.sources.mockResolvedValue({ pairs: [], unreadable: [] }); m.directions.mockReturnValue([]);
+  m.bindings.mockReturnValue([]); m.sources.mockResolvedValue({ pairs: [], unreadable: [] }); m.satellite.mockReturnValue(null); m.peer.mockReturnValue(undefined); m.directions.mockReturnValue([]);
   m.dispatcher.mockReturnValue({ agentId: 'disp', config: { name: 'Host Dispatcher' } }); m.dispatcherOn.mockReturnValue(false);
   m.actions.mockReturnValue([]); m.canvases.mockResolvedValue([]);
   m.status.mockResolvedValue({ managed: false, running: false, waiting: false, changes: [] }); m.entries.mockResolvedValue({}); m.template.mockResolvedValue({ name: 'Template' });
@@ -68,6 +70,33 @@ const read = async () => {
   return response.body as RemoteAgentDetails;
 };
 describe('host selected-agent Details projections', () => {
+  it('folds only the selected local agent’s network directions and projects cached peer fields without raw trust records or unrelated agents', async () => {
+    const base = { disabledTools: ['send_message'], link: { createdAt: '2026-11-19' }, updatedAt: '2026-11-19' };
+    m.directions.mockReturnValue([
+      { ...base, from: { agentId: 'a1' }, to: { agentId: 'b', machineId: 'm1' } },
+      { ...base, from: { agentId: 'b', machineId: 'm1' }, to: { agentId: 'a1' } },
+      { ...base, from: { agentId: 'a1', machineId: 'PRIVATE_FOREIGN_FROM' }, to: { agentId: 'PRIVATE_OTHER_AGENT', machineId: 'PRIVATE_OTHER_MACHINE' } },
+    ]);
+    m.satellite.mockImplementation((id: string) => id === 'm1' ? { alias: 'Studio', state: 'disconnected', snapshotUnavailable: true,
+      snapshot: { agents: { p1: [{ id: 'b', name: 'Peer B' }, { id: 'unrelated', name: 'PRIVATE_UNRELATED_NAME' }] }, quickAgents: {} }, tlsCertificatePem: 'PRIVATE_CERTIFICATE' } : null);
+    m.peer.mockReturnValue({ alias: 'Saved alias', lastSeen: '2026-11-19T00:00:00Z', publicKey: 'PRIVATE_UNUSED_TRUST_RECORD' });
+    const value = await read();
+    const connections = value.cards.find((c) => c.id === 'connections')!;
+    expect.soft(connections.summary).toBe('0 local directions · 1 remote connections');
+    expect.soft(connections.rows.find((r) => r.label === 'Peer B')?.value).toContain('on Studio · two-way · saved network link · disconnected · names from retained metadata');
+    expect.soft(connections.rows.find((r) => r.label === 'Peer B outgoing switches')?.value).toContain('Off: Send messages');
+    expect.soft(connections.notes.join(' ')).not.toContain('No Clubhouse MCP wires');
+    expect.soft(JSON.stringify(value)).not.toMatch(/PRIVATE_OTHER|PRIVATE_UNRELATED|PRIVATE_CERTIFICATE|PRIVATE_UNUSED/i);
+    expect.soft(m.satellite.mock.calls.every(([id]) => id === 'm1')).toBe(true);
+  });
+  it('never substitutes a different cached agent’s name when the saved network target is absent', async () => {
+    m.directions.mockReturnValue([{ from: { agentId: 'a1' }, to: { agentId: 'missing', machineId: 'm1' }, disabledTools: [], link: { createdAt: '2026-11-19' }, updatedAt: '2026-11-19' }]);
+    m.satellite.mockReturnValue({ alias: 'Studio', state: 'connected', snapshot: { agents: { p: [{ id: 'different', name: 'PRIVATE_OTHER_AGENT_NAME' }] }, quickAgents: {} } });
+    const c = (await read()).cards.find((c) => c.id === 'connections')!;
+    expect.soft(c.rows.some((r) => r.label === 'missing')).toBe(true);
+    expect.soft(c.notes.join(' ')).toContain('name for missing@m1 is unavailable or ambiguous');
+    expect.soft(JSON.stringify(c)).not.toContain('PRIVATE_OTHER_AGENT_NAME');
+  });
   it.each(['parent-removal', 'earlier-helper-release', 'cross-project-reparent', 'disposed-reparent'] as const)('withholds complete Details when real primary membership changes after helper work: %s', async (condition) => {
     const root = await fs.mkdtemp(path.join(os.tmpdir(), 'clubhouse-details-final-inventory-'));
     try {

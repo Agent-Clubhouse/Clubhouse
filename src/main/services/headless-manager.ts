@@ -737,6 +737,8 @@ export async function spawnHeadless(
    * before the process is spawned); throwing stops it there (#3613).
    */
   beforeSpawn?: () => void,
+  /** Main-private display observation of this particular created session, with no launch effect. */
+  observeCreated?: (isCurrent: () => boolean) => void,
 ): Promise<void> {
   const quickRun = knownQuickAgents().get(agentId);
   await validateSpawnCwd(cwd);
@@ -786,6 +788,8 @@ export async function spawnHeadless(
   const session = createSessionRecord(agentId, proc, outputKind, transcriptPath, onExit, createEventNormalizer, turn, quickRun);
   session.logRedactor = logRedactor.startRun();
   sessions.set(agentId, session);
+  try { observeCreated?.(() => sessions.get(agentId) === session && session.process === proc && !!proc.pid); }
+  catch { /* telemetry-exempt: read-only display observations never affect process lifecycle. */ }
   agentRunStarted(agentId, 'headless');
 
   const logStream = fs.createWriteStream(transcriptPath, { flags: 'w' });

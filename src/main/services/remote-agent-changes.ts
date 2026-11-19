@@ -10,6 +10,8 @@ import { isDispatcherIdentityAgentId } from './dispatcher/dispatcher-service';
 import { readOnlyGit, ReadOnlyGitError, readOnlyRepositoryRoot, readOnlyRepositoryChanges, type ReadOnlyComparison } from './read-only-repository-changes';
 import { redactSecretValues } from '../telemetry/diag-redaction';
 import { captureReadOnlyAgentTargetWitness } from './read-only-agent-target-witness';
+import { resolveReadOnlyQuickTarget } from './read-only-quick-target';
+import { quickRuntimeDisplay, quickRuntimeIsCurrent } from './quick-agent-events';
 
 const safeText = (s: string) => redactSecretValues(s).replace(/[\x00-\x1f\x7f]/g, ' ').slice(0, 2048);
 const inFlight = new Set<string>();
@@ -21,20 +23,28 @@ export async function readRemoteAgentChanges(agentId: string, query: RemoteChang
   inFlight.add(agentId);
   const checked = async <T>(work: Promise<T>): Promise<T> => { const value = await work; if (!authorized()) throw new Error('revoked'); return value; };
   try {
-    const target = await checked(resolveAgentConfigTarget(agentId, undefined, { strict: true }));
-    if (target.agent.id !== agentId || isDisposedAgent(target.agent)) return { status: 404, body: { error: 'agent_not_found' } };
-    const targetWitness = isDispatcherIdentityAgentId(agentId) ? null : captureReadOnlyAgentTargetWitness(target);
+    const quick = await checked(resolveReadOnlyQuickTarget(agentId, authorized));
+    const target = quick ? null : await checked(resolveAgentConfigTarget(agentId, undefined, { strict: true }));
+    if (target && (target.agent.id !== agentId || isDisposedAgent(target.agent))) return { status: 404, body: { error: 'agent_not_found' } };
+    const targetWitness = quick ? quick : isDispatcherIdentityAgentId(agentId) ? null : captureReadOnlyAgentTargetWitness(target!);
     const registration = agentRegistry.get(agentId);
     const nonce = registration?.nonce;
     const runtimeKind = registration?.runtime;
-    const runtime = getAgentRuntime(agentId);
+    const quickBound = !!quick && quickRuntimeIsCurrent(quick.run, registration);
+    const runtime = quick && !quickBound ? undefined : getAgentRuntime(agentId);
     const running = isAgentRunning(agentId);
+    if (quick && running && !quickBound) return { status: 409, body: { error: 'quick_runtime_unconfirmed' } };
     const sessionId = runtime?.kind === 'chat' ? runtime.getSessionId?.() ?? null : null;
     const nativeSessionId = runtime?.kind === 'chat' ? runtime.getNativeSessionId?.() ?? null : null;
-    const cwd = registration?.cwd || target.agent.worktreePath || target.project.path;
+    const quickFolder = quick ? quickRuntimeDisplay(quick.run)?.cwd : undefined;
+    const cwd = (quick ? quickBound ? registration?.cwd : quickFolder : registration?.cwd)
+      || quick?.run.display?.cwd || target?.agent.worktreePath || quick?.project.path || target!.project.path;
     const result: RemoteAgentChanges = { version: 1, readOnly: true, agentId, observedAt: Date.now(), scope: query.scope, state: 'ok', branch: null, base: null, sessionId, turnId: null, live: true, shared: false,
       files: [], totalFiles: 0, offset: query.offset ?? 0, nextOffset: null, uncompared: 0, skippedLarge: [], skippedRepos: [], skippedOmitted: 0 };
-    const root = isDispatcherIdentityAgentId(agentId) ? null : await checked(readOnlyRepositoryRoot(cwd));
+    // A failed/pending launch's requested cwd is display metadata, not a new
+    // filesystem read authority. Only its created-runtime observation can bind it.
+    const folderUnconfirmed = !!quick && !quickFolder;
+    const root = isDispatcherIdentityAgentId(agentId) || folderUnconfirmed ? null : await checked(readOnlyRepositoryRoot(cwd));
     let head: string | null = null;
     let comparison: ReadOnlyComparison | undefined;
     const git = async (args: string[]) => (await checked(readOnlyGit(root!, args))).toString().trim();
@@ -42,7 +52,7 @@ export async function readRemoteAgentChanges(agentId: string, query: RemoteChang
       try { return await git(args); }
       catch (error) { if (error instanceof ReadOnlyGitError && error.code === 1) return null; throw error; }
     };
-    if (isDispatcherIdentityAgentId(agentId)) result.state = 'unsupported';
+    if (isDispatcherIdentityAgentId(agentId) || folderUnconfirmed) result.state = 'unsupported';
     else if (!root) result.state = 'not-git';
     else {
       head = await probe(['rev-parse', '--verify', '--quiet', 'HEAD^{commit}']);
@@ -65,7 +75,7 @@ export async function readRemoteAgentChanges(agentId: string, query: RemoteChang
         }
         if (from) comparison = { root, from, identity: `${agentId}:${nonce ?? ''}:${query.scope}` };
         else result.state = 'no-base';
-      } else if (!/^[A-Za-z0-9_-][A-Za-z0-9._-]*$/.test(agentId) || agentId.includes('..') || agentId.endsWith('.') || agentId.endsWith('.lock')) result.state = 'unsupported';
+      } else if (quick && !sessionId || !/^[A-Za-z0-9_-][A-Za-z0-9._-]*$/.test(agentId) || agentId.includes('..') || agentId.endsWith('.') || agentId.endsWith('.lock')) result.state = 'unsupported';
       else {
         const prefix = `refs/clubhouse/checkpoints/${agentId}/`;
         const rows = (await git(['for-each-ref', '--sort=creatordate', '--count=301', '--format=%(refname)%09%(objectname)', prefix])).split('\n').filter(Boolean);
@@ -102,12 +112,15 @@ export async function readRemoteAgentChanges(agentId: string, query: RemoteChang
       if (comparison) Object.assign(result, await checked(readOnlyRepositoryChanges(comparison, query, authorized)));
     }
     if (!authorized()) return refused();
-    const finalTarget = await checked(resolveAgentConfigTarget(agentId, undefined, { strict: true }));
-    if (finalTarget.agent.id !== agentId || isDisposedAgent(finalTarget.agent) || finalTarget.project.path !== target.project.path || finalTarget.agent.worktreePath !== target.agent.worktreePath
-      || root && await checked(readOnlyRepositoryRoot(cwd)) !== root) return { status: 409, body: { error: 'agent_target_changed' } };
+    if (target) {
+      const finalTarget = await checked(resolveAgentConfigTarget(agentId, undefined, { strict: true }));
+      if (finalTarget.agent.id !== agentId || isDisposedAgent(finalTarget.agent) || finalTarget.project.path !== target.project.path || finalTarget.agent.worktreePath !== target.agent.worktreePath) return { status: 409, body: { error: 'agent_target_changed' } };
+    }
+    if (root && await checked(readOnlyRepositoryRoot(cwd)) !== root) return { status: 409, body: { error: 'agent_target_changed' } };
     if (root && await probe(['rev-parse', '--verify', '--quiet', 'HEAD^{commit}']) !== head) return { status: 409, body: { error: 'agent_run_or_branch_changed' } };
     const current = agentRegistry.get(agentId);
     if (current !== registration || current?.nonce !== nonce || current?.runtime !== runtimeKind || isAgentRunning(agentId) !== running
+      || quick && quickRuntimeIsCurrent(quick.run, current) !== quickBound
       || running && !registration && runtime?.kind !== 'chat'
       || runtime?.kind === 'chat' && (getAgentRuntime(agentId) !== runtime || runtime.getSessionId?.() !== sessionId || (runtime.getNativeSessionId?.() ?? null) !== nativeSessionId)) return { status: 409, body: { error: 'agent_run_or_branch_changed' } };
     if (!authorized()) return refused();
