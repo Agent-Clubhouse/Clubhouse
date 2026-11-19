@@ -7,7 +7,7 @@ vi.mock('./log-service', () => ({ appLog: vi.fn() }));
 import { readRuntimeModeForDisplay, getSettings as getRuntimeSettings } from './chat-runtime-settings';
 import { readAgentAccessForDisplay } from './free-agent-settings';
 import { readIdleSleepForDisplay, chatIdleSettings } from './chat-idle-settings';
-import { readGraduatedFlagForDisplay, getStoredSettings as getStoredFlags } from './experimental-settings';
+import { readGraduatedFlagForDisplay, getStoredSettings as getStoredFlags, saveSettings as saveFlags, isGraduatedFeatureOn } from './experimental-settings';
 import { resetAllSettingsStoresForTests } from './settings-store';
 let root: string;
 const files = ['experimental-settings.json', 'chat-runtime-settings.json', 'free-agent-settings.json', 'chat-idle-settings.json'];
@@ -44,9 +44,9 @@ it('honors explicit host Chat off without consulting malformed runtime preferenc
 });
 it.each([null, false, 'wrong'])('refuses malformed relevant saved fields %s rather than applying absent-field defaults', (bad) => {
   write('chat-runtime-settings.json', { 'claude-code': { mode: bad } }); write('free-agent-settings.json', { defaultMode: bad }); write('chat-idle-settings.json', { idleTimeoutMinutes: bad });
-  expect(readRuntimeModeForDisplay('claude-code').state).toBe('unavailable');
-  expect(readAgentAccessForDisplay({ freeAgentMode: true }, '/selected').state).toBe('unavailable');
-  expect(readIdleSleepForDisplay(undefined).state).toBe('unavailable');
+  expect.soft(readRuntimeModeForDisplay('claude-code').state).toBe('unavailable');
+  expect.soft(readAgentAccessForDisplay({ freeAgentMode: true }, '/selected').state).toBe('unavailable');
+  expect.soft(readIdleSleepForDisplay(undefined).state).toBe('unavailable');
 });
 it('validates only the selected project access setting and never returns unrelated defaults or raw values', () => {
   write('free-agent-settings.json', { defaultMode: 'skip-all', projectOverrides: { '/selected': 'auto', '/PRIVATE_OTHER_PROJECT': 'PRIVATE_INVALID_OTHER_SETTING' } });
@@ -67,4 +67,34 @@ it('distinguishes established host cache from changed primary, and honors the fl
   expect(readRuntimeModeForDisplay('claude-code')).toMatchObject({ state: 'ok', value: { mode: 'terminal' } });
   write('chat-idle-settings.json', { idleTimeoutMinutes: 0 }); chatIdleSettings.getSettings(); write('chat-idle-settings.json', { idleTimeoutMinutes: 240 });
   expect(readIdleSleepForDisplay('inherit')).toMatchObject({ state: 'ok', value: { minutes: 0, source: 'app' }, inputs: [{ source: 'host-cache' }] });
+});
+
+it.each(['readable', 'unreadable'])('preserves the existing flag gate latch during an actual blocked %s save without display writes', async (initial) => {
+  if (initial === 'readable') write('experimental-settings.json', { chat: true }); else fs.writeFileSync(path.join(root, 'experimental-settings.json'), '{broken');
+  getStoredFlags();
+  const open = fs.promises.open.bind(fs.promises); let release!: () => void, entered!: () => void; let blocked = false;
+  const held = new Promise<void>((resolve) => { release = resolve; }); const started = new Promise<void>((resolve) => { entered = resolve; });
+  vi.spyOn(fs.promises, 'open').mockImplementation(async (...args) => {
+    if (!blocked && String(args[0]).includes('.experimental-settings.json.tmp-')) { blocked = true; entered(); await held; }
+    return open(...args);
+  });
+  const saving = saveFlags({ chat: false });
+  try {
+    await started;
+    // The pending-write latch deliberately retains the pre-save readability
+    // decision, while its accepted-memory value differs from committed disk.
+    fs.writeFileSync(path.join(root, 'experimental-settings.json'), initial === 'readable' ? '{broken during held save' : '{"chat":true}');
+    const before = disk(); const value = readGraduatedFlagForDisplay('chat');
+    expect.soft(value).toMatchObject(initial === 'readable' ? { state: 'ok', value: false, inputs: [{ source: 'host-cache' }] } : { state: 'unavailable', inputs: [{ source: 'host-cache' }] });
+    expect.soft(isGraduatedFeatureOn('chat')).toBe(false); expect.soft(disk()).toEqual(before);
+  } finally { release(); await saving; }
+  expect(readGraduatedFlagForDisplay('chat')).toMatchObject({ state: 'ok', value: false });
+});
+
+it.each(['chat-runtime-settings.json', 'free-agent-settings.json', 'chat-idle-settings.json'])('keeps unreadable %s independent from other valid global sources without recovery', (bad) => {
+  for (const name of files) write(name, {}); fs.writeFileSync(path.join(root, bad), '{broken'); temps(); const before = disk();
+  const runtime = readRuntimeModeForDisplay('claude-code'), access = readAgentAccessForDisplay({ freeAgentMode: true }, '/selected'), idle = readIdleSleepForDisplay(undefined);
+  expect.soft(runtime.state).toBe(bad === 'chat-runtime-settings.json' ? 'unavailable' : 'ok');
+  expect.soft(access.state).toBe(bad === 'free-agent-settings.json' ? 'unavailable' : 'ok');
+  expect.soft(idle.state).toBe(bad === 'chat-idle-settings.json' ? 'unavailable' : 'ok'); expect.soft(disk()).toEqual(before);
 });
