@@ -475,7 +475,7 @@ describe('annex-client remote PTY buffer cache', () => {
       const newFetch = deferBufferFetch();
       const reopened = requestPtyBufferSnapshot(SAT, AGENT);
       oldFetch.respond('stale screen', { [ANNEX_BUFFER_HEADERS.seq]: '12' });
-      await vi.waitFor(() => expect(https.get).toHaveBeenCalledTimes(2));
+      await vi.waitFor(() => expect(https.request).toHaveBeenCalledTimes(2));
       newFetch.respond('screen after wake', { [ANNEX_BUFFER_HEADERS.seq]: '17' });
 
       expect((await reopened).data).toBe('screen after wake');
@@ -490,19 +490,19 @@ describe('annex-client remote PTY buffer cache', () => {
       _addConnectedSatelliteForTesting(SAT);
       const retryFetch = deferBufferFetch();
       firstFetch.respond('stale screen');
-      await vi.waitFor(() => expect(https.get).toHaveBeenCalledTimes(2));
+      await vi.waitFor(() => expect(https.request).toHaveBeenCalledTimes(2));
 
       _receiveSatelliteDisconnectForTesting(SAT);
       _addConnectedSatelliteForTesting(SAT);
       retryFetch.respond('another stale screen');
       expect((await pending).data).toBe('');
-      expect(https.get).toHaveBeenCalledTimes(2);
+      expect(https.request).toHaveBeenCalledTimes(2);
 
       const stableFetch = deferBufferFetch();
       const stableRequest = requestPtyBufferSnapshot(SAT, AGENT);
       stableFetch.respond('current screen');
       expect((await stableRequest).data).toBe('current screen');
-      expect(https.get).toHaveBeenCalledTimes(3);
+      expect(https.request).toHaveBeenCalledTimes(3);
     });
 
     it('stops trimming after a disconnect, since a restarted satellite counts from zero', async () => {
