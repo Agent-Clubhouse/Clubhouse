@@ -412,6 +412,7 @@ vi.stubGlobal('clubhouse', {
     purgeServerConfig: asyncNoop,
   },
   annexClient: {
+    agentSettings: vi.fn(async () => ({ status: 'offline' })),
     controllerChatPage: vi.fn(async () => ({ status: 'offline' })),
     controllerChatSessions: vi.fn(async () => ({ status: 'offline' })),
     getSatellites: async () => [],

@@ -1,3 +1,4 @@
+import { readRemoteAgentSettings } from './remote-agent-settings';
 import { handoffTransferDiagnostic, tagHandoffTransferError } from '../../shared/handoff-transfer-diagnostics';
 import { mobileProjectLinks, MOBILE_PROJECT_LINKS_EVENT } from './mobile-project-links';
 import { hydrateProjectLinks, projectLinksStore } from './project-links-store';
@@ -4044,6 +4045,26 @@ async function handleMobileAgentStateRoute(ctx: AnnexRouteContext): Promise<void
   }
 }
 
+/** Desktop display metadata only, under the existing paired-controller read authority. */
+async function handleAgentSettingsDetailsRoute(ctx: AnnexRouteContext, match: RegExpMatchArray): Promise<void> {
+  if (ctx.requireMtls()) return;
+  // Same paired-controller read authority as existing agent settings; recheck after disk reads.
+  const authorized = () => {
+    const peer = annexPeers.getPeer(ctx.principal.fingerprint);
+    return !isRefusal(ctx.reauthorize()) && !!peer && peer.kind !== 'phone'
+      && !peer.networkPending && !mobileSessionPeers.has(ctx.principal.fingerprint);
+  };
+  if (!authorized()) { sendJson(ctx.res, 403, { error: 'desktop_controller_required' }); return; }
+  let agentId: string;
+  try { agentId = decodeURIComponent(match[1]); }
+  catch { sendJson(ctx.res, 400, { error: 'invalid_agent_id' }); return; }
+  if (!agentId || agentId.length > 240) { sendJson(ctx.res, 400, { error: 'invalid_agent_id' }); return; }
+  const result = await readRemoteAgentSettings(agentId, authorized);
+  if (!authorized()) { sendJson(ctx.res, 403, { error: 'settings_read_refused' }); return; }
+  ctx.res.setHeader('Cache-Control', 'no-store');
+  sendJson(ctx.res, result.status, result.body);
+}
+
 /** A separate read surface: controller history never enters phone routes or event replay. */
 async function handleControllerChatRoute(ctx: AnnexRouteContext, sessions = false): Promise<void> {
   if (ctx.requireMtls()) return;
@@ -4683,6 +4704,7 @@ const ANNEX_HTTP_ROUTE_TABLE: AnnexHttpRoute[] = [
   { method: 'GET', pattern: /^\/api\/v1\/projects$/, handler: handleProjectsRoute },
   { method: 'GET', pattern: /^\/api\/v1\/projects\/([^/]+)\/agents$/, handler: handleProjectAgentsRoute },
   { method: 'GET', pattern: /^\/api\/v1\/agents\/([^/]+)\/buffer$/, handler: handleAgentBufferRoute },
+  { method: 'GET', pattern: /^\/api\/v1\/agents\/([^/]+)\/settings-details$/, handler: handleAgentSettingsDetailsRoute },
   { method: 'GET', pattern: /^\/api\/v1\/projects\/([^/]+)\/files\/tree(\?.*)?$/, handler: handleProjectFilesTreeRoute },
   { method: 'GET', pattern: /^\/api\/v1\/projects\/([^/]+)\/files\/read(\?.*)?$/, handler: handleProjectFilesReadRoute },
   { method: 'GET', pattern: /^\/api\/v1\/projects\/([^/]+)\/git\/info$/, handler: handleGitInfoRoute },

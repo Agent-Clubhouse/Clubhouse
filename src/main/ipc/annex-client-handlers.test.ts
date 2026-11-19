@@ -17,6 +17,7 @@ vi.mock('../services/annex-peers', () => ({
 vi.mock('../util/ipc-broadcast', () => ({ broadcastToAllWindows: vi.fn() }));
 
 vi.mock('../services/annex-client', () => ({
+  requestAgentSettings: vi.fn(async () => ({ status: 'offline' })),
   requestControllerChatPage: vi.fn(async () => ({ status: 'offline' })),
   requestControllerChatSessions: vi.fn(async () => ({ status: 'offline' })),
   requestChatPage: vi.fn(async () => ({ events: [] })),
@@ -157,6 +158,12 @@ describe('annex-client-handlers', () => {
     const handler = handlers.get(IPC.ANNEX_CLIENT.FORGET_SATELLITE)!;
     handler({}, 'fp:aa:bb');
     expect(annexClient.forgetSatellite).toHaveBeenCalledWith('fp:aa:bb');
+  });
+
+  it('delegates only a fixed remote Settings read, with bounded ids', async () => {
+    await handlers.get(IPC.ANNEX_CLIENT.AGENT_SETTINGS)!({}, 'sat', 'agent');
+    expect(annexClient.requestAgentSettings).toHaveBeenCalledWith('sat', 'agent');
+    expect(() => handlers.get(IPC.ANNEX_CLIENT.AGENT_SETTINGS)!({}, 'sat', 'a'.repeat(241))).toThrow();
   });
 
   it('delegates desktop controller reads without a command or arbitrary URL channel', async () => {

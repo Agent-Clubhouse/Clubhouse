@@ -3058,6 +3058,48 @@ describe('annex-client', () => {
       annexClient._addConnectedSatelliteForTesting(FP);
     });
 
+    it('discards Settings responses across an in-place disconnect/reconnect epoch', async () => {
+      let finish!: () => void;
+      vi.mocked(https.request).mockImplementationOnce(((_url: string, _opts: unknown, callback: (response: unknown) => void) => {
+        const req = Object.assign(new EventEmitter(), { end: () => {
+          finish = () => {
+            const res = Object.assign(new EventEmitter(), { statusCode: 200 });
+            callback(res); res.emit('data', Buffer.from('{}')); res.emit('end');
+          };
+        }, destroy: vi.fn() });
+        return req;
+      }) as any);
+      const pending = annexClient.requestAgentSettings(FP, 'a1');
+      annexClient._receiveSatelliteDisconnectForTesting(FP);
+      vi.mocked(annexPeers.getPeer).mockReturnValue({ fingerprint: FP, role: 'satellite', kind: 'desktop', tlsCertificateFingerprint: 'pin' } as any);
+      annexClient.connect(FP);
+      await vi.waitFor(() => expect(annexClient.getSatellite(FP)?.state).toBe('connected'));
+      finish();
+      expect(await pending).toEqual({ status: 'offline' });
+    });
+
+    it.each([404, 405])('represents an older Settings host (%s) without retries or local fallback', async (status) => {
+      answers.push({ status, body: {} });
+      expect(await annexClient.requestAgentSettings(FP, 'a1')).toEqual({ status: 'unavailable' });
+      expect(requests).toHaveLength(1);
+      expect(requests[0]).toMatchObject({ method: 'GET', body: undefined });
+      expect(requests[0].url).toMatch(/\/agents\/a1\/settings-details$/);
+    });
+    it('reads only the fixed Settings route and rejects malformed or wrong-agent data', async () => {
+      const value = { version: 1, readOnly: true, agentId: 'a?/#', provider: 'Host', model: 'Model', runtime: 'terminal', access: 'Ask first', executionPolicy: 'Host defaults', autoSleep: null, context: null,
+        setup: { state: 'ok', managed: false, template: null, instructions: 'None', skills: null, mcps: null } };
+      answers.push({ status: 200, body: value });
+      expect(await annexClient.requestAgentSettings(FP, 'a?/#')).toEqual({ status: 'ok', value });
+      expect(requests[0].url).toContain('/agents/a%3F%2F%23/settings-details');
+      answers.push({ status: 200, body: value });
+      expect(await annexClient.requestAgentSettings(FP, 'other')).toEqual({ status: 'error' });
+      answers.push({ status: 200, body: {} });
+      expect(await annexClient.requestAgentSettings(FP, 'a')).toEqual({ status: 'error' });
+      answers.push({ status: 403, body: { error: 'private-error' } });
+      expect(await annexClient.requestAgentSettings(FP, 'a')).toEqual({ status: 'forbidden' });
+      expect(await annexClient.requestAgentSettings('missing', 'a')).toEqual({ status: 'offline' });
+    });
+
     it.each([404, 405])('represents an old controller-chat server (%s) without retrying', async (status) => {
       answers.push({ status, body: { error: 'not_found' } });
       expect(await annexClient.requestControllerChatPage(FP)).toEqual({ status: 'unavailable' });
