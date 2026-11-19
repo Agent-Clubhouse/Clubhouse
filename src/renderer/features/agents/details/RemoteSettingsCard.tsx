@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 import type { Agent } from '../../../../shared/types';
 import type { RemoteAgentSettings } from '../../../../shared/remote-agent-settings';
 import type { ControllerReadResult } from '../../../../shared/controller-chat';
@@ -12,7 +12,8 @@ import { Button } from '../../../components/Button';
 import { CardNote, CardRow, DetailsCard } from './DetailsCard';
 import { useAgentDetailsStore } from './detailsStore';
 
-type Result = ControllerReadResult<RemoteAgentSettings> | { status: 'loading' };
+export type RemoteSettingsResult = ControllerReadResult<RemoteAgentSettings> | { status: 'loading' };
+type Result = RemoteSettingsResult;
 const message = (result: Result): string | null => {
   switch (result.status) {
     case 'loading': return 'Loading settings from the other machine…';
@@ -26,7 +27,7 @@ const message = (result: Result): string | null => {
 };
 
 /** A separate remote surface keeps every local setup, filesystem and editing hook out of this path. */
-export function RemoteSettingsCard({ agent, chat }: { agent: Agent; chat?: ChatViewState }) {
+export function RemoteSettingsCard({ agent, chat, result: supplied, children }: { agent: Agent; chat?: ChatViewState; result?: Result; children?: ReactNode }) {
   const open = useAgentDetailsStore((s) => s.settingsOpen);
   const setOpen = useAgentDetailsStore((s) => s.setSettingsOpen);
   const address = parseNamespacedId(agent.id);
@@ -41,6 +42,7 @@ export function RemoteSettingsCard({ agent, chat }: { agent: Agent; chat?: ChatV
   const satelliteId = address?.satelliteId;
   const agentId = address?.agentId;
   useEffect(() => {
+    if (supplied) return;
     if (!connected) { setRead(null); return; }
     if (!open || !satelliteId || !agentId || agent.kind !== 'durable') return;
     let active = true;
@@ -51,10 +53,10 @@ export function RemoteSettingsCard({ agent, chat }: { agent: Agent; chat?: ChatV
       () => { if (active) setRead({ key, snapshot, result: { status: 'error' } }); },
     );
     return () => { active = false; };
-  }, [open, connected, satelliteId, agentId, agent.kind, key, snapshot]);
-  const result: Result = agent.kind !== 'durable' ? { status: 'unavailable' }
+  }, [open, connected, satelliteId, agentId, agent.kind, key, snapshot, supplied]);
+  const result: Result = supplied ?? (agent.kind !== 'durable' ? { status: 'unavailable' }
     : !connected ? { status: 'offline' }
-      : read?.key === key && read.snapshot === snapshot ? read.result : { status: 'loading' };
+      : read?.key === key && read.snapshot === snapshot ? read.result : { status: 'loading' });
   const value = result.status === 'ok' ? result.value : null;
   const asleep = agent.status === 'sleeping' || agent.status === 'error';
   const session = asleep ? undefined : chat;
@@ -72,10 +74,11 @@ export function RemoteSettingsCard({ agent, chat }: { agent: Agent; chat?: ChatV
   const setup = value?.setup;
   return (
     <DetailsCard id="settings" title="Settings" summary={summary} open={open} onToggle={() => setOpen(!open)}>
-      {row('cli', 'CLI', value?.provider ?? session?.provider)}
+      {row('cli', 'CLI', [value?.provider ?? session?.provider, session?.cliVersion].filter(Boolean).join(' ') || null)}
       {row('runs-in', asleep ? 'Next wake' : 'Runs in', runtime)}
       {!asleep && liveRuntime && nextRuntime && liveRuntime !== nextRuntime && row('next-runtime', 'Next wake', nextRuntime)}
       {row('model', 'Model', model)}
+      {row('effort', 'Effort', session?.effortReported && session.effort ? session.effort[0].toUpperCase() + session.effort.slice(1) + (session.effortIsDefault ? ' (default)' : '') : null)}
       {row('access', 'Access', access)}
       {value && <>
         {row('execution-policy', 'Sandbox and approvals', value.executionPolicy)}
@@ -93,6 +96,7 @@ export function RemoteSettingsCard({ agent, chat }: { agent: Agent; chat?: ChatV
         </> : <CardNote>Couldn’t read the host’s configured instructions, skills and MCP summary.</CardNote>}
       </>}
       {message(result) && <CardNote><span role="status">{message(result)}</span></CardNote>}
+      {children}
       {['error', 'rate_limited'].includes(result.status) && <Button kind="ghost" onClick={() => setRetry((n) => n + 1)}>Try again</Button>}
       <CardNote><span data-testid="details-settings-remote">Change on {host}</span></CardNote>
     </DetailsCard>

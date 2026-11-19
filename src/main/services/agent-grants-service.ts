@@ -76,7 +76,7 @@ async function configOf(projectPath: string, agentId: string): Promise<DurableAg
   return config;
 }
 
-function viewOf(agentId: string, config: DurableAgentConfig): AgentGrantsView {
+export function viewOf(agentId: string, config: DurableAgentConfig): AgentGrantsView {
   const facts = factsOf(agentId, config);
   const saved = getAgentGrantChanges(agentId);
   return {

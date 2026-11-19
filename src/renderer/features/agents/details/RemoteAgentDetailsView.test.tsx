@@ -1,0 +1,78 @@
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+import type { Agent } from '../../../../shared/types';
+import { REMOTE_DETAILS_CARD_IDS, type RemoteAgentDetails } from '../../../../shared/remote-agent-details';
+import { useAnnexClientStore } from '../../../stores/annexClientStore';
+import { createChatViewState } from '../../../stores/chatStore';
+import { AgentDetails } from './AgentDetails';
+import { useAgentDetailsStore } from './detailsStore';
+
+const agent: Agent = { id: 'remote||sat||a1', projectId: 'remote||sat||p1', name: 'Remote', kind: 'durable', status: 'running', color: 'blue' };
+const read = vi.fn();
+const fixture = (): RemoteAgentDetails => ({ version: 1, agentId: 'a1', readOnly: true, readAt: 1, providerId: 'claude-code', running: true, status: 'running', spawnedAt: null,
+  settings: { version: 1, agentId: 'a1', readOnly: true, provider: 'Host CLI', model: 'host-model', runtime: 'chat', access: 'Ask first', executionPolicy: 'defaults', autoSleep: null, context: null, setup: { state: 'ok', managed: false, template: null, instructions: 'None', skills: null, mcps: [] } },
+  cards: REMOTE_DETAILS_CARD_IDS.map((id) => ({ id, title: id === 'orchestrate' ? 'Orchestration' : id, state: 'ok', summary: `Host ${id}`, rows: [{ label: `${id} field`, value: `${id} evidence` }], notes: [], omitted: 0, observedAt: 1 })) });
+function satellite(extra: Record<string, unknown> = {}) {
+  useAnnexClientStore.setState({ satellites: [{ id: 'sat', alias: 'Studio', state: 'connected', snapshot: {}, ...extra }] as never });
+}
+beforeEach(() => {
+  satellite();
+  useAgentDetailsStore.setState({ settingsOpen: true, focus: null });
+  read.mockResolvedValue({ status: 'ok', value: fixture() });
+  Object.assign(window.clubhouse.annexClient, { agentDetails: read });
+  for (const [object, method] of [[window.clubhouse.actions, 'list'], [window.clubhouse.git, 'branchChanges'], [window.clubhouse.agent, 'getDurableConfig'], [window.clubhouse.managed, 'getSetup'], [window.clubhouse.mcpBinding, 'getAgentConnection'], [window.clubhouse.canvas, 'getAgentCanvases']] as const) Object.assign(object, { [method]: vi.fn() });
+});
+describe('remote full Details host evidence', () => {
+  it.each(['running', 'sleeping', 'waking', 'error'] as const)('renders applicable host cards read-only for a %s agent with no local reads', async (status) => {
+    render(<AgentDetails agent={{ ...agent, status }} />);
+    await waitFor(() => expect(read).toHaveBeenCalledWith('sat', 'a1'));
+    await screen.findByText('Host CLI');
+    for (const id of ['changes', 'dispatcher', 'orchestrate', 'connections', 'actions', 'skills-mcp', 'session', 'canvases']) {
+      const toggle = screen.getByTestId(`details-card-${id}-toggle`);
+      if (toggle.getAttribute('aria-expanded') !== 'true') fireEvent.click(toggle);
+      expect(within(screen.getByTestId(`details-card-${id}`)).getByText(`${id} evidence`)).toBeInTheDocument();
+    }
+    expect(screen.queryByRole('switch')).not.toBeInTheDocument();
+    expect(screen.queryByRole('combobox')).not.toBeInTheDocument();
+    expect(window.clubhouse.actions.list).not.toHaveBeenCalled();
+    expect(window.clubhouse.git.branchChanges).not.toHaveBeenCalled();
+    expect(window.clubhouse.agent.getDurableConfig).not.toHaveBeenCalled();
+    expect(window.clubhouse.managed.getSetup).not.toHaveBeenCalled();
+    expect(window.clubhouse.mcpBinding.getAgentConnection).not.toHaveBeenCalled();
+    expect(window.clubhouse.canvas.getAgentCanvases).not.toHaveBeenCalled();
+  });
+  it('preserves Effort/default, CLI version and inherited-provider skills bound to the selected session', async () => {
+    const chat = { ...createChatViewState(agent.id), provider: 'claude-code', driver: 'claude_agent_sdk' as const, sessionId: 's1', nativeSessionId: 'n1', effort: 'high', effortReported: true, effortIsDefault: true, cliVersion: '1.2.3', providerSkills: { provider: 'claude-code' as const, driver: 'claude_agent_sdk' as const, source: 'system/init' as const, sessionId: 's1', nativeSessionId: 'n1', reportedAt: 1000, names: ['host-skill'] } };
+    render(<AgentDetails agent={agent} chat={chat} />);
+    await screen.findByText('Host CLI 1.2.3');
+    expect(screen.getByTestId('details-setting-effort')).toHaveTextContent('High (default)');
+    fireEvent.click(screen.getByTestId('details-card-skills-mcp-toggle'));
+    expect(screen.getByText('host-skill')).toBeInTheDocument();
+  });
+  it('invalidates results on snapshot loss/offline and ignores a late previous-host result', async () => {
+    let finish!: (value: unknown) => void;
+    read.mockImplementationOnce(() => new Promise((resolve) => { finish = resolve; }));
+    const view = render(<AgentDetails agent={agent} />);
+    await waitFor(() => expect(read).toHaveBeenCalled());
+    view.rerender(<AgentDetails agent={{ ...agent, id: 'remote||sat||other' }} />);
+    await act(async () => { finish({ status: 'ok', value: fixture() }); });
+    expect(screen.queryByText('Host CLI')).not.toBeInTheDocument();
+    act(() => satellite({ state: 'disconnected' }));
+    expect(screen.getByTestId('remote-details-freshness')).toHaveTextContent('Host offline');
+    act(() => satellite({ snapshotUnavailable: true }));
+    expect(screen.getByTestId('remote-details-freshness')).toHaveTextContent('snapshot is unavailable');
+  });
+  it('keeps unsupported/error/offline distinct from empty, and exposes each bounded omission', async () => {
+    const value = fixture();
+    Object.assign(value.cards.find((c) => c.id === 'actions')!, { state: 'error', summary: '', rows: [], notes: [] });
+    Object.assign(value.cards.find((c) => c.id === 'connections')!, { omitted: 7 });
+    read.mockResolvedValue({ status: 'ok', value });
+    render(<AgentDetails agent={agent} />);
+    await screen.findByText('Host CLI');
+    fireEvent.click(screen.getByTestId('details-card-actions-toggle'));
+    expect(screen.getByTestId('details-card-actions')).toHaveTextContent('Couldn’t read this section');
+    expect(screen.getByTestId('details-card-actions')).not.toHaveTextContent('No actions');
+    fireEvent.click(screen.getByTestId('details-card-connections-toggle'));
+    expect(screen.getByTestId('details-card-connections')).toHaveTextContent('7 more rows omitted');
+  });
+});

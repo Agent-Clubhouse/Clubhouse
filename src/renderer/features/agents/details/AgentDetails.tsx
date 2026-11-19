@@ -50,6 +50,7 @@ import { OtherMachinesList, otherMachinesSummary } from '../../dispatcher/OtherM
 import { useDispatcherPresence } from '../../dispatcher/useDispatcherPresence';
 import { openAgentSettingsOn } from '../agentSettingsPages';
 import { Button } from '../../../components/Button';
+import { RemoteAgentDetailsView } from './RemoteAgentDetailsView';
 
 export type { CardId } from './detailsStore';
 
@@ -184,7 +185,11 @@ export interface AgentDetailsProps {
   lastSession?: LastSessionInfo | null;
 }
 
-export function AgentDetails({ agent, chat, onShowInStream, missedSubagentId, onReviewAll, branch: givenBranch, lastSession }: AgentDetailsProps) {
+export function AgentDetails(props: AgentDetailsProps) {
+  return isRemoteProjectId(props.agent.projectId) ? <RemoteAgentDetailsView {...props} /> : <LocalAgentDetails {...props} />;
+}
+
+function LocalAgentDetails({ agent, chat, onShowInStream, missedSubagentId, onReviewAll, branch: givenBranch, lastSession }: AgentDetailsProps) {
   const setOpen = useAgentDetailsStore((s) => s.setOpen);
   const focus = useAgentDetailsStore((s) => s.focus);
   const [scope, setScope] = useState<ChangesScope>('branch');

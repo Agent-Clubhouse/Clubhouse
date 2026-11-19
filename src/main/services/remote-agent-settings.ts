@@ -51,7 +51,7 @@ export async function readRemoteAgentSettings(agentId: string, authorized: () =>
         const service = managedAgents();
         const [entries, template, status] = await Promise.all([
           service.liveEntries(),
-          setup.templateId ? service.getTemplate(setup.templateId).then((t) => label(t.name)) : null,
+          setup.templateId ? service.getTemplate(setup.templateId).then((t) => label(t.name), () => 'Template unavailable') : null,
           statusFor(project.path, agent.id),
         ]);
         const names = (ids: string[]) => ids.map((id) => entries[id] ? label(entries[id].name) : 'No longer in the library');
@@ -67,7 +67,7 @@ export async function readRemoteAgentSettings(agentId: string, authorized: () =>
         const evidence = await readResolvedAgentConfig(target);
         const text = evidence.instructions.text;
         result.setup = { state: 'ok', managed: false, template: null,
-          instructions: !agent.worktreePath ? 'Not shared by host' : text.trim() ? `Custom, ${text.trimEnd().split(/\r?\n/).length} lines${evidence.instructions.truncated ? ' (truncated)' : ''}` : 'None',
+          instructions: text.trim() ? `Custom, ${text.trimEnd().split(/\r?\n/).length} lines${evidence.instructions.truncated ? ' (truncated)' : ''}` : 'None',
           // File/global MCP configuration is deliberately outside this metadata-only contract.
           skills: null, mcps: null };
       }

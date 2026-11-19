@@ -70,6 +70,7 @@ import { clearStaleResume, isSessionNotFound, noteNextStartNotice, takeChatStart
 import { removedProfileStateDirs } from './provider-profiles-removed';
 import { noteKillRequest, recordSleep, sleepInfoForExit, takeKillRequest } from './agent-runtime/sleep-reason';
 import { onAgentExit } from './agent-exit-broadcast';
+import { noteAgentStarting, noteAgentAwake, noteAgentWakeFailed } from './agent-display-state';
 import { sessionCaptureFor, trackSessionCapture, noteSessionCaptureFailure } from './session-capture-barrier';
 import { assertLaunchesOpen } from './launch-gate';
 import { ATTR } from '../../shared/telemetry/attributes';
@@ -305,6 +306,7 @@ export function spawnAccess(
 
 /** The agent is up: tell windows, and the app event bus (#2950). */
 function announceAwake(agentId: string): void {
+  noteAgentAwake(agentId);
   broadcastToAllWindows(IPC.AGENT.AGENT_AWOKE, agentId);
   publishAppEvent({ type: 'agent.awake', agentId });
 }
@@ -315,6 +317,7 @@ export const RESUME_BLOCKED_NOTICE = "That session kept failing every turn, so i
 export async function spawnAgent(params: SpawnAgentParams): Promise<void> {
   // Quit and update close this before stopping runtimes (#2053).
   assertLaunchesOpen();
+  noteAgentStarting(params.agentId, params.kind === 'quick');
   const quickRun = params.kind === 'quick' ? beginQuickAgentRun(params) : undefined;
   const spawn = withManagedActivationLaunch(params, () => isAgentRunning(params.agentId), (managed) => {
     assertProviderSelection(params.agentId, params.orchestrator);
@@ -324,6 +327,7 @@ export async function spawnAgent(params: SpawnAgentParams): Promise<void> {
   try {
     await spawn;
   } catch (error) {
+    if (!isAgentRunning(params.agentId)) noteAgentWakeFailed(params.agentId, error);
     if (quickRun && !(error instanceof ProcessStartedReceiptError)) finishQuickAgentRun(quickRun, 'failed');
     throw error;
   } finally {

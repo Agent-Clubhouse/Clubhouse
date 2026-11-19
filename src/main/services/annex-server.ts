@@ -1,4 +1,6 @@
 import { readRemoteAgentSettings } from './remote-agent-settings';
+import { readRemoteAgentDetails } from './remote-agent-details';
+import { agentDisplayState, onAgentDisplayState } from './agent-display-state';
 import { handoffTransferDiagnostic, tagHandoffTransferError } from '../../shared/handoff-transfer-diagnostics';
 import { mobileProjectLinks, MOBILE_PROJECT_LINKS_EVENT } from './mobile-project-links';
 import { hydrateProjectLinks, projectLinksStore } from './project-links-store';
@@ -225,6 +227,10 @@ let httpServer: http.Server | null = null;
 /** Includes sockets still waiting for a TLS handshake, HTTP headers, or a WebSocket upgrade. */
 const incomingSockets = new Set<import('net').Socket>();
 let wss: WebSocketServer | null = null;
+// Existing lifecycle observations, forwarded on the existing status transport. No starts or writes.
+onAgentDisplayState((agentId, status) => {
+  if (wss) broadcastAndBuffer('agent:status', { agentId, status });
+});
 let bonjour: InstanceType<typeof Bonjour> | null = null;
 let bonjourService: Service | null = null;
 /** Publishes the advertisement again (after a dead mDNS socket, or on wake); set while the server runs. */
@@ -1046,7 +1052,7 @@ function dispatcherAgentView(config: DurableConfigs[number]) {
 function mapDurableAgent(d: DurableConfigs[number], projectId: string, policies?: Awaited<ReturnType<typeof catalogOrchestration>>, projectPath?: string) {
   const agentId = d.id;
   const isRunning = isAgentRunning(agentId);
-  const status = isRunning ? 'running' : 'sleeping';
+  const status = agentDisplayState(d, isRunning).status;
 
   return {
     id: d.id,
@@ -4059,7 +4065,9 @@ async function handleAgentSettingsDetailsRoute(ctx: AnnexRouteContext, match: Re
   try { agentId = decodeURIComponent(match[1]); }
   catch { sendJson(ctx.res, 400, { error: 'invalid_agent_id' }); return; }
   if (!agentId || agentId.length > 240) { sendJson(ctx.res, 400, { error: 'invalid_agent_id' }); return; }
-  const result = await readRemoteAgentSettings(agentId, authorized);
+  const result = match[2] === 'details'
+    ? await readRemoteAgentDetails(agentId, authorized)
+    : await readRemoteAgentSettings(agentId, authorized);
   if (!authorized()) { sendJson(ctx.res, 403, { error: 'settings_read_refused' }); return; }
   ctx.res.setHeader('Cache-Control', 'no-store');
   sendJson(ctx.res, result.status, result.body);
@@ -4705,6 +4713,7 @@ const ANNEX_HTTP_ROUTE_TABLE: AnnexHttpRoute[] = [
   { method: 'GET', pattern: /^\/api\/v1\/projects\/([^/]+)\/agents$/, handler: handleProjectAgentsRoute },
   { method: 'GET', pattern: /^\/api\/v1\/agents\/([^/]+)\/buffer$/, handler: handleAgentBufferRoute },
   { method: 'GET', pattern: /^\/api\/v1\/agents\/([^/]+)\/settings-details$/, handler: handleAgentSettingsDetailsRoute },
+  { method: 'GET', pattern: /^\/api\/v1\/agents\/([^/]+)\/(details)$/, handler: handleAgentSettingsDetailsRoute },
   { method: 'GET', pattern: /^\/api\/v1\/projects\/([^/]+)\/files\/tree(\?.*)?$/, handler: handleProjectFilesTreeRoute },
   { method: 'GET', pattern: /^\/api\/v1\/projects\/([^/]+)\/files\/read(\?.*)?$/, handler: handleProjectFilesReadRoute },
   { method: 'GET', pattern: /^\/api\/v1\/projects\/([^/]+)\/git\/info$/, handler: handleGitInfoRoute },

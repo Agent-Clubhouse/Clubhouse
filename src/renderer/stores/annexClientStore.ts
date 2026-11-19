@@ -6,7 +6,7 @@
  */
 import { create } from 'zustand';
 import { useRemoteProjectStore } from './remoteProjectStore';
-import type { HelperDeleteChoice, SatelliteSnapshot } from '../../shared/types';
+import type { AgentStatus, HelperDeleteChoice, SatelliteSnapshot } from '../../shared/types';
 import type { ChatEvent } from '../../shared/chat';
 
 const remoteChatListeners = new Set<(satelliteId: string, event: ChatEvent) => void>();
@@ -463,8 +463,8 @@ export function initAnnexClientListener(): () => void {
         throttledHookUpdate(satelliteId, agentId, p.detailedStatus);
       }
       // Its run state too, so a durable chat agent that slept there shows asleep here (a lead's Dispatcher, #3352).
-      if (agentId && (p.status === 'running' || p.status === 'sleeping')) {
-        useRemoteProjectStore.getState().updateRemoteAgentRunState(satelliteId, agentId, p.status);
+      if (agentId && p.status && ['running', 'sleeping', 'waking', 'error', 'creating', 'spawning'].includes(p.status)) {
+        useRemoteProjectStore.getState().updateRemoteAgentRunState(satelliteId, agentId, p.status as AgentStatus);
       }
     } else if (type === 'structured:event') {
       // Sent only by satellites on versions before structured mode was removed.

@@ -155,9 +155,9 @@ export async function readResolvedAgentConfig({ agent, project: p }: AgentConfig
     result.missing = resolved.missing.slice(0, CONFIG_MAX_PARTS).map((id) => prefix(id, 200));
     result.omittedMissing = resolved.missing.length - result.missing.length;
     result.truncated ||= result.omittedMissing > 0;
-  } else if (agent.worktreePath) {
+  } else {
     const provider = await resolveOrchestrator(p.path, agent.orchestrator);
-    try { Object.assign(result.instructions, await ownInstructions(agent.worktreePath, instructionsFileRel(provider))); }
+    try { Object.assign(result.instructions, await ownInstructions(agent.worktreePath || p.path, instructionsFileRel(provider))); }
     catch (error) {
       if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
     }

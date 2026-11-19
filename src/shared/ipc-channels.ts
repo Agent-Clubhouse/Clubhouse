@@ -586,6 +586,7 @@ export const IPC = {
     GIT_OPERATION: 'annex-client:git-operation',
     CHAT_PAGE: 'annex-client:chat-page',
     AGENT_SETTINGS: 'annex-client:agent-settings',
+    AGENT_DETAILS: 'annex-client:agent-details',
     CONTROLLER_CHAT_PAGE: 'annex-client:controller-chat-page',
     CONTROLLER_CHAT_SESSIONS: 'annex-client:controller-chat-sessions',
     CHAT_SESSIONS: 'annex-client:chat-sessions',
