@@ -14,10 +14,10 @@ vi.mock('./agent-config', () => ({
   peekCachedDurableConfig: () => w.config,
   peekDurableConfigsChecked: async () => ({ readable: w.inventoryReadable, agents: [w.config] }),
   flushAgentConfig: async () => {},
-  updateDurableConfig: vi.fn(async (_p, _id, update, check, precondition, onPersisted) => { w.beforeCommit?.(); await check?.(); await precondition?.prepare(); w.beforeEffect?.(); precondition?.check(w.config); if (w.commitFailed) throw new Error('disk full'); const changed = w.config.orchestrator !== update.orchestrator; if (changed) { delete w.config.lastSessionId; delete w.config.model; delete w.config.effort; delete w.config.routing; delete w.config.contextWindow; } if (update.model !== undefined) { if (update.model !== w.config.model) { delete w.config.effort; delete w.config.routing; } if (update.model === 'default') delete w.config.model; else w.config.model = update.model; } if (update.effort !== undefined) { if (update.effort === null) delete w.config.effort; else w.config.effort = update.effort; } if (update.providerTransition) w.config.providerTransition = update.providerTransition; w.config.orchestrator = update.orchestrator; w.beforeAck?.(); onPersisted?.(structuredClone(w.config)); w.afterWrite?.(); }),
+  updateDurableConfig: vi.fn(async (_p, _id, update, check, precondition, onPersisted) => { w.beforeCommit?.(); await check?.(); await precondition?.prepare(); w.beforeEffect?.(); precondition?.check(w.config); if (w.commitFailed) throw new Error('disk full'); const changed = (w.config.orchestrator || w.defaults.orchestrator || 'claude-code') !== update.orchestrator; if (changed) { for (const session of w.config.sessionHistory ?? []) session.orchestrator ??= w.config.orchestrator || 'claude-code'; delete w.config.lastSessionId; delete w.config.model; delete w.config.effort; delete w.config.routing; delete w.config.contextWindow; } if (update.model !== undefined) { if (update.model !== w.config.model) { delete w.config.effort; delete w.config.routing; } if (update.model === 'default') delete w.config.model; else w.config.model = update.model; } if (update.effort !== undefined) { if (update.effort === null) delete w.config.effort; else w.config.effort = update.effort; } if (update.providerTransition) w.config.providerTransition = update.providerTransition; w.config.orchestrator = update.orchestrator; w.beforeAck?.(); onPersisted?.(structuredClone(w.config)); w.afterWrite?.(); }),
 }));
 vi.mock('./agent-system', () => ({
-  resolveOrchestrator: async (_p: string, id = 'claude-code') => ({ id, conventions: { settingsFormat: id === 'codex-cli' ? 'toml' : 'json', legacyInstructionsFile: id === 'codex-cli' ? 'AGENTS.md' : 'CLAUDE.md' }, buildMcpArgs: () => [], peekModels: () => ({ source: 'live', via: 'handshake', fetchedAt: Date.now(), models: [{ id: 'fixture-model', label: 'Fixture', isDefault: true, efforts: w.catalogEfforts }] }), listModels: async () => ({ source: 'live', via: 'handshake', fetchedAt: Date.now(), models: [{ id: 'fixture-model', label: 'Fixture', isDefault: true, efforts: w.catalogEfforts }] }), getCapabilities: () => ({ permissions: true }), inspectInstructions: async () => id === 'codex-cli' ? w.instructions : 'same' }),
+  resolveOrchestrator: async (_p: string, id = w.defaults.orchestrator || 'claude-code') => ({ id, conventions: { settingsFormat: id === 'codex-cli' ? 'toml' : 'json', legacyInstructionsFile: id === 'codex-cli' ? 'AGENTS.md' : 'CLAUDE.md' }, buildMcpArgs: () => [], peekModels: () => ({ source: 'live', via: 'handshake', fetchedAt: Date.now(), models: [{ id: 'fixture-model', label: 'Fixture', isDefault: true, efforts: w.catalogEfforts }, { id: 'externally-selected-model', label: 'Another valid model', efforts: w.catalogEfforts }] }), listModels: async () => ({ source: 'live', via: 'handshake', fetchedAt: Date.now(), models: [{ id: 'fixture-model', label: 'Fixture', isDefault: true, efforts: w.catalogEfforts }, { id: 'externally-selected-model', label: 'Another valid model', efforts: w.catalogEfforts }] }), getCapabilities: () => ({ permissions: true }), inspectInstructions: async () => id === 'codex-cli' ? w.instructions : 'same' }),
   checkAvailability: async () => { w.beforeAvailability?.(); return { available: w.available }; },
   isAgentRunning: () => w.running, isAgentStopping: () => false,
   waitForAgentStopped: async () => !w.running,
@@ -205,6 +205,71 @@ describe('guided provider control', () => {
     const p = await previewAgentProvider('/fixture', 'a', 'codex-cli', actor, undefined, selection);
     w.beforeAck = () => { if (acknowledgedProvider) w.config.orchestrator = acknowledgedProvider; else delete w.config.orchestrator; };
     await expect(changeAgentProvider('/fixture', 'a', 'codex-cli', p.expectedState, actor, selection)).rejects.toMatchObject({ code: 'apply_committed_state_conflict', extra: { transition: { status: 'committed_state_conflict', persisted: true, requestedSelectionSaved: false, savedProvider: acknowledgedProvider ?? null, nextWake: 'fresh_read_and_review_required' } } });
+  });
+  it.each([
+    { name: 'model value', original: { model: 'fixture-model', effort: 'low' }, selection: { model: { kind: 'selected', id: 'fixture-model' }, effort: 'high' }, ack: { model: 'externally-selected-model' } },
+    { name: 'model source', original: { model: 'fixture-model', effort: 'low' }, selection: { model: { kind: 'selected', id: 'fixture-model' }, effort: 'high' }, ack: { model: undefined } },
+    { name: 'effort value', original: { model: 'fixture-model', effort: 'high' }, selection: { model: { kind: 'selected', id: 'fixture-model' }, effort: 'high' }, ack: { effort: 'low' } },
+    { name: 'effort source', original: { model: 'fixture-model', effort: 'high' }, selection: { model: { kind: 'selected', id: 'fixture-model' }, effort: 'high' }, ack: { effort: undefined } },
+    { name: 'context reset', original: {}, selection: { model: { kind: 'provider_default' }, effort: null }, ack: { contextWindow: 'external-context' } },
+    { name: 'routing reset', original: { model: 'old-model', routing: { reason: 'old' } }, selection: { model: { kind: 'selected', id: 'fixture-model' }, effort: 'high' }, ack: { routing: { reason: 'external' } } },
+    { name: 'resume pointer preservation', original: {}, selection: { model: { kind: 'provider_default' }, effort: null }, ack: { lastSessionId: 'external-native' } },
+    { name: 'history retention', original: {}, selection: { model: { kind: 'selected', id: 'fixture-model' }, effort: 'high' }, ack: { sessionHistory: [] } },
+  ])('refuses acknowledged lost reviewed $name intent', async ({ original, selection, ack }) => {
+    Object.assign(w.config, original);
+    w.config.orchestrator = 'codex-cli';
+    const chosen = { ...selection, contractVersion: 2 } as any;
+    const p = await previewAgentProvider('/fixture', 'a', 'codex-cli', actor, undefined, chosen);
+    w.beforeAck = () => { for (const [key, value] of Object.entries(ack)) { if (value === undefined) delete w.config[key]; else w.config[key] = value; } };
+    await expect(changeAgentProvider('/fixture', 'a', 'codex-cli', p.expectedState, actor, chosen)).rejects.toMatchObject({ code: 'apply_committed_state_conflict', extra: { transition: { persisted: true, requestedSelectionSaved: false, nextWake: 'fresh_read_and_review_required' } } });
+  });
+  it('accepts equal normalized provider-default semantics in an acknowledged snapshot', async () => {
+    w.config.orchestrator = 'codex-cli'; w.config.model = 'fixture-model';
+    const chosen = { contractVersion: 2 as const, model: { kind: 'provider_default' as const }, effort: null };
+    const p = await previewAgentProvider('/fixture', 'a', 'codex-cli', actor, undefined, chosen);
+    w.beforeAck = () => { w.config.model = 'default'; };
+    const result = await changeAgentProvider('/fixture', 'a', 'codex-cli', p.expectedState, actor, chosen);
+    expect(result.contract).toMatchObject({ saved: p.contract!.proposed, result: { persisted: true } });
+  });
+  it.each([
+    ['lastSessionId', 'external-native', 'resumePointer'], ['contextWindow', 'external-context', 'contextWindow'],
+    ['routing', { reason: 'external' }, 'routing'], ['sessionHistory', [], 'history'],
+    ['providerTransition', undefined, 'managedTransition'],
+  ])('refuses acknowledged managed %s reset/retention drift after preparing native instructions', async (key, value, conflict) => {
+    const cwd = await fsp.mkdtemp(path.join(os.tmpdir(), 'reviewed-reset-'));
+    const project = path.join(cwd, '.project'); await fsp.mkdir(path.join(project, '.clubhouse'), { recursive: true });
+    try {
+      await fsp.writeFile(path.join(cwd, 'CLAUDE.md'), 'same');
+      w.config.worktreePath = cwd; w.config.runtimeMode = 'terminal'; w.config.model = 'old-model'; w.config.effort = 'low';
+      w.config.contextWindow = 'old-context'; w.config.routing = { reason: 'old' };
+      w.config.managed = { version: 1, blocks: ['text'], skills: [], mcps: [] };
+      await fsp.writeFile(path.join(project, '.clubhouse', 'agents.json'), JSON.stringify([w.config]));
+      const chosen = { contractVersion: 2 as const };
+      const p = await previewAgentProvider(project, 'a', 'codex-cli', actor, undefined, chosen);
+      expect(p.settingsReset).toEqual(expect.arrayContaining(['model', 'effort', 'contextWindow', 'routing', 'resumePointer']));
+      w.beforeAck = () => { if (value === undefined) delete w.config[key as string]; else w.config[key as string] = value; };
+      await expect(changeAgentProvider(project, 'a', 'codex-cli', p.expectedState, actor, chosen)).rejects.toMatchObject({ code: 'apply_committed_state_conflict', extra: { transition: { persisted: true, conflicts: expect.arrayContaining([conflict]), nextWake: 'fresh_read_and_review_required' } } });
+      expect(w.config.orchestrator).toBe('codex-cli'); expect(await fsp.readFile(path.join(cwd, 'AGENTS.md'), 'utf8')).toBe('same');
+    } finally { await fsp.rm(cwd, { recursive: true, force: true }); }
+  });
+  it.each([false, true])('previews inherited same-provider managed=%s no-op versus required marker write', async (managed) => {
+    const cwd = await fsp.mkdtemp(path.join(os.tmpdir(), 'inherited-provider-'));
+    const project = path.join(cwd, '.project'); await fsp.mkdir(path.join(project, '.clubhouse'), { recursive: true });
+    try {
+      await fsp.writeFile(path.join(cwd, 'AGENTS.md'), 'same');
+      delete w.config.orchestrator; delete w.config.lastSessionId;
+      w.defaults = { orchestrator: 'codex-cli' }; w.config.worktreePath = cwd; w.config.runtimeMode = 'terminal'; w.config.model = 'fixture-model';
+      if (managed) w.config.managed = { version: 1, blocks: ['text'], skills: [], mcps: [] };
+      await fsp.writeFile(path.join(project, '.clubhouse', 'agents.json'), JSON.stringify([w.config]));
+      const chosen = { contractVersion: 2 as const };
+      const p = await previewAgentProvider(project, 'a', 'codex-cli', actor, undefined, chosen);
+      expect(p.contract).toMatchObject({ current: { provider: 'codex-cli', providerOverride: null }, proposed: { providerOverride: managed ? 'codex-cli' : null } });
+      const result = await changeAgentProvider(project, 'a', 'codex-cli', p.expectedState, actor, chosen);
+      expect(result.status).toBe(managed ? 'changed' : 'already_selected');
+      expect(result.contract!.saved).toEqual(p.contract!.proposed);
+      expect(w.config.model).toBe('fixture-model');
+      if (!managed) expect(updateDurableConfig).not.toHaveBeenCalled();
+    } finally { await fsp.rm(cwd, { recursive: true, force: true }); }
   });
   it('retains the committed snapshot when settings change after acknowledgment and issues no wake token', async () => {
     const selection = { contractVersion: 2 as const, model: { kind: 'selected' as const, id: 'fixture-model' }, effort: 'high' };

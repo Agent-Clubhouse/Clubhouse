@@ -5,13 +5,29 @@
       "epoch": "00000000-0000-4000-8000-000000000001",
       "error": {
         "code": "apply_committed_state_conflict",
-        "message": "Configuration was durably written, but the acknowledged provider differs from the request. Read and review the saved target before continuing."
+        "message": "Configuration was durably written, but the acknowledged state differs from the reviewed request. Read and review the saved target before continuing."
       },
       "status": "failed",
       "transition": {
+        "conflicts": [
+          "provider",
+          "providerOverride"
+        ],
         "historyRetained": null,
         "nextWake": "fresh_read_and_review_required",
         "persisted": true,
+        "proposed": {
+          "effort": {
+            "source": "provider_default",
+            "value": null
+          },
+          "model": {
+            "source": "provider_default",
+            "value": null
+          },
+          "provider": "codex-cli",
+          "providerOverride": "codex-cli"
+        },
         "requestedSelectionSaved": false,
         "saved": null,
         "savedOverrides": {
@@ -21,7 +37,10 @@
         },
         "savedProvider": null,
         "savedUnchanged": false,
-        "status": "committed_state_conflict"
+        "status": "committed_state_conflict",
+        "target": {
+          "agentId": "durable_term"
+        }
       },
       "version": 1
     },
@@ -41,19 +60,2420 @@
     },
     "status": 409
   },
+  "acknowledgedIntentConflicts": {
+    "context_reset": {
+      "apply": {
+        "body": {
+          "commandId": "provider-v2-intent-context_reset-apply",
+          "epoch": "00000000-0000-4000-8000-000000000001",
+          "error": {
+            "code": "apply_committed_state_conflict",
+            "message": "Configuration was durably written, but the acknowledged state differs from the reviewed request. Read and review the saved target before continuing."
+          },
+          "status": "failed",
+          "transition": {
+            "conflicts": [
+              "contextWindow"
+            ],
+            "historyRetained": null,
+            "nextWake": "fresh_read_and_review_required",
+            "persisted": true,
+            "proposed": {
+              "effort": {
+                "source": "provider_default",
+                "value": null
+              },
+              "model": {
+                "source": "provider_default",
+                "value": null
+              },
+              "provider": "codex-cli",
+              "providerOverride": "codex-cli"
+            },
+            "requestedSelectionSaved": false,
+            "saved": {
+              "effort": {
+                "source": "provider_default",
+                "value": null
+              },
+              "model": {
+                "source": "provider_default",
+                "value": null
+              },
+              "provider": "codex-cli",
+              "providerOverride": "codex-cli"
+            },
+            "savedOverrides": {
+              "effort": null,
+              "model": null,
+              "provider": "codex-cli"
+            },
+            "savedProvider": "codex-cli",
+            "savedUnchanged": false,
+            "status": "committed_state_conflict",
+            "target": {
+              "agentId": "durable_term"
+            }
+          },
+          "version": 1
+        },
+        "request": {
+          "agentId": "durable_term",
+          "commandId": "provider-v2-intent-context_reset-apply",
+          "contractVersion": 2,
+          "effort": null,
+          "epoch": "00000000-0000-4000-8000-000000000001",
+          "expectedState": "0000000000000000000000000000000000000000000000000000000000000002",
+          "model": {
+            "kind": "provider_default"
+          },
+          "provider": "codex-cli",
+          "type": "agent.providerChange",
+          "version": 1
+        },
+        "status": 409
+      },
+      "preview": {
+        "body": {
+          "commandId": "provider-v2-intent-context_reset-preview",
+          "epoch": "00000000-0000-4000-8000-000000000001",
+          "result": {
+            "activeProvider": null,
+            "agentId": "durable_term",
+            "availabilityMeaning": "local_cli_only",
+            "available": true,
+            "blocked": null,
+            "canSave": true,
+            "catalog": {
+              "models": [
+                {
+                  "efforts": [
+                    "low",
+                    "high"
+                  ],
+                  "hidden": false,
+                  "id": "fixture-current-model",
+                  "isDefault": true,
+                  "label": "Fixture current model",
+                  "resolvedId": null
+                },
+                {
+                  "efforts": [
+                    "low",
+                    "high"
+                  ],
+                  "hidden": false,
+                  "id": "fixture-current-other-model",
+                  "isDefault": false,
+                  "label": "Another current model",
+                  "resolvedId": null
+                }
+              ],
+              "source": "live",
+              "state": "current",
+              "via": "handshake"
+            },
+            "configuredFingerprint": "a78d633c32e4204619f8fa0b768e876542a4b859e5a1e67ee276ac8bc772b949",
+            "contextTransferred": false,
+            "contract": {
+              "current": {
+                "effort": {
+                  "source": "provider_default",
+                  "value": null
+                },
+                "model": {
+                  "source": "provider_default",
+                  "value": null
+                },
+                "provider": "claude-code",
+                "providerOverride": "claude-code"
+              },
+              "proposed": {
+                "effort": {
+                  "source": "provider_default",
+                  "value": null
+                },
+                "model": {
+                  "source": "provider_default",
+                  "value": null
+                },
+                "provider": "codex-cli",
+                "providerOverride": "codex-cli"
+              },
+              "result": {
+                "persisted": false,
+                "started": false,
+                "status": "preview"
+              },
+              "running": {
+                "effort": null,
+                "evidence": "none",
+                "model": null,
+                "provider": null
+              },
+              "saved": {
+                "effort": {
+                  "source": "provider_default",
+                  "value": null
+                },
+                "model": {
+                  "source": "provider_default",
+                  "value": null
+                },
+                "provider": "claude-code",
+                "providerOverride": "claude-code"
+              },
+              "selection": {
+                "contractVersion": 2,
+                "effort": null,
+                "model": {
+                  "kind": "provider_default"
+                }
+              },
+              "target": {
+                "agentId": "durable_term"
+              },
+              "version": 2
+            },
+            "delivery": {
+              "loaded": false,
+              "mcp": "launch_flags",
+              "nativeInstructions": "prepared_on_apply",
+              "nextWake": "revalidation_required",
+              "skills": "none_supported"
+            },
+            "expectedState": "0000000000000000000000000000000000000000000000000000000000000002",
+            "historyRetained": true,
+            "instructionScope": "managed_composition",
+            "instructions": "equivalent",
+            "managedPreparation": "keep",
+            "nextStart": "new_session",
+            "provider": "codex-cli",
+            "runtime": {
+              "mode": "terminal"
+            },
+            "savedProvider": "claude-code",
+            "settingsReset": [],
+            "state": "sleeping",
+            "targetRuntime": "terminal"
+          },
+          "status": "completed",
+          "version": 1
+        },
+        "request": {
+          "agentId": "durable_term",
+          "commandId": "provider-v2-intent-context_reset-preview",
+          "contractVersion": 2,
+          "effort": null,
+          "epoch": "00000000-0000-4000-8000-000000000001",
+          "model": {
+            "kind": "provider_default"
+          },
+          "provider": "codex-cli",
+          "type": "agent.providerPreview",
+          "version": 1
+        },
+        "status": 200
+      }
+    },
+    "effort_default_clear": {
+      "apply": {
+        "body": {
+          "commandId": "provider-v2-intent-effort_default_clear-apply",
+          "epoch": "00000000-0000-4000-8000-000000000001",
+          "error": {
+            "code": "apply_committed_state_conflict",
+            "message": "Configuration was durably written, but the acknowledged state differs from the reviewed request. Read and review the saved target before continuing."
+          },
+          "status": "failed",
+          "transition": {
+            "conflicts": [
+              "effort"
+            ],
+            "historyRetained": null,
+            "nextWake": "fresh_read_and_review_required",
+            "persisted": true,
+            "proposed": {
+              "effort": {
+                "source": "provider_default",
+                "value": null
+              },
+              "model": {
+                "source": "provider_default",
+                "value": null
+              },
+              "provider": "codex-cli",
+              "providerOverride": "codex-cli"
+            },
+            "requestedSelectionSaved": false,
+            "saved": {
+              "effort": {
+                "source": "agent",
+                "value": "high"
+              },
+              "model": {
+                "source": "provider_default",
+                "value": null
+              },
+              "provider": "codex-cli",
+              "providerOverride": "codex-cli"
+            },
+            "savedOverrides": {
+              "effort": "high",
+              "model": null,
+              "provider": "codex-cli"
+            },
+            "savedProvider": "codex-cli",
+            "savedUnchanged": false,
+            "status": "committed_state_conflict",
+            "target": {
+              "agentId": "durable_term"
+            }
+          },
+          "version": 1
+        },
+        "request": {
+          "agentId": "durable_term",
+          "commandId": "provider-v2-intent-effort_default_clear-apply",
+          "contractVersion": 2,
+          "effort": null,
+          "epoch": "00000000-0000-4000-8000-000000000001",
+          "expectedState": "0000000000000000000000000000000000000000000000000000000000000003",
+          "model": {
+            "kind": "provider_default"
+          },
+          "provider": "codex-cli",
+          "type": "agent.providerChange",
+          "version": 1
+        },
+        "status": 409
+      },
+      "preview": {
+        "body": {
+          "commandId": "provider-v2-intent-effort_default_clear-preview",
+          "epoch": "00000000-0000-4000-8000-000000000001",
+          "result": {
+            "activeProvider": null,
+            "agentId": "durable_term",
+            "availabilityMeaning": "local_cli_only",
+            "available": true,
+            "blocked": null,
+            "canSave": true,
+            "catalog": {
+              "models": [
+                {
+                  "efforts": [
+                    "low",
+                    "high"
+                  ],
+                  "hidden": false,
+                  "id": "fixture-current-model",
+                  "isDefault": true,
+                  "label": "Fixture current model",
+                  "resolvedId": null
+                },
+                {
+                  "efforts": [
+                    "low",
+                    "high"
+                  ],
+                  "hidden": false,
+                  "id": "fixture-current-other-model",
+                  "isDefault": false,
+                  "label": "Another current model",
+                  "resolvedId": null
+                }
+              ],
+              "source": "live",
+              "state": "current",
+              "via": "handshake"
+            },
+            "configuredFingerprint": "75ce4ef9de0a1c321cfb495c4c786d5d849446fbb88230d02208ea8933f2ee8a",
+            "contextTransferred": false,
+            "contract": {
+              "current": {
+                "effort": {
+                  "source": "provider_default",
+                  "value": null
+                },
+                "model": {
+                  "source": "provider_default",
+                  "value": null
+                },
+                "provider": "codex-cli",
+                "providerOverride": "codex-cli"
+              },
+              "proposed": {
+                "effort": {
+                  "source": "provider_default",
+                  "value": null
+                },
+                "model": {
+                  "source": "provider_default",
+                  "value": null
+                },
+                "provider": "codex-cli",
+                "providerOverride": "codex-cli"
+              },
+              "result": {
+                "persisted": false,
+                "started": false,
+                "status": "preview"
+              },
+              "running": {
+                "effort": null,
+                "evidence": "none",
+                "model": null,
+                "provider": null
+              },
+              "saved": {
+                "effort": {
+                  "source": "provider_default",
+                  "value": null
+                },
+                "model": {
+                  "source": "provider_default",
+                  "value": null
+                },
+                "provider": "codex-cli",
+                "providerOverride": "codex-cli"
+              },
+              "selection": {
+                "contractVersion": 2,
+                "effort": null,
+                "model": {
+                  "kind": "provider_default"
+                }
+              },
+              "target": {
+                "agentId": "durable_term"
+              },
+              "version": 2
+            },
+            "delivery": {
+              "loaded": false,
+              "mcp": "launch_flags",
+              "nativeInstructions": "prepared_on_apply",
+              "nextWake": "revalidation_required",
+              "skills": "none_supported"
+            },
+            "expectedState": "0000000000000000000000000000000000000000000000000000000000000003",
+            "historyRetained": true,
+            "instructionScope": "managed_composition",
+            "instructions": "equivalent",
+            "managedPreparation": "keep",
+            "nextStart": "new_session",
+            "provider": "codex-cli",
+            "runtime": {
+              "mode": "terminal"
+            },
+            "savedProvider": "codex-cli",
+            "settingsReset": [],
+            "state": "sleeping",
+            "targetRuntime": "terminal"
+          },
+          "status": "completed",
+          "version": 1
+        },
+        "request": {
+          "agentId": "durable_term",
+          "commandId": "provider-v2-intent-effort_default_clear-preview",
+          "contractVersion": 2,
+          "effort": null,
+          "epoch": "00000000-0000-4000-8000-000000000001",
+          "model": {
+            "kind": "provider_default"
+          },
+          "provider": "codex-cli",
+          "type": "agent.providerPreview",
+          "version": 1
+        },
+        "status": 200
+      }
+    },
+    "effort_source": {
+      "apply": {
+        "body": {
+          "commandId": "provider-v2-intent-effort_source-apply",
+          "epoch": "00000000-0000-4000-8000-000000000001",
+          "error": {
+            "code": "apply_committed_state_conflict",
+            "message": "Configuration was durably written, but the acknowledged state differs from the reviewed request. Read and review the saved target before continuing."
+          },
+          "status": "failed",
+          "transition": {
+            "conflicts": [
+              "effort"
+            ],
+            "historyRetained": null,
+            "nextWake": "fresh_read_and_review_required",
+            "persisted": true,
+            "proposed": {
+              "effort": {
+                "source": "agent",
+                "value": "high"
+              },
+              "model": {
+                "source": "agent",
+                "value": "fixture-current-model"
+              },
+              "provider": "codex-cli",
+              "providerOverride": "codex-cli"
+            },
+            "requestedSelectionSaved": false,
+            "saved": {
+              "effort": {
+                "source": "provider_default",
+                "value": null
+              },
+              "model": {
+                "source": "agent",
+                "value": "fixture-current-model"
+              },
+              "provider": "codex-cli",
+              "providerOverride": "codex-cli"
+            },
+            "savedOverrides": {
+              "effort": null,
+              "model": "fixture-current-model",
+              "provider": "codex-cli"
+            },
+            "savedProvider": "codex-cli",
+            "savedUnchanged": false,
+            "status": "committed_state_conflict",
+            "target": {
+              "agentId": "durable_term"
+            }
+          },
+          "version": 1
+        },
+        "request": {
+          "agentId": "durable_term",
+          "commandId": "provider-v2-intent-effort_source-apply",
+          "contractVersion": 2,
+          "effort": "high",
+          "epoch": "00000000-0000-4000-8000-000000000001",
+          "expectedState": "0000000000000000000000000000000000000000000000000000000000000004",
+          "model": {
+            "id": "fixture-current-model",
+            "kind": "selected"
+          },
+          "provider": "codex-cli",
+          "type": "agent.providerChange",
+          "version": 1
+        },
+        "status": 409
+      },
+      "preview": {
+        "body": {
+          "commandId": "provider-v2-intent-effort_source-preview",
+          "epoch": "00000000-0000-4000-8000-000000000001",
+          "result": {
+            "activeProvider": null,
+            "agentId": "durable_term",
+            "availabilityMeaning": "local_cli_only",
+            "available": true,
+            "blocked": null,
+            "canSave": true,
+            "catalog": {
+              "models": [
+                {
+                  "efforts": [
+                    "low",
+                    "high"
+                  ],
+                  "hidden": false,
+                  "id": "fixture-current-model",
+                  "isDefault": true,
+                  "label": "Fixture current model",
+                  "resolvedId": null
+                },
+                {
+                  "efforts": [
+                    "low",
+                    "high"
+                  ],
+                  "hidden": false,
+                  "id": "fixture-current-other-model",
+                  "isDefault": false,
+                  "label": "Another current model",
+                  "resolvedId": null
+                }
+              ],
+              "source": "live",
+              "state": "current",
+              "via": "handshake"
+            },
+            "configuredFingerprint": "1e37e2643aa7dcc29c29c53f2f4d6a17ee757b16ca3c564e8d23f607e3ece7e1",
+            "contextTransferred": false,
+            "contract": {
+              "current": {
+                "effort": {
+                  "source": "agent",
+                  "value": "high"
+                },
+                "model": {
+                  "source": "agent",
+                  "value": "fixture-current-model"
+                },
+                "provider": "codex-cli",
+                "providerOverride": "codex-cli"
+              },
+              "proposed": {
+                "effort": {
+                  "source": "agent",
+                  "value": "high"
+                },
+                "model": {
+                  "source": "agent",
+                  "value": "fixture-current-model"
+                },
+                "provider": "codex-cli",
+                "providerOverride": "codex-cli"
+              },
+              "result": {
+                "persisted": false,
+                "started": false,
+                "status": "preview"
+              },
+              "running": {
+                "effort": null,
+                "evidence": "none",
+                "model": null,
+                "provider": null
+              },
+              "saved": {
+                "effort": {
+                  "source": "agent",
+                  "value": "high"
+                },
+                "model": {
+                  "source": "agent",
+                  "value": "fixture-current-model"
+                },
+                "provider": "codex-cli",
+                "providerOverride": "codex-cli"
+              },
+              "selection": {
+                "contractVersion": 2,
+                "effort": "high",
+                "model": {
+                  "id": "fixture-current-model",
+                  "kind": "selected"
+                }
+              },
+              "target": {
+                "agentId": "durable_term"
+              },
+              "version": 2
+            },
+            "delivery": {
+              "loaded": false,
+              "mcp": "launch_flags",
+              "nativeInstructions": "prepared_on_apply",
+              "nextWake": "revalidation_required",
+              "skills": "none_supported"
+            },
+            "expectedState": "0000000000000000000000000000000000000000000000000000000000000004",
+            "historyRetained": true,
+            "instructionScope": "managed_composition",
+            "instructions": "equivalent",
+            "managedPreparation": "keep",
+            "nextStart": "new_session",
+            "provider": "codex-cli",
+            "runtime": {
+              "mode": "terminal"
+            },
+            "savedProvider": "codex-cli",
+            "settingsReset": [],
+            "state": "sleeping",
+            "targetRuntime": "terminal"
+          },
+          "status": "completed",
+          "version": 1
+        },
+        "request": {
+          "agentId": "durable_term",
+          "commandId": "provider-v2-intent-effort_source-preview",
+          "contractVersion": 2,
+          "effort": "high",
+          "epoch": "00000000-0000-4000-8000-000000000001",
+          "model": {
+            "id": "fixture-current-model",
+            "kind": "selected"
+          },
+          "provider": "codex-cli",
+          "type": "agent.providerPreview",
+          "version": 1
+        },
+        "status": 200
+      }
+    },
+    "effort_value": {
+      "apply": {
+        "body": {
+          "commandId": "provider-v2-intent-effort_value-apply",
+          "epoch": "00000000-0000-4000-8000-000000000001",
+          "error": {
+            "code": "apply_committed_state_conflict",
+            "message": "Configuration was durably written, but the acknowledged state differs from the reviewed request. Read and review the saved target before continuing."
+          },
+          "status": "failed",
+          "transition": {
+            "conflicts": [
+              "effort"
+            ],
+            "historyRetained": null,
+            "nextWake": "fresh_read_and_review_required",
+            "persisted": true,
+            "proposed": {
+              "effort": {
+                "source": "agent",
+                "value": "high"
+              },
+              "model": {
+                "source": "agent",
+                "value": "fixture-current-model"
+              },
+              "provider": "codex-cli",
+              "providerOverride": "codex-cli"
+            },
+            "requestedSelectionSaved": false,
+            "saved": {
+              "effort": {
+                "source": "agent",
+                "value": "low"
+              },
+              "model": {
+                "source": "agent",
+                "value": "fixture-current-model"
+              },
+              "provider": "codex-cli",
+              "providerOverride": "codex-cli"
+            },
+            "savedOverrides": {
+              "effort": "low",
+              "model": "fixture-current-model",
+              "provider": "codex-cli"
+            },
+            "savedProvider": "codex-cli",
+            "savedUnchanged": false,
+            "status": "committed_state_conflict",
+            "target": {
+              "agentId": "durable_term"
+            }
+          },
+          "version": 1
+        },
+        "request": {
+          "agentId": "durable_term",
+          "commandId": "provider-v2-intent-effort_value-apply",
+          "contractVersion": 2,
+          "effort": "high",
+          "epoch": "00000000-0000-4000-8000-000000000001",
+          "expectedState": "0000000000000000000000000000000000000000000000000000000000000004",
+          "model": {
+            "id": "fixture-current-model",
+            "kind": "selected"
+          },
+          "provider": "codex-cli",
+          "type": "agent.providerChange",
+          "version": 1
+        },
+        "status": 409
+      },
+      "preview": {
+        "body": {
+          "commandId": "provider-v2-intent-effort_value-preview",
+          "epoch": "00000000-0000-4000-8000-000000000001",
+          "result": {
+            "activeProvider": null,
+            "agentId": "durable_term",
+            "availabilityMeaning": "local_cli_only",
+            "available": true,
+            "blocked": null,
+            "canSave": true,
+            "catalog": {
+              "models": [
+                {
+                  "efforts": [
+                    "low",
+                    "high"
+                  ],
+                  "hidden": false,
+                  "id": "fixture-current-model",
+                  "isDefault": true,
+                  "label": "Fixture current model",
+                  "resolvedId": null
+                },
+                {
+                  "efforts": [
+                    "low",
+                    "high"
+                  ],
+                  "hidden": false,
+                  "id": "fixture-current-other-model",
+                  "isDefault": false,
+                  "label": "Another current model",
+                  "resolvedId": null
+                }
+              ],
+              "source": "live",
+              "state": "current",
+              "via": "handshake"
+            },
+            "configuredFingerprint": "1e37e2643aa7dcc29c29c53f2f4d6a17ee757b16ca3c564e8d23f607e3ece7e1",
+            "contextTransferred": false,
+            "contract": {
+              "current": {
+                "effort": {
+                  "source": "agent",
+                  "value": "high"
+                },
+                "model": {
+                  "source": "agent",
+                  "value": "fixture-current-model"
+                },
+                "provider": "codex-cli",
+                "providerOverride": "codex-cli"
+              },
+              "proposed": {
+                "effort": {
+                  "source": "agent",
+                  "value": "high"
+                },
+                "model": {
+                  "source": "agent",
+                  "value": "fixture-current-model"
+                },
+                "provider": "codex-cli",
+                "providerOverride": "codex-cli"
+              },
+              "result": {
+                "persisted": false,
+                "started": false,
+                "status": "preview"
+              },
+              "running": {
+                "effort": null,
+                "evidence": "none",
+                "model": null,
+                "provider": null
+              },
+              "saved": {
+                "effort": {
+                  "source": "agent",
+                  "value": "high"
+                },
+                "model": {
+                  "source": "agent",
+                  "value": "fixture-current-model"
+                },
+                "provider": "codex-cli",
+                "providerOverride": "codex-cli"
+              },
+              "selection": {
+                "contractVersion": 2,
+                "effort": "high",
+                "model": {
+                  "id": "fixture-current-model",
+                  "kind": "selected"
+                }
+              },
+              "target": {
+                "agentId": "durable_term"
+              },
+              "version": 2
+            },
+            "delivery": {
+              "loaded": false,
+              "mcp": "launch_flags",
+              "nativeInstructions": "prepared_on_apply",
+              "nextWake": "revalidation_required",
+              "skills": "none_supported"
+            },
+            "expectedState": "0000000000000000000000000000000000000000000000000000000000000004",
+            "historyRetained": true,
+            "instructionScope": "managed_composition",
+            "instructions": "equivalent",
+            "managedPreparation": "keep",
+            "nextStart": "new_session",
+            "provider": "codex-cli",
+            "runtime": {
+              "mode": "terminal"
+            },
+            "savedProvider": "codex-cli",
+            "settingsReset": [],
+            "state": "sleeping",
+            "targetRuntime": "terminal"
+          },
+          "status": "completed",
+          "version": 1
+        },
+        "request": {
+          "agentId": "durable_term",
+          "commandId": "provider-v2-intent-effort_value-preview",
+          "contractVersion": 2,
+          "effort": "high",
+          "epoch": "00000000-0000-4000-8000-000000000001",
+          "model": {
+            "id": "fixture-current-model",
+            "kind": "selected"
+          },
+          "provider": "codex-cli",
+          "type": "agent.providerPreview",
+          "version": 1
+        },
+        "status": 200
+      }
+    },
+    "history_retention": {
+      "apply": {
+        "body": {
+          "commandId": "provider-v2-intent-history_retention-apply",
+          "epoch": "00000000-0000-4000-8000-000000000001",
+          "error": {
+            "code": "apply_committed_state_conflict",
+            "message": "Configuration was durably written, but the acknowledged state differs from the reviewed request. Read and review the saved target before continuing."
+          },
+          "status": "failed",
+          "transition": {
+            "conflicts": [
+              "history"
+            ],
+            "historyRetained": null,
+            "nextWake": "fresh_read_and_review_required",
+            "persisted": true,
+            "proposed": {
+              "effort": {
+                "source": "agent",
+                "value": "high"
+              },
+              "model": {
+                "source": "agent",
+                "value": "fixture-current-model"
+              },
+              "provider": "codex-cli",
+              "providerOverride": "codex-cli"
+            },
+            "requestedSelectionSaved": false,
+            "saved": {
+              "effort": {
+                "source": "agent",
+                "value": "high"
+              },
+              "model": {
+                "source": "agent",
+                "value": "fixture-current-model"
+              },
+              "provider": "codex-cli",
+              "providerOverride": "codex-cli"
+            },
+            "savedOverrides": {
+              "effort": "high",
+              "model": "fixture-current-model",
+              "provider": "codex-cli"
+            },
+            "savedProvider": "codex-cli",
+            "savedUnchanged": false,
+            "status": "committed_state_conflict",
+            "target": {
+              "agentId": "durable_term"
+            }
+          },
+          "version": 1
+        },
+        "request": {
+          "agentId": "durable_term",
+          "commandId": "provider-v2-intent-history_retention-apply",
+          "contractVersion": 2,
+          "effort": "high",
+          "epoch": "00000000-0000-4000-8000-000000000001",
+          "expectedState": "0000000000000000000000000000000000000000000000000000000000000005",
+          "model": {
+            "id": "fixture-current-model",
+            "kind": "selected"
+          },
+          "provider": "codex-cli",
+          "type": "agent.providerChange",
+          "version": 1
+        },
+        "status": 409
+      },
+      "preview": {
+        "body": {
+          "commandId": "provider-v2-intent-history_retention-preview",
+          "epoch": "00000000-0000-4000-8000-000000000001",
+          "result": {
+            "activeProvider": null,
+            "agentId": "durable_term",
+            "availabilityMeaning": "local_cli_only",
+            "available": true,
+            "blocked": null,
+            "canSave": true,
+            "catalog": {
+              "models": [
+                {
+                  "efforts": [
+                    "low",
+                    "high"
+                  ],
+                  "hidden": false,
+                  "id": "fixture-current-model",
+                  "isDefault": true,
+                  "label": "Fixture current model",
+                  "resolvedId": null
+                },
+                {
+                  "efforts": [
+                    "low",
+                    "high"
+                  ],
+                  "hidden": false,
+                  "id": "fixture-current-other-model",
+                  "isDefault": false,
+                  "label": "Another current model",
+                  "resolvedId": null
+                }
+              ],
+              "source": "live",
+              "state": "current",
+              "via": "handshake"
+            },
+            "configuredFingerprint": "482787fabf5a79668a3df48de43a0a6e0e4a1357ac2aa7261181ad8f7e216177",
+            "contextTransferred": false,
+            "contract": {
+              "current": {
+                "effort": {
+                  "source": "provider_default",
+                  "value": null
+                },
+                "model": {
+                  "source": "provider_default",
+                  "value": null
+                },
+                "provider": "codex-cli",
+                "providerOverride": "codex-cli"
+              },
+              "proposed": {
+                "effort": {
+                  "source": "agent",
+                  "value": "high"
+                },
+                "model": {
+                  "source": "agent",
+                  "value": "fixture-current-model"
+                },
+                "provider": "codex-cli",
+                "providerOverride": "codex-cli"
+              },
+              "result": {
+                "persisted": false,
+                "started": false,
+                "status": "preview"
+              },
+              "running": {
+                "effort": null,
+                "evidence": "none",
+                "model": null,
+                "provider": null
+              },
+              "saved": {
+                "effort": {
+                  "source": "provider_default",
+                  "value": null
+                },
+                "model": {
+                  "source": "provider_default",
+                  "value": null
+                },
+                "provider": "codex-cli",
+                "providerOverride": "codex-cli"
+              },
+              "selection": {
+                "contractVersion": 2,
+                "effort": "high",
+                "model": {
+                  "id": "fixture-current-model",
+                  "kind": "selected"
+                }
+              },
+              "target": {
+                "agentId": "durable_term"
+              },
+              "version": 2
+            },
+            "delivery": {
+              "loaded": false,
+              "mcp": "launch_flags",
+              "nativeInstructions": "prepared_on_apply",
+              "nextWake": "revalidation_required",
+              "skills": "none_supported"
+            },
+            "expectedState": "0000000000000000000000000000000000000000000000000000000000000005",
+            "historyRetained": true,
+            "instructionScope": "managed_composition",
+            "instructions": "equivalent",
+            "managedPreparation": "keep",
+            "nextStart": "new_session",
+            "provider": "codex-cli",
+            "runtime": {
+              "mode": "terminal"
+            },
+            "savedProvider": "codex-cli",
+            "settingsReset": [],
+            "state": "sleeping",
+            "targetRuntime": "terminal"
+          },
+          "status": "completed",
+          "version": 1
+        },
+        "request": {
+          "agentId": "durable_term",
+          "commandId": "provider-v2-intent-history_retention-preview",
+          "contractVersion": 2,
+          "effort": "high",
+          "epoch": "00000000-0000-4000-8000-000000000001",
+          "model": {
+            "id": "fixture-current-model",
+            "kind": "selected"
+          },
+          "provider": "codex-cli",
+          "type": "agent.providerPreview",
+          "version": 1
+        },
+        "status": 200
+      }
+    },
+    "marker_retention": {
+      "apply": {
+        "body": {
+          "commandId": "provider-v2-intent-marker_retention-apply",
+          "epoch": "00000000-0000-4000-8000-000000000001",
+          "error": {
+            "code": "apply_committed_state_conflict",
+            "message": "Configuration was durably written, but the acknowledged state differs from the reviewed request. Read and review the saved target before continuing."
+          },
+          "status": "failed",
+          "transition": {
+            "conflicts": [
+              "managedTransition"
+            ],
+            "historyRetained": null,
+            "nextWake": "fresh_read_and_review_required",
+            "persisted": true,
+            "proposed": {
+              "effort": {
+                "source": "agent",
+                "value": "high"
+              },
+              "model": {
+                "source": "agent",
+                "value": "fixture-current-model"
+              },
+              "provider": "codex-cli",
+              "providerOverride": "codex-cli"
+            },
+            "requestedSelectionSaved": false,
+            "saved": {
+              "effort": {
+                "source": "agent",
+                "value": "high"
+              },
+              "model": {
+                "source": "agent",
+                "value": "fixture-current-model"
+              },
+              "provider": "codex-cli",
+              "providerOverride": "codex-cli"
+            },
+            "savedOverrides": {
+              "effort": "high",
+              "model": "fixture-current-model",
+              "provider": "codex-cli"
+            },
+            "savedProvider": "codex-cli",
+            "savedUnchanged": false,
+            "status": "committed_state_conflict",
+            "target": {
+              "agentId": "durable_term"
+            }
+          },
+          "version": 1
+        },
+        "request": {
+          "agentId": "durable_term",
+          "commandId": "provider-v2-intent-marker_retention-apply",
+          "contractVersion": 2,
+          "effort": "high",
+          "epoch": "00000000-0000-4000-8000-000000000001",
+          "expectedState": "0000000000000000000000000000000000000000000000000000000000000006",
+          "model": {
+            "id": "fixture-current-model",
+            "kind": "selected"
+          },
+          "provider": "codex-cli",
+          "type": "agent.providerChange",
+          "version": 1
+        },
+        "status": 409
+      },
+      "preview": {
+        "body": {
+          "commandId": "provider-v2-intent-marker_retention-preview",
+          "epoch": "00000000-0000-4000-8000-000000000001",
+          "result": {
+            "activeProvider": null,
+            "agentId": "durable_term",
+            "availabilityMeaning": "local_cli_only",
+            "available": true,
+            "blocked": null,
+            "canSave": true,
+            "catalog": {
+              "models": [
+                {
+                  "efforts": [
+                    "low",
+                    "high"
+                  ],
+                  "hidden": false,
+                  "id": "fixture-current-model",
+                  "isDefault": true,
+                  "label": "Fixture current model",
+                  "resolvedId": null
+                },
+                {
+                  "efforts": [
+                    "low",
+                    "high"
+                  ],
+                  "hidden": false,
+                  "id": "fixture-current-other-model",
+                  "isDefault": false,
+                  "label": "Another current model",
+                  "resolvedId": null
+                }
+              ],
+              "source": "live",
+              "state": "current",
+              "via": "handshake"
+            },
+            "configuredFingerprint": "75ce4ef9de0a1c321cfb495c4c786d5d849446fbb88230d02208ea8933f2ee8a",
+            "contextTransferred": false,
+            "contract": {
+              "current": {
+                "effort": {
+                  "source": "provider_default",
+                  "value": null
+                },
+                "model": {
+                  "source": "provider_default",
+                  "value": null
+                },
+                "provider": "codex-cli",
+                "providerOverride": "codex-cli"
+              },
+              "proposed": {
+                "effort": {
+                  "source": "agent",
+                  "value": "high"
+                },
+                "model": {
+                  "source": "agent",
+                  "value": "fixture-current-model"
+                },
+                "provider": "codex-cli",
+                "providerOverride": "codex-cli"
+              },
+              "result": {
+                "persisted": false,
+                "started": false,
+                "status": "preview"
+              },
+              "running": {
+                "effort": null,
+                "evidence": "none",
+                "model": null,
+                "provider": null
+              },
+              "saved": {
+                "effort": {
+                  "source": "provider_default",
+                  "value": null
+                },
+                "model": {
+                  "source": "provider_default",
+                  "value": null
+                },
+                "provider": "codex-cli",
+                "providerOverride": "codex-cli"
+              },
+              "selection": {
+                "contractVersion": 2,
+                "effort": "high",
+                "model": {
+                  "id": "fixture-current-model",
+                  "kind": "selected"
+                }
+              },
+              "target": {
+                "agentId": "durable_term"
+              },
+              "version": 2
+            },
+            "delivery": {
+              "loaded": false,
+              "mcp": "launch_flags",
+              "nativeInstructions": "prepared_on_apply",
+              "nextWake": "revalidation_required",
+              "skills": "none_supported"
+            },
+            "expectedState": "0000000000000000000000000000000000000000000000000000000000000006",
+            "historyRetained": true,
+            "instructionScope": "managed_composition",
+            "instructions": "equivalent",
+            "managedPreparation": "keep",
+            "nextStart": "new_session",
+            "provider": "codex-cli",
+            "runtime": {
+              "mode": "terminal"
+            },
+            "savedProvider": "codex-cli",
+            "settingsReset": [],
+            "state": "sleeping",
+            "targetRuntime": "terminal"
+          },
+          "status": "completed",
+          "version": 1
+        },
+        "request": {
+          "agentId": "durable_term",
+          "commandId": "provider-v2-intent-marker_retention-preview",
+          "contractVersion": 2,
+          "effort": "high",
+          "epoch": "00000000-0000-4000-8000-000000000001",
+          "model": {
+            "id": "fixture-current-model",
+            "kind": "selected"
+          },
+          "provider": "codex-cli",
+          "type": "agent.providerPreview",
+          "version": 1
+        },
+        "status": 200
+      }
+    },
+    "model_default_clear": {
+      "apply": {
+        "body": {
+          "commandId": "provider-v2-intent-model_default_clear-apply",
+          "epoch": "00000000-0000-4000-8000-000000000001",
+          "error": {
+            "code": "apply_committed_state_conflict",
+            "message": "Configuration was durably written, but the acknowledged state differs from the reviewed request. Read and review the saved target before continuing."
+          },
+          "status": "failed",
+          "transition": {
+            "conflicts": [
+              "model"
+            ],
+            "historyRetained": null,
+            "nextWake": "fresh_read_and_review_required",
+            "persisted": true,
+            "proposed": {
+              "effort": {
+                "source": "provider_default",
+                "value": null
+              },
+              "model": {
+                "source": "provider_default",
+                "value": null
+              },
+              "provider": "codex-cli",
+              "providerOverride": "codex-cli"
+            },
+            "requestedSelectionSaved": false,
+            "saved": {
+              "effort": {
+                "source": "provider_default",
+                "value": null
+              },
+              "model": {
+                "source": "agent",
+                "value": "fixture-current-other-model"
+              },
+              "provider": "codex-cli",
+              "providerOverride": "codex-cli"
+            },
+            "savedOverrides": {
+              "effort": null,
+              "model": "fixture-current-other-model",
+              "provider": "codex-cli"
+            },
+            "savedProvider": "codex-cli",
+            "savedUnchanged": false,
+            "status": "committed_state_conflict",
+            "target": {
+              "agentId": "durable_term"
+            }
+          },
+          "version": 1
+        },
+        "request": {
+          "agentId": "durable_term",
+          "commandId": "provider-v2-intent-model_default_clear-apply",
+          "contractVersion": 2,
+          "effort": null,
+          "epoch": "00000000-0000-4000-8000-000000000001",
+          "expectedState": "0000000000000000000000000000000000000000000000000000000000000003",
+          "model": {
+            "kind": "provider_default"
+          },
+          "provider": "codex-cli",
+          "type": "agent.providerChange",
+          "version": 1
+        },
+        "status": 409
+      },
+      "preview": {
+        "body": {
+          "commandId": "provider-v2-intent-model_default_clear-preview",
+          "epoch": "00000000-0000-4000-8000-000000000001",
+          "result": {
+            "activeProvider": null,
+            "agentId": "durable_term",
+            "availabilityMeaning": "local_cli_only",
+            "available": true,
+            "blocked": null,
+            "canSave": true,
+            "catalog": {
+              "models": [
+                {
+                  "efforts": [
+                    "low",
+                    "high"
+                  ],
+                  "hidden": false,
+                  "id": "fixture-current-model",
+                  "isDefault": true,
+                  "label": "Fixture current model",
+                  "resolvedId": null
+                },
+                {
+                  "efforts": [
+                    "low",
+                    "high"
+                  ],
+                  "hidden": false,
+                  "id": "fixture-current-other-model",
+                  "isDefault": false,
+                  "label": "Another current model",
+                  "resolvedId": null
+                }
+              ],
+              "source": "live",
+              "state": "current",
+              "via": "handshake"
+            },
+            "configuredFingerprint": "75ce4ef9de0a1c321cfb495c4c786d5d849446fbb88230d02208ea8933f2ee8a",
+            "contextTransferred": false,
+            "contract": {
+              "current": {
+                "effort": {
+                  "source": "provider_default",
+                  "value": null
+                },
+                "model": {
+                  "source": "provider_default",
+                  "value": null
+                },
+                "provider": "codex-cli",
+                "providerOverride": "codex-cli"
+              },
+              "proposed": {
+                "effort": {
+                  "source": "provider_default",
+                  "value": null
+                },
+                "model": {
+                  "source": "provider_default",
+                  "value": null
+                },
+                "provider": "codex-cli",
+                "providerOverride": "codex-cli"
+              },
+              "result": {
+                "persisted": false,
+                "started": false,
+                "status": "preview"
+              },
+              "running": {
+                "effort": null,
+                "evidence": "none",
+                "model": null,
+                "provider": null
+              },
+              "saved": {
+                "effort": {
+                  "source": "provider_default",
+                  "value": null
+                },
+                "model": {
+                  "source": "provider_default",
+                  "value": null
+                },
+                "provider": "codex-cli",
+                "providerOverride": "codex-cli"
+              },
+              "selection": {
+                "contractVersion": 2,
+                "effort": null,
+                "model": {
+                  "kind": "provider_default"
+                }
+              },
+              "target": {
+                "agentId": "durable_term"
+              },
+              "version": 2
+            },
+            "delivery": {
+              "loaded": false,
+              "mcp": "launch_flags",
+              "nativeInstructions": "prepared_on_apply",
+              "nextWake": "revalidation_required",
+              "skills": "none_supported"
+            },
+            "expectedState": "0000000000000000000000000000000000000000000000000000000000000003",
+            "historyRetained": true,
+            "instructionScope": "managed_composition",
+            "instructions": "equivalent",
+            "managedPreparation": "keep",
+            "nextStart": "new_session",
+            "provider": "codex-cli",
+            "runtime": {
+              "mode": "terminal"
+            },
+            "savedProvider": "codex-cli",
+            "settingsReset": [],
+            "state": "sleeping",
+            "targetRuntime": "terminal"
+          },
+          "status": "completed",
+          "version": 1
+        },
+        "request": {
+          "agentId": "durable_term",
+          "commandId": "provider-v2-intent-model_default_clear-preview",
+          "contractVersion": 2,
+          "effort": null,
+          "epoch": "00000000-0000-4000-8000-000000000001",
+          "model": {
+            "kind": "provider_default"
+          },
+          "provider": "codex-cli",
+          "type": "agent.providerPreview",
+          "version": 1
+        },
+        "status": 200
+      }
+    },
+    "model_source": {
+      "apply": {
+        "body": {
+          "commandId": "provider-v2-intent-model_source-apply",
+          "epoch": "00000000-0000-4000-8000-000000000001",
+          "error": {
+            "code": "apply_committed_state_conflict",
+            "message": "Configuration was durably written, but the acknowledged state differs from the reviewed request. Read and review the saved target before continuing."
+          },
+          "status": "failed",
+          "transition": {
+            "conflicts": [
+              "model"
+            ],
+            "historyRetained": null,
+            "nextWake": "fresh_read_and_review_required",
+            "persisted": true,
+            "proposed": {
+              "effort": {
+                "source": "agent",
+                "value": "high"
+              },
+              "model": {
+                "source": "agent",
+                "value": "fixture-current-model"
+              },
+              "provider": "codex-cli",
+              "providerOverride": "codex-cli"
+            },
+            "requestedSelectionSaved": false,
+            "saved": {
+              "effort": {
+                "source": "agent",
+                "value": "high"
+              },
+              "model": {
+                "source": "provider_default",
+                "value": null
+              },
+              "provider": "codex-cli",
+              "providerOverride": "codex-cli"
+            },
+            "savedOverrides": {
+              "effort": "high",
+              "model": null,
+              "provider": "codex-cli"
+            },
+            "savedProvider": "codex-cli",
+            "savedUnchanged": false,
+            "status": "committed_state_conflict",
+            "target": {
+              "agentId": "durable_term"
+            }
+          },
+          "version": 1
+        },
+        "request": {
+          "agentId": "durable_term",
+          "commandId": "provider-v2-intent-model_source-apply",
+          "contractVersion": 2,
+          "effort": "high",
+          "epoch": "00000000-0000-4000-8000-000000000001",
+          "expectedState": "0000000000000000000000000000000000000000000000000000000000000007",
+          "model": {
+            "id": "fixture-current-model",
+            "kind": "selected"
+          },
+          "provider": "codex-cli",
+          "type": "agent.providerChange",
+          "version": 1
+        },
+        "status": 409
+      },
+      "preview": {
+        "body": {
+          "commandId": "provider-v2-intent-model_source-preview",
+          "epoch": "00000000-0000-4000-8000-000000000001",
+          "result": {
+            "activeProvider": null,
+            "agentId": "durable_term",
+            "availabilityMeaning": "local_cli_only",
+            "available": true,
+            "blocked": null,
+            "canSave": true,
+            "catalog": {
+              "models": [
+                {
+                  "efforts": [
+                    "low",
+                    "high"
+                  ],
+                  "hidden": false,
+                  "id": "fixture-current-model",
+                  "isDefault": true,
+                  "label": "Fixture current model",
+                  "resolvedId": null
+                },
+                {
+                  "efforts": [
+                    "low",
+                    "high"
+                  ],
+                  "hidden": false,
+                  "id": "fixture-current-other-model",
+                  "isDefault": false,
+                  "label": "Another current model",
+                  "resolvedId": null
+                }
+              ],
+              "source": "live",
+              "state": "current",
+              "via": "handshake"
+            },
+            "configuredFingerprint": "3b8d030f728934254775bf58c5ddf4091ec2b1f7c8ab02771d5cda2013ac21dd",
+            "contextTransferred": false,
+            "contract": {
+              "current": {
+                "effort": {
+                  "source": "agent",
+                  "value": "low"
+                },
+                "model": {
+                  "source": "agent",
+                  "value": "fixture-current-model"
+                },
+                "provider": "codex-cli",
+                "providerOverride": "codex-cli"
+              },
+              "proposed": {
+                "effort": {
+                  "source": "agent",
+                  "value": "high"
+                },
+                "model": {
+                  "source": "agent",
+                  "value": "fixture-current-model"
+                },
+                "provider": "codex-cli",
+                "providerOverride": "codex-cli"
+              },
+              "result": {
+                "persisted": false,
+                "started": false,
+                "status": "preview"
+              },
+              "running": {
+                "effort": null,
+                "evidence": "none",
+                "model": null,
+                "provider": null
+              },
+              "saved": {
+                "effort": {
+                  "source": "agent",
+                  "value": "low"
+                },
+                "model": {
+                  "source": "agent",
+                  "value": "fixture-current-model"
+                },
+                "provider": "codex-cli",
+                "providerOverride": "codex-cli"
+              },
+              "selection": {
+                "contractVersion": 2,
+                "effort": "high",
+                "model": {
+                  "id": "fixture-current-model",
+                  "kind": "selected"
+                }
+              },
+              "target": {
+                "agentId": "durable_term"
+              },
+              "version": 2
+            },
+            "delivery": {
+              "loaded": false,
+              "mcp": "launch_flags",
+              "nativeInstructions": "prepared_on_apply",
+              "nextWake": "revalidation_required",
+              "skills": "none_supported"
+            },
+            "expectedState": "0000000000000000000000000000000000000000000000000000000000000007",
+            "historyRetained": true,
+            "instructionScope": "managed_composition",
+            "instructions": "equivalent",
+            "managedPreparation": "keep",
+            "nextStart": "new_session",
+            "provider": "codex-cli",
+            "runtime": {
+              "mode": "terminal"
+            },
+            "savedProvider": "codex-cli",
+            "settingsReset": [],
+            "state": "sleeping",
+            "targetRuntime": "terminal"
+          },
+          "status": "completed",
+          "version": 1
+        },
+        "request": {
+          "agentId": "durable_term",
+          "commandId": "provider-v2-intent-model_source-preview",
+          "contractVersion": 2,
+          "effort": "high",
+          "epoch": "00000000-0000-4000-8000-000000000001",
+          "model": {
+            "id": "fixture-current-model",
+            "kind": "selected"
+          },
+          "provider": "codex-cli",
+          "type": "agent.providerPreview",
+          "version": 1
+        },
+        "status": 200
+      }
+    },
+    "model_value": {
+      "apply": {
+        "body": {
+          "commandId": "provider-v2-intent-model_value-apply",
+          "epoch": "00000000-0000-4000-8000-000000000001",
+          "error": {
+            "code": "apply_committed_state_conflict",
+            "message": "Configuration was durably written, but the acknowledged state differs from the reviewed request. Read and review the saved target before continuing."
+          },
+          "status": "failed",
+          "transition": {
+            "conflicts": [
+              "model"
+            ],
+            "historyRetained": null,
+            "nextWake": "fresh_read_and_review_required",
+            "persisted": true,
+            "proposed": {
+              "effort": {
+                "source": "agent",
+                "value": "high"
+              },
+              "model": {
+                "source": "agent",
+                "value": "fixture-current-model"
+              },
+              "provider": "codex-cli",
+              "providerOverride": "codex-cli"
+            },
+            "requestedSelectionSaved": false,
+            "saved": {
+              "effort": {
+                "source": "agent",
+                "value": "high"
+              },
+              "model": {
+                "source": "agent",
+                "value": "fixture-current-other-model"
+              },
+              "provider": "codex-cli",
+              "providerOverride": "codex-cli"
+            },
+            "savedOverrides": {
+              "effort": "high",
+              "model": "fixture-current-other-model",
+              "provider": "codex-cli"
+            },
+            "savedProvider": "codex-cli",
+            "savedUnchanged": false,
+            "status": "committed_state_conflict",
+            "target": {
+              "agentId": "durable_term"
+            }
+          },
+          "version": 1
+        },
+        "request": {
+          "agentId": "durable_term",
+          "commandId": "provider-v2-intent-model_value-apply",
+          "contractVersion": 2,
+          "effort": "high",
+          "epoch": "00000000-0000-4000-8000-000000000001",
+          "expectedState": "0000000000000000000000000000000000000000000000000000000000000007",
+          "model": {
+            "id": "fixture-current-model",
+            "kind": "selected"
+          },
+          "provider": "codex-cli",
+          "type": "agent.providerChange",
+          "version": 1
+        },
+        "status": 409
+      },
+      "preview": {
+        "body": {
+          "commandId": "provider-v2-intent-model_value-preview",
+          "epoch": "00000000-0000-4000-8000-000000000001",
+          "result": {
+            "activeProvider": null,
+            "agentId": "durable_term",
+            "availabilityMeaning": "local_cli_only",
+            "available": true,
+            "blocked": null,
+            "canSave": true,
+            "catalog": {
+              "models": [
+                {
+                  "efforts": [
+                    "low",
+                    "high"
+                  ],
+                  "hidden": false,
+                  "id": "fixture-current-model",
+                  "isDefault": true,
+                  "label": "Fixture current model",
+                  "resolvedId": null
+                },
+                {
+                  "efforts": [
+                    "low",
+                    "high"
+                  ],
+                  "hidden": false,
+                  "id": "fixture-current-other-model",
+                  "isDefault": false,
+                  "label": "Another current model",
+                  "resolvedId": null
+                }
+              ],
+              "source": "live",
+              "state": "current",
+              "via": "handshake"
+            },
+            "configuredFingerprint": "3b8d030f728934254775bf58c5ddf4091ec2b1f7c8ab02771d5cda2013ac21dd",
+            "contextTransferred": false,
+            "contract": {
+              "current": {
+                "effort": {
+                  "source": "agent",
+                  "value": "low"
+                },
+                "model": {
+                  "source": "agent",
+                  "value": "fixture-current-model"
+                },
+                "provider": "codex-cli",
+                "providerOverride": "codex-cli"
+              },
+              "proposed": {
+                "effort": {
+                  "source": "agent",
+                  "value": "high"
+                },
+                "model": {
+                  "source": "agent",
+                  "value": "fixture-current-model"
+                },
+                "provider": "codex-cli",
+                "providerOverride": "codex-cli"
+              },
+              "result": {
+                "persisted": false,
+                "started": false,
+                "status": "preview"
+              },
+              "running": {
+                "effort": null,
+                "evidence": "none",
+                "model": null,
+                "provider": null
+              },
+              "saved": {
+                "effort": {
+                  "source": "agent",
+                  "value": "low"
+                },
+                "model": {
+                  "source": "agent",
+                  "value": "fixture-current-model"
+                },
+                "provider": "codex-cli",
+                "providerOverride": "codex-cli"
+              },
+              "selection": {
+                "contractVersion": 2,
+                "effort": "high",
+                "model": {
+                  "id": "fixture-current-model",
+                  "kind": "selected"
+                }
+              },
+              "target": {
+                "agentId": "durable_term"
+              },
+              "version": 2
+            },
+            "delivery": {
+              "loaded": false,
+              "mcp": "launch_flags",
+              "nativeInstructions": "prepared_on_apply",
+              "nextWake": "revalidation_required",
+              "skills": "none_supported"
+            },
+            "expectedState": "0000000000000000000000000000000000000000000000000000000000000007",
+            "historyRetained": true,
+            "instructionScope": "managed_composition",
+            "instructions": "equivalent",
+            "managedPreparation": "keep",
+            "nextStart": "new_session",
+            "provider": "codex-cli",
+            "runtime": {
+              "mode": "terminal"
+            },
+            "savedProvider": "codex-cli",
+            "settingsReset": [],
+            "state": "sleeping",
+            "targetRuntime": "terminal"
+          },
+          "status": "completed",
+          "version": 1
+        },
+        "request": {
+          "agentId": "durable_term",
+          "commandId": "provider-v2-intent-model_value-preview",
+          "contractVersion": 2,
+          "effort": "high",
+          "epoch": "00000000-0000-4000-8000-000000000001",
+          "model": {
+            "id": "fixture-current-model",
+            "kind": "selected"
+          },
+          "provider": "codex-cli",
+          "type": "agent.providerPreview",
+          "version": 1
+        },
+        "status": 200
+      }
+    },
+    "resume_reset": {
+      "apply": {
+        "body": {
+          "commandId": "provider-v2-intent-resume_reset-apply",
+          "epoch": "00000000-0000-4000-8000-000000000001",
+          "error": {
+            "code": "apply_committed_state_conflict",
+            "message": "Configuration was durably written, but the acknowledged state differs from the reviewed request. Read and review the saved target before continuing."
+          },
+          "status": "failed",
+          "transition": {
+            "conflicts": [
+              "resumePointer"
+            ],
+            "historyRetained": null,
+            "nextWake": "fresh_read_and_review_required",
+            "persisted": true,
+            "proposed": {
+              "effort": {
+                "source": "provider_default",
+                "value": null
+              },
+              "model": {
+                "source": "provider_default",
+                "value": null
+              },
+              "provider": "codex-cli",
+              "providerOverride": "codex-cli"
+            },
+            "requestedSelectionSaved": false,
+            "saved": {
+              "effort": {
+                "source": "provider_default",
+                "value": null
+              },
+              "model": {
+                "source": "provider_default",
+                "value": null
+              },
+              "provider": "codex-cli",
+              "providerOverride": "codex-cli"
+            },
+            "savedOverrides": {
+              "effort": null,
+              "model": null,
+              "provider": "codex-cli"
+            },
+            "savedProvider": "codex-cli",
+            "savedUnchanged": false,
+            "status": "committed_state_conflict",
+            "target": {
+              "agentId": "durable_term"
+            }
+          },
+          "version": 1
+        },
+        "request": {
+          "agentId": "durable_term",
+          "commandId": "provider-v2-intent-resume_reset-apply",
+          "contractVersion": 2,
+          "effort": null,
+          "epoch": "00000000-0000-4000-8000-000000000001",
+          "expectedState": "0000000000000000000000000000000000000000000000000000000000000002",
+          "model": {
+            "kind": "provider_default"
+          },
+          "provider": "codex-cli",
+          "type": "agent.providerChange",
+          "version": 1
+        },
+        "status": 409
+      },
+      "preview": {
+        "body": {
+          "commandId": "provider-v2-intent-resume_reset-preview",
+          "epoch": "00000000-0000-4000-8000-000000000001",
+          "result": {
+            "activeProvider": null,
+            "agentId": "durable_term",
+            "availabilityMeaning": "local_cli_only",
+            "available": true,
+            "blocked": null,
+            "canSave": true,
+            "catalog": {
+              "models": [
+                {
+                  "efforts": [
+                    "low",
+                    "high"
+                  ],
+                  "hidden": false,
+                  "id": "fixture-current-model",
+                  "isDefault": true,
+                  "label": "Fixture current model",
+                  "resolvedId": null
+                },
+                {
+                  "efforts": [
+                    "low",
+                    "high"
+                  ],
+                  "hidden": false,
+                  "id": "fixture-current-other-model",
+                  "isDefault": false,
+                  "label": "Another current model",
+                  "resolvedId": null
+                }
+              ],
+              "source": "live",
+              "state": "current",
+              "via": "handshake"
+            },
+            "configuredFingerprint": "a78d633c32e4204619f8fa0b768e876542a4b859e5a1e67ee276ac8bc772b949",
+            "contextTransferred": false,
+            "contract": {
+              "current": {
+                "effort": {
+                  "source": "provider_default",
+                  "value": null
+                },
+                "model": {
+                  "source": "provider_default",
+                  "value": null
+                },
+                "provider": "claude-code",
+                "providerOverride": "claude-code"
+              },
+              "proposed": {
+                "effort": {
+                  "source": "provider_default",
+                  "value": null
+                },
+                "model": {
+                  "source": "provider_default",
+                  "value": null
+                },
+                "provider": "codex-cli",
+                "providerOverride": "codex-cli"
+              },
+              "result": {
+                "persisted": false,
+                "started": false,
+                "status": "preview"
+              },
+              "running": {
+                "effort": null,
+                "evidence": "none",
+                "model": null,
+                "provider": null
+              },
+              "saved": {
+                "effort": {
+                  "source": "provider_default",
+                  "value": null
+                },
+                "model": {
+                  "source": "provider_default",
+                  "value": null
+                },
+                "provider": "claude-code",
+                "providerOverride": "claude-code"
+              },
+              "selection": {
+                "contractVersion": 2,
+                "effort": null,
+                "model": {
+                  "kind": "provider_default"
+                }
+              },
+              "target": {
+                "agentId": "durable_term"
+              },
+              "version": 2
+            },
+            "delivery": {
+              "loaded": false,
+              "mcp": "launch_flags",
+              "nativeInstructions": "prepared_on_apply",
+              "nextWake": "revalidation_required",
+              "skills": "none_supported"
+            },
+            "expectedState": "0000000000000000000000000000000000000000000000000000000000000002",
+            "historyRetained": true,
+            "instructionScope": "managed_composition",
+            "instructions": "equivalent",
+            "managedPreparation": "keep",
+            "nextStart": "new_session",
+            "provider": "codex-cli",
+            "runtime": {
+              "mode": "terminal"
+            },
+            "savedProvider": "claude-code",
+            "settingsReset": [],
+            "state": "sleeping",
+            "targetRuntime": "terminal"
+          },
+          "status": "completed",
+          "version": 1
+        },
+        "request": {
+          "agentId": "durable_term",
+          "commandId": "provider-v2-intent-resume_reset-preview",
+          "contractVersion": 2,
+          "effort": null,
+          "epoch": "00000000-0000-4000-8000-000000000001",
+          "model": {
+            "kind": "provider_default"
+          },
+          "provider": "codex-cli",
+          "type": "agent.providerPreview",
+          "version": 1
+        },
+        "status": 200
+      }
+    },
+    "routing_reset": {
+      "apply": {
+        "body": {
+          "commandId": "provider-v2-intent-routing_reset-apply",
+          "epoch": "00000000-0000-4000-8000-000000000001",
+          "error": {
+            "code": "apply_committed_state_conflict",
+            "message": "Configuration was durably written, but the acknowledged state differs from the reviewed request. Read and review the saved target before continuing."
+          },
+          "status": "failed",
+          "transition": {
+            "conflicts": [
+              "routing"
+            ],
+            "historyRetained": null,
+            "nextWake": "fresh_read_and_review_required",
+            "persisted": true,
+            "proposed": {
+              "effort": {
+                "source": "provider_default",
+                "value": null
+              },
+              "model": {
+                "source": "provider_default",
+                "value": null
+              },
+              "provider": "codex-cli",
+              "providerOverride": "codex-cli"
+            },
+            "requestedSelectionSaved": false,
+            "saved": {
+              "effort": {
+                "source": "provider_default",
+                "value": null
+              },
+              "model": {
+                "source": "provider_default",
+                "value": null
+              },
+              "provider": "codex-cli",
+              "providerOverride": "codex-cli"
+            },
+            "savedOverrides": {
+              "effort": null,
+              "model": null,
+              "provider": "codex-cli"
+            },
+            "savedProvider": "codex-cli",
+            "savedUnchanged": false,
+            "status": "committed_state_conflict",
+            "target": {
+              "agentId": "durable_term"
+            }
+          },
+          "version": 1
+        },
+        "request": {
+          "agentId": "durable_term",
+          "commandId": "provider-v2-intent-routing_reset-apply",
+          "contractVersion": 2,
+          "effort": null,
+          "epoch": "00000000-0000-4000-8000-000000000001",
+          "expectedState": "0000000000000000000000000000000000000000000000000000000000000002",
+          "model": {
+            "kind": "provider_default"
+          },
+          "provider": "codex-cli",
+          "type": "agent.providerChange",
+          "version": 1
+        },
+        "status": 409
+      },
+      "preview": {
+        "body": {
+          "commandId": "provider-v2-intent-routing_reset-preview",
+          "epoch": "00000000-0000-4000-8000-000000000001",
+          "result": {
+            "activeProvider": null,
+            "agentId": "durable_term",
+            "availabilityMeaning": "local_cli_only",
+            "available": true,
+            "blocked": null,
+            "canSave": true,
+            "catalog": {
+              "models": [
+                {
+                  "efforts": [
+                    "low",
+                    "high"
+                  ],
+                  "hidden": false,
+                  "id": "fixture-current-model",
+                  "isDefault": true,
+                  "label": "Fixture current model",
+                  "resolvedId": null
+                },
+                {
+                  "efforts": [
+                    "low",
+                    "high"
+                  ],
+                  "hidden": false,
+                  "id": "fixture-current-other-model",
+                  "isDefault": false,
+                  "label": "Another current model",
+                  "resolvedId": null
+                }
+              ],
+              "source": "live",
+              "state": "current",
+              "via": "handshake"
+            },
+            "configuredFingerprint": "a78d633c32e4204619f8fa0b768e876542a4b859e5a1e67ee276ac8bc772b949",
+            "contextTransferred": false,
+            "contract": {
+              "current": {
+                "effort": {
+                  "source": "provider_default",
+                  "value": null
+                },
+                "model": {
+                  "source": "provider_default",
+                  "value": null
+                },
+                "provider": "claude-code",
+                "providerOverride": "claude-code"
+              },
+              "proposed": {
+                "effort": {
+                  "source": "provider_default",
+                  "value": null
+                },
+                "model": {
+                  "source": "provider_default",
+                  "value": null
+                },
+                "provider": "codex-cli",
+                "providerOverride": "codex-cli"
+              },
+              "result": {
+                "persisted": false,
+                "started": false,
+                "status": "preview"
+              },
+              "running": {
+                "effort": null,
+                "evidence": "none",
+                "model": null,
+                "provider": null
+              },
+              "saved": {
+                "effort": {
+                  "source": "provider_default",
+                  "value": null
+                },
+                "model": {
+                  "source": "provider_default",
+                  "value": null
+                },
+                "provider": "claude-code",
+                "providerOverride": "claude-code"
+              },
+              "selection": {
+                "contractVersion": 2,
+                "effort": null,
+                "model": {
+                  "kind": "provider_default"
+                }
+              },
+              "target": {
+                "agentId": "durable_term"
+              },
+              "version": 2
+            },
+            "delivery": {
+              "loaded": false,
+              "mcp": "launch_flags",
+              "nativeInstructions": "prepared_on_apply",
+              "nextWake": "revalidation_required",
+              "skills": "none_supported"
+            },
+            "expectedState": "0000000000000000000000000000000000000000000000000000000000000002",
+            "historyRetained": true,
+            "instructionScope": "managed_composition",
+            "instructions": "equivalent",
+            "managedPreparation": "keep",
+            "nextStart": "new_session",
+            "provider": "codex-cli",
+            "runtime": {
+              "mode": "terminal"
+            },
+            "savedProvider": "claude-code",
+            "settingsReset": [],
+            "state": "sleeping",
+            "targetRuntime": "terminal"
+          },
+          "status": "completed",
+          "version": 1
+        },
+        "request": {
+          "agentId": "durable_term",
+          "commandId": "provider-v2-intent-routing_reset-preview",
+          "contractVersion": 2,
+          "effort": null,
+          "epoch": "00000000-0000-4000-8000-000000000001",
+          "model": {
+            "kind": "provider_default"
+          },
+          "provider": "codex-cli",
+          "type": "agent.providerPreview",
+          "version": 1
+        },
+        "status": 200
+      }
+    }
+  },
   "acknowledgedProviderConflict": {
     "body": {
       "commandId": "provider-v2-ack-conflict",
       "epoch": "00000000-0000-4000-8000-000000000001",
       "error": {
         "code": "apply_committed_state_conflict",
-        "message": "Configuration was durably written, but the acknowledged provider differs from the request. Read and review the saved target before continuing."
+        "message": "Configuration was durably written, but the acknowledged state differs from the reviewed request. Read and review the saved target before continuing."
       },
       "status": "failed",
       "transition": {
+        "conflicts": [
+          "provider",
+          "providerOverride"
+        ],
         "historyRetained": null,
         "nextWake": "fresh_read_and_review_required",
         "persisted": true,
+        "proposed": {
+          "effort": {
+            "source": "agent",
+            "value": "high"
+          },
+          "model": {
+            "source": "agent",
+            "value": "fixture-current-model"
+          },
+          "provider": "codex-cli",
+          "providerOverride": "codex-cli"
+        },
         "requestedSelectionSaved": false,
         "saved": {
           "effort": {
@@ -74,7 +2494,10 @@
         },
         "savedProvider": "claude-code",
         "savedUnchanged": false,
-        "status": "committed_state_conflict"
+        "status": "committed_state_conflict",
+        "target": {
+          "agentId": "durable_term"
+        }
       },
       "version": 1
     },
@@ -84,7 +2507,7 @@
       "contractVersion": 2,
       "effort": "high",
       "epoch": "00000000-0000-4000-8000-000000000001",
-      "expectedState": "0000000000000000000000000000000000000000000000000000000000000002",
+      "expectedState": "0000000000000000000000000000000000000000000000000000000000000008",
       "model": {
         "id": "fixture-current-model",
         "kind": "selected"
@@ -124,7 +2547,7 @@
         "providerOverride": "codex-cli"
       },
       "expectedProvider": "codex-cli",
-      "expectedState": "0000000000000000000000000000000000000000000000000000000000000003",
+      "expectedState": "0000000000000000000000000000000000000000000000000000000000000009",
       "resume": false,
       "type": "agent.start",
       "version": 1
@@ -153,6 +2576,17 @@
               "id": "fixture-current-model",
               "isDefault": true,
               "label": "Fixture current model",
+              "resolvedId": null
+            },
+            {
+              "efforts": [
+                "low",
+                "high"
+              ],
+              "hidden": false,
+              "id": "fixture-current-other-model",
+              "isDefault": false,
+              "label": "Another current model",
               "resolvedId": null
             }
           ],
@@ -225,14 +2659,14 @@
           "nextWake": "revalidation_required",
           "skills": "none_supported"
         },
-        "expectedState": "0000000000000000000000000000000000000000000000000000000000000004",
+        "expectedState": "000000000000000000000000000000000000000000000000000000000000000a",
         "historyRetained": true,
         "instructionScope": "managed_composition",
         "instructions": "equivalent",
         "managedPreparation": "keep",
         "nextStart": "new_session",
         "nextWake": {
-          "expectedState": "0000000000000000000000000000000000000000000000000000000000000004",
+          "expectedState": "000000000000000000000000000000000000000000000000000000000000000a",
           "state": "ready"
         },
         "provider": "codex-cli",
@@ -253,7 +2687,7 @@
       "commandId": "provider-v2-already",
       "contractVersion": 2,
       "epoch": "00000000-0000-4000-8000-000000000001",
-      "expectedState": "0000000000000000000000000000000000000000000000000000000000000004",
+      "expectedState": "000000000000000000000000000000000000000000000000000000000000000a",
       "provider": "codex-cli",
       "type": "agent.providerChange",
       "version": 1
@@ -282,6 +2716,17 @@
               "id": "fixture-current-model",
               "isDefault": true,
               "label": "Fixture current model",
+              "resolvedId": null
+            },
+            {
+              "efforts": [
+                "low",
+                "high"
+              ],
+              "hidden": false,
+              "id": "fixture-current-other-model",
+              "isDefault": false,
+              "label": "Another current model",
               "resolvedId": null
             }
           ],
@@ -360,7 +2805,7 @@
         "managedPreparation": "keep",
         "nextStart": "new_session",
         "nextWake": {
-          "expectedState": "0000000000000000000000000000000000000000000000000000000000000004",
+          "expectedState": "000000000000000000000000000000000000000000000000000000000000000a",
           "state": "ready"
         },
         "provider": "codex-cli",
@@ -384,7 +2829,7 @@
       "commandId": "provider-v2-apply",
       "contractVersion": 2,
       "epoch": "00000000-0000-4000-8000-000000000001",
-      "expectedState": "0000000000000000000000000000000000000000000000000000000000000005",
+      "expectedState": "000000000000000000000000000000000000000000000000000000000000000b",
       "provider": "codex-cli",
       "type": "agent.providerChange",
       "version": 1
@@ -408,7 +2853,7 @@
       "contractVersion": 2,
       "effort": "high",
       "epoch": "00000000-0000-4000-8000-000000000001",
-      "expectedState": "0000000000000000000000000000000000000000000000000000000000000002",
+      "expectedState": "0000000000000000000000000000000000000000000000000000000000000008",
       "model": {
         "id": "fixture-current-model",
         "kind": "selected"
@@ -442,6 +2887,17 @@
                 "id": "fixture-current-model",
                 "isDefault": true,
                 "label": "Fixture current model",
+                "resolvedId": null
+              },
+              {
+                "efforts": [
+                  "low",
+                  "high"
+                ],
+                "hidden": false,
+                "id": "fixture-current-other-model",
+                "isDefault": false,
+                "label": "Another current model",
                 "resolvedId": null
               }
             ],
@@ -519,7 +2975,7 @@
             "nextWake": "blocked",
             "skills": "none_supported"
           },
-          "expectedState": "0000000000000000000000000000000000000000000000000000000000000006",
+          "expectedState": "000000000000000000000000000000000000000000000000000000000000000c",
           "historyRetained": true,
           "instructionScope": "managed_composition",
           "instructions": "equivalent",
@@ -575,6 +3031,17 @@
                 "id": "fixture-current-model",
                 "isDefault": true,
                 "label": "Fixture current model",
+                "resolvedId": null
+              },
+              {
+                "efforts": [
+                  "low",
+                  "high"
+                ],
+                "hidden": false,
+                "id": "fixture-current-other-model",
+                "isDefault": false,
+                "label": "Another current model",
                 "resolvedId": null
               }
             ],
@@ -652,7 +3119,7 @@
             "nextWake": "blocked",
             "skills": "none_supported"
           },
-          "expectedState": "0000000000000000000000000000000000000000000000000000000000000007",
+          "expectedState": "000000000000000000000000000000000000000000000000000000000000000d",
           "historyRetained": true,
           "instructionScope": "managed_composition",
           "instructions": "equivalent",
@@ -773,7 +3240,7 @@
             "nextWake": "blocked",
             "skills": "none_supported"
           },
-          "expectedState": "0000000000000000000000000000000000000000000000000000000000000008",
+          "expectedState": "000000000000000000000000000000000000000000000000000000000000000e",
           "historyRetained": true,
           "instructionScope": "managed_composition",
           "instructions": "equivalent",
@@ -867,7 +3334,7 @@
         "providerOverride": "codex-cli"
       },
       "expectedProvider": "codex-cli",
-      "expectedState": "0000000000000000000000000000000000000000000000000000000000000003",
+      "expectedState": "0000000000000000000000000000000000000000000000000000000000000009",
       "resume": false,
       "type": "agent.start",
       "version": 1
@@ -896,6 +3363,17 @@
               "id": "fixture-current-model",
               "isDefault": true,
               "label": "Fixture current model",
+              "resolvedId": null
+            },
+            {
+              "efforts": [
+                "low",
+                "high"
+              ],
+              "hidden": false,
+              "id": "fixture-current-other-model",
+              "isDefault": false,
+              "label": "Another current model",
               "resolvedId": null
             }
           ],
@@ -973,7 +3451,7 @@
           "nextWake": "blocked",
           "skills": "none_supported"
         },
-        "expectedState": "0000000000000000000000000000000000000000000000000000000000000009",
+        "expectedState": "000000000000000000000000000000000000000000000000000000000000000f",
         "historyRetained": true,
         "instructionScope": "managed_composition",
         "instructions": "equivalent",
@@ -1029,6 +3507,17 @@
               "id": "fixture-current-model",
               "isDefault": true,
               "label": "Fixture current model",
+              "resolvedId": null
+            },
+            {
+              "efforts": [
+                "low",
+                "high"
+              ],
+              "hidden": false,
+              "id": "fixture-current-other-model",
+              "isDefault": false,
+              "label": "Another current model",
               "resolvedId": null
             }
           ],
@@ -1111,7 +3600,7 @@
         "managedPreparation": "keep",
         "nextStart": "new_session",
         "nextWake": {
-          "expectedState": "0000000000000000000000000000000000000000000000000000000000000004",
+          "expectedState": "000000000000000000000000000000000000000000000000000000000000000a",
           "state": "ready"
         },
         "provider": "codex-cli",
@@ -1168,6 +3657,17 @@
               "id": "fixture-current-model",
               "isDefault": true,
               "label": "Fixture current model",
+              "resolvedId": null
+            },
+            {
+              "efforts": [
+                "low",
+                "high"
+              ],
+              "hidden": false,
+              "id": "fixture-current-other-model",
+              "isDefault": false,
+              "label": "Another current model",
               "resolvedId": null
             }
           ],
@@ -1309,7 +3809,7 @@
         "providerOverride": "codex-cli"
       },
       "expectedProvider": "codex-cli",
-      "expectedState": "0000000000000000000000000000000000000000000000000000000000000003",
+      "expectedState": "0000000000000000000000000000000000000000000000000000000000000009",
       "resume": false,
       "type": "agent.start",
       "version": 1
@@ -1386,7 +3886,7 @@
         "providerOverride": "codex-cli"
       },
       "expectedProvider": "codex-cli",
-      "expectedState": "0000000000000000000000000000000000000000000000000000000000000003",
+      "expectedState": "0000000000000000000000000000000000000000000000000000000000000009",
       "resume": false,
       "type": "agent.start",
       "version": 1
@@ -1463,7 +3963,7 @@
         "providerOverride": "codex-cli"
       },
       "expectedProvider": "codex-cli",
-      "expectedState": "0000000000000000000000000000000000000000000000000000000000000003",
+      "expectedState": "0000000000000000000000000000000000000000000000000000000000000009",
       "resume": false,
       "type": "agent.start",
       "version": 1
@@ -1492,6 +3992,17 @@
               "id": "fixture-current-model",
               "isDefault": true,
               "label": "Fixture current model",
+              "resolvedId": null
+            },
+            {
+              "efforts": [
+                "low",
+                "high"
+              ],
+              "hidden": false,
+              "id": "fixture-current-other-model",
+              "isDefault": false,
+              "label": "Another current model",
               "resolvedId": null
             }
           ],
@@ -1558,7 +4069,7 @@
           "version": 2
         },
         "delivery": null,
-        "expectedState": "000000000000000000000000000000000000000000000000000000000000000a",
+        "expectedState": "0000000000000000000000000000000000000000000000000000000000000010",
         "historyRetained": true,
         "instructionScope": "native_primary_only",
         "instructions": "equivalent",
@@ -1586,7 +4097,7 @@
       "commandId": "provider-v2-inherited-already",
       "contractVersion": 2,
       "epoch": "00000000-0000-4000-8000-000000000001",
-      "expectedState": "000000000000000000000000000000000000000000000000000000000000000a",
+      "expectedState": "0000000000000000000000000000000000000000000000000000000000000010",
       "provider": "claude-code",
       "type": "agent.providerChange",
       "version": 1
@@ -1615,6 +4126,17 @@
               "id": "fixture-current-model",
               "isDefault": true,
               "label": "Fixture current model",
+              "resolvedId": null
+            },
+            {
+              "efforts": [
+                "low",
+                "high"
+              ],
+              "hidden": false,
+              "id": "fixture-current-other-model",
+              "isDefault": false,
+              "label": "Another current model",
               "resolvedId": null
             }
           ],
@@ -1681,7 +4203,7 @@
           "version": 2
         },
         "delivery": null,
-        "expectedState": "000000000000000000000000000000000000000000000000000000000000000a",
+        "expectedState": "0000000000000000000000000000000000000000000000000000000000000010",
         "historyRetained": true,
         "instructionScope": "native_primary_only",
         "instructions": "equivalent",
@@ -1747,7 +4269,7 @@
         "agentId": "durable_term",
         "commandId": "legacy-on-v2-apply",
         "epoch": "00000000-0000-4000-8000-000000000001",
-        "expectedState": "000000000000000000000000000000000000000000000000000000000000000b",
+        "expectedState": "0000000000000000000000000000000000000000000000000000000000000011",
         "provider": "claude-code",
         "type": "agent.providerChange",
         "version": 1
@@ -1766,7 +4288,7 @@
           "blocked": null,
           "canSave": true,
           "contextTransferred": false,
-          "expectedState": "000000000000000000000000000000000000000000000000000000000000000b",
+          "expectedState": "0000000000000000000000000000000000000000000000000000000000000011",
           "historyRetained": true,
           "instructionScope": "native_primary_only",
           "instructions": "equivalent",
@@ -1889,7 +4411,7 @@
         "providerOverride": "codex-cli"
       },
       "expectedProvider": "codex-cli",
-      "expectedState": "0000000000000000000000000000000000000000000000000000000000000003",
+      "expectedState": "0000000000000000000000000000000000000000000000000000000000000009",
       "resume": false,
       "type": "agent.start",
       "version": 1
@@ -2377,6 +4899,17 @@
               "isDefault": true,
               "label": "Fixture current model",
               "resolvedId": null
+            },
+            {
+              "efforts": [
+                "low",
+                "high"
+              ],
+              "hidden": false,
+              "id": "fixture-current-other-model",
+              "isDefault": false,
+              "label": "Another current model",
+              "resolvedId": null
             }
           ],
           "source": "live",
@@ -2481,7 +5014,7 @@
       "contractVersion": 2,
       "effort": "high",
       "epoch": "00000000-0000-4000-8000-000000000001",
-      "expectedState": "0000000000000000000000000000000000000000000000000000000000000002",
+      "expectedState": "0000000000000000000000000000000000000000000000000000000000000008",
       "model": {
         "id": "fixture-current-model",
         "kind": "selected"
@@ -2514,6 +5047,17 @@
               "id": "fixture-current-model",
               "isDefault": true,
               "label": "Fixture current model",
+              "resolvedId": null
+            },
+            {
+              "efforts": [
+                "low",
+                "high"
+              ],
+              "hidden": false,
+              "id": "fixture-current-other-model",
+              "isDefault": false,
+              "label": "Another current model",
               "resolvedId": null
             }
           ],
@@ -2654,6 +5198,17 @@
               "isDefault": true,
               "label": "Fixture current model",
               "resolvedId": null
+            },
+            {
+              "efforts": [
+                "low",
+                "high"
+              ],
+              "hidden": false,
+              "id": "fixture-current-other-model",
+              "isDefault": false,
+              "label": "Another current model",
+              "resolvedId": null
             }
           ],
           "source": "live",
@@ -2793,6 +5348,17 @@
               "isDefault": true,
               "label": "Fixture current model",
               "resolvedId": null
+            },
+            {
+              "efforts": [
+                "low",
+                "high"
+              ],
+              "hidden": false,
+              "id": "fixture-current-other-model",
+              "isDefault": false,
+              "label": "Another current model",
+              "resolvedId": null
             }
           ],
           "source": "live",
@@ -2897,7 +5463,7 @@
       "contractVersion": 2,
       "effort": "high",
       "epoch": "00000000-0000-4000-8000-000000000001",
-      "expectedState": "0000000000000000000000000000000000000000000000000000000000000002",
+      "expectedState": "0000000000000000000000000000000000000000000000000000000000000008",
       "model": {
         "id": "fixture-current-model",
         "kind": "selected"
@@ -2930,6 +5496,17 @@
               "id": "fixture-current-model",
               "isDefault": true,
               "label": "Fixture current model",
+              "resolvedId": null
+            },
+            {
+              "efforts": [
+                "low",
+                "high"
+              ],
+              "hidden": false,
+              "id": "fixture-current-other-model",
+              "isDefault": false,
+              "label": "Another current model",
               "resolvedId": null
             }
           ],
@@ -3002,7 +5579,7 @@
           "nextWake": "revalidation_required",
           "skills": "none_supported"
         },
-        "expectedState": "0000000000000000000000000000000000000000000000000000000000000005",
+        "expectedState": "000000000000000000000000000000000000000000000000000000000000000b",
         "historyRetained": true,
         "instructionScope": "managed_composition",
         "instructions": "equivalent",
@@ -3104,7 +5681,7 @@
         "providerOverride": "codex-cli"
       },
       "expectedProvider": "codex-cli",
-      "expectedState": "0000000000000000000000000000000000000000000000000000000000000003",
+      "expectedState": "0000000000000000000000000000000000000000000000000000000000000009",
       "resume": false,
       "type": "agent.start",
       "version": 1
@@ -3138,7 +5715,7 @@
       "contractVersion": 2,
       "effort": "high",
       "epoch": "00000000-0000-4000-8000-000000000001",
-      "expectedState": "000000000000000000000000000000000000000000000000000000000000000c",
+      "expectedState": "0000000000000000000000000000000000000000000000000000000000000006",
       "model": {
         "id": "fixture-current-model",
         "kind": "selected"
@@ -3198,6 +5775,17 @@
               "id": "fixture-current-model",
               "isDefault": true,
               "label": "Fixture current model",
+              "resolvedId": null
+            },
+            {
+              "efforts": [
+                "low",
+                "high"
+              ],
+              "hidden": false,
+              "id": "fixture-current-other-model",
+              "isDefault": false,
+              "label": "Another current model",
               "resolvedId": null
             }
           ],
@@ -3270,7 +5858,7 @@
           "nextWake": "revalidation_required",
           "skills": "none_supported"
         },
-        "expectedState": "0000000000000000000000000000000000000000000000000000000000000004",
+        "expectedState": "000000000000000000000000000000000000000000000000000000000000000a",
         "historyRetained": true,
         "instructionScope": "managed_composition",
         "instructions": "equivalent",
@@ -3321,6 +5909,17 @@
               "id": "fixture-current-model",
               "isDefault": true,
               "label": "Fixture current model",
+              "resolvedId": null
+            },
+            {
+              "efforts": [
+                "low",
+                "high"
+              ],
+              "hidden": false,
+              "id": "fixture-current-other-model",
+              "isDefault": false,
+              "label": "Another current model",
               "resolvedId": null
             }
           ],
@@ -3404,7 +6003,7 @@
         "managedPreparation": "keep",
         "nextStart": "new_session",
         "nextWake": {
-          "expectedState": "0000000000000000000000000000000000000000000000000000000000000003",
+          "expectedState": "0000000000000000000000000000000000000000000000000000000000000009",
           "state": "ready"
         },
         "provider": "codex-cli",
@@ -3426,7 +6025,7 @@
       "contractVersion": 2,
       "effort": "high",
       "epoch": "00000000-0000-4000-8000-000000000001",
-      "expectedState": "0000000000000000000000000000000000000000000000000000000000000002",
+      "expectedState": "0000000000000000000000000000000000000000000000000000000000000008",
       "model": {
         "id": "fixture-current-model",
         "kind": "selected"
@@ -3459,6 +6058,17 @@
               "id": "fixture-current-model",
               "isDefault": true,
               "label": "Fixture current model",
+              "resolvedId": null
+            },
+            {
+              "efforts": [
+                "low",
+                "high"
+              ],
+              "hidden": false,
+              "id": "fixture-current-other-model",
+              "isDefault": false,
+              "label": "Another current model",
               "resolvedId": null
             }
           ],
@@ -3536,7 +6146,7 @@
           "nextWake": "revalidation_required",
           "skills": "none_supported"
         },
-        "expectedState": "0000000000000000000000000000000000000000000000000000000000000002",
+        "expectedState": "0000000000000000000000000000000000000000000000000000000000000008",
         "historyRetained": true,
         "instructionScope": "managed_composition",
         "instructions": "equivalent",
@@ -3629,7 +6239,7 @@
         "providerOverride": "codex-cli"
       },
       "expectedProvider": "codex-cli",
-      "expectedState": "0000000000000000000000000000000000000000000000000000000000000003",
+      "expectedState": "0000000000000000000000000000000000000000000000000000000000000009",
       "resume": false,
       "type": "agent.start",
       "version": 1
@@ -3652,7 +6262,7 @@
       "commandId": "provider-v2-stale-default-apply",
       "contractVersion": 2,
       "epoch": "00000000-0000-4000-8000-000000000001",
-      "expectedState": "0000000000000000000000000000000000000000000000000000000000000004",
+      "expectedState": "000000000000000000000000000000000000000000000000000000000000000a",
       "provider": "codex-cli",
       "type": "agent.providerChange",
       "version": 1
@@ -3729,7 +6339,7 @@
         "providerOverride": "codex-cli"
       },
       "expectedProvider": "codex-cli",
-      "expectedState": "0000000000000000000000000000000000000000000000000000000000000003",
+      "expectedState": "0000000000000000000000000000000000000000000000000000000000000009",
       "resume": false,
       "type": "agent.start",
       "version": 1
@@ -3806,7 +6416,7 @@
         "providerOverride": "codex-cli"
       },
       "expectedProvider": "codex-cli",
-      "expectedState": "0000000000000000000000000000000000000000000000000000000000000003",
+      "expectedState": "0000000000000000000000000000000000000000000000000000000000000009",
       "resume": false,
       "type": "agent.start",
       "version": 1
@@ -3836,6 +6446,17 @@
                 "id": "fixture-current-model",
                 "isDefault": true,
                 "label": "Fixture current model",
+                "resolvedId": null
+              },
+              {
+                "efforts": [
+                  "low",
+                  "high"
+                ],
+                "hidden": false,
+                "id": "fixture-current-other-model",
+                "isDefault": false,
+                "label": "Another current model",
                 "resolvedId": null
               }
             ],
@@ -3908,7 +6529,7 @@
             "nextWake": "blocked",
             "skills": "none_supported"
           },
-          "expectedState": "000000000000000000000000000000000000000000000000000000000000000d",
+          "expectedState": "0000000000000000000000000000000000000000000000000000000000000012",
           "historyRetained": true,
           "instructionScope": "managed_composition",
           "instructions": "unverified",
@@ -3959,6 +6580,17 @@
                 "id": "fixture-current-model",
                 "isDefault": true,
                 "label": "Fixture current model",
+                "resolvedId": null
+              },
+              {
+                "efforts": [
+                  "low",
+                  "high"
+                ],
+                "hidden": false,
+                "id": "fixture-current-other-model",
+                "isDefault": false,
+                "label": "Another current model",
                 "resolvedId": null
               }
             ],
@@ -4031,7 +6663,7 @@
             "nextWake": "blocked",
             "skills": "none_supported"
           },
-          "expectedState": "000000000000000000000000000000000000000000000000000000000000000e",
+          "expectedState": "0000000000000000000000000000000000000000000000000000000000000013",
           "historyRetained": true,
           "instructionScope": "managed_composition",
           "instructions": "unverified",
@@ -4082,6 +6714,17 @@
                 "id": "fixture-current-model",
                 "isDefault": true,
                 "label": "Fixture current model",
+                "resolvedId": null
+              },
+              {
+                "efforts": [
+                  "low",
+                  "high"
+                ],
+                "hidden": false,
+                "id": "fixture-current-other-model",
+                "isDefault": false,
+                "label": "Another current model",
                 "resolvedId": null
               }
             ],
@@ -4154,7 +6797,7 @@
             "nextWake": "blocked",
             "skills": "none_supported"
           },
-          "expectedState": "000000000000000000000000000000000000000000000000000000000000000f",
+          "expectedState": "0000000000000000000000000000000000000000000000000000000000000014",
           "historyRetained": true,
           "instructionScope": "managed_composition",
           "instructions": "equivalent",
@@ -4243,7 +6886,7 @@
         "providerOverride": null
       },
       "expectedProvider": "claude-code",
-      "expectedState": "000000000000000000000000000000000000000000000000000000000000000a",
+      "expectedState": "0000000000000000000000000000000000000000000000000000000000000010",
       "type": "agent.start",
       "version": 1
     },
@@ -4297,7 +6940,7 @@
       "contractVersion": 2,
       "effort": "high",
       "epoch": "00000000-0000-4000-8000-000000000001",
-      "expectedState": "000000000000000000000000000000000000000000000000000000000000000c",
+      "expectedState": "0000000000000000000000000000000000000000000000000000000000000006",
       "model": {
         "id": "fixture-current-model",
         "kind": "selected"

@@ -50,10 +50,12 @@ export function providerNextWake(config: DurableAgentConfig, effectiveProvider: 
 function proposedConfig(config: DurableAgentConfig, current: string, provider: string, selection: ProviderSelection): DurableAgentConfig {
   const next = snapshot(config);
   // A no-op keeps an inherited provider inherited. A real setting update pins
-  // the effective provider, matching the guarded durable write below.
-  if (provider !== current || selection.model !== undefined || selection.effort !== undefined) next.orchestrator = provider;
+  // the effective provider, matching the guarded durable write below. Preparing
+  // a missing managed marker is also a write and previews that explicit pin.
+  if (provider !== current || selection.model !== undefined || selection.effort !== undefined || config.managed && !config.providerTransition) next.orchestrator = provider;
   if (provider !== current) {
-    delete next.model; delete next.effort; delete next.contextWindow; delete next.routing; delete next.lastSessionId;
+    delete next.model; delete next.effort; delete next.contextWindow; delete next.routing; delete next.lastSessionId; delete next.providerTransition;
+    for (const session of next.sessionHistory ?? []) session.orchestrator ??= current;
   }
   if (selection.model !== undefined) {
     const model = selection.model.kind === 'selected' ? selection.model.id : undefined;
@@ -197,6 +199,7 @@ export async function changeAgentProvider(projectPath: string, agentId: string, 
     if (intent && hash(existing) !== preview.configuredFingerprint) return fail('stale_state');
     if (preview.savedProvider === provider && (!intent || (selection.model === undefined && selection.effort === undefined && (!existing?.managed || existing.providerTransition)))) return { ...preview, status: 'already_selected' as const,
       ...(preview.contract && { contract: { ...preview.contract, result: { status: 'already_selected' as const, persisted: true, started: false as const } }, nextWake: existing?.managed && existing.providerTransition ? { state: 'ready' as const, expectedState: preview.expectedState } : { state: 'blocked' as const, code: 'provider_start_unsupported' } }) };
+    const reviewed = intent && existing ? proposedConfig(existing, preview.savedProvider, provider, selection) : null;
     const before = hash(await readCurrent());
     let onRejectedPreparation: (() => Promise<void>) | undefined;
     let mutationAdmitted = false;
@@ -225,6 +228,7 @@ export async function changeAgentProvider(projectPath: string, agentId: string, 
           const prepared = await previewManagedProviderTransition(projectPath, config, current, target);
           if (prepared.blocked || hash([prepared.root, prepared.source, prepared.composition, prepared.launchFingerprint]) !== hash([plan.root, plan.source, plan.composition, plan.launchFingerprint])) return fail('stale_state');
           updates.providerTransition = managedProviderMarker(agentId, prepared);
+          if (reviewed) reviewed.providerTransition = structuredClone(updates.providerTransition);
           assertFilesCurrent = managedProviderCommitFence(projectPath, prepared);
         } else if (intent) {
           assertFilesCurrent = providerSettingsCommitFence(projectPath);
@@ -271,13 +275,24 @@ export async function changeAgentProvider(projectPath: string, agentId: string, 
     const saved = intent ? commitReceipt.saved : null;
     if (intent && !saved) throw new MobileControlError('apply_outcome_unverified', 409, 'failed', 'The saved target could not be verified. Read it before retrying.',
       { transition: { status: 'outcome_unverified', persisted: null, savedUnchanged: null, historyRetained: null, nextWake: 'fresh_read_and_review_required' } });
-    // External merges may accept a provider change when our write did not
-    // change that field. Acknowledged storage is not evidence that the requested
-    // selection won. Never relabel that row or resolve inherited defaults here.
-    if (intent && saved!.orchestrator !== provider) throw new MobileControlError('apply_committed_state_conflict', 409, 'failed',
-      'Configuration was durably written, but the acknowledged provider differs from the request. Read and review the saved target before continuing.',
+    // An accepted external merge is durable evidence, not evidence that the
+    // reviewed intent won. Compare normalized choices AND promised clears and
+    // retained history/marker; a fresh preview must never rebase this check.
+    const acknowledgedSelection = saved ? { ...providerNextWake(saved, saved.orchestrator ?? ''), provider: saved.orchestrator || null } : null;
+    const conflicts: string[] = intent ? (['provider', 'providerOverride', 'model', 'effort'] as const)
+      .filter((key) => !isDeepStrictEqual(acknowledgedSelection?.[key], preview.contract!.proposed[key])) : [];
+    if (intent && reviewed && saved) {
+      for (const key of ['contextWindow', 'routing', 'lastSessionId'] as const) {
+        if (!isDeepStrictEqual(saved[key] ?? null, reviewed[key] ?? null)) conflicts.push(key === 'lastSessionId' ? 'resumePointer' : key);
+      }
+      if (!isDeepStrictEqual(saved.sessionHistory ?? [], reviewed.sessionHistory ?? [])) conflicts.push('history');
+      if (!isDeepStrictEqual(saved.providerTransition ?? null, reviewed.providerTransition ?? null)) conflicts.push('managedTransition');
+    }
+    if (conflicts.length) throw new MobileControlError('apply_committed_state_conflict', 409, 'failed',
+      'Configuration was durably written, but the acknowledged state differs from the reviewed request. Read and review the saved target before continuing.',
       { transition: { status: 'committed_state_conflict', persisted: true, requestedSelectionSaved: false,
-        savedProvider: saved!.orchestrator ?? null, saved: saved!.orchestrator ? providerNextWake(saved!, saved!.orchestrator) : null,
+        target: preview.contract!.target, proposed: preview.contract!.proposed, conflicts,
+        savedProvider: saved!.orchestrator || null, saved: saved!.orchestrator ? providerNextWake(saved!, saved!.orchestrator) : null,
         savedOverrides: { provider: saved!.orchestrator ?? null, model: saved!.model ?? null, effort: saved!.effort ?? null },
         savedUnchanged: hash(saved) === before, historyRetained: null, nextWake: 'fresh_read_and_review_required' } });
     let nextWake: { state: 'ready'; expectedState: string } | { state: 'blocked'; code: string } | undefined;

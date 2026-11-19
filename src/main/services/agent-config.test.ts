@@ -2087,6 +2087,28 @@ describe('updateDurableConfig: a new CLI (#2593)', () => {
     expect(receipt).toHaveBeenCalledWith(expect.objectContaining({ orchestrator: 'claude-code', model: 'new-model' }));
     expect(JSON.parse(written[file])[0]).toMatchObject({ orchestrator: 'claude-code', model: 'new-model' });
   });
+  it.each([
+    { field: 'model', initial: { model: 'reviewed-model', effort: 'low' }, updates: { model: 'reviewed-model', effort: 'high' }, external: 'external-model' },
+    { field: 'effort', initial: { model: 'old-model', effort: 'high' }, updates: { model: 'new-model', effort: 'high' }, external: 'low' },
+  ])('acknowledges an external unchanged $field merge without overwriting it', async ({ field, initial, updates, external }) => {
+    const written = setup({ orchestrator: 'codex-cli', ...initial });
+    const file = path.join(PROJECT_PATH, '.clubhouse', 'agents.json');
+    const receipt = vi.fn();
+    await updateDurableConfig(PROJECT_PATH, 'durable_cli', { orchestrator: 'codex-cli', ...updates }, () => {
+      const rows = JSON.parse(written[file]); rows[0][field] = external; written[file] = JSON.stringify(rows);
+    }, undefined, receipt);
+    expect(receipt).toHaveBeenCalledWith(expect.objectContaining({ [field]: external }));
+    expect(JSON.parse(written[file])[0][field]).toBe(external);
+  });
+  it.each([['lastSessionId', 'external-native'], ['contextWindow', 'external-context'], ['routing', { reason: 'external' }]])('preserves an external %s introduced while a provider reset flushes', async (field, value) => {
+    const written = setup({ orchestrator: 'claude-code' });
+    const file = path.join(PROJECT_PATH, '.clubhouse', 'agents.json'); const receipt = vi.fn();
+    await updateDurableConfig(PROJECT_PATH, 'durable_cli', { orchestrator: 'codex-cli' }, () => {
+      const rows = JSON.parse(written[file]); rows[0][field as string] = value; written[file] = JSON.stringify(rows);
+    }, undefined, receipt);
+    expect(receipt).toHaveBeenCalledWith(expect.objectContaining({ orchestrator: 'codex-cli', [field as string]: value }));
+    expect(JSON.parse(written[file])[0][field as string]).toEqual(value);
+  });
   it('never acknowledges a failed guided flush', async () => {
     setup({ orchestrator: 'claude-code' });
     vi.mocked(fsp.rename).mockRejectedValueOnce(new Error('receipt disk failure'));
