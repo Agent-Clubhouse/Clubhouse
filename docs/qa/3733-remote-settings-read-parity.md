@@ -10,7 +10,7 @@ Issue #3733 owns the confirmed missing-data gap. #2397 owns remote session contr
 
 ## Implementation
 
-A desktop-only `GET /api/v1/agents/:id/settings-details` uses existing pinned paired-controller authorization. It rejects phone/session-only/pending callers and rechecks authorization after asynchronous lookup/summary reads and immediately before responding. No mutation endpoint or agent permission grant is added.
+A desktop-only `GET /api/v1/agents/:id/settings-details` uses existing pinned paired-controller authorization. It requires an explicit desktop kind and rejects unknown/phone/session-only/pending callers and rechecks authorization after asynchronous lookup/summary reads and immediately before responding. No mutation endpoint or agent permission grant is added.
 
 The allowlist contains provider/model, host-resolved next-start runtime/access, saved execution policy/context, host auto-sleep, managed template/name inventories/instruction-block count/attribution/waiting status, or an unmanaged instruction line count. Limits: 100 managed parts, 240-character display labels, 64 KiB response. No raw instructions, MCP definitions, environment values, paths or grants leave the host summary.
 
@@ -33,6 +33,10 @@ This initial RED ran before the parent relayed the inherited resource gate. Ever
 Initial executable GREEN: 96/96 passed across five files (existing SettingsCard local tests plus new renderer/service/IPC/contract regressions); focused real-route/client checks: 9 passed, 728 intentionally unselected. Final exact-head results are reported in the parent handoff after commit. The first typecheck found a provider API mismatch (`capabilities` vs `getCapabilities()`); the implementation and fixture were corrected before final acceptance.
 
 The first existing SettingsCard attempt could not import `prosemirror-schema-list` from inherited dependencies. A reversible worktree-local node_modules symlink used the already installed approvals worktree; both package-lock blobs matched `7e45389f84ca58c5c7832cab169aa5674320d25d`. No installation, lockfile, provider, network, app configuration, reset or restart occurred.
+
+## Independent review correction
+
+Independent QA requested changes on `94f5de1b315ebab906b0321a50b7d3a54fd8e611`: two real-route negative controls (undefined and invalid `unknown` peer kind) returned 200 instead of 403. The negative control had **2 failed / 541 unselected**, and is retained unchanged in the route tests. The correction requires `peer.kind === 'desktop'` and adds post-await kind-removal/invalid/phone controls proving the adapter does not return a reader's stale successful body. The eligible route fixture now explicitly declares its desktop kind. Final independent re-review remains required on the corrected commit.
 
 ## Acceptance matrix and limits
 

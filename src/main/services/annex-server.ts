@@ -4051,7 +4051,7 @@ async function handleAgentSettingsDetailsRoute(ctx: AnnexRouteContext, match: Re
   // Same paired-controller read authority as existing agent settings; recheck after disk reads.
   const authorized = () => {
     const peer = annexPeers.getPeer(ctx.principal.fingerprint);
-    return !isRefusal(ctx.reauthorize()) && !!peer && peer.kind !== 'phone'
+    return !isRefusal(ctx.reauthorize()) && !!peer && peer.kind === 'desktop'
       && !peer.networkPending && !mobileSessionPeers.has(ctx.principal.fingerprint);
   };
   if (!authorized()) { sendJson(ctx.res, 403, { error: 'desktop_controller_required' }); return; }
