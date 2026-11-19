@@ -480,7 +480,14 @@ export function createSettingsStore<T>(
   }
 
   const store: SettingsStore<T> = {
-    peekLoaded() { return displaySnapshot && Object.freeze({ ...displaySnapshot, primary: typeof displaySnapshot.primary === 'object' ? Object.freeze(displaySnapshot.primary) : displaySnapshot.primary, value: Object.freeze(cachedSettings!) as Readonly<T> }); },
+    peekLoaded() {
+      if (!displaySnapshot) return undefined;
+      // Detach every exposed level. Freezing a live cache (or returning nested
+      // provenance aliases) would let display callers affect ordinary settings.
+      const primary = typeof displaySnapshot.primary === 'object' ? Object.freeze(cloneSettings(displaySnapshot.primary)) : displaySnapshot.primary;
+      const value = Object.freeze(cloneSettings(cachedSettings!)) as Readonly<T>;
+      return Object.freeze({ ...displaySnapshot, primary, value });
+    },
     get() {
       if (!cacheLoaded || cachedSettings === null) {
         loadSettings();
