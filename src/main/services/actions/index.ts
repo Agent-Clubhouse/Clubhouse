@@ -587,6 +587,11 @@ export function canReadDevices(reader: ActionOwner): boolean {
 
 // ── Lookups for the Clubhouse MCP tools ─────────────────────────────────────
 
+/** Display-only project label from already initialized cache; never refreshes it. */
+export function peekActionProjectName(id: string): string | undefined {
+  const project = projectById(id); return project ? projectLabel(project) : undefined;
+}
+
 /** Agent and project names, for describing actions in plain words. */
 export function actionNames(): ActionNames {
   return {

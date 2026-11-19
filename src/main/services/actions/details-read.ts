@@ -1,5 +1,5 @@
 /** Selected read-only Details projection. No engine initialization or receipt refresh. */
-import { agentActionGroups, ACTION_OUTCOMES, type RemoteActionRow } from '../../../shared/agent-action-groups';
+import { agentActionGroups, ACTION_OUTCOMES, isActionRunTime, type RemoteActionRow } from '../../../shared/agent-action-groups';
 import { describeAction, type ActionNames } from '../../../shared/actions';
 import { REMOTE_DETAILS_MAX_ROWS, type RemoteDetailsCard } from '../../../shared/remote-agent-details';
 import type { ActionsEngine } from './engine';
@@ -30,7 +30,7 @@ export function projectActionDetails(engine: Pick<ActionsEngine, 'list' | 'lastR
     const fields: RemoteActionRow = { group: group.group, enabled: a.enabled, description: display(description) };
     if (lastRun && ACTION_OUTCOMES.includes(lastRun.outcome)) {
       fields.lastRun = { outcome: lastRun.outcome };
-      if (Number.isSafeInteger(lastRun.startedAt) && lastRun.startedAt >= 0) fields.lastRun.startedAt = lastRun.startedAt;
+      if (isActionRunTime(lastRun.startedAt)) fields.lastRun.startedAt = lastRun.startedAt;
     }
     c.rows[c.rows.length - 1].action = fields;
   }

@@ -31,6 +31,7 @@ export function outcomeWords(outcome: ActionRun['outcome']): string {
 
 export function formatWhen(ms: number, now = Date.now()): string {
   const d = new Date(ms);
+  if (!Number.isFinite(d.getTime())) return 'Time unavailable';
   const sameDay = new Date(now).toDateString() === d.toDateString();
   const time = d.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
   return sameDay ? time : `${d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}, ${time}`;

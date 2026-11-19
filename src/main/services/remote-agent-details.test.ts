@@ -38,7 +38,8 @@ vi.mock('./dispatcher/dispatcher-service', () => ({ getDispatcherState: m.dispat
 vi.mock('./dispatcher/dispatcher-settings', () => ({ isDispatcherEnabled: m.dispatcherOn }));
 vi.mock('./dispatcher/dispatcher-agent-card-source', () => ({ readAgentCardView: m.agentCard }));
 vi.mock('./agent-grants-service', () => ({ viewOf: () => ({ rows: [] }) }));
-vi.mock('./actions', async () => ({ readActionDetailsForAgent: (agentId: string, projectId: string, dispatcher: boolean, names: import('../../shared/actions').ActionNames) => projectActionDetails({ list: m.actions, lastRunForDisplay: (id: string) => m.actions().find((a: { id: string }) => a.id === id)?.lastRun }, agentId, projectId, dispatcher, names), actionNames: () => ({ agent: () => 'Selected', project: () => 'Project' }) }));
+vi.mock('./actions/details-names', () => ({ actionDetailsNames: () => ({ names: { agent: () => 'Selected', project: () => 'Project' }, notices: () => [] }) }));
+vi.mock('./actions', async () => ({ readActionDetailsForAgent: (agentId: string, projectId: string, dispatcher: boolean, names: import('../../shared/actions').ActionNames) => projectActionDetails({ list: m.actions, lastRunForDisplay: (id: string) => m.actions().find((a: { id: string }) => a.id === id)?.lastRun }, agentId, projectId, dispatcher, names), peekActionProjectName: () => 'Project' }));
 vi.mock('./canvas-store-reader', () => ({ getAgentCanvasMemberships: m.canvases }));
 vi.mock('./managed-agents', () => ({ managedAgents: () => ({ liveEntries: m.entries, getTemplate: m.template }), statusFor: m.status }));
 vi.mock('./agent-settings-service', () => ({ readMcpConfig: m.mcp, readLaunchWrapper: async () => undefined, readDefaultMcps: async () => [] }));

@@ -22,7 +22,7 @@ vi.mock('./log-service', () => ({
 }));
 
 import {
-  listPeers, getPeer, isPairedPeer, addPeer, removePeer, removeAllPeers,
+  listPeers, getPeer, peekPeerAlias, isPairedPeer, addPeer, removePeer, removeAllPeers,
   updateLastSeen, checkBruteForce, recordFailedAttempt, recordSuccessfulAttempt, forgiveFailedAttempt,
   unlockPairing, isPairingLocked, resetForTests, peerNeedsPairing, listPeersForDisplay,
   noteReached, setTypedHost, recordLastSeen, controlsThisMachine,
@@ -55,6 +55,17 @@ describe('annex-peers', () => {
     (app as any).__setUserDataPath(tmpDir);
     resetForTests();
   });
+  it('peeks aliases without loading credentials and retains only unambiguous cached metadata', () => {
+    const file = path.join(tmpDir, 'annex-peers.json'); fs.writeFileSync(file, JSON.stringify([makePeer('aa:bb', 'Retained alias')]));
+    const reads = vi.spyOn(fs, 'readFileSync'); expect(peekPeerAlias('aa:bb')).toBeUndefined(); expect(reads).not.toHaveBeenCalled();
+    expect(getPeer('aa:bb')?.alias).toBe('Retained alias'); reads.mockClear();
+    fs.writeFileSync(file, 'broken current credentials');
+    expect(peekPeerAlias('AA:BB')).toBe('Retained alias'); expect(reads).not.toHaveBeenCalled(); expect(fs.readFileSync(file, 'utf8')).toBe('broken current credentials');
+    resetForTests(); reads.mockClear(); expect(peekPeerAlias('aa:bb')).toBeUndefined(); expect(reads).not.toHaveBeenCalled();
+    fs.writeFileSync(file, JSON.stringify([makePeer('aa:bb', 'First'), makePeer('AA:BB', 'Other')])); getPeer('aa:bb');
+    expect(peekPeerAlias('aa:bb')).toBeUndefined();
+  });
+
 
   afterEach(() => {
     fs.rmSync(tmpDir, { recursive: true, force: true });

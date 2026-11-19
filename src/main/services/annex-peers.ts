@@ -91,6 +91,12 @@ export function listPeersForDisplay(): AnnexPeerListing[] {
   return loadPeers().map((peer) => ({ ...peer, needsPairing: peerNeedsPairing(peer) }));
 }
 
+/** Display-only alias from existing memory; never loads credentials or emits changes. */
+export function peekPeerAlias(fingerprint: string): string | undefined {
+  const matches = cachedPeers?.filter((peer) => typeof peer.fingerprint === 'string' && peer.fingerprint.toLowerCase() === fingerprint.toLowerCase());
+  return matches?.length === 1 && typeof matches[0].alias === 'string' ? matches[0].alias : undefined;
+}
+
 export function getPeer(fingerprint: string): AnnexPeer | undefined {
   return loadPeers().find((p) => p.fingerprint === fingerprint);
 }

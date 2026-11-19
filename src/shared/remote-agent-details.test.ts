@@ -43,7 +43,7 @@ describe('remote Details contract', () => {
     const value = fixture(); const card = value.cards.find((c) => c.id === 'actions')!;
     const action = { group: 'owned', enabled: false, description: 'Wake Selected', lastRun: { outcome: 'done', startedAt: 1000 } };
     (card.rows as unknown[]) = [{ label: 'Name', value: 'Off · Wake Selected', action }]; expect(isRemoteAgentDetails(value, 'a1')).toBe(true);
-    for (const invalid of [null, {}, { ...action, group: 'unrelated' }, { ...action, enabled: 'on' }, { ...action, description: 'x'.repeat(2049) }, { ...action, steps: [] }, { ...action, lastRun: null }, { ...action, lastRun: { outcome: 'other' } }, { ...action, lastRun: { outcome: 'done', startedAt: NaN } }, { ...action, lastRun: { outcome: 'done', startedAt: -1 } }, { ...action, lastRun: { outcome: 'done', reason: 'PRIVATE_REASON' } }]) {
+    for (const invalid of [null, {}, { ...action, group: 'unrelated' }, { ...action, enabled: 'on' }, { ...action, description: 'x'.repeat(2049) }, { ...action, steps: [] }, { ...action, lastRun: null }, { ...action, lastRun: { outcome: 'other' } }, { ...action, lastRun: { outcome: 'done', startedAt: NaN } }, { ...action, lastRun: { outcome: 'done', startedAt: Number.MAX_SAFE_INTEGER } }, { ...action, lastRun: { outcome: 'done', startedAt: -1 } }, { ...action, lastRun: { outcome: 'done', reason: 'PRIVATE_REASON' } }]) {
       (card.rows as unknown[]) = [{ label: 'Name', value: 'Value', action: invalid }]; expect(isRemoteAgentDetails(value, 'a1')).toBe(false);
     }
     (card.rows as unknown[]) = []; (value.cards[0].rows as unknown[]) = [{ label: 'Name', value: 'Value', action }]; expect(isRemoteAgentDetails(value, 'a1')).toBe(false);

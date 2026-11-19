@@ -16,7 +16,7 @@ import { onChatEvent } from './agent-runtime/chat-event-bus';
 import { forgetHookTurn, onAppEvent, publishAppEvent, publishFromChatEvent } from './app-event-bus';
 import { appLog } from './log-service';
 import * as projectStore from './project-store';
-import { clearQuickAgentRuns, finishQuickAgentExit, knownQuickAgents, noteQuickAgentTurn } from './quick-agent-events';
+import { clearQuickAgentRuns, finishQuickAgentExit, knownQuickAgents, peekQuickAgentName, noteQuickAgentTurn } from './quick-agent-events';
 
 export interface KnownAgent {
   projectPath: string;
@@ -100,6 +100,11 @@ function forgetProject(projectPath: string): void {
   const prev = projectAgents.get(projectPath);
   if (prev) for (const id of prev.keys()) agents.delete(id);
   projectAgents.delete(projectPath);
+}
+
+/** Display lookup from existing maps only, without quick-run expiry side effects. */
+export function peekKnownAgentName(agentId: string): string | undefined {
+  return agents.get(agentId)?.name ?? peekQuickAgentName(agentId);
 }
 
 /** Durable agents, plus quick-run identities retained for delayed event delivery. */

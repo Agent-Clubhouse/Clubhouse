@@ -1,4 +1,4 @@
-import { ACTION_OUTCOMES, ACTION_RELATIONSHIPS, type RemoteActionRow } from './agent-action-groups';
+import { ACTION_OUTCOMES, ACTION_RELATIONSHIPS, isActionRunTime, type RemoteActionRow } from './agent-action-groups';
 import { isRemoteAgentSettings, type RemoteAgentSettings } from './remote-agent-settings';
 import type { AgentStatus } from './types';
 import { isChatDetailsEvidence, type ChatDetailsEvidence } from './chat/details-evidence';
@@ -78,7 +78,7 @@ export function isRemoteAgentDetails(value: unknown, agentId: string): value is 
           && (r.action.lastRun === undefined || !!r.action.lastRun && typeof r.action.lastRun === 'object' && !Array.isArray(r.action.lastRun)
             && Object.keys(r.action.lastRun).every((key) => ['outcome', 'startedAt'].includes(key))
             && ACTION_OUTCOMES.includes(r.action.lastRun.outcome)
-            && (r.action.lastRun.startedAt === undefined || Number.isSafeInteger(r.action.lastRun.startedAt) && r.action.lastRun.startedAt >= 0)))
+            && (r.action.lastRun.startedAt === undefined || isActionRunTime(r.action.lastRun.startedAt))))
         && (r.canvas === undefined || c.id === 'canvases' && !!r.canvas && typeof r.canvas === 'object'
           && ['app', 'project'].includes(r.canvas.scope) && text(r.canvas.canvasId) && !!r.canvas.canvasId
           && text(r.canvas.viewId) && !!r.canvas.viewId)));

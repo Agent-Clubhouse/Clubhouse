@@ -30,3 +30,6 @@ export interface RemoteActionRow {
   description: string;
   lastRun?: { outcome: typeof ACTION_OUTCOMES[number]; startedAt?: number };
 }
+
+/** JS Date supports a smaller domain than nonnegative safe integers. */
+export const isActionRunTime = (value: unknown): value is number => typeof value === 'number' && Number.isSafeInteger(value) && value >= 0 && Number.isFinite(new Date(value).getTime());

@@ -51,3 +51,9 @@ it('bounds recorded-history reads to displayed selected actions and retains grou
   expect(projected.summary).toBe('120 related'); expect(projected.rows).toHaveLength(100); expect(projected.omitted).toBe(260);
   expect(engine.lastRunForDisplay).toHaveBeenCalledTimes(100); expect(engine.lastRunForDisplay.mock.calls.every(([id]) => String(id).startsWith('own'))).toBe(true);
 });
+
+it('withholds invalid Date-domain run times while retaining the recorded outcome', () => {
+  const engine = { list: () => [action('mine', 'selected')], lastRunForDisplay: () => ({ outcome: 'done' as const, startedAt: Number.MAX_SAFE_INTEGER }) };
+  const result = projectActionDetails(engine, 'selected', 'p', false, names);
+  expect(result.rows[0].action?.lastRun).toEqual({ outcome: 'done' });
+});

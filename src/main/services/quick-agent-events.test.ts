@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { MAX_DELAY_MINUTES } from '../../shared/actions';
 import { CHAIN_WINDOW_MS, onAppEvent, publishAppEvent, resetAppEventBus, type AppEvent } from './app-event-bus';
-import { beginQuickAgentRun, clearQuickAgentRuns, finishQuickAgentExit, finishQuickAgentRun, knownQuickAgents, noteQuickAgentStop, noteQuickAgentTurn, noteQuickAgentRuntime, quickRuntimeDisplay, quickRuntimeIsCurrent } from './quick-agent-events';
+import { beginQuickAgentRun, clearQuickAgentRuns, finishQuickAgentExit, finishQuickAgentRun, knownQuickAgents, noteQuickAgentStop, noteQuickAgentTurn, noteQuickAgentRuntime, peekQuickAgentName, quickRuntimeDisplay, quickRuntimeIsCurrent } from './quick-agent-events';
 import type { AgentRegistration } from './agent-registry';
 
 let events: AppEvent[];
@@ -20,6 +20,12 @@ afterEach(() => {
 const start = { agentId: 'quick', name: 'Review', projectPath: '/project' };
 
 describe('quick run completion events', () => {
+  it('peeks display names without expiring retained IDs or hook state', () => {
+    const run = beginQuickAgentRun(start); finishQuickAgentRun(run, 'completed');
+    expect(peekQuickAgentName('quick', run.finishedAt)).toBe('Review');
+    expect(peekQuickAgentName('quick', run.finishedAt! + MAX_DELAY_MINUTES * 60_000 + 1)).toBeUndefined();
+    expect(knownQuickAgents(run.finishedAt).get('quick')).toBe(run);
+  });
   it('keeps actual created-runtime linkage private and invalidates it on replacement/untrack/nonce changes without a timing heuristic', () => {
     const run = beginQuickAgentRun(start);
     const registration: AgentRegistration = { projectPath: start.projectPath, cwd: '/actual/work', orchestrator: 'codex-cli', runtime: 'pty', nonce: 'PRIVATE_NONCE' };

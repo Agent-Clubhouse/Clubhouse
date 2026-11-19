@@ -82,6 +82,12 @@ function scheduleFinishedExpiry(): void {
   expiryTimer.unref?.();
 }
 
+/** Passive display name only; never prunes identities or hook/chain state. */
+export function peekQuickAgentName(agentId: string, now = Date.now()): string | undefined {
+  const run = runs.get(agentId);
+  return run && (run.finishedAt === undefined || now - run.finishedAt <= FINISHED_RETENTION_MS) ? run.name : undefined;
+}
+
 export function knownQuickAgents(now = Date.now()): ReadonlyMap<string, QuickAgentRun> {
   for (const [id, run] of runs) {
     if (run.finishedAt !== undefined && now - run.finishedAt > FINISHED_RETENTION_MS) {

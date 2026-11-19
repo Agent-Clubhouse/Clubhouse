@@ -1,3 +1,4 @@
+import { actionDetailsNames } from './actions/details-names';
 import type { RemoteDetailsCard } from '../../shared/remote-agent-details';
 import { CONNECTION_SOURCE_LABELS } from '../../shared/connection-sources';
 import { activeAgentLinks, CONNECTION_SWITCHES, localDirectionTools } from '../../shared/connection-grants';
@@ -7,7 +8,7 @@ import { getPeer } from './annex-peers';
 import { bindingManager } from './clubhouse-mcp/binding-manager';
 import { listConnectionSources } from './connection-sources';
 import { listConnectionDirectionsForInspection } from './connection-grants-store';
-import { readActionDetailsForAgent, actionNames } from './actions';
+import { readActionDetailsForAgent, peekActionProjectName } from './actions';
 import { getAgentCanvasMemberships } from './canvas-store-reader';
 import { row, display } from './remote-details-presentation';
 
@@ -68,9 +69,9 @@ export async function readConnectionCard(c: RemoteDetailsCard, wiresId: string) 
 }
 
 export function readActionCard(c: RemoteDetailsCard, agentId: string, projectId: string, dispatcher = false) {
-  const names = { ...actionNames(), device: (id: string) => getSatellite(id)?.alias || getPeer(id)?.alias };
-  const fields = readActionDetailsForAgent(agentId, projectId, dispatcher, names);
-  c.summary = fields.summary; c.rows = fields.rows; c.notes.push(...fields.notes); c.omitted += fields.omitted;
+  const resolver = actionDetailsNames(peekActionProjectName);
+  const fields = readActionDetailsForAgent(agentId, projectId, dispatcher, resolver.names);
+  c.summary = fields.summary; c.rows = fields.rows; c.notes.push(...fields.notes, ...resolver.notices()); c.omitted += fields.omitted;
 }
 
 export async function readCanvasCard(c: RemoteDetailsCard, agentId: string, projectId: string) {
