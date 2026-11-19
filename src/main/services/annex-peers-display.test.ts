@@ -68,3 +68,9 @@ it('detaches returned field objects from the ordinary peer cache and later displ
   if (result.state === 'ok' && result.value.alias.state === 'ok') result.value.alias.value = 'Changed caller copy';
   expect(readPeerMetadataForDisplay('selected-machine')).toMatchObject({ state: 'ok', value: { alias: { value: 'Selected computer' } } }); expect(getPeer('selected-machine')?.alias).toBe('Selected computer');
 });
+
+it('preserves the host’s custom alias text without normalizing or changing the saved name', async () => {
+  await put([peer({ alias: '  Custom computer  ' })]); listPeers(); clearCalls(); const before = await disk();
+  expect(readPeerMetadataForDisplay('selected-machine')).toMatchObject({ state: 'ok', value: { alias: { state: 'ok', value: '  Custom computer  ' } } });
+  untouched(); expect(await disk()).toEqual(before);
+});

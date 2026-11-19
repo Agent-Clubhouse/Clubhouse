@@ -128,7 +128,7 @@ function peerDisplayProjection(fingerprint: string): DisplayValue<PeerDisplayMet
   if (!selected) return unknown();
   const alias = selected.alias === undefined || selected.alias === '' ? known(null)
     : typeof selected.alias !== 'string' ? unknown<string | null>('invalid')
-    : selected.alias.length > 1024 ? unknown<string | null>('limit') : known(selected.alias.trim() || null);
+    : selected.alias.length > 1024 ? unknown<string | null>('limit') : known(selected.alias);
   const lastSeen = selected.lastSeen === undefined || selected.lastSeen === '' ? known(null)
     : typeof selected.lastSeen !== 'string' ? unknown<string | null>('invalid')
     : selected.lastSeen.length > 128 ? unknown<string | null>('limit')
