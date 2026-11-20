@@ -89,11 +89,14 @@ export function readRegisteredAgentDisplayPage(selected: RegisteredDisplaySelect
   const base = getBaseDirPath(), budget = createReadOnlyMetadataBudget(), evidence: DisplayReceipt[] = [selectedReceipt, profile(base)];
   const localRoots = new Map<string, RegisteredDisplayRoot>(), entries: RegisteredDisplayAgent[] = [];
   let knownMatches = 0, unknownRows = 0, unavailableProjects = 0, complete = true, rowsLeft = REGISTERED_DISPLAY_ROWS;
+  let deferredProject: number | undefined;
   try {
-    const snapshot = readReadOnlyPrimaryMetadata(base, 'projects.json', { budget }); evidence.push(snapshot.receipt);
+    const snapshot = readReadOnlyPrimaryMetadata(base, 'projects.json', { budget: createReadOnlyMetadataBudget() }); evidence.push(snapshot.receipt);
     const raw = Array.isArray(snapshot.raw) ? snapshot.raw : record(snapshot.raw) && snapshot.raw.version === 1 ? snapshot.raw.projects : undefined;
     if (!Array.isArray(raw)) return unknown('unreadable');
-    if (raw.length > rowsLeft) return unknown('limit'); rowsLeft -= raw.length;
+    if (raw.length > REGISTERED_DISPLAY_ROWS) return unknown('limit');
+    // Registry admission and root-row visits have separate ceilings. A full
+    // valid registry must not permanently consume every root's display budget.
     const projects: Project[] = [], ids = new Set<string>(), paths = new Set<string>();
     let selectedRegistered = false;
     for (const value of raw) {
@@ -125,13 +128,16 @@ export function readRegisteredAgentDisplayPage(selected: RegisteredDisplaySelect
       catch { aliases.set(parent, { key: null }); return undefined; }
     };
     const rootPage = projects.slice(projectOffset, projectOffset + REGISTERED_DISPLAY_PROJECTS), namespaces = new Set<string>();
-    for (const project of rootPage) {
+    for (const [index, project] of rootPage.entries()) {
       if (!admitted()) return unknown('changed');
       try {
         const data = readReadOnlyPrimaryMetadata(project.path, '.clubhouse/agents.json', { budget }); evidence.push(data.receipt);
         if (!Array.isArray(data.raw)) { unavailableProjects++; complete = false; continue; }
         // Both duplicate-ID admission and relationship projection visit every row.
-        if (data.raw.length * 2 > rowsLeft) { unavailableProjects++; complete = false; continue; }
+        if (data.raw.length * 2 > rowsLeft) {
+          if (data.raw.length * 2 <= REGISTERED_DISPLAY_ROWS && index > 0) { deferredProject = projectOffset + index; break; }
+          unavailableProjects++; complete = false; continue;
+        }
         rowsLeft -= data.raw.length * 2;
         if (data.rootNamespace && namespaces.has(data.rootNamespace)) return unknown('unreadable');
         if (data.rootNamespace) namespaces.add(data.rootNamespace);
@@ -169,14 +175,21 @@ export function readRegisteredAgentDisplayPage(selected: RegisteredDisplaySelect
         }
         if (entries.length > emittedBefore) localRoots.set(project.id, { projectPath: project.path, namespace: data.rootNamespace,
           receipt: combine([selectedReceipt, profile(base), snapshot.receipt, data.receipt, ...relevantAliases]) });
-      } catch (error) { unavailableProjects++; complete = false; if (!(error instanceof ReadOnlyMetadataLimitError)) continue; }
+      } catch (error) {
+        // A fresh request can read the deferred root with a new aggregate
+        // budget. File-size/schema refusals remain explicit, not an endless
+        // next-page retry of the same oversized file.
+        if (error instanceof ReadOnlyMetadataLimitError && error.reason === 'aggregate' && index > 0) { deferredProject = projectOffset + index; break; }
+        unavailableProjects++; complete = false;
+      }
     }
     const receipt = combine(evidence); receipts.push(receipt);
     if (!admitted() || !receipt.current()) return unknown('changed');
     if (matchOffset > 0 && matchOffset >= knownMatches) return unknown('changed');
     if (rootsOut) for (const [key, value] of localRoots) rootsOut.set(key, value);
     const next = knownMatches > matchOffset + entries.length ? { projectOffset, matchOffset: matchOffset + entries.length }
-      : projectOffset + rootPage.length < projects.length ? { projectOffset: projectOffset + rootPage.length, matchOffset: 0 } : null;
+      : deferredProject !== undefined ? { projectOffset: deferredProject, matchOffset: 0 }
+        : projectOffset + rootPage.length < projects.length ? { projectOffset: projectOffset + rootPage.length, matchOffset: 0 } : null;
     return { state: 'ok', inputs, value: { entries, complete, knownMatches, unknownRows, unavailableProjects, next, projectOffset, matchOffset, observedAt } };
   } catch (error) { return unknown(error instanceof ReadOnlyMetadataLimitError ? 'limit' : 'unreadable'); }
 }

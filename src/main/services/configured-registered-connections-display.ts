@@ -26,8 +26,8 @@ function combine(rs: readonly DisplayReceipt[]): DisplayReceipt {
 }
 
 /** Internal caller supplies already admitted selected fields and exact target/role receipt.
- * Default8/max8 related endpoints per request,16 registered roots,4096 row visits,
- * 8MiB initial primary budget and64 directory alias probes. With cache enabled,
+ * Default8/max8 related endpoints per request,16 registered roots,4096 registry visits +4096 agent-row visits,
+ * <=4MiB registry +8MiB initial root primary budget and64 directory alias probes. With cache enabled,
  * each of at most8 callbacks is preceded by the relevant root receipt; initial
  * and final aggregate receipts remain separate. Currentness rereads are not part
  * of the initial byte budget and have no hard I/O deadline. Pages are independent.

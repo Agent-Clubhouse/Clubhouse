@@ -925,7 +925,7 @@ describe('whole Details joins configured sources only through admitted endpoint 
 });
 
 describe('selected registered Connections pages at final Details assembly', () => {
-  it.each(['unchanged', 'related-primary-late', 'revoked'] as const)('keeps source continuation and final selected evidence fences: %s', async (mode) => {
+  it.each(['unchanged', 'related-primary-late', 'selected-removed', 'run-change', 'revoked'] as const)('keeps source continuation and final selected evidence fences: %s', async (mode) => {
     const root = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), 'clubhouse-details-registered-page-'))), a = path.join(root, 'a'), b = path.join(root, 'b');
     for (const folder of [a, b]) await fs.mkdir(path.join(folder, '.clubhouse'), { recursive: true });
     m.base = root; m.realConnections = true; m.realWitness = true;
@@ -937,7 +937,7 @@ describe('selected registered Connections pages at final Details assembly', () =
     let allowed = true, reached = false, observed = false;
     const module = await import('./remote-connection-card'), original = module.readPassiveConnectionCard;
     const capture = vi.spyOn(module, 'readPassiveConnectionCard').mockImplementation(async (...args) => { await original(...args); observed = args[0].rows.some((r) => r.label === 'Helper 8 · Other custom project'); });
-    m.canvases.mockImplementationOnce(async () => { reached = true; if (mode === 'related-primary-late') await fs.writeFile(relatedFile, '[]'); if (mode === 'revoked') allowed = false; return []; });
+    m.canvases.mockImplementationOnce(async () => { reached = true; if (mode === 'related-primary-late') await fs.writeFile(relatedFile, '[]'); if (mode === 'selected-removed') await fs.writeFile(path.join(a, '.clubhouse', 'agents.json'), '[]'); if (mode === 'run-change') m.registration.mockReturnValue({ nonce: 'replacement-run' }); if (mode === 'revoked') allowed = false; return []; });
     try {
       const response = await readRemoteAgentDetails('a1', () => allowed, { card: 'connections', source: 'helpers', offset: 8, projectOffset: 0 });
       expect(reached).toBe(true); expect(observed).toBe(true);

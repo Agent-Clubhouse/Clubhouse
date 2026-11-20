@@ -11,14 +11,17 @@ type RecordValue = Record<string, unknown>;
 const record = (v: unknown): v is RecordValue => !!v && typeof v === 'object' && !Array.isArray(v);
 
 export interface ReadOnlyMetadataBudget { remainingBytes: number; remainingFiles: number }
-export class ReadOnlyMetadataLimitError extends Error { readonly code = 'metadata_limit'; }
+export class ReadOnlyMetadataLimitError extends Error {
+  readonly code = 'metadata_limit';
+  constructor(message: string, readonly reason: 'aggregate' | 'file' | 'other' = 'other') { super(message); }
+}
 /** Per-query bookkeeping only; callers still admit the related registered roots. */
 export const createReadOnlyMetadataBudget = (): ReadOnlyMetadataBudget => ({ remainingBytes: 8 * 1024 * 1024, remainingFiles: 32 });
 function metadataAdmission(budget: ReadOnlyMetadataBudget | undefined, bytes: number, file: boolean): void {
   if (!budget) return;
   if (!Number.isSafeInteger(budget.remainingBytes) || budget.remainingBytes < 0 || budget.remainingBytes > 8 * 1024 * 1024
     || !Number.isSafeInteger(budget.remainingFiles) || budget.remainingFiles < 0 || budget.remainingFiles > 32
-    || budget.remainingBytes < bytes || file && !budget.remainingFiles) throw new ReadOnlyMetadataLimitError('Metadata read limit reached.');
+    || budget.remainingBytes < bytes || file && !budget.remainingFiles) throw new ReadOnlyMetadataLimitError('Metadata read limit reached.', 'aggregate');
   budget.remainingBytes -= bytes;
   if (file) budget.remainingFiles--;
 }
@@ -38,7 +41,7 @@ function inventory(root: string, relative: string, maxBytes = MAX_INVENTORY_BYTE
   }
   const leaf = chain.get(file)!;
   if (!leaf.isFile()) throw new Error('Inventory witness unavailable.');
-  if (leaf.size > BigInt(maxBytes)) throw new ReadOnlyMetadataLimitError('Inventory exceeds the read bound.');
+  if (leaf.size > BigInt(maxBytes)) throw new ReadOnlyMetadataLimitError('Inventory exceeds the read bound.', 'file');
   const same = (a: fs.BigIntStats, b: fs.BigIntStats) => a.dev === b.dev && a.ino === b.ino;
   const verify = () => {
     for (const [member, original] of chain) {
@@ -51,7 +54,7 @@ function inventory(root: string, relative: string, maxBytes = MAX_INVENTORY_BYTE
   try {
     const before = fs.fstatSync(fd, { bigint: true });
     if (!before.isFile() || !same(leaf, before)) throw new Error('Inventory changed while opening.');
-    if (before.size > BigInt(maxBytes)) throw new ReadOnlyMetadataLimitError('Inventory exceeds the read bound.');
+    if (before.size > BigInt(maxBytes)) throw new ReadOnlyMetadataLimitError('Inventory exceeds the read bound.', 'file');
     verify();
     metadataAdmission(budget, Number(before.size) + 1, false);
     const bytes = Buffer.alloc(Number(before.size) + 1);
@@ -59,7 +62,7 @@ function inventory(root: string, relative: string, maxBytes = MAX_INVENTORY_BYTE
     while (size < bytes.length) { const n = fs.readSync(fd, bytes, size, bytes.length - size, size); if (!n) break; size += n; }
     const after = fs.fstatSync(fd, { bigint: true });
     verify();
-    if (size > maxBytes) throw new ReadOnlyMetadataLimitError('Inventory exceeds the read bound.');
+    if (size > maxBytes) throw new ReadOnlyMetadataLimitError('Inventory exceeds the read bound.', 'file');
     if (before.size !== after.size || before.mtimeNs !== after.mtimeNs || before.ctimeNs !== after.ctimeNs) throw new Error('Inventory changed while reading.');
     const digest = createHash('sha256').update(bytes.subarray(0, size)).digest('hex');
     const identity = [...chain.values()].map((stat) => `${stat.dev}:${stat.ino}`).join('/');

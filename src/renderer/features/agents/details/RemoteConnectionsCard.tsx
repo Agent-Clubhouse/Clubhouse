@@ -46,7 +46,7 @@ export function RemoteConnectionsCard({ agent, details, status, freshnessKey, di
   const current = query && page?.source === query.source && page.offset === (query.offset ?? 0) && page.projectOffset === (query.projectOffset ?? 0) ? candidate : undefined;
   const overview = eligible ? details?.cards.find((c) => c.id === 'connections') : undefined;
   const card = query ? current : overview;
-  const sources: RemoteConnectionPageSource[] = ['outgoing', 'incoming', 'directions', 'sources', ...(dispatcher ? ['dispatcher-auto' as const] : agent.kind === 'durable' ? ['manual-dispatcher' as const, 'helpers' as const] : [])];
+  const sources: RemoteConnectionPageSource[] = ['outgoing', 'incoming', 'directions', 'sources', ...(dispatcher ? ['dispatcher-auto' as const] : agent.kind === 'durable' ? [...(!agent.parentAgentId ? ['manual-dispatcher' as const] : []), 'helpers' as const] : [])];
   const select = (source: RemoteConnectionPageSource) => setNavigation({ identity, query: { card: 'connections', source, offset: 0, projectOffset: 0 }, previous: [] });
   const overviewStatus = !address ? 'unavailable' : !connected ? 'offline' : status;
   const overviewMessage = overviewStatus === 'unavailable' ? 'This host does not share these details, or this agent is no longer available. The host may need an update.' : message(overviewStatus);

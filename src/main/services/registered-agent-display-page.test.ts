@@ -71,7 +71,7 @@ it('admits only a bounded number of distinct parent alias probes and labels the 
   if (result.state !== 'ok') throw new Error('fixture'); expect(result.value.entries).toHaveLength(50);
 });
 it('charges both inventory passes before traversing an oversized row collection', async () => {
-  await put(b, Array.from({ length: 2048 }, (_, i) => agent('child-' + i, { parentAgentId: 'parent', parentProjectPath: a })));
+  await put(b, Array.from({ length: 2049 }, (_, i) => agent('child-' + i, { parentAgentId: 'parent', parentProjectPath: a })));
   const result = read(); expect(result).toMatchObject({ state: 'ok', value: { complete: false, unavailableProjects: 1, knownMatches: 0, entries: [] } });
 });
 it('continues registered-root pages and treats a shifted page as changed rather than verified empty', async () => {
@@ -87,4 +87,31 @@ it('keeps malformed relationship data partial while preserving known helpers, mi
   const result = read(); expect(result).toMatchObject({ state: 'ok', value: { complete: false, unknownRows: 1, entries: [{ agentId: 'known', fields: { connectToDispatcher: { state: 'ok', value: false } } }] } });
   await fsp.unlink(path.join(b, '.clubhouse', 'agents.json')); expect(read()).toMatchObject({ state: 'ok', value: { complete: true, knownMatches: 0 } });
   await fsp.writeFile(path.join(b, '.clubhouse', 'agents.json.bak'), '[]'); expect(read()).toMatchObject({ state: 'ok', value: { complete: false, unavailableProjects: 1 } });
+});
+it('keeps a full bounded registry from consuming every related-agent row admission', async () => {
+  const projects = [{ id: 'a', name: 'Selected', path: a }, { id: 'b', name: 'Other', path: b }, ...Array.from({ length: 4094 }, (_, i) => ({ id: 'p' + i, name: 'Project ' + i, path: path.join(root, 'not-opened-' + i) }))];
+  await fsp.writeFile(path.join(getBaseDirPath(), 'projects.json'), JSON.stringify({ version: 1, projects })); await put(b, [agent('known', { parentAgentId: 'parent', parentProjectPath: a })]);
+  const result = read(); expect(result).toMatchObject({ state: 'ok', value: { knownMatches: 1, entries: [{ agentId: 'known' }], next: { projectOffset: 16, matchOffset: 0 } } });
+});
+it('continues at a deferred root after the aggregate byte budget, without permanently losing later supported records', async () => {
+  const projects = [{ id: 'a', name: 'Selected', path: a }];
+  for (let i = 0; i < 3; i++) {
+    const folder = path.join(root, 'large-' + i); await fsp.mkdir(path.join(folder, '.clubhouse'), { recursive: true });
+    await put(folder, [agent('large-' + i, { parentAgentId: 'parent', parentProjectPath: a, unused: 'x'.repeat(3 * 1024 * 1024) })]); projects.push({ id: 'large-' + i, name: 'Large ' + i, path: folder });
+  }
+  await fsp.writeFile(path.join(getBaseDirPath(), 'projects.json'), JSON.stringify({ version: 1, projects }));
+  const first = read(); expect(first).toMatchObject({ state: 'ok', value: { complete: true, knownMatches: 2, unavailableProjects: 0, next: { projectOffset: 3, matchOffset: 0 } } });
+  if (first.state !== 'ok') throw new Error('fixture'); expect(first.value.entries.map((entry) => entry.agentId)).toEqual(['large-0', 'large-1']);
+  const last = read(first.value.next!); expect(last).toMatchObject({ state: 'ok', value: { complete: true, knownMatches: 1, entries: [{ agentId: 'large-2' }], next: null } });
+});
+
+it('continues a supported later root when earlier roots exhausted this page agent-row budget', async () => {
+  await put(b, Array.from({ length: 2048 }, (_, i) => agent('child-' + i, { parentAgentId: 'parent', parentProjectPath: a })));
+  const first = read(); expect(first).toMatchObject({ state: 'ok', value: { complete: true, unavailableProjects: 0, knownMatches: 0, next: { projectOffset: 1, matchOffset: 0 } } });
+  const last = read({ projectOffset: 1, matchOffset: 2000 }); expect(last).toMatchObject({ state: 'ok', value: { complete: true, knownMatches: 2048, next: null } });
+  if (last.state !== 'ok') throw new Error('fixture'); expect(last.value.entries).toHaveLength(48); expect(last.value.entries[47].agentId).toBe('child-2047');
+});
+it('does not adopt another project’s same-ID parent or probe unrelated relationship aliases', async () => {
+  await put(b, [agent('safe', { parentAgentId: 'parent', parentProjectPath: a }), agent('wrong', { name: 'PRIVATE_OTHER_PARENT_CHILD', parentAgentId: 'parent', parentProjectPath: b }), agent('unrelated', { name: 'PRIVATE_OTHER_RELATIONSHIP', parentAgentId: 'unrelated', parentProjectPath: '/unadmitted/never-probe' })]);
+  const result = read(); expect(result).toMatchObject({ state: 'ok', value: { complete: true, knownMatches: 1, entries: [{ agentId: 'safe' }] } }); expect(JSON.stringify(result)).not.toContain('PRIVATE_');
 });
